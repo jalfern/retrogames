@@ -118,6 +118,11 @@ const MystGame = () => {
           case 'selNotch': { const tgt = F.selAlign ? 2.4 : (m.o.userData.notch === (s.selChair || 0) ? 1.5 : 0); m.o.material.emissiveIntensity += (tgt - m.o.material.emissiveIntensity) * k; break }
           case 'selAlignDoor': m.o.position.z += ((F.selAlign ? m.z0 - 3.2 : m.z0) - m.o.position.z) * k; break
           case 'selGear': { const sc = F.gearSelenitic ? 0.001 : 1; m.o.scale.x += (sc - m.o.scale.x) * k; m.o.scale.y = m.o.scale.x; m.o.scale.z = m.o.scale.x; break }
+          // CHANNELWOOD: the sluice gate drops to dam the channels, the water
+          // climbs the stone cuts, and the float lifts with it
+          case 'chanSluice': m.o.position.y += ((F.chanFlood ? m.y0 - 4.3 : m.y0) - m.o.position.y) * k; break
+          case 'chanWater': m.o.position.y += ((F.chanFlood ? m.y0 + 0.62 : m.y0) - m.o.position.y) * k; break
+          case 'chanFloat': m.o.position.y += ((F.chanFlood ? m.y0 + 0.58 : m.y0) - m.o.position.y) * k; break
           default: {
             if (m.kind.startsWith('selStone')) {
               const i = Number(m.kind.slice('selStone'.length))

@@ -244,8 +244,30 @@ export const NODES = {
     spots: [
       { id: 'retChannelwood', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'cave' },
       { id: 'starWheel', label: 'a great stone star over the falls', yaw: 0, w: 40, h: 34, act: 'starWheel' },
-      { id: 'pageChannelwoodRed', label: 'a red page in a pool', yaw: -55, w: 24, h: 24, act: 'takePage', page: 'red:channelwood', gone: 'pageRed_channelwood' },
-      { id: 'pageChannelwoodBlue', label: 'a blue page on the wood bridge', yaw: 60, w: 24, h: 24, act: 'takePage', page: 'blue:channelwood', gone: 'pageBlue_channelwood' },
+      { id: 'toChanChannels', label: 'the cut stone channels', yaw: -55, w: 60, h: 40, to: 'chanChannels' },
+    ],
+  },
+  chanChannels: {
+    pos: [0, 1.7, -40], yaw: 0, sky: 'channelwood', amb: 'falls',
+    caption: 'The channels — broad stone cuts brimmed with slow water, running toward the falls',
+    expect: ['chanSluice'],
+    spots: [
+      { id: 'retChanChannels', label: 'back to the landing', yaw: 180, w: 50, h: 36, to: 'channelwood' },
+      { id: 'chanFlood', label: 'the great flood lever', yaw: -22, w: 26, h: 32, act: 'chanFlood' },
+      { id: 'boardRaft', label: 'the float at the head of the channel', yaw: 12, w: 28, h: 30, to: 'chanWheel', need: 'chanFlood', needMsg: 'The channel runs dry to its sluice; the float sits hard on the mud. The water lever governs it.' },
+      { id: 'pageChannelwoodBlue', label: 'a blue page on the wood bridge', yaw: 55, w: 24, h: 24, act: 'takePage', page: 'blue:channelwood', gone: 'pageBlue_channelwood' },
+      { id: 'lookFalls', label: 'the falls at the end of the channels', yaw: 0, w: 44, h: 26, msg: 'Water crowds the sluice and pours over the lip beyond — the whole world here drains one way.' },
+    ],
+  },
+  chanWheel: {
+    pos: [0, 3.6, -56], yaw: 0, sky: 'channelwood', amb: 'wind',
+    caption: 'The star terrace — the great stone wheel turns above the head of the channels',
+    expect: ['starWheel'],
+    spots: [
+      { id: 'retChanWheel', label: 'down off the float', yaw: 180, w: 50, h: 36, to: 'chanChannels' },
+      { id: 'starWheel', label: 'the great stone star', yaw: 0, w: 40, h: 34, act: 'starWheel' },
+      { id: 'pageChannelwoodRed', label: 'a red page in the wheel shelter', yaw: -50, w: 24, h: 24, act: 'takePage', page: 'red:channelwood', gone: 'pageRed_channelwood' },
+      { id: 'lookFalls2', label: 'the falls, far below', yaw: 30, w: 40, h: 26, msg: 'From the terrace the channels are dark ribbons sewing the island shut, all of them running to the lip.' },
     ],
   },
 }

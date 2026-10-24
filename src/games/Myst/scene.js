@@ -672,16 +672,78 @@ const BUILDERS = {
     star.userData.spot = 'starWheel'
     g.add(star)
     mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g)
-    const bridge = mesh(new THREE.BoxGeometry(10, 0.3, 1.4), mat(TX.plank), 3, 0.8, 2, g)
-    bridge.rotation.y = 0.5; bridge.userData.spot = 'pageChannelwoodBlue'
-    const pool = mesh(new THREE.CircleGeometry(2.4, 12), new THREE.MeshStandardMaterial({ color: 0x2a6a70, roughness: 0.2, metalness: 0.2 }), -3.4, 0.08, 2.6, g)
-    pool.rotation.x = -Math.PI / 2; pool.userData.spot = 'pageChannelwoodRed'
     for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-5, 7, 2.4]]) {
       const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
       log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
     }
     tuft(g, -8.5, 0.06, 4, 1.3, 0x2f6a44); tuft(g, 8.6, 0.06, -6, 1.2, 0x2f6a44); tuft(g, 6, 0.06, 6, 1, 0x2f6a44)
     boulder(g, TX.chand, -10, 0.8, -8, 1.4, 0.6); boulder(g, TX.chand, 11, 0.6, 8, 1.2, 1.3)
+  },
+  chanChannels(g) {
+    const ground = mesh(new THREE.CircleGeometry(45, 22), mat(TX.chand), 0, 0, -40, g); ground.rotation.x = -Math.PI / 2
+    seaPlane(g, 0.02, 200, 0.7)
+    // three cut channels running toward the sluice; water rides them when flooded
+    for (const cx of [-5.4, 0, 5.4]) {
+      const lipL = mesh(new THREE.BoxGeometry(0.5, 0.9, 12), mat(TX.grey), cx - 1.5, 0.45, -30, g); lipL.userData.noPick = true
+      const lipR = mesh(new THREE.BoxGeometry(0.5, 0.9, 12), mat(TX.grey), cx + 1.5, 0.45, -30, g); lipR.userData.noPick = true
+      const wtr = mesh(new THREE.PlaneGeometry(2.6, 11.6), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.6, side: THREE.DoubleSide, roughness: 0.15 }), cx, 0.12, -30, g)
+      wtr.rotation.x = -Math.PI / 2; wtr.userData.noPick = true; wtr.userData.mech = 'chanWater'
+    }
+    // the sluice wall across the head of the channels: the gate drops to flood them
+    const wall = mesh(new THREE.BoxGeometry(24, 5, 1.4), mat(TX.grey), 0, 2.5, -23.4, g); wall.userData.noPick = true
+    const gate = mesh(new THREE.BoxGeometry(7.6, 4.4, 0.5), mat(TX.wood, { roughness: 0.8 }), 0, 4.6, -23.2, g)
+    gate.userData.landmark = 'chanSluice'; gate.userData.mech = 'chanSluice'; gate.userData.noPick = true
+    const overfall = mesh(new THREE.PlaneGeometry(7, 4.2, 1, 10), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.7, side: THREE.DoubleSide }), 0, 2.2, -22.6, g)
+    overfall.userData.fall = true; overfall.userData.noPick = true
+    // the float at the head of the centre channel: mud-bound until the water rises
+    const raft = new THREE.Group()
+    for (const px of [-0.9, -0.3, 0.3, 0.9]) mesh(new THREE.BoxGeometry(0.34, 0.14, 2.4), mat(TX.plank), px, 0, 0, raft)
+    const post = mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2), mat(TX.wood), 0, 0.6, -1.1, raft); post.userData.noPick = true
+    raft.position.set(0, 0.14, -25.6); raft.userData.mech = 'chanFloat'; raft.userData.spot = 'boardRaft'
+    g.add(raft)
+    // the flood lever, iron against the channel wall
+    mesh(new THREE.BoxGeometry(0.32, 2, 0.32), mat(TX.iron, { metalness: 0.6 }), -2.2, 1, -34.6, g).userData.landmark = 'chanSluice'
+    const lv = mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.5), mat(TX.iron, { metalness: 0.7 }), -2.2, 1.7, -35.1, g)
+    lv.rotation.x = 0.6; lv.userData.spot = 'chanFlood'; lv.userData.landmark = 'chanSluice'
+    // the wood bridge the blue page rests on
+    const bridge = mesh(new THREE.BoxGeometry(7, 0.28, 1.3), mat(TX.plank), 3.4, 0.75, -33.5, g)
+    bridge.rotation.y = -0.5; bridge.userData.spot = 'pageChannelwoodBlue'; bridge.userData.noPick = true
+    for (const [px, pz] of [[1.6, -32.6], [5.2, -34.4]]) mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.4), mat(TX.wood), px, 0.7, pz, g).userData.noPick = true
+    for (const [lx, lz, lr] of [[-8, -32, 3.2], [8.4, -36, 2.6]]) {
+      const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
+      log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
+    }
+    tuft(g, -7.6, 0.06, -37, 1.2, 0x2f6a44); tuft(g, 7.4, 0.06, -30.5, 1.1, 0x2f6a44)
+    boulder(g, TX.chand, -9.5, 0.7, -27, 1.3, 0.4); boulder(g, TX.chand, 9.8, 0.9, -26, 1.5, 1.1)
+  },
+  chanWheel(g) {
+    const terrace = mesh(new THREE.CircleGeometry(26, 22), mat(TX.chand), 0, 2.2, -56, g); terrace.rotation.x = -Math.PI / 2
+    seaPlane(g, -0.5, 200, 0.7)
+    // parapet along the terrace lip over the falls
+    for (let k = 0; k < 14; k++) {
+      const a = k * (Math.PI / 13) - Math.PI / 2
+      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 10.5, 2.7, -56 + Math.cos(a) * 10.5, g).userData.noPick = true
+    }
+    // the great stone star, close at hand on this terrace, turning
+    const star = new THREE.Group()
+    for (let k = 0; k < 5; k++) {
+      const arm = mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), mat(TX.grey), 0, 1.7, 0, star)
+      arm.rotation.z = k * 1.2566
+      arm.userData.landmark = 'starWheel'
+    }
+    star.position.set(0, 6.4, -53)
+    star.userData.spinY = 0.12
+    star.userData.spot = 'starWheel'
+    g.add(star)
+    mesh(new THREE.BoxGeometry(0.9, 4.4, 0.9), mat(TX.grey), 0, 4.4, -53, g).userData.noPick = true
+    // the wheel-shelter where the red page waits, and the float's landing rail
+    const shelter = mesh(new THREE.BoxGeometry(2.6, 2.2, 1.2), mat(TX.wood, { roughness: 0.85 }), -4.8, 3.3, -51.4, g)
+    shelter.rotation.y = 0.4; shelter.userData.spot = 'pageChannelwoodRed'; shelter.userData.landmark = 'starWheel'
+    const rail = mesh(new THREE.BoxGeometry(3.4, 0.18, 0.18), mat(TX.iron, { metalness: 0.55 }), 2.6, 2.55, -54.2, g)
+    rail.userData.noPick = true
+    const rope = mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2), mat(TX.wood), 4.2, 3.4, -54.4, g); rope.userData.noPick = true
+    tuft(g, -7.4, 2.26, -58, 1.1, 0x2f6a44); tuft(g, 6.8, 2.26, -59, 1, 0x2f6a44)
+    boulder(g, TX.chand, -8.6, 2.9, -53.5, 1.2, 0.5); boulder(g, TX.chand, 7.6, 3.1, -57, 1.4, 1.2)
   },
 }
 
@@ -699,7 +761,7 @@ export function buildWorld(ids) {
     for (const sp of NODES[id].spots) {
       if (sp.act === 'takePage') {
         const a = THREE.MathUtils.degToRad(sp.yaw)
-        const q = mesh(new THREE.PlaneGeometry(0.7, 0.9), new THREE.MeshStandardMaterial({ map: sp.page.startsWith('red') ? TX.pageR : TX.pageB, side: THREE.DoubleSide, emissive: 0x120505 }), cam[0] + Math.sin(a) * 7, 1.1, cam[2] + Math.cos(a) * 7, g)
+        const q = mesh(new THREE.PlaneGeometry(0.7, 0.9), new THREE.MeshStandardMaterial({ map: sp.page.startsWith('red') ? TX.pageR : TX.pageB, side: THREE.DoubleSide, emissive: 0x120505 }), cam[0] + Math.sin(a) * 7, cam[1] - 0.6, cam[2] + Math.cos(a) * 7, g)
         q.userData.spot = sp.id
         q.rotation.y = a
       }
@@ -739,7 +801,7 @@ function idSky(id) {
   if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
   if (id === 'stoneship') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
-  if (id === 'channelwood') return 'channelwood'
+  if (id === 'channelwood' || id === 'chanChannels' || id === 'chanWheel') return 'channelwood'
   return 'interior'
 }
 
