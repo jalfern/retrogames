@@ -408,6 +408,7 @@ void main(){
             const nn = new THREE.Mesh(new THREE.PlaneGeometry(14, 18), new THREE.MeshLambertMaterial({ map: makeTex(cnv), transparent: true, alphaTest: 0.4 }))
             nn.quaternion.copy(camera.quaternion)
             nn.position.set(FX(n.x * TS + 8), n.y * TS + 8, 9)
+            if (n.requires) { nn.userData.requires = n.requires; nn.visible = false }
             screenGroup.add(nn); staticMeshes.push(nn)
             dynamic.npcs.set(n.id, nn)
         }
@@ -595,6 +596,9 @@ void main(){
             if (!mesh) continue
             const open = (d.kind === 'switch' ? !!sim.flags.switchesOn[d.switch] : !!sim.flags.doorsOpen[d.id])
             mesh.visible = !open
+        }
+        for (const [, mesh] of dynamic.npcs) {
+            if (mesh.userData.requires) mesh.visible = !!sim.items[mesh.userData.requires]
         }
 
         const hx = sim.hero.x, hy = sim.hero.y

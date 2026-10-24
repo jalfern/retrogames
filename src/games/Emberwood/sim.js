@@ -6,7 +6,7 @@
 //   { lx, ly, aHeld, aPressed, aReleased, bPressed, cPressed }
 // Units: world px; TS=16 tiles; screens 16x11 tiles.
 
-import { SCREENS, TS, SW, SH, tileAt, isSolidTile, SHOP } from './world.js'
+import { SCREENS, TS, SW, SH, tileAt, isSolidTile, SHOP, SECRET_SHOP } from './world.js'
 
 const FIXED = 1000 / 60
 
@@ -62,7 +62,7 @@ export function createSim(seed = 1) {
         arc: 0, arcDir: 'down', arcId: 0,
         bombCool: 0,
         hitStop: 0,        // frozen frames after a kill / blast (hit-stop for weight)
-        shop: { open: false, sel: 0 },
+        shop: { open: false, sel: 0, id: null },
         paused: false,
         death: false, deathT: 0, win: false,
         enemies: [], projectiles: [], bombs: [], drops: [], blocks: [],
@@ -113,7 +113,7 @@ const crackAt = (s, tx, ty) => (s.cracks || []).find(c => c.x === tx && c.y === 
 const doorAt = (s, tx, ty) => (s.doors || []).find(d => d.x === tx && d.y === ty)
 const chestAt = (sim, tx, ty) => (scr(sim).chests || []).find(c => c.x === tx && c.y === ty && !sim.flags.chestsOpen[c.id] && (!c.after || sim.flags[c.after]))
 const plateAt = (s, tx, ty) => (s.plates || []).find(p => p.x === tx && p.y === ty)
-const npcAt = (s, tx, ty) => (s.npcs || []).find(n => n.x === tx && n.y === ty)
+const npcAt = (sim, tx, ty) => (scr(sim).npcs || []).find(n => n.x === tx && n.y === ty && (!n.requires || !!sim.items[n.requires]))
 const warpAt = (s, tx, ty) => (s.warps || []).find(w => w.x === tx && w.y === ty)
 
 export function doorOpen(sim, d) {
@@ -138,6 +138,7 @@ export function spawnRoom(sim, id, entry) {
     sim.swing = 0; sim.drawing = false; sim.holdT = 0
     sim.arc = 0
     sim.shop.open = false
+    sim.shop.id = null
 }
 
 function makeEnemy(e) {
@@ -267,9 +268,15 @@ function primaryAction(sim) {
     const tx = tileOf(h.x + dvx * (TS * 0.9))
     const ty = tileOf(h.y + dvy * (TS * 0.9))
     const s = scr(sim)
-    const npc = npcAt(s, tx, ty)
+    const npc = npcAt(sim, tx, ty)
     if (npc) {
-        if (npc.kind === 'shop') { sim.shop.open = true; sim.shop.sel = 0; emit(sim, 'ui', 0, 0) }
+        if (npc.kind === 'shop') { sim.shop.open = true; sim.shop.sel = 0; sim.shop.id = npc.id; emit(sim, 'ui', 0, 0) }
+        else if (npc.id === 'elder' && !sim.flags.elderGifted) {
+            sim.flags.elderGifted = true
+            grant(sim, 'potion')
+            say(sim, 'THE ELDER PRESSES A SMOULDERING POTION INTO YOUR HAND', 320)
+            return
+        }
         else say(sim, npc.msg, 320)
         return
     }
@@ -726,15 +733,16 @@ function revive(sim) {
 }
 
 function stepShop(sim, inp) {
-    const menu = SHOP
+    const menu = sim.shop.id === 'colporter' ? SECRET_SHOP : SHOP
     if (inp.aPressed) {
         const offer = menu[sim.shop.sel]
         if (offer.item === 'shield' && sim.items.shield) { say(sim, 'YE ALREADY CARRY A SHIELD', 100); return }
         if (offer.item === 'blade' && sim.items.blade) { say(sim, 'YE ALREADY CARRY THE EMBER BLADE', 100); return }
         if (sim.score >= offer.price) {
             sim.score -= offer.price
-            grant(sim, offer.item === 'arrows' ? 'arrows' : offer.item === 'bombs' ? 'bombs' : offer.item)
-            if (offer.item === 'bombs') sim.items.bombs += 3 // shop bundle 4 = +3 after grant
+            if (offer.item === 'arrows') { grant(sim, 'arrows'); if (sim.shop.id === 'colporter') sim.items.arrows += 10 }
+            else if (offer.item === 'bombs') { grant(sim, 'bombs'); sim.items.bombs += 3 } // shop bundle 4 = +3 after grant
+            else grant(sim, offer.item)
             emit(sim, 'buy', 0, 0)
         } else say(sim, 'NOT ENOUGH EMBERS', 90)
     }
@@ -786,6 +794,7 @@ export function simState(sim) {
         death: sim.death,
         win: !!sim.win,
         shop: sim.shop.open,
+        shopId: sim.shop.open ? sim.shop.id : null,
         screen: sim.screen,
         arc: sim.arc > 0 ? { dir: sim.arcDir, id: sim.arcId, frames: sim.arc, p: 1 - sim.arc / ARC_DUR } : null,
         items: { ...sim.items },
@@ -798,6 +807,53 @@ export function simState(sim) {
             boss2: sim.flags.boss2,
         },
     }
+}
+
+// ---- save / continue (the vale remembers your name) ----
+// Plain fields only: sim.rng is a closure, so the save is seed + everything the
+// hash sees (#391). load rebuilds on a fresh createSim(seed) and restores the
+// room's dynamic entities (pushed blocks) — enemies respawn on load exactly as
+// they respawn on re-entry, which is what a save standing at a door means.
+export function saveState(sim) {
+    return {
+        v: 1,
+        seed: sim.seed,
+        tick: sim.tick,
+        screen: sim.screen,
+        hero: { ...sim.hero },
+        items: { ...sim.items },
+        score: sim.score,
+        flags: {
+            cracked: { ...sim.flags.cracked }, doorsOpen: { ...sim.flags.doorsOpen },
+            switchesOn: { ...sim.flags.switchesOn }, chestsOpen: { ...sim.flags.chestsOpen },
+            killed: { ...sim.flags.killed }, boss1: sim.flags.boss1, boss2: sim.flags.boss2,
+            elderGifted: !!sim.flags.elderGifted,
+        },
+        cut: { ...sim.cut },
+        lastDungeonEntry: { ...sim.lastDungeonEntry },
+        blocks: sim.blocks.map(b => ({ id: b.id, x: b.x, y: b.y })),
+        win: !!sim.win,
+    }
+}
+
+export function loadState(sim, d) {
+    if (!d || d.v !== 1 || !SCREENS[d.screen]) return false
+    const fresh = createSim(d.seed)
+    fresh.tick = d.tick | 0
+    Object.assign(fresh.items, d.items)
+    Object.assign(fresh.flags, d.flags)
+    Object.assign(fresh.cut, d.cut)
+    Object.assign(fresh.lastDungeonEntry, d.lastDungeonEntry)
+    fresh.score = d.score | 0
+    fresh.win = !!d.win
+    spawnRoom(fresh, d.screen, null)
+    for (const sb of d.blocks || []) {
+        const b = fresh.blocks.find(x => x.id === sb.id)
+        if (b) { b.x = sb.x; b.y = sb.y }
+    }
+    Object.assign(fresh.hero, d.hero)
+    Object.assign(sim, fresh)
+    return true
 }
 
 export const TICK_MS = FIXED
