@@ -486,7 +486,65 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
             const d = Math.abs(a - b)
             if (d >= 4 && d <= 18 && a * b > 0) arcSteps++
         }
-        ok(arcSteps >= 8, `${z.name}: only ${arcSteps} arc steps — the ground is straight ramps, not curves`)
+        ok(arcSteps >= 24, `${z.name}: only ${arcSteps} arc steps — the ground is straight ramps, not curves`)
+    }
+
+    // #900 — FLATNESS: "the courses are mostly flat and angular". A flat
+    // expanse = one ground segment >=400px wide at constant height (short
+    // flat bands around jumps/springs/run-ups are verb architecture, not
+    // expanse). Before #900 every sector sat at 56-63% flat; the rework must
+    // hold every sector under 45%.
+    for (const z of ZONES) {
+        const x0 = z.segs[0][0], x1 = z.segs[z.segs.length - 1][2]
+        let flat = 0
+        for (const sg of z.segs) if (Math.abs(sg[3] - sg[1]) < 2 && sg[2] - sg[0] >= 400) flat += sg[2] - sg[0]
+        const frac = flat / (x1 - x0)
+        ok(frac < 0.45, `${z.name}: ${(frac * 100).toFixed(1)}% of the ground is flat expanse (>=400px slab) — #900 asked for fewer flats (was 56-63%)`)
+    }
+
+    // #900 — SPRING-HIGH: the deck routes. A fast sprung body lands on the
+    // hill-top deck and banks its rings; a slow one never reaches it.
+    {
+        const driveSpringHigh = (zi, s0) => {
+            const z = ZONES[zi]
+            const sp = z.springs.find(q => Math.abs(q[2] + 820) < 1)
+            if (!sp) return { spring: false }
+            const g = s.makeGame(); g.zone = zi
+            g.p.x = sp[0] - (s0 >= 700 ? 200 : 60); g.p.y = s.groundY(z, g.p.x); g.p.mode = 'track'; g.p.s = s0; g.p.invuln = 999
+            let spring = false, onDeck = false, rings = 0, died = false
+            for (let t = 0; t < 260; t++) {
+                s.step(g, { right: true })
+                for (const e of g.ev) {
+                    if (e.type === 'spring') spring = true
+                    if (e.type === 'ring' && g.p.route === 'low' && Math.abs(g.p.y + s.FORK_DY - s.groundY(z, g.p.x)) > 40) rings++
+                    if (e.type === 'land' && g.p.y < sp[1] - 40) onDeck = true
+                    if (e.type === 'die') died = true
+                }
+                if (died) break
+            }
+            return { spring, onDeck, rings, died }
+        }
+        for (const zi of [0, 1]) {
+            ok((ZONES[zi].deckRings || []).length >= 3, `zone ${zi}: no spring-high deck rings — the high route pays nothing`)
+            const fast = driveSpringHigh(zi, 800)
+            ok(fast.spring && fast.onDeck && !fast.died, `zone ${zi}: a fast sprung body did not land on the spring-high deck (${JSON.stringify(fast)})`)
+            const slow = driveSpringHigh(zi, 200)
+            ok(slow.spring && (!slow.onDeck || slow.died), `zone ${zi}: a slow body reached the spring-high deck (${JSON.stringify(slow)}) — the route is not earned by speed`)
+        }
+        // the proven route banks at least one deck ring per zone that has one
+        let deckHit = 0
+        const gD = s.replayScript(plan.script)
+        for (const [zi, z] of ZONES.entries()) {
+            if (!z.deckRings) continue
+            let hit = 0
+            for (const [rx, ry] of z.deckRings) {
+                const k = z.rings.findIndex(r => r[0] === rx && r[1] === ry)
+                if (k >= 0 && gD.taken.has(zi * 100 + k)) hit++
+            }
+            ok(hit >= 1, `zone ${zi}: the autopilot banked 0 of ${z.deckRings.length} spring-high deck rings — the deck route is not drivable`)
+            deckHit += hit
+        }
+        ok(deckHit >= 2, `only ${deckHit} deck rings banked run-wide — spring-high routes are scenery`)
     }
 
     // #627 — EARLY LOOP: zone 1 shows a loop inside the first ~20s, zone 2 too.
