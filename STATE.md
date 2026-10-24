@@ -1,69 +1,63 @@
-# STATE — 2026-10-24 forge session 5 (CometDriftHD #995 shipped: the desert remembers the pack)
+# STATE — 2026-10-24 forge session 6 (MYST #1005 shipped: the island stamps its own locks)
 
 ## Shipped this session
-- **#995 → main (PR #997 squash 8812ae6)** — **COMET DRIFT HD: dynamic sand
-  scarification + sun-fixed shadows**, live at
-  `https://www.jalfern.com/retrogames/comet-drift-hd`.
-  - Flagship stage (#841): queue empty, QA lane live (borrow forbidden),
-    Emberwood skipped (QA holds #994). Idle pick named HD gap #1 (autopilot
-    drift tiers); probe showed that premise is STALE — apex grace #471 +
-    bend-weighted charge #478 made tiers pay every lap on all four courses
-    (gulch seed 3: 5b/3v/8g). Stage honestly pivoted to HD gap #3.
-  - Game code: `sand.js` — px wear field (14px cells, 34px soft ruts,
-    clamped, ~35 s decay); every sand-surfaced kart >1.5v stamps; gutter
-    ribbons sink 0.11u and darken ×0.58 from captured base arrays (offset,
-    never accumulation; decay returns byte-exact). `scene.js:sunShadow` —
-    halo holds the dusk-sun azimuth (0.92), stretches along it, dims with
-    elevation; hooks `sandState()` + extended `shadowBlob()` (DEV).
-  - Harness `cometdrifthdsandcheck` (new alias, lint:hd): 29 gates — wear
-    laws, ribbon deform/base/return, pack-carves (369@0.95) vs pilot-skims
-    (147@0.32), asphalt never wears, sim purity (finish identical with/
-    without stamping; k.hint side-table), sun law monotonicity, live Chrome
-    wire-up (attract pack 78 cells, reset wipes, halo az 0.92 @ stretch 1.98,
-    contract driving deepens). `--mutate` (desert-forgets) dies.
-  - README honest gaps: #0 CLOSED by #987/#990 (residual = real-device
-    adapters), #1 CLOSED by #471/#478 with numbers, #2 CLOSED by #658
-    (TSL bloom/radial on both node backends); reflections stay open residual.
-  - Regression: cometdrifthdcheck 382/0, cometcheck GREEN, scenerycheck
-    133/0, jonqcheck 112/0, lint hd/mario/fps/ai + build green. Prod marker:
-    chunk index-BondcB6M.js carries sink 0.11 / dark 0.42 / az 0.92.
-  - QA polish pass filed: **#1002** (`feedback`) — reflections, rut lips/dust,
-    refuge bloom fallback, music, mesa ground shadow.
+- **#1005 → main (PR #1006 squash 81263f9)** — **MYST: per-save seeded codes**,
+  live at `https://www.jalfern.com/retrogames/myst`.
+  - Flagship stage (idle.mjs pick): SSX had no open gaps, Emberwood/HD QA-held
+    (#994/#1001 — QA lane live, borrow forbidden). First ran the #961 honesty
+    pass: README walkability roll-up (#838/#989/#996 all shipped) CLOSED-marked
+    so idle.mjs stops re-kicking a dead bullet; fixed-codes gap CLOSED by #1005.
+  - Game code: new `codes.js` — mulberry32 seed per fresh game (`?seed=N` pins;
+    restart redraws = new book of Myst) → safe (3×1-9), star perm 1-4, sphere
+    perm 0-3. `state.js` checks `s.codes`; Atrus's note spells the safe digits
+    in words; cave dome grows four true stars sized to the seeded ranks
+    (`scene.js:updateTrueStars`); posts sing `sing:<code>` → soundplan order.
+    `solveScript(codes)` (attract + harness) solves any seeded island; fixed
+    constants deleted.
+  - Harness: mystcheck 258/0 (+22 seeded gates: 6 probes win/shape/determinism,
+    distinct locks, clue-words-match, restart-resodes, seed parsing).
+    `--mutate` 25/25 die incl. seed-ignored-island. mystplay 13/13 live:
+    ?seed=42 → locks 658/4213/0231, dome scales 1.22/0.74/0.5/0.98, unpinned
+    fresh redraws stars+locks, solve=atrus, zero page errors. mystviewcheck
+    79/79. lint myst/mario/fps/ai + build green. Prod chunk index-C2oKLS7N.js
+    content-verified (NUMBER_WORDS / seed= / sing:).
+  - QA polish filed: **#1008** (`feedback`) — seed persistence, post-ring ticks,
+    star silhouettes, Spectator/linking animations, ocean terrain.
 
 ## Next goal
-- `game-queue` empty → flagship stages again. Honest idle pick now: **Myst
-  gap #0 — but that bullet is a stale roll-up** (#838/#989/#996 all shipped,
-  incl. #998 on main): next session should run the #961 honesty pass on
-  Myst's README first (CLOSED-mark the shipped stages), then re-pick — then
-  COMET DRIFT HD reflections (gap #0 now) is the live one.
-- Never touch QA-held issues; QA currently holds #994 (+ owns #1002 as fresh
-  feedback).
+- game-queue empty → flagship stages again. Honest re-pick after this session's
+  honesty pass: SSX 0 gaps, Emberwood held (#994), HD held (#1001), Myst's
+  remaining README gaps are ALL now in #1008 (owned) → **every flagship gap is
+  owned ⇒ STOP is legal** unless the board changes (new game-queue/steer/next,
+  or QA releases #994/#1001). Next session: re-run idle.mjs honestly first.
 
 ## Board / harness status
-- main = 8812ae6 (this ship). `main-ok` green at claim + merge; `static`
-  SUCCESS; Vercel pass; prod content-verified.
-- Worktrees: `retrogames-forge-comet-hd-tiers` (done, detached main after
-  merge). Main checkout detached at origin/main ✓.
+- main = 81263f9 (this ship). main-ok green at claim + merge; static SUCCESS;
+  Vercel prod content-verified (jalfern.com served a Vercel Security
+  Checkpoint to curl for a while — verify prod content through real Chrome or
+  by chunk-string match with browser UA, not bare curl).
+- Worktrees: `retrogames-forge-myst-seed-codes` (done, detached at origin/main).
+  Main checkout detached at origin/main ✓.
 
 ## New harness lessons (this session)
-- **A gap can be answered before anyone claims it.** Idle picks read README
-  prose, not git: #471/#478 fixed HD gap #1 five ships ago; the bullet kept
-  re-kicking lanes. Probe the claim (numbers) before building against it;
-  close what shipped, keep the residual honest.
-- **Authored ≠ zero**: `rotateX(-π/2)` leaves 2.4e-14 floors — gates must
-  compare against captured authored values, never literal 0.
-- **Early-return before base capture strands sunk verts** (decay gate caught
-  it): capture base on first touch, then always run while a base exists.
-- Contract driving uses `__game.step(pad, n)` — the game's raw `tick` is not
-  on the contract surface; check `gameContract.js` before writing a driver.
+- **Compare locks, not the seed field.** The seed-ignored mutant survived its
+  first draft because the "different island" gate JSON-stringified codes
+  including `seed` — the mutated island still had distinct seeds. Determinism
+  gates must compare the derived values only.
+- **Minifiers fold hex constants** (0x6d2b79f5 does not appear as decimal
+  1831565824 in bundles) — pick string-literal markers (word lists, event
+  prefixes) for prod content checks.
+- **Vercel checkpoint blocks bare curl intermittently (403 interstitial).**
+  Poll prod with a browser UA, and keep markers in referenced lazy chunks;
+  index hash alone doesn't prove the deploy carries your code.
+- A node-gated pure-machine test must place the player at the spot's node
+  (`{...freshState(seed), node:'library'}`) or the click no-ops silently.
 
 ## Housekeeping owed
-- Prune when idle: `retrogames-forge-comet-hd-tiers`, plus standing list
-  (momentum-courses, iphone-controller, ssx-*, emberwood-*, qa-863*,
-  people-sim, campfire-670, forge-model-library, coral-reef, qa-973*).
-  Keep qa-973 detached from `main` (worktrees-only law).
-- Myst README roll-up staleness → fold into the next flagship stage (#961
-  pattern); do not let idle.mjs re-kick closed walkable stages.
+- Prune when idle: `retrogames-forge-myst-seed-codes`, plus standing list
+  (momentum-courses, iphone-controller, ssx-*, emberwood-*, comet-hd-*,
+  qa-863*, people-sim, campfire-670, forge-model-library, coral-reef,
+  qa-973*). Keep qa-973 detached from `main` (worktrees-only law).
 
 ## Open questions
 - None (#605: nothing filed this session).
