@@ -178,6 +178,20 @@ const reachOk = gp.grab.l && gp.grab.r && gp.grab.l.d <= 0.3 && gp.grab.r.d <= 0
 r.check('grab pose reaches the nose-edge band (both hands)', reachOk,
     `l ${gp.grab.l?.d} r ${gp.grab.r?.d}`)
 
+// #967: named-grab reach hands are IK-solved onto the band, not hand-tuned.
+// Indy/Flat reach (and the generic grab) land on it; Method/Salis straddle the
+// back further than the shoulder-drop reaches — their bullet in the README
+// narrows to spine side-flex, so the gate covers what the solver proves.
+// Mutant: drop solveGrabHand from poseRider → these red (0.44–0.68 baseline).
+const REACH_HAND = { grabFlat: 'l', grabIndy: 'r' }
+for (const [p, side] of Object.entries(REACH_HAND)) {
+    const { grab } = await poseProbe(p)
+    const d = grab[side]?.d
+    r.check(`${p} reach hand touches the nose-edge band (arm IK)`, Number.isFinite(d) && d <= 0.2, `${side} ${d}`)
+}
+const gpNose = await poseProbe('grabNose')
+r.check('grabNose reach hand lands on the band (IK tightens the posed 0.18)', gpNose.grab.l?.d <= 0.12, `l ${gpNose.grab.l?.d}`)
+
 const breath = await page.evaluate(() => window.__ssxTest.standBreath())
 r.check('stand pose breathes (Idle ring moves the rig)', breath !== null && breath >= 0.015, String(breath))
 
