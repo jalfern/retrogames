@@ -17,10 +17,11 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
-import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
+import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews } from './state.js'
 import { seedFromSearch, notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
+import { drawVision } from './visions.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
 
@@ -41,11 +42,12 @@ const MystGame = () => {
   const [hud, setHud] = useState(() => ({ message: '', caption: '', pages: {}, placed: { red: 0, blue: 0 }, panel: null, book: null, ending: null, links: {} }))
   const [singRing, setSingRing] = useState(-1)
   const singRingRef = useRef(-1)
+  const visionRefs = useRef({})
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
-  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial })
+  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial })
 
   useEffect(() => {
     const wrap = stageRef.current
@@ -399,6 +401,12 @@ const MystGame = () => {
         if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000)
       }
       for (const a of anim) a.f(wt)
+      if (gs.panelOpen === 'spectator') {
+        for (const v of spectatorViews(gs)) {
+          const cv = visionRefs.current[v.age]
+          if (cv) drawVision(cv.getContext('2d'), v.age, wt, v.unlocked, cv.width, cv.height)
+        }
+      }
       renderer.render(scene, camera)
       canvas.style.filter = fade > 0 ? `brightness(${1 - fade})` : 'none'
       if (gs.time !== hudStamp || fade > 0.9) { hudStamp = gs.time; syncHud(gs) }
@@ -437,6 +445,34 @@ const MystGame = () => {
           return { node: gs.node, target: [...gs.codes.wheel], dial: [...gs.wheelDial], open: !!gs.flags.wheelOpen }
         },
         wheel: () => ({ dial: [...gs.wheelDial], target: [...gs.codes.wheel], open: !!gs.flags.wheelOpen, panel: gs.panelOpen }),
+        // #1024 — park in the control room at the SPECTATOR. 'all' thaws every
+        // lens (a returning explorer); the default keeps only what the walk to
+        // Mechanical discovered, so the harness sees sealed lenses too.
+        nearSpectator: (mode) => {
+          let s = freshState(gs.seed)
+          for (const a of solveScript(s.codes)) {
+            s = dispatch(s, a).state
+            if (a.t === 'closePanel' && s.node === 'mechRoom') break
+          }
+          s = { ...s, node: 'mechRoom', turn: 0 }
+          if (mode === 'all') {
+            s = { ...s, flags: { ...s.flags, link_selenitic: true, link_stoneship: true, link_channelwood: true } }
+          }
+          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          return { node: gs.node, views: spectatorViews(gs) }
+        },
+        visions: () => ({ panel: gs.panelOpen, clock: wt, views: spectatorViews(gs).map((v) => ({ ...v, live: !!visionRefs.current[v.age] })) }),
+        visionSig: (age) => {
+          const cv = visionRefs.current[age]
+          if (!cv) return null
+          const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data
+          let sum = 0, lit = 0
+          for (let i = 0; i < d.length; i += 371) {
+            sum = (sum * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0
+            if (d[i] + d[i + 1] + d[i + 2] > 150) lit++
+          }
+          return { sum, lit, t: wt }
+        },
         clueStars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.clueStar != null) out[o.userData.clueStar] = o.geometry.attributes.position.count }); return out },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride }),
         rocket: () => ({ ride: gs.ride, rideT: gs.rideT, h: rocketH(gs.ride, gs.rideT), dark: darkAt(gs.ride, gs.rideT) }),
@@ -632,12 +668,24 @@ const MystGame = () => {
       {hud.panel === 'spectator' && screen === 'play' && (
         <Panel title="THE SPECTATOR — a sphere of other ages" onClose={() => closeHud(false)}>
           <div className="my-2 text-sm min-h-[3rem] text-sky-200">{hud.message}</div>
-          <div className="flex gap-4 justify-center text-xs mb-1">
-            <span className="text-emerald-300">green rings</span>
-            <span className="text-zinc-300">grey sea</span>
-            <span className="text-cyan-300">waterfalls</span>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-2 justify-items-center mb-1">
+            {(hud.visions || []).map((v) => (
+              <div key={v.age} className="text-center">
+                <canvas
+                  ref={(el) => { visionRefs.current[v.age] = el }}
+                  data-vision={v.age}
+                  data-unlocked={v.unlocked ? '1' : '0'}
+                  width={152}
+                  height={114}
+                  className="block"
+                />
+                <div className={`text-[10px] uppercase tracking-widest mt-1 ${v.unlocked ? 'text-amber-200/80' : 'text-zinc-500'}`}>
+                  {v.unlocked ? v.age : 'sealed'}
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · A / Enter closes</div>
+          <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · a lens clears when you walk its age · A / Enter closes</div>
         </Panel>
       )}
       {hud.panel === 'soundbook' && screen === 'play' && (
