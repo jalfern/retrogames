@@ -18,7 +18,7 @@ import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateH
 import { decide } from './planner.js'
 import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
-import { slopePos, terrainY, DS, HEATS, rotationName, expressAt } from './course.js'
+import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK } from './art.js'
 
@@ -971,6 +971,26 @@ const SSXGame = () => {
                     }
                 },
                 setPose: (n) => { poseOverride = n || null },
+                // #975: shelf/glade probe — how many placeholders are left in the
+                // world, how many of them are day-glade slots, and whether the
+                // shelf actually attached (GLB clones added straight to world).
+                shelf: () => {
+                    const plan = sceneryPlan(g.course)
+                    const glade = gladeDefs(g.course)
+                    const gladeIdx = new Set(glade
+                        .map((d) => plan.findIndex((e) => Math.abs(e.s - d.s) < 1 && Math.abs(e.x - d.x) < 0.01))
+                        .filter((k) => k >= 0))
+                    let ph = 0, gladePh = 0
+                    world.traverse((o) => {
+                        if (o.userData.ph != null) { ph++; if (gladeIdx.has(o.userData.ph)) gladePh++ }
+                    })
+                    let models = 0
+                    for (const ch of world.children) if (ch.isGroup && ch.userData.keepGeo) models++
+                    return {
+                        ph, gladePh, gladeN: glade.length, models,
+                        attached: !!(world.userData.anim && world.userData.anim.flags.length),
+                    }
+                },
                 hero: () => {
                     const h = riders[0]?.userData?.hero
                     if (!h) return { ready: false, failed: h === false ? 1 : 0 }

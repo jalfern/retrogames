@@ -13,7 +13,7 @@ import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, rotat
 import { MUSIC } from '../src/utils/AudioController.js'
 import { computeStandings } from '../src/games/SSX/net.js'
 import * as THREE from 'three'
-import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, buildScenery, PLACEHOLDER_IDS, primitivesToKeep, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
+import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, buildScenery, PLACEHOLDER_IDS, primitivesToKeep, swapPlaceholders, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -360,6 +360,26 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         ok('#975 a failed model keeps exactly its own primitives', keep.size === pineN
             && [...keep].every((k) => plan[k].id === 'tree_pine'))
         half.tree_pine = {}
+        { // #975: the removal walk reaches NESTED primitives — the scenery
+            // group lives a level below world; a children-only scan left all
+            // 360 placeholders double-drawing in the browser.
+            const THREE = await import('three')
+            const world2 = new THREE.Group()
+            world2.add(buildScenery(co))
+            const expN = plan.reduce((n, e) => n + (PLACEHOLDER_IDS.includes(e.id) ? (e.id.startsWith('tree') ? 2 : 1) : 0), 0)
+            const removed = swapPlaceholders(world2, plan, loaded)
+            let left = 0
+            world2.traverse((o) => { if (o.userData.ph != null) left++ })
+            ok('#975 swap removes nested placeholders (360 -> 0)', removed === expN && left === 0)
+            const world3 = new THREE.Group()
+            world3.add(buildScenery(co))
+            const halfModels = { ...loaded }
+            halfModels.tree_pine = null
+            swapPlaceholders(world3, plan, halfModels)
+            let leftPine = 0
+            world3.traverse((o) => { if (o.userData.ph != null) leftPine++ })
+            ok('#975 failed-model primitives survive the nested swap', leftPine === 2 * pineN)
+        }
         const noFlag = { ...loaded }
         noFlag.flag = null
         ok('#975 non-placeholder ids never enter the keep set', primitivesToKeep(plan, noFlag).size === 0)

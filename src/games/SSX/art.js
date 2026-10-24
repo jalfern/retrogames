@@ -906,6 +906,21 @@ export function primitivesToKeep(plan, models) {
     return keep
 }
 
+// #975: pull the swapped placeholders out of the world. Descendant walk, not
+// children-only: buildScenery returns a Group that index.jsx nests inside the
+// world, and a children-only scan let every primitive survive the swap (the
+// look double-drew and nothing failed — until the browser gate counted to 360).
+export function swapPlaceholders(group, plan, models) {
+    const keep = primitivesToKeep(plan, models)
+    const doomed = []
+    group.traverse((o) => { const k = o.userData.ph; if (k != null && !keep.has(k)) doomed.push(o) })
+    for (const o of doomed) {
+        o.parent.remove(o)
+        o.traverse((q) => { if (q.geometry) q.geometry.dispose() })
+    }
+    return doomed.length
+}
+
 export async function attachShelf(course, group, alive = () => true) {
     const plan = sceneryPlan(course)
     const ids = [...new Set(plan.map((p) => p.id))]
@@ -914,13 +929,9 @@ export async function attachShelf(course, group, alive = () => true) {
         try { models[id] = await shelfTemplate(id, course.theme) } catch { models[id] = null }
     }))
     if (!alive()) return 0
-    const keep = primitivesToKeep(plan, models)
-    for (const ch of [...group.children]) {
-        const k = ch.userData.ph
-        if (k == null || keep.has(k)) continue
-        group.remove(ch)
-        ch.traverse((o) => { if (o.geometry) o.geometry.dispose() })
-    }
+    // #975: the scenery group nests inside world — traverse descendants, or
+    // the primitives never leave and every prop double-draws with its GLB.
+    swapPlaceholders(group, plan, models)
     // #791 slice 11: flags + spectators get tagged for the frame-loop animator;
     // index.jsx drives animateDecor(world, tick, hype) every frame.
     const anim = { flags: [], crowd: [] }
