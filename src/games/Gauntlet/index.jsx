@@ -566,7 +566,8 @@ const GauntletGame = () => {
                 sprite(m.kind, sx(m.x), sy(m.y), big)
                 if (m.kind === 'death') ctx.restore()
             }
-            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)
+            const other = otherEnt()
+            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)
             // facing dagger: the sword arc, rendered honestly
             const hx = sx(h.x), hy = sy(h.y)
             ctx.strokeStyle = 'rgba(232,238,248,0.35)'

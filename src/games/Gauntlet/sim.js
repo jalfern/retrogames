@@ -69,7 +69,7 @@ function fnv(str) {
 export const trapOpen = (gs) => {
     const t = gs.levelData && gs.levelData.trap
     if (!t) return true
-    return true
+    return ((gs.playT + t.phase) % t.period) < t.open
 }
 
 const resolveCell = (gs, base, c, r) => {
@@ -570,6 +570,7 @@ function updateShots(gs) {
 function updateGens(gs) {
     const lv = gs.levelData
     for (const g of gs.gens) {
+        if (!g.alive) continue
         if (g.charge > 0) {
             g.charge--
             if (g.charge === 0 && gs.monsters.length < lv.gen.cap) {
