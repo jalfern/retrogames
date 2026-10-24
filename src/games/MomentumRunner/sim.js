@@ -201,17 +201,20 @@ export const ZONES = [
 const ARC_R = 469          // valley arc radius: ~55 degrees max, reads curved
 const VALLEY_DROP = 200     // rolling dip depth — enough to charge the loop
 const LOOP_R = 70           // valley-floor loop; v^2 >= 5*G*r needs ~724
-const beatFlatBoost = (x, y, len = 2600, b0 = 900, b1 = 1500) => ({
+const beatFlatBoost = (x, y, len = 1000, b0 = 300, b1 = 900) => ({
     segs: [[x, y, x + len, y]],
     boosts: [[x + b0, x + b1]],
     x1: x + len,
 })
-const beatPitHop = (x, y, run = 1150, pit = 110) => {
-    const off = 2600 - run - pit
-    return { segs: [[x, y, x + run, y], [x + run + pit, y, x + 2600, y]], x1: x + 2600, off }
-}
+// the sector runway (beat 0 of every zone): the ONE long flat is justified —
+// it is the fork's speed runway (#550), where the fast lane is earned.
+const beatRunway = (x, y) => beatFlatBoost(x, y, 2600, 900, 1500)
+const beatPitHop = (x, y, run = 900, pit = 110, off = 400) => ({
+    segs: [[x, y, x + run, y], [x + run + pit, y, x + run + pit + off, y]],
+    x1: x + run + pit + off,
+})
 // a WIDE gap you must jump (#642 "wider gaps"): longer run-up, 180-220px pit
-const beatBigHop = (x, y, pit = 200, run = 900, off = 700) => ({
+const beatBigHop = (x, y, pit = 200, run = 900, off = 450) => ({
     segs: [[x, y, x + run, y], [x + run + pit, y, x + run + pit + off, y]],
     x1: x + run + pit + off,
 })
@@ -235,25 +238,94 @@ const beatHill = (x, y, depth = 200, down = 1300, up = 1500) => ({
     x1: x + down + up,
 })
 // rolling S-curves from true circular arcs — dip, crest, shallower dip, crest:
-// almost no flat ground (#642)
-const beatSCurves = (x, y, drop = 120, len = 2050) => {
+// almost no flat ground (#642). len=0 packs the tail to a stub (#900: the
+// flat tail was the last flat expanse in a curve beat).
+const beatSCurves = (x, y, drop = 120, len = 0) => {
     const d1 = arcPipe(x, y, drop, 4, true)
     const u1 = arcPipe(x + d1.run, y + drop, drop, 4, false)
     const d2 = arcPipe(x + d1.run + u1.run, y, drop * 0.8, 4, true)
     const u2 = arcPipe(x + d1.run + u1.run + d2.run, y + drop * 0.8, drop * 0.8, 4, false)
     const ex = x + d1.run + u1.run + d2.run + u2.run
-    return { segs: [...d1.segs, ...u1.segs, ...d2.segs, ...u2.segs, [ex, y, x + len, y]], x1: x + len }
+    const total = Math.max(len, ex - x + 140)
+    return { segs: [...d1.segs, ...u1.segs, ...d2.segs, ...u2.segs, [ex, y, x + total, y]], x1: x + total }
 }
-// spikes that MATTER (#642 "enemies placed where they matter"): a sprint
+// CASCADE (#900): six chained quarter-arcs — dip, crest, deeper dip, crest,
+// shallow dip, crest — with a stub tail. Ground that never stops bending:
+// every exit is the next entry, so speed you made coming down is speed the
+// next hill is built from. Ends tangent-flat at the entry height.
+const beatCascade = (x, y, drop = 130, tail = 180) => {
+    const ds = [drop, drop * 0.7, drop * 0.5]
+    const segs = []
+    let cx = x, cy = y
+    for (const d of ds) {
+        const a = arcPipe(cx, cy, d, 4, true)
+        segs.push(...a.segs)
+        cx += a.run
+        const b = arcPipe(cx, cy + d, d, 4, false)
+        segs.push(...b.segs)
+        cx += b.run
+    }
+    segs.push([cx, y, cx + tail, y])
+    return { segs, x1: cx + tail }
+}
+// HALF-PIPE (#900): the U-trough Sonic runs are named for — a deep arc down,
+// a short floor with a boost strip, and the far wall throws you back up to
+// the entry line. Rings low in the trough pay the ride through; the pipe IS
+// an engine: in slow, out fast. Ends tangent-flat at the entry height.
+const beatHalfPipe = (x, y, depth = 220, len = 1500) => {
+    const a0 = x + 220
+    const d = arcPipe(a0, y, depth, 5, true)
+    const bx = a0 + d.run, by = y + depth
+    const floor = [bx, by, bx + 160, by]
+    const u = arcPipe(bx + 160, by, depth, 5, false)
+    const ex = bx + 160 + u.run
+    const total = Math.max(len, ex - x + 220)
+    return {
+        segs: [[x, y, a0, y], ...d.segs, floor, ...u.segs, [ex, y, x + total, y]],
+        boosts: [[bx + 20, bx + 140]],
+        rings: [[bx + 40, by - 14], [bx + 100, by - 14]],
+        x1: x + total,
+    }
+}
+// SPRING-HIGH (#900 "springs, high and low routes"): the low line opens onto
+// a pit whose far side is a HILL-TOP deck h above it. The spring at the lip
+// is the only route onto the deck — a real second route per sector, ringed,
+// dropping back to the low line through an arc so the height is spent on
+// speed, not teleported. Ends tangent-flat at the entry height.
+const beatSpringHigh = (x, y, pit = 420, h = 150, run = 780, plat = 560) => {
+    const sx = x + run
+    const px0 = sx + pit
+    const py = y - h
+    const dn = arcPipe(px0 + plat, py, h, 4, true)
+    const ex = px0 + plat + dn.run
+    return {
+        segs: [[x, y, sx, y], [px0, py, px0 + plat, py], ...dn.segs, [ex, y, ex + 300, y]],
+        springs: [[sx, y, -820]],
+        rings: [[px0 + 140, py - 70], [px0 + 240, py - 14], [px0 + 340, py - 14], [px0 + 440, py - 14]],
+        springHigh: true,
+        x1: ex + 300,
+    }
+}
+// spikes that MATTER (#627 "enemies placed where they matter"): a sprint
 // strip, three ground rings as the toll, then a spike span — rings protect,
-// the scatter fan refills for whatever comes next.
-const beatSpikeSprint = (x, y, len = 2200) => ({
-    segs: [[x, y, x + len, y]],
-    boosts: [[x + 150, x + 700]],
-    rings: [[x + 980, y - 14], [x + 1020, y - 14], [x + 1060, y - 14]],
-    spikes: [[x + 1150, x + 1210]],
-    x1: x + len,
-})
+// the scatter fan refills for whatever comes next. #900 sits the whole beat
+// in a shallow dip so even the hazard run is terrain, not a slab of slab:
+// down the arc (speed), toll and spike on the trough floor, back up the far
+// wall. Ends tangent-flat at the entry height.
+const beatSpikeSprint = (x, y) => {
+    const a0 = x + 700
+    const d = arcPipe(a0, y, 60, 4, true)
+    const bx = a0 + d.run
+    const u = arcPipe(bx + 520, y + 60, 60, 4, false)
+    const ex = bx + 520 + u.run
+    return {
+        segs: [[x, y, a0, y], ...d.segs, [bx, y + 60, bx + 520, y + 60], ...u.segs, [ex, y, ex + 80, y]],
+        boosts: [[x + 150, x + 650]],
+        rings: [[bx + 200, y + 46], [bx + 240, y + 46], [bx + 280, y + 46]],
+        spikes: [[bx + 360, bx + 420]],
+        x1: ex + 80,
+    }
+}
 // sample a circular arc into n segments; tangent-flat at one end, steep at the
 // other (a quarter-pipe). `down` dips into the screen, `up` climbs out.
 function arcPipe(x, y, drop, n, down) {
@@ -271,7 +343,7 @@ function arcPipe(x, y, drop, n, down) {
     for (let k = 0; k < n; k++) segs.push([pts[k][0], pts[k][1], pts[k + 1][0], pts[k + 1][1]])
     return { segs, run }
 }
-const beatValleyLoop = (x, y) => {
+const beatValleyLoop = (x, y, len = 1480) => {
     const segs = [[x, y, x + 150, y]]
     const d = arcPipe(x + 150, y, VALLEY_DROP, 5, true)
     segs.push(...d.segs)
@@ -281,9 +353,10 @@ const beatValleyLoop = (x, y) => {
     const u = arcPipe(cx + LOOP_R + 80, by, VALLEY_DROP, 5, false)
     segs.push(...u.segs)
     const ex = cx + LOOP_R + 80 + u.run
-    segs.push([ex, y, x + 2600, y])
+    const total = Math.max(len, ex - x + 214)
+    segs.push([ex, y, x + total, y])
     // two rings on the valley floor before the loop: the descent's toll booth
-    return { segs, x1: x + 2600, loop: { cx, cy: by - LOOP_R, r: LOOP_R }, rings: [[cx - LOOP_R - 60, by - 14], [cx - LOOP_R - 20, by - 14]] }
+    return { segs, x1: x + total, loop: { cx, cy: by - LOOP_R, r: LOOP_R }, rings: [[cx - LOOP_R - 60, by - 14], [cx - LOOP_R - 20, by - 14]] }
 }
 
 // per-zone programs (#642): every stretch different, no cycle, no repeating
@@ -293,29 +366,29 @@ const beatValleyLoop = (x, y) => {
 // no tail rings or spikes — its only rings must stay on the loop arc.
 const PROGRAMS = [
     // GREEN HILL
-    [beatFlatBoost, beatValleyLoop, beatSpringHop, beatBigHop, beatHill, beatSpikeSprint,
-        beatSCurves, beatPitHop, beatValleyLoop, beatBigHop, beatSpringHop, beatHill,
-        beatSCurves, beatPitHop, beatFlatBoost, beatValleyLoop, beatSpikeSprint, beatBigHop,
-        beatHill, beatPitHop],
+    [beatRunway, beatValleyLoop, beatSpringHigh, beatBigHop, beatCascade, beatSpikeSprint,
+        beatSCurves, beatHalfPipe, beatValleyLoop, beatCascade, beatSpringHop, beatHill,
+        beatBigHop, beatSpikeSprint, beatHalfPipe, beatSCurves, beatPitHop, beatValleyLoop,
+        beatCascade, beatHalfPipe, beatSCurves, beatSpringHop, beatValleyLoop, beatFlatBoost],
     // EMBER GAUNTLET
-    [beatFlatBoost, beatSCurves, beatValleyLoop, beatBigHop, beatSpikeSprint, beatSpringHop,
-        beatHill, beatPitHop, beatValleyLoop, beatSCurves, beatBigHop, beatSpikeSprint,
-        beatSpringHop, beatHill, beatPitHop, beatValleyLoop, beatFlatBoost, beatBigHop,
-        beatHill, beatPitHop],
+    [beatRunway, beatSCurves, beatValleyLoop, beatBigHop, beatSpikeSprint, beatSpringHop,
+        beatSpringHigh, beatCascade, beatValleyLoop, beatHalfPipe, beatBigHop, beatSpikeSprint,
+        beatSpringHop, beatPitHop, beatValleyLoop, beatCascade, beatHalfPipe, beatSCurves,
+        beatHill, beatCascade, beatValleyLoop, beatBigHop, beatSpikeSprint, beatFlatBoost],
     // SKY LOOP — rings are load-bearing here; no tail rings, no tail spikes
-    [beatFlatBoost, beatValleyLoop, beatBigHop, beatSCurves, beatHill, beatSpringHop,
-        beatPitHop, beatValleyLoop, beatBigHop, beatHill, beatSCurves, beatSpringHop,
-        beatPitHop, beatValleyLoop, beatFlatBoost, beatBigHop, beatHill, beatSCurves,
-        beatPitHop, beatHill],
+    [beatRunway, beatValleyLoop, beatBigHop, beatSCurves, beatCascade, beatSpringHop,
+        beatHalfPipe, beatValleyLoop, beatBigHop, beatHill, beatSCurves, beatSpringHop,
+        beatPitHop, beatCascade, beatValleyLoop, beatHalfPipe, beatBigHop, beatSCurves,
+        beatCascade, beatHalfPipe, beatValleyLoop, beatBigHop, beatHill, beatFlatBoost],
 ]
 // per-beat tweaks so neighbouring zones never share a shape
 const TWEAKS = [
-    {},
-    { pitHop: [1150, 120], bigHop: [180], hill: [220, 1250, 1350], sCurves: [160] },
-    { pitHop: [1150, 130], bigHop: [220, 950, 650], hill: [260, 1500, 1100], sCurves: [150], springHop: [260] },
+    { hill: [200, 1400, 1600], halfPipe: [220, 2150] },
+    { pitHop: [1150, 120], bigHop: [180], hill: [240, 1350, 1500], sCurves: [160], cascade: [150, 380], halfPipe: [200, 2200], springHigh: [440, 150, 700, 520] },
+    { pitHop: [1150, 130], bigHop: [220, 950, 650], hill: [260, 1650, 1250], sCurves: [150], springHop: [260], cascade: [170, 320], halfPipe: [240, 2150], springHigh: [220, 170, 760, 560] },
 ]
 const TWEAKED = (fn, zi) => {
-    const tune = { beatPitHop: 'pitHop', beatBigHop: 'bigHop', beatHill: 'hill', beatSCurves: 'sCurves', beatSpringHop: 'springHop' }[fn.name]
+    const tune = { beatPitHop: 'pitHop', beatBigHop: 'bigHop', beatHill: 'hill', beatSCurves: 'sCurves', beatSpringHop: 'springHop', beatCascade: 'cascade', beatHalfPipe: 'halfPipe', beatSpringHigh: 'springHigh' }[fn.name]
     const args = TWEAKS[zi]?.[tune]
     return args ? (x, y) => fn(x, y, ...args) : fn
 }
@@ -331,7 +404,10 @@ for (const [zi, z] of ZONES.entries()) {
         const b = TWEAKED(beat, zi)(x, y)
         z.segs.push(...b.segs)
         if (b.boosts) z.boosts.push(...b.boosts)
-        if (b.rings && zi !== 2) z.rings.push(...b.rings)   // zone 2's rings stay on its loop arc
+        if (b.rings && zi !== 2) {
+            if (b.springHigh) z.deckRings = b.rings.map(([rx, ry]) => [rx, ry])
+            z.rings.push(...b.rings)
+        }
         if (b.spikes) z.spikes.push(...b.spikes)
         if (b.springs) z.springs.push(...b.springs)
         if (b.hover) z.drones.push(b.hover)
