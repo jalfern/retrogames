@@ -465,11 +465,15 @@ const MystGame = () => {
         visionSig: (age) => {
           const cv = visionRefs.current[age]
           if (!cv) return null
-          const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data
+          const w = cv.width, h = cv.height
+          const d = cv.getContext('2d').getImageData(0, 0, w, h).data
+          const cx = w / 2, cy = h / 2, rr2 = (Math.min(w, h) * 0.48 * 0.82) ** 2
           let sum = 0, lit = 0
-          for (let i = 0; i < d.length; i += 371) {
+          for (let i = 0; i < d.length; i += 16) {
             sum = (sum * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0
-            if (d[i] + d[i + 1] + d[i + 2] > 150) lit++
+            const px = i / 4 % w, py = Math.floor(i / 4 / w)
+            const chroma = Math.max(d[i], d[i + 1], d[i + 2]) - Math.min(d[i], d[i + 1], d[i + 2])
+            if ((px - cx) ** 2 + (py - cy) ** 2 < rr2 && chroma > 24) lit++
           }
           return { sum, lit, t: wt }
         },

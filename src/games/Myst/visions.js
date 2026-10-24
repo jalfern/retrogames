@@ -57,10 +57,19 @@ function selenitic(ctx, w, h, t) {
   ctx.beginPath()
   ctx.ellipse(w * 0.42, domeY, w * 0.46, h * 0.52, 0, Math.PI, 0)
   ctx.fill()
+  for (let i = 0; i < 3; i++) {
+    const ax = w * (0.2 + i * 0.24)
+    ctx.strokeStyle = `rgba(90,200,120,${0.1 + 0.06 * Math.sin(t * 0.7 + i * 2.2)})`
+    ctx.lineWidth = Math.max(1, h * 0.06)
+    ctx.beginPath()
+    ctx.moveTo(ax, h * 0.06)
+    ctx.quadraticCurveTo(ax + w * 0.05, h * 0.16, ax - w * 0.02, h * 0.26)
+    ctx.stroke()
+  }
   for (let i = 0; i < 4; i++) {
     const rr = 0.14 + i * 0.11 + 0.014 * Math.sin(t * 0.8 + i * 1.7)
-    ctx.strokeStyle = `rgba(140,220,150,${0.5 - i * 0.09 + flash * 0.2})`
-    ctx.lineWidth = Math.max(1, h * 0.02)
+    ctx.strokeStyle = `rgba(120,230,140,${0.55 - i * 0.08 + flash * 0.2})`
+    ctx.lineWidth = Math.max(1, h * 0.03)
     ctx.beginPath()
     ctx.ellipse(w * 0.42, domeY + h * 0.02, w * rr, h * rr * 0.42, 0, Math.PI, 0)
     ctx.stroke()
@@ -73,18 +82,18 @@ function stoneship(ctx, w, h, t) {
   sky(ctx, w, h, '#3a3f46', '#8d949b')
   ctx.fillStyle = 'rgba(255,236,200,0.9)'
   ctx.beginPath()
-  ctx.arc(w * 0.26, h * 0.34, h * 0.1, 0, Math.PI * 2)
+  ctx.arc(w * 0.26, h * 0.34, h * 0.12, 0, Math.PI * 2)
   ctx.fill()
   ctx.fillStyle = 'rgba(255,236,200,0.16)'
   ctx.beginPath()
   ctx.arc(w * 0.26, h * 0.34, h * 0.19, 0, Math.PI * 2)
   ctx.fill()
   const seaY = h * 0.56
-  ctx.fillStyle = '#41505a'
+  ctx.fillStyle = '#33566e'
   ctx.fillRect(0, seaY, w, h - seaY)
   for (let i = 0; i < 5; i++) {
     const yy = seaY + ((i + 0.5) / 5) * (h - seaY)
-    ctx.strokeStyle = `rgba(150,166,178,${0.16 + (i / 5) * 0.3})`
+    ctx.strokeStyle = `rgba(140,182,208,${0.2 + (i / 5) * 0.35})`
     ctx.lineWidth = Math.max(1, h * 0.024)
     ctx.beginPath()
     for (let x = 0; x <= w; x += 4) {
@@ -155,7 +164,7 @@ function channelwood(ctx, w, h, t) {
     ctx.fill()
   }
   const seaY = h * 0.62
-  ctx.fillStyle = '#6d8b93'
+  ctx.fillStyle = '#4f8b99'
   ctx.fillRect(0, seaY, w, h - seaY)
   for (let i = 0; i < 4; i++) {
     ctx.strokeStyle = `rgba(220,235,238,${0.18 + 0.08 * Math.sin(t * 1.7 + i)})`

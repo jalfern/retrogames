@@ -153,4 +153,46 @@ r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && JSON.str
   r.check('the rocket ride ran with zero page errors', errs.length === 0, errs.join(' | '))
 }
 
+// #1024 — the SPECTATOR live: park in the control room, open the sphere, and
+// watch the lenses. Sealed ages stay dark glass; a linked age must animate —
+// sampled pixels differ between two instants of the same clock.
+{
+  const p5 = await openGame(browser, { url: `${URL}?seed=42`, hook: '__mystTest', start: true, viewport: { width: 960, height: 540 } })
+  const errs5 = []
+  p5.on('pageerror', (e) => errs5.push(String(e)))
+  const sp0 = await p5.evaluate(() => window.__mystTest.nearSpectator())
+  r.check('the solver parks you at the SPECTATOR', sp0.node === 'mechRoom' && sp0.views.every((v) => v.age), JSON.stringify(sp0.views.map((v) => `${v.age}:${v.unlocked ? 'L' : '-'}`)))
+  await p5.evaluate(() => window.__mystTest.click('spectator'))
+  await p5.waitForTimeout(500)
+  const v1 = await p5.evaluate(() => window.__mystTest.visions())
+  r.check('the sphere shows four live lenses', v1.panel === 'spectator' && v1.views.length === 4 && v1.views.every((v) => v.live), JSON.stringify(v1))
+  r.check('only Mechanical is clear on the way to the sphere', v1.views.filter((v) => v.unlocked).length === 1, JSON.stringify(v1.views.map((v) => `${v.age}:${v.unlocked}`)))
+  const mA = await p5.evaluate(() => window.__mystTest.visionSig('mechanical'))
+  const seA = await p5.evaluate(() => window.__mystTest.visionSig('selenitic'))
+  await p5.waitForTimeout(900)
+  const mB = await p5.evaluate(() => window.__mystTest.visionSig('mechanical'))
+  r.check('the linked lens is alive — its picture moves on the clock', mA.lit > 4 && mB.lit > 4 && mA.sum !== mB.sum, JSON.stringify([mA, mB]))
+  r.check('an unlinked lens keeps its seal — dark churn, no vision', seA.lit <= 4, JSON.stringify(seA))
+  const dom = await p5.evaluate(() => [...document.querySelectorAll('canvas[data-vision]')].map((c) => `${c.dataset.vision}:${c.dataset.unlocked}`))
+  r.check('the panel carries one labelled lens per Age', dom.length === 4 && dom.some((d) => d.endsWith(':1')) && dom.filter((d) => d.endsWith(':0')).length === 3, dom.join(','))
+  await p5.keyboard.press('Space')
+  await p5.waitForTimeout(200)
+  const spAll = await p5.evaluate(() => {
+    const out = window.__mystTest.nearSpectator('all')
+    window.__mystTest.click('spectator')
+    return out
+  })
+  await p5.waitForTimeout(500)
+  const sigs = {}
+  for (const age of ['selenitic', 'stoneship', 'mechanical', 'channelwood']) sigs[age] = await p5.evaluate((a) => window.__mystTest.visionSig(a), age)
+  await p5.waitForTimeout(900)
+  let moved = 0
+  for (const age of Object.keys(sigs)) {
+    const later = await p5.evaluate((a) => window.__mystTest.visionSig(a), age)
+    if (later.sum !== sigs[age].sum && later.lit > 4) moved++
+  }
+  r.check('a walker who knows every Age sees four moving visions', spAll.views.every((v) => v.unlocked) && moved === 4, `${moved}/4 moved`)
+  r.check('the Spectator ran with zero page errors', errs5.length === 0, errs5.join(' | '))
+}
+
 r.exit(browser)
