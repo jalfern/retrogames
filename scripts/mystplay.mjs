@@ -63,4 +63,18 @@ const buf = await page.evaluate(() => {
 })
 r.check('stage renders pixels', buf > 5000, `dataURL ${buf} bytes`)
 
+// #1005 — the seed wire-up, live: ?seed=42 pins the locks, the cave dome
+// grows its four true stars to the seeded size ranks, and an unpinned fresh
+// redraws both locks and stars. Logic is proven in mystcheck; this proves the
+// browser actually rides the seed.
+const p2 = await openGame(browser, { url: `${URL}?seed=42`, hook: '__mystTest', start: true, viewport: { width: 960, height: 540 } })
+const c42 = await p2.evaluate(() => window.__mystTest.codes())
+r.check('?seed=42 pins the locks of this island', c42.seed === 42 && c42.safe === '658' && c42.star.join('') === '4213' && c42.sphere.join('') === '0231', JSON.stringify(c42))
+const s42 = await p2.evaluate(() => window.__mystTest.stars())
+r.check('the dome stars carry the seeded star ranks', s42[0] === 1.22 && s42[1] === 0.74 && s42[2] === 0.5 && s42[3] === 0.98, s42.join(','))
+await p2.evaluate(() => window.__mystTest.fresh())
+const cNew = await p2.evaluate(() => window.__mystTest.codes())
+const sNew = await p2.evaluate(() => window.__mystTest.stars())
+r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && JSON.stringify(sNew) !== JSON.stringify(s42), `${cNew.seed}/${sNew.join(',')}`)
+
 r.exit(browser)

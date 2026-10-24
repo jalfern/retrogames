@@ -3,10 +3,9 @@
 // unchanged and the browser component renders around it.
 
 import { NODES, AGE_LIST } from './nodes.js'
+import { deriveCodes, freshSeed, safeWords } from './codes.js'
 
-export const SAFE_CODE = '852'
-export const STAR_CODE = [4, 1, 3, 2]
-export const SPHERE_CODE = [2, 0, 3, 1]
+export const SAFE_LEN = 3
 export const SWITCH_LINKS = [
   [0, 1], [1, 0, 2], [2, 1, 3], [3, 2, 4], [4, 3],
 ]
@@ -28,8 +27,11 @@ export const BROTHER_LINES = {
   ],
 }
 
-export function freshState() {
+export function freshState(seed) {
+  const codeSeed = seed != null ? seed >>> 0 : freshSeed()
   return {
+    seed: codeSeed,
+    codes: deriveCodes(codeSeed),
     node: 'dock',
     turn: 0,
     flags: {},
@@ -107,9 +109,9 @@ export function dispatch(st, a) {
     case 'closePanel': s.panelOpen = null; s.bookOpen = null; ev.push('page'); break
     case 'dial': {
       const i = a.i
-      if (a.pad === 'safe') { const d = s.safeDial.split(''); d[i] = String(a.v != null ? ((a.v % 10) + 10) % 10 : (Number(d[i]) + (a.step || 1)) % 10); s.safeDial = d.join(''); ev.push('dial'); if (s.safeDial === SAFE_CODE && !has(s, 'safeOpen')) { s.flags.safeOpen = true; s.panelOpen = null; s.message = 'The safe swings open. Inside: a book bound in blue, and cold sea-light leaking from its pages.'; ev.push('safeOpen', 'link:stoneship'); s.flags.link_stoneship = true } }
-      if (a.pad === 'sphere') { const vv = a.v != null ? a.v : a.step; s.sphereDial[i] = vv != null ? ((vv % 4) + 4) % 4 : ((s.sphereDial[i] + 1) % 4); ev.push('dial'); if (s.sphereDial.every((v, j) => v === SPHERE_CODE[j]) && !has(s, 'sphereSolved')) { s.flags.sphereSolved = true; s.panelOpen = null; s.message = 'The tones stack in perfect order — the sphere hums, and its stone lid grinds open.'; ev.push('sphereSolved') } }
-      if (a.pad === 'star') { const vv = a.v != null ? a.v : a.step; s.starDial[i] = vv != null ? Math.max(1, Math.min(4, vv)) : (s.starDial[i] % 4) + 1; ev.push('dial'); if (s.starDial.every((v, j) => v === STAR_CODE[j]) && !has(s, 'starPanel')) { s.flags.starPanel = true; s.panelOpen = null; s.message = 'The symbols match the dome. Deep in the rock, something heavy slides free.'; ev.push('starSolved') } }
+      if (a.pad === 'safe') { const d = s.safeDial.split(''); d[i] = String(a.v != null ? ((a.v % 10) + 10) % 10 : (Number(d[i]) + (a.step || 1)) % 10); s.safeDial = d.join(''); ev.push('dial'); if (s.safeDial === s.codes.safe && !has(s, 'safeOpen')) { s.flags.safeOpen = true; s.panelOpen = null; s.message = 'The safe swings open. Inside: a book bound in blue, and cold sea-light leaking from its pages.'; ev.push('safeOpen', 'link:stoneship'); s.flags.link_stoneship = true } }
+      if (a.pad === 'sphere') { const vv = a.v != null ? a.v : a.step; s.sphereDial[i] = vv != null ? ((vv % 4) + 4) % 4 : ((s.sphereDial[i] + 1) % 4); ev.push('dial'); if (s.sphereDial.every((v, j) => v === s.codes.sphere[j]) && !has(s, 'sphereSolved')) { s.flags.sphereSolved = true; s.panelOpen = null; s.message = 'The tones stack in perfect order — the sphere hums, and its stone lid grinds open.'; ev.push('sphereSolved') } }
+      if (a.pad === 'star') { const vv = a.v != null ? a.v : a.step; s.starDial[i] = vv != null ? Math.max(1, Math.min(4, vv)) : (s.starDial[i] % 4) + 1; ev.push('dial'); if (s.starDial.every((v, j) => v === s.codes.star[j]) && !has(s, 'starPanel')) { s.flags.starPanel = true; s.panelOpen = null; s.message = 'The symbols match the dome. Deep in the rock, something heavy slides free.'; ev.push('starSolved') } }
       break
     }
     case 'toggle': {
@@ -165,7 +167,7 @@ function act(s, spot, ev) {
       else { s.panelOpen = 'safe'; s.message = `A safe: three dials, now reading ${s.safeDial.split('').join('-')}. Three numbers, and no mercy.`; ev.push('panel') }
       break
     }
-    case 'shelfNote': s.message = 'A note in Atrus\'s hand: "The lock takes three numbers — eight, five, two. I am sorry, my sons."'; ev.push('look'); break
+    case 'shelfNote': s.message = `A note in Atrus's hand: "The lock takes three numbers — ${safeWords(s.codes.safe)}. I am sorry, my sons."`; ev.push('look'); break
     case 'pedestal': {
       if (has(s, 'whitePage')) { s.ending = 'atrus'; s.message = 'The white page seats itself. The air folds — ATRUS steps onto the dock of Myst at dawn, and the island finally exhales.'; ev.push('endGood') }
       else { s.message = 'An empty slot on the pedestal, sized for a single white page.'; ev.push('look') }
@@ -178,7 +180,7 @@ function act(s, spot, ev) {
       ev.push('takePage'); break
     }
     case 'takeMatch': s.flags.matchbook = true; s.message = 'A matchbook, still dry after all these years. Fire belongs in a fireplace.'; ev.push('pickup'); break
-    case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', 'sphereSing'); break
+    case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', `sing:${s.codes.sphere.join('')}`); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
     case 'starWheel': s.message = 'The great star turns its patient circles above the falls — a symbol of Channelwood, mirrored on the panel below.'; ev.push('look'); break
     case 'chanFlood': {
@@ -323,7 +325,10 @@ export function currentSpots(st) {
 }
 
 // Deterministic solve order used by the harness and the attract autopilot.
-export function solveScript() {
+// Codes come from the live save (#1005): the script solves whatever island
+// the seed stamped, not the one from some other save's walkthrough.
+export function solveScript(codes) {
+  if (!codes) throw new Error('solveScript needs the save codes (state.codes)')
   const S = (t, extra = {}) => ({ t, ...extra })
   return [
     S('move', { id: 'dockBeach' }), S('move', { id: 'toLanding' }),
@@ -348,7 +353,7 @@ export function solveScript() {
     S('move', { id: 'retMechanical' }),
     S('click', { id: 'fireplace' }), S('click', { id: 'fireplace' }),
     S('click', { id: 'pageSeleniticRed' }), S('click', { id: 'pageSeleniticBlue' }),
-    S('click', { id: 'sphere' }), S('dial', { pad: 'sphere', i: 0, step: SPHERE_CODE[0] }), S('dial', { pad: 'sphere', i: 1, step: SPHERE_CODE[1] }), S('dial', { pad: 'sphere', i: 2, step: SPHERE_CODE[2] }), S('dial', { pad: 'sphere', i: 3, step: SPHERE_CODE[3] }), S('closePanel'),
+    S('click', { id: 'sphere' }), S('dial', { pad: 'sphere', i: 0, step: codes.sphere[0] }), S('dial', { pad: 'sphere', i: 1, step: codes.sphere[1] }), S('dial', { pad: 'sphere', i: 2, step: codes.sphere[2] }), S('dial', { pad: 'sphere', i: 3, step: codes.sphere[3] }), S('closePanel'),
     S('move', { id: 'toSelSound' }),
     ...[0, 1, 2, 3, 4, 5].map((i) => S('click', { id: `stone${i}` })),
     S('move', { id: 'toSelThrone' }),
@@ -359,7 +364,7 @@ export function solveScript() {
     S('move', { id: 'downGate' }), S('move', { id: 'backThrone' }), S('move', { id: 'backSelSound' }), S('move', { id: 'backSel' }),
     S('move', { id: 'retSelenitic' }),
     S('click', { id: 'ladderDown' }),
-    S('click', { id: 'starPanel' }), ...STAR_CODE.map((v, i) => S('dial', { pad: 'star', i, step: v })), S('closePanel'),
+    S('click', { id: 'starPanel' }), ...codes.star.map((v, i) => S('dial', { pad: 'star', i, step: v })), S('closePanel'),
     S('move', { id: 'channelwoodDoor' }),
     S('click', { id: 'starWheel' }),
     S('move', { id: 'toChanChannels' }),
@@ -372,7 +377,7 @@ export function solveScript() {
     S('move', { id: 'retChannelwood' }), S('move', { id: 'ladderUp' }),
     S('move', { id: 'outLibrary' }), S('move', { id: 'cabinDoor' }),
     S('click', { id: 'cabinShelf' }), S('click', { id: 'safe' }),
-    ...SAFE_CODE.split('').map((v, i) => S('dial', { pad: 'safe', i, step: Number(v) })),
+    ...codes.safe.split('').map((v, i) => S('dial', { pad: 'safe', i, step: Number(v) })),
     S('click', { id: 'safe' }),
     S('move', { id: 'toShipDeck' }),
     S('move', { id: 'toObservatory' }),
@@ -388,7 +393,7 @@ export function solveScript() {
 
 export function runSolver(start = freshState()) {
   let s = start
-  for (const a of solveScript()) {
+  for (const a of solveScript(s.codes)) {
     const r = dispatch(s, a)
     s = r.state
   }

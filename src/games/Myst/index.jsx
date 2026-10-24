@@ -17,8 +17,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript } from './state.js'
+import { seedFromSearch } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
-import { buildWorld, atmosphere } from './scene.js'
+import { buildWorld, atmosphere, updateTrueStars } from './scene.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 
 const VW = 960, VH = 540
@@ -74,7 +75,10 @@ const MystGame = () => {
     const { root, hot, anim, mech } = buildWorld(NODE_IDS)
     scene.add(root)
 
-    let gs = freshState()
+    let gs = freshState(seedFromSearch())
+    let seedStamp = -1
+    const syncStars = () => { if (gs.seed !== seedStamp) { seedStamp = gs.seed; updateTrueStars(root, gs.codes.star) } }
+    syncStars()
     let raf = 0, last = 0, acc = 0, wt = 0
     let fade = 1, fadeDir = -1
     let attractIx = 0, attractT = 0, hudStamp = -1
@@ -143,6 +147,7 @@ const MystGame = () => {
       const prevNode = gs.node
       const r = dispatch(gs, a)
       gs = r.state
+      syncStars()
       for (const e of r.events) {
         if (e === 'travel' || e === 'restart') fadeDir = 1
         sfx(e)
@@ -244,7 +249,8 @@ const MystGame = () => {
     canvas.addEventListener('pointermove', onMove)
 
     const startPlay = () => {
-      gs = freshState()
+      gs = freshState(seedFromSearch())
+      syncStars()
       gotoNode(gs.node); aim()
       setMode('play')
       hudStamp = -1
@@ -295,9 +301,11 @@ const MystGame = () => {
         state: () => gs,
         action: (a) => { doAction(a); return gs.message },
         click: (id) => doClick(id),
-        solve: () => { gs = runSolver(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
-        script: solveScript,
-        fresh: () => { gs = freshState(); gotoNode('dock'); aim() },
+        solve: () => { gs = runSolver(freshState(gs.seed)); syncStars(); gotoNode(gs.node); aim(); hudStamp = -1; if (gs.ending) setMode('ending'); return gs.ending },
+        script: () => solveScript(gs.codes),
+        codes: () => ({ seed: gs.seed, ...gs.codes }),
+        stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
+        fresh: (seed) => { gs = freshState(seed); syncStars(); gotoNode('dock'); aim(); return gs.seed },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending }),
         // Audit every node's framing against its caption: the camera must sit
         // OUTSIDE all solids, no single surface may fill >=80% of the view, and
@@ -460,7 +468,7 @@ const MystGame = () => {
               </button>
             ))}
           </div>
-          <div className="text-xs text-sky-200/60">the dome above the ladder shows the true stars — count their points</div>
+          <div className="text-xs text-sky-200/60">the dome over the panel holds this save's four true stars — set each dial to its star's size</div>
         </Panel>
       )}
       {hud.panel === 'switches' && screen === 'play' && (

@@ -38,6 +38,30 @@ function mesh(g, m, x = 0, y = 0, z = 0, group) {
   return o
 }
 
+function starGeometry(arms) {
+  const outer = 0.5, inner = 0.21
+  const shape = new THREE.Shape()
+  const steps = arms * 2
+  for (let i = 0; i <= steps; i++) {
+    const r = i % 2 === 0 ? outer : inner
+    const a = -Math.PI / 2 + (i * Math.PI) / arms
+    const x = Math.cos(a) * r, y = Math.sin(a) * r
+    if (i === 0) shape.moveTo(x, y); else shape.lineTo(x, y)
+  }
+  return new THREE.ShapeGeometry(shape)
+}
+
+// Rescale the four true stars to this save's star code (rank 1-4 by size).
+export function updateTrueStars(root, star) {
+  if (!root || !star) return
+  root.traverse((o) => {
+    if (o.userData && o.userData.trueStar != null) {
+      const v = Math.max(1, Math.min(4, Number(star[o.userData.trueStar]) || 1))
+      o.scale.setScalar(0.5 + (v - 1) * 0.24)
+    }
+  })
+}
+
 function skyDome(group, name) {
   const d = mesh(new THREE.SphereGeometry(900, 24, 16),
     new THREE.MeshBasicMaterial({ map: texSky(name), side: THREE.BackSide, fog: false }), 0, 0, 0, group)
@@ -271,6 +295,17 @@ const BUILDERS = {
     const stars = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)), new THREE.PointsMaterial({ color: 0xbfd8ff, size: 0.12, fog: false }))
     stars.userData.twinkle = true
     g.add(stars)
+    // #1005 — the four true stars over the star panel. Their sizes ARE this
+    // save's star code (dial rank 1-4, small to large), so the dome is the
+    // clue and a walkthrough from another save is worthless. Sizes ride the
+    // seed via updateTrueStars().
+    const trueStars = new THREE.Group()
+    for (let i = 0; i < 4; i++) {
+      const s = mesh(starGeometry(5), new THREE.MeshStandardMaterial({ color: 0xe8f0ff, emissive: 0x9db8ff, emissiveIntensity: 1.5, side: THREE.DoubleSide }), [-2.6, -0.9, 0.9, 2.6][i], [5.4, 6.1, 5.7, 4.9][i], -8.0, trueStars)
+      s.userData.trueStar = i
+      s.userData.noPick = true
+    }
+    g.add(trueStars)
     const panel = mesh(new THREE.BoxGeometry(2.2, 1.6, 0.2), mat(TX.stoneD), 0, 1.6, -8.4, g)
     panel.userData.spot = 'starPanel'
     panel.userData.landmark = 'starPanel'
