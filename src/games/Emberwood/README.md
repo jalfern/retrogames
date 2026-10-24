@@ -205,4 +205,9 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   `emberwoodcheck` 6d).
 - Continue is keyboard-only (`L`): the touch pad has no third button, so phones
   start a new journey every visit — an attract-screen continue affordance is owed.
+  — **CLOSED by #965** (the attract screen shows a tappable CONTINUE LAST JOURNEY
+  button whenever a save exists; it dispatches the same `KeyL` the keyboard path
+  uses, and the shell's tap-to-start skips `button` targets so a mis-tap can never
+  start a fresh journey. `emberwoodcheck` gates it: no save → no control; save →
+  ≥44x28px target; tapping it resumes the saved tick, not `createSim(11)`).
 - The colporter borrows the shopkeeper's red livery and needs his own sprite.
