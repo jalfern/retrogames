@@ -367,7 +367,7 @@ function tryDoors(gs, nx, ny) {
     const d = doorAt(gs, c, r)
     if (!d || d.open || d.broken) return true
     if (ch === 'L') {
-        if (gs.keys >= 0 && !gs.keys) {
+        if (gs.keys >= CFG.lockForce) {
             gs.keys -= CFG.lockForce
             d.open = true
             gs.events.push({ type: 'keyUsed', x: c, y: r })
