@@ -17,10 +17,10 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
-import { freshState, dispatch, runSolver, solveScript, RIDE } from './state.js'
+import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { seedFromSearch, notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { MESSAGES, PRESS } from './attract.js'
-import { buildWorld, atmosphere, updateTrueStars } from './scene.js'
+import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
 
@@ -45,7 +45,7 @@ const MystGame = () => {
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
-  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), sphere: [...s.sphereDial], star: [...s.starDial], switches: [...s.switches], dial: s.safeDial })
+  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial })
 
   useEffect(() => {
     const wrap = stageRef.current
@@ -83,7 +83,7 @@ const MystGame = () => {
 
     let gs = freshState(seedFromSearch())
     let seedStamp = -1
-    const syncStars = () => { if (gs.seed !== seedStamp) { seedStamp = gs.seed; updateTrueStars(root, gs.codes.star) } }
+    const syncStars = () => { if (gs.seed !== seedStamp) { seedStamp = gs.seed; updateTrueStars(root, gs.codes.star); updateWheel(root, gs.codes.wheel) } }
     syncStars()
     const toneBulbs = []
     root.traverse((o) => { if (o.userData && o.userData.tone != null && o.material) toneBulbs.push(o) })
@@ -169,6 +169,18 @@ const MystGame = () => {
             m.o.visible = on > 0.02
             break
           }
+          // THE STAR-WHEEL (#1014): the rings turn to the dials (shortest way
+          // round), and the hub cover slides clear only when the stars agree.
+          case 'chanRing0': case 'chanRing1': case 'chanRing2': {
+            const i = Number(m.kind.slice(-1))
+            const tgt = ((s.wheelDial || [0, 0, 0])[i]) * Math.PI * 2 / WHEEL_NOTCH
+            let d = (tgt - m.o.rotation.z) % (Math.PI * 2)
+            if (d > Math.PI) d -= Math.PI * 2
+            if (d < -Math.PI) d += Math.PI * 2
+            m.o.rotation.z += d * Math.min(1, dt * 7)
+            break
+          }
+          case 'chanHub': m.o.position.x += ((F.wheelOpen ? m.x0 + 0.48 : m.x0) - m.o.position.x) * k; break
           // THE ROCKET (#1010): the silver climbs, the flame breathes, the
           // high stars fade in — all driven from the pure ride state.
           case 'rocketBody': {
@@ -415,6 +427,17 @@ const MystGame = () => {
           gs = s; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, obsNote: !!gs.flags.obsNote }
         },
+        // #1014 — park on the star terrace with the wheel untouched, so the
+        // harness can drive the rings for real and watch the hub answer.
+        nearWheel: () => {
+          let s = freshState(gs.seed)
+          for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.node === 'chanWheel' && s.flags.pageRed_channelwood) break }
+          s = { ...s, flags: { ...s.flags, chanFlood: true }, node: 'chanWheel', turn: 0 }
+          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          return { node: gs.node, target: [...gs.codes.wheel], dial: [...gs.wheelDial], open: !!gs.flags.wheelOpen }
+        },
+        wheel: () => ({ dial: [...gs.wheelDial], target: [...gs.codes.wheel], open: !!gs.flags.wheelOpen, panel: gs.panelOpen }),
+        clueStars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.clueStar != null) out[o.userData.clueStar] = o.geometry.attributes.position.count }); return out },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride }),
         rocket: () => ({ ride: gs.ride, rideT: gs.rideT, h: rocketH(gs.ride, gs.rideT), dark: darkAt(gs.ride, gs.rideT) }),
         // Audit every node's framing against its caption: the camera must sit
@@ -579,6 +602,19 @@ const MystGame = () => {
             ))}
           </div>
           <div className="text-xs text-sky-200/60">the dome over the panel holds this save's four true stars — set each dial to its star's size</div>
+        </Panel>
+      )}
+      {hud.panel === 'wheel' && screen === 'play' && (
+        <Panel title="THE STAR WHEEL — three rings of stars" onClose={() => closeHud(false)}>
+          <div className="flex gap-4 justify-center my-2">
+            {(hud.wheel || new Array(WHEEL_RINGS).fill(0)).map((v, i) => (
+              <button key={i} className="px-3 py-2 border border-teal-400 text-teal-100" onClick={() => ctl.current?.action({ t: 'dial', pad: 'wheel', i })}>
+                <span className="block text-[10px] uppercase tracking-widest text-teal-300/70">{['outer', 'middle', 'inner'][i]}</span>
+                <span className="block text-lg leading-tight">✦ {WHEEL_POINTS[v]}pt</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-teal-200/60">click a ring to turn it one notch · the drum in the observatory keeps this island's sky: outer, middle, inner — the points must match the stars · A / Enter closes</div>
         </Panel>
       )}
       {hud.panel === 'switches' && screen === 'play' && (

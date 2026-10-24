@@ -3,7 +3,7 @@
 // unchanged and the browser component renders around it.
 
 import { NODES, AGE_LIST } from './nodes.js'
-import { deriveCodes, freshSeed, safeWords } from './codes.js'
+import { deriveCodes, freshSeed, safeWords, NUMBER_WORDS } from './codes.js'
 
 export const SAFE_LEN = 3
 export const SWITCH_LINKS = [
@@ -23,6 +23,15 @@ export const STAR_SHAPES = [4, 5, 6, 5]
 // lock over the brass gear. Fixed world constant, like the sun-and-moon detent.
 export const WHEEL_SPOKES = 5
 export const WHEEL_BITE = 3
+// #1014 — the same great wheel carries three concentric symbol rings, five
+// star-symbols a turn apart (4–8 points each). The alignment is stamped per
+// save (codes.wheel); the observatory drum keeps the pattern and opens the
+// hub — the Age's linking book, its way home — as the original's Ages each
+// kept their own copy's answers. The spokes drive the axle (#1017); the rings
+// read the sky (#1014): one wheel, two locks, both true.
+export const WHEEL_RINGS = 3
+export const WHEEL_NOTCH = 5
+export const WHEEL_POINTS = [4, 5, 6, 7, 8]
 
 export const BROTHER_LINES = {
   red: [
@@ -53,6 +62,7 @@ export function freshState(seed) {
     sphereDial: [-1, -1, -1, -1],
     starDial: [0, 0, 0, 0],
     wheel: 0,
+    wheelDial: new Array(WHEEL_RINGS).fill(0),
     switches: [0, 0, 0, 0, 0],
     selStone: 0,
     selChair: 0,
@@ -147,6 +157,21 @@ export function dispatch(st, a) {
       if (a.pad === 'safe') { const d = s.safeDial.split(''); d[i] = String(a.v != null ? ((a.v % 10) + 10) % 10 : (Number(d[i]) + (a.step || 1)) % 10); s.safeDial = d.join(''); ev.push('dial'); if (s.safeDial === s.codes.safe && !has(s, 'safeOpen')) { s.flags.safeOpen = true; s.panelOpen = null; s.message = 'The safe swings open. Inside: a book bound in blue, and cold sea-light leaking from its pages.'; ev.push('safeOpen', 'link:stoneship'); s.flags.link_stoneship = true } }
       if (a.pad === 'sphere') { const vv = a.v != null ? a.v : a.step; s.sphereDial[i] = vv != null ? ((vv % 4) + 4) % 4 : ((s.sphereDial[i] + 1) % 4); ev.push('dial'); if (s.sphereDial.every((v, j) => v === s.codes.sphere[j]) && !has(s, 'sphereSolved')) { s.flags.sphereSolved = true; s.panelOpen = null; s.message = 'The tones stack in perfect order — the sphere hums, and its stone lid grinds open.'; ev.push('sphereSolved') } }
       if (a.pad === 'star') { const vv = a.v != null ? a.v : a.step; s.starDial[i] = vv != null ? Math.max(1, Math.min(4, vv)) : (s.starDial[i] % 4) + 1; ev.push('dial'); if (s.starDial.every((v, j) => v === s.codes.star[j]) && !has(s, 'starPanel')) { s.flags.starPanel = true; s.panelOpen = null; s.message = 'The symbols match the dome. Deep in the rock, something heavy slides free.'; ev.push('starSolved') } }
+      if (a.pad === 'wheel') {
+        // #1014 — one notch per click, wrapping; each ring answers with its own
+        // weight (outer ring, deeper clunk). The alignment is this save's —
+        // stamped at codes.wheel, readable off the observatory drum.
+        const vv = a.v != null ? ((a.v % WHEEL_NOTCH) + WHEEL_NOTCH) % WHEEL_NOTCH : (s.wheelDial[i] + 1) % WHEEL_NOTCH
+        s.wheelDial[i] = vv
+        ev.push(`wheelTick:${i}`)
+        if (s.wheelDial.every((v, j) => v === s.codes.wheel[j]) && !has(s, 'wheelOpen')) {
+          s.flags.wheelOpen = true; s.panelOpen = null
+          s.message = 'Three stars stand together at the mark — the sky the drum remembers. Something heavy finds its notch deep inside the wheel, and the hub grinds open; inside, a book waits on a stone shelf.'
+          ev.push('wheelOpen')
+        } else {
+          s.message = `The ${['outer', 'middle', 'inner'][i]} ring clicks over: a ${WHEEL_POINTS[vv]}-pointed star stands at the mark.`
+        }
+      }
       break
     }
     case 'toggle': {
@@ -225,7 +250,19 @@ function act(s, spot, ev) {
     case 'takeMatch': s.flags.matchbook = true; s.message = 'A matchbook, still dry after all these years. Fire belongs in a fireplace.'; ev.push('pickup'); break
     case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', `sing:${s.codes.sphere.join('')}`); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
-    case 'starWheel': s.message = 'The great star turns its patient circles above the falls. One ray wears a deep notch at its tip; below the axle, the stone housing is cut with a single groove — one notch, one groove, five spokes to choose from.'; ev.push('look'); break
+    case 'starWheel': {
+      // #1014 — the wheel is no longer a monument; its three symbol rings are
+      // this Age's lock, and the hub keeps the Age's way home. The spokes and
+      // the notched ray (#1017) are what the hand hauls on the terrace.
+      s.panelOpen = 'wheel'
+      s.message = `The great stone wheel: three rings of star-symbols around a shut hub, five spokes for hauling. At the mark today: ${s.wheelDial.map((v) => WHEEL_POINTS[v]).join('-')} points. The observatory above the terrace keeps the pattern this island was carved with.`
+      ev.push('panel'); break
+    }
+    case 'starDrum': {
+      const pts = s.codes.wheel.map((v) => NUMBER_WORDS[WHEEL_POINTS[v]])
+      s.message = `Three stars glow on the bronze drum — a ${pts[0]}-pointed to the left, a ${pts[1]}-pointed at the crown, a ${pts[2]}-pointed to the right. The rim reads: "Outer, middle, inner — as the sky writes itself, so turn the wheel."`
+      ev.push('look'); break
+    }
     case 'wheelTurn': {
       s.wheel = (s.wheel + 1) % WHEEL_SPOKES
       ev.push('wheel')
@@ -460,16 +497,19 @@ export function solveScript(codes) {
     S('click', { id: 'ladderDown' }),
     S('click', { id: 'starPanel' }), ...codes.star.map((v, i) => S('dial', { pad: 'star', i, step: v })), S('closePanel'),
     S('move', { id: 'channelwoodDoor' }),
-    S('click', { id: 'starWheel' }),
     S('move', { id: 'toChanChannels' }),
     S('click', { id: 'pageChannelwoodBlue' }),
     S('click', { id: 'chanFlood' }),
     S('move', { id: 'boardRaft' }),
     S('click', { id: 'pageChannelwoodRed' }),
-    ...Array.from({ length: WHEEL_BITE }, () => S('click', { id: 'starWheel' })),
+    ...Array.from({ length: WHEEL_BITE }, () => S('click', { id: 'wheelTurn' })),
     S('click', { id: 'gearChan' }),
-    S('move', { id: 'retChanWheel' }), S('move', { id: 'retChanChannels' }),
-    S('move', { id: 'retChannelwood' }), S('move', { id: 'ladderUp' }),
+    S('move', { id: 'toChanObs' }),
+    S('click', { id: 'starDrum' }),
+    S('move', { id: 'retWheel' }),
+    S('click', { id: 'starWheel' }),
+    ...codes.wheel.map((v, i) => S('dial', { pad: 'wheel', i, v })),
+    S('move', { id: 'hubBook' }), S('move', { id: 'ladderUp' }),
     S('move', { id: 'outLibrary' }), S('move', { id: 'cabinDoor' }),
     S('click', { id: 'cabinShelf' }), S('click', { id: 'safe' }),
     ...codes.safe.split('').map((v, i) => S('dial', { pad: 'safe', i, step: Number(v) })),

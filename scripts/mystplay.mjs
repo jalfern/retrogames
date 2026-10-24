@@ -77,6 +77,38 @@ const cNew = await p2.evaluate(() => window.__mystTest.codes())
 const sNew = await p2.evaluate(() => window.__mystTest.stars())
 r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && JSON.stringify(sNew) !== JSON.stringify(s42), `${cNew.seed}/${sNew.join(',')}`)
 
+// #1014 — drive the star-wheel live: park on the star terrace, open the rings,
+// stand this save's alignment notch by notch on the real state machine, and take
+// the hub book home. The hub must refuse an unaligned wheel with the page live.
+{
+  const p4 = await openGame(browser, { url: `${URL}?seed=42`, hook: '__mystTest', start: true, viewport: { width: 960, height: 540 } })
+  const errs4 = []
+  p4.on('pageerror', (e) => errs4.push(String(e)))
+  const w0 = await p4.evaluate(() => window.__mystTest.nearWheel())
+  r.check('the solver parks you on the star terrace', w0.node === 'chanWheel' && !w0.open, JSON.stringify(w0))
+  await p4.evaluate(() => window.__mystTest.click('hubBook'))
+  await p4.waitForTimeout(150)
+  let wv = await p4.evaluate(() => window.__mystTest.wheel())
+  r.check('the shut hub refuses an unaligned wheel', !wv.open, JSON.stringify(wv))
+  await p4.evaluate(() => window.__mystTest.click('starWheel'))
+  await p4.waitForTimeout(150)
+  wv = await p4.evaluate(() => window.__mystTest.wheel())
+  r.check('the wheel opens its rings to the hand', wv.panel === 'wheel', wv.panel)
+  for (const i of [0, 1, 2]) {
+    for (let k = 0; k < wv.target[i]; k++) await p4.evaluate((j) => window.__mystTest.action({ t: 'dial', pad: 'wheel', i: j }), i)
+  }
+  await p4.waitForTimeout(150)
+  wv = await p4.evaluate(() => window.__mystTest.wheel())
+  r.check('standing the seeded stars grinds the hub open', wv.open && JSON.stringify(wv.dial) === JSON.stringify(wv.target), JSON.stringify(wv))
+  await p4.evaluate(() => window.__mystTest.click('hubBook'))
+  await p4.waitForTimeout(300)
+  const pp4 = await p4.evaluate(() => window.__mystTest.probe())
+  r.check('the hub book carries the explorer home to the cave', pp4.node === 'cave', pp4.node)
+  const drum = await p4.evaluate(() => window.__mystTest.clueStars())
+  r.check('the observatory drum wears three seeded silhouettes', drum.length === 3 && new Set(drum).size === 3, drum.join(','))
+  r.check('the star-wheel ran with zero page errors', errs4.length === 0, errs4.join(' | '))
+}
+
 // #1010 — the rocket, driven live: note at the seam, saddle, ignition, and the
 // ride flying off the RAF clock in real time until the surface ending.
 {

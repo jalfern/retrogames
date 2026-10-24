@@ -3,8 +3,8 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE } from '../src/games/Myst/state.js'
-import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed } from '../src/games/Myst/codes.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS } from '../src/games/Myst/state.js'
+import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, singTicks } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -14,7 +14,7 @@ let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
 
 console.log('MYST — graph')
-ok(Object.keys(NODES).length === 27, '27 nodes: island, tower, cave, cabin, rocket silo, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (2), walkable Stoneship (2)')
+ok(Object.keys(NODES).length === 28, '28 nodes: island, tower, cave, cabin, rocket silo, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (3), walkable Stoneship (2)')
 ok(NODES.dock && NODES.dock.spots.some((s) => s.to === 'cliffPath'), 'the dock connects up the path')
 for (const [id, n] of Object.entries(NODES)) {
   for (const s of n.spots) {
@@ -42,8 +42,10 @@ ok(mechSub.every((n) => !seen.has(n)), 'the Mechanical tower lives inside its Ag
   while (qa.length) { const id = qa.shift(); for (const sp of NODES[id].spots) { const t = sp.to ? [sp.to] : sp.visits ? [].concat(sp.visits) : []; for (const v of t) if (!seenA.has(v)) { seenA.add(v); qa.push(v) } } }
   ok(mechSub.every((n) => seenA.has(n)), 'Mechanical is walkable end to end once you are linked in')
 }
-const chanSub = ['chanChannels', 'chanWheel']
+const chanSub = ['chanChannels', 'chanWheel', 'chanObs']
 ok(['channelwood', ...chanSub].every((n) => seen.has(n)), 'Channelwood is walkable end to end once the wood door stands open')
+ok(NODES.channelwood.spots.some((s) => s.to === 'cave' && s.need === 'wheelOpen'), 'the landing panel home is keyed to the wheel — Channelwood keeps its own way out, as in 1993')
+ok(NODES.chanWheel.spots.some((s) => s.id === 'hubBook' && s.to === 'cave' && s.need === 'wheelOpen'), 'the hub book is the Age\u2019s way home, sealed until the stars agree')
 const stoneSub = ['stoneDeck', 'stoneObservatory']
 ok(stoneSub.every((n) => !seen.has(n)), "the Stoneship ship and ridge live inside the Age, not on the island path")
 {
@@ -97,6 +99,34 @@ console.log('MYST — gates hold')
   let c = { ...freshState(), node: 'chanChannels' }
   c = dispatch(c, { t: 'click', id: 'pageChannelwoodBlue' }).state
   ok(!!c.flags.pageBlue_channelwood, 'the blue page lies on the wood bridge')
+  // #1014 — the wheel is this Age's lock: both ways home refuse a stranger
+  let u = { ...freshState(90210), node: 'chanWheel' }
+  ok(dispatch(u, { t: 'move', id: 'hubBook' }).events.includes('blocked'), 'the hub cover will not budge shut')
+  u = dispatch(u, { t: 'click', id: 'starWheel' }).state
+  ok(u.panelOpen === 'wheel', 'the wheel opens its three rings to the hand')
+  const wr = u.codes.wheel.map((v) => (v + 1) % WHEEL_NOTCH)
+  for (let i = 0; i < WHEEL_RINGS; i++) u = dispatch(u, { t: 'dial', pad: 'wheel', i, v: wr[i] }).state
+  ok(!u.flags.wheelOpen, `an alignment off by one notch everywhere (${wr.join('-')}) keeps the hub shut`)
+  ok(dispatch(u, { t: 'move', id: 'hubBook' }).events.includes('blocked'), 'wrong stars, shut hub')
+  u = dispatch(u, { t: 'click', id: 'closePanel' }).state
+  ok(dispatch({ ...u, node: 'channelwood' }, { t: 'move', id: 'retChannelwood' }).events.includes('blocked'), 'the landing panel keeps its counsel until the wheel turns true')
+  let o = { ...freshState(90210), node: 'chanWheel' }
+  o = dispatch(o, { t: 'click', id: 'starWheel' }).state
+  for (let i = 0; i < WHEEL_RINGS; i++) o = dispatch(o, { t: 'dial', pad: 'wheel', i, v: o.codes.wheel[i] }).state
+  ok(!!o.flags.wheelOpen && o.panelOpen === null, `seed 90210's stars (${o.codes.wheel.map((v) => WHEEL_POINTS[v]).join('-')} points) grind the hub open and close the panel`)
+  const again = dispatch(o, { t: 'dial', pad: 'wheel', i: 0, v: o.codes.wheel[0] })
+  ok(!again.events.includes('wheelOpen'), 'the hub opens once, and keeps its word')
+  const home = dispatch(o, { t: 'move', id: 'hubBook' })
+  ok(home.state.node === 'cave' && home.events.includes('travel'), 'the hub book carries you home to the cave')
+  { // one notch per click, wrapping; the ring says its points at the mark
+    let d = { ...freshState(90210), node: 'chanWheel' }
+    d = dispatch(d, { t: 'click', id: 'starWheel' }).state
+    d = dispatch(d, { t: 'dial', pad: 'wheel', i: 1, v: WHEEL_NOTCH - 1 }).state
+    ok(d.wheelDial[1] === WHEEL_NOTCH - 1, 'a ring can be turned to its last notch')
+    const st = dispatch(d, { t: 'dial', pad: 'wheel', i: 1 })
+    ok(st.state.wheelDial[1] === 0 && st.events.includes('wheelTick:1'), 'a click past the last notch wraps to the first, and the ring answers with its own tick')
+    ok(/middle ring clicks over/.test(st.state.message), 'the ring reports what stands at the mark', st.state.message)
+  }
 }
 
 console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
@@ -372,6 +402,17 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(hum.every((c) => c.type === 'tone' && c.dur >= 1.0), 'the hum is a sustained drone, not a blip')
   ok(Math.min(...hum.map((c) => c.f)) < Math.min(...stones.map((c) => c[0].f)), 'the hum drones below the lowest rung', `hum=${Math.min(...hum.map((c) => c.f))} stone=${Math.min(...stones.map((c) => c[0].f))}`)
   ok(JSON.stringify(hum) !== JSON.stringify(buzz), 'the hum never collapses into the buzz')
+  // #1014 — the star-wheel: three rings, three weights, and the hub grind is
+  // its own event — never a re-used gate, safe or motor.
+  const rings = [...Array(WHEEL_RINGS).keys()].map((i) => plan(`wheelTick:${i}`))
+  ok(rings.every((c) => c.length > 0), 'every ring answers its click with sound')
+  ok(new Set(rings.map((c) => c[0].f)).size === WHEEL_RINGS, 'the three rings clunk at three distinct weights', rings.map((c) => c[0].f).join(','))
+  ok(rings.every((c, i) => i === 0 || c[0].f > rings[i - 1][0].f), 'outer ring lowest, inner ring highest')
+  ok(plan('wheelOpen').length > 0, 'the hub grinds open with a sound of its own')
+  ok(plan('wheelOpen').some((c) => c.type === 'sweep'), 'the hub grind is a grind, not a blip')
+  ok(JSON.stringify(plan('wheelOpen')) !== JSON.stringify(plan('gateOpen')), 'the hub is not the cliff gate re-used')
+  ok(JSON.stringify(plan('wheelOpen')) !== JSON.stringify(plan('safeOpen')), 'the hub is not the safe re-used')
+  ok(JSON.stringify(rings[0]) !== JSON.stringify(rings[2]), 'the biggest ring never collapses into the smallest')
 }
 
 console.log('MYST — the walkable Mechanical gets played, not skipped')
@@ -411,10 +452,27 @@ console.log('MYST — the walkable Channelwood gets played, not skipped')
     s = r.state
     visited.add(s.node)
   }
-  ok(['chanChannels', 'chanWheel'].every((n) => visited.has(n)), 'the winning route walks every new Channelwood view')
+  ok(['chanChannels', 'chanWheel', 'chanObs'].every((n) => visited.has(n)), 'the winning route walks every new Channelwood view')
   ok(s.flags.chanFlood && s.flags.pageRed_channelwood && s.flags.pageBlue_channelwood, 'the solver flooded the channels and took both pages')
   ok(s.flags.wheelBite && s.flags.gearChannelwood, 'the winning route also bites the star-wheel and lifts its gear')
+  ok(s.flags.wheelOpen && JSON.stringify(s.wheelDial) === JSON.stringify(s.codes.wheel), 'the solver read the drum and stood the wheel true')
   ok(isWin(s), 'and the detour still brings Atrus home')
+}
+
+console.log('MYST — the observatory keeps the wheel\u2019s sky (#1014)')
+{
+  ok(NODES.chanObs && NODES.chanWheel.spots.some((s) => s.to === 'chanObs'), 'the observatory stands above the star terrace, one stair away')
+  ok(NODES.chanObs.spots.some((s) => s.act === 'starDrum'), 'the star drum is a thing you can read up there')
+  const drumMsg = (seed) => dispatch({ ...freshState(seed), node: 'chanObs' }, { t: 'click', id: 'starDrum' }).state.message
+  for (const seed of [7, 4242, 90210]) {
+    const w = deriveCodes(seed).wheel
+    const want = w.map((v) => NUMBER_WORDS[WHEEL_POINTS[v]])
+    const m = drumMsg(seed)
+    ok(want.every((word) => m.includes(word)), `seed ${seed}: the drum spells this save\u2019s points (${want.join(', ')})`)
+    ok(/Outer, middle, inner/.test(m), 'the rim names the ring order with the stars')
+  }
+  const m1 = drumMsg(7), m2 = drumMsg(90210)
+  ok(m1 !== m2 || deriveCodes(7).wheel.join('') === deriveCodes(90210).wheel.join(''), 'two islands\u2019 skies differ when their wheels do')
 }
 
 console.log('MYST — the walkable Stoneship gets played, not skipped')
@@ -514,12 +572,15 @@ console.log('MYST — per-save codes (#1005: the original stamped its locks per 
   const shapeOk = (c) => /^[1-9][1-9][1-9]$/.test(c.safe)
     && [...c.star].sort().join('') === '1234'
     && [...c.sphere].sort().join('') === '0123'
+    && c.wheel.length === WHEEL_RINGS
+    && c.wheel.every((v) => Number.isInteger(v) && v >= 0 && v < WHEEL_NOTCH)
+    && new Set(c.wheel).size === WHEEL_RINGS
   for (const seed of SEEDS) {
     const s = freshState(seed)
-    ok(shapeOk(s.codes), `seed ${seed}: codes are legal shapes (${s.codes.safe}/${s.codes.star.join('')}/${s.codes.sphere.join('')})`)
+    ok(shapeOk(s.codes), `seed ${seed}: codes are legal shapes (${s.codes.safe}/${s.codes.star.join('')}/${s.codes.sphere.join('')}/${s.codes.wheel.join('')})`)
     ok(isWin(runSolver(freshState(seed))), `seed ${seed}: the island is winnable with its own codes`)
   }
-  const locks = (c) => JSON.stringify([c.safe, c.star, c.sphere])
+  const locks = (c) => JSON.stringify([c.safe, c.star, c.sphere, c.wheel])
   ok(locks(deriveCodes(7)) === locks(deriveCodes(7)), 'same seed, same island (deterministic mulberry32)')
   const seenCodes = new Set(SEEDS.map((x) => locks(deriveCodes(x))))
   ok(seenCodes.size === SEEDS.length, 'no two of the probe seeds stamp the same locks')
@@ -719,6 +780,21 @@ if (process.argv.includes('--mutate')) {
     ['the bite-sound goes silent', SP,
       `    case 'wheelBite': P.push({`,
       `    case 'wheelBitez': P.push({`],
+    ['the star-wheel opens at any alignment', ST,
+      `if (s.wheelDial.every((v, j) => v === s.codes.wheel[j]) && !has(s, 'wheelOpen')) {`,
+      `if (true && !has(s, 'wheelOpen')) {`],
+    ['the hub book stops needing the wheel', ND,
+      `to: 'cave', need: 'wheelOpen', needMsg: 'The hub is shut fast`,
+      `to: 'cave', needMsg: 'The hub is shut fast`],
+    ['the landing panel never sealed with the wheel', ND,
+      `to: 'cave', need: 'wheelOpen', needMsg: 'The landing panel is cold`,
+      `to: 'cave', needMsg: 'The landing panel is cold`],
+    ['the observatory drum preaches a fixed sky', ST,
+      `const pts = s.codes.wheel.map((v) => NUMBER_WORDS[WHEEL_POINTS[v]])`,
+      `const pts = ['four', 'five', 'six']`],
+    ['all three wheel rings clunk at one pitch', SP,
+      `export const WHEEL_TONES = [98, 131, 165]`,
+      `export const WHEEL_TONES = [98, 98, 98]`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

@@ -3,7 +3,7 @@
 // different numbers at the Mechanical safe, the Selenitic sphere and the
 // star panel, so the answer always came from the world, never from
 // someone else's walkthrough. This module derives the same way: one 32-bit
-// seed per fresh game (or per ?seed= pin) decides all three codes.
+// seed per fresh game (or per ?seed= pin) decides all four codes.
 
 export const NUMBER_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 
@@ -30,6 +30,7 @@ export function deriveCodes(seed) {
     safe: [0, 1, 2].map(() => 1 + Math.floor(rnd() * 9)).join(''),
     star: shuffled([1, 2, 3, 4], rnd),
     sphere: shuffled([0, 1, 2, 3], rnd),
+    wheel: shuffled([0, 1, 2, 3, 4], rnd).slice(0, 3),
   }
 }
 

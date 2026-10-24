@@ -14,6 +14,9 @@ export const TONES = [196, 262, 330, 392]
 // The sounding path of SELENITIC: six stones, biggest sings lowest. Strictly
 // ascending and distinct — the puzzle IS the pitch order.
 export const STONE_TONES = [110, 131, 147, 165, 196, 220]
+// #1014 — the star-wheel's three rings answer the finger with their own
+// weight: the outer ring clunks lowest, the inner ring clicks highest.
+export const WHEEL_TONES = [98, 131, 165]
 
 export function plan(ev) {
   // A linking-book leap is a whole other event than a walk: a long rising
@@ -24,6 +27,12 @@ export function plan(ev) {
       { type: 'sweep', f0: 90, f1: 1400, dur: 0.9, wave: 'sine', vol: 0.1 },
       { type: 'fnoise', dur: 0.5, vol: 0.12, freq: 600 },
     ]
+  }
+  // Each ring of the CHANNELWOOD wheel answers with its own weight (#1014):
+  // a stone clunk whose pitch says which ring turned, biggest ring lowest.
+  if (typeof ev === 'string' && ev.startsWith('wheelTick:')) {
+    const i = Math.max(0, Math.min(WHEEL_TONES.length - 1, Number(ev.split(':')[1]) || 0))
+    return [{ type: 'tone', f: WHEEL_TONES[i], dur: 0.09, wave: 'square', vol: 0.06 }, { type: 'noise', dur: 0.05, vol: 0.04 }]
   }
   // Stepping a sounding stone rings ITS tone: the pitch is the progress.
   if (typeof ev === 'string' && ev.startsWith('stone:')) {
@@ -76,6 +85,10 @@ export function plan(ev) {
     case 'swivel': P.push({ type: 'sweep', f0: 120, f1: 190, dur: 0.28, wave: 'triangle', vol: 0.06 }, { type: 'tone', f: 96, dur: 0.08, wave: 'square', vol: 0.05, delay: 0.26 }); break
     case 'alignOpen': P.push({ type: 'tone', f: 220, dur: 0.9, wave: 'sine', vol: 0.09 }, { type: 'tone', f: 330, dur: 0.9, wave: 'sine', vol: 0.08, delay: 0.12 }, { type: 'sweep', f0: 70, f1: 130, dur: 1.1, wave: 'sawtooth', vol: 0.06 }); break
     case 'gateOpen': P.push({ type: 'sweep', f0: 60, f1: 110, dur: 1.2, wave: 'sawtooth', vol: 0.08 }, { type: 'noise', dur: 0.9, vol: 0.09 }); break
+    // #1014 — the hub of the star-wheel: three heavy bolts thunk free in
+    // sequence under a long stone grind, then a bell rings out of the dark
+    // centre. Distinct from the cliff gate (saw + noise) and the safe.
+    case 'wheelOpen': P.push({ type: 'tone', f: 90, dur: 0.1, wave: 'square', vol: 0.08 }, { type: 'tone', f: 90, dur: 0.1, wave: 'square', vol: 0.08, delay: 0.14 }, { type: 'tone', f: 90, dur: 0.12, wave: 'square', vol: 0.08, delay: 0.28 }, { type: 'sweep', f0: 80, f1: 170, dur: 1.0, wave: 'triangle', vol: 0.06 }, { type: 'tone', f: 523, dur: 0.7, wave: 'sine', vol: 0.05, delay: 0.7 }); break
     case 'gearTake': P.push({ type: 'fnoise', dur: 0.35, vol: 0.09, freq: 900 }, { type: 'tone', f: 440, dur: 0.25, wave: 'sine', vol: 0.07, delay: 0.18 }); break
     // The field of stones hums before you touch it: a low drone under a soft
     // fifth, so the corridor of rock feels alive as you cross it, not silent.

@@ -6,7 +6,7 @@
 import * as THREE from 'three'
 import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
-import { STAR_SHAPES } from './state.js'
+import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 
 const GAP = 4000
 
@@ -61,6 +61,52 @@ export function updateTrueStars(root, star) {
       o.scale.setScalar(0.5 + (v - 1) * 0.24)
     }
   })
+}
+
+// #1014 — the observatory drum is the wheel's clue: its three stars wear THIS
+// save's point-counts (codes.wheel → 4–8 points), left / crown / right naming
+// outer / middle / inner. Swap the carved silhouettes whenever the island does.
+export function updateWheel(root, wheel) {
+  if (!root || !wheel) return
+  root.traverse((o) => {
+    if (o.userData && o.userData.clueStar != null) {
+      const v = Math.max(0, Math.min(WHEEL_POINTS.length - 1, Number(wheel[o.userData.clueStar]) || 0))
+      o.geometry = starGeometry(WHEEL_POINTS[v])
+    }
+  })
+}
+
+// The great star-wheel, assembled once and used twice (landing and terrace):
+// three concentric rings of five star-symbols, a bronze mark at the crown, and
+// a hub whose cover hides the Age's linking book until the rings align.
+// Ring i stands still at dial 0 and turns dial·72° as the dial clicks over.
+function wheelAssembly(parent, x, y, z, s) {
+  const wheel = new THREE.Group()
+  const RR = [1.35, 0.95, 0.55]
+  for (let i = 0; i < WHEEL_RINGS; i++) {
+    const ring = new THREE.Group()
+    const rim = mesh(new THREE.TorusGeometry(RR[i], 0.045, 6, 28), mat(TX.grey, { metalness: 0.2 }), 0, 0, 0, ring)
+    rim.userData.spot = 'starWheel'; rim.userData.landmark = 'starWheel'
+    for (let j = 0; j < WHEEL_NOTCH; j++) {
+      const a = Math.PI / 2 - j * Math.PI * 2 / WHEEL_NOTCH
+      const st = mesh(starGeometry(WHEEL_POINTS[j]), new THREE.MeshStandardMaterial({ color: 0xe6efe0, emissive: 0x6f9c7c, emissiveIntensity: 0.5, side: THREE.DoubleSide }), Math.cos(a) * RR[i], Math.sin(a) * RR[i], -0.05, ring)
+      st.scale.setScalar(0.17)
+      st.userData.spot = 'starWheel'; st.userData.landmark = 'starWheel'
+    }
+    ring.userData.mech = `chanRing${i}`
+    wheel.add(ring)
+  }
+  const frame = new THREE.Group()
+  const mark = mesh(new THREE.ConeGeometry(0.09, 0.22, 4), mat(TX.brass, { metalness: 0.6 }), 0, RR[0] + 0.16, -0.06, frame)
+  mark.rotation.z = Math.PI; mark.userData.noPick = true
+  const cover = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.12, 12), mat(TX.brass, { metalness: 0.65 }), 0, 0, -0.09, frame)
+  cover.rotation.x = Math.PI / 2; cover.userData.mech = 'chanHub'; cover.userData.landmark = 'starWheel'; cover.userData.noPick = true
+  const bk = mesh(new THREE.BoxGeometry(0.26, 0.05, 0.18), mat(TX.pageB), 0, 0, -0.02, frame)
+  bk.rotation.set(-0.5, 0.4, 0); bk.userData.spot = 'hubBook'
+  wheel.add(frame)
+  wheel.position.set(x, y, z)
+  wheel.scale.setScalar(s)
+  parent.add(wheel)
 }
 
 function skyDome(group, name) {
@@ -791,7 +837,9 @@ const BUILDERS = {
     const fall = mesh(new THREE.PlaneGeometry(14, 5, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 2.5, -13, g)
     fall.userData.fall = true
     rocks(g, TX.chand, [[0, 1.5, -14, 16, 3, 3, 0]])
-    // the great stone star wheel: the foremost landmark, turning over the falls behind it
+    // the great stone star wheel: the foremost landmark, turning over the falls
+    // behind it — five spokes drive the axle lock (#1017); the symbol rings and
+    // sealed hub read the sky (#1014)
     const star = new THREE.Group()
     for (let k = 0; k < 5; k++) {
       const arm = mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), mat(TX.grey), 0, 1.7, 0, star)
@@ -800,9 +848,9 @@ const BUILDERS = {
     }
     star.position.set(0, 4, -16)
     star.userData.mech = 'starWheel'
-    star.userData.spot = 'starWheel'
     g.add(star)
-    mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g)
+    wheelAssembly(g, 0, 4, -16.5, 2.6)
+    mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g).userData.landmark = 'starWheel'
     for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-5, 7, 2.4]]) {
       const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
       log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
@@ -855,13 +903,15 @@ const BUILDERS = {
       const a = k * (Math.PI / 13) - Math.PI / 2
       mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 10.5, 2.7, -56 + Math.cos(a) * 10.5, g).userData.noPick = true
     }
-    // the great stone star, close at hand on this terrace — a five-spoke lock,
-    // the notched ray tipped with iron, the housing below wearing its groove
+    // the great stone star, close at hand on this terrace — a five-spoke axle
+    // lock (#1017): the notched ray tipped with iron, the housing below wearing
+    // its groove; and riding its front face, the three symbol rings, the crown
+    // mark and the sealed hub that keep the Age's book (#1014)
     const star = new THREE.Group()
     for (let k = 0; k < 5; k++) {
       const arm = mesh(new THREE.BoxGeometry(0.8, 3.4, 0.5), mat(TX.grey), 0, 1.7, 0, star)
       arm.rotation.z = k * 1.2566
-      arm.userData.landmark = 'starWheel'
+      arm.userData.landmark = 'starWheel'; arm.userData.spot = 'wheelTurn'
       if (k === 0) {
         const notch = mesh(new THREE.BoxGeometry(0.5, 0.5, 0.62), mat(TX.iron, { metalness: 0.65 }), 0, 3.25, 0, star)
         notch.userData.landmark = 'starWheel'; notch.userData.noPick = true
@@ -869,9 +919,10 @@ const BUILDERS = {
     }
     star.position.set(0, 6.4, -53)
     star.userData.mech = 'starWheel'
-    star.userData.spot = 'starWheel'
     g.add(star)
-    mesh(new THREE.BoxGeometry(0.9, 4.4, 0.9), mat(TX.grey), 0, 4.4, -53, g).userData.noPick = true
+    wheelAssembly(g, 0, 6.4, -53.5, 2.4)
+    const pier2 = mesh(new THREE.BoxGeometry(0.9, 4.4, 0.9), mat(TX.grey), 0, 4.4, -53, g)
+    pier2.userData.noPick = true; pier2.userData.landmark = 'starWheel'
     const groove = mesh(new THREE.BoxGeometry(1.1, 0.7, 1.0), mat(TX.iron, { metalness: 0.6 }), 0, 3.1, -53, g)
     groove.userData.landmark = 'starWheel'; groove.userData.noPick = true
     // the wheel-shelter where the red page waits, the axle lock, and the gear
@@ -885,6 +936,38 @@ const BUILDERS = {
     const rope = mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.2), mat(TX.wood), 4.2, 3.4, -54.4, g); rope.userData.noPick = true
     tuft(g, -7.4, 2.26, -58, 1.1, 0x2f6a44); tuft(g, 6.8, 2.26, -59, 1, 0x2f6a44)
     boulder(g, TX.chand, -8.6, 2.9, -53.5, 1.2, 0.5); boulder(g, TX.chand, 7.6, 3.1, -57, 1.4, 1.2)
+    // the stair up to the observatory, off the right of the terrace
+    const stair = new THREE.Group()
+    for (let i = 0; i < 6; i++) mesh(new THREE.BoxGeometry(1.8, 0.42, 1.1), mat(TX.stoneD), 7.6 + (i % 2) * 1.1, 2.5 + i * 0.42, -57.5 + Math.floor(i / 2) * 1.2, stair)
+    stair.children[stair.children.length - 1].userData.spot = 'toChanObs'
+    g.add(stair)
+  },
+  chanObs(g) {
+    // camera at [0,5.2,-66] on the observatory ledge facing +z: the bronze
+    // drum close ahead, its face wearing this save's three clue-stars; the
+    // channelwood fog and sea sit below the lip behind and beside
+    const ledge = mesh(new THREE.CircleGeometry(30, 22), mat(TX.chand), 0, 4.4, -66, g); ledge.rotation.x = -Math.PI / 2
+    seaPlane(g, -0.5, 200, 0.7)
+    rocks(g, TX.chand, [[-6.2, 5.6, -62, 4, 4, 4, 0.4], [6.4, 5.2, -63, 4, 3.6, 4, -0.3], [-8.2, 4.2, -72, 5, 5, 5, 0.2], [8.4, 4.6, -74, 5, 4.4, 5, -0.2]])
+    const drum = mesh(new THREE.CylinderGeometry(1.5, 1.7, 3.2, 14), mat(TX.brass, { metalness: 0.5, roughness: 0.45 }), 0, 6.4, -70.5, g)
+    drum.userData.landmark = 'chanDome'; drum.userData.noPick = true
+    const dome = mesh(new THREE.SphereGeometry(1.55, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.brass, { metalness: 0.5, roughness: 0.45 }), 0, 8.0, -70.5, g)
+    dome.userData.landmark = 'chanDome'; dome.userData.noPick = true
+    mesh(new THREE.CylinderGeometry(0.14, 0.16, 1.0, 8), mat(TX.brass, { metalness: 0.7 }), 0, 9.3, -70.5, g).userData.noPick = true
+    // the three clue-stars, left / crown / right across the drum's face —
+    // their points are the wheel's answer, worn bright as the original's sky
+    const CSX = [-1.05, 0, 1.05], CSY = [6.0, 6.7, 6.0]
+    for (let i = 0; i < WHEEL_RINGS; i++) {
+      const st = mesh(starGeometry(WHEEL_POINTS[0]), new THREE.MeshStandardMaterial({ color: 0xf2f6e8, emissive: 0xcfe89a, emissiveIntensity: 1.3, side: THREE.DoubleSide }), CSX[i], CSY[i], -68.75, g)
+      st.scale.setScalar(0.5); st.userData.clueStar = i; st.userData.noPick = true
+    }
+    const plaque = mesh(new THREE.BoxGeometry(1.9, 0.5, 0.12), mat(TX.iron, { metalness: 0.5 }), 0, 5.32, -69.0, g)
+    plaque.userData.spot = 'starDrum'
+    mesh(new THREE.TorusGeometry(0.42, 0.05, 6, 14), mat(TX.brass, { metalness: 0.7 }), 2.4, 5.6, -69.6, g).rotation.x = 1.2
+    for (const [rx, rz] of [[-3.4, 0.5], [3.6, -0.4]]) mesh(new THREE.BoxGeometry(2.2, 0.5, 1.6), mat(TX.stoneD), rx, 4.65, -63.5 + rz, g).userData.noPick = true
+    for (let k = 0; k < 10; k++) { const a = k * (Math.PI / 9) + Math.PI / 2; mesh(new THREE.BoxGeometry(0.45, 0.9, 0.45), mat(TX.grey), Math.sin(a) * 9.5, 4.85, -66 + Math.cos(a) * 9.5, g).userData.noPick = true }
+    tuft(g, -5.2, 4.46, -68, 1.2, 0x2f6a44); tuft(g, 5.6, 4.46, -66, 1, 0x2f6a44)
+    boulder(g, TX.chand, -4.4, 4.9, -70, 1.1, 0.7); boulder(g, TX.chand, 4.8, 5.1, -71, 1.3, 1.2)
   },
 }
 
@@ -943,7 +1026,7 @@ function idSky(id) {
   if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
   if (id === 'stoneship' || id === 'stoneDeck' || id === 'stoneObservatory') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
-  if (id === 'channelwood' || id === 'chanChannels' || id === 'chanWheel') return 'channelwood'
+  if (id === 'channelwood' || id === 'chanChannels' || id === 'chanWheel' || id === 'chanObs') return 'channelwood'
   return 'interior'
 }
 
