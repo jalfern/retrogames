@@ -331,6 +331,28 @@ export const MUSIC = {
             1, 0, 0, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0, 0, 2, 0,
         ],
     },
+    // COMET DRIFT (#1001) — ORIGINAL big-beat racer bed, composed for this build
+    // (our own melody, none from any cabinet). Bright G-major I–vi–IV–V, the
+    // arcade-kart idiom: a pumping octave bass under a rising chord-tone hook and
+    // a four-on-the-floor kick, so the desert has something under the wheel that
+    // isn't just the engine and the crowd. The grid is the resting tempo; index.jsx
+    // lifts the step with the player's speed via setMusicStep (the same seam SSX /
+    // Out Run ride), so the bed drives harder down Sunset Gulch's long straights.
+    comet: {
+        step: 0.12,
+        lead: [
+            67, 0, 71, 0, 74, 0, 71, 0, 64, 0, 67, 0, 71, 0, 67, 0,
+            60, 0, 64, 0, 67, 0, 72, 0, 62, 0, 66, 0, 69, 0, 74, 0,
+        ],
+        bass: [
+            43, 43, 0, 55, 43, 0, 50, 0, 40, 40, 0, 52, 40, 0, 47, 0,
+            48, 48, 0, 55, 48, 0, 55, 0, 50, 50, 0, 57, 50, 0, 45, 0,
+        ],
+        perc: [
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0,
+            1, 0, 2, 0, 1, 0, 2, 0, 1, 0, 2, 0, 1, 2, 1, 2,
+        ],
+    },
 }
 
 class AudioController {

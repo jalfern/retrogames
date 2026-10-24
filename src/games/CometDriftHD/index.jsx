@@ -744,7 +744,7 @@ export default function CometDriftHD() {
             if (!live) return
             for (const ev of evs) {
                 if (ev.e === 'count') audioController.playTone(660, 0.12, 'square', 0.12)
-                if (ev.e === 'go') audioController.playSweep(440, 880, 0.4, 'square', 0.14)
+                if (ev.e === 'go') { audioController.playSweep(440, 880, 0.4, 'square', 0.14); audioController.startMusic('comet'); audioController.setMusicLevel(1) }
                 if (ev.e === 'boost' && ev.who === 'COMET') {
                     // each tier gets its own voice, not just a higher pitch (#471 item 7);
                     // GOLD adds a rising bell chime the lower tiers never ring (#478 item 5)
@@ -753,10 +753,11 @@ export default function CometDriftHD() {
                         else if (v.k === 'noise') audioController.playNoise(v.d, v.g)
                         else audioController.playTone(v.f, v.d, v.t, v.g, v.delay || 0)
                     }
+                    if (ev.tier === 2) audioController.duckMusic(0.55, 0.5)
                     shake = Math.max(shake, 3 + ev.tier * 2.5)
                 }
-                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); shake = 16; rumble(300, 1) }
-                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); shake = 7; rumble(100, 0.4) }
+                if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); audioController.duckMusic(0.35, 0.6); shake = 16; rumble(300, 1) }
+                if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); audioController.duckMusic(0.5, 0.35); shake = 7; rumble(100, 0.4) }
                 if (ev.e === 'lap' && ev.who === 'PLAYER') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
                 if (ev.e === 'end') { if (ev.place === 1) audioController.playFanfare(); else audioController.playDeath() }
             }
@@ -775,6 +776,9 @@ export default function CometDriftHD() {
                 audioController.playTone(base, 0.03, 'sawtooth', 0.022)
                 audioController.playTone(base * 1.504, 0.026, 'sawtooth', 0.012)
             }
+            // #1001: the bed drives harder with the pack — a hair faster down the
+            // straights, a notch quicker still on turbo (the SSX/Out Run lift seam).
+            audioController.setMusicStep(0.12 * (P.boostT > 0 ? 0.86 : 1) * (1 - Math.min(0.12, Math.max(0, P.v - 6) * 0.02)))
         }
         // #675: the crowd swells as the player nears the grandstands and dies on
         // the backstretch — a lowpassed murmur bed (bursts longer than their

@@ -141,8 +141,16 @@ ok(REAL_GAPS.Emberwood.length === 1 && !REAL_GAPS.Emberwood.some(s => /CLOSED by
     'Emberwood keeps exactly the one still-open gap after #959/#963/#965 closed the first three (CLOSED bullets filtered, not forgotten)')
 ok(!REAL_GAPS.Emberwood.some((s) => /continue is keyboard-only/i.test(s)),
     '#965: Emberwood honest-gaps re-grew the shipped attract CONTINUE affordance — that work is gated, not open')
-ok(REAL_GAPS['COMET DRIFT HD'].some((s) => s.includes('Sound is') && s.includes('Remainder')),
-    'parseGaps split a sub-bullet from its parent gap (CometDriftHD Remainder)')
+// #1001: this used to pin the sub-bullet-attachment guard on CometDriftHD's *real*
+// open "Sound is … no music / Remainder" bullet. Closing that gap honestly made it
+// red — the same #991 trap (a fixture indexing a flagship's always-open gap). The
+// parse-quality property belongs on a synthetic open parent, so a flagship shipping
+// out of its list can never turn main red.
+{
+    const sub = parseGaps('## Honest gaps\n- parent gap text that stays open here\n  - a child detail sub-bullet attached below\n')
+    ok(sub.length === 1 && sub[0].includes('child detail sub-bullet'),
+        'parseGaps joins a sub-bullet into its parent gap (synthetic — no flagship shipping can redden this guard)')
+}
 // #945: the SSX touch front-flip shipped with #894 and ssxmodelcheck gates it; the
 // stale bullet that kept it in the list re-kicked free QA lanes onto closed work.
 ok(!REAL_GAPS.SSX.some((s) => s.includes('added FRNT') || s.includes('retires it')),
