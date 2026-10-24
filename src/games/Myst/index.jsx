@@ -361,6 +361,11 @@ const MystGame = () => {
         acc -= SIM_MS
         wt += SIM_MS / 1000
         updateMech(gs, SIM_MS / 1000)
+        if (screenRef.current === 'play' && gs.link && !gs.ride) {
+          const lr = dispatch(gs, { t: 'tick' })
+          gs = lr.state
+          hudStamp = -1
+        }
         if (screenRef.current === 'play' && gs.ride && gs.ride !== 'seated' && gs.ride !== 'landed') {
           const rr = dispatch(gs, { t: 'tick' })
           gs = rr.state
@@ -411,7 +416,7 @@ const MystGame = () => {
       const lc = linkRef.current
       if (lc && gs.link && !gs.ending) {
         drawLink(lc.getContext('2d'), gs.link, Math.max(0, Math.min(1, 1 - gs.linkT / LINK_TICKS)), VW, VH)
-        lc.style.opacity = String(linkEnvelope(gs.linkT))
+        lc.style.opacity = String(linkEnvelope(LINK_TICKS - gs.linkT))
       }
       if (gs.panelOpen === 'spectator') {
         for (const v of spectatorViews(gs)) {
@@ -445,14 +450,14 @@ const MystGame = () => {
         codes: () => ({ seed: gs.seed, ...gs.codes }),
         stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
         fresh: (seed) => { gs = freshState(seed); storeSeed(gs.seed); syncStars(); gotoNode('dock'); aim(); sing = null; singRingRef.current = -1; setSingRing(-1); return gs.seed },
-        goto: (id) => { gs.node = id; gs.turn = 0; gotoNode(id); aim(); hudStamp = -1; return gs.node },
+        goto: (id) => { gs.node = id; gs.turn = 0; gs.link = null; gs.linkT = 0; gotoNode(id); aim(); hudStamp = -1; return gs.node },
         notebook: () => ({ stored: loadSeed(), current: gs.seed }),
         sing: () => ({ ring: singRingRef.current, ticks: sing ? sing.ticks : null }),
         nearRocket: () => {
           let s = freshState(gs.seed)
           for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.flags.obsNote) break }
           for (const a of [{ t: 'move', id: 'retStoneObs' }, { t: 'move', id: 'retStoneDeck' }, { t: 'move', id: 'retStoneship' }, { t: 'click', id: 'ladderDown' }]) s = dispatch(s, a).state
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, obsNote: !!gs.flags.obsNote }
         },
         // #1014 — park on the star terrace with the wheel untouched, so the
@@ -461,7 +466,7 @@ const MystGame = () => {
           let s = freshState(gs.seed)
           for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.node === 'chanWheel' && s.flags.pageRed_channelwood) break }
           s = { ...s, flags: { ...s.flags, chanFlood: true }, node: 'chanWheel', turn: 0 }
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, target: [...gs.codes.wheel], dial: [...gs.wheelDial], open: !!gs.flags.wheelOpen }
         },
         wheel: () => ({ dial: [...gs.wheelDial], target: [...gs.codes.wheel], open: !!gs.flags.wheelOpen, panel: gs.panelOpen }),
@@ -478,7 +483,7 @@ const MystGame = () => {
           if (mode === 'all') {
             s = { ...s, flags: { ...s.flags, link_selenitic: true, link_stoneship: true, link_channelwood: true } }
           }
-          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, views: spectatorViews(gs) }
         },
         visions: () => ({ panel: gs.panelOpen, clock: wt, views: spectatorViews(gs).map((v) => ({ ...v, live: !!visionRefs.current[v.age] })) }),

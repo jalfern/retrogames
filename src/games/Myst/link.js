@@ -113,22 +113,27 @@ export function drawLink(ctx, age, prog, w, h) {
   ctx.fillStyle = `rgba(${tr},${tg},${tb},0.05)`
   ctx.fillRect(0, 0, w, h)
 
-  // the seam of light opens across the page as the starfield breaks through
+  // the seam of light opens across the page as the starfield breaks through:
+  // a soft rift, brightest at its heart, not a hard bar
   if (prog > 0.10 && prog < 0.42) {
     const sp = Math.max(0, Math.min(1, (prog - 0.10) / 0.22))
     const se = sp * sp * (3 - 2 * sp)
-    const len = w * 0.78 * se, thick = Math.max(1, h * 0.05 * (1 - se * 0.5))
+    const len = w * 0.72 * se, thick = Math.max(1, h * 0.028 * (1 - se * 0.4))
     ctx.save()
     ctx.translate(cx, cy)
     ctx.rotate(-0.35)
-    ctx.fillStyle = `rgba(220,235,255,${(0.85 * se * (1 - se * 0.55)).toFixed(3)})`
+    const rg = ctx.createLinearGradient(-len / 2, 0, len / 2, 0)
+    rg.addColorStop(0, 'rgba(210,228,255,0)')
+    rg.addColorStop(0.5, `rgba(225,238,255,${(0.7 * se * (1 - se * 0.5)).toFixed(3)})`)
+    rg.addColorStop(1, 'rgba(210,228,255,0)')
+    ctx.fillStyle = rg
     ctx.beginPath()
     ctx.ellipse(0, 0, len / 2, thick / 2, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
-    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, h * 0.35 * se)
-    cg.addColorStop(0, `rgba(230,240,255,${(0.5 * se * (1 - se)).toFixed(3)})`)
-    cg.addColorStop(1, 'rgba(230,240,255,0)')
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, h * 0.42 * se)
+    cg.addColorStop(0, `rgba(215,232,255,${(0.34 * se * (1 - se * 0.35)).toFixed(3)})`)
+    cg.addColorStop(1, 'rgba(215,232,255,0)')
     ctx.fillStyle = cg
     ctx.fillRect(0, 0, w, h)
   }
