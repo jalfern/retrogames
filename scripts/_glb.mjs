@@ -138,3 +138,52 @@ export function readGlb(filePath) {
     const m = mesh.primitives.length
     return { verts: count, tris: count / 3, primitives: m, sizeBytes: buf.length, min: posAcc.min, max: posAcc.max, materials: json.materials.length, animations: (json.animations || []).length }
 }
+
+// ---- facing (#901) --------------------------------------------------------
+// A model has a *known* forward when its geometry carries an entry feature that
+// sets front apart from back. Convention (Comet #808 law): a fronted model faces
+// local +Z. Read POSITION + COLOR_0 of the first primitive, split the mesh into a
+// front slab (z in the top quarter of depth) and a back slab, and count "dark"
+// verts (rec.709 luminance < DARK_L) — a door/window/porthole reads dark, a
+// plain wall does not. Front-only dark ⇒ '+z'; back-only ⇒ '-z' (a build error —
+// fronts must not face backward); neither/both ⇒ 'radial' (no meaningful front).
+// Textured-only meshes (no COLOR_0, e.g. rigged KayKit bodies) report 'na':
+// their facing lives in the skin/pose, not baked vertex colour.
+const DARK_L = 0.2
+
+export function deriveFacing(filePath) {
+    const buf = readFileSync(filePath)
+    if (buf.readUInt32LE(0) !== MAGIC) throw new Error('not a glb: ' + filePath)
+    const jsonLen = buf.readUInt32LE(12)
+    const json = JSON.parse(buf.subarray(20, 20 + jsonLen).toString('utf8'))
+    const mesh = json.meshes[json.scenes ? json.scenes[json.scene || 0].nodes[0].mesh : 0] || json.meshes[0]
+    const prim = mesh.primitives[0]
+    if (prim.attributes.COLOR_0 === undefined) return { facing: 'na', frontDark: 0, backDark: 0, depth: 0 }
+    // locate the BIN chunk
+    let off = 12, bin = null
+    while (off + 8 <= buf.length) {
+        const cl = buf.readUInt32LE(off), ct = buf.readUInt32LE(off + 4)
+        if (ct === BIN_CHUNK) { bin = buf.subarray(off + 8, off + 8 + cl); break }
+        off += 8 + cl + ((4 - (cl % 4)) % 4)
+    }
+    if (!bin) return { facing: 'na', frontDark: 0, backDark: 0, depth: 0 }
+    const read = (ai) => {
+        const a = json.accessors[ai], bv = json.bufferViews[a.bufferView]
+        const start = bv.byteOffset + (a.byteOffset || 0)
+        return new Float32Array(bin.buffer, bin.byteOffset + start, a.count * 3)
+    }
+    const pos = read(prim.attributes.POSITION), col = read(prim.attributes.COLOR_0)
+    const n = pos.length / 3
+    let minZ = Infinity, maxZ = -Infinity
+    for (let i = 0; i < n; i++) { const z = pos[i * 3 + 2]; if (z < minZ) minZ = z; if (z > maxZ) maxZ = z }
+    const depth = (maxZ - minZ) || 1
+    const frontZ = maxZ - depth * 0.25, backZ = minZ + depth * 0.25
+    let frontDark = 0, backDark = 0
+    for (let i = 0; i < n; i++) {
+        const z = pos[i * 3 + 2]
+        const l = 0.2126 * col[i * 3] + 0.7152 * col[i * 3 + 1] + 0.0722 * col[i * 3 + 2]
+        if (l < DARK_L) { if (z >= frontZ) frontDark++; else if (z <= backZ) backDark++ }
+    }
+    const facing = frontDark > 0 && backDark === 0 ? '+z' : backDark > 0 && frontDark === 0 ? '-z' : 'radial'
+    return { facing, frontDark, backDark, depth: +depth.toFixed(2) }
+}
