@@ -1340,10 +1340,11 @@ export default function CometDriftHD() {
         let lastProbe = null
         const frameProbeTick = () => {
             try {
-                const gl = glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
-                if (!gl) { lastProbe = { readable: false, backend: backendName }; return }
+                const gl = (renderer && ((renderer.getContext && renderer.getContext()) || (renderer.backend && renderer.backend.gl)))
+                    || glCanvas.getContext('webgl2') || glCanvas.getContext('webgl')
+                if (!gl || !gl.drawingBufferWidth || !gl.drawingBufferHeight) { lastProbe = { readable: false, backend: backendName }; return }
                 const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight
-                const bw = Math.min(24, w), bh = Math.min(24, h)
+                const bw = Math.min(48, w), bh = Math.min(48, h)
                 const buf = new Uint8Array(bw * bh * 4)
                 gl.readPixels((w - bw) >> 1, (h - bh) >> 1, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf)
                 let min = 255, max = 0, sum = 0
