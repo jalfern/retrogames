@@ -30,6 +30,13 @@ export function plan(ev) {
     const i = Math.max(0, Math.min(STONE_TONES.length - 1, Number(ev.split(':')[1]) || 0))
     return [{ type: 'tone', f: STONE_TONES[i], dur: 0.8, wave: 'sine', vol: 0.1 }, { type: 'tone', f: STONE_TONES[i] * 2, dur: 0.5, wave: 'sine', vol: 0.03, delay: 0.05 }]
   }
+  // The sphere's posts sing THIS save's ring order (#1005): `sing:2031` is a
+  // different island's clue than `sing:0123`. The player reads the code by
+  // ear, so the sequence must ride the seed, not a hardcoded chirp.
+  if (typeof ev === 'string' && ev.startsWith('sing:')) {
+    const order = (ev.split(':')[1] || '').split('').map(Number).filter((n) => n >= 0 && n < TONES.length)
+    return order.map((r, i) => ({ type: 'tone', f: TONES[r], dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 }))
+  }
   const P = []
   switch (ev) {
     case 'turn': P.push({ type: 'tone', f: 220, dur: 0.05, wave: 'triangle', vol: 0.05 }); break
@@ -62,9 +69,6 @@ export function plan(ev) {
     case 'plate': P.push({ type: 'tone', f: 320, dur: 0.07, wave: 'triangle', vol: 0.05 }); break
     case 'latch': P.push({ type: 'noise', dur: 0.1, vol: 0.1 }, { type: 'tone', f: 90, dur: 0.09, wave: 'square', vol: 0.07, delay: 0.07 }); break
     case 'spectator': [330, 440, 550].forEach((f, i) => P.push({ type: 'tone', f, dur: 0.5, wave: 'sine', vol: 0.07, delay: i * 0.22 })); break
-    // The Selenitic sphere: when the panel opens the four ring posts sing their
-    // tones in sequence, one after another — the player reads the code by ear.
-    case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break
     // SELENITIC: a wrong stone is a sour buzz — two detuned saws beating against
     // each other, nothing sweet in it. The throne swivels on oiled bronze; the
     // alignment rings a sun-moon fifth; the gear lifts free with a slot's hiss.

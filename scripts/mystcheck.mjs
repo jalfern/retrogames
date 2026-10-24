@@ -3,7 +3,8 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, SAFE_CODE, STAR_CODE, SPHERE_CODE, STONE_SIZES, SUN_MOON } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON } from '../src/games/Myst/state.js'
+import { deriveCodes, safeWords, seedFromSearch } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -70,16 +71,16 @@ console.log('MYST — gates hold')
   ok(r.state.node === 'towerBase', 'with the lever the tower door opens')
 }
 { // wood door needs the star panel; wrong stars do not open it
-  let s = { ...freshState(), node: 'cave' }
+  let s = { ...freshState(4101), node: 'cave' }
   ok(dispatch(s, { t: 'move', id: 'channelwoodDoor' }).events.includes('blocked'), 'wood door locked before the stars')
   s = dispatch(s, { t: 'click', id: 'starPanel' }).state
-  let wrong = STAR_CODE.map((v, i) => (v % 4) + 1)
+  let wrong = s.codes.star.map((v) => (v % 4) + 1)
   for (let i = 0; i < 4; i++) s = dispatch(s, { t: 'dial', pad: 'star', i, v: wrong[i] }).state
-  ok(!s.flags.starPanel, 'wrong star order does not open the door')
-  let s2 = { ...freshState(), node: 'cave' }
+  ok(!s.flags.starPanel, 'star order off by one everywhere does not open the door')
+  let s2 = { ...freshState(4101), node: 'cave' }
   s2 = dispatch(s2, { t: 'click', id: 'starPanel' }).state
-  for (let i = 0; i < 4; i++) s2 = dispatch(s2, { t: 'dial', pad: 'star', i, v: STAR_CODE[i] }).state
-  ok(!!s2.flags.starPanel, 'the dome stars (4-1-3-2) open the wood door')
+  for (let i = 0; i < 4; i++) s2 = dispatch(s2, { t: 'dial', pad: 'star', i, v: s2.codes.star[i] }).state
+  ok(!!s2.flags.starPanel, `seed 4101's dome stars (${s2.codes.star.join('-')}) open the wood door`)
 }
 { // CHANNELWOOD stage 3: the flood lever drowns the channels and floats the raft
   let s = { ...freshState(), node: 'chanChannels' }
@@ -118,15 +119,15 @@ console.log('MYST — gates hold')
   ok(!!s.flags.link_selenitic, 'burning the wooden book reveals the Selenitic link')
   s = dispatch(s, { t: 'click', id: 'fireplace' }).state
   ok(s.node === 'selenitic', 'the fireplace links to SELENITIC')
-  let c = { ...freshState(), node: 'cabin' }
+  let c = { ...freshState(70707), node: 'cabin' }
+  const safeCode = c.codes.safe
   c = dispatch(c, { t: 'click', id: 'safe' }).state
   ok(c.panelOpen === 'safe', 'the safe opens its dials')
-  c = dispatch(c, { t: 'dial', pad: 'safe', i: 0, v: 1 }).state
-  c = dispatch(c, { t: 'dial', pad: 'safe', i: 1, v: 2 }).state
-  c = dispatch(c, { t: 'dial', pad: 'safe', i: 2, v: 3 }).state
-  ok(!c.flags.safeOpen, '1-2-3 does not open the safe')
-  for (let i = 0; i < 3; i++) c = dispatch(c, { t: 'dial', pad: 'safe', i, v: Number(SAFE_CODE[i]) }).state
-  ok(!!c.flags.safeOpen && !!c.flags.link_stoneship, `the safe code ${SAFE_CODE} opens the sea-world book`)
+  const nope = String((Number(safeCode[0]) % 9) + 1) + safeCode.slice(1)
+  for (let i = 0; i < 3; i++) c = dispatch(c, { t: 'dial', pad: 'safe', i, v: Number(nope[i]) }).state
+  ok(!c.flags.safeOpen, 'one digit off never opens the safe')
+  for (let i = 0; i < 3; i++) c = dispatch(c, { t: 'dial', pad: 'safe', i, v: Number(safeCode[i]) }).state
+  ok(!!c.flags.safeOpen && !!c.flags.link_stoneship, `seed 70707's safe code ${safeCode} opens the sea-world book`)
 }
 { // mechanical red page sealed behind the switch linkage (the gear on the gantry)
   let s = { ...freshState(), node: 'mechTop' }
@@ -187,10 +188,12 @@ console.log('MYST — gates hold')
   ok(!!r.state.flags.spectatorSeen && /green rings/.test(r.state.message), 'three lights swim inside the glass')
 }
 { // sphere puzzle
-  let s = { ...freshState(), node: 'selenitic' }
-  s = dispatch(s, { t: 'click', id: 'sphere' }).state
-  for (let i = 0; i < 4; i++) s = dispatch(s, { t: 'dial', pad: 'sphere', i, v: SPHERE_CODE[i] }).state
-  ok(!!s.flags.sphereSolved, 'the tone sequence opens the sphere')
+  let s = { ...freshState(31415), node: 'selenitic' }
+  const singr = dispatch(s, { t: 'click', id: 'sphere' })
+  s = singr.state
+  ok(singr.events.includes(`sing:${s.codes.sphere.join('')}`), 'opening the sphere posts sing THIS save ring order')
+  for (let i = 0; i < 4; i++) s = dispatch(s, { t: 'dial', pad: 'sphere', i, v: s.codes.sphere[i] }).state
+  ok(!!s.flags.sphereSolved, 'the seeded tone sequence opens the sphere')
 }
 
 console.log('MYST — SELENITIC walkable: sounding path, sun-and-moon throne, the gear')
@@ -238,11 +241,11 @@ ok(['selSound', 'selThrone', 'selGate', 'selTop'].every((n) => !seen.has(n)), 't
 
 console.log('MYST — pages, books, endings')
 {
-  let s = runSolver()
+  let s = runSolver(freshState(5150))
   ok(isWin(s), 'the solver seats the white page and brings Atrus home')
   ok(s.placed.red === 4 && s.placed.blue === 4, 'all eight pages rest in the books')
-  const scripted = solveScript()
-  let mid = freshState()
+  let mid = freshState(5150)
+  const scripted = solveScript(mid.codes)
   const pageClicks = scripted.filter((a) => a.id && a.id.startsWith('page')).length
   ok(pageClicks === 8, 'the solver visits eight pages')
   // books before pages = static; corrupt voices get clearer
@@ -254,7 +257,7 @@ console.log('MYST — pages, books, endings')
   b = dispatch(b, { t: 'click', id: 'redBook' }).state
   ok(b.placed.red === 1 && b.bookOpen === 'red' && !b.message.includes('fath'), 'a returned page clears the next line')
   // placing all pages does NOT free a brother; the white page must exist first
-  let w = runSolver()
+  let w = runSolver(freshState(5150))
   ok(w.ending === 'atrus', 'eight pages + pedestal = the good ending')
   let bad = { ...w, ending: null, flags: { ...w.flags, whitePage: true }, node: 'library' }
   ok(dispatch(bad, { t: 'click', id: 'redBook' }).state.ending === 'sirrus', 'freeing Sirrus traps you (red)')
@@ -300,12 +303,14 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(plan('page').length > 0, 'a page-turn is scheduled (books and panels open and close)')
   ok(plan('panel').length > 0, 'a panel opening is scheduled')
   ok(plan('safeOpen').length > 0, 'the safe-opening cue still schedules')
-  const sing = plan('sphereSing')
-  ok(sing.length === 4, 'opening the sphere makes the four posts sing (four cues)', String(sing.length))
+  const sing = plan('sing:0123')
+  ok(sing.length === 4, 'a seeded sing plans four post cues', String(sing.length))
   ok(sing.every((c, i) => c.delay === i * 0.34), 'the posts sing IN SEQUENCE (staggered delays)', sing.map((c) => c.delay).join(','))
   ok(TONES.length === 4, 'the four posts carry four distinct tones', TONES.join(','))
-  const r = dispatch({ ...freshState(), node: 'selenitic' }, { t: 'click', id: 'sphere' })
-  ok(r.events.includes('sphereSing'), 'state emits sphereSing when the sphere opens')
+  const sa = plan(`sing:${deriveCodes(11).sphere.join('')}`), sb = plan(`sing:${deriveCodes(12).sphere.join('')}`)
+  ok(JSON.stringify(sa) !== JSON.stringify(sb) || deriveCodes(11).sphere.join('') === deriveCodes(12).sphere.join(''), 'two different saves can sing two different clue sequences')
+  const r = dispatch({ ...freshState(9), node: 'selenitic' }, { t: 'click', id: 'sphere' })
+  ok(r.events.includes(`sing:${deriveCodes(9).sphere.join('')}`), 'state emits the seeded sing when the sphere opens')
   ok(r.events.includes('panel'), 'state still opens the sphere panel')
   const rb = dispatch({ ...freshState(), node: 'library' }, { t: 'click', id: 'redBook' })
   ok(rb.events.includes('page'), 'opening a book turns its page')
@@ -340,7 +345,7 @@ console.log('MYST — the walkable Mechanical gets played, not skipped')
 {
   let s = freshState()
   const visited = new Set()
-  for (const a of solveScript()) {
+  for (const a of solveScript(s.codes)) {
     const r = dispatch(s, a)
     s = r.state
     visited.add(s.node)
@@ -354,7 +359,7 @@ console.log('MYST — the walkable Selenitic gets played, not skipped')
 {
   let s = freshState()
   const visited = new Set()
-  for (const a of solveScript()) {
+  for (const a of solveScript(s.codes)) {
     const r = dispatch(s, a)
     s = r.state
     visited.add(s.node)
@@ -368,7 +373,7 @@ console.log('MYST — the walkable Channelwood gets played, not skipped')
 {
   let s = freshState()
   const visited = new Set()
-  for (const a of solveScript()) {
+  for (const a of solveScript(s.codes)) {
     const r = dispatch(s, a)
     s = r.state
     visited.add(s.node)
@@ -382,7 +387,7 @@ console.log('MYST — the walkable Stoneship gets played, not skipped')
 {
   let s = freshState()
   const visited = new Set()
-  for (const a of solveScript()) {
+  for (const a of solveScript(s.codes)) {
     const r = dispatch(s, a)
     s = r.state
     visited.add(s.node)
@@ -390,6 +395,39 @@ console.log('MYST — the walkable Stoneship gets played, not skipped')
   ok(['stoneDeck', 'stoneObservatory'].every((n) => visited.has(n)), 'the winning route walks every new Stoneship view')
   ok(s.flags.obsNote && s.flags.pageRed_stoneship && s.flags.pageBlue_stoneship, 'the solver boarded the ship, read the ridge note, and took both pages')
   ok(isWin(s), 'and the detour still brings Atrus home')
+}
+
+console.log('MYST — per-save codes (#1005: the original stamped its locks per copy)')
+{
+  const SEEDS = [1, 42, 555, 31415, 987654321, 0xffffffff]
+  const shapeOk = (c) => /^[1-9][1-9][1-9]$/.test(c.safe)
+    && [...c.star].sort().join('') === '1234'
+    && [...c.sphere].sort().join('') === '0123'
+  for (const seed of SEEDS) {
+    const s = freshState(seed)
+    ok(shapeOk(s.codes), `seed ${seed}: codes are legal shapes (${s.codes.safe}/${s.codes.star.join('')}/${s.codes.sphere.join('')})`)
+    ok(isWin(runSolver(freshState(seed))), `seed ${seed}: the island is winnable with its own codes`)
+  }
+  const locks = (c) => JSON.stringify([c.safe, c.star, c.sphere])
+  ok(locks(deriveCodes(7)) === locks(deriveCodes(7)), 'same seed, same island (deterministic mulberry32)')
+  const seenCodes = new Set(SEEDS.map((x) => locks(deriveCodes(x))))
+  ok(seenCodes.size === SEEDS.length, 'no two of the probe seeds stamp the same locks')
+  ok(!/^852$/.test(deriveCodes(7).safe) || !/^4321$/.test(deriveCodes(7).star.join('')), 'the locks are not the old fixed 852/4-1-3-2 island')
+  const note = dispatch({ ...freshState(31415), node: 'library' }, { t: 'click', id: 'shelfNote' })
+  ok(note.state.message.includes(safeWords(deriveCodes(31415).safe)), "Atrus's note spells this save's safe digits in words")
+  ok(!note.state.message.includes('eight, five, two') || deriveCodes(31415).safe === '852', 'the note no longer defaults to the old fixed 852')
+  // wrong codes stay wrong on a seeded island
+  let w = { ...freshState(555), node: 'cave' }
+  w = dispatch(w, { t: 'click', id: 'starPanel' }).state
+  const starWrong = w.codes.star.map((v) => (v % 4) + 1)
+  for (let i = 0; i < 4; i++) w = dispatch(w, { t: 'dial', pad: 'star', i, v: starWrong[i] }).state
+  ok(!w.flags.starPanel, 'star panel ignores the rotated code')
+  // a restart after an ending stamps a NEW island (a new book of Myst)
+  const won = runSolver(freshState(5150))
+  const rs = dispatch(won, { t: 'restart' }).state
+  ok(rs.seed !== 5150 && rs.node === 'dock', 'restart redraws the seed and returns to the dock')
+  ok(JSON.stringify([rs.codes.safe, rs.codes.star, rs.codes.sphere]) !== JSON.stringify([deriveCodes(5150).safe, deriveCodes(5150).star, deriveCodes(5150).sphere]), 'the restarted island carries different locks')
+  ok(seedFromSearch('?seed=42') === 42 && seedFromSearch('?lite=1&seed=777&x=1') === 777 && seedFromSearch('?x=1') === null, '?seed=N pins the island; unpinned stays random')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -400,6 +438,7 @@ if (process.argv.includes('--mutate')) {
   const SP = 'src/games/Myst/soundplan.js'
   const ST = 'src/games/Myst/state.js'
   const ND = 'src/games/Myst/nodes.js'
+  const CD = 'src/games/Myst/codes.js'
   const MUTANTS = [
     ['attract never cycles (one message)', MF,
       `    'CYAN · 1993 · REBUILT IN CODE',\n    'Living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click what you see · arrows step and turn',\n`,
@@ -422,14 +461,14 @@ if (process.argv.includes('--mutate')) {
     ['linking-book whoosh collapses into a plain travel', SP,
       `  if (typeof ev === 'string' && ev.startsWith('link:')) {`,
       `  if (false) {`],
-    ['the four posts go silent when the sphere opens', SP,
-      `    case 'sphereSing': TONES.forEach((f, i) => P.push({ type: 'tone', f, dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 })); break`,
-      `    case 'sphereSing': break`],
+    ['the posts go silent when the sphere opens', SP,
+      `  if (typeof ev === 'string' && ev.startsWith('sing:')) {`,
+      `  if (false) {`],
     ['the page-turn cue vanishes', SP,
       `    case 'page': P.push({ type: 'fnoise', dur: 0.16, vol: 0.08, freq: 1400 }); break`,
       `    case 'page': break`],
     ['state stops firing the sphere sing', ST,
-      `ev.push('panel', 'sphereSing'); break`,
+      "ev.push('panel', `sing:${s.codes.sphere.join('')}`); break",
       `ev.push('panel'); break`],
     ['a book opening stops turning its page', ST,
       `ev.push('page', 'bookVoice')`,
@@ -473,6 +512,9 @@ if (process.argv.includes('--mutate')) {
     ['the observatory stops recording the note', ST,
       `if (!has(s, 'obsNote')) {`,
       `if (false) {`],
+    ['every save stamps the same island (seed ignored)', CD,
+      `  const rnd = mulberry32(seed >>> 0)`,
+      `  const rnd = mulberry32(0)`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
