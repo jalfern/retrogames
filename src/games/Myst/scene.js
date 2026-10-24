@@ -7,6 +7,7 @@ import * as THREE from 'three'
 import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
+import { domeHeight } from './terrain.js'
 
 const GAP = 4000
 
@@ -129,6 +130,23 @@ function rocks(group, tex, list) {
     const o = mesh(new THREE.BoxGeometry(sx, sy, sz), mat(tex), x, y, z, group)
     o.rotation.y = ry || 0
   }
+}
+
+// #1033 — the Selenitic heightfield: a subdivided plane displaced by the pure
+// domeHeight(), so the grey grass dome is a real sculpt with a coast, not
+// rings bolted to a flat disc riding one shared ocean plane.
+function terrainField(group, tex, view) {
+  const geo = new THREE.PlaneGeometry(400, 400, 96, 96)
+  geo.rotateX(-Math.PI / 2)
+  const pos = geo.attributes.position
+  for (let i = 0; i < pos.count; i++) pos.setY(i, domeHeight(pos.getX(i), pos.getZ(i), view))
+  geo.computeVertexNormals()
+  const t = mat(tex)
+  t.flatShading = true
+  const p = new THREE.Mesh(geo, t)
+  p.userData.noPick = true
+  group.add(p)
+  return p
 }
 
 // The signature of SELENITIC: one huge cratered moon, low and green-white.
@@ -414,7 +432,7 @@ const BUILDERS = {
     cflame.userData.flicker = true; cflame.userData.noPick = true
   },
   selenitic(g) {
-    const ground = mesh(new THREE.CircleGeometry(60, 28), mat(TX.selen), 0, 0, 0, g); ground.rotation.x = -Math.PI / 2
+    terrainField(g, TX.selen, 'selenitic')
     seaPlane(g, 0.02, 300, 0.25)
     moon(g, 26, 22, 30, 8, null, null)
     const glow0 = new THREE.PointLight(0x9fd8b0, 12, 70); glow0.position.set(0, 10, 0); g.add(glow0)
@@ -443,7 +461,7 @@ const BUILDERS = {
   selSound(g) {
     // camera at [0,1.7,-46], facing +z: the stone field recedes toward a
     // sealed gate in the cliff, the moon low on the right shoulder
-    const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.selen), 0, 0, -46, g); ground.rotation.x = -Math.PI / 2
+    terrainField(g, TX.selen, 'selSound')
     seaPlane(g, 0.02, 300, 0.2)
     moon(g, 5, 24, 8, 5.5, null, 'lookMoon')
     // the corridor walls: two green-black rock shoulders, striated like the
