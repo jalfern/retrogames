@@ -181,6 +181,15 @@ function act(s, spot, ev) {
     case 'sphere': s.panelOpen = 'sphere'; s.message = `The sphere ring-dials read ${s.sphereDial.map((v) => (v < 0 ? '·' : v)).join('-')} — four rings, and the posts sing in sequence.`; ev.push('panel', 'sphereSing'); break
     case 'starPanel': s.panelOpen = 'star'; s.message = `Stone dials: ${s.starDial.join('-')} points of light each. The dome above shows the true stars.`; ev.push('panel'); break
     case 'starWheel': s.message = 'The great star turns its patient circles above the falls — a symbol of Channelwood, mirrored on the panel below.'; ev.push('look'); break
+    case 'chanFlood': {
+      s.flags.chanFlood = !s.flags.chanFlood
+      if (s.flags.chanFlood) {
+        s.message = 'You lean the whole weight of your shoulder into the flood lever. Far down the channels a sluice gate grinds shut across the water; the stone cuts begin, slowly, to fill.'
+      } else {
+        s.message = 'You haul the flood lever back. The sluice opens its throat again and the channels drain, dark water running to the falls.'
+      }
+      ev.push('motor', 'flood'); break
+    }
     case 'towerLever': s.message = 'The great lever is braced solid in its stone well. Whatever bell it once rang, no bell hangs here anymore.'; ev.push('look'); break
     case 'switchPanel': s.panelOpen = 'switches'; s.message = `Five iron switches: ${s.switches.join(' ')}. Switches here move gears elsewhere.`; ev.push('panel'); break
     case 'observatory': {
@@ -194,7 +203,7 @@ function act(s, spot, ev) {
       s.message = s.flags.mechCarDown
         ? 'The lever groans over. Somewhere above you the cage shudders and sinks down its rails, cables singing.'
         : 'You shove the call lever back the other way; the cables go taut and the cage climbs empty to the gantry.'
-      ev.push('motor'); break
+      ev.push('motor', 'flood'); break
     }
     case 'cageRaise': {
       if (s.flags.mechCageTop) { s.message = 'The cage is already at the top of its rails.'; ev.push('blocked'); break }
@@ -206,7 +215,7 @@ function act(s, spot, ev) {
       if (!s.flags.mechCageTop) { s.message = 'You pull the chain and nothing answers — the cage is already on the deck.'; ev.push('blocked'); break }
       s.flags.mechCageTop = false; s.flags.mechCarDown = true
       s.message = 'The brake hisses; the deck drops under your feet as the cage slides down the tower face.'
-      ev.push('motor'); break
+      ev.push('motor', 'flood'); break
     }
     case 'cageOut': {
       if (s.flags.mechCageTop) { s.node = 'mechTop'; s.turn = 0; s.message = NODES.mechTop.caption; ev.push('travel', 'enter:mechTop') }
@@ -217,7 +226,7 @@ function act(s, spot, ev) {
       if (s.flags.mechCarDown) { s.message = 'The cage is already down at the landing, swaying on its cables.'; ev.push('blocked'); break }
       s.flags.mechCarDown = true
       s.message = 'You throw the send-down lever; the cage glides off the gantry and the door slot stands clear.'
-      ev.push('motor'); break
+      ev.push('motor', 'flood'); break
     }
     case 'mechDoorBtn': {
       if (!s.flags.mechCarDown) { s.message = 'The release button sinks and clicks — but the bronze cage is jammed in the door slot. Nothing moves but the cage.'; ev.push('blocked'); break }
@@ -241,7 +250,7 @@ function act(s, spot, ev) {
       s.flags.mechPlateE = !s.flags.mechPlateE
       if (s.flags.mechPlateE) { if (!s.flags.mechLatchE) s.flags.mechCarDown = false; s.message = 'You press the shaft plate. Far below, the cage jumps onto the lift cable and rises to the gantry.' }
       else { if (!s.flags.mechLatchE) s.flags.mechCarDown = true; s.message = s.flags.mechLatchE ? 'You step off the shaft plate — the latch holds; the cage stays called.' : 'You leave the shaft plate and the cage sinks back to the landing below.' }
-      ev.push('motor'); break
+      ev.push('motor', 'flood'); break
     }
     case 'mechLatch': {
       if (s.flags.mechPlateD && !s.flags.mechLatchD) { s.flags.mechLatchD = true; s.message = 'CLACK. The latch lever bites. Whatever the door plate is doing, it will keep doing it now — your feet are free.'; ev.push('latch') }
@@ -352,7 +361,14 @@ export function solveScript() {
     S('click', { id: 'ladderDown' }),
     S('click', { id: 'starPanel' }), ...STAR_CODE.map((v, i) => S('dial', { pad: 'star', i, step: v })), S('closePanel'),
     S('move', { id: 'channelwoodDoor' }),
-    S('click', { id: 'pageChannelwoodRed' }), S('click', { id: 'pageChannelwoodBlue' }),
+    S('click', { id: 'starWheel' }),
+    S('move', { id: 'toChanChannels' }),
+    S('click', { id: 'pageChannelwoodBlue' }),
+    S('click', { id: 'chanFlood' }),
+    S('move', { id: 'boardRaft' }),
+    S('click', { id: 'pageChannelwoodRed' }),
+    S('click', { id: 'starWheel' }),
+    S('move', { id: 'retChanWheel' }), S('move', { id: 'retChanChannels' }),
     S('move', { id: 'retChannelwood' }), S('move', { id: 'ladderUp' }),
     S('move', { id: 'outLibrary' }), S('move', { id: 'cabinDoor' }),
     S('click', { id: 'cabinShelf' }), S('click', { id: 'safe' }),

@@ -5,10 +5,11 @@ live three.js world; travel is a fade, not a walk. Click/tap hot spots, or step
 and turn with the arrow keys. No inventory UI, no hints — take notes, as in 1993.
 
 ## Engine notes
-- `nodes.js` — the node graph: 22 camera poses (island, clock tower, cave,
+- `nodes.js` — the node graph: 24 camera poses (island, clock tower, cave,
   cabin, four Ages; Mechanical is a 5-node walkable set: landing, tower base,
   cage, gantry, control room; Selenitic is a 5-node walkable set: landing,
-  sounding path, throne chamber, terraces, summit ledge) with hot spots.
+  sounding path, throne chamber, terraces, summit ledge; Channelwood is a
+  3-node walkable set: landing, channels, star terrace) with hot spots.
   A spot with `to:` travels; `act:` runs a puzzle verb; `need:` gates it behind
   a flag; `reveal:` turns an illusion into a lever/door the first time you
   touch it; `visits:` hints the reachability audit about node changes an
@@ -34,7 +35,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   and then it traps you. Seating the white page brings Atrus home (`atrus`).
   `solveScript()` is the canonical winning route — the attract tour and the
   harness share it.
-- `scene.js` — builds all 22 views as sibling groups spaced `GAP` apart on X;
+- `scene.js` — builds all 24 views as sibling groups spaced `GAP` apart on X;
   the camera teleports. Conventions: a node's camera faces world +z at
   `yaw 0`; spot bearings are relative degrees from there. Sea, fire, gears,
   waterfall offsets, steam and the illusion palm animate on every frame;
@@ -42,7 +43,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   latch lever, gear seal) and Selenitic's (stones sinking when rung, cliff
   gate slab, swiveling throne, sun disc appearing only at the alignment,
   mountain door, gear lifting from its slot) are driven live from `state`
-  via `updateMech`. Views face +z: put what the caption promises at
+  via `updateMech` (the Channelwood sluice gate, channel water and float ride `chanFlood`). Views face +z: put what the caption promises at
   greater z than the camera, and check the moon's ray — corridor walls,
   lintels and buttresses silently eat it.
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
@@ -66,7 +67,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 3 endings
-npm run mystcheck -- --mutate # the interlocks must be able to fail (21 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (22 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win
 npm run mystviewcheck        # browser: every one of the 22 views framed
 npm run lint:myst
@@ -82,8 +83,9 @@ and a silent buzz.
 
 ## Honest gaps vs the original
 - #838 stage 1 made MECHANICAL walkable; stage 2 made SELENITIC walkable;
-  Channelwood and Stoneship are still single-view with one gate each
-  (next stages per the issue).
+  stage 3 (#989) made CHANNELWOOD walkable (channels + star terrace, flood
+  lever floats the raft). Stoneship is still single-view with one gate
+  (next stage per the issue).
 - The safe combination and the star/sphere codes are discoverable in-world but
   fixed (8-5-2; dome stars 4-1-3-2; tones 3-1-4-2); the original randomised
   some of these per save. The sounding-path order (biggest→smallest) and the

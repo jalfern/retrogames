@@ -77,6 +77,7 @@ export function plan(ev) {
     // fifth, so the corridor of rock feels alive as you cross it, not silent.
     // Distinct from the sour buzz (detuned saws) and the gate grind — a sweet,
     // sustained hum, which is the point of the tell.
+    case 'flood': P.push({ type: 'sweep', f0: 90, f1: 240, dur: 1.2, wave: 'sine', vol: 0.06 }, { type: 'noise', dur: 1.1, vol: 0.05 }); break
     case 'hum': P.push({ type: 'tone', f: 98, dur: 1.6, wave: 'sine', vol: 0.035 }, { type: 'tone', f: 147, dur: 1.2, wave: 'sine', vol: 0.02, delay: 0.25 }); break
     default: break
   }
