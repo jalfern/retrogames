@@ -585,7 +585,10 @@ const BUILDERS = {
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + 0.4; mesh(new THREE.CylinderGeometry(0.1, 0.12, 1.1), mat(TX.iron, { metalness: 0.6 }), Math.sin(a) * 2, 0.55, 8 + Math.cos(a) * 2, g).userData.noPick = true }
     // the rocket: riveted silver, grey fins, brass bands, one wide porthole
     const rocket = new THREE.Group()
-    const silver = mat(TX.iron, { metalness: 0.72, roughness: 0.28, color: 0xc9cfd8 })
+    // riveted silver must READ against dusk rock — a dark iron map under dusk
+    // light came out black-on-black, so the hull is a lighter alloy: color
+    // without the dark map, plus a soft self-glow and an ACES-friendly finish
+    const silver = new THREE.MeshStandardMaterial({ color: 0xcfd6df, metalness: 0.15, roughness: 0.5, emissive: 0x4a5262, emissiveIntensity: 0.6 })
     const body = mesh(new THREE.CylinderGeometry(0.95, 1.1, 5.2, 14), silver, 0, 3.6, 0, rocket)
     body.userData.landmark = 'rocket'; body.userData.noPick = true
     const nose = mesh(new THREE.ConeGeometry(0.95, 2.1, 14), silver, 0, 7.25, 0, rocket)
@@ -607,6 +610,8 @@ const BUILDERS = {
     rocket.position.set(0, 0.55, 8)
     rocket.userData.mech = 'rocketBody'
     g.add(rocket)
+    // the silver carries its own glow; a big warm work-light painted a blazing
+    // pool on the shaft floor, which read as lava, not industry
     // the ignition console on the pad edge
     mesh(new THREE.BoxGeometry(0.5, 1.2, 0.4), mat(TX.iron, { metalness: 0.6 }), -2.4, 0.6, 5.6, g)
     const ign = mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.12, 10), new THREE.MeshStandardMaterial({ color: 0xc43a2a, emissive: 0x7a160c, roughness: 0.4 }), -2.4, 1.28, 5.45, g)
@@ -921,7 +926,7 @@ export function buildWorld(ids) {
 function idSky(id) {
   const ext = ['dock', 'cliffPath', 'beach', 'landing', 'stairTop']
   if (ext.includes(id)) return id === 'dock' || id === 'cliffPath' || id === 'beach' ? 'dusk' : 'day'
-  if (id === 'towerTop' || id === 'rocketSilo') return id === 'rocketSilo' ? 'dusk' : 'day'
+  if (id === 'towerTop' || id === 'rocketSilo') return id === 'rocketSilo' ? 'silo' : 'day'
   if (id === 'selenitic' || id === 'selSound' || id === 'selThrone' || id === 'selGate' || id === 'selTop') return 'selenitic'
   if (id === 'stoneship' || id === 'stoneDeck' || id === 'stoneObservatory') return 'stoneship'
   if (id === 'mechanical' || id === 'mechWalk' || id === 'mechCar' || id === 'mechTop' || id === 'mechRoom') return 'mechanical'
@@ -937,6 +942,8 @@ const FOG = {
   stoneship: { color: 0x6c7482, near: 36, far: 400 },
   mechanical: { color: 0x59301a, near: 42, far: 460 },
   channelwood: { color: 0x265256, near: 36, far: 400 },
+  // the shaft keeps dusk's hue but swallows light: no horizon wash on the pad
+  silo: { color: 0x241a28, near: 12, far: 150 },
 }
 
 const SUNSET = {
@@ -947,6 +954,7 @@ const SUNSET = {
   stoneship: { color: 0xdfe4ea, i: 1.05 },
   mechanical: { color: 0xffb060, i: 1.35 },
   channelwood: { color: 0xcfeee6, i: 1.05 },
+  silo: { color: 0x9a86a0, i: 0.55 },
 }
 
 export function atmosphere(id) {

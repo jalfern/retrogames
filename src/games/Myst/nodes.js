@@ -202,7 +202,7 @@ export const NODES = {
     ],
   },
   rocketSilo: {
-    pos: [0, 1.7, 2], yaw: 0, sky: 'dusk', amb: 'drip',
+    pos: [0, 1.7, -1.5], yaw: 0, sky: 'dusk', amb: 'drip',
     caption: 'The rocket silo — a silver ship of an older dream, standing in its shaft of dusk',
     expect: ['rocket'],
     spots: [

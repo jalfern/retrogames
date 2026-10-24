@@ -5,7 +5,8 @@
 // wooden book, the clock tower behind the palm illusion, the star panel that
 // opens Channelwood, four Ages each hiding a red and a blue page, and three
 // endings. All art and audio generated in code; the sea, fire, gears,
-// illusions and starlight never stop moving.
+// illusions and starlight never stop moving. Four endings: Atrus, the two
+// brothers — and the rocket, if you find the note that opens its seam.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
@@ -27,7 +28,7 @@ const SIM_MS = 1000 / 60
 const NODE_IDS = Object.keys(NODES)
 const NODE_IX = Object.fromEntries(NODE_IDS.map((id, i) => [id, i]))
 const GAP = 4000
-const SILO_FOG = new THREE.Color(0x38263e)
+const SILO_FOG = new THREE.Color(0x241a28)
 const SPACE_FOG = new THREE.Color(0x05050f)
 const ATTRACT_WALK = ['dockBeach', 'toLanding', 'toStairs', 'libraryDoor', 'outLibrary', 'backLanding', 'backCliff', 'backDock']
 const attractSpots = () => ATTRACT_WALK
@@ -363,6 +364,13 @@ const MystGame = () => {
         codes: () => ({ seed: gs.seed, ...gs.codes }),
         stars: () => { const out = []; root.traverse((o) => { if (o.userData && o.userData.trueStar != null) out[o.userData.trueStar] = +o.scale.x.toFixed(3) }); return out },
         fresh: (seed) => { gs = freshState(seed); syncStars(); gotoNode('dock'); aim(); return gs.seed },
+        nearRocket: () => {
+          let s = freshState(gs.seed)
+          for (const a of solveScript(s.codes)) { s = dispatch(s, a).state; if (s.flags.obsNote) break }
+          for (const a of [{ t: 'move', id: 'retStoneObs' }, { t: 'move', id: 'retStoneDeck' }, { t: 'move', id: 'retStoneship' }, { t: 'click', id: 'ladderDown' }]) s = dispatch(s, a).state
+          gs = s; gotoNode(gs.node); aim(); hudStamp = -1
+          return { node: gs.node, obsNote: !!gs.flags.obsNote }
+        },
         probe: () => ({ node: gs.node, nodeCount: NODE_IDS.length, flags: Object.keys(gs.flags), pages: Object.keys(gs.pages), placed: gs.placed, ending: gs.ending, ride: gs.ride }),
         rocket: () => ({ ride: gs.ride, rideT: gs.rideT, h: rocketH(gs.ride, gs.rideT), dark: darkAt(gs.ride, gs.rideT) }),
         // Audit every node's framing against its caption: the camera must sit
