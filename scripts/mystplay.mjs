@@ -16,6 +16,19 @@ r.check('boots into attract', p0.ending === null && p0.node === 'dock', `node ${
 const seenNodes = new Set()
 for (let i = 0; i < 14; i++) { seenNodes.add((await probe()).node); await page.waitForTimeout(700) }
 r.check('attract demo tours the island', seenNodes.size >= 3, [...seenNodes].join(','))
+// #1027 — the Spectator shot on the title screen: all four lenses present and
+// each one moving on the clock (a dead or duplicate pane would show here).
+const lensSig = () => page.evaluate(() => [...document.querySelectorAll('canvas[data-attract-vision]')].map((c) => {
+  const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+  let s = 0
+  for (let i = 0; i < d.length; i += 16) s = (s * 31 + d[i] + d[i + 1] * 3 + d[i + 2] * 7) >>> 0
+  return s
+}))
+const l0 = await lensSig()
+await page.waitForTimeout(600)
+const l1 = await lensSig()
+r.check('the attract shows the four Spectator lenses', l0.length === 4, `${l0.length}`)
+r.check('every attract lens is live (moves on the clock)', l0.every((s, i) => s !== l1[i]), `${l0.join('')} -> ${l1.join('')}`)
 
 await page.keyboard.press('Enter')
 await page.waitForTimeout(500)
@@ -74,8 +87,11 @@ const s42 = await p2.evaluate(() => window.__mystTest.stars())
 r.check('the dome stars carry the seeded star ranks', s42[0] === 1.22 && s42[1] === 0.74 && s42[2] === 0.5 && s42[3] === 0.98, s42.join(','))
 await p2.evaluate(() => window.__mystTest.fresh())
 const cNew = await p2.evaluate(() => window.__mystTest.codes())
-const sNew = await p2.evaluate(() => window.__mystTest.stars())
-r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && JSON.stringify(sNew) !== JSON.stringify(s42), `${cNew.seed}/${sNew.join(',')}`)
+// #1027 — "the island redrew" means the locks moved. Compare every lock, not
+// just the stars: two seeds can share a star permutation (1 in 24) and a
+// stars-only comparison false-failed on that coincidence.
+const islandMoved = cNew.safe !== c42.safe || JSON.stringify(cNew.star) !== JSON.stringify(c42.star) || JSON.stringify(cNew.sphere) !== JSON.stringify(c42.sphere) || JSON.stringify(cNew.wheel) !== JSON.stringify(c42.wheel)
+r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && islandMoved, `${cNew.seed}/safe ${c42.safe}->${cNew.safe}`)
 
 // #1014 — drive the star-wheel live: park on the star terrace, open the rings,
 // stand this save's alignment notch by notch on the real state machine, and take
@@ -193,6 +209,27 @@ r.check('a fresh unpinned save redraws the island', cNew.seed !== 42 && JSON.str
   }
   r.check('a walker who knows every Age sees four moving visions', spAll.views.every((v) => v.unlocked) && moved === 4, `${moved}/4 moved`)
   r.check('the Spectator ran with zero page errors', errs5.length === 0, errs5.join(' | '))
+}
+
+// #1027 — phone reach: at a phone portrait viewport the Spectator stacks its
+// four lenses in a single (taller) column rather than two tiny panes side by
+// side, and every lens paints at 2× its on-screen size so the gear teeth, the
+// ship and the star-wheel hold their detail on a low-quality phone screen.
+{
+  const ph = await openGame(browser, { url: `${URL}?seed=42`, hook: '__mystTest', start: true, viewport: { width: 390, height: 844 } })
+  const errsPh = []
+  ph.on('pageerror', (e) => errsPh.push(String(e)))
+  await ph.evaluate(() => window.__mystTest.nearSpectator('all'))
+  await ph.evaluate(() => window.__mystTest.click('spectator'))
+  await ph.waitForTimeout(400)
+  const lens = await ph.evaluate(() => [...document.querySelectorAll('canvas[data-vision]')].map((c) => {
+    const r = c.getBoundingClientRect()
+    return { x: r.x + r.width / 2, back: c.width / (r.width || 1) }
+  }))
+  const cols = new Set(lens.map((l) => Math.round(l.x))).size
+  r.check('on a phone the four lenses stack in one column', lens.length === 4 && cols === 1, `cols ${cols} x=[${lens.map((l) => Math.round(l.x)).join(',')}]`)
+  r.check('every lens paints at 2× its on-screen size (crisp on a phone)', lens.length === 4 && lens.every((l) => l.back > 1.8 && l.back < 2.2), lens.map((l) => l.back.toFixed(2)).join(','))
+  r.check('the phone Spectator ran with zero page errors', errsPh.length === 0, errsPh.join(' | '))
 }
 
 r.exit(browser)

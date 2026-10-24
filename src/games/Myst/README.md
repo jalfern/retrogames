@@ -30,7 +30,15 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   through four glass lenses (#1024): each lens is sealed until its Age's book
   is linked — `spectatorViews(s)` reads the `link_<age>` flags, and #1024
   fixed `link_channelwood`, which no route had ever set (the star-panel solve
-  now fires `link:channelwood` the way the safe fires `link:stoneship`).
+   now fires `link:channelwood` the way the safe fires `link:stoneship`).
+   #1027: the first time you open the sphere with a lens now thawed it fires
+   `thaw:<age>` (first-time only, per save; sealed lenses never sing) — the
+   soundplan answers with a soft per-Age colour note (`THAW_TONES`, a warm-up
+   sweep into each Age's pitch). The panel renders each lens at 2× its
+   on-screen size (crisp gear/ship/wheel detail) and stacks them one column
+   on phones, two on wider screens. The attract title screen carries the four
+   lenses live (all four Ages) as the Spectator shot — the dock tour can never
+   reach the sphere itself, which sits behind Mechanical's door.
   Selenitic's chain: six stepping stones ring ascending pitches (biggest =
   lowest, as in the original) — any wrong stone buzzes and resets, the full
   route grinds the cliff gate open; the throne swivels through eight detents
@@ -98,10 +106,16 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   timed lightning flash (Selenitic), teal swell + low sun + rocking ship
   (Stoneship), forge glow + two meshed gears + rising sparks (Mechanical),
   drifting cloud banks + falls + the star-wheel in silhouette (Channelwood).
-  Every pixel is a pure function of world time `t` — no `Math.random` — and an
-  unlinked age draws a grey sealed churn instead. `mystcheck` replays the
-  painter through a recording ctx stub: same instant must paint the same
-  picture, two instants must differ, sealed must never equal open.
+   Every pixel is a pure function of world time `t` — no `Math.random` — and an
+   unlinked age draws a grey sealed churn instead. `mystcheck` replays the
+   painter through a recording ctx stub: same instant must paint the same
+   picture, two instants must differ, sealed must never equal open. #1027
+   widens the sealed-vs-dim-storm gap so the two read apart on a low-quality
+   phone screen: the sealed pane drops to a near-black neutral floor while the
+   dim Selenitic keeps a clear green floor (a brighter, greener at-rest sky),
+   and the Selenitic lightning stays a brief 160 ms window of its 6.4 s cycle —
+   its flash colour lives only in the Selenitic painter so no second lens
+   strobes in step.
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
   seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
 - Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
@@ -123,7 +137,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses
-npm run mystcheck -- --mutate # the interlocks must be able to fail (45 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (50 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -150,7 +164,11 @@ a landing panel that never sealed with the wheel, a drum that preaches one fixed
 sky to every island, and three rings collapsed to one clunk. Three
 target the Spectator lenses (#1024): a sphere that forgets which ages you
 walked, lenses that stopped showing visions, and a vision frozen outside
-time — each turns the suite red.
+time. Five more target the Spectator polish (#1027): a set of thaw notes that
+collapse to one pitch, a sphere that never sings a thaw, a sealed pane that
+climbs back to a dim-storm brightness, a dim Selenitic storm painted as
+sealed grey, and an attract that loses its Spectator shot — each turns the
+suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:

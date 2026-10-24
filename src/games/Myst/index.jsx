@@ -43,6 +43,7 @@ const MystGame = () => {
   const [singRing, setSingRing] = useState(-1)
   const singRingRef = useRef(-1)
   const visionRefs = useRef({})
+  const attractRefs = useRef({})
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -407,6 +408,14 @@ const MystGame = () => {
           if (cv) drawVision(cv.getContext('2d'), v.age, wt, v.unlocked, cv.width, cv.height)
         }
       }
+      if (screenRef.current === 'attract') {
+        // #1027 — the Spectator shot: all four lenses swim live on the title
+        // screen, so the attract promises what the sphere holds.
+        for (const a of AGE_LIST) {
+          const cv = attractRefs.current[a]
+          if (cv) drawVision(cv.getContext('2d'), a, wt, true, cv.width, cv.height)
+        }
+      }
       renderer.render(scene, camera)
       canvas.style.filter = fade > 0 ? `brightness(${1 - fade})` : 'none'
       if (gs.time !== hudStamp || fade > 0.9) { hudStamp = gs.time; syncHud(gs) }
@@ -674,16 +683,21 @@ const MystGame = () => {
       {hud.panel === 'spectator' && screen === 'play' && (
         <Panel title="THE SPECTATOR — a sphere of other ages" onClose={() => closeHud(false)}>
           <div className="my-2 text-sm min-h-[3rem] text-sky-200">{hud.message}</div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 justify-items-center mb-1">
+          {/* #1027 — a taller single-column stack on phones (portrait), two
+            columns on wider screens. Each lens paints at 2× its on-screen size
+            so the gear teeth, the ship and the wheel hold their detail on a
+            low-quality phone screen. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-2 justify-items-center mb-1">
             {(hud.visions || []).map((v) => (
               <div key={v.age} className="text-center">
                 <canvas
                   ref={(el) => { visionRefs.current[v.age] = el }}
                   data-vision={v.age}
                   data-unlocked={v.unlocked ? '1' : '0'}
-                  width={152}
-                  height={114}
+                  width={304}
+                  height={228}
                   className="block"
+                  style={{ width: 152, height: 114 }}
                 />
                 <div className={`text-[10px] uppercase tracking-widest mt-1 ${v.unlocked ? 'text-amber-200/80' : 'text-zinc-500'}`}>
                   {v.unlocked ? v.age : 'sealed'}
@@ -718,6 +732,21 @@ const MystGame = () => {
       {screen === 'attract' && (
         <div className="absolute inset-0 bg-gradient-to-b from-black/80 via-black/40 to-black/80 flex flex-col items-center justify-center text-center p-6">
           <h1 className="text-6xl font-bold tracking-[0.5em] text-amber-100 drop-shadow-[0_0_18px_rgba(255,190,90,0.6)] mb-8">MYST</h1>
+          {/* #1027 — the Spectator shot: the four lenses, live, on the title
+            screen. Small and dimmed — the title stays the hero. */}
+          <div className="flex gap-2 mb-6 opacity-70">
+            {AGE_LIST.map((a) => (
+              <canvas
+                key={a}
+                ref={(el) => { attractRefs.current[a] = el }}
+                data-attract-vision={a}
+                width={120}
+                height={90}
+                className="block"
+                style={{ width: 60, height: 45 }}
+              />
+            ))}
+          </div>
           <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />
           <p className="text-lg animate-pulse text-amber-300">{PRESS}</p>
         </div>

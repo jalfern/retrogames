@@ -396,7 +396,12 @@ function act(s, spot, ev) {
       const known = AGE_LIST.filter((a) => has(s, `link_${a}`))
       const sealedN = AGE_LIST.length - known.length
       s.message = 'The SPECTATOR: a glass sphere full of slow-turning light. Four lenses swim inside it — a world of green rings, a grey and glassy sea, a forge of iron and fire, a world of waterfalls.' + (known.length ? ` ${known.length} of four are clear to you now: ${known.map((a) => a.toUpperCase()).join(', ')}.${sealedN ? ` The rest churn grey, sealed until you walk them.` : ''}` : ' Ages, all of them — worlds inside books, and every lens still clouded.')
-      ev.push('panel', 'spectator'); break
+      ev.push('panel', 'spectator')
+      // #1027 — a lens that thaws for the first time sings its own colour note,
+      // so the "picture arrives" moment lands. First time only, per save: a
+      // returning glance is silent. Sealed lenses never sing.
+      for (const a of known) { const k = `sawThaw_${a}`; if (!has(s, k)) { s.flags[k] = true; ev.push(`thaw:${a}`) } }
+      break
     }
     // ---- SELENITIC: the sounding path, the sun-and-moon throne, the gear ----
     case 'toneStone': {
