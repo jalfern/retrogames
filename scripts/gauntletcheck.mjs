@@ -542,6 +542,13 @@ console.log('dungeon furniture (#950)')
     // with the quest scoped to four, the deep arches stay bricked (targets past the end)
     ok((LEVELS.slice(0, 4).flatMap((lv) => lv.warps || []).every((w) => w.to >= 4)), 'the four halls hold no live warp (the arcade starts warping deeper in)')
     ok(w4.levelCount === 4, 'levelCount rides the game state for the HUD')
+    const w6 = makeGame(0, 'warrior', { topDown: true, levelCount: 6 })
+    S.loadLevel(w6, 4)
+    w6.monsters = []; w6.gens.forEach((g) => { g.alive = false }); w6.hero.hp = 1e9; w6.deathSpawned = true
+    ok(w5.to >= 6, 'the deep arch targets past a six-maze quest end', `to level ${w5.to + 1}`)
+    w6.hero.x = w5.x + 0.5; w6.hero.y = w5.y + 0.5
+    step(w6, {})
+    ok(w6.level === 4 && !w6.events.some((e) => e.type === 'levelClear' && e.warp !== undefined), 'an arch to a swallowed level stays bricked')
 }
 // sword cannot kill through stone
 {
