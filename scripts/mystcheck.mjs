@@ -3,7 +3,8 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews } from '../src/games/Myst/state.js'
+import { drawVision } from '../src/games/Myst/visions.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, singTicks } from '../src/games/Myst/soundplan.js'
@@ -249,6 +250,48 @@ console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
   const r = dispatch(s, { t: 'click', id: 'spectator' })
   ok(r.state.panelOpen === 'spectator' && r.events.includes('spectator'), 'the sphere opens its panel of other ages')
   ok(!!r.state.flags.spectatorSeen && /green rings/.test(r.state.message), 'three lights swim inside the glass')
+}
+console.log('MYST — the SPECTATOR lenses are live age-visions (#1024)')
+{
+  let s = freshState()
+  ok(spectatorViews(s).every((v) => !v.unlocked), 'before any book is linked, every lens is sealed')
+  ok(JSON.stringify(spectatorViews(s)) === JSON.stringify(spectatorViews(s)), 'spectatorViews is pure — same state, same lenses')
+  s.flags.link_mechanical = true
+  ok(spectatorViews(s).map((v) => `${v.age}${v.unlocked ? 'L' : '-'}`).join(',') === 'selenitic-,stoneship-,mechanicalL,channelwood-', 'a linked age thaws exactly its own lens')
+  const openAt = {}
+  for (const a of solveScript(s.codes)) {
+    s = dispatch(s, a).state
+    spectatorViews(s).forEach((v) => { if (v.unlocked && openAt[v.age] === undefined) openAt[v.age] = s.time })
+  }
+  ok(Object.keys(openAt).length === 4, 'the winning route thaws all four lenses')
+  ok(openAt.mechanical <= openAt.selenitic && openAt.mechanical <= openAt.stoneship && openAt.mechanical <= openAt.channelwood, 'Mechanical — the age the sphere stands in — clears first')
+}
+{ // the lens painter: deterministic paint, every scene answers to the clock
+  const OPS = ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']
+  function recCtx() {
+    const ops = []
+    const num = (x) => (typeof x === 'number' ? x.toFixed(3) : String(x))
+    const grad = { addColorStop: (...a) => ops.push('stop:' + a.map(num).join(',')) }
+    const ctx = { ops }
+    for (const m of OPS) ctx[m] = (...a) => ops.push(m + ':' + a.map(num).join(','))
+    ctx.createLinearGradient = (...a) => { ops.push('lin:' + a.map(num).join(',')); return grad }
+    ctx.createRadialGradient = (...a) => { ops.push('rad:' + a.map(num).join(',')); return grad }
+    for (const p of ['fillStyle', 'strokeStyle']) {
+      let v = ''
+      Object.defineProperty(ctx, p, { get: () => v, set: (x) => { v = x; ops.push(p + ':' + x) } })
+    }
+    ctx.lineWidth = 0
+    return ctx
+  }
+  const run = (age, t, un) => { const c = recCtx(); drawVision(c, age, t, un, 152, 114); return c.ops.join('|') }
+  ok(run('mechanical', 1, true).includes('clip:'), 'each vision is painted through a glass lens')
+  for (const age of ['selenitic', 'stoneship', 'mechanical', 'channelwood']) {
+    ok(run(age, 1, true) === run(age, 1, true), `${age} lens paints the same picture at the same instant`)
+    ok(run(age, 1, true) !== run(age, 9.25, true), `${age} lens answers to the world clock`)
+    ok(run(age, 2, false) === run(age, 2, false) && run(age, 2, false) !== run(age, 2, true), `${age} sealed churn is not its vision`)
+  }
+  ok(run('selenitic', 1, true) !== run('stoneship', 1, true) && run('mechanical', 1, true) !== run('channelwood', 1, true), 'no two Ages share a vision')
+  ok(run('nowhere', 1, true) === run('nowhere', 1, false), 'an unknown age still only shows the sealed churn')
 }
 { // sphere puzzle
   let s = { ...freshState(31415), node: 'selenitic' }
@@ -668,6 +711,7 @@ if (process.argv.includes('--mutate')) {
   const ST = 'src/games/Myst/state.js'
   const ND = 'src/games/Myst/nodes.js'
   const CD = 'src/games/Myst/codes.js'
+  const VI = 'src/games/Myst/visions.js'
   const MUTANTS = [
     ['attract never cycles (one message)', MF,
       `    'CYAN · 1993 · REBUILT IN CODE',\n    'Living books · two imprisoned brothers',\n    'Four Ages hidden in plain sight',\n    'No map. No hints. Take notes, as in 1993.',\n    'Click what you see · arrows step and turn',\n`,
@@ -795,6 +839,15 @@ if (process.argv.includes('--mutate')) {
     ['all three wheel rings clunk at one pitch', SP,
       `export const WHEEL_TONES = [98, 131, 165]`,
       `export const WHEEL_TONES = [98, 98, 98]`],
+    ['the Spectator forgets which ages you walked', ST,
+      "return AGE_LIST.map((a) => ({ age: a, unlocked: has(s, `link_${a}`) }))",
+      "return AGE_LIST.map((a) => ({ age: a, unlocked: false }))"],
+    ['the lenses stop showing visions and only churn', VI,
+      `if (unlocked && SCENES[age]) SCENES[age](ctx, w, h, t)`,
+      `if (false && SCENES[age]) SCENES[age](ctx, w, h, t)`],
+    ['a vision freezes outside time', VI,
+      `if (unlocked && SCENES[age]) SCENES[age](ctx, w, h, t)`,
+      `if (unlocked && SCENES[age]) SCENES[age](ctx, w, h, 0)`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

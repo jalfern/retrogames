@@ -156,7 +156,7 @@ export function dispatch(st, a) {
       const i = a.i
       if (a.pad === 'safe') { const d = s.safeDial.split(''); d[i] = String(a.v != null ? ((a.v % 10) + 10) % 10 : (Number(d[i]) + (a.step || 1)) % 10); s.safeDial = d.join(''); ev.push('dial'); if (s.safeDial === s.codes.safe && !has(s, 'safeOpen')) { s.flags.safeOpen = true; s.panelOpen = null; s.message = 'The safe swings open. Inside: a book bound in blue, and cold sea-light leaking from its pages.'; ev.push('safeOpen', 'link:stoneship'); s.flags.link_stoneship = true } }
       if (a.pad === 'sphere') { const vv = a.v != null ? a.v : a.step; s.sphereDial[i] = vv != null ? ((vv % 4) + 4) % 4 : ((s.sphereDial[i] + 1) % 4); ev.push('dial'); if (s.sphereDial.every((v, j) => v === s.codes.sphere[j]) && !has(s, 'sphereSolved')) { s.flags.sphereSolved = true; s.panelOpen = null; s.message = 'The tones stack in perfect order — the sphere hums, and its stone lid grinds open.'; ev.push('sphereSolved') } }
-      if (a.pad === 'star') { const vv = a.v != null ? a.v : a.step; s.starDial[i] = vv != null ? Math.max(1, Math.min(4, vv)) : (s.starDial[i] % 4) + 1; ev.push('dial'); if (s.starDial.every((v, j) => v === s.codes.star[j]) && !has(s, 'starPanel')) { s.flags.starPanel = true; s.panelOpen = null; s.message = 'The symbols match the dome. Deep in the rock, something heavy slides free.'; ev.push('starSolved') } }
+      if (a.pad === 'star') { const vv = a.v != null ? a.v : a.step; s.starDial[i] = vv != null ? Math.max(1, Math.min(4, vv)) : (s.starDial[i] % 4) + 1; ev.push('dial'); if (s.starDial.every((v, j) => v === s.codes.star[j]) && !has(s, 'starPanel')) { s.flags.starPanel = true; s.flags.link_channelwood = true; s.panelOpen = null; s.message = 'The symbols match the dome. Deep in the rock, something heavy slides free.'; ev.push('starSolved', 'link:channelwood') } }
       if (a.pad === 'wheel') {
         // #1014 — one notch per click, wrapping; each ring answers with its own
         // weight (outer ring, deeper clunk). The alignment is this save's —
@@ -393,8 +393,9 @@ function act(s, spot, ev) {
     }
     case 'spectator': {
       s.flags.spectatorSeen = true; s.panelOpen = 'spectator'
-      const known = AGE_LIST.filter((a) => a !== 'mechanical' && has(s, `link_${a}`))
-      s.message = 'The SPECTATOR: a glass sphere full of slow-turning light. Three lights swim inside it — a world of green rings, a grey and glassy sea, a world of waterfalls.' + (known.length ? ` You have walked in ${known.map((a) => a.toUpperCase()).join(', ')}.` : ' Ages, all of them. Worlds inside books.')
+      const known = AGE_LIST.filter((a) => has(s, `link_${a}`))
+      const sealedN = AGE_LIST.length - known.length
+      s.message = 'The SPECTATOR: a glass sphere full of slow-turning light. Four lenses swim inside it — a world of green rings, a grey and glassy sea, a forge of iron and fire, a world of waterfalls.' + (known.length ? ` ${known.length} of four are clear to you now: ${known.map((a) => a.toUpperCase()).join(', ')}.${sealedN ? ` The rest churn grey, sealed until you walk them.` : ''}` : ' Ages, all of them — worlds inside books, and every lens still clouded.')
       ev.push('panel', 'spectator'); break
     }
     // ---- SELENITIC: the sounding path, the sun-and-moon throne, the gear ----
@@ -448,6 +449,11 @@ function act(s, spot, ev) {
 
 export function isWin(st) { return st.ending === 'atrus' }
 export function pagesTotal(st) { return Object.keys(st.pages).length }
+// #1024 — which ages the SPECTATOR is showing as live visions: a lens thaws
+// when its age's link is discovered (`link_<age>`), sealed before that.
+export function spectatorViews(s) {
+  return AGE_LIST.map((a) => ({ age: a, unlocked: has(s, `link_${a}`) }))
+}
 export function currentSpots(st) {
   const n = NODES[st.node]
   return n.spots

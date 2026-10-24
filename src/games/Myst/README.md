@@ -26,7 +26,11 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   landing jams the control-room door, so send it down before the release works;
   inside, the door bangs shut, floor plates hold door/cage only while pressed,
   and the latch lever freezes a pressed plate so you can walk out — the
-  original's control-room puzzle. The SPECTATOR sphere shows the other Ages.
+  original's control-room puzzle. The SPECTATOR sphere shows the other Ages
+  through four glass lenses (#1024): each lens is sealed until its Age's book
+  is linked — `spectatorViews(s)` reads the `link_<age>` flags, and #1024
+  fixed `link_channelwood`, which no route had ever set (the star-panel solve
+  now fires `link:channelwood` the way the safe fires `link:stoneship`).
   Selenitic's chain: six stepping stones ring ascending pitches (biggest =
   lowest, as in the original) — any wrong stone buzzes and resets, the full
   route grinds the cliff gate open; the throne swivels through eight detents
@@ -89,6 +93,15 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
    lintels and buttresses silently eat it. Stoneship (#996) is three static
    sibling views — pier, quarterdeck (the bare mast is the landmark) and the
    ridge dome — joined by free `to:` travel, with no live mechanism to drive.
+- `visions.js` — the SPECTATOR's age-visions (#1024): a circular glass pane
+  painted on a 2D canvas per Age — green storm + dome + sounding rings + a
+  timed lightning flash (Selenitic), teal swell + low sun + rocking ship
+  (Stoneship), forge glow + two meshed gears + rising sparks (Mechanical),
+  drifting cloud banks + falls + the star-wheel in silhouette (Channelwood).
+  Every pixel is a pure function of world time `t` — no `Math.random` — and an
+  unlinked age draws a grey sealed churn instead. `mystcheck` replays the
+  painter through a recording ctx stub: same instant must paint the same
+  picture, two instants must differ, sealed must never equal open.
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
   seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
 - Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
@@ -109,9 +122,9 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 
 ## Verify
 ```bash
-npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel
-npm run mystcheck -- --mutate # the interlocks must be able to fail (38 mutants)
-npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel live
+npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses
+npm run mystcheck -- --mutate # the interlocks must be able to fail (45 mutants)
+npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
 ```
@@ -134,7 +147,10 @@ instead of ticking — the gate checks rideT, not just the events), and a
 sound-book whose pages all echo one stone. Five target the star-wheel (#1014):
 a wheel that opens at any alignment, a hub cover that stopped needing the stars,
 a landing panel that never sealed with the wheel, a drum that preaches one fixed
-sky to every island, and three rings collapsed to one clunk.
+sky to every island, and three rings collapsed to one clunk. Three
+target the Spectator lenses (#1024): a sphere that forgets which ages you
+walked, lenses that stopped showing visions, and a vision frozen outside
+time — each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -172,7 +188,11 @@ sky to every island, and three rings collapsed to one clunk.
   observatory drum's seeded sky (`codes.wheel`), the Age's linking book sealed
   inside the hub until they stand true — as in the original, where Channelwood
   kept its own way home.
-- The Spectator is a still panel listing the Ages, not a rendered age-vision.
+- **CLOSED by #1024** — the Spectator is four live glass lenses, one per
+  Age: the green storm with its rings and flash, the teal sea with the
+  rocking ship, the forge with meshed gears and sparks, the cloud world
+  with the wheel — every picture a pure function of the world clock, and
+  each lens stays a sealed grey churn until you link that Age's book.
 - Ages' books link straight from their home node; there is no linking-book
   animation with the starfield travel.
 - The ocean is one shared plane. Selenitic's grass-covered grey dome shape is
