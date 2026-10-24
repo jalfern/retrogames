@@ -1,71 +1,73 @@
-# STATE — 2026-10-24 forge session 9 (MYST's sphere learned to dream)
+# STATE — 2026-10-24 forge session 11 (SHIPPED: MYST linking-book starfield)
 
 ## Shipped this session
-- **#1024 → main (PR #1026 squash dc137b2)** — **MYST: Spectator age-visions**,
-  live at `https://www.jalfern.com/retrogames/myst`.
-  - Honest idle pick: Myst README gap #0 (the sphere was a still list).
-  - Game code: new `src/games/Myst/visions.js` — four circular glass lenses,
-    one per Age, painted at runtime: Selenitic's green storm (dome, sounding
-    rings, timed lightning), Stoneship's teal swell (low sun, rocking ship),
-    Mechanical's forge (glow, two meshed gears, sparks), Channelwood's cloud
-    world (drifting banks, falls, star-wheel silhouette). Every pixel a pure
-    function of world time; unlinked Ages churn sealed grey. Pure
-    `spectatorViews(s)` reads the `link_<age>` flags; RAF paints while the
-    panel is open.
-  - **Bug fixed en route**: `link_channelwood` was never set by any route —
-    the star-panel solve now fires `link:channelwood` (like the safe's
-    `link:stoneship`), so HUD + sphere finally know the fourth Age.
-  - Harness: mystcheck **378/0** (+20: purity, seal order, monotonic thaw,
-    painter determinism via recording-ctx stub), `--mutate` **45/45 die** (+3:
-    forgetful sphere, no-vision lenses, frozen vision); mystplay **37/37**
-    live (+8: sealed = zero-chroma pixels inside the glass; linked lenses
-    provably move between clock instants); mystviewcheck 85/85; lint + build
-    green. Prod content-verified: chunk index-BoD0m1ya.js carries
-    `data-vision` on www.jalfern.com.
-- Parallel lanes while we ran: QA shipped **CDHD ruts (#1015 → PR #1025)**
-  and claimed **Myst star-wheel feel pass (#1022, `building-qa`)** — QA is
-  INSIDE Myst now.
-- Filed **#1027** (QA lane: Spectator polish — phone lens scale, sealed-vs-
-  dim-storm contrast, per-age thaw sound, flash pacing, attract shot).
+- **MYST #1031 — linking-book starfield travel** (PR #1032, squash to main
+  at 0a144ce; prod verified at https://jalfern.com/retrogames/myst — the
+  starfield chunk `index-CTvnE9cN.js` is live on www.jalfern.com).
+  Touching an Age book no longer cuts: page cover rushes up (Age ink +
+  double-rule border), a seam of light opens, ~2.9 s (175 ticks) of swirling
+  blue-white stars, then the Age resolves out of them. Six touch-points link
+  (`link.js`): tower cogs book → Mechanical, fireplace → Selenitic, safe →
+  Stoneship, cave wood door → Channelwood, plus Channelwood's hub book and
+  landing panel (the Age keeps its own way home — and its own return flight).
+  Keys + pad are muted mid-flight; `state.link/linkT` is pure sim drained by
+  the loop's tick; the node swaps under the opaque cover and the overlay
+  clears exactly on the arrival tick.
+- Gates: mystcheck 439 pass; 8 new mutants (59/59 die). mystplay 48/48 incl.
+  7 new live leap checks (overlay pixel density, mid-flight mute, resolve).
+  Visual proof via shot at cover/seam/swirl/resolve. #1031 shipped+closed;
+  QA follow-up filed as #1035 (feedback): other Ages' return panels still
+  cut, brothers-book trap pulls still cut, seam wobble, arrival accel,
+  cover SFX, DPR crispness.
+- QA lane shipped #1034 (Selenitic sculpted dome) beside us this session.
 
 ## Next goal
-- The idle picker's only unowned flagship gap left is **Myst gap #1: "Ages'
-  books link straight from their home node; there is no linking-book
-  animation with the starfield travel."** — but Myst is QA-held (#1022
-  `building-qa`), so a builder must NOT touch it this instant.
-- Next session: re-run the picker. If #1022 has shipped (Myst free), file
-  `POLISH — MYST: linking-book starfield travel animation` (game-queue +
-  lane:games), claim, build it. If QA still holds Myst and the board has no
-  claimable `next`/`steer`/queue item, every flagship gap is owned or
-  QA-held → **STOP is legal** (say so; don't invent work).
+- The honest picker (`scripts/lib/idle.mjs`, fresh from the post-merge
+  READMEs) returns **null**: SSX/Emberwood/COMET DRIFT HD have zero open gaps
+  and Myst's two README gaps are now CLOSED (#1031 linking books, #1034 dome
+  sculpt by QA). #1033/#1034 shipped while we merged. So: unless Jon files a
+  `steer`/`next` or the board gains a claimable `game-queue` item, **STOP is
+  legal** for the next session (rule: only when every flagship gap is owned —
+  they are). If QA files new Myst `feedback` (#1035 is theirs), the QA lane
+  owns it; the builder stays clear.
 
 ## Board / harness status
-- main = dc137b2; main-ok green; static SUCCESS (required check only);
-  Vercel prod verified.
-- Worktrees: main checkout `~/Dev/retrogames` detached — refresh it to
-  origin/main (`git fetch && git checkout --detach origin/main`).
-  `retrogames-forge-myst-spectator` (detached dc137b2) — prune with the
-  standing list.
+- main = ac6d004; `main-ok` green; static is the only required check; Vercel
+  prod healthy (MYST starfield link verified live).
+- Open: #1035 feedback (MYST linking polish, lane:games — QA's to take),
+  #838 epic unlabeled (not claimable), #737 waiting-jon, #549 parked.
+  #1031 shipped+closed; #1033 (dome) shipped+closed by QA via #1034.
+- This checkout detached at origin/main, clean (STATE.md committed by design —
+  a game merged this session). Lane worktree
+  `retrogames-forge-myst-linkbooks` removed; branch deleted.
 
 ## New harness lessons (this session)
-- **A pixel discriminator must exclude shared chrome.** Brightness failed the
-  sealed/linked test because the brass rim + specular sweep light every pane
-  equally; judge *chroma inside* the lens (max−min > 24, r < 0.82·R), never
-  brightness, when frames share a border.
-- **Thin features starve sparse samples.** A 2px arc at stride-92px hit ~4
-  pixels — flaky lit-counts. Stride 4px made every count agree 4/4.
-- **Link flags are a contract every consumer keeps.** Channelwood was a fully
-  walkable Age whose `link_` flag no code ever set — invisible to the HUD all
-  along. Grep `link_` assignments whenever an Age's route changes.
-- **`gh pr merge --delete-branch` flips the worktree onto local `main`** —
-  re-detach immediately (rule, and delete the stray local `main`).
+- **An envelope takes ELAPSED, not countdown.** `linkEnvelope(gs.linkT)`
+  (a remaining-ticks counter) inverted the whole fade — the early screenshots
+  showed the world through a "supposedly opaque" cover. Pass
+  `LINK_TICKS - gs.linkT`. Screenshotting every phase caught what 439 pure
+  gates could not: the gates defined envelope on elapsed, the caller passed
+  remaining, and both agreed with themselves.
+- **Dev hooks that jump state must clear transient sim fields.** The solver
+  parks left `link='stoneship'` stranded (the script never ticks it), so the
+  mid-flight key guard blocked the rocket saddle in mystplay. goto/nearWheel/
+  nearRocket/nearSpectator now zero link/linkT like solve() does.
+- **The RAF loop must actually drive new transient states.** Adding a tick
+  drain to dispatch is not enough — the loop only dispatched `tick` during the
+  rocket ride. `if (gs.link) dispatch(gs,{t:'tick'})` in the sim step or the
+  flight never ends.
+- **Prod verification paths:** apex `/retrogames/myst` answers
+  "Redirecting..." and www+slash 404s; the SPA lives at
+  `www.jalfern.com/retrogames/myst` (no slash). Games are code-split — the
+  new string is NOT in the entry chunk; grep the lazy chunks referenced by
+  the entry (`./index-*.js` refs) for a marker like `data-linkfx`.
 
 ## Housekeeping owed
-- Prune when idle: standing list (momentum-courses, iphone-controller, ssx-*,
-  emberwood-*, comet-hd-*, coral-reef, people-sim, campfire-670,
-  forge-model-library, qa-863*, qa-973*) + forge-myst-spectator + detached
-  leftovers.
-- No drive-id renames this session — pre-#1026 replays still valid.
+- Remote `forge/*` orphans (campfire-670, comet-hd-fallback,
+  emberwood-grace/sprites/wyrm-tail, iphone-controller,
+  ssx-cpu-riders-620/salis-arm) — deletion candidates once Jon or the warden
+  confirms nothing is owed. Not deleted this session.
+- No drive-id renames — replays remain valid.
 
 ## Open questions
-- None (#605: nothing filed this session).
+- None (#605: nothing filed — the build followed the README gap verbatim).
