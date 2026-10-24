@@ -110,7 +110,7 @@ export const SCREENS = {
         chests: [],
         npcs: [
             { id: 'shop', kind: 'shop', x: 5, y: 1, msg: 'WELCOME TO THE EMBER SHOP, TRAVELER.',
-                wander: [[5, 1], [6, 1], [6, 2], [5, 2], [4, 2], [4, 1]] },
+                wander: [[5, 1], [6, 1], [7, 1], [8, 1], [8, 2], [9, 2], [9, 1]] },
             { id: 'colporter', kind: 'shop', x: 2, y: 9, requires: 'blade', msg: 'HMPH. THE BLADE SUITS YE. SO DO ME WARES.',
                 wander: [[2, 9], [1, 9], [2, 9], [2, 8], [2, 9], [3, 9]] },
             { id: 'elder', kind: 'oldman', x: 12, y: 8, msg: 'THE CINDER WYRM SLEEPS BENEATH THE SHRINE. ITS SCALECLOAK SHRUGS OFF STEEL — FIRE AN ARROW INTO ITS OPENING MAW TO STAGGER IT, THEN STRIKE.',
