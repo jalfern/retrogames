@@ -292,11 +292,12 @@ export const NODES = {
   },
   chanWheel: {
     pos: [0, 3.6, -56], yaw: 0, sky: 'channelwood', amb: 'wind',
-    caption: 'The star terrace — the great stone wheel turns above the head of the channels',
+    caption: 'The star terrace — the great stone wheel turns above the channels, its housing cut with a single groove',
     expect: ['starWheel'],
     spots: [
       { id: 'retChanWheel', label: 'down off the float', yaw: 180, w: 50, h: 36, to: 'chanChannels' },
-      { id: 'starWheel', label: 'the great stone star', yaw: 0, w: 40, h: 34, act: 'starWheel' },
+      { id: 'starWheel', label: 'the great stone star — spoke handles within reach', yaw: 0, w: 40, h: 34, act: 'wheelTurn' },
+      { id: 'gearChan', label: 'brass glinting inside the wheel-shelter', yaw: -32, w: 22, h: 22, act: 'takeGearChan', gone: 'gearChannelwood', need: 'wheelBite', needMsg: 'The shelter lid is shut; a stone lock keyed to the axle holds it thrown. The star-wheel above governs it.' },
       { id: 'pageChannelwoodRed', label: 'a red page in the wheel shelter', yaw: -50, w: 24, h: 24, act: 'takePage', page: 'red:channelwood', gone: 'pageRed_channelwood' },
       { id: 'lookFalls2', label: 'the falls, far below', yaw: 30, w: 40, h: 26, msg: 'From the terrace the channels are dark ribbons sewing the island shut, all of them running to the lip.' },
     ],
