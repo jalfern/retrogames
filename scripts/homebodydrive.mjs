@@ -1,6 +1,6 @@
 // homebodydrive.mjs — drive HOMEBODY in headless Chrome with real key/tap events.
 // start, play, command, die, restart; drawn frame must follow logical state.
-import { launch, requireDevServer, openGame } from './scripts/lib/harness.mjs'
+import { launch, requireDevServer, openGame } from './lib/harness.mjs'
 
 const BASE = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/homebody`
 let pass = 0, fail = 0

@@ -25,6 +25,20 @@ export const WORK_START = 8
 export const WORK_END = 17
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
+export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
+
+// Per-need satisfaction signature: a distinct frequency, timbre and short note
+// sequence (crunch / snooze / giggle / chatter / splash) plus an optional noise
+// texture, so satisfying hunger never sounds like topping off energy. Consumed
+// by the shell's handleEvents; a pure data table so peoplecheck can prove the
+// five are actually distinct.
+export const SFX = {
+    hunger: { f: 660, type: 'square', seq: [1, 1.5, 1.25], noise: 0.07 },   // crunch
+    energy: { f: 330, type: 'sine', seq: [1, 0.75, 0.5] },                   // snooze (falling)
+    fun: { f: 523, type: 'triangle', seq: [1, 1.26, 1.5, 2] },               // giggle (arpeggio)
+    social: { f: 700, type: 'triangle', seq: [1, 1.5, 1, 1.5] },            // chatter (alternating)
+    bladder: { f: 600, type: 'sine', seq: [1, 0.66], noise: 0.06 },          // splash
+}
 
 // ---------------------------------------------------------------- map --------
 // . grass   p path   F house floor   # wall   D door/gate (walkable)
@@ -106,7 +120,7 @@ const person = (name, r, c, hue, worksOn) => ({
     faintT: 0, redT: {},  // per-need seconds spent fully red
     workedToday: false, working: false,
     mood: 1, walkPhase: 0, face: 1,
-    chatT: 0,
+    chatT: 0, alarmT: 0, wasRed: {},
 })
 
 export function newRun(seed) {
@@ -618,6 +632,7 @@ export function advance(s, dt) {
 
     for (const p of s.people) {
         p.mood = avg(p)
+        if (p.alarmT > 0) p.alarmT = Math.max(0, p.alarmT - simDt)
         if (p.working) {
             if (s.hour >= WORK_END - 1e-9) endWork(s, p)
             continue
@@ -635,6 +650,18 @@ export function advance(s, dt) {
         // emergencies: only PHYSICAL needs unattended collapse into a faint
         // (sad and bored is life, not death — like the original)
         const asleep = !!(p.use && p.use.def.id === 'bed')
+        // any need crossing into red raises a one-shot alarm pulse on the mood gem
+        // (advisory only — collapse is still governed by PHYS redT below)
+        if (asleep) { for (const n of NEEDS) p.wasRed[n] = false }
+        else {
+            for (const n of NEEDS) {
+                if (p.needs[n] <= RED_AT && !p.wasRed[n]) {
+                    p.wasRed[n] = true
+                    p.alarmT = 1.3
+                    s.events.push({ t: 'redcross', need: n, name: p.name })
+                } else if (p.needs[n] > RED_AT + 0.03) p.wasRed[n] = false
+            }
+        }
         for (const n of PHYS) {
             if (asleep) { p.redT[n] = 0; continue }
             if (p.needs[n] <= 0.02) {

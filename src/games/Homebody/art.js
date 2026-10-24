@@ -8,7 +8,7 @@
 
 import {
     W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP,
-    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT,
+    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT,
 } from './sim.js'
 
 const P = {
@@ -238,6 +238,13 @@ export function drawPerson(ctx, p, t, active) {
     ctx.closePath(); ctx.fill()
     ctx.fillStyle = 'rgba(255,255,255,0.5)'
     ctx.fillRect(gx - 1, gy - 3, 1.6, 3)
+    // alarm pulse: a need just crossed red — ripple the gem
+    if (p.alarmT > 0) {
+        const pulse = 0.5 + 0.5 * Math.sin(t * 18)
+        ctx.strokeStyle = `rgba(255,90,70,${((0.4 + 0.5 * pulse) * Math.min(1, p.alarmT)).toFixed(3)})`
+        ctx.lineWidth = 1.6
+        ctx.beginPath(); ctx.arc(gx, gy, 7 + pulse * 2.5, 0, 7); ctx.stroke()
+    }
     // working tie peek / interaction ring
     if (p.use) {
         const frac = Math.min(1, p.use.t / (p.use.def.id === 'bed' ? 20 : p.use.dur))
@@ -341,12 +348,16 @@ export function drawPanel(ctx, s, t) {
         y += 16
         for (const n of NEEDS) {
             needIcon(ctx, PANEL_X + 14, y + 4, NEED_ICON[n], needColor(p.needs[n]))
-            ctx.fillStyle = P.barBg; ctx.fillRect(PANEL_X + 26, y, 76, 7)
-            ctx.fillStyle = needColor(p.needs[n]); ctx.fillRect(PANEL_X + 27, y + 1, Math.max(2, 74 * p.needs[n]), 5)
+            ctx.fillStyle = P.barBg; ctx.fillRect(PANEL_X + 26, y, 64, 7)
+            ctx.fillStyle = needColor(p.needs[n]); ctx.fillRect(PANEL_X + 27, y + 1, Math.max(2, 62 * p.needs[n]), 5)
             if (p.needs[n] <= 0.12 && Math.floor(t * 3) % 2 === 0) {
                 ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 1
-                ctx.strokeRect(PANEL_X + 26.5, y - 0.5, 76, 7)
+                ctx.strokeRect(PANEL_X + 26.5, y - 0.5, 64, 7)
             }
+            ctx.fillStyle = p.needs[n] <= RED_AT ? '#ff8a7c' : '#cfe0f2'
+            ctx.font = 'bold 7px monospace'; ctx.textAlign = 'right'
+            ctx.fillText(String(Math.round(p.needs[n] * 100)), PANEL_X + 100, y - 1)
+            ctx.textAlign = 'left'
             y += 10
         }
         y += 8
