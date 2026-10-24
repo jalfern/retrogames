@@ -12,6 +12,8 @@ import { newRoom, join, leave, relay, rosterOf, MAX_MSG } from '../relay/core.js
 import { createPadHost, createPadClient, encodePadPacket, decodePadPacket, packSig, makeSigInbox, STALE_MS, PING_EVERY_MS, LINK_CAP, RESEAT_BASE_MS, RESEAT_TRIES } from '../src/utils/padlink.js'
 import { slotPad, clearAllSlots } from '../src/utils/onePad.js'
 import { createRecorder, validate, PING_EVERY_TICKS } from '../src/utils/recording.js'
+import jsQR from 'jsqr'
+import { encode as qrEncode, dataCodewords, codewords, formatBits, joinUrl } from '../src/utils/qrcode.js'
 
 let pass = 0
 const ok = (name, fn) => {
@@ -442,12 +444,83 @@ async function scenarioReseat() {
     await flush()
 }
 
+async function scenarioQr() {
+    // QR join code (#926). Three layers of proof:
+    //  1. byte-exact golden of the pre-mask data+EC codewords (mask-independent;
+    //     guards the byte-mode count/nibble packing + RS parity — the parts a
+    //     scanner can't tell us were already right vs a regression).
+    //  2. a full jsQR decode round-trip across codes — the real scannability
+    //     proof: catches any finder/timing/alignment/dark/format/zigzag/mask
+    //     placement bug (the v3 last-column-pair bug that stalled #926).
+    //  3. guards: v-selection boundaries and the too-long fallback.
+    const GOLDEN = 'https://jalfern.com/retrogames/pad?room=ABCD'
+    const VER3 = { v: 3, size: 29, cw: 70, ec: 15, align: [6, 22] }
+    ok('QR data codewords are byte-exact (byte-mode count + nibble packing)', () => {
+        assert.equal(Buffer.from(dataCodewords(GOLDEN, VER3)).toString('hex'),
+            '42c68747470733a2f2f6a616c6665726e2e636f6d2f726574726f67616d65732f7061643f726f6f6d3d414243440ec11ec11ec11ec11ec')
+    })
+    ok('QR full codewords append the exact RS-L parity', () => {
+        assert.equal(Buffer.from(codewords(GOLDEN, VER3)).toString('hex'),
+            '42c68747470733a2f2f6a616c6665726e2e636f6d2f726574726f67616d65732f7061643f726f6f6d3d414243440ec11ec11ec11ec11ec2a00561260f43913fb049274b724a4')
+    })
+    ok('QR format info BCH(mask) matches the spec for EC-L', () => {
+        assert.equal(formatBits(0).toString(2).padStart(15, '0'), '111011111000100')
+        assert.equal(formatBits(5).toString(2).padStart(15, '0'), '110001100011000')
+    })
+
+    // rasterise a module grid into an RGBA buffer jsQR can read (quiet zone +
+    // scale), then decode. No canvas, no Chrome — pure array math.
+    const decode = (res, scale = 4, quiet = 4) => {
+        const n = res.size
+        const dim = (n + quiet * 2) * scale
+        const data = new Uint8ClampedArray(dim * dim * 4).fill(255)
+        for (let r = 0; r < n; r++) {
+            for (let c = 0; c < n; c++) {
+                if (!res.modules[r][c]) continue
+                for (let dy = 0; dy < scale; dy++) {
+                    for (let dx = 0; dx < scale; dx++) {
+                        const idx = (((r + quiet) * scale + dy) * dim + (c + quiet) * scale + dx) * 4
+                        data[idx] = 0; data[idx + 1] = 0; data[idx + 2] = 0; data[idx + 3] = 255
+                    }
+                }
+            }
+        }
+        const out = jsQR(data, dim, dim)
+        return out && out.data
+    }
+
+    // boundary codes: '9999' and 'WXYZ' hit the ends of the CODE_ALPHABET
+    // (no I/O/0/1), a custom relay override grows the payload.
+    const cases = ['ABCD', 'K7M2', '9999', 'WXYZ', 'AAAA', 'HJKL']
+    for (const code of cases) {
+        const url = joinUrl(code)
+        ok(`QR round-trips the join URL for code ${code} (jsQR decode)`, () => {
+            assert.equal(decode(qrEncode(url)), url)
+        })
+    }
+    ok('QR round-trips a relay-overridden join URL (dev long payload)', () => {
+        const url = joinUrl('ABCD', 'wss://relay.example/room')
+        const res = qrEncode(url)
+        assert.ok(res, 'payload must still fit v1..4-L')
+        assert.equal(decode(res), url)
+    })
+
+    ok('QR picks the smallest version that fits (short=v1, 44B=v3)', () => {
+        assert.equal(qrEncode('PAD123').size, 21)          // v1 (17B) holds this
+        assert.equal(qrEncode(joinUrl('ABCD')).size, 29)    // 44B -> v3
+    })
+    ok('QR refuses payloads past v4-L (caller falls back to the text code)', () => {
+        assert.equal(qrEncode('x'.repeat(79)), null)
+    })
+}
+
 async function main() {
     console.log('padlinkcheck — link-pad spine')
     await scenarioTwoPhones()
     await scenarioHostless()
     await scenarioRate()
     await scenarioReseat()
+    await scenarioQr()
     console.log(`padlinkcheck: ${pass} passed`)
     if (process.exitCode) console.error('padlinkcheck: RED')
     else console.log('padlinkcheck: green')

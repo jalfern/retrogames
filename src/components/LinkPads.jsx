@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { createPadHost } from '../utils/padlink.js'
 import { makeHostPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.js'
+import { encode as qrEncode, joinUrl, toSvgPath } from '../utils/qrcode.js'
 
 // LINK PADS host glue (#893): the game screen half of iPhone-as-controller.
 // Opens a room over the relay, watches phones join at /retrogames/pad, and
@@ -15,10 +16,23 @@ import { makeHostPeer, makeTransport, RELAY_DEFAULT } from '../utils/linkPeers.j
 // just keeps riding the relay, and the pill says RELAY.
 
 const LinkPads = ({ secondAction }) => {
-    const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [] })
+    const [ui, setUi] = useState({ open: false, phase: 'idle', code: '', pads: [], relay: '' })
     const hostRef = useRef(null)
     const secondRef = useRef(secondAction)
     useEffect(() => { secondRef.current = secondAction }, [secondAction])
+
+    // Runtime QR of the exact join URL the phone needs (#926) — one camera-tap
+    // instead of typing the 4-letter code. Kept mask-deterministic so the same
+    // code always renders the same grid.
+    const qr = useMemo(() => {
+        if (!ui.code) return null
+        try {
+            const res = qrEncode(joinUrl(ui.code, ui.relay))
+            return res ? toSvgPath(res) : null
+        } catch {
+            return null
+        }
+    }, [ui.code, ui.relay])
 
     const syncUi = useCallback((snapshot) => {
         setUi((prev) => ({ ...prev, ...snapshot }))
@@ -28,7 +42,8 @@ const LinkPads = ({ secondAction }) => {
     const open = useCallback(() => {
         if (hostRef.current) return
         const q = new URLSearchParams(window.location.search)
-        const relay = (q.get('relay') || RELAY_DEFAULT).replace(/^http/, 'ws')
+        const relayParam = q.get('relay') || ''
+        const relay = (relayParam || RELAY_DEFAULT).replace(/^http/, 'ws')
         const host = createPadHost({
             relay,
             makeTransport,
@@ -43,7 +58,7 @@ const LinkPads = ({ secondAction }) => {
         })
         hostRef.current = host
         const code = host.open()
-        setUi({ open: true, phase: 'connecting', code, pads: [] })
+        setUi({ open: true, phase: 'connecting', code, pads: [], relay: relayParam })
         if (import.meta.env.DEV) window.__padlink = host
         let raf = 0
         const loop = () => { raf = requestAnimationFrame(loop); host.pump() }
@@ -57,7 +72,7 @@ const LinkPads = ({ secondAction }) => {
         cancelAnimationFrame(host._raf)
         host.close()
         hostRef.current = null
-        setUi({ open: false, phase: 'idle', code: '', pads: [] })
+        setUi({ open: false, phase: 'idle', code: '', pads: [], relay: '' })
         window.dispatchEvent(new CustomEvent('retrogames:linkpads', { detail: { count: 0 } }))
     }, [])
 
@@ -111,8 +126,22 @@ const LinkPads = ({ secondAction }) => {
         >
             <p className="text-[10px] tracking-[0.4em] text-white/45">LINK PADS · {ui.phase === 'connecting' ? 'CONNECTING…' : 'OPEN'}</p>
             <p className="text-5xl tracking-[0.35em] text-sky-300" style={{ textShadow: '0 0 18px rgba(125,211,252,0.35)' }}>{ui.code}</p>
+            {qr && (
+                <svg
+                    data-nav="linkpads-qr"
+                    viewBox={`0 0 ${qr.dim} ${qr.dim}`}
+                    shapeRendering="crispEdges"
+                    width={168}
+                    height={168}
+                    className="rounded-md bg-white p-1.5"
+                    aria-label="Scan to join"
+                >
+                    <rect width={qr.dim} height={qr.dim} fill="#fff" />
+                    <path d={qr.d} fill="#000" />
+                </svg>
+            )}
             <p className="text-[11px] tracking-[0.15em] text-white/70">open <span className="text-white">jalfern.com/retrogames/pad</span></p>
-            <p className="text-[10px] tracking-[0.2em] text-white/40">enter this code on your phone</p>
+            <p className="text-[10px] tracking-[0.2em] text-white/40">{qr ? 'scan the code (or type it)' : 'enter this code on your phone'}</p>
             <button onClick={close} className="mt-1 px-4 py-1 rounded-full border border-white/25 text-[10px] tracking-[0.3em] text-white/70 hover:bg-white/10">CLOSE</button>
         </div>
     )
