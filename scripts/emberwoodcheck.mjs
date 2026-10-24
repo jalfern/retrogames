@@ -11,6 +11,7 @@ import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 import { attractBot } from '../src/games/Emberwood/bot.js'
 import { WIND, SHELF_DECOR } from '../src/games/Emberwood/render.js'
 import { MUSIC } from '../src/utils/AudioController.js'
+import { MUSIC_STEP, battleHeat, musicStepFor } from '../src/games/Emberwood/art.js'
 import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
@@ -674,6 +675,43 @@ function arcScript(seed) {
     const darkCount = Object.values(SCREENS).filter(s => s.dark).length
     const litCount = Object.values(SCREENS).filter(s => !s.dark).length
     ok(darkCount > 0 && litCount > 0, `both world layers exist for the track switch (${litCount} lit / ${darkCount} dark screens)`)
+}
+
+// ---- 6d. #963 tempo seam: the beds lift with combat heat via setMusicStep ----
+{
+    for (const tr of ['emberwoodVale', 'emberwoodDeep']) {
+        ok(MUSIC_STEP[tr] === MUSIC[tr].step, `MUSIC_STEP mirrors the resting grid of ${tr} (${MUSIC_STEP[tr]})`)
+        ok(musicStepFor(tr, 0) === MUSIC_STEP[tr], `${tr} runs the resting grid when the vale is cold`)
+        const hot = musicStepFor(tr, 1)
+        ok(hot < MUSIC_STEP[tr], `${tr} quickens at full heat (${hot.toFixed(4)} < ${MUSIC_STEP[tr]})`)
+        ok(hot > MUSIC_STEP[tr] * 0.8, `${tr} lift stays musical, not cartoonish (${Math.round((1 - hot / MUSIC_STEP[tr]) * 100)}%)`)
+        ok(Math.abs(hot - MUSIC_STEP[tr] * 0.88) < 1e-9, `${tr} lifts exactly 12% at full heat`)
+        let prev = null, mono = true
+        for (let h = 0; h <= 1.0001; h += 0.05) {
+            const s = musicStepFor(tr, h)
+            if (prev !== null && s > prev + 1e-12) mono = false
+            prev = s
+        }
+        ok(mono, `${tr} tempo is monotonic in heat`)
+    }
+    ok(musicStepFor('emberwoodVale', 7) === musicStepFor('emberwoodVale', 1), 'heat clamps at the top')
+    ok(musicStepFor('emberwoodVale', -2) === MUSIC_STEP.emberwoodVale, 'heat clamps at the bottom')
+    ok(musicStepFor('nope', 0.5) === 0, 'an unknown bed asks for no step')
+    const room = (n, opts = {}) => ({
+        hero: { x: 0, y: 0 },
+        enemies: Array.from({ length: n }, (_, i) => ({ x: 400 + i, y: 400, dead: false, boss: opts.boss ? 1 : 0 })),
+    })
+    ok(battleHeat(room(0)) === 0, 'an empty room is cold')
+    ok(battleHeat({ hero: { x: 0, y: 0 }, enemies: [{ x: 5, y: 0, dead: true }] }) === 0, 'corpses do not heat the vale')
+    ok(battleHeat(room(1, { boss: true })) === 1, 'a boss pins the heat at 1')
+    ok(battleHeat(room(4)) > 0 && battleHeat(room(4)) < battleHeat(room(1, { boss: true })), 'a crowd heats, but below a boss')
+    ok(battleHeat({ hero: { x: 0, y: 0 }, enemies: [...room(2).enemies, ...room(2, {}).enemies.map(e => ({ ...e, dead: true }))] }) === battleHeat(room(2)), 'dead bodies in the room change nothing (corpses are filtered, not counted)')
+    const crowdUp = battleHeat(room(1)) < battleHeat(room(3))
+    ok(crowdUp, 'more live enemies raise the heat')
+    const near = battleHeat({ hero: { x: 0, y: 0 }, enemies: [{ x: 8, y: 0, dead: false }] })
+    const far = battleHeat({ hero: { x: 0, y: 0 }, enemies: [{ x: 400, y: 400, dead: false }] })
+    ok(near > far, 'proximity heats: an enemy at 8px out-heats one at 566px')
+    ok(near <= 1 && far >= 0, 'heat lives in [0,1]')
 }
 
 const nodeResult = { pass, fail }
