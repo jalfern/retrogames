@@ -1,0 +1,701 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>BLACK HOLE — flight past an event horizon</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #010208; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(214,222,236,.68); text-shadow: 0 1px 3px rgba(0,0,0,.85);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(255,228,190,.92); font-weight: 700; }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(8,10,18,.55); border: 1px solid rgba(255,190,110,.26); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(255,224,180,.85); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+  }
+  #audiohint.off { color: rgba(170,175,185,.5); border-color: rgba(150,150,150,.2); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #e8e2d4; background: #010208;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone</div>
+<div id="audiohint">click for gravitational drone</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+const SEED = (qs.get('seed') | 0) || 903;
+const RETINA = (window.devicePixelRatio || 1) >= 2;
+const RENDER_SCALE = LITE ? 0.5 : (RETINA ? 0.8 : 0.92);
+
+/* physics constants, Schwarzschild units: rs = 1 (M = 0.5) */
+const RS = 1.0;
+const B_CRIT = 2.598;               // 3*sqrt(3)*M — photon capture cone
+const R_IN = 3.0;                  // ISCO = 3 rs
+const R_OUT = 13.0;
+const ESC_R = 26.0;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
+}
+const HDR_OK = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------------- shaders ---------------- */
+
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform float uTime;
+uniform int uSteps;
+uniform vec3 uCamPos;
+uniform mat3 uCamBasis;      // columns: right, up, forward
+uniform float uProx;         // 0..1 proximity to the hole (drives audio-reactive glow)
+out vec4 fragColor;
+
+#define RS ${RS.toFixed(1)}
+#define R_IN ${R_IN.toFixed(1)}
+#define R_OUT ${R_OUT.toFixed(1)}
+#define ESC_R ${ESC_R.toFixed(1)}
+#define B_CRIT ${B_CRIT.toFixed(3)}
+
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash13(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+
+float vnoise(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float n000 = hash13(i), n100 = hash13(i + vec3(1,0,0));
+  float n010 = hash13(i + vec3(0,1,0)), n110 = hash13(i + vec3(1,1,0));
+  float n001 = hash13(i + vec3(0,0,1)), n101 = hash13(i + vec3(1,0,1));
+  float n011 = hash13(i + vec3(0,1,1)), n111 = hash13(i + vec3(1,1,1));
+  return mix(mix(mix(n000,n100,f.x), mix(n010,n110,f.x), f.y),
+             mix(mix(n001,n101,f.x), mix(n011,n111,f.x), f.y), f.z);
+}
+float fbm2(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 4; i++){ s += a * vnoise(vec3(p, 3.7)); p = p * 2.17 + vec2(1.9, 0.7); a *= 0.5; }
+  return s;
+}
+
+vec3 blackbody(float t){
+  vec3 c = mix(vec3(0.42, 0.10, 0.02), vec3(1.0, 0.38, 0.05), smoothstep(0.10, 0.42, t));
+  c = mix(c, vec3(1.0, 0.66, 0.22), smoothstep(0.42, 0.68, t));
+  c = mix(c, vec3(1.0, 0.92, 0.72), smoothstep(0.68, 0.88, t));
+  c = mix(c, vec3(0.80, 0.88, 1.0), smoothstep(0.95, 1.35, t));
+  c = mix(c, vec3(0.62, 0.76, 1.0), smoothstep(1.35, 2.1, t));
+  return c;
+}
+
+/* ---------- starfield: sparse bright stars + faint dust + milky way ---------- */
+vec3 starfield(vec3 rd){
+  vec3 c = vec3(0.0016, 0.0020, 0.0038);
+  vec2 sv = vec2(atan(rd.z, rd.x), asin(clamp(rd.y, -1.0, 1.0)));
+
+  // galactic band: dim great-circle haze with dust lanes
+  vec3 mw = normalize(vec3(0.30, 0.52, -0.80));
+  float lat = acos(clamp(dot(rd, mw), -1.0, 1.0));
+  float band = exp(-lat * lat * 6.5);
+  float lon = atan(dot(rd, normalize(cross(vec3(0,1,0), mw))), dot(rd, normalize(vec3(1,0,0))));
+  float haze = fbm2(vec2(lon * 2.2, lat * 3.0));
+  float rift = smoothstep(0.48, 0.82, fbm2(vec2(lon * 4.5 + 8.0, lat * 6.0)));
+  c += mix(vec3(0.016, 0.014, 0.026), vec3(0.052, 0.046, 0.070), haze) * band * (1.0 - rift * 0.65);
+
+  // two star layers: bright sparse, faint dense
+  for (int L = 0; L < 2; L++){
+    float N = L == 0 ? 190.0 : 380.0;
+    vec2 sc = vec2(sv.x * N * 0.63662, (sv.y + 1.5708) * N * 0.31831);
+    vec2 cell = floor(sc);
+    vec2 fc = fract(sc);
+    float h = hash12(cell + float(L) * 71.3 + ${(SEED % 997).toFixed(1)});
+    float thresh = L == 0 ? 0.952 : 0.915;
+    if (h > thresh){
+      vec2 jit = vec2(hash12(cell + 3.1), hash12(cell + 7.7)) * 0.7 + 0.15;
+      vec2 dd = fc - jit;
+      dd.x *= max(cos(sv.y), 0.18);                       // round stars at high declination
+      float d2 = dot(dd, dd);
+      float mag = (h - thresh) / (1.0 - thresh);
+      float tw = 0.72 + 0.28 * sin(uTime * (1.3 + mag * 5.0) + h * 61.0);
+      float glow = exp(-d2 * (L == 0 ? 300.0 : 190.0));
+      vec3 tint = mix(vec3(0.72, 0.80, 1.0), vec3(1.0, 0.82, 0.62), hash12(cell + 13.7));
+      c += tint * glow * tw * (L == 0 ? (0.5 + mag * 2.6) : 0.28);
+    }
+  }
+  return c;
+}
+
+/* ---------- accretion disk sample at equatorial crossing q ---------- */
+vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
+  float r = length(q.xz);
+  float ang = atan(q.z, q.x);
+  float om = sqrt(0.5 / (r * r * r));                    // Keplerian Omega (M=0.5)
+  float a2 = ang - uTime * om * 2.6;                     // sheared pattern
+  float lr = log(r);
+  float n = fbm2(vec2(a2 * 2.6 + lr * 3.4, lr * 5.5 - uTime * 0.10));
+  float streaks = 0.5 + 0.5 * sin(a2 * 7.0 + sin(a2 * 3.0 + lr * 4.0) * 1.6 - lr * 9.0 + n * 2.6);
+  float radial = smoothstep(R_IN * 1.02, R_IN * 2.0, r) * smoothstep(R_OUT, R_OUT * 0.60, r);
+  float dens = pow(max(n * 1.45 - 0.34, 0.0), 1.5) * (0.28 + 0.72 * pow(streaks, 1.3)) * radial;
+  opacity = clamp(dens * 0.8, 0.0, 0.9);
+
+  float temp = pow(R_IN / r, 0.72);                      // thin-disk thermal gradient
+  // relativistic Doppler: beta = sqrt(M/(r-2M)) local orbital speed
+  float beta = min(0.72, sqrt(0.5 / max(r - RS, 0.8)));
+  float gam = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
+  vec3 vd = normalize(cross(vec3(0, 1, 0), q));         // orbital velocity direction
+  float cs = dot(vd, normalize(towardCam));
+  float dlt = 1.0 / (gam * (1.0 - beta * cs));          // Doppler factor
+  float g = sqrt(max(1.0 - RS / r, 0.02));              // gravitational redshift
+  float bright = pow(dlt, 3.0) * g * g;                  // relativistic beaming
+  // observed colour temperature rides delta*g: approaching side whitens/blues,
+  // receding side reddens — one physical colour law, not a painted tint
+  float tobs = clamp((temp * 0.9 + 0.30) * dlt * g, 0.12, 1.9);
+  return blackbody(tobs) * dens * bright * (1.25 + uProx * 0.45);
+}
+
+void main(){
+  vec2 ndc = vUv * 2.0 - 1.0;
+  ndc.x *= uRes.x / uRes.y;
+  vec3 rd = normalize(uCamBasis * vec3(ndc.x, ndc.y, 1.9));
+  vec3 ro = uCamPos;
+
+  float r0 = length(ro);
+  vec3 e1 = ro / r0;
+  float a = dot(rd, e1);
+  vec3 e2v = rd - a * e1;
+  float b = r0 * length(e2v);                  // impact parameter (rs units)
+  vec3 e2 = b > 1e-4 ? e2v / length(e2v) : vec3(0.0, 1.0, 0.0);
+
+  // exact null geodesic in the orbital plane: u'' + u = 1.5*RS*u^2, u = 1/r.
+  // Leapfrog in phi; escape direction rebuilt from conserved h = b.
+  float u = 1.0 / r0;
+  float w = b > 1e-4 ? -a / b : 1.0;
+  float phi = 0.0;
+  vec3 pPrev = ro;
+  vec3 col = vec3(0.0);
+  float T = 1.0;
+  bool captured = !(b > 1e-4);
+  for (int i = 0; i < 240; i++){
+    if (i >= uSteps || captured) break;
+    float r = 1.0 / u;
+    float dlam = clamp(0.06 * r, 0.015, 0.9);           // affine step ~ 6% of range
+    float dphi = min(0.2, b * u * u * dlam);            // true-anomaly advance
+    // RK4 on (u, w): Euler pumps orbital energy and over-bends near the hole
+    float f1 = -u + 1.5 * RS * u * u;
+    float uh1 = u + 0.5 * dphi * w,        wh1 = w + 0.5 * dphi * f1;
+    float f2 = -uh1 + 1.5 * RS * uh1 * uh1;
+    float uh2 = u + 0.5 * dphi * wh1,     wh2 = w + 0.5 * dphi * f2;
+    float f3 = -uh2 + 1.5 * RS * uh2 * uh2;
+    float u4 = u + dphi * wh2,            w4 = w + dphi * f3;
+    float f4 = -u4 + 1.5 * RS * u4 * u4;
+    u += dphi * (w + 2.0 * wh1 + 2.0 * wh2 + w4) / 6.0;
+    w += dphi * (f1 + 2.0 * f2 + 2.0 * f3 + f4) / 6.0;
+    phi += dphi;
+    float rn = 1.0 / u;
+    if (rn < RS){ captured = true; break; }
+    vec3 rhat = cos(phi) * e1 + sin(phi) * e2;
+    vec3 p = rn * rhat;
+    if (pPrev.y * p.y < 0.0 && T > 0.015){    // crossed the disk plane
+      float f = pPrev.y / (pPrev.y - p.y);
+      vec3 q = mix(pPrev, p, f);
+      float rr = length(q.xz);
+      if (rr > R_IN && rr < R_OUT){
+        float vr = clamp(-w * b, -1.0, 1.0);
+        vec3 phihat = -sin(phi) * e1 + cos(phi) * e2;
+        vec3 vstep = normalize(vr * rhat + b * u * phihat);
+        float op;
+        col += T * diskEmission(q, vstep, op);
+        T *= 1.0 - op;
+      }
+    }
+    pPrev = p;
+    if (rn > ESC_R && w < 0.0) break;
+  }
+
+  vec3 v = normalize(-w * b * (cos(phi) * e1 + sin(phi) * e2) + b * u * (-sin(phi) * e1 + cos(phi) * e2));
+  vec3 bg = captured ? vec3(0.0) : starfield(v);
+
+  // photon-ring hint: rays captured just inside the critical impact parameter
+  // skim the last orbits before falling in — thin bright rim on the shadow edge
+  if (captured){
+    float ring = exp(-max(B_CRIT - b, 0.0) * 5.5);
+    col += vec3(1.0, 0.78, 0.52) * ring * 0.30;
+  }
+  col += bg * T;
+  fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float m = max(c.r, max(c.g, c.b));
+  float k = smoothstep(uThresh, uThresh + 0.6, m);
+  o = vec4(c * k, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * 0.227027;
+  c += (texture(uTex, vUv + uDir * 1.3846).rgb + texture(uTex, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uTex, vUv + uDir * 3.2307).rgb + texture(uTex, vUv - uDir * 3.2307).rgb) * 0.0702702;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr;
+uniform sampler2D uBloom;
+uniform float uGain;
+uniform float uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uGain;
+  c = aces(c * 1.12);
+  c = pow(c, vec3(1.0 / 2.2));
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.38;
+  float g = h21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.014;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- GL helpers ---------------- */
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error('shader compile failed:\n' + log);
+    throw new Error('shader: ' + log);
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progScene = program(VS_QUAD, FS_SCENE);
+const progBright = program(VS_QUAD, FS_BRIGHT);
+const progBlur = program(VS_QUAD, FS_BLUR);
+const progComp = program(VS_QUAD, FS_COMP);
+const vaoEmpty = gl.createVertexArray();
+
+const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
+const HDRType = HDR_OK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDRF, w, h, 0, gl.RGBA, HDRType, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+
+let W = 0, H = 0, hdr = null, b1 = null, b2 = null, qCap = 1;
+function effScale(){ return RENDER_SCALE * qCap; }
+function stepsFor(){ return Math.max(LITE ? 110 : 180, STEPS_TOP - dropSteps); }
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.5);
+  const cw = Math.floor(canvas.clientWidth * dpr * effScale());
+  const ch = Math.floor(canvas.clientHeight * dpr * effScale());
+  if (cw === W && ch === H) return;
+  W = Math.max(2, cw); H = Math.max(2, ch);
+  canvas.width = W; canvas.height = H;
+  hdr = makeTarget(W, H);
+  const bw = Math.max(2, W >> 2), bh = Math.max(2, H >> 2);
+  b1 = makeTarget(bw, bh);
+  b2 = makeTarget(bw, bh);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------- camera: slow flight past the hole ---------------- */
+
+const STEPS_TOP = 240;
+let dropSteps = 0;
+const cam = { yaw: 0, pitch: 0, tyaw: 0, tpitch: 0, touched: 0 };
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  cam.touched = performance.now();
+  unlockAudio();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tyaw = Math.max(-1.2, Math.min(1.2, cam.tyaw - (e.clientX - drag.x) * 0.0035));
+  cam.tpitch = Math.max(-0.5, Math.min(0.55, cam.tpitch - (e.clientY - drag.y) * 0.003));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+
+function flight(t){
+  const th = t * 0.05 + Math.sin(t * 0.021 + 0.6) * 0.22 + cam.yaw;
+  const R = 18 + 7 * Math.sin(t * 0.045 + 1.9);
+  const el = 0.13 + 0.09 * Math.sin(t * 0.028 + 0.8) + cam.pitch * 0.55;
+  const ce = Math.cos(el), se = Math.sin(el);
+  const pos = [R * ce * Math.sin(th), R * se, R * ce * Math.cos(th)];
+  let f = [-pos[0], -pos[1], -pos[2]];
+  const fl = Math.hypot(f[0], f[1], f[2]);
+  f = [f[0] / fl, f[1] / fl, f[2] / fl];
+  const pitchTilt = cam.pitch * 0.75;
+  const up0 = [0, 1, 0];
+  let r = [up0[1] * f[2] - up0[2] * f[1], up0[2] * f[0] - up0[0] * f[2], up0[0] * f[1] - up0[1] * f[0]];
+  const rl = Math.hypot(r[0], r[1], r[2]) || 1;
+  r = [r[0] / rl, r[1] / rl, r[2] / rl];
+  let u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
+  const cp = Math.cos(pitchTilt), sp = Math.sin(pitchTilt);
+  const f2 = [f[0] * cp + u[0] * sp, f[1] * cp + u[1] * sp, f[2] * cp + u[2] * sp];
+  const u2 = [u[0] * cp - f[0] * sp, u[1] * cp - f[1] * sp, u[2] * cp - f[2] * sp];
+  const prox = Math.max(0, Math.min(1, (24 - Math.hypot(pos[0], pos[1], pos[2]) - 11) / 13));
+  return { pos, f: f2, u: u2, r, prox, R };
+}
+
+/* ---------------- JS mirror of the geodesic integrator (harness probes) ------- */
+
+function traceRayJS(pIn, dIn, maxSteps){
+  const r0 = Math.hypot(pIn[0], pIn[1], pIn[2]);
+  const e1 = [pIn[0] / r0, pIn[1] / r0, pIn[2] / r0];
+  const a = dIn[0] * e1[0] + dIn[1] * e1[1] + dIn[2] * e1[2];
+  const e2v = [dIn[0] - a * e1[0], dIn[1] - a * e1[1], dIn[2] - a * e1[2]];
+  const b = r0 * Math.hypot(e2v[0], e2v[1], e2v[2]);
+  const e2l = Math.hypot(e2v[0], e2v[1], e2v[2]) || 1;
+  const e2 = [e2v[0] / e2l, e2v[1] / e2l, e2v[2] / e2l];
+  let u = 1 / r0, w = b > 1e-4 ? -a / b : 1, phi = 0;
+  let pPrev = pIn.slice();
+  let captured = !(b > 1e-4), escaped = false, hits = 0, rMin = r0;
+  for (let i = 0; i < maxSteps; i++){
+    if (captured) break;
+    const r = 1 / u;
+    rMin = Math.min(rMin, r);
+    const dlam = Math.min(0.9, Math.max(0.015, 0.06 * r));
+    const dphi = Math.min(0.2, b * u * u * dlam);
+    const f1 = -u + 1.5 * RS * u * u;
+    const uh1 = u + 0.5 * dphi * w, wh1 = w + 0.5 * dphi * f1;
+    const f2 = -uh1 + 1.5 * RS * uh1 * uh1;
+    const uh2 = u + 0.5 * dphi * wh1, wh2 = w + 0.5 * dphi * f2;
+    const f3 = -uh2 + 1.5 * RS * uh2 * uh2;
+    const u4 = u + dphi * wh2, w4 = w + dphi * f3;
+    const f4 = -u4 + 1.5 * RS * u4 * u4;
+    u += dphi * (w + 2 * wh1 + 2 * wh2 + w4) / 6;
+    w += dphi * (f1 + 2 * f2 + 2 * f3 + f4) / 6;
+    phi += dphi;
+    const rn = 1 / u;
+    if (rn < RS){ captured = true; break; }
+    const rhat = [Math.cos(phi) * e1[0] + Math.sin(phi) * e2[0], Math.cos(phi) * e1[1] + Math.sin(phi) * e2[1], Math.cos(phi) * e1[2] + Math.sin(phi) * e2[2]];
+    const p = [rn * rhat[0], rn * rhat[1], rn * rhat[2]];
+    if (pPrev[1] * p[1] < 0){
+      const f = pPrev[1] / (pPrev[1] - p[1]);
+      const rr = Math.hypot(pPrev[0] + (p[0] - pPrev[0]) * f, pPrev[2] + (p[2] - pPrev[2]) * f);
+      if (rr > R_IN && rr < R_OUT) hits++;
+    }
+    pPrev = p;
+    if (rn > ESC_R && w < 0){ escaped = true; break; }
+  }
+  const vr = Math.max(-1, Math.min(1, -w * b));
+  const ph = [-Math.sin(phi) * e1[0] + Math.cos(phi) * e2[0], -Math.sin(phi) * e1[1] + Math.cos(phi) * e2[1], -Math.sin(phi) * e1[2] + Math.cos(phi) * e2[2]];
+  const rh = [Math.cos(phi) * e1[0] + Math.sin(phi) * e2[0], Math.cos(phi) * e1[1] + Math.sin(phi) * e2[1], Math.cos(phi) * e1[2] + Math.sin(phi) * e2[2]];
+  const v = [vr * rh[0] + b * u * ph[0], vr * rh[1] + b * u * ph[1], vr * rh[2] + b * u * ph[2]];
+  const vl = Math.hypot(v[0], v[1], v[2]) || 1;
+  v[0] /= vl; v[1] /= vl; v[2] /= vl;
+  const dot = Math.max(-1, Math.min(1, v[0] * dIn[0] + v[1] * dIn[1] + v[2] * dIn[2]));
+  return { captured, escaped, hits, b: +b.toFixed(3), rMin: +rMin.toFixed(3), bend: +Math.acos(dot).toFixed(4) };
+}
+
+function probeBend(bWant){
+  const p0 = [bWant, 0, ESC_R - 0.5];
+  const d0 = [0, 0, -1];
+  const res = traceRayJS(p0, d0, 240);
+  return { b: res.b, bend: res.bend, captured: res.captured, rMin: res.rMin };
+}
+
+function probeDoppler(){
+  const cb = flight((performance.now() - t0) / 1000);
+  const out = [];
+  for (const side of [-1, 1]){
+    const q = [side * 6.5, 0, 0];
+    const n = [cb.pos[0] - q[0], cb.pos[1] - q[1], cb.pos[2] - q[2]];
+    const nl = Math.hypot(n[0], n[1], n[2]);
+    const vd = [0, 0, -side];
+    const cs = (vd[0] * n[0] + vd[1] * n[1] + vd[2] * n[2]) / nl;
+    const beta = Math.min(0.72, Math.sqrt(0.5 / (6.5 - RS)));
+    const gam = 1 / Math.sqrt(1 - beta * beta);
+    const dlt = 1 / (gam * (1 - beta * cs));
+    out.push({ side, dlt: +dlt.toFixed(3), cs: +cs.toFixed(3) });
+  }
+  const hi = out[0].dlt > out[1].dlt ? out[0] : out[1];
+  const lo = hi === out[0] ? out[1] : out[0];
+  return { left: out[0].dlt, right: out[1].dlt, ratio: +Math.pow(hi.dlt / lo.dlt, 3).toFixed(2), brightSide: hi.side, blueSide: hi.side };
+}
+
+function probeHalo(){
+  const cb = flight((performance.now() - t0) / 1000);
+  for (let k = 0.05; k <= 1.2; k += 0.05){
+    const d = [cb.f[0] + cb.u[0] * k, cb.f[1] + cb.u[1] * k, cb.f[2] + cb.u[2] * k];
+    const dl = Math.hypot(d[0], d[1], d[2]);
+    const res = traceRayJS(cb.pos.slice(), [d[0] / dl, d[1] / dl, d[2] / dl], 240);
+    if (!res.captured && res.escaped && res.hits >= 1 && res.b > B_CRIT) return { lifted: true, k: +k.toFixed(2), b: res.b, hits: res.hits };
+  }
+  return { lifted: false };
+}
+
+/* ---------------- audio: deep drone + proximity swell ---------------- */
+
+let AC = null, master = null, running = false, droneLP = null, droneGain = null;
+const audioHint = document.getElementById('audiohint');
+function unlockAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.8; master.connect(AC.destination);
+    const len = Math.floor(AC.sampleRate * 3);
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
+    droneLP = AC.createBiquadFilter(); droneLP.type = 'lowpass'; droneLP.frequency.value = 55; droneLP.Q.value = 0.7;
+    droneGain = AC.createGain(); droneGain.gain.value = 0.10;
+    src.connect(droneLP).connect(droneGain).connect(master);
+    src.start();
+    const sub = AC.createOscillator(); sub.type = 'sine'; sub.frequency.value = 34;
+    const sg = AC.createGain(); sg.gain.value = 0.055;
+    sub.connect(sg).connect(master); sub.start();
+    const lfo = AC.createOscillator(); lfo.frequency.value = 0.05;
+    const lg = AC.createGain(); lg.gain.value = 0.02;
+    lfo.connect(lg).connect(droneGain.gain); lfo.start();
+    running = true;
+    scheduleShimmer();
+    audioHint.textContent = 'gravitational drone on';
+    audioHint.classList.add('off');
+  } catch (e) { /* audio unavailable */ }
+}
+audioHint.addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+function scheduleShimmer(){
+  if (!running || !AC) return;
+  const t0a = AC.currentTime + 0.5 + Math.random() * 5;
+  const f0 = 240 + Math.random() * 220;
+  for (let k = 0; k < 3; k++){
+    const o = AC.createOscillator(); o.type = 'sine';
+    o.frequency.value = f0 * (1 + k * 0.5 + (Math.random() - 0.5) * 0.01);
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t0a);
+    g.gain.exponentialRampToValueAtTime(0.012 / (1 + k), t0a + 1.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0a + 4.2);
+    o.connect(g).connect(master);
+    o.start(t0a); o.stop(t0a + 4.4);
+  }
+  setTimeout(scheduleShimmer, 6000 + Math.random() * 8000);
+}
+function updateDrone(prox){
+  if (!running || !AC) return;
+  droneLP.frequency.setTargetAtTime(55 + prox * 90, AC.currentTime, 0.4);
+  droneGain.gain.setTargetAtTime(0.10 + prox * 0.075, AC.currentTime, 0.4);
+}
+
+/* ---------------- frame loop ---------------- */
+
+let t0 = performance.now();
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let ema = 0, busyEma = 0, workEma = 0, prevFence = null, proxNow = 0;
+let readyFlag = false;
+
+const U = p => name => gl.getUniformLocation(p, name);
+const us = U(progScene), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+
+function frame(){
+  const now = performance.now();
+  const t = (now - t0) / 1000;
+  if (lastFrame){ const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; ema = ema ? ema * 0.9 + dtms * 0.1 : dtms; }
+  lastFrame = now;
+  frames++;
+  // honest GPU cost: how long was last frame's fence still unsignalled when we ask?
+  // (rAF dt measures compositor delivery, not our cost — reef lesson)
+  if (prevFence){
+    const w0 = performance.now();
+    const st = gl.clientWaitSync(prevFence, 0, 1000000000);
+    const busy = performance.now() - w0;
+    if (st !== gl.WAIT_FAILED) busyEma = busyEma ? busyEma * 0.85 + busy * 0.15 : busy;
+    gl.deleteSync(prevFence);
+    prevFence = null;
+  }
+  resize();
+
+  cam.yaw += (cam.tyaw - cam.yaw) * 0.05;
+  cam.pitch += (cam.tpitch - cam.pitch) * 0.05;
+
+  const cb = flight(t);
+  proxNow = cb.prox;
+  updateDrone(proxNow);
+  const basis = new Float32Array([
+    cb.r[0], cb.r[1], cb.r[2],
+    cb.u[0], cb.u[1], cb.u[2],
+    cb.f[0], cb.f[1], cb.f[2],
+  ]);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.disable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progScene);
+  gl.bindVertexArray(vaoEmpty);
+  gl.uniform2f(us('uRes'), W, H);
+  gl.uniform1f(us('uTime'), t);
+  gl.uniform1i(us('uSteps'), stepsFor());
+  gl.uniform3f(us('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
+  gl.uniformMatrix3fv(us('uCamBasis'), false, basis);
+  gl.uniform1f(us('uProx'), proxNow);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.useProgram(progBright);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.viewport(0, 0, b1.w, b1.h);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.uniform1i(ubr('uTex'), 0);
+  gl.uniform1f(ubr('uThresh'), 0.5);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(progBlur);
+  gl.uniform1i(ubl('uTex'), 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 2.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 2.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 5.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 5.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progComp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform1i(uc('uHdr'), 0);
+  gl.uniform1i(uc('uBloom'), 1);
+  gl.uniform1f(uc('uGain'), 1.05);
+  gl.uniform1f(uc('uTime'), t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // adaptive ladder driven by real GPU busy time (fence wait), not rAF delivery:
+  // drop geodesic steps first (the lever that moves it), then pixels.
+  if (busyEma > 14){
+    if (dropSteps < STEPS_TOP - (LITE ? 110 : 180)) dropSteps += 15;
+    else if (qCap > 0.55){ qCap *= 0.82; resize(); }
+    busyEma = 0;
+  }
+
+  prevFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  const workMs = performance.now() - now;
+  workEma = workEma ? workEma * 0.9 + workMs * 0.1 : workMs;
+  readyFlag = true;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hooks ---------------- */
+
+window.__holeTest = {
+  get ready(){ return readyFlag; },
+  get frames(){ return frames; },
+  get gl2(){ return true; },
+  get hdr(){ return HDR_OK; },
+  mode(){ return { gl2: true, lite: LITE, retina: RETINA }; },
+  renderScale(){ return { scale: effScale(), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, steps: stepsFor(), w: W, h: H, css: canvas.clientWidth, dpr: window.devicePixelRatio || 1 }; },
+  pose(){ return { yaw: +cam.yaw.toFixed(3), pitch: +cam.pitch.toFixed(3), prox: +proxNow.toFixed(2) }; },
+  setPose(p){
+    if (p.yaw !== undefined){ cam.tyaw = p.yaw; cam.yaw = p.yaw; }
+    if (p.pitch !== undefined){ cam.tpitch = p.pitch; cam.pitch = p.pitch; }
+    cam.touched = performance.now();
+  },
+  bendAt(b){ return probeBend(b); },
+  doppler(){ return probeDoppler(); },
+  halo(){ return probeHalo(); },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
+  resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; ema = 0; },
+  physics(){ return { rs: RS, bCrit: B_CRIT, rIn: R_IN, rOut: R_OUT, escR: ESC_R }; },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'BLACK HOLE', accent: '#ffb257',
+  issues: [903], span: '~3 h', shipped: '2026-10-23',
+  assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
