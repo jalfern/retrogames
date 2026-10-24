@@ -217,3 +217,7 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   darker robe, and a leather satchel. `emberwoodcheck` paints the sprites and reads
   the pixels: the colporter's body is not the keeper's red, differs from the
   keeper's, the face stays in shadow, and the hood reads above the robe).
+- The town NPCs (keeper, elder, colporter) are static single-pose billboards:
+  no idle bob, no facing toward the hero, no walk — each stands frozen at its
+  map tile. Owed: a light idle/facing animation so the vale's townsfolk read as
+  alive rather than props.
