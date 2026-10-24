@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
 import { TRACK, COURSES, selectCourse, crestDipLaw, crestDust } from '../src/games/CometDrift/track.js'
 import { BANDS } from '../src/games/CometDrift/bands.js'
-import { trackGeometryStats, buildKart, makePool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats } from '../src/games/CometDriftHD/scene.js'
+import { trackGeometryStats, buildKart, makePool, makeStreakPool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats, bloomDiscs, BLOOM2D_MIN_LUMA } from '../src/games/CometDriftHD/scene.js'
 import { selectorGeom, selectorHit } from '../src/games/CometDrift/selector.js'
 import * as THREE from 'three'
 
@@ -107,6 +107,25 @@ if (MUTATE_BLOOM) {
         if (bloommutat) {
             writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(BUTIL, BLINE))
             console.log('  ..    bloom mutation restored')
+        }
+    })
+}
+
+// #1016 bloom2d mutant: kill the refuge's 2D additive pass (never paint) — the
+// refuge-glow browser gates MUST go red under this run.
+const B2LINE = 'const BLOOM2D_ON = true'
+const B2UTIL = 'const BLOOM2D_ON = false /* bloom2dmut */'
+let bloom2dmutat = false
+if (args.includes('--mutate-bloom2d')) {
+    const b2src = readFileSync(SHARD, 'utf8')
+    if (!b2src.includes(B2LINE)) { console.error('MUTATE_BLOOM2D: fallback flag not found — probing stale code.'); process.exit(2) }
+    writeFileSync(SHARD, b2src.replace(B2LINE, B2UTIL))
+    bloom2dmutat = true
+    console.log('  ..    mutated: the refuge 2D bloom never paints — the gold-payoff gates MUST report a FAIL')
+    process.on('exit', () => {
+        if (bloom2dmutat) {
+            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(B2UTIL, B2LINE))
+            console.log('  ..    bloom2d mutation restored')
         }
     })
 }
@@ -1509,6 +1528,40 @@ if (args.includes('--mutate-heal')) {
     })
 }
 
+// ------------------------------------------- 2D bloom fallback for the refuge (#1016)
+console.log('2D bloom fallback for the refuge tier (#1016):')
+{
+    const cam = new THREE.PerspectiveCamera(62, 2, 0.1, 400)
+    cam.position.set(0, 1.26, 12)
+    cam.lookAt(0, 0.5, -4.2)
+    cam.updateMatrixWorld()
+    const rgb = (h) => { const c = new THREE.Color(h); return { r: c.r, g: c.g, b: c.b } }
+    const GOLD = { x: 0, y: 0.4, z: 0, ...rgb(0xffd23c), f: 1 }
+    const discs = bloomDiscs([GOLD], cam, 840, 420)
+    ok(discs.length === 1 && discs[0].a > 0.1 && discs[0].r > 4 && discs[0].r < 96,
+        `a gold head projects into one live additive disc (r ${discs[0]?.r.toFixed(1)}px a ${discs[0]?.a.toFixed(2)})`)
+    ok(bloomDiscs([{ x: 0, y: 0.4, z: 0, ...rgb(0x48b8ff), f: 1 }], cam, 840, 420).length === 0, 'blue never glows (linear luma 0.43 < the gate)')
+    ok(bloomDiscs([{ x: 0, y: 0.4, z: 0, ...rgb(0xb878ff), f: 1 }], cam, 840, 420).length === 0, 'violet never glows (linear luma 0.31 < the gate)')
+    ok(bloomDiscs([{ ...GOLD, z: 20 }], cam, 840, 420).length === 0, 'heads behind the camera are culled')
+    ok(bloomDiscs([{ ...GOLD, x: 40 }], cam, 840, 420).length === 0, 'heads off-frame are culled')
+    const many = Array.from({ length: 90 }, (_, i) => ({ ...GOLD, x: (i % 9 - 4) * 0.6, z: -1 - (i % 7) }))
+    const capped = bloomDiscs(many, cam, 840, 420)
+    ok(capped.length === 48 && capped[0].r >= capped[47].r, `90 heads collapse to the 48-disc budget, near-first (r ${capped[0]?.r.toFixed(1)} ≥ ${capped[47]?.r.toFixed(1)})`)
+    ok(JSON.stringify(bloomDiscs(many, cam, 840, 420)) === JSON.stringify(capped), 'the law is deterministic (same heads, same discs)')
+    const near = bloomDiscs([GOLD], cam, 840, 420)[0]
+    const far = bloomDiscs([{ ...GOLD, z: -8 }], cam, 840, 420)[0]
+    ok(far.r < near.r, `the glow shrinks with distance (near ${near.r.toFixed(1)}px → far ${far.r.toFixed(1)}px)`)
+    const sp = makeStreakPool(8, {})
+    sp.spawn(0, 0.4, 0, 0, 0, -0.02, 14, 0xffd23c)
+    sp.spawn(0, 0.4, 0, 0, 0, -0.02, 14, 0x48b8ff)
+    ok(sp.glowEntries(BLOOM2D_MIN_LUMA).length === 1, 'the streak pool hands out only the gold head')
+    const pp = makePool(8, 0.1)
+    pp.spawn(0, 0.4, 0, 0, 0, 0, 14, 0xffd23c)
+    pp.spawn(0, 0.4, 0, 0, 0, 0, 14, 0x48b8ff)
+    ok(pp.glowEntries(BLOOM2D_MIN_LUMA).length === 1, 'the spark pool filters the same way')
+    ok(BLOOM2D_MIN_LUMA > 0.43 && BLOOM2D_MIN_LUMA < 0.68, `the gate sits above blue and below gold (${BLOOM2D_MIN_LUMA})`)
+}
+
 // ---------------------------------------------------------------- browser
 if (!SKIP_BROWSER) {
     const { launch, openGame, requireDevServer } = await import('./lib/harness.mjs')
@@ -1527,9 +1580,17 @@ if (!SKIP_BROWSER) {
         const backend = await page.evaluate(() => window.__cometHDTest.backend())
         ok(backend === 'webgl2' || backend === 'webgl2-legacy', `WebGL2 fallback backend active for pixel checks (${backend})`)
 
-        // #478 item 1: the legacy refuge must run WITHOUT the post chain (graceful absence)
+        // #478 item 1: the legacy refuge must run WITHOUT the post chain, but
+        // #1016: it must carry the 2D additive bloom fallback in its place.
         const chainPinned = await page.evaluate(() => window.__cometHDTest.fxChain())
-        ok(chainPinned.mode === null && chainPinned.pipeline === false, `post chain is gracefully absent on the pinned legacy path (mode ${chainPinned.mode}, ${chainPinned.backend})`)
+        ok(chainPinned.mode === 'bloom-2d' && chainPinned.pipeline === false, `post chain absent on the pinned legacy path — the 2D fallback takes over (mode ${chainPinned.mode}, ${chainPinned.backend})`)
+        const bloomDom = await page.evaluate(() => [...document.querySelectorAll('canvas')].map((c) => (
+            c.dataset && c.dataset.hdbloom === '1' ? 'bloom'
+                : c.dataset && c.dataset.hdgl === '1' ? 'legacy'
+                    : /pointer-events-none/.test(c.className) ? 'hud' : 'gl'
+        )))
+        ok(bloomDom.indexOf('bloom') > bloomDom.lastIndexOf('gl') && bloomDom.indexOf('bloom') < bloomDom.indexOf('hud'),
+            `the bloom overlay sits above the GL canvas, under the HUD (${bloomDom.join(' < ')})`)
 
         // #477: the authored dune buggy GLB must actually replace the primitive
         // fallback (proves the async swap + material-clone + rig wiring run in a
@@ -1571,6 +1632,31 @@ if (!SKIP_BROWSER) {
         await page.waitForTimeout(120)
         const vHeld = await page.evaluate(() => window.__cometHDTest.fx().v)
         ok(vHeld > 4.5, `gas accelerates the buggy past the drift threshold (v ${vHeld.toFixed(2)})`)
+
+        // #1016: the refuge's payoff — a gold-tier drift must light the 2D
+        // additive overlay (the node chain's job, done cheaply here).
+        // #1016: the refuge's payoff — gold streak heads must light the 2D
+        // additive overlay (the node chain's job, done cheaply here). Software
+        // GL in headless runs at a few fps, so keep feeding until a paint
+        // frame actually catches a live head (the fallback is frame-paced).
+        await page.waitForFunction(() => {
+            const t = window.__cometHDTest
+            const b = t.bloom2d()
+            if (b.discs > 0 && b.pixels > 2000) return true
+            t.bloom2d().feed()
+            return false
+        }, null, { timeout: 15000 }).catch(() => {})
+        const b2 = await page.evaluate(() => window.__cometHDTest.bloom2d())
+        ok(b2.on === true && b2.mode === 'bloom-2d', `the refuge runs the 2D bloom fallback (on ${b2.on}, mode ${b2.mode})`)
+        ok(b2.discs >= 1 && b2.frames > 0, `gold streaks feed the fallback discs (${b2.discs} discs painted over ${b2.frames} frames)`)
+        ok(b2.pixels > 2000, `the overlay really glows additively (alpha-sum ${b2.pixels})`)
+        await page.evaluate(() => {
+            const P = window.__cometHDTest.game().karts[0]
+            P.driftT = 0; P.charge = 0; P.boostT = 0
+        })
+        await page.waitForTimeout(260)
+        const b2dry = await page.evaluate(() => window.__cometHDTest.bloom2d())
+        ok(b2dry.discs === 0 && b2dry.pixels === 0, `the fallback goes dark when the gold runs out (${b2dry.discs} discs, alpha-sum ${b2dry.pixels})`)
 
         // #481 item 2/3 in pixels: the blob steers with the kart heading, and
         // the brake lamps put hot red into the frame only when braking.

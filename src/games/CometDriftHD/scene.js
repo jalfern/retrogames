@@ -884,6 +884,17 @@ export function makePool(count, size) {
             life.fill(0); col.fill(0); alive = 0
             posAttr.needsUpdate = true; colAttr.needsUpdate = true
         },
+        // #1016: bright live particles for the 2D bloom fallback (refuge tier).
+        glowEntries(minLuma) {
+            const out = []
+            for (let i = 0; i < count; i++) {
+                if (life[i] <= 0) continue
+                const luma = 0.2126 * col[i * 3] + 0.7152 * col[i * 3 + 1] + 0.0722 * col[i * 3 + 2]
+                if (luma < minLuma) continue
+                out.push({ x: pos[i * 3], y: pos[i * 3 + 1], z: pos[i * 3 + 2], r: col[i * 3], g: col[i * 3 + 1], b: col[i * 3 + 2], f: life[i] / maxLife[i] })
+            }
+            return out
+        },
     }
 }
 
@@ -993,7 +1004,58 @@ export function makeStreakPool(count, opts = {}) {
             life.fill(0); col.fill(0); alive = 0
             posAttr.needsUpdate = true; colAttr.needsUpdate = true
         },
+        // #1016: bright live streak heads for the 2D bloom fallback (refuge tier).
+        glowEntries(minLuma) {
+            const out = []
+            for (let i = 0; i < count; i++) {
+                if (life[i] <= 0) continue
+                const luma = 0.2126 * r[i] + 0.7152 * g[i] + 0.0722 * b[i]
+                if (luma < minLuma) continue
+                out.push({ x: x[i], y: y[i], z: z[i], r: r[i], g: g[i], b: b[i], f: life[i] / maxLife[i] })
+            }
+            return out
+        },
     }
+}
+
+// ---- #1016: the 2D bloom fallback for the classic-WebGL refuge. The refuge
+// builds no TSL post chain (no WebGPU/node backend), so the gold-spark payoff
+// goes flat there. This is the cheap substitute: the shell hands it the pools'
+// bright heads (pool.glowEntries(minLuma)) plus the live camera, and gets back
+// additive screen-space glow discs — the same "gold only" law the node chain's
+// luminance threshold enforces, in the linear working space three colours in:
+// gold heads (luma ≈0.68) pass, violet (0.31) / blue (0.43) and the dusk sky
+// never do, and the per-tick ×0.86 decay fades each disc as its spark dies.
+// Pure + deterministic: Node and browser agree, so cometdrifthdcheck can gate
+// the law headlessly.
+export const BLOOM2D_MIN_LUMA = 0.55
+export const BLOOM2D_SPREAD = 2.6
+export const BLOOM2D_MAX_DISCS = 48
+export const bloomLuma = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b
+export function bloomDiscs(entries, camera, W, H, opts = {}) {
+    const minLuma = opts.minLuma ?? BLOOM2D_MIN_LUMA
+    const spread = opts.spread ?? BLOOM2D_SPREAD
+    const focal = (H * 0.5) / Math.tan(((camera.fov || 64) * Math.PI) / 360)
+    const out = []
+    const v = new THREE.Vector3()
+    const c = new THREE.Vector3()
+    camera.getWorldPosition(c)
+    for (const e of entries) {
+        const luma = bloomLuma(e.r, e.g, e.b)
+        if (luma < minLuma) continue
+        v.set(e.x, e.y, e.z)
+        const dist = v.distanceTo(c)
+        if (dist < 1e-6) continue
+        v.project(camera)
+        if (v.z > 1) continue
+        const sx = (v.x * 0.5 + 0.5) * W
+        const sy = (-v.y * 0.5 + 0.5) * H
+        if (sx < -80 || sx > W + 80 || sy < -80 || sy > H + 80) continue
+        const rad = Math.min(96, Math.max(4, focal * spread / dist))
+        out.push({ x: sx, y: sy, r: rad, a: Math.min(0.65, luma * 0.55 * (0.35 + 0.65 * (e.f ?? 1))), c: [e.r, e.g, e.b] })
+    }
+    out.sort((p, q) => q.r - p.r)
+    return out.slice(0, opts.maxDiscs ?? BLOOM2D_MAX_DISCS)
 }
 
 // ---- dusk sky: banding breakers + twinkling stars (#478 item 6). Node-safe

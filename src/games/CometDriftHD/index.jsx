@@ -20,6 +20,7 @@ import {
     applySkyDither, makeStarDefs, twinkle, makeBlobShadow, exhaustOutlets, BRAKE_IDLE, BRAKE_ON, STEER_MAX,
     hudScale, hudTop, tintFor, envWashFor, SKY_STOPS, refOverlayStats, attractLayout, attractSelectGeom, sunShadow,
     buildKartGhost, GHOST, buildMesaShadows, MESA_SHADOW,
+    bloomDiscs, BLOOM2D_MIN_LUMA,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
 import { makeWear, resetWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR } from './sand.js'
@@ -226,6 +227,17 @@ export default function CometDriftHD() {
         for (const old of host.querySelectorAll('canvas[data-hdgl]')) old.remove()
         glCanvas.style.display = ''
         const hctx = hud.getContext('2d')
+        // #1016: the classic-WebGL refuge builds no TSL post chain, so the
+        // gold-spark payoff goes flat there. This 2D overlay (under the HUD,
+        // over the GL canvas) carries an additive glow for the bright streak
+        // heads instead — cheap, readable by pixel harnesses, gone when the
+        // node chain returns.
+        for (const old of host.querySelectorAll('canvas[data-hdbloom]')) old.remove()
+        const bloomEl = document.createElement('canvas')
+        bloomEl.dataset.hdbloom = '1'
+        bloomEl.className = 'block absolute inset-0 w-full h-full pointer-events-none'
+        host.insertBefore(bloomEl, hud)
+        const bctx = bloomEl.getContext('2d')
         const lite = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
         // WebGPU is the product default; ?gl=webgl2 pins the fallback so
         // pixel-reading harnesses (getImageData) see the frame — WebGPU
@@ -294,7 +306,8 @@ export default function CometDriftHD() {
         // the glow source, a luminance threshold lets ONLY the sun, the flames
         // and the gold sparks bloom (earned — the sky never glows), and a
         // center-pull radial smear rides the boost, decaying to nothing when
-        // the tank is dry. The classic WebGL2 refuge builds no chain at all.
+        // the tank is dry. The classic WebGL2 refuge builds no chain at all —
+        // #1016: it keeps the gold payoff via the 2D additive overlay below.
         const BLOOM_STRENGTH = 0.5
         const bloomGain = uniform(BLOOM_STRENGTH)
         const radialAmt = uniform(0)
@@ -664,6 +677,9 @@ export default function CometDriftHD() {
             hud.width = Math.round(cssW * dpr)
             hud.height = Math.round(cssH * dpr)
             hctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+            bloomEl.width = hud.width
+            bloomEl.height = hud.height
+            bctx.setTransform(dpr, 0, 0, dpr, 0, 0)
             camera.aspect = cssW / cssH
             camera.updateProjectionMatrix()
             if (renderer) renderer.setSize(cssW, cssH, false)
@@ -692,7 +708,9 @@ export default function CometDriftHD() {
             glCanvas = fresh
             if (post) { try { post.dispose() } catch { /* gone */ } }
             post = null
-            chainMode = null
+            // #1016: the refuge keeps its glow via the 2D additive fallback —
+            // the TSL chain never comes back on this canvas.
+            chainMode = 'bloom-2d'
             const r = new THREE.WebGLRenderer({ canvas: fresh, antialias: !lite, preserveDrawingBuffer: true })
             r.setPixelRatio(dpr)
             r.setSize(cssW, cssH, false)
@@ -1399,6 +1417,38 @@ export default function CometDriftHD() {
             if (import.meta.env.DEV) console.warn('CometDriftHD: backend rebuilt after ' + why)
         }
         const onRenderFail = () => { if (++renderFails >= 3) healIfNeeded('render failures') }
+        // #1016: paint the 2D bloom discs while the refuge is active. The
+        // bright-head luma gate lives in scene.js (bloomDiscs); here we only
+        // project-and-splat additively, so the gold tier keeps its payoff on
+        // phones that never get the TSL chain.
+        const BLOOM2D_ON = true
+        let bloomDiscsLast = 0
+        let bloomFrames = 0
+        const paintBloom = () => {
+            if (!(BLOOM2D_ON && chainMode === 'bloom-2d')) {
+                if (bloomDiscsLast) { bctx.clearRect(0, 0, cssW, cssH); bloomDiscsLast = 0 }
+                return
+            }
+            bctx.clearRect(0, 0, cssW, cssH)
+            const discs = bloomDiscs(streaks.glowEntries(BLOOM2D_MIN_LUMA).concat(sparks.glowEntries(BLOOM2D_MIN_LUMA)), camera, cssW, cssH)
+            bloomDiscsLast = discs.length
+            if (!discs.length) return
+            bloomFrames++
+            bctx.save()
+            bctx.globalCompositeOperation = 'lighter'
+            for (const d of discs) {
+                const R = Math.round(d.c[0] * 255); const G = Math.round(d.c[1] * 255); const B = Math.round(d.c[2] * 255)
+                const gr = bctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r)
+                gr.addColorStop(0, `rgba(${R},${G},${B},${d.a.toFixed(3)})`)
+                gr.addColorStop(0.45, `rgba(${R},${G},${B},${(d.a * 0.35).toFixed(3)})`)
+                gr.addColorStop(1, `rgba(${R},${G},${B},0)`)
+                bctx.fillStyle = gr
+                bctx.beginPath()
+                bctx.arc(d.x, d.y, d.r, 0, Math.PI * 2)
+                bctx.fill()
+            }
+            bctx.restore()
+        }
         // #987: in-frame pixel probe. three's WebGLBackend creates its context
         // WITHOUT preserveDrawingBuffer (its contextAttributes omit the flag —
         // confirmed in three r180 build), so a harness drawImage/getImageData
@@ -1476,6 +1526,7 @@ export default function CometDriftHD() {
                 pixelHeartbeat()
                 if (probeWant.on) frameProbeTick()
             }
+            paintBloom()
             drawHud()
             if (st.screen === 'attract') drawAttract()
             if (st.screen === 'end') drawEnd()
@@ -1627,6 +1678,9 @@ export default function CometDriftHD() {
                 return { sparks: sparks.aliveCount, dust: dust.aliveCount, streaks: streaks.aliveCount, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v }
             },
             fxChain: () => ({ mode: chainMode, pipeline: !!post, bloom: bloomGain.value, radial: Math.round(radialAmt.value * 1000) / 1000, backend: backendName }),
+            bloom2d: () => ({ mode: chainMode, on: BLOOM2D_ON && chainMode === 'bloom-2d', discs: bloomDiscsLast, frames: bloomFrames, minLuma: BLOOM2D_MIN_LUMA,
+                feed: () => { const P = g.karts[0]; for (const side of [-1, 1]) { const w = wheelWorld(P, side, 0.5); streaks.spawn(w.x, liftAt(P) + 0.13, w.z, -w.fx * 0.05, 0.018, -w.fz * 0.05, 12, 0xffd23c, 0.34) } return streaks.aliveCount },
+                pixels: (() => { try { const d = bctx.getImageData(0, 0, bloomEl.width, bloomEl.height).data; let s = 0; for (let i = 3; i < d.length; i += 4) s += d[i]; return s } catch { return -1 } })() }),
             shadowBlob: () => {
                 const sh = kartMeshes[0].shadow
                 const haloN = sh.userData.halo
@@ -1737,6 +1791,7 @@ export default function CometDriftHD() {
         return () => {
             disposed = true
             cancelAnimationFrame(raf)
+            bloomEl.remove()
             if (ro) ro.disconnect()
             window.removeEventListener('resize', relayout)
             window.removeEventListener('keydown', kd)
