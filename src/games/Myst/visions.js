@@ -43,7 +43,10 @@ function gear(ctx, x, y, r, teeth, ang, fill, stroke) {
 // close moon, the sounding rings, a flash now and then (t % 6.4, fixed).
 function selenitic(ctx, w, h, t) {
   const flash = t % 6.4 < 0.16 ? 1 - (t % 6.4) / 0.16 : 0
-  sky(ctx, w, h, flash ? '#3f5f52' : '#15251f', flash ? '#28443a' : '#0b1410')
+  // #1027 — the at-rest storm carries a clear green floor (and stays above the
+  // sealed pane's near-black) so a dim Selenitic reads as a living world, not
+  // as the grey churn of a lens you have not yet linked.
+  sky(ctx, w, h, flash ? '#3f5f52' : '#183024', flash ? '#28443a' : '#0e1c16')
   ctx.fillStyle = `rgba(224,238,224,${0.85 + flash * 0.15})`
   ctx.beginPath()
   ctx.arc(w * 0.72, h * 0.26, h * 0.15, 0, Math.PI * 2)
@@ -207,19 +210,22 @@ function channelwood(ctx, w, h, t) {
   ctx.restore()
 }
 
-// A sealed lens: grey cloud churn, no picture — the sphere shows the ages you
-// have linked, and keeps its secrets dark until then.
+// A sealed lens: near-black glass with a faint grey churn, no picture — the
+// sphere keeps its secrets dark until you walk the Age. The floor is kept
+// well below any linked lens' at-rest sky (#1027) so that, at a glance on a
+// low-quality phone screen, a sealed pane reads as *darker*, while a thawed
+// pane reads as *alive*.
 function sealed(ctx, w, h, t) {
-  sky(ctx, w, h, '#101014', '#1c1c22')
+  sky(ctx, w, h, '#060609', '#0c0c11')
   for (let i = 0; i < 3; i++) {
     const a = t * 0.18 * (1 + i * 0.4) + i * 2.1
-    ctx.strokeStyle = `rgba(120,124,138,${0.12 + i * 0.05})`
+    ctx.strokeStyle = `rgba(120,124,138,${0.1 + i * 0.04})`
     ctx.lineWidth = Math.max(1, h * 0.05)
     ctx.beginPath()
     ctx.arc(w * L, h * L, h * (0.14 + i * 0.12), a, a + 2.2)
     ctx.stroke()
   }
-  ctx.fillStyle = `rgba(160,168,180,${0.1 + 0.05 * Math.sin(t * 0.9)})`
+  ctx.fillStyle = `rgba(150,158,172,${0.07 + 0.04 * Math.sin(t * 0.9)})`
   ctx.beginPath()
   ctx.arc(w * L, h * L, h * 0.05, 0, Math.PI * 2)
   ctx.fill()

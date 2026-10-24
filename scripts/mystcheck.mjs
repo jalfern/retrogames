@@ -7,7 +7,7 @@ import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_M
 import { drawVision } from '../src/games/Myst/visions.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES, singTicks } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 
@@ -251,6 +251,17 @@ console.log('MYST — the star-wheel bites (the Channelwood sub-puzzle, #1017)')
   ok(r.state.panelOpen === 'spectator' && r.events.includes('spectator'), 'the sphere opens its panel of other ages')
   ok(!!r.state.flags.spectatorSeen && /green rings/.test(r.state.message), 'three lights swim inside the glass')
 }
+{ // #1027 — the thaw tone: each lens sings its colour note the first time it
+  // clears (per save); a returning glance is silent, and sealed lenses never sing.
+  let s = { ...freshState(), node: 'mechRoom' }
+  s.flags.link_mechanical = true
+  s.flags.link_selenitic = true
+  const r1 = dispatch(s, { t: 'click', id: 'spectator' })
+  ok(r1.events.includes('thaw:mechanical') && r1.events.includes('thaw:selenitic'), 'each newly-thawed lens sings its colour note the first time')
+  ok(!r1.events.includes('thaw:stoneship') && !r1.events.includes('thaw:channelwood'), 'a sealed lens never sings')
+  const r2 = dispatch(r1.state, { t: 'click', id: 'spectator' })
+  ok(!r2.events.includes('thaw:mechanical') && !r2.events.includes('thaw:selenitic'), 'the thaw note is first-time only — a returning glance is silent')
+}
 console.log('MYST — the SPECTATOR lenses are live age-visions (#1024)')
 {
   let s = freshState()
@@ -292,6 +303,35 @@ console.log('MYST — the SPECTATOR lenses are live age-visions (#1024)')
   }
   ok(run('selenitic', 1, true) !== run('stoneship', 1, true) && run('mechanical', 1, true) !== run('channelwood', 1, true), 'no two Ages share a vision')
   ok(run('nowhere', 1, true) === run('nowhere', 1, false), 'an unknown age still only shows the sealed churn')
+
+  // #1027 — sealed-vs-dim-storm contrast and the lightning pacing, read straight
+  // off the recorded paint ops (pure, no pixels): the sealed pane sits well
+  // below the dimmest live lens in brightness and stays neutral grey, a dim
+  // Selenitic reads green (alive), and its flash is a brief periodic window
+  // whose colour lives only in the Selenitic painter (no second lens strobes).
+  const rgb = (hex) => { const m = hex.replace('#', ''); return { r: parseInt(m.slice(0, 2), 16), g: parseInt(m.slice(2, 4), 16), b: parseInt(m.slice(4, 6), 16) } }
+  const lum = (h) => { const { r, g, b } = rgb(h); return (0.299 * r + 0.587 * g + 0.114 * b) / 255 }
+  const chroma = (h) => { const { r, g, b } = rgb(h); return Math.max(r, g, b) - Math.min(r, g, b) }
+  const greenish = (h) => { const { r, g, b } = rgb(h); return g > r && g > b }
+  const skyStops = (age, t, un) => {
+    const toks = run(age, t, un).split('|')
+    const li = toks.findIndex((t) => t.startsWith('lin:'))
+    const out = []
+    for (let i = li + 1; i < toks.length && out.length < 2; i++) if (toks[i].startsWith('stop:')) out.push(toks[i].slice(5).split(',').pop())
+    return out
+  }
+  const [sealT, sealB] = skyStops('selenitic', 1, false)
+  const [selT, selB] = skyStops('selenitic', 1, true)
+  const sealL = (lum(sealT) + lum(sealB)) / 2
+  const selL = (lum(selT) + lum(selB)) / 2
+  ok(sealL < selL - 0.04, 'the sealed pane is clearly darker than a dim Selenitic storm', `seal ${sealL.toFixed(3)} vs storm ${selL.toFixed(3)}`)
+  ok(chroma(sealT) <= 6 && chroma(sealB) <= 6, 'the sealed churn stays neutral grey — no colour to mistake for a storm', `${chroma(sealT)}/${chroma(sealB)}`)
+  ok(greenish(selT) && greenish(selB), 'a dim Selenitic storm reads green (alive), not grey', `${selT}/${selB}`)
+  const FLASH = '#3f5f52'
+  let on = 0, n = 0
+  for (let t = 0; t < 6.4; t += 0.02) { n++; if (run('selenitic', t, true).includes(FLASH)) on++ }
+  ok(on > 0 && on / n < 0.08, 'the flash is a brief window of its 6.4 s cycle — a controlled pulse, not a stuck white-out', `${on}/${n} samples`)
+  ok(!run('stoneship', 0.05, true).includes(FLASH) && !run('mechanical', 0.05, true).includes(FLASH), 'the flash colour is Selenitic-only — no second lens strobes with it')
 }
 { // sphere puzzle
   let s = { ...freshState(31415), node: 'selenitic' }
@@ -397,6 +437,10 @@ console.log('MYST — attract (rule 6, #365)')
   ok((block.match(/<p\b/g) || []).length === 1, 'only the press prompt is a raw paragraph (no stacked lore)', `${(block.match(/<p\b/g) || []).length}`)
   ok(block.includes('{MESSAGES}'), 'the attract reads copy from the shared module', '')
   ok(block.includes('{PRESS}'), 'the press prompt comes from the shared module', '')
+  // #1027 — the Spectator shot: the title screen carries all four lenses,
+  // drawn live, so the attract shows the sphere's world (the tour's dock loop
+  // can never reach the sphere behind Mechanical's door).
+  ok(block.includes('data-attract-vision') && block.includes('AGE_LIST'), 'the attract carries the Spectator shot — all four lenses, live', '')
 }
 
 console.log('MYST — sound plan (what each event schedules)')
@@ -423,6 +467,14 @@ console.log('MYST — sound plan (what each event schedules)')
   ok(plan('motor').length > 0 && JSON.stringify(plan('motor')) !== JSON.stringify(travel), 'the cage motor has its own sound, distinct from a walk')
   ok(plan('clank').length > 0 && plan('plate').length > 0 && plan('latch').length > 0, 'bolts, plates and the latch each schedule their own noise')
   ok(plan('spectator').length === 3, 'the SPECTATOR hums a three-note chord', String(plan('spectator').length))
+  // #1027 — the per-Age thaw tone: four distinct colour notes, each a soft
+  // warm-up sweep into its note; an unknown age is silent (never a fallback hum).
+  const thawAges = ['selenitic', 'stoneship', 'mechanical', 'channelwood']
+  const thaws = thawAges.map((a) => plan(`thaw:${a}`))
+  ok(thaws.every((p) => p.length > 0), 'each thawed lens schedules its colour note', thaws.map((p) => p.length).join(','))
+  ok(new Set(thawAges.map((a) => JSON.stringify(plan(`thaw:${a}`)))).size === 4, 'no two Ages share a thaw note')
+  ok(new Set(Object.values(THAW_TONES)).size === 4, 'the four thaw notes are four distinct pitches')
+  ok(plan('thaw:nowhere').length === 0, 'an unknown age is silent (no fallback hum)')
   // SELENITIC sound: the six stones must be six distinct ascending pitches, and
   // each step its own event — if every stone rang the same, the puzzle would be
   // unplayable blind. Buzz, swivel, alignment, gate and gear each get a cue too.
@@ -848,6 +900,21 @@ if (process.argv.includes('--mutate')) {
     ['a vision freezes outside time', VI,
       `if (unlocked && SCENES[age]) SCENES[age](ctx, w, h, t)`,
       `if (unlocked && SCENES[age]) SCENES[age](ctx, w, h, 0)`],
+    ['the thaw notes collapse to one pitch', SP,
+      `export const THAW_TONES = { selenitic: 262, stoneship: 330, mechanical: 392, channelwood: 494 }`,
+      `export const THAW_TONES = { selenitic: 262, stoneship: 262, mechanical: 262, channelwood: 262 }`],
+    ['the sphere never sings a thaw', ST,
+      's.flags[k] = true; ev.push(`thaw:${a}`)',
+      's.flags[k] = true; ev.push(`page`)'],
+    ['the sealed pane climbs back to a dim storm brightness', VI,
+      "sky(ctx, w, h, '#060609', '#0c0c11')",
+      "sky(ctx, w, h, '#101014', '#1c1c22')"],
+    ['a dim Selenitic storm is painted as sealed grey', VI,
+      "sky(ctx, w, h, flash ? '#3f5f52' : '#183024', flash ? '#28443a' : '#0e1c16')",
+      "sky(ctx, w, h, '#060609', '#0c0c11')"],
+    ['the attract loses its Spectator shot', JX,
+      `data-attract-vision={a}`,
+      `data-attract-gone={a}`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

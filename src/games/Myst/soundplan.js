@@ -17,6 +17,10 @@ export const STONE_TONES = [110, 131, 147, 165, 196, 220]
 // #1014 — the star-wheel's three rings answer the finger with their own
 // weight: the outer ring clunks lowest, the inner ring clicks highest.
 export const WHEEL_TONES = [98, 131, 165]
+// #1027 — each SPECTATOR lens that thaws for the first time sings its own
+// colour note: four distinct pitches, so the "picture arrives" moment is
+// per-Age and never a repeat of a neighbour's voice.
+export const THAW_TONES = { selenitic: 262, stoneship: 330, mechanical: 392, channelwood: 494 }
 
 export function plan(ev) {
   // A linking-book leap is a whole other event than a walk: a long rising
@@ -45,6 +49,14 @@ export function plan(ev) {
   if (typeof ev === 'string' && ev.startsWith('sing:')) {
     const order = (ev.split(':')[1] || '').split('').map(Number).filter((n) => n >= 0 && n < TONES.length)
     return order.map((r, i) => ({ type: 'tone', f: TONES[r], dur: 0.4, wave: 'sine', vol: 0.09, delay: i * 0.34 }))
+  }
+  // #1027 — a lens thawing: a soft warm-up sweep into its own colour note, a
+  // little behind the sweep so the picture feels like it settles as the tone
+  // lands. One voice per Age; an unknown age is silent (never a fallback hum).
+  if (typeof ev === 'string' && ev.startsWith('thaw:')) {
+    const f = THAW_TONES[ev.split(':')[1]]
+    if (!f) return []
+    return [{ type: 'sweep', f0: f * 0.5, f1: f, dur: 0.7, wave: 'sine', vol: 0.05 }, { type: 'tone', f, dur: 0.6, wave: 'sine', vol: 0.05, delay: 0.18 }]
   }
   const P = []
   switch (ev) {
