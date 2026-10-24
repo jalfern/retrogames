@@ -559,10 +559,18 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   0.52→0.58 so the forest stays ~1.9x denser than the glades (#911 law).
   `__ssxTest.shelf()` reports live ph/glade/model counts; `ssxcheck` +3 and
   `ssxmodelcheck` +3 prove ph→0 and the glade (18 big trees) lands as GLBs.
-- The pack's contact shadow is a fake blob ellipse, not real shadow casting:
-  `index.jsx` pins a dark `CircleGeometry` to the snow under the leader and fades
-  its opacity as air grows (#548 readability); there is no shadow-casting light,
-  so riders, obstacles and terrain cast no real shadows.
+- The pack's contact shadow is a fake blob ellipse, not real shadow casting —
+  **CLOSED by #986**: the `DirectionalLight` sun is now a real shadow caster —
+  a 32 m ortho shadow box (1024 texels, 512 on `?lite`) that rides with the
+  leader every frame, so one tight pass covers the pack wherever they are on the
+  500 m mountain; riders, rails, scenery and shelf props cast, the snow and
+  props receive, and the sky (`BackSide`) plus the terrain itself never cast.
+  The dark `CircleGeometry` blob and its `shC`/`shO` theme fields are gone — the
+  mid-air readability the blob faked (#548) is now cast geometry in every theme.
+  `__ssxTest.shadowInfo()` reports the live rig (map enabled, caster/receiver
+  counts, follow distance, per-theme sun/hemi tint) and `ssxmodelcheck` gates
+  it; mutants: drop `shadowMap.enabled` (or `sun.castShadow`) → caster check red;
+  pin `sun.target` at the origin → follow check red once the pack rides out.
 
 The touch front-flip is NOT a gap — #894 shipped the tilt-committed FRONT flip
 and one FLIP button, and `ssxmodelcheck` gates the button set, the tilt

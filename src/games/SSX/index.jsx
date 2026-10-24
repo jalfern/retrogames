@@ -60,14 +60,26 @@ const SSXGame = () => {
             preserveDrawingBuffer: !!import.meta.env.DEV,
         })
         renderer.outputColorSpace = THREE.SRGBColorSpace
+        renderer.shadowMap.enabled = true
+        renderer.shadowMap.type = THREE.PCFShadowMap
         renderer.setPixelRatio(LITE ? 1 : Math.min(window.devicePixelRatio || 1, 2))
 
         const scene = new THREE.Scene()
         const camera = new THREE.PerspectiveCamera(START_VISTA.fov, 1, 0.1, 900)
         scene.add(camera)
+        // #986: the sun is a real shadow caster. A tight ortho box (±16 m) rides
+        // with the pack each frame so 1024 texels stay legible across the whole
+        // 500 m mountain; near/far bracket the light's ~189 m standoff.
         const sun = new THREE.DirectionalLight(0xffffff, 1.6)
         sun.position.set(-80, 160, 60)
+        sun.castShadow = true
+        sun.shadow.mapSize.set(LITE ? 512 : 1024, LITE ? 512 : 1024)
+        sun.shadow.bias = -0.0007
+        const sunBox = sun.shadow.camera
+        sunBox.left = -16; sunBox.right = 16; sunBox.top = 16; sunBox.bottom = -16
+        sunBox.near = 60; sunBox.far = 320
         scene.add(sun, new THREE.HemisphereLight(0xffffff, 0x9aa2b4, 0.95))
+        scene.add(sun.target)
 
         let world = null
         let worldGen = 0
@@ -91,6 +103,7 @@ const SSXGame = () => {
             if (debris.length >= 8) { const d0 = debris.shift(); scene.remove(d0.mesh); disposeMesh(d0.mesh) }
             const rp = slopePos(g.course, r.s, r.x)
             const mesh = makeBoard(RIDER_COLORS[r.id], r.id, r.id)
+            mesh.traverse((o) => { if (o.isMesh) o.castShadow = true })
             mesh.position.set(rp.x, rp.y + 0.45, rp.z)
             mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3)
             scene.add(mesh)
@@ -101,15 +114,10 @@ const SSXGame = () => {
             })
         }
 
-        // fake contact shadow keeps the pack readable mid-air (#548): a dark
-        // ellipse pinned to the snow under the leader, fading as air grows;
-        // colour + base opacity are per-theme so it survives night/dusk (#615)
-        const shadowGeo = new THREE.CircleGeometry(0.72, 20)
-        shadowGeo.rotateX(-Math.PI / 2)
-        const shadowMat = new THREE.MeshBasicMaterial({ color: 0x0b1524, transparent: true, opacity: 0.28, depthWrite: false })
-        const shadow = new THREE.Mesh(shadowGeo, shadowMat)
-        scene.add(shadow)
-        let shadowBase = 0.28
+        // #986: the fake contact-shadow blob (#548) is gone — the sun now
+        // shadow-maps for real (see the sun block above), so the pack, the
+        // field props and the terrain put actual shadows on the snow, in the
+        // air and on land alike, in every theme.
 
         // carved tracks: two dark grooves laid along the player's last ~5 s line
         const GROOVE_MAX = 420
@@ -242,10 +250,12 @@ const SSXGame = () => {
             scene.fog = new THREE.FogExp2(T.fog, T.fogD)
             sun.color.setHex(T.sun)
             scene.children.find((c) => c.isHemisphereLight).color.setHex(T.hemiSky)
-            shadowMat.color.setHex(T.shC)
-            shadowBase = T.shO
             world = new THREE.Group()
             const terrainMesh = keep(buildTerrain(g.course))
+            // #986: real shadow casting — the snow receives; props and rails cast
+            // and receive; the sky (BackSide) and the terrain itself never cast,
+            // or the whole ortho box would fall in shade.
+            terrainMesh.receiveShadow = true
             world.add(terrainMesh)
             if (sparkles) sparkles.forEach((sp) => sp.material.dispose())
             sparkles = LITE ? null : [0, 1].map((layer) => buildSparkles(g.course, terrainMesh.geometry, layer))
@@ -256,12 +266,27 @@ const SSXGame = () => {
             if (rimJags) world.add(keep(rimJags))
             skyObj = buildSky(g.course)
             world.add(keep(skyObj))
+            world.traverse((o) => {
+                if (o.isMesh && o !== terrainMesh && o.material?.side !== THREE.BackSide) {
+                    o.castShadow = true
+                    o.receiveShadow = true
+                }
+            })
             scene.add(world)
             camFresh = true
-            attachShelf(g.course, world, () => gen === worldGen).catch(() => {})
+            attachShelf(g.course, world, () => gen === worldGen)
+                .then((n) => {
+                    if (n && gen === worldGen) {
+                        world.traverse((o) => {
+                            if (o.isMesh && o !== terrainMesh) { o.castShadow = true; o.receiveShadow = true }
+                        })
+                    }
+                })
+                .catch(() => {})
             for (const m of riders) scene.remove(m)
             riders = g.riders.map((r) => {
                 const rig = keep(makeHeroRider(RIDER_COLORS[r.id], RIDER_MODELS[r.id] || 'rogue', r.id))
+                rig.traverse((o) => { if (o.isMesh) o.castShadow = true })
                 scene.add(rig)
                 return rig
             })
@@ -619,12 +644,12 @@ const SSXGame = () => {
 
             for (const m of riders) m.visible = true
             g.riders.forEach((r, i) => placeRider(riders[i], r))
-            {
-                const airH = p.air ? p.y - pp.y : 0
-                shadow.position.set(pp.x, pp.y + 0.04, pp.z)
-                shadow.material.opacity = Math.max(0.05, shadowBase - airH * 0.05)
-                shadow.scale.setScalar(1 + airH * 0.05)
-            }
+            // #986: the shadow box rides with the leader each frame — one tight
+            // ortho pass around the pack instead of the old faded blob, so the
+            // contact darkening under the board is cast geometry, not a decal.
+            sun.target.position.set(pp.x, pp.y, pp.z)
+            sun.target.updateMatrixWorld()
+            sun.position.set(pp.x - 80, pp.y + 160, pp.z + 60)
 
             // snow spray: carving, landings, boost — powder density scales with speed
             // #791: the board's analog edge pressure drives spray and swish, not
@@ -1081,7 +1106,34 @@ const SSXGame = () => {
                     const b = rig?.userData?.hero?.board
                     return b ? { num: b.userData.num, logo: b.userData.logo, decal: b.children.some((c) => c.isMesh && c.material?.map) } : { num: null }
                 }),
-                shadowInfo: () => ({ theme: g.course.theme, color: shadowMat.color.getHexString(), base: shadowBase }),
+                // #986: real shadow-casting sun — the probe reports the shadow
+                // rig itself (map enabled, casters/receivers in the live scene,
+                // how tightly the box tracks the pack) instead of the old blob's
+                // decal colour.
+                shadowInfo: () => {
+                    let casters = 0
+                    let receivers = 0
+                    scene.traverse((o) => {
+                        if (!o.isMesh) return
+                        if (o.castShadow) casters++
+                        if (o.receiveShadow) receivers++
+                    })
+                    const p0 = g.riders[0]
+                    const q = slopePos(g.course, p0.s, p0.x)
+                    return {
+                        theme: g.course.theme,
+                        enabled: renderer.shadowMap.enabled === true,
+                        lightCast: sun.castShadow === true,
+                        mapSize: sun.shadow.mapSize.x,
+                        ortho: sun.shadow.camera.right,
+                        casters,
+                        receivers,
+                        follow: +Math.hypot(q.x - sun.target.position.x, q.z - sun.target.position.z).toFixed(2),
+                        blob: false,
+                        sun: sun.color.getHexString(),
+                        hemi: scene.children.find((c) => c.isHemisphereLight).color.getHexString(),
+                    }
+                },
                 // DEV #615: swap the course theme without finishing the heat
                 // (geometry is unchanged; visuals + shelf tint rebuild)
                 setTheme: (t) => { if (!THEMES[t]) return false; g.course.theme = t; shownHeat = g.heat; setCourseVisuals(); return true },
@@ -1193,7 +1245,6 @@ const SSXGame = () => {
             cancelAnimationFrame(raf)
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
             spray.geo.dispose(); spray.pts.material.map?.dispose(); spray.pts.material.dispose()
-            shadowGeo.dispose(); shadowMat.dispose(); scene.remove(shadow)
             for (const gr of grooves) { gr.geo.dispose(); gr.mesh.material.dispose(); scene.remove(gr.mesh) }
             if (streaks) { streaks.geo.dispose(); streaks.pts.material.map?.dispose(); streaks.pts.material.dispose(); camera.remove(streaks.pts) }
             renderer.forceContextLoss()

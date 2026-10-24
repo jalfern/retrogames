@@ -219,6 +219,11 @@ const boards = await page.evaluate(() => window.__ssxTest.boardInfo())
 r.check('all six boards carry a livery decal', boards.every((b) => b.decal === true), JSON.stringify(boards.map((b) => b.decal)))
 r.check('board bib numbers are unique per rider', new Set(boards.map((b) => b.num)).size === 6, JSON.stringify(boards.map((b) => b.num)))
 
+// #986: the pack casts real shadow-mapped shadows — the fake blob ellipse
+// (#548/#615) is gone. Mutants: drop `renderer.shadowMap.enabled` (or
+// `sun.castShadow`) → the caster check goes red; pin `sun.target` at the
+// origin instead of following the pack → the follow check goes red once the
+// run has left the start gate.
 const shadowBy = {}
 for (const t of ['day', 'night', 'dusk']) {
     await page.evaluate((th) => window.__ssxTest.setTheme(th), t)
@@ -226,10 +231,16 @@ for (const t of ['day', 'night', 'dusk']) {
     shadowBy[t] = await page.evaluate(() => window.__ssxTest.shadowInfo())
 }
 await page.evaluate(() => window.__ssxTest.setTheme('day'))
-r.check('contact shadow colour is per-theme', new Set(['day', 'night', 'dusk'].map((t) => shadowBy[t].color)).size === 3,
-    JSON.stringify(shadowBy))
-r.check('night contact shadow is darker than day', shadowBy.night.base > shadowBy.day.base,
-    `night ${shadowBy.night.base} vs day ${shadowBy.day.base}`)
+await page.waitForTimeout(300)
+const shd = shadowBy.day
+r.check('sun is a real shadow caster, not a fake blob',
+    shd.enabled && shd.lightCast && shd.blob === false && shd.casters >= 8, JSON.stringify(shd))
+r.check('terrain receives the cast shadows', shd.receivers >= 1, `receivers ${shd.receivers}`)
+r.check('shadow box follows the pack tightly', Math.abs(shd.follow) < 2 && shd.ortho <= 20 && shd.mapSize >= 512,
+    JSON.stringify({ follow: shd.follow, ortho: shd.ortho, mapSize: shd.mapSize }))
+r.check('shadow light is per-theme',
+    new Set(['day', 'night', 'dusk'].map((t) => `${shadowBy[t].sun}/${shadowBy[t].hemi}`)).size === 3,
+    JSON.stringify(Object.fromEntries(Object.entries(shadowBy).map(([t, v]) => [t, `${v.sun}/${v.hemi}`]))))
 
 // ---- #844: touch trick-pad + wipeout scene (fresh page, pad forced on) ----
 const page2 = await browser.newPage({ viewport: { width: 480, height: 800 } })
