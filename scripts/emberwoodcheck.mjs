@@ -842,6 +842,28 @@ if (!SKIP_BROWSER) {
         await page.goto(URL, { waitUntil: 'load' })
         await page.waitForFunction(() => window.__emberwoodTest && window.__emberwoodTest.state, null, { timeout: 15000 })
 
+        // #959 full-bleed portrait: the canvas fills a phone viewport and the
+        // ortho camera keeps 280 units of world width (viewH grows instead of
+        // cropping east/west). Pre-fix the 390x844 page got a 390x293 letterbox.
+        await page.setViewportSize({ width: 390, height: 844 })
+        await page.waitForTimeout(600)
+        const port = await page.evaluate(() => window.__emberwoodTest.renderInfo())
+        cok(port.cssH >= 800 && port.cssW >= 380,
+            `portrait canvas fills the phone viewport (css=${port.cssW}x${port.cssH} of 390x844)`)
+        cok(port.viewW >= 280 && port.viewH > 210,
+            `portrait keeps east/west coverage on full-bleed (viewW=${port.viewW.toFixed(1)}, viewH=${port.viewH.toFixed(1)}, floors 280/>210)`)
+        cok(Math.abs(port.bufferW / port.bufferH - port.cssW / port.cssH) < 0.02,
+            `portrait buffer follows the viewport aspect (buffer ${port.bufferW}x${port.bufferH} vs css ${port.cssW}x${port.cssH})`)
+        const portLite = await browser.newPage({ viewport: { width: 390, height: 844 } })
+        await portLite.goto(`${URL}?lite=1`, { waitUntil: 'load' })
+        await portLite.waitForFunction(() => window.__emberwoodTest, null, { timeout: 15000 })
+        const pl = await portLite.evaluate(() => window.__emberwoodTest.renderInfo())
+        cok(pl.lite && pl.bufferH === 640 && Math.abs(pl.bufferW / pl.bufferH - pl.cssW / pl.cssH) < 0.02 && pl.viewW >= 280,
+            `?lite=1 portrait follows the box aspect at 640 tall (buffer=${pl.bufferW}x${pl.bufferH}, viewW=${pl.viewW.toFixed(1)})`)
+        await portLite.close()
+        await page.setViewportSize({ width: 900, height: 760 })
+        await page.waitForTimeout(400)
+
         // #789 living foliage: vale screens carry plants, and the wind moves them.
         const fol0 = await page.evaluate(async () => {
             window.__emberwoodTest.goto('ow-00', 6, 5)

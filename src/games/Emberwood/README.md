@@ -125,6 +125,13 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   town mean 15.8/255 pre-fix, ~55 post-fix, lite path 58). `emberwoodcheck`
   pins it: overworld mean ≥35/30, dark-pixel fraction ≤0.35, dungeon mean in
   8..0.8×town (moody by construction).
+- **Portrait full-bleed (#959)**: portrait viewports fill the phone (canvas
+  100% x 100%) and `viewH` grows to `max(210, 280/aspect)` so the ortho
+  window never drops below 280 world units — the 16-tile screen keeps its
+  east/west columns at any phone aspect; the extra height reads as the
+  diorama's dark ground (bg + vignette), not black bars. Lite follows the
+  box aspect at 640 tall (landscape stays pinned 480x288). `emberwoodcheck`
+  pins fill, coverage (viewW ≥ 280), and both buffer aspects.
 - **Portrait canvas (#773)**: portrait viewports render at 480x360 (4:3)
   instead of 480x288 — the ortho window (viewH 210 ⊃ the 11-row screen) is
   orientation-agnostic, so portrait just gets ~25% bigger pixels. The blur
@@ -184,7 +191,8 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
 ## Honest gaps (QA polish pass will own these)
 
 - Portrait is 4:3, not full-bleed: a taller window would crop the 16-tile
-  screen's east/west columns at viewH 210.
+  screen's east/west columns at viewH 210. — **CLOSED by #959** (adaptive
+  viewH, canvas fills the phone; see Portrait full-bleed above).
 - No tempo lift on the beds (SSX's `setMusicStep` seam is unused here); no
   attract-mode music (contract keeps attract silent).
 - Continue is keyboard-only (`L`): the touch pad has no third button, so phones
