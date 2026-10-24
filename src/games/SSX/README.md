@@ -376,6 +376,11 @@ npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct
                                           #   keys drive poses, race still winnable,
                                           #   #615 rider polish (grab reach, boot weld,
                                           #   Idle breath, liveries, per-theme shadow)
+npm run ssxplay                          # browser: Chrome drives a real heat on real
+                                          #   keys only — attract live, key start, #791
+                                          #   analog press ramp, prognose WINNABLE,
+                                          #   ollie+grab banks, KeyZ flip, '?' pause
+                                          #   door, zero page errors (advisory smoke)
 ```
 
 The check proves the autopilot wins RACE (30/30 standings, zero bails) and
@@ -518,22 +523,30 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
 
 ## Honest gaps (filed as the polish pass)
 
-- No browser-drive harness script yet (`ssxplay`) — the merge gate is Node;
-  `ssxmodelcheck` covers the hero rider and the touch trick-pad in the browser.
-  (The touch front-flip path is NOT a gap — #894 shipped the tilt-committed FRONT
-  flip and one FLIP button, and `ssxmodelcheck` gates the button set, the tilt
-  directions and the stick+FLIP touch end-to-end; the stale bullet that used to
-  sit here re-kicked free lanes onto closed work, #945.)
 - Board decals reach every rider and the boot weld is solved, not posed
   (#615/#620; #883: `weldBoots` in `art.js` pins each boot's underside to
   the deck-top surface every frame after the pose blend — roll-space corner
   scan, shallow press window, tumble exempt — and `ssxmodelcheck` gates the
   weld in all eleven non-tumble hero poses; mutant: disable `weldBoots` →
-  11 FAIL).
-- Named-grab hand offsets are still hand-tuned, not solved — Indy/Method/Salis/Flat
-  hands hover 0.44–0.68 m off the edge band rather than touching it (arm IK is the
-  next slice; the reach hand is the one that must land on the band `grabReach`
-  measures).
+  11 FAIL). Still static: named-grab hand offsets are hand-tuned, not solved
+  — Indy/Method/Salis/Flat hands hover 0.44–0.68 m off the edge band rather
+  than touching it (arm IK is the next slice; the reach hand is the one that
+  must land on the band `grabReach` measures).
+- Crash obstacles + day glade are primitive placeholders, not shelf models
+  (`art.js` `buildScenery` tags each tree/rock primitive `ph` so `attachShelf()`
+  swaps in real GLBs when the model shelf ships them; today a tree is a cylinder
+  trunk + cone canopy and a rock is a dodecahedron — the placeholders carry the
+  look if the shelf or network is missing).
+- The pack's contact shadow is a fake blob ellipse, not real shadow casting:
+  `index.jsx` pins a dark `CircleGeometry` to the snow under the leader and fades
+  its opacity as air grows (#548 readability); there is no shadow-casting light,
+  so riders, obstacles and terrain cast no real shadows.
+
+The touch front-flip is NOT a gap — #894 shipped the tilt-committed FRONT flip
+and one FLIP button, and `ssxmodelcheck` gates the button set, the tilt
+directions and the stick+FLIP touch end-to-end (the stale bullet that used to
+sit here re-kicked free lanes onto closed work, #945). The browser-drive gate is
+closed too: `ssxplay` (this PR) drives a real heat on real keys only.
 
 ## Lateral sign and the tuck/scrub (#547)
 
