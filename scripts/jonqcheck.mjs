@@ -121,6 +121,12 @@ const REAL_GAPS = Object.fromEntries(FLAGSHIPS.map((g) => [g, parseGaps(README(g
 // Synthetic FIX_GAPS carry the flagship-ORDER semantics; REAL_GAPS stay the
 // ground truth for parse quality and for "what does the stage name TODAY".
 const closedMarks = (md) => (((md.split(/^##\s+Honest gaps/im)[1] || '').split(/^##\s/m)[0]).match(/CLOSED by #\d+/g) || []).length
+// #994: today's flagship rotation. SSX, Emberwood and COMET DRIFT HD have all
+// honestly shipped out of their gap lists, so the un-skipped stage lands on the
+// first flagship with a real open gap (Myst today). Hard-coding the two names
+// that were "after" on Oct 24 turned the day HD shipped into red CI — derive it.
+const FIRST_OPEN = FLAGSHIPS.find((g) => REAL_GAPS[g].length > 0)
+const firstOpenExcluding = (skip) => FLAGSHIPS.find((g) => REAL_GAPS[g].length > 0 && !skip.includes(g))
 const FIX_GAPS = {
     'SSX': ['demo SSX gap: the pack contact shadow still reads flat'],
     'Emberwood': ['demo Emberwood gap: townsfolk are rooted to their tiles'],
@@ -170,8 +176,9 @@ ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', FIX_GAPS.SSX[0])
 ok(!ownsGap([QA(902, 'SSX', 'general polish notes only')], 'SSX', FIX_GAPS.SSX[0]), 'ownsGap: naming the game without the gap does not own it')
 ok(flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [], buildingQa: [] }).game === 'SSX',
     'idle: flagship order must start at SSX (Jon\'s order, #841)')
-ok(['Emberwood', 'COMET DRIFT HD'].includes(flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game),
-    '#991: SSX shipped its gap list empty (#980/#988) — the stage names a flagship with a real gap (Emberwood pre-#994, COMET DRIFT HD after), no crash')
+ok(REAL_GAPS.SSX.length === 0 && FIRST_OPEN !== undefined &&
+    flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game === FIRST_OPEN,
+    '#991: SSX shipped its gap list empty (#980/#988) — the stage names the first flagship with a real gap (derived: today ' + FIRST_OPEN + '), no crash')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(903, 'SSX', 'a')], buildingQa: [] }).gap === 'b',
     'idle: an owned gap is skipped for the next one in the same README')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(904, 'SSX', 'a'), QA(905, 'SSX', 'b')], buildingQa: [] }).game === 'Emberwood',
@@ -215,10 +222,10 @@ ok(qaIdleStage({ issues: [IQ(921, ['feedback'])], gapsByGame: REAL_GAPS }) === n
     '#878: real feedback outranks the flagship stage — a claimable feedback item means no flagship kick')
 ok(qaIdleStage({ issues: [IQ(922, ['waiting-jon', 'question']), IQ(923, ['needs-approval', 'feedback'])], gapsByGame: FIX_GAPS }).game === 'SSX',
     '#878: a parked question and an un-approved item are NOT claimable feedback — the stage still fires')
-ok(['Emberwood', 'COMET DRIFT HD'].includes(qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS }).game),
-    '#878: a game the builder is inside (building) is skipped — one lane per game')
-ok(['Emberwood', 'COMET DRIFT HD'].includes(qaIdleStage({ issues: [IQ(925, ['building-qa'], 'QA — SSX: polish pass')], gapsByGame: REAL_GAPS }).game),
-    '#878: a game another QA lane holds (building-qa) is skipped too')
+ok(qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS }).game === firstOpenExcluding(['SSX']),
+    '#878: a game the builder is inside (building) is skipped — one lane per game (derived: today ' + firstOpenExcluding(['SSX']) + ')')
+ok(qaIdleStage({ issues: [IQ(925, ['building-qa'], 'QA — SSX: polish pass')], gapsByGame: REAL_GAPS }).game === firstOpenExcluding(['SSX']),
+    '#878: a game another QA lane holds (building-qa) is skipped too (derived: today ' + firstOpenExcluding(['SSX']) + ')')
 const allHeldByQa = FLAGSHIPS.map((g, i) => IQ(930 + i, ['building-qa'], `QA — ${g}: polish`))
 ok(qaIdleStage({ issues: allHeldByQa, gapsByGame: REAL_GAPS }) === null,
     '#878: every flagship held -> null — STOP stays legal, the QA lane is not forced at a held game')
