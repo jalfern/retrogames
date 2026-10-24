@@ -13,7 +13,7 @@ let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
 
 console.log('MYST — graph')
-ok(Object.keys(NODES).length === 24, '24 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (2)')
+ok(Object.keys(NODES).length === 26, '26 nodes: island, tower, cave, cabin, four Ages, walkable Mechanical (4), walkable Selenitic (4), walkable Channelwood (2), walkable Stoneship (2)')
 ok(NODES.dock && NODES.dock.spots.some((s) => s.to === 'cliffPath'), 'the dock connects up the path')
 for (const [id, n] of Object.entries(NODES)) {
   for (const s of n.spots) {
@@ -43,6 +43,16 @@ ok(mechSub.every((n) => !seen.has(n)), 'the Mechanical tower lives inside its Ag
 }
 const chanSub = ['chanChannels', 'chanWheel']
 ok(['channelwood', ...chanSub].every((n) => seen.has(n)), 'Channelwood is walkable end to end once the wood door stands open')
+const stoneSub = ['stoneDeck', 'stoneObservatory']
+ok(stoneSub.every((n) => !seen.has(n)), "the Stoneship ship and ridge live inside the Age, not on the island path")
+{
+  const seenS = new Set(['stoneship'])
+  const qs = ['stoneship']
+  while (qs.length) { const id = qs.shift(); for (const sp of NODES[id].spots) if (sp.to && !seenS.has(sp.to)) { seenS.add(sp.to); qs.push(sp.to) } }
+  ok(stoneSub.every((n) => seenS.has(n)), 'Stoneship is walkable end to end once the safe book opens')
+}
+ok(NODES.stoneship.spots.every((s) => !(s.to === 'stoneObservatory' || s.act === 'observatory')), 'the observatory is no longer a single fixed view from the pier')
+ok(NODES.stoneObservatory.spots.some((s) => s.act === 'observatory'), 'the observatory note now lives up on the ridge')
 const ageRet = AGE_LIST.every((a) => NODES[a].spots.some((s) => s.to))
 ok(ageRet, 'every Age has a way home')
 
@@ -86,6 +96,19 @@ console.log('MYST — gates hold')
   let c = { ...freshState(), node: 'chanChannels' }
   c = dispatch(c, { t: 'click', id: 'pageChannelwoodBlue' }).state
   ok(!!c.flags.pageBlue_channelwood, 'the blue page lies on the wood bridge')
+}
+{ // STONESHIP walk: the pier → the ship's deck → the ridge observatory, on foot, free
+  let s = { ...freshState(), node: 'stoneship' }
+  s = dispatch(s, { t: 'move', id: 'toShipDeck' }).state
+  ok(s.node === 'stoneDeck', 'you climb aboard the becalmed ship')
+  ok(dispatch(s, { t: 'click', id: 'lookShipRig' }).events.includes('look'), "the rigging is a lookable thing on the deck")
+  s = dispatch(s, { t: 'move', id: 'toObservatory' }).state
+  ok(s.node === 'stoneObservatory', 'the rock stair runs from the stern up to the dome')
+  ok(dispatch(s, { t: 'click', id: 'observatory' }).state.flags.obsNote, "the observatory hands over Atrus's note")
+  s = dispatch(s, { t: 'move', id: 'retStoneObs' }).state
+  ok(s.node === 'stoneDeck', 'the stair brings you back to the deck')
+  s = dispatch(s, { t: 'move', id: 'retStoneDeck' }).state
+  ok(s.node === 'stoneship', 'back down at the pier, where the two pages wait')
 }
 { // fireplace needs matches; safe needs the three numbers
   let s = { ...freshState(), node: 'library' }
@@ -355,6 +378,20 @@ console.log('MYST — the walkable Channelwood gets played, not skipped')
   ok(isWin(s), 'and the detour still brings Atrus home')
 }
 
+console.log('MYST — the walkable Stoneship gets played, not skipped')
+{
+  let s = freshState()
+  const visited = new Set()
+  for (const a of solveScript()) {
+    const r = dispatch(s, a)
+    s = r.state
+    visited.add(s.node)
+  }
+  ok(['stoneDeck', 'stoneObservatory'].every((n) => visited.has(n)), 'the winning route walks every new Stoneship view')
+  ok(s.flags.obsNote && s.flags.pageRed_stoneship && s.flags.pageBlue_stoneship, 'the solver boarded the ship, read the ridge note, and took both pages')
+  ok(isWin(s), 'and the detour still brings Atrus home')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -430,6 +467,12 @@ if (process.argv.includes('--mutate')) {
     ['the flood gate stops needing the sluice', ND,
       `to: 'chanWheel', need: 'chanFlood', needMsg:`,
       `to: 'chanWheel', needMsg:`],
+    ['the rock stair stops reaching the observatory', ND,
+      `to: 'stoneObservatory'`,
+      `to: 'stoneDeck'`],
+    ['the observatory stops recording the note', ST,
+      `if (!has(s, 'obsNote')) {`,
+      `if (false) {`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
