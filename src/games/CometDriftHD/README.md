@@ -280,14 +280,16 @@ classification, so a misclassified backend silently unarms it, which is what
   48-disc budget, determinism, distance falloff) + browser refuge gates
   (DOM z-order, mode, live discs, alpha-sum > 0 on the overlay, dark when dry);
   `cometdrifthdcheck --mutate-bloom2d` (painting disabled) must die.
-- No kart reflections yet — a real probe mirror is still out of reach.
-  **The rest of this bullet CLOSED by #995:** dynamic sand scarification
-  (`sand.js` — a px wear field stamped by every sand-surfaced kart, decaying
-  over ~35 s of race clock, pushing the gutter ribbon down-and-dark) and
-  sun-fixed shadows (`sunShadow`: the halo holds the dusk-sun azimuth,
-  stretches along it, and dims as elevation lifts the kart off its shadow).
-  `cometdrifthdsandcheck`: 24 gates + `--mutate` (the desert-forgets
-  mutant must die).
+ - No kart reflections yet — a real probe mirror is still out of reach.
+   **This bullet CLOSED by #995 + #1015:** dynamic sand scarification
+   (`sand.js` — a px wear field stamped by every sand-surfaced kart, decaying
+   over ~35 s of race clock, pushing the gutter ribbon down-and-dark,
+   crowning the rim with a displaced-sand lip, kicking a dust plume off fresh
+   stamps, and persisting across re-races within a session) and
+   sun-fixed shadows (`sunShadow`: the halo holds the dusk-sun azimuth,
+   stretches along it, and dims as elevation lifts the kart off its shadow).
+   `cometdrifthdsandcheck`: 42 gates + `--mutate` (the desert-forgets
+   mutant must die).
 - **CLOSED by #1001 (+ #675/#997):** the desert now rides an ORIGINAL synthesized
   music bed — `MUSIC.comet` in `AudioController.js`, a 32-step G-major I–vi–IV–V
   arcade-kart loop (pumping octave bass, chord-tone hook, four-on-the-floor kick +
@@ -344,14 +346,33 @@ the course bounds ±420px, a few thousand cells, cheap): every kart whose
 and pushes them down (`SINK` 0.11u) and dark (×0.58 at full wear) from
 captured base arrays — wear is an offset, never an accumulation, so decay
 returns the surface byte-exact and a fresh pass can never double the rut.
-Sim purity holds: stamping reads karts but writes only the field (finish
-times identical with and without the loop), and the sim's own surface hints
-ride a side table so `k.hint` is untouched. `sandState()` (DEV) exposes the
-honest state (`cells`, `depth`, `sum`, caps).
+ Sim purity holds: stamping reads karts but writes only the field (finish
+ times identical with and without the loop), and the sim's own surface hints
+ ride a side table so `k.hint` is untouched. `sandState()` (DEV) exposes the
+ honest state (`cells`, `depth`, `sum`, caps, `lip`).
 
-Law the pack must obey: the field scars in a full race (Gulch ~74 cells,
-Sandbank ~367), but the certified autopilot skims (depth ≤ 0.6·max) — the
-ideal line grazes sand only in traffic nudges; it is the rivals' seeded
-mistakes that carve. The asphalt itself never wears (ruts live in the sand).
-`npm run cometdrifthdsandcheck` — 24 gates + `--mutate`, whose
-"desert-forgets" mutant (stamps become no-ops, the ribbon never sinks) dies.
+ Law the pack must obey: the field scars in a full race (Gulch ~74 cells,
+ Sandbank ~367), but the certified autopilot skims (depth ≤ 0.6·max) — the
+ ideal line grazes sand only in traffic nudges; it is the rivals' seeded
+ mistakes that carve. The asphalt itself never wears (ruts live in the sand).
+ `npm run cometdrifthdsandcheck` — 42 gates + `--mutate`, whose
+ "desert-forgets / rim-flattens / no-plume" mutants die.
+
+## The desert remembers the session (#1015)
+
+The round-two ruts: a rut is not only a dent.
+- **The displaced sand lip.** `deformGeo` pushes the ribbon by `rutOffset(v,
+  gpc) = −v·SINK + gpc·LIP` (LIP 0.09u): sunk at the worn centre, but RAISED
+  where the central-difference wear gradient peaks — the patch edge — so the
+  displaced sand crowns the rim into a berm (~0.02u above untouched sand)
+  while the floor sits a full sink below it. Untouched sand stays byte-exact.
+- **The stamp plume.** `stampKarts` now returns `{stamped, karts}` — the
+  karts that actually carved this tick — and `STAMP_PLUME` sizes the dust a
+  fresh stamp kicks: 4 puffs per plowing kart off the rear wheels via the
+  drift dust pool (ttl 20, sand tint). The player ploughs full; the rival
+  pack ploughs on alternate ticks (half rate, `plumePuffs` is the pure law).
+  `stampDust()` (DEV) reads-and-clears the live puff count.
+- **Session persistence.** A re-race (`reset`) keeps the scars — they keep
+  decaying; the desert remembers the pack for the session. Only a course
+  swap rebuilds the field (fresh `makeWear` + fresh gutter geometry, so no
+  stale `sandBase` leaks across courses).

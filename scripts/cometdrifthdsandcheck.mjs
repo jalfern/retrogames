@@ -2,15 +2,19 @@
 //
 // Node-only (plus the sun-shadow law). Proves the desert REMEMBERS the pack:
 // the wear field stamps under any kart whose surface is sand, fades over the
-// race clock, and pushes the gutter ribbon down-and-dark where it is scarred;
-// the ruts stay in the sand (the racing line never scars); the certified
-// autopilot alone leaves a clean sheet — it is the field's seeded mistakes
-// that carve; and stamping never touches the sim (finish times are identical
-// with and without the wear loop).
+// race clock, and pushes the gutter ribbon down-and-dark where it is scarred
+// while the displaced sand crowns the rut's rim into a raised lip; a fresh
+// stamp kicks a dust plume off the plowing karts (player full, rivals half
+// rate); and the field carries across re-races (the desert remembers the
+// session) — only a course swap rebuilds it. The ruts stay in the sand (the
+// racing line never scars); the certified autopilot alone leaves a clean
+// sheet — it is the field's seeded mistakes that carve; and stamping never
+// touches the sim (finish times are identical with and without the wear loop).
 //
 //   npm run cometdrifthdsandcheck
-//   npm run cometdrifthdsandcheck -- --mutate   # stamps become no-ops and the
-//                                               # ribbon never sinks — MUST go red
+//   npm run cometdrifthdsandcheck -- --mutate   # stamps become no-ops, the
+//                                               # ribbon never moves and fresh
+//                                               # ruts kick no dust — MUST go red
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
@@ -18,7 +22,7 @@ import { fileURLToPath } from 'node:url'
 import * as THREE from 'three'
 import { TRACK, selectCourse } from '../src/games/CometDrift/track.js'
 import { makeGame, step, decide } from '../src/games/CometDrift/sim.js'
-import { SAND_WEAR, makeWear, resetWear, wearAt, stampWear, decayWear, scarStats, stampKarts, deformGeo } from '../src/games/CometDriftHD/sand.js'
+import { SAND_WEAR, makeWear, wearAt, stampWear, decayWear, scarStats, stampKarts, deformGeo, STAMP_PLUME, plumePuffs, rutOffset } from '../src/games/CometDriftHD/sand.js'
 import { sunShadow, SUN_SHADOW, makeBlobShadow } from '../src/games/CometDriftHD/scene.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -30,15 +34,16 @@ let pass = 0; let fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg}`) } }
 
 const PAIRS = [
-    ["if (s.surf === 'sand') stamped +=", "if (false) stamped +="],
-    ['pos.setY(i, base.pos[i * 3 + 1] - v * SAND_WEAR.sink)', 'pos.setY(i, base.pos[i * 3 + 1])'],
+    ['const h = stampWear(w, k.x, k.y)', 'const h = 0'],
+    ['pos.setY(i, by + rutOffset(v, gpc))', 'pos.setY(i, by)'],
+    ['n += STAMP_PLUME.perKart', 'n += 0'],
 ]
 if (MUTATE) {
     let src = readFileSync(SAND_SRC, 'utf8')
     if (!PAIRS.every(([good]) => src.includes(good))) { console.error('MUTATE: load-bearing lines not found — stale code.'); process.exit(2) }
     for (const [good, bad] of PAIRS) src = src.replace(good, bad)
     writeFileSync(SAND_SRC, src)
-    console.log('  ..    mutated: the desert forgets everything — the child run MUST be red')
+    console.log('  ..    mutated: the desert forgets, the rim flattens, the ruts kick no dust — the child run MUST be red')
     let done = false
     try {
         const child = spawnSync(process.execPath, [SELF], { encoding: 'utf8' })
@@ -107,6 +112,46 @@ console.log('— the ribbon takes the ruts —')
     ok(pos.getY(vi) === authY[vi] && col.getX(vi) === 1, 'decay lifts the ribbon and its colour back to the authored surface')
 }
 
+console.log('— the rut’s rim: displaced sand —')
+{
+    ok(rutOffset(1, 0) === -SAND_WEAR.sink, 'a full-depth centre sits a full sink below the authored surface')
+    ok(rutOffset(0, 1) === SAND_WEAR.lip, 'a peak wear gradient raises a full lip above untouched sand')
+    const w = makeWear(-400, -400, 400, 400)
+    stampWear(w, 0, 0, SAND_WEAR.max)
+    // scan +x under the stamp: the profile must crown where the wear gradient
+    // peaks (the patch edge) and floor out at the centre — never the reverse.
+    let crown = -Infinity; let crownD = -1; let floor = Infinity
+    for (let d = 0; d <= SAND_WEAR.radius + 2 * w.cell; d += 1) {
+        const v = wearAt(w, d, 0)
+        const g = Math.abs(wearAt(w, d + w.cell, 0) - wearAt(w, d - w.cell, 0)) / 2
+        const off = rutOffset(v, g)
+        if (off > crown) { crown = off; crownD = d }
+        if (d < SAND_WEAR.radius && off < floor) floor = off
+    }
+    ok(crown > 0 && crownD > SAND_WEAR.radius * 0.5, `the rim crowns ${crown.toFixed(3)}u above untouched sand at d=${crownD} — the edge, not the centre`)
+    ok(floor < -SAND_WEAR.sink * 0.9, `the floor sits ${(-floor).toFixed(3)}u below the authored surface`)
+    // and the geometry obeys the law: a finely-cut ribbon grows a real berm.
+    const geo = new THREE.PlaneGeometry(160, 160, 160, 160)
+    geo.rotateX(-Math.PI / 2)
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(geo.getAttribute('position').count * 3).fill(1), 3))
+    const pos = geo.getAttribute('position')
+    const auth = Float32Array.from(pos.array.filter((_, i) => i % 3 === 1))
+    deformGeo(geo, w)
+    let berm = -Infinity
+    for (let i = 0; i < pos.count; i++) berm = Math.max(berm, pos.getY(i) - auth[i])
+    ok(berm > 0, `deformGeo raises the rim: the deformed ribbon peaks ${berm.toFixed(3)}u above its authored surface`)
+}
+
+console.log('— the stamp plume —')
+{
+    ok(STAMP_PLUME.perKart > 0 && STAMP_PLUME.ttl > 0, 'the plume has a size and a life')
+    const P = { name: 'p' }, R = { name: 'r' }
+    const rep = { stamped: 4, karts: [P, R] }
+    ok(plumePuffs(rep, P, 0) === 2 * STAMP_PLUME.perKart, 'even tick: the player and the rivals all plough')
+    ok(plumePuffs(rep, P, 1) === STAMP_PLUME.perKart, 'odd tick: the rivals wait their turn — only the player ploughs')
+    ok(plumePuffs({ stamped: 0, karts: [] }, P, 0) === 0, 'no carving, no dust')
+}
+
 console.log('— a real race carves the desert —')
 for (const cid of ['sandbank', 'gulch']) {
     selectCourse(cid)
@@ -116,16 +161,18 @@ for (const cid of ['sandbank', 'gulch']) {
         Math.max(...TRACK.pts.map((p) => p.x)) + 420, Math.max(...TRACK.pts.map((p) => p.y)) + 420)
     const hints = {}
     const g = sim.makeGame(3)
-    let n = 0
+    let n = 0; let plowTicks = 0
     while (!g.end && n < 60 * 400) {
         sim.step(g, sim.decide(g))
-        stampKarts(w, g.karts, hints)
+        const rep = stampKarts(w, g.karts, hints)
+        if (rep.karts.length) plowTicks++
         decayWear(w)
         n++
     }
     const s = scarStats(w)
     ok(g.end === 'win' && s.cells > 0 && s.depth > 0,
         `${cid}: the pack ruts the sand in a full race (${s.cells} cells, depth ${s.depth.toFixed(2)}, sum ${s.sum})`)
+    ok(plowTicks > 0, `${cid}: the carving comes in fresh stamps — ${plowTicks} ploughing ticks kick a plume`)
 }
 
 console.log('— what must NOT happen —')
@@ -203,12 +250,13 @@ if (SKIP_BROWSER) {
         })
         ok(grown && grown.cells > 0 && grown.depth > 0 && grown.sum > 0,
             `the attract pack carves the desert live (${grown.cells} cells, depth ${grown.depth}, sum ${grown.sum})`)
-        const cleared = await page.evaluate(async () => {
+        const kept = await page.evaluate(async () => {
             window.__game.reset(7)
             const s = window.__cometHDTest.sandState()
             return s
         })
-        ok(cleared && cleared.cells === 0, 'a race reset wipes the desert clean')
+        ok(kept && kept.cells > 0 && kept.lip > 0,
+            'the desert remembers the session: a re-race keeps the scars (and the rim law travels with them)')
         const sh = await page.evaluate(() => window.__cometHDTest.shadowBlob())
         ok(sh.parts === 2 && sh.stretch > 1 && Math.abs(sh.haloAz - SUN_SHADOW.az) < 0.01,
             `the live halo holds the sun line (az ${sh.haloAz}, stretch ${sh.stretch})`)
@@ -216,10 +264,16 @@ if (SKIP_BROWSER) {
         const driven = await page.evaluate(() => {
             window.__game.step({ up: true, x: 0.6 }, 600)
             const s = window.__cometHDTest.sandState()
-            return { ...s, v: window.__game.state().v }
+            return { ...s, v: window.__game.state().v, dust: window.__cometHDTest.stampDust() }
         })
-        ok(driven.cells > cleared.cells && driven.depth > 0,
+        ok(driven.cells > kept.cells && driven.depth > 0,
             `contract-driven driving deepens the ruts (${driven.cells} cells, depth ${driven.depth})`)
+        ok(driven.dust > 0, `fresh ruts kick dust off the plowing karts (${driven.dust} puffs in the step)`)
+        const swapped = await page.evaluate(() => {
+            window.__cometHDTest.setCourse('gulch')
+            return window.__cometHDTest.sandState()
+        })
+        ok(swapped && swapped.cells === 0, 'a course swap rebuilds the field — the session’s memory is per course')
         await browser.close()
     }
 }
