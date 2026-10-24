@@ -67,9 +67,30 @@ All synthesized at runtime (no assets) through the shared chiptune engine
 - Fork ramps are quarter-pipe arcs (steep launch, flat landing) with identical
   run/rise; the commit window keys off `FORK_RAMP`, not the segment array.
 
+## Curves-first course rework (#900)
+- The tail programs were still too flat and angular. Three new beat shapes, all
+  tangent-flat at the entry height so they chain like the rest:
+  `beatCascade` (six chained quarter-arcs — dip/crest/dip/crest/dip/crest,
+  near-zero flat ground), `beatHalfPipe` (deep U: arc down, floor with a boost
+  strip, far wall up — the pipe is the engine), `beatSpringHigh` (spring at a
+  420px pit lip throws the runner onto a HILL-TOP deck h above the low line,
+  ringed, back down through an arc — a per-sector high route earned by speed:
+  landings need vx, a slow springer hits the pit wall and dies).
+- Flat expanse halved: flat ground measured as segments >=400px wide dropped
+  from 56-63% of a sector to 38-43%. The only long flats left are the two
+  justified ones — the fork runway (`beatRunway`, where the fast lane is
+  earned) and the spring-hop landing band (ballistics need it). `beatSCurves`
+  lost its flat tail; valley/hill/spike beats got packed tails; spikes now sit
+  in a shallow dip (toll rings at the trough floor).
+- Programs are 24 beats per zone. FLATNESS gate in `runnercheck` pins every
+  sector <45% flat expanse (re-flattening a valley tail turns it red);
+  SPRING-HIGH gate proves the deck route per zone (fast body lands on deck,
+  slow body hits the wall and dies, autopilot banks >=1 deck ring/zone);
+  the CURVES arc-steps floor rose 8 -> 24.
+
 ## Per-zone beat programs (#642)
 - The tail is NO LONGER a 23-beat cycle: each zone gets a hand-authored
-  `PROGRAMS` list of 20 beats, no two neighbours alike, ~15% shorter. Beats:
+  `PROGRAMS` list of 20 beats (24 since #900), no two neighbours alike. Beats:
   `flatBoost` (fork runway, ≥2600 so the deck ramps land on flat),
   `valleyLoop` (+ two toll rings), `springHop` (spring at the lip of a wide
   pit — run-off 1150: a 240px pit at ~800 px/s flies ~1000px; a short pad
