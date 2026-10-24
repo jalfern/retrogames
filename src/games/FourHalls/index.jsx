@@ -24,7 +24,7 @@ const CW = VW + PW, CH = VH + HT
 const FOV = 0.58
 const SIM_MS = 1000 / 60
 let proven = null
-const provenRun = () => { if (!proven) proven = plan(2, { maxTicks: 12000 }); return proven }
+const provenRun = () => { if (!proven) proven = plan(2, { maxTicks: 12000, levelCount: 4 }); return proven }
 
 const FourHallsGame = () => {
     const stageRef = useRef(null)
@@ -52,7 +52,7 @@ const FourHallsGame = () => {
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
-        let gs = makeGame(0, 'warrior')
+        let gs = makeGame(0, 'warrior', { levelCount: 4 })
         const zbuf = new Float32Array(VW)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, selectHero = 0
@@ -121,9 +121,9 @@ const FourHallsGame = () => {
 
         const tickDemo = () => {
             const run = provenRun()
-            if (demoAt >= run.script.length) { gs = makeGame(2, 'warrior'); demoAt = 0; return }
+            if (demoAt >= run.script.length) { gs = makeGame(2, 'warrior', { levelCount: 4 }); demoAt = 0; return }
             doSim(run.script[demoAt++])
-            if (gs.end) { gs = makeGame(2, 'warrior'); demoAt = 0 }
+            if (gs.end) { gs = makeGame(2, 'warrior', { levelCount: 4 }); demoAt = 0 }
         }
 
         const doFrameSim = () => {
@@ -461,13 +461,13 @@ const FourHallsGame = () => {
 
         // ---------------------------------------------------------------- input ----
         const startSelect = () => {
-            gs = makeGame(0, 'warrior', { partner: gs.partnerOn })
+            gs = makeGame(0, 'warrior', { partner: gs.partnerOn, levelCount: 4 })
             gs.partnerOn = false
             setMode('select')
         }
         const startPlay = (hk) => {
             const pOn = gs._pSel === 1
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn })
+            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, levelCount: 4 })
             gs.partnerOn = pOn
             setMode('play')
             say(`${HEROES[hk].WHO} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · /, '')}`)
@@ -531,9 +531,9 @@ const FourHallsGame = () => {
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ left: false, right: false, fwd: false, back: false, sword: false, arrow: false }) },
                 stepWith: (inp) => doSim(inp),
                 setKeys: (k) => { keys.l = !!k.l; keys.r = !!k.r; keys.u = !!k.u; keys.d = !!k.d; if (k.s) keys.swordEdge = true; if (k.a) keys.arrowEdge = true },
-                plan: (seed = 0, opts) => plan(seed, opts),
+                plan: (seed = 0, opts) => plan(seed, { levelCount: 4, ...opts }),
                 decide: (s) => decide(s || gs),
-                restart: () => { gs = makeGame(0, 'warrior') },
+                restart: () => { gs = makeGame(0, 'warrior', { levelCount: 4 }) },
                 startHero: (hk) => startPlay(hk),
                 events: () => evLog,
                 probe: () => ({

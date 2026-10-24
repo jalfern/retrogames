@@ -257,4 +257,10 @@ export const MATERIALS = {
     green: { base: '#2f6b34', lite: '#5da262', dark: '#17391b', mortar: '#0b1e0d', accent: '#8fff9f' },
     blue: { base: '#2f4a8f', lite: '#5a7ac2', dark: '#16274f', mortar: '#0b1226', accent: '#8fb0ff' },
     purple: { base: '#6b2f8f', lite: '#9c5ac2', dark: '#37174f', mortar: '#180b26', accent: '#e08fff' },
+    iron: { base: '#5a626e', lite: '#8b95a3', dark: '#333a44', mortar: '#15181d', accent: '#cfd8e8' },
+    teal: { base: '#1f6b6b', lite: '#48a2a2', dark: '#113a3a', mortar: '#071e1e', accent: '#8fffef' },
+    arcane: { base: '#4a2f8f', lite: '#7a5ac2', dark: '#25164f', mortar: '#100b26', accent: '#c88fff' },
+    sand: { base: '#8f7a3a', lite: '#c2ac62', dark: '#4f421b', mortar: '#261f0b', accent: '#ffe89f' },
+    gold: { base: '#8f6b16', lite: '#c9a03a', dark: '#4f3a0b', mortar: '#261a04', accent: '#ffd23f' },
+    obsidian: { base: '#2a2438', lite: '#483f5e', dark: '#161223', mortar: '#0a0812', accent: '#8fff9f' },
 }

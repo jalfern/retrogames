@@ -15,9 +15,12 @@
 import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
 import { LEVELS, W, H, MONSTERS } from './levels.js'
 
+// #950: the pilot plans conservatively — breakable and trap walls are stone to
+// it (a level must not REQUIRE the hammer or the vanishing cycle to be won);
+// warp pads, teleporters and stun tiles it shares with a player.
 const cellWalk = (gs, c, r) => {
     const ch = gs.levelData.grid[r][c]
-    if (ch === '#') return false
+    if (ch === '#' || ch === 'B' || ch === 'T') return false
     return true // doors are passable: the pilot opens them on contact
 }
 
@@ -83,7 +86,7 @@ function losClear(gs, x0, y0, x1, y1) {
     for (let i = 1; i < steps; i++) {
         const t = i / steps
         const c = Math.floor(x0 + (x1 - x0) * t), r = Math.floor(y0 + (y1 - y0) * t)
-        if (gs.levelData.grid[r][c] === '#') return false
+        if ('#BT'.includes(gs.levelData.grid[r][c])) return false
     }
     return true
 }
@@ -205,7 +208,7 @@ export function decide(gs) {
     return inp
 }
 
-export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown })
+export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.hero || 'warrior', { slack: !!opts.slack, partner: !!opts.partner, topDown: !!opts.topDown, levelCount: opts.levelCount })
     const script = []
     let deaths = 0
     const max = opts.maxTicks || 40000
@@ -307,7 +310,7 @@ export function partnerPad(gs, prevA = false) {
 function padPath(gs, sr, sc, tr, tc) {
     const passable = (c, r) => {
         const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
-        if (ch === '#') return false
+        if (ch === '#' || ch === 'B' || ch === 'T') return false
         if (ch === 'L') {
             const d = doorAt(gs, c, r)
             return !!d && (d.open || d.broken)
