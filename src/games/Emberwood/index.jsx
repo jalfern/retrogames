@@ -334,6 +334,7 @@ export default function Emberwood() {
                 fxStats: () => ({ ...fxCounts }),
                 tailStats: () => rend.tailStats(),
                 npcSprite: (id) => rend.npcSprite(id),
+                npcAnim: () => rend.npcAnim(),
                 saveNow: () => { writeSave(saveState(sim)); setHasSave(true); return true },
                 hasSave: () => !!readSave(),
                 clearSave: () => { clearSave(); setHasSave(false); return true },

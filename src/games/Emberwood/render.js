@@ -51,6 +51,19 @@ export const NPC_LIVERY = {
     colporter: { robe: '#463a52', hood: '#5c4a6a', face: '#170f1b', satchel: '#8a6a44' },
     plain: { body: '#7a6a8a', face: '#e8b48a', hair: '#cfc8dc' },
 }
+
+// #981 the townsfolk breathe. Each npc gets a deterministic rhythm from its id
+// (no two stand in lockstep): a slow squash-breath anchored at the feet, a lean
+// toward the hero (rotateZ on the billboard; the camera x-axis is (-1,0,0), so a
+// positive lean tips the top east), and a left/right flip when the hero crosses
+// to the other side (deadband 12px so passing above/below never jitter-flips).
+export const NPC_IDLE = { bob: 0.035, lean: 0.1, deadband: 12, leanK: 0.004 }
+export function npcRhythm(id) {
+    let h = 7
+    for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0
+    h = Math.abs(h)
+    return { phase: (h % 628) / 100, spd: 1.8 + (h % 5) * 0.12 }
+}
 export function paintNpc(n) {
     const cnv = document.createElement('canvas'); cnv.width = 14; cnv.height = 18
     const g = cnv.getContext('2d')
@@ -311,6 +324,10 @@ void main(){
         '=': 'grass', 'H': 'house', 'R': 'roof', 'I': 'grass', 'C': 'stone', 'S': 'stairs', '<': 'stone', 'A': 'stone',
     }[ch] || 'grass')
 
+    // #981 facing survives a room rebuild: the townsfolk keep the side they were
+    // watching when you walk back into town (visual only — the sim never sees it).
+    const npcFacing = new Map()
+
     function buildScreen(id, flags, cut) {
         disposeScreen()
         currentScreen = id
@@ -444,6 +461,10 @@ void main(){
             nn.quaternion.copy(camera.quaternion)
             nn.position.set(FX(n.x * TS + 8), n.y * TS + 8, 9)
             if (n.requires) { nn.userData.requires = n.requires; nn.visible = false }
+            const r = npcRhythm(n.id)
+            nn.userData.phase = r.phase; nn.userData.spd = r.spd
+            nn.userData.nx = n.x; nn.userData.ny = n.y
+            nn.userData.face = npcFacing.get(n.id) || 1
             screenGroup.add(nn); staticMeshes.push(nn)
             dynamic.npcs.set(n.id, nn)
         }
@@ -632,11 +653,24 @@ void main(){
             const open = (d.kind === 'switch' ? !!sim.flags.switchesOn[d.switch] : !!sim.flags.doorsOpen[d.id])
             mesh.visible = !open
         }
-        for (const [, mesh] of dynamic.npcs) {
-            if (mesh.userData.requires) mesh.visible = !!sim.items[mesh.userData.requires]
-        }
-
         const hx = sim.hero.x, hy = sim.hero.y
+        for (const [npcId, mesh] of dynamic.npcs) {
+            if (mesh.userData.requires) mesh.visible = !!sim.items[mesh.userData.requires]
+            if (!mesh.visible) continue
+            const u = mesh.userData
+            const breathe = Math.sin(tSec * u.spd + u.phase)
+            const s = 1 + breathe * NPC_IDLE.bob
+            const dxp = hx - (u.nx * TS + 8)
+            if (dxp > NPC_IDLE.deadband) u.face = 1
+            else if (dxp < -NPC_IDLE.deadband) u.face = -1
+            npcFacing.set(npcId, u.face)
+            const lean = Math.max(-NPC_IDLE.lean, Math.min(NPC_IDLE.lean, dxp * NPC_IDLE.leanK))
+            u.lean = lean
+            mesh.quaternion.copy(camera.quaternion)
+            mesh.rotateZ(lean)
+            mesh.scale.set(u.face, s, 1)
+            mesh.position.z = 9 * s
+        }
         for (const cp of canopies) {
             const under = Math.abs(hx - cp.x) < 11 && hy > cp.y - 10 && hy < cp.y + 12
             cp.o += ((under ? 0.5 : 1) - cp.o) * 0.25
@@ -904,6 +938,21 @@ void main(){
         npcSprite: (id) => {
             const n = (SCREENS['ow-11'].npcs || []).find(x => x.id === id)
             return n ? paintNpc(n).toDataURL() : null
+        },
+        // #981 — report each visible town npc's live pose so the gates can prove
+        // the idle breath, foot-anchored squash, rhythm spread and hero-facing.
+        npcAnim: () => {
+            const out = []
+            for (const [id, mesh] of dynamic.npcs) {
+                const u = mesh.userData
+                out.push({
+                    id, visible: mesh.visible, face: u.face,
+                    scaleY: +mesh.scale.y.toFixed(3), posZ: +mesh.position.z.toFixed(2),
+                    lean: +(u.lean || 0).toFixed(3),
+                    phase: +u.phase.toFixed(3), spd: +u.spd.toFixed(2),
+                })
+            }
+            return out
         },
     }
 }

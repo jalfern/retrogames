@@ -220,4 +220,16 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
 - The town NPCs (keeper, elder, colporter) are static single-pose billboards:
   no idle bob, no facing toward the hero, no walk — each stands frozen at its
   map tile. Owed: a light idle/facing animation so the vale's townsfolk read as
-  alive rather than props.
+  alive rather than props. — **CLOSED by #981** (`npcRhythm(id)` in `render.js`
+  gives each npc a deterministic phase + speed so no two bob in lockstep; `sync`
+  breathes them with a ±3.5% squash anchored at the feet (`posZ = 9*scaleY`),
+  leans each one toward the hero (`rotateZ` on the billboard, clamped ±0.1 rad —
+  the camera's x-axis is `(-1,0,0)`, so a positive lean tips the top east) and
+  flips him when the hero crosses sides (12px deadband so passing above/below
+  never jitter-flips; facing survives a room rebuild via `npcFacing`). Renderer
+  only — the sim, solver and bot never see it, determinism untouched. Walk stays
+  open below. `emberwoodcheck` gates it live via `__emberwoodTest.npcAnim()`:
+  the bob moves, stays bounded, foot-anchor drift < 0.02, distinct rhythms,
+  east/west lean+flip and the deadband hold.)
+- No walk: townsfolk are still rooted to their map tiles — wander paths are owed
+  if the vale ever grows daytime business.
