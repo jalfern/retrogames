@@ -30,6 +30,17 @@ export const WIND = {
 
 const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3 }
 
+// #939 shelf pull — the vale's tree/bush mass is real shelf models (#637), not
+// painted quads, so the facing law (#901) runs through a game: facingOf(id)
+// decides each prop's stance — 'radial' gets a deterministic yaw and stands
+// upright on the stage, '+z' billboards square to the camera, 'rigged' keeps
+// its pose. If the shelf never attaches, the painted billboards below carry
+// the look; the upgrade degrades whole (#638 pattern).
+export const SHELF_DECOR = {
+    trees: ['tree_pine', 'tree_oak', 'tree_pine_tall'],
+    bush: 'bush',
+}
+
 // #829 crisp: full quality renders at device resolution (css px x dpr, capped)
 // so lighting, bloom, vignette and geometry edges read smooth on phone+desktop;
 // the sprite/tile textures stay NearestFilter, so the pixel art keeps its
@@ -200,6 +211,62 @@ void main(){
     const grassTiles = []
     const dynamic = { doors: new Map(), cracks: new Map(), chests: new Map(), switches: new Map(), npcs: new Map() }
 
+    // #939 shelf state: templates load once; geometry/material maps are shared
+    // across clones and screens, so disposeScreen must never free them.
+    let shelf = null
+    let lastScreenArgs = null
+    const shelfShared = new Set()
+
+    async function attachShelf() {
+        try {
+            const { loadModel, facingOf } = await import('../../utils/modelShelf.js')
+            const ids = [...new Set([...SHELF_DECOR.trees, SHELF_DECOR.bush])]
+            const loaded = await Promise.all(ids.map(async (id) => ({ id, root: await loadModel(id), facing: await facingOf(id) })))
+            if (loaded.some((l) => !l.root || !l.facing)) return
+            const map = {}
+            for (const l of loaded) {
+                const box = new THREE.Box3().setFromObject(l.root)
+                const size = box.getSize(new THREE.Vector3())
+                const src = l.root.clone(true)
+                src.traverse((o) => {
+                    if (o.geometry) shelfShared.add(o.geometry)
+                    if (o.material) {
+                        shelfShared.add(o.material)
+                        if (o.material.map) shelfShared.add(o.material.map)
+                    }
+                })
+                map[l.id] = { src, facing: l.facing, h: size.y || size.z || 1 }
+            }
+            shelf = map
+            if (currentScreen && lastScreenArgs) buildScreen(...lastScreenArgs)
+        } catch { shelf = null }
+    }
+
+    const STAND_UP = Math.PI / 2
+
+    // Place one shelf prop on the stage (origin on the ground, Y-up model into
+    // Z-up stage via rotation.x = 90°; fronted ids billboard to the camera).
+    function putShelfProp(id, x, y, targetH, yaw) {
+        const t = shelf && shelf[id]
+        if (!t) return null
+        const src = t.src.clone(true)
+        const mats = []
+        src.traverse((o) => {
+            if (!o.isMesh) return
+            o.material = o.material.clone()
+            mats.push(o.material)
+            if (!lite) o.castShadow = true
+        })
+        src.scale.setScalar(targetH / t.h)
+        if (t.facing === '+z') src.quaternion.copy(camera.quaternion)
+        else src.rotation.set(STAND_UP, 0, yaw)
+        const g = new THREE.Group()
+        g.add(src)
+        g.position.set(FX(x), y, 0)
+        screenGroup.add(g); staticMeshes.push(g)
+        return { group: g, mats, facing: t.facing }
+    }
+
     const tileTexKey = (ch) => ({
         '.': 'grass', '"': 'tallgrass', ',': 'path', '~': 'water', 'T': 'grass', '#': 'stone',
         '=': 'grass', 'H': 'house', 'R': 'roof', 'I': 'grass', 'C': 'stone', 'S': 'stairs', '<': 'stone', 'A': 'stone',
@@ -208,6 +275,7 @@ void main(){
     function buildScreen(id, flags, cut) {
         disposeScreen()
         currentScreen = id
+        lastScreenArgs = [id, flags, cut]
         const s = SCREENS[id]
         const dark = !!s.dark
         scene.background = new THREE.Color(dark ? '#0d0b14' : '#22305a')
@@ -252,19 +320,31 @@ void main(){
                 if (ch === '.') {
                     const nearTree = tileAt(s, x - 1, y) === 'T' || tileAt(s, x + 1, y) === 'T' || tileAt(s, x, y - 1) === 'T' || tileAt(s, x, y + 1) === 'T'
                     if (nearTree && x > 0 && y > 0 && x < SW - 1 && y < SH - 1 && !reserved.has(`${x},${y}`) && (x * 7 + y * 13) % 3 === 0 && T('bush')) {
-                        const bu = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), new THREE.MeshLambertMaterial({ map: T('bush'), transparent: true, alphaTest: 0.4 }))
-                        bu.quaternion.copy(camera.quaternion)
-                        bu.position.set(FX(x * TS + 8), y * TS + 8, 5)
-                        screenGroup.add(bu); staticMeshes.push(bu)
-                        bushes.push({ mesh: bu, x: x * TS + 8, y: y * TS + 8 })
+                        const px = x * TS + 8, py = y * TS + 8
+                        const sp = putShelfProp(SHELF_DECOR.bush, px, py, 10, ((x * 11 + y * 5) % 12) * Math.PI / 6)
+                        if (sp) {
+                            bushes.push({ mesh: sp.group, mats: sp.mats, facing: sp.facing, x: px, y: py })
+                        } else {
+                            const bu = new THREE.Mesh(new THREE.PlaneGeometry(14, 10), new THREE.MeshLambertMaterial({ map: T('bush'), transparent: true, alphaTest: 0.4 }))
+                            bu.quaternion.copy(camera.quaternion)
+                            bu.position.set(FX(px), py, 5)
+                            screenGroup.add(bu); staticMeshes.push(bu)
+                            bushes.push({ mesh: bu, x: px, y: py })
+                        }
                     }
                 }
                 if (ch === 'T') {
-                    const tr = new THREE.Mesh(new THREE.PlaneGeometry(24, 30), new THREE.MeshLambertMaterial({ map: T('tree'), transparent: true, alphaTest: 0.4 }))
-                    tr.quaternion.copy(camera.quaternion)
-                    tr.position.set(FX(x * TS + 8), y * TS + 6, 12)
-                    screenGroup.add(tr); staticMeshes.push(tr)
-                    canopies.push({ mesh: tr, x: x * TS + 8, y: y * TS + 8, o: 1 })
+                    const px = x * TS + 8, py = y * TS + 8
+                    const sp = putShelfProp(SHELF_DECOR.trees[(x * 7 + y * 13) % SHELF_DECOR.trees.length], px, py + 4, 30, ((x * 5 + y * 7) % 12) * Math.PI / 6)
+                    if (sp) {
+                        canopies.push({ mesh: sp.group, mats: sp.mats, facing: sp.facing, x: px, y: py, o: 1 })
+                    } else {
+                        const tr = new THREE.Mesh(new THREE.PlaneGeometry(24, 30), new THREE.MeshLambertMaterial({ map: T('tree'), transparent: true, alphaTest: 0.4 }))
+                        tr.quaternion.copy(camera.quaternion)
+                        tr.position.set(FX(px), py + 6, 12)
+                        screenGroup.add(tr); staticMeshes.push(tr)
+                        canopies.push({ mesh: tr, x: px, y: py, o: 1 })
+                    }
                 }
                 if (ch === 'I') {
                     const sg = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshLambertMaterial({ map: T('sign'), transparent: true, alphaTest: 0.4 }))
@@ -336,8 +416,8 @@ void main(){
     function disposeScreen() {
         const cached = new Set(texCache.values())
         screenGroup.traverse(o => {
-            if (o.geometry) o.geometry.dispose()
-            if (o.material) { if (o.material.map && !cached.has(o.material.map)) o.material.map.dispose(); o.material.dispose() }
+            if (o.geometry && !shelfShared.has(o.geometry)) o.geometry.dispose()
+            if (o.material) { if (o.material.map && !cached.has(o.material.map) && !shelfShared.has(o.material.map)) o.material.map.dispose(); if (!shelfShared.has(o.material)) o.material.dispose() }
         })
         scene.remove(screenGroup)
         screenGroup = new THREE.Group()
@@ -521,13 +601,27 @@ void main(){
         for (const cp of canopies) {
             const under = Math.abs(hx - cp.x) < 11 && hy > cp.y - 10 && hy < cp.y + 12
             cp.o += ((under ? 0.5 : 1) - cp.o) * 0.25
-            cp.mesh.material.opacity = cp.o
-            cp.mesh.quaternion.copy(camera.quaternion)
-            cp.mesh.rotateZ(WIND.tree(cp.x, cp.y, tSec))
+            if (cp.mats) {
+                const faded = cp.o < 0.999
+                for (const m of cp.mats) {
+                    m.opacity = cp.o
+                    m.transparent = faded
+                    m.depthWrite = !faded
+                }
+                cp.mesh.rotation.x = STAND_UP + WIND.tree(cp.x, cp.y, tSec)
+            } else {
+                cp.mesh.material.opacity = cp.o
+                cp.mesh.quaternion.copy(camera.quaternion)
+                cp.mesh.rotateZ(WIND.tree(cp.x, cp.y, tSec))
+            }
         }
         for (const b of bushes) {
-            b.mesh.quaternion.copy(camera.quaternion)
-            b.mesh.rotateZ(WIND.bush(b.x, b.y, tSec))
+            if (b.mats) {
+                b.mesh.rotation.x = STAND_UP + WIND.bush(b.x, b.y, tSec)
+            } else {
+                b.mesh.quaternion.copy(camera.quaternion)
+                b.mesh.rotateZ(WIND.bush(b.x, b.y, tSec))
+            }
             b.mesh.position.x = FX(b.x) + Math.sin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
         }
         for (const gt of grassTiles) gt.tex.offset.x = WIND.grass(gt.x, gt.y, tSec)
@@ -735,7 +829,7 @@ void main(){
     }
 
     return {
-        loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, resize,
+        loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, resize, attachShelf,
         renderInfo: () => ({
             bufferW: bufW, bufferH: bufH,
             cssW: canvas.clientWidth || width, cssH: canvas.clientHeight || height,
@@ -745,8 +839,13 @@ void main(){
         get camera() { return camera },
         foliage: () => ({
             trees: canopies.length, bushes: bushes.length, grass: grassTiles.length,
-            treeRot: canopies.slice(0, 5).map(c => c.mesh.rotation.z),
-            bushRot: bushes.slice(0, 5).map(b => b.mesh.rotation.z),
+            shelfTrees: canopies.filter((c) => c.mats).length,
+            shelfBushes: bushes.filter((b) => b.mats).length,
+            shelfAttached: !!shelf,
+            // billboard quads sway around z; shelf props stand on the stage and
+            // lean around x (the upright base is STAND_UP, the wind rides on top)
+            treeRot: canopies.slice(0, 5).map(c => (c.mats ? c.mesh.rotation.x - STAND_UP : c.mesh.rotation.z)),
+            bushRot: bushes.slice(0, 5).map(b => (b.mats ? b.mesh.rotation.x - STAND_UP : b.mesh.rotation.z)),
             grassOff: grassTiles.slice(0, 6).map(g => g.tex.offset.x),
         }),
         tailStats: () => {
