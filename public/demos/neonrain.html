@@ -1,0 +1,980 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NEON RAIN — drifting a neon city at night in the rain, live in WebGL2</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #06070c; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(214,206,232,.62); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(240,232,248,.92); font-weight: 700; }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(10,8,16,.55); border: 1px solid rgba(200,170,230,.25); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(222,210,238,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8); cursor: pointer;
+  }
+  #audiohint.off { color: rgba(185,178,198,.5); border-color: rgba(150,145,160,.2); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #eee6f4; background: #0a0810;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>NEON RAIN</b> · neon city at night in the rain &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click for rain + traffic + horns</div>
+<div id="audiohint">click for rain + traffic</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+/* NEON RAIN (#1042) — a demoscene drift through a neon city at night in the rain.
+   Engine notes:
+   · one fullscreen raymarch pass: rectangular city lots on a 82x76 m grid separated
+     by roads (a boulevard along z under the camera); per-cell hash -> tower height;
+     lit window grids, neon floor bands and rooftop rim lights on the facades;
+   · city light integrates along the march into the fog ("glow through haze"), tinted
+     per block magenta/cyan/warm;
+   · wet asphalt: anisotropic puddle mask, mirror ray + pitched mirror ray smeared
+     vertically, fresnel toward grazing; traffic light-pools lit into the street;
+   · traffic: deterministic car streams (JS), drawn as additive point sprites with a
+     mirrored streak under the plane so lights smear on the wet street;
+   · rain: two parallax slabs of vertical-stretched noise tinted by block neon,
+     splashes twinkling on the near street; steam wisps rise at block vents;
+   · post: HDR float target, quarter-res bloom, ACES, slight saturation lift, vignette,
+     grain. Audio: rain hiss + traffic rumble + distant horns + pass-by whoosh,
+     all synthesized (unlocks on first click). */
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+let mirrorOn = qs.get('nomirror') !== '1';
+const SEED = (qs.get('seed') | 0) || 11;
+const RENDER_SCALE = LITE ? 0.5 : 0.72;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
+}
+const HDR_OK = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------------- shaders ---------------- */
+
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FS_CITY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uSeed;
+uniform vec3 uCamPos;
+uniform mat4 uCamInvRot;
+uniform float uFogGain;     // 0..1+ haze density (JS gusts)
+uniform float uRainGain;     // rain intensity (JS gusts)
+uniform float uDbg;          // 1 = glow only
+uniform float uNoMirror;     // 1 = disable the wet-street mirror (harness differential gate)
+out vec4 fragColor;
+
+#define PI 3.14159265
+#define ROADX 26.0
+#define ROADZ 20.0
+#define PERX 82.0
+#define PERZ 76.0
+#define LOTX 56.0
+#define LOTZ 56.0
+
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash13(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+vec2 hash22(vec2 p){
+  p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+  return fract(sin(p) * 43758.5453);
+}
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash12(i);
+  float b = hash12(i + vec2(1,0));
+  float c = hash12(i + vec2(0,1));
+  float d = hash12(i + vec2(1,1));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm2(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 3; i++){ s += a * vnoise(p); p = p * 2.03 + vec2(1.7, 3.1); a *= 0.5; }
+  return s;
+}
+
+/* neon key color of a block */
+vec3 neonOf(vec2 c){
+  float k = hash12(c * 1.7 + 4.3);
+  vec3 mag = vec3(1.0, 0.16, 0.62);
+  vec3 cyn = vec3(0.18, 0.90, 1.0);
+  vec3 wrm = vec3(1.0, 0.55, 0.18);
+  vec3 col = mix(mag, cyn, smoothstep(0.25, 0.55, k));
+  return mix(col, wrm, smoothstep(0.72, 0.92, k));
+}
+
+/* tower top height at world xz, -1 where open ground */
+float cityH(vec2 xz){
+  vec2 c = floor(xz / vec2(PERX, PERZ));
+  vec2 f = xz - c * vec2(PERX, PERZ);
+  if (f.x < ROADX || f.y < ROADZ) return -1.0;
+  vec2 q = f - vec2(ROADX, ROADZ);
+  vec2 d = min(q, vec2(LOTX, LOTZ) - q);
+  if (d.x < 2.5 || d.y < 2.5) return -1.0;
+  float r = hash12(c + 0.5);
+  if (r < 0.10) return -1.0;
+  float h = 9.0 + 52.0 * pow(hash12(c + 3.1), 1.9);
+  if (hash12(c + 7.7) > 0.93) h *= 1.75;
+  return h;
+}
+
+/* steam vents: 1 at a lot corner, drifting puffs. returns density */
+float steamAt(vec3 p, float t){
+  vec2 c = floor(p.xz / vec2(PERX, PERZ));
+  float v = hash12(c + 5.31);
+  if (v < 0.82) return 0.0;
+  vec2 f = p.xz - c * vec2(PERX, PERZ);
+  vec2 vent = vec2(ROADX + 6.0 + hash12(c + 9.2) * 14.0, ROADZ + 5.0 + hash12(c + 2.4) * 10.0);
+  float d = length(p.xz - vent);
+  float rise = clamp(p.y / 6.0, 0.0, 1.0);
+  float col = exp(-d * d * 0.09) * (1.0 - rise) * smoothstep(0.0, 0.30, p.y);
+  float puff = fbm2(p.xz * 0.35 + vec2(t * 0.12, -t * 0.09) + p.y * 0.10);
+  return col * smoothstep(0.30, 0.75, puff);
+}
+
+/* facade color + emissive for a wall hit. axis: 0 = x-normal, 1 = z-normal. */
+vec3 facadeColor(vec3 p, vec2 c, vec2 q, float h, int axis, float t){
+  float u = axis == 0 ? q.y : q.x;                    // along-wall coord (0..56)
+  float v = p.y;
+  vec3 wall = vec3(0.020, 0.022, 0.030);
+  float fu = floor(u / 2.9);
+  float fv = floor(v / 3.3);
+  vec2 wc = vec2(fu, fv) + c * 13.0 + float(axis) * 7.0;
+  float r1 = hash12(wc);
+  vec2 fr = fract(vec2(u / 2.9, v / 3.3));
+  float win = step(0.18, fr.x) * step(fr.x, 0.82) * step(0.22, fr.y) * step(fr.y, 0.78);
+  float litp = 0.34 + 0.30 * smoothstep(12.0, 60.0, h);
+  float flick = 1.0;
+  if (r1 > 0.965) flick = step(0.45, fract(sin(t * (2.0 + 6.0 * r1) + r1 * 90.0) * 0.5 + 0.5));
+  vec3 warm = vec3(1.0, 0.72, 0.42);
+  vec3 cool = vec3(0.55, 0.78, 1.0);
+  vec3 wcol = mix(warm, cool, step(0.55, hash12(wc + 17.7)));
+  float lit = step(1.0 - litp, hash12(wc + 41.3)) * flick;
+  vec3 col = mix(wall, wcol * (0.55 + 0.55 * hash12(wc + 3.7)), win * lit);
+  /* neon floor band: a whole floor is a glowing sign */
+  float band = step(0.90, hash12(vec2(fv, c.x * 3.1 + c.y * 7.7) + 21.0));
+  float stripes = 0.65 + 0.35 * sin(u * 1.1 + t * 1.6 + hash12(c + 1.3) * 20.0);
+  vec3 neon = neonOf(c) * stripes * (0.8 + 0.4 * sin(t * 0.7 + c.x + c.y));
+  col = mix(col, neon * 1.25, band * win * (0.7 + 0.3 * flick));
+  /* ground-floor storefront strip: always-lit signage, mirrors well on wet asphalt */
+  float store = smoothstep(1.6, 2.4, v) * smoothstep(6.2, 4.8, v);
+  float scots = 0.6 + 0.4 * sin(u * 0.8 + hash12(wc + 57.0) * 20.0);
+  col += neonOf(c + 5.0) * store * win * scots * 0.85;
+  /* rooftop rim neon */
+  vec2 dEdge = min(q, vec2(LOTX, LOTZ) - q);
+  float rimEdge = min(dEdge.x, dEdge.y);
+  float nearRoof = smoothstep(h - 0.65, h - 0.05, v);
+  col += neonOf(c + 2.0) * smoothstep(1.1, 0.45, rimEdge) * nearRoof * 1.15;
+  return col;
+}
+
+/* glow-through-haze: light trapped in the canyons (unit-ish field; RATE scales it) */
+vec3 glowAt(vec3 p, float t){
+  float h = cityH(p.xz);
+  if (h < 0.0) return vec3(0.0);
+  vec2 c = floor(p.xz / vec2(PERX, PERZ));
+  float hf = clamp(p.y / max(h, 1.0), 0.0, 1.0);
+  vec3 neon = neonOf(c);
+  vec3 warm = vec3(1.0, 0.62, 0.30);
+  float pulse = 0.8 + 0.2 * sin(t * 0.5 + hash12(c) * 40.0);
+  return mix(warm, neon, 0.55) * (0.55 + 0.45 * hf) * pulse;
+}
+
+struct March { vec3 col; float T; vec3 glow; };
+
+March marchCity(vec3 ro, vec3 rd, float tEnd, int steps, float t, float glowRate){
+  March m; m.col = vec3(0.0); m.T = 1.0; m.glow = vec3(0.0);
+  float fd = 0.0075 * uFogGain;
+  float jit = hash12(gl_FragCoord.xy + vec2(uSeed, floor(t * 60.0) * 0.17));
+  float tt = 4.0 + jit * 7.0;
+  for (int i = 0; i < 256; i++){
+    if (i >= steps || tt > tEnd || m.T < 0.02) break;
+    vec3 p = ro + rd * tt;
+    float h = cityH(p.xz);
+    /* glow integrates along LOS under fog extinction */
+    float gdt = clamp(tt * 0.05, 0.35, 3.0);
+    m.glow += glowAt(p, t) * (glowRate * gdt) * m.T;
+    m.T *= exp(-fd * gdt);
+    float stm = steamAt(p, t);
+    if (stm > 0.08){
+      vec2 sc = floor(p.xz / vec2(PERX, PERZ));
+      m.col += m.T * (neonOf(sc) * 0.45 + vec3(0.85, 0.62, 0.42) * 0.4) * stm * gdt * 0.006;
+      m.T *= exp(-stm * gdt * 0.22);
+    }
+    if (h >= 0.0 && p.y <= h){
+      vec2 c = floor(p.xz / vec2(PERX, PERZ));
+      vec2 f = p.xz - c * vec2(PERX, PERZ);
+      vec2 q = f - vec2(ROADX, ROADZ);
+      /* pick the crossed lot edge as the wall */
+      vec2 d0 = q, d1 = vec2(LOTX, LOTZ) - q;
+      int axis = 0; int side = 1; float dmin = 1e9;
+      if (d0.x < dmin){ dmin = d0.x; axis = 0; side = -1; }
+      if (d1.x < dmin){ dmin = d1.x; axis = 0; side = 1; }
+      if (d0.y < dmin){ dmin = d0.y; axis = 1; side = -1; }
+      if (d1.y < dmin){ dmin = d1.y; axis = 1; side = 1; }
+      vec3 fc;
+      if (p.y > h - 0.55 && dmin > 1.2){
+        fc = vec3(0.015, 0.016, 0.022);              // roof
+        vec2 dE = min(q, vec2(LOTX, LOTZ) - q);
+        fc += neonOf(c + 2.0) * smoothstep(1.3, 0.5, min(dE.x, dE.y)) * 0.9;
+      } else {
+        fc = facadeColor(p, c, q, h, axis, t);
+      }
+      /* cheap AO-ish shading: lower floors dimmer, sky bounce up top */
+      float ao = 0.45 + 0.55 * smoothstep(0.0, 0.7, p.y / max(h, 1.0));
+      m.col += m.T * fc * ao;
+      m.T = 0.0;
+      break;
+    }
+    tt += clamp(max(1.1, tt * 0.045), 1.1, 4.2);
+  }
+  return m;
+}
+
+vec3 skyCol(vec3 rd, float t){
+  float up = clamp(rd.y, 0.0, 1.0);
+  vec3 zenith = vec3(0.010, 0.011, 0.022);
+  vec3 horizon = vec3(0.085, 0.032, 0.060);
+  vec3 c = mix(horizon, zenith, pow(up, 0.42));
+  /* cloud deck catching the city light pollution */
+  if (rd.y > 0.005){
+    vec2 cp = rd.xz / max(rd.y, 0.02) * 0.010 + vec2(t * 0.004, t * 0.002);
+    float cl = fbm2(cp);
+    float deck = smoothstep(0.40, 0.75, cl) * smoothstep(0.02, 0.22, rd.y) * smoothstep(0.85, 0.35, up);
+    c = mix(c, vec3(0.085, 0.040, 0.068), deck * 0.7);
+    c += vec3(0.055, 0.020, 0.038) * deck * exp(-rd.y * 2.4);
+  }
+  c += vec3(0.11, 0.038, 0.065) * pow(max(0.0, 1.0 - abs(rd.y) * 4.0), 3.0) * 0.5;
+  return c * uFogGain;
+}
+
+void main(){
+  vec2 ndc = vUv * 2.0 - 1.0;
+  ndc.x *= uRes.x / uRes.y;
+  vec3 rd = normalize((uCamInvRot * vec4(ndc, -1.75, 1.0)).xyz);
+  vec3 ro = uCamPos;
+  float t = uTime;
+
+  float tGround = (rd.y < -0.0002) ? (-ro.y / rd.y) : 1e9;
+  float tEnd = min(tGround, 340.0);
+
+  March m = marchCity(ro, rd, tEnd, 96, t, 0.0055);
+  vec3 col = m.col + m.glow;
+
+  vec3 bg;
+  vec3 bgG = vec3(0.0);
+  vec3 refl = vec3(0.0);
+  if (tGround <= 340.0){
+    vec3 p = ro + rd * tGround;
+    /* asphalt */
+    float grain = fbm2(p.xz * 1.1);
+    vec3 asphalt = mix(vec3(0.016, 0.017, 0.021), vec3(0.030, 0.031, 0.036), grain);
+    /* lane markings on the boulevard under the cam (road band x 0..26 mod 82) */
+    vec2 f = mod(p.xz, vec2(PERX, PERZ));
+    if (f.x < ROADX){
+      float cl = abs(f.x - ROADX * 0.5);
+      float dash = step(0.45, fract(p.z / 7.0));
+      asphalt = mix(asphalt, vec3(0.16, 0.15, 0.10), smoothstep(0.30, 0.12, cl) * dash * 0.7);
+      asphalt = mix(asphalt, vec3(0.14, 0.13, 0.09), smoothstep(0.28, 0.12, abs(f.x - 6.0)) * 0.5 + smoothstep(0.28, 0.12, abs(f.x - 20.0)) * 0.5);
+    }
+    if (f.y < ROADZ){
+      float cl = abs(f.y - ROADZ * 0.5);
+      float dash = step(0.45, fract(p.x / 7.0));
+      asphalt = mix(asphalt, vec3(0.16, 0.15, 0.10), smoothstep(0.30, 0.12, cl) * dash * 0.7);
+    }
+    /* sidewalk */
+    vec2 qq = f - vec2(ROADX, ROADZ);
+    vec2 dd = min(qq, vec2(LOTX, LOTZ) - qq);
+    float walk = step(0.0, min(qq.x, qq.y)) * step(min(qq.x, qq.y), 2.5);
+    asphalt = mix(asphalt, vec3(0.045, 0.045, 0.052) * (0.8 + 0.4 * grain), walk);
+
+    /* wet mirror: anisotropic puddles, streaked along z */
+    float wet = 0.30 + 0.70 * smoothstep(0.42, 0.62, fbm2(p.xz * vec2(0.38, 0.055) + 7.0));
+    float fres = pow(1.0 + rd.y, 3.0);
+    float reflK = clamp(wet * (0.55 + 0.45 * fres), 0.0, 1.0) * (1.0 - uNoMirror);
+    vec3 rr1 = reflect(rd, vec3(0.0, 1.0, 0.0));
+    March rm = marchCity(p + vec3(0.0, 0.06, 0.0), rr1, 260.0, 38, t, 0.0012);
+    vec3 reflA = rm.col + rm.glow + skyCol(rr1, t) * rm.T;
+    vec3 rr2 = normalize(rr1 + vec3(0.0, -0.055, 0.0));      // pitched mirror = vertical smear
+    March rm2 = marchCity(p + vec3(0.0, 0.06, 0.0), rr2, 260.0, 38, t, 0.0012);
+    vec3 reflB = rm2.col + rm2.glow + skyCol(rr2, t) * rm2.T;
+    refl = reflA * 0.55 + reflB * 0.45;
+    bgG = asphalt + glowAt(vec3(p.x, 1.2, p.z), t) * 0.11;
+    bg = mix(bgG, refl * 1.15, reflK);
+    float fogK = 1.0 - exp(-tGround * 0.0075 * uFogGain);
+    bg = mix(bg, vec3(0.045, 0.022, 0.038) * uFogGain, fogK * 0.85);
+  } else {
+    bg = skyCol(rd, t);
+  }
+  col += bg * m.T;
+
+  /* rain: three parallax screen-space streak layers, tinted toward street neon */
+  float rainA = 0.0;
+  vec3 rainC = vec3(0.0);
+  for (int L = 0; L < 3; L++){
+    float fl = float(L);
+    float sc = 80.0 + fl * 65.0;
+    float spd = 9.0 + fl * 9.0;
+    vec2 g = vec2(vUv.x * sc * (uRes.x / uRes.y), vUv.y * sc * 0.5 - t * spd);
+    vec2 cell = floor(g);
+    vec2 f = fract(g);
+    float present = step(0.70, hash12(cell + vec2(3.1, 7.7) + fl * 13.7));
+    float pos = 0.2 + 0.55 * hash12(cell + vec2(9.3, 1.7) + fl * 5.3);
+    float dash = exp(-pow((f.y - pos) * 4.2, 2.0)) * exp(-pow((f.x - 0.5) * 5.5, 2.0));
+    float a = present * dash * (0.11 + 0.05 * fl) * uRainGain;
+    vec3 rc = mix(vec3(0.62, 0.68, 0.84), vec3(1.0, 0.42, 0.72), smoothstep(0.72, 0.05, vUv.y) * 0.4);
+    rainC += (1.0 - rainA) * rc * a;
+    rainA += (1.0 - rainA) * a;
+  }
+  col += rainC;
+
+  /* splashes on the near street */
+  if (tGround < 55.0){
+    vec3 p = ro + rd * tGround;
+    float sp = step(0.9885, hash12(floor(p.xz * 9.0) + floor(t * 22.0) * 0.173));
+    col += vec3(0.62, 0.60, 0.75) * sp * uRainGain * smoothstep(50.0, 8.0, tGround) * 0.35;
+  }
+
+  if (uDbg > 0.5 && uDbg < 1.5) fragColor = vec4(clamp(m.glow * 4.0, 0.0, 1.0), 1.0);
+  else fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}`;
+
+const VS_CAR = `#version 300 es
+precision highp float;
+uniform mat4 uVP;
+uniform float uPxPerM;
+uniform float uSize;
+in vec3 aPos;
+in vec3 aCol;
+in float aA;
+out vec3 vCol;
+out float vA;
+void main(){
+  vec4 cp = uVP * vec4(aPos, 1.0);
+  gl_Position = cp;
+  gl_PointSize = clamp(uSize * uPxPerM / max(cp.w, 1.0), 2.0, 190.0);
+  vCol = aCol;
+  vA = aA;
+}`;
+
+const FS_CAR = `#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vA;
+out vec4 o;
+void main(){
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  float g = exp(-r2 * 2.6);
+  o = vec4(vCol * g * vA, 1.0);
+}`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float b = max(c.r, max(c.g, c.b));
+  float k = smoothstep(uThresh, uThresh + 0.5, b);
+  o = vec4(c * k, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * 0.227027;
+  c += (texture(uTex, vUv + uDir * 1.3846).rgb + texture(uTex, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uTex, vUv + uDir * 3.2307).rgb + texture(uTex, vUv - uDir * 3.2307).rgb) * 0.0702702;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr;
+uniform sampler2D uBloom;
+uniform float uGain;
+uniform float uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uGain;
+  c = aces(c * 1.05);
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, 1.12);
+  c = pow(max(c, vec3(0.0)), vec3(1.0 / 2.2));
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.24;
+  float g = h21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.008;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- GL helpers ---------------- */
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error('shader compile failed:\n' + log);
+    throw new Error('shader: ' + log);
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progCity = program(VS_QUAD, FS_CITY);
+const progCar = program(VS_CAR, FS_CAR);
+const progBright = program(VS_QUAD, FS_BRIGHT);
+const progBlur = program(VS_QUAD, FS_BLUR);
+const progComp = program(VS_QUAD, FS_COMP);
+
+const vaoEmpty = gl.createVertexArray();
+
+const MAX_CARS = 64;
+const carVerts = new Float32Array(MAX_CARS * 2 * 7);
+const vaoCar = gl.createVertexArray();
+gl.bindVertexArray(vaoCar);
+const carBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, carBuf);
+gl.bufferData(gl.ARRAY_BUFFER, carVerts.byteLength, gl.DYNAMIC_DRAW);
+for (const [nm, size, off] of [['aPos', 3, 0], ['aCol', 3, 12], ['aA', 1, 24]]) {
+  const loc = gl.getAttribLocation(progCar, nm);
+  if (loc >= 0) {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 28, off);
+  }
+}
+gl.bindVertexArray(null);
+
+const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
+const HDRType = HDR_OK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDRF, w, h, 0, gl.RGBA, HDRType, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+
+let W = 0, H = 0, hdr = null, b1 = null, b2 = null;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.25);
+  const cw = Math.floor(canvas.clientWidth * dpr * RENDER_SCALE);
+  const ch = Math.floor(canvas.clientHeight * dpr * RENDER_SCALE);
+  if (cw === W && ch === H) return;
+  W = Math.max(2, cw); H = Math.max(2, ch);
+  canvas.width = W; canvas.height = H;
+  hdr = makeTarget(W, H);
+  const bw = Math.max(2, W >> 2), bh = Math.max(2, H >> 2);
+  b1 = makeTarget(bw, bh);
+  b2 = makeTarget(bw, bh);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------- camera ---------------- */
+
+const SPEED = 9.0;                       // m/s down the boulevard
+const cam = { yaw: 0.0, pitch: -0.07, tyaw: 0.0, tpitch: -0.07, touched: 0 };
+let camZ = 0;
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  cam.touched = performance.now();
+  unlockAudio();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tyaw -= (e.clientX - drag.x) * 0.0032;
+  cam.tpitch = Math.max(-0.30, Math.min(0.55, cam.tpitch - (e.clientY - drag.y) * 0.0028));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+
+const FOVZ = 1.75;
+
+function camBasis(t){
+  const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
+  const drift = Math.min(1, idle / 3.0);
+  cam.yaw += (cam.tyaw + Math.sin(t * 0.05) * 0.05 * drift - cam.yaw) * 0.035;
+  cam.pitch += (cam.tpitch + Math.sin(t * 0.083 + 1.3) * 0.008 * drift - cam.pitch) * 0.035;
+  const cy = Math.cos(cam.yaw), sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch), sp = Math.sin(cam.pitch);
+  const pos = [13 + Math.sin(t * 0.11) * 2.2, 18 + Math.sin(t * 0.23) * 0.7, camZ];
+  const f = [sy * cp, sp, cy * cp];
+  let r = [-f[2], 0, f[0]];
+  const rl = Math.hypot(r[0], r[2]) || 1;
+  r = [r[0] / rl, 0, r[2] / rl];
+  const u = [
+    r[1] * f[2] - r[2] * f[1],
+    r[2] * f[0] - r[0] * f[2],
+    r[0] * f[1] - r[1] * f[0],
+  ];
+  return { pos, r, u, f };
+}
+
+function rotMat(out, r, u, f){
+  out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; out[3] = 0;
+  out[4] = u[0]; out[5] = u[1]; out[6] = u[2]; out[7] = 0;
+  out[8] = -f[0]; out[9] = -f[1]; out[10] = -f[2]; out[11] = 0;
+  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+}
+function vpMat(out, r, u, f, pos, aspect){
+  const t = 1 / FOVZ, near = 1, far = 3000;
+  const view = [
+    r[0], u[0], -f[0], 0,
+    r[1], u[1], -f[1], 0,
+    r[2], u[2], -f[2], 0,
+    -(r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2]),
+    -(u[0] * pos[0] + u[1] * pos[1] + u[2] * pos[2]),
+    (f[0] * pos[0] + f[1] * pos[1] + f[2] * pos[2]),
+    1,
+  ];
+  const proj = [1 / (t * aspect), 0, 0, 0, 0, 1 / t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+  for (let c = 0; c < 4; c++){
+    for (let row = 0; row < 4; row++){
+      out[c * 4 + row] = proj[row] * view[c * 4] + proj[4 + row] * view[c * 4 + 1] + proj[8 + row] * view[c * 4 + 2] + proj[12 + row] * view[c * 4 + 3];
+    }
+  }
+}
+
+/* ---------------- traffic (JS mirror, deterministic) ---------------- */
+
+/* boulevard lanes (x center, dir +1 = away toward +z => taillights):
+   road band x in (0,26); two lanes each way */
+const LANES_NS = [
+  { x: 6.5, dir: 1, spd: 10.5 }, { x: 10.5, dir: 1, spd: 8.5 },
+  { x: 15.5, dir: -1, spd: 9.5 }, { x: 19.5, dir: -1, spd: 11.5 },
+];
+const PERX = 82, PERZ = 76;
+const cars = [];
+(function seedCars(){
+  let n = 0;
+  for (const ln of LANES_NS){
+    for (let i = 0; i < 7; i++){
+      cars.push({
+        axis: 'ns', lat: ln.x, dir: ln.dir, spd: ln.spd * (0.85 + 0.3 * rr(n + 1)),
+        phase: rr(n + 21) * 620, span: 620, roadK: 0, latOff: 0,
+      });
+      n++;
+    }
+  }
+  let m = 0;
+  for (const roadK of [-1, 0, 1]){
+    for (const [latOff, dir] of [[-4.0, 1], [4.0, -1]]){
+      for (let i = 0; i < 3; i++){
+        cars.push({ axis: 'ew', dir, spd: 9 + 4 * rr(m + 31), phase: rr(m + 41) * 560, span: 560, roadK, latOff });
+        m++;
+      }
+    }
+  }
+})();
+function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+function carPos(c, t){
+  if (c.axis === 'ns'){
+    const z = wrapRel(c.phase + c.dir * c.spd * t, camZ, c.span);
+    return [c.lat, 0.9, z];
+  }
+  const x = wrapRel(c.phase + c.dir * c.spd * t, 13, c.span);
+  const z = PERZ * (Math.round(camZ / PERZ) + c.roadK) + 10 + c.latOff;
+  return [x, 0.9, z];
+}
+function wrapRel(v, center, span){
+  let d = v - center;
+  d = d - span * Math.floor(d / span + 0.5);
+  return center + d;
+}
+
+let carDrawN = 0;
+const prevSign = new Map();
+function buildCarVerts(t){
+  let vp = 0, n = 0;
+  let whoosh = null;
+  for (let i = 0; i < cars.length && n < MAX_CARS - 1; i++){
+    const c = cars[i];
+    const p = carPos(c, t);
+    const dz = p[2] - camZ, dx = p[0] - 13;
+    const d2 = dx * dx + dz * dz;
+    if (c.axis === 'ns'){
+      const s = Math.sign(dz);
+      const key = i;
+      const prev = prevSign.get(key);
+      if (prev !== undefined && prev !== 0 && s !== 0 && prev !== s && Math.abs(dz) < 6 && Math.abs(dx) < 8){
+        whoosh = { x: dx, away: c.dir > 0 };
+      }
+      prevSign.set(key, s);
+    }
+    if (d2 > 330 * 330 || (c.axis === 'ns' && dz < -40)) continue;
+    const fog = Math.exp(-Math.sqrt(d2) * 0.0045);
+    const front = (c.axis === 'ns' && c.dir < 0 && dz > 0) || (c.axis === 'ew' && ((c.dir > 0 && p[0] < 13) || (c.dir < 0 && p[0] > 13)));
+    const col = front ? [1.0, 0.96, 0.82] : [1.0, 0.16, 0.10];
+    const a = 0.85 * fog + 0.15;
+    carVerts[vp] = p[0]; carVerts[vp + 1] = p[1]; carVerts[vp + 2] = p[2];
+    carVerts[vp + 3] = col[0]; carVerts[vp + 4] = col[1]; carVerts[vp + 5] = col[2]; carVerts[vp + 6] = a;
+    vp += 7;
+    carVerts[vp] = p[0]; carVerts[vp + 1] = -0.7; carVerts[vp + 2] = p[2];
+    carVerts[vp + 3] = col[0]; carVerts[vp + 4] = col[1] * 0.85; carVerts[vp + 5] = col[2] * 0.85; carVerts[vp + 6] = a * 0.4;
+    vp += 7;
+    n += 2;
+  }
+  carDrawN = n;
+  if (n){
+    gl.bindVertexArray(vaoCar);
+    gl.bindBuffer(gl.ARRAY_BUFFER, carBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, carVerts, 0, n * 7);
+    gl.bindVertexArray(null);
+  }
+  if (whoosh) whooshFx(whoosh.x, whoosh.away);
+  return n;
+}
+
+/* ---------------- weather (JS gust mirrors) ---------------- */
+
+function gust(t){ return 0.72 + 0.28 * Math.sin(t * 0.13 + 1.2) * Math.sin(t * 0.052 + 0.4); }
+function rainGain(t){ return 0.75 + 0.45 * (gust(t) - 0.5); }
+function fogGain(t){ return 0.9 + 0.18 * (gust(t + 9) - 0.5); }
+function wetJS(x, z){
+  return 0.30 + 0.70 * sstep(0.42, 0.62, fbmJS(x * 0.38, z * 0.055 + 7.0));
+}
+function sstep(a, b, x){ const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); }
+function vnoiseJS(x, y){
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const h = (a, b) => { const p = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return p - Math.floor(p); };
+  return (1 - uy) * ((1 - ux) * h(ix, iy) + ux * h(ix + 1, iy)) + uy * ((1 - ux) * h(ix, iy + 1) + ux * h(ix + 1, iy + 1));
+}
+function fbmJS(x, y){
+  let a = 0.5, s = 0;
+  for (let i = 0; i < 3; i++){ s += a * vnoiseJS(x, y); x = x * 2.03 + 1.7; y = y * 2.03 + 3.1; a *= 0.5; }
+  return s;
+}
+/* JS mirror of the shader's hash12 (steam-vent selector) */
+function hash12JS(x, y){
+  let px = x * 0.1031, py = y * 0.1031, pz = x * 0.1031;
+  px -= Math.floor(px); py -= Math.floor(py); pz -= Math.floor(pz);
+  const d = px * (py + 33.33) + py * (pz + 33.33) + pz * (px + 33.33);
+  px += d; py += d; pz += d;
+  const v = (px + py) * pz;
+  return v - Math.floor(v);
+}
+/* steam vents live in cells whose hash >= 0.82; count them near the camera */
+function steamCellCount(cam){
+  let n = 0;
+  const cx0 = Math.floor((cam[0] - 160) / PERX), cx1 = Math.floor((cam[0] + 160) / PERX);
+  const cz0 = Math.floor((cam[2] - 160) / PERZ), cz1 = Math.floor((cam[2] + 160) / PERZ);
+  for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++){
+    if (hash12JS(cx + 5.31, cz + 5.31) >= 0.82) n++;
+  }
+  return n;
+}
+
+/* ---------------- audio: rain, rumble, horns, whoosh ---------------- */
+
+let AC = null, master = null, running = false;
+const audioHint = document.getElementById('audiohint');
+function unlockAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    const len = Math.floor(AC.sampleRate * 2);
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    /* rain hiss */
+    const hs = AC.createBufferSource(); hs.buffer = buf; hs.loop = true;
+    const hp = AC.createBiquadFilter(); hp.type = 'bandpass'; hp.frequency.value = 5200; hp.Q.value = 0.5;
+    const hg = AC.createGain(); hg.gain.value = 0.055;
+    hs.connect(hp).connect(hg).connect(master); hs.start();
+    const rl = AC.createOscillator(); rl.frequency.value = 0.11;
+    const rg = AC.createGain(); rg.gain.value = 0.018;
+    rl.connect(rg).connect(hg.gain); rl.start();
+    /* traffic rumble */
+    const rs = AC.createBufferSource(); rs.buffer = buf; rs.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 110; lp.Q.value = 0.6;
+    const rg2 = AC.createGain(); rg2.gain.value = 0.16;
+    rs.connect(lp).connect(rg2).connect(master); rs.start();
+    running = true;
+    audioHint.textContent = 'city sound on';
+    audioHint.classList.add('off');
+  } catch (e) { /* audio unavailable */ }
+}
+audioHint.addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+function horn(){
+  if (!running || !AC) return;
+  const t = AC.currentTime;
+  const f0 = 330 + Math.round(Math.random() * 3) * 55;
+  const o1 = AC.createOscillator(); o1.type = 'square'; o1.frequency.value = f0;
+  const o2 = AC.createOscillator(); o2.type = 'square'; o2.frequency.value = f0 * 1.008;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
+  const g = AC.createGain();
+  const dur = 0.35 + Math.random() * 0.5;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.05, t + 0.04);
+  g.gain.setValueAtTime(0.05, t + dur - 0.08);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o1.connect(lp); o2.connect(lp); lp.connect(g).connect(master);
+  o1.start(t); o2.start(t); o1.stop(t + dur); o2.stop(t + dur);
+}
+let nextHorn = 6 + Math.random() * 10;
+
+function whooshFx(x, away){
+  if (!running || !AC) return;
+  const t = AC.currentTime;
+  const near = Math.max(0.15, 1 - Math.abs(x) / 8);
+  const dur = 0.7;
+  const nlen = Math.floor(dur * AC.sampleRate);
+  const nb = AC.createBuffer(1, nlen, AC.sampleRate);
+  const nd = nb.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < nlen; i++){
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    nd[i] = last * 4 * Math.exp(-i / (nlen * 0.4));
+  }
+  const n = AC.createBufferSource(); n.buffer = nb;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
+  bp.frequency.setValueAtTime(away ? 900 : 260, t);
+  bp.frequency.exponentialRampToValueAtTime(away ? 240 : 850, t + dur);
+  const pan = AC.createStereoPanner(); pan.pan.value = Math.max(-1, Math.min(1, x / 13));
+  const g = AC.createGain(); g.gain.value = 0.22 * near;
+  n.connect(bp).connect(pan).connect(g).connect(master);
+  n.start(t);
+}
+
+/* ---------------- frame loop ---------------- */
+
+let t0 = performance.now();
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let readyFlag = false;
+let speedMul = 1.0;
+let freezeT = null;
+let pendingGrab = null;
+
+const rot4 = new Float32Array(16);
+const vp4 = new Float32Array(16);
+const U = p => name => gl.getUniformLocation(p, name);
+const ucity = U(progCity), uchar = U(progCar), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+
+function frame(){
+  const t = freezeT !== null ? freezeT : (performance.now() - t0) / 1000;
+  const now = performance.now();
+  let dt = 1 / 60;
+  if (lastFrame) { const dtms = now - lastFrame; dt = Math.min(0.05, dtms / 1000); perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
+  lastFrame = now;
+  frames++;
+  resize();
+
+  camZ += dt * SPEED * speedMul;
+  const cb = camBasis(t);
+  rotMat(rot4, cb.r, cb.u, cb.f);
+  vpMat(vp4, cb.r, cb.u, cb.f, cb.pos, W / H);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progCity);
+  gl.bindVertexArray(vaoEmpty);
+  gl.uniform2f(ucity('uRes'), W, H);
+  gl.uniform1f(ucity('uTime'), t);
+  gl.uniform1f(ucity('uSeed'), SEED);
+  gl.uniform3f(ucity('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
+  gl.uniformMatrix4fv(ucity('uCamInvRot'), false, rot4);
+  gl.uniform1f(ucity('uFogGain'), fogGain(t));
+  gl.uniform1f(ucity('uRainGain'), rainGain(t));
+  gl.uniform1f(ucity('uDbg'), +(qs.get('dbg') || 0));
+  gl.uniform1f(ucity('uNoMirror'), mirrorOn ? 0.0 : 1.0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const nCars = buildCarVerts(t);
+  if (nCars){
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(progCar);
+    gl.bindVertexArray(vaoCar);
+    gl.uniformMatrix4fv(uchar('uVP'), false, vp4);
+    gl.uniform1f(uchar('uPxPerM'), H * FOVZ * 0.5);
+    gl.uniform1f(uchar('uSize'), 2.2);
+    gl.drawArrays(gl.POINTS, 0, nCars);
+    gl.disable(gl.BLEND);
+  }
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.viewport(0, 0, b1.w, b1.h);
+  gl.useProgram(progBright);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.uniform1i(ubr('uTex'), 0);
+  gl.uniform1f(ubr('uThresh'), 0.42);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(progBlur);
+  gl.uniform1i(ubl('uTex'), 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 2.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 2.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 5.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 5.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progComp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform1i(uc('uHdr'), 0);
+  gl.uniform1i(uc('uBloom'), 1);
+  gl.uniform1f(uc('uGain'), 0.55);
+  gl.uniform1f(uc('uTime'), t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (t > nextHorn){
+    horn();
+    nextHorn = t + 8 + Math.random() * 16;
+  }
+
+  if (pendingGrab){
+    const res = pendingGrab; pendingGrab = null;
+    const x0 = (W * 0.2) | 0, bw = (W * 0.6) | 0;
+    const y0 = (H * 0.10) | 0, bh = (H * 0.24) | 0;
+    const buf = new Uint8Array(bw * bh * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let s = 0, c = 0;
+    for (let i = 0; i < buf.length; i += 4){ s += 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2]; c++; }
+    res(+(s / c).toFixed(2));
+  }
+  readyFlag = true;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hooks ---------------- */
+
+window.__neonrainTest = {
+  get ready(){ return readyFlag; },
+  get frames(){ return frames; },
+  get gl2(){ return true; },
+  get hdr(){ return HDR_OK; },
+  state(){
+    const t = (performance.now() - t0) / 1000;
+    return {
+      camZ: +camZ.toFixed(1),
+      t: +t.toFixed(2),
+      cars: cars.filter(c => c.axis === 'ns').map(c => ({ lat: c.lat, dir: c.dir, z: +carPos(c, t)[2].toFixed(1) })),
+      carSprites: carDrawN,
+      rainGain: +rainGain(t).toFixed(3),
+      fogGain: +fogGain(t).toFixed(3),
+      wetAhead: wetJS(13, camZ + 30),
+      steamCells: steamCellCount([13, 18, camZ]),
+      speedMul,
+    };
+  },
+  wet(x, z){ return +wetJS(x, z).toFixed(3); },
+  gust(t){ return +gust(t).toFixed(4); },
+  setSpeed(v){ speedMul = Math.max(0, +v); },
+  setMirror(v){ mirrorOn = !!v; },
+  setFreeze(v){ freezeT = v === true ? (performance.now() - t0) / 1000 : (v ? +v : null); },
+  grab(){ return new Promise(res => { pendingGrab = res; }); },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
+  setPose(p){
+    if (p.yaw !== undefined) { cam.tyaw = p.yaw; cam.yaw = p.yaw; }
+    if (p.pitch !== undefined) { cam.tpitch = p.pitch; cam.pitch = p.pitch; }
+    cam.touched = performance.now();
+  },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'NEON RAIN', accent: '#ff3d81',
+  issues: [1042], span: '~3 h', shipped: '2026-10-25',
+  assist: 'solo', note: '“Qwen picks how” — approach researched and chosen by the builder',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
