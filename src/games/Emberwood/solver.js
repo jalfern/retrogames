@@ -13,6 +13,11 @@ const openTile = (id, tx, ty, st) => {
     if (d0) return !!st.doors[d0.id] || (d0.kind === 'switch' && !!st.switches[d0.switch])
     const ch = tileAt(s, tx, ty)
     if (ch === 'C') return !!st.cracked[id + ':' + (s.cracks || []).find(c => c.x === tx && c.y === ty)?.id]
+    if (ch === 'v') {
+        // a sealed vent crumbles into a step; raw crag stays crag
+        const vt = (s.vents || []).find(v => v.x === tx && v.y === ty)
+        return !!(vt && st.ventsOff && st.ventsOff[vt.id])
+    }
     if (isSolidTile(ch)) return false
     if (ch === '.') {
         const d = d0
@@ -68,7 +73,7 @@ const lineClear = (id, a, b) => {
     return true
 }
 
-const st0 = () => ({ cracked: {}, doors: {}, switches: {}, chests: {}, flags: {}, killed: {} })
+const st0 = () => ({ cracked: {}, doors: {}, switches: {}, chests: {}, flags: {}, killed: {}, ventsOff: {} })
 
 // can the hero stand next to tile t (its own tile may be solid/blocked)?
 function reachAdj(id, from, t, st) {
@@ -93,7 +98,7 @@ function blockSolves(id, st) {
 // logical proof over the whole game.
 export function proveGame(startKit = { bombs: false, bow: false, shield: false }) {
     const st = st0()
-    const kit = { sword: true, bombs: !!startKit.bombs, bow: !!startKit.bow, arrows: startKit.bow ? 10 : 0, shield: !!startKit.shield, keys: 0, bigkey: false }
+    const kit = { sword: true, bombs: !!startKit.bombs, bow: !!startKit.bow, arrows: startKit.bow ? 10 : 0, shield: !!startKit.shield, keys: 0, bigkey: false, gale: false }
 
     const reachables = () => {
         const seen = new Set(['ow-11'])
@@ -104,6 +109,7 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
             const from = s.spawn || (id === 'ow-11' ? [8, 6] : [7, 8])
             for (const k of Object.keys(SCREENS)) {
                 if (seen.has(k)) continue
+                if (SCREENS[k].req && !st.flags[SCREENS[k].req]) continue
                 // overworld adjacency
                 const e = s.exits || {}
                 for (const dir of Object.keys(e)) {
@@ -124,6 +130,7 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
                     if (d.kind === 'key' && kit.keys > 0) { kit.keys--; st.doors[d.id] = true; seen.add(k); q.push(k) }
                     else if (d.kind === 'bigkey' && kit.bigkey) { st.doors[d.id] = true; seen.add(k); q.push(k) }
                     else if (d.kind === 'switch' && st.switches[d.switch]) { st.doors[d.id] = true; seen.add(k); q.push(k) }
+                    else if (d.kind === 'heart' && st.flags.emberTaken) { st.doors[d.id] = true; seen.add(k); q.push(k) }
                 }
             }
         }
@@ -151,7 +158,16 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
                 if (!(kit.bow && kit.arrows > 0)) continue
                 const stand = reachAdj(id, from, [sw.x, sw.y], st)
                 if (stand && lineClear(id, stand, [sw.x, sw.y])) out.push({ type: 'switch', id: sw.id, opens: sw.opens, screen: id })
+            } else if (sw.via === 'gust') {
+                if (!kit.gale) continue
+                const stand = reachAdj(id, from, [sw.x, sw.y], st)
+                if (stand && lineClear(id, stand, [sw.x, sw.y])) out.push({ type: 'switch', id: sw.id, opens: sw.opens, screen: id })
             }
+        }
+        for (const v of s.vents || []) {
+            if (st.ventsOff[v.id]) continue
+            if (!kit.gale) continue
+            if (reachAdj(id, from, [v.x, v.y], st)) out.push({ type: 'vent', id: v.id, screen: id })
         }
         if ((s.blocks || []).length && blockSolves(id, st)) {
             for (const p of s.plates || []) if (!st.switches[p.id]) out.push({ type: 'plate', id: p.id, screen: id })
@@ -159,6 +175,10 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
         for (const e of s.enemies || []) {
             if (e.boss === 1 && !st.flags.boss1 && kit.sword) out.push({ type: 'boss', id: 'boss1', screen: id })
             if (e.boss === 2 && !st.flags.boss2 && kit.sword && kit.bow && kit.arrows > 0) out.push({ type: 'boss', id: 'boss2', screen: id })
+            // the Hollow King: steel only reaches the core once the gale has
+            // stripped the mantle, and the mantle only strips with the vents sealed
+            if (e.boss === 3 && !st.flags.boss3 && kit.sword && kit.gale &&
+                (SCREENS['d3-f0'].vents || []).every(v => st.ventsOff[v.id])) out.push({ type: 'boss', id: 'boss3', screen: id })
         }
         return out
     }
@@ -174,11 +194,17 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
                     if (a.item === 'key') kit.keys++
                     if (a.item === 'bigkey') kit.bigkey = true
                     if (a.item === 'bow') { kit.bow = true; kit.arrows += 10 }
+                    if (a.item === 'gale') kit.gale = true
+                    if (a.item === 'emberheart') st.flags.emberTaken = true
                     route.push(a)
                     progress = true
                 } else if (a.type === 'crack') {
                     st.cracked[a.id] = true
                     if (a.reveal === 'bow') { kit.bow = true; kit.arrows += 10 }
+                    route.push(a)
+                    progress = true
+                } else if (a.type === 'vent') {
+                    st.ventsOff[a.id] = true
                     route.push(a)
                     progress = true
                 } else if (a.type === 'switch' || a.type === 'plate') {
@@ -199,11 +225,13 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
 
     const seen = reachables()
     const s4 = SCREENS['d2-f4']
-    const won = st.flags.boss2 && seen.has('d2-f4') && !!reachAdj('d2-f4', s4.spawn, [s4.chests[0].x, s4.chests[0].y], st)
+    const emberWon = st.flags.boss2 && seen.has('d2-f4') && !!reachAdj('d2-f4', s4.spawn, [s4.chests[0].x, s4.chests[0].y], st)
+    const s5 = SCREENS['d3-f0']
+    const actTwoWon = st.flags.boss3 && seen.has('d3-f0') && !!reachAdj('d3-f0', s5.spawn, [s5.chests[0].x, s5.chests[0].y], st)
 
     const d1Done = !!st.flags.boss1 && seen.has('d1-e3')
     const bowGot = kit.bow
-    return { win: !!won, d1Done, bowGot, kit, route, seen: [...seen] }
+    return { win: !!actTwoWon, actWon: !!actTwoWon, emberWon: !!emberWon, d1Done, bowGot, galeGot: kit.gale, kit, route, seen: [...seen] }
 }
 
 export const shopTotal = (want) => SHOP.filter(o => want.includes(o.item)).reduce((a, o) => a + o.price, 0)

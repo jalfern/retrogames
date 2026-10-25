@@ -26,14 +26,15 @@ const GRAPH = (() => {
     return g
 })()
 
-function screenRoute(from, to) {
+function screenRoute(from, to, flags) {
     if (from === to) return null
+    const ok = (k) => !SCREENS[k] || !SCREENS[k].req || !flags || flags[SCREENS[k].req]
     const prev = { [from]: null }
     const q = [from]
     while (q.length) {
         const id = q.shift()
         for (const e of GRAPH[id]) {
-            if (e.to in prev) continue
+            if (e.to in prev || !ok(e.to)) continue
             prev[e.to] = { id, e }
             if (e.to === to) { let cur = to; while (prev[cur].id !== from) cur = prev[cur].id; return prev[cur].e }
             q.push(e.to)
@@ -42,13 +43,14 @@ function screenRoute(from, to) {
     return null
 }
 
-function screenReachable(from, to) {
+function screenReachable(from, to, flags) {
     if (from === to) return true
+    const ok = (k) => !SCREENS[k] || !SCREENS[k].req || !flags || flags[SCREENS[k].req]
     const seen = { [from]: true }
     const q = [from]
     while (q.length) {
         const id = q.shift()
-        for (const e of GRAPH[id]) { if (e.to === to) return true; if (!(e.to in seen)) { seen[e.to] = true; q.push(e.to) } }
+        for (const e of GRAPH[id]) { if (!ok(e.to)) continue; if (e.to === to) return true; if (!(e.to in seen)) { seen[e.to] = true; q.push(e.to) } }
     }
     return false
 }
@@ -348,7 +350,7 @@ export function attractBot(sim) {
             for (const v of cands) if (freeAt(sim, h0.x + v[0] * 20, h0.y + v[1] * 20)) { b.panicV = v; b.panicT = 26; break }
         }
     }
-    if (!b.plan) b.plan = proveGame({ bombs: true }).route
+    if (!b.plan) b.plan = proveGame({ bombs: true }).route.filter(a => !SCREENS[a.screen] || !SCREENS[a.screen].req)
     const st = solveSt(sim)
     if (!b.fight && (!b.seq || b.seq.kind === 'walk') && !b.fightCool) {
         const t = reachableThreat(sim, b, st)
@@ -373,7 +375,7 @@ export function attractBot(sim) {
         for (let i = 0; i < b.plan.length; i++) {
             if (doneAction(sim, b.plan[i])) continue
             const ph = phase(b.plan[i].screen)
-            if (ph < bestPhase && screenReachable(sim.screen, b.plan[i].screen)) { bestPhase = ph; ti = i }
+            if (ph < bestPhase && screenReachable(sim.screen, b.plan[i].screen, sim.flags)) { bestPhase = ph; ti = i }
         }
     }
     if (ti < 0) { b.pi = 0; b.seq = null; return inp }
@@ -412,7 +414,7 @@ export function attractBot(sim) {
             b.pending = { kind: a.type, m, screen: sim.screen }
         }
     } else {
-        const e = screenRoute(sim.screen, a.screen)
+        const e = screenRoute(sim.screen, a.screen, sim.flags)
         if (!e) return inp
         if (e.via === 'edge') {
             const s = SCREENS[sim.screen]

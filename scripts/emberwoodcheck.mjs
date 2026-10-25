@@ -845,8 +845,119 @@ const SKIP_BROWSER = process.env.EMBERWOOD_NO_BROWSER === '1'
 let browser = null, page = null, chromePass = 0, chromeFail = 0
 const cok = (c, m) => { if (c) { chromePass++; pass++; console.log('ok   ', m) } else { chromeFail++; fail++; console.log('FAIL ', m) } }
 
+
+// ---- 9. ACT TWO — the Gale Charm, the heart gate, spore vents and the Hollow King ----
+{
+    const P = (o={}) => ({ lx: 0, ly: 0, aHeld: false, aPressed: false, aReleased: false, bPressed: false, bHeld: false, bReleased: false, ...o })
+    const castGale = (s) => {
+        s.galeCool = 0
+        stepSim(s, P({ bPressed: true }))
+        for (let i = 0; i < 12; i++) stepSim(s, P({ bHeld: true }))
+        stepSim(s, P({ bReleased: true }))
+        let t = 0
+        while (s.projectiles.length && t < 60) { stepSim(s, P()); t++ }
+    }
+    const p = proveGame({ bombs: true })
+    ok(p.win === true, 'the solver finishes ACT TWO too (Dawn Heart) with bombs bought')
+    ok(p.galeGot === true, 'the solver routes through the Gale Charm chest in Hollow Spire II')
+    ok(p.emberWon === true, 'the act-one proof (Ember Heart) still holds alongside act two')
+    ok(proveGame({ bombs: false }).win === false, 'no bombs still cannot win (the bow-gate chain survives act two)')
+    ok(!p.route.some(a => SCREENS[a.screen] && SCREENS[a.screen].req && !p.route.slice(0, p.route.indexOf(a)).some(q => q.item === 'emberheart')),
+        'every act-two screen in the proof route is ordered after the Ember Heart is carried')
+
+    // heart gate on the shrine's north face
+    {
+        const s = createSim(5)
+        spawnRoom(s, 'ow-10', [12, 1])
+        stepSim(s, P({ ly: -1 }))
+        ok(s.screen === 'ow-10' && s.hero.y > 16, 'the Ashfell gate stays shut without the Ember Heart')
+        s.flags.emberTaken = true
+        let t = 0
+        while (s.screen === 'ow-10' && t < 240) { stepSim(s, P({ ly: -1 })); t++ }
+        ok(s.screen === 'ow-20', `the heart-bearer walks the north gate into Ashfell (screen=${s.screen})`)
+    }
+
+    // spore vents: gust seals, sealed crag becomes a step, spore bites otherwise
+    {
+        const s = createSim(3); s.items.gale = true
+        spawnRoom(s, 'd3-e2', [7, 7])
+        const v = s.enemies && null
+        s.hero.x = 5 * TS + 8; s.hero.y = 4 * TS + 8; s.hero.dir = 'up'
+        castGale(s)
+        ok(!!s.flags.ventsOff['v-3a'], 'a gust seals a spore vent')
+        const before = s.hero.hp
+        s.hero.x = 5 * TS + 8; s.hero.y = 2 * TS + 8
+        let bitten = false
+        for (let i = 0; i < 80; i++) { stepSim(s, P()); if (s.hero.hp < before) { bitten = true; break } }
+        ok(!bitten, 'a sealed vent no longer breathes spore on you')
+        s.flags.ventsOff = {}
+        bitten = false
+        s.hero.hp = before; s.hero.inv = 0
+        for (let i = 0; i < 80; i++) { stepSim(s, P()); if (s.hero.hp < before) { bitten = true; break } }
+        ok(bitten, 'an open vent’s spore bites (the hazard is real)')
+    }
+
+    // wind-rune only the gust reaches + gust-pushes a block onto its plate
+    {
+        const s = createSim(3); s.items.gale = true
+        spawnRoom(s, 'd3-e1', [7, 8])
+        s.hero.x = 1 * TS + 8; s.hero.y = 3 * TS + 8; s.hero.dir = 'up'
+        castGale(s)
+        ok(!!s.flags.switchesOn['sw-g1'] && !!s.flags.doorsOpen['dr3-1'], 'a wind-rune opens its door to a gust (steel and arrows cannot)')
+        const s2 = createSim(3); s2.items.gale = true
+        spawnRoom(s2, 'd3-e3', [6, 7])
+        for (let n = 0; n < 3; n++) {
+            const b = s2.blocks[0]
+            s2.hero.x = b.x * TS + 8; s2.hero.y = b.y * TS + 24; s2.hero.dir = 'up'
+            castGale(s2)
+        }
+        ok(s2.blocks[0].y === 1 && !!s2.flags.switchesOn['sw-3p'], 'repeated gusts walk the ash-block onto its plate')
+    }
+
+    // the Hollow King: mantle vs steel, vents gate the gust, core falls to the blade
+    {
+        const s = createSim(3); s.items.gale = true; s.items.blade = true
+        spawnRoom(s, 'd3-f0', [7, 8])
+        const k = s.enemies.find(e => e.type === 'king')
+        ok(!!k && k.mantle === 3, 'the Hollow King rises under three layers of cinder mantle')
+        s.hero.x = k.x; s.hero.y = k.y + 13; s.hero.dir = 'up'; k.hitSwing = -1; s.cool = 0
+        stepSim(s, P({ aPressed: true })); stepSim(s, P({ aReleased: true }))
+        for (let i = 0; i < 14; i++) stepSim(s, P())
+        ok(k.hp === 10, 'steel clanks off the mantle (no chip while it holds)')
+        s.galeCool = 0; s.hero.x = k.x; s.hero.y = k.y + 30; s.hero.dir = 'up'
+        stepSim(s, P({ bPressed: true })); for (let i = 0; i < 12; i++) stepSim(s, P({ bHeld: true })); stepSim(s, P({ bReleased: true }))
+        while (s.projectiles.length) stepSim(s, P())
+        ok(k.mantle === 3, 'the mantle holds while the spore vents still breathe')
+        s.flags.ventsOff['v-k1'] = true; s.flags.ventsOff['v-k2'] = true
+        for (let n = 0; n < 3; n++) {
+            s.hero.x = k.x; s.hero.y = k.y + 30; s.hero.dir = 'up'
+            castGale(s)
+        }
+        ok(k.mantle === 0 && k.open === 1, 'sealed vents + three gusts strip the mantle bare')
+        let swings = 0
+        while (!k.dead && swings < 12) {
+            s.hero.hp = s.hero.max
+            s.cool = 0; s.hero.x = k.x; s.hero.y = k.y + 13; s.hero.dir = 'up'; k.hitSwing = -1; k.rest = 200; k.charging = 0; k.st = 0
+            stepSim(s, P({ aPressed: true })); stepSim(s, P({ aReleased: true }))
+            for (let i = 0; i < 26; i++) stepSim(s, P())
+            swings++
+        }
+        ok(k.dead && s.flags.boss3, `the bare core falls to the Ember Blade (${swings} swings)`)
+        const d = saveState(s); d.flags.emberTaken = true; d.items.gale = true
+        const s2 = createSim(3)
+        ok(loadState(s2, d) && s2.flags.boss3 && s2.items.gale, 'the save carries the act-two flags and the charm (continue past the Wyrm keeps Ashfell)')
+    }
+
+    // determinism: the vale + act two stay seed-pure
+    {
+        const run = (seed) => { const s = createSim(seed); for (let i = 0; i < 800; i++) stepSim(s, P({ lx: i % 60 < 30 ? 1 : 0, ly: i % 40 < 20 ? -1 : 1, aPressed: i % 30 === 0, bPressed: i % 97 === 0 })); return hashState(s) }
+        ok(run(7) === run(7) && run(7) !== run(8), 'act-two code keeps the sim seed-deterministic')
+    }
+}
+
 if (!SKIP_BROWSER) {
     const { launch, openGame } = await import('./lib/harness.mjs')
+
     const URL = process.env.EMBERWOOD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/emberwood`
     try {
         browser = await launch({})

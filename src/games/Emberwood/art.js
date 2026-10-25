@@ -233,6 +233,89 @@ export function makeTextures() {
         g.fillRect(2, 2, 12, 3); g.fillRect(4, 6, 8, 3); g.fillRect(6, 10, 4, 4)
         return c
     })()
+    // ---- act two: Ashfell biome ----
+    T.ash = (() => {
+        const [c, g] = mk(16, 16)
+        g.fillStyle = '#6f6a72'; g.fillRect(0, 0, 16, 16)
+        for (let i = 0; i < 38; i++) {
+            const x = Math.floor(rnd() * 16), y = Math.floor(rnd() * 16)
+            g.fillStyle = rnd() < 0.5 ? '#7b7680' : '#615c66'
+            g.fillRect(x, y, 1, 2)
+        }
+        g.fillStyle = '#8d8894'; g.fillRect(3, 6, 2, 1); g.fillRect(11, 12, 3, 1)
+        g.fillStyle = '#4e4a54'; g.fillRect(7, 2, 1, 1); g.fillRect(13, 8, 1, 1)
+        return c
+    })()
+    T.crag = (() => {
+        const [c, g] = mk(16, 16)
+        g.fillStyle = '#2c2733'; g.fillRect(0, 0, 16, 16)
+        g.fillStyle = '#3a3342'
+        g.fillRect(1, 2, 6, 4); g.fillRect(9, 1, 5, 3)
+        g.fillRect(2, 8, 5, 4); g.fillRect(10, 7, 4, 5)
+        g.fillStyle = '#1c1822'
+        g.fillRect(7, 0, 1, 8); g.fillRect(8, 6, 1, 9); g.fillRect(0, 6, 3, 1)
+        g.fillStyle = '#571f14'; g.fillRect(12, 12, 2, 1)
+        return c
+    })()
+    T.doorHeart = (() => {
+        const [c, g] = mk(16, 16)
+        g.fillStyle = '#4e4658'; g.fillRect(0, 0, 16, 16)
+        g.fillStyle = '#39324a'; g.fillRect(2, 2, 12, 12)
+        g.fillStyle = '#b8742e'
+        g.fillRect(7, 6, 2, 2); g.fillRect(5, 8, 2, 2); g.fillRect(9, 8, 2, 2)
+        g.fillRect(6, 10, 4, 2); g.fillRect(7, 12, 2, 1)
+        g.fillStyle = '#ffd27a'; g.fillRect(7, 7, 1, 1)
+        return c
+    })()
+    T.runeGust = (() => {
+        const [c, g] = mk(12, 12)
+        g.clearRect(0, 0, 12, 12)
+        g.fillStyle = '#33475c'; g.fillRect(1, 1, 10, 10)
+        g.strokeStyle = '#8ce0ff'; g.lineWidth = 1
+        g.beginPath(); g.arc(6, 6, 3.4, 0.4, 5.2); g.stroke()
+        g.fillStyle = '#bff2ff'; g.fillRect(5, 5, 2, 2)
+        return c
+    })()
+    T.brazier = [0, 1].map(f => {
+        const [c, g] = mk(12, 16)
+        g.clearRect(0, 0, 12, 16)
+        g.fillStyle = '#4a4452'; g.fillRect(4, 9, 4, 5)
+        g.fillStyle = '#332e3c'; g.fillRect(3, 13, 6, 2)
+        g.fillStyle = '#5c5464'; g.fillRect(2, 6, 8, 3)
+        g.fillStyle = f ? '#ff9a3c' : '#c9613a'
+        g.fillRect(4, f ? 1 : 2, 4, f ? 5 : 4)
+        g.fillStyle = f ? '#ffd87a' : '#ff9a3c'
+        g.fillRect(5, f ? 2 : 3, 2, 2)
+        return c
+    })
+    T.vent = (() => {
+        const [c, g] = mk(14, 12)
+        g.clearRect(0, 0, 14, 12)
+        g.fillStyle = '#1f1b26'; g.fillRect(2, 3, 10, 8)
+        g.fillStyle = '#332e3c'; g.fillRect(1, 2, 12, 2); g.fillRect(1, 10, 12, 1)
+        g.fillStyle = '#6fae4e'; g.fillRect(4, 5, 2, 2); g.fillRect(8, 7, 2, 2)
+        g.fillStyle = '#8cc45f'; g.fillRect(5, 5, 1, 1); g.fillRect(9, 7, 1, 1)
+        g.fillStyle = '#15121b'; g.fillRect(3, 6, 8, 1)
+        return c
+    })()
+    T.ventSealed = (() => {
+        const [c, g] = mk(14, 12)
+        g.clearRect(0, 0, 14, 12)
+        g.fillStyle = '#2c2733'; g.fillRect(2, 3, 10, 8)
+        g.fillStyle = '#4a4452'; g.fillRect(3, 4, 8, 2); g.fillRect(4, 7, 6, 3)
+        g.strokeStyle = '#7b7680'; g.strokeRect(2.5, 3.5, 9, 7)
+        return c
+    })()
+    T.gust = (() => {
+        const [c, g] = mk(16, 16)
+        g.clearRect(0, 0, 16, 16)
+        g.strokeStyle = 'rgba(220,240,255,0.9)'; g.lineWidth = 2
+        g.beginPath(); g.arc(5, 8, 5.5, -1.2, 1.2); g.stroke()
+        g.beginPath(); g.arc(8, 8, 4.5, -1.0, 1.0); g.stroke()
+        g.strokeStyle = 'rgba(160,215,255,0.7)'; g.lineWidth = 1
+        g.beginPath(); g.arc(6, 8, 3, -0.9, 0.9); g.stroke()
+        return c
+    })()
 
     // ---------------- hero: 3 dirs x (walk1, walk2, slash, draw) ----------------
     const hero = (dir, pose) => {
@@ -474,6 +557,59 @@ export function makeTextures() {
             return c
         })(),
     }
+    // ---- act two boss: the Hollow King (cinder mantle over a furnace core) ----
+    T.king = {
+        mantle0: (() => {
+            const [c, g] = mk(28, 28)
+            g.clearRect(0, 0, 28, 28)
+            g.fillStyle = '#3c3444'; g.beginPath(); g.arc(14, 15, 12, 0, 7); g.fill()
+            g.fillStyle = '#57506a'
+            g.fillRect(6, 7, 8, 5); g.fillRect(15, 6, 7, 6); g.fillRect(4, 14, 7, 6); g.fillRect(17, 14, 7, 6)
+            g.fillRect(9, 21, 10, 4)
+            g.fillStyle = '#282232'
+            g.fillRect(13, 4, 2, 22); g.fillRect(4, 12, 20, 1)
+            g.fillStyle = '#ff7a3c'
+            g.fillRect(13, 12, 2, 3); g.fillRect(7, 10, 2, 2); g.fillRect(19, 10, 2, 2); g.fillRect(12, 22, 4, 2)
+            g.fillStyle = '#cfc8dc'; g.fillRect(9, 5, 2, 1); g.fillRect(17, 5, 2, 1)
+            g.fillStyle = '#8ce0ff'; g.fillRect(10, 12, 2, 2); g.fillRect(16, 12, 2, 2)
+            return c
+        })(),
+        mantle1: (() => {
+            const [c, g] = mk(28, 28)
+            g.clearRect(0, 0, 28, 28)
+            g.fillStyle = '#3c3444'; g.beginPath(); g.arc(14, 15, 12, 0, 7); g.fill()
+            g.fillStyle = '#5c5572'
+            g.fillRect(6, 7, 8, 5); g.fillRect(15, 6, 7, 6); g.fillRect(4, 14, 7, 6); g.fillRect(17, 14, 7, 6)
+            g.fillRect(9, 21, 10, 4)
+            g.fillStyle = '#282232'
+            g.fillRect(13, 4, 2, 22); g.fillRect(4, 12, 20, 1)
+            g.fillStyle = '#c9613a'
+            g.fillRect(13, 12, 2, 3); g.fillRect(7, 10, 2, 2); g.fillRect(19, 10, 2, 2); g.fillRect(12, 22, 4, 2)
+            g.fillStyle = '#cfc8dc'; g.fillRect(9, 5, 2, 1); g.fillRect(17, 5, 2, 1)
+            g.fillStyle = '#8ce0ff'; g.fillRect(10, 12, 2, 2); g.fillRect(16, 12, 2, 2)
+            return c
+        })(),
+        core: (() => {
+            const [c, g] = mk(28, 28)
+            g.clearRect(0, 0, 28, 28)
+            g.fillStyle = '#2b2434'; g.beginPath(); g.arc(14, 15, 12, 0, 7); g.fill()
+            g.fillStyle = '#151019'; g.beginPath(); g.arc(14, 15, 8.5, 0, 7); g.fill()
+            g.fillStyle = '#ff5a2a'; g.beginPath(); g.arc(14, 15, 6, 0, 7); g.fill()
+            g.fillStyle = '#ffb238'; g.beginPath(); g.arc(14, 15, 4, 0, 7); g.fill()
+            g.fillStyle = '#fff3cf'; g.beginPath(); g.arc(13, 14, 2, 0, 7); g.fill()
+            g.fillStyle = '#57506a'; g.fillRect(5, 6, 4, 3); g.fillRect(19, 6, 4, 3)
+            g.fillStyle = '#8ce0ff'; g.fillRect(9, 11, 2, 2); g.fillRect(17, 11, 2, 2)
+            return c
+        })(),
+    }
+    T.dawnheart = (() => {
+        const [c, g] = mk(12, 12)
+        g.clearRect(0, 0, 12, 12)
+        g.fillStyle = '#ffe9a8'; g.beginPath(); g.arc(6, 6, 5, 0, 7); g.fill()
+        g.fillStyle = '#fff8e0'; g.beginPath(); g.arc(5, 5, 2, 0, 7); g.fill()
+        g.fillStyle = '#ff9a3c'; g.fillRect(6, 6, 3, 1); g.fillRect(6, 8, 2, 1)
+        return c
+    })()
 
     // ---------------- drops / items ----------------
     T.ember = [0, 1].map(f => {

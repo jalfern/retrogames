@@ -31,6 +31,7 @@ const ENEMY_SPEC = {
     pod: { hp: 2, w: 11, h: 11, dmg: 1 },
     maw: { hp: 8, w: 26, h: 26, dmg: 1, boss: 1 },
     wyrm: { hp: 6, w: 22, h: 22, dmg: 1, boss: 2 },
+    king: { hp: 10, w: 26, h: 26, dmg: 1, boss: 3 },
 }
 
 const HERO = { w: 10, h: 8, speed: 1.45 }
@@ -56,11 +57,12 @@ export function createSim(seed = 1) {
         rng: mulberry32(seed >>> 0),
         screen: 'ow-11',
         hero: { x: 5 * TS + 8, y: 6 * TS + 6, dir: 'up', hp: 3, max: 3, inv: 0, hurt: 0 },
-        items: { sword: true, bow: false, shield: false, blade: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
+        items: { sword: true, bow: false, shield: false, blade: false, gale: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
         score: 0,
         swing: 0, swingDir: 'down', swingId: 0, cool: 0, holdT: 0, drawing: false,
         arc: 0, arcDir: 'down', arcId: 0,
         bombCool: 0,
+        bHoldT: 0, pendingB: 0, galeCool: 0, galing: false,
         hitStop: 0,        // frozen frames after a kill / blast (hit-stop for weight)
         shop: { open: false, sel: 0, id: null },
         paused: false,
@@ -70,8 +72,9 @@ export function createSim(seed = 1) {
         msg: null, msgT: 0,
         cut: {},           // 'scr:x,y' tall grass permanently cut
         flags: {
-            cracked: {}, doorsOpen: {}, switchesOn: {}, chestsOpen: {},
-            killed: {}, boss1: false, boss2: false,
+            cracked: {}, doorsOpen: {}, switchesOn: {}, chestsOpen: {}, ventsOff: {},
+            killed: {}, boss1: false, boss2: false, boss3: false,
+            emberTaken: false, dawnheart: false,
         },
         roomName: '', nameT: 0,
         lastDungeonEntry: {}, // dungeon id -> overworld screen+pos
@@ -98,6 +101,11 @@ function blocked(sim, x, y, w, h, phase) {
             if (d && !doorOpen(sim, d)) return true
             if (d) continue
             if (ch === 'C') { if (!sim.flags.cracked[crackAt(s, tx, ty)?.id]) return true }
+            else if (ch === 'v') {
+                // crag, unless a sealed vent has crumbled it into a step
+                const vt = (s.vents || []).find(v => v.x === tx && v.y === ty)
+                if (!(vt && sim.flags.ventsOff[vt.id])) return true
+            }
             else if (isSolidTile(ch)) return true
             else if (ch === '.') {
                 const c = chestAt(sim, tx, ty)
@@ -137,6 +145,7 @@ const warpAt = (s, tx, ty) => (s.warps || []).find(w => w.x === tx && w.y === ty
 
 export function doorOpen(sim, d) {
     if (d.kind === 'switch') return !!sim.flags.switchesOn[d.switch] || !!sim.flags.doorsOpen[d.id]
+    if (d.kind === 'heart') return !!sim.flags.emberTaken
     return !!sim.flags.doorsOpen[d.id]
 }
 
@@ -169,6 +178,7 @@ function makeEnemy(e) {
         hp: spec.hp, w: spec.w, h: spec.h, dmg: spec.dmg,
         t: 0, st: 0, vx: 0, vy: 0, hitT: 0, open: 0, stagger: 0, hidden: e.type === 'sprig',
         charging: 0, rest: 0, chx: 0, chy: 0, gen: 0,
+        mantle: e.type === 'king' ? 3 : 0, summoned: 0,
         fx: 0, fy: 1, seedOff: (e.i || 0) * 37 + 11, dead: false,
         seg: [],
     }
@@ -234,6 +244,8 @@ export function stepSim(sim, inp) {
     if (h.hurt > 0) h.hurt--
     if (sim.cool > 0) sim.cool--
     if (sim.bombCool > 0) sim.bombCool--
+    if (sim.galeCool > 0) sim.galeCool--
+    for (const b of sim.blocks) if (b.cool > 0) b.cool--
 
     // ---- movement ----
     let lx = inp.lx, ly = inp.ly
@@ -275,12 +287,32 @@ export function stepSim(sim, inp) {
     // ---- swipe trail lingers ~2 frames past the blade for a readable arc ----
     if (sim.arc > 0) sim.arc--
 
-    // ---- B: bomb ----
-    if (inp.bPressed && sim.items.bombs > 0 && sim.bombCool === 0) {
-        sim.items.bombs--
-        sim.bombCool = 30
-        sim.bombs.push({ x: h.x, y: h.y + 4, fuse: 70 })
-        emit(sim, 'placebomb', h.x, h.y)
+    // ---- B: tap = bomb, hold >=12 + release = the Gale Charm's wind gust ----
+    // Symmetric with A (tap slash / hold draw). A press arms `pendingB`; the
+    // bomb leaves on release of a short tap (or one tick after an unarmed
+    // press, which is what the attract bot's single-tick bPressed is), and a
+    // long hold becomes the charm instead — never both.
+    if (inp.bPressed) { sim.pendingB = 1; sim.bHoldT = 1 }
+    else if (inp.bHeld && sim.bHoldT > 0) {
+        sim.bHoldT++
+        sim.pendingB = 0
+        if (sim.bHoldT === 12 && sim.items.gale && sim.galeCool === 0) {
+            sim.galing = true
+            emit(sim, 'galecharge', h.x, h.y)
+        }
+    } else if (sim.pendingB > 0) {
+        if (sim.items.bombs > 0 && sim.bombCool === 0) {
+            sim.items.bombs--
+            sim.bombCool = 30
+            sim.bombs.push({ x: h.x, y: h.y + 4, fuse: 70 })
+            emit(sim, 'placebomb', h.x, h.y)
+        }
+        sim.pendingB = 0; sim.bHoldT = 0
+    }
+    if (inp.bReleased) {
+        if (sim.galing) castGale(sim)
+        sim.galing = false
+        sim.pendingB = 0; sim.bHoldT = 0
     }
 
     // ---- C: potion ----
@@ -291,6 +323,7 @@ export function stepSim(sim, inp) {
 
     stepBombs(sim)
     stepProjectiles(sim)
+    stepVents(sim)
     stepNpcs(sim)
     stepEnemies(sim)
     stepPickups(sim)
@@ -348,6 +381,11 @@ function tryDoor(sim, d) {
             sim.flags.doorsOpen[d.id] = true
             emit(sim, 'unlock', d.x * TS + 8, d.y * TS + 8)
         } else say(sim, 'A MOSSY DOOR — A GREATER KEY LURKS NEARBY', 140)
+    } else if (d.kind === 'heart') {
+        if (sim.flags.emberTaken) {
+            sim.flags.doorsOpen[d.id] = true
+            emit(sim, 'unlock', d.x * TS + 8, d.y * TS + 8)
+        } else say(sim, 'ASHFELL GATE — IT OPENS ONLY FOR ONE WHO CARRIES THE EMBER HEART', 180)
     }
 }
 
@@ -362,7 +400,9 @@ function grant(sim, item) {
     if (item === 'key') sim.items.keys++
     else if (item === 'bigkey') sim.items.bigkey = true
     else if (item === 'heart') { h.max++; h.hp = h.max; say(sim, 'HEART CONTAINER — HEART UP!', 160) }
-    else if (item === 'emberheart') { h.max += 2; h.hp = h.max; sim.win = true; say(sim, 'THE EMBER HEART — THE WOOD IS SAFE', 600) }
+    else if (item === 'emberheart') { h.max += 2; h.hp = h.max; sim.win = true; sim.flags.emberTaken = true; say(sim, 'THE EMBER HEART — THE WOOD IS SAFE', 600) }
+    else if (item === 'dawnheart') { h.max += 2; h.hp = h.max; sim.win = true; sim.flags.dawnheart = true; say(sim, 'DAWN OVER EMBERWOOD — THE VALE IS FREE AT LAST', 700) }
+    else if (item === 'gale') { sim.items.gale = true; say(sim, 'THE GALE CHARM! HOLD B, RELEASE TO LOOSE THE WIND', 260) }
     else if (item === 'bow') { sim.items.bow = true; sim.items.arrows += 10; say(sim, 'THE ELDER BOW! HOLD A TO DRAW, RELEASE TO LOOSE', 240) }
     else if (item === 'arrows') sim.items.arrows += 10
     else if (item === 'shield') sim.items.shield = true
@@ -378,6 +418,17 @@ function fireArrow(sim) {
     const [dx, dy] = DIRV[sim.hero.dir]
     sim.projectiles.push({ kind: 'arrow', x: sim.hero.x + dx * 8, y: sim.hero.y + dy * 8, vx: dx * 3.2, vy: dy * 3.2 })
     emit(sim, 'shoot', sim.hero.x, sim.hero.y)
+}
+
+// the Gale Charm's gust: a short-range cone of wind (one gust on the field,
+// ~64px of reach) that seals vents, trips wind-runes, walks push-blocks,
+// strips the Hollow King's cinder mantle and knocks trash back.
+function castGale(sim) {
+    if (!sim.items.gale) return
+    sim.galeCool = 24
+    const [dx, dy] = DIRV[sim.hero.dir]
+    sim.projectiles.push({ kind: 'gust', x: sim.hero.x + dx * 10, y: sim.hero.y + dy * 10, vx: dx * 1.9, vy: dy * 1.9, life: 34 })
+    emit(sim, 'gust', sim.hero.x, sim.hero.y, { dir: sim.hero.dir })
 }
 
 function swordHits(sim) {
@@ -417,6 +468,7 @@ function hurtEnemy(sim, e, dmg, dx, dy) {
     }
     if (e.type === 'maw' && e.open <= 0) { emit(sim, 'clank', e.x, e.y); return }
     if (e.type === 'wyrm' && e.stagger <= 0) { emit(sim, 'clank', e.x, e.y); say(sim, 'THE SCALECLOAK SHRUGS IT OFF — USE ARROWS!', 120); return }
+    if (e.type === 'king' && e.mantle > 0) { emit(sim, 'clank', e.x, e.y); say(sim, 'CINDER MANTLE — LOOSE THE WIND TO STRIP IT', 120); return }
     e.hp -= dmg
     e.hitT = 8
     if (e.stagger > 0 && e.hp <= 0) e.stagger = 0
@@ -446,6 +498,7 @@ function killEnemy(sim, e) {
     else if (e.boss) {
         if (e.boss === 1) { sim.flags.boss1 = true; say(sim, 'THE BRAMBLE MAW FALLS', 200) }
         if (e.boss === 2) { sim.flags.boss2 = true; say(sim, 'THE CINDER WYRM BREAKS INTO EMBERS', 240) }
+        if (e.boss === 3) { sim.flags.boss3 = true; say(sim, 'THE HOLLOW KING COLLAPSES INTO ASH', 260) }
         spawnDrop(sim, e.x, e.y, 'heart'); spawnDrop(sim, e.x + 8, e.y + 4, 'heart')
     } else {
         const r = sim.rng()
@@ -486,13 +539,73 @@ function stepProjectiles(sim) {
         const tx = tileOf(p.x), ty = tileOf(p.y)
         const sw = (s.switches || []).find(w => w.x === tx && w.y === ty)
         if (sw) {
-            if (!sim.flags.switchesOn[sw.id]) {
-                sim.flags.switchesOn[sw.id] = true
-                if (sw.opens) sim.flags.doorsOpen[sw.opens] = true
-                emit(sim, 'switch', p.x, p.y)
-                say(sim, 'A MECHANISM GRINDS OPEN', 120)
+            // wind-runes answer only to the gust; arrow-runes only to arrows
+            if ((p.kind === 'gust') === (sw.via === 'gust')) {
+                if (!sim.flags.switchesOn[sw.id]) {
+                    sim.flags.switchesOn[sw.id] = true
+                    if (sw.opens) sim.flags.doorsOpen[sw.opens] = true
+                    emit(sim, 'switch', p.x, p.y)
+                    say(sim, 'A MECHANISM GRINDS OPEN', 120)
+                }
+                sim.projectiles.splice(i, 1); continue
             }
-            sim.projectiles.splice(i, 1); continue
+        }
+        if (p.kind === 'gust') {
+            if (--p.life <= 0) { sim.projectiles.splice(i, 1); continue }
+            // wind-runes and vents read the tile it flies over; vents are crag
+            // tiles, so they are checked BEFORE the generic solid stop
+            const vt = (s.vents || []).find(v => v.x === tx && v.y === ty)
+            if (vt && !sim.flags.ventsOff[vt.id]) {
+                sim.flags.ventsOff[vt.id] = true
+                emit(sim, 'seal', p.x, p.y)
+                say(sim, 'THE GUST SEALS THE VENT — THE SPORE THINS', 120)
+                sim.projectiles.splice(i, 1); continue
+            }
+            const bk = sim.blocks.find(b => b.x === tx && b.y === ty)
+            if (bk) {
+                if (bk.cool === 0) {
+                    const bx = Math.sign(p.vx), by = Math.sign(p.vy)
+                    const nx = bk.x + (bx || 0), ny = bk.y + (by || 0)
+                    const chT = tileAt(s, nx, ny)
+                    const free = chT === '.' && !doorAt(s, nx, ny) && !chestAt(sim, nx, ny) &&
+                        !sim.blocks.some(q => q !== bk && q.x === nx && q.y === ny)
+                    if (free) {
+                        bk.x = nx; bk.y = ny; bk.cool = 8
+                        emit(sim, 'push', nx * TS + 8, ny * TS + 8)
+                        const plate = plateAt(s, nx, ny)
+                        if (plate && !sim.flags.switchesOn[plate.id]) {
+                            sim.flags.switchesOn[plate.id] = true
+                            if (plate.opens) sim.flags.doorsOpen[plate.opens] = true
+                            emit(sim, 'switch', nx * TS + 8, ny * TS + 8)
+                            say(sim, 'A MECHANISM GRINDS OPEN', 120)
+                        }
+                    }
+                }
+                sim.projectiles.splice(i, 1); continue
+            }
+            const king = sim.enemies.find(en => en.type === 'king' && !en.dead && Math.hypot(en.x - p.x, en.y - p.y) < 20)
+            if (king) {
+                const allSealed = (s.vents || []).every(v => sim.flags.ventsOff[v.id])
+                if (king.mantle > 0) {
+                    if (allSealed) {
+                        king.mantle--
+                        emit(sim, 'mantle', king.x, king.y)
+                        say(sim, king.mantle > 0 ? 'A LAYER OF CINDER PEELS AWAY' : 'THE MANTLE FALLS — THE CORE IS BARE!', 140)
+                    } else { emit(sim, 'clank', king.x, king.y); say(sim, 'THE MANTLE HOLDS — SEAL THE SPORE VENTS FIRST', 130) }
+                }
+                sim.projectiles.splice(i, 1); continue
+            }
+            for (const e of sim.enemies) {
+                if (e.dead || e.hidden || e.boss) continue
+                if (Math.hypot(e.x - p.x, e.y - p.y) < 16) {
+                    const kx = Math.sign(p.vx) * 10, ky = Math.sign(p.vy) * 10
+                    if (!blocked(sim, e.x + kx, e.y + ky, e.w, e.h, ENEMY_SPEC[e.type].phase)) { e.x += kx; e.y += ky }
+                    else if (!blocked(sim, e.x + kx, e.y, e.w, e.h, ENEMY_SPEC[e.type].phase)) e.x += kx
+                    if (e.type !== 'husk') hurtEnemy(sim, e, 1, Math.sign(p.vx) || 1, Math.sign(p.vy) || 0)
+                    else emit(sim, 'clank', e.x, e.y)
+                }
+            }
+            continue
         }
         if (tileAt(s, tx, ty) === '#' || tileAt(s, tx, ty) === 'C' || isSolidTile(tileAt(s, tx, ty))) {
             emit(sim, 'thunk', p.x, p.y)
@@ -576,7 +689,7 @@ function tryPush(sim, lx, ly) {
     const hx = sim.hero.x + dx * 8, hy = sim.hero.y + dy * 8
     const tx = tileOf(hx + dx * 4), ty = tileOf(hy + dy * 4)
     for (const b of sim.blocks) {
-        if (b.cool > 0) { b.cool--; continue }
+        if (b.cool > 0) continue
         if (b.x === tx && b.y === ty) {
             const nx = b.x + dx, ny = b.y + dy
             const s = scr(sim)
@@ -595,7 +708,6 @@ function tryPush(sim, lx, ly) {
             }
         }
     }
-    for (const b of sim.blocks) if (b.cool > 0) b.cool = Math.max(0, b.cool - 1)
 }
 
 function hurtHero(sim, dmg) {
@@ -604,6 +716,28 @@ function hurtHero(sim, dmg) {
     h.inv = 45; h.hurt = 12
     h.hp -= dmg
     emit(sim, 'hurt', h.x, h.y)
+}
+
+function stepVents(sim) {
+    const s = scr(sim)
+    const vents = s.vents || []
+    if (!vents.length) return
+    if (!sim.ventCool) sim.ventCool = {}
+    for (const v of vents) {
+        sim.ventCool[v.id] = (sim.ventCool[v.id] || 0) - 1
+        if (sim.flags.ventsOff[v.id]) continue
+        if (Math.hypot(sim.hero.x - (v.x * TS + 8), sim.hero.y - (v.y * TS + 8)) < 22 && sim.ventCool[v.id] <= 0) {
+            sim.ventCool[v.id] = 60
+            emit(sim, 'spore', v.x * TS + 8, v.y * TS + 8)
+            hurtHero(sim, 1)
+        }
+    }
+    // the Hollow King re-kilns its mantle while any vent still breathes
+    const king = sim.enemies.find(e => e.type === 'king' && !e.dead)
+    if (king && king.mantle < 3 && vents.some(v => !sim.flags.ventsOff[v.id]) && sim.tick % 300 === 0) {
+        king.mantle++
+        emit(sim, 'mantle', king.x, king.y)
+    }
 }
 
 function stepNpcs(sim) {
@@ -735,6 +869,38 @@ function stepEnemies(sim) {
                 }
                 break
             }
+            case 'king': {
+                // The Hollow King: cinder mantle (gale strips it, only with the
+                // vents sealed), slow heavy tread, telegraphed stomp-lunge, and
+                // one pod-summon at half its fire. Steel reaches only the bare core.
+                e.open = e.mantle <= 0 ? 1 : 0
+                if (e.hp <= 5 && !e.summoned) {
+                    e.summoned = 1
+                    emit(sim, 'roar', e.x, e.y)
+                    for (const off of [-14, 14]) {
+                        const kid = makeEnemy({ type: 'pod', x: 0, y: 0, i: 70 + (off < 0 ? 0 : 1), drop: null })
+                        kid.x = e.x + off; kid.y = e.y + 6; kid.t = e.t
+                        if (blocked(sim, kid.x, kid.y, kid.w, kid.h)) kid.x = e.x
+                        sim.enemies.push(kid)
+                    }
+                }
+                if (e.st > 0) {
+                    e.st--
+                    if (e.st === 0) { const l = dist || 1; e.chx = dx / l; e.chy = dy / l; e.charging = 34 }
+                    break
+                }
+                if (e.charging > 0) {
+                    e.charging--
+                    const nx = e.x + e.chx * 2.3, ny = e.y + e.chy * 2.3
+                    if (e.charging === 0 || blocked(sim, nx, e.y, e.w, e.h) || blocked(sim, e.x, ny, e.w, e.h)) { e.charging = 0; e.rest = 50 }
+                    else { e.fx = e.chx; e.fy = e.chy; e.x = nx; e.y = ny }
+                    break
+                }
+                if (e.rest > 0) { e.rest--; break }
+                if (dist < 110 && (e.t + e.seedOff) % 110 === 0) { e.st = 30; emit(sim, 'grunt', e.x, e.y); break }
+                moveEnemy(sim, e, dx, dy, 0.72)
+                break
+            }
         }
 
         // contact damage
@@ -800,7 +966,7 @@ function checkTransitions(sim) {
 function revive(sim) {
     sim.death = false
     sim.hero.hp = Math.min(sim.hero.max, 3)
-    const m = /^d2-/.test(sim.screen) ? 'd2-f0' : /^d1-/.test(sim.screen) ? 'd1-e0' : null
+    const m = /^d3-/.test(sim.screen) ? 'd3-e0' : /^d2-/.test(sim.screen) ? 'd2-f0' : /^d1-/.test(sim.screen) ? 'd1-e0' : null
     if (m) spawnRoom(sim, m, SCREENS[m].spawn)
     else spawnRoom(sim, 'ow-11', null)
     emit(sim, 'revive', sim.hero.x, sim.hero.y)
@@ -829,7 +995,7 @@ function stepShop(sim, inp) {
 
 const ITEM_BITS = (sim) =>
     (sim.items.sword ? 1 : 0) | (sim.items.bow ? 2 : 0) | (sim.items.shield ? 4 : 0) |
-    (sim.items.bigkey ? 8 : 0)
+    (sim.items.bigkey ? 8 : 0) | (sim.items.gale ? 16 : 0)
 
 const FLAG_BITS = (sim) => {
     let f = 0
@@ -853,6 +1019,7 @@ export function hashState(sim) {
     mix(ITEM_BITS(sim)); mix(FLAG_BITS(sim))
     mix(sim.enemies.reduce((a, e) => a + (e.dead ? 1 : 0) * 7 + Math.round(e.x) + Math.round(e.y) * 3, 0))
     mix(sim.npcs.reduce((a, n) => a + Math.round(n.x) + Math.round(n.y) * 3, 0))
+    mix(Object.keys(sim.flags.ventsOff || {}).length)
     mix(sim.death ? 1 : 0); mix(sim.win ? 1 : 0)
     return h >>> 0
 }
@@ -878,9 +1045,14 @@ export function simState(sim) {
             doors: { ...sim.flags.doorsOpen },
             switches: { ...sim.flags.switchesOn },
             chests: { ...sim.flags.chestsOpen },
+            ventsOff: { ...sim.flags.ventsOff },
             boss1: sim.flags.boss1,
             boss2: sim.flags.boss2,
+            boss3: sim.flags.boss3,
+            emberTaken: sim.flags.emberTaken,
+            dawnheart: sim.flags.dawnheart,
         },
+        winKind: sim.flags.dawnheart ? 'dawn' : 'ember',
     }
 }
 
@@ -901,7 +1073,9 @@ export function saveState(sim) {
         flags: {
             cracked: { ...sim.flags.cracked }, doorsOpen: { ...sim.flags.doorsOpen },
             switchesOn: { ...sim.flags.switchesOn }, chestsOpen: { ...sim.flags.chestsOpen },
-            killed: { ...sim.flags.killed }, boss1: sim.flags.boss1, boss2: sim.flags.boss2,
+            ventsOff: { ...sim.flags.ventsOff },
+            killed: { ...sim.flags.killed }, boss1: sim.flags.boss1, boss2: sim.flags.boss2, boss3: sim.flags.boss3,
+            emberTaken: !!sim.flags.emberTaken, dawnheart: !!sim.flags.dawnheart,
             elderGifted: !!sim.flags.elderGifted,
         },
         cut: { ...sim.cut },

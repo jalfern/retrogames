@@ -2,12 +2,14 @@
 // Tile legend:
 //   T tree  # rock/wall  = fence  H house wall  R roof  I sign  ~ water  b bridge
 //   . floor  " tall grass (slashable)  , path  < exit portal  C cracked wall
+//   a ash floor (walkable, act two)  v crag (solid, act two)
 // Entity meta (all in tile coords):
 //   chests:[{id,x,y,item,after}]   doors:[{id,x,y,kind,switch,to,entry:[x,y]}]
 //   switches:[{id,x,y,via,opens}]  plates:[{id,x,y}]  cracks:[{id,x,y,reveal,amount}]
 //   enemies:[{type,x,y,i,drop,boss}]  npcs:[{id,kind,x,y,msg,wander:[[x,y]..]}]  signs:[{x,y,msg}]
 //   warps:[{x,y,to,sx,sy}]  exits:{n/e/s/w:{to,x,y}}  spawn:[x,y] entry point
-// kind: 'key' | 'bigkey' | 'switch' (opens when linked switch fires).
+//   braziers:[{x,y}] (decor)  vents:[{id,x,y}] (act two: spore vents, seal with a gust)
+// kind: 'key' | 'bigkey' | 'switch' (opens when linked switch fires) | 'heart' (Ember Heart).
 
 export const TS = 16
 export const SW = 16
@@ -41,7 +43,7 @@ export const SCREENS = {
         ],
     }),
     'ow-10': S('ow-10', 'THE OLD SHRINE', [
-        'TTTTTTTTTTTTTTTT',
+        'TTTTTTTTTTTT.TTT',
         'T.TT...T...T...T',
         'T.T..C...TTTT..T',
         'T....T....T....T',
@@ -53,10 +55,12 @@ export const SCREENS = {
         'T....."".......T',
         'TTTT.TTTTTTTTTTT',
     ], {
-        exits: { w: { to: 'ow-00', x: 15, y: 5 }, s: { to: 'ow-11', x: 5, y: 0 } },
+        exits: { w: { to: 'ow-00', x: 15, y: 5 }, s: { to: 'ow-11', x: 5, y: 0 }, n: { to: 'ow-20', x: 8, y: 10 } },
         warps: [{ x: 8, y: 4, to: 'd2-f0', sx: 7, sy: 8 }],
+        doors: [{ id: 'dr-heart', x: 12, y: 0, kind: 'heart', to: 'ow-20', entry: [8, 10] }],
         cracks: [{ id: 'ck-10', x: 5, y: 2, reveal: 'heart' }],
         chests: [],
+        signs: [{ x: 10, y: 1, msg: 'ASHFELL GATE — THE NORTH WAY UP. IT OPENED FOR NONE... UNTIL THE WYRM\u2019S HEART WAS CARRIED.' }],
         enemies: [
             { type: 'bat', x: 8, y: 1, i: 0 },
             { type: 'wisp', x: 12, y: 3, i: 1 },
@@ -335,6 +339,157 @@ export const SCREENS = {
         enemies: [{ type: 'wyrm', x: 7, y: 4, i: 0, boss: 2 }],
         warps: [],
     }),
+
+    // ==================== ACT TWO — ASHFELL ====================
+    'ow-20': S('ow-20', 'ASHFELL ASCENT', [
+        'vvvvvvvvvvvvvvvv',
+        'vaaaaaaaaaaaaaav',
+        'vasaaavvvaaaaaav',
+        'vasaaavvvaaaaaav',
+        'vaaaaavvvaaaaaav',
+        'vaaavvvvvaaaaaav',
+        'vvvaaaaaaaaaaaav',
+        'vaaaaaaaaavvvaav',
+        'vaaaaaaaaavvvaCv',
+        'vaaaaaaaaaaaaaav',
+        'vvvvvvvvavvvvvvv',], {
+        dark: true, spawn: [8, 10], req: 'emberTaken',
+        exits: { s: { to: 'ow-10', x: 8, y: 1 } },
+        warps: [{ x: 2, y: 2, to: 'd3-e0', sx: 7, sy: 8 }],
+        cracks: [{ id: 'ck-20', x: 13, y: 8, reveal: 'embers', amount: 30 }],
+        braziers: [{ x: 4, y: 4 }, { x: 11, y: 6 }],
+        chests: [{ id: 'ch-20', x: 13, y: 1, item: 'heart' }],
+        enemies: [
+            { type: 'pod', x: 9, y: 5, i: 0 },
+            { type: 'spitter', x: 13, y: 9, i: 1 },
+            { type: 'tuskroot', x: 2, y: 7, i: 2 },
+            { type: 'wisp', x: 12, y: 3, i: 3 },
+        ],
+        signs: [{ x: 6, y: 9, msg: 'ASHFELL — THE SPORE AND THE CINDER. AT THE TOP OF THE SPIRE SITS THE HOLLOW KING, AND THE DAWN HEART BEHIND HIM.' }],
+    }),
+
+    // ---------------- DUNGEON 3 — HOLLOW SPIRE (the Gale Charm lives here) ----------------
+    'd3-e0': S('d3-e0', 'HOLLOW SPIRE I', [
+        '################',
+        '#..............#',
+        '#..####........#',
+        '#..#..#........#',
+        '#..####........#',
+        '#..............#',
+        '#..............#',
+        '#..~~..........#',
+        '#..~~..........#',
+        '#<.............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8], req: 'emberTaken',
+        doors: [{ id: 'dr3-0', x: 7, y: 0, kind: 'key', to: 'd3-e1', entry: [7, 8] }],
+        chests: [{ id: 'ch-3a', x: 12, y: 2, item: 'key' }],
+        enemies: [
+            { type: 'cinderling', x: 4, y: 6, i: 0, drop: 'key' },
+            { type: 'bat', x: 10, y: 5, i: 1 },
+            { type: 'spitter', x: 11, y: 7, i: 2 },
+        ],
+        warps: [{ x: 1, y: 9, to: 'ow-20', sx: 2, sy: 1 }],
+    }),
+    'd3-e1': S('d3-e1', 'HOLLOW SPIRE II', [
+        '################',
+        '#s.............#',
+        '#..............#',
+        '#...###........#',
+        '#...#..........#',
+        '#...#..........#',
+        '#..~~~.........#',
+        '#..............#',
+        '#.....##...C...#',
+        '#..............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8], req: 'emberTaken',
+        doors: [{ id: 'dr3-1', x: 7, y: 0, kind: 'switch', switch: 'sw-g1', to: 'd3-e2', entry: [7, 8] }],
+        switches: [{ id: 'sw-g1', x: 1, y: 1, via: 'gust', opens: 'dr3-1' }],
+        cracks: [{ id: 'ck-3b', x: 13, y: 8, reveal: 'arrows' }],
+        chests: [{ id: 'ch-3g', x: 8, y: 2, item: 'gale' }],
+        braziers: [{ x: 12, y: 5 }],
+        enemies: [
+            { type: 'husk', x: 12, y: 3, i: 0 },
+            { type: 'bat', x: 3, y: 7, i: 1 },
+            { type: 'pod', x: 9, y: 6, i: 2 },
+        ],
+        warps: [],
+    }),
+    'd3-e2': S('d3-e2', 'HOLLOW SPIRE III', [
+        '################',
+        '#.....s........#',
+        '#....v.v.......#',
+        '#..............#',
+        '#..####.#####..#',
+        '#..#........#..#',
+        '#..#..~~....#C.#',
+        '#..#........#..#',
+        '#..####.#####..#',
+        '#.....v........#',
+        '################',], {
+        dark: true, spawn: [7, 8], req: 'emberTaken',
+        doors: [{ id: 'dr3-2', x: 7, y: 0, kind: 'switch', switch: 'sw-g2', to: 'd3-e3', entry: [7, 8] }],
+        switches: [{ id: 'sw-g2', x: 6, y: 1, via: 'gust', opens: 'dr3-2' }],
+        vents: [{ id: 'v-3a', x: 5, y: 2 }, { id: 'v-3b', x: 7, y: 2 }, { id: 'v-3c', x: 6, y: 9 }],
+        cracks: [{ id: 'ck-3c', x: 13, y: 6, reveal: 'heart' }],
+        chests: [{ id: 'ch-3c', x: 5, y: 7, item: 'heart' }],
+        enemies: [
+            { type: 'spitter', x: 9, y: 5, i: 0 },
+            { type: 'bat', x: 5, y: 5, i: 1 },
+            { type: 'pod', x: 9, y: 8, i: 2 },
+            { type: 'wisp', x: 12, y: 9, i: 3 },
+        ],
+        warps: [],
+    }),
+    'd3-e3': S('d3-e3', 'HOLLOW SPIRE IV', [
+        '################',
+        '#..............#',
+        '#....#..#......#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#....~~........#',
+        '#..............#',
+        '#.#............#',
+        '#..............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8], req: 'emberTaken',
+        doors: [{ id: 'dr3-3', x: 7, y: 0, kind: 'switch', switch: 'sw-3p', to: 'd3-f0', entry: [7, 8] }],
+        plates: [{ id: 'sw-3p', x: 6, y: 1 }],
+        blocks: [{ id: 'bk-3', x: 6, y: 4 }],
+        chests: [{ id: 'ch-3d', x: 13, y: 1, item: 'heart' }],
+        enemies: [
+            { type: 'tuskroot', x: 12, y: 5, i: 0 },
+            { type: 'wisp', x: 9, y: 8, i: 1 },
+            { type: 'spitter', x: 3, y: 8, i: 2 },
+        ],
+        warps: [],
+    }),
+    'd3-f0': S('d3-f0', 'THE HOLLOW KING', [
+        '################',
+        '#..............#',
+        '#.v..........v.#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#.#............#',
+        '#<.............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8], req: 'emberTaken',
+        doors: [],
+        vents: [{ id: 'v-k1', x: 2, y: 2 }, { id: 'v-k2', x: 13, y: 2 }],
+        braziers: [{ x: 5, y: 1 }, { x: 10, y: 1 }],
+        chests: [{ id: 'ch-boss3', x: 7, y: 1, item: 'dawnheart', after: 'boss3' }],
+        enemies: [{ type: 'king', x: 7, y: 4, i: 0, boss: 3 }],
+        warps: [{ x: 1, y: 9, to: 'ow-20', sx: 8, sy: 9 }],
+    }),
 }
 
 for (const id of Object.keys(SCREENS)) {
@@ -346,7 +501,7 @@ for (const id of Object.keys(SCREENS)) {
     })
 }
 
-const SOLID_TILES = new Set(['T', '#', 'H', 'R', '=', '~', 'I', 'A'])
+const SOLID_TILES = new Set(['T', '#', 'H', 'R', '=', '~', 'I', 'A', 'v'])
 
 export const tileAt = (scr, x, y) => {
     if (!scr || x < 0 || y < 0 || x >= SW || y >= SH) return '#'

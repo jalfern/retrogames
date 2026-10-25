@@ -68,6 +68,12 @@ const fxSound = (e) => {
             case 'grant': [660, 880, 1100, 1320].forEach((f, i) => ac.playTone(f, 0.1, 'square', 0.05, i * 0.09)); break
             case 'buy': ac.playTone(980, 0.06, 'square', 0.05); ac.playTone(1240, 0.08, 'square', 0.05, 0.06); break
             case 'potion': ac.playSweep(400, 800, 0.2, 'sine', 0.06); break
+            case 'gust': ac.playFilteredNoise(0.28, 0.09, 900); ac.playSweep(300, 700, 0.22, 'sine', 0.04); break
+            case 'galecharge': ac.playSweep(220, 520, 0.18, 'triangle', 0.04); break
+            case 'seal': ac.playTone(340, 0.08, 'square', 0.05); ac.playNoise(0.12, 0.06); break
+            case 'spore': ac.playFilteredNoise(0.16, 0.05, 600); break
+            case 'mantle': ac.playSweep(200, 60, 0.3, 'square', 0.09); ac.playNoise(0.2, 0.09); ac.duckMusic(0.4, 0.4); break
+            case 'roar': ac.playSweep(140, 50, 0.5, 'sawtooth', 0.11); ac.duckMusic(0.25, 0.8); break
         }
     } catch { /* audio locked */ }
 }
@@ -129,7 +135,8 @@ export default function Emberwood() {
             const inp = {
                 lx, ly,
                 aHeld: a, aPressed: a && !prevA, aReleased: !a && prevA,
-                bPressed: b && !prevB, cPressed: keys.has('KeyC') && !keys.has('_c'),
+                bPressed: b && !prevB, bHeld: b, bReleased: !b && prevB,
+                cPressed: keys.has('KeyC') && !keys.has('_c'),
                 upPressed: up && !prevUp, downPressed: dn && !prevDn,
                 startPressed: keys.has('Enter') && !keys.has('_e'),
             }
@@ -145,7 +152,8 @@ export default function Emberwood() {
             const inp = {
                 lx: Math.abs(lx) > 0.15 ? lx : 0, ly: Math.abs(ly) > 0.15 ? ly : 0,
                 aHeld: !!pad.a, aPressed: !!pad.a && !prev.a, aReleased: !pad.a && prev.a,
-                bPressed: !!pad.b && !prev.b, cPressed: !!pad.b2 && !prev.b2,
+                bPressed: !!pad.b && !prev.b, bHeld: !!pad.b, bReleased: !pad.b && prev.b,
+                cPressed: !!pad.b2 && !prev.b2,
                 upPressed: !!pad.up && !prev.up, downPressed: !!pad.down && !prev.down,
             }
             prev.a = !!pad.a; prev.b = !!pad.b; prev.b2 = !!pad.b2; prev.up = !!pad.up; prev.down = !!pad.down
@@ -224,6 +232,7 @@ export default function Emberwood() {
                     items: { ...sim.items }, msg: sim.msgT > 0 ? sim.msg : null,
                     shop: sim.shop.open, sel: sim.shop.sel, shopId: sim.shop.id, death: sim.death, win: sim.win,
                     room: sim.roomName,
+                    winKind: sim.flags.dawnheart ? 'dawn' : 'ember',
                     nearShop: !!shopNpc, nearColporter: shopNpc?.id === 'colporter',
                 })
             }
@@ -271,6 +280,13 @@ export default function Emberwood() {
             setMode('play')
         }
 
+        const startActTwo = () => {
+            sim.win = false
+            sim._winSeen = false
+            lastSaveTick = sim.tick
+            setMode('play')
+        }
+
         const startContinue = () => {
             const d = readSave()
             if (!d || !loadState(sim, d)) { startPlay(); return }
@@ -295,7 +311,11 @@ export default function Emberwood() {
                 else startPlay()
                 return
             }
-            if (screenRef.current === 'win') { setMode('attract'); return }
+            if (screenRef.current === 'win') {
+                if (e.code === 'KeyN' && !sim.flags.dawnheart) startActTwo()
+                else setMode('attract')
+                return
+            }
             keys.add(e.code)
         }
         const onKeyUp = (e) => { keys.delete(e.code) }
@@ -348,6 +368,11 @@ export default function Emberwood() {
                     { label: '+5 bombs', run: () => { sim.items.bombs += 5 } },
                     { label: '+3 keys', run: () => { sim.items.keys += 3 } },
                     { label: 'give bow', run: () => { sim.items.bow = true; sim.items.arrows += 10 } },
+                    { label: 'give gale charm', run: () => { sim.items.gale = true } },
+                    { label: 'open act two + goto Ashfell', run: () => {
+                        sim.flags.emberTaken = true; sim.flags.doorsOpen['dr-heart'] = true
+                        spawnRoom(sim, 'ow-20', [8, 10]); rend.buildScreen(sim.screen, sim.flags, sim.cut)
+                    } },
                     { label: 'PROGNOSIS (solver on live kit)', run: () => {
                         const p = proveGame({ bombs: sim.items.bombs > 0, bow: sim.items.bow })
                         console.log('EMBERWOOD PROGNOSIS:', p.win ? 'WINNABLE' : 'STUCK', 'seen:', p.seen.join(','), 'route:', p.route.map(r => r.type + ':' + (r.item || r.id)).join('>'))
@@ -399,6 +424,7 @@ export default function Emberwood() {
                         {hud.items.bigkey && <div className="text-amber-200 text-xs">BIG KEY</div>}
                         {hud.items.shield && <div className="text-sky-200 text-xs">SHIELD</div>}
                         {hud.items.blade && <div className="text-orange-300 text-xs">EMBER BLADE</div>}
+                        {hud.items.gale && <div className="text-cyan-200 text-xs">GALE CHARM</div>}
                     </div>
                 </div>
             )}
@@ -435,13 +461,28 @@ export default function Emberwood() {
                     </div>
                 </div>
             )}
-            {screen === 'win' && (
+            {screen === 'win' && hud.winKind === 'dawn' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/85 font-mono">
+                    <div className="text-center">
+                        <div className="text-amber-200 text-3xl font-bold tracking-widest mb-2">DAWN OVER EMBERWOOD</div>
+                        <div className="text-stone-300 text-sm mb-1">The Hollow King is ash, and the Dawn Heart rises. The vale is free.</div>
+                        <div className="text-amber-200 text-sm">EMBERS GATHERED: {hud.embers}</div>
+                        <div className="text-stone-400 text-xs mt-3">PRESS ANY KEY</div>
+                    </div>
+                </div>
+            )}
+            {screen === 'win' && hud.winKind !== 'dawn' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/85 font-mono">
                     <div className="text-center">
                         <div className="text-amber-300 text-3xl font-bold tracking-widest mb-2">THE EMBER HEART</div>
-                        <div className="text-stone-300 text-sm mb-1">The Cinder Wyrm is ash. The vale breathes again.</div>
+                        <div className="text-stone-300 text-sm mb-1">The Cinder Wyrm is ash. The vale breathes again. — But the shrine’s north gate stands open now...</div>
                         <div className="text-amber-200 text-sm">EMBERS GATHERED: {hud.embers}</div>
-                        <div className="text-stone-400 text-xs mt-3">PRESS ANY KEY</div>
+                        <button
+                            data-vc="ashfell"
+                            className="pointer-events-auto mt-4 border border-cyan-500/70 bg-cyan-500/15 px-5 py-2 text-cyan-200 text-sm tracking-widest backdrop-blur-sm transition-transform active:scale-95"
+                            onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyN', key: 'n', bubbles: true }))}
+                        >CLIMB ASHFELL (ACT TWO)</button>
+                        <div className="text-stone-400 text-xs mt-2">PRESS N TO CLIMB — ANY OTHER KEY ENDS THE TALE</div>
                     </div>
                 </div>
             )}

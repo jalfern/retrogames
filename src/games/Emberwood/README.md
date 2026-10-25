@@ -159,8 +159,9 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
   clanks on both bosses). Safety rails keep the demo alive: fights only engage
   along a BFS-reachable path, one honest attempt per monster (`black`), pin
   detection, a 2400-tick budget, and a panic-break sprint that sheds a
-  48-tick contact tail. Deterministic — the Ember Heart lands at tick 11233 on
-  every seed.
+  48-tick contact tail. Deterministic — the Ember Heart lands at tick 11242 on
+  every seed (act two moved it 9 ticks: the block-cool decrement now runs in the
+  `stepSim` header, not only the push path).
 
 - **Charge-dust & split-pop (#877)**: the tuskroot kicks ground dust while
   locked in its run — the sim emits `dust` every 6th *moving* charge frame at
@@ -185,7 +186,8 @@ Bar: **MODERN** (docs/ART.md): pixel art inside a lit 3D diorama.
 
 ```bash
 npm run dev
-npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons + brightness + beds
+npm run emberwoodcheck          # boots the page, drives the sim, proves dungeons + act two (gale/vents/
+                                # runes/mantle/heart-gate) + brightness + beds
                                 # + graceful-fight duel gates (tuskroot/husk/trash/Maw/Wyrm)
                                 # + #877 juice gates (charge-dust sign, telegraph puff, split-pop, live fxStats)
 node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>console.log(m.proveGame({bombs:true}).win))"   # true
@@ -247,3 +249,37 @@ node --input-type=module -e "import('./src/games/Emberwood/solver.js').then(m=>c
   `emberwoodcheck` gates it in the sim (loop legality, halt+hold, personal halt,
   off-tile hail, save roundtrip, hash, determinism) and live in Chrome (travel
   distance, heading-true facing, gait above the idle band, ±9% bounds).)
+
+## Act two — Ashfell Ascent and the Hollow Spire (#1044)
+
+Felling the Wyrm and carrying the Ember Heart is NOT the end: the shrine's north
+gate (col 12, `kind: 'heart'`) opens only for the heart-bearer and climbs to
+**ASHFELL ASCENT** (`ow-20`), a snowline region whose cave mouth swallows you into
+the **HOLLOW SPIRE** (`d3-e0..e3`, `d3-f0`).
+
+- **Gale Charm (third action, wind-themed):** hold B ≥12 ticks and release to
+  cast a *gust* — the symmetric sibling of the bow (hold A = draw). The gust
+  travels 34 ticks: it seals **spore vents** (vines on wall tiles that breathe
+  damage spores onto the floor), strips a **wind-rune** no steel or arrow can
+  reach (they click off), shoves ash-blocks one tile per puff, and knocks trash
+  back (+1 dmg if fresh; a knockbacked husk only staggers). B held 1 tick by a
+  bot still throws a **bomb** (the `pendingB` branch wins the race — the attract
+  bot's single-tick `bPressed` still bombs everything).
+- **Spore vents** live on `'v'` crag tiles (solid in `SOLID_TILES`): a *sealed*
+  vent crumbles into a step (both `blocked()` and the solver's `openTile` crack
+  them open), so gusting a vent across a gap is also traversal. Gusts only seal
+  vents; standing beside one for a second does nothing until it's sealed.
+- **The Hollow King (boss 3)** guards the Dawn Heart: three layers of cinder
+  mantle shrug off steel (no chip while mantle > 0); a gust strips one layer but
+  only while **every vent in the room is sealed** — leave one breathing and the
+  mantle holds; leave the fight running and it regrows (+1 every 300 ticks).
+  Bare, the core takes the blade; `flags.boss3` + the `dawnheart` chest and the
+  win screen flips to DAWN OVER EMBERWOOD.
+- **Act-two proof:** the solver takes the Ember Heart first (`req: 'emberTaken'`
+  gates every act-two screen in `reachables`), then routes the Gale chest, both
+  wind-runes, the vent-gated gusts, the three-stage mantle strip, and the Dawn
+  Heart (`galeGot`, `emberWon`). `proveGame({bombs:false}).win` stays false.
+  The attract bot stays an act-one hero: its route filters out `req` screens and
+  `screenReachable` enforces them, so the demo still fells the Wyrm at 11242.
+- Save/load carry `flags.emberTaken`, `items.gale`, the vent seals and the King,
+  so a continue past the Wyrm keeps Ashfell.
