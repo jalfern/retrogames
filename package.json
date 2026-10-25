@@ -28,6 +28,7 @@
     "stormcheck": "node scripts/stormcheck.mjs",
     "reefcheck": "node scripts/reefcheck.mjs",
     "blackholecheck": "node scripts/blackholecheck.mjs",
+    "neonraincheck": "node scripts/neonraincheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",

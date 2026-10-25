@@ -56,6 +56,7 @@
 
 const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
+let mirrorOn = qs.get('nomirror') !== '1';
 const SEED = (qs.get('seed') | 0) || 11;
 const RENDER_SCALE = LITE ? 0.5 : 0.72;
 
@@ -92,6 +93,7 @@ uniform mat4 uCamInvRot;
 uniform float uFogGain;     // 0..1+ haze density (JS gusts)
 uniform float uRainGain;     // rain intensity (JS gusts)
 uniform float uDbg;          // 1 = glow only
+uniform float uNoMirror;     // 1 = disable the wet-street mirror (harness differential gate)
 out vec4 fragColor;
 
 #define PI 3.14159265
@@ -186,6 +188,10 @@ vec3 facadeColor(vec3 p, vec2 c, vec2 q, float h, int axis, float t){
   float stripes = 0.65 + 0.35 * sin(u * 1.1 + t * 1.6 + hash12(c + 1.3) * 20.0);
   vec3 neon = neonOf(c) * stripes * (0.8 + 0.4 * sin(t * 0.7 + c.x + c.y));
   col = mix(col, neon * 1.25, band * win * (0.7 + 0.3 * flick));
+  /* ground-floor storefront strip: always-lit signage, mirrors well on wet asphalt */
+  float store = smoothstep(1.6, 2.4, v) * smoothstep(6.2, 4.8, v);
+  float scots = 0.6 + 0.4 * sin(u * 0.8 + hash12(wc + 57.0) * 20.0);
+  col += neonOf(c + 5.0) * store * win * scots * 0.85;
   /* rooftop rim neon */
   vec2 dEdge = min(q, vec2(LOTX, LOTZ) - q);
   float rimEdge = min(dEdge.x, dEdge.y);
@@ -259,18 +265,18 @@ March marchCity(vec3 ro, vec3 rd, float tEnd, int steps, float t, float glowRate
 
 vec3 skyCol(vec3 rd, float t){
   float up = clamp(rd.y, 0.0, 1.0);
-  vec3 zenith = vec3(0.012, 0.014, 0.028);
-  vec3 horizon = vec3(0.16, 0.065, 0.115);
+  vec3 zenith = vec3(0.010, 0.011, 0.022);
+  vec3 horizon = vec3(0.085, 0.032, 0.060);
   vec3 c = mix(horizon, zenith, pow(up, 0.42));
   /* cloud deck catching the city light pollution */
   if (rd.y > 0.005){
     vec2 cp = rd.xz / max(rd.y, 0.02) * 0.010 + vec2(t * 0.004, t * 0.002);
     float cl = fbm2(cp);
     float deck = smoothstep(0.40, 0.75, cl) * smoothstep(0.02, 0.22, rd.y) * smoothstep(0.85, 0.35, up);
-    c = mix(c, vec3(0.155, 0.075, 0.125), deck * 0.7);
-    c += vec3(0.10, 0.035, 0.07) * deck * exp(-rd.y * 2.4);
+    c = mix(c, vec3(0.085, 0.040, 0.068), deck * 0.7);
+    c += vec3(0.055, 0.020, 0.038) * deck * exp(-rd.y * 2.4);
   }
-  c += vec3(0.22, 0.075, 0.13) * pow(max(0.0, 1.0 - abs(rd.y) * 4.0), 3.0) * 0.5;
+  c += vec3(0.11, 0.038, 0.065) * pow(max(0.0, 1.0 - abs(rd.y) * 4.0), 3.0) * 0.5;
   return c * uFogGain;
 }
 
@@ -316,17 +322,17 @@ void main(){
 
     /* wet mirror: anisotropic puddles, streaked along z */
     float wet = 0.30 + 0.70 * smoothstep(0.42, 0.62, fbm2(p.xz * vec2(0.38, 0.055) + 7.0));
-    float fres = pow(1.0 + rd.y, 5.0);
-    float reflK = clamp(wet * (0.22 + 0.78 * fres), 0.0, 1.0);
+    float fres = pow(1.0 + rd.y, 3.0);
+    float reflK = clamp(wet * (0.55 + 0.45 * fres), 0.0, 1.0) * (1.0 - uNoMirror);
     vec3 rr1 = reflect(rd, vec3(0.0, 1.0, 0.0));
-    March rm = marchCity(p + vec3(0.0, 0.06, 0.0), rr1, 300.0, 44, t, 0.0012);
+    March rm = marchCity(p + vec3(0.0, 0.06, 0.0), rr1, 260.0, 38, t, 0.0012);
     vec3 reflA = rm.col + rm.glow + skyCol(rr1, t) * rm.T;
     vec3 rr2 = normalize(rr1 + vec3(0.0, -0.055, 0.0));      // pitched mirror = vertical smear
-    March rm2 = marchCity(p + vec3(0.0, 0.06, 0.0), rr2, 300.0, 44, t, 0.0012);
+    March rm2 = marchCity(p + vec3(0.0, 0.06, 0.0), rr2, 260.0, 38, t, 0.0012);
     vec3 reflB = rm2.col + rm2.glow + skyCol(rr2, t) * rm2.T;
     refl = reflA * 0.55 + reflB * 0.45;
     bgG = asphalt + glowAt(vec3(p.x, 1.2, p.z), t) * 0.11;
-    bg = mix(bgG, refl * 0.9, reflK);
+    bg = mix(bgG, refl * 1.15, reflK);
     float fogK = 1.0 - exp(-tGround * 0.0075 * uFogGain);
     bg = mix(bg, vec3(0.045, 0.022, 0.038) * uFogGain, fogK * 0.85);
   } else {
@@ -814,6 +820,8 @@ let t0 = performance.now();
 let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
 let readyFlag = false;
 let speedMul = 1.0;
+let freezeT = null;
+let pendingGrab = null;
 
 const rot4 = new Float32Array(16);
 const vp4 = new Float32Array(16);
@@ -821,7 +829,7 @@ const U = p => name => gl.getUniformLocation(p, name);
 const ucity = U(progCity), uchar = U(progCar), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
 
 function frame(){
-  const t = (performance.now() - t0) / 1000;
+  const t = freezeT !== null ? freezeT : (performance.now() - t0) / 1000;
   const now = performance.now();
   let dt = 1 / 60;
   if (lastFrame) { const dtms = now - lastFrame; dt = Math.min(0.05, dtms / 1000); perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
@@ -849,6 +857,7 @@ function frame(){
   gl.uniform1f(ucity('uFogGain'), fogGain(t));
   gl.uniform1f(ucity('uRainGain'), rainGain(t));
   gl.uniform1f(ucity('uDbg'), +(qs.get('dbg') || 0));
+  gl.uniform1f(ucity('uNoMirror'), mirrorOn ? 0.0 : 1.0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   const nCars = buildCarVerts(t);
@@ -907,6 +916,17 @@ function frame(){
     nextHorn = t + 8 + Math.random() * 16;
   }
 
+  if (pendingGrab){
+    const res = pendingGrab; pendingGrab = null;
+    const x0 = (W * 0.2) | 0, bw = (W * 0.6) | 0;
+    const y0 = (H * 0.10) | 0, bh = (H * 0.24) | 0;
+    const buf = new Uint8Array(bw * bh * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let s = 0, c = 0;
+    for (let i = 0; i < buf.length; i += 4){ s += 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2]; c++; }
+    res(+(s / c).toFixed(2));
+  }
   readyFlag = true;
   requestAnimationFrame(frame);
 }
@@ -936,6 +956,9 @@ window.__neonrainTest = {
   wet(x, z){ return +wetJS(x, z).toFixed(3); },
   gust(t){ return +gust(t).toFixed(4); },
   setSpeed(v){ speedMul = Math.max(0, +v); },
+  setMirror(v){ mirrorOn = !!v; },
+  setFreeze(v){ freezeT = v === true ? (performance.now() - t0) / 1000 : (v ? +v : null); },
+  grab(){ return new Promise(res => { pendingGrab = res; }); },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
   setPose(p){
