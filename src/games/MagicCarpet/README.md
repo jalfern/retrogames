@@ -16,9 +16,10 @@ all art and audio synthesized at runtime.
   wolf, cow, hut incl. burning + rubble, pearl, grimoire, balloon) + biome table.
 - `index.jsx` — the shell: per-column voxel terrain march (adaptive step,
   silhouette top + occluder distance per column used to clip sprites behind
-  hills), checker dither + slope shade + haze, dusk sky with parallax sun and
-  clouds, carpet corners/hands/crosshair + carried-orb halo, the blue-stone HUD
-  (radar, VAULT bar with per-world ticks, CARRY pouch, hearts, spell slots,
+  hills),   checker dither + slope shade + haze, dusk sky with parallax sun and
+  clouds, fluttering carpet corners/hands/crosshair + carried-orb halo, the blue-stone HUD
+  (radar with hut/fire dots, VAULT bar with per-world ticks + segment-crossing
+  flash and 3-note stagger on big bankings, CARRY pouch, hearts, spell slots,
   WORLD n/3), the fixed-timestep loop, the `?` pause, VirtualControls, DEV hooks,
   and the `window.__game` contract.
 
@@ -37,8 +38,19 @@ all art and audio synthesized at runtime.
   quadratic falloff; fireball r14d10, lightning r10d8, tower fall r18d11).
   Craters sunk below WATER flood with the sea. Wizard death craters his tower.
 - Fire: blasts scatter scorch marks and ignite nearby huts; a burning hut falls
-  to rubble after 200 ticks; wolves respawn from scorch marks on a 360-tick
+  to rubble after 200 ticks; a burning hut ARMS neighbours within 20u, which
+  catch ~120 ticks later (spread chain); wolves respawn from scorch marks on a 360-tick
   clock (while the monster cap holds).
+- Fresh craters from fire glow with lava and cool over `CRATER_GLOW` (300)
+  ticks (`glowOf()`); the scorch rim stays. Only hot craters (`crater(...,hot)`)
+  glow — lightning and collapses are cold.
+- The wizard's tower is topplable: a player blast (`toppleTower()` in `blast()`)
+  within 14u of the tower base topples it once per world, the wizard takes 30
+  damage, and the tower draws as leaning rubble.
+- Per-world palettes (#1060): same geometry, different atmosphere — Verdant
+  daylight, Emberwild dusk/lava (`WORLD_PAL` sky+fog+tint), Frostbound
+  blue-white; water is a 4-tone palette-cycling wave band table (`WATER_PAL`)
+  with shore foam, plus a low wind drone tied to airspeed in the shell.
 - Mana conservation: `vault + pouch + alive pearls + wizard hoard` moves only by
   monster bounty (+), spell cost and spills (−); a world reset rebases it (the
   harness reads the `level` event's `reset` payload + new world's supply).

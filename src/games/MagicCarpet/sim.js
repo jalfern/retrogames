@@ -94,7 +94,11 @@ export function sampleH(gs, x, y) {
 
 // Terrain reshape (the original's signature): blasts punch craters into the
 // heightmap itself; craters sunk below sea level flood with the ocean.
-export function crater(gs, x, y, r, depth) {
+// Hot craters (from fire) glow with cooling lava for CRATER_GLOW ticks; the
+// scorch rim stays. glowOf() answers the render side.
+export const CRATER_GLOW = 300
+
+export function crater(gs, x, y, r, depth, hot = 0) {
     const rCell = Math.ceil(r / CELL)
     const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
     const i0 = Math.floor(cx), j0 = Math.floor(cy)
@@ -108,6 +112,23 @@ export function crater(gs, x, y, r, depth) {
             gs.heights[gi] = Math.max(0, gs.heights[gi] - fall)
         }
     }
+    gs.craters.push({ x: wrap(x, MAP), y: wrap(y, MAP), r, t: gs.tick, hot })
+    if (gs.craters.length > 10) gs.craters.shift()
+}
+
+export const glowOf = (gs, c) => (c.hot > 0 ? Math.max(0, 1 - (gs.tick - c.t) / CRATER_GLOW) : 0)
+
+// A physical blast at the wizard's tower base topples it (telekinesis throws
+// and fireballs both). One topple per world; the wizard takes the fall.
+export function toppleTower(gs, x, y) {
+    if (gs.towerDown || !gs.wizard) return false
+    if (Math.hypot(wrapD(x - gs.wizard.tx), wrapD(y - gs.wizard.ty)) > 14) return false
+    gs.towerDown = true
+    crater(gs, gs.wizard.tx, gs.wizard.ty, 12, 8, 0.6)
+    igniteHuts(gs, gs.wizard.tx, gs.wizard.ty)
+    gs.events.push({ type: 'towerDown', x: gs.wizard.tx, y: gs.wizard.ty })
+    if (gs.wizard.alive) { gs.wizard.hp -= 30; gs.events.push({ type: 'wizHit' }) }
+    return true
 }
 
 const findSpot = (gs, minH, maxH, flat, away, minAway) => {
@@ -142,6 +163,7 @@ export function makeGame(seed, level = 0) {
         kills: 0, wizardKills: 0, levelClears: 0,
         castle: null, castleStage: 0,
         wizard: null, pearls: [], books: [], monsters: [], projs: [], fireMarks: [],
+        craters: [], towerDown: false,
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
@@ -196,10 +218,12 @@ export function genWorld(gs) {
     gs.huts = []
     for (let i = 0; i < 7; i++) {
         const c = findSpot(gs, 26, 46, false, null, 0)
-        gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false })
+        gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false, catchT: 0 })
     }
     gs.projs = []
     gs.fireMarks = []
+    gs.craters = []
+    gs.towerDown = false
     return gs
 }
 
@@ -277,7 +301,8 @@ function killEntity(gs, mo, i) {
 }
 
 function blast(gs, x, y, r, depth, dmg) {
-    crater(gs, x, y, r, depth)
+    crater(gs, x, y, r, depth, 1)
+    toppleTower(gs, x, y)
     igniteHuts(gs, x, y)
     for (let k = 0; k < 3; k++) {
         const a = rnd(gs) * 6.28, d = rnd(gs) * r
@@ -562,9 +587,22 @@ export function step(gs, inp) {
             hs.burn--
             if (hs.burn === 0 && !hs.dead) {
                 hs.dead = true
-                crater(gs, hs.x, hs.y, 6, 3)
+                crater(gs, hs.x, hs.y, 6, 3, 0.35)
                 gs.events.push({ type: 'hutDown', x: hs.x, y: hs.y })
             }
+        } else if (!hs.dead && hs.catchT > 0) {
+            hs.catchT--
+            if (hs.catchT === 0) {
+                hs.burn = 200
+                gs.events.push({ type: 'ignite', x: hs.x, y: hs.y })
+            }
+        }
+    }
+    for (const hs of gs.huts) {
+        if (hs.burn <= 0) continue
+        for (const o of gs.huts) {
+            if (o === hs || o.dead || o.burn > 0 || o.catchT > 0) continue
+            if (Math.hypot(wrapD(o.x - hs.x), wrapD(o.y - hs.y)) < 20) o.catchT = 120
         }
     }
 
