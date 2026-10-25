@@ -1,52 +1,54 @@
-# STATE — session 18 (2026-10-25)
+# STATE — session 19 (2026-10-25)
 
 ## Shipped this session
-- **NEON RAIN demo** (#1042 → PR #1064, squashed to main as 6258e8b): WebGL2
-  raymarched neon city at night in the rain — procedural towers (lit windows, neon
-  bands, storefront strips, rooftop rims), fog-extincted LOS canyon glow,
-  puddle-masked wet mirror (two pitched mirror rays), 3-layer screen-space rain
-  streaks + splashes, steam vents, deterministic traffic point-sprites, bloom+ACES.
-  Synthesized rain/rumble/horns/whoosh. Live: jalfern.com/retrogames/demos/neonrain.html
-- Resumed a **corpse**: previous session died with an unpushed, unwired neonrain.html.
-  Its washed-out render had one root cause: the camera right vector was the left
-  hand (`[f.z,0,-f.x]`) — the whole frame rendered upside-down. Fixed; re-tuned
-  glow/fog/steam budgets from debug views (dbg=1..5 pass added, then trimmed).
-- `neonraincheck` (npm alias) 25/25 green: pixels + deterministic JS mirrors;
-  mirror load-bearing proven via **in-frame readPixels** differential (screenshots
-  lied: the compositor and camZ/drift drift between shots swamped the Δ; the
-  frozen-scene grab gate is deterministic). Proven-fail: mirror→0 mutant red.
-- `creditscheck` extended to 8 demos (83/83) + fixed a pre-existing blackhole
-  index/config issues mismatch ([903] vs [903,956]).
-- Polish pass filed for QA lane: **#1066** (rain-neon interplay, mullions, beacons,
-  car light shapes, big plumes, siren doppler, 390px portrait).
+- **VOLCANO demo** (#1043 → PR #1069, squashed to main as 1aefa73): WebGL2 night
+  eruption — raymarched strato-cone lit only by its own lava (animated channels
+  flowing to a white-hot crater pool, blackbody gradient, crust flicker, 8-sample
+  LOS vent-lighting onto slopes), wind-sheared ash plume with below-lighting +
+  altitude decay + internal lightning flashes, deterministic ballistic ember
+  fountain (JS closed-form), hash-star sky + galactic band + horizon ember glow,
+  vent-projected heat shimmer post, HDR→bloom→ACES. Synthesized rumble/roar/
+  blasts. Live: jalfern.com/retrogames/demos/volcano.html
+- `volcanocheck` (npm alias) 28/28 green: pixels + JS mirrors (ballistic embers,
+  lava heat field confined to cone, plume density profile, pulse surge) + real
+  drag/tap input gates + shimmer load-bearing via frozen-frame readPixels
+  differential (mean |Δ| 3.6 lum). Proven-fail: hard-forcing shimmer off in
+  FS_HAZE → gate red (Δ=0), all else green; restored by hand-sed.
+- `creditscheck` extended to 9 demos (90/90).
 
 ## Playable now
-- NEON RAIN on the demos shelf and live — drag to look, tap for sound, credits card.
+- VOLCANO on the demos shelf and live — drag to look, tap for sound, credits card.
 
 ## Branches / harness
-- forge/neon-rain branch deleted by squash; worktree `~/Dev/retrogames-forge-neon-rain`
-  can be removed (`git worktree remove` after detach — done for main checkout).
-- DEV hooks on the demo: setSpeed/setFreeze/setMirror/grab (readPixels) — spec'd
-  for future demo harnesses; other demos could adopt `grab()` for determinism.
-- Demo check gotchas learned (see #1066 context): screen-space rain is the only
-  reliable look (two volumetric attempts read as static); a mirror gate needs a
-  frozen scene + readPixels, not page screenshots.
+- forge/volcano branch deleted by squash; worktree `~/Dev/retrogames-forge-volcano`
+  removable (`git worktree remove` — main checkout is detached at origin/main).
+- Harness lessons (baked into volcanocheck.mjs comments):
+  - A frozen scene must freeze *everything* — the camera lerp kept easing between
+    "frozen" reads and let the mutant survive; setFreeze now also halts it, and
+    only then was the shimmer differential honest.
+  - Edge-energy is translation-invariant: a coherent shimmer shift barely changes
+    it — the load-bearing probe must be a per-pixel diff of two consecutive
+    frozen frames around a haze toggle (`diffHaze(want)` hook pattern).
+  - The differential caught a real bug: screen-space projection of the vent used
+    view-z where clip-w (−view-z) was needed — masks projected to sy≈46. State
+    hook exposing the projection (`craterSS`) pinned it in one probe.
+- New demos adopting screen-space effects should reuse the diffHaze deferred
+  readPixels pattern (in-frame only; preserveDrawingBuffer stays off).
 
 ## Next candidates (unclaimed)
-1. **#1066** — NEON RAIN polish (lane:qa — QA lane picks; builders stay on games).
+1. **#1070** — VOLCANO polish (lane:qa — QA lane picks; builders stay on games).
 2. Game-queue: **#1050** DEMO CORAL REEF GPU rebuild; **#1047/#1048/#1049** BLACK
-   HOLE stages (tap-probe / plunge / spin); **#1043** DEMO volcano at night.
-   Oldest next — #1043 volcano at night.
+   HOLE stages (tap-probe / plunge / spin). Oldest next — #1050 coral reef GPU.
 
 ## Open questions
 - none filed this session.
 
 ## Watch-outs learned
-- Never `git checkout -- <file>` to undo a probe-mutant while other uncommitted
-  edits live in the same file — it silently reverted an hour of tuning; restore
-  mutants by hand (sed the exact token) or stash.
-- `reflK`, glow-rate and steam-integration are *visual* choices — a pixel gate
-  cannot find a contribution the shader barely makes; make the feature loud first,
-  then gate it (mirror Δ lum 1.6→3 by 0.30→0.55 wet floor, refl 0.9→1.15).
-- A camera basis is right-handed only one way: r = normalize(cross(f, up)) with
-  u = r×f; a flipped r produces a plausible-looking but 180°-rotated city.
+- Sign conventions between hand-rolled JS projection and the GL view matrix must
+  be verified once with a state hook printing the projected point, not eyeballed
+  from a "looks centered" screenshot (sy=46 vs sy=0.574).
+- `smoothstep(e0>e1)` (reversed edges) is undefined in GLSL — it appeared to work
+  but paired with the bad projection made mask debugging mislead; prefer
+  `1.0 - smoothstep(lo, hi, d)` with lo<hi.
+- vnoise vs fbm: swapping two fbm calls (crust/flicker) to single-octave vnoise
+  bought the plume march + shimmer their frame budget back at no visible cost.
