@@ -497,7 +497,7 @@ const SSXGame = () => {
             shareRelay: !!nq.get('relay'),
             onState: (s) => { net.phase = s.phase; net.slot = s.slot; net.cap = s.cap; net.code = s.code || net.code; net.joinHref = s.joinHref; pushNet() },
             onRoster: () => { syncSeats(); pushNet() },
-            onJoin: () => audioController.playTone(660, 0.07, 'square', 0.05),
+            onJoin: () => pushNet(),
             onLeave: () => audioController.playSweep(660, 200, 0.22, 'square', 0.05),
             onStart: (m) => netStartRace(m.seed | 0),
             on: {
@@ -1321,6 +1321,8 @@ const SSXGame = () => {
                         live: 'border-cyan-300/40 text-cyan-100',
                         warn: '#ffd23f',
                         codeGlow: { color: '#fff', textShadow: '3px 0 0 #b0147a, -3px 0 0 #1490b0' },
+                        qr: '#00374a',
+                        qrFrame: '#22d3ee',
                     }}
                 />
             )}

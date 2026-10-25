@@ -747,6 +747,8 @@ const BlobBattleGame = () => {
                         warn: '#ffd23f',
                         codeGlow: { textShadow: '3px 3px 0 #000' },
                         btn: 'border-pink-300/60 text-pink-100',
+                        qr: '#4d0021',
+                        qrFrame: '#f9a8d4',
                     }}
                 />
             )}

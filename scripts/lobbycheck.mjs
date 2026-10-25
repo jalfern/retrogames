@@ -21,7 +21,7 @@
 import { CODE_RE } from '../relay/core.js'
 import { startRelay } from '../relay/server.mjs'
 import { WebSocket } from 'ws'
-import { createLobby, lobbyRole, relayFromQuery, joinHref, seatModel, displayPhase, decodeCode } from '../src/utils/lobby.js'
+import { createLobby, lobbyRole, relayFromQuery, joinHref, seatModel, displayPhase, decodeCode, joinedSeats } from '../src/utils/lobby.js'
 
 const MUTATE = process.argv.indexOf('--mutate') >= 0
 
@@ -54,6 +54,15 @@ console.log('A. lobby.js pure rules')
         'codes exclude I/O/0/1 — SNOW is not a legal room code')
     ok(displayPhase({ phase: 'offline', info: 'full' }) === 'refused' && displayPhase({ phase: 'waiting', info: '' }) === 'waiting',
         'a refusal reads as refused everywhere')
+
+    ok(joinedSeats(null, ['host', 'cpu', 'cpu', 'cpu']).length === 0,
+        'the room as first seen never chimes (no pop for the host opening)')
+    ok(joinedSeats(['host', 'cpu', 'cpu', 'cpu'], ['host', 'human', 'cpu', 'cpu']).join(',') === '1',
+        'a friend in seat 1 is an arrival — the Lobby pops that seat')
+    ok(joinedSeats(['host', 'human', 'cpu', 'cpu'], ['host', 'human', 'cpu', 'model']).length === 0,
+        'a shelf model is not an arrival — no chime for the shelf', joinedSeats(['host', 'human', 'cpu', 'cpu'], ['host', 'human', 'cpu', 'model']).join(','))
+    ok(joinedSeats(['host', 'human', 'cpu'], ['host', 'human', 'human']).join(',') === '2',
+        'a second friend arriving late still chimes')
 
     const dead = () => ({ send: () => { }, onMessage: () => { }, onClose: () => { }, close: () => { } })
     const hl = createLobby({ slug: 'ssx', cap: 4, relay: 'ws://x', makeTransport: dead })
