@@ -34,6 +34,12 @@
 //               decaying motion trail of solved images, the beacon's own
 //               Doppler hue (disk law on its line-of-sight velocity),
 //               rim-fade instead of an off-screen pop, rim-wrap on pinned images.
+//   9. SPIN (#1049) — Kerr: separated geodesics prove the physics numerically —
+//               horizon/photon-orbit/ISCO radii match GR at a*=0.9, the capture
+//               silhouette is asymmetric (prograde < retrograde, >1.4x) and flips
+//               with the spin sign while staying symmetric at a=0, co-rotating
+//               rays bend >30% more (Lense-Thirring); in pixels the
+//               Doppler-beamed bright side reverses when the spin reverses.
 //
 // Usage: node scripts/blackholecheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 45]
 // Proven-fail mutant: kill Doppler beaming (`pow(dlt, 3.0) * g * g` -> `1.0`)
@@ -51,6 +57,10 @@
 // (#1048): pin the plunge beaming uniform (`gl.uniform1f(us('uBeam'), cb.beam)` ->
 // `... 1.0`) -> the blue-white centre disc pixel gate goes red while every numeric dive
 // gate stays green (the bright blueshifted sky circle is computed physics, not painted).
+// Sixth mutant (#1049): drop the frame-shift (xi-a)^2 from the JS mirror's radial
+// potential (kerrRr `((xi - a) * (xi - a) + Q)` -> `(xi * xi + Q)`) -> the frame-dragging
+// bend gate goes red (and the capture asymmetry breaks) while every Schwarzschild gate
+// stays green (the lopsidedness lives in the frame-dragging term, not the horizon size).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -141,7 +151,7 @@ async function main() {
   ok('Keplerian shear (Omega ~ r^-3/2) drives disk rotation', /sqrt\(0\.5 \/ \(r \* r \* r\)\)/.test(src))
   ok('photons integrated with RK4 (Euler pumps energy)', /f1 \+ 2\.0 \* f2 \+ 2\.0 \* f3 \+ f4/.test(src))
   ok('photon ring lights escaping rays only — captured rays stay black (#1046)',
-    /if \(!captured && r0 > 1\.6\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
+    /if \(!captured && length\(ro\) > 1\.6\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
     !/if \(captured\)\{[^}]*ring/.test(src))
   ok('probe beacon integrates the timelike geodesic with e^2 = f0^2/(f0 - v^2) (#1047)',
     /f0 \* f0 \/ Math\.max\(f0 - v2, 1e-4\)/.test(src) && /pr\.vr \+= ar \* k/.test(src))
@@ -156,7 +166,7 @@ async function main() {
   ok('cone formula sin^2 = 27 M^2 (1-rs/r)/r^2 implemented (#1048)',
     /27 \* 0\.25 \* \(1 - RS \/ r\) \/ \(r \* r\)/.test(src))
   ok('local-tetrad impact parameter b = r*sin(psi)/sqrt(1-rs/r) at the launcher (#1048)',
-    /float b = et > 1e-4 \? r0 \* et \/ sqrt\(f00\)/.test(src))
+    /float bb0 = et > 1e-4 \? r0 \* et \/ sqrt\(f00\)/.test(src))
   ok('infall Doppler sqrt((1+b)/(1-b)) beams the escaping sky D^3 and tints blue (#1048)',
     /Math\.sqrt\(\(1 \+ b\) \/ \(1 - b\)\)/.test(src) && /bg \* uBeam \* mix\(vec3\(1\.0\), vec3\(0\.62, 0\.80, 1\.38\), uTint\)/.test(src))
   ok('horizon crossing keeps physics lit — beam capped, not a fade-to-black trick (#1048)',
@@ -178,6 +188,19 @@ async function main() {
     /function probeDopplerHue/.test(src) && /pr\.dlt = probeDopplerHue\(pr, cb\)/.test(src))
   ok('off-screen beacons fade along the rim instead of popping (#1074)',
     /function edgeFade\(nx, ny\)/.test(src) && /const wf = w \* im\.fade/.test(src))
+  ok('Kerr separated null geodesics: Bardeen R = P^2 - Del[(xi-a)^2 + Q] (#1049)',
+    /P \* P - Del \* \(\(xi - a\) \* \(xi - a\) \+ Q\)/.test(src))
+  ok('Kerr launch uses the static-tetrad covariant constants (g_tphi cross term) (#1049)',
+    /float E0 = ftt \* pt - ftphi \* pphi;/.test(src) && /float Lz = ftphi \* pt \+ gpp \* pphi;/.test(src))
+  ok('Kerr horizon r+ = M + sqrt(M^2 - a^2) gates capture (#1049)',
+    /0\.5 \+ sqrt\(max\(0\.25 - ka \* ka, 0\.0\)\)/.test(src) && /0\.5 \+ Math\.sqrt\(Math\.max\(0\.25 - a \* a, 0\)\)/.test(src))
+  ok('frame-dragged Keplerian Omega = sqrt(M)/(r^1.5 + a*sqrt(M)) + Lense-Thirring omega (#1049)',
+    /sqrt\(0\.5\) \/ \(pow\(r, 1\.5\) \+ aa \* sqrt\(0\.5\)\)/.test(src) && /omL = 2\.0 \* 0\.5 \* aa \* r \/ Ak/.test(src))
+  ok('spin toggle: key K + ?spin= URL + uSpin uniform, default Schwarzschild (#1049)',
+    /if \(e\.key === 'k' \|\| e\.key === 'K'\)/.test(src) && /qs\.get\('spin'\)/.test(src) && /us\('uSpin'\), spinA\)/.test(src) &&
+    /SPIN_Q === null \|\| isNaN\(parseFloat\(SPIN_Q\)\) \? 0 :/.test(src))
+  ok('Kerr orbital velocity relative to the ZAMO (v = (Omega-omega)*sqrt(g_phiphi)/lapse) (#1049)',
+    /abs\(om - omL\) \* Ak \/ \(r \* r \* sqrt\(max\(Del, 1e-3\)\)\)/.test(src) && /g = r \* sqrt\(max\(Del \/ Ak, 1e-4\)\)/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -298,6 +321,56 @@ async function main() {
       ok('the disk moves (Keplerian shear + turbulence between frames)', diff / dn > 0.8,
         `mean|delta|=${(diff / dn).toFixed(2)} over disk band`)
 
+      // --- Kerr spin (#1049): numbers + pixels ---
+      const kn = await page.evaluate(() => window.__holeTest.kerrNum(0.45))
+      ok('Kerr constants match GR reference at a* = 0.9 (rs=1 units)',
+        Math.abs(kn.rPlus - 0.7179) < 0.01 && Math.abs(kn.phPro - 0.779) < 0.02 &&
+        Math.abs(kn.phRetro - 1.955) < 0.02 && Math.abs(kn.iscoPro - 1.187) < 0.03 &&
+        Math.abs(kn.iscoRetro - 4.354) < 0.05,
+        `r+ ${kn.rPlus} ph ${kn.phPro}/${kn.phRetro} isco ${kn.iscoPro}/${kn.iscoRetro}`)
+      const sp0 = await page.evaluate(() => window.__holeTest.kerrSpan(0))
+      const spP = await page.evaluate(() => window.__holeTest.kerrSpan(0.45))
+      const spM = await page.evaluate(() => window.__holeTest.kerrSpan(-0.45))
+      ok('shadow is symmetric when Schwarzschild', Math.abs(sp0.left - sp0.right) < 0.02,
+        `L=${sp0.left} R=${sp0.right}`)
+      ok('D-shaped Kerr shadow: prograde capture radius < retrograde by >1.4x (#1049)',
+        spP.pro > 0 && spP.retro > 0 && spP.retro / spP.pro > 1.4, `pro=${spP.pro} retro=${spP.retro}`)
+      ok('the asymmetry flips with the spin direction (#1049)',
+        Math.abs(spM.left - spP.right) < 0.02 && Math.abs(spM.right - spP.left) < 0.02,
+        `+spin L=${spP.left} R=${spP.right} | -spin L=${spM.left} R=${spM.right}`)
+      const bp = await page.evaluate(() => window.__holeTest.kerrBends(0.45))
+      const bm = await page.evaluate(() => window.__holeTest.kerrBends(-0.45))
+      ok('frame dragging: co-rotating ray bends >30% more than counter-rotating (#1049)',
+        bp.pro / bp.retro > 1.3 && bm.pro / bm.retro > 1.3,
+        `pro=${bp.pro} retro=${bp.retro}`)
+
+      // D-shape in pixels: the dark core centroid shifts, and the shift flips with spin
+      await page.evaluate(() => window.__holeTest.setSpin(0))
+      await page.waitForTimeout(700)
+      const pxS0 = decodePng(await page.screenshot())
+      await page.evaluate(() => window.__holeTest.setSpin(0.45))
+      await page.waitForTimeout(700)
+      const pxSP = decodePng(await page.screenshot())
+      await page.evaluate(() => window.__holeTest.setSpin(-0.45))
+      await page.waitForTimeout(700)
+      const pxSM = decodePng(await page.screenshot())
+      await page.evaluate(() => window.__holeTest.setSpin(0))
+      const sideBal = img => {
+        const cx = Math.round(img.w / 2), cy = Math.round(img.h / 2)
+        let l = 0, r = 0
+        for (let y = cy - 70; y <= cy + 70; y += 2) for (let x = cx - 300; x <= cx + 300; x += 2) {
+          if ((x - cx) * (x - cx) + (y - cy) * (y - cy) < 64 * 64) continue
+          const p = px(img, x, y)
+          if (p[0] - p[2] < 10 || luma(p) < 45) continue
+          if (x < cx - 20) l += luma(p); else if (x > cx + 20) r += luma(p)
+        }
+        return l - r
+      }
+      const bP = sideBal(pxSP), bM = sideBal(pxSM)
+      ok('spin flips the disk orbit: the Doppler-beamed bright side reverses sign (#1049)',
+        Math.abs(bP) > 1500 && Math.abs(bM) > 1500 && bP * bM < 0,
+        `L-R balance +spin: ${bP.toFixed(0)}  -spin: ${bM.toFixed(0)}`)
+
       await page.evaluate(() => window.__holeTest.setPose({ yaw: 0.5, pitch: -0.2 }))
       await page.waitForTimeout(1400)
       const imgB = decodePng(await page.screenshot())
@@ -343,7 +416,7 @@ async function main() {
         if (!ps.length) break
         const ph = await page.evaluate(() => window.__holeTest.dive().phase)
         trail.push({ ...ps[ps.length - 1], phase: ph })
-        if (ps[ps.length - 1].r < 1.3) break
+        if (ps[ps.length - 1].r < 1.06) break
       }
       const rad = trail.map(p => p.r), gs = trail.map(p => p.g), ws = trail.map(p => p.glow)
       ok('beacon falls: radius strictly decreases (#1047)',
