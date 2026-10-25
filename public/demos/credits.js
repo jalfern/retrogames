@@ -136,6 +136,25 @@
     })
     document.body.appendChild(tag)
     document.body.appendChild(card)
+
+    // The bottom-left caption (#hud) wraps at viewport width, so on phones its
+    // last lines run under the corner tag (#1078). Reserve the tag's column:
+    // cap the caption so its lines break before the badge instead of beneath it.
+    function reserveCaption() {
+      var hud = document.getElementById('hud')
+      if (!hud) return
+      hud.style.maxWidth = ''
+      var tr = tag.getBoundingClientRect()
+      var hr = hud.getBoundingClientRect()
+      var crossing = hr.top < tr.bottom && hr.bottom > tr.top
+      if (crossing && hr.right > tr.left - 8) {
+        hud.style.maxWidth = Math.max(48, Math.floor(tr.left - 8 - hr.left)) + 'px'
+      }
+    }
+    reserveCaption()
+    window.addEventListener('resize', reserveCaption)
+    window.addEventListener('orientationchange', reserveCaption)
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(reserveCaption)
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount)
