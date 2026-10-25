@@ -88,13 +88,21 @@ export function createLobby(opts = {}) {
         code: room.code,
         slot: room.yourSlot,
         cap: room.cap,
-        seats: seatModel(room.cap, room.slots, models),
+        seats: seatModel(room.cap, liveSlots(), models),
         models: [...models].sort((a, b) => a - b),
         joinHref: room.code ? joinHref(opts.slug, room.code, opts.shareRelay ? opts.relay : '') : '',
         info: room.info,
     })
 
     const push = () => { if (opts.onState) opts.onState(state()) }
+
+    // seats know yourself: before the first roster lands, your own seat is
+    // already taken — the host seat must show as HOST from the first frame.
+    const liveSlots = () => {
+        const s = room.slots.slice()
+        if (room.yourSlot >= 0 && s.indexOf(room.yourSlot) < 0) { s.push(room.yourSlot); s.sort((a, b) => a - b) }
+        return s
+    }
 
     const room = createRoom({
         relay: opts.relay,
@@ -105,6 +113,7 @@ export function createLobby(opts = {}) {
         onLeave: (e) => { if (opts.onLeave) opts.onLeave(e); push() },
         onClose: (attempt) => {
             if (opts.onClose) opts.onClose(attempt)
+            if (room.phase === 'idle') return
             if (!retry || attempt >= maxRetry) { room.setPhase('offline'); return }
             room.attempt = attempt + 1
             room.setPhase('reconnecting')
@@ -164,7 +173,8 @@ export function createLobby(opts = {}) {
         },
 
         modelSeats() {
-            return [...models].filter((s) => room.slots.indexOf(s) < 0 && s < cap).sort((a, b) => a - b)
+            const live = liveSlots()
+            return [...models].filter((s) => live.indexOf(s) < 0 && s < cap).sort((a, b) => a - b)
         },
 
         close() {
