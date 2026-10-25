@@ -40,6 +40,14 @@
 //               with the spin sign while staying symmetric at a=0, co-rotating
 //               rays bend >30% more (Lense-Thirring); in pixels the
 //               Doppler-beamed bright side reverses when the spin reverses.
+//  10. SPIN POLISH (#1082) — the spin sells itself: the disk inner edge truncates
+//               to the Kerr prograde ISCO at spin (uniform uRIn, 3 rs at rest),
+//               the orbital whistle re-pitches on the frame-dragged Omega
+//               (prograde below Keplerian, retrograde above, rising on approach),
+//               each toggle records a sub-bass rumble cue with the spin's sign,
+//               an on-screen chip cycles the mode for touch players, and the HUD
+//               telemetry shows the Kerr radii (a*, r+, photon ring, ISCO,
+//               shadow half-widths) only while spinning.
 //
 // Usage: node scripts/blackholecheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 45]
 // Proven-fail mutant: kill Doppler beaming (`pow(dlt, 3.0) * g * g` -> `1.0`)
@@ -61,6 +69,11 @@
 // potential (kerrRr `((xi - a) * (xi - a) + Q)` -> `(xi * xi + Q)`) -> the frame-dragging
 // bend gate goes red (and the capture asymmetry breaks) while every Schwarzschild gate
 // stays green (the lopsidedness lives in the frame-dragging term, not the horizon size).
+// Seventh mutant (#1082): pin the live disk inner edge to its Schwarzschild value
+// (`rInNow = spinA === 0 ? R_IN : Math.max(RS * 1.05, kerrNum(Math.abs(spinA)).iscoPro)`
+// -> `rInNow = R_IN`) -> the ISCO-truncation gate goes red while every #1049 Kerr
+// geodesic and pixel gate stays green (the hot inner rim is a physical truncation
+// radius, not a painted brightness boost).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -86,7 +99,13 @@ const shots = opt('--shots', null)
 const maxMs = +opt('--max-ms', 45)
 if (!existsSync(file)) { console.error(`missing ${file}`); process.exit(1) }
 const url = 'file://' + file
-const PORT = opt('--port', '9386')
+// Per-run profile dir + port: QA lanes run this script concurrently (mini on
+// #1077, studio on #1082) and guardChrome's exit cleanup pkill-matches its
+// profile dir — a shared name meant one lane killed another's Chrome mid-run.
+// The dir must not CONTAIN the old shared path as a substring (pkill -f),
+// hence bh-check-<pid>, not blackholecheck-profile-<pid>.
+const PROF = `/tmp/forge/bh-check-${process.pid}`
+const PORT = opt('--port', String(9386 + (process.pid % 97)))
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
 
 const results = []
@@ -201,6 +220,21 @@ async function main() {
     /SPIN_Q === null \|\| isNaN\(parseFloat\(SPIN_Q\)\) \? 0 :/.test(src))
   ok('Kerr orbital velocity relative to the ZAMO (v = (Omega-omega)*sqrt(g_phiphi)/lapse) (#1049)',
     /abs\(om - omL\) \* Ak \/ \(r \* r \* sqrt\(max\(Del, 1e-3\)\)\)/.test(src) && /g = r \* sqrt\(max\(Del \/ Ak, 1e-4\)\)/.test(src))
+  ok('disk inner edge is a live uniform uRIn used by the mask and both crossing gates (#1082)',
+    /uniform float uRIn;/.test(src) && /smoothstep\(uRIn \* 1\.02, uRIn \* 2\.0, r\)/.test(src) &&
+    /rr > uRIn && rr < R_OUT/.test(src) && /rDisk > uRIn && rDisk < R_OUT/.test(src) &&
+    /gl\.uniform1f\(us\('uRIn'\), rInNow\)/.test(src))
+  ok('orbital whistle re-pitches on the frame-dragged Kerr Omega; toggle fires a sub-bass rumble (#1082)',
+    /function whineHz\(R, a\)\{[\s\S]{0,200}\+ a \* Math\.sqrt\(0\.5\)/.test(src) &&
+    /whineOsc\.frequency\.setTargetAtTime\(whineHz\(R, spinA\)/.test(src) &&
+    /function spinRumble\(a\)/.test(src) && /spinRumble\(spinA\)/.test(src))
+  ok('on-screen spin chip cycles the same off/prograde/retrograde cycle as K (#1082)',
+    /id="spinchip"/.test(src) && /spinChip\.addEventListener\('pointerdown'/.test(src) &&
+    /function cycleSpin\(\)\{ applySpin\(spinA === 0 \? SPIN_MAX : spinA > 0 \? -SPIN_MAX : 0\)/.test(src) &&
+    /if \(e\.key === 'k' \|\| e\.key === 'K'\) cycleSpin\(\)/.test(src))
+  ok('telemetry HUD (a*, r+, photon, ISCO, shadow span) driven by kerrNum + kerrSpan (#1082)',
+    /id="telemetry"/.test(src) &&
+    /function updateTelemetry\(\)\{[\s\S]{0,400}kerrNum\(Math\.abs\(spinA\)\)[\s\S]{0,200}kerrSpan\(Math\.abs\(spinA\)\)/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -208,9 +242,9 @@ async function main() {
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    `--user-data-dir=/tmp/forge/blackholecheck-profile`, 'about:blank',
+    `--user-data-dir=${PROF}`, 'about:blank',
   ], { stdio: 'ignore' })
-  const cleanup = guardChrome(chrome, '/tmp/forge/blackholecheck-profile')
+  const cleanup = guardChrome(chrome, PROF)
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))
@@ -370,6 +404,41 @@ async function main() {
       ok('spin flips the disk orbit: the Doppler-beamed bright side reverses sign (#1049)',
         Math.abs(bP) > 1500 && Math.abs(bM) > 1500 && bP * bM < 0,
         `L-R balance +spin: ${bP.toFixed(0)}  -spin: ${bM.toFixed(0)}`)
+
+      // --- spin polish (#1082): ISCO inner edge, whistle, rumble, chip, telemetry ---
+      const rigOff = await page.evaluate(() => { window.__holeTest.setSpin(0); return window.__holeTest.spinRig() })
+      const rigP = await page.evaluate(() => { window.__holeTest.setSpin(0.45); return window.__holeTest.spinRig() })
+      const rigM = await page.evaluate(() => { window.__holeTest.setSpin(-0.45); return window.__holeTest.spinRig() })
+      ok('disk inner edge truncates to the Kerr prograde ISCO at spin, 3 rs when off (#1082)',
+        rigOff.rIn === 3 && Math.abs(rigP.rIn - kn.iscoPro) < 0.01 && rigM.rIn === rigP.rIn,
+        `off=${rigOff.rIn} +spin=${rigP.rIn} (ISCO ${kn.iscoPro}) -spin=${rigM.rIn}`)
+      ok('spin toggle records a rumble cue carrying the new spin direction (#1082)',
+        rigOff.rumble === 0 && rigP.rumble === 1 && rigM.rumble === -1,
+        `${rigOff.rumble}/${rigP.rumble}/${rigM.rumble}`)
+      ok('telemetry HUD lists the Kerr radii while spinning and clears at Schwarzschild (#1082)',
+        rigOff.telemetry === '' && rigP.telemetry.includes('a* 0.9') &&
+        rigP.telemetry.includes(`r+ ${kn.rPlus}rs`) && rigP.telemetry.includes(`ISCO ${kn.iscoPro}rs`) &&
+        rigP.telemetry.includes('shadow'), rigP.telemetry)
+      ok('the spin chip mirrors the mode and cycles off -> prograde -> retrograde -> off on tap (#1082)',
+        rigOff.chip.includes('off') && rigP.chip.includes('prograde') && rigM.chip.includes('retrograde'),
+        rigP.chip)
+      await page.evaluate(() => window.__holeTest.setSpin(0))
+      const chipCycle = []
+      for (let i = 0; i < 3; i++){
+        await page.evaluate(() => document.getElementById('spinchip')
+          .dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })))
+        chipCycle.push(await page.evaluate(() => window.__holeTest.spin().a))
+      }
+      ok('tapping the chip drives the spin engine, not just the label (#1082)',
+        chipCycle[0] === 0.45 && chipCycle[1] === -0.45 && chipCycle[2] === 0, chipCycle.join(','))
+      const wh = await page.evaluate(() => ({
+        s0: window.__holeTest.whineAt(7.5, 0), sp: window.__holeTest.whineAt(7.5, 0.45),
+        sm: window.__holeTest.whineAt(7.5, -0.45), near: window.__holeTest.whineAt(4, 0.45),
+        far: window.__holeTest.whineAt(14, 0.45),
+      }))
+      ok('orbital whistle: frame-dragged Omega detunes prograde below Keplerian and retrograde above; pitch rises on approach (#1082)',
+        wh.sp < wh.s0 && wh.sm > wh.s0 && wh.near > wh.far && wh.near / wh.far > 2.4,
+        `S=${wh.s0} pro=${wh.sp} retro=${wh.sm} near=${wh.near} far=${wh.far}`)
 
       await page.evaluate(() => window.__holeTest.setPose({ yaw: 0.5, pitch: -0.2 }))
       await page.waitForTimeout(1400)

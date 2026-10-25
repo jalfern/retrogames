@@ -22,6 +22,15 @@
     color: rgba(255,224,180,.85); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
   }
   #audiohint.off { color: rgba(170,175,185,.5); border-color: rgba(150,150,150,.2); }
+  #spinchip {
+    position: fixed; top: 12px; left: 14px; z-index: 2;
+    background: rgba(8,10,18,.55); border: 1px solid rgba(150,170,255,.3); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(190,205,255,.88); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
+    user-select: none; -webkit-user-select: none;
+  }
+  #telemetry { color: rgba(178,196,255,.78); }
   #fatal {
     position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #e8e2d4; background: #010208;
@@ -31,8 +40,9 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe &nbsp;·&nbsp; the loop ends by falling in &nbsp;·&nbsp; <span id="spinhint">K = spin off</span></div>
+<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe &nbsp;·&nbsp; the loop ends by falling in &nbsp;·&nbsp; <span id="spinhint">K = spin off</span><span id="telemetry"></span></div>
 <div id="audiohint">click for gravitational drone</div>
+<div id="spinchip">K · spin off — tap</div>
 <div id="fatal"></div>
 <script>
 'use strict';
@@ -89,6 +99,7 @@ uniform float uTint;         // 0..1 blueshift of the compressed sky disk (#1048
 uniform float uDisc;         // disk visibility: fades as the diver falls past it (#1048)
 uniform float uFade;         // loop fade: 1 = flyby visible, 0 = dark interior (#1048)
 uniform float uSpin;         // Kerr spin parameter a (rs=1 units, M=0.5); 0 = Schwarzschild (#1049)
+uniform float uRIn;          // live disk inner edge: Kerr prograde ISCO at spin, 3 rs at rest (#1082)
 out vec4 fragColor;
 
 #define RS ${RS.toFixed(1)}
@@ -192,7 +203,7 @@ vec3 diskEmission(vec3 q, vec3 towardCam, float rBL, out float opacity){
   float lr = log(r);
   float n = fbm2(vec2(a2 * 2.6 + lr * 3.4, lr * 5.5 - uTime * 0.10));
   float streaks = 0.5 + 0.5 * sin(a2 * 7.0 + sin(a2 * 3.0 + lr * 4.0) * 1.6 - lr * 9.0 + n * 2.6);
-  float radial = smoothstep(R_IN * 1.02, R_IN * 2.0, r) * smoothstep(R_OUT, R_OUT * 0.60, r);
+  float radial = smoothstep(uRIn * 1.02, uRIn * 2.0, r) * smoothstep(R_OUT, R_OUT * 0.60, r);
   float dens = pow(max(n * 1.45 - 0.34, 0.0), 1.5) * (0.28 + 0.72 * pow(streaks, 1.3)) * radial;
   opacity = clamp(dens * 0.8, 0.0, 0.9);
 
@@ -299,7 +310,7 @@ void main(){
       float f = pPrev.y / (pPrev.y - p.y);
       vec3 q = mix(pPrev, p, f);
       float rr = length(q.xz);
-      if (rr > R_IN && rr < R_OUT){
+      if (rr > uRIn && rr < R_OUT){
         float vr = clamp(-w * bb0, -1.0, 1.0);
         vec3 phihat = -sin(phi) * e1 + cos(phi) * e2;
         vec3 vstep = normalize(vr * rhat + bb0 * u * phihat);
@@ -368,7 +379,7 @@ void main(){
         q.y = 0.0;
         float rr = length(q.xz);
         float rDisk = sqrt(max(rr * rr - ka * ka, 0.04));
-        if (rDisk > R_IN && rDisk < R_OUT){
+        if (rDisk > uRIn && rDisk < R_OUT){
           float op;
           col += uDisc * T * diskEmission(q, normalize(wPrev - wN), rDisk, op);
           T *= 1.0 - op;
@@ -596,16 +607,62 @@ addEventListener('pointerup', e => {
 });
 
 /* spin toggle (#1049): K cycles Schwarzschild -> Kerr prograde -> retrograde.
-   ?spin=1 / ?spin=-1 start spinning (harness + links). */
+   ?spin=1 / ?spin=-1 start spinning (harness + links).
+   #1082 polish: the same cycle is reachable by tapping the on-screen chip
+   (phone players never see K), the toggle fires a sub-bass rumble cue, the
+   orbital whistle re-pitches on the frame-dragged Kerr Omega, and the HUD
+   shows the Kerr numbers the physics already computes (kerrNum/kerrSpan). */
 const spinHint = document.getElementById('spinhint');
+const spinChip = document.getElementById('spinchip');
+const telemetry = document.getElementById('telemetry');
+let rInNow = R_IN;          // live disk inner edge in rs units (#1082)
+let lastRumble = null;      // {dir} of the most recent spin-toggle rumble
+
+/* frame-dragged orbital angular velocity -> whistle pitch (Hz). Prograde spin
+   lowers Omega at the same radius (Kerr), retrograde raises it; approach
+   (small R) always rises. */
+function whineHz(R, a){
+  const om = a !== 0 ? Math.sqrt(0.5) / (Math.pow(R, 1.5) + a * Math.sqrt(0.5))
+                     : Math.sqrt(0.5 / (R * R * R));
+  return 46 + om * 3200;
+}
+function spinRumble(a){
+  lastRumble = { dir: Math.sign(a) };
+  if (!running || !AC) return;
+  const t0a = AC.currentTime;
+  const o = AC.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(a === 0 ? 64 : 30, t0a);
+  o.frequency.exponentialRampToValueAtTime(a === 0 ? 30 : 64, t0a + 0.9);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0a);
+  g.gain.exponentialRampToValueAtTime(0.09, t0a + 0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0a + 1.4);
+  o.connect(g).connect(master);
+  o.start(t0a); o.stop(t0a + 1.5);
+}
+function updateTelemetry(){
+  if (spinA === 0){ telemetry.textContent = ''; return; }
+  const kn = kerrNum(Math.abs(spinA));
+  const sn = kerrSpan(Math.abs(spinA));
+  telemetry.textContent = ` · a* ${kn.aStar} · r+ ${kn.rPlus}rs · photon ${kn.phPro}/${kn.phRetro}rs · ISCO ${kn.iscoPro}rs · shadow ${sn.pro}/${sn.retro}rs`;
+}
 function applySpin(a){
   spinA = Math.max(-0.49, Math.min(0.49, +a || 0));
   spinHint.textContent = spinA === 0 ? 'K = spin off'
     : `K = Kerr a* = ${(spinA / 0.5).toFixed(1)} ${spinA > 0 ? 'prograde' : 'retrograde'}`;
+  spinChip.textContent = spinA === 0 ? 'K · spin off — tap'
+    : `K · Kerr a* ${(spinA / 0.5).toFixed(1)} ${spinA > 0 ? 'prograde' : 'retrograde'} — tap`;
+  // thin-disk inner edge is the prograde ISCO of the rotating hole (|a|:
+  // the disk co-rotates with the spin); Schwarzschild keeps 3 rs.
+  rInNow = spinA === 0 ? R_IN : Math.max(RS * 1.05, kerrNum(Math.abs(spinA)).iscoPro);
+  updateTelemetry();
+  spinRumble(spinA);
 }
+function cycleSpin(){ applySpin(spinA === 0 ? SPIN_MAX : spinA > 0 ? -SPIN_MAX : 0); }
 addEventListener('keydown', e => {
-  if (e.key === 'k' || e.key === 'K') applySpin(spinA === 0 ? SPIN_MAX : spinA > 0 ? -SPIN_MAX : 0);
+  if (e.key === 'k' || e.key === 'K') cycleSpin();
 });
+spinChip.addEventListener('pointerdown', () => { unlockAudio(); cycleSpin(); });
 if (spinA !== 0) applySpin(spinA);
 
 /* The flyby loop ENDS by falling in (#1048). After the close pass the drone tips to
@@ -955,7 +1012,8 @@ function probeDopplerHue(pr, cb){
 
 /* ---------------- JS mirror of the geodesic integrator (harness probes) ------- */
 
-function traceRayJS(pIn, dIn, maxSteps){
+function traceRayJS(pIn, dIn, maxSteps, rIn){
+  const rInL = rIn > 0 ? rIn : R_IN;
   const r0 = Math.hypot(pIn[0], pIn[1], pIn[2]);
   const e1 = [pIn[0] / r0, pIn[1] / r0, pIn[2] / r0];
   const a = dIn[0] * e1[0] + dIn[1] * e1[1] + dIn[2] * e1[2];
@@ -992,7 +1050,7 @@ function traceRayJS(pIn, dIn, maxSteps){
     if (pPrev[1] * p[1] < 0){
       const f = pPrev[1] / (pPrev[1] - p[1]);
       const rr = Math.hypot(pPrev[0] + (p[0] - pPrev[0]) * f, pPrev[2] + (p[2] - pPrev[2]) * f);
-      if (rr > R_IN && rr < R_OUT) hits++;
+      if (rr > rInL && rr < R_OUT) hits++;
     }
     pPrev = p;
     if (rn > ESC_R && w < 0){ escaped = true; break; }
@@ -1176,7 +1234,7 @@ function probeHalo(){
   for (let k = 0.05; k <= 1.2; k += 0.05){
     const d = [cb.f[0] + cb.u[0] * k, cb.f[1] + cb.u[1] * k, cb.f[2] + cb.u[2] * k];
     const dl = Math.hypot(d[0], d[1], d[2]);
-    const res = traceRayJS(cb.pos.slice(), [d[0] / dl, d[1] / dl, d[2] / dl], 240);
+    const res = traceRayJS(cb.pos.slice(), [d[0] / dl, d[1] / dl, d[2] / dl], 240, rInNow);
     if (!res.captured && res.escaped && res.hits >= 1 && res.b > B_CRIT) return { lifted: true, k: +k.toFixed(2), b: res.b, hits: res.hits };
   }
   return { lifted: false };
@@ -1248,9 +1306,8 @@ function updateDrone(prox, R, th){
   droneLP.frequency.setTargetAtTime(55 + prox * 90, AC.currentTime, 0.4);
   droneGain.gain.setTargetAtTime(0.10 + prox * 0.075, AC.currentTime, 0.4);
   if (whineOsc){
-    const om = Math.sqrt(0.5 / (R * R * R));
-    whineOsc.frequency.setTargetAtTime(46 + om * 3200, AC.currentTime, 0.5);
-    whineGain.gain.setTargetAtTime(0.004 + prox * 0.016, AC.currentTime, 0.5);
+    whineOsc.frequency.setTargetAtTime(whineHz(R, spinA), AC.currentTime, 0.5);
+    whineGain.gain.setTargetAtTime(0.004 + prox * 0.016 + (spinA !== 0 ? 0.002 : 0), AC.currentTime, 0.5);
     if (whinePan) whinePan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Math.sin(th) * prox)), AC.currentTime, 0.6);
   }
 }
@@ -1321,6 +1378,7 @@ function frame(){
   gl.uniform1f(us('uDisc'), cb.disc);
   gl.uniform1f(us('uFade'), cb.fade);
   gl.uniform1f(us('uSpin'), spinA);
+  gl.uniform1f(us('uRIn'), rInNow);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   // probes (#1047): drop the clock forward in coordinate time, solve where each
@@ -1480,6 +1538,9 @@ window.__holeTest = {
   bendAt(b){ return probeBend(b); },
   spin(){ return { a: +spinA.toFixed(3), aStar: +(spinA / 0.5).toFixed(3), max: SPIN_MAX, hint: spinHint.textContent }; },
   setSpin(a){ applySpin(a); return { a: +spinA.toFixed(3) }; },
+  whineAt(R, a){ return +whineHz(+R, a === undefined ? spinA : +a).toFixed(2); },
+  spinRig(){ return { rIn: +rInNow.toFixed(3), chip: spinChip.textContent, telemetry: telemetry.textContent,
+    rumble: lastRumble === null ? null : Math.sign(lastRumble.dir) }; },
   traceKerr(p, d, n, a){ return traceKerrJS(p, d, n || 240, a === undefined ? spinA : +a); },
   kerrBends(a){ return kerrSweep(a === undefined ? (spinA || SPIN_MAX) : +a); },
   kerrSpan(a){ return kerrSpan(a === undefined ? (spinA || SPIN_MAX) : +a); },
@@ -1511,7 +1572,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956, 1047, 1048, 1074, 1049], span: '~4 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047, 1048, 1074, 1049, 1082], span: '~4 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
