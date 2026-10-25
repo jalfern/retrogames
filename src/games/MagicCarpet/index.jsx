@@ -11,7 +11,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    W, H, HUD_H, QUOTA, HORIZON, MAP, WATER,
+    W, H, HUD_H, HORIZON, MAP, WATER, LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, sampleH, setHand, cycleR,
 } from './sim.js'
@@ -118,15 +118,32 @@ const MagicCarpetGame = () => {
         }
 
         const finish = (win) => {
-            setEnd({ win, score: gs.score, deaths: gs.deaths })
+            setEnd({ win, score: gs.score, deaths: gs.deaths, worlds: gs.levelClears + (win ? 1 : 0) })
             overAtRef.current = performance.now()
             setMode('over')
         }
 
         const handleEvents = (evts) => {
             for (const e of evts) {
-                if (e.type === 'bank') {
+                if (e.type === 'pickup') {
                     audioController.playTone(760 + (e.m || 3) * 30, 0.05, 'triangle', 0.05)
+                } else if (e.type === 'bankIn') {
+                    audioController.playTone(520 + Math.min(6, e.m) * 40, 0.04, 'sine', 0.04)
+                } else if (e.type === 'spill') {
+                    audioController.playSweep(600, 120, 0.5, 'triangle', 0.08)
+                    say('YOUR LOAD OF MANA IS LOST')
+                } else if (e.type === 'ignite') {
+                    audioController.playNoise(0.12, 0.05)
+                } else if (e.type === 'hutDown') {
+                    audioController.playNoise(0.2, 0.08)
+                    audioController.playTone(85, 0.12, 'square', 0.06)
+                    shake = Math.max(shake, 3)
+                } else if (e.type === 'level') {
+                    audioController.playTone(523, 0.12, 'square', 0.07)
+                    audioController.playTone(659, 0.12, 'square', 0.07, 0.12)
+                    audioController.playTone(784, 0.12, 'square', 0.07, 0.24)
+                    audioController.playTone(1046, 0.3, 'square', 0.07, 0.36)
+                    say(`WORLD RESTORED — ENTER ${e.name}`)
                 } else if (e.type === 'cast') {
                     if (e.hand === 'L') flashL = 14; else flashR = 14
                     const id = e.id
@@ -319,7 +336,7 @@ const MagicCarpetGame = () => {
             }
             for (const hs of (gs.huts || [])) {
                 const pr = project(hs.x, hs.y, sampleH(gs, hs.x, hs.y))
-                if (pr) items.push({ d: pr.d, sx: pr.sx, hw: 6 * pr.k, fn: () => drawHut(ctx, pr.sx, pr.sy, Math.max(0.3, pr.k / 5), hs.v) })
+                if (pr) items.push({ d: pr.d, sx: pr.sx, hw: 6 * pr.k, fn: () => drawHut(ctx, pr.sx, pr.sy, Math.max(0.3, pr.k / 5), hs.v, f.n, hs.burn, hs.dead) })
             }
             const prC = project(gs.castle.x, gs.castle.y, sampleH(gs, gs.castle.x, gs.castle.y))
             if (prC && gs.castleStage > 0) {
@@ -419,6 +436,16 @@ const MagicCarpetGame = () => {
                 ctx.fillRect(100 + i * 12 + sway, H - HUD_H - 2, 2, 2)
                 ctx.fillRect(178 + i * 12 + sway, H - HUD_H - 2, 2, 2)
             }
+            const carry = Math.min(8, Math.floor(gs.mana / 3))
+            for (let i = 0; i < carry; i++) {
+                const a = gs.tick * 0.045 + (i / 8) * Math.PI * 2
+                const ox = Math.cos(a) * (15 + i * 1.5)
+                const oy = Math.sin(a) * 5 - 15 - i * 0.6
+                ctx.fillStyle = '#d8b840'
+                ctx.fillRect(W / 2 + ox, H - HUD_H + oy, 2, 2)
+                ctx.fillStyle = '#f4e08a'
+                ctx.fillRect(W / 2 + ox, H - HUD_H + oy, 1, 1)
+            }
             const handY = (fl) => H - HUD_H - 2 + (fl > 0 ? -10 - fl : 0)
             ctx.fillStyle = '#caa888'
             ctx.fillRect(118 + sway, handY(flashL), 7, 8)
@@ -483,17 +510,26 @@ const MagicCarpetGame = () => {
             dot(gs.castle.x, gs.castle.y, '#ffd84a', 2.4)
             if (gs.wizard.alive) dot(gs.wizard.x, gs.wizard.y, '#c060ff', 2.4)
 
-            // mana bar
+            // vault bar (banked mana = the score) + carried pouch
             ctx.fillStyle = '#0e1a38'
-            ctx.fillRect(34, y0 + 6, 168, 7)
-            const fill = Math.min(1, gs.mana / QUOTA)
+            ctx.fillRect(34, y0 + 6, 130, 7)
+            const fill = Math.min(1, gs.bank / gs.quota)
             ctx.fillStyle = '#e8b830'
-            ctx.fillRect(35, y0 + 7, 166 * fill, 5)
+            ctx.fillRect(35, y0 + 7, 128 * fill, 5)
             ctx.fillStyle = '#0e1a38'
-            for (let q = 1; q < 6; q++) ctx.fillRect(34 + (168 * q) / 6, y0 + 6, 1, 7)
+            for (let q = 1; q < 5; q++) ctx.fillRect(34 + (130 * q) / 5, y0 + 6, 1, 7)
             ctx.fillStyle = '#ffd860'
             ctx.font = '6px monospace'
-            ctx.fillText(`MANA ${Math.floor(gs.mana)}/${QUOTA}`, 34, y0 + 21)
+            ctx.fillText(`VAULT ${Math.floor(gs.bank)}/${gs.quota}`, 34, y0 + 21)
+            ctx.fillStyle = '#0e1a38'
+            ctx.fillRect(170, y0 + 6, 34, 7)
+            ctx.fillStyle = '#f0d060'
+            ctx.fillRect(171, y0 + 7, 32 * Math.min(1, gs.mana / 40), 5)
+            ctx.fillStyle = '#ffe9a0'
+            ctx.fillText(`CARRY ${Math.floor(gs.mana)}`, 168, y0 + 21)
+            ctx.fillStyle = 'rgba(232, 200, 96, 0.85)'
+            ctx.font = '7px monospace'
+            ctx.fillText(`WORLD ${gs.level + 1}/${LEVELS.length}`, 6, 12)
             // hearts
             for (let i = 0; i < 5; i++) {
                 const full = gs.hp >= (i + 1) * 20
@@ -582,7 +618,7 @@ const MagicCarpetGame = () => {
             throwL = throwR = false
             boostKey = boostOn = boostPrev = false; upHold = 0
             setMode('play')
-            say('RESTORE THIS WORLD TO EQUILIBRIUM')
+            say(`WORLD 1 — ${LEVELS[0].name} · FILL THE VAULT`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
 
@@ -661,6 +697,7 @@ const MagicCarpetGame = () => {
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, end: gs.end, score: gs.score,
                     mana: gs.mana, hp: gs.hp, deaths: gs.deaths, kills: gs.kills,
+                    bank: Math.floor(gs.bank), level: gs.level, quota: gs.quota,
                     wizAlive: gs.wizard.alive, wizHp: gs.wizard.hp,
                     learned: [...gs.learned], hands: { ...gs.hands },
                     x: +gs.x.toFixed(2), y: +gs.y.toFixed(2), alt: +gs.alt.toFixed(2), yaw: +gs.yaw.toFixed(4),
@@ -669,11 +706,15 @@ const MagicCarpetGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                forceDeath: () => {
+                    gs.shield = 0; gs.bank = 0; gs.mana = 0; gs.hp = 0; gs.end = 'dead'
+                    gs.events.push({ type: 'dead' })
+                },
             }
             mountDbg({
                 title: 'MAGIC CARPET',
                 getState: () => [
-                    `mana ${Math.floor(gs.mana)}/${QUOTA} stage ${gs.castleStage} hp ${Math.round(gs.hp)} shield ${gs.shield} deaths ${gs.deaths}`,
+                    `VAULT ${Math.floor(gs.bank)}/${gs.quota} CARRY ${Math.floor(gs.mana)} WORLD ${gs.level + 1}/${LEVELS.length} stage ${gs.castleStage} hp ${Math.round(gs.hp)} shield ${gs.shield} deaths ${gs.deaths}`,
                     `wizard ${gs.wizard.alive ? `hp ${gs.wizard.hp} hoard ${gs.wizard.mana}` : 'SLAIN'} learned ${gs.learned.join(',')} hands ${gs.hands.L}/${gs.hands.R}`,
                     `pos ${gs.x.toFixed(0)},${gs.y.toFixed(0)} alt ${gs.alt.toFixed(0)} yaw ${gs.yaw.toFixed(2)} pearls ${gs.pearls.filter((p) => p.alive).length} monsters ${gs.monsters.length}`,
                     `screen ${screenRef.current} paused ${pausedRef.current} end ${gs.end} score ${gs.score}`,
@@ -687,11 +728,11 @@ const MagicCarpetGame = () => {
                             let t = 0
                             while (!clone.end && t < 60000) { step(clone, autopilot(clone)); t++ }
                             return clone.end === 'win'
-                                ? `WINNABLE from here: equilibrium at tick ${clone.tick} (${clone.score} pts)`
-                                : `NOT winnable by the autopilot from here: end=${clone.end || 'timeout'} mana ${Math.floor(clone.mana)}/${QUOTA}`
+                                ? `WINNABLE from here: vault quota banked at tick ${clone.tick} (${clone.score} pts)`
+                                : `NOT winnable by the autopilot from here: end=${clone.end || 'timeout'} vault ${Math.floor(clone.bank)}/${clone.quota}`
                         },
                     },
-                    { label: '+30 MANA', run: () => { gs.mana += 30; return `mana ${Math.floor(gs.mana)}` } },
+                    { label: '+30 CARRY', run: () => { gs.mana += 30; return `carry ${Math.floor(gs.mana)}` } },
                     { label: 'LEARN ALL SPELLS', run: () => { for (const sp of SPILLS) if (!gs.learned.includes(sp.id)) gs.learned.push(sp.id); if (!gs.hands.R) gs.hands.R = 'lightning'; return 'spellbook full' } },
                     { label: 'WIZARD -20', run: () => { gs.wizard.hp -= 20; return `wizard hp ${gs.wizard.hp}` } },
                 ],
@@ -711,7 +752,7 @@ const MagicCarpetGame = () => {
                     setMode('play')
                 },
                 tick: (pad) => {
-                    if (gs.end) { gs.tick += 1; return }
+                    if (gs.end) { gs.tick += 1; handleEvents(gs.events.splice(0)); return }
                     boostOn = !!pad.boost
                     if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
                     boostPrev = boostOn
@@ -720,6 +761,7 @@ const MagicCarpetGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
                     seed: contractSeed, mana: Math.floor(gs.mana), hp: Math.round(gs.hp),
+                    bank: Math.floor(gs.bank), level: gs.level,
                     deaths: gs.deaths, kills: gs.kills, wizAlive: gs.wizard.alive,
                     stage: gs.castleStage, hash: stateHash(gs),
                 }),
@@ -752,22 +794,22 @@ const MagicCarpetGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
-                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . restore the world</p>
+                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore three worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
                     <p className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
                         arrows steer the carpet (it banks and cannot crash) — A casts your left hand, X your right<br />
-                        fly through glowing grimoires to learn spells — some elude you the first time<br />
-                        mana pearls flow to your castle; grow it to 180 stored mana to restore equilibrium<br />
-                        the rival wizard hoards too — destroy him and his hoard scatters into pearls
+                        gather mana pearls, then fly them home — hover over your castle to fill the vault; die and the load is lost<br />
+                        fireballs and lightning crater the land itself — burning villages breed wolves<br />
+                        three worlds await, each guarded by a rival wizard — break him and his hoard scatters into pearls
                     </p>
                 </div>
             )}
 
             {screen === 'over' && end && (
                 <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-purple-50 font-mono px-6">
-                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'EQUILIBRIUM RESTORED' : 'THE WORLD KEEPS ITS MANA'}</h2>
-                    <p className="text-lg mb-2">{end.score} pts · {end.deaths} fall{end.deaths === 1 ? '' : 's'}</p>
-                    <p className="text-purple-200/80 mb-4 text-sm">{end.win ? 'the castle holds the quota — this world is whole' : 'dying with an empty castle unravels the flight'}</p>
+                    <h2 className={`text-4xl font-black mb-1 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'EQUILIBRIUM RESTORED' : 'THE WORLDS KEEP THEIR MANA'}</h2>
+                    <p className="text-lg mb-2">{end.score} pts · {end.deaths} fall{end.deaths === 1 ? '' : 's'} · {end.worlds}/{LEVELS.length} worlds</p>
+                    <p className="text-purple-200/80 mb-4 text-sm">{end.win ? 'every vault holds its quota — the worlds are whole' : 'dying with an empty vault unravels the flight'}</p>
                     <p className="mt-2 animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
             )}

@@ -8,14 +8,20 @@ export const WATER = 14
 export const SANDL = 20
 export const GRASSL = 54
 export const ROCKL = 74
-export const QUOTA = 180
 export const HORIZON = 92
 
 export const CFG = {
-    speed: 2.0, climb: 0.75, turn: 0.052, focal: 260,
+    speed: 2.0, climb: 0.75, turn: 0.065, focal: 260,
     boost: 1.6, boostTurn: 0.55,
-    
+    castleR: 26, bankRate: 3,
 }
+
+export const LEVELS = [
+    { name: 'VERDANT ISLES', quota: 115, hoard: 80, wizHp: 60, pearls: 56 },
+    { name: 'EMBERWILD', quota: 160, hoard: 110, wizHp: 85, pearls: 62 },
+    { name: 'FROSTBOUND', quota: 175, hoard: 140, wizHp: 110, pearls: 68 },
+]
+export const QUOTA = LEVELS[LEVELS.length - 1].quota
 
 export const SPILLS = [
     { id: 'fireball', name: 'FIREBALL', cost: 15 },
@@ -86,6 +92,24 @@ export function sampleH(gs, x, y) {
     )
 }
 
+// Terrain reshape (the original's signature): blasts punch craters into the
+// heightmap itself; craters sunk below sea level flood with the ocean.
+export function crater(gs, x, y, r, depth) {
+    const rCell = Math.ceil(r / CELL)
+    const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
+    const i0 = Math.floor(cx), j0 = Math.floor(cy)
+    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
+        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+            const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
+            const d = Math.hypot(du, dv)
+            if (d > r) continue
+            const fall = depth * (1 - d / r) ** 2
+            const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
+            gs.heights[gi] = Math.max(0, gs.heights[gi] - fall)
+        }
+    }
+}
+
 const findSpot = (gs, minH, maxH, flat, away, minAway) => {
     for (let tries = 0; tries < 800; tries++) {
         const x = rnd(gs) * MAP, y = rnd(gs) * MAP
@@ -109,31 +133,45 @@ const findSpot = (gs, minH, maxH, flat, away, minAway) => {
 
 export const BOUNTY = { giant: 18, wolf: 6, cow: 2 }
 
-export function makeGame(seed) {
+export function makeGame(seed, level = 0) {
     const gs = {
         seed: seed >>> 0, rngState: seed >>> 0, tick: 0, end: null,
+        level: Math.max(0, Math.min(LEVELS.length - 1, level)),
         x: 0, y: 0, alt: 34, yaw: 0,
-        hp: 100, shield: 0, mana: 0, deaths: 0,
-        kills: 0, wizardKills: 0,
+        hp: 100, shield: 0, mana: 0, bank: 0, spilled: 0, deaths: 0,
+        kills: 0, wizardKills: 0, levelClears: 0,
         castle: null, castleStage: 0,
         wizard: null, pearls: [], books: [], monsters: [], projs: [], fireMarks: [],
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
-        wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45,
+        wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
         heights: null, events: [], score: 0,
+        quota: LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))].quota,
     }
+    genWorld(gs)
+    return gs
+}
+
+// (Re)generate the living world of gs.level on top of gs. The rng stream keeps
+// running, so level N of seed S is reproducible from a fresh makeGame(S, N)…
+// makeGame always starts at the requested level, and step()'s level transition
+// calls genWorld in the same deterministic order.
+export function genWorld(gs) {
+    const lv = LEVELS[gs.level]
+    gs.quota = lv.quota
     gs.heights = genHeights((() => {
         return () => { gs.rngState = (gs.rngState + 0x6D2B79F5) | 0; let t = gs.rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
     })())
-    gs.rngState = seed >>> 0
-
+    gs.castleStage = 0
     const cs = findSpot(gs, 26, 44, true, null, 0)
     gs.castle = { x: cs.x, y: cs.y }
-    gs.x = wrap(cs.x + 40, MAP); gs.y = wrap(cs.y + 40, MAP)
+    gs.x = wrap(cs.x + 40, MAP); gs.y = wrap(cs.y + 40, MAP); gs.alt = 34; gs.yaw = 0
+    gs.hp = 100; gs.shield = 0; gs.mana = 0; gs.bank = 0
     const ts = findSpot(gs, 24, 48, true, gs.castle, 140)
-    gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: 60, mana: 90, alive: true, ang: rnd(gs) * 6.28 }
+    gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: lv.wizHp, mana: lv.hoard, alive: true, ang: rnd(gs) * 6.28 }
 
     const bs = []
+    gs.books = []
     for (const sp of SPILLS) {
         let p = null
         for (let k = 0; k < 60; k++) {
@@ -141,25 +179,29 @@ export function makeGame(seed) {
             if (!bs.some((b) => Math.hypot(wrapD(c.x - b.x), wrapD(c.y - b.y)) < 70) &&
                 Math.hypot(wrapD(c.x - gs.castle.x), wrapD(c.y - gs.castle.y)) > 45) { p = c; break }
         }
-        gs.books.push({ id: sp.id, x: p.x, y: p.y, taken: idTaken(sp.id, gs.learned), cd: 0 })
+        gs.books.push({ id: sp.id, x: p.x, y: p.y, taken: gs.learned.includes(sp.id), cd: 0 })
         bs.push(p)
     }
 
-    for (let i = 0; i < 56; i++) {
+    gs.pearls = []
+    for (let i = 0; i < lv.pearls; i++) {
         const x = rnd(gs) * MAP, y = rnd(gs) * MAP
         const z = Math.max(sampleH(gs, x, y), WATER) + [2, 2, 6, 12][Math.floor(rnd(gs) * 4)]
         gs.pearls.push({ x, y, z, m: 2 + Math.floor(rnd(gs) * 5), alive: true })
     }
+    gs.monsters = []
     for (let i = 0; i < 2; i++) spawnMon(gs, 'giant', gs.castle, 90)
-    for (let i = 0; i < 4; i++) spawnMon(gs, 'wolf', gs.castle, 90)
+    for (let i = 0; i < 4 + gs.level; i++) spawnMon(gs, 'wolf', gs.castle, 90)
     for (let i = 0; i < 4; i++) spawnMon(gs, 'cow', gs.castle, 70)
+    gs.huts = []
     for (let i = 0; i < 7; i++) {
         const c = findSpot(gs, 26, 46, false, null, 0)
-        gs.huts = (gs.huts || []).concat([{ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3) }])
+        gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false })
     }
+    gs.projs = []
+    gs.fireMarks = []
     return gs
 }
-const idTaken = (id, learned) => learned.includes(id)
 
 function spawnMon(gs, kind, away, minD) {
     const p = findSpot(gs, kind === 'giant' ? 24 : 20, kind === 'cow' ? 46 : 60, false, away || null, minD || 0)
@@ -195,14 +237,28 @@ function lookPoint(gs) {
 
 const entZ = (gs, x, y) => Math.max(sampleH(gs, x, y), WATER) + 4
 
+function igniteHuts(gs, x, y) {
+    for (const hs of gs.huts) {
+        if (!hs.dead && hs.burn <= 0 && Math.hypot(wrapD(hs.x - x), wrapD(hs.y - y)) < 14) {
+            hs.burn = 200
+            gs.events.push({ type: 'ignite', x: hs.x, y: hs.y })
+        }
+    }
+}
+
 function hurtPlayer(gs, dmg) {
+    if (gs.safeT > 0) return
     if (gs.shield > 0) { gs.shield = Math.max(0, gs.shield - dmg); gs.events.push({ type: 'shieldHit' }); return }
     gs.hp -= dmg
     gs.events.push({ type: 'hurt', dmg })
     if (gs.hp <= 0) {
-        if (gs.mana > 0) {
+        const lost = Math.floor(gs.mana)
+        if (lost > 0) { gs.spilled += lost; gs.events.push({ type: 'spill', m: lost }) }
+        gs.mana = 0
+        if (gs.bank > 0) {
             gs.deaths++
-            gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 34; gs.hp = 100; gs.shield = 150
+            gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 52; gs.hp = 100; gs.shield = 150
+            gs.safeT = 240
             gs.events.push({ type: 'respawn' })
         } else {
             gs.hp = 0
@@ -218,6 +274,17 @@ function killEntity(gs, mo, i) {
     dropPearls(gs, mo.x, mo.y, BOUNTY[mo.kind])
     gs.events.push({ type: 'kill', kind: mo.kind, x: mo.x, y: mo.y })
     if (gs.heldEnt && gs.heldEnt.ref === mo) { gs.heldEnt = null; gs.holdT = 0 }
+}
+
+function blast(gs, x, y, r, depth, dmg) {
+    crater(gs, x, y, r, depth)
+    igniteHuts(gs, x, y)
+    for (let k = 0; k < 3; k++) {
+        const a = rnd(gs) * 6.28, d = rnd(gs) * r
+        gs.fireMarks.push({ x: wrap(x + Math.cos(a) * d, MAP), y: wrap(y + Math.sin(a) * d, MAP), t: gs.tick })
+    }
+    applySplash(gs, x, y, dmg)
+    gs.events.push({ type: 'boom', x, y })
 }
 
 function castHand(gs, hand) {
@@ -247,6 +314,8 @@ function castHand(gs, hand) {
             if (d < 24) struck.push({ tgt: 'mon', i, dmg: 12 })
         })
         gs.events.push({ type: 'zap', x: lp.x, y: lp.y, d: lp.d })
+        crater(gs, lp.x, lp.y, 10, 8)
+        igniteHuts(gs, lp.x, lp.y)
         for (const s of struck) {
             if (s.tgt === 'wiz') { gs.wizard.hp -= s.dmg; gs.events.push({ type: 'wizHit' }) }
         }
@@ -315,6 +384,7 @@ export function step(gs, inp) {
     if (gs.coolR > 0) gs.coolR--
     if (gs.shield > 0) gs.shield--
     if (gs.wizSlow > 0) gs.wizSlow--
+    if (gs.safeT > 0) gs.safeT--
     if (gs.holdT > 0 && gs.heldEnt) { gs.holdT--; if (gs.holdT === 0) { gs.heldEnt.ref.grabbed = false; gs.heldEnt = null } }
 
     const steer = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
@@ -347,13 +417,20 @@ export function step(gs, inp) {
         if (dp < 6 && Math.abs(p.z - gs.alt) < 14) {
             p.alive = false
             gs.mana += p.m
-            gs.events.push({ type: 'bank', m: p.m })
+            gs.events.push({ type: 'pickup', m: p.m })
         }
     }
 
     for (const b of gs.books) {
         if (b.cd > 0) b.cd--
-        if (!b.taken && Math.hypot(wrapD(b.x - gs.x), wrapD(b.y - gs.y)) < 8 && Math.abs(gs.alt - (sampleH(gs, b.x, b.y) + 4)) < 16) {
+        const bdx = wrapD(gs.x - b.x), bdy = wrapD(gs.y - b.y)
+        const bd = Math.hypot(bdx, bdy)
+        const bz = sampleH(gs, b.x, b.y) + 4
+        if (!b.taken && bd < 18 && Math.abs(gs.alt - bz) < 16) {
+            b.x = wrap(b.x + bdx / Math.max(3, bd) * Math.min(1.4, bd * 0.25), MAP)
+            b.y = wrap(b.y + bdy / Math.max(3, bd) * Math.min(1.4, bd * 0.25), MAP)
+        }
+        if (!b.taken && bd < 10 && Math.abs(gs.alt - bz) < 16) {
             b.cd = 90
             if (rnd(gs) < 0.8) {
                 b.taken = true
@@ -367,14 +444,42 @@ export function step(gs, inp) {
         }
     }
 
+    // Bank-by-delivery: the load must be flown home. The vault is the score.
     if (Math.hypot(wrapD(gs.castle.x - gs.x), wrapD(gs.castle.y - gs.y)) < CFG.castleR) {
         if (gs.hp < 100) gs.hp = Math.min(100, gs.hp + 1.2)
+        if (gs.mana > 0) {
+            const move = Math.min(gs.mana, CFG.bankRate)
+            gs.mana -= move
+            gs.bank += move
+            gs.events.push({ type: 'bankIn', m: move })
+        }
     }
     {
-        const stages = [0, 30, 70, 120, 180]
-        const st = stages.filter((q) => gs.mana >= q).length - 1
+        const stages = [0, 25, 60, 105, 150]
+        const st = stages.filter((q) => gs.bank >= q).length - 1
         if (st > gs.castleStage) { gs.castleStage = st; gs.events.push({ type: 'stage', n: st }) }
-        if (gs.mana >= QUOTA) { gs.end = 'win'; gs.events.push({ type: 'win' }) }
+        if (gs.bank >= gs.quota) {
+            if (gs.level >= LEVELS.length - 1) {
+                gs.end = 'win'
+                gs.events.push({ type: 'win' })
+            } else {
+                gs.levelClears++
+                gs.level++
+                gs.quota = LEVELS[gs.level].quota
+                if (gs.heldEnt) { gs.heldEnt = null; gs.holdT = 0 }
+                gs.events.push({
+                    type: 'level', n: gs.level, name: LEVELS[gs.level].name,
+                    reset: {
+                        bank: gs.bank,
+                        pearls: gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0),
+                        hoard: gs.wizard.alive ? gs.wizard.mana : 0,
+                    },
+                })
+                const keepCarry = gs.mana
+                genWorld(gs)
+                gs.mana = keepCarry
+            }
+        }
     }
 
     const wz = gs.wizard
@@ -404,6 +509,8 @@ export function step(gs, inp) {
             wz.alive = false
             gs.wizardKills++
             dropPearls(gs, wz.tx, wz.ty, wz.mana)
+            crater(gs, wz.tx, wz.ty, 18, 11)
+            igniteHuts(gs, wz.tx, wz.ty)
             gs.events.push({ type: 'wizardDown' })
         }
     }
@@ -424,6 +531,8 @@ export function step(gs, inp) {
         m.wanderT++
         if (m.kind === 'giant') {
             if (m.wanderT > 60) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
+            const gcd = Math.hypot(wrapD(m.x - gs.castle.x), wrapD(m.y - gs.castle.y))
+            if (gcd < 55) m.dir = Math.atan2(wrapD(m.y - gs.castle.y), wrapD(m.x - gs.castle.x))
             m.x = wrap(m.x + Math.cos(m.dir) * 0.35, MAP); m.y = wrap(m.y + Math.sin(m.dir) * 0.35, MAP)
             if (m.cool > 0) m.cool--
             if (pd < 70 && m.cool <= 0) {
@@ -440,11 +549,22 @@ export function step(gs, inp) {
             const sp = pd < 45 ? 1.0 : 0.4
             m.x = wrap(m.x + Math.cos(m.dir) * sp, MAP); m.y = wrap(m.y + Math.sin(m.dir) * sp, MAP)
             if (m.cool > 0) m.cool--
-            if (pd < 6 && m.cool <= 0) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite' }) }
+            if (pd < 6 && m.cool <= 0 && gs.alt < sampleH(gs, m.x, m.y) + 10) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite' }) }
         } else {
             if (m.wanderT > 90) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
             m.x = wrap(m.x + Math.cos(m.dir) * 0.25, MAP); m.y = wrap(m.y + Math.sin(m.dir) * 0.25, MAP)
             if (pd < 5 && m.cool <= 0) { m.cool = 200; killEntity(gs, m, i); gs.events.push({ type: 'stampede' }) }
+        }
+    }
+
+    for (const hs of gs.huts) {
+        if (hs.burn > 0) {
+            hs.burn--
+            if (hs.burn === 0 && !hs.dead) {
+                hs.dead = true
+                crater(gs, hs.x, hs.y, 6, 3)
+                gs.events.push({ type: 'hutDown', x: hs.x, y: hs.y })
+            }
         }
     }
 
@@ -495,9 +615,7 @@ export function step(gs, inp) {
             if (gs.wizard.alive && Math.hypot(wrapD(p.x - gs.wizard.x), wrapD(p.y - gs.wizard.y)) < 7 &&
                 Math.abs(p.z - (entZ(gs, gs.wizard.x, gs.wizard.y))) < 10) {
                 gone = true
-                gs.fireMarks.push({ x: p.x, y: p.y, t: gs.tick })
-                applySplash(gs, gs.wizard.x, gs.wizard.y, p.dmg)
-                gs.events.push({ type: 'boom', x: p.x, y: p.y })
+                blast(gs, p.x, p.y, 14, 10, p.dmg)
             } else {
                 let hi = -1, hd = 6
                 for (let j = 0; j < gs.monsters.length; j++) {
@@ -508,20 +626,16 @@ export function step(gs, inp) {
                 if (hi >= 0) {
                     const m = gs.monsters[hi]
                     gone = true
-                    gs.fireMarks.push({ x: p.x, y: p.y, t: gs.tick })
-                    applySplash(gs, m.x, m.y, p.dmg)
-                    gs.events.push({ type: 'boom', x: p.x, y: p.y })
+                    blast(gs, m.x, m.y, 14, 10, p.dmg)
                 }
             }
         }
         if (!gone && (p.kind === 'fireball' || p.kind === 'throw') && p.grace <= 0 && p.z <= sampleH(gs, p.x, p.y) + 0.5) {
             gone = true
-            gs.fireMarks.push({ x: p.x, y: p.y, t: gs.tick })
-            applySplash(gs, p.x, p.y, p.dmg)
-            gs.events.push({ type: 'boom', x: p.x, y: p.y })
+            blast(gs, p.x, p.y, 14, 10, p.dmg)
         }
         if (!gone && p.from !== 'p') {
-            if (Math.hypot(wrapD(p.x - gs.x), wrapD(p.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
+            if (Math.hypot(wrapD(p.x - gs.x), wrapD(gs.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
                 hurtPlayer(gs, p.dmg)
                 gone = true
             }
@@ -529,12 +643,16 @@ export function step(gs, inp) {
                 gs.wizard.hp -= p.dmg; gone = true; gs.events.push({ type: 'wizHit' })
             }
         }
-        if (!gone && p.kind === 'bolt' && p.z <= sampleH(gs, p.x, p.y)) gone = true
+        if (!gone && p.kind === 'bolt' && p.z <= sampleH(gs, p.x, p.y)) {
+            gone = true
+            crater(gs, p.x, p.y, 8, 5)
+            gs.events.push({ type: 'boom', x: p.x, y: p.y })
+        }
         if (gone) gs.projs.splice(i, 1)
     }
 
-    gs.score = Math.floor(gs.mana * 10 + gs.kills * 25 + gs.wizardKills * 500 +
-        (gs.end === 'win' ? 1000 + Math.max(0, 9000 - gs.tick) : 0))
+    gs.score = Math.floor(gs.bank * 10 + gs.mana * 4 + gs.kills * 25 + gs.wizardKills * 500 +
+        gs.levelClears * 1500 + (gs.end === 'win' ? 1000 + Math.max(0, 18000 - gs.tick) : 0))
     return gs
 }
 
@@ -544,15 +662,18 @@ export function autopilot(gs) {
     const pad = { left: false, right: false, up: false, down: false, a: false, b: false }
     let tx = null, ty = null, tz = 30
 
-    if (gs.hp < 55 && gs.mana > 0) {
-        tx = gs.castle.x; ty = gs.castle.y; tz = 30
+    const home = () => { tx = gs.castle.x; ty = gs.castle.y; tz = 30 }
+    const off = OFFENSE[gs.hands.L] ? spellById(gs.hands.L).cost
+        : (OFFENSE[gs.hands.R] ? spellById(gs.hands.R).cost : 999)
+    if (gs.bank + gs.mana >= gs.quota) {
+        home()
+    } else if (gs.wizard.alive && gs.hp >= 70 && gs.mana >= off + 10) {
+        tx = gs.wizard.x; ty = gs.wizard.y; tz = entZ(gs, gs.wizard.tx, gs.wizard.ty) + 6
+    } else if (gs.mana >= 12 || (gs.hp < 55 && gs.mana > 0)) {
+        home()
     } else {
-        const off = OFFENSE[gs.hands.L] ? spellById(gs.hands.L).cost
-            : (OFFENSE[gs.hands.R] ? spellById(gs.hands.R).cost : 999)
         let target = null
-        if (gs.wizard.alive && gs.mana >= off) {
-            target = { x: gs.wizard.x, y: gs.wizard.y, z: entZ(gs, gs.wizard.tx, gs.wizard.ty) + 6 }
-        } else {
+        {
             let bp = null, bd = 1e9
             for (const q of gs.pearls) {
                 if (!q.alive) continue
@@ -567,7 +688,7 @@ export function autopilot(gs) {
             }
             if (bp && (bd < 90 || !bk)) target = { x: bp.x, y: bp.y, z: bp.z }
             else if (bk) target = { x: bk.x, y: bk.y, z: entZ(gs, bk.x, bk.y) }
-            else { tx = gs.castle.x; ty = gs.castle.y; tz = 30 }
+            else home()
         }
         if (target) { tx = target.x; ty = target.y; tz = target.z + 2 }
     }
@@ -580,14 +701,14 @@ export function autopilot(gs) {
     if (tz > gs.alt + 2.5) pad.up = true
     if (tz < gs.alt - 2.5) pad.down = true
 
-    if (gs.wizard.alive && gs.hp >= 40) {
+    if (gs.wizard.alive && gs.hp >= 40 && gs.mana >= 15) {
         const wx = wrapD(gs.wizard.x - gs.x), wy = wrapD(gs.wizard.y - gs.y)
         const wd = Math.hypot(wx, wy)
         const wda = wrap(Math.atan2(wy, wx) - gs.yaw + Math.PI, Math.PI * 2) - Math.PI
         const ph = gs.tick % 26
         if (gs.heldEnt) {
             if (wd < 40 && Math.abs(wda) < 0.25) pad.b = ph < 2
-        } else if (wd < 44 && Math.abs(wda) < 0.25 && gs.mana >= 15) {
+        } else if (wd < 44 && Math.abs(wda) < 0.25) {
             pad.a = ph < 2
             if (gs.hands.R && OFFENSE[gs.hands.R]) pad.b = ph >= 13 && ph < 15
             else if (gs.hands.R === 'slow' && gs.wizSlow <= 0 && gs.mana >= 30) pad.b = ph < 2
@@ -603,13 +724,14 @@ export function stateHash(gs) {
         for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
     }
     mix(gs.rngState); mix(gs.tick); mix(gs.score); mix(gs.end)
+    mix(gs.level); mix(gs.bank); mix(gs.spilled)
     mix(gs.x.toFixed(1)); mix(gs.y.toFixed(1)); mix(gs.alt.toFixed(1)); mix(gs.yaw.toFixed(3))
     mix(gs.hp); mix(gs.shield); mix(gs.mana); mix(gs.castleStage)
     mix(gs.wizard.alive ? gs.wizard.hp : 'x'); mix(gs.wizard.mana)
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
     mix(gs.pearls.filter((p) => p.alive).length)
     mix(gs.monsters.length); mix(gs.projs.length); mix(gs.fireMarks.length)
-    mix(gs.kills); mix(gs.wizardKills); mix(gs.deaths)
+    mix(gs.kills); mix(gs.wizardKills); mix(gs.deaths); mix(gs.levelClears)
     for (const p of gs.pearls) if (p.alive) { mix(p.x.toFixed(0)); mix(p.y.toFixed(0)) }
     return (h >>> 0).toString(16)
 }
