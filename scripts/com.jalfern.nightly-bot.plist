@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.nightly-bot</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main &amp;&amp; git -C /Users/jon/Dev/retrogames checkout -q --detach origin/main || true; cd /Users/jon/Dev/retrogames &amp;&amp; NIGHTLY_PUSH=1 NIGHTLY_FILE=1 /opt/homebrew/bin/node scripts/nightlybot.mjs</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>3</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/nightly-bot.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/nightly-bot.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+        <key>LANG</key>
+        <string>en_US.UTF-8</string>
+        <key>HOME</key>
+        <string>/Users/jon</string>
+    </dict>
+</dict>
+</plist>
