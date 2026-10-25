@@ -10,6 +10,9 @@
 // three games), the code chip copies its link on tap with a tick, the QR wears
 // the game's colours, and a refused join shakes and buzzes like a cabinet
 // refusing a coin.
+// #1055: the waiting room is a dim passthrough, not a wall — a black/45 scrim
+// with a soft vignette so the game's own attract scene keeps idling behind the
+// room (Wii channel / arcade VS), same in every lobby game.
 
 import React from 'react'
 import { encode as qrEncode, toSvgPath } from '../utils/qrcode.js'
@@ -78,7 +81,7 @@ function LobbyRoom({ state, title = 'ROOM', accent = {}, names, startHint = 'PRE
     let cpuN = 0, modelN = 0
 
     return (
-        <div className={`absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-center font-mono ${text} px-6 z-10`}>
+        <div className={`absolute inset-0 flex flex-col items-center justify-center text-center font-mono ${text} px-6 z-10`} style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.45) 52%, rgba(0,0,0,0.82) 100%)' }}>
             <div className={`text-[10px] tracking-[0.3em] mb-1 ${dim}`}>
                 {state.role === 'host' ? `HOST A ${title}` : `JOINING ${title}`}
             </div>
@@ -145,7 +148,7 @@ function LobbyRoom({ state, title = 'ROOM', accent = {}, names, startHint = 'PRE
                                 key={i}
                                 data-seat={i}
                                 data-joined={joined.indexOf(i) >= 0 ? '1' : undefined}
-                                className={`px-3 py-2 rounded border text-xs font-bold ${kindClass} ${i === state.slot ? 'ring-2 ring-yellow-300' : ''} ${joined.indexOf(i) >= 0 ? 'animate-[lobby-pop_0.28s_ease-out]' : ''}`}
+                                className={`px-3 py-2 rounded border bg-black/40 text-xs font-bold ${kindClass} ${i === state.slot ? 'ring-2 ring-yellow-300' : ''} ${joined.indexOf(i) >= 0 ? 'animate-[lobby-pop_0.28s_ease-out]' : ''}`}
                             >
                                 <div className="text-[9px] opacity-70">{isModel ? '◈ ' : ''}{KIND_LABEL[k] || k.toUpperCase()}</div>
                                 <div>{i === state.slot ? 'YOU' : label}</div>

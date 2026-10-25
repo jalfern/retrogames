@@ -775,17 +775,27 @@ const GauntletGame = () => {
 
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') {
-                ctx.fillStyle = sc === 'select' ? '#05050c' : DIM
-                ctx.fillRect(0, 0, CW, CH)
-                text('GAUNTLET', CW / 2, 58, 30, '#ffd23f', 14)
-                text('ATARI 1985 · TEN MAZES · WARPS · OVERHEAD', CW / 2, 78, 8, '#8fa3d8')
+                // #1055: while the shared room is up, the attract demo keeps
+                // running and its maze scene rides under the Lobby scrim — drop
+                // our own DIM/title/prompts so the passthrough matches SSX and
+                // Blob Battle (the Lobby owns the wording then; the host's hero
+                // cards stay — the Lobby tells them to pick).
+                const roomUp = !!net.role
+                if (!roomUp) {
+                    ctx.fillStyle = sc === 'select' ? '#05050c' : DIM
+                    ctx.fillRect(0, 0, CW, CH)
+                    text('GAUNTLET', CW / 2, 58, 30, '#ffd23f', 14)
+                    text('ATARI 1985 · TEN MAZES · WARPS · OVERHEAD', CW / 2, 78, 8, '#8fa3d8')
+                }
                 if (sc === 'attract') {
-                    const b = board()[0]
-                    for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0)) {
-                        text(l.text, l.x, l.y, l.size, l.col, l.glow)
+                    if (!roomUp) {
+                        const b = board()[0]
+                        for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0)) {
+                            text(l.text, l.x, l.y, l.size, l.col, l.glow)
+                        }
                     }
                 } else {
-                    text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
+                    if (!roomUp) text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
                     HERO_ORDER.forEach((hk, i) => {
                         const hd = HEROES[hk]
                         const cx = cardCenter(i)
@@ -807,8 +817,10 @@ const GauntletGame = () => {
                         ctx.fillStyle = '#5dff8f'; ctx.fillRect(cx - 24, 174, 48 * (hd.arrow / 18), 4)
                     })
                     const pm = gs.partnerMode || 'off'
-                    text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · PAD 2 = P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, pm === 'human' ? 7 : 8, '#8fa3d8')
-                    text('C PARTNER ' + (pm === 'cpu' ? 'ON' : 'OFF') + ' · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
+                    if (!roomUp) {
+                        text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · PAD 2 = P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, pm === 'human' ? 7 : 8, '#8fa3d8')
+                        text('C PARTNER ' + (pm === 'cpu' ? 'ON' : 'OFF') + ' · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
+                    }
                     if (pm === 'human') {
                         // the second portrait: P2's chosen hero, up in the panel
                         const hk2 = HERO_ORDER[selectHero2]

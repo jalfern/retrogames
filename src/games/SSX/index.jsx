@@ -1288,7 +1288,9 @@ const SSXGame = () => {
                 </div>
             </div>
 
-            {screen === 'attract' && (
+            {/* #1055: while the shared room is up the attract SCENE keeps running
+                under the scrim, but the card text yields to the lobby. */}
+            {screen === 'attract' && !(netUi && netUi.role) && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-6xl font-black italic mb-6" style={{ color: '#fff', textShadow: '4px 0 0 #b0147a, -4px 0 0 #1490b0, 0 12px 30px #000' }}>SSX</h1>
                     <span ref={setHud('aPop')} data-apop="1" className="block mb-4 text-2xl font-black italic text-yellow-300 transition-opacity duration-200" style={{ opacity: 0, textShadow: '0 0 18px #f0f, 3px 3px 0 #000' }} />
