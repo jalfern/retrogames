@@ -311,23 +311,36 @@ void main(){
 }`;
 
 /* probe beacons (#1047): additive screen-space glow sprites, drawn into HDR
-   before the bloom tap so a falling probe blooms like the disk does */
+   before the bloom tap so a falling probe blooms like the disk does.
+   #1074: heads + decaying motion-trail sprites in one pass, plus expanding
+   launch-puff rings (uQ) so the release reads as an event, not a spawn. */
+const SPRITE_MAX = 42;
 const FS_PROBE = `#version 300 es
 precision highp float;
 in vec2 vUv;
 uniform vec2 uRes;
-uniform vec4 uP[6];
-uniform vec3 uC[6];
+uniform vec4 uP[${SPRITE_MAX}];
+uniform vec3 uC[${SPRITE_MAX}];
+uniform vec4 uQ[4];
+uniform vec3 uQC[4];
+uniform int uNP;
+uniform int uNQ;
 out vec4 o;
 void main(){
   vec2 f = vUv * uRes;
   vec3 c = vec3(0.0);
-  for (int i = 0; i < 6; i++){
-    if (uP[i].w <= 0.0) continue;
+  for (int i = 0; i < ${SPRITE_MAX}; i++){
+    if (i >= uNP || uP[i].w <= 0.0) continue;
     vec2 d = f - uP[i].xy;
     float r2 = dot(d, d);
     float s2 = uP[i].z * uP[i].z;
     c += uC[i] * uP[i].w * (exp(-r2 / s2) + 2.4 * exp(-r2 / (s2 * 0.11)));
+  }
+  for (int j = 0; j < 4; j++){
+    if (j >= uNQ || uQ[j].w <= 0.0) continue;
+    vec2 d = f - uQ[j].xy;
+    float dr = length(d) - uQ[j].z;
+    c += uQC[j] * uQ[j].w * exp(-dr * dr / 110.0);
   }
   o = vec4(c, 1.0);
 }`;
@@ -470,8 +483,19 @@ const PROBE_T0 = 1.15
 const PROBE_SPEED = 0.7          // Schwarzschild coordinate seconds per real second
 const PROBE_SHOVE = 0.8          // launch speed added along the aim (rs/s)
 const PROBE_KILL = 0.02          // retire once the g^3 sink drops below this
+const TRAIL_MAX = 6              // solved image samples kept for the motion trail (#1074)
+const PUFF_MAX = 4
+const PUFF_DUR = 0.55          // launch puff ring lifetime (s)
 let probes = []
+let puffs = []
 let lastCb = null
+
+/* off-screen fade (#1074): a beacon leaving the frame dims along the rim over
+   the last 15% instead of popping out at the vis cutoff. */
+function edgeFade(nx, ny){
+  const e = Math.max(Math.abs(nx), Math.abs(ny))
+  return e <= 1 ? 1 : Math.max(0, 1 - (e - 1) / 0.15)
+}
 
 function blackbodyJS(t){
   let c = [0.42, 0.10, 0.02]
@@ -524,8 +548,29 @@ function dropProbe(cssX, cssY){
   const ex = [ex0, ex1, ex2]
   const ey = [vt[0] / vtl, vt[1] / vtl, vt[2] / vtl]
   const L = pr0 * vt0 * e / f0
-  probes.push({ ex, ey, r: pr0, r0: pr0, phi: 0, vr: vr0 * e / f0, e, L, t: 0 })
+  const pr = { ex, ey, r: pr0, r0: pr0, phi: 0, vr: vr0 * e / f0, e, L, t: 0, trail: [], dlt: 1 }
+  probes.push(pr)
   if (probes.length > PROBE_MAX) probes.shift()
+  const im0 = probeImage(pr, cb)
+  if (im0.vis) puffs.push({ x: im0.x, y: im0.y, t: 0 })
+  if (puffs.length > PUFF_MAX) puffs.shift()
+  probeBlip()
+}
+
+/* launch blip (#1074): a short radio-ping on the drone's receiver — downward
+   chirp, quiet, synthesized on the existing drone AudioContext. */
+function probeBlip(){
+  if (!running || !AC) return
+  const t0a = AC.currentTime
+  const o = AC.createOscillator(); o.type = 'sine'
+  o.frequency.setValueAtTime(760, t0a)
+  o.frequency.exponentialRampToValueAtTime(150, t0a + 0.32)
+  const g = AC.createGain()
+  g.gain.setValueAtTime(0.0001, t0a)
+  g.gain.exponentialRampToValueAtTime(0.05, t0a + 0.015)
+  g.gain.exponentialRampToValueAtTime(0.0001, t0a + 0.34)
+  o.connect(g).connect(master)
+  o.start(t0a); o.stop(t0a + 0.36)
 }
 
 function probeWorld(pr){
@@ -634,13 +679,42 @@ function probeImage(pr, cb){
              eC[1] * (a0 * ca - b0 * sa) + eP[1] * (a0 * sa + b0 * ca),
              eC[2] * (a0 * ca - b0 * sa) + eP[2] * (a0 * sa + b0 * ca)]
   const zf = d[0] * cb.f[0] + d[1] * cb.f[1] + d[2] * cb.f[2]
-  if (zf <= 0.05) return { vis: false, miss: mb, alpha: xb }
+  if (zf <= 0.05) return { vis: false, fade: 0, miss: mb, alpha: xb }
   const k = 1.9 / zf
   const nx = (d[0] * cb.r[0] + d[1] * cb.r[1] + d[2] * cb.r[2]) * k
   const ny = (d[0] * cb.u[0] + d[1] * cb.u[1] + d[2] * cb.u[2]) * k
   const aspect = W / Math.max(1, H)
   return { vis: Math.abs(nx / aspect) < 1.15 && Math.abs(ny) < 1.15,
+    fade: edgeFade(nx / aspect, ny),
     x: ((nx / aspect + 1) / 2) * W, y: ((1 - ny) / 2) * H, miss: mb, alpha: xb }
+}
+
+/* coordinate-time velocity of a probe in world space (#1074): dv/dt from the
+   proper-time state (dr/dt = vr*f/e, dphi/dt = L*f/(r^2*e)). */
+function probeVelocity(pr){
+  const f = Math.max(1 - RS / pr.r, 1e-9)
+  const vrt = pr.vr * f / pr.e
+  const rtpt = pr.L * f / (pr.r * pr.e)
+  const c = Math.cos(pr.phi), s = Math.sin(pr.phi)
+  return [vrt * (c * pr.ex[0] + s * pr.ey[0]) + rtpt * (-s * pr.ex[0] + c * pr.ey[0]),
+          vrt * (c * pr.ex[1] + s * pr.ey[1]) + rtpt * (-s * pr.ex[1] + c * pr.ey[1]),
+          vrt * (c * pr.ex[2] + s * pr.ey[2]) + rtpt * (-s * pr.ex[2] + c * pr.ey[2])]
+}
+
+/* the beacon's own Doppler hue (#1074): the disk law applied to the probe's
+   line-of-sight velocity — approaching infall legs blueshift slightly,
+   receding ones redden, on top of the gravitational redshift g. */
+function probeDopplerHue(pr, cb){
+  const v = probeVelocity(pr)
+  const sp = Math.hypot(v[0], v[1], v[2])
+  if (sp < 1e-6) return 1
+  const P = probeWorld(pr)
+  const nx = cb.pos[0] - P[0], ny = cb.pos[1] - P[1], nz = cb.pos[2] - P[2]
+  const nl = Math.hypot(nx, ny, nz) || 1
+  const beta = Math.min(0.45, sp)
+  const gam = 1 / Math.sqrt(Math.max(1 - beta * beta, 1e-4))
+  const cs = (v[0] * nx + v[1] * ny + v[2] * nz) / (sp * nl)
+  return Math.max(0.55, Math.min(1.8, 1 / (gam * (1 - beta * cs))))
 }
 
 /* ---------------- JS mirror of the geodesic integrator (harness probes) ------- */
@@ -863,17 +937,45 @@ function frame(){
   // beacon is actually seen (null geodesics), additive into HDR so they bloom.
   lastCb = cb;
   stepProbes(lastDt > 0 ? lastDt / 1000 : 1 / 60);
+  const pdbt = lastDt > 0 ? lastDt / 1000 : 1 / 60;
+  for (const pf of puffs) pf.t += pdbt;
+  puffs = puffs.filter(pf => pf.t < PUFF_DUR);
   if (probes.length){
-    const pArr = new Float32Array(24), cArr = new Float32Array(18);
-    for (let i = 0; i < probes.length; i++){
-      const pr = probes[i];
-      const im = probeImage(pr, cb);
-      const { w } = probeGlow(pr);
-      if (!im.vis || w <= 0.0005) continue;
-      const col = blackbodyJS(PROBE_T0 * probeGlow(pr).g);
-      pArr[i * 4] = im.x; pArr[i * 4 + 1] = im.y;
-      pArr[i * 4 + 2] = 5 + 26 * w; pArr[i * 4 + 3] = w * 2.4;
-      cArr[i * 3] = col[0]; cArr[i * 3 + 1] = col[1]; cArr[i * 3 + 2] = col[2];
+    const pArr = new Float32Array(SPRITE_MAX * 4), cArr = new Float32Array(SPRITE_MAX * 3)
+    let nS = 0
+    for (const pr of probes){
+      const im = probeImage(pr, cb)
+      const { g, w } = probeGlow(pr)
+      pr.dlt = probeDopplerHue(pr, cb)
+      const wf = w * im.fade
+      if (!im.vis || wf <= 0.0005) continue
+      const col = blackbodyJS(PROBE_T0 * probeGlow(pr).g * pr.dlt)
+      pArr[nS * 4] = im.x; pArr[nS * 4 + 1] = im.y
+      pArr[nS * 4 + 2] = 5 + 26 * wf; pArr[nS * 4 + 3] = wf * 2.4
+      cArr[nS * 3] = col[0]; cArr[nS * 3 + 1] = col[1]; cArr[nS * 3 + 2] = col[2]
+      nS++
+      pr.trail.push({ x: im.x, y: im.y, w: wf, col })
+      if (pr.trail.length > TRAIL_MAX) pr.trail.shift()
+      for (let k = 0; k < pr.trail.length - 1 && nS < SPRITE_MAX; k++){
+        const tr = pr.trail[k]
+        const tw = tr.w * 0.55 * Math.pow(0.6, pr.trail.length - 1 - k)
+        if (tw < 0.004) continue
+        pArr[nS * 4] = tr.x; pArr[nS * 4 + 1] = tr.y
+        pArr[nS * 4 + 2] = 3 + 12 * tr.w; pArr[nS * 4 + 3] = tw * 2.0
+        cArr[nS * 3] = tr.col[0]; cArr[nS * 3 + 1] = tr.col[1]; cArr[nS * 3 + 2] = tr.col[2]
+        nS++
+      }
+    }
+    const qArr = new Float32Array(16), qcArr = new Float32Array(12)
+    let nQ = 0
+    for (const pf of puffs){
+      if (nQ >= PUFF_MAX) break
+      const a = pf.t / PUFF_DUR
+      const q = (1 - a) * (1 - a)
+      qArr[nQ * 4] = pf.x; qArr[nQ * 4 + 1] = pf.y
+      qArr[nQ * 4 + 2] = 4 + 95 * a; qArr[nQ * 4 + 3] = q * 1.6
+      qcArr[nQ * 3] = 1.0; qcArr[nQ * 3 + 1] = 0.84; qcArr[nQ * 3 + 2] = 0.58
+      nQ++
     }
     gl.useProgram(progProbe);
     gl.enable(gl.BLEND);
@@ -881,6 +983,10 @@ function frame(){
     gl.uniform2f(upr('uRes'), W, H);
     gl.uniform4fv(upr('uP'), pArr);
     gl.uniform3fv(upr('uC'), cArr);
+    gl.uniform4fv(upr('uQ'), qArr);
+    gl.uniform3fv(upr('uQC'), qcArr);
+    gl.uniform1i(upr('uNP'), nS);
+    gl.uniform1i(upr('uNQ'), nQ);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     gl.disable(gl.BLEND);
   }
@@ -968,7 +1074,9 @@ window.__holeTest = {
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; ema = 0; },
   physics(){ return { rs: RS, bCrit: B_CRIT, rIn: R_IN, rOut: R_OUT, escR: ESC_R }; },
   dropAt(x, y){ dropProbe(x, y); },
-  probeInfo(){ return { max: PROBE_MAX, speed: PROBE_SPEED, t0: PROBE_T0, kill: PROBE_KILL, rs: RS }; },
+  probeInfo(){ return { max: PROBE_MAX, speed: PROBE_SPEED, t0: PROBE_T0, kill: PROBE_KILL, rs: RS, trail: TRAIL_MAX, puffDur: PUFF_DUR }; },
+  puffs(){ return puffs.length; },
+  edgeFade(x, y){ return +edgeFade(x, y).toFixed(3); },
   probes(){
     if (!lastCb) return [];
     return probes.map(pr => {
@@ -978,7 +1086,8 @@ window.__holeTest = {
         g: +g.toFixed(4), glow: +w.toFixed(5),
         x: im.vis ? +im.x.toFixed(1) : -1, y: im.vis ? +im.y.toFixed(1) : -1,
         vis: !!im.vis, miss: +im.miss.toFixed(3),
-        pin: +Math.abs(im.alpha).toFixed(3) };
+        pin: +Math.abs(im.alpha).toFixed(3),
+        dlt: +pr.dlt.toFixed(3), fade: +im.fade.toFixed(3), trail: pr.trail.length };
     });
   },
 };
@@ -986,7 +1095,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956, 1047], span: '~3 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047, 1074], span: '~4 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
