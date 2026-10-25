@@ -13,11 +13,15 @@
 //      feature the issue asked for.
 //   C. the #546 reconnect ladder rides the lobby: a dropped socket while
 //      waiting becomes 'reconnecting' and a second connect attempt.
+//   D. the #1055 passthrough: the waiting-room scrim is translucent with a
+//      vignette and each lobby game keeps its attract scene under the room
+//      (static source audit — cheap, no second browser).
 //
 //   node scripts/lobbycheck.mjs            # must go green
 //   node scripts/lobbycheck.mjs --mutate # must go RED: the host never sends
 //                                        # 'go' — the guest's kickoff has teeth
 
+import { readFileSync } from 'node:fs'
 import { CODE_RE } from '../relay/core.js'
 import { startRelay } from '../relay/server.mjs'
 import { WebSocket } from 'ws'
@@ -163,6 +167,31 @@ console.log('C. dropped socket while waiting becomes a reconnect (#546 ladder on
     ok(attempts >= 2, `the lobby redials on the backoff ladder (attempts=${attempts})`)
     l.close()
     ok(l.state().phase === 'idle', 'close() parks the lobby back at idle')
+}
+
+// ------------------------------------------------------------------ tier D ----
+// #1055: the waiting room is a dim passthrough — the scrim must stay
+// translucent (vignette, never a solid wall) and every lobby game must keep
+// its attract scene idling under the room with its own card text yielded.
+// Static source audit: cheap, no second browser, and it goes RED if any game
+// re-solidifies its background or re-stacks attract copy over the lobby.
+console.log('D. #1055 attract passthrough — scrim + per-game parity')
+{
+    const src = (f) => readFileSync(new URL(f, import.meta.url), 'utf8')
+    const lobby = src('../src/components/Lobby.jsx')
+    const ssx = src('../src/games/SSX/index.jsx')
+    const blob = src('../src/games/BlobBattle/index.jsx')
+    const gau = src('../src/games/Gauntlet/index.jsx')
+    const AUDIT = [
+        ['the shared scrim is translucent with a vignette', /radial-gradient/.test(lobby), lobby],
+        ['the scrim never re-solidifies to black/75', !/bg-black\/75/.test(lobby), lobby],
+        ['SSX: attract card yields to the room, scene keeps running', /screen === 'attract' && !\(netUi && netUi\.role\)/.test(ssx), ssx],
+        ['Blob Battle: attract card yields to the room, demo keeps painting', /screen === 'attract' && !netUi/.test(blob), blob],
+        ['Gauntlet: own DIM/title/prompts drop while the room is up', /^\s*const roomUp = !!net\.role$/m.test(gau) && (gau.match(/if \(!roomUp\)/g) || []).length >= 4, gau],
+    ]
+    for (const [name, cond, body] of AUDIT) {
+        ok(MUTATE ? !cond : cond, name, (!MUTATE && !cond) ? `missing in source:\n${body.split('\n').filter((l) => /attract|roomUp|radial|black\/7/.test(l)).slice(0, 6).join('\n')}` : '')
+    }
 }
 
 console.log(`\nlobbycheck: ${pass} passed, ${fail} failed${MUTATE ? '  [MUTANT]' : ''}`)
