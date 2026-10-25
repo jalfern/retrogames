@@ -1,54 +1,51 @@
-# STATE — session 19 (2026-10-25)
+# STATE — session 20 (2026-10-25)
 
 ## Shipped this session
-- **VOLCANO demo** (#1043 → PR #1069, squashed to main as 1aefa73): WebGL2 night
-  eruption — raymarched strato-cone lit only by its own lava (animated channels
-  flowing to a white-hot crater pool, blackbody gradient, crust flicker, 8-sample
-  LOS vent-lighting onto slopes), wind-sheared ash plume with below-lighting +
-  altitude decay + internal lightning flashes, deterministic ballistic ember
-  fountain (JS closed-form), hash-star sky + galactic band + horizon ember glow,
-  vent-projected heat shimmer post, HDR→bloom→ACES. Synthesized rumble/roar/
-  blasts. Live: jalfern.com/retrogames/demos/volcano.html
-- `volcanocheck` (npm alias) 28/28 green: pixels + JS mirrors (ballistic embers,
-  lava heat field confined to cone, plume density profile, pulse surge) + real
-  drag/tap input gates + shimmer load-bearing via frozen-frame readPixels
-  differential (mean |Δ| 3.6 lum). Proven-fail: hard-forcing shimmer off in
-  FS_HAZE → gate red (Δ=0), all else green; restored by hand-sed.
-- `creditscheck` extended to 9 demos (90/90).
+- **BLACK HOLE probe drop** (#1047 → PR #1073, squashed to main as abfea68):
+  quick tap releases a glowing beacon onto a real Schwarzschild timelike
+  geodesic (proper-time integration; e² = f0²/(f0−v²); tangential
+  inheritance capped at capture threshold L≈2.3). Observer sees the textbook
+  signature: slows in coordinate time (Δr 0.5→0.16 per sample), reddens
+  (blackbody T0·g), dims (g³), freezes above the horizon, fades to black —
+  never visibly crosses. Screen position solved per-frame from null geodesics
+  (golden-section over one in-plane launch angle through the demo's own RK4
+  bender; primary image by reflection symmetry). Additive HDR composite so
+  beacons bloom; retire below visibility; ≤6 live. Audio unchanged (drone).
+- `blackholecheck` 51/51 (was 41): 6 static laws gates + live fall/slow/
+  red+dim/never-cross/freeze-image gates + retire + real-tap pixel gate
+  (3–4k newly-lit px over the shadow) + phone quick-tap gate. Third
+  proven-fail mutant: skipping the HDR beacon pass → pixel gate red, all
+  physics gates green (probe is simulated, not painted). Restored by hand-sed,
+  re-ran green.
 
 ## Playable now
-- VOLCANO on the demos shelf and live — drag to look, tap for sound, credits card.
+- jalfern.com/retrogames/demos/blackhole.html — tap to drop probes during
+  the flyby (drops during the close pass are the money shot).
 
 ## Branches / harness
-- forge/volcano branch deleted by squash; worktree `~/Dev/retrogames-forge-volcano`
-  removable (`git worktree remove` — main checkout is detached at origin/main).
-- Harness lessons (baked into volcanocheck.mjs comments):
-  - A frozen scene must freeze *everything* — the camera lerp kept easing between
-    "frozen" reads and let the mutant survive; setFreeze now also halts it, and
-    only then was the shimmer differential honest.
-  - Edge-energy is translation-invariant: a coherent shimmer shift barely changes
-    it — the load-bearing probe must be a per-pixel diff of two consecutive
-    frozen frames around a haze toggle (`diffHaze(want)` hook pattern).
-  - The differential caught a real bug: screen-space projection of the vent used
-    view-z where clip-w (−view-z) was needed — masks projected to sy≈46. State
-    hook exposing the projection (`craterSS`) pinned it in one probe.
-- New demos adopting screen-space effects should reuse the diffHaze deferred
-  readPixels pattern (in-frame only; preserveDrawingBuffer stays off).
+- forge/blackhole-probe deleted by squash; worktree `~/Dev/retrogames-forge-
+  blackhole-probe` removable. Main checkout detached at abfea68.
+- creditscheck unaffected (card issues list extended to 903/956/1047).
 
 ## Next candidates (unclaimed)
-1. **#1070** — VOLCANO polish (lane:qa — QA lane picks; builders stay on games).
-2. Game-queue: **#1050** DEMO CORAL REEF GPU rebuild; **#1047/#1048/#1049** BLACK
-   HOLE stages (tap-probe / plunge / spin). Oldest next — #1050 coral reef GPU.
+1. Game-queue oldest: **#1048** BLACK HOLE plunge (fall through the horizon —
+   same integrator + probe machinery is the head start), then #1049 spin,
+   #1050 CORAL REEF GPU rebuild.
+2. #1063 EMBERWOOD act-two polish stays QA-owned (`building-qa`) — don't touch.
+3. New polish filed for QA lane: **#1074** (probe launch puff, motion trail,
+   probe audio, Doppler hue, off-screen fade).
 
 ## Open questions
 - none filed this session.
 
 ## Watch-outs learned
-- Sign conventions between hand-rolled JS projection and the GL view matrix must
-  be verified once with a state hook printing the projected point, not eyeballed
-  from a "looks centered" screenshot (sy=46 vs sy=0.574).
-- `smoothstep(e0>e1)` (reversed edges) is undefined in GLSL — it appeared to work
-  but paired with the bad projection made mask debugging mislead; prefer
-  `1.0 - smoothstep(lo, hi, d)` with lo<hi.
-- vnoise vs fbm: swapping two fbm calls (crust/flicker) to single-octave vnoise
-  bought the plume march + shimmer their frame budget back at no visible cost.
+- A scripted camera is not an inertial frame: inheriting its velocity verbatim
+  launched probes at superluminal local speed (e² blow-up). Correct local
+  binding is e² = f0²/(f0 − v²), and tangential inherit must be clamped by
+  angular momentum (L ≤ ~2.3 rs here) or probes ride centrifugal orbits
+  instead of falling in.
+- Coordinate-time freeze makes any fixed-length harness trail timing-flaky —
+  fall duration depends on release radius. Sample until `r < 1.3` (adaptive),
+  and gate the freeze phase on r-bucketed samples, not "last 3".
+- jalfern.com serves `/retrogames/demos/…` with a 308 (canonical redirect) —
+  prod-poll with `curl -L`; a bare grep reads the redirect body as "missing".
