@@ -69,7 +69,9 @@ const fxSound = (e) => {
             case 'buy': ac.playTone(980, 0.06, 'square', 0.05); ac.playTone(1240, 0.08, 'square', 0.05, 0.06); break
             case 'potion': ac.playSweep(400, 800, 0.2, 'sine', 0.06); break
             case 'gust': ac.playFilteredNoise(0.28, 0.09, 900); ac.playSweep(300, 700, 0.22, 'sine', 0.04); break
-            case 'galecharge': ac.playSweep(220, 520, 0.18, 'triangle', 0.04); break
+            // #1063 the wind-up reads louder: a low rising swell plus a breath of
+            // wind — the sustained charge layer in the loop carries it home.
+            case 'galecharge': ac.playSweep(160, 640, 0.3, 'triangle', 0.06); ac.playFilteredNoise(0.3, 0.045, 900); break
             case 'seal': ac.playTone(340, 0.08, 'square', 0.05); ac.playNoise(0.12, 0.06); break
             case 'spore': ac.playFilteredNoise(0.16, 0.05, 600); break
             case 'mantle': ac.playSweep(200, 60, 0.3, 'square', 0.09); ac.playNoise(0.2, 0.09); ac.duckMusic(0.4, 0.4); break
@@ -217,6 +219,13 @@ export default function Emberwood() {
             if (sc !== 'pause') fx.forEach(fxSound)
             fx.forEach(e => { fxCounts[e.k] = (fxCounts[e.k] || 0) + 1 })
             if (sc !== 'pause') rend.onFx(fx)
+            // #1063 the gust's charge layer: while the charm holds, a wind breath
+            // ticks on the sim clock (tick%6, not wall clock) and swells with the
+            // hold — release and it is gone with the cast.
+            if (sc === 'play' && !pausedRef.current && sim.galing && sim.tick % 6 === 0) {
+                const p = Math.min(1, (sim.bHoldT - 12) / 24)
+                try { audioController.playFilteredNoise(0.1, 0.02 + p * 0.05, 420 + p * 900) } catch { /* audio locked */ }
+            }
             rend.sync(sim, now / 1000)
             rend.setFocus(sim.hero.x, sim.hero.y)
             rend.draw()
@@ -227,11 +236,15 @@ export default function Emberwood() {
                 // keeper's live position, not his map tile.
                 const shopNpc = (sim.npcs || []).find(n => n.kind === 'shop' && (!n.requires || sim.items[n.requires]) &&
                     Math.hypot(n.x - sim.hero.x, n.y - sim.hero.y) < 26) || null
+                // #1063 the room's unsealed spore vents count up at the HUD edge —
+                // the King's mantle rule in one pulsing amber line.
+                const ventsOpen = (SCREENS[sim.screen]?.vents || []).filter(v => !sim.flags.ventsOff[v.id]).length
                 setHud({
                     hp: sim.hero.hp, max: sim.hero.max, embers: sim.score,
                     items: { ...sim.items }, msg: sim.msgT > 0 ? sim.msg : null,
                     shop: sim.shop.open, sel: sim.shop.sel, shopId: sim.shop.id, death: sim.death, win: sim.win,
                     room: sim.roomName,
+                    ventsOpen,
                     winKind: sim.flags.dawnheart ? 'dawn' : 'ember',
                     nearShop: !!shopNpc, nearColporter: shopNpc?.id === 'colporter',
                 })
@@ -356,12 +369,18 @@ export default function Emberwood() {
                 renderInfo: () => rend.renderInfo(),
                 fxStats: () => ({ ...fxCounts }),
                 tailStats: () => rend.tailStats(),
+                switchTells: () => rend.switchTells(),
+                ventTints: () => rend.ventTints(),
                 npcSprite: (id) => rend.npcSprite(id),
                 npcAnim: () => rend.npcAnim(),
                 saveNow: () => { writeSave(saveState(sim)); setHasSave(true); return true },
                 hasSave: () => !!readSave(),
                 clearSave: () => { clearSave(); setHasSave(false); return true },
                 win: () => { sim.flags.boss1 = true; sim.flags.boss2 = true; return true },
+                // #1063 QA hooks: load the full item kit (worst-case HUD) and flip
+                // the win screen without clearing the game (portrait audits).
+                give: (items) => { Object.assign(sim.items, items || {}); return true },
+                winNow: (dawn) => { sim.win = true; sim.flags.dawnheart = !!dawn; return true },
             }
             mountDbg({
                 title: 'EMBERWOOD',
@@ -414,15 +433,16 @@ export default function Emberwood() {
             {/* HUD — #773: clears the #437 chrome cluster (ARCADE left, PAUSE+mute
                 right sit at top 0.75rem), so the strip starts below both. */}
             {inGame && !paused && (
-                <div className="absolute left-2 right-2 flex justify-between pointer-events-none font-mono select-none" style={{ top: 'calc(3.4rem + var(--sat, 0px))', textShadow: '2px 2px 0 #000' }}>
-                    <div>
-                        <div className="flex gap-0.5 flex-wrap max-w-[220px]">
+                <div className="absolute left-2 right-2 flex justify-between pointer-events-none font-mono select-none" data-hud="strip" style={{ top: 'calc(3.4rem + var(--sat, 0px))', textShadow: '2px 2px 0 #000' }}>
+                    <div data-hud="left" className="max-w-[220px]">
+                        <div className="flex gap-0.5 flex-wrap">
                             {Array.from({ length: hud.max }).map((_, i) => <HeartIcon key={i} full={i < hud.hp} />)}
                         </div>
-                        <div className="text-amber-300 text-sm mt-1">EMBER x{hud.embers}{hud.items.keys ? ` · KEY x${hud.items.keys}` : ''}{hud.items.bombs ? ` · BOMB x${hud.items.bombs}` : ''}{hud.items.arrows && hud.items.bow ? ` · ARROW x${hud.items.arrows}` : ''}</div>
+                        <div data-hud="ember" className="text-amber-300 text-sm mt-1 leading-tight">EMBER x{hud.embers}{hud.items.keys ? ` · KEY x${hud.items.keys}` : ''}{hud.items.bombs ? ` · BOMB x${hud.items.bombs}` : ''}{hud.items.arrows && hud.items.bow ? ` · ARROW x${hud.items.arrows}` : ''}</div>
                     </div>
-                    <div className="text-right">
+                    <div data-hud="right" className="text-right">
                         <div className="text-violet-200 text-sm">{hud.room}</div>
+                        {hud.ventsOpen > 0 && <div className="text-amber-300 text-xs animate-pulse">VENTS BREATHING x{hud.ventsOpen}</div>}
                         {hud.items.bigkey && <div className="text-amber-200 text-xs">BIG KEY</div>}
                         {hud.items.shield && <div className="text-sky-200 text-xs">SHIELD</div>}
                         {hud.items.blade && <div className="text-orange-300 text-xs">EMBER BLADE</div>}

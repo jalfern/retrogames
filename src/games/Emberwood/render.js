@@ -117,6 +117,9 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
     camera.position.set(128, CAM_Y, 150)
     camera.up.set(0, -1, 0)
     camera.lookAt(128, 88, 2)
+    // #1063 charge squeeze: while the Gale Charm winds up the ortho frustum
+    // eases in ~6% and the vignette tightens (both ease back on release).
+    let chargeZ = 1
 
     const hemi = new THREE.HemisphereLight(0xbfd8ff, 0x3c3226, 1.15)
     scene.add(hemi)
@@ -228,11 +231,11 @@ export function createRenderer(canvas, { lite = false, width = 480, height = 288
         fragmentShader: 'uniform sampler2D tSrc; uniform vec2 dir; uniform float r; uniform vec2 res; varying vec2 vUv; void main(){ vec2 px=dir*r/res; vec3 s=texture2D(tSrc,vUv).rgb*0.227; s+=texture2D(tSrc,vUv+px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv-px*1.384).rgb*0.316; s+=texture2D(tSrc,vUv+px*3.230).rgb*0.070; s+=texture2D(tSrc,vUv-px*3.230).rgb*0.070; gl_FragColor=vec4(s,1.0); }',
     })
     const compMat = new THREE.ShaderMaterial({
-        uniforms: { tScene: { value: null }, tBloom: { value: null }, tSoft: { value: null }, focus: { value: new THREE.Vector2(0.5, 0.5) } },
+        uniforms: { tScene: { value: null }, tBloom: { value: null }, tSoft: { value: null }, focus: { value: new THREE.Vector2(0.5, 0.5) }, vig: { value: 0 } },
         vertexShader: VS,
         fragmentShader: `
 uniform sampler2D tScene; uniform sampler2D tBloom; uniform sampler2D tSoft;
-uniform vec2 focus; varying vec2 vUv;
+uniform vec2 focus; uniform float vig; varying vec2 vUv;
 vec3 lin2srgb(vec3 c){
   c = clamp(c, 0.0, 1.0);
   return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
@@ -242,7 +245,7 @@ void main(){
   c += texture2D(tBloom, vUv).rgb * 0.7;
   float f = smoothstep(0.16, 0.42, distance(vUv, focus));
   c = mix(c, texture2D(tSoft, vUv).rgb, f * 0.5);
-  float v = 1.0 - 0.4 * pow(length(vUv - 0.5) * 1.42, 2.2);
+  float v = 1.0 - (0.4 + vig) * pow(length(vUv - 0.5) * 1.42, 2.2);
   c *= clamp(v, 0.55, 1.0);
   // The scene RT samples back as linear; the canvas is blitted raw, so encode
   // here or the whole diorama lands near-black (#773 — measured mean 15.8/255
@@ -433,6 +436,10 @@ void main(){
         for (const sw of s.switches || []) {
             const plaque = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshLambertMaterial({ map: T(sw.via === 'gust' ? 'runeGust' : 'switchP') }))
             plaque.position.set(FX(sw.x * TS + 8), sw.y * TS + 8, 8)
+            // #1063 the wind-rune flutters with the vale's wind; arrow-switches
+            // sit dead still — motion is the at-a-glance tell.
+            plaque.userData.gustRune = sw.via === 'gust'
+            plaque.userData.phase = (sw.x * 31 + sw.y * 17) % 13
             screenGroup.add(plaque); staticMeshes.push(plaque)
             dynamic.switches.set(sw.id, plaque)
         }
@@ -750,20 +757,49 @@ void main(){
             b.mesh.position.x = FX(b.x) + Math.sin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
         }
         for (const gt of grassTiles) gt.tex.offset.x = WIND.grass(gt.x, gt.y, tSec)
+        // declared here, before the brazier loop below reads it — a `const`
+        // declared later in the same scope is in the TDZ up to its line, and
+        // every brazier screen (all of act two) used to throw on this (#1063).
+        const anim = Math.floor(tSec * 7) % 2
         for (const bz of braziers) {
-            const lit = T(anim ? 'brazier' : 'brazier')
+            // #1063 the brazier flame is a two-frame animation (T.brazier is the
+            // frame pair); the old `T(anim ? 'brazier' : 'brazier')` resolved the
+            // raw array into a texture — an invalid texSubImage2D source.
+            const lit = T('brazier/' + anim)
             if (lit) bz.mesh.material.map = lit
             bz.mesh.material.color.setRGB(1 + (anim ? 0.25 : 0), 1 + (anim ? 0.1 : 0), 1)
         }
         for (const vt of vents) {
             const off = sim.flags.ventsOff[vt.id]
             vt.mesh.material.map = T(off ? 'ventSealed' : 'vent')
+            if (off) vt.mesh.material.color.setRGB(1, 1, 1)
+            else {
+                // #1063 an unsealed vent pulses amber — the room telegraphs what
+                // still breathes, so the King's mantle rule reads without the HUD.
+                const k = 0.5 + 0.5 * Math.sin(tSec * 3.2 + vt.x * 0.13 + vt.y * 0.07)
+                vt.mesh.material.color.setRGB(1.2, 0.6 + 0.3 * k, 0.25 + 0.15 * k)
+            }
             if (!off && Math.random() < 0.06) spawnParts(vt.x, vt.y, ['#8cc45f', '#6fae4e', '#b7e08a'], 1, 1.2, 1.1)
+        }
+        for (const [_swId, mesh] of dynamic.switches) {
+            if (!mesh.userData.gustRune) continue
+            const w = WIND.gust(mesh.position.x, mesh.position.y, tSec)
+            mesh.rotation.z = Math.sin(tSec * 1.7 + mesh.userData.phase) * 0.12 * w
+            mesh.position.z = 8 + Math.sin(tSec * 2.3 + mesh.userData.phase) * 0.4 * w
         }
         camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         const lookX = camera.position.x, lookY = camera.position.y - 120
         camera.lookAt(lookX, lookY, 2)
+        // #1063 the gust charge squeezes the stage: ease the frustum in while the
+        // charm holds (fast in, slow back) and tighten the vignette to match.
+        chargeZ += ((sim.galing ? 0.94 : 1) - chargeZ) * (sim.galing ? 0.2 : 0.05)
+        const ar2 = bufW / bufH
+        const vh2 = Math.max(BASE_VIEW_H, COVER_W / ar2)
+        camera.left = -vh2 * ar2 / 2 / chargeZ; camera.right = vh2 * ar2 / 2 / chargeZ
+        camera.top = vh2 / 2 / chargeZ; camera.bottom = -vh2 / 2 / chargeZ
+        camera.updateProjectionMatrix()
+        compMat.uniforms.vig.value = (1 - chargeZ) * 5.5
         if (shake > 0.2) {
             camera.position.x += (Math.random() - 0.5) * shake
             camera.position.y += (Math.random() - 0.5) * shake
@@ -771,7 +807,6 @@ void main(){
         }
         lantern.position.set(FX(hx), hy, 12)
 
-        const anim = Math.floor(tSec * 7) % 2
         const pose = sim.swing > 0 ? 'slash' : (sim.drawing ? 'draw' : (sim.moving ? 'w' + (anim + 1) : 'w1'))
         setTex(heroBB, `hero/${sim.hero.dir}/${pose}`)
         heroBB.mesh.position.set(FX(hx), hy, 9)
@@ -968,10 +1003,16 @@ void main(){
 
     return {
         loadTex, buildScreen, sync, draw, onFx, setFocus, screenPos, dispose, resize, attachShelf,
+        // #1063 act-two polish tells for the audit: rune flutters + vent tints
+        switchTells: () => [...dynamic.switches.entries()].map(([id, m]) => ({ id, gust: !!m.userData.gustRune, rot: m.rotation.z, z: m.position.z })),
+        ventTints: () => vents.map(v => ({ off: v.mesh.material.map === T('ventSealed'), r: v.mesh.material.color.r, g: v.mesh.material.color.g, b: v.mesh.material.color.b })),
         renderInfo: () => ({
             bufferW: bufW, bufferH: bufH,
             cssW: canvas.clientWidth || width, cssH: canvas.clientHeight || height,
-            viewW: camera.right - camera.left, viewH,
+            // base frustum, not the charge-zoomed one (#1063) — coverage gates
+            // must see the at-rest window
+            viewW: viewH * (bufW / bufH), viewH,
+            charge: 1 - chargeZ,
             dpr: Math.min(window.devicePixelRatio || 1, DPR_CAP),
             samples, lite, gl2,
         }),
