@@ -218,11 +218,13 @@ failed — a warning, not a defect). Seed echo and score drops are warnings, not
 Results push `nightly.json` to forge-telemetry (`/forge` shows a ✓/✗ row per game with
 fail-streaks); each NEW failure shape files one `feedback` + `lane:qa` issue, deduped
 against open ones. `npm run nightlybotcheck` (pure
-selftest, 21 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, streaks, roster pinned against
+selftest, 24 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, streaks, roster pinned against
 contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=stuck` proves the softlock gate is
 load-bearing (it goes silent and a frozen run flips red→green). launchd
 `com.jalfern.nightly-bot` (03:30 local) starts its own dev server on :5199 so lane servers
-never collide, then pushes + files. Honest gaps: seeded exploration, not skilled play — most
+never collide, then pushes + files. The soak closes itself: `nightly.json` carries a
+`greenStreak` (mutated runs never count) and the third consecutive fully-green night closes
+#1040 automatically — no human remembers the soak ended. Honest gaps: seeded exploration, not skilled play — most
 runs fail on their own; runs that survive the cap keep moving and are flagged endurance, so
 endless designs stay distinguishable from trapped states, and winning is never gated.
 

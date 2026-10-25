@@ -166,6 +166,13 @@ export function planFilings(results, openTitles) {
     return out
 }
 
+// Consecutive fully-green runs. #1040's Done line is "3 nights unattended":
+// the third green night closes the issue itself (see soakClose), so no human
+// has to remember the soak ended.
+export function nextGreenStreak(prev, allPassed) {
+    return allPassed ? (prev?.greenStreak || 0) + 1 : 0
+}
+
 // Streaks: previous nightly.json's streak map + today's outcomes.
 export function updateStreaks(prev, results) {
     const out = {}
@@ -222,6 +229,9 @@ function selftest() {
     ok(streaks.tetris === 3, 'fail streak increments')
     ok(updateStreaks({ games: [{ id: 'tetris', failStreak: 3 }] }, [{ id: 'tetris', pass: true }]).tetris === 0,
         'a green night resets the streak')
+    ok(nextGreenStreak(null, true) === 1, 'first green night is streak 1')
+    ok(nextGreenStreak({ greenStreak: 2 }, true) === 3, 'green nights accumulate')
+    ok(nextGreenStreak({ greenStreak: 2 }, false) === 0, 'one red night resets the soak')
     const ccSrc = readFileSync(path.join(ROOT, 'scripts/contractcheck.mjs'), 'utf8')
     const ccIds = [...ccSrc.matchAll(/\{ id: '([^']+)', path: '([^']+)' \}/g)].map(m => `${m[1]}@${m[2]}`)
     const mine = GAMES.map(g => `${g.id}@${g.path}`)
@@ -366,6 +376,7 @@ async function main() {
         generated: new Date().toISOString(),
         seed: SEED,
         mutated: MUTATE || null,
+        greenStreak: nextGreenStreak(prev, !MUTATE && failed.length === 0),
         games: results.map(g => ({ id: g.id, pass: g.pass, done: !!g.done, ticks: g.ticks, score: g.score, seed: g.seed, failStreak: g.failStreak, flags: g.flags, warnings: g.warnings })),
     }
     writeFileSync('/tmp/forge/nightly.json', JSON.stringify(doc, null, 1))
@@ -394,6 +405,14 @@ async function main() {
         if (/^[0-9a-f]{40}$/.test(sha)) body.sha = sha
         execFileSync('gh', ['api', '-X', 'PUT', `${OUT}/contents/nightly.json`, '--input', '-'], { input: JSON.stringify(body) })
         console.log('nightly.json pushed')
+        if (doc.greenStreak >= 3) {
+            try {
+                execFileSync('gh', ['issue', 'comment', '1040', '--repo', 'jalfern/retrogames', '--body',
+                    `SOAK: ${doc.greenStreak} consecutive fully-green nights (this run ${doc.generated}, seed ${doc.seed}, ${results.length} games). Done-line met — closing.`])
+                execFileSync('gh', ['issue', 'close', '1040', '--repo', 'jalfern/retrogames', '--reason', 'completed'])
+                console.log('soak complete — #1040 closed')
+            } catch (e) { console.log(`soak close skipped: ${e.message.split('\n')[0]}`) }
+        }
     }
     process.exit(failed.length ? 1 : 0)
 }
