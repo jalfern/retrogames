@@ -170,20 +170,37 @@ export function drawCow(ctx, x, y, k) {
     px(ctx, x + 1.6 * k, y - 1 * k, k, k, '#c9c2b4')
 }
 
-export function drawHut(ctx, x, y, k, v) {
-    const wall = ['#c9a86a', '#b8905a', '#d0b878'][v]
+export function drawHut(ctx, x, y, k, v, f, burn, dead) {
+    if (dead) {
+        ctx.globalAlpha = 0.2
+        ctx.beginPath(); ctx.ellipse(x, y, 5 * k, k, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.globalAlpha = 1
+        px(ctx, x - 3.4 * k, y - 1.6 * k, 2.4 * k, 1.6 * k, '#3a3028')
+        px(ctx, x + 0.4 * k, y - 2.2 * k, 2 * k, 2.2 * k, '#322820')
+        px(ctx, x - 1 * k, y - 1.2 * k, 1.6 * k, 1.2 * k, '#453a2e')
+        return
+    }
+    const wall = burn > 0 ? '#6a4a30' : ['#c9a86a', '#b8905a', '#d0b878'][v]
     ctx.globalAlpha = 0.2
     ctx.beginPath(); ctx.ellipse(x, y, 5.4 * k, k, 0, 0, Math.PI * 2); ctx.fill()
     ctx.globalAlpha = 1
     px(ctx, x - 4 * k, y - 4 * k, 8 * k, 4 * k, wall)
-    px(ctx, x - 4 * k, y - 4 * k, 8 * k, 0.7 * k, '#e0d0a0')
+    px(ctx, x - 4 * k, y - 4 * k, 8 * k, 0.7 * k, burn > 0 ? '#7a5a3a' : '#e0d0a0')
     ctx.beginPath()
     ctx.moveTo(x - 5.4 * k, y - 4 * k); ctx.lineTo(x, y - 8.4 * k); ctx.lineTo(x + 5.4 * k, y - 4 * k)
-    ctx.closePath(); ctx.fillStyle = '#7a5a30'; ctx.fill()
+    ctx.closePath(); ctx.fillStyle = burn > 0 ? '#4a3018' : '#7a5a30'; ctx.fill()
     ctx.beginPath()
     ctx.moveTo(x - 5 * k, y - 4 * k); ctx.lineTo(x, y - 7.8 * k); ctx.lineTo(x + 5 * k, y - 4 * k)
-    ctx.closePath(); ctx.fillStyle = '#96703c'; ctx.fill()
+    ctx.closePath(); ctx.fillStyle = burn > 0 ? '#5a3c20' : '#96703c'; ctx.fill()
     px(ctx, x - 1 * k, y - 2.6 * k, 2 * k, 2.6 * k, '#4a3418')
+    if (burn > 0) {
+        const fl = (Math.sin(f * 0.3 + x) + 1) / 2
+        ctx.globalAlpha = 0.75 + fl * 0.25
+        px(ctx, x - 1.6 * k, y - (9 + fl * 3) * k, 1.4 * k, 2.4 * k, '#e05818')
+        px(ctx, x + 0.4 * k, y - (8 + fl * 2.4) * k, 1.1 * k, 2 * k, '#ff9830')
+        px(ctx, x - 0.6 * k, y - (10.5 + fl * 2) * k, k, 1.6 * k, '#ffd060')
+        ctx.globalAlpha = 1
+    }
 }
 
 export function drawFireball(ctx, x, y, k) {
