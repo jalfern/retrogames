@@ -24,7 +24,9 @@
 // Proven-fail mutant: kill Doppler beaming (`pow(dlt, 3.0) * g * g` -> `1.0`)
 // -> the left/right pixel asymmetry gate goes red (the disk becomes a
 // symmetric ring; the one-side-brighter signature is what makes it a disk in
-// orbit, not a halo prop).
+// orbit, not a halo prop). Second mutant (#1046): paint the photon ring on
+// captured rays (`!captured` -> `captured`, glow inside the shadow) -> the
+// ring-bounded + interior-black gates go red.
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -114,6 +116,9 @@ async function main() {
   ok('gravitational redshift sqrt(1 - rs/r) tints the disk', /sqrt\(max\(1\.0 - RS \/ r/.test(src))
   ok('Keplerian shear (Omega ~ r^-3/2) drives disk rotation', /sqrt\(0\.5 \/ \(r \* r \* r\)\)/.test(src))
   ok('photons integrated with RK4 (Euler pumps energy)', /f1 \+ 2\.0 \* f2 \+ 2\.0 \* f3 \+ f4/.test(src))
+  ok('photon ring lights escaping rays only — captured rays stay black (#1046)',
+    /if \(!captured\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
+    !/if \(captured\)\{[^}]*ring/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -243,6 +248,41 @@ async function main() {
         d += Math.abs(p[0] - q[0]) + Math.abs(p[1] - q[1]) + Math.abs(p[2] - q[2]); n += 3
       }
       ok('camera pose moves the world', d / n > 4, `mean|delta|=${(d / n).toFixed(1)}`)
+
+      // photon ring vs shadow purity (#1046) at a deterministic pose: freeze
+      // performance.now so the flyby sits still, then walk 48 radials. A
+      // ring-bounded angle = bright line (>60) whose two inner neighbours are
+      // shadow-dark (<8) — the visible silhouette of the hole IS the ring.
+      // Inside that silhouette must read ~0; the old bug painted glow inside.
+      const fctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
+      await fctx.addInitScript(() => { const o = performance.now.bind(performance); let base = null; performance.now = () => (base === null ? (base = o()) : base + 2000) })
+      const fpage = await fctx.newPage()
+      await fpage.goto(url, { waitUntil: 'load' })
+      await fpage.waitForFunction(() => window.__holeTest && window.__holeTest.ready, null, { timeout: 25000 })
+      await fpage.waitForTimeout(2000)
+      const fimg = decodePng(await fpage.screenshot())
+      const fW = fimg.w, fH = fimg.h, fcx = Math.round(fW / 2), fcy = Math.round(fH / 2)
+      let ringAngles = 0, inMax = 0, ratioFails = 0
+      for (let a = 0; a < 48; a++) {
+        const th = a / 48 * Math.PI * 2, dx = Math.cos(th), dy = Math.sin(th)
+        const at = k => { const x = Math.round(fcx + dx * k), y = Math.round(fcy + dy * k)
+          return (x > 1 && y > 1 && x < fW - 1 && y < fH - 1) ? luma(px(fimg, x, y)) : -1 }
+        let rP = -1, pk = 0
+        for (let k = 30; k <= 90; k++) { const l = at(k); if (l > pk && at(k - 2) >= 0 && at(k - 2) < 8) { pk = l; rP = k } }
+        if (pk < 60 || rP < 0) continue
+        ringAngles++
+        for (const f of [0, 0.4, 0.8]) { const l = Math.max(0, at(Math.round(rP * f))); if (l > inMax) inMax = l }
+        let iS = 0, iN = 0, oS = 0, oN = 0
+        for (let k = rP - 18; k <= rP - 4; k++) { const l = at(k); if (l >= 0) { iS += l; iN++ } }
+        for (let k = rP + 4; k <= rP + 18; k++) { const l = at(k); if (l >= 0) { oS += l; oN++ } }
+        if (iS / Math.max(1, iN) >= Math.max(4, 0.5 * oS / Math.max(1, oN))) ratioFails++
+      }
+      ok('shadow silhouette is ring-bounded from outside (#1046)', ringAngles >= 8, `${ringAngles}/48 angles show a bright line backed by dark shadow`)
+      ok('shadow interior reads ~0 — no glow painted inside the horizon (#1046)', ringAngles >= 8 && inMax < 12,
+        `max luma at 0/0.4/0.8R on ${ringAngles} ring angles = ${inMax.toFixed(1)}`)
+      ok('edge brightness decays outward (ring on the escaping side)', ringAngles >= 8 && ratioFails === 0,
+        `${ratioFails}/${ringAngles} angles with inside-brighter-than-outside rim`)
+      await fctx.close()
 
       const fBefore = await page.evaluate(() => window.__holeTest.frames)
       await page.waitForTimeout(1500)
