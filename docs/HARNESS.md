@@ -211,14 +211,18 @@ completion each night — seeded, stepped, headless, via `window.__game` — wit
 policy pure in (seed, tick), so a failure line is reproducible with one command
 (`NIGHTLY_ONLY=<id> NIGHTLY_SEED=<seed> npm run nightlybot`). Hard gates: zero page errors,
 tick advances every step, `reset(seed)` lands at tick 0 with that seed, and the run must reach
-`done` before the cap — cap-reached is a softlock. Score drops are warnings, not verdicts
-(some titles legitimately dock points). Results push `nightly.json` to forge-telemetry
-(`/forge` shows a ✓/✗ row per game with fail-streaks); each NEW failure shape files one
-`feedback` + `lane:qa` issue, deduped against open ones. `npm run nightlybotcheck` (pure
-selftest, 19 checks: policy purity, verdicts, filing dedup, streaks, roster pinned against
-contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=done` proves the softlock gate is
-load-bearing (it goes silent, and a cap-hitting game flips red→green). launchd
+`done` before the cap. A cap-reached run is a softlock only when the sim also *froze*
+(state hash invariant over the last 30 steps); still moving = endurance (the bot never
+failed — a warning, not a defect). Seed echo and score drops are warnings, not verdicts
+(engines legitimately fold seeds — Lemmings picks levels by seed, Gauntlet mods by 97).
+Results push `nightly.json` to forge-telemetry (`/forge` shows a ✓/✗ row per game with
+fail-streaks); each NEW failure shape files one `feedback` + `lane:qa` issue, deduped
+against open ones. `npm run nightlybotcheck` (pure
+selftest, 21 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, streaks, roster pinned against
+contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=stuck` proves the softlock gate is
+load-bearing (it goes silent and a frozen run flips red→green). launchd
 `com.jalfern.nightly-bot` (03:30 local) starts its own dev server on :5199 so lane servers
 never collide, then pushes + files. Honest gaps: seeded exploration, not skilled play — most
-runs end in game-over, which is fine; reaching `done` is the invariant, winning is not gated.
+runs fail on their own; runs that survive the cap keep moving and are flagged endurance, so
+endless designs stay distinguishable from trapped states, and winning is never gated.
 

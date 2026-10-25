@@ -10,11 +10,10 @@
 // Per game:
 //   boot (hook exists, zero page errors) · reset(seed) at tick 0 ·
 //   seeded pad policy until state.done or the tick cap ·
-//   INVARIANTS: tick advances every step · the run FINISHES (a cap-reached run
-//   is a softlock report) · state.seed is the seed we passed ·
-//   score never decreases (a DROP is a warning row, not a verdict: some
-//   titles legitimately dock points; the board shows it, only the hard gates
-//   file issues).
+//   INVARIANTS: tick advances every step (except the terminal step) · the run
+//   finishes, or the sim froze (hash invariant at the cap = softlock; still
+//   moving at the cap = endurance, a warning) · zero page errors.
+//   Warnings, never verdicts: seed echo (engines fold seeds), score drops.
 //
 // Reproducibility: the policy is a pure mulberry32 chain of the seed, so a
 // failure line carries the seed and the exact repro command:
@@ -33,8 +32,8 @@
 // OWN dev server on :5199 (lane dev servers on 5173 must not collide), runs
 // this, pushes, files, and leaves the arcade untouched.
 //
-// Fail it once by hand: `NIGHTLY_MUTATE=done scripts/...` breaks the
-// finishes-gate (pretend every cap-reached run passed) — see --mutate.
+// Fail it once by hand: `NIGHTLY_MUTATE=stuck node scripts/nightlybot.mjs` swallows the
+// softlock gate — any frozen run flips red→green, proving the gate is load-bearing.
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync } from 'node:fs'
@@ -124,32 +123,45 @@ export function padFor(seed, i, { buttons = [], pointer = false }) {
     return pad
 }
 
-// Verdict for one finished run. `capReached` = !done at the cap.
+// Verdict for one finished run. A cap-reached run is only a SOFTLOCK when the
+// sim has also frozen (tail hash invariant); a cap-reached run that is still
+// moving is endurance — the bot just never failed, which is not a defect.
+// Seed echo is a warning: engines legitimately consume seeds (Lemmings picks
+// levels by seed, Gauntlet folds seeds into a 97-slot rng space); the
+// determinism contract (same seed → same run) is what contractcheck pins.
 export function verdict(run, cap) {
     const flags = []
     const warnings = []
     if (run.bootError) flags.push(`boot: ${run.bootError}`)
     if (run.pageErrors > 0) flags.push(`${run.pageErrors} page error(s): ${run.errorDetail || ''}`)
     if (run.zeroTick !== 0) flags.push(`reset(seed) started at tick ${run.zeroTick}, expected 0`)
-    if (run.seedOut !== run.seed) flags.push(`state.seed=${run.seedOut} != requested seed ${run.seed}`)
+    if (run.seedOut !== run.seed) warnings.push(`state.seed=${run.seedOut} != requested seed ${run.seed} (seed folded by the engine?)`)
     if (run.ticksStalled) flags.push(`tick did not advance on step ${run.ticksStalled}`)
-    if (!run.done && run.ticks >= cap) flags.push(`softlock: no done within ${cap} ticks (score ${run.score}, tick ${run.ticks})`)
+    if (!run.done && run.ticks >= cap) {
+        if (run.stuck) flags.push(`softlock: frozen at tick ${run.ticks} (hash invariant over last ${run.stuckSpan} steps), score ${run.score}`)
+        else warnings.push(`endurance: no done within ${cap} ticks but the sim kept moving (score ${run.score})`)
+    }
     if (run.scoreDrops > 0) warnings.push(`score dropped ${run.scoreDrops}x (min ${run.scoreMin})`)
     return { pass: flags.length === 0, flags, warnings }
 }
 
-// Failures to file: one issue per game per reason-shape, deduped against the
-// titles of already-open QA-nightly issues for that game.
+// Failures to file: one issue per game per reason-shape (digits masked, so the
+// same defect at different ticks/scores is one issue), deduped against the
+// titles of already-open QA-nightly issues for that game. The shape is what
+// goes INTO the title (same truncation both sides), so dedup is stable across
+// nights — truncating the raw reason would make "tick 9000" and "tick 9100"
+// differ after the cut and re-file every night.
+export function failureShape(reason) {
+    return reason.replace(/\d+/g, '#').slice(0, 72)
+}
 export function planFilings(results, openTitles) {
     const out = []
     for (const g of results) {
         if (g.pass) continue
         const reason = g.flags[0] || 'failed'
-        const shape = reason.replace(/\d+/g, '#')
-        const re = new RegExp(`^QA \\u2014 ${g.id}: nightly`, 'i')
-        const shapeRe = new RegExp(`^QA \\u2014 ${g.id}: nightly .*${shape.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i')
-        if (openTitles.some(t => re.test(t) && shapeRe.test(t))) continue
-        out.push({ id: g.id, seed: g.seed, reason })
+        const shape = failureShape(reason)
+        if (openTitles.some(t => t.startsWith(`QA \u2014 ${g.id}: nightly ${shape}`))) continue
+        out.push({ id: g.id, seed: g.seed, reason, shape })
     }
     return out
 }
@@ -184,20 +196,27 @@ function selftest() {
     const pp = padFor(5, 3, { pointer: true })
     ok(pp.pointer && pp.pointer.x >= 0 && pp.pointer.x <= 1 && pp.pointer.y >= 0 && pp.pointer.y <= 1,
         'pointer pads sweep inside the canvas')
-    const good = { seed: 7, seedOut: 7, zeroTick: 0, ticks: 500, done: true, pageErrors: 0, ticksStalled: 0, score: 100, scoreDrops: 0, scoreMin: 0 }
+    const good = { seed: 7, seedOut: 7, zeroTick: 0, ticks: 500, done: true, pageErrors: 0, ticksStalled: 0, score: 100, scoreDrops: 0, scoreMin: 0, stuck: false, stuckSpan: 30 }
     ok(verdict(good, CAP).pass, 'a finished clean run passes')
-    ok(verdict({ ...good, done: false, ticks: CAP }, CAP).flags.some(f => /softlock/.test(f)), 'cap-reached run is a softlock')
+    ok(verdict({ ...good, done: false, ticks: CAP, stuck: true }, CAP).flags.some(f => /softlock/.test(f)), 'a frozen cap-reached run is a softlock')
+    ok(verdict({ ...good, done: false, ticks: CAP, stuck: false }, CAP).pass &&
+        verdict({ ...good, done: false, ticks: CAP, stuck: false }, CAP).warnings.some(w => /endurance/.test(w)),
+        'a cap-reached run that kept moving is endurance, not a verdict')
     ok(verdict({ ...good, pageErrors: 2 }, CAP).pass === false, 'page errors fail the run')
     ok(verdict({ ...good, ticksStalled: 42 }, CAP).flags.some(f => /tick did not advance/.test(f)), 'a stalled tick is caught')
-    ok(verdict({ ...good, seedOut: 9 }, CAP).flags.some(f => /state\.seed/.test(f)), 'wrong seed in state is caught')
+    ok(verdict({ ...good, seedOut: 9 }, CAP).pass && verdict({ ...good, seedOut: 9 }, CAP).warnings.some(w => /state\.seed/.test(w)),
+        'a folded seed warns but never verdict (engines legitimately consume seeds)')
     ok(verdict({ ...good, scoreDrops: 2 }, CAP).pass && verdict({ ...good, scoreDrops: 2 }, CAP).warnings.length === 1,
         'score drops warn but never verdict')
-    const F = [{ id: 'tetris', pass: false, flags: ['softlock: no done within 9000 ticks (score 0, tick 9000)'], seed: 20261025 }]
+    const F = [{ id: 'tetris', pass: false, flags: ['softlock: frozen at tick 9000 (hash invariant over last 30 steps), score 0'], seed: 20261025 }]
     ok(planFilings(F, []).length === 1, 'a fresh failure files')
-    ok(planFilings(F, ['QA — tetris: nightly softlock: no done within # ticks (score #, tick #)']).length === 0,
+    ok(planFilings(F, ['QA — tetris: nightly ' + failureShape(F[0].flags[0])]).length === 0,
         'the same failure shape does not file twice')
     ok(planFilings([{ ...F[0], flags: ['3 page error(s): boom'] }], ['QA — tetris: nightly softlock']).length === 1,
         'a different failure shape for the same game still files')
+    ok(planFilings([{ ...F[0], flags: ['softlock: frozen at tick 9123 (hash invariant over last 30 steps), score 7'] }],
+        ['QA — tetris: nightly ' + failureShape(F[0].flags[0])]).length === 0,
+        'same defect at different ticks/scores dedupes (digits masked)')
     ok(planFilings(F, ['QA — galaga: nightly softlock']).length === 1, 'another game open does not dedupe this one')
     const streaks = updateStreaks({ games: [{ id: 'tetris', failStreak: 2 }] }, F)
     ok(streaks.tetris === 3, 'fail streak increments')
@@ -253,6 +272,7 @@ const DRIVE = ({ seed, cap, buttons, pointer }) => {
     const zero = g.reset(seed)
     let s = zero, score = zero.score ?? 0, scoreDrops = 0, scoreMin = score, stalled = 0
     let prevTick = zero.tick
+    const hashes = [zero.hash]
     for (let i = 0; i < cap; i++) {
         const rng = mul((seed ^ Math.imul(i + 1, 0x9E3779B1)) >>> 0)
         const r = rng()
@@ -270,19 +290,22 @@ const DRIVE = ({ seed, cap, buttons, pointer }) => {
             if (buttons.includes('b') && rng() < 0.10) pad.b = true
         }
         s = g.step(pad, 1)
-        if (s.tick !== prevTick + 1 && !stalled) stalled = i + 1
+        if (!s.done && s.tick !== prevTick + 1 && !stalled) stalled = i + 1
         prevTick = s.tick
         if (typeof s.score === 'number') {
             if (s.score < score) scoreDrops++
             scoreMin = Math.min(scoreMin, s.score)
             score = s.score
         }
+        if (i >= cap - 30) hashes.push(s.hash)
         if (s.done) break
     }
     g.release()
+    const uniq = new Set(hashes.slice(-30))
     return {
         seed, seedOut: s.seed, zeroTick: zero.tick, ticks: s.tick, done: !!s.done,
         score, scoreDrops, scoreMin, ticksStalled: stalled, hash: s.hash,
+        stuck: !s.done && uniq.size <= 1, stuckSpan: Math.min(30, hashes.length),
     }
 }
 
@@ -305,7 +328,8 @@ async function play(browser, base, game, seed, mutate) {
         await page.close().catch(() => {})
     }
     const v = verdict(run, game.cap || CAP)
-    if (mutate === 'done' && run.ticks >= (game.cap || CAP)) v.pass = true // mutant: swallow the softlock gate
+    if (mutate === 'stuck') v.flags = v.flags.filter(f => !/softlock/.test(f)) // mutant: swallow the softlock gate
+    v.pass = v.flags.length === 0
     return { ...run, pass: v.pass, flags: v.flags, warnings: v.warnings }
 }
 
@@ -357,7 +381,7 @@ async function main() {
                 `**what happened:** ${f.reason}\n**seed:** ${f.seed}\n**repro:** \`NIGHTLY_ONLY=${f.id} NIGHTLY_SEED=${f.seed} node scripts/nightlybot.mjs\` (starts its own dev server on :5199)\n` +
                 `_Filed automatically by scripts/nightlybot.mjs (#1040)._`
             execFileSync('gh', ['issue', 'create', '--repo', 'jalfern/retrogames', '--label', 'feedback', '--label', 'lane:qa',
-                '--title', `QA — ${f.id}: nightly ${f.reason.slice(0, 72)}`, '--body', body])
+                '--title', `QA — ${f.id}: nightly ${f.shape}`, '--body', body])
             console.log(`filed QA issue for ${f.id}`)
         }
     }
