@@ -126,6 +126,10 @@ async function main() {
     /DEMO_CREDITS[\s\S]*name:\s*'NEON RAIN'/.test(src) && /issues:\s*\[1042\]/.test(src) && /assist:\s*'solo'/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="neonrain"/.test(idx) && /el:\s*'neonrain'/.test(idx))
+  ok('polish wired in shader (#1066: beacons, mullions, ripple rings)',
+    /h > 55\.0/.test(src) && /fr\.x - 0\.5/.test(src) && /rr0 - ph/.test(src))
+  ok('taillight bar shape in car shader (aS)', /vS > 0\.5/.test(src))
+  ok('streak neon-reaction toggleable (uReactK + setReact hook)', /uReactK/.test(src) && /setReact/.test(src))
 
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
@@ -233,6 +237,31 @@ async function main() {
       const steam = await page.evaluate(() => window.__neonrainTest.state().steamCells)
       ok('steam vents exist near the camera', steam >= 1, `${steam} vent cells`)
 
+      const fx = await page.evaluate(() => {
+        const D = window.__neonrainTest
+        const s = D.state()
+        const phase = []; for (let t = 0; t <= 6; t += 0.25) phase.push(D.beaconPhase(t))
+        const patter = []; for (let z = 0; z <= 600; z += 5) patter.push(D.metalPatter(13, z))
+        return {
+          tallCells: s.tallCells, headPairs: s.headPairs, tailBars: s.tailBars,
+          react: [D.neonReact(0.05), D.neonReact(1.0)],
+          phase, pspan: Math.max(...patter) - Math.min(...patter),
+          dop: [D.sirenDoppler(false), D.sirenDoppler(true)],
+          ripples: D.rippleCells(13, s.camZ + 20),
+        }
+      })
+      const pspan = Math.max(...fx.phase) - Math.min(...fx.phase)
+      ok('tall towers host blinking aviation beacons', fx.tallCells >= 1 && pspan > 0.4,
+        `${fx.tallCells} tall cells, blink phase span ${pspan.toFixed(2)}`)
+      ok('cars show headlight pairs and taillight bars', fx.headPairs >= 4 && fx.tailBars >= 4,
+        `${fx.headPairs} head pairs, ${fx.tailBars} tail bars`)
+      ok('rain streaks brighten crossing neon (react gain)', fx.react[1] - fx.react[0] > 1.4,
+        `react ${fx.react[0]} -> ${fx.react[1]}`)
+      ok('puddle ripple splash cells exist near the street', fx.ripples >= 5, `${fx.ripples} ripple cells`)
+      ok('distant siren doppler (approaching higher, receding lower)', fx.dop[0] > 1.05 && fx.dop[1] < 0.95,
+        `${fx.dop[0]} / ${fx.dop[1]}`)
+      ok('rain-on-metal patter tracks wetness + vents', fx.pspan > 0.008, `patter spread ${fx.pspan.toFixed(3)}`)
+
       await page.evaluate(() => window.__neonrainTest.setPose({ yaw: 0.9, pitch: 0.12 }))
       await page.waitForTimeout(1400)
       const imgD = decodePng(await page.screenshot())
@@ -280,6 +309,21 @@ async function main() {
       }
       ok(`frame time under ${budget} ms at 1600x1000 (${soft ? 'software raster' : 'hardware'})`,
         perf.n >= 45 && perf.avg <= budget, `avg=${perf.avg}ms max=${perf.max}ms over ${perf.n} frames`)
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForTimeout(800)
+      const portrait = await page.evaluate(() => {
+        const hud = document.getElementById('hud')
+        const hint = document.getElementById('audiohint')
+        return {
+          ow: document.documentElement.scrollWidth > window.innerWidth + 1,
+          hudF: parseFloat(getComputedStyle(hud).fontSize),
+          hintF: parseFloat(getComputedStyle(hint).fontSize),
+        }
+      })
+      ok('390px portrait: no overflow, HUD/hint scales down',
+        !portrait.ow && portrait.hudF <= 10 && portrait.hintF <= 10,
+        `overflow=${portrait.ow} hud=${portrait.hudF}px hint=${portrait.hintF}px`)
     }
 
     ok('zero page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
