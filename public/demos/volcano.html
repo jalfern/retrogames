@@ -1,0 +1,997 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>VOLCANO — erupting at night, live in WebGL2</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #07060a; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
+  #hud {
+    position: fixed; left: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(232,210,196,.62); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+    text-transform: uppercase;
+  }
+  #hud b { color: rgba(255,228,208,.92); font-weight: 700; }
+  #audiohint {
+    position: fixed; top: 12px; right: 14px; z-index: 2;
+    background: rgba(14,8,6,.55); border: 1px solid rgba(255,150,80,.28); border-radius: 8px;
+    padding: 7px 12px; backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    font: 11px/1.5 ui-monospace, Menlo, monospace; letter-spacing: .12em; text-transform: uppercase;
+    color: rgba(240,214,196,.85); text-shadow: 0 1px 3px rgba(0,0,0,.8); cursor: pointer;
+  }
+  #audiohint.off { color: rgba(198,176,160,.5); border-color: rgba(160,140,125,.2); }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #f4ece6; background: #0a0806;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>VOLCANO</b> · an eruption at night &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click for rumble + blasts</div>
+<div id="audiohint">click for volcano sound</div>
+<div id="fatal"></div>
+<script>
+'use strict';
+
+/* VOLCANO (#1043) — a demoscene night eruption, one-file WebGL2.
+   Engine notes:
+   · one fullscreen raymarch pass: a strato-cone heightfield (pow profile + gully
+     fBm, crater bowl with a raised rim) ringed by dark plains and a far ridge;
+   · lava: an animated channel mask on the cone (flow drifts downslope toward the
+     crater pool); blackbody emission white-hot at the vent, cooling red at the
+     toes; crust flicker; an 8-sample LOS walk toward the vent paints warm pools
+     of light onto the slopes with terrain occlusion;
+   · plume: a raymarched volumetric column above the crater — rising, wind-sheared
+     domain-warped fBm, 3-step below-lighting from the vent + hot-base incandescence
+     + occasional internal flash pulses;
+   · embers: deterministic JS particle fountain fired from the vent — closed-form
+     ballistic arcs with wind, flickering additive sprites dying orange to dark red;
+   · sky: hash-star field with twinkle + a faint galactic band, warm ember glow
+     toward the volcano on the horizon;
+   · post: HDR float target, screen-space heat shimmer around the projected vent
+     (rising warped-noise refraction), quarter-res bloom, ACES, vignette, grain.
+     Audio: deep rumble + eruption roar + periodic blasts, all synthesized
+     (unlocks on first click). */
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+let hazeOn = qs.get('nohaze') !== '1';
+const SEED = (qs.get('seed') | 0) || 7;
+const RENDER_SCALE = LITE ? 0.5 : 0.72;
+
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
+}
+const HDR_OK = !!gl.getExtension('EXT_color_buffer_float');
+gl.getExtension('OES_texture_float_linear');
+
+/* ---------------- shaders ---------------- */
+
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uSeed;
+uniform vec3 uCamPos;
+uniform mat4 uCamInvRot;
+uniform float uPulse;      // eruption intensity (JS surges)
+uniform float uFlash;      // plume lightning flash envelope
+uniform float uDbg;        // 1 = lava mask, 2 = plume density
+out vec4 fragColor;
+
+#define PI 3.14159265
+#define HC 196.0
+#define RB 380.0
+#define RC 58.0
+#define RP 30.0
+#define VENT_Y 165.0
+#define PLUME_TOP 683.0
+
+float hash12(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  float a = hash12(i);
+  float b = hash12(i + vec2(1,0));
+  float c = hash12(i + vec2(0,1));
+  float d = hash12(i + vec2(1,1));
+  return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+}
+float fbm2(vec2 p){
+  float a = 0.5, s = 0.0;
+  for (int i = 0; i < 3; i++){ s += a * vnoise(p); p = p * 2.03 + vec2(1.7, 3.1); a *= 0.5; }
+  return s;
+}
+
+/* volcano + surrounding land height */
+float terrainH(vec2 xz){
+  float r = length(xz);
+  float ang = atan(xz.y, xz.x);
+  float k = clamp(1.0 - r / RB, 0.0, 1.0);
+  float cone = HC * pow(k, 1.15);
+  cone += (fbm2(vec2(ang * 4.0, r * 0.014)) - 0.5) * 16.0 * k * k;
+  cone += exp(-pow((r - RC) / 14.0, 2.0)) * 7.0;
+  cone -= smoothstep(RC, RC * 0.35, r) * 24.0;
+  float plain = (fbm2(xz * 0.004 + 13.0) - 0.5) * 14.0 + 2.0;
+  plain *= smoothstep(RB * 0.8, RB * 1.4, r);
+  float ridge = exp(-pow((r - 1250.0) / 300.0, 2.0)) * (140.0 * fbm2(vec2(ang * 2.0, 3.7)) + 60.0);
+  ridge *= smoothstep(900.0, 1150.0, r);
+  return cone + plain + ridge;
+}
+
+/* lava channel mask on the cone + crater pool, 0..1 */
+float lavaMask(vec2 xz, float r, float t){
+  if (r > RB * 0.96) return 0.0;
+  float ang = atan(xz.y, xz.x);
+  float warp = fbm2(vec2(r * 0.02, ang * 1.3));
+  float ch = fbm2(vec2(ang * 3.4 + warp * 0.9, r * 0.016 - t * 0.10));
+  float aa = fwidth(ch) * 1.5 + 0.012;
+  float m = smoothstep(0.60 - aa, 0.60 + aa, ch);
+  m *= smoothstep(RB, RB * 0.70, r) * smoothstep(RC * 0.9, RC * 1.7, r);
+  float pool = smoothstep(RP + 6.0, RP - 6.0, r);
+  return clamp(max(m, pool), 0.0, 1.0);
+}
+
+/* lava emission at surface point; heat out = 0..1 brightness gate */
+vec3 lavaColor(vec2 xz, float r, float t, out float heat){
+  float m = lavaMask(xz, r, t);
+  float ang = atan(xz.y, xz.x);
+  float flick = 0.72 + 0.28 * fbm2(vec2(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3));
+  heat = m * flick;
+  float temp = smoothstep(RB * 0.85, RC, r);
+  float crust = 0.55 + 0.45 * smoothstep(0.35, 0.65, fbm2(xz * 0.05 + vec2(0.0, t * 0.4)));
+  vec3 c = mix(vec3(0.55, 0.06, 0.01), vec3(1.0, 0.30, 0.05), temp);
+  c = mix(c, vec3(1.0, 0.78, 0.40), pow(temp, 2.0) * flick);
+  return c * heat * crust * (1.3 + 2.3 * pow(temp, 2.0)) * (0.55 + 0.45 * uPulse);
+}
+
+/* plume density at p, 0..1 */
+float plumeDensity(vec3 p, float t){
+  float dy = p.y - VENT_Y;
+  if (dy < -6.0 || dy > 520.0) return 0.0;
+  float cx = pow(max(dy, 0.0), 1.3) * 0.06;
+  float rad = length(p.xz - vec2(cx, 0.0));
+  float PRy = 34.0 + dy * 0.52;
+  float radial = 1.0 - smoothstep(PRy * 0.30, PRy, rad);
+  float hfade = smoothstep(-4.0, 40.0, dy) * (1.0 - smoothstep(170.0, 520.0, dy));
+  vec3 q = p - vec3(cx * 0.4, -t * 26.0, 0.0);
+  float tb = fbm2(vec2(q.x, q.z) * 0.007 + vec2(q.y * 0.005 + t * 0.03, t * 0.02));
+  float d = radial * hfade * smoothstep(0.40, 0.76, tb) - 0.05;
+  return clamp(d * (0.62 + 0.75 * uPulse), 0.0, 1.0);
+}
+
+vec3 plumeLight(vec3 p, float t, float dens){
+  vec3 vp = vec3(0.0, VENT_Y + 4.0, 0.0);
+  vec3 L = vp - p;
+  float dL = max(length(L), 1.0);
+  vec3 vdir = L / dL;
+  float sh = 0.0;
+  for (int j = 1; j <= 3; j++) sh += plumeDensity(p + vdir * float(j) * 30.0, t);
+  float occ = exp(-sh * 0.55);
+  float att = 1.0 / (1.0 + dL * dL * 0.000055);
+  vec3 hot = mix(vec3(0.80, 0.20, 0.04), vec3(1.0, 0.50, 0.14), clamp(dens + 0.2, 0.0, 1.0));
+  vec3 sc = hot * occ * att * dens * 4.2 * exp(-max(0.0, p.y - VENT_Y) / 300.0);
+  float base = exp(-max(0.0, p.y - VENT_Y) / 60.0) * smoothstep(95.0, 18.0, length(p.xz));
+  sc += vec3(1.0, 0.50, 0.15) * base * dens * (0.35 + 0.65 * uPulse);
+  float cx = pow(max(p.y - VENT_Y, 0.0), 1.3) * 0.06;
+  float fl = uFlash * exp(-pow(length(p.xz - vec2(cx, 0.0)) / 95.0, 2.0)) * smoothstep(60.0, 170.0, p.y - VENT_Y);
+  sc += vec3(0.72, 0.78, 1.0) * fl * (0.35 + 0.65 * dens) * 3.0;
+  sc += vec3(0.028, 0.034, 0.058) * dens * 0.14;
+  return sc;
+}
+
+void main(){
+  vec2 ndc = vUv * 2.0 - 1.0;
+  ndc.x *= uRes.x / uRes.y;
+  vec3 rd = normalize((uCamInvRot * vec4(ndc, -1.75, 1.0)).xyz);
+  vec3 ro = uCamPos;
+  float t = uTime;
+
+  /* raymarch the land + cone */
+  float jit = hash12(gl_FragCoord.xy + vec2(uSeed, floor(t * 60.0) * 0.17));
+  float tt = 1.0 + jit * 6.0;
+  float tHit = 1e9;
+  float hitY = 0.0;
+  for (int i = 0; i < 110; i++){
+    if (tt > 2600.0) break;
+    vec3 p = ro + rd * tt;
+    float h = terrainH(p.xz);
+    if (p.y <= h){ tHit = tt; hitY = h; break; }
+    tt += clamp(max(2.0, (p.y - h) * 0.55), 2.0, 46.0);
+    if (rd.y < 0.0 && p.y < -20.0) break;
+  }
+
+  vec3 col;
+  if (tHit < 1e8){
+    vec3 p = ro + rd * tHit;
+    float r = length(p.xz);
+    vec2 ex = vec2(2.5, 0.0), ez = vec2(0.0, 2.5);
+    vec3 n = normalize(vec3(
+      terrainH(p.xz - ex) - terrainH(p.xz + ex),
+      5.0,
+      terrainH(p.xz - ez) - terrainH(p.xz + ez)));
+    /* dark basalt with only the eruption lighting it */
+    vec3 albedo = mix(vec3(0.030, 0.028, 0.032), vec3(0.052, 0.046, 0.048), fbm2(p.xz * 0.02));
+    vec3 L = vec3(0.0);
+    if (r > 4.0){
+      vec2 dirv = -p.xz / r;
+      for (int k2 = 1; k2 <= 8; k2++){
+        float s = float(k2) * 17.0;
+        if (s > r + 12.0) s = r;
+        vec2 q = p.xz + dirv * s;
+        float qr = length(q);
+        float hs = terrainH(q);
+        float sightY = mix(p.y + 3.0, VENT_Y + 24.0, s / r);
+        float vis = smoothstep(3.0, 16.0, sightY - hs);
+        float hh;
+        L += lavaColor(q, qr, t, hh) * vis / (1.0 + s * s * 0.00028);
+        if (s >= r) break;
+      }
+    }
+    L *= 0.42 + 0.58 * max(0.0, n.y);
+    vec3 amb = vec3(0.012, 0.014, 0.026) * (0.45 + 0.55 * max(0.0, n.y));
+    col = albedo * (amb + L * 0.34);
+    float lh;
+    col += lavaColor(p.xz, r, t, lh);
+    /* distance haze toward the horizon */
+    float fogK = 1.0 - exp(-tHit * 0.00042);
+    col = mix(col, vec3(0.016, 0.014, 0.026), fogK);
+  } else {
+    col = vec3(0.008, 0.009, 0.018);
+    if (rd.y > 0.0){
+      col = mix(vec3(0.016, 0.012, 0.030), vec3(0.006, 0.007, 0.016), pow(clamp(rd.y, 0.0, 1.0), 0.5));
+      /* hash stars */
+      vec2 suv = vec2(atan(rd.z, rd.x) * 0.1591549 + 0.5, asin(clamp(rd.y, -1.0, 1.0)) * 0.3183099 + 0.5);
+      vec2 gsz = vec2(1100.0, 550.0);
+      vec2 cell = floor(suv * gsz);
+      float hs2 = hash12(cell + uSeed);
+      if (hs2 > 0.9962){
+        vec2 cc = fract(suv * gsz) - 0.5;
+        float tw = 0.62 + 0.38 * sin(t * (1.4 + hs2 * 9.0) + hs2 * 61.0);
+        float mag = (hs2 - 0.9962) / 0.0038;
+        float s = exp(-dot(cc, cc) * 7.0) * (0.18 + mag * 1.1) * tw * smoothstep(0.0, 0.10, rd.y);
+        vec3 tint = mix(vec3(0.72, 0.80, 1.0), vec3(1.0, 0.86, 0.70), hash12(cell + 9.1));
+        col += tint * s;
+      }
+      /* faint galactic band */
+      float milky = fbm2(suv * vec2(26.0, 15.0) + vec2(suv.y * 7.0, 0.0));
+      col += vec3(0.05, 0.05, 0.085) * smoothstep(0.58, 0.92, milky) * exp(-pow((rd.y - 0.52) / 0.26, 2.0)) * 0.22;
+    }
+    /* warm ember glow on the horizon toward the volcano */
+    float hz = exp(-max(0.0, abs(rd.y) - 0.02) * 6.0);
+    float towards = max(0.0, dot(normalize(rd.xz + vec2(1e-5)), normalize(-ro.xz + vec2(1e-5))));
+    col += vec3(0.55, 0.17, 0.05) * pow(towards, 7.0) * hz * 0.11 * (0.5 + 0.5 * uPulse);
+  }
+
+  /* plume volume between camera and the terrain hit */
+  float tau = 0.0;
+  if (rd.y > 0.0015 || (rd.y > -0.0015 && ro.y < PLUME_TOP)){
+    float t1 = (VENT_Y - 8.0 - ro.y) / max(rd.y, 1e-5);
+    float t2 = (PLUME_TOP - ro.y) / max(rd.y, 1e-5);
+    if (rd.y < 0.0){ float s = t1; t1 = t2; t2 = s; }
+    float pa = max(t1, 2.0), pb = min(t2, min(tHit, 2400.0));
+    if (pb > pa){
+      float stp = (pb - pa) / 38.0;
+      float tp = pa + jit * stp;
+      for (int i = 0; i < 38; i++){
+        if (tp > pb) break;
+        vec3 p = ro + rd * tp;
+        float d = plumeDensity(p, t);
+        if (d > 0.012){
+          col += plumeLight(p, t, d) * exp(-tau) * stp * 0.10;
+          tau += d * stp * 0.022;
+        }
+        tp += stp;
+      }
+    }
+  }
+
+  if (uDbg > 0.5 && uDbg < 1.5){
+    float hh = 0.0;
+    vec2 dp = (ro + rd * min(tHit, 900.0)).xz;
+    lavaColor(dp, length(dp), t, hh);
+    col = clamp(vec3(hh * 0.35, hh * 0.8, hh), 0.0, 1.0);
+  } else if (uDbg > 1.5 && uDbg < 2.5){
+    float dd = plumeDensity(ro + rd * min(max(tHit, 1.0), 500.0), t);
+    col = clamp(vec3(dd * 0.5, dd * 0.7, dd), 0.0, 1.0);
+  }
+  fragColor = vec4(max(col, vec3(0.0)), 1.0);
+}`;
+
+const VS_EMBER = `#version 300 es
+precision highp float;
+uniform mat4 uVP;
+uniform float uPxPerM;
+uniform float uSize;
+in vec3 aPos;
+in vec3 aCol;
+in float aA;
+out vec3 vCol;
+out float vA;
+void main(){
+  vec4 cp = uVP * vec4(aPos, 1.0);
+  gl_Position = cp;
+  gl_PointSize = clamp(uSize * uPxPerM / max(cp.w, 1.0), 1.5, 42.0);
+  vCol = aCol;
+  vA = aA;
+}`;
+
+const FS_EMBER = `#version 300 es
+precision highp float;
+in vec3 vCol;
+in float vA;
+out vec4 o;
+void main(){
+  vec2 q = gl_PointCoord * 2.0 - 1.0;
+  float r2 = dot(q, q);
+  if (r2 > 1.0) discard;
+  float g = exp(-r2 * 3.2);
+  o = vec4(vCol * g * vA, 1.0);
+}`;
+
+const FS_HAZE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uTime;
+uniform float uHazeOn;
+uniform vec2 uCraterSS;    // projected vent, uv (y-up)
+uniform float uHazeR;      // shimmer radius, uv
+out vec4 o;
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(h21(i), h21(i + vec2(1,0)), u.x), mix(h21(i + vec2(0,1)), h21(i + vec2(1,1)), u.x), u.y);
+}
+void main(){
+  vec3 base = texture(uTex, vUv).rgb;
+  float lum = dot(base, vec3(0.299, 0.587, 0.114));
+  float d = distance((vUv - uCraterSS) * vec2(1.0, 1.15), vec2(0.0));
+  float above = smoothstep(-0.02, 0.30, vUv.y - uCraterSS.y);
+  float m = smoothstep(uHazeR, uHazeR * 0.12, d) * (0.30 + 0.70 * above)
+          * smoothstep(0.10, 0.45, lum) * uHazeOn;
+  vec2 q = vUv * vec2(7.0, 5.5) + vec2(sin(vUv.y * 24.0 + uTime * 2.3) * 0.18, -uTime * 0.55);
+  vec2 n = vec2(vn(q), vn(q + vec2(4.7, 8.3))) - 0.5;
+  vec2 uv = vUv + n * 0.011 * m;
+  o = vec4(mix(base, texture(uTex, uv).rgb, clamp(m * 1.4, 0.0, 1.0)), 1.0);
+}`;
+
+const FS_BRIGHT = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform float uThresh;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb;
+  float b = max(c.r, max(c.g, c.b));
+  float k = smoothstep(uThresh, uThresh + 0.5, b);
+  o = vec4(c * k, 1.0);
+}`;
+
+const FS_BLUR = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+uniform vec2 uDir;
+out vec4 o;
+void main(){
+  vec3 c = texture(uTex, vUv).rgb * 0.227027;
+  c += (texture(uTex, vUv + uDir * 1.3846).rgb + texture(uTex, vUv - uDir * 1.3846).rgb) * 0.3162162;
+  c += (texture(uTex, vUv + uDir * 3.2307).rgb + texture(uTex, vUv - uDir * 3.2307).rgb) * 0.0702702;
+  o = vec4(c, 1.0);
+}`;
+
+const FS_COMP = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uHdr;
+uniform sampler2D uBloom;
+uniform float uGain;
+uniform float uTime;
+out vec4 o;
+vec3 aces(vec3 x){
+  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
+}
+float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+void main(){
+  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uGain;
+  c = aces(c * 1.06);
+  float l = dot(c, vec3(0.299, 0.587, 0.114));
+  c = mix(vec3(l), c, 1.14);
+  c = pow(max(c, vec3(0.0)), vec3(1.0 / 2.2));
+  vec2 q = vUv - 0.5;
+  c *= 1.0 - dot(q, q) * 0.22;
+  float g = h21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 137.0) - 0.5;
+  c += g * 0.008;
+  o = vec4(c, 1.0);
+}`;
+
+/* ---------------- GL helpers ---------------- */
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    const log = gl.getShaderInfoLog(s);
+    console.error('shader compile failed:\n' + log);
+    throw new Error('shader: ' + log);
+  }
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error('link: ' + gl.getProgramInfoLog(p));
+  return p;
+}
+
+const progScene = program(VS_QUAD, FS_SCENE);
+const progEmber = program(VS_EMBER, FS_EMBER);
+const progHaze = program(VS_QUAD, FS_HAZE);
+const progBright = program(VS_QUAD, FS_BRIGHT);
+const progBlur = program(VS_QUAD, FS_BLUR);
+const progComp = program(VS_QUAD, FS_COMP);
+
+const vaoEmpty = gl.createVertexArray();
+
+const MAX_EMBERS = 420;
+const emberVerts = new Float32Array(MAX_EMBERS * 7);
+const vaoEmber = gl.createVertexArray();
+gl.bindVertexArray(vaoEmber);
+const emberBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, emberBuf);
+gl.bufferData(gl.ARRAY_BUFFER, emberVerts.byteLength, gl.DYNAMIC_DRAW);
+for (const [nm, size, off] of [['aPos', 3, 0], ['aCol', 3, 12], ['aA', 1, 24]]) {
+  const loc = gl.getAttribLocation(progEmber, nm);
+  if (loc >= 0) {
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 28, off);
+  }
+}
+gl.bindVertexArray(null);
+
+const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
+const HDRType = HDR_OK ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+
+function makeTarget(w, h){
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, HDRF, w, h, 0, gl.RGBA, HDRType, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const fbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  return { tex, fbo, w, h };
+}
+
+let W = 0, H = 0, hdr = null, hz = null, b1 = null, b2 = null;
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.25);
+  const cw = Math.floor(canvas.clientWidth * dpr * RENDER_SCALE);
+  const ch = Math.floor(canvas.clientHeight * dpr * RENDER_SCALE);
+  if (cw === W && ch === H) return;
+  W = Math.max(2, cw); H = Math.max(2, ch);
+  canvas.width = W; canvas.height = H;
+  hdr = makeTarget(W, H);
+  hz = makeTarget(W, H);
+  const bw = Math.max(2, W >> 2), bh = Math.max(2, H >> 2);
+  b1 = makeTarget(bw, bh);
+  b2 = makeTarget(bw, bh);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------- camera ---------------- */
+
+const FOVZ = 1.75;
+const VENT_Y = 165;
+const cam = { yaw: 0, pitch: 0, tyaw: 0, tpitch: 0, touched: 0 };
+let camAz = 0.65;
+let drag = null;
+canvas.addEventListener('pointerdown', e => {
+  drag = { x: e.clientX, y: e.clientY };
+  canvas.setPointerCapture(e.pointerId);
+  cam.touched = performance.now();
+  unlockAudio();
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  cam.tyaw -= (e.clientX - drag.x) * 0.0032;
+  cam.tpitch = Math.max(-0.28, Math.min(0.34, cam.tpitch - (e.clientY - drag.y) * 0.0028));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', () => { drag = null; });
+
+function camState(t){
+  const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
+  const drift = Math.min(1, idle / 3.0);
+  cam.yaw += (cam.tyaw + Math.sin(t * 0.05) * 0.02 * drift - cam.yaw) * 0.035;
+  cam.pitch += (cam.tpitch + Math.sin(t * 0.083 + 1.3) * 0.006 * drift - cam.pitch) * 0.035;
+  const az = camAz + cam.yaw;
+  const el = 0.055 + cam.pitch;
+  const dist = 620.0 + Math.sin(t * 0.05) * 26.0;
+  const pos = [Math.cos(az) * dist, 132.0 + Math.sin(t * 0.09) * 6.0 + el * 420.0, Math.sin(az) * dist];
+  const tgt = [0.0, 122.0 + cam.pitch * 260.0, 0.0];
+  let f = [tgt[0] - pos[0], tgt[1] - pos[1], tgt[2] - pos[2]];
+  const fl = Math.hypot(f[0], f[1], f[2]);
+  f = [f[0] / fl, f[1] / fl, f[2] / fl];
+  let r = [-f[2], 0, f[0]];
+  const rl = Math.hypot(r[0], r[2]) || 1;
+  r = [r[0] / rl, 0, r[2] / rl];
+  const u = [
+    r[1] * f[2] - r[2] * f[1],
+    r[2] * f[0] - r[0] * f[2],
+    r[0] * f[1] - r[1] * f[0],
+  ];
+  return { pos, r, u, f, az };
+}
+
+function rotMat(out, r, u, f){
+  out[0] = r[0]; out[1] = r[1]; out[2] = r[2]; out[3] = 0;
+  out[4] = u[0]; out[5] = u[1]; out[6] = u[2]; out[7] = 0;
+  out[8] = -f[0]; out[9] = -f[1]; out[10] = -f[2]; out[11] = 0;
+  out[12] = 0; out[13] = 0; out[14] = 0; out[15] = 1;
+}
+function vpMat(out, r, u, f, pos, aspect){
+  const t = 1 / FOVZ, near = 1, far = 3200;
+  const view = [
+    r[0], u[0], -f[0], 0,
+    r[1], u[1], -f[1], 0,
+    r[2], u[2], -f[2], 0,
+    -(r[0] * pos[0] + r[1] * pos[1] + r[2] * pos[2]),
+    -(u[0] * pos[0] + u[1] * pos[1] + u[2] * pos[2]),
+    (f[0] * pos[0] + f[1] * pos[1] + f[2] * pos[2]),
+    1,
+  ];
+  const proj = [1 / (t * aspect), 0, 0, 0, 0, 1 / t, 0, 0, 0, 0, (far + near) / (near - far), -1, 0, 0, 2 * far * near / (near - far), 0];
+  for (let c = 0; c < 4; c++){
+    for (let row = 0; row < 4; row++){
+      out[c * 4 + row] = proj[row] * view[c * 4] + proj[4 + row] * view[c * 4 + 1] + proj[8 + row] * view[c * 4 + 2] + proj[12 + row] * view[c * 4 + 3];
+    }
+  }
+}
+
+/* ---------------- eruption rhythm (JS, drives shader + audio + embers) ---------- */
+
+function pulse(t){
+  const a = 0.62 + 0.20 * Math.sin(t * 0.53 + 0.8) * Math.sin(t * 0.19 + 2.1);
+  const cyc = t % 13.0;
+  const surge = cyc < 3.6 ? Math.exp(-Math.pow(Math.max(0.0, cyc - 0.5), 1.8) * 0.55) * 0.55 : 0.0;
+  return Math.max(0.15, a + surge);
+}
+const flashes = [];
+(function seedFlashes(){
+  let ft = 5.5;
+  while (ft < 1000){ flashes.push(ft); ft += 7 + rr(900 + ft * 3) * 11; }
+})();
+function flashEnv(t){
+  let e = 0;
+  for (let i = 0; i < flashes.length; i++){
+    const ft = flashes[i];
+    if (t < ft - 0.05 || t > ft + 0.5) continue;
+    const a = t - ft;
+    e = Math.max(e, (a < 0.06 ? a / 0.06 : Math.exp(-(a - 0.06) * 9.0)) * (0.75 + 0.25 * Math.sin(a * 90.0)));
+  }
+  return Math.max(0, Math.min(1, e));
+}
+function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - Math.floor(s); }
+
+/* ---------------- embers (deterministic closed-form ballistic fountain) -------- */
+
+const EMB_N = 1700;                       // scheduled over the first ~170 s
+const EBURST = 2.6;                      // burst period
+const EG = -16.0, EWIND = 7.0;
+function emberAt(i, t){
+  const cyc = Math.floor(i / 24);
+  const Ti = cyc * EBURST + rr(i * 3 + 1) * EBURST * 0.9;
+  const age = t - Ti;
+  if (age < 0 || age > 3.1) return null;
+  const sp = 26 + rr(i + 7) * 20;
+  const ang = rr(i + 11) * Math.PI * 2;
+  const spr = 4 + rr(i + 13) * 14;
+  const r0 = rr(i + 17) * 16;
+  const p0 = [Math.cos(ang) * r0, VENT_Y + 6, Math.sin(ang) * r0];
+  const vx = Math.cos(ang) * spr, vy = sp, vz = Math.sin(ang) * spr;
+  const pos = [p0[0] + vx * age + 0.5 * EWIND * age * age, p0[1] + vy * age + 0.5 * EG * age * age, p0[2] + vz * age];
+  const vel = [vx + EWIND * age, vy + EG * age, vz];
+  const flick = 0.55 + 0.45 * Math.sin((i % 7) * 2.1 + age * 22.0);
+  const b = Math.exp(-age * 0.9) * flick * (0.5 + 0.5 * pulse(Ti));
+  return { pos, vel, age, b };
+}
+function emberColor(age, b){
+  const temp = Math.exp(-age * 0.55);
+  const r = 1.0;
+  const g = 0.24 + 0.58 * temp * temp;
+  const bl = 0.03 + 0.42 * Math.pow(temp, 3);
+  return [r * (0.6 + 0.4 * temp), g, bl];
+}
+
+let emberDrawN = 0;
+function buildEmberVerts(t, cb){
+  let vp = 0, n = 0, live = 0;
+  for (let i = 0; i < EMB_N && n < MAX_EMBERS; i++){
+    const e = emberAt(i, t);
+    if (!e) continue;
+    live++;
+    const dx = e.pos[0] - cb.pos[0], dy = e.pos[1] - cb.pos[1], dz = e.pos[2] - cb.pos[2];
+    const fwd = dx * cb.f[0] + dy * cb.f[1] + dz * cb.f[2];
+    if (fwd < 2 || fwd > 1500) continue;
+    const col = emberColor(e.age, e.b);
+    emberVerts[vp] = e.pos[0]; emberVerts[vp + 1] = e.pos[1]; emberVerts[vp + 2] = e.pos[2];
+    emberVerts[vp + 3] = col[0]; emberVerts[vp + 4] = col[1]; emberVerts[vp + 5] = col[2];
+    emberVerts[vp + 6] = e.b;
+    vp += 7;
+    n++;
+  }
+  emberDrawN = n;
+  if (n){
+    gl.bindVertexArray(vaoEmber);
+    gl.bindBuffer(gl.ARRAY_BUFFER, emberBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, emberVerts, 0, n * 7);
+    gl.bindVertexArray(null);
+  }
+  return { n, live };
+}
+
+/* ---------------- JS mirrors (harness senses the same fields the shader uses) --- */
+
+function vnoiseJS(x, y){
+  const ix = Math.floor(x), iy = Math.floor(y);
+  const fx = x - ix, fy = y - iy;
+  const ux = fx * fx * (3 - 2 * fx), uy = fy * fy * (3 - 2 * fy);
+  const h = (a, b) => { const p = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return p - Math.floor(p); };
+  return (1 - uy) * ((1 - ux) * h(ix, iy) + ux * h(ix + 1, iy)) + uy * ((1 - ux) * h(ix, iy + 1) + ux * h(ix + 1, iy + 1));
+}
+function fbm2JS(x, y){
+  let a = 0.5, s = 0;
+  for (let i = 0; i < 3; i++){ s += a * vnoiseJS(x, y); x = x * 2.03 + 1.7; y = y * 2.03 + 3.1; a *= 0.5; }
+  return s;
+}
+const HC = 196, RB = 380, RC = 58, RP = 30;
+function lavaHeatJS(x, z, t){
+  const r = Math.hypot(x, z);
+  if (r > RB * 0.96) return 0;
+  const ang = Math.atan2(z, x);
+  const warp = fbm2JS(r * 0.02, ang * 1.3);
+  const ch = fbm2JS(ang * 3.4 + warp * 0.9, r * 0.016 - t * 0.10);
+  let m = smoothstepJS(0.58, 0.62, ch);
+  m *= smoothstepJS(RB, RB * 0.70, r) * smoothstepJS(RC * 0.9, RC * 1.7, r);
+  const pool = smoothstepJS(RP + 6, RP - 6, r);
+  m = Math.max(m, pool);
+  const flick = 0.72 + 0.28 * fbm2JS(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3);
+  return Math.min(1, m * flick);
+}
+function lavaTempJS(x, z){
+  const r = Math.hypot(x, z);
+  return smoothstepJS(RB * 0.85, RC, r);
+}
+function plumeDensityJS(y, t){
+  const dy = y - VENT_Y;
+  if (dy < -6 || dy > 520) return 0;
+  const cx = Math.pow(Math.max(dy, 0), 1.3) * 0.06;
+  const rad = Math.abs(cx);                       // on the x axis of the shear
+  const PRy = 34 + dy * 0.52;
+  const radial = 1 - smoothstepJS(PRy * 0.30, PRy, rad);
+  const hfade = smoothstepJS(-4, 40, dy) * (1 - smoothstepJS(170, 520, dy));
+  const qy = y + t * 26;
+  const tb = fbm2JS(cx * 0.007 + qy * 0.005 + t * 0.03, t * 0.02);
+  const d = radial * hfade * smoothstepJS(0.40, 0.76, tb) - 0.05;
+  return Math.max(0, Math.min(1, d * (0.62 + 0.75 * pulse(t))));
+}
+function smoothstepJS(a, b, x){
+  const k = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return k * k * (3 - 2 * k);
+}
+
+/* ---------------- audio: rumble, roar, blasts ---------------- */
+
+let AC = null, master = null, running = false;
+let roarGain = null, rumbleGain = null;
+const audioHint = document.getElementById('audiohint');
+function unlockAudio(){
+  if (AC) return;
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.9; master.connect(AC.destination);
+    const len = Math.floor(AC.sampleRate * 2);
+    const buf = AC.createBuffer(1, len, AC.sampleRate);
+    const d = buf.getChannelData(0);
+    let last = 0;
+    for (let i = 0; i < len; i++){
+      const w = Math.random() * 2 - 1;
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.2;
+    }
+    /* deep rumble */
+    const rs = AC.createBufferSource(); rs.buffer = buf; rs.loop = true;
+    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 78; lp.Q.value = 0.7;
+    rumbleGain = AC.createGain(); rumbleGain.gain.value = 0.24;
+    rs.connect(lp).connect(rumbleGain).connect(master); rs.start();
+    const rl = AC.createOscillator(); rl.frequency.value = 0.13;
+    const rg = AC.createGain(); rg.gain.value = 0.05;
+    rl.connect(rg).connect(rumbleGain.gain); rl.start();
+    /* eruption roar */
+    const ns = AC.createBufferSource(); ns.buffer = buf; ns.loop = true;
+    const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.6;
+    roarGain = AC.createGain(); roarGain.gain.value = 0.03;
+    ns.connect(bp).connect(roarGain).connect(master); ns.start();
+    running = true;
+    audioHint.textContent = 'volcano sound on';
+    audioHint.classList.add('off');
+  } catch (e) { /* audio unavailable */ }
+}
+audioHint.addEventListener('pointerdown', unlockAudio);
+addEventListener('keydown', unlockAudio);
+
+function blast(strength){
+  if (!running || !AC) return;
+  const t = AC.currentTime;
+  const dur = 1.1 + Math.random() * 0.6;
+  const o = AC.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(52, t);
+  o.frequency.exponentialRampToValueAtTime(24, t + dur);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.22 * strength, t + 0.05);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + dur);
+  const nlen = Math.floor(0.9 * AC.sampleRate);
+  const nb = AC.createBuffer(1, nlen, AC.sampleRate);
+  const nd = nb.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < nlen; i++){
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.02 * w) / 1.02;
+    nd[i] = last * 4 * Math.exp(-i / (nlen * 0.3));
+  }
+  const n = AC.createBufferSource(); n.buffer = nb;
+  const nlp = AC.createBiquadFilter(); nlp.type = 'lowpass'; nlp.frequency.value = 160;
+  const ng = AC.createGain(); ng.gain.value = 0.16 * strength;
+  n.connect(nlp).connect(ng).connect(master);
+  n.start(t);
+}
+let nextBlast = 0;
+
+/* ---------------- frame loop ---------------- */
+
+let t0 = performance.now();
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let readyFlag = false;
+let speedMul = 1.0;
+let freezeT = null;
+let pendingGrab = null;
+
+const rot4 = new Float32Array(16);
+const vp4 = new Float32Array(16);
+const U = p => name => gl.getUniformLocation(p, name);
+const usc = U(progScene), uem = U(progEmber), uhz = U(progHaze), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+
+let lastCraterSS = [0.5, 0.5], lastHazeR = 0.3;
+
+function craterScreen(cb){
+  const aspect = W / H;
+  const t = 1 / FOVZ;
+  const px = cb.r[0] * 0 + cb.r[1] * (VENT_Y + 10) + cb.r[2] * 0 - (cb.r[0] * cb.pos[0] + cb.r[1] * cb.pos[1] + cb.r[2] * cb.pos[2]);
+  const py = cb.u[0] * 0 + cb.u[1] * (VENT_Y + 10) + cb.u[2] * 0 - (cb.u[0] * cb.pos[0] + cb.u[1] * cb.pos[1] + cb.u[2] * cb.pos[2]);
+  const pz = -(cb.f[0] * 0 + cb.f[1] * (VENT_Y + 10) + cb.f[2] * 0) + (cb.f[0] * cb.pos[0] + cb.f[1] * cb.pos[1] + cb.f[2] * cb.pos[2]);
+  const w = Math.max(pz, 1);
+  const sx = (px / (t * aspect)) / w * 0.5 + 0.5;
+  const sy = (py / t) / w * 0.5 + 0.5;
+  const r = Math.min(0.28, Math.max(0.06, 160 * FOVZ / (2 * w)));
+  return [sx, sy, r];
+}
+
+function frame(){
+  const t = freezeT !== null ? freezeT : (performance.now() - t0) / 1000;
+  const now = performance.now();
+  let dt = 1 / 60;
+  if (lastFrame) { const dtms = now - lastFrame; dt = Math.min(0.05, dtms / 1000); perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
+  lastFrame = now;
+  frames++;
+  resize();
+
+  camAz += dt * 0.021 * speedMul;
+  const cb = camState(t);
+  rotMat(rot4, cb.r, cb.u, cb.f);
+  vpMat(vp4, cb.r, cb.u, cb.f, cb.pos, W / H);
+  const puls = pulse(t);
+  const flash = flashEnv(t);
+  const css = craterScreen(cb);
+  lastCraterSS = [css[0], css[1]]; lastHazeR = css[2];
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hdr.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progScene);
+  gl.bindVertexArray(vaoEmpty);
+  gl.uniform2f(usc('uRes'), W, H);
+  gl.uniform1f(usc('uTime'), t);
+  gl.uniform1f(usc('uSeed'), SEED);
+  gl.uniform3f(usc('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
+  gl.uniformMatrix4fv(usc('uCamInvRot'), false, rot4);
+  gl.uniform1f(usc('uPulse'), puls);
+  gl.uniform1f(usc('uFlash'), flash);
+  gl.uniform1f(usc('uDbg'), +(qs.get('dbg') || 0));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const embers = buildEmberVerts(t, cb);
+  if (embers.n){
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(progEmber);
+    gl.bindVertexArray(vaoEmber);
+    gl.uniformMatrix4fv(uem('uVP'), false, vp4);
+    gl.uniform1f(uem('uPxPerM'), H * FOVZ * 0.5);
+    gl.uniform1f(uem('uSize'), 1.1);
+    gl.drawArrays(gl.POINTS, 0, embers.n);
+    gl.disable(gl.BLEND);
+  }
+
+  /* heat shimmer: HDR -> hz with vent-masked refraction */
+  gl.bindFramebuffer(gl.FRAMEBUFFER, hz.fbo);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progHaze);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, hdr.tex);
+  gl.uniform1i(uhz('uTex'), 0);
+  gl.uniform1f(uhz('uTime'), t);
+  gl.uniform1f(uhz('uHazeOn'), hazeOn ? 1.0 : 0.0);
+  gl.uniform2f(uhz('uCraterSS'), css[0], css[1]);
+  gl.uniform1f(uhz('uHazeR'), css[2]);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.viewport(0, 0, b1.w, b1.h);
+  gl.useProgram(progBright);
+  gl.bindTexture(gl.TEXTURE_2D, hz.tex);
+  gl.uniform1i(ubr('uTex'), 0);
+  gl.uniform1f(ubr('uThresh'), 0.40);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.useProgram(progBlur);
+  gl.uniform1i(ubl('uTex'), 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 2.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 2.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b2.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform2f(ubl('uDir'), 5.4 / b1.w, 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
+  gl.bindTexture(gl.TEXTURE_2D, b2.tex);
+  gl.uniform2f(ubl('uDir'), 0, 5.4 / b1.h);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progComp);
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, hz.tex);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, b1.tex);
+  gl.uniform1i(uc('uHdr'), 0);
+  gl.uniform1i(uc('uBloom'), 1);
+  gl.uniform1f(uc('uGain'), 0.62);
+  gl.uniform1f(uc('uTime'), t);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  if (running && roarGain) roarGain.gain.setTargetAtTime(0.02 + 0.05 * puls + 0.06 * flash, AC.currentTime, 0.25);
+  if (flash > 0.9 && t > nextBlast){
+    blast(0.7 + flash * 0.3);
+    nextBlast = t + 4;
+  }
+  const cyc = t % 13.0;
+  if (cyc < 0.05 && t > nextBlast){
+    blast(0.5 + 0.5 * puls);
+    nextBlast = t + 6;
+  }
+
+  if (pendingGrab){
+    const res = pendingGrab; pendingGrab = null;
+    const x0 = (W * 0.25) | 0, bw = (W * 0.5) | 0;
+    const y0 = Math.min(H - 8, Math.max(4, Math.round((1 - lastCraterSS[1]) * H) - 8));
+    const bh = Math.max(8, Math.min(H - y0 - 4, Math.round(lastHazeR * H * 1.6)));
+    const buf = new Uint8Array(bw * bh * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    let s = 0, c = 0;
+    for (let i = 0; i < buf.length; i += 4){ s += 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2]; c++; }
+    res(+(s / c).toFixed(2));
+  }
+  readyFlag = true;
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ---------------- DEV hooks ---------------- */
+
+window.__volcanoTest = {
+  get ready(){ return readyFlag; },
+  get frames(){ return frames; },
+  get gl2(){ return true; },
+  get hdr(){ return HDR_OK; },
+  state(){
+    const t = (performance.now() - t0) / 1000;
+    const live = [];
+    for (let i = 0; i < EMB_N && live.length < 40; i++){
+      const e = emberAt(i, t);
+      if (e) live.push({ i, p: e.pos.map(v => +v.toFixed(1)), v: e.vel.map(v => +v.toFixed(1)), age: +e.age.toFixed(2) });
+    }
+    return {
+      t: +t.toFixed(2),
+      camAz: +(camAz * 180 / Math.PI).toFixed(2),
+      pulse: +pulse(t).toFixed(3),
+      flash: +flashEnv(t).toFixed(3),
+      embers: live,
+      emberLive: live.length >= 40 ? '40+' : live.length,
+      emberSprites: emberDrawN,
+      hazeOn,
+      audioOn: running,
+      craterSS: lastCraterSS.map(v => +v.toFixed(3)),
+      hazeR: +lastHazeR.toFixed(3),
+      speedMul,
+    };
+  },
+  pulse(t){ return +pulse(t).toFixed(4); },
+  lavaHeat(x, z){ return +lavaHeatJS(x, z, (performance.now() - t0) / 1000).toFixed(3); },
+  lavaHeatAt(x, z, t){ return +lavaHeatJS(x, z, +t).toFixed(3); },
+  lavaTemp(x, z){ return +lavaTempJS(x, z).toFixed(3); },
+  plumeAt(y){ return +plumeDensityJS(+y, (performance.now() - t0) / 1000).toFixed(3); },
+  ember(i, t){ const e = emberAt(i, +t); return e ? { p: e.pos.map(v => +v.toFixed(2)), v: e.vel.map(v => +v.toFixed(2)) } : null; },
+  setSpeed(v){ speedMul = Math.max(0, +v); },
+  setHaze(v){ hazeOn = !!v; },
+  setFreeze(v){ freezeT = v === true ? (performance.now() - t0) / 1000 : (v ? +v : null); },
+  grab(){ return new Promise(res => { pendingGrab = res; }); },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
+  resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
+  setPose(p){
+    if (p.yaw !== undefined) { cam.tyaw = p.yaw; cam.yaw = p.yaw; }
+    if (p.pitch !== undefined) { cam.tpitch = p.pitch; cam.pitch = p.pitch; }
+    cam.touched = performance.now();
+  },
+};
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'VOLCANO', accent: '#ff6a2a',
+  issues: [1043], span: '~3 h', shipped: '2026-10-25',
+  assist: 'solo', note: '“Qwen picks how” — approach researched and chosen by the builder',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
