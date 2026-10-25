@@ -594,7 +594,7 @@ void main(){
             p.life = 18 + Math.random() * 18
         }
     }
-    const JUICE = { hit: ['#ffd27a', '#ff9a3c'], blood: ['#8a4030', '#c96a4a'], cut: ['#8cc45f', '#b7e08a'], boom: ['#ffd27a', '#ff9a3c', '#ff5a2a'], coin: ['#ffe08a', '#ffb238'], magic: ['#8ce0ff', '#bff2ff'], dust: ['#9b8254', '#8a714a', '#6e5a3a'], shard: ['#7c3d30', '#5c2f2f', '#c9613a'] }
+    const JUICE = { hit: ['#ffd27a', '#ff9a3c'], blood: ['#8a4030', '#c96a4a'], cut: ['#8cc45f', '#b7e08a'], boom: ['#ffd27a', '#ff9a3c', '#ff5a2a'], coin: ['#ffe08a', '#ffb238'], magic: ['#8ce0ff', '#bff2ff'], dust: ['#9b8254', '#8a714a', '#6e5a3a'], shard: ['#7c3d30', '#5c2f2f', '#c9613a'], mote: ['#ffd27a', '#ff9a3c', '#ffb238'] }
 
     function spawnDust(x, y, dirx, diry, n) {
         // ground-hugging earth puffs that drift back along the charge line
@@ -605,8 +605,21 @@ void main(){
             p.m.position.set(FX(x + (Math.random() - 0.5) * 4), y + (Math.random() - 0.5) * 3, 1 + Math.random() * 2)
             p.vx = dirx * 0.5 + (Math.random() - 0.5) * 0.7
             p.vy = diry * 0.5 + (Math.random() - 0.5) * 0.7
-            p.vz = 0.15 + Math.random() * 0.35
-            p.life = 12 + Math.random() * 10
+        p.vz = 0.15 + Math.random() * 0.35
+        p.life = 12 + Math.random() * 10
+    }
+}
+    function spawnMotes(x, y, z) {
+        // #1063 Ashfell snowline: warm ember motes that drift slowly upward
+        for (let i = 0; i < 2; i++) {
+            const p = parts[partIdx]; partIdx = (partIdx + 1) % PARTS
+            p.m.visible = true
+            p.m.material.color.set(JUICE.mote[Math.floor(Math.random() * JUICE.mote.length)])
+            p.m.position.set(FX(x + (Math.random() - 0.5) * 12), y + (Math.random() - 0.5) * 12, (z || 6) + (Math.random() - 0.5) * 6)
+            p.vx = (Math.random() - 0.5) * 0.35
+            p.vy = -(0.15 + Math.random() * 0.25)
+            p.vz = (Math.random() - 0.5) * 0.15
+            p.life = 55 + Math.random() * 45
         }
     }
     let shake = 0
@@ -635,6 +648,7 @@ void main(){
                 case 'warp': spawnParts(e.x, e.y, ['#8ce0ff', '#bff2ff'], 12, 2.4, 2); break
                 case 'grant': spawnParts(e.x, e.y, ['#ffd27a', '#fff3cf', '#8ce0ff'], 14, 2.6, 2.2); break
                 case 'gust': case 'galecharge': spawnParts(e.x, e.y, ['#e8f4ff', '#8ce0ff', '#bff2ff'], 8, 2.6, 1.4); break
+                case 'mote': spawnMotes(e.x, e.y, e.z); break
                 case 'seal': spawnParts(e.x, e.y, ['#8cc45f', '#cfd6e6', '#6fae4e'], 12, 2.4, 1.8); break
                 case 'spore': spawnParts(e.x, e.y, ['#8cc45f', '#4c8438'], 6, 2, 1.2); break
                 case 'mantle': spawnParts(e.x, e.y, ['#57506a', '#2c2733', '#ff7a3c'], 14, 3.2, 2.2); shake = Math.max(shake, 5); break

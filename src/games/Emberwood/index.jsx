@@ -12,7 +12,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
 import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from './sim.js'
 import { createRenderer } from './render.js'
-import { makeTextures, battleHeat, musicStepFor } from './art.js'
+import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot } from './bot.js'
 import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
@@ -237,13 +237,15 @@ export default function Emberwood() {
                 })
             }
 
-            // Music (#781/#963): the vale sings above ground, the dungeons drone
-            // below; the attract screen runs the vale bed at low gain (SSX #791
-            // precedent — the AudioContext is locked before the first gesture
-            // anyway). Pause, death and win stay silent. The grid lifts with
-            // combat heat through setMusicStep: a hot room quickens the bed.
+            // Music (#781/#963/#1063): the vale sings above ground, the dungeons
+            // drone below, and the act-two Ashfell ascent rides its own high,
+            // sparse bed (musicBedFor keys off the ember-heart gate). The attract
+            // screen runs the vale bed at low gain (SSX #791 precedent — the
+            // AudioContext is locked before the first gesture anyway). Pause,
+            // death and win stay silent. The grid lifts with combat heat through
+            // setMusicStep: a hot room quickens the bed.
             const bed = !pausedRef.current && sc === 'play' && !sim.death && !sim.win
-                ? (SCREENS[sim.screen]?.dark ? 'emberwoodDeep' : 'emberwoodVale')
+                ? musicBedFor(SCREENS[sim.screen])
                 : (!pausedRef.current && sc === 'attract' ? 'emberwoodVale' : null)
             if (bed) {
                 audioController.startMusic(bed)

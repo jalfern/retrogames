@@ -698,7 +698,16 @@ export const JUICE = {
 // grid of each bed; battleHeat reads how hot a room is (0..1) and musicStepFor
 // turns that into a step duration — a packed, close-quarters room quickens the
 // bed by up to 12%. Pure, so emberwoodcheck can gate it without a browser.
-export const MUSIC_STEP = { emberwoodVale: 0.13, emberwoodDeep: 0.17 }
+export const MUSIC_STEP = { emberwoodVale: 0.13, emberwoodDeep: 0.17, emberwoodAshfell: 0.18 }
+
+// #1063 act-two track: the Ashfell ascent + Hollow Spire ride their own sparse,
+// high bed, chosen by the ember-heart gate that seals those screens off. Pure,
+// so the audit can prove the bed switch without a browser.
+export function musicBedFor(screen) {
+    if (screen && screen.req === 'emberTaken') return 'emberwoodAshfell'
+    if (screen && screen.dark) return 'emberwoodDeep'
+    return 'emberwoodVale'
+}
 
 export function battleHeat(s) {
     const live = (s.enemies || []).filter(e => !e.dead)

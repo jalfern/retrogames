@@ -89,6 +89,18 @@ function say(sim, text, t = 180) { sim.msg = text; sim.msgT = t }
 
 function emit(sim, k, x, y, extra) { sim.fx.push({ k, x, y, ...(extra || {}) }) }
 
+// #1063 Ashfell reads too empty: the sim scatters drifting ember motes on a
+// deterministic tick schedule (seed-pure — they never enter hashState) and the
+// renderer gives each a slow upward drift. Ashfell's signature: the vale and the
+// act-one deep stay mote-free.
+function stepAmbient(sim) {
+    const s = scr(sim)
+    if (!s || s.req !== 'emberTaken') return
+    if (sim.tick % 6 !== 0) return
+    const r = (n) => { const x = Math.sin((sim.tick * 7 + n) * 12.9898) * 43758.5453; return x - Math.floor(x) }
+    emit(sim, 'mote', 12 + r(1) * 232, 12 + r(2) * 152, { z: 5 + r(3) * 11 })
+}
+
 function blocked(sim, x, y, w, h, phase) {
     if (phase) return false
     const s = scr(sim)
@@ -326,6 +338,7 @@ export function stepSim(sim, inp) {
     stepVents(sim)
     stepNpcs(sim)
     stepEnemies(sim)
+    stepAmbient(sim)
     stepPickups(sim)
     checkTransitions(sim)
 
