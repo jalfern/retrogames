@@ -10,7 +10,7 @@
 import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
-    makeGame, step, autopilot, stateHash,
+    makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -159,6 +159,67 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     let j = 0
     while (j < 260 && !hs.dead) { step(gs, {}); gs.events.length = 0; j++ }
     r.check('a hut in the blast ignites and burns to rubble', ignited && hs.dead, `ignited=${ignited} dead=${hs.dead}`)
+}
+
+// ---- fire spreads: a burning hut arms its neighbours (~120 ticks), far huts stay safe
+{
+    const gs = makeGame(7)
+    gs.monsters.length = 0
+    gs.wizard.alive = false
+    gs.quota = 9999
+    gs.huts.length = 0
+    gs.huts.push({ x: 100, y: 100, v: 0, burn: 200, dead: false, catchT: 0 })
+    gs.huts.push({ x: 112, y: 100, v: 1, burn: 0, dead: false, catchT: 0 })
+    gs.huts.push({ x: 160, y: 100, v: 2, burn: 0, dead: false, catchT: 0 })
+    const near = gs.huts[1], far = gs.huts[2]
+    let caughtAt = -1, i = 0
+    while (i < 190 && caughtAt < 0) {
+        step(gs, {})
+        if (caughtAt < 0 && near.burn > 0) caughtAt = i
+        gs.events.length = 0
+        i++
+    }
+    r.check('fire spreads: neighbouring hut catches ~120 ticks later, a 60u hut never does',
+        caughtAt > 110 && caughtAt < 130 && far.burn === 0 && far.catchT === 0,
+        `caughtAt=${caughtAt} farBurn=${far.burn} farCatchT=${far.catchT}`)
+}
+
+// ---- fresh craters glow with lava and cool over ~300 ticks (fire craters only)
+{
+    const gs = makeGame(7)
+    gs.monsters.length = 0
+    gs.wizard.alive = false
+    gs.quota = 9999
+    gs.mana = 15; gs.coolL = 0
+    let boom = null, i = 0
+    while (i < 80 && !boom) {
+        step(gs, i === 0 ? { castL: true } : {})
+        for (const e of gs.events) if (e.type === 'boom') boom = e
+        gs.events.length = 0
+        i++
+    }
+    const hot = boom ? gs.craters.find((c) => c.hot === 1) : null
+    const freshGlow = hot ? glowOf(gs, hot) : 0
+    for (let j = 0; j < CRATER_GLOW + 5; j++) { step(gs, {}); gs.events.length = 0 }
+    const oldGlow = hot ? glowOf(gs, hot) : 1
+    r.check('a fireball crater is born glowing hot and its lava cools to nothing after CRATER_GLOW ticks',
+        boom && hot && freshGlow > 0.9 && oldGlow === 0 && gs.craters.length <= 10,
+        `glow ${freshGlow.toFixed(2)} → ${oldGlow.toFixed(2)} craters=${gs.craters.length}`)
+}
+
+// ---- telekinesis throws and fireballs topple the wizard's tower at its base
+{
+    const gs = makeGame(7)
+    gs.quota = 9999
+    const tx = gs.wizard.tx, ty = gs.wizard.ty
+    const hp0 = gs.wizard.hp
+    r.check('toppling is refused far from the tower base',
+        toppleTower(gs, gs.wizard.tx + 40, gs.wizard.ty + 40) === false && !gs.towerDown)
+    const down = toppleTower(gs, tx + 3, ty - 2)
+    r.check('a throw landing at the tower base topples it (once per world, wizard takes the fall)',
+        down && gs.towerDown && gs.wizard.hp === hp0 - 30 &&
+        toppleTower(gs, tx, ty) === false,
+        `down=${down} towerDown=${gs.towerDown} hp ${hp0}→${gs.wizard.hp}`)
 }
 
 // ---- mana conservation through a real campaign (vault + pouch + pearls + hoard)

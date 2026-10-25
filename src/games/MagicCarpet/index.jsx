@@ -13,7 +13,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import {
     W, H, HUD_H, HORIZON, MAP, WATER, LEVELS,
     SPILLS, spellById,
-    makeGame, step, autopilot, stateHash, sampleH, setHand, cycleR,
+    makeGame, step, autopilot, stateHash, sampleH, setHand, cycleR, glowOf,
 } from './sim.js'
 import {
     drawPearl, drawBook, drawBalloon, drawCastle, drawTower, drawWizard,
@@ -23,12 +23,25 @@ import {
 const FIXED_DT = 1000 / 60
 const FOCAL = 240
 const VIEW_D = 190
-const HAZE = [172, 190, 208]
 
-const mix = (a, b, t) => `rgb(${Math.round(a[0] + (b[0] - a[0]) * t)},${Math.round(a[1] + (b[1] - a[1]) * t)},${Math.round(a[2] + (b[2] - a[2]) * t)})`
+const mixN = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
 const BI_RGB = [[0x1c, 0x4a, 0x86], [0x25, 0x5c, 0x9e], [0xc9, 0xae, 0x6c], [0xb3, 0x97, 0x5a],
     [0x48, 0x81, 0x2f], [0x3a, 0x6c, 0x26], [0x75, 0x65, 0x4f], [0x5e, 0x51, 0x40],
     [0xe6, 0xeb, 0xf2], [0xc9, 0xd2, 0xdd]]
+
+// Per-world atmospheres (issue #1060): same geometry, shifted palettes —
+// Verdant daylight, Emberwild dusk under a lava sky, Frostbound blue-white.
+const WORLD_PAL = [
+    { sky: ['#141b4d', '#3a5f96', '#a8bcc8'], haze: [172, 190, 208], sun: '#f2e0a0', cloud: '#c9d4e2', tint: null },
+    { sky: ['#241033', '#7a3050', '#d07048'], haze: [198, 128, 104], sun: '#ff9048', cloud: '#d8a084', tint: [[126, 46, 24], 0.16] },
+    { sky: ['#1a2450', '#5a7ab0', '#c8dcec'], haze: [198, 216, 236], sun: '#e8f0fa', cloud: '#e2ecf6', tint: [[152, 188, 228], 0.2] },
+]
+// 4-bit-style palette-cycling water: [deep, mid, light, foam] per world.
+const WATER_PAL = [
+    [[0x1c, 0x4a, 0x86], [0x2a, 0x62, 0xaa], [0x48, 0x84, 0xc4], [0x7a, 0xb4, 0xe0]],
+    [[0x30, 0x1a, 0x40], [0x4c, 0x2a, 0x56], [0x74, 0x44, 0x60], [0xb0, 0x6c, 0x5e]],
+    [[0x24, 0x46, 0x70], [0x3c, 0x64, 0x94], [0x64, 0x8e, 0xbc], [0x9e, 0xc4, 0xe2]],
+]
 
 const SPELL_COLORS = {
     fireball: '#ff7a28', lightning: '#ffe24a', heal: '#ff5060',
@@ -91,6 +104,7 @@ const MagicCarpetGame = () => {
         let raf = 0, last = 0, acc = 0
         let toast = 0, toastMsg = '', shake = 0
         let flashL = 0, flashR = 0, hurtFlash = 0
+        let vaultFlash = 0, prevSeg = -1
         const keys = { l: false, r: false, u: false, d: false }
         let throwL = false, throwR = false
         let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
@@ -128,7 +142,13 @@ const MagicCarpetGame = () => {
                 if (e.type === 'pickup') {
                     audioController.playTone(760 + (e.m || 3) * 30, 0.05, 'triangle', 0.05)
                 } else if (e.type === 'bankIn') {
-                    audioController.playTone(520 + Math.min(6, e.m) * 40, 0.04, 'sine', 0.04)
+                    if (e.m >= 3) {
+                        audioController.playTone(560, 0.035, 'sine', 0.045)
+                        audioController.playTone(660, 0.035, 'sine', 0.045, 0.07)
+                        audioController.playTone(784, 0.05, 'sine', 0.045, 0.14)
+                    } else {
+                        audioController.playTone(520 + Math.min(6, e.m) * 40, 0.04, 'sine', 0.04)
+                    }
                 } else if (e.type === 'spill') {
                     audioController.playSweep(600, 120, 0.5, 'triangle', 0.08)
                     say('YOUR LOAD OF MANA IS LOST')
@@ -178,6 +198,11 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(300, 50, 0.7, 'sawtooth', 0.09)
                     shake = 8
                     say('THE RIVAL WIZARD FALLS — HIS TREASURE SCATTERS')
+                } else if (e.type === 'towerDown') {
+                    audioController.playNoise(0.55, 0.12)
+                    audioController.playTone(60, 0.3, 'square', 0.08)
+                    shake = Math.max(shake, 6)
+                    say('THE WIZARD\'S TOWER TOPPLES')
                 } else if (e.type === 'wizfire') audioController.playSweep(920, 380, 0.14, 'sawtooth', 0.05)
                 else if (e.type === 'rocksling') audioController.playNoise(0.07, 0.05)
                 else if (e.type === 'bite') audioController.playTone(170, 0.06, 'square', 0.05)
@@ -234,6 +259,7 @@ const MagicCarpetGame = () => {
             boostOn = boostKey || upHold >= 24
             if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
             if (boostOn && gs.tick % 12 === 0) audioController.playNoise(0.06, 0.02)
+            if (gs.tick % 46 === 0) audioController.playSweep(74, 58, 0.5, 'sine', boostOn ? 0.028 : 0.015)
             boostPrev = boostOn
             doSim({
                 left: keys.l, right: keys.r, up: keys.u, down: keys.d,
@@ -245,24 +271,26 @@ const MagicCarpetGame = () => {
         // --------------------------------------------------------------- paint ----
         const paintTerrain = () => {
             f.n = gs.tick
+            const pal = WORLD_PAL[Math.min(gs.level, WORLD_PAL.length - 1)]
+            const wpal = WATER_PAL[Math.min(gs.level, WATER_PAL.length - 1)]
             const grad = ctx.createLinearGradient(0, 0, 0, HORIZON + 12)
-            grad.addColorStop(0, '#141b4d')
-            grad.addColorStop(0.62, '#3a5f96')
-            grad.addColorStop(1, '#a8bcc8')
+            grad.addColorStop(0, pal.sky[0])
+            grad.addColorStop(0.62, pal.sky[1])
+            grad.addColorStop(1, pal.sky[2])
             ctx.fillStyle = grad
             ctx.fillRect(0, 0, W, HORIZON + 12)
             const sunAz = 2.1
             let sa = ((sunAz - gs.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
             const sx = W / 2 + sa * FOCAL
             if (sx > -20 && sx < W + 20) {
-                ctx.fillStyle = '#f2e0a0'
+                ctx.fillStyle = pal.sun
                 ctx.beginPath(); ctx.arc(sx, 42, 7, 0, Math.PI * 2); ctx.fill()
                 ctx.globalAlpha = 0.25
                 ctx.beginPath(); ctx.arc(sx, 42, 12, 0, Math.PI * 2); ctx.fill()
                 ctx.globalAlpha = 1
             }
             ctx.globalAlpha = 0.55
-            ctx.fillStyle = '#c9d4e2'
+            ctx.fillStyle = pal.cloud
             for (let c = 0; c < 5; c++) {
                 const caz = c * 1.27 + 0.4 + gs.tick * 0.00018
                 let ca = ((caz - gs.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
@@ -274,6 +302,7 @@ const MagicCarpetGame = () => {
             }
             ctx.globalAlpha = 1
 
+            const crs = gs.craters
             for (let i = 0; i < W; i++) {
                 const az = gs.yaw + Math.atan((i - W / 2) / FOCAL)
                 const dx = Math.cos(az), dy = Math.sin(az)
@@ -290,18 +319,47 @@ const MagicCarpetGame = () => {
                         const water = raw <= WATER
                         const ci = biomeIdx * 2
                         const shade = Math.max(0.62, Math.min(1.25, 1 - (raw - prevH) * 0.045))
-                        let ca = BI_RGB[ci], cb = BI_RGB[ci + 1]
+                        let rgb
                         if (water) {
-                            const spark = ((Math.floor(wx / 3) + Math.floor(wy / 3) + ((gs.tick >> 3) & 1)) & 3) === 0
-                            ca = spark ? [0x7a, 0xb4, 0xe0] : [0x2a, 0x62, 0xaa]
-                            cb = spark ? [0x58, 0x9a, 0xd0] : [0x1c, 0x4a, 0x86]
+                            const wph = gs.tick * 0.06
+                            const band = Math.sin(raw * 1.15 + wx * 0.11 + wy * 0.07 + wph)
+                            let wi = band > 0.55 ? 3 : band > 0 ? 2 : band > -0.55 ? 1 : 0
+                            if (raw <= WATER + 1.4 && band > -0.3) wi = 3
+                            rgb = wpal[wi]
+                            const chkW = ((Math.floor(wx / 2) + Math.floor(wy / 2)) & 1) === 0
+                            if (!chkW) rgb = mixN(rgb, [0, 0, 0], 0.1)
+                        } else {
+                            let ca = BI_RGB[ci], cb = BI_RGB[ci + 1]
+                            if (pal.tint) { ca = mixN(ca, pal.tint[0], pal.tint[1]); cb = mixN(cb, pal.tint[0], pal.tint[1]) }
+                            rgb = (Math.floor(wx / 2) + Math.floor(wy / 2)) & 1 ? cb : ca
                         }
-                        const chk = ((Math.floor(wx / 2) + Math.floor(wy / 2)) & 1) === 0
+                        if (crs.length > 0) {
+                            for (const c of crs) {
+                                let ddx = wx - c.x; if (ddx > MAP / 2) ddx -= MAP; else if (ddx < -MAP / 2) ddx += MAP
+                                let ddy = wy - c.y; if (ddy > MAP / 2) ddy -= MAP; else if (ddy < -MAP / 2) ddy += MAP
+                                const cd = Math.hypot(ddx, ddy)
+                                if (cd > c.r * 1.3) continue
+                                const heat = glowOf(gs, c)
+                                if (cd < c.r) {
+                                    if (heat > 0) {
+                                        const fk = 0.82 + 0.18 * Math.sin(gs.tick * 0.3 + c.x)
+                                        const g = heat * (1 - cd / c.r) * 0.62 * fk
+                                        rgb = mixN(rgb, [255, 90 + Math.sin(gs.tick * 0.11 + c.y) * 45, 28], g)
+                                    } else if (cd < c.r * 0.72 && cd > c.r * 0.3) {
+                                        rgb = mixN(rgb, wpal[2], ((gs.tick >> 3) & 1) === 0 ? 0.35 : 0)
+                                    }
+                                }
+                                if (cd > c.r * 0.55 && cd < c.r * 1.25) {
+                                    const rim = Math.max(0, 1 - Math.abs(cd - c.r * 0.9) / (c.r * 0.32 + 5))
+                                    rgb = mixN(rgb, [44, 26, 16], rim * 0.42)
+                                }
+                            }
+                        }
                         const fog = Math.min(1, d / VIEW_D)
-                        let col = mix(chk ? ca : cb, HAZE, fog * 0.72)
-                        if (shade > 1.02) col = mix(col, [255, 250, 220], (shade - 1) * 0.8)
-                        if (shade < 0.98) col = mix(col, [10, 14, 30], (1 - shade) * 0.7)
-                        ctx.fillStyle = col
+                        rgb = mixN(rgb, pal.haze, fog * 0.72)
+                        if (shade > 1.02) rgb = mixN(rgb, [255, 250, 220], (shade - 1) * 0.8)
+                        if (shade < 0.98) rgb = mixN(rgb, [10, 14, 30], (1 - shade) * 0.7)
+                        ctx.fillStyle = `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`
                         ctx.fillRect(i, y, 1, Math.max(1, prevY - y))
                         topSilD = d
                         prevY = y
@@ -349,7 +407,7 @@ const MagicCarpetGame = () => {
             }
             const wz = gs.wizard
             const prT = project(wz.tx, wz.ty, sampleH(gs, wz.tx, wz.ty))
-            if (prT) items.push({ d: prT.d, sx: prT.sx, hw: 7 * prT.k, fn: () => drawTower(ctx, prT.sx, prT.sy, Math.max(0.3, prT.k / 4), f.n, wz.alive) })
+            if (prT) items.push({ d: prT.d, sx: prT.sx, hw: 7 * prT.k, fn: () => drawTower(ctx, prT.sx, prT.sy, Math.max(0.3, prT.k / 4), f.n, wz.alive && !gs.towerDown, gs.towerDown) })
             if (wz.alive) {
                 const prW = project(wz.x, wz.y, sampleH(gs, wz.x, wz.y) + 10 + Math.sin(gs.tick * 0.05) * 2)
                 if (prW) items.push({ d: prW.d, sx: prW.sx, hw: 5 * prW.k, fn: () => drawWizard(ctx, prW.sx, prW.sy, Math.max(0.4, prW.k / 4), f.n) })
@@ -421,16 +479,19 @@ const MagicCarpetGame = () => {
                 ctx.globalAlpha = 1
             }
             const stretch = boostOn ? 4 : 0
+            const flut = boostOn ? 2.3 : 1.1
+            const flapL = Math.sin(gs.tick * 0.26) * flut
+            const flapR = Math.sin(gs.tick * 0.26 + Math.PI) * flut
             ctx.fillStyle = '#8a1f28'
             ctx.beginPath()
-            ctx.moveTo(96 + sway, H - HUD_H); ctx.lineTo(150 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 16 + bob - stretch); ctx.closePath(); ctx.fill()
+            ctx.moveTo(96 + sway, H - HUD_H); ctx.lineTo(150 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 16 + bob - stretch + flapL); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(170 + sway, H - HUD_H); ctx.lineTo(224 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 16 + bob - stretch); ctx.closePath(); ctx.fill()
+            ctx.moveTo(170 + sway, H - HUD_H); ctx.lineTo(224 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 16 + bob - stretch + flapR); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#b8303c'
             ctx.beginPath()
-            ctx.moveTo(104 + sway, H - HUD_H); ctx.lineTo(144 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 11 + bob - stretch); ctx.closePath(); ctx.fill()
+            ctx.moveTo(104 + sway, H - HUD_H); ctx.lineTo(144 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 11 + bob - stretch + flapL * 0.6); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(176 + sway, H - HUD_H); ctx.lineTo(216 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 11 + bob - stretch); ctx.closePath(); ctx.fill()
+            ctx.moveTo(176 + sway, H - HUD_H); ctx.lineTo(216 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 11 + bob - stretch + flapR * 0.6); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#d8a840'
             for (let i = 0; i < 4; i++) {
                 ctx.fillRect(100 + i * 12 + sway, H - HUD_H - 2, 2, 2)
@@ -507,6 +568,8 @@ const MagicCarpetGame = () => {
             for (const p of gs.pearls) if (p.alive) dot(p.x, p.y, '#e8e0c0')
             for (const m of gs.monsters) dot(m.x, m.y, m.kind === 'cow' ? '#d8d0c0' : '#e05040', 1.6)
             for (const b of gs.books) if (!b.taken) dot(b.x, b.y, '#40e0d0')
+            for (const hs of gs.huts) dot(hs.x, hs.y, hs.dead ? '#5a5262' : '#c89040', 1.2)
+            for (const fm of gs.fireMarks) dot(fm.x, fm.y, '#ff5030', 1.6)
             dot(gs.castle.x, gs.castle.y, '#ffd84a', 2.4)
             if (gs.wizard.alive) dot(gs.wizard.x, gs.wizard.y, '#c060ff', 2.4)
 
@@ -518,6 +581,16 @@ const MagicCarpetGame = () => {
             ctx.fillRect(35, y0 + 7, 128 * fill, 5)
             ctx.fillStyle = '#0e1a38'
             for (let q = 1; q < 5; q++) ctx.fillRect(34 + (130 * q) / 5, y0 + 6, 1, 7)
+            const seg = Math.min(5, Math.floor(fill * 5))
+            if (seg > prevSeg) { if (prevSeg >= 0) vaultFlash = 8; prevSeg = seg }
+            else if (seg < prevSeg) prevSeg = seg
+            if (vaultFlash > 0) {
+                ctx.globalAlpha = (vaultFlash / 8) * 0.8
+                ctx.fillStyle = '#fff'
+                ctx.fillRect(35, y0 + 7, 128 * fill, 5)
+                ctx.globalAlpha = 1
+                vaultFlash--
+            }
             ctx.fillStyle = '#ffd860'
             ctx.font = '6px monospace'
             ctx.fillText(`VAULT ${Math.floor(gs.bank)}/${gs.quota}`, 34, y0 + 21)
@@ -617,6 +690,7 @@ const MagicCarpetGame = () => {
             keys.l = keys.r = keys.u = keys.d = false
             throwL = throwR = false
             boostKey = boostOn = boostPrev = false; upHold = 0
+            vaultFlash = 0; prevSeg = -1
             setMode('play')
             say(`WORLD 1 — ${LEVELS[0].name} · FILL THE VAULT`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
@@ -703,6 +777,7 @@ const MagicCarpetGame = () => {
                     x: +gs.x.toFixed(2), y: +gs.y.toFixed(2), alt: +gs.alt.toFixed(2), yaw: +gs.yaw.toFixed(4),
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
+                    towerDown: gs.towerDown, craters: gs.craters.length,
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
@@ -749,6 +824,7 @@ const MagicCarpetGame = () => {
                     keys.l = keys.r = keys.u = keys.d = false
                     throwL = throwR = false
                     boostKey = boostOn = boostPrev = false; upHold = 0
+                    vaultFlash = 0; prevSeg = -1
                     setMode('play')
                 },
                 tick: (pad) => {

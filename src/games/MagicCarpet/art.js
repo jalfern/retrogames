@@ -78,7 +78,21 @@ export function drawCastle(ctx, x, y, k, stage) {
     ctx.globalAlpha = 1
 }
 
-export function drawTower(ctx, x, y, k, f, alive) {
+export function drawTower(ctx, x, y, k, f, alive, toppled) {
+    if (toppled) {
+        px(ctx, x - 8 * k, y - 2.4 * k, 16 * k, 2.4 * k, '#41394f')
+        px(ctx, x - 6 * k, y - 6 * k, 5 * k, 3.6 * k, '#362e44')
+        px(ctx, x + 1.4 * k, y - 4.6 * k, 4.4 * k, 2.2 * k, '#2e2638')
+        px(ctx, x - 2.4 * k, y - 8 * k, 3.4 * k, 2.4 * k, '#362e44')
+        px(ctx, x + 3 * k, y - 8 * k, 2 * k, k, '#4a4258')
+        ctx.globalAlpha = 0.3
+        px(ctx, x - 10 * k, y, 20 * k, 1.6 * k, '#000')
+        const d = (Math.sin(f * 0.11) + 1) / 2
+        ctx.globalAlpha = 0.18 + d * 0.12
+        px(ctx, x - 5 * k, y - 3 * k, 10 * k, k, '#8a7f96')
+        ctx.globalAlpha = 1
+        return
+    }
     if (!alive) {
         px(ctx, x - 7 * k, y - 3 * k, 14 * k, 3 * k, '#4a4258')
         px(ctx, x - 5 * k, y - 5 * k, 4 * k, 2 * k, '#3a3248')
