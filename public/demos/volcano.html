@@ -155,10 +155,10 @@ float lavaMask(vec2 xz, float r, float t){
 vec3 lavaColor(vec2 xz, float r, float t, out float heat){
   float m = lavaMask(xz, r, t);
   float ang = atan(xz.y, xz.x);
-  float flick = 0.72 + 0.28 * fbm2(vec2(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3));
+      float flick = 0.72 + 0.28 * vnoise(vec2(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3));
   heat = m * flick;
   float temp = smoothstep(RB * 0.85, RC, r);
-  float crust = 0.55 + 0.45 * smoothstep(0.35, 0.65, fbm2(xz * 0.05 + vec2(0.0, t * 0.4)));
+  float crust = 0.55 + 0.45 * smoothstep(0.35, 0.65, vnoise(xz * 0.05 + vec2(0.0, t * 0.4)));
   vec3 c = mix(vec3(0.55, 0.06, 0.01), vec3(1.0, 0.30, 0.05), temp);
   c = mix(c, vec3(1.0, 0.78, 0.40), pow(temp, 2.0) * flick);
   return c * heat * crust * (1.3 + 2.3 * pow(temp, 2.0)) * (0.55 + 0.45 * uPulse);
@@ -173,6 +173,7 @@ float plumeDensity(vec3 p, float t){
   float PRy = 34.0 + dy * 0.52;
   float radial = 1.0 - smoothstep(PRy * 0.30, PRy, rad);
   float hfade = smoothstep(-4.0, 40.0, dy) * (1.0 - smoothstep(170.0, 520.0, dy));
+  if (radial * hfade < 0.02) return 0.0;
   vec3 q = p - vec3(cx * 0.4, -t * 26.0, 0.0);
   float tb = fbm2(vec2(q.x, q.z) * 0.007 + vec2(q.y * 0.005 + t * 0.03, t * 0.02));
   float d = radial * hfade * smoothstep(0.40, 0.76, tb) - 0.05;
@@ -185,11 +186,11 @@ vec3 plumeLight(vec3 p, float t, float dens){
   float dL = max(length(L), 1.0);
   vec3 vdir = L / dL;
   float sh = 0.0;
-  for (int j = 1; j <= 3; j++) sh += plumeDensity(p + vdir * float(j) * 30.0, t);
+  for (int j = 1; j <= 2; j++) sh += plumeDensity(p + vdir * float(j) * 34.0, t);
   float occ = exp(-sh * 0.55);
   float att = 1.0 / (1.0 + dL * dL * 0.000055);
   vec3 hot = mix(vec3(0.80, 0.20, 0.04), vec3(1.0, 0.50, 0.14), clamp(dens + 0.2, 0.0, 1.0));
-  vec3 sc = hot * occ * att * dens * 4.2 * exp(-max(0.0, p.y - VENT_Y) / 300.0);
+  vec3 sc = hot * occ * att * dens * 3.2 * exp(-max(0.0, p.y - VENT_Y) / 120.0);
   float base = exp(-max(0.0, p.y - VENT_Y) / 60.0) * smoothstep(95.0, 18.0, length(p.xz));
   sc += vec3(1.0, 0.50, 0.15) * base * dens * (0.35 + 0.65 * uPulse);
   float cx = pow(max(p.y - VENT_Y, 0.0), 1.3) * 0.06;
@@ -290,9 +291,9 @@ void main(){
     if (rd.y < 0.0){ float s = t1; t1 = t2; t2 = s; }
     float pa = max(t1, 2.0), pb = min(t2, min(tHit, 2400.0));
     if (pb > pa){
-      float stp = (pb - pa) / 38.0;
+      float stp = (pb - pa) / 26.0;
       float tp = pa + jit * stp;
-      for (int i = 0; i < 38; i++){
+      for (int i = 0; i < 26; i++){
         if (tp > pb) break;
         vec3 p = ro + rd * tp;
         float d = plumeDensity(p, t);
@@ -367,12 +368,12 @@ void main(){
   vec3 base = texture(uTex, vUv).rgb;
   float lum = dot(base, vec3(0.299, 0.587, 0.114));
   float d = distance((vUv - uCraterSS) * vec2(1.0, 1.15), vec2(0.0));
-  float above = smoothstep(-0.02, 0.30, vUv.y - uCraterSS.y);
+  float above = smoothstep(-0.05, 0.12, vUv.y - uCraterSS.y);
   float m = smoothstep(uHazeR, uHazeR * 0.12, d) * (0.30 + 0.70 * above)
-          * smoothstep(0.10, 0.45, lum) * uHazeOn;
-  vec2 q = vUv * vec2(7.0, 5.5) + vec2(sin(vUv.y * 24.0 + uTime * 2.3) * 0.18, -uTime * 0.55);
+          * smoothstep(0.06, 0.32, lum) * uHazeOn;
+  vec2 q = vUv * vec2(22.0, 17.0) + vec2(sin(vUv.y * 24.0 + uTime * 2.3) * 0.6, -uTime * 0.55);
   vec2 n = vec2(vn(q), vn(q + vec2(4.7, 8.3))) - 0.5;
-  vec2 uv = vUv + n * 0.011 * m;
+  vec2 uv = vUv + n * 0.03 * m;
   o = vec4(mix(base, texture(uTex, uv).rgb, clamp(m * 1.4, 0.0, 1.0)), 1.0);
 }`;
 
@@ -532,10 +533,12 @@ canvas.addEventListener('pointermove', e => {
 addEventListener('pointerup', () => { drag = null; });
 
 function camState(t){
-  const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
-  const drift = Math.min(1, idle / 3.0);
-  cam.yaw += (cam.tyaw + Math.sin(t * 0.05) * 0.02 * drift - cam.yaw) * 0.035;
-  cam.pitch += (cam.tpitch + Math.sin(t * 0.083 + 1.3) * 0.006 * drift - cam.pitch) * 0.035;
+  if (freezeT === null) {
+    const idle = Math.max(0, (performance.now() - cam.touched) / 1000 - 2.0);
+    const drift = Math.min(1, idle / 3.0);
+    cam.yaw += (cam.tyaw + Math.sin(t * 0.05) * 0.02 * drift - cam.yaw) * 0.035;
+    cam.pitch += (cam.tpitch + Math.sin(t * 0.083 + 1.3) * 0.006 * drift - cam.pitch) * 0.035;
+  }
   const az = camAz + cam.yaw;
   const el = 0.055 + cam.pitch;
   const dist = 620.0 + Math.sin(t * 0.05) * 26.0;
@@ -607,11 +610,11 @@ function rr(n){ const s = Math.sin(n * 127.1 + 311.7) * 43758.5453; return s - M
 
 /* ---------------- embers (deterministic closed-form ballistic fountain) -------- */
 
-const EMB_N = 1700;                       // scheduled over the first ~170 s
+const EMB_N = 4400;                      // scheduled over the first ~180 s
 const EBURST = 2.6;                      // burst period
 const EG = -16.0, EWIND = 7.0;
 function emberAt(i, t){
-  const cyc = Math.floor(i / 24);
+  const cyc = Math.floor(i / 64);
   const Ti = cyc * EBURST + rr(i * 3 + 1) * EBURST * 0.9;
   const age = t - Ti;
   if (age < 0 || age > 3.1) return null;
@@ -687,7 +690,7 @@ function lavaHeatJS(x, z, t){
   m *= smoothstepJS(RB, RB * 0.70, r) * smoothstepJS(RC * 0.9, RC * 1.7, r);
   const pool = smoothstepJS(RP + 6, RP - 6, r);
   m = Math.max(m, pool);
-  const flick = 0.72 + 0.28 * fbm2JS(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3);
+  const flick = 0.72 + 0.28 * vnoiseJS(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3);
   return Math.min(1, m * flick);
 }
 function lavaTempJS(x, z){
@@ -790,6 +793,10 @@ let readyFlag = false;
 let speedMul = 1.0;
 let freezeT = null;
 let pendingGrab = null;
+let pendingEdges = null;
+let pendingDiff = null;
+let diffPrev = null;
+let diffWant = true;
 
 const rot4 = new Float32Array(16);
 const vp4 = new Float32Array(16);
@@ -804,7 +811,7 @@ function craterScreen(cb){
   const px = cb.r[0] * 0 + cb.r[1] * (VENT_Y + 10) + cb.r[2] * 0 - (cb.r[0] * cb.pos[0] + cb.r[1] * cb.pos[1] + cb.r[2] * cb.pos[2]);
   const py = cb.u[0] * 0 + cb.u[1] * (VENT_Y + 10) + cb.u[2] * 0 - (cb.u[0] * cb.pos[0] + cb.u[1] * cb.pos[1] + cb.u[2] * cb.pos[2]);
   const pz = -(cb.f[0] * 0 + cb.f[1] * (VENT_Y + 10) + cb.f[2] * 0) + (cb.f[0] * cb.pos[0] + cb.f[1] * cb.pos[1] + cb.f[2] * cb.pos[2]);
-  const w = Math.max(pz, 1);
+  const w = Math.max(-pz, 1);
   const sx = (px / (t * aspect)) / w * 0.5 + 0.5;
   const sy = (py / t) / w * 0.5 + 0.5;
   const r = Math.min(0.28, Math.max(0.06, 160 * FOVZ / (2 * w)));
@@ -932,6 +939,43 @@ function frame(){
     for (let i = 0; i < buf.length; i += 4){ s += 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2]; c++; }
     res(+(s / c).toFixed(2));
   }
+  if (pendingEdges){
+    const res = pendingEdges; pendingEdges = null;
+    const x0 = (W * 0.30) | 0, bw = (W * 0.40) | 0;
+    const y0 = Math.min(H - 8, Math.max(4, Math.round((1 - lastCraterSS[1]) * H)));
+    const bh = Math.max(8, Math.min(H - y0 - 4, Math.round(H * 0.34)));
+    const buf = new Uint8Array(bw * bh * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(x0, y0, bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const L = i => 0.299 * buf[i] + 0.587 * buf[i + 1] + 0.114 * buf[i + 2];
+    let s = 0, c = 0;
+    for (let y = 1; y < bh - 1; y++) for (let x = 1; x < bw - 1; x++){
+      const i = (y * bw + x) * 4;
+      s += Math.abs(L(i) - L(i + 4)) + Math.abs(L(i) - L(i + bw * 4));
+      c++;
+    }
+    res(c ? +(s / c).toFixed(3) : 0);
+  }
+  if (pendingDiff){
+    const bw = (W * 0.28) | 0, bh = Math.round(H * 0.16);
+    const x0 = (W * 0.36) | 0;
+    const y0 = Math.min(H - 8, Math.max(4, Math.round((1 - lastCraterSS[1]) * H) - 4));
+    const h = Math.min(bh, H - y0 - 4);
+    const buf = new Uint8Array(bw * h * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    gl.readPixels(x0, y0, bw, h, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+    const lum = new Float32Array(bw * h);
+    for (let i = 0; i < bw * h; i++) lum[i] = 0.299 * buf[i * 4] + 0.587 * buf[i * 4 + 1] + 0.114 * buf[i * 4 + 2];
+    if (diffPrev === null){
+      hazeOn = diffWant;
+      diffPrev = lum;
+    } else {
+      let s = 0;
+      for (let i = 0; i < bw * h; i++) s += Math.abs(lum[i] - diffPrev[i]);
+      pendingDiff(+(s / (bw * h)).toFixed(3));
+      pendingDiff = null; diffPrev = null;
+    }
+  }
   readyFlag = true;
   requestAnimationFrame(frame);
 }
@@ -954,6 +998,7 @@ window.__volcanoTest = {
     return {
       t: +t.toFixed(2),
       camAz: +(camAz * 180 / Math.PI).toFixed(2),
+      yaw: +cam.yaw.toFixed(3),
       pulse: +pulse(t).toFixed(3),
       flash: +flashEnv(t).toFixed(3),
       embers: live,
@@ -976,6 +1021,8 @@ window.__volcanoTest = {
   setHaze(v){ hazeOn = !!v; },
   setFreeze(v){ freezeT = v === true ? (performance.now() - t0) / 1000 : (v ? +v : null); },
   grab(){ return new Promise(res => { pendingGrab = res; }); },
+  grabEdges(){ return new Promise(res => { pendingEdges = res; }); },
+  diffHaze(want){ return new Promise(res => { pendingDiff = res; diffPrev = null; diffWant = !!want; }); },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
   setPose(p){
