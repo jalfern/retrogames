@@ -31,7 +31,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe &nbsp;·&nbsp; the loop ends by falling in</div>
+<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe &nbsp;·&nbsp; the loop ends by falling in &nbsp;·&nbsp; <span id="spinhint">K = spin off</span></div>
 <div id="audiohint">click for gravitational drone</div>
 <div id="fatal"></div>
 <script>
@@ -49,6 +49,9 @@ const B_CRIT = 2.598;               // 3*sqrt(3)*M — photon capture cone
 const R_IN = 3.0;                  // ISCO = 3 rs
 const R_OUT = 13.0;
 const ESC_R = 26.0;
+const SPIN_MAX = 0.45;             // Kerr a at a* = 0.9 (M = 0.5); #1049 spin toggle
+const SPIN_Q = qs.get('spin');
+let spinA = SPIN_Q === null || isNaN(parseFloat(SPIN_Q)) ? 0 : Math.sign(parseFloat(SPIN_Q)) * SPIN_MAX;
 
 const canvas = document.getElementById('c');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -85,6 +88,7 @@ uniform float uBeam;         // infall Doppler beaming D^3 of the escaping sky (
 uniform float uTint;         // 0..1 blueshift of the compressed sky disk (#1048)
 uniform float uDisc;         // disk visibility: fades as the diver falls past it (#1048)
 uniform float uFade;         // loop fade: 1 = flyby visible, 0 = dark interior (#1048)
+uniform float uSpin;         // Kerr spin parameter a (rs=1 units, M=0.5); 0 = Schwarzschild (#1049)
 out vec4 fragColor;
 
 #define RS ${RS.toFixed(1)}
@@ -162,11 +166,29 @@ vec3 starfield(vec3 rd, float focus, vec2 sdir){
 }
 
 /* ---------- accretion disk sample at equatorial crossing q ---------- */
-vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
-  float r = length(q.xz);
+vec3 diskEmission(vec3 q, vec3 towardCam, float rBL, out float opacity){
+  float r = rBL > 0.0 ? rBL : length(q.xz);
   float ang = atan(q.z, q.x);
-  float om = sqrt(0.5 / (r * r * r));                    // Keplerian Omega (M=0.5)
-  float a2 = ang - uTime * om * 2.6;                     // sheared pattern
+  float sa = uSpin != 0.0 ? sign(uSpin) : 1.0;
+  float aa = abs(uSpin);
+  float om; float beta; float g;
+  if (aa > 0.0){
+    /* Kerr: frame-dragged Keplerian prograde with the spin,
+       Omega = sqrt(M)/(r^1.5 + a*sqrt(M)); orbital speed measured relative to
+       the ZAMO: v = (Omega - omega)*sqrt(g_phiphi)/lapse at the equator,
+       omega = 2Mar/(r^2+a^2)^2 (Lense-Thirring), lapse = r*sqrt(Del/A). */
+    float Del = r * r - RS * r + aa * aa;
+    float Ak = pow(r * r + aa * aa, 2.0);
+    om = sqrt(0.5) / (pow(r, 1.5) + aa * sqrt(0.5));
+    float omL = 2.0 * 0.5 * aa * r / Ak;
+    beta = min(0.92, abs(om - omL) * Ak / (r * r * sqrt(max(Del, 1e-3))));
+    g = r * sqrt(max(Del / Ak, 1e-4));
+  } else {
+    om = sqrt(0.5 / (r * r * r));                        // Keplerian Omega (M=0.5)
+    beta = min(0.72, sqrt(0.5 / max(r - RS, 0.8)));      // local orbital speed
+    g = sqrt(max(1.0 - RS / r, 0.02));                   // gravitational redshift
+  }
+  float a2 = ang - uTime * om * 2.6 * sa;                // sheared pattern
   float lr = log(r);
   float n = fbm2(vec2(a2 * 2.6 + lr * 3.4, lr * 5.5 - uTime * 0.10));
   float streaks = 0.5 + 0.5 * sin(a2 * 7.0 + sin(a2 * 3.0 + lr * 4.0) * 1.6 - lr * 9.0 + n * 2.6);
@@ -175,13 +197,10 @@ vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
   opacity = clamp(dens * 0.8, 0.0, 0.9);
 
   float temp = pow(R_IN / r, 0.72);                      // thin-disk thermal gradient
-  // relativistic Doppler: beta = sqrt(M/(r-2M)) local orbital speed
-  float beta = min(0.72, sqrt(0.5 / max(r - RS, 0.8)));
   float gam = 1.0 / sqrt(max(1.0 - beta * beta, 1e-4));
-  vec3 vd = normalize(cross(vec3(0, 1, 0), q));         // orbital velocity direction
+  vec3 vd = sa * normalize(cross(vec3(0, 1, 0), q));     // orbital velocity direction
   float cs = dot(vd, normalize(towardCam));
-  float dlt = 1.0 / (gam * (1.0 - beta * cs));          // Doppler factor
-  float g = sqrt(max(1.0 - RS / r, 0.02));              // gravitational redshift
+  float dlt = 1.0 / (gam * (1.0 - beta * cs));           // Doppler factor
   float bright = pow(dlt, 3.0) * g * g;                  // relativistic beaming
   bright = bright / (1.0 + max(bright - 3.0, 0.0) * 0.22);  // soft knee: turbulence survives the beamed core
   // observed colour temperature rides delta*g: approaching side whitens/blues,
@@ -190,12 +209,53 @@ vec3 diskEmission(vec3 q, vec3 towardCam, out float opacity){
   return blackbody(tobs) * dens * bright * (1.25 + uProx * 0.45);
 }
 
+/* ---------- Kerr null geodesics, separated (Bardeen) form (#1049) ----------
+   Axis = world +y; BL coords (r, th, ph). Constants of motion (E=1 units):
+   xi = Lz/E, Q Carter. March:
+     Sigma r' = sr*sqrt(R),  R = P^2 - Del*(r^2 + (Lz-a)^2 + Q),  P = r^2+a^2 - a*xi
+     Sigma th' = st*sqrt(Th), Th = Q + a^2*cos^2 - xi^2*cot^2
+     Sigma ph' = -a + xi/sin^2 + a*P/Del
+   Capture at r < r+ = M + sqrt(M^2 - a^2). Launch from a static local tetrad
+   at the drone — same convention as the Schwarzschild path (the orbiting drone
+   is treated as instantaneously static), so frame dragging shows up in the sky
+   and in the D-shaped shadow exactly as Bardeen's (alpha,beta) predicts. */
+float Rrad(float r, float a, float xi, float Q){
+  float P = r * r + a * a - a * xi;
+  float Del = r * r - RS * r + a * a;
+  return P * P - Del * (r * r + (xi - a) * (xi - a) + Q);
+}
+float Thet(float th, float a, float xi, float Q){
+  float c = cos(th), s2 = max(1.0 - c * c, 1e-8);
+  return Q + a * a * c * c - xi * xi * c * c / s2;
+}
+vec3 blToWorld(float r, float th, float ph, float a){
+  float w = sqrt(r * r + a * a), s = sin(th);
+  return vec3(w * s * sin(ph), r * cos(th), w * s * cos(ph));
+}
+
+vec3 kerrD(float r, float th, float a, float xi, float Q, float sr, float sth){
+  float Sig = r * r + a * a * cos(th) * cos(th);
+  float Del = max(r * r - RS * r + a * a, 1e-3);
+  float P = r * r + a * a - a * xi;
+  float c = cos(th), s2 = max(1.0 - c * c, 1e-8);
+  return vec3(sr * sqrt(max(Rrad(r, a, xi, Q), 0.0)) / Sig,
+              sth * sqrt(max(Thet(th, a, xi, Q), 0.0)) / Sig,
+              (-a + xi / s2 + a * P / Del) / Sig);
+}
+
 void main(){
   vec2 ndc = vUv * 2.0 - 1.0;
   ndc.x *= uRes.x / uRes.y;
   vec3 rd = normalize(uCamBasis * vec3(ndc.x, ndc.y, 1.9));
   vec3 ro = uCamPos;
 
+  vec3 col = vec3(0.0);
+  float T = 1.0;
+  bool captured = false;
+  vec3 v = rd;
+  float b = 0.0;
+
+  if (uSpin == 0.0){
   float r0 = length(ro);
   vec3 e1 = ro / r0;
   float a = dot(rd, e1);
@@ -204,23 +264,22 @@ void main(){
   // local static tetrad at r: sin(psi) = b*sqrt(1-rs/r)/r, so a locally-emitted
   // ray has b = r*sin(psi)/sqrt(1-rs/r); Euclidean screen angles = local angles.
   float f00 = max(1.0 - RS / r0, 1e-6);
-  float b = et > 1e-4 ? r0 * et / sqrt(f00) : 0.0;
+  float bb0 = et > 1e-4 ? r0 * et / sqrt(f00) : 0.0;
   vec3 e2 = et > 1e-4 ? e2v / et : vec3(0.0, 1.0, 0.0);
 
   // exact null geodesic in the orbital plane: u'' + u = 1.5*RS*u^2, u = 1/r.
   // Leapfrog in phi; escape direction rebuilt from conserved h = b.
   float u = 1.0 / r0;
-  float w = b > 1e-4 ? -sign(a) * sqrt(max(1.0 / (b * b) - u * u + u * u * u, 1e-9)) : (a >= 0.0 ? -1000.0 : 1.0);
+  float w = bb0 > 1e-4 ? -sign(a) * sqrt(max(1.0 / (bb0 * bb0) - u * u + u * u * u, 1e-9)) : (a >= 0.0 ? -1000.0 : 1.0);
   float phi = 0.0;
   vec3 pPrev = ro;
-  vec3 col = vec3(0.0);
-  float T = 1.0;
-  bool captured = !(b > 1e-4);
+  b = bb0;
+  captured = !(bb0 > 1e-4);
   for (int i = 0; i < 240; i++){
     if (i >= uSteps || captured) break;
     float r = 1.0 / u;
     float dlam = clamp(0.06 * r, 0.015, 0.9);           // affine step ~ 6% of range
-    float dphi = min((r < 2.0 ? 0.055 : 0.2), b * u * u * dlam);   // finer near-critical steps: kills edge scalloping
+    float dphi = min((r < 2.0 ? 0.055 : 0.2), bb0 * u * u * dlam);   // finer near-critical steps: kills edge scalloping
     // RK4 on (u, w): Euler pumps orbital energy and over-bends near the hole
     float f1 = -u + 1.5 * RS * u * u;
     float uh1 = u + 0.5 * dphi * w,        wh1 = w + 0.5 * dphi * f1;
@@ -241,11 +300,11 @@ void main(){
       vec3 q = mix(pPrev, p, f);
       float rr = length(q.xz);
       if (rr > R_IN && rr < R_OUT){
-        float vr = clamp(-w * b, -1.0, 1.0);
+        float vr = clamp(-w * bb0, -1.0, 1.0);
         vec3 phihat = -sin(phi) * e1 + cos(phi) * e2;
-        vec3 vstep = normalize(vr * rhat + b * u * phihat);
+        vec3 vstep = normalize(vr * rhat + bb0 * u * phihat);
         float op;
-        col += uDisc * T * diskEmission(q, vstep, op);
+        col += uDisc * T * diskEmission(q, vstep, 0.0, op);
         T *= 1.0 - op;
       }
     }
@@ -253,7 +312,74 @@ void main(){
     if (rn > ESC_R && w < 0.0) break;
   }
 
-  vec3 v = normalize(-w * b * (cos(phi) * e1 + sin(phi) * e2) + b * u * (-sin(phi) * e1 + cos(phi) * e2));
+  v = normalize(-w * bb0 * (cos(phi) * e1 + sin(phi) * e2) + bb0 * u * (-sin(phi) * e1 + cos(phi) * e2));
+  b = bb0;
+  } else {
+    /* ---- Kerr branch: separated geodesic march in (r, th, ph) ---- */
+    float ka = uSpin;
+    float rPlus = 0.5 + sqrt(max(0.25 - ka * ka, 0.0));
+    float cyl0 = length(ro.xz);
+    float s1r = cyl0 * cyl0 + ro.y * ro.y - ka * ka;
+    float r0k = sqrt(max(0.5 * (s1r + sqrt(max(s1r * s1r + 4.0 * ka * ka * ro.y * ro.y, 0.0))), 1e-3));
+    float th0 = acos(clamp(ro.y / r0k, -1.0, 1.0));
+    float ph0 = atan(ro.x, ro.z);
+    float s0 = sin(th0), c0 = cos(th0);
+    float wk = sqrt(r0k * r0k + ka * ka);
+    // static orthonormal tetrad directions at the drone (world-space embedding)
+    vec3 er = normalize(vec3(r0k * s0 / wk * sin(ph0), c0, r0k * s0 / wk * cos(ph0)));
+    vec3 et = normalize(vec3(wk * c0 * sin(ph0), -r0k * s0, wk * c0 * cos(ph0)));
+    vec3 ep = vec3(cos(ph0), 0.0, -sin(ph0));
+    float n_r = dot(rd, er), n_t = dot(rd, et), n_p = dot(rd, ep);
+    // constants of motion from the static tetrad (E_loc = 1 units)
+    float Sig0 = r0k * r0k + ka * ka * c0 * c0;
+    float Del0 = r0k * r0k - RS * r0k + ka * ka;
+    float E0 = sqrt(max((Del0 - ka * ka * s0 * s0) / Sig0, 1e-6));
+    float Lz = sqrt(max((pow(r0k * r0k + ka * ka, 2.0) - Del0 * ka * ka * s0 * s0) * s0 * s0 / Sig0, 1e-8)) * n_p;
+    float xi = Lz / E0;
+    float Q = max(Sig0 * n_t * n_t - ka * ka * E0 * E0 * c0 * c0 + Lz * Lz * c0 * c0 / max(s0 * s0, 1e-8), 0.0);
+
+    float r = r0k, th = th0, ph = 0.0;
+    float sr = n_r >= 0.0 ? 1.0 : -1.0;
+    float st = n_t >= 0.0 ? 1.0 : -1.0;
+    vec3 wPrev = ro;
+    b = sqrt(xi * xi + Q);
+    for (int i = 0; i < 240; i++){
+      if (i >= uSteps || captured) break;
+      float Rr = Rrad(r, ka, xi, Q);
+      float Tt = Thet(th, ka, xi, Q);
+      float dlam = min(0.9, 0.02 * r * (r * r + ka * ka * cos(th) * cos(th)) / sqrt(max(Rr, 1e-6)));
+      vec3 k1 = kerrD(r, th, ka, xi, Q, sr, st);
+      vec3 k2 = kerrD(r + 0.5 * dlam * k1.x, th + 0.5 * dlam * k1.y, ka, xi, Q, sr, st);
+      vec3 k3 = kerrD(r + 0.5 * dlam * k2.x, th + 0.5 * dlam * k2.y, ka, xi, Q, sr, st);
+      vec3 k4 = kerrD(r + dlam * k3.x, th + dlam * k3.y, ka, xi, Q, sr, st);
+      float rN = r + dlam * (k1.x + 2.0 * k2.x + 2.0 * k3.x + k4.x) / 6.0;
+      float thN = th + dlam * (k1.y + 2.0 * k2.y + 2.0 * k3.y + k4.y) / 6.0;
+      float phN = ph + dlam * (k1.z + 2.0 * k2.z + 2.0 * k3.z + k4.z) / 6.0;
+      if (rN < rPlus){ captured = true; break; }
+      vec3 wN = blToWorld(rN, thN, ph0 + phN, ka);
+      if (wPrev.y * wN.y < 0.0 && T > 0.015){   // crossed the disk plane
+        float f = wPrev.y / (wPrev.y - wN.y);
+        vec3 q = mix(wPrev, wN, f);
+        q.y = 0.0;
+        float rr = length(q.xz);
+        float rDisk = sqrt(max(rr * rr - ka * ka, 0.04));
+        if (rDisk > R_IN && rDisk < R_OUT){
+          float op;
+          col += uDisc * T * diskEmission(q, normalize(wPrev - wN), rDisk, op);
+          T *= 1.0 - op;
+        }
+      }
+      if ((rN - r) * sr < 0.0) sr = -sr;        // radial turning point
+      if ((thN - th) * st < 0.0) st = -st;      // theta turning point
+      r = rN; th = thN; ph = phN;
+      wPrev = wN;
+      if (r > ESC_R && sr > 0.0) break;
+    }
+    vec3 wEnd = blToWorld(r, th, ph0 + ph, ka);
+    v = normalize(wEnd - wPrev);
+    captured = captured || r < rPlus;
+  }
+
   float focus = captured ? 1.0 : clamp(1.0 + 2.2 * exp(-max(b - B_CRIT, 0.0) * 2.2), 1.0, 3.4);
   vec2 sdir = length(ndc) > 1e-4 ? normalize(ndc) : vec2(1.0, 0.0);
   vec3 bg = captured ? vec3(0.0) : starfield(v, focus, sdir);
@@ -268,7 +394,7 @@ void main(){
   // the shadow limb / photon ring exists for external observers; deep inside
   // the photon sphere (the plunge's final approach) the whole frame is the
   // shadow, so no limb glow (#1048).
-  if (!captured && r0 > 1.6){
+  if (!captured && length(ro) > 1.6 && uSpin == 0.0){
     float ring = exp(-max(b - B_CRIT, 0.0) * 14.0);
     col += mix(vec3(1.0, 0.85, 0.62), vec3(0.68, 0.82, 1.0), uTint) * ring * 0.5 * (1.0 + uBeam * 0.12);
   }
@@ -456,6 +582,19 @@ addEventListener('pointerup', e => {
   drag = null;
   downPt = null;
 });
+
+/* spin toggle (#1049): K cycles Schwarzschild -> Kerr prograde -> retrograde.
+   ?spin=1 / ?spin=-1 start spinning (harness + links). */
+const spinHint = document.getElementById('spinhint');
+function applySpin(a){
+  spinA = Math.max(-0.49, Math.min(0.49, +a || 0));
+  spinHint.textContent = spinA === 0 ? 'K = spin off'
+    : `K = Kerr a* = ${(spinA / 0.5).toFixed(1)} ${spinA > 0 ? 'prograde' : 'retrograde'}`;
+}
+addEventListener('keydown', e => {
+  if (e.key === 'k' || e.key === 'K') applySpin(spinA === 0 ? SPIN_MAX : spinA > 0 ? -SPIN_MAX : 0);
+});
+if (spinA !== 0) applySpin(spinA);
 
 /* The flyby loop ENDS by falling in (#1048). After the close pass the drone tips to
  * a radial infall: r(s) = rs*(1 + (R1/rs - 1)*(1-s)^3.5) — a free-fall-like profile
@@ -863,6 +1002,138 @@ function probeBend(bWant){
   return { b: res.b, bend: res.bend, captured: res.captured, rMin: res.rMin };
 }
 
+/* ---- Kerr JS mirror of the shader's separated geodesic march (#1049) ---- */
+
+function kerrRr(r, a, xi, Q){
+  const P = r * r + a * a - a * xi, D = r * r - RS * r + a * a;
+  return P * P - D * (r * r + (xi - a) * (xi - a) + Q);
+}
+function kerrTh(th, a, xi, Q){
+  const c = Math.cos(th), s2 = Math.max(1 - c * c, 1e-8);
+  return Q + a * a * c * c - xi * xi * c * c / s2;
+}
+function kerrDeriv(r, th, a, xi, Q, sr, st){
+  const S = r * r + a * a * Math.cos(th) * Math.cos(th);
+  const D = Math.max(r * r - RS * r + a * a, 1e-3);
+  const P = r * r + a * a - a * xi;
+  const c = Math.cos(th), s2 = Math.max(1 - c * c, 1e-8);
+  return [sr * Math.sqrt(Math.max(kerrRr(r, a, xi, Q), 0)) / S,
+          st * Math.sqrt(Math.max(kerrTh(th, a, xi, Q), 0)) / S,
+          (-a + xi / s2 + a * P / D) / S];
+}
+function kerrWorld(r, th, ph, a){
+  const w = Math.sqrt(r * r + a * a), s = Math.sin(th);
+  return [w * s * Math.sin(ph), r * Math.cos(th), w * s * Math.cos(ph)];
+}
+
+function traceKerrJS(pIn, dIn, maxSteps, a){
+  const nl = Math.hypot(dIn[0], dIn[1], dIn[2]);
+  const d = [dIn[0] / nl, dIn[1] / nl, dIn[2] / nl];
+  const cyl0 = Math.hypot(pIn[0], pIn[2]);
+  const s1r = cyl0 * cyl0 + pIn[1] * pIn[1] - a * a;
+  const r0 = Math.sqrt(Math.max(0.5 * (s1r + Math.sqrt(Math.max(s1r * s1r + 4 * a * a * pIn[1] * pIn[1], 0))), 1e-3));
+  const th0 = Math.acos(Math.max(-1, Math.min(1, pIn[1] / r0)));
+  const ph0 = Math.atan2(pIn[0], pIn[2]);
+  const s0 = Math.sin(th0), c0 = Math.cos(th0);
+  const wk = Math.sqrt(r0 * r0 + a * a);
+  const er = [r0 * s0 / wk * Math.sin(ph0), c0, r0 * s0 / wk * Math.cos(ph0)];
+  const et = [wk * c0 * Math.sin(ph0), -r0 * s0, wk * c0 * Math.cos(ph0)];
+  const ep = [Math.cos(ph0), 0, -Math.sin(ph0)];
+  const dot = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+  const nr = dot(d, er), nt = dot(d, et), np = dot(d, ep);
+  const Sig0 = r0 * r0 + a * a * c0 * c0, Del0 = r0 * r0 - RS * r0 + a * a;
+  const E0 = Math.sqrt(Math.max((Del0 - a * a * s0 * s0) / Sig0, 1e-6));
+  const A0 = Math.pow(r0 * r0 + a * a, 2) - Del0 * a * a * s0 * s0;
+  const Lz = Math.sqrt(Math.max(A0 * s0 * s0 / Sig0, 1e-8)) * np;
+  const xi = Lz / E0;
+  const Q = Math.max(Sig0 * nt * nt - a * a * E0 * E0 * c0 * c0 + Lz * Lz * c0 * c0 / Math.max(s0 * s0, 1e-8), 0);
+  const rPlus = 0.5 + Math.sqrt(Math.max(0.25 - a * a, 0));
+  let r = r0, th = th0, ph = 0;
+  let sr = nr >= 0 ? 1 : -1, st = nt >= 0 ? 1 : -1;
+  let wPrev = pIn.slice(), captured = false, escaped = false, rMin = r0;
+  for (let i = 0; i < maxSteps; i++){
+    const Rr = kerrRr(r, a, xi, Q);
+    const dlam = Math.min(0.9, 0.02 * r * (r * r + a * a * Math.cos(th) * Math.cos(th)) / Math.sqrt(Math.max(Rr, 1e-6)));
+    const k1 = kerrDeriv(r, th, a, xi, Q, sr, st);
+    const k2 = kerrDeriv(r + 0.5 * dlam * k1[0], th + 0.5 * dlam * k1[1], a, xi, Q, sr, st);
+    const k3 = kerrDeriv(r + 0.5 * dlam * k2[0], th + 0.5 * dlam * k2[1], a, xi, Q, sr, st);
+    const k4 = kerrDeriv(r + dlam * k3[0], th + dlam * k3[1], a, xi, Q, sr, st);
+    const dR = dlam * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]) / 6;
+    const dT = dlam * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]) / 6;
+    const dP = dlam * (k1[2] + 2 * k2[2] + 2 * k3[2] + k4[2]) / 6;
+    const rN = r + dR, thN = th + dT, phN = ph + dP;
+    if (rN < rPlus){ captured = true; break; }
+    if (dR * sr < 0) sr = -sr;
+    if (dT * st < 0) st = -st;
+    r = rN; th = thN; ph = phN;
+    rMin = Math.min(rMin, r);
+    const wN = kerrWorld(r, th, ph0 + ph, a);
+    wPrev = wN;
+    if (r > ESC_R && sr > 0){ escaped = true; break; }
+  }
+  const wEnd = kerrWorld(r, th, ph0 + ph, a);
+  let vx = wEnd[0] - wPrev[0], vy = wEnd[1] - wPrev[1], vz = wEnd[2] - wPrev[2];
+  const vl = Math.hypot(vx, vy, vz) || 1;
+  vx /= vl; vy /= vl; vz /= vl;
+  const bp = Math.max(-1, Math.min(1, vx * d[0] + vy * d[1] + vz * d[2]));
+  return { captured, escaped, rMin: +rMin.toFixed(3), xi: +xi.toFixed(3),
+    b: +Math.sqrt(xi * xi + Q).toFixed(3), bend: +Math.acos(bp).toFixed(4) };
+}
+
+/* prograde vs counter-rotating bending of two symmetric rays at an equatorial
+   camera (#1049): frame dragging makes the co-rotating ray bend more strongly. */
+function kerrSweep(a){
+  const C = [0, 0, 9], k0 = 0.38;
+  const L = Math.hypot(k0, 0, -1);
+  const out = {};
+  for (const side of [-1, 1]){
+    const res = traceKerrJS(C, [side * k0 / L, 0, -1 / L], 240, a);
+    const pro = side * Math.sign(a) * res.xi > 0;
+    out[pro ? 'pro' : 'retro'] = res.bend;
+    if (res.captured) out.pro = out.retro = null;
+  }
+  return { pro: out.pro, retro: out.retro };
+}
+
+/* silhouette half-widths in launch tangent k, prograde vs retrograde sides —
+   the D-shaped shadow: the capture region is narrower prograde (#1049). */
+function kerrSpan(a){
+  const C = [0, 0, 9];
+  const cap = (side, k) => {
+    const L = Math.hypot(k, 0, -1);
+    return traceKerrJS(C, [side * k / L, 0, -1 / L], 240, a).captured;
+  };
+  const edge = side => {
+    let lo = 0.02, hi = 1.4;
+    if (cap(side, hi) || !cap(side, lo)) return -1;
+    for (let i = 0; i < 26; i++){
+      const mid = (lo + hi) / 2;
+      if (cap(side, mid)) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
+  const lft = edge(-1), rgt = edge(1);
+  const pro = a > 0 ? rgt : lft, retro = a > 0 ? lft : rgt;
+  return { left: +lft.toFixed(3), right: +rgt.toFixed(3), pro: +pro.toFixed(3), retro: +retro.toFixed(3) };
+}
+
+/* exact Kerr radii + angular velocities for the gates (#1049) */
+function kerrNum(a){
+  const M = 0.5, as = a / M;
+  const rp = M + Math.sqrt(Math.max(M * M - a * a, 0));
+  const phPro = 2 * M * (1 + Math.cos(2 / 3 * Math.acos(Math.min(1, Math.max(-1, -as)))));
+  const phRet = 2 * M * (1 + Math.cos(2 / 3 * Math.acos(Math.min(1, Math.max(-1, as)))));
+  const Z1 = 1 + Math.cbrt(1 - as * as) * (Math.cbrt(Math.pow(1 + as, 2)) + Math.cbrt(Math.pow(1 - as, 2)));
+  const Z2 = Math.sqrt(Math.max(3 * as * as + Z1 * Z1, 0));
+  const iPro = M * (3 + Z2 - Math.sqrt(Math.max((3 - Z1) * (3 + Z1 + 2 * Z2), 0)));
+  const iRet = M * (3 + Z2 + Math.sqrt(Math.max((3 - Z1) * (3 + Z1 + 2 * Z2), 0)));
+  return { aStar: +as.toFixed(3), rPlus: +rp.toFixed(4),
+    phPro: +phPro.toFixed(4), phRetro: +phRet.toFixed(4),
+    iscoPro: +iPro.toFixed(4), iscoRetro: +iRet.toFixed(4),
+    omegaPro6: +(Math.sqrt(M) / (Math.pow(6, 1.5) + a * Math.sqrt(M))).toFixed(5),
+    omegaDrag6: +(2 * M * a * 6 / Math.pow(36 + a * a, 2)).toFixed(5) };
+}
+
 function probeDoppler(){
   const cb = flight((performance.now() - t0) / 1000);
   const out = [];
@@ -1031,6 +1302,7 @@ function frame(){
   gl.uniform1f(us('uTint'), cb.tint);
   gl.uniform1f(us('uDisc'), cb.disc);
   gl.uniform1f(us('uFade'), cb.fade);
+  gl.uniform1f(us('uSpin'), spinA);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   // probes (#1047): drop the clock forward in coordinate time, solve where each
@@ -1188,6 +1460,12 @@ window.__holeTest = {
     cam.touched = performance.now();
   },
   bendAt(b){ return probeBend(b); },
+  spin(){ return { a: +spinA.toFixed(3), aStar: +(spinA / 0.5).toFixed(3), max: SPIN_MAX, hint: spinHint.textContent }; },
+  setSpin(a){ applySpin(a); return { a: +spinA.toFixed(3) }; },
+  traceKerr(p, d, n, a){ return traceKerrJS(p, d, n || 240, a === undefined ? spinA : +a); },
+  kerrBends(a){ return kerrSweep(a === undefined ? (spinA || SPIN_MAX) : +a); },
+  kerrSpan(a){ return kerrSpan(a === undefined ? (spinA || SPIN_MAX) : +a); },
+  kerrNum(a){ return kerrNum(a === undefined ? (spinA || SPIN_MAX) : +a); },
   doppler(){ return probeDoppler(); },
   halo(){ return probeHalo(); },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
@@ -1215,7 +1493,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956, 1047, 1048, 1074], span: '~4 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047, 1048, 1074, 1049], span: '~4 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
