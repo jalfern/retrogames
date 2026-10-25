@@ -267,13 +267,20 @@ export function makeTextures() {
         g.fillStyle = '#ffd27a'; g.fillRect(7, 7, 1, 1)
         return c
     })()
+    // #1063 the wind-rune reads as WIND at a glance: three cyan gust strokes on
+    // a deep-indigo plate, curled tips staggered like motion — never the red
+    // button-block of an arrow switch.
     T.runeGust = (() => {
         const [c, g] = mk(12, 12)
         g.clearRect(0, 0, 12, 12)
-        g.fillStyle = '#33475c'; g.fillRect(1, 1, 10, 10)
-        g.strokeStyle = '#8ce0ff'; g.lineWidth = 1
-        g.beginPath(); g.arc(6, 6, 3.4, 0.4, 5.2); g.stroke()
-        g.fillStyle = '#bff2ff'; g.fillRect(5, 5, 2, 2)
+        g.fillStyle = '#1d2740'; g.fillRect(1, 1, 10, 10)
+        g.fillStyle = '#121a30'; g.fillRect(2, 2, 8, 8)
+        g.fillStyle = '#8ce0ff'
+        g.fillRect(3, 3, 5, 1); g.fillRect(8, 3, 1, 2)          // top gust, curl down
+        g.fillRect(3, 5, 6, 1); g.fillRect(9, 4, 1, 3)          // mid gust, longest
+        g.fillRect(3, 7, 4, 1); g.fillRect(7, 7, 1, 2)          // low gust, curl down
+        g.fillStyle = '#d6f6ff'
+        g.fillRect(3, 5, 3, 1)                                  // bright core of the mid gust
         return c
     })()
     T.brazier = [0, 1].map(f => {

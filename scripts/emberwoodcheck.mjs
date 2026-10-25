@@ -1002,6 +1002,24 @@ const cok = (c, m) => { if (c) { chromePass++; pass++; console.log('ok   ', m) }
         ok(loadState(s2, d) && s2.flags.boss3 && s2.items.gale, 'the save carries the act-two flags and the charm (continue past the Wyrm keeps Ashfell)')
     }
 
+    // #1063 charge state + vent data: the wind-up arms only on a real hold,
+    // exactly one gust per release, and the King arena carries the vents the
+    // amber HUD pulse counts
+    {
+        const s = createSim(3); s.items.gale = true
+        spawnRoom(s, 'd3-e1', [7, 8])
+        stepSim(s, P({ bPressed: true })); stepSim(s, P({ bHeld: true })); stepSim(s, P({ bReleased: true }))
+        ok(!s.galing && s.projectiles.length === 0, 'a short B tap never arms the wind-up (no charge, no gust)')
+        const s3 = createSim(3); s3.items.gale = true
+        spawnRoom(s3, 'd3-e1', [7, 8])
+        stepSim(s3, P({ bPressed: true }))
+        for (let i = 0; i < 20; i++) stepSim(s3, P({ bHeld: true }))
+        ok(s3.galing === true, 'a long hold stays charged deep in the wind-up (tick 20)')
+        stepSim(s3, P({ bReleased: true }))
+        ok(s3.projectiles.filter(p => p.kind === 'gust').length === 1, 'exactly one gust leaves on release of a long hold')
+        ok((SCREENS['d3-f0'].vents || []).length === 2, 'the King arena carries two spore vents for the amber HUD pulse')
+    }
+
     // determinism: the vale + act two stay seed-pure
     {
         const run = (seed) => { const s = createSim(seed); for (let i = 0; i < 800; i++) stepSim(s, P({ lx: i % 60 < 30 ? 1 : 0, ly: i % 40 < 20 ? -1 : 1, aPressed: i % 30 === 0, bPressed: i % 97 === 0 })); return hashState(s) }
@@ -1188,6 +1206,32 @@ if (!SKIP_BROWSER) {
         cok(pl.lite && pl.bufferH === 640 && Math.abs(pl.bufferW / pl.bufferH - pl.cssW / pl.cssH) < 0.02 && pl.viewW >= 280,
             `?lite=1 portrait follows the box aspect at 640 tall (buffer=${pl.bufferW}x${pl.bufferH}, viewW=${pl.viewW.toFixed(1)})`)
         await portLite.close()
+        // #1063 the 390px portrait pass: the full-kit HUD (incl. the GALE line)
+        // must keep its two columns apart inside the phone edge, and the CLIMB
+        // ASHFELL win button must stay a real touch target.
+        const pkit = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.give({ bigkey: true, shield: true, blade: true, gale: true, keys: 5, bombs: 3, arrows: 12, bow: true, potions: 2 })
+            await new Promise(r => setTimeout(r, 400))
+            const L = document.querySelector('[data-hud="left"]').getBoundingClientRect()
+            const R = document.querySelector('[data-hud="right"]').getBoundingClientRect()
+            const E = document.querySelector('[data-hud="ember"]').getBoundingClientRect()
+            return { vw: window.innerWidth, lR: L.right, rL: R.left, rR: R.right, eR: E.right, galeLine: !!document.querySelector('[data-hud="right"] .text-cyan-200') }
+        })
+        cok(pkit.lR + 4 < pkit.rL, `the full-kit HUD keeps the two columns apart at 390px (left ends ${pkit.lR.toFixed(0)}, right starts ${pkit.rL.toFixed(0)})`)
+        cok(pkit.eR <= pkit.vw - 2 && pkit.rR <= pkit.vw, `the EMBER line and item column stay inside the phone edge at 390px (E right=${pkit.eR.toFixed(0)}, R right=${pkit.rR.toFixed(0)} of ${pkit.vw})`)
+        cok(pkit.galeLine, 'the GALE CHARM HUD line shows in the portrait right column')
+        const pwin = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.winNow(false)
+            await new Promise(r => setTimeout(r, 500))
+            const b = document.querySelector('[data-vc="ashfell"]')
+            const r = b.getBoundingClientRect()
+            return { vw: window.innerWidth, w: r.width, h: r.height, left: r.left, right: r.right }
+        })
+        cok(pwin.w >= 44 && pwin.h >= 28 && pwin.left >= 0 && pwin.right <= pwin.vw,
+            `the CLIMB ASHFELL button fits 390px portrait and stays tappable (${pwin.w.toFixed(0)}x${pwin.h.toFixed(0)}, edge ${pwin.right.toFixed(0)} of ${pwin.vw})`)
         await page.setViewportSize({ width: 900, height: 760 })
         await page.waitForTimeout(400)
 
@@ -1271,6 +1315,53 @@ if (!SKIP_BROWSER) {
             return { stored, has, cleared: !T.hasSave() }
         })
         cok(sv.stored && sv.has && sv.cleared, `the shell persists the save to localStorage and can clear it (${sv.stored ? 'written' : 'missing'})`)
+
+        // #1063 act-two polish, live: the gust's wind-up squeezes the stage
+        // (camera + vignette ease in and back), the wind-rune flutters with the
+        // wind while the arrow switch sits dead still, and unsealed vents pulse
+        // amber in the Hollow King's arena.
+        const charge = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.give({ gale: true, bombs: 3 })
+            const raf = () => new Promise(r => requestAnimationFrame(r))
+            T.step(1, { b: true })
+            for (let i = 0; i < 14; i++) { T.step(1, { b: true }); await raf() }
+            const mid = T.renderInfo().charge
+            T.step(1, {})
+            for (let i = 0; i < 40; i++) { T.step(1, {}); await raf() }
+            return { mid, post: T.renderInfo().charge }
+        })
+        cok(charge.mid > 0.02, `the stage squeezes in while the charm winds up (charge=${charge.mid.toFixed(3)} mid-hold)`)
+        cok(charge.post < charge.mid && charge.post < 0.01, `the squeeze eases back after release (${charge.mid.toFixed(3)} -> ${charge.post.toFixed(3)})`)
+        const rune = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.goto('d3-e1', 2, 8)
+            const raf = () => new Promise(r => requestAnimationFrame(r))
+            const g = []
+            for (let i = 0; i < 40; i++) {
+                for (const s of T.switchTells()) if (s.gust) g.push(Math.abs(s.rot))
+                await raf()
+            }
+            T.goto('d2-f1', 3, 8)
+            await raf(); await raf()
+            const a = T.switchTells()
+            return { gMax: Math.max(...g, 0), n: a.length, still: a.length === 1 && !a[0].gust && a[0].rot === 0 }
+        })
+        cok(rune.gMax > 0.02, `the wind-rune flutters with the vale's wind (peak |rot|=${rune.gMax.toFixed(3)} rad over ~40 frames)`)
+        cok(rune.still, `the arrow switch sits dead still (switches on d2-f1: ${rune.n})`)
+        const ventT = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            T.reset(11)
+            T.goto('d3-f0', 7, 8)
+            const raf = () => new Promise(r => requestAnimationFrame(r))
+            const gs = []
+            for (let i = 0; i < 30; i++) { for (const v of T.ventTints()) gs.push(v.g); await raf() }
+            return { pulse: Math.max(...gs) - Math.min(...gs), t0: T.ventTints()[0] }
+        })
+        cok(ventT.pulse > 0.05, `unsealed vents pulse in the arena (tint green swings ${ventT.pulse.toFixed(3)} over ~30 frames)`)
+        cok(ventT.t0.r > 1.0 && ventT.t0.g < 1.0, `the vent tint reads warm-amber, not white (r=${ventT.t0.r.toFixed(2)}, g=${ventT.t0.g.toFixed(2)})`)
 
         // #968 the colporter is the *secret* travelling merchant: hooded, face in
         // shadow, his own livery — never the keeper's red. The audit paints each
