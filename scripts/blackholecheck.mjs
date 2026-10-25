@@ -24,6 +24,10 @@
 //               reddens + dims (g, g^3 ↓), never crosses (r > rs, fades to
 //               black), holds its image while freezing, then retires; pixels
 //               prove it lights the shadow; phone quick-tap drops too.
+//   8. POLISH (#1074) — the drop sells itself: launch puff ring at spawn,
+//               decaying motion trail of solved images, the beacon's own
+//               Doppler hue (disk law on its line-of-sight velocity),
+//               rim-fade instead of an off-screen pop, rim-wrap on pinned images.
 //
 // Usage: node scripts/blackholecheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 45]
 // Proven-fail mutant: kill Doppler beaming (`pow(dlt, 3.0) * g * g` -> `1.0`)
@@ -34,7 +38,10 @@
 // ring-bounded + interior-black gates go red. Third mutant (#1047): skip the
 // beacon HDR pass (`if (probes.length)` -> `if (false)`) -> the newly-lit
 // pixels gate goes red while every physics gate stays green (the probe is
-// simulated, not painted).
+// simulated, not painted). Fourth mutant (#1074): empty the trail buffer each
+// frame (`if (pr.trail.length > TRAIL_MAX) pr.trail.shift()` ->
+// `pr.trail.length = 0`) -> the trail gate goes red while physics, pixels and
+// the puff gate stay green (the trail is a real record of solved images).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -129,14 +136,22 @@ async function main() {
     !/if \(captured\)\{[^}]*ring/.test(src))
   ok('probe beacon integrates the timelike geodesic with e^2 = f0^2/(f0 - v^2) (#1047)',
     /f0 \* f0 \/ Math\.max\(f0 - v2, 1e-4\)/.test(src) && /pr\.vr \+= ar \* k/.test(src))
-  ok('probe light reddens/dims by g^3 on blackbody(T0*g) (#1047)',
-    /g \* g \* g \* Math\.min\(1, pr\.t/.test(src) && /blackbodyJS\(PROBE_T0 \* probeGlow\(pr\)\.g\)/.test(src))
+  ok('probe light reddens/dims by g^3 on blackbody(T0*g*doppler) (#1047/#1074)',
+    /g \* g \* g \* Math\.min\(1, pr\.t/.test(src) && /blackbodyJS\(PROBE_T0 \* probeGlow\(pr\)\.g \* pr\.dlt\)/.test(src))
   ok('probe apparent position solved by null-geodesic miss search (#1047)',
     /const missOf = \(al\)/.test(src) && /phiG = 0\.618/.test(src))
   ok('tap (<300ms, <12px) drops a probe; drags do not (#1047)',
     /performance\.now\(\) - downPt\.t < 300/.test(src) && /Math\.hypot\(e\.clientX - downPt\.x, e\.clientY - downPt\.y\) < 12/.test(src))
   ok('beacons composite additively into HDR so they bloom (#1047)',
     /gl\.blendFunc\(gl\.ONE, gl\.ONE\)/.test(src))
+  ok('launch puff: expanding shock ring at spawn + synthesized radio blip (#1074)',
+    /puffs\.push\(\{ x: im0\.x/.test(src) && /uniform vec4 uQ\[4\]/.test(src) && /function probeBlip/.test(src))
+  ok('beacon leaves a decaying motion trail of solved images (#1074)',
+    /TRAIL_MAX = 6/.test(src) && /pr\.trail\.push\(\{ x: im\.x/.test(src) && /Math\.pow\(0\.6,/.test(src))
+  ok('beacon carries its own Doppler hue (disk law on its line-of-sight velocity) (#1074)',
+    /function probeDopplerHue/.test(src) && /pr\.dlt = probeDopplerHue\(pr, cb\)/.test(src))
+  ok('off-screen beacons fade along the rim instead of popping (#1074)',
+    /function edgeFade\(nx, ny\)/.test(src) && /const wf = w \* im\.fade/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -278,6 +293,15 @@ async function main() {
       const W2 = s0.w, H2 = s0.h, cx2 = Math.round(W2 / 2), cy2 = Math.round(H2 / 2)
       await page.mouse.click(cx2, cy2 - 2)
       ok('quick tap drops a beacon', await page.evaluate(() => window.__holeTest.probes().length) === 1)
+      ok('launch puff spawns at the drop point (#1074)',
+        await page.evaluate(() => window.__holeTest.puffs()) >= 1)
+      const ef = await page.evaluate(() => ({
+        in: window.__holeTest.edgeFade(0.4, 0.4),
+        edge: window.__holeTest.edgeFade(1.08, 0),
+        gone: window.__holeTest.edgeFade(1.4, 0),
+      }))
+      ok('off-screen fade law: full on-frame, partial on the rim, zero past it (#1074)',
+        ef.in === 1 && ef.edge > 0.2 && ef.edge < 0.9 && ef.gone === 0, JSON.stringify(ef))
       await page.waitForTimeout(500)
       const s1 = decodePng(await page.screenshot())
       let lit = 0
@@ -317,6 +341,13 @@ async function main() {
         await page.waitForTimeout(300)
       }
       ok('beacon retires once redshifted below visibility (#1047)', retired === 1)
+      ok('beacon accumulates a motion trail of solved images (#1074)',
+        trail.some(p => p.trail >= 3), trail.map(p => p.trail).join(','))
+      ok('beacon Doppler hue is physical and relaxes as the beacon freezes (#1074)',
+        trail.every(p => p.dlt > 0.54 && p.dlt < 1.82) &&
+        Math.max(...trail.map(p => p.dlt)) - Math.min(...trail.map(p => p.dlt)) >= 0.15 &&
+        trail[trail.length - 1].dlt > trail[0].dlt + 0.1,
+        `dlt ${trail.map(p => p.dlt).join(' ')}`)
 
       // photon ring vs shadow purity (#1046) at a deterministic pose: freeze
       // performance.now so the flyby sits still, then walk 48 radials. A
