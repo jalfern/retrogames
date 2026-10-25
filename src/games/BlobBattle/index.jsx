@@ -9,6 +9,7 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
+import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
@@ -16,12 +17,12 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
-import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
+import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep } from '../../utils/lockstep.js'
 import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx, winPresentation } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
 import { CANVAS, PALETTE, orbSprite, championOrb, text, textWidth, stage, wellFrame } from './art.js'
-import { SEATS, PAD_DELAY, HASH_EVERY, randomCode, toWire, assemblePads, hostSeed } from './net.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, toWire, assemblePads, hostSeed } from './net.js'
 
 const W = CANVAS.W, H = CANVAS.H
 const SIM_MS = FIXED_DT
@@ -82,11 +83,13 @@ const BlobBattleGame = () => {
         const say = (m, col) => { toastMsg = m; toastCol = col || PALETTE.gold; toast = 110 }
 
         // ------------------------------------------------------------ online ----
+        // #840 lockstep battle on the #1039 shared lobby: ?net=host /
+        // ?net=join&room=CODE / ?relay=ws(s)://host — the same join flow, code
+        // and waiting room every multiplayer game uses.
         const nq = new URLSearchParams(window.location.search)
-        const netRole = nq.get('net') === 'host' ? 'host' : nq.get('net') === 'join' ? 'guest' : null
-        const relayUrl = (nq.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
-        const hostCode = netRole === 'host' ? randomCode() : ''
-        const net = { active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off', slot: netRole === 'host' ? 0 : 1, code: netRole === 'guest' ? decodeCode(nq.get('room')) : hostCode, seats: [0, 1].slice(0, netRole ? 1 : 0) }
+        const netRole = lobbyRole(window.location.search)
+        const relayUrl = relayFromQuery(window.location.search)
+        const net = { active: !!netRole, role: netRole, phase: netRole ? 'idle' : 'off', slot: netRole === 'host' ? 0 : 1, code: '', seats: [0, 1].slice(0, netRole ? 1 : 0), joinHref: '' }
         let ws = null
         const makeTransport = (url) => {
             ws = new WebSocket(url)
@@ -113,7 +116,8 @@ const BlobBattleGame = () => {
         let countdown = 0 // 3-2-1 go gate (online only): sim frames still counting
         const pushNetUi = () => setNetUi(net.active ? {
             role: net.role, phase: net.phase, code: net.code, slot: net.slot,
-            seats: seatKinds(SEATS, net.room ? net.room.slots : [net.slot]),
+            seats: seatModel(SEATS, net.room ? net.room.slots : [net.slot]),
+            joinHref: net.joinHref,
             names: ['HOST', 'CHALLENGER'],
         } : null)
 
@@ -226,41 +230,39 @@ const BlobBattleGame = () => {
         }
 
         if (net.active) {
-            net.room = createRoom({
-                relay: relayUrl,
+            const lobby = createLobby({
+                slug: 'blob-battle',
                 cap: SEATS,
+                relay: relayUrl,
                 makeTransport,
-                maxRetry: 6,
-                onPhase: (p) => { net.phase = p; pushNetUi() },
+                shareRelay: !!nq.get('relay'),
+                onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref; pushNetUi() },
                 onRoster: ({ slots }) => { net.seats = slots.slice(); pushNetUi() },
                 onJoin: () => pushNetUi(),
                 onLeave: () => { rivalLeft(); pushNetUi() },
+                onStart: (m) => { startPlay('online', m.seed >>> 0) },
+                on: {
+                    pad: (m) => {
+                        ls.gotPad(m.k | 0, m.p)
+                        padMirror[m.s | 0] && padMirror[m.s | 0].set(m.k | 0, m.p)
+                    },
+                    hs: (m) => {
+                        const r = ls.gotHash(m.k | 0, m.h >>> 0)
+                        if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
+                    },
+                    gone: () => { rivalLeft() },
+                },
             })
-            net.room.on('pad', (m) => {
-                ls.gotPad(m.k | 0, m.p)
-                padMirror[m.s | 0] && padMirror[m.s | 0].set(m.k | 0, m.p)
-            })
-            net.room.on('hs', (m) => {
-                const r = ls.gotHash(m.k | 0, m.h >>> 0)
-                if (r && r.desync !== undefined) { desyncRef.current = true; setDesync(true); pausedRef.current = true }
-            })
-            net.room.on('gone', () => { rivalLeft() })
-            net.room.on('go', (m) => {
-                net.phase = 'racing'
-                pushNetUi()
-                startPlay('online', m.seed >>> 0)
-            })
-            net.room.connect(net.code, SEATS)
+            net.lobby = lobby
+            net.room = lobby.room
+            if (net.role === 'host') lobby.open()
+            else lobby.join(nq.get('room'))
             pushNetUi()
         }
 
         const onlineStart = () => {
-            if (!net.room || net.room.phase !== 'waiting') return
-            const seed = hostSeed()
-            net.room.send('go', { seed })
-            net.phase = 'racing'
-            pushNetUi()
-            startPlay('online', seed)
+            if (!net.lobby) return
+            net.lobby.start({ seed: hostSeed() })
         }
 
         // re-join (#863): a desync froze the match; the host re-rolls the seed
@@ -733,19 +735,20 @@ const BlobBattleGame = () => {
             )}
 
             {netUi && netUi.phase !== 'racing' && screen === 'attract' && (
-                <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-center font-mono text-pink-100 px-6">
-                    <p className="text-sm mb-2 text-pink-300/70">{netUi.role === 'host' ? 'OPEN A CHALLENGE' : 'JOIN A CHALLENGE'}</p>
-                    <p className="text-5xl font-black tracking-widest mb-4" style={{ textShadow: '3px 3px 0 #000' }}>{netUi.code || '····'}</p>
-                    <div className="mb-4 space-y-1 text-sm">
-                        {netUi.seats.map((k, i) => (
-                            <p key={i} className={k === 'cpu' ? 'text-slate-500' : 'text-pink-200'}>
-                                {netUi.names[i]}: {k === 'cpu' ? 'waiting...' : k === 'host' ? 'HOST (you)' : 'CHALLENGER (you)'}
-                            </p>
-                        ))}
-                    </div>
-                    <p className="animate-pulse font-bold">{netUi.role === 'host' ? 'PRESS SPACE TO DROP THE FIRST BLOB' : 'WAITING FOR THE HOST TO START'}</p>
-                    <p className="text-xs text-pink-300/50 mt-3">share the code · a friend opens /retrogames/blob-battle?net=join&room=CODE</p>
-                </div>
+                <Lobby
+                    state={netUi}
+                    title="CHALLENGE"
+                    names={netUi.names}
+                    startHint="PRESS SPACE TO DROP THE FIRST BLOB"
+                    accent={{
+                        text: 'text-pink-100',
+                        dim: 'text-pink-300/70',
+                        live: 'border-pink-300/50 text-pink-100',
+                        warn: '#ffd23f',
+                        codeGlow: { textShadow: '3px 3px 0 #000' },
+                        btn: 'border-pink-300/60 text-pink-100',
+                    }}
+                />
             )}
 
             {desync && (

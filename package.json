@@ -241,7 +241,8 @@
     "ssxterraincheck": "node scripts/ssxterraincheck.mjs",
     "shoreperf": "node scripts/shoreperf.mjs",
     "shoreguard": "node scripts/shoreperf.mjs --quiet-check-only",
-    "chromeguardcheck": "node scripts/chromeguardcheck.mjs"
+    "chromeguardcheck": "node scripts/chromeguardcheck.mjs",
+    "lobbycheck": "node scripts/lobbycheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

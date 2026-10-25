@@ -8,6 +8,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import PauseOverlay from '../../components/PauseOverlay'
+import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { PRESS, MESSAGES } from './attract.js'
@@ -16,7 +17,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES, flipDirFromTilt, bodyFromTilt } from './sim.js'
 import { decide } from './planner.js'
-import { createRoom, decodeCode, seatKinds } from '../../utils/room.js'
+import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
@@ -409,29 +410,32 @@ const SSXGame = () => {
             }
         }
 
-        // ---- #845 ONLINE -----------------------------------------------------
-        // ?net=host / ?net=join&room=CODE / ?relay=wss://host. One racer hosts,
-        // friends join by code (up to 4), CPU riders fill the rest of the six-rider
-        // field, the host starts everyone on one seed, and the others ride as live
-        // ghosts. No lockstep (riders don't collide): everyone races the SAME three
-        // mountains locally and exchanges per-heat finish times; the relay forwards
-        // each racer's finish to all others so every box holds the same table and
+        // ---- #845 ONLINE / #1039 SHARED LOBBY --------------------------------
+        // ?net=host / ?net=join&room=CODE / ?relay=wss://host — parsed by the
+        // shared lobby (src/utils/lobby.js) so joining feels identical to Blob
+        // Battle and Gauntlet. One racer hosts, friends join by code (up to 4),
+        // CPU riders fill the rest of the six-rider field, the host starts
+        // everyone on one seed, and the others ride as live ghosts. No lockstep
+        // (riders don't collide): everyone races the SAME three mountains
+        // locally and exchanges per-heat finish times; the relay forwards each
+        // racer's finish to all others so every box holds the same table and
         // runs the same pure reducer -> an identical friends' podium.
         const nq = new URLSearchParams(location.search)
-        const netRole = nq.get('net') === 'host' ? 'host' : nq.get('net') === 'join' ? 'guest' : null
-        const relayUrl = (nq.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
+        const netRole = lobbyRole(location.search)
+        const relayUrl = relayFromQuery(location.search)
         const SEAT_NAMES = ['P1', 'P2', 'P3', 'P4']
         const net = {
             role: netRole, active: !!netRole, racing: false, phase: netRole ? 'idle' : 'off',
             code: '', slot: -1, cap: 4, seed: 0,
             seatToId: {}, remoteIds: [], cpuIds: [], seats: [],
             ghosts: {}, fin: {}, reportedHeat: -1, lastSend: 0,
-            standings: null, standingsDone: false, reconnectTimer: 0, attempt: 0,
+            standings: null, standingsDone: false, joinHref: '',
         }
         const nameFor = (seat) => (seat === net.slot ? 'YOU' : SEAT_NAMES[seat] || ('P' + (seat + 1)))
         const pushNet = () => setNetUi(net.active ? {
             role: net.role, phase: net.phase, code: net.code, cap: net.cap, slot: net.slot,
-            seats: seatKinds(net.cap, net.seats.length ? net.seats : [0]),
+            seats: seatModel(net.cap, net.seats.length ? net.seats : (net.role === 'host' ? [0] : [])),
+            joinHref: net.joinHref,
             standings: net.standings, done: net.standingsDone, names: SEAT_NAMES.slice(0, net.cap),
         } : null)
 
@@ -488,14 +492,15 @@ const SSXGame = () => {
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
         }
 
-        const room = createRoom({
-            relay: relayUrl, makeTransport,
-            onPhase: (p) => { net.phase = p; pushNet() },
+        const lobby = createLobby({
+            slug: 'ssx', cap: 4, relay: relayUrl, makeTransport,
+            shareRelay: !!nq.get('relay'),
+            onState: (s) => { net.phase = s.phase; net.slot = s.slot; net.cap = s.cap; net.code = s.code || net.code; net.joinHref = s.joinHref; pushNet() },
             onRoster: () => { syncSeats(); pushNet() },
             onJoin: () => audioController.playTone(660, 0.07, 'square', 0.05),
             onLeave: () => audioController.playSweep(660, 200, 0.22, 'square', 0.05),
+            onStart: (m) => netStartRace(m.seed | 0),
             on: {
-                go: (m) => { if (net.role === 'guest') netStartRace(m.seed | 0) },
                 st: (m) => { const id = net.seatToId[m.s]; if (id != null) net.ghosts[id] = decodeState(m) },
                 fin: (m) => {
                     if (m.s === net.slot) return
@@ -505,25 +510,17 @@ const SSXGame = () => {
                 },
             },
         })
+        const room = lobby.room
 
         const netHostStart = () => {
             if (net.role !== 'host' || net.racing) return
-            const seed = (Math.random() * 2147483647) >>> 0
-            room.send('go', { seed })
-            netStartRace(seed)
+            lobby.start({ seed: (Math.random() * 2147483647) >>> 0 })
         }
 
         if (net.active) {
-            if (net.role === 'host') room.connect(net.code || (net.code = randomCode()), 4)
-            else net.code = decodeCode(nq.get('room')); if (net.code) room.connect(net.code, 0)
+            if (net.role === 'host') lobby.open()
+            else lobby.join(nq.get('room'))
             pushNet()
-        }
-
-        function randomCode() {
-            const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-            let s = ''
-            for (let i = 0; i < 4; i++) s += A[Math.floor(Math.random() * A.length)]
-            return s
         }
 
         // broadcast our hero pose a few times a second; park nothing, just report.
@@ -1311,33 +1308,21 @@ const SSXGame = () => {
                 </div>
             )}
 
-            {/* #845 waiting room — host shows the code, seats fill as friends join. */}
+            {/* #1039 shared waiting room — same code/QR/seat/hint layout in every game. */}
             {screen === 'attract' && netUi && netUi.role && (
-                <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center text-cyan-50 font-mono px-6">
-                    <div className="text-[10px] tracking-[0.3em] text-cyan-300/70 mb-1">{netUi.role === 'host' ? 'HOST A RACE' : 'JOINING RACE'}</div>
-                    {netUi.code ? (
-                        <div className="text-5xl font-black italic tracking-widest mb-3" style={{ color: '#fff', textShadow: '3px 0 0 #b0147a, -3px 0 0 #1490b0' }}>
-                            {netUi.code.split('').join(' ')}
-                        </div>
-                    ) : (
-                        <div className="text-lg mb-3 animate-pulse">{netUi.phase === 'offline' ? 'RELAY OFFLINE' : 'CONNECTING…'}</div>
-                    )}
-                    <div className="flex gap-2 mb-4">
-                        {(() => { let cpu = 0; return netUi.seats.map((k, i) => {
-                            const isCpu = k === 'cpu'
-                            if (isCpu) cpu++
-                            return (
-                                <div key={i} className={`px-3 py-2 rounded border text-xs font-bold ${isCpu ? 'border-white/15 text-white/40' : 'border-cyan-300/40 text-cyan-100'} ${i === netUi.slot ? 'ring-2 ring-yellow-300' : ''}`}>
-                                    <div className="text-[9px] opacity-70">{isCpu ? 'CPU' : k.toUpperCase()}</div>
-                                    <div>{i === netUi.slot ? 'YOU' : (isCpu ? `CPU ${cpu}` : (netUi.names[i] || ('P' + (i + 1))))}</div>
-                                </div>
-                            )
-                        }) })()}
-                    </div>
-                    {netUi.role === 'host'
-                        ? <p className="text-sm text-yellow-300 animate-pulse">{netUi.phase === 'racing' ? 'RACING…' : 'PRESS SPACE / TAP TO START · FRIENDS JOIN AT /retrogames/ssx?net=join&room=' + netUi.code}</p>
-                        : <p className="text-sm text-cyan-200/80 animate-pulse">waiting for the host to start…</p>}
-                </div>
+                <Lobby
+                    state={netUi}
+                    title="RACE"
+                    names={netUi.names}
+                    startHint="PRESS SPACE / TAP TO START"
+                    accent={{
+                        text: 'text-cyan-50',
+                        dim: 'text-cyan-300/70',
+                        live: 'border-cyan-300/40 text-cyan-100',
+                        warn: '#ffd23f',
+                        codeGlow: { color: '#fff', textShadow: '3px 0 0 #b0147a, -3px 0 0 #1490b0' },
+                    }}
+                />
             )}
 
             {/* #845 live friends' standings — shown while racing online. */}
