@@ -19,6 +19,11 @@
 //   6. SPEED  — frame budget with software-raster fallback detection
 //               (campfire convention; rAF-dt is delivery, fence-busy on the
 //               demo side drives its own degradation ladder).
+//   7. PROBES (#1047) — tap drops a glowing beacon on a real infalling
+//               geodesic: it falls (r↓), slows in observer time (Δr shrinks),
+//               reddens + dims (g, g^3 ↓), never crosses (r > rs, fades to
+//               black), holds its image while freezing, then retires; pixels
+//               prove it lights the shadow; phone quick-tap drops too.
 //
 // Usage: node scripts/blackholecheck.mjs [--file <path>] [--shots <dir>] [--json] [--max-ms 45]
 // Proven-fail mutant: kill Doppler beaming (`pow(dlt, 3.0) * g * g` -> `1.0`)
@@ -26,7 +31,10 @@
 // symmetric ring; the one-side-brighter signature is what makes it a disk in
 // orbit, not a halo prop). Second mutant (#1046): paint the photon ring on
 // captured rays (`!captured` -> `captured`, glow inside the shadow) -> the
-// ring-bounded + interior-black gates go red.
+// ring-bounded + interior-black gates go red. Third mutant (#1047): skip the
+// beacon HDR pass (`if (probes.length)` -> `if (false)`) -> the newly-lit
+// pixels gate goes red while every physics gate stays green (the probe is
+// simulated, not painted).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -119,6 +127,16 @@ async function main() {
   ok('photon ring lights escaping rays only — captured rays stay black (#1046)',
     /if \(!captured\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
     !/if \(captured\)\{[^}]*ring/.test(src))
+  ok('probe beacon integrates the timelike geodesic with e^2 = f0^2/(f0 - v^2) (#1047)',
+    /f0 \* f0 \/ Math\.max\(f0 - v2, 1e-4\)/.test(src) && /pr\.vr \+= ar \* k/.test(src))
+  ok('probe light reddens/dims by g^3 on blackbody(T0*g) (#1047)',
+    /g \* g \* g \* Math\.min\(1, pr\.t/.test(src) && /blackbodyJS\(PROBE_T0 \* probeGlow\(pr\)\.g\)/.test(src))
+  ok('probe apparent position solved by null-geodesic miss search (#1047)',
+    /const missOf = \(al\)/.test(src) && /phiG = 0\.618/.test(src))
+  ok('tap (<300ms, <12px) drops a probe; drags do not (#1047)',
+    /performance\.now\(\) - downPt\.t < 300/.test(src) && /Math\.hypot\(e\.clientX - downPt\.x, e\.clientY - downPt\.y\) < 12/.test(src))
+  ok('beacons composite additively into HDR so they bloom (#1047)',
+    /gl\.blendFunc\(gl\.ONE, gl\.ONE\)/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -249,6 +267,57 @@ async function main() {
       }
       ok('camera pose moves the world', d / n > 4, `mean|delta|=${(d / n).toFixed(1)}`)
 
+      // --- probe beacons (#1047) ---
+      await page.evaluate(() => window.__holeTest.setPose({ yaw: 0, pitch: 0 }))
+      let rr2 = 99
+      for (let i = 0; i < 240 && !(rr2 > 6 && rr2 < 9); i++){
+        await page.waitForTimeout(250)
+        rr2 = await page.evaluate(() => window.__holeTest.flightR)
+      }
+      const s0 = decodePng(await page.screenshot())
+      const W2 = s0.w, H2 = s0.h, cx2 = Math.round(W2 / 2), cy2 = Math.round(H2 / 2)
+      await page.mouse.click(cx2, cy2 - 2)
+      ok('quick tap drops a beacon', await page.evaluate(() => window.__holeTest.probes().length) === 1)
+      await page.waitForTimeout(500)
+      const s1 = decodePng(await page.screenshot())
+      let lit = 0
+      for (let y = cy2 - 90; y <= cy2 + 90; y += 2) for (let x = cx2 - 90; x <= cx2 + 90; x += 2) {
+        const a = px(s0, x, y), b = px(s1, x, y)
+        if (luma(b) - luma(a) > 55 && b[0] >= b[2] - 6) lit++
+      }
+      ok('the beacon lights new pixels over the shadow (#1047)', lit > 30, `${lit} newly-lit px near centre`)
+      const trail = []
+      for (let i = 0; i < 24; i++){
+        await page.waitForTimeout(1500)
+        const ps = await page.evaluate(() => window.__holeTest.probes())
+        if (!ps.length) break
+        trail.push(ps[ps.length - 1])
+        if (ps[ps.length - 1].r < 1.3) break
+      }
+      const rad = trail.map(p => p.r), gs = trail.map(p => p.g), ws = trail.map(p => p.glow)
+      ok('beacon falls: radius strictly decreases (#1047)',
+        rad.length >= 5 && rad.every((v, i) => i === 0 || v < rad[i - 1]), rad.map(v => v.toFixed(2)).join('>'))
+      const drad = rad.slice(1).map((v, i) => rad[i] - v)
+      ok('beacon slows in observer time: coordinate dr/dt shrinks to a crawl (#1047)',
+        drad.length >= 4 && drad[drad.length - 1] < 0.6 * drad[0], `first Δr=${drad[0].toFixed(3)} last Δr=${drad[drad.length - 1].toFixed(3)}`)
+      ok('beacon reddens and dims: g and g^3 glow strictly decrease (#1047)',
+        gs.length >= 5 && gs.every((v, i) => i === 0 || v < gs[i - 1]) &&
+        ws.every((v, i) => i === 0 || v < ws[i - 1]) && gs[gs.length - 1] < 0.7,
+        `g ${gs[0].toFixed(3)}->${gs[gs.length - 1].toFixed(3)} glow ${ws[0].toFixed(3)}->${ws[ws.length - 1].toFixed(3)}`)
+      ok('beacon never crosses the horizon: r stays above rs and fades toward black (#1047)',
+        rad.every(v => v > 1.0001) && ws[ws.length - 1] < 0.3, `min r=${Math.min(...rad).toFixed(4)} end glow=${ws[ws.length - 1].toFixed(3)}`)
+      const frozen = trail.filter(p => p.vis && p.r < 1.5)
+      ok('beacon image holds its screen position while it freezes (#1047)',
+        frozen.length >= 2 && Math.max(...frozen.map(p => p.x)) - Math.min(...frozen.map(p => p.x)) < 18 &&
+        Math.max(...frozen.map(p => p.y)) - Math.min(...frozen.map(p => p.y)) < 12,
+        frozen.map(p => `(${p.x.toFixed(0)},${p.y.toFixed(0)})`).join(' '))
+      let retired = 0
+      for (let i = 0; i < 160; i++){
+        if ((await page.evaluate(() => window.__holeTest.probes().length)) === 0){ retired = 1; break }
+        await page.waitForTimeout(300)
+      }
+      ok('beacon retires once redshifted below visibility (#1047)', retired === 1)
+
       // photon ring vs shadow purity (#1046) at a deterministic pose: freeze
       // performance.now so the flyby sits still, then walk 48 radials. A
       // ring-bounded angle = bright line (>60) whose two inner neighbours are
@@ -312,6 +381,12 @@ async function main() {
       })
       await phone.waitForTimeout(600)
       ok('phone tap-drag steers the look', await phone.evaluate(() => Math.abs(window.__holeTest.pose().yaw) > 0.05))
+      await phone.evaluate(() => {
+        const c = document.getElementById('c')
+        c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 2, clientX: 195, clientY: 420, bubbles: true }))
+        c.dispatchEvent(new PointerEvent('pointerup', { pointerId: 2, clientX: 195, clientY: 420, bubbles: true }))
+      })
+      ok('phone quick-tap drops a beacon (#1047)', await phone.evaluate(() => window.__holeTest.probes().length) === 1)
       await pctx.close()
 
       const ctxR = await browser.newContext({ viewport: { width: 1180, height: 820 }, deviceScaleFactor: 2 })

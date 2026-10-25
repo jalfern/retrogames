@@ -31,7 +31,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone</div>
+<div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe</div>
 <div id="audiohint">click for gravitational drone</div>
 <div id="fatal"></div>
 <script>
@@ -310,6 +310,28 @@ void main(){
   o = vec4(c, 1.0);
 }`;
 
+/* probe beacons (#1047): additive screen-space glow sprites, drawn into HDR
+   before the bloom tap so a falling probe blooms like the disk does */
+const FS_PROBE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform vec4 uP[6];
+uniform vec3 uC[6];
+out vec4 o;
+void main(){
+  vec2 f = vUv * uRes;
+  vec3 c = vec3(0.0);
+  for (int i = 0; i < 6; i++){
+    if (uP[i].w <= 0.0) continue;
+    vec2 d = f - uP[i].xy;
+    float r2 = dot(d, d);
+    float s2 = uP[i].z * uP[i].z;
+    c += uC[i] * uP[i].w * (exp(-r2 / s2) + 2.4 * exp(-r2 / (s2 * 0.11)));
+  }
+  o = vec4(c, 1.0);
+}`;
+
 /* ---------------- GL helpers ---------------- */
 
 function compile(type, src){
@@ -336,6 +358,7 @@ const progScene = program(VS_QUAD, FS_SCENE);
 const progBright = program(VS_QUAD, FS_BRIGHT);
 const progBlur = program(VS_QUAD, FS_BLUR);
 const progComp = program(VS_QUAD, FS_COMP);
+const progProbe = program(VS_QUAD, FS_PROBE);
 const vaoEmpty = gl.createVertexArray();
 
 const HDRF = HDR_OK ? gl.RGBA16F : gl.RGBA8;
@@ -381,8 +404,10 @@ const STEPS_TOP = 240;
 let dropSteps = 0;
 const cam = { yaw: 0, pitch: 0, tyaw: 0, tpitch: 0, touched: 0 };
 let drag = null;
+let downPt = null;
 canvas.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY };
+  downPt = { x: e.clientX, y: e.clientY, t: performance.now() };
   canvas.setPointerCapture(e.pointerId);
   cam.touched = performance.now();
   unlockAudio();
@@ -393,7 +418,12 @@ canvas.addEventListener('pointermove', e => {
   cam.tpitch = Math.max(-0.5, Math.min(0.55, cam.tpitch - (e.clientY - drag.y) * 0.003));
   drag = { x: e.clientX, y: e.clientY };
 });
-addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointerup', e => {
+  if (downPt && performance.now() - downPt.t < 300 &&
+      Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y) < 12) dropProbe(e.clientX, e.clientY);
+  drag = null;
+  downPt = null;
+});
 
 function flight(t){
   const th = t * 0.05 + Math.sin(t * 0.021 + 0.6) * 0.22 + cam.yaw;
@@ -415,6 +445,202 @@ function flight(t){
   const u2 = [u[0] * cp - f[0] * sp, u[1] * cp - f[1] * sp, u[2] * cp - f[2] * sp];
   const prox = Math.max(0, Math.min(1, (21.5 - Math.hypot(pos[0], pos[1], pos[2])) / 14));
   return { pos, f: f2, u: u2, r, prox, R, th };
+}
+
+/* ---------------- probes (#1047): glowing beacons dropped toward the hole ----- *
+ * A tap releases a beacon from the camera, inheriting the drone's orbital
+ * velocity plus an inward shove — so it's a real infalling test particle:
+ * motion stays in the (position, velocity) plane; we integrate the exact
+ * Schwarzschild geodesic in PROPER time,
+ *   dv_r/dtau = -(rs/2r^2)(1 + L^2/r^2) + (1 - rs/r) L^2/r^3,
+ *   dphi/dtau = L/r^2,   dt/dtau = e/f,   e^2 = f0^2/(f0 - v0^2),
+ * then convert to coordinate time (the camera's clock): the (1 - rs/r) factor
+ * is gravitational time dilation, so the beacon asymptotically freezes above
+ * the horizon, which is what an outside observer actually sees. Observed light
+ * rides g = sqrt(1 - rs/r): colour blackbody(T0*g), intensity ~ g^3 — reddens
+ * into infra-red and dims to nothing. Its apparent position is NOT the straight
+ * projection: light from the probe reaches the camera along a null geodesic,
+ * and by reflection symmetry through the camera-probe-hole plane the primary
+ * image lies in that plane — so a golden-section search over a single in-plane
+ * launch angle through the same RK4 light-bender finds where the beacon is
+ * actually seen. Near the horizon that solution pins to the shadow rim.       */
+
+const PROBE_MAX = 6
+const PROBE_T0 = 1.15
+const PROBE_SPEED = 0.7          // Schwarzschild coordinate seconds per real second
+const PROBE_SHOVE = 0.8          // launch speed added along the aim (rs/s)
+const PROBE_KILL = 0.02          // retire once the g^3 sink drops below this
+let probes = []
+let lastCb = null
+
+function blackbodyJS(t){
+  let c = [0.42, 0.10, 0.02]
+  const mix = (a, b, k) => [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k, a[2] + (b[2] - a[2]) * k]
+  const ss = (e0, e1, x) => { const u = Math.max(0, Math.min(1, (x - e0) / (e1 - e0))); return u * u * (3 - 2 * u) }
+  c = mix(c, [1.0, 0.38, 0.05], ss(0.10, 0.42, t))
+  c = mix(c, [1.0, 0.66, 0.22], ss(0.42, 0.68, t))
+  c = mix(c, [1.0, 0.92, 0.72], ss(0.68, 0.88, t))
+  c = mix(c, [0.80, 0.88, 1.0], ss(0.95, 1.35, t))
+  c = mix(c, [0.62, 0.76, 1.0], ss(1.35, 2.1, t))
+  return c
+}
+
+function dropProbe(cssX, cssY){
+  const cb = lastCb
+  if (!cb) return
+  const t = (performance.now() - t0) / 1000
+  const pA = flight(t + 0.06), pB = flight(t - 0.06)
+  const camV = [(pA.pos[0] - pB.pos[0]) / 0.12, (pA.pos[1] - pB.pos[1]) / 0.12, (pA.pos[2] - pB.pos[2]) / 0.12]
+  const aspect = W / Math.max(1, H)
+  const nx = ((cssX / Math.max(1, canvas.clientWidth)) * 2 - 1) * aspect
+  const ny = -((cssY / Math.max(1, canvas.clientHeight)) * 2 - 1)
+  let aim = [cb.r[0] * nx + cb.u[0] * ny + cb.f[0] * 1.9,
+             cb.r[1] * nx + cb.u[1] * ny + cb.f[1] * 1.9,
+             cb.r[2] * nx + cb.u[2] * ny + cb.f[2] * 1.9]
+  const al = Math.hypot(aim[0], aim[1], aim[2])
+  aim = [aim[0] / al, aim[1] / al, aim[2] / al]
+  const v = [camV[0] * 0.95 + aim[0] * PROBE_SHOVE, camV[1] * 0.95 + aim[1] * PROBE_SHOVE, camV[2] * 0.95 + aim[2] * PROBE_SHOVE]
+  const C = cb.pos
+  const p = [C[0] + aim[0] * 2.2, C[1] + aim[1] * 2.2, C[2] + aim[2] * 2.2]
+  const pr0 = Math.hypot(p[0], p[1], p[2])
+  if (pr0 < RS * 1.8) return
+  const ex0 = p[0] / pr0, ex1 = p[1] / pr0, ex2 = p[2] / pr0
+  const vr0raw = v[0] * ex0 + v[1] * ex1 + v[2] * ex2
+  let vt = [v[0] - vr0raw * ex0, v[1] - vr0raw * ex1, v[2] - vr0raw * ex2]
+  const vtl = Math.hypot(vt[0], vt[1], vt[2])
+  if (vtl < 1e-6) return
+  const sgn = Math.sign(vt[0] * camV[0] + vt[1] * camV[1] + vt[2] * camV[2]) || 1
+  // the drone's scripted path is powered, not geodesic: inherit its tangential
+  // drift only up to the capture threshold L ~ 2.3 rs (above that the beacons
+  // ride centrifugal orbits instead of falling in), and always shove inward.
+  const vr0 = Math.min(vr0raw, -0.45)
+  const f0 = 1 - RS / pr0
+  let v2 = vr0 * vr0 + Math.min(vtl, 0.3) * Math.min(vtl, 0.3)
+  let e = Math.sqrt(f0 * f0 / Math.max(f0 - v2, 1e-4))
+  let vt0 = sgn * Math.min(vtl, 2.3 * f0 / (pr0 * e))
+  v2 = vr0 * vr0 + vt0 * vt0
+  if (v2 > 0.85 * f0) v2 = 0.85 * f0
+  e = Math.sqrt(f0 * f0 / Math.max(f0 - v2, 1e-4))
+  const ex = [ex0, ex1, ex2]
+  const ey = [vt[0] / vtl, vt[1] / vtl, vt[2] / vtl]
+  const L = pr0 * vt0 * e / f0
+  probes.push({ ex, ey, r: pr0, r0: pr0, phi: 0, vr: vr0 * e / f0, e, L, t: 0 })
+  if (probes.length > PROBE_MAX) probes.shift()
+}
+
+function probeWorld(pr){
+  const c = Math.cos(pr.phi), s = Math.sin(pr.phi)
+  return [pr.r * (c * pr.ex[0] + s * pr.ey[0]), pr.r * (c * pr.ex[1] + s * pr.ey[1]), pr.r * (c * pr.ex[2] + s * pr.ey[2])]
+}
+
+function stepProbes(dt){
+  let budget0 = Math.min(dt, 0.05) * PROBE_SPEED
+  for (const pr of probes){
+    pr.t += dt
+    let budget = budget0
+    for (let n = 0; n < 500 && budget > 1e-6; n++){
+      const f = Math.max(1 - RS / pr.r, 1e-9)
+      const k = Math.min(0.004, budget * f / pr.e)
+      if (k <= 0) break
+      const l2 = pr.L * pr.L
+      const ar = -(RS / (2 * pr.r * pr.r)) * (1 + l2 / (pr.r * pr.r)) + f * l2 / (pr.r * pr.r * pr.r)
+      pr.vr += ar * k
+      pr.r += pr.vr * k
+      pr.phi += pr.L / (pr.r * pr.r) * k
+      budget -= k * pr.e / f
+      if (pr.r < RS + 1e-7){ pr.r = RS + 1e-7; pr.vr = 0 }
+    }
+  }
+  probes = probes.filter(pr =>
+    Math.pow(Math.max(1 - RS / pr.r, 0), 1.5) >= PROBE_KILL && pr.r < pr.r0 + 6 && pr.t < 90)
+}
+
+function probeGlow(pr){
+  const g = Math.sqrt(Math.max(1 - RS / pr.r, 0))
+  return { g, w: g * g * g * Math.min(1, pr.t / 0.3) }
+}
+
+/* Primary-image solve: null geodesic from the camera that passes through the
+   probe world point. Search one in-plane launch angle; miss = closest the
+   bent ray comes to the probe. */
+function probeImage(pr, cb){
+  const C = cb.pos
+  const rC = Math.hypot(C[0], C[1], C[2])
+  const eC = [C[0] / rC, C[1] / rC, C[2] / rC]
+  const P = probeWorld(pr)
+  const pR = pr.r
+  const cp = (P[0] * eC[0] + P[1] * eC[1] + P[2] * eC[2]) / pR
+  const sp = Math.sqrt(Math.max(1 - cp * cp, 1e-9))
+  const eP = [(P[0] / pR - cp * eC[0]) / sp, (P[1] / pR - cp * eC[1]) / sp, (P[2] / pR - cp * eC[2]) / sp]
+  const psi = Math.acos(Math.max(-1, Math.min(1, cp)))
+  const chord = [P[0] - C[0], P[1] - C[1], P[2] - C[2]]
+  const cl = Math.hypot(chord[0], chord[1], chord[2]) || 1
+  const a0 = (chord[0] * eC[0] + chord[1] * eC[1] + chord[2] * eC[2]) / cl
+  const b0 = (chord[0] * eP[0] + chord[1] * eP[1] + chord[2] * eP[2]) / cl
+
+  const missOf = (al) => {
+    const ca = Math.cos(al), sa = Math.sin(al)
+    const aa = a0 * ca - b0 * sa, bb = a0 * sa + b0 * ca
+    let d = [eC[0] * aa + eP[0] * bb, eC[1] * aa + eP[1] * bb, eC[2] * aa + eP[2] * bb]
+    const dl = Math.hypot(d[0], d[1], d[2])
+    d = [d[0] / dl, d[1] / dl, d[2] / dl]
+    const a = d[0] * eC[0] + d[1] * eC[1] + d[2] * eC[2]
+    const e2v = [d[0] - a * eC[0], d[1] - a * eC[1], d[2] - a * eC[2]]
+    const b = rC * Math.hypot(e2v[0], e2v[1], e2v[2])
+    if (b < 1e-4) return 1e9
+    const e2l = Math.hypot(e2v[0], e2v[1], e2v[2])
+    const e2 = [e2v[0] / e2l, e2v[1] / e2l, e2v[2] / e2l]
+    let u = 1 / rC, w = -a / b, phi = 0
+    let best = Math.hypot(P[0] - C[0], P[1] - C[1], P[2] - C[2])
+    for (let i = 0; i < 130; i++){
+      const r = 1 / u
+      const dlam = Math.min(0.9, Math.max(0.015, 0.06 * r))
+      const dphi = Math.min(r < 2 ? 0.05 : 0.16, b * u * u * dlam)
+      const f1 = -u + 1.5 * RS * u * u
+      const uh1 = u + 0.5 * dphi * w, wh1 = w + 0.5 * dphi * f1
+      const f2 = -uh1 + 1.5 * RS * uh1 * uh1
+      const uh2 = u + 0.5 * dphi * wh1, wh2 = w + 0.5 * dphi * f2
+      const f3 = -uh2 + 1.5 * RS * uh2 * uh2
+      const u4 = u + dphi * wh2, w4 = w + dphi * f3
+      const f4 = -u4 + 1.5 * RS * u4 * u4
+      u += dphi * (w + 2 * wh1 + 2 * wh2 + w4) / 6
+      w += dphi * (f1 + 2 * f2 + 2 * f3 + f4) / 6
+      phi += dphi
+      const rn = 1 / u
+      if (rn < RS) return best
+      const cph = Math.cos(phi), sph = Math.sin(phi)
+      const p = [rn * (cph * eC[0] + sph * e2[0]), rn * (cph * eC[1] + sph * e2[1]), rn * (cph * eC[2] + sph * e2[2])]
+      const md = Math.hypot(p[0] - P[0], p[1] - P[1], p[2] - P[2])
+      if (md < best) best = md
+      if (phi > psi + 0.5 && rn > pr.r) break
+    }
+    return best
+  }
+
+  let lo = -0.7, hi = 0.7
+  const gr = (gr0, gr1, n) => { let bm = 1e9, bx = 0
+    for (let i = 0; i <= n; i++){ const x = gr0 + (gr1 - gr0) * i / n; const m = missOf(x); if (m < bm){ bm = m; bx = x } }
+    return [bx, bm] }
+  let [xb, mb] = gr(lo, hi, 7)
+  const phiG = 0.6180339887
+  for (let i = 0; i < 9; i++){
+    const a1 = hi - (hi - lo) * phiG, a2 = lo + (hi - lo) * phiG
+    const m1 = missOf(a1), m2 = missOf(a2)
+    if (m1 < m2){ hi = a2; if (m1 < mb){ mb = m1; xb = a1 } } else { lo = a1; if (m2 < mb){ mb = m2; xb = a2 } }
+    if (hi - lo < 0.004) break
+  }
+  const ca = Math.cos(xb), sa = Math.sin(xb)
+  const d = [eC[0] * (a0 * ca - b0 * sa) + eP[0] * (a0 * sa + b0 * ca),
+             eC[1] * (a0 * ca - b0 * sa) + eP[1] * (a0 * sa + b0 * ca),
+             eC[2] * (a0 * ca - b0 * sa) + eP[2] * (a0 * sa + b0 * ca)]
+  const zf = d[0] * cb.f[0] + d[1] * cb.f[1] + d[2] * cb.f[2]
+  if (zf <= 0.05) return { vis: false, miss: mb, alpha: xb }
+  const k = 1.9 / zf
+  const nx = (d[0] * cb.r[0] + d[1] * cb.r[1] + d[2] * cb.r[2]) * k
+  const ny = (d[0] * cb.u[0] + d[1] * cb.u[1] + d[2] * cb.u[2]) * k
+  const aspect = W / Math.max(1, H)
+  return { vis: Math.abs(nx / aspect) < 1.15 && Math.abs(ny) < 1.15,
+    x: ((nx / aspect + 1) / 2) * W, y: ((1 - ny) / 2) * H, miss: mb, alpha: xb }
 }
 
 /* ---------------- JS mirror of the geodesic integrator (harness probes) ------- */
@@ -581,17 +807,17 @@ function updateDrone(prox, R, th){
 /* ---------------- frame loop ---------------- */
 
 let t0 = performance.now();
-let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
+let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0, lastDt = 0;
 let ema = 0, busyEma = 0, workEma = 0, prevFence = null, proxNow = 0, orbitR = 21.5;
 let readyFlag = false;
 
 const U = p => name => gl.getUniformLocation(p, name);
-const us = U(progScene), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp);
+const us = U(progScene), ubr = U(progBright), ubl = U(progBlur), uc = U(progComp), upr = U(progProbe);
 
 function frame(){
   const now = performance.now();
   const t = (now - t0) / 1000;
-  if (lastFrame){ const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; ema = ema ? ema * 0.9 + dtms * 0.1 : dtms; }
+  if (lastFrame){ const dtms = now - lastFrame; lastDt = dtms; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; ema = ema ? ema * 0.9 + dtms * 0.1 : dtms; }
   lastFrame = now;
   frames++;
   // honest GPU cost: how long was last frame's fence still unsignalled when we ask?
@@ -632,6 +858,32 @@ function frame(){
   gl.uniformMatrix3fv(us('uCamBasis'), false, basis);
   gl.uniform1f(us('uProx'), proxNow);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  // probes (#1047): drop the clock forward in coordinate time, solve where each
+  // beacon is actually seen (null geodesics), additive into HDR so they bloom.
+  lastCb = cb;
+  stepProbes(lastDt > 0 ? lastDt / 1000 : 1 / 60);
+  if (probes.length){
+    const pArr = new Float32Array(24), cArr = new Float32Array(18);
+    for (let i = 0; i < probes.length; i++){
+      const pr = probes[i];
+      const im = probeImage(pr, cb);
+      const { w } = probeGlow(pr);
+      if (!im.vis || w <= 0.0005) continue;
+      const col = blackbodyJS(PROBE_T0 * probeGlow(pr).g);
+      pArr[i * 4] = im.x; pArr[i * 4 + 1] = im.y;
+      pArr[i * 4 + 2] = 5 + 26 * w; pArr[i * 4 + 3] = w * 2.4;
+      cArr[i * 3] = col[0]; cArr[i * 3 + 1] = col[1]; cArr[i * 3 + 2] = col[2];
+    }
+    gl.useProgram(progProbe);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.uniform2f(upr('uRes'), W, H);
+    gl.uniform4fv(upr('uP'), pArr);
+    gl.uniform3fv(upr('uC'), cArr);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    gl.disable(gl.BLEND);
+  }
 
   gl.useProgram(progBright);
   gl.bindFramebuffer(gl.FRAMEBUFFER, b1.fbo);
@@ -715,12 +967,26 @@ window.__holeTest = {
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; ema = 0; },
   physics(){ return { rs: RS, bCrit: B_CRIT, rIn: R_IN, rOut: R_OUT, escR: ESC_R }; },
+  dropAt(x, y){ dropProbe(x, y); },
+  probeInfo(){ return { max: PROBE_MAX, speed: PROBE_SPEED, t0: PROBE_T0, kill: PROBE_KILL, rs: RS }; },
+  probes(){
+    if (!lastCb) return [];
+    return probes.map(pr => {
+      const im = probeImage(pr, lastCb);
+      const { g, w } = probeGlow(pr);
+      return { r: +pr.r.toFixed(4), r0: +pr.r0.toFixed(2), e: +pr.e.toFixed(4), t: +pr.t.toFixed(2),
+        g: +g.toFixed(4), glow: +w.toFixed(5),
+        x: im.vis ? +im.x.toFixed(1) : -1, y: im.vis ? +im.y.toFixed(1) : -1,
+        vis: !!im.vis, miss: +im.miss.toFixed(3),
+        pin: +Math.abs(im.alpha).toFixed(3) };
+    });
+  },
 };
 </script>
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956], span: '~3 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047], span: '~3 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
