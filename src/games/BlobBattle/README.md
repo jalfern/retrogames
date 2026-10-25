@@ -34,8 +34,9 @@ while incoming rows are queued COUNTERS them. First to 2 rounds wins.
   like a human's. `normal` is the pre-#863 CPU. In a solo match the player picks
   the opponent's rung from the title: `1` easy, `3` hard, any other key / tap =
   normal (phone default).
-- `net.js` — online semantics on the reusable room layer (`src/utils/room.js`,
-  #845) + lockstep (`src/utils/lockstep.js`, #531). Well index == seat index
+- `net.js` — online semantics on the shared lobby (`src/utils/lobby.js`, #1039)
+  and its room layer (`src/utils/room.js`, #845) + lockstep
+  (`src/utils/lockstep.js`, #531). Well index == seat index
   canonically; pads ride `{t:'pad',s,k,p}` (a=rotate, s=hard drop);
   `assemblePads` builds `[well0, well1]` in seat order — pass the maps in SEAT
   order, mixing that up swaps the streams (a real desync this harness caught).

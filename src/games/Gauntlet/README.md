@@ -148,6 +148,9 @@ for real: C at select, Digit1, the partner travels under its own pads.
 
 `?net=host` opens a room and shows its 4-letter code; a friend opens
 `?net=join&room=CODE` and the game starts when the host picks a hero.
+Since #1039 the join flow, the waiting room (`<Lobby>`) and the #546 reconnect
+ladder are the shared ones (`src/utils/lobby.js`) — identical to SSX and Blob
+Battle; Gauntlet keeps its own lockstep lock and hero payload on top.
 Transport is the Cloudflare relay (`relay/`, see its README); both browsers
 run the same deterministic sim from the host's seed and exchange pads +
 hashes through the reserved `remote` seat path — `src/utils/lockstep.js`

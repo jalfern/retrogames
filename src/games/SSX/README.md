@@ -604,10 +604,11 @@ starts everyone on one seed, and the other racers ride as **live ghosts**. There
 **no lockstep** — riders don't collide, so each browser runs the mountain locally and
 exchanges data instead of sharing a sim:
 
-- **Transport** — the reusable `src/utils/room.js` client over the relay
-  (`relay/core.js` + `worker.js`/`server.mjs`), which this issue generalised from
-  2P to up to 4 via an explicit `?cap=` and a `roster` presence broadcast on every
-  join/leave. Any future multiplayer title reuses `room.js` verbatim.
+- **Transport** — the shared `src/utils/lobby.js` client (#1039) over the reusable
+  `src/utils/room.js` room layer (#845, `relay/core.js` + `worker.js`/`server.mjs`,
+  generalised from 2P to up to 4 via an explicit `?cap=` and a `roster` presence
+  broadcast on every join/leave). The waiting-room UI is the shared
+  `<Lobby>` (`src/components/Lobby.jsx`) — same code/QR/seats/hints everywhere.
 - **Ghosts** — each racer broadcasts a quantised pose snapshot (`net.js`
   `encodeState`, ~150 B, far under the relay's 512 B cap) every other tick; peers
   apply it onto a stand-in rider id (`applyGhost`) so `poseRider` draws them on the
@@ -625,6 +626,7 @@ layer is additive and gated on `net.active` (ssxcheck still 213/213).
 
 Verify: `npm run roomcheck` (Node — relay N-cap + roster, room.js roster deltas,
 snapshot budget/round-trip, seat map, standings reducer; `--mutate` proves it can
-fail), `npm run ssxdrill` (two headless Chromes vs the local relay — needs
+fail), `npm run lobbycheck` (shared join flow across ssx/blob-battle/gauntlet),
+`npm run ssxdrill` (two headless Chromes vs the local relay — needs
 `npm run dev`: host code, guest join, host-start, same seed, live ghosts, finish
 exchange lights standings on both).
