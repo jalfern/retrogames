@@ -11,6 +11,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
+import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -31,8 +32,8 @@ import { attractFrame, DIM } from './attract.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
-import { createLockStep, retryDelay } from '../../utils/lockstep'
-import { makeCode } from '../../../relay/core.js'
+import { createLockStep } from '../../utils/lockstep'
+import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 
 const PW = 64, HT = 40
@@ -48,9 +49,7 @@ const GauntletGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [netUi, setNetUi] = useState({ phase: 'idle', code: '', info: '', role: null })
-    const [joinCode, setJoinCode] = useState('')
     const netJoinRef = useRef(null)
-    const netCodeRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -84,94 +83,87 @@ const GauntletGame = () => {
         const revealAt = new Map()
 
         // ------------------------------------------------------------ online ----
-        // #531 pilot: ?net=host / ?net=join&room=CODE / ?relay=ws(s)://host.
+        // #531 pilot, riding the #1039 shared lobby: ?net=host /
+        // ?net=join&room=CODE / ?relay=ws(s)://host. The join flow, the waiting
+        // room and the reconnect ladder are the shared ones (src/utils/lobby.js)
+        // — identical words and layout in SSX and Blob Battle. Gauntlet keeps
+        // its own lockstep pad/hash lock (the #531 determinism law) and the
+        // hero payload the host broadcasts at kickoff.
         // Canonical seats on BOTH boxes: hero = host's entity, partner = the
         // guest's — so both sims consume the identical pad streams and their
         // stateHashes must agree. The guest's camera/HUD follow gs.partner so
         // each player watches their own hero.
         const q = new URLSearchParams(window.location.search)
-        const netRole = q.get('net') === 'host' ? 'host' : q.get('net') === 'join' ? 'guest' : null
-        const netRelay = (q.get('relay') || 'wss://retrogames.jalfern.workers.dev').replace(/^http/, 'ws')
+        const netRole = lobbyRole(window.location.search)
+        const netRelay = relayFromQuery(window.location.search)
         const net = {
-            phase: netRole === 'host' ? 'connecting' : netRole === 'guest' ? ((q.get('room') || '').toUpperCase().length === 4 ? 'connecting' : 'entry') : 'idle',
+            phase: netRole === 'host' ? 'connecting' : netRole === 'guest' ? (decodeCode(q.get('room')) ? 'connecting' : 'entry') : 'idle',
             role: netRole,
-            code: netRole === 'host' ? (netCodeRef.current || (netCodeRef.current = makeCode(Math.random))) : (q.get('room') || '').toUpperCase(),
-            ws: null,
+            code: netRole === 'host' ? '' : decodeCode(q.get('room')),
             peer: false,
             lock: null,
             tamper: false,
             desyncTick: 0,
             lastHash: '',
             info: '',
-            attempt: 0,
-            maxRetry: 0,
-            retryTimer: 0,
+            joinHref: '',
+            room: null,
+            lobby: null,
         }
-        const netPush = () => setNetUi({ phase: net.phase, code: net.code, info: net.desyncTick ? `tick ${net.desyncTick}` : (net.info || ''), role: net.role })
+        const netPush = () => setNetUi({
+            phase: net.phase, code: net.code, role: net.role, joinHref: net.joinHref,
+            info: net.desyncTick ? `tick ${net.desyncTick}` : (net.info || ''),
+            seats: net.role ? seatModel(2, net.room ? net.room.slots : (net.role === 'host' ? [0] : [])) : null,
+        })
         if (netRole) netPush()
+
+        const makeTransport = (url) => {
+            const ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
 
         const netEnd = (phase) => {
             net.phase = phase
-            clearTimeout(net.retryTimer)
-            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
             netPush()
         }
 
-        const netConnect = (code) => {
-            net.code = code
-            clearTimeout(net.retryTimer)
-            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
-            netPush()
-            let ws
-            try { ws = new WebSocket(`${netRelay}/room/${code}`) } catch { net.phase = 'offline'; netPush(); return }
-            net.ws = ws
-            ws.onmessage = (ev) => {
-                let obj = null
-                try { obj = JSON.parse(ev.data) } catch { return }
-                if (obj.t === 'welcome') { net.attempt = 0; net.phase = 'waiting'; netPush() }
-                else if (obj.t === 'peer') {
-                    net.peer = true
-                    if (net.phase === 'gone' || net.phase === 'offline' || net.phase === 'reconnecting') { net.phase = 'waiting'; netPush() }
-                    else netPush()
+        net.lobby = netRole ? createLobby({
+            slug: 'gauntlet',
+            cap: 2,
+            relay: netRelay,
+            shareRelay: !!q.get('relay'),
+            makeTransport,
+            onState: (s) => { net.code = s.code || net.code; net.joinHref = s.joinHref; net.info = s.info; if (s.phase !== 'racing') net.phase = s.phase; else if (net.role === 'guest') net.phase = 'play'; netPush() },
+            onRoster: ({ slots }) => {
+                net.peer = slots.length >= 2
+                if (net.peer && (net.phase === 'gone' || net.phase === 'offline')) { net.phase = 'waiting'; net.info = '' }
+                if (net.peer) {
                     audioController.playTone(660, 0.07, 'square', 0.05)
                     audioController.playTone(990, 0.09, 'square', 0.05, 0.07)
-                } else if (obj.t === 'start' && net.role === 'guest') {
-                    netBegin(obj.seed | 0, obj.hero || 'warrior', obj.peerHero || 'valkyrie')
-                } else if (obj.t === 'hs') {
-                    const r = net.lock && net.lock.gotHash(obj.k, obj.h)
-                    if (r && r.desync !== undefined) netDesync(r.desync)
-                } else if (obj.t === 'pad') {
-                    if (net.lock) net.lock.gotPad(obj.k, obj.p)
-                } else if (obj.t === 'gone') {
+                }
+                netPush()
+            },
+            on: {
+                gone: () => {
                     if (net.phase === 'play' || net.phase === 'waiting') { net.phase = 'gone'; netPush() }
                     audioController.playSweep(660, 180, 0.25, 'square', 0.07)
-                } else if (obj.t === 'err') {
-                    net.phase = 'refused'
-                    net.info = obj.e
-                    netPush()
-                }
-            }
-            ws.onerror = () => { /* onclose owns the retry decision (#546) */ }
-            // #546 item 2: a dropped WS (phone sleep, wifi hop) while still
-            // waiting reconnects with exponential backoff instead of dead-ending
-            // at offline; 6 tries, then give up and say RELAY OFFLINE.
-            ws.onclose = (ev) => {
-                if (import.meta.env.DEV) console.log('net ws close', ev.code, ev.reason)
-                if (net.ws !== ws) return
-                if (net.phase === 'play' || net.phase === 'desync' || net.phase === 'refused' || net.phase === 'gone' || net.phase === 'over') return
-                if (net.attempt < 6) {
-                    net.phase = 'reconnecting'
-                    netPush()
-                    clearTimeout(net.retryTimer)
-                    net.attempt++
-                    net.maxRetry = net.attempt
-                    net.retryTimer = setTimeout(() => netConnect(net.code), retryDelay(net.attempt - 1))
-                } else {
-                    net.phase = 'offline'
-                    netPush()
-                }
-            }
-        }
+                },
+                hs: (m) => {
+                    const r = net.lock && net.lock.gotHash(m.k, m.h)
+                    if (r && r.desync !== undefined) netDesync(r.desync)
+                },
+                pad: (m) => {
+                    if (net.lock) net.lock.gotPad(m.k, m.p)
+                },
+            },
+            onStart: (m) => { if (net.role === 'guest') netBegin(m.seed | 0, m.hero || 'warrior', m.peerHero || 'valkyrie') },
+        }) : null
+        net.room = net.lobby ? net.lobby.room : null
 
         const netDesync = (k) => {
             net.desyncTick = k
@@ -181,7 +173,7 @@ const GauntletGame = () => {
         }
 
         const netStartLock = () => {
-            net.lock = createLockStep({ send: (m) => { if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify(m)) } })
+            net.lock = createLockStep({ send: (m) => { if (net.room) net.room.send(m.t, m) } })
             keys.l = keys.r = keys.u = keys.d = false
             keys.swordEdge = false; keys.arrowEdge = false
             seatPrev.a = false
@@ -896,7 +888,7 @@ const GauntletGame = () => {
             if (online) {
                 gs.partnerMode = 'human'
                 gs.partnerHuman = false
-                if (net.ws && net.ws.readyState === 1) net.ws.send(JSON.stringify({ t: 'start', seed: gs.seed, hero: hk, peerHero }))
+                if (net.lobby) net.lobby.start({ seed: gs.seed, hero: hk, peerHero })
                 netStartLock()
                 net.phase = 'play'
                 netPush()
@@ -1057,13 +1049,13 @@ const GauntletGame = () => {
                     stalls: net.lock ? net.lock.stats().stalls : 0,
                     stallRun: net.lock ? net.lock.stats().stallRun : 0,
                     padAge: net.lock ? net.lock.padAge(performance.now()) : -1,
-                    attempt: net.attempt,
-                    maxRetry: net.maxRetry,
+                    attempt: net.room ? net.room.attempt : 0,
+                    maxRetry: 6,
                     desyncTick: net.desyncTick,
                 }),
                 netTamper: () => { net.tamper = true },
-                netKill: () => { if (net.ws) { try { net.ws.close() } catch { /* gone */ } } },
-                netJoin: (code) => netConnect((code || '').toUpperCase()),
+                netKill: () => { if (net.room && net.room.ws) { try { net.room.ws.close() } catch { /* gone */ } } },
+                netJoin: (code) => netJoinRef.current && netJoinRef.current(code),
             }
             mountDbg({
                 title: 'GAUNTLET',
@@ -1082,15 +1074,14 @@ const GauntletGame = () => {
             })
         }
 
-        netJoinRef.current = netConnect
-        if (net.role === 'host') netConnect(net.code)
-        if (net.role === 'guest' && net.code.length === 4) netConnect(net.code)
+        netJoinRef.current = (code) => net.lobby && net.lobby.join(code)
+        if (net.role === 'host') net.lobby.open()
+        if (net.role === 'guest' && net.code) net.lobby.join(net.code)
         last = performance.now()
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
-            clearTimeout(net.retryTimer)
-            if (net.ws) { try { net.ws.close() } catch { /* gone */ } net.ws = null }
+            if (net.room) { try { net.room.clearRetry(); net.room.reset() } catch { /* gone */ } }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
@@ -1104,48 +1095,32 @@ const GauntletGame = () => {
 
     const entry = GAMES.find((g) => g.label === 'GAUNTLET')
     const netPhase = netUi.phase
-    const netOverlay = netPhase === 'idle' || netPhase === 'play' ? null : (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-[rgba(5,5,12,0.88)] font-mono text-[#8fa3d8] tracking-widest">
-            {netPhase === 'entry' && (
-                <div className="flex flex-col items-center gap-2">
-                    <div className="text-[11px] text-[#ffd23f]">JOIN A FRIEND'S QUEST</div>
-                    <div className="flex gap-2">
-                        <input
-                            value={joinCode}
-                            onChange={(e) => setJoinCode(e.target.value.toUpperCase().replace(/[^ABCDEFGHJKLMNPQRSTUVWXYZ23456789]/g, '').slice(0, 4))}
-                            onKeyDown={(e) => { if (e.key === 'Enter' && joinCode.length === 4 && netJoinRef.current) netJoinRef.current(joinCode) }}
-                            placeholder="CODE"
-                            maxLength={4}
-                            className="w-28 bg-transparent border border-[#2b3348] px-2 py-1 text-center text-[#e9f7ff] text-lg tracking-[0.4em] outline-none focus:border-[#ffd23f]"
-                        />
-                        <button
-                            type="button"
-                            disabled={joinCode.length !== 4}
-                            onClick={() => netJoinRef.current && netJoinRef.current(joinCode)}
-                            className="border border-[#ffd23f] px-3 py-1 text-[11px] text-[#ffd23f] disabled:opacity-30"
-                        >
-                            JOIN
-                        </button>
-                    </div>
-                </div>
-            )}
-            {netPhase === 'connecting' && <div className="text-[11px]">CONNECTING TO THE RELAY…</div>}
-            {netPhase === 'reconnecting' && <div className="text-[11px] text-[#ffd23f]">CONNECTION DROPPED — RECONNECTING…</div>}
-            {netPhase === 'offline' && <div className="text-[11px] text-[#ff5d5d]">RELAY OFFLINE — CHECK NETWORK OR ?relay= URL</div>}
-            {netPhase === 'refused' && <div className="text-[11px] text-[#ff5d5d]">ROOM {netUi.code} — {String(netUi.info || 'REFUSED').toUpperCase()}</div>}
-            {netPhase === 'waiting' && netUi.role === 'host' && (
-                <div className="flex flex-col items-center gap-2">
-                    <div className="text-[10px]">ROOM CODE</div>
-                    <div className="text-3xl text-[#ffd23f] tracking-[0.5em]">{netUi.code}</div>
-                    <div className="text-[10px]">WAITING FOR A FRIEND…</div>
-                </div>
-            )}
-            {netPhase === 'waiting' && netUi.role !== 'host' && <div className="text-[11px]">IN ROOM {netUi.code} — WAITING FOR THE HOST TO PICK A HERO…</div>}
-            {netPhase === 'gone' && <div className="text-[11px] text-[#ff5d5d]">FRIEND LEFT — RELOAD TO ROOM AGAIN</div>}
-            {netPhase === 'over' && <div className="text-[10px]">RELOAD TO PLAY ONLINE AGAIN</div>}
-            {netPhase === 'desync' && <div className="text-[13px] text-[#ff5d5d]">NET DESYNC {netUi.info.toUpperCase()} — SIMS DIVERGED</div>}
+    const bespoke = (text, col = '#8fa3d8', size = 'text-[11px]') => (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-[rgba(5,5,12,0.88)] font-mono tracking-widest" style={{ color: col }}>
+            <div className={size}>{text}</div>
         </div>
     )
+    const netOverlay = netPhase === 'idle' || netPhase === 'play' ? null :
+        netPhase === 'gone' ? bespoke('FRIEND LEFT — RELOAD TO ROOM AGAIN', '#ff5d5d') :
+            netPhase === 'over' ? bespoke('RELOAD TO PLAY ONLINE AGAIN') :
+                netPhase === 'desync' ? bespoke(`NET DESYNC ${String(netUi.info || '').toUpperCase()} — SIMS DIVERGED`, '#ff5d5d', 'text-[13px]') :
+                    <Lobby
+                        state={netUi}
+                        title="QUEST"
+                        names={['HOST', 'FRIEND']}
+                        waitHint="WAITING FOR THE HOST TO PICK A HERO…"
+                        startHint="PICK A HERO — SPACE SENDS THE PARTY"
+                        onEntry={(c) => netJoinRef.current && netJoinRef.current(c)}
+                        accent={{
+                            text: 'text-[#8fa3d8]',
+                            dim: 'text-[#8fa3d8]',
+                            live: 'border-[#3d4a6b] text-[#e9f7ff]',
+                            warn: '#ffd23f',
+                            bad: '#ff5d5d',
+                            btn: 'border-[#ffd23f] text-[#ffd23f]',
+                            codeGlow: { color: '#ffd23f' },
+                        }}
+                    />
 
     return (
         <div className="relative w-full h-full flex flex-col items-center justify-center bg-[#05050c] select-none">
