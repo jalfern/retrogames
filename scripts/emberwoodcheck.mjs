@@ -11,7 +11,7 @@ import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
 import { attractBot } from '../src/games/Emberwood/bot.js'
 import { WIND, SHELF_DECOR } from '../src/games/Emberwood/render.js'
 import { MUSIC } from '../src/utils/AudioController.js'
-import { MUSIC_STEP, battleHeat, musicStepFor } from '../src/games/Emberwood/art.js'
+import { MUSIC_STEP, battleHeat, musicStepFor, musicBedFor } from '../src/games/Emberwood/art.js'
 import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
@@ -804,6 +804,60 @@ function arcScript(seed) {
     const far = battleHeat({ hero: { x: 0, y: 0 }, enemies: [{ x: 400, y: 400, dead: false }] })
     ok(near > far, 'proximity heats: an enemy at 8px out-heats one at 566px')
     ok(near <= 1 && far >= 0, 'heat lives in [0,1]')
+}
+
+// ---- 6e. #1063 act-two track: the Ashfell ascent + Hollow Spire ride a
+// distinct high, sparse bed (not the deep drone); the selector keys off the
+// ember-heart gate that seals those screens off.
+{
+    const A = MUSIC.emberwoodAshfell
+    ok(!!A && A.lead.length === 32 && A.bass.length === 32 && A.perc.length === 32, 'the ashfell bed exists and is a full 32-step bed (lead+bass+perc)')
+    ok(!!A && A.step > 0.08 && A.step < 0.2, `the ashfell bed tempo is playable (${A && A.step}s/step)`)
+    const centroid = (arr) => { const on = arr.filter(n => n > 0); return on.length ? on.reduce((a, b) => a + b, 0) / on.length : 0 }
+    ok(centroid(A.lead) > centroid(MUSIC.emberwoodDeep.lead) + 8, `the ashfell lead sits a full octave above the deep drone (${centroid(A.lead).toFixed(1)} vs ${centroid(MUSIC.emberwoodDeep.lead).toFixed(1)})`)
+    const notes = (arr) => arr.filter(n => n > 0).length
+    ok(notes(A.lead) < notes(MUSIC.emberwoodDeep.lead), `the ashfell lead is sparser than the deep (${notes(A.lead)} notes vs ${notes(MUSIC.emberwoodDeep.lead)})`)
+    ok(notes(A.perc) < notes(MUSIC.emberwoodDeep.perc), `the ashfell pulse is sparser than the deep (${notes(A.perc)} hits vs ${notes(MUSIC.emberwoodDeep.perc)})`)
+    ok(MUSIC_STEP.emberwoodAshfell === A.step, `MUSIC_STEP mirrors the ashfell grid (${MUSIC_STEP.emberwoodAshfell})`)
+    const act2 = Object.values(SCREENS).filter(s => s.req === 'emberTaken')
+    ok(act2.length >= 6, `act two has ${act2.length} screens (Ashfell + Hollow Spire) for the track switch`)
+    ok(act2.every(s => musicBedFor(s) === 'emberwoodAshfell'), 'every act-two screen selects the ashfell bed')
+    ok(musicBedFor(SCREENS['d1-e0']) === 'emberwoodDeep', 'an act-one dungeon still rides the deep drone')
+    ok(musicBedFor(SCREENS['ow-00']) === 'emberwoodVale', 'the vale still sings the vale bed')
+    ok(musicStepFor('emberwoodAshfell', 0) === MUSIC_STEP.emberwoodAshfell && musicStepFor('emberwoodAshfell', 1) < MUSIC_STEP.emberwoodAshfell, 'the ashfell bed lifts with combat heat like the others')
+}
+
+// ---- #1063 the Hollow King door teaches its mantle rule before the first fight.
+{
+    const sign = (SCREENS['d3-e3'].signs || []).find(v => v.bossHint)
+    ok(!!sign, 'a hint sign stands at the Hollow King door (Hollow Spire IV)')
+    if (sign) {
+        const s = createSim(3)
+        spawnRoom(s, 'd3-e3', [7, 8])
+        s.hero.x = sign.x * TS + 8; s.hero.y = (sign.y + 1) * TS + 8; s.hero.dir = 'up'; s.cool = 0
+        stepSim(s, inp({ ap: true })); stepSim(s, inp({ ar: true }))
+        ok(s.msgT > 0 && /CINDER|MANTELE|GUST|SEAL/i.test(s.msg || ''), `reading the sign teaches the mantle rule (${JSON.stringify((s.msg || '').slice(0, 28))})`)
+        // the sign sits on the approach to the boss door, not buried in a wall
+        const scrOfSign = SCREENS['d3-e3']
+        ok(!isSolidTile(tileAt(scrOfSign, sign.x, sign.y)), 'the hint sign stands on a walkable tile, not a wall')
+    }
+}
+
+// ---- #1063 Ashfell is no longer empty: drifting ember motes sell the snowline.
+{
+    const countMotes = (seed, screen, tx, ty, n) => {
+        const s = createSim(seed); spawnRoom(s, screen, [tx, ty])
+        s.enemies = []; s.hero.inv = 1e9 // isolate the emitter from fights/lethal drift
+        let motes = 0
+        for (let i = 0; i < n; i++) { stepSim(s, inp({})); for (const f of s.fx) if (f.k === 'mote') motes++; s.fx.length = 0 }
+        return { motes, screen: s.screen }
+    }
+    const ash = countMotes(3, 'd3-e0', 7, 8, 240)
+    ok(ash.motes > 20 && ash.screen === 'd3-e0', `drifting ember motes fill the Ashfell ascent (${ash.motes} motes in 240 ticks, room ${ash.screen})`)
+    const vale = countMotes(3, 'ow-00', 6, 5, 240)
+    ok(vale.motes === 0, `the vale has no ember motes — it is Ashfell's tell (${vale.motes})`)
+    const deep = countMotes(3, 'd1-e0', 7, 8, 240)
+    ok(deep.motes === 0, `the act-one deep stays mote-free too (${deep.motes})`)
 }
 
 const nodeResult = { pass, fail }

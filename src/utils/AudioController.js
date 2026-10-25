@@ -277,6 +277,24 @@ export const MUSIC = {
             1, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 2, 0, 0, 1, 0,
         ],
     },
+    // "ASHFELL" — the act-two snowline: the deep drone lifted an octave and
+    // thinned out. A cold, sparse, high bell over a low ember drone — the valley
+    // you climb above the vale, not a room below it.
+    emberwoodAshfell: {
+        step: 0.18,
+        lead: [
+            69, 0, 0, 72, 0, 0, 0, 74, 0, 0, 76, 0, 0, 0, 74, 0,
+            0, 0, 72, 0, 0, 74, 0, 0, 71, 0, 0, 0, 69, 0, 0, 0,
+        ],
+        bass: [
+            45, 0, 0, 0, 0, 0, 0, 0, 41, 0, 0, 0, 0, 0, 0, 0,
+            45, 0, 0, 0, 0, 0, 0, 0, 40, 0, 0, 0, 0, 0, 0, 0,
+        ],
+        perc: [
+            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0,
+            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0,
+        ],
+    },
     // MOMENTUM RUNNER — three original beds, one per sector, composed for this
     // build. The tempo is the map: city sprints (fastest), the foundry drives
     // (heavy), orbit floats (slowest) — crossing a zone card you feel the

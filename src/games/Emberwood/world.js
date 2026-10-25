@@ -459,6 +459,7 @@ export const SCREENS = {
     ], {
         dark: true, spawn: [7, 8], req: 'emberTaken',
         doors: [{ id: 'dr3-3', x: 7, y: 0, kind: 'switch', switch: 'sw-3p', to: 'd3-f0', entry: [7, 8] }],
+        signs: [{ x: 7, y: 1, bossHint: true, msg: 'THE HOLLOW KING IS WRAPPED IN CINDER. STEEL CANNOT TOUCH HIM — SEAL THE SPORE VENTS, THEN RELEASE THE GALE TO STRIP HIS MANTELE, LAYER BY LAYER, UNTIL THE BARE CORE YIELDS TO YOUR BLADE.' }],
         plates: [{ id: 'sw-3p', x: 6, y: 1 }],
         blocks: [{ id: 'bk-3', x: 6, y: 4 }],
         chests: [{ id: 'ch-3d', x: 13, y: 1, item: 'heart' }],
