@@ -54,8 +54,9 @@
      toward the volcano on the horizon;
    · post: HDR float target, screen-space heat shimmer around the projected vent
      (rising warped-noise refraction), quarter-res bloom, ACES, vignette, grain.
-     Audio: deep rumble + eruption roar + periodic blasts, all synthesized
-     (unlocks on first click). */
+      Audio: deep rumble + low growl tracking the pulse + eruption roar + faint
+      crackle + periodic blasts + delayed distant thunder after flashes
+      (unlocks on first click). */
 
 const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
@@ -122,6 +123,23 @@ float fbm2(vec2 p){
   return s;
 }
 
+/* dark foreground boulders on the near plain (anchor the scale, break the flat horizon) */
+float rocks(vec2 xz){
+  float s = 0.0;
+  for (int i = 0; i < 7; i++){
+    float fi = float(i);
+    float ra = hash12(vec2(fi * 1.7, uSeed + 2.0)) * 6.2831853;
+    float rr2 = 400.0 + hash12(vec2(fi * 3.1, uSeed + 5.0)) * 360.0;
+    vec2 c = vec2(cos(ra), sin(ra)) * rr2;
+    float wid = 26.0 + hash12(vec2(fi * 1.3, uSeed + 9.0)) * 34.0;
+    float hgt = (26.0 + hash12(vec2(fi + 5.0, uSeed + 13.0)) * 44.0)
+              * (0.72 + 0.28 * vnoise((xz - c) * 0.06 + fi));
+    float d = length(xz - c);
+    s = max(s, hgt * exp(-pow(d / wid, 4.0)));
+  }
+  return s;
+}
+
 /* volcano + surrounding land height */
 float terrainH(vec2 xz){
   float r = length(xz);
@@ -135,7 +153,7 @@ float terrainH(vec2 xz){
   plain *= smoothstep(RB * 0.8, RB * 1.4, r);
   float ridge = exp(-pow((r - 1250.0) / 300.0, 2.0)) * (140.0 * fbm2(vec2(ang * 2.0, 3.7)) + 60.0);
   ridge *= smoothstep(900.0, 1150.0, r);
-  return cone + plain + ridge;
+  return cone + plain + ridge + rocks(xz);
 }
 
 /* lava channel mask on the cone + crater pool, 0..1 */
@@ -145,9 +163,11 @@ float lavaMask(vec2 xz, float r, float t){
   float warp = fbm2(vec2(r * 0.02, ang * 1.3));
   float ch = fbm2(vec2(ang * 3.4 + warp * 0.9, r * 0.016 - t * 0.10));
   float aa = fwidth(ch) * 1.5 + 0.012;
-  float m = smoothstep(0.60 - aa, 0.60 + aa, ch);
+  float wid = 0.13 * (1.0 - smoothstep(RC * 1.1, RB * 0.95, r));
+  float m = smoothstep(0.60 - wid - aa, 0.60 + aa, ch);
   m *= smoothstep(RB, RB * 0.70, r) * smoothstep(RC * 0.9, RC * 1.7, r);
-  float pool = smoothstep(RP + 6.0, RP - 6.0, r);
+  float rim = 2.5 * uPulse * (0.5 + 0.5 * sin(ang * 3.0 - t * 0.9));
+  float pool = 1.0 - smoothstep(RP - 6.0, RP + 6.0 + rim, r);
   return clamp(max(m, pool), 0.0, 1.0);
 }
 
@@ -171,12 +191,19 @@ float plumeDensity(vec3 p, float t){
   float cx = pow(max(dy, 0.0), 1.3) * 0.06;
   float rad = length(p.xz - vec2(cx, 0.0));
   float PRy = 34.0 + dy * 0.52;
+  PRy *= 1.0 + 0.45 * smoothstep(240.0, 430.0, dy);   // mushroom umbrella in the top third
   float radial = 1.0 - smoothstep(PRy * 0.30, PRy, rad);
-  float hfade = smoothstep(-4.0, 40.0, dy) * (1.0 - smoothstep(170.0, 520.0, dy));
+  float hfade = smoothstep(-4.0, 40.0, dy) * (1.0 - smoothstep(170.0, 470.0, dy));
   if (radial * hfade < 0.02) return 0.0;
   vec3 q = p - vec3(cx * 0.4, -t * 26.0, 0.0);
   float tb = fbm2(vec2(q.x, q.z) * 0.007 + vec2(q.y * 0.005 + t * 0.03, t * 0.02));
+  if (dy > 140.0){
+    vec3 q2 = p - vec3(cx * 0.75 + dy * 0.35, -t * 15.0, 0.0);
+    float tb2 = fbm2(vec2(q2.x, q2.z) * 0.0045 + vec2(q2.y * 0.004 + t * 0.02, t * 0.015));
+    tb = mix(tb, tb2, smoothstep(140.0, 320.0, dy));
+  }
   float d = radial * hfade * smoothstep(0.40, 0.76, tb) - 0.05;
+  d *= 1.0 - 0.60 * smoothstep(240.0, 400.0, dy);    // umbrella thins as it entrains air
   return clamp(d * (0.62 + 0.75 * uPulse), 0.0, 1.0);
 }
 
@@ -190,13 +217,15 @@ vec3 plumeLight(vec3 p, float t, float dens){
   float occ = exp(-sh * 0.55);
   float att = 1.0 / (1.0 + dL * dL * 0.000055);
   vec3 hot = mix(vec3(0.80, 0.20, 0.04), vec3(1.0, 0.50, 0.14), clamp(dens + 0.2, 0.0, 1.0));
-  vec3 sc = hot * occ * att * dens * 3.2 * exp(-max(0.0, p.y - VENT_Y) / 120.0);
+  vec3 sc = hot * occ * att * dens * 3.2 * exp(-max(0.0, p.y - VENT_Y) / 110.0);
+  sc *= exp(-max(0.0, p.y - VENT_Y - 170.0) / 50.0);   // vent glow can't reach the canopy: silhouette up top
   float base = exp(-max(0.0, p.y - VENT_Y) / 60.0) * smoothstep(95.0, 18.0, length(p.xz));
   sc += vec3(1.0, 0.50, 0.15) * base * dens * (0.35 + 0.65 * uPulse);
   float cx = pow(max(p.y - VENT_Y, 0.0), 1.3) * 0.06;
-  float fl = uFlash * exp(-pow(length(p.xz - vec2(cx, 0.0)) / 95.0, 2.0)) * smoothstep(60.0, 170.0, p.y - VENT_Y);
+  float fl = uFlash * exp(-pow(length(p.xz - vec2(cx, 0.0)) /(75.0 + 30.0 * uPulse), 2.0))
+           * smoothstep(60.0, 170.0, p.y - VENT_Y) * (1.0 - smoothstep(280.0, 430.0, p.y - VENT_Y));
   sc += vec3(0.72, 0.78, 1.0) * fl * (0.35 + 0.65 * dens) * 3.0;
-  sc += vec3(0.028, 0.034, 0.058) * dens * 0.14;
+  sc += vec3(0.028, 0.034, 0.058) * dens * 0.14 * (0.3 + 0.7 * exp(-max(0.0, p.y - VENT_Y) / 160.0));
   return sc;
 }
 
@@ -291,9 +320,9 @@ void main(){
     if (rd.y < 0.0){ float s = t1; t1 = t2; t2 = s; }
     float pa = max(t1, 2.0), pb = min(t2, min(tHit, 2400.0));
     if (pb > pa){
-      float stp = (pb - pa) / 26.0;
+      float stp = min((pb - pa) / 26.0, 26.0);
       float tp = pa + jit * stp;
-      for (int i = 0; i < 26; i++){
+      for (int i = 0; i < 52; i++){
         if (tp > pb) break;
         vec3 p = ro + rd * tp;
         float d = plumeDensity(p, t);
@@ -369,8 +398,8 @@ void main(){
   float lum = dot(base, vec3(0.299, 0.587, 0.114));
   float d = distance((vUv - uCraterSS) * vec2(1.0, 1.15), vec2(0.0));
   float above = smoothstep(-0.05, 0.12, vUv.y - uCraterSS.y);
-  float m = smoothstep(uHazeR, uHazeR * 0.12, d) * (0.30 + 0.70 * above)
-          * smoothstep(0.06, 0.32, lum) * uHazeOn;
+  float m = (1.0 - smoothstep(uHazeR * 0.30, uHazeR * 1.05, d)) * (0.30 + 0.70 * above)
+          * smoothstep(0.05, 0.55, lum) * uHazeOn;
   vec2 q = vUv * vec2(22.0, 17.0) + vec2(sin(vUv.y * 24.0 + uTime * 2.3) * 0.6, -uTime * 0.55);
   vec2 n = vec2(vn(q), vn(q + vec2(4.7, 8.3))) - 0.5;
   vec2 uv = vUv + n * 0.03 * m;
@@ -594,7 +623,7 @@ function pulse(t){
 const flashes = [];
 (function seedFlashes(){
   let ft = 5.5;
-  while (ft < 1000){ flashes.push(ft); ft += 7 + rr(900 + ft * 3) * 11; }
+  while (ft < 1000){ flashes.push(ft); ft += 5 + rr(900 + ft * 3) * 9; }
 })();
 function flashEnv(t){
   let e = 0;
@@ -618,6 +647,8 @@ function emberAt(i, t){
   const Ti = cyc * EBURST + rr(i * 3 + 1) * EBURST * 0.9;
   const age = t - Ti;
   if (age < 0 || age > 3.1) return null;
+  const pn = Math.max(0, Math.min(1, pulse(Ti) - 0.15));
+  if (rr(i * 5 + 3) > 0.30 + 0.70 * pn) return null;
   const sp = 26 + rr(i + 7) * 20;
   const ang = rr(i + 11) * Math.PI * 2;
   const spr = 4 + rr(i + 13) * 14;
@@ -686,9 +717,11 @@ function lavaHeatJS(x, z, t){
   const ang = Math.atan2(z, x);
   const warp = fbm2JS(r * 0.02, ang * 1.3);
   const ch = fbm2JS(ang * 3.4 + warp * 0.9, r * 0.016 - t * 0.10);
-  let m = smoothstepJS(0.58, 0.62, ch);
+  const wid = 0.13 * (1 - smoothstepJS(RC * 1.1, RB * 0.95, r));
+  let m = smoothstepJS(0.58 - wid, 0.62, ch);
   m *= smoothstepJS(RB, RB * 0.70, r) * smoothstepJS(RC * 0.9, RC * 1.7, r);
-  const pool = smoothstepJS(RP + 6, RP - 6, r);
+  const rim = 2.5 * pulse(t) * (0.5 + 0.5 * Math.sin(ang * 3.0 - t * 0.9));
+  const pool = 1 - smoothstepJS(RP - 6, RP + 6 + rim, r);
   m = Math.max(m, pool);
   const flick = 0.72 + 0.28 * vnoiseJS(r * 0.08 - t * 0.55, ang * 3.0 + t * 0.3);
   return Math.min(1, m * flick);
@@ -702,12 +735,19 @@ function plumeDensityJS(y, t){
   if (dy < -6 || dy > 520) return 0;
   const cx = Math.pow(Math.max(dy, 0), 1.3) * 0.06;
   const rad = Math.abs(cx);                       // on the x axis of the shear
-  const PRy = 34 + dy * 0.52;
+  let PRy = 34 + dy * 0.52;
+  PRy *= 1 + 0.45 * smoothstepJS(240, 430, dy);
   const radial = 1 - smoothstepJS(PRy * 0.30, PRy, rad);
-  const hfade = smoothstepJS(-4, 40, dy) * (1 - smoothstepJS(170, 520, dy));
+  const hfade = smoothstepJS(-4, 40, dy) * (1 - smoothstepJS(170, 470, dy));
   const qy = y + t * 26;
-  const tb = fbm2JS(cx * 0.007 + qy * 0.005 + t * 0.03, t * 0.02);
-  const d = radial * hfade * smoothstepJS(0.40, 0.76, tb) - 0.05;
+  let tb = fbm2JS(cx * 0.007 + qy * 0.005 + t * 0.03, t * 0.02);
+  if (dy > 140){
+    const q2x = cx * 0.25 - dy * 0.35, q2y = y + t * 15;
+    const tb2 = fbm2JS(q2x * 0.0045 + q2y * 0.004 + t * 0.02, t * 0.015);
+    tb = tb + (tb2 - tb) * smoothstepJS(140, 320, dy);
+  }
+  const d = (radial * hfade * smoothstepJS(0.40, 0.76, tb) - 0.05)
+          * (1 - 0.60 * smoothstepJS(240, 400, dy));
   return Math.max(0, Math.min(1, d * (0.62 + 0.75 * pulse(t))));
 }
 function smoothstepJS(a, b, x){
@@ -718,7 +758,7 @@ function smoothstepJS(a, b, x){
 /* ---------------- audio: rumble, roar, blasts ---------------- */
 
 let AC = null, master = null, running = false;
-let roarGain = null, rumbleGain = null;
+let roarGain = null, rumbleGain = null, growlGain = null, crackleGain = null;
 const audioHint = document.getElementById('audiohint');
 function unlockAudio(){
   if (AC) return;
@@ -747,6 +787,19 @@ function unlockAudio(){
     const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 420; bp.Q.value = 0.6;
     roarGain = AC.createGain(); roarGain.gain.value = 0.03;
     ns.connect(bp).connect(roarGain).connect(master); ns.start();
+    /* low growl: sustained body that tracks the eruption pulse */
+    const gs = AC.createBufferSource(); gs.buffer = buf; gs.loop = true;
+    const glpf = AC.createBiquadFilter(); glpf.type = 'lowpass'; glpf.frequency.value = 150; glpf.Q.value = 0.9;
+    growlGain = AC.createGain(); growlGain.gain.value = 0.05;
+    gs.connect(glpf).connect(growlGain).connect(master); gs.start();
+    /* faint crackle: high sparse hiss of burning gas */
+    const cs2 = AC.createBufferSource(); cs2.buffer = buf; cs2.loop = true;
+    const chpf = AC.createBiquadFilter(); chpf.type = 'highpass'; chpf.frequency.value = 1600;
+    crackleGain = AC.createGain(); crackleGain.gain.value = 0.006;
+    cs2.connect(chpf).connect(crackleGain).connect(master); cs2.start();
+    const clfo = AC.createOscillator(); clfo.type = 'sine'; clfo.frequency.value = 6.3;
+    const clg = AC.createGain(); clg.gain.value = 0.004;
+    clfo.connect(clg).connect(crackleGain.gain); clfo.start();
     running = true;
     audioHint.textContent = 'volcano sound on';
     audioHint.classList.add('off');
@@ -784,6 +837,38 @@ function blast(strength){
   n.start(t);
 }
 let nextBlast = 0;
+
+/* distant thunder: speed-of-light delay after a visible plume flash */
+const thunders = [];
+let lastThunder = -9;
+function thunder(strength){
+  if (!running || !AC) return;
+  const t = AC.currentTime;
+  const dur = 2.2 + rr(Math.floor(t * 100)) * 0.8;
+  const o = AC.createOscillator(); o.type = 'sine';
+  o.frequency.setValueAtTime(36, t);
+  o.frequency.exponentialRampToValueAtTime(17, t + dur);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.13 * strength, t + 0.35);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(master);
+  o.start(t); o.stop(t + dur);
+  const nlen = Math.floor(2.0 * AC.sampleRate);
+  const nb = AC.createBuffer(1, nlen, AC.sampleRate);
+  const nd = nb.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < nlen; i++){
+    const w = Math.random() * 2 - 1;
+    last = (last + 0.008 * w) / 1.008;
+    nd[i] = last * 6 * Math.exp(-i / (nlen * 0.45)) * (0.7 + 0.3 * Math.sin(i / nlen * 9.0));
+  }
+  const n = AC.createBufferSource(); n.buffer = nb;
+  const nlp = AC.createBiquadFilter(); nlp.type = 'lowpass'; nlp.frequency.value = 95;
+  const ng = AC.createGain(); ng.gain.value = 0.1 * strength;
+  n.connect(nlp).connect(ng).connect(master);
+  n.start(t);
+}
 
 /* ---------------- frame loop ---------------- */
 
@@ -917,6 +1002,13 @@ function frame(){
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   if (running && roarGain) roarGain.gain.setTargetAtTime(0.02 + 0.05 * puls + 0.06 * flash, AC.currentTime, 0.25);
+  if (running && growlGain) growlGain.gain.setTargetAtTime(0.04 + 0.14 * puls, AC.currentTime, 0.3);
+  if (running && crackleGain) crackleGain.gain.setTargetAtTime(0.004 + 0.008 * puls, AC.currentTime, 0.2);
+  if (flash > 0.9 && t > lastThunder + 3.0){
+    thunders.push({ at: t + 1.6 + rr(Math.floor(t * 7)) * 1.2, s: 0.5 + flash * 0.5 });
+    lastThunder = t;
+  }
+  while (thunders.length && t >= thunders[0].at) thunder(thunders.shift().s);
   if (flash > 0.9 && t > nextBlast){
     blast(0.7 + flash * 0.3);
     nextBlast = t + 4;
@@ -1016,6 +1108,12 @@ window.__volcanoTest = {
   lavaHeatAt(x, z, t){ return +lavaHeatJS(x, z, +t).toFixed(3); },
   lavaTemp(x, z){ return +lavaTempJS(x, z).toFixed(3); },
   plumeAt(y){ return +plumeDensityJS(+y, (performance.now() - t0) / 1000).toFixed(3); },
+  plumeBand(y){
+    const dy = +y - VENT_Y;
+    return +((34 + dy * 0.52) * (1 + 0.45 * smoothstepJS(240, 430, dy))).toFixed(1);
+  },
+  emberCount(t){ let n = 0; for (let i = 0; i < EMB_N; i++) if (emberAt(i, +t)) n++; return n; },
+  audio(){ return { growl: growlGain ? +growlGain.gain.value.toFixed(4) : 0, crackle: crackleGain ? +crackleGain.gain.value.toFixed(4) : 0, thunderPending: thunders.length }; },
   ember(i, t){ const e = emberAt(i, +t); return e ? { p: e.pos.map(v => +v.toFixed(2)), v: e.vel.map(v => +v.toFixed(2)) } : null; },
   setSpeed(v){ speedMul = Math.max(0, +v); },
   setHaze(v){ hazeOn = !!v; },

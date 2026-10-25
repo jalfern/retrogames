@@ -16,6 +16,10 @@
 //     · lava exists on the cone (mirror max > threshold) and nowhere beyond its foot
 //     · plume density is dense at the vent, thinning to nothing at its top
 //     · heat shimmer is load-bearing (frozen-frame edge-energy changes when toggled)
+//     · plume umbrella widens in the top third (mirror band ratio)
+//     · ember shower density pumps with the pulse (count peak vs mean)
+//     · growl + crackle audio layers run and the growl tracks the pulse
+//     · portrait 390px: crater framed, scene lit, embers drawn
 //     · a real drag rotates the view; a real tap unlocks audio
 //   3. LAW    — self-contained single file; NOT registered in games.js
 //               (demos law, Jon 2026-10-19); carries its credits config.
@@ -207,8 +211,9 @@ async function main() {
       const sprites = await page.evaluate(() => window.__volcanoTest.state().emberSprites)
       ok('ember sprites render', sprites > 30, `${sprites} sprites`)
 
+      await page.waitForTimeout(1800)
       const zA = await page.evaluate(() => window.__volcanoTest.state().camAz)
-      await page.waitForTimeout(1500)
+      await page.waitForTimeout(2200)
       const zB = await page.evaluate(() => window.__volcanoTest.state().camAz)
       ok('camera orbits the mountain (camAz grows)', zB > zA + 1.0, `${zA}° -> ${zB}°`)
 
@@ -251,6 +256,23 @@ async function main() {
         `low=${plume.low} high=${plume.high}`)
       ok('no plume below the vent', plume.below === 0, `${plume.below}`)
 
+      const band = await page.evaluate(() => {
+        const D = window.__volcanoTest
+        return { lo: D.plumeBand(300), hi: D.plumeBand(560) }
+      })
+      ok('plume umbrella widens in the top third', band.hi > band.lo * 2.2, `PR@300=${band.lo} PR@560=${band.hi}`)
+
+      const ramp = await page.evaluate(() => {
+        const D = window.__volcanoTest
+        const c = []
+        for (let t = 0; t <= 78; t += 0.5) c.push(D.emberCount(t))
+        const mx = Math.max(...c)
+        const mean = c.reduce((a, b) => a + b, 0) / c.length
+        return { mx, mean }
+      })
+      ok('ember shower density pumps with the pulse', ramp.mx > ramp.mean * 1.35,
+        `peak=${ramp.mx} mean=${ramp.mean.toFixed(1)}`)
+
       // shimmer load-bearing: frozen scene (frame-identical), flip haze inside the
       // demo between two consecutive reads -> the per-pixel delta IS the shimmer
       await page.evaluate(() => { const D = window.__volcanoTest; D.setSpeed(0) })
@@ -272,6 +294,29 @@ async function main() {
       const yawB = await page.evaluate(() => window.__volcanoTest.state().yaw)
       ok('drag rotates the view', Math.abs(yawB - yawA) > 0.15, `yaw ${yawA} -> ${yawB}`)
       ok('tap unlocks audio', await page.evaluate(() => window.__volcanoTest.state().audioOn))
+
+      let growlHi = await page.evaluate(() => window.__volcanoTest.audio().growl)
+      for (let i = 0; i < 8; i++){
+        growlHi = Math.max(growlHi, await page.evaluate(() => window.__volcanoTest.audio().growl))
+        await page.waitForTimeout(600)
+      }
+      const audio = await page.evaluate(() => window.__volcanoTest.audio())
+      ok('growl + crackle layers run; growl tracks the pulse',
+        growlHi > 0.09 && audio.crackle > 0.001, `growlMax=${growlHi} crackle=${audio.crackle}`)
+
+      await page.setViewportSize({ width: 390, height: 844 })
+      await page.waitForTimeout(1400)
+      const port = await page.evaluate(() => {
+        const s = window.__volcanoTest.state()
+        return { ss: s.craterSS, sprites: s.emberSprites }
+      })
+      const pimg = decodePng(await page.screenshot())
+      const pAvg = meanLum(pimg, 0, 0, pimg.w, pimg.h)
+      ok('portrait 390px: crater framed, scene lit, embers drawn',
+        port.ss[0] > 0.3 && port.ss[0] < 0.7 && port.ss[1] > 0.2 && port.ss[1] < 0.78 &&
+        pAvg > 8 && pAvg < 85 && port.sprites > 10,
+        `craterSS=[${port.ss}] avg=${pAvg.toFixed(0)} sprites=${port.sprites}`)
+      if (shots) { mkdirSync(shots, { recursive: true }); writeFileSync(resolve(shots, 'portrait.png'), await page.screenshot()) }
 
       if (shots) {
         mkdirSync(shots, { recursive: true })
