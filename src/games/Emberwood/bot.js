@@ -26,14 +26,15 @@ const GRAPH = (() => {
     return g
 })()
 
-function screenRoute(from, to) {
+function screenRoute(from, to, flags) {
     if (from === to) return null
+    const ok = (k) => !SCREENS[k] || !SCREENS[k].req || !flags || flags[SCREENS[k].req]
     const prev = { [from]: null }
     const q = [from]
     while (q.length) {
         const id = q.shift()
         for (const e of GRAPH[id]) {
-            if (e.to in prev) continue
+            if (e.to in prev || !ok(e.to)) continue
             prev[e.to] = { id, e }
             if (e.to === to) { let cur = to; while (prev[cur].id !== from) cur = prev[cur].id; return prev[cur].e }
             q.push(e.to)
@@ -42,13 +43,14 @@ function screenRoute(from, to) {
     return null
 }
 
-function screenReachable(from, to) {
+function screenReachable(from, to, flags) {
     if (from === to) return true
+    const ok = (k) => !SCREENS[k] || !SCREENS[k].req || !flags || flags[SCREENS[k].req]
     const seen = { [from]: true }
     const q = [from]
     while (q.length) {
         const id = q.shift()
-        for (const e of GRAPH[id]) { if (e.to === to) return true; if (!(e.to in seen)) { seen[e.to] = true; q.push(e.to) } }
+        for (const e of GRAPH[id]) { if (!ok(e.to)) continue; if (e.to === to) return true; if (!(e.to in seen)) { seen[e.to] = true; q.push(e.to) } }
     }
     return false
 }
