@@ -176,9 +176,9 @@ ok(!ownsGap([QA(901, 'Myst', 'totally unrelated text')], 'SSX', FIX_GAPS.SSX[0])
 ok(!ownsGap([QA(902, 'SSX', 'general polish notes only')], 'SSX', FIX_GAPS.SSX[0]), 'ownsGap: naming the game without the gap does not own it')
 ok(flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [], buildingQa: [] }).game === 'SSX',
     'idle: flagship order must start at SSX (Jon\'s order, #841)')
-ok(REAL_GAPS.SSX.length === 0 && FIRST_OPEN !== undefined &&
-    flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] }).game === FIRST_OPEN,
-    '#991: SSX shipped its gap list empty (#980/#988) — the stage names the first flagship with a real gap (derived: today ' + FIRST_OPEN + '), no crash')
+const stageReal = flagshipStage({ gapsByGame: REAL_GAPS, qaIssues: [], buildingQa: [] })
+ok(REAL_GAPS.SSX.length === 0 && (FIRST_OPEN ? stageReal && stageReal.game === FIRST_OPEN : stageReal === null),
+    '#991: SSX shipped its gap list empty (#980/#988) — the stage names the first flagship with a real gap, or null when every gap is owned (derived: today ' + (FIRST_OPEN || 'every gap owned -> null') + '), no crash')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(903, 'SSX', 'a')], buildingQa: [] }).gap === 'b',
     'idle: an owned gap is skipped for the next one in the same README')
 ok(flagshipStage({ gapsByGame: { 'SSX': ['a', 'b'], 'Emberwood': ['c'] }, qaIssues: [QA(904, 'SSX', 'a'), QA(905, 'SSX', 'b')], buildingQa: [] }).game === 'Emberwood',
@@ -222,10 +222,13 @@ ok(qaIdleStage({ issues: [IQ(921, ['feedback'])], gapsByGame: REAL_GAPS }) === n
     '#878: real feedback outranks the flagship stage — a claimable feedback item means no flagship kick')
 ok(qaIdleStage({ issues: [IQ(922, ['waiting-jon', 'question']), IQ(923, ['needs-approval', 'feedback'])], gapsByGame: FIX_GAPS }).game === 'SSX',
     '#878: a parked question and an un-approved item are NOT claimable feedback — the stage still fires')
-ok(qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS }).game === firstOpenExcluding(['SSX']),
-    '#878: a game the builder is inside (building) is skipped — one lane per game (derived: today ' + firstOpenExcluding(['SSX']) + ')')
-ok(qaIdleStage({ issues: [IQ(925, ['building-qa'], 'QA — SSX: polish pass')], gapsByGame: REAL_GAPS }).game === firstOpenExcluding(['SSX']),
-    '#878: a game another QA lane holds (building-qa) is skipped too (derived: today ' + firstOpenExcluding(['SSX']) + ')')
+const skipBuild = qaIdleStage({ issues: [IQ(924, ['building'], 'GAME — SSX: the deep pass')], gapsByGame: REAL_GAPS })
+const wantSkip = firstOpenExcluding(['SSX'])
+ok(wantSkip ? skipBuild && skipBuild.game === wantSkip : skipBuild === null,
+    '#878: a game the builder is inside (building) is skipped — one lane per game (derived: today ' + (wantSkip || 'every gap owned -> null') + ')')
+const skipQa = qaIdleStage({ issues: [IQ(925, ['building-qa'], 'QA — SSX: polish pass')], gapsByGame: REAL_GAPS })
+ok(wantSkip ? skipQa && skipQa.game === wantSkip : skipQa === null,
+    '#878: a game another QA lane holds (building-qa) is skipped too (derived: today ' + (wantSkip || 'every gap owned -> null') + ')')
 const allHeldByQa = FLAGSHIPS.map((g, i) => IQ(930 + i, ['building-qa'], `QA — ${g}: polish`))
 ok(qaIdleStage({ issues: allHeldByQa, gapsByGame: REAL_GAPS }) === null,
     '#878: every flagship held -> null — STOP stays legal, the QA lane is not forced at a held game')
