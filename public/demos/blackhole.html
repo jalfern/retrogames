@@ -222,7 +222,7 @@ vec3 diskEmission(vec3 q, vec3 towardCam, float rBL, out float opacity){
 float Rrad(float r, float a, float xi, float Q){
   float P = r * r + a * a - a * xi;
   float Del = r * r - RS * r + a * a;
-  return P * P - Del * (r * r + (xi - a) * (xi - a) + Q);
+  return P * P - Del * ((xi - a) * (xi - a) + Q);
 }
 float Thet(float th, float a, float xi, float Q){
   float c = cos(th), s2 = max(1.0 - c * c, 1e-8);
@@ -330,13 +330,18 @@ void main(){
     vec3 et = normalize(vec3(wk * c0 * sin(ph0), -r0k * s0, wk * c0 * cos(ph0)));
     vec3 ep = vec3(cos(ph0), 0.0, -sin(ph0));
     float n_r = dot(rd, er), n_t = dot(rd, et), n_p = dot(rd, ep);
-    // constants of motion from the static tetrad (E_loc = 1 units)
+    // constants of motion from the static tetrad (E_loc = 1 units):
+    // p^t = 1/sqrt(-g_tt), p^phi = n_p/sqrt(g_phiphi), then covariant E, Lz
     float Sig0 = r0k * r0k + ka * ka * c0 * c0;
     float Del0 = r0k * r0k - RS * r0k + ka * ka;
-    float E0 = sqrt(max((Del0 - ka * ka * s0 * s0) / Sig0, 1e-6));
-    float Lz = sqrt(max((pow(r0k * r0k + ka * ka, 2.0) - Del0 * ka * ka * s0 * s0) * s0 * s0 / Sig0, 1e-8)) * n_p;
+    float ftt = max((Del0 - ka * ka * s0 * s0) / Sig0, 1e-6);      // -g_tt
+    float ftphi = -ka * r0k * s0 * s0 / Sig0;                       // g_tphi (2M=1)
+    float gpp = (pow(r0k * r0k + ka * ka, 2.0) - Del0 * ka * ka * s0 * s0) * s0 * s0 / Sig0;
+    float pt = 1.0 / sqrt(ftt), pphi = n_p / sqrt(max(gpp, 1e-8));
+    float E0 = ftt * pt - ftphi * pphi;                             // E = -p_t
+    float Lz = ftphi * pt + gpp * pphi;                             // Lz = p_phi
     float xi = Lz / E0;
-    float Q = max(Sig0 * n_t * n_t - ka * ka * E0 * E0 * c0 * c0 + Lz * Lz * c0 * c0 / max(s0 * s0, 1e-8), 0.0);
+    float Q = max(Sig0 * n_t * n_t / (E0 * E0) - ka * ka * c0 * c0 + xi * xi * c0 * c0 / max(s0 * s0, 1e-8), 0.0);
 
     float r = r0k, th = th0, ph = 0.0;
     float sr = n_r >= 0.0 ? 1.0 : -1.0;
@@ -372,11 +377,18 @@ void main(){
       if ((rN - r) * sr < 0.0) sr = -sr;        // radial turning point
       if ((thN - th) * st < 0.0) st = -st;      // theta turning point
       r = rN; th = thN; ph = phN;
-      wPrev = wN;
       if (r > ESC_R && sr > 0.0) break;
+      wPrev = wN;
     }
-    vec3 wEnd = blToWorld(r, th, ph0 + ph, ka);
-    v = normalize(wEnd - wPrev);
+    { // escape direction from the geodesic velocity in the world embedding basis
+      float cr = cos(th), srq = sin(th), wkx = sqrt(r * r + ka * ka);
+      float pw = ph0 + ph;
+      vec3 erx = normalize(vec3(r * srq / wkx * sin(pw), cr, r * srq / wkx * cos(pw)));
+      vec3 etx = normalize(vec3(wkx * cr * sin(pw), -r * srq, wkx * cr * cos(pw)));
+      vec3 epx = vec3(cos(pw), 0.0, -sin(pw));
+      vec3 kd = kerrD(r, th, ka, xi, Q, sr, st);
+      v = normalize(kd.x * erx + kd.y * etx + srq * kd.z * epx);
+    }
     captured = captured || r < rPlus;
   }
 
@@ -394,7 +406,7 @@ void main(){
   // the shadow limb / photon ring exists for external observers; deep inside
   // the photon sphere (the plunge's final approach) the whole frame is the
   // shadow, so no limb glow (#1048).
-  if (!captured && length(ro) > 1.6 && uSpin == 0.0){
+  if (!captured && length(ro) > 1.6){
     float ring = exp(-max(b - B_CRIT, 0.0) * 14.0);
     col += mix(vec3(1.0, 0.85, 0.62), vec3(0.68, 0.82, 1.0), uTint) * ring * 0.5 * (1.0 + uBeam * 0.12);
   }
@@ -1006,7 +1018,7 @@ function probeBend(bWant){
 
 function kerrRr(r, a, xi, Q){
   const P = r * r + a * a - a * xi, D = r * r - RS * r + a * a;
-  return P * P - D * (r * r + (xi - a) * (xi - a) + Q);
+  return P * P - D * ((xi - a) * (xi - a) + Q);
 }
 function kerrTh(th, a, xi, Q){
   const c = Math.cos(th), s2 = Math.max(1 - c * c, 1e-8);
@@ -1021,11 +1033,6 @@ function kerrDeriv(r, th, a, xi, Q, sr, st){
           st * Math.sqrt(Math.max(kerrTh(th, a, xi, Q), 0)) / S,
           (-a + xi / s2 + a * P / D) / S];
 }
-function kerrWorld(r, th, ph, a){
-  const w = Math.sqrt(r * r + a * a), s = Math.sin(th);
-  return [w * s * Math.sin(ph), r * Math.cos(th), w * s * Math.cos(ph)];
-}
-
 function traceKerrJS(pIn, dIn, maxSteps, a){
   const nl = Math.hypot(dIn[0], dIn[1], dIn[2]);
   const d = [dIn[0] / nl, dIn[1] / nl, dIn[2] / nl];
@@ -1042,15 +1049,18 @@ function traceKerrJS(pIn, dIn, maxSteps, a){
   const dot = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
   const nr = dot(d, er), nt = dot(d, et), np = dot(d, ep);
   const Sig0 = r0 * r0 + a * a * c0 * c0, Del0 = r0 * r0 - RS * r0 + a * a;
-  const E0 = Math.sqrt(Math.max((Del0 - a * a * s0 * s0) / Sig0, 1e-6));
-  const A0 = Math.pow(r0 * r0 + a * a, 2) - Del0 * a * a * s0 * s0;
-  const Lz = Math.sqrt(Math.max(A0 * s0 * s0 / Sig0, 1e-8)) * np;
+  const ftt = Math.max((Del0 - a * a * s0 * s0) / Sig0, 1e-6);
+  const ftphi = -a * r0 * s0 * s0 / Sig0;
+  const gpp = (Math.pow(r0 * r0 + a * a, 2) - Del0 * a * a * s0 * s0) * s0 * s0 / Sig0;
+  const pt = 1 / Math.sqrt(ftt), pphi = np / Math.sqrt(Math.max(gpp, 1e-8));
+  const E0 = ftt * pt - ftphi * pphi;
+  const Lz = ftphi * pt + gpp * pphi;
   const xi = Lz / E0;
-  const Q = Math.max(Sig0 * nt * nt - a * a * E0 * E0 * c0 * c0 + Lz * Lz * c0 * c0 / Math.max(s0 * s0, 1e-8), 0);
+  const Q = Math.max(Sig0 * nt * nt / (E0 * E0) - a * a * c0 * c0 + xi * xi * c0 * c0 / Math.max(s0 * s0, 1e-8), 0);
   const rPlus = 0.5 + Math.sqrt(Math.max(0.25 - a * a, 0));
   let r = r0, th = th0, ph = 0;
   let sr = nr >= 0 ? 1 : -1, st = nt >= 0 ? 1 : -1;
-  let wPrev = pIn.slice(), captured = false, escaped = false, rMin = r0;
+  let captured = false, escaped = false, rMin = r0;
   for (let i = 0; i < maxSteps; i++){
     const Rr = kerrRr(r, a, xi, Q);
     const dlam = Math.min(0.9, 0.02 * r * (r * r + a * a * Math.cos(th) * Math.cos(th)) / Math.sqrt(Math.max(Rr, 1e-6)));
@@ -1067,12 +1077,20 @@ function traceKerrJS(pIn, dIn, maxSteps, a){
     if (dT * st < 0) st = -st;
     r = rN; th = thN; ph = phN;
     rMin = Math.min(rMin, r);
-    const wN = kerrWorld(r, th, ph0 + ph, a);
-    wPrev = wN;
     if (r > ESC_R && sr > 0){ escaped = true; break; }
   }
-  const wEnd = kerrWorld(r, th, ph0 + ph, a);
-  let vx = wEnd[0] - wPrev[0], vy = wEnd[1] - wPrev[1], vz = wEnd[2] - wPrev[2];
+  let vx = 0, vy = 0, vz = 0;
+  { // exit direction from the geodesic velocity in the world embedding basis
+    const cr = Math.cos(th), srq = Math.sin(th), wkx = Math.sqrt(r * r + a * a);
+    const pw = ph0 + ph;
+    const erx = [r * srq / wkx * Math.sin(pw), cr, r * srq / wkx * Math.cos(pw)];
+    const etx = [wkx * cr * Math.sin(pw), -r * srq, wkx * cr * Math.cos(pw)];
+    const epx = [Math.cos(pw), 0, -Math.sin(pw)];
+    const kd = kerrDeriv(r, th, a, xi, Q, sr, st);
+    vx = kd[0] * erx[0] + kd[1] * etx[0] + srq * kd[2] * epx[0];
+    vy = kd[0] * erx[1] + kd[1] * etx[1] + srq * kd[2] * epx[1];
+    vz = kd[0] * erx[2] + kd[1] * etx[2] + srq * kd[2] * epx[2];
+  }
   const vl = Math.hypot(vx, vy, vz) || 1;
   vx /= vl; vy /= vl; vz /= vl;
   const bp = Math.max(-1, Math.min(1, vx * d[0] + vy * d[1] + vz * d[2]));
@@ -1088,7 +1106,7 @@ function kerrSweep(a){
   const out = {};
   for (const side of [-1, 1]){
     const res = traceKerrJS(C, [side * k0 / L, 0, -1 / L], 240, a);
-    const pro = side * Math.sign(a) * res.xi > 0;
+    const pro = res.xi * Math.sign(a) > 0;   // xi carries the launch-side sign
     out[pro ? 'pro' : 'retro'] = res.bend;
     if (res.captured) out.pro = out.retro = null;
   }
