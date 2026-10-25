@@ -43,3 +43,14 @@ loaded by relative `<script src>` — never absolute URLs (the per-demo `*check`
   `window.DEMO_CREDITS` (demos) / `window.DEMO_INDEX` (the index page).
 - `ocean.stars.js` — Yale BSC star data for OCEAN/MOUNTAINS skies
   (`node scripts/build-ocean-stars.mjs` regenerates).
+
+## blackhole.html engine notes
+
+Schwarzschild flyby + plunge + probes as before; key `K` (or `?spin=1/-1`)
+switches to a Kerr black hole (a* = 0.9): a separated null-geodesic integrator
+(Bardeen r/theta/phi with Carter constants from a static-tetrad launch) makes
+the D-shaped shadow, Lense-Thirring bend asymmetry and frame-dragged disk
+emerge from physics. Honest gaps (also on the QA pass issue #1082): the
+photon-ring glow uses the Schwarzschild b_crit locus; the plunge cone/Doppler
+formulas and the probe-beacon integrators stay Schwarzschild; the disk inner
+edge stays at 3rs rather than the Kerr ISCO (2.32M prograde).

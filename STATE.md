@@ -1,59 +1,55 @@
-# STATE — session 21 (2026-10-25)
+# STATE — session 22 (2026-10-25)
 
 ## Shipped this session
-- **BLACK HOLE plunge** (#1048 → PR #1076, squashed to main as e74433d):
-  the flyby loop now ends by actually falling in. After the close pass the drone
-  tips to a radial infall r(s) = rs·(1 + (R1/rs−1)(1−s)^3.5) and crosses r=rs.
-  The outside sky compresses into the escape cone (sin²α = 27M²(1−rs/r)/r², given
-  by the demo's own null-geodesic tracer) while the shadow fills the frame;
-  infall Doppler D = √((1+β)/(1−β)), β=√(rs/r), beams the sky D³ and blueshifts
-  it — a bright blue-white disc, hottest as the cone collapses. No flash at the
-  crossing; the dark interior fades back to the loop start and probes clear.
-  The drone holds its tip-over while dropped beacons (#1047) are still in view.
-- **Real physics bug fixed on the way**: the tracer used Euclidean screen angles
-  for the impact parameter; near the horizon the local-tetrad relation
-  b = r·sinψ/√(1−rs/r) diverges, so escape/capture at depth was wrong (whole
-  frame whitened). Launch conditions are now the correct local-frame ones
-  (b, w from the radial equation) in the shader AND both JS mirrors. Photon ring
-  gated to r>1.5rs (no limb glow inside the photon sphere); disk fades as the
-  diver falls past it.
-- Rebased onto QA's #1074 probe polish mid-flight (same files!); probe weights
-  now ride the loop fade too.
-- `blackholecheck` 75/75 (was 59 on main): +16 gates — cone-formula match,
-  monotone r, blueshift rise, cone→0 at horizon, pixel gate (>50% dark frame +
-  bright blue-white core), loop auto-restart, local-tetrad launcher. Fifth
-  proven-fail mutant: pin uBeam=1 → disc pixel gate red, all physics gates green
-  (the bright circle is computed, not painted). Verified live in prod.
+- **BLACK HOLE spin (#1049 → PR #1080, squashed to main as 4620cf5)**: the hole
+  can now spin. A separated Kerr null-geodesic tracer (Bardeen r/θ/φ, Carter
+  constants ξ,q from a static-tetrad launch incl. the g_tφ cross term, RK4,
+  capture at r+ = M+√(M²−a²), disk crossings at θ=π/2) engages under `uSpin≠0`.
+  Everything lopsided EMERGES from the geodesics, nothing painted:
+  D-shaped shadow (prograde capture 0.157 vs retrograde 0.375 at a*=0.9,
+  flips with spin sign, symmetric-and-exactly-Schwarzschild at a=0),
+  Lense–Thirring bend asymmetry 2.27 vs 1.35 rad, frame-dragged Keplerian
+  disk Ω=√M/(r^1.5+a√M) + ZAMO Doppler (beamed side reverses with spin),
+  GR constants verified: r+ 0.718, photon orbits 1.56M/3.91M, ISCO 2.32M/8.71M.
+  Toggle: key `K` cycles off/prograde/retrograde; `?spin=1`/`?spin=-1` links.
+  Default a=0 keeps all 75 legacy gates bit-identical.
+- `blackholecheck` 75→87 green; sixth proven-fail mutant: dropping the
+  frame-shift (ξ−a)² term from the JS mirror's radial potential turns the
+  bend gate red while every Schwarzschild gate stays green. Verified live in prod.
+- Bugs squashed on the way: static-tetrad launch initially dropped the g_tφ
+  covariant conversion (mirrors showed impossible R(r0)<0 — the clue); the
+  escape-direction reconstruction gave a zero-length final segment (wPrev
+  updated before the break) — now derived from the geodesic velocity.
 
 ## Playable now
-- jalfern.com/retrogames/demos/blackhole.html — watch one loop: flyby, probe
-  drops (tap), then the plunge with the shrinking blueshifted sky circle.
+- jalfern.com/retrogames/demos/blackhole.html — press K (or open with
+  ?spin=1): disk drags prograde with the hole, one sky side brightens and the
+  shadow sits visibly lopsided. K again reverses.
 
 ## Branches / harness
-- forge/blackhole-plunge deleted by squash; worktree `~/Dev/retrogames-forge-
-  blackhole-plunge` removable. Main checkout detached at e74433d.
-- main's node_modules symlink in worktrees is a local convenience only.
+- forge/blackhole-spin deleted by squash; worktree `~/Dev/retrogames-forge-
+  blackhole-spin` removable. Main checkout `~/Dev/retrogames` is detached at
+  the OLD main (0ef54e6) — next lane's step-1 fetch fixes it.
 
 ## Next candidates (unclaimed)
-1. Game-queue oldest: **#1049** BLACK HOLE spin (Kerr ergosphere — the plunge
-   machinery + the now-correct local-tetrad launcher are the head start),
-   then #1050 CORAL REEF GPU rebuild.
-2. #1063 EMBERWOOD act-two polish stays QA-owned (`building-qa`) — don't touch.
-3. New polish filed for QA lane: **#1077** (plunge audio, tidal shear on the
-   sky disc, singularity light-show, dive telemetry HUD, tip-over cue).
+1. Game-queue oldest: **#1050** CORAL REEF GPU rebuild (WebGL2/WebGPU, from
+   scratch). Then the queue is empty — flagship polish stage (#841) per rules.
+2. **#1082** BLACK HOLE spin polish stays QA-owned (`feedback`, don't touch).
+3. #1063 EMBERWOOD act-two polish stays QA-owned (`building-qa`) — don't touch.
 
 ## Open questions
 - none filed this session.
 
 ## Watch-outs learned
-- A camera looking AWAY from the hole exposes the tracer's far-field shortcut:
-  Euclidean screen angles are NOT local physical angles near the horizon; use
-  b = r·sinψ/√(1−rs/r) with w from the radial equation, in GLSL and every JS
-  mirror, or deep-dive frames whiten out.
-- The photon-ring term glows for ALL escaping rays (b<b_crit ⇒ ring=1); gate it
-  to r>1.5rs or the deep plunge's radial center burns bright.
-- QA lane can merge into the same files while you build (#1074 vs #1048 hit
-  blackhole.html/index/blackholecheck all three) — expect to rebase and
-  semantically re-apply, then re-prove mutants on the rebased tree.
-- Screenshot-vs-jumpTo timing skew (~0.3–0.4s under headless) crosses short
-  phase boundaries: keep money-shot windows ≥1s and capture at window mid.
+- Regex source gates are rename-fragile: when refactoring shader variables
+  (b→bb0, ring condition), update the gate regexes in the same commit.
+- Adding screenshot time to a suite shifts loop phases; gates whose margins were
+  ~0.1 sat on the edge and flaked. Fix physically (probe-trail break 1.3→1.06
+  = deeper freeze) rather than by loosening thresholds.
+- `perl -pi` with a space-mismatched pattern no-ops SILENTLY — always grep for
+  the mutation after applying it (bit two mutant attempts).
+- `jalfern.com` (bare) 308-redirects to `www.jalfern.com`; prod-verify polls
+  must use www or `-L`.
+- Static-tetrad Kerr launch: constants are covariant (E=−p_t, Lz=p_φ include
+  g_tφ·p^φ, p^t=1/√(−g_tt)·E_loc); skipping the cross term passes most gates
+  and fails only on near-horizon physics.
