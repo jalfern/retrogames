@@ -204,3 +204,21 @@ launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after
 scripts/forge.sh                                                # force a session now
 tail -f /tmp/forge/last.log                                     # watch a session
 ```
+
+**The nightly bot (#1040):** contractcheck proves a game *boots 600 ticks*; nothing proved a
+game can be *finished* unattended. `scripts/nightlybot.mjs` plays every contract game to
+completion each night — seeded, stepped, headless, via `window.__game` — with a mulberry32 pad
+policy pure in (seed, tick), so a failure line is reproducible with one command
+(`NIGHTLY_ONLY=<id> NIGHTLY_SEED=<seed> npm run nightlybot`). Hard gates: zero page errors,
+tick advances every step, `reset(seed)` lands at tick 0 with that seed, and the run must reach
+`done` before the cap — cap-reached is a softlock. Score drops are warnings, not verdicts
+(some titles legitimately dock points). Results push `nightly.json` to forge-telemetry
+(`/forge` shows a ✓/✗ row per game with fail-streaks); each NEW failure shape files one
+`feedback` + `lane:qa` issue, deduped against open ones. `npm run nightlybotcheck` (pure
+selftest, 19 checks: policy purity, verdicts, filing dedup, streaks, roster pinned against
+contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=done` proves the softlock gate is
+load-bearing (it goes silent, and a cap-hitting game flips red→green). launchd
+`com.jalfern.nightly-bot` (03:30 local) starts its own dev server on :5199 so lane servers
+never collide, then pushes + files. Honest gaps: seeded exploration, not skilled play — most
+runs end in game-over, which is fine; reaching `done` is the invariant, winning is not gated.
+

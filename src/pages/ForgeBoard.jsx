@@ -12,6 +12,7 @@ const REPO = 'jalfern/retrogames'
 // (issues, PRs, pulses, build feed, vitals) into this one file.
 const RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/board.json'
 const LOG_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/log.json'
+const NIGHTLY_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/nightly.json'
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
@@ -67,6 +68,7 @@ const ForgeBoard = () => {
     const [samples, setSamples] = useState(null)
     const [generated, setGenerated] = useState(null)
     const [daily, setDaily] = useState(null)
+    const [nightly, setNightly] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -104,6 +106,10 @@ const ForgeBoard = () => {
                     const lr = await fetch(`${LOG_RAW}?t=${Math.floor(Date.now() / 60000)}`)
                     if (lr.ok) setDaily(await lr.json())
                 } catch { /* the daily log is decoration; the board works without it */ }
+                try {
+                    const nr = await fetch(`${NIGHTLY_RAW}?t=${Math.floor(Date.now() / 60000)}`)
+                    if (nr.ok) setNightly(await nr.json())
+                } catch { /* no nightly run yet — the section just stays hidden */ }
                 setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
                 setError('')
             } catch (e) {
@@ -319,6 +325,25 @@ const ForgeBoard = () => {
                     <h2 className="text-[#c2e0c2] text-sm tracking-widest mb-3">✓ SHIPPED ({shipped.length})</h2>
                     <div className="grid md:grid-cols-2 gap-4">{shipped.map(i => card(i, 'border-[#c2e0c2] text-gray-300'))}</div>
                 </section>
+
+                {nightly?.games?.length > 0 && (
+                    <section className="mb-10">
+                        <h2 className="text-[#57e6ff] text-sm tracking-widest mb-2">🤖 NIGHTLY BOT RUN ({nightly.games.filter(g => g.pass).length}/{nightly.games.length} green)</h2>
+                        <p className="text-[10px] text-gray-600 mb-3">
+                            One seeded bot plays every contract game to completion each night; a run that cannot finish is a softlock report.
+                            run {nightly.generated?.slice(0, 10)} · seed {nightly.seed}
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-1 text-[10px]">
+                            {nightly.games.map(g => (
+                                <div key={g.id} title={[...(g.flags || []), ...(g.warnings || [])].join('\n') || 'clean run'}
+                                    className={`flex justify-between border px-2 py-1 ${g.pass ? 'border-[#0f0]/30 text-[#8f8]' : 'border-[#f55]/60 text-[#f88] animate-pulse'}`}>
+                                    <span className="truncate">{g.pass ? '✓' : '✗'} {g.id}</span>
+                                    <span className="opacity-60 shrink-0 ml-1">{g.pass ? `${g.ticks}t` : g.failStreak > 1 ? `×${g.failStreak}` : 'RED'}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 {daily && (
                     <Link to="/forge/log" className="block border border-[#0ff]/40 hover:border-[#0ff] p-3 mb-8 text-[10px] leading-relaxed">
