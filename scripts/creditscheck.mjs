@@ -77,6 +77,9 @@ function staticLayer() {
   ok('credits.js sizes a 32px tap target + safe-area insets',
     /min-height:32px/.test(cj) &&
     /env\(safe-area-inset-left\)/.test(cj) && /env\(safe-area-inset-bottom\)/.test(cj))
+  ok('credits.js keeps the caption clear of the tag (#1078)',
+    /function reserveCaption\(\)/.test(cj) &&
+    /maxWidth/.test(cj) && /addEventListener\('resize', reserveCaption\)/.test(cj))
   const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')
 
   for (const d of DEMOS) {
@@ -225,6 +228,30 @@ async function browserLayer() {
     ok('phone boots with zero page errors', errs3.length === 0, errs3[0])
     pageErrsTotal += errs3.length
     await pctx.close()
+
+    // --- #1078: at 390px the corner tag never covers the bottom caption ---
+    const octx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
+    for (const d of DEMOS) {
+      const opage = await octx.newPage()
+      const e4 = []
+      opage.on('pageerror', e => e4.push(e.message))
+      await opage.goto('file://' + resolve(ROOT, `public/demos/${d}.html`), { waitUntil: 'load' })
+      const o = await opage.evaluate(() => {
+        const t = document.getElementById('credits-tag')
+        const h = document.getElementById('hud')
+        if (!t || !h) return { miss: true }
+        const tr = t.getBoundingClientRect(), hr = h.getBoundingClientRect()
+        return {
+          ox: Math.min(tr.right, hr.right) - Math.max(tr.left, hr.left),
+          oy: Math.min(tr.bottom, hr.bottom) - Math.max(tr.top, hr.top),
+          lines: h.getClientRects().length,
+        }
+      })
+      ok(`${d}: caption clear of tag at 390px (#1078)`,
+        !o.miss && e4.length === 0 && (o.ox <= 0 || o.oy <= 0),
+        o.miss ? 'missing #hud or tag' : `overlapX=${o.ox.toFixed(1)} overlapY=${o.oy.toFixed(1)} lines=${o.lines}${e4[0] ? ' err:' + e4[0] : ''}`)
+    }
+    await octx.close()
 
     // --- reduced motion: card opens with no animation ---
     const rctx = await browser.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })
