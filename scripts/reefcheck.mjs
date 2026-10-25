@@ -113,30 +113,30 @@ async function main() {
   ok('not registered in games.js (demos law, Jon 2026-10-19)', !/path:\s*['"]\/[^'"]*reef|label:\s*['"]Coral Reef/i.test(reg))
   ok('exposes __reefTest DEV hook', /__reefTest/.test(src))
   ok('depth absorption is the law (red decays fastest in waterCol)',
-    /function waterCol\(/.test(src) && /mix\(125, 8,/.test(src) && /mix\(196, 50,/.test(src))
+    /function waterCol\(/.test(src) && /mix\(126, 9,/.test(src) && /mix\(197, 44,/.test(src))
   ok('god rays drawn additively (lighter composite)', /drawRays/.test(src) && /globalCompositeOperation = 'lighter'/.test(src))
   ok('caustics computed as a moving field and composited onto the sand',
-    /function caustics\(t\)/.test(src) && /putImageData\(causticImg/.test(src) && /'screen'/.test(src))
+    /function caustic\(x, z, t\)/.test(src) && /putImageData\(causticImg/.test(src) && /drawCausticOverlay/.test(src))
   ok('corals / fans / anemones sway with a current',
-    /function anemone\(/.test(src) && /function fan\(/.test(src) && /function branch\(/.test(src) && /p\.sway/.test(src))
+    /buildGeo\(/.test(src) && /p\.sway/.test(src) && /'anemone'/.test(src) && /'fan'/.test(src) && /'branch'/.test(src))
   ok('fish school runs boids rules (separation + alignment + cohesion)',
     /SEPR/.test(src) && /ALGN/.test(src) && /COH/.test(src) && /fishOrder/.test(src))
   ok('fish vary by species (multiple silhouettes + size classes, #947)',
     /SPECIES\s*=\s*\[/.test(src) && /species/.test(src) && /cls/.test(src))
   ok('school wheels around a drifting heading (murmuration bias, #947)', /const wheel =/.test(src))
   ok('caustics hug the seabed contour (height-aware strips, #947)',
-    /for \(let x = 0; x < cssW; x \+= STEP\)/.test(src) && /const gy = seabedY\(0, x\)/.test(src))
-  ok('caustics brighter on shallow floor than deep (#947)', /const sh = clamp\(\(gy - cssH \* 0\.74\)/.test(src))
+    /seabedH\(wx, wz\) - Yc/.test(src) && /drawCausticOverlay/.test(src))
+  ok('caustics brighter on shallow floor than deep (#947)',     /\(1 - th \/ 170\)/.test(src))
   ok('branch coral tips curl with phase lag down the branch (#947)',
-    /const curl = depth === 1/.test(src) && /Math\.sin\(t \* 1\.7 - ph\)/.test(src))
+    /seg\.y1 \* 0\.35/.test(src) && /t \* p\.sway \+ p\.phase \+ seg\.y1/.test(src))
   ok('sea fans flex, ribs bending with the current (#947)',
-    /const flex = Math\.sin\(t \* p\.sway/.test(src) && /flex \* 9, -L \* 0\.9/.test(src))
+    /const flex = Math\.sin\(t \* p\.sway/.test(src) && /flex \* fr \* fr/.test(src))
   ok('god rays wobble in width and scatter at the surface line (#947)',
-    /const wobble = 1 \+ 0\.45/.test(src) && /rgba\(175,240,230,\$\{Math\.min\(0\.5, a \* 1\.25\)/.test(src))
+    /const wobble = 1 \+ 0\.45/.test(src) && /beamTex/.test(src) && /skew \/ hgt/.test(src))
   ok('reef crackle + pass-by whoosh audio wired (#947)',
     /function crackle\(/.test(src) && /function scheduleCrackle\(/.test(src) && /function fishWhoosh\(/.test(src) && /scheduleCrackle\(\);/.test(src))
   ok('idle camera bobs and hovers near hero corals (#947)',
-    /cam\.touched > 2500/.test(src) && /driftMul = 0\.45/.test(src))
+    /cam\.touched > 2500/.test(src) && /driftMul = 0\.5/.test(src))
   ok('marine snow + bubbles particles live in the scene', /layoutSnow/.test(src) && /maybeBubble/.test(src))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
 
