@@ -314,7 +314,7 @@ function castHand(gs, hand) {
             if (d < 24) struck.push({ tgt: 'mon', i, dmg: 12 })
         })
         gs.events.push({ type: 'zap', x: lp.x, y: lp.y, d: lp.d })
-        crater(gs, lp.x, lp.y, 9, 6)
+        crater(gs, lp.x, lp.y, 10, 8)
         igniteHuts(gs, lp.x, lp.y)
         for (const s of struck) {
             if (s.tgt === 'wiz') { gs.wizard.hp -= s.dmg; gs.events.push({ type: 'wizHit' }) }
@@ -467,8 +467,17 @@ export function step(gs, inp) {
                 gs.level++
                 gs.quota = LEVELS[gs.level].quota
                 if (gs.heldEnt) { gs.heldEnt = null; gs.holdT = 0 }
-                gs.events.push({ type: 'level', n: gs.level, name: LEVELS[gs.level].name })
+                gs.events.push({
+                    type: 'level', n: gs.level, name: LEVELS[gs.level].name,
+                    reset: {
+                        bank: gs.bank,
+                        pearls: gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0),
+                        hoard: gs.wizard.alive ? gs.wizard.mana : 0,
+                    },
+                })
+                const keepCarry = gs.mana
                 genWorld(gs)
+                gs.mana = keepCarry
             }
         }
     }
@@ -500,7 +509,7 @@ export function step(gs, inp) {
             wz.alive = false
             gs.wizardKills++
             dropPearls(gs, wz.tx, wz.ty, wz.mana)
-            crater(gs, wz.tx, wz.ty, 16, 9)
+            crater(gs, wz.tx, wz.ty, 18, 11)
             igniteHuts(gs, wz.tx, wz.ty)
             gs.events.push({ type: 'wizardDown' })
         }
@@ -606,7 +615,7 @@ export function step(gs, inp) {
             if (gs.wizard.alive && Math.hypot(wrapD(p.x - gs.wizard.x), wrapD(p.y - gs.wizard.y)) < 7 &&
                 Math.abs(p.z - (entZ(gs, gs.wizard.x, gs.wizard.y))) < 10) {
                 gone = true
-                blast(gs, p.x, p.y, 13, 7, p.dmg)
+                blast(gs, p.x, p.y, 14, 10, p.dmg)
             } else {
                 let hi = -1, hd = 6
                 for (let j = 0; j < gs.monsters.length; j++) {
@@ -617,13 +626,13 @@ export function step(gs, inp) {
                 if (hi >= 0) {
                     const m = gs.monsters[hi]
                     gone = true
-                    blast(gs, m.x, m.y, 13, 7, p.dmg)
+                    blast(gs, m.x, m.y, 14, 10, p.dmg)
                 }
             }
         }
         if (!gone && (p.kind === 'fireball' || p.kind === 'throw') && p.grace <= 0 && p.z <= sampleH(gs, p.x, p.y) + 0.5) {
             gone = true
-            blast(gs, p.x, p.y, 13, 7, p.dmg)
+            blast(gs, p.x, p.y, 14, 10, p.dmg)
         }
         if (!gone && p.from !== 'p') {
             if (Math.hypot(wrapD(p.x - gs.x), wrapD(gs.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
@@ -636,7 +645,7 @@ export function step(gs, inp) {
         }
         if (!gone && p.kind === 'bolt' && p.z <= sampleH(gs, p.x, p.y)) {
             gone = true
-            crater(gs, p.x, p.y, 7, 4)
+            crater(gs, p.x, p.y, 8, 5)
             gs.events.push({ type: 'boom', x: p.x, y: p.y })
         }
         if (gone) gs.projs.splice(i, 1)
