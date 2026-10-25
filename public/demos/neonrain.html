@@ -27,6 +27,10 @@
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #eee6f4; background: #0a0810;
     text-align: center; padding: 2em; white-space: pre;
   }
+  @media (max-width: 480px) {
+    #hud { font-size: 9px; letter-spacing: .06em; max-width: 58vw; line-height: 1.5; }
+    #audiohint { font-size: 9px; letter-spacing: .06em; padding: 5px 8px; max-width: 34vw; text-align: right; }
+  }
 </style>
 </head>
 <body>
@@ -57,6 +61,7 @@
 const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
 let mirrorOn = qs.get('nomirror') !== '1';
+let reactOn = true;
 const SEED = (qs.get('seed') | 0) || 11;
 const RENDER_SCALE = LITE ? 0.5 : 0.72;
 
@@ -94,6 +99,7 @@ uniform float uFogGain;     // 0..1+ haze density (JS gusts)
 uniform float uRainGain;     // rain intensity (JS gusts)
 uniform float uDbg;          // 1 = glow only
 uniform float uNoMirror;     // 1 = disable the wet-street mirror (harness differential gate)
+uniform float uReactK;      // 0 = disable rain/neon streak reaction (harness gate)
 out vec4 fragColor;
 
 #define PI 3.14159265
@@ -197,6 +203,15 @@ vec3 facadeColor(vec3 p, vec2 c, vec2 q, float h, int axis, float t){
   float rimEdge = min(dEdge.x, dEdge.y);
   float nearRoof = smoothstep(h - 0.65, h - 0.05, v);
   col += neonOf(c + 2.0) * smoothstep(1.1, 0.45, rimEdge) * nearRoof * 1.15;
+  /* mullions: cross bars dividing each lit window into panes */
+  float mull = win * (step(abs(fr.x - 0.5), 0.030) + step(abs(fr.y - 0.52), 0.026));
+  col = mix(col, vec3(0.012, 0.013, 0.018), clamp(mull, 0.0, 1.0) * (0.35 + 0.55 * lit));
+  /* occasional warm interior silhouette for scale */
+  float sil = step(0.86, hash12(wc + 91.7)) * win * lit
+            * step(0.30, fr.y) * step(fr.y, 0.72) * (step(0.40, fr.x) * step(fr.x, 0.60)
+            + step(0.50, pow(fr.x - 0.30, 2.0) * 40.0) * step(fr.y, 0.45) * 0.6);
+  col = mix(col, vec3(0.006, 0.006, 0.010), sil * 0.82);
+  col += wcol * sil * 0.10;
   return col;
 }
 
@@ -249,6 +264,11 @@ March marchCity(vec3 ro, vec3 rd, float tEnd, int steps, float t, float glowRate
         fc = vec3(0.015, 0.016, 0.022);              // roof
         vec2 dE = min(q, vec2(LOTX, LOTZ) - q);
         fc += neonOf(c + 2.0) * smoothstep(1.3, 0.5, min(dE.x, dE.y)) * 0.9;
+        /* blinking aviation beacon on the tallest towers, dead center of the lot */
+        if (h > 55.0){
+          float bcn = step(0.55, fract(t * 0.9 + hash12(c + 11.0) * 7.0));
+          fc += vec3(1.0, 0.05, 0.035) * bcn * smoothstep(1.8, 0.3, length(q - vec2(LOTX * 0.5, LOTZ * 0.5))) * 2.4;
+        }
       } else {
         fc = facadeColor(p, c, q, h, axis, t);
       }
@@ -340,7 +360,10 @@ void main(){
   }
   col += bg * m.T;
 
-  /* rain: three parallax screen-space streak layers, tinted toward street neon */
+  /* rain: three parallax screen-space streak layers, tinted toward street neon,
+     brightened streak-by-streak while crossing lit (neon) regions */
+  float sl = dot(col, vec3(0.299, 0.587, 0.114));
+  float react = 1.0 + 1.7 * uReactK * smoothstep(0.22, 1.1, sl);
   float rainA = 0.0;
   vec3 rainC = vec3(0.0);
   for (int L = 0; L < 3; L++){
@@ -353,18 +376,26 @@ void main(){
     float present = step(0.70, hash12(cell + vec2(3.1, 7.7) + fl * 13.7));
     float pos = 0.2 + 0.55 * hash12(cell + vec2(9.3, 1.7) + fl * 5.3);
     float dash = exp(-pow((f.y - pos) * 4.2, 2.0)) * exp(-pow((f.x - 0.5) * 5.5, 2.0));
-    float a = present * dash * (0.11 + 0.05 * fl) * uRainGain;
+    float a = present * dash * (0.11 + 0.05 * fl) * uRainGain * react;
     vec3 rc = mix(vec3(0.62, 0.68, 0.84), vec3(1.0, 0.42, 0.72), smoothstep(0.72, 0.05, vUv.y) * 0.4);
     rainC += (1.0 - rainA) * rc * a;
     rainA += (1.0 - rainA) * a;
   }
   col += rainC;
 
-  /* splashes on the near street */
+  /* splashes on the near street: impact flash + expanding ripple rings on puddles */
   if (tGround < 55.0){
     vec3 p = ro + rd * tGround;
-    float sp = step(0.9885, hash12(floor(p.xz * 9.0) + floor(t * 22.0) * 0.173));
+    vec2 sCell = floor(p.xz * 9.0);
+    vec2 sFr = fract(p.xz * 9.0);
+    float sp = step(0.9885, hash12(sCell + floor(t * 22.0) * 0.173));
     col += vec3(0.62, 0.60, 0.75) * sp * uRainGain * smoothstep(50.0, 8.0, tGround) * 0.35;
+    float wetS = 0.30 + 0.70 * smoothstep(0.42, 0.62, fbm2(p.xz * vec2(0.38, 0.055) + 7.0));
+    float ph = fract(t * 1.7 + hash12(sCell + 3.7));
+    float rr0 = length(sFr - 0.5) * 2.0;
+    float ring = exp(-pow((rr0 - ph) * 5.0, 2.0)) * (1.0 - ph);
+    float rp = step(0.965, hash12(sCell + 1.9));
+    col += vec3(0.55, 0.58, 0.72) * ring * rp * wetS * uRainGain * smoothstep(45.0, 6.0, tGround) * 0.28;
   }
 
   if (uDbg > 0.5 && uDbg < 1.5) fragColor = vec4(clamp(m.glow * 4.0, 0.0, 1.0), 1.0);
@@ -379,26 +410,36 @@ uniform float uSize;
 in vec3 aPos;
 in vec3 aCol;
 in float aA;
+in float aS;
 out vec3 vCol;
 out float vA;
+out float vS;
 void main(){
   vec4 cp = uVP * vec4(aPos, 1.0);
   gl_Position = cp;
   gl_PointSize = clamp(uSize * uPxPerM / max(cp.w, 1.0), 2.0, 190.0);
   vCol = aCol;
   vA = aA;
+  vS = aS;
 }`;
 
 const FS_CAR = `#version 300 es
 precision highp float;
 in vec3 vCol;
 in float vA;
+in float vS;
 out vec4 o;
 void main(){
   vec2 q = gl_PointCoord * 2.0 - 1.0;
-  float r2 = dot(q, q);
-  if (r2 > 1.0) discard;
-  float g = exp(-r2 * 2.6);
+  float g;
+  if (vS > 0.5){
+    if (abs(q.y) > 0.62) discard;
+    g = exp(-pow(q.y * 2.6, 2.0)) * exp(-pow(q.x * 1.15, 2.0));
+  } else {
+    float r2 = dot(q, q);
+    if (r2 > 1.0) discard;
+    g = exp(-r2 * 2.6);
+  }
   o = vec4(vCol * g * vA, 1.0);
 }`;
 
@@ -484,17 +525,17 @@ const progComp = program(VS_QUAD, FS_COMP);
 const vaoEmpty = gl.createVertexArray();
 
 const MAX_CARS = 64;
-const carVerts = new Float32Array(MAX_CARS * 2 * 7);
+const carVerts = new Float32Array(MAX_CARS * 4 * 8);
 const vaoCar = gl.createVertexArray();
 gl.bindVertexArray(vaoCar);
 const carBuf = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, carBuf);
 gl.bufferData(gl.ARRAY_BUFFER, carVerts.byteLength, gl.DYNAMIC_DRAW);
-for (const [nm, size, off] of [['aPos', 3, 0], ['aCol', 3, 12], ['aA', 1, 24]]) {
+for (const [nm, size, off] of [['aPos', 3, 0], ['aCol', 3, 12], ['aA', 1, 24], ['aS', 1, 28]]) {
   const loc = gl.getAttribLocation(progCar, nm);
   if (loc >= 0) {
     gl.enableVertexAttribArray(loc);
-    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 28, off);
+    gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 32, off);
   }
 }
 gl.bindVertexArray(null);
@@ -649,12 +690,19 @@ function wrapRel(v, center, span){
   return center + d;
 }
 
-let carDrawN = 0;
+let carDrawN = 0, headPairsF = 0, tailBarsF = 0;
 const prevSign = new Map();
+function pushLight(vp, x, y, z, col, a, shape){
+  carVerts[vp] = x; carVerts[vp + 1] = y; carVerts[vp + 2] = z;
+  carVerts[vp + 3] = col[0]; carVerts[vp + 4] = col[1]; carVerts[vp + 5] = col[2];
+  carVerts[vp + 6] = a; carVerts[vp + 7] = shape;
+  return vp + 8;
+}
 function buildCarVerts(t){
   let vp = 0, n = 0;
   let whoosh = null;
-  for (let i = 0; i < cars.length && n < MAX_CARS - 1; i++){
+  headPairsF = 0; tailBarsF = 0;
+  for (let i = 0; i < cars.length && n < MAX_CARS * 2; i++){
     const c = cars[i];
     const p = carPos(c, t);
     const dz = p[2] - camZ, dx = p[0] - 13;
@@ -671,15 +719,21 @@ function buildCarVerts(t){
     if (d2 > 330 * 330 || (c.axis === 'ns' && dz < -40)) continue;
     const fog = Math.exp(-Math.sqrt(d2) * 0.0045);
     const front = (c.axis === 'ns' && c.dir < 0 && dz > 0) || (c.axis === 'ew' && ((c.dir > 0 && p[0] < 13) || (c.dir < 0 && p[0] > 13)));
-    const col = front ? [1.0, 0.96, 0.82] : [1.0, 0.16, 0.10];
     const a = 0.85 * fog + 0.15;
-    carVerts[vp] = p[0]; carVerts[vp + 1] = p[1]; carVerts[vp + 2] = p[2];
-    carVerts[vp + 3] = col[0]; carVerts[vp + 4] = col[1]; carVerts[vp + 5] = col[2]; carVerts[vp + 6] = a;
-    vp += 7;
-    carVerts[vp] = p[0]; carVerts[vp + 1] = -0.7; carVerts[vp + 2] = p[2];
-    carVerts[vp + 3] = col[0]; carVerts[vp + 4] = col[1] * 0.85; carVerts[vp + 5] = col[2] * 0.85; carVerts[vp + 6] = a * 0.4;
-    vp += 7;
-    n += 2;
+    if (front){
+      const off = c.axis === 'ns' ? [[0.75, 0], [-0.75, 0]] : [[0, 0.75], [0, -0.75]];
+      headPairsF++;
+      for (const [ox, oz] of off){
+        vp = pushLight(vp, p[0] + ox, p[1], p[2] + oz, [1.0, 0.96, 0.82], a, 0);
+        vp = pushLight(vp, p[0] + ox, -0.7, p[2] + oz, [1.0, 0.88, 0.72], a * 0.4, 0);
+        n += 2;
+      }
+    } else {
+      tailBarsF++;
+      vp = pushLight(vp, p[0], p[1], p[2], [1.0, 0.16, 0.10], a, 1);
+      vp = pushLight(vp, p[0], -0.7, p[2], [1.0, 0.13, 0.085], a * 0.4, 1);
+      n += 2;
+    }
   }
   carDrawN = n;
   if (n){
@@ -732,10 +786,26 @@ function steamCellCount(cam){
   }
   return n;
 }
+/* rain-on-metal patter level: wetness x vent proximity near a point */
+function metalPatter(x, z){
+  return 0.006 + 0.022 * wetJS(x, z) * Math.min(1, steamCellCount([x, 18, z]));
+}
+/* JS mirror of the shader's tall-tower selector (beacon hosts) */
+function tallCellCount(cam){
+  let n = 0;
+  const cx0 = Math.floor((cam[0] - 160) / PERX), cx1 = Math.floor((cam[0] + 160) / PERX);
+  const cz0 = Math.floor((cam[2] - 160) / PERZ), cz1 = Math.floor((cam[2] + 160) / PERZ);
+  for (let cx = cx0; cx <= cx1; cx++) for (let cz = cz0; cz <= cz1; cz++){
+    const boost = hash12JS(cx + 7.7, cz + 7.7);
+    const h0 = 9 + 52 * Math.pow(hash12JS(cx + 3.1, cz + 3.1), 1.9);
+    if ((boost > 0.93 ? h0 * 1.75 : h0) > 55.0) n++;
+  }
+  return n;
+}
 
 /* ---------------- audio: rain, rumble, horns, whoosh ---------------- */
 
-let AC = null, master = null, running = false;
+let AC = null, master = null, running = false, metalG = null;
 const audioHint = document.getElementById('audiohint');
 function unlockAudio(){
   if (AC) return;
@@ -764,6 +834,11 @@ function unlockAudio(){
     const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 110; lp.Q.value = 0.6;
     const rg2 = AC.createGain(); rg2.gain.value = 0.16;
     rs.connect(lp).connect(rg2).connect(master); rs.start();
+    /* rain-on-metal patter: gain keyed per-frame to wetness + vent proximity */
+    const ms = AC.createBufferSource(); ms.buffer = buf; ms.loop = true;
+    const mb = AC.createBiquadFilter(); mb.type = 'bandpass'; mb.frequency.value = 1900; mb.Q.value = 1.2;
+    metalG = AC.createGain(); metalG.gain.value = 0.006;
+    ms.connect(mb).connect(metalG).connect(master); ms.start();
     running = true;
     audioHint.textContent = 'city sound on';
     audioHint.classList.add('off');
@@ -789,6 +864,32 @@ function horn(){
   o1.start(t); o2.start(t); o1.stop(t + dur); o2.stop(t + dur);
 }
 let nextHorn = 6 + Math.random() * 10;
+
+/* distant siren wail with doppler shift (approaching = higher pitch) */
+function sirenDoppler(away){ return away ? 0.93 : 1.07; }
+let nextSiren = 14 + Math.random() * 22;
+function siren(away){
+  if (!running || !AC) return;
+  const ts0 = AC.currentTime;
+  const base = 620 * sirenDoppler(away);
+  const o = AC.createOscillator(); o.type = 'triangle';
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1600;
+  const g = AC.createGain();
+  const dur = 2.55;
+  g.gain.setValueAtTime(0.0001, ts0);
+  g.gain.exponentialRampToValueAtTime(0.032, ts0 + 0.3);
+  g.gain.setValueAtTime(0.032, ts0 + dur - 0.5);
+  g.gain.exponentialRampToValueAtTime(0.0001, ts0 + dur);
+  for (let k = 0; k < 3; k++){
+    const ts = ts0 + k * 0.85;
+    o.frequency.setValueAtTime(base, ts);
+    o.frequency.linearRampToValueAtTime(base * 0.82, ts + 0.42);
+    o.frequency.linearRampToValueAtTime(base * 0.97, ts + 0.85);
+  }
+  const pan = AC.createStereoPanner(); pan.pan.value = away ? 0.6 : -0.5;
+  o.connect(lp).connect(pan).connect(g).connect(master);
+  o.start(ts0); o.stop(ts0 + dur);
+}
 
 function whooshFx(x, away){
   if (!running || !AC) return;
@@ -858,6 +959,7 @@ function frame(){
   gl.uniform1f(ucity('uRainGain'), rainGain(t));
   gl.uniform1f(ucity('uDbg'), +(qs.get('dbg') || 0));
   gl.uniform1f(ucity('uNoMirror'), mirrorOn ? 0.0 : 1.0);
+  gl.uniform1f(ucity('uReactK'), reactOn ? 1.0 : 0.0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   const nCars = buildCarVerts(t);
@@ -915,6 +1017,11 @@ function frame(){
     horn();
     nextHorn = t + 8 + Math.random() * 16;
   }
+  if (t > nextSiren){
+    siren(Math.random() > 0.5);
+    nextSiren = t + 18 + Math.random() * 30;
+  }
+  if (metalG) metalG.gain.value = metalPatter(13, camZ + 8);
 
   if (pendingGrab){
     const res = pendingGrab; pendingGrab = null;
@@ -950,13 +1057,33 @@ window.__neonrainTest = {
       fogGain: +fogGain(t).toFixed(3),
       wetAhead: wetJS(13, camZ + 30),
       steamCells: steamCellCount([13, 18, camZ]),
+      tallCells: tallCellCount([13, 18, camZ]),
+      headPairs: headPairsF,
+      tailBars: tailBarsF,
       speedMul,
     };
   },
   wet(x, z){ return +wetJS(x, z).toFixed(3); },
   gust(t){ return +gust(t).toFixed(4); },
+  neonReact(lum){ return +(1.0 + 1.7 * sstep(0.22, 1.1, lum)).toFixed(3); },
+  beaconPhase(t){
+    const v = t * 0.9 + hash12JS(2.31 + 11, 200 / PERZ | 0) * 7.0;
+    return +(v - Math.floor(v)).toFixed(4);
+  },
+  sirenDoppler(away){ return sirenDoppler(!!away); },
+  metalPatter(x, z){ return +metalPatter(x, z).toFixed(4); },
+  rippleCells(x, z){
+    let n = 0;
+    for (let i = -28; i <= 28; i += 1) for (let j = -16; j <= 16; j += 1){
+      const [ux, uy] = [Math.floor((x + i) * 9), Math.floor((z + j) * 9)];
+      const p = Math.sin((ux + 1.9) * 127.1 + (uy + 1.9) * 311.7) * 43758.5453;
+      if (p - Math.floor(p) >= 0.965) n++;
+    }
+    return n;
+  },
   setSpeed(v){ speedMul = Math.max(0, +v); },
   setMirror(v){ mirrorOn = !!v; },
+  setReact(v){ reactOn = !!v; },
   setFreeze(v){ freezeT = v === true ? (performance.now() - t0) / 1000 : (v ? +v : null); },
   grab(){ return new Promise(res => { pendingGrab = res; }); },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
