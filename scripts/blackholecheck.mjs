@@ -19,6 +19,12 @@
 //   6. SPEED  — frame budget with software-raster fallback detection
 //               (campfire convention; rAF-dt is delivery, fence-busy on the
 //               demo side drives its own degradation ladder).
+//   8. PLUNGE (#1048) — the flyby loop ends by actually falling in: r(s) falls
+//               monotonically to the horizon, the escape-cone half-angle collapses to 0
+//               below the photon sphere, infall Doppler D=sqrt((1+b)/(1-b)) rises
+//               (blueshift) before the crossing, pixels show a mostly-dark frame with a
+//               bright blue-white centre disc (sky through the shrinking cone), the dark
+//               interior fades, and the loop auto-restarts to the flyby with probes cleared.
 //   7. PROBES (#1047) — tap drops a glowing beacon on a real infalling
 //               geodesic: it falls (r↓), slows in observer time (Δr shrinks),
 //               reddens + dims (g, g^3 ↓), never crosses (r > rs, fades to
@@ -41,7 +47,10 @@
 // simulated, not painted). Fourth mutant (#1074): empty the trail buffer each
 // frame (`if (pr.trail.length > TRAIL_MAX) pr.trail.shift()` ->
 // `pr.trail.length = 0`) -> the trail gate goes red while physics, pixels and
-// the puff gate stay green (the trail is a real record of solved images).
+// the puff gate stay green (the trail is a real record of solved images). Fifth mutant
+// (#1048): pin the plunge beaming uniform (`gl.uniform1f(us('uBeam'), cb.beam)` ->
+// `... 1.0`) -> the blue-white centre disc pixel gate goes red while every numeric dive
+// gate stays green (the bright blueshifted sky circle is computed physics, not painted).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -132,7 +141,7 @@ async function main() {
   ok('Keplerian shear (Omega ~ r^-3/2) drives disk rotation', /sqrt\(0\.5 \/ \(r \* r \* r\)\)/.test(src))
   ok('photons integrated with RK4 (Euler pumps energy)', /f1 \+ 2\.0 \* f2 \+ 2\.0 \* f3 \+ f4/.test(src))
   ok('photon ring lights escaping rays only — captured rays stay black (#1046)',
-    /if \(!captured\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
+    /if \(!captured && r0 > 1\.6\)\{[^}]*ring = exp\(-max\(b - B_CRIT[^)]*\)[^}]*\}/.test(src) &&
     !/if \(captured\)\{[^}]*ring/.test(src))
   ok('probe beacon integrates the timelike geodesic with e^2 = f0^2/(f0 - v^2) (#1047)',
     /f0 \* f0 \/ Math\.max\(f0 - v2, 1e-4\)/.test(src) && /pr\.vr \+= ar \* k/.test(src))
@@ -142,6 +151,23 @@ async function main() {
     /const missOf = \(al\)/.test(src) && /phiG = 0\.618/.test(src))
   ok('tap (<300ms, <12px) drops a probe; drags do not (#1047)',
     /performance\.now\(\) - downPt\.t < 300/.test(src) && /Math\.hypot\(e\.clientX - downPt\.x, e\.clientY - downPt\.y\) < 12/.test(src))
+  ok('plunge profile r(s) = rs*(1 + (R1/rs-1)*(1-s)^3.5) drives the dive (#1048)',
+    /Math\.pow\(1 - s, 3\.5\)/.test(src))
+  ok('cone formula sin^2 = 27 M^2 (1-rs/r)/r^2 implemented (#1048)',
+    /27 \* 0\.25 \* \(1 - RS \/ r\) \/ \(r \* r\)/.test(src))
+  ok('local-tetrad impact parameter b = r*sin(psi)/sqrt(1-rs/r) at the launcher (#1048)',
+    /float b = et > 1e-4 \? r0 \* et \/ sqrt\(f00\)/.test(src))
+  ok('infall Doppler sqrt((1+b)/(1-b)) beams the escaping sky D^3 and tints blue (#1048)',
+    /Math\.sqrt\(\(1 \+ b\) \/ \(1 - b\)\)/.test(src) && /bg \* uBeam \* mix\(vec3\(1\.0\), vec3\(0\.62, 0\.80, 1\.38\), uTint\)/.test(src))
+  ok('horizon crossing keeps physics lit — beam capped, not a fade-to-black trick (#1048)',
+    /Math\.min\(42, Math\.pow\(D, 3\)\)/.test(src))
+  ok('loop restarts after the plunge and clears probes (#1048)',
+    /t - cycleBase - diveHold >= CYCLE/.test(src) && /probes = \[\];/.test(src))
+  ok('the drone waits to fall while its beacons are still in view (#1048)',
+    /probes\.length && cb\.phase === 'orbit'/.test(src))
+  ok('the disk recedes from view as the diver falls past it (#1048)',
+    /gl\.uniform1f\(us\('uDisc'\), cb\.disc\)/.test(src) && /1 - 1\.15 \* s/.test(src) &&
+    /col \+= uDisc \* T \* diskEmission/.test(src))
   ok('beacons composite additively into HDR so they bloom (#1047)',
     /gl\.blendFunc\(gl\.ONE, gl\.ONE\)/.test(src))
   ok('launch puff: expanding shock ring at spawn + synthesized radio blip (#1074)',
@@ -311,11 +337,12 @@ async function main() {
       }
       ok('the beacon lights new pixels over the shadow (#1047)', lit > 30, `${lit} newly-lit px near centre`)
       const trail = []
-      for (let i = 0; i < 24; i++){
-        await page.waitForTimeout(1500)
+      for (let i = 0; i < 48; i++){
+        await page.waitForTimeout(700)
         const ps = await page.evaluate(() => window.__holeTest.probes())
         if (!ps.length) break
-        trail.push(ps[ps.length - 1])
+        const ph = await page.evaluate(() => window.__holeTest.dive().phase)
+        trail.push({ ...ps[ps.length - 1], phase: ph })
         if (ps[ps.length - 1].r < 1.3) break
       }
       const rad = trail.map(p => p.r), gs = trail.map(p => p.g), ws = trail.map(p => p.glow)
@@ -330,7 +357,7 @@ async function main() {
         `g ${gs[0].toFixed(3)}->${gs[gs.length - 1].toFixed(3)} glow ${ws[0].toFixed(3)}->${ws[ws.length - 1].toFixed(3)}`)
       ok('beacon never crosses the horizon: r stays above rs and fades toward black (#1047)',
         rad.every(v => v > 1.0001) && ws[ws.length - 1] < 0.3, `min r=${Math.min(...rad).toFixed(4)} end glow=${ws[ws.length - 1].toFixed(3)}`)
-      const frozen = trail.filter(p => p.vis && p.r < 1.5)
+      const frozen = trail.filter(p => p.vis && p.r < 1.5 && p.phase === 'orbit')
       ok('beacon image holds its screen position while it freezes (#1047)',
         frozen.length >= 2 && Math.max(...frozen.map(p => p.x)) - Math.min(...frozen.map(p => p.x)) < 18 &&
         Math.max(...frozen.map(p => p.y)) - Math.min(...frozen.map(p => p.y)) < 12,
@@ -348,6 +375,69 @@ async function main() {
         Math.max(...trail.map(p => p.dlt)) - Math.min(...trail.map(p => p.dlt)) >= 0.15 &&
         trail[trail.length - 1].dlt > trail[0].dlt + 0.1,
         `dlt ${trail.map(p => p.dlt).join(' ')}`)
+
+      // --- the plunge (#1048): fall through the horizon ---
+      const pl = await page.evaluate(() => {
+        const d = window.__holeTest
+        const rs = []
+        for (let i = 0; i <= 10; i++) rs.push(d.diveR(i / 10))
+        return { rs,
+          c145: d.coneAt(1.45), c12: d.coneAt(1.2), c105: d.coneAt(1.05), c101: d.coneAt(1.01), c1: d.coneAt(1),
+          b105: d.blueAt(1.05), b12: d.blueAt(1.2), b75: d.blueAt(7.5) }
+      })
+      ok('dive radius falls monotonically from the flyby exit to the horizon (#1048)',
+        pl.rs.every((v, i) => i === 0 || v < pl.rs[i - 1]) && pl.rs[0] < 8 && pl.rs[0] > 6 && pl.rs[10] === 1,
+        `r: ${pl.rs[0]} -> ${pl.rs[5]} -> ${pl.rs[10]}`)
+      ok('below the photon sphere the sky cone collapses monotonically to zero at the horizon (#1048)',
+        pl.c145 > pl.c12 && pl.c12 > pl.c105 && pl.c105 > pl.c101 && pl.c101 > 0 && pl.c1 === 0 &&
+        pl.c145 > 80 && pl.c105 < 40,
+        `cone(1.45)=${pl.c145}deg (1.2)=${pl.c12} (1.05)=${pl.c105} (1.01)=${pl.c101} (1)=${pl.c1}`)
+      ok('infall blueshift D = sqrt((1+b)/(1-b)) rises toward the horizon (#1048)',
+        pl.b105 > pl.b12 && pl.b12 > pl.b75 && pl.b105 > 1.9 && pl.b75 > 1.4,
+        `D: r7.5=${pl.b75} r1.2=${pl.b12} r1.05=${pl.b105}`)
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 1.5))
+      await page.waitForTimeout(200)
+      const dv0 = await page.evaluate(() => window.__holeTest.dive())
+      ok('after the flyby the camera plunges inward (#1048)',
+        dv0.phase === 'dive' && dv0.r < 6 && dv0.r > 1.05 && dv0.beam > 1.5, JSON.stringify(dv0))
+      const liveR = []
+      for (let i = 0; i < 10; i++){
+        await page.waitForTimeout(250)
+        liveR.push(await page.evaluate(() => window.__holeTest.dive().r))
+      }
+      ok('live plunge: radius strictly decreases (#1048)',
+        liveR.every((v, i) => i === 0 || v < liveR[i - 1]), liveR.map(v => v.toFixed(2)).join('>'))
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 9 * 0.85))
+      await page.waitForTimeout(150)
+      const dchk = await page.evaluate(() => window.__holeTest.dive())
+      const dimg = decodePng(await page.screenshot())
+      const dW = dimg.w, dH = dimg.h, dcx = Math.round(dW / 2), dcy = Math.round(dH / 2)
+      let litDisc = 0, blueDisc = 0, darker = 0, tot = 0, core = 0
+      for (let y = 0; y < dH; y += 3) for (let x = 0; x < dW; x += 3){
+        const p = px(dimg, x, y), L = luma(p)
+        tot++
+        if (L < 10) darker++
+        const dx = x - dcx, dy = y - dcy
+        if (dx * dx + dy * dy < 120 * 120 && L > 70){ litDisc++; if (p[2] > p[0] - 4) blueDisc++ }
+        if (dx * dx + dy * dy < 60 * 60 && L > 150) core++
+      }
+      ok('the sky compresses to a bright blue-white disc while the shadow fills the frame (#1048)',
+        dchk.phase === 'dive' && dchk.disc < 0.25 && litDisc > 60 && blueDisc > litDisc * 0.6 && core > 40 && darker / tot > 0.5,
+        `lit=${litDisc} blueish=${blueDisc} core=${core} dark=${(100 * darker / tot).toFixed(0)}% ${JSON.stringify(dchk)}`)
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 9 + 0.15))
+      await page.waitForTimeout(250)
+      const dk = await page.evaluate(() => window.__holeTest.dive())
+      ok('past the horizon the interior goes dark — r < rs, cone 0, fade out (#1048)',
+        dk.phase === 'dark' && dk.inside && dk.cone === 0 && dk.fade < 0.2, JSON.stringify(dk))
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 9 + 1.5))
+      await page.waitForTimeout(500)
+      const rb = await page.evaluate(() => window.__holeTest.dive())
+      ok('the loop fades back to the flyby start (#1048)',
+        rb.phase === 'orbit' && rb.r > 15 && rb.fade === 1, JSON.stringify(rb))
 
       // photon ring vs shadow purity (#1046) at a deterministic pose: freeze
       // performance.now so the flyby sits still, then walk 48 radials. A
