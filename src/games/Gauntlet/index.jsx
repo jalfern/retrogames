@@ -142,10 +142,6 @@ const GauntletGame = () => {
             onRoster: ({ slots }) => {
                 net.peer = slots.length >= 2
                 if (net.peer && (net.phase === 'gone' || net.phase === 'offline')) { net.phase = 'waiting'; net.info = '' }
-                if (net.peer) {
-                    audioController.playTone(660, 0.07, 'square', 0.05)
-                    audioController.playTone(990, 0.09, 'square', 0.05, 0.07)
-                }
                 netPush()
             },
             on: {
@@ -1119,6 +1115,8 @@ const GauntletGame = () => {
                             bad: '#ff5d5d',
                             btn: 'border-[#ffd23f] text-[#ffd23f]',
                             codeGlow: { color: '#ffd23f' },
+                            qr: '#1b2540',
+                            qrFrame: '#8fa3d8',
                         }}
                     />
 

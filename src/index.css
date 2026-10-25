@@ -45,3 +45,51 @@ select,
   -webkit-user-select: text;
   user-select: text;
 }
+
+/* #1052 lobby polish — the waiting room is alive: a friend pops into their
+   seat (Wii-style overshoot) and a refused join shakes the cabinet like a
+   rejected coin. Keyframes live here (shared chrome), the Lobby drives them. */
+@keyframes lobby-pop {
+  0% {
+    transform: scale(0.3);
+    opacity: 0;
+  }
+
+  60% {
+    transform: scale(1.14);
+    opacity: 1;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes lobby-shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  15% {
+    transform: translateX(-7px);
+  }
+
+  30% {
+    transform: translateX(7px);
+  }
+
+  45% {
+    transform: translateX(-5px);
+  }
+
+  60% {
+    transform: translateX(5px);
+  }
+
+  75% {
+    transform: translateX(-3px);
+  }
+}

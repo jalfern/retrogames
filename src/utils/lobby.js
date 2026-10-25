@@ -64,6 +64,19 @@ export function displayPhase(room) {
     return room.phase
 }
 
+// joinedSeats compares two seat-model snapshots and lists the seats that just
+// became OCCUPIED (a friend at the wheel). cpu/model slots are unfilled seats,
+// not arrivals — the Lobby uses this to pop a seat and fire ONE join chime,
+// identical in every game (#1052). `prev` null = first frame seen.
+export function joinedSeats(prev, next) {
+    if (!prev) return []
+    const was = new Set()
+    prev.forEach((k, i) => { if (k === 'host' || k === 'human') was.add(i) })
+    const out = []
+    ; (next || []).forEach((k, i) => { if ((k === 'host' || k === 'human') && !was.has(i)) out.push(i) })
+    return out
+}
+
 // createLobby(opts):
 //   slug          game path segment for the share link ('ssx', 'blob-battle', 'gauntlet')
 //   cap           seats in the room (2 for pairs, 4 for SSX)
