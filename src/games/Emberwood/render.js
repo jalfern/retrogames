@@ -28,7 +28,7 @@ export const WIND = {
     grass: (x, y, t) => WIND.field(x, y, t, 2.6, 0.7) * WIND.gust(x, y, t) * 0.06,
 }
 
-const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3 }
+const SOLID_H = { '#': WALL_H, 'T': 2, 'H': WALL_H, 'R': WALL_H, '=': 5, 'I': 3, 'v': WALL_H }
 
 // #939 shelf pull — the vale's tree/bush mass is real shelf models (#637), not
 // painted quads, so the facing law (#901) runs through a game: facingOf(id)
@@ -261,6 +261,8 @@ void main(){
     const canopies = []
     const bushes = []
     const grassTiles = []
+    const braziers = []
+    const vents = []
     const dynamic = { doors: new Map(), cracks: new Map(), chests: new Map(), switches: new Map(), npcs: new Map() }
 
     // #939 shelf state: templates load once; geometry/material maps are shared
@@ -320,7 +322,7 @@ void main(){
     }
 
     const tileTexKey = (ch) => ({
-        '.': 'grass', '"': 'tallgrass', ',': 'path', '~': 'water', 'T': 'grass', '#': 'stone',
+        '.': 'grass', '"': 'tallgrass', ',': 'path', '~': 'water', 'T': 'grass', '#': 'stone', 'a': 'ash', 'v': 'crag',
         '=': 'grass', 'H': 'house', 'R': 'roof', 'I': 'grass', 'C': 'stone', 'S': 'stairs', '<': 'stone', 'A': 'stone',
     }[ch] || 'grass')
 
@@ -429,7 +431,7 @@ void main(){
             screenGroup.add(ring); staticMeshes.push(ring)
         }
         for (const sw of s.switches || []) {
-            const plaque = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshLambertMaterial({ map: T('switchP') }))
+            const plaque = new THREE.Mesh(new THREE.PlaneGeometry(12, 12), new THREE.MeshLambertMaterial({ map: T(sw.via === 'gust' ? 'runeGust' : 'switchP') }))
             plaque.position.set(FX(sw.x * TS + 8), sw.y * TS + 8, 8)
             screenGroup.add(plaque); staticMeshes.push(plaque)
             dynamic.switches.set(sw.id, plaque)
@@ -442,7 +444,7 @@ void main(){
             dynamic.chests.set(c.id, ch2)
         }
         for (const d of s.doors || []) {
-            const box = new THREE.Mesh(new THREE.BoxGeometry(TS, TS, WALL_H), new THREE.MeshLambertMaterial({ map: T(d.kind === 'bigkey' ? 'doorBig' : 'door') }))
+            const box = new THREE.Mesh(new THREE.BoxGeometry(TS, TS, WALL_H), new THREE.MeshLambertMaterial({ map: T(d.kind === 'bigkey' ? 'doorBig' : (d.kind === 'heart' ? 'doorHeart' : 'door')) }))
             box.position.set(FX(d.x * TS + 8), d.y * TS + 8, WALL_H / 2)
             if (!lite) box.castShadow = true
             screenGroup.add(box); staticMeshes.push(box)
@@ -454,6 +456,22 @@ void main(){
             if (!lite) box.castShadow = true
             screenGroup.add(box); staticMeshes.push(box)
             dynamic.cracks.set(cr.id, box)
+        }
+        braziers.length = 0
+        for (const b of s.braziers || []) {
+            const mb = new THREE.Mesh(new THREE.PlaneGeometry(12, 16), new THREE.MeshLambertMaterial({ map: T('brazier'), transparent: true, alphaTest: 0.4 }))
+            mb.quaternion.copy(camera.quaternion)
+            mb.position.set(FX(b.x * TS + 8), b.y * TS + 8, 8)
+            screenGroup.add(mb); staticMeshes.push(mb)
+            braziers.push({ mesh: mb, x: b.x * TS + 8, y: b.y * TS + 8 })
+        }
+        vents.length = 0
+        for (const v of s.vents || []) {
+            const mv = new THREE.Mesh(new THREE.PlaneGeometry(14, 12), new THREE.MeshLambertMaterial({ map: T('vent'), transparent: true, alphaTest: 0.4 }))
+            mv.position.set(FX(v.x * TS + 8), v.y * TS + 8, 0.2)
+            mv.userData.vid = v.id
+            screenGroup.add(mv); staticMeshes.push(mv)
+            vents.push({ mesh: mv, id: v.id, x: v.x * TS + 8, y: v.y * TS + 8 })
         }
         for (const n of s.npcs || []) {
             const cnv = paintNpc(n)
@@ -483,6 +501,8 @@ void main(){
         canopies.length = 0
         bushes.length = 0
         grassTiles.length = 0
+        braziers.length = 0
+        vents.length = 0
         dynamic.doors.clear(); dynamic.cracks.clear(); dynamic.chests.clear(); dynamic.switches.clear(); dynamic.npcs.clear()
     }
 
@@ -614,6 +634,11 @@ void main(){
                 case 'split': spawnParts(e.x, e.y, JUICE.shard, 10, 3.2, 2); spawnParts(e.x, e.y, ['#ff9a3c', '#ffd87a'], 6, 2, 2.4); shake = Math.max(shake, 3); break
                 case 'warp': spawnParts(e.x, e.y, ['#8ce0ff', '#bff2ff'], 12, 2.4, 2); break
                 case 'grant': spawnParts(e.x, e.y, ['#ffd27a', '#fff3cf', '#8ce0ff'], 14, 2.6, 2.2); break
+                case 'gust': case 'galecharge': spawnParts(e.x, e.y, ['#e8f4ff', '#8ce0ff', '#bff2ff'], 8, 2.6, 1.4); break
+                case 'seal': spawnParts(e.x, e.y, ['#8cc45f', '#cfd6e6', '#6fae4e'], 12, 2.4, 1.8); break
+                case 'spore': spawnParts(e.x, e.y, ['#8cc45f', '#4c8438'], 6, 2, 1.2); break
+                case 'mantle': spawnParts(e.x, e.y, ['#57506a', '#2c2733', '#ff7a3c'], 14, 3.2, 2.2); shake = Math.max(shake, 5); break
+                case 'roar': spawnParts(e.x, e.y, ['#ff9a3c', '#ffd27a'], 18, 3.6, 2.6); shake = Math.max(shake, 7); break
             }
         }
     }
@@ -639,7 +664,7 @@ void main(){
         if (!TEX) return
         lastSim = sim
         const dark = !!SCREENS[sim.screen]?.dark
-        const sig = sim.screen + '|' + Object.keys(sim.flags.cracked).length + '|' + Object.keys(sim.flags.doorsOpen).length + '|' + Object.keys(sim.flags.chestsOpen).length
+        const sig = sim.screen + '|' + Object.keys(sim.flags.cracked).length + '|' + Object.keys(sim.flags.doorsOpen).length + '|' + Object.keys(sim.flags.chestsOpen).length + '|' + Object.keys(sim.flags.ventsOff || {}).length
         if (sig !== structureSig || sim.screen !== currentScreen) {
             buildScreen(sim.screen, sim.flags, sim.cut)
             structureSig = sig
@@ -647,6 +672,7 @@ void main(){
             for (const [did, mesh] of dynamic.doors) if (sim.flags.doorsOpen[did]) mesh.visible = false
             for (const [kid, mesh] of dynamic.cracks) if (sim.flags.cracked[kid]) mesh.visible = false
             for (const [sid2, mesh] of dynamic.switches) if (sim.flags.switchesOn[sid2]) mesh.material.color.set('#4aff7a')
+            for (const vt of vents) if (sim.flags.ventsOff[vt.id]) vt.mesh.material.map = T('ventSealed')
         }
         const s = SCREENS[sim.screen]
         for (const d of s.doors || []) {
@@ -710,6 +736,16 @@ void main(){
             b.mesh.position.x = FX(b.x) + Math.sin(tSec * 4.7 + b.x * 0.11) * WIND.gust(b.x, b.y, tSec) * 0.35
         }
         for (const gt of grassTiles) gt.tex.offset.x = WIND.grass(gt.x, gt.y, tSec)
+        for (const bz of braziers) {
+            const lit = T(anim ? 'brazier' : 'brazier')
+            if (lit) bz.mesh.material.map = lit
+            bz.mesh.material.color.setRGB(1 + (anim ? 0.25 : 0), 1 + (anim ? 0.1 : 0), 1)
+        }
+        for (const vt of vents) {
+            const off = sim.flags.ventsOff[vt.id]
+            vt.mesh.material.map = T(off ? 'ventSealed' : 'vent')
+            if (!off && Math.random() < 0.06) spawnParts(vt.x, vt.y, ['#8cc45f', '#6fae4e', '#b7e08a'], 1, 1.2, 1.1)
+        }
         camera.position.x += (FX(128 + (hx - 128) * 0.5) - camera.position.x) * 0.08
         camera.position.y += ((CAM_Y + (hy - 88) * 0.5) - camera.position.y) * 0.08
         const lookX = camera.position.x, lookY = camera.position.y - 120
@@ -761,11 +797,13 @@ void main(){
             else if (e.type === 'pod') key = `pod/${e.t % 70 < 26 ? 1 : 0}`
             else if (e.type === 'maw') key = `maw/${e.open ? 'open' : 'closed'}`
             else if (e.type === 'wyrm') key = `wyrm/${e.open ? 'open' : 'closed'}`
+            else if (e.type === 'king') key = `king/${e.mantle <= 0 ? 'core' : (e.t % 30 < 15 ? 'mantle0' : 'mantle1')}`
             else key = `cinder/${anim}`
             setTex(b, key)
             b.mesh.scale.set(1, 1, 1)
             if (e.type === 'maw') b.mesh.scale.set(28 / 16, 28 / 16, 1)
             if (e.type === 'wyrm') b.mesh.scale.set(24 / 16, 20 / 16, 1)
+            if (e.type === 'king') b.mesh.scale.set(28 / 16, 28 / 16, 1)
             b.mesh.position.set(FX(e.x), e.y, 8 + (e.type === 'bat' || e.type === 'wisp' ? 6 : 0))
             b.mesh.scale.x *= (e.fx > 0.1 ? -1 : 1)
             const el = e.hitT > 0 ? 1.7 : probeLight(e.x, e.y, dark)
@@ -824,7 +862,8 @@ void main(){
             const pr = sim.projectiles[i]
             if (!pr) { p.mesh.visible = false; p.shadow.visible = false; continue }
             p.mesh.visible = true
-            setTex(p, pr.kind === 'arrow' ? 'arrow' : 'orb')
+            setTex(p, pr.kind === 'arrow' ? 'arrow' : (pr.kind === 'gust' ? 'gust' : 'orb'))
+            p.mat.opacity = pr.kind === 'gust' ? Math.max(0.2, Math.min(1, pr.life / 24)) : 1
             p.mesh.position.set(FX(pr.x), pr.y, 8)
             p.mesh.rotation.z = Math.atan2(pr.vy, pr.vx)
             const pl = probeLight(pr.x, pr.y, dark)

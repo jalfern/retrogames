@@ -43,7 +43,7 @@ export const SCREENS = {
         ],
     }),
     'ow-10': S('ow-10', 'THE OLD SHRINE', [
-        'TTTTTTTT.TTTTTTT',
+        'TTTTTTTTTTTT.TTT',
         'T.TT...T...T...T',
         'T.T..C...TTTT..T',
         'T....T....T....T',
@@ -57,7 +57,7 @@ export const SCREENS = {
     ], {
         exits: { w: { to: 'ow-00', x: 15, y: 5 }, s: { to: 'ow-11', x: 5, y: 0 }, n: { to: 'ow-20', x: 8, y: 10 } },
         warps: [{ x: 8, y: 4, to: 'd2-f0', sx: 7, sy: 8 }],
-        doors: [{ id: 'dr-heart', x: 8, y: 0, kind: 'heart', to: 'ow-20', entry: [8, 10] }],
+        doors: [{ id: 'dr-heart', x: 12, y: 0, kind: 'heart', to: 'ow-20', entry: [8, 10] }],
         cracks: [{ id: 'ck-10', x: 5, y: 2, reveal: 'heart' }],
         chests: [],
         signs: [{ x: 10, y: 1, msg: 'ASHFELL GATE — THE NORTH WAY UP. IT OPENED FOR NONE... UNTIL THE WYRM\u2019S HEART WAS CARRIED.' }],
@@ -344,16 +344,15 @@ export const SCREENS = {
     'ow-20': S('ow-20', 'ASHFELL ASCENT', [
         'vvvvvvvvvvvvvvvv',
         'vaaaaaaaaaaaaaav',
-        'vasaavvvavaaaaav',
-        'vaavv~~~vvavaaav',
-        'vavaa~~~avvavaav',
-        'vaaavaa~~aaavaav',
-        'vvvavvaaavvaavvv',
-        'vaaavaavvvvavaav',
-        'vavvaaavvaavavvv',
-        'vaaaav' + 'aaaaaaaaa' + 'v',
-        'vvvvvvvva' + 'vvvvvvv',
-    ], {
+        'vasaaavvvaaaaaav',
+        'vasaaavvvaaaaaav',
+        'vaaaaavvvaaaaaav',
+        'vaaavvvvvaaaaaav',
+        'vvvaaaaaaaaaaaav',
+        'vaaaaaaaaavvvaav',
+        'vaaaaaaaaavvvaCv',
+        'vaaaaaaaaaaaaaav',
+        'vvvvvvvvavvvvvvv',], {
         dark: true, spawn: [8, 10], req: 'emberTaken',
         exits: { s: { to: 'ow-10', x: 8, y: 1 } },
         warps: [{ x: 2, y: 2, to: 'd3-e0', sx: 7, sy: 8 }],
@@ -421,22 +420,21 @@ export const SCREENS = {
     }),
     'd3-e2': S('d3-e2', 'HOLLOW SPIRE III', [
         '################',
-        '#.....s#.......#',
-        '######vv########',
-        '#............C.#',
-        '#..####.####...#',
+        '#.....s........#',
+        '#....v.v.......#',
+        '#..............#',
+        '#..####.#####..#',
         '#..#........#..#',
-        '#..#..~~....#..#',
+        '#..#..~~....#C.#',
         '#..#........#..#',
-        '#..####.####...#',
+        '#..####.#####..#',
         '#.....v........#',
-        '################',
-    ], {
+        '################',], {
         dark: true, spawn: [7, 8], req: 'emberTaken',
         doors: [{ id: 'dr3-2', x: 7, y: 0, kind: 'switch', switch: 'sw-g2', to: 'd3-e3', entry: [7, 8] }],
         switches: [{ id: 'sw-g2', x: 6, y: 1, via: 'gust', opens: 'dr3-2' }],
-        vents: [{ id: 'v-3a', x: 6, y: 2 }, { id: 'v-3b', x: 7, y: 2 }, { id: 'v-3c', x: 6, y: 9 }],
-        cracks: [{ id: 'ck-3c', x: 13, y: 3, reveal: 'heart' }],
+        vents: [{ id: 'v-3a', x: 5, y: 2 }, { id: 'v-3b', x: 7, y: 2 }, { id: 'v-3c', x: 6, y: 9 }],
+        cracks: [{ id: 'ck-3c', x: 13, y: 6, reveal: 'heart' }],
         chests: [{ id: 'ch-3c', x: 5, y: 7, item: 'heart' }],
         enemies: [
             { type: 'spitter', x: 9, y: 5, i: 0 },
@@ -449,13 +447,13 @@ export const SCREENS = {
     'd3-e3': S('d3-e3', 'HOLLOW SPIRE IV', [
         '################',
         '#..............#',
-        '#.####.####....#',
-        '#.#........#...#',
-        '#.#...B....#...#',
-        '#.#........#.###',
-        '#.#..~~....#...#',
-        '#.####.###.....#',
-        '#......#.......#',
+        '#....#..#......#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#....~~........#',
+        '#..............#',
+        '#.#............#',
         '#..............#',
         '################',
     ], {
@@ -463,7 +461,7 @@ export const SCREENS = {
         doors: [{ id: 'dr3-3', x: 7, y: 0, kind: 'switch', switch: 'sw-3p', to: 'd3-f0', entry: [7, 8] }],
         plates: [{ id: 'sw-3p', x: 6, y: 1 }],
         blocks: [{ id: 'bk-3', x: 6, y: 4 }],
-        chests: [{ id: 'ch-3d', x: 13, y: 2, item: 'heart' }],
+        chests: [{ id: 'ch-3d', x: 13, y: 1, item: 'heart' }],
         enemies: [
             { type: 'tuskroot', x: 12, y: 5, i: 0 },
             { type: 'wisp', x: 9, y: 8, i: 1 },
@@ -503,7 +501,7 @@ for (const id of Object.keys(SCREENS)) {
     })
 }
 
-const SOLID_TILES = new Set(['T', '#', 'H', 'R', '=', '~', 'I', 'A'])
+const SOLID_TILES = new Set(['T', '#', 'H', 'R', '=', '~', 'I', 'A', 'v'])
 
 export const tileAt = (scr, x, y) => {
     if (!scr || x < 0 || y < 0 || x >= SW || y >= SH) return '#'
