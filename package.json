@@ -247,7 +247,8 @@
     "lobbycheck": "node scripts/lobbycheck.mjs",
     "nightlybot": "node scripts/nightlybot.mjs",
     "nightlybotcheck": "node scripts/nightlybot.mjs --selftest",
-    "cachecheck": "node scripts/cachecheck.mjs"
+    "cachecheck": "node scripts/cachecheck.mjs",
+    "ironringcheck": "node scripts/ironringcheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",

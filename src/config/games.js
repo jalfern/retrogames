@@ -191,6 +191,8 @@ const CivilizationVGame = lazy(() => import('../games/CivilizationV'))
 // lane-defense sim audits in Node (gardencheck), so planner and sim ride together.
 const GardenGuardGame = lazy(() => import('../games/GardenGuard'))
 const HomebodyGame = lazy(() => import('../games/Homebody'))
+// IRON RING: three.js fighter — Pong is not paying for a 3D engine.
+const IronRingGame = lazy(() => import('../games/IronRing'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1050,5 +1052,18 @@ export const GAMES = [
         theme: 'dark',
         description: "An original people sim in the spirit of a certain Maxish life classic (PC 2000) — its own IP, names and art, all synthesized. Two residents, five needs, one little suburban lot seen from above, and a clock that never stops: tap a fridge, a bed, the TV or the mailbox and your resident walks over (pathfinding around every sofa) and does the thing. Hunger, energy, fun, social and bladder drain all day; a kite-gem over their head spins green, amber or red, and unattended red needs end in a very embarrassing collapse. Work pays: whoever's rostered clocks out at five with § in pocket, and the career ladder climbs. B opens the buy mode — time stands still over a catalog of thirteen pieces, from a Puffed Sofa to a Shower Cubby — tap to place, tap again to sell half back; furniture raises the home's ambience, and ambience plus happy residents bank contentment hour by hour. Fern, the neighbour, drifts in through the gate on seeded schedules to talk about the weather, and a thought log narrates the little stories as they happen (dreams about cheese included). Bank 80 contentment and the lifetime wish is granted; let both residents fall at once and the household ends. Deterministic seed→hash, and the attract demo drives the same autopilot a QA harness runs.",
         controls: ['Tap an object: your resident walks over and uses it — tap the floor to just walk', 'Tap a resident (or G): switch who you command', 'Stick / arrows: walk directly · ✓ / SPACE: use the nearest object', '⚒ / B: BUY MODE — time stops; arrows move the ghost, ✓ places', 'In buy mode: tap an owned piece to sell it back for half · 1-9 pick a catalog card', 'The mailbox = work: clock in between 08:00 and 16:00 on your resident\'s days', 'Watch the kite gem: amber means a need is close, red means minutes to collapse', '?: pause and read the house rules'],
+    },
+
+    {
+        path: '/iron-ring',
+        pad: { layout: 'dpad', buttons: [{ label: 'P', code: 'Space' }, { label: 'K', code: 'KeyZ' }], analog: false, reason: 'six verbs down to two on glass: A punches, B kicks, and one direction + button throws a special' },
+        builtBy: 'forge',
+        added: '2026-10-25',
+        visibility: 'private',
+        component: IronRingGame,
+        label: 'IRON RING',
+        theme: 'dark',
+        description: "An original one-on-one fighter in the spirit of the 1991 arcade giant that defined the genre — its own roster, its own stages, its own moves, and the same soul: best of three rounds with health bars and a ticking clock, light and heavy punches and kicks, hold-back blocking (lows must be crouch-blocked), close-range throws, cancels that chain normals into specials, and motion inputs — down-forward-punch throws fire, forward-down-up catches jumpers. Six original fighters (KADE, VEXA, BRAKK, SABLE, HYDE, TESSA) with distinct builds, moves and ports of call; a six-opponent arcade ladder from easy to insane; and a super meter that auto-upgrades your special at 50 and again at a full bar. The look is SFIV's trick: chunky 3D fighters fighting on a 2D plane, camera tracking and zooming with the spacing, live crowds and neon. The whole fighting core is a shared engine (seed + pads = identical fights, hash-checked), so head-to-head works: 1P ladder on your phone, local 2P on one keyboard, or iron-ring?net=host versus a friend over room codes.",
+        controls: ['Arrows: move · hold BACK to block (BACK+DOWN blocks low) · UP: jump', 'J / SPACE / A: light punch · K: heavy punch · U: kick · I: heavy kick · Z / B: light kick', 'DOWN-FORWARD + punch: special (fireball-style) — at full meter the same motion SUPERS', 'FORWARD-DOWN-UP + punch: rising anti-air · close + forward + heavy: THROW', 'Chain: light into heavy into special = combo counter', '1P ARCADE LADDER · 2 on the title: LOCAL 2P (P2: WASD + F G V B) · 6 fighters: keys 3-8', '?: pause and read the rules · online: iron-ring?net=host / ?net=join&room=CODE'],
     },
 ]
