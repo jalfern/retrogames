@@ -681,7 +681,6 @@ addEventListener('keydown', e => {
   if (e.key === 'k' || e.key === 'K') cycleSpin();
 });
 spinChip.addEventListener('pointerdown', () => { unlockAudio(); cycleSpin(); });
-if (spinA !== 0) applySpin(spinA);
 
 /* The flyby loop ENDS by falling in (#1048). After the close pass the drone tips to
  * a radial infall: r(s) = rs*(1 + (R1/rs - 1)*(1-s)^3.5) — a free-fall-like profile
@@ -1271,6 +1270,7 @@ let lastDiveAudio = { dopplerHz: 0, subSwell: 0, D: 1, near: 0, diving: false };
 const audioHint = document.getElementById('audiohint');
 const divehudEl = document.getElementById('divehud');
 const tipcueEl = document.getElementById('tipcue');
+if (spinA !== 0) applySpin(spinA);
 let lastTip = { until: -1, visible: false };
 let lastHud = { visible: false, text: '' };
 function unlockAudio(){
