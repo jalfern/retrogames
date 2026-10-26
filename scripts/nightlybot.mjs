@@ -83,6 +83,8 @@ export const GAMES = [
     { id: 'emberwood', path: '/emberwood' },
     { id: 'garden-guard', path: '/garden-guard' },
     { id: 'homebody', path: '/homebody' },
+    { id: 'iron-ring', path: '/iron-ring' },
+    { id: 'viper-pit', path: '/viper-pit' },
 ]
 const CAP = 9000
 
@@ -372,6 +374,7 @@ async function main() {
     const prev = await fetchPrev()
     const streaks = updateStreaks(prev, results)
     for (const g of results) g.failStreak = streaks[g.id]
+    const failed = results.filter(g => !g.pass)
     const doc = {
         generated: new Date().toISOString(),
         seed: SEED,
@@ -380,7 +383,6 @@ async function main() {
         games: results.map(g => ({ id: g.id, pass: g.pass, done: !!g.done, ticks: g.ticks, score: g.score, seed: g.seed, failStreak: g.failStreak, flags: g.flags, warnings: g.warnings })),
     }
     writeFileSync('/tmp/forge/nightly.json', JSON.stringify(doc, null, 1))
-    const failed = results.filter(g => !g.pass)
     console.log(`\nnightlybot: ${results.length - failed.length}/${results.length} games passed` +
         (failed.length ? ` — ${failed.map(f => f.id).join(', ')} RED` : ' — OK'))
 
