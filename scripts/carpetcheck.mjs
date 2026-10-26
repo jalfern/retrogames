@@ -435,6 +435,47 @@ await page.waitForTimeout(200)
 const gpuC = await page.evaluate(() => ({ glow: window.__carpetTest.glowCells(), scorch: window.__carpetTest.scorchCells(), tick: window.__carpetTest.probe().tick }))
 r.check('lava glow cools to nothing after CRATER_GLOW ticks', gpuC.glow === 0, `glow cells ${gpuC.glow} at tick ${gpuC.tick}`)
 r.check('scorch outlives the glow', gpuC.scorch >= 6, `scorch cells ${gpuC.scorch}`)
+
+// ---- #1090 polish A: the world pass is world-time driven, not wall-clock.
+// Water shimmer, lava flicker, clouds and cloud shadows all sample uWorldTime
+// (sim ticks), so two captures at the SAME tick must be pixel-identical. Run
+// before the rubble gate so no particles exist on screen yet (particles
+// integrate per paint frame). Mutation guide: switch the water block back to
+// uTime (performance.now) in renderer.js tFrag and consecutive captures
+// diverge — this gate goes red.
+const sameTick = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    window.__game.reset(7)
+    for (let i = 0; i < 40; i++) window.__game.step({}, 1)
+    await new Promise((res) => setTimeout(res, 150))
+    const grab = () => t.pixels(0.3, 0.75, 64, 10)
+    const a = grab()
+    await new Promise((res) => setTimeout(res, 150))
+    const b = grab()
+    if (!a || !b) return { ok: false, why: 'no readback' }
+    let diff = 0
+    for (let i = 0; i < a.length; i++) diff += Math.abs(a[i] - b[i])
+    return { ok: a.length === b.length && diff === 0, diff, tick: t.probe().tick }
+})
+r.check('same tick renders identical frames: water/clouds/shadow animate on WORLD time (#1090)',
+    sameTick.ok, `sumAbsDiff=${sameTick.diff} at tick ${sameTick.tick}${sameTick.why ? ' (' + sameTick.why + ')' : ''}`)
+
+// ---- #1090 polish B: rubble keeps smouldering long after the fire is gone.
+// Reset clears particles; killHut marks a hut dead (burn 0); after 40 ticks the
+// dead-rubble emitter must still be breathing smoke with no hot crater anywhere
+// (glow===0 rules out crater/blast smoke as the source). Mutation guide: delete
+// the `hs.dead` smoke branch in renderer.js emitAmbient and this gate goes red.
+await page.evaluate(() => { window.__game.reset(7) })
+await page.waitForTimeout(250)
+const smokeLate = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    t.killHut()
+    for (let i = 0; i < 40; i++) window.__game.step({}, 1)
+    await new Promise((res) => setTimeout(res, 800))
+    return { puffs: t.smokePuffs(), glow: t.glowCells() }
+})
+r.check('dead rubble keeps smouldering long after the fire is gone (#1090)',
+    smokeLate.puffs > 0 && smokeLate.glow === 0, `smoke instances ${smokeLate.puffs}, glow ${smokeLate.glow}`)
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 await browser.close()

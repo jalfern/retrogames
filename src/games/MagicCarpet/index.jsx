@@ -100,6 +100,7 @@ const MagicCarpetGame = () => {
         let flashL = 0, flashR = 0, hurtFlash = 0
         let vaultFlash = 0, prevSeg = -1
         let bankS = 0, sinkS = 0, prevAlt = gs.alt
+        let bankHum = 0
         const keys = { l: false, r: false, u: false, d: false }
         let throwL = false, throwR = false
         let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
@@ -117,6 +118,7 @@ const MagicCarpetGame = () => {
                 if (e.type === 'pickup') {
                     audioController.playTone(760 + (e.m || 3) * 30, 0.05, 'triangle', 0.05)
                 } else if (e.type === 'bankIn') {
+                    bankHum = 30
                     if (e.m >= 3) {
                         audioController.playTone(560, 0.035, 'sine', 0.045)
                         audioController.playTone(660, 0.035, 'sine', 0.045, 0.07)
@@ -148,6 +150,8 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'zap') {
                     audioController.playNoise(0.16, 0.09)
                     audioController.playSweep(1500, 260, 0.2, 'square', 0.06)
+                    audioController.playTone(210, 0.26, 'triangle', 0.028, 0.14)
+                    audioController.playTone(140, 0.4, 'triangle', 0.016, 0.3)
                 } else if (e.type === 'heal') {
                     audioController.playTone(660, 0.09, 'sine', 0.06)
                     audioController.playTone(880, 0.14, 'sine', 0.06, 0.09)
@@ -163,6 +167,8 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'boom') {
                     audioController.playNoise(0.28, 0.11)
                     audioController.playTone(70, 0.18, 'square', 0.07)
+                    audioController.playTone(58, 0.28, 'square', 0.032, 0.15)
+                    audioController.playTone(46, 0.42, 'square', 0.018, 0.32)
                     shake = Math.max(shake, 4)
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
@@ -235,6 +241,18 @@ const MagicCarpetGame = () => {
             if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
             if (boostOn && gs.tick % 12 === 0) audioController.playNoise(0.06, 0.02)
             if (gs.tick % 46 === 0) audioController.playSweep(74, 58, 0.5, 'sine', boostOn ? 0.028 : 0.015)
+            if (bankHum > 0) {
+                if (gs.tick % 9 === 0) audioController.playTone(98 + (gs.tick % 3) * 7, 0.2, 'sine', 0.022)
+                bankHum--
+            }
+            if (gs.tick % 170 === 0) {
+                const near = gs.monsters.find((m) => m.kind !== 'cow' &&
+                    Math.hypot(((m.x - gs.x + MAP / 2) % MAP + MAP) % MAP - MAP / 2, ((m.y - gs.y + MAP / 2) % MAP + MAP) % MAP - MAP / 2) < 95)
+                if (near) {
+                    audioController.playTone(near.kind === 'giant' ? 44 : 62, 0.34, 'sawtooth', 0.026)
+                    audioController.playTone(near.kind === 'giant' ? 33 : 47, 0.5, 'sawtooth', 0.016, 0.2)
+                }
+            }
             boostPrev = boostOn
             doSim({
                 left: keys.l, right: keys.r, up: keys.u, down: keys.d,
@@ -243,8 +261,9 @@ const MagicCarpetGame = () => {
             throwL = throwR = false
         }
 
-        const paintCarpetAndHands = () => {
-            const sway = keys.l ? -3 : keys.r ? 3 : 0
+        const paintCarpetAndHands = (bk = 0) => {
+            const sway = (keys.l ? -3 : keys.r ? 3 : 0) + bk * 26
+            const squash = Math.abs(bk) * 4
             const bob = Math.sin(gs.tick * 0.09) * 1.5
             if (boostOn) {
                 ctx.globalAlpha = 0.3
@@ -260,16 +279,20 @@ const MagicCarpetGame = () => {
             const flut = boostOn ? 2.3 : 1.1
             const flapL = Math.sin(gs.tick * 0.26) * flut
             const flapR = Math.sin(gs.tick * 0.26 + Math.PI) * flut
+            const baseY = H - HUD_H
+            const yL = baseY - bk * 5
+            const yR = baseY + bk * 5
+            const yC = baseY - bk * 2.5
             ctx.fillStyle = '#8a1f28'
             ctx.beginPath()
-            ctx.moveTo(96 + sway, H - HUD_H); ctx.lineTo(150 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 16 + bob - stretch + flapL); ctx.closePath(); ctx.fill()
+            ctx.moveTo(96 + sway, yL); ctx.lineTo(150 + sway, yC); ctx.lineTo(128 + sway + bk * 6, baseY - 16 + bob - stretch + flapL + squash); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(170 + sway, H - HUD_H); ctx.lineTo(224 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 16 + bob - stretch + flapR); ctx.closePath(); ctx.fill()
+            ctx.moveTo(170 + sway, yC); ctx.lineTo(224 + sway, yR); ctx.lineTo(192 + sway + bk * 6, baseY - 16 + bob - stretch + flapR + squash); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#b8303c'
             ctx.beginPath()
-            ctx.moveTo(104 + sway, H - HUD_H); ctx.lineTo(144 + sway, H - HUD_H); ctx.lineTo(128 + sway, H - HUD_H - 11 + bob - stretch + flapL * 0.6); ctx.closePath(); ctx.fill()
+            ctx.moveTo(104 + sway, yL + bk); ctx.lineTo(144 + sway, yC); ctx.lineTo(128 + sway + bk * 4, baseY - 11 + bob - stretch + flapL * 0.6 + squash); ctx.closePath(); ctx.fill()
             ctx.beginPath()
-            ctx.moveTo(176 + sway, H - HUD_H); ctx.lineTo(216 + sway, H - HUD_H); ctx.lineTo(192 + sway, H - HUD_H - 11 + bob - stretch + flapR * 0.6); ctx.closePath(); ctx.fill()
+            ctx.moveTo(176 + sway, yC); ctx.lineTo(216 + sway, yR - bk); ctx.lineTo(192 + sway + bk * 4, baseY - 11 + bob - stretch + flapR * 0.6 + squash); ctx.closePath(); ctx.fill()
             ctx.fillStyle = '#d8a840'
             for (let i = 0; i < 4; i++) {
                 ctx.fillRect(100 + i * 12 + sway, H - HUD_H - 2, 2, 2)
@@ -283,6 +306,17 @@ const MagicCarpetGame = () => {
             const orbR = gs.hands.R ? SPELL_COLORS[gs.hands.R] : null
             if (flashL > 0 && orbL) { ctx.fillStyle = orbL; ctx.beginPath(); ctx.arc(121 + sway, handY(flashL) - 3, 3.4, 0, Math.PI * 2); ctx.fill() }
             if (flashR > 0 && orbR) { ctx.fillStyle = orbR; ctx.beginPath(); ctx.arc(199 + sway, handY(flashR) - 3, 3.4, 0, Math.PI * 2); ctx.fill() }
+            const orbReady = (id, cool) => id && cool <= 0 && gs.mana >= (spellById(id)?.cost ?? 99)
+            if (!(flashL > 0) && orbReady(gs.hands.L, gs.coolL)) {
+                ctx.globalAlpha = 0.4 + Math.sin(gs.tick * 0.15) * 0.12
+                ctx.fillStyle = orbL; ctx.beginPath(); ctx.arc(121 + sway, handY(0) - 3, 2.4, 0, Math.PI * 2); ctx.fill()
+                ctx.globalAlpha = 1
+            }
+            if (!(flashR > 0) && orbReady(gs.hands.R, gs.coolR)) {
+                ctx.globalAlpha = 0.4 + Math.sin(gs.tick * 0.15 + 2) * 0.12
+                ctx.fillStyle = orbR; ctx.beginPath(); ctx.arc(199 + sway, handY(0) - 3, 2.4, 0, Math.PI * 2); ctx.fill()
+                ctx.globalAlpha = 1
+            }
             if (gs.heldEnt) {
                 ctx.fillStyle = '#58e8d8'
                 ctx.beginPath(); ctx.arc(W / 2, H - HUD_H - 30 + Math.sin(gs.tick * 0.2), 4, 0, Math.PI * 2); ctx.fill()
@@ -427,19 +461,24 @@ const MagicCarpetGame = () => {
         }
 
         let prevYaw = gs.yaw
+        let lastVisTick = -1
         const paint = () => {
             const sx = shake > 0 ? ((performance.now() % 7) - 3) * shake * 0.35 : 0
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.35 : 0
             if (shake > 0) { shake *= 0.85; if (shake < 0.35) shake = 0 }
-            if (flashL > 0) flashL--
-            if (flashR > 0) flashR--
-            const steer = (keys.r ? 1 : 0) - (keys.l ? 1 : 0)
-            const yawDelta = gs.yaw - prevYaw
-            prevYaw = gs.yaw
-            const bankTarget = screenRef.current === 'play' ? steer : Math.max(-1, Math.min(1, yawDelta * 14))
-            bankS += (bankTarget - bankS) * 0.12
-            sinkS += (Math.max(-1.2, Math.min(1.2, (gs.alt - prevAlt) * 0.6)) - sinkS) * 0.15
-            prevAlt = gs.alt
+            const visual = gs.tick !== lastVisTick
+            lastVisTick = gs.tick
+            if (visual) {
+                if (flashL > 0) flashL--
+                if (flashR > 0) flashR--
+                const steer = (keys.r ? 1 : 0) - (keys.l ? 1 : 0)
+                const yawDelta = gs.yaw - prevYaw
+                prevYaw = gs.yaw
+                const bankTarget = screenRef.current === 'play' ? steer : Math.max(-1, Math.min(1, yawDelta * 14))
+                bankS += (bankTarget - bankS) * 0.12
+                sinkS += (Math.max(-1.2, Math.min(1.2, (gs.alt - prevAlt) * 0.6)) - sinkS) * 0.15
+                prevAlt = gs.alt
+            }
             if (renderer) {
                 renderer.frame(gs, {
                     bank: bankS,
@@ -452,7 +491,7 @@ const MagicCarpetGame = () => {
             ctx.clearRect(0, 0, W, H)
             ctx.save()
             ctx.translate(sx, sy)
-            paintCarpetAndHands()
+            paintCarpetAndHands(screenRef.current === 'play' ? bankS : bankS * 0.5)
             ctx.restore()
             ctx.globalAlpha = 1
             paintHud()
@@ -569,6 +608,8 @@ const MagicCarpetGame = () => {
                     return gs.craters.length
                 },
                 fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },
+                killHut: () => { const hs = gs.huts[0]; hs.burn = 0; hs.dead = true; return 1 },
+                smokePuffs: () => (renderer ? renderer.smokeCount() : -1),
                 glowCells: () => (renderer ? renderer.glowCells() : -1),
                 scorchCells: () => (renderer ? renderer.scorchCells() : -1),
                 pixels: (x, y, w, h) => {

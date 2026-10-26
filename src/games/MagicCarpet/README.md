@@ -110,9 +110,32 @@ else; restored after. Balance: autopilot wins 60/60 seeds (slowest ~26.5k ticks)
 - Village populations are decorative huts — no villagers, no convert/burn moral
   economy, no prisoners.
 - No anaglyph/stereo mode, no 3D sound. `?` pause carries the rules instead.
-- Water surface is shader ripples + glitter, not the original's 4-bit
-  palette-cycling wave animation; no underwater view when cratered below sea.
+- Water is shader waves with self-shadowing, sun-linked sparkle, dithered
+  depth bands and foam lace tracing the shoreline — but not the original's
+  4-bit palette-cycling wave animation; no underwater view when cratered below sea.
 - No per-pixel terrain deformation ripple animation — craters appear on the
   heightmap the tick they land (visible, but instantaneous).
 - Fog is per-object/per-vertex distance mix, not a true aerial-perspective
-  gradient with altitude; clouds are a dome shader, not layered volumes.
+  gradient with altitude; clouds are two dome layers that cast a drifting
+  shadow on the land, not volumetric bodies.
+
+## #1090 polish (2026-10-25, QA)
+
+- Water: two-wave analytic normals with sun-facing self-shadow, sparkle term
+  tied to sun angle + ripple slope (palette-cycling's readable cousin), three
+  dithered depth bands, foam lace that traces the shore geometry.
+- Clouds: two parallax dome layers + a low-freq cloud shadow that drifts over
+  the terrain; cool lava craters keep an obsidian sheen (specular on scorch);
+  dead rubble smoulders (smoke keeps rising long after the burn); hut windows
+  flicker warm (negative billboard seed channel drives BILL_FRAG).
+- Billboards tilt toward the horizon (`lean` in BILL_VERT) instead of staying
+  screen-vertical; the HUD carpet corners squash/lift with bank and a loaded,
+  cooled hand shows a ready orb before the cast flash.
+- Sound: boom/zap reverb tails (delayed low echoes), a low hum while the vault
+  fills, distant monster growls tied to radar proximity.
+- World-time determinism: water, lava, clouds, cloud-shadow, particle flicker
+  and the bank/sink camera easing all animate on sim ticks, not wall clock —
+  so a frozen tick is a pixel-stable frame. This is the load-bearing new
+  carpetcheck gate (`same tick renders identical frames`); the second new gate
+  is `dead rubble keeps smouldering` (mutant: delete the `hs.dead` smoke
+  branch in emitAmbient → red).
