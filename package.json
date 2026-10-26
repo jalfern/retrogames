@@ -248,7 +248,9 @@
     "nightlybot": "node scripts/nightlybot.mjs",
     "nightlybotcheck": "node scripts/nightlybot.mjs --selftest",
     "cachecheck": "node scripts/cachecheck.mjs",
-    "ironringcheck": "node scripts/ironringcheck.mjs"
+    "ironringcheck": "node scripts/ironringcheck.mjs",
+    "lint:viper": "eslint src/games/ViperPit src/components src/utils src/config src/main.jsx scripts/viperpitcheck.mjs",
+    "viperpitcheck": "node scripts/viperpitcheck.mjs"
   },
   "dependencies": {
     "ifvms": "^1.1.6",
