@@ -193,6 +193,7 @@ const GardenGuardGame = lazy(() => import('../games/GardenGuard'))
 const HomebodyGame = lazy(() => import('../games/Homebody'))
 // IRON RING: three.js fighter — Pong is not paying for a 3D engine.
 const IronRingGame = lazy(() => import('../games/IronRing'))
+const ViperPitGame = lazy(() => import('../games/ViperPit'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1065,5 +1066,18 @@ export const GAMES = [
         theme: 'dark',
         description: "An original one-on-one fighter in the spirit of the 1991 arcade giant that defined the genre — its own roster, its own stages, its own moves, and the same soul: best of three rounds with health bars and a ticking clock, light and heavy punches and kicks, hold-back blocking (lows must be crouch-blocked), close-range throws, cancels that chain normals into specials, and motion inputs — down-forward-punch throws fire, forward-down-up catches jumpers. Six original fighters (KADE, VEXA, BRAKK, SABLE, HYDE, TESSA) with distinct builds, moves and ports of call; a six-opponent arcade ladder from easy to insane; and a super meter that auto-upgrades your special at 50 and again at a full bar. The look is SFIV's trick: chunky 3D fighters fighting on a 2D plane, camera tracking and zooming with the spacing, live crowds and neon. The whole fighting core is a shared engine (seed + pads = identical fights, hash-checked), so head-to-head works: 1P ladder on your phone, local 2P on one keyboard, or iron-ring?net=host versus a friend over room codes.",
         controls: ['Arrows: move · hold BACK to block (BACK+DOWN blocks low) · UP: jump', 'J / SPACE / A: light punch · K: heavy punch · U: kick · I: heavy kick · Z / B: light kick', 'DOWN-FORWARD + punch: special (fireball-style) — at full meter the same motion SUPERS', 'FORWARD-DOWN-UP + punch: rising anti-air · close + forward + heavy: THROW', 'Chain: light into heavy into special = combo counter', '1P ARCADE LADDER · 2 on the title: LOCAL 2P (P2: WASD + F G V B) · 6 fighters: keys 3-8', '?: pause and read the rules · online: iron-ring?net=host / ?net=join&room=CODE'],
+    },
+
+    {
+        path: '/viper-pit',
+        pad: { layout: 'dpad', buttons: [{ label: 'P', code: 'Space' }, { label: 'K', code: 'KeyZ' }], analog: false, reason: 'glass fighter: A punches, B kicks, GUARD sits beside them; specials are one direction + button after the motion' },
+        builtBy: 'forge',
+        added: '2026-10-26',
+        visibility: 'private',
+        component: ViperPitGame,
+        label: 'VIPER PIT',
+        theme: 'dark',
+        description: "An original gritty one-on-one fighter in the spirit of the 1992 arcade shock that made fighting games dangerous — its own roster, its own pits, its own moves, none of its names: best of three, light and heavy punches and kicks, and the signature difference — a dedicated GUARD button (back-walking never blocks; GUARD+DOWN catches lows), uppercuts that LAUNCH their victim into a juggle window, and a FINISHING MOVE per fighter: full bar, down-back-down-forward + punch, and if it catches a wounded foe the round ends in style (stylized, never gory). Five original fighters — NYX the silent assassin, CINDER the firebreather, VESS the inverted acrobat, RIV the last word, KRAX sold by the kilo — each with their own launch-uppercut and named finisher, over a five-pit street ladder from easy to insane, in three dark arenas (back alley at 2 a.m., the foundry, the last train) with fog, hanging lamps, chain-link and silhouetted crowds. Runs on the shared fighting core (seed + pads = identical fights, hash-checked): 1P ladder on your phone (pad + P + K + GUARD), local 2P on one keyboard, or viper-pit?net=host versus a friend over room codes.",
+        controls: ['Arrows: move/jump · hold GUARD (O / the on-screen GUARD button) to block · GUARD+DOWN blocks lows', 'J / SPACE / A: light punch · K: heavy punch · U / B: light kick · I: heavy kick', 'DOWN-FORWARD + punch: special (at full bar the same motion SUPERS)', 'FORWARD-DOWN-UP + punch: UPPERCUT — they launch · close + forward + heavy: THROW', 'DOWN-BACK-DOWN-FORWARD + punch at a FULL BAR: your FINISHING MOVE — a wounded foe is ended in style', 'Chain: light into heavy into special = combo counter · 1 STREET LADDER · 2 LOCAL 2P (P2: WASD + F G V B, H guards) · keys 3-7 quick-pick', '?: pause and read the rules · online: viper-pit?net=host / ?net=join&room=CODE'],
     },
 ]

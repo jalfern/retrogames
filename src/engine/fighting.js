@@ -4,6 +4,12 @@
 // (IRON RING now, the Mortal-Kombat-style title #1096 next) plugs in its roster
 // as data and never re-implements the rules.
 //
+// #1096 options (VIPER PIT), both default-off so IRON RING's sims are
+// bit-identical: `guardButton` (blocking needs the dedicated pad.bk verb,
+// back-walking never blocks) and move-level `finisher`/`finishAt` (a signature
+// finishing move that ends the round outright — in style — when it drops an
+// already-wounded opponent).
+//
 // Determinism law (#494/#495): createMatch(seed) + identical pad streams ⇒
 // identical matchHash every tick. Every random the SIM consumes comes from the
 // seed; renderer juice (particles, shake) may use Math.random, this file may
@@ -78,6 +84,7 @@ export function createMatch(cfg) {
     const { seed, p1, p2, rounds = 2, time = ROUND_TIME } = cfg
     const m = {
         seed: seed >>> 0, rounds, maxRounds: 2 * rounds + 1,
+        guardButton: !!cfg.guardButton,
         rng: mulberry32((seed >>> 0) ^ 0x1234abc9),
         tick: 0, phase: 'intro', phaseT: INTRO_FREEZE,
         timer: time * 60, hitstop: 0, round: 1,
@@ -148,6 +155,7 @@ const MOTION = {
     dp: ['f', 'd', 'u'],
     rdp: ['b', 'd', 'u'],
     qcb: ['d', 'b'],
+    qcbf: ['d', 'b', 'd', 'f'],
 }
 
 function pushHistory(f, pad) {
@@ -173,6 +181,9 @@ function tryStartSpecial(f, strength) {
         if (f.meter >= 50 && sp[name].ex) { f.meter -= 50; return `${name}x` }
         return name
     }
+    // finisher (VIPER PIT): ↓←↓→ at a full bar — checked first so its `d,f`
+    // tail can't be stolen by the plain qcf parse below.
+    if (sp.qcbf && f.meter >= 100 && matchMotion(hist, MOTION.qcbf, 26, 10)) { f.meter = 0; return 'qcbf' }
     if (sp.rdp && strength !== 'k' && matchMotion(hist, MOTION.rdp)) return fire('rdp')
     if (sp.dp && strength !== 'k' && matchMotion(hist, MOTION.dp)) return fire('dp')
     if (sp.qcf && matchMotion(hist, MOTION.qcf)) return fire('qcf')
@@ -198,8 +209,14 @@ function updateFighter(m, f, opp, pad) {
     const dir = dirToken(pad, f.facing)
     const fwd = dir === 'f' || dir === 'df' || dir === 'uf'
     const back = dir === 'b' || dir === 'db' || dir === 'ub'
-    f.blockHeld = back && f.y === 0 && (f.st === 'idle' || f.st === 'crouch' || f.st === 'blockstun')
-    f.crouchBlock = f.blockHeld && (pad.down || dir === 'db' || dir === 'd')
+    const groundedIdle = f.y === 0 && (f.st === 'idle' || f.st === 'crouch' || f.st === 'blockstun')
+    if (m.guardButton) {
+        f.blockHeld = !!pad.bk && groundedIdle
+        f.crouchBlock = f.blockHeld && (pad.down || dir === 'd' || dir === 'db')
+    } else {
+        f.blockHeld = back && groundedIdle
+        f.crouchBlock = f.blockHeld && (pad.down || dir === 'db' || dir === 'd')
+    }
 
     if (f.charge >= 45) f.charge = 45
     else if (back) f.charge++
@@ -360,7 +377,13 @@ function resolveHit(m, atk, def, move, seq) {
         if (atk.st === 'attack') { atk.cancelGate = true }
         m.hitstop = Math.max(m.hitstop, raw >= 9 ? 7 : 4)
         m.events.push({ t: m.tick, kind: 'hit', by: atk.side, dmg: raw, combo: atk.combo })
-        if (def.hp <= 0) koRound(m, atk)
+        if (move.finisher && def.hp <= (move.finishAt || 30)) {
+            def.hp = 0
+            m.hitstop = Math.max(m.hitstop, 12)
+            m.events.push({ t: m.tick, kind: 'finish', by: atk.side })
+            koRound(m, atk)
+            m.banner = 'FINISH!'
+        } else if (def.hp <= 0) koRound(m, atk)
     }
     if (atk.st === 'attack') atk.hitOnce[seq] = true
 }
@@ -390,6 +413,7 @@ function projectileSpawn(m, f, mv) {
         owner: f.side, kind: mv.name || 'orb',
         x: f.x + f.facing * 1.1, y: 1.15 + (mv.y || 0),
         vx: (mv.speed || 0.16) * f.facing,
+        vy: mv.vy || 0, grav: !!mv.grav,
         dmg: mv.dmg, hitstun: mv.hitstun, blockstun: mv.blockstun || 10,
         push: mv.push || 0.12, ttl: mv.ttl || 150, super: !!mv.super,
     })
@@ -399,8 +423,11 @@ function projectileSpawn(m, f, mv) {
 function updateProjectiles(m) {
     const dead = []
     for (const p of m.projectiles) {
-        p.x += p.vx; p.ttl--
-        if (p.x < -WALL - 2 || p.x > WALL + 2 || p.ttl <= 0) { dead.push(p); continue }
+        p.x += p.vx
+        if (p.grav) p.vy -= GRAV * 0.55
+        p.y += p.vy
+        p.ttl--
+        if (p.x < -WALL - 2 || p.x > WALL + 2 || p.ttl <= 0 || (p.grav && p.y < 0.05)) { dead.push(p); continue }
         const def = m.fighters[p.owner === 0 ? 1 : 0]
         const pb = { x0: p.x - 0.35, x1: p.x + 0.35, y0: p.y - 0.3, y1: p.y + 0.3 }
         if (overlap(pb, hurtBox(def)) && def.st !== 'down' && def.st !== 'getup') {
@@ -430,7 +457,7 @@ function cpuDecide(m, f, opp) {
     // threatened by an incoming projectile?
     const inc = m.projectiles.find((p) => p.owner !== f.side && Math.abs(p.x - f.x) < 3.4 && Math.sign(p.vx) === Math.sign(f.x - p.x))
     if (inc) {
-        if (r < tier * 0.7) return [{ [away]: true, down: true }, { [away]: true, down: true }, { [away]: true, down: true }, { [away]: true, down: true }]
+        if (r < tier * 0.7) return [{ [away]: true, down: true, bk: true }, { [away]: true, down: true, bk: true }, { [away]: true, down: true, bk: true }, { [away]: true, down: true, bk: true }]
         if (r < tier * 0.85) return [{ up: true }]
     }
     // punish jump-ins from below
@@ -449,12 +476,15 @@ function cpuDecide(m, f, opp) {
     }
     // close range
     if (m.rng() < 0.22 * tier) {
-        const s = [{ [away]: true }, { [away]: true }, { [away]: true }]
-        if (m.rng() < 0.3) s.push({ [away]: true, down: true })
+        const s = [{ [away]: true, bk: true }, { [away]: true, bk: true }, { [away]: true, bk: true }]
+        if (m.rng() < 0.3) s.push({ [away]: true, down: true, bk: true })
         return s
     }
     if (f.def.moves.throw && dist < 1.35 && m.rng() < tier * 0.3 && opp.st !== 'down' && opp.st !== 'hitstun') {
         return [{ [toward]: true }, { [toward]: true, hp: true }, { [toward]: true }]
+    }
+    if (f.def.moves.qcbf && f.meter >= 100 && opp.hp <= (f.def.moves.qcbf.finishAt || 30) && dist < 2.6 && m.rng() < 0.35 + tier * 0.6) {
+        return scriptMotion('p', 'qcbf', f)
     }
     if (sp.dp && m.rng() < tier * 0.14) return scriptMotion("p", "dp", f)
     if (qcfKey && m.rng() < tier * 0.2) return scriptMotion(sp.qcf.kick ? "k" : "p", "qcf", f)
@@ -466,8 +496,10 @@ function cpuDecide(m, f, opp) {
 
 function scriptMotion(strength, name, f) {
     const toward = f.facing === 1 ? 'right' : 'left'
+    const away = toward === 'right' ? 'left' : 'right'
     const btn = strength === 'k' ? (name === 'dp' ? 'hk' : 'lk') : (name === 'dp' ? 'hp' : 'lp')
     if (name === 'qcf') return [{ down: true }, { down: true, [toward]: true }, { [toward]: true }, { [toward]: true, [btn]: true }, { [toward]: true }]
+    if (name === 'qcbf') return [{ down: true }, { down: true, [away]: true }, { [away]: true }, { down: true }, { down: true, [toward]: true }, { [toward]: true }, { [toward]: true, [btn]: true }, { [toward]: true }]
     if (name === 'dp') return [{ [toward]: true }, { [toward]: true, down: true }, { down: true }, { up: true }, { up: true, [btn]: true }, {}]
     return [{}]
 }
@@ -604,7 +636,7 @@ function nextRound(m) {
 }
 
 export function emptyPad() {
-    return { left: false, right: false, up: false, down: false, lp: false, hp: false, lk: false, hk: false }
+    return { left: false, right: false, up: false, down: false, lp: false, hp: false, lk: false, hk: false, bk: false }
 }
 
 // ---- hash -------------------------------------------------------------------------
