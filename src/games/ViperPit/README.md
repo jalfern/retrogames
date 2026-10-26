@@ -27,7 +27,14 @@ the #1096 options switched on.
   gore). CPU guards and attempts finishers through the same pad scripts.
 - **Dark stages**: back alley at 2 a.m., the foundry, the last train — fog,
   procedural asphalt, chain-link, neon signs, silhouetted crowds with phone
-  glow, hanging lamps with light cones, drifting embers.
+  glow, hanging lamps with light cones, drifting embers. The pits are alive
+  (#1106 stage life): the foundry's molten pool breathes (slow pulse under a
+  fast shimmer) and casts a flickering orange light onto floor and fighters;
+  the alley runs falling rain streaks (LineSegments, wind-slanted, wrapping);
+  the subway gets an occasional train pass — a headlight PointLight sweeps
+  across the pit over ~4.5 s and the car windows flash bright with it. All
+  presentation (wall-clock driven, like the lamp flicker) — nothing feeds the
+  engine, so netplay hashes are untouched.
 - **Sound (#1106)**: every stage runs its own ambient bed (alley crowd murmur
   + rain drips, foundry machinery, subway rail hum + track clacks —
   `MUSIC.viperAlley/viperFoundry/viperSubway`, started with the fight via the
@@ -52,10 +59,15 @@ the #1096 options switched on.
 - `src/games/ViperPit/render.js` — three.js: articulated limb rigs
   (shoulder/elbow/hip/knee groups, capsule limbs), canvas-texture asphalt,
   chain-link fence, crowd + lamps + embers, hit sparks, SSIV-ish camera
-  (midpoint + zoom-by-distance) with handheld shake.
+  (midpoint + zoom-by-distance) with handheld shake. `buildStage` returns the
+  stage-life fx handles (`molten` {mat,light}, `rain` {geo,vel,fallen},
+  `sweep` {light,wins,phase,period,force,prog}); `sync` animates them per
+  frame (molten pulse/cast, rain fall + wrap, periodic/forced train sweep).
 - `src/games/ViperPit/index.jsx` — cabinet: attract CPU-vs-CPU demo, select,
   street ladder (NYX→KRAX easy→insane), local 2P, #1039-lobby netplay with the
   9-verb pad wire + hash-every-30, HUD canvas, FINISH flash/letterbox juice.
+  DEV `__viperPitTest` also exposes `fx()` (stage-life snapshot), `stage(i)`
+  (jump to a pit by index) and `sweep()` (force the train pass) for probes.
 
 ## Rules worth knowing
 
@@ -79,14 +91,18 @@ the #1096 options switched on.
 
 ## Verify
 
-- `npm run viperpitcheck` — 62 gates: the Node rules (guard vs back-walk,
-  low-block, throw-through-guard, uppercut launch, FINISH + healthy-foe
-  finisher, qcf not stolen, cancel combo, juggle rules, determinism, every
-  ladder CPU completes a match, hit events carry `mv`) + the #1106 audio
-  wiring (source-level call-site gates + a stripped-whoosh/sting mutant
-  proving the gate bites) + headless Chrome drive (attract→select→fight,
-  real keys reach the sim, GUARD hold, K.O. flow, the stage bed running and
-  the KO crowd surge reaching the real audio graph, zero page errors).
+- `npm run viperpitcheck` — the Node rules (guard vs back-walk, low-block,
+  throw-through-guard, uppercut launch, FINISH + healthy-foe finisher, qcf not
+  stolen, cancel combo, juggle rules, determinism, every ladder CPU completes
+  a match, hit events carry `mv`) + the #1106 audio wiring (source-level
+  call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
+  the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
+  fall, train sweep + a dead-pulse mutant) + headless Chrome drive
+  (attract→select→fight, real keys reach the sim, GUARD hold, K.O. flow, the
+  stage bed running and the KO crowd surge reaching the real audio graph,
+  stage-life runtime probes via `fx()`: molten opacity actually changes and
+  the cast light is on, `rainFallen` advances, a forced subway sweep walks
+  0→1, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.

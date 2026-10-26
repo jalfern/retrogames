@@ -260,6 +260,7 @@ export function poseFighter(rig, f, tSec) {
 export function buildStage(scene, stage) {
     const grp = new THREE.Group()
     const r = mulberry(stage.id.length * 7919 + stage.name.length)
+    let moltenFx = null, rainFx = null, sweepFx = null
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 26), new THREE.MeshStandardMaterial({ map: asphaltTex(stage.ground, stage.groundLine, 1234), roughness: 0.92 }))
     floor.rotation.x = -Math.PI / 2; grp.add(floor)
@@ -289,22 +290,48 @@ export function buildStage(scene, stage) {
         const lid = new THREE.Mesh(BOX, std(0x27402f, { rough: 0.8, metal: 0.2 })); lid.scale.set(3.1, 0.15, 1.5); lid.position.y = 0.88; ds.add(lid)
         ds.position.set(-9.5, 0.8, -4.5); grp.add(ds)
         const bag = new THREE.Mesh(CAPS, std(0x1c1e22)); bag.scale.set(0.35, 0.4, 0.35); bag.position.set(-7.6, 0.35, -4.2); grp.add(bag)
+        const RN = 90
+        const rGeo = new THREE.BufferGeometry()
+        const rpos = new Float32Array(RN * 6)
+        const rvel = []
+        for (let i = 0; i < RN; i++) {
+            const x = (r() - 0.5) * 30, y = r() * 10, z = -6 + r() * 7
+            rpos[i * 6] = x; rpos[i * 6 + 1] = y; rpos[i * 6 + 2] = z
+            rpos[i * 6 + 3] = x - 0.08; rpos[i * 6 + 4] = y - 0.35; rpos[i * 6 + 5] = z
+            rvel.push(6 + r() * 5)
+        }
+        rGeo.setAttribute('position', new THREE.BufferAttribute(rpos, 3))
+        const rain = new THREE.LineSegments(rGeo, new THREE.LineBasicMaterial({ color: 0x8fa8c8, transparent: true, opacity: 0.3 }))
+        grp.add(rain)
+        rainFx = { geo: rGeo, vel: rvel, n: RN, fallen: 0, last: -1 }
     } else if (stage.props === 'girders') {
         const gm = std(0x4a3226, { metal: 0.6, rough: 0.5 })
         for (const px of [-11, 11]) grp.add(limb(CYL, 0.28, 12, gm, px, 6, -7))
         const beam = limb(CYL, 0.22, 24, gm, 0, 11, -7); beam.rotation.z = Math.PI / 2; grp.add(beam)
-        const molten = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }))
+        const moltenMat = new THREE.MeshBasicMaterial({ color: 0xff7a20, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })
+        const molten = new THREE.Mesh(PLANE, moltenMat)
         molten.rotation.x = -Math.PI / 2; molten.position.set(0, 0.03, -5); molten.scale.set(6, 2, 1); grp.add(molten)
+        const moltenLight = new THREE.PointLight(0xff6a20, 0, 9, 1.6)
+        moltenLight.position.set(0, 1.1, -4)
+        grp.add(moltenLight)
+        moltenFx = { mat: moltenMat, light: moltenLight }
     } else {
         const wm = std(0x2c3038, { rough: 0.5 })
         for (let i = 0; i < 5; i++) {
             const t = new THREE.Mesh(BOX, wm); t.scale.set(8, 2.2, 0.2); t.position.set(-16 + i * 8, 2.6, -8.5); grp.add(t)
         }
         const train = new THREE.Mesh(BOX, std(0x3a3f4a, { metal: 0.6, rough: 0.35 })); train.scale.set(40, 3, 2); train.position.set(0, 1.9, -7.6); grp.add(train)
+        const wins = []
         for (let i = 0; i < 6; i++) {
             const win = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ color: 0xffe9a8, transparent: true, opacity: 0.8 }))
             win.position.set(-15 + i * 6, 2.3, -6.55); win.scale.set(2.4, 1.1, 1); grp.add(win)
+            wins.push(win)
         }
+        const sweepLight = new THREE.PointLight(0xdce8ff, 0, 18, 1.2)
+        sweepLight.position.set(-15, 2.2, -4.5)
+        sweepLight.visible = false
+        grp.add(sweepLight)
+        sweepFx = { light: sweepLight, wins, phase: r() * 30, period: 24 + r() * 12, dur: 4.5, force: -1, prog: -1 }
     }
 
     const crowd = []
@@ -351,7 +378,7 @@ export function buildStage(scene, stage) {
     grp.add(particles)
 
     scene.add(grp)
-    return { grp, crowd, lamps, particles, vel, stage }
+    return { grp, crowd, lamps, particles, vel, stage, molten: moltenFx, rain: rainFx, sweep: sweepFx }
 }
 
 // -- scene -------------------------------------------------------------------------
@@ -418,6 +445,55 @@ export function createScene(canvas) {
                     if (pos.array[i * 3 + 1] > 9) { pos.array[i * 3 + 1] = 0.2; pos.array[i * 3] = (Math.random() - 0.5) * 26 }
                 }
                 pos.needsUpdate = true
+                if (stageFx.molten) {
+                    // the melt breathes: a slow pulse under a fast shimmer, and
+                    // the pool's light falls on the floor and the fighters
+                    const pulse = 0.5 + 0.5 * Math.sin(tSec * 1.4)
+                    const flick = Math.sin(tSec * 13.7) * Math.sin(tSec * 5.1)
+                    const e = 0.3 + 0.45 * pulse + 0.25 * flick
+                    stageFx.molten.mat.opacity = 0.3 + 0.4 * e
+                    stageFx.molten.light.intensity = 6 + 22 * e
+                }
+                if (stageFx.rain) {
+                    const rn = stageFx.rain
+                    const d = Math.max(0, Math.min(0.1, tSec - (rn.last >= 0 ? rn.last : tSec)))
+                    rn.last = tSec
+                    const rp = rn.geo.attributes.position
+                    for (let i = 0; i < rn.n; i++) {
+                        const dy = rn.vel[i] * d
+                        rp.array[i * 6] -= dy * 0.22
+                        rp.array[i * 6 + 1] -= dy
+                        rp.array[i * 6 + 3] -= dy * 0.22
+                        rp.array[i * 6 + 4] -= dy
+                        if (rp.array[i * 6 + 4] < 0.1) {
+                            const nx = (Math.random() - 0.5) * 30
+                            const ny = 9 + Math.random() * 1.5
+                            rp.array[i * 6] = nx; rp.array[i * 6 + 1] = ny
+                            rp.array[i * 6 + 3] = nx - 0.08; rp.array[i * 6 + 4] = ny - 0.35
+                        }
+                        rn.fallen += dy
+                    }
+                    rp.needsUpdate = true
+                }
+                if (stageFx.sweep) {
+                    // a train passes the platform every so often: its headlight
+                    // sweeps across the pit and the car windows flash bright
+                    const s = stageFx.sweep
+                    let t = -1
+                    if (s.force >= 0) { t = tSec - s.force; if (t >= s.dur) s.force = -1 }
+                    if (t < 0) { const cy = (tSec + s.phase) % s.period; if (cy < s.dur) t = cy }
+                    if (t >= 0) {
+                        const k = t / s.dur
+                        s.light.visible = true
+                        s.light.position.x = -15 + k * 30
+                        s.light.intensity = 34 * Math.sin(Math.PI * k)
+                        for (const w of s.wins) w.material.opacity = 0.75 + 0.25 * Math.sin(Math.PI * k)
+                        s.prog = k
+                    } else {
+                        s.light.visible = false
+                        s.prog = -1
+                    }
+                }
             }
             for (let i = sparks.length - 1; i >= 0; i--) {
                 const s = sparks[i]
