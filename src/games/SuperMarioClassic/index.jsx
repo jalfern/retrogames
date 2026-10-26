@@ -994,7 +994,7 @@ const SuperMarioGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[760px] aspect-[16/15] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-[#5c94fc]">
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SUPER MARIO BROS (ORIGINAL)')} onResume={handleResume} />}
-                <div className="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-[10px] tracking-widest text-white/80 bg-black/40 px-2 py-1 rounded font-mono">
+                <div className="pointer-events-none fixed inset-x-0 bottom-2 text-center text-[10px] tracking-widest text-white/80 bg-black/40 px-2 py-1 rounded font-mono">
                     ORIGINAL ONE-SHOT BUILD &nbsp;·&nbsp; PRESS ? FOR MENU
                 </div>
             </div>

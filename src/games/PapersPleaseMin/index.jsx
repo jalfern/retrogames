@@ -389,7 +389,7 @@ const PapersPleaseMinGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
+                    <div className="absolute inset-x-0 top-16 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#e8c15a', textShadow: '2px 0 0 #a33c3c, -2px 0 0 #49b25a, 0 10px 24px #000' }}>PAPERS, PLEASE-MIN</h1>
                         <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />

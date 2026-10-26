@@ -508,7 +508,7 @@ const LodeRunnerLiteGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
                     <span ref={setHud('vault')} className="border border-orange-300/60 text-orange-200 px-2 py-0.5 rounded bg-black/40">VAULT 1/3</span>
                     <span ref={setHud('gold')} className="text-yellow-300">GOLD 0/5</span>
                     <span ref={setHud('lives')} className="text-red-300/90">LIVES 3</span>
@@ -521,7 +521,7 @@ const LodeRunnerLiteGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
-                    <div className="absolute inset-x-0 top-3 text-center pointer-events-none">
+                    <div className="absolute inset-x-0 top-16 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
                         <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
