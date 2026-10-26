@@ -2,8 +2,9 @@
 
 Bullfrog Productions, MS-DOS, 1994 (#489; fidelity rework #1041). First-person
 carpet flight over seeded rolling worlds; fly mana home to your castle until every
-vault reaches its quota. RETRO bar: everything drawn at 320×200, nearest-scaled,
-all art and audio synthesized at runtime.
+vault reaches its quota. The rules are the #1059 sim unchanged; #1083 replaced the
+view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
+320×200 blue-stone overlay. All art and audio synthesized at runtime.
 
 ## Layout
 
@@ -13,15 +14,25 @@ all art and audio synthesized at runtime.
   wizard, spells, vault economy, `autopilot()` (drives the attract demo AND the
   harness), `stateHash()`. No browser APIs in here — the harness imports it directly.
 - `art.js` — rect-composed pixel sprites (wizard, tower, castle stages, giant,
-  wolf, cow, hut incl. burning + rubble, pearl, grimoire, balloon) + biome table.
-- `index.jsx` — the shell: per-column voxel terrain march (adaptive step,
-  silhouette top + occluder distance per column used to clip sprites behind
-  hills),   checker dither + slope shade + haze, dusk sky with parallax sun and
-  clouds, fluttering carpet corners/hands/crosshair + carried-orb halo, the blue-stone HUD
-  (radar with hut/fire dots, VAULT bar with per-world ticks + segment-crossing
-  flash and 3-note stagger on big bankings, CARRY pouch, hearts, spell slots,
-  WORLD n/3), the fixed-timestep loop, the `?` pause, VirtualControls, DEV hooks,
-  and the `window.__game` contract.
+  wolf, cow, hut incl. burning + rubble, pearl, grimoire, balloon) + biome
+  table. Never patched by #1083: the GPU renderer bakes it into an atlas.
+- `renderer.js` — the HD world pass (#1083), a fresh WebGL2 renderer (three.js,
+  the COMET DRIFT HD house pattern). Terrain = camera-centered grid whose
+  heights are sampled in the vertex shader from a live RGBA8 data texture
+  (R=height, G=lava glow, B=scorch) re-uploaded every tick, so blasts visibly
+  tear the ground and low craters flood. Water is geometric at sea level plus
+  shader ripples/glitter/depth banding/shore foam; sky is a gradient dome with
+  sun glow + drifting fbm clouds matched to the fog; entities are instanced
+  billboards from a runtime-baked atlas; fire/smoke/embers are instanced quads;
+  lightning is a jagged additive line mesh; post = bright-pass bloom + vignette.
+  Three per-world palettes (PAL). `frame(gs, {bank,boost,pitch,sink,shakeX,shakeY})`
+  — camera banks into turns, pitches with climb/dive, FOV stretches on boost.
+- `index.jsx` — the shell: the 2D HUD overlay canvas (320×200, nearest-scaled,
+  pointer-transparent) with carpet corners/hands/crosshair + carried-orb halo,
+  the blue-stone HUD (radar with hut/fire dots, VAULT bar with per-world ticks
+  + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
+  hearts, spell slots, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
 
@@ -70,11 +81,15 @@ all art and audio synthesized at runtime.
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 30 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 43 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
-                           # plus a headless-Chrome pass
+                           # plus a headless-Chrome pass and 9 GPU-pass gates
+                           # (#1083: WebGL2 alive, sky/terrain separation,
+                           # texture, lava-glow + scorch in the heightmap
+                           # upload, glow cools, scorch persists, no shader
+                           # console errors)
 CONTRACT_ONLY=magic-carpet npm run contractcheck
 ```
 
@@ -95,5 +110,9 @@ else; restored after. Balance: autopilot wins 60/60 seeds (slowest ~26.5k ticks)
 - Village populations are decorative huts — no villagers, no convert/burn moral
   economy, no prisoners.
 - No anaglyph/stereo mode, no 3D sound. `?` pause carries the rules instead.
-- Terrain is bilinear-height voxels with dither, not the original's 4-bit
-  palette-cycling water.
+- Water surface is shader ripples + glitter, not the original's 4-bit
+  palette-cycling wave animation; no underwater view when cratered below sea.
+- No per-pixel terrain deformation ripple animation — craters appear on the
+  heightmap the tick they land (visible, but instantaneous).
+- Fog is per-object/per-vertex distance mix, not a true aerial-perspective
+  gradient with altitude; clouds are a dome shader, not layered volumes.

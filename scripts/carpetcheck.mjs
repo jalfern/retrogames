@@ -349,6 +349,8 @@ const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })
 const errs = []
 page.on('pageerror', (e) => errs.push(e.message))
+const gpuErrs = []
+page.on('console', (m) => { if (m.type() === 'error' && /shader|webgl/i.test(m.text())) gpuErrs.push(m.text().slice(0, 160)) })
 
 const meta = await page.evaluate(() => window.__game.meta)
 r.check('contract meta magic-carpet with A+B', meta?.id === 'magic-carpet' && meta.buttons.includes('a') && meta.buttons.includes('b'))
@@ -375,6 +377,65 @@ r.check('__carpetTest starts play mode', hooked === 'play', hooked)
 await page.waitForTimeout(700)
 const live = await page.evaluate(() => window.__carpetTest.probe())
 r.check('play mode ticks with no stuck loop', live.tick > 20, `tick=${live.tick}`)
+
+// ---- GPU world pass (#1083): the GPU must actually render the world, craters
+// must visibly feed the terrain upload (glow), lava cools, scorch persists.
+// Reload first so every shader compile lands under the console listener.
+await page.reload({ waitUntil: 'load' })
+await page.waitForFunction(() => window.__game && window.__carpetTest, null, { timeout: 15000 })
+await page.waitForTimeout(500)
+const gpuA = await page.evaluate(() => {
+    const t = window.__carpetTest
+    t.start()
+    const stats = (x, y, w, h) => {
+        const p = t.pixels(x, y, w, h)
+        if (!p) return null
+        let rs = 0, gs = 0, bs = 0, n = 0
+        const lum = []
+        for (let i = 0; i < p.length; i += 4) {
+            rs += p[i]; gs += p[i + 1]; bs += p[i + 2]
+            lum.push(0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2])
+            n++
+        }
+        const mr = rs / n, mg = gs / n, mb = bs / n
+        const m = lum.reduce((a, b) => a + b, 0) / n
+        const sd = Math.sqrt(lum.reduce((a, b) => a + (b - m) * (b - m), 0) / n)
+        return { r: mr, g: mg, b: mb, mean: m, sd }
+    }
+    return { gl2: t.gl2(), sky: stats(0.5, 0.10, 40, 8), ground: stats(0.5, 0.80, 40, 8), center: stats(0.35, 0.42, 48, 110) }
+})
+r.check('GPU world pass present (WebGL2 renderer alive)', gpuA.gl2 === true)
+r.check('sky paints: bright and blue-dominant', gpuA.sky && gpuA.sky.mean > 28 && gpuA.sky.b > gpuA.sky.r + 12,
+    gpuA.sky ? `mean ${gpuA.sky.mean.toFixed(0)} rgb ${gpuA.sky.r.toFixed(0)},${gpuA.sky.g.toFixed(0)},${gpuA.sky.b.toFixed(0)}` : 'no readback')
+r.check('terrain reads different from sky below the horizon', gpuA.ground && gpuA.sky &&
+    Math.hypot(gpuA.ground.r - gpuA.sky.r, gpuA.ground.g - gpuA.sky.g, gpuA.ground.b - gpuA.sky.b) > 24,
+    gpuA.ground ? `ground rgb ${gpuA.ground.r.toFixed(0)},${gpuA.ground.g.toFixed(0)},${gpuA.ground.b.toFixed(0)} vs sky rgb ${gpuA.sky.r.toFixed(0)},${gpuA.sky.g.toFixed(0)},${gpuA.sky.b.toFixed(0)}` : 'no readback')
+r.check('the world has texture, not a flat fill', gpuA.center && gpuA.center.sd > 6, `sd ${gpuA.center ? gpuA.center.sd.toFixed(1) : 'n/a'}`)
+await page.evaluate(() => { window.__carpetTest.digHot() })
+await page.waitForTimeout(150)
+const gpuDig = await page.evaluate(() => {
+    const t = window.__carpetTest
+    const p = t.pixels(0.35, 0.72, 48, 18)
+    if (!p) return null
+    const lum = []
+    for (let i = 0; i < p.length; i += 4) lum.push(0.2126 * p[i] + 0.7152 * p[i + 1] + 0.0722 * p[i + 2])
+    const m = lum.reduce((a, b) => a + b, 0) / lum.length
+    return { mean: m, sd: Math.sqrt(lum.reduce((a, b) => a + (b - m) ** 2, 0) / lum.length) }
+})
+r.check('digging at the feet lights the near ground (camera sits ON its terrain grid)',
+    gpuDig && gpuA.ground && Math.abs(gpuDig.mean - gpuA.ground.mean) > 3 && gpuDig.sd > 2,
+    gpuDig ? `after dig mean ${gpuDig.mean.toFixed(1)} sd ${gpuDig.sd.toFixed(1)} vs ground mean ${gpuA.ground.mean.toFixed(1)}` : 'no readback')
+await page.evaluate(() => { window.__carpetTest.digHot(); window.__carpetTest.fx({ type: 'boom', x: 100, y: 100 }) })
+await page.waitForTimeout(200)
+const gpuB = await page.evaluate(() => ({ glow: window.__carpetTest.glowCells(), scorch: window.__carpetTest.scorchCells() }))
+r.check('a hot crater feeds lava glow into the terrain upload', gpuB.glow >= 4, `glow cells ${gpuB.glow}`)
+r.check('blasts leave persistent scorch in the terrain upload', gpuB.scorch >= 6, `scorch cells ${gpuB.scorch}`)
+await page.evaluate(() => { for (let i = 0; i < 320; i++) window.__game.step({}, 1) })
+await page.waitForTimeout(200)
+const gpuC = await page.evaluate(() => ({ glow: window.__carpetTest.glowCells(), scorch: window.__carpetTest.scorchCells(), tick: window.__carpetTest.probe().tick }))
+r.check('lava glow cools to nothing after CRATER_GLOW ticks', gpuC.glow === 0, `glow cells ${gpuC.glow} at tick ${gpuC.tick}`)
+r.check('scorch outlives the glow', gpuC.scorch >= 6, `scorch cells ${gpuC.scorch}`)
+r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 await browser.close()
 
