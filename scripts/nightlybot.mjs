@@ -83,6 +83,8 @@ export const GAMES = [
     { id: 'emberwood', path: '/emberwood' },
     { id: 'garden-guard', path: '/garden-guard' },
     { id: 'homebody', path: '/homebody' },
+    { id: 'iron-ring', path: '/iron-ring' },
+    { id: 'viper-pit', path: '/viper-pit' },
 ]
 const CAP = 9000
 
