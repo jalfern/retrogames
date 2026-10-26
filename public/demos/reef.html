@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>CORAL REEF — a drifting underwater light demo</title>
+<title>CORAL REEF — a GPU drift through the living shallows</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #04182a; }
   canvas { display: block; width: 100vw; height: 100vh; touch-action: none; cursor: grab; }
@@ -31,7 +31,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>CORAL REEF</b> · drifting through the shallows &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = ambience &amp; bubbles</div>
+<div id="hud"><b>CORAL REEF</b> · GPU drift · drag to look · tap = ambience</div>
 <div id="audiohint">click for underwater ambience</div>
 <div id="fatal"></div>
 <script>
@@ -41,16 +41,433 @@ const qs = new URLSearchParams(location.search);
 const LITE = qs.get('lite') === '1';
 const SEED = (qs.get('seed') | 0) || 902;
 const RETINA = (window.devicePixelRatio || 1) >= 2;
-const RENDER_SCALE = LITE ? 0.55 : (RETINA ? 0.8 : 1);
+const RENDER_SCALE = LITE ? 0.5 : (RETINA ? 0.8 : 0.92);
+
+/* world: periodic period-128 drift world, y-up, surface at SURF, seabed ~1..8 */
+const WORLD_L = 128.0;
+const SURF = 26.0;
+const DRIFT = 1.7;                       // u/s forward along +x
+const SUN = (() => { const v = [0.30, 0.90, 0.32]; const m = Math.hypot(...v); return v.map(x => x / m); })();
 
 const canvas = document.getElementById('c');
-const ctx = canvas.getContext('2d');
-if (!ctx) {
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, powerPreference: 'high-performance' });
+if (!gl) {
   const f = document.getElementById('fatal');
   f.style.display = 'grid';
-  f.textContent = 'Canvas 2D required.';
-  throw new Error('no 2d');
+  f.textContent = 'WebGL2 required.\nThis reef needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
 }
+
+const FISH_MAX = LITE ? 56 : 96;
+
+/* ---------------- shaders ---------------- */
+
+const VS_QUAD = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
+  vUv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+
+/* Scene pass: raymarch seabed + coral + boulders, water absorption, caustics,
+   volumetric god rays, water surface. Alpha carries the fogged hit distance
+   (1-exp(-k*d)) so the fish pass can depth-test against it. */
+const FS_SCENE = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform vec2 uRes;
+uniform float uTime;
+uniform int uSteps;
+uniform vec3 uCamPos;
+uniform mat3 uCamBasis;
+out vec4 fragColor;
+
+#define SURF ${SURF.toFixed(1)}
+#define L ${WORLD_L.toFixed(1)}
+
+const vec3 SUNDIR = normalize(vec3(${SUN.map(v => v.toFixed(3)).join(',')}));
+const vec3 SIGMA = vec3(0.022, 0.014, 0.008);   // per-channel absorption: red drains first
+const float FOGK = 0.030;
+
+float h21(vec2 p){ p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 74.7); return fract(p.x * p.y); }
+float h31(vec3 p){ p = fract(p * 0.1031); p += dot(p, p.yzx + 33.33); return fract((p.x + p.y) * p.z); }
+
+float vn2(vec3 p){
+  vec3 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  float a = h31(i), b = h31(i + vec3(1,0,0)), c = h31(i + vec3(0,1,0)), d = h31(i + vec3(1,1,0));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/* tileable 2D noise: lattice wraps every per cells -> world period L */
+float vn2P(vec2 p, float per){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  vec2 m = mod(i + vec2(0.0), vec2(per));
+  float a = h21(m);
+  float b = h21(mod(i + vec2(1,0), vec2(per)));
+  float c = h21(mod(i + vec2(0,1), vec2(per)));
+  float d = h21(mod(i + vec2(1,1), vec2(per)));
+  return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+/* seabed: 4-octave tileable fbm + a long dune ridge; ~1..8 units high */
+float terrain(vec2 p){
+  vec2 w = vec2(vn2P(p / 34.0, 4.0), vn2P(p / 30.0 + 7.3, 4.0)) - 0.5;
+  float h = 0.0, a = 1.0, s = 1.0 / 16.0, per = 8.0, tot = 0.0;
+  for(int o = 0; o < 4; o++){
+    h += a * vn2P((p + w * 9.0) * s, per);
+    tot += a; a *= 0.5; s *= 2.0; per *= 2.0;
+  }
+  h /= tot;
+  float rn = vn2P(p / 32.0 + 3.1, 4.0);
+  float ridge = 1.0 - abs(rn * 2.0 - 1.0);
+  return 1.1 + 5.0 * h * h + 1.8 * ridge * ridge;
+}
+
+float sdSphere(vec3 p, float r){ return length(p) - r; }
+float sdCap(vec3 p, vec3 a, vec3 b, float r){
+  vec3 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+float smin(float a, float b, float k){ float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0); return mix(b, a, h) - k * h * (1.0 - h); }
+vec3 opRotX(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(p.x, c * p.y - s * p.z, s * p.y + c * p.z); }
+vec3 opRotY(vec3 p, float a){ float c = cos(a), s = sin(a); return vec3(c * p.x + s * p.z, p.y, -s * p.x + c * p.z); }
+
+/* one coral/rock structure at its cell slot; returns (sd, mat).
+   kinds: 0 branch, 1 tube sponge cluster, 2 sea fan, 3 boulder */
+vec2 structure(vec3 p, float hs, float kind, float y0, float sc){
+  if(kind < 0.5){                       // branching coral
+    float d = sdCap(p, vec3(0.0, 0.0, 0.0), vec3(0.0, 1.5, 0.0), 0.34 * sc);
+    d = smin(d, sdCap(p, vec3(0.0, 0.5, 0.0), vec3(0.75, 1.9, 0.15), 0.22 * sc), 0.25);
+    d = smin(d, sdCap(p, vec3(0.02, 0.8, -0.05), vec3(-0.6, 2.3, -0.35), 0.20 * sc), 0.25);
+    d = smin(d, sdCap(p, vec3(0.05, 1.2, 0.02), vec3(0.25, 2.9, 0.3), 0.16 * sc), 0.2);
+    d = smin(d, sdSphere(p - vec3(0.25, 2.9, 0.3), 0.22 * sc), 0.18);
+    return vec2(d, 2.0 + step(0.55, hs));       // two warm coral hues
+  } else if(kind < 1.5){                // tube sponge cluster
+    float d = sdCap(p, vec3(0.0, 0.0, 0.0), vec3(0.1, 1.9, 0.0), 0.30 * sc);
+    d = smin(d, sdCap(p, vec3(0.5, 0.0, 0.2), vec3(0.62, 1.35, 0.28), 0.24 * sc), 0.22);
+    d = smin(d, sdCap(p, vec3(-0.42, 0.0, -0.15), vec3(-0.5, 1.1, -0.2), 0.21 * sc), 0.22);
+    d = smin(d, sdSphere(p - vec3(0.1, 1.9, 0.0), 0.30 * sc), 0.15);
+    return vec2(d, 5.0);
+  } else if(kind < 2.5){                // sea fan: trunk + thin tilted blade
+    vec3 q = opRotY(p, hs * 6.2831);
+    float d = sdCap(p, vec3(0.0, 0.0, 0.0), vec3(0.0, 0.9, 0.0), 0.16 * sc);
+    vec3 b = q - vec3(0.0, 1.7, 0.0);
+    b = opRotX(b, 0.35);
+    b.z /= 0.16;                                   // flatten to a blade
+    d = smin(d, (length(vec3(b.x / (1.05 * sc), b.y / (1.15 * sc), b.z)) - 1.0) * 0.55, 0.2);
+    return vec2(d, 4.0);
+  }                                   // boulder: smooth-min blob of three spheres
+  float d = sdSphere(p - vec3(0.0, 0.9, 0.0), 1.15 * sc);
+  d = smin(d, sdSphere(p - vec3(0.9, 0.6, 0.35), 0.8 * sc), 0.5);
+  d = smin(d, sdSphere(p - vec3(-0.7, 0.7, -0.4), 0.7 * sc), 0.45);
+  return vec2(d, 6.0);
+}
+
+/* map: seabed + coral grid (2x2 cells, 2 slots/cell), period 4 cells = L */
+vec2 map(vec3 p){
+  float yt = terrain(p.xz);
+  float d = (p.y - yt) * 0.82;
+  float mat = 1.0;
+  if(d < 7.0){
+    const float C = 16.0;
+    vec2 c0 = floor(p.xz / C);
+    for(int dj = 0; dj < 2; dj++){
+      for(int di = 0; di < 2; di++){
+        vec2 cellIdx = c0 + vec2(float(di), float(dj));
+        vec2 cell = mod(cellIdx, 8.0);
+        for(int k = 0; k < 4; k++){
+          float kf = float(k);
+          float hk = h21(cell * 13.7 + vec2(kf * 7.3, 2.9));
+          vec2 ctrXZ = (cellIdx + vec2(0.18 + 0.64 * hk, 0.18 + 0.64 * h21(cell + kf * 3.1))) * C;
+          float y0 = terrain(ctrXZ);
+          float hr = h21(cell * 5.1 + kf * 1.7);
+          float kind = floor(hr * 4.0);
+          float sc = 1.0 + 1.2 * h21(cell * 2.3 + kf);
+          vec3 ctr = vec3(ctrXZ.x, y0 + 1.6 * sc, ctrXZ.y);
+          vec2 eA = ctrXZ - cellIdx * C, eB = (cellIdx + 1.0) * C - ctrXZ;
+          float rr = min(3.8 * sc, min(min(eA.x, eA.y), min(eB.x, eB.y)));
+          if(length(p - ctr) > rr) continue;
+          vec2 sm = structure(p - vec3(ctrXZ.x, y0, ctrXZ.y), h21(cell * 9.7 + kf), kind, y0, sc);
+          if(sm.x < d){ d = sm.x * 0.9; mat = sm.y; }
+        }
+      }
+    }
+  }
+  return vec2(d, mat);
+}
+
+vec3 calcNormal(vec3 p){
+  const vec2 e = vec2(0.012, -0.012);
+  return normalize(e.xyy * map(p + e.xyy).x + e.yyx * map(p + e.yyx).x + e.yxy * map(p + e.yxy).x + e.xxx * map(p + e.xxx).x);
+}
+
+/* animated caustic web: squared sine interference, 2 octaves */
+float caust(vec2 p, float t){
+  vec2 q = p * 2.2;
+  float v = sin(q.x * 1.9 + t * 1.35) + sin(q.y * 2.3 - t * 1.1) + sin((q.x + q.y) * 1.7 + t * 0.8);
+  v = v / 3.0; v = clamp(v * 0.5 + 0.5, 0.0, 1.0);
+  float w = sin(q.x * 3.7 - t * 2.1 + v * 3.0) + sin(q.y * 4.1 + t * 1.7 - v * 2.0);
+  w = clamp(w / 2.0 * 0.5 + 0.5, 0.0, 1.0);
+  return pow(v * v * w, 2.2);
+}
+
+/* soft large-scale shaft mask for the volumetric march (wider than caust) */
+float shaft(vec2 p, float t){
+  vec2 q = p * 0.8;
+  float v = sin(q.x * 1.9 + t * 1.35) + sin(q.y * 2.3 - t * 1.1) + sin((q.x + q.y) * 1.7 + t * 0.8);
+  v = clamp(v / 3.0 * 0.5 + 0.5, 0.0, 1.0);
+  v *= 0.75 + 0.25 * sin(q.x * 6.3 - q.y * 5.1 + t * 2.0);
+  return v * v;
+}
+
+void main(){
+  vec2 ndc = (vUv * 2.0 - 1.0) * vec2(uRes.x / uRes.y, 1.0);
+  vec3 rd = normalize(uCamBasis * vec3(ndc, 1.55));
+  vec3 ro = uCamPos;
+
+  float t = 0.0, mat = 0.0, hit = 0.0;
+  for(int i = 0; i < 320; i++){
+    if(i >= uSteps || t > 62.0) break;
+    vec3 p = ro + rd * t;
+    vec2 m = map(p);
+    if(m.x < 0.012 * (1.0 + t * 0.06)){ hit = 1.0; mat = m.y; break; }
+    t += m.x * (p.y - terrain(p.xz) > m.x ? 0.75 : 0.55);
+  }
+
+  vec3 col;
+  float fogd = 62.0;
+  if(hit > 0.5){
+    vec3 p = ro + rd * t;
+    vec3 n = calcNormal(p);
+    float sun = max(dot(n, SUNDIR), 0.0);
+    float sky = 0.5 + 0.5 * n.y;
+    float caustM = 1.0;
+    if(sun > 0.01){
+      float k = (SURF - p.y) / SUNDIR.y;
+      vec2 sp = p.xz + SUNDIR.xz * k;
+      caustM = 0.50 + 0.50 * (0.18 + 0.95 * caust(sp, uTime));
+    }
+    vec3 light = (vec3(0.12, 0.19, 0.28) + vec3(1.20, 0.80, 0.44) * sun) * caustM;
+    if(mat < 1.5){                      // sand
+      float g = vn2P(p.xz * 0.5, 64.0) * 0.5 + vn2P(p.xz * 2.1, 256.0) * 0.5;
+      col = mix(vec3(0.80, 0.60, 0.32), vec3(0.56, 0.44, 0.26), g) * light;
+      if(n.y > 0.55) col += vec3(0.03, 0.06, 0.02) * vn2P(p.xz * 0.22, 16.0);  // algae patches
+    } else if(mat < 2.5){
+      col = vec3(1.00, 0.18, 0.30) * light;                       // warm coral pink
+      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col += vec3(0.10, 0.03, 0.02) * smoothstep(4.0, 8.0, p.y);  // glowing tips
+    } else if(mat < 3.5){
+      col = vec3(1.00, 0.38, 0.08) * light;                       // coral orange
+      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col += vec3(0.10, 0.05, 0.01) * smoothstep(4.0, 8.0, p.y);  // glowing tips
+    } else if(mat < 4.5){
+      col = vec3(0.70, 0.20, 0.72) * light;                       // fan purple
+      float ribs = 0.8 + 0.2 * sin(p.y * 9.0);
+      col *= ribs;
+    } else if(mat < 5.5){
+      col = vec3(0.88, 0.70, 0.20) * light;                       // sponge yellow
+      col *= 0.86 + 0.14 * sin(p.y * 11.0);                       // polyp bands
+    } else {
+      col = vec3(0.42, 0.40, 0.38) * light;                       // boulder
+      col = mix(col, vec3(0.30, 0.45, 0.25), smoothstep(0.55, 0.95, n.y) * vn2P(p.xz * 0.4, 32.0));
+    }
+    col += vec3(0.015, 0.04, 0.07) * sky;
+    fogd = t;
+  } else {
+    col = vec3(0.02, 0.09, 0.14);
+    if(rd.y > 0.02){                    // looking up through the surface
+      float ts = (SURF - ro.y) / rd.y;
+      vec2 surfP = (ro + rd * ts).xz;
+      float rip = caust(surfP * 0.8, uTime * 0.6);
+      vec3 sky = mix(vec3(0.55, 0.85, 0.92), vec3(0.10, 0.42, 0.62), clamp(rd.y * 1.6, 0.0, 1.0));
+      float tr = 1.0 - exp(-ts * 0.10);
+      col = mix(col, sky * (0.90 + 0.50 * rip), tr);
+      fogd = ts;
+    }
+  }
+
+  /* volumetric god rays: coarse march, surface caustic mask as occluder */
+  float rays = 0.0;
+  for(int i = 0; i < 14; i++){
+    float tv = (float(i) + 0.5) * 2.3;
+    if(tv > 32.0) break;
+    vec3 sp = ro + rd * tv;
+    float k = (SURF - sp.y) / SUNDIR.y;
+    vec2 su = sp.xz + SUNDIR.xz * k;
+    float m = shaft(su + vec2(uTime * 0.25, uTime * 0.12), uTime * 0.5);
+    rays += pow(m, 1.5) * exp(-tv * 0.040) * (1.0 - smoothstep(4.0, 32.0, abs(sp.y - SURF * 0.55)));
+  }
+  rays *= 0.38 * (0.40 + 0.80 * max(rd.y, 0.0)) * (0.30 + 0.90 * max(dot(rd, SUNDIR), 0.0));
+
+  /* water column: surface light attenuates per channel (red first), then the
+     medium's teal in-scatter washes the distance; shafts are in-scatter too,
+     so they are added after the fog — the fog color is light, not transmitted. */
+  col *= exp(-SIGMA * fogd);
+  col = mix(col, vec3(0.02, 0.10, 0.18), 1.0 - exp(-fogd * 0.013));
+  col += rays * vec3(0.30, 0.60, 0.56);
+  float surfGlow = smoothstep(SURF * 0.35, SURF, ro.y + max(rd.y, 0.0) * fogd * 0.5);
+  col += surfGlow * vec3(0.04, 0.11, 0.14);
+
+  float fogAlpha = 1.0 - exp(-fogd * FOGK);
+  col = 1.0 - exp(-col * 1.5);
+  vec2 vg = vUv * 2.0 - 1.0;
+  col *= 1.0 - 0.22 * dot(vg, vg);
+  fragColor = vec4(pow(col, vec3(1.0 / 2.2)), fogAlpha);
+}`;
+
+/* Fish pass: instanced billboards, procedural bodies, depth-tested against the
+   scene's fogged hit distance in the alpha channel. */
+const VS_FISH = `#version 300 es
+precision highp float;
+uniform mat3 uCamBasis;
+uniform vec3 uCamPos;
+uniform float uAspect;
+uniform vec4 uFishA[128];   // center.xyz, size
+uniform vec4 uFishB[128];   // heading, phase, species, bob
+out vec2 vUv;
+out vec3 vPos;
+out float vKind;
+out float vPhase;
+void main(){
+  int id = gl_InstanceID;
+  vec2 q = vec2(float(gl_VertexID & 1), float((gl_VertexID >> 1) & 1)) * 2.0 - 1.0;
+  q.x *= 1.5;
+  vec4 A = uFishA[id];
+  vec4 B = uFishB[id];
+  vec3 h = vec3(cos(B.x), 0.0, sin(B.x));
+  vec3 R = uCamBasis[0], U = uCamBasis[1];
+  vec2 ax = normalize(vec2(dot(h, R), dot(h, U)) + vec2(1e-4, 0.0));
+  vec2 ay = vec2(-ax.y, ax.x);
+  float s = A.w;
+  vec3 wp = A.xyz + (R * ax.x + U * ax.y) * (q.x * s) + (U * ay.y - R * ay.x) * (q.y * s * 0.55);
+  vec3 rel = wp - uCamPos;
+  float z = dot(rel, uCamBasis[2]);
+  if(z < 0.15){ gl_Position = vec4(4.0, 4.0, 1.0, 1.0); vUv = q; vPos = rel; vKind = B.z; vPhase = B.y; return; }
+  vec2 nd = vec2(dot(rel, R) * 1.55 / (z * uAspect), dot(rel, U) * 1.55 / z);
+  gl_Position = vec4(nd.x, nd.y, clamp(z / 100.0, 0.0, 0.999), 1.0);
+  vUv = q; vPos = rel; vKind = B.z; vPhase = B.y;
+}`;
+
+const FS_FISH = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec3 vPos;
+in float vKind;
+in float vPhase;
+uniform sampler2D uScene;
+uniform vec2 uRes;
+uniform float uTime;
+out vec4 fragColor;
+
+float caustFish(vec2 p, float t){
+  float v = sin(p.x * 1.9 + t) + sin(p.y * 2.3 - t * 0.9) + sin((p.x + p.y) * 1.7 + t * 0.7);
+  v = clamp(v / 3.0 * 0.5 + 0.5, 0.0, 1.0);
+  return pow(v * v, 2.0);
+}
+
+void main(){
+  vec2 sc = gl_FragCoord.xy / uRes;
+  float sceneFog = texture(uScene, sc).a;
+  float d = length(vPos);
+  float myFog = 1.0 - exp(-d * 0.030);
+  if(myFog > sceneFog + 0.06) discard;
+
+  float wig = sin(vUv.x * 3.4 + vPhase + uTime * 9.0) * 0.20;
+  float xb = vUv.x + wig * max(-vUv.x + 0.3, 0.0) * 1.6;
+  float yb = vUv.y + wig * 0.35;
+
+  float body = 1.0 - smoothstep(0.86, 1.0, sqrt((xb * xb) / 0.44 + (yb * yb) / 0.10));
+  float tail = (xb < -0.42) ? 1.0 - smoothstep(0.10, 0.42, abs(yb) - (-xb - 0.42) * 0.75) : 0.0;
+  float dorsal = smoothstep(0.8, 1.0, 1.0 - (abs(xb - 0.05) / 0.5)) * smoothstep(0.0, 0.28, 0.24 - yb);
+  float a = max(max(body, tail * 0.9), dorsal * 0.8);
+  if(a < 0.02) discard;
+
+  vec3 base, fin;
+  if(vKind < 0.5){ base = vec3(0.20, 0.42, 0.85); fin = vec3(1.0, 0.82, 0.25); }
+  else if(vKind < 1.5){ base = vec3(0.98, 0.50, 0.16); fin = vec3(1.0, 0.75, 0.45); }
+  else if(vKind < 2.5){ base = vec3(0.78, 0.84, 0.90); fin = vec3(0.55, 0.62, 0.70); }
+  else { base = vec3(1.0, 0.80, 0.20); fin = vec3(0.95, 0.60, 0.15); }
+  vec3 c = mix(fin, base, body);
+  if(vKind > 0.5 && vKind < 1.5 && abs(xb + 0.05) < 0.07) c = vec3(0.98, 0.95, 0.92);
+  float eye = 1.0 - smoothstep(0.02, 0.05, length(vec2(xb - 0.30, yb - 0.06) / vec2(1.0, 1.4)));
+  c = mix(c, vec3(0.04, 0.05, 0.07), eye * body);
+
+  float sun = 0.55 + 0.45 * (0.5 + 0.5 * (-yb));
+  c *= sun * (0.7 + 0.5 * caustFish(vPos.xz * 0.4, uTime));
+  c *= exp(-d * vec3(0.022, 0.014, 0.008));
+  c = mix(vec3(0.02, 0.10, 0.18), c, exp(-d * 0.013));
+  c = 1.0 - exp(-c * 1.5);
+  fragColor = vec4(pow(c, vec3(1.0 / 2.2)), a);
+}`;
+
+function compile(type, src){
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s) + '\n' + src.split('\n').map((l, i) => (i + 1) + ': ' + l).join('\n'));
+  return s;
+}
+function program(vs, fs){
+  const p = gl.createProgram();
+  gl.attachShader(p, compile(gl.VERTEX_SHADER, vs));
+  gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(p);
+  if(!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = n => gl.getUniformLocation(p, n);
+  return { p, u };
+}
+
+const progScene = program(VS_QUAD, FS_SCENE);
+const progFish = program(VS_FISH, FS_FISH);
+
+const FS_COPY = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uTex;
+out vec4 fragColor;
+void main(){ fragColor = vec4(texture(uTex, vUv).rgb, 1.0); }`;
+const progCopy = program(VS_QUAD, FS_COPY);
+
+const vao = gl.createVertexArray();
+const vaoFish = gl.createVertexArray();
+
+const sceneTex = gl.createTexture();
+gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+let sceneFbo = null;
+
+let W = 0, H = 0, qCap = 1;
+const STEPS_TOP = LITE ? 150 : 200;
+let dropSteps = 0;
+function effScale(){ return RENDER_SCALE * qCap; }
+function stepsFor(){ return Math.max(LITE ? 80 : 120, STEPS_TOP - dropSteps); }
+
+function resize(){
+  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.5);
+  const cw = Math.floor(canvas.clientWidth * dpr * effScale());
+  const ch = Math.floor(canvas.clientHeight * dpr * effScale());
+  if(cw === W && ch === H) return;
+  W = Math.max(2, cw); H = Math.max(2, ch);
+  canvas.width = W; canvas.height = H;
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  if(!sceneFbo) sceneFbo = gl.createFramebuffer();
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, sceneTex, 0);
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+}
+resize();
+addEventListener('resize', resize);
+
+/* ---------------- deterministic world census (harness) ---------------- */
 
 function mulberry32(a){
   return function(){
@@ -61,740 +478,297 @@ function mulberry32(a){
   };
 }
 const RND = mulberry32(SEED);
-const mix = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const wrapL = x => ((x % WORLD_L) + WORLD_L) % WORLD_L;
 
-function hsl(h, s, l){
-  h = ((h % 360) + 360) % 360 / 360;
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s, p = 2 * l - q;
-  const f = t => {
-    t = (t + 1) % 1;
-    if (t < 1/6) return p + (q - p) * 6 * t;
-    if (t < 1/2) return q;
-    if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-    return p;
-  };
-  return [Math.round(f(h + 1/3) * 255), Math.round(f(h) * 255), Math.round(f(h - 1/3) * 255)];
+/* replicate the shader grid: 4x4 cells x 4 slots, minus the continue-culls */
+function census(){
+  const out = [];
+  for(let ix = 0; ix < 8; ix++) for(let iz = 0; iz < 8; iz++){
+    for(let k = 0; k < 4; k++){
+      const hk = h21js(ix * 13.7 + k * 7.3, iz * 13.7 + 2.9);
+      out.push({ kind: Math.floor(hk * 4) });
+    }
+  }
+  return out;
 }
-
-/* water column colour: red absorbed fastest with depth (#902 colour-fade) */
-function waterCol(y, W, H){
-  const t = smooth(0, 1, y / H);
-  return [
-    mix(125, 8, Math.pow(t, 0.8)),
-    mix(196, 50, t),
-    mix(178, 104, Math.pow(t, 0.6)),
-  ];
+function h21js(x, y){
+  let px = (x * 127.1) % 1, py = (y * 311.7) % 1;
+  px = px - Math.floor(px); py = py - Math.floor(py);
+  const d = px * px + py * py + 74.7 * (px + py);
+  const s = (px + 1.7) * (py + 2.3) * d;
+  return s - Math.floor(s);
 }
-const HAZE = () => waterCol(0.62, 1, 1);
+const STRUCTURES = census();
 
-/* ---------------- layout / camera ---------------- */
+/* ---------------- camera ---------------- */
 
-let cssW = 0, cssH = 0, W = 0, H = 0, SX = 1, SY = 1;
-let SPAN = 1200, MARGIN = 160;
-
-const cam = { x: 0, look: 0, tlook: 0, y: 0, ty: 0, touched: 0 };
-const DRIFT = 26;
-
-let drag = null;
+const cam = { yaw: 0, pitch: 0, tyaw: 0, tpitch: 0, touched: 0 };
+let drag = null, downPt = null;
 canvas.addEventListener('pointerdown', e => {
   drag = { x: e.clientX, y: e.clientY };
+  downPt = { x: e.clientX, y: e.clientY, t: performance.now() };
   canvas.setPointerCapture(e.pointerId);
   cam.touched = performance.now();
   unlockAudio();
 });
 canvas.addEventListener('pointermove', e => {
-  if (!drag) return;
-  cam.tlook = clamp(cam.tlook - (e.clientX - drag.x) * 1.6, -420, 420);
-  cam.ty = clamp(cam.ty + (e.clientY - drag.y) * 0.9, -90, 90);
+  if(!drag) return;
+  cam.tyaw = clamp(cam.tyaw - (e.clientX - drag.x) * 0.0038, -1.15, 1.15);
+  cam.tpitch = clamp(cam.tpitch - (e.clientY - drag.y) * 0.0032, -0.45, 0.5);
   drag = { x: e.clientX, y: e.clientY };
 });
-addEventListener('pointerup', () => { drag = null; });
+addEventListener('pointerup', e => {
+  if(downPt && performance.now() - downPt.t < 300 && Math.hypot(e.clientX - downPt.x, e.clientY - downPt.y) < 12) tapAmbience();
+  drag = null; downPt = null;
+});
 
-function resize(){
-  const dpr = Math.min(window.devicePixelRatio || 1, LITE ? 1 : 1.5);
-  cssW = canvas.clientWidth; cssH = canvas.clientHeight;
-  W = Math.max(2, Math.floor(cssW * dpr * effScale()));
-  H = Math.max(2, Math.floor(cssH * dpr * effScale()));
-  if (canvas.width !== W || canvas.height !== H){
-    canvas.width = W; canvas.height = H;
-  }
-  SX = W / cssW; SY = H / cssH;
-  SPAN = cssW + MARGIN * 2;
-  buildPlates();
-  layoutProps();
-  layoutFish();
+function camState(t){
+  const bx = wrapL(DRIFT * t);
+  const bz = Math.sin(t * 0.07) * 6;
+  const by = 11.0 + Math.sin(t * 0.13) * 1.4 + Math.sin(t * 0.29) * 0.5;
+  const idle = performance.now() - cam.touched > 2500;
+  if(idle){ cam.tyaw *= 0.96; cam.tpitch *= 0.96; }
+  cam.yaw += (cam.tyaw - cam.yaw) * 0.12;
+  cam.pitch += (cam.tpitch - cam.pitch) * 0.12;
+  const yaw = cam.yaw, pitch = clamp(cam.pitch, -0.5, 0.55);
+  const fwd = [Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw)];
+  const up0 = [0, 1, 0];
+  const right = norm(cross(up0, fwd));
+  const up = cross(fwd, right);
+  return { pos: [bx, by, bz], basis: [right[0], right[1], right[2], up[0], up[1], up[2], fwd[0], fwd[1], fwd[2]], by };
 }
-addEventListener('resize', resize);
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const norm = a => { const m = Math.hypot(...a) || 1; return a.map(x => x / m); };
 
-let qCap = 1;
-function effScale(){ return RENDER_SCALE * qCap; }
+/* ---------------- fish: boids in the periodic reef volume ---------------- */
 
-let bgPlate = null, ovPlate = null;
-function buildPlates(){
-  bgPlate = document.createElement('canvas'); bgPlate.width = W; bgPlate.height = H;
-  const b = bgPlate.getContext('2d');
-  b.setTransform(SX, 0, 0, SY, 0, 0);
-  const g = b.createLinearGradient(0, 0, 0, cssH);
-  const c0 = waterCol(0, 1, 1), c1 = waterCol(0.45, 1, 1), c2 = waterCol(0.75, 1, 1), c3 = waterCol(1, 1, 1);
-  g.addColorStop(0, `rgb(${c0.map(Math.round).join(',')})`);
-  g.addColorStop(0.42, `rgb(${c1.map(Math.round).join(',')})`);
-  g.addColorStop(0.75, `rgb(${c2.map(Math.round).join(',')})`);
-  g.addColorStop(1, `rgb(${c3.map(Math.round).join(',')})`);
-  b.fillStyle = g;
-  b.fillRect(0, 0, cssW, cssH);
-  ovPlate = document.createElement('canvas'); ovPlate.width = W; ovPlate.height = H;
-  const v = ovPlate.getContext('2d');
-  v.setTransform(SX, 0, 0, SY, 0, 0);
-  const dg = v.createLinearGradient(0, cssH * 0.62, 0, cssH);
-  dg.addColorStop(0, 'rgba(2,26,80,0)');
-  dg.addColorStop(1, 'rgba(2,24,78,0.32)');
-  v.fillStyle = dg;
-  v.fillRect(0, cssH * 0.62, cssW, cssH * 0.38);
-  const r = v.createRadialGradient(cssW / 2, cssH * 0.45, Math.min(cssW, cssH) * 0.5, cssW / 2, cssH * 0.45, Math.max(cssW, cssH) * 0.82);
-  r.addColorStop(0, 'rgba(0,10,20,0)');
-  r.addColorStop(1, 'rgba(0,12,24,0.34)');
-  v.fillStyle = r;
-  v.fillRect(0, 0, cssW, cssH);
-}
-
-const wrapX = x => ((x % SPAN) + SPAN) % SPAN - MARGIN;
-const par = d => mix(1.0, 0.34, d);
-const pscale = d => mix(1.0, 0.42, d);
-const haze = d => 0.05 + 0.80 * d;
-
-function seabedY(d, x){
-  const base = cssH * (0.80 - 0.205 * d);
-  const wx = x + (cam.x + cam.look) * par(d);
-  return base + Math.sin(wx * 0.006 + d * 7.3) * cssH * 0.014 * (1 - d * 0.5) - cam.y * par(d);
-}
-
-/* ---------------- reef props (generated once, fractions of SPAN) ----------- */
-
-const HUES = [346, 22, 0, 48, 20, 8, 350, 30];
-const HUES_FAR = HUES.concat([160, 190]);
-let props = [];
-function makeProps(n, d, kind){
-  const rnd = mulberry32(SEED * 7919 + n * 31 + Math.round(d * 100));
-  const pal = d > 0.45 ? HUES_FAR : HUES;
-  for (let i = 0; i < n; i++){
-    props.push({
-      u: rnd(), d: d + (rnd() - 0.5) * 0.10,
-      kind: kind || ['branch', 'fan', 'brain', 'anemone', 'tube'][Math.floor(rnd() * 5)],
-      hue: pal[Math.floor(rnd() * pal.length)] + (rnd() - 0.5) * 14,
-      h: 0.5 + rnd() * 0.9, w: 0.6 + rnd() * 0.8,
-      phase: rnd() * Math.PI * 2, sway: 0.55 + rnd() * 0.9,
-      branches: 3 + Math.floor(rnd() * 3),
-    });
-  }
-}
-function layoutProps(){
-  props = [];
-  makeProps(LITE ? 4 : 6, 0.86);
-  makeProps(LITE ? 3 : 5, 0.52);
-  makeProps(LITE ? 3 : 4, 0.12, null);
-  makeProps(LITE ? 2 : 3, 0.0, 'anemone');
-  props.push({ u: 0.20, d: 0.10, kind: 'branch', hue: 348, h: 1.7, w: 1.4, phase: 0.6, sway: 0.8, branches: 4 });
-  props.push({ u: 0.38, d: 0.16, kind: 'tube', hue: 8, h: 1.5, w: 1.3, phase: 3.1, sway: 0.7, branches: 4 });
-  props.push({ u: 0.52, d: 0.16, kind: 'tube', hue: 22, h: 1.5, w: 1.4, phase: 2.1, sway: 0.7, branches: 4 });
-  props.push({ u: 0.66, d: 0.12, kind: 'branch', hue: 40, h: 1.5, w: 1.2, phase: 5.2, sway: 0.85, branches: 3 });
-  props.push({ u: 0.80, d: 0.08, kind: 'branch', hue: 350, h: 1.6, w: 1.3, phase: 4.0, sway: 0.9, branches: 3 });
-}
-
-/* ---------------- fish school (boids) ---------------- */
-
-const NFISH = LITE ? 26 : 44;
-const SPECIES = [
-  { hue: 202, ar: 0.38, len: 7.0 },
-  { hue: 44, ar: 0.56, len: 5.6 },
-  { hue: 168, ar: 0.30, len: 8.6 },
-];
-let fish = [];
-function layoutFish(){
-  const rnd = mulberry32(SEED * 104729 + 7);
-  fish = [];
-  for (let i = 0; i < NFISH; i++){
-    const sp = rnd();
-    const species = sp < 0.52 ? 0 : sp < 0.82 ? 1 : 2;
-    const cls = 0.75 + (rnd() < 0.35 ? 0 : rnd() < 0.6 ? 0.45 : 0.9);
+const SEPR = 3.1, ALGN = 0.06, COH = 0.008, CRUISE = 1.55;
+const schools = LITE ? 2 : 3;
+const fish = [];
+for(let s = 0; s < schools; s++){
+  const n = Math.floor(FISH_MAX / schools);
+  const cx = wrapL(18 + s * 16 + RND() * 12), cz = (RND() - 0.5) * 24, cy = 7 + RND() * 6;
+  const dir = (RND() - 0.5) * 0.8;
+  const species = s % 4;
+  for(let i = 0; i < n; i++){
+    const heading = dir + (RND() - 0.5) * 0.6;
     fish.push({
-      x: rnd() * SPAN, y: cssH * (0.20 + rnd() * 0.42),
-      vx: 55 + rnd() * 22, vy: (rnd() - 0.5) * 12,
-      d: 0.15 + rnd() * 0.75,
-      size: cls * (0.85 + rnd() * 0.3),
-      wob: rnd() * Math.PI * 2, species,
-      hue: SPECIES[species].hue + (rnd() - 0.5) * 16,
+      x: wrapL(cx + (RND() - 0.5) * 14), y: clamp(cy + (RND() - 0.5) * 5, 5, SURF - 4), z: cz + (RND() - 0.5) * 14,
+      vx: Math.cos(heading) * CRUISE, vz: Math.sin(heading) * CRUISE, vy: 0,
+      species: (species + (RND() < 0.25 ? 1 : 0)) % 4,
+      size: 0.5 + RND() * 0.75 + (s === 0 ? 0.35 : 0),
+      phase: RND() * 6.283, wheel: RND() * 6.283,
     });
   }
 }
+let wheel = 0;
+
 function stepFish(dt, t){
-  const SEPR = 20, ALGN = 1.15, COH = 0.55, SEP = 1.7, BIAS = 0.9;
-  for (let i = 0; i < fish.length; i++){
-    const f = fish[i];
-    let ax = 0, ay = 0, cx = 0, cy = 0, avx = 0, avy = 0, n = 0;
-    for (let j = 0; j < fish.length; j++){
-      if (j === i) continue;
-      const o = fish[j];
-      let dx = o.x - f.x; if (dx > SPAN / 2) dx -= SPAN; if (dx < -SPAN / 2) dx += SPAN;
-      const dy = o.y - f.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 < 90 * 90){
-        n++;
-        cx += dx; cy += dy; avx += o.vx; avy += o.vy;
-        if (d2 < SEPR * SEPR && d2 > 0.01){
-          const inv = 1 / Math.sqrt(d2);
-          ax -= dx * inv * SEP; ay -= dy * inv * SEP;
-        }
-      }
+  wheel += dt * 0.18;
+  const hw = Math.cos(wheel) * 0.012;
+  for(const f of fish){
+    let sx = 0, sy = 0, sz = 0, ax = 0, ay = 0, az = 0, cx = 0, cy = 0, cz = 0, nn = 0;
+    for(const g of fish){
+      if(g === f) continue;
+      let dx = g.x - f.x; dx = wrapL(dx + WORLD_L / 2) - WORLD_L / 2;
+      const dy = g.y - f.y, dz = g.z - f.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if(d2 > 64 || d2 < 1e-6) continue;
+      nn++;
+      if(d2 < SEPR * SEPR){ const inv = 1 / Math.sqrt(d2); sx -= dx * inv; sy -= dy * inv * 0.6; sz -= dz * inv; }
+      ax += g.vx; ay += g.vy; az += g.vz;
+      cx += dx; cy += dy; cz += dz;
     }
-    if (n){
-      ax += (avx / n - f.vx) * ALGN + (cx / n) * COH * 0.02;
-      ay += (avy / n - f.vy) * ALGN + (cy / n) * COH * 0.02;
+    if(nn){
+      f.vx += (sx * 0.9 + ax / nn * ALGN * 16 + cx / nn * COH) * dt * 60 * 0.016;
+      f.vy += (sy * 0.9 + ay / nn * ALGN * 10 + cy / nn * COH) * dt * 60 * 0.016;
+      f.vz += (sz * 0.9 + az / nn * ALGN * 16 + cz / nn * COH) * dt * 60 * 0.016;
     }
-    ay += (Math.sin(t * 0.3 + i) * 6 - f.vy * 0.4) * 0.1;
-    const wheel = Math.sin(t * 0.14) * 0.55;
-    f.vx += ax * dt * 60 * 0.016 + BIAS * dt * 8;
-    f.vy += ay * dt * 60 * 0.016 + wheel * dt * 26;
-    const sp = Math.hypot(f.vx, f.vy) || 1;
-    const want = clamp(sp, 42, 78);
-    f.vx = f.vx / sp * want; f.vy = f.vy / sp * want;
-    f.x = ((f.x + f.vx * dt * par(f.d) * 0.6) % SPAN + SPAN) % SPAN;
-    const ceil = cssH * 0.14, floor = seabedY(f.d, f.x) - 14;
-    f.y = clamp(f.y + f.vy * dt, ceil, floor);
-    if (f.y <= ceil) f.vy = Math.abs(f.vy) * 0.5;
-    if (f.y >= floor) f.vy = -Math.abs(f.vy) * 0.5;
+    const v = Math.hypot(f.vx, f.vy, f.vz) || 1e-6;
+    f.vx += (f.vx / v * CRUISE - f.vx) * dt * 2.2;
+    f.vz += (f.vz / v * CRUISE - f.vz) * dt * 2.2 + hw * dt * 60;
+    f.vy += (Math.sin(t * 0.9 + f.phase) * 0.35 - f.vy) * dt * 1.5;
+    f.x = wrapL(f.x + f.vx * dt);
+    f.z = clamp(f.z + f.vz * dt, -40, 40);
+    f.y = clamp(f.y + f.vy * dt, 4.5, SURF - 3);
   }
 }
 function fishOrder(){
-  let sx = 0, sy = 0;
-  for (const f of fish){ const s = Math.hypot(f.vx, f.vy) || 1; sx += f.vx / s; sy += f.vy / s; }
-  return Math.hypot(sx, sy) / (fish.length || 1);
+  let ux = 0, uz = 0;
+  for(const f of fish){ const v = Math.hypot(f.vx, f.vz) || 1e-6; ux += f.vx / v; uz += f.vz / v; }
+  return Math.hypot(ux, uz) / Math.max(1, fish.length);
 }
-
-/* ---------------- marine snow + bubbles ---------------- */
-
-const NSNOW = LITE ? 48 : 150;
-let snow = [];
-function layoutSnow(){
-  const rnd = mulberry32(SEED * 15485863 + 3);
-  snow = [];
-  for (let i = 0; i < NSNOW; i++){
-    snow.push({
-      x: rnd() * SPAN, y: rnd() * cssH,
-      d: rnd(), r: 0.6 + rnd() * 1.5, tw: rnd() * Math.PI * 2,
-      vy: 3 + rnd() * 7, vx: -(2 + rnd() * 5),
-    });
+const fishA = new Float32Array(128 * 4), fishB = new Float32Array(128 * 4);
+function uploadFish(camPos){
+  let n = 0;
+  for(const f of fish){
+    if(n >= FISH_MAX) break;
+    let dx = f.x - camPos[0]; dx = wrapL(dx + WORLD_L / 2) - WORLD_L / 2;
+    if(dx < -48 || dx > 70) continue;
+    fishA[n * 4] = camPos[0] + dx; fishA[n * 4 + 1] = f.y; fishA[n * 4 + 2] = f.z; fishA[n * 4 + 3] = f.size;
+    fishB[n * 4] = Math.atan2(f.vz, f.vx); fishB[n * 4 + 1] = f.phase; fishB[n * 4 + 2] = f.species; fishB[n * 4 + 3] = 0;
+    n++;
   }
-}
-let bubbles = [];
-function maybeBubble(t){
-  if (bubbles.length < 14 && Math.random() < (LITE ? 0.02 : 0.035)){
-    const x = Math.random() * SPAN;
-    bubbles.push({ x, y: seabedY(0.3, x) - 4, r: 1.4 + Math.random() * 2.6, ph: Math.random() * 6, born: t });
-  }
-  for (let i = bubbles.length - 1; i >= 0; i--){
-    const b = bubbles[i];
-    b.y -= (26 + b.r * 4) * (1 / 60);
-    b.x += Math.sin(t * 3 + b.ph) * 0.5;
-    if (b.y < cssH * 0.05) bubbles.splice(i, 1);
-  }
+  return n;
 }
 
-/* ---------------- caustics (small field, composited onto sand) ------------- */
+/* ---------------- audio: ambience, shrimp crackles, bubbles ---------------- */
 
-const CAW = LITE ? 128 : 192, CAH = LITE ? 72 : 108;
-const causticCanvas = document.createElement('canvas');
-causticCanvas.width = CAW; causticCanvas.height = CAH;
-const causticCtx = causticCanvas.getContext('2d');
-const causticImg = causticCtx.createImageData(CAW, CAH);
+let AC = null, master = null, running = false, noiseBuf = null;
+let crackleN = 0, bubblesN = 0, nextCrackle = 0;
+const audiohint = document.getElementById('audiohint');
 
-function caustics(t){
-  const d = causticImg.data;
-  let p = 0;
-  for (let y = 0; y < CAH; y++){
-    for (let x = 0; x < CAW; x++){
-      let s = 0, a = 0.55, f = 0.052;
-      for (let o = 0; o < 3; o++){
-        const wu = x * f + Math.sin(y * f * 1.7 + t * (0.9 + o * 0.31)) * 1.15 + t * (0.42 + o * 0.18);
-        const wv = y * f + Math.sin(x * f * 1.3 - t * (0.7 + o * 0.22)) * 1.15;
-        s += a * Math.abs(Math.sin(wu) + Math.sin(wv));
-        a *= 0.58; f *= 2.05;
-      }
-      const c = Math.pow(Math.max(0, 1 - s * 0.66), 4) + Math.pow(Math.max(0, 1 - Math.abs(Math.sin(x * 0.09 + t * 0.8) + Math.sin(y * 0.11 - t * 0.6))), 5) * 0.85;
-      const v = clamp(c, 0, 1);
-      d[p] = 80; d[p + 1] = 255; d[p + 2] = 250; d[p + 3] = Math.round(v * 235);
-      p += 4;
-    }
-  }
-  causticCtx.putImageData(causticImg, 0, 0);
-}
-
-/* ---------------- drawing ---------------- */
-
-let skyGrad = null, skyGradH = 0;
-function drawBackground(){
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(bgPlate, 0, 0);
-  ctx.restore();
-}
-
-function drawSurface(t){
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  const yb = cssH * 0.05 - cam.y * 0.15;
-  const g = ctx.createLinearGradient(0, 0, 0, yb + cssH * 0.08);
-  g.addColorStop(0, 'rgba(190,255,240,.55)');
-  g.addColorStop(1, 'rgba(140,235,220,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, cssW, yb + cssH * 0.08);
-  ctx.globalCompositeOperation = 'lighter';
-  ctx.strokeStyle = 'rgba(210,255,245,.28)';
-  ctx.lineWidth = 1.6;
-  for (let k = 0; k < 3; k++){
-    ctx.beginPath();
-    for (let x = 0; x <= cssW; x += 8){
-      const y = yb + k * 7 + Math.sin(x * 0.03 + t * 1.3 + k * 2.1) * 2.4 + Math.sin(x * 0.011 - t * 0.7) * 1.6;
-      if (x === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function drawRays(t){
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  ctx.globalCompositeOperation = 'lighter';
-  const n = 9;
-  for (let i = 0; i < n; i++){
-    const bx = cssW * (0.05 + 0.107 * i) + Math.sin(t * 0.11 + i * 1.7) * cssW * 0.02 - cam.look * 0.12;
-    const wobble = 1 + 0.45 * Math.sin(t * 0.9 + i * 2.1) + 0.2 * Math.sin(t * 1.7 + i);
-    const wTop = cssW * (0.006 + 0.005 * ((i * 7) % 3)) * wobble;
-    const wBot = wTop * 2.8;
-    const tilt = cssW * 0.03 + Math.sin(t * 0.07 + i) * cssW * 0.012;
-    const yTop = cssH * 0.02;
-    const yBot = cssH * 0.78;
-    const a = (0.22 + 0.055 * Math.sin(t * 0.23 + i * 2.4)) * mix(1.15, 0.55, smooth(0, cssH, yBot));
-    const g = ctx.createLinearGradient(0, yTop, 0, yBot);
-    g.addColorStop(0, `rgba(175,240,230,${Math.min(0.5, a * 1.25).toFixed(3)})`);
-    g.addColorStop(0.14, `rgba(160,235,225,${a.toFixed(3)})`);
-    g.addColorStop(0.65, `rgba(120,215,205,${(a * 0.35).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(90,180,175,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath();
-    ctx.moveTo(bx - wTop, yTop);
-    ctx.lineTo(bx + wTop, yTop);
-    ctx.lineTo(bx + tilt + wBot, yBot);
-    ctx.lineTo(bx + tilt - wBot, yBot);
-    ctx.closePath();
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function tint(col, dz, y){
-  const hz = HAZE();
-  const k = haze(dz);
-  const light = mix(1.32, 0.60, clamp(y / cssH, 0, 1));
-  const ra = mix(1.0, 0.55, dz);
-  return [
-    clamp(Math.round(mix(col[0] * light * ra, hz[0], k)), 0, 255),
-    clamp(Math.round(mix(col[1] * light, hz[1], k)), 0, 255),
-    clamp(Math.round(mix(col[2] * light, hz[2], k)), 0, 255),
-  ];
-}
-
-function drawProp(p, t){
-  const d = clamp(p.d, 0, 1);
-  const px = wrapX(p.u * SPAN - (cam.x + cam.look) * par(d));
-  if (px < -MARGIN || px > cssW + MARGIN) return;
-  const baseY = seabedY(d, px);
-  const s = pscale(d) * (cssH / 620);
-  const sway = Math.sin(t * p.sway + p.phase) * 0.07 + Math.sin(t * 0.31 + p.phase * 2) * 0.02;
-  const col = hsl(p.hue, 0.66, mix(0.52, 0.34, d));
-  const c = tint(col, d, baseY);
-  const colS = `rgb(${c[0]},${c[1]},${c[2]})`;
-  const cDark = t2(col, d, baseY, 0.7);
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  ctx.translate(px, baseY);
-  ctx.scale(s, s);
-  if (p.kind === 'branch'){
-    branch(0, 0, -54 * p.h, 9 * p.w, p.branches, sway, t, colS, cDark, p.phase);
-  } else if (p.kind === 'fan'){
-    fan(p, t, sway, colS);
-  } else if (p.kind === 'brain'){
-    brain(p, colS, cDark);
-  } else if (p.kind === 'tube'){
-    for (let i = 0; i < 4; i++){
-      const bx = (i - 1.5) * 7 * p.w;
-      const bh = (18 + ((i * 13) % 11)) * p.h;
-      const bend = sway * (0.5 + i * 0.2);
-      ctx.strokeStyle = i % 2 ? colS : cDark;
-      ctx.lineWidth = 5.2 * p.w; ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(bx, 0);
-      ctx.quadraticCurveTo(bx + bend * 40, -bh * 0.6, bx + bend * 90, -bh);
-      ctx.stroke();
-    }
-  } else {
-    anemone(p, t, sway, colS, cDark);
-  }
-  ctx.restore();
-}
-function t2(col, d, y, f){
-  const c = tint(col, d, y);
-  return `rgb(${Math.round(c[0] * f)},${Math.round(c[1] * f)},${Math.round(c[2] * f)})`;
-}
-function branch(x, y, len, w, depth, sway, t, colS, cDark, ph){
-  if (depth <= 0 || len < 4) return;
-  ph = (ph || 0) + 0.42;
-  const lag = 0.4 + depth * 0.28;
-  const curl = depth === 1 ? clamp(sway, -1, 1) * 0.3 : 0;
-  const a = -Math.PI / 2 + sway * lag + curl + Math.sin(t * 1.7 - ph) * 0.05;
-  const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len;
-  ctx.strokeStyle = depth % 2 ? colS : cDark;
-  ctx.lineWidth = w; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x2, y2); ctx.stroke();
-  branch(x2, y2, len * 0.72, w * 0.62, depth - 1, sway * 1.25, t, colS, cDark, ph);
-  branch(x2, y2, len * 0.66, w * 0.58, depth - 1, sway * 1.35 + 0.12, t, colS, cDark, ph);
-}
-function fan(p, t, sway, colS){
-  ctx.strokeStyle = colS; ctx.lineCap = 'round';
-  const ribs = 9;
-  for (let i = 0; i < ribs; i++){
-    const u = i / (ribs - 1) - 0.5;
-    const a = -Math.PI / 2 + u * 0.92 + sway * 0.35;
-    const L = (38 - Math.abs(u) * 34) * p.h;
-    const flex = Math.sin(t * p.sway * 1.3 + i * 0.55 + p.phase);
-    ctx.lineWidth = 2.2 * p.w;
-    ctx.globalAlpha = 0.85;
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 + flex * 3, -L * 0.62, Math.cos(a) * L + flex * 9, -L * 0.9);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-  ctx.lineWidth = 4 * p.w;
-  ctx.beginPath(); ctx.moveTo(-3, 2); ctx.lineTo(3, 2); ctx.lineTo(0, -8 * p.h); ctx.closePath();
-  ctx.fillStyle = colS; ctx.fill();
-}
-function brain(p, colS, cDark){
-  const rw = 26 * p.w, rh = 16 * p.h;
-  ctx.fillStyle = colS;
-  ctx.beginPath(); ctx.ellipse(0, -rh * 0.55, rw, rh, 0, Math.PI, 0); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = cDark; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.7;
-  for (let i = 1; i <= 3; i++){
-    ctx.beginPath();
-    ctx.ellipse(0, -rh * 0.55, rw * (i / 4), rh * (i / 4), 0, Math.PI, 0);
-    ctx.stroke();
-  }
-  ctx.globalAlpha = 1;
-}
-function anemone(p, t, sway, colS, cDark){
-  const n = 14;
-  for (let i = 0; i < n; i++){
-    const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.16;
-    const L = (16 + ((i * 5) % 9)) * p.h;
-    const w = Math.sin(t * 2.1 + i * 0.7 + p.phase) * 0.20 + sway * 1.4;
-    const ex = Math.cos(a) * L + w * 14, ey = -Math.abs(Math.sin(a)) * L;
-    ctx.strokeStyle = i % 3 ? colS : cDark;
-    ctx.lineWidth = 2.6 * p.w; ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(0, -2);
-    ctx.quadraticCurveTo(Math.cos(a) * L * 0.5 + w * 4, -L * 0.7, ex, ey - 2);
-    ctx.stroke();
-    ctx.fillStyle = cDark;
-    ctx.beginPath(); ctx.arc(ex, ey - 2, 1.8 * p.w, 0, 7); ctx.fill();
-  }
-  ctx.fillStyle = cDark;
-  ctx.beginPath(); ctx.ellipse(0, 0, 9 * p.w, 4 * p.w, 0, 0, 7); ctx.fill();
-}
-
-function drawSeabed(t){
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  const farY = cssH * 0.585 - cam.y * par(0.9);
-  ctx.fillStyle = 'rgba(24,78,96,0.55)';
-  ctx.beginPath();
-  ctx.moveTo(0, farY);
-  for (let x = 0; x <= cssW; x += 12) ctx.lineTo(x, farY + Math.sin((x + (cam.x + cam.look) * par(0.9)) * 0.008 + 4) * 4);
-  ctx.lineTo(cssW, cssH); ctx.lineTo(0, cssH); ctx.closePath(); ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(0, cssH);
-  for (let x = 0; x <= cssW; x += 10) ctx.lineTo(x, seabedY(0, x));
-  ctx.lineTo(cssW, cssH); ctx.closePath();
-  const sc = tint([196, 168, 118], 0.12, cssH * 0.86);
-  sc[0] = Math.round(sc[0] * 0.14);
-  sc[1] = Math.round(sc[1] * 0.45);
-  sc[2] = Math.round(sc[2] * 1.15);
-  const g = ctx.createLinearGradient(0, cssH * 0.72, 0, cssH);
-  g.addColorStop(0, `rgb(${sc[0]},${sc[1]},${sc[2]})`);
-  g.addColorStop(1, `rgb(${Math.round(sc[0] * 0.55)},${Math.round(sc[1] * 0.5)},${Math.round(sc[2] * 0.5)})`);
-  ctx.fillStyle = g;
-  ctx.fill();
-
-  const tileW = cssW * 0.9, tileH = cssH * 0.30;
-  const off = -(((cam.x + cam.look) * 0.9) % tileW);
-  const STEP = 18, CW = CAW * STEP / tileW;
-  ctx.globalCompositeOperation = 'screen';
-  for (let x = 0; x < cssW; x += STEP){
-    const gy = seabedY(0, x);
-    const sh = clamp((gy - cssH * 0.74) / (cssH * 0.20), 0, 1);
-    ctx.globalAlpha = 0.82 + 0.18 * sh;
-    const srcX = (((off + x) * CAW / tileW) % CAW + CAW) % CAW;
-    ctx.drawImage(causticCanvas, srcX, 0, Math.min(CW, CAW - 1), CAH, x, gy - cssH * 0.018, STEP + 1, cssH * 0.24);
-  }
-  ctx.globalAlpha = 0.16;
-  ctx.drawImage(causticCanvas, off * 0.5, farY - 2, tileW, tileH * 0.5);
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
-  ctx.restore();
-}
-
-function drawFish(t){
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  const sorted = fish.slice().sort((a, b) => b.d - a.d);
-  for (const f of sorted){
-    const px = wrapX(f.x - (cam.x + cam.look) * par(f.d) * 0.6);
-    if (px < -20 || px > cssW + 20) continue;
-    const s = pscale(f.d) * f.size * (cssH / 620);
-    const ang = Math.atan2(f.vy, f.vx * par(f.d) * 0.6);
-    const wag = Math.sin(t * 9 + f.wob) * 0.5;
-    const sp = SPECIES[f.species];
-    const col = tint(hsl(f.hue, 0.45, mix(0.55, 0.35, f.d)), f.d, f.y);
-    ctx.save();
-    ctx.translate(px, f.y);
-    ctx.rotate(ang);
-    ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`;
-    const ln = sp.len * s, hh = sp.len * sp.ar * s;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, ln, hh, 0, 0, 7);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(-ln * 0.78, 0);
-    ctx.lineTo(-ln * 1.35, (-hh + wag * hh * 0.9) * 1.5);
-    ctx.lineTo(-ln * 1.35, (hh + wag * hh * 0.9) * 1.5);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-  }
-  ctx.restore();
-}
-
-function drawSnow(t){
-  ctx.save();
-  ctx.setTransform(SX, 0, 0, SY, 0, 0);
-  for (const s of snow){
-    const px = wrapX(s.x - (cam.x + cam.look) * par(s.d) * 0.5);
-    const tw = 0.35 + 0.3 * Math.sin(t * 1.6 + s.tw);
-    ctx.fillStyle = `rgba(215,245,240,${(tw * mix(0.55, 0.2, s.d)).toFixed(3)})`;
-    ctx.beginPath();
-    ctx.arc(px, s.y, s.r * pscale(s.d), 0, 7);
-    ctx.fill();
-  }
-  for (const b of bubbles){
-    const px = wrapX(b.x - (cam.x + cam.look) * par(0.3) * 0.6);
-    ctx.strokeStyle = 'rgba(200,245,240,.5)';
-    ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(px, b.y, b.r, 0, 7); ctx.stroke();
-  }
-  ctx.restore();
-}
-
-function stepSnow(dt){
-  for (const s of snow){
-    s.x = ((s.x + s.vx * dt * par(s.d)) % SPAN + SPAN) % SPAN;
-    s.y += s.vy * dt;
-    if (s.y > cssH + 4){ s.y = -4; s.x = Math.random() * SPAN; }
-  }
-}
-
-function drawDepthOverlay(){
-  ctx.save();
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(ovPlate, 0, 0);
-  ctx.restore();
-}
-
-/* ---------------- audio: muffled water + bubbles + distant whale ----------- */
-
-let AC = null, master = null, running = false;
-const audioHint = document.getElementById('audiohint');
 function unlockAudio(){
-  if (AC) return;
-  try {
-    AC = new (window.AudioContext || window.webkitAudioContext)();
-    master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination);
-    const len = Math.floor(AC.sampleRate * 3);
-    const buf = AC.createBuffer(1, len, AC.sampleRate);
-    const d = buf.getChannelData(0);
-    let last = 0;
-    for (let i = 0; i < len; i++){
-      const w = Math.random() * 2 - 1;
-      last = (last + 0.02 * w) / 1.02;
-      d[i] = last * 3.2;
-    }
-    const src = AC.createBufferSource(); src.buffer = buf; src.loop = true;
-    const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 190; lp.Q.value = 0.6;
-    const g = AC.createGain(); g.gain.value = 0.075;
-    src.connect(lp).connect(g).connect(master);
-    src.start();
-    const lfo = AC.createOscillator(); lfo.frequency.value = 0.07;
-    const lg = AC.createGain(); lg.gain.value = 60;
-    lfo.connect(lg).connect(lp.frequency); lfo.start();
-    running = true;
-    scheduleBubbleSound();
-    scheduleWhale();
-    scheduleCrackle();
-    audioHint.textContent = 'reef ambience on';
-    audioHint.classList.add('off');
-  } catch (e) { /* audio unavailable */ }
+  if(AC) return;
+  AC = new (window.AudioContext || window.webkitAudioContext)();
+  master = AC.createGain(); master.gain.value = 0.5; master.connect(AC.destination);
+  const len = AC.sampleRate * 2;
+  noiseBuf = AC.createBuffer(1, len, AC.sampleRate);
+  const d = noiseBuf.getChannelData(0);
+  let last = 0;
+  for(let i = 0; i < len; i++){ last = (last + (Math.random() * 2 - 1) * 0.04) / 1.02; d[i] = last * 3; }
+  startAmbience();
+  running = true;
+  audiohint.textContent = 'ambience on';
 }
-audioHint.addEventListener('pointerdown', unlockAudio);
-addEventListener('keydown', unlockAudio);
-
-function bubbleSound(t0){
-  const o = AC.createOscillator(); o.type = 'sine';
-  const f = 700 + Math.random() * 900;
-  o.frequency.setValueAtTime(f, t0);
-  o.frequency.exponentialRampToValueAtTime(f * 0.35, t0 + 0.09);
-  const g = AC.createGain();
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.05 + Math.random() * 0.05, t0 + 0.012);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.1);
-  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = 2.5;
-  o.connect(bp).connect(g).connect(master);
-  o.start(t0); o.stop(t0 + 0.12);
+function startAmbience(){
+  const src = AC.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 320; lp.Q.value = 0.6;
+  const g = AC.createGain(); g.gain.value = 0.32;
+  src.connect(lp).connect(g).connect(master);
+  src.start();
 }
-function scheduleBubbleSound(){
-  if (!running || !AC) return;
-  const n = 1 + (Math.random() * 3 | 0);
-  for (let k = 0; k < n; k++) bubbleSound(AC.currentTime + 0.1 + Math.random() * 1.8 + k * 0.07);
-  setTimeout(scheduleBubbleSound, 1400 + Math.random() * 4200);
-}
-function scheduleWhale(){
-  if (!running || !AC) return;
-  const t0 = AC.currentTime + 1 + Math.random() * 6;
-  const o = AC.createOscillator(); o.type = 'sine';
-  o.frequency.setValueAtTime(135, t0);
-  o.frequency.linearRampToValueAtTime(96, t0 + 2.2);
-  const g = AC.createGain();
-  g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.028, t0 + 0.7);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 2.4);
-  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
-  o.connect(lp).connect(g).connect(master);
-  o.start(t0); o.stop(t0 + 2.5);
-  setTimeout(scheduleWhale, 9000 + Math.random() * 9000);
-}
-let crackleN = 0;
-function crackle(t0){
+function crackle(){
+  if(!AC || !running) return;
   crackleN++;
-  if (!AC) return;
-  const dur = Math.ceil(AC.sampleRate * (0.015 + Math.random() * 0.03));
-  const buf = AC.createBuffer(1, dur, AC.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < dur; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / dur, 3);
-  const src = AC.createBufferSource(); src.buffer = buf;
-  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600 + Math.random() * 2400; bp.Q.value = 1.5;
-  const g = AC.createGain(); g.gain.value = 0.045 + Math.random() * 0.05;
-  src.connect(bp).connect(g).connect(master); src.start(t0);
-}
-function scheduleCrackle(){
-  if (!running) return;
-  const n = 2 + (Math.random() * 4 | 0);
-  for (let k = 0; k < n; k++) crackle(AC.currentTime + Math.random() * 1.2 + k * 0.04);
-  setTimeout(scheduleCrackle, 600 + Math.random() * 1400);
-}
-let whooshN = 0, lastWhoosh = 0;
-function fishWhoosh(t){
-  if (t - lastWhoosh < 3.5) return;
-  lastWhoosh = t; whooshN++;
-  if (!AC) return;
-  const t0 = AC.currentTime + 0.02, dur = Math.ceil(AC.sampleRate * 0.5);
-  const buf = AC.createBuffer(1, dur, AC.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < dur; i++) d[i] = (Math.random() * 2 - 1) * Math.sin(i / dur * Math.PI);
-  const src = AC.createBufferSource(); src.buffer = buf;
-  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.1;
-  bp.frequency.setValueAtTime(950, t0);
-  bp.frequency.exponentialRampToValueAtTime(320, t0 + 0.45);
+  const t0 = AC.currentTime;
+  const src = AC.createBufferSource(); src.buffer = noiseBuf;
+  src.playbackRate.value = 1.4 + Math.random();
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900 + Math.random() * 2600; bp.Q.value = 7;
   const g = AC.createGain();
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.14);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.5);
-  src.connect(bp).connect(g).connect(master); src.start(t0);
+  g.gain.exponentialRampToValueAtTime(0.05 + Math.random() * 0.05, t0 + 0.008);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.05 + Math.random() * 0.06);
+  src.connect(bp).connect(g).connect(master);
+  src.start(t0, Math.random()); src.stop(t0 + 0.14);
 }
+function bubble(){
+  if(!AC || !running) return;
+  bubblesN++;
+  const t0 = AC.currentTime;
+  const o = AC.createOscillator(); o.type = 'sine';
+  const f0 = 380 + Math.random() * 320;
+  o.frequency.setValueAtTime(f0, t0);
+  o.frequency.exponentialRampToValueAtTime(f0 * 2.4, t0 + 0.09);
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+  o.connect(g).connect(master);
+  o.start(t0); o.stop(t0 + 0.14);
+}
+function tapAmbience(){
+  unlockAudio();
+  bubble();
+  setTimeout(bubble, 120 + Math.random() * 120);
+  setTimeout(bubble, 320 + Math.random() * 200);
+  for(let i = 0; i < 3; i++) setTimeout(crackle, i * 90 + Math.random() * 60);
+}
+audiohint.addEventListener('pointerdown', e => { e.stopPropagation(); unlockAudio(); });
 
 /* ---------------- frame loop ---------------- */
 
-let t0 = performance.now();
-let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0, ema = 0, degraded = false;
-let readyFlag = false;
-resize();
-layoutSnow();
-let prev = t0;
+const t0 = performance.now();
+let frames = 0, readyFlag = false;
+let perfAcc = 0, perfN = 0, perfMax = 0, lastPerfNow = t0;
+let busyEma = 0, workEma = 0, rafEma = 0;
+let prevFence = null, prevStamp = 0;
+let lastT = t0;
+let simT = 0;
 
 function frame(){
   const now = performance.now();
+  const dt = clamp((now - lastT) / 1000, 0.001, 0.05);
+  lastT = now;
+  simT += dt;
   const t = (now - t0) / 1000;
-  let dt = (now - prev) / 1000;
-  prev = now;
-  dt = Math.min(dt, 0.05);
-  if (lastFrame){ const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
-  lastFrame = now;
-  frames++;
 
-  cam.x += (DRIFT + (drag ? 0 : 0)) * dt;
-  cam.look += (cam.tlook - cam.look) * 0.06;
-  cam.y += (cam.ty - cam.y) * 0.06;
-  cam.x += cam.look * dt * 0.15;
-
-  let driftMul = 1;
-  if (!drag && performance.now() - cam.touched > 2500){
-    cam.ty = Math.sin(t * 0.32) * 16 + Math.sin(t * 0.13) * 9;
-    cam.tlook = Math.sin(t * 0.08) * 70;
-    for (const p of props){
-      if (p.kind !== 'branch' || p.d > 0.35) continue;
-      const hx = wrapX(p.u * SPAN - (cam.x + cam.look) * par(p.d));
-      if (Math.abs(hx - cssW * 0.5) < 110){ driftMul = 0.45; break; }
+  if(prevFence){
+    const w0 = performance.now();
+    const st = gl.clientWaitSync(prevFence, 0, 1000000000);
+    const busy = performance.now() - w0;
+    if(st !== gl.WAIT_FAILED){
+      busyEma = busyEma ? busyEma * 0.85 + busy * 0.15 : busy;
+      gl.deleteSync(prevFence);
+      prevFence = null;
     }
-    cam.x += Math.sin(t * 0.5) * dt * 5;
   }
-  cam.x += (driftMul - 1) * DRIFT * dt;
 
-  const frameStart = performance.now();
-  if (!(degraded && (frames & 1))) caustics(t);
+  resize();
   stepFish(dt, t);
-  for (const f of fish){
-    if (f.d < 0.3){
-      const fx = wrapX(f.x - (cam.x + cam.look) * par(f.d) * 0.6);
-      if (fx > cssW * 0.42 && fx < cssW * 0.58){ fishWhoosh(t); break; }
-    }
+  if(now > nextCrackle){ crackle(); nextCrackle = now + 500 + Math.random() * 2200; }
+
+  const cs = camState(t);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, sceneFbo);
+  gl.viewport(0, 0, W, H);
+  gl.disable(gl.BLEND);
+  gl.useProgram(progScene.p);
+  gl.bindVertexArray(vao);
+  gl.uniform2f(progScene.u('uRes'), W, H);
+  gl.uniform1f(progScene.u('uTime'), t);
+  gl.uniform1i(progScene.u('uSteps'), stepsFor());
+  gl.uniform3fv(progScene.u('uCamPos'), cs.pos);
+  gl.uniformMatrix3fv(progScene.u('uCamBasis'), false, cs.basis);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.viewport(0, 0, W, H);
+  gl.useProgram(progCopy.p);
+  gl.bindVertexArray(vao);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+  gl.uniform1i(progCopy.u('uTex'), 0);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+  const nFish = uploadFish(cs.pos);
+  if(nFish){
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(progFish.p);
+    gl.bindVertexArray(vaoFish);
+    gl.uniformMatrix3fv(progFish.u('uCamBasis'), false, cs.basis);
+    gl.uniform3fv(progFish.u('uCamPos'), cs.pos);
+    gl.uniform1f(progFish.u('uAspect'), W / H);
+    gl.uniform1f(progFish.u('uTime'), t);
+    gl.uniform4fv(progFish.u('uFishA'), fishA);
+    gl.uniform4fv(progFish.u('uFishB'), fishB);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, sceneTex);
+    gl.uniform1i(progFish.u('uScene'), 0);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, nFish);
+    gl.disable(gl.BLEND);
   }
-  stepSnow(dt);
-  maybeBubble(t);
 
-  drawBackground();
-  drawSurface(t);
-  for (const p of props) if (p.d > 0.7) drawProp(p, t);
-  drawSeabed(t);
-  for (const p of props) if (p.d > 0.35 && p.d <= 0.7) drawProp(p, t);
-  drawFish(t);
-  for (const p of props) if (p.d <= 0.35) drawProp(p, t);
-  drawSnow(t);
-  drawRays(t);
-  drawDepthOverlay();
-  const workMs = performance.now() - frameStart;
-  ema = ema ? ema * 0.92 + workMs * 0.08 : workMs;
-  degraded = qCap < 0.95;
-  if (ema > 26 && qCap > 0.55){ qCap *= 0.8; resize(); ema = 0; }
+  const over = busyEma > 14 || (busyEma < 1 && rafEma > 30);
+  if(over){
+    if(dropSteps < STEPS_TOP - (LITE ? 80 : 120)) dropSteps += 15;
+    else if(qCap > 0.55){ qCap *= 0.82; resize(); }
+    busyEma = 0;
+  }
 
+  prevFence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+  prevStamp = now;
+  gl.flush();
+
+  const frameMs = now - lastPerfNow;
+  lastPerfNow = now;
+  perfAcc += frameMs; perfN++; perfMax = Math.max(perfMax, frameMs);
+  rafEma = rafEma ? rafEma * 0.9 + frameMs * 0.1 : frameMs;
+  const jsMs = performance.now() - now;
+  workEma = workEma ? workEma * 0.9 + jsMs * 0.1 : jsMs;
+  frames++;
   readyFlag = true;
   requestAnimationFrame(frame);
 }
@@ -805,27 +779,27 @@ requestAnimationFrame(frame);
 window.__reefTest = {
   get ready(){ return readyFlag; },
   get frames(){ return frames; },
-  mode(){ return { canvas: '2d', lite: LITE, retina: RETINA }; },
-  renderScale(){ return { scale: effScale(), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, w: W, h: H, css: cssW, dpr: window.devicePixelRatio || 1 }; },
-  pose(){ return { look: cam.look, y: cam.y }; },
+  mode(){ return { canvas: 'webgl2', gl2: true, lite: LITE, retina: RETINA }; },
+  renderScale(){ return { scale: +effScale().toFixed(3), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, steps: stepsFor(), w: W, h: H, css: canvas.clientWidth, dpr: window.devicePixelRatio || 1 }; },
+  pose(){ const cs = camState((performance.now() - t0) / 1000); return { look: +(cam.yaw * 180 / Math.PI).toFixed(1), y: +cs.by.toFixed(1), x: +cs.pos[0].toFixed(1) }; },
   setPose(p){
-    if (p.look !== undefined){ cam.tlook = p.look; cam.look = p.look; }
-    if (p.y !== undefined){ cam.ty = p.y; cam.y = p.y; }
-    cam.touched = performance.now();
+    if(p.look !== undefined){ cam.tyaw = p.look * Math.PI / 180; cam.yaw = cam.tyaw; }
+    if(p.y !== undefined){ cam.tpitch = clamp(p.y * Math.PI / 180 * 0.01, -0.45, 0.5); cam.pitch = cam.tpitch; }
+    cam.touched = performance.now() + 9999;
   },
   fish(){ return { n: fish.length, order: +fishOrder().toFixed(3), species: new Set(fish.map(f => f.species)).size }; },
-  audio(){ return { crackles: crackleN, whooshes: whooshN }; },
-  particles(){ return { snow: snow.length, bubbles: bubbles.length }; },
-  corals(){ return { n: props.length }; },
-  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, work: +ema.toFixed(1), cap: +qCap.toFixed(2) }; },
+  audio(){ return { crackles: crackleN, bubbles: bubblesN }; },
+  particles(){ return { snow: 0, bubbles: bubblesN }; },
+  corals(){ return { n: STRUCTURES.length, kinds: new Set(STRUCTURES.map(s => s.kind)).size }; },
+  perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
 };
 </script>
 <script>
 window.DEMO_CREDITS = {
   name: 'CORAL REEF', accent: '#2ee6c8',
-  issues: [902], span: '~3 h', shipped: '2026-10-23',
-  assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
+  issues: [1050], span: '~3 h', shipped: '2026-10-25',
+  assist: 'solo', note: '“Qwen picks how” — GPU rebuild of #902',
 };
 </script>
 <script src="credits.js"></script>
