@@ -413,6 +413,7 @@ function projectileSpawn(m, f, mv) {
         owner: f.side, kind: mv.name || 'orb',
         x: f.x + f.facing * 1.1, y: 1.15 + (mv.y || 0),
         vx: (mv.speed || 0.16) * f.facing,
+        vy: mv.vy || 0, grav: !!mv.grav,
         dmg: mv.dmg, hitstun: mv.hitstun, blockstun: mv.blockstun || 10,
         push: mv.push || 0.12, ttl: mv.ttl || 150, super: !!mv.super,
     })
@@ -422,8 +423,11 @@ function projectileSpawn(m, f, mv) {
 function updateProjectiles(m) {
     const dead = []
     for (const p of m.projectiles) {
-        p.x += p.vx; p.ttl--
-        if (p.x < -WALL - 2 || p.x > WALL + 2 || p.ttl <= 0) { dead.push(p); continue }
+        p.x += p.vx
+        if (p.grav) p.vy -= GRAV * 0.55
+        p.y += p.vy
+        p.ttl--
+        if (p.x < -WALL - 2 || p.x > WALL + 2 || p.ttl <= 0 || (p.grav && p.y < 0.05)) { dead.push(p); continue }
         const def = m.fighters[p.owner === 0 ? 1 : 0]
         const pb = { x0: p.x - 0.35, x1: p.x + 0.35, y0: p.y - 0.3, y1: p.y + 0.3 }
         if (overlap(pb, hurtBox(def)) && def.st !== 'down' && def.st !== 'getup') {
