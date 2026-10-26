@@ -13,6 +13,22 @@ const REFRESH_MS = 5 * 60 * 1000
 const FIXTURE = new URLSearchParams(window.location.search).get('report')
 const REPORT_URL = FIXTURE && /^\/retrogames\/[a-z0-9._/-]+$/i.test(FIXTURE) ? FIXTURE : REPORT_RAW
 
+// When the report was generated, in the report's own zone (PT), how long ago,
+// and the viewer's local time when that zone differs. The job runs every 4 h,
+// so anything older than STALE_H means the pipe has stopped.
+const STALE_H = 6
+function generatedStamp(generated, tz = 'America/Los_Angeles', nowMs = Date.now(), viewerTz) {
+    const t = Date.parse(generated)
+    if (!Number.isFinite(t)) return null
+    const fmt = zone => new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }).format(t)
+    const short = zone => (new Intl.DateTimeFormat('en-US', { timeZone: zone, timeZoneName: 'short' }).formatToParts(t).find(x => x.type === 'timeZoneName') || {}).value || zone
+    const mins = Math.max(0, Math.round((nowMs - t) / 60000))
+    const ago = mins < 60 ? `${mins} min ago` : mins < 48 * 60 ? `${Math.round(mins / 60)} h ago` : `${Math.round(mins / 1440)} days ago`
+    const here = viewerTz || Intl.DateTimeFormat().resolvedOptions().timeZone
+    const local = here && here !== tz ? `${fmt(here)} ${short(here)}` : null
+    return { text: `${fmt(tz)} ${short(tz)}`, ago, local, stale: mins > STALE_H * 60 }
+}
+
 const CSS = `
 .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:#5d6762;--rule:#dde2de;
   --builder:#2c62d6;--qa:#0f9a73;--ops:#9aa39e;--warn:#c77a06;--hot:#d2462b;
@@ -32,6 +48,9 @@ html[data-theme="light"] .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:
 .sr h1{font:700 clamp(32px,8vw,52px)/1.02 var(--display);margin:8px 0 10px;text-wrap:balance;letter-spacing:-.01em}
 .sr h2{font:600 20px/1.2 var(--display);margin:0 0 4px;letter-spacing:.01em}
 .sr .lede{max-width:62ch;color:var(--muted);margin:0}
+.sr .stamp{font:500 12.5px/1.5 var(--mono);color:var(--muted);margin:0 0 10px}
+.sr .stamp b{color:var(--ink);font-weight:600}
+.sr .stamp.stale b{color:var(--warn)}
 .sr .lede b,.sr .lede strong{color:var(--ink);font-weight:600}
 .sr .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:10px;overflow:hidden}
 .sr .stat{background:var(--panel);padding:14px 14px 12px;min-width:0}
@@ -220,6 +239,7 @@ export default function ShiftReport() {
     const first = report.rows[0]
     const last = report.rows[report.rows.length - 1]
     const year = new Date(report.generated).getUTCFullYear()
+    const stamp = generatedStamp(report.generated, report.tz)
     const axisLabel = k => `${WDof(k, year)} ${+k.slice(3, 5)}, ${hrLabel(parts(k).hr)}`
 
     return (
@@ -232,6 +252,11 @@ export default function ShiftReport() {
                         <Link to="/forge" className="navlink" style={{ border: 'none', padding: 0 }}>← board</Link>
                     </div>
                     <h1>{report.headline}</h1>
+                    {stamp && (
+                        <p className={`stamp${stamp.stale ? ' stale' : ''}`}>
+                            Generated <b>{stamp.text}</b> · {stamp.ago}{stamp.local && <> · {stamp.local} your time</>}
+                        </p>
+                    )}
                     {report.lede && <p className="lede" dangerouslySetInnerHTML={{ __html: report.lede }} />}
                 </header>
 
