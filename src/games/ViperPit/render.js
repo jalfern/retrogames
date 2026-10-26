@@ -391,6 +391,44 @@ export function buildStage(scene, stage) {
         cone.position.set(lx, 2.7, 1.5); lamps.push({ pts, cone, phase: r() * 6.28 }); grp.add(cone)
     }
 
+    // midground layer (#1106): furniture at a depth between the fighters and
+    // the fence — variety beyond the flat backdrop. Each prop is a pivot group
+    // at its base so the sync can rock it, and it reacts to the fight: a fighter
+    // rushing past, or a forced kick, sends it swaying. Presentation only —
+    // nothing here feeds the engine, so netplay hashes are untouched.
+    const midItems = (stage.midground || []).map((md) => {
+        const g = new THREE.Group()
+        g.position.set(md.x, 0, md.z ?? -3.6)
+        if (md.t === 'crate') {
+            const b = new THREE.Mesh(BOX, std(0x6a5334, { rough: 0.9 })); b.scale.set(1.1, 1.1, 1.1); b.position.y = 0.55; g.add(b)
+            const l = new THREE.Mesh(BOX, std(0x57432a, { rough: 0.9 })); l.scale.set(1.14, 0.12, 1.14); l.position.y = 1.12; g.add(l)
+        } else if (md.t === 'barrel') {
+            const b = limb(CYL, 0.42, 1.15, std(0x3d4c55, { metal: 0.35, rough: 0.55 })); b.position.y = 0.58; g.add(b)
+            const band = limb(CYL, 0.43, 0.1, std(0x2b363d, { metal: 0.5 })); band.position.y = 0.95; g.add(band)
+        } else if (md.t === 'drum') {
+            const b = limb(CYL, 0.5, 0.85, std(0x6a4326, { metal: 0.3, rough: 0.6 })); b.position.y = 0.43; g.add(b)
+        } else if (md.t === 'tank') {
+            const b = limb(CYL, 0.72, 2.4, std(0x4c3a26, { metal: 0.5, rough: 0.6 })); b.position.y = 1.2; g.add(b)
+            const cap = new THREE.Mesh(SPH, std(0x5c4830, { metal: 0.5 })); cap.scale.set(0.72, 0.42, 0.72); cap.position.y = 2.35; g.add(cap)
+        } else if (md.t === 'bench') {
+            const seat = new THREE.Mesh(BOX, std(0x4c4236, { rough: 0.9 })); seat.scale.set(2.2, 0.12, 0.62); seat.position.y = 0.52; g.add(seat)
+            for (const lx of [-0.9, 0.9]) { const leg = new THREE.Mesh(BOX, std(0x3a322a)); leg.scale.set(0.12, 0.52, 0.55); leg.position.set(lx, 0.26, 0); g.add(leg) }
+        } else if (md.t === 'booth') {
+            const b = new THREE.Mesh(BOX, std(0x35414e, { rough: 0.7 })); b.scale.set(1.6, 2.6, 1.2); b.position.y = 1.3; g.add(b)
+            const roof = new THREE.Mesh(BOX, std(0x2a343e)); roof.scale.set(1.85, 0.16, 1.45); roof.position.y = 2.72; g.add(roof)
+            const win = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ color: stage.crowdLit, transparent: true, opacity: 0.5 })); win.scale.set(1.05, 0.7, 1); win.position.set(0, 1.7, 0.62); g.add(win)
+        } else {
+            const cord = limb(CYL, 0.02, 1.4, std(0x101014)); cord.position.y = 1.7; g.add(cord)
+            const board = new THREE.Mesh(BOX, std(0x2a2620, { rough: 0.8 })); board.scale.set(1.5, 0.72, 0.08); board.position.y = 0.9; g.add(board)
+            const glow = new THREE.Mesh(PLANE, new THREE.MeshBasicMaterial({ color: stage.lampColor, transparent: true, opacity: 0.25 })); glow.scale.set(1.2, 0.5, 1); glow.position.set(0, 0.9, 0.06); g.add(glow)
+        }
+        const ampl = md.t === 'sign' ? 1.4 : (md.t === 'crate' || md.t === 'barrel') ? 0.8 : 0.5
+        const it = { g, x: md.x, phase: r() * 6.28, ampl, base: 0.01 + r() * 0.012 }
+        grp.add(g)
+        return it
+    })
+    const midFx = midItems.length ? { items: midItems, n: midItems.length, maxSway: 0, force: 0 } : null
+
     const N = stage.props === 'girders' ? 90 : 50
     const pGeo = new THREE.BufferGeometry()
     const pos = new Float32Array(N * 3)
@@ -407,7 +445,7 @@ export function buildStage(scene, stage) {
     grp.add(particles)
 
     scene.add(grp)
-    return { grp, crowd, lamps, particles, vel, stage, molten: moltenFx, rain: rainFx, sweep: sweepFx }
+    return { grp, crowd, lamps, particles, vel, stage, molten: moltenFx, rain: rainFx, sweep: sweepFx, mid: midFx }
 }
 
 // -- scene -------------------------------------------------------------------------
@@ -523,6 +561,24 @@ export function createScene(canvas) {
                     } else {
                         s.light.visible = false
                         s.prog = -1
+                    }
+                }
+                if (stageFx.mid) {
+                    // the midground lives: a wall-clock breeze, plus a kick when a
+                    // fighter rushes past or a forced kick lands. Presentation only.
+                    const md = stageFx.mid
+                    md.maxSway = 0
+                    if (md.force > 0) md.force *= 0.85
+                    for (const it of md.items) {
+                        let kick = 0
+                        for (const f of m.fighters) {
+                            const prox = clamp(1 - Math.abs(f.x - it.x) / 4.5, 0, 1)
+                            kick = Math.max(kick, prox * Math.min(1, Math.abs(f.vx || 0) / 1.6))
+                        }
+                        kick = Math.max(kick, Math.min(1, md.force || 0))
+                        const sway = Math.sin(tSec * 1.6 + it.phase) * it.base + kick * 0.12 * it.ampl
+                        it.g.rotation.z = sway
+                        md.maxSway = Math.max(md.maxSway, Math.abs(sway))
                     }
                 }
             }

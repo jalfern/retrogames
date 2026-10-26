@@ -745,6 +745,7 @@ const ViperPitGame = () => {
                 finisherReady() { if (gs) { gs.fighters[0].meter = 100; gs.fighters[1].hp = Math.min(gs.fighters[1].hp, 25) } },
                 stage(i) { startFight(i, 'cpu') },
                 sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
+                midKick() { if (stageFx && stageFx.mid) stageFx.mid.force = 1 },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 fx() {
@@ -756,6 +757,8 @@ const ViperPitGame = () => {
                         rain: stageFx.rain ? stageFx.rain.n : null,
                         rainFallen: stageFx.rain ? +stageFx.rain.fallen.toFixed(2) : null,
                         sweep: stageFx.sweep ? +stageFx.sweep.prog.toFixed(3) : null,
+                        mid: stageFx.mid ? stageFx.mid.n : null,
+                        midSway: stageFx.mid ? +stageFx.mid.maxSway.toFixed(4) : null,
                     }
                 },
             }

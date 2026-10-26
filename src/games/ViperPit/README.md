@@ -51,6 +51,12 @@ the #1096 options switched on.
   (grunt at startup, slam on hit). Each finisher has a per-fighter sting on
   the `finish` event (NYX stitch, CINDER bonfire, VESS dry-land, RIV neon
   zap, KRAX scrap clang). K.O. adds a low-passed crowd-surge swell.
+- **Midground (#1106)**: each pit gets a depth layer of props between the
+  fighters and the fence (alley crates + barrels, foundry tanks + drums, subway
+  booth + benches) — variety beyond the flat backdrop. The props are pivot
+  groups that live: a wall-clock breeze, and a kick when a fighter rushes past
+  or a forced hit lands (`fx()` sway). Presentation only — netplay hashes
+  untouched.
 
 ## Where the code lives
 
@@ -68,8 +74,9 @@ the #1096 options switched on.
   chain-link fence, crowd + lamps + embers, hit sparks, SSIV-ish camera
   (midpoint + zoom-by-distance) with handheld shake. `buildStage` returns the
   stage-life fx handles (`molten` {mat,light}, `rain` {geo,vel,fallen},
-  `sweep` {light,wins,phase,period,force,prog}); `sync` animates them per
-  frame (molten pulse/cast, rain fall + wrap, periodic/forced train sweep).
+  `sweep` {light,wins,phase,period,force,prog}, `mid` {items,n,maxSway,force});
+  `sync` animates them per frame (molten pulse/cast, rain fall + wrap,
+  periodic/forced train sweep, midground breeze + fight-rush kick).
   `poseFinisherBeat` scripts the loser through a finisher's beats, and `sync`
   takes a `cine` handle (camera punch-in + victim beat pose) for the FINISH
   cinematic.
@@ -110,10 +117,11 @@ the #1096 options switched on.
   fall, train sweep + a dead-pulse mutant) + headless Chrome drive
   (attract→select→fight, real keys reach the sim, GUARD hold, K.O. flow, the
   stage bed running and the KO crowd surge reaching the real audio graph,
-  stage-life runtime probes via `fx()`: molten opacity actually changes and
-  the cast light is on, `rainFallen` advances, a forced subway sweep walks
-  0→1, the finisher cinematic running its multi-beat sequence via
-  `forceFinish()` + `cine()`, zero page errors).
+    stage-life runtime probes via `fx()`: molten opacity actually changes and
+    the cast light is on, `rainFallen` advances, a forced subway sweep walks
+    0→1, the midground layer present per pit and rocking past its idle breeze
+    on a forced `midKick()`, the finisher cinematic running its multi-beat
+    sequence via `forceFinish()` + `cine()`, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -124,6 +132,7 @@ the #1096 options switched on.
 ## Honest gaps (polish-pass candidates)
 
 - No intro/outround dialogue lines; win/lose quotes are QA polish.
-- Sub-zero: no stage interactives or midground variety beyond props.
+- Stage midground + fight-reactive sway landed (#1106); heavier interactivity
+  (destructible props, pickups) still open.
 - `qcb` still unused by any fighter; guard crush / stun meter not implemented.
 - Net select: guest pick reaches the host only if sent before the host starts.

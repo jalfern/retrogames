@@ -325,6 +325,33 @@ if (MUT) {
     ok(!/0\.5 \* Math\.sin\(tSec \* 1\.4\)/.test(mutR), 'mutant: dead molten pulse fails the gate (harness bites)')
 }
 
+// ---- #1106 stage midground gate ------------------------------------------------
+// Each pit has a midground layer beyond the flat backdrop (variety), and the
+// props react to the fight: a fighter rushing past, or a forced kick, rocks them.
+// Data gate on stages.js, source gates on render.js/index.jsx, a dead-sway
+// mutant, and a part B runtime probe through __viperPitTest.fx()/midKick().
+{
+    const fs = await import('node:fs')
+    const { STAGES } = await import(bust('../src/games/ViperPit/stages.js'))
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok(STAGES.length >= 3 && STAGES.every((s) => Array.isArray(s.midground) && s.midground.length >= 3),
+        'each pit defines a midground layer (>=3 props)')
+    const midGates = [
+        ['midground pivot groups built from the stage data', /const midItems = \(stage\.midground \|\| \[\]\)\.map\(/],
+        ['midground exposed on the fx handle', /mid: midFx/],
+        ['breeze (wall-clock sway on each prop)', /Math\.sin\(tSec \* 1\.6 \+ it\.phase\) \* it\.base/],
+        ['kick from a fighter rushing past (proximity * |vx|)', /Math\.abs\(f\.vx \|\| 0\) \/ 1\.6/],
+        ['live sway tracked for the probe', /md\.maxSway = Math\.max\(md\.maxSway, Math\.abs\(sway\)\)/],
+    ]
+    for (const [label, re] of midGates) ok(re.test(rsrc), `midground gate: ${label}`)
+    ok(/midKick\(\) \{ if \(stageFx && stageFx\.mid\) stageFx\.mid\.force = 1 \}/.test(gsrc), 'midground gate: dev hook can force a kick for the probe')
+    ok(/midSway: stageFx\.mid \? \+stageFx\.mid\.maxSway\.toFixed\(4\)/.test(gsrc), 'midground gate: fx() reports the live sway')
+    // mutant: kill the sway (breeze + kick) — the gate must fail
+    const mutMid = rsrc.replace('Math.sin(tSec * 1.6 + it.phase) * it.base + kick * 0.12 * it.ampl', '0')
+    ok(!/Math\.sin\(tSec \* 1\.6 \+ it\.phase\) \* it\.base/.test(mutMid), 'mutant: dead midground sway fails the gate (harness bites)')
+}
+
 // ---- #1106 finisher cinematic gate ------------------------------------------------
 // The signature finish sells as a multi-beat sequence: a per-beat camera punch-in,
 // a per-beat blow, and the loser scripted through the fighter's beats. Data gate
@@ -507,6 +534,32 @@ if (!MUT) {
         }
         ok(maxI >= 1, `finisher cinematic fires multiple beats (reached beat ${maxI})`)
         ok(cleared, 'finisher cinematic clears after its last beat')
+    }
+
+    // #1106 stage midground: each pit has a midground layer beyond the backdrop,
+    // and the props react to the fight — a forced kick rocks them well past the
+    // idle breeze.
+    {
+        const toStage = async (i, id) => {
+            await page.evaluate((n) => window.__viperPitTest.stage(n), i)
+            await page.waitForFunction((want) => {
+                const f = window.__viperPitTest.fx()
+                return f && f.id === want && window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro'
+            }, id, { timeout: 20000 })
+        }
+        for (const [i, id] of [[0, 'alley'], [1, 'foundry'], [2, 'subway']]) {
+            await toStage(i, id)
+            const f1 = await page.evaluate(() => window.__viperPitTest.fx())
+            ok(f1 && f1.mid >= 3, `${id} midground layer present (${f1 && f1.mid} props)`)
+            const idle = f1.midSway
+            await page.evaluate(() => window.__viperPitTest.midKick())
+            await page.waitForFunction((base) => {
+                const f = window.__viperPitTest.fx()
+                return f && f.midSway > base + 0.01
+            }, idle, { timeout: 1500 })
+            const f2 = await page.evaluate(() => window.__viperPitTest.fx())
+            ok(f2.midSway > idle + 0.01, `${id} midground reacts to the fight (sway ${idle} -> ${f2.midSway})`)
+        }
     }
 
     await page.keyboard.press('Escape')
