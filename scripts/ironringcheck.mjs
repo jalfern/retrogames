@@ -19,6 +19,7 @@ import { launch, requireDevServer, relayNoise } from './lib/harness.mjs'
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const URL = process.env.IRONRING_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/iron-ring`
 const MUT = process.argv.includes('--mutate')
+const MUTCONT = process.argv.includes('--mutate-continue')
 
 let pass = 0, fail = 0
 const ok = (cond, msg) => { if (cond) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.error(`FAIL  ${msg}`) } }
@@ -194,6 +195,31 @@ if (MUT) {
 
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
+// ---- mutate-continue: prove the ladder-loss continue gate can fail --------------
+// (deleting the continue branch keeps a lost ladder run silently on 'play'/'attract'
+// instead of the CONTINUE? screen — the normal-mode gate below must then go red.)
+if (MUTCONT) {
+    console.log('mutate-continue: proving the continue-screen gate bites')
+    await requireDevServer(URL)
+    const mb = await launch()
+    const mp = await mb.newPage({ viewport: { width: 1024, height: 640 } })
+    await mp.addInitScript(() => { window.__IRONRING_NOCONTINUE__ = true })
+    await mp.goto(URL, { waitUntil: 'networkidle' })
+    await mp.waitForFunction(() => window.__ironRingTest, null, { timeout: 15000 })
+    await mp.evaluate(() => window.__ironRingTest.start())
+    await mp.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await mp.evaluate(() => window.__ironRingTest.koP1())
+    await mp.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await mp.evaluate(() => window.__ironRingTest.koP1())
+    await mp.waitForTimeout(3200)
+    const ms = await mp.evaluate(() => window.__ironRingTest.state)
+    ok(ms.screen !== 'continue' && (ms.screen === 'play' || ms.screen === 'attract'),
+        `mutant: loss never reaches the continue screen (screen ${ms.screen}) — the gate would catch its removal`)
+    await mb.close()
+    console.log(`ironringcheck (mutate-continue): ${pass} ok, ${fail} fail`)
+    process.exit(fail ? 1 : 0)
+}
+
 // ---- Part B: browser drive ---------------------------------------------------------
 if (!MUT) {
     console.log('part B: browser drive at', URL)
@@ -241,8 +267,9 @@ if (!MUT) {
     // round + match flow: two K.O.s end the match with the human ahead
     let guard = 0
     while (guard++ < 8 && st.wins[0] < 2 && st.phase !== 'done') {
+        await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
         await page.evaluate(() => window.__ironRingTest.koP2())
-        await page.waitForTimeout(3300)
+        await page.waitForTimeout(200)
         st = await page.evaluate(() => window.__ironRingTest.state)
     }
     ok(st.wins[0] >= 2 || st.phase === 'done', `two K.O.s advance rounds (wins ${st.wins.join('-')}, phase ${st.phase})`)
@@ -253,6 +280,44 @@ if (!MUT) {
     const pausedVisible = await page.evaluate(() => !!document.body.innerText.match(/IRON RING|RESUME|PAUSED|CONTROL/i))
     ok(pausedVisible, '?/Esc opens the pause overlay')
     await page.keyboard.press('Escape')
+
+    // ---- continue screen (#1103): a lost ladder run asks CONTINUE? with credits ----
+    await page.evaluate(() => window.__ironRingTest.start())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP1())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP1())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'continue', null, { timeout: 8000 })
+    st = await page.evaluate(() => window.__ironRingTest.state)
+    ok(st.screen === 'continue', `ladder loss lands on the CONTINUE screen (screen ${st.screen})`)
+    ok(st.continueFrames > 0 && st.credits === 3, `continue shows a countdown + full credits (frames ${st.continueFrames}, credits ${st.credits})`)
+    ok(st.quote === BY_ID[st.opponent].quote, `the winning CPU taunts with its quote (${st.quote})`)
+    await page.keyboard.press('Space')
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'play', null, { timeout: 4000 })
+    st = await page.evaluate(() => window.__ironRingTest.state)
+    ok(st.credits === 2 && st.opponent === 'vexa', `SPACE spends a credit and retries the SAME rung (credits ${st.credits}, opp ${st.opponent})`)
+    // lose the retried run too, then let the countdown run out (no key) → attract
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP1())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP1())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'continue', null, { timeout: 8000 })
+    ok((await page.evaluate(() => window.__ironRingTest.state)).credits === 2, `second loss keeps the spent credit (credits 2)`)
+    await page.evaluate(() => window.__ironRingTest.expireContinue())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'attract', null, { timeout: 2000 })
+    st = await page.evaluate(() => window.__ironRingTest.state)
+    ok(st.screen === 'attract' && st.credits === 0, `countdown expiry ends the run at attract, credits lost (credits ${st.credits})`)
+
+    // ---- victory quote (#1103): winning the last rung crowns with the fighter's quote ----
+    await page.evaluate(() => { window.__ironRingTest.start(); window.__ironRingTest.setLadder(5) })
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP2())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 8000 })
+    await page.evaluate(() => window.__ironRingTest.koP2())
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'champion', null, { timeout: 8000 })
+    st = await page.evaluate(() => window.__ironRingTest.state)
+    ok(st.screen === 'champion', `winning the final rung crowns the player (screen ${st.screen})`)
+    ok(st.quote === BY_ID.kade.quote, `champion screen shows the player's victory quote (${st.quote})`)
 
     ok(errors.length === 0, `zero page errors (${errors.slice(0, 2).join(' | ') || 'clean'})`)
     await browser.close()

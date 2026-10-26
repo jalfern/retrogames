@@ -25,6 +25,8 @@ const SIM_MS = FIXED_DT
 const SEATS = 2
 const PAD_DELAY = 8
 const HASH_EVERY = 30
+const CREDITS_START = 3
+const CONTINUE_FRAMES = 10 * 60
 
 const wirePad = (p) => ({ l: !!p.left, r: !!p.right, u: !!p.up, d: !!p.down, lp: !!p.lp, hp: !!p.hp, lk: !!p.lk, hk: !!p.hk })
 const fromWire = (p) => ({ left: !!(p && p.l), right: !!(p && p.r), up: !!(p && p.u), down: !!(p && p.d), lp: !!(p && p.lp), hp: !!(p && p.hp), lk: !!(p && p.lk), hk: !!(p && p.hk) })
@@ -93,6 +95,7 @@ const IronRingGame = () => {
         let p1Char = 'kade', p2Char = 'vexa'
         let p2Picked = false
         let cursor = 0
+        let credits = CREDITS_START, continueFrames = 0, quoteText = '', championChar = 'kade'
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let comboFx = [0, 0], comboVal = [0, 0]
@@ -220,6 +223,8 @@ const IronRingGame = () => {
             setDesync(false)
             pausedRef.current = false
             setPaused(false)
+            continueFrames = 0
+            quoteText = ''
             rebuildRigs()
             rebuildStage()
             setSc('play')
@@ -229,7 +234,10 @@ const IronRingGame = () => {
             if (net.active) { setSc('select'); return }
             p2Picked = false
             cursor = 0
-            setSc('select')
+            credits = CREDITS_START
+            quoteText = ''
+            continueFrames = 0
+            setSc('attract')
         }
 
         const atSelect = () => {
@@ -269,18 +277,26 @@ const IronRingGame = () => {
                 return
             }
             if (scr === 'select') {
-                if (e.code === 'Digit1' && !net.active) mode = 'cpu'
-                if (e.code === 'Digit2' && !net.active) mode = 'local'
-                if (e.code === 'ArrowLeft' || e.code === 'KeyA') cursor = (cursor + ROSTER.length - 1) % ROSTER.length
-                if (e.code === 'ArrowRight' || e.code === 'KeyD') cursor = (cursor + 1) % ROSTER.length
-                if (e.code === 'ArrowUp' || e.code === 'KeyW') cursor = (cursor + ROSTER.length - 3) % ROSTER.length
-                if (e.code === 'ArrowDown' || e.code === 'KeyS') cursor = (cursor + 3) % ROSTER.length
+                if (e.code === 'Digit1' && !net.active) { mode = 'cpu'; audioController.playTone(523, 0.06, 'square', 0.07) }
+                if (e.code === 'Digit2' && !net.active) { mode = 'local'; audioController.playTone(392, 0.06, 'square', 0.07) }
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') { cursor = (cursor + ROSTER.length - 1) % ROSTER.length; audioController.playTone(660, 0.04, 'square', 0.06) }
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') { cursor = (cursor + 1) % ROSTER.length; audioController.playTone(660, 0.04, 'square', 0.06) }
+                if (e.code === 'ArrowUp' || e.code === 'KeyW') { cursor = (cursor + ROSTER.length - 3) % ROSTER.length; audioController.playTone(660, 0.04, 'square', 0.06) }
+                if (e.code === 'ArrowDown' || e.code === 'KeyS') { cursor = (cursor + 3) % ROSTER.length; audioController.playTone(660, 0.04, 'square', 0.06) }
+                if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') audioController.playTone(880, 0.1, 'square', 0.1)
                 if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') atSelect()
-                if (/^Digit[3-8]$/.test(e.code)) { cursor = Number(e.code.slice(5)) - 3; atSelect() }
+                if (/^Digit[3-8]$/.test(e.code)) { cursor = Number(e.code.slice(5)) - 3; audioController.playTone(880, 0.1, 'square', 0.1); atSelect() }
                 return
             }
             if (scr === 'champion') {
                 if (e.code === 'Space' || e.code === 'Enter') atAttract()
+                return
+            }
+            if (scr === 'continue') {
+                if (credits > 0 && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyZ')) {
+                    credits--; audioController.playTone(740, 0.12, 'square', 0.1)
+                    startFight(undefined, 'cpu')
+                }
                 return
             }
             if (desyncRef.current && (e.code === 'Space' || e.code === 'Enter')) {
@@ -304,6 +320,7 @@ const IronRingGame = () => {
             if (scr === 'attract') atAttract()
             else if (scr === 'select') atSelect()
             else if (scr === 'champion') atAttract()
+            else if (scr === 'continue' && credits > 0) { credits--; audioController.playTone(740, 0.12, 'square', 0.1); startFight(undefined, 'cpu') }
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -392,14 +409,22 @@ const IronRingGame = () => {
                             }
                         }, 2600)
                     } else if (won) {
+                        championChar = p1Char
+                        quoteText = (BY_ID[championChar] || ROSTER[0]).quote || ''
                         ;[0, 4, 7, 12].forEach((semi, i) => setTimeout(() => audioController.playTone(523 * Math.pow(2, semi / 12), 0.18, 'square', 0.11), i * 120))
                         setSc('champion')
                         attractDemo()
                     } else {
                         audioController.playSweep(400, 120, 0.5, 'sawtooth', 0.1)
-                        retryTimer = setTimeout(() => {
-                            if (screenRef.current === 'play' && gs.phase === 'done') startFight(undefined, 'cpu')
-                        }, 2600)
+                        if (window.__IRONRING_NOCONTINUE__) {
+                            retryTimer = setTimeout(() => {
+                                if (screenRef.current === 'play' && gs.phase === 'done') startFight(undefined, 'cpu')
+                            }, 2600)
+                        } else {
+                            quoteText = (BY_ID[p2Char] || ROSTER[1]).quote || ''
+                            continueFrames = CONTINUE_FRAMES
+                            setSc('continue')
+                        }
                     }
                 } else if (mode === 'local') {
                     retryTimer = setTimeout(() => {
@@ -541,8 +566,34 @@ const IronRingGame = () => {
                 hctx.fillText('ARCADE CHAMPION', W / 2, H * 0.4)
                 ui(Math.max(13, H * 0.026))
                 hctx.fillStyle = '#fff'
-                hctx.fillText(`${(BY_ID[p1Char] || ROSTER[0]).name} CONQUERS THE RING`, W / 2, H * 0.5)
-                hctx.fillText('PRESS ANY KEY', W / 2, H * 0.62)
+                hctx.fillText(`${(BY_ID[championChar] || ROSTER[0]).name} CONQUERS THE RING`, W / 2, H * 0.5)
+                if (quoteText) {
+                    ui(Math.max(11, H * 0.022))
+                    hctx.fillStyle = 'rgba(255,210,62,0.92)'
+                    hctx.fillText(`"${quoteText}"`, W / 2, H * 0.56)
+                }
+                hctx.fillStyle = '#fff'
+                hctx.fillText('PRESS ANY KEY', W / 2, H * 0.66)
+            }
+            if (scr === 'continue') {
+                hctx.fillStyle = 'rgba(6,4,14,0.72)'; hctx.fillRect(0, 0, W, H)
+                ui(Math.max(30, H * 0.075))
+                hctx.textAlign = 'center'
+                hctx.strokeStyle = 'rgba(150,40,30,0.9)'; hctx.lineWidth = Math.max(4, H * 0.012)
+                hctx.strokeText('CONTINUE?', W / 2, H * 0.36)
+                hctx.fillStyle = '#ff5a3c'
+                hctx.fillText('CONTINUE?', W / 2, H * 0.36)
+                ui(Math.max(40, H * 0.1))
+                hctx.fillStyle = '#ffd23e'
+                hctx.fillText(String(Math.max(0, Math.ceil(continueFrames / 60))), W / 2, H * 0.52)
+                if (quoteText) {
+                    ui(Math.max(12, H * 0.024))
+                    hctx.fillStyle = 'rgba(255,120,90,0.95)'
+                    hctx.fillText(`${(BY_ID[p2Char] || ROSTER[1]).name}: "${quoteText}"`, W / 2, H * 0.62)
+                }
+                ui(Math.max(12, H * 0.024))
+                hctx.fillStyle = `rgba(255,255,255,${(0.7 + 0.3 * Math.sin(Date.now() / 300)).toFixed(2)})`
+                hctx.fillText(credits > 0 ? `PRESS SPACE — CREDITS ${credits}` : 'GAME OVER', W / 2, H * 0.72)
             }
             if (paused && scr === 'play') {
                 hctx.fillStyle = 'rgba(4,3,10,0.45)'; hctx.fillRect(0, 0, W, H)
@@ -599,6 +650,14 @@ const IronRingGame = () => {
                     }
                 }
             }
+            if (screenRef.current === 'continue') {
+                continueFrames--
+                if (continueFrames <= 0 || credits <= 0) {
+                    credits = 0
+                    attractDemo()
+                    setSc('attract')
+                }
+            }
             if (shake > 0) shake *= 0.88
             if (gs && stageFx && rigs) scene.sync(gs, rigs, stageFx, now / 1000, shake > 0.4 ? shake * 0.02 : 0)
             drawHud(hud.width, hud.height)
@@ -609,10 +668,13 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st) } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), credits, continueFrames, opponent: p2Char, ladderIdx, quote: screenRef.current === 'champion' ? (BY_ID[championChar] || ROSTER[0]).quote : screenRef.current === 'continue' ? (BY_ID[p2Char] || ROSTER[1]).quote : null } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
-                start() { startFight(7, 'cpu') },
+                start() { p1Char = 'kade'; p2Char = LADDER[0]; ladderIdx = 0; mode = 'cpu'; startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
+                koP1() { if (gs) forceKO(gs, 1) },
+                expireContinue() { continueFrames = 1 },
+                setLadder(i) { ladderIdx = i },
             }
             dbg = mountDbg({
                 title: 'IRON RING',
