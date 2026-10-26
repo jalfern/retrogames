@@ -216,7 +216,12 @@ vec3 diskEmission(vec3 q, vec3 towardCam, float rBL, out float opacity){
   }
   float a2 = ang - uTime * om * 2.6 * sa;                // sheared pattern
   float lr = log(r);
-  float n = fbm2(vec2(a2 * 2.6 + lr * 3.4, lr * 5.5 - uTime * 0.10));
+  // turbulence on a circle in angle: atan wraps at ±pi, and feeding the raw angle
+  // into fbm put a hard pattern seam at that azimuth (visible across near and far
+  // disk at the pinch points). cos/sin(a2) is seamless; radius still decorrelates
+  // the pattern via lr in the circle radius and the second coord.
+  float sc = 2.2 + lr * 0.8;
+  float n = fbm2(vec2(cos(a2) * sc + lr * 3.4, sin(a2) * sc + lr * 5.5 - uTime * 0.10));
   float streaks = 0.5 + 0.5 * sin(a2 * 7.0 + sin(a2 * 3.0 + lr * 4.0) * 1.6 - lr * 9.0 + n * 2.6);
   float radial = smoothstep(uRIn * 1.02, uRIn * 2.0, r) * smoothstep(R_OUT, R_OUT * 0.60, r);
   float dens = pow(max(n * 1.45 - 0.34, 0.0), 1.5) * (0.28 + 0.72 * pow(streaks, 1.3)) * radial;
