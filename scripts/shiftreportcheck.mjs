@@ -296,6 +296,11 @@ ok('reference look is committed', read('docs/forge/shift-report-ref.html').inclu
 ok('FORGE.md tells sessions to publish notes', read('scripts/FORGE.md').includes('SHIFTREPORT_NOTES'))
 ok('FORGE.md documents the look picks', read('scripts/FORGE.md').includes('look'))
 ok('report page renders the go-look box', /className="golook"/.test(read('src/pages/ShiftReport.jsx')) && /report\.look/.test(read('src/pages/ShiftReport.jsx')))
+ok('report page shows when it was generated, at the top', (() => {
+    const src = read('src/pages/ShiftReport.jsx')
+    const h1 = src.indexOf('<h1>{report.headline}</h1>')
+    return src.includes('generatedStamp(report.generated') && src.indexOf('className={`stamp') > h1 && src.indexOf('className={`stamp') < src.indexOf('className="golook"')
+})())
 ok('generator enumerates public demos', read('scripts/shiftreport.mjs').includes('public/demos'))
 ok('shiftreportcheck is wired as a core CI gate',
     read('scripts/checks.mjs').includes("'shiftreportcheck'") &&
