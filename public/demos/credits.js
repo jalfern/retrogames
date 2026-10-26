@@ -140,15 +140,42 @@
     // The bottom-left caption (#hud) wraps at viewport width, so on phones its
     // last lines run under the corner tag (#1078). Reserve the tag's column:
     // cap the caption so its lines break before the badge instead of beneath it.
+    // #1099: then keep the whole caption inside the viewport — tighten the font
+    // one px at a time, and as a last resort clamp to the lines that fit, so
+    // no demo caption is ever clipped or stacked over the badge in any mode.
     function reserveCaption() {
       var hud = document.getElementById('hud')
       if (!hud) return
       hud.style.maxWidth = ''
+      hud.style.fontSize = ''
+      hud.style.maxHeight = ''
+      hud.style.overflow = ''
+      hud.style.display = ''
+      hud.style.webkitBoxOrient = ''
+      hud.style.webkitLineClamp = ''
       var tr = tag.getBoundingClientRect()
       var hr = hud.getBoundingClientRect()
       var crossing = hr.top < tr.bottom && hr.bottom > tr.top
       if (crossing && hr.right > tr.left - 8) {
         hud.style.maxWidth = Math.max(48, Math.floor(tr.left - 8 - hr.left)) + 'px'
+        hr = hud.getBoundingClientRect()
+      }
+      var base = parseFloat(window.getComputedStyle(hud).fontSize) || 11
+      var vh = window.innerHeight
+      var fs = base
+      while ((hr.top < 4 || hr.bottom > vh - 4) && fs > 8) {
+        fs -= 1
+        hud.style.fontSize = fs + 'px'
+        hr = hud.getBoundingClientRect()
+      }
+      if (hr.top < 4) {
+        var lineH = parseFloat(window.getComputedStyle(hud).lineHeight) || fs * 1.7
+        var lines = Math.max(1, Math.floor((vh - 16) / lineH))
+        hud.style.display = '-webkit-box'
+        hud.style.webkitBoxOrient = 'vertical'
+        hud.style.webkitLineClamp = String(lines)
+        hud.style.maxHeight = Math.floor(lines * lineH) + 'px'
+        hud.style.overflow = 'hidden'
       }
     }
     reserveCaption()

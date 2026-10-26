@@ -667,7 +667,7 @@ const LemGame = () => {
                 style={{ bottom: play ? LAYOUT.panelReserve : 0 }} />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-amber-50 font-mono text-xs">
+                <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-amber-50 font-mono text-xs">
                     <span id="lem-lvl" ref={setHud('lvl')} className="font-bold tracking-widest text-sm" />
                     <div className="w-28 h-2.5 bg-black/50 rounded overflow-hidden border border-black/50">
                         <div ref={setHud('time')} className="h-full" style={{ background: 'linear-gradient(90deg,#ffd83d,#e23b3b)', width: '100%' }} />

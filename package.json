@@ -141,6 +141,7 @@
     "pongcheck": "node scripts/pongcheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",
     "attractcheck": "node scripts/attractcheck.mjs",
+    "textfitcheck": "node scripts/textfitcheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
     "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",

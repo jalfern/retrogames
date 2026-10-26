@@ -7,6 +7,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -717,12 +718,17 @@ const MagicCarpetGame = () => {
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
                     <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore three worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
-                    <p className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4">
-                        arrows steer the carpet (it banks and cannot crash) — A casts your left hand, X your right<br />
-                        gather mana pearls, then fly them home — hover over your castle to fill the vault; die and the load is lost<br />
-                        fireballs and lightning crater the land itself — burning villages breed wolves<br />
-                        three worlds await, each guarded by a rival wizard — break him and his hoard scatters into pearls
-                    </p>
+                    <AttractMessage
+                        className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4"
+                        messages={[
+                            'ARROWS STEER THE CARPET · IT BANKS AND CANNOT CRASH',
+                            'A CASTS YOUR LEFT HAND · X YOUR RIGHT',
+                            'GATHER MANA PEARLS · HOVER YOUR CASTLE TO FILL THE VAULT',
+                            'DIE AND THE LOAD IS LOST',
+                            'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
+                            'THREE WORLDS · EACH GUARDED BY A RIVAL WIZARD',
+                        ]}
+                    />
                 </div>
             )}
 

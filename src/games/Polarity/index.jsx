@@ -433,7 +433,7 @@ const PolarityGame = () => {
                 <div className="absolute top-9 left-3 w-28 h-1.5 bg-white/15 rounded overflow-hidden">
                     <div ref={setHud('charge')} className="h-full bg-cyan-300 transition-all duration-150" style={{ width: '0%' }} />
                 </div>
-                <div ref={setHud('nova')} className="absolute top-11 left-3 text-cyan-200 font-mono text-[10px] font-bold animate-pulse transition-opacity" style={{ opacity: 0 }}>NOVA READY — FLIP</div>
+                <div ref={setHud('nova')} className="absolute top-20 left-3 text-cyan-200 font-mono text-[10px] font-bold animate-pulse transition-opacity" style={{ opacity: 0 }}>NOVA READY — FLIP</div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-cyan-100 font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #0af' }} />
             </div>
 

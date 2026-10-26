@@ -15,6 +15,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -1309,11 +1310,15 @@ const CivilizationVGame = () => {
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
                     <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">FROM THE FIRST SETTLER TO THE LAST ROCKET</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
-                    <p className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-5">
-                        win one of the three crowns, or grow your capital to size {GOAL} by turn {CFG.turnLimit}<br />
-                        tap a tile to move your unit · E settles a city · drag pans, Home re-centers<br />
-                        Space ends the turn
-                    </p>
+                    <AttractMessage
+                        className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-5"
+                        messages={[
+                            `WIN ONE OF THE THREE CROWNS · OR GROW YOUR CAPITAL TO SIZE ${GOAL} BY TURN ${CFG.turnLimit}`,
+                            'TAP A TILE TO MOVE · E SETTLES A CITY',
+                            'DRAG PANS · HOME RE-CENTERS',
+                            'SPACE ENDS THE TURN',
+                        ]}
+                    />
                 </div>
             )}
 

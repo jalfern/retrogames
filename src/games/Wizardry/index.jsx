@@ -510,7 +510,7 @@ const WizardryGame = () => {
                 style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '118px', height: '118px' }} />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+                <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
                     <span ref={setHud('floor')} className="border border-indigo-400/60 text-indigo-200 px-2 py-0.5 rounded bg-black/40">LEVEL 1</span>
                     <span className="text-amber-200">POTIONS <b ref={setHud('potions')}>1</b></span>
                     <span className="text-cyan-200">FACING <b ref={setHud('dir')}>EAST</b></span>
