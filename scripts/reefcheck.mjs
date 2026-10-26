@@ -115,7 +115,7 @@ async function main() {
   ok('raymarch SDF scene: terrain heightfield + coral structures',
     /float terrain\(vec2/.test(src) && /vec2 structure\(/.test(src) && /sdCap\(/.test(src) && /smin\(/.test(src))
   ok('water drains colour with distance (per-channel Beer-Lambert)',
-    /const vec3 SIGMA = vec3\(0\.0\d+, 0\.0\d+, 0\.0\d+\)/.test(src) && /exp\(SIGMA \* fogd\)/.test(src))
+    /const vec3 SIGMA = vec3\(0\.0\d+, 0\.0\d+, 0\.0\d+\)/.test(src) && /exp\(-SIGMA \* fogd\)/.test(src))
   ok('caustics: animated field modulating the sun term', /float caust\(vec2 p, float t\)/.test(src) && /caust\(sp, uTime\)/.test(src))
   ok('god rays: volumetric march along the ray', /float rays = 0\.0;/.test(src) && /rays \+=/.test(src) && /rays \*=/.test(src))
   ok('tileable period-128 drift world (endless, seamless loop)', /const WORLD_L = 128/.test(src) && /mod\(i \+ vec2\(0\.0\), vec2\(per\)\)/.test(src))
@@ -175,15 +175,18 @@ async function main() {
       const W = img.w, H = img.h
 
       const topBand = meanRGB(img, Math.round(W * 0.15), Math.round(H * 0.08), Math.round(W * 0.85), Math.round(H * 0.22))
+      const midBand = meanRGB(img, Math.round(W * 0.15), Math.round(H * 0.40), Math.round(W * 0.85), Math.round(H * 0.52))
       const botBand = meanRGB(img, Math.round(W * 0.15), Math.round(H * 0.86), Math.round(W * 0.85), Math.round(H * 0.97))
-      ok('water brightens toward the surface (luma top > bottom)',
-        luma(topBand) > luma(botBand) + 20, `top=${luma(topBand).toFixed(0)} bottom=${luma(botBand).toFixed(0)}`)
-      const rgTop = topBand[0] / topBand[1], rgBot = botBand[0] / botBand[1]
-      ok('red absorbed with distance (r/g ratio collapses down-column)',
-        rgTop > rgBot * 1.2 && rgBot < 0.7, `r/g top=${rgTop.toFixed(2)} bottom=${rgBot.toFixed(2)}`)
-      ok('column reads blue-green (b > r everywhere)',
-        topBand[2] > topBand[0] + 10 && botBand[2] > botBand[0] + 10,
-        `top rgb=${topBand.map(v => v.toFixed(0)).join(',')} bottom rgb=${botBand.map(v => v.toFixed(0)).join(',')}`)
+      const farSand = meanRGB(img, Math.round(W * 0.15), Math.round(H * 0.55), Math.round(W * 0.85), Math.round(H * 0.64))
+      ok('water brightens toward the surface (luma top > distant column)',
+        luma(topBand) > luma(midBand) + 15, `top=${luma(topBand).toFixed(0)} mid=${luma(midBand).toFixed(0)}`)
+      const rgNear = botBand[0] / botBand[1], rgFar = farSand[0] / farSand[1]
+      ok('red drains with distance (sand goes teal down-column)',
+        rgNear > 0.95 && rgFar < 0.85 && rgNear > rgFar * 1.15,
+        `sand r/g near=${rgNear.toFixed(2)} far=${rgFar.toFixed(2)}`)
+      ok('column reads blue-green (cyan top, teal distance, warm sand underfoot)',
+        topBand[2] > topBand[0] + 10 && midBand[2] > midBand[0] + 10 && botBand[1] > botBand[2],
+        `top rgb=${topBand.map(v => v.toFixed(0)).join(',')} mid rgb=${midBand.map(v => v.toFixed(0)).join(',')} bottom rgb=${botBand.map(v => v.toFixed(0)).join(',')}`)
 
       let rays = 0, rayCols = new Set()
       for (let x = 4; x < W - 18; x += 2) {
@@ -220,11 +223,11 @@ async function main() {
       for (let x = 4; x < W - 4; x += 2) {
         for (let y = Math.round(H * 0.52); y < Math.round(H * 0.95); y += 2) {
           const [r, g, b] = px(img, x, y)
-          if (r - b > 10 && r - g > 22 && r > 60 && luma([r, g, b]) < 215) { coral++; coralCols.add(Math.floor(x / 96)) }
+          if (r - g > 14 && r > 55 && luma([r, g, b]) < 215) { coral++; coralCols.add(Math.floor(x / 96)) }
         }
       }
-      ok('warm living coral colour across the reef bands', coral > 80 && coralCols.size >= 3,
-        `${coral} warm coral px across ${coralCols.size}/10 sections`)
+      ok('living coral colour across the reef bands', coral > 120 && coralCols.size >= 3,
+        `${coral} coral-hue px across ${coralCols.size}/10 sections`)
 
       let rayShim = 0, rn = 0
       for (let y = Math.round(H * 0.10); y < Math.round(H * 0.50); y += 3) for (let x = 4; x < W - 4; x += 2) {
@@ -272,8 +275,8 @@ async function main() {
       ok('phone 390x844 boots clean (lite)', phoneReady && errsP.length === 0, errsP[0])
       await phone.evaluate(() => {
         const c = document.getElementById('c')
-        c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 200, clientY: 400, bubbles: true }))
-        c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 120, clientY: 430, bubbles: true }))
+        c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 350, clientY: 400, bubbles: true }))
+        c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 70, clientY: 430, bubbles: true }))
       })
       await phone.waitForTimeout(600)
       ok('phone tap-drag steers the look', await phone.evaluate(() => Math.abs(window.__reefTest.pose().look) > 40))

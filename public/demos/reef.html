@@ -88,7 +88,7 @@ out vec4 fragColor;
 #define L ${WORLD_L.toFixed(1)}
 
 const vec3 SUNDIR = normalize(vec3(${SUN.map(v => v.toFixed(3)).join(',')}));
-const vec3 SIGMA = vec3(0.052, 0.021, 0.0105);   // per-channel absorption: red drains first
+const vec3 SIGMA = vec3(0.022, 0.014, 0.008);   // per-channel absorption: red drains first
 const float FOGK = 0.030;
 
 float h21(vec2 p){ p = fract(p * vec2(127.1, 311.7)); p += dot(p, p + 74.7); return fract(p.x * p.y); }
@@ -124,7 +124,7 @@ float terrain(vec2 p){
   h /= tot;
   float rn = vn2P(p / 32.0 + 3.1, 4.0);
   float ridge = 1.0 - abs(rn * 2.0 - 1.0);
-  return 1.1 + 6.0 * h * h + 2.4 * ridge * ridge;
+  return 1.1 + 5.0 * h * h + 1.8 * ridge * ridge;
 }
 
 float sdSphere(vec3 p, float r){ return length(p) - r; }
@@ -173,23 +173,24 @@ vec2 map(vec3 p){
   float yt = terrain(p.xz);
   float d = (p.y - yt) * 0.82;
   float mat = 1.0;
-  if(d < 6.0){
+  if(d < 10.0){
     const float C = 32.0;
     vec2 c0 = floor(p.xz / C);
     for(int dj = 0; dj < 2; dj++){
       for(int di = 0; di < 2; di++){
         vec2 cellIdx = c0 + vec2(float(di), float(dj));
         vec2 cell = mod(cellIdx, 4.0);
-        for(int k = 0; k < 2; k++){
+        for(int k = 0; k < 5; k++){
           float kf = float(k);
           float hk = h21(cell * 13.7 + vec2(kf * 7.3, 2.9));
-          vec2 ctrXZ = (cellIdx + vec2(0.2 + 0.6 * hk, 0.2 + 0.6 * h21(cell + kf * 3.1))) * C;
+          vec2 ctrXZ = (cellIdx + vec2(0.15 + 0.7 * hk, 0.15 + 0.7 * h21(cell + kf * 3.1))) * C;
           float y0 = terrain(ctrXZ);
           float hr = h21(cell * 5.1 + kf * 1.7);
           float kind = floor(hr * 4.0);
-          float sc = 0.8 + 0.9 * h21(cell * 2.3 + kf);
+          float sc = 1.0 + 1.2 * h21(cell * 2.3 + kf);
           vec3 ctr = vec3(ctrXZ.x, y0 + 1.6 * sc, ctrXZ.y);
-          float rr = 3.4 * sc;
+          vec2 eA = ctrXZ - cellIdx * C, eB = (cellIdx + 1.0) * C - ctrXZ;
+          float rr = min(3.8 * sc, min(min(eA.x, eA.y), min(eB.x, eB.y)));
           if(length(p - ctr) > rr) continue;
           vec2 sm = structure(p - vec3(ctrXZ.x, y0, ctrXZ.y), h21(cell * 9.7 + kf), kind, y0, sc);
           if(sm.x < d){ d = sm.x * 0.9; mat = sm.y; }
@@ -215,6 +216,15 @@ float caust(vec2 p, float t){
   return pow(v * v * w, 2.2);
 }
 
+/* soft large-scale shaft mask for the volumetric march (wider than caust) */
+float shaft(vec2 p, float t){
+  vec2 q = p * 0.8;
+  float v = sin(q.x * 1.9 + t * 1.35) + sin(q.y * 2.3 - t * 1.1) + sin((q.x + q.y) * 1.7 + t * 0.8);
+  v = clamp(v / 3.0 * 0.5 + 0.5, 0.0, 1.0);
+  v *= 0.75 + 0.25 * sin(q.x * 6.3 - q.y * 5.1 + t * 2.0);
+  return v * v;
+}
+
 void main(){
   vec2 ndc = (vUv * 2.0 - 1.0) * vec2(uRes.x / uRes.y, 1.0);
   vec3 rd = normalize(uCamBasis * vec3(ndc, 1.55));
@@ -236,31 +246,37 @@ void main(){
     vec3 n = calcNormal(p);
     float sun = max(dot(n, SUNDIR), 0.0);
     float sky = 0.5 + 0.5 * n.y;
-    float shade = 0.42 + 0.58 * sun;
+    float caustM = 1.0;
     if(sun > 0.01){
       float k = (SURF - p.y) / SUNDIR.y;
       vec2 sp = p.xz + SUNDIR.xz * k;
-      shade *= 0.35 + 0.65 * (0.25 + 1.15 * caust(sp, uTime));
+      caustM = 0.62 + 0.38 * (0.35 + 0.65 * caust(sp, uTime));
     }
+    vec3 light = (vec3(0.16, 0.24, 0.33) + vec3(1.15, 0.78, 0.46) * sun) * caustM;
     if(mat < 1.5){                      // sand
       float g = vn2P(p.xz * 0.5, 64.0) * 0.5 + vn2P(p.xz * 2.1, 256.0) * 0.5;
-      col = mix(vec3(0.78, 0.66, 0.42), vec3(0.55, 0.48, 0.34), g) * shade;
-      if(n.y > 0.55) col += vec3(0.10, 0.16, 0.05) * vn2P(p.xz * 0.22, 16.0);  // algae patches
+      col = mix(vec3(0.80, 0.60, 0.32), vec3(0.56, 0.44, 0.26), g) * light;
+      if(n.y > 0.55) col += vec3(0.03, 0.06, 0.02) * vn2P(p.xz * 0.22, 16.0);  // algae patches
     } else if(mat < 2.5){
-      col = vec3(0.92, 0.36, 0.52) * shade;                       // warm coral pink
+      col = vec3(1.00, 0.18, 0.30) * light;                       // warm coral pink
+      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col += vec3(0.10, 0.03, 0.02) * smoothstep(4.0, 8.0, p.y);  // glowing tips
     } else if(mat < 3.5){
-      col = vec3(0.98, 0.55, 0.24) * shade;                       // coral orange
+      col = vec3(1.00, 0.38, 0.08) * light;                       // coral orange
+      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col += vec3(0.10, 0.05, 0.01) * smoothstep(4.0, 8.0, p.y);  // glowing tips
     } else if(mat < 4.5){
-      col = vec3(0.58, 0.32, 0.68) * shade;                       // fan purple
+      col = vec3(0.70, 0.20, 0.72) * light;                       // fan purple
       float ribs = 0.8 + 0.2 * sin(p.y * 9.0);
       col *= ribs;
     } else if(mat < 5.5){
-      col = vec3(0.85, 0.72, 0.25) * shade;                       // sponge yellow
+      col = vec3(0.88, 0.70, 0.20) * light;                       // sponge yellow
+      col *= 0.86 + 0.14 * sin(p.y * 11.0);                       // polyp bands
     } else {
-      col = vec3(0.42, 0.40, 0.38) * shade;                       // boulder
+      col = vec3(0.42, 0.40, 0.38) * light;                       // boulder
       col = mix(col, vec3(0.30, 0.45, 0.25), smoothstep(0.55, 0.95, n.y) * vn2P(p.xz * 0.4, 32.0));
     }
-    col += vec3(0.05, 0.11, 0.14) * sky;
+    col += vec3(0.015, 0.04, 0.07) * sky;
     fogd = t;
   } else {
     col = vec3(0.02, 0.09, 0.14);
@@ -269,34 +285,36 @@ void main(){
       vec2 surfP = (ro + rd * ts).xz;
       float rip = caust(surfP * 0.8, uTime * 0.6);
       vec3 sky = mix(vec3(0.55, 0.85, 0.92), vec3(0.10, 0.42, 0.62), clamp(rd.y * 1.6, 0.0, 1.0));
-      float tr = 1.0 - exp(-ts * 0.035);
-      col = mix(col, sky * (0.55 + 0.55 * rip), tr);
+      float tr = 1.0 - exp(-ts * 0.10);
+      col = mix(col, sky * (0.90 + 0.50 * rip), tr);
       fogd = ts;
     }
   }
 
   /* volumetric god rays: coarse march, surface caustic mask as occluder */
   float rays = 0.0;
-  for(int i = 0; i < 10; i++){
-    float tv = (float(i) + 0.5) * 3.1;
-    if(tv > 36.0) break;
+  for(int i = 0; i < 14; i++){
+    float tv = (float(i) + 0.5) * 2.3;
+    if(tv > 32.0) break;
     vec3 sp = ro + rd * tv;
     float k = (SURF - sp.y) / SUNDIR.y;
     vec2 su = sp.xz + SUNDIR.xz * k;
-    float m = caust(su * 0.5 + vec2(uTime * 0.9, uTime * 0.4), uTime * 0.8);
-    rays += pow(m, 1.6) * exp(-tv * 0.052) * (1.0 - smoothstep(4.0, 34.0, abs(sp.y - SURF * 0.5)));
+    float m = shaft(su + vec2(uTime * 0.25, uTime * 0.12), uTime * 0.5);
+    rays += pow(m, 1.5) * exp(-tv * 0.040) * (1.0 - smoothstep(4.0, 32.0, abs(sp.y - SURF * 0.55)));
   }
-  rays *= 0.16 * (0.5 + 0.5 * max(rd.y, 0.0)) * (0.5 + 0.7 * max(dot(rd, SUNDIR), 0.0));
-  col += rays * vec3(0.55, 0.95, 0.95);
+  rays *= 0.38 * (0.40 + 0.80 * max(rd.y, 0.0)) * (0.30 + 0.90 * max(dot(rd, SUNDIR), 0.0));
 
-  /* water column: brighter near the surface, per-channel absorption with distance */
-  col = mix(col, vec3(0.06, 0.30, 0.42), 1.0 - exp(-fogd * FOGK * 0.55));
-  col *= exp(SIGMA * fogd);                       // sun spectrum drains red first
+  /* water column: surface light attenuates per channel (red first), then the
+     medium's teal in-scatter washes the distance; shafts are in-scatter too,
+     so they are added after the fog — the fog color is light, not transmitted. */
+  col *= exp(-SIGMA * fogd);
+  col = mix(col, vec3(0.02, 0.10, 0.18), 1.0 - exp(-fogd * 0.016));
+  col += rays * vec3(0.30, 0.60, 0.56);
   float surfGlow = smoothstep(SURF * 0.35, SURF, ro.y + max(rd.y, 0.0) * fogd * 0.5);
-  col += surfGlow * vec3(0.05, 0.14, 0.18);
+  col += surfGlow * vec3(0.04, 0.11, 0.14);
 
   float fogAlpha = 1.0 - exp(-fogd * FOGK);
-  col = 1.0 - exp(-col * 1.35);
+  col = 1.0 - exp(-col * 1.5);
   vec2 vg = vUv * 2.0 - 1.0;
   col *= 1.0 - 0.22 * dot(vg, vg);
   fragColor = vec4(pow(col, vec3(1.0 / 2.2)), fogAlpha);
@@ -330,7 +348,7 @@ void main(){
   vec3 rel = wp - uCamPos;
   float z = dot(rel, uCamBasis[2]);
   if(z < 0.15){ gl_Position = vec4(4.0, 4.0, 1.0, 1.0); vUv = q; vPos = rel; vKind = B.z; vPhase = B.y; return; }
-  vec2 nd = vec2(dot(rel, R) / z, dot(rel, U) / z) / uAspect;
+  vec2 nd = vec2(dot(rel, R) * 1.55 / (z * uAspect), dot(rel, U) * 1.55 / z);
   gl_Position = vec4(nd.x, nd.y, clamp(z / 100.0, 0.0, 0.999), 1.0);
   vUv = q; vPos = rel; vKind = B.z; vPhase = B.y;
 }`;
@@ -357,7 +375,7 @@ void main(){
   float sceneFog = texture(uScene, sc).a;
   float d = length(vPos);
   float myFog = 1.0 - exp(-d * 0.030);
-  if(myFog > sceneFog + 0.03) discard;
+  if(myFog > sceneFog + 0.06) discard;
 
   float wig = sin(vUv.x * 3.4 + vPhase + uTime * 9.0) * 0.20;
   float xb = vUv.x + wig * max(-vUv.x + 0.3, 0.0) * 1.6;
@@ -381,8 +399,9 @@ void main(){
 
   float sun = 0.55 + 0.45 * (0.5 + 0.5 * (-yb));
   c *= sun * (0.7 + 0.5 * caustFish(vPos.xz * 0.4, uTime));
-  c = mix(vec3(0.06, 0.30, 0.42), c, exp(-d * 0.030) * exp(vec3(0.052, 0.021, 0.0105) * d));
-  c = 1.0 - exp(-c * 1.35);
+  c *= exp(-d * vec3(0.022, 0.014, 0.008));
+  c = mix(vec3(0.02, 0.10, 0.18), c, exp(-d * 0.016));
+  c = 1.0 - exp(-c * 1.5);
   fragColor = vec4(pow(c, vec3(1.0 / 2.2)), a);
 }`;
 
@@ -466,7 +485,7 @@ const wrapL = x => ((x % WORLD_L) + WORLD_L) % WORLD_L;
 function census(){
   const out = [];
   for(let ix = 0; ix < 4; ix++) for(let iz = 0; iz < 4; iz++){
-    for(let k = 0; k < 2; k++){
+    for(let k = 0; k < 5; k++){
       const hk = h21js(ix * 13.7 + k * 7.3, iz * 13.7 + 2.9);
       out.push({ kind: Math.floor(hk * 4) });
     }
@@ -507,11 +526,11 @@ addEventListener('pointerup', e => {
 function camState(t){
   const bx = wrapL(DRIFT * t);
   const bz = Math.sin(t * 0.07) * 6;
-  const by = 12 + Math.sin(t * 0.13) * 2.2 + Math.sin(t * 0.29) * 0.7;
+  const by = 11.0 + Math.sin(t * 0.13) * 1.4 + Math.sin(t * 0.29) * 0.5;
   const idle = performance.now() - cam.touched > 2500;
   if(idle){ cam.tyaw *= 0.96; cam.tpitch *= 0.96; }
-  cam.yaw += (cam.tyaw - cam.yaw) * 0.06;
-  cam.pitch += (cam.tpitch - cam.pitch) * 0.06;
+  cam.yaw += (cam.tyaw - cam.yaw) * 0.12;
+  cam.pitch += (cam.tpitch - cam.pitch) * 0.12;
   const yaw = cam.yaw, pitch = clamp(cam.pitch, -0.5, 0.55);
   const fwd = [Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw)];
   const up0 = [0, 1, 0];
@@ -524,18 +543,18 @@ const norm = a => { const m = Math.hypot(...a) || 1; return a.map(x => x / m); }
 
 /* ---------------- fish: boids in the periodic reef volume ---------------- */
 
-const SEPR = 2.6, ALGN = 0.06, COH = 0.012, CRUISE = 1.25;
+const SEPR = 3.1, ALGN = 0.06, COH = 0.008, CRUISE = 1.55;
 const schools = LITE ? 2 : 3;
 const fish = [];
 for(let s = 0; s < schools; s++){
   const n = Math.floor(FISH_MAX / schools);
-  const cx = RND() * WORLD_L * 0.8 + 10, cz = (RND() - 0.5) * 26, cy = 8 + RND() * 8;
-  const dir = RND() * Math.PI * 2;
+  const cx = wrapL(18 + s * 16 + RND() * 12), cz = (RND() - 0.5) * 24, cy = 7 + RND() * 6;
+  const dir = (RND() - 0.5) * 0.8;
   const species = s % 4;
   for(let i = 0; i < n; i++){
     const heading = dir + (RND() - 0.5) * 0.6;
     fish.push({
-      x: wrapL(cx + (RND() - 0.5) * 9), y: clamp(cy + (RND() - 0.5) * 4, 5, SURF - 4), z: cz + (RND() - 0.5) * 9,
+      x: wrapL(cx + (RND() - 0.5) * 14), y: clamp(cy + (RND() - 0.5) * 5, 5, SURF - 4), z: cz + (RND() - 0.5) * 14,
       vx: Math.cos(heading) * CRUISE, vz: Math.sin(heading) * CRUISE, vy: 0,
       species: (species + (RND() < 0.25 ? 1 : 0)) % 4,
       size: 0.5 + RND() * 0.75 + (s === 0 ? 0.35 : 0),
