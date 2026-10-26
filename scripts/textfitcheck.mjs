@@ -244,9 +244,13 @@ async function auditView(pages) {
     return paged
 }
 
+// CI runners (ubuntu): sandbox off + bigger shm, or Chromium dies on startup
+// before the CDP port opens (same args as launch() in lib/harness.mjs).
+const ciArgs = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []
 const chrome = spawn(CHROME, [
     '--headless=new', '--remote-debugging-port=9391',
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
+    ...ciArgs,
     '--user-data-dir=' + PROFILE, 'about:blank',
 ], { stdio: 'ignore' })
 const cleanup = guardChrome(chrome, PROFILE)
