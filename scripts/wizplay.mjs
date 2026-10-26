@@ -223,8 +223,7 @@ else {
 {
     await page.keyboard.press('Shift+Slash')
     await wait(300)
-    const paused = await page.evaluate(() => !!document.querySelector('h2, [class*=pause], [class*=PAUSE]'))
-    r.check('? opens the pause overlay', paused)
+    r.check('? opens the pause overlay', (await page.locator('text=RESUME GAME').count()) > 0)
     await page.keyboard.press('Shift+Slash')
     await wait(200)
     const back = await probe()
