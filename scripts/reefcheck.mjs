@@ -18,6 +18,9 @@
 //   5. SPEED  — frame cost (GPU fence busy, falling back to rAF delivery when
 //               the compositor submits late) under budget; software-GL
 //               calibration decides the bar (CI Chrome is software-rendered).
+//   #1093 polish gates — coral bump relief + albedo variety, narrow ray cores
+//     (sunward mid-band luma), graded horizon (no dark row-dip), per-species
+//     silhouettes, loose spawn, self-swaying drift camera, whale/LFO ambience.
 //
 // Usage: node scripts/reefcheck.mjs [--file <path>] [--shots <dir>] [--json]
 // Proven-fail mutant: zero the caustic field (caust() -> return 0.0) -> the
@@ -124,6 +127,19 @@ async function main() {
     /SEPR/.test(src) && /ALGN/.test(src) && /COH/.test(src) && /fishOrder/.test(src))
   ok('fish vary by species and wheel around a drifting heading',
     /species/.test(src) && /const wheel =|wheel \+=/.test(src))
+  ok('#1093 coral surface relief: normal-bump from a polyp noise field',
+    /g -= n \* dot\(g, n\)/.test(src) && /n = normalize\(n - g/.test(src) && /vn2\(p \* he\)/.test(src))
+  ok('#1093 coral albedo varies (relief mottling + per-cell tint, not flat bands)',
+    /relief \* [45]/.test(src) && /vn2\(floor\(p \* 0\.(55|8)\)\)/.test(src))
+  ok('#1093 god rays: narrow cores, sunward falloff curves (no mid-frame wash)',
+    /pow\(m, 2\.[0-9]\)/.test(src) && /pow\(max\(dot\(rd, SUNDIR\), 0\.0\), [12]\.[0-9]\)/.test(src))
+  ok('#1093 horizon has a graded haze ramp toward the surface line',
+    /smoothstep\(-0\.30?, 0\.03, rd\.y\)/.test(src))
+  ok('#1093 fish silhouettes per species (shape specs reach the shader)',
+    /FISH_SPEC\[int\(vKind\)\]/.test(src) && /sqrt\(\(xb \* xb\) \/ sp\.x \+ \(yb \* yb\) \/ sp\.y\)/.test(src))
+  ok('#1093 ambience variety: LFO-modulated bed + distant whale calls + varied bubbles',
+    /function whale\(/.test(src) && /lfo/.test(src) && /glide = 1\.7 \+ Math\.random/.test(src) && /whales/.test(src))
+  ok('#1093 drift camera sways toward the schools', /function swayOf\(t\)/.test(src) && /cam\.yaw \+ swayOf\(t\)/.test(src))
   ok('adaptive quality ladder (fence busy -> steps -> pixels)',
     /clientWaitSync/.test(src) && /dropSteps/.test(src) && /qCap/.test(src))
   const hudLine = (src.match(/<div id="hud">(.*?)<\/div>/) || [, ''])[1]
@@ -240,12 +256,47 @@ async function main() {
       }
       ok('god rays shimmer between frames', rayShim / rn > 0.4, `mean|Δ|=${(rayShim / rn).toFixed(2)} in ray band`)
 
+      let worstDip = 0, dipRow = -1
+      const rows = []
+      for (let y = Math.round(H * 0.20); y < Math.round(H * 0.62); y++) {
+        let s = 0
+        for (let x = Math.round(W * 0.2); x < Math.round(W * 0.8); x += 2) s += luma(px(img, x, y))
+        rows.push(s / Math.ceil((W * 0.6) / 2))
+      }
+      for (let i = 3; i < rows.length - 3; i++) {
+        const dip = Math.min(rows[i - 3], rows[i + 3]) - rows[i]
+        if (dip > worstDip) { worstDip = dip; dipRow = i }
+      }
+      ok('horizon grades into haze — no hard dark strip', worstDip < 5.0, `worst row dip=${worstDip.toFixed(1)} luma at band row ${dipRow}`)
+
+      await page.evaluate(() => window.__reefTest.setPose({ look: 47, y: 40 }))
+      await page.waitForTimeout(1200)
+      const imgS = decodePng(await page.screenshot())
+      const sunBand = meanRGB(imgS, Math.round(W * 0.2), Math.round(H * 0.38), Math.round(W * 0.8), Math.round(H * 0.56))
+      await page.evaluate(() => window.__reefTest.setPose({ look: 227, y: 40 }))
+      await page.waitForTimeout(1200)
+      const imgA2 = decodePng(await page.screenshot())
+      const awayBand = meanRGB(imgA2, Math.round(W * 0.2), Math.round(H * 0.38), Math.round(W * 0.8), Math.round(H * 0.56))
+      ok('looking sunward does not wash the mid frame (rays stay narrower than the water)',
+        luma(sunBand) < luma(awayBand) + 16 && luma(sunBand) < 120,
+        `sunward=${luma(sunBand).toFixed(0)} away=${luma(awayBand).toFixed(0)}`)
       await page.evaluate(() => window.__reefTest.setPose({ look: 0, y: 0 }))
-      await page.waitForTimeout(4500)
-      const yA = await page.evaluate(() => window.__reefTest.pose().y)
-      await page.waitForTimeout(4000)
-      const yB = await page.evaluate(() => window.__reefTest.pose().y)
-      ok('idle camera bobs vertically without input', Math.abs(yB - yA) > 0.3, `y ${yA.toFixed(1)} -> ${yB.toFixed(1)}`)
+
+      const shapes = await page.evaluate(() => window.__reefTest.fishShapes())
+      ok('fish silhouettes vary by species (not one arrow shape)',
+        shapes.distinct >= 4 && shapes.total >= 4, JSON.stringify(shapes))
+      const spread = await page.evaluate(() => window.__reefTest.spawnSpread())
+      ok('school spawns loose, not a clump', spread.xz > 7, `spawn xz spread=${spread.xz}`)
+      const lookA = await page.evaluate(() => window.__reefTest.pose().look)
+      await page.waitForTimeout(6000)
+      const lookB = await page.evaluate(() => window.__reefTest.pose().look)
+      ok('camera curves sideways past the reef on its own', Math.abs(lookB - lookA) > 2.0, `look ${lookA.toFixed(1)} -> ${lookB.toFixed(1)}`)
+
+      await page.evaluate(() => window.__reefTest.setPose({ look: 0, y: 0 }))
+      const ys = []
+      for (let i = 0; i < 16; i++) { ys.push(await page.evaluate(() => window.__reefTest.pose().y)); await page.waitForTimeout(500) }
+      const bobAmp = Math.max(...ys) - Math.min(...ys)
+      ok('idle camera bobs vertically without input', bobAmp > 0.3, `bob range ${bobAmp.toFixed(1)} over 8s`)
       await page.evaluate(() => window.__reefTest.setPose({ look: 260, y: 40 }))
 
       await page.waitForTimeout(1800)

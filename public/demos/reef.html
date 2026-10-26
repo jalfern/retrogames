@@ -244,6 +244,15 @@ void main(){
   if(hit > 0.5){
     vec3 p = ro + rd * t;
     vec3 n = calcNormal(p);
+    float relief = 0.0;
+    if(mat > 1.5 && t < 26.0){                 // polyp/furrow relief on living structures
+      const float he = 7.0;
+      float h0 = vn2(p * he);
+      vec3 g = vec3(vn2((p + vec3(0.03, 0.0, 0.0)) * he), vn2((p + vec3(0.0, 0.03, 0.0)) * he), vn2((p + vec3(0.0, 0.0, 0.03)) * he)) - h0;
+      g -= n * dot(g, n);
+      n = normalize(n - g * 2.6);
+      relief = h0;
+    }
     float sun = max(dot(n, SUNDIR), 0.0);
     float sky = 0.5 + 0.5 * n.y;
     float caustM = 1.0;
@@ -259,19 +268,22 @@ void main(){
       if(n.y > 0.55) col += vec3(0.03, 0.06, 0.02) * vn2P(p.xz * 0.22, 16.0);  // algae patches
     } else if(mat < 2.5){
       col = vec3(1.00, 0.18, 0.30) * light;                       // warm coral pink
-      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col *= 0.78 + 0.22 * sin(p.y * 14.0 + relief * 5.0 + mat);  // polyp bands + relief mottling
+      col *= mix(vec3(1.0), vec3(0.90, 0.74, 0.84), vn2(floor(p * 0.55)) * 0.7);
       col += vec3(0.10, 0.03, 0.02) * smoothstep(4.0, 8.0, p.y);  // glowing tips
     } else if(mat < 3.5){
       col = vec3(1.00, 0.38, 0.08) * light;                       // coral orange
-      col *= 0.85 + 0.15 * sin(p.y * 12.0 + mat);                  // polyp bands
+      col *= 0.78 + 0.22 * sin(p.y * 14.0 + relief * 5.0 + mat); // polyp bands + relief mottling
+      col *= mix(vec3(1.0), vec3(0.88, 0.72, 0.55), vn2(floor(p * 0.55)) * 0.7);
       col += vec3(0.10, 0.05, 0.01) * smoothstep(4.0, 8.0, p.y);  // glowing tips
     } else if(mat < 4.5){
       col = vec3(0.70, 0.20, 0.72) * light;                       // fan purple
-      float ribs = 0.8 + 0.2 * sin(p.y * 9.0);
+      float ribs = 0.78 + 0.22 * sin(p.y * 9.0 + relief * 3.0);
       col *= ribs;
     } else if(mat < 5.5){
       col = vec3(0.88, 0.70, 0.20) * light;                       // sponge yellow
-      col *= 0.86 + 0.14 * sin(p.y * 11.0);                       // polyp bands
+      col *= 0.80 + 0.20 * sin(p.y * 11.0 + relief * 4.0);        // polyp bands
+      col *= mix(vec3(1.0), vec3(0.82, 0.78, 0.60), vn2(floor(p * 0.8)) * 0.6);
     } else {
       col = vec3(0.42, 0.40, 0.38) * light;                       // boulder
       col = mix(col, vec3(0.30, 0.45, 0.25), smoothstep(0.55, 0.95, n.y) * vn2P(p.xz * 0.4, 32.0));
@@ -279,7 +291,7 @@ void main(){
     col += vec3(0.015, 0.04, 0.07) * sky;
     fogd = t;
   } else {
-    col = vec3(0.02, 0.09, 0.14);
+    col = mix(vec3(0.02, 0.08, 0.13), vec3(0.05, 0.14, 0.20), smoothstep(-0.30, 0.03, rd.y));
     if(rd.y > 0.02){                    // looking up through the surface
       float ts = (SURF - ro.y) / rd.y;
       vec2 surfP = (ro + rd * ts).xz;
@@ -300,9 +312,9 @@ void main(){
     float k = (SURF - sp.y) / SUNDIR.y;
     vec2 su = sp.xz + SUNDIR.xz * k;
     float m = shaft(su + vec2(uTime * 0.25, uTime * 0.12), uTime * 0.5);
-    rays += pow(m, 1.5) * exp(-tv * 0.040) * (1.0 - smoothstep(4.0, 32.0, abs(sp.y - SURF * 0.55)));
+    rays += pow(m, 2.3) * exp(-tv * 0.040) * (1.0 - smoothstep(4.0, 32.0, abs(sp.y - SURF * 0.55)));
   }
-  rays *= 0.38 * (0.40 + 0.80 * max(rd.y, 0.0)) * (0.30 + 0.90 * max(dot(rd, SUNDIR), 0.0));
+  rays *= 0.30 * (0.32 + 0.68 * max(rd.y, 0.0)) * (0.14 + 0.86 * pow(max(dot(rd, SUNDIR), 0.0), 1.8));
 
   /* water column: surface light attenuates per channel (red first), then the
      medium's teal in-scatter washes the distance; shafts are in-scatter too,
@@ -353,6 +365,15 @@ void main(){
   vUv = q; vPos = rel; vKind = B.z; vPhase = B.y;
 }`;
 
+const FISH_SPECS = [
+  { len: 0.44, hgt: 0.100, tail: 1.00, dorf: 1.00 },   // standard reef fish
+  { len: 0.38, hgt: 0.135, tail: 0.80, dorf: 1.70 },   // deep-bodied, tall dorsal
+  { len: 0.50, hgt: 0.072, tail: 1.40, dorf: 0.45 },   // slender darter, long tail
+  { len: 0.35, hgt: 0.120, tail: 0.65, dorf: 1.20 },   // short and rounded
+];
+const SPEC_GLSL = 'const vec4 FISH_SPEC[4] = vec4[4](' +
+  FISH_SPECS.map(s => `vec4(${s.len.toFixed(3)}, ${s.hgt.toFixed(3)}, ${s.tail.toFixed(3)}, ${s.dorf.toFixed(3)})`).join(', ') + ');';
+
 const FS_FISH = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -363,6 +384,7 @@ uniform sampler2D uScene;
 uniform vec2 uRes;
 uniform float uTime;
 out vec4 fragColor;
+${SPEC_GLSL}
 
 float caustFish(vec2 p, float t){
   float v = sin(p.x * 1.9 + t) + sin(p.y * 2.3 - t * 0.9) + sin((p.x + p.y) * 1.7 + t * 0.7);
@@ -381,9 +403,10 @@ void main(){
   float xb = vUv.x + wig * max(-vUv.x + 0.3, 0.0) * 1.6;
   float yb = vUv.y + wig * 0.35;
 
-  float body = 1.0 - smoothstep(0.86, 1.0, sqrt((xb * xb) / 0.44 + (yb * yb) / 0.10));
-  float tail = (xb < -0.42) ? 1.0 - smoothstep(0.10, 0.42, abs(yb) - (-xb - 0.42) * 0.75) : 0.0;
-  float dorsal = smoothstep(0.8, 1.0, 1.0 - (abs(xb - 0.05) / 0.5)) * smoothstep(0.0, 0.28, 0.24 - yb);
+  vec4 sp = FISH_SPEC[int(vKind)];
+  float body = 1.0 - smoothstep(0.86, 1.0, sqrt((xb * xb) / sp.x + (yb * yb) / sp.y));
+  float tail = (xb < -0.42) ? 1.0 - smoothstep(0.10, 0.42, abs(yb) - (-xb - 0.42) * 0.75 * sp.z) : 0.0;
+  float dorsal = smoothstep(0.8, 1.0, 1.0 - (abs(xb - 0.05) / 0.5)) * smoothstep(0.0, 0.28, 0.22 * sp.w - yb);
   float a = max(max(body, tail * 0.9), dorsal * 0.8);
   if(a < 0.02) discard;
 
@@ -523,6 +546,8 @@ addEventListener('pointerup', e => {
   drag = null; downPt = null;
 });
 
+function swayOf(t){ return Math.sin(t * 0.05) * 0.20 + 0.14; }
+
 function camState(t){
   const bx = wrapL(DRIFT * t);
   const bz = Math.sin(t * 0.07) * 6;
@@ -531,7 +556,7 @@ function camState(t){
   if(idle){ cam.tyaw *= 0.96; cam.tpitch *= 0.96; }
   cam.yaw += (cam.tyaw - cam.yaw) * 0.12;
   cam.pitch += (cam.tpitch - cam.pitch) * 0.12;
-  const yaw = cam.yaw, pitch = clamp(cam.pitch, -0.5, 0.55);
+  const yaw = cam.yaw + swayOf(t), pitch = clamp(cam.pitch, -0.5, 0.55);
   const fwd = [Math.cos(pitch) * Math.cos(yaw), Math.sin(pitch), Math.cos(pitch) * Math.sin(yaw)];
   const up0 = [0, 1, 0];
   const right = norm(cross(up0, fwd));
@@ -553,8 +578,9 @@ for(let s = 0; s < schools; s++){
   const species = s % 4;
   for(let i = 0; i < n; i++){
     const heading = dir + (RND() - 0.5) * 0.6;
+    const fx = wrapL(cx + (RND() - 0.5) * 26), fy = clamp(cy + (RND() - 0.5) * 9, 5, SURF - 4), fz = cz + (RND() - 0.5) * 26;
     fish.push({
-      x: wrapL(cx + (RND() - 0.5) * 14), y: clamp(cy + (RND() - 0.5) * 5, 5, SURF - 4), z: cz + (RND() - 0.5) * 14,
+      x: fx, y: fy, z: fz, sx: fx, sy: fy, sz: fz,
       vx: Math.cos(heading) * CRUISE, vz: Math.sin(heading) * CRUISE, vy: 0,
       species: (species + (RND() < 0.25 ? 1 : 0)) % 4,
       size: 0.5 + RND() * 0.75 + (s === 0 ? 0.35 : 0),
@@ -616,7 +642,7 @@ function uploadFish(camPos){
 /* ---------------- audio: ambience, shrimp crackles, bubbles ---------------- */
 
 let AC = null, master = null, running = false, noiseBuf = null;
-let crackleN = 0, bubblesN = 0, nextCrackle = 0;
+let crackleN = 0, bubblesN = 0, whalesN = 0, nextCrackle = 0, nextWhale = 0;
 const audiohint = document.getElementById('audiohint');
 
 function unlockAudio(){
@@ -630,6 +656,7 @@ function unlockAudio(){
   for(let i = 0; i < len; i++){ last = (last + (Math.random() * 2 - 1) * 0.04) / 1.02; d[i] = last * 3; }
   startAmbience();
   running = true;
+  nextWhale = performance.now() + 5000 + Math.random() * 6000;
   audiohint.textContent = 'ambience on';
 }
 function startAmbience(){
@@ -638,6 +665,36 @@ function startAmbience(){
   const g = AC.createGain(); g.gain.value = 0.32;
   src.connect(lp).connect(g).connect(master);
   src.start();
+  const lfo = AC.createOscillator(); lfo.frequency.value = 0.05;
+  const lfoG = AC.createGain(); lfoG.gain.value = 130;
+  lfo.connect(lfoG); lfoG.connect(lp.frequency);
+  lfo.start();
+  const hiss = AC.createBufferSource(); hiss.buffer = noiseBuf; hiss.loop = true; hiss.playbackRate.value = 2.3;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1400;
+  const hg = AC.createGain(); hg.gain.value = 0.010;
+  hiss.connect(hp).connect(hg).connect(master);
+  hiss.start();
+}
+function whale(){
+  if(!AC || !running) return;
+  whalesN++;
+  const t0 = AC.currentTime;
+  const o = AC.createOscillator(); o.type = 'sine';
+  const f = 85 + Math.random() * 55;
+  o.frequency.setValueAtTime(f, t0);
+  o.frequency.exponentialRampToValueAtTime(f * 1.7, t0 + 2.2);
+  o.frequency.exponentialRampToValueAtTime(f * 0.8, t0 + 4.6);
+  const vib = AC.createOscillator(); vib.frequency.value = 5.5;
+  const vg = AC.createGain(); vg.gain.value = 2.5;
+  vib.connect(vg); vg.connect(o.frequency);
+  vib.start(t0); vib.stop(t0 + 4.8);
+  const lpw = AC.createBiquadFilter(); lpw.type = 'lowpass'; lpw.frequency.value = 340;
+  const g = AC.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(0.045, t0 + 1.4);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 4.8);
+  o.connect(lpw).connect(g).connect(master);
+  o.start(t0); o.stop(t0 + 5);
 }
 function crackle(){
   if(!AC || !running) return;
@@ -658,15 +715,17 @@ function bubble(){
   bubblesN++;
   const t0 = AC.currentTime;
   const o = AC.createOscillator(); o.type = 'sine';
-  const f0 = 380 + Math.random() * 320;
+  const f0 = 260 + Math.random() * 560;
+  const glide = 1.7 + Math.random() * 1.2;
+  const dur = 0.09 + Math.random() * 0.08;
   o.frequency.setValueAtTime(f0, t0);
-  o.frequency.exponentialRampToValueAtTime(f0 * 2.4, t0 + 0.09);
+  o.frequency.exponentialRampToValueAtTime(f0 * glide, t0 + dur);
   const g = AC.createGain();
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(0.07, t0 + 0.015);
-  g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+  g.gain.exponentialRampToValueAtTime(0.045 + Math.random() * 0.05, t0 + 0.015);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur + 0.03);
   o.connect(g).connect(master);
-  o.start(t0); o.stop(t0 + 0.14);
+  o.start(t0); o.stop(t0 + dur + 0.05);
 }
 function tapAmbience(){
   unlockAudio();
@@ -708,6 +767,7 @@ function frame(){
   resize();
   stepFish(dt, t);
   if(now > nextCrackle){ crackle(); nextCrackle = now + 500 + Math.random() * 2200; }
+  if(now > nextWhale){ whale(); nextWhale = now + 16000 + Math.random() * 14000; }
 
   const cs = camState(t);
 
@@ -781,15 +841,28 @@ window.__reefTest = {
   get frames(){ return frames; },
   mode(){ return { canvas: 'webgl2', gl2: true, lite: LITE, retina: RETINA }; },
   renderScale(){ return { scale: +effScale().toFixed(3), base: RENDER_SCALE, cap: +qCap.toFixed(2), lite: LITE, retina: RETINA, steps: stepsFor(), w: W, h: H, css: canvas.clientWidth, dpr: window.devicePixelRatio || 1 }; },
-  pose(){ const cs = camState((performance.now() - t0) / 1000); return { look: +(cam.yaw * 180 / Math.PI).toFixed(1), y: +cs.by.toFixed(1), x: +cs.pos[0].toFixed(1) }; },
+  pose(){ const t = (performance.now() - t0) / 1000; const cs = camState(t); return { look: +((cam.yaw + swayOf(t)) * 180 / Math.PI).toFixed(1), y: +cs.by.toFixed(1), x: +cs.pos[0].toFixed(1) }; },
   setPose(p){
     if(p.look !== undefined){ cam.tyaw = p.look * Math.PI / 180; cam.yaw = cam.tyaw; }
     if(p.y !== undefined){ cam.tpitch = clamp(p.y * Math.PI / 180 * 0.01, -0.45, 0.5); cam.pitch = cam.tpitch; }
     cam.touched = performance.now() + 9999;
   },
   fish(){ return { n: fish.length, order: +fishOrder().toFixed(3), species: new Set(fish.map(f => f.species)).size }; },
-  audio(){ return { crackles: crackleN, bubbles: bubblesN }; },
+  audio(){ return { crackles: crackleN, bubbles: bubblesN, whales: whalesN }; },
   particles(){ return { snow: 0, bubbles: bubblesN }; },
+  fishShapes(){ return { distinct: new Set(FISH_SPECS.map(s => `${s.len},${s.hgt},${s.tail},${s.dorf}`)).size, total: FISH_SPECS.length }; },
+  spawnSpread(){
+    let mx = 0, mz = 0;
+    for(const f of fish){ mx += f.sx; mz += f.sz; }
+    mx /= fish.length; mz /= fish.length;
+    let vx = 0, vz = 0;
+    for(const f of fish){
+      let dx = f.sx - mx; dx = wrapL(dx + WORLD_L / 2) - WORLD_L / 2;
+      vx += dx * dx; vz += (f.sz - mz) * (f.sz - mz);
+    }
+    const n = Math.max(1, fish.length - 1);
+    return { xz: +Math.sqrt((vx + vz) / n).toFixed(2) };
+  },
   corals(){ return { n: STRUCTURES.length, kinds: new Set(STRUCTURES.map(s => s.kind)).size }; },
   perf(){ return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN, busy: +busyEma.toFixed(1), work: +workEma.toFixed(1), steps: stepsFor(), cap: +qCap.toFixed(2) }; },
   resetPerf(){ perfAcc = 0; perfN = 0; perfMax = 0; },
@@ -798,7 +871,7 @@ window.__reefTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'CORAL REEF', accent: '#2ee6c8',
-  issues: [1050], span: '~3 h', shipped: '2026-10-25',
+  issues: [1050, 1093], span: '~3 h', shipped: '2026-10-25',
   assist: 'solo', note: '“Qwen picks how” — GPU rebuild of #902',
 };
 </script>
