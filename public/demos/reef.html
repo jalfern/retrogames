@@ -173,17 +173,17 @@ vec2 map(vec3 p){
   float yt = terrain(p.xz);
   float d = (p.y - yt) * 0.82;
   float mat = 1.0;
-  if(d < 10.0){
-    const float C = 32.0;
+  if(d < 7.0){
+    const float C = 16.0;
     vec2 c0 = floor(p.xz / C);
     for(int dj = 0; dj < 2; dj++){
       for(int di = 0; di < 2; di++){
         vec2 cellIdx = c0 + vec2(float(di), float(dj));
-        vec2 cell = mod(cellIdx, 4.0);
-        for(int k = 0; k < 5; k++){
+        vec2 cell = mod(cellIdx, 8.0);
+        for(int k = 0; k < 4; k++){
           float kf = float(k);
           float hk = h21(cell * 13.7 + vec2(kf * 7.3, 2.9));
-          vec2 ctrXZ = (cellIdx + vec2(0.15 + 0.7 * hk, 0.15 + 0.7 * h21(cell + kf * 3.1))) * C;
+          vec2 ctrXZ = (cellIdx + vec2(0.18 + 0.64 * hk, 0.18 + 0.64 * h21(cell + kf * 3.1))) * C;
           float y0 = terrain(ctrXZ);
           float hr = h21(cell * 5.1 + kf * 1.7);
           float kind = floor(hr * 4.0);
@@ -208,7 +208,7 @@ vec3 calcNormal(vec3 p){
 
 /* animated caustic web: squared sine interference, 2 octaves */
 float caust(vec2 p, float t){
-  vec2 q = p * 0.55;
+  vec2 q = p * 2.2;
   float v = sin(q.x * 1.9 + t * 1.35) + sin(q.y * 2.3 - t * 1.1) + sin((q.x + q.y) * 1.7 + t * 0.8);
   v = v / 3.0; v = clamp(v * 0.5 + 0.5, 0.0, 1.0);
   float w = sin(q.x * 3.7 - t * 2.1 + v * 3.0) + sin(q.y * 4.1 + t * 1.7 - v * 2.0);
@@ -250,9 +250,9 @@ void main(){
     if(sun > 0.01){
       float k = (SURF - p.y) / SUNDIR.y;
       vec2 sp = p.xz + SUNDIR.xz * k;
-      caustM = 0.62 + 0.38 * (0.35 + 0.65 * caust(sp, uTime));
+      caustM = 0.50 + 0.50 * (0.18 + 0.95 * caust(sp, uTime));
     }
-    vec3 light = (vec3(0.16, 0.24, 0.33) + vec3(1.15, 0.78, 0.46) * sun) * caustM;
+    vec3 light = (vec3(0.12, 0.19, 0.28) + vec3(1.20, 0.80, 0.44) * sun) * caustM;
     if(mat < 1.5){                      // sand
       float g = vn2P(p.xz * 0.5, 64.0) * 0.5 + vn2P(p.xz * 2.1, 256.0) * 0.5;
       col = mix(vec3(0.80, 0.60, 0.32), vec3(0.56, 0.44, 0.26), g) * light;
@@ -308,7 +308,7 @@ void main(){
      medium's teal in-scatter washes the distance; shafts are in-scatter too,
      so they are added after the fog — the fog color is light, not transmitted. */
   col *= exp(-SIGMA * fogd);
-  col = mix(col, vec3(0.02, 0.10, 0.18), 1.0 - exp(-fogd * 0.016));
+  col = mix(col, vec3(0.02, 0.10, 0.18), 1.0 - exp(-fogd * 0.013));
   col += rays * vec3(0.30, 0.60, 0.56);
   float surfGlow = smoothstep(SURF * 0.35, SURF, ro.y + max(rd.y, 0.0) * fogd * 0.5);
   col += surfGlow * vec3(0.04, 0.11, 0.14);
@@ -400,7 +400,7 @@ void main(){
   float sun = 0.55 + 0.45 * (0.5 + 0.5 * (-yb));
   c *= sun * (0.7 + 0.5 * caustFish(vPos.xz * 0.4, uTime));
   c *= exp(-d * vec3(0.022, 0.014, 0.008));
-  c = mix(vec3(0.02, 0.10, 0.18), c, exp(-d * 0.016));
+  c = mix(vec3(0.02, 0.10, 0.18), c, exp(-d * 0.013));
   c = 1.0 - exp(-c * 1.5);
   fragColor = vec4(pow(c, vec3(1.0 / 2.2)), a);
 }`;
@@ -445,7 +445,7 @@ gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 let sceneFbo = null;
 
 let W = 0, H = 0, qCap = 1;
-const STEPS_TOP = LITE ? 150 : 240;
+const STEPS_TOP = LITE ? 150 : 200;
 let dropSteps = 0;
 function effScale(){ return RENDER_SCALE * qCap; }
 function stepsFor(){ return Math.max(LITE ? 80 : 120, STEPS_TOP - dropSteps); }
@@ -481,11 +481,11 @@ const RND = mulberry32(SEED);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const wrapL = x => ((x % WORLD_L) + WORLD_L) % WORLD_L;
 
-/* replicate the shader grid: 4x4 cells x 2 slots, minus the continue-culls */
+/* replicate the shader grid: 4x4 cells x 4 slots, minus the continue-culls */
 function census(){
   const out = [];
-  for(let ix = 0; ix < 4; ix++) for(let iz = 0; iz < 4; iz++){
-    for(let k = 0; k < 5; k++){
+  for(let ix = 0; ix < 8; ix++) for(let iz = 0; iz < 8; iz++){
+    for(let k = 0; k < 4; k++){
       const hk = h21js(ix * 13.7 + k * 7.3, iz * 13.7 + 2.9);
       out.push({ kind: Math.floor(hk * 4) });
     }
@@ -682,7 +682,7 @@ audiohint.addEventListener('pointerdown', e => { e.stopPropagation(); unlockAudi
 const t0 = performance.now();
 let frames = 0, readyFlag = false;
 let perfAcc = 0, perfN = 0, perfMax = 0, lastPerfNow = t0;
-let busyEma = 0, workEma = 0;
+let busyEma = 0, workEma = 0, rafEma = 0;
 let prevFence = null, prevStamp = 0;
 let lastT = t0;
 let simT = 0;
@@ -695,10 +695,11 @@ function frame(){
   const t = (now - t0) / 1000;
 
   if(prevFence){
-    const st = gl.clientWaitSync(prevFence, 0, 0);
-    if(st === gl.ALREADY_SIGNALED || st === gl.CONDITION_SATISFIED){
-      const ms = now - prevStamp;
-      busyEma = busyEma ? busyEma * 0.9 + ms * 0.1 : ms;
+    const w0 = performance.now();
+    const st = gl.clientWaitSync(prevFence, 0, 1000000000);
+    const busy = performance.now() - w0;
+    if(st !== gl.WAIT_FAILED){
+      busyEma = busyEma ? busyEma * 0.85 + busy * 0.15 : busy;
       gl.deleteSync(prevFence);
       prevFence = null;
     }
@@ -750,7 +751,8 @@ function frame(){
     gl.disable(gl.BLEND);
   }
 
-  if(busyEma > 14){
+  const over = busyEma > 14 || (busyEma < 1 && rafEma > 30);
+  if(over){
     if(dropSteps < STEPS_TOP - (LITE ? 80 : 120)) dropSteps += 15;
     else if(qCap > 0.55){ qCap *= 0.82; resize(); }
     busyEma = 0;
@@ -763,6 +765,7 @@ function frame(){
   const frameMs = now - lastPerfNow;
   lastPerfNow = now;
   perfAcc += frameMs; perfN++; perfMax = Math.max(perfMax, frameMs);
+  rafEma = rafEma ? rafEma * 0.9 + frameMs * 0.1 : frameMs;
   const jsMs = performance.now() - now;
   workEma = workEma ? workEma * 0.9 + jsMs * 0.1 : jsMs;
   frames++;

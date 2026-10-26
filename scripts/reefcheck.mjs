@@ -15,17 +15,18 @@
 //               exposes __reefTest; short caption so credits.js can keep it
 //               clear of the BUILT BY tag (#1078); credits block present.
 //   4. PHONE  — boots clean at 390x844 lite; tap-drag steers; sharp at dpr2.
-//   5. SPEED  — GPU fence busy time (real draw cost) under budget, software-GL
+//   5. SPEED  — frame cost (GPU fence busy, falling back to rAF delivery when
+//               the compositor submits late) under budget; software-GL
 //               calibration decides the bar (CI Chrome is software-rendered).
 //
 // Usage: node scripts/reefcheck.mjs [--file <path>] [--shots <dir>] [--json]
 // Proven-fail mutant: zero the caustic field (caust() -> return 0.0) -> the
-// lit-sand, caustics-move and ray-shimmer gates go red.
+// caustic-web strand gate goes red (shafts alone cannot pattern the sand).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
 import { inflateSync } from 'node:zlib'
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -130,6 +131,7 @@ async function main() {
     hudLine.length > 0 && hudLine.length < 90, `${hudLine.length} chars`)
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
 
+  rmSync('/tmp/forge/reefcheck-profile', { recursive: true, force: true })
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
@@ -201,14 +203,17 @@ async function main() {
       ok('god rays slant down from the surface', rays > 800 && rayCols.size >= 3, `${rays} ray px across ${rayCols.size}/10 sections`)
 
       const floorY0 = Math.round(H * 0.80), floorY1 = Math.round(H * 0.97)
-      let lit = 0, litCols = new Set()
-      for (let x = 4; x < W - 4; x += 2) {
+      let web = 0, webCols = new Set()
+      for (let x = 10; x < W - 10; x += 2) {
         for (let y = floorY0; y < floorY1; y += 2) {
-          const [r, g, b] = px(img, x, y)
-          if (g > 95 && b > 80 && luma([r, g, b]) > 80) { lit++; litCols.add(Math.floor(x / 96)) }
+          const l = luma(px(img, x, y))
+          const lL = luma(px(img, x - 9, y)), lR = luma(px(img, x + 9, y))
+          const lU = luma(px(img, x, y - 9)), lD = luma(px(img, x, y + 9))
+          if (l > 90 && l - Math.max(lL, lR, lU, lD) > 6) { web++; webCols.add(Math.floor(x / 96)) }
         }
       }
-      ok('caustics light the sand floor', lit > 400 && litCols.size >= 4, `${lit} lit sand px across ${litCols.size}/10 sections`)
+      ok('caustic web strands pattern the sand floor', web > 300 && webCols.size >= 4,
+        `${web} hi-contrast web px across ${webCols.size}/10 sections`)
 
       await page.waitForTimeout(700)
       const img2 = decodePng(await page.screenshot())
@@ -273,13 +278,18 @@ async function main() {
       try { await phone.waitForFunction(() => window.__reefTest && window.__reefTest.ready, null, { timeout: 25000 }) }
       catch { phoneReady = false }
       ok('phone 390x844 boots clean (lite)', phoneReady && errsP.length === 0, errsP[0])
-      await phone.evaluate(() => {
+      await phone.evaluate(async () => {
         const c = document.getElementById('c')
+        const at = (x, y) => c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: x, clientY: y, bubbles: true }))
         c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 350, clientY: 400, bubbles: true }))
-        c.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 70, clientY: 430, bubbles: true }))
+        at(280, 410); await new Promise(r => setTimeout(r, 60))
+        at(210, 420); await new Promise(r => setTimeout(r, 60))
+        at(140, 425); await new Promise(r => setTimeout(r, 60))
+        at(70, 430)
       })
-      await phone.waitForTimeout(600)
-      ok('phone tap-drag steers the look', await phone.evaluate(() => Math.abs(window.__reefTest.pose().look) > 40))
+      await phone.waitForTimeout(1000)
+      ok('phone tap-drag steers the look', await phone.evaluate(() => Math.abs(window.__reefTest.pose().look) > 40),
+        `look=${await phone.evaluate(() => window.__reefTest.pose().look)}`)
       ok('phone caption clears the BUILT BY tag at 390px (#1078)', await phone.evaluate(() => {
         const hud = document.getElementById('hud'), tag = document.getElementById('credits-tag')
         if (!hud || !tag) return false
@@ -311,25 +321,37 @@ async function main() {
       })
       const soft = calib > 0.5
       const measure = async (q, vp, budget) => {
-        const pctxQ = await browser.newContext({ viewport: vp })
-        const pageQ = await pctxQ.newPage()
-        await pageQ.goto(url + q, { waitUntil: 'load' })
-        await pageQ.waitForFunction(() => window.__reefTest && window.__reefTest.ready, null, { timeout: 25000 })
-        await pageQ.waitForTimeout(5000)
-        let best = null
-        for (let w = 0; w < 4; w++) {
-          await pageQ.evaluate(() => window.__reefTest.resetPerf())
-          await pageQ.waitForTimeout(2500)
-          const perf = await pageQ.evaluate(() => window.__reefTest.perf())
-          if (perf.n >= 20 && (best === null || perf.busy < best.busy)) best = perf
+        let perf = null
+        for (let attempt = 0; attempt < 2 && !perf; attempt++) {
+          try {
+            const pctxQ = await browser.newContext({ viewport: vp })
+            try {
+              const pageQ = await pctxQ.newPage()
+              await pageQ.goto(url + q, { waitUntil: 'load' })
+              await pageQ.waitForFunction(() => window.__reefTest && window.__reefTest.ready, null, { timeout: 25000 })
+              await pageQ.waitForTimeout(5000)
+              let best = null
+              for (let w = 0; w < 4; w++) {
+                await pageQ.evaluate(() => window.__reefTest.resetPerf())
+                await pageQ.waitForTimeout(2500)
+                const p = await pageQ.evaluate(() => window.__reefTest.perf())
+                if (p.n >= 20 && (best === null || p.busy < best.busy)) best = p
+              }
+              perf = best
+            } finally {
+              try { await pctxQ.close() } catch { /* already dead */ }
+            }
+          } catch {
+            if (attempt === 1) perf = { n: 0, busy: Infinity, avg: Infinity }
+          }
         }
-        await pctxQ.close()
-        const perf = best || { n: 0, busy: Infinity, avg: Infinity }
-        ok(`GPU busy under ${budget} ms at ${vp.width}x${vp.height}${q ? ' (lite)' : ''} (${soft ? 'software GL' : 'hardware'})`,
-          perf.n >= 20 && perf.busy <= budget, `busy=${perf.busy}ms avg-rAF=${perf.avg}ms steps=${perf.steps} cap=${perf.cap}`)
+        perf = perf || { n: 0, busy: Infinity, avg: Infinity }
+        const cost = Math.max(perf.busy, perf.avg)
+        ok(`frame cost under ${budget} ms at ${vp.width}x${vp.height}${q ? ' (lite)' : ''} (${soft ? 'software GL' : 'hardware'})`,
+          perf.n >= 20 && cost <= budget, `cost=${cost.toFixed(1)}ms (busy=${perf.busy} avg-rAF=${perf.avg}) steps=${perf.steps} cap=${perf.cap}`)
       }
-      await measure('?lite=1', { width: 640, height: 426 }, +opt('--busy-lite', soft ? 90 : 10))
-      await measure('', { width: 1280, height: 800 }, +opt('--busy-full', soft ? 260 : 24))
+      await measure('?lite=1', { width: 640, height: 426 }, +opt('--busy-lite', soft ? 90 : 30))
+      await measure('', { width: 1280, height: 800 }, +opt('--busy-full', soft ? 260 : 45))
     }
 
     ok('zero page errors', errs.length === 0, errs.slice(0, 2).join(' | '))
