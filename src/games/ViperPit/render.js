@@ -198,6 +198,7 @@ export function poseFighter(rig, f, tSec) {
         const kick = /k($|_)/.test(key.replace('qcbf', 'hk')) || key === 'lk' || key === 'hk' || key === 'clk' || key === 'chk' || key === 'al'
         const throwish = mv.type === 'throw'
         const upper = key === 'dp' || key.startsWith('dp') || key === 'qcbf'
+        const counter = key === 'qcb' || key === 'qcb_S' || key === 'qcbx'
         const proj = !!mv.projectile
         q.lean = ph === 'hit' ? 0.22 : 0.08 * wind
         if (throwish) {
@@ -207,6 +208,11 @@ export function poseFighter(rig, f, tSec) {
             q.arms = [{ sh: -2.6 * wind, el: -0.15, z: 0.2 }, { sh: 0.4, el: -1.6, z: -0.4 }]
             q.hipY = -0.12 + 0.1 * wind
             q.legs = [{ hip: 0.25, kn: -0.4 }, { hip: -0.15, kn: -0.15 }]
+        } else if (counter) {
+            q.lean = -0.14 * wind
+            q.arms = [{ sh: -1.9 * wind, el: -0.3, z: 0.3 }, { sh: 0.5, el: -1.5, z: -0.35 }]
+            q.hipY = -0.1 + 0.06 * wind
+            q.legs = [{ hip: 0.15, kn: -0.3 }, { hip: -0.1, kn: -0.15 }]
         } else if (kick) {
             const lowK = key === 'clk' || key === 'chk'
             q.legs = [{ hip: -1.35 * wind + (lowK ? 0.5 : 0), kn: lowK ? -0.1 : -0.25 }, { hip: 0.12, kn: -0.25 }]

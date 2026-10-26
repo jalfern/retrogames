@@ -25,6 +25,12 @@ the #1096 options switched on.
   is clean and the victim is at/below `finishAt` (30) HP the round ends with a
   FINISH! banner + the fighter's named finisher over the top (stylized, no
   gore). CPU guards and attempts finishers through the same pad scripts.
+- **A qcb counter per fighter (#1106)**: `qcb` (↓←+P) — a fast down-back
+  counter with per-fighter frame data (NYX a quick blade, CINDER a close flame
+  burst, VESS a rising back-axle, RIV a heavy shoulder check, KRAX a headbutt).
+  The engine resolves `qcb` *after* `qcbf` so the finisher's `d,b` prefix isn't
+  stolen (its 2nd token, back, also can't be confused with qcf's forward), and
+  the CPU throws it at close range.
 - **Finisher cinematics (#1106)**: a finisher that ends the round plays out as
   a 3-beat sequence over the KO freeze — the loser is scripted through the
   signature beats (KRAX grab→strike→slam, VESS grab→flip→dry-land, NYX a triple
@@ -101,16 +107,16 @@ the #1096 options switched on.
 - P1: arrows · O or the GUARD button = block · J/Space/A punch-L · K punch-H ·
   U/B kick-L · I kick-H.
 - P2 (local 2P): WASD + F/G/V/B, H guards.
-- Motions: ↓→+P special (EX@50, super@100 same motion) · →↓↑+P uppercut
-  (launches) · ↓←↓→+P at FULL bar FINISHING MOVE · close →+heavy THROW.
+-   Motions: ↓→+P special (EX@50, super@100 same motion) · →↓↑+P uppercut
+  (launches) · ↓←+P qcb counter · ↓←↓→+P at FULL bar FINISHING MOVE · close →+heavy THROW.
 - 1 ladder · 2 local 2P · keys 3-7 quick-pick · Esc/? pause.
 - Online: `/retrogames/viper-pit?net=host` / `?net=join&room=CODE`.
 
 ## Verify
 
 - `npm run viperpitcheck` — the Node rules (guard vs back-walk, low-block,
-  throw-through-guard, uppercut launch, FINISH + healthy-foe finisher, qcf not
-  stolen, cancel combo, juggle rules, determinism, every ladder CPU completes
+    throw-through-guard, uppercut launch, FINISH + healthy-foe finisher, qcf/qcbf not stolen, qcb
+    counter fires, cancel combo, juggle rules, determinism, every ladder CPU completes
   a match, hit events carry `mv`) + the #1106 audio wiring (source-level
   call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
   the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
@@ -134,5 +140,5 @@ the #1096 options switched on.
 - No intro/outround dialogue lines; win/lose quotes are QA polish.
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
-- `qcb` still unused by any fighter; guard crush / stun meter not implemented.
+- `qcb` counter landed (#1106); guard crush / stun meter not implemented.
 - Net select: guest pick reaches the host only if sent before the host starts.
