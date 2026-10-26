@@ -28,13 +28,23 @@ the #1096 options switched on.
 - **Dark stages**: back alley at 2 a.m., the foundry, the last train — fog,
   procedural asphalt, chain-link, neon signs, silhouetted crowds with phone
   glow, hanging lamps with light cones, drifting embers.
+- **Sound (#1106)**: every stage runs its own ambient bed (alley crowd murmur
+  + rain drips, foundry machinery, subway rail hum + track clacks —
+  `MUSIC.viperAlley/viperFoundry/viperSubway`, started with the fight via the
+  stage's `bed` key, stopped on unmount). Swing sounds fire at move START via
+  the st:move transition (`hearSwings`): launchers whoosh, throws grunt. The
+  hit event now carries the move key (`mv`) so a throw's SLAM lands on impact
+  (grunt at startup, slam on hit). Each finisher has a per-fighter sting on
+  the `finish` event (NYX stitch, CINDER bonfire, VESS dry-land, RIV neon
+  zap, KRAX scrap clang). K.O. adds a low-passed crowd-surge swell.
 
 ## Where the code lives
 
 - `src/engine/fighting.js` — shared core + the #1096 options (`guardButton`,
   move-level `finisher`/`finishAt`, `qcbf` motion, projectile vy/grav for
   arcing kicks). Every new line is behind a flag or a data key the IRON RING
-  roster never sets.
+  roster never sets. Hit events carry the move key (`mv`, #1106 audio seam) —
+  an additive field; `matchHash` ignores events, IRON RING stays bit-identical.
 - `src/games/ViperPit/fighters.js` — 5 fighters (NYX assassin easy, CINDER
   zoner, VESS acrobat, RIV all-round, KRAX grappler insane); each: build/gear,
   palette, stats, specials on engine motion keys + a named `finish`.
@@ -69,13 +79,17 @@ the #1096 options switched on.
 
 ## Verify
 
-- `npm run viperpitcheck` — 26 Node rule gates (guard vs back-walk, low-block,
-  throw-through-guard, uppercut launch, FINISH + healthy-foe finisher, qcf not
-  stolen, cancel combo, determinism, every ladder CPU completes a match) +
-  headless Chrome drive (attract→select→fight, real keys reach the sim, GUARD
-  hold, K.O. flow, zero page errors).
+- `npm run viperpitcheck` — 62 gates: the Node rules (guard vs back-walk,
+  low-block, throw-through-guard, uppercut launch, FINISH + healthy-foe
+  finisher, qcf not stolen, cancel combo, juggle rules, determinism, every
+  ladder CPU completes a match, hit events carry `mv`) + the #1106 audio
+  wiring (source-level call-site gates + a stripped-whoosh/sting mutant
+  proving the gate bites) + headless Chrome drive (attract→select→fight,
+  real keys reach the sim, GUARD hold, K.O. flow, the stage bed running and
+  the KO crowd surge reaching the real audio graph, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
-  must let heavies smash through GUARD.
+  must let heavies smash through GUARD; lifting the juggle cap must let the
+  third aerial hit connect.
 - `CONTRACT_ONLY=viper-pit npm run contractcheck` — the #377 driving contract.
 - `npm run lint:viper` + the three repo gates (`lint:mario`, `lint:fps`,
   `lint:ai`) + `npm run build`.

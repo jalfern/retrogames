@@ -222,6 +222,22 @@ if (!MUT) {
     const t0 = m.timer
     for (let i = 0; i < 60; i++) e.step(m, [P(), P()])
     ok(m.timer === t0 - 60, 'clock ticks 1 per second')
+
+    // #1106 audio slice — the hit event must carry the move key so the cabinet
+    // can tell a throw slam / launcher hit from a plain punch
+    m = mk()
+    m.fighters[1].x = m.fighters[0].x + 1.2
+    e.step(m, [P({ hp: true }), P()])
+    for (let i = 0; i < 16; i++) e.step(m, [P(), P()])
+    const hpEv = m.events.find((x) => x.kind === 'hit')
+    ok(hpEv && hpEv.mv === 'hp', `hit event carries the move key (mv=${hpEv && hpEv.mv})`)
+    m = mk()
+    m.fighters[1].x = m.fighters[0].x + 1.2
+    e.step(m, [P({ right: true }), P()])
+    e.step(m, [P({ right: true, hp: true }), P()])
+    for (let i = 0; i < 24; i++) e.step(m, [P(), P()])
+    const throwEv = m.events.find((x) => x.kind === 'hit' && x.mv === 'throw')
+    ok(!!throwEv, 'throw hit event carries mv=throw (the slam seam)')
 }
 
 if (MUT) {
@@ -254,6 +270,36 @@ if (MUT) {
     unlinkSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
 
+// ---- #1106 audio wiring gate ---------------------------------------------------------
+// The SFX live inside a React component (not runnable in Node), so the gate is
+// source-level on the call sites, plus a mutant proving the gate bites — the
+// same pattern lemcheck/gauntletcheck use for audio.
+{
+    const fs = await import('node:fs')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const asrc = fs.readFileSync(path.join(HERE, '../src/utils/AudioController.js'), 'utf8')
+    const audioGates = [
+        ['launcher whoosh at move start (rising sweep)', /playSweep\(160, 640, 0\.16, 'sawtooth', 0\.055\)/],
+        ['launcher whoosh air (filtered noise)', /playFilteredNoise\(0\.13, 0\.09, 1600\)/],
+        ['throw grunt at move start', /playSweep\(120, 55, 0\.15, 'sawtooth', 0\.1\)/],
+        ['throw slam keys off the hit event move', /mdef\.type === 'throw'/],
+        ['throw slam impact (falling sweep)', /playSweep\(95, 28, 0\.26, 'sawtooth', 0\.16\)/],
+        ['swing trigger is the st:move start transition', /pre\[i\] !== 'attack:' \+ f\.move/],
+        ['KO crowd surge (filtered swell)', /playFilteredNoise\(1\.1, 0\.16, 480\)/],
+        ['stage bed starts with the fight', /audioController\.startMusic\(stage\.bed\)/],
+        ['stage bed stops on unmount', /audioController\.stopMusic\(\)/],
+    ]
+    for (const [label, re] of audioGates) ok(re.test(gsrc), `audio gate: ${label}`)
+    for (const fid of ['nyx', 'cinder', 'vess', 'riv']) ok(gsrc.includes(`fid === '${fid}'`), `finisher sting: ${fid} voice`)
+    ok(gsrc.includes("playTone(82, 0.22, 'square', 0.12)"), 'finisher sting: krax voice')
+    for (const bed of ['viperAlley', 'viperFoundry', 'viperSubway']) ok(new RegExp(`${bed}: \\{`).test(asrc), `MUSIC bed ${bed} registered`)
+    // mutant: strip the whoosh + krax sting — the gate must fail
+    const mutSrc = gsrc
+        .replace("audioController.playSweep(160, 640, 0.16, 'sawtooth', 0.055)", '')
+        .replace("audioController.playTone(82, 0.22, 'square', 0.12)", '')
+    ok(!/playSweep\(160, 640, 0\.16, 'sawtooth', 0\.055\)/.test(mutSrc) && !mutSrc.includes("playTone(82, 0.22, 'square', 0.12)"), 'mutant: stripped whoosh/sting fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -265,11 +311,26 @@ if (!MUT) {
     const errors = []
     page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text())) errors.push(msg.text()) })
     page.on('pageerror', (err) => errors.push(String(err)))
+    await page.context().addInitScript(() => {
+        window.__vpAudio = { osc: 0, buf: 0 }
+        const patch = (C) => {
+            if (!C) return
+            const o = C.prototype.createOscillator
+            C.prototype.createOscillator = function () { window.__vpAudio.osc++; return o.call(this) }
+            const b = C.prototype.createBufferSource
+            C.prototype.createBufferSource = function () { window.__vpAudio.buf++; return b.call(this) }
+        }
+        patch(window.AudioContext)
+        patch(window.webkitAudioContext)
+    })
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('canvas[data-viperpit-stage]') && window.__viperPitTest, null, { timeout: 15000 })
 
     const shots = await page.locator('canvas[data-viperpit-stage]').screenshot()
     ok(shots.length > 5000, 'attract renders a rich frame (non-trivial canvas)')
+
+    const attractSt = await page.evaluate(() => window.__viperPitTest.state)
+    ok(attractSt && attractSt.bed && /^viper(Alley|Foundry|Subway)$/.test(attractSt.bed), `attract runs the stage's ambient bed (${attractSt && attractSt.bed})`)
 
     await page.keyboard.press('Digit1')
     await page.waitForTimeout(200)
@@ -297,6 +358,12 @@ if (!MUT) {
     ok(punchStarted, 'keyboard attack input starts a move in the sim')
     ok(hitLanded || st.x[0] !== -2.6, `attack closes on the CPU (P2 hp ${st.hp[1]}, P1 x ${st.x[0]})`)
 
+    // #1106 audio: the bed + hit SFX must reach the real audio graph in the cabinet
+    const a0 = await page.evaluate(() => ({ ...window.__vpAudio }))
+    await page.waitForTimeout(2500)
+    const a1 = await page.evaluate(() => window.__vpAudio)
+    ok(a1.osc + a1.buf - a0.osc - a0.buf >= 4, `audio graph produces voices in the cabinet (${a1.osc - a0.osc} osc, ${a1.buf - a0.buf} noise in 2.5s)`)
+
     // GUARD key reaches the engine: hold O while the CPU attacks — over a long
     // window its heavies must be blocked somewhere (no full damage while
     // holding) — plus the on-screen GUARD button dispatches KeyO too.
@@ -313,6 +380,18 @@ if (!MUT) {
     ok(sawGuard || guardHpLoss <= 4, `GUARD hold limits damage while held (lost ${guardHpLoss}, sawGuard ${sawGuard})`)
     const guardBtnOk = await page.evaluate(() => !!document.querySelector('[data-vc="guard"]'))
     ok(guardBtnOk, 'on-screen GUARD button is present during play')
+
+    // #1106 audio: the K.O. crowd surge must reach the real audio graph
+    {
+        let w = 0
+        while (w++ < 25 && (await page.evaluate(() => window.__viperPitTest.state)).phase !== 'fight') await page.waitForTimeout(200)
+        const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
+        await page.evaluate(() => window.__viperPitTest.koP2())
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'ko', null, { timeout: 5000 })
+        await page.waitForTimeout(900)
+        const b1 = await page.evaluate(() => window.__vpAudio)
+        ok(b1.osc - b0.osc + b1.buf - b0.buf >= 3, `K.O. crowd surge reaches the audio graph (${b1.osc - b0.osc} osc, ${b1.buf - b0.buf} noise)`)
+    }
 
     // two K.O.s advance rounds
     let guard = 0
