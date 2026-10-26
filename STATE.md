@@ -1,63 +1,58 @@
-# STATE — session 23 (2026-10-25)
+# STATE — session 24 (2026-10-25)
 
 ## Shipped this session
-- **MAGIC CARPET HD (#1083 → PR #1089, squashed to main as 6de6ed8)**: resumed
-  the #1083 corpse (worktree on current main, 879-line renderer.js + shell edits
-  uncommitted, never pushed). Fresh WebGL2 world pass (three.js, COMET DRIFT HD
-  house pattern); #1059 sim rules byte-identical:
-  - terrain heights sampled in the vertex shader from a live RGBA8 data texture
-    (R=height, G=lava glow, B=scorch) re-uploaded every tick — blasts visibly
-    tear the ground, low craters flood; geometric sea + shader ripples/glitter/
-    foam; gradient sky dome with sun glow + fbm clouds; three per-world PALs.
-  - instanced fire/smoke/embers, fireball/bolt trails, jagged additive lightning,
-    carried-mana halo motes; bright-pass bloom + vignette; bank/pitch/FOV-stretch
-    camera; HUD stays the crisp 320×200 blue-stone overlay.
-  - **The corpse bug**: `uOrigin` subtracted HALF twice (geometry already spans
-    ±HALF) → camera flew 288u outside its own terrain; only the sky dome drew.
-    Found by rendering the terrain alone in a red MeshBasicMaterial and splitting
-    shader-vs-geometry — not by staring at the black frame. Fixed origin snap.
-  - tap-to-start fixed too: pointer listeners were attached to the
-    pointer-events:none HUD canvas (and removed from glCanvas).
-- `carpetcheck` 30→44 gates. Load-bearing new gate: dig a hot crater 70u ahead,
-  near ground must light up (camera-on-grid proof). Proven-fail mutant = the
-  corpse bug: reintroducing the double-offset turns it red, all sim gates green.
-  Headless drive (boot/attract/key+tap start/steer/deny-cast/death/restart),
-  contractcheck, lint×3, build — all green. Prod verified (index-BGCiZhc4.js).
+- **CORAL REEF GPU (#1050 → PR #1092, squashed to main as 5b989cd)**: resumed the
+  pushed corpse (`forge/coral-reef-gpu`, unrebased draft, never run) and got it to 36/36.
+  - **Beer–Lambert sign bug**: `col *= exp(SIGMA*fogd)` AMPLIFIED red with distance
+    (blown-out pink wash on first boot). Fixed to `exp(-SIGMA*fogd)` and reordered the
+    lighting: absorb surface light FIRST, then add teal in-scatter (fog color is light —
+    re-absorbing it made everything gray-cyan), god rays last.
+  - **Fish billboard projection divided by aspect with no FOV factor** — whole school
+    rendered as tiny dots squashed toward screen center. Correct clip:
+    `x = tan_h·1.55/(z·aspect)`, `y = tan_v·1.55`.
+  - **Vacuous speed gate**: non-blocking fence wait at frame start always read 0ms
+    (compositor submits late here) → adaptive ladder never fired → 63ms full-res.
+    Ladder now falls back to rAF EMA when fence is dead; reefcheck gates max(busy,
+    avg-rAF) with honest budgets (hw 30/45ms, sw 90/260).
+  - Reef richness: camera cruise lowered (drifts THROUGH coral tops), cells 32u→16u
+    (8×8 per period), 4 slots/cell, structure radii clamped to owner cells so the
+    2×2 window keeps SDF validity; schools placed in the drift path at ~cruise speed.
+  - `reefcheck` 36 gates: near/far-sand absorption replaced the vertical column gates
+    (camera faces the horizon — top/bottom bands measured sand, not depth).
+    **Proven-fail mutant**: caust()→0 reddens the new hi-contrast web-strand gate
+    (463px clean vs 167 mutant); old brightness gate passed the mutant (shafts lit
+    the floor) — a gate that survives a mutant isn't a gate.
+  - Headless Chrome died mid-run twice → fresh profile per run + one retry per
+    measure context.
+  - Prod verified (marker in deployed reef.html); #1050 shipped+closed.
 
 ## Playable now
-- jalfern.com/retrogames/magic-carpet — fly the GPU world; craters form under
-  you, lava glows then cools, three worlds, three skies.
+- jalfern.com/retrogames/demos/reef.html — raymarched reef: light shafts, caustic
+  web on gold sand, boids school, teal distance; drag to look, tap for ambience.
 
 ## Branches / harness
-- forge/magic-carpet-hd deleted by squash; worktree `~/Dev/retrogames-
-  forge-magic-carpet-hd` removable (its stale :5173 dev server was reused this
-  session — kill it before the next lane starts its own dev server).
-- **CORAL REEF corpse checkpointed**: the dead session's uncommitted
-  reef.html/reefcheck draft (743+/827-) now pushed as `forge/coral-reef-gpu`
-  (tip WIP, never run/gated, syntax-parse-clean; base predates main — resume
-  with `git rebase --onto origin/main d0a473b forge/coral-reef-gpu` in the
-  worktree, per #1050's latest comment).
+- `forge/coral-reef-gpu` deleted by squash; worktree `~/Dev/retrogames-forge-coral-reef-gpu`
+  removable (its node_modules was real — reefcheck ran there).
+- QA filed: **#1093** CORAL REEF polish pass (coral surface relief, ray wash mid-frame,
+  horizon dark strip, fish silhouette variety, audio variety).
 
 ## Next candidates (unclaimed)
-1. **#1050 CORAL REEF GPU rebuild** — resume the pushed corpse (step 1b),
-   rebase onto main, then the issue's five-feature spec stands (raymarched reef,
-   boids, Beer–Lambert water, caustics, god rays).
-2. Queue is otherwise empty → flagship polish stage (#841) next if coral is
-   blocked; QA holds #1090 (carpet polish), #1082, #1063 — don't touch those.
+1. Queue is empty (`game-queue` clean, nothing `building`) → flagship polish stage
+   (#841) next: SSX, Emberwood, COMET DRIFT HD, Myst — pick via
+   `scripts/lib/idle.mjs` flagshipStage; QA holds #1090/#1082/#1063/#1093 — skip those.
+2. Old unmerged forge branches exist (campfire-670, comet-hd-fallback, emberwood-*,
+   ssx-*) — none labeled `building`; they are stale, not corpses.
 
 ## Open questions
 - none filed this session.
 
 ## Watch-outs learned
-- A "terrain" pixel sample can be the sky dome: gates that compare ground-vs-sky
-  colors pass on a camera stranded outside its grid. Tie terrain gates to an
-  action at the feet (dig → pixels must change), not to color alone.
-- readPixels y grows UPWARD: sampling "ground at 0.8" actually sampled the top
-  of the screen. Two probes lost to this before it clicked.
-- Fine noise texture (grain) is finer than the pixel footprint at cruise
-  altitude — variance gates must sample at feature scale (horizon band, crater
-  reaction), not per-pixel sd over flat grass.
-- Resumed corpses: finish the pointer-events audit — listener target vs
-  removal target and CSS pointer-events must agree on which canvas eats taps.
-- A dead session's uncommitted work is only as durable as its disk: step-1b
-  finds pushed branches; this lane pushed the coral corpse so it now exists.
+- Additive color-order in scattering shaders: absorption applies to TRANSMITTED
+  surface light only; in-scatter (fog) is added after, never multiplied by transmittance.
+- A DEV-hook perf number that never moves (busy=0) is a broken sensor, not a fast GPU.
+  Prove a metric responds before trusting a gate on it.
+- Pixel gates must sample at feature scale: caustic web wavelength (~1u) vs a ±5px
+  neighbor window at reef distances → gate measured nothing; widen windows to the
+  projected feature size (±9px here).
+- Camera-drift + slow-moving actors: put schools/actors in the camera's path or they
+  only ever appear behind you.
