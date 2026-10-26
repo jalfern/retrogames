@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { packPages } from '../utils/textFit'
+import { audioController } from '../utils/AudioController.js'
 
 // #1099: the shared help screen must never overflow a phone. Blocks (title,
 // description, each control row) are measured against the live viewport and
@@ -12,6 +13,10 @@ const PauseOverlay = ({ game, badge, onResume }) => {
     const touchRef = useRef(null)
     const [groups, setGroups] = useState(null)
     const [page, setPage] = useState(0)
+    // hint starts on: it renders only while pages > 1, and the effect below
+    // schedules its 3 s fade (no synchronous setState in an effect body).
+    const [showHint, setShowHint] = useState(true)
+    const prevPage = useRef(0)
 
     const controls = game?.controls || []
     const blocks = [
@@ -78,6 +83,19 @@ const PauseOverlay = ({ game, badge, onResume }) => {
         return () => window.removeEventListener('keydown', onKey, true)
     }, [pages])
 
+    useEffect(() => {
+        if (pages <= 1) return undefined
+        const id = setTimeout(() => setShowHint(false), 3000)
+        return () => clearTimeout(id)
+    }, [pages])
+
+    useEffect(() => {
+        if (page !== prevPage.current) {
+            prevPage.current = page
+            audioController.playTone(440, 0.06, 'square', 0.04)
+        }
+    }, [page])
+
     const onPointerDown = (e) => { touchRef.current = e.clientX }
     const onPointerUp = (e) => {
         if (touchRef.current == null) return
@@ -103,28 +121,43 @@ const PauseOverlay = ({ game, badge, onResume }) => {
             </div>
 
             {pages > 1 && (
-                <div className="flex items-center gap-4 mt-2" data-help-pager="">
-                    <button
-                        data-help-prev=""
-                        aria-label="Previous help page"
-                        onClick={() => setPage((p) => Math.max(p - 1, 0))}
-                        disabled={page === 0}
-                        className="min-h-[44px] min-w-[44px] px-3 text-2xl border-2 border-white rounded-lg disabled:opacity-30"
-                    >
-                        ‹
-                    </button>
-                    <span data-help-page={`${page + 1}/${pages}`} className="text-sm tracking-[0.3em] text-gray-300">
-                        {page + 1}/{pages}
-                    </span>
-                    <button
-                        data-help-next=""
-                        aria-label="Next help page"
-                        onClick={() => setPage((p) => Math.min(p + 1, pages - 1))}
-                        disabled={page === pages - 1}
-                        className="min-h-[44px] min-w-[44px] px-3 text-2xl border-2 border-white rounded-lg disabled:opacity-30"
-                    >
-                        ›
-                    </button>
+                <div className="flex flex-col items-center gap-1 mt-2">
+                    {showHint && (
+                        <div data-help-hint="" className="text-[10px] tracking-wider text-gray-400 animate-pulse">
+                            swipe or use ‹ › to page
+                        </div>
+                    )}
+                    <div className="flex items-center gap-4" data-help-pager="">
+                        <button
+                            data-help-prev=""
+                            aria-label="Previous help page"
+                            onClick={() => setPage((p) => Math.max(p - 1, 0))}
+                            disabled={page === 0}
+                            className="min-h-[44px] min-w-[44px] px-3 text-2xl border-2 border-white rounded-lg disabled:opacity-30"
+                        >
+                            ‹
+                        </button>
+                        <div className="flex items-center gap-1.5" data-help-dots="" aria-hidden>
+                            {Array.from({ length: pages }, (_, i) => (
+                                <span
+                                    key={i}
+                                    className={`w-1.5 h-1.5 rounded-full transition-colors ${i === page ? 'bg-white' : 'bg-gray-600'}`}
+                                />
+                            ))}
+                        </div>
+                        <span data-help-page={`${page + 1}/${pages}`} className="text-sm tracking-[0.3em] text-gray-300">
+                            {page + 1}/{pages}
+                        </span>
+                        <button
+                            data-help-next=""
+                            aria-label="Next help page"
+                            onClick={() => setPage((p) => Math.min(p + 1, pages - 1))}
+                            disabled={page === pages - 1}
+                            className="min-h-[44px] min-w-[44px] px-3 text-2xl border-2 border-white rounded-lg disabled:opacity-30"
+                        >
+                            ›
+                        </button>
+                    </div>
                 </div>
             )}
 

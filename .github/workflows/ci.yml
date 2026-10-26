@@ -346,6 +346,13 @@ jobs:
         env:
           TAP_ONLY: "1"
           TAP_CANVAS: "1"
+      # #1099/#1109: help, title and caption text never overflows the viewport
+      # or covers the pad/chrome on any game or demo (3 viewports, ~225 gates).
+      # Advisory like the rest of this job; it rides `core`, so shared
+      # component PRs pay it and game-only PRs do not.
+      - name: "Text-fit sweep (#1099): no help/title/caption text overflows or covers pad/chrome, 3 viewports"
+        if: contains(fromJSON(env.KEYS), 'core')
+        run: npm run textfitcheck
       - name: Polarity smoke (real keys, pixels graded against physics)
         if: contains(fromJSON(env.KEYS), 'polar')
         run: npm run polarplay
