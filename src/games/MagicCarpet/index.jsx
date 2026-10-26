@@ -1,7 +1,8 @@
 // MAGIC CARPET — Bullfrog's 1994 DOS god-game, rebuilt whole in code. The rules
-// live in ./sim.js (pure, seeded, harness-provable); art in ./art.js. This file
-// is the shell: per-column voxel terrain with fog + checker dither, sprite passes
-// clipped by the terrain depth buffer, the blue-stone HUD, and the loop.
+// live in ./sim.js (pure, seeded, harness-provable). #1083 moved the world to
+// the GPU: ./renderer.js is a fresh WebGL2 pass (heightmap-sampled terrain,
+// real water, sky, fire/smoke particles, lightning, bloom) and this file is the
+// shell: the loop, the blue-stone HUD (2D overlay canvas), input and hooks.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -11,37 +12,14 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    W, H, HUD_H, HORIZON, MAP, WATER, LEVELS,
+    W, H, HUD_H, HORIZON, MAP,
+    LEVELS,
     SPILLS, spellById,
-    makeGame, step, autopilot, stateHash, sampleH, setHand, cycleR, glowOf,
+    makeGame, step, autopilot, stateHash, setHand, cycleR, crater,
 } from './sim.js'
-import {
-    drawPearl, drawBook, drawBalloon, drawCastle, drawTower, drawWizard,
-    drawGiant, drawWolf, drawCow, drawHut, drawFireball, drawBolt,
-} from './art.js'
+import { createCarpetGL } from './renderer.js'
 
 const FIXED_DT = 1000 / 60
-const FOCAL = 240
-const VIEW_D = 190
-
-const mixN = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
-const BI_RGB = [[0x1c, 0x4a, 0x86], [0x25, 0x5c, 0x9e], [0xc9, 0xae, 0x6c], [0xb3, 0x97, 0x5a],
-    [0x48, 0x81, 0x2f], [0x3a, 0x6c, 0x26], [0x75, 0x65, 0x4f], [0x5e, 0x51, 0x40],
-    [0xe6, 0xeb, 0xf2], [0xc9, 0xd2, 0xdd]]
-
-// Per-world atmospheres (issue #1060): same geometry, shifted palettes —
-// Verdant daylight, Emberwild dusk under a lava sky, Frostbound blue-white.
-const WORLD_PAL = [
-    { sky: ['#141b4d', '#3a5f96', '#a8bcc8'], haze: [172, 190, 208], sun: '#f2e0a0', cloud: '#c9d4e2', tint: null },
-    { sky: ['#241033', '#7a3050', '#d07048'], haze: [198, 128, 104], sun: '#ff9048', cloud: '#d8a084', tint: [[126, 46, 24], 0.16] },
-    { sky: ['#1a2450', '#5a7ab0', '#c8dcec'], haze: [198, 216, 236], sun: '#e8f0fa', cloud: '#e2ecf6', tint: [[152, 188, 228], 0.2] },
-]
-// 4-bit-style palette-cycling water: [deep, mid, light, foam] per world.
-const WATER_PAL = [
-    [[0x1c, 0x4a, 0x86], [0x2a, 0x62, 0xaa], [0x48, 0x84, 0xc4], [0x7a, 0xb4, 0xe0]],
-    [[0x30, 0x1a, 0x40], [0x4c, 0x2a, 0x56], [0x74, 0x44, 0x60], [0xb0, 0x6c, 0x5e]],
-    [[0x24, 0x46, 0x70], [0x3c, 0x64, 0x94], [0x64, 0x8e, 0xbc], [0x9e, 0xc4, 0xe2]],
-]
 
 const SPELL_COLORS = {
     fireball: '#ff7a28', lightning: '#ffe24a', heal: '#ff5060',
@@ -89,15 +67,31 @@ const MagicCarpetGame = () => {
     useEffect(() => {
         const wrap = stageRef.current
         if (!wrap) return undefined
+        const lite = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
+        const glCanvas = document.createElement('canvas')
+        glCanvas.dataset.mcStage = '1'
+        glCanvas.className = 'absolute block'
+        glCanvas.style.touchAction = 'none'
+        glCanvas.style.width = '100%'
+        glCanvas.style.height = '100%'
+        wrap.appendChild(glCanvas)
         const canvas = document.createElement('canvas')
-        canvas.dataset.mcStage = '1'
+        canvas.dataset.mcHud = '1'
         canvas.width = W; canvas.height = H
-        canvas.className = 'block w-full h-full'
+        canvas.className = 'absolute block'
         canvas.style.imageRendering = 'pixelated'
         canvas.style.touchAction = 'none'
+        canvas.style.pointerEvents = 'none'
         wrap.appendChild(canvas)
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
+
+        let renderer = null
+        try {
+            renderer = createCarpetGL(glCanvas, { lite })
+        } catch {
+            renderer = null
+        }
 
         let gs = makeGame(7)
         let demoSeed = 7, demoT = 0
@@ -105,31 +99,12 @@ const MagicCarpetGame = () => {
         let toast = 0, toastMsg = '', shake = 0
         let flashL = 0, flashR = 0, hurtFlash = 0
         let vaultFlash = 0, prevSeg = -1
+        let bankS = 0, sinkS = 0, prevAlt = gs.alt
         const keys = { l: false, r: false, u: false, d: false }
         let throwL = false, throwR = false
         let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
-        const part = []
-        const groundTop = new Float32Array(W)
-        const groundD = new Float32Array(W)
-        const f = { n: 0 }
 
         const say = (m) => { toastMsg = m; toast = 150 }
-        const burst = (cx, cy, n, col, sp0 = 0.8) => {
-            for (let i = 0; i < n; i++) {
-                const a = (i / n) * Math.PI * 2, sp = sp0 + ((i * 7) % 10) / 6
-                part.push({ x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 0.7, t: 0, col })
-            }
-        }
-
-        const project = (wx, wy, wz) => {
-            const dx = ((wx - gs.x + MAP / 2) % MAP + MAP) % MAP - MAP / 2
-            const dy = ((wy - gs.y + MAP / 2) % MAP + MAP) % MAP - MAP / 2
-            const fwd = dx * Math.cos(gs.yaw) + dy * Math.sin(gs.yaw)
-            if (fwd < 5 || fwd > VIEW_D + 20) return null
-            const side = -dx * Math.sin(gs.yaw) + dy * Math.cos(gs.yaw)
-            const k = FOCAL / fwd
-            return { sx: W / 2 + side * k, sy: HORIZON + (gs.alt - wz) * k, k, d: fwd }
-        }
 
         const finish = (win) => {
             setEnd({ win, score: gs.score, deaths: gs.deaths, worlds: gs.levelClears + (win ? 1 : 0) })
@@ -188,8 +163,6 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'boom') {
                     audioController.playNoise(0.28, 0.11)
                     audioController.playTone(70, 0.18, 'square', 0.07)
-                    const p = project(e.x, e.y, WATER + 2)
-                    if (p) burst(p.sx, p.sy, 10, '#ffb040', 1)
                     shake = Math.max(shake, 4)
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
@@ -241,7 +214,9 @@ const MagicCarpetGame = () => {
 
         const doSim = (inp) => {
             step(gs, inp)
-            handleEvents(gs.events.splice(0))
+            const evts = gs.events.splice(0)
+            if (renderer) renderer.handleEvents(evts, gs)
+            handleEvents(evts)
         }
 
         const tickDemo = () => {
@@ -266,203 +241,6 @@ const MagicCarpetGame = () => {
                 castL: throwL, castR: throwR, boost: boostOn,
             })
             throwL = throwR = false
-        }
-
-        // --------------------------------------------------------------- paint ----
-        const paintTerrain = () => {
-            f.n = gs.tick
-            const pal = WORLD_PAL[Math.min(gs.level, WORLD_PAL.length - 1)]
-            const wpal = WATER_PAL[Math.min(gs.level, WATER_PAL.length - 1)]
-            const grad = ctx.createLinearGradient(0, 0, 0, HORIZON + 12)
-            grad.addColorStop(0, pal.sky[0])
-            grad.addColorStop(0.62, pal.sky[1])
-            grad.addColorStop(1, pal.sky[2])
-            ctx.fillStyle = grad
-            ctx.fillRect(0, 0, W, HORIZON + 12)
-            const sunAz = 2.1
-            let sa = ((sunAz - gs.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-            const sx = W / 2 + sa * FOCAL
-            if (sx > -20 && sx < W + 20) {
-                ctx.fillStyle = pal.sun
-                ctx.beginPath(); ctx.arc(sx, 42, 7, 0, Math.PI * 2); ctx.fill()
-                ctx.globalAlpha = 0.25
-                ctx.beginPath(); ctx.arc(sx, 42, 12, 0, Math.PI * 2); ctx.fill()
-                ctx.globalAlpha = 1
-            }
-            ctx.globalAlpha = 0.55
-            ctx.fillStyle = pal.cloud
-            for (let c = 0; c < 5; c++) {
-                const caz = c * 1.27 + 0.4 + gs.tick * 0.00018
-                let ca = ((caz - gs.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-                const cx = W / 2 + ca * FOCAL
-                const cy = 26 + (c % 3) * 14
-                if (cx < -40 || cx > W + 40) continue
-                ctx.fillRect(cx - 16, cy, 34, 5)
-                ctx.fillRect(cx - 9, cy - 4, 18, 5)
-            }
-            ctx.globalAlpha = 1
-
-            const crs = gs.craters
-            for (let i = 0; i < W; i++) {
-                const az = gs.yaw + Math.atan((i - W / 2) / FOCAL)
-                const dx = Math.cos(az), dy = Math.sin(az)
-                let prevY = H - HUD_H
-                let topSilD = VIEW_D + 1
-                let prevH = gs.alt
-                for (let d = 7; d <= VIEW_D; d += 1 + d * 0.02) {
-                    const wx = gs.x + dx * d, wy = gs.y + dy * d
-                    const raw = sampleH(gs, wx, wy)
-                    const h = Math.max(raw, WATER)
-                    const y = HORIZON + (gs.alt - h) * FOCAL / d
-                    if (y < prevY - 0.6) {
-                        const biomeIdx = BIOMES_IDX(raw)
-                        const water = raw <= WATER
-                        const ci = biomeIdx * 2
-                        const shade = Math.max(0.62, Math.min(1.25, 1 - (raw - prevH) * 0.045))
-                        let rgb
-                        if (water) {
-                            const wph = gs.tick * 0.06
-                            const band = Math.sin(raw * 1.15 + wx * 0.11 + wy * 0.07 + wph)
-                            let wi = band > 0.55 ? 3 : band > 0 ? 2 : band > -0.55 ? 1 : 0
-                            if (raw <= WATER + 1.4 && band > -0.3) wi = 3
-                            rgb = wpal[wi]
-                            const chkW = ((Math.floor(wx / 2) + Math.floor(wy / 2)) & 1) === 0
-                            if (!chkW) rgb = mixN(rgb, [0, 0, 0], 0.1)
-                        } else {
-                            let ca = BI_RGB[ci], cb = BI_RGB[ci + 1]
-                            if (pal.tint) { ca = mixN(ca, pal.tint[0], pal.tint[1]); cb = mixN(cb, pal.tint[0], pal.tint[1]) }
-                            rgb = (Math.floor(wx / 2) + Math.floor(wy / 2)) & 1 ? cb : ca
-                        }
-                        if (crs.length > 0) {
-                            for (const c of crs) {
-                                let ddx = wx - c.x; if (ddx > MAP / 2) ddx -= MAP; else if (ddx < -MAP / 2) ddx += MAP
-                                let ddy = wy - c.y; if (ddy > MAP / 2) ddy -= MAP; else if (ddy < -MAP / 2) ddy += MAP
-                                const cd = Math.hypot(ddx, ddy)
-                                if (cd > c.r * 1.3) continue
-                                const heat = glowOf(gs, c)
-                                if (cd < c.r) {
-                                    if (heat > 0) {
-                                        const fk = 0.82 + 0.18 * Math.sin(gs.tick * 0.3 + c.x)
-                                        const g = heat * (1 - cd / c.r) * 0.62 * fk
-                                        rgb = mixN(rgb, [255, 90 + Math.sin(gs.tick * 0.11 + c.y) * 45, 28], g)
-                                    } else if (cd < c.r * 0.72 && cd > c.r * 0.3) {
-                                        rgb = mixN(rgb, wpal[2], ((gs.tick >> 3) & 1) === 0 ? 0.35 : 0)
-                                    }
-                                }
-                                if (cd > c.r * 0.55 && cd < c.r * 1.25) {
-                                    const rim = Math.max(0, 1 - Math.abs(cd - c.r * 0.9) / (c.r * 0.32 + 5))
-                                    rgb = mixN(rgb, [44, 26, 16], rim * 0.42)
-                                }
-                            }
-                        }
-                        const fog = Math.min(1, d / VIEW_D)
-                        rgb = mixN(rgb, pal.haze, fog * 0.72)
-                        if (shade > 1.02) rgb = mixN(rgb, [255, 250, 220], (shade - 1) * 0.8)
-                        if (shade < 0.98) rgb = mixN(rgb, [10, 14, 30], (1 - shade) * 0.7)
-                        ctx.fillStyle = `rgb(${Math.round(rgb[0])},${Math.round(rgb[1])},${Math.round(rgb[2])})`
-                        ctx.fillRect(i, y, 1, Math.max(1, prevY - y))
-                        topSilD = d
-                        prevY = y
-                    }
-                    prevH = raw
-                    if (prevY < 4) break
-                }
-                groundTop[i] = prevY
-                groundD[i] = topSilD
-            }
-        }
-        const BIOMES_IDX = (h) => (h <= WATER ? 0 : h <= 20 ? 1 : h <= 54 ? 2 : h <= 74 ? 3 : 4)
-
-        const clipTop = (p, halfW) => {
-            const lo = Math.max(0, Math.floor(p.sx - halfW)), hi = Math.min(W - 1, Math.ceil(p.sx + halfW))
-            let top = 0
-            for (let c = lo; c <= hi; c++) if (p.d >= groundD[c] && groundTop[c] > top) top = groundTop[c]
-            return top
-        }
-
-        const paintSprites = () => {
-            const items = []
-            for (const p of gs.pearls) {
-                if (!p.alive) continue
-                const pr = project(p.x, p.y, p.z)
-                if (pr) items.push({ d: pr.d, sx: pr.sx, hw: 3 * pr.k, fn: () => drawPearl(ctx, pr.sx, pr.sy, Math.max(0.5, pr.k / 3), f.n + p.x * 7) })
-            }
-            for (const b of gs.books) {
-                if (b.taken) continue
-                const pr = project(b.x, b.y, Math.max(sampleH(gs, b.x, b.y), WATER) + 4)
-                if (pr) items.push({ d: pr.d, sx: pr.sx, hw: 6 * pr.k, fn: () => drawBook(ctx, pr.sx, pr.sy, Math.max(0.5, pr.k / 5), f.n) })
-            }
-            for (const hs of (gs.huts || [])) {
-                const pr = project(hs.x, hs.y, sampleH(gs, hs.x, hs.y))
-                if (pr) items.push({ d: pr.d, sx: pr.sx, hw: 6 * pr.k, fn: () => drawHut(ctx, pr.sx, pr.sy, Math.max(0.3, pr.k / 5), hs.v, f.n, hs.burn, hs.dead) })
-            }
-            const prC = project(gs.castle.x, gs.castle.y, sampleH(gs, gs.castle.x, gs.castle.y))
-            if (prC && gs.castleStage > 0) {
-                items.push({ d: prC.d, sx: prC.sx, hw: 16 * prC.k, fn: () => drawCastle(ctx, prC.sx, prC.sy, Math.max(0.3, prC.k / 5), gs.castleStage) })
-                for (let bi = 0; bi < gs.castleStage; bi++) {
-                    const bx = gs.castle.x + Math.cos(bi * 2.1) * 26, by = gs.castle.y + Math.sin(bi * 2.1) * 26
-                    const pb = project(bx, by, sampleH(gs, bx, by) + 16 + Math.sin(gs.tick * 0.02 + bi) * 3)
-                    if (pb) items.push({ d: pb.d, sx: pb.sx, hw: 4 * pb.k, fn: () => drawBalloon(ctx, pb.sx, pb.sy, Math.max(0.3, pb.k / 5), f.n, bi) })
-                }
-            }
-            const wz = gs.wizard
-            const prT = project(wz.tx, wz.ty, sampleH(gs, wz.tx, wz.ty))
-            if (prT) items.push({ d: prT.d, sx: prT.sx, hw: 7 * prT.k, fn: () => drawTower(ctx, prT.sx, prT.sy, Math.max(0.3, prT.k / 4), f.n, wz.alive && !gs.towerDown, gs.towerDown) })
-            if (wz.alive) {
-                const prW = project(wz.x, wz.y, sampleH(gs, wz.x, wz.y) + 10 + Math.sin(gs.tick * 0.05) * 2)
-                if (prW) items.push({ d: prW.d, sx: prW.sx, hw: 5 * prW.k, fn: () => drawWizard(ctx, prW.sx, prW.sy, Math.max(0.4, prW.k / 4), f.n) })
-            }
-            for (const m of gs.monsters) {
-                if (m.grabbed) continue
-                const pr = project(m.x, m.y, sampleH(gs, m.x, m.y))
-                if (!pr) continue
-                const k = Math.max(0.3, pr.k / 5)
-                if (m.kind === 'giant') items.push({ d: pr.d, sx: pr.sx, hw: 6 * k * 1.5, fn: () => drawGiant(ctx, pr.sx, pr.sy, k * 1.5, f.n, m.hp < 12) })
-                else if (m.kind === 'wolf') items.push({ d: pr.d, sx: pr.sx, hw: 5 * k, fn: () => drawWolf(ctx, pr.sx, pr.sy, k, f.n, true) })
-                else items.push({ d: pr.d, sx: pr.sx, hw: 4 * k, fn: () => drawCow(ctx, pr.sx, pr.sy, k, f.n) })
-            }
-            for (const fm of gs.fireMarks) {
-                const pr = project(fm.x, fm.y, sampleH(gs, fm.x, fm.y))
-                if (!pr) continue
-                const age = gs.tick - fm.t
-                if (age > 900) continue
-                items.push({
-                    d: pr.d - 0.1, sx: pr.sx, hw: 5 * Math.max(0.4, pr.k / 4), fn: () => {
-                        const fk = Math.max(0.4, pr.k / 4)
-                        ctx.globalAlpha = 0.75
-                        ctx.fillStyle = '#3a2418'
-                        ctx.beginPath(); ctx.ellipse(pr.sx, pr.sy, 5 * fk, 1.8 * fk, 0, 0, Math.PI * 2); ctx.fill()
-                        if (age < 240) {
-                            const fl = Math.sin(gs.tick * 0.3 + fm.x) * fk
-                            ctx.fillStyle = '#e05818'
-                            ctx.fillRect(pr.sx - 1.5 * fk, pr.sy - (3 + Math.abs(fl)) * fk, 3 * fk, 3 * fk)
-                            ctx.fillStyle = '#ffc040'
-                            ctx.fillRect(pr.sx - 0.7 * fk, pr.sy - 2.4 * fk, 1.4 * fk, 1.6 * fk)
-                        }
-                        ctx.globalAlpha = 1
-                    },
-                })
-            }
-            for (const p of gs.projs) {
-                const pr = project(p.x, p.y, p.z)
-                if (!pr) continue
-                const k = Math.max(0.4, pr.k / 4)
-                if (p.kind === 'fireball') items.push({ d: pr.d, sx: pr.sx, hw: 3 * k, fn: () => drawFireball(ctx, pr.sx, pr.sy, k) })
-                else if (p.kind === 'bolt') items.push({ d: pr.d, sx: pr.sx, hw: 3 * k, fn: () => drawBolt(ctx, pr.sx, pr.sy, k, '#c060ff') })
-                else if (p.kind === 'rock') items.push({ d: pr.d, sx: pr.sx, hw: 2.5 * k, fn: () => { ctx.fillStyle = '#7a6a54'; ctx.beginPath(); ctx.arc(pr.sx, pr.sy, 2 * k, 0, Math.PI * 2); ctx.fill() } })
-                else if (p.kind === 'arrow') items.push({ d: pr.d, sx: pr.sx, hw: 2.5 * k, fn: () => { ctx.fillStyle = '#d8d8e0'; ctx.fillRect(pr.sx - 2 * k, pr.sy - 0.4 * k, 4 * k, 0.8 * k) } })
-                else if (p.kind === 'throw') items.push({ d: pr.d, sx: pr.sx, hw: 3 * k, fn: () => { ctx.fillStyle = '#9a6a3a'; ctx.beginPath(); ctx.arc(pr.sx, pr.sy, 2.2 * k, 0, Math.PI * 2); ctx.fill() } })
-            }
-            items.sort((a, b) => b.d - a.d)
-            for (const it of items) {
-                ctx.save()
-                const top = clipTop(it, it.hw)
-                ctx.beginPath()
-                ctx.rect(0, 0, W, Math.max(top, 0))
-                ctx.clip()
-                it.fn()
-                ctx.restore()
-            }
         }
 
         const paintCarpetAndHands = () => {
@@ -496,16 +274,6 @@ const MagicCarpetGame = () => {
             for (let i = 0; i < 4; i++) {
                 ctx.fillRect(100 + i * 12 + sway, H - HUD_H - 2, 2, 2)
                 ctx.fillRect(178 + i * 12 + sway, H - HUD_H - 2, 2, 2)
-            }
-            const carry = Math.min(8, Math.floor(gs.mana / 3))
-            for (let i = 0; i < carry; i++) {
-                const a = gs.tick * 0.045 + (i / 8) * Math.PI * 2
-                const ox = Math.cos(a) * (15 + i * 1.5)
-                const oy = Math.sin(a) * 5 - 15 - i * 0.6
-                ctx.fillStyle = '#d8b840'
-                ctx.fillRect(W / 2 + ox, H - HUD_H + oy, 2, 2)
-                ctx.fillStyle = '#f4e08a'
-                ctx.fillRect(W / 2 + ox, H - HUD_H + oy, 1, 1)
             }
             const handY = (fl) => H - HUD_H - 2 + (fl > 0 ? -10 - fl : 0)
             ctx.fillStyle = '#caa888'
@@ -658,27 +426,34 @@ const MagicCarpetGame = () => {
             }
         }
 
+        let prevYaw = gs.yaw
         const paint = () => {
             const sx = shake > 0 ? ((performance.now() % 7) - 3) * shake * 0.35 : 0
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.35 : 0
             if (shake > 0) { shake *= 0.85; if (shake < 0.35) shake = 0 }
             if (flashL > 0) flashL--
             if (flashR > 0) flashR--
+            const steer = (keys.r ? 1 : 0) - (keys.l ? 1 : 0)
+            const yawDelta = gs.yaw - prevYaw
+            prevYaw = gs.yaw
+            const bankTarget = screenRef.current === 'play' ? steer : Math.max(-1, Math.min(1, yawDelta * 14))
+            bankS += (bankTarget - bankS) * 0.12
+            sinkS += (Math.max(-1.2, Math.min(1.2, (gs.alt - prevAlt) * 0.6)) - sinkS) * 0.15
+            prevAlt = gs.alt
+            if (renderer) {
+                renderer.frame(gs, {
+                    bank: bankS,
+                    boost: boostOn || screenRef.current === 'attract',
+                    pitch: 0.06 + (keys.d ? 0.05 : 0) - (keys.u ? 0.04 : 0),
+                    sink: sinkS * 0.08,
+                    shakeX: sx, shakeY: sy,
+                })
+            }
             ctx.clearRect(0, 0, W, H)
             ctx.save()
             ctx.translate(sx, sy)
-            paintTerrain()
-            paintSprites()
             paintCarpetAndHands()
             ctx.restore()
-            for (let i = part.length - 1; i >= 0; i--) {
-                const pa = part[i]
-                pa.t++; pa.x += pa.vx; pa.y += pa.vy; pa.vy += 0.07
-                if (pa.t > 30 || pa.y > H) { part.splice(i, 1); continue }
-                ctx.globalAlpha = 1 - pa.t / 30
-                ctx.fillStyle = pa.col
-                ctx.fillRect(pa.x, pa.y, 2, 2)
-            }
             ctx.globalAlpha = 1
             paintHud()
         }
@@ -686,7 +461,7 @@ const MagicCarpetGame = () => {
         const startPlay = () => {
             gs = makeGame((performance.now() * 977) >>> 0)
             demoT = 0
-            part.length = 0
+            if (renderer) renderer.resetWorld()
             keys.l = keys.r = keys.u = keys.d = false
             throwL = throwR = false
             boostKey = boostOn = boostPrev = false; upHold = 0
@@ -737,15 +512,21 @@ const MagicCarpetGame = () => {
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
-        canvas.addEventListener('pointerdown', onPointer)
-        canvas.addEventListener('contextmenu', onCtx)
+        glCanvas.addEventListener('pointerdown', onPointer)
+        glCanvas.addEventListener('contextmenu', onCtx)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
+            const dprCap = lite ? 1 : 1.5
+            const dpr = Math.min(window.devicePixelRatio || 1, dprCap)
+            if (renderer) renderer.resize(Math.round(r.width * dpr), Math.round(r.height * dpr))
             const sc = Math.min(r.width / W, r.height / H)
-            canvas.style.width = `${W * sc}px`
-            canvas.style.height = `${H * sc}px`
+            const hw = Math.round(W * sc), hh = Math.round(H * sc)
+            canvas.style.width = `${hw}px`
+            canvas.style.height = `${hh}px`
+            canvas.style.left = `${Math.round((r.width - hw) / 2)}px`
+            canvas.style.top = `${Math.round((r.height - hh) / 2)}px`
         }
         window.addEventListener('resize', resize)
         resize()
@@ -781,6 +562,27 @@ const MagicCarpetGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                gl2: () => !!renderer,
+                digHot: () => {
+                    gs.quota = 999999
+                    crater(gs, gs.x + Math.cos(gs.yaw) * 70, gs.y + Math.sin(gs.yaw) * 70, 16, 10, 1)
+                    return gs.craters.length
+                },
+                fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },
+                glowCells: () => (renderer ? renderer.glowCells() : -1),
+                scorchCells: () => (renderer ? renderer.scorchCells() : -1),
+                pixels: (x, y, w, h) => {
+                    if (!renderer) return null
+                    const g = renderer.gl
+                    const cw = renderer.renderer.domElement.width, ch = renderer.renderer.domElement.height
+                    const px0 = Math.min(Math.max(0, Math.floor(x * cw)), cw - 1)
+                    const py0 = Math.min(Math.max(0, Math.floor(ch - y * ch)), ch - 1)
+                    const pw = Math.min(Math.max(1, w), cw - px0)
+                    const ph = Math.min(Math.max(1, h), ch - py0)
+                    const buf = new Uint8Array(pw * ph * 4)
+                    g.readPixels(px0, py0, pw, ph, g.RGBA, g.UNSIGNED_BYTE, buf)
+                    return Array.from(buf)
+                },
                 forceDeath: () => {
                     gs.shield = 0; gs.bank = 0; gs.mana = 0; gs.hp = 0; gs.end = 'dead'
                     gs.events.push({ type: 'dead' })
@@ -820,7 +622,7 @@ const MagicCarpetGame = () => {
                     contractSeed = seed >>> 0
                     gs = makeGame(contractSeed)
                     demoT = 0
-                    part.length = 0
+                    if (renderer) renderer.resetWorld()
                     keys.l = keys.r = keys.u = keys.d = false
                     throwL = throwR = false
                     boostKey = boostOn = boostPrev = false; upHold = 0
@@ -841,7 +643,7 @@ const MagicCarpetGame = () => {
                     deaths: gs.deaths, kills: gs.kills, wizAlive: gs.wizard.alive,
                     stage: gs.castleStage, hash: stateHash(gs),
                 }),
-                canvas: () => canvas,
+                canvas: () => glCanvas,
                 snapshot: () => JSON.parse(JSON.stringify(gs)),
                 restore: (s) => { gs = s },
             })
@@ -853,10 +655,12 @@ const MagicCarpetGame = () => {
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
-            canvas.removeEventListener('pointerdown', onPointer)
-            canvas.removeEventListener('contextmenu', onCtx)
+            glCanvas.removeEventListener('pointerdown', onPointer)
+            glCanvas.removeEventListener('contextmenu', onCtx)
             cancelAnimationFrame(raf)
+            if (renderer) renderer.dispose()
             canvas.remove()
+            glCanvas.remove()
         }
     }, [setMode])
 
