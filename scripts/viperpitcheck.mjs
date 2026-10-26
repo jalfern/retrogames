@@ -55,6 +55,7 @@ ok(LADDER.length >= 5, 'street ladder has 5 opponents')
 ok(ROSTER.every((d) => d.moves.lp && d.moves.hp && d.moves.lk && d.moves.hk && d.moves.throw), 'every fighter has punch/kick/throw verbs')
 ok(ROSTER.every((d) => (d.moves.dp || d.moves.charge) && (d.moves.dp ? d.moves.dp.launch > 0.1 : d.moves.charge.launch > 0.07)), 'every fighter has a launching uppercut/power')
 ok(ROSTER.every((d) => d.moves.qcbf && d.moves.qcbf.finisher), 'every fighter has a signature FINISHING MOVE (qcbf finisher)')
+ok(ROSTER.every((d) => d.specials.qcb && d.moves.qcb && d.moves.qcb.type === 'special' && d.moves.qcb.startup >= 1 && d.moves.qcb.active >= 1 && d.moves.qcb.recovery >= 1 && d.moves.qcb.dmg >= 5 && d.moves.qcb.hitstun >= 10 && d.moves.qcb.blockstun >= 5 && d.moves.qcb.push >= 0.1 && Array.isArray(d.moves.qcb.box) && d.moves.qcb.box.length === 4), 'every fighter has a qcb counter special with real frame data')
 ok(ROSTER.every((d) => d.finish), 'every finisher is named')
 
 const human = (id) => ({ ...BY_ID[id], cpu: false })
@@ -67,6 +68,7 @@ const mk = (p1 = 'riv', p2 = 'nyx', seed = 5) => {
 const QCBF = [{ down: true }, { down: true, left: true }, { left: true }, { down: true }, { down: true, right: true }, { right: true }, { right: true, lp: true }, { right: true }]
 const QCF = [{ down: true }, { down: true, right: true }, { right: true }, { right: true, lp: true }]
 const DP = [{ right: true }, { right: true, down: true }, { down: true }, { up: true, hp: true }, {}]
+const QCB = [{ down: true }, { down: true, left: true }, { left: true }, { left: true, lp: true }]
 
 // a heavy punch lands for its frame data
 let m = mk()
@@ -158,6 +160,19 @@ if (!MUT) {
     m.fighters[1].x = m.fighters[0].x + 3.5
     for (const fr of QCF) e.step(m, [fr, P()])
     ok(m.fighters[0].move === 'qcf', `plain down-forward still fires the special (${m.fighters[0].move})`)
+
+    // qcb counter: down-back + punch fires it (resolved after qcbf)
+    m = mk('riv', 'nyx')
+    m.fighters[1].x = m.fighters[0].x + 1.5
+    for (const fr of QCB) e.step(m, [fr, P()])
+    ok(m.fighters[0].move === 'qcb', `down-back + punch fires the qcb counter (${m.fighters[0].move})`)
+
+    // qcb must not steal the qcbf finisher's d,b prefix at full meter
+    m = mk('riv', 'nyx')
+    m.fighters[1].x = m.fighters[0].x + 1.2
+    m.fighters[0].meter = 100
+    for (const fr of QCBF) e.step(m, [fr, P()])
+    ok(m.fighters[0].move === 'qcbf', `full qcbf at max meter fires the finisher, not the qcb counter (${m.fighters[0].move})`)
 
     // cancel combo: light into heavy chains
     m = mk()
@@ -374,6 +389,21 @@ if (MUT) {
     ok(!/baseZ - \(cine \? cine\.zoom/.test(mutR), 'mutant: dead camera punch-in fails the gate (harness bites)')
 }
 
+// ---- #1106 qcb counter gate ------------------------------------------------
+// Every fighter has a down-back counter; the engine resolves it AFTER the qcbf
+// finisher (so the finisher's d,b prefix isn't stolen) and the CPU throws it at
+// close range. Source gates + a dead-resolver mutant + a part B runtime probe.
+{
+    const fs = await import('node:fs')
+    const esrc = fs.readFileSync(path.join(HERE, '../src/engine/fighting.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok(/if \(sp\.qcb && matchMotion\(hist, MOTION\.qcb\)\) return fire\('qcb'\)/.test(esrc), 'qcb gate: engine resolves the down-back counter motion')
+    ok(/sp\.qcb && dist < 2\.2 && m\.rng\(\) < tier \* 0\.22/.test(esrc), 'qcb gate: the CPU throws the counter at close range')
+    ok(/forceQcb\(\) \{/.test(gsrc), 'qcb gate: dev hook can force the counter for the probe')
+    const mutE = esrc.replace("if (sp.qcb && matchMotion(hist, MOTION.qcb)) return fire('qcb')", "if (false) return fire('qcb')")
+    ok(!/if \(sp\.qcb && matchMotion\(hist, MOTION\.qcb\)\) return fire\('qcb'\)/.test(mutE), 'mutant: dead qcb resolver fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -560,6 +590,21 @@ if (!MUT) {
             const f2 = await page.evaluate(() => window.__viperPitTest.fx())
             ok(f2.midSway > idle + 0.01, `${id} midground reacts to the fight (sway ${idle} -> ${f2.midSway})`)
         }
+    }
+
+    // #1106 qcb counter: the down-back counter is live in the cabinet — it starts,
+    // poses and renders without a page error (forceQcb -> state().st[0] === 'qcb').
+    {
+        await page.evaluate(() => window.__viperPitTest.stage(1))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
+        await page.evaluate(() => window.__viperPitTest.forceQcb())
+        let sawQcb = false
+        for (let i = 0; i < 10 && !sawQcb; i++) {
+            const s = await page.evaluate(() => window.__viperPitTest.state)
+            if (s && s.st[0] === 'qcb') sawQcb = true
+            await page.waitForTimeout(25)
+        }
+        ok(sawQcb, 'qcb counter is live in the sim (state reports the move)')
     }
 
     await page.keyboard.press('Escape')

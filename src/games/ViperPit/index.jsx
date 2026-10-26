@@ -748,6 +748,7 @@ const ViperPitGame = () => {
                 midKick() { if (stageFx && stageFx.mid) stageFx.mid.force = 1 },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
+                forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },
                 fx() {
                     if (!stageFx) return null
                     return {

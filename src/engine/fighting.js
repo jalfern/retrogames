@@ -189,6 +189,7 @@ function tryStartSpecial(f, strength) {
     // finisher (VIPER PIT): ↓←↓→ at a full bar — checked first so its `d,f`
     // tail can't be stolen by the plain qcf parse below.
     if (sp.qcbf && f.meter >= 100 && matchMotion(hist, MOTION.qcbf, 26, 10)) { f.meter = 0; return 'qcbf' }
+    if (sp.qcb && matchMotion(hist, MOTION.qcb)) return fire('qcb') // after qcbf so the finisher's d,b prefix isn't stolen
     if (sp.rdp && strength !== 'k' && matchMotion(hist, MOTION.rdp)) return fire('rdp')
     if (sp.dp && strength !== 'k' && matchMotion(hist, MOTION.dp)) return fire('dp')
     if (sp.qcf && matchMotion(hist, MOTION.qcf)) return fire('qcf')
@@ -503,6 +504,7 @@ function cpuDecide(m, f, opp) {
     if (f.def.moves.qcbf && f.meter >= 100 && opp.hp <= (f.def.moves.qcbf.finishAt || 30) && dist < 2.6 && m.rng() < 0.35 + tier * 0.6) {
         return scriptMotion('p', 'qcbf', f)
     }
+    if (sp.qcb && dist < 2.2 && m.rng() < tier * 0.22) return scriptMotion('p', 'qcb', f)
     if (sp.dp && m.rng() < tier * 0.14) return scriptMotion("p", "dp", f)
     if (qcfKey && m.rng() < tier * 0.2) return scriptMotion(sp.qcf.kick ? "k" : "p", "qcf", f)
     const pick = m.rng()
