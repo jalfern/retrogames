@@ -215,13 +215,17 @@ function makeBillboardGeo(cap) {
 }
 
 const BILL_VERT = `
-uniform vec3 uRight; uniform vec3 uUp; uniform vec3 uCamPos; uniform float uFogD;
+uniform vec3 uRight; uniform vec3 uUp; uniform vec3 uFwd; uniform vec3 uCamPos; uniform float uFogD;
 attribute vec3 aPos; attribute vec2 aSize; attribute vec4 aUv; attribute vec4 aTint; attribute float aSeed;
 varying vec2 vUv; varying vec3 vTint; varying float vAlpha; varying float vFog; varying float vSeed; varying float vUp;
 void main(){
     vec2 q = uv;
     float anchor = aUv.w < 0.0 ? 0.5 : 0.0; // packed: negative stored h means centered anchor
-    vec3 world = aPos + uRight * (q.x - 0.5) * aSize.x + uUp * (q.y - anchor) * aSize.y;
+    vec3 relC = aPos - uCamPos;
+    float elev = relC.y / max(length(relC), 1.0);
+    float lean = smoothstep(0.12, -0.32, elev) * 0.32;
+    vec3 upv = normalize(mix(uUp, uFwd, lean));
+    vec3 world = aPos + uRight * (q.x - 0.5) * aSize.x + upv * (q.y - anchor) * aSize.y;
     vec3 rel = world - uCamPos;
     vFog = smoothstep(70.0, uFogD, length(rel));
     vUv = vec2(aUv.x + q.x * aUv.z, aUv.y - (1.0 - q.y) * abs(aUv.w));
@@ -231,24 +235,29 @@ void main(){
 `
 const BILL_FRAG = `
 precision highp float;
-uniform sampler2D uAtlas; uniform vec3 uFogCol; uniform float uSunUp;
+uniform sampler2D uAtlas; uniform vec3 uFogCol; uniform float uSunUp, uWorldTime;
 varying vec2 vUv; varying vec3 vTint; varying float vAlpha; varying float vFog; varying float vSeed; varying float vUp;
+float hash11b(float p){ p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
 void main(){
     vec4 t = texture2D(uAtlas, vUv);
     if (t.a < 0.02) discard;
     vec3 c = t.rgb * vTint * (0.74 + 0.3 * uSunUp + 0.1 * vUp);
+    if (vSeed < -0.5) {
+        float flick = 0.5 + 0.5 * sin(uWorldTime * (0.07 + hash11b(-vSeed) * 0.1) + vSeed * 37.0);
+        c += vec3(1.0, 0.62, 0.22) * flick * smoothstep(0.5, 0.16, vUp) * 0.55;
+    }
     c = mix(c, uFogCol, vFog);
     gl_FragColor = vec4(c, t.a * vAlpha);
 }
 `
 const PART_FRAG = `
 precision highp float;
-uniform sampler2D uAtlas; uniform vec3 uFogCol; uniform float uTime;
+uniform sampler2D uAtlas; uniform vec3 uFogCol; uniform float uWorldTime;
 varying vec2 vUv; varying vec3 vTint; varying float vAlpha; varying float vFog; varying float vSeed; varying float vUp;
 float hash11(float p){ p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
 void main(){
     vec4 t = texture2D(uAtlas, vUv);
-    float flick = 0.72 + 0.28 * sin(uTime * (9.0 + hash11(vSeed) * 7.0) + vSeed * 40.0);
+    float flick = 0.72 + 0.28 * sin(uWorldTime * (0.15 + hash11(vSeed) * 0.12) + vSeed * 40.0);
     vec3 c = t.rgb * vTint * flick;
     c = mix(c, uFogCol, vFog * 0.7);
     gl_FragColor = vec4(c, t.a * vAlpha);
@@ -302,7 +311,7 @@ void main(){
 `
     const tFrag = `
 precision highp float;
-uniform sampler2D uData; uniform vec3 uSunDir; uniform float uTime;
+uniform sampler2D uData; uniform vec3 uSunDir; uniform float uTime, uWorldTime;
 uniform vec3 uCamPos;
 uniform vec3 uZenith, uFogCol, uSunCol, uDeep, uShallow, uFoam, uSand, uGrassA, uGrassB, uRock, uSnow;
 uniform float uFogD;
@@ -323,38 +332,61 @@ void main(){
     vec3 land = mix(uSand, mix(uGrassA, uGrassB, grain), grassT);
     land = mix(land, uRock, max(rockT, smoothstep(0.24, 0.5, slope)));
     land = mix(land, uSnow, snowT);
-    land = land * (0.84 + 0.26 * grain);
+    land = land * (0.80 + 0.32 * grain);
     vec3 col = land * diff * mix(vec3(1.0), uSunCol, 0.25);
+    vec3 V = normalize(uCamPos - vWorld);
     if (vH < ${WATER}.0) {
         float depth = ${WATER}.0 - vH;
-        vec3 wcol = mix(uShallow, uDeep, smoothstep(0.0, 9.0, depth));
-        vec2 rp = vWorld.xz * 0.55 + uTime * vec2(0.7, 0.5);
-        float rip = sin(rp.x + sin(rp.y * 1.3 + uTime)) + sin(rp.y * 1.7 - uTime * 1.3);
-        vec3 wn = normalize(vec3(cos(rp.x + uTime) * 0.09, 1.0, cos(rp.y * 1.4 - uTime) * 0.09));
-        vec3 V = normalize(uCamPos - vWorld);
+        float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + 3.3) * 0.45;
+        float b0 = clamp(floor(bpos) / 3.0, 0.0, 1.0);
+        float b1 = clamp((floor(bpos) + 1.0) / 3.0, 0.0, 1.0);
+        vec3 wcol = mix(uShallow, uDeep, mix(b0, b1, smoothstep(0.3, 0.7, fract(bpos))));
+        vec2 rp = vWorld.xz * 0.55 + uWorldTime * vec2(0.02, 0.014);
+        vec2 rp2 = vWorld.xz * 0.31 - uWorldTime * vec2(0.011, 0.018);
+        float rip = sin(rp.x + sin(rp.y * 1.3 + uWorldTime * 0.02)) + sin(rp.y * 1.7 - uWorldTime * 0.026);
+        vec3 wn = normalize(vec3(
+            -(cos(rp.x + uWorldTime * 0.02) * 0.11 + cos(rp2.x * 1.7) * 0.07),
+            1.0,
+            -(cos(rp.y * 1.4 - uWorldTime * 0.022) * 0.1 + cos(rp2.y * 2.1) * 0.09)));
         float fres = pow(1.0 - max(dot(wn, V), 0.0), 3.0);
         vec3 hv = normalize(V + uSunDir);
         float spec = pow(max(dot(wn, hv), 0.0), 46.0) * (0.5 + 0.5 * sin(rip));
+        float wss = dot(wn.xz, normalize(uSunDir.xz));
+        float wsh = 0.74 + 0.26 * smoothstep(-0.16, 0.16, wss);
+        vec3 refl = normalize(reflect(-V, wn));
+        float spark = pow(max(dot(refl, normalize(uSunDir)), 0.0), 140.0)
+            * step(0.42, fbm2(vWorld.xz * 0.8 + uWorldTime * 0.016));
         wcol = mix(wcol, uZenith * 1.2, fres * 0.45);
+        wcol *= wsh * (0.9 + 0.1 * sin(rip * 1.4 + vWorld.z * 0.04));
         wcol += uSunCol * spec * 0.9;
-        float foam = smoothstep(${WATER + 0.9}, ${WATER - 0.6}, vH) * (0.45 + 0.55 * fbm2(vWorld.xz * 0.9 + uTime * 0.8));
-        wcol = mix(wcol, uFoam, clamp(foam, 0.0, 1.0) * 0.8 * smoothstep(3.0, 0.0, depth));
+        wcol += uSunCol * spark * 2.4;
+        float shore = smoothstep(3.2 + fbm2(vWorld.xz * 0.3) * 1.7, 0.35, depth);
+        float foam = shore * (0.45 + 0.55 * fbm2(vWorld.xz * 0.9 + uWorldTime * 0.014));
+        float lace = smoothstep(0.9, 1.6, depth + fbm2(vWorld.xz * 1.6 - uWorldTime * 0.02)) * shore;
+        wcol = mix(wcol, uFoam, clamp(foam + lace * 0.5, 0.0, 1.0) * 0.85);
         col = wcol;
     }
     if (vGlow > 0.004) {
-        float flick = 0.72 + 0.28 * fbm3(vWorld.xz * 0.22 + uTime * 1.6);
-        vec3 lava = mix(vec3(1.55, 0.42, 0.07), vec3(1.25, 0.95, 0.45), fbm2(vWorld.xz * 0.5 + uTime) * vGlow);
+        float flick = 0.72 + 0.28 * fbm3(vWorld.xz * 0.22 + uWorldTime * 0.03);
+        vec3 lava = mix(vec3(1.55, 0.42, 0.07), vec3(1.25, 0.95, 0.45), fbm2(vWorld.xz * 0.5 + uWorldTime * 0.03) * vGlow);
         col = mix(col, lava, clamp(vGlow * flick, 0.0, 1.0));
         col += lava * vGlow * 0.35;
     }
-    col = mix(col, vec3(0.10, 0.07, 0.05), vScorch * 0.7);
+    if (vScorch > 0.02 && vGlow <= 0.004) {
+        vec3 hv2 = normalize(V + uSunDir);
+        float gloss = pow(max(dot(nrm, hv2), 0.0), 26.0);
+        col = mix(col, col * 0.5, vScorch * 0.55);
+        col += uSunCol * gloss * vScorch * 0.9;
+    }
+    float cshade = fbm2(vWorld.xz * 0.011 + vec2(uWorldTime * 0.0016, uWorldTime * 0.0009));
+    col *= 1.0 - 0.22 * smoothstep(0.48, 0.76, cshade);
     col = mix(col, uFogCol, smoothstep(70.0, uFogD, vDist) * 0.92);
     gl_FragColor = vec4(col, 1.0);
 }
 `
     const tUniforms = {
         uData: { value: hTex }, uOrigin: { value: new THREE.Vector2() }, uCamPos: { value: new THREE.Vector3() },
-        uTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(0.4, 0.7, 0.5) },
+        uTime: { value: 0 }, uWorldTime: { value: 0 }, uSunDir: { value: new THREE.Vector3(0.4, 0.7, 0.5) },
         uZenith: { value: new THREE.Color() }, uFogCol: { value: new THREE.Color() }, uSunCol: { value: new THREE.Color() },
         uDeep: { value: new THREE.Color() }, uShallow: { value: new THREE.Color() }, uFoam: { value: new THREE.Color() },
         uSand: { value: new THREE.Color() }, uGrassA: { value: new THREE.Color() }, uGrassB: { value: new THREE.Color() },
@@ -387,6 +419,7 @@ void main(){
         uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
         uSunDir: tUniforms.uSunDir, uSunCol: tUniforms.uSunCol,
         uCloudCol: { value: new THREE.Color() }, uCloudMix: { value: 0.5 }, uTime: tUniforms.uTime,
+        uWorldTime: tUniforms.uWorldTime,
     }
     const sky = new THREE.Mesh(
         new THREE.SphereGeometry(900, 32, 18),
@@ -395,7 +428,7 @@ void main(){
             vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
             fragmentShader: `
 precision highp float;
-uniform vec3 uZenith, uHorizon, uSunDir, uSunCol, uCloudCol; uniform float uCloudMix, uTime;
+uniform vec3 uZenith, uHorizon, uSunDir, uSunCol, uCloudCol; uniform float uCloudMix, uTime, uWorldTime;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main(){
@@ -407,9 +440,13 @@ void main(){
     col += uSunCol * pow(max(sd, 0.0), 14.0) * 0.22;
     col += uSunCol * pow(max(sd, 0.0), 3.0) * 0.06;
     vec2 cp = d.xz / max(abs(d.y) + 0.18, 0.18);
-    float c = fbm3(cp * 1.15 + vec2(uTime * 0.012, uTime * 0.006));
-    float cov = smoothstep(0.52 - uCloudMix * 0.14, 0.78, c) * smoothstep(0.0, 0.22, d.y) * (1.0 - smoothstep(0.55, 1.0, d.y) * 0.35);
-    col = mix(col, uCloudCol, cov * uCloudMix);
+    float c = fbm3(cp * 1.15 + vec2(uWorldTime * 0.0002, uWorldTime * 0.0001));
+    float c2 = fbm3(cp * 2.4 + vec2(-uWorldTime * 0.00035, uWorldTime * 0.00023) + 9.1);
+    float fine = fbm2(cp * 5.5 + vec2(uWorldTime * 0.0005, -uWorldTime * 0.0003));
+    float cov = smoothstep(0.56 - uCloudMix * 0.12, 0.80, c) * smoothstep(0.0, 0.22, d.y) * (1.0 - smoothstep(0.55, 1.0, d.y) * 0.35);
+    float cov2 = smoothstep(0.58 - uCloudMix * 0.1, 0.84, c2) * smoothstep(0.0, 0.3, d.y);
+    col = mix(col, uCloudCol * (0.78 + 0.34 * fine), cov2 * uCloudMix * 0.55);
+    col = mix(col, uCloudCol * (0.86 + 0.3 * fine), cov * uCloudMix);
     gl_FragColor = vec4(col, 1.0);
 }
 `,
@@ -422,8 +459,9 @@ void main(){
     const mkMat = (frag, additive) => new THREE.ShaderMaterial({
         uniforms: {
             uAtlas: { value: atlas.tex }, uRight: { value: new THREE.Vector3(1, 0, 0) }, uUp: { value: new THREE.Vector3(0, 1, 0) },
+            uFwd: { value: new THREE.Vector3(0, 0, 1) },
             uCamPos: tUniforms.uCamPos, uFogCol: tUniforms.uFogCol, uFogD: tUniforms.uFogD,
-            uSunUp: { value: 0.7 }, uTime: tUniforms.uTime,
+            uSunUp: { value: 0.7 }, uTime: tUniforms.uTime, uWorldTime: tUniforms.uWorldTime,
         },
         vertexShader: BILL_VERT, fragmentShader: frag,
         transparent: true, depthWrite: false, depthTest: true,
@@ -613,9 +651,9 @@ void main(){
 
     // ---- sprites (billboards)
     const sprItems = []
-    const pushSpr = (name, x, y, z, tint, alpha, flip) => {
+    const pushSpr = (name, x, y, z, tint, alpha, flip, sd) => {
         const s = SPRITES[name]
-        sprItems.push({ d: 0, name, x, y, z, w: s.ww, h: s.wh, center: !!s.center, tint: tint || [1, 1, 1], alpha: alpha ?? 1, flip: !!flip })
+        sprItems.push({ d: 0, name, x, y, z, w: s.ww, h: s.wh, center: !!s.center, tint: tint || [1, 1, 1], alpha: alpha ?? 1, flip: !!flip, sd: sd ?? null })
     }
 
     const fillSprites = (gs) => {
@@ -632,7 +670,7 @@ void main(){
         for (const hs of gs.huts || []) {
             if (hs.dead) pushSpr('rubble', hs.x, hs.y, gz(hs.x, hs.y) + 0.4, [1, 1, 1], 1)
             else if (hs.burn > 0) pushSpr('hutBurn', hs.x, hs.y, gz(hs.x, hs.y), [1, 1, 1], 1)
-            else pushSpr('hut', hs.x, hs.y, gz(hs.x, hs.y), [1, 1, 1], 1)
+            else pushSpr('hut', hs.x, hs.y, gz(hs.x, hs.y), [1, 1, 1], 1, false, -5 - hs.v)
         }
         const cst = gs.castleStage
         if (cst > 0) {
@@ -679,7 +717,7 @@ void main(){
             spr.aUv[i * 4 + 2] = (it.flip ? -u.w : u.w)
             spr.aUv[i * 4 + 3] = it.center ? -u.h : u.h
             spr.aTint[i * 4] = it.tint[0]; spr.aTint[i * 4 + 1] = it.tint[1]; spr.aTint[i * 4 + 2] = it.tint[2]; spr.aTint[i * 4 + 3] = it.alpha
-            spr.aSeed[i] = i
+            spr.aSeed[i] = it.sd ?? i
         }
         spr.geo.instanceCount = n
         markGeo(spr)
@@ -688,6 +726,9 @@ void main(){
     // ---- ambient emitters + particle integrate/upload
     const emitAmbient = (gs) => {
         for (const hs of gs.huts || []) {
+            if (hs.dead && Math.random() < 0.3) {
+                spawn(hs.x + (Math.random() - 0.5) * 2, heightAt(gs, hs.x, hs.y) + 1.2, hs.y + (Math.random() - 0.5) * 2, 'smoke', (Math.random() - 0.5) * 0.25, 0.55 + Math.random() * 0.4, (Math.random() - 0.5) * 0.25, 1.6 + Math.random() * 1.4, 80 + Math.random() * 50)
+            }
             if (hs.burn > 0 && Math.random() < 0.25) {
                 spawn(hs.x + (Math.random() - 0.5) * 3, heightAt(gs, hs.x, hs.y) + 2, hs.y + (Math.random() - 0.5) * 3, 'fire', 0, 1.1 + Math.random(), 0, 1.1 + Math.random() * 0.8, 22)
                 if (Math.random() < 0.4) spawn(hs.x, heightAt(gs, hs.x, hs.y) + 4.5, hs.y, 'smoke', (Math.random() - 0.5) * 0.4, 0.85 + Math.random() * 0.5, (Math.random() - 0.5) * 0.4, 2.8 + Math.random() * 2.4, 110 + Math.random() * 70)
@@ -803,6 +844,7 @@ void main(){
         uploadData(gs)
         emitAmbient(gs)
         tUniforms.uTime.value = performance.now() / 1000
+        tUniforms.uWorldTime.value = gs.tick
 
         const bank = view.bank || 0
         const cpP = (view.pitch ?? 0.06) + (view.sink || 0)
@@ -830,6 +872,7 @@ void main(){
         for (const m of [sprMesh, parMesh, smokeMesh]) {
             m.material.uniforms.uRight.value.copy(right)
             m.material.uniforms.uUp.value.copy(up)
+            m.material.uniforms.uFwd.value.copy(fwd)
         }
         fillSprites(gs)
         fillParticles({ fwd, right, up })
@@ -865,6 +908,7 @@ void main(){
         resetWorld,
         applyPalette,
         particleCount: () => parts.length,
+        smokeCount: () => smoke.geo.instanceCount,
         spriteCount: () => spr.geo.instanceCount,
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
         scorchCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 2] > 0) n++; return n },
