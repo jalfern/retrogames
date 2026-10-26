@@ -14,6 +14,12 @@ the #1096 options switched on.
   bit-identical.
 - **Uppercuts that launch**: every fighter's rising `dp` (→↓↑+P) sets a big
   `launch` (0.125+); the victim pops into a juggle window.
+- **Juggle rules (#1106)**: engine option `createMatch({ juggle: true })`
+  (default off — IRON RING stays bit-identical). Launched victims keep their
+  horizontal speed damped so they hang in a pocket instead of flinging away;
+  exactly ONE aerial follow-up lands per launch (it re-pops the victim and
+  counts in the combo), and every further airborne hit is refused — the lock
+  clears when the victim's back hits the floor (hitair→down→getup).
 - **A signature finishing move per fighter**: `qcbf` (↓←↓→+P) at a FULL bar.
   Engine checks `qcbf` before `qcf` so its d,f tail can't be stolen. If the hit
   is clean and the victim is at/below `finishAt` (30) HP the round ends with a
@@ -78,8 +84,6 @@ the #1096 options switched on.
 
 - Finishers are one big hit today; a multi-beat cinematic sequence per finisher
   would sell the signature moment.
-- Uppercut launch exists but there is no dedicated juggle/aerial-combo ruleset
-  yet (air recovery is the generic hitair→down).
 - No intro/outround dialogue lines; win/lose quotes are QA polish.
 - Sub-zero: no stage interactives or midground variety beyond props.
 - `qcb` still unused by any fighter; guard crush / stun meter not implemented.

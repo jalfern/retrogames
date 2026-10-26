@@ -211,7 +211,7 @@ const ViperPitGame = () => {
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
             const human2 = m !== 'cpu'
-            gs = createMatch({ seed: sd, guardButton: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
+            gs = createMatch({ seed: sd, guardButton: true, juggle: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
             finishFx = 0; finishText = ''
@@ -323,7 +323,7 @@ const ViperPitGame = () => {
         const attractDemo = () => {
             seedCounter = (seedCounter + 0x9e3779b9) >>> 0
             const a = BY_ID.riv, b = BY_ID.krax
-            gs = createMatch({ seed: seedCounter | 1, guardButton: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
+            gs = createMatch({ seed: seedCounter | 1, guardButton: true, juggle: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'riv'; p2Char = 'krax'
             rebuildRigs(); rebuildStage()
@@ -479,9 +479,12 @@ const ViperPitGame = () => {
                     }
                     if (comboFx[i] > 0) {
                         comboFx[i]--
-                        ui(Math.max(16, H * 0.034))
+                        const pop = comboFx[i] > 54 ? 1 + (comboFx[i] - 54) / 40 : 1
+                        ui(Math.max(16, H * 0.034) * pop)
                         hctx.textAlign = 'center'
-                        hctx.fillStyle = `rgba(255,210,62,${Math.min(1, comboFx[i] / 30).toFixed(2)})`
+                        const tier = comboVal[i] >= 6 ? '#ff5a3c' : comboVal[i] >= 4 ? '#b07aff' : '#ffd23e'
+                        const r = parseInt(tier.slice(1, 3), 16), g = parseInt(tier.slice(3, 5), 16), b = parseInt(tier.slice(5, 7), 16)
+                        hctx.fillStyle = `rgba(${r},${g},${b},${Math.min(1, comboFx[i] / 30).toFixed(2)})`
                         hctx.fillText(`${comboVal[i]} HIT COMBO`, i === 0 ? W * 0.22 : W * 0.78, H * 0.3)
                     }
                 }

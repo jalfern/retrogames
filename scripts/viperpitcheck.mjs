@@ -4,10 +4,13 @@
 // blocks), launching uppercuts, qcbf finishing moves that end a wounded
 // opponent in style — plus the inherited rules (block/chip, low-block, throw
 // through guard, projectiles, cancel-combos, seeded determinism) and every
-// ladder CPU completing a match. Part B drives the cabinet in headless Chrome
+// ladder CPU completing a match — plus #1106 juggle rules (a launched foe
+// hangs in a pocket; exactly one aerial follow-up lands, the next is locked
+// until the floor resets). Part B drives the cabinet in headless Chrome
 // with real key events: attract → select → fight → K.O., inputs reaching the
 // sim, the drawn frame moving. `--mutate` proves the harness can fail: a dead
-// guard (blockHeld never true) must let heavies smash through the GUARD.
+// guard (blockHeld never true) must let heavies smash through the GUARD, and
+// a removed juggle cap must let the third aerial hit connect.
 //
 //   npm run viperpitcheck              # Node rules + browser drive
 //   npm run viperpitcheck -- --mutate  # prove red
@@ -28,15 +31,19 @@ const ok = (cond, msg) => { if (cond) { pass++; console.log(`  ok  ${msg}`) } el
 const P = (o = {}) => ({ left: false, right: false, up: false, down: false, lp: false, hp: false, lk: false, hk: false, bk: false, ...o })
 const bust = (p) => `${p}?c=${Date.now()}${MUT ? 'm' : ''}`
 
-console.log(`viperpitcheck part A: fighting core + guard-button rules${MUT ? ' (MUTANT: guard never engages)' : ''}`)
+console.log(`viperpitcheck part A: fighting core + guard-button + juggle rules${MUT ? ' (MUTANT: guard dead, juggle cap lifted)' : ''}`)
 const SRC = path.join(HERE, '../src/engine/fighting.js')
 if (MUT) {
     const src = await import('node:fs').then((fs) => fs.readFileSync(SRC, 'utf8'))
-    const before = src
-    const mutated = src.replace(
-        'f.blockHeld = !!pad.bk && groundedIdle',
-        'f.blockHeld = !!pad.bk && groundedIdle && !globalThis.__VIPER_NOGUARD__')
-    ok(mutated !== before, 'mutate: guard gate line found to patch')
+    const mutated = src
+        .replace(
+            'f.blockHeld = !!pad.bk && groundedIdle',
+            'f.blockHeld = !!pad.bk && groundedIdle && !globalThis.__VIPER_NOGUARD__')
+        .replace(
+            'if (m.juggle && airborne && def.juggled >= 1) {',
+            'if (m.juggle && airborne && def.juggled >= (globalThis.__VIPER_NOLOCK__ ? 99 : 1)) {')
+    ok(mutated.includes('__VIPER_NOGUARD__'), 'mutate: guard gate line found to patch')
+    ok(mutated.includes('__VIPER_NOLOCK__'), 'mutate: juggle lock gate line found to patch')
     writeFileSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
@@ -52,7 +59,7 @@ ok(ROSTER.every((d) => d.finish), 'every finisher is named')
 
 const human = (id) => ({ ...BY_ID[id], cpu: false })
 const mk = (p1 = 'riv', p2 = 'nyx', seed = 5) => {
-    const m = e.createMatch({ seed, guardButton: true, p1: human(p1), p2: human(p2) })
+    const m = e.createMatch({ seed, guardButton: true, juggle: true, p1: human(p1), p2: human(p2) })
     let g = 0
     while (m.phase !== 'fight' && g++ < 400) e.step(m, [P(), P()])
     return m
@@ -162,9 +169,36 @@ if (!MUT) {
     for (let i = 0; i < 20; i++) e.step(m, [P(), P()])
     ok(hp - m.fighters[1].hp >= 13, `lp→hp chains for ${hp - m.fighters[1].hp} dmg (cancel window)`)
 
+    // juggle (#1106): launched victims hang in a pocket, exactly ONE aerial
+    // follow-up lands, the next is refused even in range, recovery resets it
+    const groundedAtk = (mm) => { let w = 0; while ((mm.fighters[0].st === 'attack' || mm.fighters[0].y > 0) && w++ < 90) e.step(mm, [P(), P()]) }
+    const pin = (mm) => { mm.fighters[1].x = mm.fighters[0].x + 1.2; if (mm.fighters[1].y < 0.8) mm.fighters[1].y = 0.8 }
+    m = mk()
+    m.fighters[1].x = m.fighters[0].x + 1.1
+    for (const fr of DP) e.step(m, [fr, P()])
+    groundedAtk(m)
+    hp = m.fighters[1].hp
+    for (const fr of DP) e.step(m, [fr, P()])
+    let fj = 0
+    while (m.fighters[1].hp === hp && fj++ < 20) e.step(m, [P(), P()])
+    ok(hp - m.fighters[1].hp >= 8 && m.fighters[0].combo === 2 && m.fighters[1].juggled === 1,
+        `juggle: aerial follow-up on a launched foe lands (${hp - m.fighters[1].hp} dmg, combo ${m.fighters[0].combo})`)
+    groundedAtk(m)
+    hp = m.fighters[1].hp
+    for (const fr of DP) { pin(m); e.step(m, [fr, P()]) }
+    for (let i = 0; i < 12; i++) { pin(m); e.step(m, [P(), P()]) }
+    ok(hp - m.fighters[1].hp === 0, `juggle lock: third aerial hit refused even in range (${hp - m.fighters[1].hp} dmg)`)
+    let gj = 0
+    while (m.fighters[1].st !== 'idle' && gj++ < 300) e.step(m, [P({ right: true }), P()])
+    hp = m.fighters[1].hp
+    for (const fr of DP) e.step(m, [fr, P()])
+    fj = 0
+    while (m.fighters[1].hp === hp && fj++ < 25) e.step(m, [P(), P()])
+    ok(hp - m.fighters[1].hp >= 8 && m.fighters[1].juggled === 0, 'juggle lock clears on recovery — the floor resets the combo game')
+
     // determinism
     const run = (seed) => {
-        const mm = e.createMatch({ seed, guardButton: true, p1: { ...BY_ID.riv, cpu: true }, p2: human('krax') })
+        const mm = e.createMatch({ seed, guardButton: true, juggle: true, p1: { ...BY_ID.riv, cpu: true }, p2: human('krax') })
         const hs = []
         for (let k = 0; k < 300; k++) {
             e.step(mm, [P({ left: k % 61 >= 44, bk: k % 40 < 8, lp: k % 29 === 0 }), P({ left: k % 61 < 22, bk: k % 50 < 10 })])
@@ -177,7 +211,7 @@ if (!MUT) {
 
     // the game can be won: every ladder CPU beats an idle dummy
     for (const id of LADDER) {
-        const mm = e.createMatch({ seed: 1234, guardButton: true, p1: { ...BY_ID[id], cpu: true }, p2: human('nyx') })
+        const mm = e.createMatch({ seed: 1234, guardButton: true, juggle: true, p1: { ...BY_ID[id], cpu: true }, p2: human('nyx') })
         let g = 0
         while (mm.phase !== 'done' && g++ < 60 * 60 * 4) e.step(mm, [P(), P()])
         ok(mm.phase === 'done' && mm.winner === 0 && mm.fighters[0].wins >= 2, `CPU ${id} completes a match vs idle`)
@@ -199,6 +233,24 @@ if (MUT) {
     for (let i = 0; i < 16; i++) e.step(m, [P(), P({ bk: true })])
     ok(hp - m.fighters[1].hp === 9, 'MUTANT check: guard gate removed → heavies smash through (harness bites)')
     globalThis.__VIPER_NOGUARD__ = false
+    // juggle-lock mutant: the aerial follow-up cap removed → the third hit lands
+    globalThis.__VIPER_NOLOCK__ = true
+    m = mk()
+    m.fighters[1].x = m.fighters[0].x + 1.1
+    for (const fr of DP) e.step(m, [fr, P()])
+    let wm = 0
+    while ((m.fighters[0].st === 'attack' || m.fighters[0].y > 0) && wm++ < 90) e.step(m, [P(), P()])
+    hp = m.fighters[1].hp
+    for (const fr of DP) e.step(m, [fr, P()])
+    let fm = 0
+    while (m.fighters[1].hp === hp && fm++ < 20) e.step(m, [P(), P()])
+    const mutJuggle = hp - m.fighters[1].hp
+    while ((m.fighters[0].st === 'attack' || m.fighters[0].y > 0) && wm++ < 180) e.step(m, [P(), P()])
+    hp = m.fighters[1].hp
+    for (const fr of DP) { m.fighters[1].x = m.fighters[0].x + 1.2; if (m.fighters[1].y < 0.8) m.fighters[1].y = 0.8; e.step(m, [fr, P()]) }
+    for (let i = 0; i < 12; i++) { m.fighters[1].x = m.fighters[0].x + 1.2; if (m.fighters[1].y < 0.8) m.fighters[1].y = 0.8; e.step(m, [P(), P()]) }
+    ok(mutJuggle >= 8 && hp - m.fighters[1].hp >= 8, `MUTANT check: juggle cap removed → unlimited air juggles (${mutJuggle} then ${hp - m.fighters[1].hp})`)
+    globalThis.__VIPER_NOLOCK__ = false
     unlinkSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
 
