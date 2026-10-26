@@ -101,6 +101,7 @@ const ViperPitGame = () => {
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
+        let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
         let lagHp = [100, 100]
         let rigs = null
@@ -403,6 +404,8 @@ const ViperPitGame = () => {
                     }
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.4, 0xff4030)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.8, 0xffd050)
+                    const qcbf = m.fighters[e.by].def.moves.qcbf
+                    finishCine = { beats: (qcbf && qcbf.beats) || ['stitch', 'stitch', 'slam'], by: e.by, startedAt: performance.now(), fired: -1 }
                 }
             }
         }
@@ -693,8 +696,38 @@ const ViperPitGame = () => {
                 }
             }
             if (shake > 0) shake *= 0.88
+            // FINISH cinematic: the signature finish plays out as a multi-beat
+            // sequence over the KO freeze — a camera punch-in, a per-beat blow,
+            // and the loser scripted through the fighter's beats. Presentation
+            // only (wall-clock driven), so the engine + netplay hashes are untouched.
+            cine = null
+            if (finishCine && scr === 'play') {
+                const beats = finishCine.beats
+                const ACTIVE0 = 140, BEAT_MS = 250
+                const endAt = finishCine.startedAt + ACTIVE0 + beats.length * BEAT_MS
+                if (now >= endAt) {
+                    finishCine = null
+                } else {
+                    const t = now - finishCine.startedAt
+                    if (t >= ACTIVE0) {
+                        const i = Math.min(beats.length - 1, Math.floor((t - ACTIVE0) / BEAT_MS))
+                        const isLast = i === beats.length - 1
+                        if (finishCine.fired !== i) {
+                            finishCine.fired = i
+                            const v = gs.fighters[1 - finishCine.by]
+                            if (i === 0) { audioController.playTone(96, 0.08, 'square', 0.13); audioController.playNoise(0.05, 0.15) }
+                            else if (!isLast) { audioController.playSweep(240, 540, 0.12, 'sawtooth', 0.11); audioController.playNoise(0.06, 0.17) }
+                            else { audioController.playSweep(330, 70, 0.32, 'sawtooth', 0.17); audioController.playNoise(0.28, 0.27) }
+                            shake = Math.max(shake, 8 + i * 5)
+                            scene.spark(v.x, 1.5, 0xff6a30)
+                        }
+                        const k = Math.max(0, Math.min(1, (now - (finishCine.startedAt + ACTIVE0 + i * BEAT_MS)) / BEAT_MS))
+                        cine = { side: 1 - finishCine.by, kind: beats[i], k, zoom: (1.0 + i * 0.5) * Math.sin(Math.PI * k) }
+                    }
+                }
+            }
             if (gs && stageFx && rigs) {
-                scene.sync(gs, rigs, stageFx, now / 1000, shake > 0.4 ? shake * 0.02 : 0)
+                scene.sync(gs, rigs, stageFx, now / 1000, shake > 0.4 ? shake * 0.02 : 0, cine)
                 scene.render()
             }
             drawHud(hud.width, hud.height)
@@ -712,6 +745,8 @@ const ViperPitGame = () => {
                 finisherReady() { if (gs) { gs.fighters[0].meter = 100; gs.fighters[1].hp = Math.min(gs.fighters[1].hp, 25) } },
                 stage(i) { startFight(i, 'cpu') },
                 sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
+                cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
+                forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 fx() {
                     if (!stageFx) return null
                     return {

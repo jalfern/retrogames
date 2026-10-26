@@ -31,7 +31,7 @@ const defs = [
             ...sp({ key: 'dp', move: { type: 'special', startup: 3, active: 7, recovery: 19, dmg: 9, hitstun: 18, blockstun: 11, push: 0.1, launch: 0.125, box: [0.2, 0.7, 1.4, 2.25] } },
                 { dmg: 12, launch: 0.13 },
                 { dmg: 17, launch: 0.14 }),
-            qcbf: { type: 'special', startup: 6, active: 9, recovery: 24, dmg: 22, hitstun: 26, blockstun: 14, push: 0.22, launch: 0.13, finisher: true, finishAt: 30, box: [0.3, 0.55, 2.0, 2.2] },
+            qcbf: { type: 'special', startup: 6, active: 9, recovery: 24, dmg: 22, hitstun: 26, blockstun: 14, push: 0.22, launch: 0.13, finisher: true, finishAt: 30, beats: ['stitch', 'stitch', 'slam'], box: [0.3, 0.55, 2.0, 2.2] },
         },
     },
     {
@@ -48,7 +48,7 @@ const defs = [
                 { startup: 8, dmg: 14, projectile: { name: 'fire', speed: 0.28, dmg: 14, hitstun: 22, ttl: 240, super: true } }),
             ...sp({ key: 'dp', move: { type: 'special', startup: 3, active: 7, recovery: 20, dmg: 9, hitstun: 18, blockstun: 11, push: 0.1, launch: 0.125, box: [0.22, 0.7, 1.45, 2.2] } },
                 { dmg: 12, launch: 0.13 }, null),
-            qcbf: { type: 'special', startup: 5, active: 9, recovery: 26, dmg: 22, hitstun: 24, blockstun: 13, push: 0.2, launch: 0.12, finisher: true, finishAt: 30, box: [0.3, 0.5, 2.0, 2.1] },
+            qcbf: { type: 'special', startup: 5, active: 9, recovery: 26, dmg: 22, hitstun: 24, blockstun: 13, push: 0.2, launch: 0.12, finisher: true, finishAt: 30, beats: ['charge', 'flare', 'blast'], box: [0.3, 0.5, 2.0, 2.1] },
         },
     },
     {
@@ -66,7 +66,7 @@ const defs = [
             ...sp({ key: 'dp', move: { type: 'special', startup: 4, active: 8, recovery: 17, dmg: 8, hitstun: 17, blockstun: 10, push: 0.1, launch: 0.135, box: [0.2, 0.6, 1.5, 2.3] } },
                 { dmg: 11 },
                 { dmg: 16, launch: 0.145 }),
-            qcbf: { type: 'special', startup: 5, active: 10, recovery: 22, dmg: 21, hitstun: 24, blockstun: 13, push: 0.2, launch: 0.14, finisher: true, finishAt: 30, box: [0.25, 0.45, 1.95, 2.35] },
+            qcbf: { type: 'special', startup: 5, active: 10, recovery: 22, dmg: 21, hitstun: 24, blockstun: 13, push: 0.2, launch: 0.14, finisher: true, finishAt: 30, beats: ['grab', 'flip', 'slam'], box: [0.25, 0.45, 1.95, 2.35] },
         },
     },
     {
@@ -86,7 +86,7 @@ const defs = [
                 { dmg: 18, launch: 0.145 }),
             ...sp({ key: 'charge', move: { type: 'special', startup: 7, active: 4, recovery: 21, dmg: 12, hitstun: 19, blockstun: 12, push: 0.18, launch: 0.08, box: [0.4, 0.75, 1.95, 1.7] } },
                 { dmg: 15 }, { dmg: 21 }),
-            qcbf: { type: 'special', startup: 6, active: 10, recovery: 24, dmg: 24, hitstun: 26, blockstun: 14, push: 0.24, launch: 0.135, finisher: true, finishAt: 30, box: [0.3, 0.5, 2.05, 2.25] },
+            qcbf: { type: 'special', startup: 6, active: 10, recovery: 24, dmg: 24, hitstun: 26, blockstun: 14, push: 0.24, launch: 0.135, finisher: true, finishAt: 30, beats: ['charge', 'surge', 'blast'], box: [0.3, 0.5, 2.05, 2.25] },
         },
     },
     {
@@ -103,7 +103,7 @@ const defs = [
                 { dmg: 28, launch: 0.12 }),
             ...sp({ key: 'charge', move: { type: 'special', startup: 6, active: 4, recovery: 22, dmg: 13, hitstun: 20, blockstun: 12, push: 0.2, launch: 0.09, box: [0.4, 0.7, 2.0, 1.75] } },
                 { dmg: 16 }, { dmg: 22 }),
-            qcbf: { type: 'throw', startup: 4, active: 4, recovery: 28, dmg: 26, hitstun: 40, push: 0.24, launch: 0.12, finisher: true, finishAt: 30, box: [0.4, 0.5, 1.9, 2.0] },
+            qcbf: { type: 'throw', startup: 4, active: 4, recovery: 28, dmg: 26, hitstun: 40, push: 0.24, launch: 0.12, finisher: true, finishAt: 30, beats: ['grab', 'strike', 'slam'], box: [0.4, 0.5, 1.9, 2.0] },
         },
     },
 ]
