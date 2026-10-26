@@ -1,50 +1,54 @@
-# STATE — session 25 (2026-10-25)
+# STATE — session 26 (2026-10-26)
 
 ## Shipped this session
-- **IRON RING (#1095 → PR #1098, squashed to main as 365911e)**: original 1v1
-  fighter in the SFII spirit, MODERN bar, own IP throughout. Live at
-  jalfern.com/retrogames/iron-ring.
-  - **Shared fighting core** `src/engine/fighting.js` (new `src/engine/`):
-    state machine (idle/crouch/jump/attack/blockstun/hitstun/launched/down/
-    getup/win), frame data, hitbox/hurtbox, block rules (back-hold; lows need
-    crouch-block; throws beat block; heavy-chip never KOs), hitstop, cancels
-    (combo), forgiving facing-relative motion parser, charge, projectiles,
-    best-of-N rounds, tiered CPU that emits PAD FRAMES through the same motion
-    parser humans use (no cheating). #1096 reuses it as pure roster data.
-  - Roster 6: KADE/VEXA/BRAKK/SABLE/HYDE/TESSA (build, palette, reach, hp,
-    qcf/dp/charge specials, EX@50 / super auto@100 — phone-friendly). Ladder
-    VEXA easy → KADE insane. 3 stages, SSIV camera (midpoint + zoom-by-dist),
-    live crowd/flags/neon, box-rig humanoids posed per state, shelf props.
-  - Modes: ladder (phone pad A/B + dir specials), local 2P (P1 arrows+JKUI,
-    P2 WASD+FGBV), net over #1039 lobby: 8-tick pad lockstep, hash-every-30;
-    wire carries 8 verbs so the 6-bit lockstep normalizer is bypassed with a
-    hand-rolled mirror.
-  - `ironringcheck` 33 gates green + proven-fail mutant (dead hitbox gate =
-    zero damage); contractcheck 14/14; build green.
+- **VIPER PIT (#1096 → PR #1105, squashed to main as e39ea51)**: original
+  gritty 1v1 fighter in the MK spirit, MODERN bar, own IP throughout. Live at
+  jalfern.com/retrogames/viper-pit.
+  - **Engine extensions (#1096 options, IRON RING bit-identical —
+    ironringcheck still 25/25)** in `src/engine/fighting.js`: `guardButton`
+    mode (dedicated `pad.bk` verb; back-walking never blocks; GUARD+DOWN =
+    low block), `qcbf` motion (↓←↓→, checked BEFORE qcf so its d,f tail can't
+    be stolen), move-level `finisher`/`finishAt` (clean hit on ≤30 HP ends the
+    round with the FINISH! banner + `finish` event), projectile `vy/grav`
+    (arcing kicks), CPU guards and attempts finishers through pad scripts.
+  - Roster 5: NYX/CINDER/VESS/RIV/KRAX — each with a launching uppercut
+    (dp launch ≥0.125) and a NAMED signature finisher (SHADOW STITCH,
+    BONFIRE, DRY LAND, NEON PURGE, SCRAP HEAP). Ladder NYX easy → KRAX insane.
+  - 3 dark pits (back alley 2 a.m. / foundry / last train): fog, procedural
+    asphalt canvas textures, chain-link fence, neon signs, silhouetted crowd
+    with phone glow, hanging lamps with volumetric cones + flicker, embers.
+    Articulated limb rigs (shoulder/elbow/hip/knee, capsules) — NOT IronRing's
+    boxes; SSIV camera + handheld shake; GUARD on-screen button on phone.
+  - Modes: ladder (pad+A/B+GUARD), local 2P (P1 arrows+JKUI+O, P2 WASD+FGBV+H),
+    net over #1039 lobby: 9-verb pad wire, hash-every-30.
+  - `viperpitcheck` 36 gates green + proven-fail mutant (guard gate removed =
+    heavies smash through GUARD); contractcheck 14/14; lint gates + build green.
 
 ## Playable now
-- jalfern.com/retrogames/iron-ring — tap start, pick a fighter, fight the ladder.
+- jalfern.com/retrogames/viper-pit — tap start, pick a fighter, hold GUARD,
+  earn the bar, ↓←↓→+punch to FINISH.
 
 ## Branches / harness
-- `forge/iron-ring` deleted by squash. Worktree `~/Dev/retrogames-forge-iron-ring`
-  removable (its node_modules is a symlink to the main checkout).
-- QA filed: **#1103** IRON RING polish pass (multi-hit specials, special→super
-  cancels, guard crush/stun, stage midground variety, KO slow-mo, victory
-  quotes, bloom/DOF, select sfx, stage ambience, continue screen).
-- #1096 (MK-style fighter on the shared engine) still queued `next` — untouched,
-  that's the natural next claim.
+- `forge/viper-pit` deleted by squash. Worktree `~/Dev/retrogames-forge-viper-pit`
+  removable (node_modules is a symlink to the main checkout).
+- QA filed: **#1106** VIPER PIT polish pass (finisher cinematics, juggle rules,
+  stage life/ambience, directional hit reactions, HUD+KO juice, portrait
+  select, guard feedback, per-fighter audio).
+- Queue: **#1099** PLATFORM — help/title screens overflow on small screens
+  (oldest `game-queue`; the natural next claim).
 
 ## Lessons learned
-- Roster data with `cpu` tiers silently hijacks human seats — every code path
-  that puts a def on a human seat must clone with `cpu:false`.
-- A keyboard tap (<16ms) can fall between two 60 fps polls: latch every keydown
-  into the next sampled pad, or browser punches vanish while Node punches hit.
-- `blockHeld` must include the crouch state, or crouch-blocking (lows) is
-  impossible — and it fails silently with only real distance inputs.
-- Motion buffer timestamps must be absolute frames; "elapsed since push" breaks
-  subsequence window/gap checks in ways that look like motion detection failure.
-- KO must flow through the damage path (`resolveHit`); an exported `forceKO`
-  seam keeps harnesses honest about the rest.
+- Pressing UP jumps BEFORE the attack check in the idle branch: a dp/uppercut
+  script must send `up + button` on ONE frame — a standalone `up` frame jumps
+  and the move degrades to the air kick. (Test scripts, humans and the CPU all
+  need this; it bites identically in IRON RING.)
+- A qcbf-style motion (d,b,d,f) contains a qcf (d,f) subsequence inside the
+  parser window — check the longer motion FIRST in tryStartSpecial.
+- A finisher must never KO a healthy opponent: gate on `def.hp <= finishAt`
+  inside `resolveHit`, keep the plain KO path untouched; harness proves both
+  branches.
+- Back-walk-block vs guard-button is an engine-level option, not a per-game
+  hack: one `guardButton` flag keeps both titles' sims hash-verifiable.
 
 ## Open questions
 - none filed this session.
