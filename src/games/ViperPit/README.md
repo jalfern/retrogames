@@ -25,6 +25,13 @@ the #1096 options switched on.
   is clean and the victim is at/below `finishAt` (30) HP the round ends with a
   FINISH! banner + the fighter's named finisher over the top (stylized, no
   gore). CPU guards and attempts finishers through the same pad scripts.
+- **Finisher cinematics (#1106)**: a finisher that ends the round plays out as
+  a 3-beat sequence over the KO freeze — the loser is scripted through the
+  signature beats (KRAX grab→strike→slam, VESS grab→flip→dry-land, NYX a triple
+  stitch, CINDER charge→flare→blast, RIV charge→surge→blast), each beat a
+  camera punch-in + a per-beat blow, the per-fighter sting landing on the final
+  hit. Presentation only (wall-clock driven) — the engine and netplay hashes are
+  untouched.
 - **Dark stages**: back alley at 2 a.m., the foundry, the last train — fog,
   procedural asphalt, chain-link, neon signs, silhouetted crowds with phone
   glow, hanging lamps with light cones, drifting embers. The pits are alive
@@ -63,6 +70,9 @@ the #1096 options switched on.
   stage-life fx handles (`molten` {mat,light}, `rain` {geo,vel,fallen},
   `sweep` {light,wins,phase,period,force,prog}); `sync` animates them per
   frame (molten pulse/cast, rain fall + wrap, periodic/forced train sweep).
+  `poseFinisherBeat` scripts the loser through a finisher's beats, and `sync`
+  takes a `cine` handle (camera punch-in + victim beat pose) for the FINISH
+  cinematic.
 - `src/games/ViperPit/index.jsx` — cabinet: attract CPU-vs-CPU demo, select,
   street ladder (NYX→KRAX easy→insane), local 2P, #1039-lobby netplay with the
   9-verb pad wire + hash-every-30, HUD canvas, FINISH flash/letterbox juice.
@@ -102,7 +112,8 @@ the #1096 options switched on.
   stage bed running and the KO crowd surge reaching the real audio graph,
   stage-life runtime probes via `fx()`: molten opacity actually changes and
   the cast light is on, `rainFallen` advances, a forced subway sweep walks
-  0→1, zero page errors).
+  0→1, the finisher cinematic running its multi-beat sequence via
+  `forceFinish()` + `cine()`, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -112,8 +123,6 @@ the #1096 options switched on.
 
 ## Honest gaps (polish-pass candidates)
 
-- Finishers are one big hit today; a multi-beat cinematic sequence per finisher
-  would sell the signature moment.
 - No intro/outround dialogue lines; win/lose quotes are QA polish.
 - Sub-zero: no stage interactives or midground variety beyond props.
 - `qcb` still unused by any fighter; guard crush / stun meter not implemented.

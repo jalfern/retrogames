@@ -256,6 +256,35 @@ export function poseFighter(rig, f, tSec) {
     r.legL.hip.rotation.x = q.legs[1].hip; r.legL.kn.rotation.x = q.legs[1].kn
 }
 
+// -- finisher cinematic: per-beat victim pose --------------------------------------
+// During the FINISH freeze the loser is scripted through the signature beats
+// (grab/stitch/strike/flip/slam/blast/charge/surge/flare). k is 0..1 progress in
+// the beat; the pose eases in from the body and is what sells each beat.
+export function poseFinisherBeat(rig, kind, k) {
+    const e = ease(k)
+    const S = {
+        grab:   { hipY: -0.16 * e, lean: 0.3 * e, headX: 0.3 * e, drop: 0, arms: [{ sh: -0.9, el: -1.6, z: 0.5 }, { sh: -0.7, el: -1.7, z: -0.45 }], legs: [{ hip: 0.4, kn: -0.6 }, { hip: 0.2, kn: -0.4 }] },
+        stitch: { hipY: -0.05, lean: -0.3 * e, headX: -0.55 * e, drop: 0, arms: [{ sh: 0.85, el: -1.0, z: 0.7 }, { sh: 0.75, el: -1.0, z: -0.7 }], legs: [{ hip: -0.25, kn: -0.3 }, { hip: 0.22, kn: -0.35 }] },
+        strike: { hipY: -0.05, lean: -0.42 * e, headX: -0.7 * e, drop: 0, arms: [{ sh: 0.95, el: -0.9, z: 0.75 }, { sh: 0.85, el: -0.9, z: -0.75 }], legs: [{ hip: -0.32, kn: -0.32 }, { hip: 0.25, kn: -0.35 }] },
+        flip:   { hipY: 0.95 * Math.sin(Math.PI * e), lean: -0.4, headX: -0.3, drop: 0, arms: [{ sh: -1.4, el: -0.4, z: 0.8 }, { sh: -1.2, el: -0.5, z: -0.8 }], legs: [{ hip: 0.9, kn: -1.2 }, { hip: 0.6, kn: -0.9 }] },
+        slam:   { hipY: -0.08 * e, lean: 0.2 * e, headX: 0.2 * e, drop: e, arms: [{ sh: 0.9, el: -0.3, z: 0.9 }, { sh: 0.8, el: -0.3, z: -0.9 }], legs: [{ hip: 0.3, kn: -0.4 }, { hip: -0.2, kn: -0.2 }] },
+        blast:  { hipY: -0.14 * e, lean: -0.5 * e, headX: -0.5 * e, drop: 0.55 * e, arms: [{ sh: 1.0, el: -0.2, z: 1.0 }, { sh: 0.9, el: -0.2, z: -1.0 }], legs: [{ hip: -0.3, kn: -0.5 }, { hip: 0.3, kn: -0.3 }] },
+        charge: { hipY: -0.28 * e, lean: -0.2 * e, headX: -0.15 * e, drop: 0, arms: [{ sh: -0.6, el: -1.8, z: 0.6 }, { sh: -0.5, el: -1.9, z: -0.5 }], legs: [{ hip: 0.6, kn: -1.1 }, { hip: 0.5, kn: -0.9 }] },
+        surge:  { hipY: -0.05, lean: -0.4 * e, headX: -0.4 * e, drop: 0.25 * e, arms: [{ sh: 1.1, el: -0.3, z: 0.9 }, { sh: 1.0, el: -0.3, z: -0.9 }], legs: [{ hip: -0.35, kn: -0.35 }, { hip: 0.3, kn: -0.3 }] },
+        flare:  { hipY: -0.1 * e, lean: -0.3 * e, headX: -0.3 * e, drop: 0.3 * e, arms: [{ sh: 0.8, el: -0.5, z: 0.8 }, { sh: 0.7, el: -0.5, z: -0.8 }], legs: [{ hip: -0.25, kn: -0.4 }, { hip: 0.25, kn: -0.3 }] },
+    }
+    const q = S[kind] || S.stitch
+    const r = rig
+    r.body.rotation.x = ease(q.drop) * Math.PI / 2
+    r.body.position.y = q.hipY - ease(q.drop) * 0.42
+    r.torso.rotation.x = q.lean
+    r.head.rotation.x = q.headX
+    r.armR.sh.rotation.x = q.arms[0].sh; r.armR.sh.rotation.z = q.arms[0].z; r.armR.el.rotation.x = q.arms[0].el
+    r.armL.sh.rotation.x = q.arms[1].sh; r.armL.sh.rotation.z = q.arms[1].z; r.armL.el.rotation.x = q.arms[1].el
+    r.legR.hip.rotation.x = q.legs[0].hip; r.legR.kn.rotation.x = q.legs[0].kn
+    r.legL.hip.rotation.x = q.legs[1].hip; r.legL.kn.rotation.x = q.legs[1].kn
+}
+
 // -- stage -------------------------------------------------------------------------
 export function buildStage(scene, stage) {
     const grp = new THREE.Group()
@@ -407,13 +436,14 @@ export function createScene(canvas) {
                 sparks.push({ mesh: m, t: 14, vx: Math.cos(a) * 0.06, vy: Math.sin(a) * 0.05 + 0.03 })
             }
         },
-        sync(m, rigs, stageFx, tSec, shake) {
+        sync(m, rigs, stageFx, tSec, shake, cine) {
             const [fa, fb] = m.fighters
             const mid = (fa.x + fb.x) / 2
             const dist = Math.abs(fa.x - fb.x)
+            const baseZ = clamp(10.5 + dist * 0.85, 10.5, 15.5)
             cam.position.x = mid
-            cam.position.z = clamp(10.5 + dist * 0.85, 10.5, 15.5)
-            cam.position.y = 2.4 + (shake || 0) * 0.04
+            cam.position.z = Math.max(5.5, baseZ - (cine ? cine.zoom : 0))
+            cam.position.y = 2.4 + (shake || 0) * 0.04 - (cine ? 0.5 * Math.sin(Math.PI * (cine.k || 0)) : 0)
             cam.lookAt(mid, 1.5, 0)
             if (shake) {
                 cam.position.x += (Math.random() - 0.5) * shake * 0.06
@@ -423,7 +453,8 @@ export function createScene(canvas) {
                 const f = m.fighters[i], rig = rigs[i]
                 rig.root.position.x = f.x
                 rig.root.rotation.y = f.facing === 1 ? -Math.PI / 2 : Math.PI / 2
-                poseFighter(rig, f, tSec)
+                if (cine && cine.side === i) poseFinisherBeat(rig, cine.kind, cine.k)
+                else poseFighter(rig, f, tSec)
                 rig.shadow.position.x = f.x
                 const air = clamp(1 - f.y * 0.25, 0.4, 1)
                 rig.shadow.scale.set(0.8 * f.def.build.bulk * air, 1.3 * air, 1)

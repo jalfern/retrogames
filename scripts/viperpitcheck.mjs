@@ -325,6 +325,28 @@ if (MUT) {
     ok(!/0\.5 \* Math\.sin\(tSec \* 1\.4\)/.test(mutR), 'mutant: dead molten pulse fails the gate (harness bites)')
 }
 
+// ---- #1106 finisher cinematic gate ------------------------------------------------
+// The signature finish sells as a multi-beat sequence: a per-beat camera punch-in,
+// a per-beat blow, and the loser scripted through the fighter's beats. Data gate
+// (beats on every qcbf), source gates (the cine driver + beat poses), and a mutant.
+{
+    const fs = await import('node:fs')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const BEAT_KINDS = new Set(['grab', 'stitch', 'strike', 'flip', 'slam', 'blast', 'charge', 'surge', 'flare'])
+    ok(ROSTER.every((d) => Array.isArray(d.moves.qcbf.beats) && d.moves.qcbf.beats.length >= 2 && d.moves.qcbf.beats.length <= 3 && d.moves.qcbf.beats.every((k) => BEAT_KINDS.has(k))), 'every finisher has a 2-3 beat signature sequence')
+    ok(/baseZ - \(cine \? cine\.zoom/.test(rsrc), 'finisher-cine gate: per-beat camera punch-in')
+    ok(/poseFinisherBeat\(rig, cine\.kind, cine\.k\)/.test(rsrc), 'finisher-cine gate: loser scripted through the beats')
+    ok(/export function poseFinisherBeat\(/.test(rsrc), 'finisher-cine gate: per-beat victim pose exists')
+    ok(/finishCine = \{ beats: \(qcbf && qcbf\.beats\)/.test(gsrc), 'finisher-cine gate: cine starts on the finish event')
+    ok(/finishCine\.fired !== i/.test(gsrc), 'finisher-cine gate: per-beat stepping')
+    ok(/playSweep\(330, 70, 0\.32, 'sawtooth', 0\.17\)/.test(gsrc), 'finisher-cine gate: final-blow boom')
+    ok(/cine\(\) \{/.test(gsrc) && /forceFinish\(\) \{/.test(gsrc), 'finisher-cine gate: dev hooks expose cine() and forceFinish()')
+    // mutant: kill the camera punch-in — the gate must fail
+    const mutR = rsrc.replace('baseZ - (cine ? cine.zoom : 0)', 'baseZ')
+    ok(!/baseZ - \(cine \? cine\.zoom/.test(mutR), 'mutant: dead camera punch-in fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -462,6 +484,29 @@ if (!MUT) {
         await page.waitForTimeout(450)
         const s2 = await page.evaluate(() => window.__viperPitTest.fx())
         ok(s2.sweep > s1.sweep && s2.sweep <= 1, `subway train light-sweep passes the pit (${s1.sweep} -> ${s2.sweep})`)
+    }
+
+    // #1106 finisher cinematic: the signature finish is a multi-beat sequence —
+    // camera punch-in + a per-beat blow + the loser scripted through the beats.
+    // forceFinish() starts the cine for P1's finisher; cine() reports the sequence.
+    {
+        await page.evaluate(() => window.__viperPitTest.forceFinish())
+        let sawActive = false, maxI = -1
+        for (let i = 0; i < 30 && !sawActive; i++) {
+            const c = await page.evaluate(() => window.__viperPitTest.cine())
+            if (c.active) { sawActive = true; if (c.i > maxI) maxI = c.i }
+            await page.waitForTimeout(60)
+        }
+        ok(sawActive, 'finisher cinematic starts on a finish')
+        let cleared = false
+        for (let i = 0; i < 40 && !cleared; i++) {
+            const c = await page.evaluate(() => window.__viperPitTest.cine())
+            if (c.active && c.i > maxI) maxI = c.i
+            if (!c.active) { cleared = true; break }
+            await page.waitForTimeout(60)
+        }
+        ok(maxI >= 1, `finisher cinematic fires multiple beats (reached beat ${maxI})`)
+        ok(cleared, 'finisher cinematic clears after its last beat')
     }
 
     await page.keyboard.press('Escape')
