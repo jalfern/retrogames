@@ -14,9 +14,9 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
-import { createMatch, step, emptyPad, matchHash, fightersState, FIXED_DT } from '../../engine/fighting.js'
+import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER } from './fighters.js'
 import { createScene, buildFighter, buildStage, attachShelfProps } from './render.js'
 import { STAGES } from './stages.js'
@@ -103,6 +103,16 @@ const IronRingGame = () => {
         const oursH = new Map(), peerH = new Map()
         const keys1 = emptyPad()
         const keys2 = emptyPad()
+        // press latch: a tap can fall entirely between two 60 fps polls; every
+        // keydown is guaranteed to reach at least one sampled pad this way.
+        const latch1 = new Set()
+        const latch2 = new Set()
+        const drained = (keys, latch) => {
+            const p = { ...keys }
+            for (const k of latch) { p[k] = true }
+            latch.clear()
+            return p
+        }
         const guestPick = { char: null }
 
         // ---- net (#1039 lobby + hand-rolled pad lockstep: the wire carries the
@@ -279,9 +289,9 @@ const IronRingGame = () => {
             }
             if (scr !== 'play') return
             const k1 = KEY_P1[e.code]
-            if (k1) { keys1[k1] = true; if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault() }
+            if (k1) { keys1[k1] = true; latch1.add(k1); if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault() }
             const k2 = KEY_P2[e.code]
-            if (mode === 'local' && k2) { keys2[k2] = true; e.preventDefault() }
+            if (mode === 'local' && k2) { keys2[k2] = true; latch2.add(k2); e.preventDefault() }
         }
         const onKeyUp = (e) => {
             const k1 = KEY_P1[e.code]
@@ -333,8 +343,8 @@ const IronRingGame = () => {
                 }
                 return [p0, p1]
             }
-            if (mode === 'local') return [{ ...keys1 }, { ...keys2 }]
-            return [{ ...keys1 }, emptyPad()]
+            if (mode === 'local') return [drained(keys1, latch1), drained(keys2, latch2)]
+            return [drained(keys1, latch1), emptyPad()]
         }
 
         // ---- audio + fx ------------------------------------------------------------------
@@ -569,6 +579,7 @@ const IronRingGame = () => {
             while (acc >= SIM_MS && steps < 5) {
                 acc -= SIM_MS
                 steps++
+                if (contractHoldsLoop()) { acc = 0; break }
                 if (scr === 'attract' && gs) {
                     step(gs, [emptyPad(), emptyPad()])
                     if (gs.phase === 'done') attractDemo()
@@ -598,9 +609,10 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins) } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st) } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { startFight(7, 'cpu') },
+                koP2() { if (gs) forceKO(gs, 0) },
             }
             dbg = mountDbg({
                 title: 'IRON RING',
@@ -632,6 +644,7 @@ const IronRingGame = () => {
                     if (!gs) return { tick: 0, score: 0, done: false, hash: 0 }
                     return {
                         tick: gs.tick,
+                        seed: gs.seed,
                         score: gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp),
                         done: gs.phase === 'done',
                         hash: matchHash(gs),

@@ -51,6 +51,7 @@ const GAMES = [
     { id: 'emberwood', path: '/emberwood' },
     { id: 'garden-guard', path: '/garden-guard' },
     { id: 'homebody', path: '/homebody' },
+    { id: 'iron-ring', path: '/iron-ring' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
@@ -91,6 +92,7 @@ const PATTERNS = {
     'blob-battle': (i) => ({ left: i % 43 < 15, right: i % 43 >= 20 && i % 43 < 34, down: i % 17 < 4, a: i % 11 < 2, b: i % 23 === 0 }),
     homebody: (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 30, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 34, a: i % 17 === 0, b: i % 97 === 0, pointer: { x: 0.35 + 0.3 * Math.sin(i / 47), y: 0.45 + 0.25 * Math.cos(i / 41), down: i % 43 === 0 } }),
     'garden-guard': (i) => ({ left: i % 13 < 3, right: i % 17 >= 8 && i % 17 < 11, up: i % 29 < 2, down: i % 23 >= 6 && i % 23 < 8, a: i % 7 < 2, b: i % 31 < 1, pointer: { x: 0.55 + 0.32 * Math.sin(i / 40), y: 0.55 + 0.3 * Math.cos(i / 37), down: i % 53 === 0 } }),
+    'iron-ring': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

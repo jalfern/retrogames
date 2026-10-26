@@ -198,7 +198,7 @@ function updateFighter(m, f, opp, pad) {
     const dir = dirToken(pad, f.facing)
     const fwd = dir === 'f' || dir === 'df' || dir === 'uf'
     const back = dir === 'b' || dir === 'db' || dir === 'ub'
-    f.blockHeld = back && f.y === 0 && (f.st === 'idle' || f.st === 'blockstun')
+    f.blockHeld = back && f.y === 0 && (f.st === 'idle' || f.st === 'crouch' || f.st === 'blockstun')
     f.crouchBlock = f.blockHeld && (pad.down || dir === 'db' || dir === 'd')
 
     if (f.charge >= 45) f.charge = 45
@@ -372,6 +372,15 @@ function koRound(m, winner) {
     winner.st = 'win'; winner.sf = 0; winner.move = null; winner.vx = 0
     const loser = m.fighters[winner.side === 0 ? 1 : 0]
     loser.st = 'down'; loser.sf = 0; loser.move = null
+}
+
+// forceKO ends a round immediately — a harness/debug seam, not a game mechanic.
+export function forceKO(m, winnerIdx) {
+    if (m.phase !== 'fight') return m
+    const winner = m.fighters[winnerIdx]
+    m.fighters[winnerIdx === 0 ? 1 : 0].hp = 0
+    koRound(m, winner)
+    return m
 }
 
 // ---- projectiles --------------------------------------------------------------------
