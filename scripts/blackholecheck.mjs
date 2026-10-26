@@ -78,6 +78,11 @@
 // -> `... 0.0`) -> the CMB-ring pixel gate goes red (ring px -> 0) while dive().glow and
 // every physics/audio/HUD gate stay green (the ring is painted by that one uniform in the
 // dark interior, not simulated — proven-fail: glow held 0.54, ring dropped to 0).
+// Ninth mutant (#1097/#1100): the filed bugs ARE the mutants — restore the full radii
+// string in updateTelemetry and `if (spinA !== 0) applySpin(spinA)` at script top ->
+// the portrait caption gate goes red (multi-line dump) and the phone ?spin=1 boot gate
+// goes red with `ReferenceError: Cannot access 'running' before initialization` (the TDZ
+// killed eval before __holeTest existed; every spin gate used to set spin only post-load).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -236,9 +241,11 @@ async function main() {
     /id="spinchip"/.test(src) && /spinChip\.addEventListener\('pointerdown'/.test(src) &&
     /function cycleSpin\(\)\{ applySpin\(spinA === 0 \? SPIN_MAX : spinA > 0 \? -SPIN_MAX : 0\)/.test(src) &&
     /if \(e\.key === 'k' \|\| e\.key === 'K'\) cycleSpin\(\)/.test(src))
-  ok('telemetry HUD (a*, r+, photon, ISCO, shadow span) driven by kerrNum + kerrSpan (#1082)',
+  ok('spin caption is one short line; full Kerr radii live in the kerrNum/kerrSpan hooks, not the HUD (#1097)',
     /id="telemetry"/.test(src) &&
-    /function updateTelemetry\(\)\{[\s\S]{0,400}kerrNum\(Math\.abs\(spinA\)\)[\s\S]{0,200}kerrSpan\(Math\.abs\(spinA\)\)/.test(src))
+    /function updateTelemetry\(\)\{[^}]*spinning[^}]*a\*/.test(src) &&
+    !/ISCO \$\{/.test(src) && !/shadow \$\{/.test(src) && !/photon \$\{/.test(src) &&
+    /kerrNum\(a\)\{ return kerrNum/.test(src) && /kerrSpan\(a\)\{ return kerrSpan/.test(src))
   ok('plunge audio rides the dive: Doppler pitch + sub swell near the horizon (#1077)',
     /function diveAudio/.test(src) && /diveOsc/.test(src) && /subGainRef\.gain\.setTargetAtTime/.test(src))
   ok('tidal shear stretches the sky disc tangentially as the cone compresses (#1077)',
@@ -429,10 +436,13 @@ async function main() {
       ok('spin toggle records a rumble cue carrying the new spin direction (#1082)',
         rigOff.rumble === 0 && rigP.rumble === 1 && rigM.rumble === -1,
         `${rigOff.rumble}/${rigP.rumble}/${rigM.rumble}`)
-      ok('telemetry HUD lists the Kerr radii while spinning and clears at Schwarzschild (#1082)',
-        rigOff.telemetry === '' && rigP.telemetry.includes('a* 0.9') &&
-        rigP.telemetry.includes(`r+ ${kn.rPlus}rs`) && rigP.telemetry.includes(`ISCO ${kn.iscoPro}rs`) &&
-        rigP.telemetry.includes('shadow'), rigP.telemetry)
+      ok('spin caption is a single short a* line while spinning and clears at Schwarzschild (#1097)',
+        rigOff.telemetry === '' && rigP.telemetry === ' · spinning · a* 0.9' &&
+        rigM.telemetry === ' · spinning · a* -0.9', `${rigP.telemetry}|${rigM.telemetry}`)
+      const sn = await page.evaluate(() => window.__holeTest.kerrSpan(0.45))
+      ok('the Kerr radii the caption lost (#1097) are still harness-readable (kerrNum/kerrSpan + ISCO rIn)',
+        kn.rPlus > 0 && kn.rPlus < 1 && kn.phPro > 0 && kn.phRetro > kn.phPro &&
+        kn.iscoPro < 3 && sn.pro > 0 && sn.pro < sn.retro, JSON.stringify({ kn, sn }))
       ok('the spin chip mirrors the mode and cycles off -> prograde -> retrograde -> off on tap (#1082)',
         rigOff.chip.includes('off') && rigP.chip.includes('prograde') && rigM.chip.includes('retrograde'),
         rigP.chip)
@@ -710,11 +720,22 @@ async function main() {
       const errsP = []
       phone.on('pageerror', e => errsP.push('pageerror: ' + e.message))
       phone.on('console', m => { if (m.type() === 'error') errsP.push('console: ' + m.text().split('\n')[0]) })
-      await phone.goto(url + '?lite=1', { waitUntil: 'load' })
+      await phone.goto(url + '?lite=1&spin=1', { waitUntil: 'load' })
       let phoneReady = true
       try { await phone.waitForFunction(() => window.__holeTest && window.__holeTest.ready, null, { timeout: 25000 }) }
       catch { phoneReady = false }
-      ok('phone 390x844 boots clean (lite)', phoneReady && errsP.length === 0, errsP[0])
+      ok('phone 390x844 boots clean with ?spin=1 — the init spin must not hit a TDZ (#1100)',
+        phoneReady && errsP.length === 0, errsP[0])
+      const telP = await phone.evaluate(() => {
+        const t = document.getElementById('telemetry')
+        return { ready: !!(window.__holeTest && window.__holeTest.ready),
+          text: t.textContent, lines: t.getClientRects().length,
+          spin: window.__holeTest ? window.__holeTest.spin().a : null }
+      })
+      ok('portrait ?spin=1 caption is ONE line, a* only — no r+/photon/ISCO/shadow dump over the hole (#1097)',
+        telP.ready && telP.spin === 0.45 && telP.lines === 1 &&
+        telP.text.includes('a* 0.9') && !/ISCO|shadow|photon|r\+/.test(telP.text),
+        JSON.stringify(telP))
       await phone.evaluate(() => {
         const c = document.getElementById('c')
         c.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, clientX: 200, clientY: 400, bubbles: true }))

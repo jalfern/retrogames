@@ -41,7 +41,7 @@
     color: rgba(190,205,255,.88); text-shadow: 0 1px 3px rgba(0,0,0,.85); cursor: pointer;
     user-select: none; -webkit-user-select: none;
   }
-  #telemetry { color: rgba(178,196,255,.78); }
+  #telemetry { color: rgba(178,196,255,.78); white-space: nowrap; }
   #fatal {
     position: fixed; inset: 0; display: none; place-items: center; z-index: 3;
     font: 14px/1.6 ui-monospace, Menlo, monospace; color: #e8e2d4; background: #010208;
@@ -628,8 +628,9 @@ addEventListener('pointerup', e => {
    ?spin=1 / ?spin=-1 start spinning (harness + links).
    #1082 polish: the same cycle is reachable by tapping the on-screen chip
    (phone players never see K), the toggle fires a sub-bass rumble cue, the
-   orbital whistle re-pitches on the frame-dragged Kerr Omega, and the HUD
-   shows the Kerr numbers the physics already computes (kerrNum/kerrSpan). */
+    orbital whistle re-pitches on the frame-dragged Kerr Omega, and the HUD
+    shows the Kerr numbers the physics already computes (kerrNum/kerrSpan;
+    since #1097 the full radii stay in those hooks and the caption is one line). */
 const spinHint = document.getElementById('spinhint');
 const spinChip = document.getElementById('spinchip');
 const telemetry = document.getElementById('telemetry');
@@ -659,10 +660,10 @@ function spinRumble(a){
   o.start(t0a); o.stop(t0a + 1.5);
 }
 function updateTelemetry(){
-  if (spinA === 0){ telemetry.textContent = ''; return; }
-  const kn = kerrNum(Math.abs(spinA));
-  const sn = kerrSpan(Math.abs(spinA));
-  telemetry.textContent = ` · a* ${kn.aStar} · r+ ${kn.rPlus}rs · photon ${kn.phPro}/${kn.phRetro}rs · ISCO ${kn.iscoPro}rs · shadow ${sn.pro}/${sn.retro}rs`;
+  /* #1097: the caption stays one short line in every mode (portrait phones
+     turned the old radii dump into a tall column over the hole). The full
+     Kerr telemetry lives in the kerrNum/kerrSpan test hooks, not on screen. */
+  telemetry.textContent = spinA === 0 ? '' : ` · spinning · a* ${(spinA / 0.5).toFixed(1)}`;
 }
 function applySpin(a){
   spinA = Math.max(-0.49, Math.min(0.49, +a || 0));
@@ -681,7 +682,8 @@ addEventListener('keydown', e => {
   if (e.key === 'k' || e.key === 'K') cycleSpin();
 });
 spinChip.addEventListener('pointerdown', () => { unlockAudio(); cycleSpin(); });
-if (spinA !== 0) applySpin(spinA);
+/* ?spin= applies after all state exists — see the deferred call near the DEV
+   hooks (#1100: running here hit the audio `running` let before its declaration). */
 
 /* The flyby loop ENDS by falling in (#1048). After the close pass the drone tips to
  * a radial infall: r(s) = rs*(1 + (R1/rs - 1)*(1-s)^3.5) — a free-fall-like profile
@@ -1562,6 +1564,11 @@ function frame(){
 }
 requestAnimationFrame(frame);
 
+/* #1100: apply the ?spin= start AFTER every referenced state (incl. the audio
+   `running` let) is initialized — this call at script top threw a TDZ
+   ReferenceError that killed eval before __holeTest/ready ever existed. */
+if (spinA !== 0) applySpin(spinA);
+
 /* ---------------- DEV hooks ---------------- */
 
 window.__holeTest = {
@@ -1646,7 +1653,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956, 1047, 1048, 1074, 1049, 1082, 1077], span: '~4 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047, 1048, 1074, 1049, 1082, 1077, 1097, 1100], span: '~4 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
