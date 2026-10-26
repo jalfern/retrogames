@@ -1,54 +1,52 @@
-# STATE — session 26 (2026-10-26)
+# STATE — session 27 (2026-10-26)
 
 ## Shipped this session
-- **VIPER PIT (#1096 → PR #1105, squashed to main as e39ea51)**: original
-  gritty 1v1 fighter in the MK spirit, MODERN bar, own IP throughout. Live at
-  jalfern.com/retrogames/viper-pit.
-  - **Engine extensions (#1096 options, IRON RING bit-identical —
-    ironringcheck still 25/25)** in `src/engine/fighting.js`: `guardButton`
-    mode (dedicated `pad.bk` verb; back-walking never blocks; GUARD+DOWN =
-    low block), `qcbf` motion (↓←↓→, checked BEFORE qcf so its d,f tail can't
-    be stolen), move-level `finisher`/`finishAt` (clean hit on ≤30 HP ends the
-    round with the FINISH! banner + `finish` event), projectile `vy/grav`
-    (arcing kicks), CPU guards and attempts finishers through pad scripts.
-  - Roster 5: NYX/CINDER/VESS/RIV/KRAX — each with a launching uppercut
-    (dp launch ≥0.125) and a NAMED signature finisher (SHADOW STITCH,
-    BONFIRE, DRY LAND, NEON PURGE, SCRAP HEAP). Ladder NYX easy → KRAX insane.
-  - 3 dark pits (back alley 2 a.m. / foundry / last train): fog, procedural
-    asphalt canvas textures, chain-link fence, neon signs, silhouetted crowd
-    with phone glow, hanging lamps with volumetric cones + flicker, embers.
-    Articulated limb rigs (shoulder/elbow/hip/knee, capsules) — NOT IronRing's
-    boxes; SSIV camera + handheld shake; GUARD on-screen button on phone.
-  - Modes: ladder (pad+A/B+GUARD), local 2P (P1 arrows+JKUI+O, P2 WASD+FGBV+H),
-    net over #1039 lobby: 9-verb pad wire, hash-every-30.
-  - `viperpitcheck` 36 gates green + proven-fail mutant (guard gate removed =
-    heavies smash through GUARD); contractcheck 14/14; lint gates + build green.
+- **PLATFORM text-fit (#1099 → PR #1108, squashed to main as 53061c5)**: help,
+  title and caption text no longer overflows, clips or hides chrome/pad on any
+  game or demo. Live at jalfern.com/retrogames once Vercel finishes the merge.
+  - **One shared mechanism**: `src/utils/textFit.js` `packPages` (unit-tested)
+    packs content blocks into viewport-fitting pages. `PauseOverlay` (all ~72
+    games) now paginates on short screens — thumb-sized ‹ › pager + swipe +
+    arrow keys, pinned RESUME, `data-help-fit=single|paged`; desktop keeps the
+    single column.
+  - MAGIC CARPET (4-line) + CIVILIZATION (3-line) attract rule-walls replaced
+    by the shared `<AttractMessage>` cycle (ART.md rule 6, one line at a time).
+  - `credits.js` caption-fit for every demo: badge-column reserve (#1078) kept,
+    then px-tighten, then viewport clamp.
+  - Phone-only chrome nudges: Lemmings / LodeRunnerLite / Wizardry /
+    PapersPleaseMin / SuperMarioClassic / Polarity HUD and title rows moved
+    below the ARCADE/PAUSE/FEEDBACK band.
+  - **New gate `npm run textfitcheck`** (225/225): every registry game + every
+    demo at 390x844 / 844x390 / 1280x800 — attract/help/caption bounds vs the
+    viewport, visible pad controls and corner chrome (chrome rule = phones;
+    desktop chrome floats by design, #437), WIN proves real paging.
+    Proven-fail: always-single mutant -> WIN red (header documents it).
+  - lint gates + build green.
 
 ## Playable now
-- jalfern.com/retrogames/viper-pit — tap start, pick a fighter, hold GUARD,
-  earn the bar, ↓←↓→+punch to FINISH.
+- Every title: '?' on a landscape phone now pages through CONTROLS instead of
+  cutting them off; MAGIC CARPET / CIV titles cycle one rule line at a time.
 
 ## Branches / harness
-- `forge/viper-pit` deleted by squash. Worktree `~/Dev/retrogames-forge-viper-pit`
-  removable (node_modules is a symlink to the main checkout).
-- QA filed: **#1106** VIPER PIT polish pass (finisher cinematics, juggle rules,
-  stage life/ambience, directional hit reactions, HUD+KO juice, portrait
-  select, guard feedback, per-fighter audio).
-- Queue: **#1099** PLATFORM — help/title screens overflow on small screens
-  (oldest `game-queue`; the natural next claim).
+- `forge/help-text-fit` deleted by squash. Worktree `~/Dev/retrogames-forge-help-text-fit`
+  removable (node_modules symlinked to the main checkout). My dev server:
+  kill pid in /tmp/forge/dev-5175.log when done.
+- QA filed: **#1109** text-fit polish pass (pager dots/hint + flip cue, custom
+  overlays, landscape attract line width, demo clamp whole-word drops, CI).
+- Queue: empty (game-queue). Next idle per #841: flagship polish stage
+  (SSX, Emberwood, COMET DRIFT HD, Myst — oldest unowned README gap).
 
 ## Lessons learned
-- Pressing UP jumps BEFORE the attack check in the idle branch: a dp/uppercut
-  script must send `up + button` on ONE frame — a standalone `up` frame jumps
-  and the move degrades to the air kick. (Test scripts, humans and the CPU all
-  need this; it bites identically in IRON RING.)
-- A qcbf-style motion (d,b,d,f) contains a qcf (d,f) subsequence inside the
-  parser window — check the longer motion FIRST in tryStartSpecial.
-- A finisher must never KO a healthy opponent: gate on `def.hp <= finishAt`
-  inside `resolveHit`, keep the plain KO path untouched; harness proves both
-  branches.
-- Back-walk-block vs guard-button is an engine-level option, not a per-game
-  hack: one `guardButton` flag keeps both titles' sims hash-verifiable.
+- Help overlays mount only AFTER play starts — a harness must send a start
+  gesture before '?' or it audits nothing (WIN was silently unwinnable).
+- The pad's invisible stick layer is full-screen; overlap checks must target
+  visible controls only ([data-vc=dpad/diag/fixedstick/button]).
+- Corner chrome covers game art BY DESIGN on desktop (#437) — enforce chrome
+  overlap only on phone viewports or half the arcade "fails".
+- js-dos/ifvms arms crash headless Chrome under 3 concurrent WebGL contexts
+  and print their own banner text — skip emulator dirs (use named imports too,
+  `import { ZorkI } from '../games/Zork'`); doscheck owns that arm.
+- The FEEDBACK button sits at 44..~74px: phone HUD rows need top-20, not top-14.
 
 ## Open questions
 - none filed this session.
