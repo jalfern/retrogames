@@ -4,11 +4,13 @@
 // (IRON RING now, the Mortal-Kombat-style title #1096 next) plugs in its roster
 // as data and never re-implements the rules.
 //
-// #1096 options (VIPER PIT), both default-off so IRON RING's sims are
+// #1096 options (VIPER PIT), all default-off so IRON RING's sims are
 // bit-identical: `guardButton` (blocking needs the dedicated pad.bk verb,
 // back-walking never blocks) and move-level `finisher`/`finishAt` (a signature
 // finishing move that ends the round outright — in style — when it drops an
-// already-wounded opponent).
+// already-wounded opponent). #1106 adds `juggle`: launched victims hang in a
+// pocket instead of flinging away, exactly ONE aerial follow-up connects per
+// launch, and the juggle lock clears when the victim's back touches the floor.
 //
 // Determinism law (#494/#495): createMatch(seed) + identical pad streams ⇒
 // identical matchHash every tick. Every random the SIM consumes comes from the
@@ -74,6 +76,7 @@ function createFighter(def, side) {
         buf: [], press: null,
         charge: 0,
         combo: 0, comboTimer: 0,
+        juggled: 0,
         wins: 0,
         cpuScript: [], cpuCool: 0, cpuSeenAtk: -999,
         lastAnim: 'idle', animT: 0,
@@ -85,6 +88,7 @@ export function createMatch(cfg) {
     const m = {
         seed: seed >>> 0, rounds, maxRounds: 2 * rounds + 1,
         guardButton: !!cfg.guardButton,
+        juggle: !!cfg.juggle,
         rng: mulberry32((seed >>> 0) ^ 0x1234abc9),
         tick: 0, phase: 'intro', phaseT: INTRO_FREEZE,
         timer: time * 60, hitstop: 0, round: 1,
@@ -107,6 +111,7 @@ export function resetRound(m) {
         f.st = 'idle'; f.sf = 0; f.move = null; f.phase = ''; f.hitOnce = {}
         f.buf = []; f.press = null; f.charge = 0
         f.combo = 0; f.comboTimer = 0
+        f.juggled = 0
         f.cpuScript = []; f.cpuCool = 40
     }
     m.projectiles = []
@@ -290,7 +295,8 @@ function updateFighter(m, f, opp, pad) {
             break
         }
         case 'hitair': {
-            if (f.y <= 0 && f.vy <= 0) { f.y = 0; f.vy = 0; f.st = 'down'; f.sf = 0 }
+            if (m.juggle) f.vx *= 0.8
+            if (f.y <= 0 && f.vy <= 0) { f.y = 0; f.vy = 0; f.st = 'down'; f.sf = 0; f.juggled = 0 }
             break
         }
         case 'down': {
@@ -365,13 +371,24 @@ function resolveHit(m, atk, def, move, seq) {
         if (atk.st === 'attack') { atk.cancelGate = true }
         m.events.push({ t: m.tick, kind: 'block', by: atk.side })
     } else {
+        const airborne = def.y > 0 || def.st === 'hitair'
+        if (m.juggle && airborne && def.juggled >= 1) {
+            // juggle lock: one aerial follow-up per launch, then the body is
+            // brittle — no third hit until the floor resets it.
+            return
+        }
         const inCombo = def.st === 'hitstun' || def.st === 'hitair'
         atk.combo = inCombo ? atk.combo + 1 : 1
         atk.comboTimer = 60
         def.hp = Math.max(0, def.hp - raw)
         def.st = 'hitstun'; def.stun = move.hitstun; def.sf = 0
-        def.vx = move.push * (atk.facing)
+        def.vx = move.push * atk.facing * (m.juggle && (airborne || move.launch) ? 0.3 : 1)
         if (move.launch) { def.vy = move.launch; def.y = Math.max(def.y, 0.01) }
+        if (m.juggle && airborne) {
+            def.juggled++
+            def.vy = Math.max(def.vy, 0.06)
+        }
+        if (!airborne) def.juggled = 0
         atk.meter = Math.min(100, atk.meter + raw * 0.8)
         def.meter = Math.min(100, def.meter + raw * 0.5)
         if (atk.st === 'attack') { atk.cancelGate = true }
