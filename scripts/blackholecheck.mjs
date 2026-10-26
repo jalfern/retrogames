@@ -74,6 +74,10 @@
 // -> `rInNow = R_IN`) -> the ISCO-truncation gate goes red while every #1049 Kerr
 // geodesic and pixel gate stays green (the hot inner rim is a physical truncation
 // radius, not a painted brightness boost).
+// Eighth mutant (#1077): pin the CMB glow uniform (`gl.uniform1f(us('uGlow'), cb.glow)`
+// -> `... 0.0`) -> the CMB-ring pixel gate goes red (ring px -> 0) while dive().glow and
+// every physics/audio/HUD gate stay green (the ring is painted by that one uniform in the
+// dark interior, not simulated — proven-fail: glow held 0.54, ring dropped to 0).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -235,6 +239,16 @@ async function main() {
   ok('telemetry HUD (a*, r+, photon, ISCO, shadow span) driven by kerrNum + kerrSpan (#1082)',
     /id="telemetry"/.test(src) &&
     /function updateTelemetry\(\)\{[\s\S]{0,400}kerrNum\(Math\.abs\(spinA\)\)[\s\S]{0,200}kerrSpan\(Math\.abs\(spinA\)\)/.test(src))
+  ok('plunge audio rides the dive: Doppler pitch + sub swell near the horizon (#1077)',
+    /function diveAudio/.test(src) && /diveOsc/.test(src) && /subGainRef\.gain\.setTargetAtTime/.test(src))
+  ok('tidal shear stretches the sky disc tangentially as the cone compresses (#1077)',
+    /uniform float uShear/.test(src) && /focus \* uShear/.test(src) && /function shearFactor/.test(src))
+  ok('singularity CMB ring glows in the dark interior before the loop restart (#1077)',
+    /uniform float uGlow/.test(src) && /exp\(-pow\(\(length\(ac\) - 0\.11\) \* 20\.0, 2\.0\)\)/.test(src))
+  ok('dive telemetry HUD shows r\/rs, D and cone while falling (#1077)',
+    /id="divehud"/.test(src) && /divehudEl\.textContent/.test(src) && /cb\.rcam\.toFixed\(2\)/.test(src) && /cb\.cone\.toFixed\(0\)/.test(src))
+  ok('tip-over cue warns in the last 1 s before the loop dives (#1077)',
+    /id="tipcue"/.test(src) && /ORBIT_T - tlc/.test(src) && /until >= 0 && until <= 1/.test(src))
   const idx = readFileSync(resolve(ROOT, 'public/demos/index.html'), 'utf8')
   ok('linked from the demos index (card + DEMO_INDEX)', /id="blackhole"/.test(idx) && /el: 'blackhole'/.test(idx))
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
@@ -580,6 +594,70 @@ async function main() {
       const rb = await page.evaluate(() => window.__holeTest.dive())
       ok('the loop fades back to the flyby start (#1048)',
         rb.phase === 'orbit' && rb.r > 15 && rb.fade === 1, JSON.stringify(rb))
+
+      // --- plunge polish (#1077): shear, telemetry HUD, dive audio, CMB ring, tip cue ---
+      const sh = await page.evaluate(() => ({ far: window.__holeTest.shearAt(7.5), mid: window.__holeTest.shearAt(2.0), rim: window.__holeTest.shearAt(1.05) }))
+      ok('tidal shear grows as the sky disc compresses toward the collapse (#1077)',
+        sh.rim > sh.mid && sh.mid > sh.far && sh.rim > sh.far + 0.6,
+        `r7.5=${sh.far} r2.0=${sh.mid} r1.05=${sh.rim}`)
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 3))
+      await page.waitForTimeout(200)
+      const hudOn = await page.evaluate(() => window.__holeTest.diveHud())
+      ok('dive telemetry HUD is up mid-plunge with r\/rs, D, cone (#1077)',
+        hudOn.visible === true && /r\/rs/.test(hudOn.text) && /D /.test(hudOn.text) && /cone/.test(hudOn.text), JSON.stringify(hudOn))
+      await page.evaluate(() => window.__holeTest.jumpTo(30))
+      await page.waitForTimeout(200)
+      const hudOff = await page.evaluate(() => window.__holeTest.diveHud())
+      ok('dive telemetry HUD is hidden during the flyby (#1077)', hudOff.visible === false, JSON.stringify(hudOff))
+
+      await page.evaluate(() => window.__holeTest.jumpTo(20))
+      await page.waitForTimeout(200)
+      const auOrbit = await page.evaluate(() => window.__holeTest.drone())
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 4))
+      await page.waitForTimeout(200)
+      const auDive = await page.evaluate(() => window.__holeTest.drone())
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 9.2))
+      await page.waitForTimeout(200)
+      const auDeep = await page.evaluate(() => window.__holeTest.drone())
+      ok('plunge audio: Doppler pitch rises toward the horizon (#1077)',
+        auOrbit.dopplerHz === 0 && auDive.dopplerHz > auOrbit.dopplerHz && auDeep.dopplerHz > auDive.dopplerHz && auDeep.dopplerHz > 600,
+        `orbit=${auOrbit.dopplerHz}Hz dive=${auDive.dopplerHz}Hz deep=${auDeep.dopplerHz}Hz`)
+      ok('plunge audio: sub-bass swells near the horizon (#1077)',
+        auOrbit.subSwell === 0 && auDive.subSwell > auOrbit.subSwell && auDeep.subSwell > 0.6,
+        `orbit=${auOrbit.subSwell} dive=${auDive.subSwell} deep=${auDeep.subSwell}`)
+
+      await page.evaluate(() => window.__holeTest.jumpTo(62 + 9 + 0.1))
+      await page.waitForTimeout(250)
+      // read the live glow BEFORE the (slow, software-rendered) screenshot: the
+      // screenshot advances the wall-clock sim deep into the dark interior and
+      // would otherwise decay the Doppler glow below the gate's threshold.
+      const gGlow = await page.evaluate(() => window.__holeTest.dive().glow)
+      const gimg = decodePng(await page.screenshot())
+      const gW = gimg.w, gH = gimg.h, gcx = Math.round(gW / 2), gcy = Math.round(gH / 2)
+      const ringPx = 0.11 * Math.min(gW, gH)
+      let gRing = 0, gDark = 0, gTot = 0
+      for (let y = 4; y < gH - 4; y += 2) for (let x = 4; x < gW - 4; x += 2){
+        const rad = Math.hypot(x - gcx, y - gcy); const L = luma(px(gimg, x, y)); gTot++
+        if (L > 38 && Math.abs(rad - ringPx) < 16) gRing++
+        if (L < 14) gDark++
+      }
+      ok('singularity CMB ring glows in the dark interior near the crossing (#1077)',
+        gGlow > 0.3 && gRing > 60 && gDark / gTot > 0.6, `glow=${gGlow} ring=${gRing} dark=${(100 * gDark / gTot).toFixed(0)}%`)
+
+      await page.evaluate(() => window.__holeTest.jumpTo(61.55))
+      await page.waitForTimeout(200)
+      const tipNear = await page.evaluate(() => window.__holeTest.tipCue())
+      ok('tip-over cue is live ~1 s before the loop dives (#1077)',
+        tipNear.visible === true && tipNear.until > 0 && tipNear.until < 1, JSON.stringify(tipNear))
+      await page.evaluate(() => window.__holeTest.jumpTo(60.0))
+      await page.waitForTimeout(200)
+      const tipFar = await page.evaluate(() => window.__holeTest.tipCue())
+      await page.evaluate(() => window.__holeTest.jumpTo(63.0))
+      await page.waitForTimeout(200)
+      const tipGone = await page.evaluate(() => window.__holeTest.tipCue())
+      ok('tip-over cue is quiet well before the tip and gone once diving (#1077)',
+        tipFar.visible === false && tipGone.visible === false, `far=${JSON.stringify(tipFar)} diving=${JSON.stringify(tipGone)}`)
 
       // photon ring vs shadow purity (#1046) at a deterministic pose: freeze
       // performance.now so the flyby sits still, then walk 48 radials. A

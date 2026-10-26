@@ -14,6 +14,17 @@
     text-transform: uppercase;
   }
   #hud b { color: rgba(255,228,190,.92); font-weight: 700; }
+  #divehud {
+    position: fixed; right: 14px; bottom: 12px; z-index: 2; pointer-events: none;
+    font: 11px/1.6 ui-monospace, Menlo, monospace; letter-spacing: .1em; text-transform: uppercase;
+    color: rgba(178,205,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.85); opacity: 0; transition: opacity .18s;
+  }
+  #divehud.on { opacity: 1; }
+  #tipcue {
+    position: fixed; left: 50%; top: 16%; transform: translateX(-50%); z-index: 2; pointer-events: none;
+    font: 12px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .34em; text-transform: uppercase;
+    color: rgba(255,214,150,.95); text-shadow: 0 0 14px rgba(255,168,80,.55); opacity: 0;
+  }
   #audiohint {
     position: fixed; top: 12px; right: 14px; z-index: 2;
     background: rgba(8,10,18,.55); border: 1px solid rgba(255,190,110,.26); border-radius: 8px;
@@ -41,6 +52,8 @@
 <body>
 <canvas id="c"></canvas>
 <div id="hud"><b>BLACK HOLE</b> · gravitational lensing · Keplerian disk &nbsp;·&nbsp; drag to look &nbsp;·&nbsp; click = drone &nbsp;·&nbsp; tap = drop probe &nbsp;·&nbsp; the loop ends by falling in &nbsp;·&nbsp; <span id="spinhint">K = spin off</span><span id="telemetry"></span></div>
+<div id="divehud"></div>
+<div id="tipcue">&#9662; tipping over</div>
 <div id="audiohint">click for gravitational drone</div>
 <div id="spinchip">K · spin off — tap</div>
 <div id="fatal"></div>
@@ -100,6 +113,8 @@ uniform float uDisc;         // disk visibility: fades as the diver falls past i
 uniform float uFade;         // loop fade: 1 = flyby visible, 0 = dark interior (#1048)
 uniform float uSpin;         // Kerr spin parameter a (rs=1 units, M=0.5); 0 = Schwarzschild (#1049)
 uniform float uRIn;          // live disk inner edge: Kerr prograde ISCO at spin, 3 rs at rest (#1082)
+uniform float uShear;        // tidal stretch of the sky disc as the cone compresses (#1077)
+uniform float uGlow;         // singularity CMB ring glow near the crossing (#1077)
 out vec4 fragColor;
 
 #define RS ${RS.toFixed(1)}
@@ -168,7 +183,7 @@ vec3 starfield(vec3 rd, float focus, vec2 sdir){
       // Jacobian focusing near the shadow limb: magnified stars stretch tangentially
       float drp = dd.x * sdir.x + dd.y * sdir.y;
       float dtp = dd.x * sdir.y - dd.y * sdir.x;
-      float glow = exp(-(drp * drp * K * 1.15 + dtp * dtp * K / focus));
+      float glow = exp(-(drp * drp * K * 1.15 + dtp * dtp * K / (focus * uShear)));
       vec3 tint = mix(vec3(0.72, 0.80, 1.0), vec3(1.0, 0.82, 0.62), hash12(cell + 13.7));
       c += tint * glow * tw * (L == 0 ? (0.5 + mag * 2.6) : 0.28);
     }
@@ -422,7 +437,10 @@ void main(){
     col += mix(vec3(1.0, 0.85, 0.62), vec3(0.68, 0.82, 1.0), uTint) * ring * 0.5 * (1.0 + uBeam * 0.12);
   }
   col += bg * T;
-  fragColor = vec4(max(col, vec3(0.0)) * uFade, 1.0);
+  vec3 base = max(col, vec3(0.0)) * uFade;
+  vec2 ac = (vUv - 0.5) * vec2(uRes.x / uRes.y, 1.0);
+  base += vec3(0.60, 0.80, 1.35) * exp(-pow((length(ac) - 0.11) * 20.0, 2.0)) * uGlow * 1.6;
+  fragColor = vec4(base, 1.0);
 }`;
 
 const FS_BRIGHT = `#version 300 es
@@ -682,6 +700,7 @@ function escapeConeDeg(r){
 }
 function infallBeta(r){ return Math.min(0.9995, Math.sqrt(RS / Math.max(r, RS * 1.0005))); }
 function dopplerBlue(r){ const b = infallBeta(r); return Math.sqrt((1 + b) / (1 - b)); }
+function shearFactor(r){ const D = dopplerBlue(r); return 1 + 2.6 * Math.min(1.4, (D - 1) / 2.2); }
 
 function flight(t){
   let tl = t - cycleBase - diveHold;
@@ -692,7 +711,7 @@ function flight(t){
     o.prox = Math.max(0, Math.min(1, (21.5 - Math.hypot(o.pos[0], o.pos[1], o.pos[2])) / 14));
     o.phase = 'orbit'; o.rcam = Math.hypot(o.pos[0], o.pos[1], o.pos[2]);
     o.cone = escapeConeDeg(o.rcam); o.blue = 1;
-    o.beam = 1; o.tint = 0; o.fade = 1; o.disc = 1;
+    o.beam = 1; o.tint = 0; o.fade = 1; o.disc = 1; o.glow = 0; o.shear = 1;
     return o;
   }
   const o0 = orbitPose(ORBIT_T);
@@ -723,8 +742,11 @@ function flight(t){
   f = nrm(f); u = nrm(u); rr = nrm(rr);
   const D = dopplerBlue(r);
   const beam = phase === 'dark' ? Math.min(1, Math.pow(D, 3) * fade) : Math.min(42, Math.pow(D, 3));
+  const glow = phase === 'dark' ? Math.exp(-Math.max(0, (1.0 - r) / 0.35)) : 0;
+  const shear = shearFactor(r);
   return { pos, f, u, r: rr, prox: Math.max(0, Math.min(1, (21.5 - r) / 14)), R: r, th: 0,
     phase, rcam: r, cone: escapeConeDeg(r), blue: D, beam: Math.max(1, beam), tint: Math.min(1, (D - 1) / 3.2), fade,
+    glow: +glow.toFixed(4), shear: +shear.toFixed(3),
     disc: phase === 'dark' ? 0 : Math.max(0, 1 - 1.15 * s) * (1 - 0.9 * Math.min(1, (D - 1) / 3.2)) };
 }
 
@@ -1244,7 +1266,13 @@ function probeHalo(){
 
 let AC = null, master = null, running = false, droneLP = null, droneGain = null;
 let whineOsc = null, whineGain = null, whinePan = null;
+let diveOsc = null, diveGain = null, subGainRef = null;
+let lastDiveAudio = { dopplerHz: 0, subSwell: 0, D: 1, near: 0, diving: false };
 const audioHint = document.getElementById('audiohint');
+const divehudEl = document.getElementById('divehud');
+const tipcueEl = document.getElementById('tipcue');
+let lastTip = { until: -1, visible: false };
+let lastHud = { visible: false, text: '' };
 function unlockAudio(){
   if (AC) return;
   try {
@@ -1267,6 +1295,10 @@ function unlockAudio(){
     const sub = AC.createOscillator(); sub.type = 'sine'; sub.frequency.value = 34;
     const sg = AC.createGain(); sg.gain.value = 0.055;
     sub.connect(sg).connect(master); sub.start();
+    subGainRef = sg;
+    diveOsc = AC.createOscillator(); diveOsc.type = 'sine'; diveOsc.frequency.value = 0;
+    diveGain = AC.createGain(); diveGain.gain.value = 0;
+    diveOsc.connect(diveGain).connect(master); diveOsc.start();
     const lfo = AC.createOscillator(); lfo.frequency.value = 0.05;
     const lg = AC.createGain(); lg.gain.value = 0.02;
     lfo.connect(lg).connect(droneGain.gain); lfo.start();
@@ -1301,6 +1333,18 @@ function scheduleShimmer(){
   }
   setTimeout(scheduleShimmer, 6000 + Math.random() * 8000);
 }
+/* plunge dive audio (#1077): the drone rides the fall — a Doppler pitch element
+   that scales with the infall blueshift D, plus a sub-bass swell that builds
+   near the horizon (r -> rs). Targets are computed every frame regardless of
+   AudioContext state so the harness can read the law headless. */
+function diveAudio(r, phase){
+  const D = dopplerBlue(r);
+  const diving = phase !== 'orbit';
+  const dopplerHz = diving ? 90 + 240 * Math.min(5, Math.pow(Math.max(0, D - 1), 1.1)) : 0;
+  const near = Math.max(0, Math.min(1, 1 - (r - RS) / (RS * 2.2)));
+  const subSwell = diving ? near : 0;
+  return { dopplerHz, subSwell, near, D, diving };
+}
 function updateDrone(prox, R, th){
   if (!running || !AC) return;
   droneLP.frequency.setTargetAtTime(55 + prox * 90, AC.currentTime, 0.4);
@@ -1309,6 +1353,11 @@ function updateDrone(prox, R, th){
     whineOsc.frequency.setTargetAtTime(whineHz(R, spinA), AC.currentTime, 0.5);
     whineGain.gain.setTargetAtTime(0.004 + prox * 0.016 + (spinA !== 0 ? 0.002 : 0), AC.currentTime, 0.5);
     if (whinePan) whinePan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Math.sin(th) * prox)), AC.currentTime, 0.6);
+  }
+  if (diveOsc){
+    diveOsc.frequency.setTargetAtTime(lastDiveAudio.dopplerHz, AC.currentTime, 0.25);
+    diveGain.gain.setTargetAtTime(lastDiveAudio.diving ? 0.028 * (0.35 + 0.65 * Math.min(1, lastDiveAudio.D / 5)) : 0, AC.currentTime, 0.3);
+    if (subGainRef) subGainRef.gain.setTargetAtTime(0.055 + 0.05 * lastDiveAudio.subSwell, AC.currentTime, 0.4);
   }
 }
 
@@ -1354,6 +1403,24 @@ function frame(){
   if (probes.length && cb.phase === 'orbit') diveHold = Math.min(diveHold + (lastDt > 0 ? lastDt / 1000 : 1 / 60), 45);
   proxNow = cb.prox;
   orbitR = cb.rcam;
+  lastDiveAudio = diveAudio(cb.rcam, cb.phase);
+  {
+    let tlc = t - cycleBase - diveHold;
+    if (tlc < 0) tlc += CYCLE;
+    if (tlc >= CYCLE) tlc -= CYCLE;
+    const until = cb.phase === 'orbit' ? (ORBIT_T - tlc) : -1;
+    const show = until >= 0 && until <= 1;
+    tipcueEl.style.opacity = show ? (1 - until).toFixed(3) : '0';
+    lastTip = { until: +until.toFixed(3), visible: show };
+  }
+  if (cb.phase === 'dive' || cb.phase === 'dark'){
+    divehudEl.textContent = `r/rs ${cb.rcam.toFixed(2)} \u00B7 D ${cb.blue.toFixed(2)} \u00B7 cone ${cb.cone.toFixed(0)}\u00B0`;
+    divehudEl.classList.add('on');
+    lastHud = { visible: true, text: divehudEl.textContent };
+  } else {
+    divehudEl.classList.remove('on');
+    lastHud = { visible: false, text: '' };
+  }
   updateDrone(proxNow, cb.R, cb.th);
   const basis = new Float32Array([
     cb.r[0], cb.r[1], cb.r[2],
@@ -1379,6 +1446,8 @@ function frame(){
   gl.uniform1f(us('uFade'), cb.fade);
   gl.uniform1f(us('uSpin'), spinA);
   gl.uniform1f(us('uRIn'), rInNow);
+  gl.uniform1f(us('uShear'), cb.shear);
+  gl.uniform1f(us('uGlow'), cb.glow);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   // probes (#1047): drop the clock forward in coordinate time, solve where each
@@ -1514,9 +1583,14 @@ window.__holeTest = {
     return { phase: cb.phase, r: +cb.rcam.toFixed(3), cone: +cb.cone.toFixed(1),
       blue: +cb.blue.toFixed(3), beam: +cb.beam.toFixed(2), tint: +cb.tint.toFixed(3),
       disc: +cb.disc.toFixed(3),
-      fade: +cb.fade.toFixed(3), inside: cb.rcam < RS, cycle: +CYCLE.toFixed(1),
+      fade: +cb.fade.toFixed(3), glow: +cb.glow.toFixed(4), shear: +cb.shear.toFixed(3),
+      inside: cb.rcam < RS, cycle: +CYCLE.toFixed(1),
       orbitT: ORBIT_T, diveT: DIVE_T };
   },
+  drone(){ const d = lastDiveAudio; return { running: !!AC, diving: !!d.diving, dopplerHz: +d.dopplerHz.toFixed(1), subSwell: +d.subSwell.toFixed(3), D: +d.D.toFixed(3), near: +d.near.toFixed(3) }; },
+  tipCue(){ return { until: +lastTip.until.toFixed(3), visible: !!lastTip.visible }; },
+  diveHud(){ return { visible: !!lastHud.visible, text: lastHud.text }; },
+  shearAt(r){ return +shearFactor(r).toFixed(3); },
   diveR(s){
     const R1 = Math.hypot(orbitPose(ORBIT_T).pos[0], orbitPose(ORBIT_T).pos[1], orbitPose(ORBIT_T).pos[2]);
     return +(RS * (1 + (R1 / RS - 1) * Math.pow(1 - Math.max(0, Math.min(1, s)), 3.5))).toFixed(4);
@@ -1572,7 +1646,7 @@ window.__holeTest = {
 <script>
 window.DEMO_CREDITS = {
   name: 'BLACK HOLE', accent: '#ffb257',
-  issues: [903, 956, 1047, 1048, 1074, 1049, 1082], span: '~4 h', shipped: '2026-10-23',
+  issues: [903, 956, 1047, 1048, 1074, 1049, 1082, 1077], span: '~4 h', shipped: '2026-10-23',
   assist: 'solo', note: '“Qwen picks how” — approach chosen by the builder',
 };
 </script>
