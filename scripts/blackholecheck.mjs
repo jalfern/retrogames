@@ -252,6 +252,25 @@ async function main() {
     /uniform float uShear/.test(src) && /focus \* uShear/.test(src) && /function shearFactor/.test(src))
   ok('singularity CMB ring glows in the dark interior before the loop restart (#1077)',
     /uniform float uGlow/.test(src) && /exp\(-pow\(\(length\(ac\) - 0\.11\) \* 20\.0, 2\.0\)\)/.test(src))
+  {
+    const hash13 = p => { p = p.map(x => { const v = x * 0.1031; return v - Math.floor(v) }); const d = p[0] * p[1] + p[1] * p[2] + p[2] * p[0] + 33.33 * (p[0] + p[1] + p[2]); p = p.map(x => x + d); const q = p[0] + p[1]; return (q * p[2]) - Math.floor(q * p[2]) }
+    const vnoise = p => {
+      const i = p.map(Math.floor), f = p.map(x => x - Math.floor(x)).map(x => x * x * (3 - 2 * x))
+      const h = (a, b, c) => hash13([i[0] + a, i[1] + b, i[2] + c])
+      const lx = (a, b) => a + (b - a) * f[0], ly = (a, b) => a + (b - a) * f[1]
+      return ly(lx(lx(h(0,0,0), h(1,0,0)), lx(h(0,1,0), h(1,1,0))), lx(lx(h(0,0,1), h(1,0,1)), lx(h(0,1,1), h(1,1,1))), f[2])
+    }
+    const fbm2 = p => { let a = 0.5, s = 0, x = p[0], y = p[1]; for (let i = 0; i < 4; i++) { s += a * vnoise([x, y, 3.7]); x = x * 2.17 + 1.9; y = y * 2.17 + 0.7; a *= 0.5 } return s }
+    const diskNoise = (a2, r) => { const lr = Math.log(r), sc = 2.2 + lr * 0.8; return fbm2([Math.cos(a2) * sc + lr * 3.4, Math.sin(a2) * sc + lr * 5.5]) }
+    let worstSeam = 0, varied = 0
+    for (let r = 3.2; r < 13; r += 0.31) for (let a = 0; a < 6.28; a += 0.53) {
+      worstSeam = Math.max(worstSeam, Math.abs(diskNoise(a, r) - diskNoise(a + 2 * Math.PI, r)))
+      varied = Math.max(varied, Math.abs(diskNoise(a, r) - diskNoise(a + 0.35, r)))
+    }
+    ok('disk turbulence noise is 2pi-periodic in angle — no fbm seam at the atan branch cut (#1123)',
+      worstSeam < 1e-6 && varied > 0.02 && /fbm2\(vec2\(cos\(a2\) \* sc \+ lr \* 3\.4, sin\(a2\) \* sc \+ lr \* 5\.5/.test(src),
+      `wrap jump ${worstSeam.toExponential(2)}, angular variation ${varied.toFixed(3)}`)
+  }
   ok('dive telemetry HUD shows r\/rs, D and cone while falling (#1077)',
     /id="divehud"/.test(src) && /divehudEl\.textContent/.test(src) && /cb\.rcam\.toFixed\(2\)/.test(src) && /cb\.cone\.toFixed\(0\)/.test(src))
   ok('tip-over cue warns in the last 1 s before the loop dives (#1077)',
