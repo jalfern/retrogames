@@ -26,7 +26,7 @@
 // -> every landscape game with long controls goes red (clipped body).
 
 import { spawn } from 'node:child_process'
-import { readFileSync, existsSync, readdirSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync, mkdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { guardChrome } from './chromecleanup.mjs'
@@ -41,7 +41,14 @@ const { chromium } = await import('playwright-core').catch(() => {
 
 const PORT = process.env.DEV_PORT || '5173'
 const BASE = process.env.TEXTFIT_URL || `http://localhost:${PORT}/retrogames`
-const CHROME = process.env.SHOT_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const PROFILE = process.env.TEXTFIT_PROFILE || '/tmp/forge/textfit-profile'
+mkdirSync(PROFILE, { recursive: true })
+// Local boxes: system Chrome. CI (no /Applications): the playwright chromium
+// the smoke job installs (`npx playwright-core install --with-deps chromium`).
+const SYS_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+const CHROME = process.env.SHOT_CHROME || (existsSync(SYS_CHROME)
+    ? SYS_CHROME
+    : (() => { try { return chromium.executablePath() } catch { console.error('no Chrome found — install one or run `npx playwright-core install chromium`'); process.exit(1) } })())
 
 const VIEWPORTS = [
     { name: 'phone-portrait', width: 390, height: 844 },
@@ -240,9 +247,9 @@ async function auditView(pages) {
 const chrome = spawn(CHROME, [
     '--headless=new', '--remote-debugging-port=9391',
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    '--user-data-dir=/tmp/forge/textfit-profile', 'about:blank',
+    '--user-data-dir=' + PROFILE, 'about:blank',
 ], { stdio: 'ignore' })
-const cleanup = guardChrome(chrome, '/tmp/forge/textfit-profile')
+const cleanup = guardChrome(chrome, PROFILE)
 let browser
 for (let i = 0; i < 40 && !browser; i++) {
     await new Promise((r) => setTimeout(r, 500))

@@ -12,7 +12,7 @@ const AttractMessage = ({ messages, ms = 2600, className = 'text-white/70' }) =>
         return () => clearInterval(id)
     }, [messages.length, ms])
     if (!messages.length) return null
-    return <p className={`font-mono text-[11px] leading-4 ${className}`}>{messages[i % messages.length]}</p>
+    return <p className={`font-mono text-[11px] leading-4 max-w-[calc(100vw-32px)] ${className}`}>{messages[i % messages.length]}</p>
 }
 
 export default AttractMessage

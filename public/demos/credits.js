@@ -174,8 +174,18 @@
         hud.style.display = '-webkit-box'
         hud.style.webkitBoxOrient = 'vertical'
         hud.style.webkitLineClamp = String(lines)
-        hud.style.maxHeight = Math.floor(lines * lineH) + 'px'
         hud.style.overflow = 'hidden'
+        // Drop whole · segments from the end so the clamp never cuts mid-word.
+        var orig = hud.innerHTML
+        var segs = orig.split(/&nbsp;·&nbsp;|\s·\s/)
+        if (segs.length > 1) {
+          for (var n = segs.length - 1; n >= 1; n--) {
+            hud.innerHTML = segs.slice(0, n).join(' · ') + ' · …'
+            hr = hud.getBoundingClientRect()
+            if (hr.top >= 4 && hr.bottom <= vh - 4) break
+            if (n === 1) hud.innerHTML = orig
+          }
+        }
       }
     }
     reserveCaption()
