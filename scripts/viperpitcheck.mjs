@@ -300,6 +300,31 @@ if (MUT) {
     ok(!/playSweep\(160, 640, 0\.16, 'sawtooth', 0\.055\)/.test(mutSrc) && !mutSrc.includes("playTone(82, 0.22, 'square', 0.12)"), 'mutant: stripped whoosh/sting fails the gate (harness bites)')
 }
 
+// ---- #1106 stage-life wiring gate ---------------------------------------------------
+// The pits must live: foundry molten pulses and casts light, alley rain falls,
+// a subway train light-sweeps past. Source-level gates + a mutant proving the
+// gate bites; part B probes the live cabinet through __viperPitTest.fx().
+{
+    const fs = await import('node:fs')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const stageGates = [
+        ['molten glow breathes (slow pulse)', /0\.5 \* Math\.sin\(tSec \* 1\.4\)/],
+        ['molten cast light (PointLight over the pool)', /new THREE\.PointLight\(0xff6a20/],
+        ['alley rain streaks (LineSegments)', /new THREE\.LineSegments\(rGeo/],
+        ['rain falls (streak positions advanced)', /rp\.array\[i \* 6 \+ 1\] -= dy/],
+        ['subway sweep light (PointLight on the track)', /new THREE\.PointLight\(0xdce8ff/],
+        ['sweep crosses the pit with time', /s\.light\.position\.x = -15 \+ k \* 30/],
+        ['train windows flash during the pass', /w\.material\.opacity = 0\.75 \+ 0\.25 \* Math\.sin\(Math\.PI \* k\)/],
+    ]
+    for (const [label, re] of stageGates) ok(re.test(rsrc), `stage-life gate: ${label}`)
+    ok(/fx\(\) \{/.test(gsrc) && /stage\(i\) \{ startFight\(i, 'cpu'\) \}/.test(gsrc), 'stage-life gate: dev hooks expose fx() and jump stages')
+    ok(/stageFx\.sweep\.force = performance\.now\(\) \/ 1000/.test(gsrc), 'stage-life gate: sweep can be forced for the probe')
+    // mutant: kill the molten pulse — the gate must fail
+    const mutR = rsrc.replace('0.5 + 0.5 * Math.sin(tSec * 1.4)', '0.5')
+    ok(!/0\.5 \* Math\.sin\(tSec \* 1\.4\)/.test(mutR), 'mutant: dead molten pulse fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -401,6 +426,43 @@ if (!MUT) {
         st = await page.evaluate(() => window.__viperPitTest.state)
     }
     ok(st.wins[0] >= 2 || st.phase === 'done', `two K.O.s advance rounds (wins ${st.wins.join('-')}, phase ${st.phase})`)
+
+    // #1106 stage life: the pits must be alive. Foundry molten pulses and casts
+    // light; alley rain streaks fall; the subway train light-sweeps the pit.
+    {
+        const toStage = async (i, id) => {
+            await page.evaluate((n) => window.__viperPitTest.stage(n), i)
+            await page.waitForFunction((want) => {
+                const f = window.__viperPitTest.fx()
+                return f && f.id === want && window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro'
+            }, id, { timeout: 20000 })
+        }
+        await toStage(1, 'foundry')
+        const m1 = await page.evaluate(() => window.__viperPitTest.fx())
+        ok(m1 && m1.molten != null && m1.rain == null && m1.sweep == null, `foundry stage is live (molten ${m1 && m1.molten})`)
+        await page.waitForTimeout(700)
+        const m2 = await page.evaluate(() => window.__viperPitTest.fx())
+        ok(m2 && m2.molten !== m1.molten, `molten glow pulses over time (${m1.molten} -> ${m2.molten})`)
+        ok(m2.moltenLight > 8, `molten casts light onto the pit (intensity ${m2.moltenLight})`)
+
+        await toStage(0, 'alley')
+        const r1 = await page.evaluate(() => window.__viperPitTest.fx())
+        ok(r1 && r1.rain > 40 && r1.molten == null && r1.sweep == null, `alley rain streaks present (${r1 && r1.rain})`)
+        await page.waitForTimeout(500)
+        const r2 = await page.evaluate(() => window.__viperPitTest.fx())
+        ok(r2.rainFallen > r1.rainFallen, `rain is falling (fallen ${r1.rainFallen} -> ${r2.rainFallen})`)
+
+        await toStage(2, 'subway')
+        await page.evaluate(() => window.__viperPitTest.sweep())
+        await page.waitForFunction(() => {
+            const f = window.__viperPitTest.fx()
+            return f && f.sweep > 0 && f.sweep < 1
+        }, null, { timeout: 4000 })
+        const s1 = await page.evaluate(() => window.__viperPitTest.fx())
+        await page.waitForTimeout(450)
+        const s2 = await page.evaluate(() => window.__viperPitTest.fx())
+        ok(s2.sweep > s1.sweep && s2.sweep <= 1, `subway train light-sweep passes the pit (${s1.sweep} -> ${s2.sweep})`)
+    }
 
     await page.keyboard.press('Escape')
     await page.waitForTimeout(300)

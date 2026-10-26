@@ -710,6 +710,19 @@ const ViperPitGame = () => {
                 start() { startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
                 finisherReady() { if (gs) { gs.fighters[0].meter = 100; gs.fighters[1].hp = Math.min(gs.fighters[1].hp, 25) } },
+                stage(i) { startFight(i, 'cpu') },
+                sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
+                fx() {
+                    if (!stageFx) return null
+                    return {
+                        id: stageFx.stage.id,
+                        molten: stageFx.molten ? +stageFx.molten.mat.opacity.toFixed(3) : null,
+                        moltenLight: stageFx.molten ? Math.round(stageFx.molten.light.intensity) : null,
+                        rain: stageFx.rain ? stageFx.rain.n : null,
+                        rainFallen: stageFx.rain ? +stageFx.rain.fallen.toFixed(2) : null,
+                        sweep: stageFx.sweep ? +stageFx.sweep.prog.toFixed(3) : null,
+                    }
+                },
             }
             dbg = mountDbg({
                 title: 'VIPER PIT',
