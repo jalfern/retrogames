@@ -17,6 +17,14 @@ export const STAGES = [
         ],
         crowd: '#0d0f16', crowdLit: 0x5a6a8a,
         lampColor: 0xffe6b0, lamps: [-5.5, 5.5],
+        midground: [
+            { t: 'crate', x: -8.6, z: -3.4 },
+            { t: 'barrel', x: -6.9, z: -3.9 },
+            { t: 'barrel', x: -6.2, z: -3.3 },
+            { t: 'crate', x: 8.8, z: -3.2 },
+            { t: 'barrel', x: 7.4, z: -3.6 },
+            { t: 'sign', x: 0.4, z: -4.0 },
+        ],
     },
     {
         id: 'foundry', name: 'THE FOUNDRY',
@@ -31,6 +39,14 @@ export const STAGES = [
         ],
         crowd: '#150c08', crowdLit: 0x9a5a30,
         lampColor: 0xff9040, lamps: [-6.5, 0, 6.5],
+        midground: [
+            { t: 'tank', x: -9.0, z: -3.8 },
+            { t: 'drum', x: -7.4, z: -3.4 },
+            { t: 'drum', x: -3.4, z: -3.2 },
+            { t: 'tank', x: 9.2, z: -3.9 },
+            { t: 'drum', x: 7.6, z: -3.5 },
+            { t: 'sign', x: 3.6, z: -4.1 },
+        ],
     },
     {
         id: 'subway', name: 'MIDTOWN, LAST TRAIN',
@@ -45,5 +61,12 @@ export const STAGES = [
         ],
         crowd: '#0b0c14', crowdLit: 0x6878b0,
         lampColor: 0xcfe0ff, lamps: [-4.5, 4.5],
+        midground: [
+            { t: 'booth', x: -9.2, z: -3.7 },
+            { t: 'bench', x: -5.4, z: -3.4 },
+            { t: 'sign', x: 0.0, z: -4.2 },
+            { t: 'bench', x: 8.8, z: -3.3 },
+            { t: 'drum', x: 6.4, z: -3.6 },
+        ],
     },
 ]
