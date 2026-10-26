@@ -224,6 +224,7 @@ const ViperPitGame = () => {
             setPaused(false)
             rebuildRigs()
             rebuildStage()
+            audioController.startMusic(stage.bed)
             setSc('play')
         }
 
@@ -327,6 +328,7 @@ const ViperPitGame = () => {
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'riv'; p2Char = 'krax'
             rebuildRigs(); rebuildStage()
+            audioController.startMusic(stage.bed)
             lagHp = [100, 100]
         }
         attractDemo()
@@ -364,6 +366,13 @@ const ViperPitGame = () => {
                 if (e.kind === 'hit') {
                     audioController.playNoise(0.07, 0.16)
                     audioController.playTone(e.dmg >= 9 ? 84 : 120, 0.1, 'sawtooth', 0.12)
+                    const mdef = m.fighters[e.by].def.moves[e.mv]
+                    if (mdef && mdef.type === 'throw') {
+                        // throw slam: the grunt happened at startup, the slam lands now
+                        audioController.playNoise(0.22, 0.24)
+                        audioController.playSweep(95, 28, 0.26, 'sawtooth', 0.16)
+                        shake = Math.max(shake, 10)
+                    }
                     shake = Math.max(shake, e.dmg >= 9 ? 10 : 6)
                     if (e.combo >= 2) { comboVal[e.by] = e.combo; comboFx[e.by] = 70 }
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.5, e.dmg >= 9 ? 0xffb050 : 0xffe8e0)
@@ -375,10 +384,46 @@ const ViperPitGame = () => {
                     finishText = (m.fighters[e.by].def.finish || 'FINISH').toUpperCase()
                     audioController.playSweep(160, 40, 0.8, 'sawtooth', 0.18)
                     audioController.playNoise(0.4, 0.22)
+                    // per-fighter finisher sting — each signature move gets its own voice
+                    const fid = m.fighters[e.by].def.id
+                    if (fid === 'nyx') {
+                        ;[220, 330, 440].forEach((sf, i) => audioController.playTone(sf, 0.09, 'sawtooth', 0.09, 0.1 + i * 0.09))
+                    } else if (fid === 'cinder') {
+                        audioController.playSweep(140, 520, 0.5, 'sawtooth', 0.1)
+                        audioController.playFilteredNoise(0.5, 0.12, 900)
+                    } else if (fid === 'vess') {
+                        audioController.playTone(200, 0.1, 'square', 0.09, 0.1)
+                        audioController.playTone(90, 0.18, 'sine', 0.14, 0.2)
+                    } else if (fid === 'riv') {
+                        audioController.playSweep(880, 160, 0.3, 'sawtooth', 0.09)
+                        audioController.playTone(1245, 0.06, 'square', 0.07, 0.05)
+                    } else {
+                        audioController.playTone(82, 0.22, 'square', 0.12)
+                        audioController.playSweep(300, 90, 0.24, 'square', 0.08)
+                    }
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.4, 0xff4030)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.8, 0xffd050)
                 }
             }
+        }
+
+        // swing sounds fire at move START (the hit sound plays on impact). A
+        // launcher whooshes, a throw grunts; cancels re-trigger so every move
+        // in a chain earns its own swing.
+        const hearSwings = (m, pre) => {
+            m.fighters.forEach((f, i) => {
+                if (f.st === 'attack' && pre[i] !== 'attack:' + f.move) {
+                    const mv = f.def.moves[f.move]
+                    if (!mv) return
+                    if (mv.launch) {
+                        audioController.playSweep(160, 640, 0.16, 'sawtooth', 0.055)
+                        audioController.playFilteredNoise(0.13, 0.09, 1600)
+                    } else if (mv.type === 'throw') {
+                        audioController.playSweep(120, 55, 0.15, 'sawtooth', 0.1)
+                        audioController.playTone(64, 0.12, 'square', 0.07)
+                    }
+                }
+            })
         }
 
         let retryTimer = null
@@ -386,6 +431,7 @@ const ViperPitGame = () => {
             if (m.phase === 'ko' && prevPhase !== 'ko') {
                 audioController.playSweep(200, 50, 0.7, 'sawtooth', 0.16)
                 audioController.playNoise(0.32, 0.2)
+                audioController.playFilteredNoise(1.1, 0.16, 480)
                 shake = Math.max(shake, 14); flashT = Math.max(flashT, 18)
                 bannerText = m.banner; bannerT = 130
             } else if (m.phase === 'fight' && prevPhase === 'intro') {
@@ -632,6 +678,7 @@ const ViperPitGame = () => {
                     const prevPhase = gs.phase, prevRound = gs.round
                     const pads = livePads()
                     if (pads) {
+                        const preSwing = gs.fighters.map((f) => f.st + ':' + f.move)
                         step(gs, pads)
                         if (mode === 'online' && gs.tick % HASH_EVERY === 0) {
                             const h = matchHash(gs)
@@ -640,6 +687,7 @@ const ViperPitGame = () => {
                             if (peerH.has(gs.tick) && peerH.get(gs.tick) !== h) { desyncRef.current = true; setDesync(true) }
                         }
                         hearEvents(gs)
+                        hearSwings(gs, preSwing)
                         watchPhase(gs, prevPhase, prevRound)
                     }
                 }
@@ -657,7 +705,7 @@ const ViperPitGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__viperPitTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st) } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, bed: audioController.music ? audioController.music.track : null, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st) } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
@@ -709,6 +757,7 @@ const ViperPitGame = () => {
         return () => {
             alive = false
             cancelAnimationFrame(raf)
+            audioController.stopMusic()
             clearTimeout(retryTimer)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

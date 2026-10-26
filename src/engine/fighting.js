@@ -393,7 +393,7 @@ function resolveHit(m, atk, def, move, seq) {
         def.meter = Math.min(100, def.meter + raw * 0.5)
         if (atk.st === 'attack') { atk.cancelGate = true }
         m.hitstop = Math.max(m.hitstop, raw >= 9 ? 7 : 4)
-        m.events.push({ t: m.tick, kind: 'hit', by: atk.side, dmg: raw, combo: atk.combo })
+        m.events.push({ t: m.tick, kind: 'hit', by: atk.side, dmg: raw, combo: atk.combo, mv: atk.move })
         if (move.finisher && def.hp <= (move.finishAt || 30)) {
             def.hp = 0
             m.hitstop = Math.max(m.hitstop, 12)

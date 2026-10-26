@@ -6,6 +6,7 @@
 export const STAGES = [
     {
         id: 'alley', name: 'BACK ALLEY, 2 A.M.',
+        bed: 'viperAlley',
         ground: '#2c2a26', groundLine: '#201e1a', fog: 0x0a0c12, fogD: 0.052,
         key: 0xd8c8a8, keyI: 1.15, rim: 0x3a5f8a,
         props: 'dumpster',
@@ -19,6 +20,7 @@ export const STAGES = [
     },
     {
         id: 'foundry', name: 'THE FOUNDRY',
+        bed: 'viperFoundry',
         ground: '#33261e', groundLine: '#241a14', fog: 0x160b06, fogD: 0.045,
         key: 0xffb070, keyI: 1.35, rim: 0xd8582a,
         props: 'girders',
@@ -32,6 +34,7 @@ export const STAGES = [
     },
     {
         id: 'subway', name: 'MIDTOWN, LAST TRAIN',
+        bed: 'viperSubway',
         ground: '#26262e', groundLine: '#1b1b22', fog: 0x07070d, fogD: 0.05,
         key: 0xcfd8ff, keyI: 1.0, rim: 0x4a7ad8,
         props: 'tiles',
