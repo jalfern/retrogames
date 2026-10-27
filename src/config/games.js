@@ -86,10 +86,10 @@ const DogfightGame = lazy(() => import('../games/Dogfight'))
 // PAPERBOY: same lesson — the route solver that scripts the attract demo is
 // the SAME module the Node harness audits, so it rides in its own chunk.
 const PaperboyGame = lazy(() => import('../games/Paperboy'))
-// WIZARDRY: same lesson — the seeded floors and the solver that proves them
+// TEN-DEEP: same lesson — the seeded floors and the solver that proves them
 // winnable (and re-proves them with slack supplies deleted) ride in the
-// game's own chunk; wizcheck imports those modules unchanged in Node.
-const WizardryGame = lazy(() => import('../games/Wizardry'))
+// game's own chunk; tendeepcheck imports those modules unchanged in Node.
+const TenDeepGame = lazy(() => import('../games/TenDeep'))
 // SPY HUNTER: same lesson — the scripted stages and the simulative autopilot
 // that proves them (and scripts/huntercheck.mjs audits) ride in their own
 // chunk; the harness imports sim/script/planner unchanged in Node.
@@ -432,15 +432,15 @@ export const GAMES = [
         controls: ['Arrows / D-pad: steer the handlebars; UP mashes the pedals, DOWN crawls', 'SPACE / A: throw a paper toward your lean (you must be leaned that way at the door!)', 'F / B button: hurl one down the lane — the only answer to a lunging dog', 'Cross carts only AHEAD of their nose, and hug a dog\'s own kerb after it launches', '?: pause and read the rules'],
     },
     {
-        path: '/wizardry',
+        path: '/ten-deep',
         pad: { layout: 'dpad', buttons: [{ label: 'F', code: 'KeyF' }], analog: false, reason: 'turn-based battle — the arrows pick the target' },
         builtBy: 'forge',
-        added: '2026-10-12',
-        component: WizardryGame,
-        label: 'WIZARDRY',
+        added: '2026-10-26',
+        component: TenDeepGame,
+        label: 'TEN-DEEP',
         theme: 'dark',
-        description: 'The 1981 dungeon, rebuilt honest: a party of six crawls three seeded mazes in shaded wireframe first person, fighting turn-based ledger combat where every point of damage is booked and recomputed by the harness that ships with this repo. Firebolt, heal, potions and MP springs are the resource puzzle — the whole campaign is PROVEN winnable by the autopilot (the thing demoing on this title screen is that proof, live), and re-proven with one fewer potion and one fewer spring than the proof consumes. Kill the Lich on Level 3. Death is real; every run reshuffles nothing — the dungeon is the same maze the harness audited.',
-        controls: ['Arrows / D-pad: walk and turn in the corridor', 'SPACE / A: USE — stairs down, drink at a spring, touch the throne (that wakes the Lich)', 'In battle: SPACE attack · F / B: FIREBOLT · H heal the most wounded · P drink a potion · L flee (not from the Lich)', 'In battle the arrows pick your TARGET — burn the caster first', '?: pause and read the rules'],
+        description: 'A ten-floor dungeon crawl in the spirit of the 1981 classic, with our own world and its rules intact: a party of six sinks through TEN DEEPS below a fallen keep — seeded mazes in shaded first person, turn-based ledger combat where every point of damage is booked and recomputed by the harness that ships with this repo. Firebolt, heal, potions and MP springs are the resource puzzle; the bestiary climbs from Cave Rats and Mire Adders through Grave Ghouls, Bog Trolls and Minotauros to the Deep Wyrms who ward THE HOLLOW KING on DEEP 10. The whole campaign is PROVEN winnable by the autopilot (the thing demoing on this title screen is that proof, live), and re-proven with one fewer potion and one fewer spring than the proof consumes. Death is real; every run reshuffles nothing — the Deep is the same maze the harness audited.',
+        controls: ['Arrows / D-pad: walk and turn in the corridor', 'SPACE / A: USE — stairs down, drink at a spring, touch the throne (that wakes the King)', 'In battle: SPACE attack · F / B: FIREBOLT · H heal the most wounded · P drink a potion · L flee (not from the King)', 'In battle the arrows pick your TARGET — burn the caster first', '?: pause and read the rules'],
     },
     {
         path: '/spy-hunter',

@@ -173,10 +173,10 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'paper')
       - run: npm run papercheck
         if: contains(fromJSON(env.KEYS), 'paper')
-      - run: npm run lint:wiz
-        if: contains(fromJSON(env.KEYS), 'wiz')
-      - run: npm run wizcheck
-        if: contains(fromJSON(env.KEYS), 'wiz')
+      - run: npm run lint:tendeep
+        if: contains(fromJSON(env.KEYS), 'tendeep')
+      - run: npm run tendeepcheck
+        if: contains(fromJSON(env.KEYS), 'tendeep')
       - run: npm run builtbycheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run navcheck
@@ -382,9 +382,9 @@ jobs:
       - name: Paperboy smoke (real keys, drawn boy sits where the physics projects him, a timed throw scores, a crash pays a life)
         if: contains(fromJSON(env.KEYS), 'paper')
         run: npm run paperplay
-      - name: Wizardry smoke (real keys walk a seeded maze, the view matches the grid pixel-for-pixel, a stepped-on ambush fights back, the stairs answer SPACE)
-        if: contains(fromJSON(env.KEYS), 'wiz')
-        run: npm run wizplay
+      - name: TEN-DEEP smoke (real keys walk a seeded maze, the view matches the grid pixel-for-pixel, a stepped-on ambush fights back, the stairs answer SPACE)
+        if: contains(fromJSON(env.KEYS), 'tendeep')
+        run: npm run tendeepplay
       - name: Excitebike smoke (real keys — pixels sit where the heightmap projects the bike, an air is won by the lean, the engine boils and a stalled bike pumps out)
         if: contains(fromJSON(env.KEYS), 'excite')
         run: npm run exciteplay

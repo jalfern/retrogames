@@ -1,4 +1,4 @@
-// WIZARDRY — the pure heart: state + discrete command -> new state + events.
+// TEN-DEEP — the pure heart: state + discrete command -> new state + events.
 // Zero Math.random (the only dice are dungeon.js's seeded mulberry, and only
 // at floor generation). Every combat round is a ledger entry the harness
 // recomputes independently: damage dealt == damage taken, always.
@@ -40,6 +40,9 @@ export const HEROES0 = [
 ]
 
 const HX = [1, 0, -1, 0], HY = [0, 1, 0, -1]    // dir: 0=E 1=S 2=W 3=N
+
+// the throne on the last deep: the King and his two wyrm wardens
+const BOSS_GROUP = ['KING', 'WYRM', 'WYRM']
 
 // opts.skipPots / skipSprings: ["floor,x,y", ...] tiles the harness can delete
 // to grade the SLACK RULE — the campaign must still be winnable with one
@@ -337,7 +340,7 @@ export function step(st, cmd) {
         }
         const fx = st.x + HX[st.dir], fy = st.y + HY[st.dir]
         if (st.map.throne && st.map.throne.x === fx && st.map.throne.y === fy) {
-            startCombat(st, ['LICH', 'WRAITH', 'WRAITH'], true)
+            startCombat(st, BOSS_GROUP, true)
             return
         }
         st.events.push({ type: 'nothing' })
@@ -347,7 +350,7 @@ export function step(st, cmd) {
 function settleTile(st) {
     const t = st.y * SIZE + st.x
     if (st.map.throne && st.map.throne.y === st.y && st.map.throne.x === st.x) {
-        startCombat(st, ['LICH', 'WRAITH', 'WRAITH'], true)
+        startCombat(st, BOSS_GROUP, true)
         return
     }
     if (st.pots.has(t)) {

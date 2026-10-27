@@ -55,7 +55,7 @@ const GAMES = [
     ['/lode-runner', 'canvas', 'LODE RUNNER-LITE'],
     ['/dogfight', 'canvas', 'DOG FIGHT'],
     ['/paperboy', 'canvas', 'PAPERBOY'],
-    ['/wizardry', 'canvas', 'WIZARDRY'],
+    ['/ten-deep', 'canvas', 'TEN-DEEP'],
     ['/spy-hunter', 'canvas', 'SPY HUNTER'],
     ['/excitebike', 'canvas', 'EXCITEBIKE'],
     ['/mario-kart', 'canvas', 'MARIO KART'],

@@ -270,13 +270,13 @@ const REACT_TITLES = [
         leak: `    'Four Ages hidden in plain sight',\n`,
     },
     {
-        label: 'WIZARDRY',
-        jsx: 'src/games/Wizardry/index.jsx',
-        mf: 'src/games/Wizardry/attract.js',
-        import: '../src/games/Wizardry/attract.js',
+        label: 'TEN-DEEP',
+        jsx: 'src/games/TenDeep/index.jsx',
+        mf: 'src/games/TenDeep/attract.js',
+        import: '../src/games/TenDeep/attract.js',
         slot: '<AttractMessage className="mb-6 text-indigo-100/80" messages={MESSAGES} />',
         blinkFrom: `animate-pulse text-white">{PRESS}</p>`,
-        wrap: `    'THREE LEVELS · SUPPLIES ARE REAL',\n`,
+        wrap: `    'TEN FLOORS · SUPPLIES ARE REAL',\n`,
         leak: `    'ARROWS WALK AND TURN · SPACE USES STAIRS',\n`,
     },
     {

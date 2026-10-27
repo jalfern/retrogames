@@ -1,0 +1,15 @@
+// TEN-DEEP attract copy — the single source of truth the shell renders through
+// <AttractMessage> and attractcheck audits. Rule 6 (#365): one informational
+// message at a time, cycling. The attract never stacks a rules wall over the
+// demo — the demo is the proof, let it run.
+
+export const PRESS = 'PRESS ANY KEY OR TAP'
+
+export const MESSAGES = [
+    'TEN DEEPS BELOW · THE HOLLOW KING KEEPS',
+    'SIX HEROES, ONE TORCH-LIT WELL',
+    'ARROWS WALK AND TURN · SPACE USES STAIRS',
+    'F THROWS FIREBOLT · H HEALS · P DRINKS',
+    'L FLEES — BUT NEVER FROM THE KING',
+    'TEN FLOORS · SUPPLIES ARE REAL',
+]

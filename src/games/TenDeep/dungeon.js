@@ -1,14 +1,17 @@
-// WIZARDRY — floor generation. Pure and seeded: mulberry32 lives here and is
-// the ONLY dice in the game; Math.random is banned at the door by wizcheck.
+// TEN-DEEP — floor generation. Pure and seeded: mulberry32 lives here and is
+// the ONLY dice in the game; Math.random is banned at the door by tendeepcheck.
 // Floors are carved as a randomized DFS maze on odd cells, then BRAIDED
 // (dead ends punched into loops) — a maze is a tree, so by construction every
-// open cell is reachable from the entrance. wizcheck re-proves that with its
+// open cell is reachable from the entrance. tendeepcheck re-proves that with its
 // own BFS anyway: the generator may never referee its own work.
 //
 // Everything the campaign consumes is PLACED, never rolled: stairs at the
 // far end, potions and MP-springs on real cells, ambushes as NAMED tiles
 // (stepping on one fires a fixed group, once). A slack supply is a placeable
 // tile so the harness can physically remove one and re-prove the win.
+//
+// The world is ours: TEN DEEPS below a fallen keep, each a seeded maze with
+// its own keeper bestiary, the Hollow King on the last.
 
 export const SIZE = 19
 
@@ -23,29 +26,71 @@ export function mulberry32(seed) {
 }
 
 export const MOBS = {
-    RAT:    { name: 'Giant Rat',    hp: 12, atk: 6,  def: 1, spd: 6, xp: 24,  art: 'rat' },
-    SNAKE:  { name: 'Cave Snake',   hp: 16, atk: 7,  def: 2, spd: 7, xp: 34,  art: 'snake' },
-    GOBLIN: { name: 'Goblin',       hp: 22, atk: 9,  def: 3, spd: 4, xp: 58,  art: 'goblin' },
-    SKELET: { name: 'Skeleton',     hp: 28, atk: 10, def: 4, spd: 5, xp: 86,  art: 'skelet' },
-    WRAITH: { name: 'Wraith',       hp: 26, atk: 12, def: 3, spd: 8, xp: 120, art: 'wraith' },
-    LICH:   { name: 'THE LICH',     hp: 300, atk: 20, def: 8, spd: 6, xp: 2000, art: 'lich' },
+    RAT:      { name: 'Cave Rat',       hp: 12, atk: 6,  def: 1, spd: 6, xp: 24,   art: 'rat' },
+    SNAKE:    { name: 'Mire Adder',     hp: 16, atk: 7,  def: 2, spd: 7, xp: 34,   art: 'snake' },
+    GOBLIN:   { name: 'Rag Goblin',     hp: 22, atk: 9,  def: 3, spd: 4, xp: 58,   art: 'goblin' },
+    SKELET:   { name: 'Bone Sentry',    hp: 28, atk: 10, def: 4, spd: 5, xp: 86,   art: 'skelet' },
+    WRAITH:   { name: 'Pale Wraith',    hp: 26, atk: 12, def: 3, spd: 8, xp: 120,  art: 'wraith' },
+    GHOUL:    { name: 'Grave Ghoul',    hp: 34, atk: 11, def: 3, spd: 5, xp: 110,  art: 'ghoul' },
+    TROLL:    { name: 'Bog Troll',      hp: 48, atk: 13, def: 5, spd: 3, xp: 150,  art: 'troll' },
+    MINOTAUR: { name: 'Minotauros',     hp: 58, atk: 15, def: 5, spd: 6, xp: 210,  art: 'minotaur' },
+    WYRM:     { name: 'Deep Wyrm',      hp: 70, atk: 17, def: 6, spd: 7, xp: 300,  art: 'wyrm' },
+    KING:     { name: 'THE HOLLOW KING', hp: 340, atk: 22, def: 8, spd: 6, xp: 5000, art: 'king' },
 }
 
+// Ten seeded deeps. Names, monsters, layouts and story are original work.
+// The ramp is deliberate: each deep's mix steps above the last so XP and the
+// spring/potion economy carry a party from 36-hp novices to king-slayers.
 export const FLOORS = [
     {
-        name: 'LEVEL 1 — THE GOBLIN KEEPS', seed: 1337,
+        name: 'DEEP 1 — RAT CELLAR', seed: 1337,
         groups: [['RAT', 'RAT', 'RAT', 'RAT'], ['SNAKE', 'SNAKE', 'SNAKE'], ['GOBLIN', 'GOBLIN', 'RAT', 'RAT'], ['SNAKE', 'SNAKE', 'RAT'], ['GOBLIN', 'SNAKE', 'SNAKE', 'RAT'], ['GOBLIN', 'GOBLIN', 'GOBLIN']],
         ambushes: 7, pots: 3, springs: 1,
     },
     {
-        name: 'LEVEL 2 — HALL OF BONES', seed: 4711,
+        name: 'DEEP 2 — GOBLIN RENTS', seed: 4711,
         groups: [['SKELET', 'SKELET', 'SKELET'], ['GOBLIN', 'GOBLIN', 'SKELET', 'SNAKE'], ['SNAKE', 'SNAKE', 'SNAKE', 'SNAKE'], ['SKELET', 'WRAITH'], ['GOBLIN', 'SKELET', 'SKELET', 'RAT', 'RAT'], ['WRAITH', 'SNAKE', 'SNAKE'], ['SKELET', 'SKELET', 'SKELET', 'SKELET']],
         ambushes: 8, pots: 3, springs: 2,
     },
     {
-        name: 'LEVEL 3 — THRONE OF THE LICH', seed: 90210,
-        groups: [['WRAITH', 'WRAITH'], ['SKELET', 'SKELET', 'WRAITH'], ['WRAITH', 'SNAKE', 'SNAKE', 'SNAKE'], ['SKELET', 'WRAITH', 'GOBLIN', 'GOBLIN'], ['WRAITH', 'WRAITH', 'SNAKE']],
-        ambushes: 6, pots: 2, springs: 2,
+        name: 'DEEP 3 — HALL OF SENTRIES', seed: 90210,
+        groups: [['WRAITH', 'WRAITH'], ['SKELET', 'SKELET', 'WRAITH'], ['WRAITH', 'SNAKE', 'SNAKE', 'SNAKE'], ['SKELET', 'WRAITH', 'GOBLIN', 'GOBLIN'], ['WRAITH', 'WRAITH', 'SNAKE'], ['GHOUL', 'SKELET', 'SKELET']],
+        ambushes: 8, pots: 3, springs: 2,
+    },
+    {
+        name: 'DEEP 4 — THE GNAWING PIT', seed: 20270,
+        groups: [['GHOUL', 'GHOUL'], ['GHOUL', 'SKELET', 'SKELET', 'RAT'], ['WRAITH', 'GHOUL'], ['SKELET', 'SKELET', 'SKELET', 'SKELET'], ['GHOUL', 'WRAITH', 'SNAKE', 'SNAKE']],
+        ambushes: 9, pots: 3, springs: 2,
+    },
+    {
+        name: 'DEEP 5 — BOG OF TROLLS', seed: 55513,
+        groups: [['TROLL', 'GHOUL'], ['TROLL', 'SKELET', 'SKELET'], ['WRAITH', 'WRAITH', 'GHOUL'], ['GHOUL', 'GHOUL', 'GHOUL'], ['TROLL', 'RAT', 'RAT', 'RAT', 'RAT'], ['WRAITH', 'GHOUL', 'SKELET']],
+        ambushes: 9, pots: 3, springs: 2,
+    },
+    {
+        name: 'DEEP 6 — THE GRINDING GALLERY', seed: 61742,
+        groups: [['TROLL', 'TROLL'], ['MINOTAUR', 'GHOUL', 'GHOUL'], ['TROLL', 'WRAITH', 'SKELET', 'SKELET'], ['MINOTAUR', 'SKELET', 'SKELET'], ['GHOUL', 'GHOUL', 'WRAITH', 'WRAITH']],
+        ambushes: 9, pots: 3, springs: 2,
+    },
+    {
+        name: 'DEEP 7 — LABYRINTH OF HORNS', seed: 77301,
+        groups: [['MINOTAUR', 'TROLL'], ['MINOTAUR', 'WRAITH', 'WRAITH'], ['TROLL', 'TROLL', 'GHOUL', 'GHOUL'], ['MINOTAUR', 'MINOTAUR'], ['WRAITH', 'WRAITH', 'WRAITH', 'SKELET']],
+        ambushes: 9, pots: 2, springs: 2,
+    },
+    {
+        name: 'DEEP 8 — THE MOLT HALL', seed: 80817,
+        groups: [['WYRM', 'MINOTAUR'], ['WYRM', 'GHOUL', 'GHOUL', 'GHOUL'], ['TROLL', 'TROLL', 'TROLL', 'WRAITH'], ['MINOTAUR', 'WRAITH', 'SKELET', 'SKELET', 'SKELET']],
+        ambushes: 10, pots: 2, springs: 2,
+    },
+    {
+        name: 'DEEP 9 — GATE OF WYRMS', seed: 91919,
+        groups: [['WYRM', 'WYRM'], ['WYRM', 'WRAITH', 'WRAITH'], ['MINOTAUR', 'MINOTAUR', 'GHOUL', 'GHOUL'], ['WYRM', 'TROLL', 'SKELET', 'SKELET'], ['WRAITH', 'WRAITH', 'WRAITH', 'WRAITH']],
+        ambushes: 10, pots: 2, springs: 3,
+    },
+    {
+        name: 'DEEP 10 — THRONE OF THE HOLLOW KING', seed: 10010,
+        groups: [['WYRM', 'WRAITH', 'WRAITH'], ['MINOTAUR', 'MINOTAUR', 'MINOTAUR'], ['WYRM', 'GHOUL', 'GHOUL', 'GHOUL'], ['WRAITH', 'WRAITH', 'WYRM'], ['TROLL', 'TROLL', 'TROLL', 'TROLL']],
+        ambushes: 8, pots: 2, springs: 3,
     },
 ]
 

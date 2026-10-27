@@ -10,7 +10,7 @@
 // a slow laker creeps down at SCROLL minus its engine, oncoming traffic
 // hurtles at SCROLL plus theirs). Kills, damage and misses are booked as
 // events with the arithmetic attached so the harness can recompute the
-// score ledger from scratch — the wizcheck lesson.
+// score ledger from scratch — the tendeepcheck lesson.
 
 import { STAGES } from './script.js'
 

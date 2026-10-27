@@ -1,7 +1,7 @@
 // THE BARD'S TALE — the painter. Everything here draws from a pure sim state;
 // it never mutates or reads the clock except the animation phase `t` handed in.
 // Dungeons render as coloured first-person walls (raycast DDA, shaded per floor
-// palette — deliberately warmer and fuller than Wizardry's green wireframe);
+// palette — deliberately warmer and fuller than TEN-DEEP's green wireframe);
 // Skara Brae renders as a bright overhead town; monsters are animated procedural
 // portraits sized by their range band. No images, no external assets.
 

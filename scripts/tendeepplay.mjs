@@ -1,7 +1,7 @@
-// WIZARDRY — Chrome plays the keep with NOTHING but real key events, and the
+// TEN-DEEP — Chrome plays the Deep with NOTHING but real key events, and the
 // claims the Node harness cannot see are graded in PIXELS:
 //
-//   npm run wizplay     (needs `npm run dev`)
+//   npm run tendeepplay     (needs `npm run dev`)
 //
 //   1. THE DEMO IS ALIVE — the proven solver walks a real tab.
 //   2. THE INPUT PATH — arrows walk/turn; the automap cursor is painted at
@@ -14,14 +14,14 @@
 //   6. THE STAIRS — real SPACE descends.
 //   7. DEATH, THE OVER SCREEN, ONE KEY BACK.
 //   8. ? pauses. Zero page errors throughout.
-// Reachability, the ledger pins, slack and determinism live in wizcheck (Node).
+// Reachability, the ledger pins, slack and determinism live in tendeepcheck (Node).
 
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
-const URL = process.env.WIZ_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/wizardry`
+const URL = process.env.DEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ten-deep`
 await requireDevServer(URL)
 
-const r = new Report('wizplay')
+const r = new Report('tendeepplay')
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 700, height: 640 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
@@ -29,12 +29,12 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
-const probe = () => page.evaluate(() => window.__wizTest.probe())
+const probe = () => page.evaluate(() => window.__deepTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)
 const tap = async (key, times = 1) => {
     for (let i = 0; i < times; i++) { await page.keyboard.press(key); await wait(90) }
 }
-const setup = (o) => page.evaluate((x) => window.__wizTest.setup(x), o)
+const setup = (o) => page.evaluate((x) => window.__deepTest.setup(x), o)
 const ensureSetup = async (o) => {
     for (let i = 0; i < 8; i++) {
         if (await setup(o)) return true
@@ -63,9 +63,9 @@ const px = (x, y, w, h, sel, filter) => page.evaluate(([sx, sy, sw, sh, slct, fl
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
-    await page.waitForFunction(() => !!window.__wizTest, null, { timeout: 30000 })
+    await page.waitForFunction(() => !!window.__deepTest, null, { timeout: 30000 })
 } catch {
-    r.check('DEV hook exists', false, 'window.__wizTest never appeared (dev server? /wizardry route?)')
+    r.check('DEV hook exists', false, 'window.__deepTest never appeared (dev server? /ten-deep route?)')
     r.exit(browser)
 }
 r.check('DEV hook exists', true)
@@ -105,7 +105,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
     r.check('ARROW RIGHT turns', c.dir === (a.dir + 1) % 4, `dir ${a.dir} -> ${c.dir}`)
     // automap: the amber cursor sits on the SIM cell
     const [mx, my] = [c.x * 5, c.y * 5]
-    const amber = await px(mx, my, 5, 5, 'canvas[data-wiz-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
+    const amber = await px(mx, my, 5, 5, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
     r.check('the automap paints the party where the sim says', amber >= 18, `cell (${c.x},${c.y}) amber=${amber}/25`)
 }
 
@@ -118,7 +118,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
         if (wallSeen !== 1) await tap('ArrowRight')
     }
     r.check('driver found a wall-ahead pose', wallSeen === 1, `wallDist=${wallSeen}`)
-    const blue = await px(126, 30, 5, 140, 'canvas[data-wiz-view]', (R, G, B) => B > 90 && B > R + 30)
+    const blue = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check('a wall at one pace paints the view wall-blue', blue > 40, `blue px in centre column=${blue}`)
     // wall-follow until the sightline is open 5+ paces with nothing on the
     // floor (springs/stairs/pots also light the centre column — the pose must
@@ -132,7 +132,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
     }
     const p2 = await probe()
     r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stairs=${p2.view.stairs}`)
-    const blueFar = await px(126, 30, 5, 140, 'canvas[data-wiz-view]', (R, G, B) => B > 90 && B > R + 30)
+    const blueFar = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check('a clear hall leaves the centre dark — the view is the grid', blueFar <= 10, `blue px=${blueFar} (wall pose had ${blue})`)
 }
 
@@ -156,7 +156,7 @@ if (ambush) {
     r.check('the fight opens with mobs on the ledger', !!p.combat && p.combat.mobs.length >= 1, JSON.stringify((p.combat || {}).mobs || []))
     const m0 = p.mobPx.find((m) => m.hp > 0)
     const sx = Math.round(m0.sx - m0.size * 0.4), sy = Math.round(140 - m0.size * 0.85)
-    const art = await px(sx, sy, Math.round(m0.size * 0.8), Math.round(m0.size * 0.7), 'canvas[data-wiz-view]', (R, G, B) => (R + G + B) > 120)
+    const art = await px(sx, sy, Math.round(m0.size * 0.8), Math.round(m0.size * 0.7), 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 120)
     r.check('a live mob has its painted plate where the projection says', art >= 10, `mob at x=${m0.sx} size=${Math.round(m0.size)} painted=${art}`)
     const dealt0 = p.ledger.dealt
     await tap('Space', 2)
@@ -184,7 +184,7 @@ else {
 {
     await ensureSetup({ at: [1, 1] })
     const stairs = await page.evaluate(async () => {
-        const cv = window.__wizTest
+        const cv = window.__deepTest
         const st = cv.probe()
         return st.stairs
     })
@@ -227,7 +227,7 @@ else {
     await page.keyboard.press('Shift+Slash')
     await wait(200)
     const back = await probe()
-    r.check('? gives the keep back', back.screen === 'play')
+    r.check('? gives the Deep back', back.screen === 'play')
 }
 
 r.check('zero page errors for the whole crawl', errors.length === 0, errors.slice(0, 3).join(' | '))
