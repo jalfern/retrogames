@@ -30,6 +30,14 @@ export const THROW_RANGE = 1.5
 export const ROUND_TIME = 99
 export const KO_FREEZE = 170
 export const INTRO_FREEZE = 150
+// Guard crush (#1106, VIPER PIT): a hidden guard gauge drains while a fighter
+// blocks; when it empties the guard CRUSHES — a long stun the opponent can
+// punish. The gauge regens while not guarding. Off by default (IRON RING
+// stays bit-identical); createMatch({ guardCrush: true }) turns it on.
+export const GUARD_MAX = 100
+export const CRUSH_FRAMES = 46
+export const CRUSH_CHIP = 7
+export const GUARD_REGEN = 0.35
 
 // ---- rng (mulberry32 — the repo's seeded stream) ------------------------------
 export function mulberry32(a) {
@@ -70,7 +78,7 @@ function createFighter(def, side) {
         def, side,
         x: side === 0 ? -2.6 : 2.6, y: 0, vx: 0, vy: 0,
         facing: side === 0 ? 1 : -1,
-        hp: def.hp || 100, meter: 0,
+        hp: def.hp || 100, meter: 0, guard: GUARD_MAX,
         st: 'idle', sf: 0, move: null, phase: '', hitOnce: {},
         blockHeld: false, crouchBlock: false,
         buf: [], press: null,
@@ -89,6 +97,7 @@ export function createMatch(cfg) {
         seed: seed >>> 0, rounds, maxRounds: 2 * rounds + 1,
         guardButton: !!cfg.guardButton,
         juggle: !!cfg.juggle,
+        guardCrush: !!cfg.guardCrush,
         rng: mulberry32((seed >>> 0) ^ 0x1234abc9),
         tick: 0, phase: 'intro', phaseT: INTRO_FREEZE,
         timer: time * 60, hitstop: 0, round: 1,
@@ -112,6 +121,7 @@ export function resetRound(m) {
         f.buf = []; f.press = null; f.charge = 0
         f.combo = 0; f.comboTimer = 0
         f.juggled = 0
+        f.guard = GUARD_MAX
         f.cpuScript = []; f.cpuCool = 40
     }
     m.projectiles = []
@@ -287,6 +297,13 @@ function updateFighter(m, f, opp, pad) {
             if (f.sf >= f.stun) { f.st = (pad.down || dir === 'd') && f.y === 0 ? 'crouch' : 'idle'; f.sf = 0 }
             break
         }
+        case 'crush': {
+            // guard crushed — a long helplessness the opponent can punish; the
+            // guard resets full when it wears off.
+            f.vx = 0
+            if (f.sf >= f.stun) { f.st = (pad.down || dir === 'd') && f.y === 0 ? 'crouch' : 'idle'; f.sf = 0; if (m.guardCrush) f.guard = GUARD_MAX }
+            break
+        }
         case 'hitstun': {
             if (f.y > 0) { f.vx *= 0.985 } else f.vx *= 0.8
             if (f.sf >= f.stun) {
@@ -329,6 +346,8 @@ function updateFighter(m, f, opp, pad) {
     f.x += f.vx
     f.x = Math.max(-WALL, Math.min(WALL, f.x))
 
+    if (m.guardCrush && f.st !== 'blockstun' && f.st !== 'crush') f.guard = Math.min(GUARD_MAX, f.guard + GUARD_REGEN)
+
     if (f.comboTimer > 0) { f.comboTimer--; if (f.comboTimer === 0) f.combo = 0 }
 }
 
@@ -360,7 +379,7 @@ function overlap(a, b) {
 
 function resolveHit(m, atk, def, move, seq) {
     const blocked = def.blockHeld && def.y === 0 && move.type !== 'throw' &&
-        def.st !== 'down' && def.st !== 'getup' && def.st !== 'hitstun' && def.st !== 'hitair' &&
+        def.st !== 'down' && def.st !== 'getup' && def.st !== 'hitstun' && def.st !== 'hitair' && def.st !== 'crush' &&
         (!move.low || def.crouchBlock) && (!move.overhead || !def.crouchBlock)
     const raw = move.dmg
     if (blocked) {
@@ -371,6 +390,16 @@ function resolveHit(m, atk, def, move, seq) {
         if (move.type !== 'throw' && move.dmg >= 9) def.hp = Math.max(1, def.hp - 1)
         if (atk.st === 'attack') { atk.cancelGate = true }
         m.events.push({ t: m.tick, kind: 'block', by: atk.side })
+        if (m.guardCrush) {
+            def.guard = Math.max(0, def.guard - raw)
+            if (def.guard <= 0) {
+                def.st = 'crush'; def.stun = CRUSH_FRAMES; def.sf = 0
+                def.vx = move.push * 0.6 * (def.facing === 1 ? -1 : 1)
+                def.hp = Math.max(1, def.hp - CRUSH_CHIP)
+                m.hitstop = Math.max(m.hitstop, 8)
+                m.events.push({ t: m.tick, kind: 'crush', by: atk.side, dmg: CRUSH_CHIP })
+            }
+        }
     } else {
         const airborne = def.y > 0 || def.st === 'hitair'
         if (m.juggle && airborne && def.juggled >= 1) {
@@ -583,7 +612,7 @@ export function step(m, pads) {
         const pad = f.def.cpu ? cpuPad(m, f, m.fighters[i === 0 ? 1 : 0]) : pads[i === 0 ? 0 : 1] || emptyPad()
         padsIn[i] = pad
         f.facing = m.fighters[i === 0 ? 1 : 0].x >= f.x ? 1 : -1
-        if (f.st === 'attack' || f.st === 'hitstun' || f.st === 'blockstun' || f.st === 'down' || f.st === 'getup' || f.st === 'hitair') {
+        if (f.st === 'attack' || f.st === 'hitstun' || f.st === 'blockstun' || f.st === 'down' || f.st === 'getup' || f.st === 'hitair' || f.st === 'crush') {
             // keep facing locked mid-commit for fairness
             if (f.st === 'attack') f.facing = f.commitFace || f.facing
         } else f.commitFace = f.facing
