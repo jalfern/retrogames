@@ -1,4 +1,4 @@
-// TEN-DEEP — Chrome plays the keep with NOTHING but real key events, and the
+// TEN-DEEP — Chrome plays the Deep with NOTHING but real key events, and the
 // claims the Node harness cannot see are graded in PIXELS:
 //
 //   npm run tendeepplay     (needs `npm run dev`)

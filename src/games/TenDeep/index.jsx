@@ -53,8 +53,16 @@ const ART = {
         '..wwww....', '.wwwwww...', '.wewwew...', '.wwddww...', '..wddw....', '...ww..r..', '..wwww.wr.', '.w.ww.w.r.', '...ww...r.', '..ww.ww...'] },
     wraith: { s: 6, pal: { p: '#8f9bff', d: '#3a3f8f', e: '#c6ff00' }, rows: [
         '..pppp....', '.pppppp...', 'peppppep..', 'pppppppp..', '.ppddpp...', '..pddp....', '..pddp.pp.', '...pp.pp..', '...pp.p...', '..p..p....'] },
-    lich: { s: 9, pal: { k: '#4b4f6b', d: '#23263a', g: '#7dffce', r: '#ff5252', y: '#ffd54f', w: '#e8ecf5' }, rows: [
-        '...yyyy...', '..ywwwwy..', '.ywkddkwy.', '.wkddddkw.', '.wrddddrw.', '..kddddk..', '.kkddddkk.', 'kkkddddkkk', 'k.kddddk.k', '...kkkk...'] },
+    ghoul: { s: 6, pal: { g: '#9db87a', d: '#4f6b34', e: '#ff5252', c: '#e8e0c8' }, rows: [
+        '..gg......', '.gggg.....', '.gegge....', '.ggggg.cc.', '..gddg.cc.', '.gggggg.c.', 'gg.gggg...', '.g.gg.g...', 'gg.gg.gg..', '.d...d....'] },
+    troll: { s: 7, pal: { t: '#6f9a52', b: '#3c5a2a', e: '#ffd54f', w: '#e8e0c8', c: '#8a6b46' }, rows: [
+        '.tttttt...', 'tttttttt..', '.tebbet...', 'ttttttttc.', 'ttwttwttc.', 'tbbbbbbbc.', '.ttttttc..', '.tttttt...', '.tt..tt...', '.ttt..ttt.'] },
+    minotaur: { s: 8, pal: { m: '#8a5a3a', b: '#5c3a22', e: '#ff5252', h: '#e8e0c8', a: '#8a6b46', x: '#b8bec9' }, rows: [
+        'hh.mm.mmhh', '.hmmmmmmh.', '.memmmmem.', '.mmmbbmmm.', 'mmmmbbmmmx', '.mmmmmmmax', '.mbmmmmmax', '..mm.mm.ax', '.mmm..mmm.', '.mmm...mm.'] },
+    wyrm: { s: 7, pal: { s: '#4f8a7a', d: '#2f5a4a', e: '#ffe082', f: '#e8e0c8' }, rows: [
+        '....ss....', '..ssssss..', '.sseesssd.', 'ssssssfdd.', 'ssssssfd..', '.ssssss...', '..ssssss..', '...ssssss.', '....ssssd.', '.....ss...'] },
+    king: { s: 9, pal: { k: '#4b4f6b', d: '#23263a', g: '#7dffce', y: '#ffd54f', w: '#e8ecf5' }, rows: [
+        '...yyyy...', '..ywwwwy..', '.ywkddkwy.', '.wkddddkw.', '.wgddddgw.', '..kddddk..', '.kkddddkk.', 'kkkddddkkk', 'k.kddddk.k', '...kkkk...'] },
 }
 
 const drawMob = (ctx, art, x, y, size, flash) => {
@@ -109,7 +117,7 @@ const TenDeepGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 260) evLog.splice(0, evLog.length - 260)
             for (const e of evts) {
-                if (e.type === 'ambush') { audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE LICH RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
+                if (e.type === 'ambush') { audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE HOLLOW KING RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
                 else if (e.type === 'hit') { audioController.playNoise(0.12, 0.07); shake = 4; flashHit = 0.25 }
                 else if (e.type === 'slay') { audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`) }
                 else if (e.type === 'fire') { audioController.playSweep(700, 180, 0.18, 'sawtooth', 0.05) }
@@ -122,7 +130,7 @@ const TenDeepGame = () => {
                 else if (e.type === 'descend') audioController.playSweep(600, 120, 0.6, 'triangle', 0.08)
                 else if (e.type === 'bump') audioController.playTone(90, 0.05, 'square', 0.05)
                 else if (e.type === 'fled') audioController.playSweep(500, 150, 0.3, 'square', 0.06)
-                else if (e.type === 'noback') say('THERE IS NO FLIGHT FROM THE LICH')
+                else if (e.type === 'noback') say('THERE IS NO FLIGHT FROM THE KING')
                 else if (e.type === 'empty') audioController.playTone(70, 0.06, 'triangle', 0.05)
             }
         }
@@ -234,7 +242,7 @@ const TenDeepGame = () => {
                 const slot = mobs.indexOf(m)
                 const sx = 128 + (slot - (n - 1) / 2) * 62
                 const A = ART[m.art]
-                const size = (A ? A.s * 10 : 50) * (m.key === 'LICH' ? 1.25 : 1)
+                const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
                 if (m.hp > 0) {
                     drawMob(ctx, m.art, sx - size / 2, 140 - size + wob, size, flashHit > 0)
                     if (i === gs.target) {
@@ -253,7 +261,7 @@ const TenDeepGame = () => {
             })
             if (gs.combat && gs.combat.boss) {
                 ctx.fillStyle = '#ff5252'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'
-                ctx.fillText('THE LICH — NO FLIGHT', 128, 14)
+                ctx.fillText('THE HOLLOW KING — NO FLIGHT', 128, 14)
             }
         }
 
@@ -416,7 +424,7 @@ const TenDeepGame = () => {
                         const slot = gs.combat.mobs.indexOf(m)
                         const sx = 128 + (slot - (n - 1) / 2) * 62
                         const A = ART[m.art]
-                        const size = (A ? A.s * 10 : 50) * (m.key === 'LICH' ? 1.25 : 1)
+                        const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
                         return { i, sx, size, hp: m.hp }
                     }) : [],
                     party: gs.party.map((h) => ({ ...h })),
@@ -484,7 +492,7 @@ const TenDeepGame = () => {
                     },
                     { label: '+5 POTIONS', run: () => { gs.potions += 5; return 'five crimson vials' } },
                     { label: 'FULL HEAL', run: () => { for (const h of gs.party) { h.hp = h.maxHp; h.mp = h.maxMp; if (h.hp > 0) h.alive = true } return 'the party is whole' } },
-                    { label: 'WARP TO STAIRS', run: () => { if (!gs.map.stairs) return 'the Lich owns this floor'; gs.x = gs.map.stairs.x; gs.y = gs.map.stairs.y; return 'the stair glows' } },
+                    { label: 'WARP TO STAIRS', run: () => { if (!gs.map.stairs) return 'the King owns this floor'; gs.x = gs.map.stairs.x; gs.y = gs.map.stairs.y; return 'the stair glows' } },
                 ],
             })
         }
@@ -529,8 +537,8 @@ const TenDeepGame = () => {
 
             {screen === 'over' && end && (
                 <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-amber-50 font-mono px-6 text-center">
-                    <h2 className={`text-4xl font-black mb-2 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'THE LICH HAS FALLEN' : 'THE PARTY PERISHES'}</h2>
-                    <p className="text-lg mb-4">{end.win ? 'Level 3 is silent. The keep is yours.' : 'The dark keeps what it takes. The keep reshuffles for the next six.'}</p>
+                    <h2 className={`text-4xl font-black mb-2 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'THE HOLLOW KING HAS FALLEN' : 'THE PARTY PERISHES'}</h2>
+                    <p className="text-lg mb-4">{end.win ? 'Ten deeps below, the throne is silent. The Deep is yours.' : 'The dark keeps what it takes. The Deep reshuffles for the next six.'}</p>
                     <p className="text-sm text-white/70">{(end.win ? 'Victory at tick ' : 'Fallen at tick ') + end.tick}</p>
                     <p className="mt-6 animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>

@@ -1,15 +1,15 @@
 // TEN-DEEP attract copy — the single source of truth the shell renders through
 // <AttractMessage> and attractcheck audits. Rule 6 (#365): one informational
-// message at a time, cycling. The old attract stacked a four-line rules wall —
-// including the CI autopilot line — undimmed over the demo.
+// message at a time, cycling. The attract never stacks a rules wall over the
+// demo — the demo is the proof, let it run.
 
 export const PRESS = 'PRESS ANY KEY OR TAP'
 
 export const MESSAGES = [
-    'CRAWL OF THE SIX · THE LICH KEEPS',
-    'SIX HEROES, ONE TORCH-LIT GRID',
+    'TEN DEEPS BELOW · THE HOLLOW KING KEEPS',
+    'SIX HEROES, ONE TORCH-LIT WELL',
     'ARROWS WALK AND TURN · SPACE USES STAIRS',
     'F THROWS FIREBOLT · H HEALS · P DRINKS',
-    'L FLEES — BUT NEVER FROM THE LICH',
-    'THREE LEVELS · SUPPLIES ARE REAL',
+    'L FLEES — BUT NEVER FROM THE KING',
+    'TEN FLOORS · SUPPLIES ARE REAL',
 ]
