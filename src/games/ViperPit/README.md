@@ -31,6 +31,14 @@ the #1096 options switched on.
   The engine resolves `qcb` *after* `qcbf` so the finisher's `d,b` prefix isn't
   stolen (its 2nd token, back, also can't be confused with qcf's forward), and
   the CPU throws it at close range.
+- **Guard crush (#1106)**: every fighter carries a hidden GUARD gauge (the
+  teal strip above the meter). Each blocked hit drains it by the hit's damage;
+  when it empties the guard **CRUSHES** — the defender staggers back guardless
+  for a long punish window (`st === 'crush'`, ~0.77 s), takes chip damage, and
+  a `GUARD BREAK` banner + hard crack + screen jolt sell it. The gauge regens
+  while the fighter isn't guarding and resets full when a crush wears off.
+  Engine option `createMatch({ guardCrush: true })` — off by default so IRON
+  RING sims stay bit-identical; the netplay hash is deterministic either way.
 - **Finisher cinematics (#1106)**: a finisher that ends the round plays out as
   a 3-beat sequence over the KO freeze — the loser is scripted through the
   signature beats (KRAX grab→strike→slam, VESS grab→flip→dry-land, NYX a triple
@@ -68,9 +76,10 @@ the #1096 options switched on.
 
 - `src/engine/fighting.js` — shared core + the #1096 options (`guardButton`,
   move-level `finisher`/`finishAt`, `qcbf` motion, projectile vy/grav for
-  arcing kicks). Every new line is behind a flag or a data key the IRON RING
-  roster never sets. Hit events carry the move key (`mv`, #1106 audio seam) —
-  an additive field; `matchHash` ignores events, IRON RING stays bit-identical.
+  arcing kicks, `guardCrush` for the guard gauge + crush state). Every new line
+  is behind a flag or a data key the IRON RING roster never sets. Hit events
+  carry the move key (`mv`, #1106 audio seam) — an additive field; `matchHash`
+  ignores events, IRON RING stays bit-identical.
 - `src/games/ViperPit/fighters.js` — 5 fighters (NYX assassin easy, CINDER
   zoner, VESS acrobat, RIV all-round, KRAX grappler insane); each: build/gear,
   palette, stats, specials on engine motion keys + a named `finish`.
@@ -96,6 +105,11 @@ the #1096 options switched on.
 
 - Blocking: only `bk` (guard) blocks in this title; `blockHeld` still covers
   idle/crouch/blockstun. GUARD+DOWN = crouch-block; throws beat guard.
+- Guard crush: blocking drains a hidden gauge by the hit's damage; an empty
+  gauge CRUSHES the guard (a long helplessness + chip, `GUARD BREAK` banner)
+  that the opponent can punish. The gauge regens while not guarding and resets
+  full after a crush. Read the teal strip — flash red means you're about to
+  crack.
 - Finishers spend the whole bar; they do big damage to healthy foes (dmg 20-26,
   never a reliable KO) and end a wounded one (≤30) outright via the
   `finish` event path in `resolveHit`.
@@ -116,7 +130,9 @@ the #1096 options switched on.
 
 - `npm run viperpitcheck` — the Node rules (guard vs back-walk, low-block,
     throw-through-guard, uppercut launch, FINISH + healthy-foe finisher, qcf/qcbf not stolen, qcb
-    counter fires, cancel combo, juggle rules, determinism, every ladder CPU completes
+    counter fires, cancel combo, juggle rules, guard crush — a guard that absorbs
+    enough blocks breaks into a punish stun, the punch then connects unblocked,
+    and the gauge regens — determinism, every ladder CPU completes
   a match, hit events carry `mv`) + the #1106 audio wiring (source-level
   call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
   the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
@@ -126,8 +142,10 @@ the #1096 options switched on.
     stage-life runtime probes via `fx()`: molten opacity actually changes and
     the cast light is on, `rainFallen` advances, a forced subway sweep walks
     0→1, the midground layer present per pit and rocking past its idle breeze
-    on a forced `midKick()`, the finisher cinematic running its multi-beat
-    sequence via `forceFinish()` + `cine()`, zero page errors).
+     on a forced `midKick()`, the finisher cinematic running its multi-beat
+     sequence via `forceFinish()` + `cine()`, the qcb counter live in the sim,
+     a forced guard-crush entering and clearing the crush stun with the gauge
+     refilling via `forceCrush()` + `guard()`, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -140,5 +158,7 @@ the #1096 options switched on.
 - No intro/outround dialogue lines; win/lose quotes are QA polish.
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
-- `qcb` counter landed (#1106); guard crush / stun meter not implemented.
+- `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
+  an empty gauge CRUSHES into a long punish stun (chip + `GUARD BREAK`), the
+  gauge regens and resets full. A live guard/stun meter is drawn above the bar.
 - Net select: guest pick reaches the host only if sent before the host starts.

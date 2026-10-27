@@ -211,6 +211,42 @@ if (!MUT) {
     while (m.fighters[1].hp === hp && fj++ < 25) e.step(m, [P(), P()])
     ok(hp - m.fighters[1].hp >= 8 && m.fighters[1].juggled === 0, 'juggle lock clears on recovery — the floor resets the combo game')
 
+    // guard crush (#1106): a guard that absorbs enough blocked hits CRUSHES —
+    // the defender is stunned, takes chip, and a follow-up punch can no longer
+    // be blocked (the punish window opens). The gauge regens once not guarding.
+    {
+        const mkC = (seed = 5) => {
+            const mm = e.createMatch({ seed, guardButton: true, juggle: true, guardCrush: true, p1: human('riv'), p2: human('nyx') })
+            let g = 0
+            while (mm.phase !== 'fight' && g++ < 400) e.step(mm, [P(), P()])
+            return mm
+        }
+        m = mkC()
+        m.fighters[1].guard = 24
+        let sawCrush = false
+        for (let round = 0; round < 8 && !sawCrush; round++) {
+            let w = 0
+            while (m.fighters[0].st !== 'idle' && w++ < 90) e.step(m, [P(), P({ bk: true })])
+            m.fighters[1].x = m.fighters[0].x + 1.3
+            e.step(m, [P({ hp: true }), P({ bk: true })])
+            for (let i = 0; i < 24; i++) { e.step(m, [P(), P({ bk: true })]); if (m.events.some((x) => x.kind === 'crush')) { sawCrush = true; break } }
+        }
+        ok(sawCrush, `guard crushes after absorbing repeated blocks (p2 ${m.fighters[1].st}, guard ${m.fighters[1].guard})`)
+        ok(m.events.some((x) => x.kind === 'crush'), 'guard-break event fires (the punish window opens)')
+        m = mkC()
+        m.fighters[1].x = m.fighters[0].x + 1.2
+        m.fighters[1].st = 'crush'; m.fighters[1].stun = 46; m.fighters[1].sf = 0; m.fighters[1].guard = 0
+        const hpC = m.fighters[1].hp
+        e.step(m, [P({ hp: true }), P({ bk: true })])
+        for (let i = 0; i < 14; i++) e.step(m, [P(), P({ bk: true })])
+        ok(hpC - m.fighters[1].hp >= 8, `a crushed foe can't block — the punish connects (${hpC - m.fighters[1].hp} dmg)`)
+        m = mkC()
+        m.fighters[1].guard = 30
+        let gRegen = 0
+        while (m.fighters[1].guard < 90 && gRegen++ < 200) e.step(m, [P(), P()])
+        ok(m.fighters[1].guard >= 90, `guard gauge regens while not guarding (${m.fighters[1].guard})`)
+    }
+
     // determinism
     const run = (seed) => {
         const mm = e.createMatch({ seed, guardButton: true, juggle: true, p1: { ...BY_ID.riv, cpu: true }, p2: human('krax') })
@@ -402,6 +438,29 @@ if (MUT) {
     ok(/forceQcb\(\) \{/.test(gsrc), 'qcb gate: dev hook can force the counter for the probe')
     const mutE = esrc.replace("if (sp.qcb && matchMotion(hist, MOTION.qcb)) return fire('qcb')", "if (false) return fire('qcb')")
     ok(!/if \(sp\.qcb && matchMotion\(hist, MOTION\.qcb\)\) return fire\('qcb'\)/.test(mutE), 'mutant: dead qcb resolver fails the gate (harness bites)')
+}
+
+// ---- #1106 guard crush gate ------------------------------------------------
+// A guard that absorbs enough blocks CRUSHES: the defender is stunned, takes
+// chip, and can't block the punish. Engine gates (drain / crush state / regen)
+// + cabinet gates (flag on, hears the event, draws the gauge) + a dead-drain
+// mutant. The real mechanic is driven in part A above; part B probes the live
+// cabinet through __viperPitTest.forceCrush()/guard().
+{
+    const fs = await import('node:fs')
+    const esrc = fs.readFileSync(path.join(HERE, '../src/engine/fighting.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok(/def\.guard = Math\.max\(0, def\.guard - raw\)/.test(esrc), 'crush gate: blocking drains the guard gauge')
+    ok(/def\.st = 'crush'; def\.stun = CRUSH_FRAMES/.test(esrc), 'crush gate: an empty guard breaks into a crush stun')
+    ok(/case 'crush':/.test(esrc), 'crush gate: the crush stun is a real state')
+    ok(/m\.guardCrush && f\.st !== 'blockstun' && f\.st !== 'crush'\) f\.guard = Math\.min\(GUARD_MAX/.test(esrc), 'crush gate: the guard gauge regens while not guarding')
+    ok(/guardCrush: true/.test(gsrc), 'crush gate: the cabinet turns guardCrush on')
+    ok(/e\.kind === 'crush'/.test(gsrc), 'crush gate: the cabinet hears the guard-break event')
+    ok(/f\[i\]\.guard/.test(gsrc), 'crush gate: the HUD draws the guard gauge')
+    ok(/forceCrush\(\) \{/.test(gsrc) && /guard\(\) \{ return gs/.test(gsrc), 'crush gate: dev hooks expose guard() and forceCrush()')
+    // mutant: kill the drain — the gate must fail
+    const mutE = esrc.replace('def.guard = Math.max(0, def.guard - raw)', 'def.guard = def.guard')
+    ok(!/def\.guard = Math\.max\(0, def\.guard - raw\)/.test(mutE), 'mutant: dead guard drain fails the gate (harness bites)')
 }
 
 console.log(`part A: ${pass} ok, ${fail} fail`)
@@ -605,6 +664,33 @@ if (!MUT) {
             await page.waitForTimeout(25)
         }
         ok(sawQcb, 'qcb counter is live in the sim (state reports the move)')
+    }
+
+    // #1106 guard crush: the guard gauge + crush stun are live in the cabinet —
+    // force a guard break, watch the fighter enter the crush stun, then recover
+    // with a full guard.
+    {
+        await page.evaluate(() => window.__viperPitTest.stage(1))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
+        const gFull = await page.evaluate(() => window.__viperPitTest.guard())
+        ok(gFull && gFull[1] >= 90, `guard gauge starts full in the cabinet (${gFull && gFull[1]})`)
+        await page.evaluate(() => window.__viperPitTest.forceCrush())
+        let sawCrush = false
+        for (let i = 0; i < 25 && !sawCrush; i++) {
+            const s = await page.evaluate(() => window.__viperPitTest.state)
+            if (s && s.st[1] === 'crush') sawCrush = true
+            await page.waitForTimeout(40)
+        }
+        ok(sawCrush, 'guard-crush stun is live in the sim (state reports crush)')
+        let recovered = false
+        for (let i = 0; i < 200 && !recovered; i++) {
+            const s = await page.evaluate(() => window.__viperPitTest.state)
+            if (s && s.st[1] !== 'crush') { recovered = true; break }
+            await page.waitForTimeout(40)
+        }
+        const gAfter = await page.evaluate(() => window.__viperPitTest.guard())
+        ok(recovered, 'crush stun clears back to a guarding-ready fighter')
+        ok(gAfter && gAfter[1] >= 90, `guard gauge refills after the crush (${gAfter && gAfter[1]})`)
     }
 
     await page.keyboard.press('Escape')

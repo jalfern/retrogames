@@ -212,7 +212,7 @@ const ViperPitGame = () => {
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
             const human2 = m !== 'cpu'
-            gs = createMatch({ seed: sd, guardButton: true, juggle: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
+            gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
             finishFx = 0; finishText = ''
@@ -325,7 +325,7 @@ const ViperPitGame = () => {
         const attractDemo = () => {
             seedCounter = (seedCounter + 0x9e3779b9) >>> 0
             const a = BY_ID.riv, b = BY_ID.krax
-            gs = createMatch({ seed: seedCounter | 1, guardButton: true, juggle: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
+            gs = createMatch({ seed: seedCounter | 1, guardButton: true, juggle: true, guardCrush: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'riv'; p2Char = 'krax'
             rebuildRigs(); rebuildStage()
@@ -380,6 +380,15 @@ const ViperPitGame = () => {
                 } else if (e.kind === 'block') {
                     audioController.playTone(640, 0.03, 'square', 0.05)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.35, 0xbfd8ff)
+                } else if (e.kind === 'crush') {
+                    // guard break — the defender's guard shatters: a hard crack,
+                    // a screen jolt, and a big punish window opens.
+                    shake = Math.max(shake, 14); flashT = Math.max(flashT, 12)
+                    bannerText = 'GUARD BREAK'; bannerT = 80
+                    audioController.playSweep(560, 84, 0.28, 'sawtooth', 0.15)
+                    audioController.playNoise(0.18, 0.18)
+                    audioController.playTone(70, 0.2, 'square', 0.1)
+                    scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.3, 0x39d8c8)
                 } else if (e.kind === 'finish') {
                     shake = 18; flashT = 26; finishFx = 200
                     finishText = (m.fighters[e.by].def.finish || 'FINISH').toUpperCase()
@@ -526,6 +535,16 @@ const ViperPitGame = () => {
                         hctx.textAlign = i === 0 ? 'left' : 'right'
                         hctx.fillText('FINISH READY', i === 0 ? mx : mx + mw, my - 5)
                     }
+                    // guard-crush gauge: a thin strip above the meter — calm teal
+                    // while full, flashing red as it nears empty (guard about to
+                    // break), dead-empty and red while the guard is crushed.
+                    const gh = Math.max(4, H * 0.009), gy = my - gh - 5
+                    const gfrac = Math.max(0, Math.min(1, f[i].guard / 100))
+                    const crushed = f[i].st === 'crush'
+                    hctx.fillStyle = crushed ? '#3a0f14' : '#0d1517'
+                    hctx.fillRect(i === 0 ? mx : mx + mw - mw, gy, mw, gh)
+                    hctx.fillStyle = crushed ? '#ff5a3c' : (gfrac < 0.28 ? (Math.sin(gs.tick * 0.5) > 0 ? '#ff5a3c' : '#c22a1c') : '#39d8c8')
+                    hctx.fillRect(i === 0 ? mx : mx + mw - mw * gfrac, gy, mw * gfrac, gh)
                     if (comboFx[i] > 0) {
                         comboFx[i]--
                         const pop = comboFx[i] > 54 ? 1 + (comboFx[i] - 54) / 40 : 1
@@ -746,6 +765,8 @@ const ViperPitGame = () => {
                 stage(i) { startFight(i, 'cpu') },
                 sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
                 midKick() { if (stageFx && stageFx.mid) stageFx.mid.force = 1 },
+                guard() { return gs ? gs.fighters.map((f) => Math.round(f.guard)) : null },
+                forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0 } },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },

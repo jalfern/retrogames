@@ -231,6 +231,12 @@ export function poseFighter(rig, f, tSec) {
         q.arms = [{ sh: 0.7, el: -1.1, z: 0.6 }, { sh: 0.6, el: -1.2, z: -0.6 }]
         q.hipY = -0.05
         q.legs = [{ hip: -0.25, kn: -0.2 }, { hip: 0.2, kn: -0.3 }]
+    } else if (st === 'crush') {
+        // guard shattered — staggered back, guard thrown up but broken, open
+        q.lean = -0.42; q.headX = -0.6
+        q.hipY = -0.08
+        q.arms = [{ sh: -2.0, el: -2.3, z: 0.5 }, { sh: -1.7, el: -2.1, z: -0.55 }]
+        q.legs = [{ hip: -0.3, kn: -0.45 }, { hip: 0.25, kn: -0.35 }]
     } else if (st === 'down') {
         q.drop = 1
         q.arms = [{ sh: 0.9, el: -0.3, z: 0.9 }, { sh: 0.8, el: -0.3, z: -0.9 }]
