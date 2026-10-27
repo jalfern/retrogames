@@ -1,54 +1,57 @@
-# STATE — session 31 (2026-10-26)
+# STATE — session 32 (2026-10-26)
 
 ## Shipped this session
-- **BRITANNIA M1: Walk Britannia** — merged `e8d3f64` (#1133, issue #1128).
-  Live at https://jalfern.com/retrogames/britannia (route 200, bundle hash
-  contains it). Ultima IV rebuilt from scratch, no emulator: the geography is
-  read at runtime from `ultima4.jsdos` (own ZIP reader + raw-deflate inflate —
-  the bundle pads its deflate streams), WORLD.MAP = terrain byte per tile in
-  32x32 blocks, ocean=0; 8 moongates auto-detected from the original's star
-  glyphs; ships board at any coast; day/night + torchlight; C = classic-tile
-  comparison; win = ride all 8 gates. Private (#379) until Jon promotes.
-- Stall over: #1121 retitled (STALLED prefix dropped) after #1128 was claimed;
-  AGENTS rule-4 streak broken with game code merged.
-- #1128: shipped label, stays open (milestones 2-5: talk/trade/virtue,
-  combat, 3D dungeons, shrines/Abyss/ending).
-- QA polish pass filed: **#1135** (classic-tile decode of SHAPES.EGA, weather,
-  walk frames, real swell, gate juice).
+- **TEN-DEEP stage 1** — merged `dbc4c9c` (#1137, issue #1127).
+  Live at https://jalfern.com/retrogames/ten-deep (private — #379 — not in
+  the Arcade menu until Jon promotes). WIZARDRY's trademark is gone: dir,
+  route, label, hooks (`__deepTest`), checks (`tendeepcheck`, `tendeepplay`),
+  CI keys (`tendeep`) — zero Wizardry strings in src/scripts/bundle.
+  Content is now own-IP: TEN DEEPS below a fallen keep (seeds new, layouts
+  new, names new) and a new bestiary — Cave Rat, Mire Adder, Rag Goblin,
+  Bone Sentry, Pale Wraith + fresh plates Grave Ghoul, Bog Troll, Minotauros,
+  Deep Wyrm — boss THE HOLLOW KING (crowned, glow-eyed, no flight) with two
+  Wyrm wardens. Rules untouched: 6-hero party, ledger combat, slack-proven
+  campaign (1152 cmds, 7 potions, 8 springs, 65 casts; lvl-9 party; all
+  slack deletions still win). tendeepcheck 676/676 (+5 mutants caught);
+  tendeepplay 25/25 real keys, zero page errors; King fight pixel-checked.
+- Solver bug the ten-floor proof exposed: autopilot deadlocked standing on a
+  spring at FULL MP re-issuing `use` — now drinks only when dry. (Three-floor
+  geometry never hit it; ten floors found it in minutes. Proof finds bugs.)
+- QA polish pass filed: **#1138** (stone reads, step easing, mob idles +
+  death dissolve, spell VFX, automap fog, floor ambience, HUD vials, epitaphs).
 
 ## Playable now
-- BRITANNIA on prod (private — not in Arcade menu yet).
-- `scripts/main-ok.sh` green at merge time; #601 freeze stayed lifted.
+- TEN-DEEP on prod (private). `scripts/main-ok.sh` green at merge time.
 
 ## Branches / harness
-- Worktree `~/Dev/retrogames-forge-britannia` remains (branch deleted by the
-  squash-merge; gh's auto-checkout failed because the QA worktree holds
-  `main` — worktree re-detached to origin/main). When idle:
-  `git worktree remove ~/Dev/retrogames-forge-britannia`.
-- `npm run britanniacheck` (11/11, mutant-proven) + `lint:britannia` alias;
-  britannia registered in `scripts/checks.mjs` SCOPES. CI workflow steps for
-  the new key NOT added (needs `workflow` scope) — next lane may add:
-  two `if: contains(fromJSON(env.KEYS),'britannia')` steps in ci.yml.
-- Gotcha for new games: a stray `,` in games.js builds fine but crashes
-  visibilitycheck/builtbycheck — always run those before pushing.
+- Worktree `~/Dev/retrogames-forge-ten-deep` REMOVED after merge; main
+  checkout detached at origin/main.
+- CI `wiz` steps renamed to `tendeep` in ci.yml (workflow scope present —
+  britannia's missing CI steps still are NOT; see session 31 note).
+- `npm run tendeepcheck / tendeepplay / lint:tendeep`; scope `tendeep` in
+  checks.mjs. tapstart/vpadboot/vpadcheck/attractcheck now expect TEN-DEEP.
+- New-game rename lesson: bulk s/WIZARDRY/TEN-DEEP/ corrupts identifiers
+  (`WizardryGame`) and lazy-import paths (`../games/Wizardry`) — grep the
+  broken token after any branding rename, before the first lint.
 
 ## For the next session
-- #1128 is the standing game-queue item (shipped label + building absent;
-  claim for stage 2 "Talk, trade and virtue" — .TLK/SPEECH data, keyword
-  conversations, shopkeepers, karma).
-- Or Jon promotes BRITANNIA to public / answers the shape of stages 2-5.
+- #1127 is back on `game-queue` for **stage 2: the surface world** — tavern
+  (hire/roll), temple (resurrect/heal), training grounds (spend XP — the
+  sim's 100*lvl^2 curve already runs; the town spends it), magic shop.
+  Stage 3: races/classes/alignments + spells-by-level. Stage 4: MODERN look
+  = shared renderer #1129 (don't double-build it inside TEN-DEEP).
+- Or Jon promotes TEN-DEEP public / rules on #1129 (renderer) — it would
+  lift TEN-DEEP, BARD'S TALE and BRITANNIA dungeons at once.
 
 ## Open questions
-- none new (#1121 is answered-in-spirit — the board refilled; it can be
-  closed whenever Jon or the warden sweeps it).
+- #1121 (AWAITING, board direction) — unchanged, deadline 2026-10-28.
 
 ## Lessons learned
-- Node 26's DecompressionStream rejects trailing junk in DOS-zip deflate
-  streams; Chrome may too → the game carries a tolerant inflate, verified
-  byte-perfect vs zlib in britanniacheck.
-- 2011 PC Ultima IV `WORLD.MAP` layout decoded: 32x32 tile blocks,
-  row-major blocks, 256x256 tiles, v0=ocean; bright 4-arm stars mark sites
-  (gates/dungeons/shrines — not distinguishable by value yet, so M1 treats
-  the 8 strongest inland stars as moongates).
-- `gh pr merge` after `--delete-branch` tries to checkout `main` and dies if
-  another worktree holds it — merge still lands; just re-detach (rule says).
+- A determinism check that prints `a.hash vs b.hash` IDENTICAL on failure is
+  lying about the cause: the condition AND-ed in `won`. Compose failure text
+  from what actually differed.
+- The `setup({floor})` DEV guard was hardcoded `< 3` with the old floor
+  count — carry floors-count changes into harness helpers, not just FLOORS.
+- Screenshotting a pixel game while spamming `cmd` faster than rAF captures
+  the hit-flash full-white (flashHit decays only per paint). Let frames land
+  (~1s idle) before sampling pixels.
