@@ -1,10 +1,10 @@
-// WIZARDRY — the Node gate. No browser, no dev server. This file is the
+// TEN-DEEP — the Node gate. No browser, no dev server. This file is the
 // reason the attract demo is a PROVEN campaign and not theatre, and the
 // reason the maze cannot be a lie: the generator never referees its own
-// work — wizcheck re-proves reachability with its own BFS.
+// work — tendeepcheck re-proves reachability with its own BFS.
 //
-//   npm run wizcheck             # audit + pins + proven run + slack + determinism
-//   npm run wizcheck -- --mutate # re-break the load-bearing rules; every
+//   npm run tendeepcheck             # audit + pins + proven run + slack + determinism
+//   npm run tendeepcheck -- --mutate # re-break the load-bearing rules; every
 //                                # mutant MUST turn something red
 //
 // Sections: no-random · FLOOR AUDIT (independent BFS) · ENGINE PINS
@@ -17,9 +17,9 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext } from '../src/games/Wizardry/sim.js'
-import { genFloor, FLOORS, MOBS } from '../src/games/Wizardry/dungeon.js'
-import { solveRun } from '../src/games/Wizardry/solver.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext } from '../src/games/TenDeep/sim.js'
+import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
+import { solveRun } from '../src/games/TenDeep/solver.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MUT = process.argv.includes('--mutate')
@@ -41,7 +41,7 @@ const mobHp = (g) => (g.combat ? g.combat.mobs.reduce((n, m) => n + m.hp, 0) : 0
 // ---------------------------------------------------------------- math is banned ----
 section('MATH.RANDOM IS A SIM CRIME')
 for (const f of ['sim.js', 'dungeon.js', 'solver.js']) {
-    const raw = readFileSync(join(HERE, '../src/games/Wizardry', f), 'utf8')
+    const raw = readFileSync(join(HERE, '../src/games/TenDeep', f), 'utf8')
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     ok(!/Math\s*\.\s*random/.test(src), `${f} contains Math.random — the dungeon may never be luck`)
 }
@@ -274,9 +274,9 @@ section('SLACK RULE — one fewer of every supply the proof consumed, and no spr
     const lastSpring = proven.ledger.springTiles[proven.ledger.springTiles.length - 1]
     ok(!!lastPot && !!lastSpring, `the proof recorded no supply tiles (pots=${proven.ledger.potTiles.length} springs=${proven.ledger.springTiles.length}) — slack cannot even be phrased`)
     if (!lastPot || !lastSpring) {
-        console.log('\nwizcheck: SLACK UNPHRASABLE — the campaign consumed nothing; every supply check below is meaningless')
+        console.log('\ntendeepcheck: SLACK UNPHRASABLE — the campaign consumed nothing; every supply check below is meaningless')
         fails.push('slack: no consumed supplies to remove')
-        console.log(`\nwizcheck: ${pass}/${pass + fails.length} checks passed — ${fails.length} FAILED`)
+        console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed — ${fails.length} FAILED`)
         fails.forEach((f) => console.log(`  FAIL  ${f}`))
         process.exit(1)
     }
@@ -379,6 +379,6 @@ if (MUT) {
     })
 }
 
-console.log(`\nwizcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
+console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
 fails.forEach((f) => console.log(`  FAIL  ${f}`))
 process.exit(fails.length ? 1 : 0)

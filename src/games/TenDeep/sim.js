@@ -1,4 +1,4 @@
-// WIZARDRY — the pure heart: state + discrete command -> new state + events.
+// TEN-DEEP — the pure heart: state + discrete command -> new state + events.
 // Zero Math.random (the only dice are dungeon.js's seeded mulberry, and only
 // at floor generation). Every combat round is a ledger entry the harness
 // recomputes independently: damage dealt == damage taken, always.

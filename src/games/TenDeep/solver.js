@@ -1,5 +1,5 @@
-// WIZARDRY — the autopilot AND the proof. This is the same code the attract
-// demo drives live; wizcheck runs it cold on the whole campaign and on the
+// TEN-DEEP — the autopilot AND the proof. This is the same code the attract
+// demo drives live; tendeepcheck runs it cold on the whole campaign and on the
 // slack-deleted supplies, so the demo is never theatre: it is the witness.
 //
 // The policy deliberately does NOT cheat: it walks BFS toward the stairs/

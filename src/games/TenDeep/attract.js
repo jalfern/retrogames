@@ -1,4 +1,4 @@
-// WIZARDRY attract copy — the single source of truth the shell renders through
+// TEN-DEEP attract copy — the single source of truth the shell renders through
 // <AttractMessage> and attractcheck audits. Rule 6 (#365): one informational
 // message at a time, cycling. The old attract stacked a four-line rules wall —
 // including the CI autopilot line — undimmed over the demo.

@@ -1,7 +1,7 @@
-// WIZARDRY — Chrome plays the keep with NOTHING but real key events, and the
+// TEN-DEEP — Chrome plays the keep with NOTHING but real key events, and the
 // claims the Node harness cannot see are graded in PIXELS:
 //
-//   npm run wizplay     (needs `npm run dev`)
+//   npm run tendeepplay     (needs `npm run dev`)
 //
 //   1. THE DEMO IS ALIVE — the proven solver walks a real tab.
 //   2. THE INPUT PATH — arrows walk/turn; the automap cursor is painted at
@@ -14,14 +14,14 @@
 //   6. THE STAIRS — real SPACE descends.
 //   7. DEATH, THE OVER SCREEN, ONE KEY BACK.
 //   8. ? pauses. Zero page errors throughout.
-// Reachability, the ledger pins, slack and determinism live in wizcheck (Node).
+// Reachability, the ledger pins, slack and determinism live in tendeepcheck (Node).
 
 import { launch, requireDevServer, Report, relayNoise } from './lib/harness.mjs'
 
-const URL = process.env.WIZ_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/wizardry`
+const URL = process.env.DEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ten-deep`
 await requireDevServer(URL)
 
-const r = new Report('wizplay')
+const r = new Report('tendeepplay')
 const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 700, height: 640 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
@@ -29,12 +29,12 @@ const errors = []
 page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
-const probe = () => page.evaluate(() => window.__wizTest.probe())
+const probe = () => page.evaluate(() => window.__deepTest.probe())
 const wait = (ms) => page.waitForTimeout(ms)
 const tap = async (key, times = 1) => {
     for (let i = 0; i < times; i++) { await page.keyboard.press(key); await wait(90) }
 }
-const setup = (o) => page.evaluate((x) => window.__wizTest.setup(x), o)
+const setup = (o) => page.evaluate((x) => window.__deepTest.setup(x), o)
 const ensureSetup = async (o) => {
     for (let i = 0; i < 8; i++) {
         if (await setup(o)) return true
@@ -63,9 +63,9 @@ const px = (x, y, w, h, sel, filter) => page.evaluate(([sx, sy, sw, sh, slct, fl
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
-    await page.waitForFunction(() => !!window.__wizTest, null, { timeout: 30000 })
+    await page.waitForFunction(() => !!window.__deepTest, null, { timeout: 30000 })
 } catch {
-    r.check('DEV hook exists', false, 'window.__wizTest never appeared (dev server? /wizardry route?)')
+    r.check('DEV hook exists', false, 'window.__deepTest never appeared (dev server? /ten-deep route?)')
     r.exit(browser)
 }
 r.check('DEV hook exists', true)
@@ -105,7 +105,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
     r.check('ARROW RIGHT turns', c.dir === (a.dir + 1) % 4, `dir ${a.dir} -> ${c.dir}`)
     // automap: the amber cursor sits on the SIM cell
     const [mx, my] = [c.x * 5, c.y * 5]
-    const amber = await px(mx, my, 5, 5, 'canvas[data-wiz-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
+    const amber = await px(mx, my, 5, 5, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
     r.check('the automap paints the party where the sim says', amber >= 18, `cell (${c.x},${c.y}) amber=${amber}/25`)
 }
 
@@ -184,7 +184,7 @@ else {
 {
     await ensureSetup({ at: [1, 1] })
     const stairs = await page.evaluate(async () => {
-        const cv = window.__wizTest
+        const cv = window.__deepTest
         const st = cv.probe()
         return st.stairs
     })

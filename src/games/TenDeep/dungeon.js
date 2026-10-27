@@ -1,8 +1,8 @@
-// WIZARDRY — floor generation. Pure and seeded: mulberry32 lives here and is
-// the ONLY dice in the game; Math.random is banned at the door by wizcheck.
+// TEN-DEEP — floor generation. Pure and seeded: mulberry32 lives here and is
+// the ONLY dice in the game; Math.random is banned at the door by tendeepcheck.
 // Floors are carved as a randomized DFS maze on odd cells, then BRAIDED
 // (dead ends punched into loops) — a maze is a tree, so by construction every
-// open cell is reachable from the entrance. wizcheck re-proves that with its
+// open cell is reachable from the entrance. tendeepcheck re-proves that with its
 // own BFS anyway: the generator may never referee its own work.
 //
 // Everything the campaign consumes is PLACED, never rolled: stairs at the

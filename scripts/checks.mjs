@@ -46,7 +46,7 @@ export const SCOPES = {
   dog: { dirs: ['src/games/Dogfight'], lint: ['lint:dog'], checks: [['dogfightcheck', true]], smoke: ['dogfightplay'] },
   sweep: { dirs: ['src/games/Minesweeper'], lint: ['lint:sweep'], checks: [['sweepcheck', true]], smoke: [] },
   paper: { dirs: ['src/games/Paperboy'], lint: ['lint:paper'], checks: [['papercheck', true]], smoke: ['paperplay'] },
-  wiz: { dirs: ['src/games/Wizardry'], lint: ['lint:wiz'], checks: [['wizcheck', true]], smoke: ['wizplay'] },
+  tendeep: { dirs: ['src/games/TenDeep'], lint: ['lint:tendeep'], checks: [['tendeepcheck', true]], smoke: ['tendeepplay'] },
   hunter: { dirs: ['src/games/SpyHunter'], lint: ['lint:hunter'], checks: [['huntercheck', true]], smoke: [] },
   excite: { dirs: ['src/games/Excitebike'], lint: ['lint:excite'], checks: [['excitecheck', true]], smoke: ['exciteplay'] },
   kart: { dirs: ['src/games/MarioKart'], lint: ['lint:kart'], checks: ['kartcheck'], smoke: [] },

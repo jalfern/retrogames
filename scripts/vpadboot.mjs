@@ -30,7 +30,7 @@ const TOUCHED = [
     ['/lemmings', 'pointer'], ['/metroid', 'stick'], ['/polarity', 'stick'],
     ['/simcity-min', 'dpad'], ['/outpost', 'dpad'], ['/papers-please', 'dpad'],
     ['/lode-runner', 'stick'], ['/dogfight', 'stick'], ['/paperboy', 'stick'],
-    ['/wizardry', 'dpad'], ['/spy-hunter', 'stick'], ['/excitebike', 'stick'],
+    ['/ten-deep', 'dpad'], ['/spy-hunter', 'stick'], ['/excitebike', 'stick'],
     ['/tetris', 'dpad'], ['/qbert', 'dpad'], ['/zelda', 'stick'],
     ['/minesweeper', 'dpad'], ['/bubble-bobble', 'stick'], ['/gauntlet', 'stick'],
     ['/four-halls', 'stick'], ['/smash-tv', 'stick'], ['/lunar-lander', 'stick'],

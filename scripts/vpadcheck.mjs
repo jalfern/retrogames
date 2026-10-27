@@ -262,7 +262,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
     const folded = [
         ['/mario', 'KeyF'], ['/ironkeep', 'ShiftLeft'], ['/beezee', 'KeyV'],
         ['/metroid', 'KeyX'], ['/simcity-min', 'KeyT'], ['/outpost', 'KeyT'], ['/papers-please', 'KeyD'],
-        ['/lode-runner', 'ArrowDown'], ['/dogfight', 'KeyE'], ['/paperboy', 'KeyF'], ['/wizardry', 'KeyF'],
+        ['/lode-runner', 'ArrowDown'], ['/dogfight', 'KeyE'], ['/paperboy', 'KeyF'], ['/ten-deep', 'KeyF'],
         ['/spy-hunter', 'KeyX'], ['/excitebike', 'KeyG'], ['/mario-kart', 'KeyR'], ['/zelda', 'KeyX'],
         ['/minesweeper', 'KeyB'], ['/bubble-bobble', 'KeyB'], ['/gauntlet', 'KeyX'], ['/four-halls', 'KeyX'],
         ['/smash-tv', 'KeyB'], ['/out-run', 'KeyB'], ['/lunar-lander', 'KeyX'], ['/polarity', 'KeyX'],
@@ -487,7 +487,7 @@ ok(padButton({ layout: 'dpad', buttons: [] }) === null, 'padButton: no buttons -
         const j = gamesSrc.indexOf('path: ', i + 1)
         return gamesSrc.slice(i, j === -1 ? gamesSrc.length : j)
     }
-    const dpadGames = ['/minesweeper', '/simcity-min', '/outpost', '/papers-please', '/wizardry', '/tetris', '/qbert', '/bards-tale']
+    const dpadGames = ['/minesweeper', '/simcity-min', '/outpost', '/papers-please', '/ten-deep', '/tetris', '/qbert', '/bards-tale']
     for (const path of dpadGames) {
         const block = blockFor(path)
         ok(block !== null, `games.js has an entry for ${path}`)

@@ -1,8 +1,8 @@
-// WIZARDRY — the arcade shell. Everything is runtime art: a shaded
+// TEN-DEEP — the arcade shell. Everything is runtime art: a shaded
 // painter's-algorithm wireframe of the same grid the sim walks (256x224),
 // bitmap-plate monster sprites, an automap built from the explored set.
 // The attract demo is the Node-proven solver driving THIS state machine
-// live — wizcheck's witness and the demo are the same code.
+// live — tendeepcheck's witness and the demo are the same code.
 //
 // Layout: 1. projection + sprites 2. fixed-timestep shell (commands are
 // discrete; the clock only drives fades/bob) 3. input 4. DEV hook + DebugKit
@@ -71,7 +71,7 @@ const drawMob = (ctx, art, x, y, size, flash) => {
     }
 }
 
-const WizardryGame = () => {
+const TenDeepGame = () => {
     const stageRef = useRef(null)
     const mapRef = useRef(null)
     const [screen, setScreen] = useState('attract')
@@ -88,7 +88,7 @@ const WizardryGame = () => {
         const wrap = stageRef.current
         if (!wrap) return undefined
         const canvas = document.createElement('canvas')
-        canvas.dataset.wizView = '1'
+        canvas.dataset.deepView = '1'
         canvas.width = W; canvas.height = H
         canvas.className = 'block w-full h-full'
         canvas.style.imageRendering = 'pixelated'
@@ -386,7 +386,7 @@ const WizardryGame = () => {
         raf = requestAnimationFrame(frame)
 
         if (import.meta.env.DEV) {
-            window.__wizTest = {
+            window.__deepTest = {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
@@ -464,7 +464,7 @@ const WizardryGame = () => {
                 },
             }
             mountDbg({
-                title: 'WIZARDRY',
+                title: 'TEN-DEEP',
                 getState: () => [
                     `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}`,
                     `potions ${gs.potions}  explored ${gs.explored.size}  dealt ${gs.ledger.dealt} taken ${gs.ledger.taken}`,
@@ -490,7 +490,7 @@ const WizardryGame = () => {
         }
 
         return () => {
-            if (import.meta.env.DEV) { if (window.__wizTest) delete window.__wizTest; unmountDbg() }
+            if (import.meta.env.DEV) { if (window.__deepTest) delete window.__deepTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
             window.removeEventListener('resize', resize)
@@ -505,7 +505,7 @@ const WizardryGame = () => {
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
-            <canvas ref={mapRef} data-wiz-map="1" width={95} height={95}
+            <canvas ref={mapRef} data-deep-map="1" width={95} height={95}
                 className="absolute bottom-3 left-3 border border-indigo-500/40 bg-black/80 rounded opacity-90 pointer-events-none"
                 style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '118px', height: '118px' }} />
 
@@ -521,7 +521,7 @@ const WizardryGame = () => {
 
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
-                    <h1 className="text-5xl font-black tracking-widest mb-6" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>WIZARDRY</h1>
+                    <h1 className="text-5xl font-black tracking-widest mb-6" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>TEN-DEEP</h1>
                     <AttractMessage className="mb-6 text-indigo-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
@@ -536,10 +536,10 @@ const WizardryGame = () => {
                 </div>
             )}
 
-            {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'WIZARDRY')} onResume={handleResume} />}
+            {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'TEN-DEEP')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
         </div>
     )
 }
 
-export default WizardryGame
+export default TenDeepGame
