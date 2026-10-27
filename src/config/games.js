@@ -194,6 +194,9 @@ const HomebodyGame = lazy(() => import('../games/Homebody'))
 // IRON RING: three.js fighter — Pong is not paying for a 3D engine.
 const IronRingGame = lazy(() => import('../games/IronRing'))
 const ViperPitGame = lazy(() => import('../games/ViperPit'))
+// BRITANNIA: its own chunk — the jsdos reader + inflate + star detection ride with it, and the
+// 558 KB map bundle is fetched only when someone actually opens the land.
+const BritanniaGame = lazy(() => import('../games/Britannia'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1079,5 +1082,19 @@ export const GAMES = [
         theme: 'dark',
         description: "An original gritty one-on-one fighter in the spirit of the 1992 arcade shock that made fighting games dangerous — its own roster, its own pits, its own moves, none of its names: best of three, light and heavy punches and kicks, and the signature difference — a dedicated GUARD button (back-walking never blocks; GUARD+DOWN catches lows), uppercuts that LAUNCH their victim into a juggle window, and a FINISHING MOVE per fighter: full bar, down-back-down-forward + punch, and if it catches a wounded foe the round ends in style (stylized, never gory). Five original fighters — NYX the silent assassin, CINDER the firebreather, VESS the inverted acrobat, RIV the last word, KRAX sold by the kilo — each with their own launch-uppercut and named finisher, over a five-pit street ladder from easy to insane, in three dark arenas (back alley at 2 a.m., the foundry, the last train) with fog, hanging lamps, chain-link and silhouetted crowds. Runs on the shared fighting core (seed + pads = identical fights, hash-checked): 1P ladder on your phone (pad + P + K + GUARD), local 2P on one keyboard, or viper-pit?net=host versus a friend over room codes.",
         controls: ['Arrows: move/jump · hold GUARD (O / the on-screen GUARD button) to block · GUARD+DOWN blocks lows', 'J / SPACE / A: light punch · K: heavy punch · U / B: light kick · I: heavy kick', 'DOWN-FORWARD + punch: special (at full bar the same motion SUPERS)', 'FORWARD-DOWN-UP + punch: UPPERCUT — they launch · close + forward + heavy: THROW', 'DOWN-BACK-DOWN-FORWARD + punch at a FULL BAR: your FINISHING MOVE — a wounded foe is ended in style', 'Chain: light into heavy into special = combo counter · 1 STREET LADDER · 2 LOCAL 2P (P2: WASD + F G V B, H guards) · keys 3-7 quick-pick', '?: pause and read the rules · online: viper-pit?net=host / ?net=join&room=CODE'],
+    },
+,
+    {
+        path: '/britannia',
+        pad: { layout: 'dpad', buttons: [{ label: '\u2693', code: 'Space' }], analog: false, reason: 'arrows walk and sail; \u2693/SPACE answers the moongate when it whirls' },
+        builtBy: 'forge',
+        added: '2026-10-26',
+        visibility: 'private',
+        tapStart: false,
+        component: BritanniaGame,
+        label: 'BRITANNIA',
+        theme: 'dark',
+        description: "Ultima IV, rebuilt from scratch — no emulator, the same world. The geography is genuinely Origin's: the map is read at runtime from the original 2011-freeware data files (WORLD.MAP pulled out of ultima4.jsdos), so every coast, island and shore you walk is the Britannia of 1985; the engine is world-agnostic and could load another map the same way. The pixels and sounds are brand new and modern: animated sea, procedural terrain, a day/night cycle that darkens the land and lights a flickering torch around your party, and eight moongates that glow and whirl — step on one, choose a destination, and be gone. Walk ashore, board at any coast, sail the open sea; press C to flip the map back to classic EGA-ish shades for comparison with the original. Stage 1 of five (#1128): the walk. Conversations, virtues, combat, 3D dungeons and the Abyss follow. The moongate pilgrimage — finding and riding all eight gates — is the milestone's win condition.",
+        controls: ['Arrows / WASD / stick: walk · walk into the sea to board a ship · walk ashore to leave it', 'Step on a glowing MOONGATE: arrows choose, SPACE rides · number keys jump to a gate', 'Touch: tap a direction to stride that way · tap the map center to answer gates · tap a destination in the gate menu', 'C: classic tiles (EGA-ish) — press again for the modern look', '?: pause and read the lore of the land', 'Goal: visit all eight moongates, Avatar'],
     },
 ]

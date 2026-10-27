@@ -53,6 +53,7 @@ const GAMES = [
     { id: 'homebody', path: '/homebody' },
     { id: 'iron-ring', path: '/iron-ring' },
     { id: 'viper-pit', path: '/viper-pit' },
+    { id: 'britannia', path: '/britannia' },
 ]
 const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
@@ -95,6 +96,7 @@ const PATTERNS = {
     'garden-guard': (i) => ({ left: i % 13 < 3, right: i % 17 >= 8 && i % 17 < 11, up: i % 29 < 2, down: i % 23 >= 6 && i % 23 < 8, a: i % 7 < 2, b: i % 31 < 1, pointer: { x: 0.55 + 0.32 * Math.sin(i / 40), y: 0.55 + 0.3 * Math.cos(i / 37), down: i % 53 === 0 } }),
     'iron-ring': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
     'viper-pit': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
+    britannia: (i) => ({ left: i % 53 >= 42, right: i % 53 < 15, up: i % 61 >= 50, down: i % 61 < 12, a: i % 47 < 2, b: i % 97 === 0 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
