@@ -49,7 +49,7 @@ const realRandom = Math.random
 Math.random = () => { throw new Error('Math.random called during gen/solve') }
 let froze = false
 try {
-    for (let i = 0; i < 3; i++) genFloor(i)
+    for (let i = 0; i < FLOORS.length; i++) genFloor(i)
     const g = makeRun()
     for (let i = 0; i < 300 && !g.end; i++) step(g, 'fwd')
     froze = true
@@ -194,7 +194,7 @@ section('ENGINE PINS')
         const ev2 = run(g, 'attack')
         ok(!ev2.some((e) => e.type === 'levelup'), '1 xp past zero levelled a hero — the gate leaks')
     }
-    // 8. FLEE: costs the rear guard, returns to the map; the Lich refuses.
+    // 8. FLEE: costs the rear guard, returns to the map; the Hollow King refuses.
     {
         const g = makeRun()
         g.mode = 'combat'
@@ -206,9 +206,9 @@ section('ENGINE PINS')
         ok(!!fh && fh.d === CFG.fleeCost && slowest.hp === hpB - CFG.fleeCost, `the parting shot misbooked: d=${fh ? fh.d : 'none'} hp=${slowest.hp}`)
         ok(g.mode === 'map' && !g.combat, 'flee did not return the party to the corridor')
         g.mode = 'combat'
-        g.combat = { boss: true, round: 0, mobs: [{ id: 0, key: 'LICH', name: 'THE LICH', art: 'lich', hp: 99, maxHp: 99, atk: 1, def: 0, spd: 1, xp: 0 }] }
+        g.combat = { boss: true, round: 0, mobs: [{ id: 0, key: 'KING', name: 'THE HOLLOW KING', art: 'king', hp: 99, maxHp: 99, atk: 1, def: 0, spd: 1, xp: 0 }] }
         const ev2 = run(g, 'flee')
-        ok(ev2.some((e) => e.type === 'noback') && g.mode === 'combat', 'the Lich let the party run')
+        ok(ev2.some((e) => e.type === 'noback') && g.mode === 'combat', 'the Hollow King let the party run')
     }
     // 9. STAIRS AND THRONE: use descends, the throne wakes the campaign's end.
     {
@@ -218,14 +218,14 @@ section('ENGINE PINS')
         const ev = run(g, 'use')
         ok(ev.some((e) => e.type === 'descend' && g.floor === 1), `stairs did not descend: floor=${g.floor}`)
         const g3 = makeRun()
-        const th = genFloor(2).throne
-        g3.map = genFloor(2)
+        const th = genFloor(FLOORS.length - 1).throne
+        g3.map = genFloor(FLOORS.length - 1)
         const dirs = [[1, 0, 2], [-1, 0, 0], [0, 1, 3], [0, -1, 1]]
         const near = dirs.find(([dx, dy]) => !g3.map.wall(th.x + dx, th.y + dy))
         ok(!!near, 'the throne has no open neighbour — unwinnable geometry')
         g3.x = th.x + near[0]; g3.y = th.y + near[1]; g3.dir = near[2]
         run(g3, 'fwd')
-        ok(g3.mode === 'combat' && g3.combat && g3.combat.boss, 'stepping up to the throne did not start the Lich fight')
+        ok(g3.mode === 'combat' && g3.combat && g3.combat.boss, 'stepping up to the throne did not start the King fight')
     }
     // 10. MOVEMENT: back is the reverse, walls refuse, fire/heal cost MP honestly.
     {
@@ -257,13 +257,13 @@ let proven = null
 {
     const t0 = Date.now()
     proven = solveRun()
-    ok(proven.won, `the autopilot did NOT kill the Lich: end=${proven.end}`)
+    ok(proven.won, `the autopilot did NOT dethrone the Hollow King: end=${proven.end}`)
     ok(proven.ticks < 60000, `the proof ran out the tick clock (${proven.ticks})`)
     ok(proven.ledger.potionsUsed >= 3, `the proof burned only ${proven.ledger.potionsUsed} potions — supplies are decoration if the campaign does not need them`)
     ok(proven.ledger.springsUsed >= 1, 'the proof never drank from a spring — MP must be a real resource')
     ok(proven.ledger.casts >= 10, `only ${proven.ledger.casts} casts — magic is decoration if the proof barely uses it`)
     ok(proven.party.some((p) => p.alive), 'the campaign was won by corpses')
-    ok(proven.party.some((p) => p.lvl > 1), 'nobody levelled across three floors — XP is a decoration')
+    ok(proven.party.some((p) => p.lvl > 1), 'nobody levelled across ten deeps — XP is a decoration')
     console.log(`  ..    ${proven.ticks} commands, dealt ${proven.ledger.dealt} taken ${proven.ledger.taken}, ${proven.ledger.potionsUsed} potions, ${proven.ledger.springsUsed} springs, ${proven.ledger.casts} casts, ${Date.now() - t0} ms`)
 }
 

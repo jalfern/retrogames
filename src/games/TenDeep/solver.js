@@ -67,7 +67,12 @@ export function nextAction(st) {
     const m = st.map
     const t = key(st.x, st.y)
     if (m.stairs && m.stairs.y === st.y && m.stairs.x === st.x) return 'use'
-    if (st.springs.has(t)) return 'use'
+    if (st.springs.has(t)) {
+        // drink when someone is dry; a full party walks on — standing on the
+        // spring shouting USE forever is not a plan, it is a deadlock
+        const dry = st.party.some(h => h.alive && h.mp < h.maxMp)
+        if (dry) return 'use'
+    }
     const goals = new Set()
     if (m.stairs) goals.add(key(m.stairs.x, m.stairs.y))
     if (m.throne) goals.add(key(m.throne.x, m.throne.y))
