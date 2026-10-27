@@ -33,6 +33,10 @@ transcribed into source:
 
 ## Honest gaps (stage 1)
 
+- Weather (`weather.js`, #1135): a deterministic sky per 16x16-tile region and
+  24s epoch — rain in the south, snow north of the snow line (y<72), storms
+  with night lightning + delayed thunder. No moving fronts, no wet/dry
+  accumulation, no weather on the sea surface beyond the tint.
 - Moongates warp between the 8 detected stars with a destination picker;
   the original's moon-phase routing and shrine destinations arrive with
   stage 5. Names (Britain, Trinsic…) arrive when town/talk data loads.
