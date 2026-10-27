@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
+import { WX, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -104,6 +105,50 @@ for (let step = 0; step < 7 && visited.size < 8; step++) {
     for (let i = 0; i < 8; i++) if (!visited.has(i)) { visited.add(i); break }
 }
 ok(visited.size === 8, 'pilgrimage completes: all 8 gates reachable via the network')
+
+// weather (#1135): a deterministic sky, latitude-correct precipitation, lightning
+// only at night inside storms, one flash per strike, and skies that drift.
+// Prove-it-can-fail: flip SNOW_LINE or the night window in weather.js.
+ok(isFrozen(SNOW_LINE - 1) && !isFrozen(SNOW_LINE), `snow line exact at y=${SNOW_LINE}`)
+ok(weatherAt(100, 100, 3000) === weatherAt(100, 100, 3000) && weatherAt(100, 100, 3000, 7) === weatherAt(100, 100, 3000, 7), 'weather deterministic per place+time+seed')
+let snowSouth = 0, rainNorth = 0, clearCnt = 0, wetCnt = 0, tot = 0
+for (let y = 0; y < MAPW; y += 8) for (let x = 0; x < MAPW; x += 8) for (let ep = 0; ep < 6; ep++) {
+    const w = weatherAt(x, y, ep * 1440 + 7)
+    tot++
+    if (w === WX.CLEAR) clearCnt++
+    else wetCnt++
+    if (w === WX.SNOW && y >= SNOW_LINE) snowSouth++
+    if (w === WX.RAIN && y < SNOW_LINE) rainNorth++
+}
+const clearFrac = clearCnt / tot
+ok(snowSouth === 0 && rainNorth === 0, `snow only north, rain only south (${snowSouth} stray snow, ${rainNorth} stray rain)`)
+ok(clearFrac > 0.45 && clearFrac < 0.85, `sky mostly clear but not always (${(clearFrac * 100).toFixed(1)}% clear over 6 epochs)`)
+ok(wetCnt > tot * 0.1, `weather reaches most of the land over time (${(wetCnt / tot * 100).toFixed(1)}% wet samples)`)
+let stuck = 0
+for (let i = 0; i < 40; i++) {
+    const set = new Set()
+    for (let ep = 0; ep < 24; ep++) set.add(weatherAt((i * 37) % MAPW, (i * 53) % MAPW, ep * 1440 + 13))
+    if (set.size === 1) stuck++
+}
+ok(stuck === 0, 'the sky drifts: no spot stays under one weather for 24 epochs')
+let badFlash = 0, flashSeen = 0, dayFlash = 0, onset = 0, multiPeak = 0
+for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW; x += 8) {
+    if (weatherAt(x, y, 1800) !== WX.STORM) continue
+    for (let b = 0; b < 4; b++) {
+        let peaks = 0
+        for (let t = b * 90; t < b * 90 + 90; t++) {
+            const f = flashAt(x, y, t, 0.5)
+            if (f > 0) { flashSeen++; if (!stormNight(0.5)) badFlash++ }
+            if (f >= 1) peaks++
+            if (flashOnset(x, y, t, 0.5)) onset++
+            if (flashAt(x, y, t, 0.1) > 0) dayFlash++
+        }
+        if (peaks > 1) multiPeak++
+    }
+}
+ok(flashSeen > 0 && badFlash === 0, `lightning strikes at night in storms (${flashSeen} flash frames)`)
+ok(dayFlash === 0, 'no lightning during the day')
+ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thunder cues scheduled)`)
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
 process.exit(fails ? 1 : 0)

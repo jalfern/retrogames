@@ -18,6 +18,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
+import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather.js'
 
 const SIM_MS = 1000 / 60
 const TILE = 32
@@ -131,7 +132,7 @@ const BritanniaGame = () => {
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
-            sel: 1, gate: -1, done: false, camX: 0, camY: 0,
+            sel: 1, gate: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
         })
 
         const load = async () => {
@@ -162,6 +163,17 @@ const BritanniaGame = () => {
 
         const step = (pad) => {
             S.tick++
+            const sky = weatherAt(S.x, S.y, S.tick, S.seed)
+            if (sky !== S.wx) {
+                S.wx = sky
+                if (sky === WX.RAIN) { S.toast = 110; S.toastMsg = 'Rain sweeps low over the moor.'; audioController.playNoise(0.35, 0.07) }
+                else if (sky === WX.SNOW) { S.toast = 110; S.toastMsg = 'Snow drifts down from the north.'; audioController.playTone(520, 0.5, 'sine', 0.05) }
+                else if (sky === WX.STORM) { S.toast = 110; S.toastMsg = 'A storm gathers over the land.'; audioController.playSweep(90, 45, 1, 'sawtooth', 0.12) }
+            }
+            if ((S.wx === WX.RAIN || S.wx === WX.STORM) && (S.tick % 42) === 0) audioController.playNoise(0.14, 0.04)
+            S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed)
+            if (flashOnset(S.x, S.y, S.tick, tod(), S.seed)) S.thunder = S.tick + 26
+            if (S.thunder === S.tick) { audioController.playNoise(0.7, 0.2); audioController.playSweep(72, 28, 0.9, 'sawtooth', 0.14) }
             // camera eases toward the player (world px)
             const wx = S.x * TILE, wy = S.y * TILE
             S.camX += (wx - S.camX) * 0.12
@@ -313,7 +325,42 @@ const BritanniaGame = () => {
                 ctx.fillStyle = 'rgba(255,255,255,0.14)'
                 ctx.fillRect(0, 0, VIEW_W, VIEW_H)
             }
+            const wet = S.wx === WX.RAIN ? 0.1 : S.wx === WX.SNOW ? 0.12 : S.wx === WX.STORM ? 0.22 : 0
+            if (wet > 0) {
+                ctx.fillStyle = `rgba(28,40,62,${wet})`
+                ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+                drawPrecip(t)
+            }
+            if (S.fl > 0) {
+                ctx.fillStyle = `rgba(226,238,255,${0.55 * S.fl})`
+                ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+            }
             drawHud(n)
+        }
+
+        const drawPrecip = (t) => {
+            const storm = S.wx === WX.STORM
+            if (S.wx === WX.SNOW) {
+                ctx.fillStyle = 'rgba(240,246,255,0.85)'
+                const n = storm ? 120 : 90
+                for (let i = 0; i < n; i++) {
+                    const fx = (((hash2(i, 3, 1) * VIEW_W + Math.sin(t / 22 + i) * 18 - S.camX * 0.2) % VIEW_W) + VIEW_W) % VIEW_W
+                    const fy = (hash2(i, 7, 2) * VIEW_H + t * (0.8 + hash2(i, 11, 3) * 0.7)) % VIEW_H
+                    ctx.beginPath(); ctx.arc(fx, fy, 1.6 + (i % 3) * 0.5, 0, 7); ctx.fill()
+                }
+                return
+            }
+            const n = storm ? 130 : 110
+            ctx.strokeStyle = `rgba(170,200,235,${storm ? 0.4 : 0.3})`
+            ctx.lineWidth = storm ? 1.6 : 1.2
+            const slant = storm ? 7 : 3
+            ctx.beginPath()
+            for (let i = 0; i < n; i++) {
+                const rx = (((hash2(i, 5, 1) * VIEW_W - S.camX * 0.3) % VIEW_W) + VIEW_W) % VIEW_W
+                const ry = (hash2(i, 9, 2) * VIEW_H + t * (storm ? 16 : 12)) % VIEW_H
+                ctx.moveTo(rx, ry); ctx.lineTo(rx - slant, ry + 14)
+            }
+            ctx.stroke()
         }
 
         const drawHud = (n) => {
@@ -328,6 +375,8 @@ const BritanniaGame = () => {
             ctx.fillText(S.ship ? 'SHIP' : 'FOOT', 300, 29)
             const hrs = Math.floor(tod() * 24)
             ctx.fillText(`${String(hrs).padStart(2, '0')}:00 ${n > 0.5 ? 'NIGHT' : 'DAY'}`, 380, 29)
+            ctx.fillStyle = S.wx === WX.STORM ? '#e0a060' : S.wx === WX.SNOW ? '#e8f2ff' : S.wx === WX.RAIN ? '#7fb0e0' : '#9fb4d8'
+            ctx.fillText(WX_NAME[S.wx], VIEW_W - 290, 29)
             ctx.fillStyle = '#7fe8ff'
             ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, 540, 29)
             ctx.fillStyle = '#6a7b9a'
@@ -507,6 +556,7 @@ const BritanniaGame = () => {
                     hash: ((S.x * 256 + S.y) * 31 + S.visited.size * 7 + (S.ship ? 1 : 0) + S.gate * 997) >>> 0,
                     x: S.x, y: S.y, ship: S.ship, gate: S.gate,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
+                    weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
                 }
             }
             window.__britanniaTest = {
@@ -519,7 +569,7 @@ const BritanniaGame = () => {
             }
             mountDbg({
                 title: 'BRITANNIA',
-                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? 'SHIP' : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `gates ${S.visited.size}/${gates.length}`, `done ${S.done}`] : ['loading…'],
+                getState: () => exports_state().ready ? [`pos ${S.x},${S.y} ${S.ship ? 'SHIP' : 'FOOT'}`, `tod ${tod().toFixed(2)}`, `wx ${WX_NAME[S.wx]}`, `gates ${S.visited.size}/${gates.length}`, `done ${S.done}`] : ['loading…'],
                 actions: [
                     { label: 'to gate I', run: () => { S.x = gates[0].x; S.y = gates[0].y } },
                     { label: 'night', run: () => { S.tick = Math.floor(DAY * 0.5) } },
