@@ -38,6 +38,7 @@ export const SCOPES = {
   polar: { dirs: ['src/games/Polarity'], lint: ['lint:polar'], checks: ['polarcheck'], smoke: ['polarplay'] },
   missile: { dirs: ['src/games/MissileBattle'], lint: ['lint:missile'], checks: ['missilecheck'], smoke: ['missileplay'] },
   sim: { dirs: ['src/games/SimCityMin'], lint: ['lint:sim'], checks: ['citycheck'], smoke: ['cityplay'] },
+  britannia: { dirs: ['src/games/Britannia'], lint: ['lint:britannia'], checks: ['britanniacheck'], smoke: [] },
   outpost: { dirs: ['src/games/Outpost'], lint: ['lint:outpost'], checks: ['outpostcheck'], smoke: ['outpostplay'] },
   papers: { dirs: ['src/games/PapersPleaseMin'], lint: ['lint:papers'], checks: ['paperscheck'], smoke: ['papersplay'] },
   lode: { dirs: ['src/games/LodeRunnerLite'], lint: ['lint:lode'], checks: [['lodecheck', true]], smoke: ['lodeplay'] },
