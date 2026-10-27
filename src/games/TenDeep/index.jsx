@@ -440,7 +440,7 @@ const TenDeepGame = () => {
                 cmd: (c) => { act(c); return true },
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
-                    if (opts.floor !== undefined && opts.floor !== gs.floor && opts.floor < 3) {
+                    if (opts.floor !== undefined && opts.floor !== gs.floor && opts.floor < 10) {
                         for (let f = gs.floor; f < opts.floor; f++) step(gs, 'wait')
                         gs = makeRun()
                         while (gs.floor < opts.floor) {

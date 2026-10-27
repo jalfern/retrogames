@@ -118,7 +118,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
         if (wallSeen !== 1) await tap('ArrowRight')
     }
     r.check('driver found a wall-ahead pose', wallSeen === 1, `wallDist=${wallSeen}`)
-    const blue = await px(126, 30, 5, 140, 'canvas[data-wiz-view]', (R, G, B) => B > 90 && B > R + 30)
+    const blue = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check('a wall at one pace paints the view wall-blue', blue > 40, `blue px in centre column=${blue}`)
     // wall-follow until the sightline is open 5+ paces with nothing on the
     // floor (springs/stairs/pots also light the centre column — the pose must
@@ -132,7 +132,7 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
     }
     const p2 = await probe()
     r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stairs=${p2.view.stairs}`)
-    const blueFar = await px(126, 30, 5, 140, 'canvas[data-wiz-view]', (R, G, B) => B > 90 && B > R + 30)
+    const blueFar = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check('a clear hall leaves the centre dark — the view is the grid', blueFar <= 10, `blue px=${blueFar} (wall pose had ${blue})`)
 }
 
@@ -156,7 +156,7 @@ if (ambush) {
     r.check('the fight opens with mobs on the ledger', !!p.combat && p.combat.mobs.length >= 1, JSON.stringify((p.combat || {}).mobs || []))
     const m0 = p.mobPx.find((m) => m.hp > 0)
     const sx = Math.round(m0.sx - m0.size * 0.4), sy = Math.round(140 - m0.size * 0.85)
-    const art = await px(sx, sy, Math.round(m0.size * 0.8), Math.round(m0.size * 0.7), 'canvas[data-wiz-view]', (R, G, B) => (R + G + B) > 120)
+    const art = await px(sx, sy, Math.round(m0.size * 0.8), Math.round(m0.size * 0.7), 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 120)
     r.check('a live mob has its painted plate where the projection says', art >= 10, `mob at x=${m0.sx} size=${Math.round(m0.size)} painted=${art}`)
     const dealt0 = p.ledger.dealt
     await tap('Space', 2)
@@ -227,7 +227,7 @@ else {
     await page.keyboard.press('Shift+Slash')
     await wait(200)
     const back = await probe()
-    r.check('? gives the keep back', back.screen === 'play')
+    r.check('? gives the Deep back', back.screen === 'play')
 }
 
 r.check('zero page errors for the whole crawl', errors.length === 0, errors.slice(0, 3).join(' | '))
