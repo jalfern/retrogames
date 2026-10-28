@@ -112,15 +112,19 @@ export function rollCandidates(rnd, party) {
     let magusAt = -1
     for (let i = 0; i < 6; i++) {
         six.push(rollBody(rnd))
-        if (classOk(six[i], 'MAGUS') && magusAt < 0) magusAt = i
+        if (six[i].cls === 'MAGUS' && classOk(six[i], 'MAGUS') && magusAt < 0) magusAt = i
     }
     if (magicless && magusAt < 0) {
-        let forced = null
-        for (let tries = 0; tries < 24 && !forced; tries++) {
-            const b = rollBody(rnd)
-            if (classOk(b, 'MAGUS')) forced = b
+        // construct a legal MAGUS paper — the bench keeps its promise by making
+        // one, not by gambling on the dice (still seeded, still honest)
+        const race = 'VASK'
+        const roll = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1))
+        six[Math.floor(rnd() * 6)] = {
+            name: NAMES[Math.floor(rnd() * NAMES.length)], cls: 'MAGUS', race,
+            aff: 10 + roll(0, 4), hp: Math.max(6, roll(20, 34) + RACES[race].hp),
+            mp: Math.max(0, roll(6, 14) + RACES[race].mp),
+            atk: Math.max(1, roll(5, 8) + RACES[race].atk), def: Math.max(0, roll(1, 4)), spd: Math.max(1, roll(3, 8)),
         }
-        if (forced) six[Math.floor(rnd() * 6)] = forced
     }
     return six.map(b => ({
         ...b,

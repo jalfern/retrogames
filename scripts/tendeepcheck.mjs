@@ -17,7 +17,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, BUILDINGS, SERVICES, DX as DXC, DY as DYC } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC } from '../src/games/TenDeep/sim.js'
+import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
 
@@ -231,7 +232,8 @@ section('ENGINE PINS')
         run(g3, 'fwd')
         ok(g3.mode === 'combat' && g3.combat && g3.combat.boss, 'stepping up to the throne did not start the King fight')
     }
-    // 10. MOVEMENT: back is the reverse, walls refuse, fire/heal cost MP honestly.
+    // 10. MOVEMENT: back is the reverse, walls refuse; spells cost MP, and
+    //     only a class that has LEARNED the letter may work it.
     {
         const g = makeRun()
         step(g, 'down')
@@ -240,18 +242,24 @@ section('ENGINE PINS')
         ok(g.x !== b.x || g.y !== b.y, 'fwd from the entrance refused (the entrance corridor must open somewhere)')
         run(g, 'back')
         ok(g.x === b.x && g.y === b.y, `back did not reverse fwd: (${g.x},${g.y}) want (${b.x},${b.y})`)
-        const caster = [...g.party].sort((a, b2) => b2.mp - a.mp)[0]
         g.mode = 'combat'
         g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'RAT', name: 'Volunteer', art: 'rat', hp: 999, maxHp: 999, atk: 1, def: 99, spd: 1, xp: 0 }] }
-        const mpB = caster.mp
-        run(g, 'fire')
-        ok(caster.mp === mpB - CFG.fireCost, `FIREBOLT cost ${mpB - caster.mp}, want ${CFG.fireCost}`)
+        const mirabel = g.party.find((p) => p.name === 'MIRABEL')
+        const mpB = mirabel.mp
+        run(g, 'cast firebolt')
+        ok(mirabel.mp === mpB - SPELLS.firebolt.cost, `FIREBOLT cost ${mpB - mirabel.mp}, want ${SPELLS.firebolt.cost}`)
+        // BORAM the FECHT owns no book: fire is refused before the round burns
+        const mpTot0 = g.party.reduce((n, p) => n + p.mp, 0)
+        mirabel.mp = 0
+        const evNo = run(g, 'cast firebolt')
+        ok(evNo.some((e) => e.type === 'noLetter') && g.party.reduce((n, p) => n + p.mp, 0) === mpTot0 - (mpB - SPELLS.firebolt.cost), 'a company with no MP for firebolt cast anyway')
+        mirabel.mp = 2
         const hurt = g.party.find((p) => p.name === 'BORAM')
         hurt.hp = 5
         const mpTot = g.party.reduce((n, p) => n + p.mp, 0)
         const before = g.party.map((p) => p.hp)
-        run(g, 'heal')
-        ok(g.party.reduce((n, p) => n + p.mp, 0) === mpTot - CFG.healCost, `heal did not spend exactly ${CFG.healCost} MP in total`)
+        run(g, 'cast heal')
+        ok(g.party.reduce((n, p) => n + p.mp, 0) === mpTot - SPELLS.heal.cost, `heal did not spend exactly ${SPELLS.heal.cost} MP in total`)
         ok(g.party.some((p, i) => p.hp > before[i]), 'heal did not mend anyone — the mob merely bit while nobody healed')
     }
 }
@@ -464,7 +472,215 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
     }
 }
 
-section('THE PROVEN CAMPAIGN (the attract demo replays this solver live)')
+section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 3 of #1127)')
+{
+    // 1. the table: 5 races / 3 ways / 5 classes; every ladder letter names a
+    //    real spell; the DURROW ban is honest and named
+    ok(Object.keys(RACES).length === 5 && ALIGN_ORDER.length === 3 && Object.keys(CLASSES).length === 5, 'the people table is not 5/3/5')
+    ok(RACES.DURROW.bans && RACES.DURROW.bans.includes('MAGUS'), 'the stoneborn ban on MAGUS vanished — Wizardry keeps its exclusives')
+    for (const [cid, c] of Object.entries(CLASSES)) {
+        for (const [id, lvl] of Object.entries(c.spells)) {
+            ok(!!SPELLS[id], `${cid} ladder names ${id}, which is no spell`)
+            ok(Number.isInteger(lvl) && lvl >= 1, `${cid}.${id} unlock level is not a whole level`)
+        }
+    }
+    ok(CLASSES.MAGUS.spells.firebolt === 1 && CLASSES.MAGUS.spells.firestorm === 5, 'the MAGUS ladder drifted (firebolt L1, firestorm L5)')
+    ok(Object.keys(CLASSES.FECHT.spells).length === 0 && Object.keys(CLASSES.FOOTPAD.spells).length === 0, 'steel learned a letter — fighters and footpads never cast')
+
+    // 2. spells by LEVEL: the ladder arrives with the level, not free with MP
+    {
+        const g = makeRun()
+        const ms = g.party.find((p) => p.name === 'MIRABEL')
+        ok(ms.cls === 'MAGUS' && canCast(ms, 'firebolt') && !canCast(ms, 'firestorm'), 'a level-1 MAGUS does not hold exactly firebolt')
+        ms.lvl = 5
+        ok(canCast(ms, 'firestorm'), 'firebolt L1 and firestorm L5 did not unlock at the threshold')
+        ms.lvl = 1
+        ok(!canCast(ms, 'firestorm'), 'firestorm came back down with the level')
+    }
+    // 3. the class gate at the round table: a FECHT with a full spirit still
+    //    owns no book — the command is refused before any round burns
+    {
+        const g = makeRun()
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'RAT', name: 'Auditor', art: 'rat', hp: 99, maxHp: 99, atk: 1, def: 99, spd: 1, xp: 0 }] }
+        for (const p of g.party) { if (p.cls !== 'FECHT') p.mp = 0; else p.mp = 99 }
+        const ev = run(g, 'cast firebolt')
+        ok(ev.some((e) => e.type === 'noLetter') && g.combat.round === 0, 'a wizardless company cast firebolt anyway — the class ladder is a decoration')
+    }
+    // 4. GUARD: a held shield halves what it eats (floor 1) and the ledger
+    //    stays exact against observed HP
+    {
+        const probeGuard = () => {
+            const g = makeRun()
+            g.mode = 'combat'
+            g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'TROLL', name: 'Club', art: 'troll', hp: 999, maxHp: 999, atk: 13, def: 5, spd: 9, xp: 0 }] }
+            g.party.forEach((p) => { p.spd = 1; p.def = 5 })
+            const before = g.party.reduce((n, p) => n + p.hp, 0)
+            run(g, 'guard')
+            const after = g.party.reduce((n, p) => n + p.hp, 0)
+            return before - after === 4 && g.ledger.taken === 4   // raw 13-5=8 -> half 4
+        }
+        ok(probeGuard(), 'the held shield does not halve a troll club 8 -> 4')
+    }
+    // 5. WARD: blinds the dark for three rounds, and it EXPIRES
+    {
+        const g = makeRun()
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'SKELET', name: 'Blind Blade', art: 'skelet', hp: 999, maxHp: 999, atk: 16, def: 4, spd: 1, xp: 0 }] }
+        g.party.forEach((p) => { p.spd = 5; p.def = 4 })
+        const ms = g.party.find((p) => p.name === 'MIRABEL')
+        ms.lvl = 7   // WARD is a MAGUS L7 letter
+        const hp0 = g.party.reduce((n, p) => n + p.hp, 0)
+        run(g, 'cast ward')
+        const hp1 = g.party.reduce((n, p) => n + p.hp, 0)
+        ok(g.ward === 2 && hp0 - hp1 === 6, `ward round should eat half of 12 (=6), took ${hp0 - hp1} (ward=${g.ward})`)
+        run(g, 'attack')
+        run(g, 'attack')
+        const hp3 = g.party.reduce((n, p) => n + p.hp, 0)
+        ok(hp1 - hp3 === 6 + 6, `the ward must cover rounds 2-3 at half (${hp1 - hp3})`)
+        run(g, 'attack')
+        const hp4 = g.party.reduce((n, p) => n + p.hp, 0)
+        ok(g.ward === 0 && hp3 - hp4 === 12, `the ward overstayed its welcome (loss ${hp3 - hp4}, want full 12)`)
+    }
+    // 6. HEEL (subdue): the mob kneels — XP paid, zero overkill booked; the
+    //    King cannot be commanded to kneel, and the refusal costs nothing
+    {
+        const g = makeRun()
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'RAT', name: 'Turncoat', art: 'rat', hp: 12, maxHp: 12, atk: 6, def: 1, spd: 6, xp: 24 }] }
+        const ms = g.party.find((p) => p.name === 'MIRABEL')
+        ms.lvl = 9
+        const ev = run(g, 'cast heel')
+        ok(ev.some((e) => e.type === 'subdue' && e.name === 'Turncoat'), 'the rat refused to kneel')
+        const round = ev.find((e) => e.type === 'round')
+        ok(round && round.dSum === 11, `a subdued 12-hp rat must book exactly 11 (its remaining HP): ${round ? round.dSum : 'no round'}`)
+        ok(g.ledger.taken === 0 && g.mode === 'map' && !g.combat, 'the kneeling rat still struck, or the fight did not end')
+        const k = makeRun()
+        k.mode = 'combat'
+        k.combat = { boss: true, round: 0, mobs: [{ id: 0, key: 'KING', name: 'THE HOLLOW KING', art: 'king', hp: 340, maxHp: 340, atk: 22, def: 8, spd: 6, xp: 5000 }] }
+        const kr = k.party.find((p) => p.name === 'MIRABEL')
+        kr.lvl = 9
+        const mpB = kr.mp
+        const evK = run(k, 'cast heel')
+        ok(evK.some((e) => e.type === 'noback') && k.mode === 'combat' && kr.mp === mpB, 'the Hollow King knelt, or the refusal charged MP')
+    }
+    // 7. alignment is a real stat: the paper recomposes when the way shifts
+    {
+        const body = { name: 'TEST', cls: 'CLERIC', race: 'VASK', aff: 5, hp: 30, mp: 4, atk: 8, def: 4, spd: 5 }
+        const oath = compose(body, 'OATH'), ruin = compose(body, 'RUIN')
+        ok(oath.def === 5 && ruin.def === 3 && ruin.atk === 10, 'alignment does not move the steel the way the table says')
+        const w = compose(body, 'WANDER')
+        ok(w.spd === 6 && w.atk === 8, 'WANDER is not the quick foot it claims')
+    }
+    // 8. THE BENCH: vacancy rules, refusal of the settled, gates, the fee
+    {
+        const g = makeRun()
+        step(g, 'enter-T')
+        const list = SERVICES.T
+        ok(list.some((s) => s.id === 'create'), 'the tavern has no creation bench')
+        g.town.svc = list.findIndex((s) => s.id === 'create')
+        const evLive = run(g, 'open')
+        ok(evLive.some((e) => e.type === 'townNo') && g.town.cand === null, 'the bench seated a settled hero')
+        // post a stranger, then the bench is open for that open slot
+        g.party[3].alive = false; g.party[3].hp = 0
+        g.town.svc = 0
+        run(g, 'sel+'); run(g, 'sel+'); run(g, 'sel+')
+        run(g, 'buy')
+        ok(g.party[3].fresh && g.party[3].alive, 'POST did not leave a fresh name awaiting its paper')
+        ok(isVacant(g, 3) && !isVacant(g, 0), 'vacancy misread — dead/fresh/living must be exact')
+        g.town.svc = list.findIndex((s) => s.id === 'create')
+        const evOpen = run(g, 'open')
+        ok(evOpen.some((e) => e.type === 'townOpenBench') && g.town.cand && g.town.cand.length === 6, 'the bench did not open six papers')
+        ok(g.town.cand.every((c) => typeof c.pass === 'boolean'), 'papers left the bench without a gate verdict')
+    }
+    // 9. the bench is deterministic, and a wizardless company always finds a
+    //    MAGUS among the papers
+    {
+        const bench = (seeded) => {
+            const g = makeRun()
+            step(g, 'enter-T')
+            g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
+            g.party.forEach((h, i) => { if (i < 5) { h.alive = false; h.hp = 0 } })
+            run(g, 'open')
+            return g.town.cand.map((c) => `${c.name}/${c.race}/${c.cls}/${c.pass}`).join('|')
+        }
+        const a = bench(), b = bench()
+        ok(a === b, `papers deal differently between identical runs:\n    ${a}\n    ${b}`)
+        const six = a.split('|')
+        ok(six.length === 6, 'the bench rolled away from six')
+        ok(six.some((s) => s.endsWith('/true')), 'every paper failed at once — the bench dealt nothing but refusals')
+        // force a magicless company: no survivor knows a letter
+        const g = makeRun()
+        step(g, 'enter-T')
+        g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
+        g.party.forEach((h) => { h.alive = false; h.hp = 0 })
+        g.party[0].alive = true; g.party[0].hp = 20; g.party[0].cls = 'FECHT'
+        g.town.hero = 1
+        run(g, 'open')
+        ok(g.town.cand.some((c) => c.cls === 'MAGUS' && c.pass), 'a wizardless company got no MAGUS among the papers — the bench broke its promise')
+    }
+    // 10. FAIL stays FAIL; shift recomposes the bill of sale; ACCEPT pays the
+    //     flat fee exactly once and books it in the town ledger
+    {
+        const g = makeRun()
+        step(g, 'enter-T')
+        g.party[2].alive = false; g.party[2].hp = 0
+        g.town.hero = 2
+        g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
+        run(g, 'open')
+        g.town.cand = [{ name: 'WANNABE', cls: 'MAGUS', race: 'DURROW', aff: 14, hp: 30, mp: 10, atk: 6, def: 3, spd: 5, pass: false }]
+        const p0 = purse(g)
+        const ev = run(g, 'accept')
+        ok(ev.some((e) => e.type === 'townNo') && g.ledger.tx.length === 0 && purse(g) === p0, 'a stoneborn MAGUS slipped past the gate')
+        g.town.cand = [{ name: 'WANNABE', cls: 'FECHT', race: 'VASK', aff: 5, hp: 30, mp: 4, atk: 8, def: 4, spd: 5, pass: true }]
+        run(g, 'shift+'); run(g, 'shift+')
+        const cand = g.town.cand[0]
+        const composed = compose(cand, ALIGN_ORDER[g.town.ali])
+        const evA = run(g, 'accept')
+        const cr = evA.find((e) => e.type === 'create')
+        ok(cr && cr.cls === 'FECHT' && cr.ali === ALIGN_ORDER[2], 'accept did not take the chosen paper and way')
+        ok(cr.hp === composed.hp && cr.atk === composed.atk && cr.def === composed.def && cr.spd === composed.spd, 'the hero who stood up differs from the paper — the composition is theatre')
+        ok(cr.price === createPriceFor() && purse(g) === p0 - CFG.createCost, `the bench mischarged: ${p0} -> ${purse(g)}`)
+        ok(g.ledger.tx.length === 1 && g.ledger.tx[0].id === 'create' && g.town.cand === null, 'the sale was not booked, or the bench stayed open')
+        ok(!g.party[2].fresh && g.party[2].lvl === 1 && g.party[2].xp === 0, 'a created hero is not a fresh level-1 soul')
+        ok(Object.keys(CLASSES[g.party[2].cls].spells).length === 0, 'a created FECHT stands holding a spellbook')
+    }
+    // 11. hashes and replays see the people and the bench
+    {
+        const a = makeRun()
+        const b = makeRun()
+        b.party[0].race = 'HOB'
+        ok(stateHash(a) !== stateHash(b), 'stateHash ignores race')
+        b.party[0].race = a.party[0].race
+        b.party[0].ali = 'RUIN'
+        ok(stateHash(a) !== stateHash(b), 'stateHash ignores alignment')
+        b.party[0].ali = a.party[0].ali
+        b.party[0].cls = 'CLERIC'
+        ok(stateHash(a) !== stateHash(b), 'stateHash ignores class')
+        const c = makeRun()
+        step(c, 'enter-T')
+        c.party[0].alive = false; c.party[0].hp = 0
+        c.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
+        run(c, 'open')
+        ok(stateHash(c) !== stateHash(makeRun()), 'stateHash ignores the open bench')
+        run(c, 'sel+'); run(c, 'shift+')
+        ok(stateHash(c) !== stateHash(makeRun()), 'stateHash ignores the bench cursor/way')
+    }
+    // 12. gold conservation through a full hire-and-create cycle
+    {
+        const g = makeRun()
+        g.party.forEach((h) => { h.gold += 100; g.ledger.goldIn += 100 })
+        const in0 = g.ledger.goldIn
+        step(g, 'enter-T')
+        g.party[1].alive = false; g.party[1].hp = 0
+        g.town.hero = 1
+        run(g, 'buy')                                  // POST 40
+        g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
+        run(g, 'open'); run(g, 'roll'); run(g, 'accept')   // CREATE 60
+        ok(in0 - g.ledger.goldSpent === purse(g), `coins misplaced through hire+create: in=${in0} spent=${g.ledger.goldSpent} purse=${purse(g)}`)
+        ok(g.party[1].alive && !g.party[1].fresh, 'the created hero never stood up')
+    }
+}
 let proven = null
 {
     const t0 = Date.now()
@@ -602,6 +818,29 @@ if (MUT) {
         const fh = ev.find((e) => e.type === 'fleeHit')
         return !!fh && fh.d === CFG.fleeCost && fh.d > 0
     })
+
+    // 7. the shield stops halving — the guard contract dies
+    mut('guardDiv 2 -> 1 (a shield made of air)', { guardDiv: 1 }, () => {
+        const g = makeRun()
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'TROLL', name: 'Club', art: 'troll', hp: 999, maxHp: 999, atk: 13, def: 5, spd: 9, xp: 0 }] }
+        g.party.forEach((p) => { p.spd = 1; p.def = 5 })
+        const b = g.party.reduce((n, p) => n + p.hp, 0)
+        run(g, 'guard')
+        return b - g.party.reduce((n, p) => n + p.hp, 0) === 4
+    })
+
+    // 8. the MAGUS ladder forgets its levels — firestorm for every novice
+    {
+        const base = (() => { const g = makeRun(); return !canCast(g.party.find((p) => p.name === 'MIRABEL'), 'firestorm') })()
+        ok(base === true, 'mutation harness broken: baseline for ladder drift is not true')
+        const save = CLASSES.MAGUS.spells.firestorm
+        CLASSES.MAGUS.spells.firestorm = 1
+        const v = canCast(makeRun().party.find((p) => p.name === 'MIRABEL'), 'firestorm')
+        CLASSES.MAGUS.spells.firestorm = save
+        console.log(`  mut MAGUS ladder firestorm 5 -> 1 (novice pyromancy): ${v ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+        ok(v, 'ladder drift SURVIVED — spells-by-level became a decoration')
+    }
 }
 
 console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)
