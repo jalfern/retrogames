@@ -51,3 +51,21 @@ transcribed into source:
 npm run britanniacheck      # data integrity + rules + winnability (Node, no browser)
 npm run dev                 # play at /retrogames/britannia
 ```
+
+## Walk sprites + input latch (#1135 polish)
+
+- `avatar.js`: the Avatar is 4 facings x 3 frames (idle + two striding),
+  procedural, mirrored profile, face only when the world sees it. `S.face`
+  + `S.anim` live in the sim; `face`/`frame` ride the harness state.
+- Tap latch (`taps`): a keydown that lands between two fixed-timestep steps
+  used to vanish (keyup deleted it before any `step()` read the pad — the
+  moongate B-cancel and quick arrows were losing presses). Keys now latch in
+  `taps` and die only after a step consumed them; pointer taps use the same
+  latch instead of `setTimeout` races.
+- A cancelled moongate (`dismissed`) stays closed until you leave its 3x3
+  neighbourhood — B beside a gate no longer locks the pilgrim in the menu.
+- Pad chrome (`[data-vc="1"]`) is full-width `pointer-events-auto`; a
+  Britannia-scoped `<style>` makes its transparent gaps fall through, so
+  moongate menu row-taps reach the canvas on phones. Shared component
+  untouched on purpose — other titles may lean on the bar; a sweep there
+  needs its own QA issue.

@@ -19,6 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
 import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather.js'
+import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 
 const SIM_MS = 1000 / 60
 const TILE = 32
@@ -132,6 +133,7 @@ const BritanniaGame = () => {
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
+            face: 'down', anim: 0, dismissed: -1,
             sel: 1, gate: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
         })
 
@@ -203,7 +205,7 @@ const BritanniaGame = () => {
                         }
                     }
                 }
-                if (pad.b || pad.start) S.gate = -1
+                if (pad.b || pad.start) { S.dismissed = S.gate; S.gate = -1 }
                 return
             }
             if (S.cd > 0) { S.cd--; return }
@@ -219,21 +221,25 @@ const BritanniaGame = () => {
             if (S.ship) {
                 if (!isSea(v)) {
                     S.ship = false; S.x = nx; S.y = ny; S.cd = SHIP_CD
+                    S.face = faceFor(dx, dy); S.anim++
                     audioController.playNoise(0.2, 0.12)
                     S.toast = 90; S.toastMsg = "Thou stepp'st ashore."
                 } else { S.x = nx; S.y = ny; S.cd = SHIP_CD }
             } else if (isSea(v)) {
                 S.ship = true; S.x = nx; S.y = ny; S.cd = SHIP_CD
+                S.face = faceFor(dx, dy); S.anim++
                 audioController.playSweep(140, 90, 0.5, 'sawtooth', 0.18)
                 S.toast = 90; S.toastMsg = 'Aye, a ship! The open sea lies ahead.'
             } else {
                 S.x = nx; S.y = ny; S.cd = WALK_CD
+                S.face = faceFor(dx, dy); S.anim++
                 if ((S.tick % 2) === 0) audioController.playTone(90 + (S.tick % 3) * 14, 0.03, 'triangle', 0.06)
             }
             if (!S.ship) {
                 const gi = gates.findIndex(g => Math.abs(g.x - S.x) <= 1 && Math.abs(g.y - S.y) <= 1)
                 if (gi >= 0 && !S.visited.has(gi)) { S.visited.add(gi); audioController.playSweep(600, 1100, 0.4, 'sine', 0.15) }
-                if (gi >= 0 && gi !== S.gate) { S.gate = gi; S.sel = 0 }
+                if (gi < 0) S.dismissed = -1
+                if (gi >= 0 && gi !== S.gate && gi !== S.dismissed) { S.gate = gi; S.sel = 0 }
             }
         }
 
@@ -292,13 +298,8 @@ const BritanniaGame = () => {
                 ctx.restore()
             } else {
                 ctx.save()
-                ctx.translate(px, py + Math.sin(t / 5) * (S.cd > 0 ? 1.2 : 0))
-                ctx.fillStyle = '#7a2f2f'
-                ctx.beginPath(); ctx.arc(0, -4, 7, Math.PI, 0); ctx.lineTo(7, 10); ctx.lineTo(-7, 10); ctx.closePath(); ctx.fill()
-                ctx.fillStyle = '#e8c89a'
-                ctx.beginPath(); ctx.arc(0, -5, 3.4, 0, 7); ctx.fill()
-                ctx.fillStyle = '#3d1a1a'
-                ctx.fillRect(-7, 8, 14, 3)
+                ctx.translate(px, py)
+                drawAvatar(ctx, S.face, walkFrame(S.anim, S.cd > 0), S.cd > 0 ? Math.sin(t / 5) * 1.2 : 0)
                 ctx.restore()
             }
             // darkness + torchlight
@@ -470,6 +471,7 @@ const BritanniaGame = () => {
                 while (acc >= SIM_MS) {
                     acc -= SIM_MS
                     if (!contractHoldsLoop()) step(padNow)
+                    taps.clear()
                     S.cd = Math.max(0, S.cd - 0)
                 }
             }
@@ -481,9 +483,10 @@ const BritanniaGame = () => {
 
         // --- input ---
         const held = new Set()
+        const taps = new Set()
         const padNow = new Proxy({}, {
-            get: (_t, k) => held.has(k),
-            has: (_t, k) => held.has(k),
+            get: (_t, k) => held.has(k) || taps.has(k),
+            has: (_t, k) => held.has(k) || taps.has(k),
         })
         const KEYS = {
             ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
@@ -507,7 +510,11 @@ const BritanniaGame = () => {
             }
             if (e.key === 'c' || e.key === 'C') { classicOn = !classicOn; return }
             const f = KEYS[e.code]
-            if (f) { held.add(f); e.preventDefault() }
+            if (f) {
+                held.add(f)
+                taps.add(f)
+                e.preventDefault()
+            }
         }
         const onKeyUp = (e) => { const f = KEYS[e.code]; if (f) held.delete(f) }
         const onTap = (e) => {
@@ -520,20 +527,17 @@ const BritanniaGame = () => {
                 const bw = 420, bh = 60 + gates.length * 40
                 const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
                 const row = Math.floor((my - (by + 46)) / 40)
-                if (row >= 0 && row < gates.length - 1) {
-                    S.sel = row; held.add('a'); setTimeout(() => held.delete('a'), 50)
-                } else if (mx < bx || mx > bx + bw || my < by || my > by + bh) {
-                    held.add('b'); setTimeout(() => held.delete('b'), 50)
+                const inBox = mx >= bx && mx <= bx + bw && my >= by && my <= by + bh
+                if (inBox && row >= 0 && row < gates.length - 1) {
+                    S.sel = row; taps.add('a')
+                } else if (!inBox) {
+                    taps.add('b')
                 }
                 return
             }
             const dxm = mx - VIEW_W / 2, dym = my - VIEW_H / 2
-            if (Math.abs(dxm) + Math.abs(dym) < 40) { held.add('a'); setTimeout(() => held.delete('a'), 50); return }
-            held.add(Math.abs(dxm) > Math.abs(dym) ? (dxm > 0 ? 'right' : 'left') : (dym > 0 ? 'down' : 'up'))
-            setTimeout(() => held.delete('left'), 140)
-            setTimeout(() => held.delete('right'), 140)
-            setTimeout(() => held.delete('up'), 140)
-            setTimeout(() => held.delete('down'), 140)
+            if (Math.abs(dxm) + Math.abs(dym) < 40) { taps.add('a'); return }
+            taps.add(Math.abs(dxm) > Math.abs(dym) ? (dxm > 0 ? 'right' : 'left') : (dym > 0 ? 'down' : 'up'))
         }
         window.addEventListener('keydown', onKey)
         window.addEventListener('keyup', onKeyUp)
@@ -555,6 +559,7 @@ const BritanniaGame = () => {
                     tick: S.tick, score: S.visited.size, done: S.done, ready: true, seed: S.seed,
                     hash: ((S.x * 256 + S.y) * 31 + S.visited.size * 7 + (S.ship ? 1 : 0) + S.gate * 997) >>> 0,
                     x: S.x, y: S.y, ship: S.ship, gate: S.gate,
+                    face: S.face, frame: walkFrame(S.anim, S.cd > 0), anim: S.anim,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
                 }
@@ -592,6 +597,11 @@ const BritanniaGame = () => {
     const play = screen === 'play'
     return (
         <div ref={stageRef} className="relative w-full h-full bg-black">
+            {/* the pad chrome bar is pointer-events-auto across the full width; on a
+                phone its footprint covers the moongate menu rows, so taps meant for a
+                destination died on the bar. Scope-transparent here (never in the shared
+                component): the gaps between pad buttons fall through to the canvas. */}
+            <style>{`[data-vc="1"]{pointer-events:none}[data-vc="dpad"],[data-vc="actzone"],[data-vc="diag"]{pointer-events:auto}`}</style>
             {screen === 'loading' && (
                 <div className="absolute inset-0 flex items-center justify-center text-[#e8d9a0] font-mono tracking-widest">
                     UNROLLING THE MAP OF BRITANNIA…
