@@ -177,3 +177,24 @@ export function unexposeGame() {
     if (exposed && window.__game === exposed) delete window.__game
     exposed = null
 }
+
+// #1200 — production-safe FEEDBACK state hook. The __game contract above is
+// DEV-only, but the in-game feedback button files reports from jalfern.com
+// (Jon's phone = production) and needs the game's live state to replay them:
+// captureState() reads window.__feedbackInfo when __game is absent. Games
+// register their own state() — the same source the contract uses — in EVERY
+// build, outside the DEV gate. A broken state() must never take the game down,
+// so the getter is try/caught and window-guarded.
+export function exposeFeedbackState(stateFn) {
+    if (typeof window === 'undefined' || typeof stateFn !== 'function') return
+    window.__feedbackInfo = () => {
+        try {
+            const s = stateFn()
+            return s && typeof s === 'object' ? s : null
+        } catch { return null }
+    }
+}
+
+export function unexposeFeedbackState() {
+    if (typeof window !== 'undefined') delete window.__feedbackInfo
+}
