@@ -169,7 +169,8 @@ export function poseFighter(rig, f, tSec) {
         arms: [{ sh: 0, el: -0.6, z: 0.18 }, { sh: 0, el: -0.6, z: -0.18 }],
         legs: [{ hip: 0, kn: 0 }, { hip: 0, kn: 0 }],
     }
-    const breathe = Math.sin(tSec * 2.2) * 0.015
+    const stance = (f.def && f.def.stance) || null
+    const breathe = Math.sin(tSec * (stance ? stance.bobHz : 2.2)) * (stance ? stance.bobAmp : 0.015)
     const st = f.st
     const mv = f.def.moves[f.move]
     const walkSpeed = Math.abs(f.vx || 0)
@@ -177,10 +178,20 @@ export function poseFighter(rig, f, tSec) {
 
     if (st === 'idle' || st === 'crouch') {
         const low = st === 'crouch'
-        q.hipY = breathe - (low ? 0.34 : 0)
-        q.lean = low ? 0.18 : 0.05
-        q.arms = [{ sh: -0.5, el: -1.7, z: 0.5 }, { sh: -0.35, el: -1.9, z: -0.45 }]
-        q.legs = [{ hip: low ? 0.7 : swing * 0.5 + 0.05, kn: low ? -1.3 : -0.12 }, { hip: low ? 0.7 : -swing * 0.5 - 0.05, kn: low ? -1.3 : -0.1 }]
+        if (stance) {
+            q.hipY = breathe + stance.dip - (low ? 0.28 : 0)
+            q.lean = stance.lean + (low ? 0.13 : 0)
+            q.headX = stance.head + (low ? 0.1 : 0)
+            q.arms = stance.arms.map((a) => low ? { sh: a.sh - 0.35, el: a.el - 0.3, z: a.z } : { ...a })
+            q.legs = stance.legs.map((g, i) => low
+                ? { hip: g.hip + 0.55, kn: g.kn - 0.9 }
+                : { hip: g.hip + (i === 0 ? swing * 0.5 + 0.05 : -swing * 0.5 - 0.05), kn: g.kn })
+        } else {
+            q.hipY = breathe - (low ? 0.34 : 0)
+            q.lean = low ? 0.18 : 0.05
+            q.arms = [{ sh: -0.5, el: -1.7, z: 0.5 }, { sh: -0.35, el: -1.9, z: -0.45 }]
+            q.legs = [{ hip: low ? 0.7 : swing * 0.5 + 0.05, kn: low ? -1.3 : -0.12 }, { hip: low ? 0.7 : -swing * 0.5 - 0.05, kn: low ? -1.3 : -0.1 }]
+        }
     } else if (st === 'blockstun') {
         const low = f.crouchBlock
         q.hipY = -(low ? 0.32 : 0.04)
@@ -227,10 +238,29 @@ export function poseFighter(rig, f, tSec) {
             q.hipY = -0.05
         }
     } else if (st === 'hitstun') {
-        q.lean = -0.3; q.headX = -0.4
-        q.arms = [{ sh: 0.7, el: -1.1, z: 0.6 }, { sh: 0.6, el: -1.2, z: -0.6 }]
-        q.hipY = -0.05
-        q.legs = [{ hip: -0.25, kn: -0.2 }, { hip: 0.2, kn: -0.3 }]
+        // directional reaction: front hits snap the head back and peel away;
+        // a hit from behind pitches the body forward with arms flung toward the
+        // blow; lows buckle the knees; overheads snap the head up-and-back.
+        const hint = rig.hitHint
+        const back = (f.vx || 0) * f.facing > 0.001
+        if (hint && hint.low) {
+            q.lean = -0.18; q.headX = -0.2; q.hipY = -0.32
+            q.arms = [{ sh: -0.7, el: -1.25, z: 0.45 }, { sh: -0.6, el: -1.35, z: -0.45 }]
+            q.legs = [{ hip: 0.75, kn: -1.4 }, { hip: 0.6, kn: -1.2 }]
+        } else if (hint && hint.high) {
+            q.lean = -0.35; q.headX = -0.75; q.hipY = -0.02
+            q.arms = [{ sh: -2.2, el: -0.5, z: 0.65 }, { sh: -2.0, el: -0.55, z: -0.6 }]
+            q.legs = [{ hip: -0.2, kn: -0.25 }, { hip: 0.25, kn: -0.35 }]
+        } else if (back) {
+            q.lean = 0.28; q.headX = 0.5; q.hipY = -0.06
+            q.arms = [{ sh: -1.8, el: -0.8, z: 0.7 }, { sh: -1.6, el: -0.9, z: -0.65 }]
+            q.legs = [{ hip: 0.4, kn: -0.55 }, { hip: -0.3, kn: -0.3 }]
+        } else {
+            q.lean = -0.3; q.headX = -0.4
+            q.arms = [{ sh: 0.7, el: -1.1, z: 0.6 }, { sh: 0.6, el: -1.2, z: -0.6 }]
+            q.hipY = -0.05
+            q.legs = [{ hip: -0.25, kn: -0.2 }, { hip: 0.2, kn: -0.3 }]
+        }
     } else if (st === 'crush') {
         // guard shattered — staggered back, guard thrown up but broken, open
         q.lean = -0.42; q.headX = -0.6
@@ -253,8 +283,14 @@ export function poseFighter(rig, f, tSec) {
     }
 
     if (walkSpeed > 0.01 && (st === 'idle')) {
-        q.legs = [{ hip: swing * 0.6, kn: -0.2 - Math.max(0, -swing) * 0.3 }, { hip: -swing * 0.6, kn: -0.2 - Math.max(0, swing) * 0.3 }]
-        q.arms = [{ sh: -0.4 - swing * 0.3, el: -1.5, z: 0.3 }, { sh: -0.4 + swing * 0.3, el: -1.5, z: -0.3 }]
+        // walk-in drives the shoulders toward the opponent; walking out is a
+        // tighter, shorter shuffle that keeps the guard up.
+        const forward = (f.vx || 0) * f.facing > 0
+        const amp = forward ? 0.6 : 0.42
+        const armSwing = forward ? 0.3 : 0.18
+        q.lean += forward ? 0.12 : -0.1
+        q.legs = [{ hip: swing * amp, kn: -0.2 - Math.max(0, -swing) * 0.3 }, { hip: -swing * amp, kn: -0.2 - Math.max(0, swing) * 0.3 }]
+        q.arms = [{ sh: -0.4 - swing * armSwing, el: -1.5, z: 0.3 }, { sh: -0.4 + swing * armSwing, el: -1.5, z: -0.3 }]
     }
 
     const r = rig
@@ -501,6 +537,7 @@ export function createScene(canvas) {
             }
             for (let i = 0; i < 2; i++) {
                 const f = m.fighters[i], rig = rigs[i]
+                if (rig.hitHint && f.st !== 'hitstun' && f.st !== 'hitair') rig.hitHint = null
                 rig.root.position.x = f.x
                 rig.root.rotation.y = f.facing === 1 ? -Math.PI / 2 : Math.PI / 2
                 if (cine && cine.side === i) poseFinisherBeat(rig, cine.kind, cine.k)
