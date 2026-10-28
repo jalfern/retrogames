@@ -21,6 +21,7 @@ import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
 import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather.js'
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
+import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 
 const SIM_MS = 1000 / 60
 const TILE = 32
@@ -136,7 +137,7 @@ const BritanniaGame = () => {
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
             face: 'down', anim: 0, dismissed: -1,
             sel: 1, gate: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
-            amb: AMB.NONE,
+            amb: AMB.NONE, warp: null,
         })
 
         const load = async () => {
@@ -196,6 +197,27 @@ const BritanniaGame = () => {
             const wx = S.x * TILE, wy = S.y * TILE
             S.camX += (wx - S.camX) * 0.12
             S.camY += (wy - S.camY) * 0.12
+            // a warp in flight: the Avatar is held in the swirl, movement is
+            // frozen, and the position swaps on the single hidden peak frame —
+            // the one frame the white-out is full, so the jump is never seen
+            if (S.warp) {
+                const age = S.tick - S.warp.t0
+                if (!S.warp.swapped && warpSwapAt(age)) {
+                    const g = gates[S.warp.dest]
+                    S.x = g.x; S.y = g.y; S.ship = false
+                    S.warp.swapped = true
+                    S.visited.add(S.warp.dest)
+                    audioController.playSweep(200, 900, 0.5, 'sine', 0.22)
+                    S.toast = 120; S.toastMsg = `The moon gate whirls thee to ${ROMAN[S.warp.dest]}!`
+                    if (S.visited.size >= gates.length) {
+                        S.done = true
+                        audioController.playSweep(400, 1200, 1.2, 'sine', 0.25)
+                        setMode('end')
+                    }
+                }
+                if (age >= WARP_LEN) S.warp = null
+                return
+            }
             if (S.done) return
             if (S.gate >= 0) {
                 const n = gates.length
@@ -203,22 +225,17 @@ const BritanniaGame = () => {
                 if (pad.up && S.sel > 0) { S.sel--; audioController.playTone(440, 0.04, 'square', 0.1) }
                 if (pad.down && S.sel < rows - 1) { S.sel++; audioController.playTone(380, 0.04, 'square', 0.1) }
                 for (let i = 0; i < 8; i++) {
-                    if (pad['k' + (i + 1)] && i < n && i !== S.gate) { S.sel = i < S.gate ? i : i - 1; pad = { ...pad, a: true } }
+                    if (pad['k' + (i + 1)] && i < n && i !== S.gate) { S.sel = i < S.gate ? i : i - 1; audioController.playTone(360, 0.04, 'square', 0.1); pad = { ...pad, a: true } }
                 }
                 if (pad.a) {
                     const dest = S.sel < S.gate ? S.sel : S.sel + 1
                     if (dest !== S.gate && dest < n) {
-                        const g = gates[dest]
-                        S.x = g.x; S.y = g.y; S.ship = false
-                        S.visited.add(dest)
+                        // a warp begins: the teleport itself is deferred to the
+                        // white-out peak (the step() warp block) so the journey
+                        // is seen as a swirl + flash, not an instant cut (#1135)
+                        S.warp = { dest, t0: S.tick, swapped: false }
                         S.gate = -1
-                        audioController.playSweep(200, 900, 0.5, 'sine', 0.22)
-                        S.toast = 120; S.toastMsg = `The moon gate whirls thee to ${ROMAN[dest]}!`
-                        if (S.visited.size >= gates.length) {
-                            S.done = true
-                            audioController.playSweep(400, 1200, 1.2, 'sine', 0.25)
-                            setMode('end')
-                        }
+                        audioController.playSweep(150, 130, 0.32, 'sawtooth', 0.13)
                     }
                 }
                 if (pad.b || pad.start) { S.dismissed = S.gate; S.gate = -1 }
@@ -353,6 +370,28 @@ const BritanniaGame = () => {
             if (S.fl > 0) {
                 ctx.fillStyle = `rgba(226,238,255,${0.55 * S.fl})`
                 ctx.fillRect(0, 0, VIEW_W, VIEW_H)
+            }
+            if (S.warp) {
+                const age = S.tick - S.warp.t0
+                const wf = warpFlash(age)
+                if (wf > 0) { ctx.fillStyle = `rgba(226,246,255,${(0.92 * wf).toFixed(3)})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H) }
+                const ring = warpRing(age)
+                if (ring) {
+                    ctx.save()
+                    ctx.translate(px, py)
+                    for (let k = 0; k < 3; k++) {
+                        ctx.strokeStyle = `rgba(150,235,255,${(ring.a * (1 - k * 0.22)).toFixed(3)})`
+                        ctx.lineWidth = 3 - k * 0.7
+                        ctx.beginPath()
+                        ctx.arc(0, 0, ring.r * (0.55 + 0.24 * k), S.tick / 8 + k * 2.1, S.tick / 8 + k * 2.1 + 4.4)
+                        ctx.stroke()
+                    }
+                    for (const m of warpMotes(age, S.warp.dest, S.seed)) {
+                        ctx.fillStyle = `rgba(198,246,255,${m.a.toFixed(3)})`
+                        ctx.beginPath(); ctx.arc(m.x, m.y, m.sz, 0, 7); ctx.fill()
+                    }
+                    ctx.restore()
+                }
             }
             drawHud(n)
         }
@@ -634,6 +673,7 @@ const BritanniaGame = () => {
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
                     ambient: AMB_NAME[S.amb],
+                    warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                 }
             }
             window.__britanniaTest = {
