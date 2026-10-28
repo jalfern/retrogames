@@ -695,6 +695,7 @@ const PickRushGame = () => {
             correct: gs.correct,
             combo: gs.combo,
             fusesLeft: FUSES - gs.warnings,
+            beltV: Math.round(1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed * 1000) / 1000,
             pos: Math.round(gs.arms[0].x * 10) / 10,
             clawY: Math.round(gs.arms[0].tip * 10) / 10,
             carried: gs.arms[0].held !== null ? gs.items.find((i2) => i2.id === gs.arms[0].held)?.kind || 'x' : '',
