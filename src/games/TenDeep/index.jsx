@@ -354,7 +354,7 @@ const TenDeepGame = () => {
                 }
                 else if (e.type === 'fire' || e.type === 'spell') {
                     audioController.playSweep(e.spell === 'firestorm' ? 900 : 700, 180, e.spell === 'firestorm' ? 0.32 : 0.18, 'sawtooth', 0.05)
-                    if (e.type === 'spell' && e.mob != null) { const s = mobSlot(e.mob); if (s && false) fxList.push({ kind: 'bolt', t0: performance.now(), from: [CX, 188], to: [s.sx, 140 - s.size * 0.5], hot: e.spell === 'firestorm', jit: boltJit(e.spell, e.mob) }) }
+                    if (e.type === 'spell' && e.mob != null) { const s = mobSlot(e.mob); if (s) fxList.push({ kind: 'bolt', t0: performance.now(), from: [CX, 188], to: [s.sx, 140 - s.size * 0.5], hot: e.spell === 'firestorm', jit: boltJit(e.spell, e.mob) }) }
                 }
                 else if (e.type === 'guard') { audioController.playTone(140, 0.14, 'square', 0.06); say('SHIELDS HELD — WHAT LANDS, LANDS HALF') }
                 else if (e.type === 'ward') { audioController.playSweep(500, 1400, 0.4, 'sine', 0.05); say('WARD — THE DARK BLINKS') }

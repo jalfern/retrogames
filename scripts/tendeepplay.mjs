@@ -312,8 +312,25 @@ else {
             r.check('the bolt leaves the hero line and aims at its target', Math.abs(boltSeen.from[0] - 128) < 4 && Math.abs(boltSeen.from[1] - 188) < 4 && Math.abs(boltSeen.to[0] - tx) < 24 && Math.abs(boltSeen.to[1] - ty) < 24, `from ${JSON.stringify(boltSeen.from)} to ${JSON.stringify(boltSeen.to)} want~(${tx},${ty})`)
             const bx = Math.min(boltSeen.from[0], boltSeen.to[0]), by = Math.min(boltSeen.from[1], boltSeen.to[1])
             const bw = Math.abs(boltSeen.to[0] - boltSeen.from[0]) + 10, bh = Math.abs(boltSeen.to[1] - boltSeen.from[1]) + 10
-            let lit = 0
-            for (let s = 0; s < 4; s++) { lit = Math.max(lit, await px(bx, by, bw, bh, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 430)); await wait(18) }
+            // sample INSIDE rAF callbacks (a busy-loop around getImageData
+            // starves the page's own paint and reads a stale canvas): the bolt
+            // is already mid-flight, and the next frames still carry it
+            const lit = await page.evaluate(async (box) => {
+                const d = document.querySelector('canvas[data-deep-view]').getContext('2d')
+                const count = (x, y, w, h) => {
+                    const a = d.getImageData(x, y, w, h).data
+                    let n = 0
+                    for (let i = 0; i < a.length; i += 4) if (a[i] + a[i + 1] + a[i + 2] > 430) n++
+                    return n
+                }
+                let best = 0
+                for (let i = 0; i < 24; i++) {   // 24 frames covers the 280 ms bolt at any refresh rate
+                    await new Promise((res) => requestAnimationFrame(res))
+                    best = Math.max(best, count(...box))
+                    if (best > 6) break
+                }
+                return best
+            }, [bx, by, bw, bh])
             r.check('the bolt is bright on screen mid-flight (additive glow)', lit > 6, `lit px in bolt band=${lit}`)
         }
         let cleared = false
