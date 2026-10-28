@@ -18,7 +18,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
-import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather.js'
+import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } from './weather.js'
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
@@ -107,6 +107,7 @@ const BritanniaGame = () => {
         load().catch(() => setMode('error'))
 
         const tod = () => (S.tick % DAY) / DAY
+        const terrainAt = (x, y) => (world ? world.get(x, y) : 0)
         const coastAt = (x, y) => isSea(world.get(x, y)) &&
             (!isSea(world.get(x + 1, y)) || !isSea(world.get(x - 1, y)) || !isSea(world.get(x, y + 1)) || !isSea(world.get(x, y - 1)))
         const ambAt = (x, y, tick, seed) => {
@@ -126,7 +127,7 @@ const BritanniaGame = () => {
 
         const step = (pad) => {
             S.tick++
-            const sky = weatherAt(S.x, S.y, S.tick, S.seed)
+            const sky = weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)
             if (sky !== S.wx) {
                 S.wx = sky
                 if (sky === WX.RAIN) { S.toast = 110; S.toastMsg = 'Rain sweeps low over the moor.'; audioController.playNoise(0.35, 0.07) }
@@ -134,8 +135,8 @@ const BritanniaGame = () => {
                 else if (sky === WX.STORM) { S.toast = 110; S.toastMsg = 'A storm gathers over the land.'; audioController.playSweep(90, 45, 1, 'sawtooth', 0.12) }
             }
             if ((S.wx === WX.RAIN || S.wx === WX.STORM) && (S.tick % 42) === 0) audioController.playNoise(0.14, 0.04)
-            S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed)
-            if (flashOnset(S.x, S.y, S.tick, tod(), S.seed)) S.thunder = S.tick + 26
+            S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed, terrainAt)
+            if (flashOnset(S.x, S.y, S.tick, tod(), S.seed, terrainAt)) S.thunder = S.tick + 26
             if (S.thunder === S.tick) { audioController.playNoise(0.7, 0.2); audioController.playSweep(72, 28, 0.9, 'sawtooth', 0.14) }
             const amb = ambAt(S.x, S.y, S.tick, S.seed)
             if (amb !== S.amb) {
@@ -681,6 +682,7 @@ const BritanniaGame = () => {
                     face: S.face, frame: walkFrame(S.anim, S.cd > 0), anim: S.anim,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
+                    shadow: reliefBias(S.x, S.y, terrainAt),
                     ambient: AMB_NAME[S.amb],
                     swell: crest(S.x, S.y, S.tick),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,

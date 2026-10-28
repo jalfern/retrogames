@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
-import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
+import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen, reliefBias, ROCK, SHADOW_D, SHADOW_MAX, UPLIFT_MAX, SUMMIT } from '../src/games/Britannia/weather.js'
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
@@ -175,6 +175,80 @@ ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thu
         if (weatherAt(x + 16, y, b * 90 + WX_EPOCH) !== WX.STORM) rideBad++
     }
     ok(ride > 0 && rideBad === 0, `lightning rides with its storm: one epoch on, the cell one region east is still storming (${ride} strikes, ${rideBad} lost storms)`)
+}
+
+// rain shadow (#1135): fronts ride west-to-east, so rock is a wind barrier —
+// the leeward (east) side of a ridge dries out, the windward (west) side gets
+// uplift, the bias decays with distance, oceans cast nothing, and the shell
+// feeds the real WORLD.MAP into the sky. Prove-it-can-fail: zero reliefBias
+// (or flip its signs) and the orientation/conversion/storm gates go red.
+{
+    const ridge = rx => (x, y) => (x === rx ? ROCK : 0)
+    const flat = () => 0
+    const RX = 100
+    ok(reliefBias(100, 100, null) === 0 && weatherAt(100, 100, 3000, 5) === weatherAt(100, 100, 3000, 5, null),
+        'no terrain passed = exactly the old drift field (all 4-arg callers unchanged)')
+    ok(reliefBias(RX, 50, ridge(RX)) === SUMMIT && reliefBias(RX + 4, 50, ridge(RX)) < 0 && reliefBias(RX - 4, 50, ridge(RX)) > 0,
+        'orientation: summit lifts, east of a ridge is dry (leeward), west is wet (windward)')
+    let monoS = true, monoU = true
+    for (let d = 1; d < SHADOW_D; d++) {
+        if (Math.abs(reliefBias(RX + d + 1, 50, ridge(RX))) >= Math.abs(reliefBias(RX + d, 50, ridge(RX)))) monoS = false
+        if (Math.abs(reliefBias(RX - d - 1, 50, ridge(RX))) >= Math.abs(reliefBias(RX - d, 50, ridge(RX)))) monoU = false
+    }
+    ok(monoS && monoU && reliefBias(RX + SHADOW_D + 1, 50, ridge(RX)) === 0,
+        `the bias decays with distance and dies past ${SHADOW_D} tiles (linear falloff both sides)`)
+    const twin = (x, y) => (x === RX - 4 || x === RX + 4 ? ROCK : 0)
+    ok(reliefBias(RX, 50, twin) === 0, 'rock equidistant on both sides cancels: no shadow in a valley between twins')
+    ok(reliefBias(50, 50, flat) === 0 && reliefBias(171, 23, flat) === 0,
+        'sea casts no shadow (flat terrain biases nothing anywhere)')
+    ok(reliefBias(120, 50, ridge(RX)) === reliefBias(120, 50, ridge(RX)), 'rain shadow deterministic per place+terrain')
+    let dry = 0, wetBack = 0
+    for (let d = 1; d <= SHADOW_D; d++) for (let ep = 0; ep < 320; ep++) {
+        const t = ep * 37 + 11
+        const base = weatherAt(RX + d, 50, t, 3)
+        const wx = weatherAt(RX + d, 50, t, 3, ridge(RX))
+        if (base !== WX.CLEAR && wx === WX.CLEAR) dry++
+        if (base === WX.CLEAR && wx !== WX.CLEAR) wetBack++
+    }
+    ok(dry > 0 && wetBack === 0, `the shadow actually dries land (${dry} fronts turned clear east of the ridge; ${wetBack} impossible reversals)`)
+    let windWet = 0, windDry = 0
+    for (let d = 1; d <= SHADOW_D; d++) for (let ep = 0; ep < 240; ep++) for (let sd = 0; sd < 24; sd++) {
+        const t = ep * 41 + 7
+        const base = weatherAt(RX - d, 50, t, sd)
+        const wx = weatherAt(RX - d, 50, t, sd, ridge(RX))
+        if (base === WX.CLEAR && wx !== WX.CLEAR) windWet++
+        if (base !== WX.CLEAR && wx === WX.CLEAR) windDry++
+    }
+    ok(windWet > 0 && windDry === 0, `the windward face actually wets (${windWet} fronts lifted into rain; ${windDry} impossible dryings)`)
+    let stormEastBase = 0, stormEastShadow = 0, stormWest = 0
+    for (let ep = 0; ep < 480; ep++) {
+        const t = ep * 23 + 5
+        if (weatherAt(RX + 1, 50, t, 9) === WX.STORM) stormEastBase++
+        if (weatherAt(RX + 1, 50, t, 9, ridge(RX)) === WX.STORM) stormEastShadow++
+        if (weatherAt(RX - 1, 50, t, 9, ridge(RX)) === WX.STORM) stormWest++
+    }
+    ok(stormEastBase > 0 && stormEastShadow === 0,
+        `the first leeward tile never storms (base saw ${stormEastBase} storms there; shadow keeps it at ${stormEastShadow})`)
+    ok(stormWest > 0, `storms do reach the windward face (${stormWest} windward storms)`)
+    let flashE = 0
+    for (let ep = 0; ep < 240; ep++) if (flashOnset(RX + 1, 50, ep * 29 + 3, 0.5, 9, ridge(RX))) flashE++
+    ok(flashE === 0, 'no lightning in the rain shadow (no storm, no strike)')
+    let rockTiles = 0, bites = 0, holdFar = 0, farTot = 0
+    const rockWrap = (x, y) => world.get(x, y)
+    for (let y = 0; y < MAPW; y += 3) for (let x = 0; x < MAPW; x += 3) if (world.get(x, y) === ROCK) rockTiles++
+    for (let y = 8; y < MAPW; y += 4) for (let x = 8; x < MAPW; x += 1) {
+        const b = reliefBias(x, y, rockWrap)
+        if (b === 0) { farTot++; if (weatherAt(x, y, 7777, 3, rockWrap) === weatherAt(x, y, 7777, 3)) holdFar++ }
+        else if (weatherAt(x, y, 7777, 3, rockWrap) !== weatherAt(x, y, 7777, 3)) bites++
+    }
+    ok(rockTiles > 0, `Britannia has rock to block the wind (${rockTiles * 9} rock tiles sampled)`)
+    ok(bites > 0 && holdFar === farTot,
+        `real Britannia: the sky changes where ridges stand (${bites} altered cells) and never does where they don't (${farTot - holdFar}/${farTot} far cells moved)`)
+    const wsrc = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/const terrainAt = \(x, y\) => \(world \? world\.get\(x, y\) : 0\)/.test(wsrc), 'index.jsx: the real WORLD.MAP is the terrain the sky reads')
+    ok(/weatherAt\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)/.test(wsrc), 'index.jsx: the avatar sky is terrain-aware')
+    ok(/flashAt\(S\.x, S\.y, S\.tick, tod\(\), S\.seed, terrainAt\)/.test(wsrc) && /flashOnset\(S\.x, S\.y, S\.tick, tod\(\), S\.seed, terrainAt\)/.test(wsrc), 'index.jsx: lightning obeys the shadow too')
+    ok(/shadow: reliefBias\(S\.x, S\.y, terrainAt\)/.test(wsrc), 'index.jsx: the harness can see the shadow under the Avatar')
 }
 
 // ambient life (#1135): birds wheel over the moors and fish break at sea, so
