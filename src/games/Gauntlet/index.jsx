@@ -34,7 +34,7 @@ import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -985,6 +985,9 @@ const GauntletGame = () => {
         canvas.addEventListener('pointerdown', onPointer)
 
         // ------------------------------------------------------------- DEV hook ----
+        // #1200: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, x: +gs.hero.x.toFixed(2), y: +gs.hero.y.toFixed(2) }))
+
         if (import.meta.env.DEV) {
             let cPrev = { a: false, b: false }
             exposeGame({
@@ -1089,6 +1092,7 @@ const GauntletGame = () => {
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             if (net.room) { try { net.room.clearRetry(); net.room.reset() } catch { /* gone */ } }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)

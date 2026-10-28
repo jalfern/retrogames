@@ -13,7 +13,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
@@ -313,6 +313,9 @@ const TetrisGame = () => {
         raf = requestAnimationFrame(frame)
 
         // ------------------------------------------------------- DEV hook ----
+        // #1200: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.over, seed: gs.seed, x: gs.cur ? gs.cur.x : -1, y: gs.cur ? gs.cur.y : -1 }))
+
         if (import.meta.env.DEV) {
             window.__tetrisTest = {
                 probe: () => {
@@ -388,6 +391,7 @@ const TetrisGame = () => {
         }
 
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__tetrisTest) delete window.__tetrisTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
