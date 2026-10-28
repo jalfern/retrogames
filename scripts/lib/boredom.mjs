@@ -71,7 +71,10 @@ export function tickSignals(before, after) {
             }
         }
     }
-    return { ev, dmg, act, dist: Math.round(dist) }
+    // 3 decimals, not Math.round: a Gauntlet hero walks ~0.045 cells/tick and
+    // per-tick rounding erased the whole walk, so living seconds read dead
+    // (#1190). The per-second bucket is the rounding point, not the tick.
+    return { ev, dmg, act, dist: Math.round(dist * 1000) / 1000 }
 }
 
 // 60-tick buckets → one number per second: the "what's happening" magnitude —

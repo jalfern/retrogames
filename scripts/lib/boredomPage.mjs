@@ -81,7 +81,7 @@ export const REPLAY = ({ seed, cap, buttons, pointer, opts }) => {
             }
         }
         for (const k of Object.keys(s || {})) seenKeys.add(k)
-        samples.push({ ev, dmg, act, dist: Math.round(dist), level: s.level !== undefined ? s.level : (s.wave !== undefined ? s.wave : null) })
+        samples.push({ ev, dmg, act, dist: Math.round(dist * 1000) / 1000, level: s.level !== undefined ? s.level : (s.wave !== undefined ? s.wave : null) })
         prev = s
         if (s.done) { done = true; break }
     }

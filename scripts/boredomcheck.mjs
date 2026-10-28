@@ -55,6 +55,9 @@ console.log('math (scripts/lib/boredom.mjs)')
         tickSignals(S({ x: 0 }), S({ x: 30 })).dist === 30 && tickSignals(S({ x: 0 }), S({ x: 1 })).dist === 1)
     ok('a moved pair carries both axes',
         tickSignals(S({ pos: [0, 0] }), S({ pos: [3, -4] })).dist === 7)
+    ok('sub-tick motion survives rounding (#1190): a 0.045 walk is not erased',
+        tickSignals(S({ x: 5 }), S({ x: 5.045 })).dist === 0.045
+        && tickSignals(S({ pos: [5, 5] }), S({ pos: [5.045, 5.045] })).dist > 0)
     ok('an oversized key is scenery, not motion',
         tickSignals(S({ grid: 'x'.repeat(5000) }), S({ grid: 'y'.repeat(5000) })).act === 0)
 
@@ -65,6 +68,15 @@ console.log('math (scripts/lib/boredom.mjs)')
     ok('a sub-second run still maps to one second', bucketSeconds([s(1, 0, 0), s(0, 2, 0)]).length === 1)
     ok('legacy samples without dist fall back to the key count',
         bucketSeconds(Array.from({ length: 60 }, () => ({ ev: 0, dmg: 0, act: 2 })))[0] === 120)
+    {
+        const walk = Array.from({ length: 600 }, (_, i) => s(0, 0, i === 299 ? 400 : 0.045))
+        const wStrip = bucketSeconds(walk)
+        const wCls = classifyStrip(wStrip)
+        ok('a hero walking 0.045/tick never reads dead and never files (#1190)',
+            wStrip.every((v) => v > 0) && !wCls.includes('dead')
+            && shouldFile(wCls, worstStretch(wCls), false) === false,
+            `strip ${wStrip.map((v) => v.toFixed(1)).join(',')}`)
+    }
     ok('combineSeeds means over seeds that reached the second',
         combineSeeds([[10, 10], [20]]).join(',') === '15,10', combineSeeds([[10, 10], [20]]).join(','))
 
