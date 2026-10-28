@@ -885,6 +885,8 @@ const ViperPitGame = () => {
                         hipY: +rig.body.position.y.toFixed(3),
                         armR: +rig.armR.sh.rotation.x.toFixed(3),
                         armL: +rig.armL.sh.rotation.x.toFixed(3),
+                        legR: +rig.legR.hip.rotation.x.toFixed(3),
+                        legL: +rig.legL.hip.rotation.x.toFixed(3),
                         kneeR: +rig.legR.kn.rotation.x.toFixed(3),
                         kneeL: +rig.legL.kn.rotation.x.toFixed(3),
                     }
