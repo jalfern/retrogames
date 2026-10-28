@@ -162,6 +162,7 @@
     "juiceaudit": "node scripts/juiceaudit.mjs",
     "juicecheck": "node scripts/juicecheck.mjs",
     "boredomaudit": "node scripts/boredomaudit.mjs",
+    "rewritecheck": "node scripts/rewritecheck.mjs",
     "boredomcheck": "node scripts/boredomcheck.mjs",
     "joustdive": "node scripts/joustdive.mjs",
     "lint:qbert": "eslint src/games/QBert src/components src/utils src/config src/main.jsx scripts",
