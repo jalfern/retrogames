@@ -284,13 +284,25 @@ export function poseFighter(rig, f, tSec) {
 
     if (walkSpeed > 0.01 && (st === 'idle')) {
         // walk-in drives the shoulders toward the opponent; walking out is a
-        // tighter, shorter shuffle that keeps the guard up.
+        // tighter, shorter shuffle that keeps the guard up. #1106 gait: each
+        // fighter walks on their own tempo and stride (KRAX lumbers, VESS
+        // bounces on his toes), the hips bob once per step, the swinging foot
+        // lifts at the toe, and the arms counter-swing around the fighter's
+        // OWN guard geometry instead of dropping into a generic tuck.
         const forward = (f.vx || 0) * f.facing > 0
-        const amp = forward ? 0.6 : 0.42
-        const armSwing = forward ? 0.3 : 0.18
+        const g = (f.def && f.def.gait) || { tempo: 11, stride: 0.6, bob: 0.02, armSwing: 0.24, toe: 0.12 }
+        const rate = g.tempo * (forward ? 1 : 0.82)
+        const sw = Math.sin(tSec * rate)
+        const amp = g.stride * (forward ? 1 : 0.7)
         q.lean += forward ? 0.12 : -0.1
-        q.legs = [{ hip: swing * amp, kn: -0.2 - Math.max(0, -swing) * 0.3 }, { hip: -swing * amp, kn: -0.2 - Math.max(0, swing) * 0.3 }]
-        q.arms = [{ sh: -0.4 - swing * armSwing, el: -1.5, z: 0.3 }, { sh: -0.4 + swing * armSwing, el: -1.5, z: -0.3 }]
+        q.hipY += g.bob * (1 - Math.abs(sw)) * (forward ? 1 : 0.7)
+        q.legs = [
+            { hip: sw * amp - Math.max(0, sw) * g.toe, kn: -0.2 - Math.max(0, -sw) * 0.34 + Math.max(0, sw) * 0.12 },
+            { hip: -sw * amp - Math.max(0, -sw) * g.toe, kn: -0.2 - Math.max(0, sw) * 0.34 + Math.max(0, -sw) * 0.12 },
+        ]
+        const baseArms = stance ? stance.arms : [{ sh: -0.42, el: -1.5, z: 0.3 }, { sh: -0.42, el: -1.5, z: -0.3 }]
+        const armSwing = g.armSwing * (forward ? 1 : 0.6)
+        q.arms = baseArms.map((a, i) => ({ sh: a.sh + (i === 0 ? -1 : 1) * sw * armSwing, el: a.el, z: a.z }))
     }
 
     const r = rig

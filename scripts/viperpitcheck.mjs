@@ -512,7 +512,7 @@ if (MUT) {
         ['an overhead snaps the head back', /hint && hint\.high/],
         ['a hit from behind pitches forward (push sign vs facing)', /\(f\.vx \|\| 0\) \* f\.facing > 0\.001/],
         ['walk-in leans toward, walk-out leans off', /q\.lean \+= forward \? 0\.12 : -0\.1/],
-        ['walk-out shuffle is shorter than walk-in', /forward \? 0\.6 : 0\.42/],
+        ['walk-out shuffle is shorter than walk-in', /g\.stride \* \(forward \? 1 : 0\.7\)/],
         ['the hint clears when the stun ends', /rig\.hitHint && f\.st !== 'hitstun'/],
         ['the victim height hint lands on the rig', /victim\.hitHint = \{ low: !!\(mdef && mdef\.low\), high: !!\(mdef && mdef\.overhead\) \}/],
     ]
@@ -524,6 +524,76 @@ if (MUT) {
     ok(!/\(f\.vx \|\| 0\) \* f\.facing > 0\.001/.test(mutD), 'mutant: direction-blind hitstun fails the gate (harness bites)')
     const mutW = rsrc.replace('q.lean += forward ? 0.12 : -0.1', '')
     ok(!/q\.lean \+= forward \? 0\.12 : -0\.1/.test(mutW), 'mutant: dead walk lean fails the gate (harness bites)')
+}
+
+// ---- #1106 walk-gait gate -----------------------------------------------------------
+// Walking is not one shared shuffle: each fighter carries a gait profile
+// (tempo/stride/bob/armSwing/toe), the cycle alternates the legs, the hips bob
+// once per step, the swinging foot lifts at the toe, and the arms counter-swing
+// around the fighter's own guard geometry instead of a generic tuck. All of it
+// is presentation (fighters.js data + render.js walk branch), so the gate is a
+// data gate + source gates + three mutants that must bite. Part B drives the live
+// cabinet through __viperPitTest.pose() while a real ArrowRight hold walks.
+{
+    const fs = await import('node:fs')
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok((fsrc.match(/\bgait: \{/g) || []).length >= 5, 'gait gate: all five fighters carry a gait profile')
+    ok(new Set(ROSTER.map((d) => JSON.stringify(d.gait))).size === 5, 'gait gate: every gait differs from the others')
+    ok(ROSTER.every((d) => d.gait && d.gait.tempo > 0 && d.gait.stride > 0 && d.gait.bob > 0 && d.gait.armSwing > 0 && d.gait.toe >= 0), 'gait gate: every profile is complete and sane')
+    const gaitGates = [
+        ['walk pose reads the fighter gait (with a sane default)', /const g = \(f\.def && f\.def\.gait\) \|\| \{/],
+        ['stride tempo is per-fighter; walk-out steps slower', /g\.tempo \* \(forward \? 1 : 0\.82\)/],
+        ['hips bob once per step (lift on the pass)', /q\.hipY \+= g\.bob \* \(1 - Math\.abs\(sw\)\)/],
+        ['the swinging foot lifts at the toe', /Math\.max\(0, sw\) \* g\.toe/],
+        ['the trail knee bends as the planted leg takes weight', /-0\.2 - Math\.max\(0, -sw\) \* 0\.34/],
+        ['arms counter-swing around the fighter\'s own guard geometry', /const baseArms = stance \? stance\.arms :/],
+        ['the counter-swing scales by gait (and tightens walking out)', /g\.armSwing \* \(forward \? 1 : 0\.6\)/],
+    ]
+    for (const [label, re] of gaitGates) ok(re.test(rsrc), `gait gate: ${label}`)
+    ok(/legR: \+rig\.legR\.hip\.rotation\.x/.test(gsrc) && /legL: \+rig\.legL\.hip\.rotation\.x/.test(gsrc), 'gait gate: pose() reports the hip joints for the live probe')
+    const mutG = rsrc.replace('const g = (f.def && f.def.gait) || {', 'const g = {')
+    ok(!/\(f\.def && f\.def\.gait\)/.test(mutG), 'mutant: gait dropped from the walk pose fails the gate (harness bites)')
+    const mutB = rsrc.replace('q.hipY += g.bob * (1 - Math.abs(sw)) * (forward ? 1 : 0.7)', '')
+    ok(!/q\.hipY \+= g\.bob/.test(mutB), 'mutant: dead walk bob fails the gate (harness bites)')
+    const mutA = rsrc.replace('const baseArms = stance ? stance.arms :', 'const baseArms =')
+    ok(!/stance \? stance\.arms :/.test(mutA), 'mutant: generic walk arms fail the guard-geometry gate (harness bites)')
+}
+
+// ---- #1106 walk-gait determinism (Part A, plain Node) ------------------------------
+// poseFighter is pure math over a rig, so the gait itself is pinned here without
+// a browser: sweep wall-clock time while a fighter walks and the cycle must
+// alternate legs, bob the hips once per step, lumber wide for KRAX, take quick
+// short steps for NYX, and shuffle shorter walking out than in.
+{
+    const { buildFighter, poseFighter } = await import(bust('../src/games/ViperPit/render.js'))
+    const walkSig = (id, forward) => {
+        const rig = buildFighter(BY_ID[id])
+        const f = { st: 'idle', move: null, sf: 0, x: 0, y: 0, def: BY_ID[id], vx: (forward ? 0.088 : -0.068) * (BY_ID[id].walkMul || 1), facing: 1 }
+        const s = []
+        for (let t = 0; t <= 1680; t += 30) {
+            poseFighter(rig, f, t / 1000)
+            s.push({ legR: rig.legR.hip.rotation.x, legL: rig.legL.hip.rotation.x, hipY: rig.body.position.y, armR: rig.armR.sh.rotation.x })
+        }
+        return s
+    }
+    const rg = (s, k) => Math.max(...s.map((p) => p[k])) - Math.min(...s.map((p) => p[k]))
+    const fl = (s) => { let f = 0, prev = 0; for (const p of s) { const d = Math.sign(p.legR - p.legL); if (prev !== 0 && d !== 0 && d !== prev) f++; if (d !== 0) prev = d } return f }
+    const kF = walkSig('krax', true), kB = walkSig('krax', false), nF = walkSig('nyx', true), vF = walkSig('vess', true)
+    ok(fl(kF) >= 3, `KRAX's walk alternates legs (${fl(kF)} phase flips over 1.7s)`)
+    ok(fl(nF) >= 4, `NYX's quicker tempo alternates more often (${fl(nF)} flips)`)
+    ok(fl(nF) > fl(kF), `NYX steps faster than KRAX walks (${fl(nF)} vs ${fl(kF)} flips)`)
+    ok(rg(kF, 'legR') > 1.3 && rg(nF, 'legR') < rg(kF, 'legR') - 0.15,
+        `KRAX lumbers with a longer stride than NYX (${rg(kF, 'legR').toFixed(3)} vs ${rg(nF, 'legR').toFixed(3)})`)
+    ok(rg(kB, 'legR') < rg(kF, 'legR') * 0.92 && rg(kB, 'legR') > 0.6,
+        `walking out is a shorter shuffle (${rg(kB, 'legR').toFixed(3)} vs ${rg(kF, 'legR').toFixed(3)})`)
+    ok(rg(kF, 'hipY') > 0.02 && rg(vF, 'hipY') > rg(nF, 'hipY') + 0.01,
+        `the stride bobs the hips, hardest on bouncy VESS (${rg(vF, 'hipY').toFixed(3)} vs ${rg(nF, 'hipY').toFixed(3)})`)
+    ok(Math.abs(nF[0].armR - BY_ID.nyx.stance.arms[0].sh) < 0.001 && Math.abs(kF[0].armR - BY_ID.krax.stance.arms[0].sh) < 0.001,
+        'at step-over the walk arms sit on the stance guard geometry, not a generic tuck')
+    ok(Math.abs(rg(vF, 'armR') / 2 - BY_ID.vess.gait.armSwing) < 0.02 && Math.abs(rg(nF, 'armR') / 2 - BY_ID.nyx.gait.armSwing) < 0.02,
+        `walk arms counter-swing scaled by gait (${(rg(vF, 'armR') / 2).toFixed(2)}/${(rg(nF, 'armR') / 2).toFixed(2)})`)
 }
 
 // ---- #1106 HUD juice gate -----------------------------------------------------------
@@ -884,6 +954,42 @@ if (!MUT) {
         ok(front && over && Math.abs(over.head) > Math.abs(front.head) + 0.1, `an overhead snaps the head back harder (head ${over && over.head} vs ${front && front.head})`)
         await page.evaluate(() => window.__viperPitTest.stage(1))
         await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
+    }
+
+    // #1106 walk gait (live): a real ArrowRight hold walks NYX — legs visibly
+    // alternate, the hips bob, the stride is wide, and the guard arms stay up
+    // (the deterministic stride/tempo comparison per fighter is Part A above).
+    {
+        await page.evaluate(() => window.__viperPitTest.setChars('nyx', 'riv'))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        const walkSamples = async (key, need = 22) => {
+            const out = []
+            for (let t = 0; t < 14 && out.length < need; t++) {
+                await page.keyboard.down(key)
+                for (let i = 0; i < 4; i++) {
+                    const p = await page.evaluate(() => window.__viperPitTest.pose(0))
+                    if (p && p.st === 'idle' && Math.abs(p.vx) > 0.01) out.push(p)
+                    await page.waitForTimeout(40)
+                }
+                await page.keyboard.up(key)
+                await page.waitForTimeout(60)
+            }
+            return out
+        }
+        const range = (s, k) => (s.length ? Math.max(...s.map((p) => p[k])) - Math.min(...s.map((p) => p[k])) : 0)
+        const mean = (s, k) => (s.length ? s.reduce((a, p) => a + p[k], 0) / s.length : 0)
+        const fwd = await walkSamples('ArrowRight')
+        ok(fwd.length >= 6, `NYX walks on real input (${fwd.length} walked samples)`)
+        ok(fwd.filter((p) => Math.abs(p.legR - p.legL) > 0.1).length >= 4,
+            `the live walk drives alternating legs (${fwd.filter((p) => Math.abs(p.legR - p.legL) > 0.1).length}/${fwd.length} samples mid-stride)`)
+        ok(range(fwd, 'hipY') > 0.01, `the stride bobs the hips live (${range(fwd, 'hipY').toFixed(3)})`)
+        ok(range(fwd, 'legR') > 0.4, `the stride swings the legs live (${range(fwd, 'legR').toFixed(3)})`)
+        ok(mean(fwd, 'armR') < -0.47, `the guard arm stays raised while walking (mean armR ${mean(fwd, 'armR').toFixed(3)})`)
+        const back = await walkSamples('ArrowLeft')
+        ok(back.length >= 6 && range(back, 'legR') > 0.4,
+            `walking out still drives the shuffle stride (${back.length} samples, ${back.length ? range(back, 'legR').toFixed(3) : '-'} swing)`)
+        await page.evaluate(() => window.__viperPitTest.setChars('riv', 'nyx'))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
     }
 
     await page.keyboard.press('Escape')

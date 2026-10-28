@@ -75,6 +75,16 @@ the #1096 options switched on.
   ends), overheads snap the head up-and-back. Walking in drives the shoulders
   toward the opponent; walking out is a tighter, shorter shuffle. Presentation
   only — fighters.js data + render.js posing; engine and hashes untouched.
+- **Walk gait (#1106)**: five fighters, five ways to walk. Each carries a
+  `gait` profile (tempo, stride, hip bob, arm swing, toe lift) — KRAX lumbers
+  on a slow wide stride, NYX takes quick bladed steps, VESS bobs hardest on
+  his toes, RIV strides square, CINDER is even and measured. The cycle
+  alternates the legs, lifts the hips once per step, kicks the swinging toe
+  up, bends the trail knee as the planted leg takes weight, and counter-swings
+  the arms around the fighter's OWN guard geometry instead of dropping into a
+  generic tuck. Walking out steps slower and shorter than walking in.
+  Presentation only — fighters.js data + render.js walk branch; engine and
+  hashes untouched.
 - **Midground (#1106)**: each pit gets a depth layer of props between the
   fighters and the fence (alley crates + barrels, foundry tanks + drums, subway
   booth + benches) — variety beyond the flat backdrop. The props are pivot
@@ -157,7 +167,10 @@ the #1096 options switched on.
      a forced guard-crush entering and clearing the crush stun with the gauge
      refilling via `forceCrush()` + `guard()`, the five idle stances reading
      distinct live and front/back/low/overhead hit reactions differing via
-     `pose()` + `forceHit()`, zero page errors).
+     `pose()` + `forceHit()`, a real ArrowRight hold walking with the gait
+     readable live — legs alternating, hips bobbing per step, KRAX striding
+     wider than NYX and both keeping their own guard-arm geometry via
+     `pose()`'s legR/legL hips, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.

@@ -24,6 +24,7 @@ const defs = [
         build: { h: 1.06, bulk: 0.9, hair: 'hood', gear: 'wrap' },
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
         walkMul: 1.14, jumpMul: 1.06, reach: 0.94,
+        gait: { tempo: 12.5, stride: 0.52, bob: 0.018, armSwing: 0.24, toe: 0.14 },
         finish: 'SHADOW STITCH',
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
@@ -45,6 +46,7 @@ const defs = [
         build: { h: 1.02, bulk: 0.95, hair: 'short', gear: 'jacket' },
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
         reach: 1.0,
+        gait: { tempo: 10.5, stride: 0.58, bob: 0.022, armSwing: 0.26, toe: 0.12 },
         finish: 'BONFIRE',
         specials: { qcf: { ex: true, super: true }, dp: { ex: true }, qcb: true, qcbf: true },
         moves: {
@@ -65,6 +67,7 @@ const defs = [
         build: { h: 0.98, bulk: 0.85, hair: 'shaven', gear: 'wrap' },
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
         walkMul: 1.08, jumpMul: 1.24, reach: 0.96,
+        gait: { tempo: 13.5, stride: 0.5, bob: 0.038, armSwing: 0.3, toe: 0.18 },
         finish: 'DRY LAND',
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
@@ -86,6 +89,7 @@ const defs = [
         build: { h: 1.08, bulk: 1.02, hair: 'mohawk', gear: 'jacket' },
         color: { skin: 0xd69a6b, top: 0x44485a, pants: 0x1c1e26, hair: 0x8a2f3f, accent: 0xd8e04a },
         reach: 1.04,
+        gait: { tempo: 11, stride: 0.6, bob: 0.02, armSwing: 0.22, toe: 0.12 },
         finish: 'NEON PURGE',
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, charge: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
@@ -109,6 +113,7 @@ const defs = [
         build: { h: 1.18, bulk: 1.4, hair: 'bald', gear: 'chain' },
         color: { skin: 0x9a6a44, top: 0x5a4632, pants: 0x33302b, hair: 0x141414, accent: 0xc0c8d0 },
         walkMul: 0.8, hp: 115, reach: 1.1,
+        gait: { tempo: 8, stride: 0.72, bob: 0.03, armSwing: 0.16, toe: 0.08 },
         finish: 'SCRAP HEAP',
         specials: { qcf: { kick: true, ex: true, super: true }, charge: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
