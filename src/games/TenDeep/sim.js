@@ -72,6 +72,7 @@ export function makeRun(opts = {}) {
         strict: !!opts.strict,
         party: HEROES0.map(h => ({ ...h, lvl: 1, xp: 0, alive: true, fresh: false, maxHp: h.hp, maxMp: h.mp })),
         explored: new Set(),
+        marks: [],
         skipPots: new Set(opts.skipPots || []),
         skipSprings: new Set(opts.skipSprings || []),
         // per-floor mutable state, filled by enterFloor
@@ -134,7 +135,18 @@ function markView(st) {
             if (!st.map.wall(st.x + dx, st.y + dy)) st.explored.add((st.y + dy) * SIZE + (st.x + dx))
         }
     }
+    if (st.map.stairs && st.explored.has(st.map.stairs.y * SIZE + st.map.stairs.x) &&
+        !st.marks.some(m => m.floor === st.floor && m.kind === 'stairs')) {
+        st.marks.push({ floor: st.floor, kind: 'stairs', x: st.map.stairs.x, y: st.map.stairs.y })
+    }
+    if (st.map.throne && st.explored.has(st.map.throne.y * SIZE + st.map.throne.x) &&
+        !st.marks.some(m => m.floor === st.floor && m.kind === 'throne')) {
+        st.marks.push({ floor: st.floor, kind: 'throne', x: st.map.throne.x, y: st.map.throne.y })
+    }
 }
+
+export const automapRing = (x, y, hx, hy) => Math.max(Math.abs(x - hx), Math.abs(y - hy))
+export const automapShade = (ring) => (ring <= 2 ? '#3c466e' : '#20284a')
 
 export const fireDmg = (h) => SPELLS.firebolt.power(h.lvl)
 export const healPow = (h) => SPELLS.heal.power(h.lvl)

@@ -118,8 +118,15 @@ stat you pick at the bench.
     Combat opens with staging, also presentation-only: on an ambush the group
     slides in from the right (300 ms per mob + 70 ms stagger, ease-out, off
     `combatT0` — a performance.now() the sim never sees, so `stateHash` is
-    untouched), and under the crown the `THE HOLLOW KING — NO FLIGHT` banner
-    pulses on the beat (`sin(bob/5)`) while the field dims with it.
+     untouched), and under the crown the `THE HOLLOW KING — NO FLIGHT` banner
+     pulses on the beat (`sin(bob/5)`) while the field dims with it.
+    The automap breathes too: explored cells within Chebyshev radius 2 of the
+    hero (the view radius) keep the bright ink, older ground dims to
+    `#20284a` (`automapRing`/`automapShade` in sim.js — pure, so the Node
+    gate proves them). The canvas carries a 20px floor-ruler gutter: one row
+    per visited floor, amber on the current one, a green `v` where the stairs
+    were seen and a red `K` at the throne — `st.marks` is the sim's pen-and-
+    paper memory, written once per floor by `markView`, surviving descent.
 - Harness hooks (DEV): `window.__deepTest` (probe/start/cmd/setup/hash),
   DebugKit with PROGNOSIS (re-solves the LIVE mutated state).
 
