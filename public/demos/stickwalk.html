@@ -80,7 +80,7 @@
 <body>
 <canvas id="c"></canvas>
 <div id="hud"><b>STICK WALK</b><span class="hints"> · 31-joint mocap rig · procedural gait &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; ↑↓ speed &nbsp;·&nbsp; ←→ turn &nbsp;·&nbsp; SPACE jog/run &nbsp;·&nbsp;</span> <span id="telemetry"></span></div>
-<div id="audiohint">click for footsteps</div>
+<div id="audiohint">footsteps on</div>
 <div id="attract">
   <div>
     <h1>STICK <i>WALK</i></h1>
@@ -143,11 +143,22 @@ let puffs = [];
 let lastHeelPuff = null;
 let userTurn = 0;
 let trails = { head: [], lW: [], rW: [] };
+// ground footprints: stamped on heel strike, fade over FP_LIFE seconds
+const footprints = [];
+const FP_LIFE = 5.0, FP_MAX = 36;
 let frames = 0, readyFlag = false;
-let lastT = 0, perfAcc = 0, perfN = 0, perfMax = 0;
-let audioOn = false;
+let lastT = 0;
+const perfWin = [];
+let audioOn = true;
+// render interpolation: the sim ticks at a fixed 60 Hz, but the display may
+// draw at 120 Hz — between ticks the figure is drawn at the lerped pose, so
+// high-refresh phones never see a 2:1 stutter
+const prevJ = new Float64Array(31 * 3);
+const curJ = new Float64Array(31 * 3);
+let prevPos = [0, 0], curPos = [0, 0], lastAlpha = 1;
 
 for (let i = 0; i < 90; i++) { sim.vT = 1.35; sim.wT = 0.5; SW.step(sim, 1 / 60); }
+prevJ.set(sim.joints); prevPos[0] = sim.pos[0]; prevPos[1] = sim.pos[1];
 
 const attractMsgs = [
   'weight shift · arm swing · planted feet',
@@ -172,13 +183,12 @@ function startPlay() {
   screenMode = 'play';
   document.getElementById('attract').classList.add('gone');
 }
-function firstGesture() {
-  if (audioOn) return;
-  audioOn = true;
-  unlockAudio();
-  document.getElementById('audiohint').textContent = 'footsteps on';
-  document.getElementById('audiohint').classList.add('off');
+function ensureAudio() {
+  if (!audioOn) return;
+  if (!AC) unlockAudio();
+  if (AC && AC.state === 'suspended') AC.resume().catch(() => {});
 }
+function firstGesture() { ensureAudio(); }
 
 /* ---------------- input ---------------- */
 
@@ -219,7 +229,17 @@ pad.querySelectorAll('button').forEach(b => {
   b.addEventListener('pointerup', e => { e.preventDefault(); keys[code] = 0; });
   b.addEventListener('pointercancel', () => { keys[code] = 0; });
 });
-document.getElementById('audiohint').addEventListener('pointerdown', e => { e.stopPropagation(); firstGesture(); });
+const audiohint = document.getElementById('audiohint');
+function syncAudioHint() {
+  audiohint.textContent = audioOn ? 'footsteps on' : 'footsteps off';
+  audiohint.classList.toggle('off', !audioOn);
+}
+audiohint.addEventListener('pointerdown', e => {
+  e.stopPropagation();
+  audioOn = !audioOn;
+  if (audioOn) ensureAudio();
+  syncAudioHint();
+});
 
 /* ---------------- audio: synthesized footsteps ---------------- */
 
@@ -235,7 +255,7 @@ function unlockAudio() {
   } catch (e) { /* audio unavailable */ }
 }
 function footstep(kind, gain) {
-  if (!AC || !master || !noiseBuf) return;
+  if (!audioOn || !AC || !master || !noiseBuf) return;
   const t0a = AC.currentTime;
   const src = AC.createBufferSource(); src.buffer = noiseBuf;
   const flt = AC.createBiquadFilter();
@@ -343,9 +363,9 @@ function drawGrid(cb, center) {
 
 function drawShadows(cb, center) {
   const pts = [[center[0] + 0.02, center[1] + 0.03],
-    [sim.joints[J.L_ANKLE * 3], sim.joints[J.L_ANKLE * 3 + 2]],
-    [sim.joints[J.R_ANKLE * 3], sim.joints[J.R_ANKLE * 3 + 2]]];
-  const heights = [0.5, sim.joints[J.L_ANKLE * 3 + 1], sim.joints[J.R_ANKLE * 3 + 1]];
+    [curJ[J.L_ANKLE * 3], curJ[J.L_ANKLE * 3 + 2]],
+    [curJ[J.R_ANKLE * 3], curJ[J.R_ANKLE * 3 + 2]]];
+  const heights = [0.5, curJ[J.L_ANKLE * 3 + 1], curJ[J.R_ANKLE * 3 + 1]];
   for (let k = 0; k < pts.length; k++) {
     const h = heights[k];
     const s = project([pts[k][0], 0.001, pts[k][1]], cb);
@@ -370,7 +390,7 @@ const ARM_BONES = new Set([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
 const ch8 = (x) => Math.max(0, Math.min(255, Math.round(x)));
 
 function drawFigure(cb, withSprite) {
-  const j = sim.joints;
+  const j = curJ;
   const cC = project([j[J.CHEST * 3], j[J.CHEST * 3 + 1], j[J.CHEST * 3 + 2]], cb);
   const centerZ = cC ? cC.z : cam.dist;
   const segs = [];
@@ -440,20 +460,38 @@ function drawTrails(cb) {
   ctx.lineWidth = Math.max(1, DPR * 0.8);
   for (const [name, joint, rgb] of spec) {
     const buf = trails[name];
-    buf.push([sim.joints[joint * 3], sim.joints[joint * 3 + 1], sim.joints[joint * 3 + 2]]);
+    buf.push([curJ[joint * 3], curJ[joint * 3 + 1], curJ[joint * 3 + 2]]);
     if (buf.length > 9) buf.shift();
     for (let i = 1; i < buf.length; i++) {
       const a = project(buf[i - 1], cb), b = project(buf[i], cb);
       if (!a || !b) continue;
-      ctx.strokeStyle = rgb + (0.04 + 0.14 * i / buf.length).toFixed(3) + ')';
+      ctx.strokeStyle = rgb + (0.05 + 0.20 * i / buf.length).toFixed(3) + ')';
       ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
     }
   }
 }
 
+function drawFootprints(cb) {
+  while (footprints.length && sim.t - footprints[0].t0 > FP_LIFE) footprints.shift();
+  const focal = Math.min(W, H) * 1.05;
+  for (const fp of footprints) {
+    const k = 1 - (sim.t - fp.t0) / FP_LIFE;
+    const a = project([fp.x, 0.002, fp.z], cb);
+    const b = project([fp.x + fp.dx * 0.14, 0.002, fp.z + fp.dz * 0.14], cb);
+    if (!a || !b) continue;
+    const ang = Math.atan2(b.y - a.y, b.x - a.x);
+    const rx = 0.062 * focal / a.z, ry = 0.026 * focal / a.z;
+    ctx.save();
+    ctx.translate(a.x, a.y); ctx.rotate(ang);
+    ctx.fillStyle = `rgba(140,160,195,${(0.30 * k * k).toFixed(3)})`;
+    ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+}
+
 function drawBrackets(cb) {
   if (screenMode !== 'play') return;
-  const c = project([sim.pos[0], 0.95, sim.pos[1]], cb);
+  const c = project([curPos[0], 0.95, curPos[1]], cb);
   if (!c) return;
   const s = Math.min(W, H) * 1.05 / c.z;
   const hw = 0.32 * s, hh = 0.95 * s;
@@ -479,6 +517,16 @@ function spawnPuff(ev) {
   if (ev.toeR) puffs.push({ p: at(J.R_TOE, J.R_MID), t: 0, r: 0.020 + sim.v * 0.004, a: walkA * 0.75 });
   if (ev.heelL || ev.heelR) lastHeelPuff = { r: 0.030 + sim.v * 0.008, a: walkA };
   if (puffs.length > 8) puffs.splice(0, puffs.length - 8);
+  const stamp = (jHeel, jToe, on) => {
+    if (!on) return;
+    const hx = j[jHeel * 3], hz = j[jHeel * 3 + 2];
+    const tx = j[jToe * 3] - hx, tz = j[jToe * 3 + 2] - hz;
+    const tl = Math.hypot(tx, tz) || 1;
+    footprints.push({ x: hx, z: hz, dx: tx / tl, dz: tz / tl, t0: sim.t });
+    if (footprints.length > FP_MAX) footprints.shift();
+  };
+  stamp(J.L_HEEL, J.L_TOE, ev.heelL);
+  stamp(J.R_HEEL, J.R_TOE, ev.heelR);
   const g = Math.min(1, 0.25 + sim.v / 5);
   if (ev.heelL || ev.heelR) footstep('heel', g);
   if (ev.toeL || ev.toeR) footstep('toe', g);
@@ -523,10 +571,12 @@ function applyControls(dt) {
 const FIXED_DT = 1 / 60;
 let acc = 0;
 const telemetry = document.getElementById('telemetry');
-let lastStats = { markerPx: 0, bonePx: 0, shadowDark: 0 };
+let lastStats = { markerPx: 0, bonePx: 0, darkFrac: 0, shadowDark: 0 };
 
 function tickSim() {
   applyControls(FIXED_DT);
+  prevJ.set(sim.joints);
+  prevPos[0] = sim.pos[0]; prevPos[1] = sim.pos[1];
   const ev = SW.step(sim, FIXED_DT).events;
   spawnPuff(ev);
 }
@@ -535,7 +585,7 @@ function frame() {
   const now = performance.now();
   if (lastT) {
     const dtms = now - lastT;
-    perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms;
+    perfWin.push(dtms); if (perfWin.length > 600) perfWin.shift();
     acc += Math.min(dtms / 1000, 0.15);
   }
   lastT = now;
@@ -543,12 +593,18 @@ function frame() {
   while (acc >= FIXED_DT) { tickSim(); acc -= FIXED_DT; stepped = true; }
   resize();
 
-  const lookAt = [sim.pos[0], 1.0, sim.pos[1]];
+  lastAlpha = Math.max(0, Math.min(1, acc / FIXED_DT));
+  for (let i = 0; i < curJ.length; i++) curJ[i] = prevJ[i] + (sim.joints[i] - prevJ[i]) * lastAlpha;
+  curPos[0] = prevPos[0] + (sim.pos[0] - prevPos[0]) * lastAlpha;
+  curPos[1] = prevPos[1] + (sim.pos[1] - prevPos[1]) * lastAlpha;
+
+  const lookAt = [curPos[0], 1.0, curPos[1]];
   const cb = camBasis(lookAt);
   drawBg();
-  drawGrid(cb, sim.pos);
+  drawGrid(cb, curPos);
   drawPuffs(cb, acc > 0 ? FIXED_DT : 1 / 60);
-  drawShadows(cb, sim.pos);
+  drawFootprints(cb);
+  drawShadows(cb, curPos);
   drawTrails(cb);
   const vis = drawFigure(cb, true);
   drawBrackets(cb);
@@ -556,7 +612,6 @@ function frame() {
   if (frames % 6 === 0) {
     const gp = sim.gp;
     telemetry.textContent = `speed ${sim.v.toFixed(1)} m/s · ${gp.gait} · Fr ${gp.fr.toFixed(2)} · slip 0 mm`;
-    lastStats = classify();
   }
   void vis;
   readyFlag = true;
@@ -650,11 +705,21 @@ window.__stickwalkTest = {
     return p ? { x: p.x, y: p.y, z: +p.z.toFixed(2) } : null;
   },
   stats() { return lastStats; },
-  classify() { return classify(); },
+  classify() { lastStats = classify(); return lastStats; },
   plant(v, secs) { return SW.metrics.plantAudit(+v, 0, +(secs || 6)); },
   scan() { return SW.metrics.scan(); },
   gaitAt(v) { return SW.gaitParams(+v); },
   puffs() { return puffs.length; },
+  footprints() {
+    let maxAge = 0;
+    for (const fp of footprints) maxAge = Math.max(maxAge, sim.t - fp.t0);
+    return { n: footprints.length, maxAge: +maxAge.toFixed(2), life: FP_LIFE, cap: FP_MAX };
+  },
+  interp() {
+    const h = 4 * 3;
+    const three = (buf) => [+buf[h].toFixed(4), +buf[h + 1].toFixed(4), +buf[h + 2].toFixed(4)];
+    return { alpha: +lastAlpha.toFixed(3), dispHead: three(curJ), prevHead: three(prevJ), simHead: three(sim.joints) };
+  },
   puffSpec() { return lastHeelPuff ? { r: +lastHeelPuff.r.toFixed(4), a: +lastHeelPuff.a.toFixed(3), v: +sim.v.toFixed(2) } : null; },
   headSil() {
     const cb = camBasis([sim.pos[0], 1.0, sim.pos[1]]);
@@ -685,9 +750,15 @@ window.__stickwalkTest = {
   },
   padVisible() { return pad.classList.contains('on'); },
   trailLen() { return trails.head.length; },
-  audio() { return { on: !!AC, unlocked: audioOn }; },
-  perf() { return { avg: perfN ? +(perfAcc / perfN).toFixed(2) : 0, max: +perfMax.toFixed(2), n: perfN }; },
-  resetPerf() { perfAcc = 0; perfN = 0; perfMax = 0; },
+  audio() { return { on: audioOn, ctx: !!AC, state: AC ? AC.state : null }; },
+  perf() {
+    const d = perfWin.slice().sort((a, b) => a - b);
+    if (!d.length) return { avg: 0, median: 0, p95: 0, max: 0, worst: 0, n: 0 };
+    const q = (f) => d[Math.min(d.length - 1, Math.floor(f * (d.length - 1)))];
+    const worst = d[d.length - 1];
+    return { avg: +(d.reduce((s, x) => s + x, 0) / d.length).toFixed(2), median: +q(0.5).toFixed(2), p95: +q(0.95).toFixed(2), max: +worst.toFixed(2), worst: +worst.toFixed(2), n: d.length };
+  },
+  resetPerf() { perfWin.length = 0; },
   rig() { return { joints: SW.JOINT_COUNT, bones: BONES.length, names: SW.JOINT_NAMES }; },
 };
 </script>
