@@ -264,7 +264,7 @@ the breaching games as QA issues (nightlybot-style shape dedupe). The founding c
 Runner read 81% bored with 90 s of dead air — a false positive: its contract state hid the runner
 (a #1184 blind state, hash moving while every visible key sat still). The map now flags blind
 states (`∅`, never files on them) and Momentum exposes `pos`, its honest reading 0%.
-`npm run boredomcheck` (37 gates: pure math + live Lunar Lander probe + committed-json + roster
-parity) is the load-bearing part; `BOREDOM_MUTATE=dead` blinds dead-detection and six gates go
-red. Measurement, not a CI gate — the map reports courses, it does not block builds.
+`npm run boredomcheck` (47 gates: pure math on every threshold + live Lunar Lander probe +
+committed-json validation + roster parity) is the load-bearing part; `BOREDOM_MUTATE=dead`
+blinds dead-detection and seven gates go red. Measurement, not a CI gate — the map reports courses, it does not block builds.
 

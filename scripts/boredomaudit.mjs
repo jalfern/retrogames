@@ -129,7 +129,7 @@ if (process.env.BOREDOM_FILE) {
     const { execFileSync } = await import('node:child_process')
     const open = JSON.parse(execFileSync('gh', ['issue', 'list', '--repo', 'jalfern/retrogames', '--state', 'open',
         '--label', 'feedback', '--json', 'title'], { encoding: 'utf8' })).map((i) => i.title)
-    const shape = (g) => `${g.worst ? g.worst.type : 'flat'} ${String(g.worst ? g.worst.startSec : 0).replace(/\d+/g, '#')}s`.slice(0, 60)
+    const shape = (g) => (g.worst ? `${g.worst.type} ${g.worst.len}s @${g.worst.startSec}s` : 'majority flat').replace(/\d+/g, '#').slice(0, 60)
     for (const g of report.games) {
         if (!g.file || g.boredom === null || g.blind) continue
         const sh = shape(g)
