@@ -38,8 +38,8 @@ transcribed into source:
   lightning + delayed thunder — and the whole pattern drifts west-to-east at
   one region per epoch (`driftOf`), so fronts travel and a cell keeps its kind
   as it rides. Rock blocks the wind: rain shadow, see below. Fronts still move
-  at constant speed, and precipitation adds nothing on the sea surface beyond
-  the tint.
+   at constant speed; rain now hits the sea (see Rain on the sea), though
+   precipitation raises no swell of its own beyond the dimples.
 - Moongates warp between the 8 detected stars with a destination picker;
   the menu names each gate for its virtue-moon (moons.js, the eight-wheel
   homage to the original) and prints tonight's phase with a lit-disc glyph —
@@ -161,3 +161,24 @@ npm run dev                 # play at /retrogames/britannia
   PH_T=0 (ride/east red), drop coast gate (open-ocean foam red), swap the
   'w' cluster (edge red), stub the drawTile crest (wiring red) — each goes
   red, restored green.
+
+## Rain on the sea (#1135 polish)
+
+- `swell.js`: wet cells now strike the open water. `splatIntensity(wx)` maps
+  RAIN/SNOW/STORM to 0.55/0.35/1 (clear = 0), and `dimples` scatters that
+  many seeded rings per tile, each with its own period (22..42 ticks): the
+  ring opens, fades, dies, and a new drop takes its place — struck water,
+  never static dots. Storm > rain > snow > glass, every tile, every tick.
+- `index.jsx` asks the terrain-aware `weatherAt` per sea tile at draw time,
+  so dimples sit exactly where the cell rains (rain shadow included); snow
+  paints soft flecks instead of rings; classic mode (`C`) stays a clean tile
+  sheet (the v===0 modern branch only). `seaRain` rides the harness state.
+  Pure + deterministic — the sim and its hashes are untouched.
+- `britanniacheck` +12 gates: determinism, dry-sea silence, per-kind
+  mapping, storm>rain>snow ordering, tile bounds + sane alpha, the
+  live-and-die lifecycle, real-ocean coverage of both sky states, zero
+  dimple/sky mismatches over 7.8k sea samples, and 3 wiring gates.
+  Mutants: dropping the `intensity <= 0` guard reddens 3 gates; swapping
+  the rain/snow intensities reddens 2 — each restored green.
+- Still honest: rain adds no swell of its own (the wind drives crests, not
+  the drops), and there is no splash sound at sea beyond the global rain hiss.

@@ -25,7 +25,7 @@ import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit } from './moons.js'
-import { crest, crestLane, foam, landSides, foamPatches } from './swell.js'
+import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples } from './swell.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -282,6 +282,23 @@ const BritanniaGame = () => {
                         for (const p of foamPatches(tx, ty, sd, t, S.seed, st)) {
                             ctx.fillStyle = `rgba(235,242,250,${p.a.toFixed(3)})`
                             ctx.beginPath(); ctx.arc(sx + p.x, sy + p.y, p.sz, 0, 7); ctx.fill()
+                        }
+                    }
+                }
+                // rain hits the sea (#1135): seeded dimple rings open and die on
+                // wet tiles, exactly where the sky rains — a clear sea stays glass
+                const wxh = weatherAt(tx, ty, t, S.seed, terrainAt)
+                const si = splatIntensity(wxh)
+                if (si > 0) {
+                    const flecks = wxh === WX.SNOW
+                    for (const d of dimples(tx, ty, si, t, S.seed)) {
+                        if (flecks) {
+                            ctx.fillStyle = `rgba(238,244,252,${d.a.toFixed(3)})`
+                            ctx.beginPath(); ctx.arc(sx + d.x, sy + d.y, 1.1, 0, 7); ctx.fill()
+                        } else {
+                            ctx.strokeStyle = `rgba(208,230,250,${d.a.toFixed(3)})`
+                            ctx.lineWidth = 1
+                            ctx.beginPath(); ctx.arc(sx + d.x, sy + d.y, d.r, 0, 7); ctx.stroke()
                         }
                     }
                 }
@@ -685,6 +702,7 @@ const BritanniaGame = () => {
                     shadow: reliefBias(S.x, S.y, terrainAt),
                     ambient: AMB_NAME[S.amb],
                     swell: crest(S.x, S.y, S.tick),
+                    seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                 }
