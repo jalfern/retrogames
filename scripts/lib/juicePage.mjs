@@ -12,7 +12,7 @@ export const WINDOW = async ({ codes, pointer, frames, tol, noise }) => {
     const g = window.__game
     const src = [...document.querySelectorAll('canvas')].sort((a, b) => (b.width * b.height) - (a.width * a.height))[0]
     if (!src) return { error: 'no canvas' }
-    const w = Math.min(src.width || 320, 480)
+    const w = Math.min(src.width || 320, 320)
     const h = Math.max(1, Math.round(w * (src.height || 240) / (src.width || 320)))
     const cv = document.createElement('canvas')
     cv.width = w; cv.height = h

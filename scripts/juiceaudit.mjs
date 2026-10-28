@@ -119,7 +119,7 @@ for (const p of RUN) {
     await page.close()
 }
 
-const report = buildReport({ commit, games })
+const report = buildReport({ commit, games, windowTicks: FRAMES, trials: N_TRIALS })
 mkdirSync(dirname(OUT), { recursive: true })
 writeFileSync(OUT, JSON.stringify(report, null, 1) + '\n')
 const ranked = [...report.games].sort((a, b) => (a.score ?? 1) - (b.score ?? 1))

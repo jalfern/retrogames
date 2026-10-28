@@ -71,13 +71,14 @@ export function silentActions(actions) {
     return Object.entries(actions || {}).filter(([, a]) => !a.juice).map(([k]) => k)
 }
 
-export function buildReport({ commit = 'unknown', games = [] }) {
+export function buildReport({ commit = 'unknown', games = [], windowTicks = WINDOW_TICKS, trials = TRIALS, note = null }) {
     return {
         generated: new Date().toISOString(),
         commit,
-        windowTicks: WINDOW_TICKS,
-        trials: TRIALS,
+        windowTicks,
+        trials,
         thresholds: { burstMin: BURST_MIN, idleExceed: IDLE_EXCEED, pixelTol: PIXEL_TOL },
+        ...(note ? { note } : {}),
         games: games.map((g) => ({ ...g, score: gameScore(g.actions) })),
     }
 }
