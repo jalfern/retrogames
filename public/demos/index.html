@@ -168,6 +168,17 @@
     <div class="meta"><span>WEBGL2 · SHARED DUNGEON RENDERER</span><span>2026-10-28</span></div>
   </a>
 
+  <a class="card" id="stickwalk" style="margin-top:18px">
+    <div class="row">
+      <span class="name">STICK WALK</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">A 31-joint mocap studio figure walking in WebGL-era 2D-perspective: a procedural gait with real weight shift, contralateral arm swing
+      and feet that plant WITHOUT sliding — stance contacts are frozen in world space and the legs solve by IK from the planted foot, so measured slip is 0 mm.
+      The dynamic Froude number picks the gait: walking keeps double support, and push past ~0.5 and a flight phase appears. Drag to orbit; arrows walk and turn; SPACE jogs; synthesized footsteps on contact.</p>
+    <div class="meta"><span>CANVAS 2D · PROCEDURAL MOCAP GAIT</span><span>2026-10-28</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -189,6 +200,7 @@
   document.getElementById('neonrain').href = base + 'neonrain.html'
   document.getElementById('volcano').href = base + 'volcano.html'
   document.getElementById('deepglass').href = base + 'deepglass.html'
+  document.getElementById('stickwalk').href = base + 'stickwalk.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
@@ -202,6 +214,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'neonrain', issues: [1042], span: '~3 h', assist: 'solo' },
   { el: 'volcano', issues: [1043], span: '~3 h', assist: 'solo' },
   { el: 'deepglass', issues: [1129], span: '~1 h', assist: 'solo' },
+  { el: 'stickwalk', issues: [1150], span: '~2 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>
