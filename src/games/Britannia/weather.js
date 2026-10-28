@@ -1,13 +1,17 @@
 // BRITANNIA weather — pure sim, no DOM (#1135): the sky is decided per
-// 16x16-tile region and per 24s epoch from a hash of (region, epoch, seed),
-// so rain/snow/storm are deterministic (harness-replayable) yet vary across
-// the land and drift over the night. North of the snow line precipitation
-// falls as snow; lightning only ever strikes at night, and only in storms.
+// 16x16-tile region from a hash of (region, seed), and the whole pattern
+// rides west-to-east at one region per WX_EPOCH (#1135 fronts) — mid-latitudes
+// blow off the ocean like they do on Earth. So rain/snow/storm are
+// deterministic (harness-replayable), coherent in space and time (a cell keeps
+// its kind as it travels), yet vary across the land. North of the snow line
+// precipitation falls as snow; lightning only ever strikes at night, inside a
+// storm, and rides the storm cell east.
 
 export const WX = { CLEAR: 0, RAIN: 1, SNOW: 2, STORM: 3 }
 export const WX_NAME = ['CLEAR', 'RAIN', 'SNOW', 'STORM']
 export const SNOW_LINE = 72
 export const WX_EPOCH = 1440
+export const driftOf = (tick) => Math.floor(tick / WX_EPOCH)
 const FLASH_PERIOD = 90
 const FLASH_FRAMES = 5
 
@@ -22,8 +26,7 @@ export const isFrozen = (y) => y < SNOW_LINE
 
 export function weatherAt(x, y, tick, seed = 0) {
     const [gx, gy] = regionOf(x, y)
-    const ep = Math.floor(tick / WX_EPOCH)
-    const r = hash3(gx, gy, (ep ^ seed) + 1013)
+    const r = hash3(gx - driftOf(tick), gy, seed + 1013)
     if (r < 0.62) return WX.CLEAR
     if (r < 0.88) return isFrozen(y) ? WX.SNOW : WX.RAIN
     return WX.STORM
@@ -38,7 +41,7 @@ export function flashAt(x, y, tick, tod, seed = 0) {
     if (!stormNight(tod)) return 0
     const [gx, gy] = regionOf(x, y)
     const b = Math.floor(tick / FLASH_PERIOD)
-    if (hash3(gx, gy, (b ^ seed) * 7 + 31) > 0.28) return 0
+    if (hash3(gx - driftOf(tick), gy, (b ^ seed) * 7 + 31) > 0.28) return 0
     const ph = tick % FLASH_PERIOD
     return ph < FLASH_FRAMES ? 1 - ph / FLASH_FRAMES : 0
 }

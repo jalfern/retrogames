@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
-import { WX, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
+import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 
 const path = 'public/games/ultima4.jsdos'
@@ -150,6 +150,26 @@ for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW; x += 8) {
 ok(flashSeen > 0 && badFlash === 0, `lightning strikes at night in storms (${flashSeen} flash frames)`)
 ok(dayFlash === 0, 'no lightning during the day')
 ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thunder cues scheduled)`)
+
+// fronts (#1135): the sky rides west-to-east at one region per epoch, so a
+// weather cell keeps its kind as it travels: the pattern sampled at (x, y, t)
+// must reappear at (x + 16k, y, t + k*WX_EPOCH). Prove-it-can-fail: freeze
+// the drift in weather.js (driftOf -> 0) and these two gates go red.
+{
+    let invBad = 0, invTot = 0
+    for (let y = 8; y < MAPW; y += 16) for (let x = 8; x < MAPW - 48; x += 16) for (const k of [1, 2, 3]) {
+        invTot++
+        if (weatherAt(x, y, 137, 0) !== weatherAt(x + 16 * k, y, 137 + k * WX_EPOCH, 0)) invBad++
+    }
+    ok(invBad === 0, `fronts drift east: the pattern rides (x+16k, t+k*epoch) (${invTot - invBad}/${invTot} samples hold)`)
+    let ride = 0, rideBad = 0
+    for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW - 16; x += 8) for (let b = 1; b < 16; b++) {
+        if (flashAt(x, y, b * 90, 0.5) < 1) continue
+        ride++
+        if (weatherAt(x + 16, y, b * 90 + WX_EPOCH) !== WX.STORM) rideBad++
+    }
+    ok(ride > 0 && rideBad === 0, `lightning rides with its storm: one epoch on, the cell one region east is still storming (${ride} strikes, ${rideBad} lost storms)`)
+}
 
 // walk sprites (#1135): 4 facings x 3 frames of a procedurally drawn Avatar,
 // provable headless with a recording ctx — a facing that never turns, legs
