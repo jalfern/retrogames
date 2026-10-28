@@ -21,7 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
-import { createScene, buildFighter, buildStage, createPortraitRenderer } from './render.js'
+import { createScene, buildFighter, buildStage, createPortraitRenderer, guardShimmer, guardShatter, SHIMMER_FRAMES, SHATTER_FRAMES } from './render.js'
 import { STAGES } from './stages.js'
 
 const SIM_MS = FIXED_DT
@@ -107,6 +107,7 @@ const ViperPitGame = () => {
         let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
         let chipFx = [0, 0]
+        let shimmerFx = [0, 0], shatterFx = [0, 0]
         let koHold = null, slowFlip = false
         const KO_HOLD_MS = 1150, KO_SLOW_MS = 520
         let lagHp = [100, 100]
@@ -250,7 +251,7 @@ const ViperPitGame = () => {
             gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
-            chipFx = [0, 0]; koHold = null; koFxRound = 0
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0
             finishFx = 0; finishText = ''
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
@@ -370,7 +371,7 @@ const ViperPitGame = () => {
             rebuildRigs(); rebuildStage()
             audioController.startMusic(stage.bed)
             lagHp = [100, 100]
-            chipFx = [0, 0]; koHold = null; koFxRound = 0
+            chipFx = [0, 0]; shimmerFx = [0, 0]; shatterFx = [0, 0]; koHold = null; koFxRound = 0
         }
         attractDemo()
 
@@ -425,6 +426,9 @@ const ViperPitGame = () => {
                 } else if (e.kind === 'block') {
                     audioController.playTone(640, 0.03, 'square', 0.05)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.35, 0xbfd8ff)
+                    const dfr = m.fighters[e.by], atk = m.fighters[e.by === 0 ? 1 : 0]
+                    shimmerFx[e.by] = SHIMMER_FRAMES
+                    scene.shield(dfr.x, atk.x >= dfr.x ? 1 : -1, 0x9ad8ff)
                 } else if (e.kind === 'crush') {
                     // guard break — the defender's guard shatters: a hard crack,
                     // a screen jolt, and a big punish window opens.
@@ -434,6 +438,8 @@ const ViperPitGame = () => {
                     audioController.playNoise(0.18, 0.18)
                     audioController.playTone(70, 0.2, 'square', 0.1)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.3, 0x39d8c8)
+                    shatterFx[e.by] = SHATTER_FRAMES
+                    scene.shatter(m.fighters[e.by].x, 1.35)
                 } else if (e.kind === 'finish') {
                     shake = 18; flashT = 26; finishFx = 200
                     finishText = (m.fighters[e.by].def.finish || 'FINISH').toUpperCase()
@@ -623,6 +629,27 @@ const ViperPitGame = () => {
                     hctx.fillRect(i === 0 ? mx : mx + mw - mw, gy, mw, gh)
                     hctx.fillStyle = crushed ? '#ff5a3c' : (gfrac < 0.28 ? (Math.sin(gs.tick * 0.5) > 0 ? '#ff5a3c' : '#c22a1c') : '#39d8c8')
                     hctx.fillRect(i === 0 ? mx : mx + mw - mw * gfrac, gy, mw * gfrac, gh)
+                    if (shimmerFx[i] > 0) {
+                        shimmerFx[i]--
+                        const sk = guardShimmer(shimmerFx[i] / SHIMMER_FRAMES)
+                        hctx.fillStyle = `rgba(150,235,255,${(sk.a * 0.5).toFixed(2)})`
+                        hctx.fillRect(mx, gy, mw, gh)
+                        const swx = mx + mw * sk.sweep
+                        hctx.fillStyle = `rgba(235,255,250,${sk.a.toFixed(2)})`
+                        hctx.fillRect(Math.min(mx + mw - 3, Math.max(mx, swx - 1.5)), gy - 1, 3, gh + 2)
+                    }
+                    if (shatterFx[i] > 0) {
+                        shatterFx[i]--
+                        const bk = guardShatter(shatterFx[i] / SHATTER_FRAMES)
+                        hctx.fillStyle = `rgba(255,255,255,${bk.a.toFixed(2)})`
+                        hctx.fillRect(mx, gy, mw, gh)
+                        hctx.strokeStyle = `rgba(90,20,30,${bk.a.toFixed(2)})`
+                        hctx.lineWidth = 1
+                        for (let cr = 0; cr < bk.ticks; cr++) {
+                            const cx2 = mx + mw * ((cr + 0.5) / bk.ticks)
+                            hctx.beginPath(); hctx.moveTo(cx2 - 2, gy + gh + 1); hctx.lineTo(cx2 + 2, gy - 1); hctx.stroke()
+                        }
+                    }
                     if (comboFx[i] > 0) {
                         comboFx[i]--
                         const pop = comboFx[i] > 54 ? 1 + (comboFx[i] - 54) / 40 : 1
@@ -953,7 +980,11 @@ const ViperPitGame = () => {
                 },
                 midKick() { if (stageFx && stageFx.mid) stageFx.mid.force = 1 },
                 guard() { return gs ? gs.fighters.map((f) => Math.round(f.guard)) : null },
-                forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0 } },
+                forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0; shatterFx[1] = SHATTER_FRAMES; if (scene) scene.shatter(f.x, 1.35) } },
+                forceBlock(i) { const k = i | 0; if (gs && shimmerFx) { shimmerFx[k] = SHIMMER_FRAMES; if (scene) scene.shield(gs.fighters[k].x, gs.fighters[k === 0 ? 1 : 0].x >= gs.fighters[k].x ? 1 : -1, 0x9ad8ff) } },
+                blockFx() { return shimmerFx.map((v) => v > 0) },
+                breakFx() { return shatterFx.map((v) => v > 0) },
+                shieldFx() { return scene ? scene.fxCount() : null },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 koFx() {

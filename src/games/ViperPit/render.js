@@ -154,6 +154,19 @@ export function buildFighter(def) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const ease = (t) => t * t * (3 - 2 * t)
 
+export const SHIMMER_FRAMES = 18
+export const SHATTER_FRAMES = 26
+
+export function guardShimmer(k) {
+    const p = 1 - clamp(k, 0, 1)
+    return { a: Math.sin(Math.PI * p) * 0.85, r: 0.5 + p * 0.55, sweep: p }
+}
+
+export function guardShatter(k) {
+    const p = 1 - clamp(k, 0, 1)
+    return { a: Math.pow(clamp(k, 0, 1), 1.4), spread: p * 1.7, ring: 0.45 + p * 2.3, ticks: 8 }
+}
+
 // -- select-screen portraits (#1106) -------------------------------------------------
 // A tiny second GL view renders each fighter, posed in their OWN idle stance,
 // into a card-sized canvas the 2D HUD composites onto the select grid.
@@ -555,6 +568,11 @@ export function createScene(canvas) {
 
     const sparks = []
     const sparkGeo = new THREE.SphereGeometry(0.12, 6, 5)
+    const shieldGeo = new THREE.TorusGeometry(0.55, 0.05, 6, 22, Math.PI * 1.25)
+    const ringGeo = new THREE.TorusGeometry(0.5, 0.035, 6, 24)
+    const shardGeo = new THREE.BoxGeometry(0.18, 0.05, 0.02)
+    const shieldFx = []
+    const shatterFx = []
 
     return {
         renderer, scene, cam,
@@ -568,6 +586,30 @@ export function createScene(canvas) {
                 sparks.push({ mesh: m, t: 14, vx: Math.cos(a) * 0.06, vy: Math.sin(a) * 0.05 + 0.03 })
             }
         },
+        shield(x, dir, color) {
+            const m = new THREE.Mesh(shieldGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+            m.position.set(x + (dir >= 0 ? 0.5 : -0.5), 1.35, 0.45)
+            m.rotation.z = dir >= 0 ? -Math.PI * 0.625 : Math.PI * 0.375
+            scene.add(m)
+            shieldFx.push({ mesh: m, t: SHIMMER_FRAMES })
+        },
+        shatter(x, y) {
+            const mk = (geo) => new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x39d8c8, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }))
+            const ring = mk(ringGeo)
+            ring.position.set(x, y, 0.45)
+            scene.add(ring)
+            const shards = []
+            for (let i = 0; i < guardShatter(1).ticks; i++) {
+                const a = (i / guardShatter(1).ticks) * Math.PI * 2
+                const s = mk(shardGeo)
+                s.rotation.z = a
+                s.position.set(x, y, 0.45)
+                scene.add(s)
+                shards.push({ mesh: s, ux: Math.cos(a), uy: Math.sin(a) * 0.8 })
+            }
+            shatterFx.push({ ring, shards, t: SHATTER_FRAMES, x, y })
+        },
+        fxCount() { return { shields: shieldFx.length, bursts: shatterFx.length } },
         sync(m, rigs, stageFx, tSec, shake, cine) {
             const [fa, fb] = m.fighters
             const mid = (fa.x + fb.x) / 2
@@ -683,6 +725,30 @@ export function createScene(canvas) {
                 s.mesh.position.x += s.vx; s.mesh.position.y += s.vy; s.vy -= 0.004
                 s.mesh.material.opacity = s.t / 14
                 if (s.t <= 0) { scene.remove(s.mesh); sparks.splice(i, 1) }
+            }
+            for (let i = shieldFx.length - 1; i >= 0; i--) {
+                const s = shieldFx[i]
+                const g = guardShimmer(s.t / SHIMMER_FRAMES)
+                s.mesh.material.opacity = g.a
+                s.mesh.scale.set(g.r / 0.55, g.r / 0.55, 1)
+                s.t--
+                if (s.t <= 0) { scene.remove(s.mesh); shieldFx.splice(i, 1) }
+            }
+            for (let i = shatterFx.length - 1; i >= 0; i--) {
+                const s = shatterFx[i]
+                const g = guardShatter(s.t / SHATTER_FRAMES)
+                s.ring.material.opacity = g.a * 0.9
+                s.ring.scale.set(g.ring / 0.5, g.ring / 0.5, 1)
+                for (const sh of s.shards) {
+                    sh.mesh.material.opacity = g.a
+                    sh.mesh.position.set(s.x + sh.ux * g.spread, s.y + sh.uy * g.spread, 0.45)
+                }
+                s.t--
+                if (s.t <= 0) {
+                    scene.remove(s.ring)
+                    for (const sh of s.shards) scene.remove(sh.mesh)
+                    shatterFx.splice(i, 1)
+                }
             }
         },
         render() { renderer.render(scene, cam) },

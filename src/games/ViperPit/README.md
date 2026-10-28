@@ -39,6 +39,13 @@ the #1096 options switched on.
   while the fighter isn't guarding and resets full when a crush wears off.
   Engine option `createMatch({ guardCrush: true })` — off by default so IRON
   RING sims stay bit-identical; the netplay hash is deterministic either way.
+- **Guard feedback (#1106)**: blocking now shows. A blocked hit shimmers — an
+  additive teal arc in front of the defender (facing the attacker) plus a cyan
+  glow + light sweep across that fighter's guard gauge. A broken guard
+  shatters — the gauge flashes white-hot with crack ticks, and a teal ring
+  opens at the defender as shards fly off. Both fx are pure-curve driven
+  (`guardShimmer`/`guardShatter`, 18/26 frames) and presentation-only — the
+  engine and hashes never see them.
 - **Finisher cinematics (#1106)**: a finisher that ends the round plays out as
   a 3-beat sequence over the KO freeze — the loser is scripted through the
   signature beats (KRAX grab→strike→slam, VESS grab→flip→dry-land, NYX a triple
@@ -114,12 +121,16 @@ the #1096 options switched on.
   periodic/forced train sweep, midground breeze + fight-rush kick).
   `poseFinisherBeat` scripts the loser through a finisher's beats, and `sync`
   takes a `cine` handle (camera punch-in + victim beat pose) for the FINISH
-  cinematic.
+  cinematic. `guardShimmer`/`guardShatter` are pure guard-fx curves; `shield`
+  (arc mesh) and `shatter` (ring + 8 shards) spawn them, `sync` animates and
+  recycles the pools, and `fxCount()` reports the live pools for probes.
 - `src/games/ViperPit/index.jsx` — cabinet: attract CPU-vs-CPU demo, select,
   street ladder (NYX→KRAX easy→insane), local 2P, #1039-lobby netplay with the
   9-verb pad wire + hash-every-30, HUD canvas, FINISH flash/letterbox juice.
   DEV `__viperPitTest` also exposes `fx()` (stage-life snapshot), `stage(i)`
-  (jump to a pit by index) and `sweep()` (force the train pass) for probes.
+  (jump to a pit by index), `sweep()` (force the train pass) and the guard-fx
+  probes `forceBlock(i)`/`forceCrush()`, `blockFx()`, `breakFx()`,
+  `shieldFx()` (live GL pool counts).
 - **Select screen (#1106)**: each card shows the fighter's OWN rig rendered by
   `createPortraitRenderer` (a mini 240x187 GL view, preserveDrawingBuffer so
   the HUD `drawImage`s it; card aspect matches the canvas so nothing
@@ -177,7 +188,10 @@ the #1096 options switched on.
      on a forced `midKick()`, the finisher cinematic running its multi-beat
      sequence via `forceFinish()` + `cine()`, the qcb counter live in the sim,
      a forced guard-crush entering and clearing the crush stun with the gauge
-     refilling via `forceCrush()` + `guard()`, the five idle stances reading
+     refilling via `forceCrush()` + `guard()`, guard-fx live via
+     `forceBlock()`/`forceCrush()` + `blockFx()`/`breakFx()`/`shieldFx()` (arc
+     in the GL pool, gauge strip pixel-audited for the cyan shimmer and the
+     white-hot break flash), the five idle stances reading
      distinct live and front/back/low/overhead hit reactions differing via
      `pose()` + `forceHit()`, a real ArrowRight hold walking with the gait
      readable live — legs alternating, hips bobbing per step, KRAX striding
@@ -200,5 +214,7 @@ the #1096 options switched on.
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
   an empty gauge CRUSHES into a long punish stun (chip + `GUARD BREAK`), the
-  gauge regens and resets full. A live guard/stun meter is drawn above the bar.
+  gauge regens and resets full. A live guard/stun meter is drawn above the
+  bar, and the feedback reads now too — shimmer arc + gauge cyan sweep on
+  every block, white-hot flash + shard burst on the break.
 - Net select: guest pick reaches the host only if sent before the host starts.
