@@ -114,7 +114,12 @@ stat you pick at the bench.
    same foe traces the same path (the harness can trust it), no
    `Math.random` anywhere near it. `mobSlot` mirrors `paintCombat`'s
    projection exactly, so a bolt lands where its target is drawn; a bolt
-   for an already-gone target simply has no slot.
+    for an already-gone target simply has no slot.
+    Combat opens with staging, also presentation-only: on an ambush the group
+    slides in from the right (300 ms per mob + 70 ms stagger, ease-out, off
+    `combatT0` — a performance.now() the sim never sees, so `stateHash` is
+    untouched), and under the crown the `THE HOLLOW KING — NO FLIGHT` banner
+    pulses on the beat (`sin(bob/5)`) while the field dims with it.
 - Harness hooks (DEV): `window.__deepTest` (probe/start/cmd/setup/hash),
   DebugKit with PROGNOSIS (re-solves the LIVE mutated state).
 
