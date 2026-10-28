@@ -20,8 +20,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
-import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes } from './fighters.js'
-import { createScene, buildFighter, buildStage } from './render.js'
+import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
+import { createScene, buildFighter, buildStage, createPortraitRenderer } from './render.js'
 import { STAGES } from './stages.js'
 
 const SIM_MS = FIXED_DT
@@ -98,6 +98,7 @@ const ViperPitGame = () => {
         let p1Char = 'riv', p2Char = 'nyx'
         let p2Picked = false
         let cursor = 3
+        let portraits = null, portraitR = null, pickLine = null, cardRects = []
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
@@ -207,6 +208,35 @@ const ViperPitGame = () => {
             stageFx = buildStage(scene.scene, stage)
         }
 
+        // ---- select screen (#1106) ------------------------------------------------------
+        // rigs rendered to card portraits (once), a voice-register hover blip,
+        // and the chosen fighter's intro line printed from pick through the
+        // pre-fight intro. Presentation only — the engine never sees any of it.
+        const ensurePortraits = () => {
+            if (portraits) return portraits
+            try {
+                portraitR = createPortraitRenderer(240)
+                const map = {}
+                for (const d of ROSTER) map[d.id] = portraitR.render(d)
+                portraits = map
+            } catch { portraits = null }
+            return portraits
+        }
+        const hoverBlip = (def) => {
+            const n = voiceNotes(def)
+            audioController.playTone(n[0], 0.05, def.voice.wave, 0.08)
+            audioController.playTone(n[1], 0.06, def.voice.wave, 0.08, 0.055)
+        }
+        const pickSting = (def) => {
+            const n = voiceNotes(def)
+            audioController.playTone(n[2], 0.09, def.voice.wave, 0.1)
+            audioController.playTone(n[1], 0.14, def.voice.wave, 0.09, 0.09)
+        }
+        const hoverSelect = (d) => {
+            cursor = (cursor + d + ROSTER.length) % ROSTER.length
+            hoverBlip(ROSTER[cursor])
+        }
+
         // ---- flow ---------------------------------------------------------------------
         const startFight = (seed, m) => {
             mode = m
@@ -236,6 +266,7 @@ const ViperPitGame = () => {
         }
 
         const atAttract = () => {
+            pickLine = null
             if (net.active) { setSc('select'); return }
             p2Picked = false
             setSc('select')
@@ -243,6 +274,8 @@ const ViperPitGame = () => {
 
         const atSelect = () => {
             const c = ROSTER[cursor]
+            pickLine = { text: `${c.name} — ${c.intro}`, t: 150 }
+            pickSting(c)
             if (net.active) {
                 if (net.role === 'host') {
                     net.lobby.start({ seed: (seedCounter = (seedCounter * 1103515245 + 12345) >>> 0), hostChar: c.id, guestChar: guestPick.char || seededChar(seedCounter, c.id) })
@@ -280,8 +313,8 @@ const ViperPitGame = () => {
             if (scr === 'select') {
                 if (e.code === 'Digit1' && !net.active) mode = 'cpu'
                 if (e.code === 'Digit2' && !net.active) mode = 'local'
-                if (e.code === 'ArrowLeft' || e.code === 'KeyA') cursor = (cursor + ROSTER.length - 1) % ROSTER.length
-                if (e.code === 'ArrowRight' || e.code === 'KeyD') cursor = (cursor + 1) % ROSTER.length
+                if (e.code === 'ArrowLeft' || e.code === 'KeyA') hoverSelect(-1)
+                if (e.code === 'ArrowRight' || e.code === 'KeyD') hoverSelect(1)
                 if (e.code === 'Space' || e.code === 'Enter' || e.code === 'NumpadEnter') atSelect()
                 if (/^Digit[3-7]$/.test(e.code)) { cursor = Number(e.code.slice(5)) - 3; atSelect() }
                 return
@@ -527,6 +560,7 @@ const ViperPitGame = () => {
         const hex = (n) => `#${n.toString(16).padStart(6, '0')}`
         const drawHud = (W, H) => {
             hctx.clearRect(0, 0, W, H)
+            if (pickLine && pickLine.t > 0) pickLine.t--
             const scr = screenRef.current
             if (!gs) return
             const f = gs.fighters
@@ -616,6 +650,14 @@ const ViperPitGame = () => {
                     hctx.strokeText(bannerText, W / 2, H * 0.42)
                     hctx.fillText(bannerText, W / 2, H * 0.42)
                 }
+                if (pickLine && pickLine.t > 0 && gs.phase === 'intro') {
+                    ui(Math.max(13, H * 0.03))
+                    hctx.textAlign = 'center'
+                    hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
+                    hctx.fillStyle = `rgba(255,246,232,${Math.min(1, pickLine.t / 30 + 0.25).toFixed(2)})`
+                    hctx.strokeText(pickLine.text, W / 2, H * 0.72)
+                    hctx.fillText(pickLine.text, W / 2, H * 0.72)
+                }
                 if (finishFx > 0) {
                     finishFx--
                     ui(Math.max(20, H * 0.052))
@@ -695,24 +737,34 @@ const ViperPitGame = () => {
                 hctx.fillText(net.active ? `ROOM ${net.code || '····'}` : '1 STREET LADDER     2 LOCAL 2P', W / 2, H * 0.92)
             }
             if (scr === 'select') {
+                ensurePortraits()
                 hctx.fillStyle = 'rgba(5,4,10,0.82)'; hctx.fillRect(0, 0, W, H)
                 ui(Math.max(20, H * 0.045))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = '#59e0c8'
                 hctx.fillText(p2Picked ? 'PLAYER 2 — CHOOSE' : net.active ? (net.role === 'host' ? 'HOST — CHOOSE' : 'GUEST — CHOOSE') : 'CHOOSE YOUR FIGHTER', W / 2, H * 0.12)
-                const cw = Math.min(W * 0.3, H * 0.5), ch = cw * 0.78
                 const total = ROSTER.length
+                const cw = Math.min(H * 0.5, (W * 0.94) / (total * 1.06)), ch = cw * 0.78
                 ROSTER.forEach((rd, i) => {
                     const col = i % 5
                     const x = W / 2 - (cw * 1.06 * total) / 2 + col * (cw * 1.06), y = H * 0.24
+                    cardRects[i] = { id: rd.id, x, y, w: cw, h: ch }
+                    const hovered = i === cursor
                     hctx.fillStyle = '#12121c'; hctx.fillRect(x, y, cw, ch)
-                    hctx.strokeStyle = i === cursor ? '#59e0c8' : '#31364a'
-                    hctx.lineWidth = i === cursor ? 3 : 1
+                    const pt = portraits && portraits[rd.id]
+                    if (pt) {
+                        if (hovered) { hctx.shadowColor = 'rgba(89,224,200,0.75)'; hctx.shadowBlur = Math.max(10, W * 0.014) }
+                        hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)
+                        hctx.shadowBlur = 0
+                    } else {
+                        hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, y + ch * 0.12, cw * 0.2, ch * 0.2)
+                        hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.28)
+                        hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.05)
+                        hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, y + ch * 0.64, cw * 0.28, ch * 0.1)
+                    }
+                    hctx.strokeStyle = hovered ? '#59e0c8' : '#31364a'
+                    hctx.lineWidth = hovered ? 3 : 1
                     hctx.strokeRect(x, y, cw, ch)
-                    hctx.fillStyle = hex(rd.color.skin); hctx.fillRect(x + cw * 0.4, y + ch * 0.12, cw * 0.2, ch * 0.2)
-                    hctx.fillStyle = hex(rd.color.top); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.28)
-                    hctx.fillStyle = hex(rd.color.accent); hctx.fillRect(x + cw * 0.32, y + ch * 0.36, cw * 0.36, ch * 0.05)
-                    hctx.fillStyle = hex(rd.color.pants); hctx.fillRect(x + cw * 0.36, y + ch * 0.64, cw * 0.28, ch * 0.1)
                     ui(Math.max(11, H * 0.022))
                     hctx.textAlign = 'center'
                     hctx.fillStyle = '#fff'
@@ -721,6 +773,17 @@ const ViperPitGame = () => {
                     hctx.fillStyle = 'rgba(190,195,215,0.85)'
                     hctx.fillText(rd.tag, x + cw / 2, y + ch * 0.95)
                 })
+                ui(Math.max(10, H * 0.019))
+                hctx.textAlign = 'center'
+                hctx.fillStyle = 'rgba(89,224,200,0.85)'
+                hctx.fillText(`"${ROSTER[cursor].intro}"`, W / 2, H * 0.24 + ch + Math.max(22, H * 0.042))
+                if (pickLine && pickLine.t > 0) {
+                    ui(Math.max(13, H * 0.03))
+                    hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
+                    hctx.fillStyle = `rgba(255,246,232,${Math.min(1, pickLine.t / 30 + 0.2).toFixed(2)})`
+                    hctx.strokeText(pickLine.text, W / 2, H * 0.74)
+                    hctx.fillText(pickLine.text, W / 2, H * 0.74)
+                }
                 ui(Math.max(11, H * 0.021))
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(255,255,255,0.9)'
@@ -858,6 +921,36 @@ const ViperPitGame = () => {
                 finisherReady() { if (gs) { gs.fighters[0].meter = 100; gs.fighters[1].hp = Math.min(gs.fighters[1].hp, 25) } },
                 stage(i) { startFight(i, 'cpu') },
                 sweep() { if (stageFx && stageFx.sweep) stageFx.sweep.force = performance.now() / 1000 },
+                selectInfo() {
+                    return {
+                        cursor,
+                        id: ROSTER[cursor] ? ROSTER[cursor].id : null,
+                        portraits: portraits ? Object.keys(portraits).length : 0,
+                        line: pickLine && pickLine.t > 0 ? pickLine.text : null,
+                    }
+                },
+                hover(d) { hoverSelect(d | 0) },
+                pick() { atSelect() },
+                cardRects() { return cardRects.slice() },
+                portraitStats() {
+                    if (!portraits) return null
+                    const out = {}
+                    for (const [id, cv] of Object.entries(portraits)) {
+                        const c2 = document.createElement('canvas')
+                        c2.width = cv.width; c2.height = cv.height
+                        const g2 = c2.getContext('2d')
+                        g2.drawImage(cv, 0, 0)
+                        const d = g2.getImageData(0, 0, c2.width, c2.height).data
+                        let ink = 0, head = 0
+                        for (let y = 0; y < c2.height; y++) {
+                            for (let x = 0; x < c2.width; x++) {
+                                if (d[(y * c2.width + x) * 4 + 3] > 24) { ink++; if (y < c2.height * 0.4) head++ }
+                            }
+                        }
+                        out[id] = { ink: +(ink / (c2.width * c2.height)).toFixed(3), head }
+                    }
+                    return out
+                },
                 midKick() { if (stageFx && stageFx.mid) stageFx.mid.force = 1 },
                 guard() { return gs ? gs.fighters.map((f) => Math.round(f.guard)) : null },
                 forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0 } },
@@ -969,6 +1062,7 @@ const ViperPitGame = () => {
             if (net.lobby && net.lobby.destroy) net.lobby.destroy()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__viperPitTest }
             scene.renderer.dispose()
+            if (portraitR) portraitR.dispose()
             if (wrap.contains(gl)) wrap.removeChild(gl)
             if (wrap.contains(hud)) wrap.removeChild(hud)
             void dbg

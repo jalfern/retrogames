@@ -18,6 +18,7 @@ function sp(base, ex, sup) {
 const defs = [
     {
         id: 'nyx', name: 'NYX', tag: 'QUIET ENTRY', cpu: 'easy',
+        voice: { base: 300, wave: 'sine' },
         stance: { lean: 0.12, bobAmp: 0.022, bobHz: 2.8, dip: -0.06, head: 0.12, arms: [{ sh: -0.62, el: -1.95, z: 0.55 }, { sh: -0.28, el: -2.1, z: -0.5 }], legs: [{ hip: 0.16, kn: -0.22 }, { hip: -0.18, kn: -0.14 }] },
         intro: 'I DO NOT TALK BACK', win: 'NOTHING TO SEE', lose: 'YOU GET ANOTHER SHOT',
         cpuStyle: { zone: 0.18, jump: 0.3 },
@@ -40,6 +41,7 @@ const defs = [
     },
     {
         id: 'cinder', name: 'CINDER', tag: 'BRING THE HEAT', cpu: 'normal',
+        voice: { base: 180, wave: 'sawtooth' },
         stance: { lean: 0.0, bobAmp: 0.012, bobHz: 1.8, dip: -0.02, head: -0.05, arms: [{ sh: -0.3, el: -1.3, z: 0.35 }, { sh: -0.55, el: -2.15, z: -0.5 }], legs: [{ hip: 0.05, kn: -0.1 }, { hip: -0.16, kn: -0.2 }] },
         intro: 'YOU ASKED FOR HEAT', win: 'BURNT OUT', lose: 'STILL GOT A SPARK',
         cpuStyle: { zone: 0.55 },
@@ -61,6 +63,7 @@ const defs = [
     },
     {
         id: 'vess', name: 'VESS', tag: 'UPSIDE THROUGH YOU', cpu: 'hard',
+        voice: { base: 420, wave: 'square' },
         stance: { lean: 0.07, bobAmp: 0.035, bobHz: 3.4, dip: 0.02, head: -0.1, arms: [{ sh: -0.42, el: -1.35, z: 0.4 }, { sh: -0.38, el: -1.45, z: -0.4 }], legs: [{ hip: 0.1, kn: -0.28 }, { hip: -0.12, kn: -0.24 }] },
         intro: 'CATCH ME IF YOU CAN', win: 'UPSIDE DOWN', lose: 'THAT ONE LANDED',
         cpuStyle: { zone: 0.22, jump: 0.5 },
@@ -83,6 +86,7 @@ const defs = [
     },
     {
         id: 'riv', name: 'RIV', tag: 'LAST WORD STANDING', cpu: 'brutal',
+        voice: { base: 240, wave: 'sawtooth' },
         stance: { lean: 0.05, bobAmp: 0.015, bobHz: 2.2, dip: 0.0, head: 0.0, arms: [{ sh: -0.5, el: -1.7, z: 0.5 }, { sh: -0.35, el: -1.9, z: -0.45 }], legs: [{ hip: 0.05, kn: -0.12 }, { hip: -0.05, kn: -0.1 }] },
         intro: 'I END CONVERSATIONS', win: "LAST WORD'S MINE", lose: 'SAY IT AGAIN',
         cpuStyle: { zone: 0.4 },
@@ -107,6 +111,7 @@ const defs = [
     },
     {
         id: 'krax', name: 'KRAX', tag: 'SOLD BY THE KILO', cpu: 'insane',
+        voice: { base: 120, wave: 'square' },
         stance: { lean: 0.16, bobAmp: 0.028, bobHz: 1.6, dip: -0.04, head: 0.18, arms: [{ sh: -0.3, el: -1.15, z: 0.9 }, { sh: -0.2, el: -1.25, z: -0.9 }], legs: [{ hip: 0.24, kn: -0.3 }, { hip: -0.24, kn: -0.28 }] },
         intro: 'BIG BILL COMING', win: 'PAID IN FULL', lose: "THAT'LL BE EXTRA",
         cpuStyle: { zone: 0.05, jump: 0.04 },
@@ -141,6 +146,14 @@ export const LADDER = ['nyx', 'cinder', 'vess', 'riv', 'krax']
 export function introQuotes(a, b) {
     return { a: `${a.name} — ${a.intro}`, b: `${b.name} — ${b.intro}` }
 }
+// #1106 — the select screen: each fighter gets a voice register (hover blips
+// and the pick sting synthesize two notes of it) and an intro line printed on
+// the pick. Kept pure so viperpitcheck can pin the roster table without a browser.
+export function voiceNotes(def) {
+    const v = def.voice || { base: 240, wave: 'square' }
+    return [v.base, Math.round(v.base * 1.5), Math.round(v.base * 0.66)]
+}
+
 export function koQuotes(m) {
     const wIdx = (m.phase === 'done' && m.winner != null)
         ? m.winner

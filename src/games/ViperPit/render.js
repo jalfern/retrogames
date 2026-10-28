@@ -154,6 +154,40 @@ export function buildFighter(def) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const ease = (t) => t * t * (3 - 2 * t)
 
+// -- select-screen portraits (#1106) -------------------------------------------------
+// A tiny second GL view renders each fighter, posed in their OWN idle stance,
+// into a card-sized canvas the 2D HUD composites onto the select grid.
+// preserveDrawingBuffer so drawImage can read the frame after the render — the
+// js-dos lesson, applied before it bites here. Presentation only.
+export function createPortraitRenderer(w = 240) {
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = Math.round(w * 0.78)
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, preserveDrawingBuffer: true })
+    renderer.setSize(canvas.width, canvas.height, false)
+    renderer.setClearColor(0x000000, 0)
+    const scene = new THREE.Scene()
+    scene.add(new THREE.HemisphereLight(0x39415a, 0x0c0a08, 1.1))
+    const key = new THREE.DirectionalLight(0xffe6c8, 2.1); key.position.set(2.4, 3.6, 4.2); scene.add(key)
+    const rim = new THREE.DirectionalLight(0x59e0c8, 1.6); rim.position.set(-2.8, 1.9, -3); scene.add(rim)
+    const cam = new THREE.PerspectiveCamera(30, canvas.width / canvas.height, 0.1, 20)
+    cam.position.set(0, 1.6, 7.4)
+    cam.lookAt(0, 1.5, 0)
+    return {
+        canvas,
+        render(def) {
+            const rig = buildFighter(def)
+            rig.root.rotation.y = 0.55
+            poseFighter(rig, { st: 'idle', move: null, sf: 0, x: 0, y: 0, vx: 0, facing: 1, def }, 0.25)
+            scene.add(rig.root)
+            renderer.render(scene, cam)
+            scene.remove(rig.root)
+            return canvas
+        },
+        dispose() { renderer.dispose() },
+    }
+}
+
 function attackProgress(f) {
     const mv = f.def && f.def.moves ? f.def.moves[f.move] : null
     if (!mv) return { p: 0, ph: 'idle' }

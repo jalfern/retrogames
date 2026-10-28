@@ -120,6 +120,18 @@ the #1096 options switched on.
   9-verb pad wire + hash-every-30, HUD canvas, FINISH flash/letterbox juice.
   DEV `__viperPitTest` also exposes `fx()` (stage-life snapshot), `stage(i)`
   (jump to a pit by index) and `sweep()` (force the train pass) for probes.
+- **Select screen (#1106)**: each card shows the fighter's OWN rig rendered by
+  `createPortraitRenderer` (a mini 240x187 GL view, preserveDrawingBuffer so
+  the HUD `drawImage`s it; card aspect matches the canvas so nothing
+  stretches; front three-quarter framing, teal rim light). Hovering blips the
+  hovered fighter's `voice` register (`voiceNotes` in fighters.js, two notes
+  of base + fifth) and prints their intro line under the grid; the pick stings
+  the register's low pair and carries `NAME — INTRO` from the pick through the
+  pre-fight intro. The card grid sizes from the viewport so all five fit.
+  All presentation — the engine and hashes never see it. DEV hooks:
+  `selectInfo()` (cursor/id/portraits/line), `hover(d)`, `pick()`,
+  `portraitStats()` (per-portrait ink + head-region pixels), `cardRects()`
+  (live card geometry for the on-screen fit + portrait-ink pixel audit).
 
 ## Rules worth knowing
 
@@ -180,7 +192,10 @@ the #1096 options switched on.
 
 ## Honest gaps (polish-pass candidates)
 
-- No intro/outround dialogue lines; win/lose quotes are QA polish.
+- Intro + win/lose quote lines landed (#1106); deeper outround replies (loser
+  sub-lines, taunt-on-win) remain open. The select screen landed too
+  (portraits + hover blips + intro-on-pick); portrait pose-per-card and a
+  hover portrait zoom would be the next polish.
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;
