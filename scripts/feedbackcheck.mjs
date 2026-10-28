@@ -13,6 +13,7 @@ import { readFileSync } from 'node:fs'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
     corsOrigin, corsHeaders, CORS_ALLOW_HEADERS, FB_SHOT_PLACEHOLDER, screenshotMarkdown,
+    quarantineNote,
 } from '../relay/core.js'
 import {
     makeRing, captureFeedback, submitFeedback, probeFeedback, FB_RELAY,
@@ -67,6 +68,25 @@ ok('issue: screenshot becomes a placeholder, never a fake "attached" claim',
     issueJon.body.includes(FB_SHOT_PLACEHOLDER) && !/data URL attached/.test(issueJon.body))
 ok('shot: uploaded asset renders as markdown', screenshotMarkdown('https://github.githubassets.com/x/shot.png') === '![feedback screenshot](https://github.githubassets.com/x/shot.png)')
 ok('shot: failed upload says so, no broken image tag', !screenshotMarkdown(null).includes('![') && !screenshotMarkdown('javascript:alert(1)').includes('!['))
+
+// ── #737 follow-up: quarantine must explain itself, and /status must be honest ─
+// Jon filed one report from his iPhone; it landed behind needs-approval with zero
+// explanation and the screenshot upload failed silently — "what happened to my
+// test?" was unanswerable from the board. Every quarantined body now carries the
+// why; every failed upload carries the HTTP status.
+ok('quarantine: Jon gets no note', quarantineNote({ key: 'K' }, true) === null)
+ok('quarantine: key offered but rejected says check JON_KEY', /did not match/.test(quarantineNote({ key: 'K9x' }, false)) && /JON_KEY/.test(quarantineNote({ key: 'K9x' }, false)))
+ok('quarantine: no key says open the key link', /no tester key/.test(quarantineNote({}, false)) && /one-time key link/.test(quarantineNote({}, false)))
+ok('quarantine: the note never leaks the key value', !quarantineNote({ key: 'S3cretOneTime' }, false).includes('S3cretOneTime'))
+const qJon = buildFeedbackIssue(good, true)
+const qKey = buildFeedbackIssue({ ...good, key: 'K9x' }, false)
+const qAnon = buildFeedbackIssue(good, false)
+ok('issue: Jon body carries no quarantine line', !qJon.body.includes('Quarantined'))
+ok('issue: rejected-key body explains mismatch + secret', qKey.body.includes('Quarantined') && /did not match/.test(qKey.body))
+ok('issue: no-key body explains the device tier', qAnon.body.includes('Quarantined') && /no tester key/.test(qAnon.body))
+ok('issue: quarantine bodies still never leak secrets', !/K9x|ghp_|github_pat_/i.test(qKey.body + qAnon.body))
+ok('shot: failed upload carries the http status', /http 401/.test(screenshotMarkdown(null, 401)) && !screenshotMarkdown(null, 404).includes('!['))
+ok('shot: statusless failure keeps the honest line', /upload failed/.test(screenshotMarkdown(null)) && !/http/.test(screenshotMarkdown(null)))
 
 // ── client: the input ring trims to the last 30 s ────────────────────────────
 const ring = makeRing()
@@ -132,6 +152,8 @@ ok('cors: ACAO echoes the exact origin (credentials-safe)', corsHeaders('https:/
 const workerSrc = readFileSync(new URL('../relay/worker.js', import.meta.url), 'utf8')
 ok('wiring: worker preflights OPTIONS on the HTTP endpoints', /req\.method === 'OPTIONS'/.test(workerSrc) && /corsHeaders/.test(workerSrc))
 ok('wiring: /status + /feedback answers carry corsHeaders', (workerSrc.match(/json\(/g) || []).length >= 6 && !/Response\.json\(\{ ok: true, service/.test(workerSrc))
+ok('wiring: /status advertises jonKey presence (boolean, no value)', /jonKey:\s*!!env\.JON_KEY/.test(workerSrc) && !/jonKey:\s*env\.JON_KEY[^?]/.test(workerSrc))
+ok('wiring: upload failure routes its status into the issue', /screenshotMarkdown\(null, res\.status\)/.test(workerSrc))
 const chromeSrc = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
 ok('panel: opening the feedback panel toggles the game pause', /onClick=\{toggle\}/.test(chromeSrc) && /const toggle = \(\) => \{[\s\S]*?dispatchPause\(\)/.test(chromeSrc))
 

@@ -36,6 +36,8 @@ async function attachScreenshot(env, number, dataUrl, issueBody) {
         if (res.ok) {
             const j = await res.json()
             markdown = screenshotMarkdown(j && j.browser_download_url)
+        } else {
+            markdown = screenshotMarkdown(null, res.status)
         }
     } catch { /* upload failed: honest fallback line */ }
     try {
@@ -248,8 +250,10 @@ export default {
             // Capability flag (#737): the in-game FEEDBACK button stays hidden until
             // the relay can actually file (deploy + GH secret present), so a PR that
             // ships the client before Jon's deploy never shows a button that 503s.
+            // jonKey (#737 follow-up): presence-only boolean — "the secrets should be
+            // deployed" must be checkable with one curl, without leaking the key.
             const feedback = !!(env.GITHUB_TOKEN && env.GH_REPO)
-            return json({ ok: true, service: 'retrogames-relay', rooms, feedback }, origin, 200)
+            return json({ ok: true, service: 'retrogames-relay', rooms, feedback, jonKey: !!env.JON_KEY }, origin, 200)
         }
         const m = url.pathname.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) return new Response('use /room/CODE', { status: 400 })
