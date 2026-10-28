@@ -616,7 +616,7 @@ if (MUT) {
         ['the letterbox bars slide in and back out', /const slide = Math\.max\(0, Math\.min\(1, el \/ 160, \(KO_HOLD_MS - el\) \/ 160\)\)/],
         ['the round-win card prints name + tag', /WINS ROUND \$\{koHold\.round\}/],
         ['the hold clears when the freeze ends or a new round starts', /gs\.phase !== 'ko' && gs\.phase !== 'done'/],
-        ['the juice resets between matches', /chipFx = \[0, 0\]; koHold = null; koFxRound = 0/],
+        ['the juice resets between matches', /chipFx = \[0, 0\]; shimmerFx = \[0, 0\]; shatterFx = \[0, 0\]; koHold = null; koFxRound = 0/],
         ['the K.O. dedupe resets with each new match (round-1 K.O. fires)', /koHold = null; koFxRound = 0/],
     ]
     for (const [label, re] of juiceGates) ok(re.test(gsrc), `HUD juice gate: ${label}`)
@@ -625,6 +625,76 @@ if (MUT) {
     ok(!/slowFlip = !slowFlip/.test(mutSlow), 'mutant: dead KO slow-mo fails the gate (harness bites)')
     const mutChip = gsrc.replace('chipFx[e.by] = 20', '')
     ok(!/chipFx\[e\.by\] = 20/.test(mutChip), 'mutant: stripped chip flash fails the gate (harness bites)')
+}
+
+// ---- #1106 guard-feedback fx gate ---------------------------------------------------
+// A blocked hit must SHIMMER (arc in front of the defender + cyan sweep over the
+// guard gauge) and a broken guard must SHATTER (white-hot gauge flash + crack
+// ticks + teal ring + shards flying off the fighter). Pure curves are pinned in
+// plain Node; the wiring is source-level; Part B drives the live cabinet through
+// __viperPitTest.forceBlock()/forceCrush()/blockFx()/breakFx()/shieldFx() and
+// pixel-audits the gauge strip.
+{
+    const fs = await import('node:fs')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const { guardShimmer, guardShatter, SHIMMER_FRAMES, SHATTER_FRAMES } = await import(bust('../src/games/ViperPit/render.js'))
+    const ks = [1, 0.75, 0.5, 0.25, 0]
+    const sm = ks.map(guardShimmer)
+    ok(sm[0].a < 0.05 && sm[4].a < 0.05 && sm[2].a > 0.5,
+        `guard-fx: the shimmer ramps up and fades out (alpha ${sm.map((s) => s.a.toFixed(2)).join('→')})`)
+    ok(sm.every((s, i) => i === 0 || s.r > sm[i - 1].r),
+        `guard-fx: the shimmer arc expands as it fades (${sm[0].r.toFixed(2)}→${sm[4].r.toFixed(2)})`)
+    ok(sm[0].sweep === 0 && Math.abs(sm[4].sweep - 1) < 1e-9 && sm.every((s, i) => i === 0 || s.sweep > sm[i - 1].sweep),
+        'guard-fx: the gauge shimmer sweep travels the full strip')
+    const st = ks.map(guardShatter)
+    ok(st[0].a > 0.9 && st[4].a < 0.05,
+        `guard-fx: the break flash starts hot and cools off (alpha ${st.map((s) => s.a.toFixed(2)).join('→')})`)
+    ok(st.every((s, i) => i === 0 || (s.spread > st[i - 1].spread && s.ring > st[i - 1].ring)),
+        `guard-fx: shards fly and the ring opens while the flash cools (${st[0].spread.toFixed(2)}→${st[4].spread.toFixed(2)})`)
+    ok(st.every((s) => s.ticks === 8 && s.a >= 0 && s.a <= 1 && s.ring > 0.4 && s.ring < 3),
+        'guard-fx: shatter output stays sane for every k')
+    ok(SHIMMER_FRAMES === 18 && SHATTER_FRAMES === 26, `guard-fx: the break outlasts the shimmer (${SHIMMER_FRAMES}/${SHATTER_FRAMES} frames)`)
+    const fxGates = [
+        ['a blocked hit arms the defender shimmer', /shimmerFx\[e\.by\] = SHIMMER_FRAMES/],
+        ['the shimmer arc sits in front of the defender, facing the attacker', /scene\.shield\(dfr\.x, atk\.x >= dfr\.x \? 1 : -1, 0x9ad8ff\)/],
+        ['a crushed guard arms the break flash', /shatterFx\[e\.by\] = SHATTER_FRAMES/],
+        ['the shatter burst fires at the defender', /scene\.shatter\(m\.fighters\[e\.by\]\.x, 1\.35\)/],
+        ['the gauge shimmers while a block lands', /guardShimmer\(shimmerFx\[i\] \/ SHIMMER_FRAMES\)/],
+        ['the gauge flashes white-hot on the break', /guardShatter\(shatterFx\[i\] \/ SHATTER_FRAMES\)/],
+        ['the shimmer drains every frame', /if \(shimmerFx\[i\] > 0\) \{\s*shimmerFx\[i\]--/],
+        ['the break flash drains every frame', /if \(shatterFx\[i\] > 0\) \{\s*shatterFx\[i\]--/],
+        ['guard fx reset between matches', /chipFx = \[0, 0\]; shimmerFx = \[0, 0\]; shatterFx = \[0, 0\]; koHold = null/],
+        ['dev hooks drive the live fx', /forceBlock\(i\) \{[\s\S]*blockFx\(\) \{ return shimmerFx\.map/,],
+        ['dev hooks read the GL fx pool', /shieldFx\(\) \{ return scene \? scene\.fxCount\(\)/],
+    ]
+    for (const [label, re] of fxGates) ok(re.test(gsrc), `guard-fx gate: ${label}`)
+    ok(gsrc.includes('shatterFx[1] = SHATTER_FRAMES'), 'guard-fx gate: forceCrush arms the break flash too')
+    const rGates = [
+        ['shield is an additive arc mesh', /new THREE\.TorusGeometry\(0\.55, 0\.05, 6, 22, Math\.PI \* 1\.25\)/],
+        ['break ring mesh', /new THREE\.TorusGeometry\(0\.5, 0\.035, 6, 24\)/],
+        ['shard meshes for the burst', /new THREE\.BoxGeometry\(0\.18, 0\.05, 0\.02\)/],
+        ['the burst is teal additive light', /color: 0x39d8c8, transparent: true, opacity: 0, blending: THREE\.AdditiveBlending/],
+        ['sync animates the shimmer', /guardShimmer\(s\.t \/ SHIMMER_FRAMES\)/],
+        ['sync animates the burst', /guardShatter\(s\.t \/ SHATTER_FRAMES\)/],
+        ['shards fly outward per frame', /sh\.mesh\.position\.set\(s\.x \+ sh\.ux \* g\.spread/],
+        ['shimmer meshes recycle', /shieldFx\.splice\(i, 1\)/],
+        ['burst meshes recycle', /shatterFx\.splice\(i, 1\)/],
+    ]
+    for (const [label, re] of rGates) ok(re.test(rsrc), `guard-fx gate: ${label}`)
+    const mutShim = gsrc.replace('shimmerFx[e.by] = SHIMMER_FRAMES', '')
+    ok(!/shimmerFx\[e\.by\] = SHIMMER_FRAMES/.test(mutShim), 'mutant: stripped block shimmer fails the gate (harness bites)')
+    const mutBrk = gsrc.replace('shatterFx[e.by] = SHATTER_FRAMES', '')
+    ok(!/shatterFx\[e\.by\] = SHATTER_FRAMES/.test(mutBrk), 'mutant: stripped break flash fails the gate (harness bites)')
+    const MUT = path.join(HERE, '../src/games/ViperPit/.render-mut-guardfx.mjs')
+    try {
+        fs.writeFileSync(MUT, rsrc.replace('spread: p * 1.7', 'spread: 0').replace('Math.sin(Math.PI * p) * 0.85', '0'))
+        const mm = await import(bust('../src/games/ViperPit/.render-mut-guardfx.mjs'))
+        const mSpread = [1, 0.75, 0.5, 0.25, 0].map(mm.guardShatter)
+        const mShim = [1, 0.75, 0.5, 0.25, 0].map(mm.guardShimmer)
+        ok(!(mSpread.every((s, i) => i === 0 || s.spread > mSpread[i - 1].spread)), 'mutant: frozen shard spread fails the fly-apart pin (harness bites)')
+        ok(!(mShim[2].a > 0.5), 'mutant: dead shimmer alpha fails the ramp pin (harness bites)')
+    } finally { fs.unlinkSync(MUT) }
 }
 
 // ---- #1106 select-screen gate -----------------------------------------------------
@@ -974,6 +1044,50 @@ if (!MUT) {
         const gAfter = await page.evaluate(() => window.__viperPitTest.guard())
         ok(recovered, 'crush stun clears back to a guarding-ready fighter')
         ok(gAfter && gAfter[1] >= 90, `guard gauge refills after the crush (${gAfter && gAfter[1]})`)
+    }
+
+    // #1106 guard fx: a force-blocked hit shimmers the gauge cyan (HUD pixels)
+    // and puts the arc in the live GL pool; a forced crush flashes the gauge
+    // white-hot and spawns the teal shard burst — then both cool off.
+    {
+        await page.evaluate(() => window.__viperPitTest.stage(1))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
+        const gaugePix = (side) => page.evaluate((s) => {
+            const cv = document.querySelector('canvas[data-viperpit-hud]')
+            const g = cv.getContext('2d')
+            const W = cv.width, H = cv.height
+            const gh = Math.max(4, Math.round(H * 0.009)), gy = Math.round(H * 0.9 - gh - 5)
+            const x0 = s === 0 ? Math.round(W * 0.03) : Math.round(W - 0.03 * W - W * 0.28)
+            const d = g.getImageData(x0, gy - 1, Math.round(W * 0.28), gh + 2).data
+            let white = 0, blue = 0
+            for (let i = 0; i < d.length; i += 4) {
+                if (d[i + 3] < 20) continue
+                if (d[i] > 215 && d[i + 1] > 215 && d[i + 2] > 215) white++
+                blue += d[i + 2]
+            }
+            return { white, blue }
+        }, side)
+        const base = await gaugePix(0)
+        await page.evaluate(() => window.__viperPitTest.forceBlock(0))
+        const armed = await page.evaluate(() => ({ block: window.__viperPitTest.blockFx(), gl: window.__viperPitTest.shieldFx() }))
+        ok(armed.block && armed.block[0] && !armed.block[1], 'guard-fx live: a blocked hit arms the shimmer on the blocker only')
+        ok(armed.gl && armed.gl.shields > 0, `guard-fx live: the shimmer arc is in the scene (${armed.gl && armed.gl.shields})`)
+        let peakBlue = base.blue
+        for (let i = 0; i < 12; i++) { peakBlue = Math.max(peakBlue, (await gaugePix(0)).blue); await page.waitForTimeout(30) }
+        ok(peakBlue > base.blue * 1.03, `guard-fx live: the gauge shimmers cyan under the block (blue ${peakBlue} vs base ${base.blue})`)
+        let released = false
+        for (let i = 0; i < 40 && !released; i++) { released = await page.evaluate(() => window.__viperPitTest.blockFx().every((v) => !v)); if (!released) await page.waitForTimeout(40) }
+        ok(released, 'guard-fx live: the shimmer releases')
+        await page.evaluate(() => window.__viperPitTest.forceCrush())
+        const brk = await page.evaluate(() => ({ fx: window.__viperPitTest.breakFx(), gl: window.__viperPitTest.shieldFx() }))
+        ok(brk.fx && brk.fx[1] && !brk.fx[0], 'guard-fx live: a crushed guard arms the break flash')
+        ok(brk.gl && brk.gl.bursts > 0, `guard-fx live: the shard burst spawns in the scene (${brk.gl && brk.gl.bursts})`)
+        let peakWhite = 0
+        for (let i = 0; i < 14; i++) { peakWhite = Math.max(peakWhite, (await gaugePix(1)).white); await page.waitForTimeout(30) }
+        ok(peakWhite > 150, `guard-fx live: the gauge flashes white-hot on the break (${peakWhite} white px)`)
+        let cooled = false
+        for (let i = 0; i < 60 && !cooled; i++) { cooled = await page.evaluate(() => window.__viperPitTest.breakFx().every((v) => !v)); if (!cooled) await page.waitForTimeout(40) }
+        ok(cooled, 'guard-fx live: the break flash cools off')
     }
 
     // #1106 HUD juice: a hit flashes the health bar; the K.O. drops letterbox
