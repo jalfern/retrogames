@@ -11,6 +11,7 @@ import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, is
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
+import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit } from '../src/games/Britannia/moons.js'
 import { shadeAt } from '../src/games/Britannia/tiles.js'
 
 const path = 'public/games/ultima4.jsdos'
@@ -374,6 +375,28 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/warping: !!S\.warp, warpFlash:/.test(src), 'index.jsx: the harness can see a warp in flight')
     const menuA = (src.split('if (pad.a) {')[1] || '').split('if (pad.b')[0] || ''
     ok(!/S\.x = g\.x; S\.y = g\.y; S\.ship = false/.test(menuA), 'index.jsx: the gate menu no longer cuts to the destination on the spot')
+}
+
+// moon flavor (#1135): every gate bears one of the eight virtue-moons and the
+// sky shows tonight's phase, cycled once per in-world day so the menu can't lie
+// about the moon it claims to follow.
+{
+    ok(MOONS.length === 8 && new Set(MOONS).size === 8 && PHASES.length === 8,
+        'eight named moons and eight moon phases (the original wheel)')
+    ok([0, 1, 2, 3, 4, 5, 6, 7].every(g => MOONS.includes(moonName(g))) && new Set([0, 1, 2, 3, 4, 5, 6, 7].map(moonName)).size === 8,
+        'the eight gates carry eight distinct moons')
+    ok(moonPhase(0) === 0 && moonPhase(DAY_TICKS - 1) === 0 && moonPhase(DAY_TICKS) === 1 && moonPhase(DAY_TICKS * 8) === 0,
+        'the phase rolls once per in-world day and cycles the full wheel')
+    let mono = true
+    for (let p = 0; p <= 4; p++) if (phaseLit(p) !== p / 4) mono = false
+    ok(mono && phaseLit(0) === 0 && phaseLit(4) === 1 && Math.abs(phaseLit(2) - 0.5) < 1e-9 && Math.abs(phaseLit(7) - 0.25) < 1e-9,
+        'the disc lit-fraction runs new→full→new with the phase (0, .25, .5, .75, 1, .75, .5, .25)')
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/moonPhase\(S\.tick\)/.test(src) && /the \$\{PHASES\[ph\]\} rules the sky/.test(src),
+        'index.jsx: the gate menu names tonight\'s moon phase from the world clock')
+    ok(/moonName\(i\)} moon/.test(src), 'index.jsx: each menu row is named for its moon, not "gate N"')
+    ok(/whirls thee to \$\{ROMAN\[S\.warp\.dest\]\} of \$\{moonName\(S\.warp\.dest\)\}/.test(src),
+        'index.jsx: the arrival toast keeps its named destination (the slice did not hollow the warp)')
 }
 
 // land texture (#1146): the modern tiles shade from a smooth field keyed to
