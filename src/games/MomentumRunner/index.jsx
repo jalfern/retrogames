@@ -1136,7 +1136,12 @@ const MomentumGame = () => {
                     return {
                         tick: gs.tick, score: gs.score, done: !!gs.end,
                         seed: contractSeed, zone: gs.zone, rings: gs.rings,
-                        deaths: gs.deaths, hash: h >>> 0,
+                        deaths: gs.deaths,
+                        // the runner is live state: the #1130 juice audit's motion
+                        // channel and the #1131 boredom map cannot see a hero the
+                        // contract hides (a sprinting course read as 90s dead air).
+                        pos: [Math.round(p.x), Math.round(p.y)],
+                        hash: h >>> 0,
                     }
                 },
                 canvas: () => canvas,
