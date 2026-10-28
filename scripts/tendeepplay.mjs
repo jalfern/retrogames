@@ -10,9 +10,12 @@
 //      wall-blue; a clear hall leaves it dark.
 //   3b. THE WALK BREATHES — fwd/back glide the projection ~130ms, the
 //      settled frame is the exact snapped one, and a bump never lunges.
-//   4. THE AMBUSH — walking a real step into a named tile starts combat.
+//   4. THE AMBUSH — walking a real step into a named tile starts combat;
+//      the group slides in from the right, plate off its slot mid-slide.
 //   5. COMBAT PIXELS AND LEDGER — a live mob has its art on screen where the
 //      projection says; swings are booked; the kill ends the fight.
+//   5c. THE CROWN — a real step onto the throne opens the king fight; the
+//      banner pulses on the beat and the field dims with it.
 //   6. THE STAIRS — real SPACE descends.
 //   7. DEATH, THE OVER SCREEN, ONE KEY BACK.
 //   8. ? pauses. Zero page errors throughout.
@@ -199,17 +202,52 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
 // walk with real keys like a person in a dark corridor: forward while the
 // hall is open, right at every wall, until an ambush lands. The ambush
 // tiles are deliberately NOT exposed to the driver — no cheating a fight.
+// The first probe after the step is the staging window: the group slides in
+// from the right (300 ms + stagger), so mid-slide its plate is off its slot.
+const catchMid = (p) => (p.slide > 0 && p.slideX && p.slideX.x - p.slideX.sx > 12) ? p : null
 let ambush = null
+let mid = null
 for (let stepN = 0; stepN < 130 && !ambush; stepN++) {
     const p = await probe()
-    if (p.mode === 'combat') { ambush = p; break }
+    if (p.mode === 'combat') { ambush = p; mid = catchMid(p); break }
     await page.keyboard.press(p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
     await wait(80)
 }
 ambush = ambush || ((await probe()).mode === 'combat' ? await probe() : null)
 r.check('a real step onto an ambush tile starts combat', !!ambush, ambush ? `mode=${ambush.mode}` : 'never met an ambush walking')
+if (ambush && !mid) {
+    // slow tab: the first frame landed after the slide had mostly run. One
+    // fresh run, walk to a fresh ambush, and try to catch the slide in time.
+    await page.evaluate(() => window.__deepTest.start())
+    await wait(300)
+    await page.keyboard.press('KeyF')
+    await wait(400)
+    const seen = new Set()
+    for (let t = 0; t < 200 && !mid; t++) {
+        const p = await probe()
+        if (p.mode === 'combat') { ambush = p; mid = catchMid(p); break }
+        if (p.mode !== 'map') { await wait(70); continue }
+        const cell = `${p.x},${p.y}`
+        await page.keyboard.press(seen.has(cell) || p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
+        seen.add(cell)
+        await wait(80)
+    }
+}
 
-// ---- 5. combat: art on screen, swings booked, the kill lands ----
+// ---- 5. combat: staging in, art on screen, swings booked, the kill lands ----
+r.check('an ambush opens with a slide-in (plate off its slot on the first frame)', !!mid,
+    mid ? `slide ${Math.round(mid.slide)} ms left, plate at x=${Math.round(mid.slideX.x)} vs slot ${Math.round(mid.slideX.sx)}` : 'never caught a mid-slide frame')
+if (mid && mid.slideX) {
+    const w = Math.round(mid.slideX.size * 0.8), h = Math.round(mid.slideX.size * 0.7)
+    const y = Math.round(140 - mid.slideX.size * 0.85)
+    const slotLit = await px(Math.round(mid.slideX.sx - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
+    const bandLit = await px(Math.round(mid.slideX.x - w / 2), y, w, h, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 200)
+    r.check('the mid-slide plate is painted right of its final slot', bandLit > slotLit + 10, `band=${bandLit} slot=${slotLit} (plate at x=${Math.round(mid.slideX.x)})`)
+}
+// the plate gate below samples the SETTLED frame — wait the slide out
+for (let i = 0; i < 50 && (await probe()).slide > 0; i++) await wait(40)
+// the retry run may have lost the fight: a stale ambush has nothing to grade
+if (ambush && !(await probe()).combat) ambush = null
 if (ambush) {
     let p = await probe()
     r.check('the fight opens with mobs on the ledger', !!p.combat && p.combat.mobs.length >= 1, JSON.stringify((p.combat || {}).mobs || []))
@@ -339,6 +377,64 @@ else {
         r.check('combat FX is presentation-only (stateHash identical bolt-alive vs cleared)', !!hashAlive && cleared && hashAlive === hashCleared, `alive=${hashAlive} cleared=${hashCleared}`)
         r.check('the bolt clears on its own (no stuck frame)', cleared, 'fxList never drained to zero')
     }
+}
+
+// ---- 5c. staging under the crown: a real step onto the throne opens the king
+//      fight, whose banner pulses on the beat while the field dims with it ----
+{
+    await page.evaluate(() => window.__deepTest.start())
+    await wait(300)
+    await ensureSetup({ floor: 9, party: [
+        { i: 0, hp: 999, mp: 60 }, { i: 1, hp: 999, mp: 60 }, { i: 2, hp: 999, mp: 60 },
+        { i: 3, hp: 999, mp: 60 }, { i: 4, hp: 999, mp: 60 }, { i: 5, hp: 999, mp: 60 },
+    ] })
+    const th = (await probe()).throne
+    const DXH = [1, 0, -1, 0], DYH = [0, 1, 0, -1]
+    let boss = null
+    for (let f = 0; f < 4 && !boss; f++) {
+        const cx = th.x - DXH[f], cy = th.y - DYH[f]
+        if (cx < 1 || cy < 1 || cx >= 18 || cy >= 18) continue
+        if (await page.evaluate(([x, y]) => window.__deepTest.wallAt(x, y), [cx, cy])) continue
+        await ensureSetup({ at: [cx, cy], facing: f })
+        await page.keyboard.press('ArrowUp')   // the one step the driver may not fake
+        await wait(250)
+        const p = await probe()
+        if (p.combat && p.combat.boss) boss = p
+    }
+    r.check('a real step onto the throne opens the king fight', !!boss, boss ? 'boss combat' : 'no open door found around the throne')
+    if (boss) {
+        await wait(600)   // let the slide-in settle; the pulse rides bob and never stops
+        // mean brightness of a fixed box over 48 rAF frames (sampled inside the
+        // callbacks — a busy-loop around getImageData starves the paint): 48
+        // frames span >1 beat (sin(bob/5), period ~31 frames) at any frame rate
+        const swing = ([x, y, w, h]) => page.evaluate(async ([bx, by, bw, bh]) => {
+            const d = document.querySelector('canvas[data-deep-view]').getContext('2d')
+            const mean = () => {
+                const a = d.getImageData(bx, by, bw, bh).data
+                let s = 0
+                for (let i = 0; i < a.length; i += 4) s += a[i] + a[i + 1] + a[i + 2]
+                return s / (a.length / 4)
+            }
+            let mn = Infinity, mx = -Infinity
+            for (let i = 0; i < 48; i++) {
+                await new Promise((res) => requestAnimationFrame(res))
+                const v = mean()
+                if (v < mn) mn = v
+                if (v > mx) mx = v
+            }
+            return { mn, mx }
+        }, [x, y, w, h])
+        // the banner box holds only the warning text; the field box is the
+        // top-left strip the gradient alone owns — the king's 112 px plate
+        // starts at y~27, the banner text at x~47, the bob never reaches up
+        const banner = await swing([50, 4, 156, 12])
+        r.check('the king banner pulses (text brightness swings with the beat)', banner.mx - banner.mn > 8, `mean ${banner.mn.toFixed(1)}..${banner.mx.toFixed(1)}`)
+        const field = await swing([4, 2, 32, 18])
+        r.check('the field dims under the crown (brightness swings with the beat)', field.mx - field.mn > 4, `mean ${field.mn.toFixed(1)}..${field.mx.toFixed(1)}`)
+    }
+    // the next section walks stairs — the throne floor has none; a fresh run
+    // back at DEEP 1 restores the floor section 6 assumes
+    await ensureSetup({ floor: 0 })
 }
 
 // ---- 6. the stairs: real SPACE descends ----

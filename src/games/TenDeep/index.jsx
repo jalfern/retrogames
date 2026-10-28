@@ -328,6 +328,26 @@ const TenDeepGame = () => {
         // presentation-only combat feedback (never in gs/stateHash): a bolt on a
         // cast, sparkles on a heal, a dissolve + XP floater on a kill.
         const fxList = []
+        // combat staging (presentation-only, never in stateHash): the ambush
+        // group slides in from the right — 300 ms per mob + 70 ms stagger,
+        // ease-out — and under the crown the banner pulses while the field
+        // dims with it. combatT0 is performance.now() at the fight's start;
+        // the sim knows nothing of it.
+        const SLIDE_MS = 300, SLIDE_STAGGER = 70
+        let combatT0 = 0
+        const slideX = (i, sx, size) => {
+            if (!combatT0) return sx
+            const age = performance.now() - combatT0 - i * SLIDE_STAGGER
+            if (age >= SLIDE_MS) return sx
+            const p = Math.max(0, age / SLIDE_MS)
+            const e = 1 - (1 - p) * (1 - p)
+            const x0 = W + size / 2
+            return x0 + (sx - x0) * e
+        }
+        const slideRemain = (n) => {
+            if (!combatT0) return 0
+            return Math.max(0, SLIDE_MS + n * SLIDE_STAGGER - (performance.now() - combatT0))
+        }
         // the walk breathes: fwd/back glide the projection ~130ms (presentation
         // only — the sim steps instantly and the endpoints render exactly the
         // snapped frame). off>0 = a step was taken toward the view's old pose.
@@ -346,7 +366,7 @@ const TenDeepGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 260) evLog.splice(0, evLog.length - 260)
             for (const e of evts) {
-                if (e.type === 'ambush') { audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE HOLLOW KING RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
+                if (e.type === 'ambush') { combatT0 = performance.now(); audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE HOLLOW KING RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
                 else if (e.type === 'hit') { audioController.playNoise(0.12, 0.07); shake = 4; flashHit = 0.25 }
                 else if (e.type === 'slay') {
                     audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`)
@@ -612,24 +632,31 @@ const TenDeepGame = () => {
                 const sx = 128 + (slot - (n - 1) / 2) * 62
                 const A = ART[m.art]
                 const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
+                const mx = slideX(slot, sx, size)
                 if (m.hp > 0) {
-                    drawMob(ctx, m.art, sx - size / 2, 140 - size + wob, size, flashHit > 0)
+                    drawMob(ctx, m.art, mx - size / 2, 140 - size + wob, size, flashHit > 0)
                     if (i === gs.target) {
                         ctx.strokeStyle = '#ffffff'
                         ctx.beginPath()
-                        ctx.moveTo(sx - size / 2 - 3, 140 - size + wob + 6)
-                        ctx.lineTo(sx - size / 2 - 3, 140 + wob)
-                        ctx.moveTo(sx + size / 2 + 3, 140 - size + wob + 6)
-                        ctx.lineTo(sx + size / 2 + 3, 140 + wob)
+                        ctx.moveTo(mx - size / 2 - 3, 140 - size + wob + 6)
+                        ctx.lineTo(mx - size / 2 - 3, 140 + wob)
+                        ctx.moveTo(mx + size / 2 + 3, 140 - size + wob + 6)
+                        ctx.lineTo(mx + size / 2 + 3, 140 + wob)
                         ctx.stroke()
                     }
-                    ctx.fillStyle = '#222'; ctx.fillRect(sx - 16, 144, 32, 4)
+                    ctx.fillStyle = '#222'; ctx.fillRect(mx - 16, 144, 32, 4)
                     ctx.fillStyle = m.hp / m.maxHp > 0.4 ? '#e5484d' : '#ff8a3d'
-                    ctx.fillRect(sx - 16, 144, 32 * (m.hp / m.maxHp), 4)
+                    ctx.fillRect(mx - 16, 144, 32 * (m.hp / m.maxHp), 4)
                 }
             })
             if (gs.combat && gs.combat.boss) {
-                ctx.fillStyle = '#ff5252'; ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'
+                // the crown's warning: the banner pulses on the beat and the
+                // field dims with it, so the words cut through the dark
+                const pulse = 0.5 + 0.5 * Math.sin(bob / 5)
+                ctx.fillStyle = `rgba(4,0,10,${(0.1 + 0.14 * pulse).toFixed(3)})`
+                ctx.fillRect(0, 0, W, 150)
+                ctx.fillStyle = `rgba(255,82,82,${(0.55 + 0.45 * pulse).toFixed(3)})`
+                ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'
                 ctx.fillText('THE HOLLOW KING — NO FLIGHT', 128, 14)
             }
         }
@@ -823,6 +850,16 @@ const TenDeepGame = () => {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     ease: easeOff(),
+                    slide: gs.combat ? slideRemain(gs.combat.mobs.length) : 0,
+                    slideX: (() => {
+                        if (!gs.combat || !gs.combat.mobs.length) return null
+                        const m = gs.combat.mobs[0]
+                        const n = Math.max(gs.combat.mobs.filter((q) => q.hp > 0).length, gs.combat.mobs.length)
+                        const sx = 128 + (0 - (n - 1) / 2) * 62
+                        const A = ART[m.art]
+                        const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
+                        return { x: slideX(0, sx, size), sx, size }
+                    })(),
                     fx: (() => { const b = fxList.find((f) => f.kind === 'bolt'); return { count: fxList.length, kinds: fxList.map((f) => f.kind), bolt: b ? { from: b.from, to: b.to } : null } })(),
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
                     gold: purse(gs), wipe: gs.wipe, ward: gs.ward,
@@ -876,6 +913,7 @@ const TenDeepGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                wallAt: (x, y) => !!(gs.map && gs.map.wall(x, y)),
                 cmd: (c) => { act(c); return true },
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
