@@ -19,7 +19,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import {
-    makeGame, step, autopilot, loadLevel,
+    makeGame, step, autopilot, loadLevel, markChores, stateHash,
     VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS,
 } from './sim.js'
 
@@ -317,11 +317,12 @@ const TidyBotGame = () => {
                     ctx.beginPath(); ctx.moveTo(c.x + c.w - 8.5, c.y + c.h - 12); ctx.lineTo(c.x + c.w - 8.5, c.y + c.h - 5); ctx.stroke()
                 }
             }
-            // label tag
-            ctx.fillStyle = 'rgba(10,8,6,0.55)'; ctx.fillRect(c.x + c.w / 2 - 13, c.y - 8, 26, 7)
+            // label tag, below the appliance so the HUD never eats it
+            const ty = c.y + c.h + c.doorLen + 2
+            ctx.fillStyle = 'rgba(10,8,6,0.55)'; ctx.fillRect(c.x + c.w / 2 - 13, ty, 26, 7)
             ctx.fillStyle = c.id === 'dw' ? '#7ec8ff' : '#a8e6b0'
             ctx.font = 'bold 5px monospace'; ctx.textAlign = 'center'
-            ctx.fillText(c.label, c.x + c.w / 2, c.y - 2.4)
+            ctx.fillText(c.label, c.x + c.w / 2, ty + 5.6)
             ctx.textAlign = 'left'
         }
 
@@ -416,10 +417,10 @@ const TidyBotGame = () => {
             const m = Math.max(0, Math.ceil(gs2.clock / 60))
             ctx.fillStyle = '#f0e0c0'; ctx.font = 'bold 6px monospace'
             ctx.fillText(`${m}s`, VIEW_W / 2, 22)
-            // chores
+            // chores — bottom-right corner, out of the main routes
             ctx.textAlign = 'left'
             ctx.font = '6px monospace'
-            let cy = 34
+            let cy = 176
             ctx.fillStyle = 'rgba(16,10,8,0.66)'
             ctx.fillRect(VIEW_W - 74, cy - 6, 70, gs2.chores.length * 8 + 4)
             for (const c of gs2.chores) {
@@ -427,15 +428,15 @@ const TidyBotGame = () => {
                 ctx.fillText(`${c.done ? '✔' : '·'} ${c.label}`, VIEW_W - 70, cy)
                 cy += 8
             }
-            // tidy meter
+            // tidy meter, in the HUD strip's right corner
             const roll = gs2.tidies + gs2.jams + gs2.wrongs + gs2.spills + gs2.breaks
             const pct = roll ? gs2.tidies / roll : 1
-            ctx.fillStyle = 'rgba(16,10,8,0.66)'; ctx.fillRect(4, 30, 46, 10)
+            ctx.fillStyle = 'rgba(16,10,8,0.66)'; ctx.fillRect(VIEW_W - 50, 4, 46, 10)
             ctx.fillStyle = '#c8a06a'; ctx.font = 'bold 5px monospace'
-            ctx.fillText('TIDY', 6, 35)
-            ctx.fillStyle = '#3a2c22'; ctx.fillRect(6, 36, 40, 2.5)
+            ctx.fillText('TIDY', VIEW_W - 48, 9)
+            ctx.fillStyle = '#3a2c22'; ctx.fillRect(VIEW_W - 48, 10, 40, 2.5)
             ctx.fillStyle = pct > 0.75 ? '#5dff8f' : pct > 0.45 ? '#ffd23f' : '#ff5a4f'
-            ctx.fillRect(6, 36, 40 * pct, 2.5)
+            ctx.fillRect(VIEW_W - 48, 10, 40 * pct, 2.5)
         }
 
         const paintAttract = (tick) => {
@@ -620,7 +621,7 @@ const TidyBotGame = () => {
                 rx: gs.rx, ry: gs.ry, facing: gs.facing, walk: gs.walk, held: gs.held,
                 dw: { door: gs.dw.door, target: gs.dw.target, cd: gs.dw.cd },
                 fr: { door: gs.fr.door, target: gs.fr.target, cd: gs.fr.cd },
-                dwRun: gs.dwRun, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, tidies: gs.tidies,
+                dwRun: gs.dwRun, opened: { ...gs.opened }, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, tidies: gs.tidies,
                 items: gs.items, auto: gs.auto, end: gs.end, endReason: gs.endReason, levelsDone: gs.levelsDone, timeBonusTotal: gs.timeBonusTotal,
             })),
             restore: (s) => {
@@ -628,13 +629,15 @@ const TidyBotGame = () => {
                 Object.assign(gs, {
                     seed: s.seed >>> 0, tick: s.tick, score: s.score, clock: s.clock,
                     rx: s.rx, ry: s.ry, facing: s.facing, walk: s.walk, held: s.held,
-                    dwRun: s.dwRun, breaks: s.breaks, wrongs: s.wrongs, spills: s.spills, jams: s.jams, tidies: s.tidies,
+                    dwRun: s.dwRun, opened: { dw: false, fr: false, ...(s.opened || {}) }, breaks: s.breaks, wrongs: s.wrongs, spills: s.spills, jams: s.jams, tidies: s.tidies,
                     end: s.end, endReason: s.endReason || '', levelsDone: s.levelsDone, timeBonusTotal: s.timeBonusTotal,
                 })
                 gs.dw.door = s.dw.door; gs.dw.target = s.dw.target; gs.dw.cd = s.dw.cd
                 gs.fr.door = s.fr.door; gs.fr.target = s.fr.target; gs.fr.cd = s.fr.cd
                 gs.auto = { ...s.auto }
                 gs.items = s.items.map((it) => ({ ...it }))
+                markChores(gs)
+                gs.hash = stateHash(gs)
             },
         })
 

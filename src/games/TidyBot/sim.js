@@ -36,7 +36,7 @@ export const STOVE = { x: 172, y: WALL, w: 32, h: 22 }
 export const TABLE = { x: 198, y: 124, w: 96, h: 44 }
 export const PLANTS = [
     { x: 18, y: 204, w: 12, h: 12 },
-    { x: 294, y: 204, w: 12, h: 12 },
+    { x: 226, y: 204, w: 12, h: 12 },
 ]
 export const WALLS = [
     { x: 0, y: 0, w: VIEW_W, h: WALL },
@@ -56,9 +56,9 @@ export const DW = {
 }
 export const FR = {
     id: 'fr', label: 'FRIDGE',
-    x: 266, y: 8, w: 38, h: 34, doorLen: 30,
+    x: 266, y: 30, w: 38, h: 34, doorLen: 30,
     zones: [
-        { x: 246, y: 44, w: 18, h: 46 },
+        { x: 246, y: 32, w: 18, h: 52 },
     ],
 }
 export const CONTAINERS = [DW, FR]
@@ -138,11 +138,14 @@ const distToRect = (px, py, r) => {
 
 const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
 
+// mutant hooks (tidycheck --mutate only; production never sets these)
+export const SIMHOOKS = { noBlock: false, freeRun: false, softStow: false }
+
 export const blockers = (gs) => {
     const out = [...WALLS, COUNTER, STOVE, TABLE, ...PLANTS]
     for (const cc of [gs.dw, gs.fr]) {
         out.push({ x: cc.x, y: cc.y, w: cc.w, h: cc.h })
-        if (cc.door > 0.55) out.push({ x: cc.x + 2, y: cc.y + cc.h, w: cc.w - 4, h: cc.doorLen })
+        if (cc.door > 0.55 && !SIMHOOKS.noBlock) out.push({ x: cc.x + 2, y: cc.y + cc.h, w: cc.w - 4, h: cc.doorLen })
     }
     return out
 }
@@ -196,6 +199,7 @@ export function makeGame(seed, players = 1) {
         dw: { ...DW, door: 0, target: 0, cd: 0 },
         fr: { ...FR, door: 0, target: 0, cd: 0 },
         dwRun: false,
+        opened: { dw: false, fr: false },
         breaks: 0, wrongs: 0, spills: 0, jams: 0, tidies: 0,
         chores: [],
         ev: [],
@@ -229,10 +233,10 @@ export function loadLevel(gs, level) {
     gs.dw.door = 0; gs.dw.target = 0; gs.dw.cd = 0
     gs.fr.door = 0; gs.fr.target = 0; gs.fr.cd = 0
     gs.dwRun = false
+    gs.opened = { dw: false, fr: false }
     gs.held = null
     gs.rx = HOME.x; gs.ry = HOME.y; gs.facing = 'down'
     gs.auto = { cd: 0 }
-    gs.ev.length = 0
     gs.chores = computeChores(gs)
 }
 
@@ -248,7 +252,7 @@ export function computeChores(gs) {
     return chores
 }
 
-const markChores = (gs) => {
+export const markChores = (gs) => {
     const onTable = looseItems(gs).filter((it) => it.x >= TABLE.x - 4 && it.x <= TABLE.x + TABLE.w + 4 && it.y >= TABLE.y - 4 && it.y <= TABLE.y + TABLE.h + 4)
     const dwAll = gs.items.filter((i) => KINDS[i.kind].to === 'dw').every((i) => (i.state === 'in' && i.cont === 'dw') || i.state === 'gone')
     const frAll = gs.items.filter((i) => KINDS[i.kind].to === 'fr').every((i) => (i.state === 'in' && i.cont === 'fr') || i.state === 'gone')
@@ -258,7 +262,9 @@ const markChores = (gs) => {
         if (c.label === 'LOAD WASH') c.done = dwAll
         if (c.label === 'CLOSE & RUN') c.done = gs.dwRun
         if (c.label === 'CHILL FOOD') c.done = frAll
-        if (c.label === 'CLOSE ALL') c.done = isShut(gs.dw) && isShut(gs.fr)
+        if (c.label === 'CLOSE ALL') c.done = isShut(gs.dw) && isShut(gs.fr) &&
+            (!gs.items.some((i) => KINDS[i.kind].to === 'dw') || gs.opened.dw) &&
+            (!gs.items.some((i) => KINDS[i.kind].to === 'fr') || gs.opened.fr)
     }
     return { onTable: onTable.length, dwAll, frAll, hasDw }
 }
@@ -281,8 +287,10 @@ const placeInto = (gs, c, it, gentle) => {
         say(gs, 'JAM +6', it.x, it.y, 'jam')
         gs.ev.push({ type: 'jam', kind: it.kind, x: c.x + c.w / 2, y: c.y + c.h / 2 })
     } else {
-        gs.score -= 20
-        gs.wrongs++
+        if (!SIMHOOKS.softStow) {
+            gs.score -= 20
+            gs.wrongs++
+        }
         say(gs, 'WRONG STOW −20', c.x + c.w / 2, c.y - 4, 'bad')
         gs.ev.push({ type: 'wrong', kind: it.kind, x: c.x + c.w / 2, y: c.y + c.h / 2 })
     }
@@ -295,7 +303,7 @@ const toggleDoor = (gs, c, open) => {
     if (open && c.door >= 0.9) return
     if (!open && c.door <= 0.01) return
     if (c.door > 0.01 && c.door < 0.99) return // mid-swing ignores presses
-    if (open) {
+    if (open && !SIMHOOKS.noBlock) {
         const box = { x: gs.rx - ROBOT_R, y: gs.ry - ROBOT_R, w: ROBOT_R * 2, h: ROBOT_R * 2 }
         if (overlaps(box, doorRect(c))) {
             say(gs, 'STAND CLEAR', c.x + c.w / 2, c.y - 4, 'bad')
@@ -305,6 +313,7 @@ const toggleDoor = (gs, c, open) => {
     }
     c.target = open ? 1 : 0
     c.cd = 14
+    if (open) gs.opened[c.id] = true
     gs.ev.push({ type: open ? 'open' : 'close', c: c.id, x: c.x + c.w / 2, y: c.y + c.h })
 }
 
@@ -420,7 +429,7 @@ export function step(gs, pads) {
                 gs.ev.push({ type: 'retrieve', kind: it.kind, x: gs.rx, y: gs.ry })
             } else if (gs.dwRun) softBuzz(gs)
             else if (nearBody(gs.dw, gs.rx, gs.ry)) {
-                if (dwLoaded(gs) > 0) {
+                if (dwLoaded(gs) > 0 || SIMHOOKS.freeRun) {
                     gs.dwRun = true
                     gs.score += 40
                     say(gs, 'CYCLE ON +40', gs.dw.x + gs.dw.w / 2, gs.dw.y - 4, 'ok')
