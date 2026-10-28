@@ -4,6 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
+import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN } from './track.js'
@@ -30,7 +31,10 @@ const LAND_H = 176
 const LAND_W_MIN = 256
 const LAND_W_MAX = 384
 const PORT_W = 256
-const PORT_H_MAX = 448
+// #1211: cap must not clamp a real phone's aspect (390x844 = 0.462 wants
+// H=554; the old 448 left a 19% CSS stretch). 576 covers portrait down to
+// 0.44 aspect; object-contain letterboxes beyond that instead of squashing.
+const PORT_H_MAX = 576
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
 
@@ -87,7 +91,7 @@ export default function CometDrift() {
                 W = Math.max(LAND_W_MIN, Math.min(LAND_W_MAX, Math.round(LAND_H * aspect)))
             } else {
                 W = PORT_W
-                H = Math.min(PORT_H_MAX, Math.round(PORT_W / Math.max(0.5, aspect)))
+                H = Math.min(PORT_H_MAX, Math.round(PORT_W / aspect))
             }
             canvas.width = W; canvas.height = H
             ctx = canvas.getContext('2d')
@@ -932,8 +936,11 @@ export default function CometDrift() {
             // pick; a tap anywhere else (name, prompt, sky) starts the race
             const rect = canvas.getBoundingClientRect()
             if (rect.width > 0 && rect.height > 0) {
-                const cx = (e.clientX - rect.left) / rect.width * W
-                const cy = (e.clientY - rect.top) / rect.height * H
+                // #1211: object-contain can letterbox the picture inside the CSS
+                // box; map through containMap so chevron taps land in frame coords.
+                const m = containMap(W, H, rect.width, rect.height)
+                const cx = (e.clientX - rect.left - m.ox) / m.s
+                const cy = (e.clientY - rect.top - m.oy) / m.s
                 const hit = selectorHit(selectorGeom(W, H, hs), cx, cy)
                 if (hit === -1) { cycleCourse(-1); return }
                 if (hit === 1) { cycleCourse(1); return }
@@ -1079,7 +1086,7 @@ export default function CometDrift() {
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
             onPointerDown={(e) => tapRef.current && tapRef.current(e)}
         >
-            <canvas ref={canvasRef} data-fit="source" width={LAND_W_MAX} height={LAND_H} className="block w-full h-full" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
+            <canvas ref={canvasRef} data-fit="source" width={LAND_W_MAX} height={LAND_H} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT GP')} badge={COURSE.name} onResume={handleResume} />}
         </div>

@@ -15,6 +15,7 @@ import AttractMessage from '../../components/AttractMessage'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { containMap } from '../../utils/fitCanvas'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews } from './state.js'
@@ -65,7 +66,7 @@ const MystGame = () => {
     const canvas = renderer.domElement
     canvas.dataset.mystStage = '1'
     canvas.id = 'myst-stage'
-    canvas.className = 'block w-full h-full'
+    canvas.className = 'block w-full h-full object-contain'
     canvas.style.touchAction = 'none'
     wrap.appendChild(canvas)
     const scene = new THREE.Scene()
@@ -306,8 +307,12 @@ const MystGame = () => {
     const pointer = new THREE.Vector2()
     const pick = (ev) => {
       const r = canvas.getBoundingClientRect()
-      pointer.x = ((ev.clientX - r.left) / r.width) * 2 - 1
-      pointer.y = -((ev.clientY - r.top) / r.height) * 2 + 1
+      // #1211: object-contain letterboxes the 16:9 stage in portrait; convert
+      // client coords through the bars into frame pixels, then NDC. Out-of-
+      // picture taps fall outside [-1,1] and simply miss every hotspot.
+      const m = containMap(VW, VH, r.width, r.height)
+      pointer.x = ((ev.clientX - r.left - m.ox) / (VW * m.s)) * 2 - 1
+      pointer.y = -((ev.clientY - r.top - m.oy) / (VH * m.s)) * 2 + 1
       ray.setFromCamera(pointer, camera)
       const list = hot.filter((h) => h.node === gs.node && !(h.mesh.userData.noPick)).map((h) => h.mesh)
       const hit = ray.intersectObjects(list, false)[0]
@@ -635,7 +640,7 @@ const MystGame = () => {
           data-linkfx={hud.link}
           width={VW}
           height={VH}
-          className="absolute inset-0 w-full h-full z-[45]"
+          className="absolute inset-0 w-full h-full object-contain z-[45]"
           style={{ pointerEvents: 'none' }}
         />
       )}
