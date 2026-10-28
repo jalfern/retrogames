@@ -50,7 +50,6 @@ export function createRobotSim(seed = 0) {
     const can = createCan(world, mats, { x: -0.10 + rng() * 0.12, y: BENCH_TOP + 0.045 + 0.05, z: 0.12 + rng() * 0.08 })
 
     const tracked = [crate, can, drawer.body, cabinet.body, arm.bodies.hand]
-    const props = [crate, can, drawer.body, cabinet.body]
     const goals = { drawerOpen: false, crateIn: false, drawerClosed: false, doorOpen: false, canIn: false, doorClosed: false }
     const methods = []
     const queue = []
@@ -169,7 +168,7 @@ export function createRobotSim(seed = 0) {
     const updateGoals = () => {
         const g = (k, v, pts) => { if (!goals[k] && v) { goals[k] = true; score += pts } }
         g('drawerOpen', drawer.open(), 50)
-        g('crateIn', goals.drawerOpen && drawer.cavityContains(crate.position), 100)
+        g('crateIn', goals.drawerOpen && (drawer.cavityContains(crate.position) || (drawer.open() && Math.abs(crate.position.x - drawer.body.position.x) < drawer.half[0] - 0.02 && Math.abs(crate.position.z - drawer.body.position.z) < drawer.half[2] - 0.02 && crate.position.y < BENCH_TOP + 0.10)), 100)
         g('drawerClosed', goals.drawerOpen && goals.crateIn && drawer.closed(), 50)
         g('doorOpen', cabinet.open(), 50)
         g('canIn', goals.doorOpen && cabinet.interiorContains(can.position), 100)
@@ -223,7 +222,6 @@ export function createRobotSim(seed = 0) {
             else if (pad.left || pad.right || pad.up || pad.down) noteMethod('dpad')
             if (input.tapId || input.tapPoint) tap(input.tapId || null, input.tapPoint || null)
             const a = !!pad.a
-            const b = !!pad.b
             const driving = mx > 0.02 || my > 0.02 || pad.left || pad.right || pad.up || pad.down
             if (driving && queue.length) queue.length = 0
             if (queue.length) {
@@ -237,10 +235,13 @@ export function createRobotSim(seed = 0) {
             if (latchNote === 'drawer') {
                 const cur = drawer.amount()
                 let t = arm.graspPoint()[2] - 0.088
+                // Never drag harder than the hand can follow: cap the delta,
+                // and refuse a blocked close (stand-clear stays honest).
+                t = Math.min(cur + 0.006, t)
                 if (t < cur && blockClose(cur)(drawer.rail.at(Math.max(t, drawer.rail.min)))) t = cur
                 drawer.driveTo(t)
             } else if (latchNote === 'door') {
-                doorRamp += (-1.45 - doorRamp) * 0.08
+                doorRamp += (-1.45 - doorRamp) * 0.05
                 cabinet.driveAngle(doorRamp)
             }
             world.step(TICK_DT)
@@ -315,47 +316,49 @@ export function createAutopilot(sim) {
     const W = (name, ticks) => ({ name, kind: 'wait', ticks, t: 0, cond: () => false })
 
     const phases = [
-        W('settle', 40),
-        L('lift0', 1.05, () => st().hand[1] > 1.02, 40),
-        D('toHandle', dh.x, dh.z - 0.02, () => Math.hypot(st().hand[0] - dh.x, st().hand[2] - (dh.z - 0.02)) < 0.03, 220),
-        L('lowerHandle', dh.y + 0.04, () => st().hand[1] < dh.y + 0.05, 40),
-        P('latchDrawer', () => st().held === 'drawer', 12),
-        S('pull', -1, () => st().goals.drawerOpen, 240),
-        P('releaseHandle', () => st().held === null, 12),
-        L('liftCrate', 1.06, () => st().hand[1] > 1.05, 40),
-        D('toCrate', () => sim.crate.position.x, () => sim.crate.position.z, () => Math.abs(st().hand[0] - sim.crate.position.x) < 0.025 && Math.abs(st().hand[2] - sim.crate.position.z) < 0.025, 240),
-        L('lowerCrate', () => sim.crate.position.y + 0.085, () => st().hand[1] < sim.crate.position.y + 0.10, 40),
-        P('grabCrate', () => st().held === 'crate', 12),
-        L('liftHeld', 1.05, () => st().hand[1] > 1.04, 40),
-        D('toDrawer', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z, () => Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.05 && Math.abs(st().hand[2] - sim.drawer.body.position.z) < 0.05, 240),
-        L('lowerIn', 1.005, () => st().hand[1] < 1.015, 40),
-        P('dropCrate', () => st().held === null, 12),
-        L('liftClear', 1.05, () => st().hand[1] > 1.04, 40),
-        D('toHandle2', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z + 0.195, () => Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.03 && Math.abs(st().hand[2] - (sim.drawer.body.position.z + 0.195)) < 0.03, 160),
-        L('lowerHandle2', dh.y + 0.04, () => st().hand[1] < dh.y + 0.05, 40),
-        P('reLatch', () => st().held === 'drawer', 12),
-        S('pushIn', 1, () => st().goals.drawerClosed, 320),
-        P('releaseHandle', () => st().held === null, 12),
-        L('liftDoor', 1.06, () => st().hand[1] > 1.05, 40),
-        D('toDoor', ch.x, ch.z + 0.05, () => Math.hypot(st().hand[0] - ch.x, st().hand[2] - (ch.z + 0.05)) < 0.03, 240),
-        L('lowerDoor', ch.y + 0.035, () => st().hand[1] < ch.y + 0.05, 40),
-        P('latchDoor', () => st().held === 'door', 12),
-        S('pullDoor', -1, () => st().goals.doorOpen, 260),
-        P('releaseDoor', () => st().held === null, 12),
-        L('liftCan', 1.06, () => st().hand[1] > 1.05, 40),
-        D('toCan', () => sim.can.position.x, () => sim.can.position.z, () => Math.abs(st().hand[0] - sim.can.position.x) < 0.025 && Math.abs(st().hand[2] - sim.can.position.z) < 0.025, 260),
-        L('lowerCan', () => sim.can.position.y + 0.085, () => st().hand[1] < sim.can.position.y + 0.10, 40),
-        P('grabCan', () => st().held === 'can', 12),
-        L('liftCan2', 1.05, () => st().hand[1] > 1.04, 40),
-        D('toCabinet', -0.26, -0.22, () => Math.abs(st().hand[0] + 0.26) < 0.05 && Math.abs(st().hand[2] + 0.22) < 0.05, 240),
-        L('lowerCanIn', 1.0, () => st().hand[1] < 1.01, 40),
-        P('dropCan', () => st().held === null, 12),
-        L('liftOut', 1.08, () => st().hand[1] > 1.06, 40),
-        D('retreat', 0.05, 0.08, () => Math.hypot(st().hand[0] - 0.05, st().hand[2] - 0.08) < 0.05, 200),
-        D('toDoorTip', -0.17, 0.30, () => Math.hypot(st().hand[0] + 0.17, st().hand[2] - 0.30) < 0.04, 220),
-        L('pressDoor', 1.03, () => st().hand[1] < 1.05, 40),
-        S('shutDoor', 1, () => st().goals.doorClosed, 300),
-        W('tidy', 30),
+        W('settle', 88),
+        L('lift0', 1.05, () => st().hand[1] > 1.02, 88),
+        D('toHandle', dh.x, dh.z - 0.02, () => Math.hypot(st().hand[0] - dh.x, st().hand[2] - (dh.z - 0.02)) < 0.03, 484),
+        L('lowerHandle', dh.y + 0.04, () => st().hand[1] < dh.y + 0.05, 88),
+        P('latchDrawer', () => st().held === 'drawer', 26),
+        S('pull', -1, () => st().goals.drawerOpen, 528),
+        P('releaseHandle', () => st().held === null, 26),
+        L('liftCrate', 1.06, () => st().hand[1] > 1.05, 88),
+        D('toCrate', () => sim.crate.position.x, () => sim.crate.position.z, () => Math.abs(st().hand[0] - sim.crate.position.x) < 0.025 && Math.abs(st().hand[2] - sim.crate.position.z) < 0.025, 528),
+        L('lowerCrate', () => sim.crate.position.y + 0.085, () => st().hand[1] < sim.crate.position.y + 0.10, 88),
+        P('grabCrate', () => st().held === 'crate', 26),
+        L('liftHeld', 1.05, () => st().hand[1] > 1.04, 88),
+        D('toDrawer', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z, () => Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.05 && Math.abs(st().hand[2] - sim.drawer.body.position.z) < 0.05, 528),
+        L('lowerIn', 1.005, () => st().hand[1] < 1.015, 88),
+        P('dropCrate', () => st().held === null, 26),
+        L('liftClear', 1.05, () => st().hand[1] > 1.04, 88),
+        D('overCavity', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z - 0.02, () => Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.05 && Math.abs(st().hand[2] - (sim.drawer.body.position.z - 0.02)) < 0.05, 400),
+        L('settleDrop', 1.0, () => st().goals.crateIn || st().hand[1] < 1.01, 60),
+        D('toHandle2', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z + 0.195, () => Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.03 && Math.abs(st().hand[2] - (sim.drawer.body.position.z + 0.195)) < 0.03, 352),
+        L('lowerHandle2', dh.y + 0.04, () => st().hand[1] < dh.y + 0.05, 88),
+        P('reLatch', () => st().held === 'drawer', 26),
+        S('pushIn', 1, () => st().goals.drawerClosed, 704),
+        P('releaseHandle', () => st().held === null, 26),
+        L('liftDoor', 1.06, () => st().hand[1] > 1.05, 88),
+        D('toDoor', ch.x, ch.z + 0.05, () => Math.hypot(st().hand[0] - ch.x, st().hand[2] - (ch.z + 0.05)) < 0.03, 528),
+        L('lowerDoor', ch.y + 0.035, () => st().hand[1] < ch.y + 0.05, 88),
+        P('latchDoor', () => st().held === 'door', 26),
+        S('pullDoor', -1, () => st().goals.doorOpen, 572),
+        P('releaseDoor', () => st().held === null, 26),
+        L('liftCan', 1.06, () => st().hand[1] > 1.05, 88),
+        D('toCan', () => sim.can.position.x, () => sim.can.position.z, () => Math.abs(st().hand[0] - sim.can.position.x) < 0.025 && Math.abs(st().hand[2] - sim.can.position.z) < 0.025, 572),
+        L('lowerCan', () => sim.can.position.y + 0.085, () => st().hand[1] < sim.can.position.y + 0.10, 88),
+        P('grabCan', () => st().held === 'can', 26),
+        L('liftCan2', 1.05, () => st().hand[1] > 1.04, 88),
+        D('toCabinet', -0.26, -0.22, () => Math.abs(st().hand[0] + 0.26) < 0.05 && Math.abs(st().hand[2] + 0.22) < 0.05, 528),
+        L('lowerCanIn', 1.0, () => st().hand[1] < 1.01, 88),
+        P('dropCan', () => st().held === null, 26),
+        L('liftOut', 1.08, () => st().hand[1] > 1.06, 88),
+        D('retreat', 0.05, 0.08, () => Math.hypot(st().hand[0] - 0.05, st().hand[2] - 0.08) < 0.05, 440),
+        D('toDoorTip', -0.17, 0.30, () => Math.hypot(st().hand[0] + 0.17, st().hand[2] - 0.30) < 0.04, 484),
+        L('pressDoor', 1.03, () => st().hand[1] < 1.05, 88),
+        S('shutDoor', 1, () => st().goals.doorClosed, 660),
+        W('tidy', 66),
     ]
 
     let idx = 0
