@@ -32,7 +32,9 @@
 // what makes this a torch-lit dungeon, not an evenly lit box). Third mutant:
 // `if (live.length)` -> `if (false)` in buildSprites -> the rat/skeleton
 // pixel gates go red while every wall gate stays green (monsters are drawn
-// from the atlas, not painted into the maze pass).
+// from the atlas, not painted into the maze pass). Fourth mutant: delete the
+// rim draw pass in frame() (`uRim, 1.0` loop) -> "readability: monster keeps a
+// crisp outline" goes red (edges 0: the grey body blends into the lit floor).
 //
 // Usage: node scripts/deepglasscheck.mjs [--shots <dir>] [--json] [--no-speed]
 // Needs `npm run dev` running (or set DEV_PORT).
@@ -249,7 +251,10 @@ const viewPix = async (goto, expect, name, shotName) => {
 }
 await viewPix([5.5, 12.5, 0, Math.PI], { warm: 1500 }, 'door close-up', 'door.png')
 await viewPix([5.5, 10.5, 0, 0], { warm: 4000, darkFrac: 0.006 }, 'corridor torch + falloff', 'corridor.png')
-await viewPix([5.5, 4.5, 0, 0], { grey: 900 }, 'rat billboard', 'rat.png')
+const ratPix = await viewPix([5.5, 4.5, 0, 0], { grey: 900 }, 'rat billboard', 'rat.png')
+// a dark silhouette rim keeps the monster's outline crisp against the lit
+// walls; without it the grey body blends into the floor (dark-bright edges 0).
+ok('readability: monster keeps a crisp outline', ratPix.edges >= 24, `edges ${ratPix.edges}`)
 await viewPix([8.5, 5.5, 0, -Math.PI / 2], { cool: 1200 }, 'water pool cool', 'water.png')
 await viewPix([10.5, 7.5, 0, 0], { amber: 80 }, 'up-stairs arrow', 'stairs.png')
 const corridorStats = await viewPix([5.5, 10.5, 0, 0], {}, 'corridor again')

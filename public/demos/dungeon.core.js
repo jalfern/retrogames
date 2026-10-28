@@ -391,11 +391,13 @@ precision highp float;
 in vec2 vUv;
 in vec3 vLight;
 uniform sampler2D uAtlas;
+uniform float uRim;
 out vec4 o;
 void main(){
   vec4 t = texture(uAtlas, vUv);
   if (t.a < 0.35) discard;
-  o = vec4(t.rgb * vLight, 1.0);
+  vec3 c = (uRim > 0.5) ? vec3(0.020, 0.016, 0.012) : t.rgb * vLight;
+  o = vec4(c, 1.0);
 }`;
 
   function compile(gl, type, src) {
@@ -467,7 +469,7 @@ void main(){
     const pSpr = program(gl, VS_SPR, FS_SPR);
     const uM = {}, uS = {};
     for (const n of ['uVP', 'uCamPos', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas']) uM[n] = gl.getUniformLocation(pMaze, n);
-    for (const n of ['uVP', 'uCamPos', 'uRight', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas', 'uBase', 'uSize', 'uUvO', 'uUvS', 'uAnim']) uS[n] = gl.getUniformLocation(pSpr, n);
+    for (const n of ['uVP', 'uCamPos', 'uRight', 'uTime', 'uLC', 'uLCol', 'uLPR', 'uLPC', 'uLI', 'uAtlas', 'uBase', 'uSize', 'uUvO', 'uUvS', 'uAnim', 'uRim']) uS[n] = gl.getUniformLocation(pSpr, n);
 
     const STRIDE = 9 * 4;
     const vaoM = gl.createVertexArray();
@@ -822,6 +824,18 @@ void main(){
         gl.bindVertexArray(vaoS);
         gl.bindBuffer(gl.ARRAY_BUFFER, bufS);
         gl.bufferData(gl.ARRAY_BUFFER, sprData.subarray(0, ns * 5), gl.DYNAMIC_DRAW);
+        // dark silhouette rim (scaled up) then the lit core: keeps each
+        // monster's outline readable against the lit walls at range.
+        for (const s of api._live) {
+          const u = s._u;
+          gl.uniform3f(uS.uBase, u.base[0], u.base[1], u.base[2]);
+          gl.uniform2f(uS.uSize, u.size[0] * 1.12, u.size[1] * 1.12);
+          gl.uniform2f(uS.uUvO, u.uvO[0], u.uvO[1]);
+          gl.uniform2f(uS.uUvS, u.uvS[0], u.uvS[1]);
+          gl.uniform1f(uS.uAnim, u.anim);
+          gl.uniform1f(uS.uRim, 1.0);
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
         for (const s of api._live) {
           const u = s._u;
           gl.uniform3f(uS.uBase, u.base[0], u.base[1], u.base[2]);
@@ -829,6 +843,7 @@ void main(){
           gl.uniform2f(uS.uUvO, u.uvO[0], u.uvO[1]);
           gl.uniform2f(uS.uUvS, u.uvS[0], u.uvS[1]);
           gl.uniform1f(uS.uAnim, u.anim);
+          gl.uniform1f(uS.uRim, 0.0);
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         }
         gl.depthMask(true);
