@@ -33,6 +33,7 @@
     "neonraincheck": "node scripts/neonraincheck.mjs",
     "volcanocheck": "node scripts/volcanocheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
+  "deepglasscheck": "node scripts/deepglasscheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "oceanfoam": "node scripts/oceanfoam.mjs",
