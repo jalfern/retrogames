@@ -54,9 +54,9 @@ const bgSet = (key, count, fn) => {
 }
 
 // one item sprite, centered on (x, y)
-const drawItem = (ctx, kind, x, y, rot, tiny = false) => {
+const drawItem = (ctx, kind, x, y, rot, tiny = false, squashY = 1) => {
     const s = tiny ? 0.5 : 1
-    ctx.save(); ctx.translate(x, y); ctx.scale(s, s)
+    ctx.save(); ctx.translate(x, y); ctx.scale(s, s * squashY)
     if (kind === 'crate') {
         ctx.fillStyle = '#6e4a26'; ctx.fillRect(-7, -6, 14, 12)
         ctx.fillStyle = CORE.crate; ctx.fillRect(-6, -5, 12, 10)
@@ -157,6 +157,9 @@ const PickRushGame = () => {
         let musicZone = 0
         let contractSeed = 4242
         const parts = []
+        const landings = []
+        let boost = 0
+        let attractAt = 0
         const keys = { left: false, right: false, down: false }
         const keys2 = { left: false, right: false, down: false }
         let edgeA = false, edgeB = false, edge2A = false
@@ -203,12 +206,16 @@ const PickRushGame = () => {
             for (const e of evts) evLog.push({ ...e, tick: gs.tick })
             if (evLog.length > 240) evLog.splice(0, evLog.length - 240)
             for (const e of evts) {
-                if (e.type === 'grab') { audioController.playSweep(420, 760, 0.09, 'square', 0.05); burst(e.x, e.y, 3, '#cfd8e3', 1.4) }
+                if (e.type === 'grab') {
+                    audioController.playSweep(420, 760, 0.09, 'square', 0.05); burst(e.x, e.y ?? BELT_Y - 8, 3, '#cfd8e3', 1.4)
+                    if (e.seat === 1) { audioController.playTone(880, 0.05, 'square', 0.035); audioController.playTone(560, 0.07, 'square', 0.035, 0.05) }
+                }
                 else if (e.type === 'release') audioController.playNoise(0.07, 0.05)
                 else if (e.type === 'drop') {
                     audioController.playTone(660 + Math.min(6, e.combo) * 90, 0.07, 'square', 0.06)
                     audioController.playTone(990 + Math.min(6, e.combo) * 90, 0.12, 'square', 0.05, 0.07)
                     burst(e.x, BIN_TOP, 5, TAG[e.kind], 2)
+                    if (landings.length < 8) landings.push({ kind: e.kind, x: e.x, t: 0 })
                     if (e.combo >= 4) say(`COMBO ×${e.combo}`, '#ffd23f')
                 }
                 else if (e.type === 'miss') { audioController.playSweep(240, 120, 0.2, 'sawtooth', 0.06); shake = 4 }
@@ -223,10 +230,13 @@ const PickRushGame = () => {
                 }
                 else if (e.type === 'slip') { audioController.playSweep(900, 500, 0.1, 'sawtooth', 0.05); burst(e.x, e.y, 3, '#9aa4b0', 1.2) }
                 else if (e.type === 'shift') {
+                    audioController.playSweep(940, 1180, 0.16, 'triangle', 0.07)
+                    audioController.playSweep(1180, 920, 0.2, 'triangle', 0.07, 0.2)
                     audioController.playTone(523, 0.1, 'square', 0.07)
-                    audioController.playTone(659, 0.1, 'square', 0.07, 0.11)
-                    audioController.playTone(784, 0.2, 'square', 0.07, 0.22)
+                    audioController.playTone(659, 0.1, 'square', 0.07, 0.32)
+                    audioController.playTone(784, 0.2, 'square', 0.07, 0.43)
                     say(`SHIFT ${e.shift + 1} CLEAR — LINE SPEED UP`, '#5dff8f')
+                    boost = 52
                 }
                 else if (e.type === 'fire') { audioController.playDeath(); shake = 9; flash = 12 }
                 else if (e.type === 'win') { audioController.playFanfare(); say('CONTRACT COMPLETED!', '#ffd23f') }
@@ -352,19 +362,24 @@ const PickRushGame = () => {
             // rubber tread
             ctx.fillStyle = '#161c24'; ctx.fillRect(-4, BELT_Y, BELT_END + 8, 12)
             ctx.save(); ctx.beginPath(); ctx.rect(-4, BELT_Y, BELT_END + 8, 12); ctx.clip()
-            ctx.strokeStyle = '#242e3a'; ctx.lineWidth = 3
+            ctx.strokeStyle = '#2c3947'; ctx.lineWidth = 4
             const off = gs.beltPos
-            for (let x = -20; x < BELT_END + 20; x += 16) {
+            for (let x = -20; x < BELT_END + 20; x += 14) {
                 ctx.beginPath(); ctx.moveTo(x + off, BELT_Y); ctx.lineTo(x + off + 7, BELT_Y + 12); ctx.stroke()
             }
             ctx.restore()
-            ctx.fillStyle = 'rgba(255,255,255,0.05)'; ctx.fillRect(-4, BELT_Y, BELT_END + 8, 1.5)
-            // end rollers
+            // side rails: lit top lip + shadow cast onto the tread
+            ctx.fillStyle = '#46586c'; ctx.fillRect(-4, BELT_Y - 2, BELT_END + 8, 2)
+            ctx.fillStyle = 'rgba(255,255,255,0.10)'; ctx.fillRect(-4, BELT_Y, BELT_END + 8, 1.5)
+            ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(-4, BELT_Y + 1.5, BELT_END + 8, 2)
+            ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-4, BELT_Y + 10, BELT_END + 8, 2)
+            // end rollers, spinning with the real belt speed
             for (const rx of [-1, BELT_END + 3]) {
                 ctx.fillStyle = '#3a4c60'; circle(ctx, rx + 2, BELT_Y + 6, 7); ctx.fill()
                 ctx.strokeStyle = '#22303e'; ctx.lineWidth = 2
-                const ra = tick * 0.14
+                const ra = gs.beltPos * 0.32
                 ctx.beginPath(); ctx.moveTo(rx + 2 - Math.cos(ra) * 5, BELT_Y + 6 - Math.sin(ra) * 5); ctx.lineTo(rx + 2 + Math.cos(ra) * 5, BELT_Y + 6 + Math.sin(ra) * 5); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(rx + 2 - Math.sin(ra) * 5, BELT_Y + 6 + Math.cos(ra) * 5); ctx.lineTo(rx + 2 + Math.sin(ra) * 5, BELT_Y + 6 - Math.cos(ra) * 5); ctx.stroke()
             }
             // end-of-line warning: strobe board + flags
             const danger = gs.items.some((it) => it.onBelt && it.carriedBy === -1 && it.x > 350)
@@ -388,12 +403,20 @@ const PickRushGame = () => {
                 ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fillRect(b.x, y, 2, FLOOR_Y - y)
                 // open mouth
                 ctx.fillStyle = '#0a0f16'; ctx.fillRect(b.x + 4, y + 1, b.w - 8, 3)
-                // landed stock silhouette (climbs with the fill)
+                // landed stock: the bin's own kind, stacking and squashing in
                 const fill = Math.min(10, gs.binFill[i])
+                const tag = BIN_TAG[i]
                 for (let k = 0; k < fill; k++) {
                     const bxp = b.x + 8 + (k % 3) * 18 + ((k * 13) % 6)
                     const byp = FLOOR_Y - 6 - Math.floor(k / 3) * 9
-                    if (byp > y + 8) { ctx.fillStyle = 'rgba(40,52,66,0.9)'; ctx.fillRect(bxp, byp, 12, 8) }
+                    if (byp <= y + 8) continue
+                    const squash = k >= fill - 3 ? 0.75 : 1
+                    ctx.globalAlpha = 0.55
+                    ctx.fillStyle = tag
+                    if (k % 3 === 2) { circle(ctx, bxp + 6, byp + 4, 5); ctx.fill() } else ctx.fillRect(bxp, byp + 8 - 8 * squash, 12, 8 * squash)
+                    ctx.globalAlpha = 0.25
+                    ctx.fillStyle = '#0a0f16'; ctx.fillRect(bxp, byp + 8 - 8 * squash + 5, 12 * (k % 3 === 2 ? 0.8 : 1), 2)
+                    ctx.globalAlpha = 1
                 }
                 // tag plate
                 ctx.fillStyle = '#0d141d'; ctx.fillRect(b.x + 8, y + 24, b.w - 16, 12)
@@ -497,9 +520,11 @@ const PickRushGame = () => {
             ctx.fillStyle = '#22303e'; ctx.fillRect(VIEW_W / 2 - 60, 12, 120, 4)
             ctx.fillStyle = left < 0.18 ? (tick % 20 < 10 ? '#ff5a4f' : '#7c2f28') : '#5dff8f'
             ctx.fillRect(VIEW_W / 2 - 60, 12, 120 * Math.max(0, left), 4)
-            // quota gauge
+            // quota gauge — amber pulse when one pick stands between here and the whistle
             const q = SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota
-            ctx.fillStyle = '#8fa8c0'; ctx.font = 'bold 8px monospace'
+            const near = !gs.end && gs.correct > 0 && q - gs.correct === 1
+            ctx.fillStyle = near && tick % 16 < 8 ? '#ffd23f' : '#8fa8c0'
+            ctx.font = `bold ${near ? 9 : 8}px monospace`
             ctx.fillText(`QUOTA ${gs.correct}/${q}`, VIEW_W / 2, 24)
             // fuse box
             ctx.textAlign = 'right'
@@ -526,15 +551,24 @@ const PickRushGame = () => {
         const paintAttract = (tick) => {
             ctx.fillStyle = 'rgba(8,10,16,0.62)'; ctx.fillRect(0, 0, VIEW_W, VIEW_H)
             ctx.textAlign = 'center'
-            const bob = Math.sin(tick * 0.05) * 2
+            const beat = Math.min(1, attractAt / 34), ease = beat < 1 ? 1 - (1 - beat) * (1 - beat) : 1
+            const bob = Math.sin(tick * 0.05) * 2 + (1 - ease) * 10
+            ctx.globalAlpha = ease
             // sign box
             ctx.fillStyle = 'rgba(10,14,20,0.85)'; ctx.fillRect(VIEW_W / 2 - 120, 58 + bob, 240, 44)
             ctx.strokeStyle = '#c8a11c'; ctx.lineWidth = 2; ctx.strokeRect(VIEW_W / 2 - 120, 58 + bob, 240, 44)
             ctx.font = 'bold 26px monospace'
-            ctx.fillStyle = '#ff8c1a'; ctx.fillText('PICK', VIEW_W / 2 - 34, 90 + bob)
-            ctx.fillStyle = '#5dff8f'; ctx.fillText('RUSH', VIEW_W / 2 + 38, 90 + bob)
+            // neon tubes: one buzzes dark every so often, warm glow behind both
+            const flick1 = (tick % 181 < 3 || tick % 97 < 2) ? 0.3 : 1
+            const flick2 = (tick % 157 < 2 || tick % 113 < 3) ? 0.35 : 1
+            ctx.shadowColor = '#ff8c1a'; ctx.shadowBlur = 6
+            ctx.globalAlpha = ease * flick1; ctx.fillStyle = '#ff8c1a'; ctx.fillText('PICK', VIEW_W / 2 - 34, 90 + bob)
+            ctx.shadowColor = '#5dff8f'
+            ctx.globalAlpha = ease * flick2; ctx.fillStyle = '#5dff8f'; ctx.fillText('RUSH', VIEW_W / 2 + 38, 90 + bob)
+            ctx.shadowBlur = 0; ctx.globalAlpha = ease
             ctx.font = 'bold 8px monospace'; ctx.fillStyle = '#8fa8c0'
             ctx.fillText('NIGHT SHIFT SORTING CO. — EST. 19XX', VIEW_W / 2, 116 + bob)
+            ctx.globalAlpha = 1
             if (tick % 60 < 40) {
                 ctx.font = 'bold 11px monospace'; ctx.fillStyle = '#ffffff'
                 ctx.fillText('PRESS ANY KEY / TAP TO CLOCK IN', VIEW_W / 2, 150)
@@ -587,19 +621,35 @@ const PickRushGame = () => {
             paintBack(tick)
             paintFloor()
             paintBelt(tick)
+            if (boost > 0) {
+                ctx.globalAlpha = (boost / 52) * 0.4
+                ctx.strokeStyle = '#9fb8d0'; ctx.lineWidth = 1
+                const bo = (tick * 6) % 26
+                for (let x = -26 + bo; x < VIEW_W; x += 26) {
+                    ctx.beginPath(); ctx.moveTo(x, BELT_Y + 3); ctx.lineTo(x + 12, BELT_Y + 3); ctx.stroke()
+                    ctx.beginPath(); ctx.moveTo(x + 13, BELT_Y + 8); ctx.lineTo(x + 25, BELT_Y + 8); ctx.stroke()
+                }
+                ctx.globalAlpha = 1
+                boost--
+            }
             // items behind the claw? cargo under the belt line draws over bins
             for (const it of gs.items) {
                 if (it.carriedBy !== -1) continue
                 drawItem(ctx, it.kind, Math.round(it.x), Math.round(it.y), it.rot)
             }
             paintBins(tick)
+            for (let i = landings.length - 1; i >= 0; i--) {
+                const l = landings[i]; l.t++
+                if (l.t > 10) { landings.splice(i, 1); continue }
+                drawItem(ctx, l.kind, Math.round(l.x), BIN_TOP + 4, 0, false, 0.45 + 0.55 * (l.t / 10))
+            }
             paintRail()
             for (let s = 0; s < gs.arms.length; s++) paintArm(s, tick)
             paintFx()
             ctx.restore()
             paintHud(tick)
             if (flash > 0) { ctx.fillStyle = `rgba(255,60,50,${flash / 40})`; ctx.fillRect(0, 0, VIEW_W, VIEW_H); flash-- }
-            if (screenRef.current === 'attract') paintAttract(tick)
+            if (screenRef.current === 'attract') { paintAttract(tick); attractAt++ } else attractAt = 0
             if (screenRef.current === 'over') paintOver(tick)
             // toast
             if (hudRef.current.toastT > 0) { hudRef.current.toastT--; if (hudRef.current.toastT === 0 && hudRef.current.toast) hudRef.current.toast.textContent = '' }
@@ -626,7 +676,7 @@ const PickRushGame = () => {
 
         const startPlay = () => {
             gs = makeGame((Math.random() * 2 ** 31) | 0, 2)
-            parts.length = 0; gs.fx.length = 0
+            parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
             setEnd(null)
             setMode('play')
             audioController.playTone(220, 0.08, 'square', 0.06)
@@ -688,6 +738,7 @@ const PickRushGame = () => {
             shift: gs.shift,
             quota: SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota,
             correct: gs.correct,
+            quotaNear: !gs.end && gs.correct > 0 && SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota - gs.correct === 1,
             combo: gs.combo,
             fusesLeft: FUSES - gs.warnings,
             beltV: Math.round(1.05 * SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].speed * 1000) / 1000,
@@ -708,6 +759,7 @@ const PickRushGame = () => {
                 contractSeed = seed >>> 0
                 gs = makeGame(contractSeed, players || 1)
                 parts.length = 0
+                landings.length = 0; boost = 0
                 humanSeat2Ref.current = false
                 setEnd(null)
                 setMode('play')

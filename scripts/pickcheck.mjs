@@ -451,6 +451,23 @@ if (!NODE_ONLY) {
         await page.waitForTimeout(300)
         rep.check('RESTART: a Space after the firing card clocks back in', await page.evaluate(() => window.__pickrushTest.state().mode === 'attract'))
 
+        // juice carrier: the quota gauge flags near-clear at exactly one pick short
+        const near = await page.evaluate(() => {
+            const g = window.__game
+            g.reset(7, 1)
+            const base = g.state().quotaNear
+            const gs = window.__pickrushTest.sim()
+            gs.correct = g.state().quota - 1
+            const on = g.state().quotaNear
+            gs.correct = g.state().quota
+            const over = g.state().quotaNear
+            gs.correct = 0
+            g.release()
+            return { base, on, over }
+        })
+        rep.check('JUICE: quotaNear flips true at exactly one pick short of quota',
+            !near.base && near.on === true && near.over === false, JSON.stringify(near))
+
         // determinism through the live contract
         const script = scriptFor('pick-rush')
         const det = await page.evaluate((scr) => {
