@@ -99,3 +99,27 @@ npm run dev                 # play at /retrogames/britannia
   goes red, restored green.
 - Still empty of *monsters* — the honest overworld threat arrives with
   combat (stage 3).
+
+## Coastal swell (#1135 polish)
+
+- `swell.js`: the sea breathes. A plane-wave crest field `crest(tx,ty,t)`
+  rides west-to-east at one tile per 24 ticks — the same wind the weather
+  fronts drift on — with a slight north-south tilt so wavefronts are not
+  screen-perfect lines. Exact invariant: the crest at `(x, t)` reappears at
+  `(x+k, t+k*24)`. `crestLane` jitters the crest's position within each tile
+  so neighbours never paint in lockstep.
+- Foam lives only where land holds the water: `landSides` reads the map for
+  the edges with land beside them, `foam` is 0 on open ocean and pulses
+  0.35..1 at shore as each crest passes (monotone in the crest), and
+  `foamPatches` scatters seeded speckles against the correct edge — the
+  ocean-demo painted-blob dissolve shrunk to tile scale, never a solid
+  stroke. Pure + deterministic (hashes of tile/side/seed); sim and hashes
+  untouched; classic mode (`C`) stays a clean tile sheet.
+- `britanniacheck` +21 gates: determinism, east-phase (PH_T < 0), ride
+  invariant, periodic-but-alive, band span, lane spread, open-ocean never
+  foams, shore foam never vanishes, everywhere-pulsing, foam-tracks-crest
+  monotone, coast/open sampling of the real map, speckle determinism/
+  count/bounds/edge-hugging/seed-sensitivity, plus 4 wiring gates. Mutants:
+  PH_T=0 (ride/east red), drop coast gate (open-ocean foam red), swap the
+  'w' cluster (edge red), stub the drawTile crest (wiring red) — each goes
+  red, restored green.

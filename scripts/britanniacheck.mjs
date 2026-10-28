@@ -13,6 +13,7 @@ import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/av
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit } from '../src/games/Britannia/moons.js'
 import { shadeAt } from '../src/games/Britannia/tiles.js'
+import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches } from '../src/games/Britannia/swell.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -422,6 +423,106 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/blockShades\(tx, ty\)/.test(src), 'index.jsx: the modern tile shades come from the world-continuous field (blockShades)')
     ok(!/sheet\[v < 9 \? v : 8\]|tiles\.modern/.test(src), 'index.jsx: no per-tile stamp cache remains for the modern land')
+}
+
+// coastal swell (#1135): the sea is never flat static color — a plane of
+// swells rides west-to-east (the same wind the fronts drift on), foam gathers
+// only where land holds the water back, swells with every passing crest, and
+// breaks into seeded speckles hugging the right land edge.
+// Prove-it-can-fail: set PH_T = 0 in swell.js (the ride/east gates go red),
+// drop the coast gate in foam() (open-ocean foam goes red), swap the 'e'/'w'
+// clusters in foamPatches() (the edge gate goes red).
+{
+    ok(crest(40, 60, 500) === crest(40, 60, 500) && crestLane(40, 60, 3) === crestLane(40, 60, 3),
+        'swells deterministic per place+time+lane-seed')
+    ok(PH_T < 0, `phase falls as ticks rise at fixed x (PH_T=${PH_T.toFixed(5)}) => crests run east, with the wind`)
+    let rideBad = 0, rideTot = 0
+    for (let ty = 0; ty < 64; ty += 5) for (let tx = 0; tx < 64; tx += 3) for (const k of [1, 2, 3]) {
+        rideTot++
+        if (Math.abs(crest(tx, ty, 137) - crest(tx + k, ty, 137 + k * SWELL_TILE)) > 1e-6) rideBad++
+    }
+    ok(rideBad === 0, `swells ride east: the crest at (x, t) reappears at (x+k, t+k*${SWELL_TILE}) (${rideTot - rideBad}/${rideTot} samples hold)`)
+    ok(Math.abs(crest(40, 60, 300) - crest(40, 60, 300 + Math.round(SWELL_TILE / SWELL_PH))) < 1e-6 &&
+        Math.abs(crest(40, 60, 307) - crest(40, 60, 313)) > 1e-3,
+        'the swell field is periodic (~48 ticks) but not frozen between repeats')
+    let cmin = 1, cmax = 0
+    for (let ty = 0; ty < 96; ty += 7) for (let tx = 0; tx < 96; tx += 5) for (let tt = 0; tt < SWELL_TILE; tt += 3) {
+        const c = crest(tx, ty, tt + 5)
+        if (c < cmin) cmin = c
+        if (c > cmax) cmax = c
+    }
+    ok(cmin < 0.15 && cmax > 0.55, `the sea visibly breathes: crest band spans ${cmin.toFixed(2)}..${cmax.toFixed(2)} (not flat, not all crest)`)
+    let lmin = 99, lmax = 0
+    for (let i = 0; i < 200; i++) {
+        const l = crestLane(i % 60, (i * 7) % 60, 0)
+        if (l < lmin) lmin = l
+        if (l > lmax) lmax = l
+    }
+    ok(lmin >= 6 && lmax <= 26 && lmax - lmin > 8, `crest lanes vary tile to tile (${lmin.toFixed(1)}..${lmax.toFixed(1)}) so the sea never paints in lockstep`)
+    let foamSea = 0
+    for (let i = 0; i < 300; i++) if (foam(i % 97, (i * 13) % 97, false, i * 5, i % 7) > 0) foamSea++
+    ok(foamSea === 0, `open ocean never foams (${foamSea} foaming mid-sea tiles)`)
+    let vanish = 0
+    for (let i = 0; i < 300; i++) if (foam(i % 97, (i * 13) % 97, true, i * 5, i % 7) < 0.25) vanish++
+    ok(vanish === 0, 'shore foam is always there (never vanishes entirely)')
+    let pulseBad = 0, pulseTot = 0
+    for (let tx = 0; tx < 40; tx += 3) for (let ty = 0; ty < 40; ty += 5) {
+        let fmin = 1, fmax = 0
+        for (let tt = 0; tt < SWELL_TILE * 2; tt++) {
+            const st = foam(tx, ty, true, tt, 0)
+            if (st < fmin) fmin = st
+            if (st > fmax) fmax = st
+        }
+        pulseTot++
+        if (fmax - fmin < 0.2) pulseBad++
+    }
+    ok(pulseBad === 0, `foam swells as crests pass at every shore tile (${pulseTot} tiles all pulsing >0.2)`)
+    let monoBad = 0
+    for (let i = 0; i < 120; i++) {
+        const tx = i % 41, ty = 7 + (i * 3) % 37
+        for (let a = 0; a < 24; a++) for (let b = 0; b < 24; b++) {
+            const ca = crest(tx, ty, a * 2), cb = crest(tx, ty, b * 2)
+            const fa = foam(tx, ty, true, a * 2, 3), fb = foam(tx, ty, true, b * 2, 3)
+            if (ca < cb - 1e-9 && fa > fb + 1e-9) monoBad++
+        }
+    }
+    ok(monoBad === 0, 'foam tracks the swell: a bigger crest is never a thinner line')
+    let coastSeen = 0, openSeen = 0
+    for (let y = 0; y < MAPW; y += 4) for (let x = 0; x < MAPW; x += 4) {
+        if (!isSea(world.get(x, y))) continue
+        if (landSides(x, y, world).length) coastSeen++
+        else openSeen++
+    }
+    ok(coastSeen > 50 && openSeen > 50, `Britannia has both coast and open sea for the renderer (${coastSeen} coast, ${openSeen} open sampled)`)
+    const p1 = foamPatches(50, 60, 'e', 100, 0, 0.8)
+    const p2 = foamPatches(50, 60, 'e', 100, 0, 0.8)
+    ok(p1.length === p2.length && p1.every((p, i) => p.x === p2[i].x && p.y === p2[i].y && p.sz === p2[i].sz && p.a === p2[i].a),
+        'foam speckles deterministic (same tile+side+time+seed, same blobs)')
+    ok(p1.length >= 4 && p1.length <= 8, `a shore edge carries a plausible scatter (${p1.length} blobs)`)
+    ok(foamPatches(50, 60, 'e', 100, 0, 0).length === 0, 'no speckles without foam strength')
+    ok(p1.every(p => p.x >= 0 && p.x <= 32 && p.y >= 0 && p.y <= 32 && p.a > 0 && p.a <= 1 && p.sz >= 1),
+        'every speckle sits inside its tile with a sane size and alpha')
+    {
+        const edgeOf = s => s === 'e' ? ['x', 20] : s === 'w' ? ['x', 0] : s === 's' ? ['y', 20] : ['y', 0]
+        let edgeBad = 0
+        for (const s of ['n', 's', 'e', 'w']) for (let i = 0; i < 12; i++) {
+            const [axis, lo] = edgeOf(s)
+            for (const p of foamPatches(i * 3 + 1, i * 5 + 2, s, i * 7, 0, 0.7)) {
+                if (p[axis] < lo - p.sz || p[axis] > lo + 12 + p.sz) edgeBad++
+            }
+        }
+        ok(edgeBad === 0, 'foam hugs the land side: every blob sits against the edge it belongs to')
+    }
+    ok(JSON.stringify(p1) !== JSON.stringify(foamPatches(50, 60, 'e', 100, 4, 0.8)), 'seed changes the foam scatter')
+    {
+        const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+        ok(/crest\(tx, ty, t\)/.test(src) && /foamPatches\(tx, ty, sd, t, S\.seed, st\)/.test(src), 'index.jsx: ocean tiles paint crest lines and shore foam in drawTile')
+        ok(/landSides\(tx, ty, world\)/.test(src), 'index.jsx: foam lands only on edges with real land beside them')
+        ok(/swell: crest\(S\.x, S\.y, S\.tick\)/.test(src), 'index.jsx: the harness can watch the swell under the Avatar')
+        const classicIdx = src.indexOf('if (classicOn) { ctx.drawImage(tiles.classic')
+        const swellIdx = src.indexOf('crest(tx, ty, t)')
+        ok(classicIdx >= 0 && swellIdx > classicIdx, 'index.jsx: classic (C) mode still paints its clean tile sheet before any swell')
+    }
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
