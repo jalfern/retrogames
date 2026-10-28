@@ -1,46 +1,46 @@
-# STATE — session 36 (2026-10-28)
+# STATE — session 37 (2026-10-28)
 
 ## Shipped this session
-**DEEP GLASS** (#1129, PR #1166, squash-merged as `9ffa84a`) — the shared first-person
-dungeon renderer the queue's oldest platform item asked for. Lives as a demo (demos law:
-not registered in `games.js`).
+**STICK WALK** (#1150, PR #1177, squash `167d713`) — resumed a dead session's
+corpse (gait core was pushed; renderer+harness were uncommitted in-flight).
+Live: https://jalfern.com/retrogames/demos/stickwalk.html (demos law: index only,
+never games.js).
 
-- `public/demos/dungeon.core.js` — WebGL2 engine, the reusable piece for future
-  Wizardry/Bard's-Tale/Ultima-IV titles:
-  - 512px atlas: brick/flag/timber/water/gravel/stairs/door + 2-frame monster billboards
-  - lighting: flickering torch cone, decaying spell lights (2 slots), fog-to-darkness
-  - pure logic headless-safe: `blocked`, `viewCells`, `cellBlocks`
-  - smooth grid moves: quarter-turns with easing + step head-bob, `snapTo`/`animateTo`
-- `public/demos/deepglass.html` — two-level "Glass Vault" showcase: door-gated vault,
-  crypt down-stairs, three monsters, attract autopilot, synth audio, mobile pad.
-- `scripts/deepglasscheck.mjs` + `npm run deepglasscheck` — 48 gates
-  (boots/rules/smooth/pixels/attract/phone/law), frame-polled, mutant-tested
-  (disable sprite draw → sprite gates go red). Local 48/48 twice.
+- `public/demos/stickwalk.html` — studio renderer: perspective grid clipped at the
+  camera near plane, depth-shaded white bones + amber joint dots (cyan feet), planted
+  contact shadows, orbit/drag camera, attract autopilot circles, telemetry
+  (speed/gait/Froude/slip), synthesized heel/toe footsteps, phone pad, credits card.
+- `scripts/stickwalkcheck.mjs` + `npm run stickwalkcheck` — 47 gates
+  (boots/rules/pixels/smooth/attract/phone/law), 47/47 twice local, proven-fail
+  mutant: contact-ride turns slip gates red (170–330 mm) at every speed.
 
-## Hard-won engine facts (now true in core)
-- `snapTo`/`tickAnim` must carry level z (`EYE_H + z`) — ignoring it drew a lower level
-  below its own floor (crypt was pitch black).
-- Monster billboards use wizardry-flat neutral luma (`dot(L,0.34)`), otherwise the warm
-  torch tint makes "grey" monster pixels unclassifiable and pixel gates lie.
-- Water gets a cyan shimmer term in FS_MAZE so it reads cool under warm torch light.
-- Harness gates wait on FRAMES (`waitForFunction` on `frames()`), never wall-clock —
-  the warden box sat at load ~14 all session (1–2 s rAF frames). Busy-loops around
-  readPixels freeze rAF and read stale canvases — sample inside rAF callbacks instead.
+## Main-red fix (#601 freeze, lifted this session)
+Nightly failed `missileplay` (cityHit gates). Root cause: DEV `quiet` stage emptied
+the queue but the sim's auto wave-clear still fired on empty sky, wiping planted
+warheads on slow CI frames (reproduced at 20x/64x CPU throttle). Mine (`hold` flag,
+PR #1173) and QA's sentinel-queue fix (#1176, merged first) solved it independently;
+#1173 closed redundant. Nightly rerun green → freeze lifted.
+
+## Hard-won renderer facts (the corpse's silent-NaN trio)
+- `sim.pos` is `[x, z]` — grid/floor code indexing `center[2]` gets `undefined`;
+  the grid and body shadow shipped invisibly for a whole draft.
+- Lines spanning the camera must be clipped at the near plane, not dropped when an
+  endpoint projects null (every ±9 m line then vanishes).
+- Joint dots/bone widths must derive from metres×focal/z; fixed constants produced
+  68 px bones (a blob person). Gate thresholds recalibrated with the art.
 
 ## Next goal
-No queued claim left verified this session — pick the next free item on the forge board
-(`https://jalfern.com/retrogames/forge`) or continue DEEP GLASS: convert the demo into a
-registered arcade title with a real crawl/cast loop (that needs Jon's taste sign-off —
-candidate jonq question).
+No queued claim left verified this session. #1150 closed; check the forge board
+(https://jalfern.com/retrogames/forge) — TEN-DEEP next stage, #1179 is QA's (not a
+builder lane task per 2026-10-19 decision).
 
 ## Environment notes
-- Box heavily loaded (omlx-server + Adobe, load avg ~14). Speed gate passes only on
-  quiet boxes; `--no-speed` is the local mode, CI runs full.
-- QA lane runs its own vite on :5174; forge on :5173.
+- Box heavily loaded; `--no-speed` local mode for stickwalkcheck (CI runs full).
+- :5173 belongs to a stale dungeon-renderer lane worktree; this session used :5176.
 
 ## Open questions for Jon
 (none filed this session)
 
 ## Carry-over
-- TEN-DEEP (stages 1–3 shipped #1137/#1153/#1159) — next stage unknown; check board.
-- Demos index now carries deepglass (`public/demos/index.html`).
+- #1179 QA — STICK WALK polish pass (head silhouette, arm depth sort, grid fade…).
+- TEN-DEEP stages 1–3 shipped (#1137/#1153/#1159) — next stage: check board.
