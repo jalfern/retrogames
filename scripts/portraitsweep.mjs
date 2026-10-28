@@ -2,8 +2,10 @@
 // 390×844 and asks each visible canvas: does your CSS box keep your intrinsic
 // aspect ratio? A >2% mismatch means the picture is stretched (the Britannia
 // bug). Also requires the ROTATE YOUR PHONE card (#1147) on wide titles.
-// Advisory overall, but HARD-FAILS the titles fixed in #1147 so a future PR
-// cannot re-introduce the stretch silently.
+// #1211: every fixed title is now honest (last three: myst, mario-kart,
+// comet-drift), so the sweep goes HARD-FAIL-WIDE — any visible-canvas route
+// that stretches or hides its rotate hint exits red. Routes whose canvas has
+// not booted in the probe window stay SKIP (advisory), as before.
 //
 // Usage: node scripts/portraitsweep.mjs [--only path,path] [--port N]
 
@@ -13,8 +15,6 @@ const args = process.argv.slice(2)
 const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d }
 const port = opt('--port', process.env.DEV_PORT || '5173')
 const only = opt('--only') ? opt('--only').split(',') : null
-
-const FIXED = ['/britannia', '/outrun', '/tempest']
 
 const src = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
 const paths = [...src.matchAll(/path:\s*'([^']+)'/g)].map((m) => m[1]).filter((p) => p !== '/')
@@ -63,9 +63,8 @@ for (const p of routes) {
     const stretched = rows.filter((r) => r.skew > 0.02)
     const hintBad = wide && !hint
     const bad = stretched.length || hintBad
-    const tag = FIXED.includes(p) ? (bad ? 'FAIL' : 'ok  ') : (bad ? 'WARN' : 'ok  ')
-    if (FIXED.includes(p) && bad) failures++
-    else if (bad) warnings++
+    const tag = bad ? 'FAIL' : 'ok  '
+    if (bad) failures++
     console.log(`${tag} ${p}  canvases=${rows.map((r) => `${r.w}x${r.h}->${r.cw}x${r.ch} skew ${(r.skew * 100).toFixed(1)}%`).join(' | ')}${hintBad ? '  MISSING-ROTATE-HINT' : ''}${hint ? '  rotate-hint' : ''}`)
 }
 await browser.close()

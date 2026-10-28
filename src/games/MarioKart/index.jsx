@@ -29,7 +29,10 @@ const LAND_H = 224
 const LAND_W_MIN = 256
 const LAND_W_MAX = 512
 const PORT_W = 256
-const PORT_H_MAX = 448
+// #1211: the cap must not clamp a real phone's aspect — 390x844 is 0.462 and
+// wants H=554; the old 448 left a 19% CSS stretch. 576 covers every current
+// portrait down to 0.44 aspect; object-contain below letterboxes beyond that.
+const PORT_H_MAX = 576
 const ROAD_ROWS = 122   // horizon -> bottom of the playfield (camera framing)
 const HUD_ROWS = 24     // instrument strip along the bottom
 const CAM_H = 55
@@ -85,7 +88,7 @@ export default function MarioKart() {
                 W = Math.max(LAND_W_MIN, Math.min(LAND_W_MAX, Math.round(LAND_H * aspect)))
             } else {
                 W = PORT_W
-                H = Math.min(PORT_H_MAX, Math.max(LAND_H, Math.round(PORT_W / Math.max(0.5, aspect))))
+                H = Math.min(PORT_H_MAX, Math.max(LAND_H, Math.round(PORT_W / aspect)))
             }
             canvas.width = W
             canvas.height = H
@@ -600,7 +603,7 @@ export default function MarioKart() {
             className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none"
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
-            <canvas ref={canvasRef} data-fit="source" width={256} height={224} className="block w-full h-full" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
+            <canvas ref={canvasRef} data-fit="source" width={256} height={224} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
