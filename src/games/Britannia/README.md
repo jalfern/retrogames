@@ -37,8 +37,9 @@ transcribed into source:
   rain in the south, snow north of the snow line (y<72), storms with night
   lightning + delayed thunder — and the whole pattern drifts west-to-east at
   one region per epoch (`driftOf`), so fronts travel and a cell keeps its kind
-  as it rides. Fronts ignore terrain (no rain shadow behind the mountains),
-  move at constant speed, and add nothing on the sea surface beyond the tint.
+  as it rides. Rock blocks the wind: rain shadow, see below. Fronts still move
+  at constant speed, and precipitation adds nothing on the sea surface beyond
+  the tint.
 - Moongates warp between the 8 detected stars with a destination picker;
   the menu names each gate for its virtue-moon (moons.js, the eight-wheel
   homage to the original) and prints tonight's phase with a lit-disc glyph —
@@ -58,6 +59,35 @@ transcribed into source:
   heath vs plains (#1135 archaeology). Sea/cliff/plains have no named tileset
   and stay flat fills. The EGA map palette in `ega.js` reproduces the semantic
   colour use the tilesets prove (the original set it by port I/O at runtime).
+
+## Rain shadow (#1135 polish)
+
+- `weather.js`: fronts ride west-to-east, so rock (terrain 3) is a wind
+  barrier. `reliefBias(x, y, terrainAt)` shifts the region roll by −0.22 at
+  the ridge's east foot, decaying linearly to 0 past 8 tiles (leeward shadow:
+  the air already rained out); +0.12 west of the ridge with the same falloff
+  (windward uplift); +0.15 on the rock itself (summit). Rock equidistant both
+  sides cancels to 0 (a valley between twin ridges stays neutral), sea casts
+  nothing (sea is not rock), and with no terrain passed the sky is bit-for-bit
+  the old drift field — every pre-existing 4-arg caller is untouched.
+- `weatherAt` / `flashAt` / `flashOnset` take the optional `terrainAt` last and
+  shift the same roll, so the first leeward tile can never storm (−0.22 caps
+  r below the 0.88 storm line) and lightning follows its storm into the dry.
+- `index.jsx` feeds the loaded `WORLD.MAP` through `terrainAt`, and the
+  harness state exposes `shadow` (the bias under the Avatar) so bots can see
+  it: walk east off a ridge and the moors stay dry while the west face takes
+  the weather.
+- `britanniacheck` +18 gates: null-passthrough parity, orientation
+  (summit/up/wet, east/down/dry), monotone decay + hard zero past 8, twin-ridge
+  cancellation, sea neutrality, determinism, dry conversions with zero
+  impossible reversals east, wet conversions with zero impossible dryings west,
+  the first leeward tile never storms (the base field storms it 41 times
+  without the shadow), windward storms do arrive, no lightning in the shadow,
+  real Britannia has rock (693 sampled), the sky bites exactly where ridges
+  stand and never where they don't, and 4 wiring gates. Mutants: flipping the
+  two signs reddens 5 gates; zeroing the bias reddens 6 — each restored green.
+- Still honest: the shadow is 1-D along the wind (no cross-wind ridge shape,
+  no orographic cloud cap on the summit itself).
 
 ## Verify
 
