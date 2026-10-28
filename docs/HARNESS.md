@@ -228,3 +228,22 @@ never collide, then pushes + files. The soak closes itself: `nightly.json` carri
 runs fail on their own; runs that survive the cap keep moving and are flagged endurance, so
 endless designs stay distinguishable from trapped states, and winning is never gated.
 
+**The juice audit (#1130):** "every player action should get a reaction back" is the
+game-feel rule; `scripts/juiceaudit.mjs` makes it a number. For every contract game it seeds
+through `window.__game.reset(seed)` — deliberately NOT `step()`: the loop lock bypasses the
+live input→events→audio path, which is exactly where juice lives (proved on Lunar Lander:
+locked ticks burn fuel but hum nothing) — then holds each declared button ~150 ms with real
+KeyboardEvents (VirtualControls' own codes; `B` reads its code off `[data-vc=b][data-key]`,
+pointer titles get a canvas-centre tap), sampling every animation frame against an equal idle
+window at the same seed and phase. Channels: **sound** (AudioController counts scheduled
+one-shots, exposed DEV-only as `window.__audioSfx`; the music bed never counts), **motion**
+(state keys the idle window never moved — deterministic sims make this a clean paired test,
+which pixels cannot be because starfields twinkle by design), **score pop**, and a high-bar
+**fx** burst (≥2% of the canvas at once, 1.6× idle: explosions, flashes, shake). PREP takes
+the shortest pre-roll out of wait phases (Missile Command ignores fire for 150 ticks — the
+banner is law, not a bug). Output `public/forge/juice.json` (worst-first bars on `/forge`).
+`npm run juicecheck` (21 gates: pure math on every threshold + one live Lunar Lander probe)
+is the load-bearing part; `--mutate` strips the SFX counter and the sound gate goes red.
+The audit itself is a measurement, not a CI gate — a 0% game files QA, it does not block a
+build.
+

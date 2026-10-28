@@ -65,3 +65,25 @@ export const WINDOW = async ({ codes, pointer, frames, tol, noise }) => {
         pop: JSON.stringify(after.score) !== JSON.stringify(before.score),
     }
 }
+
+// #1130 — get the sim to a RECEPTIVE phase before measuring. Some titles gate
+// input during a wave banner or intro by design (Missile Command ignores fire
+// for 150 ticks — an audit that probes the banner reports a false 0%). Locked
+// contract steps run the sim deterministically without needing the loop; take
+// the shortest pre-roll after which the game is neither over nor parked in a
+// wait phase. Both the idle and action windows inherit the same pre-roll at
+// the same seed, so the paired comparison stays intact.
+export const WAIT_PHASES = ['banner', 'attract', 'intro', 'ready', 'menu', 'start', 'over', 'gameover', 'game over', 'select', 'choose', 'levelup', 'level up', 'pause', 'paused', 'dying', 'respawn', 'brief', 'story']
+
+export const PREP = ({ seed, waits, steps }) => {
+    const g = window.__game
+    const phaseOf = (s) => String(s.phase || s.screen || s.mode || '').toLowerCase()
+    for (const n of steps) {
+        g.reset(seed)
+        if (n > 0) g.step({}, n)
+        g.release()
+        const s = g.state()
+        if (!s.done && !waits.includes(phaseOf(s))) return { ticks: n, phase: phaseOf(s) }
+    }
+    return { ticks: steps[steps.length - 1], phase: phaseOf(g.state()) }
+}

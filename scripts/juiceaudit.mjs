@@ -34,7 +34,7 @@ import { dirname, join } from 'node:path'
 import { launch, openGame, requireDevServer } from './lib/harness.mjs'
 import { GAMES } from './lib/contractGames.mjs'
 import { WINDOW_TICKS, TRIALS, PIXEL_TOL, STATE_NOISE, actionVerdict, buildReport, silentActions } from './lib/juice.mjs'
-import { WINDOW } from './lib/juicePage.mjs'
+import { WINDOW, PREP, WAIT_PHASES } from './lib/juicePage.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const BASE = process.env.JUICE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
@@ -90,8 +90,8 @@ for (const p of RUN) {
         let idleKeys = []
         let idleMax = 0
         for (let t = 0; t < N_TRIALS; t++) {
-            await page.evaluate((seed) => window.__game.reset(seed), SEED)
-            await page.waitForTimeout(150)
+            await page.evaluate(PREP, { seed: SEED, waits: WAIT_PHASES, steps: [0, 90, 180, 270, 360] })
+            await page.waitForTimeout(120)
             const idle = await page.evaluate(WINDOW, { codes: [], frames: FRAMES, tol: PIXEL_TOL, noise: STATE_NOISE })
             const run = await page.evaluate(WINDOW, { codes: act.codes, pointer: !!act.pointer, frames: FRAMES, tol: PIXEL_TOL, noise: STATE_NOISE })
             if (run.error) continue

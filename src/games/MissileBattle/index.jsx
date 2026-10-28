@@ -423,6 +423,10 @@ const MissileBattleGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
                     seed: contractSeed, wave: gs.wave, phase: gs.phase,
+                    // the reticle is live state: arrows steer it, and the #1130
+                    // juice audit's motion channel cannot see an aim it is not
+                    // told about (a steering game read as four dead buttons).
+                    aim: [Math.round(gs.aim.x), Math.round(gs.aim.y)],
                     cities: gs.cities.filter((c) => c.alive).length,
                     ammo: gs.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0),
                     hash: stateHash(gs),

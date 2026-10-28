@@ -90,7 +90,7 @@ if (!NO_BROWSER) {
 
     // Same sampler the audit ships with (scripts/lib/juicePage.mjs): real key
     // events, the game's own loop, canvas + SFX + state keys between frames.
-    const WINDOW = (await import('./lib/juicePage.mjs')).WINDOW
+    const { WINDOW, PREP, WAIT_PHASES } = await import('./lib/juicePage.mjs')
 
     const src = readFileSync(AC, 'utf8')
     let mutated = null
@@ -105,8 +105,8 @@ if (!NO_BROWSER) {
         const page = await openGame(browser, { url: `${BASE}/lunar-lander`, hook: '__game', start: true, wait: 500 })
         const errs = []
         page.on('pageerror', (e) => errs.push(e.message))
-        await page.evaluate(() => window.__game.reset(7))
-        await page.waitForTimeout(250)
+        const prep = await page.evaluate(PREP, { seed: 7, waits: WAIT_PHASES, steps: [0, 90, 180, 270, 360] })
+        ok(`lunar-lander: PREP lands in a receptive phase (not ${WAIT_PHASES.slice(0, 3).join('/')}…)`, !WAIT_PHASES.includes(prep.phase) && prep.ticks <= 90, `phase=${prep.phase} after ${prep.ticks} ticks`)
         const idle = await page.evaluate(WINDOW, { codes: [], frames: WINDOW_TICKS, tol: PIXEL_TOL, noise: STATE_NOISE })
         const thrust = await page.evaluate(WINDOW, { codes: ['ArrowUp'], frames: WINDOW_TICKS, tol: PIXEL_TOL, noise: STATE_NOISE })
         const v = actionVerdict({ sfx: thrust.sfx, burstMax: thrust.burst, idleMax: idle.burst, pop: false, keys: thrust.keys, idleKeys: idle.keys })

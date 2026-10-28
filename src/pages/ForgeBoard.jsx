@@ -13,6 +13,9 @@ const REPO = 'jalfern/retrogames'
 const RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/board.json'
 const LOG_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/log.json'
 const NIGHTLY_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/nightly.json'
+// #1130 — the juice audit lives in THIS repo (it measures this repo's games):
+// regenerate with `npm run juiceaudit` against the dev server.
+const JUICE_URL = `${import.meta.env.BASE_URL}forge/juice.json`
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
@@ -69,6 +72,7 @@ const ForgeBoard = () => {
     const [generated, setGenerated] = useState(null)
     const [daily, setDaily] = useState(null)
     const [nightly, setNightly] = useState(null)
+    const [juice, setJuice] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -110,6 +114,10 @@ const ForgeBoard = () => {
                     const nr = await fetch(`${NIGHTLY_RAW}?t=${Math.floor(Date.now() / 60000)}`)
                     if (nr.ok) setNightly(await nr.json())
                 } catch { /* no nightly run yet — the section just stays hidden */ }
+                try {
+                    const jr = await fetch(`${JUICE_URL}?t=${Math.floor(Date.now() / 3600000)}`)
+                    if (jr.ok) setJuice(await jr.json())
+                } catch { /* no audit committed yet — the section stays hidden */ }
                 setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
                 setError('')
             } catch (e) {
@@ -344,6 +352,41 @@ const ForgeBoard = () => {
                         </div>
                     </section>
                 )}
+
+                {juice?.games?.length > 0 && (() => {
+                    const ranked = [...juice.games].sort((a, b) => (a.score ?? 1) - (b.score ?? 1))
+                    const scored = juice.games.filter((g) => g.score != null)
+                    const avg = scored.length ? Math.round(100 * scored.reduce((s, g) => s + g.score, 0) / scored.length) : 0
+                    const gaps = (g) => Object.entries(g.actions || {}).filter(([, a]) => !a.juice).map(([k]) => k)
+                    const band = (x) => (x >= 0.9 ? 'border-[#0f0]/30 text-[#8f8]' : x >= 0.6 ? 'border-[#fb0]/50 text-[#fc9]' : 'border-[#f55]/60 text-[#f88]')
+                    return (
+                        <section className="mb-10">
+                            <h2 className="text-[#ff7ad9] text-sm tracking-widest mb-2">🧃 JUICE AUDIT — every action gets a reaction ({avg}% average)</h2>
+                            <p className="text-[10px] text-gray-600 mb-3 leading-relaxed">
+                                Each contract game is played through <span className="text-[#ff7ad9]">window.__game</span>: every declared button held ~
+                                {Math.round(juice.windowTicks / 60 * 1000)} ms with the sim watched frame by frame against an equal idle window.
+                                Channels: <span className="text-[#8f8]">sound</span> (synth SFX), <span className="text-[#8f8]">motion</span> (state the idle window never moved),
+                                score pop, loud pixel burst. A silent action is a polish bug.
+                                audit @{juice.commit} · {String(juice.generated).slice(0, 10)} · regenerate: npm run juiceaudit
+                            </p>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-1 text-[10px]">
+                                {ranked.map((g) => {
+                                    const silent = gaps(g)
+                                    const x = g.score ?? 1
+                                    return (
+                                        <div key={g.id} title={Object.entries(g.actions || {}).map(([k, a]) => `${k}: ${a.juice ? 'ok' : 'SILENT'}${a.sound ? ' sound' : ''}${a.moved ? ' motion' : ''}${a.pop ? ' pop' : ''}${a.fx ? ' fx' : ''}`).join('\n')}
+                                            className={`flex items-center gap-2 border px-2 py-1 ${band(x)}`}>
+                                            <span className="w-32 truncate shrink-0">{g.id}</span>
+                                            <span className="flex-1 h-1 bg-white/10"><span className="block h-1 bg-current" style={{ width: `${Math.round(x * 100)}%` }} /></span>
+                                            <span className="w-9 text-right shrink-0">{g.score == null ? '—' : `${Math.round(x * 100)}%`}</span>
+                                            <span className="w-40 truncate shrink-0 opacity-70">{silent.length ? `silent: ${silent.join(', ')}` : ''}</span>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </section>
+                    )
+                })()}
 
                 {daily && (
                     <Link to="/forge/log" className="block border border-[#0ff]/40 hover:border-[#0ff] p-3 mb-8 text-[10px] leading-relaxed">
