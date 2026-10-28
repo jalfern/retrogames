@@ -10,6 +10,7 @@ import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/ga
 import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
+import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -328,6 +329,50 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/drawAvatar\(ctx, S\.face, walkFrame\(/.test(src), 'index.jsx: the hero renders through the sprite, not a single bobbing blob')
     ok(/face: S\.face, frame:/.test(src), 'index.jsx: face/frame exposed to the harness so bots can watch the walk')
     ok(/pad\.b \|\| pad\.start\) \{ S\.dismissed = S\.gate; S\.gate = -1 \}/.test(src) && /gi !== S\.dismissed/.test(src) && /if \(gi < 0\) S\.dismissed = -1/.test(src), 'index.jsx: a cancelled moongate stays cancelled until thee walk away (B no longer locks the pilgrim beside the gate)')
+}
+
+// moongate warp (#1135): the signature action is now a short deterministic
+// journey, not an instant cut — the world whites out, the position swaps on the
+// single hidden peak frame, and the Avatar is held still the whole time.
+// Prove-it-can-fail: make warpSwapAt true at age 0 (an instant cut), freeze the
+// white-out, or let the ring stop growing — the peak/swap/ring gates go red.
+{
+    ok(warpActive(0) && warpActive(WARP_LEN - 1) && !warpActive(WARP_LEN) && !warpActive(-1),
+        `a warp is active for exactly WARP_LEN ticks (0..${WARP_LEN - 1})`)
+    let rampOk = true, fallOk = true
+    for (let a = 0; a < WARP_PEAK; a++) if (!(warpFlash(a) < warpFlash(a + 1))) rampOk = false
+    for (let a = WARP_PEAK; a < WARP_LEN; a++) if (!(warpFlash(a) >= warpFlash(a + 1))) fallOk = false
+    ok(rampOk && fallOk, 'the white-out ramps up to the peak then fades (a journey, not a blink)')
+    ok(warpFlash(0) === 0 && Math.abs(warpFlash(WARP_PEAK) - 1) < 1e-9 && warpFlash(WARP_LEN - 1) < 0.12 && warpFlash(WARP_LEN) === 0,
+        `the white-out is 0 at the start, full (1.0) at the peak, near-zero at the end (peak age ${WARP_PEAK})`)
+    ok(!warpSwapAt(0) && !warpSwapAt(WARP_PEAK - 1) && warpSwapAt(WARP_PEAK) && warpSwapAt(WARP_LEN - 1) && !warpSwapAt(WARP_LEN),
+        'the position swap is only the white-out peak — never the first frame (no instant cut)')
+    ok(warpFlash(WARP_PEAK) >= 0.99, 'the swap is hidden: the peak frame is a full white-out')
+    const r0 = warpRing(0), r1 = warpRing(Math.floor(WARP_LEN / 2)), r2 = warpRing(WARP_LEN - 1)
+    ok(!!r0 && !!r2 && r1.r > r0.r && r2.r > r1.r && r0.a > 0 && r2.a > 0,
+        'the portal ring opens wide over the journey (radius grows, stays visible)')
+    ok(warpRing(-1) === null && warpRing(WARP_LEN) === null, 'no ring outside the warp window')
+    const m1 = warpMotes(10, 3, 7), m2 = warpMotes(10, 3, 7)
+    const same = m1.length === m2.length && m1.every((m, i) => m.x === m2[i].x && m.y === m2[i].y && m.a === m2[i].a && m.sz === m2[i].sz)
+    ok(m1.length === 42 && same, 'the light motes are deterministic (same age+gate+seed, same burst)')
+    ok(m1.every(m => m.a >= 0 && m.a <= 1 && Math.abs(m.x) < 200 && Math.abs(m.y) < 160), 'the motes stay on screen and alpha is in [0,1]')
+    ok(warpMotes(-1, 3, 7).length === 0 && warpMotes(WARP_LEN, 3, 7).length === 0, 'no motes outside the warp window')
+    ok(warpMotes(5, 3, 7).some(m => m.a > 0) && warpMotes(WARP_LEN - 2, 3, 7).every(m => m.a < 0.3), 'the burst thins out toward the arrival')
+}
+
+// wiring: the warp is what the pilgrim actually sees, and the old instant cut is gone
+{
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/S\.warp = \{ dest, t0: S\.tick, swapped: false \}/.test(src), 'index.jsx: choosing a gate starts a warp (S.warp), not an instant teleport')
+    ok(/if \(!S\.warp\.swapped && warpSwapAt\(age\)\)/.test(src), 'index.jsx: the position swaps only under warpSwapAt (the hidden peak)')
+    const teleIdx = src.indexOf('S.x = g.x; S.y = g.y; S.ship = false')
+    const swapIdx = src.indexOf('warpSwapAt(age)')
+    ok(teleIdx > swapIdx && swapIdx >= 0, 'index.jsx: the teleport sits after warpSwapAt(age) — inside the peak, not the menu')
+    ok(/if \(age >= WARP_LEN\) S\.warp = null/.test(src), 'index.jsx: the warp ends and releases the Avatar after WARP_LEN ticks')
+    ok(/warpRing\(age\)/.test(src) && /warpMotes\(age, S\.warp\.dest, S\.seed\)/.test(src) && /warpFlash\(age\)/.test(src), 'index.jsx: the swirl, the motes and the white-out are all drawn')
+    ok(/warping: !!S\.warp, warpFlash:/.test(src), 'index.jsx: the harness can see a warp in flight')
+    const menuA = (src.split('if (pad.a) {')[1] || '').split('if (pad.b')[0] || ''
+    ok(!/S\.x = g\.x; S\.y = g\.y; S\.ship = false/.test(menuA), 'index.jsx: the gate menu no longer cuts to the destination on the spot')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
