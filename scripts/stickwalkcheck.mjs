@@ -235,6 +235,77 @@ const headHit = await T(page, async () => {
 ok('pixels: head marker is drawn where the sim says', headHit.checked >= 5 && headHitsOk(headHit), JSON.stringify(headHit))
 function headHitsOk(h) { return h.hits / Math.max(1, h.checked) > 0.9 }
 
+// head silhouette: the projected HEAD..HEAD_TOP region must be FILLED bone-white
+// (a silhouette), not just the thin neck stick + one marker dot
+const sil = await T(page, async () => {
+  const t = window.__stickwalkTest
+  t.setSpeed(1.4); t.setTurn(0)
+  await new Promise(r => setTimeout(r, 700))
+  let best = null
+  const end = performance.now() + 2500
+  await new Promise(res => {
+    const l = () => { const s = t.headSil(); if (s && (!best || s.frac > best.frac)) best = s; performance.now() > end ? res() : requestAnimationFrame(l) }
+    l()
+  })
+  return best
+})
+ok('render: head is a filled silhouette, not a bare stick', !!sil && sil.frac >= 0.6 && sil.rx >= 8, JSON.stringify(sil))
+
+// arm/torso depth sort: at a quarter view the camera-near elbow must render
+// clearly brighter than the far elbow (signed depth shading + z-order)
+const armDep = await T(page, async () => {
+  const t = window.__stickwalkTest
+  t.setSpeed(1.4); t.setTurn(0)
+  const th = t.pose().yaw
+  t.setCam(th + Math.PI / 4, 0.12)
+  await new Promise(r => setTimeout(r, 800))
+  const cv = document.getElementById('c')
+  const lum = (joint) => {
+    const p = t.screenOf(joint)
+    if (!p) return null
+    const img = cv.getContext('2d').getImageData(Math.max(0, Math.round(p.x - 7)), Math.max(0, Math.round(p.y - 7)), 15, 15).data
+    let s = 0, n = 0
+    for (let i = 0; i < img.length; i += 4) { const v = img[i] + img[i + 1] + img[i + 2]; if (v > 420 && img[i + 2] > img[i] - 12) { s += v; n++ } }
+    return n >= 4 ? { z: p.z, avg: s / n } : null
+  }
+  let best = null
+  const end = performance.now() + 3000
+  await new Promise(res => {
+    const l = () => {
+      const a = lum(8), b = lum(13)
+      if (a && b) {
+        const near = a.z <= b.z ? a : b, far = a.z <= b.z ? b : a
+        const cand = { sep: +(far.z - near.z).toFixed(2), diff: +(near.avg - far.avg).toFixed(1) }
+        if (!best || cand.sep > best.sep) best = cand
+      }
+      performance.now() > end ? res() : requestAnimationFrame(l)
+    }
+    l()
+  })
+  return best
+})
+ok('render: near arm renders brighter than far arm (depth sort)', !!armDep && armDep.sep >= 0.12 && armDep.diff >= 30, JSON.stringify(armDep))
+
+// grid distance fade: fade curve must fall off with camera depth, and the
+// rendered floor near the feet must be bluer-brighter than far field rows
+const gridFade = await T(page, () => {
+  const cv = document.getElementById('c')
+  const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data
+  const W2 = cv.width, H2 = cv.height
+  const rowMax = (y0, y1) => {
+    let m = 0
+    for (let y = Math.round(y0 * H2); y < y1 * H2; y++) {
+      for (let x = Math.round(0.12 * W2); x < 0.38 * W2; x++) {
+        const bmr = d[(y * W2 + x) * 4 + 2] - d[(y * W2 + x) * 4]
+        if (bmr > m) m = bmr
+      }
+    }
+    return m
+  }
+  return { nearPx: rowMax(0.80, 0.92), midPx: rowMax(0.62, 0.70), farPx: rowMax(0.46, 0.52) }
+})
+ok('render: grid fades with camera distance', gridFade.nearPx >= 34 && gridFade.nearPx - gridFade.farPx >= 14, JSON.stringify(gridFade))
+
 /* ---------------- 4. SMOOTH (vault + trails) ---------------- */
 console.log('stickwalk: smooth')
 const vault = await T(page, async () => {
@@ -261,12 +332,20 @@ ok('rules: contact puffs spawn at foot strikes', (await T(page, () => window.__s
   await new Promise(r => setTimeout(r, 1500))
   return t.puffs() > 0
 }))
+const puffWalk = await T(page, async () => {
+  const t = window.__stickwalkTest
+  t.setSpeed(1.0)
+  await new Promise(r => setTimeout(r, 1800))
+  return t.puffSpec()
+})
+ok('juice: heel puffs stay visible at walking speed', !!puffWalk && puffWalk.r >= 0.036 && puffWalk.a >= 0.2 && puffWalk.v <= 1.15, JSON.stringify(puffWalk))
 
 /* ---------------- 5. ATTRACT + PHONE ---------------- */
 console.log('stickwalk: attract + phone')
 {
   const p = await open()
   const s0 = await T(p, () => window.__stickwalkTest.pose())
+  ok('attract: autopilot starts mid-stride at cruise speed (pre-warmed sim)', s0.t >= 1.2 && s0.v >= 1.3, JSON.stringify(s0))
   await p.waitForFunction((s) => {
     const n = window.__stickwalkTest.pose()
     return Math.hypot(n.x - s.x, n.z - s.z) > 0.4 || Math.abs(n.yaw - s.yaw) > 0.3
@@ -284,6 +363,12 @@ console.log('stickwalk: attract + phone')
   await p.touchscreen.tap(195, 400)
   await p.waitForFunction(() => window.__stickwalkTest.screen() === 'play', null, { timeout: 8000 })
   ok('phone: tap starts the demo', true)
+  const hudFit = await T(p, () => {
+    const h = document.getElementById('hud')
+    const r = h.getBoundingClientRect()
+    return { h: Math.round(r.height), scrollW: document.documentElement.scrollWidth, inner: window.innerWidth, right: Math.round(r.right), bottom: Math.round(r.bottom), innerH: window.innerHeight, tele: document.getElementById('telemetry').textContent.length }
+  })
+  ok('phone: HUD fits 390px without overflow or pad overlap', hudFit.h <= 60 && hudFit.scrollW <= hudFit.inner && hudFit.right <= hudFit.inner && hudFit.tele > 10, JSON.stringify(hudFit))
   const spdBefore = await T(p, () => window.__stickwalkTest.pose().v)
   const el = await p.$('#pad .up')
   const bb = await el.boundingBox()

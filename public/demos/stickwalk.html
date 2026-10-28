@@ -15,6 +15,10 @@
     text-transform: uppercase;
   }
   #hud b { color: rgba(255,203,110,.95); font-weight: 700; }
+  @media (max-width: 560px) {
+    #hud { font-size: 10px; letter-spacing: .08em; }
+    #hud .hints { display: none; }
+  }
   #audiohint {
     position: fixed; top: 12px; right: 14px; z-index: 2;
     background: rgba(8,10,18,.55); border: 1px solid rgba(255,190,110,.26); border-radius: 8px;
@@ -75,7 +79,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="hud"><b>STICK WALK</b> · 31-joint mocap rig · procedural gait &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; ↑↓ speed &nbsp;·&nbsp; ←→ turn &nbsp;·&nbsp; SPACE jog/run &nbsp;·&nbsp; <span id="telemetry"></span></div>
+<div id="hud"><b>STICK WALK</b><span class="hints"> · 31-joint mocap rig · procedural gait &nbsp;·&nbsp; drag to orbit &nbsp;·&nbsp; ↑↓ speed &nbsp;·&nbsp; ←→ turn &nbsp;·&nbsp; SPACE jog/run &nbsp;·&nbsp;</span> <span id="telemetry"></span></div>
 <div id="audiohint">click for footsteps</div>
 <div id="attract">
   <div>
@@ -136,11 +140,14 @@ const cam = {
 };
 const keys = { ArrowUp: 0, ArrowDown: 0, ArrowLeft: 0, ArrowRight: 0, Space: 0 };
 let puffs = [];
+let lastHeelPuff = null;
 let userTurn = 0;
 let trails = { head: [], lW: [], rW: [] };
 let frames = 0, readyFlag = false;
 let lastT = 0, perfAcc = 0, perfN = 0, perfMax = 0;
 let audioOn = false;
+
+for (let i = 0; i < 90; i++) { sim.vT = 1.35; sim.wT = 0.5; SW.step(sim, 1 / 60); }
 
 const attractMsgs = [
   'weight shift · arm swing · planted feet',
@@ -306,25 +313,31 @@ function drawGrid(cb, center) {
   const R = 9, step = 0.5;
   const i0 = Math.floor((center[0] - R) / step), i1 = Math.ceil((center[0] + R) / step);
   const j0 = Math.floor((center[1] - R) / step), j1 = Math.ceil((center[1] + R) / step);
-  ctx.lineWidth = Math.max(1, DPR * 1.1);
   const depth = (p) => (p[0] - cb.pos[0]) * cb.f[0] + (0 - cb.pos[1]) * cb.f[1] + (p[1] - cb.pos[2]) * cb.f[2];
-  const clipLine = (a, b, fade) => {
-    const za = depth(a), zb = depth(b);
+  const chunkLine = (a, b, major) => {
+    let za = depth(a), zb = depth(b);
     if (za < 0.3 && zb < 0.3) return;
-    if (za < 0.3) { const t = (0.3 - za) / (zb - za); a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; }
-    else if (zb < 0.3) { const t = (0.3 - zb) / (za - zb); b = [b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t]; }
-    const pa = project([a[0], 0, a[1]], cb), pb = project([b[0], 0, b[1]], cb);
-    if (!pa || !pb) return;
-    ctx.strokeStyle = `rgba(130,160,210,${(0.5 * Math.max(0, fade)).toFixed(3)})`;
-    ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+    if (za < 0.3) { const t = (0.3 - za) / (zb - za); a = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]; za = 0.3; }
+    else if (zb < 0.3) { const t = (0.3 - zb) / (za - zb); b = [b[0] + (a[0] - b[0]) * t, b[1] + (a[1] - b[1]) * t]; zb = 0.3; }
+    const K = Math.max(1, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 0.9));
+    ctx.lineWidth = (major ? 1.35 : 1) * DPR * 1.1;
+    for (let k = 0; k < K; k++) {
+      const t0 = k / K, t1 = (k + 1) / K;
+      const d0 = za + (zb - za) * t0, d1 = za + (zb - za) * t1;
+      const fade = 1 - Math.max(0, Math.min(1, ((d0 + d1) / 2 - 1.5) / 7.5));
+      if (fade <= 0.02) continue;
+      const pa = project([a[0] + (b[0] - a[0]) * t0, 0, a[1] + (b[1] - a[1]) * t0], cb);
+      const pb = project([a[0] + (b[0] - a[0]) * t1, 0, a[1] + (b[1] - a[1]) * t1], cb);
+      if (!pa || !pb) continue;
+      ctx.strokeStyle = `rgba(130,160,210,${((major ? 0.55 : 0.3) * fade).toFixed(3)})`;
+      ctx.beginPath(); ctx.moveTo(pa.x, pa.y); ctx.lineTo(pb.x, pb.y); ctx.stroke();
+    }
   };
   for (let i = i0; i <= i1; i++) {
-    const fade = 1 - Math.abs(i * step - center[0]) / R;
-    clipLine([i * step, j0 * step], [i * step, j1 * step], fade);
+    chunkLine([i * step, j0 * step], [i * step, j1 * step], i % 2 === 0);
   }
   for (let j = j0; j <= j1; j++) {
-    const fade = 1 - Math.abs(j * step - center[1]) / R;
-    clipLine([i0 * step, j * step], [i1 * step, j * step], fade);
+    chunkLine([i0 * step, j * step], [i1 * step, j * step], j % 2 === 0);
   }
 }
 
@@ -353,20 +366,43 @@ const FOOTJ = new Set([J.L_HEEL, J.R_HEEL, J.L_TOE, J.R_TOE, J.L_MID, J.R_MID, J
 
 function boneWidth(z) { return Math.max(1.6, (Math.min(W, H) * 1.05) * 0.021 / z); }
 
+const ARM_BONES = new Set([5, 6, 7, 8, 9, 10, 11, 12, 13, 14]);
+const ch8 = (x) => Math.max(0, Math.min(255, Math.round(x)));
+
 function drawFigure(cb, withSprite) {
   const j = sim.joints;
+  const cC = project([j[J.CHEST * 3], j[J.CHEST * 3 + 1], j[J.CHEST * 3 + 2]], cb);
+  const centerZ = cC ? cC.z : cam.dist;
   const segs = [];
-  for (const [a, b] of BONES) {
+  for (let bi = 0; bi < BONES.length; bi++) {
+    const [a, b] = BONES[bi];
+    if (a === J.HEAD && b === J.HEAD_TOP) continue;
     const pa = project([j[a * 3], j[a * 3 + 1], j[a * 3 + 2]], cb);
     const pb = project([j[b * 3], j[b * 3 + 1], j[b * 3 + 2]], cb);
     if (!pa || !pb) continue;
-    segs.push({ pa, pb, z: (pa.z + pb.z) / 2 });
+    segs.push({ pa, pb, z: (pa.z + pb.z) / 2, arm: ARM_BONES.has(bi) });
+  }
+  const pH = project([j[J.HEAD * 3], j[J.HEAD * 3 + 1], j[J.HEAD * 3 + 2]], cb);
+  const pT = project([j[J.HEAD_TOP * 3], j[J.HEAD_TOP * 3 + 1], j[J.HEAD_TOP * 3 + 2]], cb);
+  if (pH && pT) {
+    const focal = Math.min(W, H) * 1.05;
+    const zH = (pH.z + pT.z) / 2;
+    segs.push({ head: true, pa: pH, pb: pT, z: zH - 0.02, arm: false, rx: 0.078 * focal / zH });
   }
   segs.sort((s1, s2) => s2.z - s1.z);
   if (withSprite) {
     for (const s of segs) {
-      const shade = Math.max(0.5, Math.min(1, 2.4 / s.z));
-      ctx.strokeStyle = `rgba(${Math.round(222 * shade + 20)},${Math.round(228 * shade + 18)},${Math.round(238 * shade + 14)},0.95)`;
+      const prox = Math.max(0.62, Math.min(1, 2.9 / s.z));
+      const rel = Math.max(-1, Math.min(1, (s.z - centerZ) / 0.30));
+      const shade = Math.max(0.5, Math.min(1.06, prox * (1 - (s.arm ? 0.26 : 0.11) * rel)));
+      if (s.head) {
+        const cx = (s.pa.x + s.pb.x) / 2, cy = (s.pa.y + s.pb.y) / 2;
+        const ry = Math.hypot(s.pb.x - s.pa.x, s.pb.y - s.pa.y) / 2 + s.rx * 0.42;
+        ctx.fillStyle = `rgba(${ch8(214 * shade + 22)},${ch8(221 * shade + 20)},${ch8(233 * shade + 16)},0.92)`;
+        ctx.beginPath(); ctx.ellipse(cx, cy, s.rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+        continue;
+      }
+      ctx.strokeStyle = `rgba(${ch8(222 * shade + 20)},${ch8(228 * shade + 18)},${ch8(238 * shade + 14)},0.95)`;
       ctx.lineWidth = boneWidth(s.z);
       ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(s.pa.x, s.pa.y); ctx.lineTo(s.pb.x, s.pb.y); ctx.stroke();
@@ -374,6 +410,7 @@ function drawFigure(cb, withSprite) {
   }
   const dots = [];
   for (let k = 0; k < 31; k++) {
+    if (k === J.HEAD_TOP) continue;
     const p = project([j[k * 3], j[k * 3 + 1], j[k * 3 + 2]], cb);
     if (!p) continue;
     dots.push({ p, k, major: MAJOR.has(k), foot: FOOTJ.has(k) });
@@ -384,11 +421,15 @@ function drawFigure(cb, withSprite) {
       const shade = Math.max(0.55, Math.min(1, 2.4 / d.p.z));
       const r = (d.foot ? 0.011 : d.major ? 0.017 : 0.012) * (Math.min(W, H) * 1.05) / d.p.z;
       if (d.foot) {
-        ctx.fillStyle = `rgba(${Math.round(120 * shade + 60)},${Math.round(200 * shade + 40)},${Math.round(235 * shade + 20)},0.95)`;
+        ctx.fillStyle = `rgba(${ch8(120 * shade + 60)},${ch8(200 * shade + 40)},${ch8(235 * shade + 20)},0.95)`;
       } else {
-        ctx.fillStyle = `rgba(255,${Math.round(176 * shade + 40)},${Math.round(64 * shade)},0.95)`;
+        ctx.fillStyle = `rgba(255,${ch8(176 * shade + 40)},${ch8(64 * shade)},0.95)`;
       }
       ctx.beginPath(); ctx.arc(d.p.x, d.p.y, Math.max(1.2, r), 0, Math.PI * 2); ctx.fill();
+      if (d.major && r > 2.4) {
+        ctx.fillStyle = 'rgba(255,246,224,.85)';
+        ctx.beginPath(); ctx.arc(d.p.x - r * 0.32, d.p.y - r * 0.36, r * 0.3, 0, Math.PI * 2); ctx.fill();
+      }
     }
   }
   return dots.length;
@@ -431,10 +472,12 @@ function drawBrackets(cb) {
 function spawnPuff(ev) {
   const j = sim.joints;
   const at = (j1, j2) => [(j[j1 * 3] + j[j2 * 3]) / 2, (j[j1 * 3 + 2] + j[j2 * 3 + 2]) / 2];
-  if (ev.heelL) puffs.push({ p: at(J.L_ANKLE, J.L_HEEL), t: 0, r: 0.022 + sim.v * 0.006 });
-  if (ev.heelR) puffs.push({ p: at(J.R_ANKLE, J.R_HEEL), t: 0, r: 0.022 + sim.v * 0.006 });
-  if (ev.toeL) puffs.push({ p: at(J.L_TOE, J.L_MID), t: 0, r: 0.014 + sim.v * 0.003 });
-  if (ev.toeR) puffs.push({ p: at(J.R_TOE, J.R_MID), t: 0, r: 0.014 + sim.v * 0.003 });
+  const walkA = 0.17 + Math.min(0.15, sim.v * 0.055);
+  if (ev.heelL) puffs.push({ p: at(J.L_ANKLE, J.L_HEEL), t: 0, r: 0.030 + sim.v * 0.008, a: walkA });
+  if (ev.heelR) puffs.push({ p: at(J.R_ANKLE, J.R_HEEL), t: 0, r: 0.030 + sim.v * 0.008, a: walkA });
+  if (ev.toeL) puffs.push({ p: at(J.L_TOE, J.L_MID), t: 0, r: 0.020 + sim.v * 0.004, a: walkA * 0.75 });
+  if (ev.toeR) puffs.push({ p: at(J.R_TOE, J.R_MID), t: 0, r: 0.020 + sim.v * 0.004, a: walkA * 0.75 });
+  if (ev.heelL || ev.heelR) lastHeelPuff = { r: 0.030 + sim.v * 0.008, a: walkA };
   if (puffs.length > 8) puffs.splice(0, puffs.length - 8);
   const g = Math.min(1, 0.25 + sim.v / 5);
   if (ev.heelL || ev.heelR) footstep('heel', g);
@@ -449,7 +492,7 @@ function drawPuffs(cb, dt) {
     if (!s) continue;
     const a = 1 - q.t / 0.32;
     const rr = q.r * (1 + q.t * 1.6) * (Math.min(W, H) * 1.05) / s.z;
-    ctx.fillStyle = `rgba(150,165,190,${(0.10 * a * a).toFixed(3)})`;
+    ctx.fillStyle = `rgba(150,165,190,${(q.a * a * a).toFixed(3)})`;
     ctx.beginPath(); ctx.ellipse(s.x, s.y, rr, rr * 0.32, 0, 0, Math.PI * 2); ctx.fill();
   }
 }
@@ -612,6 +655,34 @@ window.__stickwalkTest = {
   scan() { return SW.metrics.scan(); },
   gaitAt(v) { return SW.gaitParams(+v); },
   puffs() { return puffs.length; },
+  puffSpec() { return lastHeelPuff ? { r: +lastHeelPuff.r.toFixed(4), a: +lastHeelPuff.a.toFixed(3), v: +sim.v.toFixed(2) } : null; },
+  headSil() {
+    const cb = camBasis([sim.pos[0], 1.0, sim.pos[1]]);
+    const j = sim.joints;
+    const pH = project([j[J.HEAD * 3], j[J.HEAD * 3 + 1], j[J.HEAD * 3 + 2]], cb);
+    const pT = project([j[J.HEAD_TOP * 3], j[J.HEAD_TOP * 3 + 1], j[J.HEAD_TOP * 3 + 2]], cb);
+    if (!pH || !pT) return null;
+    const focal = Math.min(W, H) * 1.05;
+    const zH = (pH.z + pT.z) / 2;
+    const rx = 0.078 * focal / zH;
+    const cx = (pH.x + pT.x) / 2, cy = (pH.y + pT.y) / 2;
+    const ry = Math.hypot(pT.x - pH.x, pT.y - pH.y) / 2 + rx * 0.42;
+    let img;
+    try { img = ctx.getImageData(Math.max(0, Math.round(cx - rx)), Math.max(0, Math.round(cy - ry)), Math.min(W, Math.round(rx * 2)) || 1, Math.min(H, Math.round(ry * 2)) || 1); } catch (e) { return null; }
+    const ox = Math.max(0, Math.round(cx - rx)), oy = Math.max(0, Math.round(cy - ry));
+    const d = img.data;
+    let inn = 0, lit = 0;
+    for (let yy = 0; yy < img.height; yy += 2) {
+      for (let xx = 0; xx < img.width; xx += 2) {
+        const wx = ox + xx - cx, wy = oy + yy - cy;
+        if ((wx * wx) / (rx * rx) + (wy * wy) / (ry * ry) > 0.85) continue;
+        inn++;
+        const i = (yy * img.width + xx) * 4;
+        if (d[i] + d[i + 1] + d[i + 2] > 330) lit++;
+      }
+    }
+    return inn ? { frac: +(lit / inn).toFixed(3), rx: +rx.toFixed(1), ry: +ry.toFixed(1) } : null;
+  },
   padVisible() { return pad.classList.contains('on'); },
   trailLen() { return trails.head.length; },
   audio() { return { on: !!AC, unlocked: audioOn }; },
