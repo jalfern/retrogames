@@ -14,7 +14,7 @@ import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpM
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit } from '../src/games/Britannia/moons.js'
 import { shadeAt } from '../src/games/Britannia/tiles.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
-import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches } from '../src/games/Britannia/swell.js'
+import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples } from '../src/games/Britannia/swell.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -631,6 +631,50 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/tiles = buildTileCaches\(zip\)/.test(src), 'index.jsx: the classic cache is built from the original bundle bytes')
     ok(/cs\[variantOf\(hash2, tx, ty, vv\) % cs\.length\]/.test(src), 'index.jsx: classic mode stamps the decoded variants, deterministic per world tile')
+}
+
+// rain on the sea (#1135): precipitation used to add nothing on open water
+// beyond the screen tint — now wet cells dimple the surface with seeded rings
+// that open, fade and die. Prove-it-can-fail: remove the intensity<=0 guard
+// (dry seas start dimpling), swap the rain/snow intensities (the order gate
+// goes red), or drop the weatherAt call in drawTile (wiring goes red).
+{
+    const d1 = dimples(40, 200, SPLAT.storm, 777, 3)
+    const d2 = dimples(40, 200, SPLAT.storm, 777, 3)
+    ok(JSON.stringify(d1) === JSON.stringify(d2), 'dimples are deterministic (same tile+intensity+tick+seed, same strikes)')
+    ok(splatIntensity(WX.CLEAR) === 0 && dimples(40, 200, 0, 777, 3).length === 0,
+        'a clear sky (or zero intensity) strikes the sea nothing — dry sea stays glass')
+    ok(splatIntensity(WX.STORM) === SPLAT.storm && splatIntensity(WX.RAIN) === SPLAT.rain && splatIntensity(WX.SNOW) === SPLAT.snow,
+        'each wet kind maps to its intensity (rain/snow/storm)')
+    ok(dimples(9, 9, SPLAT.storm, 5, 1).length > dimples(9, 9, SPLAT.rain, 5, 1).length &&
+        dimples(9, 9, SPLAT.rain, 5, 1).length > dimples(9, 9, SPLAT.snow, 5, 1).length &&
+        dimples(9, 9, SPLAT.snow, 5, 1).length > 0,
+        'more rain, more dimples: storm > rain > snow > clear, every tile, every tick')
+    let boundsOk = true
+    for (let i = 0; i < 40; i++) for (const d of dimples(i * 7, i * 13, SPLAT.storm, i * 31, i)) {
+        if (d.x < 0 || d.x > 32 || d.y < 0 || d.y > 32 || d.r <= 0 || d.r > 3.5 || d.a < 0 || d.a > 1) boundsOk = false
+    }
+    ok(boundsOk, 'every dimple stays inside its 32px tile with sane radius and alpha')
+    const alphas = []
+    for (let t = 0; t < 600; t++) for (const d of dimples(50, 180, SPLAT.rain, t, 2)) alphas.push(d.a)
+    const peak = Math.max(...alphas)
+    ok(peak > 0.1 && alphas.some(a => a < peak * 0.1),
+        'dimples live and die (alpha runs to near-zero in a window) — struck water, not static dots')
+    let seas = 0, wetSeen = 0, drySeen = 0, mismatch = 0
+    for (let y = 0; y < MAPW; y += 6) for (let x = 0; x < MAPW; x += 6) for (let ep = 0; ep < 8; ep++) {
+        if (!isSea(world.get(x, y))) continue
+        seas++
+        const wx = weatherAt(x, y, ep * 1440 + x, 5, v => world.get(x, y) && v >= 0 ? world.get(x, y) : 0)
+        const dd = dimples(x, y, splatIntensity(wx), ep * 1440 + x, 5)
+        if (wx === WX.CLEAR) { drySeen++; if (dd.length) mismatch++ } else { wetSeen++; if (!dd.length) mismatch++ }
+    }
+    ok(seas > 50 && wetSeen > 0 && drySeen > 0, `real Britannia offers both weather states at sea (${seas} sea samples, ${wetSeen} wet, ${drySeen} dry)`)
+    ok(mismatch === 0, `dimples sit exactly where the sky is wet over real ocean (${mismatch} mismatches over ${seas} samples)`)
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/const wxh = weatherAt\(tx, ty, t, S\.seed, terrainAt\)/.test(src), 'index.jsx: the sea asks the (terrain-aware) sky per tile')
+    ok(/dimples\(tx, ty, si, t, S\.seed\)/.test(src), 'index.jsx: wet sea tiles are drawn with dimples')
+    ok(/seaRain: splatIntensity\(weatherAt\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)\)/.test(src),
+        'index.jsx: the harness can see the rain striking the Avatar\'s sea tile')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')

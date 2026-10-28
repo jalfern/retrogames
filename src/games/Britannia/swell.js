@@ -7,6 +7,7 @@
 
 import { hash2, TILE } from './tiles.js'
 import { isSea } from './britmap.js'
+import { WX } from './weather.js'
 
 export const SWELL_TILE = 24   // a crest advances one tile every 24 ticks (~1.3 px/tick)
 export const SWELL_PH = 0.5    // one crest per 2 tiles
@@ -67,6 +68,39 @@ export function foamPatches(tx, ty, side, t, seed = 0, strength = 1) {
         else if (side === 'w') { x = r2 * 12; y = 2 + r1 * 28 }
         else { x = 20 + r2 * 12; y = 2 + r1 * 28 }
         out.push({ x, y, sz: 1.4 + r1 * 2.2 * swell, a: Math.min(1, strength * (0.45 + 0.5 * r2)) })
+    }
+    return out
+}
+
+// rain on the sea (#1135): precipitation over open water used to add nothing
+// beyond the screen tint — rain on the sea is dimples: seeded rings that
+// open and die one drop at a time, more of them the wetter the sky. Snow is
+// muted: fewer, gentler strikes. Intensity comes from weatherAt, so dimples
+// sit exactly where the cell is raining/snowing/storming — a clear sea gets
+// none, and a storm sea gets the most. Pure + deterministic like the swells
+// they ride.
+export const SPLAT = { rain: 0.55, snow: 0.35, storm: 1 }
+
+export function splatIntensity(wx) {
+    if (wx === WX.RAIN) return SPLAT.rain
+    if (wx === WX.SNOW) return SPLAT.snow
+    if (wx === WX.STORM) return SPLAT.storm
+    return 0
+}
+
+// dimples on a wet sea tile, tile-local px. Each dimple has a seeded period
+// (22..42 ticks): its ring opens (r grows), fades and dies, and a new one
+// takes its place — the surface is struck, never decorated with static dots.
+export function dimples(tx, ty, intensity, t, seed = 0) {
+    if (intensity <= 0) return []
+    const n = 2 + Math.floor(intensity * 5)
+    const out = []
+    for (let i = 0; i < n; i++) {
+        const h1 = hash2(tx * 11 + i, ty * 23 + i, seed ^ 0xa17)
+        const h2 = hash2(ty * 29 + i, tx * 7 + i, seed ^ 0x3c5)
+        const per = 22 + Math.floor(h1 * 20)
+        const ph = (((t + Math.floor(h2 * per)) % per) / per)
+        out.push({ x: 3 + h1 * 24, y: 3 + h2 * 24, r: 0.8 + ph * 2.6, a: (1 - ph) * intensity * 0.5 })
     }
     return out
 }
