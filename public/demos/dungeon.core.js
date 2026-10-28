@@ -139,10 +139,10 @@ globalThis.DungeonRenderer = (function () {
     // 3 WATER — deep green-black with wave bands and sparkle
     {
       const { ox, oy } = T(MAT.WATER);
-      g.fillStyle = '#0c2028'; g.fillRect(ox, oy, TILE, TILE);
+      g.fillStyle = '#0e2438'; g.fillRect(ox, oy, TILE, TILE);
       for (let k = 0; k < 30; k++) {
         const y = oy + rnd() * TILE;
-        g.strokeStyle = `rgba(${70 + rnd() * 40 | 0},${130 + rnd() * 50 | 0},${130 + rnd() * 40 | 0},${0.10 + rnd() * 0.12})`;
+        g.strokeStyle = `rgba(${45 + rnd() * 30 | 0},${120 + rnd() * 50 | 0},${175 + rnd() * 45 | 0},${0.12 + rnd() * 0.14})`;
         g.lineWidth = 1 + rnd() * 2;
         g.beginPath(); g.moveTo(ox, y);
         g.bezierCurveTo(ox + 40, y - 6 - rnd() * 8, ox + 90, y + 6 + rnd() * 8, ox + TILE, y);
@@ -350,6 +350,7 @@ void main(){
   vec2 base = vec2(mod(vMat, 4.0), floor(vMat / 4.0));
   vec2 suv = (base + clamp(vUv, 0.004, 0.996)) / 4.0;
   vec3 c = texture(uAtlas, suv).rgb * vLight;
+  if (vMat > 2.5 && vMat < 3.5) c += vec3(0.015, 0.09, 0.15) * (0.55 + 0.45 * sin(vUv.y * 42.0 + vUv.x * 7.0));
   o = vec4(c, 1.0);
 }`;
 
@@ -379,7 +380,9 @@ void main(){
   vec3 p = uBase + uRight * (aPos.x * uSize.x) + vec3(sway * aPos.y, 0.0, aPos.y * uSize.y);
   gl_Position = uVP * vec4(p, 1.0);
   vec3 n = normalize(uCamPos - p);
-  vLight = lightAt(p - vec3(sway * aPos.y, 0.0, 0.0), n, uCamPos, uLCol[0], uLC, uLCol, uLPR, uLPC, uLI);
+  vec3 L = lightAt(p - vec3(sway * aPos.y, 0.0, 0.0), n, uCamPos, uLCol[0], uLC, uLCol, uLPR, uLPC, uLI);
+  float Lm = dot(L, vec3(0.34));
+  vLight = vec3(Lm * 0.5 + 0.66);
   vUv = uUvO + aUv * uUvS;
 }`;
 
@@ -522,7 +525,7 @@ void main(){
     };
     api.snapTo = (x, y, z, yaw) => {
       anim = null; logic = { x, y, z, yaw };
-      view = { x, y, z, yaw }; api.eyeZ = EYE_H;
+      view = { x, y, z, yaw }; api.eyeZ = EYE_H + z;
     };
     api.pose = () => ({ x: logic.x, y: logic.y, z: logic.z, yaw: logic.yaw });
     api.renderPose = () => ({ x: view.x, y: view.y, z: api.eyeZ, yaw: view.yaw });
@@ -696,7 +699,7 @@ void main(){
     /* simulation of view, lights, torch ------------------------------- */
 
     function tickAnim(dt) {
-      if (!anim) { api.eyeZ = EYE_H; return; }
+      if (!anim) { api.eyeZ = EYE_H + view.z; return; }
       anim.t += dt;
       const k = clamp(anim.t / anim.dur, 0, 1);
       const e = easeInOut(k);
@@ -769,7 +772,7 @@ void main(){
       for (const L of lights) {
         const k = 1 - L.t / L.life;
         const pulse = k > 0.8 ? (1 - k) / 0.2 : k;
-        slots.push({ x: L.x, y: L.y, z: L.z + 0.9, col: [L.r, L.g, L.b], radius: L.radius, cone: [0.1, 0.1, 0.99], I: 1.6 * clamp(pulse, 0, 1) });
+        slots.push({ x: L.x, y: L.y, z: L.z + 0.9, col: [L.r, L.g, L.b], radius: L.radius, cone: [0.0, 0.0, -1.0], I: 1.6 * clamp(pulse, 0, 1) });
       }
       slots.sort((a, b) => b.I - a.I);
       const LC = new Float32Array(6), LCol = new Float32Array(6), LPR = new Float32Array(4), LPC = new Float32Array(6), LI = new Float32Array(2);

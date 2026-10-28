@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="icon" href="data:,">
 <title>DEEP GLASS — the shared dungeon renderer in WebGL2</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #030308; }
@@ -96,7 +97,7 @@ const VAULT_A = [
   '#.....#.....#',
   '#..##.##.#>##',
   '#..##......##',
-  '##.#######.##',
+  '##.##.###.###',
   '#....+.....##',
   '#...........#',
   '#############',
@@ -130,12 +131,12 @@ const levels = [
 /* SPACE on (or facing) a stair cell changes level: A (10,8) up → the crypt;
  * crypt (3,2) down → back onto A at (10,7). */
 const LINKS = [
-  { from: 0, cell: [10, 8], to: 1, at: [2.5, 3.5, 1, 0] },
-  { from: 1, cell: [3, 2], to: 0, at: [10.5, 7.5, 0, Math.PI] },
+  { from: 0, cell: [10, 8], to: 1, at: [2.5, 3.5, 1, Math.PI] },
+  { from: 1, cell: [3, 2], to: 0, at: [10.5, 7.5, 0, 0] },
 ];
 
 let li = 0;
-const party = { x: 5.5, y: 12.5, z: 0, yaw: 0 };
+const party = { x: 5.5, y: 12.5, z: 0, yaw: Math.PI };
 R.setMaze(levels[0].maze);
 R.snapTo(party.x, party.y, party.z, party.yaw);
 
@@ -146,7 +147,7 @@ const MONSTERS = {
     { x: 9.5, y: 7.5, mat: 10, w: 0.62, h: 0.9, anim: 80 },
   ],
   1: [
-    { x: 3.5, y: 5.5, mat: 9, w: 0.62, h: 0.95, anim: 40 },
+    { x: 2.5, y: 5.5, z: 1, mat: 9, w: 0.74, h: 1.05, anim: 40 },
   ],
 };
 
@@ -269,7 +270,7 @@ function actContext() {
 
 function castLight() {
   const f = facingIdx();
-  R.light(party.x + DXS[f] * 2.5, party.y + DYS[f] * 2.5, party.z, 0.35, 1.0, 0.5, 6.5, 900);
+  R.light(party.x + DXS[f] * 2.5, party.y + DYS[f] * 2.5, party.z, 0.5, 2.2, 0.7, 6.5, 900);
   sndSpell();
   say('LANTERN SPELL');
 }
@@ -333,7 +334,7 @@ function startPlay() {
   R.setMaze(levels[0].maze);
   const m = levels[0].maze;
   for (let i = 0; i < m.cells.length; i++) if (m.cells[i] === 6) m.doorOpen[i] = 0;
-  party.x = 5.5; party.y = 12.5; party.z = 0; party.yaw = 0;
+  party.x = 5.5; party.y = 12.5; party.z = 0; party.yaw = Math.PI;
   R.snapTo(party.x, party.y, party.z, party.yaw);
   R.torch = true;
   updHud();
@@ -448,7 +449,11 @@ window.__deepglassTest = {
   killTorch: () => { R.torch = false; },
   relight: () => { R.torch = true; },
   light: (x, y, z, r, g, b, rad, life) => R.light(x, y, z, r, g, b, rad, life),
-  goto: (x, y, z, yaw) => { party.x = x; party.y = y; party.z = z; party.yaw = yaw; R.snapTo(x, y, z, yaw); },
+  goto: (x, y, z, yaw) => {
+    if (z !== li) { li = z; R.setMaze(levels[z].maze); updHud(); }
+    party.x = x; party.y = y; party.z = z; party.yaw = yaw; R.snapTo(x, y, z, yaw);
+  },
+  setLevel: (i) => { li = i; R.setMaze(levels[i].maze); updHud(); },
   sprites: () => MONSTERS[li].map((s) => ({ ...s })),
   blocked: (x, y) => R.blocked(x, y),
   viewCells: (x, y, r) => R.viewCells(x, y, r),
@@ -465,9 +470,9 @@ window.__deepglassTest = {
         mean += (r + g + b) / 3; tot++;
         if (r > 55 && r > b + 25) warm++;
         if (b > r + 12 && b > 40) cool++;
-        if (r > 40 && Math.abs(r - b) < 18 && Math.abs(r - g) < 18) grey++;
+        if (r > 80 && Math.max(Math.abs(r - g), Math.abs(g - b), Math.abs(r - b)) < 32) grey++;
           if (g > 90 && g > r + 50 && g > b + 40) green++;
-        if (r > 150 && g > 85 && b < 95) amber++;
+        if (r > 70 && r > g + 30 && g > b + 8) amber++;
         if ((r + g + b) / 3 < 10) dark++;
       }
     }
