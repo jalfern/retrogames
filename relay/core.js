@@ -205,16 +205,32 @@ export function feedbackLabels(isJon) {
     return isJon ? FB_LABELS.slice() : FB_LABELS.concat(FB_AWAIT_LABEL)
 }
 
+// #737 follow-up ("what happened to my test?"): a quarantined report must SAY why.
+// Jon's iPhone report landed behind needs-approval with zero explanation and both
+// lanes skip quarantine, so it looked like the button swallowed his test. The body
+// now carries a self-diagnosis line — key-present-but-rejected (JON_KEY missing or
+// stale in the worker env) vs no-key-at-all (device never opened the link).
+// The key value itself NEVER appears; only its presence is described.
+export function quarantineNote(body, isJon) {
+    if (isJon) return null
+    return body && typeof body.key === 'string' && body.key
+        ? 'Quarantined: a tester key was offered but did not match — check the relay JON_KEY secret is deployed.'
+        : 'Quarantined: no tester key from this device — open the one-time key link (or paste the key in the panel) to skip approval.'
+}
+
 // #905: the filed issue used to SAY "data URL attached" and then attach nothing —
 // a screenshot QA could never view. The body now carries a placeholder instead;
 // the worker uploads the PNG as a real issue asset (uploads.github.com) and
 // patches the placeholder with the CDN markdown. If the upload fails the
-// placeholder becomes an honest note, never a fake claim.
+// placeholder becomes an honest note, never a fake claim. The HTTP status rides
+// along so the failure is debuggable from the issue alone (#737: uploads failed
+// silently on Jon's report).
 export const FB_SHOT_PLACEHOLDER = '{{SCREENSHOT}}'
 
-export function screenshotMarkdown(url) {
+export function screenshotMarkdown(url, status) {
     if (typeof url === 'string' && /^https:\/\//.test(url)) return `![feedback screenshot](${url})`
-    return 'Screenshot captured but the relay upload failed — ask the reporter to re-send.'
+    const why = Number.isInteger(status) ? ` (http ${status})` : ''
+    return `Screenshot captured but the relay upload failed${why} — ask the reporter to re-send.`
 }
 
 // GitHub issue payload from a validated report. No secrets, no network here — the
@@ -232,6 +248,8 @@ export function buildFeedbackIssue(body, isJon) {
         lines.push('', `Last ${body.input.durationSec || 30}s of input (seed ${body.input.seed ?? '?'}, retrogames-rec/v1):`, '```json', JSON.stringify(body.input), '```')
     }
     if (body.screenshot) lines.push('', FB_SHOT_PLACEHOLDER)
+    const why = quarantineNote(body, isJon)
+    if (why) lines.push('', why)
     return { title, body: lines.join('\n'), labels: feedbackLabels(!!isJon) }
 }
 

@@ -34,10 +34,15 @@ after 1 h).
 2027-01-17; `CLOUDFLARE_ACCOUNT_ID` variable). `npx wrangler@4 deploy`.
 
 ## HTTP endpoints (#737/#886)
-- `GET /status` → `{ok, rooms, feedback}` — the button self-hide probe
-  (`feedback:true` only once GH secrets are deployed).
+- `GET /status` → `{ok, rooms, feedback, jonKey}` — the button self-hide probe
+  (`feedback:true` only once GH secrets are deployed). `jonKey` is a
+  presence-only boolean: one curl proves whether the `JON_KEY` secret is
+  deployed without leaking it.
 - `POST /feedback` → files a GitHub issue via the server-side token; the
-  payload gate is `validateFeedback` in `core.js`.
+  payload gate is `validateFeedback` in `core.js`. A quarantined report's body
+  says WHY (key rejected → check the JON_KEY secret; no key → device never
+  opened the one-time link), and a failed screenshot upload names its HTTP
+  status — no more silent quarantine ("what happened to my test?").
 - CORS (#886): both endpoints (plus `OPTIONS` preflight) send
   `Access-Control-Allow-Origin` for the arcade origins only
   (`jalfern.com`, `www.jalfern.com`, the workers.dev host, localhost:*).
