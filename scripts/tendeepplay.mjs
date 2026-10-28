@@ -90,11 +90,33 @@ await wait(900)
     r.check('the demo actually fights (ambushes fire)', sawCombat || after.evLog.some((e) => e.type === 'slay'), `explored=${after.explored}`)
 }
 
-// ---- 2. a real key starts the crawl; arrows walk; automap tracks the sim ----
+// ---- 2. the RIM: a key starts on the street; doors open; the well takes you down ----
 await page.keyboard.press('KeyZ')
 await wait(300)
 let s = await probe()
-r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `screen=${s.screen} mode=${s.mode}`)
+r.check('any key starts at THE RIM', s.screen === 'play' && s.mode === 'town' && s.town && s.town.b === null, `screen=${s.screen} mode=${s.mode}`)
+r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.gold}`)
+{
+    const a = await probe()
+    await tap('ArrowRight')
+    const b = await probe()
+    r.check('arrows pick a door on the street', b.town && b.town.sel === (a.town.sel + 1) % 4, `sel ${a.town.sel} -> ${b.town && b.town.sel}`)
+    await tap('Space')
+    const c = await probe()
+    r.check('SPACE enters the chosen door', c.town && c.town.b === 'V' && c.town.services && c.town.services.length === 4, `b=${c.town && c.town.b}`)
+    // temple windows: pale blue glass on the interior wash
+    const glass = await px(8, 26, 240, 120, 'canvas[data-deep-view]', (R, G, B) => B > 110 && B > R + 20 && G > 60)
+    r.check('the interior paints its room (temple wash on screen)', glass > 200, `lit px=${glass}`)
+    await tap('KeyL')
+    const d = await probe()
+    r.check('L steps back out to the street', d.town && d.town.b === null, `b=${d.town && d.town.b}`)
+    // amber windows of the tavern from the street (facade pixels, not stars)
+    const amber = await px(12, 60, 232, 60, 'canvas[data-deep-view]', (R, G, B) => R > 180 && G > 110 && B < 110)
+    r.check('the street paints lit facades', amber > 10, `amber px=${amber}`)
+    await tap('KeyF')
+    const e = await probe()
+    r.check('F at the well opens DEEP 1', e.mode === 'map' && e.floor === 0, `mode=${e.mode} floor=${e.floor}`)
+}
 {
     const a = await probe()
     await tap('ArrowUp', 2)
@@ -105,8 +127,8 @@ r.check('any key starts the crawl', s.screen === 'play' && s.mode === 'map', `sc
     r.check('ARROW RIGHT turns', c.dir === (a.dir + 1) % 4, `dir ${a.dir} -> ${c.dir}`)
     // automap: the amber cursor sits on the SIM cell
     const [mx, my] = [c.x * 5, c.y * 5]
-    const amber = await px(mx, my, 5, 5, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
-    r.check('the automap paints the party where the sim says', amber >= 18, `cell (${c.x},${c.y}) amber=${amber}/25`)
+    const amber2 = await px(mx, my, 5, 5, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
+    r.check('the automap paints the party where the sim says', amber2 >= 18, `cell (${c.x},${c.y}) amber=${amber2}/25`)
 }
 
 // ---- 3. the wireframe matches the grid: wall near = blue centre, hall = dark ----
@@ -196,18 +218,64 @@ else {
     r.check('SPACE on the stairs descends', after.floor === before.floor + 1, `floor ${before.floor} -> ${after.floor}`)
 }
 
-// ---- 7. death is real, the over screen shows, one key returns ----
+// ---- 7. a wipe carries the bodies to THE RIM; keys hire and re-descend ----
 {
     await ensureSetup({ at: [1, 1], party: [{ i: 0, hp: 1 }, { i: 1, hp: 1 }, { i: 2, hp: 1 }, { i: 3, hp: 1 }, { i: 4, hp: 1 }, { i: 5, hp: 1 }], potions: 0 })
+    let wiped = null
+    for (let t = 0; t < 120 && !wiped; t++) {
+        const p = await probe()
+        if (p.wipe) { wiped = p; break }
+        if (p.mode === 'combat') await page.keyboard.press('Space')
+        else await page.keyboard.press(p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
+        await wait(90)
+    }
+    r.check('a total party kill carries the bodies to THE RIM', !!wiped && wiped.mode === 'town', wiped ? `mode=${wiped.mode}` : `never wiped (${(await probe()).screen}/${(await probe()).mode})`)
+    r.check('the dead-body tax was paid and booked', wiped.gold < wiped.ledger.goldIn && wiped.ledger.goldSpent > 0, `purse=${wiped.gold} goldIn=${wiped.ledger.goldIn} spent=${wiped.ledger.goldSpent}`)
+    // walk to the tavern (sel 0), hire the first fallen hero we find
+    await page.keyboard.press('KeyL')
+    for (let i = 0; i < 4; i++) {
+        const p = await probe()
+        if (p.town && p.town.sel === 0) break
+        await page.keyboard.press('ArrowLeft')
+        await wait(90)
+    }
+    await page.keyboard.press('Space')
+    await wait(250)
+    let hired = null
+    for (let i = 0; i < 8 && !hired; i++) {
+        const p = await probe()
+        if (p.town && p.town.b === 'T' && p.town.services && p.town.services[0].ok) {
+            await page.keyboard.press('Space')
+            await wait(250)
+            hired = await waitEv((e) => e.type === 'hire', 20)
+            break
+        }
+        await page.keyboard.press('ArrowDown')
+        await wait(120)
+    }
+    r.check('keys hire a replacement at the tavern', !!hired, hired ? `${hired.who} joins` : 'no hire event from real keys')
+    const afterHire = await probe()
+    r.check('the company stands taller after the hire', afterHire.party.filter((h) => h.alive).length >= wiped.party.filter((h) => h.alive).length + 1, `alive ${wiped.party.filter((h) => h.alive).length} -> ${afterHire.party.filter((h) => h.alive).length}`)
+    await page.keyboard.press('KeyL')
+    await wait(150)
+    await page.keyboard.press('KeyF')
+    await wait(250)
+    const back = await probe()
+    r.check('the well reopens: F descends again at DEEP 1', back.mode === 'map' && back.floor === 0, `mode=${back.mode} floor=${back.floor}`)
+}
+
+// ---- 7b. dead AND penniless is the real end: over screen, one key back ----
+{
+    await ensureSetup({ at: [1, 1], gold: 0, party: [{ i: 0, hp: 1 }, { i: 1, hp: 1 }, { i: 2, hp: 1 }, { i: 3, hp: 1 }, { i: 4, hp: 1 }, { i: 5, hp: 1 }], potions: 0 })
     let over = null
-    for (let t = 0; t < 80 && !over; t++) {
+    for (let t = 0; t < 120 && !over; t++) {
         const p = await probe()
         if (p.screen === 'over') { over = p; break }
         if (p.mode === 'combat') await page.keyboard.press('Space')
         else await page.keyboard.press(p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
         await wait(90)
     }
-    r.check('a last-life mistake ends the party (over screen)', !!over, over ? 'screen=over' : `still ${(await probe()).screen}/${(await probe()).mode}`)
+    r.check('dead with an empty purse ends the run (over screen)', !!over, over ? 'screen=over' : `still ${(await probe()).screen}/${(await probe()).mode}`)
     await wait(1200)
     await page.keyboard.press('KeyZ')
     await wait(400)
@@ -216,7 +284,7 @@ else {
     await page.keyboard.press('KeyZ')
     await wait(300)
     o = await probe()
-    r.check('and the crawl starts again fresh', o.screen === 'play' && o.floor === 0 && o.party.every((h) => h.alive), `screen=${o.screen} floor=${o.floor}`)
+    r.check('and the crawl starts again fresh at the RIM', o.screen === 'play' && o.floor === 0 && o.gold === 120 && o.party.every((h) => h.alive), `screen=${o.screen} gold=${o.gold}`)
 }
 
 // ---- 8. ? pauses and hands the keyboard back ----

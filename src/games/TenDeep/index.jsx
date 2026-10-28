@@ -342,6 +342,7 @@ const TenDeepGame = () => {
         }
 
         const paintMap = () => {
+            if (!gs.map) { ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200); return }   // ended at the RIM: no corridor left to show
             ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200)
             for (let i = DEPTH; i >= 1; i--) {
                 const o = ring(i - 1 === 0 ? 0.62 : i - 1)
@@ -499,7 +500,7 @@ const TenDeepGame = () => {
             if (now - lastHud < 100) return
             lastHud = now
             const h = hudRef.current
-            if (h.floor) h.floor.textContent = gs.mode === 'town' ? TOWN : gs.map.name
+            if (h.floor) h.floor.textContent = gs.mode === 'map' || gs.mode === 'combat' ? gs.map.name : TOWN
             if (h.potions) h.potions.textContent = String(gs.potions)
             if (h.gold) h.gold.textContent = String(purse(gs))
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
@@ -692,7 +693,7 @@ const TenDeepGame = () => {
             mountDbg({
                 title: 'TEN-DEEP',
                 getState: () => [
-                    gs.mode === 'town' ? `THE RIM — ${gs.town.b ? BUILDINGS.find((b) => b.key === gs.town.b).name : 'the street'}  purse ${purse(gs)}` : `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}`,
+                    gs.mode === 'map' || gs.mode === 'combat' ? `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}` : `THE RIM — ${gs.town.b ? BUILDINGS.find((b) => b.key === gs.town.b).name : (gs.end ? 'cold ground' : 'the street')}  purse ${purse(gs)}`,
                     `potions ${gs.potions}  explored ${gs.explored.size}  dealt ${gs.ledger.dealt} taken ${gs.ledger.taken}`,
                     gs.party.map((h) => `${h.name} ${h.hp}/${h.maxHp}mp${h.mp}L${h.lvl}${h.alive ? '' : ' x'}`).join('  '),
                     gs.combat ? `ROUND ${gs.combat.round}: ${gs.combat.mobs.map((m) => `${m.name} ${m.hp}`).join(' | ')}` : `end ${gs.end}`,
