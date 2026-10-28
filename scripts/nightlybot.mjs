@@ -240,6 +240,11 @@ function selftest() {
     const mine = GAMES.map(g => `${g.id}@${g.path}`)
     ok(JSON.stringify(ccIds) === JSON.stringify(mine),
         `roster matches contractcheck (${mine.length} games)`)
+    const selfSrc = readFileSync(fileURLToPath(import.meta.url), 'utf8')
+    const declAt = selfSrc.search(/const failed = results\.filter/)
+    const useAt = selfSrc.search(/failed\.length/)
+    ok(declAt >= 0 && declAt < useAt,
+        'live shell declares `failed` before greenStreak reads it (TDZ #1145: selftest never reaches main())')
     console.log(`\n${fail ? 'FAILED' : 'PASSED'} ${pass}/${pass + fail}`)
     process.exit(fail ? 1 : 0)
 }
