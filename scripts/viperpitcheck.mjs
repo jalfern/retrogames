@@ -526,6 +526,37 @@ if (MUT) {
     ok(!/q\.lean \+= forward \? 0\.12 : -0\.1/.test(mutW), 'mutant: dead walk lean fails the gate (harness bites)')
 }
 
+// ---- #1106 HUD juice gate -----------------------------------------------------------
+// Chips must be visible and K.O.s staged like the original: the health bar
+// flashes on every hit, the K.O. freeze drops letterbox bars, steps the world
+// at half speed, holds a camera punch-in and raises a winner card (name +
+// tag). Presentation only (index.jsx draw/loop — no engine change), so the
+// gates are source-level with two mutants that must bite. Part B drives the
+// live cabinet through __viperPitTest.koFx()/chips() and measures the slow-mo
+// as a real tick-rate drop across the freeze.
+{
+    const fs = await import('node:fs')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    const juiceGates = [
+        ['every hit arms the chip flash', /chipFx\[e\.by\] = 20/],
+        ['the chip flash drains every frame', /if \(chipFx\[i\] > 0\) \{\s*chipFx\[i\]--/],
+        ['the K.O. opens a letterbox hold naming the winner', /koHold = \{ startedAt: performance\.now\(\), name: wf\.def\.name, tag: wf\.def\.tag/],
+        ['the KO freeze steps at half speed', /if \(slow && \(slowFlip = !slowFlip\)\) acc = Math\.min\(acc, SIM_MS - 0\.5\)/],
+        ['the hold camera punches in over the freeze', /cine = \{ side: -1, kind: null, k: 0, zoom: 0\.8 \*/],
+        ['the letterbox bars slide in and back out', /const slide = Math\.max\(0, Math\.min\(1, el \/ 160, \(KO_HOLD_MS - el\) \/ 160\)\)/],
+        ['the round-win card prints name + tag', /WINS ROUND \$\{koHold\.round\}/],
+        ['the hold clears when the freeze ends or a new round starts', /gs\.phase !== 'ko' && gs\.phase !== 'done'/],
+        ['the juice resets between matches', /chipFx = \[0, 0\]; koHold = null; koFxRound = 0/],
+        ['the K.O. dedupe resets with each new match (round-1 K.O. fires)', /koHold = null; koFxRound = 0/],
+    ]
+    for (const [label, re] of juiceGates) ok(re.test(gsrc), `HUD juice gate: ${label}`)
+    ok(/koFx\(\) \{/.test(gsrc) && /chips\(\) \{/.test(gsrc), 'HUD juice gate: dev hooks expose koFx() and chips()')
+    const mutSlow = gsrc.replace('if (slow && (slowFlip = !slowFlip)) acc = Math.min(acc, SIM_MS - 0.5)', '')
+    ok(!/slowFlip = !slowFlip/.test(mutSlow), 'mutant: dead KO slow-mo fails the gate (harness bites)')
+    const mutChip = gsrc.replace('chipFx[e.by] = 20', '')
+    ok(!/chipFx\[e\.by\] = 20/.test(mutChip), 'mutant: stripped chip flash fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -754,6 +785,43 @@ if (!MUT) {
         const gAfter = await page.evaluate(() => window.__viperPitTest.guard())
         ok(recovered, 'crush stun clears back to a guarding-ready fighter')
         ok(gAfter && gAfter[1] >= 90, `guard gauge refills after the crush (${gAfter && gAfter[1]})`)
+    }
+
+    // #1106 HUD juice: a hit flashes the health bar; the K.O. drops letterbox
+    // bars, runs the freeze at half speed, holds the camera on the winner and
+    // raises a "NAME WINS ROUND n" card — then everything releases.
+    {
+        await page.evaluate(() => window.__viperPitTest.stage(0))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        const flash = await page.evaluate(() => { window.__viperPitTest.forceHit(1, 'front'); return window.__viperPitTest.chips() })
+        ok(flash && flash[1], 'a hit flashes the health bar (chip flash live)')
+        const n0 = await page.evaluate(() => window.__viperPitTest.state.tick)
+        await page.waitForTimeout(500)
+        const n1 = await page.evaluate(() => window.__viperPitTest.state.tick)
+        const normalRate = (n1 - n0) / 500
+        ok(normalRate > 0.02, `sim ticks at real time before the K.O. (${normalRate.toFixed(3)} tick/ms)`)
+        await page.evaluate(() => window.__viperPitTest.koP2())
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'ko', null, { timeout: 5000 })
+        // forceKO sets the phase synchronously; watchPhase arms the hold one
+        // sim step later — poll for the hold, don't assume the same frame.
+        let kf = { active: false }
+        for (let i = 0; i < 25 && !kf.active; i++) {
+            kf = await page.evaluate(() => window.__viperPitTest.koFx())
+            if (!kf.active) await page.waitForTimeout(40)
+        }
+        ok(kf.active && kf.by === 0 && kf.name, `K.O. opens a letterbox hold naming the winner (${kf.name} WINS ROUND ${kf.round} "${kf.tag}")`)
+        ok(kf.slow, 'the K.O. freeze starts in slow motion')
+        const s0 = await page.evaluate(() => window.__viperPitTest.state.tick)
+        await page.waitForTimeout(250)
+        const s1 = await page.evaluate(() => window.__viperPitTest.state.tick)
+        const slowRate = (s1 - s0) / 250
+        ok(slowRate < normalRate * 0.75, `the freeze runs at half speed during the slow-mo (${slowRate.toFixed(3)} vs ${normalRate.toFixed(3)} tick/ms)`)
+        let released = false
+        for (let i = 0; i < 80 && !released; i++) {
+            released = await page.evaluate(() => !window.__viperPitTest.koFx().active)
+            if (!released) await page.waitForTimeout(50)
+        }
+        ok(released, 'the letterbox hold releases after the freeze')
     }
 
     // #1106 fighter animation depth: all five idle stances differ in the live

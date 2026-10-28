@@ -105,6 +105,9 @@ const ViperPitGame = () => {
         let koFxRound = -1
         let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
+        let chipFx = [0, 0]
+        let koHold = null, slowFlip = false
+        const KO_HOLD_MS = 1150, KO_SLOW_MS = 520
         let lagHp = [100, 100]
         let rigs = null
         let nextSend = 0
@@ -217,6 +220,7 @@ const ViperPitGame = () => {
             gs = createMatch({ seed: sd, guardButton: true, juggle: true, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
             comboFx = [0, 0]; comboVal = [0, 0]
+            chipFx = [0, 0]; koHold = null; koFxRound = 0
             finishFx = 0; finishText = ''
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
@@ -333,6 +337,7 @@ const ViperPitGame = () => {
             rebuildRigs(); rebuildStage()
             audioController.startMusic(stage.bed)
             lagHp = [100, 100]
+            chipFx = [0, 0]; koHold = null; koFxRound = 0
         }
         attractDemo()
 
@@ -382,6 +387,7 @@ const ViperPitGame = () => {
                     }
                     shake = Math.max(shake, e.dmg >= 9 ? 10 : 6)
                     if (e.combo >= 2) { comboVal[e.by] = e.combo; comboFx[e.by] = 70 }
+                    chipFx[e.by] = 20
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.5, e.dmg >= 9 ? 0xffb050 : 0xffe8e0)
                 } else if (e.kind === 'block') {
                     audioController.playTone(640, 0.03, 'square', 0.05)
@@ -470,7 +476,10 @@ const ViperPitGame = () => {
                 const q = koQuotes(m)
                 if (q) { quote = q; quoteT = 140 }
                 const wf = m.fighters.find((f) => f.st === 'win')
-                if (wf) koSting(wf.def.id)
+                if (wf) {
+                    koSting(wf.def.id)
+                    koHold = { startedAt: performance.now(), name: wf.def.name, tag: wf.def.tag, by: wf === m.fighters[0] ? 0 : 1, round: m.round }
+                }
             } else if (m.phase === 'fight' && prevPhase === 'intro') {
                 bannerText = 'FIGHT!'; bannerT = 50
                 const iq = introQuotes(BY_ID[p1Char], BY_ID[p2Char])
@@ -521,6 +530,7 @@ const ViperPitGame = () => {
             const scr = screenRef.current
             if (!gs) return
             const f = gs.fighters
+            if (koHold && (performance.now() - koHold.startedAt > KO_HOLD_MS || (gs.phase !== 'ko' && gs.phase !== 'done'))) koHold = null
             const ui = (px) => { hctx.font = `bold ${px}px "Arial Black", "Courier New", monospace` }
 
             if (scr === 'play' || scr === 'champion') {
@@ -541,6 +551,11 @@ const ViperPitGame = () => {
                     hctx.fillStyle = grad
                     const w = bw * frac
                     hctx.fillRect(i === 0 ? x : x + bw - w, by, w, bh)
+                    if (chipFx[i] > 0) {
+                        chipFx[i]--
+                        hctx.fillStyle = `rgba(255,240,225,${(chipFx[i] / 20 * 0.45).toFixed(2)})`
+                        hctx.fillRect(x, by, bw, bh)
+                    }
                     ui(Math.max(11, H * 0.024))
                     hctx.textAlign = i === 0 ? 'left' : 'right'
                     hctx.fillStyle = '#e8e6f0'
@@ -607,6 +622,30 @@ const ViperPitGame = () => {
                     hctx.textAlign = 'center'
                     hctx.fillStyle = `rgba(255,64,48,${Math.min(1, finishFx / 60).toFixed(2)})`
                     hctx.fillText(finishText, W / 2, H * 0.54)
+                }
+                if (koHold) {
+                    const el = performance.now() - koHold.startedAt
+                    const slide = Math.max(0, Math.min(1, el / 160, (KO_HOLD_MS - el) / 160))
+                    const barH = H * 0.11 * slide
+                    hctx.fillStyle = '#050408'
+                    hctx.fillRect(0, 0, W, barH)
+                    hctx.fillRect(0, H - barH, W, barH)
+                    hctx.strokeStyle = `rgba(89,224,200,${(0.55 * slide).toFixed(2)})`
+                    hctx.lineWidth = Math.max(1, H * 0.004)
+                    hctx.beginPath(); hctx.moveTo(0, barH - 1); hctx.lineTo(W, barH - 1); hctx.stroke()
+                    hctx.beginPath(); hctx.moveTo(0, H - barH + 1); hctx.lineTo(W, H - barH + 1); hctx.stroke()
+                    if (slide > 0.5) {
+                        ui(Math.max(17, H * 0.04))
+                        hctx.textAlign = 'center'
+                        hctx.strokeStyle = 'rgba(10,6,10,0.9)'; hctx.lineWidth = Math.max(3, H * 0.007)
+                        const cardY = H - barH - Math.max(12, H * 0.028)
+                        hctx.strokeText(`${koHold.name} WINS ROUND ${koHold.round}`, W / 2, cardY)
+                        hctx.fillStyle = '#ffd23e'
+                        hctx.fillText(`${koHold.name} WINS ROUND ${koHold.round}`, W / 2, cardY)
+                        ui(Math.max(9, H * 0.018))
+                        hctx.fillStyle = `rgba(190,195,215,${Math.min(1, slide).toFixed(2)})`
+                        hctx.fillText(`"${koHold.tag}"`, W / 2, cardY + Math.max(18, H * 0.036))
+                    }
                 }
                 if (quoteT > 0 && quote) {
                     quoteT--
@@ -735,6 +774,11 @@ const ViperPitGame = () => {
             const scr = screenRef.current
             attractT += dt
             if (attractT > 3000) { attractT = 0; attractMsg++ }
+            // KO freeze slow-mo: the freeze steps at half speed so the finish
+            // lands cinematically — the engine itself is untouched (a tick is a
+            // tick; only wall-clock consumption is throttled, like the cine).
+            const slow = !!(koHold && gs && gs.phase === 'ko' && now - koHold.startedAt < KO_SLOW_MS)
+            if (slow && (slowFlip = !slowFlip)) acc = Math.min(acc, SIM_MS - 0.5)
             while (acc >= SIM_MS && steps < 5) {
                 acc -= SIM_MS
                 steps++
@@ -791,6 +835,10 @@ const ViperPitGame = () => {
                     }
                 }
             }
+            if (!cine && koHold && gs && gs.phase === 'ko') {
+                const ke = Math.min(1, (now - koHold.startedAt) / KO_HOLD_MS)
+                cine = { side: -1, kind: null, k: 0, zoom: 0.8 * Math.min(1, ke * 3) * Math.min(1, (1 - ke) * 2.5) }
+            }
             if (gs && stageFx && rigs) {
                 scene.sync(gs, rigs, stageFx, now / 1000, shake > 0.4 ? shake * 0.02 : 0, cine)
                 scene.render()
@@ -815,6 +863,16 @@ const ViperPitGame = () => {
                 forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0 } },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
+                koFx() {
+                    if (!koHold) return { active: false, by: -1, name: null, tag: null, round: 0, slow: false, ms: 0 }
+                    const now = performance.now()
+                    return {
+                        active: true, by: koHold.by, name: koHold.name, tag: koHold.tag, round: koHold.round,
+                        slow: !!(gs && gs.phase === 'ko' && now - koHold.startedAt < KO_SLOW_MS),
+                        ms: Math.round(now - koHold.startedAt),
+                    }
+                },
+                chips() { return chipFx.map((v) => v > 0) },
                 forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },
                 pose(i) {
                     const f = gs && gs.fighters[i], rig = rigs && rigs[i]
@@ -835,6 +893,7 @@ const ViperPitGame = () => {
                     if (!gs || !rigs) return
                     const f = gs.fighters[i]
                     f.st = 'hitstun'; f.stun = 20; f.sf = 0; f.move = null
+                    chipFx[i] = 20
                     if (kind === 'back') { f.vx = 0.1 * f.facing; rigs[i].hitHint = null }
                     else { f.vx = -0.1 * f.facing; rigs[i].hitHint = kind === 'low' ? { low: true, high: false } : kind === 'over' ? { low: false, high: true } : null }
                 },
