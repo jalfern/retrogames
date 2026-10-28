@@ -8,7 +8,7 @@
 // only when a hero is actually hurting. If this policy can still win with one
 // fewer potion and spring than it consumes, a person can.
 
-import { SIZE, DX, DY, CFG, makeRun, step, cloneState, fireDmg } from './sim.js'
+import { SIZE, DX, DY, CFG, SPELLS, canCast, makeRun, step, cloneState, fireDmg } from './sim.js'
 
 const key = (x, y) => y * SIZE + x
 
@@ -52,17 +52,21 @@ export function nextAction(st) {
         const alive = st.party.filter(h => h.alive)
         if (!alive.length) return 'attack'
         const hurt = alive.slice().sort((a, b) => a.hp / a.maxHp - b.hp / b.maxHp)[0]
-        const caster = alive.slice().sort((a, b) => b.mp - a.mp || a.name.localeCompare(b.name))[0]
+        // a letter is only worth ordering if a LIVING class-ladder holder can
+        // work it — a fighter with a full spirit still cannot cast
+        const richest = (id) => alive.filter(h => canCast(h, id)).sort((a, b) => b.mp - a.mp || a.name.localeCompare(b.name))[0] || null
+        const healer = richest('heal')
+        const burner = richest('firebolt')
         const mobs = st.combat.mobs
         const live = mobs.filter(m => m.hp > 0)
         if (!live.length) return 'attack'
         const low = hurt.hp / hurt.maxHp
         if (low < 0.4 && st.potions > 0) return 'potion'
-        if (low < 0.6 && caster.mp >= CFG.healCost) return 'heal'
-        const pick = live.find(m => caster.mp >= CFG.fireCost && m.hp <= fireDmg(caster)) || live[0]
+        if (low < 0.6 && healer) return 'cast heal'
+        const pick = live.find(m => burner && m.hp <= fireDmg(burner)) || live[0]
         const pi = mobs.indexOf(pick)
         if (st.target !== pi) return st.target < pi ? 'target+' : 'target-'
-        if (caster.mp >= CFG.fireCost && pick.hp <= fireDmg(caster)) return 'fire'
+        if (burner && pick.hp <= fireDmg(burner)) return 'cast firebolt'
         return 'attack'
     }
     const m = st.map

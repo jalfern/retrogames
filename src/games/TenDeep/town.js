@@ -1,12 +1,11 @@
 // TEN-DEEP — THE RIM: the hamlet on the lip of the well (stage 2 of #1127).
 // Wizardry's surface (Apple II, 1981) is four services and a purse: the
-// TAVERN hires replacements, the TEMPLE calls the dead back, the TRAINING
-// GROUNDS spend carried XP for levels, the ALCHEMIST sells potions. Gold is
-// the binding resource: kills print it, town charges it, and a wipe taxes the
-// purse by half — so the cellar can never farm an infinite party.
-//
-// Pure data + seeded rolls. No Math.random here either: recruits roll on
-// mulberry32 driven by the run's town seed (sim.js owns the counter).
+// TAVERN hires replacements and seats the creation bench, the TEMPLE calls the
+// dead back, the TRAINING GROUNDS spend carried XP for levels, the ALCHEMIST
+// sells potions. Gold is the binding resource: kills print it, town charges it,
+// and a wipe taxes the purse by half — so the cellar can never farm an
+// infinite party. Stage 3 added CREATE: the bench where races, classes and
+// alignments are rolled and chosen (people.js owns the people math).
 
 export const TOWN = 'THE RIM'
 
@@ -21,7 +20,10 @@ export const BUILDINGS = [
 // applies to, `exec` is the whole effect — the harness re-grades the same
 // table so prices and effects cannot drift from what the check asserts.
 export const SERVICES = {
-    T: [{ id: 'post', label: 'POST FOR HIRE', priceKey: 'hireCost', desc: 'replace a fallen hero with a fresh roll' }],
+    T: [
+        { id: 'post', label: 'POST FOR HIRE', priceKey: 'hireCost', desc: 'a seeded stranger fills the fallen slot' },
+        { id: 'create', label: 'CREATE', priceKey: 'createCost', desc: 'the bench: roll race, class & alignment' },
+    ],
     V: [
         { id: 'mourn', label: 'MOURN — call back (1 hp)', priceKey: 'mournCost', desc: 'the dead return at the threshold of life' },
         { id: 'restore', label: 'RESTORE — life & limb', priceKey: 'restoreCost', desc: 'the dead whole, the wounded whole' },
@@ -32,29 +34,15 @@ export const SERVICES = {
     A: [{ id: 'potion', label: 'BUY POTION', priceKey: 'potionCost', desc: 'crimson glass, 26 hp when drunk' }],
 }
 
-// own-IP names + stat bands for tavern hires (the preset six live in sim.js)
-export const RECRUIT_NAMES = [
-    'HALGAR', 'Yarrow', 'Nettle', 'ORIN', 'Sable', 'KESTREL', 'Bryn', 'Ashford',
-    'Marrow', 'Vess', 'Cobble', 'Liorin', 'Pell', 'WREN', 'Dunstan', 'Ilsa',
-    'GRIM', 'Fenwick', 'Sorrel', 'Tamsin',
-]
+export { rollRecruit } from './people.js'
 
-export function rollRecruit(rnd) {
-    const pick = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1))
-    const name = RECRUIT_NAMES[Math.floor(rnd() * RECRUIT_NAMES.length)]
-    // NOTE: no gold here — a hire arrives empty-pursed but never burns the
-    // coin the fallen hero was still carrying; conservation is sacred.
-    return {
-        name,
-        hp: pick(22, 38), mp: pick(2, 16),
-        atk: pick(5, 10), def: pick(1, 5), spd: pick(3, 8),
-    }
-}
-
-// which purse slots a service may target, honestly evaluated against state
-export function serviceHeroOk(id, h) {
+// which purse slots a service may target, honestly evaluated against state.
+// `vacant` = the slot holds no one: fallen, or freshly posted and waiting at
+// the creation bench for a name of its own.
+export function serviceHeroOk(id, h, vacant) {
     switch (id) {
-        case 'post': return !h.alive
+        case 'post': return vacant
+        case 'create': return vacant
         case 'mourn': case 'restore': return !h.alive
         case 'mend': return h.alive && h.hp < h.maxHp
         case 'refresh': return h.alive && h.mp < h.maxMp
