@@ -33,8 +33,8 @@
     "neonraincheck": "node scripts/neonraincheck.mjs",
     "volcanocheck": "node scripts/volcanocheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
-  "deepglasscheck": "node scripts/deepglasscheck.mjs",
-  "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
+    "deepglasscheck": "node scripts/deepglasscheck.mjs",
+    "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
@@ -265,6 +265,7 @@
     "viperpitcheck": "node scripts/viperpitcheck.mjs"
   },
   "dependencies": {
+    "cannon-es": "^0.20.0",
     "ifvms": "^1.1.6",
     "js-dos": "^8.3.20",
     "react": "^19.2.0",
