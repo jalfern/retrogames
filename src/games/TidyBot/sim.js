@@ -181,9 +181,8 @@ const looseItems = (gs) => gs.items.filter((it) => it.state === 'loose')
 const wrongInside = (gs) => gs.items.filter((it) => it.state === 'in' && KINDS[it.kind].to !== it.cont)
 export const dwLoaded = (gs) => gs.items.filter((it) => it.state === 'in' && it.cont === 'dw').length
 
-const byId = (gs, id) => gs.items.find((it) => it.id === id)
-
 export function makeGame(seed, players = 1) {
+    void players
     const gs = {
         seed: seed >>> 0,
         players: 1,

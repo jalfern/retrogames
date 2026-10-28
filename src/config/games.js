@@ -200,6 +200,7 @@ const BritanniaGame = lazy(() => import('../games/Britannia'))
 // PICK RUSH: its own chunk — the deterministic sorter sim and the foreman
 // autopilot (shared with the attract demo and pickcheck) ride together.
 const PickRushGame = lazy(() => import('../games/PickRush'))
+const TidyBotGame = lazy(() => import('../games/TidyBot'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1111,5 +1112,19 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original arcade sorter — the robot-arm-at-the-conveyor game. Pieces ride in on a night-shift line; your gantry crane slides the rail, dips the claw (it clamps on contact), hoists the cargo clear and drops it in its tagged bin: cyan CRATE, amber CAN, magenta BOTTLE, green COIL, red SCRAP. The line speeds up every shift and the quota gauge must be full before the shift clock runs dry — and three bad places on the floor (wrong bin, dropped load, smashed glass) and you are FIRED. Odd pieces turn up: BARRELS roll, and an off-axis grab slips out of the jaws; BOTTLES are FRAGILE — slam them from carry height and they shatter, so feather them down with DOWN and release low. Chain good drops for combo pay. On the twin rails you never race alone: the FOREMAN (CPU) works every other piece by spawn — a real head-to-head on one belt — and P opens seat 2 for a human with A/D/S + F. The attract demo is the two autopilots racing; the whole sim is seeded (seed + pads = identical hashes).',
         controls: ['Arrow Left/Right / d-pad: slide the gantry crane along the rail', 'SPACE / A / GRAB: dip the claw — it clamps what it touches and auto-hoists', 'Press GRAB again over a bin to RELEASE the cargo · B / DROP also releases', 'DOWN feathers the claw while carrying — the ONLY safe way to land a FRAGILE bottle', 'Match the cargo tag to the bin color; SCRAP goes in the red bin', 'A rolling BARREL slips out unless it is upright when the jaws close', 'Clear the QUOTA before the shift clock empties — four shifts and you are line chief', 'Off the far end of the belt: −50 and your combo dies · wrong bin / smash / floor: a fuse blows, three = FIRED', 'Attract: C races the FOREMAN (default) · P opens seat 2 for a human (A/D/S move, F grab)', '?: pause and read the shift rules'],
+    },
+
+    {
+        path: '/tidy-bot',
+        pad: { layout: 'dpad', buttons: [{ label: 'USE', code: 'Space' }, { label: 'TOSS', code: 'KeyB' }], analog: false, reason: 'walk the bot, USE grabs/places/opens/closes, TOSS hurls cargo or starts a shut washer' },
+        builtBy: 'forge',
+        added: '2026-10-28',
+        visibility: 'private',
+        tapStart: false,
+        component: TidyBotGame,
+        label: 'TIDY BOT',
+        theme: 'dark',
+        description: 'An original chores game — the household robot sim, at dollhouse scale. Your caretaker bot works a printed chore list and the ORDER is the puzzle: a closed dishwasher refuses cargo, so slide the rack out (it really opens, and its open door blocks the floor — stand clear or it refuses); stow every plate and cup, close the loaded washer, and press TOSS beside it to start its cycle. Apples and milk belong in the fridge — an apple found in the dishwasher is a WRONG STOW you must rescue and re-stow, and level 3 ships one pre-loaded to teach that lesson. Gentle placements pay tidy points; TOSSing cargo jams for less, spills on the tiles cost neatness, and a thrown plate shatters on the kitchen floor. Score on time (level clock bonus), breakage and the tidy meter. Three houses, each messier than the last — kitchen drizzle, dine-in disaster, full-house frantic — and the game is always finishable: even smashed dishes count as cleared. The attract demo drives the same chore-planning autopilot the harness proves against; the whole sim is seeded (seed + pads = identical hashes).',
+        controls: ['Arrows / WASD / d-pad: drive the bot around the house', 'SPACE / A / USE: pick up litter · place into an open container · open a shut door · close an open one', 'B / TOSS: hurl held cargo toward where you face — it jams into open containers', 'Empty-handed B at an open container RETRIEVES the last stow (wrong kinds first)', 'B beside a closed, loaded washer starts its cycle — CLOSE & RUN is a chore', 'Open doors block the floor: a door that finds the robot in the way refuses (STAND CLEAR)', 'Match kind to container: plates/cups → WASHER, apple/milk → FRIDGE; wrong stows park until rescued', 'Thrown PLATEs shatter on the tiles (−40); spills and jams pay less than gentle A places', 'Beat each house clock for the time bonus; the tidy meter pays at the end', '?: pause and read the chore rules'],
     },
 ]
