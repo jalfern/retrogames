@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
 import { WX, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
+import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -149,6 +150,55 @@ for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW; x += 8) {
 ok(flashSeen > 0 && badFlash === 0, `lightning strikes at night in storms (${flashSeen} flash frames)`)
 ok(dayFlash === 0, 'no lightning during the day')
 ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thunder cues scheduled)`)
+
+// walk sprites (#1135): 4 facings x 3 frames of a procedurally drawn Avatar,
+// provable headless with a recording ctx — a facing that never turns, legs
+// that never stride, a back view that shows its face, or a left that is not
+// the right's mirror all fail here. Prove-it-can-fail: draw a circle always.
+const rec = () => {
+    const ops = []
+    let tx = 0, ty = 0, sc = 1
+    return {
+        ops,
+        save() {}, restore() {}, beginPath() {}, closePath() {}, fill() {}, stroke() {},
+        translate(x, y) { tx += x * sc; ty += y },
+        scale(x) { sc *= x },
+        moveTo(x, y) { ops.push(`M${(x * sc + tx).toFixed(1)},${(y + ty).toFixed(1)}`) },
+        lineTo(x, y) { ops.push(`L${(x * sc + tx).toFixed(1)},${(y + ty).toFixed(1)}`) },
+        arc(x, y, r) { ops.push(`C${(x * sc + tx).toFixed(1)},${(y + ty).toFixed(1)}:${r}`) },
+        fillRect(x, y, w, h) { ops.push(`R${(x * sc + tx).toFixed(1)},${(y + ty).toFixed(1)},${w},${h}`) },
+        set fillStyle(v) { ops.push(`k${v}`) },
+        get fillStyle() { return '#000' },
+        lineWidth: 1,
+    }
+}
+const sprite = (face, frame, bob = 0) => { const r = rec(); drawAvatar(r, face, frame, bob); return r.ops.join('|') }
+ok(FACES.length === 4 && ['down', 'left', 'right', 'up'].every(f => FACES.includes(f)), 'the Avatar has four facings')
+ok(faceFor(-1, 0) === 'left' && faceFor(1, 0) === 'right' && faceFor(0, -1) === 'up' && faceFor(0, 1) === 'down', 'faceFor maps every cardinal press to its facing')
+ok(walkFrame(0, false) === 0 && walkFrame(1, true) === 2 && walkFrame(2, true) === 1 && walkFrame(3, true) === 2, 'a walk cycle is idle + two striding frames, alternating')
+const sigs = [0, 1, 2].map(f => sprite('down', f))
+ok(sigs[0] !== sigs[1] && sigs[1] !== sigs[2] && sigs[0] !== sigs[2], 'the three frames are visibly different sprites (not one pose re-stamped)')
+ok(sprite('down', 1, 2) !== sprite('down', 1, 0), 'bob actually moves the sprite (the walk has spring, not a frozen stamp)')
+ok(!sprite('up', 1).includes('#e8c89a'), 'the back view shows hair, never a face')
+ok(sprite('down', 0).includes('#e8c89a') && sprite('left', 0).includes('#e8c89a'), 'front and profile views show the face')
+ok(sprite('left', 1) !== sprite('right', 1), 'left and right profiles are distinct drawings')
+{
+    const negX = s => s.split('|').map(op => {
+        if (op[0] === 'k') return op
+        const parts = op.slice(1).split(',')
+        parts[0] = (-parseFloat(parts[0])).toFixed(1)
+        return op[0] + parts.join(',')
+    }).join('|')
+    ok(negX(sprite('left', 1)) === sprite('right', 1), 'the profile is one drawing mirrored, not two drifting art assets')
+}
+ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2), 'sprites are deterministic (same facing+frame, same pixels)')
+{
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/S\.face = faceFor\(dx, dy\)/.test(src) && /S\.anim\+\+/.test(src), 'index.jsx: walking turns the Avatar (face + anim update on every land move)')
+    ok(/drawAvatar\(ctx, S\.face, walkFrame\(/.test(src), 'index.jsx: the hero renders through the sprite, not a single bobbing blob')
+    ok(/face: S\.face, frame:/.test(src), 'index.jsx: face/frame exposed to the harness so bots can watch the walk')
+    ok(/pad\.b \|\| pad\.start\) \{ S\.dismissed = S\.gate; S\.gate = -1 \}/.test(src) && /gi !== S\.dismissed/.test(src) && /if \(gi < 0\) S\.dismissed = -1/.test(src), 'index.jsx: a cancelled moongate stays cancelled until thee walk away (B no longer locks the pilgrim beside the gate)')
+}
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
 process.exit(fails ? 1 : 0)
