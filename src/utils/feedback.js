@@ -171,10 +171,12 @@ export function captureScreenshot() {
 }
 
 // Game contract state + camera when a game exposes them; absent otherwise.
-export function captureState() {
-    if (!HAS_WIN) return null
-    const g = window.__game
-    const s = g && typeof g.state === 'function' ? g.state() : (window.__feedbackInfo && window.__feedbackInfo())
+// `win` is injectable (defaults to the real window) so the harness can drive it
+// against a fake PRODUCTION window — no __game, __feedbackInfo present (#1200).
+export function captureState(win = HAS_WIN ? window : null) {
+    if (!win) return null
+    const g = win.__game
+    const s = g && typeof g.state === 'function' ? g.state() : (win.__feedbackInfo && win.__feedbackInfo())
     if (!s || typeof s !== 'object') return null
     const out = {}
     for (const k of ['tick', 'score', 'done', 'seed', 'x', 'y', 'z', 'camera', 'players', 'lives']) {
@@ -195,8 +197,8 @@ function gameIdFrom(route) {
 
 // Assemble a validated-shape report. `ring`/`fetchImpl` are injectable so the
 // harness can drive it with fake time and a fake network.
-export function captureFeedback({ note = '', ring = null, seconds = 30, route = '', isDemo = false, diag = null } = {}) {
-    const fullRoute = route || (HAS_WIN ? (window.location && window.location.pathname) || '' : '')
+export function captureFeedback({ note = '', ring = null, seconds = 30, route = '', isDemo = false, diag = null, win = HAS_WIN ? window : null } = {}) {
+    const fullRoute = route || (win && win.location && win.location.pathname) || ''
     const payload = {
         note: String(note),
         gameId: gameIdFrom(fullRoute),
@@ -204,10 +206,10 @@ export function captureFeedback({ note = '', ring = null, seconds = 30, route = 
         route: fullRoute,
         ts: Date.now(),
     }
-    if (HAS_WIN && navigator && navigator.userAgent) payload.ua = navigator.userAgent.slice(0, 200)
+    if (win && win.navigator && win.navigator.userAgent) payload.ua = win.navigator.userAgent.slice(0, 200)
     const shot = captureScreenshot()
     if (shot) payload.screenshot = shot
-    const state = captureState()
+    const state = captureState(win)
     if (state) payload.state = state
     if (isDemo && diag) payload.diag = diag
     if (ring) {
@@ -219,7 +221,7 @@ export function captureFeedback({ note = '', ring = null, seconds = 30, route = 
             // #905: seed was "?" on every filed report because it only looked at
             // __game (DEV-only). The same state source the contract uses (and the
             // production __feedbackInfo fallback) carries the seed when it exists.
-            const seed = (state && state.seed) ?? (HAS_WIN && window.__feedbackInfo ? window.__feedbackInfo().seed : undefined)
+            const seed = (state && state.seed) ?? (win && win.__feedbackInfo ? win.__feedbackInfo().seed : undefined)
             if (Number.isInteger(seed)) payload.input.seed = seed
         }
     }

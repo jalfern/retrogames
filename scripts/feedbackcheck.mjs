@@ -339,9 +339,28 @@ ok('guard: removing the shield hands keys back to the game', e3.stopped === fals
 ok('guard: stop() detaches both shields', win1.listenerCount('keydown') === 1 && win1.listenerCount('keyup') === 1)
 
 // ── #905: seed reaches the replay without DEV-only __game ────────────────────
-const feedbackSrc = readFileSync(new URL('../src/utils/feedback.js', import.meta.url), 'utf8')
-ok('capture: seed key survives the contract filter', /'seed'/.test(feedbackSrc))
-ok('capture: seed falls back to __feedbackInfo (production hook)', /__feedbackInfo\(\)\.seed/.test(feedbackSrc))
+// #1200: this used to be a regex asserting the __feedbackInfo fallback text
+// existed in feedback.js. Now drive captureFeedback against a fake PRODUCTION
+// window — no __game (that's the DEV-only contract), __feedbackInfo present (the
+// new production-safe hook) — and prove the payload actually carries state.seed
+// + input.seed: a report Jon files from his phone is replayable. The DEV path
+// (a window WITH __game) still prefers the contract state, so the hook is a
+// fallback, not a replacement.
+const prodWin = {
+    location: { pathname: '/retrogames/gauntlet' },
+    navigator: { userAgent: 'QA-fake-phone/1.0' },
+    __feedbackInfo: () => ({ tick: 7160, score: 150, done: false, seed: 42, x: 12, y: 4 }),
+}
+const prodRing = makeRing()
+prodRing.push({ right: true }, Date.now() - 500) // a key held inside the window
+const prodCap = captureFeedback({ note: 'prod replay test', ring: prodRing, route: '/retrogames/gauntlet', win: prodWin })
+ok('prod: the state block rides the report without __game', prodCap.state && prodCap.state.seed === 42 && prodCap.state.tick === 7160 && prodCap.state.x === 12)
+ok('prod: the input stream carries the seed (replayable)', prodCap.input && prodCap.input.seed === 42 && prodCap.input.ticks === 1800)
+const devWin = { location: { pathname: '/retrogames/gauntlet' }, __game: { state: () => ({ seed: 7, tick: 5 }) } }
+const devRing = makeRing()
+devRing.push({ right: true }, Date.now() - 500)
+const devCap = captureFeedback({ note: 'dev contract test', ring: devRing, route: '/retrogames/gauntlet', win: devWin })
+ok('dev: the __game contract state is still preferred when present', devCap.state && devCap.state.seed === 7 && devCap.state.tick === 5)
 
 // ── #905: panel UX — own screen, ESC, send returns to the game, key row ─────
 ok('panel: owns a full screen above every game overlay', /fixed inset-0 z-\[80\]/.test(chromeSrc))

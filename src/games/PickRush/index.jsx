@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
@@ -782,6 +782,9 @@ const PickRushGame = () => {
         })
 
         // DEV hook
+        // #1200: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(simState)
+
         if (import.meta.env.DEV) {
             window.__pickrushTest = {
                 state: testState,
@@ -817,6 +820,7 @@ const PickRushGame = () => {
 
         return () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             canvas.removeEventListener('pointerdown', onPointerDown)

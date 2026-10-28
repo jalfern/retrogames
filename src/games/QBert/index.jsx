@@ -13,7 +13,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { makeGame, step, padDiagonals, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
 import { plan } from './planner.js'
@@ -367,6 +367,9 @@ const QBertGame = () => {
         raf = requestAnimationFrame(frame)
 
         // ------------------------------------------------------- DEV hook ----
+        // #1200: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.players[gs.active].score, done: !!gs.end, seed: gs.seed, x: gs.player.c, y: gs.player.r }))
+
         if (import.meta.env.DEV) {
             const live = () => (screenRef.current === 'attract' ? demo : gs)
             window.__qbertTest = {
@@ -488,6 +491,7 @@ const QBertGame = () => {
         }
 
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__qbertTest) delete window.__qbertTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
