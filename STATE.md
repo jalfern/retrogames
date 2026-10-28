@@ -1,57 +1,58 @@
-# STATE — session 32 (2026-10-26)
+# STATE — session 34 (2026-10-28) — TEN-DEEP stage 2: THE RIM SHIPPED
 
-## Shipped this session
-- **TEN-DEEP stage 1** — merged `dbc4c9c` (#1137, issue #1127).
-  Live at https://jalfern.com/retrogames/ten-deep (private — #379 — not in
-  the Arcade menu until Jon promotes). WIZARDRY's trademark is gone: dir,
-  route, label, hooks (`__deepTest`), checks (`tendeepcheck`, `tendeepplay`),
-  CI keys (`tendeep`) — zero Wizardry strings in src/scripts/bundle.
-  Content is now own-IP: TEN DEEPS below a fallen keep (seeds new, layouts
-  new, names new) and a new bestiary — Cave Rat, Mire Adder, Rag Goblin,
-  Bone Sentry, Pale Wraith + fresh plates Grave Ghoul, Bog Troll, Minotauros,
-  Deep Wyrm — boss THE HOLLOW KING (crowned, glow-eyed, no flight) with two
-  Wyrm wardens. Rules untouched: 6-hero party, ledger combat, slack-proven
-  campaign (1152 cmds, 7 potions, 8 springs, 65 casts; lvl-9 party; all
-  slack deletions still win). tendeepcheck 676/676 (+5 mutants caught);
-  tendeepplay 25/25 real keys, zero page errors; King fight pixel-checked.
-- Solver bug the ten-floor proof exposed: autopilot deadlocked standing on a
-  spring at FULL MP re-issuing `use` — now drinks only when dry. (Three-floor
-  geometry never hit it; ten floors found it in minutes. Proof finds bugs.)
-- QA polish pass filed: **#1138** (stone reads, step easing, mob idles +
-  death dissolve, spell VFX, automap fog, floor ambience, HUD vials, epitaphs).
+## Shipped
+- **TEN-DEEP — stage 2: THE RIM** (surface world), PR #1153, squash
+  `1668ab3`, part of #1127. Live: https://jalfern.com/retrogames/ten-deep
+  (private, #379 — verified in the prod bundle, chunk index-CfCw8b2n.js
+  carries THE RIM).
+- Wizardry's surface, own world: the run OPENS at the hamlet on the well.
+  TAVERN posts replacement heroes (40g, seeded deterministic rolls, refuses
+  the living); TEMPLE mourns 200g×lvl (dead at 1 hp) / restores 400g×lvl /
+  mends 30g / refreshes 25g; TRAINING GROUNDS spend carried XP + 100g×next
+  level; ALCHEMIST sells potions at 25g. Gold: mobs pay xp/4; a wipe carries
+  the bodies home at a half-purse tax; dead + purse<hire = the real over.
+- **Proof purity kept**: all Node proofs and playOut run `strict` — no second
+  life in the harness; campaign still wins in 1153 commands (+1 `down`),
+  slack holds (-pot/-spring/both/no-springs), `proven.ledger.tx === 0`.
 
-## Playable now
-- TEN-DEEP on prod (private). `scripts/main-ok.sh` green at merge time.
+## Harness
+- tendeepcheck 716/716 (+39 RIM pins incl. gold conservation through
+  walk→ambush→wipe→hire, coffin-crew refused at the well, broke+fallen=over,
+  hashes see purse/street); 6/6 mutants caught incl. new hireCost→0.
+- tendeepplay 37/37 real keys + pixels (street door pick, interior wash,
+  hire off real keys, tax booked, F reopens DEEP 1). attractcheck caught my
+  two long attract lines in CI once — fixed to ≤44 chars, then `static` green.
 
-## Branches / harness
-- Worktree `~/Dev/retrogames-forge-ten-deep` REMOVED after merge; main
-  checkout detached at origin/main.
-- CI `wiz` steps renamed to `tendeep` in ci.yml (workflow scope present —
-  britannia's missing CI steps still are NOT; see session 31 note).
-- `npm run tendeepcheck / tendeepplay / lint:tendeep`; scope `tendeep` in
-  checks.mjs. tapstart/vpadboot/vpadcheck/attractcheck now expect TEN-DEEP.
-- New-game rename lesson: bulk s/WIZARDRY/TEN-DEEP/ corrupts identifiers
-  (`WizardryGame`) and lazy-import paths (`../games/Wizardry`) — grep the
-  broken token after any branding rename, before the first lint.
+## Board
+- #1127 back on `game-queue` for **stage 3**: races/classes/alignments at the
+  tavern + spells-by-level. Stage 4 = MODERN look via #1129 (don't
+  double-build the renderer inside TEN-DEEP).
+- #1138 (TEN-DEEP polish pass) got the stage-2 additions: textured facades,
+  street life/animation, MOURN juice, coin clink, town ambience, inn-vs-temple
+  economy note, demo beat showing the surface.
+
+## Branches / housekeeping
+- Worktree `~/Dev/retrogames-forge-ten-deep-surface` — release when stage 3
+  starts or prune; branch deleted on merge; worktree detached at origin/main.
+- TEN-DEEP is NOT in contractcheck/nightlybot rosters (stage-1 precedent:
+  it ships with its own tendeepp* arms). Don't "fix" this by reflex — it is
+  a deliberate scope choice, revisit only with Jon.
 
 ## For the next session
-- #1127 is back on `game-queue` for **stage 2: the surface world** — tavern
-  (hire/roll), temple (resurrect/heal), training grounds (spend XP — the
-  sim's 100*lvl^2 curve already runs; the town spends it), magic shop.
-  Stage 3: races/classes/alignments + spells-by-level. Stage 4: MODERN look
-  = shared renderer #1129 (don't double-build it inside TEN-DEEP).
-- Or Jon promotes TEN-DEEP public / rules on #1129 (renderer) — it would
-  lift TEN-DEEP, BARD'S TALE and BRITANNIA dungeons at once.
+- Claim #1127 stage 3 (race/class/alignment roll at the tavern — the hire
+  pool grows into creation; spells-by-level unlocks with level).
+- Or promote candidates for Jon: TEN-DEEP + BRITANNIA both playable private.
 
 ## Open questions
-- #1121 (AWAITING, board direction) — unchanged, deadline 2026-10-28.
+- #1121 (board direction) — AWAITING, deadline passes today; the warden
+  sweep takes its default. No new questions filed this session.
 
 ## Lessons learned
-- A determinism check that prints `a.hash vs b.hash` IDENTICAL on failure is
-  lying about the cause: the condition AND-ed in `won`. Compose failure text
-  from what actually differed.
-- The `setup({floor})` DEV guard was hardcoded `< 3` with the old floor
-  count — carry floors-count changes into harness helpers, not just FLOORS.
-- Screenshotting a pixel game while spamming `cmd` faster than rAF captures
-  the hit-flash full-white (flashHit decays only per paint). Let frames land
-  (~1s idle) before sampling pixels.
+- `gh pr checks` can report a STALE pre-rebase `static` FAILURE; verify the
+  check belongs to the current head SHA (`gh run list --json headSha`) before
+  believing a red after force-push.
+- The Wipe→tax bug class: per-hero floor-halving must book exactly what it
+  takes, and a hire must not destroy the dead hero's carried coin — the
+  conservation pin (`goldIn − spent == purse`) caught both in minutes.
+- attractcheck (44-char lines) is a CI-only gate — run it locally before
+  pushing attract copy changes.
