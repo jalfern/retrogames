@@ -11,6 +11,7 @@ import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, is
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
+import { shadeAt } from '../src/games/Britannia/tiles.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -373,6 +374,31 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/warping: !!S\.warp, warpFlash:/.test(src), 'index.jsx: the harness can see a warp in flight')
     const menuA = (src.split('if (pad.a) {')[1] || '').split('if (pad.b')[0] || ''
     ok(!/S\.x = g\.x; S\.y = g\.y; S\.ship = false/.test(menuA), 'index.jsx: the gate menu no longer cuts to the destination on the spot')
+}
+
+// land texture (#1146): the modern tiles shade from a smooth field keyed to
+// WORLD position, so the land reads as soft, continuous terrain — never the
+// per-pixel salt-and-pepper static, and never a repeating tile stamp. grain =
+// fraction of adjacent 16px blocks that differ in shade, sampled at exactly the
+// block centers the renderer paints (shadeAt). The old per-block hash sat at
+// ~0.6; a smooth field sits far below 0.3, and flattening it to one shade drops
+// it toward 0. Prove-it-can-fail: make worldNoise a raw per-block hash (grain ->
+// ~0.5) or a constant (grain -> 0) and these go red.
+{
+    const step = 16, span = 512
+    let t = 0, d = 0
+    for (let y = 0; y < span; y += step) for (let x = 0; x < span; x += step) {
+        const s = shadeAt(x + 8, y + 8)
+        if (x + step < span) { t++; if (s !== shadeAt(x + step + 8, y + 8)) d++ }
+        if (y + step < span) { t++; if (s !== shadeAt(x + 8, y + step + 8)) d++ }
+    }
+    const g = d / t
+    ok(g < 0.3, `land mottle is smooth, not static: grain ${g.toFixed(2)} (< 0.30)`)
+    ok(g > 0.02, `land still varies (not one flat shade): grain ${g.toFixed(2)} (> 0.02)`)
+    // and the renderer must actually paint from that field, not a per-tile stamp
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/blockShades\(tx, ty\)/.test(src), 'index.jsx: the modern tile shades come from the world-continuous field (blockShades)')
+    ok(!/sheet\[v < 9 \? v : 8\]|tiles\.modern/.test(src), 'index.jsx: no per-tile stamp cache remains for the modern land')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
