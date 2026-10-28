@@ -110,6 +110,7 @@ export function makeGame(seed = 1, players = 1) {
         arms: [],
         rng: mulberry32(seed >>> 0),
         nextSpawn: 30,
+        spawnN: 0,
         binFill: BINS.map(() => 0),
     }
     for (let i = 0; i < gs.players; i++) {
@@ -118,6 +119,7 @@ export function makeGame(seed = 1, players = 1) {
             mode: 'up',         // up | lowering | low | rising
             held: null,         // item id
             clamp: 0,           // clamp-close animation frames
+            score: 0,           // this seat's bank (head-to-head)
             // autopilot memory
             target: -1, walk: 0, commit: 0,
         })
@@ -169,17 +171,8 @@ function endShift(gs) {
     }
 }
 
-// seats share one rail: arm order never crosses
-function orderArms(gs) {
-    if (gs.arms.length < 2) return
-    const [a, b] = gs.arms
-    const gap = 26
-    if (a.x > b.x - gap) {
-        const mid = (a.x + b.x) / 2
-        a.x = clampX(mid - gap / 2, ARM_MIN, ARM_MAX)
-        b.x = clampX(mid + gap / 2, ARM_MIN, ARM_MAX)
-    }
-}
+// NOTE: the two carriages ride twin rails (the belt is shared, the rails are
+// not) — a cargo bound for a far bin never deadlocks behind the rival crane.
 
 function stepArm(gs, seat, pad) {
     const arm = gs.arms[seat]
@@ -227,6 +220,7 @@ function stepArm(gs, seat, pad) {
                 break
             }
             it.carriedBy = seat
+            it.lastSeat = seat
             it.onBelt = false
             it.vx = 0; it.vy = 0
             arm.held = it.id
@@ -300,6 +294,8 @@ function stepItems(gs) {
                         gs.bestCombo = Math.max(gs.bestCombo, gs.combo)
                         const pts = 100 + (gs.combo - 1) * 25 + gs.shift * 25
                         gs.score += pts
+                        const credited = gs.arms[it.lastSeat ?? 0] || gs.arms[0]
+                        credited.score += pts
                         gs.correct++
                         gs.binFill[BINS.indexOf(bin)]++
                         gs.ev.push({ type: 'drop', kind: it.kind, bin: BINS.indexOf(bin), pts, combo: gs.combo, x: it.x })
@@ -328,7 +324,7 @@ function spawn(gs) {
     const kind = pickKind(gs.rng, gs.shift)
     const K = KINDS[kind]
     gs.items.push({
-        id: NEXT_ID++, kind, x: -12, y: BELT_Y - K.h / 2,
+        id: NEXT_ID++, n: gs.spawnN++, kind, x: -12, y: BELT_Y - K.h / 2,
         vx: 0, vy: 0, rot: gs.rng() * Math.PI, onBelt: true,
         carriedBy: -1, fragile: K.fragile, landed: false,
     })
@@ -350,7 +346,7 @@ export function autopilot(gs, seat) {
         const it = itemById(gs, arm.held)
         const bin = BINS[it ? KINDS[it.kind].bin : 0]
         const cx = bin.x + bin.w / 2
-        if (Math.abs(arm.x - cx) > 2) { pad[it && arm.x < cx ? 'right' : 'left'] = true; return pad }
+        if (Math.abs(arm.x - cx) > 12) { pad[it && arm.x < cx ? 'right' : 'left'] = true; return pad }
         if (it && it.fragile && arm.tip < CLAW_DOWN - 12) { pad.down = true; return pad }
         // release needs a fresh press edge: gap tick, then press
         if (arm.prevA) pad.a = false
@@ -358,25 +354,33 @@ export function autopilot(gs, seat) {
         return pad
     }
 
-    // empty claw: press once (descent is automatic), stay quiet until mode up
-    if (arm.mode !== 'up') {
-        pad.a = arm.held === null && (arm.mode === 'lowering' || arm.mode === 'low') && arm.prevA ? true : false
-        if (arm.mode === 'low' && !arm.prevA) pad.a = true
+    // empty claw: coast through the descent; bottomed out with nothing → rise
+    if (arm.mode === 'low') {
+        if (arm.prevA) pad.a = false
+        else pad.a = true
         return pad
     }
+    if (arm.mode !== 'up') return pad
     if (arm.prevA) { pad.a = false; return pad }
 
+    // with a rival on the rail, every other piece belongs to each crane
+    // (P1: even spawns, foreman: odd); solo, the whole line is yours
+    const home = gs.players > 1 ? (it) => (it.n ?? 0) % 2 === seat : () => true
     let best = null
     for (const it of gs.items) {
         if (it.carriedBy !== -1 || !it.onBelt) continue
         if (it.x > BELT_END - 24) continue
+        if (!home(it)) continue
         if (it.x < arm.x - 40) continue
         if (!best || it.x < best.x) best = it
     }
     if (!best) {
-        const behind = gs.items.filter((it) => it.onBelt && it.carriedBy === -1 && it.x < arm.x - 30)
-        if (behind.length) pad.left = true
-        else if (arm.x > 210) pad.left = true
+        if (seat === 0) {
+            const behind = gs.items.filter((it) => it.onBelt && it.carriedBy === -1 && it.x < arm.x - 30 && home(it))
+            if (behind.length) pad.left = true
+            else if (arm.x > 110) pad.left = true
+        } else if (arm.x > 250) pad.left = true
+        else if (arm.x < 250) pad.right = true
         return pad
     }
     if (arm.target !== best.id) { arm.target = best.id; arm.jitter = Math.round((rnd() - 0.5) * 3); arm.skip = rnd() < 0.03 }
@@ -414,7 +418,6 @@ export function step(gs, pads) {
     for (let s = 0; s < gs.players; s++) {
         stepArm(gs, s, Array.isArray(pads) ? pads[s] : (s === 0 ? pads : {}))
     }
-    orderArms(gs)
     stepItems(gs)
     if (!gs.end && gs.shiftTick >= SHIFT_TICKS) endShift(gs)
     for (const f of gs.fx) f.k++
