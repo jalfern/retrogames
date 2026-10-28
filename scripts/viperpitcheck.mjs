@@ -48,7 +48,7 @@ if (MUT) {
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
 const e = await import(bust(ENG_PATH))
-const { ROSTER, BY_ID, LADDER } = await import(bust('../src/games/ViperPit/fighters.js'))
+const { ROSTER, BY_ID, LADDER, voiceNotes } = await import(bust('../src/games/ViperPit/fighters.js'))
 
 ok(ROSTER.length >= 5, `roster has ${ROSTER.length} distinct fighters`)
 ok(LADDER.length >= 5, 'street ladder has 5 opponents')
@@ -627,6 +627,67 @@ if (MUT) {
     ok(!/chipFx\[e\.by\] = 20/.test(mutChip), 'mutant: stripped chip flash fails the gate (harness bites)')
 }
 
+// ---- #1106 select-screen gate -----------------------------------------------------
+// Picking a fighter must feel like the arcade: each card shows the fighter's OWN
+// rig posed in their idle stance (a mini GL render composited onto the HUD),
+// hovering blips their voice register, and the pick prints their intro line and
+// carries it through the pre-fight intro. Data gate on fighters.js (voice
+// registers + the pure note selector), source gates on render.js/index.jsx, and
+// three mutants that must bite. Part B drives the live select screen through
+// __viperPitTest.selectInfo()/hover() and a real arrow-hold + Space pick.
+{
+    const fs = await import('node:fs')
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok((fsrc.match(/\bvoice: \{/g) || []).length >= 5, 'select gate: all five fighters carry a voice register')
+    ok(new Set(ROSTER.map((d) => JSON.stringify(d.voice))).size === 5, 'select gate: every voice register differs')
+    ok(ROSTER.every((d) => d.voice && d.voice.base > 60 && d.voice.base < 1000 && ['sine', 'square', 'sawtooth', 'triangle'].includes(d.voice.wave)),
+        'select gate: every register is a sane pitch + waveform')
+    ok(/export function voiceNotes\(def\)/.test(fsrc), 'select gate: pure voice-note selector exists')
+    ok(ROSTER.every((d) => { const n = voiceNotes(d); return n.length === 3 && n.every((x) => x > 40 && x < 4000) }),
+        'select gate: voiceNotes returns three sane notes per fighter')
+    const vN = ['nyx', 'cinder', 'vess', 'riv', 'krax'].map((id) => voiceNotes(BY_ID[id])[0])
+    ok(new Set(vN).size === 5, `select gate: hover-note pitches differ per fighter (${vN.join('/')})`)
+    const portGates = [
+        ['portrait mini-renderer captures frames for the HUD', /preserveDrawingBuffer: true/],
+        ['portrait poses the rig in its own idle stance', /poseFighter\(rig, \{ st: 'idle'/],
+        ['front three-quarter framing for the card', /rig\.root\.rotation\.y = 0\.55/],
+        ['pit-teal rim light on the portrait', /new THREE\.DirectionalLight\(0x59e0c8, 1\.6\)/],
+        ['card-aspect canvas so the HUD never stretches it', /canvas\.height = Math\.round\(w \* 0\.78\)/],
+        ['full-body framing: camera back far enough to keep the head in', /cam\.position\.set\(0, 1\.6, 7\.4\)/],
+    ]
+    for (const [label, re] of portGates) ok(re.test(rsrc), `select gate: ${label}`)
+    const mutC = rsrc.replace('cam.position.set(0, 1.6, 7.4)', 'cam.position.set(0, 1.2, 3.1)')
+    ok(!/cam\.position\.set\(0, 1\.6, 7\.4\)/.test(mutC), 'mutant: portrait camera pushed too close fails the framing gate (harness bites)')
+    const cabGates = [
+        ['select screen builds the portraits once', /const ensurePortraits = \(\) => \{\s*if \(portraits\) return portraits/],
+        ['card body composites the captured rig portrait', /hctx\.drawImage\(pt, x \+ cw \* 0\.04/],
+        ['the hovered card glows teal', /shadowColor = 'rgba\(89,224,200,0\.75\)'/],
+        ['hovering blips the hovered fighter voice', /const hoverSelect = \(d\) => \{\s*cursor = \(cursor \+ d \+ ROSTER\.length\) % ROSTER\.length\s*hoverBlip\(ROSTER\[cursor\]\)/],
+        ['the arrow keys drive the hover blip', /hoverSelect\(-1\)[\s\S]*hoverSelect\(1\)/],
+        ['the hovered intro blurb prints under the grid', /`"\$\{ROSTER\[cursor\]\.intro\}"`/],
+        ['the pick prints the chosen fighter intro line', /pickLine = \{ text: `\$\{c\.name\} — \$\{c\.intro\}`, t: 150 \}/],
+        ['the pick gets its own sting of the register', /const pickSting = \(def\) =>/],
+        ['the intro line carries through the pre-fight intro', /pickLine && pickLine\.t > 0 && gs\.phase === 'intro'/],
+        ['portraits fall back to colour blocks without WebGL', /catch \{ portraits = null \}/],
+        ['all five cards fit the screen', /const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\) \/ \(total \* 1\.06\)\)/],
+        ['card rects recorded at draw time for the probe', /cardRects\[i\] = \{ id: rd\.id, x, y, w: cw, h: ch \}/],
+        ['dev hook reports the card rects', /cardRects\(\) \{ return cardRects\.slice\(\) \}/],
+    ]
+    for (const [label, re] of cabGates) ok(re.test(gsrc), `select gate: ${label}`)
+    ok(/selectInfo\(\) \{/.test(gsrc) && /hover\(d\) \{ hoverSelect\(d \| 0\) \}/.test(gsrc) && /pick\(\) \{ atSelect\(\) \}/.test(gsrc),
+        'select gate: dev hooks expose selectInfo/hover/pick')
+    const mutP = gsrc.replace('hctx.drawImage(pt, x + cw * 0.04, y + ch * 0.02, cw * 0.92, ch * 0.92)', '')
+    ok(!/hctx\.drawImage\(pt/.test(mutP), 'mutant: portraits dropped from the cards fails the gate (harness bites)')
+    const mutH = gsrc.replace('hoverBlip(ROSTER[cursor])', '')
+    ok(!/hoverBlip\(ROSTER\[cursor\]\)/.test(mutH), 'mutant: silent hover fails the gate (harness bites)')
+    const mutV = fsrc.replace(/\bvoice: \{/g, 'voice__X: {')
+    ok((mutV.match(/\bvoice: \{/g) || []).length === 0, 'mutant: stripped voice registers empty the data gate (harness bites)')
+    const mutL = gsrc.replace('const cw = Math.min(H * 0.5, (W * 0.94) / (total * 1.06))', 'const cw = Math.min(W * 0.3, H * 0.5)')
+    ok(!/const cw = Math\.min\(H \* 0\.5, \(W \* 0\.94\)/.test(mutL), 'mutant: overflowing card grid fails the fit gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -661,7 +722,65 @@ if (!MUT) {
 
     await page.keyboard.press('Digit1')
     await page.waitForTimeout(200)
-    await page.keyboard.press('Space')
+
+    // #1106 select screen: rig portraits on the cards, voice-register hover
+    // blips, and the intro line printed on the pick (selectInfo/hover hooks +
+    // real arrow/Space keys).
+    {
+        await page.waitForFunction(() => {
+            const s = window.__viperPitTest.selectInfo()
+            return s && s.portraits >= 5
+        }, null, { timeout: 10000 })
+        const si = await page.evaluate(() => window.__viperPitTest.selectInfo())
+        ok(si.portraits >= 5, `all five rig portraits render on the select cards (${si.portraits})`)
+        // framing audit with pixels, not vibes: every portrait must paint a
+        // fighter (enough ink) with the head inside the frame (top rows inked)
+        // — a camera pushed into the chest crops the head and reads 0 up top.
+        const pstats = await page.evaluate(() => window.__viperPitTest.portraitStats())
+        const PIDS = ['nyx', 'cinder', 'vess', 'riv', 'krax']
+        ok(pstats && PIDS.every((id) => pstats[id]), 'portrait pixels readable for the framing audit')
+        ok(PIDS.every((id) => pstats && pstats[id] && pstats[id].ink > 0.1 && pstats[id].ink < 0.95),
+            `every portrait paints a fighter, not a void or a wall (${PIDS.map((id) => `${id}:${pstats && pstats[id] ? pstats[id].ink : '-'}`).join(' ')})`)
+        ok(PIDS.every((id) => pstats && pstats[id] && pstats[id].head > 100),
+            `every portrait keeps the head inside the card (${PIDS.map((id) => pstats && pstats[id] ? pstats[id].head : '-').join('/')} head-pixels)`)
+        // the cards themselves, audited on the live HUD canvas: every card
+        // sits on screen and carries ink (a portrait) in its body region.
+        const fit = await page.evaluate(() => {
+            const cv = document.querySelector('canvas[data-viperpit-hud]')
+            const g = cv.getContext('2d')
+            return window.__viperPitTest.cardRects().map((r) => {
+                const onScreen = r.x >= 0 && r.y >= 0 && r.x + r.w <= cv.width && r.y + r.h <= cv.height
+                const d = g.getImageData(Math.round(r.x + r.w * 0.2), Math.round(r.y + r.h * 0.12), Math.round(r.w * 0.6), Math.round(r.h * 0.6)).data
+                let ink = 0
+                for (let i = 0; i < d.length; i += 4) {
+                    if (d[i + 3] > 24 && 0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2] > 50) ink++
+                }
+                return { id: r.id, onScreen, ink: +(ink / (d.length / 4)).toFixed(3) }
+            })
+        })
+        ok(fit.length >= 5 && fit.every((c) => c.onScreen), `all five cards sit on screen (${fit.map((c) => c.id).join(',')})`)
+        ok(fit.every((c) => c.ink > 0.04), `each card carries its portrait on the HUD (${fit.map((c) => `${c.id}:${c.ink}`).join(' ')})`)
+        const b0 = await page.evaluate(() => ({ ...window.__vpAudio }))
+        await page.keyboard.press('ArrowRight')
+        await page.waitForTimeout(150)
+        const s1 = await page.evaluate(() => window.__viperPitTest.selectInfo())
+        const b1 = await page.evaluate(() => window.__vpAudio)
+        ok(s1.cursor !== si.cursor && s1.id, `select cursor moves on a real arrow press (${si.cursor} -> ${s1.cursor}, ${s1.id})`)
+        ok(b1.osc - b0.osc >= 2, `hovering blips the fighter's voice register (${b1.osc - b0.osc} tones)`)
+        await page.evaluate(() => window.__viperPitTest.hover(-1))
+        const s2 = await page.evaluate(() => window.__viperPitTest.selectInfo())
+        ok(s2.cursor === si.cursor, `the hover hook wraps the cursor back (${s1.cursor} -> ${s2.cursor})`)
+        const selShot = await page.locator('canvas[data-viperpit-hud]').screenshot()
+        ok(selShot.length > 2000, 'select screen draws a rich card grid (non-trivial HUD frame)')
+        await page.keyboard.press('Space')
+        let pl = null
+        for (let i = 0; i < 25 && !pl; i++) {
+            pl = (await page.evaluate(() => window.__viperPitTest.selectInfo())).line
+            if (!pl) await page.waitForTimeout(40)
+        }
+        ok(pl && pl.includes('—'), `the pick prints the fighter's intro line (${pl})`)
+    }
+
     await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
     let st = await page.evaluate(() => window.__viperPitTest.state)
     ok(st && (st.phase === 'fight' || st.phase === 'ko'), `fight starts from select (phase ${st && st.phase})`)
