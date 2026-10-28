@@ -22,9 +22,9 @@ import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
+import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
 
 const SIM_MS = 1000 / 60
-const TILE = 32
 const VIEW_W = 1280
 const VIEW_H = 720
 const DAY = 7200
@@ -41,59 +41,10 @@ const ATTRACT = [
     'Press any key, or tap, to begin the pilgrimage',
 ]
 
-// per-terrain base colors: 0 sea, 1 grass, 2 marsh, 3 rock, 4 hill, 5 forest,
-// 6 heath, 7 plains, 8 coast/sand
-const TERR = [
-    ['#123a63', '#1a4c7e', '#25639b'],
-    ['#27521f', '#316527', '#3d7a31'],
-    ['#3d4a24', '#4a5a2c', '#586a37'],
-    ['#4c4636', '#5d5744', '#6e6752'],
-    ['#54564f', '#666a61', '#787d73'],
-    ['#1c3d18', '#264f20', '#316229'],
-    ['#46523a', '#556247', '#647354'],
-    ['#6d7a3f', '#7f8d4c', '#92a15b'],
-    ['#b7a267', '#c9b57a', '#dcc98e'],
-]
-
-const hash2 = (x, y, s) => {
-    let h = (x * 374761393 + y * 668265263 + s * -1640531527) | 0
-    h = (h ^ (h >>> 13)) * 1274126177
-    return ((h ^ (h >>> 16)) >>> 0) / 4294967296
-}
-
 function buildTileCaches() {
-    const modern = []
-    for (let v = 0; v < 9; v++) {
-        const c = document.createElement('canvas')
-        c.width = TILE; c.height = TILE
-        const x = c.getContext('2d')
-        const [lo, mid, hi] = TERR[v]
-        x.fillStyle = mid
-        x.fillRect(0, 0, TILE, TILE)
-        for (let py = 0; py < TILE; py += 2) {
-            for (let px = 0; px < TILE; px += 2) {
-                const n = hash2(px, py, v)
-                if (n > 0.72) { x.fillStyle = hi; x.fillRect(px, py, 2, 2) }
-                else if (n < 0.24) { x.fillStyle = lo; x.fillRect(px, py, 2, 2) }
-            }
-        }
-        if (v === 5) {
-            for (let i = 0; i < 4; i++) {
-                const gx = 4 + Math.floor(hash2(i, v, 1) * 20)
-                const gy = 4 + Math.floor(hash2(i, v, 2) * 20)
-                x.fillStyle = '#12300f'
-                x.beginPath(); x.arc(gx, gy, 3.4, 0, 7); x.fill()
-                x.fillStyle = '#2c5a22'
-                x.beginPath(); x.arc(gx - 1, gy - 1, 2, 0, 7); x.fill()
-            }
-        }
-        if (v === 4) {
-            x.strokeStyle = '#8b9186'
-            x.lineWidth = 2
-            x.beginPath(); x.moveTo(6, 26); x.lineTo(16, 6); x.lineTo(26, 24); x.stroke()
-        }
-        modern.push(c)
-    }
+    // classic (C) mode is a flat EGA stamp per terrain. The modern look is NOT
+    // cached: it shades each tile live from the world-continuous field so the
+    // land never shows a repeating tile pattern (#1146).
     const classic = []
     const SHADE = ['#00007c', '#00a800', '#005400', '#6c6c6c', '#949494', '#00a800', '#545400', '#a8a800', '#d4c878']
     for (let v = 0; v < 9; v++) {
@@ -104,7 +55,7 @@ function buildTileCaches() {
         x.fillRect(0, 0, TILE, TILE)
         classic.push(c)
     }
-    return { modern, classic }
+    return { classic }
 }
 
 const BritanniaGame = () => {
@@ -278,9 +229,28 @@ const BritanniaGame = () => {
 
         const drawTile = (tx, ty, sx, sy, t) => {
             const v = world.get(tx, ty)
-            const sheet = classicOn ? tiles.classic : tiles.modern
-            ctx.drawImage(sheet[v < 9 ? v : 8], sx, sy)
-            if (v === 0 && !classicOn) {
+            const vv = v < 9 ? v : 8
+            if (classicOn) { ctx.drawImage(tiles.classic[vv], sx, sy); return }
+            // modern: shade each 16px block from the world-continuous field so
+            // the land is soft, continuous terrain — no static, no tile repeat
+            const [lo, mid, hi] = TERR[vv]
+            const bs = TILE / SUB
+            const sh = blockShades(tx, ty)
+            for (let by = 0; by < SUB; by++) for (let bx = 0; bx < SUB; bx++) {
+                const s = sh[by * SUB + bx]
+                ctx.fillStyle = s === 2 ? hi : s === 0 ? lo : mid
+                ctx.fillRect(sx + bx * bs, sy + by * bs, bs, bs)
+            }
+            if (v === 5) {
+                // forest canopy, keyed to the world tile so it never repeats
+                for (let i = 0; i < 4; i++) {
+                    const gx = sx + 4 + Math.floor(hash2(tx * 5 + i, ty * 5 + i, 1) * 24)
+                    const gy = sy + 4 + Math.floor(hash2(tx * 5 + i, ty * 5 + i, 2) * 24)
+                    ctx.fillStyle = '#12300f'; ctx.beginPath(); ctx.arc(gx, gy, 3.4, 0, 7); ctx.fill()
+                    ctx.fillStyle = '#2c5a22'; ctx.beginPath(); ctx.arc(gx - 1, gy - 1, 2, 0, 7); ctx.fill()
+                }
+            }
+            if (v === 0) {
                 const ph = Math.floor(t / 14) % 2
                 if (hash2(tx, ty, ph) > 0.82) {
                     ctx.fillStyle = 'rgba(190,225,255,0.5)'
