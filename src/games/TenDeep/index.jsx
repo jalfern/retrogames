@@ -16,7 +16,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -706,8 +706,22 @@ const TenDeepGame = () => {
             g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height)
             for (const t of gs.explored) {
                 const x = t % SIZE, y = Math.floor(t / SIZE)
-                g.fillStyle = '#3c466e'
+                g.fillStyle = automapShade(automapRing(x, y, gs.x, gs.y))
                 g.fillRect(x * C, y * C, C, C)
+            }
+            // floor ruler gutter: stairs/throne remembered on EVERY floor visited
+            g.fillStyle = '#000'
+            g.fillRect(SIZE * C, 0, cv.width - SIZE * C, cv.height)
+            for (let fi = 0; fi <= gs.floor; fi++) {
+                const ry = fi * 9 + 2
+                g.font = '6px monospace'
+                g.textAlign = 'left'
+                g.fillStyle = fi === gs.floor ? '#ffd54f' : '#4a5578'
+                g.fillText(String(fi + 1), SIZE * C + 2, ry + 4)
+                for (const m of gs.marks) if (m.floor === fi) {
+                    g.fillStyle = m.kind === 'stairs' ? '#57e389' : '#ff5252'
+                    g.fillText(m.kind === 'stairs' ? 'v' : 'K', SIZE * C + 7, ry + 4)
+                }
             }
             if (gs.map.stairs && gs.explored.has(gs.map.stairs.y * SIZE + gs.map.stairs.x)) {
                 g.fillStyle = '#57e389'; g.fillRect(gs.map.stairs.x * C, gs.map.stairs.y * C, C, C)
@@ -878,6 +892,7 @@ const TenDeepGame = () => {
                     springHere: gs.springs.has(gs.y * SIZE + gs.x),
                     potHere: gs.pots.has(gs.y * SIZE + gs.x),
                     explored: gs.explored.size,
+                    marks: gs.marks,
                     view: (() => {
                         // what the wireframe can see: first solid depth + features
                         // in front, exactly as paintMap walks the corridor
@@ -1003,9 +1018,9 @@ const TenDeepGame = () => {
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
-            <canvas ref={mapRef} data-deep-map="1" width={95} height={95}
+            <canvas ref={mapRef} data-deep-map="1" width={115} height={95}
                 className="absolute bottom-3 left-3 border border-indigo-500/40 bg-black/80 rounded opacity-90 pointer-events-none"
-                style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '118px', height: '118px' }} />
+                style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '143px', height: '118px' }} />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">

@@ -14,10 +14,11 @@
 // potion, one fewer consumed spring, both, and a full spring-strip) ·
 // DETERMINISM.
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -231,6 +232,61 @@ section('ENGINE PINS')
         g3.x = th.x + near[0]; g3.y = th.y + near[1]; g3.dir = near[2]
         run(g3, 'fwd')
         ok(g3.mode === 'combat' && g3.combat && g3.combat.boss, 'stepping up to the throne did not start the King fight')
+    }
+    // 9b. AUTOMAP MEMORY: the pen-and-paper ledger. Every stairs/throne the
+    //     party lays eyes on is remembered with its FLOOR, survives descent,
+    //     and is never written twice. Ring dimming is pure and monotone.
+    {
+        const g = makeRun()
+        step(g, 'down')
+        ok(Array.isArray(g.marks) && g.marks.length === 0, `the marks ledger starts dirty: ${JSON.stringify(g.marks)}`)
+        const s0 = g.map.stairs
+        const dirs9 = [[1, 0, 2], [-1, 0, 0], [0, 1, 3], [0, -1, 1]]
+        const near9 = dirs9.find(([dx, dy]) => !g.map.wall(s0.x + dx, s0.y + dy))
+        ok(!!near9, 'the stairs have no open neighbour — unwinnable geometry')
+        g.x = s0.x + near9[0]; g.y = s0.y + near9[1]; g.dir = near9[2]
+        run(g, 'fwd')
+        ok(g.x === s0.x && g.y === s0.y, 'the party did not step onto the stair tile')
+        ok(g.marks.some(m => m.floor === 0 && m.kind === 'stairs' && m.x === s0.x && m.y === s0.y),
+            `stairs seen on DEEP 1 left no mark: ${JSON.stringify(g.marks)}`)
+        run(g, 'back'); run(g, 'fwd')
+        ok(g.marks.filter(m => m.floor === 0 && m.kind === 'stairs').length === 1,
+            `the stairs were inked twice: ${JSON.stringify(g.marks)}`)
+        run(g, 'use')
+        ok(g.floor === 1, 'use on the stairs did not descend')
+        ok(g.marks.some(m => m.floor === 0 && m.kind === 'stairs'), 'descending wiped the DEEP 1 stair memory')
+        ok(g.marks.every(m => m.floor === 0), `the new floor pre-inked its marks: ${JSON.stringify(g.marks)}`)
+
+        const g3 = makeRun()
+        step(g3, 'down')
+        g3.map = genFloor(FLOORS.length - 1)
+        const th = g3.map.throne
+        const nearT = dirs9.find(([dx, dy]) => !g3.map.wall(th.x + dx, th.y + dy))
+        ok(!!nearT, 'the throne has no open neighbour — unwinnable geometry')
+        g3.x = th.x + nearT[0]; g3.y = th.y + nearT[1]; g3.dir = nearT[2]
+        const gk = makeRun()
+        gk.map = g3.map; gk.mode = 'map'; gk.floor = FLOORS.length - 1
+        const two = dirs9.find(([dx, dy]) => !g3.map.wall(th.x + dx, th.y + dy) && !g3.map.wall(th.x + 2 * dx, th.y + 2 * dy))
+        ok(!!two, 'no two-tile approach to the throne on the last floor')
+        gk.x = th.x + 2 * two[0]; gk.y = th.y + 2 * two[1]; gk.dir = two[2]
+        run(gk, 'fwd')
+        ok(gk.marks.some(m => m.kind === 'throne' && m.floor === FLOORS.length - 1),
+            `the throne on the last floor left no mark: ${JSON.stringify(gk.marks)}`)
+        run(gk, 'back'); run(gk, 'fwd')
+        ok(gk.marks.filter(m => m.kind === 'throne').length === 1,
+            `the throne was inked more than once: ${JSON.stringify(gk.marks)}`)
+
+        ok(automapRing(1, 1, 0, 2) === 1 && automapRing(3, 0, 0, 0) === 3 && automapRing(-4, 2, 0, 0) === 4,
+            'automapRing is not Chebyshev')
+        const nearS = automapShade(0), farS = automapShade(3)
+        ok(nearS !== farS && /^#[0-9a-f]{6}$/i.test(nearS) && /^#[0-9a-f]{6}$/i.test(farS),
+            'the automap fog is still all-or-nothing per cell')
+        ok(automapShade(1) === nearS && automapShade(2) === nearS && automapShade(4) === farS && automapShade(9) === farS,
+            'the fog ring boundary drifted off radius 2')
+        const gR = makeRun()
+        step(gR, 'down')
+        ok([...gR.explored].every(t => automapShade(automapRing(t % SIZE, Math.floor(t / SIZE), gR.x, gR.y)) === nearS),
+            'fresh exploration at a glance sits in the dim ring — the ring radius is under the view radius')
     }
     // 10. MOVEMENT: back is the reverse, walls refuse; spells cost MP, and
     //     only a class that has LEARNED the letter may work it.
@@ -840,6 +896,25 @@ if (MUT) {
         CLASSES.MAGUS.spells.firestorm = save
         console.log(`  mut MAGUS ladder firestorm 5 -> 1 (novice pyromancy): ${v ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
         ok(v, 'ladder drift SURVIVED — spells-by-level became a decoration')
+    }
+
+    // 9. source-patch mutants: the automap fog ring and the memory ledger.
+    {
+        const simFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
+        const orig = readFileSync(simFile, 'utf8')
+        const mutants = [
+            ['fog ring 2 -> 5 (fog forgets to dim)', "ring <= 2 ? '#3c466e'", "ring <= 5 ? '#3c466e'"],
+            ['the memory ledger re-inks every look', '!st.marks.some(m => m.floor === st.floor && m.kind === \'stairs\')', 'true'],
+            ['the memory ledger forgets the throne', '!st.marks.some(m => m.floor === st.floor && m.kind === \'throne\')', 'true'],
+        ]
+        for (const [name, from, to] of mutants) {
+            ok(orig.includes(from), `mutant anchor missing: ${name}`)
+            writeFileSync(simFile, orig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            writeFileSync(simFile, orig)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the automap gates stopped touching this rule`)
+        }
     }
 }
 
