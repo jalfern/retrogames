@@ -13,6 +13,7 @@ import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/av
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit } from '../src/games/Britannia/moons.js'
 import { shadeAt } from '../src/games/Britannia/tiles.js'
+import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches } from '../src/games/Britannia/swell.js'
 
 const path = 'public/games/ultima4.jsdos'
@@ -519,10 +520,43 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         ok(/crest\(tx, ty, t\)/.test(src) && /foamPatches\(tx, ty, sd, t, S\.seed, st\)/.test(src), 'index.jsx: ocean tiles paint crest lines and shore foam in drawTile')
         ok(/landSides\(tx, ty, world\)/.test(src), 'index.jsx: foam lands only on edges with real land beside them')
         ok(/swell: crest\(S\.x, S\.y, S\.tick\)/.test(src), 'index.jsx: the harness can watch the swell under the Avatar')
-        const classicIdx = src.indexOf('if (classicOn) { ctx.drawImage(tiles.classic')
+        const classicIdx = src.indexOf('if (classicOn) {')
         const swellIdx = src.indexOf('crest(tx, ty, t)')
         ok(classicIdx >= 0 && swellIdx > classicIdx, 'index.jsx: classic (C) mode still paints its clean tile sheet before any swell')
     }
+}
+
+// classic tiles (#1135): C mode stamps the ORIGINAL terrain tiles. The mapping
+// is Origin's own: the tilesets live in files named BY TERRAIN (GRASS.CON,
+// MARSH.CON, BRUSH.CON, HILL.CON, FOREST.CON, SHORE.CON) — nothing guessed,
+// unlike the SHAPES.EGA base table, which is absent from the bundle and whose
+// one AVATAR.EXE candidate contradicts the sheet's colour runs (would mislabel
+// marsh vs heath vs plains), so sea/cliff/plains honestly stay flat fills.
+// Prove-it-can-fail: swap FOREST.CON and GRASS.CON contents in the zip view
+// (the trunk gate goes red), truncate a CON (length gate), corrupt record 1 of
+// one file (shared-header gate).
+{
+    const CON = ['GRASS.CON', 'MARSH.CON', 'BRUSH.CON', 'HILL.CON', 'FOREST.CON', 'SHORE.CON', 'BRICK.CON']
+    ok(CON.every(n => zip[n] && zip[n].length === 192), `six terrain CON tilesets (+BRICK) present at 192B (${CON.map(n => `${n}:${zip[n] ? zip[n].length : 'MISSING'}`).join(' ')})`)
+    const hdrHas = n => { const t = decodeRecord(zip[n], 32); return t.includes(12) && t.includes(13) }
+    ok(CON.every(hdrHas), 'record 1 carries the same magenta marker pair (12+13) in every CON file — a shared header field, so the 32B record alignment is real, not assumed')
+    const sets = {}
+    let idxBad = 0
+    for (const n of CON) {
+        sets[n] = decodeCon(zip[n])
+        for (const t of sets[n]) for (const p of t) if (p > 15) idxBad++
+    }
+    ok(Object.values(sets).every(s => s.length === 4) && idxBad === 0, `each CON decodes to 4 variant tiles x 64 in-range 4bpp indices (${idxBad} out-of-range pixels)`)
+    const cnt = (tile, idx) => tile.reduce((a, p) => a + (p === idx ? 1 : 0), 0)
+    ok(sets['GRASS.CON'].every(t => cnt(t, 4) >= 16 && cnt(t, 4) > Math.max(cnt(t, 1), cnt(t, 2), cnt(t, 6), cnt(t, 7), cnt(t, 8))), 'GRASS.CON variants are ground-dominant (index 4 the top colour of every tile) — the file really is plain grass')
+    ok(sets['FOREST.CON'].every(t => cnt(t, 6) >= 1 && cnt(t, 4) >= 1) && sets['FOREST.CON'].some(t => cnt(t, 6) > cnt(sets['GRASS.CON'][0], 6) + 8), 'FOREST.CON carries brown trunk pixels over green ground — distinct from GRASS.CON, not the same tileset relabelled')
+    ok(sets['SHORE.CON'].some(t => cnt(t, 1) + cnt(t, 2) >= 8) && sets['SHORE.CON'].some(t => cnt(t, 4) >= 4), 'SHORE.CON mixes blue/cyan water with green land — these are coast tiles, so terrain 8 really is the beach ring')
+    ok(sets['HILL.CON'].every(t => cnt(t, 7) + cnt(t, 8) >= 1) && sets['MARSH.CON'].some(t => cnt(t, 1) + cnt(t, 2) >= 1), 'HILL.CON shows grey rock and MARSH.CON shows standing water — the two terrain tilesets say what their names say')
+    ok(sets['BRICK.CON'].filter(t => cnt(t, 3) >= 24).length === 4, 'BRICK.CON is solid cyan masonry with yellow accents — real wall tiles, reserved for the stage-2 cities')
+    ok(Object.keys(CON_TERR).length === 6 && [...Object.keys(CON_TERR), ...Object.keys(FLAT)].map(Number).sort((a, b) => a - b).join(',') === '0,1,2,3,4,5,6,7,8', 'every terrain 0..8 is either a named original tileset or an honest flat fill (no silent gaps)')
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/tiles = buildTileCaches\(zip\)/.test(src), 'index.jsx: the classic cache is built from the original bundle bytes')
+    ok(/cs\[variantOf\(hash2, tx, ty, vv\) % cs\.length\]/.test(src), 'index.jsx: classic mode stamps the decoded variants, deterministic per world tile')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
