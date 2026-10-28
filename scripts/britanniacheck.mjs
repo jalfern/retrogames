@@ -12,7 +12,8 @@ import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progre
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor } from '../src/games/Britannia/moons.js'
-import { shadeAt } from '../src/games/Britannia/tiles.js'
+import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
+import { TOWN_R, FLAT as TOWN_FLAT, townScore } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples } from '../src/games/Britannia/swell.js'
 
@@ -704,6 +705,82 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/dimples\(tx, ty, si, t, S\.seed\)/.test(src), 'index.jsx: wet sea tiles are drawn with dimples')
     ok(/seaRain: splatIntensity\(weatherAt\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)\)/.test(src),
         'index.jsx: the harness can see the rain striking the Avatar\'s sea tile')
+}
+
+{
+    // towns before walls (#1135): built-up ground rides the detected gates
+    const terrain = (x, y) => world.get(x, y)
+    const synthetic = { '1 grass': 1, '6 heath': 6, '7 plains': 7 }
+    let flatOk = true
+    for (const v of Object.values(synthetic)) if (townScore(0, 0, [{ x: 0, y: 0 }], () => v) <= 0) flatOk = false
+    ok(flatOk, 'level ground (grass/heath/plains) at a gate reads built-up')
+    let hardOk = true
+    for (const v of [0, 2, 3, 4, 5, 8, 9, 76]) if (townScore(0, 0, [{ x: 0, y: 0 }], () => v) !== 0) hardOk = false
+    ok(hardOk, 'sea, marsh, rock, hill, forest, sand and POI tiles never build (towns sit on level ground)')
+    let farOk = true
+    for (const g of gates) for (let dy = -7; dy <= 7; dy++) for (let dx = -7; dx <= 7; dx++) {
+        const d = Math.max(Math.abs(dx), Math.abs(dy))
+        if (d <= TOWN_R) continue
+        if (townScore(g.x + dx, g.y + dy, gates, terrain) > 0 && d > TOWN_R) {
+            const others = gates.some(o => o !== g && Math.max(Math.abs(o.x - g.x - dx), Math.abs(o.y - g.y - dy)) <= TOWN_R)
+            if (!others) farOk = false
+        }
+    }
+    ok(farOk, `nothing reads built-up beyond TOWN_R=${TOWN_R} from every gate (its own radius, no bleed)`)
+    let decayOk = true, plazaOk = true
+    const allFlat = () => 1
+    for (let r = 1; r <= TOWN_R; r++) {
+        const prev = townScore(10 + r - 1, 10, [{ x: 10, y: 10 }], allFlat)
+        const ring = townScore(10 + r, 10, [{ x: 10, y: 10 }], allFlat)
+        if (ring > prev || (ring === prev && r > 0)) decayOk = false
+    }
+    if (townScore(10, 10, [{ x: 10, y: 10 }], allFlat) <= 0) decayOk = false
+    for (const g of gates) {
+        if (townScore(g.x, g.y, gates, terrain) <= 0 && !isSea(world.get(g.x, g.y)) && TOWN_FLAT.has(world.get(g.x, g.y))) plazaOk = false
+    }
+    ok(decayOk, 'on level ground the built-up score strictly decays with distance from the gate')
+    ok(plazaOk, 'gate plazas themselves read built-up when their ground is level')
+    let popOk = true
+    const popCounts = gates.map(g => {
+        let n = 0
+        for (let dy = -TOWN_R; dy <= TOWN_R; dy++) for (let dx = -TOWN_R; dx <= TOWN_R; dx++) {
+            if (townScore(g.x + dx, g.y + dy, gates, terrain) > 0) n++
+        }
+        return n
+    })
+    for (const n of popCounts) if (n < 8) popOk = false
+    ok(popOk, `every one of the eight gates has a town around it (${popCounts.join(', ')} built tiles ≥ 8)`)
+    let cleanOk = true
+    for (let y = 0; y < MAPW; y += 3) for (let x = 0; x < MAPW; x += 3) {
+        if (townScore(x, y, gates, terrain) > 0 && (isSea(world.get(x, y)) || !TOWN_FLAT.has(world.get(x, y)))) cleanOk = false
+    }
+    ok(cleanOk, 'over the whole real map, built ground is always flat land')
+    const grass = ['#27521f', '#316527', '#3d7a31']
+    const spread = h => Math.max(...[1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))) - Math.min(...[1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16)))
+    const bp = builtPalette(grass, 1)
+    ok(bp.join() !== grass.join() && bp.every((h, i) => spread(h) < spread(grass[i])),
+        'built-up grass is greyer than moor grass (mortar wash, not a new hue)')
+    ok(mixHex('#316527', [104, 100, 92], 0) === '#316527' && /^#[0-9a-f]{6}$/.test(bp[0]),
+        'mixHex is identity at t=0 and always emits a hex colour')
+    let cobbleDet = true, cobbleN = 0, cobbleTot = 0
+    for (let i = 0; i < 200; i++) {
+        const g = gates[i % gates.length]
+        for (let by = 0; by < 2; by++) for (let bx = 0; bx < 2; bx++) {
+            const c = cobbleBlock(g.x + (i % 7) - 3, g.y + (i % 5) - 2, bx, by)
+            if (cobbleBlock(g.x + (i % 7) - 3, g.y + (i % 5) - 2, bx, by) !== c) cobbleDet = false
+            cobbleTot++; if (c) cobbleN++
+        }
+    }
+    const frac = cobbleN / cobbleTot
+    ok(cobbleDet && frac > 0.1 && frac < 0.9, `cobble grout is deterministic and scattered (${(frac * 100).toFixed(1)}% of town blocks paved)`)
+    const tsrc = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/const ts = townScore\(tx, ty, gates, terrainAt\)/.test(tsrc) && /builtPalette\(TERR\[vv\], ts\)/.test(tsrc),
+        'index.jsx: drawTile washes and paves built-up ground in modern mode')
+    ok(/classical|classicOn/.test(tsrc) && !/builtPalette\(TERR\[vv\], ts\)/.test(tsrc.slice(0, tsrc.indexOf('const ts = townScore')) || ''),
+        'index.jsx: the wash lives in the modern branch (classic sheet stays clean)')
+    ok(/if \(ts > 0 && cobbleBlock\(tx, ty, bx, by\)\)/.test(tsrc), 'index.jsx: town blocks darken onto cobble grout')
+    ok(/inTown && !S\.wasTown/.test(tsrc) && /town lieth nigh/.test(tsrc), 'index.jsx: entering town toasts once')
+    ok(/town: townScore\(S\.x, S\.y, gates, terrainAt\)/.test(tsrc), 'index.jsx: the harness can see the town under the Avatar')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
