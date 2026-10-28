@@ -1039,7 +1039,7 @@ const ViperPitGame = () => {
             }
             dbg = mountDbg({
                 title: 'VIPER PIT',
-                state: () => (gs ? { phase: gs.phase, round: gs.round, timer: Math.ceil(gs.timer / 60), p1: `${gs.fighters[0].hp}hp ${Math.round(gs.fighters[0].meter)}m ${gs.fighters[0].st}${gs.fighters[0].move ? ':' + gs.fighters[0].move : ''}`, p2: `${gs.fighters[1].hp}hp ${Math.round(gs.fighters[1].meter)}m ${gs.fighters[1].st}${gs.fighters[1].move ? ':' + gs.fighters[1].move : ''}` } : {}),
+                state: () => (gs ? { phase: gs.phase, round: gs.round, timer: Math.ceil(gs.timer / 60), p1: `${gs.fighters[0].hp}hp ${Math.round(gs.fighters[0].meter)}m ${gs.fighters[0].st}${gs.fighters[0].move ? ':' + gs.fighters[0].move : ''}`, p2: `${gs.fighters[1].hp}hp ${Math.round(gs.fighters[1].meter)}m ${gs.fighters[1].st}${gs.fighters[1].move ? ':' + gs.fighters[1].move : ''}, p1x: +gs.fighters[0].x.toFixed(2), p1mv: gs.fighters[0].move ? (gs.fighters[0].move.key || gs.fighters[0].move.type) : ''` } : {}),
                 cheats: [
                     { label: 'P2 to 1 HP', run: () => { if (gs) gs.fighters[1].hp = 1 } },
                     { label: 'Fill P1 meter', run: () => { if (gs) gs.fighters[0].meter = 100 } },

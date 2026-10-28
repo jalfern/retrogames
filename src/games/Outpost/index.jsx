@@ -359,7 +359,7 @@ const OutpostGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.ore, done: !!gs.end,
                     seed: gs.baseSeed, depth: gs.depth, food: gs.food, dug: gs.dug,
-                    dwarves: gs.dwarves.filter((d) => d.alive).length,
+                    dwarves: gs.dwarves.filter((d) => d.alive).length, cursor: [cursor.x, cursor.y],
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,

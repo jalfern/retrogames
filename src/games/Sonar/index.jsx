@@ -394,7 +394,7 @@ const SonarGame = () => {
                 },
                 state: () => ({
                     tick: tickBase + gs.tick, score: runScore + gs.score, done: !!gs.end,
-                    seed, depth, lives: gs.lives, have: gs.have, pearls: gs.pearls.length,
+                    seed, depth, lives: gs.lives, have: gs.have, pearls: gs.pearls.length, cell: gs.player.c,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,

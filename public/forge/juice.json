@@ -1,8 +1,8 @@
 {
- "generated": "2026-10-28T16:21:44.770Z",
- "commit": "64ff9f1",
- "windowTicks": 6,
- "trials": 2,
+ "generated": "2026-10-28T19:28:37.631Z",
+ "commit": "f37f958",
+ "windowTicks": 9,
+ "trials": 3,
  "thresholds": {
   "burstMin": 0.02,
   "idleExceed": 1.6,
@@ -56,7 +56,7 @@
       "x",
       "y"
      ],
-     "idle": 0.002
+     "idle": 0.003
     },
     "a": {
      "sound": true,
@@ -92,7 +92,7 @@
       "p",
       "spawned"
      ],
-     "idle": 0
+     "idle": 0.001
     },
     "right": {
      "sound": false,
@@ -105,33 +105,37 @@
       "p",
       "spawned"
      ],
-     "idle": 0
+     "idle": 0.001
     },
     "up": {
      "sound": true,
      "fx": false,
      "moved": true,
-     "pop": false,
+     "pop": true,
      "juice": true,
      "keys": [
       "bullets",
       "enemies",
-      "spawned"
+      "score",
+      "spawned",
+      "superKills"
      ],
-     "idle": 0
+     "idle": 0.059
     },
     "a": {
      "sound": true,
      "fx": false,
      "moved": true,
-     "pop": false,
+     "pop": true,
      "juice": true,
      "keys": [
       "bullets",
       "enemies",
-      "spawned"
+      "score",
+      "spawned",
+      "superKills"
      ],
-     "idle": 0.011
+     "idle": 0.019
     }
    },
    "errors": 0,
@@ -150,7 +154,7 @@
      "keys": [
       "paddle"
      ],
-     "idle": 0.01
+     "idle": 0
     },
     "right": {
      "sound": false,
@@ -161,20 +165,22 @@
      "keys": [
       "paddle"
      ],
-     "idle": 0.01
+     "idle": 0.012
     },
     "a": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.01
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "score"
+     ],
+     "idle": 0
     }
    },
    "errors": 0,
-   "score": 0.6666666666666666
+   "score": 1
   },
   {
    "id": "galaga",
@@ -182,14 +188,15 @@
    "actions": {
     "left": {
      "sound": false,
-     "fx": false,
+     "fx": true,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
+      "lives",
       "playerX"
      ],
-     "idle": 0.025
+     "idle": 0.041
     },
     "right": {
      "sound": false,
@@ -200,45 +207,49 @@
      "keys": [
       "playerX"
      ],
-     "idle": 0.026
+     "idle": 0.041
     },
     "up": {
      "sound": false,
-     "fx": false,
-     "moved": false,
+     "fx": true,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.026
+     "juice": true,
+     "keys": [
+      "playerY"
+     ],
+     "idle": 0.024
     },
     "down": {
      "sound": false,
-     "fx": false,
-     "moved": false,
+     "fx": true,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.022
+     "juice": true,
+     "keys": [
+      "playerY"
+     ],
+     "idle": 0.025
     },
     "a": {
      "sound": true,
-     "fx": false,
+     "fx": true,
      "moved": false,
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.029
+     "idle": 0.028
     }
    },
    "errors": 0,
-   "score": 0.6
+   "score": 1
   },
   {
    "id": "dig-dug",
    "method": "stick",
    "actions": {
     "left": {
-     "sound": false,
+     "sound": true,
      "fx": false,
      "moved": true,
      "pop": false,
@@ -246,10 +257,10 @@
      "keys": [
       "x"
      ],
-     "idle": 0.019
+     "idle": 0.011
     },
     "right": {
-     "sound": false,
+     "sound": true,
      "fx": false,
      "moved": true,
      "pop": false,
@@ -257,21 +268,10 @@
      "keys": [
       "x"
      ],
-     "idle": 0.007
+     "idle": 0.02
     },
     "up": {
      "sound": false,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "y"
-     ],
-     "idle": 0.01
-    },
-    "down": {
-     "sound": true,
      "fx": false,
      "moved": true,
      "pop": false,
@@ -281,6 +281,17 @@
      ],
      "idle": 0.011
     },
+    "down": {
+     "sound": true,
+     "fx": false,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "y"
+     ],
+     "idle": 0.01
+    },
     "a": {
      "sound": true,
      "fx": false,
@@ -288,7 +299,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.01
+     "idle": 0.023
     }
    },
    "errors": 0,
@@ -307,10 +318,10 @@
      "keys": [
       "aim"
      ],
-     "idle": 0.004
+     "idle": 0.003
     },
     "right": {
-     "sound": true,
+     "sound": false,
      "fx": false,
      "moved": true,
      "pop": false,
@@ -329,7 +340,7 @@
      "keys": [
       "aim"
      ],
-     "idle": 0.004
+     "idle": 0.005
     },
     "down": {
      "sound": false,
@@ -340,7 +351,7 @@
      "keys": [
       "aim"
      ],
-     "idle": 0.004
+     "idle": 0.01
     },
     "a": {
      "sound": true,
@@ -351,7 +362,7 @@
      "keys": [
       "ammo"
      ],
-     "idle": 0.008
+     "idle": 0.009
     }
    },
    "errors": 0,
@@ -371,7 +382,7 @@
       "d",
       "score"
      ],
-     "idle": 0.058
+     "idle": 0.062
     },
     "right": {
      "sound": true,
@@ -381,9 +392,10 @@
      "juice": true,
      "keys": [
       "d",
+      "lives",
       "score"
      ],
-     "idle": 0.062
+     "idle": 0.056
     },
     "a": {
      "sound": true,
@@ -395,7 +407,7 @@
       "d",
       "score"
      ],
-     "idle": 0.056
+     "idle": 0.06
     }
    },
    "errors": 0,
@@ -407,39 +419,47 @@
    "actions": {
     "left": {
      "sound": false,
-     "fx": false,
-     "moved": false,
+     "fx": true,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.02
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.025
     },
     "right": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.023
+     "juice": true,
+     "keys": [
+      "x"
+     ],
+     "idle": 0.05
     },
     "up": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.024
+     "juice": true,
+     "keys": [
+      "pedal"
+     ],
+     "idle": 0.025
     },
     "down": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.021
+     "juice": true,
+     "keys": [
+      "pedal"
+     ],
+     "idle": 0.02
     },
     "a": {
      "sound": true,
@@ -450,17 +470,50 @@
      "keys": [
       "papers"
      ],
-     "idle": 0.03
+     "idle": 0.023
     }
    },
    "errors": 0,
-   "score": 0.2
+   "score": 1
   },
   {
    "id": "blob-battle",
    "method": "stick",
    "actions": {
     "left": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "scores"
+     ],
+     "idle": 0.01
+    },
+    "right": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "scores"
+     ],
+     "idle": 0.018
+    },
+    "down": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": false,
+     "juice": true,
+     "keys": [
+      "scores"
+     ],
+     "idle": 0.022
+    },
+    "a": {
      "sound": true,
      "fx": false,
      "moved": true,
@@ -469,34 +522,7 @@
      "keys": [
       "scores"
      ],
-     "idle": 0.017
-    },
-    "right": {
-     "sound": true,
-     "fx": true,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.014
-    },
-    "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.051
-    },
-    "a": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.013
+     "idle": 0.049
     }
    },
    "errors": 0,
@@ -509,29 +535,38 @@
     "left": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.125
+     "juice": true,
+     "keys": [
+      "px",
+      "py"
+     ],
+     "idle": 0.127
     },
     "right": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
+     "juice": true,
+     "keys": [
+      "px",
+      "py"
+     ],
      "idle": 0.133
     },
     "down": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.106
+     "juice": true,
+     "keys": [
+      "locks",
+      "py"
+     ],
+     "idle": 0.127
     },
     "a": {
      "sound": false,
@@ -540,11 +575,11 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.125
+     "idle": 0.129
     }
    },
    "errors": 0,
-   "score": 0
+   "score": 0.75
   },
   {
    "id": "boulder-dash",
@@ -559,7 +594,7 @@
      "keys": [
       "player"
      ],
-     "idle": 0.012
+     "idle": 0.021
     },
     "right": {
      "sound": true,
@@ -570,18 +605,18 @@
      "keys": [
       "player"
      ],
-     "idle": 0.027
+     "idle": 0.028
     },
     "up": {
      "sound": true,
-     "fx": false,
+     "fx": true,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
       "player"
      ],
-     "idle": 0.026
+     "idle": 0.027
     },
     "down": {
      "sound": true,
@@ -592,7 +627,7 @@
      "keys": [
       "player"
      ],
-     "idle": 0.027
+     "idle": 0.023
     },
     "a": {
      "sound": true,
@@ -601,7 +636,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.025
+     "idle": 0.016
     }
    },
    "errors": 0,
@@ -618,7 +653,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.039
+     "idle": 0.032
     },
     "right": {
      "sound": true,
@@ -627,7 +662,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.041
+     "idle": 0.035
     },
     "up": {
      "sound": true,
@@ -636,7 +671,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.027
+     "idle": 0.04
     },
     "down": {
      "sound": true,
@@ -645,7 +680,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.034
+     "idle": 0.029
     },
     "a": {
      "sound": true,
@@ -654,7 +689,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.029
+     "idle": 0.049
     }
    },
    "errors": 0,
@@ -667,20 +702,24 @@
     "left": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.002
+     "juice": true,
+     "keys": [
+      "p1x"
+     ],
+     "idle": 0.001
     },
     "right": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.002
+     "juice": true,
+     "keys": [
+      "p1x"
+     ],
+     "idle": 0.006
     },
     "up": {
      "sound": false,
@@ -689,7 +728,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.004
+     "idle": 0.002
     },
     "down": {
      "sound": false,
@@ -698,20 +737,22 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.002
+     "idle": 0.004
     },
     "a": {
      "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
+     "keys": [
+      "p1y"
+     ],
      "idle": 0.005
     }
    },
    "errors": 0,
-   "score": 0.2
+   "score": 0.6
   },
   {
    "id": "joust",
@@ -733,20 +774,22 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.005
+     "idle": 0.007
     },
     "a": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.007
+     "juice": true,
+     "keys": [
+      "p1vy"
+     ],
+     "idle": 0.023
     }
    },
    "errors": 0,
-   "score": 0
+   "score": 0.3333333333333333
   },
   {
    "id": "qbert",
@@ -759,7 +802,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.005
+     "idle": 0.01
     },
     "right": {
      "sound": false,
@@ -768,7 +811,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.004
+     "idle": 0.01
     },
     "up": {
      "sound": false,
@@ -777,7 +820,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.004
+     "idle": 0.01
     },
     "down": {
      "sound": false,
@@ -786,7 +829,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.01
+     "idle": 0.005
     },
     "a": {
      "sound": false,
@@ -795,7 +838,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.004
+     "idle": 0.005
     }
    },
    "errors": 0,
@@ -812,7 +855,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.169
+     "idle": 0.184
     },
     "right": {
      "sound": true,
@@ -821,16 +864,16 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.061
+     "idle": 0.062
     },
     "up": {
-     "sound": false,
+     "sound": true,
      "fx": false,
      "moved": false,
      "pop": false,
-     "juice": false,
+     "juice": true,
      "keys": [],
-     "idle": 0.062
+     "idle": 0.08
     },
     "down": {
      "sound": true,
@@ -839,7 +882,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.062
+     "idle": 0.072
     },
     "a": {
      "sound": true,
@@ -848,11 +891,11 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.061
+     "idle": 0.072
     }
    },
    "errors": 0,
-   "score": 0.8
+   "score": 1
   },
   {
    "id": "comet-drift-hd",
@@ -865,7 +908,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.61
+     "idle": 0
     },
     "right": {
      "sound": true,
@@ -914,13 +957,13 @@
     "pointer": {
      "sound": true,
      "fx": false,
-     "moved": true,
+     "moved": false,
      "pop": false,
      "juice": true,
      "keys": [
       "spawned"
      ],
-     "idle": 0
+     "idle": 0.002
     }
    },
    "errors": 0,
@@ -933,38 +976,46 @@
     "left": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
      "idle": 0.005
     },
     "right": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0.005
     },
     "up": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
      "idle": 0.005
     },
     "down": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0
+     "juice": true,
+     "keys": [
+      "cell"
+     ],
+     "idle": 0.005
     },
     "a": {
      "sound": true,
@@ -973,11 +1024,11 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0
+     "idle": 0.005
     }
    },
    "errors": 0,
-   "score": 0.2
+   "score": 1
   },
   {
    "id": "polarity",
@@ -999,7 +1050,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.008
+     "idle": 0.009
     },
     "up": {
      "sound": true,
@@ -1008,16 +1059,16 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.013
+     "idle": 0.008
     },
     "down": {
      "sound": true,
-     "fx": false,
+     "fx": true,
      "moved": false,
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.009
+     "idle": 0.008
     },
     "a": {
      "sound": true,
@@ -1026,7 +1077,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.007
+     "idle": 0.018
     }
    },
    "errors": 0,
@@ -1039,38 +1090,46 @@
     "left": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.002
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
     },
     "right": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.002
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
     },
     "up": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.003
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.004
     },
     "down": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.004
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
     },
     "a": {
      "sound": true,
@@ -1079,11 +1138,11 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.002
+     "idle": 0.003
     }
    },
    "errors": 0,
-   "score": 0.2
+   "score": 1
   },
   {
    "id": "dogfight",
@@ -1096,7 +1155,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.815
+     "idle": 0.811
     },
     "right": {
      "sound": true,
@@ -1105,7 +1164,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.753
+     "idle": 0.803
     },
     "up": {
      "sound": true,
@@ -1114,7 +1173,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.796
+     "idle": 0.812
     },
     "down": {
      "sound": true,
@@ -1123,7 +1182,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.836
+     "idle": 0.787
     },
     "a": {
      "sound": true,
@@ -1135,7 +1194,7 @@
       "belt",
       "bullets"
      ],
-     "idle": 0.812
+     "idle": 0.782
     }
    },
    "errors": 0,
@@ -1153,6 +1212,7 @@
      "juice": true,
      "keys": [
       "enemies",
+      "lives",
       "x"
      ],
      "idle": 0.014
@@ -1171,7 +1231,7 @@
     },
     "up": {
      "sound": true,
-     "fx": false,
+     "fx": true,
      "moved": true,
      "pop": false,
      "juice": true,
@@ -1179,30 +1239,31 @@
       "enemies",
       "y"
      ],
-     "idle": 0.029
+     "idle": 0.014
     },
     "down": {
-     "sound": true,
-     "fx": false,
-     "moved": true,
-     "pop": false,
-     "juice": true,
-     "keys": [
-      "enemies",
-      "y"
-     ],
-     "idle": 0.028
-    },
-    "a": {
      "sound": true,
      "fx": true,
      "moved": true,
      "pop": false,
      "juice": true,
      "keys": [
-      "enemies"
+      "enemies",
+      "y"
      ],
-     "idle": 0.014
+     "idle": 0.024
+    },
+    "a": {
+     "sound": true,
+     "fx": true,
+     "moved": true,
+     "pop": true,
+     "juice": true,
+     "keys": [
+      "enemies",
+      "score"
+     ],
+     "idle": 0.108
     }
    },
    "errors": 0,
@@ -1214,21 +1275,21 @@
    "actions": {
     "left": {
      "sound": false,
-     "fx": true,
+     "fx": false,
      "moved": false,
      "pop": false,
-     "juice": true,
+     "juice": false,
      "keys": [],
-     "idle": 0.234
+     "idle": 0.449
     },
     "right": {
      "sound": false,
-     "fx": true,
+     "fx": false,
      "moved": false,
      "pop": false,
-     "juice": true,
+     "juice": false,
      "keys": [],
-     "idle": 0.236
+     "idle": 0.433
     },
     "up": {
      "sound": false,
@@ -1237,7 +1298,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.2
+     "idle": 0.463
     },
     "down": {
      "sound": false,
@@ -1246,20 +1307,20 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.359
+     "idle": 0.511
     },
     "a": {
      "sound": true,
-     "fx": true,
+     "fx": false,
      "moved": false,
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.427
+     "idle": 0.471
     }
    },
    "errors": 0,
-   "score": 1
+   "score": 0.6
   },
   {
    "id": "metroid",
@@ -1268,20 +1329,26 @@
     "left": {
      "sound": false,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.003
+     "juice": true,
+     "keys": [
+      "vy",
+      "x"
+     ],
+     "idle": 0.006
     },
     "right": {
      "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.003
+     "keys": [
+      "vy",
+      "x"
+     ],
+     "idle": 0.005
     },
     "down": {
      "sound": false,
@@ -1290,20 +1357,23 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.005
+     "idle": 0.003
     },
     "a": {
      "sound": false,
      "fx": true,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.582
+     "keys": [
+      "vy",
+      "y"
+     ],
+     "idle": 0.003
     }
    },
    "errors": 0,
-   "score": 0.5
+   "score": 0.75
   },
   {
    "id": "momentum",
@@ -1311,43 +1381,54 @@
    "actions": {
     "left": {
      "sound": false,
-     "fx": false,
-     "moved": false,
+     "fx": true,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.007
+     "juice": true,
+     "keys": [
+      "pos",
+      "s",
+      "vx"
+     ],
+     "idle": 0.446
     },
     "right": {
      "sound": false,
      "fx": true,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.007
+     "keys": [
+      "pos",
+      "s"
+     ],
+     "idle": 0.176
     },
     "up": {
      "sound": true,
-     "fx": true,
-     "moved": false,
+     "fx": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.006
+     "keys": [
+      "pos"
+     ],
+     "idle": 0.11
     },
     "a": {
      "sound": true,
      "fx": true,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.008
+     "keys": [
+      "pos"
+     ],
+     "idle": 0.019
     }
    },
    "errors": 0,
-   "score": 0.75
+   "score": 1
   },
   {
    "id": "magic-carpet",
@@ -1357,45 +1438,36 @@
      "sound": true,
      "fx": true,
      "moved": false,
-     "pop": true,
+     "pop": false,
      "juice": true,
-     "keys": [
-      "mana",
-      "score"
-     ],
-     "idle": 0.773
+     "keys": [],
+     "idle": 0.555
     },
     "right": {
      "sound": true,
      "fx": false,
-     "moved": true,
+     "moved": false,
      "pop": true,
      "juice": true,
      "keys": [
       "mana",
       "score"
      ],
-     "idle": 0.772
+     "idle": 0.691
     },
     "up": {
      "sound": true,
      "fx": false,
-     "moved": false,
-     "pop": false,
+     "moved": true,
+     "pop": true,
      "juice": true,
-     "keys": [],
-     "idle": 0.902
+     "keys": [
+      "mana",
+      "score"
+     ],
+     "idle": 0.441
     },
     "down": {
-     "sound": true,
-     "fx": false,
-     "moved": false,
-     "pop": false,
-     "juice": true,
-     "keys": [],
-     "idle": 0.767
-    },
-    "a": {
      "sound": true,
      "fx": false,
      "moved": true,
@@ -1405,7 +1477,16 @@
       "mana",
       "score"
      ],
-     "idle": 0.767
+     "idle": 0.437
+    },
+    "a": {
+     "sound": true,
+     "fx": false,
+     "moved": false,
+     "pop": false,
+     "juice": true,
+     "keys": [],
+     "idle": 0.328
     }
    },
    "errors": 0,
@@ -1422,6 +1503,7 @@
      "pop": false,
      "juice": true,
      "keys": [
+      "hp",
       "x"
      ],
      "idle": 0.005
@@ -1435,7 +1517,7 @@
      "keys": [
       "x"
      ],
-     "idle": 0.005
+     "idle": 0.004
     },
     "up": {
      "sound": false,
@@ -1444,10 +1526,9 @@
      "pop": false,
      "juice": true,
      "keys": [
-      "hp",
       "y"
      ],
-     "idle": 0.027
+     "idle": 0.003
     },
     "down": {
      "sound": false,
@@ -1459,7 +1540,7 @@
       "hp",
       "y"
      ],
-     "idle": 0.024
+     "idle": 0.004
     },
     "a": {
      "sound": true,
@@ -1470,7 +1551,7 @@
      "keys": [
       "hp"
      ],
-     "idle": 0.005
+     "idle": 0.004
     }
    },
    "errors": 0,
@@ -1487,7 +1568,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.052
+     "idle": 0.087
     },
     "right": {
      "sound": false,
@@ -1496,7 +1577,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.061
+     "idle": 0.17
     },
     "up": {
      "sound": false,
@@ -1505,7 +1586,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.098
+     "idle": 0.146
     },
     "down": {
      "sound": false,
@@ -1514,7 +1595,7 @@
      "pop": false,
      "juice": true,
      "keys": [],
-     "idle": 0.059
+     "idle": 0.046
     },
     "a": {
      "sound": false,
@@ -1523,7 +1604,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.059
+     "idle": 0.011
     }
    },
    "errors": 0,
@@ -1534,40 +1615,48 @@
    "method": "pointer",
    "actions": {
     "left": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
      "idle": 0.003
     },
     "right": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
      "idle": 0.003
     },
     "up": {
-     "sound": false,
+     "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
-     "juice": false,
-     "keys": [],
-     "idle": 0.011
+     "juice": true,
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.003
     },
     "down": {
      "sound": true,
      "fx": false,
-     "moved": false,
+     "moved": true,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.003
+     "keys": [
+      "cursor"
+     ],
+     "idle": 0.013
     },
     "a": {
      "sound": true,
@@ -1591,11 +1680,11 @@
       "acorns",
       "plants"
      ],
-     "idle": 0.003
+     "idle": 0.026
     }
    },
    "errors": 0,
-   "score": 0.5
+   "score": 1
   },
   {
    "id": "homebody",
@@ -1608,9 +1697,10 @@
      "pop": false,
      "juice": false,
      "keys": [
+      "hero",
       "hour"
      ],
-     "idle": 0.01
+     "idle": 0.003
     },
     "right": {
      "sound": false,
@@ -1619,9 +1709,10 @@
      "pop": false,
      "juice": false,
      "keys": [
+      "hero",
       "hour"
      ],
-     "idle": 0.003
+     "idle": 0.01
     },
     "up": {
      "sound": false,
@@ -1630,9 +1721,10 @@
      "pop": false,
      "juice": false,
      "keys": [
+      "hero",
       "hour"
      ],
-     "idle": 0.002
+     "idle": 0.014
     },
     "down": {
      "sound": false,
@@ -1641,9 +1733,10 @@
      "pop": false,
      "juice": false,
      "keys": [
+      "hero",
       "hour"
      ],
-     "idle": 0.003
+     "idle": 0.014
     },
     "a": {
      "sound": false,
@@ -1654,7 +1747,7 @@
      "keys": [
       "hour"
      ],
-     "idle": 0.002
+     "idle": 0.014
     },
     "pointer": {
      "sound": true,
@@ -1662,8 +1755,11 @@
      "moved": false,
      "pop": false,
      "juice": true,
-     "keys": [],
-     "idle": 0.002
+     "keys": [
+      "hero",
+      "hour"
+     ],
+     "idle": 0.011
     }
    },
    "errors": 0,
@@ -1697,7 +1793,7 @@
      "pop": false,
      "juice": false,
      "keys": [],
-     "idle": 0.996
+     "idle": 0.995
     }
    },
    "errors": 0,
@@ -1718,12 +1814,14 @@
       "face",
       "frame",
       "gate",
+      "gateFlavor",
       "score",
       "swell",
       "tod",
+      "town",
       "y"
      ],
-     "idle": 0.943
+     "idle": 0.995
     },
     "down": {
      "sound": true,
@@ -1735,12 +1833,14 @@
       "anim",
       "frame",
       "gate",
+      "gateFlavor",
       "score",
       "swell",
       "tod",
+      "town",
       "y"
      ],
-     "idle": 0.92
+     "idle": 0.995
     },
     "left": {
      "sound": true,
@@ -1753,12 +1853,14 @@
       "face",
       "frame",
       "gate",
+      "gateFlavor",
       "score",
       "swell",
       "tod",
+      "town",
       "x"
      ],
-     "idle": 0.995
+     "idle": 0.919
     },
     "right": {
      "sound": true,
@@ -1771,12 +1873,14 @@
       "face",
       "frame",
       "gate",
+      "gateFlavor",
       "score",
       "swell",
       "tod",
+      "town",
       "x"
      ],
-     "idle": 0.914
+     "idle": 0.918
     },
     "a": {
      "sound": false,
@@ -1788,13 +1892,11 @@
       "swell",
       "tod"
      ],
-     "idle": 0.932
+     "idle": 0.93
     }
    },
    "errors": 0,
    "score": 0.8
   }
- ],
- "note": "first fleet pass (2026-10-28): movement silents cluster in games whose state() exposes no position fields \u2014 motion channel blind there; calibration issue #TBD",
- "average": 0.652
+ ]
 }

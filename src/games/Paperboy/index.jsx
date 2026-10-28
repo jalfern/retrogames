@@ -542,7 +542,8 @@ const PaperboyGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
                     seed: contractSeed, lives: gs.lives, delivered: gs.delivered,
-                    missed: gs.missed, papers: gs.papers, streak: gs.streak, hash: stateHash(gs),
+                    missed: gs.missed, papers: gs.papers, streak: gs.streak,
+                    x: Math.round(gs.x), pedal: keys.u ? 2 : keys.d ? 0 : 1, hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
                 snapshot: () => JSON.parse(JSON.stringify(gs)),

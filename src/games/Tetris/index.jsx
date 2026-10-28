@@ -378,6 +378,7 @@ const TetrisGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.over,
                     seed: gs.seed, level: gs.level, lines: gs.lines, locks: gs.locks,
+                    px: gs.cur ? gs.cur.x : -1, py: gs.cur ? gs.cur.y : -1, rot: gs.cur ? gs.cur.rot : 0,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
