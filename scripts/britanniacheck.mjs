@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
 import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen } from '../src/games/Britannia/weather.js'
+import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 
 const path = 'public/games/ultima4.jsdos'
@@ -169,6 +170,115 @@ ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thu
         if (weatherAt(x + 16, y, b * 90 + WX_EPOCH) !== WX.STORM) rideBad++
     }
     ok(ride > 0 && rideBad === 0, `lightning rides with its storm: one epoch on, the cell one region east is still storming (${ride} strikes, ${rideBad} lost storms)`)
+}
+
+// ambient life (#1135): birds wheel over the moors and fish break at sea, so
+// the land never feels empty — deterministic, habitat-correct (never birds on
+// the water, never fish on the hills), riding the same west-to-east wind as
+// the fronts, no starved cells over a long horizon, coasts livelier than open
+// ocean, and flocks that cross their cell instead of flickering in place.
+// Prove-it-can-fail: swap the land/sea gate in ambient.js, drop the coast
+// bias, freeze driftCells (coverage goes red), or freeze progressOf.
+{
+    ok(ambientAt(100, 100, 1, false, 500) === ambientAt(100, 100, 1, false, 500) &&
+        ambientAt(100, 100, 1, false, 500, 9) === ambientAt(100, 100, 1, false, 500, 9),
+        'ambient deterministic per place+time+seed')
+    let seedShift = 0
+    for (let e = 0; e < 40; e++) {
+        const x = (e * 13) % MAPW, y = (e * 29) % MAPW, t = e * 97 + 5
+        const terr = world.get(x, y)
+        if (ambientAt(x, y, terr, terr === 0, t, 0) !== ambientAt(x, y, terr, terr === 0, t, 5)) seedShift++
+    }
+    ok(seedShift > 3, `seed changes the wildlife (${seedShift}/40 cells differ)`)
+
+    const cellCentre = (cx, cy) => [cx * AMB_CELL + AMB_CELL / 2, cy * AMB_CELL + AMB_CELL / 2]
+    const NCELL = MAPW / AMB_CELL
+    let birdSea = 0, fishLand = 0
+    const landCells = [], coastCells = [], openCells = []
+    for (let cy = 0; cy < NCELL; cy++) for (let cx = 0; cx < NCELL; cx++) {
+        const [wx, wy] = cellCentre(cx, cy)
+        const terr = world.get(wx, wy)
+        if (terr === 0) {
+            const coast = !isSea(world.get(wx + 1, wy)) || !isSea(world.get(wx - 1, wy)) || !isSea(world.get(wx, wy + 1)) || !isSea(world.get(wx, wy - 1))
+            ;(coast ? coastCells : openCells).push([wx, wy])
+        } else landCells.push([wx, wy])
+        for (let k = 0; k < 8; k++) {
+            const t = k * CELL_DRIFT + 7
+            const a = ambientAt(wx, wy, terr, terr === 0 && (!isSea(world.get(wx + 1, wy)) || !isSea(world.get(wx - 1, wy)) || !isSea(world.get(wx, wy + 1)) || !isSea(world.get(wx, wy - 1))), t, 0)
+            if (a === AMB.BIRD && terr === 0) birdSea++
+            if (a === AMB.FISH && terr !== 0) fishLand++
+        }
+    }
+    ok(birdSea === 0 && fishLand === 0, `habitat correct: birds only on land, fish only at sea (${birdSea} gulls-on-hill, ${fishLand} fish-on-moor)`)
+
+    let starved = 0
+    for (const [wx, wy] of landCells) {
+        let seenBird = false
+        for (let k = 0; k < 64; k++) if (ambientAt(wx, wy, 1, false, k * CELL_DRIFT + 3, 0) === AMB.BIRD) { seenBird = true; break }
+        if (!seenBird) starved++
+    }
+    ok(landCells.length > 200 && starved === 0, `no moor waits forever: every land cell gets birds within 64 drift steps (${landCells.length} cells, ${starved} starved)`)
+    let fishless = 0
+    for (const [wx, wy] of openCells) {
+        let seenFish = false
+        for (let k = 0; k < 64; k++) if (ambientAt(wx, wy, 0, false, k * CELL_DRIFT + 3, 0) === AMB.FISH) { seenFish = true; break }
+        if (!seenFish) fishless++
+    }
+    ok(openCells.length > 100 && fishless === 0, `open ocean gets callers too: every sea cell sees fish within 64 drift steps (${openCells.length} cells, ${fishless} fishless)`)
+
+    let coastFish = 0, openFish = 0, tot = 0
+    for (const [wx, wy] of coastCells) for (let k = 0; k < 64; k++) if (ambientAt(wx, wy, 0, true, k * CELL_DRIFT + 3, 0) === AMB.FISH) coastFish++
+    for (const [wx, wy] of openCells) for (let k = 0; k < 64; k++) if (ambientAt(wx, wy, 0, false, k * CELL_DRIFT + 3, 0) === AMB.FISH) openFish++
+    {
+        const cr = coastFish / Math.max(1, coastCells.length * 64), or = openFish / Math.max(1, openCells.length * 64)
+        ok(cr > or + 0.1, `shallows are livelier: ${(cr * 100).toFixed(1)}% fishy at the coast vs ${(or * 100).toFixed(1)}% on the open sea`)
+    }
+    tot = 0
+    let busyBird = 0, busyFish = 0, seaTot = 0
+    for (let cy = 0; cy < NCELL; cy++) for (let cx = 0; cx < NCELL; cx++) {
+        const [wx, wy] = cellCentre(cx, cy)
+        const terr = world.get(wx, wy)
+        const coast = terr === 0 && (!isSea(world.get(wx + 1, wy)) || !isSea(world.get(wx - 1, wy)) || !isSea(world.get(wx, wy + 1)) || !isSea(world.get(wx, wy - 1)))
+        const a = ambientAt(wx, wy, terr, coast, 1234, 0)
+        if (terr === 0) { seaTot++; if (a === AMB.FISH) busyFish++ }
+        else { tot++; if (a === AMB.BIRD) busyBird++ }
+    }
+    const bb = busyBird / tot, bf = busyFish / seaTot
+    ok(bb > 0.15 && bb < 0.8, `one glance at the moors shows life but not a plague (${(bb * 100).toFixed(1)}% of land cells with birds)`)
+    ok(bf > 0.02 && bf < 0.6, `the sea is mostly calm, rarely dead (${(bf * 100).toFixed(1)}% of sea cells with fish)`)
+
+    let rideBad = 0, rideTot = 0
+    for (let cy = 0; cy < NCELL; cy++) for (let cx = 4; cx < NCELL - 4; cx++) for (const k of [1, 2, 3]) {
+        rideTot++
+        if (rollOf(cx * AMB_CELL + 4, cy * AMB_CELL + 4, 137, 0) !== rollOf(cx * AMB_CELL + 4 + AMB_CELL * k, cy * AMB_CELL + 4, 137 + k * CELL_DRIFT, 0)) rideBad++
+    }
+    ok(rideBad === 0, `wildlife rides the wind: the roll at (x, t) reappears at (x+8k, t+k*drift) (${rideTot - rideBad}/${rideTot} samples hold)`)
+
+    ok(progressOf(5) < progressOf(6) && progressOf(CELL_DRIFT - 1) > progressOf(CELL_DRIFT - 2) && progressOf(CELL_DRIFT) === 0, 'progress sweeps the flock west-to-east once per cell-life, then resets')
+    {
+        let dir = 0, probe = null
+        for (let cy = 0; cy < NCELL && !dir; cy++) for (let cx = 0; cx < NCELL && !dir; cx++) {
+            const [wx, wy] = cellCentre(cx, cy)
+            const f = flockOf(wx, wy, 0, 0)
+            if (f.dir === 1 && f.n >= 3) { dir = 1; probe = [wx, wy] }
+        }
+        ok(!!probe && flightOf(probe[0], probe[1], 100, 0) > flightOf(probe[0], probe[1], 20, 0), 'flocks fly across their cell — a dir=1 flock is further east later in its life')
+    }
+    {
+        const f1 = flockOf(100, 100, 500), f2 = flockOf(100, 100, 500)
+        ok(f1.n === f2.n && f1.dir === f2.dir && f1.n >= 3 && f1.n <= 5, 'flock size is deterministic and plausible (3..5 birds)')
+        const seen = new Set()
+        for (let cy = 0; cy < NCELL; cy++) for (let cx = 0; cx < NCELL; cx++) seen.add(flockOf(cx * AMB_CELL + 4, cy * AMB_CELL + 4, 0, 0).dir)
+        ok(seen.has(1) && seen.has(-1), 'some flocks ride the wind east, some fly against it (not a one-direction wallpaper)')
+    }
+
+    {
+        const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+        ok(/const amb = ambAt\(S\.x, S\.y, S\.tick, S\.seed\)/.test(src), 'index.jsx: step() listens for wildlife under the Avatar')
+        ok(/audioController\.playTone\(2280/.test(src) && /audioController\.playNoise\(0\.14, 0\.05\)/.test(src), 'index.jsx: bird chirps and fish splashes sound when the wildlife arrives')
+        ok((src.match(/drawAmbient/g) || []).length === 3, 'index.jsx: ambient life is drawn in play and in attract (one definition, two call sites)')
+        ok(/ambient: AMB_NAME\[S\.amb\]/.test(src), 'index.jsx: the harness can see the wildlife over the Avatar')
+    }
 }
 
 // walk sprites (#1135): 4 facings x 3 frames of a procedurally drawn Avatar,
