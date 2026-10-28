@@ -32,6 +32,7 @@ page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
 page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__deepTest.probe())
+const hash = () => page.evaluate(() => window.__deepTest.hash())
 const wait = (ms) => page.waitForTimeout(ms)
 const tap = async (key, times = 1) => {
     for (let i = 0; i < times; i++) { await page.keyboard.press(key); await wait(90) }
@@ -241,6 +242,86 @@ if (ambush) {
 }
 else {
     r.check('combat section (no ambush reached — every combat check is meaningless without it)', false, 'skipped with the ambush failure')
+}
+
+// ---- 5b. combat feedback FX: a bolt crosses the target slot, a heal sparkles,
+//      and NONE of it touches the ledger (stateHash identical FX-alive vs cleared)
+{
+    // section 5 already consumed the near-corridor ambush, and a consumed tile
+    // is gone for the run — so a stale walk just oscillates the row forever.
+    // A fresh start() re-seeds every ambush (deterministic map), then we walk a
+    // real first-player step into a live fight. Buff for the walk, full MP casters.
+    await page.evaluate(() => window.__deepTest.start())
+    await wait(300)
+    await page.keyboard.press('KeyF')   // down the well to DEEP 1
+    await wait(400)
+    await ensureSetup({ potions: 9, party: [
+        { i: 0, hp: 999, mp: 60 }, { i: 1, hp: 999, mp: 60 }, { i: 2, hp: 999, mp: 60 },
+        { i: 3, hp: 999, mp: 60 }, { i: 4, hp: 999, mp: 60 }, { i: 5, hp: 999, mp: 60 },
+    ] })
+    let p = await probe()
+    const seen = new Set()
+    for (let t = 0; t < 200 && !p.combat; t++) {
+        p = await probe()
+        if (p.mode === 'combat') break
+        if (p.mode !== 'map') { await wait(70); continue }
+        const cell = `${p.x},${p.y}`
+        // revisit a cell => we are looping a corridor: turn to break it
+        await page.keyboard.press(seen.has(cell) || p.view.wallDist === 1 ? 'ArrowRight' : 'ArrowUp')
+        seen.add(cell)
+        await wait(80)
+    }
+    p = await probe()
+    r.check('FX pose is standing in a live fight', !!p.combat, `mode=${p.mode}`)
+    if (p.combat) {
+        // a heal only mends a hero UNDER its max (sim:235) — wound the spellless
+        // FECHT (index 0) so the heal has someone to answer for
+        await ensureSetup({ party: [{ i: 0, hp: 5 }] })
+        // 1) HEAL sparkles over the mended hero (first, so the fight survives the bolt)
+        let sparkSeen = false
+        for (let t = 0; t < 10 && !sparkSeen; t++) {
+            await page.keyboard.press('KeyH')
+            for (let s = 0; s < 8 && !sparkSeen; s++) {
+                const b = await probe()
+                if (b.fx && b.fx.kinds && b.fx.kinds.includes('spark')) { sparkSeen = true; break }
+                await wait(16)
+            }
+            if (!sparkSeen) await wait(24)
+        }
+        r.check('a heal cast sparkles over the mended hero', sparkSeen, 'no spark fx after H')
+
+        // 2) FIREBOLT: one cast doubles as the bolt-aim pin AND the
+        //    presentation-only pin — capture the stateHash the instant a bolt
+        //    is alive, then again after it clears; they must be identical.
+        const target = (await probe()).mobPx.find((m) => m.hp > 0)
+        let boltSeen = null, hashAlive = null
+        if (target) {
+            for (let t = 0; t < 10 && !boltSeen; t++) {
+                await page.keyboard.press('KeyF')
+                for (let s = 0; s < 10 && !boltSeen; s++) {
+                    const b = await probe()
+                    if (b.fx && b.fx.bolt) { boltSeen = b.fx.bolt; hashAlive = await hash(); break }
+                    await wait(16)
+                }
+                if (!boltSeen) await wait(24)
+            }
+        }
+        r.check('a firebolt cast paints a bolt across the target slot', !!boltSeen, boltSeen ? `from ${JSON.stringify(boltSeen.from)} to ${JSON.stringify(boltSeen.to)}` : 'no bolt fx after F')
+        if (boltSeen && target) {
+            const tx = Math.round(target.sx), ty = Math.round(140 - target.size * 0.5)
+            r.check('the bolt leaves the hero line and aims at its target', Math.abs(boltSeen.from[0] - 128) < 4 && Math.abs(boltSeen.from[1] - 188) < 4 && Math.abs(boltSeen.to[0] - tx) < 24 && Math.abs(boltSeen.to[1] - ty) < 24, `from ${JSON.stringify(boltSeen.from)} to ${JSON.stringify(boltSeen.to)} want~(${tx},${ty})`)
+            const bx = Math.min(boltSeen.from[0], boltSeen.to[0]), by = Math.min(boltSeen.from[1], boltSeen.to[1])
+            const bw = Math.abs(boltSeen.to[0] - boltSeen.from[0]) + 10, bh = Math.abs(boltSeen.to[1] - boltSeen.from[1]) + 10
+            let lit = 0
+            for (let s = 0; s < 4; s++) { lit = Math.max(lit, await px(bx, by, bw, bh, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 430)); await wait(18) }
+            r.check('the bolt is bright on screen mid-flight (additive glow)', lit > 6, `lit px in bolt band=${lit}`)
+        }
+        let cleared = false
+        for (let s = 0; s < 60 && !cleared; s++) { const b = await probe(); if (b.fx && b.fx.count === 0) { cleared = true; break } ; await wait(28) }
+        const hashCleared = await hash()
+        r.check('combat FX is presentation-only (stateHash identical bolt-alive vs cleared)', !!hashAlive && cleared && hashAlive === hashCleared, `alive=${hashAlive} cleared=${hashCleared}`)
+        r.check('the bolt clears on its own (no stuck frame)', cleared, 'fxList never drained to zero')
+    }
 }
 
 // ---- 6. the stairs: real SPACE descends ----
