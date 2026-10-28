@@ -56,7 +56,7 @@
   <div class="press">PRESS ANY KEY / TAP</div>
 </div>
 <div id="fatal"></div>
-<script src="dungeon.core.js"></script>
+<script src="dungeon.core.js?v=20261028"></script>
 <script>
 'use strict';
 
@@ -429,6 +429,7 @@ const glctx = canvas.getContext('webgl2');
 window.__deepglassTest = {
   ready: true,
   frames: () => R.frameCount,
+  verts: () => R.verts,
   pose: () => R.pose(),
   view: () => R.renderPose(),
   flick: () => R.flick,
@@ -465,7 +466,7 @@ window.__deepglassTest = {
         if (r > 55 && r > b + 25) warm++;
         if (b > r + 12 && b > 40) cool++;
         if (r > 40 && Math.abs(r - b) < 18 && Math.abs(r - g) < 18) grey++;
-        if (g > 60 && g > r + 25) green++;
+          if (g > 90 && g > r + 50 && g > b + 40) green++;
         if (r > 150 && g > 85 && b < 95) amber++;
         if ((r + g + b) / 3 < 10) dark++;
       }

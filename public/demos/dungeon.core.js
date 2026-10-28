@@ -293,9 +293,10 @@ vec3 lightAt(vec3 p, vec3 n, vec3 camPos, vec3 LCol0,
     vec3 d = LC[i] - p;
     float dl = max(length(d), 1e-4);
     d = d / dl;
-    float att = clamp(1.0 - dl / LPR[i], 0.0, 1.0);
+    vec3 df = -d;
+    float att = clamp(1.0 - dl / LPR[i].x, 0.0, 1.0);
     att = att * att * (3.0 - 2.0 * att);
-    float cone = clamp(dot(d, LPC[i]), 0.0, 1.0);
+    float cone = clamp(dot(df, LPC[i]), 0.0, 1.0);
     cone = mix(0.45, 1.0, pow(cone, 1.5));
     lam = max(lam, I * att * cone * (0.30 + 0.70 * max(dot(n, d), 0.0)));
   }
@@ -667,7 +668,10 @@ void main(){
       const live = [];
       for (const s of api.sprites) {
         if ((s.z || 0) !== zf) continue;
-        if (Math.hypot(s.x - logic.x, s.y - logic.y) > RANGE + 2) continue;
+        const sdx = s.x - view.x, sdy = s.y - view.y;
+        if (Math.hypot(sdx, sdy) > RANGE + 2) continue;
+        const cf = Math.cos(view.yaw), sf = Math.sin(view.yaw)
+        if (sdx * -sf + sdy * cf < -0.25) continue;
         const frame = (Math.floor((s.anim || 0) / 300) & 1);
         const u0 = SPR_U[s.mat] != null ? SPR_U[s.mat] : 0;
         const inset = 0.008;
@@ -732,9 +736,9 @@ void main(){
       gl.viewport(0, 0, w, h);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      const R = [Math.cos(view.yaw), Math.sin(view.yaw), 0];
       const F = norm3(-Math.sin(view.yaw), Math.cos(view.yaw), -0.05);
-      const U = norm3(-F[1], F[0], 0);
+      const R = [F[1], -F[0], 0];
+      const U = norm3(-F[0] * F[2], -F[1] * F[2], 1 - F[2] * F[2]);
       const eye = [view.x, view.y, api.eyeZ];
       const aspect = (w / Math.max(1, h)) || 1.333;
       const tanV = Math.tan(FOV_V / 2);
@@ -778,7 +782,7 @@ void main(){
         LI[i] = s.I;
       }
 
-      gl.useProgram(pMaze);
+      gl.useProgram(opts.debugTris ? pSpr : pMaze);
       gl.uniformMatrix4fv(uM.uVP, false, VPm);
       gl.uniform3fv(uM.uCamPos, eye);
       gl.uniform1f(uM.uTime, api.time / 1000);
@@ -791,6 +795,7 @@ void main(){
       gl.bindTexture(gl.TEXTURE_2D, atlasTex);
       gl.uniform1i(uM.uAtlas, 0);
       const nv = buildGeometry();
+      api.verts = nv;
       gl.bindVertexArray(vaoM);
       gl.bindBuffer(gl.ARRAY_BUFFER, bufM);
       gl.bufferData(gl.ARRAY_BUFFER, mazeData.subarray(0, nv * 9), gl.DYNAMIC_DRAW);
@@ -840,5 +845,5 @@ void main(){
     return api;
   }
 
-  return { create, cellBlocks, viewCells, MAT, CELL, WALL_H, EYE_H, RANGE };
+  return { create, cellBlocks, viewCells, buildAtlas, MAT, CELL, WALL_H, EYE_H, RANGE };
 })();
