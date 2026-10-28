@@ -22,7 +22,8 @@ import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } fro
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
-import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
+import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
+import { townScore } from './towns.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples } from './swell.js'
@@ -85,7 +86,7 @@ const BritanniaGame = () => {
         const fresh = (seed = 0) => ({
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
-            face: 'down', anim: 0, dismissed: -1,
+            face: 'down', anim: 0, dismissed: -1, wasTown: false,
             sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
             amb: AMB.NONE, warp: null,
         })
@@ -225,6 +226,11 @@ const BritanniaGame = () => {
                 if (gi < 0) S.dismissed = -1
                 if (gi >= 0 && gi !== S.gate && gi !== S.dismissed) { S.gate = gi; S.sel = 0; S.hoverRow = -1 }
             }
+            // crossing onto built-up ground sells the town before its walls do (#1135)
+            const ts = townScore(S.x, S.y, gates, terrainAt)
+            const inTown = !S.ship && ts > 0
+            if (inTown && !S.wasTown) { S.toast = 100; S.toastMsg = 'Cottages and smoke: a town lieth nigh.'; audioController.playTone(330, 0.14, 'triangle', 0.05) }
+            S.wasTown = inTown
         }
 
         const drawTile = (tx, ty, sx, sy, t) => {
@@ -233,11 +239,13 @@ const BritanniaGame = () => {
             if (classicOn) { const cs = tiles.classic[vv]; ctx.drawImage(cs[variantOf(hash2, tx, ty, vv) % cs.length], sx, sy); return }
             // modern: shade each 16px block from the world-continuous field so
             // the land is soft, continuous terrain — no static, no tile repeat
-            const [lo, mid, hi] = TERR[vv]
+            const ts = townScore(tx, ty, gates, terrainAt)
+            const [lo, mid, hi] = ts > 0 ? builtPalette(TERR[vv], ts) : TERR[vv]
             const bs = TILE / SUB
             const sh = blockShades(tx, ty)
             for (let by = 0; by < SUB; by++) for (let bx = 0; bx < SUB; bx++) {
-                const s = sh[by * SUB + bx]
+                let s = sh[by * SUB + bx]
+                if (ts > 0 && cobbleBlock(tx, ty, bx, by)) s = Math.max(0, s - 1)
                 ctx.fillStyle = s === 2 ? hi : s === 0 ? lo : mid
                 ctx.fillRect(sx + bx * bs, sy + by * bs, bs, bs)
             }
@@ -727,6 +735,7 @@ const BritanniaGame = () => {
                     ambient: AMB_NAME[S.amb],
                     swell: crest(S.x, S.y, S.tick),
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
+                    town: townScore(S.x, S.y, gates, terrainAt),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                     hoverRow: S.gate >= 0 ? S.hoverRow : -1,

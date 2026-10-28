@@ -54,6 +54,28 @@ export function shadeAt(wx, wy) {
     return 1
 }
 
+// built-up wash (#1135): cottage-grey mortar pulled into the terrain palette
+// around a gate-town, proportionally to the town score. Pure string math.
+export const MORTAR = [104, 100, 92]
+
+export function mixHex(hex, rgb, t) {
+    const r = Math.round(parseInt(hex.slice(1, 3), 16) + (rgb[0] - parseInt(hex.slice(1, 3), 16)) * t)
+    const g = Math.round(parseInt(hex.slice(3, 5), 16) + (rgb[1] - parseInt(hex.slice(3, 5), 16)) * t)
+    const b = Math.round(parseInt(hex.slice(5, 7), 16) + (rgb[2] - parseInt(hex.slice(5, 7), 16)) * t)
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+}
+
+export function builtPalette(base, s) {
+    const t = 0.55 * Math.min(1, s)
+    return base.map(h => mixHex(h, MORTAR, t))
+}
+
+// which sub-block of a town tile reads as darker cobble grout — seeded by
+// tile + block so the paving never shimmers between frames
+export function cobbleBlock(tx, ty, bx, by) {
+    return hash2(tx * 3 + bx, ty * 7 + by, 5) > 0.62
+}
+
 // the exact shades the renderer paints for the tile at world (tx,ty): the
 // SUB x SUB block centers, so the grain gate measures the real output
 export function blockShades(tx, ty) {

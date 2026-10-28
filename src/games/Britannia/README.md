@@ -204,3 +204,26 @@ npm run dev                 # play at /retrogames/britannia
   pointermove tracking + chirp parity, state exposure, title-clear layout pin.
   Mutants: duplicate a line (2 red), strip a phase word (1 red), delete the
   hover chirp (1 red) — each restored green.
+
+## Town tint (#1135 polish)
+
+- `towns.js`: the land around each detected moongate reads **built-up** before
+  its walls arrive. In the original every virtue gate stands at a settlement's
+  edge, so a 4-tile Chebyshev skirt of level ground (grass/heath/plains) around
+  each gate scores 1→0.2 outward; sea, marsh, rock, hill, forest, sand and POI
+  tiles score 0 (towns are founded on level ground, never on a peak or a star).
+  Pure + deterministic, driven entirely by the runtime gate detections — nothing
+  transcribed.
+- `tiles.js`: `builtPalette` washes the terrain palette toward cottage-grey
+  mortar (0.55·score) and `cobbleBlock` darkens ~39% of a town tile's sub-blocks
+  into grout — paved, not painted flat. Modern mode only; classic (`C`) stays a
+  clean original sheet. Stepping onto built ground toasts once ("Cottages and
+  smoke: a town lieth nigh."). `town` rides the harness state.
+- `britanniacheck` +14 gates: level-builds, hard-terrain-never, per-gate radius
+  (no bleed), strict decay, level plazas, every gate populated on real Britannia
+  (18–41 built tiles), whole-map built-ground-is-flat, greyer-not-hued wash,
+  mixHex identity+format, cobble determinism+scatter, and 5 wiring gates.
+  Mutants: FLAT+rock reddens 2 (never-build + whole-map), TOWN_R=0 reddens the
+  population gate, dropping the wash reddens wiring — each restored green.
+- Still honest: these are tinted outskirts, not town *data* — walls, gates and
+  enterable buildings come when the `.ULT` region files load in stage 2.
