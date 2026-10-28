@@ -527,14 +527,14 @@ export const GAMES = [
     },
     {
         path: '/qbert',
-        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'cube-grid diagonal hops — the 2x2 corner pad' },
+        pad: { layout: 'dpad', buttons: [], analog: false, reason: 'cube-grid diagonal hops — each dpad arrow is one diagonal, like the cabinet stick' },
         builtBy: 'forge',
         added: '2026-10-14',
         component: QBertGame,
         label: 'Q*BERT',
         theme: 'dark',
         description: 'The 1982 Gottlieb pyramid, rebuilt honest: hop the diagonals over 28 isometric cubes and turn every top green — the apex counts at the start, and a diagonal that leaves the pyramid is a fall. Coily the snake drops in after your 9th flip and hops one cube per drop straight at you. The flying discs carry you from the apex back to the top, and a snake within reach follows the disc off the edge (+500). Red balls ricochet down the sides; from round 2 Ugg and Wrongway run the rows, and from round 3 Sam & Slick slide through and wipe your green away. Later rounds trade the flip for the 5-colour cycle: clear the round when every cube matches. Chain the hops — single 25, round-trip 50, heli-jump 100. The attract demo is the same autopilot a Node harness audits: geometry, snake chase, disc lure and the score ledger included.',
-        controls: ['Hop the diagonals with ARROW PAIRS: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT (the touch pad shows the four corners)', 'Land on every cube to turn it green — the round ends when all 28 match (apex already counts)', 'Do NOT hop off the pyramid edges — the skirt corners are falls (the apex up-hop rides a passing disc instead)', 'Coily hops at you once the round gets going — ride a disc and a nearby snake follows it off the edge (+500)', 'Chain: two hops back onto the cube you came from = 50 (round trip); 2+ up-hops = 100 (heli)', 'Every round after the first cycles five colours — match them all · ? pauses'],
+        controls: ['Hop the diagonals: a SINGLE arrow is a diagonal like the cabinet stick — UP = up-left, RIGHT = up-right, LEFT = down-left, DOWN = down-right (arrow pairs name the exact diagonal too: UP+LEFT, UP+RIGHT, DOWN+LEFT, DOWN+RIGHT)', 'Land on every cube to turn it green — the round ends when all 28 match (apex already counts)', 'Do NOT hop off the pyramid edges — the skirt corners are falls (the apex up-hop rides a passing disc instead)', 'Coily hops at you once the round gets going — ride a disc and a nearby snake follows it off the edge (+500)', 'Chain: two hops back onto the cube you came from = 50 (round trip); 2+ up-hops = 100 (heli)', 'Every round after the first cycles five colours — match them all · ? pauses'],
     },
     {
         path: '/arkanoid',
