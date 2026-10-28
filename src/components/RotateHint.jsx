@@ -9,11 +9,13 @@ const MIN_ASPECT = 4 / 3
 // menu screens stay unaffected). Auto-clears on rotation; a stubborn player
 // can dismiss it for this visit.
 export default function RotateHint() {
-    const [portrait, setPortrait] = useState(() => window.matchMedia('(orientation: portrait)').matches)
+    const [portrait, setPortrait] = useState(() =>
+        typeof window !== 'undefined' && window.matchMedia?.('(orientation: portrait)').matches === true)
     const [wide, setWide] = useState(false)
     const [dismissed, setDismissed] = useState(false)
 
     useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return
         const mq = window.matchMedia('(orientation: portrait)')
         const onMq = (e) => setPortrait(e.matches)
         mq.addEventListener('change', onMq)
