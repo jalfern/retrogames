@@ -55,7 +55,8 @@ differ); the shipped autopilot clears every shift quota with headroom on
 seeds 7/101/2027; and in headless Chrome the game boots clean, starts with a
 real Space, the cable and cargo pixels sit where the sim says after real
 keystrokes, and three wrong-bin drops fired via the DEV kit end the shift and
-restart — with zero page errors.
+restart — with zero page errors. A `JUICE` gate proves the `quotaNear` contract
+key flips exactly one pick short of quota (the gauge pulse reads it).
 
 ## Honest gaps
 
