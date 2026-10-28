@@ -265,6 +265,7 @@ else {
     {
         const wasFreshIdx = afterHire.party.findIndex((h) => h.fresh)
         r.check('the hire left an open slot awaiting its paper', wasFreshIdx >= 0, `fresh index=${wasFreshIdx}`)
+        await ensureSetup({ gold: 300 })           // a funded purse: the bench fee must be payable
         await page.keyboard.press('ArrowRight')   // service: POST -> CREATE
         await wait(150)
         await page.keyboard.press('Space')        // open the bench
@@ -291,7 +292,7 @@ else {
             const purseB = chosen.gold
             await page.keyboard.press('Space')    // accept
             const cr = await waitEv((e) => e.type === 'create', 24)
-            r.check('SPACE accepts the paper and the hero stands', !!cr, cr ? `${cr.name} the ${cr.cls} (${cr.race}, ${cr.ali})` : 'no create event from real keys')
+            r.check('SPACE accepts the paper and the hero stands', !!cr, cr ? `${cr.who} the ${cr.cls} (${cr.race}, ${cr.ali})` : 'no create event from real keys')
             if (cr) {
                 r.check('the created hero matches the composed paper', cr.hp === paper.composed.hp && cr.atk === paper.composed.atk && cr.def === paper.composed.def && cr.spd === paper.composed.spd && cr.ali === chosen.town.ali, `paper hp${paper.composed.hp} a${paper.composed.atk} d${paper.composed.def} s${paper.composed.spd}/${chosen.town.ali} vs hero hp${cr.hp} a${cr.atk} d${cr.def} s${cr.spd}/${cr.ali}`)
                 const afterCr = await probe()
