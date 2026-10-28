@@ -36,6 +36,7 @@
   "deepglasscheck": "node scripts/deepglasscheck.mjs",
   "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
+    "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "oceanfoam": "node scripts/oceanfoam.mjs",
