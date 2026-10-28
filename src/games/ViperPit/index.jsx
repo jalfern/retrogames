@@ -102,6 +102,7 @@ const ViperPitGame = () => {
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
         let quote = null, quoteT = 0
+        let koFxRound = -1
         let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
         let lagHp = [100, 100]
@@ -452,7 +453,11 @@ const ViperPitGame = () => {
 
         let retryTimer = null
         const watchPhase = (m, prevPhase, prevRound) => {
-            if (m.phase === 'ko' && prevPhase !== 'ko') {
+            // dedupe by round, not by the fight→ko transition: the harness's
+            // forceKO() sets the phase between ticks, so prevPhase is already
+            // 'ko' and the transition test would skip the K.O. fx + quotes
+            if (m.phase === 'ko' && koFxRound !== m.round) {
+                koFxRound = m.round
                 audioController.playSweep(200, 50, 0.7, 'sawtooth', 0.16)
                 audioController.playNoise(0.32, 0.2)
                 audioController.playFilteredNoise(1.1, 0.16, 480)
