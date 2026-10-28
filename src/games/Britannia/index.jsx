@@ -17,6 +17,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { containMap } from '../../utils/fitCanvas'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
 import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } from './weather.js'
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
@@ -72,7 +73,7 @@ const BritanniaGame = () => {
         let dead = false
         const canvas = document.createElement('canvas')
         canvas.width = VIEW_W; canvas.height = VIEW_H
-        canvas.className = 'block w-full h-full'
+        canvas.className = 'block w-full h-full object-contain'
         canvas.style.touchAction = 'none'
         wrap.appendChild(canvas)
         const ctx = canvas.getContext('2d')
@@ -364,10 +365,10 @@ const BritanniaGame = () => {
             // darkness + torchlight
             if (n > 0.02) {
                 lx.clearRect(0, 0, VIEW_W, VIEW_H)
-                lx.fillStyle = `rgba(6,10,30,${0.72 * n})`
+                lx.fillStyle = `rgba(6,10,30,${0.58 * n})`
                 lx.fillRect(0, 0, VIEW_W, VIEW_H)
                 lx.globalCompositeOperation = 'destination-out'
-                const fl = 150 + Math.sin(t / 4) * 8 + Math.sin(t / 2.3) * 5
+                const fl = 220 + Math.sin(t / 4) * 8 + Math.sin(t / 2.3) * 5
                 const gr = lx.createRadialGradient(px, py, 10, px, py, fl)
                 gr.addColorStop(0, 'rgba(0,0,0,1)')
                 gr.addColorStop(1, 'rgba(0,0,0,0)')
@@ -673,8 +674,9 @@ const BritanniaGame = () => {
         const onMove = (e) => {
             if (!S || screenRef.current !== 'play' || S.gate < 0 || S.warp) return
             const rect = canvas.getBoundingClientRect()
-            const mx = (e.clientX - rect.left) / rect.width * VIEW_W
-            const my = (e.clientY - rect.top) / rect.height * VIEW_H
+            const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
+            const mx = (e.clientX - rect.left - fit.ox) / fit.s
+            const my = (e.clientY - rect.top - fit.oy) / fit.s
             const bw = 420, bh = 60 + gates.length * 40
             const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
             if (mx < bx || mx > bx + bw || my < by || my > by + bh) return
@@ -689,8 +691,9 @@ const BritanniaGame = () => {
             if (screenRef.current === 'attract' || screenRef.current === 'end') { startGame(); return }
             if (!S || screenRef.current !== 'play') return
             const rect = canvas.getBoundingClientRect()
-            const mx = (e.clientX - rect.left) / rect.width * VIEW_W
-            const my = (e.clientY - rect.top) / rect.height * VIEW_H
+            const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
+            const mx = (e.clientX - rect.left - fit.ox) / fit.s
+            const my = (e.clientY - rect.top - fit.oy) / fit.s
             if (S.gate >= 0) {
                 const bw = 420, bh = 60 + gates.length * 40
                 const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2

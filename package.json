@@ -22,6 +22,7 @@
     "cornerprobe": "node scripts/cornerprobe.mjs",
     "preview": "vite preview",
     "shot": "node scripts/shot.mjs",
+    "portraitsweep": "node scripts/portraitsweep.mjs",
     "oceancheck": "node scripts/oceancheck.mjs",
     "shorecheck": "node scripts/shorecheck.mjs",
     "shorewebkit": "node scripts/shorewebkit.mjs",

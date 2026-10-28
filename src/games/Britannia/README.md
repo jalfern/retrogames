@@ -227,3 +227,14 @@ npm run dev                 # play at /retrogames/britannia
   population gate, dropping the wash reddens wiring — each restored green.
 - Still honest: these are tinted outskirts, not town *data* — walls, gates and
   enterable buildings come when the `.ULT` region files load in stage 2.
+
+## iPhone portrait fit (#1147)
+- The 1280x720 canvas is `w-full h-full object-contain`: portrait letterboxes
+  to a correct-aspect band (square tiles) instead of squashing 3x tall.
+- Pointer mapping (gate-menu hover + tap-to-move) subtracts the letterbox bars
+  via `containMap()` in src/utils/fitCanvas.js — rect-relative math would land
+  taps in the wrong game row.
+- Night is readable at phone scale: overlay alpha 0.72->0.58 of the phase,
+  torch radius 150->220; the shared RotateHint card asks landscape titles
+  to rotate in portrait. `npm run portraitsweep` (port 390x844) hard-fails
+  britannia/outrun/tempest if the stretch ever returns.

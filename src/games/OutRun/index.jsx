@@ -55,7 +55,7 @@ const OutRunGame = () => {
         const canvas = document.createElement('canvas')
         canvas.dataset.outrunStage = '1'
         canvas.width = W; canvas.height = H
-        canvas.className = 'block w-full h-full'
+        canvas.className = 'block w-full h-full object-contain'
         canvas.style.imageRendering = 'pixelated'
         canvas.style.touchAction = 'none'
         wrap.appendChild(canvas)
