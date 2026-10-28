@@ -16,6 +16,8 @@ const NIGHTLY_RAW = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/m
 // #1130 — the juice audit lives in THIS repo (it measures this repo's games):
 // regenerate with `npm run juiceaudit` against the dev server.
 const JUICE_URL = `${import.meta.env.BASE_URL}forge/juice.json`
+// #1131 — the boredom map: where bot runs go flat, dead or spiky.
+const BOREDOM_URL = `${import.meta.env.BASE_URL}forge/boredom.json`
 
 const Lamp = ({ label, ok, children }) => (
     <div className={`border p-3 text-xs ${ok ? 'border-[#0f0]/60' : 'border-[#f80]/60'}`}>
@@ -73,6 +75,7 @@ const ForgeBoard = () => {
     const [daily, setDaily] = useState(null)
     const [nightly, setNightly] = useState(null)
     const [juice, setJuice] = useState(null)
+    const [boredom, setBoredom] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -118,6 +121,10 @@ const ForgeBoard = () => {
                     const jr = await fetch(`${JUICE_URL}?t=${Math.floor(Date.now() / 3600000)}`)
                     if (jr.ok) setJuice(await jr.json())
                 } catch { /* no audit committed yet — the section stays hidden */ }
+                try {
+                    const br = await fetch(`${BOREDOM_URL}?t=${Math.floor(Date.now() / 3600000)}`)
+                    if (br.ok) setBoredom(await br.json())
+                } catch { /* no map committed yet — the section stays hidden */ }
                 setNow(Date.now()); lastFetch.current = Date.now(); setLastFetched(Date.now())
                 setError('')
             } catch (e) {
@@ -383,6 +390,41 @@ const ForgeBoard = () => {
                                         </div>
                                     )
                                 })}
+                            </div>
+                        </section>
+                    )
+                })()}
+
+                {boredom?.games?.length > 0 && (() => {
+                    const ranked = [...boredom.games].sort((a, b) => (b.boredom ?? -1) - (a.boredom ?? -1))
+                    const scored = boredom.games.filter((g) => g.boredom != null)
+                    const avg = scored.length ? Math.round(100 * scored.reduce((s, g) => s + g.boredom, 0) / scored.length) : 0
+                    const band = (x) => (x <= 0.05 ? 'border-[#0f0]/30 text-[#8f8]' : x <= 0.25 ? 'border-[#fb0]/50 text-[#fc9]' : 'border-[#f55]/60 text-[#f88]')
+                    const cell = { dead: 'bg-[#7a0000]', flat: 'bg-[#3a3a3a]', live: 'bg-[#19b34c]', spike: 'bg-[#ffd23f]' }
+                    return (
+                        <section className="mb-10">
+                            <h2 className="text-[#57d0ff] text-sm tracking-widest mb-2">🥶 BOREDOM MAP — where runs go flat ({avg}% average)</h2>
+                            <p className="text-[10px] text-gray-600 mb-3 leading-relaxed">
+                                The nightly bot policy replays every contract game over seeds {String(boredom.seeds || []).replace(/,/g, ', ')};
+                                each strip is one second of world activity — <span className="text-[#7a0000]">■</span> dead (nothing moves),
+                                <span className="text-[#777]"> ■</span> flat (well under the run median),
+                                <span className="text-[#19b34c]"> ■</span> live, <span className="text-[#ffd23f]">■</span> spike.
+                                A long dark stretch is a course that stopped playing the player.
+                                BLIND = its contract state hides positions, so flat reads are suspect (#1184).
+                                map @{boredom.commit} · {String(boredom.generated).slice(0, 10)} · regenerate: npm run boredomaudit
+                            </p>
+                            <div className="grid grid-cols-1 gap-1 text-[10px]">
+                                {ranked.map((g) => (
+                                    <div key={g.id} title={(g.classes || []).map((c, i) => `${i}s: ${c}`).join('\n')}
+                                        className={`flex items-center gap-2 border px-2 py-1 ${band(g.boredom ?? 0)}`}>
+                                        <span className="w-32 truncate shrink-0">{g.id}{g.blind ? ' ∅' : ''}</span>
+                                        <span className="flex-1 flex gap-px h-2 overflow-hidden">
+                                            {(g.classes || []).map((c, i) => <span key={i} className={`flex-1 ${cell[c] || 'bg-[#3a3a3a]'}`} />)}
+                                        </span>
+                                        <span className="w-9 text-right shrink-0">{g.boredom == null ? '—' : `${Math.round(g.boredom * 100)}%`}</span>
+                                        <span className="w-40 truncate shrink-0 opacity-70">{g.worst ? `worst ${g.worst.type} ${g.worst.len}s @${g.worst.startSec}s` : g.blind ? 'blind state — readings suspect' : ''}</span>
+                                    </div>
+                                ))}
                             </div>
                         </section>
                     )
