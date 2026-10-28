@@ -247,3 +247,24 @@ is the load-bearing part; `--mutate` strips the SFX counter and the sound gate g
 The audit itself is a measurement, not a CI gate — a 0% game files QA, it does not block a
 build.
 
+**The boredom map (#1131):** "where does a run go flat, dead or spiky?" `scripts/boredomaudit.mjs`
+replays the nightly bot's own pad policy (`padFor` seed math, `nightlybot.mjs`) over three seeds
+per contract game through **locked** contract steps — the opposite clock choice from the juice
+audit, and right for the same reason: boredom lives in the WORLD (score, enemies, damage), not in
+audio/particles, and locked steps are deterministic, seedable and ~1000× real time. Each tick
+diffs `__game.state()` into **reward** (score up), **damage** (lives/cities/ammo/health-style
+keys down) and **distance-weighted motion** (position keys by how far they moved; bare
+key-counting keeps a coasting runner "live" forever; `tick/hash/seed/done` are noise).
+Summed into 1-second strips, combined by mean over seeds still alive at that second, each second
+classified against the run median: **dead** (0), **flat** (≤35%), **live**, **spike** (≥250%);
+`boredom = (dead + flat/2)/seconds`, plus the longest dead/flat stretch named with its start.
+Trailing partial seconds are dropped — a run cut off by `done` must not fake dead air.
+`public/forge/boredom.json` renders worst-first heat strips on `/forge`; `BOREDOM_FILE=1` files
+the breaching games as QA issues (nightlybot-style shape dedupe). The founding catch: Momentum
+Runner read 81% bored with 90 s of dead air — a false positive: its contract state hid the runner
+(a #1184 blind state, hash moving while every visible key sat still). The map now flags blind
+states (`∅`, never files on them) and Momentum exposes `pos`, its honest reading 0%.
+`npm run boredomcheck` (37 gates: pure math + live Lunar Lander probe + committed-json + roster
+parity) is the load-bearing part; `BOREDOM_MUTATE=dead` blinds dead-detection and six gates go
+red. Measurement, not a CI gate — the map reports courses, it does not block builds.
+

@@ -45,6 +45,8 @@ const OPTS = {
     noise: ['tick', 'hash', 'seed', 'done'],
     damage: ['lives', 'cities', 'ammo', 'health', 'hp', 'fuels', 'shields'],
     keyMaxLen: 4096,
+    waits: ['banner', 'attract', 'intro', 'ready', 'menu', 'start', 'over', 'gameover', 'game over', 'select', 'choose', 'levelup', 'level up', 'pause', 'paused', 'dying', 'respawn', 'brief', 'story'],
+    preRoll: 600,
 }
 // Comet Drift HD defaults to WebGPU (state is fine, but keep the documented
 // readback pin the other contract harnesses use).

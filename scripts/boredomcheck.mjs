@@ -23,7 +23,7 @@ import { join, dirname } from 'node:path'
 import {
     tickSignals, bucketSeconds, combineSeeds, classifySecond, classifyStrip,
     boredomScore, worstStretch, segmentLevels, shouldFile, buildReport,
-    FLAT_RATIO, SPIKE_RATIO, FLAT_WEIGHT, FLAT_FILE_SHARE, MEDIAN_FLOOR, DAMAGE_KEYS,
+    FLAT_RATIO, SPIKE_RATIO, FLAT_WEIGHT, FLAT_FILE_SHARE, MEDIAN_FLOOR, DEAD_FILE_SECS, DAMAGE_KEYS,
 } from './lib/boredom.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
@@ -91,21 +91,27 @@ console.log('math (scripts/lib/boredom.mjs)')
     ok('segmentLevels splits on a changing level', JSON.stringify(segmentLevels([1, 1, 2, 2, 2]).map((l) => `${l.label}:${l.len}`)) === JSON.stringify(['1:2', '2:3']))
     ok('a constant level field yields no segments (single course)', segmentLevels([3, 3, 3]).length === 0)
 
-    ok('any dead second files', shouldFile(['live', 'dead']) === true)
-    ok(`a majority-flat run files (${FLAT_FILE_SHARE})`, shouldFile(['flat', 'flat', 'live']) === true)
-    ok('a mostly-live run never files', shouldFile(['flat', 'live', 'live']) === false)
+    ok('a short dead blip does not file (wait-phase law)', shouldFile(['live', 'dead', 'live'], { type: 'dead', startSec: 1, len: 1 }, false) === false)
+    ok(`a ${'dead'} stretch of DEAD_FILE_SECS files`, shouldFile(['dead', 'dead', 'dead', 'live'], { type: 'dead', startSec: 0, len: 3 }, false) === true)
+    ok(`a majority-flat run files (${FLAT_FILE_SHARE})`, shouldFile(['flat', 'flat', 'live'], null, false) === true)
+    ok('a mostly-live run never files', shouldFile(['flat', 'live', 'live'], null, false) === false)
+    ok('a blind game never files, however dead it reads', shouldFile(['dead', 'dead', 'dead'], { type: 'dead', startSec: 0, len: 3 }, true) === false)
 
     const rep = buildReport({ commit: 'abc1234', seeds: [7], games: [{ id: 'x', strip: [0, 10, 10, 30] }] })
     ok('report stamps commit + ISO time + seeds + thresholds', rep.commit === 'abc1234'
         && !Number.isNaN(Date.parse(rep.generated)) && rep.seeds.join() === '7'
         && rep.thresholds.flatRatio === FLAT_RATIO && rep.thresholds.spikeRatio === SPIKE_RATIO
         && rep.thresholds.flatWeight === FLAT_WEIGHT && rep.thresholds.flatFileShare === FLAT_FILE_SHARE
-        && rep.thresholds.medianFloor === MEDIAN_FLOOR)
+        && rep.thresholds.medianFloor === MEDIAN_FLOOR && rep.thresholds.deadFileSecs === DEAD_FILE_SECS)
     ok('report decorates games with classes/boredom/worst',
         rep.games[0].classes.join(',') === 'dead,live,live,spike'
         && rep.games[0].boredom === 0.25
         && rep.games[0].worst.type === 'dead' && rep.games[0].worst.len === 1)
-    ok('a dead run files from the report', rep.games[0].file === true)
+    ok('a long dead run files from the report, a short blip does not',
+        buildReport({ games: [{ id: 'x', strip: [0, 0, 0, 10] }] }).games[0].file === true
+        && buildReport({ games: [{ id: 'x', strip: [0, 10] }] }).games[0].file === false)
+    ok('the report marks a blind game unfileable',
+        buildReport({ games: [{ id: 'x', strip: [0, 0, 0, 0], blind: true }] }).games[0].file === false)
 }
 
 // --------------------------------------------------- mutant (lib-blindness) ----
@@ -125,6 +131,8 @@ if (!NO_BROWSER && !ENV_ON) {
         noise: ['tick', 'hash', 'seed', 'done'],
         damage: DAMAGE_KEYS,
         keyMaxLen: 4096,
+        waits: ['banner', 'attract', 'intro', 'ready', 'menu', 'start', 'over', 'gameover', 'game over', 'select', 'choose', 'levelup', 'level up', 'pause', 'paused', 'dying', 'respawn', 'brief', 'story'],
+        preRoll: 600,
     }
 
     console.log('live (lunar-lander):')

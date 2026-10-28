@@ -26,7 +26,9 @@ const MUTED = typeof process !== 'undefined' && process.env && process.env.BORED
 export const FLAT_RATIO = 0.35        // a second under 35% of the run median is flat
 export const SPIKE_RATIO = 2.5        // ...and over 250% of it spikes (difficulty spike)
 export const FLAT_WEIGHT = 0.5        // flat counts half of dead toward the boredom score
-export const FLAT_FILE_SHARE = 0.5    // ≥50% flat seconds files a QA issue
+export const FLAT_FILE_SHARE = 0.5   // ≥50% flat seconds files a QA issue
+export const DEAD_FILE_SECS = 3      // ...or a dead stretch of ≥3 s; shorter dark
+                                     // blips are wait phases and interludes — law, not gap
 export const STATE_NOISE = ['tick', 'hash', 'seed', 'done']
 export const KEY_MAX_LEN = 4096       // a state key bigger than this is scenery, not signal
 
@@ -183,13 +185,18 @@ export function segmentLevels(levels) {
     return out.length <= 1 ? [] : out
 }
 
-// Does this game's profile warrant a QA filing? Dead seconds are always news;
-// a majority-flat run is the "empty course" shape.
-export function shouldFile(classes) {
-    if (!classes.length) return false
+// Does this game's profile warrant a QA filing? A dead stretch of
+// DEAD_FILE_SECS or more, or a majority-flat run (the "empty course" shape).
+// Short dark blips are wait phases (between waves the original waits — law,
+// not a gap, the #1130 lesson). A BLIND game never files: its contract state
+// hides positions, so flat reads are suspect until #1184 calibrates it.
+export function shouldFile(classes, worst, blind) {
+    if (!classes.length || blind) return false
     const dead = classes.filter((c) => c === 'dead').length
     const flat = classes.filter((c) => c === 'flat').length
-    return dead > 0 || flat / classes.length >= FLAT_FILE_SHARE
+    if (worst && worst.type === 'dead' && worst.len >= DEAD_FILE_SECS) return true
+    if (dead >= DEAD_FILE_SECS) return true
+    return flat / classes.length >= FLAT_FILE_SHARE
 }
 
 export function buildReport({ commit = 'unknown', seeds = [], sps = 60, games = [] }) {
@@ -198,17 +205,18 @@ export function buildReport({ commit = 'unknown', seeds = [], sps = 60, games = 
         commit,
         seeds,
         ticksPerSecond: sps,
-        thresholds: { flatRatio: FLAT_RATIO, spikeRatio: SPIKE_RATIO, flatWeight: FLAT_WEIGHT, flatFileShare: FLAT_FILE_SHARE, medianFloor: MEDIAN_FLOOR },
+        thresholds: { flatRatio: FLAT_RATIO, spikeRatio: SPIKE_RATIO, flatWeight: FLAT_WEIGHT, flatFileShare: FLAT_FILE_SHARE, medianFloor: MEDIAN_FLOOR, deadFileSecs: DEAD_FILE_SECS },
         ...(MUTED ? { mutated: 'dead' } : {}),
         games: games.map((g) => {
             const classes = classifyStrip(g.strip)
             const boredom = boredomScore(g.strip, classes)
+            const worst = worstStretch(classes)
             return {
                 ...g,
                 classes,
                 boredom,
-                worst: worstStretch(classes),
-                file: shouldFile(classes),
+                worst,
+                file: shouldFile(classes, worst, g.blind),
             }
         }),
     }

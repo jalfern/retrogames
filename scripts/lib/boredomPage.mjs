@@ -22,7 +22,18 @@ export const REPLAY = ({ seed, cap, buttons, pointer, opts }) => {
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296
     }
     const g = window.__game
-    const zero = g.reset(seed)
+    const zero0 = g.reset(seed)
+    // wait-phase pre-roll (#1130's PREP lesson): an attract/banner intro is original
+    // law, not boredom — step through it before the first sample so dead air starts
+    // where playing starts.
+    const phaseOf = (s) => String((s && (s.phase || s.screen || s.mode)) || '').toLowerCase()
+    let pre = zero0
+    let preTicks = 0
+    for (let n = 0; n < opts.preRoll && !pre.done && opts.waits.includes(phaseOf(pre)); n++) {
+        pre = g.step({}, 1)
+        preTicks++
+    }
+    const zero = pre
     let prev = zero
     const seenKeys = new Set(Object.keys(zero || {}))
     const samples = [{ ev: 0, dmg: 0, act: 0, level: zero.level !== undefined ? zero.level : (zero.wave !== undefined ? zero.wave : null) }]
@@ -75,5 +86,5 @@ export const REPLAY = ({ seed, cap, buttons, pointer, opts }) => {
         if (s.done) { done = true; break }
     }
     g.release()
-    return { seed, ticks: samples.length - 1, done, keys: [...seenKeys], samples }
+    return { seed, preTicks, ticks: samples.length - 1, done, keys: [...seenKeys], samples }
 }
