@@ -102,6 +102,8 @@ const ViperPitGame = () => {
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
         let finishCine = null, cine = null
+        let quote = null
+        const QUOTE_T = 150
         let comboFx = [0, 0], comboVal = [0, 0]
         let lagHp = [100, 100]
         let rigs = null
@@ -226,6 +228,8 @@ const ViperPitGame = () => {
             rebuildRigs()
             rebuildStage()
             audioController.startMusic(stage.bed)
+            quote = null
+            if (d2raw.intro) say(d2raw, 'intro', 'intro')
             setSc('play')
         }
 
@@ -438,6 +442,20 @@ const ViperPitGame = () => {
             })
         }
 
+        // #1106 dialogue: the pits talk trash — the opponent taunts at the round
+        // intro, the winner gets the last word over the loser's reply at the
+        // outround. Each voice is a 3-note blip in the fighter's own register
+        // (synth only, no assets).
+        const voiceBlip = (d) => {
+            ;(d.voice || [300, 260, 340]).forEach((hz, i) => audioController.playTone(hz, 0.05, 'square', 0.05, i * 0.07))
+        }
+        const say = (d, field, kind, sub) => {
+            const text = d[field]
+            if (!text) return
+            quote = { name: d.name, text, sub: sub || null, kind, t: QUOTE_T }
+            voiceBlip(d)
+        }
+
         let retryTimer = null
         const watchPhase = (m, prevPhase, prevRound) => {
             if (m.phase === 'ko' && prevPhase !== 'ko') {
@@ -453,8 +471,12 @@ const ViperPitGame = () => {
             } else if (m.phase === 'intro' && prevRound < m.round) {
                 bannerText = m.banner; bannerT = 110
                 audioController.playTone(494, 0.1, 'square', 0.08)
+                say(m.fighters[1].def, 'intro', 'intro')
             }
             if (m.phase === 'done' && prevPhase !== 'done') {
+                const wd = m.fighters[m.winner].def
+                const ld = m.fighters[1 - m.winner].def
+                say(wd, 'win', 'win', ld.name + ': ' + ld.lose)
                 const won = m.winner === 0
                 if (mode === 'cpu') {
                     if (won && ladderIdx < LADDER.length - 1) {
@@ -579,6 +601,31 @@ const ViperPitGame = () => {
                     hctx.fillStyle = `rgba(255,64,48,${Math.min(1, finishFx / 60).toFixed(2)})`
                     hctx.fillText(finishText, W / 2, H * 0.54)
                 }
+                if (quote && quote.t > 0) {
+                    quote.t--
+                    ui(Math.max(12, H * 0.026))
+                    hctx.textAlign = 'center'
+                    const qh = Math.max(52, H * 0.11) + (quote.sub ? Math.max(18, H * 0.034) : 0)
+                    const qw = Math.max(
+                        hctx.measureText(quote.name).width,
+                        hctx.measureText(quote.text).width,
+                        quote.sub ? hctx.measureText(quote.sub).width : 0) + Math.max(36, W * 0.05)
+                    const qy = H * 0.72
+                    hctx.fillStyle = 'rgba(8,6,12,0.78)'; hctx.fillRect(W / 2 - qw / 2, qy - qh / 2, qw, qh)
+                    hctx.strokeStyle = quote.kind === 'win' ? '#ffd23e' : '#59e0c8'; hctx.lineWidth = 2
+                    hctx.strokeRect(W / 2 - qw / 2, qy - qh / 2, qw, qh)
+                    const fade = Math.min(1, quote.t / 25 + 0.5)
+                    hctx.fillStyle = `rgba(89,224,200,${fade.toFixed(2)})`
+                    hctx.fillText(quote.name, W / 2, qy - qh / 2 + Math.max(20, H * 0.04))
+                    const typed = quote.text.slice(0, Math.min(quote.text.length, Math.floor((QUOTE_T - quote.t) / 2)))
+                    hctx.fillStyle = `rgba(255,244,235,${fade.toFixed(2)})`
+                    hctx.fillText(typed, W / 2, qy - qh / 2 + Math.max(44, H * 0.084))
+                    if (quote.sub) {
+                        ui(Math.max(10, H * 0.02))
+                        hctx.fillStyle = `rgba(160,165,190,${Math.min(1, quote.t / 40).toFixed(2)})`
+                        hctx.fillText(quote.sub, W / 2, qy + qh / 2 - Math.max(9, H * 0.016))
+                    }
+                }
                 if (flashT > 0) { flashT--; hctx.fillStyle = `rgba(255,235,220,${(flashT / 60).toFixed(2)})`; hctx.fillRect(0, 0, W, H) }
                 if (desync && net.active) {
                     hctx.fillStyle = 'rgba(5,5,10,0.72)'; hctx.fillRect(0, 0, W, H)
@@ -655,6 +702,8 @@ const ViperPitGame = () => {
                 ui(Math.max(13, H * 0.026))
                 hctx.fillStyle = '#fff'
                 hctx.fillText(`${(BY_ID[p1Char] || ROSTER[0]).name} SURVIVES THE NIGHT`, W / 2, H * 0.5)
+                hctx.fillStyle = 'rgba(89,224,200,0.9)'
+                hctx.fillText(`"${(BY_ID[p1Char] || ROSTER[0]).win || 'KING OF THE PIT.'}"`, W / 2, H * 0.56)
                 hctx.fillText('PRESS ANY KEY', W / 2, H * 0.62)
             }
             if (paused && scr === 'play') {
@@ -768,6 +817,7 @@ const ViperPitGame = () => {
                 guard() { return gs ? gs.fighters.map((f) => Math.round(f.guard)) : null },
                 forceCrush() { if (gs) { const f = gs.fighters[1]; f.st = 'crush'; f.stun = 46; f.sf = 0; f.guard = 0 } },
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
+                quote() { return quote && quote.t > 0 ? { name: quote.name, text: quote.text, sub: quote.sub, kind: quote.kind, t: quote.t } : null },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },
                 fx() {

@@ -65,6 +65,14 @@ the #1096 options switched on.
   (grunt at startup, slam on hit). Each finisher has a per-fighter sting on
   the `finish` event (NYX stitch, CINDER bonfire, VESS dry-land, RIV neon
   zap, KRAX scrap clang). K.O. adds a low-passed crowd-surge swell.
+- **Intro/outround dialogue (#1106)**: arcade fighters talk trash. Each fighter
+  carries an `intro` taunt, a `win` line and a `lose` reply (all original,
+  distinct per fighter) plus a 3-note `voice` blip register. The opponent
+  taunts at the round intro, every new round replays it, and the outround card
+  pairs the winner's line with the loser's reply; the champion screen quotes
+  the player's win line. The card types on (2 chars/frame) and fades over
+  150 frames; lines are presentation-only — the engine and netplay hashes are
+  untouched. DEV `__viperPitTest.quote()` reports the live card.
 - **Midground (#1106)**: each pit gets a depth layer of props between the
   fighters and the fence (alley crates + barrels, foundry tanks + drums, subway
   booth + benches) — variety beyond the flat backdrop. The props are pivot
@@ -82,7 +90,7 @@ the #1096 options switched on.
   ignores events, IRON RING stays bit-identical.
 - `src/games/ViperPit/fighters.js` — 5 fighters (NYX assassin easy, CINDER
   zoner, VESS acrobat, RIV all-round, KRAX grappler insane); each: build/gear,
-  palette, stats, specials on engine motion keys + a named `finish`.
+  palette, stats, specials on engine motion keys + a named `finish` + intro/win/lose lines + a voice register.
 - `src/games/ViperPit/stages.js` — 3 pits (fog/light/props/neon data).
 - `src/games/ViperPit/render.js` — three.js: articulated limb rigs
   (shoulder/elbow/hip/knee groups, capsule limbs), canvas-texture asphalt,
@@ -135,6 +143,10 @@ the #1096 options switched on.
     and the gauge regens — determinism, every ladder CPU completes
   a match, hit events carry `mv`) + the #1106 audio wiring (source-level
   call-site gates + a stripped-whoosh/sting mutant proving the gate bites) +
+  the #1106 dialogue wiring (every fighter has distinct intro/win/lose lines
+  + a 3-note voice, source gates for taunt-at-start / taunt-per-round /
+  outround win+reply pairing / voice blip / card draw + decay / dev `quote()`
+  probe, and a stripped-win-line mutant proving the gate bites) +
   the #1106 stage-life wiring (source gates for the molten pulse/cast, rain
   fall, train sweep + a dead-pulse mutant) + headless Chrome drive
   (attract→select→fight, real keys reach the sim, GUARD hold, K.O. flow, the
@@ -145,7 +157,9 @@ the #1096 options switched on.
      on a forced `midKick()`, the finisher cinematic running its multi-beat
      sequence via `forceFinish()` + `cine()`, the qcb counter live in the sim,
      a forced guard-crush entering and clearing the crush stun with the gauge
-     refilling via `forceCrush()` + `guard()`, zero page errors).
+     refilling via `forceCrush()` + `guard()`, the opponent's taunt card at
+     the round intro and the winner/loser outround card via `setChars` +
+     `koP2` x2 + `quote()`, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.
@@ -155,7 +169,8 @@ the #1096 options switched on.
 
 ## Honest gaps (polish-pass candidates)
 
-- No intro/outround dialogue lines; win/lose quotes are QA polish.
+- Intro/outround dialogue landed (#1106): per-fighter taunt at the round intro,
+  win/lose lines at the outround, voice blips per fighter.
 - Stage midground + fight-reactive sway landed (#1106); heavier interactivity
   (destructible props, pickups) still open.
 - `qcb` counter + guard crush landed (#1106): blocking drains a guard gauge;

@@ -23,6 +23,7 @@ const defs = [
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
         walkMul: 1.14, jumpMul: 1.06, reach: 0.94,
         finish: 'SHADOW STITCH',
+        intro: "YOU WON'T HEAR ME COMING", win: 'QUIET NIGHT. QUIET WIN.', lose: '(SILENCE.)', voice: [520, 660, 590],
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'special', startup: 7, active: 4, recovery: 16, dmg: 8, hitstun: 15, blockstun: 9, push: 0.1, box: [0.4, 0.95, 1.9, 1.55] } },
@@ -42,6 +43,7 @@ const defs = [
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
         reach: 1.0,
         finish: 'BONFIRE',
+        intro: 'LAST CHANCE TO WALK AWAY', win: 'STILL SMOLDERING.', lose: 'OUTBURNED. FINE.', voice: [180, 150, 220],
         specials: { qcf: { ex: true, super: true }, dp: { ex: true }, qcb: true, qcbf: true },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'special', startup: 11, active: 1, recovery: 21, dmg: 7, hitstun: 15, blockstun: 10, push: 0.12, projectile: { name: 'fire', speed: 0.19, dmg: 7, hitstun: 15, blockstun: 10 } } },
@@ -60,6 +62,7 @@ const defs = [
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
         walkMul: 1.08, jumpMul: 1.24, reach: 0.96,
         finish: 'DRY LAND',
+        intro: 'TRY NOT TO BLINK', win: 'LANDED ON MY FEET, AS USUAL.', lose: 'GRAVITY WINS THIS ONE.', voice: [440, 620, 510],
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'special', startup: 9, active: 1, recovery: 18, dmg: 6, hitstun: 13, blockstun: 8, push: 0.08, projectile: { name: 'arc', speed: 0.22, y: 0.55, vy: 0.055, grav: true, dmg: 6, hitstun: 13, blockstun: 8 } } },
@@ -79,6 +82,7 @@ const defs = [
         color: { skin: 0xd69a6b, top: 0x44485a, pants: 0x1c1e26, hair: 0x8a2f3f, accent: 0xd8e04a },
         reach: 1.04,
         finish: 'NEON PURGE',
+        intro: 'I ALWAYS GET THE LAST WORD', win: 'WORD IS BOND.', lose: 'NEVER MIND THE REWRITE.', voice: [300, 260, 340],
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true }, charge: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'special', startup: 10, active: 1, recovery: 20, dmg: 7, hitstun: 15, blockstun: 9, push: 0.12, projectile: { name: 'spit', speed: 0.21, dmg: 7, hitstun: 15, blockstun: 9 } } },
@@ -100,6 +104,7 @@ const defs = [
         color: { skin: 0x9a6a44, top: 0x5a4632, pants: 0x33302b, hair: 0x141414, accent: 0xc0c8d0 },
         walkMul: 0.8, hp: 115, reach: 1.1,
         finish: 'SCRAP HEAP',
+        intro: 'YOU WEIGH IN LIGHT', win: 'PAID IN FULL.', lose: 'SHORT CHANGED.', voice: [120, 98, 140],
         specials: { qcf: { kick: true, ex: true, super: true }, charge: { ex: true, super: true }, qcb: true, qcbf: true },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'throw', startup: 4, active: 3, recovery: 24, dmg: 17, hitstun: 36, push: 0.16, launch: 0.1, box: [0.4, 0.55, 1.8, 1.95] } },

@@ -351,6 +351,43 @@ if (MUT) {
     ok(!/playSweep\(160, 640, 0\.16, 'sawtooth', 0\.055\)/.test(mutSrc) && !mutSrc.includes("playTone(82, 0.22, 'square', 0.12)"), 'mutant: stripped whoosh/sting fails the gate (harness bites)')
 }
 
+// ---- #1106 intro / outround dialogue gate ----------------------------------------
+// Arcade fighters talk: the opponent taunts at the round intro and the winner
+// gets the last word over the loser's reply. Data gate (intro/win/lose/voice
+// on every fighter, lines distinct), source gates on the cabinet (quote set at
+// fight start and every round intro, the outround card pairs both lines, the
+// card draws + decays per frame, the DEV quote() probe), plus a mutant that
+// strips NYX's win line — the data gate must fail.
+{
+    const fs = await import('node:fs')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok(ROSTER.every((d) => typeof d.intro === 'string' && d.intro.length >= 8), 'dialogue: every fighter has an intro taunt')
+    ok(ROSTER.every((d) => typeof d.win === 'string' && d.win.length >= 4), 'dialogue: every fighter has a win line')
+    ok(ROSTER.every((d) => typeof d.lose === 'string' && d.lose.length >= 4), 'dialogue: every fighter has a lose line')
+    ok(new Set(ROSTER.map((d) => d.intro)).size === ROSTER.length, 'dialogue: intro taunts are distinct per fighter')
+    ok(new Set(ROSTER.map((d) => d.win)).size === ROSTER.length, 'dialogue: win lines are distinct per fighter')
+    ok(new Set(ROSTER.map((d) => d.lose)).size === ROSTER.length, 'dialogue: lose lines are distinct per fighter')
+    ok(ROSTER.every((d) => Array.isArray(d.voice) && d.voice.length === 3 && d.voice.every((hz) => hz > 60 && hz < 1200)), 'dialogue: every fighter has a 3-note voice blip')
+    const talkGates = [
+        ['taunt is spoken when a fight starts', /if \(d2raw\.intro\) say\(d2raw, 'intro', 'intro'\)/],
+        ['new round replays the opponent taunt', /say\(m\.fighters\[1\]\.def, 'intro', 'intro'\)/],
+        ['outround pairs the winner line with the loser reply', /say\(wd, 'win', 'win', ld\.name \+ ': ' \+ ld\.lose\)/],
+        ['every spoken line gets a voice blip', /voiceBlip\(d\)/],
+        ['dialogue card draws on the cabinet', /if \(quote && quote\.t > 0\)/],
+        ['dialogue card decays per frame', /quote\.t--/],
+        ['DEV hook exposes the live quote', /quote\(\) \{ return quote && quote\.t > 0/],
+    ]
+    for (const [label, re] of talkGates) ok(re.test(gsrc), `dialogue gate: ${label}`)
+    // mutant: strip NYX's win line — the data gate must fail on it
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const mutF = fsrc.replace("win: 'QUIET NIGHT. QUIET WIN.', ", '')
+    ok(mutF !== fsrc, 'mutate: win line found to patch')
+    writeFileSync(path.join(HERE, '../src/games/ViperPit/.mutant-fighters.mjs'), mutF)
+    const mutRoster = (await import(bust('../src/games/ViperPit/.mutant-fighters.mjs'))).ROSTER
+    ok(!mutRoster.every((d) => typeof d.win === 'string' && d.win.length >= 4), 'mutant: stripped win line fails the dialogue gate (harness bites)')
+    unlinkSync(path.join(HERE, '../src/games/ViperPit/.mutant-fighters.mjs'))
+}
+
 // ---- #1106 stage-life wiring gate ---------------------------------------------------
 // The pits must live: foundry molten pulses and casts light, alley rain falls,
 // a subway train light-sweeps past. Source-level gates + a mutant proving the
@@ -691,6 +728,31 @@ if (!MUT) {
         const gAfter = await page.evaluate(() => window.__viperPitTest.guard())
         ok(recovered, 'crush stun clears back to a guarding-ready fighter')
         ok(gAfter && gAfter[1] >= 90, `guard gauge refills after the crush (${gAfter && gAfter[1]})`)
+    }
+
+    // #1106 dialogue: the opponent taunts at the round intro and the winner gets
+    // the last word over the loser's reply at the outround — quote() reports the
+    // live card in the cabinet.
+    {
+        const krax = ROSTER.find((d) => d.id === 'krax')
+        const nyx = ROSTER.find((d) => d.id === 'nyx')
+        await page.evaluate(() => window.__viperPitTest.setChars('nyx', 'krax'))
+        let q = null
+        for (let i = 0; i < 20 && !(q && q.kind === 'intro'); i++) {
+            q = await page.evaluate(() => window.__viperPitTest.quote())
+            await page.waitForTimeout(60)
+        }
+        ok(q && q.kind === 'intro' && q.name === krax.name && q.text === krax.intro,
+            `opponent taunts at the round intro (${q ? `${q.name}: "${q.text}"` : 'nothing'})`)
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        await page.evaluate(() => window.__viperPitTest.koP2())
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        await page.evaluate(() => window.__viperPitTest.koP2())
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'done', null, { timeout: 20000 })
+        const qw = await page.evaluate(() => window.__viperPitTest.quote())
+        ok(qw && qw.kind === 'win' && qw.name === nyx.name && qw.text === nyx.win,
+            `winner gets the last word at the outround (${qw ? `${qw.name}: "${qw.text}"` : 'nothing'})`)
+        ok(qw && qw.sub === `${krax.name}: ${krax.lose}`, `loser replies under the win line (${qw && qw.sub})`)
     }
 
     await page.keyboard.press('Escape')
