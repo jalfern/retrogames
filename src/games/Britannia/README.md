@@ -48,8 +48,16 @@ transcribed into source:
   stage 5. Names (Britain, Trinsic…) arrive when town/talk data loads.
 - Boarding is free at any coast (the purchase lives in stage 2's shops).
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
-- Classic mode (`C`) approximates the EGA look with raw terrain shades;
-  decoding `SHAPES.EGA` tile graphics for a true tile sheet is queued.
+- Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
+  terrain-named tilesets (`GRASS/MARSH/BRUSH/HILL/FOREST/SHORE.CON`, 192B =
+  6×32B records; records 2..5 are four 8×8 chunky-4bpp variants, high nibble
+  = left pixel; `BRICK.CON` is held for stage-2 cities). The filename is the
+  terrain mapping — nothing guessed. `SHAPES.EGA` stays undecoded on purpose:
+  its terrain→base table isn't in the bundle and the lone AVATAR.EXE candidate
+  contradicts the sheet's colour runs, so wiring it would mislabel marsh vs
+  heath vs plains (#1135 archaeology). Sea/cliff/plains have no named tileset
+  and stay flat fills. The EGA map palette in `ega.js` reproduces the semantic
+  colour use the tilesets prove (the original set it by port I/O at runtime).
 
 ## Verify
 

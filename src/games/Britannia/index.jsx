@@ -23,6 +23,7 @@ import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } fro
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
+import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches } from './swell.js'
 
@@ -43,21 +44,17 @@ const ATTRACT = [
     'Press any key, or tap, to begin the pilgrimage',
 ]
 
-function buildTileCaches() {
-    // classic (C) mode is a flat EGA stamp per terrain. The modern look is NOT
-    // cached: it shades each tile live from the world-continuous field so the
-    // land never shows a repeating tile pattern (#1146).
-    const classic = []
-    const SHADE = ['#00007c', '#00a800', '#005400', '#6c6c6c', '#949494', '#00a800', '#545400', '#a8a800', '#d4c878']
-    for (let v = 0; v < 9; v++) {
-        const c = document.createElement('canvas')
-        c.width = TILE; c.height = TILE
-        const x = c.getContext('2d')
-        x.fillStyle = SHADE[v]
-        x.fillRect(0, 0, TILE, TILE)
-        classic.push(c)
+function buildTileCaches(zip) {
+    // classic (C) mode stamps the ORIGINAL terrain tiles decoded from the
+    // bundle's terrain-named .CON files (see ega.js); terrains without a
+    // named tileset stay a flat fill. The modern look is NOT cached: it
+    // shades each tile live from the world-continuous field so the land never
+    // shows a repeating tile pattern (#1146).
+    if (!zip) {
+        const SHADE = ['#00007c', '#00a800', '#005400', '#6c6c6c', '#949494', '#00a800', '#545400', '#a8a800', '#d4c878']
+        return { classic: SHADE.map(c => { const cv = document.createElement('canvas'); cv.width = TILE; cv.height = TILE; const x = cv.getContext('2d'); x.fillStyle = c; x.fillRect(0, 0, TILE, TILE); return [cv] }) }
     }
-    return { classic }
+    return { classic: buildClassicStamps(zip, TILE, hash2) }
 }
 
 const BritanniaGame = () => {
@@ -102,7 +99,7 @@ const BritanniaGame = () => {
             world = makeWorld(zip['WORLD.MAP'])
             const st = findStars(world)
             gates = st.gates
-            tiles = buildTileCaches()
+            tiles = buildTileCaches(zip)
             S = fresh(0)
             S.camX = S.x * TILE; S.camY = S.y * TILE
             setMode('attract')
@@ -232,7 +229,7 @@ const BritanniaGame = () => {
         const drawTile = (tx, ty, sx, sy, t) => {
             const v = world.get(tx, ty)
             const vv = v < 9 ? v : 8
-            if (classicOn) { ctx.drawImage(tiles.classic[vv], sx, sy); return }
+            if (classicOn) { const cs = tiles.classic[vv]; ctx.drawImage(cs[variantOf(hash2, tx, ty, vv) % cs.length], sx, sy); return }
             // modern: shade each 16px block from the world-continuous field so
             // the land is soft, continuous terrain — no static, no tile repeat
             const [lo, mid, hi] = TERR[vv]
