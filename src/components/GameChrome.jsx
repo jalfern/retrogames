@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import { dispatchPause } from '../utils/pauseEvent'
 import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeedback, installTypingGuard, saveJonKey, readJonKey } from '../utils/feedback'
+import RotateHint from './RotateHint'
 
 // Shared in-game chrome (#437): two always-visible corner buttons on every game
 // screen, sized for a thumb inside the iOS safe area. Installed in fullscreen
@@ -220,6 +221,7 @@ const GameChrome = ({ theme = 'light' }) => {
                 PAUSE
             </button>
             <FeedbackButton theme={theme} />
+            <RotateHint />
         </>
     )
 }

@@ -45,6 +45,16 @@ export function fitFill(W, H, cssW, cssH) {
   return Math.abs(s - Math.round(s)) <= 1e-6 ? Math.round(s) : s
 }
 
+// #1147: where a `w-full h-full object-contain` canvas actually placed its
+// picture inside its CSS box. The element still fills the box; the content is
+// centered with letterbox bars. Pointer code that maps client coords to game
+// coords must subtract the bars and divide by the scale, or taps land wrong.
+export function containMap(W, H, cssW, cssH) {
+  const s = Math.min(cssW / W, cssH / H)
+  if (!Number.isFinite(s) || s <= 0) return { s: 1, ox: 0, oy: 0 }
+  return { s, ox: (cssW - W * s) / 2, oy: (cssH - H * s) / 2 }
+}
+
 // DOM: owns the display canvas and keeps it in step with the container and dpr.
 //   source     the game's W×H canvas — kept in the DOM, the harness reads it
 //   container  the element the display canvas is centred in (the game's root)
