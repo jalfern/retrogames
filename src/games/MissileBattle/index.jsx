@@ -345,7 +345,11 @@ const MissileBattleGame = () => {
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
                     if (opts.wave !== undefined) { gs = makeGame(opts.wave) }
-                    if (opts.quiet) gs.queue.length = 0
+                    // quiet = an empty SKY, not an empty script: an emptied
+                    // queue reads as wave-clear on the first play tick, and
+                    // freshWave ~4.3 s later wipes planted warheads and relits
+                    // cities (#1174). This entry never reaches its launch tick.
+                    if (opts.quiet) gs.queue = [{ t: Number.MAX_SAFE_INTEGER, kind: 'icbm', x0: 128, ti: -1, spd: Number.MAX_SAFE_INTEGER }]
                     if (opts.ammo) opts.ammo.forEach((a, i) => { if (gs.bases[i]) gs.bases[i].ammo = a })
                     if (opts.spawn) {
                         const s = opts.spawn

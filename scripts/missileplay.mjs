@@ -210,16 +210,32 @@ r.check('the banner hands the sky over to the script', !!st, `phase=${(await pro
 
 // ---- a neglected city burns (honest punishment, real world time) ----
 {
-    await ensureSetup({ wave: 1, quiet: true })
-    await waitPlay()
+    // atomic stage (#1174): wave reset + quiet + plant in ONE setup call, so
+    // the warhead cannot be planted into a settling wave and wiped by the
+    // freshWave. The plant waits out the banner (~2.5 s) and lands at city 0.
+    await ensureSetup({ wave: 1, quiet: true, spawn: { kind: 'icbm', x: 54, y: 150, vy: 0.9, ti: 0 } })
     const alive = (await probe()).cities.filter(Boolean).length
     r.check('the between-wave rebuild relit the cities', alive >= 5, `cities=${alive} after reload`)
-    await ensureSetup({ spawn: { kind: 'icbm', x: 54, y: 150, vy: 0.9, ti: 0 } })
     const burn = await waitEv((ev) => ev.type === 'cityHit' && ev.x === 54, 150)
     r.check('an unopposed warhead takes the city it was aimed at', !!burn,
         burn ? '' : `cities=${JSON.stringify((await probe()).cities)} last=${JSON.stringify((await probe()).evLog.slice(-3).map((e) => e.type))}`)
     const s = await probe()
     r.check('the board state knows the city is dark', s.cities[0] === false, JSON.stringify(s.cities))
+}
+
+// ---- the quiet stage stays put (#1174 determinism gate) ----
+// emptying the queue read as an instant wave-clear; freshWave ~4.3 s later
+// rebuilt the cities and wiped planted warheads, so half the nightlies graded
+// a world the driver had not staged. A quiet stage must still be playing the
+// SAME wave, seconds later — with a plain `queue.length = 0` this gate is
+// red on every run, not on one in twenty.
+{
+    await ensureSetup({ wave: 1, quiet: true })
+    await wait(4500)
+    const q = await probe()
+    r.check('a quiet stage stays put: same wave, still playing, cities intact',
+        q.phase === 'play' && q.wave === 1 && q.cities.every(Boolean),
+        `phase=${q.phase} wave=${q.wave} cities=${q.cities.filter(Boolean).length}`)
 }
 
 // ---- the map goes dark, a key brings it back ----
