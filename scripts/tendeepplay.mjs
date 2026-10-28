@@ -181,6 +181,11 @@ if (ambush) {
     const art = await px(sx, sy, Math.round(m0.size * 0.8), Math.round(m0.size * 0.7), 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 120)
     r.check('a live mob has its painted plate where the projection says', art >= 10, `mob at x=${m0.sx} size=${Math.round(m0.size)} painted=${art}`)
     const dealt0 = p.ledger.dealt
+    const taken0 = p.ledger.taken
+    await tap('KeyG', 1)
+    const gp = await probe()
+    const guardEv = gp.evLog.find((e) => e.type === 'guard')
+    r.check('real G holds the shield (booked, and the round still resolves)', !!guardEv && gp.combat && gp.ledger.taken >= taken0, `guard=${!!guardEv} taken ${taken0} -> ${gp.ledger.taken}`)
     await tap('Space', 2)
     p = await probe()
     r.check('real SPACE swings book damage in the ledger', p.ledger.dealt > dealt0, `${dealt0} -> ${p.ledger.dealt}`)
@@ -256,6 +261,47 @@ else {
     r.check('keys hire a replacement at the tavern', !!hired, hired ? `${hired.who} joins` : 'no hire event from real keys')
     const afterHire = await probe()
     r.check('the company stands taller after the hire', afterHire.party.filter((h) => h.alive).length >= wiped.party.filter((h) => h.alive).length + 1, `alive ${wiped.party.filter((h) => h.alive).length} -> ${afterHire.party.filter((h) => h.alive).length}`)
+    // ---- stage 3: the creation bench — the POSTED hero takes a rolled paper
+    {
+        const wasFreshIdx = afterHire.party.findIndex((h) => h.fresh)
+        r.check('the hire left an open slot awaiting its paper', wasFreshIdx >= 0, `fresh index=${wasFreshIdx}`)
+        await ensureSetup({ gold: 300 })           // a funded purse: the bench fee must be payable
+        await page.keyboard.press('ArrowRight')   // service: POST -> CREATE
+        await wait(150)
+        await page.keyboard.press('Space')        // open the bench
+        let bench = null
+        for (let i = 0; i < 24 && !bench; i++) {
+            const q = await probe()
+            if (q.town && q.town.cand) bench = q
+            else await wait(90)
+        }
+        r.check('SPACE opens the bench with six papers', !!bench && bench.town.cand.length === 6, bench ? `papers=${bench.town.cand.length}` : 'bench never opened')
+        if (bench) {
+            // walk the cursor to a passing paper
+            for (let i = 0; i < 8 && !bench.town.cand[bench.town.ci].pass; i++) { await page.keyboard.press('ArrowDown'); await wait(110); bench = await probe() }
+            r.check('the cursor finds an OK paper (FAIL stays FAIL)', bench.town.cand[bench.town.ci].pass, `paper ${bench.town.ci}: ${bench.town.cand[bench.town.ci].cls} ${bench.town.cand[bench.town.ci].pass ? 'OK' : 'FAIL'}`)
+            await page.keyboard.press('KeyR')     // reroll — free
+            await wait(220)
+            let reroll = await probe()
+            r.check('R deals six fresh papers', !!reroll.town.cand && reroll.town.cand.length === 6 && reroll.town.cand.map((c) => c.name).join() !== bench.town.cand.map((c) => c.name).join(), 'papers did not change on reroll')
+            for (let i = 0; i < 8 && !reroll.town.cand[reroll.town.ci].pass; i++) { await page.keyboard.press('ArrowDown'); await wait(110); reroll = await probe() }
+            await page.keyboard.press('ArrowRight')  // shift the way
+            await wait(130)
+            const chosen = await probe()
+            const paper = chosen.town.cand[chosen.town.ci]
+            const purseB = chosen.gold
+            await page.keyboard.press('Space')    // accept
+            const cr = await waitEv((e) => e.type === 'create', 24)
+            r.check('SPACE accepts the paper and the hero stands', !!cr, cr ? `${cr.who} the ${cr.cls} (${cr.race}, ${cr.ali})` : 'no create event from real keys')
+            if (cr) {
+                r.check('the created hero matches the composed paper', cr.hp === paper.composed.hp && cr.atk === paper.composed.atk && cr.def === paper.composed.def && cr.spd === paper.composed.spd && cr.ali === chosen.town.ali, `paper hp${paper.composed.hp} a${paper.composed.atk} d${paper.composed.def} s${paper.composed.spd}/${chosen.town.ali} vs hero hp${cr.hp} a${cr.atk} d${cr.def} s${cr.spd}/${cr.ali}`)
+                const afterCr = await probe()
+                r.check('the bench charged its flat fee and booked it', afterCr.gold === purseB - 60 && afterCr.ledger.goldSpent >= 60, `purse ${purseB} -> ${afterCr.gold}`)
+                const hero = afterCr.party[wasFreshIdx]
+                r.check('the open slot is filled by the created hero', !!hero && hero.alive && !hero.fresh && hero.lvl === 1, hero ? `${hero.name} fresh=${hero.fresh} L${hero.lvl}` : 'slot gone')
+            }
+        }
+    }
     await page.keyboard.press('KeyL')
     await wait(150)
     await page.keyboard.press('KeyF')

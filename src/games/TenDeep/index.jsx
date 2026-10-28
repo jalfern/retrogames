@@ -16,7 +16,8 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, BUILDINGS, SERVICES, TOWN } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast } from './sim.js'
+import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
 import AttractMessage from '../../components/AttractMessage'
@@ -178,6 +179,43 @@ const paintRim = (ctx, gs, bob, uiSel) => {
 const ROOM_TINT = { T: ['#241608', '#3a2410'], V: ['#0e1a30', '#1c3050'], G: ['#141f14', '#223322'], A: ['#1c0e30', '#301a4c'] }
 const CLERK = { T: 'OLD BRANNOCK POLISHES GLASS', V: 'SISTER YANNE COUNTS COINS', G: 'SERGEANT OWL EYES THE SIX', A: 'MAD SIXVIAL WEIGHS POWDER' }
 
+// six candidate papers at the tavern bench: paper, race/class tag, the stat
+// line as the chosen alignment composes it, and the honest gate verdict
+const paintBench = (ctx, gs) => {
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#ffd54f'; ctx.font = 'bold 7px monospace'
+    ctx.fillText('THE CREATION BENCH', 8, 26)
+    ctx.fillStyle = '#9fb4ff'; ctx.font = '6px monospace'; ctx.textAlign = 'right'
+    const way = ALIGNMENTS[ALIGN_ORDER[gs.town.ali]]
+    ctx.fillText(`WAY: ${way.name} — ${way.desc}`, 248, 26)
+    const slot = gs.party[gs.town.hero]
+    ctx.fillStyle = slot.alive ? '#9fb4ff' : '#e05555'
+    ctx.textAlign = 'left'; ctx.font = '6px monospace'
+    ctx.fillText(slot.alive ? 'THE OPEN SLOT: A FRESH POST, AWAITING ITS PAPER' : 'THE OPEN SLOT: A GRAVE, AWAITING A NAME', 8, 34)
+    gs.town.cand.forEach((cbody, i) => {
+        const y = 44 + i * 17
+        const sel = i === gs.town.ci
+        const c = compose(cbody, ALIGN_ORDER[gs.town.ali])
+        ctx.fillStyle = sel ? '#ffffff' : cbody.pass ? '#9fb4ff' : '#6b5f7e'
+        ctx.font = 'bold 6px monospace'
+        ctx.fillText((sel ? '▸' : ' ') + c.name.slice(0, 7), 8, y)
+        ctx.fillStyle = sel ? '#ffd54f' : '#5f6aa0'
+        ctx.fillText(`${RACES[c.race].abbr}-${CLASSES[c.cls].abbr}`, 50, y)
+        ctx.fillStyle = sel ? '#cdd6f0' : '#4a5488'
+        ctx.fillText(`hp${c.hp} mp${c.mp} a${c.atk} d${c.def} s${c.spd} af${c.aff}`, 74, y)
+        ctx.fillStyle = cbody.pass ? '#57e389' : '#e05555'
+        ctx.textAlign = 'right'
+        ctx.fillText(cbody.pass ? 'OK' : 'FAIL', 248, y)
+        ctx.textAlign = 'left'
+        if (sel) {
+            ctx.fillStyle = '#6b7699'; ctx.font = '5px monospace'
+            const ban = RACES[cbody.race].bans ? ' · race bans ' + RACES[cbody.race].bans.map(b => CLASSES[b].abbr).join('/') : ''
+            ctx.fillText(CLASSES[cbody.cls].reqText + ban, 8, y + 6)
+            ctx.font = 'bold 6px monospace'
+        }
+    })
+}
+
 const paintInterior = (ctx, gs, bob) => {
     const b = gs.town.b
     const tint = ROOM_TINT[b]
@@ -204,6 +242,10 @@ const paintInterior = (ctx, gs, bob) => {
         const sel = i === gs.town.hero
         ctx.fillStyle = sel ? '#ffffff' : h.alive ? '#9fb4ff' : '#e05555'
         ctx.fillText((sel ? '▸ ' : '  ') + h.name.slice(0, 7), 8, y)
+        ctx.fillStyle = h.alive ? '#ffd54f' : '#6b4050'
+        ctx.font = '5px monospace'
+        ctx.fillText(`${RACES[h.race].abbr}-${CLASSES[h.cls].abbr}·${ALIGNMENTS[h.ali].abbr}${Object.keys(CLASSES[h.cls].spells).length ? '*' : ''}`, 8, y + 6)
+        ctx.font = 'bold 7px monospace'
         ctx.fillStyle = '#333'; ctx.fillRect(52, y - 5, 34, 3)
         ctx.fillStyle = h.alive ? '#e5484d' : '#4a2020'
         ctx.fillRect(52, y - 5, 34 * Math.max(0, h.hp / h.maxHp), 3)
@@ -211,7 +253,19 @@ const paintInterior = (ctx, gs, bob) => {
         ctx.fillStyle = '#4f9dff'; ctx.fillRect(52, y - 1, 34 * (h.mp / h.maxMp), 3)
         ctx.fillStyle = h.alive ? '#ffd54f' : '#e05555'
         ctx.fillText(h.alive ? `L${h.lvl} ${h.gold}g` : 'FALLEN', 90, y)
+        ctx.fillStyle = h.fresh ? '#57e389' : '#4a5488'; ctx.font = '5px monospace'
+        ctx.fillText(h.alive ? (h.fresh ? 'POSTED — bench open' : '') : '', 90, y + 6)
+        ctx.font = 'bold 7px monospace'
     })
+    if (gs.town.b === 'T' && gs.town.cand) {
+        paintBench(ctx, gs)
+        ctx.fillStyle = '#0c1024'; ctx.fillRect(0, H - 24, W, 24)
+        ctx.fillStyle = '#ffd54f'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+        ctx.fillText(`PURSE ${purse(gs)}g · ACCEPT ${createPriceFor()}g`, 128, H - 14)
+        ctx.fillStyle = '#9fb4ff'
+        ctx.fillText('↑↓ PAPER · ←→ WAY · R REROLL · SPACE ACCEPT · L LEAVE', 128, H - 5)
+        return
+    }
     ctx.textAlign = 'right'
     ctx.fillStyle = '#cdd6f0'; ctx.font = 'bold 7px monospace'
     ctx.fillText('SERVICES', 248, 26)
@@ -224,7 +278,7 @@ const paintInterior = (ctx, gs, bob) => {
         ctx.textAlign = 'right'
         ctx.fillText((sel ? '◂ ' : '') + svc.label, 214, y)
         ctx.fillStyle = sel ? (ok ? '#57e389' : '#e05555') : '#ffd54f'
-        ctx.fillText(`${price}g`, 248, y)
+        ctx.fillText(svc.id === 'create' && ok ? 'OPEN' : `${price}g`, 248, y)
         if (sel) {
             ctx.fillStyle = '#9fb4ff'; ctx.font = '6px monospace'; ctx.textAlign = 'right'
             ctx.fillText(svc.desc, 248, y + 8)
@@ -281,7 +335,13 @@ const TenDeepGame = () => {
                 if (e.type === 'ambush') { audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE HOLLOW KING RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
                 else if (e.type === 'hit') { audioController.playNoise(0.12, 0.07); shake = 4; flashHit = 0.25 }
                 else if (e.type === 'slay') { audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`) }
-                else if (e.type === 'fire') { audioController.playSweep(700, 180, 0.18, 'sawtooth', 0.05) }
+                else if (e.type === 'fire' || e.type === 'spell') { audioController.playSweep(e.spell === 'firestorm' ? 900 : 700, 180, e.spell === 'firestorm' ? 0.32 : 0.18, 'sawtooth', 0.05) }
+                else if (e.type === 'guard') { audioController.playTone(140, 0.14, 'square', 0.06); say('SHIELDS HELD — WHAT LANDS, LANDS HALF') }
+                else if (e.type === 'ward') { audioController.playSweep(500, 1400, 0.4, 'sine', 0.05); say('WARD — THE DARK BLINKS') }
+                else if (e.type === 'prayer') { audioController.playSweep(260, 780, 0.5, 'sine', 0.06); say(e.got > 0 ? 'A PRAYER, SHARED AND ANSWERED' : 'HEAVEN IS SILENT — NO ONE WAS HURT') }
+                else if (e.type === 'spellDry') { audioController.playTone(120, 0.08, 'triangle', 0.05); say('NO ONE BLEEDS — THE LETTER GOES TO WASTE') }
+                else if (e.type === 'subdue') { audioController.playSweep(360, 120, 0.3, 'triangle', 0.06); say(`${e.name} KNEELS`) }
+                else if (e.type === 'noLetter') { audioController.playTone(85, 0.1, 'square', 0.05); say(`${(SPELLS[e.spell] || { name: e.spell }).name} — NOT IN ANY OPEN SPELLBOOK`) }
                 else if (e.type === 'heal' || e.type === 'potion') audioController.playSweep(320, 880, 0.24, 'sine', 0.06)
                 else if (e.type === 'levelup') { audioController.playSweep(400, 1200, 0.5, 'square', 0.07); say(`${e.who} — LEVEL ${e.lvl}!`) }
                 else if (e.type === 'fall') { audioController.playSweep(300, 60, 0.7, 'sawtooth', 0.09); say(`${e.who} HAS FALLEN`) }
@@ -296,7 +356,11 @@ const TenDeepGame = () => {
                 else if (e.type === 'wipe') { audioController.playSweep(220, 55, 0.9, 'sawtooth', 0.1); say('THE BODIES RETURN TO THE RIM — HALF THE PURSE BUYS PASSAGE') }
                 else if (e.type === 'townEnter') { audioController.playTone(180, 0.08, 'triangle', 0.05); say(`${e.name} — DOORS OPEN`) }
                 else if (e.type === 'townBuy') audioController.playTone(1245, 0.05, 'square', 0.04)
-                else if (e.type === 'hire') { audioController.playSweep(300, 900, 0.4, 'square', 0.06); say(`WELCOME TO THE COMPANY, ${e.who}`) }
+                else if (e.type === 'hire') { audioController.playSweep(300, 900, 0.4, 'square', 0.06); say(`WELCOME, ${e.who} THE ${e.cls} — THE POST IS FILLED`) }
+                else if (e.type === 'townOpenBench') { audioController.playTone(220, 0.1, 'triangle', 0.05); say('THE BENCH OPENS — SIX PAPERS, ONE COMPANY') }
+                else if (e.type === 'townRoll') { audioController.playNoise(0.15, 0.05); say('OLD BRANNOCK SHUFFLES FRESH PAPERS') }
+                else if (e.type === 'shift') { audioController.playTone(330, 0.06, 'square', 0.04); say(`THE WAY OF ${e.ali}`) }
+                else if (e.type === 'create') { audioController.playSweep(320, 1200, 0.55, 'square', 0.07); say(`${e.who} THE ${e.cls} (${e.race}, ${e.ali}) JOINS THE COMPANY`) }
                 else if (e.type === 'mourn') { audioController.playSweep(200, 800, 0.6, 'sine', 0.08); say(`${e.who} RETURNS FROM THE DARK AT 1 HP`) }
                 else if (e.type === 'restore') { audioController.playSweep(300, 1100, 0.5, 'sine', 0.08); say(`${e.who} — LIFE AND LIMB RESTORED`) }
                 else if (e.type === 'buyPotion') { audioController.playTone(880, 0.09, 'square', 0.05); say('A FRESH VIAL FOR THE SATCHEL') }
@@ -462,6 +526,10 @@ const TenDeepGame = () => {
                 ctx.fillStyle = '#224'; ctx.fillRect(px + 2, 216, 34, 2)
                 ctx.fillStyle = '#4f9dff'; ctx.fillRect(px + 2, 216, 34 * (h.mp / h.maxMp), 2)
                 ctx.fillStyle = '#ffd54f'; ctx.fillText('L' + h.lvl, px + 2, 221)
+                ctx.fillStyle = h.alive && Object.keys(CLASSES[h.cls].spells).length ? '#7fc4ff' : '#6b7699'
+                ctx.textAlign = 'right'
+                ctx.fillText(CLASSES[h.cls].abbr + (Object.keys(CLASSES[h.cls].spells).length ? '*' : ''), px + 36, 221)
+                ctx.textAlign = 'left'
             })
             drawAutomap()
         }
@@ -505,8 +573,8 @@ const TenDeepGame = () => {
             if (h.gold) h.gold.textContent = String(purse(gs))
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (h.cmd) h.cmd.textContent = gs.mode === 'town'
-                ? (gs.town.b ? '↑↓ hero · ←→ service · SPACE buy · L leave' : '←→ doors · SPACE enter · F descends')
-                : gs.mode === 'combat' ? 'SPACE attack · F fire · H heal · P potion · L flee' : 'ARROWS walk · SPACE use · P potion'
+                ? (gs.town.b ? (gs.town.b === 'T' && gs.town.cand ? '↑↓ paper · ←→ way · R reroll · SPACE accept · L leave' : '↑↓ hero · ←→ service · SPACE buys · L leave') : '←→ doors · SPACE enter · F descends')
+                : gs.mode === 'combat' ? `SPACE attack · G guard · F ${pickSpell('dmg') ? SPELLS[pickSpell('dmg')].name : 'no fire'} · H ${pickSpell('heal') ? SPELLS[pickSpell('heal')].name : 'no heal'} · P drink · L flee` : 'ARROWS walk · SPACE use · P potion'
             if (h.dir) h.dir.textContent = ['EAST', 'SOUTH', 'WEST', 'NORTH'][gs.dir]
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -533,6 +601,16 @@ const TenDeepGame = () => {
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
         }
 
+        // which letter the key will work: the mightiest the company has
+        // LEARNED, preferring one it can pay for this instant
+        const pickSpell = (family) => {
+            const ids = family === 'heal' ? ['prayer', 'heal'] : ['firestorm', 'firebolt']
+            const alive = gs.party.filter(h => h.alive)
+            const know = ids.filter(id => alive.some(h => CLASSES[h.cls].spells[id] !== undefined && h.lvl >= CLASSES[h.cls].spells[id]))
+            const ready = know.filter(id => alive.some(h => canCast(h, id)))
+            return ready[0] || know[0] || null
+        }
+
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
@@ -543,11 +621,25 @@ const TenDeepGame = () => {
             if (pausedRef.current) return
             if (gs.mode === 'town') {
                 if (gs.town.b) {
+                    if (gs.town.b === 'T' && gs.town.cand) {
+                        if (e.code === 'ArrowUp') act('sel-')
+                        else if (e.code === 'ArrowDown') act('sel+')
+                        else if (e.code === 'ArrowLeft') act('shift-')
+                        else if (e.code === 'ArrowRight') act('shift+')
+                        else if (e.code === 'KeyR') act('roll')
+                        else if (e.code === 'Space') act('accept')
+                        else if (e.code === 'KeyL') act('leave')
+                        else if (e.code === 'KeyP') act('potion')
+                        return
+                    }
                     if (e.code === 'ArrowUp') act('sel-')
                     else if (e.code === 'ArrowDown') act('sel+')
                     else if (e.code === 'ArrowLeft') act('svc-')
                     else if (e.code === 'ArrowRight') act('svc+')
-                    else if (e.code === 'Space' || e.code === 'KeyF') act('buy')
+                    else if (e.code === 'Space' || e.code === 'KeyF') {
+                        const svc = SERVICES[gs.town.b][gs.town.svc]
+                        act(svc && svc.id === 'create' ? 'open' : 'buy')
+                    }
                     else if (e.code === 'KeyL') act('leave')
                     else if (e.code === 'KeyP') act('potion')
                 } else {
@@ -566,8 +658,9 @@ const TenDeepGame = () => {
             else if (e.code === 'ArrowLeft') act(fighting ? 'target-' : 'left')
             else if (e.code === 'ArrowRight') act(fighting ? 'target+' : 'right')
             else if (e.code === 'Space') act(fighting ? 'attack' : 'use')
-            else if (e.code === 'KeyF') act(fighting ? 'fire' : 'use')
-            else if (e.code === 'KeyH') act(fighting ? 'heal' : 'wait')
+            else if (e.code === 'KeyF') act(fighting ? `cast ${pickSpell('dmg') || 'firebolt'}` : 'use')
+            else if (e.code === 'KeyH') act(fighting ? `cast ${pickSpell('heal') || 'heal'}` : 'wait')
+            else if (e.code === 'KeyG') act(fighting ? 'guard' : 'wait')
             else if (e.code === 'KeyP') act('potion')
             else if (e.code === 'KeyL') act(fighting ? 'flee' : 'wait')
         }
@@ -596,9 +689,13 @@ const TenDeepGame = () => {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
-                    gold: purse(gs), wipe: gs.wipe,
+                    gold: purse(gs), wipe: gs.wipe, ward: gs.ward,
                     town: gs.mode === 'town' ? {
                         b: gs.town.b, hero: gs.town.hero, svc: gs.town.svc, sel: uiSel,
+                        ci: gs.town.ci, ali: ALIGN_ORDER[gs.town.ali],
+                        cand: gs.town.cand ? gs.town.cand.map(c => ({ ...c, composed: compose(c, ALIGN_ORDER[gs.town.ali]) })) : null,
+                        createPrice: createPriceFor(),
+                        vacant: gs.party.map((_, i) => isVacant(gs, i)),
                         services: gs.town.b ? SERVICES[gs.town.b].map((s, i) => ({
                             id: s.id, price: servicePrice(gs, s), ok: canBuy(gs) && gs.town.svc === i,
                         })) : null,
@@ -654,7 +751,7 @@ const TenDeepGame = () => {
                     if (opts.kill !== undefined) { const h = gs.party[opts.kill]; if (h) { h.alive = false; h.hp = 0 } }
                     if (opts.townB !== undefined) {
                         gs.mode = 'town'; gs.combat = null
-                        gs.town = { b: opts.townB || null, svc: 0, hero: 0 }
+                        gs.town = { b: opts.townB || null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
                         return true
                     }
                     if (gs.mode === 'town') step(gs, 'down')
@@ -695,7 +792,7 @@ const TenDeepGame = () => {
                 getState: () => [
                     gs.mode === 'map' || gs.mode === 'combat' ? `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}` : `THE RIM — ${gs.town.b ? BUILDINGS.find((b) => b.key === gs.town.b).name : (gs.end ? 'cold ground' : 'the street')}  purse ${purse(gs)}`,
                     `potions ${gs.potions}  explored ${gs.explored.size}  dealt ${gs.ledger.dealt} taken ${gs.ledger.taken}`,
-                    gs.party.map((h) => `${h.name} ${h.hp}/${h.maxHp}mp${h.mp}L${h.lvl}${h.alive ? '' : ' x'}`).join('  '),
+                    gs.party.map((h) => `${h.name}[${CLASSES[h.cls].abbr}/${RACES[h.race].abbr}/${ALIGNMENTS[h.ali].abbr}] ${h.hp}/${h.maxHp}mp${h.mp}L${h.lvl}${h.alive ? '' : ' x'}[${Object.keys(CLASSES[h.cls].spells).filter(id => h.lvl >= CLASSES[h.cls].spells[id]).join('+') || 'no-book'}]`).join('  '),
                     gs.combat ? `ROUND ${gs.combat.round}: ${gs.combat.mobs.map((m) => `${m.name} ${m.hp}`).join(' | ')}` : `end ${gs.end}`,
                 ],
                 actions: [

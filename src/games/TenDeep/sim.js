@@ -13,8 +13,10 @@
 
 import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
 import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN } from './town.js'
+import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
 
 export { SIZE, BUILDINGS, SERVICES, TOWN }
+export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
 export const W = 256
 export const H = 224
 export const VIEWD = 6
@@ -23,15 +25,15 @@ export const CFG = {
     dmgFloor: 1,        // every honest swing lands at least this
     potionHeal: 26,
     springMp: 10,
-    fireCost: 3,
-    healCost: 4,
     fleeCost: 6,        // monsters' parting shot when the party runs (normal fights)
+    guardDiv: 2,        // a held shield halves what it eats (floor 1)
+    wardAmt: 3,         // WARD: eyes peeled — the wardens' first round strikes blind
     xpBase: 100,        // next level at xpBase * lvl^2
     lvlHp: 8, lvlMp: 3, lvlAtk: 2, lvlDef: 1,
-    healAmt: 16,        // + lvl*3
     // --- THE RIM (stage 2, #1127): gold prices and the wipe tax -----------
     goldPerXp: 4,       // every mob pays goldPerXp gold per XP it grants
     hireCost: 40,       // tavern: replace a fallen hero with a fresh roll
+    createCost: 60,     // tavern bench: roll papers, choose alignment, accept
     mournCost: 200,     // temple: 200 × lvl — the dead return at 1 hp
     restoreCost: 400,   // temple: 400 × lvl — the dead return whole
     mendCost: 30,       // temple: fill one hero's HP
@@ -43,13 +45,16 @@ export const CFG = {
 
 export const purse = (st) => st.party.reduce((n, h) => n + h.gold, 0)
 
+// the founding six — every one now a person on paper: race, class, alignment,
+// affinity. The spellbook is whatever the class ladder has unlocked at their
+// level; the preset company starts as the stage-1/2 roster grew it.
 export const HEROES0 = [
-    { name: 'THANREL', hp: 36, mp: 2, atk: 8, def: 4, spd: 3, gold: 20 },
-    { name: 'MIRABEL', hp: 28, mp: 14, atk: 6, def: 2, spd: 5, gold: 20 },
-    { name: 'OSRIC',   hp: 30, mp: 10, atk: 7, def: 3, spd: 6, gold: 20 },
-    { name: 'GWENDA',  hp: 24, mp: 18, atk: 5, def: 2, spd: 8, gold: 20 },
-    { name: 'BORAM',   hp: 34, mp: 6, atk: 9, def: 3, spd: 4, gold: 20 },
-    { name: 'ELARA',   hp: 26, mp: 12, atk: 6, def: 2, spd: 7, gold: 20 },
+    { name: 'THANREL', race: 'VASK',    cls: 'FECHT',     ali: 'OATH',   aff: 5, hp: 40, mp: 4,  atk: 9, def: 5, spd: 3, gold: 20 },
+    { name: 'MIRABEL', race: 'ELPHAME', cls: 'MAGUS',     ali: 'WANDER', aff: 12, hp: 26, mp: 16, atk: 6, def: 2, spd: 6, gold: 20 },
+    { name: 'OSRIC',   race: 'DURROW',  cls: 'FECHT',     ali: 'OATH',   aff: 3, hp: 36, mp: 3,  atk: 8, def: 6, spd: 5, gold: 20 },
+    { name: 'GWENDA',  race: 'KNUM',    cls: 'CLERIC',     ali: 'OATH',   aff: 9, hp: 22, mp: 22, atk: 4, def: 3, spd: 8, gold: 20 },
+    { name: 'BORAM',   race: 'VASK',    cls: 'FOOTPAD',   ali: 'RUIN',   aff: 4, hp: 33, mp: 6,  atk: 11, def: 2, spd: 4, gold: 20 },
+    { name: 'ELARA',   race: 'HOB',     cls: 'CLERIC',     ali: 'WANDER', aff: 8, hp: 23, mp: 12, atk: 6, def: 1, spd: 9, gold: 20 },
 ]
 
 const HX = [1, 0, -1, 0], HY = [0, 1, 0, -1]    // dir: 0=E 1=S 2=W 3=N
@@ -65,15 +70,17 @@ export function makeRun(opts = {}) {
         tick: 0, floor: 0, x: 1, y: 1, dir: 0,
         mode: 'town', end: null, potions: 1,
         strict: !!opts.strict,
-        party: HEROES0.map(h => ({ ...h, maxHp: h.hp, maxMp: h.mp, lvl: 1, xp: 0, alive: true })),
+        party: HEROES0.map(h => ({ ...h, lvl: 1, xp: 0, alive: true, fresh: false, maxHp: h.hp, maxMp: h.mp })),
         explored: new Set(),
         skipPots: new Set(opts.skipPots || []),
         skipSprings: new Set(opts.skipSprings || []),
         // per-floor mutable state, filled by enterFloor
         pots: new Set(), springs: new Set(), ambushes: new Set(),
-        combat: null, target: 0,
-        // THE RIM: street or building interior; wipe = bodies just carried home
-        town: { b: null, svc: 0, hero: 0 }, wipe: false,
+        combat: null, target: 0, ward: 0,
+        // THE RIM: street or building interior; wipe = bodies just carried home;
+        // cand = the creation bench is open (six papers, chosen alignment)
+        town: { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 },
+        wipe: false,
         townSeed: opts.townSeed || 0x5EED,
         ledger: { dealt: 0, taken: 0, casts: 0, potionsUsed: 0, springsUsed: 0, potTiles: [], springTiles: [], goldIn: HEROES0.reduce((n, h) => n + h.gold, 0), goldSpent: 0, tx: [] },
         events: [],
@@ -90,7 +97,8 @@ function markViewTown(st) {
 export function enterDungeon(st) {
     st.mode = 'map'
     st.wipe = false
-    st.town = { b: null, svc: 0, hero: 0 }
+    st.town = { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
+    st.ward = 0
     enterFloor(st, 0)
 }
 
@@ -128,8 +136,8 @@ function markView(st) {
     }
 }
 
-export const fireDmg = (h) => 10 + h.lvl * 4
-export const healPow = (h) => CFG.healAmt + h.lvl * 3
+export const fireDmg = (h) => SPELLS.firebolt.power(h.lvl)
+export const healPow = (h) => SPELLS.heal.power(h.lvl)
 export const xpNext = (lvl) => CFG.xpBase * lvl * lvl
 
 function gainXp(st, n) {
@@ -167,6 +175,11 @@ function firstAliveEnemy(st) {
     return null
 }
 
+// One command = one full round. cmd: 'attack' | 'guard' | 'potion' |
+// `cast <spellId>`. Only a hero whose CLASS LADDER has unlocked the letter
+// and whose MP covers the cost may work it — spells are earned, not free with
+// a full spirit. Spells ignore armour; a held shield (guard) halves what it
+// eats; WARD blinds the monsters' eyes for three rounds.
 function resolveRound(st, cmd) {
     const c = st.combat
     c.round++
@@ -175,16 +188,13 @@ function resolveRound(st, cmd) {
     const mobs = c.mobs.filter(m => m.hp > 0)
     const order = [...heros.map(h => ({ h, m: null, s: h.spd, hero: true })), ...mobs.map(m => ({ m, h: null, s: m.spd, hero: false }))]
         .sort((a, b) => b.s - a.s || (a.hero ? -1 : b.hero ? 1 : 0))
-    // the healer/actor assignment was chosen this round by the command; a
-    // command applies to the party leader-capable hero (the first alive hero
-    // with MP for casts); everyone else swings steel at the target.
-    const caster = cmd === 'fire' || cmd === 'heal'
-        ? (cmd === 'fire'
-            ? [...heros].sort((a, b) => b.mp - a.mp || b.name.localeCompare(a.name))[0]
-            : [...heros].sort((a, b) => b.mp - a.mp || b.name.localeCompare(a.name))[0])
+    const spellId = cmd.startsWith('cast ') ? cmd.slice(5) : null
+    const guardOn = cmd === 'guard'
+    // the working caster: richest MP among the living who actually know the letter
+    const caster = spellId
+        ? heros.filter(h => canCast(h, spellId)).sort((a, b) => b.mp - a.mp || b.name.localeCompare(a.name))[0]
         : null
-    const needCost = cmd === 'fire' ? CFG.fireCost : CFG.healCost
-    const castOk = caster && caster.mp >= needCost
+    const spell = spellId && caster ? SPELLS[spellId] : null
     const potionHero = cmd === 'potion'
         ? [...heros].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp) || a.name.localeCompare(b.name))[0]
         : null
@@ -209,30 +219,47 @@ function resolveRound(st, cmd) {
                 st.events.push({ type: 'potion', who: o.h.name, got })
                 continue
             }
-            if (o.h === caster && castOk) {
-                if (cmd === 'fire') {
+            if (o.h === caster && spell) {
+                o.h.mp -= spell.cost
+                st.ledger.casts++
+                if (spell.kind === 'damage') {
                     const t = tgt()
                     if (t) {
-                        o.h.mp -= CFG.fireCost
-                        st.ledger.casts++
-                        const d = Math.min(t.hp, fireDmg(o.h))
+                        const d = Math.min(t.hp, spell.power(o.h.lvl))
                         t.hp -= d
                         dealt.push({ to: t.id, d })
-                        st.events.push({ type: 'fire', who: o.h.name, mob: t.id, d })
+                        st.events.push({ type: 'spell', who: o.h.name, spell: spellId, mob: t.id, d })
                         if (t.hp <= 0) mobDeath(st, t)
                     }
-                } else {
+                } else if (spell.kind === 'healOne') {
                     const hurt = [...heros].filter(h => h.alive && h.hp < h.maxHp).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp) || a.name.localeCompare(b.name))[0]
                     if (hurt) {
-                        o.h.mp -= CFG.healCost
-                        st.ledger.casts++
-                        const got = Math.min(healPow(o.h), hurt.maxHp - hurt.hp)
+                        const got = Math.min(spell.power(o.h.lvl), hurt.maxHp - hurt.hp)
                         hurt.hp += got
                         dealt.push({ to: null, heal: got })
                         st.events.push({ type: 'heal', who: o.h.name, on: hurt.name, got })
                     } else {
-                        const t = tgt()
-                        if (t) { const d = Math.min(t.hp, Math.max(CFG.dmgFloor, o.h.atk - t.def)); t.hp -= d; dealt.push({ to: t.id, d }); if (t.hp <= 0) mobDeath(st, t) }
+                        st.events.push({ type: 'spellDry', who: o.h.name, spell: spellId })
+                    }
+                } else if (spell.kind === 'healAll') {
+                    let sum = 0
+                    for (const h of heros) {
+                        if (!h.alive || h.hp >= h.maxHp) continue
+                        const got = Math.min(spell.power(o.h.lvl), h.maxHp - h.hp)
+                        h.hp += got
+                        sum += got
+                        dealt.push({ to: null, heal: got })
+                    }
+                    st.events.push({ type: 'prayer', who: o.h.name, got: sum })
+                } else if (spell.kind === 'ward') {
+                    st.ward = CFG.wardAmt
+                    st.events.push({ type: 'ward', who: o.h.name })
+                } else if (spell.kind === 'subdue') {
+                    const t = tgt()
+                    if (t) {
+                        if (t.hp > 1) dealt.push({ to: t.id, d: t.hp - 1, subdue: true })
+                        st.events.push({ type: 'subdue', mob: t.id, name: t.name })
+                        mobDeath(st, t)   // kneeling is dying by the ledger: XP paid, zero overkill
                     }
                 }
                 continue
@@ -251,7 +278,9 @@ function resolveRound(st, cmd) {
             const prey = [...alive].sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp) || a.name.localeCompare(b.name))[0]
             // overkill does not carry over: the ledger counts damage ACTUALLY
             // lost, so a kill cannot book more than the prey had to give
-            const d = Math.min(prey.hp, Math.max(CFG.dmgFloor, o.m.atk - prey.def))
+            let d = Math.min(prey.hp, Math.max(CFG.dmgFloor, o.m.atk - prey.def))
+            if (st.ward > 0) d = Math.max(CFG.dmgFloor, Math.floor(d / 2))
+            if (guardOn) d = Math.max(CFG.dmgFloor, Math.floor(d / CFG.guardDiv))
             prey.hp -= d
             taken.push({ from: o.m.id, to: prey.name, d })
             st.events.push({ type: 'hit', mob: o.m.id, who: prey.name, d })
@@ -266,6 +295,8 @@ function resolveRound(st, cmd) {
     const tSum = taken.reduce((n, e) => n + e.d, 0)
     st.ledger.dealt += dSum
     st.ledger.taken += tSum
+    if (guardOn) st.events.push({ type: 'guard' })
+    if (st.ward > 0) st.ward--
     st.events.push({ type: 'round', n: c.round, dealt: dealt.filter(e => e.d), taken, dSum, tSum })
 
     if (!c.mobs.some(m => m.hp > 0)) winCombat(st)
@@ -278,6 +309,7 @@ function resolveRound(st, cmd) {
 // the campaign must still win or die on its own supplies, exactly as in
 // stage 1. Only the player gets the temple's bargain.
 function carryHome(st) {
+    st.ward = 0
     let lost = 0
     for (const h of st.party) {
         const take = Math.floor(h.gold / CFG.wipeTax)
@@ -289,7 +321,7 @@ function carryHome(st) {
     if (st.strict) { st.mode = 'over'; st.end = 'dead'; return }
     st.mode = 'town'
     st.wipe = true
-    st.town = { b: null, svc: 0, hero: 0 }
+    st.town = { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
     markViewTown(st)
     st.events.push({ type: 'wipe', lost })
     // dead and broke at the gate: nobody left to call and nothing to pay with
@@ -313,6 +345,7 @@ function winCombat(st) {
     const boss = st.combat.boss
     st.events.push({ type: 'victory', boss })
     st.combat = null
+    st.ward = 0
     if (boss) { st.mode = 'over'; st.end = 'win'; return }
     st.mode = 'map'
 }
@@ -347,8 +380,19 @@ export function step(st, cmd) {
             }
             st.events.push({ type: 'fled' })
             st.combat = null
+            st.ward = 0
             st.mode = 'map'
             if (!st.party.some(h => h.alive)) carryHome(st)
+            return
+        }
+        if (cmd === 'guard') { resolveRound(st, cmd); return }
+        if (cmd.startsWith('cast ')) {
+            const id = cmd.slice(5)
+            const sp = SPELLS[id]
+            if (!sp) { st.events.push({ type: 'nothing' }); return }
+            if (sp.noBoss && st.combat.boss) { st.events.push({ type: 'noback', spell: id }); return }
+            if (!st.party.some(h => canCast(h, id))) { st.events.push({ type: 'noLetter', spell: id }); return }
+            resolveRound(st, cmd)
             return
         }
         resolveRound(st, cmd)
@@ -413,6 +457,7 @@ export function step(st, cmd) {
 // Town commands: enter-<B> | leave | down | sel+/sel- (hero) | svc+/svc- |
 // buy | wait. Money is conserved loudly: every purchase books into
 // ledger.goldSpent and ledger.tx, so the harness can recompute the purse.
+// With the creation bench open (tavern CREATE): roll | shift+/shift- | accept.
 export const servicePrice = (st, svc) =>
     svc.id === 'mourn' || svc.id === 'restore'
         ? CFG[svc.priceKey] * st.party[st.town.hero].lvl
@@ -420,15 +465,28 @@ export const servicePrice = (st, svc) =>
             ? CFG[svc.priceKey] * (st.party[st.town.hero].lvl + 1)
             : CFG[svc.priceKey]
 
+// the bench charges its flat fee only when a paper is ACCEPTED; the roll and
+// the alignment shift are free look-around (what you see is what you pay)
+export const createPriceFor = () => CFG.createCost
+
+export const isVacant = (st, i) => {
+    const h = st.party[i]
+    return !h.alive || !!h.fresh
+}
+
 export function currentService(st) {
     return st.town.b ? SERVICES[st.town.b][st.town.svc] : null
 }
 
 export function canBuy(st) {
-    const svc = currentService(st)
-    if (!svc) return false
-    const h = st.party[st.town.hero]
-    if (!serviceHeroOk(svc.id, h)) return false
+    const t = st.town
+    if (!t.b) return false
+    const svc = SERVICES[t.b][t.svc]
+    const h = st.party[t.hero]
+    if (t.b === 'T' && t.cand) {
+        return serviceHeroOk('create', h, isVacant(st, t.hero)) && purse(st) >= createPriceFor(st)
+    }
+    if (!serviceHeroOk(svc.id, h, isVacant(st, t.hero))) return false
     if (svc.id === 'train') return h.xp >= xpNext(h.lvl)
     return purse(st) >= servicePrice(st, svc)
 }
@@ -468,19 +526,62 @@ function townStep(st, cmd) {
     }
     if (cmd === 'leave') {
         if (!t.b) return
-        t.b = null; t.svc = 0
+        t.b = null; t.svc = 0; t.cand = null; t.ci = 0; t.ali = 0
         st.events.push({ type: 'townStreet' })
         return
     }
     const ent = BUILDINGS.find(b => b.key === cmd.replace('enter-', ''))
     if (cmd.startsWith('enter-')) {
         if (!ent) { st.events.push({ type: 'townNo' }); return }
-        t.b = ent.key; t.svc = 0
+        t.b = ent.key; t.svc = 0; t.cand = null; t.ci = 0; t.ali = 0
         st.events.push({ type: 'townEnter', b: ent.key, name: ent.name })
         return
     }
     if (!t.b) { st.events.push({ type: 'townNo' }); return }
     const list = SERVICES[t.b]
+
+    // ---- the creation bench: six papers, free rerolls, alignment shift,
+    // accept pays the flat fee. Race/class gates are printed on the paper —
+    // FAIL stays FAIL no matter how much you want that MAGUS.
+    if (t.b === 'T' && t.cand) {
+        if (cmd === 'roll') {
+            t.cand = rollCandidates(mulberry32(st.townSeed), st.party)
+            st.townSeed = (st.townSeed + 104729) >>> 0
+            t.ci = 0
+            st.events.push({ type: 'townRoll', n: t.cand.length })
+            return
+        }
+        if (cmd === 'shift+' || cmd === 'shift-') {
+            t.ali = (t.ali + (cmd === 'shift+' ? 1 : ALIGN_ORDER.length - 1)) % ALIGN_ORDER.length
+            st.events.push({ type: 'shift', ali: ALIGN_ORDER[t.ali] })
+            return
+        }
+        if (cmd === 'sel+' || cmd === 'sel-') {
+            t.ci = (t.ci + (cmd === 'sel+' ? 1 : t.cand.length - 1)) % t.cand.length
+            return
+        }
+        if (cmd === 'accept') {
+            const body = t.cand[t.ci]
+            if (!body.pass) { st.events.push({ type: 'townNo', why: body.cls }); return }
+            const price = createPriceFor()
+            if (purse(st) < price) { st.events.push({ type: 'broke', price }); return }
+            charge(st, price, st.party[t.hero])
+            st.ledger.tx.push({ b: 'T', id: 'create', hero: t.hero, price })
+            const hero = compose(body, ALIGN_ORDER[t.ali])
+            Object.assign(st.party[t.hero], hero, { maxHp: hero.hp, maxMp: hero.mp, lvl: 1, xp: 0, alive: true, fresh: false, gold: st.party[t.hero].gold })
+            t.cand = null; t.ci = 0; t.ali = 0; t.svc = 0
+            st.events.push({ type: 'create', who: hero.name, cls: hero.cls, race: hero.race, ali: hero.ali, price,
+                hp: hero.hp, mp: hero.mp, atk: hero.atk, def: hero.def, spd: hero.spd })
+            if (st.wipe && !st.party.some(h2 => h2.alive) && purse(st) < CFG.hireCost) {
+                st.mode = 'over'; st.end = 'dead'
+            }
+            return
+        }
+        if (cmd === 'svc+' || cmd === 'svc-') return   // the bench holds the room
+        st.events.push({ type: 'townNo' })              // buy/down belong to the street, not the table
+        return
+    }
+
     if (cmd === 'svc+' || cmd === 'svc-') {
         t.svc = (t.svc + (cmd === 'svc+' ? 1 : list.length - 1)) % list.length
         return
@@ -489,10 +590,21 @@ function townStep(st, cmd) {
         t.hero = (t.hero + (cmd === 'sel+' ? 1 : st.party.length - 1)) % st.party.length
         return
     }
+    if (cmd === 'open') {
+        const svc = list[t.svc]
+        if (svc.id !== 'create') { st.events.push({ type: 'townNo' }); return }
+        if (!serviceHeroOk('create', st.party[t.hero], isVacant(st, t.hero))) { st.events.push({ type: 'townNo', why: 'create' }); return }
+        if (purse(st) < createPriceFor()) { st.events.push({ type: 'broke', price: createPriceFor() }); return }
+        t.cand = rollCandidates(mulberry32(st.townSeed), st.party)
+        st.townSeed = (st.townSeed + 104729) >>> 0
+        t.ci = 0
+        st.events.push({ type: 'townOpenBench', n: t.cand.length })
+        return
+    }
     if (cmd !== 'buy') return
     const svc = list[t.svc]
     const h = st.party[t.hero]
-    if (!serviceHeroOk(svc.id, h)) { st.events.push({ type: 'townNo', why: svc.id }); return }
+    if (!serviceHeroOk(svc.id, h, isVacant(st, t.hero))) { st.events.push({ type: 'townNo', why: svc.id }); return }
     if (svc.id === 'train' && h.xp < xpNext(h.lvl)) { st.events.push({ type: 'townNo', why: 'xp' }); return }
     const price = servicePrice(st, svc)
     if (purse(st) < price) { st.events.push({ type: 'broke', price }); return }
@@ -504,8 +616,9 @@ function townStep(st, cmd) {
             const rnd = mulberry32(st.townSeed + st.ledger.tx.length * 7919)
             st.townSeed = (st.townSeed + 104729) >>> 0
             const r = rollRecruit(rnd)
-            Object.assign(h, r, { maxHp: r.hp, maxMp: r.mp, lvl: 1, xp: 0, alive: true })
-            st.events.push({ type: 'hire', who: h.name, hp: r.hp, mp: r.mp, atk: r.atk, def: r.def, spd: r.spd })
+            Object.assign(h, r, { maxHp: r.hp, maxMp: r.mp, lvl: 1, xp: 0, alive: true, fresh: true, gold: h.gold })
+            st.events.push({ type: 'hire', who: h.name, cls: h.cls, race: h.race, ali: h.ali,
+                hp: r.hp, mp: r.mp, atk: r.atk, def: r.def, spd: r.spd })
             break
         }
         case 'mourn':
@@ -571,8 +684,15 @@ export function stateHash(st) {
     mix(st.tick); mix(st.floor); mix(st.x); mix(st.y); mix(st.dir); mix(st.potions)
     mix(st.mode === 'town' ? (st.town.b ? 300 + st.town.svc : 299) : st.mode === 'combat' ? 2 : st.mode === 'over' ? 4 : 1)
     mix(purse(st)); mix(st.town.hero); mix(st.wipe ? 1 : 0); mix(st.townSeed)
+    mix(st.town.cand ? 500 + st.town.ci + st.town.ali * 17 : 0)
+    mix(st.ward)
     if (st.end) mix(st.end === 'win' ? 777 : 666)
-    for (const p of st.party) { mix(p.hp); mix(p.mp); mix(p.lvl); mix(p.alive ? 1 : 0) }
+    for (const p of st.party) {
+        mix(p.hp); mix(p.mp); mix(p.lvl); mix(p.alive ? 1 : 0)
+        mix(p.gold); mix(p.fresh ? 3 : 1)
+        const k = p.race.charCodeAt(0) + p.cls.charCodeAt(0) * 31 + p.ali.charCodeAt(1) * 101
+        mix(k); mix(p.aff)
+    }
     if (st.combat) for (const m of st.combat.mobs) mix(m.hp)
     mix(st.ledger.dealt * 131 + st.ledger.taken)
     return (h >>> 0).toString(16)
