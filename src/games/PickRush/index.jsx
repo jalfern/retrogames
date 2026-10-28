@@ -43,11 +43,6 @@ const srand = (seed) => {
     return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296 }
 }
 const circle = (ctx, x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2) }
-const capsule = (ctx, x1, y1, x2, y2, w, col) => {
-    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
-}
-
 // pre-generated backdrop columns (deterministic; zero RNG at draw time)
 const bgCache = {}
 const bgSet = (key, count, fn) => {
@@ -137,7 +132,6 @@ const PickRushGame = () => {
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
-    const seatsRef = useRef(2)
     const humanSeat2Ref = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
@@ -266,6 +260,7 @@ const PickRushGame = () => {
         }
 
         const doSim = () => {
+            ensureHum()
             const sc = screenRef.current
             if (sc === 'attract') {
                 if (demoAt > 90 && gs.end) { gs = makeGame(1337 + (demoAt % 97), 2); demoAt = 0 }
@@ -701,9 +696,9 @@ const PickRushGame = () => {
             carried: gs.arms[0].held !== null ? gs.items.find((i2) => i2.id === gs.arms[0].held)?.kind || 'x' : '',
             arm2Pos: gs.arms[1] ? Math.round(gs.arms[1].x * 10) / 10 : null,
             items: gs.items.map((it) => [it.kind, Math.round(it.x), Math.round(it.y), it.carriedBy, it.onBelt ? 1 : 0]),
-            mode: screenRef.current,
             endReason: gs.endReason,
         })
+        const testState = () => ({ ...simState(), mode: screenRef.current })
         exposeGame({
             id: 'pick-rush',
             method: 'dpad',
@@ -737,7 +732,7 @@ const PickRushGame = () => {
         // DEV hook
         if (import.meta.env.DEV) {
             window.__pickrushTest = {
-                state: simState,
+                state: testState,
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,

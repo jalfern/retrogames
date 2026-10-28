@@ -19,6 +19,7 @@
 //   quota — shift 1's quota becomes unreachable
 
 import * as s from '../src/games/PickRush/sim.js'
+import { scriptFor } from './lib/contractGames.mjs'
 
 const args = process.argv.slice(2)
 const NODE_ONLY = args.includes('--node')
@@ -313,16 +314,17 @@ if (!NODE_ONLY) {
         const page = await openGame(browser, { url: `${BASE}/pick-rush`, hook: '__pickrushTest', viewport: { width: 940, height: 700 } })
         page.on('pageerror', () => { pageErrors++ })
 
-        rep.check(await page.evaluate(() => window.__game && window.__game.meta.id === 'pick-rush' && window.__game.meta.buttons.includes('a')),
-            'BOOT: window.__game is live with the pad contract')
+        rep.check('BOOT: window.__game is live with the pad contract',
+            await page.evaluate(() => !!window.__game && window.__game.meta.id === 'pick-rush' && window.__game.meta.buttons.includes('a')))
 
+        await page.waitForFunction(() => window.__pickrushTest.state().tick > 60, null, { timeout: 15000 })
         const attract = await page.evaluate(() => window.__pickrushTest.state())
-        rep.check(attract.mode === 'attract' && attract.tick > 0, 'ATTRACT: the demo line runs before anyone touches it')
+        rep.check('ATTRACT: the demo line runs before anyone touches it', attract.mode === 'attract' && attract.tick > 0)
 
         // real Space clocks in
         await page.keyboard.press('Space')
         await page.waitForTimeout(200)
-        rep.check(await page.evaluate(() => window.__pickrushTest.state().mode === 'play'), 'START: a real SPACE leaves attract')
+        rep.check('START: a real SPACE leaves attract', await page.evaluate(() => window.__pickrushTest.state().mode === 'play'))
 
         // real strokes move the crane, and the cable is painted where it says
         const before = await page.evaluate(() => window.__pickrushTest.state())
@@ -330,19 +332,20 @@ if (!NODE_ONLY) {
         await page.waitForTimeout(320)
         await page.keyboard.up('ArrowRight')
         await page.waitForTimeout(120)
-        const cable = await page.evaluate(() => {
+        const cable = await page.evaluate((b0) => {
             const st = window.__pickrushTest.state()
             const c = window.__pickrushTest.canvas()
             const x = Math.round(st.pos * 2)
-            const d = c.getContext('2d').getImageData(x - 2, Math.round((39 + st.clawY) / 2) * 2, 5, 4).data
+            const midY = Math.round(((34 + (st.clawY - 8)) / 2) * 2)
+            const d = c.getContext('2d').getImageData(x - 2, midY, 5, 6).data
             let hit = false
             for (let i = 0; i < d.length; i += 4) {
                 if (Math.abs(d[i] - 207) < 40 && Math.abs(d[i + 1] - 216) < 40 && Math.abs(d[i + 2] - 227) < 40) hit = true
             }
-            return { moved: st.pos > before.pos, hit }
-        })
-        rep.check(cable.moved, 'DRIVE: ArrowRight really slides the gantry east')
-        rep.check(cable.hit, 'PIXELS: the cable is painted exactly at the sim-reported arm x')
+            return { moved: st.pos > b0 + 1, hit }
+        }, before.pos)
+        rep.check('DRIVE: ArrowRight really slides the gantry east', cable.moved)
+        rep.check('PIXELS: the cable is painted exactly at the sim-reported arm x', cable.hit)
 
         // cargo pixel proof: spawn a CAN through the DEV kit, grab it via the
         // contract, carry it low over its bin, and sample the core colour
@@ -387,16 +390,16 @@ if (!NODE_ONLY) {
             const s1 = it()
             const c = window.__pickrushTest.canvas()
             const ix = Math.round(s1.pos * 2)
-            const iy = Math.round((55 + 9) * 2)
-            const d = c.getContext('2d').getImageData(ix - 8, iy - 14, 17, 28).data
+            const iy = Math.round((60 + 9) * 2)
+            const d = c.getContext('2d').getImageData(ix - 10, iy - 16, 21, 32).data
             let painted = false
             for (let k = 0; k < d.length; k += 4) {
                 if (Math.abs(d[k] - 224) < 36 && Math.abs(d[k + 1] - 160) < 36 && Math.abs(d[k + 2] - 48) < 36) painted = true
             }
             return { carried, painted }
         })
-        rep.check(cargo.carried, 'GRAB: the claw clamps a can on the live page')
-        rep.check(cargo.painted, 'PIXELS: the carried CAN is painted at the claw, matching sim state')
+        rep.check('GRAB: the claw clamps a can on the live page', cargo.carried)
+        rep.check('PIXELS: the carried CAN is painted at the claw, matching sim state', cargo.painted)
 
         // die and restart: three wrong-bin drops via the DEV kit
         const death = await page.evaluate(async () => {
@@ -440,29 +443,31 @@ if (!NODE_ONLY) {
             const s1 = it()
             return { done: s1.done, reason: s1.endReason, fuses: s1.fusesLeft }
         })
-        rep.check(death.done && /WRONG BIN/.test(death.reason || '') && death.fuses === 0, 'FIRE: three wrong-bin drops through the contract end the shift')
+        rep.check('FIRE: three wrong-bin drops through the contract end the shift',
+            death.done && /WRONG BIN/.test(death.reason || '') && death.fuses === 0)
 
+        await page.waitForTimeout(750)
         await page.keyboard.press('Space')
         await page.waitForTimeout(300)
-        rep.check(await page.evaluate(() => window.__pickrushTest.state().mode === 'attract'), 'RESTART: a Space after the firing card clocks back in')
+        rep.check('RESTART: a Space after the firing card clocks back in', await page.evaluate(() => window.__pickrushTest.state().mode === 'attract'))
 
         // determinism through the live contract
-        const det = await page.evaluate(() => {
+        const script = scriptFor('pick-rush')
+        const det = await page.evaluate((scr) => {
             const g = window.__game
-            const script = (i) => ({ left: i % 43 < 17, right: i % 43 >= 21 && i % 43 < 38, down: i % 67 < 6, a: i % 13 < 2, b: i % 37 === 0 })
             const run = () => {
                 g.reset(7)
                 let s = null
-                for (let i = 0; i < 600; i++) s = g.step([script(i)], 1)
+                for (let i = 0; i < scr.length; i++) s = g.step([scr[i]], 1)
                 return JSON.stringify(s)
             }
             const A = run(), B = run()
             g.release()
             return { equal: A === B, tick: JSON.parse(B).tick }
-        })
-        rep.check(det.equal && det.tick === 600, 'CONTRACT: 600 scripted ticks replay identically in the live page')
+        }, script)
+        rep.check('CONTRACT: 600 scripted ticks replay identically in the live page', det.equal && det.tick === 600, `ended at ${det.tick}`)
 
-        rep.check(pageErrors === 0, 'ZERO page errors', String(pageErrors))
+        rep.check('ZERO page errors', pageErrors === 0, String(pageErrors))
     } finally {
         rep.exit(browser)
     }
