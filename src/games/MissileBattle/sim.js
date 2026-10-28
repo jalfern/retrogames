@@ -296,8 +296,10 @@ export function step(g, input = {}) {
 
     // 6. wave clear: script spent, sky empty — the classic rebuilds the
     //    cities between waves, which is what makes every wave a closed,
-    //    re-solvable puzzle for the slack rule in the harness
-    if (g.queue.length === 0 && g.enemies.length === 0 && g.blasts.length === 0 && g.intc.length === 0) {
+    //    re-solvable puzzle for the slack rule in the harness.
+    //    A `hold` (set only by the DEV quiet-stage hook) pins the stage: a
+    //    drained queue must not auto-advance and wipe what a harness planted.
+    if (!g.hold && g.queue.length === 0 && g.enemies.length === 0 && g.blasts.length === 0 && g.intc.length === 0) {
         const ammo = g.bases.reduce((n, b) => n + (b.alive ? b.ammo : 0), 0)
         const cities = g.cities.filter((c) => c.alive).length
         g.score += ammo * 5 + cities * 10

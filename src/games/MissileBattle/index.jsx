@@ -345,7 +345,7 @@ const MissileBattleGame = () => {
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
                     if (opts.wave !== undefined) { gs = makeGame(opts.wave) }
-                    if (opts.quiet) gs.queue.length = 0
+                    if (opts.quiet) { gs.queue.length = 0; gs.phase = 'play'; gs.pT = 0; gs.hold = true }
                     if (opts.ammo) opts.ammo.forEach((a, i) => { if (gs.bases[i]) gs.bases[i].ammo = a })
                     if (opts.spawn) {
                         const s = opts.spawn
