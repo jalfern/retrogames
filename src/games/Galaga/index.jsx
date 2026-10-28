@@ -377,7 +377,7 @@ const GalagaGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null,
                     seed: contractSeed, wave: gs.wave, lives: gs.lives, phase: gs.phase,
-                    double: gs.double, playerX: gs.player.x, hash: stateHash(gs),
+                    double: gs.double, playerX: gs.player.x, playerY: Math.round(gs.player.y), hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
                 // snapshot/restore intentionally omitted: Galaga enemies carry

@@ -399,6 +399,7 @@ const HomebodyGame = () => {
                 tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed,
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
                 items: gs.items.length, visitors: gs.visitor ? 1 : 0,
+                hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
             }

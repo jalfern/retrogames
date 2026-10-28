@@ -1141,6 +1141,7 @@ const MomentumGame = () => {
                         // channel and the #1131 boredom map cannot see a hero the
                         // contract hides (a sprinting course read as 90s dead air).
                         pos: [Math.round(p.x), Math.round(p.y)],
+                        vx: Math.round(p.vx || 0), s: Math.round(p.s || 0),
                         hash: h >>> 0,
                     }
                 },

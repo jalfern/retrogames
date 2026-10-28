@@ -489,6 +489,7 @@ const QBertGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.players[gs.active].score, done: !!gs.end,
                     seed: gs.seed, level: gs.level, mode: gs.mode, flips: gs.flips,
+                    qr: gs.player.r, qc: gs.player.c,
                     needed: neededCubes(gs).length, p1: gs.players[0].score, lives: gs.players[0].lives,
                     hash: stateHash(gs),
                 }),

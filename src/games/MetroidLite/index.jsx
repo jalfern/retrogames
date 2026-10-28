@@ -493,6 +493,7 @@ const MetroidGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: !!gs.end,
                     seed: contractSeed, energy: gs.energy, deaths: gs.deaths,
+                    x: Math.round(gs.p.x), y: Math.round(gs.p.y), vy: Math.round(gs.p.vy * 100),
                     taken: gs.world.items.filter(i => i.taken).length,
                     hash: stateHash(gs),
                 }),

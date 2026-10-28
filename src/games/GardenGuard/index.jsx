@@ -419,7 +419,7 @@ const GardenGuardGame = () => {
                 tick: gs.tick, score: gs.score, done: gs.done || false, seed: gs.seed,
                 level: gs.level, acorns: gs.acorns, plants: gs.plants.length, enemies: gs.enemies.length,
                 spawned: gs.spawned, total: gs.totalSpawns, mowers: gs.mowers.filter(Boolean).length,
-                waveProgress: waveProgress(gs), big: bigWaveUp(gs), hash: stateHash(gs),
+                waveProgress: waveProgress(gs), big: bigWaveUp(gs), cursor: [gs.cursor.r, gs.cursor.c], hash: stateHash(gs),
             }
         }
 

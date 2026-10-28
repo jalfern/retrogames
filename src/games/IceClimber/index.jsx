@@ -409,6 +409,7 @@ const IceGame = () => {
                 state: () => ({
                     tick: gs.tick, score: gs.score, done: gs.end !== null && gs.end !== 'clear',
                     seed: contractSeed, level: gs.level, lives: gs.lives, carrotTaken: !!gs.carrotTaken,
+                    p1x: Math.round(gs.climbers[0].x), p1y: Math.round(gs.climbers[0].y), climbing: !!gs.climbers[0].climbing,
                     hash: stateHash(gs),
                 }),
                 canvas: () => canvas,
