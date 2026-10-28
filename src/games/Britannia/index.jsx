@@ -23,6 +23,7 @@ import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } fro
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
+import { PHASES, moonPhase, moonName, phaseLit } from './moons.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -159,7 +160,7 @@ const BritanniaGame = () => {
                     S.warp.swapped = true
                     S.visited.add(S.warp.dest)
                     audioController.playSweep(200, 900, 0.5, 'sine', 0.22)
-                    S.toast = 120; S.toastMsg = `The moon gate whirls thee to ${ROMAN[S.warp.dest]}!`
+                    S.toast = 120; S.toastMsg = `The moon gate whirls thee to ${ROMAN[S.warp.dest]} of ${moonName(S.warp.dest)}!`
                     if (S.visited.size >= gates.length) {
                         S.done = true
                         audioController.playSweep(400, 1200, 1.2, 'sine', 0.25)
@@ -481,16 +482,27 @@ const BritanniaGame = () => {
             ctx.fillRect(bx, by, bw, bh)
             ctx.strokeStyle = '#7fe8ff'; ctx.lineWidth = 2
             ctx.strokeRect(bx, by, bw, bh)
+            const ph = moonPhase(S.tick)
             ctx.fillStyle = '#7fe8ff'
             ctx.font = 'bold 22px monospace'
             ctx.fillText('A MOONGATE WHIRLS', bx + 24, by + 36)
+            const lit = phaseLit(ph)
+            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 29, 9, 0, Math.PI * 2)
+            ctx.fillStyle = '#2a3455'; ctx.fill()
+            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 29, 9 * lit, 0, Math.PI * 2)
+            ctx.fillStyle = '#e8e2c8'; ctx.fill()
+            ctx.font = '13px monospace'
+            ctx.fillStyle = '#8fa6c8'
+            ctx.textAlign = 'right'
+            ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 34)
+            ctx.textAlign = 'left'
             ctx.font = '17px monospace'
             for (let i = 0; i < gates.length; i++) {
                 if (i === S.gate) continue
                 const row = by + 64 + (i < S.gate ? i : i - 1) * 40
                 const sel = (i < S.gate ? i : i - 1) === S.sel
                 ctx.fillStyle = sel ? '#ffd840' : '#9fb4d8'
-                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — moon gate ${i + 1}${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 14)
+                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${moonName(i)} moon${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 14)
             }
             ctx.fillStyle = '#6a7b9a'
             ctx.font = '14px monospace'
@@ -644,6 +656,7 @@ const BritanniaGame = () => {
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
                     ambient: AMB_NAME[S.amb],
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
+                    moon: moonPhase(S.tick),
                 }
             }
             window.__britanniaTest = {

@@ -40,6 +40,10 @@ transcribed into source:
   as it rides. Fronts ignore terrain (no rain shadow behind the mountains),
   move at constant speed, and add nothing on the sea surface beyond the tint.
 - Moongates warp between the 8 detected stars with a destination picker;
+  the menu names each gate for its virtue-moon (moons.js, the eight-wheel
+  homage to the original) and prints tonight's phase with a lit-disc glyph —
+  phase = day count mod 8, pure + deterministic so `britanniacheck` proves
+  the wheel (plus a bad-wheel mutant that goes red).
   the original's moon-phase routing and shrine destinations arrive with
   stage 5. Names (Britain, Trinsic…) arrive when town/talk data loads.
 - Boarding is free at any coast (the purchase lives in stage 2's shops).
