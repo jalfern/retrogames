@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>DEEP GLASS — the shared dungeon renderer in WebGL2</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #030308; }
+  canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+  #hud {
+    position: fixed; left: 12px; top: 10px; z-index: 2; pointer-events: none;
+    font: 11px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .14em;
+    color: rgba(226,210,180,.72); text-shadow: 0 1px 3px rgba(0,0,0,.8); text-transform: uppercase;
+  }
+  #hud b { color: rgba(255,232,196,.95); }
+  #hud .off { color: rgba(150,150,150,.5); }
+  #keys {
+    position: fixed; right: 12px; bottom: 10px; z-index: 2; pointer-events: none; text-align: right;
+    font: 10px/1.7 ui-monospace, Menlo, monospace; letter-spacing: .10em;
+    color: rgba(200,190,170,.5); text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  }
+  #toast {
+    position: fixed; left: 50%; top: 22%; transform: translateX(-50%); z-index: 2; pointer-events: none;
+    font: 700 15px/1.4 ui-monospace, Menlo, monospace; letter-spacing: .2em;
+    color: #ffe2b0; text-shadow: 0 0 14px rgba(255,150,60,.6), 0 2px 4px #000;
+    opacity: 0; transition: opacity .35s;
+    text-transform: uppercase; text-align: center;
+  }
+  #attract {
+    position: fixed; inset: 0; z-index: 3; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center;
+    background: radial-gradient(ellipse at 50% 42%, rgba(20,12,6,.28), rgba(2,2,6,.82) 70%);
+  }
+  #attract h1 {
+    margin: 0 0 18px; font: 900 44px/1 ui-monospace, Menlo, monospace; letter-spacing: .16em;
+    color: #ffd58a; text-shadow: 0 0 26px rgba(255,140,40,.55), 3px 3px 0 #3a1c08;
+  }
+  #attract .sub { font: 11px/1.9 ui-monospace, Menlo, monospace; letter-spacing: .24em; color: #cbb892; min-height: 2.4em; text-transform: uppercase; }
+  #attract .press { margin-top: 26px; font: 700 13px ui-monospace, Menlo, monospace; letter-spacing: .3em; color: #fff; animation: pl 1.6s infinite; }
+  @keyframes pl { 0%,100% { opacity: 1 } 50% { opacity: .25 } }
+  #fatal {
+    position: fixed; inset: 0; display: none; place-items: center; z-index: 4;
+    font: 14px/1.6 ui-monospace, Menlo, monospace; color: #f0dcc4; background: #100d09;
+    text-align: center; padding: 2em; white-space: pre;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"><b>DEEP GLASS</b> · dungeon renderer <b id="flr">LEVEL A</b> · <span id="torchchip">TORCH <b id="tstate">LIT</b></span></div>
+<div id="keys">&#8593;&#8595; step &middot; &#8592;&#8594; turn &middot; SPACE door/stairs &middot; L light &middot; T torch<br>drag = look &middot; swipe = step &middot; tap = act</div>
+<div id="toast"></div>
+<div id="attract">
+  <h1>DEEP GLASS</h1>
+  <div class="sub" id="atline"></div>
+  <div class="press">PRESS ANY KEY / TAP</div>
+</div>
+<div id="fatal"></div>
+<script src="dungeon.core.js"></script>
+<script>
+'use strict';
+
+/* DEEP GLASS — showcase for the shared first-person dungeon renderer (#1129).
+ * Dungeon: The Glass Vault, a two-level seed of the Wizardry/Bard's Tale/
+ * Ultima-IV view. The renderer (dungeon.core.js) only draws; this page owns
+ * the maze, the party's one position, collision, doors, stairs, sound, the
+ * attract autopilot and the DEV hook. */
+
+const qs = new URLSearchParams(location.search);
+const LITE = qs.get('lite') === '1';
+const RENDER_SCALE = LITE ? 0.5 : Math.min(1, window.devicePixelRatio || 1);
+const STEP_MS = 320, TURN_MS = 260, STAIR_MS = 520;
+
+const canvas = document.getElementById('c');
+const R = DungeonRenderer.create(canvas, { dpr: RENDER_SCALE });
+if (!R) {
+  const f = document.getElementById('fatal');
+  f.style.display = 'grid';
+  f.textContent = 'WebGL2 required.\nThis demo needs a WebGL2-capable browser.';
+  throw new Error('no webgl2');
+}
+
+/* ---------------- the vault: two levels ---------------- */
+
+/* The Glass Vault. Chars: # wall, . stone, w wood, ~ water, + door,
+ * > stairs up, < stairs down. Reachability of door/pool/stairs/hall and
+ * every monster cell from the spawn is proven by scripts/deepglasscheck. */
+const VAULT_A = [
+  '#############',
+  '#wwwwww..~~.#',
+  '#wwwwww..~~.#',
+  '#.....#....~#',
+  '#..##.#~~~~.#',
+  '#..##.#~~~~.#',
+  '#..+..#~~~~.#',
+  '#.....#.....#',
+  '#..##.##.#>##',
+  '#..##......##',
+  '##.#######.##',
+  '#....+.....##',
+  '#...........#',
+  '#############',
+];
+const VAULT_B = [
+  '#######',
+  '#.....#',
+  '#..<..#',
+  '#..#..#',
+  '#.....#',
+  '#.....#',
+  '#######',
+];
+
+function parse(rows) {
+  const w = rows[0].length, h = rows.length;
+  const cells = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ch = rows[y][x];
+      cells[y * w + x] = ch === '#' ? 1 : ch === 'w' ? 2 : ch === '~' ? 3 : ch === '>' ? 4 : ch === '<' ? 5 : ch === '+' ? 6 : 0;
+    }
+  }
+  return { w, h, cells, doorOpen: new Float32Array(w * h) };
+}
+
+const levels = [
+  { maze: parse(VAULT_A), name: 'LEVEL A — THE GLASS VAULT' },
+  { maze: parse(VAULT_B), name: 'LEVEL B — THE CRYPT' },
+];
+/* SPACE on (or facing) a stair cell changes level: A (10,8) up → the crypt;
+ * crypt (3,2) down → back onto A at (10,7). */
+const LINKS = [
+  { from: 0, cell: [10, 8], to: 1, at: [2.5, 3.5, 1, 0] },
+  { from: 1, cell: [3, 2], to: 0, at: [10.5, 7.5, 0, Math.PI] },
+];
+
+let li = 0;
+const party = { x: 5.5, y: 12.5, z: 0, yaw: 0 };
+R.setMaze(levels[0].maze);
+R.snapTo(party.x, party.y, party.z, party.yaw);
+
+const MONSTERS = {
+  0: [
+    { x: 5.5, y: 6.5, mat: 8, w: 0.55, h: 0.5, anim: 0 },
+    { x: 4.5, y: 1.5, mat: 9, w: 0.62, h: 0.95, anim: 160 },
+    { x: 9.5, y: 7.5, mat: 10, w: 0.62, h: 0.9, anim: 80 },
+  ],
+  1: [
+    { x: 3.5, y: 5.5, mat: 9, w: 0.62, h: 0.95, anim: 40 },
+  ],
+};
+
+/* ---------------- audio (synth only) ---------------- */
+
+let AC = null;
+function ac() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* silent */ } }
+  if (AC && AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(d, f0, f1, type, vol) {
+  const a = ac(); if (!a) return;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(f0, a.currentTime);
+  o.frequency.exponentialRampToValueAtTime(Math.max(30, f1), a.currentTime + d);
+  g.gain.setValueAtTime(vol == null ? 0.05 : vol, a.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.0001, a.currentTime + d);
+  o.connect(g); g.connect(a.destination);
+  o.start(); o.stop(a.currentTime + d + 0.02);
+}
+function noiseBurst(d, vol) {
+  const a = ac(); if (!a) return;
+  const len = Math.floor(a.sampleRate * d);
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) ch[i] = (Math.random() * 2 - 1) * (1 - i / len);
+  const src = a.createBufferSource(); src.buffer = buf;
+  const f = a.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.8;
+  const g = a.createGain(); g.gain.value = vol == null ? 0.05 : vol;
+  src.connect(f); f.connect(g); g.connect(a.destination);
+  src.start();
+}
+const sndStep = () => noiseBurst(0.07, 0.028);
+const sndBump = () => { tone(0.08, 120, 70, 'square', 0.05); };
+const sndDoor = (open) => { tone(0.34, open ? 150 : 220, open ? 90 : 140, 'sawtooth', 0.045); noiseBurst(0.12, 0.02); };
+const sndSpell = () => { tone(0.16, 640, 1280, 'sine', 0.05); tone(0.3, 960, 1920, 'sine', 0.03); };
+const sndSplash = () => noiseBurst(0.22, 0.05);
+const sndStair = (up) => {
+  tone(0.1, up ? 330 : 260, up ? 392 : 200, 'triangle', 0.05);
+  setTimeout(() => tone(0.1, up ? 392 : 200, up ? 494 : 155, 'triangle', 0.05), 110);
+};
+const sndTorch = (on) => tone(0.12, on ? 200 : 300, on ? 320 : 160, 'triangle', 0.04);
+
+/* ---------------- game actions ---------------- */
+
+let screen = 'attract';
+let toastT = 0;
+const toastEl = document.getElementById('toast');
+const say = (m) => { toastEl.textContent = m; toastEl.style.opacity = m ? '1' : '0'; toastT = m ? 1600 : 0; };
+
+const DXS = [1, 0, -1, 0], DYS = [0, 1, 0, -1];
+const facingIdx = () => ((Math.round(party.yaw / (Math.PI / 2)) + 1) % 4 + 4) % 4;
+
+function cellAt(x, y) {
+  const m = levels[li].maze;
+  if (x < 0 || y < 0 || x >= m.w || y >= m.h) return 1;
+  return m.cells[y * m.w + x];
+}
+const passable = (c, open) => c !== 1 && !(c === 6 && open <= 0.5);
+
+function stepInto(dx, dy) {
+  const nx = party.x + dx, ny = party.y + dy;
+  const cx = Math.floor(nx), cy = Math.floor(ny);
+  const c = cellAt(cx, cy);
+  if (!passable(c, levels[li].maze.doorOpen[cy * levels[li].maze.w + cx])) { sndBump(); return false; }
+  party.x = nx; party.y = ny;
+  R.animateTo(party.x, party.y, party.z, party.yaw, STEP_MS);
+  if (c === 3) sndSplash(); else sndStep();
+  return true;
+}
+
+const actFwd = () => stepInto(DXS[facingIdx()], DYS[facingIdx()]);
+const actBack = () => stepInto(-DXS[facingIdx()], -DYS[facingIdx()]);
+const actTurn = (dir) => {
+  party.yaw += dir * Math.PI / 2;
+  R.animateTo(party.x, party.y, party.z, party.yaw, TURN_MS);
+};
+
+const frontCell = () => [Math.floor(party.x + DXS[facingIdx()] * 0.6), Math.floor(party.y + DYS[facingIdx()] * 0.6)];
+const myCell = () => [Math.floor(party.x), Math.floor(party.y)];
+
+const doorTweens = {};
+function tweenDoor(i, target) { sndDoor(target === 1); doorTweens[i] = target; }
+
+function takeStairs(cx, cy) {
+  const kind = cellAt(cx, cy);
+  const link = LINKS.find((L) => L.from === li && L.cell[0] === cx && L.cell[1] === cy);
+  if (!link) return false;
+  li = link.to;
+  const dst = levels[li];
+  R.setMaze(dst.maze);
+  for (const k in doorTweens) delete doorTweens[k];
+  const [ax, ay, az, yaw] = link.at;
+  party.x = ax; party.y = ay; party.z = az; party.yaw = yaw;
+  R.animateTo(ax, ay, az, yaw, STAIR_MS);
+  sndStair(kind === 4);
+  say(dst.name);
+  updHud();
+  return true;
+}
+
+function actContext() {
+  const [fx, fy] = frontCell();
+  const fc = cellAt(fx, fy);
+  if (fc === 6) {
+    const m = levels[li].maze;
+    const i = fy * m.w + fx;
+    const o = m.doorOpen[i] > 0.5 ? 0 : 1;
+    tweenDoor(i, o);
+    say(o ? 'THE DOOR SWINGS' : 'THE DOOR SHUTS');
+    return;
+  }
+  const [mx, my] = myCell();
+  const mc = cellAt(mx, my);
+  if (mc === 4 || mc === 5) { takeStairs(mx, my); return; }
+  if (fc === 4 || fc === 5) { takeStairs(fx, fy); return; }
+}
+
+function castLight() {
+  const f = facingIdx();
+  R.light(party.x + DXS[f] * 2.5, party.y + DYS[f] * 2.5, party.z, 0.35, 1.0, 0.5, 6.5, 900);
+  sndSpell();
+  say('LANTERN SPELL');
+}
+
+function updHud() {
+  document.getElementById('flr').textContent = levels[li].name.split('—')[0].trim();
+}
+
+/* ---------------- attract autopilot (seeded, robust) ---------------- */
+
+let tourRnd = (function () {
+  let a = 0x9E3779B9;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+})();
+let tourSteps = 0;
+function tourStep() {
+  tourSteps++;
+  const f = facingIdx();
+  const [fx, fy] = frontCell();
+  const fc = cellAt(fx, fy);
+  const [mx, my] = myCell();
+  const mc = cellAt(mx, my);
+  const open = levels[li].maze.doorOpen[fy * levels[li].maze.w + fx];
+  if ((mc === 4 || mc === 5) && tourRnd() < 0.5) { actContext(); return; }
+  if ((fc === 4 || fc === 5) && tourRnd() < 0.7) { actContext(); return; }
+  if (fc === 6 && open <= 0.5 && tourRnd() < 0.7) { actContext(); return; }
+  if (fc === 6 && open > 0.5 && tourRnd() < 0.15) { actContext(); return; }
+  if (passable(fc, open) && tourRnd() < 0.74) { actFwd(); return; }
+  actTurn(tourRnd() < 0.5 ? 1 : -1);
+  if (tourSteps % 17 === 0) castLight();
+}
+
+const AT_LINES = [
+  'THE SHARED FIRST-PERSON DUNGEON RENDERER',
+  'ONE TORCH — STONE, WOOD, WATER, STAIRS',
+  'LIGHT FALLS OFF INTO TRUE DARKNESS',
+  'BUILT FOR WIZARDRY, BARD\'S TALE, ULTIMA IV',
+];
+let atLineI = 0;
+const atLineEl = document.getElementById('atline');
+atLineEl.textContent = AT_LINES[0];
+setInterval(() => { atLineEl.textContent = AT_LINES[(atLineI = (atLineI + 1) % AT_LINES.length)]; }, 2200);
+
+/* ---------------- input ---------------- */
+
+const KEYS = {
+  ArrowUp: () => actFwd(), ArrowDown: () => actBack(),
+  ArrowLeft: () => actTurn(1), ArrowRight: () => actTurn(-1),
+  Space: () => actContext(), KeyL: () => castLight(),
+};
+
+function startPlay() {
+  screen = 'play';
+  document.getElementById('attract').style.display = 'none';
+  li = 0;
+  R.setMaze(levels[0].maze);
+  const m = levels[0].maze;
+  for (let i = 0; i < m.cells.length; i++) if (m.cells[i] === 6) m.doorOpen[i] = 0;
+  party.x = 5.5; party.y = 12.5; party.z = 0; party.yaw = 0;
+  R.snapTo(party.x, party.y, party.z, party.yaw);
+  R.torch = true;
+  updHud();
+  say(levels[0].name);
+  tone(0.4, 220, 660, 'square', 0.05);
+}
+
+function onKey(e) {
+  ac();
+  if (screen === 'attract') { startPlay(); return; }
+  if (screen !== 'play') return;
+  if (e.code === 'KeyT') {
+    R.torch = !R.torch;
+    document.getElementById('torchchip').className = R.torch ? '' : 'off';
+    sndTorch(R.torch);
+    say(R.torch ? 'TORCH RELIT' : 'DARKNESS');
+    return;
+  }
+  const fn = KEYS[e.code];
+  if (fn) { e.preventDefault(); fn(); }
+}
+window.addEventListener('keydown', onKey);
+
+let pdown = null;
+window.addEventListener('pointerdown', () => {
+  ac();
+  if (screen === 'attract') { startPlay(); return; }
+  pdown = { x: 0, y: 0, t: performance.now(), used: false };
+});
+window.addEventListener('pointermove', (e) => {
+  if (!pdown || screen !== 'play') return;
+  pdown.x += e.movementX || 0; pdown.y += e.movementY || 0;
+  if (Math.abs(pdown.x) > 26) { actTurn(pdown.x > 0 ? -1 : 1); pdown.x = 0; pdown.used = true; }
+  else if (Math.abs(pdown.y) > 42) { (pdown.y < 0 ? actFwd : actBack)(); pdown.y = 0; pdown.used = true; }
+});
+window.addEventListener('pointerup', () => {
+  if (screen === 'play' && pdown && !pdown.used && performance.now() - pdown.t < 350) actContext();
+  pdown = null;
+});
+
+/* ---------------- frame loop ---------------- */
+
+let raf = 0, last = 0, tourAcc = 0;
+const tstateEl = document.getElementById('tstate');
+
+function fit() {
+  canvas.style.width = window.innerWidth + 'px';
+  canvas.style.height = window.innerHeight + 'px';
+  canvas.width = Math.max(8, Math.floor(window.innerWidth * RENDER_SCALE));
+  canvas.height = Math.max(8, Math.floor(window.innerHeight * RENDER_SCALE));
+}
+window.addEventListener('resize', fit);
+fit();
+
+function syncSprites(dt) {
+  const list = MONSTERS[li];
+  for (const s of list) s.anim = (s.anim || 0) + dt;
+  R.setSprites(list);
+}
+
+function tweenDoors(dt) {
+  const m = levels[li].maze;
+  for (const k in doorTweens) {
+    const i = +k, tgt = doorTweens[k];
+    const v = m.doorOpen[i];
+    const d = tgt - v;
+    const nv = v + Math.sign(d) * Math.min(Math.abs(d), dt / 420);
+    m.doorOpen[i] = nv;
+    if (nv === tgt) delete doorTweens[k];
+  }
+}
+
+function frame(ts) {
+  raf = requestAnimationFrame(frame);
+  if (!last) last = ts;
+  const dt = Math.min(ts - last, 100);
+  last = ts;
+  if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.style.opacity = '0'; }
+  tweenDoors(dt);
+  syncSprites(dt);
+  if (screen === 'attract') {
+    tourAcc += dt;
+    while (tourAcc > 400) { tourAcc -= 400; tourStep(); }
+  }
+  R.frame(dt);
+  tstateEl.textContent = R.torch ? 'LIT' : 'OUT';
+}
+raf = requestAnimationFrame(frame);
+
+/* ---------------- DEV hook ---------------- */
+
+const glctx = canvas.getContext('webgl2');
+window.__deepglassTest = {
+  ready: true,
+  frames: () => R.frameCount,
+  pose: () => R.pose(),
+  view: () => R.renderPose(),
+  flick: () => R.flick,
+  torch: () => R.torch,
+  level: () => li,
+  screen: () => screen,
+  doorAt: (x, y) => { const m = levels[li].maze; return m.doorOpen[y * m.w + x]; },
+  cellAt: (x, y) => cellAt(x, y),
+  act: (code) => {
+    if (screen === 'attract') { startPlay(); return 'started'; }
+    if (code === 'KeyT') { onKey({ code: 'KeyT', preventDefault() {} }); return 'ok'; }
+    if (KEYS[code]) { KEYS[code](); return 'ok'; }
+    return 'nokey';
+  },
+  start: startPlay,
+  killTorch: () => { R.torch = false; },
+  relight: () => { R.torch = true; },
+  light: (x, y, z, r, g, b, rad, life) => R.light(x, y, z, r, g, b, rad, life),
+  goto: (x, y, z, yaw) => { party.x = x; party.y = y; party.z = z; party.yaw = yaw; R.snapTo(x, y, z, yaw); },
+  sprites: () => MONSTERS[li].map((s) => ({ ...s })),
+  blocked: (x, y) => R.blocked(x, y),
+  viewCells: (x, y, r) => R.viewCells(x, y, r),
+  stats: () => {
+    const w = canvas.width, h = canvas.height;
+    const px = new Uint8Array(w * h * 4);
+    glctx.readPixels(0, 0, w, h, glctx.RGBA, glctx.UNSIGNED_BYTE, px);
+    let mean = 0, warm = 0, cool = 0, grey = 0, green = 0, amber = 0, dark = 0, tot = 0;
+    const step = Math.max(1, Math.floor(Math.sqrt((w * h) / 90000)));
+    for (let y = 0; y < h; y += step) {
+      for (let x = 0; x < w; x += step) {
+        const k = (y * w + x) * 4;
+        const r = px[k], g = px[k + 1], b = px[k + 2];
+        mean += (r + g + b) / 3; tot++;
+        if (r > 55 && r > b + 25) warm++;
+        if (b > r + 12 && b > 40) cool++;
+        if (r > 40 && Math.abs(r - b) < 18 && Math.abs(r - g) < 18) grey++;
+        if (g > 60 && g > r + 25) green++;
+        if (r > 150 && g > 85 && b < 95) amber++;
+        if ((r + g + b) / 3 < 10) dark++;
+      }
+    }
+    return { w, h, mean: mean / tot, warm, cool, grey, green, amber, darkFrac: dark / tot, tot };
+  },
+};
+
+window.DEMO_CREDITS = {
+  name: 'DEEP GLASS', accent: '#ffb347',
+  issues: [1129], span: '~1 h', shipped: '2026-10-28',
+  assist: 'solo',
+  note: 'the shared dungeon renderer every Wizardry-class game will ride',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>
