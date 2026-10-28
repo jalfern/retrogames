@@ -17,89 +17,10 @@
 
 import { openGame, launch, requireDevServer, Report } from './lib/harness.mjs'
 import { validate } from '../src/utils/recording.js'
+import { GAMES, TICKS, scriptFor, LIVE } from './lib/contractGames.mjs'
 
 const BASE = process.env.CONTRACT_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
-const GAMES = [
-    { id: 'lunar-lander', path: '/lunar-lander' },
-    { id: 'tempest', path: '/tempest' },
-    { id: 'arkanoid', path: '/arkanoid' },
-    { id: 'galaga', path: '/galaga' },
-    { id: 'dig-dug', path: '/dig-dug' },
-    { id: 'missile-battle', path: '/missile-battle' },
-    { id: 'spy-hunter', path: '/spy-hunter' },
-    { id: 'paperboy', path: '/paperboy' },
-    { id: 'blob-battle', path: '/blob-battle' },
-    { id: 'tetris', path: '/tetris' },
-    { id: 'boulder-dash', path: '/boulder-dash' },
-    { id: 'bubble-bobble', path: '/bubble-bobble' },
-    { id: 'ice-climber', path: '/ice-climber' },
-    { id: 'joust', path: '/joust' },
-    { id: 'qbert', path: '/qbert' },
-    { id: 'comet-drift', path: '/comet-drift' },
-    { id: 'comet-drift-hd', path: '/comet-drift-hd' },
-    { id: 'lemmings', path: '/lemmings' },
-    { id: 'sonar', path: '/sonar' },
-    { id: 'polarity', path: '/polarity' },
-    { id: 'outpost', path: '/outpost' },
-    { id: 'dogfight', path: '/dogfight' },
-    { id: 'smash-tv', path: '/smash-tv' },
-    { id: 'beezee', path: '/beezee' },
-    { id: 'metroid', path: '/metroid' },
-    { id: 'momentum', path: '/momentum' },
-    { id: 'magic-carpet', path: '/magic-carpet' },
-    { id: 'gauntlet', path: '/gauntlet' },
-    { id: 'emberwood', path: '/emberwood' },
-    { id: 'garden-guard', path: '/garden-guard' },
-    { id: 'homebody', path: '/homebody' },
-    { id: 'iron-ring', path: '/iron-ring' },
-    { id: 'viper-pit', path: '/viper-pit' },
-    { id: 'britannia', path: '/britannia' },
-]
-const TICKS = 600
 const ONLY = process.env.CONTRACT_ONLY
-// #527 item 1 — games whose loop banks live ticks (recordLiveTick). The live
-// gate below runs only for these; every other game's recorder is still fed by
-// step(), so a full rollout is the remaining work on #527.
-const LIVE = ['tetris']
-
-const PATTERNS = {
-    'lunar-lander': (i) => ({ left: i % 71 < 16, right: false, up: i % 37 < 18 }),
-    tempest: (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, a: i % 9 < 4 }),
-    arkanoid: (i) => ({ left: i % 43 < 21, right: i % 43 >= 24 && i % 43 < 40, a: i % 29 < 3 }),
-    galaga: (i) => ({ left: i % 47 < 18, right: i % 47 >= 23 && i % 47 < 40, a: i % 7 < 3, up: i % 97 < 2 }),
-    'dig-dug': (i) => ({ left: i % 53 < 15, right: i % 53 >= 20 && i % 53 < 35, up: i % 61 < 12, down: i % 61 >= 30 && i % 61 < 42, a: i % 11 < 4 }),
-    'missile-battle': (i) => ({ left: i % 31 < 14, right: i % 31 >= 16 && i % 31 < 28, up: i % 41 < 9, a: i % 13 < 2 }),
-    'spy-hunter': (i) => ({ left: i % 37 < 15, right: i % 37 >= 19 && i % 37 < 31, a: i % 5 < 3, b: i % 23 < 2 }),
-    paperboy: (i) => ({ left: i % 41 < 17, right: i % 41 >= 22 && i % 41 < 36, up: i % 3 === 0, down: i % 89 < 4, a: i % 17 < 2 }),
-    tetris: (i) => ({ left: i % 43 < 18, right: i % 43 >= 22 && i % 43 < 38, down: i % 17 < 4, a: i % 11 < 2 }),
-    'boulder-dash': (i) => ({ left: i % 53 < 14, right: i % 53 >= 18 && i % 53 < 32, up: i % 61 < 10, down: i % 61 >= 28 && i % 61 < 40, a: i % 7 < 3 }),
-    'bubble-bobble': (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 8, down: i % 59 >= 30 && i % 59 < 38, a: i % 13 < 2 }),
-    'ice-climber': (i) => ({ left: i % 41 < 15, right: i % 41 >= 19 && i % 41 < 33, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 9 < 3 }),
-    joust: (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, a: i % 5 < 2 }),
-    qbert: (i) => ({ left: i % 43 < 18 && i % 89 < 50, right: i % 43 >= 20 && i % 43 < 38, up: i % 29 < 14, down: i % 29 >= 15 && i % 29 < 28, a: i % 31 < 2 }),
-    'comet-drift': (i) => ({ left: i % 43 < 15, right: i % 43 >= 21 && i % 43 < 34, up: i % 59 !== 0, a: i % 11 < 4 }),
-    'comet-drift-hd': (i) => ({ left: i % 43 < 15, right: i % 43 >= 21 && i % 43 < 34, up: i % 59 !== 0, a: i % 11 < 4 }),
-    lemmings: (i) => ({ pointer: { x: (i % 50) / 50, y: (i % 37) / 37, down: i % 97 === 0 }, b: i % 61 === 0 }),
-    sonar: (i) => ({ left: i % 47 < 14, right: i % 47 >= 18 && i % 47 < 32, up: i % 53 < 10, down: i % 53 >= 28 && i % 53 < 40, a: i % 9 < 2 }),
-    polarity: (i) => ({ left: i % 43 < 15, right: i % 43 >= 19 && i % 43 < 34, up: i % 59 < 8, down: i % 59 >= 30 && i % 59 < 38, a: i % 7 < 3, b: i % 23 < 2 }),
-    outpost: (i) => ({ left: i % 41 < 16, right: i % 41 >= 20 && i % 41 < 36, up: i % 61 < 10, down: i % 61 >= 26 && i % 61 < 38, a: i % 11 < 3, b: i % 31 < 2 }),
-    'dogfight': (i) => ({ left: i % 37 < 14, right: i % 37 >= 17 && i % 37 < 30, up: i % 41 < 12, down: i % 41 >= 20 && i % 41 < 30, a: i % 5 < 2, b: i % 53 < 20 }),
-    'smash-tv': (i) => ({ left: i % 41 < 16, right: i % 41 >= 20 && i % 41 < 36, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 9 < 3, b: i % 29 < 2 }),
-    beezee: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 34, up: i % 53 < 12, down: i % 53 >= 28 && i % 53 < 38, a: i % 7 < 4, b: i % 61 < 20 }),
-    metroid: (i) => ({ left: i % 43 < 15, right: i % 43 >= 19 && i % 43 < 34, down: i % 67 < 6, a: i % 11 < 3, b: i % 17 < 2 }),
-    momentum: (i) => ({ left: i % 97 < 6, right: i % 97 >= 10, up: i % 17 < 4, a: i % 19 < 5 }),
-    'magic-carpet': (i) => ({ left: i % 41 < 14, right: i % 41 >= 18 && i % 41 < 32, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 38, a: i % 13 < 2, b: i % 29 < 2 }),
-    gauntlet: (i) => ({ left: i % 47 < 16, right: i % 47 >= 20 && i % 47 < 36, up: i % 59 < 12, down: i % 59 >= 30 && i % 59 < 42, a: i % 9 < 2, b: i % 23 < 2 }),
-    emberwood: (i) => ({ left: i % 43 < 16, right: i % 43 >= 20 && i % 43 < 34, up: i % 53 < 12, down: i % 53 >= 26 && i % 53 < 36, a: i % 11 < 4, b: i % 29 < 2 }),
-    'blob-battle': (i) => ({ left: i % 43 < 15, right: i % 43 >= 20 && i % 43 < 34, down: i % 17 < 4, a: i % 11 < 2, b: i % 23 === 0 }),
-    homebody: (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 30, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 34, a: i % 17 === 0, b: i % 97 === 0, pointer: { x: 0.35 + 0.3 * Math.sin(i / 47), y: 0.45 + 0.25 * Math.cos(i / 41), down: i % 43 === 0 } }),
-    'garden-guard': (i) => ({ left: i % 13 < 3, right: i % 17 >= 8 && i % 17 < 11, up: i % 29 < 2, down: i % 23 >= 6 && i % 23 < 8, a: i % 7 < 2, b: i % 31 < 1, pointer: { x: 0.55 + 0.32 * Math.sin(i / 40), y: 0.55 + 0.3 * Math.cos(i / 37), down: i % 53 === 0 } }),
-    'iron-ring': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
-    'viper-pit': (i) => ({ left: i % 61 >= 44, right: i % 61 < 22, up: i % 89 < 2, down: i % 61 >= 22 && i % 61 < 44, a: i % 13 < 2, b: i % 29 < 2 }),
-    britannia: (i) => ({ left: i % 53 >= 42, right: i % 53 < 15, up: i % 61 >= 50, down: i % 61 < 12, a: i % 47 < 2, b: i % 97 === 0 }),
-}
-const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
-
 const DRIVE = ({ seed, script }) => {
     const g = window.__game
     const zero = g.reset(seed)

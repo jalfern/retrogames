@@ -159,6 +159,8 @@
     "tetrisplay": "node scripts/tetrisplay.mjs",
     "lint:joust": "eslint src/games/Joust src/components src/utils src/config src/main.jsx scripts",
     "joustcheck": "node scripts/joustcheck.mjs",
+    "juiceaudit": "node scripts/juiceaudit.mjs",
+    "juicecheck": "node scripts/juicecheck.mjs",
     "joustdive": "node scripts/joustdive.mjs",
     "lint:qbert": "eslint src/games/QBert src/components src/utils src/config src/main.jsx scripts",
     "qbertcheck": "node scripts/qbertcheck.mjs",
