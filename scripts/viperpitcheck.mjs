@@ -490,6 +490,42 @@ if (MUT) {
     ok((mutF.match(/\bintro: /g) || []).length === 0 && (mutF.match(/\bwin: /g) || []).length === 0, 'mutant: stripped quote table empties the data gate (harness bites)')
 }
 
+// ---- #1106 fighter animation-depth gate ---------------------------------------------
+// Five fighters must not share one skeleton: each carries its own idle stance
+// (lean/bob/guard/legs), hitstun reads direction and height, and walking in
+// leans toward the opponent while walking out keeps a tighter shuffle. All of it
+// is presentation (rig-side data + poseFighter), so the gate is a data gate on
+// fighters.js, source gates on render.js/index.jsx, and three mutants that each
+// have to make the gate bite. Part B drives the live cabinet through
+// __viperPitTest.pose()/forceHit().
+{
+    const fs = await import('node:fs')
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    ok((fsrc.match(/\bstance: \{/g) || []).length >= 5, 'anim gate: all five fighters carry a stance profile')
+    ok(new Set(ROSTER.map((d) => JSON.stringify(d.stance))).size === 5, 'anim gate: every idle stance differs from the others')
+    const animGates = [
+        ['idle pose reads the fighter stance', /const stance = \(f\.def && f\.def\.stance\) \|\| null/],
+        ['per-fighter breathing (amplitude + tempo)', /Math\.sin\(tSec \* \(stance \? stance\.bobHz : 2\.2\)\) \* \(stance \? stance\.bobAmp : 0\.015\)/],
+        ['a low hit buckles the knees', /hint && hint\.low/],
+        ['an overhead snaps the head back', /hint && hint\.high/],
+        ['a hit from behind pitches forward (push sign vs facing)', /\(f\.vx \|\| 0\) \* f\.facing > 0\.001/],
+        ['walk-in leans toward, walk-out leans off', /q\.lean \+= forward \? 0\.12 : -0\.1/],
+        ['walk-out shuffle is shorter than walk-in', /forward \? 0\.6 : 0\.42/],
+        ['the hint clears when the stun ends', /rig\.hitHint && f\.st !== 'hitstun'/],
+        ['the victim height hint lands on the rig', /victim\.hitHint = \{ low: !!\(mdef && mdef\.low\), high: !!\(mdef && mdef\.overhead\) \}/],
+    ]
+    for (const [label, re] of animGates) ok(re.test(rsrc) || re.test(gsrc), `anim gate: ${label}`)
+    ok(/pose\(i\) \{/.test(gsrc) && /forceHit\(i, kind\) \{/.test(gsrc), 'anim gate: dev hooks expose pose() and forceHit()')
+    const mutS = rsrc.replace('const stance = (f.def && f.def.stance) || null', 'const stance = null')
+    ok(!/const stance = \(f\.def && f\.def\.stance\)/.test(mutS), 'mutant: stance dropped from the pose fails the gate (harness bites)')
+    const mutD = rsrc.replace('const back = (f.vx || 0) * f.facing > 0.001', 'const back = false')
+    ok(!/\(f\.vx \|\| 0\) \* f\.facing > 0\.001/.test(mutD), 'mutant: direction-blind hitstun fails the gate (harness bites)')
+    const mutW = rsrc.replace('q.lean += forward ? 0.12 : -0.1', '')
+    ok(!/q\.lean \+= forward \? 0\.12 : -0\.1/.test(mutW), 'mutant: dead walk lean fails the gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------
@@ -718,6 +754,68 @@ if (!MUT) {
         const gAfter = await page.evaluate(() => window.__viperPitTest.guard())
         ok(recovered, 'crush stun clears back to a guarding-ready fighter')
         ok(gAfter && gAfter[1] >= 90, `guard gauge refills after the crush (${gAfter && gAfter[1]})`)
+    }
+
+    // #1106 fighter animation depth: all five idle stances differ in the live
+    // cabinet, and hit reactions are directional (front/back/low/overhead).
+    {
+        const sig = (p) => `${p.lean}|${p.head}|${p.armR}|${p.kneeR}`
+        const poses = {}
+        for (const id of ['nyx', 'cinder', 'vess', 'riv', 'krax']) {
+            await page.evaluate((a) => window.__viperPitTest.setChars(a, 'nyx'), id)
+            await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+            let p = null
+            for (let i = 0; i < 40 && !(p && p.st === 'idle'); i++) {
+                p = await page.evaluate(() => window.__viperPitTest.pose(0))
+                await page.waitForTimeout(80)
+            }
+            ok(p && p.st === 'idle', `${id} settles into an idle stance`)
+            if (p) poses[id] = sig(p)
+        }
+        ok(Object.keys(poses).length === 5 && new Set(Object.values(poses)).size === 5,
+            `all five idle stances read differently live (${Object.values(poses).join(' ')})`)
+        const fightLive = async () => {
+            const s0 = await page.evaluate(() => window.__viperPitTest.state)
+            if (s0 && s0.phase === 'fight') return
+            await page.evaluate(() => window.__viperPitTest.stage(0))
+            await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase === 'fight', null, { timeout: 20000 })
+        }
+        const matches = (p, kind) => {
+            if (!p || p.st !== 'hitstun') return false
+            if (kind === 'back') return p.vx * p.facing > 0
+            if (kind === 'low') return !!(p.hint && p.hint.low)
+            if (kind === 'over') return !!(p.hint && p.hint.high)
+            return p.vx * p.facing < 0
+        }
+        const reaction = async (kind) => {
+            let seen = false
+            for (let i = 0; i < 90; i++) {
+                const p = await page.evaluate((k) => {
+                    window.__viperPitTest.forceHit(1, k)
+                    return window.__viperPitTest.pose(1)
+                }, kind)
+                const ph = await page.evaluate(() => window.__viperPitTest.state && window.__viperPitTest.state.phase)
+                if (ph !== 'fight' || !matches(p, kind)) { seen = 0; await page.waitForTimeout(30); continue }
+                seen++
+                if (seen >= 3) {
+                    await page.waitForTimeout(80)
+                    const fin = await page.evaluate(() => window.__viperPitTest.pose(1))
+                    return fin && fin.st === 'hitstun' ? fin : p
+                }
+                await page.waitForTimeout(30)
+            }
+            return null
+        }
+        const front = await reaction('front')
+        const back = await reaction('back')
+        const low = await reaction('low')
+        const over = await reaction('over')
+        ok(front && back && low && over, 'front/back/low/overhead hit reactions are all reachable live')
+        ok(front && back && sig(front) !== sig(back), `a back hit reads differently from a front hit (${front && sig(front)} vs ${back && sig(back)})`)
+        ok(front && low && sig(front) !== sig(low), `a low hit buckles differently from a body hit (${front && sig(front)} vs ${low && sig(low)})`)
+        ok(front && over && Math.abs(over.head) > Math.abs(front.head) + 0.1, `an overhead snaps the head back harder (head ${over && over.head} vs ${front && front.head})`)
+        await page.evaluate(() => window.__viperPitTest.stage(1))
+        await page.waitForFunction(() => window.__viperPitTest.state && window.__viperPitTest.state.phase !== 'intro', null, { timeout: 20000 })
     }
 
     await page.keyboard.press('Escape')

@@ -65,6 +65,16 @@ the #1096 options switched on.
   (grunt at startup, slam on hit). Each finisher has a per-fighter sting on
   the `finish` event (NYX stitch, CINDER bonfire, VESS dry-land, RIV neon
   zap, KRAX scrap clang). K.O. adds a low-passed crowd-surge swell.
+- **Animation depth (#1106)**: five fighters, five ways to stand. Each carries a
+  `stance` profile (lean, breathe amplitude/tempo, guard geometry, leg set) —
+  NYX low and bladed, CINDER upright weight-back, VESS light and bouncy on his
+  toes, RIV squared classic, KRAX wide-hunched with arms open for the grab.
+  Hitstun is directional: front hits snap the head back, a hit from behind
+  pitches the body forward (push sign vs facing), lows buckle the knees (the hit
+  event's `mv` carries the height into `rig.hitHint`, cleared when the stun
+  ends), overheads snap the head up-and-back. Walking in drives the shoulders
+  toward the opponent; walking out is a tighter, shorter shuffle. Presentation
+  only — fighters.js data + render.js posing; engine and hashes untouched.
 - **Midground (#1106)**: each pit gets a depth layer of props between the
   fighters and the fence (alley crates + barrels, foundry tanks + drums, subway
   booth + benches) — variety beyond the flat backdrop. The props are pivot
@@ -145,7 +155,9 @@ the #1096 options switched on.
      on a forced `midKick()`, the finisher cinematic running its multi-beat
      sequence via `forceFinish()` + `cine()`, the qcb counter live in the sim,
      a forced guard-crush entering and clearing the crush stun with the gauge
-     refilling via `forceCrush()` + `guard()`, zero page errors).
+     refilling via `forceCrush()` + `guard()`, the five idle stances reading
+     distinct live and front/back/low/overhead hit reactions differing via
+     `pose()` + `forceHit()`, zero page errors).
 - `npm run viperpitcheck -- --mutate` — proven-fail: removing the guard gate
   must let heavies smash through GUARD; lifting the juggle cap must let the
   third aerial hit connect.

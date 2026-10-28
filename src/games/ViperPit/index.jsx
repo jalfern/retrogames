@@ -370,6 +370,10 @@ const ViperPitGame = () => {
                     audioController.playNoise(0.07, 0.16)
                     audioController.playTone(e.dmg >= 9 ? 84 : 120, 0.1, 'sawtooth', 0.12)
                     const mdef = m.fighters[e.by].def.moves[e.mv]
+                    if (rigs) {
+                        const victim = rigs[e.by === 0 ? 1 : 0]
+                        if (victim) victim.hitHint = { low: !!(mdef && mdef.low), high: !!(mdef && mdef.overhead) }
+                    }
                     if (mdef && mdef.type === 'throw') {
                         // throw slam: the grunt happened at startup, the slam lands now
                         audioController.playNoise(0.22, 0.24)
@@ -812,6 +816,28 @@ const ViperPitGame = () => {
                 cine() { return finishCine ? { active: true, by: finishCine.by, i: finishCine.fired, kind: finishCine.beats[finishCine.fired], beats: finishCine.beats } : { active: false, beats: null } },
                 forceFinish() { if (gs) { const d = gs.fighters[0].def.moves.qcbf; finishCine = { beats: (d && d.beats) || ['stitch', 'stitch', 'slam'], by: 0, startedAt: performance.now(), fired: -1 } } },
                 forceQcb() { if (gs) { const f = gs.fighters[0]; if (f.def.moves.qcb) { f.st = 'attack'; f.sf = 0; f.move = 'qcb'; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false } } },
+                pose(i) {
+                    const f = gs && gs.fighters[i], rig = rigs && rigs[i]
+                    if (!f || !rig) return null
+                    return {
+                        st: f.st,
+                        vx: +f.vx.toFixed(3), facing: f.facing, hint: rig.hitHint || null,
+                        lean: +rig.torso.rotation.x.toFixed(3),
+                        head: +rig.head.rotation.x.toFixed(3),
+                        hipY: +rig.body.position.y.toFixed(3),
+                        armR: +rig.armR.sh.rotation.x.toFixed(3),
+                        armL: +rig.armL.sh.rotation.x.toFixed(3),
+                        kneeR: +rig.legR.kn.rotation.x.toFixed(3),
+                        kneeL: +rig.legL.kn.rotation.x.toFixed(3),
+                    }
+                },
+                forceHit(i, kind) {
+                    if (!gs || !rigs) return
+                    const f = gs.fighters[i]
+                    f.st = 'hitstun'; f.stun = 20; f.sf = 0; f.move = null
+                    if (kind === 'back') { f.vx = 0.1 * f.facing; rigs[i].hitHint = null }
+                    else { f.vx = -0.1 * f.facing; rigs[i].hitHint = kind === 'low' ? { low: true, high: false } : kind === 'over' ? { low: false, high: true } : null }
+                },
                 fx() {
                     if (!stageFx) return null
                     return {
