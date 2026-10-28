@@ -22,3 +22,19 @@ export const moonName = (gate) => MOONS[((gate % MOONS.length) + MOONS.length) %
 
 // 0..1 lit fraction for the little phase disc (0 new, 1 full).
 export const phaseLit = (phase) => (phase <= 4 ? phase : 8 - phase) / 4
+
+// One flavor line per phase (#1135 gate-menu polish): each names its own
+// phase word, so the menu never decorates a full moon with crescent talk.
+// Pure, finite, and bounded so britanniacheck can read the whole table.
+export const PHASE_FLAVOR = [
+    'new moon: the gate hums, patient as a seed',
+    'waxing crescent: a silver sliver coaches it',
+    'first quarter: half the sky holds its breath',
+    'waxing gibbous: the near-full moon pulls taut',
+    'full moon: silver light floods the gate',
+    'waning gibbous: the light loosens; step on',
+    'last quarter: half-dark, steady as ever',
+    'waning crescent: nearly dark — the bold ride',
+]
+
+export const gateFlavor = (phase) => PHASE_FLAVOR[((Math.round(phase) % 8) + 8) % 8]

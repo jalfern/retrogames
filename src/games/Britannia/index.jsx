@@ -24,7 +24,7 @@ import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
 import { buildClassicStamps, variantOf } from './ega.js'
-import { PHASES, moonPhase, moonName, phaseLit } from './moons.js'
+import { PHASES, moonPhase, moonName, phaseLit, gateFlavor } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples } from './swell.js'
 
 const SIM_MS = 1000 / 60
@@ -86,7 +86,7 @@ const BritanniaGame = () => {
             seed: seed >>> 0, tick: 0, x: gates[seed % Math.max(1, gates.length)]?.x ?? 93, y: gates[seed % Math.max(1, gates.length)]?.y ?? 67,
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
             face: 'down', anim: 0, dismissed: -1,
-            sel: 1, gate: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
+            sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
             amb: AMB.NONE, warp: null,
         })
 
@@ -223,7 +223,7 @@ const BritanniaGame = () => {
                 const gi = gates.findIndex(g => Math.abs(g.x - S.x) <= 1 && Math.abs(g.y - S.y) <= 1)
                 if (gi >= 0 && !S.visited.has(gi)) { S.visited.add(gi); audioController.playSweep(600, 1100, 0.4, 'sine', 0.15) }
                 if (gi < 0) S.dismissed = -1
-                if (gi >= 0 && gi !== S.gate && gi !== S.dismissed) { S.gate = gi; S.sel = 0 }
+                if (gi >= 0 && gi !== S.gate && gi !== S.dismissed) { S.gate = gi; S.sel = 0; S.hoverRow = -1 }
             }
         }
 
@@ -532,14 +532,14 @@ const BritanniaGame = () => {
             ctx.font = 'bold 22px monospace'
             ctx.fillText('A MOONGATE WHIRLS', bx + 24, by + 36)
             const lit = phaseLit(ph)
-            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 29, 9, 0, Math.PI * 2)
+            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 54, 9, 0, Math.PI * 2)
             ctx.fillStyle = '#2a3455'; ctx.fill()
-            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 29, 9 * lit, 0, Math.PI * 2)
+            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 54, 9 * lit, 0, Math.PI * 2)
             ctx.fillStyle = '#e8e2c8'; ctx.fill()
             ctx.font = '13px monospace'
             ctx.fillStyle = '#8fa6c8'
             ctx.textAlign = 'right'
-            ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 34)
+            ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 58)
             ctx.textAlign = 'left'
             ctx.font = '17px monospace'
             for (let i = 0; i < gates.length; i++) {
@@ -552,6 +552,11 @@ const BritanniaGame = () => {
             ctx.fillStyle = '#6a7b9a'
             ctx.font = '14px monospace'
             ctx.fillText('arrows + SPACE choose · number keys jump · B cancel', bx + 28, by + bh - 14)
+            // tonight's moon sets the mood of the trip (#1135): one flavor
+            // line per phase, always naming the phase it claims
+            ctx.fillStyle = '#bcd0ec'
+            ctx.font = 'italic 13px monospace'
+            ctx.fillText(gateFlavor(ph), bx + 28, by + bh - 44)
         }
 
         const drawAttract = () => {
@@ -654,6 +659,24 @@ const BritanniaGame = () => {
             }
         }
         const onKeyUp = (e) => { const f = KEYS[e.code]; if (f) held.delete(f) }
+        // mouse hover in the gate menu: a row under the pointer becomes the
+        // selection and chirps, so a pointer traveller gets the same feedback
+        // the arrows give (#1135; tap already chose rows silently)
+        const onMove = (e) => {
+            if (!S || screenRef.current !== 'play' || S.gate < 0 || S.warp) return
+            const rect = canvas.getBoundingClientRect()
+            const mx = (e.clientX - rect.left) / rect.width * VIEW_W
+            const my = (e.clientY - rect.top) / rect.height * VIEW_H
+            const bw = 420, bh = 60 + gates.length * 40
+            const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
+            if (mx < bx || mx > bx + bw || my < by || my > by + bh) return
+            const row = Math.floor((my - (by + 46)) / 40)
+            if (row < 0 || row >= gates.length - 1) return
+            if (row !== S.hoverRow) {
+                S.hoverRow = row
+                if (row !== S.sel) { S.sel = row; audioController.playTone(420, 0.03, 'square', 0.08) }
+            }
+        }
         const onTap = (e) => {
             if (screenRef.current === 'attract' || screenRef.current === 'end') { startGame(); return }
             if (!S || screenRef.current !== 'play') return
@@ -678,6 +701,7 @@ const BritanniaGame = () => {
         }
         window.addEventListener('keydown', onKey)
         window.addEventListener('keyup', onKeyUp)
+        window.addEventListener('pointermove', onMove)
         canvas.addEventListener('pointerdown', onTap)
 
         // --- DEV hooks + contract ---
@@ -705,6 +729,8 @@ const BritanniaGame = () => {
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
+                    hoverRow: S.gate >= 0 ? S.hoverRow : -1,
+                    gateFlavor: S.gate >= 0 ? gateFlavor(moonPhase(S.tick)) : '',
                 }
             }
             window.__britanniaTest = {
@@ -732,6 +758,7 @@ const BritanniaGame = () => {
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKey)
             window.removeEventListener('keyup', onKeyUp)
+            window.removeEventListener('pointermove', onMove)
             canvas.remove()
             if (import.meta.env.DEV) { if (window.__britanniaTest) delete window.__britanniaTest; unmountDbg(); unexposeGame() }
         }

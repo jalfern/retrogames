@@ -182,3 +182,25 @@ npm run dev                 # play at /retrogames/britannia
   the rain/snow intensities reddens 2 — each restored green.
 - Still honest: rain adds no swell of its own (the wind drives crests, not
   the drops), and there is no splash sound at sea beyond the global rain hiss.
+
+## Gate-menu flavor + hover chirp (#1135 polish)
+
+- `moons.js`: `PHASE_FLAVOR` — eight lines, one per moon phase, each naming
+  the very phase it decorates, each ≤ 48 chars so it fits the 420px panel.
+  The open gate menu prints tonight's line under the destination rows, so the
+  warp is flavored by the moon it claims to follow (still pure +
+  deterministic; the wheel already lived in `moonPhase`).
+- `index.jsx`: a mouse travelling the open menu now *chirps* — the row under
+  the pointer becomes the selection and answers with the same square-wave blip
+  class the arrows always gave (420 Hz). Taps keep their old silent
+  choose-on-touch. `hoverRow` (−1 when the menu is closed) and the current
+  flavor line ride the harness state.
+- Playtest fix (screenshot evidence): the phase line + lit-disc shared the
+  title's baseline and the longer phase names overprinted "A MOONGATE
+  WHIRLS" — the phase row now sits below the title (disc by+54, text by+58,
+  title by+36; pinned so it cannot creep back).
+- `britanniacheck` +9 gates: 8 distinct lines, self-naming phase word,
+  wrap-deterministic `gateFlavor`, panel-fit bounds, menu print wiring,
+  pointermove tracking + chirp parity, state exposure, title-clear layout pin.
+  Mutants: duplicate a line (2 red), strip a phase word (1 red), delete the
+  hover chirp (1 red) — each restored green.
