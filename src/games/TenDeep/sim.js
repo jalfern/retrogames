@@ -448,6 +448,17 @@ function charge(st, price, h) {
 function townStep(st, cmd) {
     const t = st.town
     if (cmd === 'wait') return
+    if (cmd === 'potion') {
+        if (st.potions <= 0) { st.events.push({ type: 'empty' }); return }
+        const hurt = st.party.filter(h => h.alive).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]
+        if (!hurt) { st.events.push({ type: 'empty' }); return }
+        st.potions--
+        st.ledger.potionsUsed++
+        const got = Math.min(CFG.potionHeal, hurt.maxHp - hurt.hp)
+        hurt.hp += got
+        st.events.push({ type: 'potion', who: hurt.name, got })
+        return
+    }
     if (cmd === 'down') {
         if (t.b) { st.events.push({ type: 'townNo' }); return }
         if (!st.party.some(h => h.alive)) { st.events.push({ type: 'noBreathers' }); return }

@@ -42,11 +42,12 @@ export const RECRUIT_NAMES = [
 export function rollRecruit(rnd) {
     const pick = (lo, hi) => lo + Math.floor(rnd() * (hi - lo + 1))
     const name = RECRUIT_NAMES[Math.floor(rnd() * RECRUIT_NAMES.length)]
+    // NOTE: no gold here — a hire arrives empty-pursed but never burns the
+    // coin the fallen hero was still carrying; conservation is sacred.
     return {
         name,
         hp: pick(22, 38), mp: pick(2, 16),
         atk: pick(5, 10), def: pick(1, 5), spd: pick(3, 8),
-        gold: 0,
     }
 }
 
