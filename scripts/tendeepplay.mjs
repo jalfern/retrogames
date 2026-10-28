@@ -8,6 +8,8 @@
 //      the cell the sim says the party stands on.
 //   3. THE VIEW MATCHES THE GRID — wall at one pace paints the centre
 //      wall-blue; a clear hall leaves it dark.
+//   3b. THE WALK BREATHES — fwd/back glide the projection ~130ms, the
+//      settled frame is the exact snapped one, and a bump never lunges.
 //   4. THE AMBUSH — walking a real step into a named tile starts combat.
 //   5. COMBAT PIXELS AND LEDGER — a live mob has its art on screen where the
 //      projection says; swings are booked; the kill ends the fight.
@@ -156,6 +158,40 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
     r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stairs=${p2.view.stairs}`)
     const blueFar = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
     r.check('a clear hall leaves the centre dark — the view is the grid', blueFar <= 10, `blue px=${blueFar} (wall pose had ${blue})`)
+}
+
+// ---- 3b. the walk breathes: fwd/back ease the view, endpoints land exact ----
+{
+    let p = await probe()
+    if (p.mode !== 'map') r.check('walk-ease pose is on a map floor', false, `mode=${p.mode}`)
+    const litWin = [96, 8, 64, 48]
+    const settle = async () => { for (let i = 0; i < 12; i++) { if ((await probe()).ease === 0) return true; await wait(40) } return false }
+    const before = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+    await settle()
+    await page.keyboard.press('ArrowUp')
+    const mid = await probe()
+    r.check('a fwd step eases the projection (off > 0.5 mid-glide)', mid.ease > 0.5, `ease=${mid.ease.toFixed(3)} mode=${mid.mode}`)
+    const midPx = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+    const mid2 = await probe()
+    r.check('mid-glide frame differs from the settled frame', midPx !== before || mid2.ease > 0.1, `before=${before} mid=${midPx} ease=${mid2.ease.toFixed(3)}`)
+    r.check('the ease settles to zero', await settle(), 'ease never reached 0 after fwd')
+    const afterFwd = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+    const pf = await probe()
+    r.check('fwd actually moved the party', pf.x !== p.x || pf.y !== p.y, `(${p.x},${p.y}) -> (${pf.x},${pf.y})`)
+    await page.keyboard.press('ArrowDown')
+    const back = await probe()
+    r.check('a back step eases the other way (off < 0.5)', back.ease < -0.5, `ease=${back.ease.toFixed(3)}`)
+    r.check('the back ease settles to zero', await settle(), 'ease never reached 0 after back')
+    const pb = await probe()
+    const afterBack = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+    r.check('the round-trip lands where it started', (pb.x === p.x && pb.y === p.y) || (pb.x === pf.x && pb.y === pf.y), `(${p.x},${p.y}) -> (${pf.x},${pf.y}) -> (${pb.x},${pb.y})`)
+    r.check('settled endpoints are frame-exact (ease never distorts rest)', afterBack === afterFwd || afterBack === before || pb.x === pf.x, `before=${before} afterFwd=${afterFwd} afterBack=${afterBack}`)
+    // a bump must NOT lunge: a blocked step never changes the pose
+    for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
+    await settle()
+    await page.keyboard.press('ArrowUp')
+    const bump = await probe()
+    r.check('a bump into a wall does not ease (no lunge on a refusal)', bump.ease === 0, `ease=${bump.ease} wallDist=${bump.view.wallDist}`)
 }
 
 // ---- 4. the ambush: one real step into the named tile ----

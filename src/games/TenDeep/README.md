@@ -100,6 +100,11 @@ stat you pick at the bench.
   bitmap monster plates, automap from the explored set. The MODERN 3D look
   waits on the shared dungeon renderer (#1129); this renderer keeps the
   pixel contract the play-check samples (wall ahead ⇒ centre wall-blue).
+  fwd/back steps glide the ring geometry over ~130ms (`ringE` clamped at
+  ring(0.62)) so the walk breathes — presentation only: the sim steps in
+  whole cells and the settled frame is the exact snapped one; bumps and
+  turns stay instant (the original snaps too). Probe exposes `ease` so
+  tendeepplay can grade mid-glide vs settled frames.
 - Harness hooks (DEV): `window.__deepTest` (probe/start/cmd/setup/hash),
   DebugKit with PROGNOSIS (re-solves the LIVE mutated state).
 
