@@ -17,7 +17,7 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, BUILDINGS, SERVICES, DX as DXC, DY as DYC } from '../src/games/TenDeep/sim.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
 
@@ -40,7 +40,7 @@ const mobHp = (g) => (g.combat ? g.combat.mobs.reduce((n, m) => n + m.hp, 0) : 0
 
 // ---------------------------------------------------------------- math is banned ----
 section('MATH.RANDOM IS A SIM CRIME')
-for (const f of ['sim.js', 'dungeon.js', 'solver.js']) {
+for (const f of ['sim.js', 'dungeon.js', 'solver.js', 'town.js']) {
     const raw = readFileSync(join(HERE, '../src/games/TenDeep', f), 'utf8')
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     ok(!/Math\s*\.\s*random/.test(src), `${f} contains Math.random — the dungeon may never be luck`)
@@ -51,6 +51,7 @@ let froze = false
 try {
     for (let i = 0; i < FLOORS.length; i++) genFloor(i)
     const g = makeRun()
+    step(g, 'down')
     for (let i = 0; i < 300 && !g.end; i++) step(g, 'fwd')
     froze = true
 } catch (e) {
@@ -171,6 +172,7 @@ section('ENGINE PINS')
     // 6. THE SPRING: restores MP, respects the cap, and is ONE-SHOT.
     {
         const g = makeRun()
+        step(g, 'down')
         const s = g.map.springs[0]
         g.x = s.x; g.y = s.y
         for (const p of g.party) p.mp = 0
@@ -213,11 +215,13 @@ section('ENGINE PINS')
     // 9. STAIRS AND THRONE: use descends, the throne wakes the campaign's end.
     {
         const g = makeRun()
+        step(g, 'down')
         const s = g.map.stairs
         g.x = s.x; g.y = s.y
         const ev = run(g, 'use')
         ok(ev.some((e) => e.type === 'descend' && g.floor === 1), `stairs did not descend: floor=${g.floor}`)
         const g3 = makeRun()
+        step(g3, 'down')
         const th = genFloor(FLOORS.length - 1).throne
         g3.map = genFloor(FLOORS.length - 1)
         const dirs = [[1, 0, 2], [-1, 0, 0], [0, 1, 3], [0, -1, 1]]
@@ -230,6 +234,7 @@ section('ENGINE PINS')
     // 10. MOVEMENT: back is the reverse, walls refuse, fire/heal cost MP honestly.
     {
         const g = makeRun()
+        step(g, 'down')
         const b = { x: g.x, y: g.y }
         run(g, 'fwd')
         ok(g.x !== b.x || g.y !== b.y, 'fwd from the entrance refused (the entrance corridor must open somewhere)')
@@ -251,7 +256,214 @@ section('ENGINE PINS')
     }
 }
 
-// ------------------------------------------------------------------- the proven run ----
+// ------------------------------------------------------------------ THE RIM ----
+section('THE RIM — surface-world pins (stage 2 of #1127)')
+{
+    ok(BUILDINGS.length === 4 && SERVICES.T && SERVICES.V && SERVICES.G && SERVICES.A, 'the RIM must have exactly four houses: tavern, temple, grounds, alchemist')
+    // the game OPENS on the surface: the expedition walks down, not spawns in
+    {
+        const g = makeRun()
+        ok(g.mode === 'town' && g.town.b === null, `a fresh run must open at the RIM street, got mode=${g.mode}`)
+        ok(purse(g) === 120 && g.ledger.goldIn === 120, `starting purse ${purse(g)} (want 120 = printed gold in the ledger)`)
+        run(g, 'down')
+        ok(g.mode === 'map' && g.floor === 0, `F at the well must open DEEP 1, got mode=${g.mode} floor=${g.floor}`)
+        const dead = makeRun()
+        dead.party.forEach(h => { h.alive = false; h.hp = 0 })
+        const ev = run(dead, 'down')
+        ok(ev.some(e => e.type === 'noBreathers') && dead.mode === 'town', 'a coffin crew was allowed down the well')
+    }
+    // TAVERN: hire replaces a corpse — and refuses the living
+    {
+        const g = makeRun()
+        step(g, 'enter-T')
+        const ev = run(g, 'buy')
+        ok(ev.some(e => e.type === 'townNo') && purse(g) === 120 && g.ledger.tx.length === 0, 'the tavern hired a BREATHING hero — post is for the fallen only')
+        g.party[3].alive = false; g.party[3].hp = 0
+        run(g, 'sel+'); run(g, 'sel+'); run(g, 'sel+')
+        const ev2 = run(g, 'buy')
+        const h = g.party[3]
+        ok(ev2.some(e => e.type === 'hire') && h.alive && h.lvl === 1 && h.hp === h.maxHp, 'the tavern did not replace the fallen with a fresh level-1 roll')
+        ok(purse(g) === 80 && g.ledger.goldSpent === CFG.hireCost, `hire misbooked: purse=${purse(g)} spent=${g.ledger.goldSpent}`)
+        ok(g.ledger.tx.length === 1 && g.ledger.tx[0].id === 'post' && g.ledger.tx[0].price === CFG.hireCost, 'the hire was not booked into the town ledger')
+    }
+    // deterministic rolls: same seed, same company; successive hires differ
+    {
+        const seq = () => {
+            const g = makeRun()
+            step(g, 'enter-T')
+            const names = []
+            for (let i = 0; i < 4; i++) {
+                g.party[i].alive = false; g.party[i].hp = 0
+                g.town.hero = i
+                step(g, 'buy')
+                names.push(g.party[i].name)
+            }
+            return names.join('|')
+        }
+        const a = seq(), b = seq()
+        ok(a === b, `recruit rolls drift between identical runs: ${a} vs ${b}`)
+        ok(new Set(a.split('|')).size > 1, 'the tavern keeps handing back the same recruit — the roll is stuck')
+    }
+    // TEMPLE: Mourn at 200×lvl returns the dead at 1 hp; broke refuses and nothing moves
+    {
+        const g = makeRun()
+        g.party.forEach(h => { h.gold += 200; g.ledger.goldIn += 200 })
+        g.party[2].alive = false; g.party[2].hp = 0
+        const p0 = purse(g)
+        step(g, 'enter-V'); run(g, 'sel+'); run(g, 'sel+')
+        const price = servicePrice(g, SERVICES.V[0])
+        ok(price === CFG.mournCost * 1, `mourn must price at 200 x lvl, got ${price}`)
+        run(g, 'buy')
+        ok(g.party[2].alive && g.party[2].hp === 1, 'Mourn did not return the dead at the threshold of life (1 hp)')
+        ok(purse(g) === p0 - 200, `mourn misbooked: ${p0} -> ${purse(g)}`)
+        const poor = makeRun()
+        poor.party[0].alive = false; poor.party[0].hp = 0
+        step(poor, 'enter-V')
+        const ev = run(poor, 'buy')
+        ok(ev.some(e => e.type === 'broke') && !poor.party[0].alive && purse(poor) === 120, 'the temple resurrected on credit')
+    }
+    // TEMPLE: Restore the dead whole / Mend / Refresh
+    {
+        const g = makeRun()
+        g.party.forEach(h => { h.gold += 400; g.ledger.goldIn += 400 })
+        g.party[1].alive = false; g.party[1].hp = 0
+        step(g, 'enter-V'); run(g, 'svc+'); run(g, 'sel+')
+        run(g, 'buy')
+        ok(g.party[1].alive && g.party[1].hp === g.party[1].maxHp && g.party[1].mp === g.party[1].maxMp, 'Restore left someone less than whole')
+        g.party[4].hp = 3; g.party[4].mp = 0
+        g.town.svc = 2; g.town.hero = 4
+        run(g, 'buy')
+        ok(g.party[4].hp === g.party[4].maxHp, 'Mend did not fill the wounded hero')
+        g.town.svc = 3
+        run(g, 'buy')
+        ok(g.party[4].mp === g.party[4].maxMp, 'Refresh did not return the spent magic')
+    }
+    // TRAINING GROUNDS: the XP-at-threshold bargain, priced 100 × next level
+    {
+        const g = makeRun()
+        g.party.forEach(h => { h.gold += 200; g.ledger.goldIn += 200 })
+        step(g, 'enter-G')
+        const ev0 = run(g, 'buy')
+        ok(ev0.some(e => e.type === 'townNo') && g.party[0].lvl === 1 && purse(g) === 1320, 'training sold a level to a hero with no XP')
+        g.party[0].xp = xpNext(1)
+        const hpB = g.party[0].maxHp, p0 = purse(g)
+        const ev = run(g, 'buy')
+        ok(ev.some(e => e.type === 'levelup' && e.trained && e.lvl === 2), 'training at the threshold did not raise a level')
+        ok(g.party[0].maxHp === hpB + CFG.lvlHp && g.party[0].xp === 0, 'training did not spend the XP it was paid in')
+        ok(p0 - purse(g) === CFG.trainCost * 2, `training price must be 100 x next level (200), paid ${p0 - purse(g)}`)
+    }
+    // ALCHEMIST: potions for gold
+    {
+        const g = makeRun()
+        step(g, 'enter-A')
+        const p0 = purse(g)
+        const ev = run(g, 'buy')
+        ok(ev.some(e => e.type === 'buyPotion') && g.potions === 2 && p0 - purse(g) === CFG.potionCost, 'the alchemist did not sell a vial at list')
+    }
+    // WIPE: bodies to the RIM, half the purse per hero, tax booked
+    {
+        const g = makeRun()
+        run(g, 'down')
+        const amb = g.map.ambushes[0]
+        g.x = amb.x; g.y = amb.y; g.mode = 'map'
+        g.party.forEach(h => { h.gold += 41; g.ledger.goldIn += 41 })
+        const per = g.party.map(h => h.gold)
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'TROLL', name: 'Wipe Machine', art: 'troll', hp: 9999, maxHp: 9999, atk: 99, def: 99, spd: 9, xp: 0 }] }
+        let t = 0
+        while (g.mode === 'combat' && t++ < 40) step(g, 'attack')
+        ok(g.mode === 'town' && g.wipe, `a total party kill must carry the bodies to the RIM, got mode=${g.mode}`)
+        const wantLost = per.reduce((n, v) => n + Math.floor(v / CFG.wipeTax), 0)
+        const evW = g.events.find(e => e.type === 'wipe')
+        ok(evW && evW.lost === wantLost, `the dead-body tax misbooked: lost=${evW ? evW.lost : 'none'} want=${wantLost}`)
+        ok(g.ledger.goldSpent >= wantLost, 'the tax was not booked into the gold ledger')
+    }
+    // broke AND fallen: the run truly ends
+    {
+        const g = makeRun()
+        run(g, 'down')
+        g.party.forEach(h => { h.gold = 0 })
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'TROLL', name: 'Ruination', art: 'troll', hp: 9999, maxHp: 9999, atk: 99, def: 99, spd: 9, xp: 0 }] }
+        let t = 0
+        while (g.mode === 'combat' && t++ < 40) step(g, 'attack')
+        ok(g.mode === 'over' && g.end === 'dead', `dead with an empty purse must end the run, got ${g.mode}/${g.end}`)
+    }
+    // strict runs (the proofs) have NO second life
+    {
+        const g = makeRun({ strict: true })
+        g.mode = 'combat'
+        g.combat = { boss: false, round: 0, mobs: [{ id: 0, key: 'TROLL', name: 'Strict Reaper', art: 'troll', hp: 9999, maxHp: 9999, atk: 99, def: 99, spd: 9, xp: 0 }] }
+        let t = 0
+        while (g.mode === 'combat' && t++ < 40) step(g, 'attack')
+        ok(g.end === 'dead', 'a strict run got the temple bargain — the proof grew a second life')
+    }
+    // money is conserved through an honest cycle: walk onto an ambush, get
+    // wiped, and every coin must still balance between purse and ledger
+    {
+        const g = makeRun()
+        run(g, 'down')
+        // BFS on the live map, walked with real commands — no teleporting.
+        // Target the FARTHEST ambush; heroes walk it at 3 hp (a player who
+        // over-reaches with a broken company pays with bodies, not gold).
+        const bfs = (tx, ty) => {
+            const prev = new Map([[g.y * SIZE + g.x, null]])
+            const q = [[g.x, g.y]]
+            while (q.length && !prev.has(ty * SIZE + tx)) {
+                const [cx, cy] = q.shift()
+                for (let d = 0; d < 4; d++) {
+                    const nx = cx + DXC[d], ny = cy + DYC[d]
+                    if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || g.map.wall(nx, ny) || prev.has(ny * SIZE + nx)) continue
+                    prev.set(ny * SIZE + nx, { from: cy * SIZE + cx, d })
+                    q.push([nx, ny])
+                }
+            }
+            const k = ty * SIZE + tx
+            if (!prev.has(k)) return null
+            const out = []
+            for (let kk = k; prev.get(kk) !== null; kk = prev.get(kk).from) out.unshift(prev.get(kk).d)
+            return out
+        }
+        let path = null
+        for (const a of g.map.ambushes) {
+            const pth = bfs(a.x, a.y)
+            if (pth && (!path || pth.length > path.length)) path = pth
+        }
+        ok(!!path, 'no ambush is reachable from the entrance — the RIM economy has no source')
+        for (const d of path) {
+            if (g.mode === 'town' || g.wipe || g.end) break
+            if (g.mode === 'map') for (const h of g.party) if (h.alive) h.hp = Math.min(h.hp, 3)
+            if (g.mode !== 'map') continue
+            let delta = (d - g.dir + 4) % 4
+            while (delta-- > 0) step(g, 'right')
+            step(g, 'fwd')
+            let t = 0
+            while (g.mode === 'combat' && t++ < 40) step(g, 'attack')
+        }
+        ok(g.mode === 'town' && g.wipe, `the wounded walk did not end in a RIM wipe (${g.mode}/${g.end})`)
+        const inLedger = g.ledger.goldIn, spent = g.ledger.goldSpent
+        ok(inLedger - spent === purse(g), `coins must live in the purse or in the ledger: in=${inLedger} spent=${spent} purse=${purse(g)}`)
+        ok(g.ledger.goldIn > 120 || g.ledger.tx.length > 0, 'the wipe happened before any coin was printed — an empty economy proves nothing')
+        step(g, 'enter-T')
+        g.town.hero = g.party.findIndex(h => !h.alive)
+        ok(g.town.hero >= 0, 'a wipe with no fallen hero? the TPK machine failed')
+        if (purse(g) >= CFG.hireCost) {
+            run(g, 'buy')
+            ok(inLedger - g.ledger.goldSpent === purse(g), 'the hire broke gold conservation')
+        }
+    }
+    // hashes see the purse and the street — determinism covers the surface too
+    {
+        const a = makeRun(), b = makeRun()
+        ok(stateHash(a) === stateHash(b), 'two fresh RIM streets hash differently')
+        b.party[0].gold += 1
+        ok(stateHash(a) !== stateHash(b), 'stateHash ignores the purse')
+        const c = makeRun()
+        step(c, 'enter-T')
+        ok(stateHash(c) !== stateHash(makeRun()), 'stateHash ignores where you stand in town')
+    }
+}
+
 section('THE PROVEN CAMPAIGN (the attract demo replays this solver live)')
 let proven = null
 {
@@ -264,6 +476,8 @@ let proven = null
     ok(proven.ledger.casts >= 10, `only ${proven.ledger.casts} casts — magic is decoration if the proof barely uses it`)
     ok(proven.party.some((p) => p.alive), 'the campaign was won by corpses')
     ok(proven.party.some((p) => p.lvl > 1), 'nobody levelled across ten deeps — XP is a decoration')
+    ok(proven.ledger.tx.length === 0, `the proof visited THE RIM (${proven.ledger.tx.length} town services) — the campaign must win on dungeon supplies alone`)
+    ok(proven.ledger.goldIn > 120, 'the proof printed no gold — RIM prices were never tested against real income')
     console.log(`  ..    ${proven.ticks} commands, dealt ${proven.ledger.dealt} taken ${proven.ledger.taken}, ${proven.ledger.potionsUsed} potions, ${proven.ledger.springsUsed} springs, ${proven.ledger.casts} casts, ${Date.now() - t0} ms`)
 }
 
@@ -355,6 +569,7 @@ if (MUT) {
     // 3. springs stop restoring MP — the campaign's only renewable fuel is a lie
     mut('springMp 14 -> 0 (a dry spring)', { springMp: 0 }, () => {
         const g = makeRun()
+        step(g, 'down')
         const s = g.map.springs[0]
         g.x = s.x; g.y = s.y
         for (const p of g.party) p.mp = 0
@@ -368,7 +583,17 @@ if (MUT) {
         return r.won && r.party.some((p) => p.lvl > 1)
     })
 
-    // 5. fleeing becomes free — the retreat contract dies
+    // 5. hires go free — the RIM economy is a giveaway and death has no cost
+    mut('hireCost 40 -> 0 (a free corps of hires)', { hireCost: 0 }, () => {
+        const g = makeRun()
+        g.party[3].alive = false; g.party[3].hp = 0
+        step(g, 'enter-T')
+        g.town.hero = 3
+        run(g, 'buy')
+        return purse(g) === 120 - CFG.hireCost && purse(g) < 120
+    })
+
+    // 6. fleeing becomes free — the retreat contract dies
     mut('fleeCost 6 -> 0 (a free walk away)', { fleeCost: 0 }, () => {
         const g = makeRun()
         g.mode = 'combat'

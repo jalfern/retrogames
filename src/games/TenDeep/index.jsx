@@ -16,7 +16,8 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, BUILDINGS, SERVICES, TOWN } from './sim.js'
+import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
@@ -79,6 +80,165 @@ const drawMob = (ctx, art, x, y, size, flash) => {
     }
 }
 
+// --------------------------------------------------------------- THE RIM ----
+// dusk over the hamlet on the lip of the well: seeded stars, the Hollow Keep
+// brooding on the skyline, four lit facades and the well-mouth glowing amber.
+const RIM = (() => {
+    const rnd = mulberry32(0xC0FFEE)
+    return {
+        stars: Array.from({ length: 42 }, () => ({ x: Math.floor(rnd() * W), y: Math.floor(rnd() * 92), tw: rnd() })),
+        flecks: Array.from({ length: 90 }, () => ({ x: Math.floor(rnd() * W), y: 124 + Math.floor(rnd() * 74), w: 1 + Math.floor(rnd() * 3) })),
+        keep: [[0, 118], [18, 118], [26, 92], [34, 92], [34, 74], [44, 74], [44, 96], [70, 96], [78, 66], [86, 66], [86, 48], [97, 60], [108, 48], [108, 88], [140, 88], [148, 70], [156, 70], [156, 96], [196, 96], [204, 82], [212, 82], [212, 104], [256, 104], [256, 130], [0, 130]],
+    }
+})()
+
+const FACADE_X = [12, 76, 140, 204]
+
+const drawFacade = (ctx, b, x, sel, bob) => {
+    const y = sel ? 66 : 70
+    const w = 40, wall = 44
+    const wobble = sel ? Math.sin(bob / 9) * 1.2 : 0
+    ctx.fillStyle = '#171426'; ctx.fillRect(x - 2, y - 8 + wobble, w + 4, wall + 10)
+    ctx.fillStyle = '#241d33'; ctx.fillRect(x, y + wobble, w, wall)
+    ctx.fillStyle = '#2e2440'
+    for (let r = 0; r < 5; r++) ctx.fillRect(x, y + r * 9 + wobble, w, 1)
+    ctx.fillStyle = '#0d0a16'; ctx.fillRect(x + 15, y + 26 + wobble, 10, 18)
+    if (b.key === 'T') {
+        ctx.fillStyle = '#ffb84d'; ctx.fillRect(x + 4, y + 8 + wobble, 8, 7); ctx.fillRect(x + 28, y + 8 + wobble, 8, 7)
+        ctx.fillStyle = '#b3402e'; ctx.fillRect(x + 14, y - 6 + wobble, 12, 8)
+        ctx.fillStyle = '#ffd54f'; ctx.fillRect(x + 17, y - 3 + wobble, 6, 2)
+    } else if (b.key === 'V') {
+        ctx.fillStyle = '#cdd6f0'; ctx.fillRect(x + 6, y + 6 + wobble, 28, 3)
+        ctx.fillStyle = '#9fb4ff'
+        for (let i = 0; i < 9; i++) {
+            const a = (i / 9) * Math.PI * 2
+            ctx.fillRect(x + 20 + Math.cos(a) * 7, y + 16 + wobble + Math.sin(a) * 7, 2, 2)
+        }
+    } else if (b.key === 'G') {
+        ctx.fillStyle = '#4c5b43'
+        for (let i = 0; i < 5; i++) ctx.fillRect(x + 2 + i * 8, y + 24 + wobble, 3, 20)
+        ctx.fillStyle = '#8a94a6'; ctx.fillRect(x + 16, y + 8 + wobble, 8, 10)
+        ctx.fillStyle = '#c8503c'; ctx.fillRect(x + 18, y + 10 + wobble, 4, 6)
+    } else {
+        ctx.fillStyle = '#7d4fd8'; ctx.fillRect(x + 5, y + 7 + wobble, 9, 8)
+        ctx.fillStyle = '#b98cff'; ctx.fillRect(x + 27, y + 7 + wobble, 9, 8)
+        ctx.fillStyle = '#57e389'; ctx.fillRect(x + 18, y + 22 + wobble + ((Math.sin(bob / 6) * 1.5) | 0), 4, 5)
+    }
+    if (sel) {
+        ctx.strokeStyle = '#ffffff'
+        ctx.strokeRect(x - 3.5, y - 11.5 + wobble, w + 7, wall + 15)
+        ctx.fillStyle = '#ffd54f'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
+        ctx.fillText(b.name, x + w / 2, y - 15 + wobble)
+        ctx.fillStyle = '#9fb4ff'; ctx.font = '6px monospace'
+        ctx.fillText(b.sign, x + w / 2, y + wall + 16 + wobble)
+    }
+}
+
+const paintRim = (ctx, gs, bob, uiSel) => {
+    const g = ctx.createLinearGradient(0, 0, 0, 130)
+    g.addColorStop(0, '#070a24'); g.addColorStop(0.7, '#1c1638'); g.addColorStop(1, '#43263f')
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, 130)
+    RIM.stars.forEach((s) => {
+        const tw = 0.5 + 0.5 * Math.sin(bob / 20 + s.tw * 9)
+        ctx.fillStyle = `rgba(220,228,255,${(0.25 + 0.55 * tw * s.tw).toFixed(2)})`
+        ctx.fillRect(s.x, s.y, 1, 1)
+    })
+    ctx.fillStyle = '#e8ecf5'; ctx.beginPath(); ctx.arc(212, 26, 9, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#1c1638'; ctx.beginPath(); ctx.arc(216, 23, 8, 0, Math.PI * 2); ctx.fill()
+    ctx.fillStyle = '#05060f'
+    ctx.beginPath(); ctx.moveTo(RIM.keep[0][0], RIM.keep[0][1])
+    for (const p of RIM.keep) ctx.lineTo(p[0], p[1])
+    ctx.closePath(); ctx.fill()
+    const glow = 0.4 + 0.25 * Math.sin(bob / 14)
+    ctx.fillStyle = `rgba(125,255,206,${glow.toFixed(2)})`
+    ctx.fillRect(89, 54, 3, 4); ctx.fillRect(93, 54, 3, 4)
+    const gr = ctx.createLinearGradient(0, 124, 0, H)
+    gr.addColorStop(0, '#241d33'); gr.addColorStop(1, '#120e1c')
+    ctx.fillStyle = gr; ctx.fillRect(0, 124, W, H - 124)
+    ctx.fillStyle = '#2e2440'
+    RIM.flecks.forEach((f) => ctx.fillRect(f.x, f.y, f.w, 1))
+    BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === uiSel && !gs.town.b, bob))
+    const wx = 128, wy = 158
+    ctx.fillStyle = '#3a3f5c'; ctx.fillRect(wx - 14, wy - 10, 28, 18)
+    ctx.fillStyle = '#8a94a6'
+    for (let i = 0; i < 7; i++) ctx.fillRect(wx - 14 + i * 4, wy - 10 + (i % 2), 4, 3)
+    ctx.fillStyle = '#050408'; ctx.fillRect(wx - 9, wy - 6, 18, 10)
+    ctx.fillStyle = `rgba(255,180,60,${(0.3 + 0.2 * Math.sin(bob / 8)).toFixed(2)})`
+    ctx.fillRect(wx - 6, wy - 3, 12, 4)
+    ctx.fillStyle = '#6b4519'; ctx.fillRect(wx - 14, wy - 24, 2, 14); ctx.fillRect(wx + 12, wy - 24, 2, 14)
+    ctx.fillStyle = '#4a3320'; ctx.fillRect(wx - 16, wy - 26, 32, 3)
+    ctx.fillStyle = '#0c1024'; ctx.fillRect(0, 176, W, 24)
+    ctx.fillStyle = '#9fb4ff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(gs.wipe ? 'THE RIM — THE TEMPLE OPENS ALL NIGHT' : 'THE RIM — THE LIP OF THE WELL', 128, 184)
+    ctx.fillStyle = '#ffd54f'
+    ctx.fillText('←→ DOORS · SPACE ENTER · F DESCEND TO THE DEEP', 128, 194)
+    void gs
+}
+
+const ROOM_TINT = { T: ['#241608', '#3a2410'], V: ['#0e1a30', '#1c3050'], G: ['#141f14', '#223322'], A: ['#1c0e30', '#301a4c'] }
+const CLERK = { T: 'OLD BRANNOCK POLISHES GLASS', V: 'SISTER YANNE COUNTS COINS', G: 'SERGEANT OWL EYES THE SIX', A: 'MAD SIXVIAL WEIGHS POWDER' }
+
+const paintInterior = (ctx, gs, bob) => {
+    const b = gs.town.b
+    const tint = ROOM_TINT[b]
+    const g = ctx.createLinearGradient(0, 0, 0, H)
+    g.addColorStop(0, tint[0]); g.addColorStop(1, tint[1])
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H)
+    ctx.fillStyle = '#00000030'
+    for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 1)
+    ctx.fillStyle = '#0c1024'; ctx.fillRect(0, 0, W, 16)
+    const B = BUILDINGS.find((q) => q.key === b)
+    ctx.fillStyle = '#ffd54f'; ctx.font = 'bold 9px monospace'; ctx.textAlign = 'left'
+    ctx.fillText(B.name, 8, 11)
+    ctx.fillStyle = '#9fb4ff'; ctx.font = '6px monospace'; ctx.textAlign = 'right'
+    ctx.fillText(B.sign, 248, 11)
+    ctx.fillStyle = '#4a3320'; ctx.fillRect(0, 150, W, 8)
+    ctx.fillStyle = '#6b4519'; ctx.fillRect(0, 150, W, 2)
+    ctx.fillStyle = '#cdd6f0'; ctx.font = '6px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(CLERK[b], 128, 146 + Math.sin(bob / 12) * 0.8)
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#cdd6f0'; ctx.font = 'bold 7px monospace'
+    ctx.fillText('THE COMPANY', 8, 26)
+    gs.party.forEach((h, i) => {
+        const y = 32 + i * 19
+        const sel = i === gs.town.hero
+        ctx.fillStyle = sel ? '#ffffff' : h.alive ? '#9fb4ff' : '#e05555'
+        ctx.fillText((sel ? '▸ ' : '  ') + h.name.slice(0, 7), 8, y)
+        ctx.fillStyle = '#333'; ctx.fillRect(52, y - 5, 34, 3)
+        ctx.fillStyle = h.alive ? '#e5484d' : '#4a2020'
+        ctx.fillRect(52, y - 5, 34 * Math.max(0, h.hp / h.maxHp), 3)
+        ctx.fillStyle = '#224'; ctx.fillRect(52, y - 1, 34, 3)
+        ctx.fillStyle = '#4f9dff'; ctx.fillRect(52, y - 1, 34 * (h.mp / h.maxMp), 3)
+        ctx.fillStyle = h.alive ? '#ffd54f' : '#e05555'
+        ctx.fillText(h.alive ? `L${h.lvl} ${h.gold}g` : 'FALLEN', 90, y)
+    })
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#cdd6f0'; ctx.font = 'bold 7px monospace'
+    ctx.fillText('SERVICES', 248, 26)
+    SERVICES[b].forEach((svc, i) => {
+        const y = 32 + i * 14
+        const sel = i === gs.town.svc
+        const price = servicePrice(gs, svc)
+        const ok = canBuy(gs) && gs.town.svc === i
+        ctx.fillStyle = sel ? '#ffffff' : '#9fb4ff'
+        ctx.textAlign = 'right'
+        ctx.fillText((sel ? '◂ ' : '') + svc.label, 214, y)
+        ctx.fillStyle = sel ? (ok ? '#57e389' : '#e05555') : '#ffd54f'
+        ctx.fillText(`${price}g`, 248, y)
+        if (sel) {
+            ctx.fillStyle = '#9fb4ff'; ctx.font = '6px monospace'; ctx.textAlign = 'right'
+            ctx.fillText(svc.desc, 248, y + 8)
+            ctx.font = 'bold 7px monospace'
+        }
+    })
+    ctx.fillStyle = '#0c1024'; ctx.fillRect(0, H - 24, W, 24)
+    ctx.fillStyle = '#ffd54f'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
+    ctx.fillText(`PURSE ${purse(gs)}g · POTIONS ${gs.potions}`, 128, H - 14)
+    ctx.fillStyle = '#9fb4ff'
+    ctx.fillText('↑↓ HERO · ←→ SERVICE · SPACE BUY · L LEAVE', 128, H - 5)
+    void b
+}
+
 const TenDeepGame = () => {
     const stageRef = useRef(null)
     const mapRef = useRef(null)
@@ -108,6 +268,7 @@ const TenDeepGame = () => {
         let gs = makeRun()
         let raf = 0, last = 0, acc = 0, demoAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
+        let uiSel = 0
         const evLog = []
         let shake = 0, flashHit = 0
 
@@ -132,6 +293,16 @@ const TenDeepGame = () => {
                 else if (e.type === 'fled') audioController.playSweep(500, 150, 0.3, 'square', 0.06)
                 else if (e.type === 'noback') say('THERE IS NO FLIGHT FROM THE KING')
                 else if (e.type === 'empty') audioController.playTone(70, 0.06, 'triangle', 0.05)
+                else if (e.type === 'wipe') { audioController.playSweep(220, 55, 0.9, 'sawtooth', 0.1); say('THE BODIES RETURN TO THE RIM — HALF THE PURSE BUYS PASSAGE') }
+                else if (e.type === 'townEnter') { audioController.playTone(180, 0.08, 'triangle', 0.05); say(`${e.name} — DOORS OPEN`) }
+                else if (e.type === 'townBuy') audioController.playTone(1245, 0.05, 'square', 0.04)
+                else if (e.type === 'hire') { audioController.playSweep(300, 900, 0.4, 'square', 0.06); say(`WELCOME TO THE COMPANY, ${e.who}`) }
+                else if (e.type === 'mourn') { audioController.playSweep(200, 800, 0.6, 'sine', 0.08); say(`${e.who} RETURNS FROM THE DARK AT 1 HP`) }
+                else if (e.type === 'restore') { audioController.playSweep(300, 1100, 0.5, 'sine', 0.08); say(`${e.who} — LIFE AND LIMB RESTORED`) }
+                else if (e.type === 'buyPotion') { audioController.playTone(880, 0.09, 'square', 0.05); say('A FRESH VIAL FOR THE SATCHEL') }
+                else if (e.type === 'broke') { audioController.playTone(80, 0.12, 'triangle', 0.06); say('THE PURSE REFUSES') }
+                else if (e.type === 'townNo') audioController.playTone(90, 0.05, 'square', 0.04)
+                else if (e.type === 'noBreathers') { audioController.playTone(70, 0.14, 'sawtooth', 0.06); say('NO BREATHING HERO WALKS YOU DOWN') }
             }
         }
 
@@ -151,7 +322,7 @@ const TenDeepGame = () => {
         }
 
         const tickDemo = () => {
-            if (gs.end) { gs = makeRun(); return }
+            if (gs.end || (gs.mode === 'town' && !gs.party.some(h => h.alive))) { gs = makeRun(); uiSel = 0; return }
             act(nextAction(gs))
         }
 
@@ -171,6 +342,7 @@ const TenDeepGame = () => {
         }
 
         const paintMap = () => {
+            if (!gs.map) { ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200); return }   // ended at the RIM: no corridor left to show
             ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200)
             for (let i = DEPTH; i >= 1; i--) {
                 const o = ring(i - 1 === 0 ? 0.62 : i - 1)
@@ -272,7 +444,8 @@ const TenDeepGame = () => {
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.85; if (shake < 0.4) shake = 0 }
             ctx.save(); ctx.translate(sx, sy)
-            if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
+            if (gs.mode === 'town') { if (gs.town.b) paintInterior(ctx, gs, bob); else paintRim(ctx, gs, bob, uiSel) }
+            else if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
             else paintMap()
             ctx.restore()
             ctx.fillStyle = '#000'; ctx.fillRect(0, 200, W, H - 200)
@@ -296,6 +469,9 @@ const TenDeepGame = () => {
         const drawAutomap = () => {
             const cv = mapRef.current
             if (!cv) return
+            const inDeep = gs.mode === 'map' || gs.mode === 'combat'
+            cv.style.display = inDeep && screenRef.current === 'play' ? 'block' : 'none'
+            if (!inDeep) return
             const g = cv.getContext('2d')
             const C = 5
             g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height)
@@ -324,10 +500,13 @@ const TenDeepGame = () => {
             if (now - lastHud < 100) return
             lastHud = now
             const h = hudRef.current
-            if (h.floor) h.floor.textContent = gs.map.name
+            if (h.floor) h.floor.textContent = gs.mode === 'map' || gs.mode === 'combat' ? gs.map.name : TOWN
             if (h.potions) h.potions.textContent = String(gs.potions)
+            if (h.gold) h.gold.textContent = String(purse(gs))
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
-            if (h.cmd) h.cmd.textContent = gs.mode === 'combat' ? 'SPACE attack · F fire · H heal · P potion · L flee' : 'ARROWS walk · SPACE use · P potion'
+            if (h.cmd) h.cmd.textContent = gs.mode === 'town'
+                ? (gs.town.b ? '↑↓ hero · ←→ service · SPACE buy · L leave' : '←→ doors · SPACE enter · F descends')
+                : gs.mode === 'combat' ? 'SPACE attack · F fire · H heal · P potion · L flee' : 'ARROWS walk · SPACE use · P potion'
             if (h.dir) h.dir.textContent = ['EAST', 'SOUTH', 'WEST', 'NORTH'][gs.dir]
             if (toast > 0 && !pausedRef.current) toast--
         }
@@ -347,9 +526,10 @@ const TenDeepGame = () => {
 
         const startPlay = () => {
             gs = makeRun()
+            uiSel = 0
             evLog.length = 0
             setMode('play')
-            say(gs.map.name.toUpperCase())
+            say('THE RIM — THE LIP OF THE WELL')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
         }
 
@@ -361,6 +541,24 @@ const TenDeepGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            if (gs.mode === 'town') {
+                if (gs.town.b) {
+                    if (e.code === 'ArrowUp') act('sel-')
+                    else if (e.code === 'ArrowDown') act('sel+')
+                    else if (e.code === 'ArrowLeft') act('svc-')
+                    else if (e.code === 'ArrowRight') act('svc+')
+                    else if (e.code === 'Space' || e.code === 'KeyF') act('buy')
+                    else if (e.code === 'KeyL') act('leave')
+                    else if (e.code === 'KeyP') act('potion')
+                } else {
+                    if (e.code === 'ArrowLeft') uiSel = (uiSel + BUILDINGS.length - 1) % BUILDINGS.length
+                    else if (e.code === 'ArrowRight') uiSel = (uiSel + 1) % BUILDINGS.length
+                    else if (e.code === 'Space') act(`enter-${BUILDINGS[uiSel].key}`)
+                    else if (e.code === 'KeyF' || e.code === 'ArrowUp') act('down')
+                    else if (e.code === 'KeyP') act('potion')
+                }
+                return
+            }
             const fighting = gs.mode === 'combat'
             if (!fighting && e.repeat && ['Space', 'KeyP', 'KeyF'].includes(e.code)) return
             if (e.code === 'ArrowUp') act(fighting ? 'target+' : 'fwd')
@@ -398,8 +596,15 @@ const TenDeepGame = () => {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
-                    wallAhead: !!gs.map.wall(gs.x + DX[gs.dir], gs.y + DY[gs.dir]),
-                    stairs: gs.map.stairs, throne: gs.map.throne,
+                    gold: purse(gs), wipe: gs.wipe,
+                    town: gs.mode === 'town' ? {
+                        b: gs.town.b, hero: gs.town.hero, svc: gs.town.svc, sel: uiSel,
+                        services: gs.town.b ? SERVICES[gs.town.b].map((s, i) => ({
+                            id: s.id, price: servicePrice(gs, s), ok: canBuy(gs) && gs.town.svc === i,
+                        })) : null,
+                    } : null,
+                    wallAhead: !!(gs.map && gs.map.wall(gs.x + DX[gs.dir], gs.y + DY[gs.dir])),
+                    stairs: gs.map ? gs.map.stairs : null, throne: gs.map ? gs.map.throne : null,
                     springHere: gs.springs.has(gs.y * SIZE + gs.x),
                     potHere: gs.pots.has(gs.y * SIZE + gs.x),
                     explored: gs.explored.size,
@@ -407,6 +612,7 @@ const TenDeepGame = () => {
                         // what the wireframe can see: first solid depth + features
                         // in front, exactly as paintMap walks the corridor
                         let wallDist = 7, pots = 0, springs = 0, stairs = false
+                        if (!gs.map) return { wallDist: 0, pots, springs, stairs }
                         for (let i = 1; i <= DEPTH; i++) {
                             const cell = { x: gs.x + DX[gs.dir] * i, y: gs.y + DY[gs.dir] * i }
                             if (gs.map.wall(cell.x, cell.y)) { wallDist = i; break }
@@ -440,9 +646,22 @@ const TenDeepGame = () => {
                 cmd: (c) => { act(c); return true },
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
+                    if (opts.gold !== undefined) {
+                        for (const h of gs.party) h.gold = 0
+                        gs.party[0].gold = opts.gold
+                        gs.ledger.goldIn += Math.max(0, opts.gold - 120)
+                    }
+                    if (opts.kill !== undefined) { const h = gs.party[opts.kill]; if (h) { h.alive = false; h.hp = 0 } }
+                    if (opts.townB !== undefined) {
+                        gs.mode = 'town'; gs.combat = null
+                        gs.town = { b: opts.townB || null, svc: 0, hero: 0 }
+                        return true
+                    }
+                    if (gs.mode === 'town') step(gs, 'down')
                     if (opts.floor !== undefined && opts.floor !== gs.floor && opts.floor < 10) {
                         for (let f = gs.floor; f < opts.floor; f++) step(gs, 'wait')
                         gs = makeRun()
+                        step(gs, 'down')
                         while (gs.floor < opts.floor) {
                             gs.combat = null
                             gs.x = gs.map.stairs.x; gs.y = gs.map.stairs.y
@@ -474,7 +693,7 @@ const TenDeepGame = () => {
             mountDbg({
                 title: 'TEN-DEEP',
                 getState: () => [
-                    `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}`,
+                    gs.mode === 'map' || gs.mode === 'combat' ? `${gs.map.name}  (${gs.x},${gs.y}) facing ${['E', 'S', 'W', 'N'][gs.dir]}  mode ${gs.mode}` : `THE RIM — ${gs.town.b ? BUILDINGS.find((b) => b.key === gs.town.b).name : (gs.end ? 'cold ground' : 'the street')}  purse ${purse(gs)}`,
                     `potions ${gs.potions}  explored ${gs.explored.size}  dealt ${gs.ledger.dealt} taken ${gs.ledger.taken}`,
                     gs.party.map((h) => `${h.name} ${h.hp}/${h.maxHp}mp${h.mp}L${h.lvl}${h.alive ? '' : ' x'}`).join('  '),
                     gs.combat ? `ROUND ${gs.combat.round}: ${gs.combat.mobs.map((m) => `${m.name} ${m.hp}`).join(' | ')}` : `end ${gs.end}`,
@@ -521,6 +740,7 @@ const TenDeepGame = () => {
                 <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
                     <span ref={setHud('floor')} className="border border-indigo-400/60 text-indigo-200 px-2 py-0.5 rounded bg-black/40">LEVEL 1</span>
                     <span className="text-amber-200">POTIONS <b ref={setHud('potions')}>1</b></span>
+                    <span className="text-yellow-100">PURSE <b ref={setHud('gold')}>120</b></span>
                     <span className="text-cyan-200">FACING <b ref={setHud('dir')}>EAST</b></span>
                     <span ref={setHud('cmd')} className="ml-auto text-white/60" />
                 </div>
@@ -538,7 +758,7 @@ const TenDeepGame = () => {
             {screen === 'over' && end && (
                 <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center text-amber-50 font-mono px-6 text-center">
                     <h2 className={`text-4xl font-black mb-2 ${end.win ? 'text-yellow-300' : 'text-red-400'}`}>{end.win ? 'THE HOLLOW KING HAS FALLEN' : 'THE PARTY PERISHES'}</h2>
-                    <p className="text-lg mb-4">{end.win ? 'Ten deeps below, the throne is silent. The Deep is yours.' : 'The dark keeps what it takes. The Deep reshuffles for the next six.'}</p>
+                    <p className="text-lg mb-4">{end.win ? 'Ten deeps below, the throne is silent. The Deep is yours.' : 'The dark keeps what it takes — this company has no gold left at the RIM to call them back.'}</p>
                     <p className="text-sm text-white/70">{(end.win ? 'Victory at tick ' : 'Fallen at tick ') + end.tick}</p>
                     <p className="mt-6 animate-pulse font-bold">TAP / PRESS ANY KEY</p>
                 </div>
