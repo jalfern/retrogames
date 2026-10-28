@@ -19,6 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
 import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen } from './weather.js'
+import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 
 const SIM_MS = 1000 / 60
@@ -135,6 +136,7 @@ const BritanniaGame = () => {
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
             face: 'down', anim: 0, dismissed: -1,
             sel: 1, gate: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
+            amb: AMB.NONE,
         })
 
         const load = async () => {
@@ -154,6 +156,14 @@ const BritanniaGame = () => {
         load().catch(() => setMode('error'))
 
         const tod = () => (S.tick % DAY) / DAY
+        const coastAt = (x, y) => isSea(world.get(x, y)) &&
+            (!isSea(world.get(x + 1, y)) || !isSea(world.get(x - 1, y)) || !isSea(world.get(x, y + 1)) || !isSea(world.get(x, y - 1)))
+        const ambAt = (x, y, tick, seed) => {
+            const cx = Math.floor(x / AMB_CELL) * AMB_CELL + AMB_CELL / 2
+            const cy = Math.floor(y / AMB_CELL) * AMB_CELL + AMB_CELL / 2
+            const v = world.get(cx, cy)
+            return ambientAt(cx, cy, v, coastAt(cx, cy), tick, seed)
+        }
         const night = () => {
             const t = tod()
             if (t < 0.25) return 0
@@ -176,6 +186,12 @@ const BritanniaGame = () => {
             S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed)
             if (flashOnset(S.x, S.y, S.tick, tod(), S.seed)) S.thunder = S.tick + 26
             if (S.thunder === S.tick) { audioController.playNoise(0.7, 0.2); audioController.playSweep(72, 28, 0.9, 'sawtooth', 0.14) }
+            const amb = ambAt(S.x, S.y, S.tick, S.seed)
+            if (amb !== S.amb) {
+                S.amb = amb
+                if (amb === AMB.BIRD) { audioController.playTone(2280 + (S.tick % 7) * 90, 0.06, 'sine', 0.045); audioController.playTone(2980 + (S.tick % 5) * 60, 0.05, 'sine', 0.03) }
+                else if (amb === AMB.FISH) audioController.playNoise(0.14, 0.05)
+            }
             // camera eases toward the player (world px)
             const wx = S.x * TILE, wy = S.y * TILE
             S.camX += (wx - S.camX) * 0.12
@@ -282,6 +298,8 @@ const BritanniaGame = () => {
                 ctx.lineWidth = 2
                 ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 7, t / 12, t / 12 + 4.6); ctx.stroke()
             }
+            // ambient life: birds wheel over the moors, fish break at sea (#1135)
+            if (!classicOn) drawAmbient(t, camX, camY)
             // hero / ship
             const px = S.x * TILE - camX + 16, py = S.y * TILE - camY + 16
             const bob = Math.sin(t / 6) * 2
@@ -364,6 +382,58 @@ const BritanniaGame = () => {
             ctx.stroke()
         }
 
+        const drawAmbient = (t, camX, camY) => {
+            const seed = S ? S.seed : 0
+            const c0 = Math.floor(camX / (AMB_CELL * TILE)) - 1
+            const r0 = Math.floor(camY / (AMB_CELL * TILE)) - 1
+            const c1 = Math.floor((camX + VIEW_W) / (AMB_CELL * TILE)) + 1
+            const r1 = Math.floor((camY + VIEW_H) / (AMB_CELL * TILE)) + 1
+            for (let cy = r0; cy <= r1; cy++) {
+                for (let cx = c0; cx <= c1; cx++) {
+                    const wx = cx * AMB_CELL + AMB_CELL / 2, wy = cy * AMB_CELL + AMB_CELL / 2
+                    const kind = ambAt(wx, wy, t, seed)
+                    if (!kind) continue
+                    const bx = cx * AMB_CELL * TILE + AMB_CELL * TILE / 2 - camX
+                    const by = cy * AMB_CELL * TILE + AMB_CELL * TILE / 2 - camY
+                    const f = flockOf(wx, wy, t, seed)
+                    if (kind === AMB.BIRD) {
+                        const p = progressOf(t)
+                        const off = flightOf(wx, wy, t, seed) * 220
+                        const seen = Math.sin(Math.PI * p)
+                        const mid = (f.n - 1) / 2
+                        for (let i = 0; i < f.n; i++) {
+                            const vx = bx + off + (i - mid) * 13 * f.dir
+                            const vy = by - 46 - f.lift - Math.abs(i - mid) * 5 + Math.sin(t / 23 + cx + i) * 4
+                            const flap = Math.sin(t / 3.2 + i * 1.7) * 2.6
+                            ctx.strokeStyle = `rgba(14,16,26,${0.45 + 0.4 * seen})`
+                            ctx.lineWidth = 2
+                            ctx.beginPath()
+                            ctx.moveTo(vx - 5, vy - flap)
+                            ctx.quadraticCurveTo(vx, vy + flap * 0.8, vx + 5, vy - flap)
+                            ctx.stroke()
+                        }
+                    } else if (kind === AMB.FISH) {
+                        for (let i = 0; i < 2; i++) {
+                            const jp = progressOf(t) * 1.6 - i * 0.35
+                            if (jp <= 0 || jp >= 1) continue
+                            const arc = Math.sin(Math.PI * jp)
+                            const fx = bx + (i - 0.5) * 34 + f.dir * arc * 26
+                            ctx.save()
+                            ctx.translate(fx, by + 4 - arc * 16)
+                            ctx.rotate(f.dir * (0.9 - arc * 1.6))
+                            ctx.fillStyle = 'rgba(190,214,235,0.85)'
+                            ctx.beginPath(); ctx.ellipse(0, 0, 6, 2.4, 0, 0, 7); ctx.fill()
+                            ctx.beginPath(); ctx.moveTo(-6, 0); ctx.lineTo(-10, -3); ctx.lineTo(-10, 3); ctx.closePath(); ctx.fill()
+                            ctx.restore()
+                            ctx.strokeStyle = `rgba(210,235,255,${0.5 * arc})`
+                            ctx.lineWidth = 1.5
+                            ctx.beginPath(); ctx.ellipse(fx, by + 6, 8 + arc * 10, 2.6 + arc * 2, 0, 0, 7); ctx.stroke()
+                        }
+                    }
+                }
+            }
+        }
+
         const drawHud = (n) => {
             ctx.fillStyle = 'rgba(8,10,22,0.78)'
             ctx.fillRect(0, 0, VIEW_W, 46)
@@ -428,6 +498,7 @@ const BritanniaGame = () => {
                     drawTile(x0 + rx, y0 + ry, ox + rx * TILE, oy + ry * TILE, t)
                 }
             }
+            drawAmbient(t, camX, camY)
             ctx.fillStyle = 'rgba(4,6,18,0.55)'
             ctx.fillRect(0, 0, VIEW_W, VIEW_H)
             ctx.textAlign = 'center'
@@ -562,6 +633,7 @@ const BritanniaGame = () => {
                     face: S.face, frame: walkFrame(S.anim, S.cd > 0), anim: S.anim,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
+                    ambient: AMB_NAME[S.amb],
                 }
             }
             window.__britanniaTest = {
