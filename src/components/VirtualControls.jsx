@@ -682,13 +682,13 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseLeave={aMU}
                     >
                         {secondAction && (
-                            <div ref={bBtnRef} style={btnStyle} className={`${actBase} ${isHeld(secondAction.code) ? 'bg-orange-400/40 ring-white/90 scale-95 brightness-150' : 'bg-orange-500/25 ring-white/60'}`}>
+                            <div ref={bBtnRef} data-vc="b" data-key={secondAction.code} style={btnStyle} className={`${actBase} ${isHeld(secondAction.code) ? 'bg-orange-400/40 ring-white/90 scale-95 brightness-150' : 'bg-orange-500/25 ring-white/60'}`}>
                                 <span className="text-white/90">{<IconBolt s={Math.round(sz.btn * ICON_F)} />}</span>
                                 <span className="text-white font-bold leading-none" style={{ fontSize: sz.font((secondAction.label || 'B').length) }}>{secondAction.label || 'B'}</span>
                             </div>
                         )}
                         {showA && (
-                            <div ref={aBtnRef} style={btnStyle} className={`${actBase} ${isHeld('Space') ? 'bg-red-400/40 ring-white/90 scale-95 brightness-150' : 'bg-red-500/25 ring-white/60'}`}>
+                            <div ref={aBtnRef} data-vc="a" data-key="Space" style={btnStyle} className={`${actBase} ${isHeld('Space') ? 'bg-red-400/40 ring-white/90 scale-95 brightness-150' : 'bg-red-500/25 ring-white/60'}`}>
                                 <span className="text-white/90">{<IconFire s={Math.round(sz.btn * ICON_F)} />}</span>
                                 <span className="text-white font-bold leading-none" style={{ fontSize: sz.font(aLabel.length) }}>{aLabel}</span>
                             </div>

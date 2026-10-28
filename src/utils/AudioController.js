@@ -431,6 +431,10 @@ class AudioController {
         this.analyser = null
         this.music = null
         this.pendingStep = null
+        // one-shot SFX scheduled since load (#1130 juice audit: an action that
+        // schedules nothing is an action that sounds like nothing). Music steps
+        // never count — the bed is not feedback.
+        this.sfx = 0
     }
 
     init() {
@@ -480,6 +484,7 @@ class AudioController {
     playTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
         if (this.muted || !this.ctx) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
+        this.sfx++
         const t = this.ctx.currentTime + delay
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
@@ -493,6 +498,7 @@ class AudioController {
 
     playNoise(duration, vol = 0.2) {
         if (this.muted || !this.ctx) return
+        this.sfx++
         const bufferSize = this.ctx.sampleRate * duration
         const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
         const data = buffer.getChannelData(0)
@@ -509,6 +515,7 @@ class AudioController {
     // crackle reads as static, a bed needs the filter
     playFilteredNoise(duration, vol = 0.2, freq = 800) {
         if (this.muted || !this.ctx) return
+        this.sfx++
         const sr = this.ctx.sampleRate
         const buffer = this.ctx.createBuffer(1, Math.max(1, Math.floor(sr * duration)), sr)
         const data = buffer.getChannelData(0)
@@ -524,6 +531,7 @@ class AudioController {
 
     playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1) {
         if (this.muted || !this.ctx) return
+        this.sfx++
         const osc = this.ctx.createOscillator()
         const gain = this.ctx.createGain()
         osc.type = type
@@ -646,3 +654,10 @@ class AudioController {
 }
 
 export const audioController = new AudioController()
+
+// #1130 — DEV-only readback of the one-shot SFX counter for the juice audit.
+// Optional chain keeps `import.meta.env` off the Node import path (popcheck,
+// qbertcheck and friends import this module in plain Node, where it is absent).
+if (typeof window !== 'undefined' && import.meta.env?.DEV) {
+    window.__audioSfx = () => audioController.sfx
+}

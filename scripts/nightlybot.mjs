@@ -47,7 +47,7 @@ const OUT = 'repos/jalfern/forge-telemetry'
 const CDN = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/nightly.json'
 
 // The contract roster. nightlybotcheck.mjs pins this set against
-// contractcheck.mjs's GAMES so the two cannot drift silently.
+// contractcheck's roster (scripts/lib/contractGames.mjs) so the two cannot drift silently.
 // cap = world ticks a run gets before it is called unfinished. Defaults are
 // generous (150 s of world time); games listed here override when a full
 // credit-free run legitimately needs longer.
@@ -235,7 +235,7 @@ function selftest() {
     ok(nextGreenStreak(null, true) === 1, 'first green night is streak 1')
     ok(nextGreenStreak({ greenStreak: 2 }, true) === 3, 'green nights accumulate')
     ok(nextGreenStreak({ greenStreak: 2 }, false) === 0, 'one red night resets the soak')
-    const ccSrc = readFileSync(path.join(ROOT, 'scripts/contractcheck.mjs'), 'utf8')
+    const ccSrc = readFileSync(path.join(ROOT, 'scripts/lib/contractGames.mjs'), 'utf8')
     const ccIds = [...ccSrc.matchAll(/\{ id: '([^']+)', path: '([^']+)' \}/g)].map(m => `${m[1]}@${m[2]}`)
     const mine = GAMES.map(g => `${g.id}@${g.path}`)
     ok(JSON.stringify(ccIds) === JSON.stringify(mine),
