@@ -14,7 +14,9 @@ the player actually gets, in plain Node.
 - `art.js` — every sprite: iso cubes (cached per colour), Q*BERT poses, Coily,
   the disc, balls, runners, the slick, the font (with `@ # *` for the balloon).
 - `index.jsx` — the shell: fixed 256x224, fixed timestep, attract/over screens,
-  arrow-pair input, `__qbertTest` DEV hook, DebugKit panel.
+  single-arrow diagonal input (`padDiagonals`: UP=up-left, RIGHT=up-right,
+  LEFT=down-left, DOWN=down-right; pairs still name the exact diagonal; #1196),
+  `__qbertTest` DEV hook, DebugKit panel.
 - `scripts/qbertcheck.mjs` — the Node gate (static CI). `scripts/qbertdive.mjs`
   — the real-keys browser drive (advisory verify tier).
 
@@ -113,6 +115,6 @@ attract demo; `npm run qbertcheck` grades the pilot with its OWN walker as
 referee (71 checks: geometry literals, chase/lure radius, chain ledger 25/50/100,
 pilot clears round 1 with lives-1 slack on 8 seeds, hash-for-hash). Verify with
 `npm run qbertcheck` (`static` gate) and `npm run qbertdive` (Chrome, real
-arrow-pair keys; advisory tier). Note: at the apex, up-diagonals are the disc
+arrow keys — singles and pairs; advisory tier). Note: at the apex, up-diagonals are the disc
 attempt — the way off the top is down-diagonal (the harness learned this the
 honest way).

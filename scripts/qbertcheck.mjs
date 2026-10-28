@@ -11,7 +11,7 @@
 // life than the player is dealt (the slack rule), hash-for-hash deterministic.
 
 import {
-    makeGame, step, stateHash, ROWS, CUBES, id, rowOf, colOf, neighbors,
+    makeGame, step, padDiagonals, stateHash, ROWS, CUBES, id, rowOf, colOf, neighbors,
     valid, cubeXY, neededCubes, edgeDist, W, HOP_TICKS, TUNNEL, tunnelCx,
 } from '../src/games/QBert/sim.js'
 import { plan } from '../src/games/QBert/planner.js'
@@ -98,6 +98,43 @@ r.check('the apex has exactly the two down-diagonal neighbours', JSON.stringify(
     const gs = makeGame({ seed: 5 })
     play(gs, { ul: true })
     r.check('an up-hop from the apex with no disc nearby is blocked (never a fall off the top)', gs.player.hop === null && gs.players[0].lives === 3)
+}
+
+// ----------------------------------------- single-arrow arcade diagonals (#1196) ----
+// The cabinet stick only registers diagonals, and VirtualControls dispatches ONE
+// arrow per pad press — so a lone arrow must actuate its diagonal. Literal
+// destinations from interior cube (3,2), where all four diagonals are on-board.
+{
+    const D = JSON.stringify
+    r.check('padDiagonals: lone UP means up-left', D(padDiagonals(true, false, false, false)) === D({ ul: true }))
+    r.check('padDiagonals: lone RIGHT means up-right', D(padDiagonals(false, false, false, true)) === D({ ur: true }))
+    r.check('padDiagonals: lone LEFT means down-left (the pad tap that was dead)', D(padDiagonals(false, false, true, false)) === D({ dl: true }))
+    r.check('padDiagonals: lone DOWN means down-right', D(padDiagonals(false, true, false, false)) === D({ dr: true }))
+    r.check('padDiagonals: no keys held is no input', D(padDiagonals(false, false, false, false)) === D({}))
+    r.check('an explicit arrow pair still names its exact diagonal (and outranks its singles)',
+        D(padDiagonals(true, false, true, false)) === D({ ul: true }) &&
+        D(padDiagonals(true, false, false, true)) === D({ ur: true }) &&
+        D(padDiagonals(false, true, true, false)) === D({ dl: true }) &&
+        D(padDiagonals(false, true, false, true)) === D({ dr: true }))
+    const lone = (keys) => {
+        const gs = makeGame({ seed: 9 })
+        Object.assign(gs.player, { r: 3, c: 2, invuln: 200 })
+        clearEv(gs)
+        play(gs, padDiagonals(...keys))
+        until(gs, () => !gs.player.hop, HOP_TICKS + 5)
+        return gs
+    }
+    let gs = lone([true, false, false, false])
+    r.check('lone UP walks the hero from (3,2) to (2,1) on the real board', gs.player.r === 2 && gs.player.c === 1, `@${gs.player.r},${gs.player.c}`)
+    gs = lone([false, false, false, true])
+    r.check('lone RIGHT walks the hero from (3,2) to (2,2) on the real board', gs.player.r === 2 && gs.player.c === 2, `@${gs.player.r},${gs.player.c}`)
+    gs = lone([false, false, true, false])
+    r.check('lone LEFT walks the hero from (3,2) to (4,2) on the real board', gs.player.r === 4 && gs.player.c === 2, `@${gs.player.r},${gs.player.c}`)
+    gs = lone([false, true, false, false])
+    r.check('lone DOWN walks the hero from (3,2) to (4,3) on the real board', gs.player.r === 4 && gs.player.c === 3, `@${gs.player.r},${gs.player.c}`)
+    gs = makeGame({ seed: 9 })
+    play(gs, padDiagonals(true, false, false, false))
+    r.check('lone UP at the apex is the disc attempt, never a fall off the top', gs.player.hop === null && gs.players[0].lives === 3)
 }
 
 // ------------------------------------------------------------ facing ----

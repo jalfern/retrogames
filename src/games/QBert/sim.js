@@ -237,6 +237,23 @@ function checkClear(gs) {
     }
 }
 
+// The cabinet's 4-way stick can only ever register diagonals, so a SINGLE
+// arrow names one diagonal too — exactly what the mobile pad dispatches, one
+// arrow per press (#1196: pairs alone left the pad dead). Rotation: up ->
+// up-left, right -> up-right, left -> down-left, down -> down-right. An
+// explicit arrow pair still names its exact diagonal and outranks singles.
+export function padDiagonals(up, dn, lf, rt) {
+    if (up && lf) return { ul: true }
+    if (up && rt) return { ur: true }
+    if (dn && lf) return { dl: true }
+    if (dn && rt) return { dr: true }
+    if (up) return { ul: true }
+    if (rt) return { ur: true }
+    if (lf) return { dl: true }
+    if (dn) return { dr: true }
+    return {}
+}
+
 export function step(gs, input = {}) {
     if (gs.end) return gs
     gs.tick++

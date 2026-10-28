@@ -15,7 +15,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
-import { makeGame, step, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
+import { makeGame, step, padDiagonals, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
 import { plan } from './planner.js'
 import { sfxFor } from './sound.js'
 import {
@@ -292,12 +292,7 @@ const QBertGame = () => {
                 acc += ft
                 while (acc >= SIM_MS) {
                     acc -= SIM_MS
-                    const input = {
-                        ul: held.up && held.lf,
-                        ur: held.up && held.rt,
-                        dl: held.dn && held.lf,
-                        dr: held.dn && held.rt,
-                    }
+                    const input = padDiagonals(held.up, held.dn, held.lf, held.rt)
                     if (screenRef.current === 'attract' && demo) {
                         step(demo, plan(demo))
                         if (demo.end || (demo.pending && demo.pending.t <= 0)) buildDemo()
@@ -478,12 +473,7 @@ const QBertGame = () => {
                 },
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; return }
-                    step(gs, {
-                        ul: !!pad.up && !!pad.left,
-                        ur: !!pad.up && !!pad.right,
-                        dl: !!pad.down && !!pad.left,
-                        dr: !!pad.down && !!pad.right,
-                    })
+                    step(gs, padDiagonals(!!pad.up, !!pad.down, !!pad.left, !!pad.right))
                     handleEvents(gs, false)
                 },
                 state: () => ({

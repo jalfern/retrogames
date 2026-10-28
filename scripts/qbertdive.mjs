@@ -61,6 +61,31 @@ r.check('any key starts the round', q.screen === 'play', q.screen)
     r.check('the hop lands on (1,0) and flips it green', q.r === 1 && q.c === 0 && q.cubes[1] === '1' && q.flips === before.flips + 1, `@${q.r},${q.c} flips=${q.flips}`)
 }
 
+// --------------------------------- single arrows actuate (#1196 pad path) ----
+// VirtualControls dispatches ONE arrow per pad press; each lone arrow must be
+// a diagonal (arcade 4-way stick), not a dead key.
+{
+    const lone = async (key, expect, disc = false) => {
+        const before = await probe()
+        await page.keyboard.down(key)
+        const p = disc
+            ? await settle((x) => x.ride || x.hop || x.r !== before.r || x.c !== before.c || x.lives !== before.lives, 1200)
+            : await settle((x) => x.hop || x.r !== before.r || x.c !== before.c, 2000)
+        const moved = p.hop || p.ride || p.r !== before.r || p.c !== before.c
+        await page.keyboard.up(key)
+        const land = await settle((x) => !x.hop, 2000)
+        return { moved, land, before }
+    }
+    let t = await lone('ArrowLeft', [2, 0])
+    r.check('lone LEFT (what the pad sends) hops the hero down-left', t.moved && t.land.r === 2 && t.land.c === 0, `@${t.before.r},${t.before.c} -> @${t.land.r},${t.land.c}`)
+    t = await lone('ArrowRight', [1, 0])
+    r.check('lone RIGHT hops the hero up-right', t.moved && t.land.r === 1 && t.land.c === 0, `@${t.before.r},${t.before.c} -> @${t.land.r},${t.land.c}`)
+    t = await lone('ArrowRight', [0, 0])
+    r.check('lone RIGHT lands back on the apex', t.moved && t.land.r === 0 && t.land.c === 0, `@${t.before.r},${t.before.c} -> @${t.land.r},${t.land.c}`)
+    t = await lone('ArrowUp', null, true)
+    r.check('lone UP at the apex is the disc attempt — never a fall', !t.land.dying && t.land.lives === t.before.lives && (t.moved || (!t.land.hop && t.land.r === 0)), `moved=${t.moved} dying=${t.land.dying} lives=${t.land.lives}`)
+}
+
 // ------------------------------------------------ the drawn bird is lit ----
 {
     const litNow = () => page.evaluate(() => {
