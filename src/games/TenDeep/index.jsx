@@ -325,6 +325,17 @@ const TenDeepGame = () => {
         let uiSel = 0
         const evLog = []
         let shake = 0, flashHit = 0
+        // the walk breathes: fwd/back glide the projection ~130ms (presentation
+        // only — the sim steps instantly and the endpoints render exactly the
+        // snapped frame). off>0 = a step was taken toward the view's old pose.
+        const EASE_MS = 130
+        let ease = { from: 0, t0: 0 }
+        const easeOff = () => {
+            if (!ease.from) return 0
+            const p = (performance.now() - ease.t0) / EASE_MS
+            if (p >= 1) { ease.from = 0; return 0 }
+            return ease.from * (1 - p * p * (3 - 2 * p))
+        }
 
         const say = (m) => { toastMsg = m; toast = 150 }
 
@@ -378,7 +389,11 @@ const TenDeepGame = () => {
 
         const act = (cmd) => {
             if (gs.end) return
+            const bx = gs.x, by = gs.y, bd = gs.dir, bm = gs.mode
             step(gs, cmd)
+            if (bm === 'map' && gs.mode === 'map' && gs.dir === bd && (gs.x !== bx || gs.y !== by)) {
+                ease = { from: (gs.x - bx) === DX[bd] && (gs.y - by) === DY[bd] ? 1 : -1, t0: performance.now() }
+            }
             handleEvents(gs.events.splice(0))
             // the attract demo may win or die — that is theatre, not a game over;
             // only the PLAYER's run ends the screen
@@ -399,6 +414,7 @@ const TenDeepGame = () => {
 
         // ---------------------------------------------------------------- paint ----
         const ahead = (i) => ({ x: gs.x + DX[gs.dir] * i, y: gs.y + DY[gs.dir] * i })
+        const ringE = (d) => ring(Math.max(d + easeOff(), 0.62))
 
         const quad = (x0, y0, x1, y1, x2, y2, x3, y3, col) => {
             ctx.fillStyle = col
@@ -409,8 +425,8 @@ const TenDeepGame = () => {
             if (!gs.map) { ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200); return }   // ended at the RIM: no corridor left to show
             ctx.fillStyle = '#05060d'; ctx.fillRect(0, 0, W, 200)
             for (let i = DEPTH; i >= 1; i--) {
-                const o = ring(i - 1 === 0 ? 0.62 : i - 1)
-                const n = ring(i)
+                const o = ringE(i - 1 === 0 ? 0.62 : i - 1)
+                const n = ringE(i)
                 const lit = (DEPTH - i + 1) / DEPTH
                 const cell = ahead(i)
                 const solid = gs.map.wall(cell.x, cell.y)
@@ -688,6 +704,7 @@ const TenDeepGame = () => {
             window.__deepTest = {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
+                    ease: easeOff(),
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
                     gold: purse(gs), wipe: gs.wipe, ward: gs.ward,
                     town: gs.mode === 'town' ? {
