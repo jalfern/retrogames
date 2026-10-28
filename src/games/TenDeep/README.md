@@ -100,11 +100,21 @@ stat you pick at the bench.
   bitmap monster plates, automap from the explored set. The MODERN 3D look
   waits on the shared dungeon renderer (#1129); this renderer keeps the
   pixel contract the play-check samples (wall ahead ⇒ centre wall-blue).
-  fwd/back steps glide the ring geometry over ~130ms (`ringE` clamped at
-  ring(0.62)) so the walk breathes — presentation only: the sim steps in
-  whole cells and the settled frame is the exact snapped one; bumps and
-  turns stay instant (the original snaps too). Probe exposes `ease` so
-  tendeepplay can grade mid-glide vs settled frames.
+   fwd/back steps glide the ring geometry over ~130ms (`ringE` clamped at
+   ring(0.62)) so the walk breathes — presentation only: the sim steps in
+   whole cells and the settled frame is the exact snapped one; bumps and
+   turns stay instant (the original snaps too). Probe exposes `ease` so
+   tendeepplay can grade mid-glide vs settled frames.
+   Combat feedback rides on top as `fxList` — a bolt streak per damage cast
+   (280 ms, ease-out, additive glow), sparkles over a mended hero (520 ms),
+   a wide prayer glimmer, and a dissolve + XP floater on a kill. The sim
+   resolves every cast the instant it happens; `fxList` is a separate
+   closure array that `stateHash` never mixes, so the light is free. Each
+   bolt's path jitter is an FNV hash of `spell:mob` — the same cast at the
+   same foe traces the same path (the harness can trust it), no
+   `Math.random` anywhere near it. `mobSlot` mirrors `paintCombat`'s
+   projection exactly, so a bolt lands where its target is drawn; a bolt
+   for an already-gone target simply has no slot.
 - Harness hooks (DEV): `window.__deepTest` (probe/start/cmd/setup/hash),
   DebugKit with PROGNOSIS (re-solves the LIVE mutated state).
 

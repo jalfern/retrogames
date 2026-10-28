@@ -325,6 +325,9 @@ const TenDeepGame = () => {
         let uiSel = 0
         const evLog = []
         let shake = 0, flashHit = 0
+        // presentation-only combat feedback (never in gs/stateHash): a bolt on a
+        // cast, sparkles on a heal, a dissolve + XP floater on a kill.
+        const fxList = []
         // the walk breathes: fwd/back glide the projection ~130ms (presentation
         // only — the sim steps instantly and the endpoints render exactly the
         // snapped frame). off>0 = a step was taken toward the view's old pose.
@@ -345,15 +348,24 @@ const TenDeepGame = () => {
             for (const e of evts) {
                 if (e.type === 'ambush') { audioController.playSweep(180, 60, 0.5, 'sawtooth', 0.09); say(e.boss ? 'THE HOLLOW KING RISES!' : `AMBUSH: ${e.group.join(', ')}`) }
                 else if (e.type === 'hit') { audioController.playNoise(0.12, 0.07); shake = 4; flashHit = 0.25 }
-                else if (e.type === 'slay') { audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`) }
-                else if (e.type === 'fire' || e.type === 'spell') { audioController.playSweep(e.spell === 'firestorm' ? 900 : 700, 180, e.spell === 'firestorm' ? 0.32 : 0.18, 'sawtooth', 0.05) }
+                else if (e.type === 'slay') {
+                    audioController.playSweep(420, 90, 0.22, 'square', 0.06); say(`${e.name} SLAIN`)
+                    const s = mobSlot(e.mob); if (s) fxList.push({ kind: 'slay', t0: performance.now(), x: s.sx, y: 140 - s.size * 0.5, size: s.size, art: s.art, xp: e.xp })
+                }
+                else if (e.type === 'fire' || e.type === 'spell') {
+                    audioController.playSweep(e.spell === 'firestorm' ? 900 : 700, 180, e.spell === 'firestorm' ? 0.32 : 0.18, 'sawtooth', 0.05)
+                    if (e.type === 'spell' && e.mob != null) { const s = mobSlot(e.mob); if (s) fxList.push({ kind: 'bolt', t0: performance.now(), from: [CX, 188], to: [s.sx, 140 - s.size * 0.5], hot: e.spell === 'firestorm', jit: boltJit(e.spell, e.mob) }) }
+                }
                 else if (e.type === 'guard') { audioController.playTone(140, 0.14, 'square', 0.06); say('SHIELDS HELD — WHAT LANDS, LANDS HALF') }
                 else if (e.type === 'ward') { audioController.playSweep(500, 1400, 0.4, 'sine', 0.05); say('WARD — THE DARK BLINKS') }
-                else if (e.type === 'prayer') { audioController.playSweep(260, 780, 0.5, 'sine', 0.06); say(e.got > 0 ? 'A PRAYER, SHARED AND ANSWERED' : 'HEAVEN IS SILENT — NO ONE WAS HURT') }
+                else if (e.type === 'prayer') { audioController.playSweep(260, 780, 0.5, 'sine', 0.06); say(e.got > 0 ? 'A PRAYER, SHARED AND ANSWERED' : 'HEAVEN IS SILENT — NO ONE WAS HURT'); if (e.got > 0) fxList.push({ kind: 'spark', t0: performance.now(), wide: true }) }
                 else if (e.type === 'spellDry') { audioController.playTone(120, 0.08, 'triangle', 0.05); say('NO ONE BLEEDS — THE LETTER GOES TO WASTE') }
                 else if (e.type === 'subdue') { audioController.playSweep(360, 120, 0.3, 'triangle', 0.06); say(`${e.name} KNEELS`) }
                 else if (e.type === 'noLetter') { audioController.playTone(85, 0.1, 'square', 0.05); say(`${(SPELLS[e.spell] || { name: e.spell }).name} — NOT IN ANY OPEN SPELLBOOK`) }
-                else if (e.type === 'heal' || e.type === 'potion') audioController.playSweep(320, 880, 0.24, 'sine', 0.06)
+                else if (e.type === 'heal' || e.type === 'potion') {
+                    audioController.playSweep(320, 880, 0.24, 'sine', 0.06)
+                    if (e.type === 'heal' && e.on) { const idx = gs.party.findIndex(h => h.name === e.on); if (idx >= 0) fxList.push({ kind: 'spark', t0: performance.now(), x: idx * 42 + 23 }) }
+                }
                 else if (e.type === 'levelup') { audioController.playSweep(400, 1200, 0.5, 'square', 0.07); say(`${e.who} — LEVEL ${e.lvl}!`) }
                 else if (e.type === 'fall') { audioController.playSweep(300, 60, 0.7, 'sawtooth', 0.09); say(`${e.who} HAS FALLEN`) }
                 else if (e.type === 'victory') { audioController.playSweep(500, 1600, 0.7, 'square', 0.08); say(e.boss ? '' : 'BATTLE WON') }
@@ -481,6 +493,111 @@ const TenDeepGame = () => {
             ctx.fillRect(CX - 4, 100, 9, 1); ctx.fillRect(CX, 96, 1, 9)
         }
 
+        // ------------------------------------------------ combat feedback ----
+        // The bolt, the sparkle and the dissolve ride on top of the painted
+        // world. They touch NO state: the sim resolves a cast the instant it
+        // happens, this is only the light we let it leave. mobSlot mirrors
+        // paintCombat's projection to the pixel, so a bolt lands exactly where
+        // its target is drawn — and a bolt for a gone target simply has no slot.
+        const mobSlot = (i) => {
+            if (!gs.combat) return null
+            const m = gs.combat.mobs[i]
+            if (!m) return null
+            const n = gs.combat.mobs.length
+            const sx = 128 + (i - (n - 1) / 2) * 62
+            const A = ART[m.art]
+            const size = (A ? A.s * 10 : 50) * (m.key === 'KING' ? 1.25 : 1)
+            return { sx, size, art: m.art }
+        }
+        // a deterministic per-bolt offset in [0,1): repeated casts of the same
+        // letter at the same foe trace the same path (the harness can trust it),
+        // while different foes/spears fan out. No Math.random anywhere near it.
+        const boltJit = (spell, mob) => {
+            let h = 2166136261
+            const s = String(spell) + ':' + mob
+            for (let k = 0; k < s.length; k++) { h ^= s.charCodeAt(k); h = Math.imul(h, 16777619) }
+            return ((h >>> 0) % 1000) / 1000
+        }
+        const paintFx = (now) => {
+            if (!fxList.length) return
+            for (let i = fxList.length - 1; i >= 0; i--) {
+                const f = fxList[i]
+                const age = now - f.t0
+                if (f.kind === 'bolt') {
+                    const D = 280
+                    if (age > D) { fxList.splice(i, 1); continue }
+                    const p = age / D
+                    const e = 1 - (1 - p) * (1 - p)   // ease-out: fast launch, soft landing
+                    const [x0, y0] = f.from, [x1, y1] = f.to
+                    const dx = x1 - x0, dy = y1 - y0
+                    const L = Math.hypot(dx, dy) || 1
+                    const ox = (-dy / L) * (f.jit - 0.5) * 16
+                    const oy = (dx / L) * (f.jit - 0.5) * 10
+                    const tx = x0 + dx * e + ox * e, ty = y0 + dy * e + oy * e
+                    ctx.save()
+                    ctx.globalCompositeOperation = 'lighter'
+                    ctx.lineCap = 'round'
+                    ctx.strokeStyle = f.hot ? 'rgba(255,150,40,0.45)' : 'rgba(96,206,255,0.45)'
+                    ctx.lineWidth = 4
+                    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(tx, ty); ctx.stroke()
+                    ctx.strokeStyle = f.hot ? '#fff3c4' : '#dbf5ff'
+                    ctx.lineWidth = 1.5
+                    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(tx, ty); ctx.stroke()
+                    if (p > 0.55) {
+                        const a = (p - 0.55) / 0.45
+                        ctx.fillStyle = f.hot ? `rgba(255,210,120,${a * 0.9})` : `rgba(160,230,255,${a * 0.9})`
+                        ctx.beginPath(); ctx.arc(x1 + ox, y1 + oy, 3 + a * 6, 0, 7); ctx.fill()
+                    }
+                    ctx.restore()
+                } else if (f.kind === 'spark') {
+                    const D = 520
+                    if (age > D) { fxList.splice(i, 1); continue }
+                    const p = age / D
+                    const cx0 = f.wide ? 128 : f.x
+                    const yBase = f.wide ? 150 : 216
+                    const spread = f.wide ? 120 : 12
+                    ctx.save()
+                    ctx.globalCompositeOperation = 'lighter'
+                    const N = f.wide ? 14 : 7
+                    for (let k = 0; k < N; k++) {
+                        const j = boltJit(f.wide ? 'w' : 's', k + (f.x | 0))
+                        const jx = (j - 0.5) * spread * 2
+                        const yy = yBase - p * (14 + j * 10) - j * 4
+                        const a = (1 - p) * (0.5 + 0.5 * j)
+                        ctx.fillStyle = f.wide ? `rgba(255,226,122,${a})` : `rgba(125,255,176,${a})`
+                        ctx.fillRect(cx0 + jx - 1, yy - 1, 2, 2)
+                    }
+                    ctx.restore()
+                } else if (f.kind === 'slay') {
+                    const D = 460
+                    if (age > D) { fxList.splice(i, 1); continue }
+                    const p = age / D
+                    const cy = f.y != null ? f.y : 140 - f.size * 0.5
+                    if (p < 0.6) {
+                        ctx.save()
+                        ctx.globalAlpha = 1 - p / 0.6
+                        drawMob(ctx, f.art, f.x - f.size / 2, 140 - f.size + p * 22, f.size, false)
+                        ctx.restore()
+                    }
+                    ctx.save()
+                    ctx.globalCompositeOperation = 'lighter'
+                    for (let k = 0; k < 8; k++) {
+                        const j = boltJit('slay', k + ((f.x | 0) % 97))
+                        const a = 1 - p
+                        ctx.fillStyle = `rgba(255,${120 + ((j * 80) | 0)},60,${a * 0.8})`
+                        ctx.fillRect(f.x + (j - 0.5) * f.size * p * 2.4, cy - p * 26 - j * 6, 2, 2)
+                    }
+                    ctx.restore()
+                    if (f.xp) {
+                        const a = 1 - p
+                        ctx.fillStyle = `rgba(125,255,176,${a})`
+                        ctx.font = 'bold 9px monospace'; ctx.textAlign = 'center'
+                        ctx.fillText('+' + f.xp, f.x, cy - 4 - p * 20)
+                    }
+                }
+            }
+        }
+
         const paintCombat = () => {
             const g = ctx.createLinearGradient(0, 0, 0, 150)
             g.addColorStop(0, '#131633'); g.addColorStop(1, '#2a1d3d')
@@ -548,6 +665,7 @@ const TenDeepGame = () => {
                 ctx.textAlign = 'left'
             })
             drawAutomap()
+            paintFx(performance.now())
         }
 
         const drawAutomap = () => {
@@ -705,6 +823,7 @@ const TenDeepGame = () => {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     ease: easeOff(),
+                    fx: (() => { const b = fxList.find((f) => f.kind === 'bolt'); return { count: fxList.length, kinds: fxList.map((f) => f.kind), bolt: b ? { from: b.from, to: b.to } : null } })(),
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
                     gold: purse(gs), wipe: gs.wipe, ward: gs.ward,
                     town: gs.mode === 'town' ? {
