@@ -24,6 +24,7 @@ import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades } from './tiles.js'
 import { PHASES, moonPhase, moonName, phaseLit } from './moons.js'
+import { crest, crestLane, foam, landSides, foamPatches } from './swell.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -256,6 +257,35 @@ const BritanniaGame = () => {
                 if (hash2(tx, ty, ph) > 0.82) {
                     ctx.fillStyle = 'rgba(190,225,255,0.5)'
                     ctx.fillRect(sx + 6, sy + 10 + ((tx + ty + ph) % 3) * 4, 12, 2)
+                }
+                // swells ride the sea west-to-east, the same wind the fronts
+                // drift on; crests break into dashed chop off their lee, and
+                // foam gathers only where land holds the water back (#1135)
+                const c = crest(tx, ty, t)
+                if (c > 0.04) {
+                    const lane = crestLane(tx, ty, S.seed)
+                    ctx.strokeStyle = `rgba(154,198,232,${(0.12 + 0.34 * c).toFixed(3)})`
+                    ctx.lineWidth = 2
+                    ctx.beginPath()
+                    if (c > 0.72) {
+                        ctx.moveTo(sx + 2, sy + lane); ctx.lineTo(sx + 30, sy + lane)
+                    } else {
+                        const g1 = 8 + hash2(tx, ty, 11) * 6
+                        const g2 = 16 + hash2(tx, ty, 12) * 6
+                        ctx.moveTo(sx + 2, sy + lane); ctx.lineTo(sx + g1, sy + lane)
+                        ctx.moveTo(sx + g2, sy + lane + 1); ctx.lineTo(sx + 30, sy + lane + 1)
+                    }
+                    ctx.stroke()
+                }
+                const sides = landSides(tx, ty, world)
+                if (sides.length) {
+                    const st = foam(tx, ty, true, t, S.seed)
+                    for (const sd of sides) {
+                        for (const p of foamPatches(tx, ty, sd, t, S.seed, st)) {
+                            ctx.fillStyle = `rgba(235,242,250,${p.a.toFixed(3)})`
+                            ctx.beginPath(); ctx.arc(sx + p.x, sy + p.y, p.sz, 0, 7); ctx.fill()
+                        }
+                    }
                 }
             }
         }
@@ -655,6 +685,7 @@ const BritanniaGame = () => {
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
                     ambient: AMB_NAME[S.amb],
+                    swell: crest(S.x, S.y, S.tick),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
                 }
