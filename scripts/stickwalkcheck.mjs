@@ -33,6 +33,13 @@
 // Second mutant: set duty's run branch floor to 0.55 (`0.30, 0.50` -> `0.55,
 // 0.62`) — the flight-phase gate goes red and the regime gate flips: running
 // without a flight phase is not running.
+// Polish mutants (#1179, run together in the html): skip the head ellipse
+// (`if (pH && pT)` -> `if (false)`), kill signed depth shading
+// (`(s.arm ? 0.26 : 0.11) * rel` -> `0 * rel`), freeze the grid fade
+// (`const fade = 1 - ...` -> `const fade = 1`), delete the attract pre-warm
+// loop (`for (let i = 0; i < 90; ...)`), and pin walk puffs to the old
+// alpha (`walkA` -> 0.10) — the six polish gates all go red together,
+// everything else stays green.
 //
 // All motion gates WAIT ON FRAMES (waitForFunction), not wall-clock sleeps.
 // Usage: node scripts/stickwalkcheck.mjs [--shots <dir>] [--json] [--no-speed]
@@ -284,7 +291,7 @@ const armDep = await T(page, async () => {
   })
   return best
 })
-ok('render: near arm renders brighter than far arm (depth sort)', !!armDep && armDep.sep >= 0.12 && armDep.diff >= 30, JSON.stringify(armDep))
+ok('render: near arm renders brighter than far arm (depth sort)', !!armDep && armDep.sep >= 0.12 && armDep.diff >= 45, JSON.stringify(armDep))
 
 // grid distance fade: fade curve must fall off with camera depth, and the
 // rendered floor near the feet must be bluer-brighter than far field rows
