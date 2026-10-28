@@ -197,6 +197,9 @@ const ViperPitGame = lazy(() => import('../games/ViperPit'))
 // BRITANNIA: its own chunk — the jsdos reader + inflate + star detection ride with it, and the
 // 558 KB map bundle is fetched only when someone actually opens the land.
 const BritanniaGame = lazy(() => import('../games/Britannia'))
+// PICK RUSH: its own chunk — the deterministic sorter sim and the foreman
+// autopilot (shared with the attract demo and pickcheck) ride together.
+const PickRushGame = lazy(() => import('../games/PickRush'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1095,5 +1098,18 @@ export const GAMES = [
         theme: 'dark',
         description: "Ultima IV, rebuilt from scratch — no emulator, the same world. The geography is genuinely Origin's: the map is read at runtime from the original 2011-freeware data files (WORLD.MAP pulled out of ultima4.jsdos), so every coast, island and shore you walk is the Britannia of 1985; the engine is world-agnostic and could load another map the same way. The pixels and sounds are brand new and modern: animated sea, procedural terrain, a day/night cycle that darkens the land and lights a flickering torch around your party, and eight moongates that glow and whirl — step on one, choose a destination, and be gone. Walk ashore, board at any coast, sail the open sea; press C to flip the map back to the original 1985 terrain tiles (decoded at runtime from Origin's own terrain-named data files) for comparison with the original. Stage 1 of five (#1128): the walk. Conversations, virtues, combat, 3D dungeons and the Abyss follow. The moongate pilgrimage — finding and riding all eight gates — is the milestone's win condition.",
         controls: ['Arrows / WASD / stick: walk · walk into the sea to board a ship · walk ashore to leave it', 'Step on a glowing MOONGATE: arrows choose, SPACE rides · number keys jump to a gate', 'Touch: tap a direction to stride that way · tap the map center to answer gates · tap a destination in the gate menu', 'C: classic tiles (EGA-ish) — press again for the modern look', '?: pause and read the lore of the land', 'Goal: visit all eight moongates, Avatar'],
+    },
+    {
+        path: '/pick-rush',
+        pad: { layout: 'dpad', buttons: [{ label: 'GRAB', code: 'Space' }, { label: 'DROP', code: 'KeyB' }], analog: false, reason: 'crane work: slide the gantry, dip the claw, feather with DOWN, release with GRAB or DROP' },
+        builtBy: 'forge',
+        added: '2026-10-28',
+        visibility: 'private',
+        tapStart: false,
+        component: PickRushGame,
+        label: 'PICK RUSH',
+        theme: 'dark',
+        description: 'An original arcade sorter — the robot-arm-at-the-conveyor game. Pieces ride in on a night-shift line; your gantry crane slides the rail, dips the claw (it clamps on contact), hoists the cargo clear and drops it in its tagged bin: cyan CRATE, amber CAN, magenta BOTTLE, green COIL, red SCRAP. The line speeds up every shift and the quota gauge must be full before the shift clock runs dry — and three bad places on the floor (wrong bin, dropped load, smashed glass) and you are FIRED. Odd pieces turn up: BARRELS roll, and an off-axis grab slips out of the jaws; BOTTLES are FRAGILE — slam them from carry height and they shatter, so feather them down with DOWN and release low. Chain good drops for combo pay. On the twin rails you never race alone: the FOREMAN (CPU) works every other piece by spawn — a real head-to-head on one belt — and P opens seat 2 for a human with A/D/S + F. The attract demo is the two autopilots racing; the whole sim is seeded (seed + pads = identical hashes).',
+        controls: ['Arrow Left/Right / d-pad: slide the gantry crane along the rail', 'SPACE / A / GRAB: dip the claw — it clamps what it touches and auto-hoists', 'Press GRAB again over a bin to RELEASE the cargo · B / DROP also releases', 'DOWN feathers the claw while carrying — the ONLY safe way to land a FRAGILE bottle', 'Match the cargo tag to the bin color; SCRAP goes in the red bin', 'A rolling BARREL slips out unless it is upright when the jaws close', 'Clear the QUOTA before the shift clock empties — four shifts and you are line chief', 'Off the far end of the belt: −50 and your combo dies · wrong bin / smash / floor: a fuse blows, three = FIRED', 'Attract: C races the FOREMAN (default) · P opens seat 2 for a human (A/D/S move, F grab)', '?: pause and read the shift rules'],
     },
 ]
