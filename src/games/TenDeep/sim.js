@@ -11,9 +11,10 @@
 // focus fire, MP and potions are the resource puzzle — which is exactly what
 // the slack rule re-grades with one fewer of every supply consumed.
 
-import { genFloor, MOBS, FLOORS, SIZE } from './dungeon.js'
+import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
+import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN } from './town.js'
 
-export { SIZE }
+export { SIZE, BUILDINGS, SERVICES, TOWN }
 export const W = 256
 export const H = 224
 export const VIEWD = 6
@@ -28,15 +29,27 @@ export const CFG = {
     xpBase: 100,        // next level at xpBase * lvl^2
     lvlHp: 8, lvlMp: 3, lvlAtk: 2, lvlDef: 1,
     healAmt: 16,        // + lvl*3
+    // --- THE RIM (stage 2, #1127): gold prices and the wipe tax -----------
+    goldPerXp: 4,       // every mob pays goldPerXp gold per XP it grants
+    hireCost: 40,       // tavern: replace a fallen hero with a fresh roll
+    mournCost: 200,     // temple: 200 × lvl — the dead return at 1 hp
+    restoreCost: 400,   // temple: 400 × lvl — the dead return whole
+    mendCost: 30,       // temple: fill one hero's HP
+    refreshCost: 25,    // temple: fill one hero's MP
+    trainCost: 100,     // grounds: 100 × next level, and the XP is spent
+    potionCost: 25,     // alchemist: one crimson vial
+    wipeTax: 2,         // a wipe costs half the purse (the dead-body tax)
 }
 
+export const purse = (st) => st.party.reduce((n, h) => n + h.gold, 0)
+
 export const HEROES0 = [
-    { name: 'THANREL', hp: 36, mp: 2, atk: 8, def: 4, spd: 3 },
-    { name: 'MIRABEL', hp: 28, mp: 14, atk: 6, def: 2, spd: 5 },
-    { name: 'OSRIC',   hp: 30, mp: 10, atk: 7, def: 3, spd: 6 },
-    { name: 'GWENDA',  hp: 24, mp: 18, atk: 5, def: 2, spd: 8 },
-    { name: 'BORAM',   hp: 34, mp: 6, atk: 9, def: 3, spd: 4 },
-    { name: 'ELARA',   hp: 26, mp: 12, atk: 6, def: 2, spd: 7 },
+    { name: 'THANREL', hp: 36, mp: 2, atk: 8, def: 4, spd: 3, gold: 20 },
+    { name: 'MIRABEL', hp: 28, mp: 14, atk: 6, def: 2, spd: 5, gold: 20 },
+    { name: 'OSRIC',   hp: 30, mp: 10, atk: 7, def: 3, spd: 6, gold: 20 },
+    { name: 'GWENDA',  hp: 24, mp: 18, atk: 5, def: 2, spd: 8, gold: 20 },
+    { name: 'BORAM',   hp: 34, mp: 6, atk: 9, def: 3, spd: 4, gold: 20 },
+    { name: 'ELARA',   hp: 26, mp: 12, atk: 6, def: 2, spd: 7, gold: 20 },
 ]
 
 const HX = [1, 0, -1, 0], HY = [0, 1, 0, -1]    // dir: 0=E 1=S 2=W 3=N
@@ -50,7 +63,8 @@ const BOSS_GROUP = ['KING', 'WYRM', 'WYRM']
 export function makeRun(opts = {}) {
     const st = {
         tick: 0, floor: 0, x: 1, y: 1, dir: 0,
-        mode: 'map', end: null, potions: 1,
+        mode: 'town', end: null, potions: 1,
+        strict: !!opts.strict,
         party: HEROES0.map(h => ({ ...h, maxHp: h.hp, maxMp: h.mp, lvl: 1, xp: 0, alive: true })),
         explored: new Set(),
         skipPots: new Set(opts.skipPots || []),
@@ -58,11 +72,26 @@ export function makeRun(opts = {}) {
         // per-floor mutable state, filled by enterFloor
         pots: new Set(), springs: new Set(), ambushes: new Set(),
         combat: null, target: 0,
-        ledger: { dealt: 0, taken: 0, casts: 0, potionsUsed: 0, springsUsed: 0, potTiles: [], springTiles: [] },
+        // THE RIM: street or building interior; wipe = bodies just carried home
+        town: { b: null, svc: 0, hero: 0 }, wipe: false,
+        townSeed: opts.townSeed || 0x5EED,
+        ledger: { dealt: 0, taken: 0, casts: 0, potionsUsed: 0, springsUsed: 0, potTiles: [], springTiles: [], goldIn: HEROES0.reduce((n, h) => n + h.gold, 0), goldSpent: 0, tx: [] },
         events: [],
     }
-    enterFloor(st, 0)
+    markViewTown(st)
     return st
+}
+
+function markViewTown(st) {
+    st.explored = new Set()
+    st.map = null
+}
+
+export function enterDungeon(st) {
+    st.mode = 'map'
+    st.wipe = false
+    st.town = { b: null, svc: 0, hero: 0 }
+    enterFloor(st, 0)
 }
 
 function enterFloor(st, fi) {
@@ -240,14 +269,43 @@ function resolveRound(st, cmd) {
     st.events.push({ type: 'round', n: c.round, dealt: dealt.filter(e => e.d), taken, dSum, tSum })
 
     if (!c.mobs.some(m => m.hp > 0)) winCombat(st)
-    else if (!st.party.some(h => h.alive)) { st.mode = 'over'; st.end = 'dead' }
+    else if (!st.party.some(h => h.alive)) carryHome(st)
+}
+
+// a wipe is not the end any more (stage 2): the bodies are carried back to
+// THE RIM and the purse pays the dead-body tax. A strict run (the Node
+// proof, the slack re-grade, the determinism pins) has no second life —
+// the campaign must still win or die on its own supplies, exactly as in
+// stage 1. Only the player gets the temple's bargain.
+function carryHome(st) {
+    let lost = 0
+    for (const h of st.party) {
+        const take = Math.floor(h.gold / CFG.wipeTax)
+        h.gold -= take
+        lost += take
+    }
+    st.ledger.goldSpent += lost
+    st.combat = null
+    if (st.strict) { st.mode = 'over'; st.end = 'dead'; return }
+    st.mode = 'town'
+    st.wipe = true
+    st.town = { b: null, svc: 0, hero: 0 }
+    markViewTown(st)
+    st.events.push({ type: 'wipe', lost })
+    // dead and broke at the gate: nobody left to call and nothing to pay with
+    if (!st.party.some(h => h.alive) && purse(st) < CFG.hireCost) {
+        st.mode = 'over'; st.end = 'dead'
+    }
 }
 
 function m_ended(st) { return !st.combat || st.mode !== 'combat' }
 
 function mobDeath(st, m) {
     m.hp = 0
-    st.events.push({ type: 'slay', mob: m.id, name: m.name, xp: m.xp })
+    const gold = Math.max(1, Math.round(m.xp / CFG.goldPerXp))
+    st.party[m.id % st.party.length].gold += gold
+    st.ledger.goldIn += gold
+    st.events.push({ type: 'slay', mob: m.id, name: m.name, xp: m.xp, gold })
     gainXp(st, m.xp)
 }
 
@@ -290,10 +348,14 @@ export function step(st, cmd) {
             st.events.push({ type: 'fled' })
             st.combat = null
             st.mode = 'map'
-            if (!st.party.some(h => h.alive)) { st.mode = 'over'; st.end = 'dead' }
+            if (!st.party.some(h => h.alive)) carryHome(st)
             return
         }
         resolveRound(st, cmd)
+        return
+    }
+    if (st.mode === 'town') {
+        townStep(st, cmd)
         return
     }
     if (st.mode !== 'map') return
@@ -347,6 +409,131 @@ export function step(st, cmd) {
     }
 }
 
+// --------------------------------------------------------------- THE RIM ----
+// Town commands: enter-<B> | leave | down | sel+/sel- (hero) | svc+/svc- |
+// buy | wait. Money is conserved loudly: every purchase books into
+// ledger.goldSpent and ledger.tx, so the harness can recompute the purse.
+export const servicePrice = (st, svc) =>
+    svc.id === 'mourn' || svc.id === 'restore'
+        ? CFG[svc.priceKey] * st.party[st.town.hero].lvl
+        : svc.id === 'train'
+            ? CFG[svc.priceKey] * (st.party[st.town.hero].lvl + 1)
+            : CFG[svc.priceKey]
+
+export function currentService(st) {
+    return st.town.b ? SERVICES[st.town.b][st.town.svc] : null
+}
+
+export function canBuy(st) {
+    const svc = currentService(st)
+    if (!svc) return false
+    const h = st.party[st.town.hero]
+    if (!serviceHeroOk(svc.id, h)) return false
+    if (svc.id === 'train') return h.xp >= xpNext(h.lvl)
+    return purse(st) >= servicePrice(st, svc)
+}
+
+function charge(st, price, h) {
+    let left = price
+    for (const p of st.party) {
+        const take = Math.min(p.gold, left)
+        p.gold -= take
+        left -= take
+        if (!left) break
+    }
+    st.ledger.goldSpent += price
+    void h
+}
+
+function townStep(st, cmd) {
+    const t = st.town
+    if (cmd === 'wait') return
+    if (cmd === 'down') {
+        if (t.b) { st.events.push({ type: 'townNo' }); return }
+        if (!st.party.some(h => h.alive)) { st.events.push({ type: 'noBreathers' }); return }
+        st.events.push({ type: 'descend', to: 0 })
+        enterDungeon(st)
+        return
+    }
+    if (cmd === 'leave') {
+        if (!t.b) return
+        t.b = null; t.svc = 0
+        st.events.push({ type: 'townStreet' })
+        return
+    }
+    const ent = BUILDINGS.find(b => b.key === cmd.replace('enter-', ''))
+    if (cmd.startsWith('enter-')) {
+        if (!ent) { st.events.push({ type: 'townNo' }); return }
+        t.b = ent.key; t.svc = 0
+        st.events.push({ type: 'townEnter', b: ent.key, name: ent.name })
+        return
+    }
+    if (!t.b) { st.events.push({ type: 'townNo' }); return }
+    const list = SERVICES[t.b]
+    if (cmd === 'svc+' || cmd === 'svc-') {
+        t.svc = (t.svc + (cmd === 'svc+' ? 1 : list.length - 1)) % list.length
+        return
+    }
+    if (cmd === 'sel+' || cmd === 'sel-') {
+        t.hero = (t.hero + (cmd === 'sel+' ? 1 : st.party.length - 1)) % st.party.length
+        return
+    }
+    if (cmd !== 'buy') return
+    const svc = list[t.svc]
+    const h = st.party[t.hero]
+    if (!serviceHeroOk(svc.id, h)) { st.events.push({ type: 'townNo', why: svc.id }); return }
+    if (svc.id === 'train' && h.xp < xpNext(h.lvl)) { st.events.push({ type: 'townNo', why: 'xp' }); return }
+    const price = servicePrice(st, svc)
+    if (purse(st) < price) { st.events.push({ type: 'broke', price }); return }
+    charge(st, price, h)
+    st.ledger.tx.push({ b: t.b, id: svc.id, hero: t.hero, price })
+    st.events.push({ type: 'townBuy', id: svc.id, who: h.name, price })
+    switch (svc.id) {
+        case 'post': {
+            const rnd = mulberry32(st.townSeed + st.ledger.tx.length * 7919)
+            st.townSeed = (st.townSeed + 104729) >>> 0
+            const r = rollRecruit(rnd)
+            Object.assign(h, r, { maxHp: r.hp, maxMp: r.mp, lvl: 1, xp: 0, alive: true })
+            st.events.push({ type: 'hire', who: h.name, hp: r.hp, mp: r.mp, atk: r.atk, def: r.def, spd: r.spd })
+            break
+        }
+        case 'mourn':
+            h.alive = true; h.hp = 1
+            st.events.push({ type: 'mourn', who: h.name })
+            break
+        case 'restore':
+            h.alive = true; h.hp = h.maxHp; h.mp = h.maxMp
+            st.events.push({ type: 'restore', who: h.name })
+            break
+        case 'mend':
+            h.hp = h.maxHp
+            break
+        case 'refresh':
+            h.mp = h.maxMp
+            break
+        case 'train': {
+            h.xp -= xpNext(h.lvl)
+            h.lvl++
+            h.maxHp += CFG.lvlHp; h.hp = Math.min(h.maxHp, h.hp + CFG.lvlHp)
+            h.maxMp += CFG.lvlMp; h.mp = Math.min(h.maxMp, h.mp + CFG.lvlMp)
+            h.atk += CFG.lvlAtk
+            h.def += CFG.lvlDef
+            st.events.push({ type: 'levelup', who: h.name, lvl: h.lvl, trained: true })
+            break
+        }
+        case 'potion':
+            st.potions++
+            st.events.push({ type: 'buyPotion', potions: st.potions })
+            break
+        default:
+            break
+    }
+    // broke and fallen: no service can lift this company — that is the run's end
+    if (st.wipe && !st.party.some(h2 => h2.alive) && purse(st) < CFG.hireCost) {
+        st.mode = 'over'; st.end = 'dead'
+    }
+}
+
 function settleTile(st) {
     const t = st.y * SIZE + st.x
     if (st.map.throne && st.map.throne.y === st.y && st.map.throne.x === st.x) {
@@ -371,6 +558,8 @@ export function stateHash(st) {
     let h = 0x811c9dc5
     const mix = (n) => { h ^= Math.round(n * 100) | 0; h = Math.imul(h, 0x01000193) }
     mix(st.tick); mix(st.floor); mix(st.x); mix(st.y); mix(st.dir); mix(st.potions)
+    mix(st.mode === 'town' ? (st.town.b ? 300 + st.town.svc : 299) : st.mode === 'combat' ? 2 : st.mode === 'over' ? 4 : 1)
+    mix(purse(st)); mix(st.town.hero); mix(st.wipe ? 1 : 0); mix(st.townSeed)
     if (st.end) mix(st.end === 'win' ? 777 : 666)
     for (const p of st.party) { mix(p.hp); mix(p.mp); mix(p.lvl); mix(p.alive ? 1 : 0) }
     if (st.combat) for (const m of st.combat.mobs) mix(m.hp)

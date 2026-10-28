@@ -47,6 +47,7 @@ function turnToward(dir, want) {
 
 export function nextAction(st) {
     if (st.end) return 'wait'
+    if (st.mode === 'town') return st.party.some(h => h.alive) ? 'down' : 'wait'
     if (st.mode === 'combat') {
         const alive = st.party.filter(h => h.alive)
         if (!alive.length) return 'attack'
@@ -82,12 +83,16 @@ export function nextAction(st) {
     return 'fwd'
 }
 
+// The proof runs strict: no surface, no second life. The campaign must win or
+// die on the dungeon's own supplies — town is the player's bargain, never the
+// autopilot's. tendeepcheck pins that a proven run books zero town services.
 export function solveRun(opts = {}, maxTicks = 60000) {
-    return playOut(makeRun(opts), maxTicks)
+    return playOut(makeRun({ ...opts, strict: opts.strict !== false }), maxTicks)
 }
 
 export function playOut(st, maxTicks = 60000) {
     const s = cloneState(st)
+    s.strict = true   // the witness never visits THE RIM — same rule as solveRun
     const receipts = []
     let t = 0
     while (!s.end && t < maxTicks) {
@@ -112,6 +117,9 @@ function stateHashOf(s) {
     const mix = (n) => { h ^= (n | 0); h = Math.imul(h, 0x01000193) }
     mix(s.ledger.dealt * 131 + s.ledger.taken)
     mix(s.potions)
+    mix(s.ledger.goldIn * 3 + s.ledger.goldSpent)
+    mix(s.party.reduce((n, p) => n + p.gold, 0))
+    mix(s.townSeed)
     for (const p of s.party) { mix(p.hp); mix(p.mp * 7); mix(p.lvl * 31); mix(p.alive ? 1 : 0) }
     mix(s.floor); mix(s.x); mix(s.y)
     return (h >>> 0).toString(16)
