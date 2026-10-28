@@ -11,7 +11,7 @@ import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, is
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
-import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit } from '../src/games/Britannia/moons.js'
+import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor } from '../src/games/Britannia/moons.js'
 import { shadeAt } from '../src/games/Britannia/tiles.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples } from '../src/games/Britannia/swell.js'
@@ -473,6 +473,35 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/moonName\(i\)} moon/.test(src), 'index.jsx: each menu row is named for its moon, not "gate N"')
     ok(/whirls thee to \$\{ROMAN\[S\.warp\.dest\]\} of \$\{moonName\(S\.warp\.dest\)\}/.test(src),
         'index.jsx: the arrival toast keeps its named destination (the slice did not hollow the warp)')
+}
+
+// gate-menu phase flavor + hover chirp (#1135): the menu prints one mood line
+// per moon phase — eight distinct lines, each naming the phase it claims, all
+// short enough for the 420px panel — and a mouse travelling the rows makes the
+// row it crosses chirp, so pointer guests get what the arrows always gave.
+// Prove-it-can-fail: make every PHASE_FLAVOR entry the same string (distinct
+// red), strip a phase word from one line (self-naming red), delete the hover
+// chirp or the pointermove wiring (source pins red).
+{
+    ok(PHASE_FLAVOR.length === 8 && new Set(PHASE_FLAVOR).size === 8,
+        'eight distinct phase-flavor lines (one per phase, no filler copies)')
+    ok(PHASE_FLAVOR.every((s, i) => s.toLowerCase().includes(PHASES[i])),
+        'every flavor line names the very phase it decorates')
+    ok([0, 1, 2, 3, 4, 5, 6, 7].every(p => gateFlavor(p) === PHASE_FLAVOR[p] && gateFlavor(p + 8) === gateFlavor(p) && gateFlavor(-1) === PHASE_FLAVOR[7]),
+        'gateFlavor maps the wheel deterministically and wraps both ways')
+    const lens = PHASE_FLAVOR.map(s => s.length)
+    ok(Math.max(...lens) <= 48 && Math.min(...lens) >= 20,
+        `lines fit the 420px panel (longest ${Math.max(...lens)} ≤ 48 chars) and carry some verse (shortest ${Math.min(...lens)} ≥ 20)`)
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/gateFlavor\(ph\)/.test(src), 'index.jsx: the open gate menu prints tonight\'s phase flavor')
+    ok(/addEventListener\('pointermove', onMove\)/.test(src) && /S\.hoverRow = row/.test(src),
+        'index.jsx: pointer hover over the menu tracks and selects rows')
+    ok(/S\.sel = row; audioController\.playTone\(420/.test(src),
+        'index.jsx: hovering onto a new row chirps (audio parity with the arrows)')
+    ok(/hoverRow: S\.gate >= 0 \? S\.hoverRow : -1/.test(src) && /gateFlavor: S\.gate >= 0 \? gateFlavor\(moonPhase\(S\.tick\)\)/.test(src),
+        'index.jsx: hover row and tonight\'s flavor ride the harness state (menu closed => -1/empty)')
+    ok(/by \+ 54, 9(\*lit)?/.test(src) && /by \+ 58\)/.test(src),
+        'index.jsx: the phase line + disc sit BELOW the menu title (title baseline by+36, phase by+58 — no overprint)')
 }
 
 // land texture (#1146): the modern tiles shade from a smooth field keyed to
