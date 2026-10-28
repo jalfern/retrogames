@@ -4,7 +4,10 @@
 // and QA must be able to replay the last 30 s of input exactly. Those two claims
 // are the token-free crux of the feature — payload validation, the quarantine
 // label, the issue builder, the input ring and the submit path — so they are all
-// provable without a browser, a deploy, or Jon's secret.
+// provable without a browser, a deploy, or Jon's secret. The ring expands key
+// events onto the sim's 60 Hz grid (one pad per tick), and this file replays a
+// full 30 s window through the gauntlet sim to prove the filed stream determines
+// the trajectory: schedule and expansion must land on the same state.hash.
 //
 //   node scripts/feedbackcheck.mjs        # green when the contract holds
 //   node scripts/feedbackcheck.mjs --mutate   # RED by design (drop the size cap)
@@ -20,7 +23,8 @@ import {
     storeJonKey, readJonKey, saveJonKey, JONKEY_STORE,
     startKeyboardRing, installTypingGuard,
 } from '../src/utils/feedback.js'
-import { REC_FORMAT } from '../src/utils/recording.js'
+import { REC_FORMAT, validate, verifyRecording, decodePad, encodePad } from '../src/utils/recording.js'
+import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
 
 const mutate = process.argv.includes('--mutate')
 let pass = 0
@@ -30,6 +34,7 @@ function ok(name, cond) {
 }
 
 // ── relay: validateFeedback (the single gate on every report) ────────────────
+const dense = (n) => Array.from({ length: n }, (_, i) => ({ t: i + 1, pad: {} }))
 const good = {
     note: 'Wyrm never saddles on the second pass',
     gameId: 'emberwood',
@@ -38,7 +43,7 @@ const good = {
     ts: Date.now(),
     screenshot: 'data:image/png;base64,' + 'A'.repeat(256),
     state: { tick: 7160, score: 150, x: 12, y: 4 },
-    input: { format: REC_FORMAT, durationSec: 30, seed: 42, pads: [{ t: 1, pad: { right: true } }, { t: 2, pad: {} }] },
+    input: { format: REC_FORMAT, durationSec: 30, tickRate: 60, seed: 42, ticks: 1800, pads: dense(1800) },
 }
 ok('validate: good payload accepted', validateFeedback(good).ok === true)
 ok('validate: missing note rejected', validateFeedback({ ...good, note: '   ' }).ok === false)
@@ -47,9 +52,14 @@ ok('validate: missing gameId rejected', validateFeedback({ ...good, gameId: '' }
 ok('validate: non-data screenshot rejected', validateFeedback({ ...good, screenshot: 'http://x/y.png' }).ok === false)
 ok('validate: oversize screenshot rejected', validateFeedback({ ...good, screenshot: 'data:image/png;base64,' + 'A'.repeat(2_000_000) }).ok === false)
 ok('validate: oversize state rejected', validateFeedback({ ...good, state: { big: 'y'.repeat(5000) } }).ok === false)
-ok('validate: too many pads rejected', validateFeedback({ ...good, input: { format: REC_FORMAT, seed: 1, pads: Array.from({ length: FB_MAX_PADS + 1 }, (_, i) => ({ t: i + 1, pad: {} })) } }).ok === false)
+ok('validate: too many pads rejected', validateFeedback({ ...good, input: { format: REC_FORMAT, seed: 1, pads: dense(FB_MAX_PADS + 1) } }).ok === false)
 ok('validate: non-integer seed rejected', validateFeedback({ ...good, input: { format: REC_FORMAT, seed: 1.5, pads: [] } }).ok === false)
 ok('validate: bad pad frame rejected', validateFeedback({ ...good, input: { format: REC_FORMAT, seed: 1, pads: [{ t: 0, pad: {} }] } }).ok === false)
+ok('validate: sparse event-list pads rejected (not per-tick)',
+    validateFeedback({ ...good, input: { ...good.input, ticks: 12, pads: [{ t: 1, pad: { down: true } }, { t: 2, pad: {} }, { t: 4, pad: { right: true } }] } }).ok === false)
+ok('validate: ticks cross-check rejected on mismatch',
+    validateFeedback({ ...good, input: { ...good.input, ticks: 3, pads: dense(2) } }).ok === false)
+ok('validate: 30 s @ 60 Hz (1800 dense frames) accepted', validateFeedback(good).ok === true)
 ok('validate: missing input ok (fallback)', validateFeedback({ note: 'hi', gameId: 'tetris' }).ok === true)
 
 // ── relay: quarantine label is the only difference between Jon and friends ───
@@ -60,6 +70,7 @@ const issueJon = buildFeedbackIssue(good, true)
 const issueFriend = buildFeedbackIssue(good, false)
 ok('issue: title carries gameId', issueJon.title.startsWith('FEEDBACK emberwood:'))
 ok('issue: body carries seed + rec format', issueJon.body.includes('seed 42') && issueJon.body.includes(REC_FORMAT))
+ok('issue: header names the per-tick window', /1800 ticks @ 60 Hz/.test(issueJon.body))
 ok('issue: body never leaks a token', !/ghp_|github_pat_|Authorization/i.test(issueJon.body))
 ok('issue: friend quarantined', issueFriend.labels.includes('needs-approval') && !issueJon.labels.includes('needs-approval'))
 
@@ -88,15 +99,26 @@ ok('issue: quarantine bodies still never leak secrets', !/K9x|ghp_|github_pat_/i
 ok('shot: failed upload carries the http status', /http 401/.test(screenshotMarkdown(null, 401)) && !screenshotMarkdown(null, 404).includes('!['))
 ok('shot: statusless failure keeps the honest line', /upload failed/.test(screenshotMarkdown(null)) && !/http/.test(screenshotMarkdown(null)))
 
-// ── client: the input ring trims to the last 30 s ────────────────────────────
-const ring = makeRing()
+// ── client: the input ring expands to per-tick frames (the replayable shape) ──
+// Events at exact 60 Hz grid multiples (anchored on an injected NOW) so the
+// expected frame counts are exact: 1 s = 60 ticks, no boundary ambiguity.
 const NOW = Date.now()
-ring.push({ right: true }, NOW - 40_000) // outside window
-ring.push({ right: true }, NOW - 10_000)
-ring.push({ right: true, a: true }, NOW - 1_000)
-const tail = ring.tail(30)
-ok('ring: trims to window (drops the 40s-old frame)', tail.length === 2)
-ok('ring: frames are rec-style (1-based t, encoded pad)', tail[0].t === 1 && typeof tail[1].pad === 'object')
+const ring = makeRing()
+ring.push({ right: true }, NOW - 40_000) // press+release fully outside the window
+ring.push({}, NOW - 39_000)
+ring.push({ right: true }, NOW - 10_000) // 1 s hold, mid-window
+ring.push({}, NOW - 9_000)
+ring.push({ right: true, a: true }, NOW - 1_000) // held into the capture edge
+const tail = ring.tail(30, NOW)
+const fr = (t) => (tail[t - 1] ? tail[t - 1].pad : null) // tick-numbered read, safe on a broken tail
+ok('ring: expands to per-tick frames (30 s @ 60 Hz = 1800)', tail.length === 1800)
+ok('ring: frames are dense (t = i+1) with encoded pads', tail[0] && tail[1] && tail[0].t === 1 && tail[1].t === 2 && typeof tail[0].pad === 'object')
+ok('ring: a press+release outside the window leaves no trace', JSON.stringify(fr(1)) === '{}')
+ok('ring: hold timing survives expansion (the 1 s hold = 60 right-only frames)',
+    tail.filter((f) => f.pad.right && !f.pad.a).length === 60)
+ok('ring: the 1 s hold starts at tick 1200 (10 s before capture)',
+    JSON.stringify(fr(1199)) === '{}' && JSON.stringify(fr(1200)) === JSON.stringify({ right: true }))
+ok('ring: a held key reaches the capture edge', !!fr(1800) && fr(1800).right === true && fr(1800).a === true)
 
 const ring2 = makeRing()
 for (let i = 0; i < 5; i++) ring2.push({ up: true }, Date.now())
@@ -107,8 +129,107 @@ const capRing = makeRing()
 capRing.push({ right: true }, Date.now())
 const cap = captureFeedback({ note: 'bug!', ring: capRing, route: '/retrogames/tetris' })
 ok('capture: note + gameId + build', cap.note === 'bug!' && cap.gameId === 'tetris' && typeof cap.build === 'string')
-ok('capture: input uses rec format', cap.input && cap.input.format === REC_FORMAT && cap.input.pads.length === 1)
+ok('capture: input is a per-tick rec stream (1800 frames, seed-ready)',
+    cap.input && cap.input.format === REC_FORMAT && cap.input.ticks === 1800 && cap.input.pads.length === 1800)
+const capIdle = makeRing()
+capIdle.push({ right: true }, Date.now() - 35_000) // press+release both before the window
+capIdle.push({}, Date.now() - 31_000)
+const capNoInput = captureFeedback({ note: 'static looks off', ring: capIdle, route: '/retrogames/britannia' })
+ok('capture: an idle window files no input block (still-frame report)', capNoInput.input === undefined)
 ok('capture: no screenshot/state in headless (fallback)', cap.screenshot === undefined && cap.state === undefined)
+
+// ── #737 core: the filed 30 s stream replays EXACTLY (seed + per-tick pads) ──
+// The Done bar is "QA replays the 30 s from one of them." The proof: a scripted
+// input schedule produces the key EVENTS a ring would bank; tail() expands them
+// onto the 60 Hz grid; the expanded frames and the schedule itself each drive a
+// gauntlet sim — final state.hash must agree. Same seed+pads⇒hash law that
+// replaycheck pins for multiplayer recordings, applied to a filed report.
+const RT = 1800 // 30 s @ 60 Hz
+const RT_SEED = 7
+const RT_NOW = Date.now()
+const RT_DT = 1000 / 60
+const RT_BANDS = [
+    [0, 300, { right: true }], [300, 600, {}], [600, 900, { up: true }],
+    [900, 1200, { left: true }], [1200, 1500, { down: true }], [1500, 1800, { right: true }],
+]
+const rtPadAt = (i) => {
+    const p = {}
+    for (const [s, e, b] of RT_BANDS) if (i >= s && i < e) Object.assign(p, b)
+    if ((i >= 1550 && i < 1552) || (i >= 1650 && i < 1652)) p.a = true // sword taps
+    return p
+}
+// The ring banks keydown/keyup SNAPSHOTS only — derive them from the schedule:
+const rtEvents = []
+{
+    let prev = ''
+    for (let i = 0; i < RT; i++) {
+        const p = rtPadAt(i)
+        const j = JSON.stringify(p)
+        if (j !== prev) { rtEvents.push({ ms: RT_NOW - (RT - 1 - i) * RT_DT, pad: p }); prev = j }
+    }
+}
+const rtRing = makeRing(30_000)
+for (const e of rtEvents) rtRing.push(e.pad, e.ms)
+const rtFrames = rtRing.tail(30, RT_NOW)
+ok('core: the ring expands the event list to the full 30 s window', rtFrames.length === RT)
+
+const rtFold = (p, prev) => ({
+    left: !!p.left, right: !!p.right, fwd: !!p.up, back: !!p.down,
+    sword: !!p.a && !prev.a, arrow: !!p.b && !prev.b,
+})
+const rtRun = (padAt, seed = RT_SEED) => {
+    const g = makeGame(seed % 97, 'warrior', { topDown: true })
+    let prev = { a: false, b: false }
+    const h0 = { x: g.hero.x, y: g.hero.y }
+    let maxD = 0
+    for (let i = 0; i < RT; i++) {
+        const p = padAt(i) || {}
+        step(g, rtFold(p, prev))
+        prev = { a: !!p.a, b: !!p.b }
+        maxD = Math.max(maxD, Math.hypot(g.hero.x - h0.x, g.hero.y - h0.y))
+        g.events.length = 0
+    }
+    return { g, maxD }
+}
+const rtRef = rtRun(rtPadAt)                                   // the schedule, direct
+const rtVia = rtRun((i) => decodePad(rtFrames[i] ? rtFrames[i].pad : {}, 'dpad')) // through tail()
+ok('core: tail() expansion == the schedule (identical final state.hash)', stateHash(rtRef.g) === stateHash(rtVia.g))
+ok('core: the 30 s is a live run (hero travels, scores, survives)', rtRef.maxD > 5 && rtRef.g.score > 0 && rtRef.g.tick === RT && !rtRef.g.end)
+// The 5 s cardinal walk converges across most seeds (walls decide), but 7 and 1
+// land on different states — the pair the calibration run proved divergent. If a
+// future gauntlet change makes them agree, re-pick a divergent pair.
+const rtOther = rtRun(rtPadAt, 1)
+ok('core: the seed is load-bearing (seed 7 vs 1, same input, different state)', stateHash(rtOther.g) !== stateHash(rtRef.g))
+
+// And the filed window assembles into a rec file the repo's OWN codec replays:
+const rtRec = {
+    format: REC_FORMAT, game: 'gauntlet', method: 'dpad', seed: RT_SEED, players: 1,
+    ticks: RT, hashEvery: 30,
+    slots: [{ source: { kind: 'human' }, pads: rtFrames.map((f) => f.pad), raw: dense(RT).map(() => ({})) }],
+    hashes: [],
+}
+ok('core: the filed window assembles into a codec-VALID rec file', validate(rtRec) === null)
+let rtG = null
+let rtPrev = { a: false, b: false }
+const rtRes = verifyRecording(rtRec, {
+    reset: (seed) => { rtG = makeGame(seed % 97, 'warrior', { topDown: true }); rtPrev = { a: false, b: false } },
+    step: (pads) => {
+        const p = (pads[0] || {})
+        step(rtG, rtFold(p, rtPrev))
+        rtPrev = { a: !!p.a, b: !!p.b }
+        rtG.events.length = 0
+    },
+    state: () => ({ tick: rtG.tick, hash: stateHash(rtG) }),
+})
+ok('core: verifyRecording replays the filed window to the same state', rtRes.ok === true && rtRes.state.hash === stateHash(rtRef.g))
+
+// The pre-fix shape — what #1088 actually filed: an event list renumbered 1..E.
+// It cannot fill the window, so any "replay" of it is a different game, not the
+// player's 30 s. Kept as a standing gate: the old shape must NOT replay.
+const oldFrames = rtEvents.map((e, i) => ({ t: i + 1, pad: encodePad(e.pad) }))
+ok('core: the old event-list shape cannot fill the window (E << ticks)', oldFrames.length < RT / 10)
+ok('core: replaying the old shape lands elsewhere (it has no timing)',
+    stateHash(rtRun((i) => decodePad(oldFrames[i] ? oldFrames[i].pad : {}, 'dpad')).g) !== stateHash(rtRef.g))
 
 // ── client: submit posts through the relay and never leaks the token ─────────
 let captured = null
@@ -235,8 +356,14 @@ if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
     // that still enforces FB_MAX_PADS refuses it (green); remove the cap and this
     // goes red — proving the size gate is load-bearing, not decoration.
-    const oversize = { ...good, input: { format: REC_FORMAT, seed: 1, pads: Array.from({ length: FB_MAX_PADS + 1 }, (_, i) => ({ t: i + 1, pad: {} })) } }
+    const oversize = { ...good, input: { format: REC_FORMAT, seed: 1, pads: dense(FB_MAX_PADS + 1) } }
     ok('mutant: oversize input refused (catches a removed cap)', validateFeedback(oversize).ok === false)
+    // Mutant: an expansion that ignores event timestamps (the pre-fix bug) gives
+    // every frame the LAST held pad. It must diverge from the schedule's reference
+    // run — the timestamps are what make a filed stream replayable. Remove the
+    // clock from tail() and the always-on core gate above goes red instead.
+    const rtMut = rtRun(() => decodePad(encodePad(rtEvents[rtEvents.length - 1].pad), 'dpad'))
+    ok('mutant: timestamp-blind expansion diverges from the reference', stateHash(rtMut.g) !== stateHash(rtRef.g))
 }
 
 console.log(`\nfeedbackcheck: ${pass}/${pass + fail} ${fail ? 'RED' : 'GREEN'}`)

@@ -65,22 +65,35 @@ if (HAS_WIN) {
     } catch { /* storage blocked */ }
 }
 
-// A ring of timestamped pads, trimmed to the last `seconds`. Fed once per play
-// tick from the game's loop (or from the keyboard logger below). tail() returns
-// rec-style frames so QA replays the same codec the recorder ships.
+// A ring of timestamped pad SNAPSHOTS (the full held state at each key event),
+// trimmed to the last `seconds`. tail() expands the snapshots onto the sim's
+// 60 Hz grid — one frame per tick, dense t = 1..N — so the filed stream IS the
+// rec codec's per-tick pad slot: seed + these frames determines the trajectory
+// exactly (the same shape replaycheck's verifyRecording consumes). The old
+// event-indexed shape (t = 1..E, E key events) dropped every gap between presses
+// — #1088's 12 events over 30 s could not be replayed at all. `now` is injectable
+// so the harness drives it against a fake clock.
 export function makeRing(windowMs = FB_WINDOW_MS) {
     const buf = []
+    const TICK_MS = 1000 / 60
     return {
         push(pad, at) {
             buf.push({ ms: at == null ? (HAS_WIN ? performance.now() : Date.now()) : at, pad: pad || {} })
             const cutoff = (at == null ? (HAS_WIN ? performance.now() : Date.now()) : at) - windowMs
             while (buf.length && buf[0].ms < cutoff) buf.shift()
         },
-        tail(seconds) {
-            const win = (seconds == null ? windowMs : seconds * 1000)
-            const now = HAS_WIN ? performance.now() : Date.now()
-            const kept = buf.filter((e) => now - e.ms <= win)
-            return kept.map((e, i) => ({ t: i + 1, pad: encodePad(e.pad) }))
+        tail(seconds, now) {
+            const win = seconds == null ? windowMs : seconds * 1000
+            const n = Math.round(win / TICK_MS)
+            const t1 = now == null ? (HAS_WIN ? performance.now() : Date.now()) : now
+            const out = new Array(n)
+            let e = 0
+            for (let i = 0; i < n; i++) {
+                const at = t1 - (n - 1 - i) * TICK_MS // when sim tick i ran
+                while (e < buf.length && buf[e].ms <= at) e++
+                out[i] = { t: i + 1, pad: encodePad(e > 0 ? buf[e - 1].pad : {}) }
+            }
+            return out
         },
         size() { return buf.length },
         clear() { buf.length = 0 },
@@ -199,8 +212,10 @@ export function captureFeedback({ note = '', ring = null, seconds = 30, route = 
     if (isDemo && diag) payload.diag = diag
     if (ring) {
         const pads = ring.tail(seconds)
-        if (pads.length) {
-            payload.input = { format: REC_FORMAT, durationSec: seconds, pads }
+        // Only file an input block when the window actually held a key: a report
+        // on a still frame (a graphics bug) carries no stream, same as before.
+        if (pads.some((f) => Object.keys(f.pad).length)) {
+            payload.input = { format: REC_FORMAT, durationSec: seconds, tickRate: 60, ticks: pads.length, pads }
             // #905: seed was "?" on every filed report because it only looked at
             // __game (DEV-only). The same state source the contract uses (and the
             // production __feedbackInfo fallback) carries the seed when it exists.

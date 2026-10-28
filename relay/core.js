@@ -184,16 +184,22 @@ export function validateFeedback(body) {
         const inp = body.input
         if (!inp || typeof inp !== 'object') return { ok: false, err: 'bad input' }
         if (inp.seed !== undefined && !Number.isInteger(inp.seed)) return { ok: false, err: 'bad seed' }
+        if (inp.ticks !== undefined && (!Number.isInteger(inp.ticks) || inp.ticks < 1)) return { ok: false, err: 'bad ticks' }
         if (!Array.isArray(inp.pads)) return { ok: false, err: 'input.pads must be an array' }
         if (inp.pads.length > FB_MAX_PADS) return { ok: false, err: 'too many pads' }
-        for (const f of inp.pads) {
-            if (!f || typeof f !== 'object' || !Number.isInteger(f.t) || f.t < 1) {
-                return { ok: false, err: 'bad pad frame' }
+        for (let i = 0; i < inp.pads.length; i++) {
+            const f = inp.pads[i]
+            // #737: the stream is per-tick — frames are DENSE (t = i+1), one pad
+            // per 60 Hz tick. A sparse event list (the pre-fix shape, #1088) drops
+            // the gaps between presses and cannot be replayed, so it is refused.
+            if (!f || typeof f !== 'object' || f.t !== i + 1) {
+                return { ok: false, err: 'pad frames must be per-tick dense (t = i+1)' }
             }
             if (f.pad !== undefined && typeof f.pad !== 'string' && typeof f.pad !== 'object') {
                 return { ok: false, err: 'bad pad codec' }
             }
         }
+        if (inp.ticks !== undefined && inp.ticks !== inp.pads.length) return { ok: false, err: 'ticks must equal pads.length' }
         if (byteLen(inp) > FB_MAX_INPUT) return { ok: false, err: 'input too large' }
     }
     return { ok: true }
@@ -245,7 +251,8 @@ export function buildFeedbackIssue(body, isJon) {
     if (body.state) lines.push('', 'State:', '```json', JSON.stringify(body.state, null, 2), '```')
     if (body.diag) lines.push('', 'Diagnostics:', '```json', JSON.stringify(body.diag, null, 2), '```')
     if (body.input) {
-        lines.push('', `Last ${body.input.durationSec || 30}s of input (seed ${body.input.seed ?? '?'}, retrogames-rec/v1):`, '```json', JSON.stringify(body.input), '```')
+        const ticks = body.input.ticks ?? body.input.pads.length
+        lines.push('', `Last ${body.input.durationSec || 30}s of input (seed ${body.input.seed ?? '?'}, ${ticks} ticks @ ${body.input.tickRate || 60} Hz, retrogames-rec/v1):`, '```json', JSON.stringify(body.input), '```')
     }
     if (body.screenshot) lines.push('', FB_SHOT_PLACEHOLDER)
     const why = quarantineNote(body, isJon)
