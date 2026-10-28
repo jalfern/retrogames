@@ -572,7 +572,6 @@ void main(){
     function doorFrame(cx, cy, dx, dy, zf) {
       const tx = -dy, ty = dx;
       const hx = cx + CELL / 2 + dx * CELL / 2, hy = cy + CELL / 2 + dy * CELL / 2;
-      const post = (CELL - DOOR_W) / 2;
       for (const s of [1, -1]) {
         const o0 = s * DOOR_W / 2, o1 = s * CELL / 2;
         quad(hx + tx * o0, hy + ty * o0, zf,
@@ -682,12 +681,12 @@ void main(){
         live.push(s);
         if (live.length >= 64) break;
       }
-      for (const s of live) {
+      if (live.length) {
         pushS(-0.5, 1, 0, 0); pushS(0.5, 1, 1, 0); pushS(0.5, 0, 1, 1);
         pushS(-0.5, 1, 0, 0); pushS(0.5, 0, 1, 1); pushS(-0.5, 0, 0, 1);
       }
       api._live = live;
-      return sn;
+      return live.length ? 6 : 0;
     }
 
     /* simulation of view, lights, torch ------------------------------- */
@@ -697,7 +696,6 @@ void main(){
       anim.t += dt;
       const k = clamp(anim.t / anim.dur, 0, 1);
       const e = easeInOut(k);
-      const moved = Math.hypot(anim.x1 - anim.x0, anim.y1 - anim.y0);
       view.x = lerp(anim.x0, anim.x1, e);
       view.y = lerp(anim.y0, anim.y1, e);
       view.z = lerp(anim.z0, anim.z1, e);
