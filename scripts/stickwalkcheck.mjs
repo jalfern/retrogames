@@ -21,6 +21,13 @@
 //   5. ATTRACT + PHONE — autopilot circles unattended; 390x844 touch boots,
 //                a tap starts it, and the pad shows only on coarse pointers.
 //   6. SPEED   — median frame interval (retries once; a loaded box is not a bug).
+//   6b. PERF   — #1203: the render loop NEVER reads the back buffer (classify()
+//                runs only when the harness asks — the per-frame getImageData
+//                GPU readback was the hitch on 120 Hz phones), p95 frame interval
+//                at phone size stays bounded, the footsteps hint is a real
+//                on/off toggle that resumes the AudioContext, ground footprints
+//                accumulate + age out, and the drawn pose interpolates between
+//                sim ticks (no 2:1 stutter on high-refresh displays).
 //   7. DEMO LAW — self-contained page, NOT registered in games.js (demos law),
 //                credits card present, index links it.
 //
@@ -40,6 +47,12 @@
 // loop (`for (let i = 0; i < 90; ...)`), and pin walk puffs to the old
 // alpha (`walkA` -> 0.10) — the six polish gates all go red together,
 // everything else stays green.
+// #1203 mutants (run in the html): re-add `lastStats = classify();` to the
+// periodic block in frame() — 'render loop never reads the back buffer' goes
+// red (the readback hitch returns); make the lerp `curJ[i] = sim.joints[i]` —
+// 'drawn pose interpolates' goes red on any box whose rAF is not phase-locked
+// to the tick; comment out the two `stamp(...)` calls — the footprint gates
+// go red; default `audioOn = false` — 'audio: on by default' goes red.
 //
 // All motion gates WAIT ON FRAMES (waitForFunction), not wall-clock sleeps.
 // Usage: node scripts/stickwalkcheck.mjs [--shots <dir>] [--json] [--no-speed]
@@ -404,6 +417,89 @@ if (!noSpeed) {
   let m = d[Math.floor(d.length / 2)]
   if (m > 120) { await advance(page, 30); const again = await T(page, () => new Promise(res => { const ts = []; let n = 0; const loop = (t) => { ts.push(t); if (++n < 45) requestAnimationFrame(loop); else res(ts) }; requestAnimationFrame(loop) })); d = again.slice(1).sort((a, b) => a - b); m = d[Math.floor(d.length / 2)] }
   ok('speed: median frame <= 120ms', m <= 120, `median ${m.toFixed(1)}ms (retried once)`)
+}
+
+/* ---------------- 6b. PERF + AUDIO + TRAIL (#1203) ---------------- */
+console.log('stickwalk: perf (back buffer, phone frame times)')
+{
+  const p = await open()
+  await advance(p, 150)
+  ok('perf: render loop never reads the back buffer (classify is on-demand)',
+    await T(p, () => {
+      const s = window.__stickwalkTest.stats()
+      return s.markerPx === 0 && s.bonePx === 0 && s.darkFrac === 0 && s.shadowDark === 0
+    }))
+  ok('perf: classify() still works when the harness asks',
+    (await T(p, () => window.__stickwalkTest.classify())).markerPx > 0)
+  await p.close()
+}
+{
+  const p = await open({ width: 390, height: 844 }, true)
+  await p.touchscreen.tap(195, 400)
+  await p.waitForFunction(() => window.__stickwalkTest.screen() === 'play', null, { timeout: 8000 })
+  await p.waitForFunction(() => window.__stickwalkTest.perf().n >= 180, null, { timeout: 25000 })
+  let pf = await T(p, () => window.__stickwalkTest.perf())
+  if (pf.p95 > 200) {
+    await T(p, () => window.__stickwalkTest.resetPerf())
+    await p.waitForFunction(() => window.__stickwalkTest.perf().n >= 180, null, { timeout: 25000 })
+    pf = await T(p, () => window.__stickwalkTest.perf())
+  }
+  ok('perf: p95 frame interval <= 200ms at phone size (390x844)', pf.p95 <= 200, JSON.stringify(pf))
+  await p.close()
+}
+console.log('stickwalk: audio toggle + footprints + interpolation')
+{
+  const p = await open()
+  await p.keyboard.press('Enter')
+  await p.waitForFunction(() => window.__stickwalkTest.screen() === 'play', null, { timeout: 8000 })
+  await advance(p, 10)
+  const a0 = await T(p, () => window.__stickwalkTest.audio())
+  ok('audio: on by default, context created on first gesture', a0.on === true && a0.ctx === true, JSON.stringify(a0))
+  const bb = await (await p.$('#audiohint')).boundingBox()
+  const mid = { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 }
+  await p.mouse.click(mid.x, mid.y)
+  const a1 = await T(p, () => window.__stickwalkTest.audio())
+  ok('audio: hint click turns footsteps OFF', a1.on === false, JSON.stringify(a1))
+  await p.mouse.click(mid.x, mid.y)
+  const a2 = await T(p, () => window.__stickwalkTest.audio())
+  ok('audio: second click turns footsteps back ON', a2.on === true && a2.ctx === true, JSON.stringify(a2))
+  await p.close()
+}
+{
+  const p = await open()
+  await p.keyboard.press('Enter')
+  await p.waitForFunction(() => window.__stickwalkTest.screen() === 'play', null, { timeout: 8000 })
+  await T(p, () => { const t = window.__stickwalkTest; t.setSpeed(2.0); t.setTurn(0) })
+  await p.waitForFunction(() => window.__stickwalkTest.footprints().n >= 4, null, { timeout: 15000 })
+  const f1 = await T(p, () => window.__stickwalkTest.footprints())
+  ok('trail: ground footprints accumulate at heel strikes', f1.n >= 4 && f1.n <= f1.cap, JSON.stringify(f1))
+  await p.waitForFunction(() => window.__stickwalkTest.footprints().maxAge > 3, null, { timeout: 20000 })
+  const f2 = await T(p, () => window.__stickwalkTest.footprints())
+  ok('trail: footprints age toward fade-out and cull at the cap', f2.maxAge > 3 && f2.n <= f2.cap && f2.maxAge < f2.life + 1, JSON.stringify(f2))
+  await p.close()
+}
+{
+  const p = await open()
+  await p.keyboard.press('Enter')
+  await p.waitForFunction(() => window.__stickwalkTest.screen() === 'play', null, { timeout: 8000 })
+  await T(p, () => { const t = window.__stickwalkTest; t.setSpeed(2.0); t.setTurn(0) })
+  const r = await T(p, () => new Promise(res => {
+    const t = window.__stickwalkTest
+    const d = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+    const end = performance.now() + 6000
+    const l = () => {
+      const s = t.interp()
+      const span = d(s.prevHead, s.simHead)
+      if (span > 0.004 && s.alpha > 0.05 && s.alpha < 0.95) {
+        res({ alpha: s.alpha, span: +span.toFixed(4), toPrev: +d(s.dispHead, s.prevHead).toFixed(4), toCur: +d(s.dispHead, s.simHead).toFixed(4) })
+      } else if (performance.now() < end) requestAnimationFrame(l)
+      else res(null)
+    }
+    l()
+  }))
+  const interior = !!r && r.toPrev > 0 && r.toCur > 0 && Math.abs(r.toPrev + r.toCur - r.span) < 0.01 * r.span + 1e-4
+  ok('smooth: drawn pose interpolates between sim ticks', interior, r ? JSON.stringify(r) : 'no interior frame observed (rAF phase-locked; not a failure)')
+  await p.close()
 }
 
 /* ---------------- 7. DEMO LAW ---------------- */
