@@ -463,6 +463,33 @@ if (MUT) {
     ok(!/def\.guard = Math\.max\(0, def\.guard - raw\)/.test(mutE), 'mutant: dead guard drain fails the gate (harness bites)')
 }
 
+// ---- #1106 intro + K.O. quote gate --------------------------------------------------
+// Each fighter carries a round intro + a win line + a lose line; the FIGHT call and
+// the K.O./match freeze show them. The selectors (introQuotes/koQuotes) are pure in
+// fighters.js so the render stays thin. Source-level on the data + the call sites,
+// plus a mutant that strips the table so the data gate bites.
+{
+    const fs = await import('node:fs')
+    const fsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/fighters.js'), 'utf8')
+    const gsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/index.jsx'), 'utf8')
+    for (const [label, re] of [
+        ['pure intro selector (both fighters)', /export function introQuotes\(a, b\)/],
+        ['pure K.O. selector (round + match line)', /export function koQuotes\(m\)/],
+    ]) ok(re.test(fsrc), `quote gate: ${label}`)
+    for (const [label, re] of [
+        ['render reads the K.O. quote', /koQuotes\(m\)/],
+        ['render reads the intro quote at FIGHT', /introQuotes\(BY_ID\[p1Char\], BY_ID\[p2Char\]\)/],
+        ['K.O. quote is drawn as a card', /quote\.a, W \/ 2, H \* 0\.59/],
+        ['per-fighter K.O. blurb sting', /const koSting = \(fid\)/],
+    ]) ok(re.test(gsrc), `quote gate: ${label}`)
+    ok((fsrc.match(/\bintro: /g) || []).length >= 5, 'quote gate: all five fighters carry an intro line')
+    ok((fsrc.match(/\bwin: /g) || []).length >= 5, 'quote gate: all five fighters carry a win line')
+    ok((fsrc.match(/\blose: /g) || []).length >= 5, 'quote gate: all five fighters carry a lose line')
+    // mutant: strip the quote table — the "5 lines" data gate has nothing left to count
+    const mutF = fsrc.replace(/\bintro: /g, 'intro__X: ').replace(/\bwin: /g, 'win__X: ').replace(/\blose: /g, 'lose__X: ')
+    ok((mutF.match(/\bintro: /g) || []).length === 0 && (mutF.match(/\bwin: /g) || []).length === 0, 'mutant: stripped quote table empties the data gate (harness bites)')
+}
+
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
 // ---- Part B: browser drive ---------------------------------------------------------

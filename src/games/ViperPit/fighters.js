@@ -18,6 +18,7 @@ function sp(base, ex, sup) {
 const defs = [
     {
         id: 'nyx', name: 'NYX', tag: 'QUIET ENTRY', cpu: 'easy',
+        intro: 'I DO NOT TALK BACK', win: 'NOTHING TO SEE', lose: 'YOU GET ANOTHER SHOT',
         cpuStyle: { zone: 0.18, jump: 0.3 },
         build: { h: 1.06, bulk: 0.9, hair: 'hood', gear: 'wrap' },
         color: { skin: 0xcf9a72, top: 0x3d3f4a, pants: 0x23252e, hair: 0x11131a, accent: 0x59e0c8 },
@@ -37,6 +38,7 @@ const defs = [
     },
     {
         id: 'cinder', name: 'CINDER', tag: 'BRING THE HEAT', cpu: 'normal',
+        intro: 'YOU ASKED FOR HEAT', win: 'BURNT OUT', lose: 'STILL GOT A SPARK',
         cpuStyle: { zone: 0.55 },
         build: { h: 1.02, bulk: 0.95, hair: 'short', gear: 'jacket' },
         color: { skin: 0xb47a52, top: 0x7e2f22, pants: 0x2c2622, hair: 0x241612, accent: 0xff9a3c },
@@ -55,6 +57,7 @@ const defs = [
     },
     {
         id: 'vess', name: 'VESS', tag: 'UPSIDE THROUGH YOU', cpu: 'hard',
+        intro: 'CATCH ME IF YOU CAN', win: 'UPSIDE DOWN', lose: 'THAT ONE LANDED',
         cpuStyle: { zone: 0.22, jump: 0.5 },
         build: { h: 0.98, bulk: 0.85, hair: 'shaven', gear: 'wrap' },
         color: { skin: 0xe4c39b, top: 0x2f5d52, pants: 0x1f2a26, hair: 0x1a1410, accent: 0xb8ff5a },
@@ -74,6 +77,7 @@ const defs = [
     },
     {
         id: 'riv', name: 'RIV', tag: 'LAST WORD STANDING', cpu: 'brutal',
+        intro: 'I END CONVERSATIONS', win: "LAST WORD'S MINE", lose: 'SAY IT AGAIN',
         cpuStyle: { zone: 0.4 },
         build: { h: 1.08, bulk: 1.02, hair: 'mohawk', gear: 'jacket' },
         color: { skin: 0xd69a6b, top: 0x44485a, pants: 0x1c1e26, hair: 0x8a2f3f, accent: 0xd8e04a },
@@ -95,6 +99,7 @@ const defs = [
     },
     {
         id: 'krax', name: 'KRAX', tag: 'SOLD BY THE KILO', cpu: 'insane',
+        intro: 'BIG BILL COMING', win: 'PAID IN FULL', lose: "THAT'LL BE EXTRA",
         cpuStyle: { zone: 0.05, jump: 0.04 },
         build: { h: 1.18, bulk: 1.4, hair: 'bald', gear: 'chain' },
         color: { skin: 0x9a6a44, top: 0x5a4632, pants: 0x33302b, hair: 0x141414, accent: 0xc0c8d0 },
@@ -117,3 +122,22 @@ export const ROSTER = defs.map((d) => ({ ...d, moves: fighterMoves(d) }))
 export const BY_ID = Object.fromEntries(ROSTER.map((d) => [d.id, d]))
 
 export const LADDER = ['nyx', 'cinder', 'vess', 'riv', 'krax']
+
+// #1106 — round intro + K.O. quote selection, kept pure so viperpitcheck (Part A,
+// plain Node) can pin them: the right fighter says the right line, and a stripped
+// quote table is caught. `m` is a fighting-core match; the round winner is the
+// fighter whose st is 'win' (set by koRound, cleared by nextRound), or m.winner
+// (0/1) once the match is done.
+export function introQuotes(a, b) {
+    return { a: `${a.name} — ${a.intro}`, b: `${b.name} — ${b.intro}` }
+}
+export function koQuotes(m) {
+    const wIdx = (m.phase === 'done' && m.winner != null)
+        ? m.winner
+        : m.fighters.findIndex((f) => f.st === 'win')
+    if (wIdx !== 0 && wIdx !== 1) return null
+    const wd = m.fighters[wIdx].def
+    const ld = m.fighters[wIdx === 0 ? 1 : 0].def
+    if (m.phase === 'done') return { a: `${wd.name} — ${wd.win}`, b: `${ld.name} — ${ld.lose}`, match: true }
+    return { a: `${wd.name} — ${wd.win}`, b: null }
+}

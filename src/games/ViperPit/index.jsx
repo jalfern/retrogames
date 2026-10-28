@@ -20,7 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
-import { ROSTER, BY_ID, LADDER } from './fighters.js'
+import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes } from './fighters.js'
 import { createScene, buildFighter, buildStage } from './render.js'
 import { STAGES } from './stages.js'
 
@@ -101,6 +101,8 @@ const ViperPitGame = () => {
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let finishFx = 0, finishText = ''
+        let quote = null, quoteT = 0
+        let koFxRound = -1
         let finishCine = null, cine = null
         let comboFx = [0, 0], comboVal = [0, 0]
         let lagHp = [100, 100]
@@ -438,16 +440,37 @@ const ViperPitGame = () => {
             })
         }
 
+        // #1106 — a per-fighter blurb sting on the K.O. freeze, so each winner's
+        // line lands with their own voice (the finisher sting covers the move;
+        // this covers the round/match-out moment).
+        const koSting = (fid) => {
+            if (fid === 'nyx') { audioController.playTone(240, 0.1, 'sine', 0.09, 0.04); audioController.playTone(180, 0.14, 'sine', 0.08, 0.14) }
+            else if (fid === 'cinder') audioController.playSweep(320, 620, 0.32, 'sawtooth', 0.08)
+            else if (fid === 'vess') { audioController.playTone(520, 0.07, 'square', 0.07); audioController.playTone(700, 0.07, 'square', 0.06, 0.08) }
+            else if (fid === 'riv') { audioController.playSweep(440, 150, 0.34, 'sawtooth', 0.09); audioController.playTone(90, 0.16, 'square', 0.1) }
+            else { audioController.playTone(120, 0.18, 'square', 0.1); audioController.playSweep(240, 120, 0.2, 'square', 0.07) }
+        }
+
         let retryTimer = null
         const watchPhase = (m, prevPhase, prevRound) => {
-            if (m.phase === 'ko' && prevPhase !== 'ko') {
+            // dedupe by round, not by the fight→ko transition: the harness's
+            // forceKO() sets the phase between ticks, so prevPhase is already
+            // 'ko' and the transition test would skip the K.O. fx + quotes
+            if (m.phase === 'ko' && koFxRound !== m.round) {
+                koFxRound = m.round
                 audioController.playSweep(200, 50, 0.7, 'sawtooth', 0.16)
                 audioController.playNoise(0.32, 0.2)
                 audioController.playFilteredNoise(1.1, 0.16, 480)
                 shake = Math.max(shake, 14); flashT = Math.max(flashT, 18)
                 bannerText = m.banner; bannerT = 130
+                const q = koQuotes(m)
+                if (q) { quote = q; quoteT = 140 }
+                const wf = m.fighters.find((f) => f.st === 'win')
+                if (wf) koSting(wf.def.id)
             } else if (m.phase === 'fight' && prevPhase === 'intro') {
                 bannerText = 'FIGHT!'; bannerT = 50
+                const iq = introQuotes(BY_ID[p1Char], BY_ID[p2Char])
+                if (iq) { quote = iq; quoteT = 60 }
                 audioController.playTone(660, 0.12, 'square', 0.1)
                 setTimeout(() => audioController.playTone(440, 0.16, 'square', 0.1), 140)
             } else if (m.phase === 'intro' && prevRound < m.round) {
@@ -456,6 +479,8 @@ const ViperPitGame = () => {
             }
             if (m.phase === 'done' && prevPhase !== 'done') {
                 const won = m.winner === 0
+                const q = koQuotes(m)
+                if (q) { quote = q; quoteT = 240 }
                 if (mode === 'cpu') {
                     if (won && ladderIdx < LADDER.length - 1) {
                         audioController.playTone(587, 0.12, 'square', 0.1)
@@ -578,6 +603,23 @@ const ViperPitGame = () => {
                     hctx.textAlign = 'center'
                     hctx.fillStyle = `rgba(255,64,48,${Math.min(1, finishFx / 60).toFixed(2)})`
                     hctx.fillText(finishText, W / 2, H * 0.54)
+                }
+                if (quoteT > 0 && quote) {
+                    quoteT--
+                    if (quote.a) {
+                        ui(Math.max(15, H * 0.034))
+                        hctx.textAlign = 'center'
+                        const alpha = Math.min(1, quoteT / 24 + 0.12)
+                        hctx.strokeStyle = 'rgba(8,5,8,0.92)'; hctx.lineWidth = Math.max(2, H * 0.006)
+                        hctx.fillStyle = `rgba(255,246,232,${alpha.toFixed(2)})`
+                        hctx.strokeText(quote.a, W / 2, H * 0.59)
+                        hctx.fillText(quote.a, W / 2, H * 0.59)
+                        if (quote.b) {
+                            hctx.fillStyle = `rgba(150,214,200,${alpha.toFixed(2)})`
+                            hctx.strokeText(quote.b, W / 2, H * 0.64)
+                            hctx.fillText(quote.b, W / 2, H * 0.64)
+                        }
+                    }
                 }
                 if (flashT > 0) { flashT--; hctx.fillStyle = `rgba(255,235,220,${(flashT / 60).toFixed(2)})`; hctx.fillRect(0, 0, W, H) }
                 if (desync && net.active) {
