@@ -1,4 +1,4 @@
-import { useState, useEffect, createContext, useContext, useCallback, useMemo, Suspense } from 'react'
+import { useState, useEffect, useContext, useCallback, useMemo, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { GAMES } from './config/games'
 import GamesList from './components/GamesList'
@@ -7,6 +7,7 @@ import GameChrome from './components/GameChrome'
 import LinkPads from './components/LinkPads'
 import PadLink from './pages/PadLink'
 import { PadContext } from './components/padContext'
+import { GameLabelContext } from './components/gameLabelContext'
 import { padButton, extraButtonsOf } from './components/gamepadMap'
 import { methodOf } from './utils/onePad'
 import ArcadeShowcase from './pages/ArcadeShowcase'
@@ -14,11 +15,6 @@ import ForgeBoard from './pages/ForgeBoard'
 import ForgeLog from './pages/ForgeLog'
 import ShiftReport from './pages/ShiftReport'
 import { audioController } from './utils/AudioController'
-
-const GameLabelContext = createContext({
-  label: '',
-  setGameInfo: () => { }
-})
 
 function RandomHome() {
   const { setGameInfo } = useContext(GameLabelContext)
