@@ -1,4 +1,4 @@
-# ROBOT LAB — Plaicraft robot-sim kit (issue #1141, stages 1–2)
+# ROBOT LAB — Plaicraft robot-sim kit (issue #1141, stages 1–3)
 
 Route `/robot-lab` · visibility: private · built by forge, 2026-10-28/29.
 
@@ -43,6 +43,23 @@ physics the USD layer holds (mass/friction/collider) + provenance.
 - **Episodes pin their physics**: `episode.assets = simready-manifest/1` —
   exported datasets declare which transcribed record they were played with.
 
+## Stage 3 — torque, wrist camera, force-closure (issue #1141)
+- **Torque-driven joints**: the servo commands τ = Kp·θ_err + Kd·ω_err +
+  gravity feedforward, clamped at per-joint τ_max (`JOINT_SPECS`, desk-arm
+  class figures with provenance); θ̈ = (τ − τ_gravity)/I integrates each joint.
+  Links stay kinematic bodies (stage-1 solver lessons stand); payload masses
+  load the distal joints for real, effort % + SAT flags ride in
+  `state().torque/.sat` and the HUD strip.
+- **Wrist camera**: live PIP viewport (renderer scissor pass) mounted on the
+  hand looking along the finger axis, C toggles, crosshair + label overlay.
+- **Force closure**: holding is `n·μ_eff·F_clamp` from the 2F-85 `grip`
+  record (40 N setting, rubber μ 0.7, μ_eff = min(pad, asset surface)) vs
+  `m·(g+|a|)` smoothed + gross weld deviation > 20 mm. Slam cargo into the
+  drawer lip and it slips; a pick the pads can't statically hold is REFUSED
+  at the grab (recorded `refused:<slot>` event). SLIP events count in
+  `state().slips` and the HUD.
+- Manifest rev `simready-manifest/2` (grip block added); episodes pin it.
+
 ## Win condition
 Two tasks, all six subgoals: drawerOpen · crateIn · drawerClosed ·
 doorOpen · canIn · doorClosed (score 50/100/50/50/100/50 = 400).
@@ -56,7 +73,7 @@ The drawer **refuses to close** when the crate sits on the rail track
   point-while-holding = carry and drop there.
 
 ## Verify commands
-- `npm run robokitcheck` — ten gates, all green: determinism (seed+pads =
+- `npm run robokitcheck` — thirteen gates, all green: determinism (seed+pads =
   identical hashes across processes), analytic servo round-trip (worst |Δ|
   ≤ 50 mm; the near-column dead zone is documented, not hidden), empty-grip
   refusal, stand-clear mechanism (Rail blockFn freezes a slide into an
@@ -64,8 +81,12 @@ The drawer **refuses to close** when the crate sits on the rail track
   all 6 goals on seeds 1..12, plus stage-2: manifest schema/link-only,
   license-gate recompute (no `never` verdict ships), live physics carries the
   transcribed masses/frictions, episodes pin the manifest revision.
-  Mutant-proven twice: reintroducing the hardcoded crate mass reddens gate 9;
-  a silent CC0→SCEA relicense on the gripper reddens gate 8.
+  Stage 3 gates: actuator spec (rated carry inside shoulder τ_max), live
+  force-closure (budget = manifest math, weld wears it, under-force pick
+  refused), visibility (torque/slip state + WRIST-CAM/torque HUD tripwires).
+  Mutant-proven three times: hardcoded crate mass reddens gate 9; silent
+  CC0→SCEA relicense reddens gate 8; shoulder τ_max 12→6 reddens gates
+  11/12/6 (the carry can't be held).
 - `CONTRACT_ONLY=robot-lab npm run contractcheck` — 18/18 including live
   capture replaying hash-equal (the loop honors `contractHoldsLoop()` and
   `reset()` enters play synchronously, so banked ticks belong to the header
@@ -105,7 +126,8 @@ The drawer **refuses to close** when the crate sits on the rail track
 1. SimReady mesh pulls: USD→GLB conversion + exact USD-side friction/mass
    transcription is the manual step (outside CI); until pulled, records are
    published-spec estimates and the game renders its own meshes.
-2. Fully dynamic (torque-driven) arm; wrist camera; force-closure grasp model
-   (the 2F-85 rubber-pad friction stays recorded, not live, until then).
+2. Links are torque-serviced in joint space (θ̈ = τ/I); the cannon bodies
+   stay kinematic (anchor+constraint fling, see gotchas). Base reaction and
+   joint flexing would need a full rigid-body chain — a later stage.
 3. Modem-level juice: drawer rumble, latch clicks, carry sway audio.
 

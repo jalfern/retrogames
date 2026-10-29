@@ -16,7 +16,7 @@
 
 import { licenseGate } from '../modelLibrary.js'
 
-export const MANIFEST_REV = 'simready-manifest/1'
+export const MANIFEST_REV = 'simready-manifest/2'
 export const SIMREADY_LIBRARY = 'nvidia-simready'
 
 export const ASSETS = [
@@ -34,7 +34,10 @@ export const ASSETS = [
             friction: 0.7,
             collider: { type: 'box', half: [0.041, 0.045, 0.05] },
         },
-        physicsProvenance: 'published 2F-85 spec: 1.0 kg incl. fingers, 85 mm stroke, rubber pads; friction applied at stage 3 (force-closure), mass recorded now (links are kinematic)',
+        // Stage 3: force-closure law inputs, published 2F-85 figures.
+        // Grasp-force setting range 20–140 N; the lab runs 40 N (low-mid).
+        grip: { clampForceN: 40, padFriction: 0.7, contacts: 2, safety: 1.35 },
+        physicsProvenance: 'published 2F-85 spec: 1.0 kg incl. fingers, 85 mm stroke, 20–140 N grasp force (lab setting 40 N), rubber pads μ≈0.7; live force-closure since stage 3 (links still kinematic)',
         mesh: { pulled: false, formats: 'usd→glb (manual, outside CI)' },
         use: 'the kit fingertip pair',
     },

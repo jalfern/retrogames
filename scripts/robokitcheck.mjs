@@ -15,6 +15,7 @@ import {
     createRobotSim, createAutopilot, WIN_TICKS,
     createEpisode, validateEpisode, exportEpisodes, BENCH_TOP,
     ASSETS, SLOTS, assetFor, gateFor, MANIFEST_REV, SIMREADY_LIBRARY,
+    JOINT_SPECS, LINK_MASSES, forceClosureFor,
 } from '../src/utils/robot/index.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -229,6 +230,83 @@ const run = (seed, maxTicks = WIN_TICKS) => {
     check('episode pins its manifest revision; corrupt pin rejected, un-pinned allowed',
         vGood === null && rec.episode.assets === MANIFEST_REV && typeof vBad === 'string' && vLegacy === null,
         `good=${JSON.stringify(vGood)} bad=${JSON.stringify(vBad)} legacy=${JSON.stringify(vLegacy)}`)
+}
+
+// 11. Actuator spec (stage 3): joints are torque-driven with recorded limits,
+//     and the worst static gravity load (links + rated carton carry, near
+//     horizontal, far reach) stays INSIDE τmax — the arm is spec-honest, and
+//     links alone hold at ≥1.3× margin.
+{
+    const problems = []
+    const G = 9.82
+    for (const [k, sp] of Object.entries(JOINT_SPECS)) {
+        if (!(sp.tauMax > 0 && sp.inertia > 0 && sp.omegaMax > 0 && sp.kp > 0 && sp.kd > 0)) problems.push(`${k}: spec ${JSON.stringify(sp)}`)
+    }
+    const sim = createRobotSim(3)
+    const mG = assetFor('gripper').physics.massKg
+    const mC = assetFor('crate').physics.massKg
+    const L1 = 0.3, L2 = 0.3, LG = 0.055
+    const worstLinks = G * (LINK_MASSES.upper * L1 / 2 + LINK_MASSES.fore * (L1 + L2 / 2) + mG * (L1 + L2 + LG))
+    const worstCarry = worstLinks + G * mC * (L1 + L2 + LG)
+    if (worstCarry > JOINT_SPECS.phi1.tauMax) problems.push(`worst carry ${worstCarry.toFixed(2)} N·m exceeds shoulder τmax ${JOINT_SPECS.phi1.tauMax}`)
+    if (JOINT_SPECS.phi1.tauMax / worstLinks < 1.3) problems.push(`shoulder links-only margin ${(JOINT_SPECS.phi1.tauMax / worstLinks).toFixed(2)} < 1.3`)
+    void sim
+    check('actuator spec: positive limits, rated carry inside shoulder τmax', problems.length === 0, problems.join('; '))
+}
+
+// 12. Force-closure law is LIVE and manifest-derived (stage 3): the weld's
+//     hold budget equals contacts·min(μ_pad, μ_surface)·F_clamp recomputed
+//     from the SimReady records, and lowering clamp force below the load makes
+//     the gripper REFUSE the pick (recorded in events).
+{
+    const problems = []
+    const sim = createRobotSim(1)
+    for (const [slot, body] of [['crate', sim.crate], ['can', sim.can]]) {
+        const fc = forceClosureFor(body)
+        const grip = assetFor('gripper').grip
+        const a = assetFor(slot).physics
+        const want = grip.contacts * Math.min(grip.padFriction, a.friction) * grip.clampForceN
+        if (Math.abs(fc.budgetN - want) > 1e-9) problems.push(`${slot}: budget ${fc.budgetN} != manifest math ${want}`)
+    }
+    // Approach + grab via the autopilot itself (the same path the game plays):
+    // a hand-scripted approach lands short of the sphere-clamped crate.
+    const ap12 = createAutopilot(sim)
+    let okGrab = false
+    for (let i = 0; i < 700 && !okGrab; i++) {
+        okGrab = sim.step({ pad: ap12() }).held === 'crate'
+    }
+    if (!okGrab) problems.push('autopilot never held the crate at 40 N')
+    else if (Math.abs(sim.arm.weld.holdBudgetN - 2 * 0.5 * 40) > 1e-9) problems.push(`weld budget ${sim.arm.weld.holdBudgetN}`)
+    armDrop(sim)
+    assetFor('gripper').grip.clampForceN = 1
+    const refused = sim.arm.tryGrab([sim.crate])
+    if (refused || !sim.arm.gripRefused || sim.arm.gripRefused.slot !== 'crate') problems.push('under-force grab not refused with reason')
+    assetFor('gripper').grip.clampForceN = 40
+    check('force-closure: budget = manifest law, weld wears it, under-force pick refused', problems.length === 0, problems.join('; '))
+}
+function armDrop(sim) {
+    if (sim.arm.weld) sim.arm.drop()
+}
+
+// 13. Stage-3 visibility: state exposes torque/slip fields, and the game
+//     actually renders the wrist-camera PIP and the torque strip (source
+//     tripwires — invisible work is undone work).
+{
+    const problems = []
+    const sim = createRobotSim(2)
+    sim.step({ pad: {} })
+    const st = sim.state()
+    for (const k of ['yaw', 'phi1', 'phi2', 'gamw']) {
+        if (!Number.isFinite(st.torque?.[k])) problems.push(`state.torque.${k} missing`)
+    }
+    if (!Number.isInteger(st.sat) || !Number.isInteger(st.slips)) problems.push('state.sat/slips missing')
+    if (!('gripN' in st) || !('budgetN' in st)) problems.push('state.gripN/budgetN missing')
+    const game = readFileSync(join(ROOT, 'src', 'games', 'RobotLab', 'index.jsx'), 'utf8')
+    if (!game.includes('WRIST-CAM')) problems.push('no WRIST-CAM HUD')
+    if (!game.includes('setScissorTest')) problems.push('no PIP viewport render')
+    if (!game.includes('JOINT TORQUE')) problems.push('no torque strip')
+    if (!/KIT_VERSION = 'stage3'/.test(readFileSync(join(ROOT, 'src', 'utils', 'robot', 'index.js'), 'utf8'))) problems.push('KIT_VERSION not stage3')
+    check('stage-3 visibility: torque/slip state + wrist-cam & torque HUD wired', problems.length === 0, problems.join('; '))
 }
 
 console.log(failures === 0 ? 'robokitcheck: OK' : `robokitcheck: ${failures} FAILED`)

@@ -83,6 +83,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'heist')
       - run: npm run heistcheck
         if: contains(fromJSON(env.KEYS), 'heist')
+      - run: npm run robokitcheck
+        if: contains(fromJSON(env.KEYS), 'robot')
       - run: npm run lint:bee
         if: contains(fromJSON(env.KEYS), 'bee')
       - run: npm run beecheck
