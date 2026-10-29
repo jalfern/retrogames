@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import VirtualControls from '../../components/VirtualControls'
 import PauseOverlay from '../../components/PauseOverlay'
-import { exposeGame, unexposeGame, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -188,7 +188,8 @@ export default function RobotLab() {
             raf = requestAnimationFrame(loop)
             const dt = Math.min(now - last, 250)
             last = now
-            if (!pausedRef.current) {
+            if (contractHoldsLoop()) acc = 0
+            else if (!pausedRef.current) {
                 acc += dt
                 let steps = 0
                 while (acc >= FIXED_DT && steps < 5) {
@@ -232,7 +233,12 @@ export default function RobotLab() {
                 players: 1,
                 buttons: ['a', 'b'],
                 reads: ['x', 'y'],
-                reset: (seed) => { sim = createRobotSim(seed); autopilot = createAutopilot(sim); if (phaseRef.current === 'attract') setPhase('attract'); return sim.state() },
+                reset: (seed) => {
+                    sim = createRobotSim(seed); autopilot = createAutopilot(sim)
+                    ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet' })
+                    phaseRef.current = 'play'; setPhase('play')
+                    return sim.state()
+                },
                 tick: (pad) => { sim.step({ pad }) },
                 state: () => sim.state(),
                 canvas: () => canvas,
