@@ -10,7 +10,7 @@ export const CORE = {
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'feedbackcheck', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
-    'runwaycheck', 'claimcheck'],
+    'runwaycheck', 'claimcheck', 'robokitcheck'],
   smoke: ['vpadboot', 'tapstartcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',
@@ -27,6 +27,7 @@ export const SCOPES = {
   fps: { dirs: ['src/games/IronKeep'], lint: ['lint:fps'], checks: [], smoke: [] },
   ai: { dirs: ['src/ai', 'src/games/Zork', 'src/games/KingsQuest'], lint: ['lint:ai'], checks: ['aicheck', 'zorkcheck'], smoke: [] },
   heist: { dirs: ['src/games/RaccoonHeist'], lint: ['lint:heist'], checks: ['heistcheck'], smoke: ['heistsmoke'] },
+  robot: { dirs: ['src/games/RobotLab', 'src/utils/robot'], lint: [], checks: ['robokitcheck'], smoke: [] },
   bee: { dirs: ['src/games/Beezee'], lint: ['lint:bee'], checks: ['beecheck'], smoke: [] },
   lem: { dirs: ['src/games/Lemmings'], lint: ['lint:lem'], checks: ['lemcheck', 'recmethods', ['recmethods', true]], smoke: [] },
   zelda: { dirs: ['src/games/Zelda'], lint: ['lint:zelda'], checks: ['zeldacheck'], smoke: ['zeldaplay'] },

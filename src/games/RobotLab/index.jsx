@@ -22,20 +22,24 @@ const FIXED_DT = 1000 / 60
 const TOUCH = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
 const LITE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
 
-const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Space: 'a', ShiftLeft: 'b', KeyB: 'b' }
+        const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Space: 'a', ShiftLeft: 'b', KeyB: 'b' }
 
-const ASSEMBLY = manifestSummary()
-const GATE_COLOR = { ship: 'text-emerald-300', credit: 'text-sky-300', review: 'text-amber-300', never: 'text-rose-400' }
+        const ASSEMBLY = manifestSummary()
+        const GATE_COLOR = { ship: 'text-emerald-300', credit: 'text-sky-300', review: 'text-amber-300', never: 'text-rose-400' }
+        const JOINT_ROWS = [['yaw', 'YAW'], ['phi1', 'SHL'], ['phi2', 'ELB'], ['gamw', 'WRS']]
 
-export default function RobotLab() {
-    const mountRef = useRef(null)
-    const canvasRef = useRef(null)
-    const [phase, setPhase] = useState('attract')
-    const [paused, setPaused] = useState(false)
-    const phaseRef = useRef('attract')
-    const pausedRef = useRef(false)
-    useEffect(() => { phaseRef.current = phase }, [phase])
-    useEffect(() => { pausedRef.current = paused }, [paused])
+        export default function RobotLab() {
+            const mountRef = useRef(null)
+            const canvasRef = useRef(null)
+            const [phase, setPhase] = useState('attract')
+            const [paused, setPaused] = useState(false)
+            const [tq, setTq] = useState(null)
+            const [wristOn, setWristOn] = useState(true)
+            const phaseRef = useRef('attract')
+            const pausedRef = useRef(false)
+            const wristRef = useRef(true)
+            useEffect(() => { phaseRef.current = phase }, [phase])
+            useEffect(() => { pausedRef.current = paused }, [paused])
 
     useEffect(() => {
         const mount = mountRef.current
@@ -61,6 +65,8 @@ export default function RobotLab() {
         const rim = new THREE.PointLight(0x35e0c8, 6, 3)
         rim.position.set(-0.9, 1.6, -0.6)
         scene.add(rim)
+
+        const wcam = new THREE.PerspectiveCamera(58, 4 / 3, 0.02, 4)
 
         const mat = {
             steel: new THREE.MeshStandardMaterial({ color: 0x9fb0c4, metalness: 0.85, roughness: 0.35 }),
@@ -109,6 +115,9 @@ export default function RobotLab() {
         }
         meshes.can.castShadow = !LITE
         scene.add(meshes.can)
+        const lens = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.013, 0.016, 10), mat.dark)
+        lens.position.set(0, 0.028, 0)
+        meshes.hand.add(lens)
         meshes.drawer.userData.kit = 'drawer'
         meshes.door.userData.kit = 'door'
         meshes.crate.userData.kit = 'crate'
@@ -166,6 +175,7 @@ export default function RobotLab() {
         }
 
         const onKey = (ev) => {
+            if (ev.code === 'KeyC' && phaseRef.current !== 'won') { wristRef.current = !wristRef.current; setWristOn(wristRef.current); return }
             if ((ev.code === 'KeyQ' || ev.code === 'Slash') && phaseRef.current === 'play') { setPaused((p) => !p); return }
             if (phaseRef.current === 'attract' || phaseRef.current === 'won') { setPhase('play'); startRun((Date.now() % 100000) | 0); audioController.playTone(660, 0.08, 'square'); return }
             if (ev.code in KEYS) { keys.add(ev.code); ev.preventDefault() }
@@ -182,6 +192,8 @@ export default function RobotLab() {
         let acc = 0
         let last = performance.now()
         let raf = 0
+        const wd = new THREE.Vector3()
+        const wu = new THREE.Vector3()
         const hud = () => {
             const st = sim.state()
             return st
@@ -219,6 +231,28 @@ export default function RobotLab() {
             }
             sync()
             renderer.render(scene, cam)
+            if (wristRef.current) {
+                wd.set(0, -1, 0).applyQuaternion(meshes.hand.quaternion)
+                wu.set(0, 0, -1).applyQuaternion(meshes.hand.quaternion)
+                const hp = meshes.hand.position
+                wcam.position.set(hp.x + wd.x * 0.03, hp.y + wd.y * 0.03, hp.z + wd.z * 0.03)
+                wcam.up.copy(wu)
+                wcam.lookAt(hp.x + wd.x * 0.28, hp.y + wd.y * 0.28, hp.z + wd.z * 0.28)
+                const pw = Math.max(120, Math.round(W() * 0.28))
+                const ph = Math.round(pw * 0.75)
+                const px = W() - pw - 8
+                const py = H() - ph - 8
+                renderer.setViewport(px, py, pw, ph)
+                renderer.setScissor(px, py, pw, ph)
+                renderer.setScissorTest(true)
+                renderer.render(scene, wcam)
+                renderer.setScissorTest(false)
+                renderer.setViewport(0, 0, W(), H())
+            }
+            if (phaseRef.current !== 'attract' && sim.tick % 8 === 0) {
+                const s2 = sim.state()
+                setTq({ t: s2.torque, sat: s2.sat, g: s2.gripN, b: s2.budgetN, s: s2.slips })
+            }
         }
         raf = requestAnimationFrame(loop)
 
@@ -289,6 +323,33 @@ export default function RobotLab() {
                             {a.massKg === null ? ' · static' : ` · ${a.massKg.toFixed(2)} kg`}
                         </div>
                     ))}
+                </div>
+            )}
+            {phase !== 'attract' && tq && (
+                <div className="pointer-events-none absolute left-3 top-10 select-none font-mono text-[9px] leading-[13px] text-slate-400">
+                    <div className="text-slate-500">JOINT TORQUE · τ/τmax · C=WRIST-CAM</div>
+                    {JOINT_ROWS.map(([k, lbl]) => {
+                        const v = tq.t[k]
+                        const hot = Math.abs(v) >= 99
+                        return (
+                            <div key={k} className="flex items-center justify-end gap-1">
+                                <span>{lbl}</span>
+                                <span className="inline-block h-[5px] w-16 overflow-hidden bg-slate-700/60">
+                                    <span className={`block h-full ${hot ? 'bg-rose-400' : 'bg-emerald-400'}`} style={{ width: `${Math.min(100, Math.abs(v))}%` }} />
+                                </span>
+                                <span className={hot ? 'text-rose-400' : ''}>{hot ? 'SAT' : `${v}%`}</span>
+                            </div>
+                        )
+                    })}
+                    {tq.b !== null && <div>GRIP {tq.g.toFixed(1)} / {tq.b.toFixed(0)} N</div>}
+                    {tq.s > 0 && <div className="text-rose-400">CARGO SLIPPED ×{tq.s}</div>}
+                </div>
+            )}
+            {phase !== 'attract' && wristOn && (
+                <div className="pointer-events-none absolute font-mono text-[8px] text-emerald-300/70" style={{ right: 8, top: 8, width: 'max(120px, 28%)', aspectRatio: '4 / 3', border: '1px solid rgba(53,224,200,0.35)' }}>
+                    <span className="absolute left-1 top-0.5">WRIST-CAM</span>
+                    <span className="absolute left-1/2 top-1/2 h-2 w-px -translate-x-1/2 -translate-y-1/2 bg-emerald-300/40" />
+                    <span className="absolute left-1/2 top-1/2 h-px w-2 -translate-x-1/2 -translate-y-1/2 bg-emerald-300/40" />
                 </div>
             )}
             {phase === 'attract' && (
