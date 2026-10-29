@@ -37,9 +37,17 @@ The drawer **refuses to close** when the crate sits on the rail track
   point-while-holding = carry and drop there.
 
 ## Verify commands
-- `node scripts/robokitcheck.mjs` (alias `npm run robokitcheck`) — **NOT YET
-  WRITTEN** (stage 1 shipped WIP; see honest gaps).
-- Node sim smoke: `node --input-type=module -e "import { createRobotSim, createAutopilot } from './src/utils/robot/index.js'; ..."`
+- `npm run robokitcheck` — six gates, all green: determinism (seed+pads =
+  identical hashes across processes), analytic servo round-trip (worst |Δ|
+  ≤ 50 mm; the near-column dead zone is documented, not hidden), empty-grip
+  refusal, stand-clear mechanism (Rail blockFn freezes a slide into an
+  occupant), episode validate (good passes / corrupt fails), autopilot wins
+  all 6 goals on seeds 1..12 (mutant-proven: stub the stand-clear check and
+  the gate goes red).
+- `CONTRACT_ONLY=robot-lab npm run contractcheck` — 18/18 including live
+  capture replaying hash-equal (the loop honors `contractHoldsLoop()` and
+  `reset()` enters play synchronously, so banked ticks belong to the header
+  seed).
 
 ## Gotchas learned (each cost a debug cycle)
 - **Kinematic anchor + solver constraint = fling.** LockConstraint between the
@@ -51,18 +59,21 @@ The drawer **refuses to close** when the crate sits on the rail track
   the body back the next tick. When clamped, zero the axis velocity instead.
 - **Angle convention:** the door angle() is NEGATIVE swung out; driveAngle
   follows angle() — a sign flip here swings the door through the cabinet.
-- IK without the `Jᵀ` factor (applying `A⁻¹b` straight to joints) converges
-  nowhere — silent, not noisy.
+- **IK without the `Jᵀ` factor (applying `A⁻¹b` straight to joints) converges
+  nowhere** — silent, not noisy. Replaced by an analytic 2R elbow-up servo with
+  per-tick slew limits; the limit-cycle came from the solver flipping branch
+  across the wrist singularity.
+- **cannon sleeps bodies on contact:** forces and velocity writes are ignored
+  on a sleeping body — a held door or latched rail body must be woken
+  (`sleepState = 0`) every tick the actuator pushes.
+- **Contract live capture demands tick-0 honesty:** a keypress that starts a
+  run re-seeds with `Date.now()` for humans — fine, but the contract `reset`
+  must land the sim in play mode at the requested seed, and the rAF loop must
+  stand down while `contractHoldsLoop()`. Otherwise banked hashes are from a
+  different world than the header seed claims (diverged @30).
 
 ## Honest gaps (next sessions / QA)
-1. **Autopilot win is not reliable yet** — full task order reaches ~4/6
-   subgoals per seed; the drawer re-latch + door-open phases need phase-budget
-   and approach tuning (seeds 1/2/3/7 traces in issue #1141 comments). The
-   win proof gate cannot be written honestly until autopilot wins every seed.
-2. `robokitcheck.mjs` — gates planned: determinism (seed+pads = hash),
-   IK↔FK round-trip ≤2 cm, stand-clear refusal, empty-grip refusal, episode
-   validate + replay hash-equal + JSONL export, boot/win browser gates.
-   Also join `contractcheck` (`contractGames.mjs`) once the win gate exists.
-3. SimReady asset hookup (stage 2, waits #1140); license checks per asset.
-4. Fully dynamic (torque-driven) arm; wrist camera; force-closure grasp model.
-5. Modem-level juice: drawer rumble, latch clicks, carry sway audio.
+1. SimReady asset hookup (stage 2, waits #1140); license checks per asset.
+2. Fully dynamic (torque-driven) arm; wrist camera; force-closure grasp model.
+3. Modem-level juice: drawer rumble, latch clicks, carry sway audio.
+
