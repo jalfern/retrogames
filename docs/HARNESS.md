@@ -153,6 +153,24 @@ that tail is cleaned up.
 > then enter the device code at github.com/login/device. Additive and reversible via
 > `--remove-scopes`.
 
+### Film strips (#1132): judge a visual PR in five seconds
+`npm run filmstrip -- --game tetris --attach <pr>` runs one seeded replay
+(`reset(seed)` + the game's fixed `contractGames` pattern, `scripts/lib/filmstrip.mjs`)
+against base (`origin/main`) and head, each on its own vite dev server, photographs the
+canvas at shared checkpoints through `frame()`, and composes a two-row strip: per-column
+`state.hash` equality plus a native-resolution pixel diff. The verdict line is one of
+*identical* / *identical up to draw jitter* / *visual-only change (hashes equal, N%
+pixels)* / *SIM DIVERGED @ tick t* — the hashes, not the pixels, prove sim alignment
+(WebGL draw jitter is real). `--attach` publishes the PNG under `strips/` in
+jalfern/forge-telemetry (the same anonymous CDN pipe as report.json) and comments it
+inline on the PR (issue fallback); shift notes may carry `strips:[{text,href}]`, which
+`shiftreportcheck` pins to exactly that origin+dir and `/retrogames/forge/report`
+renders as a section. The pure core (`checkpoints`/`verdict`/`telemetryPath`/`layout`)
+is offline-testable; `npm run filmstripcheck` (16 gates) re-runs the browser loop on
+tetris and embeds its own mutant — a capture at seed+1 must come back SIM DIVERGED.
+Capture runs on dev servers because `__game` is DEV-only; a game with no PATTERNS
+entry cannot join a strip; `--strict` exits non-zero on divergence for CI wiring.
+
 ### WebGPU shaders: in-place workgroup butterflies need read → barrier → write
 An FFT stage that reads `a`/`b` out of `var<workgroup>` memory and writes **both** butterfly
 slots is racing unless a `workgroupBarrier()` sits **between the reads and the writes** —
