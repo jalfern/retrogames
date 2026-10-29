@@ -1,9 +1,12 @@
 // physicswalk.core.js — real planar rigid-body dynamics for PHYSICS WALK (#1204),
 // headless-safe (Node + browser). The physics is honest:
-//   - an XPBD particle rig: 12 point masses joined by stiff distance constraints
-//     (bones + torso/foot braces) integrated with gravity at a fixed substep;
+//   - an XPBD particle rig: 18 point masses joined by stiff distance constraints
+//     (bones + torso/foot braces + pinned shoulders) integrated with gravity at a
+//     fixed substep;
 //   - hip/knee/ankle motors are bend torques applied by virtual work — forces,
-//     not pose writes. The only kinematic operation in the sim is the ground
+//     not pose writes. Arms are gait-coupled pendulums: the shoulder torque
+//     reaches the hand opposite the same-side foot's travel, still pure torque.
+//     The only kinematic operation in the sim is the ground
 //     itself (impenetrable floor); feet never teleport.
 //   - balance is a real inverted-pendulum problem: torso-pitch PD + ankle push
 //     + step placement under the centre of mass. Stance foot slip is bounded by
@@ -22,22 +25,29 @@
   const CONTACT_H = 0.028      // particle height counted as ground contact
 
   // rig: particle order — 0 H hip, 1 CH chest, 2 HD head, 3 BK back brace,
-  // legs L(4..7) R(8..11): knee, ankle, heel, toe
+  // legs L(4..7) R(8..11): knee, ankle, heel, toe; arms L(12..14) R(15..17):
+  // shoulder, elbow, hand
   const P_NAMES = ['hip', 'chest', 'head', 'back',
     'lKnee', 'lAnkle', 'lHeel', 'lToe',
-    'rKnee', 'rAnkle', 'rHeel', 'rToe']
-  const M = [12, 10, 4.5, 6, 3, 1.6, 0.8, 0.9, 3, 1.6, 0.8, 0.9]
+    'rKnee', 'rAnkle', 'rHeel', 'rToe',
+    'lSho', 'lElb', 'lHand', 'rSho', 'rElb', 'rHand']
+  const M = [12, 10, 4.5, 6, 3, 1.6, 0.8, 0.9, 3, 1.6, 0.8, 0.9,
+    0.9, 0.6, 0.8, 0.9, 0.6, 0.8]
   const N = M.length
 
   // legs: particle index bases (knee, ankle, heel, toe)
   const LEGS = [{ k: 4, a: 5, h: 6, t: 7, side: 1 }, { k: 8, a: 9, h: 10, t: 11, side: -1 }]
   const HIP_L = [4, 5], HIP_R = [8, 9]
+  // arms: shoulder pinned to chest+back brace, elbow, hand (pendulum segments)
+  const ARMS = [{ s: 12, e: 13, h: 14, side: 1 }, { s: 15, e: 16, h: 17, side: -1 }]
 
   // rest pose (metres) — upright, both feet flat, slight knee softness
   const REST = [
     [0.000, 0.950], [0.015, 1.250], [0.030, 1.470], [-0.100, 1.130],
     [0.020, 0.500], [0.000, 0.075], [-0.085, 0.010], [0.170, 0.015],
     [0.020, 0.500], [0.000, 0.075], [-0.085, 0.010], [0.170, 0.015],
+    [0.012, 1.210], [0.004, 0.980], [-0.004, 0.760], [0.012, 1.210],
+    [0.004, 0.980], [-0.004, 0.760],
   ]
 
   // distance constraints [i, j, rest, compliance]
@@ -50,6 +60,10 @@
   for (const L of LEGS) {
     bone(0, L.k, 2e-6); bone(L.k, L.a, 2e-6)                    // thigh, shin
     bone(L.a, L.h); bone(L.a, L.t); bone(L.h, L.t)               // rigid foot
+  }
+  for (const A of ARMS) {
+    bone(1, A.s); bone(3, A.s, 2e-6)                             // shoulder pinned
+    bone(A.s, A.e, 2e-6); bone(A.e, A.h, 2e-6)                  // upper arm, forearm
   }
 
   const clamp = (x, a, b) => x < a ? a : x > b ? b : x
@@ -71,6 +85,7 @@
       fallenFor: 0,
       steps: 0, lastStepLeg: -1, lastStepT: -1,
       legs: LEGS.map(L => ({ k: L.k, a: L.a, h: L.h, t: L.t, side: L.side, swing: false, swingT: 0, planted: true })),
+      arms: ARMS.map(A => ({ s: A.s, e: A.e, h: A.h, side: A.side })),
       events: { stepL: 0, stepR: 0, fall: 0, landL: 0, landR: 0 },
       grf: [0, 0, 0, 0],           // |normal impulse| per foot point per frame
       slipSlide: 0,                // max stance-point sliding speed this frame
@@ -90,6 +105,10 @@
         stepTh: 0.052,               // support margin (m) that triggers a step
         catchLead: 0.108,            // swing reaches this far ahead of CoM
         trailTh: 0.136,              // foot this far behind CoM gets lifted and swung
+        kArm: 36.42969482294447, dArm: 4.866482090467382, // shoulder: hand target from opposite-leg phase
+        sArm: 1,                     // shoulder sign multiplier (searched)
+        kElb: 7.137600602869544, dElb: 1.8739646355098905, // elbow: soft hang, slight trailing flex
+        armG: 0.9149777887072866, armAmp: 0.154988867306875, // contralateral gain + reach clamp (m)
       }, opts.tuning || {}),
       seed: opts.seed || 1,
       deterministicJitter: 0,
@@ -176,6 +195,9 @@
       const hipL = cap(torques.hipL), hipR = cap(torques.hipR)
       const kneeL = cap(torques.kneeL), kneeR = cap(torques.kneeR)
       const ankleL = cap(torques.ankleL), ankleR = cap(torques.ankleR)
+      const capA = (x) => clamp(x, -45, 45)
+      const shL = capA(torques.shL || 0), shR = capA(torques.shR || 0)
+      const elL = capA(torques.elL || 0), elR = capA(torques.elR || 0)
       // hip: angle chest–hip–knee
       jointTorque(sim, f, 1, 0, HIP_L[0], hipL)
       jointTorque(sim, f, 1, 0, HIP_R[0], hipR)
@@ -185,6 +207,11 @@
       // ankle: angle knee–ankle–toe
       jointTorque(sim, f, HIP_L[0], HIP_L[1], HIP_L[1] + 2, ankleL)
       jointTorque(sim, f, HIP_R[0], HIP_R[1], HIP_R[1] + 2, ankleR)
+      // shoulder: angle head–chest–elbow ; elbow: angle shoulder–elbow–hand
+      jointTorque(sim, f, 2, 1, 13, shL)
+      jointTorque(sim, f, 2, 1, 16, shR)
+      jointTorque(sim, f, 12, 13, 14, elL)
+      jointTorque(sim, f, 15, 16, 17, elR)
     }
 
     // integrate (semi-implicit Euler), remember pre-projection positions
@@ -275,7 +302,7 @@
 
       const T = sim.tuning
       const dead = sim.mode === 'fallen'
-      const tq = { hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, ankleL: 0, ankleR: 0 }
+      const tq = { hipL: 0, hipR: 0, kneeL: 0, kneeR: 0, ankleL: 0, ankleR: 0, shL: 0, shR: 0, elL: 0, elR: 0 }
       if (!dead) {
         const hipX = sim.p[0 * 2], hipY = sim.p[0 * 2 + 1]
         const hipVx = sim.v[0 * 2], hipVy = sim.v[0 * 2 + 1]
@@ -305,6 +332,22 @@
             const pushT = ay < 0.03 ? clamp((0.05 - margin) * 30, 0, 1) : 0
             tq['ankle' + key] = bal * 0.6 + T.sAnk * (T.kA * (0.0 - (ty - hy)) - T.dA * (vtx - vhy) * 4 - T.push * pushT)
           }
+        }
+        // arms: contralateral pendulum. The same-side foot trailing behind the
+        // CoM sends that hand forward (and vice versa) — gait-coupled, driven by
+        // torques (virtual work, couple closed at the joint), never pose writes.
+        for (let ai = 0; ai < sim.arms.length; ai++) {
+          const A = sim.arms[ai]
+          const same = sim.legs[ai]
+          const shx = sim.p[A.s * 2], shy = sim.p[A.s * 2 + 1]
+          const elx = sim.p[A.e * 2], ely = sim.p[A.e * 2 + 1]
+          const hnx = sim.p[A.h * 2], hny = sim.p[A.h * 2 + 1]
+          const rel = sim.p[same.a * 2] - sim.com[0]
+          const lead = clamp(-T.armG * rel, -T.armAmp, T.armAmp)
+          const target = sim.com[0] + lead
+          const tauSh = T.sArm * (T.kArm * (target - hnx) - T.dArm * (sim.v[A.h * 2] - sim.v[A.s * 2]))
+          tq['sh' + (ai === 0 ? 'L' : 'R')] = tauSh
+          tq['el' + (ai === 0 ? 'L' : 'R')] = T.kElb * ((hnx - elx) - (REST[A.h][0] - REST[A.e][0])) - T.dElb * (sim.v[A.h * 2] - sim.v[A.e * 2])
         }
       }
       substep(sim, h, tq)
@@ -410,7 +453,7 @@
   }
 
   global.PhysicsWalk = {
-    G, H, N, P_NAMES, M, BONES, REST, CONTACT_H,
+    G, H, N, P_NAMES, M, BONES, REST, CONTACT_H, LEGS, ARMS,
     create, step, push, reset, run,
     metrics: { run },
   }

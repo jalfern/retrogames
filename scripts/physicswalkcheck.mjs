@@ -1,5 +1,5 @@
 // physicswalkcheck — self-verifying harness for public/demos/physicswalk.html +
-// physicswalk.core.js (PHYSICS WALK, #1204: a 12-mass XPBD rigid-body biped
+// physicswalk.core.js (PHYSICS WALK, #1204: an 18-mass XPBD rigid-body biped
 // that balances by real dynamics and must be pushed, not posed).
 //
 // Gates:
@@ -140,6 +140,54 @@ function runPush(v, secs = 6) {
     return Array.from(sim.p).map(x => x.toFixed(9)).join(',')
   }
   ok('physics: same seed + same pushes => identical state (no hidden RNG)', run() === run())
+}
+{
+  // arms: gait-coupled contralateral pendulums (real particles + torques)
+  ok('sim: arms are sim particles with pinned shoulders', PW.N === 18 && PW.ARMS.length === 2 &&
+    PW.BONES.some(b => b[0] === 1 && b[1] === 12) && PW.BONES.some(b => b[0] === 3 && b[1] === 15))
+  const sim = PW.create({})
+  for (let i = 0; i < 120; i++) PW.step(sim, 1 / 60)
+  PW.push(sim, 0.7, 0)
+  const sig = []
+  for (let i = 0; i < 480 && sim.mode !== 'fallen'; i++) {
+    PW.step(sim, 1 / 60)
+    sig.push([sim.p[14 * 2] - sim.p[12 * 2], sim.p[17 * 2] - sim.p[15 * 2],
+      sim.p[5 * 2] - sim.com[0], sim.p[9 * 2] - sim.com[0]])
+  }
+  const corr = (a, b) => {
+    const m = (x) => x.reduce((s, q) => s + q, 0) / x.length
+    const ma = m(a), mb = m(b)
+    let num = 0, da = 0, db = 0
+    for (let i = 0; i < a.length; i++) { num += (a[i] - ma) * (b[i] - mb); da += (a[i] - ma) ** 2; db += (b[i] - mb) ** 2 }
+    return num / (Math.sqrt(da * db) || 1e-9)
+  }
+  const ampL = Math.max(...sig.map(q => q[0])) - Math.min(...sig.map(q => q[0]))
+  const ampR = Math.max(...sig.map(q => q[1])) - Math.min(...sig.map(q => q[1]))
+  const cL = corr(sig.map(q => q[0]), sig.map(q => q[2]))
+  const cR = corr(sig.map(q => q[1]), sig.map(q => q[3]))
+  const anti = corr(sig.map(q => q[0]), sig.map(q => q[1]))
+  ok('arms: hands swing with the carry (amp >= 5 cm both sides)', ampL >= 0.05 && ampR >= 0.05, `L ${ampL.toFixed(3)} R ${ampR.toFixed(3)} m`)
+  ok('arms: contralateral — hand opposes its own side\'s foot (corr < -0.5)', cL < -0.5 && cR < -0.5, `L ${cL.toFixed(2)} R ${cR.toFixed(2)}`)
+  ok('arms: hands beat anti-phase with each other (corr < -0.4)', anti < -0.4, `anti ${anti.toFixed(2)}`)
+  ok('arms: added top mass keeps balance honest (no topple in carry)', sim.mode !== 'fallen')
+  {
+    // mutant honesty: decouple the arm from the gait (armG=0) — the arms stay
+    // live pendulums (they still swing from inertia; that part IS honest), but
+    // the foot-coupling signal must collapse: the swing is gait-driven, not
+    // a scripted pose.
+    const simM = PW.create({ tuning: { armG: 0 } })
+    for (let i = 0; i < 120; i++) PW.step(simM, 1 / 60)
+    PW.push(simM, 0.7, 0)
+    const sigM = []
+    for (let i = 0; i < 480 && simM.mode !== 'fallen'; i++) {
+      PW.step(simM, 1 / 60)
+      sigM.push([simM.p[14 * 2] - simM.p[12 * 2], simM.p[17 * 2] - simM.p[15 * 2],
+        simM.p[5 * 2] - simM.com[0], simM.p[9 * 2] - simM.com[0]])
+    }
+    const cML = corr(sigM.map(q => q[0]), sigM.map(q => q[2]))
+    const cMR = corr(sigM.map(q => q[1]), sigM.map(q => q[3]))
+    ok('mutant: armG=0 kills the gait coupling (gate is load-bearing)', Math.abs(cML) < 0.5 && Math.abs(cMR) < 0.5, `L ${cML.toFixed(2)} R ${cMR.toFixed(2)}`)
+  }
 }
 
 /* ---------------- 2. BOOTS (browser) ---------------- */
