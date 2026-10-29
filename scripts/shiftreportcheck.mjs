@@ -23,7 +23,7 @@ const m = await import('./shiftreport.mjs')
 
 for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
     'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'parseGameEntries',
-    'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents']) {
+    'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents', 'validateStrips']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
 }
 
@@ -260,6 +260,31 @@ const replaced = m.buildReport({
 ok('carry-over chains stay stable', replaced.notes[0].text === 'Fleet ran hot.')
 const overwritten = m.buildReport({ now: NOW + 2 * H, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: { headline: 'Second shift', lede: '', notes: [{ tag: 'w', text: 'New note' }] }, prev: carried })
 ok('new session notes replace carried ones', overwritten.headline === 'Second shift' && overwritten.notes[0].text === 'New note' && !overwritten.notesCarried)
+
+// ---- film strips (#1132): telemetry-pinned hrefs, carried like notes ----
+const STRIP_URL = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/strips/PR100-tetris-abc1234-20261028T200000.png'
+ok('validateStrips: telemetry strips .png accepted',
+    m.validateStrips([{ text: 'tetris before/after', href: STRIP_URL }]).length === 1)
+ok('validateStrips: offsite, non-png, traversal and non-strips paths rejected',
+    m.validateStrips([
+        { text: 'x', href: 'https://evil.example/strips/a.png' },
+        { text: 'x', href: 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/report.json' },
+        { text: 'x', href: 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/strips/../secret.png' },
+        { text: 'x', href: 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/strips/notpng.jpg' },
+        { text: '', href: STRIP_URL },
+    ]).length === 0)
+ok('validateStrips: cap two, html stripped',
+    (() => { const v = m.validateStrips([
+        { text: '<b>one</b>', href: STRIP_URL }, { text: 'two', href: STRIP_URL }, { text: 'three', href: STRIP_URL }])
+    return v.length === 2 && v[0].text === 'one' })())
+const strippedNotes = { ...NOTED, strips: [{ text: '<b>Tetris</b> palette before/after', href: STRIP_URL }] }
+const stripRep = m.buildReport({ now: NOW, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: strippedNotes })
+ok('buildReport: fresh strips land in report.strips, tags stripped',
+    stripRep.strips.length === 1 && stripRep.strips[0].href === STRIP_URL && stripRep.strips[0].text === 'Tetris palette before/after')
+const stripsCarried = m.buildReport({ now: NOW + H, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: null, prev: stripRep })
+ok('strips carry across ticks until replaced', stripsCarried.strips.length === 1 && stripsCarried.strips[0].href === STRIP_URL)
+const stripsReplaced = m.buildReport({ now: NOW + 2 * H, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: { ...NOTED, strips: [] }, prev: stripsCarried })
+ok('a session with no strips after carry keeps them (durable artifact)', stripsReplaced.strips.length === 1)
 
 // ---- go look rides the notes pipe (#647) ----
 const lookRep = m.buildReport({ now: NOW, pulls: lookPulls, issues: [], runs, samples, gamesSrc: GAME_FIXTURE, demos: DEMOS })

@@ -11,7 +11,7 @@
 // supplies them at its end with
 //   SHIFTREPORT_NOTES=notes.json node scripts/shiftreport.mjs
 // (shape: {headline, lede, notes:[{tag:'w'|'h'|'k', text}],
-//          look:[{text, href}]}) and this script
+//          look:[{text, href}], strips:[{text, href}]}) and this script
 // carries those notes through every later 4 h regeneration until a session
 // replaces them. Without notes the headline is script-generated
 // ("N merges in 48 hours") — a fallback, never fake prose.
@@ -324,6 +324,28 @@ export function buildThemes({ pulls, gameLabels, privates }) {
         })
 }
 
+// ---------- film strips (#1132) ----------
+
+// notes.strips = [{text, href}] — before/after strips produced by
+// `npm run filmstrip -- --attach <pr>`, which publishes them to the telemetry
+// repo's strips/ dir. Href is pinned to exactly that origin+dir+.png so the
+// report can never be pointed at arbitrary offsite images.
+const STRIP_LIMIT = 2
+const STRIP_HREF = /^https:\/\/raw\.githubusercontent\.com\/jalfern\/forge-telemetry\/main\/strips\/[A-Za-z0-9._-]+\.png$/
+const clipStrip = x => (x.length > 96 ? `${x.slice(0, 95)}…` : x)
+
+export function validateStrips(strips) {
+    const out = []
+    for (const g of Array.isArray(strips) ? strips : []) {
+        if (!g || out.length >= STRIP_LIMIT) continue
+        const text = String(g.text || '').replace(/<[^>]*>/g, '').trim()
+        const href = String(g.href || '').trim()
+        if (!text || !STRIP_HREF.test(href)) continue
+        out.push({ text: clipStrip(text), href })
+    }
+    return out
+}
+
 // Registry entries of PUBLIC games ({label, path}) — go-look needs the path too.
 export function parseGameEntries(src) {
     const start = src.indexOf('export const GAMES')
@@ -477,12 +499,20 @@ export function buildReport({ now, pulls = [], issues = [], runs = [], samples =
         ? chosenLook
         : buildGoLook({ pulls: merged, gameEntries, demos, privates })
 
+    // Film strips (#1132): fresh notes replace; otherwise previous strips stay
+    // until a session supplies new ones (a strip is a durable artifact — unlike
+    // go-look there is no in-window death rule; it names a specific merged PR).
+    const freshStrips = validateStrips(notes && notes.strips)
+    const carriedStrips = prev ? validateStrips(prev.strips) : []
+    const strips = freshStrips.length ? freshStrips : carriedStrips
+
     return {
         generated: new Date(now).toISOString(),
         tz: TZ, hours: WINDOW_HOURS,
         headline, lede, notes: noteList, notesFrom,
         notesCarried: !!carried,
         look,
+        strips,
         stats: {
             merged: { total: merged.length, ...split },
             issues: { closed: issuesClosed, opened: issuesOpened },
