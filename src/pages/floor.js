@@ -99,27 +99,6 @@ export const runwayBadge = (runway, now = Date.now()) => {
     return { text: runway.line, tone: stale ? 'dim' : amber ? 'amber' : polish ? 'violet' : 'green', stale }
 }
 
-// runwayTrend (#1233) — the reveal's sparkline rows: per lane the last
-// days of the runway number straight off board.json's `trend` (null = that
-// day had no rate — a gap in the line, never an invented point), plus a
-// coarse delta so "is the queue shrinking?" reads at a glance. Degrades to
-// [] on pre-trend board.json (the telemetry schema lags this branch until
-// after merge) and on any lane with fewer than two known points — one point
-// is not a trend. Pure, so runwaycheck pins it without a browser.
-export const runwayTrend = (runway) => {
-    if (!runway || typeof runway !== 'object' || !runway.trend || typeof runway.trend !== 'object') return []
-    return [['Builder', runway.trend.builder], ['QA', runway.trend.qa]]
-        .filter(([, t]) => Array.isArray(t))
-        .map(([name, t]) => {
-            const points = t.map((p) => (p && Number.isFinite(p.days) ? p.days : null))
-            const known = points.filter((d) => Number.isFinite(d))
-            if (known.length < 2) return null
-            const drift = known[known.length - 1] - known[0]
-            return { name, points, delta: Math.abs(drift) < 0.5 ? 'flat' : drift < 0 ? 'shrinking' : 'growing' }
-        })
-        .filter(Boolean)
-}
-
 // runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
 // lane carrying the math behind its "~N days": the per-item S/M/L mix, the total
 // size, the rate (closes/day over the trailing window) and the days it yields.
@@ -128,6 +107,10 @@ export const runwayTrend = (runway) => {
 // no `mix` — so a missing field degrades to null (the reveal says "—" / falls
 // back to the item count), never invents a number and never throws. Pinned by
 // runwaycheck without a browser.
+const numOrNull = (v) => (Number.isFinite(v) ? v : null)
+const normLaneSplit = (x) => x && typeof x === 'object'
+    ? { items: numOrNull(x.items), size: numOrNull(x.size), days: numOrNull(x.days) }
+    : null
 export const runwayMath = (runway) => {
     if (!runway || typeof runway !== 'object') return []
     return [['Builder', runway.builder], ['QA', runway.qa]]
@@ -145,6 +128,39 @@ export const runwayMath = (runway) => {
                 days: Number.isFinite(l.days) ? l.days : null,
                 amber: !!l.amber,
                 polish: !!l.polish,
+                // lanes (#1233) — the Builder platform/games split (null on the
+                // QA lane and on pre-#1233 board.json — the row just omits it).
+                lanes: l.lanes && typeof l.lanes === 'object'
+                    ? { platform: normLaneSplit(l.lanes.platform), games: normLaneSplit(l.lanes.games) }
+                    : null,
             }
         })
 }
+
+// runwayTrend (#1233) — the 7-day sparkline samples as pure data: one entry
+// per persisted UTC day with each lane's day-count (null = that lane had no
+// number that day). The board renders whatever the telemetry machine last
+// baked, and OLDER board.json has no `history` — so a missing or junk field
+// degrades to [] (no trend row), never throws. Pinned by runwaycheck.
+export const runwayTrend = (runway) => {
+    if (!runway || !Array.isArray(runway.history)) return []
+    return runway.history
+        .filter((p) => p && typeof p === 'object' && typeof p.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.d))
+        .map((p) => ({
+            date: p.d,
+            builder: Number.isFinite(p.b) ? p.b : null,
+            qa: Number.isFinite(p.q) ? p.q : null,
+        }))
+}
+
+// sparkline (#1233) — one trend row as pure text: one cell per day, the glyph
+// height is the value relative to that lane's OWN max over the window (so a
+// quiet lane and a busy lane both use the full ▁..█ range), null = blank (a
+// day the lane had no number for). Text, not SVG: the board is monospace and
+// runwaycheck pins the exact glyphs without a browser.
+const SPARK = '▁▂▃▄▅▆▇█'
+export const sparkline = (values) => values.map((v) => {
+    if (v == null) return ' '
+    const max = Math.max(0, ...values.filter((x) => x != null))
+    return SPARK[max > 0 ? Math.min(7, Math.floor((v / max) * 8)) : 0]
+}).join('')

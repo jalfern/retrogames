@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sparkline } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -238,27 +238,18 @@ const ForgeBoard = () => {
                         const days = m.days != null ? `~${m.days} days` : '~?'
                         return `${mix} = ${size} ÷ ${rate} ≈ ${days}`
                     }
-                    // #1233 — the trend line: one SVG polyline per lane over the
-                    // reconstructed daily runway number; null days leave gaps.
-                    const spark = (points) => {
-                        const known = points.filter((d) => d != null)
-                        if (known.length < 2) return null
-                        const min = Math.min(...known), max = Math.max(...known)
-                        const span = max - min || 1
-                        const segs = []
-                        let cur = []
-                        points.forEach((d, i) => {
-                            if (d == null) { if (cur.length) { segs.push(cur); cur = [] } return }
-                            cur.push(`${(i * 72 / (points.length - 1)).toFixed(1)},${(11 - (d - min) / span * 9).toFixed(1)}`)
-                        })
-                        if (cur.length) segs.push(cur)
-                        return (
-                            <svg width="72" height="12" className="shrink-0" aria-hidden="true">
-                                {segs.map((s, i) => <polyline key={i} points={s.join(' ')} fill="none" stroke="currentColor" strokeWidth="1" opacity="0.8" />)}
-                            </svg>
-                        )
+                    // #1233 — the Builder lane is one worker shared by two
+                    // sub-queues, so the split shows where the days sit: each
+                    // bucket's size priced at the lane's full rate. Null on the
+                    // QA lane and on old board.json (the sub-line just omits).
+                    const splitLine = (m) => {
+                        if (!m.lanes) return null
+                        const b = (label, x) => x && x.items != null
+                            ? `${label} ${x.items} item${x.items === 1 ? '' : 's'}${x.days != null && x.items > 0 ? ` ≈ ${x.days} d` : ''}`
+                            : null
+                        const parts = [b('platform', m.lanes.platform), b('games', m.lanes.games)].filter(Boolean)
+                        return parts.length ? `→ ${parts.join(' · ')}` : null
                     }
-                    const trendWord = { shrinking: '▼ shrinking', growing: '▲ growing', flat: '◆ flat' }
                     return (
                         <div className="mb-5">
                             <div data-runway={b.tone}
@@ -275,22 +266,21 @@ const ForgeBoard = () => {
                                     className={`border-t-0 border -mt-px px-4 py-2 mx-auto w-fit text-[10px] leading-relaxed ${tone}`}>
                                     <div className="tracking-widest opacity-60 mb-1">THE MATH — how the "~N days" counts (last {win} d window)</div>
                                     {math.map((m) => (
-                                        <div key={m.name} className="flex justify-between gap-4">
-                                            <span className="shrink-0">{m.name}{m.amber ? ' ⚠ under 1d' : m.polish ? ' · polish' : ''}</span>
-                                            <span className="opacity-80 text-right">{laneLine(m)}</span>
+                                        <div key={m.name}>
+                                            <div className="flex justify-between gap-4">
+                                                <span className="shrink-0">{m.name}{m.amber ? ' ⚠ under 1d' : m.polish ? ' · polish' : ''}</span>
+                                                <span className="opacity-80 text-right">{laneLine(m)}</span>
+                                            </div>
+                                            {splitLine(m) && (
+                                                <div data-runway-split className="pl-4 opacity-70">{splitLine(m)}</div>
+                                            )}
                                         </div>
                                     ))}
                                     {trend.length > 0 && (
-                                        <div data-runway-sparkline className="mt-2 pt-1 border-t border-current border-opacity-30">
-                                            <div className="tracking-widest opacity-60 mb-1">TREND — runway days, last {trend[0].points.length} d</div>
-                                            {trend.map((t) => (
-                                                <div key={t.name} className="flex items-center justify-between gap-3">
-                                                    <span className="shrink-0">{t.name}</span>
-                                                    {spark(t.points)}
-                                                    <span className={`shrink-0 ${t.delta === 'shrinking' ? 'text-[#0f0]' : t.delta === 'growing' ? 'text-[#f80]' : 'opacity-60'}`}
-                                                        data-spark-trend={t.name}>{trendWord[t.delta]}</span>
-                                                </div>
-                                            ))}
+                                        <div data-runway-trend className="mt-1 pt-1 border-t border-current/20">
+                                            <div className="tracking-widest opacity-60 mb-1">TREND — {trend.length} d (one sample per day, tail = now)</div>
+                                            <div className="flex justify-between gap-4"><span className="shrink-0">Builder</span><span className="opacity-80 text-right">{sparkline(trend.map(p => p.builder))}</span></div>
+                                            <div className="flex justify-between gap-4"><span className="shrink-0">QA</span><span className="opacity-80 text-right">{sparkline(trend.map(p => p.qa))}</span></div>
                                         </div>
                                     )}
                                 </div>

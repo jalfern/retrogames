@@ -17,6 +17,12 @@
 export const SIZES = { S: 0.4, M: 0.8, L: 1.5 }
 export const WINDOW_DAYS = 14
 export const AMBER_UNDER_DAYS = 1
+// HISTORY_DAYS (#1233) — the trend window behind the strip's sparkline: one
+// sample per UTC day, seven deep ("is the queue shrinking?" readable at a
+// glance). A reboot of the telemetry box empties the /tmp file and the
+// sparkline refills over seven days — honest, like the last-known-runway
+// fallback a failed run already gives the board.
+export const HISTORY_DAYS = 7
 
 // S first: "POLISH — SSX: fix audio" stays S even though SSX sounds big;
 // then L, else M. Title carries most of the signal, body only its first line.
@@ -72,39 +78,46 @@ export function laneRunway({ items = [], ratePerDay = null }) {
     }
 }
 
-// laneTrend (#1233) — the runway number's recent past, one point per day,
-// honest by reconstruction: the lane at a snapshot k days back = the items
-// that EXISTED then (open now and created by then, plus issues closed since
-// then that were created by then), over the closes-per-day rate in the
-// trailing window ENDING that day. Label lineage is today's — labels stay on
-// issues after they close, the same assumption shipRate already makes — and
-// sizes are re-estimated from title/body, which do not change. A day whose
-// window holds no closes has no rate: `days` is null there, so the sparkline
-// leaves a gap; nothing is invented. An item with an unparseable created_at
-// (older payloads) counts as existing in every snapshot: it shifts the whole
-// line by its size, which reads worse before it reads false. Oldest → newest.
-export const TREND_DAYS = 7
+// historyPoint (#1233) — one sparkline sample from a computed runway: each
+// lane's day-count for one UTC day. A lane with no recent ships carries null
+// (the sparkline leaves that day's cell blank, never a made-up zero).
+export const historyPoint = (runway, dateKey) => ({
+    d: dateKey,
+    b: runway?.builder?.days ?? null,
+    q: runway?.qa?.days ?? null,
+})
 
-export function laneTrend({ openItems = [], closed = [], windowDays = WINDOW_DAYS, days = TREND_DAYS, now = Date.now() } = {}) {
-    const DAY = 86400e3
-    const ms = (v) => { const t = Date.parse(v); return Number.isFinite(t) ? t : null }
-    const out = []
-    for (let k = days - 1; k >= 0; k--) {
-        const dk = now - k * DAY
-        let total = 0
-        for (const i of openItems) { const c = ms(i?.created_at); if (c == null || c <= dk) total += estimateIssue(i) }
-        for (const i of closed) {
-            const x = ms(i?.closed_at)
-            if (x != null && x <= dk) continue
-            const c = ms(i?.created_at)
-            if (c == null || c <= dk) total += estimateIssue(i)
+// historyAppend (#1233) — the 7-day trend as a pure list update. Re-sampling
+// the same UTC day REPLACES that day's entry, so the tail always reads as
+// "now"; the list stays date-ascending and capped (older days fall off the
+// left). Junk entries are dropped, never thrown on: the file is /tmp-local
+// and a corrupt line must not take the runway strip down.
+export const historyAppend = (history, point, { cap = HISTORY_DAYS } = {}) => {
+    const clean = Array.isArray(history)
+        ? history.filter((p) => p && typeof p === 'object' && typeof p.d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.d))
+        : []
+    const next = [...clean.filter((p) => p.d !== point.d), point]
+    next.sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0))
+    return next.slice(-cap)
+}
+
+// splitRunway (#1233) — the Builder lane is ONE worker, so the platform/games
+// split never divides the rate: each sub-queue shows how many days its own
+// size would take AT THE SHARED full-lane rate (platform.size + games.size =
+// the total, so the two day-counts sum to the lane's days). Unlabeled items
+// are games — the builder's default job; `lane:platform` opts out.
+export const splitRunway = (items, ratePerDay) => {
+    const isPlatform = (i) => (i.labels || []).some((l) => (typeof l === 'string' ? l : l.name) === 'lane:platform')
+    const bucket = (pred) => {
+        const it = items.filter(pred)
+        const size = it.reduce((s, i) => s + estimateIssue(i), 0)
+        return {
+            items: it.length,
+            size: Math.round(size * 100) / 100,
+            days: ratePerDay ? Math.round((size / ratePerDay) * 10) / 10 : null,
         }
-        let n = 0
-        for (const i of closed) { const x = ms(i?.closed_at); if (x != null && x <= dk && x >= dk - windowDays * DAY) n++ }
-        const rate = n > 0 ? n / windowDays : null
-        out.push({ t: new Date(dk).toISOString().slice(0, 10), days: rate == null ? null : Math.round((total / rate) * 10) / 10 })
     }
-    return out
+    return { platform: bucket(isPlatform), games: bucket((i) => !isPlatform(i)) }
 }
 
 const lanePhrase = (name, lane) =>
@@ -136,15 +149,11 @@ export function computeRunway({ issues, closedBuilder = [], closedQa = [], now =
     const qaItems = issues.filter((i) => isOpenIssue(i) && (has(i, 'feedback') || has(i, 'building-qa')) && !has(i, 'needs-approval'))
     const builderRate = shipRate((closedBuilder || []).map((i) => i.closed_at), { windowDays, now })
     const qaRate = shipRate((closedQa || []).map((i) => i.closed_at), { windowDays, now })
-    const builder = laneRunway({ items: builderItems, ratePerDay: builderRate })
+    // lanes (#1233) — the platform/games split rides the builder lane: the
+    // strip's reveal can show WHERE the days sit without changing the line.
+    const builder = { ...laneRunway({ items: builderItems, ratePerDay: builderRate }), lanes: splitRunway(builderItems, builderRate) }
     const qa = laneRunway({ items: qaItems, ratePerDay: qaRate })
-    // trend (#1233): the same membership and lineage the strip's number uses,
-    // walked back day-by-day, so "is the queue shrinking?" is readable.
-    const trend = {
-        builder: laneTrend({ openItems: builderItems, closed: closedBuilder || [], windowDays, now }),
-        qa: laneTrend({ openItems: qaItems, closed: closedQa || [], windowDays, now }),
-    }
-    return { builder, qa, trend, line: runwayLine({ builder, qa }), windowDays }
+    return { builder, qa, line: runwayLine({ builder, qa }), windowDays }
 }
 
 // digestText is the questions-digest body (#1201: the runway line must be
