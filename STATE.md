@@ -1,69 +1,70 @@
-# STATE — session 47 (2026-10-28/29)
+# STATE — session 49 (2026-10-29)
 
 ## Shipped this session
-**ROBOT LAB stage 2 — SimReady hookup** (#1141, PR #1224, squash 0122761).
-The kit now wears its assets' data: `src/utils/robot/assets.js` is a manifest
-of 6 SimReady records (Robotiq 2F-85 gripper, corrugated carton, 300 ml tin,
-LG crisper drawer, appliance door, warehouse bench) — supplier, https link
-(link-only, nothing mirrored, CI never downloads), license, transcribed
-physics + provenance + mesh-pull status. Transcribed **masses and frictions
-drive the live cannon world** (drawer 1.6 kg, door 0.9 kg, carton 0.42 kg @
-μ0.5 — new cardboard/tin surfaces, bench wood μ0.32, steel pairs keep
-stage-1 measured values pending per-asset USD transcription); autopilot still
-wins all 6 goals on seeds 1..12. License law = #1140's `licenseGate()`
-(per-supplier → review; `never` fails the gate; declared gates recomputed).
-Provenance HUD (ASSEMBLY strip) + `episode.assets = simready-manifest/1` pin
-so exported datasets declare their physics. **Caught and fixed a prod bug from
-stage 1**: `<PauseOverlay visible={paused}>` — the component has no `visible`
-prop and renders fullscreen z-50 on mount, so live play had worn the help
-screen (state probes stayed green throughout; a screenshot caught it). Trap
-documented in docs/GAME-SHELL.md.
+**ROBOT LAB stage 3 — the arm gets real physics** (#1141, PR #1237, squash
+43bb50e). Rule-4 streak broken: game code shipped.
+- Torque-driven joints: τ = Kp·θerr + Kd·ω + gravity-FF clamped at per-joint
+  τmax (`JOINT_SPECS`, desk-arm class, provenance in code); θ̈=(τ−τg)/I.
+  Effort % + SAT flags in state + HUD bars.
+- Force-closure grasp: budget = n·μ_eff·F_clamp from the 2F-85 `grip` record
+  (40 N, rubber μ0.7, μ_eff=min(pad,surface)); under-force picks REFUSED at
+  the grab; sustained crash/gross-grind = SLIP (events + HUD counter).
+  Manifest → simready-manifest/2; episodes pin it.
+- Wrist camera: scissor PIP from the gripper axis, C toggles, crosshair.
+- Harness: robokitcheck 13 gates (added: actuator spec, live force-closure
+  law + refusal, HUD/state tripwires), mutant-proven (shoulder τmax 12→6
+  reddens 4 gates); wired into ci.yml static (new `robot` scope) +
+  checks.mjs CORE/SCOPES — stages 1–2 had shipped the alias UNWIRED.
+- Headless drive green: attract→play→pause→resume, zero page errors, PIP +
+  torque strip visually verified.
 
 ## Hard-won facts
-- **A component can ignore its `visible` prop.** PauseOverlay mounts-fullscreen
-  unless the CALLER gates it: `{paused && <PauseOverlay …/>}` is the convention.
-  Screenshots catch what state hashes can't — drive visually at least once.
-- BSD sed (macOS) has no `0,/re/` address range — use `perl -0pe 's/…/,/'`
-  (no /g) for first-occurrence swaps when mutating data rows for mutants.
-- jalfern.com/retrogames **proxy cache lags Vercel deployments by 10–30 min**;
-  `gh api …/deployments` + statuses is the deploy truth, the served bundle
-  hash is the edge truth — don't call a merge unverified from the domain alone.
-- Another lane's dev server held :5173 — always take `npm run dev`'s chosen
-  port from its log (was 5178 here) and pass `CONTRACT_URL`.
-
-## Harness
-`npm run robokitcheck` now 10 gates (was 6): + manifest schema/link-only,
-license-gate recompute + library registration, live-physics-carries-the-
-manifest, episode asset pin (corrupt rejected, legacy allowed). Mutant-proven:
-reintroduced hardcoded crate mass reddens gate 9; silent CC0→SCEA gripper
-relicense reddens gate 8; both restored green. contractcheck robot-lab 18/18
-(live capture replays hash-equal on the new masses). Scoped lints + build green.
+- Discrete torque servo needs ωn·dt ≪ 1: at ωn·dt≈4 the torque-clamped
+  gamma joint became a max-ω relay that period-2 flip-flopped the whole arm
+  (hand body ±3 m while FK stayed sane; the flung pose ate the crate).
+  Gains ζ=1 at ωn·dt≈0.3 fixed it.
+- Gravity FF without gravity in the plant = pure P = permanent droop
+  (200 mm at reach). Plant integrates (τ_motor − τ_g)/I; FF cancels;
+  payload compensated 90% → visible honest sag.
+- Weld carry velocity must be feedforward: error-velocity + position snap
+  double-applies the step, a ~30 N fake grind that tripped the slip law.
+- Gripper closed gap (45 mm) was under the crate (65 mm): cannon ejected the
+  prop at grab = instant fake crash. Closed gap 66 mm clears it (2F-85
+  stroke is 85 mm).
+- A PR touching `.github/workflows/` skipped its `pull_request` CI run
+  entirely (no check-runs at all on the SHA, twice; siblings were fine).
+  Manual `gh workflow run ci.yml --ref <branch>` supplied a passing `static`
+  check on the SHA and the rule-5 merge gate accepted it. Suspected
+  root cause worth 10 min: ci.yml `on:` has no `types:` but scope job's
+  `git diff origin/main...HEAD` deep-clone? Not proven — if it recurs,
+  file a harness issue.
 
 ## Next goal
-`game-queue`: **#1201 forge runway** (lane:platform) — only queue item.
-#1141 stays **building** for stage 3 (torque-driven arm, wrist camera,
-force-closure grasp, real USD→GLB mesh pulls; scope in its PR/issue comments)
-— no pushed branch, so step 1b won't resume it automatically; a builder
-session must pick it deliberately (it's game code and outranks #1201 for
-rule 4 health if chosen). QA lane owns #1227 (ROBOT LAB polish, filed this
-session) + its backlog.
+`game-queue` is EMPTY after this session's claim. #1141 stays `building`
+with stage 4 scope in its thread: real USD→GLB mesh pulls (needs the
+network-rule answer — HuggingFace is outside the GitHub/npm rule; likely a
+Jon question via jonq next session), full rigid-body chain + base reaction,
+juice. QA lane owns #1227 (robot-lab polish, updated with stage-3 asks),
+#1233 shipped (#1238), #1234 shipped (#1235).
+
+## Harness
+robokitcheck registered everywhere at last: package.json (was already),
+ci.yml static `robot` scope, checks.mjs CORE+SCOPES; ciscope selftest ok.
+forgecheck 45 ✓, lints (forge/mario/fps/ai) ✓, build ✓.
 
 ## Environment notes
-- `~/Dev/retrogames-forge-robot-kit` worktree: branch deleted on merge; detach
-  it (`git checkout --detach origin/main`) before reuse; node_modules is real
-  and current (cannon-es present).
-- `qa-1138` worktree still holds local `main` (multi-session carry-over);
-  QA lane should detach it for real.
-- Dev server from this session: stopped? No — killed by machine? Left running
-  on :5178 — kill before next use (`lsof -nP -iTCP:5178`).
+- Main checkout: detached at origin/main (43bb50e), STATE committed via its
+  own docs PR (docs-only → fast static).
+- Worktrees: `~/Dev/retrogames-forge-robot-kit` now detached at origin/main,
+  branch merged+deleted — reuse or prune. `retrogames-forge-forge-runway`
+  still has real node_modules if needed.
+- Dev servers killed ✓.
 
 ## Open questions for Jon
-(none filed — no taste/priority calls came up)
+- #1229 — questions-digest mail wrapper location (default: stdout producer).
 
 ## Carry-over
-- Rule 4: game code merged this session — streak reset, healthy.
-- Prod check was still on the proxy lag at session end (deployments API says
-  production SUCCESS at e85dbb3 ⊇ 0122761); the queue/flags say re-verify
-  `simready-manifest` in the served bundle next time.
-- Per FORGE step 9 STATE.md committed via a STATE PR only if game merged —
-  it did this session (#1224), so this file ships behind its own PR.
+- #1141 stage 4 (above) — next builder session claims it deliberately
+  (same claim-comment pattern; label already `building`).
+- Prod: Vercel deploying 43bb50e; live check was green pre-merge on
+  preview 43bb50e; re-verify `simready-manifest/2` in the served bundle.
