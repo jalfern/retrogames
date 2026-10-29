@@ -6,14 +6,16 @@
 // + link-only law, license gate enforcement (no 'never', declared gate ==
 // licenseGate recompute, library registered + physics-capable), transcribed
 // physics actually lives in the cannon world, and episodes pin their manifest
-// revision.
+// revision. Gates 11-13 (stage 3): torque actuator spec, live force-closure,
+// stage-3 visibility. Gate 14 (QA polish #1227): episode stats + HUD wiring.
+// Gate 15: snapshot/restore round-trip honesty (torque cache).
 
 import { readFileSync, existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
     createRobotSim, createAutopilot, WIN_TICKS,
-    createEpisode, validateEpisode, exportEpisodes, BENCH_TOP,
+    createEpisode, validateEpisode, exportEpisodes, saveEpisode, episodeStats, BENCH_TOP,
     ASSETS, SLOTS, assetFor, gateFor, MANIFEST_REV, SIMREADY_LIBRARY,
     JOINT_SPECS, LINK_MASSES, forceClosureFor,
 } from '../src/utils/robot/index.js'
@@ -307,6 +309,101 @@ function armDrop(sim) {
     if (!game.includes('JOINT TORQUE')) problems.push('no torque strip')
     if (!/KIT_VERSION = 'stage3'/.test(readFileSync(join(ROOT, 'src', 'utils', 'robot', 'index.js'), 'utf8'))) problems.push('KIT_VERSION not stage3')
     check('stage-3 visibility: torque/slip state + wrist-cam & torque HUD wired', problems.length === 0, problems.join('; '))
+}
+
+// 14. Polish pass (#1227): episode stats count honest wins (an entry without
+//     a winning episode block is saved-but-not-won), stats survive a missing
+//     storage, and the game wires the run counter, the gripper open/closed
+//     tick, slip juice (edge-detect + thud + shake) and the timeout loss.
+{
+    const problems = []
+    const prevLS = Object.getOwnPropertyDescriptor(globalThis, 'localStorage')
+    const store = new Map()
+    Object.defineProperty(globalThis, 'localStorage', {
+        configurable: true, writable: true,
+        value: {
+            getItem: (k) => (store.has(k) ? store.get(k) : null),
+            setItem: (k, v) => { store.set(k, String(v)) },
+            removeItem: (k) => { store.delete(k) },
+        },
+    })
+    const rec14 = (seed, success, score) => {
+        const ep = createEpisode({ gameId: 'robotlab', seed, task: 't', poseEvery: 1 })
+        ep.addTick({ x: 0, y: 0, a: false, b: false }, null, 'h1', { hand: { p: [0, 1, 0], q: [0, 0, 0, 1] } })
+        return saveEpisode(ep.finish({ success, score, finalHash: 'h2' }))
+    }
+    rec14(1, true, 400)
+    rec14(2, false, 120)
+    store.set('retrogames-episodes', JSON.stringify([...JSON.parse(store.get('retrogames-episodes')), { v: 'retrogames-rec/v1' }]))
+    const st14 = episodeStats()
+    if (st14.saved !== 3 || st14.won !== 1) problems.push(`stats ${JSON.stringify(st14)} != {saved:3,won:1}`)
+    if (prevLS) Object.defineProperty(globalThis, 'localStorage', prevLS)
+    else delete globalThis.localStorage
+    const st0 = episodeStats()
+    if (st0.saved !== 0 || st0.won !== 0) problems.push(`no-storage stats ${JSON.stringify(st0)} != zeros`)
+    const game = readFileSync(join(ROOT, 'src', 'games', 'RobotLab', 'index.jsx'), 'utf8')
+    if (!game.includes('episodeStats')) problems.push('run counter not wired to episodeStats')
+    if (!game.includes('SAVED')) problems.push('no SAVED/WON run counter in HUD')
+    if (!game.includes('GRIPPER')) problems.push('no gripper open/closed tick')
+    if (!/st\.slips > lastSlips/.test(game)) problems.push('slip edge not tracked')
+    if (!game.includes('playNoise')) problems.push('no slip thud sound')
+    if (!/shake/.test(game)) problems.push('no slip screen shake')
+    if (!game.includes('TASK TIMEOUT')) problems.push('timeout loss not surfaced')
+    check('polish #1227: episode stats honest wins + run counter/gripper/slip/timeout HUD wired', problems.length === 0, problems.join('; '))
+}
+
+// 15. Snapshot/restore round-trip in pure Node (#1227 QA): state() right
+//     after restore must equal the state at snapshot time — the field that
+//     silently diverged on main was `torque` (per-tick actuator cache never
+//     refreshed by restore; phi1 47% vs 59% for identical joints). The
+//     contractcheck browser gate only trips when the script happens to
+//     snapshot mid-run; this one always runs.
+{
+    const padA = { left: true, right: false, up: true, down: false, a: false, b: false }
+    const padB = { left: false, right: true, up: false, down: true, a: false, b: false }
+    const sim = createRobotSim(7)
+    for (let i = 0; i < 600; i++) sim.step({ pad: padA })
+    const snap = sim.snapshot()
+    const atSnap = JSON.stringify(sim.state())
+    let detail = ''
+    let ok = true
+    for (const pass of [1, 2]) {
+        for (let i = 0; i < 37; i++) sim.step({ pad: padB })
+        sim.restore(snap)
+        const back = sim.state()
+        if (JSON.stringify(back) !== atSnap) {
+            ok = false
+            const a = JSON.parse(atSnap)
+            for (const k of Object.keys(a)) {
+                if (JSON.stringify(a[k]) !== JSON.stringify(back[k])) detail += ` pass${pass}.${k}=${JSON.stringify(back[k])}(want ${JSON.stringify(a[k])})`
+            }
+        }
+    }
+    check('snapshot/restore round-trip: state identical both passes (torque cache refreshed)', ok, detail)
+    const sim2 = createRobotSim(1)
+    const ap2 = createAutopilot(sim2)
+    let heldAt = -1
+    for (let i = 0; i < 700; i++) {
+        if (sim2.step({ pad: ap2() }).held === 'crate') { heldAt = i; break }
+    }
+    let wOk = heldAt >= 0
+    let wDetail = heldAt < 0 ? 'autopilot failed to grab the crate' : ''
+    if (wOk) {
+        const snap2 = sim2.snapshot()
+        if (!snap2.weld) { wOk = false; wDetail = 'snapshot lost the weld' }
+        else {
+            sim2.restore(snap2)
+            try {
+                sim2.step({ pad: ap2() })
+                const w = sim2.arm.weld
+                if (!w) { wOk = false; wDetail = 'weld dropped on the first restored tick' }
+                else if (!Number.isFinite(w.devS) || !Number.isFinite(w.slipS)) { wOk = false; wDetail = `dev/slip NaN after weld restore (heldAt=${heldAt})` }
+                for (let i = 0; i < 9; i++) sim2.step({ pad: ap2() })
+                if (!Number.isFinite(sim2.state().hash)) { wOk = false; wDetail = 'hash NaN after weld restore' }
+            } catch (err) { wOk = false; wDetail = `step after weld restore threw: ${err}` }
+        }
+    }
+    check('restore with a live weld: weld state self-consistent, deviation monitor finite post-restore', wOk, wDetail)
 }
 
 console.log(failures === 0 ? 'robokitcheck: OK' : `robokitcheck: ${failures} FAILED`)
