@@ -47,18 +47,27 @@ loaded by relative `<script src>` — never absolute URLs (the per-demo `*check`
 
 ## physicswalk.core.js engine notes (#1204)
 
-PHYSICS WALK is the dynamics rung under STICK WALK: a 12-particle XPBD rig
-(torso brace + two knee-ankle-heel-toe legs) with stiff distance constraints,
+PHYSICS WALK is the dynamics rung under STICK WALK: an 18-particle XPBD rig
+(torso brace + two knee-ankle-heel-toe legs + two shoulder-pinned arm
+pendulums) with stiff distance constraints,
 hip/knee/ankle motors applied as momentum-conserving virtual-work torque pairs,
 and penalty ground contact (spring-damper normal + Coulomb friction bounded by
 the true per-point normal force, so the foot rolls heel-to-toe instead of
 gluing). Balance = torso-pitch PD through hip+ankle, a hip-height lift reflex,
 and margin/trailing-based step triggers that place the swing foot ahead of the
-CoM. Controller gains were searched (60k+ candidates in Node); determinism is
-guaranteed (no RNG). Gated by `npm run physicswalkcheck` (28 gates incl. a
-balance mutant). Honest gaps: planar balance only (no lateral DOF); no
-arm swing; sustained steady walking settles into a stagger, not a stride cycle;
-collision uses point feet (no toe-ramp mesh).
+CoM. Arms (#1218) are honest pendulums: the shoulder torque reaches the hand
+*opposite* the same-side foot's travel (`target = CoM − armG·(foot−CoM)`,
+clamped), still a virtual-work couple closed at the joint — searched gains give
+8–9 cm carry swing with hand-vs-foot correlation ≈ −0.9 and inter-hand
+anti-phase ≈ −0.67 (they windmill when over-driven: the search rejected
+30–60 cm candidates). Controller gains were searched (60k+ candidates in Node);
+arm gains too (~400 valid candidates; the ladder is rounding-sensitive at the
+1.5 m/s topple boundary — keep full float precision when editing).
+Determinism is guaranteed (no RNG). Gated by `npm run physicswalkcheck`
+(34 gates incl. a balance mutant and an arm gait-coupling mutant).
+Honest gaps: planar balance only (no lateral DOF); sustained steady walking
+settles into a stagger, not a stride cycle; collision uses point feet
+(no toe-ramp mesh).
 
 ## blackhole.html engine notes
 
