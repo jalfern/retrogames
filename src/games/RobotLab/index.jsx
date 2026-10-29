@@ -304,7 +304,7 @@ export default function RobotLab() {
                     <div className="mt-2 text-xs text-slate-300">EPISODE SAVED · PRESS ANY KEY</div>
                 </div>
             )}
-            <PauseOverlay visible={paused} game={entry} onResume={() => setPaused(false)} />
+            {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
             <VirtualControls visible={phase === 'play' && !paused} secondAction={{ label: 'LIFT', code: 'ShiftLeft' }} />
         </div>
     )

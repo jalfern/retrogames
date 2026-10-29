@@ -94,6 +94,13 @@ The drawer **refuses to close** when the crate sits on the rail track
   stand down while `contractHoldsLoop()`. Otherwise banked hashes are from a
   different world than the header seed claims (diverged @30).
 
+- **`<PauseOverlay visible={paused}>` never hides.** The component has no
+  `visible` prop — it renders fullscreen `z-50` whenever it MOUNTS, and its
+  capture-phase paging handler swallows Arrow keys. Stage 1 shipped that prop
+  form, so live play wore the help screen; stage 2 caught it with a real
+  headless drive (screenshot, not state probes — `paused` was false the whole
+  time). Mount `{paused && <PauseOverlay … />}` like every other game.
+
 ## Honest gaps (next sessions / QA)
 1. SimReady mesh pulls: USD→GLB conversion + exact USD-side friction/mass
    transcription is the manual step (outside CI); until pulled, records are
