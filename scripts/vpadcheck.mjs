@@ -1281,6 +1281,40 @@ clearAllSlots()
         '#906 CometDriftHD no longer force-passes the redundant DRIFT prop')
 }
 
+// --- 35. #1221: britannia mobile pad — one clean cross, one labelled action,
+// no watermark over the playfield (the iPhone-landscape complaint bundle). ---
+{
+    const gamesSrc = readFileSync(new URL('../src/config/games.js', import.meta.url), 'utf8')
+    const i = gamesSrc.indexOf("path: '/britannia'")
+    ok(i !== -1, 'games.js has an entry for /britannia')
+    const block = i === -1 ? '' : gamesSrc.slice(i, gamesSrc.indexOf('path: ', i + 1) === -1 ? gamesSrc.length : gamesSrc.indexOf('path: ', i + 1))
+    ok(/layout: 'dpad'/.test(block), '#1221 britannia declares the d-pad (not the floating stick)')
+    ok(/analog: false/.test(block), '#1221 britannia stays digital (no phantom stick zone)')
+    ok(/aLabel: 'GATE'/.test(block), "#1221 britannia's A button is labelled GATE (not a fire glyph)")
+    ok(/buttons: \[\]/.test(block), '#1221 britannia declares no B button (dismiss is Escape / tap-outside)')
+    ok(!/\u2715/.test(block), '#1221 no ✕-labelled button in the britannia registry entry')
+    ok(/footer: 'none'/.test(block), '#1221 britannia opts out of the shell footer (mark sat mid-map on landscape)')
+    const bc = readFileSync(new URL('../src/games/Britannia/index.jsx', import.meta.url), 'utf8')
+    ok(!/VirtualControls visible=\{play && !paused\} secondAction=/.test(bc),
+        '#1221 Britannia no longer force-passes a secondAction prop')
+    ok(/hudInsets/.test(bc) && /data-nav="arcade"/.test(bc),
+        '#1221 Britannia insets its canvas HUD past the shell chrome (landscape collision)')
+    // One clean cross: the legacy d-pad branch must draw exactly the four arms —
+    // a stray centre dot read as "a second stick" in Jon's screenshot. Prove the
+    // guard bites by running it over a mutant copy that restores the dot.
+    const vc = readFileSync(new URL('../src/components/VirtualControls.jsx', import.meta.url), 'utf8')
+    const sliceOf = (src) => {
+        const a = src.indexOf('ref={dPadRef}')
+        const b = src.indexOf('data-vc="actzone"')
+        return a === -1 || b === -1 ? null : src.slice(a, b)
+    }
+    const cross = sliceOf(vc)
+    ok(cross !== null && !/w-3 h-3 .*rounded-full/.test(cross),
+        '#1221 d-pad branch has no stray centre dot (the phantom stick base)')
+    const mutant = (cross || '').replace('onTouchStart={dTS}', 'onTouchStart={dTS} data-x><div class="w-3 h-3 bg-neutral-600/40 rounded-full')
+    ok(/w-3 h-3 .*rounded-full/.test(mutant), '#1221 dot-restored mutant is caught by the guard')
+}
+
 // --- Summary ---
 const total = pass + fail
 console.log(`vpadcheck: ${pass}/${total} pass, ${fail} fail`)

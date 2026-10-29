@@ -498,24 +498,54 @@ const BritanniaGame = () => {
             }
         }
 
+        // #1221: the shell chrome (ARCADE/FEEDBACK left, PAUSE+mute right) sits
+        // in the viewport's top corners. iPhone landscape letterboxes the canvas
+        // side-only, so the canvas HUD bar lands under that chrome and the two
+        // layers collide. Measure the chrome each frame (three rect reads) and
+        // inset the HUD — vertically past the chrome bottoms and horizontally
+        // past the corner buttons — only while the canvas top actually touches
+        // the chrome band (portrait letterboxes the canvas below it → zero).
+        const hudInsets = () => {
+            const rect = canvas.getBoundingClientRect()
+            const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
+            const at = (s) => document.querySelector(s)?.getBoundingClientRect()
+            const left = [at('[data-nav="arcade"]'), at('[data-feedback="open"]')].filter(Boolean)
+            const pause = at('[data-nav="pause"]')
+            const all = [...left, ...(pause ? [pause] : [])]
+            if (!all.length || rect.top >= Math.max(...all.map((b) => b.bottom))) return { top: 0, left: 0, right: 0 }
+            return {
+                top: (Math.max(...all.map((b) => b.bottom)) - rect.top) / fit.s + 6,
+                left: left.length ? (Math.max(...left.map((b) => b.right)) - rect.left) / fit.s + 10 : 0,
+                right: pause ? (rect.right - pause.left) / fit.s + 10 : 0,
+            }
+        }
+
         const drawHud = (n) => {
+            const ins = hudInsets()
+            const barH = Math.max(46, ins.top + 40)
+            const baseY = Math.max(30, ins.top + 26)
             ctx.fillStyle = 'rgba(8,10,22,0.78)'
-            ctx.fillRect(0, 0, VIEW_W, 46)
+            ctx.fillRect(0, 0, VIEW_W, barH)
             ctx.fillStyle = '#e8d9a0'
             ctx.font = 'bold 20px monospace'
-            ctx.fillText('BRITANNIA', 16, 30)
+            const tx = Math.max(16, ins.left)
+            ctx.fillText('BRITANNIA', tx, baseY)
             ctx.font = '15px monospace'
             ctx.fillStyle = '#9fb4d8'
-            ctx.fillText(`x:${S.x} y:${S.y}`, 180, 29)
-            ctx.fillText(S.ship ? 'SHIP' : 'FOOT', 300, 29)
+            const rx = Math.max(16, ins.right)
+            ctx.fillText(`x:${S.x} y:${S.y}`, Math.max(180, tx + 130), baseY - 1)
+            ctx.fillText(S.ship ? 'SHIP' : 'FOOT', Math.max(300, tx + 250), baseY - 1)
             const hrs = Math.floor(tod() * 24)
-            ctx.fillText(`${String(hrs).padStart(2, '0')}:00 ${n > 0.5 ? 'NIGHT' : 'DAY'}`, 380, 29)
-            ctx.fillStyle = S.wx === WX.STORM ? '#e0a060' : S.wx === WX.SNOW ? '#e8f2ff' : S.wx === WX.RAIN ? '#7fb0e0' : '#9fb4d8'
-            ctx.fillText(WX_NAME[S.wx], VIEW_W - 290, 29)
+            ctx.fillText(`${String(hrs).padStart(2, '0')}:00 ${n > 0.5 ? 'NIGHT' : 'DAY'}`, Math.max(380, tx + 330), baseY - 1)
             ctx.fillStyle = '#7fe8ff'
-            ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, 540, 29)
+            ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, Math.max(540, tx + 490), baseY - 1)
+            ctx.textAlign = 'right'
             ctx.fillStyle = '#6a7b9a'
-            ctx.fillText('C classic · ? help', VIEW_W - 210, 29)
+            ctx.fillText('C classic · ? help', VIEW_W - rx, baseY - 1)
+            const helpW = ctx.measureText('C classic · ? help').width
+            ctx.fillStyle = S.wx === WX.STORM ? '#e0a060' : S.wx === WX.SNOW ? '#e8f2ff' : S.wx === WX.RAIN ? '#7fb0e0' : '#9fb4d8'
+            ctx.fillText(WX_NAME[S.wx], VIEW_W - rx - helpW - 16, baseY - 1)
+            ctx.textAlign = 'left'
             if (S.toast > 0) {
                 S.toast--
                 ctx.font = '18px monospace'
@@ -796,7 +826,7 @@ const BritanniaGame = () => {
             )}
             {screen === 'end' && <div />}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'BRITANNIA')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: '✕', code: 'KeyZ' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }
