@@ -44,6 +44,7 @@ const TOUCHED = [
     ['/missile-battle', 'stick'],
     ['/mario-kart', 'stick'], ['/comet-drift', 'stick'],
     ['/comet-drift-hd', 'stick'], ['/emberwood', 'stick'],
+    ['/britannia', 'dpad'],
 ]
 
 // #906: the drawn face buttons must say the game's verbs — the exact list of
@@ -153,6 +154,47 @@ for (const [path, method] of TOUCHED) {
         r.check(`${path} boots with zero page errors`, false, String(e.message).slice(0, 200))
         r.check(`${path} pad is on screen`, false, 'boot failed')
         r.check(`${path} stick zone ${method === 'stick' ? 'present' : 'absent'}`, false, 'boot failed')
+    } finally {
+        await page.close()
+    }
+}
+
+// #1221: iPhone landscape is the collision viewport — the canvas letterboxes
+// side-only, so shell chrome and the watermark sit over the playfield and the
+// pad. Pin the fixes in a real 844x390 phone: one clean d-pad cross (4 arm
+// children, no phantom stick base/dot), one labelled action button, and no
+// JALFERN.COM mark anywhere on screen during play.
+{
+    const errors = []
+    const page = await browser.newPage({
+        viewport: { width: 844, height: 390 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
+    })
+    page.setDefaultTimeout(60000)
+    page.on('pageerror', e => errors.push(String(e.message).slice(0, 200)))
+    try {
+        await page.goto(BASE + '/britannia', { waitUntil: 'load' })
+        await page.waitForSelector('canvas', { timeout: 20000 })
+        await page.waitForTimeout(1200)
+        await page.touchscreen.tap(422, 195)
+        await page.waitForSelector('[data-vc="dpad"]', { timeout: 15000 }).catch(() => null)
+        const g = await page.evaluate(() => {
+            const dpad = document.querySelector('[data-vc="dpad"]')
+            const zone = document.querySelector('[data-vc="actzone"]')
+            const mark = [...document.querySelectorAll('h1')].find((h) => h.textContent.includes('JALFERN.COM'))
+            return {
+                dpads: document.querySelectorAll('[data-vc="dpad"]').length,
+                arms: dpad ? dpad.children.length : -1,
+                labels: zone ? [...zone.children].map((b) => b.textContent.trim()) : [],
+                mark: !!mark,
+            }
+        })
+        r.check('#1221 britannia renders exactly one d-pad', g.dpads === 1, `dpads=${g.dpads}`)
+        r.check('#1221 d-pad is one clean cross (4 arms, no phantom stick)', g.arms === 4, `children=${g.arms} (a 5th child is the stray stick base/dot)`)
+        r.check("#1221 action pad shows one labelled button: GATE", JSON.stringify(g.labels) === JSON.stringify(['GATE']), `drawn ${JSON.stringify(g.labels)}`)
+        r.check('#1221 no JALFERN.COM watermark over the playfield (footer: none)', g.mark === false, 'footer mark still on screen')
+        r.check('#1221 britannia landscape boots with zero page errors', errors.length === 0, errors.join(' | ').slice(0, 300))
+    } catch (e) {
+        r.check('#1221 britannia landscape page', false, String(e.message).slice(0, 200))
     } finally {
         await page.close()
     }

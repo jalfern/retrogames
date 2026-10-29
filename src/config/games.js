@@ -1091,6 +1091,10 @@ export const GAMES = [
     {
         path: '/britannia',
         pad: { layout: 'dpad', aLabel: 'GATE', buttons: [], analog: false, reason: 'arrows walk and sail; the one on-screen action (GATE/Space) answers the moongate when it whirls — dismiss is Escape / tap-outside, so no second button' },
+        // #1221: the bottom-centre JALFERN mark sat in the middle of the map on
+        // iPhone landscape (the pad band's top-band move is portrait-only) — the
+        // canvas HUD already carries the title, so the shell footer opts out here.
+        footer: 'none',
         builtBy: 'forge',
         added: '2026-10-26',
         visibility: 'private',
