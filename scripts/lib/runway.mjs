@@ -55,11 +55,16 @@ export function fmtDays(days) {
 // half-built game is still days of work before the lane is free).
 export function laneRunway({ items = [], ratePerDay = null }) {
     const total = items.reduce((s, i) => s + estimateIssue(i), 0)
+    // mix (#1233) — the per-item S/M/L breakdown behind the total size, so the
+    // board can show HOW the "~N days" was counted, not just the number.
+    const mix = { S: 0, M: 0, L: 0 }
+    for (const i of items) mix[sizeClass(i)]++
     const days = ratePerDay ? total / ratePerDay : null
     const polish = items.length === 0
     return {
         items: items.length,
         size: Math.round(total * 100) / 100,
+        mix,
         rate: ratePerDay ? Math.round(ratePerDay * 100) / 100 : null,
         days: days == null ? null : Math.round(days * 10) / 10,
         amber: !polish && days != null && days < AMBER_UNDER_DAYS,

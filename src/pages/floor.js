@@ -98,3 +98,32 @@ export const runwayBadge = (runway, now = Date.now()) => {
     const polish = !!(runway.builder?.polish || runway.qa?.polish)
     return { text: runway.line, tone: stale ? 'dim' : amber ? 'amber' : polish ? 'violet' : 'green', stale }
 }
+
+// runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
+// lane carrying the math behind its "~N days": the per-item S/M/L mix, the total
+// size, the rate (closes/day over the trailing window) and the days it yields.
+// `runway` is the board.json block. Pure and defensive on purpose: the board
+// renders whatever the telemetry machine last baked, and OLDER board.json has
+// no `mix` — so a missing field degrades to null (the reveal says "—" / falls
+// back to the item count), never invents a number and never throws. Pinned by
+// runwaycheck without a browser.
+export const runwayMath = (runway) => {
+    if (!runway || typeof runway !== 'object') return []
+    return [['Builder', runway.builder], ['QA', runway.qa]]
+        .filter(([, l]) => l && typeof l === 'object')
+        .map(([name, l]) => {
+            const mix = l.mix && typeof l.mix === 'object'
+                ? { S: +l.mix.S || 0, M: +l.mix.M || 0, L: +l.mix.L || 0 }
+                : null
+            return {
+                name,
+                items: Number.isFinite(l.items) ? l.items : null,
+                size: Number.isFinite(l.size) ? l.size : null,
+                mix,
+                rate: Number.isFinite(l.rate) ? l.rate : null,
+                days: Number.isFinite(l.days) ? l.days : null,
+                amber: !!l.amber,
+                polish: !!l.polish,
+            }
+        })
+}
