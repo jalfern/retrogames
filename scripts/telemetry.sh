@@ -114,6 +114,19 @@ if r.returncode != 0:
     print('telemetry push failed:', r.stderr[:200])
 PY
 
+# runway (#1201) — "N days of queued work left" per lane, attached to
+# board.json below. Materialise script + lib from origin/main into /tmp first
+# (the stdin `node -` pattern cannot work here: a stdin module resolves
+# relative imports against the launchd CWD, and './lib/runway.mjs' would
+# resolve against /). A failed run leaves the previous runway.json in place,
+# so the board keeps the last known runway instead of a hole.
+git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null || true
+mkdir -p /tmp/forge/lib
+git -C /Users/jon/Dev/retrogames show origin/main:scripts/lib/runway.mjs > /tmp/forge/lib/runway.mjs \
+    && git -C /Users/jon/Dev/retrogames show origin/main:scripts/runway.mjs > /tmp/forge/runway-run.mjs \
+    && node /tmp/forge/runway-run.mjs --out /tmp/forge/runway.json >/dev/null \
+    || echo 'runway failed'
+
 # board.json — the board's ONE file. The browser used to hit api.github.com
 # directly (~6 fetches per reload) and shared-IP rate limits took the board
 # OFFLINE while the machine underneath was healthy. Everything the board
@@ -182,6 +195,15 @@ board = {'generated': subprocess.run(['date', '-u', '+%Y-%m-%dT%H:%M:%SZ'],
                                      capture_output=True, text=True).stdout.strip(),
          'samples': samples, 'issues': list(by.values()), 'prs': prs,
          'pulses': comments(pulse_num, 6), 'feed': comments(build_num, 8)}
+
+# #1201 — the runway line ("Builder: ~2.5 days queued · QA: ~0.5 day").
+# Missing/stale file just means the board hides the strip (or dims it via the
+# generated timestamp inside).
+try:
+    with open('/tmp/forge/runway.json') as f:
+        board['runway'] = json.load(f)
+except Exception:
+    pass
 
 data = base64.b64encode(json.dumps(board).encode()).decode()
 body = {'message': 'board', 'content': data, 'branch': 'main'}

@@ -13,6 +13,9 @@
 //   node scripts/jonq.mjs list  [--lane games] [--json]  # lanes read this at the claim step
 //   node scripts/jonq.mjs halt                            # yes|no  — does a `halt` stop the factory?
 //   node scripts/jonq.mjs steer                           # #<n>   — jalfern's steer, if any
+//   node scripts/jonq.mjs digest                          # questions-digest email body
+//                                                       #   (open questions + the #1201
+//                                                       #    runway line, stdout)
 //
 // `ask` refuses (exit 2) when the decision is not decidable — fewer than two
 // options, no default, or the lane already carries 3 open questions: ask
@@ -25,6 +28,7 @@ import {
     claimOrder, decide, defaultComment, formatQuestion, halted, laneLabel,
     openQuestions, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
+import { computeRunway, digestText } from './lib/runway.mjs'
 
 const REPO = process.env.JONQ_REPO || 'jalfern/retrogames'
 const OWNER = process.env.JONQ_OWNER || 'jalfern'
@@ -178,7 +182,40 @@ switch (cmd) {
         console.log(n == null ? '' : `#${n}`)
         break
     }
+    case 'digest': {
+        // The questions-digest body (#1201): every open question with its
+        // state/deadline/default, then the runway line ("Builder: ~2.5 days
+        // queued · QA: ~0.5 day") so Jon sees how long the board has left
+        // without opening it. stdout is the contract — wherever the mail
+        // wrapper lives, this is the body it sends.
+        const issues = openIssues(null).map(toIssue)
+        const questions = openIssues(QUESTION_LABEL).map((raw) => {
+            const issue = { ...toIssue(raw), comments: commentsOf(raw.number) }
+            const { state, defaultText, deadline } = decide(issue, new Date())
+            return {
+                number: issue.number, title: issue.title, state, defaultText,
+                deadline: deadline ? deadline.toISOString() : null,
+                lane: (issue.labels.find((l) => l.startsWith('lane:')) || '').replace('lane:', ''),
+            }
+        })
+        let runway = null
+        try {
+            const closed = (label) => {
+                const rows = []
+                for (let page = 1; page <= 3; page++) {
+                    const chunk = ghJson([`repos/${REPO}/issues?state=closed&labels=${label}&per_page=100&page=${page}`,
+                        '--jq', '[.[] | {closed_at}]'])
+                    rows.push(...chunk)
+                    if (chunk.length < 100) break
+                }
+                return rows
+            }
+            runway = computeRunway({ issues, closedBuilder: closed('building'), closedQa: closed('feedback'), now: Date.now() })
+        } catch { /* offline: the digest still ships, minus the runway line */ }
+        console.log(digestText({ questions, runway, now }))
+        break
+    }
     default:
-        console.error('usage: jonq.mjs ask|sweep|list|halt|steer|claim [opts]')
+        console.error('usage: jonq.mjs ask|sweep|list|halt|steer|claim|digest [opts]')
         process.exit(2)
 }

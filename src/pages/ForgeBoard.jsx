@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -76,6 +76,7 @@ const ForgeBoard = () => {
     const [nightly, setNightly] = useState(null)
     const [juice, setJuice] = useState(null)
     const [boredom, setBoredom] = useState(null)
+    const [runway, setRunway] = useState(null)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -109,6 +110,7 @@ const ForgeBoard = () => {
                 setFeed(d.feed ?? [])
                 setSamples(d.samples ?? [])
                 setGenerated(d.generated ?? null)
+                setRunway(d.runway ?? null)
                 try {
                     const lr = await fetch(`${LOG_RAW}?t=${Math.floor(Date.now() / 60000)}`)
                     if (lr.ok) setDaily(await lr.json())
@@ -210,6 +212,23 @@ const ForgeBoard = () => {
                             : 'never fetched'}
                     </div>
                 </div>
+
+                {runway && (() => {
+                    const b = runwayBadge(runway, now)
+                    if (!b) return null
+                    const tone = {
+                        amber: 'border-[#f80]/70 text-[#f80]',
+                        green: 'border-[#0f0]/40 text-[#8f8]',
+                        violet: 'border-[#d4c5f9]/50 text-[#d4c5f9]',
+                        dim: 'border-gray-700 text-gray-500',
+                    }[b.tone]
+                    return (
+                        <div data-runway={b.tone} className={`border px-4 py-2 mb-5 mx-auto w-fit text-xs tracking-wider ${tone}`}>
+                            ⏱ RUNWAY — {b.text}
+                            {b.stale && <span className="opacity-60"> · stale</span>}
+                        </div>
+                    )
+                })()}
 
                 <div className="flex justify-center gap-4 mb-6">
                     <a className="border-2 border-[#ffe14d] text-[#ffe14d] px-4 py-2 text-xs tracking-wider hover:bg-[#ffe14d] hover:text-black transition-colors"

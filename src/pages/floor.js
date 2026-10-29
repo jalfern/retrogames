@@ -85,3 +85,16 @@ export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.n
 
     return { queued, building, shipped, pulse, anvil, gate, cart, shelf: shipped }
 }
+
+// runwayBadge (#1201) — the runway strip's { text, tone } from board.json's
+// `runway` block. Pure and shared so runwaycheck can pin it without a
+// browser: the amber RULE is decided upstream (scripts/lib/runway.mjs owns
+// "under a day"); this only maps states to colours and hides stale data
+// (>1 h old = yesterday's weather — dim, not confident green).
+export const runwayBadge = (runway, now = Date.now()) => {
+    if (!runway || !runway.line) return null
+    const stale = !!runway.generated && now - Date.parse(runway.generated) > 60 * 60 * 1000
+    const amber = !!(runway.builder?.amber || runway.qa?.amber)
+    const polish = !!(runway.builder?.polish || runway.qa?.polish)
+    return { text: runway.line, tone: stale ? 'dim' : amber ? 'amber' : polish ? 'violet' : 'green', stale }
+}
