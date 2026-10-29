@@ -43,6 +43,13 @@ after 1 h).
   says WHY (key rejected → check the JON_KEY secret; no key → device never
   opened the one-time link), and a failed screenshot upload names its HTTP
   status — no more silent quarantine ("what happened to my test?").
+  Screenshots attach through the persistent `feedback-assets` release (#1222):
+  uploads.github.com issue-assets is dead for server-side uploads (raw → 400
+  "Multipart form data required", multipart → 422 "Bad Size" at any size),
+  while release assets still take raw binary and a published release's
+  download URL renders in issue markdown. The token therefore needs repo
+  write (classic `repo` / fine-grained Contents:write) — with less it files
+  the report and leaves the honest upload-failed line.
 - CORS (#886): both endpoints (plus `OPTIONS` preflight) send
   `Access-Control-Allow-Origin` for the arcade origins only
   (`jalfern.com`, `www.jalfern.com`, the workers.dev host, localhost:*).
