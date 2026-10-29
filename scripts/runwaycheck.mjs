@@ -9,13 +9,19 @@
 //      ("~2.5 days queued · ~0.5 day"), a non-empty lane never reads "~0
 //      days", under-a-day is amber, empty queue is the polish fallback said
 //      out loud, computeRunway classifies lanes off labels (PR rows and
-//      stalled/needs-approval never count), and the digest body carries the
-//      questions plus the runway line;
+//      stalled/needs-approval never count), the digest body carries the
+//      questions plus the runway line, the 7-day trend history (#1233) is
+//      one sample per UTC day (same-day re-sample replaces, ascending,
+//      capped, junk-safe) and the Builder platform/games split prices each
+//      sub-queue at the SHARED one-worker rate;
 //   B. the wiring — telemetry.sh materialises the estimator from origin/main
-//      and attaches it to board.json, ForgeBoard renders the strip (tone from
-//      floor.js runwayBadge), jonq.mjs has `digest`, checks.mjs + ci.yml +
-//      package.json carry the alias. Source-level tripwires: delete the board
-//      attach from telemetry.sh and this goes red.
+//      and attaches it to board.json, scripts/runway.mjs appends the trend
+//      sample per run, ForgeBoard renders the strip (tone from floor.js
+//      runwayBadge), the math reveal, the 7-day sparkline and the split
+//      (all from floor.js pure text), jonq.mjs has `digest`, checks.mjs +
+//      ci.yml + package.json carry the alias. Source-level tripwires: delete
+//      the board attach from telemetry.sh or the history append from
+//      runway.mjs and this goes red.
 //
 // Mutant proof (required one): flip AMBER_UNDER_DAYS in scripts/lib/runway.mjs
 // from 1 to 0 -> every amber fixture goes red. Verified by hand.
@@ -24,10 +30,11 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
-    AMBER_UNDER_DAYS, SIZES, TREND_DAYS, computeRunway, digestText, estimateIssue,
-    fmtDays, laneRunway, laneTrend, runwayLine, shipRate, sizeClass,
+    AMBER_UNDER_DAYS, HISTORY_DAYS, SIZES, computeRunway, digestText,
+    estimateIssue, fmtDays, historyAppend, historyPoint, laneRunway,
+    runwayLine, shipRate, sizeClass, splitRunway,
 } from './lib/runway.mjs'
-import { runwayBadge, runwayMath, runwayTrend } from '../src/pages/floor.js'
+import { runwayBadge, runwayMath, runwayTrend, sparkline } from '../src/pages/floor.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -94,29 +101,59 @@ eq(shipRate(['nonsense', daysAgo(2)], { now: NOW }), 1 / 14, 'junk timestamps ar
     eq(JSON.stringify(laneRunway({ items: [issue(33, 'A', []), issue(34, 'B', [])], ratePerDay: 0.5 }).mix), JSON.stringify({ S: 0, M: 2, L: 0 }), 'two plain items are two M')
 }
 
-// laneTrend (#1233): the sparkline data — days-per-lane reconstructed for the
-// last TREND_DAYS days. Membership at a snapshot = items that existed then
-// (open + closed-since); rate = closes in the window ENDING that day; no
-// closes in a window = null point (a gap, never a lie).
+// historyPoint / historyAppend (#1233): the 7-day trend the strip's sparkline
+// draws — one sample per UTC day, same-day re-samples REPLACE (the tail reads
+// as now), the list is ascending and capped, and junk degrades, never throws.
 {
-    ok(TREND_DAYS === 7, 'the trend spans a week')
-    const open = [
-        { number: 40, title: 'GAME — FROGGER', body: '', created_at: daysAgo(25) },
-        { number: 41, title: 'GAME — FROGGER', body: '', created_at: daysAgo(25) },
-        { number: 42, title: 'GAME — FROGGER', body: '', created_at: daysAgo(2) },
+    const pt = historyPoint({ builder: { days: 2.5 }, qa: { days: null } }, '2026-10-29')
+    eq(pt.d, '2026-10-29', 'a sample is keyed by its UTC day')
+    eq(pt.b, 2.5, 'the builder day-count rides the sample')
+    eq(pt.q, null, 'a lane with no rate rides null, not a made-up 0')
+    eq(historyPoint(null, '2026-10-29').b, null, 'a missing runway degrades to nulls')
+
+    let h = []
+    for (const [d, b, q] of [['2026-10-25', 4, 1], ['2026-10-26', 3, 1], ['2026-10-27', 3, 0.5], ['2026-10-28', 2, 0.5], ['2026-10-29', 3.5, 0.5]])
+        h = historyAppend(h, { d, b, q })
+    eq(h.length, 5, 'five distinct days append five samples')
+    eq(h[0].d, '2026-10-25', 'the list stays date-ascending')
+
+    h = historyAppend(h, { d: '2026-10-27', b: 9, q: 1 })
+    eq(h.length, 5, 'a same-day re-sample replaces, does not grow the list')
+    eq(h.find((p) => p.d === '2026-10-27').b, 9, 'the re-sample carries the NEW value')
+
+    let long = []
+    for (let i = 0; i < 9; i++) long = historyAppend(long, { d: `2026-10-${String(20 + i).padStart(2, '0')}`, b: 1, q: 1 })
+    eq(long.length, HISTORY_DAYS, 'the window is capped at HISTORY_DAYS (7)')
+    eq(long[0].d, '2026-10-22', 'the oldest days fall off the left, the newest stay')
+
+    eq(historyAppend(null, { d: '2026-10-29', b: 1, q: 1 }).length, 1, 'a missing file starts a one-sample history')
+    eq(historyAppend('corrupt', { d: '2026-10-29', b: 1, q: 1 }).length, 1, 'a corrupt file degrades to empty, never throws')
+    const junky = historyAppend([{ d: 'junk' }, 'x', null, { d: '2026-10-28', b: 2, q: 2 }], { d: '2026-10-29', b: 1, q: 1 })
+    eq(junky.length, 2, 'junk entries are dropped, real ones kept')
+    eq(junky[0].d, '2026-10-28', 'a bad `d` cannot poison the sort order')
+}
+
+// splitRunway (#1233): the Builder lane is ONE worker shared by platform and
+// games, so the split prices each sub-queue at the SHARED full-lane rate and
+// the two day-counts sum to the lane's days. Unlabeled = games (default job);
+// `lane:platform` opts out.
+{
+    const items = [
+        issue(40, 'PLATFORM: robot sim kit (SimReady)', ['building', 'lane:platform']),
+        issue(41, 'GAME — FROGGER', ['game-queue']),
+        issue(42, 'GAME — MYST: open-world 3D', ['game-queue']),
     ]
-    const closed = [4, 6, 8, 10].map((d) => ({ title: 'GAME — DONE', body: '', created_at: daysAgo(30), closed_at: daysAgo(d) }))
-    const tr = laneTrend({ openItems: open, closed, now: NOW })
-    eq(tr.length, 7, 'seven daily points, oldest first')
-    eq(tr[6].days, 8.4, 'today: three open M at 4 closes/14 d = 8.4 days')
-    eq(tr[0].days, 11.2, 'six days back: C1 still a member (closed later), 3 closes in window = 11.2')
-    eq(tr[2].days, 5.6, 'four days back: C1 just closed out, two old M = 5.6')
-    eq(tr[4].days, 8.4, 'two days back: the fresh item joined, rate 4/window = 8.4')
-    ok(tr.every((p) => /^\d{4}-\d{2}-\d{2}$/.test(p.t)), 'every point carries a plain date')
-    const cold = laneTrend({ openItems: open, closed: [], now: NOW })
-    ok(cold.every((p) => p.days === null), 'no closes anywhere = a week of honest nulls')
-    const born = laneTrend({ openItems: [{ number: 43, title: 'GAME — X' }], closed: [], now: NOW })
-    eq(born[0].days, null, 'unknown created_at still counts as existing (rate null keeps it honest)', born[0])
+    const s = splitRunway(items, 1)
+    eq(s.platform.items, 1, 'lane:platform items bucket to platform')
+    eq(s.games.items, 2, 'unlabeled items bucket to games (the builder\'s default job)')
+    eq(s.platform.size, SIZES.L, 'platform size is its own items only')
+    eq(s.games.size, SIZES.M + SIZES.L, 'games size is its own items only')
+    eq(s.platform.days, SIZES.L, 'platform days are priced at the SHARED lane rate')
+    eq(s.games.days, SIZES.M + SIZES.L, 'games days are priced at the SHARED lane rate')
+    ok(Math.abs(s.platform.days + s.games.days - (s.platform.size + s.games.size)) < 0.02,
+        'at 1/day the split\'s days sum to the lane\'s total size (one worker)')
+    eq(splitRunway(items, null).platform.days, null, 'no rate -> null split days, never invented')
+    eq(splitRunway([], 1).platform.items, 0, 'an empty lane splits into two empty buckets')
 }
 
 // the line: symmetric per-lane shape ("something like" per the brief)
@@ -151,6 +188,11 @@ eq(runwayLine({
     eq(r.qa.items, 2, 'needs-approval stays out of QA')
     eq(r.qa.rate, 0.29, 'qa rate = feedback-closes per day, rounded to 2 dp')
     ok(r.line.startsWith('Builder: ~4.5 days queued'), `big open-world L + building M at 0.5/day reads ~4.5 days (${r.line})`)
+    eq(r.builder.lanes.platform.items, 1, 'computeRunway splits the builder lane off the lane: label')
+    eq(r.builder.lanes.games.items, 1, 'the game-queue item stays in the games bucket')
+    eq(r.builder.lanes.platform.size, SIZES.M, 'the platform bucket prices its own item only')
+    eq(r.builder.lanes.platform.days, SIZES.M / 0.5, 'the split prices platform days at the shared lane rate')
+    eq(r.qa.lanes, undefined, 'the QA lane carries no split (it has no sub-queues)')
     const cold = computeRunway({ issues, closedBuilder: [], closedQa: [], now: NOW })
     ok(cold.line.includes('~?'), 'no closes anywhere -> both lanes read ?', cold.line)
 }
@@ -179,14 +221,17 @@ const tele = read('./telemetry.sh')
 ok(tele.includes('/tmp/forge/lib/runway.mjs') && tele.includes('runway-run.mjs'), 'telemetry.sh materialises runway + lib from origin/main (stdin cannot: relative imports resolve against /)')
 ok(tele.includes("board['runway']"), 'telemetry.sh attaches runway to board.json')
 ok(tele.includes('/tmp/forge/runway.json'), 'telemetry.sh reads the runway file the board ships')
+const rw = read('./runway.mjs')
+ok(rw.includes('historyAppend') && rw.includes('historyPoint'), 'runway.mjs appends the 7-day trend sample per run (#1233)')
+ok(rw.includes('RUNWAY_HISTORY'), 'the history path is env-overridable (offline test hook)')
+ok(rw.includes('runway.history = history'), 'the history rides the runway.json the board ships (no telemetry.sh change: the attach is whole-object)')
 const board = read('../src/pages/ForgeBoard.jsx')
 ok(board.includes('runwayBadge') && board.includes('data-runway'), 'ForgeBoard renders the runway strip via the shared badge')
 ok(board.includes('setRunway(d.runway ?? null)'), 'ForgeBoard reads runway off board.json')
 ok(board.includes('runwayMath') && board.includes('data-runway-reveal'), 'ForgeBoard reveals the runway math on hover/tap (#1233)')
 ok(board.includes('setRunwayOpen') && board.includes('onMouseEnter') && board.includes('onClick'), 'the strip toggles its reveal (desktop hover + touch tap)')
-ok(board.includes('runwayTrend') && board.includes('data-runway-sparkline'), 'ForgeBoard draws the 7-day trend sparklines in the reveal (#1233)')
-ok(board.includes('polyline') && board.includes('shrinking'), 'the sparkline is drawn (SVG) and says which way the queue is moving')
-ok(read('./runway.mjs').includes('created_at'), 'the IO half fetches created_at — the trend reconstructs membership, not guesses')
+ok(board.includes('runwayTrend') && board.includes('data-runway-trend') && board.includes('sparkline'), 'ForgeBoard renders the 7-day trend sparkline from floor.js (#1233)')
+ok(board.includes('data-runway-split') && board.includes('splitLine'), 'ForgeBoard renders the Builder platform/games split in the reveal (#1233)')
 const jq = read('./jonq.mjs')
 ok(jq.includes("case 'digest'") && jq.includes('digestText'), 'jonq.mjs gained the digest command (#1201 email body)')
 ok(jq.includes('ask|sweep|list|halt|steer|claim|digest'), 'usage line mentions digest')
@@ -204,7 +249,8 @@ eq(runwayBadge({ line: 'x' }, NOW).text, 'x', 'the strip shows the lib\'s line v
 // telemetry machine last baked and that lags this branch until after merge.
 {
     const full = runwayMath({
-        builder: { items: 2, size: 2.7, mix: { S: 1, M: 1, L: 1 }, rate: 1, days: 2.7, amber: false, polish: false },
+        builder: { items: 2, size: 2.7, mix: { S: 1, M: 1, L: 1 }, rate: 1, days: 2.7, amber: false, polish: false,
+            lanes: { platform: { items: 1, size: 0.8, days: 0.8 }, games: { items: 1, size: 1.9, days: 1.9 } } },
         qa: { items: 4, size: 2.4, mix: { S: 0, M: 4, L: 0 }, rate: 15.93, days: 0.2, amber: true, polish: false },
     })
     eq(full.length, 2, 'one reveal row per lane')
@@ -213,58 +259,43 @@ eq(runwayBadge({ line: 'x' }, NOW).text, 'x', 'the strip shows the lib\'s line v
     eq(JSON.stringify(full[0].mix), JSON.stringify({ S: 1, M: 1, L: 1 }), 'the S/M/L mix rides the reveal data')
     eq(full[1].rate, 15.93, 'the two rates ride the reveal')
     eq(full[1].amber, true, 'the amber flag rides the reveal')
+    eq(JSON.stringify(full[0].lanes), JSON.stringify({ platform: { items: 1, size: 0.8, days: 0.8 }, games: { items: 1, size: 1.9, days: 1.9 } }),
+        'the platform/games split rides the builder row (#1233)')
+    eq(full[1].lanes, null, 'the QA lane has no split to ride')
     // old schema (no mix) degrades to a null mix and keeps the rest — never throws
     const oldSchema = runwayMath({ builder: { items: 1, size: 1.5, rate: 0.43, days: 3.5 }, qa: { items: 4, size: 2.4, rate: 15.93, days: 0.2, amber: true } })
     eq(oldSchema[0].mix, null, 'a missing mix degrades to null (pre-#1233 board.json)')
     eq(oldSchema[0].items, 1, 'the item count survives the old schema (reveal fallback)')
+    eq(oldSchema[0].lanes, null, 'a missing lanes block degrades to null (pre-split board.json)')
     eq(oldSchema[1].days, 0.2, 'days survive the old schema')
     eq(oldSchema[1].amber, true, 'amber survives the old schema')
     eq(runwayMath(null).length, 0, 'no runway draws no reveal rows')
     eq(runwayMath({ builder: null, qa: null }).length, 0, 'null lanes are filtered, not rendered')
 }
 
-// computeRunway carries the trend for both lanes (#1233): seven points each,
-// and today's point must equal the live number — the reconstruction ends where
-// the strip's "~N days" begins, or the sparkline would contradict its own
-// headline and the whole reveal loses trust.
+// runwayTrend + sparkline (#1233): the 7-day sparkline as pure data + pure
+// text. Old board.json has no `history` (no trend row), a lane without a
+// number rides null (a blank cell, never zero), and each lane normalises to
+// its OWN max so a quiet lane still uses the full glyph range.
 {
-    const issues = [
-        issue(50, 'GAME — BIG QUEST', ['game-queue']),
-        issue(51, 'QA — fix audio', ['feedback']),
-    ]
-    const closed = (d) => ({ closed_at: daysAgo(d), created_at: daysAgo(d + 20), title: 'GAME — DONE', body: '' })
-    const r = computeRunway({
-        issues,
-        closedBuilder: [closed(2), closed(8), closed(10), closed(12)],
-        closedQa: [closed(2)],
-        now: NOW,
-    })
-    eq(r.trend.builder.length, 7, 'the builder lane carries seven trend points')
-    eq(r.trend.qa.length, 7, 'the QA lane carries seven trend points')
-    eq(r.trend.builder[6].days, r.builder.days, 'today\'s trend point equals the live runway number')
-    eq(r.trend.qa[6].days, r.qa.days, 'same on QA — the line and its headline never disagree')
-    ok(r.trend.builder[0].days > r.builder.days, 'older points reflect the extra work still queued back then')
-    const dry = computeRunway({ issues, closedBuilder: [], closedQa: [], now: NOW })
-    ok(dry.trend.builder.every((p) => p.days === null), 'a lane with no recent ships trends as ?s, not zeros')
-}
+    const full = runwayTrend({ history: [
+        { d: '2026-10-28', b: 2, q: 0.5 },
+        { d: '2026-10-29', b: 3.5, q: null },
+    ] })
+    eq(full.length, 2, 'one trend row per persisted day')
+    eq(full[1].date, '2026-10-29', 'the rows keep their UTC day key')
+    eq(full[1].builder, 3.5, 'the tail carries the newest builder reading')
+    eq(full[1].qa, null, 'a lane with no number rides null, not a made-up 0')
+    eq(runwayTrend({}).length, 0, 'old board.json (no history) draws no trend')
+    eq(runwayTrend(null).length, 0, 'no runway draws no trend')
+    eq(runwayTrend({ history: [{ d: 'junk' }, 'x', null, { d: '2026-10-29', b: 'nope', q: 1 }] }).length, 1, 'junk samples are dropped, real ones kept')
 
-// runwayTrend (#1233): the board's sparkline rows — pure, hole-preserving,
-// and honest about the direction word.
-{
-    ok(runwayTrend(null).length === 0, 'no runway data draws no trend rows')
-    ok(runwayTrend({ builder: {}, qa: {} }).length === 0, 'pre-trend board.json degrades to nothing (schema lags until merge)')
-    ok(runwayTrend({ trend: { builder: null, qa: null } }).length === 0, 'null lanes are filtered, not rendered')
-    const t = runwayTrend({ trend: {
-        builder: [{ t: '2026-10-23', days: 4 }, { t: '2026-10-24', days: null }, { t: '2026-10-25', days: 2 }],
-        qa: [{ t: '2026-10-23', days: 1 }, { t: '2026-10-24', days: 1.5 }, { t: '2026-10-25', days: 2.5 }],
-    } })
-    eq(t.length, 2, 'one sparkline row per lane')
-    eq(JSON.stringify(t[0].points), JSON.stringify([4, null, 2]), 'null days stay holes in the line, never zero')
-    eq(t[0].delta, 'shrinking', 'fewer days left than a week ago is shrinking')
-    eq(t[1].delta, 'growing', 'more days left is growing')
-    eq(runwayTrend({ trend: { builder: [{ t: 'a', days: 3 }, { t: 'b', days: 3.2 }] } })[0].delta, 'flat', 'a drift under half a day is flat')
-    ok(runwayTrend({ trend: { builder: [{ t: 'a', days: null }, { t: 'b', days: 2 }] } }).length === 0, 'one known point is not a trend')
-    eq(runwayTrend({ trend: { builder: [{ t: 'a', days: 5 }, { t: 'b', days: 4 }, { t: 'c', days: null }] } })[0].delta, 'shrinking', 'the direction reads across a trailing hole')
+    eq(sparkline([1, 2, null, 4]), '▃▅ █', 'cells scale to the lane\'s own max, null = blank')
+    eq(sparkline([4]), '█', 'a lone sample is the full block')
+    eq(sparkline([2, 2, 2]), '███', 'equal samples fill the range evenly')
+    eq(sparkline([0, 4]), '▁█', 'zero is the shortest bar, not blank')
+    eq(sparkline([null, null]), '  ', 'all-null days leave blank cells')
+    eq(sparkline([]), '', 'an empty window draws nothing')
 }
 
 console.log(`\x1b[1m\nrunwaycheck: ${pass} gates, ${fails.length} failures\x1b[0m`)
