@@ -51,6 +51,8 @@ didn't fire — board truth, not memory).
   delete remote branch + detach manually (done again this session). Ask the QA lane,
   someday, to detach it for real.
 - Left no dev servers running (filmstrip kills its own; manual 5187 was killed before exit).
+- `git add -A` swallowed a 200KB smoke PNG into main — `scripts/.strips/` is gitignored
+  now (chore 2d1a6a2). Commit capture output never again.
 
 ## Open questions for Jon
 (none filed this session)
