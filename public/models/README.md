@@ -22,3 +22,8 @@ category, pack, author, license, source, path, format, size and bounds.
 `scripts/build-shelf.mjs` regenerates the `scenery/` kit and the cart, derives
 facing, and rewrites `shelf.json`; `scripts/shelfcheck.mjs` gates the index, the
 models, and the facing law.
+
+Need something the shelf doesn't have? Look in the **library index**
+(`libraries.json`, #1140) — a link list of CC0/permitted sources (Kenney,
+Quaternius, Poly Haven, Khronos samples, NVIDIA SimReady) with a license gate —
+before modelling from scratch. Guide: `docs/MODELS.md`.

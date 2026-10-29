@@ -42,6 +42,7 @@
     "pickcheck": "node scripts/pickcheck.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
+    "modelindexcheck": "node scripts/modelindexcheck.mjs",
     "oceanfold": "node scripts/oceanfold.mjs",
     "oceanfoam": "node scripts/oceanfoam.mjs",
     "audcheck": "node scripts/audcheck.mjs",

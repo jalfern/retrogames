@@ -26,6 +26,8 @@ own `src/games/<Name>/` and are designed from the original.
   + `Space` ("A"); pass `secondAction` for "B", `visible={false}` on menus.
 - Audio: everything synthesized via `audioController`; nothing plays before
   the first user gesture unlocks the AudioContext (App.jsx).
+- 3D assets: before modelling a prop, check the shelf (`src/utils/modelShelf.js`)
+  and the free-model library index (`src/utils/modelLibrary.js`, `docs/MODELS.md`, #1140).
 
 ## DEV test hooks
 

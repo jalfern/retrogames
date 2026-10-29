@@ -104,3 +104,8 @@ exit stays unknown (never `#ng` — in Zork that is a legal *spell*), and two ro
 identically are not aliased. Refusing to merge costs one re-walk; merging silently deletes every
 frontier behind the merge. And **prose is the referee**: `open window` is proved by
 `nailed and boarded` disappearing, never by a score bump — in Zork I that move is worth 0 points.
+
+For robot-learning games the physical world is already indexed: `docs/MODELS.md`
+(+ `public/models/libraries.json`, #1140) records which free 3D sources carry real
+mass/friction/collision data (NVIDIA SimReady) so future pick-and-place and
+household-task titles can pull real objects instead of inventing them.

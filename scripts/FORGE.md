@@ -95,7 +95,10 @@ AGENTS.md wins.
     promotes a game to `'public'`). That plumbing is all you reuse: never
     copy another game's art, HUD, palette or drawing code. Design the look
     from the original.
-   **Read `docs/ART.md` before drawing anything** and match its exemplars.
+    **Read `docs/ART.md` before drawing anything** and match its exemplars.
+    **Need a 3D prop, rider or vehicle? Check `docs/MODELS.md` first** — the shelf
+    (`modelShelf.js`) is what we own, the library index (`modelLibrary.js`, #1140)
+    is where free models live; pull only what the game actually uses, GLB, iPhone-sized.
    **Mount `src/utils/DebugKit.js`** (DEV-only F1 panel: live state, cheat
    buttons, and for puzzle/level games a PROGNOSIS action that re-runs your
    own solver on the LIVE mutated state — "can this still be won from
