@@ -49,6 +49,7 @@
     "evoprobe": "node scripts/evoprobe.mjs",
     "fpscheck": "node scripts/fpscheck.mjs",
     "zorkcheck": "node scripts/zorkcheck.mjs",
+    "robokitcheck": "node scripts/robokitcheck.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",
     "padlayoutcheck": "node scripts/padlayoutcheck.mjs",

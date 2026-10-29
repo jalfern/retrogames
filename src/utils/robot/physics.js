@@ -65,7 +65,9 @@ export function poseHash(bodies) {
     for (const b of bodies) {
         const p = b.position
         const q = b.quaternion
-        s += `${b.id}:${q3(p.x)},${q3(p.y)},${q3(p.z)}|${q3(q.x)},${q3(q.y)},${q3(q.z)},${q3(q.w)};`
+        // kitName, not body.id: cannon ids are a global counter, so two sims
+        // in one process would hash different poses for identical physics.
+        s += `${b.kitName ?? b.id}:${q3(p.x)},${q3(p.y)},${q3(p.z)}|${q3(q.x)},${q3(q.y)},${q3(q.z)},${q3(q.w)};`
     }
     return hashString(s)
 }
@@ -111,27 +113,44 @@ export class Rail {
 
     apply(blockFns = []) {
         const b = this.body
+        // Rail-driven bodies must never be asleep: cannon ignores force/velocity
+        // writes on sleeping bodies, so a parked drawer would deadlock (same
+        // sleep trap as the door).
+        b.sleepState = 0
         const t = this.param(b.position)
         let target = Math.min(this.max, Math.max(this.min, t))
-        if (target < t) {
-            for (const fn of blockFns) {
-                if (fn(this.at(target))) target = t
-            }
+        // Standing-cargo refusal must be evaluated whenever the slide would
+        // move, not only on overshoot: gating on (target < t) meant a closing
+        // drawer (target === t in range) NEVER asked, and the stand-clear
+        // check silently never ran (cargo got crushed, gate went green).
+        let blocked = false
+        for (const fn of blockFns) {
+            // Refusal means HOLD at the current parameter (and zero the axial
+            // velocity, else stored speed creeps the body ~6 mm/tick straight
+            // through the block — measured).
+            if (fn(this.at(target))) { blocked = true; break }
         }
-        // Orientation/axis control. When the solver carried the body past the
-        // rail limits we clamp position AND zero the axis velocity — writing
-        // (clamped - overshoot)/dt as velocity fires the body back next tick
-        // (the fling we proved on the bench).
+        if (blocked) {
+            // Hold at the current parameter. The tick that first crosses the
+            // refusal carries one step of speed (~15 mm) — contact
+            // compliance; the hold is rigid from the next tick (velocity and
+            // axial force are shed below).
+            target = Math.min(this.max, Math.max(this.min, t))
+        }
+        // Prismatic joint, fully projected: position snaps to the rail line
+        // at the (clamped) parameter, velocity is purely axial. Pinning only
+        // y left x free — the drawer slid sideways off its bearings into the
+        // can pocket and shoved the target prop out of reach. Writing the
+        // exact rail point also unwinds gravity/lateral integration drift.
+        const p = this.at(target)
         const a = this.axis
-        if (target !== t) {
-            const p = this.at(target)
-            b.position.set(p.x, p.y, p.z)
-            const vn = b.velocity.dot(a)
-            b.velocity.set(b.velocity.x - vn * a.x, b.velocity.y - vn * a.y, b.velocity.z - vn * a.z)
-        } else {
-            const vt = b.velocity.dot(a)
-            b.velocity.set(a.x * vt, a.y * vt, a.z * vt)
-        }
+        b.position.set(p.x, p.y, p.z)
+        const vt = blocked ? 0 : Math.max(-0.35, Math.min(0.35, b.velocity.dot(a)))
+        b.velocity.set(a.x * vt, a.y * vt, a.z * vt)
+        // A held slide also sheds axial force: velocity-zero alone is not
+        // enough when the pusher re-applies force every tick (it rebuilds
+        // 0.66 m/s of speed each step and creeps through).
+        if (blocked) { const vf = b.force.dot(a); b.force.set(b.force.x - vf * a.x, b.force.y - vf * a.y, b.force.z - vf * a.z) }
         b.quaternion.copy(this.locked)
         b.angularVelocity.set(0, 0, 0)
     }

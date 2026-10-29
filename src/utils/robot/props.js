@@ -49,6 +49,13 @@ export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
         rail,
         half,
         handle: { x, y: BENCH_TOP + half[1] * 2 + 0.012, z: z + half[2] + 0.008 },
+        // Live handle: the handle rides the drawer. The static `handle` is
+        // only correct while closed — latching against it while open is the
+        // re-latch starvation bug (measured 0.100 m off at full travel).
+        handlePos() {
+            const dz = rail.param(drawer.position)
+            return { x, y: BENCH_TOP + half[1] * 2 + 0.012, z: z + half[2] + 0.008 + dz }
+        },
         open: () => rail.param(drawer.position) > 0.05,
         closed: () => rail.param(drawer.position) < 0.005,
         amount: () => rail.param(drawer.position),
@@ -75,6 +82,7 @@ export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
 
 export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     let armHoldingDoor = false
+    let openDetent = false
     const H = 0.26
     const y0 = BENCH_TOP
     const w = 0.14
@@ -86,10 +94,16 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     anchor.addShape(new CANNON.Box(new CANNON.Vec3(w, T / 2, d)), new CANNON.Vec3(0, H / 2 - T / 2, d))
     anchor.kitName = 'cabinet'
     world.addBody(anchor)
-    const hinge = { x: x + w - T, y: y0 + H / 2, z: z + d + 0.004 }
+    // Overlay door (classic appliance mount): the panel rides 10 mm IN FRONT
+    // of the side walls, so its swing path never touches the carcass. An
+    // inset door overlapped the walls ~2 mm even closed, and every driven
+    // sweep banked solver energy until the door spun off at release (±3 rad).
+    const restH = w - 2 * T - 0.004
+    const doorZ = z + d + 0.016
+    const hinge = { x: x + w - T, y: y0 + H / 2, z: doorZ }
     const door = new CANNON.Body({ mass: 0.5, material: mats.steel })
-    door.addShape(new CANNON.Box(new CANNON.Vec3(w, H / 2, T / 2)), new CANNON.Vec3(-(w - T), 0, -T))
-    door.position.set(hinge.x - (w - T), hinge.y, hinge.z)
+    door.addShape(new CANNON.Box(new CANNON.Vec3(restH, H / 2 - T, T / 2)))
+    door.position.set(hinge.x - restH, hinge.y, hinge.z)
     door.kitName = 'door'
     world.addBody(door)
     const axis = new CANNON.Vec3(0, 1, 0)
@@ -98,8 +112,8 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     door.pointToLocalFrame(new CANNON.Vec3(hinge.x, hinge.y, hinge.z), pivotDoor)
     anchor.pointToLocalFrame(new CANNON.Vec3(hinge.x, hinge.y, hinge.z), pivotAnchor)
     const hingeC = new CANNON.HingeConstraint(anchor, door, { pivotA: pivotAnchor, pivotB: pivotDoor, axisA: axis, axisB: axis })
-    void hingeC
     world.addConstraint(hingeC)
+    let hingeOn = true
     const rest = { x: door.position.x - hinge.x, z: door.position.z - hinge.z }
     const self = {
         body: door,
@@ -118,6 +132,29 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
         spring() {
             const a = self.angle()
             if (armHoldingDoor) return
+            // A pinned/stalled door falls asleep in the solver and then ignores
+            // every spring write (dead at -0.25 forever). Wake before forcing.
+            door.sleepState = 0
+            // Hard hinge stop: a free door can never pass ~90°. The kinematic
+            // hand used to whip it to -2.0 rad and strand it past reach (the
+            // latchDoorClose miss); clamp position to the arc + kill velocity.
+            if (a < -1.55 || a > 0.15) { self.driveAngle(Math.max(-1.55, Math.min(0.15, a))); return }
+            // Hinge bushing cap: a kinematic hand glancing off an open door
+            // used to inject flail-energy (angle ran to -2.17 past any stop).
+            if (door.angularVelocity.y > 3) door.angularVelocity.y = 3
+            if (door.angularVelocity.y < -3) door.angularVelocity.y = -3
+            if (a <= -1.1) openDetent = true
+            if (openDetent) {
+                // Open detent: an opened door HOLDS open (friction hinge, like
+                // a real appliance) across the WHOLE range. Velocity-level
+                // control (not += accel): the hinge constraint eats
+                // acceleration-level pushes and the door crawled open at
+                // 0.005 rad/tick when dragged half-shut (seed 9 stall).
+                // Only a latched driveAngle release may close it.
+                const err = -1.42 - a
+                door.angularVelocity.y = Math.max(-2, Math.min(2, err * 0.8))
+                return
+            }
             if (Math.abs(a) >= 0.6) {
                 door.angularVelocity.y *= 0.985
                 return
@@ -135,6 +172,7 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
         // driveAngle takes the same convention as angle().
         driveAngle(a) {
             const aa = Math.min(0.15, Math.max(-1.55, a))
+            if (aa > -0.7) openDetent = false
             const th = -aa
             const ca = Math.cos(th)
             const sa = Math.sin(th)
@@ -152,9 +190,24 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
         interiorContains(pos) {
             return Math.abs(pos.x - x) < w - T - 0.005 && pos.y > y0 + 0.02 && pos.y < y0 + H && Math.abs(pos.z - z) < d
         },
-        handle: { x: x - w + T + 0.03, y: y0 + H / 2, z: z + d + 0.02 },
+        handle: { x: x - 0.04, y: y0 + H / 2, z: doorZ + 0.02 },
+        // Live handle rides the swinging door (same starvation fix as drawer).
+        handlePos() {
+            const local = new CANNON.Vec3(x - 0.04 - hinge.x, y0 + H / 2 - hinge.y, doorZ + 0.02 - hinge.z)
+            const rot = new CANNON.Vec3()
+            door.quaternion.vmult(local, rot)
+            return { x: hinge.x + rot.x, y: hinge.y + rot.y, z: hinge.z + rot.z }
+        },
     }
-    self.setHeld = (v) => { armHoldingDoor = v }
+    self.setHeld = (v) => {
+        armHoldingDoor = v
+        // While the hand drives the door kinematically the solver hinge must
+        // be OFF: constraint + direct pose writes fight each other and spin
+        // the door past both stops (measured ±3 rad). driveAngle keeps the
+        // door exactly on the arc, so the hinge re-adds cleanly on release.
+        if (v && hingeOn) { world.removeConstraint(hingeC); hingeOn = false }
+        if (!v && !hingeOn) { world.addConstraint(hingeC); hingeOn = true }
+    }
     return self
 }
 

@@ -47,11 +47,13 @@ export function forwardKinematics({ yaw, phi1, phi2, gamw }, shoulder) {
 // reaches (u, v) in the yaw plane, with a weak bias keeping the gripper
 // vertical (gamma -> 0). Damped least squares (J^T (J J^T + λI)^-1 b), 8
 // fixed iterations — deterministic float math, identical in Node and Chrome.
+// Planar inverse kinematics (kept as the kit's pure FK/IK utility for the
+// harness round-trip gate; the live rig uses the analytic servo in
+// createArm — see solve()).
 export function planarIK(_target, seed, u, v) {
     const W = 0.08
     const j = { phi1: seed.phi1, phi2: seed.phi2, gamw: seed.gamw }
-    for (let it = 0; it < 8; it++) {
-        const g = j.phi1 + j.phi2 + j.gamw
+    for (let it = 0; it < 8; it++) {        const g = j.phi1 + j.phi2 + j.gamw
         const s1 = Math.sin(j.phi1), c1 = Math.cos(j.phi1)
         const s2 = Math.sin(j.phi1 + j.phi2), c2 = Math.cos(j.phi1 + j.phi2)
         const sg = Math.sin(g), cg = Math.cos(g)
@@ -132,26 +134,67 @@ export function createArm(world, mats, { base }) {
         lock: null,
         weld: null,
         target: { x: base[0], y: base[1] + 0.12, z: base[2] + 0.28 },
-        work: { x: [-0.6, 0.6], y: [base[1] + 0.03, base[1] + 0.42], z: [base[2] - 0.12, base[2] + 0.72] },
+        // z floor keeps targets in front of the column: at/below the column
+        // plane atan2(dx, dz) sign-flips with microns of x-jitter and mirrors
+        // the whole arm across the bench (the yaw-flip flail).
+        work: { x: [-0.6, 0.6], y: [base[1] + 0.03, base[1] + 0.42], z: [base[2] + 0.06, base[2] + 0.72] },
         bodies,
     }
 
+    // Analytic 2R servo (elbow-up branch) + joint slew limit, replacing the
+    // damped-LS inner loop: DLS limit-cycled between branch mirrors near
+    // full extension (period-2/3 flips measured), a joint-space servo is
+    // monotone by construction. Vertical-gripper gamma is solved exactly and
+    // clamped at its stop (a few mm grasp deviation there, never meters).
     const solve = () => {
         const t = arm.target
-        const rawYaw = Math.atan2(t.x - shoulder.x, t.z - shoulder.z)
-        arm.joints.yaw = clamp(rawYaw, LIMITS.yaw[0], LIMITS.yaw[1])
-        const f = Math.max(1e-6, Math.hypot(t.x - shoulder.x, t.z - shoulder.z))
-        const v = t.y - shoulder.y
-        const j = planarIK(null, { phi1: arm.joints.phi1, phi2: arm.joints.phi2, gamw: arm.joints.gamw, gamma: arm.joints.phi1 + arm.joints.phi2 + arm.joints.gamw }, f, v)
-        arm.joints.phi1 = j.phi1
-        arm.joints.phi2 = j.phi2
-        arm.joints.gamw = j.gamw
+        const dx = t.x - shoulder.x
+        const dzw = t.z - shoulder.z
+        const dy = t.y - shoulder.y
+        arm.joints.yaw = arm.joints.yaw + clamp(Math.atan2(dx, Math.max(0.06, dzw)) - arm.joints.yaw, -0.08, 0.08)
+        arm.joints.yaw = clamp(arm.joints.yaw, LIMITS.yaw[0], LIMITS.yaw[1])
+        const f = Math.max(1e-6, Math.hypot(dx, dzw))
+        const wf = f
+        const wd = -(dy + LG) // wrist in (forward, down) coords, gripper vertical
+        const r = Math.min(Math.hypot(wf, wd), L1 + L2 - 0.002)
+        const psi = Math.atan2(wf, Math.max(1e-6, wd))
+        const c2 = (r * r - L1 * L1 - L2 * L2) / (2 * L1 * L2)
+        const phi2d = -Math.acos(clamp(c2, -1, 1))
+        const phi1d = clamp(psi - Math.atan2(L2 * Math.sin(phi2d), L1 + L2 * Math.cos(phi2d)), LIMITS.phi1[0], LIMITS.phi1[1])
+        const phi2dC = clamp(phi2d, LIMITS.phi2[0], LIMITS.phi2[1])
+        const gamd = clamp(-(phi1d + phi2dC), LIMITS.gamw[0], LIMITS.gamw[1])
+        const j = arm.joints
+        j.phi1 = clamp(j.phi1 + clamp(phi1d - j.phi1, -0.05, 0.05), LIMITS.phi1[0], LIMITS.phi1[1])
+        j.phi2 = clamp(j.phi2 + clamp(phi2dC - j.phi2, -0.05, 0.05), LIMITS.phi2[0], LIMITS.phi2[1])
+        j.gamw = clamp(j.gamw + clamp(gamd - j.gamw, -0.05, 0.05), LIMITS.gamw[0], LIMITS.gamw[1])
+    }
+
+    // Radial reach clamp: commanding beyond L1+L2+LG sends the DLS upside
+    // down (phi1 parks at 2.0, the pose flails between two branches). The
+    // work box alone isn't enough — its corners are outside the sphere.
+    const R_MAX = 0.63
+    const clampTarget = () => {
+        let tx = clamp(arm.target.x, arm.work.x[0], arm.work.x[1])
+        let ty = clamp(arm.target.y, arm.work.y[0], arm.work.y[1])
+        let tz = clamp(arm.target.z, arm.work.z[0], arm.work.z[1])
+        const dx = tx - shoulder.x, dy = ty - shoulder.y, dz = tz - shoulder.z
+        const r = Math.hypot(dx, dy, dz)
+        if (r > R_MAX) {
+            const k = R_MAX / r
+            tx = shoulder.x + dx * k
+            ty = shoulder.y + dy * k
+            tz = shoulder.z + dz * k
+        }
+        arm.target.x = tx
+        arm.target.y = ty
+        arm.target.z = tz
     }
 
     arm.setTarget = (x, y, z) => {
-        arm.target.x = clamp(x, arm.work.x[0], arm.work.x[1])
-        arm.target.y = clamp(y, arm.work.y[0], arm.work.y[1])
-        arm.target.z = clamp(z, arm.work.z[0], arm.work.z[1])
+        arm.target.x = x
+        arm.target.y = y
+        arm.target.z = z
+        clampTarget()
     }
 
     // Stick drive: x lateral, y depth (forward +); holding b flips y to lift.
@@ -159,12 +202,13 @@ export function createArm(world, mats, { base }) {
         const dx = (pad.x || 0) + (pad.right ? 1 : 0) - (pad.left ? 1 : 0)
         const dy = (pad.y || 0) + (pad.down ? 1 : 0) - (pad.up ? 1 : 0)
         const sp = 0.42 * TICK_DT
-        arm.target.x = clamp(arm.target.x + dx * sp, arm.work.x[0], arm.work.x[1])
+        arm.target.x += dx * sp
         if (pad.b) {
-            arm.target.y = clamp(arm.target.y - dy * sp, arm.work.y[0], arm.work.y[1])
+            arm.target.y -= dy * sp
         } else {
-            arm.target.z = clamp(arm.target.z - dy * sp, arm.work.z[0], arm.work.z[1])
+            arm.target.z -= dy * sp
         }
+        clampTarget()
     }
 
     arm.setGapTarget = (open) => { arm.gapTarget = open ? 0.075 : 0.045 }
