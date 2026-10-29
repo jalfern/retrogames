@@ -1,6 +1,6 @@
-# ROBOT LAB — Plaicraft robot-sim kit (issue #1141, stage 1)
+# ROBOT LAB — Plaicraft robot-sim kit (issue #1141, stages 1–2)
 
-Route `/robot-lab` · visibility: private · built by forge, 2026-10-28.
+Route `/robot-lab` · visibility: private · built by forge, 2026-10-28/29.
 
 ## What this is
 The shared robot sim kit three future games (#1142, #1143, #1144) run on, plus
@@ -24,6 +24,25 @@ its QA surface. The sim is pure Node (`src/utils/robot/*` — no DOM, no three);
 - `index.js` — sim factory, task/goal logic, pointer-tap macros, autopilot
   (drives ONLY pads; shared by attract demo and the harness).
 
+## Stage 2 — SimReady hookup (#1140 shipped; issue #1141)
+`assets.js` is the manifest: every physical entity (gripper, crate, can,
+drawer, door, bench) carries its SimReady record — supplier, https link (LINK
+only, nothing mirrored — CI never downloads; USD→GLB conversion is the
+documented manual step outside the network rule), SPDX-ish license, and the
+physics the USD layer holds (mass/friction/collider) + provenance.
+- **License law** = #1140's `licenseGate()`: per-supplier packs resolve to
+  `review` — no mesh enters the shelf until its asset page is checked;
+  `never` fails `robokitcheck`; declared gates are recomputed from law.
+- **Physics travels with the asset**: transcribed masses/frictions drive the
+  live cannon world (drawer 1.6 kg, door 0.9 kg, carton 0.42 kg @ μ 0.5, tin
+  0.39 kg @ μ 0.3, bench wood μ 0.32; gripper 2F-85 1.0 kg recorded — links
+  are kinematic, force-closure comes with the torque arm). Bodies carry
+  `simready` id stamps; gate 9 proves the world wears the manifest.
+- **Provenance HUD**: ASSEMBLY strip shows supplier + gate badge + mass per
+  part; players see where the physics came from.
+- **Episodes pin their physics**: `episode.assets = simready-manifest/1` —
+  exported datasets declare which transcribed record they were played with.
+
 ## Win condition
 Two tasks, all six subgoals: drawerOpen · crateIn · drawerClosed ·
 doorOpen · canIn · doorClosed (score 50/100/50/50/100/50 = 400).
@@ -37,13 +56,16 @@ The drawer **refuses to close** when the crate sits on the rail track
   point-while-holding = carry and drop there.
 
 ## Verify commands
-- `npm run robokitcheck` — six gates, all green: determinism (seed+pads =
+- `npm run robokitcheck` — ten gates, all green: determinism (seed+pads =
   identical hashes across processes), analytic servo round-trip (worst |Δ|
   ≤ 50 mm; the near-column dead zone is documented, not hidden), empty-grip
   refusal, stand-clear mechanism (Rail blockFn freezes a slide into an
   occupant), episode validate (good passes / corrupt fails), autopilot wins
-  all 6 goals on seeds 1..12 (mutant-proven: stub the stand-clear check and
-  the gate goes red).
+  all 6 goals on seeds 1..12, plus stage-2: manifest schema/link-only,
+  license-gate recompute (no `never` verdict ships), live physics carries the
+  transcribed masses/frictions, episodes pin the manifest revision.
+  Mutant-proven twice: reintroducing the hardcoded crate mass reddens gate 9;
+  a silent CC0→SCEA relicense on the gripper reddens gate 8.
 - `CONTRACT_ONLY=robot-lab npm run contractcheck` — 18/18 including live
   capture replaying hash-equal (the loop honors `contractHoldsLoop()` and
   `reset()` enters play synchronously, so banked ticks belong to the header
@@ -73,7 +95,10 @@ The drawer **refuses to close** when the crate sits on the rail track
   different world than the header seed claims (diverged @30).
 
 ## Honest gaps (next sessions / QA)
-1. SimReady asset hookup (stage 2, waits #1140); license checks per asset.
-2. Fully dynamic (torque-driven) arm; wrist camera; force-closure grasp model.
+1. SimReady mesh pulls: USD→GLB conversion + exact USD-side friction/mass
+   transcription is the manual step (outside CI); until pulled, records are
+   published-spec estimates and the game renders its own meshes.
+2. Fully dynamic (torque-driven) arm; wrist camera; force-closure grasp model
+   (the 2F-85 rubber-pad friction stays recorded, not live, until then).
 3. Modem-level juice: drawer rumble, latch clicks, carry sway audio.
 
