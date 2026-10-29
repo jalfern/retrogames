@@ -22,7 +22,7 @@ import { createArm } from './arm.js'
 import { createBench, createDrawer, createCabinet, createCrate, createCan, BENCH_TOP } from './props.js'
 
 export { BENCH_TOP }
-export { createEpisode, validateEpisode, episodeDownload, exportEpisodes, saveEpisode, loadEpisodes } from './episode.js'
+export { createEpisode, validateEpisode, episodeDownload, exportEpisodes, saveEpisode, loadEpisodes, episodeStats } from './episode.js'
 export { forwardKinematics, planarIK, forceClosureFor, JOINT_SPECS, LINK_MASSES, SLIP_EMA, SLIP_SLACK, SLIP_GRIND, GRIND_EMA } from './arm.js'
 export { Rail } from './physics.js'
 export { ASSETS, SLOTS, assetFor, gateFor, manifestSummary, MANIFEST_REV, SIMREADY_LIBRARY } from './assets.js'
@@ -288,6 +288,8 @@ export function createRobotSim(seed = 0) {
                 gap: arm.gap,
                 gapTarget: arm.gapTarget,
                 held: arm.held,
+                tn: { ...arm.torqueNow },
+                sat: { ...arm.saturated },
                 weld: arm.weld
                     ? {
                         id: arm.weld.body.id,
@@ -319,6 +321,7 @@ export function createRobotSim(seed = 0) {
             Object.assign(arm.spin, s.spin || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
             Object.assign(arm.target, s.target)
             arm.gap = s.gap; arm.gapTarget = s.gapTarget; arm.held = s.held
+            if (s.tn) { Object.assign(arm.torqueNow, s.tn); Object.assign(arm.saturated, s.sat || {}) }
             arm.weld = null
             queue.length = 0; queue.push(...s.queue.map((q) => ({ ...q })))
             for (const bs of s.bodies) {
@@ -347,6 +350,9 @@ export function createRobotSim(seed = 0) {
                         devS: s.weld.devS || 0,
                         cmdP: new CANNON.Vec3(b.position.x, b.position.y, b.position.z),
                         prevP: new CANNON.Vec3(b.position.x, b.position.y, b.position.z),
+                        prevWp: new CANNON.Vec3(b.position.x, b.position.y, b.position.z),
+                        prevWpOld: new CANNON.Vec3(b.position.x, b.position.y, b.position.z),
+
                         prevD: { x: 0, y: 0, z: 0 },
                     }
                 }

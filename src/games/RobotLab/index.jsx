@@ -16,7 +16,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { createRobotSim, createAutopilot, createEpisode, saveEpisode, manifestSummary, MANIFEST_REV } from '../../utils/robot'
+import { createRobotSim, createAutopilot, createEpisode, saveEpisode, episodeStats, manifestSummary, MANIFEST_REV } from '../../utils/robot'
 
 const FIXED_DT = 1000 / 60
 const TOUCH = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
@@ -34,6 +34,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             const [phase, setPhase] = useState('attract')
             const [paused, setPaused] = useState(false)
             const [tq, setTq] = useState(null)
+            const [runs, setRuns] = useState(() => episodeStats())
             const [wristOn, setWristOn] = useState(true)
             const phaseRef = useRef('attract')
             const pausedRef = useRef(false)
@@ -55,7 +56,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         const scene = new THREE.Scene()
         scene.fog = new THREE.Fog(0x10151f, 2.2, 4.0)
         const cam = new THREE.PerspectiveCamera(46, W() / H(), 0.05, 12)
-        cam.position.set(0.12, 1.52, 1.18)
+        const CAM_BASE = [0.12, 1.52, 1.18]
+        cam.position.set(...CAM_BASE)
         cam.lookAt(0, 0.9, -0.18)
         const key = new THREE.DirectionalLight(0xfff2df, 2.6)
         key.position.set(1.4, 2.4, 1.6)
@@ -169,15 +171,19 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         canvas.addEventListener('pointerdown', onPointer)
 
         let ep = null
+        let lastSlips = 0
+        let shake = 0
         const startRun = (seed) => {
             sim = createRobotSim(seed)
             ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
+            lastSlips = 0
+            shake = 0
         }
 
         const onKey = (ev) => {
             if (ev.code === 'KeyC' && phaseRef.current !== 'won') { wristRef.current = !wristRef.current; setWristOn(wristRef.current); return }
             if ((ev.code === 'KeyQ' || ev.code === 'Slash') && phaseRef.current === 'play') { setPaused((p) => !p); return }
-            if (phaseRef.current === 'attract' || phaseRef.current === 'won') { setPhase('play'); startRun((Date.now() % 100000) | 0); audioController.playTone(660, 0.08, 'square'); return }
+            if (phaseRef.current === 'attract' || phaseRef.current === 'won' || phaseRef.current === 'lost') { setPhase('play'); startRun((Date.now() % 100000) | 0); audioController.playTone(660, 0.08, 'square'); return }
             if (ev.code in KEYS) { keys.add(ev.code); ev.preventDefault() }
         }
         const onUp = (ev) => { if (ev.code in KEYS) keys.delete(ev.code) }
@@ -215,12 +221,26 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     if (phaseRef.current === 'play' && ep) {
                         ep.addTick([pad], null, st.hash, st.poses)
                         recordLiveTick([pad])
+                        if (st.slips > lastSlips) {
+                            shake = 1
+                            audioController.playNoise(0.14, 0.4)
+                            audioController.playTone(85, 0.22, 'sine', 0.3)
+                        }
+                        lastSlips = st.slips
                         if (st.done && ep.ticks > 0) {
                             const file = ep.finish({ success: true, score: st.score, finalHash: st.hash })
                             saveEpisode(file)
+                            setRuns(episodeStats())
                             ep = null
                             setPhase('won')
                             audioController.playSweep(440, 880, 0.3)
+                        } else if (st.timeout && ep.ticks > 0) {
+                            const file = ep.finish({ success: false, score: st.score, finalHash: st.hash })
+                            saveEpisode(file)
+                            setRuns(episodeStats())
+                            ep = null
+                            setPhase('lost')
+                            audioController.playSweep(300, 110, 0.5)
                         }
                     }
                     if (phaseRef.current === 'attract' && (sim.done || sim.tick > 1400)) {
@@ -230,6 +250,13 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 }
             }
             sync()
+            if (shake > 0.02) {
+                shake *= 0.86
+                cam.position.set(CAM_BASE[0] + (Math.random() - 0.5) * 0.024 * shake, CAM_BASE[1] + (Math.random() - 0.5) * 0.016 * shake, CAM_BASE[2])
+            } else if (shake > 0) {
+                shake = 0
+                cam.position.set(CAM_BASE[0], CAM_BASE[1], CAM_BASE[2])
+            }
             renderer.render(scene, cam)
             if (wristRef.current) {
                 wd.set(0, -1, 0).applyQuaternion(meshes.hand.quaternion)
@@ -251,7 +278,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             }
             if (phaseRef.current !== 'attract' && sim.tick % 8 === 0) {
                 const s2 = sim.state()
-                setTq({ t: s2.torque, sat: s2.sat, g: s2.gripN, b: s2.budgetN, s: s2.slips })
+                setTq({ t: s2.torque, sat: s2.sat, g: s2.gripN, b: s2.budgetN, s: s2.slips, p: s2.gap, h: s2.held })
             }
         }
         raf = requestAnimationFrame(loop)
@@ -273,6 +300,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 reset: (seed) => {
                     sim = createRobotSim(seed); autopilot = createAutopilot(sim)
                     ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
+                    lastSlips = 0; shake = 0
                     phaseRef.current = 'play'; setPhase('play')
                     return sim.state()
                 },
@@ -313,6 +341,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             <div className="pointer-events-none absolute left-3 top-2 select-none font-mono text-[11px] leading-4 text-emerald-300/90">
                 <div>ROBOT LAB</div>
                 <div>PUT THE CRATE IN THE DRAWER · STOW THE CAN · CLOSE UP</div>
+                {phase !== 'attract' && <div className="text-slate-500">EPISODES {runs.saved} SAVED · {runs.won} WON</div>}
             </div>
             {phase !== 'attract' && (
                 <div className="pointer-events-none absolute bottom-2 left-3 select-none font-mono text-[9px] leading-[13px] text-slate-400">
@@ -342,6 +371,10 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                         )
                     })}
                     {tq.b !== null && <div>GRIP {tq.g.toFixed(1)} / {tq.b.toFixed(0)} N</div>}
+                    <div>
+                        <span className={`mr-1 inline-block h-[6px] w-[6px] align-middle ${tq.h ? 'bg-emerald-400' : tq.p < 0.07 ? 'bg-amber-300' : 'bg-slate-600'}`} />
+                        GRIPPER {tq.h ? `CLOSED · HOLDING ${String(tq.h).toUpperCase()}` : tq.p < 0.07 ? 'CLOSED · EMPTY' : 'OPEN'}
+                    </div>
                     {tq.s > 0 && <div className="text-rose-400">CARGO SLIPPED ×{tq.s}</div>}
                 </div>
             )}
@@ -362,6 +395,12 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             {phase === 'won' && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 font-mono text-center">
                     <div className="text-3xl font-bold text-emerald-300">TASKS COMPLETE</div>
+                    <div className="mt-2 text-xs text-slate-300">EPISODE SAVED · PRESS ANY KEY</div>
+                </div>
+            )}
+            {phase === 'lost' && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/50 font-mono text-center">
+                    <div className="text-3xl font-bold text-rose-400">TASK TIMEOUT</div>
                     <div className="mt-2 text-xs text-slate-300">EPISODE SAVED · PRESS ANY KEY</div>
                 </div>
             )}

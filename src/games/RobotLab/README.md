@@ -73,7 +73,7 @@ The drawer **refuses to close** when the crate sits on the rail track
   point-while-holding = carry and drop there.
 
 ## Verify commands
-- `npm run robokitcheck` — thirteen gates, all green: determinism (seed+pads =
+- `npm run robokitcheck` — sixteen gates, all green: determinism (seed+pads =
   identical hashes across processes), analytic servo round-trip (worst |Δ|
   ≤ 50 mm; the near-column dead zone is documented, not hidden), empty-grip
   refusal, stand-clear mechanism (Rail blockFn freezes a slide into an
@@ -121,6 +121,28 @@ The drawer **refuses to close** when the crate sits on the rail track
   form, so live play wore the help screen; stage 2 caught it with a real
   headless drive (screenshot, not state probes — `paused` was false the whole
   time). Mount `{paused && <PauseOverlay … />}` like every other game.
+
+- **Torque cache is per-tick — snapshot must carry it.** `state().torque`
+  reads the actuator effort cache written inside `actuate()` from the
+  PRE-integration θ/ω; joint/spin writes alone can't rebuild it (a recompute
+  from the restored θ/ω reproduces the NEXT tick's command, not the stored
+  one — equal only at steady state, which is why a constant-pad probe misses
+  it). Shipped broken in #1237 (contractcheck on main: 17/18, `phi1 47% vs
+  71%` for identical joints). Fixed by carrying `tn`/`sat` in `snapshot()`
+  and writing them back in `restore()`. robokitcheck gate 15 proves the
+  round-trip mid-motion in pure Node, mutant-proven (drop the write → red).
+
+## QA polish pass (issue #1227, stage-2 asks)
+- **Run counter**: `episodeStats()` in the kit counts saved/won episodes;
+  HUD header shows `EPISODES n SAVED · n WON` (refreshed on every save).
+- **Timeout is a loss**: at `WIN_TICKS` the run ends on TASK TIMEOUT and the
+  episode saves with `success:false` — Plaicraft datasets carry failures too,
+  and the SAVED/WON split becomes meaningful.
+- **Gripper tick**: the torque strip shows `GRIPPER OPEN / CLOSED · EMPTY /
+  CLOSED · HOLDING <slot>` with an LED, reading `state().gap`/`held`.
+- **Slip juice**: a new SLIP edge (state.slips delta) fires a noise-burst thud
+  + low sine and a decaying camera shake (play phase only).
+- Harness: gates 14 (stats + HUD tripwires) and 15 (restore round-trip).
 
 ## Honest gaps (next sessions / QA)
 1. SimReady mesh pulls: USD→GLB conversion + exact USD-side friction/mass

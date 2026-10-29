@@ -123,3 +123,10 @@ export function loadEpisodes() {
         return Array.isArray(list) ? list : []
     } catch { return [] }
 }
+
+export function episodeStats() {
+    const list = loadEpisodes()
+    let won = 0
+    for (const e of list) if (e && e.episode && e.episode.success === true) won++
+    return { saved: list.length, won }
+}
