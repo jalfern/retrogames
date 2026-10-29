@@ -34,8 +34,8 @@
     "neonraincheck": "node scripts/neonraincheck.mjs",
     "volcanocheck": "node scripts/volcanocheck.mjs",
     "creditscheck": "node scripts/creditscheck.mjs",
-  "deepglasscheck": "node scripts/deepglasscheck.mjs",
-  "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
+    "deepglasscheck": "node scripts/deepglasscheck.mjs",
+    "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
@@ -50,6 +50,7 @@
     "evoprobe": "node scripts/evoprobe.mjs",
     "fpscheck": "node scripts/fpscheck.mjs",
     "zorkcheck": "node scripts/zorkcheck.mjs",
+    "robokitcheck": "node scripts/robokitcheck.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",
     "padlayoutcheck": "node scripts/padlayoutcheck.mjs",
@@ -266,6 +267,7 @@
     "viperpitcheck": "node scripts/viperpitcheck.mjs"
   },
   "dependencies": {
+    "cannon-es": "^0.20.0",
     "ifvms": "^1.1.6",
     "js-dos": "^8.3.20",
     "react": "^19.2.0",

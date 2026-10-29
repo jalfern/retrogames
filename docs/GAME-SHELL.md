@@ -143,3 +143,32 @@ hash-equal through plain model seats by `npm run replaycheck` (`--mutate` drops
 one live pad mid-file and must be caught). The determinism law is the same one
 #494 states: seed + per-player pad streams ⇒ identical hashes, whatever
 produced the pads.
+
+## Episode block — optional addendum for training (`plaicraft`, issue #1141)
+
+A recording may carry ONE extra top-level key, `episode`; the base format is
+untouched, old files validate unchanged, and v1-capable replay tools ignore
+it. Module: `src/utils/robot/episode.js` (`createEpisode` wraps
+`createRecorder`; `validateEpisode` = base validate + episode rules).
+
+```json
+"episode": {
+  "task": "put-the-crate-in-the-drawer", "success": true, "score": 350,
+  "poseEvery": 6, "poseCount": 150,
+  "poses": [ { "t": 6, "o": { "can": { "p": [0.1,0.94,-0.02], "q": [0,0,0,1] } } } ],
+  "methodsUsed": ["stick", "pointer"]
+}
+```
+
+- `task` / `success` / `score` — what the run was and how it ended.
+- `poses` — every `poseEvery` ticks, a map of tracked body name → position +
+  orientation, quantized to the same 3 decimals as `hashes`. Physics truth
+  for training consumers; the `hashes` checkpoints remain the replay proof
+  that the poses are exactly what the sim produced.
+- `methodsUsed` — input kinds seen during the run (`human`/`cpu`/`model`/
+  `pointer`… — games tag each tick's method).
+- Storage/export (browser): `saveEpisode` (localStorage ring, 50),
+  `exportEpisodes(list)` → one JSON-lines file (`plaicraft-episodes-N.jsonl`),
+  `episodeDownload(rec)` → single-file payload. Every exported line must pass
+  `validateEpisode` or the export throws.
+

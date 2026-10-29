@@ -41,12 +41,13 @@ const GAMES = [
     { id: 'britannia', path: '/britannia' },
     { id: 'pick-rush', path: '/pick-rush' },
     { id: 'tidy-bot', path: '/tidy-bot' },
+    { id: 'robot-lab', path: '/robot-lab' },
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
 // contractcheck looks at this; every other game's recorder is still fed by
 // step(), so a full rollout is the remaining work on #527.
-const LIVE = ['tetris']
+const LIVE = ['tetris', 'robot-lab']
 
 const PATTERNS = {
     'lunar-lander': (i) => ({ left: i % 71 < 16, right: false, up: i % 37 < 18 }),
@@ -85,6 +86,7 @@ const PATTERNS = {
     britannia: (i) => ({ left: i % 53 >= 42, right: i % 53 < 15, up: i % 61 >= 50, down: i % 61 < 12, a: i % 47 < 2, b: i % 97 === 0 }),
     'pick-rush': (i) => ({ left: i % 43 < 17, right: i % 43 >= 21 && i % 43 < 38, down: i % 67 < 6, a: i % 149 === 0 && i < 200, b: false }),
     'tidy-bot': (i) => ({ left: i % 47 < 16, right: i % 47 >= 22 && i % 47 < 38, up: i % 61 < 8, down: i % 61 >= 26 && i % 61 < 40, a: i % 151 === 0 && i < 200, b: false }),
+    'robot-lab': (i) => ({ left: i % 71 < 22, right: i % 71 >= 28 && i % 71 < 50, up: i % 53 < 14, down: i % 53 >= 20 && i % 53 < 34, a: i % 19 < 3, b: i % 37 < 2 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

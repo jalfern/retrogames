@@ -201,6 +201,7 @@ const BritanniaGame = lazy(() => import('../games/Britannia'))
 // autopilot (shared with the attract demo and pickcheck) ride together.
 const PickRushGame = lazy(() => import('../games/PickRush'))
 const TidyBotGame = lazy(() => import('../games/TidyBot'))
+const RobotLabGame = lazy(() => import('../games/RobotLab'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1126,5 +1127,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original chores game — the household robot sim, at dollhouse scale. Your caretaker bot works a printed chore list and the ORDER is the puzzle: a closed dishwasher refuses cargo, so slide the rack out (it really opens, and its open door blocks the floor — stand clear or it refuses); stow every plate and cup, close the loaded washer, and press TOSS beside it to start its cycle. Apples and milk belong in the fridge — an apple found in the dishwasher is a WRONG STOW you must rescue and re-stow, and level 3 ships one pre-loaded to teach that lesson. Gentle placements pay tidy points; TOSSing cargo jams for less, spills on the tiles cost neatness, and a thrown plate shatters on the kitchen floor. Score on time (level clock bonus), breakage and the tidy meter. Three houses, each messier than the last — kitchen drizzle, dine-in disaster, full-house frantic — and the game is always finishable: even smashed dishes count as cleared. The attract demo drives the same chore-planning autopilot the harness proves against; the whole sim is seeded (seed + pads = identical hashes).',
         controls: ['Arrows / WASD / d-pad: drive the bot around the house', 'SPACE / A / USE: pick up litter · place into an open container · open a shut door · close an open one', 'B / TOSS: hurl held cargo toward where you face — it jams into open containers', 'Empty-handed B at an open container RETRIEVES the last stow (wrong kinds first)', 'B beside a closed, loaded washer starts its cycle — CLOSE & RUN is a chore', 'Open doors block the floor: a door that finds the robot in the way refuses (STAND CLEAR)', 'Match kind to container: plates/cups → WASHER, apple/milk → FRIDGE; wrong stows park until rescued', 'Thrown PLATEs shatter on the tiles (−40); spills and jams pay less than gentle A places', 'Beat each house clock for the time bonus; the tidy meter pays at the end', '?: pause and read the chore rules'],
+    },
+    {
+        path: '/robot-lab',
+        pad: { layout: 'stick', buttons: [{ label: 'GRIP', code: 'Space' }, { label: 'LIFT', code: 'ShiftLeft' }], analog: true, reason: 'drive the gripper: stick reaches, GRIP grabs/latches, LIFT flips the stick to vertical' },
+        builtBy: 'forge',
+        added: '2026-10-28',
+        visibility: 'private',
+        tapStart: false,
+        component: RobotLabGame,
+        label: 'ROBOT LAB',
+        theme: 'dark',
+        description: 'The Plaicraft robot-sim kit (issue #1141 stage 1), on a dollhouse workbench: a 4-joint arm with a real parallel gripper, a drawer on real rails, and a spring-hinged cabinet. The crate goes in the drawer and the drawer closes; the can goes in the cabinet and the door swings shut. Real physics underneath — the drawer refuses to close on a crate left on the track (STAND CLEAR), the gripper grabs nothing when it closes on air, and everything you carry swings with real mass. Every run records a Plaicraft EPISODE (seed, one pad per tick per slot, object-pose track, success flag) for training-data export. Any of three input styles: analog stick, keys, or tap-to-point ("pick that, put it there").',
+        controls: ['Stick / Arrows: move the gripper (left/right, reach in/out)', 'SHIFT / B (held): stick moves UP/DOWN instead (lift mode)', 'SPACE / A: close the gripper — grab a crate or can, latch a drawer/door handle; press again to release', 'Tap an object: arm drives to it and grabs - tap an open drawer/cabinet: opens it - tap a spot while holding: carries and drops it there', 'Win both tasks: CRATE then drawer then close - CAN then cabinet then door shut', '?: pause and read the rules'],
     },
 ]
