@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="icon" href="data:,">
+<title>PHYSICS WALK — labs</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #060b16; overflow: hidden; touch-action: none; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; top: 10px; left: 12px; z-index: 5; pointer-events: none;
+    font: 11px/1.5 ui-monospace, Menlo, monospace; color: #7fd4e8;
+    text-shadow: 0 0 6px rgba(0,0,0,0.9);
+  }
+  #hud .k { color: #3d6f80; }
+  #audiohint {
+    position: fixed; bottom: 14px; left: 12px; z-index: 6;
+    font: 10px ui-monospace, monospace; color: #7fd4e8; border: 1px solid #274;
+    border: 1px solid rgba(127,212,232,0.35); padding: 4px 8px; cursor: pointer;
+    background: rgba(6,11,22,0.6); letter-spacing: 0.08em;
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="audiohint">FOOTSTEP AUDIO: ON</div>
+<script src="physicswalk.core.js?v=1"></script>
+<script>
+(() => {
+  'use strict'
+  const cv = document.getElementById('c')
+  const ctx = cv.getContext('2d')
+  const hud = document.getElementById('hud')
+  const PW = window.PhysicsWalk
+  const N = PW.N
+
+  let W = 0, HH = 0, dpr = 1
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = cv.width = Math.floor(window.innerWidth * dpr)
+    HH = cv.height = Math.floor(window.innerHeight * dpr)
+  }
+  resize()
+  window.addEventListener('resize', resize)
+
+  let screen = 'attract'          // attract | play
+  let frames = 0
+  let audioOn = true, ac = null
+  function tone(f0, f1, dur, gain, type) {
+    if (!audioOn || !ac) return
+    const o = ac.createOscillator(), g = ac.createGain()
+    o.type = type || 'sine'
+    o.frequency.setValueAtTime(f0, ac.currentTime)
+    o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), ac.currentTime + dur)
+    g.gain.setValueAtTime(gain, ac.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + dur)
+    o.connect(g).connect(ac.destination)
+    o.start(); o.stop(ac.currentTime + dur + 0.02)
+  }
+  function noise(dur, gain) {
+    if (!audioOn || !ac) return
+    const n = ac.createBufferSource(), b = ac.createBuffer(1, ac.sampleRate * dur, ac.sampleRate)
+    const d = b.getChannelData(0)
+    for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length)
+    n.buffer = b
+    const g = ac.createGain(); g.gain.value = gain
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420
+    n.connect(f).connect(g).connect(ac.destination)
+    n.start()
+  }
+  const unlock = () => { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); ac.resume && ac.resume() } }
+  window.addEventListener('pointerdown', unlock)
+  window.addEventListener('keydown', unlock)
+
+  const sim = PW.create({})
+  let camX = 0
+  const puffs = []
+  const trail = []
+
+  // deterministic attract script: pushes at fixed intervals
+  const attractPushes = [1.4, 0.9, 2.6, 0.6, 1.8, 3.4]
+  let attractI = 0, attractTimer = 0
+
+  function pushFrom(xFrac) {
+    unlock()
+    if (screen === 'attract') { screen = 'play'; PW.reset(sim); trail.length = 0 }
+    if (sim.mode === 'fallen') { PW.reset(sim); trail.length = 0; return }
+    const v = 0.4 + 3.0 * xFrac
+    PW.push(sim, v, 0)
+    tone(340, 120, 0.18, 0.10, 'triangle')
+  }
+
+  window.addEventListener('pointerdown', (e) => {
+    pushFrom(Math.min(1, Math.max(0, e.clientX / window.innerWidth)) * 0.8 + 0.1)
+  })
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') { pushFrom(0.5); e.preventDefault() }
+    if (e.code === 'ArrowRight') { sim.tuning.force = Math.min(90, sim.tuning.force + 12) }
+    if (e.code === 'ArrowLeft') { sim.tuning.force = Math.max(-40, sim.tuning.force - 12) }
+    if (e.code === 'ArrowUp') { PW.push(sim, 1.2, 0) }
+    if (e.code === 'ArrowDown') { PW.push(sim, -1.2, 0) }
+  })
+
+  const hint = document.getElementById('audiohint')
+  hint.addEventListener('pointerdown', (e) => {
+    e.stopPropagation()
+    audioOn = !audioOn
+    hint.textContent = 'FOOTSTEP AUDIO: ' + (audioOn ? 'ON' : 'OFF')
+    if (audioOn) unlock()
+  })
+
+  // projection: side-on view with a faint 3/4 bias so depth reads
+  const YAW = 0.32, TILT = 0.14
+  function project(wx, wy, wz) {
+    const rx = wx * Math.cos(YAW) + wz * Math.sin(YAW)
+    const rz = -wx * Math.sin(YAW) + wz * Math.cos(YAW)
+    const s = Math.min(W, HH) / 3.1
+    const persp = 1 / (1 + rz * 0.04)
+    return [
+      W * 0.5 + (rx - camX) * s * persp,
+      HH * 0.72 - (wy - 0.9) * s * persp - rz * s * TILT * 0.25,
+      rz,
+    ]
+  }
+
+  function capsule(ax, ay, az, bx, by, bz, wA, wB, col) {
+    const A = project(ax, ay, az), B = project(bx, by, bz)
+    const g = ctx.createLinearGradient(A[0], A[1], B[0], B[1])
+    g.addColorStop(0, col); g.addColorStop(1, col)
+    ctx.strokeStyle = g
+    ctx.lineCap = 'round'
+    ctx.lineWidth = ((wA + wB) / 2) * Math.min(W, HH) / 3.1
+    ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke()
+    return [A, B]
+  }
+
+  function drawGround() {
+    const g = ctx.createLinearGradient(0, HH * 0.42, 0, HH)
+    g.addColorStop(0, '#0a1424'); g.addColorStop(1, '#060b16')
+    ctx.fillStyle = g
+    ctx.fillRect(0, 0, W, HH)
+    ctx.lineWidth = Math.max(1, dpr)
+    const gY = (k) => HH * 0.72 + k
+    ctx.strokeStyle = 'rgba(40,90,120,0.35)'
+    for (let i = 0; i < 14; i++) {
+      const k = i * i * 2.6 * dpr
+      ctx.globalAlpha = 1 - i / 15
+      ctx.beginPath(); ctx.moveTo(0, gY(k * 0.4)); ctx.lineTo(W, gY(k * 0.4)); ctx.stroke()
+    }
+    ctx.globalAlpha = 1
+    // survey ticks every 0.5m of world x
+    ctx.font = `${10 * dpr}px ui-monospace, monospace`
+    ctx.fillStyle = 'rgba(70,140,170,0.5)'
+    const x0 = Math.floor((camX - 3) * 2) / 2
+    for (let wx = x0; wx < camX + 3; wx += 0.5) {
+      const p = project(wx, 0, 0)
+      ctx.fillRect(p[0], p[1], dpr, 6 * dpr)
+      if (Math.abs(wx * 2 - Math.round(wx * 2)) < 1e-9 && Math.round(wx * 2) % 2 === 0) {
+        ctx.fillText(wx.toFixed(0) + 'm', p[0] + 3 * dpr, p[1] + 16 * dpr)
+      }
+    }
+    // ground line
+    ctx.strokeStyle = 'rgba(90,180,210,0.5)'
+    const L = project(camX - 4, 0, 0), Rr = project(camX + 4, 0, 0)
+    ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(Rr[0], Rr[1]); ctx.stroke()
+  }
+
+  function drawFigure() {
+    const p = sim.p
+    const deep = (z) => 1 - Math.min(0.45, Math.max(-0.2, z * 0.09))
+    const leg = (L, z, dim) => {
+      const col = dim ? `rgba(70,110,135,${0.75})` : '#9fdcef'
+      const colB = dim ? 'rgba(60,95,120,0.75)' : '#7fd4e8'
+      capsule(p[0], p[1], z, p[L.k * 2], p[L.k * 2 + 1], z, 0.075, 0.06, colB)
+      capsule(p[L.k * 2], p[L.k * 2 + 1], z, p[L.a * 2], p[L.a * 2 + 1], z, 0.058, 0.042, colB)
+      capsule(p[L.h * 2], p[L.h * 2 + 1], z, p[L.t * 2], p[L.t * 2 + 1], z, 0.045, 0.032, col)
+    }
+    // far leg first
+    leg(sim.legs[1], -0.075, true)
+    // torso + head
+    capsule(p[3], p[3 + 1], 0, p[1], p[1 + 1], 0, 0.12, 0.10, 'rgba(80,120,150,0.9)')
+    capsule(p[0], p[1], 0, p[1], p[1 + 1], 0, 0.115, 0.13, '#bfeaf5')
+    capsule(p[1], p[1 + 1], 0, p[2], p[2 + 1], 0, 0.10, 0.07, '#bfeaf5')
+    const hp = project(p[2], p[2 + 1], 0)
+    const hs = project(p[2], p[2 + 1] + 0.12, 0)
+    ctx.fillStyle = '#e8fbff'
+    ctx.beginPath()
+    ctx.ellipse(hp[0], (hp[1] + hs[1]) / 2, Math.abs(hp[1] - hs[1]) * 0.9 + 8 * dpr, Math.abs(hp[1] - hs[1]) * 0.9 + 9 * dpr, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // near leg
+    leg(sim.legs[0], 0.075, false)
+    // joint dots (near side only)
+    ctx.fillStyle = '#ffcf6e'
+    for (const i of [0, 1, 2, 4, 5, 6, 7]) {
+      const s = project(p[i * 2], p[i * 2 + 1], 0.075)
+      ctx.beginPath(); ctx.arc(s[0], s[1], 3 * dpr, 0, Math.PI * 2); ctx.fill()
+    }
+  }
+
+  function drawTelemetry() {
+    const p = sim.p
+    // CoM marker + plumb line
+    const c = project(sim.com[0], sim.com[1], 0)
+    const f = project(sim.com[0], 0, 0)
+    ctx.setLineDash([4 * dpr, 4 * dpr])
+    ctx.strokeStyle = 'rgba(255,210,110,0.55)'
+    ctx.lineWidth = dpr
+    ctx.beginPath(); ctx.moveTo(c[0], c[1]); ctx.lineTo(f[0], f[1]); ctx.stroke()
+    ctx.setLineDash([])
+    ctx.fillStyle = '#ffd26e'
+    ctx.beginPath(); ctx.arc(c[0], c[1], 4.5 * dpr, 0, Math.PI * 2); ctx.fill()
+    ctx.font = `${9 * dpr}px ui-monospace, monospace`
+    ctx.fillText('CoM', c[0] + 7 * dpr, c[1] - 5 * dpr)
+    // support bracket
+    if (sim.support) {
+      const a = project(sim.support[0], 0, 0), b = project(sim.support[1], 0, 0)
+      ctx.strokeStyle = sim.margin < 0.02 ? 'rgba(255,110,110,0.9)' : 'rgba(110,255,170,0.8)'
+      ctx.lineWidth = 2.4 * dpr
+      ctx.beginPath(); ctx.moveTo(a[0], a[1] + 4 * dpr); ctx.lineTo(b[0], b[1] + 4 * dpr); ctx.stroke()
+    }
+    // GRF arrows
+    for (let fi = 0; fi < 2; fi++) {
+      const L = sim.legs[fi]
+      for (const [pt, gi] of [[L.h, fi * 2], [L.t, fi * 2 + 1]]) {
+        const F = sim.grf[gi]
+        if (F > 40) {
+          const s = project(p[pt * 2], p[pt * 2 + 1], 0)
+          ctx.strokeStyle = `rgba(110,220,255,${Math.min(0.85, F / 500)})`
+          ctx.lineWidth = 2 * dpr
+          ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(s[0], s[1] - Math.min(70, F / 6) * dpr); ctx.stroke()
+        }
+      }
+    }
+    // lean gauge top-right
+    const gx = W - 150 * dpr, gy = 26 * dpr, gw = 120 * dpr
+    ctx.strokeStyle = 'rgba(90,160,190,0.5)'
+    ctx.lineWidth = dpr
+    ctx.strokeRect(gx, gy, gw, 8 * dpr)
+    const lv = Math.max(-1, Math.min(1, sim.phi / 0.6))
+    ctx.fillStyle = Math.abs(sim.phi) > 0.35 ? '#ff7a7a' : '#7fd4e8'
+    ctx.fillRect(gx + gw / 2 + Math.min(0, lv) * gw / 2, gy, Math.abs(lv) * gw / 2, 8 * dpr)
+    ctx.fillStyle = '#7fd4e8'
+    ctx.fillText('LEAN ' + (sim.phi >= 0 ? '+' : '') + sim.phi.toFixed(2) + ' rad', gx, gy - 4 * dpr)
+  }
+
+  function drawPuffs() {
+    for (let i = puffs.length - 1; i >= 0; i--) {
+      const q = puffs[i]
+      q.a -= 0.028; q.r += 0.03
+      if (q.a <= 0) { puffs.splice(i, 1); continue }
+      const s = project(q.x, 0.01, q.z)
+      ctx.strokeStyle = `rgba(160,220,240,${q.a})`
+      ctx.lineWidth = dpr
+      ctx.beginPath(); ctx.ellipse(s[0], s[1], q.r * 40 * dpr, q.r * 10 * dpr, 0, 0, Math.PI * 2); ctx.stroke()
+    }
+  }
+
+  function drawTrail() {
+    if (trail.length < 2) return
+    ctx.lineWidth = 1.6 * dpr
+    for (let i = 1; i < trail.length; i++) {
+      ctx.strokeStyle = `rgba(255,210,110,${(i / trail.length) * 0.3})`
+      const a = project(trail[i - 1][0], trail[i - 1][1] - 0.3, 0)
+      const b = project(trail[i][0], trail[i][1] - 0.3, 0)
+      ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke()
+    }
+  }
+
+  let prevEvents = { landL: 0, landR: 0, fall: 0 }
+  function frame() {
+    frames++
+    camX += (sim.com[0] - camX) * 0.08
+    PW.step(sim, 1 / 60)
+
+    if (sim.events.landL || sim.events.landR) {
+      const L = sim.events.landL ? sim.legs[0] : sim.legs[1]
+      puffs.push({ x: sim.p[L.h * 2], z: 0.06, a: 0.55, r: 0.06 })
+      noise(0.09, sim.grf[0] > 200 ? 0.16 : 0.09)
+    }
+    if (sim.events.fall && !prevEvents.fall) { tone(180, 55, 0.5, 0.22, 'sawtooth'); noise(0.3, 0.28) }
+    prevEvents = { ...sim.events }
+
+    if (sim.comTrace === undefined) { /* noop */ }
+    if (frames % 2 === 0) { trail.push([sim.com[0], sim.com[1]]); if (trail.length > 90) trail.shift() }
+
+    drawGround()
+    drawTrail()
+    drawPuffs()
+    drawFigure()
+    drawTelemetry()
+
+    ctx.font = `${11 * dpr}px ui-monospace, monospace`
+    ctx.fillStyle = '#7fd4e8'
+    hud.innerHTML =
+      `<span class="k">BALANCE</span> ${sim.mode === 'fallen' ? 'TOPPLED' : Math.abs(sim.phi) < 0.12 ? 'STEADY' : Math.abs(sim.phi) < 0.32 ? 'STUMBLING' : 'FALLING'}<br>` +
+      `<span class="k">SUPPORT MARGIN</span> ${sim.margin >= 0 ? '+' : ''}${(sim.margin * 100).toFixed(0)} cm<br>` +
+      `<span class="k">STRIDES</span> ${Math.floor(sim.steps / 2)} &nbsp;<span class="k">SPEED</span> ${Math.abs(sim.comV[0]).toFixed(2)} m/s<br>` +
+      `<span class="k">TAP</span> to push &nbsp;<span class="k">←→</span> lean &nbsp;<span class="k">SPACE</span> shove`
+
+    if (screen === 'attract') {
+      attractTimer += 1 / 60
+      ctx.fillStyle = 'rgba(230,250,255,0.9)'
+      ctx.font = `${13 * dpr}px ui-monospace, monospace`
+      ctx.fillText('PHYSICS WALK — he balances with real dynamics: mass, gravity, friction, motors.', 16 * dpr, HH * 0.14)
+      ctx.fillText('Tap / any key to start.', 16 * dpr, HH * 0.14 + 18 * dpr)
+      if (attractTimer > attractPushes[attractI % attractPushes.length] + 1.6) {
+        attractTimer = 0
+        PW.push(sim, attractPushes[attractI++ % attractPushes.length], 0)
+        if (sim.mode === 'fallen') { PW.reset(sim); trail.length = 0 }
+      }
+    } else if (sim.mode === 'fallen') {
+      ctx.fillStyle = 'rgba(255,140,140,0.95)'
+      ctx.font = `${14 * dpr}px ui-monospace, monospace`
+      ctx.fillText('TOPPLED — tap to stand him up again', W * 0.5 - 150 * dpr, HH * 0.2)
+    }
+  }
+
+  function loop() { frame(); requestAnimationFrame(loop) }
+  requestAnimationFrame(loop)
+
+  /* ---- DEV / harness hook ---- */
+  window.__physicswalkTest = {
+    ready: true,
+    frames: () => frames,
+    screen: () => screen,
+    start: () => { screen = 'play'; PW.reset(sim); trail.length = 0 },
+    push: (v) => PW.push(sim, v, 0),
+    reset: () => { PW.reset(sim); trail.length = 0; puffs.length = 0 },
+    metrics: () => ({
+      mode: sim.mode, phi: +sim.phi.toFixed(3), margin: +sim.margin.toFixed(3),
+      com: [+sim.com[0].toFixed(3), +sim.com[1].toFixed(3)],
+      comV: [+sim.comV[0].toFixed(3), +sim.comV[1].toFixed(3)],
+      steps: sim.steps, support: sim.support,
+      grf: sim.grf.map(v => +v.toFixed(0)),
+      swing: sim.legs.map(l => l.swing),
+      force: sim.tuning.force,
+    }),
+    state: () => Array.from(sim.p),
+    screenOf: (i) => { const s = project(sim.p[i * 2], sim.p[i * 2 + 1], 0); return { x: s[0] / dpr, y: s[1] / dpr, z: s[2] } },
+    audio: () => ({ on: audioOn, ctx: !!ac }),
+    sim: () => sim,
+  }
+  window.__pwScreen = () => screen
+})();
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'PHYSICS WALK', accent: '#7fd4e8',
+  issues: [1204], span: '~3 h', shipped: '2026-10-28',
+  assist: 'solo',
+  note: 'goal-only brief: a biped with real mass, motors and friction that balances on its own — tap to push.',
+};
+</script>
+<script src="credits.js"></script>
+</body>
+</html>

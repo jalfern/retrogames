@@ -43,6 +43,22 @@ loaded by relative `<script src>` — never absolute URLs (the per-demo `*check`
   `window.DEMO_CREDITS` (demos) / `window.DEMO_INDEX` (the index page).
 - `ocean.stars.js` — Yale BSC star data for OCEAN/MOUNTAINS skies
   (`node scripts/build-ocean-stars.mjs` regenerates).
+- `physicswalk.core.js` — PHYSICS WALK engine (#1204), below.
+
+## physicswalk.core.js engine notes (#1204)
+
+PHYSICS WALK is the dynamics rung under STICK WALK: a 12-particle XPBD rig
+(torso brace + two knee-ankle-heel-toe legs) with stiff distance constraints,
+hip/knee/ankle motors applied as momentum-conserving virtual-work torque pairs,
+and penalty ground contact (spring-damper normal + Coulomb friction bounded by
+the true per-point normal force, so the foot rolls heel-to-toe instead of
+gluing). Balance = torso-pitch PD through hip+ankle, a hip-height lift reflex,
+and margin/trailing-based step triggers that place the swing foot ahead of the
+CoM. Controller gains were searched (60k+ candidates in Node); determinism is
+guaranteed (no RNG). Gated by `npm run physicswalkcheck` (28 gates incl. a
+balance mutant). Honest gaps: planar balance only (no lateral DOF); no
+arm swing; sustained steady walking settles into a stagger, not a stride cycle;
+collision uses point feet (no toe-ramp mesh).
 
 ## blackhole.html engine notes
 

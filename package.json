@@ -38,6 +38,7 @@
     "creditscheck": "node scripts/creditscheck.mjs",
     "deepglasscheck": "node scripts/deepglasscheck.mjs",
     "stickwalkcheck": "node scripts/stickwalkcheck.mjs",
+    "physicswalkcheck": "node scripts/physicswalkcheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",

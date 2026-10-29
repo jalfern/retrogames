@@ -179,6 +179,18 @@
     <div class="meta"><span>CANVAS 2D · PROCEDURAL MOCAP GAIT</span><span>2026-10-28</span></div>
   </a>
 
+  <a class="card" id="physicswalk" style="margin-top:18px">
+    <div class="row">
+      <span class="name">PHYSICS WALK</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">The rung below STICK WALK on the ladder: here nothing is scripted. A 12-mass XPBD rigid-body biped — gravity, joint motors, Coulomb
+      friction — has to balance on its own like an inverted pendulum, catching itself with steps. Tap to push him: light taps stumble and recover,
+      hard ones topple him to a dead ragdoll. Live telemetry (lean, support margin, ground-reaction arrows, CoM plumb) shows he is really balancing.
+      Arrows lean, SPACE shoves.</p>
+    <div class="meta"><span>CANVAS 2D · XPBD RIGID-BODY DYNAMICS</span><span>2026-10-28</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -201,6 +213,7 @@
   document.getElementById('volcano').href = base + 'volcano.html'
   document.getElementById('deepglass').href = base + 'deepglass.html'
   document.getElementById('stickwalk').href = base + 'stickwalk.html'
+  document.getElementById('physicswalk').href = base + 'physicswalk.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
@@ -215,6 +228,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'volcano', issues: [1043], span: '~3 h', assist: 'solo' },
   { el: 'deepglass', issues: [1129], span: '~1 h', assist: 'solo' },
   { el: 'stickwalk', issues: [1150], span: '~2 h', assist: 'solo' },
+  { el: 'physicswalk', issues: [1204], span: '~3 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>
