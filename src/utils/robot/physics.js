@@ -9,6 +9,7 @@
 // Pure: no DOM, no React, no three.js. The renderer reads body poses.
 
 import * as CANNON from 'cannon-es'
+import { assetFor } from './assets.js'
 
 export { CANNON }
 
@@ -32,18 +33,33 @@ export function createWorld() {
     return world
 }
 
-// Real materials with per-pair contact data (SimReady keeps mass/friction per
-// asset; stage 1 ships the kit's own measured constants, stage 2 keeps the
-// per-asset ones coming from SimReady).
+// Real materials with per-pair contact data. Stage 2 (#1140 hookup): the
+// surfaces named in the SimReady manifest carry the manifest's transcribed
+// friction — cardboard, tin and the bench wood come from the asset records
+// (`assets.js`); steel-on-steel and steel-on-cargo keep the kit's measured
+// stage-1 pair values until each asset's USD surface data is transcribed
+// (robokitcheck proves the transcribed ones are the live ones).
 export function installMaterials(world) {
     const steel = new CANNON.Material('steel')
     const plastic = new CANNON.Material('plastic')
     const wood = new CANNON.Material('wood')
-    world.addContactMaterial(new CANNON.ContactMaterial(steel, wood, { friction: 0.32, restitution: 0.05 }))
-    world.addContactMaterial(new CANNON.ContactMaterial(plastic, wood, { friction: 0.45, restitution: 0.08 }))
+    const carton = new CANNON.Material('cardboard')
+    const tin = new CANNON.Material('tin')
+    const fCarton = assetFor('crate').physics
+    const fTin = assetFor('can').physics
+    const fBench = assetFor('bench').physics
+    wood.friction = fBench.friction
+    carton.friction = fCarton.friction
+    tin.friction = fTin.friction
+    world.addContactMaterial(new CANNON.ContactMaterial(steel, wood, { friction: fBench.friction, restitution: 0.05 }))
+    world.addContactMaterial(new CANNON.ContactMaterial(carton, wood, { friction: fCarton.friction, restitution: fCarton.restitution }))
+    world.addContactMaterial(new CANNON.ContactMaterial(tin, wood, { friction: fTin.friction, restitution: fTin.restitution }))
     world.addContactMaterial(new CANNON.ContactMaterial(steel, steel, { friction: 0.18, restitution: 0.02 }))
-    world.addContactMaterial(new CANNON.ContactMaterial(plastic, steel, { friction: 0.28, restitution: 0.06 }))
-    return { steel, plastic, wood }
+    world.addContactMaterial(new CANNON.ContactMaterial(carton, steel, { friction: 0.28, restitution: 0.06 }))
+    world.addContactMaterial(new CANNON.ContactMaterial(tin, steel, { friction: 0.28, restitution: 0.06 }))
+    world.addContactMaterial(new CANNON.ContactMaterial(carton, carton, { friction: fCarton.friction, restitution: fCarton.restitution }))
+    world.addContactMaterial(new CANNON.ContactMaterial(tin, tin, { friction: fTin.friction, restitution: fTin.restitution }))
+    return { steel, plastic, wood, carton, tin }
 }
 
 const q3 = (v) => Math.round(v * 1000) / 1000

@@ -13,7 +13,10 @@ own `src/games/<Name>/` and are designed from the original.
   `imageSmoothingEnabled = false` for pixel titles.
 - Attract first: any keydown or `pointerdown` starts the game. `'?'`
   (Esc / backquote too) toggles `PauseOverlay` with the registry entry from
-  `GAMES.find(g => g.label === '<LABEL>')`.
+  `GAMES.find(g => g.label === '<LABEL>')`. Mount it conditionally —
+  `{paused && <PauseOverlay … />}`: the component has no `visible` prop and
+  renders fullscreen whenever it mounts (RobotLab shipped the prop form and
+  wore the help screen over live play, #1141).
 - Tap-to-start is wired in the shared shell, not per game (`#430`): a registry
   entry may carry `tapStart: true`, and `App.jsx` then synthesizes the start
   key (Space) on any tap outside the on-screen controls (`data-vc`) and UI

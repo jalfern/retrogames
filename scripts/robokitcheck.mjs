@@ -1,12 +1,23 @@
 // robokitcheck — the robot sim kit's self-verifying gate (issue #1141).
 //   node scripts/robokitcheck.mjs          exit 0 green, exit 1 + FAIL lines red
-// Gates: determinism, servo round-trip, empty-grip rejection, stand-clear
-// rejection, episode validate/replay hash, autopilot full-win on 12 seeds.
+// Gates 1-6 (stage 1): determinism, servo round-trip, empty-grip rejection,
+// stand-clear rejection, episode validate/replay hash, autopilot full-win on
+// 12 seeds. Gates 7-10 (stage 2, SimReady hookup via #1140): manifest schema
+// + link-only law, license gate enforcement (no 'never', declared gate ==
+// licenseGate recompute, library registered + physics-capable), transcribed
+// physics actually lives in the cannon world, and episodes pin their manifest
+// revision.
 
+import { readFileSync, existsSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import {
     createRobotSim, createAutopilot, WIN_TICKS,
     createEpisode, validateEpisode, exportEpisodes, BENCH_TOP,
+    ASSETS, SLOTS, assetFor, gateFor, MANIFEST_REV, SIMREADY_LIBRARY,
 } from '../src/utils/robot/index.js'
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
 let failures = 0
 const check = (name, ok, detail = '') => {
@@ -135,6 +146,89 @@ const run = (seed, maxTicks = WIN_TICKS) => {
     }
     check('autopilot wins all 6 goals on seeds 1..12', failures.length === 0,
         failures.length ? failures.join('; ') : `max ${maxTicks} ticks < ${WIN_TICKS}`)
+}
+
+// 7. Manifest schema + link-only law (#1140): every kit entity carries a
+//    complete SimReady record, and NOTHING is mirrored — no mesh files pulled.
+{
+    const problems = []
+    const want = ['gripper', 'crate', 'can', 'drawer', 'door', 'bench']
+    if (JSON.stringify(SLOTS) !== JSON.stringify(want)) problems.push(`slots ${JSON.stringify(SLOTS)} != ${JSON.stringify(want)}`)
+    if (!/^simready-manifest\/\d+$/.test(MANIFEST_REV)) problems.push(`rev ${MANIFEST_REV}`)
+    const ids = new Set()
+    for (const a of ASSETS) {
+        for (const f of ['id', 'kitSlot', 'name', 'supplier', 'library', 'url', 'license', 'physicsProvenance']) {
+            if (typeof a[f] !== 'string' || !a[f]) problems.push(`${a.kitSlot}: ${f} missing`)
+        }
+        if (a.library !== SIMREADY_LIBRARY) problems.push(`${a.kitSlot}: library ${a.library}`)
+        if (!/^https:\/\//.test(a.url)) problems.push(`${a.kitSlot}: url not https`)
+        const ph = a.physics || {}
+        if (!ph.collider || typeof ph.collider.type !== 'string') problems.push(`${a.kitSlot}: collider missing`)
+        if (ph.massKg === null && !ph.static) problems.push(`${a.kitSlot}: null mass without static flag`)
+        if (ph.massKg !== null && !(ph.massKg > 0)) problems.push(`${a.kitSlot}: mass ${ph.massKg}`)
+        if (!(ph.friction >= 0)) problems.push(`${a.kitSlot}: friction missing`)
+        if (ids.has(a.id)) problems.push(`duplicate id ${a.id}`)
+        ids.add(a.id)
+        if (a.mesh && a.mesh.pulled) problems.push(`${a.kitSlot}: mesh pulled — link-only law`)
+        if (existsSync(join(ROOT, 'public', 'models', `${a.id}.glb`))) problems.push(`${a.kitSlot}: GLB mirrored in public/models`)
+    }
+    check('manifest: complete SimReady records for 6 slots, link-only (nothing mirrored)', problems.length === 0, problems.join('; '))
+}
+
+// 8. License gate as law (#1140): declared gate equals what licenseGate()
+//    recomputes, nothing is 'never', and the library is registered in the
+//    index with its physics flag on.
+{
+    const problems = []
+    for (const a of ASSETS) {
+        const g = gateFor(a)
+        if (g !== a.gate) problems.push(`${a.id}: declared ${a.gate}, law says ${g}`)
+        if (g === 'never') problems.push(`${a.id}: license ${a.license} may never ship`)
+    }
+    const idx = JSON.parse(readFileSync(join(ROOT, 'public', 'models', 'libraries.json'), 'utf8'))
+    const lib = idx.libraries.find((l) => l.id === SIMREADY_LIBRARY)
+    if (!lib) problems.push(`library ${SIMREADY_LIBRARY} not in index`)
+    else if (lib.physics !== true) problems.push(`${SIMREADY_LIBRARY}: index says physics=${lib.physics}, kit treats it as the physics source`)
+    check('license gate: recomputed gates match, no never-verdict, library registered', problems.length === 0, problems.join('; '))
+}
+
+// 9. Transcribed physics is LIVE: masses and frictions the manifest names are
+//    the ones the running cannon world actually wears (SimReady's promise —
+//    GLB carries no physics, so the record must reach the bodies).
+{
+    const sim = createRobotSim(7)
+    const problems = []
+    const massOf = { crate: sim.crate, can: sim.can, drawer: sim.drawer.body, door: sim.cabinet.body }
+    for (const [slot, body] of Object.entries(massOf)) {
+        const want = assetFor(slot).physics.massKg
+        if (Math.abs(body.mass - want) > 1e-9) problems.push(`${slot}: world ${body.mass} kg, manifest ${want} kg`)
+        if (body.simready !== assetFor(slot).id) problems.push(`${slot}: provenance stamp missing`)
+    }
+    if (sim.arm.bodies.hand.simready !== 'robotiq_2f85') problems.push('gripper: no SimReady record on the hand')
+    if (Math.abs(sim.mats.carton.friction - assetFor('crate').physics.friction) > 1e-9) problems.push('cardboard friction not transcribed')
+    if (Math.abs(sim.mats.tin.friction - assetFor('can').physics.friction) > 1e-9) problems.push('tin friction not transcribed')
+    if (Math.abs(sim.mats.wood.friction - assetFor('bench').physics.friction) > 1e-9) problems.push('bench friction not transcribed')
+    const cm = sim.world.getContactMaterial(sim.mats.carton, sim.mats.wood)
+    if (!cm || Math.abs(cm.friction - assetFor('crate').physics.friction) > 1e-9) problems.push('carton-wood contact pair missing/wrong')
+    check('live physics carries the manifest masses/frictions', problems.length === 0, problems.join('; '))
+}
+
+// 10. Episode asset pin: a run records which manifest revision's physics it
+//     was played against; corrupt pins fail validation.
+{
+    const ep = createEpisode({ gameId: 'robotlab', seed: 1, task: 'pin-test', poseEvery: 1, assets: MANIFEST_REV })
+    ep.addTick({ x: 0, y: 0, a: false, b: false }, null, 'h1', { hand: { p: [0, 1, 0], q: [0, 0, 0, 1] } })
+    const rec = ep.finish({ success: true, score: 1, finalHash: 'h2' })
+    const vGood = validateEpisode(rec)
+    const bad = JSON.parse(JSON.stringify(rec))
+    bad.episode.assets = 42
+    const vBad = validateEpisode(bad)
+    const noPin = createEpisode({ gameId: 'robotlab', seed: 1, task: 'pin-absent-ok', poseEvery: 1 })
+    noPin.addTick({ x: 0, y: 0, a: false, b: false }, null, 'h1', { hand: { p: [0, 1, 0], q: [0, 0, 0, 1] } })
+    const vLegacy = validateEpisode(noPin.finish({ success: false, score: 0 }))
+    check('episode pins its manifest revision; corrupt pin rejected, un-pinned allowed',
+        vGood === null && rec.episode.assets === MANIFEST_REV && typeof vBad === 'string' && vLegacy === null,
+        `good=${JSON.stringify(vGood)} bad=${JSON.stringify(vBad)} legacy=${JSON.stringify(vLegacy)}`)
 }
 
 console.log(failures === 0 ? 'robokitcheck: OK' : `robokitcheck: ${failures} FAILED`)
