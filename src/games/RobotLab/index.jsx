@@ -16,13 +16,16 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { createRobotSim, createAutopilot, createEpisode, saveEpisode } from '../../utils/robot'
+import { createRobotSim, createAutopilot, createEpisode, saveEpisode, manifestSummary, MANIFEST_REV } from '../../utils/robot'
 
 const FIXED_DT = 1000 / 60
 const TOUCH = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
 const LITE = typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('lite')
 
 const KEYS = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Space: 'a', ShiftLeft: 'b', KeyB: 'b' }
+
+const ASSEMBLY = manifestSummary()
+const GATE_COLOR = { ship: 'text-emerald-300', credit: 'text-sky-300', review: 'text-amber-300', never: 'text-rose-400' }
 
 export default function RobotLab() {
     const mountRef = useRef(null)
@@ -159,7 +162,7 @@ export default function RobotLab() {
         let ep = null
         const startRun = (seed) => {
             sim = createRobotSim(seed)
-            ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet' })
+            ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
         }
 
         const onKey = (ev) => {
@@ -235,7 +238,7 @@ export default function RobotLab() {
                 reads: ['x', 'y'],
                 reset: (seed) => {
                     sim = createRobotSim(seed); autopilot = createAutopilot(sim)
-                    ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet' })
+                    ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
                     phaseRef.current = 'play'; setPhase('play')
                     return sim.state()
                 },
@@ -277,6 +280,17 @@ export default function RobotLab() {
                 <div>ROBOT LAB</div>
                 <div>PUT THE CRATE IN THE DRAWER · STOW THE CAN · CLOSE UP</div>
             </div>
+            {phase !== 'attract' && (
+                <div className="pointer-events-none absolute bottom-2 left-3 select-none font-mono text-[9px] leading-[13px] text-slate-400">
+                    <div className="text-slate-500">ASSEMBLY · {MANIFEST_REV} · SIMREADY LINK-LIST, NOTHING MIRRORED</div>
+                    {ASSEMBLY.map((a) => (
+                        <div key={a.slot}>
+                            {a.slot.toUpperCase()} · {a.supplier.length > 26 ? `${a.supplier.slice(0, 25)}…` : a.supplier} · <span className={GATE_COLOR[a.gate] || 'text-slate-400'}>{a.gate.toUpperCase()}</span>
+                            {a.massKg === null ? ' · static' : ` · ${a.massKg.toFixed(2)} kg`}
+                        </div>
+                    ))}
+                </div>
+            )}
             {phase === 'attract' && (
                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/40 font-mono text-center">
                     <div className="text-3xl font-bold tracking-widest text-emerald-300">ROBOT LAB</div>
