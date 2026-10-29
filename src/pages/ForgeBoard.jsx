@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -228,6 +228,7 @@ const ForgeBoard = () => {
                     // rate/day and the days it yields. runwayMath degrades to
                     // the item count when old board.json has no `mix`.
                     const math = runwayMath(runway)
+                    const trend = runwayTrend(runway)
                     const win = Number.isFinite(runway.windowDays) ? runway.windowDays : 14
                     const laneLine = (m) => {
                         const mix = m.mix ? `${m.mix.S} S · ${m.mix.M} M · ${m.mix.L} L`
@@ -237,6 +238,27 @@ const ForgeBoard = () => {
                         const days = m.days != null ? `~${m.days} days` : '~?'
                         return `${mix} = ${size} ÷ ${rate} ≈ ${days}`
                     }
+                    // #1233 — the trend line: one SVG polyline per lane over the
+                    // reconstructed daily runway number; null days leave gaps.
+                    const spark = (points) => {
+                        const known = points.filter((d) => d != null)
+                        if (known.length < 2) return null
+                        const min = Math.min(...known), max = Math.max(...known)
+                        const span = max - min || 1
+                        const segs = []
+                        let cur = []
+                        points.forEach((d, i) => {
+                            if (d == null) { if (cur.length) { segs.push(cur); cur = [] } return }
+                            cur.push(`${(i * 72 / (points.length - 1)).toFixed(1)},${(11 - (d - min) / span * 9).toFixed(1)}`)
+                        })
+                        if (cur.length) segs.push(cur)
+                        return (
+                            <svg width="72" height="12" className="shrink-0" aria-hidden="true">
+                                {segs.map((s, i) => <polyline key={i} points={s.join(' ')} fill="none" stroke="currentColor" strokeWidth="1" opacity="0.8" />)}
+                            </svg>
+                        )
+                    }
+                    const trendWord = { shrinking: '▼ shrinking', growing: '▲ growing', flat: '◆ flat' }
                     return (
                         <div className="mb-5">
                             <div data-runway={b.tone}
@@ -258,6 +280,19 @@ const ForgeBoard = () => {
                                             <span className="opacity-80 text-right">{laneLine(m)}</span>
                                         </div>
                                     ))}
+                                    {trend.length > 0 && (
+                                        <div data-runway-sparkline className="mt-2 pt-1 border-t border-current border-opacity-30">
+                                            <div className="tracking-widest opacity-60 mb-1">TREND — runway days, last {trend[0].points.length} d</div>
+                                            {trend.map((t) => (
+                                                <div key={t.name} className="flex items-center justify-between gap-3">
+                                                    <span className="shrink-0">{t.name}</span>
+                                                    {spark(t.points)}
+                                                    <span className={`shrink-0 ${t.delta === 'shrinking' ? 'text-[#0f0]' : t.delta === 'growing' ? 'text-[#f80]' : 'opacity-60'}`}
+                                                        data-spark-trend={t.name}>{trendWord[t.delta]}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
