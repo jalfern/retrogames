@@ -640,27 +640,32 @@ const VirtualControls = ({ secondPad, secondAction: secondActionProp, visible = 
                         onMouseUp={dMU}
                         onMouseLeave={dMU}
                     >
-                        <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`} style={armStyle}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowUp') ? 'text-white' : 'text-white/50'}>
+                        {/* #1221: one clean cross. The arms are rectangles that
+                            meet at the centre (up/down = full-height bar, left/
+                            right = full-width bar) so the pad reads as ONE
+                            d-pad: no corner overlap, no stray centre dot that
+                            read as "a second stick". The touch zone is the whole
+                            box (dPadRef + dirsFrom), so the arms are visuals. */}
+                        <div className={`absolute top-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowUp')}`} style={{ width: sz.arm, height: sz.stick / 2 }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowUp') ? 'text-white' : 'text-white/60'}>
                                 <path d="M12 19V5M5 12l7-7 7 7" />
                             </svg>
                         </div>
-                        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`} style={armStyle}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowDown') ? 'text-white' : 'text-white/50'}>
+                        <div className={`absolute bottom-0 left-1/2 -translate-x-1/2 ${dBtnCls('ArrowDown')}`} style={{ width: sz.arm, height: sz.stick / 2 }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowDown') ? 'text-white' : 'text-white/60'}>
                                 <path d="M12 5v14M19 12l-7 7-7-7" />
                             </svg>
                         </div>
-                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`} style={armStyle}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowLeft') ? 'text-white' : 'text-white/50'}>
+                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowLeft')}`} style={{ width: sz.stick / 2, height: sz.arm }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowLeft') ? 'text-white' : 'text-white/60'}>
                                 <path d="M19 12H5M12 19l-7-7 7-7" />
                             </svg>
                         </div>
-                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`} style={armStyle}>
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowRight') ? 'text-white' : 'text-white/50'}>
+                        <div className={`absolute right-0 top-1/2 -translate-y-1/2 ${dBtnCls('ArrowRight')}`} style={{ width: sz.stick / 2, height: sz.arm }}>
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={isHeld('ArrowRight') ? 'text-white' : 'text-white/60'}>
                                 <path d="M5 12h14M12 5l7 7-7 7" />
                             </svg>
                         </div>
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-3 h-3 bg-neutral-600/40 rounded-full" />
                     </div>
                 )}
 

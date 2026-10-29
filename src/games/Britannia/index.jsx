@@ -796,7 +796,7 @@ const BritanniaGame = () => {
             )}
             {screen === 'end' && <div />}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'BRITANNIA')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
-            <VirtualControls visible={play && !paused} secondAction={{ label: '✕', code: 'KeyZ' }} />
+            <VirtualControls visible={play && !paused} />
         </div>
     )
 }

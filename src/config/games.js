@@ -1090,7 +1090,7 @@ export const GAMES = [
     },
     {
         path: '/britannia',
-        pad: { layout: 'dpad', buttons: [{ label: '\u2693', code: 'Space' }], analog: false, reason: 'arrows walk and sail; \u2693/SPACE answers the moongate when it whirls' },
+        pad: { layout: 'dpad', aLabel: 'GATE', buttons: [], analog: false, reason: 'arrows walk and sail; the one on-screen action (GATE/Space) answers the moongate when it whirls — dismiss is Escape / tap-outside, so no second button' },
         builtBy: 'forge',
         added: '2026-10-26',
         visibility: 'private',
