@@ -14,11 +14,13 @@ n=${1:-}; node=${2:-}; plan=${3:-}
 repo=jalfern/retrogames
 [ -n "$n" ] && [ -n "$node" ] || { echo "usage: qa-claim.sh <issue> <node> \"<plan>\""; exit 2; }
 
-# newest live claim on the issue as "<node> <minutes since the newest QA comment>"
+# newest live claim on the issue as "<node> <minutes since the newest LIVENESS comment>"
+# (#1234) liveness = claimed/checkpoint only: bookkeeping notes ("claim dead",
+# "yielding") must not extend the 90-min lockout on the very item they free.
 holder() {
-  gh api --paginate "repos/$repo/issues/$n/comments?per_page=100" | jq -rs '
+  ${GH:-gh} api --paginate "repos/$repo/issues/$n/comments?per_page=100" | jq -rs '
     (add // []) as $all
-    | ([$all[] | select(.body | startswith("QA"))] | last) as $q
+    | ([$all[] | select(.body | test("^QA \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
     | ([$all[] | select(.body | test("^QA \\([a-z0-9-]+\\): claimed"))] | last) as $c
     | if $c == null then empty else
         "\($c.body | capture("^QA \\((?<n>[a-z0-9-]+)\\)").n) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)"
@@ -37,17 +39,17 @@ if [ "$who" = "$node" ] && [ "$age" -lt 90 ]; then
 fi
 
 note=""
-[ -n "$who" ] && note=" (last claim was $who's; no QA comment for ${age} min)"
+[ -n "$who" ] && note=" (last claim was $who's; no claim/checkpoint for ${age} min)"
 body="QA ($node): claimed $(date -u +%Y-%m-%dT%H:%MZ)$note — plan: $plan"
 if [ -n "${QA_CLAIM_DRY:-}" ]; then echo "DRY: would label building-qa and post: $body"; exit 0; fi
-gh api -X POST "repos/$repo/issues/$n/labels" -f 'labels[]=building-qa' >/dev/null
-gh api "repos/$repo/issues/$n/comments" -f body="$body" >/dev/null
+${GH:-gh} api -X POST "repos/$repo/issues/$n/labels" -f 'labels[]=building-qa' >/dev/null
+${GH:-gh} api "repos/$repo/issues/$n/comments" -f body="$body" >/dev/null
 
 # a claim that landed with ours: the newest one wins, the other yields
 sleep 5
 read -r who _ <<<"$(holder)" || true
 if [ "$who" != "$node" ]; then
-  gh api "repos/$repo/issues/$n/comments" -f body="QA ($node): yielding to $who" >/dev/null
+  ${GH:-gh} api "repos/$repo/issues/$n/comments" -f body="QA ($node): yielding to $who" >/dev/null
   echo "YIELDED: $who claimed #$n at the same time. Pick another item."
   exit 1
 fi
