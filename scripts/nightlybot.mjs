@@ -86,6 +86,9 @@ export const GAMES = [
     { id: 'iron-ring', path: '/iron-ring' },
     { id: 'viper-pit', path: '/viper-pit' },
     { id: 'britannia', path: '/britannia' },
+    { id: 'pick-rush', path: '/pick-rush' },
+    { id: 'tidy-bot', path: '/tidy-bot' },
+    { id: 'robot-lab', path: '/robot-lab' },
 ]
 const CAP = 9000
 
