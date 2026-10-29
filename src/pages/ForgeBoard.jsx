@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -77,6 +77,7 @@ const ForgeBoard = () => {
     const [juice, setJuice] = useState(null)
     const [boredom, setBoredom] = useState(null)
     const [runway, setRunway] = useState(null)
+    const [runwayOpen, setRunwayOpen] = useState(false)
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -222,10 +223,43 @@ const ForgeBoard = () => {
                         violet: 'border-[#d4c5f9]/50 text-[#d4c5f9]',
                         dim: 'border-gray-700 text-gray-500',
                     }[b.tone]
+                    // #1233 — the strip never shows the math. Reveal on hover
+                    // (desktop) or tap (touch): per-lane S/M/L mix, total size,
+                    // rate/day and the days it yields. runwayMath degrades to
+                    // the item count when old board.json has no `mix`.
+                    const math = runwayMath(runway)
+                    const win = Number.isFinite(runway.windowDays) ? runway.windowDays : 14
+                    const laneLine = (m) => {
+                        const mix = m.mix ? `${m.mix.S} S · ${m.mix.M} M · ${m.mix.L} L`
+                            : m.items != null ? `${m.items} item${m.items === 1 ? '' : 's'}` : '? items'
+                        const size = m.size != null ? `${m.size} build-days` : '? size'
+                        const rate = m.rate != null ? `${m.rate}/day` : 'no recent ships'
+                        const days = m.days != null ? `~${m.days} days` : '~?'
+                        return `${mix} = ${size} ÷ ${rate} ≈ ${days}`
+                    }
                     return (
-                        <div data-runway={b.tone} className={`border px-4 py-2 mb-5 mx-auto w-fit text-xs tracking-wider ${tone}`}>
-                            ⏱ RUNWAY — {b.text}
-                            {b.stale && <span className="opacity-60"> · stale</span>}
+                        <div className="mb-5">
+                            <div data-runway={b.tone}
+                                onMouseEnter={() => setRunwayOpen(true)}
+                                onMouseLeave={() => setRunwayOpen(false)}
+                                onClick={() => setRunwayOpen(o => !o)}
+                                className={`border px-4 py-2 mx-auto w-fit text-xs tracking-wider cursor-help select-none ${tone}`}>
+                                ⏱ RUNWAY — {b.text}
+                                {b.stale && <span className="opacity-60"> · stale</span>}
+                                <span className="opacity-40"> ⌄</span>
+                            </div>
+                            {runwayOpen && math.length > 0 && (
+                                <div data-runway-reveal
+                                    className={`border-t-0 border -mt-px px-4 py-2 mx-auto w-fit text-[10px] leading-relaxed ${tone}`}>
+                                    <div className="tracking-widest opacity-60 mb-1">THE MATH — how the "~N days" counts (last {win} d window)</div>
+                                    {math.map((m) => (
+                                        <div key={m.name} className="flex justify-between gap-4">
+                                            <span className="shrink-0">{m.name}{m.amber ? ' ⚠ under 1d' : m.polish ? ' · polish' : ''}</span>
+                                            <span className="opacity-80 text-right">{laneLine(m)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     )
                 })()}

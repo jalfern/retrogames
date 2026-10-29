@@ -27,7 +27,7 @@ import {
     AMBER_UNDER_DAYS, SIZES, computeRunway, digestText, estimateIssue,
     fmtDays, laneRunway, runwayLine, shipRate, sizeClass,
 } from './lib/runway.mjs'
-import { runwayBadge } from '../src/pages/floor.js'
+import { runwayBadge, runwayMath } from '../src/pages/floor.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -81,6 +81,17 @@ eq(shipRate(['nonsense', daysAgo(2)], { now: NOW }), 1 / 14, 'junk timestamps ar
     const n = laneRunway({ items: [issue(13, 'B', [])], ratePerDay: null })
     eq(n.days, null, 'no rate -> null days')
     eq(n.amber, false, 'unknown is never coloured amber')
+}
+
+// laneRunway.mix (#1233): the per-item S/M/L breakdown behind the total size —
+// this is what the strip's reveal shows, so the number can be read apart.
+{
+    const mixed = laneRunway({ items: [issue(30, 'fix audio', []), issue(31, 'GAME — MYST open-world 3D', []), issue(32, 'GAME — FROGGER', [])], ratePerDay: 1 })
+    eq(JSON.stringify(mixed.mix), JSON.stringify({ S: 1, M: 1, L: 1 }), 'mix counts each item by its size class')
+    eq(mixed.size, 0.4 + 1.5 + 0.8, 'size is exactly the sum the mix explains')
+    eq(mixed.items, 3, 'item count still rides alongside the mix')
+    eq(JSON.stringify(laneRunway({ items: [], ratePerDay: 1 }).mix), JSON.stringify({ S: 0, M: 0, L: 0 }), 'an empty lane has an empty mix, not a missing one')
+    eq(JSON.stringify(laneRunway({ items: [issue(33, 'A', []), issue(34, 'B', [])], ratePerDay: 0.5 }).mix), JSON.stringify({ S: 0, M: 2, L: 0 }), 'two plain items are two M')
 }
 
 // the line: symmetric per-lane shape ("something like" per the brief)
@@ -146,6 +157,8 @@ ok(tele.includes('/tmp/forge/runway.json'), 'telemetry.sh reads the runway file 
 const board = read('../src/pages/ForgeBoard.jsx')
 ok(board.includes('runwayBadge') && board.includes('data-runway'), 'ForgeBoard renders the runway strip via the shared badge')
 ok(board.includes('setRunway(d.runway ?? null)'), 'ForgeBoard reads runway off board.json')
+ok(board.includes('runwayMath') && board.includes('data-runway-reveal'), 'ForgeBoard reveals the runway math on hover/tap (#1233)')
+ok(board.includes('setRunwayOpen') && board.includes('onMouseEnter') && board.includes('onClick'), 'the strip toggles its reveal (desktop hover + touch tap)')
 const jq = read('./jonq.mjs')
 ok(jq.includes("case 'digest'") && jq.includes('digestText'), 'jonq.mjs gained the digest command (#1201 email body)')
 ok(jq.includes('ask|sweep|list|halt|steer|claim|digest'), 'usage line mentions digest')
@@ -157,6 +170,30 @@ eq(runwayBadge({ line: 'x', builder: { amber: true } }, NOW).tone, 'amber', 'one
 eq(runwayBadge({ line: 'x', qa: { polish: true } }, NOW).tone, 'violet', 'polish fallback is violet, not alarming')
 eq(runwayBadge({ line: 'x', generated: daysAgo(2) }, NOW).tone, 'dim', 'hours-old data dims')
 eq(runwayBadge({ line: 'x' }, NOW).text, 'x', 'the strip shows the lib\'s line verbatim')
+
+// runwayMath (#1233): the reveal's per-lane data — pure, and defensive on the
+// old board.json schema (no `mix`), since the board renders whatever the
+// telemetry machine last baked and that lags this branch until after merge.
+{
+    const full = runwayMath({
+        builder: { items: 2, size: 2.7, mix: { S: 1, M: 1, L: 1 }, rate: 1, days: 2.7, amber: false, polish: false },
+        qa: { items: 4, size: 2.4, mix: { S: 0, M: 4, L: 0 }, rate: 15.93, days: 0.2, amber: true, polish: false },
+    })
+    eq(full.length, 2, 'one reveal row per lane')
+    eq(full[0].name, 'Builder', 'the first row is the builder lane')
+    eq(full[1].name, 'QA', 'the second row is the QA lane')
+    eq(JSON.stringify(full[0].mix), JSON.stringify({ S: 1, M: 1, L: 1 }), 'the S/M/L mix rides the reveal data')
+    eq(full[1].rate, 15.93, 'the two rates ride the reveal')
+    eq(full[1].amber, true, 'the amber flag rides the reveal')
+    // old schema (no mix) degrades to a null mix and keeps the rest — never throws
+    const oldSchema = runwayMath({ builder: { items: 1, size: 1.5, rate: 0.43, days: 3.5 }, qa: { items: 4, size: 2.4, rate: 15.93, days: 0.2, amber: true } })
+    eq(oldSchema[0].mix, null, 'a missing mix degrades to null (pre-#1233 board.json)')
+    eq(oldSchema[0].items, 1, 'the item count survives the old schema (reveal fallback)')
+    eq(oldSchema[1].days, 0.2, 'days survive the old schema')
+    eq(oldSchema[1].amber, true, 'amber survives the old schema')
+    eq(runwayMath(null).length, 0, 'no runway draws no reveal rows')
+    eq(runwayMath({ builder: null, qa: null }).length, 0, 'null lanes are filtered, not rendered')
+}
 
 console.log(`\x1b[1m\nrunwaycheck: ${pass} gates, ${fails.length} failures\x1b[0m`)
 for (const f of fails) console.error(`FAIL ${f}`)
