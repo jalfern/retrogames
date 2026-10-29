@@ -217,6 +217,14 @@ and pushes `log.json` to forge-telemetry with every telemetry tick — shipped (
 `docs/shots/issue-<n>/` screenshots), stalled, regressed (only `static` failures count),
 waiting on Jon, private titles gated. `/forge/log` renders 14 days newest-first; the board
 shows the live headline. Rules pinned by `npm run dailylogcheck`.
+**The runway** (#1201): `scripts/lib/runway.mjs` estimates each lane's queue in build-days
+(S/M/L keyword classes) over the trailing 14-day ship rate read from label lineage (closes
+carrying `building` = Builder, `feedback` = QA — title-guessing is noise at ~45 merges/day);
+under a day reads amber, zero queue reads `polish-only — self-directed`, zero rate reads `?`.
+`scripts/runway.mjs` pushes it inside `board.json` (telemetry.sh materialises script+lib from
+origin/main into /tmp — a stdin `node -` cannot resolve relative imports), the board shows it
+at the top, and `jonq digest` prints the questions-digest body with the same line. Rules
+pinned by `npm run runwaycheck`.
 ```bash
 launchctl load ~/Library/LaunchAgents/com.jalfern.forge.plist   # install (after cp)
 scripts/forge.sh                                                # force a session now
