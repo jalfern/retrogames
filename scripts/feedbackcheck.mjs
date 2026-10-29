@@ -274,7 +274,7 @@ const workerSrc = readFileSync(new URL('../relay/worker.js', import.meta.url), '
 ok('wiring: worker preflights OPTIONS on the HTTP endpoints', /req\.method === 'OPTIONS'/.test(workerSrc) && /corsHeaders/.test(workerSrc))
 ok('wiring: /status + /feedback answers carry corsHeaders', (workerSrc.match(/json\(/g) || []).length >= 6 && !/Response\.json\(\{ ok: true, service/.test(workerSrc))
 ok('wiring: /status advertises jonKey presence (boolean, no value)', /jonKey:\s*!!env\.JON_KEY/.test(workerSrc) && !/jonKey:\s*env\.JON_KEY[^?]/.test(workerSrc))
-ok('wiring: upload failure routes its status into the issue', /screenshotMarkdown\(null, res\.status\)/.test(workerSrc))
+ok('wiring: upload failure routes its status into the issue', /screenshotMarkdown\(null, up\.status\)/.test(workerSrc))
 const chromeSrc = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
 ok('panel: opening the feedback panel toggles the game pause', /onClick=\{toggle\}/.test(chromeSrc) && /const toggle = \(\) => \{[\s\S]*?dispatchPause\(\)/.test(chromeSrc))
 
@@ -369,7 +369,108 @@ ok('panel: successful send goes straight back to the game', /if \(res\.ok\) \{[\
 ok('panel: a toast confirms the filed issue after the screen is gone', /data-feedback="toast"/.test(chromeSrc))
 ok('panel: typing is shielded by the capture guard', /installTypingGuard\(panelRef\.current/.test(chromeSrc))
 ok('panel: Jon key row saves to the device', /saveJonKey/.test(chromeSrc) && /data-feedback="keysave"/.test(chromeSrc))
-ok('wiring: worker uploads the screenshot as an issue asset', /uploads\.github\.com/.test(workerSrc) && /FB_SHOT_PLACEHOLDER/.test(workerSrc) && /screenshotMarkdown/.test(workerSrc))
+const coreSrc = readFileSync(new URL('../relay/core.js', import.meta.url), 'utf8')
+ok('wiring: worker uploads the screenshot through core.uploadScreenshot', /uploadScreenshot/.test(workerSrc) && /FB_SHOT_PLACEHOLDER/.test(workerSrc) && /screenshotMarkdown/.test(workerSrc))
+ok('wiring: uploads ride release assets, never the dead issue-assets endpoint',
+    /releases\/tags\//.test(coreSrc) && /releases\/\$\{release\.id\}\/assets|uploads\.github\.com/.test(coreSrc)
+    && !/issues\/\$\{number\}\/assets/.test(coreSrc))
+
+// ── #1222: screenshot upload through the persistent feedback-assets release ──
+// uploads.github.com issue-assets answers 400 "Multipart form data required" to raw
+// bodies and 422 "Bad Size" to canonical multipart at any size (live-reproduced with
+// a valid token) — the relay files screenshots as RELEASE assets instead. Drive the
+// whole flow against a fake GitHub and prove the URL that lands in the issue.
+import { uploadScreenshot, screenshotContentType, screenshotAssetName, FB_ASSET_TAG } from '../relay/core.js'
+
+const PNG1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+const JPG1x1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//dFmYWtlAAC40wAAAA==.jpeg'
+const UP_URL = 'https://uploads.github.com/repos/r/r/releases/42/assets{?name,label}'
+const DL_URL = 'https://github.com/jalfern/retrogames/releases/download/feedback-assets/feedback-7-1700000000000.png'
+const H = { authorization: 'Bearer tok', 'user-agent': 'retrogames-relay' }
+
+const ghStub = (routes) => {
+    const calls = []
+    const fn = async (url, init = {}) => {
+        calls.push({ url, method: init.method || 'GET', headers: init.headers || {}, body: init.body })
+        const key = `${init.method || 'GET'} ${url.replace(/\?.*/, '')}`
+        const r = routes[key]
+        if (r === undefined) return { ok: false, status: 404, json: async () => ({ message: 'Not Found' }) }
+        return typeof r === 'function' ? r(init) : { ok: true, status: 200, json: async () => r }
+    }
+    fn.calls = calls
+    return fn
+}
+const okRelease = { id: 42, draft: false, upload_url: UP_URL }
+
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: okRelease,
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: true, status: 201, json: async () => ({ browser_download_url: DL_URL }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 7, dataUrl: PNG1x1, headers: H, now: 1700000000000 })
+    const post = f.calls.find((c) => c.method === 'POST')
+    ok('shot1222: existing release reused (no create call)', up.url === DL_URL && !f.calls.some((c) => c.method === 'POST' && c.url === 'https://api.github.com/repos/r/r/releases'))
+    ok('shot1222: upload goes to uploads.github.com release assets', post.url.startsWith('https://uploads.github.com/repos/r/r/releases/42/assets?name='))
+    ok('shot1222: raw bytes uploaded, not JSON or multipart', post.body instanceof Uint8Array && post.headers['content-type'] === 'image/png')
+    ok('shot1222: asset name unique per issue + timestamp', /name=feedback-7-1700000000000\.png/.test(post.url))
+    ok('shot1222: auth header rides the upload', post.headers.authorization === 'Bearer tok')
+}
+{
+    const f = ghStub({
+        [`POST https://api.github.com/repos/r/r/releases`]: () => ({ ok: true, status: 201, json: async () => okRelease }),
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: true, status: 201, json: async () => ({ browser_download_url: DL_URL }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 8, dataUrl: PNG1x1, headers: H, now: 1 })
+    const create = f.calls.find((c) => c.method === 'POST' && c.url.endsWith('/repos/r/r/releases'))
+    ok('shot1222: missing release created on first use', up.url === DL_URL && JSON.parse(create.body).tag_name === FB_ASSET_TAG)
+    ok('shot1222: new release is published, not draft (draft URLs are private)', JSON.parse(create.body).draft === false)
+}
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: { id: 42, draft: true, upload_url: UP_URL },
+        [`PATCH https://api.github.com/repos/r/r/releases/42`]: () => ({ ok: true, status: 200, json: async () => ({ ...okRelease, draft: false }) }),
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: true, status: 201, json: async () => ({ browser_download_url: DL_URL }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 9, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1222: a draft release found at the tag is published before use',
+        up.url === DL_URL && f.calls.some((c) => c.method === 'PATCH' && JSON.parse(c.body).draft === false))
+}
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: { id: 42, draft: false, upload_url: UP_URL },
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: false, status: 422, json: async () => ({ message: 'Bad Size' }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 10, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1222: upload rejection reports its status for the honest line',
+        up.url === null && up.status === 422 && /http 422/.test(screenshotMarkdown(null, up.status)))
+}
+{
+    const f = ghStub({})
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 11, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1222: release create refused (read-only token) fails honest', up.url === null && !up.url)
+}
+{
+    const boom = async () => { throw new Error('network down') }
+    const up = await uploadScreenshot({ fetchImpl: boom, apiUrl: 'https://api.github.com', repo: 'r/r', number: 12, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1222: network failure never throws', up.url === null)
+}
+ok('shot1222: jpeg data URL uploads as image/jpeg with a .jpg name',
+    screenshotContentType(JPG1x1) === 'image/jpeg' && /\.jpg$/.test(screenshotAssetName(7, 1, JPG1x1))
+    && screenshotContentType(PNG1x1) === 'image/png' && screenshotContentType('garbage') === 'image/png')
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: okRelease,
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: true, status: 201, json: async () => ({ state: 'starter' }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 13, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1222: a 201 without browser_download_url is not a fake success',
+        up.url === null && !screenshotMarkdown(up.url).includes('!['))
+}
+ok('shot1222: placeholder patch renders the image in the filed body', (() => {
+    const body = buildFeedbackIssue({ ...good, screenshot: PNG1x1 }, true).body
+    const patched = body.replace(FB_SHOT_PLACEHOLDER, screenshotMarkdown(DL_URL))
+    return patched.includes(`![feedback screenshot](${DL_URL})`) && !patched.includes(FB_SHOT_PLACEHOLDER)
+})())
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator

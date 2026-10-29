@@ -239,6 +239,96 @@ export function screenshotMarkdown(url, status) {
     return `Screenshot captured but the relay upload failed${why} — ask the reporter to re-send.`
 }
 
+// #1222: the endpoint above USED to upload to `POST /repos/{repo}/issues/{n}/assets`
+// on uploads.github.com. That path is dead for server-side uploads — reproduced live
+// with a valid repo-scoped token: raw bodies answer 400 "Multipart form data required"
+// and canonical multipart answers 422 "Bad Size" at ANY size (254 B … 14 KB, with or
+// without X-GitHub-Api-Version). It now serves only the browser-session flow.
+// Release assets still take raw binary (documented) and a PUBLISHED release's
+// browser_download_url renders in issue markdown, so every feedback screenshot rides
+// one persistent, published `feedback-assets` release, created on first use.
+// The token needs repo write (classic `repo` / fine-grained Contents:write) — a
+// token that can file issues but not releases gets the honest failure line.
+
+export const FB_ASSET_TAG = 'feedback-assets'
+
+const SHOT_EXT = { png: 'png', jpg: 'jpg', jpeg: 'jpg', gif: 'gif', webp: 'webp' }
+
+export function screenshotContentType(dataUrl) {
+    const m = /^data:image\/(png|jpe?g|gif|webp)[;,]/.exec(String(dataUrl || ''))
+    const t = m ? m[1] : 'png'
+    return t === 'jpg' || t === 'jpeg' ? 'image/jpeg' : `image/${t}`
+}
+
+export function screenshotAssetName(number, ts, dataUrl) {
+    const m = /^data:image\/(png|jpe?g|gif|webp)[;,]/.exec(String(dataUrl || ''))
+    const ext = SHOT_EXT[m ? m[1] : 'png'] || 'png'
+    return `feedback-${number >>> 0}-${ts}.${ext}`
+}
+
+// uploadScreenshot never throws: { url } on success, { url: null, status? } on any
+// failure (status = the HTTP status when GitHub answered). `fetchImpl` is injectable
+// so feedbackcheck drives the whole flow against a fake GitHub.
+export async function uploadScreenshot({ fetchImpl, apiUrl, repo, number, dataUrl, headers, now = Date.now() }) {
+    const doFetch = fetchImpl || fetch
+    const jsonHeaders = { ...headers, 'content-type': 'application/json' }
+    let release = null
+    try {
+        const res = await doFetch(`${apiUrl}/repos/${repo}/releases/tags/${FB_ASSET_TAG}`, { headers: jsonHeaders })
+        if (res.ok) release = await res.json()
+    } catch { /* probe failed: try to create below */ }
+    if (!release || !release.id) {
+        try {
+            const res = await doFetch(`${apiUrl}/repos/${repo}/releases`, {
+                method: 'POST',
+                headers: jsonHeaders,
+                body: JSON.stringify({
+                    tag_name: FB_ASSET_TAG,
+                    name: 'Feedback screenshots',
+                    body: 'Screenshots filed by players through the in-game FEEDBACK button. Managed by the relay — do not delete.',
+                    draft: false,
+                    prerelease: false,
+                }),
+            })
+            if (res.ok) release = await res.json()
+        } catch { /* honest line below */ }
+    }
+    if (!release || !release.id) return { url: null }
+    if (release.draft) {
+        // A draft release's download URLs are NOT public — publishing is mandatory,
+        // not cosmetic (verified: draft asset fetch 404s without auth).
+        try {
+            await doFetch(`${apiUrl}/repos/${repo}/releases/${release.id}`, {
+                method: 'PATCH',
+                headers: jsonHeaders,
+                body: JSON.stringify({ draft: false }),
+            })
+        } catch { /* url may still be public if the tag was already published */ }
+    }
+    let bin
+    try {
+        const b64 = String(dataUrl).split(',')[1] || ''
+        bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))
+    } catch { return { url: null } }
+    if (!bin.length) return { url: null }
+    const base = release.upload_url
+        ? String(release.upload_url).replace(/\{[^}]*\}$/, '')
+        : `https://uploads.github.com/repos/${repo}/releases/${release.id}/assets`
+    const name = screenshotAssetName(number, now, dataUrl)
+    try {
+        const res = await doFetch(`${base}?name=${encodeURIComponent(name)}`, {
+            method: 'POST',
+            headers: { ...headers, 'content-type': screenshotContentType(dataUrl) },
+            body: bin,
+        })
+        if (res.ok) {
+            const j = await res.json().catch(() => null)
+            return j && j.browser_download_url ? { url: j.browser_download_url } : { url: null }
+        }
+        return { url: null, status: res.status }
+    } catch { return { url: null } }
+}
+
 // GitHub issue payload from a validated report. No secrets, no network here — the
 // worker attaches the Authorization header. The token NEVER appears in the body.
 export function buildFeedbackIssue(body, isJon) {
