@@ -13,6 +13,7 @@
 // dynamic arm is a later stage. Masses of everything the arm touches are real.
 
 import { CANNON, TICK_DT } from './physics.js'
+import { assetFor } from './assets.js'
 
 const DOWN = new CANNON.Vec3(0, -1, 0)
 
@@ -124,6 +125,9 @@ export function createArm(world, mats, { base }) {
     kin('hand', [0.035, 0.02, 0.03])
     kin('fingerL', [0.012, 0.035, 0.02])
     kin('fingerR', [0.012, 0.035, 0.02])
+    const gripperAsset = assetFor('gripper')
+    bodies.hand.simready = gripperAsset.id
+    bodies.hand.simreadyMass = gripperAsset.physics.massKg
 
     const arm = {
         shoulder,

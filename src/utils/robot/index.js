@@ -25,6 +25,7 @@ export { BENCH_TOP }
 export { createEpisode, validateEpisode, episodeDownload, exportEpisodes, saveEpisode, loadEpisodes } from './episode.js'
 export { forwardKinematics, planarIK } from './arm.js'
 export { Rail } from './physics.js'
+export { ASSETS, SLOTS, assetFor, gateFor, manifestSummary, MANIFEST_REV, SIMREADY_LIBRARY } from './assets.js'
 
 export const BASE = [0, BENCH_TOP, -0.30]
 export const WIN_TICKS = 4200
@@ -474,4 +475,4 @@ export function createAutopilot(sim) {
     return driver
 }
 
-export const KIT_VERSION = 'stage1'
+export const KIT_VERSION = 'stage2'

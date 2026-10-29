@@ -20,7 +20,7 @@ import { createRecorder, validate } from '../recording.js'
 export const EPISODE_POSE_EVERY = 6
 
 export function createEpisode(opts = {}) {
-    const { task = 'unspecified', poseEvery = EPISODE_POSE_EVERY, sources, ...rest } = opts
+    const { task = 'unspecified', poseEvery = EPISODE_POSE_EVERY, sources, assets = null, ...rest } = opts
     const rec = createRecorder({ ...rest, sources })
     const poses = []
     const methodsUsed = []
@@ -47,6 +47,10 @@ export function createEpisode(opts = {}) {
                 poses,
                 methodsUsed: methodsUsed.length ? [...methodsUsed] : [file.method],
             }
+            // Asset pin (#1141 stage 2): which SimReady manifest revision's
+            // physics this run was played against — datasets stay honest about
+            // the transcribed masses/frictions they were generated with.
+            if (assets) file.episode.assets = assets
             return file
         },
     }
@@ -76,6 +80,7 @@ export function validateEpisode(rec) {
         lastT = x.t
     }
     if (!Array.isArray(ep.methodsUsed) || !ep.methodsUsed.length) return 'episode.methodsUsed must be a non-empty list'
+    if (ep.assets !== undefined && (typeof ep.assets !== 'string' || !ep.assets)) return 'episode.assets must be a non-empty string'
     return null
 }
 

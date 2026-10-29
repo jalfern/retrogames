@@ -1,12 +1,15 @@
-// ROBOT SIM KIT — props (issue #1141 stage 1): bench, drawer (real rails),
-// cabinet + spring-hinged door, crate, can. All dynamic bodies keep real
-// mass/friction (SimReady's promise: the physics travels with the asset).
+// ROBOT SIM KIT — props (issue #1141 stages 1–2): bench, drawer (real rails),
+// cabinet + spring-hinged door, crate, can. Masses and surface frictions come
+// from the SimReady manifest (src/utils/robot/assets.js): SimReady's promise
+// is that the physics travels with the asset, and GLB carries no physics, so
+// the USD-side record is transcribed here instead of dropped.
 //
 // The drawer is a COMPOUND body (bottom + four walls, open top), so a crate
 // rides inside the cavity for real, and closing onto a crate left on the rail
 // track is refused by the Rail stand-clear test.
 
 import { CANNON, Rail } from './physics.js'
+import { assetFor } from './assets.js'
 
 export const BENCH_TOP = 0.90
 
@@ -18,6 +21,7 @@ export function createBench(world, mats) {
         material: mats.wood,
     })
     bench.kitName = 'bench'
+    bench.simready = assetFor('bench').id
     world.addBody(bench)
     const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: mats.wood })
     floor.quaternion.setFromEuler(-Math.PI / 2, 0, 0)
@@ -31,7 +35,7 @@ const T = 0.012
 export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
     const half = [0.20, 0.045, 0.16]
     const shapeBottom = new CANNON.Box(new CANNON.Vec3(half[0] - T, T / 2, half[2] - T))
-    const drawer = new CANNON.Body({ mass: 1.4, material: mats.steel })
+    const drawer = new CANNON.Body({ mass: assetFor('drawer').physics.massKg, material: mats.steel })
     drawer.addShape(shapeBottom, new CANNON.Vec3(0, -half[1] + T / 2, 0))
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, half[1], half[2])), new CANNON.Vec3(-half[0] + T / 2, 0, 0))
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, half[1], half[2])), new CANNON.Vec3(half[0] - T / 2, 0, 0))
@@ -39,6 +43,7 @@ export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(half[0], half[1], T / 2)), new CANNON.Vec3(0, 0, half[2] - T / 2))
     drawer.position.set(x, BENCH_TOP + half[1], z)
     drawer.kitName = 'drawer'
+    drawer.simready = assetFor('drawer').id
     world.addBody(drawer)
     const rail = new Rail(drawer, { anchor: [x, BENCH_TOP + half[1], z], axis: [0, 0, 1], min: -0.015, max: 0.10 })
     rail.halfExtents = half
@@ -101,10 +106,11 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     const restH = w - 2 * T - 0.004
     const doorZ = z + d + 0.016
     const hinge = { x: x + w - T, y: y0 + H / 2, z: doorZ }
-    const door = new CANNON.Body({ mass: 0.5, material: mats.steel })
+    const door = new CANNON.Body({ mass: assetFor('door').physics.massKg, material: mats.steel })
     door.addShape(new CANNON.Box(new CANNON.Vec3(restH, H / 2 - T, T / 2)))
     door.position.set(hinge.x - restH, hinge.y, hinge.z)
     door.kitName = 'door'
+    door.simready = assetFor('door').id
     world.addBody(door)
     const axis = new CANNON.Vec3(0, 1, 0)
     const pivotDoor = new CANNON.Vec3()
@@ -213,26 +219,28 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
 
 const TICK = 1 / 60
 
-export function createCrate(world, mats, { x, y, z }, mass = 0.5) {
+export function createCrate(world, mats, { x, y, z }, mass = assetFor('crate').physics.massKg) {
     const crate = new CANNON.Body({
         mass,
         shape: new CANNON.Box(new CANNON.Vec3(0.0325, 0.0325, 0.0325)),
         position: new CANNON.Vec3(x, y, z),
-        material: mats.plastic,
+        material: mats.carton,
     })
     crate.kitName = 'crate'
+    crate.simready = assetFor('crate').id
     world.addBody(crate)
     return crate
 }
 
 export function createCan(world, mats, { x, y, z }) {
     const can = new CANNON.Body({
-        mass: 0.35,
+        mass: assetFor('can').physics.massKg,
         shape: new CANNON.Cylinder(0.028, 0.028, 0.09, 14),
         position: new CANNON.Vec3(x, y, z),
-        material: mats.plastic,
+        material: mats.tin,
     })
     can.kitName = 'can'
+    can.simready = assetFor('can').id
     world.addBody(can)
     return can
 }
