@@ -93,6 +93,13 @@ html[data-theme="light"] .sr{--bg:#f3f5f2;--panel:#ffffff;--ink:#151b18;--muted:
 .sr .lookline .try{font:500 12.5px var(--mono);color:var(--builder);white-space:nowrap}
 .sr .lookline:hover .try{text-decoration:underline}
 .sr .lookline:hover .ln{color:var(--builder)}
+.sr .strips{border:1px solid var(--rule);border-radius:12px;padding:16px 18px;background:var(--panel)}
+.sr .strips h2{margin-bottom:2px}
+.sr .stripitem{padding:12px 0;border-top:1px dashed var(--rule)}
+.sr .stripitem:first-of-type{border-top:none}
+.sr .stripitem .st{display:block;font-size:13.5px;color:var(--ink);text-decoration:none;margin-bottom:8px}
+.sr .stripitem .st:hover{color:var(--builder)}
+.sr .stripitem img{display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--rule)}
 .sr .note{background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
 .sr .note .tag{font:600 11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;padding:5px 7px;border-radius:5px;border:1px solid currentColor;white-space:nowrap}
 .sr .note .tag.w{color:var(--warn)} .sr .note .tag.h{color:var(--hot)} .sr .note .tag.k{color:var(--qa)}
@@ -270,6 +277,20 @@ export default function ShiftReport() {
                                 <span className="ln">{g.text}</span>
                                 <span className="try">try it →</span>
                             </a>
+                        ))}
+                    </section>
+                )}
+
+                {report.strips && report.strips.length > 0 && (
+                    <section className="strips" aria-label="Film strips">
+                        <div className="eyebrow">film strips</div>
+                        <h2>Before and after, same seed</h2>
+                        <p className="sub" style={{ marginBottom: 2 }}>Seed-matched replays of this shift&apos;s visual changes — base vs branch, frame by frame, with the verdict.</p>
+                        {report.strips.map((s, i) => (
+                            <div className="stripitem" key={`${s.href}-${i}`}>
+                                <a className="st" href={s.href} target="_blank" rel="noreferrer">{s.text} ↗</a>
+                                <img src={s.href} alt={s.text} loading="lazy" />
+                            </div>
                         ))}
                     </section>
                 )}
