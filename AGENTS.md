@@ -159,6 +159,7 @@ After merging, `gh pr checks --watch` for Vercel, then open `https://jalfern.com
 
 ## Where the rest lives
 - **docs/AI.md** — the `src/ai` spine, the no-remote-AI-backend history, the Zork brain.
+- **docs/MODELS.md** — 3D model shelf + free-model library index; look before you model (#1140).
 - **docs/HARNESS.md** — the self-verifying suite script by script, the mutant essays, CI detail,
   and the forge loop + warden.
 - **Per-game deep notes** — each game's own README (RaccoonHeist, Galaga, IronKeep, SuperMario,
