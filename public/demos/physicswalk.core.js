@@ -96,13 +96,6 @@
     }
   }
 
-  // signed angle at joint J between rays J->P0 and J->P1 (positive = P1 CCW from P0)
-  function angAt(sim, p0, j, p1) {
-    const ax = sim.p[p0 * 2] - sim.p[j * 2], ay = sim.p[p0 * 2 + 1] - sim.p[j * 2 + 1]
-    const bx = sim.p[p1 * 2] - sim.p[j * 2], by = sim.p[p1 * 2 + 1] - sim.p[j * 2 + 1]
-    return Math.atan2(ax * by - ay * bx, ax * bx + ay * by)
-  }
-
   // torque tau about joint J acting on the angle between rays J->P0, J->P1,
   // by virtual work with translation invariance (force on J closes the couple,
   // so the pair conserves linear momentum — pure torque, no momentum pumping):
@@ -232,7 +225,7 @@
     }
     for (let i = 0; i < N; i++) {
       const ix = i * 2, iy = i * 2 + 1
-      const vx = (sim.p[ix] - pPrev[ix]) / dt
+      let vx = (sim.p[ix] - pPrev[ix]) / dt
       let vy = (sim.p[iy] - pPrev[iy]) / dt
       if (sim.p[iy] < 0.005) {
         if (Math.abs(vx) > sim.slipSlide) sim.slipSlide = Math.abs(vx)
@@ -243,9 +236,9 @@
           if (i === L.t) sim.grf[fi * 2 + 1] = Math.max(sim.grf[fi * 2 + 1], jn)
         }
       } else {
-        vy = vy
+        vx *= 1 - 0.0004
       }
-      sim.v[ix] = vx * (sim.p[iy] >= 0.005 ? 1 - 0.0004 : 1)
+      sim.v[ix] = vx
       sim.v[iy] = vy
     }
   }
@@ -288,12 +281,12 @@
         const hipVx = sim.v[0 * 2], hipVy = sim.v[0 * 2 + 1]
         for (let fi = 0; fi < 2; fi++) {
           const L = sim.legs[fi]
-          const kx = sim.p[L.k * 2], ky = sim.p[L.k * 2 + 1]
+          const kx = sim.p[L.k * 2]
           const ax = sim.p[L.a * 2], ay = sim.p[L.a * 2 + 1]
-          const hx = sim.p[L.h * 2], hy = sim.p[L.h * 2 + 1]
-          const tx = sim.p[L.t * 2], ty = sim.p[L.t * 2 + 1]
-          const vkx = sim.v[L.k * 2], vyk = sim.v[L.k * 2 + 1]
-          const vax = sim.v[L.a * 2], vay = sim.v[L.a * 2 + 1]
+          const hy = sim.p[L.h * 2 + 1]
+          const ty = sim.p[L.t * 2 + 1]
+          const vkx = sim.v[L.k * 2]
+          const vax = sim.v[L.a * 2]
           const vtx = sim.v[L.t * 2], vhy = sim.v[L.h * 2 + 1]
           const key = fi === 0 ? 'L' : 'R'
           if (L.swing) {
