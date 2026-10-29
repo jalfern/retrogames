@@ -99,6 +99,27 @@ export const runwayBadge = (runway, now = Date.now()) => {
     return { text: runway.line, tone: stale ? 'dim' : amber ? 'amber' : polish ? 'violet' : 'green', stale }
 }
 
+// runwayTrend (#1233) — the reveal's sparkline rows: per lane the last
+// days of the runway number straight off board.json's `trend` (null = that
+// day had no rate — a gap in the line, never an invented point), plus a
+// coarse delta so "is the queue shrinking?" reads at a glance. Degrades to
+// [] on pre-trend board.json (the telemetry schema lags this branch until
+// after merge) and on any lane with fewer than two known points — one point
+// is not a trend. Pure, so runwaycheck pins it without a browser.
+export const runwayTrend = (runway) => {
+    if (!runway || typeof runway !== 'object' || !runway.trend || typeof runway.trend !== 'object') return []
+    return [['Builder', runway.trend.builder], ['QA', runway.trend.qa]]
+        .filter(([, t]) => Array.isArray(t))
+        .map(([name, t]) => {
+            const points = t.map((p) => (p && Number.isFinite(p.days) ? p.days : null))
+            const known = points.filter((d) => Number.isFinite(d))
+            if (known.length < 2) return null
+            const drift = known[known.length - 1] - known[0]
+            return { name, points, delta: Math.abs(drift) < 0.5 ? 'flat' : drift < 0 ? 'shrinking' : 'growing' }
+        })
+        .filter(Boolean)
+}
+
 // runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
 // lane carrying the math behind its "~N days": the per-item S/M/L mix, the total
 // size, the rate (closes/day over the trailing window) and the days it yields.

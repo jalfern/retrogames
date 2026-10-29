@@ -72,6 +72,41 @@ export function laneRunway({ items = [], ratePerDay = null }) {
     }
 }
 
+// laneTrend (#1233) — the runway number's recent past, one point per day,
+// honest by reconstruction: the lane at a snapshot k days back = the items
+// that EXISTED then (open now and created by then, plus issues closed since
+// then that were created by then), over the closes-per-day rate in the
+// trailing window ENDING that day. Label lineage is today's — labels stay on
+// issues after they close, the same assumption shipRate already makes — and
+// sizes are re-estimated from title/body, which do not change. A day whose
+// window holds no closes has no rate: `days` is null there, so the sparkline
+// leaves a gap; nothing is invented. An item with an unparseable created_at
+// (older payloads) counts as existing in every snapshot: it shifts the whole
+// line by its size, which reads worse before it reads false. Oldest → newest.
+export const TREND_DAYS = 7
+
+export function laneTrend({ openItems = [], closed = [], windowDays = WINDOW_DAYS, days = TREND_DAYS, now = Date.now() } = {}) {
+    const DAY = 86400e3
+    const ms = (v) => { const t = Date.parse(v); return Number.isFinite(t) ? t : null }
+    const out = []
+    for (let k = days - 1; k >= 0; k--) {
+        const dk = now - k * DAY
+        let total = 0
+        for (const i of openItems) { const c = ms(i?.created_at); if (c == null || c <= dk) total += estimateIssue(i) }
+        for (const i of closed) {
+            const x = ms(i?.closed_at)
+            if (x != null && x <= dk) continue
+            const c = ms(i?.created_at)
+            if (c == null || c <= dk) total += estimateIssue(i)
+        }
+        let n = 0
+        for (const i of closed) { const x = ms(i?.closed_at); if (x != null && x <= dk && x >= dk - windowDays * DAY) n++ }
+        const rate = n > 0 ? n / windowDays : null
+        out.push({ t: new Date(dk).toISOString().slice(0, 10), days: rate == null ? null : Math.round((total / rate) * 10) / 10 })
+    }
+    return out
+}
+
 const lanePhrase = (name, lane) =>
     `${name}: ${lane.polish ? 'polish-only — self-directed' : `${fmtDays(lane.days)}${lane.days == null ? ' (no recent ships)' : ''} queued`}`
 
@@ -103,7 +138,13 @@ export function computeRunway({ issues, closedBuilder = [], closedQa = [], now =
     const qaRate = shipRate((closedQa || []).map((i) => i.closed_at), { windowDays, now })
     const builder = laneRunway({ items: builderItems, ratePerDay: builderRate })
     const qa = laneRunway({ items: qaItems, ratePerDay: qaRate })
-    return { builder, qa, line: runwayLine({ builder, qa }), windowDays }
+    // trend (#1233): the same membership and lineage the strip's number uses,
+    // walked back day-by-day, so "is the queue shrinking?" is readable.
+    const trend = {
+        builder: laneTrend({ openItems: builderItems, closed: closedBuilder || [], windowDays, now }),
+        qa: laneTrend({ openItems: qaItems, closed: closedQa || [], windowDays, now }),
+    }
+    return { builder, qa, trend, line: runwayLine({ builder, qa }), windowDays }
 }
 
 // digestText is the questions-digest body (#1201: the runway line must be

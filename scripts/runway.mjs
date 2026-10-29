@@ -34,15 +34,18 @@ try {
     // --jq keeps payloads small: full objects blew execFileSync's default
     // buffer (ENOBUFS) at 300 rows.
     issues = gh([`repos/${REPO}/issues?state=open&per_page=100`, '--jq',
-        '[.[] | {number, title, state, pull_request, body, labels: [.labels[].name]}]'])
+        '[.[] | {number, title, state, pull_request, body, created_at, labels: [.labels[].name]}]'])
     // Closed issues list newest-closed-first: page until a page is older
     // than the window (rates are coarse, so 3 pages = 300 closes is a cap,
     // and a lane shipping >300 items/14 d has a runway of hours anyway).
+    // #1233: rows carry created_at + title + body-line too — the trend
+    // reconstructs what the queue looked like each day, which needs to know
+    // when each closed item was born and how big it was.
     const closed = (label) => {
         const rows = []
         for (let page = 1; page <= 3; page++) {
             const chunk = gh([`repos/${REPO}/issues?state=closed&labels=${label}&per_page=100&page=${page}`,
-                '--jq', '[.[] | {closed_at}]'])
+                '--jq', '[.[] | {closed_at, created_at, title, body: ((.body // "") | split("\\n")[0][:200])}]'])
             rows.push(...chunk)
             if (chunk.length < 100) break
         }
