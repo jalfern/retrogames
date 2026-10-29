@@ -12,3 +12,5 @@ scripts/.shots/**/*.png
 scripts/.shots/**/*.jpg
 scripts/.shots/**/*.jpeg
 .wrangler/
+scripts/.strips/**/*.png
+scripts/.strips/**/*.jpg
