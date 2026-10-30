@@ -1,0 +1,72 @@
+#!/bin/zsh
+# forge — one switch for the factory.
+#
+#   forge status          halted or not, and every opencode session still running
+#   forge stop [reason]   open a `halt` issue: warden, forge.sh and forge-qa.sh start
+#                         nothing new (#605). Sessions already running finish.
+#   forge stop --now      same, then end the running sessions (unpushed work is lost)
+#   forge start           close every open `halt` issue; the warden resumes next tick
+#
+# Every lane's `opencode run` lives on the Studio (mini/mbp QA reach their oMLX
+# through the ssh tunnels), so this is the only box that needs it.
+
+R=jalfern/retrogames
+# Real lane runs only: forge.sh/forge-qa.sh call `opencode run --auto ...` or
+# `opencode run --model ...`. A bare "opencode run" also matches the watch.sh
+# tmux panes, whose args carry the pattern text (see watch.sh:37).
+PAT="opencode run (--auto|--model)"
+
+halts() { gh issue list -R $R -l halt --state open --json number -q '.[].number' 2>/dev/null; }
+
+sessions() {
+    local pid etime args lane
+    for pid in $(pgrep -f "$PAT"); do
+        etime=$(ps -o etime= -p $pid 2>/dev/null | tr -d ' ') || continue
+        args=$(ps -o args= -p $pid 2>/dev/null)
+        case "$args" in
+            *"QA MASTER on node "*) lane="QA $(print -r -- "$args" | sed -E 's/.*QA MASTER on node ([a-z]+).*/\1/')" ;;
+            *"THE FORGE"*)          lane="builder" ;;
+            *)                      lane="other opencode run" ;;
+        esac
+        printf '  %-8s %-16s up %s\n' $pid "$lane" $etime
+    done
+}
+
+show() {
+    local h=$(halts | paste -sd' ' -)
+    if [[ -n "$h" ]]; then echo "forge: HALTED (#${h// / #})"; else echo "forge: running"; fi
+    local s=$(sessions)
+    if [[ -n "$s" ]]; then echo "sessions:"; print -r -- "$s"; else echo "sessions: none"; fi
+}
+
+case "$1" in
+    status|"") show ;;
+    stop)
+        shift
+        local now=no; [[ "$1" == --now ]] && { now=yes; shift; }
+        if [[ -z "$(halts)" ]]; then
+            gh issue create -R $R -l halt -t "FORGE HALT${*:+: $*}" \
+                -b "Frozen by Jon with \`forge stop\`${*:+: $*}. \`forge start\` closes this." >/dev/null \
+                && echo "halt issue opened"
+        else
+            echo "already halted"
+        fi
+        if [[ $now == yes ]] && pgrep -f "$PAT" >/dev/null; then
+            pkill -TERM -f "$PAT"; sleep 3
+            pkill -KILL -f "$PAT" 2>/dev/null
+            pkill -f "user-data-dir=/tmp/forge/" 2>/dev/null   # orphaned headless Chrome (#907)
+            echo "running sessions ended"
+        fi
+        show
+        [[ $now == no ]] && [[ -n "$(sessions)" ]] && echo "(still finishing; 'forge stop --now' ends them)"
+        ;;
+    start)
+        local n
+        for n in $(halts); do gh issue close $n -R $R -c "Lifted with \`forge start\`." >/dev/null 2>&1 && echo "closed halt #$n"; done
+        # GitHub's issue list lags a few seconds behind a close; wait for it.
+        local i; for i in 1 2 3 4 5 6; do [[ -z "$(halts)" ]] && break; sleep 2; done
+        show
+        echo "(the warden picks it up on its next tick, within 10 min)"
+        ;;
+    *) echo "usage: forge status | stop [--now] [reason] | start"; exit 2 ;;
+esac
