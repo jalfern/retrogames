@@ -9,6 +9,7 @@
 //   KICK_B=1
 //   QA_STUDIO_QUEUE=0
 //   QA_MINI_QUEUE=0
+//   QA_MINI_FLAGSHIP=0
 //   LADDER=8
 //
 // Values are integers or `-` only (warden eval's this output; nothing else can
@@ -58,4 +59,5 @@ console.log(`KICK_A=${plan.kick.a ? 1 : 0}`)
 console.log(`KICK_B=${plan.kick.b ? 1 : 0}`)
 console.log(`QA_STUDIO_QUEUE=${plan.qaStudioQueue ? 1 : 0}`)
 console.log(`QA_MINI_QUEUE=${plan.qaMiniQueue ? 1 : 0}`)
+console.log(`QA_MINI_FLAGSHIP=${plan.qaMiniFlagship ? 1 : 0}`)
 console.log(`LADDER=${plan.counts.ladder}`)

@@ -86,7 +86,8 @@ confuse the two queues.
       one claim order now: steer → next → oldest across `game-queue`, `feedback`
       and the flagship polish stage. When this lane has NO claimable `feedback`
       item but the warden kicked it anyway (the builder is busy on a queued title
-      and a flagship gap is unowned), do NOT idle: run
+      and a flagship gap is unowned; #1372 adds the case where the queue left
+      mini nothing either), do NOT idle: run
       `node scripts/idle-kick.mjs qa` — it answers `KICK <GAME> <gapIndex>` for
       the oldest unowned honest gap of SSX / Emberwood / COMET DRIFT HD / Myst
       that no lane is inside (a `building` title or a `building-qa` title), or

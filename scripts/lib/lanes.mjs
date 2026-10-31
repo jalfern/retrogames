@@ -22,6 +22,12 @@
 //     as studioUp by the warden). If studio is down or busy, its share goes to
 //     mini instead — no lane idles while a claimable game waits. Transient
 //     over/under-reserve is harmless: claim time (#878) owns collision safety.
+//   QA mini flagship (#1372) — the #878 flagship fallback reaches mini too:
+//     when feedback AND queue leave mini nothing (everything was consumed by
+//     builders or studio's reserve), the warden may send mini to an unowned
+//     flagship gap instead of idling. The warden only kicks when studio did not
+//     take the gap itself this tick (down/busy/queue-bound = the gap survives
+//     studio's share), so mini stays the last lane, same reserve shape as #1290.
 //
 // Targets are assigned to FREE slots in slot order (a before b): a busy slot
 // takes nothing, so the next free slot inherits its ladder position — the two
@@ -74,12 +80,19 @@ export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = fa
     // after builders and (if it can run) studio have each taken theirs.
     const studioReserve = studioUp && qaStudioQueue ? 1 : 0
     const qaMiniQueue = feedbackFree === 0 && queueFree > freeSlots + studioReserve
+    // #1372: with nothing left for mini in feedback or the queue, mini idles —
+    // and an unowned flagship gap outranks idling (#878). Mutually exclusive
+    // with qaMiniQueue by construction: the queue wins per tick (e-prime), the
+    // flagship stage is the tail. Whether the gap survives studio's SHARE is a
+    // runtime fact (down/busy/queue-kicked), decided by the warden, not here.
+    const qaMiniFlagship = feedbackFree === 0 && queueFree <= freeSlots + studioReserve
 
     return {
         targets,
         kick,
         qaStudioQueue,
         qaMiniQueue,
+        qaMiniFlagship,
         counts: { ladder: ladder.length, feedbackFree, queueFree, freeSlots, studioReserve },
     }
 }
