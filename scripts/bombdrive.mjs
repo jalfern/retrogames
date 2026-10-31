@@ -61,30 +61,43 @@ ok('play opens a round-1 bomb', st0.round === 1 && st0.modules.length === 1)
 
 // real keys: cycle modules + move cursor; drawn selection follows the logic
 const box = await cvBox(page)
-const clip = { x: box.x + 20, y: box.y + box.h * 0.28, width: box.w - 40, height: box.h * 0.4 }
+const clip = { x: box.x + 20, y: box.y + box.h * 0.15, width: box.w - 40, height: box.h * 0.73 }
 const shotBefore = await page.screenshot({ clip })
-page.keyboard.down('ArrowRight')
-await sleep(140)
-page.keyboard.up('ArrowRight')
-await sleep(160)
-const st1 = await page.evaluate(() => window.__tmdTest.state())
-const st1moved = st0.modules[0].type === 'D'
-    ? st1.modules[0].dial !== st0.modules[0].dial
-    : st1.cursor.sub !== st0.cursor.sub
-const shotAfter = await page.screenshot({ clip })
-ok('real arrows move the cursor/dial (logical)', st1moved, `sub ${st0.cursor.sub} -> ${st1.cursor.sub}, dial ${st0.modules[0].dial} -> ${st1.modules[0].dial}`)
-ok('the picture moved with the input', !shotBefore.equals(shotAfter))
+// Hold ArrowRight and sample: the min-hold latch + a mod-3 wire cursor can net
+// to zero on a single press, so the proof is ANY intermediate sub != 0
+// while the key is down (and catch the picture then, for the pixel check).
+let moved = false
+let shotMid = null
+await page.keyboard.down('ArrowRight')
+for (let i = 0; i < 26; i++) {
+    const s = await page.evaluate(() => window.__tmdTest.state())
+    const subNow = s.modules[0].type === 'D' ? s.modules[0].dial !== st0.modules[0].dial : s.cursor.sub !== st0.cursor.sub
+    if (subNow) {
+        moved = true
+        // the selection marker blinks; try a couple of phases for a visible diff
+        for (let k = 0; k < 4 && !shotMid; k++) {
+            const sh = await page.screenshot({ clip })
+            if (!sh.equals(shotBefore)) shotMid = sh
+            else await sleep(70)
+        }
+        if (shotMid) break
+    }
+    await sleep(20)
+}
+await page.keyboard.up('ArrowRight')
+await sleep(120)
+ok('real arrows move the cursor/dial (logical)', moved, `sub was ${st0.cursor.sub}`)
+ok('the picture moved with the input', !!shotMid)
 await page.screenshot({ path: '/tmp/forge/tmd-play.png' })
 
-// a real strike: mash SPACE on wires until a breaker trips (never free-solves)
-let strikes = 0
-for (let i = 0; i < 8 && !strikes; i++) {
-    await page.keyboard.press('Space')
-    await sleep(180)
-    strikes = (await page.evaluate(() => window.__tmdTest.state())).strikes
-    page.keyboard.down('ArrowRight'); await sleep(90); page.keyboard.up('ArrowRight'); await sleep(60)
-}
-ok('a wrong verb at the panel trips a strike for real', strikes === 1)
+// a real strike on a seed where wire 0 is provably the wrong cut (node-pinned:
+// seed 7 -> N?, target wire != 0): press SPACE at the leftmost wire
+await page.evaluate(() => window.__tmdTest.start(7, 1))
+await sleep(250)
+await page.keyboard.press('Space')
+await sleep(220)
+const strikeSt = await page.evaluate(() => window.__tmdTest.state())
+ok('a wrong verb at the panel trips a strike for real', strikeSt.strikes === 1, `strikes=${strikeSt.strikes}`)
 
 // mic grammar path (no speech service in headless — phrase injection, #1249 lesson)
 const micOn = await page.evaluate(() => { window.__tmdTest.call('cut purple'); return window.__tmdTest.voiceLog().slice(-1)[0] })

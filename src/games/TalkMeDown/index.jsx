@@ -419,6 +419,7 @@ export default function TalkMeDown() {
                 screen: () => screenRef.current,
                 call: (text) => voiceCall(text),
                 release: (field) => { keys1Ref.current[field] = false },
+                keys: () => ({ ...keys1Ref.current }),
                 state: () => { const g = gsRef.current; return g ? simState(g) : null },
                 hash: () => { const g = gsRef.current; return g ? hash(g) : 0 },
                 voiceLog: () => voiceLogRef.current.slice(),
