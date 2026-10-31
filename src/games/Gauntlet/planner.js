@@ -300,14 +300,50 @@ export function partnerPad(gs, prevA = false, cmd = null) {
     // by a lock ends in the same honest place: wait where you were sent, like
     // a player who can't get through either.
     if (cmd && cmd.kind !== 'follow') {
-        if (cmd.kind === 'hold') return pad
-        const goal = cmd.goal
-        if (goal) {
-            if (cmd.kind === 'key' && !gs.items.some((it) => !it.taken && it.t === 'key' && Math.floor(it.x) === goal[0] && Math.floor(it.y) === goal[1])) return pad
-            if (pr === goal[1] && pc === goal[0]) return pad // took the ground — hold it
-            const gpath = padPath(gs, pr, pc, goal[1], goal[0])
-            if (gpath.length) { steerOnPath(pad, p, gpath, 0.25); return pad }
-            return pad // sealed by a lock: wait at the threshold
+        if (cmd.kind === 'hold') {
+            // #1287: HOLD auto-releases once the hero has LEFT the post and
+            // comes back — returning to a guard you no longer need reads
+            // dumb, so the partner falls back into follow. A hold given while
+            // the hero is already at your shoulder sticks (he hasn't left
+            // yet), and any explicit next call still wins.
+            if (Math.hypot(h.x - p.x, h.y - p.y) > 4) cmd.left = true
+            if (!cmd.left) return pad
+            if (Math.hypot(h.x - p.x, h.y - p.y) <= 1.6) { gs._vCmd = null; cmd = null }
+            else return pad
+        } else if (cmd.kind === 'attack') {
+            // #1287: chase-and-cut the called-out beast until it is dead;
+            // the cut pulse up top lands the blade when it closes to reach.
+            // When the beast dies (or despawns) the partner comes home.
+            const tgt = gs.monsters.find((m) => m.id === cmd.target)
+            if (!tgt) { gs._vCmd = null; cmd = null }
+            else {
+                const tr = Math.floor(tgt.y), tc = Math.floor(tgt.x)
+                if (pr !== tr || pc !== tc) {
+                    const apath = padPath(gs, pr, pc, tr, tc)
+                    if (apath.length) { steerOnPath(pad, p, apath, 0.22); return pad }
+                }
+                steer(tgt.x, tgt.y, 0.5)
+                return pad
+            }
+        } else {
+            const goal = cmd.goal
+            if (goal) {
+                if (cmd.kind === 'key' && !gs.items.some((it) => !it.taken && it.t === 'key' && Math.floor(it.x) === goal[0] && Math.floor(it.y) === goal[1])) return pad
+                if (pr === goal[1] && pc === goal[0]) {
+                    // #1287: goto used to stand at the far corner forever. Once
+                    // the ground is taken, the partner returns to follow when
+                    // the hero enters the goal's quadrant or closes to ~8
+                    // cells — the scout finishes and rejoins instead of idling.
+                    cmd.arrived = true
+                    const sameQuad = (goal[1] < H / 2) === (Math.floor(h.y) < H / 2) && (goal[0] >= W / 2) === (Math.floor(h.x) >= W / 2)
+                    if (sameQuad || Math.hypot(h.x - p.x, h.y - p.y) <= 8) { gs._vCmd = null; cmd = null }
+                    else return pad
+                } else {
+                    const gpath = padPath(gs, pr, pc, goal[1], goal[0])
+                    if (gpath.length) { steerOnPath(pad, p, gpath, 0.25); return pad }
+                    return pad // sealed by a lock: wait at the threshold
+                }
+            }
         }
     }
     let path = padPath(gs, pr, pc, Math.floor(ty), Math.floor(tx))
@@ -396,6 +432,22 @@ export function applyCall(gs, intent) {
         const goal = keyGoal(gs, pc, pr)
         if (!goal) return { ok: false, why: 'NO KEY' }
         gs._vCmd = { kind: 'key', goal }
+        return { ok: true }
+    }
+    if (intent.kind === 'attack') {
+        // #1287: the nearest beast the partner can SEE (the call means "that
+        // guy" — something in sight) and walk to. The id is frozen at call
+        // time so the same call at the same tick chases the same creature;
+        // partnerPad re-steers toward its live position every tick.
+        let best = null, bd = Infinity
+        for (const m of gs.monsters || []) {
+            const d = Math.hypot(m.x - p.x, m.y - p.y)
+            if (d >= bd || !losClear(gs, p.x, p.y, m.x, m.y)) continue
+            const mr = Math.floor(m.y), mc = Math.floor(m.x)
+            if ((mr === pr && mc === pc) || padPath(gs, pr, pc, mr, mc).length) { bd = d; best = m }
+        }
+        if (!best) return { ok: false, why: 'NO TARGET' }
+        gs._vCmd = { kind: 'attack', target: best.id, goal: null }
         return { ok: true }
     }
     if (intent.kind === 'follow' || intent.kind === 'hold') {

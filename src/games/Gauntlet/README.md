@@ -83,7 +83,8 @@ you face · X / F / B: arrow down the facing. P2 (desktop, issue #275 item 7):
 WASD: move 8-way · F: sword. Hero screen: arrows or TAP a card to pick P1,
 Space or TAP the card again to start (issue #403); C: CPU partner, P:
 two-player (P2 on WASD+F, A/D picks P2's hero, shown as a second portrait) ·
-V: voice co-op — speak to the CPU seat (see Spoken co-op below) ·
+V: voice co-op — speak to the CPU seat; on phones tap the `MIC · TAP` pill
+instead (no V key needed, see Spoken co-op below) ·
 ?: pause.
 
 ## Verify
@@ -165,19 +166,31 @@ pads**, so the sim never learns a voice exists, and Frank's trained model can
 drop into the same `intent → pad stream` seat later.
 
 Calls: **"take the upper right"** (goto the far side of that quadrant),
-**"grab the key"**, **"follow me"**, **"hold here"** (+ synonyms; see
+**"grab the key"**, **"attack that guy"** (#1287: nearest beast in sight —
+chase and cut until it dies, then the partner rejoins you), **"follow me"**,
+**"hold here"** (+ synonyms; see
 voicecalls.js for the exact grammar; compass words split the maze at W/2,
 H/2). Rules the seat keeps while obeying: the survival food-break still
 outranks an order (a dead partner guards nothing), the cut pulse keeps
 firing (hold = stand your ground and swing), a locked door means WAIT at the
 threshold, and a refused call (no key on the level, no lane into a walled
-corner, no partner) is answered honestly — the banner says NO KEY / NO WAY.
-Explicit HOLD does not auto-release when the hero arrives; next call wins.
+corner, nothing in sight to attack, no partner) is answered honestly — the
+banner says NO KEY / NO WAY / NO TARGET. Orders also release themselves
+(#1287): a GOTO returns to follow once the corner is taken AND the hero
+enters that quadrant (or closes to ~8 cells), and an explicit HOLD drops when
+the hero leaves the post and comes back to your shoulder — a hold shouted
+point-blank sticks until you move.
 
 The player always knows what was heard: the words + the intent flash bottom-of
 view (green obeyed / red refused, with the why), a blinking VOICE dot marks
-listening, a `MIC ON · <order>` pill sits bottom-right, and obey/refuse blips
-are synthesized. Every call banks into the recording as the additive
+listening — it swells while words are in flight (interim recognition, and the
+#1257 `__voiceVu` meter, #1287), a `MIC ON · <order>` pill sits bottom-right,
+and obey/refuse blips are synthesized. On phones (no V key, and Jon's rule says
+no second stick) THE PILL IS THE TOGGLE: a dimmed `MIC · TAP` pill waits on
+touch devices, tap it to open the mic, tap again to dismiss (#1287). The first
+time the mic is YES'd, a one-time card shows the five calls in the exact words
+(`retrogames:gauntlet-voice-hints` marks it seen), so a player who never reads
+this README still knows what to shout. Every call banks into the recording as the additive
 `voiceCmd: [{t, said, intent, ok, dir?, why?}]` channel (#1247's file, like
 ping: replay ignores it; what the seat DID is `slots[1].pads` on the same
 tick clock, raw audio aligns via the voice clock).
@@ -189,9 +202,9 @@ still honors the picker); voice co-op is local solo play only (online seats
 get their pads from the friend); the seat takes no loot — "grab the key" walks
 it to the key and holds the spot for the hero (existing no-hands gap, see
 Honest gaps above); headless browsers have no speech engine, so CI drives the
-same path through `__gauntletTest.voiceCall()` and `setVoiceMode()`; auto
-release-on-hero-arrive for goto (partner waits at the corner until the next
-call or V) is a filed polish candidate.
+same path through `__gauntletTest.voiceCall()` and `setVoiceMode()`; link-pad
+phone voice → the seat over the relay's `k:'v'` channel (#1287 item 6) is still
+open.
 
 ## Online 2P (#531) — the pilot
 

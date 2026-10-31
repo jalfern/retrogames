@@ -79,6 +79,13 @@ console.log('grammar — words become intents:')
         ['guard the door', { kind: 'hold' }],
         ['stop', { kind: 'hold' }],
         ['wait', { kind: 'hold' }],
+        ['defend the door', { kind: 'hold' }],
+        ['attack that guy', { kind: 'attack' }],
+        ['kill the monster', { kind: 'attack' }],
+        ['get him', { kind: 'attack' }],
+        ['fight it', { kind: 'attack' }],
+        ['smash that beast', { kind: 'attack' }],
+        ['attack!', { kind: 'attack' }],
     ]
     for (const [said, want] of cases) {
         const got = parseCall(said)
@@ -91,8 +98,12 @@ console.log('grammar — words become intents:')
     // a direction, not a key order); normalize folds accents + punctuation.
     ok(parseCall('grab the upper-right corner')?.kind === 'goto', 'quadrant outranks the grab-verb')
     ok(normalizeCall('Éradsé Upper-Right!').includes('upper right'), 'accents + punctuation normalize away (hyphen folds to a space)')
-    ok(intentLabel({ kind: 'goto', dir: 'upper-right' }) === 'UPPER RIGHT' && intentLabel({ kind: 'key' }) === 'THE KEY', 'banner labels read like the cabinet')
-    ok(CALL_INTENTS.join(',') === 'goto,key,follow,hold' && DIRS.length === 4, 'intent + direction sets pinned')
+    ok(intentLabel({ kind: 'goto', dir: 'upper-right' }) === 'UPPER RIGHT' && intentLabel({ kind: 'key' }) === 'THE KEY' && intentLabel({ kind: 'attack' }) === 'ATTACK', 'banner labels read like the cabinet')
+    ok(CALL_INTENTS.join(',') === 'goto,key,attack,follow,hold' && DIRS.length === 4, 'intent + direction sets pinned')
+    // #1287 specificity: the key call outranks the attack verbs ("get the key"
+    // sends the seat to the key, not at a beast); plain "it/him" targets do not
+    // mean a key.
+    ok(parseCall('get the key')?.kind === 'key', 'get the key outranks the attack verb')
 }
 
 console.log('apply — honest refusals:')
@@ -117,6 +128,11 @@ console.log('apply — honest refusals:')
     ok(applyCall(walled, { kind: 'goto', dir: 'lower-right' }).why === 'NO WAY', 'a stone corner refuses')
     ok(applyCall(walled, { kind: 'teleport' }).why === 'NO CALL' && applyCall(walled, null).why === 'NO CALL', 'unknown intents refused')
     ok(applyCall(walled, { kind: 'goto', dir: 'lower-right' }) && walled._vCmd === undefined, 'refused calls set no command state')
+    // #1287: attack with nobody in sight refuses honestly (the synth level has
+    // no beasts at all, and a partner-less game refuses upstream of targeting).
+    ok(applyCall(walled, { kind: 'attack' }).why === 'NO TARGET', 'attack with no target in sight refused')
+    const alone = makeGame(1, 'warrior', { topDown: true })
+    ok(applyCall(alone, { kind: 'attack' }).why === 'NO PARTNER', 'attack needs the seat open')
     ok(makeGame(1, 'warrior', { topDown: true }).levelData.grid[20][20] !== '#', 'LEVELS stayed clean (no cross-test bleed)')
 }
 
@@ -155,6 +171,78 @@ console.log('hold — stay grounded, keep swinging:')
     }
     ok(start !== null, 'hold test ran')
     ok(moved === 0 || dead > 0, 'partner held its ground every living tick', `moved ${moved} ticks, deaths ${dead}`)
+}
+
+console.log('attack — chase and cut (the #1287 fifth call):')
+{
+    // deterministic hunt: drive seeds until one produces an in-sight target,
+    // then the seat must close on it (and the run ends the command when the
+    // beast dies — the partner comes back to follow).
+    let won = null
+    for (let s = 1; s <= 10 && !won; s++) {
+        const gs = makeGame(s, 'warrior', { partner: true, topDown: true })
+        gs.partnerOn = true
+        let prevA = false, called = false, tgt = null, closed = false, deadT = 0
+        for (let t = 1; t <= 1500 && !gs.end; t++) {
+            if (!called && t > 30) {
+                const res = applyCall(gs, { kind: 'attack' })
+                if (res.ok) { called = true; tgt = gs._vCmd.target }
+            }
+            const raw = partnerPad(gs, prevA, cmdOf(gs))
+            prevA = raw.a
+            step(gs, {}, seatOf(raw))
+            if (called && !deadT) {
+                const m = gs.monsters.find((mm) => mm.id === tgt)
+                if (!m) deadT = gs.tick
+                else if (Math.hypot(gs.partner.x - m.x, gs.partner.y - m.y) < 1.6) closed = true
+            } else if (deadT && gs.tick >= deadT + 2) break
+        }
+        if (called && closed && deadT) won = { seed: s, closed, deadT }
+    }
+    ok(won !== null, 'a shouted ATTACK made the seat close on and kill its target', won ? `seed ${won.seed}, died @${won.deadT}` : 'no seed closed the hunt')
+    if (won) ok(won.closed, 'the seat walked INTO reach (chase, not standoff)')
+    // quiet level: no beasts, honest refusal
+    const q = drive(1, [[40, { kind: 'attack' }]], 400, { quiet: true })
+    ok(!q.gs._vCmd || q.gs._vCmd.kind !== 'attack', 'attack on an empty hall never sets a command')
+}
+
+console.log('release — the seat comes home (the #1287 smart goto/HOLD):')
+{
+    // goto: partner takes the far corner while the hero is still a diagonal
+    // away at spawn — the order lives and flags arrival; then the hero arrives
+    // IN the goal quadrant and the order clears (the partner returns to follow
+    // instead of standing at the corner forever). NOTE: no hero teleports to a
+    // far cell here — the #524 shared-view clamp repositions the pair and drags
+    // the partner off its corner (rule 8 caught that via a dx that should have
+    // been impossible).
+    const ra = drive(1, [[10, { kind: 'goto', dir: 'upper-right' }]], 2500, { stopAtGoal: true, quiet: true })
+    ok(ra.reached !== null, 'goto: partner stood on the far corner cell', JSON.stringify(ra.reached))
+    if (ra.reached) {
+        step(ra.gs, {}, seatOf(partnerPad(ra.gs, false, cmdOf(ra.gs))))
+        ok(ra.gs._vCmd && ra.gs._vCmd.kind === 'goto' && ra.gs._vCmd.arrived === true, 'goto: corner held, hero still far — the order stays alive', JSON.stringify(ra.gs._vCmd))
+        const [gc, gr] = ra.reached.cell
+        ra.gs.hero.x = gc + 0.5; ra.gs.hero.y = gr + 0.5
+        step(ra.gs, {}, seatOf(partnerPad(ra.gs, false, cmdOf(ra.gs))))
+        ok(ra.gs._vCmd === null, 'goto: hero in the goal quadrant released the order — partner returns to follow')
+    }
+    // hold: sticks while the hero is put, releases when he leaves and comes back.
+    const gs = makeGame(1, 'warrior', { partner: true, topDown: true })
+    gs.partnerOn = true
+    applyCall(gs, { kind: 'hold' })
+    let prevA = false
+    for (let t = 1; t <= 60; t++) { const raw = partnerPad(gs, prevA, cmdOf(gs)); prevA = raw.a; step(gs, {}, seatOf(raw)) }
+    ok(gs._vCmd && gs._vCmd.kind === 'hold', 'hold sticks while the hero stays at the shoulder', JSON.stringify(gs._vCmd))
+    // the hero DRIVES away (leaving must be real travel — a far teleport would
+    // snap to the shared-view edge, #524): spawn opens upward at ~0.045 cells
+    // per tick, so 110 ticks clear the 4-cell threshold. The RETURN lands by
+    // hand next to the post (both heroes inside the view box → clamp no-ops),
+    // because the release itself is the thing under test, not pathing.
+    for (let t = 1; t <= 110; t++) { const raw = partnerPad(gs, prevA, cmdOf(gs)); prevA = raw.a; step(gs, { fwd: true }, seatOf(raw)) }
+    ok(gs._vCmd && gs._vCmd.kind === 'hold', 'hold survives while the hero drives away', `dist ${Math.hypot(gs.hero.x - gs.partner.x, gs.hero.y - gs.partner.y).toFixed(1)}, cmd ${JSON.stringify(gs._vCmd)}`)
+    ok(gs._vCmd.left === true, 'hold: the hero leaving the post is noticed')
+    gs.hero.x = gs.partner.x + 0.2; gs.hero.y = gs.partner.y
+    const rawR = partnerPad(gs, prevA, cmdOf(gs)); prevA = rawR.a; step(gs, {}, seatOf(rawR))
+    ok(gs._vCmd === null || gs.partner.down || gs.end, 'hold: hero returns to the shoulder — the seat drops the post and follows', `dist ${Math.hypot(gs.hero.x - gs.partner.x, gs.hero.y - gs.partner.y).toFixed(2)}`)
 }
 
 console.log('the seat law — a called seat still says ONLY pads:')
