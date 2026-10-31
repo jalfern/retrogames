@@ -38,7 +38,8 @@ if (process.argv.includes('--selftest')) {
       if (!scripts[a]) { console.log(`FAIL scope ${k}: alias ${a} missing from package.json`); bad++; }
     }
   }
-  for (const a of [...CORE.lint, ...CORE.checks, ...CORE.smoke]) {
+  for (const c of [...CORE.lint, ...CORE.checks, ...CORE.smoke]) {
+    const a = Array.isArray(c) ? c[0] : c;   // CORE may carry [alias, mutate] like SCOPES
     if (!scripts[a]) { console.log(`FAIL core: alias ${a} missing from package.json`); bad++; }
   }
   console.log(bad ? `ciscope: ${bad} FAILURES` : `ciscope: ${cases.length + 1} cases ok (selftest)`);

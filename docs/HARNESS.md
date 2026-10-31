@@ -133,6 +133,7 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 
 ```bash
 scripts/main-ok.sh                        # merge-freeze check (rule 5)
+node scripts/watchcheck.mjs               # watch.sh pane self-heal proof (#1259; skips where no zsh)
 node scripts/ciscope.mjs --selftest     # proof the scope table is honest
 gh pr checks --watch                      # all checks on your PR
 gh workflow run ci.yml --ref <branch>     # opt into the browser suite
