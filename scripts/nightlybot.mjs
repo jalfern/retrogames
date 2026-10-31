@@ -89,6 +89,10 @@ export const GAMES = [
     { id: 'pick-rush', path: '/pick-rush' },
     { id: 'tidy-bot', path: '/tidy-bot' },
     { id: 'robot-lab', path: '/robot-lab' },
+    { id: 'floor-boss', path: '/floor-boss' },
+    { id: 'short-order-shout', path: '/short-order-shout' },
+    { id: 'gravel-yard', path: '/gravel-yard' },
+    { id: 'talk-me-down', path: '/talk-me-down' },
 ]
 const CAP = 9000
 
