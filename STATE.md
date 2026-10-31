@@ -1,71 +1,62 @@
-# STATE — session 65 (2026-10-31, slot b)
+# STATE — session 66 (2026-10-31, slot a)
 
 ## Shipped this session
-**FIRE CREW live** — https://jalfern.com/retrogames/fire-crew (#1254, closed
-shipped). Slot a built the whole game (seeded fire/wind/collapse sim, 3-seat
-info-split co-op, runtime art, firecrewcheck 33 gates, drive green) and parked
-PR #1360 at the #601 freeze waiting on `static`. Warden assigned #1254 to
-slot b; slot a's claim was 162 min stale so the takeover claim succeeded.
-Independent re-verification on port 5178 BEFORE merging: firecrewcheck 33/33,
-firecrewplay DRIVE GREEN (start/play/pause/contract/die/restart, zero page
-errors), contractcheck fire-crew section green, attractcheck 694/0, three
-scoped lint gates + build green. Slot a's rule-5 merge loop fired at 19:30Z
-(`cca1dc4`, static green 9m55s); slot b verified prod bundle contains the game
-and the route returns 200.
-- RALLY CO-DRIVER (#1251 → `f35a63c`) merged on top during this session by
-  another lane — not ours, but it explains why main moved twice. Their follow-up
-  pause fix landed too (#1364), as did the SHORT ORDER SHOUT polish pass
-  (#1292 via PR #1363: walk glide, serve stamp, tip meter, ticket fanfare).
-- Filed **#1361** FIRE CREW polish pass (voice capture unwired #1247, static
-  smoke field, seat-3 parked truck, water-cone juice, loft bucket-brigade,
-  ART.md pass).
-- Filed **#1362** TALK ME DOWN broken: contractcheck deterministically red at
-  main — seeded run dies at tick 461/600 and `seed` is never recorded
-  (reproduced 3/3). QA lane: do this one first; it is not polish, it is breakage.
+**RALLY CO-DRIVER is live and its pause path is FIXED** — the game merged as
+`f35a63c` (PR #1307, the QA lanes' build, ~7 min after my claim; GitHub
+serialized, no damage). My post-merge real-drive review found the shipped
+pause path broken four ways; the hotfix merged as `97091bf` (PR #1364).
+Live: https://jalfern.com/retrogames/rally-co-driver (private until Jon
+promotes, #379). QA polish #1365 filed.
 
-## Lessons worth keeping
-- A stale claim can host a LIVE merge loop. Before charging into a "stale"
-  game, `pgrep -fl main-ok.sh` in addition to the claim-liveness check. If a
-  rule-5 loop is in flight: verify independently, let it fire — racing two
-  `gh pr merge` calls buys nothing.
-- Prod verification: poll the Vercel alias (`retrogames-psi.vercel.app`) as
-  well as `www.jalfern.com` — the same bundle hash read different contents at
-  the edge minutes apart. When they disagree, the alias is the deploy, the
-  .com edge is a cache.
-- Never trust a worktree directory as yours: a second lane checked
-  `state-session-64` out inside `retrogames-forge-fire-crew` mid-merge-loop
-  and my `gh pr merge` died on "not on any branch". If a takeover shares a
-  worktree, re-assert `git rev-parse --abbrev-ref HEAD` right before merging,
-  or do the merge from a private worktree.
+## The four pause bugs (worth keeping)
+CI never presses `?` — `static` doesn't lint `src/games/**` and rallycheck is
+Node-only — so the shipped build had: (1) `pausedRef.current` referenced in
+JSX but defined only inside the effect → RESUME click threw ReferenceError;
+(2) `simStep` never checked pause → the stage ran behind the overlay;
+(3) no `Shift+/`→`Question` normalization → `?` never fired on a real
+keyboard — and THIS hid (4): `<PauseOverlay entry={G}>` should be `game={G}`,
+a React-tree crash the moment `?` did fire. Fix + regression proof =
+`scripts/rallydrive.mjs` (`npm run rallydrive`, 16 real-key assertions incl.
+"sim FROZEN while paused" and "RESUME click without error").
+Candidate for the shared drive kit: every game's drive step should press `?`
+and click RESUME.
+
+## Collision notes (#1258 growing pains, two ways)
+- Studio pruned the `qa/rally-co-driver` worktree (merging #1307) while I was
+  verifying that same branch — two uncommitted fixes lost, rebuilt in minutes.
+  Rule: never verify or edit in another lane's worktree; copy the branch into
+  YOUR lane worktree first.
+- Slot b's session-65 lesson adopted: `pgrep -fl main-ok.sh` before treating a
+  stale claim as dead; and prod verification = poll the Vercel alias
+  (`retrogames-psi.vercel.app/retrogames/`) as the deploy of record, the
+  jalfern.com edge can serve torn bundles minutes apart. Alias rally chunk
+  carried both fix markers (`shiftKey&&"Slash"→"Question"`, no `entry:`).
+- #1307's merge skipped the nightlybot roster entry for rally-co-driver —
+  #1364 carried it; without it the next nightly repeats #1350's red.
 
 ## Next goal
-Game queue is nearly empty — one real game left: **#1291 SHORT ORDER SHOUT
-stage 2 — online kitchen lobby** (game-queue). The rest of `game-queue` is
-PLATFORM (#1290, #1299, #1354) and #1141 stays stalled on platform. After
-#1291 the builder runs dry unless Jon refills — next-but-one builder should
-expect the flagship polish stage (#841) and derive the pick honestly with
-`scripts/lib/idle.mjs`.
+Game queue: **#1291 SHORT ORDER SHOUT stage 2 — online kitchen lobby**
+(the last real game; #1354/#1299/#1290 are platform-lane). If it's taken,
+expect the flagship polish stage (#841) — derive the pick with
+`scripts/lib/idle.mjs`, not memory. Builder refills will be thin after #1291.
 
-## Rule-4 watch
-Counter reset — FIRE CREW is merged game code this session (63 game, 64
-platform, 65 game).
-
-## Open questions for Jon
-- none from this session. #1286 sits AWAITING on the qa lane; #737 still
-  waiting-jon from earlier lanes.
-
-## Carry-over
-- QA: **#1362 first** (talk-me-down breakage), then #1305, #1295,
-  #1306, #1351–#1353 first-time-player passes, #1361 FIRE CREW polish,
-  #1287 GAUNTLET voice polish, #1266/#1275 follow-ups.
-- Platform: #1358 (shoreperf cancel poisons nightly verdicts), #1359 (mutants
-  left in tree after SIGTERM — until fixed, mutate runs need ≥8 min budgets),
-  #1141 stage 4.
-- Live `forge` dashboard adoption: `scripts/watch.sh --kill; scripts/watch.sh
-  --live` to rebuild panes (old-format panes are logged-only).
+## Harness
+- `rallydrive` added (npm alias); rallycheck mutant-proven red once
+  (off-track speed cap) and restored. nightlybot roster includes rally.
 
 ## Environment notes
-- Slot b built in `~/Dev/retrogames-forge-fire-crew` (shared with slot a across
-  the handoff; node_modules symlinked to main checkout). Slot b's dev server on
-  5178 stopped after verification; slot a owns 5173 (untouched). Main checkout
-  left detached ✓; STATE.md rides its own PR per the #1308/#1311 pattern.
+- Slot a worked in `~/Dev/retrogames-forge-rally-co-driver`; port 5173
+  reclaimed from the dead fire-crew lane's leaked dev server (#1360 shipped,
+  session gone — killing it is plumbing). node_modules symlink to the main
+  checkout served eslint/rallycheck/build/drive fine.
+
+## Open questions for Jon
+- none from this session (games lane). #1286 sits AWAITING on the qa lane;
+  #737 still waiting-jon from earlier lanes.
+
+## Carry-over
+- #1362 TALK ME DOWN contractcheck red at main (QA lane first — it's
+  breakage, not polish, filed by slot b).
+- #1365 RALLY CO-DRIVER polish (online lobby, model seat arm, voice field QA,
+  ART.md juice); #1361 FIRE CREW polish; #1305 TALK ME DOWN polish;
+  #1287 GAUNTLET voice polish. #1266/#1275 QA follow-ups; #1141 stage 4.
