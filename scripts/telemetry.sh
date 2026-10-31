@@ -77,13 +77,22 @@ git -C /Users/jon/Dev/retrogames show origin/main:scripts/tps.mjs > /tmp/forge/t
 TPS=$(node /tmp/forge/tps.mjs 2>/dev/null)
 [[ "$TPS" == \{* ]] || TPS=null
 
+S_UP=false; pgrep -f 'opencode run.*THE FORGE( on slot a)?\.' >/dev/null 2>&1 && S_UP=true
+T_UP=false; pgrep -f 'opencode run.*THE FORGE on slot b\.' >/dev/null 2>&1 && T_UP=true
+
 # Three panes, same names as the home terminal: Builder / QA·Mini / QA·MBP.
 # The studio's own oMLX server and the warden are plumbing, not lanes — they
 # used to be series here and only confused the board.
+# slots {a,b} (#1269): which builder slot was alive at THIS instant. The pulse
+# can't tell afterwards which slot merged a PR, so it records it as it happens;
+# shiftreport.mjs attributes builder merges to the slot alive at merge time
+# (same pgrep identity as board.json's live slots). Pre-fleet samples lack the
+# field; the report treats that as unattributable, never as a guess.
 S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' builder),\
 \"mini\":{\"cpu\":$MC,\"rss\":$MR},\"mbp\":{\"cpu\":$BC,\"rss\":$BR}},\
 \"tps\":$TPS,\
+\"slots\":{\"a\":$S_UP,\"b\":$T_UP},\
 \"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"builder\":$(act "$(readlink /tmp/forge/last.log)"),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)"),\"mbp\":$(act "$(readlink /tmp/forge/last-qa-mbp.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'

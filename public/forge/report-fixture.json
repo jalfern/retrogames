@@ -27,7 +27,13 @@
    "total": 32,
    "builder": 12,
    "qa": 15,
-   "ops": 5
+   "ops": 5,
+   "slots": {
+    "a": 7,
+    "b": 3,
+    "both": 1,
+    "unknown": 1
+   }
   },
   "issues": {
    "closed": 9,

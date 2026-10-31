@@ -9,6 +9,9 @@
   How the sample was computed (keep these definitions):
   - Window: last 48 h, America/Los_Angeles.
   - Lane of a merged PR = branch prefix: forge… = builder, qa… = QA, anything else = ops.
+  - Slot of a builder merge (#1269): the slot alive at merge time — the nearest 5-min
+    pulse sample (telemetry slots {a,b}); "both" when two slots were live, ? when none
+    was or the sample predates slot data. Shown on the fleet line: "26 builder (a 19 · b 4 · ? 3)".
   - Merges by hour: merged_at bucketed per local hour, stacked builder / QA / ops.
   - "Builder idle" band: from the builder's last merge until it next ran (telemetry tasks.builder == null).
   - Machines: telemetry.json samples rolled up per hour. Mac mini / MBP busy = whole-box cpu > 60.
@@ -95,7 +98,7 @@ footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--rule);padd
 </header>
 
 <section class="stats" aria-label="Totals">
-  <div class="stat"><div class="n">105</div><div class="l">PRs merged<br>62 QA · 26 builder · 17 ops</div></div>
+  <div class="stat"><div class="n">105</div><div class="l">PRs merged<br>62 QA · 26 builder (a 19 · b 4 · ? 3) · 17 ops</div></div>
   <div class="stat"><div class="n">56</div><div class="l">issues closed<br>48 opened</div></div>
   <div class="stat"><div class="n">41</div><div class="l">merged between 11pm and 7am</div></div>
   <div class="stat"><div class="n">12 min</div><div class="l">median PR open → merged (it's all CI)</div></div>
@@ -143,7 +146,7 @@ footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--rule);padd
   </div>
 </section>
 
-<footer>Sources: GitHub PRs, issues and Actions runs for jalfern/retrogames, plus forge-telemetry samples, pulled Tue Oct 20 at 10:55am PT. Lanes are inferred from branch names (forge/… = builder, qa/… = QA, everything else = ops).</footer>
+<footer>Sources: GitHub PRs, issues and Actions runs for jalfern/retrogames, plus forge-telemetry samples, pulled Tue Oct 20 at 10:55am PT. Lanes are inferred from branch names (forge/… = builder, qa/… = QA, everything else = ops); builder merges are attributed to slot a or b from the pulse (the slot alive at merge time), and ? covers what the samples can't tell apart.</footer>
 </main>
 
 <script>

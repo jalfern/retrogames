@@ -243,6 +243,13 @@ export default function ShiftReport() {
 
     const st = report.stats
     const ci = report.ci
+    // #1269 — slot a/b attribution of the builder merges. Only shown when at
+    // least one merge was attributed; `?` is the honest remainder (both slots
+    // live at the merge, or no slot data — pre-fleet samples, 24 h ring edge).
+    const sl = st.merged.slots
+    const slotTxt = sl && sl.a + sl.b + sl.both > 0
+        ? ` (a ${sl.a}${sl.b ? ` · b ${sl.b}` : ''}${sl.both + sl.unknown ? ` · ? ${sl.both + sl.unknown}` : ''})`
+        : ''
     const first = report.rows[0]
     const last = report.rows[report.rows.length - 1]
     const year = new Date(report.generated).getUTCFullYear()
@@ -297,7 +304,7 @@ export default function ShiftReport() {
 
                 <section className="stats" aria-label="Totals">
                     <div className="stat"><div className="n">{st.merged.total}</div>
-                        <div className="l">PRs merged<br />{st.merged.qa} QA · {st.merged.builder} builder · {st.merged.ops} ops</div></div>
+                        <div className="l">PRs merged<br />{st.merged.qa} QA · {st.merged.builder} builder{slotTxt} · {st.merged.ops} ops</div></div>
                     <div className="stat"><div className="n">{st.issues.closed}</div>
                         <div className="l">issues closed<br />{st.issues.opened} opened</div></div>
                     <div className="stat"><div className="n">{st.overnight}</div>
@@ -381,7 +388,9 @@ export default function ShiftReport() {
                 <footer>
                     Sources: GitHub PRs, issues and Actions runs for jalfern/retrogames, plus forge-telemetry samples,
                     generated {String(report.generated).slice(0, 16).replace('T', ' ')} UTC. Lanes are inferred from branch names
-                    (forge/… = builder, qa/… = QA, everything else = ops). Only the headline, lede, notes and go-look picks are model-written.
+                    (forge/… = builder, qa/… = QA, everything else = ops); builder merges are attributed to slot a or b
+                    from the pulse (the slot alive at merge time), and `?` covers what the samples can't tell apart.
+                    Only the headline, lede, notes and go-look picks are model-written.
                 </footer>
             </main>
         </div>
