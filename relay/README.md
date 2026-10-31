@@ -42,7 +42,9 @@ after 1 h).
   payload gate is `validateFeedback` in `core.js`. A quarantined report's body
   says WHY (key rejected → check the JON_KEY secret; no key → device never
   opened the one-time link), and a failed screenshot upload names its HTTP
-  status — no more silent quarantine ("what happened to my test?").
+  status **and GitHub's own reason** (the error body, #1295: a bare 403 hid a
+  token scope gap for three nights) — no more silent quarantine ("what
+  happened to my test?").
   Screenshots attach through the persistent `feedback-assets` release (#1222):
   uploads.github.com issue-assets is dead for server-side uploads (raw → 400
   "Multipart form data required", multipart → 422 "Bad Size" at any size),

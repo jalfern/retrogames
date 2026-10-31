@@ -30,7 +30,7 @@ async function attachScreenshot(env, number, dataUrl, issueBody) {
         dataUrl,
         headers: { authorization: `Bearer ${env.GITHUB_TOKEN}`, 'user-agent': 'retrogames-relay' },
     })
-    const markdown = up.url ? screenshotMarkdown(up.url) : screenshotMarkdown(null, up.status)
+    const markdown = up.url ? screenshotMarkdown(up.url) : screenshotMarkdown(null, up.status, up.err)
     try {
         await fetch(`${GH_API}/repos/${env.GH_REPO}/issues/${number}`, {
             method: 'PATCH',

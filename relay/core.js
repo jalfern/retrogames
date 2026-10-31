@@ -233,9 +233,42 @@ export function quarantineNote(body, isJon) {
 // silently on Jon's report).
 export const FB_SHOT_PLACEHOLDER = '{{SCREENSHOT}}'
 
-export function screenshotMarkdown(url, status) {
+// #1295: a bare status is not a diagnosis — every production upload since #1222
+// failed with a bare "(http 403)" and the reason (the relay's GITHUB_TOKEN lacks
+// push access for release assets) was unprovable from the issue. GitHub's error
+// BODY is the diagnosis: a scope gap says "Must have push access…", a rate limit
+// says so too. Capture it (one body read: JSON `message` when JSON, raw text
+// otherwise) and carry it in the honest line, truncated — the line stays one
+// sentence. The body is read exactly ONCE (a consumed Response cannot be read
+// twice), so text comes first and JSON is parsed from it when possible.
+export async function screenshotErrorReason(res) {
+    if (!res || typeof res !== 'object') return ''
+    let body = null
+    if (typeof res.text === 'function') {
+        try { body = String(await res.text()) } catch { return '' }
+    } else if (typeof res.json === 'function') {
+        try { body = await res.json() } catch { return '' }
+    } else {
+        return ''
+    }
+    if (body === null) return ''
+    if (typeof body === 'object') {
+        return typeof body.message === 'string' && body.message ? body.message.slice(0, 160) : ''
+    }
+    let text = String(body)
+    try {
+        const j = JSON.parse(text)
+        if (j && typeof j.message === 'string' && j.message) return j.message.slice(0, 160)
+    } catch { /* not JSON — raw snippet below */ }
+    return text.replace(/\s+/g, ' ').trim().slice(0, 160)
+}
+
+export function screenshotMarkdown(url, status, err) {
     if (typeof url === 'string' && /^https:\/\//.test(url)) return `![feedback screenshot](${url})`
-    const why = Number.isInteger(status) ? ` (http ${status})` : ''
+    let why = ''
+    if (Number.isInteger(status)) why = ` (http ${status}`
+    if (err) why += `: ${String(err)}`
+    if (why) why += ')'
     return `Screenshot captured but the relay upload failed${why} — ask the reporter to re-send.`
 }
 
@@ -266,9 +299,10 @@ export function screenshotAssetName(number, ts, dataUrl) {
     return `feedback-${number >>> 0}-${ts}.${ext}`
 }
 
-// uploadScreenshot never throws: { url } on success, { url: null, status? } on any
-// failure (status = the HTTP status when GitHub answered). `fetchImpl` is injectable
-// so feedbackcheck drives the whole flow against a fake GitHub.
+// uploadScreenshot never throws: { url } on success, { url: null, status?, err? }
+// on any failure (status = the HTTP status when GitHub answered; err = the
+// server's own words on why, #1295). `fetchImpl` is injectable so feedbackcheck
+// drives the whole flow against a fake GitHub.
 export async function uploadScreenshot({ fetchImpl, apiUrl, repo, number, dataUrl, headers, now = Date.now() }) {
     const doFetch = fetchImpl || fetch
     const jsonHeaders = { ...headers, 'content-type': 'application/json' }
@@ -325,7 +359,7 @@ export async function uploadScreenshot({ fetchImpl, apiUrl, repo, number, dataUr
             const j = await res.json().catch(() => null)
             return j && j.browser_download_url ? { url: j.browser_download_url } : { url: null }
         }
-        return { url: null, status: res.status }
+        return { url: null, status: res.status, err: await screenshotErrorReason(res) }
     } catch { return { url: null } }
 }
 
