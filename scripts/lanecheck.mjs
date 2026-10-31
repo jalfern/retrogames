@@ -156,6 +156,7 @@ ok(plist.includes('<string>com.jalfern.forge-b</string>') && /<string>b<\/string
 ok(warden.includes('scripts/lanes.mjs') && warden.includes('A_TARGET'), 'warden takes its plan from lanes.mjs')
 ok(warden.includes('kick_slot a') && warden.includes('kick_slot b'), 'warden kicks both builder slots')
 ok(warden.includes('launchctl bootstrap') && warden.includes('forge-b'), 'warden self-bootstraps the slot-b job from main')
+ok(warden.includes('origin/main:scripts/$SLOTB_JOB.plist'), 'slot-b plist is read from origin/main, not the lagging working tree (quiet-never-fire guard)')
 ok(warden.includes('studio-lanes.verdict') && warden.includes('revert'), 'warden enforces the trial verdict')
 ok(/builder \'"\$s"\' idle|"WARDEN: builder \$s idle"/.test(warden), 'per-slot kick comments (two stall counters, #1258)')
 ok(warden.includes('QA_STUDIO_QUEUE'), 'warden routes studio QA onto the queue')
