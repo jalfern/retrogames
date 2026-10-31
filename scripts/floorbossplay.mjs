@@ -75,6 +75,32 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     r.check('bot 1 paints teal at its logical cell', gg > 110 && bb > 120 && rr < 120, `rgb(${rr},${gg},${bb}) at (${bot.gx},${bot.gy})`)
 }
 
+// ---- the dock sells the fantasy: a ship summons the truck ----
+{
+    // the first order lands ~4 s in; wait for one to cover before forcing a ship
+    const tOrd = Date.now()
+    while (Date.now() - tOrd < 15000 && (await page.evaluate(() => window.__floorbossTest.sim().orders.length)) === 0)
+        await new Promise((res) => setTimeout(res, 200))
+    const oid = await page.evaluate(() => window.__floorbossTest.shipNow())
+    r.check('a ship is forced through the dock', oid != null, `order ${oid}`)
+    const t0 = Date.now()
+    let parked = null
+    while (Date.now() - t0 < 10000) {
+        parked = await page.evaluate(() => window.__floorbossTest.truck())
+        if (parked.mode === 'park') break
+        await new Promise((res) => setTimeout(res, 150))
+    }
+    r.check('truck backs in and parks at the dock', parked && parked.mode === 'park', JSON.stringify(parked))
+    const t1 = Date.now()
+    let after = parked
+    while (Date.now() - t1 < 15000) {
+        after = await page.evaluate(() => window.__floorbossTest.truck())
+        if (after.mode === 'out') break
+        await new Promise((res) => setTimeout(res, 150))
+    }
+    r.check('truck drives off once the dock is clear', after && after.mode === 'out', JSON.stringify(after))
+}
+
 // ---- full shift, end and restart ----
 {
     await page.evaluate(() => { const g = window.__floorbossTest; for (let i = 0; i < 9200 && !g.sim().end; i++) g.step(1) })
