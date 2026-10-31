@@ -100,7 +100,12 @@ stat you pick at the bench.
   `demos/dungeon.core.js`, WebGL2, loaded on demand via
   `src/utils/dungeonRenderer.js`): torch-lit brick with falloff and fog,
   real stair geometry, water-shimmer springs, a crimson beacon on the
-  Hollow King's throne (`R.light` each frame within range). It draws on a
+  Hollow King's throne (`R.light` each frame within range). The renderer's
+  camera-right axis is `(-F.y, F.x)` for this repo's grid frame (x=east,
+  y=south, z=up) — facing south puts screen-right at west; the old
+  `(F.y, -F.x)` mirrored every frame and read as swapped left/right keys
+  (#1293, pinned by `deepglasscheck` "camera:" and a `tendeepplay`
+  junction pixel gate). It draws on a
   canvas stacked UNDER the 2D layer, which keeps the HUD strip, automap,
   toasts, FX, RIM, interiors, bench and combat plates exactly as before.
   Mapping: wall/floor 1/0, spring cells → water material, stairs → stair-down

@@ -1022,6 +1022,11 @@ const TenDeepGame = () => {
                         })) : null,
                     } : null,
                     wallAhead: !!(gs.map && gs.map.wall(gs.x + DX[gs.dir], gs.y + DY[gs.dir])),
+                    // the sim's OWN hands: facing dir, left = dir+3, right = dir+1.
+                    // The mirror gate (#1293) grades which screen side the GL view
+                    // paints these cells on — the view must agree with these.
+                    wallLeft: !!(gs.map && gs.map.wall(gs.x + DX[(gs.dir + 3) % 4], gs.y + DY[(gs.dir + 3) % 4])),
+                    wallRight: !!(gs.map && gs.map.wall(gs.x + DX[(gs.dir + 1) % 4], gs.y + DY[(gs.dir + 1) % 4])),
                     stairs: gs.map ? gs.map.stairs : null, throne: gs.map ? gs.map.throne : null,
                     springHere: gs.springs.has(gs.y * SIZE + gs.x),
                     potHere: gs.pots.has(gs.y * SIZE + gs.x),
@@ -1071,6 +1076,15 @@ const TenDeepGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                // what one cell holds, for the harness's pose search (#1293):
+                // the mirror gate needs a cell whose flanks disagree.
+                cellAt: (x, y) => (gs.map ? {
+                    wall: !!gs.map.wall(x, y),
+                    spring: gs.springs.has(y * SIZE + x),
+                    pot: gs.pots.has(y * SIZE + x),
+                    stair: !!(gs.map.stairs && gs.map.stairs.y === y && gs.map.stairs.x === x),
+                    throne: !!(gs.map.throne && gs.map.throne.y === y && gs.map.throne.x === x),
+                } : null),
                 wallAt: (x, y) => !!(gs.map && gs.map.wall(x, y)),
                 cmd: (c) => { act(c); return true },
                 setup: (opts = {}) => {
