@@ -22,6 +22,7 @@ import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePric
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
+import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MUT = process.argv.includes('--mutate')
@@ -737,6 +738,62 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
         ok(g.party[1].alive && !g.party[1].fresh, 'the created hero never stood up')
     }
 }
+// ---------------------------------------------------- party-strip text fit (#1282) ----
+section('PARTY STRIP TEXT FIT — measured, never assumed')
+{
+    const PANEL_INNER = 34   // px+2 .. px+36 usable width of a 38px mini panel
+    // 1. the estimator is monotone in both size and length
+    ok(estWidth(5, 5) < estWidth(6, 5) && estWidth(6, 5) < estWidth(7, 5),
+        'estWidth is not monotone in font size')
+    ok(estWidth(6, 4) < estWidth(6, 5) && estWidth(6, 5) < estWidth(6, 9),
+        'estWidth is not monotone in text length')
+
+    // 2. THE READABILITY WIN: a normal name now renders at 7px, not the old hard
+    //    6px — the strip grew because a real measurement said it fits the panel.
+    {
+        const f = fitSize('BORAM', PANEL_INNER, [7, 6, 5], null)
+        ok(f.size === 7, `a short name did not grow to the largest fitting size (got ${f.size}, want 7)`)
+        ok(estWidth(f.size, f.text.length) <= PANEL_INNER, `BORAM at ${f.size}px overflows the panel (${estWidth(f.size, f.text.length)} > ${PANEL_INNER})`)
+    }
+
+    // 3. OVERFLOW GUARD: any name, however long, is ellipsized to fit — nothing
+    //    ever spills past the panel edge into its neighbour.
+    {
+        const names = ['BORAM', 'GWENDA', 'MIRABEL', 'THORAMUND', 'OATHBREAKER', 'E', 'AAAAAAAAAAAAAAAAAAAA']
+        for (const nm of names) {
+            const f = fitSize(nm, PANEL_INNER, [7, 6, 5], null)
+            ok(estWidth(f.size, f.text.length) <= PANEL_INNER, `name '${nm}' fit at ${f.size}px to '${f.text}' = ${estWidth(f.size, f.text.length)}px > ${PANEL_INNER}`)
+            ok(f.text.length <= nm.length && (nm.length <= 3 || f.text.length >= 2), `name '${nm}' collapsed to nothing: '${f.text}'`)
+        }
+    }
+
+    // 4. THE COLLISION GUARD: the level tag (left) and class tag (right) share
+    //    the bottom row and must never touch. Left starts at px+2, right ends at
+    //    px+36, so they collide only if est(left) + est(right) > PANEL_INNER.
+    {
+        const clsTags = Object.values(CLASSES).map((c) => c.abbr + (Object.keys(c.spells).length ? '*' : ''))
+        const lvls = [1, 9, 10, 99]
+        for (const tag of clsTags) {
+            for (const lvl of lvls) {
+                const r = fitTwoCols('L' + lvl, tag, 17, 15, [7, 6, 5], null)
+                ok(estWidth(r.size, r.left.length) <= 17, `left '${r.left}' exceeds its 17px column at ${r.size}px`)
+                ok(estWidth(r.size, r.right.length) <= 15, `right '${r.right}' exceeds its 15px column at ${r.size}px`)
+                ok(estWidth(r.size, r.left.length) + estWidth(r.size, r.right.length) <= PANEL_INNER,
+                    `level/class row collides: L${lvl}+${tag} = ${estWidth(r.size, r.left.length) + estWidth(r.size, r.right.length)}px > ${PANEL_INNER} at ${r.size}px`)
+                ok(r.size >= 6, `the level/class row shrank below the readable floor for L${lvl}/${tag}: ${r.size}px`)
+            }
+        }
+    }
+
+    // 5. a wider allowance never yields a smaller font than a narrower one
+    {
+        const wide = fitSize('MIRABEL', 40, [7, 6, 5], null)
+        const tight = fitSize('MIRABEL', 12, [7, 6, 5], null)
+        ok(wide.size >= tight.size, `fit is not monotone in allowance: ${wide.size}px at 40w < ${tight.size}px at 12w`)
+    }
+    console.log(`  ..    names size up to ${fitSize('GWENDA', PANEL_INNER, [7, 6, 5], null).size}px; row stays clear at ${fitTwoCols('L99', 'OB*', 17, 15, [7, 6, 5], null).size}px`)
+}
+
 let proven = null
 {
     const t0 = Date.now()
@@ -915,6 +972,29 @@ if (MUT) {
             writeFileSync(simFile, orig)
             console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
             ok(res.status !== 0, `${name} SURVIVED — the automap gates stopped touching this rule`)
+        }
+    }
+
+    // 10. source-patch mutants (hudfit.js, #1282): the strip must grow short names
+    //     to the largest fitting size AND must ellipsize names that never fit.
+    {
+        const hudFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'hudfit.js')
+        const hudOrig = readFileSync(hudFile, 'utf8')
+        const hudMutants = [
+            ['the strip never grows a name (size picker dead)',
+                'if (width(s, text) <= maxW) { chosen = s; break }',
+                'if (false && width(s, text) <= maxW) { chosen = s; break }'],
+            ['the strip never ellipsizes (names spill the panel)',
+                'let out = text',
+                'let out = text; if (text.length > 9) return { size: chosen, text }'],
+        ]
+        for (const [name, from, to] of hudMutants) {
+            ok(hudOrig.includes(from), `hudfit mutant anchor missing: ${name}`)
+            writeFileSync(hudFile, hudOrig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            writeFileSync(hudFile, hudOrig)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the party-strip text-fit gate stopped touching this rule`)
         }
     }
 }
