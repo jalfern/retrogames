@@ -83,6 +83,7 @@ you face · X / F / B: arrow down the facing. P2 (desktop, issue #275 item 7):
 WASD: move 8-way · F: sword. Hero screen: arrows or TAP a card to pick P1,
 Space or TAP the card again to start (issue #403); C: CPU partner, P:
 two-player (P2 on WASD+F, A/D picks P2's hero, shown as a second portrait) ·
+V: voice co-op — speak to the CPU seat (see Spoken co-op below) ·
 ?: pause.
 
 ## Verify
@@ -97,6 +98,10 @@ npm run gauntletcheck             # 133 checks: geometry, art, sound, minimap,
                                       # partner), rules, overhead mode, ledger,
                                       # pilot, slack, determinism
 npm run gauntletcheck -- --mutate # 16 mutants, all must die
+npm run voicecmdcheck           # #1249 spoken co-op: grammar, obey/refuse,
+                                #      pad-law, determinism, voiceCmd format,
+                                #      quest won with 20 calls shouted (mutant
+                                #      red: --mutate makes the seat deaf)
 npm run slotcheck -- --mutate     # #494 seat determinism: cpu pads recorded,
                                       # replayed through model seats, hash-equal
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
@@ -143,6 +148,47 @@ proved by `npm run slotcheck` (seed + recorded pad streams ⇒ identical
 state hash, tick by tick, for both this game's seat kinds and Bubble Bobble;
 `--mutate` drops one live pad and goes red). `gauntletplay` drives the seat
 for real: C at select, Digit1, the partner travels under its own pads.
+
+## Spoken co-op (#1249) — the model in a seat takes orders from your mouth
+
+A human plays; the partner seat listens. `V` toggles voice co-op at hero
+select or mid-run (mic consent is the #1247 ask, never auto-asked; declined
+= a polite toast, game plays on). The path: mic → `src/utils/speechListen.js`
+(Web Speech wrapper: continuous, auto-restarts after Chrome's silence-stop,
+disarms on hard failure) → `voicecalls.js parseCall` (transcript → intent,
+null when unsure) → `planner.js applyCall` (freezes the goal cell at call
+time) → `partnerPad(gs, prevA, cmd)` steers it — **the seat still only emits
+pads**, so the sim never learns a voice exists, and Frank's trained model can
+drop into the same `intent → pad stream` seat later.
+
+Calls: **"take the upper right"** (goto the far side of that quadrant),
+**"grab the key"**, **"follow me"**, **"hold here"** (+ synonyms; see
+voicecalls.js for the exact grammar; compass words split the maze at W/2,
+H/2). Rules the seat keeps while obeying: the survival food-break still
+outranks an order (a dead partner guards nothing), the cut pulse keeps
+firing (hold = stand your ground and swing), a locked door means WAIT at the
+threshold, and a refused call (no key on the level, no lane into a walled
+corner, no partner) is answered honestly — the banner says NO KEY / NO WAY.
+Explicit HOLD does not auto-release when the hero arrives; next call wins.
+
+The player always knows what was heard: the words + the intent flash bottom-of
+view (green obeyed / red refused, with the why), a blinking VOICE dot marks
+listening, a `MIC ON · <order>` pill sits bottom-right, and obey/refuse blips
+are synthesized. Every call banks into the recording as the additive
+`voiceCmd: [{t, said, intent, ok, dir?, why?}]` channel (#1247's file, like
+ping: replay ignores it; what the seat DID is `slots[1].pads` on the same
+tick clock, raw audio aligns via the voice clock).
+
+Honest gaps: en-US only (Web Speech API); recognition is the browser's — a
+misfire is a null intent, not a misobeyed order; the speech mic uses the
+system default device (Web Speech takes no deviceId — the #1247 recorder
+still honors the picker); voice co-op is local solo play only (online seats
+get their pads from the friend); the seat takes no loot — "grab the key" walks
+it to the key and holds the spot for the hero (existing no-hands gap, see
+Honest gaps above); headless browsers have no speech engine, so CI drives the
+same path through `__gauntletTest.voiceCall()` and `setVoiceMode()`; auto
+release-on-hero-arrive for goto (partner waits at the corner until the next
+call or V) is a filed polish candidate.
 
 ## Online 2P (#531) — the pilot
 
