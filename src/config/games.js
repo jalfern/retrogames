@@ -210,6 +210,9 @@ const FloorBossGame = lazy(() => import('../games/FloorBoss'))
 const ShortOrderShoutGame = lazy(() => import('../games/ShortOrderShout'))
 const GravelYardGame = lazy(() => import('../games/GravelYard'))
 
+// Talk Me Down: the split-info bomb sim chunks with the game (#1252).
+const TalkMeDownGame = lazy(() => import('../games/TalkMeDown'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -1190,5 +1193,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original co-op heavy-metal sandbox (#1253): a golden-hour gravel yard where the information is cut three ways. The DIGGER sees the pile and its wet seams - wet gravel jams the screen plant. The SCREEN wears the grade chart - gate WIDE pours coarse, NARROW pours fines - but knows no orders. The TRUCK owns the order board at the gate - grade x units before the deadline - and shouts it on the radio. Nobody alone knows the whole job: run the chain (dig, dump into the hopper, batch it through the gate into the two graded bays, load, tip at the trailer) and talk to your crew. Jammed? Jog it. Wrong grade at the gate is a refusal, and three refusals ruin the shift; lapsed orders cost credit. 180-second shifts, 600C makes the CLEAN SHIFT stamp. 1-3 hands: you always start on the digger; the truck seat can share the keyboard (WASD + F/G); unfilled seats run CPU crew members that emit the same pads you do - and every radio call they make is what THEIR seat would see, so solo you play by ear.',
         controls: ['Arrows / d-pad: drive the digger (you work the cell you face)', 'SPACE / DIG: cut gravel facing the pile - load a bay facing it - cycle the gate WIDE/MED/NARROW at the console (the pad you pull up onto, right of the funnel)', 'B / DUMP: tip the bucket into the hopper from the pad below the funnel - tip the truck bed at the trailer spots - jog a JAMMED screen (also starts a batch from the console pad)', 'The radio banner says what the other seats see: orders (TRUCK), jams and spill (SCREEN), wet seams (DIGGER)', 'Attract: any key or tap - Select: arrows pick 1-3 hands, P makes the truck seat HUMAN (WASD + F/G), SPACE starts the shift', 'Three refusals at the gate ruin the shift; lapsed orders cost 20C; 600C before the 3:00 whistle stamps the CLEAN SHIFT', '?: pause and read the yard rules'],
+    },
+    {
+        path: '/talk-me-down',
+        pad: { layout: 'dpad', aLabel: 'DO', buttons: [{ label: 'PAGE', code: 'KeyB' }], reason: 'wires, dials and glyphs want exact aiming: arrows aim at the module part, DO commits the verb (cut/SET/press), PAGE flips the manual rail' },
+        builtBy: 'forge',
+        added: '2026-10-31',
+        visibility: 'private',
+        tapStart: false,
+        component: TalkMeDownGame,
+        label: 'TALK ME DOWN',
+        theme: 'dark',
+        description: 'An original split-info bomb puzzle (#1252): ONE SEES THE BOMB, THE OTHER HOLDS THE MANUAL. The panel shows only facts - a serial plate, a bar of LEDs, a colored bolt, modules stamped N3 / D1 / G2 - and never a rule. The manual is a typewritten rulebook whose entries answer exactly those stamps: NEON means cut ONE wire, DIAL means set the number then SET, GLYPH means press three symbols in order. Neither seat can solve a bomb alone; between two humans there is only the couch - or the mic (V: shout "cut red" and the right wire pulses green). Solo, a CPU partner holds the manual and prints orders on the LCD rail. Wrong verbs spark: the module locks, five seconds burn off the fuse, and one of three breakers trips. Bombs get meaner - more modules, deeper rule variants, shorter fuses - and five cleared wins the SQUAD CHIEF stamp. Seeded and deterministic (seed + per-seat pads => identical hashes) so a trained model can take either seat later.',
+        controls: ['Seat 1 DEFUSER - Arrows / d-pad: UP/DOWN pick a module, LEFT/RIGHT pick a wire, dial number or glyph', 'SPACE / A: the verb - cut the wire - press SET on the dial - press the glyph', 'B / PAGE: hide or show the manual rail (solo); mic V shouts: "cut red", "turn to seven", "press star", "set"', 'Seat 2 MANUAL (2P keyboard) - WASD page and line, F flags a rule: the defuser sees READ N3 on the module', 'Attract: any key or tap - LEFT/RIGHT pick 1P or 2P - SPACE starts', 'Three strikes or a zero fuse ends the run; 5 bombs = SQUAD CHIEF', '?: pause and read the squad card'],
     },
 ]

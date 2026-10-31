@@ -60,6 +60,8 @@
     "soscheck": "node scripts/soscheck.mjs",
     "gravelcheck": "node scripts/gravelcheck.mjs",
     "gravelplay": "node scripts/gravelplay.mjs",
+    "bombcheck": "node scripts/bombcheck.mjs",
+    "bombdrive": "node scripts/bombdrive.mjs",
     "sosplay": "node scripts/sosplay.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",

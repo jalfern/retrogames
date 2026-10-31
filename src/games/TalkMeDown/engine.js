@@ -430,6 +430,39 @@ export function step(gs, pads) {
     return gs
 }
 
+// solvePad — one pad that plays the cursor's module correctly (the attract
+// demo's hands and the harness's autopilot; same rules the manual prints).
+export function solvePad(gs) {
+    const m = gs.modules[gs.cursor.mod]
+    if (!m || m.solved) return { down: true }
+    if (m.locked > 0) return {}
+    const t = computeTarget(gs, m)
+    if (!t) return {}
+    const pad = {}
+    if (t.wire !== undefined) {
+        const d = t.wire - gs.cursor.sub
+        if (d > 0) pad.right = true
+        if (d < 0) pad.left = true
+        if (d === 0) pad.a = true
+    } else if (t.dial !== undefined) {
+        if (m.dial !== t.dial) {
+            const cw = (t.dial - m.dial + 10) % 10
+            if (cw <= 5) pad.right = true
+            else pad.left = true
+        } else pad.a = true
+    } else {
+        const pressed = (gs.seqInput[gs.cursor.mod] || []).length
+        const d = t.seq[pressed] - gs.cursor.sub
+        if (d > 0) pad.right = true
+        if (d < 0) pad.left = true
+        if (d === 0) pad.a = true
+    }
+    return pad
+}
+
+// drainEvents — the shell pops transient fx cues once per tick.
+export function drainEvents(gs) { return gs.events.splice(0) }
+
 // ---- state / hash -----------------------------------------------------------
 export function simState(gs) {
     return {
