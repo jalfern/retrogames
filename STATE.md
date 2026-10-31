@@ -1,54 +1,67 @@
-# STATE — session 57 (2026-10-30)
+# STATE — session 50 (2026-10-30)
 
 ## Shipped this session
-**VOICE CAPTURE in recordings** — Jon's `next` issue #1247, shipped via PR
-#1256 (squash to main): `retrogames-rec/v1` → **v2**.
+**CAMPFIRE fidelity trilogy (#670 follow-ons)** — Jon picked the order
+(ground → flame → life layer) after a visual review; one PR each, all merged:
+- **#1255 ground** (adedc8e): fwidth footprint-attenuated ground detail (kills
+  the vertical moiré bars), bounce-lit shadow floor 0.22→0.55, softer
+  penumbra, soot bowl + trodden sand ring, log char glow. New gate
+  `lit ground graded` (meanR>55 of tight lit box): 47.5 pre → 63–76 post;
+  mutant (floor→0.22) = 45.7 red.
+- **#1261 flame** (847ed2a): anisotropic upward-licking wrinkles, higher-
+  contrast lobes + upper tear = distinct tongues, propagating flicker
+  (`sin(t·6.7 − h·5.5)` — tips lag base ~0.1 s), white confined to coal bed,
+  gold body, blue base; solid near-field `fall` clamp 1.15 (was blowing logs
+  to tan); irregular stone ring (even ring threw picket-fence shadows);
+  grain octave 26→11 (26 beat near Nyquist in the bright pool).
+- **#1264 life layer** (37b05fd): spark streak trails (analytic path drawn
+  at 4 age-offsets), flare-coupled per-group spark pops, taller/warmer lit
+  smoke plume, heat-haze wobble in composite (masked to plume column).
+  Gate: `heat haze knob` hook round-trip (mutant: hooks removed = red).
+Suite 21/21 green (was 19 pre-PRs), frame time unchanged at 16.7 ms
+@1600x1000 (45 ms budget).
 
-- Raw per-player opus tracks (`voice.tracks[]`: slots, consent, headset, mime,
-  ms, clock, b64) aligned to the tick clock (`clock[{t,ms}]` ~1/s,
-  `tickToMs` interp, `voiceDrift` worst-lag; 30-min throttled profile proven
-  in Node). Consent overlay BEFORE `getUserMedia`, saved in the file; no
-  consent = no audio; headset suggested. `navigator.userActivation` keeps
-  scripted harness captures plain-v1/prompt-free.
-- **Remote seats**: guest mic streams to host over the relay's already-forwarded
-  `pad` type as `k:'v'` subkind (~6 msg/s vs 240/s window, 512B budget pinned
-  by test) — zero relay changes. Host inbox merges guest tracks into its file.
-  Guest mic released on race end / peer-gone / unmount.
-- Every contract game gets local voice free (`__game.recordStart/Stop`).
-- En-route fix: Gauntlet never banked live-loop ticks (#527 retro-gap) — now
-  at the `doSim` funnel, loop-lock-guarded.
-- Harness: `npm run voicecheck` 40 gates (`--mutate` red), advisory
-  `npm run voicedrive` 11/11 headless (macOS TCC kills headless hardware
-  mics → WebAudio synth source; `VOICEDRIVE_HW=1` forces device path).
-- QA polish pass filed: #1257 (mic indicators, consent feedback, VU, device
-  pick, online 2-page drive, file size, link-pad mics).
+## Hard-won facts
+- **Pixel gates cannot separate haze from flame self-flicker**: toggle-vs-
+  baseline ratios 1.10–1.46 in normal runs fully overlap the wobble=0
+  mutant (1.13); 6 averaging rounds don't help — the noise isn't variance,
+  it's the flame evolving between screenshots. Recorded in the harness
+  header rather than shipping a green-but-hollow gate.
+- Same trap for spark-streak visibility: any plume box above the pit is
+  dominated by flame-tip glow (dimming sparks 12× left box count 88→89).
+  Spark correctness stays covered by burst-cluster invariants.
+- Dark-fraction metrics swing ±0.07 with noise phase → use mean-R (or
+  multi-frame averages) for grading checks.
+- **sed mutants contaminate siblings**: `s/mix(0.22…5.2/…0.55…/` hit both
+  ground and stone lines — PR1 shipped stone floor 0.55 (intended 0.25;
+  gate evidence still consistent, corrected in PR2). Mutate via node
+  replace on a unique anchor, not line-based sed.
+- GitHub "8 files changed" diffstat printed under a merge can belong to a
+  concurrent lane; verify squash commit content before worrying.
 
 ## Next goal
-Ladder empty again after this claim (no `steer`/`next`/`game-queue`).
-#1141 stage 4 is the known next real build — #1241 closed before this session;
-check its close reason next session: if DEFAULTED (GitHub-only meshes), stage 4
-may claim per session 56's carry-over logic. Otherwise wait on Jon (#1229).
+`game-queue` unchanged from session 49: #1141 stage 4 (robot-lab USD→GLB +
+rigid-body chain) is the standing carry-over, claim deliberately next
+session. No campfire follow-ups pending; #670 stays closed.
 
 ## Harness
-voicecheck + voicedrive added (one check + one driver, per rule 6).
-`harness.mjs.launch` gained `extraArgs` (additive). Latest nightly on main:
-**success** (`main-ok.sh` green pre-merge; the >120s linger noted in session
-56 reproduced — verdict prints, harmless).
+campfirecheck now 21 gates (+graded-ground, +haze-knob), mutants 3 & 4
+documented in its header. CI `static` green on all three merges; advisory
+jobs not waited on (rule 3).
 
 ## Environment notes
-- Main checkout: detached at origin/main; this lane worked in
-  `~/Dev/retrogames-forge-voice-capture` (forge/voice-capture → deleted on
-  merge). Dev server 5177 (5173/5174/5175 owned elsewhere) — left running,
-  harmless; logs /tmp/forge/vite-5177.log.
-- STATE.md ships via its own PR (session-49 pattern) since a game merged.
+- Main checkout detached at origin/main (37b05fd). Worktree
+  `~/Dev/retrogames-forge-campfire-fidelity` detached at origin/main,
+  branch merged+deleted, node_modules symlink removed — prune or reuse.
+- Concurrent lanes merged during session: #1262 (demo FEEDBACK block,
+  touched campfire.html too — verified coexistence with my changes),
+  #1263 (voice layer).
 
 ## Open questions for Jon
-- #1229 — Runway digest mail wrapper location (carried; AWAITING, deadline
-  Oct 31 — defaults to stdout-producer-only if no answer).
-No new questions filed (nothing taste/priority-shaped came up — the issue
-body decided the hard calls).
+- none new (visual-fidelity order + gate-honesty calls were made in-PR
+  with data; happy to revisit the abandoned pixel gates if you see a
+  deterministic design).
 
 ## Carry-over
-- #1141 stage 4 — check #1241's close reason, then claim per session 56 logic.
-- #1257 QA polish (voice) belongs to the QA lane.
-- When Jon labels a queue item, the ladder resumes normally.
+- #1141 stage 4 (above). Prod: Vercel deploying 37b05fd; spot-check
+  jalfern.com/retrogames/demos/campfire.html after deploy.
