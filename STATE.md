@@ -1,67 +1,61 @@
-# STATE — session 50 (2026-10-30)
+# STATE — session 58 (2026-10-31)
 
 ## Shipped this session
-**CAMPFIRE fidelity trilogy (#670 follow-ons)** — Jon picked the order
-(ground → flame → life layer) after a visual review; one PR each, all merged:
-- **#1255 ground** (adedc8e): fwidth footprint-attenuated ground detail (kills
-  the vertical moiré bars), bounce-lit shadow floor 0.22→0.55, softer
-  penumbra, soot bowl + trodden sand ring, log char glow. New gate
-  `lit ground graded` (meanR>55 of tight lit box): 47.5 pre → 63–76 post;
-  mutant (floor→0.22) = 45.7 red.
-- **#1261 flame** (847ed2a): anisotropic upward-licking wrinkles, higher-
-  contrast lobes + upper tear = distinct tongues, propagating flicker
-  (`sin(t·6.7 − h·5.5)` — tips lag base ~0.1 s), white confined to coal bed,
-  gold body, blue base; solid near-field `fall` clamp 1.15 (was blowing logs
-  to tan); irregular stone ring (even ring threw picket-fence shadows);
-  grain octave 26→11 (26 beat near Nyquist in the bright pool).
-- **#1264 life layer** (37b05fd): spark streak trails (analytic path drawn
-  at 4 age-offsets), flare-coupled per-group spark pops, taller/warmer lit
-  smoke plume, heat-haze wobble in composite (masked to plume column).
-  Gate: `heat haze knob` hook round-trip (mutant: hooks removed = red).
-Suite 21/21 green (was 19 pre-PRs), frame time unchanged at 16.7 ms
-@1600x1000 (45 ms budget).
+**THE FLEET: 2 builders + 1 QA on the Studio, whole-queue lanes** — Jon's steer
+#1258, shipped via PR #1267 (squash to main, 38cf33f), prod verified
+(bundle index-BF7nEgPC.js carries the ⚙ SLOTS row on jalfern.com/retrogames).
 
-## Hard-won facts
-- **Pixel gates cannot separate haze from flame self-flicker**: toggle-vs-
-  baseline ratios 1.10–1.46 in normal runs fully overlap the wobble=0
-  mutant (1.13); 6 averaging rounds don't help — the noise isn't variance,
-  it's the flame evolving between screenshots. Recorded in the harness
-  header rather than shipping a green-but-hollow gate.
-- Same trap for spark-streak visibility: any plume box above the pit is
-  dominated by flame-tip glow (dimming sparks 12× left box count 88→89).
-  Spark correctness stays covered by burst-cluster invariants.
-- Dark-fraction metrics swing ±0.07 with noise phase → use mean-R (or
-  multi-frame averages) for grading checks.
-- **sed mutants contaminate siblings**: `s/mix(0.22…5.2/…0.55…/` hit both
-  ground and stone lines — PR1 shipped stone floor 0.55 (intended 0.25;
-  gate evidence still consistent, corrected in PR2). Mutate via node
-  replace on a unique anchor, not line-based sed.
-- GitHub "8 files changed" diffstat printed under a merge can belong to a
-  concurrent lane; verify squash commit content before worrying.
+- **Slot b** is a real builder: `forge.sh <a|b>`, identity "THE FORGE on slot
+  a|b." (prompt = lock = watch label), ports 5173/5178, job
+  `com.jalfern.forge-b` self-bootstrapped by the warden from origin/main.
+- **Whole queue:** `scripts/lib/lanes.mjs` (pure) ranks builders games-first
+  (corpse→steer→next→queue→feedback) and gates studio-QA's queue fallthrough
+  (feedback first; queue only when items outnumber free slots; flagship last).
+  Warden evals it, hands targets via /tmp/forge/target-<slot>, per-slot stall
+  counters, parked the builder-slot QA spill while slot b lives.
+- **One lane per issue (#878) enforced at claim:** new `forge-claim.sh` +
+  `qa-claim.sh` share ONE liveness namespace (`FORGE (slot)`/`QA (node)`,
+  90 min, newest-wins yield). QA taking a queue item strips `game-queue`.
+- **Visibility:** `forge status` names builder-a/b + trial; watch.sh BUILDER·B
+  pane; pulse `builders=N/2`; board.json `slots` → ⚙ SLOTS row on /forge.
+- **48 h trial, self-enforcing:** `studiotrial.mjs` (warden step 5b) starts the
+  clock, at 48 h posts items/day before-vs-after on #1258 and writes
+  keep|revert to /tmp/forge/studio-lanes.verdict — revert stops slot-b kicks.
+  Tokens/s was never persisted pre-trial; report uses items/day and says so.
+- Gate: `npm run lanecheck` (45 gates, mutant-proven) + claimcheck A8; all
+  neighbour checks, eslint, 3 lint gates, build green; WARDEN_DRY tick clean.
+- Follow-up gaps filed as #1266 (profiles/t-s persistence/slot-b live pane/
+  report slots). #1258 → shipped (closes via hygiene tick; trial verdict posts
+  there as a comment regardless).
 
 ## Next goal
-`game-queue` unchanged from session 49: #1141 stage 4 (robot-lab USD→GLB +
-rigid-body chain) is the standing carry-over, claim deliberately next
-session. No campfire follow-ups pending; #670 stays closed.
+**#1141 stage 4 is UNBLOCKED** — Jon answered #1241: "HuggingFace is fine for
+meshes. Link-index them per the model-source rule; don't vendor big files."
+Claim it next session: strip `stalled` (the answer cleared it), resume via
+FORGE.md step 1b ladder. Deep game queue behind it too (#1248, #1249,
+#1251-1254, #1259, #1144, #1127) — slot b is chewing on the queue already.
+NOTE rule-4 watch: last merges skew platform/QA; a *game* merge next session
+resets the streak.
 
 ## Harness
-campfirecheck now 21 gates (+graded-ground, +haze-knob), mutants 3 & 4
-documented in its header. CI `static` green on all three merges; advisory
-jobs not waited on (rule 3).
+lanecheck added (one small check, rule 6). Warden step 4 is planner-driven with
+an inline legacy-ladder fallback if lanes.mjs breaks. jonqcheck re-pinned for
+the new halt path (behavior unchanged).
 
 ## Environment notes
-- Main checkout detached at origin/main (37b05fd). Worktree
-  `~/Dev/retrogames-forge-campfire-fidelity` detached at origin/main,
-  branch merged+deleted, node_modules symlink removed — prune or reuse.
-- Concurrent lanes merged during session: #1262 (demo FEEDBACK block,
-  touched campfire.html too — verified coexistence with my changes),
-  #1263 (voice layer).
+- This lane worked in `~/Dev/retrogames-forge-studio-lanes`
+  (forge/studio-lanes; branch deleted on merge — worktree now detached at
+  origin/main). Main checkout untouched/detached per law.
+- The merge loop raced once: `gh pr checks` without the PR number answered a
+  different PR's static. Always name the PR (`gh pr checks 1267 ...`) in the
+  wait loop. Merge itself was refused while BLOCKED — no damage.
+- jalfern.com apex 301s to www — poll prod with curl -L.
 
 ## Open questions for Jon
-- none new (visual-fidelity order + gate-honesty calls were made in-PR
-  with data; happy to revisit the abandoned pixel gates if you see a
-  deterministic design).
+- none open from this session (#1229 already resolved before it; #737 sits
+  waiting-jon for his review of the shipped feedback button).
 
 ## Carry-over
-- #1141 stage 4 (above). Prod: Vercel deploying 37b05fd; spot-check
-  jalfern.com/retrogames/demos/campfire.html after deploy.
+- #1141 stage 4 — un-stall + claim (HF meshes allowed, link-index only).
+- #1266 QA follow-ups (fleet) and #1257 polish remain QA-lane work.
+- 48 h trial verdict (~Oct 32) decides slot b; watch the #1258 comment.
