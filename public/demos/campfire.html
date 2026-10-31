@@ -143,6 +143,7 @@ in vec2 vUv;
 uniform vec2 uRes;
 uniform float uTime;
 uniform float uFlare;
+uniform float uBurn;   // log lifetime clock (sim seconds, rate-scalable)
 uniform vec2 uWind;
 uniform vec3 uCamPos;
 uniform mat4 uCamInvRot;
@@ -272,14 +273,122 @@ float sdSeg(vec3 p, vec3 a, vec3 b){
   float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
   return length(pa - ba * h);
 }
+// ---- log burn & crumble (#670 fidelity 4) ---------------------------------
+// One slow burn clock (uBurn, sim seconds) runs every log through a full
+// lifetime: it tumbles in fresh, thins and pits as the burn front eats
+// upward from the coal bed, snaps a glowing chunk free where the front
+// reaches it (the chunk pivots, falls, lands in the coals, glows and
+// shrinks away), then the stub sinks into the bed as the log dies. All
+// analytic from uBurn — deterministic, and the DEV hook can scrub the clock.
+// Noise pitting is strictly subtractive (never adds to d), so the SDF stays
+// a valid march bound; chunk gaps are planar slabs (gradient 1 = safe).
+const vec3 LOGA[6] = vec3[6](
+  vec3( 0.30, 0.015,  0.10), vec3(-0.28, 0.015,  0.14), vec3( 0.05, 0.015,  0.30),
+  vec3(-0.10, 0.015, -0.28), vec3(-0.30, 0.040, -0.06), vec3(-0.06, 0.075, -0.26));
+const vec3 LOGB[6] = vec3[6](
+  vec3(-0.06, 0.40, -0.05), vec3( 0.07, 0.38, -0.02), vec3(-0.02, 0.36, -0.06),
+  vec3( 0.04, 0.34,  0.06), vec3( 0.30, 0.040,  0.06), vec3( 0.06, 0.075,  0.26));
+const float LOGR[6] = float[6](0.055, 0.050, 0.052, 0.048, 0.045, 0.043);
+
+struct LogState {
+  vec3 lo, hi;   // burned axis (low end, possibly trimmed high end)
+  float r;       // current radius
+  float bi;      // burn fraction 0..1
+  float ein;     // tumble-in entry 0..1
+  float ph, T, cp;
+  // chunk break state (lean logs only):
+  int broken;    // front reached the anchor -> gap carved in the log
+  int falling;   // chunk exists as a free body
+  vec3 cA, cB;   // chunk endpoints (pre-fall, in the parent's space)
+  vec3 u;        // parent axis unit
+  float rc;      // chunk radius
+  vec3 coff;     // chunk fall offset
+  float ang;     // tumble angle
+  vec3 w;        // tumble axis
+  float gapMid, gapHalf;
+};
+
+LogState logState(int i){
+  LogState L;
+  float ph = hash12(vec2(float(i) * 7.31 + 2.7, 13.37));
+  float T = 80.0 + ph * 40.0;                 // lifetime 80–120 s at rate 1
+  float cp = fract(uBurn / T + ph);
+  float ein = smoothstep(0.0, 0.035, cp);     // new log tossed in (first ~3 s)
+  float bi = clamp(cp / 0.8, 0.0, 1.0);       // fully burned at 80 % of cycle
+  vec3 a = LOGA[i], b = LOGB[i];
+  vec3 lo = a.y < b.y ? a : b, hi = a.y < b.y ? b : a;
+  float lean = step(0.30, hi.y - lo.y);
+  hi = mix(hi, lo, lean * 0.5 * bi);         // tip retreats down the axis
+  float sink = smoothstep(0.85, 1.0, bi);    // final collapse into the bed
+  // toss-in: a fresh log slides in from upper right on a diagonal drop
+  float ein2 = (1.0 - ein) * (1.0 - ein);
+  float yoff = ein2 * 0.35 - sink * 0.14;
+  float slide = ein2 * 0.55;
+  lo.y += yoff; hi.y += yoff;
+  lo.x += slide; hi.x += slide;
+  L.lo = lo; L.hi = hi; L.u = normalize(hi - lo);
+  L.r = LOGR[i] * (1.0 - (0.14 + 0.32 * lean) * bi) * (1.0 - sink * 0.85);
+  L.bi = bi; L.ein = ein; L.ph = ph; L.T = T; L.cp = cp;
+  L.falling = 0; L.broken = 0; L.rc = 0.0; L.ang = 0.0; L.coff = vec3(0.0);
+  L.w = vec3(0.0, 0.0, 1.0); L.gapMid = 0.0; L.gapHalf = 0.0;
+  L.cA = lo; L.cB = lo;
+  // Chunk break: one slot per leaning log, anchor mid-shaft.
+  if (lean > 0.5){
+    float hs = hash12(vec2(float(i) * 3.7 + 1.1, 7.7));
+    float s0 = 0.30 + hs * 0.28;
+    float sLen = 0.16 + hash12(vec2(float(i) + 5.0, 2.2)) * 0.12;
+    float s1 = min(s0 + sLen, 0.98);
+    float tau = s0 * 0.9;
+    if (bi >= tau){
+      L.broken = 1;
+      float alen = length(hi - lo);
+      L.gapMid = (s0 + s1) * 0.5 * alen;
+      L.gapHalf = (s1 - s0) * 0.5 * alen + 0.008;
+      L.cA = mix(lo, hi, s0); L.cB = mix(lo, hi, s1);
+      float cpBr = tau * 0.8;
+      float ageS = cp >= cpBr ? (cp - cpBr) * T : -1.0;
+      float fallH = max(0.02, min(L.cA.y, L.cB.y) - 0.03);
+      float g = 3.2;
+      float landA = sqrt(2.0 * fallH / g);
+      float ad = min(max(ageS, 0.0), landA);
+      float post = max(0.0, ageS - landA);
+      float fade = smoothstep(0.4, 3.4, post);
+      if (ageS >= 0.0 && ageS < landA + 3.4){
+        L.falling = 1;
+        vec2 drift = vec2(hash12(vec2(float(i) * 1.3, 4.1)) - 0.5,
+                          hash12(vec2(float(i) * 2.9, 8.3)) - 0.5);
+        L.coff = vec3(drift.x * 0.10 * ad, -0.5 * g * ad * ad - post * 0.03,
+                      drift.y * 0.10 * ad);
+        L.ang = (hs - 0.5) * 3.0 * ad;
+        L.rc = L.r * 0.82 * (1.0 - 0.7 * fade);
+        L.w = normalize(cross(L.u, vec3(0.0, 1.0, 0.0)) + vec3(0.0, 0.0, 0.02));
+      }
+    }
+  }
+  return L;
+}
+
 float logsSdf(vec3 p){
   float d = 1e5;
-  d = min(d, sdSeg(p, vec3( 0.30, 0.015,  0.10), vec3(-0.06, 0.40, -0.05)) - 0.055);
-  d = min(d, sdSeg(p, vec3(-0.28, 0.015,  0.14), vec3( 0.07, 0.38, -0.02)) - 0.050);
-  d = min(d, sdSeg(p, vec3( 0.05, 0.015,  0.30), vec3(-0.02, 0.36, -0.06)) - 0.052);
-  d = min(d, sdSeg(p, vec3(-0.10, 0.015, -0.28), vec3( 0.04, 0.34,  0.06)) - 0.048);
-  d = min(d, sdSeg(p, vec3(-0.30, 0.040, -0.06), vec3( 0.30, 0.040,  0.06)) - 0.045);
-  d = min(d, sdSeg(p, vec3(-0.06, 0.075, -0.26), vec3( 0.06, 0.075,  0.26)) - 0.043);
+  for (int i = 0; i < 6; i++){
+    LogState L = logState(i);
+    if (L.bi >= 1.0) continue;
+    // Pitted, crumbly surface: deepens with burn. Subtractive only.
+    float pit = (0.010 + 0.030 * L.bi) * (1.0 - vnoise(p * 7.0 + float(i) * 17.0));
+    float dl = sdSeg(p, L.lo, L.hi) - L.r - pit;
+    if (L.broken == 1){
+      // gap slab (planar cut, SDF-safe): chunk snapped out of here
+      float sx = dot(p - L.lo, L.u);
+      dl = max(dl, L.gapHalf - abs(sx - L.gapMid));
+    }
+    d = min(d, dl);
+    if (L.falling == 1){
+      vec3 q = p - L.cA - L.coff;
+      q = q * cos(L.ang) + cross(L.w, q) * sin(L.ang)
+          + L.w * dot(L.w, q) * (1.0 - cos(L.ang));
+      d = min(d, sdSeg(q, vec3(0.0), L.cB - L.cA) - L.rc);
+    }
+  }
   return d;
 }
 float sceneSdf(vec3 p){
@@ -362,15 +471,19 @@ vec3 solidColor(vec3 p, vec3 n, vec3 rd, int hitLogs){
   vec3 warm = vec3(1.0, 0.52, 0.16);
   vec3 c;
   if (hitLogs == 1){
+    // heat field: how close this point is to the fire's core. Drives both the
+    // ember-crack glow below and the char-vs-fresh-wood gradient: parts of a
+    // log far from the coals are brown wood, near them is black charcoal.
+    float heat = smoothstep(0.46, 0.02, p.y) * smoothstep(0.50, 0.08, length(p.xz));
     float char = fbm3(p * 22.0);
     vec3 albedo = mix(vec3(0.045, 0.032, 0.025), vec3(0.10, 0.075, 0.055), char);
     float bark = smoothstep(0.35, 0.75, fbm3(p * vec3(30.0, 30.0, 90.0)));
     albedo *= 0.75 + 0.5 * bark;
+    albedo = mix(albedo, vec3(0.155, 0.105, 0.062), (1.0 - heat) * 0.8);
     c = albedo * (warm * ndl * fall * uFlare * mix(0.10, 1.0, sh) * 4.2);
     // Charred logs: dark faces with bright glowing cracks, not a uniform
     // orange glow. Higher burn contrast + lower diffuse keeps wood reading as
     // solid charred bodies with ember light in the fissures.
-    float heat = smoothstep(0.46, 0.02, p.y) * smoothstep(0.50, 0.08, length(p.xz));
     float burn = pow(max(0.0, fbm3(p * 15.0 + vec3(0.0, -uTime * 0.25, 0.0))), 3.0);
     c += mix(vec3(0.5, 0.07, 0.01), vec3(1.0, 0.42, 0.06), burn) * heat * burn * uFlare * 2.4;
   } else {
@@ -782,6 +895,8 @@ let t0 = performance.now();
 let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
 let readyFlag = false;
 let heatAmt = 1; // heat-haze wobble scale (QA gate toggles it, DEV hook too)
+let burnClock = 0, burnRate = 1; // log lifetimes in sim seconds (#670 fidelity 4)
+let flareOv = null; // QA: pin the flicker multiplier for deterministic pixel gates
 
 const rot4 = new Float32Array(16);
 const vp4 = new Float32Array(16);
@@ -808,11 +923,12 @@ function frame(){
   const t = (performance.now() - t0) / 1000;
   const now = performance.now();
   if (lastFrame) { const dtms = now - lastFrame; perfAcc += dtms; perfN++; if (dtms > perfMax) perfMax = dtms; }
+  burnClock += (lastFrame ? Math.min((now - lastFrame) / 1000, 0.05) : 0) * burnRate;
   lastFrame = now;
   frames++;
   resize();
 
-  const flare = flickerAt(t);
+  const flare = flareOv !== null ? flareOv : flickerAt(t);
   const wind = windAt(t);
   const cb = camBasis(t);
   rotMat(rot4, cb.r, cb.u, cb.f);
@@ -830,6 +946,7 @@ function frame(){
   gl.uniform2f(us('uRes'), W, H);
   gl.uniform1f(us('uTime'), t);
   gl.uniform1f(us('uFlare'), flare);
+  gl.uniform1f(us('uBurn'), burnClock);
   gl.uniform2f(us('uWind'), wind[0], wind[1]);
   gl.uniform3f(us('uCamPos'), cb.pos[0], cb.pos[1], cb.pos[2]);
   gl.uniformMatrix4fv(us('uCamInvRot'), false, rot4);
@@ -934,6 +1051,12 @@ window.__campfireTest = {
   },
   setHeat(x){ heatAmt = +x; },
   heat(){ return heatAmt; },
+  // #670 fidelity 4: log burn clock — scrub / accelerate the lifetimes (QA)
+  burn(){ return burnClock; },
+  setBurnClock(x){ burnClock = +x; },
+  setBurnRate(x){ burnRate = +x; },
+  getBurnRate(){ return burnRate; },
+  setFlare(x){ flareOv = x === null ? null : +x; }, // null restores live flicker
 };
 </script>
 <script>

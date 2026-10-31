@@ -10,6 +10,8 @@
 //     · the world beyond the ring falls to darkness (top corners stay dark)
 //     · embers glow outside the flame silhouette and move
 //     · sparks burst in clusters with ballistic fall; heat-haze knob wired
+//     · logs live and die: burn-clock hooks wired, and scrubbing the clock
+//       changes the pile (rubble vs standing tepee — deterministic states)
 //     · the sky is dark but carries star pinpoints
 //     · the camera pose moves the world
 //   3. LAW    — self-contained single file; NOT registered in games.js
@@ -30,6 +32,9 @@
 // abandoned: flame self-flicker between screenshots (ratio 1.10-1.46) fully
 // overlaps the wobble=0 mutant (1.13), so shimmer can't be pixel-proved here —
 // it is verified visually and the hook contract is what's gated.
+// Mutant 5 (fidelity PR 4, 2026-10-30): pin the uBurn uniform to 0 (logs
+// frozen) -> crumble gate reddens: pinned+interleaved mean-R Δ collapses from
+// ~15 to ~0 (same state both clocks; flicker is pinned out, not the signal).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -266,10 +271,17 @@ async function main() {
         }
         return acc
       }
-      const eA = scanEmber(img, centA)
-      await page.waitForTimeout(1500)
+      // #670 fidelity 4: pin the flare for ember sampling too. Unpinned, a
+      // flare surge made eA=825 vs eB=8 across two frames — the gate measured
+      // uFlare's phase, not the ember field.
+      await page.evaluate(() => window.__campfireTest.setFlare(1.0))
+      await page.waitForTimeout(100)
+      centA.length = 0; centB.length = 0
+      const eA = scanEmber(decodePng(await page.screenshot()), centA)
+      await page.waitForTimeout(900)
       const imgB = decodePng(await page.screenshot())
       const eB = scanEmber(imgB, centB)
+      await page.evaluate(() => window.__campfireTest.setFlare(null))
       ok('embers glow outside the flame silhouette', eA > 8 && eB > 8, `${eA} / ${eB} ember px`)
       // #670 fidelity 3 note: an automated "spark streak" pixel gate was built
       // and discarded. Every plume box above the pit is dominated by the flame
@@ -296,6 +308,43 @@ async function main() {
         return { ok: got === 0.5 && dflt === 1, why: `default=${dflt} roundtrip=${got}` }
       })
       ok('heat haze knob present and wired', heatRT.ok, heatRT.why)
+
+      // #670 fidelity 4: log lifetimes. Gate A is the hook contract. Gate B
+      // is honest pixels: the crumble is a STATE difference at pinned clocks —
+      // log phases derive from hashes of uBurn, so clock 130 (several logs at
+      // end-of-life rubble, coal glow unobstructed) and clock 70 (densely
+      // standing charcoal tepee shielding the core) are the same frame content
+      // every run. The confounds ARE controllable, unlike haze: the flicker
+      // multiplier is pinned (setFlare) and the two clocks are INTERLEAVED per
+      // sample so smoke evolution is common-mode. Sequential unpinned sampling
+      // was attempt 1 and failed (Δ=-3..+7: uFlare's 0.45-1.5 swing swamps
+      // the ~16 state separation). Pinned+interleaved: Δ=15-16, gate at 8.
+      // Mutant (uBurn pinned 0) collapses Δ to ~0.
+      const burnRT = await page.evaluate(() => {
+        const t = window.__campfireTest
+        if (!(t.setBurnClock && t.setBurnRate && t.getBurnRate && typeof t.burn === 'function' && typeof t.setFlare === 'function')) return { ok: false, why: 'no hook' }
+        t.setBurnRate(7); const rt = t.getBurnRate()
+        t.setBurnClock(5); const ck = t.burn()
+        t.setBurnRate(1)
+        return { ok: rt === 7 && ck === 5, why: `rate rt=${rt} clock rt=${ck}` }
+      })
+      ok('burn clock hooks wired (rate + clock round-trip)', burnRT.ok, burnRT.why)
+      const pileBox = { x0: Math.round(W * 0.36), x1: Math.round(W * 0.64), y0: Math.round(H * 0.34), y1: Math.round(H * 0.58) }
+      const meanPileAt = async (c) => {
+        await page.evaluate((cc) => window.__campfireTest.setBurnClock(cc), c)
+        await page.waitForTimeout(80) // let the pinned clock reach the GPU once
+        const img2 = decodePng(await page.screenshot())
+        let s = 0, n = 0
+        for (let y = pileBox.y0; y < pileBox.y1; y += 2) for (let x = pileBox.x0; x < pileBox.x1; x += 2) { s += px(img2, x, y)[0]; n++ }
+        return s / n
+      }
+      await page.evaluate(() => { const t = window.__campfireTest; t.setBurnRate(0); t.setFlare(1.0) })
+      let accA = 0, accB2 = 0
+      for (let k = 0; k < 5; k++) { accA += await meanPileAt(130); accB2 += await meanPileAt(70) }
+      await page.evaluate(() => { const t = window.__campfireTest; t.setFlare(null); t.setBurnRate(1) })
+      const mA = accA / 5, mB2 = accB2 / 5
+      ok('logs crumble with the burn clock (rubble vs tepee)', mA - mB2 > 8,
+        `pile meanR clock130=${mA.toFixed(1)} clock70=${mB2.toFixed(1)} Δ=${(mA - mB2).toFixed(1)}`)
       const drift = centA.length && centB.length
         ? Math.hypot(
           centA.reduce((a, c) => a + c[0], 0) / centA.length - centB.reduce((a, c) => a + c[0], 0) / centB.length,
