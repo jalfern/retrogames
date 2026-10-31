@@ -147,13 +147,13 @@ async function main() {
     hudLine.length > 0 && hudLine.length < 90, `${hudLine.length} chars`)
   ok('credits card block present (#674)', /window\.DEMO_CREDITS\s*=/.test(src) && /<script src="credits\.js">/.test(src))
 
-  rmSync('/tmp/forge/reefcheck-profile', { recursive: true, force: true })
+  rmSync(`/tmp/forge/p${process.env.DEV_PORT || 5173}/reefcheck-profile`, { recursive: true, force: true })
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    `--user-data-dir=/tmp/forge/reefcheck-profile`, 'about:blank',
+    `--user-data-dir=/tmp/forge/p${process.env.DEV_PORT || 5173}/reefcheck-profile`, 'about:blank',
   ], { stdio: 'ignore' })
-  const cleanup = guardChrome(chrome, '/tmp/forge/reefcheck-profile')
+  const cleanup = guardChrome(chrome, `/tmp/forge/p${process.env.DEV_PORT || 5173}/reefcheck-profile`)
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))

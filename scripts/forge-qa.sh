@@ -62,8 +62,11 @@ fi
 cd "$REPO" || exit 1
 
 # #907 backstop: a killed session can orphan headless Chrome under launchd.
-# Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
-pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+# #1266: lane-scoped by this node's DEV_PORT ($DEV) — two QA sessions that
+# start while the other's browser is live no longer reap each other's Chrome;
+# the second sweep only ever hits legacy unsuffixed dirs. Never a normal Chrome.
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/p$DEV/" 2>/dev/null || true
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/[^/]*-profile" 2>/dev/null || true
 
 # halt (#605): Jon froze the lanes — no QA node starts a new session either.
 # (A session already running finishes its current step, reports, and exits;

@@ -57,13 +57,16 @@ fi
 cd "$REPO" || exit 1
 
 # #907 backstop: a killed session can orphan headless Chrome under launchd.
-# Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
-# #1258: profiles are shared per-check-script across lanes, so sweeping while
-# another builder slot is live would kill ITS browser — sweep only when every
-# builder slot is idle (an orphan from the dead slot b then waits for slot a's
-# next restart; honest small gap, noted in docs/HARNESS.md).
+# #1266: lane-scoped. Each slot's profiles live under /tmp/forge/p<port>/ (the
+# checks namespace by DEV_PORT), so restarting one slot no longer kills the
+# other slot's LIVE browsers. Never matches a normal Chrome.
+if [[ "$SLOT" == a ]]; then DEV=5173; else DEV=5178; fi
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/p$DEV/" 2>/dev/null || true
+# Legacy unsuffixed dirs predate #1266's namespacing; a session still running
+# old code may own one, so sweep those only when slot a starts with every
+# builder slot idle (an orphan then waits for this restart; honest small gap).
 if [[ "$SLOT" == a ]] && ! pgrep -f "opencode run.*THE FORGE" >/dev/null; then
-    pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+    pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/[^/]*-profile" 2>/dev/null || true
 fi
 
 # halt (#605): a `halt` label on any open issue is Jon freezing the factory.
@@ -93,9 +96,8 @@ echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
 PROMPT="You are THE FORGE on slot $SLOT. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
 # #1258: the slot names its port and its claim script — the playbook's ladder
 # stays the same, only claim mechanics and the dev server differ per slot.
-if [[ "$SLOT" == a ]]; then DEV_PORT_B=5173; else DEV_PORT_B=5178; fi
-export DEV_PORT=$DEV_PORT_B
-PROMPT="$PROMPT Slot notes (#1258): claim with scripts/forge-claim.sh <n> $SLOT \"<plan>\"; your dev server port is $DEV_PORT_B — start yours with \`npm run dev -- --port $DEV_PORT_B --strictPort\` (DEV_PORT is exported; browser scripts read it). Never use or stop another lane's port."
+export DEV_PORT=$DEV
+PROMPT="$PROMPT Slot notes (#1258): claim with scripts/forge-claim.sh <n> $SLOT \"<plan>\"; your dev server port is $DEV — start yours with \`npm run dev -- --port $DEV --strictPort\` (DEV_PORT is exported; browser scripts read it). Never use or stop another lane's port."
 
 # target (#1258): the warden writes its assignment to /tmp/forge/target-<slot>
 # right before kickstart; fresh (<20 min) means it belongs to THIS fire. A

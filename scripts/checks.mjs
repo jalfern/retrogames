@@ -10,7 +10,7 @@ export const CORE = {
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'feedbackcheck', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
-    'runwaycheck', 'claimcheck', 'robokitcheck', 'lanecheck'],
+    'runwaycheck', 'claimcheck', 'robokitcheck', 'tpscheck', 'lanecheck'],
   smoke: ['vpadboot', 'tapstartcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',
