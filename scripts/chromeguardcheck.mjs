@@ -72,18 +72,34 @@ for (const f of ['mountainscheck', 'campfirecheck', 'stormcheck', 'oceancheck', 
   ok(`${f}.mjs imports guardChrome (#907)`, /from '\.\/chromecleanup\.mjs'/.test(src))
   ok(`${f}.mjs guards its Chrome spawn (#907)`, /guardChrome\(chrome,/.test(src))
 }
+// #1266: profiles are namespaced by the lane's DEV_PORT, so two lanes running
+// the same check never share a profile dir and a lane restart never kills the
+// other's live browser. spawn and guard must agree on the namespaced path.
+const NS = /\/tmp\/forge\/p\$\{process\.env\.DEV_PORT \|\| 5173\}\/[a-z]+-profile/
+for (const f of ['mountainscheck', 'campfirecheck', 'stormcheck', 'oceancheck', 'shorecheck', 'creditscheck', 'reefcheck', 'neonraincheck', 'volcanocheck', 'textfitcheck']) {
+  const src = await import('node:fs').then(m => m.readFileSync(resolve(HERE, `${f}.mjs`), 'utf8'))
+  const hits = src.match(/\/tmp\/forge\/[a-z]*-?(?:p\$\{[^}]*\}\/)?[a-z]*-?profile/g) || []
+  const unsuffixed = src.match(/\/tmp\/forge\/[a-z]+-profile(?!-)/g) || []
+  ok(`${f}.mjs namespaces its profile dir by DEV_PORT (#1266)`, NS.test(src),
+    unsuffixed.length ? `unsuffixed path remains: ${unsuffixed[0]}` : 'no p${DEV_PORT} path found')
+  ok(`${f}.mjs keeps no unsuffixed /tmp/forge profile (#1266)`, unsuffixed.length === 0,
+    unsuffixed.join(' '))
+  void hits
+}
 ok('guard installs SIGTERM + SIGINT + exit handlers (#907)',
   /process\.on\('exit'/.test(await import('node:fs').then(m => m.readFileSync(guardSrc, 'utf8'))) &&
   /process\.on\('SIGTERM'/.test(await import('node:fs').then(m => m.readFileSync(guardSrc, 'utf8'))) &&
   /process\.on\('SIGINT'/.test(await import('node:fs').then(m => m.readFileSync(guardSrc, 'utf8'))))
 for (const f of ['forge.sh', 'forge-qa.sh']) {
   const src = await import('node:fs').then(m => m.readFileSync(resolve(HERE, f), 'utf8'))
-  ok(`${f} carries the /tmp/forge orphan backstop (#907)`,
-    /pkill -u "\$\(id -u\)" -f "user-data-dir=\/tmp\/forge\/"/.test(src))
+  ok(`${f} carries a lane-scoped /tmp/forge orphan backstop (#907 #1266)`,
+    /pkill -u "\$\(id -u\)" -f "user-data-dir=\/tmp\/forge\/p(5173|\$DEV)\//.test(src))
+  ok(`${f} no longer sweeps every lane's Chrome (#1266)`,
+    !/pkill -u "\$\(id -u\)" -f "user-data-dir=\/tmp\/forge\/"/.test(src))
 }
 
 console.log('# 3. syntax')
-for (const f of ['chromecleanup.mjs', 'mountainscheck.mjs', 'campfirecheck.mjs', 'stormcheck.mjs', 'oceancheck.mjs', 'shorecheck.mjs', 'creditscheck.mjs', 'shoreperf.mjs']) {
+for (const f of ['chromecleanup.mjs', 'mountainscheck.mjs', 'campfirecheck.mjs', 'stormcheck.mjs', 'oceancheck.mjs', 'shorecheck.mjs', 'creditscheck.mjs', 'shoreperf.mjs', 'reefcheck.mjs', 'neonraincheck.mjs', 'volcanocheck.mjs', 'textfitcheck.mjs', 'tps.mjs', 'tpscheck.mjs']) {
   const r = spawnSync('node', ['--check', resolve(HERE, f)])
   ok(`${f} parses`, r.status === 0, r.stderr.toString().split('\n')[0])
 }

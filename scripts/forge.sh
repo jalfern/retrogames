@@ -27,8 +27,12 @@ fi
 cd "$REPO" || exit 1
 
 # #907 backstop: a killed session can orphan headless Chrome under launchd.
-# Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
-pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+# #1266: lane-scoped. This slot's profiles live under /tmp/forge/p<port>/ (the
+# checks namespace by DEV_PORT), so a slot-a restart no longer kills slot b's
+# LIVE browsers; the second sweep only ever hits legacy unsuffixed dirs, which
+# nothing creates anymore. Never matches a normal Chrome.
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/p5173/" 2>/dev/null || true
+pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/[^/]*-profile" 2>/dev/null || true
 
 # halt (#605): a `halt` label on any open issue is Jon freezing the factory.
 # The warden already refuses to kick; this catches launchd's own timer and any

@@ -215,9 +215,9 @@ async function main() {
   const chrome = spawn(CHROME, [
     '--headless=new', `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--mute-audio',
-    `--user-data-dir=/tmp/forge/mountainscheck-profile`, 'about:blank',
+    `--user-data-dir=/tmp/forge/p${process.env.DEV_PORT || 5173}/mountainscheck-profile`, 'about:blank',
   ], { stdio: 'ignore' })
-  const cleanup = guardChrome(chrome, '/tmp/forge/mountainscheck-profile')
+  const cleanup = guardChrome(chrome, `/tmp/forge/p${process.env.DEV_PORT || 5173}/mountainscheck-profile`)
   let browser
   for (let i = 0; i < 40 && !browser; i++) {
     await new Promise(r => setTimeout(r, 500))

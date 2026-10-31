@@ -41,7 +41,7 @@ const { chromium } = await import('playwright-core').catch(() => {
 
 const PORT = process.env.DEV_PORT || '5173'
 const BASE = process.env.TEXTFIT_URL || `http://localhost:${PORT}/retrogames`
-const PROFILE = process.env.TEXTFIT_PROFILE || '/tmp/forge/textfit-profile'
+const PROFILE = process.env.TEXTFIT_PROFILE || `/tmp/forge/p${process.env.DEV_PORT || 5173}/textfit-profile`
 mkdirSync(PROFILE, { recursive: true })
 // Local boxes: system Chrome. CI (no /Applications): the playwright chromium
 // the smoke job installs (`npx playwright-core install --with-deps chromium`).

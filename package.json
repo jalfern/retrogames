@@ -266,6 +266,7 @@
     "shoreperf": "node scripts/shoreperf.mjs",
     "shoreguard": "node scripts/shoreperf.mjs --quiet-check-only",
     "chromeguardcheck": "node scripts/chromeguardcheck.mjs",
+    "tpscheck": "node scripts/tpscheck.mjs",
     "lobbycheck": "node scripts/lobbycheck.mjs",
     "nightlybot": "node scripts/nightlybot.mjs",
     "nightlybotcheck": "node scripts/nightlybot.mjs --selftest",

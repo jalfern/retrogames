@@ -68,12 +68,22 @@ remote_vitals() {   # $1 = ssh target -> "cpu rss", zeros when unreachable
 set -- $(remote_vitals sfm5mini);            MC=$1; MR=$2
 set -- $(remote_vitals jon@100.116.224.56); BC=$1; BR=$2
 
+# t/s sampling (#1266): watch.sh shows gen tokens/s live; this records it.
+# Materialise the sampler from origin/main (same launchd-safe pattern as the
+# runway below). A failed sample embeds null — the board skips, no hole in the
+# rest of the pulse.
+git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null || true
+git -C /Users/jon/Dev/retrogames show origin/main:scripts/tps.mjs > /tmp/forge/tps.mjs 2>/dev/null || true
+TPS=$(node /tmp/forge/tps.mjs 2>/dev/null)
+[[ "$TPS" == \{* ]] || TPS=null
+
 # Three panes, same names as the home terminal: Builder / QA·Mini / QA·MBP.
 # The studio's own oMLX server and the warden are plumbing, not lanes — they
 # used to be series here and only confused the board.
 S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FREE:-0},\
 \"tasks\":{$(task 'opencode run.*THE FORGE' builder),\
 \"mini\":{\"cpu\":$MC,\"rss\":$MR},\"mbp\":{\"cpu\":$BC,\"rss\":$BR}},\
+\"tps\":$TPS,\
 \"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"builder\":$(act "$(readlink /tmp/forge/last.log)"),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)"),\"mbp\":$(act "$(readlink /tmp/forge/last-qa-mbp.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'
