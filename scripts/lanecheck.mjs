@@ -13,6 +13,9 @@
 // (QA would steal a builder's game). For #1290 the same works on the reserve:
 // flip `studioUp && qaStudioQueue` to `false` in lib/lanes.mjs — A8d goes red
 // (mini would collide with studio on the last item). Both verified by hand.
+// For #1372 the flagship tail flips the same way: change `<=` to `<` in the
+// qaMiniFlagship line — A9b goes red (mini would idle while studio's reserve
+// covers the only queue item).
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -134,6 +137,27 @@ section('A. pure planner')
         'A8h slot b unloaded -> one free builder, studio takes one, mini the last')
     ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true }).counts.studioReserve === 1,
         'A8i reserve counted when studio is queue-bound and up')
+}
+
+// A9 — QA mini flagship fallback (#1372): the #878 flagship stage is mini's
+// tail when feedback AND queue leave it nothing. Queue outranks the flagship
+// stage per tick (e-prime), and whether the gap survives studio's share is a
+// runtime warden fact (STUDIO_FLAGSHIPPED), pinned in C below.
+{
+    const fb = iss(1, ['feedback'])
+    const q = (n, day) => iss(n, ['game-queue'], { created_at: `2026-10-${day}T00:00:00Z` })
+    ok(lanePlan({ issues: [fb], freeA: false, freeB: false }).qaMiniFlagship === false,
+        'A9a feedback exists -> mini works feedback, no flagship flag')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true }).qaMiniFlagship === true,
+        'A9b queue 1 absorbed by studio reserve -> mini idle -> flagship eligible (mutant line: <= flipped to <)')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: false }).qaMiniFlagship === false,
+        'A9c studio down -> mini takes the queue item instead (queue wins the tick)')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: false, freeB: false, studioUp: true }).qaMiniFlagship === false,
+        'A9d queue survives for mini -> queue build, not flagship')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: true, freeB: true }).qaMiniFlagship === true,
+        'A9e queue covered by the two builders -> mini idle -> flagship eligible')
+    ok(lanePlan({ issues: [], freeA: false, freeB: false }).qaMiniFlagship === true,
+        'A9f board fully dry -> flagship fallback is mini\'s tail')
 }
 
 section('B. board slots + trial verdict')
@@ -309,6 +333,11 @@ ok(warden.includes('QA_STUDIO_QUEUE'), 'warden routes studio QA onto the queue')
 ok(warden.includes('QA_MINI_QUEUE') && /node" == mini && "\$QA_MINI_QUEUE"/.test(warden),
     'warden routes mini QA onto the queue (#1290)')
 ok(warden.includes('--studio-up'), 'warden feeds studio liveness to the planner (#1290 reserve)')
+ok(warden.includes('QA_MINI_FLAGSHIP') && warden.includes('qa-flagship:mini')
+    && /com\.jalfern\.forge-qa"/.test(warden),
+    'warden routes mini QA onto the flagship gap the #878 block left standing (#1372)')
+ok(/STUDIO_FLAGSHIPPED=1/.test(warden),
+    'a studio flagship kick consumes the gap so mini cannot double up on it (#1372)')
 ok(qaMd.includes('mini included #1290'), 'FORGE-QA.md e-prime names mini as a queue-build node (#1290)')
 ok(warden.includes('"$B_LOADED" == 0'), 'builder-slot QA spill parked while slot b is loaded')
 ok(warden.includes('studiotrial.mjs'), 'warden ticks the trial clock')
