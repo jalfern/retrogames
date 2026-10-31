@@ -24,3 +24,8 @@ export function townScore(tx, ty, gates, terrainAt) {
     }
     return best
 }
+
+// #1352: the town toast promises "cottages and smoke" — a seeded slice of the
+// strongest built-up tiles hosts a cottage so the promise is kept on screen.
+// Pure and deterministic: same tile, same verdict, every frame and every run.
+export const hasCottage = (tx, ty) => (((tx * 73856093) ^ (ty * 19349663)) >>> 8) % 100 < 40

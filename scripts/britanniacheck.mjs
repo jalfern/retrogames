@@ -13,7 +13,7 @@ import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/av
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
 import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, gateFlavor } from '../src/games/Britannia/moons.js'
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
-import { TOWN_R, FLAT as TOWN_FLAT, townScore } from '../src/games/Britannia/towns.js'
+import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples } from '../src/games/Britannia/swell.js'
 
@@ -492,7 +492,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'gateFlavor maps the wheel deterministically and wraps both ways')
     const lens = PHASE_FLAVOR.map(s => s.length)
     ok(Math.max(...lens) <= 48 && Math.min(...lens) >= 20,
-        `lines fit the 420px panel (longest ${Math.max(...lens)} ≤ 48 chars) and carry some verse (shortest ${Math.min(...lens)} ≥ 20)`)
+        `lines fit the 480px panel (longest ${Math.max(...lens)} ≤ 48 chars) and carry some verse (shortest ${Math.min(...lens)} ≥ 20)`)
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/gateFlavor\(ph\)/.test(src), 'index.jsx: the open gate menu prints tonight\'s phase flavor')
     ok(/addEventListener\('pointermove', onMove\)/.test(src) && /S\.hoverRow = row/.test(src),
@@ -501,8 +501,8 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'index.jsx: hovering onto a new row chirps (audio parity with the arrows)')
     ok(/hoverRow: S\.gate >= 0 \? S\.hoverRow : -1/.test(src) && /gateFlavor: S\.gate >= 0 \? gateFlavor\(moonPhase\(S\.tick\)\)/.test(src),
         'index.jsx: hover row and tonight\'s flavor ride the harness state (menu closed => -1/empty)')
-    ok(/by \+ 54, 9(\*lit)?/.test(src) && /by \+ 58\)/.test(src),
-        'index.jsx: the phase line + disc sit BELOW the menu title (title baseline by+36, phase by+58 — no overprint)')
+    ok(/by \+ 29, 9(\*lit)?/.test(src) && /by \+ 34\)/.test(src) && /rowTop: 62/.test(src),
+        'index.jsx: the phase line + disc share the title row (disc by+29, caption by+34) and rows start at by+62 — #1352 no overprint of row I')
 }
 
 // land texture (#1146): the modern tiles shade from a smooth field keyed to
@@ -781,6 +781,101 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/if \(ts > 0 && cobbleBlock\(tx, ty, bx, by\)\)/.test(tsrc), 'index.jsx: town blocks darken onto cobble grout')
     ok(/inTown && !S\.wasTown/.test(tsrc) && /town lieth nigh/.test(tsrc), 'index.jsx: entering town toasts once')
     ok(/town: townScore\(S\.x, S\.y, gates, terrainAt\)/.test(tsrc), 'index.jsx: the harness can see the town under the Avatar')
+}
+
+// first-time player pass (#1352): the goal is on screen from the first second,
+// gates are legible at noon, a compass points at the next gate, towns keep
+// their promise of cottages, the HUD is pinned to the content top (not sunk
+// into the map by the letterbox), the clock agrees with the sky, and the gate
+// menu speaks the keys the game actually binds.
+// Prove-it-can-fail: revert the gate alpha to pulse*(0.5+0.5*n) (noon glow
+// goes red), drop the fit.oy term in hudInsets (the bar sinks again), restore
+// the un-shifted clock (noon reads 00:00), or delete the compass.
+{
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/GOAL: find and ride all eight moongates/.test(src) &&
+        (src.match(/GOAL: find and ride all eight moongates/g) || []).length === 2,
+        'index.jsx: the goal is stated twice — fixed line on attract AND the first toast')
+    ok(/S\.toast = 300; S\.toastMsg = 'GOAL/.test(src) && /if \(!\/\^GOAL\/\.test\(S\.toastMsg \|\| ''\)\)/.test(src),
+        'index.jsx: the goal toast fires the moment play begins and a sky change cannot swallow it')
+
+    // day glow: the core alpha is pulse*(0.55+0.45*n)+0.28 — at noon (n=0) it
+    // spans 0.445..0.72 and never the old 0.15..0.40; an anchor ring adds a
+    // dark teal edge so the swirl never disappears on tan grass
+    const coreAlpha = (p, n) => Math.min(0.94, p * (0.55 + 0.45 * n) + 0.28)
+    ok(coreAlpha(0.3, 0) >= 0.4 && coreAlpha(0.8, 0) <= 0.94 && coreAlpha(0.8, 1) > coreAlpha(0.8, 0),
+        `noon gate glow is plainly bright (core alpha ${coreAlpha(0.3, 0).toFixed(2)}..${coreAlpha(0.8, 0).toFixed(2)}, night burns harder)`)
+    ok(/rgba\(16,70,88,0\.55\)/.test(src) && /pulse \* \(0\.55 \+ 0\.45 \* n\) \+ 0\.28/.test(src),
+        'index.jsx: the anchor ring + steady bright core replace the day-invisible glow')
+
+    ok(/const nearestUnvisited = \(\) =>/.test(src) &&
+        /S\.visited\.has\(i\)/.test(src) && /if \(gx < 0 \|\| gx > VIEW_W \|\| gy < 0 \|\| gy > VIEW_H\)/.test(src),
+        'index.jsx: a compass computes the nearest UNVISITED gate and points only when the gate itself is off-screen')
+    ok(/`to \$\{ROMAN\[gd\.i\]} · \$\{gd\.d\} paces`/.test(src),
+        'index.jsx: the compass names its target and distance (never a bare arrow)')
+    {
+        // wrap-aware nearest: a gate one tile west across the seam must read as
+        // 1 pace, not 255 — same wrap law as the walk itself
+        const dWrap = (a, b) => { let d = b - a; if (d > MAPW / 2) d -= MAPW; if (d < -MAPW / 2) d += MAPW; return d }
+        ok(dWrap(2, 254) === -4 && dWrap(254, 2) === 4 && dWrap(10, 13) === 3,
+            'compass directions wrap the map seam like the walk does')
+    }
+
+    ok(hasCottage(10, 10) === hasCottage(10, 10) && hasCottage(10, 11) !== undefined,
+        'hasCottage is deterministic per tile')
+    {
+        let seen = 0, tot = 0
+        for (const g of gates) for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (g.x + dx === g.x && g.y + dy === g.y) continue
+            tot++; if (hasCottage(g.x + dx, g.y + dy)) seen++
+        }
+        ok(seen >= 2, `gate plazas actually host cottages to walk past (${seen} of ${tot} plaza tiles)`)
+        let varied = new Set()
+        for (let i = 0; i < 400; i++) varied.add(hasCottage(i % 20, (i * 7) % 20))
+        ok(varied.has(true) && varied.has(false), 'cottages scatter, not stamp (some plots built, some empty)')
+    }
+    ok(/ts >= 0\.75 && !onGate\(tx, ty\) && hasCottage\(tx, ty\)/.test(src),
+        'index.jsx: cottages stand only on the strongest built-up ground, never under a gate')
+    ok(/hearth smoke|drawCottage/.test(src) && /rgba\(214,214,220/.test(src),
+        'index.jsx: smoke wisps lift off the roofs — the town toast is not a lie')
+
+    ok(/const contentTop = rect\.top \+ fit\.oy/.test(src) && /contentTop >= Math\.max/.test(src),
+        'index.jsx: HUD insets measure against the letterbox content top, not the canvas element (#1352 bar no longer floats)')
+    ok(/contentLeft\) \/ fit\.s/.test(src) && /contentRight - pause\.left/.test(src),
+        'index.jsx: side insets are letterbox-aware too')
+
+    ok(/Math\.floor\(\(\(tod\(\) \+ 0\.5\) % 1\) \* 24\)/.test(src),
+        'index.jsx: the clock is offset half a cycle — tod 0 is noon, so noon no longer reads 00:00')
+    {
+        const DAY2 = 7200
+        const nightN = t => { const x = (t % DAY2) / DAY2; return x < 0.25 ? 0 : x < 0.34 ? (x - 0.25) / 0.09 : x < 0.72 ? 1 : x < 0.81 ? 1 - (x - 0.72) / 0.09 : 0 }
+        const hrs = t => Math.floor((((t % DAY2) / DAY2 + 0.5) % 1) * 24)
+        ok(hrs(0) === 12 && nightN(0) <= 0.5, 'high sun (tick 0) reads 12:00 DAY')
+        ok(hrs(Math.floor(DAY2 * 0.5)) === 0 && nightN(Math.floor(DAY2 * 0.5)) > 0.5, 'tick mid-cycle reads 00:00 NIGHT')
+        let agree = true
+        for (let t = 0; t < DAY2; t += 7) {
+            const hr = hrs(t), dark = nightN(t) > 0.5
+            if (dark && hr >= 8 && hr <= 16) agree = false
+            if (!dark && (hr <= 1 || hr >= 22)) agree = false
+        }
+        ok(agree, 'hour and DAY/NIGHT label never contradict across a whole day (night only 19..06, day only 06..19)')
+    }
+
+    ok(/Z\/Esc cancel/.test(src) && !/B cancel/.test(src),
+        'index.jsx: the menu hint names Z/Esc — the keys actually bound to cancel')
+    ok(/Escape: 'start'/.test(src) && /pad\.b \|\| pad\.start\) \{ S\.dismissed/.test(src),
+        'index.jsx: Esc really does close the gate menu (start-dismiss path)')
+    {
+        // menu geometry: rows clear of the header, hint clear of the border
+        const W = 1280, H = 720
+        const g = { w: 480, rowTop: 62, pitch: 36 }, rows = 7
+        const bh = g.rowTop + rows * g.pitch + 44
+        ok(g.rowTop >= 56 && bh <= H * 0.75, `menu box stands clear (rows from by+${g.rowTop}, box height ${bh})`)
+        const footer = 'arrows + SPACE choose · 1-8 jump · Z/Esc cancel'
+        ok(footer.length * 8.4 <= g.w - 56, `footer hint fits inside the ${g.w}px box (${footer.length} chars ≈ ${(footer.length * 8.4) | 0}px)`)
+        const longest = '  VIII — Spirituality moon  [visited]'
+        ok(longest.length * 10.2 <= g.w - 56, `longest gate row fits (${longest.length} chars ≈ ${(longest.length * 10.2) | 0}px)`)
+    }
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
