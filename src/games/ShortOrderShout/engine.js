@@ -80,12 +80,47 @@ export function walkable(gs, x, y, ignoreCook = -1) {
 // --- seeded rng (mulberry32) ---------------------------------------------------
 export function mulberry32(seed) {
     let a = seed >>> 0
-    return function () {
+    const f = function () {
         a = (a + 0x6d2b79f5) | 0
         let t = Math.imul(a ^ (a >>> 15), 1 | a)
         t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296
     }
+    // peek exposes the raw state so snapshotGame/restoreGame can resume the
+    // exact stream (#1291 online resync). mulberry32(a) continues from state a.
+    f.peek = () => a
+    return f
+}
+
+// --- snapshot / restore (#1291 online resync) -----------------------------------
+// JSON-safe full sim state. Deliberately additive: hashState never reads rng/fx/
+// log, so ticking, hashing and every existing gate are byte-identical with these
+// in the module. The rng closure's raw state rides as rngA; restore rebuilds the
+// continuation with mulberry32(rngA). fx/log are render/diag sugar — dropped.
+export function snapshotGame(gs) {
+    const snap = {
+        seed: gs.seed, rngA: gs.rng.peek(), rngState: gs.rngState,
+        tick: gs.tick, score: gs.score, strikes: gs.strikes, served: gs.served,
+        done: gs.done, win: gs.win, seats: gs.seats,
+        nextTicket: gs.nextTicket, dishSeq: gs.dishSeq,
+        cooks: JSON.parse(JSON.stringify(gs.cooks)),
+        tickets: JSON.parse(JSON.stringify(gs.tickets)),
+        burners: JSON.parse(JSON.stringify(gs.burners)),
+        pot: JSON.parse(JSON.stringify(gs.pot)),
+        board: gs.board,
+        floors: JSON.parse(JSON.stringify(gs.floors)),
+        projs: JSON.parse(JSON.stringify(gs.projs)),
+    }
+    return snap
+}
+
+export function restoreGame(snap) {
+    const { rngA, ...rest } = snap
+    const gs = JSON.parse(JSON.stringify(rest))
+    gs.rng = mulberry32(rngA >>> 0)
+    gs.fx = []
+    gs.log = []
+    return gs
 }
 
 // Deterministic FNV-1a over the sim (no juice fields).
