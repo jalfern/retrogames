@@ -215,6 +215,36 @@ try:
 except Exception:
     pass
 
+# #1258 — live slots: which builder slots and QA lanes hold a session right
+# now (identity = the prompt strings, pgrep'd exactly like the lane locks).
+# null = idle. The board renders this as the slots line (floor.js slotsLine).
+def live(pat):
+    r = subprocess.run(['pgrep', '-f', pat], capture_output=True, text=True)
+    pids = r.stdout.split()
+    if not pids:
+        return None
+    e = subprocess.run(['ps', '-o', 'etime=', '-p', pids[0]], capture_output=True, text=True)
+    return {'pid': int(pids[0]), 'up': e.stdout.strip()}
+
+slots = {
+    'a': live('opencode run.*THE FORGE( on slot a)?\\.'),
+    'b': live('opencode run.*THE FORGE on slot b\\.'),
+    'qaStudio': live('opencode run.*QA MASTER on node studio\\.'),
+    'qaMini': live('opencode run.*QA MASTER on node mini\\.'),
+}
+try:
+    v = open('/tmp/forge/studio-lanes.verdict').read().strip()
+    if v:
+        slots['verdict'] = v
+except Exception:
+    pass
+try:
+    st = json.load(open('/tmp/forge/studio-lanes.json'))
+    slots['trial'] = {'since': st.get('since'), 'reported': st.get('reported', False)}
+except Exception:
+    pass
+board['slots'] = slots
+
 data = base64.b64encode(json.dumps(board).encode()).decode()
 body = {'message': 'board', 'content': data, 'branch': 'main'}
 sha = subprocess.run(['gh', 'api', f'{OUT}/contents/board.json?ref=main',

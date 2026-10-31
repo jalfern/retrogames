@@ -231,6 +231,33 @@ scripts/forge.sh                                                # force a sessio
 tail -f /tmp/forge/last.log                                     # watch a session
 ```
 
+**Two builders + whole queue (#1258, Jon's steer 2026-10-31, 48 h trial):** the Studio runs
+builder slots **a** and **b** (`forge.sh <a|b>`; identity "THE FORGE on slot a|b." in the
+prompt — the QA-node trick, so locks/watch/status distinguish slots; ports 5173/5178; job
+`com.jalfern.forge-b`, self-bootstrapped by the warden from origin/main — merging is the
+install). One planner decides everything claimable: `scripts/lib/lanes.mjs` (pure) ranks the
+builders' ladder games-first (corpse → steer → next → oldest game-queue → oldest feedback)
+and gates the studio QA's queue-fallthrough (feedback first; then queue items only when they
+outnumber free builder slots; flagship polish last). The warden evals the planner's output
+(`/tmp/forge/target-<slot>` hands each slot its issue) and keeps per-slot stall counters.
+One lane per issue is enforced at claim time by a UNIFIED liveness namespace —
+`forge-claim.sh` (new) and `qa-claim.sh` both honour `FORGE (<slot>):` and `QA (<node>):`
+claimed/checkpoint, 90 min, newest wins, loser yields — so QA building a queued title can
+never collide with a builder (#878). The builder-slot QA spill (`forge-qa.sh builder`) is
+parked while slot b is loaded (superseded; reverting the trial restores it). The 48 h trial
+is self-enforcing: `scripts/studiotrial.mjs tick` (warden step 5b) starts the clock on first
+run, at 48 h posts items/day before-vs-after on #1258 and writes keep|revert to
+`/tmp/forge/studio-lanes.verdict`; `revert` makes step 4 stop kicking slot b. Tokens/s
+streams live in watch.sh but nothing persisted it pre-trial, so the report ships items/day
+and says so. Visibility: `forge status` names builder-a/b + trial state, watch.sh has a
+BUILDER·B pane, the pulse line carries `builders=N/2`, board.json gains `slots` and
+`/forge` renders the ⚙ SLOTS row (`floor.js slotsLine`, pinned pure). Gate:
+`npm run lanecheck` (45 gates: planner order, slot assignment, QA-queue matrix, slotsLine,
+trial verdict + wiring tripwires; flip `queueFree > freeSlots` to `>=` and the QA-steal
+fixtures go red). Honest gaps: orphan-Chrome sweep only runs when slot a restarts idle
+(shared per-script profiles), watch has no live-tap pane for slot b, the shift report counts
+merges per lane (branch `forge/*` = builder regardless of slot) — filed for QA follow-up.
+
 **The nightly bot (#1040):** contractcheck proves a game *boots 600 ticks*; nothing proved a
 game can be *finished* unattended. `scripts/nightlybot.mjs` plays every contract game to
 completion each night — seeded, stepped, headless, via `window.__game` — with a mulberry32 pad

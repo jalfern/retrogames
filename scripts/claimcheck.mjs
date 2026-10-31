@@ -137,11 +137,23 @@ section('A. live behaviour via stubbed gh')
   ok(code === 0 && out.includes('CLAIMED #900 for studio'), `A7 clean issue claims: code=${code}`)
 }
 
+// A8 — #1258 unified namespace: a BUILDER-held item blocks QA too (#878 says
+// one lane per game; the whole-queue QA lane must still respect a builder).
+{
+  const { code, out } = runClaim([cmt('FORGE (b): claimed recently — plan: x', 5)], 'studio')
+  ok(code === 1 && out.includes('REFUSED') && out.includes('held by b'), `A8 builder claim blocks QA: code=${code}`)
+}
+
 section('B. wiring tripwires')
 const claim = readFileSync(script, 'utf8')
-ok(/test\("\^QA \\\\\(\[a-z0-9-\]\+\\\\\): \(claimed\|checkpoint\)"\)\)/.test(claim),
-  'holder() measures age from claimed|checkpoint only (#1234)')
+ok(/test\("\^\(QA\|FORGE\) \\\\\(\[a-z0-9-\]\+\\\\\): \(claimed\|checkpoint\)"\)\)/.test(claim),
+  'holder() measures age from claimed|checkpoint only (#1234), unified namespace (#1258)')
 ok(!claim.includes('startswith("QA")'), 'holder() no longer ages from any QA-prefixed comment')
+ok(/api -X DELETE .*labels\/game-queue|for l in game-queue next steer/.test(claim),
+  'qa-claim strips queue labels when QA takes a queue item (#1258 whole queue)')
+const fclaim = readFileSync(join(here, 'forge-claim.sh'), 'utf8')
+ok(fclaim.includes('^(QA|FORGE)') && fclaim.includes('labels[]=building'),
+  'forge-claim.sh exists and shares the unified liveness namespace (#1258)')
 const pkg = readFileSync(join(here, '..', 'package.json'), 'utf8')
 ok(pkg.includes('"claimcheck"'), 'package.json carries the claimcheck alias')
 const checks = readFileSync(join(here, 'checks.mjs'), 'utf8')
