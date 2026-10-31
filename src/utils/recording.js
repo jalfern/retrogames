@@ -1,5 +1,8 @@
 // RECORDING FORMAT — `retrogames-rec/v1` (issue #495): ONE JSON file for a
 // recorded multiplayer run, good enough to replay it EXACTLY and to train on.
+// v2 (#1247) adds a `voice` section: raw per-player audio tracks aligned to
+// the tick clock (see src/utils/voice.js). v1 files remain valid; v1 files
+// must NOT carry voice.
 //
 //   {
 //     format: 'retrogames-rec/v1',
@@ -46,8 +49,12 @@
 
 import { METHODS, DIR_FIELDS, AIM_FIELDS, normalizePad } from './onePad.js'
 import { SLOT_KINDS } from './slotSources.js'
+import { validateVoice } from './voice.js'
 
 export const REC_FORMAT = 'retrogames-rec/v1'
+// #1247: v2 = v1 + a `voice` section (raw per-player tracks aligned to the
+// tick clock). v1 files stay valid forever; replay ignores voice either way.
+export const REC_FORMAT_V2 = 'retrogames-rec/v2'
 
 export const DEFAULT_HASH_EVERY = 30
 
@@ -139,12 +146,12 @@ export function createRecorder(opts = {}) {
             ticks++
             if (hash !== null && hash !== undefined && ticks % hashEvery === 0) hashes.push({ t: ticks, h: hash })
         },
-        finish(finalHash = null) {
+        finish(finalHash = null, voice = null) {
             const srcs = resolveSources()
             if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
             slots.forEach((s, i) => { s.source = srcs[i]; if (!s.ping.length) delete s.ping })
             const rec = {
-                format: REC_FORMAT,
+                format: voice ? REC_FORMAT_V2 : REC_FORMAT,
                 build,
                 game: gameId,
                 method,
@@ -155,6 +162,7 @@ export function createRecorder(opts = {}) {
                 slots,
                 hashes,
             }
+            if (voice) rec.voice = voice
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
                 hashes.push({ t: ticks, h: finalHash })
             }
@@ -168,7 +176,9 @@ export function createRecorder(opts = {}) {
 
 export function validate(rec) {
     if (!rec || typeof rec !== 'object') return 'not an object'
-    if (rec.format !== REC_FORMAT) return `bad format tag: ${JSON.stringify(rec.format)}`
+    if (rec.format !== REC_FORMAT && rec.format !== REC_FORMAT_V2) return `bad format tag: ${JSON.stringify(rec.format)}`
+    if (rec.format === REC_FORMAT && rec.voice !== undefined) return 'voice requires the v2 format tag'
+    if (rec.format === REC_FORMAT_V2 && rec.voice === undefined) return 'v2 requires a voice section'
     if (typeof rec.game !== 'string' || !rec.game) return 'missing game id'
     if (!METHODS.includes(rec.method)) return `bad method: ${JSON.stringify(rec.method)}`
     if (!Number.isInteger(rec.seed)) return 'seed must be an integer'
@@ -198,6 +208,10 @@ export function validate(rec) {
         last = x.t
     }
     if (rec.ticks > 0 && rec.hashes.length > 0 && rec.hashes[rec.hashes.length - 1].t !== rec.ticks) return 'final checkpoint must be at the last tick'
+    if (rec.voice !== undefined) {
+        const bv = validateVoice(rec.voice, rec.players)
+        if (bv) return bv
+    }
     return null
 }
 
