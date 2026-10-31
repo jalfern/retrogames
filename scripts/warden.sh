@@ -75,13 +75,17 @@ main() {
     fi
     trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
-    # ---- 0. SLEEP WATCH (#1354) -----------------------------------------
+    # ---- 0. SLEEP WATCH (#1354, v2 #1392) ------------------------------
     # The warden cannot tick while the Mac sleeps, so the gap between its own
     # ticks is the cheapest honest outage witness. sleepwatch.mjs turns a gap
     # ≥ 30 min into a named window — pmset supplies the real Sleep→Wake bounds
     # and the reason ("Software Sleep"), dark-wakes inside are counted as
     # naps, not uptime — keeps a 48 h ledger at /tmp/forge/asleep.json, and
     # echoes the newest window on every pulse line for 24 h after it ends.
+    # v2: pmset is captured EVERY tick, because a box dark-waking every few
+    # minutes lets these ticks land while staying effectively down — the same
+    # capture now also stamps `churn=N` (≥3 sleeps inside half an hour) and
+    # `asleep=true since=HH:MM` (open sleep chain, live onset) onto the pulse.
     # The board banner (floor.js) and the questions digest (jonq digest) read
     # the same ledger. Backfill runs ONCE (no ledger yet) so the incident that
     # motivated #1354 goes on the record honestly, from pmset history.
@@ -102,6 +106,9 @@ main() {
         [[ "$DRY" != 1 ]] && print -r -- "$NOWN" > "$LOG_DIR/warden.lasttick"
         ASLEEP=$(node "$SW" pulse --out "$LOG_DIR/asleep.json" 2>/dev/null | tail -1)
         [[ "$SREC" == recorded=[1-9]* ]] && log "sleepwatch: $SREC -> $ASLEEP"
+        # #1392: churn/onset news must reach the log even with no tick-gap to
+        # record — that is precisely the night the gap path is blind to.
+        [[ "$SREC" == *churn=[1-9]* || "$SREC" == *asleep=1* ]] && log "sleepwatch v2: $SREC -> ${ASLEEP:-no field}"
     fi
 
     # ---- 1. COUNT -----------------------------------------------------
@@ -151,6 +158,9 @@ main() {
         # #1354: `asleep=HH:MM-HH:MM asleepm=N [naps=N]` rides for 24 h after
         # a Studio-sleep window, so a dead board and a sleeping Mac tell
         # different stories. No window (or none recent) = field omitted.
+        # #1392: the same slot carries the LIVE `asleep=true since=HH:MM` while
+        # the box never fully woke, and `churn=N` names a dark-wake-churning
+        # night where the ticks landed but nothing could ship.
         local nb=0 suf=""
         pgrep -f "opencode run.*THE FORGE( on slot a)?\\." >/dev/null && nb=$((nb + 1))
         pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && nb=$((nb + 1))
@@ -172,6 +182,10 @@ main() {
     # #1354: a freshly-recorded outage is an action — the follow-up pulse
     # repeats it, and one `slept:1` in the log names the hours that went dark.
     [[ "${SREC:-}" == recorded=[1-9]* ]] && ACTIONS+=("slept:1")
+    # #1392: churn and live onset are actions too — ticks landing on a box
+    # that never really woke is an outage-in-progress the gap cannot see.
+    [[ "${SREC:-}" == *churn=[1-9]* ]] && ACTIONS+=("churn:1")
+    [[ "${SREC:-}" == *asleep=1* ]] && ACTIONS+=("onset:1")
 
     # ---- 2b. HYGIENE (#891): a `shipped` issue is done — close it ----------
     # FORGE.md adds `shipped` at merge but leaves the issue open (#616 sat

@@ -29,7 +29,7 @@ import {
     openQuestions, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
 import { computeRunway, digestText } from './lib/runway.mjs'
-import { sleepLine } from './sleepwatch.mjs'
+import { churnLine, sleepLine } from './sleepwatch.mjs'
 
 const REPO = process.env.JONQ_REPO || 'jalfern/retrogames'
 const OWNER = process.env.JONQ_OWNER || 'jalfern'
@@ -216,12 +216,16 @@ switch (cmd) {
         // #1354 — if the warden's sleep ledger says the Studio was down, the
         // digest says so first. Ledger path is overridable for the harness and
         // for other machines; a missing file is just a machine that stayed up.
+        // #1392 — the churn ledger rides right after: ticks landed, but a box
+        // dark-waking every few minutes was effectively down too.
         let sleep = null
+        let churn = null
         try {
             const led = JSON.parse(readFileSync(process.env.FORGE_ASLEEP || '/tmp/forge/asleep.json', 'utf8'))
             sleep = sleepLine(led.windows, now)
+            churn = churnLine(led.churns, now)
         } catch { /* no ledger: nothing to report */ }
-        console.log(digestText({ questions, runway, sleep, now }))
+        console.log(digestText({ questions, runway, sleep, churn, now }))
         break
     }
     default:
