@@ -168,6 +168,19 @@ ok(read('forge-claim.sh').includes('yielding to') && qac.includes('(QA|FORGE)'),
     'claim scripts share one liveness namespace and yield on collision')
 
 ok(watch.includes('BUILDER·B') && watch.includes('n=5'), 'watch.sh shows slot b (pane + resize bits)')
+const qafa = read('forge-qa.sh'), tapStudio = read('com.jalfern.tap-studio.plist')
+ok(tapStudio.includes('<string>com.jalfern.tap-studio</string>') && /<string>8011<\/string>/.test(tapStudio)
+    && /<string>8000<\/string>/.test(tapStudio) && tapStudio.includes('stream-studio.log')
+    && tapStudio.includes('<key>KeepAlive</key>'),
+    'tap-studio plist: :8011 -> :8000 -> stream-studio.log, KeepAlive')
+ok(qafa.includes('http://127.0.0.1:8011/v1/models') && qafa.includes('omlxtapstudio')
+    && qafa.includes('!= 502'),
+    'forge-qa.sh routes the studio session through tap :8011, fail-open (#1268)')
+ok(qafa.includes('JOB=com.jalfern.tap-studio') && qafa.includes('origin/main:scripts/$JOB.plist')
+    && qafa.includes('launchctl bootstrap'),
+    'forge-qa.sh self-bootstraps tap-studio from origin/main (merge = install, slot-b pattern)')
+ok(watch.includes('LANE=studio') && watch.includes('TAPPORT=8011'),
+    'watch.sh --live splits a live pane on QA·STUDIO over its own stream')
 ok(telem.includes("board['slots']") && telem.includes('opencode run.*THE FORGE on slot b'),
     'telemetry bakes live slots into board.json')
 ok(floor.includes('export const slotsLine'), 'floor.js owns the pure slotsLine')

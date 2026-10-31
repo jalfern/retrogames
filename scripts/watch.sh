@@ -3,9 +3,10 @@
 #
 #   scripts/watch.sh          # open it (or re-attach if it is already running)
 #   scripts/watch.sh --kill   # close it
-#   scripts/watch.sh --live   # also show BUILDER's tokens as they generate
-#                             # (a pane right of BUILDER; needs the tap — see
-#                             # scripts/tap.mjs. Switching layouts: --kill first.)
+#   scripts/watch.sh --live   # also show the model's tokens as they generate
+#                             # (a live pane right of BUILDER·A and of
+#                             # QA·STUDIO; needs the taps — see scripts/tap.mjs
+#                             # and tap-studio. Switching layouts: --kill first.)
 #
 # Works from anywhere you can SSH into the Studio (phone over Tailscale too):
 # the tmux session lives here, so every device attaches to the same panes.
@@ -191,8 +192,12 @@ tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -t "$SESSION" \
     "env -u TMUX tmux new-session -A -s retro -c $HOME/Dev/retrogames"
 # LIVE: right half of the BUILDER row. It shares that row, so the warden's
 # resizing of BUILDER moves it too (the warden only lays out the x=0 column).
+# #1268: QA·STUDIO gets the same treatment for its own tap (:8011).
 (( LIVE )) && tmux split-window -h -l 50% -t "$BUILDER_PANE" \
     -e L=BUILDER -e LANE=builder -e TAPPORT=8010 zsh -c "$(live_pane)"
+STUDIO_PANE=$(tmux display -p -t "$SESSION:0.4" '#{pane_id}')
+(( LIVE )) && tmux split-window -h -l 50% -t "$STUDIO_PANE" \
+    -e L=QA·STUDIO -e LANE=studio -e TAPPORT=8011 zsh -c "$(live_pane)"
 # Mouse: on server-wide (-g), so the nested RETRO session gets it too. With it
 # off there, the wheel over RETRO dropped the outer pane into copy-mode: the
 # chat froze, scrolled junk, and typing seemed dead until `q`. And scrolling a

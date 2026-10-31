@@ -87,6 +87,40 @@ fi
 
 PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes.$EXTRA"
 
+# TAP-studio (#1268): the studio lane gets its own live stream, like the
+# builders' :8010 tap. Merge = install, warden's slot-b pattern: the job plist
+# comes from origin/main (never the lagging working tree), and the provider is
+# cloned from omlxtap with only the port changed (no secret in the repo).
+# Fail-open everywhere: no job, no tap, no provider -> the session talks to
+# oMLX direct, exactly forge.sh's behaviour.
+MODEL_ARGS=(--model "$MODEL")
+if [[ "$NODE" == studio ]]; then
+    JOB=com.jalfern.tap-studio
+    LA="$HOME/Library/LaunchAgents/$JOB.plist"
+    if ! launchctl print "gui/$(id -u)/$JOB" >/dev/null 2>&1; then
+        mkdir -p "$HOME/Library/LaunchAgents"
+        if { [[ -f "$LA" ]] || git -C "$REPO" show "origin/main:scripts/$JOB.plist" > "$LA" 2>/dev/null; } \
+           && launchctl bootstrap "gui/$(id -u)" "$LA" >/dev/null 2>&1; then
+            echo "$(date): bootstrapped $JOB" >> "$LOG"
+        fi
+    fi
+    OCFG="$HOME/.config/opencode/opencode.json"
+    if jq -e '.provider.omlxtap' "$OCFG" >/dev/null 2>&1 && ! jq -e '.provider.omlxtapstudio' "$OCFG" >/dev/null 2>&1; then
+        T=$(mktemp) && jq '.provider.omlxtapstudio = (.provider.omlxtap | .options.baseURL = "http://127.0.0.1:8011/v1")' "$OCFG" > "$T" \
+            && mv "$T" "$OCFG" || rm -f "$T"
+    fi
+    for i in 1 2 3; do
+        TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:8011/v1/models)
+        [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] && break
+        sleep 1
+    done
+    if [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] \
+       && jq -e '.provider.omlxtapstudio' "$OCFG" >/dev/null 2>&1; then
+        MODEL_ARGS=(--model "omlxtapstudio/${STUDIO_MODEL#*/}")
+    fi
+fi
+echo "$(date): model route: ${MODEL_ARGS[*]}" >> "$LOG"
+
 # #601 red-main freeze: this lane refuses to ship fixes on top of a red trunk.
 if [[ -x "$REPO/scripts/main-ok.sh" ]] && ! "$REPO/scripts/main-ok.sh" >/dev/null 2>&1; then
     echo "$(date): MAIN RED — nightly failed; $NODE QA session starts in fix-main mode" >> "$LOG"
@@ -135,7 +169,7 @@ save_checkpoint() {
 }
 if (( FG )); then
     echo "$(date): FOREGROUND $NODE session pid=$$ log=$LOG cap=${CAP_MIN}m" >> "$LOG"
-    /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1 &
+    /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1 &
     OC=$!
     ( sleep $(( CAP_MIN * 60 )); kill -0 $OC 2>/dev/null || exit 0
       echo "$(date): HARD CAP ${CAP_MIN}m: saving, then stopping the session" >> "$LOG"
@@ -147,7 +181,7 @@ if (( FG )); then
     exit $STATUS
 fi
 
-nohup /opt/homebrew/bin/opencode run --auto --model "$MODEL" "$PROMPT" >> "$LOG" 2>&1 &
+nohup /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 echo "$(date): kicked $NODE QA session pid=$BG log=$LOG" >> "$LOG"
 
