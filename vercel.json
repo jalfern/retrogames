@@ -77,7 +77,7 @@
     { "source": "/retrogames/js-dos/:path*", "destination": "/js-dos/:path*" },
      { "source": "/retrogames/replays/:path*", "destination": "/replays/:path*" },
      { "source": "/retrogames/models/:path*", "destination": "/models/:path*" },
-     { "source": "/retrogames/forge/:path*", "destination": "/forge/:path*" },
+     { "source": "/retrogames/forge/(.*\\..+)", "destination": "/forge/$1" },
     { "source": "/retrogames/demos", "destination": "/demos/index.html" },
     { "source": "/retrogames/demos/", "destination": "/demos/index.html" },
     { "source": "/retrogames/demos/:path*", "destination": "/demos/:path*" },
