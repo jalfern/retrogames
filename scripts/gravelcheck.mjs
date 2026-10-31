@@ -261,6 +261,38 @@ console.log('— #1380: steer through cooldown; refills never entomb —')
         `tippedExit=${tippedExit} entombed=${entombed}`)
 }
 
+console.log('— #1306: diesel drone cadence, radio voice ID, cents payout —')
+{
+    // Audio juice rides on fx, so its SCHEDULING must be deterministic even
+    // though fx never enters the hash. Mutant proof: delete the `drone` push
+    // in stepGame and the cadence assertion goes red; neuter tip()'s cents and
+    // the payout assertion goes red.
+    const gs = createGame(1, 1)
+    step(gs, [{}, {}, {}], 600)
+    const drones = drainFx(gs).filter((f) => f.k === 'drone')
+    ok('diesel drone cadences every 48 ticks',
+        drones.length === Math.floor(600 / 48) && drones.every((f, i) => f.tick === (i + 1) * 48),
+        `n=${drones.length} first=${drones[0] && drones[0].tick}`)
+
+    // every radio callout carries a seat who; content matches the seat
+    const rgs = runEm(7, 3, 3000)
+    const radios = drainFx(rgs).filter((f) => f.k === 'radio') // latest 40, enough coverage
+    const WHOS = new Set(['TRUCK', 'SCREEN', 'DIGGER', 'BOARD'])
+    ok('radio callouts all carry a seat who', radios.length > 0 && radios.every((f) => WHOS.has(f.who) && f.text),
+        `n=${radios.length} who=${radios[0] && radios[0].who}`)
+    ok('radio content is said by the right seat', radios.every((f) =>
+        !/JAM/.test(f.text) || f.who === 'SCREEN') && radios.every((f) => !/ORDER/.test(f.text) || f.who === 'TRUCK'))
+
+    // order completion reports the full payout for the cents ticker
+    const gs3 = createGame(1, 1)
+    gs3.orders = [{ id: 77, grade: 'coarse', units: 2, left: 1000, total: 1000 }]
+    gs3.truck.bed = 2; gs3.bedGrade = 'coarse'
+    gs3.truck.x = DOCK_SPOTS[0][0]; gs3.truck.y = DOCK_SPOTS[0][1]; gs3.truck.face = 'left'
+    tap(gs3, 1, { b: true })
+    const done = drainFx(gs3).find((f) => f.k === 'orderDone')
+    ok('orderDone fx carries cents = units*rate + bonus', !!done && done.cents === 2 * 30 + 40, JSON.stringify(done))
+}
+
 console.log('— win proof (CPU crew) —')
 {
     let wins = 0

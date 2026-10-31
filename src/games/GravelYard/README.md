@@ -64,8 +64,9 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
 
 ## Harness
 
-- `npm run gravelcheck` — 44 engine assertions (layout, determinism, dig/dump/
-  batch/gate/jam/load/tip/refuse/strike/orders/overflow, win + slack) plus
+- `npm run gravelcheck` — 52 engine assertions (layout, determinism, dig/dump/
+  batch/gate/jam/load/tip/refuse/strike/orders/overflow, win + slack, the
+  #1306 juice contract: drone cadence, radio voice IDs, orderDone cents) plus
   browser boot, contract determinism, the in-browser CPU-brain proof and
   frame checks. Needs `npm run dev` (DEV_PORT, default 5173).
   `GY_SKIP_BROWSER=1 npm run gravelcheck` skips the browser half.
@@ -95,3 +96,8 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   polish candidate.
 - Movement is d-pad-only (no analog stick); CPU crews never reverse (all
   forward routing), so tight squeezes are handled by replanning, not backing up.
+- #1306 polish shipped the mid-game feel pass (amber cones + cast shadow,
+  wet-cell 2-frame shimmer, diesel idle drone at a 48-tick cadence, per-seat
+  radio voice formants, cents ticker + CLEAN SHIFT stamp). Attract tip-seeding,
+  boom/bed animation, shaker life and the mic voice hooks (#1247) were split
+  into a follow-up polish issue at ship time.

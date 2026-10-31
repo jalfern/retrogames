@@ -52,7 +52,7 @@ export default function GravelYard() {
     const selectRef = useRef(1)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, jamFlash: 0 })
+    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, popCents: 0, boardShake: 0, stampT: 0, jamFlash: 0 })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -104,7 +104,7 @@ export default function GravelYard() {
                 stepGame(g, merged)
                 const fx = drainFx(g)
                 for (const f of fx) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
-                if (g.done && screenRef.current === 'play') { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
+                if (g.done && screenRef.current === 'play') { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50 }
             },
             state: () => {
                 const g = gsRef.current || createGame(1, 1)
@@ -138,9 +138,10 @@ export default function GravelYard() {
             const hud = hudRef.current
             if (f.k === 'toast') { hud.toast = f.msg; hud.toastT = 110 }
             if (f.k === 'radio') { hud.radio = { who: f.who, text: f.text }; hud.radioT = 170 }
-            if (f.k === 'orderDone') hud.popT = 26
+            if (f.k === 'orderDone') { hud.popT = 26; hud.popCents = f.cents || 0 }
             if (f.k === 'jam') { hud.shake = 26; hud.jamFlash = 30 }
             if (f.k === 'spill' || f.k === 'refuse') hud.shake = 16
+            if (f.k === 'refuse') hud.boardShake = 22 // the order board rattles on a strike
             if (f.k === 'ruined') hud.shake = 40
         }
 
@@ -240,7 +241,7 @@ export default function GravelYard() {
             // seat 0 is the recording stream's human; cpu streams are banked too
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
-            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50 }
         }
 
         const attractTick = () => {
@@ -283,6 +284,8 @@ export default function GravelYard() {
             if (hud.toastT > 0) hud.toastT--
             if (hud.radioT > 0) hud.radioT--
             if (hud.popT > 0) hud.popT--
+            if (hud.boardShake > 0) hud.boardShake--
+            if (hud.stampT > 0) hud.stampT--
             if (hud.shake > 0) hud.shake--
             if (hud.jamFlash > 0) hud.jamFlash--
 
@@ -306,7 +309,7 @@ export default function GravelYard() {
                     } else if (k === 'pile') {
                         const c = g.pile.find((pc) => pc.x === x && pc.y === y)
                         const u = c ? c.units : 0
-                        ctx.drawImage(S.pile[c && c.wet ? 'wet' : 'dry'][u], px, py)
+                        ctx.drawImage(c && c.wet ? (Math.floor(t / 8) % 2 ? S.pile.wetB[u] : S.pile.wet[u]) : S.pile.dry[u], px, py)
                     } else if (k === 'hopper' || k === 'console') {
                         ctx.drawImage(S.dirt[1], px, py) // face cells belong to the plant sprite
                     } else ctx.drawImage(S.dirt[(x + y) % 2], px, py)
@@ -415,15 +418,24 @@ export default function GravelYard() {
             ctx.fillText(`${mm}:${ss < 10 ? '0' : ''}${ss}`, 6, 37)
             ctx.fillStyle = hud.popT > 0 ? '#ffe082' : '#f0e8d0'
             ctx.fillText(`${g.score}C`, 120, 12)
+            if (hud.popT > 0 && hud.popCents > 0) { // cents ticker floats up off the score
+                ctx.font = '8px "Press Start 2P", monospace'
+                ctx.globalAlpha = Math.min(1, hud.popT / 12)
+                ctx.fillStyle = '#7ae07a'
+                ctx.fillText(`+${hud.popCents}C`, 158, 12 - (26 - hud.popT) * 0.45)
+                ctx.globalAlpha = 1
+                ctx.font = '9px "Press Start 2P", monospace'
+            }
             ctx.fillStyle = '#a89878'
             ctx.fillText(`GOAL ${QUOTA}C`, 120, 24)
             for (let i = 0; i < MAX_STRIKES; i++) {
                 ctx.fillStyle = i < g.strikes ? '#ff5252' : '#3a281c'
                 ctx.fillRect(120 + i * 12, 30, 8, 8)
             }
-            // order cards
+            // order cards (they rattle when the gate refuses a load)
+            const bx = hud.boardShake > 0 ? (hud.boardShake % 2 ? 2 : -2) : 0
             g.orders.slice(0, 2).forEach((o, i) => {
-                const ox = 210 + i * 78, oy = 4
+                const ox = 210 + i * 78 + bx, oy = 4
                 ctx.fillStyle = '#120c08'; ctx.fillRect(ox, oy, 72, 30)
                 ctx.fillStyle = GRADE_COLOR[o.grade]; ctx.fillRect(ox + 2, oy + 2, 8, 8)
                 ctx.fillStyle = '#f0e8d0'
@@ -520,6 +532,23 @@ export default function GravelYard() {
                 ctx.fillStyle = '#c8b890'
                 ctx.fillText(g2.win ? 'THE FOREMAN NODS' : `GOAL WAS ${QUOTA}C${g2.strikes >= MAX_STRIKES ? ' - THREE REFUSALS' : ''}`, CANVAS_W / 2, 136)
                 if (Math.floor(t / 30) % 2) { ctx.fillStyle = '#ffd048'; ctx.fillText('SPACE FOR THE NEXT SHIFT', CANVAS_W / 2, 166) }
+                if (g2.win && hud.stampT > 0) { // #1306 the foreman's stamp slams in
+                    const age = 50 - hud.stampT
+                    const k = age < 8 ? 2.4 - 1.4 * (age / 8) : 1
+                    ctx.save()
+                    ctx.translate(CANVAS_W / 2 + 96, 214)
+                    ctx.rotate(-0.14)
+                    ctx.scale(k, k)
+                    ctx.globalAlpha = age < 4 ? 0.35 + age * 0.16 : 1
+                    ctx.strokeStyle = '#e04838'; ctx.lineWidth = 3
+                    ctx.strokeRect(-74, -18, 148, 36)
+                    ctx.lineWidth = 1.5
+                    ctx.strokeRect(-69, -13, 138, 26)
+                    ctx.fillStyle = '#e04838'
+                    ctx.font = '12px "Press Start 2P", monospace'
+                    ctx.fillText('CLEAN SHIFT', 0, 5)
+                    ctx.restore()
+                }
                 ctx.textAlign = 'left'
             }
         }

@@ -279,7 +279,9 @@ function tip(gs) {
         return
     }
     const n = Math.min(gs.truck.bed, match.units)
-    gs.score += n * RATE[gs.bedGrade]
+    const paid = n * RATE[gs.bedGrade]
+    gs.score += paid
+    match.paid = (match.paid || 0) + paid // transient cents (hash enumerates its own fields; see hashState)
     gs.truck.bed -= n
     if (gs.truck.bed === 0) gs.bedGrade = null
     match.units -= n
@@ -289,7 +291,7 @@ function tip(gs) {
         const bonus = Math.round(40 * Math.max(0, match.left / match.total))
         gs.score += bonus
         gs.orders = gs.orders.filter((o) => o !== match)
-        gs.fx.push({ k: 'orderDone', bonus, tick: gs.tick })
+        gs.fx.push({ k: 'orderDone', bonus, cents: match.paid + bonus, tick: gs.tick })
         radio(gs, 'TRUCK', `ORDER FILLED +${bonus}BONUS`)
     }
 }
@@ -484,6 +486,9 @@ export function stepGame(gs, pads) {
     stepOperator(gs, pads[2] || {})
     stepPlant(gs)
     stepWorld(gs)
+    // #1306 diesel idle: a low drone under live play (every 0.8 s), heavier
+    // while the screen runs. fx only — hashState never reads fx.
+    if (!gs.done && gs.tick % 48 === 0) gs.fx.push({ k: 'drone', load: gs.plant.running ? 1 : 0, tick: gs.tick })
     if (gs.fx.length > 40) gs.fx.splice(0, gs.fx.length - 40)
     return gs
 }
