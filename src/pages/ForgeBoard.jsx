@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sleepBanner, sparkline, slotsLine } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sleepBanner, sparkline, slotsLine, throughputLine } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -156,6 +156,9 @@ const ForgeBoard = () => {
     // it at the TOP of the board: 11 h of "nothing shipped" reads very
     // differently once you see the Mac was down.
     const sleep = sleepBanner(pulse)
+    // #1377 — live aggregate throughput from the same samples pipe: tokens/hr
+    // per box over the trailing hour, from the servers' own usage counters.
+    const throughput = throughputLine(samples, now)
     const qaShape = i => (/^(qa|bug)\b/i.test(i.title) || (i.body || '').startsWith('**where:**'))
         && !labelOf(i, 'game-queue') && !labelOf(i, 'building') && !labelOf(i, 'shipped')
     const qa = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
@@ -238,6 +241,13 @@ const ForgeBoard = () => {
                         </div>
                     )
                 })()}
+
+                {throughput && (
+                    <div data-throughput={throughput.boxes.length}
+                        className="text-[10px] tracking-wider text-gray-500 mb-2 text-center">
+                        ⚡ {throughput.text} — server counters, last hour
+                    </div>
+                )}
 
                 {runway && (() => {
                     const b = runwayBadge(runway, now)
