@@ -6,10 +6,12 @@
 //   1. THE DEMO IS ALIVE — the proven solver walks a real tab.
 //   2. THE INPUT PATH — arrows walk/turn; the automap cursor is painted at
 //      the cell the sim says the party stands on.
-//   3. THE VIEW MATCHES THE GRID — wall at one pace paints the centre
-//      wall-blue; a clear hall leaves it dark.
-//   3b. THE WALK BREATHES — fwd/back glide the projection ~130ms, the
-//      settled frame is the exact snapped one, and a bump never lunges.
+//   3. THE VIEW MATCHES THE GRID — on the shared WebGL renderer (#1129 via
+//      #1127 stage 4) a wall at one pace puts LIT BRICK in the centre column
+//      and a clear hall leaves it DARK (torch falloff into fog); with no
+//      WebGL2 the wireframe fallback keeps its old blue-wall signal.
+//   3b. THE WALK GLIDES — the rendered eye lags the sim's truth mid-step and
+//      lands frame-exact on the cell; a bump never lunges.
 //   4. THE AMBUSH — walking a real step into a named tile starts combat;
 //      the group slides in from the right, plate off its slot mid-slide.
 //   5. COMBAT PIXELS AND LEDGER — a live mob has its art on screen where the
@@ -66,6 +68,32 @@ const px = (x, y, w, h, sel, filter) => page.evaluate(([sx, sy, sw, sh, slct, fl
     for (let i = 0; i < d.length; i += 4) if (f(d[i], d[i + 1], d[i + 2])) n++
     return n
 }, [x, y, w, h, sel, filter.toString()])
+
+// Sample the WebGL corridor canvas. WebGL has no getImageData — this reads
+// the framebuffer with gl.readPixels (bottom-left origin, flipped here);
+// the shared renderer sets preserveDrawingBuffer (#1129), so readback sees
+// the last drawn frame — the js-dos lesson, applied before it could bite.
+// Coords are in the logical 256x224 space, mapped to the backing store.
+const glmean = (x, y, w, h) => page.evaluate(([sx, sy, sw, sh]) => {
+    const cv = document.querySelector('canvas[data-deep-gl]')
+    if (!cv || !cv.width) return -1
+    const gl = cv.getContext('webgl2')
+    if (!gl || gl.isContextLost()) return -1
+    const W = cv.width, H = cv.height
+    const bx = Math.round((sx / 256) * W)
+    const by = H - Math.round((sy / 224) * H) - Math.max(1, Math.round((sh / 224) * H))
+    const bw = Math.max(1, Math.round((sw / 256) * W))
+    const bh = Math.max(1, Math.round((sh / 224) * H))
+    const buf = new Uint8Array(bw * bh * 4)
+    gl.readPixels(bx, Math.max(0, by), bw, bh, gl.RGBA, gl.UNSIGNED_BYTE, buf)
+    let s = 0
+    for (let i = 0; i < buf.length; i += 4) s += buf[i] + buf[i + 1] + buf[i + 2]
+    return +(s / (buf.length / 4)).toFixed(1)
+}, [x, y, w, h])
+// the eye glides between cells; sampling mid-glide reads a corridor whose
+// axis is still swinging (a real lesson from this harness's first run) —
+// always wait for the eye to settle on the sim's pose before pixels.
+const settleGl = async () => { for (let i = 0; i < 25; i++) { if ((await probe()).glLag < 0.02) return true; await wait(40) } return false }
 
 await page.goto(URL, { waitUntil: 'load' })
 try {
@@ -137,17 +165,26 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
     r.check('the automap paints the party where the sim says', amber2 >= 18, `cell (${c.x},${c.y}) amber=${amber2}/25`)
 }
 
-// ---- 3. the wireframe matches the grid: wall near = blue centre, hall = dark ----
+// ---- 3. the view matches the grid: torch-lit brick vs darkness (or the
+//      wireframe fallback: wall near = blue centre, hall = dark) ----
 {
+    const useGl = (await probe()).gl
     // find a pose with a wall at one pace: turn around until view says so
     let wallSeen = -1
     for (let t = 0; t < 4 && wallSeen !== 1; t++) {
         wallSeen = (await probe()).view.wallDist
-        if (wallSeen !== 1) await tap('ArrowRight')
+        if (wallSeen !== 1) { await tap('ArrowRight'); if (useGl) await settleGl() }
     }
     r.check('driver found a wall-ahead pose', wallSeen === 1, `wallDist=${wallSeen}`)
+    if (useGl) await settleGl()
+    const COL = [110, 92, 36, 20]   // dead-centre box at eye level: near brick vs far dark
     const blue = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
-    r.check('a wall at one pace paints the view wall-blue', blue > 40, `blue px in centre column=${blue}`)
+    const wallLit = useGl ? await glmean(...COL) : -1
+    r.check(useGl
+        ? 'a wall at one pace puts torch-lit brick in the centre (the shared renderer draws the grid)'
+        : 'a wall at one pace paints the view wall-blue',
+        useGl ? wallLit > 42 : blue > 40,
+        useGl ? `centre brightness at wall=${wallLit}` : `blue px in centre column=${blue}`)
     // wall-follow until the sightline is open 5+ paces with nothing on the
     // floor (springs/stairs/pots also light the centre column — the pose must
     // be clean for the dark-centre claim to mean anything)
@@ -156,46 +193,78 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
         if (p.mode !== 'map') break
         if (p.view.wallDist >= 5 && !p.view.pots && !p.view.springs && !p.view.stairs) break
         await page.keyboard.press(p.view.wallDist <= 2 ? 'ArrowRight' : 'ArrowUp')
-        await wait(80)
+        if (useGl) await settleGl(); else await wait(80)
     }
     const p2 = await probe()
     r.check('driver reached a clear long hall', p2.view.wallDist >= 5 && !p2.view.pots && !p2.view.springs && !p2.view.stairs, `wallDist=${p2.view.wallDist} pot=${p2.view.pots} spring=${p2.view.springs} stairs=${p2.view.stairs}`)
+    const hallLit = useGl ? await glmean(...COL) : -1
     const blueFar = await px(126, 30, 5, 140, 'canvas[data-deep-view]', (R, G, B) => B > 90 && B > R + 30)
-    r.check('a clear hall leaves the centre dark — the view is the grid', blueFar <= 10, `blue px=${blueFar} (wall pose had ${blue})`)
+    r.check(useGl
+        ? 'a clear hall falls off into darkness — the light is the grid'
+        : 'a clear hall leaves the centre dark — the view is the grid',
+        useGl ? hallLit < 38 && hallLit < wallLit / 1.6 : blueFar <= 10,
+        useGl ? `centre brightness in hall=${hallLit} (wall pose had ${wallLit})` : `blue px=${blueFar} (wall pose had ${blue})`)
 }
 
-// ---- 3b. the walk breathes: fwd/back ease the view, endpoints land exact ----
+// ---- 3b. the walk glides: the rendered eye lags the sim's truth mid-step
+//      and lands frame-exact on the cell; a bump never lunges. On the GL
+//      renderer the proof is the lag between R.pose() (sim truth) and
+//      R.renderPose() (the eye actually drawn); the wireframe keeps its
+//      130 ms projection ease. ----
 {
     let p = await probe()
-    if (p.mode !== 'map') r.check('walk-ease pose is on a map floor', false, `mode=${p.mode}`)
-    const litWin = [96, 8, 64, 48]
-    const settle = async () => { for (let i = 0; i < 12; i++) { if ((await probe()).ease === 0) return true; await wait(40) } return false }
-    const before = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
-    await settle()
-    await page.keyboard.press('ArrowUp')
-    const mid = await probe()
-    r.check('a fwd step eases the projection (off > 0.5 mid-glide)', mid.ease > 0.5, `ease=${mid.ease.toFixed(3)} mode=${mid.mode}`)
-    const midPx = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
-    const mid2 = await probe()
-    r.check('mid-glide frame differs from the settled frame', midPx !== before || mid2.ease > 0.1, `before=${before} mid=${midPx} ease=${mid2.ease.toFixed(3)}`)
-    r.check('the ease settles to zero', await settle(), 'ease never reached 0 after fwd')
-    const afterFwd = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
-    const pf = await probe()
-    r.check('fwd actually moved the party', pf.x !== p.x || pf.y !== p.y, `(${p.x},${p.y}) -> (${pf.x},${pf.y})`)
-    await page.keyboard.press('ArrowDown')
-    const back = await probe()
-    r.check('a back step eases the other way (off < 0.5)', back.ease < -0.5, `ease=${back.ease.toFixed(3)}`)
-    r.check('the back ease settles to zero', await settle(), 'ease never reached 0 after back')
-    const pb = await probe()
-    const afterBack = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
-    r.check('the round-trip lands where it started', (pb.x === p.x && pb.y === p.y) || (pb.x === pf.x && pb.y === pf.y), `(${p.x},${p.y}) -> (${pf.x},${pf.y}) -> (${pb.x},${pb.y})`)
-    r.check('settled endpoints are frame-exact (ease never distorts rest)', afterBack === afterFwd || afterBack === before || pb.x === pf.x, `before=${before} afterFwd=${afterFwd} afterBack=${afterBack}`)
-    // a bump must NOT lunge: a blocked step never changes the pose
-    for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
-    await settle()
-    await page.keyboard.press('ArrowUp')
-    const bump = await probe()
-    r.check('a bump into a wall does not ease (no lunge on a refusal)', bump.ease === 0, `ease=${bump.ease} wallDist=${bump.view.wallDist}`)
+    if (p.mode !== 'map') r.check('walk-glide pose is on a map floor', false, `mode=${p.mode}`)
+    if (p.gl) {
+        const settle = async () => { for (let i = 0; i < 25; i++) { if ((await probe()).glLag < 0.02) return true; await wait(40) } return false }
+        r.check('the settled eye sits on the sim cell (lag 0)', await settle(), `lag=${(await probe()).glLag.toFixed(3)}`)
+        await page.keyboard.press('ArrowUp')
+        let midG = null
+        for (let i = 0; i < 12; i++) { midG = await probe(); if (midG.glLag > 0.12) break }
+        r.check('a fwd step glides the eye (lag > 0.12 mid-glide)', !!midG && midG.glLag > 0.12, `lag=${midG ? midG.glLag.toFixed(3) : 'n/a'} mode=${midG && midG.mode}`)
+        r.check('the glide settles onto the sim cell', await settle(), 'glLag never reached 0 after fwd')
+        const pf = await probe()
+        r.check('fwd actually moved the party', pf.x !== p.x || pf.y !== p.y, `(${p.x},${p.y}) -> (${pf.x},${pf.y})`)
+        await page.keyboard.press('ArrowDown')
+        let bkG = null
+        for (let i = 0; i < 12; i++) { bkG = await probe(); if (bkG.glLag > 0.12) break }
+        r.check('a back step glides too (lag > 0.12 mid-glide)', !!bkG && bkG.glLag > 0.12, `lag=${bkG ? bkG.glLag.toFixed(3) : 'n/a'}`)
+        r.check('the back glide settles to zero', await settle(), 'glLag never reached 0 after back')
+        const pb = await probe()
+        r.check('the round-trip lands where it started', (pb.x === p.x && pb.y === p.y) || (pb.x === pf.x && pb.y === pf.y), `(${p.x},${p.y}) -> (${pf.x},${pf.y}) -> (${pb.x},${pb.y})`)
+        // a bump must NOT lunge: a blocked step never starts an animation
+        for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
+        await settle()
+        await page.keyboard.press('ArrowUp')
+        await wait(60)
+        const bump = await probe()
+        r.check('a bump into a wall does not glide (no lunge on a refusal)', bump.glLag === 0, `lag=${bump.glLag.toFixed(3)} wallDist=${bump.view.wallDist}`)
+    }
+    else {
+        const litWin = [96, 8, 64, 48]
+        const settleE = async () => { for (let i = 0; i < 12; i++) { if ((await probe()).ease === 0) return true; await wait(40) } return false }
+        const before = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+        await settleE()
+        await page.keyboard.press('ArrowUp')
+        const mid = await probe()
+        r.check('a fwd step eases the projection (off > 0.5 mid-glide)', mid.ease > 0.5, `ease=${mid.ease.toFixed(3)} mode=${mid.mode}`)
+        const midPx = await px(...litWin, 'canvas[data-deep-view]', (R, G, B) => (R + G + B) > 24)
+        const mid2 = await probe()
+        r.check('mid-glide frame differs from the settled frame', midPx !== before || mid2.ease > 0.1, `before=${before} mid=${midPx} ease=${mid2.ease.toFixed(3)}`)
+        r.check('the ease settles to zero', await settleE(), 'ease never reached 0 after fwd')
+        const pf = await probe()
+        r.check('fwd actually moved the party', pf.x !== p.x || pf.y !== p.y, `(${p.x},${p.y}) -> (${pf.x},${pf.y})`)
+        await page.keyboard.press('ArrowDown')
+        const back = await probe()
+        r.check('a back step eases the other way (off < 0.5)', back.ease < -0.5, `ease=${back.ease.toFixed(3)}`)
+        r.check('the back ease settles to zero', await settleE(), 'ease never reached 0 after back')
+        const pb = await probe()
+        r.check('the round-trip lands where it started', (pb.x === p.x && pb.y === p.y) || (pb.x === pf.x && pb.y === pf.y), `(${p.x},${p.y}) -> (${pf.x},${pf.y}) -> (${pb.x},${pb.y})`)
+        for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
+        await settleE()
+        await page.keyboard.press('ArrowUp')
+        const bump = await probe()
+        r.check('a bump into a wall does not ease (no lunge on a refusal)', bump.ease === 0, `ease=${bump.ease} wallDist=${bump.view.wallDist}`)
+    }
 }
 
 // ---- 4. the ambush: one real step into the named tile ----

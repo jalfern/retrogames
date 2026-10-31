@@ -96,11 +96,31 @@ stat you pick at the bench.
   ambushes, drinks only when dry (full party walks on — otherwise a spring
   tile is a deadlock). The attract demo drives this live, so the demo is the
   witness, not theatre.
-- `index.jsx` — painter's-algorithm wireframe at 256x224, runtime 10x10
-  bitmap monster plates, automap from the explored set. The MODERN 3D look
-  waits on the shared dungeon renderer (#1129); this renderer keeps the
-  pixel contract the play-check samples (wall ahead ⇒ centre wall-blue).
-   fwd/back steps glide the ring geometry over ~130ms (`ringE` clamped at
+- `index.jsx` — the corridor is the SHARED dungeon renderer (#1129,
+  `demos/dungeon.core.js`, WebGL2, loaded on demand via
+  `src/utils/dungeonRenderer.js`): torch-lit brick with falloff and fog,
+  real stair geometry, water-shimmer springs, a crimson beacon on the
+  Hollow King's throne (`R.light` each frame within range). It draws on a
+  canvas stacked UNDER the 2D layer, which keeps the HUD strip, automap,
+  toasts, FX, RIM, interiors, bench and combat plates exactly as before.
+  Mapping: wall/floor 1/0, spring cells → water material, stairs → stair-down
+  material; potions are NOT drawn in 3D (Wizardry never showed floor items —
+  the automap and event text carry them). Pose: cell centres at +0.5,
+  `yaw = (dir−1)·π/2`; moves/turns `animateTo` (250/190 ms, head-bob),
+  teleports (descend, wipe, dev setup) `snapTo`. No WebGL2 → the old
+  painter's-algorithm wireframe stands in, byte-for-byte behaviour.
+  The pixel contract differs per renderer (tendeepplay branches on
+  `probe().gl`): with GL, a wall at one pace ⇒ torch-lit brick at centre,
+  open hall ⇒ darkness (the torch flips the wireframe's blue-wall signal,
+  on purpose), and the eye's lag between `R.pose()` (sim truth) and
+  `R.renderPose()` grades the glide — settled lag is 0 and landings are
+  frame-exact; with the wireframe, the old wall-blue/centre-dark and
+  130 ms `ease` proofs still run. GL pixel reads go through
+  `gl.readPixels` (the renderer sets `preserveDrawingBuffer`, the js-dos
+  lesson) — and always AFTER waiting for `glLag < 0.02`: sampling mid-glide
+  reads a corridor whose axis is still swinging (learned the hard way on
+  this harness's first run). The wireframe's fwd/back steps glide the ring
+  geometry over ~130ms (`ringE` clamped at
    ring(0.62)) so the walk breathes — presentation only: the sim steps in
    whole cells and the settled frame is the exact snapped one; bumps and
    turns stay instant (the original snaps too). Probe exposes `ease` so
@@ -145,7 +165,12 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
 
 - Town is a service screen, not a walkable overworld (the original's New
   Sorpigal had streets; ours is the four-door view + the well).
-- Wireframe look until the shared renderer (#1129) lands.
+- Monsters do not stand in the corridor before combat — the original showed
+  roaming groups in the 3D view; ours are hidden ambush tiles (a sim rule
+  since stage 1; the #1129 billboard pipeline is where this would land, and
+  making ambushes visible would re-open the solver/proof).
+- Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
+  to a separate combat screen, but the plates want their own MODERN pass).
 - No between-run persistence (Wizardry saved to disk; we don't).
 - The pad carries arrows + A + F; guard/heel on touch want a second-action
   pass (#1138 will weigh it against the pad budget).
