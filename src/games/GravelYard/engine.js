@@ -369,13 +369,16 @@ function stepMachine(gs, m, pad) {
         m.moveCd = 1 // cannot drive while working
         return
     }
-    if (m.moveCd > 0) return
     let dx = 0, dy = 0
     if (pad.up) { dy = -1; m.face = 'up' }
     else if (pad.down) { dy = 1; m.face = 'down' }
     else if (pad.left) { dx = -1; m.face = 'left' }
     else if (pad.right) { dx = 1; m.face = 'right' }
     if (!dx && !dy) return
+    // #1306: steer now, move when the step is over. Holding a direction while
+    // moveCd is still running used to be swallowed whole — facing never changed,
+    // so a bump-then-act sequence (dump at the hopper) died on the face guard.
+    if (m.moveCd > 0) return
     const speed = m.kind === 'truck' ? SPEED_TRUCK : SPEED_DIG
     if (driveable(gs, m.x + dx, m.y + dy, m.seat)) {
         m.x += dx; m.y += dy
@@ -446,8 +449,17 @@ function stepWorld(gs) {
     gs.refillT--
     if (gs.refillT <= 0) {
         gs.refillT = 900
-        // tip-in lands only where nothing is parked (never bury a machine)
-        const spare = gs.pile.filter((c) => c.units < 4 && !gs.machines.some((mm) => mm.x === c.x && mm.y === c.y))
+        // tip-in lands where nothing is parked — and never walls a parked machine in.
+        // #1306 seed-5 freeze: spare tips filled every exit of a dug-out flat cell the
+        // digger stood on; the cell itself was "protected" but the machine was entombed,
+        // bfs found no path, and the CPU sat full-bucket for the rest of the shift.
+        const entombs = (c) => gs.machines.some((mm) => {
+            if (mm.x === c.x && mm.y === c.y) return true
+            const exits = [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) =>
+                driveable(gs, mm.x + dx, mm.y + dy, mm.seat) && !(mm.x + dx === c.x && mm.y + dy === c.y))
+            return exits.length === 0
+        })
+        const spare = gs.pile.filter((c) => c.units < 4 && !entombs(c))
         if (spare.length) {
             const c = spare[Math.floor(gs.rng() * spare.length)]
             c.units++
