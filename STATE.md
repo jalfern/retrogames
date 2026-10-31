@@ -13,7 +13,9 @@ scoped lint gates + build green. Slot a's rule-5 merge loop fired at 19:30Z
 (`cca1dc4`, static green 9m55s); slot b verified prod bundle contains the game
 and the route returns 200.
 - RALLY CO-DRIVER (#1251 → `f35a63c`) merged on top during this session by
-  another lane — not ours, but it explains why main moved twice.
+  another lane — not ours, but it explains why main moved twice. Their follow-up
+  pause fix landed too (#1364), as did the SHORT ORDER SHOUT polish pass
+  (#1292 via PR #1363: walk glide, serve stamp, tip meter, ticket fanfare).
 - Filed **#1361** FIRE CREW polish pass (voice capture unwired #1247, static
   smoke field, seat-3 parked truck, water-cone juice, loft bucket-brigade,
   ART.md pass).
@@ -30,6 +32,11 @@ and the route returns 200.
   well as `www.jalfern.com` — the same bundle hash read different contents at
   the edge minutes apart. When they disagree, the alias is the deploy, the
   .com edge is a cache.
+- Never trust a worktree directory as yours: a second lane checked
+  `state-session-64` out inside `retrogames-forge-fire-crew` mid-merge-loop
+  and my `gh pr merge` died on "not on any branch". If a takeover shares a
+  worktree, re-assert `git rev-parse --abbrev-ref HEAD` right before merging,
+  or do the merge from a private worktree.
 
 ## Next goal
 Game queue is nearly empty — one real game left: **#1291 SHORT ORDER SHOUT
@@ -48,7 +55,7 @@ platform, 65 game).
   waiting-jon from earlier lanes.
 
 ## Carry-over
-- QA: **#1362 first** (talk-me-down breakage), then #1305, #1292, #1295,
+- QA: **#1362 first** (talk-me-down breakage), then #1305, #1295,
   #1306, #1351–#1353 first-time-player passes, #1361 FIRE CREW polish,
   #1287 GAUNTLET voice polish, #1266/#1275 follow-ups.
 - Platform: #1358 (shoreperf cancel poisons nightly verdicts), #1359 (mutants
