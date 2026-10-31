@@ -233,6 +233,7 @@
     "contractcheck": "node scripts/contractcheck.mjs",
     "claimcheck": "node scripts/claimcheck.mjs",
     "lanecheck": "node scripts/lanecheck.mjs",
+    "sleepwatchcheck": "node scripts/sleepwatchcheck.mjs",
     "tapstartcheck": "node scripts/tapstart.mjs",
     "landerreplay": "node scripts/landerreplaycheck.mjs",
     "landerpolicy": "node scripts/landerpolicycheck.mjs",

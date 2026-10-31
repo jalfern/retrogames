@@ -11,6 +11,8 @@
 # the trust gate by a cleverly worded issue.
 #
 # One tick, in order:
+#   0. SLEEP — gap since my last tick ≫ 10 min? The Studio was down (asleep);
+#              record the window (#1354) and echo it on the pulse line.
 #   1. COUNT   — gather the numbers the pulse line needs
 #   2. PULSE   — post the pulse line first (the /forge board reads it)
 #   3. TRIAGE  — trust gate, then label new issues by their title
@@ -73,6 +75,35 @@ main() {
     fi
     trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 
+    # ---- 0. SLEEP WATCH (#1354) -----------------------------------------
+    # The warden cannot tick while the Mac sleeps, so the gap between its own
+    # ticks is the cheapest honest outage witness. sleepwatch.mjs turns a gap
+    # ≥ 30 min into a named window — pmset supplies the real Sleep→Wake bounds
+    # and the reason ("Software Sleep"), dark-wakes inside are counted as
+    # naps, not uptime — keeps a 48 h ledger at /tmp/forge/asleep.json, and
+    # echoes the newest window on every pulse line for 24 h after it ends.
+    # The board banner (floor.js) and the questions digest (jonq digest) read
+    # the same ledger. Backfill runs ONCE (no ledger yet) so the incident that
+    # motivated #1354 goes on the record honestly, from pmset history.
+    # Keeping the Mac awake stays Jon's call — this only reports.
+    ASLEEP=""
+    SW="$LOG_DIR/sleepwatch.mjs"
+    git -C "$REPO" show origin/main:scripts/sleepwatch.mjs > "$SW" 2>/dev/null \
+        || cp "$REPO/scripts/sleepwatch.mjs" "$SW" 2>/dev/null || true
+    # -s, not -f: a failed `git show` still leaves a ZERO-byte file behind,
+    # and node running an empty module silently no-ops the whole step.
+    if [[ -s "$SW" ]]; then
+        NOWN=$(date +%s)
+        SWDRY=""; [[ "$DRY" == 1 ]] && SWDRY="--dry"
+        [[ ! -f "$LOG_DIR/asleep.json" ]] && log "sleep backfill: $(node "$SW" backfill --out "$LOG_DIR/asleep.json" $SWDRY 2>>"$LOG" | tail -1)"
+        LASTT=""
+        [[ -f "$LOG_DIR/warden.lasttick" ]] && LASTT=$(head -1 "$LOG_DIR/warden.lasttick" 2>/dev/null)
+        SREC=$(node "$SW" tick --last "$LASTT" --now "$NOWN" --out "$LOG_DIR/asleep.json" $SWDRY 2>>"$LOG" | tail -1)
+        [[ "$DRY" != 1 ]] && print -r -- "$NOWN" > "$LOG_DIR/warden.lasttick"
+        ASLEEP=$(node "$SW" pulse --out "$LOG_DIR/asleep.json" 2>/dev/null | tail -1)
+        [[ "$SREC" == recorded=[1-9]* ]] && log "sleepwatch: $SREC -> $ASLEEP"
+    fi
+
     # ---- 1. COUNT -----------------------------------------------------
     git -C "$REPO" fetch -q --prune origin 2>/dev/null
     MAIN=$(git -C "$REPO" rev-parse --short=7 origin/main 2>/dev/null || echo unknown)
@@ -117,10 +148,14 @@ main() {
     pulse_line() {   # $1 = alive word, $2 = actions
         # #1258: `builders=N/2` — how many builder slots are running right now
         # (a and b are pgrep'd the way the slots themselves are locked).
-        local nb=0
+        # #1354: `asleep=HH:MM-HH:MM asleepm=N [naps=N]` rides for 24 h after
+        # a Studio-sleep window, so a dead board and a sleeping Mac tell
+        # different stories. No window (or none recent) = field omitted.
+        local nb=0 suf=""
         pgrep -f "opencode run.*THE FORGE( on slot a)?\\." >/dev/null && nb=$((nb + 1))
         pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && nb=$((nb + 1))
-        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT builders=$nb/2 actions=$2"
+        [[ -n "$ASLEEP" ]] && suf=" $ASLEEP"
+        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT builders=$nb/2$suf actions=$2"
     }
     comment() {      # $1 = issue number, $2 = text
         act gh api "repos/$GH/issues/$1/comments" -f body="$2" --silent || log "comment on #$1 failed"
@@ -134,6 +169,9 @@ main() {
     log "pulse: $(pulse_line "$ALIVE" none)"
 
     ACTIONS=()
+    # #1354: a freshly-recorded outage is an action — the follow-up pulse
+    # repeats it, and one `slept:1` in the log names the hours that went dark.
+    [[ "${SREC:-}" == recorded=[1-9]* ]] && ACTIONS+=("slept:1")
 
     # ---- 2b. HYGIENE (#891): a `shipped` issue is done — close it ----------
     # FORGE.md adds `shipped` at merge but leaves the issue open (#616 sat

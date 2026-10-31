@@ -121,6 +121,26 @@ export const slotsLine = (slots) => {
     return { text: parts.join(' · ') + (fleet ? ` · fleet:${fleet}` : ''), busy, total: 2, fleet }
 }
 
+// sleepBanner (#1354) — the red strip atop /forge when the Studio itself was
+// asleep. Input is the newest pulse's kv block (asleep=HH:MM-HH:MM asleepm=N
+// [naps=N]); the warden only echoes a window for 24 h after it ends, so the
+// banner never needs its own clock math beyond the injected minutes. Pure and
+// defensive: a missing or malformed field returns null (no banner, no throw).
+export const sleepBanner = (pulse) => {
+    if (!pulse || typeof pulse.asleep !== 'string') return null
+    if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(pulse.asleep)) return null
+    const min = Number(pulse.asleepm)
+    if (!Number.isFinite(min) || min <= 0) return null
+    const h = Math.floor(min / 60), m = min % 60
+    const dur = h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
+    const naps = Number(pulse.naps) || 0
+    return {
+        text: `STUDIO WAS ASLEEP ${pulse.asleep.replace('-', '–')} · ${dur}${naps ? ` · ${naps} dark wakes` : ''}`,
+        minutes: min,
+        severe: min >= 120,
+    }
+}
+
 // runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
 // lane carrying the math behind its "~N days": the per-item S/M/L mix, the total
 // size, the rate (closes/day over the trailing window) and the days it yields.
