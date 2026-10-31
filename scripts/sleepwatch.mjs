@@ -103,7 +103,9 @@ export function buildWindows(events, { minMin = GAP_MIN, until = null } = {}) {
 // detectGap({lastTick, now}) (epoch seconds) -> raw window or null.
 export function detectGap({ lastTick = null, now }) {
     if (lastTick == null || lastTick === '' || !Number.isFinite(+lastTick)) return null
-    const min = Math.round((+now - +lastTick) / 60)
+    // floor, not round: 29m59s is two missed ticks plus normal drift, not an
+    // outage; the claim needs a full GAP_MIN between tick starts.
+    const min = Math.floor((+now - +lastTick) / 60)
     if (min < GAP_MIN) return null
     return { from: +lastTick * 1000, to: +now * 1000, min, naps: 0, reason: null, src: 'tickgap' }
 }
@@ -176,8 +178,12 @@ export function addWindows(existing, fresh, now = Date.now()) {
 
 // ---- CLI (what warden.sh runs; ledger IO lives here, not in the pure core)
 
-const arg = (argv, name) => { const i = argv.indexOf(`--${name}`); return i >= 0 ? argv[i + 1] : undefined }
-const has = (argv, name) => argv.includes(`--${name}`)
+const arg = (argv, name) => {
+    const i = argv.findIndex((a) => a === `--${name}` || a.startsWith(`--${name}=`))
+    if (i < 0) return undefined
+    return argv[i] === `--${name}` ? argv[i + 1] : argv[i].slice(name.length + 3)
+}
+const has = (argv, name) => argv.some((a) => a === `--${name}` || a.startsWith(`--${name}=`))
 
 function readLedger(file) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')).windows || [] } catch { return [] }
@@ -206,7 +212,7 @@ function run(argv) {
         if (!events || !events.length) { console.log('backfilled=0'); return }
         const ws = buildWindows(events, { until: NOW }).filter((w) => NOW - w.to <= LEDGER_KEEP_H * 3600000)
         if (!dry && ws.length) writeLedger(file, addWindows(readLedger(file), ws, NOW))
-        console.log(`backfilled=${ws.length}`)
+        console.log(`backfilled=${ws.length}${dry ? ' dry' : ''}`)
         return
     }
     if (cmd === 'tick') {
@@ -214,8 +220,12 @@ function run(argv) {
         if (!gap) { console.log('recorded=0'); return }
         const events = arg(argv, 'pmset') ? parsePmset(fs.readFileSync(arg(argv, 'pmset'), 'utf8')) : capturePmset()
         const ws = windowsForGap(gap, events || [])
-        if (!dry) writeLedger(file, addWindows(readLedger(file), ws, NOW))
-        console.log(`recorded=${ws.length} src=${ws[0]?.src || 'none'}`)
+        const before = readLedger(file)
+        const after = addWindows(before, ws, NOW)
+        if (!dry) writeLedger(file, after)
+        // report what was ADDED (dedupe can swallow a re-seen outage, and an
+        // already-recorded gap must not fire the warden's slept action twice)
+        console.log(`recorded=${after.length - before.length} src=${ws[0]?.src || 'none'}${dry ? ' dry' : ''}`)
         return
     }
     if (cmd === 'pulse') {

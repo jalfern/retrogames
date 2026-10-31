@@ -90,7 +90,9 @@ main() {
     SW="$LOG_DIR/sleepwatch.mjs"
     git -C "$REPO" show origin/main:scripts/sleepwatch.mjs > "$SW" 2>/dev/null \
         || cp "$REPO/scripts/sleepwatch.mjs" "$SW" 2>/dev/null || true
-    if [[ -f "$SW" ]]; then
+    # -s, not -f: a failed `git show` still leaves a ZERO-byte file behind,
+    # and node running an empty module silently no-ops the whole step.
+    if [[ -s "$SW" ]]; then
         NOWN=$(date +%s)
         SWDRY=""; [[ "$DRY" == 1 ]] && SWDRY="--dry"
         [[ ! -f "$LOG_DIR/asleep.json" ]] && log "sleep backfill: $(node "$SW" backfill --out "$LOG_DIR/asleep.json" $SWDRY 2>>"$LOG" | tail -1)"
