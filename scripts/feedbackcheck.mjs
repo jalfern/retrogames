@@ -13,6 +13,7 @@
 //   node scripts/feedbackcheck.mjs --mutate   # RED by design (drop the size cap)
 
 import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
     corsOrigin, corsHeaders, CORS_ALLOW_HEADERS, FB_SHOT_PLACEHOLDER, screenshotMarkdown,
@@ -471,6 +472,141 @@ ok('shot1222: placeholder patch renders the image in the filed body', (() => {
     const patched = body.replace(FB_SHOT_PLACEHOLDER, screenshotMarkdown(DL_URL))
     return patched.includes(`![feedback screenshot](${DL_URL})`) && !patched.includes(FB_SHOT_PLACEHOLDER)
 })())
+
+// ── #737 demo half: the demo FEEDBACK injector (public/demos/feedback.js) ────
+// Same law, different surface: a demo has no sim, no contract, no pad stream —
+// its complaint is usually "it stutters", so the report carries a DIAGNOSTICS
+// block instead: browser, GPU, settings, and the last ~10 s of REAL frame
+// times with hitches (the numbers QA used to read off the screen, #702). The
+// injector is a classic script (no build step), so this runs it in a fake
+// window: no document → the DOM mount is skipped, the pure logic is exposed
+// on window.__demoFeedback and driven exactly as the browser would.
+const fbSrc = readFileSync(fileURLToPath(new URL('../public/demos/feedback.js', import.meta.url)), 'utf8')
+function runDemoFeedback(fakeWin) {
+    new Function('window', 'document', 'fetch', fbSrc)(fakeWin, undefined, undefined)
+    return fakeWin.__demoFeedback
+}
+const memStorage = () => {
+    const m = new Map()
+    return { getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)) }, removeItem: (k) => { m.delete(k) } }
+}
+const demoWin = {
+    location: { pathname: '/retrogames/demos/ocean.html', search: '' },
+    navigator: { userAgent: 'DemoPhone Safari/605.1.15', deviceMemory: 4, hardwareConcurrency: 8 },
+    localStorage: memStorage(),
+    innerWidth: 390, innerHeight: 844, devicePixelRatio: 3,
+    DEMO_CREDITS: { name: 'OCEAN', accent: '#ffb060', shipped: '2026-10-18' },
+    DEMO_DIAG: { waves: 3 },
+}
+const dfb = runDemoFeedback(demoWin)
+ok('demo: injector exposes __demoFeedback in plain Node',
+    !!(dfb && dfb.makeFrameRing && dfb.buildDiag && dfb.captureDemoFeedback && dfb.probe && dfb.submit))
+{
+    // 600 real frames at 16 ms with three hitches (80/120/400 ms) — the
+    // summary is the proof the report carries.
+    const ring = dfb.makeFrameRing()
+    for (let i = 0; i < 600; i++) {
+        const ms = (i === 100) ? 80 : (i === 300) ? 120 : (i === 500) ? 400 : 16
+        ring.push(i, ms)
+    }
+    const s = ring.summary(600)
+    const expectedAvg = Math.round(((597 * 16) + 80 + 120 + 400) / 600 * 100) / 100
+    ok('demo frames: 600 samples with exactly 3 hitches', s.n === 600 && s.spanMs === 600 && s.hitches.length === 3)
+    ok('demo frames: avg/max honest (16.92 / 400)', s.avgMs === expectedAvg && s.maxMs === 400)
+    ok('demo frames: a hitch carries when + how long', s.hitches[0].t === 100 && s.hitches[0].ms === 80 && s.hitches[2].t === 500 && s.hitches[2].ms === 400)
+}
+{
+    const ring = dfb.makeFrameRing()
+    ring.push(1000, 16)
+    for (let i = 0; i < 600; i++) ring.push(11000 + i, 16)
+    ok('demo frames: the ring trims to the last 10 s (old frame gone)', ring.summary(12599).n === 600)
+}
+{
+    const ring = dfb.makeFrameRing()
+    ring.push(0, 33.3)
+    ring.push(1, 33.4)
+    const s = ring.summary(2)
+    ok('demo frames: 33.3 ms is not a hitch, 33.4 is (the 30 fps line)', s.hitches.length === 1 && s.hitches[0].t === 1)
+}
+{
+    const d = dfb.buildDiag({ win: demoWin, route: '/retrogames/demos/ocean.html', frames: { n: 600, spanMs: 10000, avgMs: 16.9, maxMs: 40, hitches: [{ t: 5, ms: 80 }] } })
+    ok('demo diag: browser + gpu + settings + frames', !!(d.browser && d.gpu && d.settings && d.frames))
+    ok('demo diag: browser honest (ua/deviceMemory/cores)', d.browser.ua === 'DemoPhone Safari/605.1.15' && d.browser.deviceMemory === 4 && d.browser.cores === 8)
+    ok('demo diag: gpu degrades to n/a without a document (no GL here)', d.gpu === 'n/a')
+    ok('demo diag: settings carry demo identity + display + DEMO_DIAG hook',
+        d.settings.demo === 'ocean' && d.settings.accent === '#ffb060' && d.settings.dpr === 3 && d.settings.viewport === '390x844' && d.settings.waves === 3)
+    ok('demo diag: stays under the relay cap (8000 B)', new TextEncoder().encode(JSON.stringify(d)).length <= 8000)
+}
+{
+    const d2 = dfb.buildDiag({ win: { ...demoWin, DEMO_DIAG: () => ({ quality: 'high' }) }, frames: null })
+    ok('demo diag: a DEMO_DIAG function merges into settings', d2.settings.quality === 'high')
+    ok('demo diag: an empty ring reports zero, not NaN', d2.frames.n === 0 && d2.frames.avgMs === 0 && d2.frames.hitches.length === 0)
+}
+{
+    // Pathological 10 s: every frame a hitch. The cap must hold — thinned or
+    // dropped with the count kept — a report is never rejected over detail.
+    const frames = { n: 600, spanMs: 10000, avgMs: 55, maxMs: 400, hitches: Array.from({ length: 600 }, (_, i) => ({ t: i * 16, ms: 60 })) }
+    const d = dfb.buildDiag({ win: demoWin, frames })
+    ok('demo diag: 600 hitches stay under the cap', new TextEncoder().encode(JSON.stringify(d)).length <= 8000,
+        `${new TextEncoder().encode(JSON.stringify(d)).length} B`)
+    ok('demo diag: the summary survives even when the detail is dropped',
+        d.frames.n === 600 && d.frames.maxMs === 400 && (d.frames.hitches.length > 0 || d.frames.hitchesDropped === 600))
+}
+{
+    const p = dfb.captureDemoFeedback({
+        note: 'stutters after wave 3', route: '/retrogames/demos/ocean.html',
+        frames: { n: 100, spanMs: 10000, avgMs: 17, maxMs: 90, hitches: [{ t: 9, ms: 90 }] },
+        screenshot: 'data:image/png;base64,' + 'A'.repeat(64), ts: 123, win: demoWin,
+    })
+    ok('demo report: note/gameId/build/route/ua assembled',
+        p.note === 'stutters after wave 3' && p.gameId === 'ocean' && p.build === 'static' &&
+        p.route === '/retrogames/demos/ocean.html' && p.ua === 'DemoPhone Safari/605.1.15')
+    ok('demo report: diag present, no input ring (a demo has no pads)', !!p.diag && p.diag.frames.n === 100 && p.input === undefined)
+    ok('demo report: relay accepts the demo shape', validateFeedback(p).ok === true)
+    ok('demo report: relay refuses a diag over the 8000 B cap',
+        validateFeedback({ note: 'x', gameId: 'ocean', diag: { big: 'y'.repeat(9000) } }).ok === false)
+    const body = buildFeedbackIssue(p, false).body
+    ok('demo report: the issue body renders the Diagnostics block', body.includes('Diagnostics:') && body.includes('"hitches"'))
+}
+{
+    const mkFetch = (json, throws) => async () => {
+        if (throws) throw new Error('network down')
+        return { ok: true, status: 200, json: async () => json }
+    }
+    ok('demo probe: relay feedback:true → mount', (await dfb.probe({ win: demoWin, fetchImpl: mkFetch({ feedback: true }) })) === true)
+    ok('demo probe: feedback:false → stays hidden', (await dfb.probe({ win: demoWin, fetchImpl: mkFetch({ feedback: false }) })) === false)
+    ok('demo probe: relay down → hidden, never throws', (await dfb.probe({ win: demoWin, fetchImpl: mkFetch(null, true) })) === false)
+    let called = 0
+    const forced = { ...demoWin, location: { pathname: '/retrogames/demos/ocean.html', search: '?feedback=1' } }
+    ok('demo probe: ?feedback=1 forces on without a fetch (file:// QA path)',
+        (await dfb.probe({ win: forced, fetchImpl: async () => { called++; return { json: async () => ({}) } } })) === true && called === 0)
+}
+{
+    const seen = []
+    const post = async (url, init) => {
+        seen.push({ url, init })
+        return { ok: true, status: 200, json: async () => ({ ok: true, issue: 'https://github.com/jalfern/retrogames/issues/777' }) }
+    }
+    const p = dfb.captureDemoFeedback({ note: 'hi', route: '/retrogames/demos/ocean.html', win: demoWin })
+    const res = await dfb.submit(p, { storage: demoWin.localStorage, fetchImpl: post })
+    ok('demo submit: posts JSON to the relay /feedback',
+        res.ok === true && res.issue === 'https://github.com/jalfern/retrogames/issues/777' &&
+        seen[0].url === dfb.RELAY + '/feedback' && seen[0].init.method === 'POST' &&
+        seen[0].init.headers['content-type'] === 'application/json')
+    ok('demo submit: no key saved → the body has no key field', !('key' in JSON.parse(seen[0].init.body)))
+    dfb.saveJonKey('  jonkey-123  ', demoWin.localStorage)
+    await dfb.submit(p, { storage: demoWin.localStorage, fetchImpl: post })
+    ok('demo submit: a saved Jon key rides the next report (trimmed)', JSON.parse(seen[1].init.body).key === 'jonkey-123')
+    const res2 = await dfb.submit(p, { storage: demoWin.localStorage, fetchImpl: async () => { throw new Error('network down') } })
+    ok('demo submit: network failure resolves honest, never throws', res2.ok === false && /network down/.test(res2.err))
+}
+{
+    const st = memStorage()
+    ok('demo key: one-time link captured, decoded, stored',
+        dfb.storeJonKey('?next=1&jonkey=abc%20123#h', st) === 'abc 123' && dfb.readJonKey(st) === 'abc 123')
+    ok('demo key: no link → nothing stored', dfb.storeJonKey('?other=1', memStorage()) == null)
+    ok('demo key: same store as the game side (one origin, one key)', dfb.JONKEY_STORE === JONKEY_STORE)
+}
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
