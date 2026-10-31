@@ -1,61 +1,52 @@
-# STATE — session 58 (2026-10-31)
+# STATE — session 59 (2026-10-31)
 
 ## Shipped this session
-**THE FLEET: 2 builders + 1 QA on the Studio, whole-queue lanes** — Jon's steer
-#1258, shipped via PR #1267 (squash to main, 38cf33f), prod verified
-(bundle index-BF7nEgPC.js carries the ⚙ SLOTS row on jalfern.com/retrogames).
+**TEN-DEEP gets the MODERN look — #1127 complete (stage 4 of 4)** — merged
+`4586ad9` (PR #1273), prod verified (`index-DEGtBc2G.js` carries it;
+`demos/dungeon.core.js` serves 200). Slot b's first solo ship.
 
-- **Slot b** is a real builder: `forge.sh <a|b>`, identity "THE FORGE on slot
-  a|b." (prompt = lock = watch label), ports 5173/5178, job
-  `com.jalfern.forge-b` self-bootstrapped by the warden from origin/main.
-- **Whole queue:** `scripts/lib/lanes.mjs` (pure) ranks builders games-first
-  (corpse→steer→next→queue→feedback) and gates studio-QA's queue fallthrough
-  (feedback first; queue only when items outnumber free slots; flagship last).
-  Warden evals it, hands targets via /tmp/forge/target-<slot>, per-slot stall
-  counters, parked the builder-slot QA spill while slot b lives.
-- **One lane per issue (#878) enforced at claim:** new `forge-claim.sh` +
-  `qa-claim.sh` share ONE liveness namespace (`FORGE (slot)`/`QA (node)`,
-  90 min, newest-wins yield). QA taking a queue item strips `game-queue`.
-- **Visibility:** `forge status` names builder-a/b + trial; watch.sh BUILDER·B
-  pane; pulse `builders=N/2`; board.json `slots` → ⚙ SLOTS row on /forge.
-- **48 h trial, self-enforcing:** `studiotrial.mjs` (warden step 5b) starts the
-  clock, at 48 h posts items/day before-vs-after on #1258 and writes
-  keep|revert to /tmp/forge/studio-lanes.verdict — revert stops slot-b kicks.
-  Tokens/s was never persisted pre-trial; report uses items/day and says so.
-- Gate: `npm run lanecheck` (45 gates, mutant-proven) + claimcheck A8; all
-  neighbour checks, eslint, 3 lint gates, build green; WARDEN_DRY tick clean.
-- Follow-up gaps filed as #1266 (profiles/t-s persistence/slot-b live pane/
-  report slots). #1258 → shipped (closes via hygiene tick; trial verdict posts
-  there as a comment regardless).
+- The corridor is now the shared #1129 WebGL2 renderer, loaded on demand via
+  new `src/utils/dungeonRenderer.js` (BASE_URL runtime injection — jsdos.js
+  idiom, never a script tag in index.html): torch-lit brick with falloff +
+  fog, real stair-down geometry, springs as rippling water, a crimson
+  `R.light` beacon on the Hollow King's throne.
+- Two-layer stage: GL corridor underneath, the unchanged 2D layer (HUD,
+  automap, toasts, FX, combat plates, RIM, interiors, bench) on top. No
+  WebGL2 → the shipped wireframe stands in, byte-for-byte.
+- Rules untouched: sim/solver/ledger unwritten this session. tendeepcheck
+  795/795; tendeepplay re-pinned for the new look, none dropped, 66/66
+  (lit-brick-vs-darkness centre contract; `glLag` glide proofs land
+  frame-exact; bump = zero lunge). Mutant proven: dropping the `glideGl()`
+  hook fails exactly the two lag checks.
+- #1127 closed completed; polish backlog filed as **#1275** (MODERN combat
+  plates, corridor-monster options, spring beacon, pad second-actions,
+  attract-text contrast, HUD strip legibility).
 
 ## Next goal
-**#1141 stage 4 is UNBLOCKED** — Jon answered #1241: "HuggingFace is fine for
-meshes. Link-index them per the model-source rule; don't vendor big files."
-Claim it next session: strip `stalled` (the answer cleared it), resume via
-FORGE.md step 1b ladder. Deep game queue behind it too (#1248, #1249,
-#1251-1254, #1259, #1144, #1127) — slot b is chewing on the queue already.
-NOTE rule-4 watch: last merges skew platform/QA; a *game* merge next session
-resets the streak.
+Deep game queue for slot a/b: **#1248, #1249, #1251–1254, #1259, #1144**
+(oldest `game-queue` first per the ladder). #1141 stage 4 (platform lane) is
+un-stalled per Jon's HF answer — not a builder candidate. Rule-4 watch: reset
+— game code merged this session.
 
 ## Harness
-lanecheck added (one small check, rule 6). Warden step 4 is planner-driven with
-an inline legacy-ladder fallback if lanes.mjs breaks. jonqcheck re-pinned for
-the new halt path (behavior unchanged).
+`tendeepplay` carries the GL contract + a settle-before-sample discipline:
+pixel reads must wait for `glLag < 0.02`, because reading mid-glide grades a
+corridor whose axis is still swinging (this session's own first-run bug, now
+pinned behaviour + documented).
 
 ## Environment notes
-- This lane worked in `~/Dev/retrogames-forge-studio-lanes`
-  (forge/studio-lanes; branch deleted on merge — worktree now detached at
-  origin/main). Main checkout untouched/detached per law.
-- The merge loop raced once: `gh pr checks` without the PR number answered a
-  different PR's static. Always name the PR (`gh pr checks 1267 ...`) in the
-  wait loop. Merge itself was refused while BLOCKED — no damage.
-- jalfern.com apex 301s to www — poll prod with curl -L.
+- This lane worked in `~/Dev/retrogames-forge-wizardry-own-ip`
+  (forge/wizardry-own-ip; branch deleted on merge — worktree now detached at
+  origin/main). Slot b port 5178, `npm run dev -- --port 5178 --strictPort`.
+- **Never symlink `node_modules` into a worktree** — Vite then resolves two
+  React copies and the app dies with "Invalid hook call". Run
+  `npm ci --prefer-offline` in the fresh worktree (~1 min).
+- jalfern.com apex 301s to www — poll prod with `curl -L` (reconfirmed).
 
 ## Open questions for Jon
-- none open from this session (#1229 already resolved before it; #737 sits
-  waiting-jon for his review of the shipped feedback button).
+- none open from this session (#737 still sits waiting-jon from earlier lanes).
 
 ## Carry-over
-- #1141 stage 4 — un-stall + claim (HF meshes allowed, link-index only).
-- #1266 QA follow-ups (fleet) and #1257 polish remain QA-lane work.
-- 48 h trial verdict (~Oct 32) decides slot b; watch the #1258 comment.
+- #1275 QA polish pass on TEN-DEEP (feedback — QA lane's next job).
+- #1141 stage 4 (platform lane), #1266 QA follow-ups, 48 h trial verdict
+  (~Oct 32) posts on #1258 — this session's merged game is the evidence.
