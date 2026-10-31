@@ -632,6 +632,65 @@ else {
     r.check('and the crawl starts again fresh at the RIM', o.screen === 'play' && o.floor === 0 && o.gold === 120 && o.party.every((h) => h.alive), `screen=${o.screen} gold=${o.gold}`)
 }
 
+// ---- 7b. #1275: the mode-aware B + the spring beacon ----
+// The pad budget is arrows + A + B; B must carry the verb the mode misses on
+// a phone, and the DOM button must CARRY the code its label promises (the
+// mapping itself is pinned in tendeepcheck — this grades the live pad).
+{
+    const okSetup = await ensureSetup({ floor: 1, potions: 3, party: [{ i: 0, hp: 1 }] })
+    const c0 = await probe()
+    if (!okSetup || c0.mode !== 'map') {
+        r.check('pad section anchor: a corridor pose with potions', false, `setup=${okSetup} mode=${c0.mode}`)
+    } else {
+        const pot0 = c0.potions
+        await page.keyboard.press('KeyP')
+        await wait(140)
+        const c1 = await probe()
+        r.check('the code B carries in the corridor (KeyP) drinks for real', c1.potions === pot0 - 1, `potions ${pot0} -> ${c1.potions}`)
+        // a (synthetic) touch brings the pad back after keyboard play
+        await page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+        await wait(150)
+        const bDom = () => page.evaluate(() => {
+            const el = document.querySelector('[data-vc="b"]')
+            return el ? { key: el.dataset.key, label: el.textContent.trim() } : null
+        })
+        const bb = await bDom()
+        r.check('the pad shows DRINK on B in the corridor', !!bb && bb.key === 'KeyP' && /DRINK/.test(bb.label), JSON.stringify(bb))
+        // the spring beacon: what lights must be exactly what is near — while
+        // still in the corridor (the renderer only draws in mode map)
+        const cb = await probe()
+        if (cb.gl && cb.mode === 'map') {
+            r.check('beacons match the sim — every spring within falloff lights, nothing else',
+                cb.glBeacons === cb.springsNear + (cb.throneNear ? 1 : 0),
+                `beacons=${cb.glBeacons} springsNear=${cb.springsNear} throneNear=${cb.throneNear}`)
+            // walk to a real spring through the dev sim (no key events, and
+            // the arrival clears any ambush) — the floor's own well must sit
+            // inside the beacon falloff
+            let near = null
+            const cells = cb.springCells || []
+            if (cells.length && await setup({ at: cells[0] })) {
+                await wait(220)
+                const s = await probe()
+                if (s.mode === 'map' && s.springsNear >= 1 && s.glBeacons >= s.springsNear) near = s
+            }
+            r.check('a spring within six cells carries its cyan beacon', !!near, near ? `springsNear=${near.springsNear} beacons=${near.glBeacons}` : 'no spring within reach while walking')
+        } else {
+            r.check('beacon checks need the GL renderer (wireframe stand-in)', true, `gl=${!!(cb && cb.gl)} mode=${(cb || {}).mode}`)
+        }
+        // walking pressed trusted keys — bring the pad back before grading it
+        await page.evaluate(() => window.dispatchEvent(new Event('touchstart')))
+        await wait(150)
+        await setup({ townB: 'T' })
+        await wait(250)
+        const bt = await bDom()
+        r.check('the pad shows LEAVE on B inside a building (a phone had no exit)', !!bt && bt.key === 'KeyL' && /LEAVE/.test(bt.label), JSON.stringify(bt))
+        await page.evaluate(() => window.__deepTest.cmd('leave'))
+        await wait(250)
+        const bs = await bDom()
+        r.check('the pad shows DESCEND on B on the street', !!bs && bs.key === 'KeyF' && /DESCEND/.test(bs.label), JSON.stringify(bs))
+    }
+}
+
 // ---- 8. ? pauses and hands the keyboard back ----
 {
     await page.keyboard.press('Shift+Slash')

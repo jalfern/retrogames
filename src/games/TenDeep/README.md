@@ -172,5 +172,8 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
 - Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
   to a separate combat screen, but the plates want their own MODERN pass).
 - No between-run persistence (Wizardry saved to disk; we don't).
-- The pad carries arrows + A + F; guard/heel on touch want a second-action
-  pass (#1138 will weigh it against the pad budget).
+- ~~The pad carries arrows + A + F~~ #1275: B is mode-aware (`padB` in
+  `sim.js`, pinned in tendeepcheck, graded in tendeeppplay) — DRINK in the
+  corridor, LEAVE inside a building, DESCEND on the street, fire in battle
+  or GUARD when no living hero can work a letter. Heal and flee stay
+  keyboard verbs — the pad budget is arrows + A + B.
