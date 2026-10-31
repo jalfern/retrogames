@@ -179,8 +179,15 @@ async function main() {
     const ctx = await browser.newContext({ viewport: { width: 960, height: 540 } })
     const page = await ctx.newPage()
     const errs = []
-    page.on('pageerror', e => errs.push('pageerror: ' + e.message))
-    page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text().split('\n')[0]) })
+    // feedback.js (#1262) probes the relay at load; from a file:// origin that
+    // CORS rejection is benign noise, not a demo fault — same filter as
+    // emberwoodcheck's relayNoise.
+    const relayNoise = (t, loc) => t.includes('retrogames.jalfern.workers.dev') ||
+      (loc && String(loc.url || '').startsWith('https://retrogames.jalfern.workers.dev/'))
+    page.on('pageerror', e => { if (!relayNoise(e.message)) errs.push('pageerror: ' + e.message) })
+    page.on('console', m => {
+      if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errs.push('console: ' + m.text().split('\n')[0])
+    })
     await page.goto(url, { waitUntil: 'load' })
 
     let ready = true
