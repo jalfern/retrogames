@@ -55,13 +55,14 @@ export function mountDbg({ title, getState, actions = [] }) {
     const liveRecBtn = document.createElement('button')
     liveRecBtn.textContent = 'REC'
     liveRecBtn.style.cssText = 'background:#310;color:#f88;border:1px solid #f88;font:10px monospace;padding:2px 8px;cursor:pointer'
-    liveRecBtn.onclick = () => {
+    liveRecBtn.onclick = async () => {
         const g = window.__game
         if (!g || typeof g.recordStart !== 'function') { flash('no __game (game not wired)'); return }
         try {
             if (g.isRecording && g.isRecording()) {
                 const rec = g.recordStop()
                 if (!rec) { flash('REC: nothing captured'); return }
+                if (window.__voiceFlush) { try { await window.__voiceFlush } catch { /* voice optional */ } } // #1247: mic flushes its last chunk async
                 const dl = recDownload(rec)
                 const url = URL.createObjectURL(new Blob([dl.text], { type: 'application/json' }))
                 const a = document.createElement('a')
@@ -81,10 +82,11 @@ export function mountDbg({ title, getState, actions = [] }) {
     const recBtn = document.createElement('button')
     recBtn.textContent = 'download rec .json'
     recBtn.style.cssText = 'background:#103;color:#8cf;border:1px solid #8cf;font:10px monospace;padding:2px 6px;cursor:pointer'
-    recBtn.onclick = () => {
+    recBtn.onclick = async () => {
         try {
             const rec = window.__lastRecording
             if (!rec) { flash('no recording — recordStart() then recordStop() first'); return }
+            if (window.__voiceFlush) { try { await window.__voiceFlush } catch { /* voice optional */ } } // #1247
             const dl = recDownload(rec)
             const url = URL.createObjectURL(new Blob([dl.text], { type: 'application/json' }))
             const a = document.createElement('a')

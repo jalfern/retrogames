@@ -14,12 +14,19 @@
 
 import { normalizePad, rawPad } from './onePad'
 import { createRecorder, verifyRecording, DEFAULT_HASH_EVERY } from './recording'
+import { createVoiceSession } from './voiceCapture'
 
 let loopLock = false
 let exposed = null
 let recorder = null
 let lastPlayers = 1
 let liveFeed = null
+// #1247: while a recorder runs, the local mic banks a raw voice track aligned
+// to the recorded ticks. `voiceExtra` lets a game contribute already-assembled
+// tracks (Gauntlet online: guest audio relayed in). Flush promise parked at
+// window.__voiceFlush so a download can await the mic's final chunk.
+let voice = null
+let voiceExtra = null
 
 export const contractHoldsLoop = () => loopLock
 
@@ -77,7 +84,7 @@ export function exposeGame(spec) {
     // tick, mirroring the step() bank byte-for-byte so a live capture is the
     // same file the harness would record. rawsFor reads the live device; a
     // keyboard/dpad seat has no analog device so its raw mirrors the pad.
-    liveFeed = (pads) => { if (recorder) recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()) }
+    liveFeed = (pads) => { if (recorder) { recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks) } }
     const api = {
         meta: {
             id: spec.id,
@@ -106,7 +113,7 @@ export function exposeGame(spec) {
                 const ones = pad.map((p) => normalizePad(p || {}, method))
                 if (!ones.length) ones.push(normalizePad({}, method))
                 spec.tick(ones[0], ones)
-                if (recorder) recorder.addTick(ones, rawsFor(ones), hashNow(), pingsNow())
+                if (recorder) { recorder.addTick(ones, rawsFor(ones), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks) }
             } else {
                 const one = normalizePad(pad || {}, method)
                 const len = n > 0 ? Math.ceil(n) : 0
@@ -115,7 +122,10 @@ export function exposeGame(spec) {
                     const h = len > 0 ? hashNow() : null
                     const raws = len > 0 ? rawsFor([one]) : null
                     const pings = len > 0 ? pingsNow() : null
-                    for (let i = 0; i < len; i++) recorder.addTick([one], raws, i === len - 1 ? h : null, pings)
+                    for (let i = 0; i < len; i++) {
+                        recorder.addTick([one], raws, i === len - 1 ? h : null, pings)
+                        if (voice) voice.onTick(recorder.ticks)
+                    }
                 }
             }
             return api.state()
@@ -138,14 +148,49 @@ export function exposeGame(spec) {
                 hashEvery,
                 sources: spec.sources || null,
             })
+            // #1247 local voice. Only a REAL interaction opens the consent
+            // prompt (navigator.userActivation): scripted harness captures
+            // never see an overlay and keep producing plain v1 files. A game
+            // opts out with spec.voice === false; spec.voice.slots narrows
+            // which seats this device's mic covers (Gauntlet online: [0]).
+            voiceExtra = typeof spec.voiceExtra === 'function' ? spec.voiceExtra : null
+            voice = null
+            const activationOk = typeof navigator === 'undefined' || !navigator.userActivation || navigator.userActivation.isActive !== false
+            if (spec.voice !== false && activationOk) {
+                const vslots = spec.voice && Array.isArray(spec.voice.slots) ? spec.voice.slots : Array.from({ length: seatCount }, (_, i) => i)
+                voice = createVoiceSession({ slots: vslots })
+            }
             return { recording: true, seed: s.seed, players: spec.players && spec.players > 1 ? spec.players : 1, hashEvery }
         },
         recordStop: () => {
             if (!recorder) return null
             const s = spec.state()
-            const rec = recorder.finish(typeof s.hash === 'number' || typeof s.hash === 'string' ? s.hash : null)
+            const extra = (voiceExtra ? voiceExtra() : null) || { tracks: [], declined: [] }
+            const local = voice
+            const localSlots = local ? local.slots : []
+            voice = null
+            voiceExtra = null
+            // A voice section (even empty) marks the file v2; consent-pending
+            // or unsupported runs simply end up with no tracks. No voice
+            // attempted at all (harness, spec.voice:false) -> stays v1.
+            const wantVoice = !!local || (extra.tracks && extra.tracks.length > 0) || (extra.declined && extra.declined.length > 0)
+            const voiceSec = wantVoice ? { tracks: [...(extra.tracks || [])], declined: [...(extra.declined || [])] } : null
+            const rec = recorder.finish(typeof s.hash === 'number' || typeof s.hash === 'string' ? s.hash : null, voiceSec)
             recorder = null
             window.__lastRecording = rec
+            if (local) {
+                // The mic flushes its last chunk asynchronously; the download
+                // button awaits this promise before serialising the file.
+                window.__voiceFlush = local.finalize().then((track) => {
+                    if (track) {
+                        rec.voice.tracks.push(track)
+                        rec.voice.tracks.sort((a, b) => a.slots[0] - b.slots[0])
+                    } else if (local.consent.consent === false && local.consent.reason === 'declined') {
+                        for (const sl of localSlots) if (!rec.voice.declined.includes(sl)) rec.voice.declined.push(sl)
+                    }
+                    return rec
+                })
+            }
             return rec
         },
         isRecording: () => !!recorder,
@@ -174,6 +219,8 @@ export function unexposeGame() {
     loopLock = false
     recorder = null
     liveFeed = null
+    voice = null
+    voiceExtra = null
     if (exposed && window.__game === exposed) delete window.__game
     exposed = null
 }

@@ -210,3 +210,42 @@ jalfern repo, here the pad is `/retrogames/pad`. Ping IS written into the
 `ping: [{t, ms}]` trace of the measured link RTT (replay ignores it, files
 without it stay valid) — plus the pad page shows a rotate-to-landscape hint
 and buzzes on button presses where `navigator.vibrate` exists.
+
+## Voice in recordings (#1247) — the online pilot
+
+Online races record **raw voice per player** into `retrogames-rec/v2` (v1 files
+stay valid; replay ignores voice). Each player-device answers one consent
+prompt before its mic ever opens ("headsets recommended — tracks don't bleed";
+the answer is saved on the track; declining = no audio, the race plays on).
+Local captures ride the `__game` contract (DebugKit REC — a scripted
+`recordStart()` never prompts: `navigator.userActivation` keeps harness files
+clean v1). The **guest's mic streams live to the host** — raw opus chunks plus
+its tick clock ride the relay's already-forwarded `pad` type as a `k:'v'`
+subkind (sig-style framing, ~6 msg/s vs the 240/s window, **zero relay
+changes**), the host assembles them with `makeVoiceInbox()` and the contract
+merges everything into its file via `spec.voiceExtra`. Alignment: every track
+carries `clock: [{t, ms}]` sampled ~1/s inside the sim — `tickToMs(clock, t)`
+puts any pad tick into the audio, `voiceDrift()` reports worst lag from
+realtime (proven over a synthetic 30-min throttled session). Guest mic is
+released on race end, peer-gone **and unmount**. Re-export is a verbatim
+base64 decode (`voiceReexport`) — nothing to transcode for PLAICraft.
+
+Live capture finally wired too: Gauntlet's own loop now banks every sim tick
+via `recordLiveTick` at the `doSim` funnel (loop-lock-guarded so a contract
+`step()` never double-banks) — a hand-REC during real play is a replayable
+file, which it wasn't before (#527 item 1, retro-joined).
+
+Verify: `npm run voicecheck` (40 gates: format, alignment math incl. the
+30-min drift profile, wire budget/rate, consent gating; `--mutate` goes red
+when the clock stops riding the wire) and advisory
+`DEV_PORT=… npm run voicedrive` (headless Chrome: overlay → consent → real
+opus bytes → validating v2 file. On macOS it stands in a WebAudio oscillator
+stream because TCC kills headless hardware capture; `VOICEDRIVE_HW=1` forces
+the fake-device path for Linux boxes).
+
+Honest gaps: guest tracks align to the guest's own tick clock, which matches
+the host's file only when recording spans the whole race (start REC at race
+start); link-pad phone mics are separate devices and are NOT captured (the
+host mic covers seat 0 only in net play); production has no recorder yet —
+the transport runs in prod builds today but only DEV/harness sessions save
+audio until the Plaicraft sink (#1141) lands.
