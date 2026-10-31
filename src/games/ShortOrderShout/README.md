@@ -70,7 +70,7 @@ Known CPU reference results (engine seeds): 2P CPU pair reaches quota on
 
 ## Honest gaps
 
-- **Online seats through the lobby = stage 2.** The slots expose `remote`
+- **Online seats through the lobby = stage 2 (#1291).** The slots expose `remote`
   and the sim is lockstep-ready (seed + pad streams), but the lobby/relay
   wiring is not done here; 2P is local keyboard today.
 - **Voice**: the recording path carries raw per-seat voice (#1247 via
