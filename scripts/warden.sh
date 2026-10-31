@@ -258,10 +258,20 @@ main() {
         pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && B_IDLE=0
     fi
 
-    A_TARGET=""; B_TARGET=""; QA_STUDIO_QUEUE=0; TARGET=""
+    A_TARGET=""; B_TARGET=""; QA_STUDIO_QUEUE=0; QA_MINI_QUEUE=0; TARGET=""
+    # #1290: is the studio QA lane able to take a queue item this tick? Idle
+    # (no session), model answers on :8000, job installed. The planner gives
+    # mini the queue only after builders AND studio have taken theirs — unless
+    # studio can't run, in which case its share goes to mini.
+    STUDIO_UP=0
+    if ! pgrep -f "opencode run.*QA MASTER on node studio\\." >/dev/null 2>&1 \
+       && curl -s -m 3 "http://127.0.0.1:8000/v1/models" >/dev/null 2>&1 \
+       && launchctl print "gui/$(id -u)/com.jalfern.forge-qa-studio" >/dev/null 2>&1; then
+        STUDIO_UP=1
+    fi
     if [[ "$HALTED" != yes ]]; then
         PLAN=$(print -r -- "$ISSUES" | node "$REPO/scripts/lanes.mjs" \
-              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" 2>>"$LOG" | tail -8)
+              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" --studio-up "$STUDIO_UP" 2>>"$LOG" | tail -8)
         if [[ -n "$PLAN" ]]; then
             eval "$PLAN"   # int/- values only; lanes.mjs guarantees
             [[ "${A_TARGET:-}" == "-" ]] && A_TARGET=""
@@ -282,7 +292,7 @@ main() {
             log "lanes.mjs failed — legacy single-slot ladder: ${A_TARGET:-none}"
         fi
         TARGET=${A_TARGET:-}
-        log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE"
+        log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE qmq=$QA_MINI_QUEUE sup=$STUDIO_UP"
     fi
 
     kick_slot() {   # $1 = slot a|b, $2 = issue number, $3 = launchd job
@@ -336,7 +346,9 @@ main() {
     # A lane is kicked when its model answers, it has no session of its own
     # (identity = "QA MASTER on node <node>." in the prompt), its launchd job
     # is installed, and enough work is waiting:
-    #   mini    — any feedback item (that includes a checkpoint to resume)
+    #   mini    — any feedback item (that includes a checkpoint to resume), or
+    #             the queue (#1290) when feedback is empty and items remain after
+    #             builders and studio take theirs (QA_MINI_QUEUE from lanes.mjs)
     #   studio  — 1+ UNCLAIMED item (a second stream on the Studio's model)
     #   builder — 2+ UNCLAIMED, and only while the builder is idle with no
     #             game waiting: QA spills into the builder's slot, and step 4
@@ -365,7 +377,10 @@ main() {
         # free feedback but more queued games than free builder slots — the
         # QA session takes the oldest one (FORGE-QA.md 2f), and qa-claim.sh's
         # unified namespace keeps it off any builder's game (#878).
-        (( have >= need )) || { [[ "$node" == studio && "$QA_STUDIO_QUEUE" == 1 ]] || continue; }
+        # #1290: mini earns the same right one step behind studio — the planner
+        # already reserved studio's share, so both QA lanes can be in the queue
+        # at once without aiming at the same item.
+        (( have >= need )) || { [[ ( "$node" == studio && "$QA_STUDIO_QUEUE" == 1 ) || ( "$node" == mini && "$QA_MINI_QUEUE" == 1 ) ]] || continue; }
         launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
         act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
         [[ "$node" == studio ]] && STUDIO_KICKED=1

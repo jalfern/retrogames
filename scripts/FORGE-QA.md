@@ -96,13 +96,15 @@ confuse the two queues.
       claim it with `scripts/qa-claim.sh` and run the normal reproduce → fix →
       gate → ship on it — it is game code, so it counts for AGENTS.md rule 4.
       One ship per session still holds.
-     e′) **Queue build (#1258).** When there is NO claimable `feedback` item
-       but claimable `game-queue` items exist (the warden kicks the studio lane
-       exactly when the builder slots are saturated — every lane works the whole
-       queue): take the OLDEST claimable one (skip stalled, needs-approval,
-       waiting-jon/question, building, building-qa), claim it with
-       `scripts/qa-claim.sh <n> <node> "<plan>"` — it strips `game-queue` and
-       REFUSES if a builder holds the item, in which case take the next — and
+     e′) **Queue build (#1258, mini included #1290).** When there is NO claimable
+       `feedback` item but claimable `game-queue` items exist (the warden kicks
+       a QA lane — studio, or mini one step behind studio — exactly when the
+       builder slots and the lanes ahead of you are saturated: every lane works
+       the whole queue): take the OLDEST claimable one (skip stalled,
+       needs-approval, waiting-jon/question, building, building-qa), claim it
+       with `scripts/qa-claim.sh <n> <node> "<plan>"` — it strips `game-queue`
+       and REFUSES if a builder holds the item, in which case take the next —
+       and
        build it as a STAGE: read `scripts/FORGE.md` §3, post the design
        paragraph, build in YOUR `qa/<slug>` worktree (never a `forge/` branch),
        design the look from the original per docs/ART.md. Shipping the whole

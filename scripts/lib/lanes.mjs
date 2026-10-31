@@ -16,6 +16,12 @@
 //     when queue items outnumber the free builder slots — a queued game goes to
 //     a builder first, and the #878 flagship-gap fallback stays cheaper still
 //     (the warden only asks it when neither kick happened).
+//   QA mini (#1290) — the same whole-queue right, one step behind studio: mini
+//     joins the queue only when items remain AFTER builders and studio each
+//     take theirs (studioReserve = studio lane idle+up+queue-bound, passed in
+//     as studioUp by the warden). If studio is down or busy, its share goes to
+//     mini instead — no lane idles while a claimable game waits. Transient
+//     over/under-reserve is harmless: claim time (#878) owns collision safety.
 //
 // Targets are assigned to FREE slots in slot order (a before b): a busy slot
 // takes nothing, so the next free slot inherits its ladder position — the two
@@ -45,10 +51,12 @@ export function builderLadder(issues, { owner = OWNER } = {}) {
     return tier.filter((i) => (seen.has(i.number) ? false : (seen.add(i.number), true)))
 }
 
-// lanePlan — targets + kick flags for the two builder slots and the studio QA
-// queue-fallthrough flag. freeA/freeB = that slot has no live session;
-// bLoaded = the slot-b launchd job exists (trial not reverted).
-export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = false, bLoaded = true } = {}) {
+// lanePlan — targets + kick flags for the two builder slots and the QA lanes'
+// queue-fallthrough flags. freeA/freeB = that slot has no live session;
+// bLoaded = the slot-b launchd job exists (trial not reverted);
+// studioUp (#1290) = the studio QA lane is idle, its model answers and its job
+// exists — i.e. it will consume one queue item this tick, so mini reserves it.
+export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = false, bLoaded = true, studioUp = true } = {}) {
     const ladder = builderLadder(issues, { owner })
     const rest = ladder.slice()
     const targets = { a: null, b: null }
@@ -62,11 +70,16 @@ export function lanePlan({ issues = [], owner = OWNER, freeA = false, freeB = fa
         && !has(i, 'building') && !qaHeld(i)).length
     const freeSlots = (freeA ? 1 : 0) + (freeB && bLoaded ? 1 : 0)
     const qaStudioQueue = feedbackFree === 0 && queueFree > freeSlots
+    // #1290: mini is the LAST lane — it takes the queue only when items remain
+    // after builders and (if it can run) studio have each taken theirs.
+    const studioReserve = studioUp && qaStudioQueue ? 1 : 0
+    const qaMiniQueue = feedbackFree === 0 && queueFree > freeSlots + studioReserve
 
     return {
         targets,
         kick,
         qaStudioQueue,
-        counts: { ladder: ladder.length, feedbackFree, queueFree, freeSlots },
+        qaMiniQueue,
+        counts: { ladder: ladder.length, feedbackFree, queueFree, freeSlots, studioReserve },
     }
 }

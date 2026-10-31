@@ -10,7 +10,9 @@
 //
 // Mutant proof (required one): flip `queueFree > freeSlots` to `>=` in
 // scripts/lib/lanes.mjs — A6's "queue 2, both builders free" fixture goes red
-// (QA would steal a builder's game). Verified by hand at write time.
+// (QA would steal a builder's game). For #1290 the same works on the reserve:
+// flip `studioUp && qaStudioQueue` to `false` in lib/lanes.mjs — A8d goes red
+// (mini would collide with studio on the last item). Both verified by hand.
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -18,7 +20,7 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { slotsLine } from '../src/pages/floor.js'
-import { trialVerdict, reportText, VERDICT_FILE } from './studiotrial.mjs'
+import { trialVerdict, reportText, laneSplit, VERDICT_FILE } from './studiotrial.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 let pass = 0
@@ -108,6 +110,31 @@ section('A. pure planner')
         'A7d queue 3 > 2 free slots -> QA takes the third')
 }
 
+// A8 — QA mini queue-fallthrough matrix (#1290): mini takes the queue only
+// after builders AND studio (when it can run) take theirs.
+{
+    const fb = iss(1, ['feedback'])
+    const q = (n, day) => iss(n, ['game-queue'], { created_at: `2026-10-${day}T00:00:00Z` })
+    ok(lanePlan({ issues: [fb, q(4, 10)], freeA: true, freeB: true }).qaMiniQueue === false,
+        'A8a feedback exists -> mini keeps the feedback path, no queue flag')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true }).qaMiniQueue === false,
+        'A8b builders busy, queue 1, studio up -> the item is studio\'s, mini waits')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: false }).qaMiniQueue === true,
+        'A8c studio down -> mini takes studio\'s share (no lane idles)')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: false, freeB: false, studioUp: true }).qaMiniQueue === true,
+        'A8d busy builders, queue 2, studio up -> one survives for mini')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: true, freeB: true, studioUp: true }).qaMiniQueue === false,
+        'A8e both builders free, queue 2 -> builders cover it, no QA steal')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11), q(6, 12)], freeA: true, freeB: true, studioUp: true }).qaMiniQueue === false,
+        'A8f queue 3, two builders + studio -> studio takes the third, mini still waits')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11), q(6, 12), q(7, 13)], freeA: true, freeB: true, studioUp: true }).qaMiniQueue === true,
+        'A8g queue 4 -> the fourth survives for mini')
+    ok(lanePlan({ issues: [q(4, 10), q(5, 11)], freeA: false, freeB: true, bLoaded: false, studioUp: true }).qaMiniQueue === true,
+        'A8h slot b unloaded -> one free builder, studio takes one, mini the last')
+    ok(lanePlan({ issues: [q(4, 10)], freeA: false, freeB: false, studioUp: true }).counts.studioReserve === 1,
+        'A8i reserve counted when studio is queue-bound and up')
+}
+
 section('B. board slots + trial verdict')
 
 // B1 — slotsLine pure: null-safe, honest idle/up, trial/fleet word
@@ -135,6 +162,33 @@ section('B. board slots + trial verdict')
     ok(VERDICT_FILE === '/tmp/forge/studio-lanes.verdict', 'B2d verdict file is the path warden step 4 reads')
 }
 
+// B3 — lane split (#1290): ships classified by LAST claim lineage; mini visible
+{
+    const rows = [
+        { claims: ['FORGE (a): claimed 2026-10-30T01:00Z — plan: x'] },
+        { claims: ['FORGE (b): claimed 2026-10-30T01:00Z — plan: x', 'FORGE (b): checkpoint 2026-10-30T02:00Z'] },
+        { claims: ['QA (studio): claimed 2026-10-30T01:00Z — plan: x'] },
+        { claims: ['QA (builder): claimed 2026-10-30T01:00Z — plan: x'] },
+        { claims: ['QA (mini): claimed 2026-10-30T01:00Z — plan: x'] },
+        { claims: ['QA (mbp): claimed 2026-10-30T01:00Z — plan: x'] },
+        { claims: [] },
+        { claims: ['QA (mini): claimed 2026-10-30T01:00Z — plan: x', 'QA (studio): claimed 2026-10-30T03:00Z (last claim was mini\'s) — plan: y'] },
+        { claims: ['WARDEN: builder b idle, kicked a session'] },
+    ]
+    const s = laneSplit(rows)
+    ok(s.builder === 2 && s.studioQa === 3 && s.mini === 1 && s.other === 3,
+        `B3a lineage split builder/studioQa/mini/other: got ${JSON.stringify(s)}`)
+    ok(s.studioQa === 3 && s.mini === 1,
+        'B3b takeover (mini->studio) counts studio, the parked mbp and unclaimed land in other')
+    const t = reportText({ since: '2026-10-30T12:00:00Z', until: '2026-11-01T12:00:00Z',
+        verdict: trialVerdict({ closedBefore: new Array(8).fill('x'), closedAfter: new Array(12).fill('x') }),
+        split: { builder: 2, studioQa: 3, mini: 1, other: 3 } })
+    ok(/mini QA 1/.test(t) && /Lane split \(after window\)/.test(t),
+        'B3c report shows mini ships on their own line')
+    ok(!/Lane split/.test(reportText({ since: 'a', until: 'b', verdict: trialVerdict({}) })),
+        'B3d no split passed -> no split line (pre-#1290 report shape unchanged)')
+}
+
 section('C. wiring tripwires')
 const read = (f) => readFileSync(join(here, f), 'utf8')
 const warden = read('warden.sh'), forge = read('forge.sh'), qac = read('qa-claim.sh')
@@ -160,6 +214,10 @@ ok(warden.includes('origin/main:scripts/$SLOTB_JOB.plist'), 'slot-b plist is rea
 ok(warden.includes('studio-lanes.verdict') && warden.includes('revert'), 'warden enforces the trial verdict')
 ok(/builder \'"\$s"\' idle|"WARDEN: builder \$s idle"/.test(warden), 'per-slot kick comments (two stall counters, #1258)')
 ok(warden.includes('QA_STUDIO_QUEUE'), 'warden routes studio QA onto the queue')
+ok(warden.includes('QA_MINI_QUEUE') && /node" == mini && "\$QA_MINI_QUEUE"/.test(warden),
+    'warden routes mini QA onto the queue (#1290)')
+ok(warden.includes('--studio-up'), 'warden feeds studio liveness to the planner (#1290 reserve)')
+ok(qaMd.includes('mini included #1290'), 'FORGE-QA.md e-prime names mini as a queue-build node (#1290)')
 ok(warden.includes('"$B_LOADED" == 0'), 'builder-slot QA spill parked while slot b is loaded')
 ok(warden.includes('studiotrial.mjs'), 'warden ticks the trial clock')
 ok(warden.includes('builders=$nb/2'), 'pulse line carries slot liveness')
@@ -189,7 +247,7 @@ ok(fcli.includes('builder-b') && fcli.includes('studiotrial.mjs'), 'forge status
 
 ok(forgeMd.includes('scripts/forge-claim.sh') && !forgeMd.includes('gh issue edit <n> --add-label building'),
     'FORGE.md claims via the atomic script, never by hand')
-ok(qaMd.includes('Queue build (#1258)'), 'FORGE-QA.md carries the queue fallthrough (whole queue both ways)')
+ok(qaMd.includes('Queue build (#1258'), 'FORGE-QA.md carries the queue fallthrough (whole queue both ways; #1290 extends the heading to mini)')
 
 ok(pkg.includes('"lanecheck"'), 'package.json carries the lanecheck alias')
 ok(checks.includes("'lanecheck'"), 'checks.mjs CORE replays lanecheck nightly')

@@ -5,7 +5,8 @@
 // drop back to 1 builder + 1 QA and say so." So this script:
 //   tick     — records the trial start (first run on main after the merge);
 //              at 48 h computes items/day for the two windows, posts the
-//              report on #1258, and persists keep|revert to
+//              report on #1258 (with the #1290 lane split — mini's ships on
+//              their own line), and persists keep|revert to
 //              /tmp/forge/studio-lanes.verdict — warden step 4 reads it and
 //              refuses to kick slot b on `revert` (that IS the drop-back).
 //   status   — one human line for `forge status` / the board.
@@ -37,21 +38,50 @@ export function trialVerdict({ closedBefore = [], closedAfter = [], hours = TRIA
 }
 
 // reportText — the #1258 comment. Numbers from the verdict, tone factual.
-export function reportText({ since, until, verdict }) {
+// `split` (optional, #1290) is laneSplit() over the after-window ships: mini
+// runs the smaller model, so Jon sees its ships on their own line.
+export function reportText({ since, until, verdict, split }) {
     const v = verdict.keep ? 'KEEP — throughput went up.' : 'REVERT — throughput did not go up; warden stops kicking slot b (back to 1 builder + 1 QA).'
-    return [
+    const lines = [
         'FORGE STUDIO TRIAL REPORT (#1258) — first 48 h of 2 builders + 1 QA',
         `Trial window: ${since.slice(0, 16)}Z → ${until.slice(0, 16)}Z`,
         '',
         `Items shipped per day — before: ${verdict.before} · after: ${verdict.after} (issues closed carrying building/feedback)`,
         `Builder output: ${verdict.keep ? 'up' : 'not up'} with the second slot.`,
-        '',
+    ]
+    if (split) lines.push('',
+        `Lane split (after window): builders ${split.builder} · studio QA ${split.studioQa} · mini QA ${split.mini} · other ${split.other}`,
+        split.capped
+            ? `(classified by last claim comment lineage over the first ${split.capped} ships — window capped)`
+            : '(classified by last claim comment lineage; other = unclaimed close or a parked node)')
+    lines.push('',
         `VERDICT: ${v}`,
         '',
         'Metric honesty: tokens/s streams live in watch.sh but nothing persisted it before',
         'the trial, so the comparison uses items/day; if the fleet keeps, wiring t/s',
         'persistence into telemetry is the obvious follow-up.',
-    ].join('\n')
+    )
+    return lines.join('\n')
+}
+
+// laneSplit — pure (#1290). Rows are closed issues, each carrying its claim
+// comment bodies oldest-first. Classify by the LAST lineage (a takeover moves
+// the ship): FORGE (a|b) = builder slot · QA (studio|builder) = studio-model
+// QA · QA (mini) = mini · anything else (never claimed, parked node) = other.
+export function laneSplit(rows) {
+    const split = { builder: 0, studioQa: 0, mini: 0, other: 0 }
+    const LINEAGE = /^(QA|FORGE) \(([a-z0-9-]+)\): (claimed|checkpoint)/
+    for (const r of rows || []) {
+        let last = null
+        for (const b of r.claims || []) if (LINEAGE.test(b || '')) last = b
+        if (!last) { split.other++; continue }
+        const [lane, node] = last.match(LINEAGE).slice(1)
+        if (lane === 'FORGE') split.builder++
+        else if (node === 'mini') split.mini++
+        else if (node === 'studio' || node === 'builder') split.studioQa++
+        else split.other++
+    }
+    return split
 }
 
 const gh = (args) => execFileSync('gh', args, { encoding: 'utf8' })
@@ -66,8 +96,20 @@ function closedInWindow(label, fromMs, toMs) {
     try { rows = JSON.parse(out) } catch { return [] }
     return rows
         .filter((i) => !i.pull_request)
-        .map((i) => i.closed_at)
-        .filter((t) => { const ms = Date.parse(t); return Number.isFinite(ms) && ms >= fromMs && ms <= toMs })
+        .map((i) => ({ number: i.number, at: i.closed_at }))
+        .filter((i) => { const ms = Date.parse(i.at); return Number.isFinite(ms) && ms >= fromMs && ms <= toMs })
+}
+
+// claimLines (#1290) — the claim/checkpoint bodies on one issue, oldest-first.
+function claimLines(n) {
+    let out
+    try {
+        out = gh(['api', '--paginate', `repos/${REPO}/issues/${n}/comments?per_page=100`])
+    } catch { return [] }
+    let rows
+    try { rows = JSON.parse(out) } catch { return [] }
+    return rows.map((c) => c.body || '')
+        .filter((b) => /^(QA|FORGE) \([a-z0-9-]+\): (claimed|checkpoint)/.test(b))
 }
 
 function load() {
@@ -93,8 +135,13 @@ const tick = () => {
     const afterClosed = [...closedInWindow('building', sinceMs, now),
         ...closedInWindow('feedback', sinceMs, now)]
     const verdict = trialVerdict({ closedBefore: beforeClosed, closedAfter: afterClosed })
+    // #1290: lane split of the after-window ships — one comment fetch per ship,
+    // capped at 40 (well above any observed 48 h count; the report says so).
+    const allAfter = [...new Set(afterClosed.map((i) => i.number))]
+    const split = laneSplit(allAfter.slice(0, 40).map((n) => ({ claims: claimLines(n) })))
+    if (allAfter.length > 40) split.capped = allAfter.length
     try {
-        gh(['api', `repos/${REPO}/issues/1258/comments`, '-f', `body=${reportText({ since: st.since, until: iso(now), verdict })}`])
+        gh(['api', `repos/${REPO}/issues/1258/comments`, '-f', `body=${reportText({ since: st.since, until: iso(now), verdict, split })}`])
     } catch (e) {
         return `report failed: ${String(e.message || e).slice(0, 120)}`
     }
