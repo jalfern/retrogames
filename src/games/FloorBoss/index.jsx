@@ -106,6 +106,23 @@ const FloorBossGame = () => {
         let overAt = 0
         let episode = null
 
+        // ---- polish animation state (#1278) — renderer-only, never touches the
+        // sim, so hashes are untouched. The truck is the floor's face: a ship
+        // summons it, it parks at the dock, then drives off once clear.
+        let truck = { x: -90, mode: 'out', t: 0 } // mode: out | back | park | leave
+        const TRUCK_PARK = PX(23) + 5 // trailer centered under the dock lane
+        const botAnim = new Map() // bot id -> { dir, turn, trail }
+        const orderEnter = new Map() // order id -> slide-in ticks left
+        const arcItems = [] // arm->bot transfer ghosts { x0,y0,x1,y1,k,kind }
+        let armTip = { x: 0, y: 0 }
+        let grip = 1 // gripper spread: 1 open, 0 closed
+        let humT = 60 // 60 bpm floor hum while bots move
+        const truckDock = () => {
+            if (truck.mode === 'out') { truck.mode = 'back'; truck.x = -90 }
+            else if (truck.mode === 'leave') truck.mode = 'park'
+            truck.t = 300
+        }
+
         const beginEpisode = () => {
             try {
                 episode = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed: gs.seed >>> 0, players: 1, sources: ['human'], task: 'floor-boss-shift', assets: MANIFEST_REV })
@@ -145,7 +162,7 @@ const FloorBossGame = () => {
                     case 'order': audioController.playTone(300, 0.05, 'square', 0.04); break
                     case 'armload': audioController.playTone(520, 0.05, 'triangle', 0.05); break
                     case 'pick': audioController.playSweep(440, 760, 0.07, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#ffe9a8', 1); break
-                    case 'bay': audioController.playSweep(320, 560, 0.07, 'triangle', 0.05); break
+                    case 'bay': audioController.playSweep(320, 560, 0.07, 'triangle', 0.05); arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(e.x) + 13, y1: PY(e.y) + 3, k: 0, kind: e.k }); break
                     case 'stow': audioController.playTone(620, 0.05, 'square', 0.05); audioController.playTone(930, 0.07, 'square', 0.04, 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#9fe8b4', 1.2); break
                     case 'deliver': audioController.playTone(740, 0.06, 'square', 0.05); break
                     case 'ship': {
@@ -154,12 +171,13 @@ const FloorBossGame = () => {
                         audioController.playTone(784, 0.14, 'square', 0.07, 0.18)
                         fx(`+${e.pay}`, '#5dff8f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y))
                         burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 6, '#9fe8b4', 1.8)
+                        truckDock()
                         break
                     }
-                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`+${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); break
+                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`+${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); truckDock(); break
                     case 'expire': audioController.playSweep(340, 160, 0.22, 'sawtooth', 0.08); shake = 6; flash = 7; fx('EXPIRED', '#ff5a4f', W / 2, 200); break
                     case 'quota': audioController.playFanfare(); fx('QUOTA CLEARED', '#5dff8f', W / 2, 190); break
-                    case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
+                    case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
                     case 'jamclear': audioController.playSweep(220, 480, 0.09, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#7ec8ff', 1.2); break
                     case 'jamauto': audioController.playSweep(200, 380, 0.12, 'square', 0.04); break
                     case 'turbo': audioController.playTone(900 + Math.random() * 300, 0.03, 'square', 0.03); break
@@ -208,6 +226,19 @@ const FloorBossGame = () => {
             recordTick()
             edgeA = false; edgeB = false
             handleEvents(gs.ev, gs.tick)
+            // the floor hums at 60 bpm while bots work — gain scales with how
+            // many robots are on duty (soft machinery, not a metronome)
+            if (--humT <= 0) {
+                humT = 60
+                if (!gs.end) {
+                    const active = gs.robots.filter((b) => !b.broken && (b.moveT > 0 || b.pickT > 0 || b.task.kind !== 'idle')).length
+                    if (active) {
+                        const v = 0.005 + 0.004 * Math.min(4, active)
+                        audioController.playTone(62, 0.5, 'sine', v)
+                        audioController.playTone(65.5, 0.5, 'sine', v * 0.7)
+                    }
+                }
+            }
             if (gs.end) finish()
         }
 
@@ -243,6 +274,12 @@ const FloorBossGame = () => {
             ctx.fillStyle = '#1a2731'; ctx.fillRect(PX(0), y, (CONV_X1N + 1) * TILE, TILE)
             ctx.strokeStyle = '#2d4254'; ctx.lineWidth = 1
             ctx.strokeRect(PX(0) + 0.5, y + 0.5, (CONV_X1N + 1) * TILE - 1, TILE - 1)
+            // 2.5D rig: a lighter top rail and darker under-belt give the deck depth
+            ctx.fillStyle = '#24384a'; ctx.fillRect(PX(0), y - 3, (CONV_X1N + 1) * TILE, 3)
+            ctx.fillStyle = '#0c151d'; ctx.fillRect(PX(0), y + TILE, (CONV_X1N + 1) * TILE, 3)
+            ctx.fillStyle = '#3a556c'
+            ctx.beginPath(); ctx.arc(PX(CONV_X1N + 1) - 3, y + TILE / 2, 2.6, 0, Math.PI * 2); ctx.fill()
+            ctx.beginPath(); ctx.arc(PX(1) + TILE - 3, y + TILE / 2, 2.6, 0, Math.PI * 2); ctx.fill()
             ctx.strokeStyle = 'rgba(126,200,255,0.35)'; ctx.lineWidth = 1.6
             const off = (tick * 0.8) % 13
             for (let cx = PX(0) + off; cx < PX(CONV_X1N + 1); cx += 13) {
@@ -261,21 +298,26 @@ const FloorBossGame = () => {
             const bx = PX(ARM_CELL.x) + TILE / 2, by = PY(ARM_CELL.y) + TILE / 2
             ctx.fillStyle = '#3a4a58'; ctx.beginPath(); ctx.arc(bx, by + 2, 9, 0, Math.PI * 2); ctx.fill()
             ctx.fillStyle = '#5f7280'; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill()
-            // two-link arm reaches toward the bay when loaded, rests otherwise
+            // two-link arm reaches toward the bay when loaded, rests otherwise;
+            // it dips toward the waiting bot through the BAY_TICKS handoff
             const pose = gs.arm.pose
             const restA = -2.2, workA = -0.9
-            const ang = restA + (workA - restA) * pose
+            const handing = gs.robots.some((bb) => bb.task.kind === 'toArm' && bb.pickT > 0)
+            const ang = restA + (workA - restA) * pose + (handing ? 0.22 : 0)
             const L1 = 16, L2 = 14
             const ex = bx + Math.cos(ang) * L1, ey = by + Math.sin(ang) * L1
             const hx = ex + Math.cos(ang + 1.1 - pose * 0.7) * L2, hy = ey + Math.sin(ang + 1.1 - pose * 0.7) * L2
+            armTip = { x: hx, y: hy }
             ctx.strokeStyle = '#8fa3b0'; ctx.lineWidth = 4
             ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke()
             ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke()
             ctx.fillStyle = '#c9d4dc'; ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill()
-            // gripper
+            // gripper — closes when loaded, opens when the transfer lands
+            grip += ((gs.arm.held ? 0 : 1) - grip) * 0.25
+            const sp = 2 + grip * 3
             ctx.strokeStyle = gs.arm.held ? '#ffd23f' : '#7e8c96'; ctx.lineWidth = 2
-            ctx.beginPath(); ctx.moveTo(hx - 3, hy - 2); ctx.lineTo(hx - 5, hy + 3); ctx.stroke()
-            ctx.beginPath(); ctx.moveTo(hx + 3, hy - 2); ctx.lineTo(hx + 5, hy + 3); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(hx - 3, hy - 2); ctx.lineTo(hx - 3 - sp, hy + 3); ctx.stroke()
+            ctx.beginPath(); ctx.moveTo(hx + 3, hy - 2); ctx.lineTo(hx + 3 + sp, hy + 3); ctx.stroke()
             if (gs.arm.held) drawItem(ctx, gs.arm.held, hx, hy + 5, 0.9)
             ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(bx, by - 8, 1.8 + Math.sin(tick * 0.1) * 0.5, 0, Math.PI * 2); ctx.fill()
         }
@@ -301,7 +343,10 @@ const FloorBossGame = () => {
         const paintRacks = () => {
             for (const r of gs.racks) {
                 const x = PX(r.x), y = PY(r.y)
+                // 2.5D: drop shadow + a lighter top face reads as box height
+                ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.fillRect(x + 3, y + 4, TILE - 2, TILE - 2)
                 ctx.fillStyle = '#20303c'; ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2)
+                ctx.fillStyle = '#2b4152'; ctx.fillRect(x + 1, y + 1, TILE - 2, 5)
                 ctx.strokeStyle = '#c96a1f'; ctx.lineWidth = 2
                 ctx.strokeRect(x + 2, y + 2, TILE - 4, TILE - 4)
                 // shelf lips
@@ -317,34 +362,51 @@ const FloorBossGame = () => {
         const paintRobots = (tick) => {
             for (const b of gs.robots) {
                 const x = PX(b.x) + TILE / 2, y = PY(b.y) + TILE / 2
+                // personality: a rotational impulse when heading changes (sway),
+                // and a deterministic shudder while a JAM brake holds the bot
+                let anim = botAnim.get(b.id)
+                if (!anim) { anim = { dir: b.dir, turn: 0, trail: [] }; botAnim.set(b.id, anim) }
+                if (anim.dir !== b.dir) {
+                    const d = ((b.dir - anim.dir) % 4 + 4) % 4
+                    anim.turn = d === 1 ? 1 : d === 3 ? -1 : 0
+                    anim.dir = b.dir
+                }
+                if (anim.turn) { anim.turn *= 0.85; if (Math.abs(anim.turn) < 0.05) anim.turn = 0 }
+                const jx = b.jam ? Math.sin(tick * 1.31 + b.id * 9.7) * 0.9 : 0
+                const jy = b.jam ? Math.cos(tick * 1.73 + b.id * 5.3) * 0.6 : 0
+                const bx = x + jx, by = y + jy
                 ctx.fillStyle = 'rgba(0,0,0,0.3)'
-                ctx.beginPath(); ctx.ellipse(x, y + 8, 9, 3, 0, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.ellipse(bx, by + 8, 9, 3, 0, 0, Math.PI * 2); ctx.fill()
                 const body = b.broken ? '#5e4a44' : b.jam ? '#c98a2f' : '#2ea8b8'
                 const edge = b.broken ? '#3a2c28' : b.jam ? '#7c5217' : '#1c6c78'
-                ctx.fillStyle = edge; ctx.fillRect(x - 9, y - 8, 18, 16)
-                ctx.fillStyle = body; ctx.fillRect(x - 8, y - 7, 16, 14)
-                ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(x - 8, y - 7, 16, 3)
+                ctx.save()
+                ctx.translate(bx, by)
+                ctx.rotate(anim.turn * 0.16)
+                ctx.fillStyle = edge; ctx.fillRect(-9, -8, 18, 16)
+                ctx.fillStyle = body; ctx.fillRect(-8, -7, 16, 14)
+                ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(-8, -7, 16, 3)
                 // wheel nubs
                 ctx.fillStyle = '#12262e'
-                ctx.fillRect(x - 10, y - 6, 2, 5); ctx.fillRect(x + 8, y - 6, 2, 5)
-                ctx.fillRect(x - 10, y + 1, 2, 5); ctx.fillRect(x + 8, y + 1, 2, 5)
+                ctx.fillRect(-10, -6, 2, 5); ctx.fillRect(8, -6, 2, 5)
+                ctx.fillRect(-10, 1, 2, 5); ctx.fillRect(8, 1, 2, 5)
+                ctx.restore()
                 // amber eye toward heading
                 const d = [[0, -2], [2.5, 0], [0, 2], [-2.5, 0]][b.dir % 4]
                 ctx.fillStyle = b.broken ? '#ff5a4f' : tick % 100 < 5 ? '#fff2a0' : '#ffc23f'
-                ctx.beginPath(); ctx.arc(x + d[0], y - 1 + d[1], 2, 0, Math.PI * 2); ctx.fill()
+                ctx.beginPath(); ctx.arc(bx + d[0], by - 1 + d[1], 2, 0, Math.PI * 2); ctx.fill()
                 // status glyphs
                 if (b.broken) {
                     ctx.strokeStyle = '#ff5a4f'; ctx.lineWidth = 2
-                    ctx.beginPath(); ctx.moveTo(x - 4, y - 12); ctx.lineTo(x + 2, y - 12); ctx.stroke()
+                    ctx.beginPath(); ctx.moveTo(bx - 4, by - 12); ctx.lineTo(bx + 2, by - 12); ctx.stroke()
                     ctx.fillStyle = '#ff5a4f'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
-                    ctx.fillText('🔧', x + 6, y - 9); ctx.textAlign = 'left'
+                    ctx.fillText('🔧', bx + 6, by - 9); ctx.textAlign = 'left'
                 } else if (b.jam) {
                     ctx.fillStyle = tick % 24 < 12 ? '#ffd23f' : '#ff9a4f'
                     ctx.font = 'bold 8px monospace'; ctx.textAlign = 'center'
-                    ctx.fillText('JAM', x, y - 11); ctx.textAlign = 'left'
+                    ctx.fillText('JAM', bx, by - 11); ctx.textAlign = 'left'
                 }
-                if (gs.sel === b.id) { ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.4; ctx.strokeRect(x - 11.5, y - 10.5, 23, 21) }
-                if (b.carry) drawItem(ctx, b.carry, x, y - 14 + Math.sin(tick * 0.12) * 1, 0.85)
+                if (gs.sel === b.id) { ctx.strokeStyle = '#ffd23f'; ctx.lineWidth = 1.4; ctx.strokeRect(bx - 11.5, by - 10.5, 23, 21) }
+                if (b.carry) drawItem(ctx, b.carry, bx, by - 14 + Math.sin(tick * 0.12) * 1, 0.85)
             }
         }
 
@@ -433,8 +495,18 @@ const FloorBossGame = () => {
             ctx.fillText(`${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`, 300, 23)
             ctx.font = 'bold 7px monospace'; ctx.fillStyle = '#7e9cb0'
             ctx.fillText('SHIFT', 300, 9)
-            // rush lamp
+            // rush lamp — a rotating beacon glow while the wave is on
             const rush = gs.tick % (2700 + 1200) >= 2700
+            if (rush) {
+                ctx.save()
+                ctx.translate(346, 17)
+                ctx.rotate(tick * 0.25)
+                ctx.fillStyle = 'rgba(255,210,63,0.22)'
+                for (let i = 0; i < 2; i++) {
+                    ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, 17, i * Math.PI, i * Math.PI + 0.9); ctx.closePath(); ctx.fill()
+                }
+                ctx.restore()
+            }
             ctx.fillStyle = rush ? (tick % 30 < 16 ? '#ffd23f' : '#8a6a17') : '#243038'
             ctx.beginPath(); ctx.arc(346, 17, 7, 0, Math.PI * 2); ctx.fill()
             ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 7px monospace'
@@ -452,21 +524,27 @@ const FloorBossGame = () => {
             open.forEach((o, i) => {
                 const r = orderRect(i)
                 const late = o.due - gs.tick < 540
+                // new cards slide in from the right; danger-band cards shudder
+                let enter = orderEnter.get(o.id)
+                if (enter == null) { enter = 14; orderEnter.set(o.id, enter) }
+                else if (enter > 0) orderEnter.set(o.id, enter - 1)
+                const rx = r.x + (enter > 0 ? (enter / 14) * 46 : 0) + (late ? ((gs.tick % 8) < 4 ? 1.4 : -1.4) : 0)
                 ctx.fillStyle = 'rgba(16,26,36,0.9)'
-                ctx.fillRect(r.x, r.y, r.w, r.h)
+                ctx.fillRect(rx, r.y, r.w, r.h)
                 ctx.strokeStyle = o.prio ? '#ffd23f' : late ? (gs.tick % 30 < 16 ? '#ff5a4f' : '#5c2f28') : '#2d4254'
                 ctx.lineWidth = 1.3
-                ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1)
-                o.items.slice(0, 3).forEach((k, j) => drawItem(ctx, k, r.x + 16 + j * 22, r.y + 20, 1))
+                ctx.strokeRect(rx + 0.5, r.y + 0.5, r.w - 1, r.h - 1)
+                o.items.slice(0, 3).forEach((k, j) => drawItem(ctx, k, rx + 16 + j * 22, r.y + 20, 1))
                 const span = o.due - (o.items.length === 1 ? 1800 : 2400)
                 const frac = Math.max(0, Math.min(1, (o.due - gs.tick) / (o.due - span)))
-                ctx.fillStyle = '#14212c'; ctx.fillRect(r.x + 6, r.y + r.h - 14, r.w - 12, 5)
+                ctx.fillStyle = '#14212c'; ctx.fillRect(rx + 6, r.y + r.h - 14, r.w - 12, 5)
                 ctx.fillStyle = late ? '#ff5a4f' : '#3d9fd8'
-                ctx.fillRect(r.x + 6, r.y + r.h - 14, (r.w - 12) * frac, 5)
+                ctx.fillRect(rx + 6, r.y + r.h - 14, (r.w - 12) * frac, 5)
                 ctx.fillStyle = o.prio ? '#ffd23f' : '#5d7284'
                 ctx.font = 'bold 6px monospace'
-                ctx.fillText(o.prio ? 'PRIORITY' : `#${o.id}`, r.x + 6, r.y + r.h - 4)
+                ctx.fillText(o.prio ? 'PRIORITY' : `#${o.id}`, rx + 6, r.y + r.h - 4)
             })
+            if (orderEnter.size > 40) for (const id of [...orderEnter.keys()]) if (!gs.orders.some((o) => o.id === id)) orderEnter.delete(id)
         }
 
         const paintFooter = () => {
@@ -492,6 +570,91 @@ const FloorBossGame = () => {
             if (gs.tick % (2700 + 1200) < 2700) return
             ctx.fillStyle = `rgba(255,180,40,${0.05 + (tick % 40 < 20 ? 0.03 : 0)})`
             ctx.fillRect(GX, GY, COLS * TILE, ROWS * TILE)
+        }
+
+        const paintRushScan = (tick) => {
+            if (gs.tick % (2700 + 1200) < 2700) return
+            const sy = GY + ((tick * 1.5) % (ROWS * TILE))
+            ctx.fillStyle = 'rgba(255,190,60,0.05)'; ctx.fillRect(GX, sy - 2, COLS * TILE, 5)
+            ctx.fillStyle = 'rgba(255,210,90,0.14)'; ctx.fillRect(GX, sy, COLS * TILE, 1)
+        }
+
+        // The dock's truck: backs in on a ship, parks under the dock, drives
+        // off when clear. Pure painter state — the sim's shipping is unchanged.
+        const paintTruck = (tick) => {
+            if (truck.mode === 'back') { truck.x += 2.6; if (truck.x >= TRUCK_PARK) { truck.x = TRUCK_PARK; truck.mode = 'park' } }
+            else if (truck.mode === 'park') { if (--truck.t <= 0) truck.mode = 'leave' }
+            else if (truck.mode === 'leave') { truck.x += 3.2; if (truck.x > W + 30) { truck.mode = 'out'; truck.x = -90 } }
+            if (truck.mode === 'out') return
+            const x = truck.x, ty = 414
+            ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 2, ty + 20, 68, 4)
+            // trailer
+            ctx.fillStyle = '#243342'; ctx.fillRect(x, ty, 46, 18)
+            ctx.fillStyle = '#d8cfc0'; ctx.fillRect(x + 2, ty + 2, 42, 14)
+            ctx.fillStyle = '#171310'
+            for (let i = 0; i < 4; i++) ctx.fillRect(x + 6 + i * 9, ty + 4, 6, 10) // cargo
+            ctx.fillStyle = '#c9971f'; ctx.fillRect(x, ty + 2, 3, 14) // rear hazard stripe
+            // cab
+            ctx.fillStyle = '#b3541e'; ctx.fillRect(x + 48, ty + 2, 14, 16)
+            ctx.fillStyle = '#e8e0d0'; ctx.fillRect(x + 50, ty + 4, 10, 5)
+            // wheels
+            ctx.fillStyle = '#0a0f14'
+            for (const wx of [x + 5, x + 34, x + 51]) ctx.fillRect(wx, ty + 18, 6, 4)
+            if (truck.mode === 'back') { ctx.fillStyle = '#ff5a4f'; ctx.fillRect(x - 1, ty + 3, 2, 4); ctx.fillRect(x - 1, ty + 11, 2, 4) }
+            if (truck.mode === 'leave') {
+                ctx.fillStyle = '#fff2a0'; ctx.fillRect(x + 62, ty + 4, 2, 4); ctx.fillRect(x + 62, ty + 12, 2, 4)
+                ctx.fillStyle = 'rgba(255,242,160,0.10)'
+                ctx.beginPath(); ctx.moveTo(x + 64, ty + 5); ctx.lineTo(x + 92, ty - 3); ctx.lineTo(x + 92, ty + 25); ctx.lineTo(x + 64, ty + 14); ctx.closePath(); ctx.fill()
+            }
+            if (truck.mode === 'park') {
+                ctx.fillStyle = `rgba(93,255,143,${0.22 + 0.14 * Math.sin(tick * 0.2)})`
+                ctx.fillRect(PX(23) - 4, ty - 6, TILE * 2 + 8, 4)
+            }
+        }
+
+        // the arm->bot transfer: a ghost item tracing the BAY_TICKS handoff arc
+        const paintArcs = () => {
+            for (let i = arcItems.length - 1; i >= 0; i--) {
+                const a = arcItems[i]; a.k++
+                if (a.k > 15) { arcItems.splice(i, 1); continue }
+                const t = a.k / 15
+                ctx.globalAlpha = 1 - t * 0.55
+                drawItem(ctx, a.kind, a.x0 + (a.x1 - a.x0) * t, a.y0 + (a.y1 - a.y0) * t - Math.sin(t * Math.PI) * 10, 0.85)
+            }
+            if (arcItems.length) ctx.globalAlpha = 1
+        }
+
+        // first 15 s: spotlight the selected bot (or bot 1) with a ghost trail
+        // so click-select-dispatch teaches itself without attract lines
+        const paintTutorial = (tick) => {
+            if (screenRef.current !== 'play' || gs.tick > 900) return
+            const bot = gs.sel != null ? gs.robots.find((b) => b.id === gs.sel) : null
+            const target = bot || gs.robots.find((b) => !b.broken)
+            if (!target) return
+            const anim = botAnim.get(target.id)
+            const x = PX(target.x) + TILE / 2, y = PY(target.y) + TILE / 2
+            const pulse = 0.5 + 0.5 * Math.sin(tick * 0.15)
+            const g = ctx.createRadialGradient(x, y, 4, x, y, 24 + pulse * 4)
+            g.addColorStop(0, 'rgba(255,210,63,0.15)')
+            g.addColorStop(1, 'rgba(255,210,63,0)')
+            ctx.fillStyle = g
+            ctx.beginPath(); ctx.arc(x, y, 28 + pulse * 4, 0, Math.PI * 2); ctx.fill()
+            if (bot && anim) {
+                const lastT = anim.trail[anim.trail.length - 1]
+                // record only new positions — an idle bot must not smear a
+                // static amber blob over itself
+                if (tick % 3 === 0 && (!lastT || lastT.x !== x || lastT.y !== y)) {
+                    anim.trail.push({ x, y, t: tick }); if (anim.trail.length > 20) anim.trail.shift()
+                }
+                for (let i = anim.trail.length - 1; i >= 0; i--) if (tick - anim.trail[i].t > 90) anim.trail.splice(i, 1)
+                const n = anim.trail.length
+                anim.trail.forEach((p, i) => {
+                    ctx.globalAlpha = Math.max(0, 1 - (tick - p.t) / 90) * ((i + 1) / n) * 0.3
+                    ctx.fillStyle = '#ffd23f'
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill()
+                })
+                ctx.globalAlpha = 1
+            }
         }
 
         const paintAttract = (tick) => {
@@ -552,9 +715,13 @@ const FloorBossGame = () => {
             paintRacks()
             paintArm(tick)
             paintRobots(tick)
+            paintArcs()
+            paintTutorial(tick)
             paintCursor(tick)
             paintParticles()
             paintRushWash(tick)
+            paintRushScan(tick)
+            paintTruck(tick)
             ctx.restore()
             paintHud(tick)
             paintOrders()
@@ -690,6 +857,15 @@ const FloorBossGame = () => {
                 click: (x, y) => clickCell(gs, x, y),
                 press: (code) => onKeyDown({ code, preventDefault() {}, repeat: false }),
                 release: (code) => onKeyUp({ code }),
+                // ship a covered order on the next tick (harness: proves the truck cycle)
+                shipNow: () => {
+                    const o = gs.orders.find((x) => !x.shipped && !x.expired)
+                    if (!o) return null
+                    for (const k of o.items) gs.staging.push(k)
+                    gs.packT = 1
+                    return o.id
+                },
+                truck: () => ({ ...truck }),
                 GX, GY, TILE, W, H,
             }
             mountDbg({
