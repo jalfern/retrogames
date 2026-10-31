@@ -102,7 +102,7 @@ export function buildWindows(events, { minMin = GAP_MIN, until = null } = {}) {
 
 // detectGap({lastTick, now}) (epoch seconds) -> raw window or null.
 export function detectGap({ lastTick = null, now }) {
-    if (lastTick == null || !Number.isFinite(+lastTick)) return null
+    if (lastTick == null || lastTick === '' || !Number.isFinite(+lastTick)) return null
     const min = Math.round((+now - +lastTick) / 60)
     if (min < GAP_MIN) return null
     return { from: +lastTick * 1000, to: +now * 1000, min, naps: 0, reason: null, src: 'tickgap' }

@@ -159,8 +159,12 @@ export function computeRunway({ issues, closedBuilder = [], closedQa = [], now =
 // digestText is the questions-digest body (#1201: the runway line must be
 // visible without opening the site). Rows: #num [state] lane — title, with
 // deadline + default indented; then the runway line, always.
-export function digestText({ questions = [], runway = null, now = new Date() }) {
+// #1354: a `sleep` line (when the Studio was down) rides FIRST, right under
+// the header — a sleeping machine outranks every open question, because it
+// explains why none of them moved.
+export function digestText({ questions = [], runway = null, sleep = null, now = new Date() }) {
     const lines = [`FORGE QUESTIONS DIGEST — ${now.toISOString().slice(0, 10)}`]
+    if (sleep) lines.push(sleep)
     if (questions.length === 0) lines.push('(no open questions)')
     for (const q of questions) {
         lines.push(`#${q.number} [${q.state}] ${q.lane ? `lane:${q.lane}` : 'lane:?'} — ${q.title}`)

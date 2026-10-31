@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sparkline, slotsLine } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sleepBanner, sparkline, slotsLine } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -152,6 +152,10 @@ const ForgeBoard = () => {
     // the counts against the fetched labels through THIS function.
     const floor = deriveFloor({ issues, prs, pulses, now })
     const { queued, shipped, pulse, building } = floor
+    // #1354 — when the warden's ticks show the Studio itself was asleep, say
+    // it at the TOP of the board: 11 h of "nothing shipped" reads very
+    // differently once you see the Mac was down.
+    const sleep = sleepBanner(pulse)
     const qaShape = i => (/^(qa|bug)\b/i.test(i.title) || (i.body || '').startsWith('**where:**'))
         && !labelOf(i, 'game-queue') && !labelOf(i, 'building') && !labelOf(i, 'shipped')
     const qa = (issues ?? []).filter(i => i.state === 'open' && !i.pull_request
@@ -215,6 +219,13 @@ const ForgeBoard = () => {
                             : 'never fetched'}
                     </div>
                 </div>
+
+                {sleep && (
+                    <div data-sleep={sleep.minutes}
+                        className={`border-2 px-3 py-2 mb-4 text-center text-[11px] tracking-wider ${sleep.severe ? 'border-[#f55] text-[#f88] animate-pulse' : 'border-[#ffb347] text-[#ffb347]'}`}>
+                        ⚠ {sleep.text} — nothing can ship while the Mac sleeps
+                    </div>
+                )}
 
                 {slots && (() => {
                     // #1258 — the fleet at a glance: 2 builder slots + the QA
