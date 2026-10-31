@@ -259,6 +259,22 @@ fixtures go red). Honest gaps: orphan-Chrome sweep only runs when slot a restart
 (shared per-script profiles), watch has no live-tap pane for slot b, the shift report counts
 merges per lane (branch `forge/*` = builder regardless of slot) — filed for QA follow-up.
 
+**Aggregate throughput measured (#1299):** the trial report can now answer "tokens/hr with
+N streams" honestly. `tps.mjs` sums `tokens_per_second` over EVERY generating stream (was
+`generating[0]`), reports `gen`/`p` (tokens in flight across streams), `n` (active streams)
+and `tot` = the server's cumulative `total_tokens_served`; `telemetry.sh` appends
+`ts/tps/slots` (slots now incl. qaStudio/qaMini) to `/tmp/forge/tokens.jsonl` at ~7-day
+retention (telemetry.jsonl keeps only 24 h — too short for a 48 h trial). At report time
+`studiotrial.mjs` pulls each box's `/admin/api/usage?range=7d` — hourly token buckets with
+400-day retention, so the BEFORE window is measured from real counters, not extrapolated —
+and adds per-box tokens/hr (every stream counted, Jon's RETRO chat included, with mean/peak
+active streams from the ledger), sessions that hit their time box without shipping (span
+= session-log name→mtime; unmarked builder logs before fleet-start were slot a, after it
+are dropped not guessed; ships attributed by last claim lineage), and an hourly sparkline
+chart with `|` marking fleet-on. Gates: `tpscheck` 17 (§3 all-stream math) + `lanecheck`
+§B4 (usageWindow tz/fraction/coverage math, streamStats, boxMisses, spark, report faces,
+old pre-#1290 report shape pinned word-for-word).
+
 **The nightly bot (#1040):** contractcheck proves a game *boots 600 ticks*; nothing proved a
 game can be *finished* unattended. `scripts/nightlybot.mjs` plays every contract game to
 completion each night — seeded, stepped, headless, via `window.__game` — with a mulberry32 pad

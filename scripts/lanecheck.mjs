@@ -20,7 +20,8 @@ import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
 import { slotsLine } from '../src/pages/floor.js'
-import { trialVerdict, reportText, laneSplit, VERDICT_FILE } from './studiotrial.mjs'
+import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
+    usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 let pass = 0
@@ -187,6 +188,97 @@ section('B. board slots + trial verdict')
         'B3c report shows mini ships on their own line')
     ok(!/Lane split/.test(reportText({ since: 'a', until: 'b', verdict: trialVerdict({}) })),
         'B3d no split passed -> no split line (pre-#1290 report shape unchanged)')
+}
+
+// B4 — aggregate throughput math (#1299): all-stream tokens/hr, stream stats,
+// time-box misses, sparkline chart — pinned offline against fixtures.
+{
+    // B4a usageWindow: tz from `start`, partial-hour fractions, quiet coverage
+    const day = (n) => Array.from({ length: 24 }, () => n)
+    const usage = { start: '2026-10-29T00:00:00-07:00', heatmap: [{ date: '2026-10-29', tokens: day(1000) }] }
+    const full = usageWindow(usage, Date.parse('2026-10-29T07:00:00Z'), Date.parse('2026-10-30T07:00:00Z'))
+    ok(full && full.tokens === 24000 && full.hours === 24, `B4a full local day: ${JSON.stringify(full && { t: full.tokens, h: full.hours })}`)
+    const part = usageWindow(usage, Date.parse('2026-10-29T08:00:00Z'), Date.parse('2026-10-29T09:30:00Z'))
+    ok(part && part.tokens === 1500 && part.hours === 1.5, `B4b partial window fractions the boundary hour: ${JSON.stringify(part && { t: part.tokens, h: part.hours })}`)
+    const quiet = usageWindow({ start: '2026-10-29T00:00:00-07:00', heatmap: [{ date: '2026-10-29', tokens: day(0) }] },
+        Date.parse('2026-10-29T07:00:00Z'), Date.parse('2026-10-30T07:00:00Z'))
+    ok(quiet && quiet.tokens === 0 && quiet.hours === 24, 'B4c quiet hours still count as coverage')
+    ok(usageWindow(null, 0, 1) === null && usageWindow({ heatmap: [] }, 0, 1) === null,
+        'B4d missing usage payload is null, never a throw')
+
+    // B4e spark
+    ok(spark([0, 50, 100]) === '▁▅█' && spark([]) === '·' && spark([0, 0, 0]) === '···',
+        `B4e sparkline scale + zero handling: ${spark([0, 50, 100])}`)
+
+    // B4f streamStats from ledger rows
+    const rows = [
+        { ts: 1000, tps: { omlx: { n: 2 } } },          // before window — ignored
+        { ts: 2000, tps: { omlx: { n: 3 } } },
+        { ts: 2300, tps: { omlx: { n: 1 } } },
+        { ts: 2600, tps: { omlx: { n: 0 } } },
+        { ts: 3000, tps: { omlxmini: { n: 9 } } },       // other box — ignored
+    ]
+    const st = streamStats(rows, 'omlx', 1500 * 1000, 2500 * 1000)
+    ok(st && st.samples === 2 && st.mean === 2 && st.max === 3 && st.since === '1970-01-01T00:33:20Z',
+        `B4f stream stats mean/max/window: ${JSON.stringify(st)}`)
+    ok(streamStats(rows, 'omlxmbp', 0, 9e12) === null, 'B4g box with no samples -> null (honest line)')
+
+    // B4h laneOfClaims: last lineage wins; parked/unknown lanes are null
+    ok(laneOfClaims(['FORGE (a): claimed x', 'FORGE (b): claimed y']) === 'b', 'B4h takeover moves the ship')
+    ok(laneOfClaims(['QA (mini): claimed x']) === 'qaMini' && laneOfClaims(['QA (studio): checkpoint x']) === 'qaStudio'
+        && laneOfClaims(['QA (mbp): claimed x']) === null && laneOfClaims([]) === null,
+        'B4i lanes map, parked mbp + unclaimed are null')
+
+    // B4j boxMisses: spans vs ships across the four lanes
+    const H = 3600e3
+    const t0 = Date.parse('2026-11-01T00:00:00Z')
+    const spans = [
+        { lane: 'a', startMs: t0, endMs: t0 + 178 * 60e3, alive: false },   // hit, shipped
+        { lane: 'b', startMs: t0, endMs: t0 + 175 * 60e3, alive: false },   // hit, missed
+        { lane: 'b', startMs: t0 + 200 * 60e3, endMs: t0 + 260 * 60e3, alive: false }, // short, not hit
+        { lane: 'qaMini', startMs: t0, endMs: t0 + 61 * 60e3, alive: false }, // hit, missed
+        { lane: 'qaStudio', startMs: t0, endMs: t0 + 59 * 60e3, alive: true }, // alive — excluded
+        { lane: 'a', startMs: t0 - 50 * H, endMs: t0 - 49 * H, alive: false },  // outside window
+    ]
+    const ships = [{ lane: 'a', atMs: t0 + 100 * 60e3 }, { lane: 'b', atMs: t0 + 195 * 60e3 }] // b's ship lands between spans
+    const m = boxMisses(spans, ships, t0 - 48 * H, t0 + 48 * H)
+    ok(m.a.n === 1 && m.a.hit === 1 && m.a.miss === 0, `B4j shipped span clears: ${JSON.stringify(m.a)}`)
+    ok(m.b.n === 2 && m.b.hit === 1 && m.b.miss === 1, `B4k short span not a hit; missed span counted: ${JSON.stringify(m.b)}`)
+    ok(m.qaMini.n === 1 && m.qaMini.miss === 1 && m.qaStudio.n === 0, 'B4l QA lanes separate; alive span never judged')
+
+    // B4m span-name parsing (log naming IS the identity)
+    ok(parseSpanName('qa-studio-20261031-134321.log').lane === 'qaStudio'
+        && parseSpanName('qa-20261031-131259.log').lane === 'qaMini'
+        && parseSpanName('20261030-203144.log').lane === 'builder'
+        && parseSpanName('notes.txt') === null && parseSpanName('dev-b-wizardry.log') === null,
+        'B4m session-log names map to lanes; foreign files rejected')
+    ok(BOX_MIN.a === 180 && BOX_MIN.b === 180 && BOX_MIN.qaStudio === 60 && BOX_MIN.qaMini === 60,
+        'B4n time boxes: 3 h builders, 1 h QA (matches the prompts)')
+
+    // B4o reportText with perf — every #1299 face, honestly degraded without
+    const perf = {
+        boxes: [{ name: 'Studio', before: { tokens: 48000, hours: 48 }, after: { tokens: 96000, hours: 48 },
+            streams: { samples: 100, mean: 1.4, max: 4, since: '2026-10-31T21:00:00Z' } },
+        { name: 'Mini', before: { tokens: 20000, hours: 48 }, after: null, streams: null }],
+        spansBefore: { a: { n: 2, hit: 1, miss: 1 }, b: { n: 0, hit: 0, miss: 0 }, qaStudio: { n: 5, hit: 2, miss: 1 }, qaMini: { n: 20, hit: 10, miss: 5 }, qaX: { n: 0, hit: 0, miss: 0 } },
+        spansAfter: { a: { n: 1, hit: 0, miss: 0 }, b: { n: 1, hit: 1, miss: 1 }, qaStudio: { n: 0, hit: 0, miss: 0 }, qaMini: { n: 3, hit: 2, miss: 2 } },
+        chartLines: ['Studio ▁▂|▃▄'], chartSince: '2026-10-29T02:20:00Z',
+        honesty: ['ledger span note'],
+    }
+    const pt = reportText({ since: '2026-10-31T02:20:00Z', until: '2026-11-02T02:20:00Z',
+        verdict: trialVerdict({ closedBefore: new Array(8).fill('x'), closedAfter: new Array(12).fill('x') }), perf })
+    ok(/Tokens\/hr — EVERY stream/.test(pt) && /Studio: before 1k\/hr → after 2k\/hr/.test(pt),
+        'B4o tokens/hr lines present, summed across streams')
+    ok(/Mini: before 0\.4k\/hr → after —/.test(pt) && /Mini streams: no ledger samples yet/.test(pt),
+        'B4p missing window/streams degrade to honest placeholders, never zeros')
+    ok(/builders 1\/2 · studio QA 1\/5 · mini QA 5\/20/.test(pt) && /mini QA 2\/3/.test(pt),
+        'B4q box-miss lines per window, builders summed over slots')
+    ok(/▁▂\|▃▄/.test(pt) && /10-29 → 11-02/.test(pt) && /ledger span note/.test(pt),
+        'B4r chart line with fleet-on marker + span label + honesty carried')
+    ok(/usage counters/.test(pt) && !/nothing persisted it before/.test(pt),
+        'B4s perf report states where tokens/hr come from (old paragraph would lie)')
+    ok(/nothing persisted it before/.test(reportText({ since: 'a', until: 'b', verdict: trialVerdict({}) })),
+        'B4t no perf -> pre-#1299 metric-honesty paragraph stays word-for-word')
 }
 
 section('C. wiring tripwires')
