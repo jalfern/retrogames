@@ -24,7 +24,7 @@ import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } fro
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
 import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from './tiles.js'
-import { townScore } from './towns.js'
+import { townScore, hasCottage } from './towns.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor } from './moons.js'
 import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples } from './swell.js'
@@ -89,7 +89,7 @@ const BritanniaGame = () => {
             ship: false, cd: 0, visited: gates.length ? new Set([0]) : new Set(),
             face: 'down', anim: 0, dismissed: -1, wasTown: false,
             sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
-            amb: AMB.NONE, warp: null,
+            amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
         })
 
         const load = async () => {
@@ -118,6 +118,22 @@ const BritanniaGame = () => {
             const v = world.get(cx, cy)
             return ambientAt(cx, cy, v, coastAt(cx, cy), tick, seed)
         }
+        // the pilgrimage compass (#1352): eight gates on a 256² land is a long
+        // blind walk, so a chevron by the Avatar points at the nearest gate not
+        // yet visited and says how far. Wrapped like the walk itself is.
+        const nearestUnvisited = () => {
+            let bi = -1, bd = Infinity, bx = 0, by = 0
+            for (let i = 0; i < gates.length; i++) {
+                if (S.visited.has(i)) continue
+                let dx = gates[i].x - S.x, dy = gates[i].y - S.y
+                if (dx > MAPW / 2) dx -= MAPW; if (dx < -MAPW / 2) dx += MAPW
+                if (dy > MAPW / 2) dy -= MAPW; if (dy < -MAPW / 2) dy += MAPW
+                const d = Math.hypot(dx, dy)
+                if (d < bd) { bd = d; bi = i; bx = dx; by = dy }
+            }
+            return bi < 0 ? null : { i: bi, dx: bx, dy: by, d: Math.round(bd) }
+        }
+
         const night = () => {
             const t = tod()
             if (t < 0.25) return 0
@@ -132,9 +148,13 @@ const BritanniaGame = () => {
             const sky = weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)
             if (sky !== S.wx) {
                 S.wx = sky
-                if (sky === WX.RAIN) { S.toast = 110; S.toastMsg = 'Rain sweeps low over the moor.'; audioController.playNoise(0.35, 0.07) }
-                else if (sky === WX.SNOW) { S.toast = 110; S.toastMsg = 'Snow drifts down from the north.'; audioController.playTone(520, 0.5, 'sine', 0.05) }
-                else if (sky === WX.STORM) { S.toast = 110; S.toastMsg = 'A storm gathers over the land.'; audioController.playSweep(90, 45, 1, 'sawtooth', 0.12) }
+                // a sky change must not swallow the goal toast (#1352): the
+                // first words a new pilgrim reads are the pilgrimage itself
+                if (!/^GOAL/.test(S.toastMsg || '')) {
+                    if (sky === WX.RAIN) { S.toast = 110; S.toastMsg = 'Rain sweeps low over the moor.'; audioController.playNoise(0.35, 0.07) }
+                    else if (sky === WX.SNOW) { S.toast = 110; S.toastMsg = 'Snow drifts down from the north.'; audioController.playTone(520, 0.5, 'sine', 0.05) }
+                    else if (sky === WX.STORM) { S.toast = 110; S.toastMsg = 'A storm gathers over the land.'; audioController.playSweep(90, 45, 1, 'sawtooth', 0.12) }
+                }
             }
             if ((S.wx === WX.RAIN || S.wx === WX.STORM) && (S.tick % 42) === 0) audioController.playNoise(0.14, 0.04)
             S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed, terrainAt)
@@ -250,6 +270,7 @@ const BritanniaGame = () => {
                 ctx.fillStyle = s === 2 ? hi : s === 0 ? lo : mid
                 ctx.fillRect(sx + bx * bs, sy + by * bs, bs, bs)
             }
+            if (ts >= 0.75 && !onGate(tx, ty) && hasCottage(tx, ty)) drawCottage(sx, sy, tx, ty, t)
             if (v === 5) {
                 // forest canopy, keyed to the world tile so it never repeats
                 for (let i = 0; i < 4; i++) {
@@ -316,6 +337,22 @@ const BritanniaGame = () => {
 
         let classicOn = false
 
+        // cottages + hearth smoke (#1352): the town toast promises "cottages
+        // and smoke", so the strongest built-up ground must actually host them.
+        // Placement is seeded per tile (hasCottage) and never under a gate.
+        const onGate = (tx, ty) => gates.some(g => g.x === tx && g.y === ty)
+        const drawCottage = (sx, sy, tx, ty, t) => {
+            const cx = sx + 16
+            ctx.fillStyle = '#7f7668'; ctx.fillRect(cx - 7, sy + 12, 14, 10)
+            ctx.fillStyle = '#42352a'
+            ctx.beginPath(); ctx.moveTo(cx - 9, sy + 12); ctx.lineTo(cx, sy + 3); ctx.lineTo(cx + 9, sy + 12); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#2b2118'; ctx.fillRect(cx - 2, sy + 16, 4, 6)
+            ctx.fillStyle = '#ffd98a'; ctx.fillRect(cx + 3, sy + 14, 3, 3)
+            const ph = (t / 3 + hash2(tx, ty, 5) * 40) % 20
+            ctx.fillStyle = `rgba(214,214,220,${(0.34 * (1 - ph / 20)).toFixed(3)})`
+            ctx.beginPath(); ctx.arc(cx + 4 + Math.sin(ph / 3 + tx) * 2, sy + 2 - ph, 2 + ph * 0.14, 0, 7); ctx.fill()
+        }
+
         const draw = () => {
             const t = S.tick
             const n = night()
@@ -334,9 +371,15 @@ const BritanniaGame = () => {
                 const sx = g.x * TILE - camX, sy = g.y * TILE - camY
                 if (sx < -40 || sy < -40 || sx > VIEW_W + 40 || sy > VIEW_H + 40) continue
                 const pulse = 0.55 + 0.25 * Math.sin(t / 9 + i)
-                ctx.fillStyle = `rgba(120,230,255,${pulse * (0.5 + 0.5 * n)})`
-                ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 12 + 2 * Math.sin(t / 7 + i), 0, 7); ctx.fill()
-                ctx.strokeStyle = `rgba(240,255,255,${0.5 + 0.4 * n})`
+                // day legibility (#1352): the old glow was pulse*(0.5+0.5*n) — a
+                // faint ~16px swirl on tan grass at noon. A dark teal anchor ring
+                // keeps the gate on the map by day; the bright core burns steadily
+                // and glows harder the deeper the night.
+                ctx.fillStyle = 'rgba(16,70,88,0.55)'
+                ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 15 + 2 * Math.sin(t / 7 + i), 0, 7); ctx.fill()
+                ctx.fillStyle = `rgba(120,230,255,${Math.min(0.94, pulse * (0.55 + 0.45 * n) + 0.28).toFixed(3)})`
+                ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 11 + 2 * Math.sin(t / 7 + i), 0, 7); ctx.fill()
+                ctx.strokeStyle = `rgba(240,255,255,${0.6 + 0.35 * n})`
                 ctx.lineWidth = 2
                 ctx.beginPath(); ctx.arc(sx + 16, sy + 16, 7, t / 12, t / 12 + 4.6); ctx.stroke()
             }
@@ -416,6 +459,29 @@ const BritanniaGame = () => {
                         ctx.beginPath(); ctx.arc(m.x, m.y, m.sz, 0, 7); ctx.fill()
                     }
                     ctx.restore()
+                }
+            }
+            // the pilgrimage compass: visible guidance to the next gate, drawn
+            // above the night wash so it never dims away (#1352)
+            if (!S.warp && S.gate < 0 && !S.done) {
+                const gd = nearestUnvisited()
+                if (gd) {
+                    const gx = gates[gd.i].x * TILE - camX + 16, gy = gates[gd.i].y * TILE - camY + 16
+                    if (gx < 0 || gx > VIEW_W || gy < 0 || gy > VIEW_H) {
+                        const ang = Math.atan2(gd.dy, gd.dx)
+                        const ax = Math.max(30, Math.min(VIEW_W - 30, px + Math.cos(ang) * 62))
+                        const ay = Math.max(92, Math.min(VIEW_H - 64, py + Math.sin(ang) * 62))
+                        ctx.save()
+                        ctx.translate(ax, ay); ctx.rotate(ang)
+                        ctx.fillStyle = 'rgba(127,232,255,0.92)'
+                        ctx.beginPath(); ctx.moveTo(11, 0); ctx.lineTo(-7, -8); ctx.lineTo(-3, 0); ctx.lineTo(-7, 8); ctx.closePath(); ctx.fill()
+                        ctx.restore()
+                        ctx.font = 'bold 13px monospace'
+                        ctx.textAlign = 'center'
+                        ctx.fillStyle = '#7fe8ff'
+                        ctx.fillText(`to ${ROMAN[gd.i]} · ${gd.d} paces`, ax, ay + 24)
+                        ctx.textAlign = 'left'
+                    }
                 }
             }
             drawHud(n)
@@ -499,24 +565,28 @@ const BritanniaGame = () => {
         }
 
         // #1221: the shell chrome (ARCADE/FEEDBACK left, PAUSE+mute right) sits
-        // in the viewport's top corners. iPhone landscape letterboxes the canvas
-        // side-only, so the canvas HUD bar lands under that chrome and the two
-        // layers collide. Measure the chrome each frame (three rect reads) and
-        // inset the HUD — vertically past the chrome bottoms and horizontally
-        // past the corner buttons — only while the canvas top actually touches
-        // the chrome band (portrait letterboxes the canvas below it → zero).
+        // in the viewport's top corners. Inset the HUD only while the chrome
+        // actually overlaps the DRAWN content — #1352: comparing against the
+        // canvas element's top ignored the object-contain letterbox (fit.oy),
+        // so on a 4:3 desktop window the chrome hovered over black bars, the
+        // inset still fired, and the HUD sank ~70px into the map. Content is
+        // at rect.top + fit.oy; measure against that (landscape phones have
+        // oy = 0, so the #1221 behaviour there is untouched).
         const hudInsets = () => {
             const rect = canvas.getBoundingClientRect()
             const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
+            const contentTop = rect.top + fit.oy
+            const contentLeft = rect.left + fit.ox
+            const contentRight = rect.right - fit.ox
             const at = (s) => document.querySelector(s)?.getBoundingClientRect()
             const left = [at('[data-nav="arcade"]'), at('[data-feedback="open"]')].filter(Boolean)
             const pause = at('[data-nav="pause"]')
             const all = [...left, ...(pause ? [pause] : [])]
-            if (!all.length || rect.top >= Math.max(...all.map((b) => b.bottom))) return { top: 0, left: 0, right: 0 }
+            if (!all.length || contentTop >= Math.max(...all.map((b) => b.bottom))) return { top: 0, left: 0, right: 0 }
             return {
-                top: (Math.max(...all.map((b) => b.bottom)) - rect.top) / fit.s + 6,
-                left: left.length ? (Math.max(...left.map((b) => b.right)) - rect.left) / fit.s + 10 : 0,
-                right: pause ? (rect.right - pause.left) / fit.s + 10 : 0,
+                top: (Math.max(...all.map((b) => b.bottom)) - contentTop) / fit.s + 6,
+                left: left.length ? (Math.max(...left.map((b) => b.right)) - contentLeft) / fit.s + 10 : 0,
+                right: pause ? (contentRight - pause.left) / fit.s + 10 : 0,
             }
         }
 
@@ -524,7 +594,7 @@ const BritanniaGame = () => {
             const ins = hudInsets()
             const barH = Math.max(46, ins.top + 40)
             const baseY = Math.max(30, ins.top + 26)
-            ctx.fillStyle = 'rgba(8,10,22,0.78)'
+            ctx.fillStyle = 'rgba(8,10,22,0.88)'
             ctx.fillRect(0, 0, VIEW_W, barH)
             ctx.fillStyle = '#e8d9a0'
             ctx.font = 'bold 20px monospace'
@@ -535,7 +605,11 @@ const BritanniaGame = () => {
             const rx = Math.max(16, ins.right)
             ctx.fillText(`x:${S.x} y:${S.y}`, Math.max(180, tx + 130), baseY - 1)
             ctx.fillText(S.ship ? 'SHIP' : 'FOOT', Math.max(300, tx + 250), baseY - 1)
-            const hrs = Math.floor(tod() * 24)
+            // tod() 0 is high sun (the night() curve is bright around it), so
+            // the clock is offset half a cycle — it used to read 00:00 DAY at
+            // noon (#1352). Midnight is tod 0.5, and the DAY/NIGHT label (n)
+            // then agrees with the hour: dusk ~19:00, dawn ~06:30.
+            const hrs = Math.floor(((tod() + 0.5) % 1) * 24)
             ctx.fillText(`${String(hrs).padStart(2, '0')}:00 ${n > 0.5 ? 'NIGHT' : 'DAY'}`, Math.max(380, tx + 330), baseY - 1)
             ctx.fillStyle = '#7fe8ff'
             ctx.fillText(`MOONGATES ${S.visited.size}/${gates.length}`, Math.max(540, tx + 490), baseY - 1)
@@ -557,11 +631,21 @@ const BritanniaGame = () => {
             }
         }
 
+        // gate-menu geometry (#1352): one source of truth for the box and rows,
+        // shared by the painter and both pointer handlers. The old box was 420px
+        // with rows starting at by+46: the phase caption overprinted row I, the
+        // flavor line crowded row VIII, and the 420px-wide footer hint ran past
+        // the border. 480px with measured gaps fits the longest row + hint.
+        const GM = { w: 480, rowTop: 62, pitch: 36 }
+        const gmBox = () => {
+            const bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
+            return { bw: GM.w, bh, bx: VIEW_W / 2 - GM.w / 2, by: VIEW_H / 2 - bh / 2 }
+        }
+
         const drawGateMenu = () => {
             ctx.fillStyle = 'rgba(4,6,18,0.72)'
             ctx.fillRect(0, 0, VIEW_W, VIEW_H)
-            const bw = 420, bh = 60 + gates.length * 40
-            const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
+            const { bw, bh, bx, by } = gmBox()
             ctx.fillStyle = 'rgba(10,14,34,0.95)'
             ctx.fillRect(bx, by, bw, bh)
             ctx.strokeStyle = '#7fe8ff'; ctx.lineWidth = 2
@@ -571,31 +655,33 @@ const BritanniaGame = () => {
             ctx.font = 'bold 22px monospace'
             ctx.fillText('A MOONGATE WHIRLS', bx + 24, by + 36)
             const lit = phaseLit(ph)
-            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 54, 9, 0, Math.PI * 2)
+            ctx.beginPath(); ctx.arc(bx + bw - 30, by + 29, 9, 0, Math.PI * 2)
             ctx.fillStyle = '#2a3455'; ctx.fill()
-            ctx.beginPath(); ctx.arc(bx + bw - 32, by + 54, 9 * lit, 0, Math.PI * 2)
+            ctx.beginPath(); ctx.arc(bx + bw - 30, by + 29, 9 * lit, 0, Math.PI * 2)
             ctx.fillStyle = '#e8e2c8'; ctx.fill()
             ctx.font = '13px monospace'
             ctx.fillStyle = '#8fa6c8'
             ctx.textAlign = 'right'
-            ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 58)
+            ctx.fillText(`the ${PHASES[ph]} rules the sky`, bx + bw - 48, by + 34)
             ctx.textAlign = 'left'
             ctx.font = '17px monospace'
             for (let i = 0; i < gates.length; i++) {
                 if (i === S.gate) continue
-                const row = by + 64 + (i < S.gate ? i : i - 1) * 40
+                const row = by + GM.rowTop + (i < S.gate ? i : i - 1) * GM.pitch
                 const sel = (i < S.gate ? i : i - 1) === S.sel
                 ctx.fillStyle = sel ? '#ffd840' : '#9fb4d8'
-                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${moonName(i)} moon${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 14)
+                ctx.fillText(`${sel ? '> ' : '  '}${ROMAN[i]} — ${moonName(i)} moon${S.visited.has(i) ? '  [visited]' : ''}`, bx + 28, row + 23)
             }
             ctx.fillStyle = '#6a7b9a'
             ctx.font = '14px monospace'
-            ctx.fillText('arrows + SPACE choose · number keys jump · B cancel', bx + 28, by + bh - 14)
+            // "B" is not a key on this game's keyboard — cancel is Z (and Esc,
+            // which maps to start and closes the menu) (#1352)
+            ctx.fillText('arrows + SPACE choose · 1-8 jump · Z/Esc cancel', bx + 28, by + bh - 14)
             // tonight's moon sets the mood of the trip (#1135): one flavor
             // line per phase, always naming the phase it claims
             ctx.fillStyle = '#bcd0ec'
             ctx.font = 'italic 13px monospace'
-            ctx.fillText(gateFlavor(ph), bx + 28, by + bh - 44)
+            ctx.fillText(gateFlavor(ph), bx + 28, by + bh - 36)
         }
 
         const drawAttract = () => {
@@ -618,6 +704,11 @@ const BritanniaGame = () => {
             ctx.font = '20px monospace'
             ctx.fillStyle = '#7fe8ff'
             ctx.fillText(cycleAttract(t, ATTRACT), VIEW_W / 2, VIEW_H / 2 + 4)
+            // the goal stands on the attract screen itself (#1352): a cold
+            // start should know what the pilgrimage is without opening help
+            ctx.font = 'bold 18px monospace'
+            ctx.fillStyle = '#cfe6a8'
+            ctx.fillText('GOAL: find and ride all eight moongates', VIEW_W / 2, VIEW_H / 2 + 44)
             ctx.fillStyle = '#ffe9a8'
             ctx.font = '16px monospace'
             if ((t / 30) % 2 < 1.2) ctx.fillText('PRESS ANY KEY · TAP TO SET FORTH', VIEW_W / 2, VIEW_H / 2 + 80)
@@ -678,6 +769,8 @@ const BritanniaGame = () => {
         }
         const startGame = () => {
             S = fresh()
+            // the goal is also the first thing the new pilgrim is told (#1352)
+            S.toast = 300; S.toastMsg = 'GOAL: find and ride all eight moongates'
             setMode('play')
         }
         const onKey = (e) => {
@@ -707,10 +800,10 @@ const BritanniaGame = () => {
             const fit = containMap(VIEW_W, VIEW_H, rect.width, rect.height)
             const mx = (e.clientX - rect.left - fit.ox) / fit.s
             const my = (e.clientY - rect.top - fit.oy) / fit.s
-            const bw = 420, bh = 60 + gates.length * 40
+            const bw = GM.w, bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
             const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
             if (mx < bx || mx > bx + bw || my < by || my > by + bh) return
-            const row = Math.floor((my - (by + 46)) / 40)
+            const row = Math.floor((my - (by + GM.rowTop)) / GM.pitch)
             if (row < 0 || row >= gates.length - 1) return
             if (row !== S.hoverRow) {
                 S.hoverRow = row
@@ -725,9 +818,9 @@ const BritanniaGame = () => {
             const mx = (e.clientX - rect.left - fit.ox) / fit.s
             const my = (e.clientY - rect.top - fit.oy) / fit.s
             if (S.gate >= 0) {
-                const bw = 420, bh = 60 + gates.length * 40
+                const bw = GM.w, bh = GM.rowTop + (gates.length - 1) * GM.pitch + 44
                 const bx = VIEW_W / 2 - bw / 2, by = VIEW_H / 2 - bh / 2
-                const row = Math.floor((my - (by + 46)) / 40)
+                const row = Math.floor((my - (by + GM.rowTop)) / GM.pitch)
                 const inBox = mx >= bx && mx <= bx + bw && my >= by && my <= by + bh
                 if (inBox && row >= 0 && row < gates.length - 1) {
                     S.sel = row; taps.add('a')
