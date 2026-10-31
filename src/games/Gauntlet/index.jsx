@@ -18,7 +18,8 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
-import { plan, decide, partnerPad } from './planner.js'
+import { plan, decide, partnerPad, applyCall } from './planner.js'
+import { parseCall, intentLabel } from './voicecalls.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
 import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
@@ -34,9 +35,10 @@ import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, isRecording } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording } from '../../utils/gameContract'
 import { makeVoiceInbox, packVoiceAudio } from '../../utils/voice'
-import { createVoiceSession } from '../../utils/voiceCapture'
+import { createVoiceSession, askVoiceConsent } from '../../utils/voiceCapture'
+import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -51,6 +53,7 @@ const GauntletGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [netUi, setNetUi] = useState({ phase: 'idle', code: '', info: '', role: null })
+    const [voiceUi, setVoiceUi] = useState(null)
     const netJoinRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
@@ -83,6 +86,11 @@ const GauntletGame = () => {
         const parts = []
         const debris = []
         const revealAt = new Map()
+
+        // #1249 spoken co-op state — declared early so finish() can hand the
+        // mic back on death/win; the verbs live beside the seat below, and
+        // offNow is wired there (property call, never a TDZ dance).
+        const voiceCtl = { on: false, listen: null, said: '', label: '', ok: false, why: '', okT: 0, offNow: null }
 
         // ------------------------------------------------------------ online ----
         // #531 pilot, riding the #1039 shared lobby: ?net=host /
@@ -334,6 +342,7 @@ const GauntletGame = () => {
             const sc = gs.score
             if (win) localStorage.setItem('gauntlet.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
+            if (voiceCtl.on && voiceCtl.offNow) voiceCtl.offNow() // #1249: never leave the mic hot on the GAME OVER screen
             if (net.role && net.phase === 'play') netEnd('over')
             setMode('over')
         }
@@ -386,6 +395,63 @@ const GauntletGame = () => {
             p2Sel.l = s.left; p2Sel.r = s.right; p2Sel.a = s.a
         }
 
+        // VOICE CO-OP (#1249): shout at the maze, the seat obeys. Mic →
+        // speechListen → parseCall → applyCall freezes a goal → partnerPad
+        // steers it INSIDE the seat — the whole path ends in pads, so the sim
+        // never learns a voice exists (the issue's law: "the seat still only
+        // emits pads, like any slot"). V toggles; mic consent is the #1247
+        // ask (never auto-asked). The heard call flashes on the HUD so the
+        // player knows what was understood, and every call banks into the
+        // recording as `voiceCmd`. A trained model (Frank's lab) drops in by
+        // emitting the same intents voicecalls.parseCall returns.
+        const voicePush = () => setVoiceUi(voiceCtl.on ? { label: voiceCtl.label || 'LISTENING' } : null)
+        const voiceHeard = (raw, res) => {
+            voiceCtl.said = raw.length > 28 ? `${raw.slice(0, 28)}…` : raw
+            voiceCtl.ok = !!res.ok
+            if (res.ok) voiceCtl.label = intentLabel(res.intent)
+            voiceCtl.why = res.ok ? '' : res.why || 'NO CALL'
+            voiceCtl.okT = 200
+            recordVoiceCmd({
+                t: Math.max(1, gs.tick),
+                said: raw.slice(0, 80),
+                intent: res.ok ? res.intent.kind : null,
+                ok: !!res.ok,
+                ...(res.ok && res.intent.kind === 'goto' ? { dir: res.intent.dir } : {}),
+                ...(res.ok ? {} : { why: voiceCtl.why }),
+            })
+            if (res.ok) { audioController.playTone(880, 0.07, 'square', 0.06); audioController.playTone(1318, 0.09, 'square', 0.05, 0.07) }
+            else audioController.playTone(233, 0.12, 'sawtooth', 0.05)
+            voicePush()
+        }
+        const voiceCall = (raw) => {
+            const text = String(raw || '').trim()
+            if (!text) return null
+            const intent = parseCall(text)
+            const res = intent ? applyCall(gs, intent) : { ok: false, why: 'NOT SURE' }
+            voiceHeard(text, { ...res, intent })
+            return res
+        }
+        const voiceOn = async () => {
+            if (net.phase === 'play') { say('VOICE ORDERS WAIT FOR THE SOLO HALLS'); return }
+            if (gs.partnerHuman) { say('SOMEONE ALREADY HOLDS SEAT 2'); return }
+            if (!gs.partnerOn) { gs.partnerOn = true; gs.partnerMode = 'cpu'; syncSeat() }
+            else if (gs.partnerMode !== 'cpu') gs.partnerMode = 'cpu'
+            const consent = await askVoiceConsent()
+            if (!consent.consent) { say('NO MIC, NO ORDERS'); voiceCtl.on = false; voicePush(); return }
+            voiceCtl.on = true
+            voiceCtl.label = 'FOLLOW'
+            voiceCtl.listen = startSpeechListen({ onPhrase: (p) => voiceCall(p), onError: () => { /* the badge already tells the truth */ } })
+            voicePush()
+        }
+        const voiceOff = () => {
+            voiceCtl.on = false
+            if (voiceCtl.listen) { voiceCtl.listen.stop(); voiceCtl.listen = null }
+            voiceCtl.okT = 0
+            gs._vCmd = null
+            voicePush()
+        }
+        voiceCtl.offNow = voiceOff
+
         const doFrameSim = () => {
             if (net.phase === 'play') { netTick(); return }
             const sc = screenRef.current
@@ -398,7 +464,7 @@ const GauntletGame = () => {
                     pInp = padToInp(modelP2, seatPrev)
                     seatPrev.a = !!modelP2.a
                 } else if (p2slot.kind === 'cpu') {
-                    const raw = partnerPad(gs, seatPrev.a)
+                    const raw = partnerPad(gs, seatPrev.a, gs._vCmd)
                     pInp = { left: raw.left, right: raw.right, fwd: raw.up, back: raw.down, sword: raw.a }
                     seatPrev.a = raw.a
                 } else {
@@ -834,6 +900,32 @@ const GauntletGame = () => {
             text(`LVL ${gs.level + 1}/${gs.levelCount}`, CW - PW - 12, VH + 28, 8, '#8fb0ff', 2, 'right')
             if (toast > 0) { text(toastMsg, (VW + PW) / 2, VH + 34, 10, '#e9f7ff', 6); toast-- }
 
+            // #1249 heard-call banner + listening dot. The banner rides the
+            // bottom of the maze view (never over the HUD band): the words,
+            // then what the seat understood — green when it obeyed, red when
+            // it refused, so a misheard "corner" never reads as an order lost.
+            if (voiceCtl.on && screenRef.current === 'play' && (gs.tick >> 4) % 2 === 0) {
+                ctx.fillStyle = '#38e07b'
+                ctx.beginPath(); ctx.arc(10, 10, 3, 0, Math.PI * 2); ctx.fill()
+                text('VOICE', 17, 12, 7, '#38e07b', 4, 'left')
+            }
+            if (voiceCtl.okT > 0) {
+                voiceCtl.okT--
+                if (screenRef.current === 'play') {
+                    const line = voiceCtl.ok
+                        ? `"${voiceCtl.said}" -> ${voiceCtl.label}`
+                        : `"${voiceCtl.said}" ? ${voiceCtl.why}`
+                    ctx.font = 'bold 8px monospace'
+                    const bw = Math.min(CW - 8, ctx.measureText(line).width + 14)
+                    const bx = (VW - bw) / 2, by = VH - 17
+                    ctx.fillStyle = 'rgba(5,5,14,0.92)'
+                    ctx.fillRect(bx, by, bw, 13)
+                    ctx.strokeStyle = voiceCtl.ok ? '#2c9156' : '#8a3a3a'
+                    ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, 12)
+                    text(line, bx + bw / 2, by + 9, 8, voiceCtl.ok ? '#5dff8f' : '#ffb0a3', 4)
+                }
+            }
+
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') {
                 // #1055: while the shared room is up, the attract demo keeps
@@ -970,6 +1062,12 @@ const GauntletGame = () => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             if (net.role && ev.target && ev.target.tagName === 'INPUT') return
             if (net.role === 'guest' && net.phase !== 'play') return
+            // #1249: V summons (or dismisses) the voice seat — from the hero
+            // select screen or mid-run. Mic permission is never auto-asked.
+            if (ev.code === 'KeyV' && (screenRef.current === 'play' || screenRef.current === 'select')) {
+                if (voiceCtl.on) voiceOff(); else voiceOn()
+                return
+            }
             const sc = screenRef.current
             if (sc === 'attract') { startSelect(); return }
             if (sc === 'select') {
@@ -1119,6 +1217,20 @@ const GauntletGame = () => {
                     deathSpawned: gs.deathSpawned, end: gs.end,
                 }),
                 gameTime: () => gs.tick / 60,
+                // #1249: harness path — a spoken call without a speech engine.
+                // Downstream of the words this IS the mic path (same parse →
+                // apply → banner → record), so headless CI drives real logic.
+                voiceCall: (text) => {
+                    const res = voiceCall(text)
+                    return { said: voiceCtl.said, label: voiceCtl.label, ok: voiceCtl.ok, why: voiceCtl.why, cmd: gs._vCmd ? { kind: gs._vCmd.kind, goal: gs._vCmd.goal || null } : null, applied: res }
+                },
+                voiceMode: () => ({ on: voiceCtl.on, supported: speechSupported(), cmd: gs._vCmd ? gs._vCmd.kind : null, listening: !!voiceCtl.listen && voiceCtl.listen.active }),
+                setVoiceMode: (on) => {
+                    if (on) {
+                        if (!gs.partnerOn) { gs.partnerOn = true; gs.partnerMode = 'cpu'; syncSeat() }
+                        voiceCtl.on = true; voiceCtl.label = 'FOLLOW'; voicePush()
+                    } else voiceOff()
+                },
                 netProbe: () => ({
                     phase: net.phase, role: net.role, code: net.code, peer: net.peer,
                     tick: gs.tick, seed: gs.seed, hash: stateHash(gs),
@@ -1159,6 +1271,7 @@ const GauntletGame = () => {
             cancelAnimationFrame(raf)
             unexposeFeedbackState()
             netVoiceEnd() // #1247: never leave the mic hot after unmount
+            if (voiceCtl.listen) { voiceCtl.listen.stop(); voiceCtl.listen = null } // #1249: same law for the speech mic
             if (net.room) { try { net.room.clearRetry(); net.room.reset() } catch { /* gone */ } }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
@@ -1231,6 +1344,18 @@ const GauntletGame = () => {
                     style={{ color: netUi.voice === 'rec' ? '#38e07b' : '#8b8b98', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
                 >
                     voice: P2 {netUi.voice === 'rec' ? '✓' : '✗'}
+                </div>
+            )}
+            {/* #1249: the voice seat's badge — listening, and the order it is
+                under. Bottom-right, mirror of the guest-mic pill. */}
+            {voiceUi && screen === 'play' && !paused && (
+                <div
+                    data-voice-coop="on"
+                    data-voice-order={voiceUi.label}
+                    className="fixed z-[62] bottom-3 right-3 font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={{ color: '#ffd23f', borderColor: 'rgba(255,210,63,0.55)', background: 'rgba(0,0,0,0.35)' }}
+                >
+                    MIC ON · {voiceUi.label}
                 </div>
             )}
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
