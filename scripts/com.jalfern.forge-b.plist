@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.forge-b</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/zsh</string>
+        <string>-c</string>
+        <string>git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null; git -C /Users/jon/Dev/retrogames show origin/main:scripts/forge.sh | exec /bin/zsh -s -- "$@"</string>
+        <string>forge.sh</string>
+        <string>--foreground</string>
+        <string>b</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/jon/Dev/retrogames</string>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/launchd-b.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/launchd-b.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin</string>
+    </dict>
+</dict>
+</plist>

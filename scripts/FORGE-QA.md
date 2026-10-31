@@ -96,7 +96,21 @@ confuse the two queues.
       claim it with `scripts/qa-claim.sh` and run the normal reproduce → fix →
       gate → ship on it — it is game code, so it counts for AGENTS.md rule 4.
       One ship per session still holds.
-    No candidates and no flagship gap (`idle-kick.mjs qa` says NONE) → STOP
+     e′) **Queue build (#1258).** When there is NO claimable `feedback` item
+       but claimable `game-queue` items exist (the warden kicks the studio lane
+       exactly when the builder slots are saturated — every lane works the whole
+       queue): take the OLDEST claimable one (skip stalled, needs-approval,
+       waiting-jon/question, building, building-qa), claim it with
+       `scripts/qa-claim.sh <n> <node> "<plan>"` — it strips `game-queue` and
+       REFUSES if a builder holds the item, in which case take the next — and
+       build it as a STAGE: read `scripts/FORGE.md` §3, post the design
+       paragraph, build in YOUR `qa/<slug>` worktree (never a `forge/` branch),
+       design the look from the original per docs/ART.md. Shipping the whole
+       game in 60 min is unlikely and that is fine — at the cap, checkpoint
+       per step 6 (keep `building-qa` + the pushed branch) and the next
+       session resumes it. A real queued title outranks the flagship polish
+       stage in e): Jon's queue beats self-directed work, so try e′ before e).
+    No candidates, no queue item and no flagship gap (`idle-kick.mjs qa` says NONE) → STOP
     (comment nothing; silence is the correct output).
 
 3. **Claim:** run `scripts/qa-claim.sh <n> <your node> "<one-line plan>"`;

@@ -99,6 +99,28 @@ export const runwayBadge = (runway, now = Date.now()) => {
     return { text: runway.line, tone: stale ? 'dim' : amber ? 'amber' : polish ? 'violet' : 'green', stale }
 }
 
+// slotsLine (#1258) — the live fleet row: which of the two builder slots and
+// the QA lanes hold a session right now. Input is board.json's `slots` block
+// (baked by telemetry.sh; null entry = idle). Pure and defensive: no slots or
+// a malformed one returns null (the row hides), never throws. `busy` counts
+// running builder slots so the JSX can tone it; `fleet` carries the trial
+// state ('trial' while the 48 h #1258 trial runs, else the verdict word).
+export const slotsLine = (slots) => {
+    if (!slots || typeof slots !== 'object') return null
+    const cell = (name, s) => `${name}:${s && s.pid ? `up ${String(s.up || '').trim()}` : 'idle'}`
+    const parts = [
+        cell('builder-a', slots.a),
+        cell('builder-b', slots.b),
+        cell('qa·studio', slots.qaStudio),
+        cell('qa·mini', slots.qaMini),
+    ]
+    const busy = [slots.a, slots.b].filter((s) => s && s.pid).length
+    let fleet = null
+    if (slots.trial && slots.trial.since && !slots.trial.reported) fleet = 'trial'
+    else if (typeof slots.verdict === 'string' && slots.verdict) fleet = slots.verdict.split(' ')[0]
+    return { text: parts.join(' · ') + (fleet ? ` · fleet:${fleet}` : ''), busy, total: 2, fleet }
+}
+
 // runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
 // lane carrying the math behind its "~N days": the per-item S/M/L mix, the total
 // size, the rate (closes/day over the trailing window) and the days it yields.
