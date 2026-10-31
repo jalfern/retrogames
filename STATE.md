@@ -2,8 +2,9 @@
 
 ## Shipped this session
 **SHORT ORDER SHOUT — #1248 original co-op kitchen merged** — `582fe58`
-(PR #1288), prod verified (chunk `ShortOrderShout-wr98i1J.js` live at
-`/retrogames/short-order-shout`, the URL is in the issue's ship comment).
+(PR #1288), prod verified (`index-CPS5Fix5.js` → chunk `index-BEuwrU6u.js`
+carries the game, live at `/retrogames/short-order-shout`; URL in the issue
+ship comment).
 
 - Original IP (Jon's call: no Overcooked name/art). 13×7 deterministic grid
   kitchen: 1–4 cooks sit across a pass counter, order tickets on timers, take
@@ -48,6 +49,10 @@ Rule-4 watch: reset — game code merged this session.
   the deleted branch out and git refuses to remove the worktree.
 - STATE.md commits go straight to main only when a game merged this session
   (verified with session 60's `d74f60f`).
+- jalfern.com apex 301s to www — poll prod with `curl -L`. Prod builds rename
+  game chunks to `index-<hash>.js` (the local name `ShortOrderShout-<hash>.js`
+  404s live); verify by scanning the chunks the main index imports for the
+  game's label string, not by guessing the filename.
 
 ## Open questions for Jon
 - none open from this session (#737 still sits waiting-jon from earlier lanes).
