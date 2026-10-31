@@ -13,8 +13,8 @@ export const WORLD_Y = 44
 const PAL = {
     dirtA: '#b08050', dirtB: '#a07048', rut: '#8a5c38', speck: '#c89868', speckLo: '#7c5030',
     fenceA: '#7a6248', fenceB: '#5a4632', wire: '#c8b890',
-    gravel: '#9a9088', gravelHi: '#c0b8ac', gravelLo: '#6a6058',
-    wet: '#5c5248', wetHi: '#78695a',
+    gravel: '#a08658', gravelHi: '#d8bc84', gravelLo: '#5e4628',
+    wet: '#56483a', wetHi: '#8a7048',
     coarse: '#8d7a60', coarseHi: '#b09878', coarseLo: '#5e4c38',
     fines: '#c8a878', finesHi: '#e0c898', finesLo: '#8a7048',
     pit: '#6a4828', pitLo: '#4c3218',
@@ -89,43 +89,53 @@ function build() {
     }
 
     // --- gravel pile cells: cone size by units (0..4), wet seams speckled ----
-    S.pile = { dry: [], wet: [] }
+    // #1306 golden hour: amber cones with a long cast shadow to the lower
+    // right; wet cells shimmer between two glisten frames.
+    S.pile = { dry: [], wet: [], wetB: [] }
+    const GLINT_A = [[9, 16, 3, 2], [19, 21, 2, 2]]
+    const GLINT_B = [[13, 13, 2, 2], [22, 24, 3, 2], [7, 22, 2, 2]]
     for (let u = 0; u <= 4; u++) {
         for (const wet of [false, true]) {
-            const [c, g] = mk(TILE, TILE)
-            if (u === 0) { // dug-out pit
-                g.fillStyle = PAL.pit
-                g.fillRect(0, 0, TILE, TILE)
-                speckle(g, TILE, TILE, 14, [PAL.pitLo], u * 7 + (wet ? 3 : 1))
-                g.fillStyle = 'rgba(0,0,0,0.25)'
-                g.fillRect(4, 4, TILE - 8, TILE - 8)
-            } else {
-                g.fillStyle = wet ? PAL.wet : (u % 2 ? PAL.dirtB : PAL.dirtA)
-                g.fillRect(0, 0, TILE, TILE)
-                const hgt = 4 + u * 6
-                const base = wet ? PAL.gravelLo : PAL.gravel
-                const hi = wet ? PAL.wetHi : PAL.gravelHi
-                g.fillStyle = base
-                g.beginPath()
-                g.moveTo(2, TILE - 2)
-                g.lineTo(TILE / 2, TILE - 2 - hgt)
-                g.lineTo(TILE - 2, TILE - 2)
-                g.closePath()
-                g.fill()
-                g.fillStyle = hi
-                g.beginPath()
-                g.moveTo(TILE / 2 - 3, TILE - 8 - hgt / 2)
-                g.lineTo(TILE / 2, TILE - 2 - hgt)
-                g.lineTo(TILE / 2 + 2, TILE - 6 - hgt / 2)
-                g.closePath()
-                g.fill()
-                speckle(g, TILE, TILE - 4, u * 6 + 4, wet ? [PAL.wetHi, PAL.gravelLo] : [PAL.gravelHi, PAL.gravelLo], u * 13 + (wet ? 9 : 5))
-                if (wet) { // glisten
-                    g.fillStyle = 'rgba(90,130,160,0.35)'
-                    g.fillRect(9, 16, 3, 2); g.fillRect(19, 21, 2, 2)
+            const frames = wet ? 2 : 1
+            for (let fr = 0; fr < frames; fr++) {
+                const [c, g] = mk(TILE, TILE)
+                if (u === 0) { // dug-out pit
+                    g.fillStyle = PAL.pit
+                    g.fillRect(0, 0, TILE, TILE)
+                    speckle(g, TILE, TILE, 14, [PAL.pitLo], u * 7 + (wet ? 3 : 1))
+                    g.fillStyle = 'rgba(0,0,0,0.25)'
+                    g.fillRect(4, 4, TILE - 8, TILE - 8)
+                } else {
+                    g.fillStyle = wet ? PAL.wet : (u % 2 ? PAL.dirtB : PAL.dirtA)
+                    g.fillRect(0, 0, TILE, TILE)
+                    const hgt = 4 + u * 6
+                    g.fillStyle = 'rgba(24,12,4,0.30)' // long golden-hour shadow
+                    g.beginPath(); g.ellipse(TILE / 2 + 4, TILE - 3, 6 + u * 2.5, 3, 0, 0, Math.PI * 2); g.fill()
+                    const base = wet ? PAL.gravelLo : PAL.gravel
+                    const hi = wet ? PAL.wetHi : PAL.gravelHi
+                    g.fillStyle = base
+                    g.beginPath()
+                    g.moveTo(2, TILE - 2)
+                    g.lineTo(TILE / 2, TILE - 2 - hgt)
+                    g.lineTo(TILE - 2, TILE - 2)
+                    g.closePath()
+                    g.fill()
+                    g.fillStyle = hi
+                    g.beginPath()
+                    g.moveTo(TILE / 2 - 3, TILE - 8 - hgt / 2)
+                    g.lineTo(TILE / 2, TILE - 2 - hgt)
+                    g.lineTo(TILE / 2 + 2, TILE - 6 - hgt / 2)
+                    g.closePath()
+                    g.fill()
+                    speckle(g, TILE, TILE - 4, u * 6 + 4, wet ? [PAL.wetHi, PAL.gravelLo] : [PAL.gravelHi, PAL.gravelLo], u * 13 + (wet ? 9 : 5))
+                    if (wet) { // glisten — frame B is brighter on other pixels
+                        g.fillStyle = fr ? 'rgba(150,190,220,0.5)' : 'rgba(90,130,160,0.35)'
+                        for (const [gx, gy, gw, gh] of (fr ? GLINT_B : GLINT_A)) g.fillRect(gx, gy, gw, gh)
+                    }
                 }
+                if (!wet) S.pile.dry.push(c)
+                else S.pile[fr ? 'wetB' : 'wet'].push(c)
             }
-            S.pile[wet ? 'wet' : 'dry'].push(c)
         }
     }
 
