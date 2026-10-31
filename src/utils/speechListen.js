@@ -18,11 +18,13 @@ export function speechSupported() {
     return !!(window.SpeechRecognition || window.webkitSpeechRecognition)
 }
 
-// startSpeechListen({ onPhrase, onError?, lang? }) → { supported, active, stop }
+// startSpeechListen({ onPhrase, onHeard?, onError?, lang? }) → { supported, active, stop }
 // The returned object is the only handle: stop() disarms for good (unmount,
-// voice mode off, net play) and never restarts.
+// voice mode off, net play) and never restarts. `onHeard` (#1287) fires on
+// INTERIM results — words still in flight — purely so the HUD can flicker
+// live while someone speaks; only final transcripts reach `onPhrase`.
 export function startSpeechListen(opts = {}) {
-    const { onPhrase, onError, lang = 'en-US' } = opts
+    const { onPhrase, onHeard, onError, lang = 'en-US' } = opts
     if (!speechSupported()) return { supported: false, active: false, stop() {} }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
     let armed = true
@@ -34,7 +36,7 @@ export function startSpeechListen(opts = {}) {
         try { rec = new SR() } catch { armed = false; if (onError) onError('init-failed'); return }
         rec.lang = lang
         rec.continuous = true
-        rec.interimResults = false
+        rec.interimResults = !!onHeard
         rec.maxAlternatives = 1
         rec.onresult = (ev) => {
             if (!armed) return
@@ -43,6 +45,9 @@ export function startSpeechListen(opts = {}) {
                 if (res.isFinal) {
                     const phrase = String(res.transcript || '').trim()
                     if (phrase && onPhrase) onPhrase(phrase)
+                } else if (onHeard) {
+                    const partial = String((res[0] && res[0].transcript) || '').trim()
+                    if (partial) onHeard(partial)
                 }
             }
         }

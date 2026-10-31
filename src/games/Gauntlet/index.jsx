@@ -54,6 +54,12 @@ const GauntletGame = () => {
     const [paused, setPaused] = useState(false)
     const [netUi, setNetUi] = useState({ phase: 'idle', code: '', info: '', role: null })
     const [voiceUi, setVoiceUi] = useState(null)
+    const [voiceHints, setVoiceHints] = useState(false)
+    const voiceToggleRef = useRef(null)
+    // #1287: phones have no V key — the MIC pill becomes the toggle on
+    // touch devices (a tap, not a second stick). Coarse-pointer detection
+    // keeps the desktop HUD exactly as shipped.
+    const touchUi = typeof window !== 'undefined' && !!((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints || 0) > 0)
     const netJoinRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
@@ -90,7 +96,7 @@ const GauntletGame = () => {
         // #1249 spoken co-op state — declared early so finish() can hand the
         // mic back on death/win; the verbs live beside the seat below, and
         // offNow is wired there (property call, never a TDZ dance).
-        const voiceCtl = { on: false, listen: null, said: '', label: '', ok: false, why: '', okT: 0, offNow: null }
+        const voiceCtl = { on: false, listen: null, said: '', label: '', ok: false, why: '', okT: 0, animT: 0, pulseT: 0, offNow: null }
 
         // ------------------------------------------------------------ online ----
         // #531 pilot, riding the #1039 shared lobby: ?net=host /
@@ -411,6 +417,7 @@ const GauntletGame = () => {
             if (res.ok) voiceCtl.label = intentLabel(res.intent)
             voiceCtl.why = res.ok ? '' : res.why || 'NO CALL'
             voiceCtl.okT = 200
+            voiceCtl.animT = 0 // #1287: the banner rises + settles on arrival
             recordVoiceCmd({
                 said: raw.slice(0, 80),
                 intent: res.ok ? res.intent.kind : null,
@@ -439,7 +446,16 @@ const GauntletGame = () => {
             if (!consent.consent) { say('NO MIC, NO ORDERS'); voiceCtl.on = false; voicePush(); return }
             voiceCtl.on = true
             voiceCtl.label = 'FOLLOW'
-            voiceCtl.listen = startSpeechListen({ onPhrase: (p) => voiceCall(p), onError: () => { /* the badge already tells the truth */ } })
+            voiceCtl.listen = startSpeechListen({
+                onPhrase: (p) => voiceCall(p),
+                onHeard: () => { voiceCtl.pulseT = 8 }, // word-level flicker (#1287)
+                onError: () => { /* the badge already tells the truth */ },
+            })
+            // #1287: a player who YES'd the mic but never read the manual still
+            // knows what to shout — one-time card, exact words, tap to dismiss.
+            let seen = ''
+            try { seen = localStorage.getItem('retrogames:gauntlet-voice-hints') || '' } catch { /* private mode */ }
+            if (!seen) { try { localStorage.setItem('retrogames:gauntlet-voice-hints', '1') } catch { /* private mode */ } setVoiceHints(true) }
             voicePush()
         }
         const voiceOff = () => {
@@ -450,6 +466,7 @@ const GauntletGame = () => {
             voicePush()
         }
         voiceCtl.offNow = voiceOff
+        voiceToggleRef.current = () => { if (voiceCtl.on) voiceOff(); else voiceOn() }
 
         const doFrameSim = () => {
             if (net.phase === 'play') { netTick(); return }
@@ -903,20 +920,30 @@ const GauntletGame = () => {
             // bottom of the maze view (never over the HUD band): the words,
             // then what the seat understood — green when it obeyed, red when
             // it refused, so a misheard "corner" never reads as an order lost.
-            if (voiceCtl.on && screenRef.current === 'play' && (gs.tick >> 4) % 2 === 0) {
-                ctx.fillStyle = '#38e07b'
-                ctx.beginPath(); ctx.arc(10, 10, 3, 0, Math.PI * 2); ctx.fill()
-                text('VOICE', 17, 12, 7, '#38e07b', 4, 'left')
+            if (voiceCtl.on && screenRef.current === 'play') {
+                if (voiceCtl.pulseT > 0) voiceCtl.pulseT--
+                if ((gs.tick >> 4) % 2 === 0 || voiceCtl.pulseT > 0) {
+                    // #1287: word-level flicker — the dot swells while words
+                    // are in flight (interim recognition) or the #1257 page VU
+                    // meter (__voiceVu) is hot, and blinks plainly otherwise.
+                    const vu = Math.max(voiceCtl.pulseT > 0 ? 0.5 : 0, Math.min(1, (window.__voiceVu || 0) * 2))
+                    ctx.fillStyle = vu > 0.4 ? '#b6ffce' : '#38e07b'
+                    ctx.beginPath(); ctx.arc(10, 10, 3 + vu * 2.5, 0, Math.PI * 2); ctx.fill()
+                    text('VOICE', 17, 12, 7, '#38e07b', 4, 'left')
+                }
             }
             if (voiceCtl.okT > 0) {
                 voiceCtl.okT--
+                voiceCtl.animT++
                 if (screenRef.current === 'play') {
                     const line = voiceCtl.ok
                         ? `"${voiceCtl.said}" -> ${voiceCtl.label}`
                         : `"${voiceCtl.said}" ? ${voiceCtl.why}`
                     ctx.font = 'bold 8px monospace'
                     const bw = Math.min(CW - 8, ctx.measureText(line).width + 14)
-                    const bx = (VW - bw) / 2, by = VH - 17
+                    // #1287: rise + two-frame settle instead of popping in flat.
+                    const yo = voiceCtl.animT <= 1 ? 5 : voiceCtl.animT === 2 ? 2 : 0
+                    const bx = (VW - bw) / 2, by = VH - 17 + yo
                     ctx.fillStyle = 'rgba(5,5,14,0.92)'
                     ctx.fillRect(bx, by, bw, 13)
                     ctx.strokeStyle = voiceCtl.ok ? '#2c9156' : '#8a3a3a'
@@ -1346,15 +1373,58 @@ const GauntletGame = () => {
                 </div>
             )}
             {/* #1249: the voice seat's badge — listening, and the order it is
-                under. Bottom-right, mirror of the guest-mic pill. */}
-            {voiceUi && (screen === 'play' || screen === 'select') && !paused && (
-                <div
-                    data-voice-coop="on"
-                    data-voice-order={voiceUi.label}
+                under. Bottom-right, mirror of the guest-mic pill. #1287: the
+                pill IS the toggle — phones have no V key, so tapping it turns
+                voice co-op on (consent flow and all) or off. On touch devices
+                the pill stands ready (dimmed, "MIC · TAP") even while off. */}
+            {(voiceUi || touchUi) && (screen === 'play' || screen === 'select') && !paused && (
+                <button
+                    type="button"
+                    data-voice-coop={voiceUi ? 'on' : 'off'}
+                    {...(voiceUi ? { 'data-voice-order': voiceUi.label } : {})}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); voiceToggleRef.current?.() }}
                     className="fixed z-[62] bottom-3 right-3 font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
-                    style={{ color: '#ffd23f', borderColor: 'rgba(255,210,63,0.55)', background: 'rgba(0,0,0,0.35)' }}
+                    style={voiceUi
+                        ? { color: '#ffd23f', borderColor: 'rgba(255,210,63,0.55)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }
+                        : { color: '#8b8b98', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }}
                 >
-                    MIC ON · {voiceUi.label}
+                    {voiceUi ? `MIC ON · ${voiceUi.label}` : 'MIC · TAP'}
+                </button>
+            )}
+            {/* #1287: one-time phrase card the moment the mic is YES'd — the
+                calls in the exact words, so a player who never reads the
+                manual still knows what to shout. Tap to dismiss. */}
+            {voiceHints && (
+                <div
+                    data-voice-hints="on"
+                    className="fixed inset-0 z-[70] flex items-center justify-center"
+                    style={{ background: 'rgba(6,4,16,0.86)', fontFamily: '"Press Start 2P", monospace', color: '#e8e0ff', textAlign: 'center' }}
+                    onClick={() => setVoiceHints(false)}
+                >
+                    <div style={{ maxWidth: 430, padding: '24px 22px', border: '3px solid #ffd23f', background: '#141021', borderRadius: 8, lineHeight: 2 }}>
+                        <div style={{ fontSize: 13, color: '#ffd23f', marginBottom: 12 }}>SPEAK TO YOUR PARTNER</div>
+                        {[
+                            ['TAKE THE UPPER RIGHT', 'scout that corner'],
+                            ['GRAB THE KEY', 'fetch the key'],
+                            ['ATTACK THAT GUY', 'chase down a beast'],
+                            ['FOLLOW ME', 'rejoin your side'],
+                            ['HOLD HERE', 'guard and swing'],
+                        ].map(([call, what]) => (
+                            <div key={call} style={{ fontSize: 9, marginBottom: 6 }}>
+                                <span style={{ color: '#5dff8f' }}>“{call}”</span>
+                                <span style={{ color: '#8fa3d8' }}> — {what}</span>
+                            </div>
+                        ))}
+                        <div style={{ fontSize: 8, color: '#8fa3d8', marginTop: 10 }}>V or tap the MIC pill to switch it on and off</div>
+                        <button
+                            type="button"
+                            data-voice-hints-ok
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setVoiceHints(false) }}
+                            style={{ marginTop: 14, fontFamily: 'inherit', fontSize: 10, padding: '10px 16px', background: '#ffd23f', color: '#141021', border: 0, borderRadius: 4, cursor: 'pointer' }}
+                        >
+                            GOT IT
+                        </button>
+                    </div>
                 </div>
             )}
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
