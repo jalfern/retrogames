@@ -19,7 +19,7 @@ import { mulberry32, hashString } from '../../utils/robot/physics.js'
 export const COLS = 26
 export const ROWS = 15
 export const SHIFT = 9000 // 150 s @ 60 fps
-export const QUOTA = 300
+export const QUOTA = 1000
 export const STRIKES = 3
 
 export const CELL = {
@@ -46,7 +46,7 @@ const BAY_TICKS = 15
 const DROP_TICKS = 20
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
 const JAM_AUTO = 300 // self-resolve after 5 s
-const REPAIR_TICKS = 240
+const REPAIR_TICKS = 1200
 const TURBO_CUT = 15
 const CURSOR_STEP = 4 // keyboard/mobile cursor: one cell per 4 ticks
 const ARM_CELL = { x: 16, y: 1 }
@@ -64,7 +64,7 @@ export const RACK_SPOTS = [
     { x: 14, y: 5 }, { x: 16, y: 5 }, { x: 18, y: 5 }, { x: 20, y: 5 },
     { x: 22, y: 5 }, { x: 16, y: 7 }, { x: 20, y: 7 }, { x: 12, y: 7 },
 ]
-const HOME_PADS = [{ x: 23, y: 12 }, { x: 24, y: 12 }]
+const HOME_PADS = [{ x: 23, y: 12 }, { x: 24, y: 12 }, { x: 22, y: 12 }, { x: 21, y: 12 }]
 
 const RUSH_ON = 2700
 const RUSH_LEN = 1200
@@ -143,6 +143,12 @@ function cellClick(gs, x, y) {
         gs.ev.push({ type: 'select', x, y })
         return 'select'
     }
+    if (gs.tool === 'hire') {
+        if (gs.robots.length >= MAX_ROBOTS || gs.score < ROBOT_COST) { gs.ev.push({ type: 'poor', x: gs.cursor.x, y: gs.cursor.y }); gs.tool = null; return 'poor' }
+        hireRobot(gs)
+        gs.tool = null
+        return 'hire'
+    }
     if (gs.tool === 'rack') {
         if (map[y][x] !== CELL.FLOOR) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
         if (gs.racks.length >= RACK_SPOTS.length + 4) { gs.ev.push({ type: 'refuse', x, y }); return 'refuse' }
@@ -182,6 +188,11 @@ function cellClick(gs, x, y) {
 export const clickCell = cellClick
 
 export function setTool(gs, tool) { gs.tool = gs.tool === tool ? null : tool }
+// B cycles the build tool: none → rack → hire → none (pad/mouse parity).
+export function cycleTool(gs) {
+    gs.tool = gs.tool === null ? 'rack' : gs.tool === 'rack' ? 'hire' : null
+    return gs.tool
+}
 export function toggleAuto(gs) { gs.auto = !gs.auto; gs.ev.push({ type: 'auto', on: gs.auto }); return gs.auto }
 export function clickOrder(gs, id) {
     const o = gs.orders.find((x) => x.id === id && !o.shipped && !o.expired)
@@ -202,7 +213,7 @@ function newRobot(gs, x, y) {
         id: gs.nextBotId++, x, y, carry: null,
         task: { kind: 'idle' }, path: [], moveT: 0, wait: 0, jam: false,
         pickT: 0, broken: false, repair: 0, wear: 0,
-        wearMax: 320 + Math.floor(gs.rng() * 260), dir: 0, hist: [], stall: 0,
+        wearMax: 260 + Math.floor(gs.rng() * 180), dir: 0, hist: [], stall: 0,
     }
 }
 
@@ -292,7 +303,9 @@ function autoAssign(gs) {
 export function makeGame(seed = 1337) {
     const rng = mulberry32((seed * 2654435761 >>> 0) ^ 0x1b873593)
     const gs = {
-        seed: seed >>> 0, rng, tick: 0, score: 0, strikes: 0, auto: true,
+        seed: seed >>> 0, rng, tick: 0,
+        score: 100, // opening float — SimCity lets you lay pipe before the tax base exists
+        strikes: 0, auto: true,
         tool: null, sel: null, cursor: { x: 12, y: 7 }, cursorT: 0,
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
@@ -317,7 +330,7 @@ function spawnOrder(gs) {
     const n = gs.tick > 3000 || gs.rng() < 0.4 ? (gs.rng() < 0.22 ? 3 : 2) : 1
     const items = []
     for (let i = 0; i < n; i++) items.push(KINDS[Math.floor(gs.rng() * KINDS.length)])
-    const due = gs.tick + Math.round((items.length === 1 ? 2100 : 2700) * (rush ? 0.85 : 1))
+    const due = gs.tick + Math.round((items.length === 1 ? 1800 : 2400) * (rush ? 0.85 : 1))
     gs.orders.push({ id: gs.nextOrderId++, items, due, prio: false, shipped: false, expired: false })
     gs.ev.push({ type: 'order' })
 }
@@ -510,7 +523,7 @@ export function step(gs, pads = [{}]) {
         if (pad.down) gs.cursor.y = Math.min(ROWS - 1, gs.cursor.y + 1)
     }
     if (pad.a && !gs.prevA) cellClick(gs, gs.cursor.x, gs.cursor.y)
-    if (pad.b && !gs.prevB) setTool(gs, 'rack')
+    if (pad.b && !gs.prevB) cycleTool(gs)
     gs.prevA = !!pad.a
     gs.prevB = !!pad.b
 
@@ -520,7 +533,7 @@ export function step(gs, pads = [{}]) {
     // intake
     gs.spawnT--
     if (gs.spawnT <= 0) {
-        gs.spawnT = rush ? 90 : 160
+        gs.spawnT = rush ? 70 : 130
         if (!gs.conv.some((c) => c.x <= CONV_X0 + 1)) gs.conv.push({ kind: KINDS[Math.floor(gs.rng() * KINDS.length)], x: CONV_X0 })
         else { gs.score -= OVERFLOW_FINE; gs.ev.push({ type: 'overflow', x: CONV_X0, y: CONV_ROW }) }
     }
@@ -542,7 +555,7 @@ export function step(gs, pads = [{}]) {
     // orders
     gs.orderT--
     if (gs.orderT <= 0) {
-        gs.orderT = (rush ? 380 : 700) + Math.floor(gs.rng() * 220)
+        gs.orderT = (rush ? 320 : 540) + Math.floor(gs.rng() * 200)
         spawnOrder(gs)
     }
     for (const o of gs.orders) {
@@ -639,10 +652,17 @@ export function createAutopilot() {
         const target = s.robots.find((r) => r.broken) || s.robots.find((r) => r.jam)
 
         // expand: keep the floor ahead of the flow — racks within the belt-to-
-        // dock corridor, whenever there is spare cash beyond a reserve.
+        // dock corridor, whenever there is spare cash beyond a reserve; hire a
+        // third robot once the racks are worth more hands.
         let goal = null
+        const wantHire = s.robots.length < 3 && s.racks.length >= 8 && s.score > ROBOT_COST + 220
         if (!target && s.score > RACK_COST + 80 && s.racks.length < RACK_SPOTS.length) {
             goal = RACK_SPOTS.find((sp) => !s.racks.some((r) => r.x === sp.x && r.y === sp.y)) || null
+        }
+        if (!target && !goal && wantHire) {
+            if (s.tool !== 'hire') pad.b = flip
+            else pad.a = flip
+            return pad
         }
         if (!target && !goal) return pad
 
