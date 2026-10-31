@@ -81,11 +81,35 @@ bottle tip-meter tracks the 5-serve streak; attract teases `"CALL OUT ORDERS"`
 only (seat 2 wants a keyboard). A 4-bar synthesized diner loop (`dinerBar`,
 audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
 
+## Online lobby (#1291, stage 2)
+
+`?net=host` opens a room (the shared Lobby #1039), friends join with
+`?net=join&room=CODE` (QR on the waiting room). The protocol is
+`src/games/ShortOrderShout/net.js` (pure, Node-testable):
+
+- Seats: a browser drives the seat its relay slot owns; the host may keep one
+  extra keyboard partner seat (P, while the room has space); open seats are CPU.
+  Mobile players each own their own seat — VirtualControls feeds the device's
+  seat, not always seat 1 (`ownSeat` in index.jsx).
+- Lockstep: pads sampled ONCE, `PAD_DELAY`=10 ticks ahead (sampling law #531),
+  batched every 2nd tick as byte masks (`{t:'pad',s,k,mm:{seat:[m,m]}}`,
+  ~30 Hz/member); the whole-sim hash rides every 60 ticks and must agree with
+  EVERY peer (`createSosSync.check`). CPU seats are deterministic — they need no
+  wire, only seed + identical state (which lockstep guarantees).
+- Desync: mismatch => guests send `{t:'res',e:'req'}`, the host snapshots
+  (`snapshotGame`, rng closure peek — additive, hashes unchanged) chunked
+  <=380B over `res`; guests restore + rebuild CPU plans and play continues,
+  no reload. A dead friend (3 s stall) makes the host re-kick on a fresh seed.
+- Wire discipline: only FORWARD_TYPES, <=512B, ~93 msg/s worst case (4 members)
+  against the relay's 240/s window — proven by `npm run soslinkcheck` (31
+  assertions incl. full-shift score equality with the local reference run;
+  mutant: neuter `check()` => red).
+
 ## Honest gaps
 
-- **Online seats through the lobby = stage 2 (#1291).** The slots expose `remote`
-  and the sim is lockstep-ready (seed + pad streams), but the lobby/relay
-  wiring is not done here; 2P is local keyboard today.
+- **Voice/PTT over the relay** (issue item 3) is not wired — the relay is
+  data-only and rate-guarded; filed with the QA polish pass. The #1247 record
+  path still banks per-seat mic audio.
 - **Voice**: the recording path carries raw per-seat voice (#1247 via
   `gameContract.recordStart`); an in-game production voice toggle arrives
   with online stage 2.
