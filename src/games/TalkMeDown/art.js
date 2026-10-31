@@ -154,37 +154,40 @@ function drawWireShape(g, x0, y0, x1, y1, color, lit, pulse) {
 }
 
 export function drawNeon(g, r, m, cursorSub, pulseWire, tick) {
+    const top = r.y + Math.max(20, (r.h - 148) / 2)
+    const bot = top + 148
     // terminal strips top and bottom
     g.fillStyle = '#8a8f98'
-    g.fillRect(r.x + 6, r.y + r.h - 12, r.w - 12, 4)
-    g.fillRect(r.x + 6, r.y + 18, r.w - 12, 4)
+    g.fillRect(r.x + 6, bot - 2, r.w - 12, 4)
+    g.fillRect(r.x + 6, top - 2, r.w - 12, 4)
     const n = m.wires.length
     m.wires.forEach((w, i) => {
         const x = r.x + 22 + i * Math.floor((r.w - 56) / Math.max(1, n - 1))
         const lit = w.lit && !m.solved
         if (w.cut) { // severed: two stubs + dangling end
-            const midY = r.y + r.h / 2
+            const midY = (top + bot) / 2
             g.strokeStyle = P.wire[w.color]; g.lineWidth = 3
-            g.beginPath(); g.moveTo(x, r.y + 20); g.lineTo(x - 3, midY - 6); g.stroke()
-            g.beginPath(); g.moveTo(x + 1, r.y + r.h - 10); g.lineTo(x + 5, midY + 10); g.stroke()
+            g.beginPath(); g.moveTo(x, top + 2); g.lineTo(x - 3, midY - 6); g.stroke()
+            g.beginPath(); g.moveTo(x + 1, bot - 2); g.lineTo(x + 5, midY + 10); g.stroke()
             g.lineWidth = 1
         } else {
-            drawWireShape(g, x, r.y + 20, x + 2, r.y + r.h - 10, w.color, lit, pulseWire === i && tick % 12 < 6)
+            drawWireShape(g, x, top + 2, x + 2, bot - 2, w.color, lit, pulseWire === i && tick % 12 < 6)
         }
         if (cursorSub === i && !m.solved) {
             g.fillStyle = tick % 20 < 12 ? '#ffe66b' : '#fff'
-            g.fillRect(x - 4, r.y + r.h - 18, 9, 3)
+            g.fillRect(x - 4, bot + 6, 9, 3)
         }
     })
     g.font = FONT(6); g.fillStyle = '#7d838d'; g.fillText('NEON', r.x + 8, r.y + 14)
 }
 
 export function drawDialModule(g, r, m, pulse, tick) {
-    // knob plate + value + SET key
-    g.fillStyle = '#141416'; g.fillRect(r.x + 8, r.y + 22, 44, 30)
-    g.fillStyle = P.fuseDim; g.fillRect(r.x + 10, r.y + 24, 40, 26)
-    segDigit(g, r.x + 18, r.y + 28, m.dial, P.amber, '#3d2c10')
-    const cx = r.x + 74, cy = r.y + r.h / 2 + 4
+    // knob plate + value + SET key, arranged across the module mid-line
+    const cy = r.y + r.h / 2
+    g.fillStyle = '#141416'; g.fillRect(r.x + 10, cy - 15, 44, 30)
+    g.fillStyle = P.fuseDim; g.fillRect(r.x + 12, cy - 13, 40, 26)
+    segDigit(g, r.x + 20, cy - 9, m.dial, P.amber, '#3d2c10')
+    const cx = r.x + 90
     g.fillStyle = '#6b7078'; g.beginPath(); g.arc(cx, cy, 16, 0, 7); g.fill()
     g.fillStyle = '#3c4046'; g.beginPath(); g.arc(cx, cy, 12, 0, 7); g.fill()
     const ang = -Math.PI / 2 + (m.dial / 10) * Math.PI * 2
@@ -243,9 +246,10 @@ function glyphPath(g, gi, cx, cy, s, color) {
 }
 
 export function drawGlyphModule(g, r, m, cursorSub, pulseGlyph, seqDone, tick) {
+    const kh = Math.min(96, r.h - 28)
+    const ky = r.y + (r.h - kh) / 2 + 4
     for (let i = 0; i < 6; i++) {
         const kx = r.x + 10 + i * Math.floor((r.w - 24) / 6), kw = Math.floor((r.w - 24) / 6) - 4
-        const ky = r.y + 20, kh = r.h - 28
         const wasPressed = !m.solved && (seqDone || []).includes(i)
         const hot = (cursorSub === i && !m.solved && tick % 20 < 12) || wasPressed
         const pulse = pulseGlyph === i && tick % 12 < 6
@@ -332,7 +336,7 @@ export function drawManual(g, page, line, stamps, tick, hidden) {
     pool.forEach((v, idx) => {
         const rule = RULEBOOK[key].find(r => r.id === key + v)
         const live = stamps.includes(rule.id)
-        const lines = wrapText(g, rule.text, RAIL.w - 52)
+        const lines = wrapText(g, rule.text, RAIL.w - 66)
         if (line === idx) {
             g.fillStyle = '#2f7d43'
             g.fillText('>', RAIL.x + 28, y)
@@ -349,10 +353,6 @@ export function drawManual(g, page, line, stamps, tick, hidden) {
     FOOTER[key].forEach((ln, i) => g.fillText(ln, RAIL.x + 30, RAIL.y + RAIL.h - 64 + i * 9))
     g.font = FONT(6); g.fillStyle = '#8a8168'
     g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)
-    if (stamps.length && tick % 40 < 24) {
-        g.font = FONT(7); g.fillStyle = P.margin
-        g.fillText('LIVE: ' + stamps.join(' '), RAIL.x + 30, RAIL.y + 38 + 8)
-    }
 }
 
 // ---- chrome bits -----------------------------------------------------------

@@ -140,7 +140,7 @@ export function computeTarget(gs, m) {
 // ---- bomb generation --------------------------------------------------------
 function fuseFor(round) { return Math.max(30, 70 - round * 5) }
 function moduleCountFor(round) { return Math.min(1 + (round >> 1), 4) }
-function variantPool(type, round) {
+export function variantPool(type, round) {
     const all = RULEBOOK[type]
     // round 1-2: gentle shallow rules; deeper variants unlock round by round.
     const open = { N: [1, 2, 5, 3, 4, 6], D: [1, 2, 3, 4], G: [1, 3, 2, 4] }[type]
@@ -195,7 +195,8 @@ export function buildBomb(gs) {
     const types = ['N', 'D', 'G']
     const mods = []
     for (let i = 0; i < n; i++) {
-        const type = types[(i + round) % 3]
+        // seat the iconic wire module first — a bomb is recognizable in one glance
+        const type = i === 0 ? 'N' : types[(i + round) % 3]
         let stampId = 0
         let m = null
         for (let attempt = 0; attempt < 24 && !m; attempt++) {
@@ -479,7 +480,7 @@ export function simState(gs) {
         bolt: gs.features.bolt,
         cursor: { ...gs.cursor },
         modules: gs.modules.map(m => ({
-            stamp: m.stamp, solved: m.solved, locked: m.locked > 0,
+            stamp: m.stamp, type: m.type, solved: m.solved, locked: m.locked > 0,
             wires: m.wires ? m.wires.map(w => [w.color, w.lit ? 1 : 0, w.cut ? 1 : 0]) : undefined,
             dial: m.dial,
         })),
