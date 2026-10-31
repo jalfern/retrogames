@@ -1,69 +1,65 @@
-# STATE — session 62 (2026-10-30, slot b)
+# STATE — session 61 (2026-10-31, slot a)
 
 ## Shipped this session
-**Campfire fidelity 4 + 5 (#670)** — Jon reviewed the life-layer PR and asked
-for two things: tone down the heat-haze (it distorted the flames too much),
-and make the logs crumble into charcoal procedurally "like a proper fire",
-investigating solutions online. Both merged:
-- **#1297 haze** (`b5e0f2a`): shimmer now bends the smoke/sky *behind* the
-  plume, not the emitting gas (flame bodies excluded from luma ~0.55 up, was
-  1.2; gain halved 0.0035→0.0017 ≈3 px). Also fixed a pre-existing harness
-  break from #1262: demos' feedback.js relay probe fails CORS on `file://`,
-  tripping `zero page errors` — applied emberwoodcheck's relayNoise filter.
-- **#1300 crumble** (`531adef`): each log runs an 80–120 s hash-staggered
-  lifetime from one uniform `uBurn` — fresh log tossed in on a diagonal, char
-  thins + tip retreats + surface pitting deepens, one hash-placed chunk snaps
-  out per leaning log (planar gap, tumbles at world-g into the coal bed,
-  glows then shrinks away), stub collapses, new log in. Char→fresh-wood
-  gradient (near coals black char + ember cracks — kept Jon's glow — upper
-  parts brown). Research: websearch was DOWN all session; used DuckDuckGo
-  html endpoint → standard game-FX *dissolve-with-burn-edge* pattern
-  (noise-field thresholded by a growing burn value + glowing edge), adapted
-  from texture space to raymarched SDF.
+**GRAVEL YARD — #1253 co-op heavy-metal sandbox merged** — `0c73d26` (PR #1303),
+prod verified (`assets/index-Dtx_Khwm.js` carries `gravel-yard`; live at
+`/retrogames/gravel-yard`, private until Jon promotes, #379).
 
-## Hard-won facts (harness honesty)
-- **A state gate beats a motion gate.** Haze (this run's #1297 earlier PR)
-  can't be pixel-proved — flame self-flicker between screenshots overlaps it.
-  But crumble IS provable because it's a *state*, not motion: log phases are
-  pure functions of `uBurn`, so pinned clocks are identical across runs. Gate
-  B (rubble-vs-tepee pile mean-R) needs TWO controls: pin the flare (new
-  `setFlare(x)` DEV hook) AND interleave the two clocks per sample. Without
-  them Δ swung −3..+7 (flare's 0.45–1.5 swing swamps the ~16 separation);
-  pinned+interleaved Δ=18.2–19.2, gate at 8. Mutant uBurn→0 gives Δ=−0.0.
-- Contract and pixel gates catch different faults: removing a hook reddens the
-  contract gate but not the pixel gate (crumble still shows); pinning uBurn
-  reddens the pixel gate but not the contract. Both green ≠ bug; keep both.
-- The ember gate was itself silently a flare-phase meter — unpinned it once
-  read 825 vs 8 ember px across two frames. Pin the flare there too.
+- The chain IS the game: pile -> digger bucket(3) -> shaker hopper(6) -> gate
+  (WIDE 75% coarse / MED 50 / NARROW 20) -> graded bays(8) -> truck bed(4) ->
+  tip against an order -> credit. 180 s shifts, quota 600C, three refusals at
+  the gate ruin the shift. Wet seams jam the screen — jog it B (1+wet times).
+- **Split info (#1253 design rule)**: moisture only at the pile, grade chart
+  only on the plant, orders only on the truck's board — radio callouts (fx
+  `radio`) say what the SHOUTING seat sees, so a solo crew plays by ear.
+- One pad law all seats: arrows drive where you face, A works the faced cell,
+  B releases it. Seats: 0 digger (you), 1 truck (P = human, WASD+F/G), 2 the
+  screen operator (CPU locally; model-ready via contract). Unfilled = CPU
+  emitters, pads only (#494).
+- Deterministic core (`engine.js`, mulberry32 + FNV). Win proof: full-CPU crew
+  quota on **8/8 seeds** (663-985C); slack (one unit less EVERY pile cell)
+  **7/8**; two-handed 8/8. `simulate(seed, players)` is the reference driver.
+- Harness: `gravelcheck` 53 gates (rules, determinism, win+slack, browser boot,
+  contract determinism, in-browser CPU-brain proof) + `gravelplay` 20 real-key
+  gates (dig+dump chain by keystroke, pixel-vs-sim both ways, pause freeze,
+  over-screen + SPACE restart, tap-to-start). Mutant: drop `gs.strikes++` in
+  tip() -> red x2; restore -> green. contractcheck gravel-yard 14/14.
+- #1253 closed shipped; polish pass filed as **#1306** (amber cones + wet
+  shimmer, boom/tip animation, engine idle drone + per-seat radio timbres,
+  cents ticker + CLEAN SHIFT stamp, attract seeded to a tip moment, mic that
+  lets a truck-seat human SHOUT orders — Gauntlet's voicecalls is the pattern).
 
 ## Next goal
-Unchanged game queue (oldest-first per the ladder): **#1252 BOMB DEFUSE,
-#1253 GRAVEL YARD, #1254 FIRE CREW, #1259 forge-watch hardening, #1144
-follow-ups**. Rule-4 watch: reset — game/demo code merged this session.
+Game queue (oldest first): **#1254 FIRE CREW**, then platform-labeled items
+(#1291 kitchen online lobby, #1259 forge-watch, #1290 mini-whole-queue — the
+mini/platform lane's own picks). #1141 stays platform-lane.
+**#1252 BOMB DEFUSE** still carries `building` + slot b's design comment
+("TALK ME DOWN") but has NO pushed branch — if slot b's claim stamp goes stale
+(90 min), it is claimable and its design comment is the spec to resume from.
+Rule-4 watch: reset — game code merged this session.
 
 ## Harness
-- campfirecheck now 23 gates (was 21): +`burn clock hooks wired` (contract),
-  +`logs crumble with the burn clock` (state pixel gate); ember gate now
-  flare-pinned. Mutants 5 documented in its header (uBurn→0 → crumble red;
-  hook removed → contract red). All green ×4 runs; frame time unchanged
-  16.7 ms @1600×1000 (45 ms budget) despite extra SDF segments + pitting.
+- `gravelcheck`/`gravelplay` join the suite (aliases in package.json).
+- `gravel-yard` wired into contractGames (GAMES + wiggle pattern).
 
 ## Environment notes
-- Slot b: worktree `~/Dev/retrogames-forge-campfire-fidelity` (detached at
-  origin/main `531adef`; branches merged+deleted, node_modules symlinked to
-  main checkout — playwright-core resolves). No port needed (demos run
-  file://).
-- Prod verified live (`531adef`): crumble symbols + toned haze present on
-  jalfern.com/retrogames/demos/campfire.html (apex 301s to www — curl -L).
-- websearch tool returned "Web search cancelled" 3×; webfetch to shadertoy
-  403'd. DuckDuckGo html endpoint (`html.duckduckgo.com/html/?q=…`) works
-  as the research fallback — use it next time search is needed.
+- Slot a worked in `~/Dev/retrogames-forge-gravel-yard` (merged; worktree left
+  detached at origin/main). Port 5173, `npm run dev -- --port 5173 --strictPort`;
+  dev server STOPPED at session end.
+- `forge-claim.sh` needs `bash` (no exec bit). Refused on #1252 (fresh b stamp)
+  and took the ladder: #1253.
+- Two lessons this shift: machines act on the cell they FACE — plan routes to
+  STAND cells, never the face cell (hopper/console became solid plant faces);
+  and an original game's "unreachable" clue is topology — dug-out pile cells
+  must become driveable or interior seams starve the crew (seed 4 scored 0).
 
 ## Open questions for Jon
-- none open from this session.
+- none open from this session (#737 still sits waiting-jon from earlier lanes).
 
 ## Carry-over
-- #1291 SHORT ORDER SHOUT stage 2 — online kitchen lobby (game-queue).
-- #1292 QA polish pass for SHORT ORDER SHOUT (feedback — QA lane's job).
-- #1287 QA polish on GAUNTLET voice co-op; #1141 stage 4 (platform lane),
-  #1266/#1275 QA follow-ups, 48 h trial verdict (~Nov 1) posts on #1258.
+- #1306 QA polish pass on GRAVEL YARD (feedback — QA lane's job).
+- #1287 QA polish pass on GAUNTLET voiced co-op (feedback).
+- #1291 SHORT ORDER SHOUT stage 2 online lobby (next kitchen-scale build;
+  GRAVEL YARD's seats are lockstep-ready for the same plumbing).
+- #1141 stage 4 (platform lane), #1266/#1275 QA follow-ups, 48 h trial verdict
+  (~Nov 1) posts on #1258.
