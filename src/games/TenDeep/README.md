@@ -152,6 +152,23 @@ stat you pick at the bench.
     per visited floor, amber on the current one, a green `v` where the stairs
     were seen and a red `K` at the throne — `st.marks` is the sim's pen-and-
     paper memory, written once per floor by `markView`, surviving descent.
+- First-time-player pass (#1351, pinned in tendeepplay): toasts decay per
+  SIM frame — 150 frames is 2.5 s of screen time, not the old 15 s stall; a
+  wall bump gets a 12-frame darken + shake beat (presentation-only, probe
+  `bump`); automap cells grew to 6 px and a faint UNIFORM dot grid fills the
+  box (dots reveal no walls — the explored ink is still the only truth); the
+  town footer + controls line paints in-canvas at 176..200 (the rim's
+  convention — the old H-24 band belongs to the party strip, which
+  overpainted it); the party cards print `hp/maxHp` where the class tag used
+  to sit (the class still prints in full on every town screen); on touch the
+  letterbox reserves the pad band (vpadSize's law) and lifts the stage above
+  it, and the site footer opts out (`footer: 'none'` — the strip is the
+  game's own bottom surface).
+- hudfit's measurement was font-blind (the pass found it): `fitSize`/
+  `fitTwoCols` measured every candidate size with `ctx.measureText` at the
+  font the caller left behind, so a 5-char `hp/maxHp` string "didn't fit"
+  the column and printed `40…`. `measure()` now sets and restores `ctx.font`
+  per candidate; the Node estimator was already size-aware.
 - Harness hooks (DEV): `window.__deepTest` (probe/start/cmd/setup/hash),
   DebugKit with PROGNOSIS (re-solves the LIVE mutated state).
 

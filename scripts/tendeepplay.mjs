@@ -132,6 +132,17 @@ await wait(300)
 let s = await probe()
 r.check('any key starts at THE RIM', s.screen === 'play' && s.mode === 'town' && s.town && s.town.b === null, `screen=${s.screen} mode=${s.mode}`)
 r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.gold}`)
+// #1351: the toast is on screen the instant the run starts…
+r.check('a start toast is on screen', s.toast === true, `toast=${s.toast}`)
+// #1351: …and the party strip prints HP figures — the right column of every
+// card carries ink (all six stand at the RIM; a dead card would print red).
+// A 5 px glyph is mostly anti-aliased edge blends on the dark card, so the
+// filter counts near-white ink, not just full-brightness cores — it still
+// excludes the gold level tag (B=79), the red HP bar (G=72) and the blue MP
+// bar (R=79), none of which can wear an HP number.
+let hpLit = 0
+for (let i = 0; i < 6; i++) hpLit += await px(4 + i * 42 + 18, 215, 18, 7, 'canvas[data-deep-view]', (R, G, B) => R > 110 && G > 110 && B > 120)
+r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in the HP column=${hpLit}`)
 {
     const a = await probe()
     await tap('ArrowRight')
@@ -143,6 +154,13 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
     // temple windows: pale blue glass on the interior wash
     const glass = await px(8, 26, 240, 120, 'canvas[data-deep-view]', (R, G, B) => B > 110 && B > R + 20 && G > 60)
     r.check('the interior paints its room (temple wash on screen)', glass > 200, `lit px=${glass}`)
+    // #1351: the shop's purse + controls line is painted IN the canvas at
+    // 176..200 (the rim's convention) — the old H-24 band is the party
+    // strip's, which overpainted these lines, so the DOM strip was the only
+    // hint a first-time player saw
+    const stripDark = await px(0, 176, 256, 24, 'canvas[data-deep-view]', (R, G, B) => R < 30 && G < 30 && B < 60)
+    const stripText = await px(0, 176, 256, 24, 'canvas[data-deep-view]', (R, G, B) => R + G + B > 400)
+    r.check('the interior footer (purse + controls) is painted in-canvas above the party strip', stripDark > 3000 && stripText > 60, `dark=${stripDark} text=${stripText}`)
     await tap('KeyL')
     const d = await probe()
     r.check('L steps back out to the street', d.town && d.town.b === null, `b=${d.town && d.town.b}`)
@@ -161,10 +179,24 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
     await tap('ArrowRight')
     const c = await probe()
     r.check('ARROW RIGHT turns', c.dir === (a.dir + 1) % 4, `dir ${a.dir} -> ${c.dir}`)
-    // automap: the amber cursor sits on the SIM cell
-    const [mx, my] = [c.x * 5, c.y * 5]
-    const amber2 = await px(mx, my, 5, 5, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
-    r.check('the automap paints the party where the sim says', amber2 >= 18, `cell (${c.x},${c.y}) amber=${amber2}/25`)
+    // automap: the amber cursor sits on the SIM cell (6 px cells — #1351)
+    const [mx, my] = [c.x * 6, c.y * 6]
+    const amber2 = await px(mx, my, 6, 6, 'canvas[data-deep-map]', (R, G, B) => R > 200 && G > 170 && B < 130)
+    r.check('the automap paints the party where the sim says', amber2 >= 20, `cell (${c.x},${c.y}) amber=${amber2}/36`)
+    // #1351: a faint dot grid fills the box — the 19x19 field reads as a map
+    // before a single cell is inked (uniform dots reveal no walls); the dim
+    // explored ink counts too, the bright ring does not — 361 cells, ≤25 bright
+    const dots = await px(0, 0, 114, 114, 'canvas[data-deep-map]', (R, G, B) => R > 16 && R < 40 && G > 24 && G < 48 && B > 56 && B < 90)
+    r.check('the automap fills its box with the dot grid', dots >= 300, `grid px=${dots}`)
+}
+
+// #1351: the toast decays per SIM frame — 150 frames is 2.5 s of screen time,
+// not the old 15 s stall that sat dead centre of the corridor (the last say
+// here was the temple door, ~2.5 s back by now)
+{
+    let toastGone = false
+    for (let i = 0; i < 70 && !toastGone; i++) { toastGone = !(await probe()).toast; if (!toastGone) await wait(100) }
+    r.check('the toast fades on its own (per-frame decay, ~2.5 s)', toastGone, 'toast still up 7 s after the last say')
 }
 
 // ---- 3. the view matches the grid: torch-lit brick vs darkness (or the
@@ -312,9 +344,18 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
         for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
         await settle()
         await page.keyboard.press('ArrowUp')
+        // #1351: the refusal gets a beat — a shake + darken the player can
+        // see. The beat is 12 paint frames, so poll fast: at 120 Hz it is
+        // gone in ~100 ms
+        let bumpSeen = false
+        for (let i = 0; i < 20 && !bumpSeen; i++) { bumpSeen = !!(await probe()).bump; if (!bumpSeen) await wait(25) }
         await wait(60)
         const bump = await probe()
         r.check('a bump into a wall does not glide (no lunge on a refusal)', bump.glLag === 0, `lag=${bump.glLag.toFixed(3)} wallDist=${bump.view.wallDist}`)
+        r.check('a bump into a wall shakes and darkens the view', bumpSeen, 'no bump beat seen within ~500 ms')
+        let bumpCleared = false
+        for (let i = 0; i < 60 && !bumpCleared; i++) { bumpCleared = !(await probe()).bump; if (!bumpCleared) await wait(60) }
+        r.check('the bump beat clears on its own', bumpCleared, 'bump stuck')
     }
     else {
         const litWin = [96, 8, 64, 48]
@@ -339,8 +380,16 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
         for (let t = 0; t < 4 && (await probe()).view.wallDist !== 1; t++) await tap('ArrowRight')
         await settleE()
         await page.keyboard.press('ArrowUp')
+        // #1351: the bump beat (shake + darken) — poll fast: the beat is 12
+        // paint frames, short at high refresh rates
+        let bumpSeen = false
+        for (let i = 0; i < 20 && !bumpSeen; i++) { bumpSeen = !!(await probe()).bump; if (!bumpSeen) await wait(25) }
         const bump = await probe()
         r.check('a bump into a wall does not ease (no lunge on a refusal)', bump.ease === 0, `ease=${bump.ease} wallDist=${bump.view.wallDist}`)
+        r.check('a bump into a wall shakes and darkens the view', bumpSeen, 'no bump beat seen within ~500 ms')
+        let bumpCleared = false
+        for (let i = 0; i < 60 && !bumpCleared; i++) { bumpCleared = !(await probe()).bump; if (!bumpCleared) await wait(60) }
+        r.check('the bump beat clears on its own', bumpCleared, 'bump stuck')
     }
 }
 
