@@ -79,6 +79,10 @@ TPS=$(node /tmp/forge/tps.mjs 2>/dev/null)
 
 S_UP=false; pgrep -f 'opencode run.*THE FORGE( on slot a)?\.' >/dev/null 2>&1 && S_UP=true
 T_UP=false; pgrep -f 'opencode run.*THE FORGE on slot b\.' >/dev/null 2>&1 && T_UP=true
+# QA lanes too (#1299): the tokens ledger carries all four slot flags so the
+# trial report can reconstruct session spans (who was alive, for how long).
+Q_UP=false; pgrep -f 'opencode run.*QA MASTER on node studio\.' >/dev/null 2>&1 && Q_UP=true
+M_UP=false; pgrep -f 'opencode run.*QA MASTER on node mini\.' >/dev/null 2>&1 && M_UP=true
 
 # Three panes, same names as the home terminal: Builder / QA·Mini / QA·MBP.
 # The studio's own oMLX server and the warden are plumbing, not lanes — they
@@ -92,11 +96,11 @@ S="{\"t\":\"$(date +%H:%M:%S)\",\"ts\":$(date +%s),\"load\":$LOAD,\"free\":${FRE
 \"tasks\":{$(task 'opencode run.*THE FORGE' builder),\
 \"mini\":{\"cpu\":$MC,\"rss\":$MR},\"mbp\":{\"cpu\":$BC,\"rss\":$BR}},\
 \"tps\":$TPS,\
-\"slots\":{\"a\":$S_UP,\"b\":$T_UP},\
+\"slots\":{\"a\":$S_UP,\"b\":$T_UP,\"qaStudio\":$Q_UP,\"qaMini\":$M_UP},\
 \"commit\":$(printf '%s' "$COMMIT" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))'),\"act\":{\"builder\":$(act "$(readlink /tmp/forge/last.log)"),\"qa\":$(act "$(readlink /tmp/forge/last-qa.log)"),\"mbp\":$(act "$(readlink /tmp/forge/last-qa-mbp.log)")}}"
 
 python3 - "$LOCAL" "$S" <<'PYS'
-import os, sys
+import json, os, sys
 path, sample = sys.argv[1], sys.argv[2]
 try:
     lines = open(path).read().splitlines()
@@ -108,6 +112,23 @@ lines = lines[-288:]   # 24 h at 5 min
 with open(path + '.tmp', 'w') as f:
     f.write('\n'.join(lines) + '\n')
 os.replace(path + '.tmp', path)   # atomic: readers never see a torn line
+
+# tokens ledger (#1299) — ts/tps/slots on a LONGER retention than telemetry.jsonl
+# (24 h keeps too little for the 48 h trial). The trial report derives exact
+# tokens/hr from tps.tot counter deltas and stream counts from tps.n here.
+LEDGER = '/tmp/forge/tokens.jsonl'
+try:
+    obj = json.loads(sample)
+    if obj.get('ts') and obj.get('tps'):
+        row = json.dumps({'ts': obj['ts'], 'tps': obj['tps'], 'slots': obj.get('slots')})
+        with open(LEDGER, 'a') as f:
+            f.write(row + '\n')
+        keep = open(LEDGER).read().splitlines()[-2016:]   # ~7 d at 5 min
+        with open(LEDGER + '.tmp', 'w') as f:
+            f.write('\n'.join(keep) + '\n')
+        os.replace(LEDGER + '.tmp', LEDGER)
+except Exception:
+    pass   # a ledger hiccup must never kill the pulse
 PYS
 
 python3 - "$S" <<'PY'
