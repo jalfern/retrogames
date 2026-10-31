@@ -1,0 +1,674 @@
+// RALLY CO-DRIVER (#1251) — an original 2P night rally: the road hides itself
+// behind crests, and the co-driver's pace notes are the only thing that tells
+// you what is over the top. The sim (sim.js/stage.js/calls.js) is pure and
+// node-audited (rallycheck); this file is the shell: the loop, the night
+// render, the three co-driver sources (CPU / note keys / voice), the HUD.
+//
+// Seating (#494): seat 1 = the driver (arrows + A), seat 2 = the co-driver —
+// CPU by default, the QWE/ASD/Z note keys on desktop, or V for spoken notes
+// (#1247 consent + #1249-style speechListen). Lobby seats are stage 2.
+
+import { useEffect, useRef, useState } from 'react'
+import PauseOverlay from '../../components/PauseOverlay'
+import VirtualControls from '../../components/VirtualControls'
+import { GAMES } from '../../config/games'
+import { audioController } from '../../utils/AudioController'
+import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { askVoiceConsent } from '../../utils/voiceCapture'
+import { startSpeechListen, speechSupported } from '../../utils/speechListen'
+import {
+    createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
+    stageAt, distAhead,
+    ROAD_HALF, SHOULDER, FOG_RANGE, VMAX,
+} from './sim.js'
+import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
+
+const SIM_MS = 1000 / 60
+const W = 480
+const H = 270
+const SC = 1.1            // world units -> px
+const CY = H * 0.62       // the car's screen row
+const KM_PER_UNIT = 0.15 * 3.6 * 60 // v (units/tick) -> km/h at 60 Hz
+
+const G = GAMES.find((g) => g.label === 'RALLY CO-DRIVER')
+
+const ATTRACT_MSGS = [
+    'NIGHT. FOG. BLIND CRESTS.',
+    'THE CO-DRIVER SEES WHAT YOU CANNOT',
+    'EVERY CORNER IS CALLED BEFORE THE HILL',
+    'LISTEN FOR “LEFT 2, THEN RIGHT 3”',
+    'C: CO-DRIVER KEYS · V: SPEAK THE NOTES',
+]
+
+// desktop 2P: the co-driver's note keys. QWE = LEFT 1/2/3, ASD = RIGHT 1/2/3,
+// Z = STRAIGHT. A note is a moment (a tap), not a hold.
+const CO_KEYS = {
+    KeyQ: { dir: -1, sev: 1 }, KeyW: { dir: -1, sev: 2 }, KeyE: { dir: -1, sev: 3 },
+    KeyA: { dir: 1, sev: 1 }, KeyS: { dir: 1, sev: 2 }, KeyD: { dir: 1, sev: 3 },
+    KeyZ: { dir: 0, sev: 1 },
+}
+
+function fmtTime(ms) {
+    const m = Math.floor(ms / 60000)
+    const s = Math.floor(ms / 1000) % 60
+    const c = Math.floor(ms / 10) % 100
+    return `${m}:${String(s).padStart(2, '0')}.${String(c).padStart(2, '0')}`
+}
+
+// world -> screen for a stage-following camera (north-up; the ribbon meanders)
+function worldToScreen(ctx2, cx, cy, wx, wy) {
+    return [ (wx - cx) * SC + W / 2, (wy - cy) * SC + CY ]
+}
+
+export default function RallyCoDriver() {
+    const wrapRef = useRef(null)
+    const canvasRef = useRef(null)
+    const [screen, setScreen] = useState('attract')
+    const [paused, setPaused] = useState(false)
+    const [voiceUi, setVoiceUi] = useState(null) // { on, said, ok, label }
+    const [coMode, setCoMode] = useState('cpu') // cpu | human (voice rides the cpu seat)
+
+    useEffect(() => {
+        const wrap = wrapRef.current
+        if (!wrap) return undefined
+        const LITE = new URLSearchParams(location.search).has('lite')
+        const canvas = document.createElement('canvas')
+        canvas.width = W
+        canvas.height = H
+        canvas.className = 'block'
+        canvas.style.width = '100%'
+        canvas.style.aspectRatio = `${W}/${H}`
+        canvas.style.imageRendering = 'pixelated'
+        canvas.style.touchAction = 'none'
+        wrap.appendChild(canvas)
+        canvasRef.current = canvas
+        const ctx = canvas.getContext('2d')
+        ctx.imageSmoothingEnabled = false
+
+        const screenRef = { cur: 'attract' }
+        const setScreenBoth = (s) => { screenRef.cur = s; setScreen(s) }
+        const pausedRef = { cur: false }
+
+        let seedRef = { cur: 1 }
+        let attractSeed = 0x5eed
+        const play = { g: createSim(seedRef.cur, 2) }
+        const attract = { g: createSim(attractSeed, 2) }
+        const best = { t: null }
+        const hintUntil = { t: 0 }
+
+        // driver input: held keys (keyboard + VirtualControls dispatch the
+        // same keydown events, so phones and keys share one path)
+        const keys = { up: false, down: false, left: false, right: false, a: false }
+
+        const voice = { on: false, listen: null }
+        const pushVoice = () => setVoiceUi(voice.on ? { on: true, said: voice.said, ok: voice.ok, label: voice.label } : null)
+
+        const startRace = () => {
+            play.g = createSim(seedRef.cur, 2)
+            play.g.co.kind = 'cpu'
+            setCoMode('cpu')
+            voice.said = ''; voice.ok = false; voice.label = ''
+            pushVoice()
+            hintUntil.t = play.g.tick + 420
+            setScreenBoth('play')
+            audioController.playTone(440, 0.07, 'square', 0.06)
+            audioController.playTone(660, 0.09, 'square', 0.06, 0.08)
+        }
+
+        const driverPad = () => ({
+            up: keys.up, down: keys.down, left: keys.left, right: keys.right, a: keys.a,
+        })
+
+        const coPad = (g) => (g.co.kind === 'cpu' ? cpuCoDriverPad(g) : {})
+
+        // ---- voice (V) — spoken notes into the cpu co-driver seat -----------
+        const voiceStop = () => {
+            voice.on = false
+            if (voice.listen) { voice.listen.stop(); voice.listen = null }
+            pushVoice()
+        }
+        const voiceOn = async () => {
+            if (screenRef.cur !== 'play') return
+            if (play.g.co.kind === 'human') { say('THE KEYS HOLD SEAT 2 — PRESS C') }
+            if (voice.on) { voiceStop(); return }
+            if (!speechSupported()) { say('NO SPEECH ENGINE ON THIS DEVICE') }
+            const consent = await askVoiceConsent()
+            if (!consent.consent) { say('NO MIC, NO NOTES'); return }
+            voice.on = true
+            voice.label = 'LISTENING'
+            voice.listen = startSpeechListen({
+                onPhrase: (p) => {
+                    if (screenRef.cur !== 'play') return
+                    const call = parseCoCall(p)
+                    voice.said = p.length > 22 ? `${p.slice(0, 22)}…` : p
+                    voice.ok = !!call
+                    voice.label = call ? callLabel(call) : 'NO NOTE'
+                    if (call) {
+                        applyCallEvent(play.g, call, 'voice')
+                        audioController.playTone(880, 0.06, 'square', 0.05)
+                        audioController.playTone(1318, 0.08, 'square', 0.04, 0.06)
+                    } else audioController.playTone(233, 0.1, 'sawtooth', 0.04)
+                    pushVoice()
+                },
+                onError: () => { /* the badge already tells the truth */ },
+            })
+            pushVoice()
+        }
+
+        // a short centered line, one at a time (ART rule)
+        let sayUntil = 0
+        let sayText = ''
+        const say = (t) => { sayText = t; sayUntil = performance.now() + 1800 }
+
+        const onKey = (e, down) => {
+            if (down && e.repeat) return
+            const code = e.code
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(code)) e.preventDefault()
+            if (code === 'Question' || code === 'Escape' || code === 'Backquote') {
+                if (down && screenRef.cur !== 'attract') {
+                    pausedRef.cur = !pausedRef.cur
+                    setPaused(pausedRef.cur)
+                    if (pausedRef.cur) voiceStop()
+                }
+                return
+            }
+            if (pausedRef.cur) return
+            if (screenRef.cur === 'attract') { if (down) startRace(); return }
+            if (screenRef.cur === 'over') { if (down && (code === 'Space' || code === 'Enter')) startRace(); return }
+            // play
+            if (code === 'KeyC' && down) {
+                if (voice.on) voiceStop()
+                play.g.co.kind = play.g.co.kind === 'cpu' ? 'human' : 'cpu'
+                setCoMode(play.g.co.kind)
+                say(play.g.co.kind === 'human' ? 'SEAT 2: QWE LEFT · ASD RIGHT · Z STRAIGHT' : 'SEAT 2: CO-D CPU')
+                return
+            }
+            if (code === 'KeyV' && down) { voiceOn(); return }
+            if (code === 'ArrowUp') keys.up = down
+            if (code === 'ArrowDown') keys.down = down
+            if (code === 'ArrowLeft') keys.left = down
+            if (code === 'ArrowRight') keys.right = down
+            if (code === 'Space') keys.a = down
+            // human co-driver: a note is a tap
+            if (down && play.g.co.kind === 'human' && CO_KEYS[code]) {
+                const call = CO_KEYS[code]
+                applyCallEvent(play.g, call, 'human')
+                audioController.playTone(call.dir === 0 ? 520 : 620 + call.sev * 90, 0.05, 'square', 0.05)
+            }
+        }
+        const kd = (e) => onKey(e, true)
+        const ku = (e) => onKey(e, false)
+        const tap = () => {
+            if (pausedRef.cur) return
+            if (screenRef.cur === 'attract') startRace()
+            else if (screenRef.cur === 'over') startRace()
+        }
+        window.addEventListener('keydown', kd)
+        window.addEventListener('keyup', ku)
+        canvas.addEventListener('pointerdown', tap)
+
+        // ---- juice from sim events ------------------------------------------
+        const juice = (g) => {
+            for (const e of g.events) {
+                if (e.kind === 'note') {
+                    audioController.playTone(660, 0.05, 'square', 0.04)
+                    audioController.playTone(990, 0.07, 'square', 0.03, 0.05)
+                } else if (e.kind === 'noisecall') {
+                    audioController.playTone(220, 0.1, 'sawtooth', 0.04)
+                } else if (e.kind === 'lap') {
+                    audioController.playTone(523, 0.08, 'square', 0.06)
+                    audioController.playTone(784, 0.1, 'square', 0.06, 0.09)
+                } else if (e.kind === 'finish') {
+                    audioController.playTone(523, 0.09, 'square', 0.07)
+                    audioController.playTone(659, 0.09, 'square', 0.07, 0.1)
+                    audioController.playTone(784, 0.09, 'square', 0.07, 0.2)
+                    audioController.playTone(1046, 0.16, 'square', 0.07, 0.3)
+                }
+            }
+            g.events.length = 0
+            if (g.tick % 5 === 0 && g.car.v > 0.4 && screenRef.cur === 'play') {
+                audioController.playTone(44 + g.car.v * 26, 0.04, 'sawtooth', 0.011)
+            }
+        }
+
+        // ---- the loop (one driver, fixed timestep, contract can hold it) ----
+        let raf = 0
+        let last = performance.now()
+        let acc = 0
+        let offWas = false
+
+        const simStep = () => {
+            if (screenRef.cur === 'attract') {
+                const g = attract.g
+                tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
+                if (g.done) {
+                    attractSeed = (attractSeed * 1103515245 + 12345) & 0x7fffffff
+                    attract.g = createSim(attractSeed, 2)
+                }
+                return
+            }
+            if (screenRef.cur !== 'play') return
+            const g = play.g
+            if (g.car.off && !offWas) audioController.playNoise(0.12, 0.03)
+            offWas = g.car.off
+            tickSim(g, [driverPad(), coPad(g)])
+            juice(g)
+            if (g.done) {
+                const t = state(g).score
+                if (best.t == null || t < best.t) best.t = t
+                setScreenBoth('over')
+                voiceStop()
+            }
+        }
+
+        // ---- the night render -------------------------------------------------
+        const roadPts = (g) => {
+            // samples behind the car (always visible) and ahead to the fog cut
+            const car = g.car
+            const out = []
+            const step = LITE ? 8 : 6
+            for (let d = -80; d <= g.vis + 8; d += step) {
+                const s = car.s + d
+                const p = stageAt(g.stage, s)
+                const nx = -Math.sin(p.heading), ny = Math.cos(p.heading) // right vector
+                out.push({
+                    d,
+                    lx: p.x + nx * (ROAD_HALF + SHOULDER), ly: p.y + ny * (ROAD_HALF + SHOULDER),
+                    rx: p.x - nx * (ROAD_HALF + SHOULDER), ry: p.y - ny * (ROAD_HALF + SHOULDER),
+                    cx: p.x, cy: p.y,
+                    cxL: p.x + nx * -ROAD_HALF, cyL: p.y + ny * -ROAD_HALF,
+                    cxR: p.x + nx * ROAD_HALF, cyR: p.y + ny * ROAD_HALF,
+                })
+            }
+            return out
+        }
+
+        const fogAlpha = (d, vis) => {
+            // solid near the car, gone at the fog cut — the road literally
+            // stops existing where the hill or the fog eats it
+            if (d < 0) return 1
+            if (d >= vis) return 0
+            if (d < vis * 0.65) return 1
+            return (vis - d) / (vis * 0.35)
+        }
+
+        // a road band between two named edges over the given samples, fog-faded
+        // at its mid-distance (the road literally stops existing at the cut)
+        const band = (pts, xa, ya, xb, yb, fill, vis) => {
+            if (pts.length < 2) return
+            ctx.beginPath()
+            const [x0, y0] = worldToScreen(ctx, cam.x, cam.y, pts[0][xa], pts[0][ya])
+            ctx.moveTo(x0, y0)
+            for (let i = 1; i < pts.length; i++) {
+                const [x, y] = worldToScreen(ctx, cam.x, cam.y, pts[i][xa], pts[i][ya])
+                ctx.lineTo(x, y)
+            }
+            for (let i = pts.length - 1; i >= 0; i--) {
+                const [x, y] = worldToScreen(ctx, cam.x, cam.y, pts[i][xb], pts[i][yb])
+                ctx.lineTo(x, y)
+            }
+            ctx.closePath()
+            ctx.globalAlpha = fogAlpha((pts[0].d + pts[pts.length - 1].d) / 2, vis)
+            ctx.fillStyle = fill
+            ctx.fill()
+            ctx.globalAlpha = 1
+        }
+
+        let cam = { x: 0, y: 0 }
+
+        const drawWorld = (g) => {
+            const car = g.car
+            const p0 = stageAt(g.stage, car.s)
+            const nx0 = -Math.sin(p0.heading), ny0 = Math.cos(p0.heading)
+            cam = { x: p0.x + nx0 * car.lat, y: p0.y + ny0 * car.lat }
+
+            // night ground
+            ctx.fillStyle = '#060910'
+            ctx.fillRect(0, 0, W, H)
+            // faint star field (static, cheap)
+            ctx.fillStyle = 'rgba(200,210,235,0.05)'
+            for (let i = 0; i < 24; i++) {
+                const sx = ((i * 733 + 91) % W)
+                const sy = ((i * 389 + 57) % H)
+                ctx.fillRect(sx, sy, 1, 1)
+            }
+
+            const pts = roadPts(g)
+            // fog cut: everything past it simply does not exist
+            const vis = g.vis
+            const visCut = LITE ? Math.ceil(vis / 8) * 8 : vis
+            const visIdx = Math.max(1, Math.floor((visCut + 80) / (LITE ? 8 : 6)))
+
+            // shoulders (gravel) and asphalt, chunked for the fog fade
+            const chunk = LITE ? 3 : 2
+            for (let i = 0; i < visIdx - 1; i += chunk) {
+                const j = Math.min(i + chunk, visIdx - 1)
+                const seg = pts.slice(i, j + 1)
+                band(seg, 'lx', 'ly', 'cxL', 'cyL', '#1c1811', vis)
+                band(seg, 'cxR', 'cyR', 'rx', 'ry', '#1c1811', vis)
+                band(seg, 'cxL', 'cyL', 'cxR', 'cyR', '#252932', vis)
+            }
+            // center dashes
+            ctx.lineWidth = 1
+            for (let i = 0; i < visIdx - 1; i++) {
+                const a = fogAlpha(pts[i].d)
+                if (a <= 0.02) continue
+                if (Math.floor((car.s + pts[i].d) / 26) % 2 === 0) continue
+                ctx.globalAlpha = a * 0.5
+                const [x1, y1] = worldToScreen(ctx, cam.x, cam.y, pts[i].cx, pts[i].cy)
+                const [x2, y2] = worldToScreen(ctx, cam.x, cam.y, pts[i + 1].cx, pts[i + 1].cy)
+                ctx.strokeStyle = '#a7adb8'
+                ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke()
+            }
+            // reflector studs, alternating white/red every 50 units
+            for (let i = 0; i < visIdx; i++) {
+                const s = car.s + pts[i].d
+                const a = fogAlpha(pts[i].d)
+                if (a <= 0.02) continue
+                const band = Math.floor(s / 50) % 2
+                ctx.globalAlpha = a
+                ctx.fillStyle = band ? '#c23b31' : '#dcd8cc'
+                for (const side of [-1, 1]) {
+                    const p = stageAt(g.stage, s)
+                    const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                    const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * side * (ROAD_HALF + 4), p.y + ny * side * (ROAD_HALF + 4))
+                    ctx.fillRect(sx - 1, sy - 1, 2, 2)
+                }
+            }
+            // corner chevrons on the outside, a beat before the corner
+            for (const c of g.stage.corners) {
+                const d = distAhead(g.stage, car.s, c.s)
+                if (d > vis || d < -20) continue
+                const a = fogAlpha(Math.max(0, d))
+                if (a <= 0.03) continue
+                for (let k = 0; k < 3; k++) {
+                    const cs = c.s - 70 + k * 26
+                    const cd = distAhead(g.stage, car.s, cs)
+                    if (cd > vis) continue
+                    const p = stageAt(g.stage, cs)
+                    const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                    const ox = p.x + nx * -c.dir * (ROAD_HALF + 8)
+                    const oy = p.y + ny * -c.dir * (ROAD_HALF + 8)
+                    const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, ox, oy)
+                    ctx.globalAlpha = fogAlpha(cd)
+                    ctx.fillStyle = k % 2 ? '#dcd8cc' : '#c23b31'
+                    const dirx = -Math.sin(p.heading + Math.PI / 2 * c.dir)
+                    const diry = Math.cos(p.heading + Math.PI / 2 * c.dir)
+                    ctx.beginPath()
+                    ctx.moveTo(sx + dirx * 3, sy + diry * 3)
+                    ctx.lineTo(sx - dirx * 2 - ny * 3 * c.dir, sy - diry * 2 - nx * 3 * c.dir)
+                    ctx.lineTo(sx - dirx * 2 + ny * 3 * c.dir, sy - diry * 2 + nx * 3 * c.dir)
+                    ctx.closePath()
+                    ctx.fill()
+                }
+            }
+            ctx.globalAlpha = 1
+
+            // the fog wall where the road ends (a crest, not just distance)
+            if (vis < FOG_RANGE - 2) {
+                const end = pts[Math.min(visIdx, pts.length - 1)]
+                const [ex, ey] = worldToScreen(ctx, cam.x, cam.y, end.cx, end.cy)
+                const grad = ctx.createRadialGradient(ex, ey, 6, ex, ey, 90)
+                grad.addColorStop(0, 'rgba(6,9,16,0.9)')
+                grad.addColorStop(1, 'rgba(6,9,16,0)')
+                ctx.fillStyle = grad
+                ctx.fillRect(ex - 90, ey - 90, 180, 180)
+            }
+
+            // the car (screen-anchored: it IS the camera subject)
+            const carSx = W / 2 + car.lat * SC
+            const carSy = CY + (car.off ? Math.sin(g.tick * 0.9) * 0.7 : 0)
+            const angle = p0.heading + car.align
+            // headlight beams (before the car, additive)
+            ctx.save()
+            ctx.translate(carSx, carSy)
+            ctx.rotate(angle)
+            ctx.globalCompositeOperation = 'lighter'
+            if (!LITE) {
+                const beam = ctx.createLinearGradient(6, 0, 130, 0)
+                beam.addColorStop(0, 'rgba(255,236,180,0.16)')
+                beam.addColorStop(1, 'rgba(255,236,180,0)')
+                ctx.fillStyle = beam
+                ctx.beginPath()
+                ctx.moveTo(6, -2.5); ctx.lineTo(130, -34); ctx.lineTo(130, 34); ctx.lineTo(6, 2.5)
+                ctx.closePath(); ctx.fill()
+            }
+            ctx.restore()
+            ctx.save()
+            ctx.translate(carSx, carSy)
+            ctx.rotate(angle)
+            ctx.fillStyle = 'rgba(0,0,0,0.45)'
+            ctx.fillRect(-5.5, -2.5, 12, 6)
+            ctx.fillStyle = '#0b0d12'
+            ctx.fillRect(-4.5, -4.2, 3.4, 2); ctx.fillRect(1.4, -4.2, 3.4, 2)
+            ctx.fillRect(-4.5, 2.2, 3.4, 2); ctx.fillRect(1.4, 2.2, 3.4, 2)
+            ctx.fillStyle = '#2f5fc4'
+            ctx.fillRect(-6, -3, 12, 6)
+            ctx.fillStyle = '#27488f'
+            ctx.fillRect(-6.6, -3, 1.4, 6)
+            ctx.fillStyle = '#dfe4ee'
+            ctx.fillRect(-2.6, -2, 5.2, 4)
+            ctx.fillStyle = '#ffe9b0'
+            ctx.fillRect(4.8, -2.6, 1.4, 1.6); ctx.fillRect(4.8, 1, 1.4, 1.6)
+            ctx.fillStyle = '#c23b31'
+            ctx.fillRect(-6.4, -2.4, 1, 1.6); ctx.fillRect(-6.4, 0.8, 1, 1.6)
+            ctx.restore()
+        }
+
+        // ---- HUD ---------------------------------------------------------------
+        const drawHud = (g) => {
+            const st = state(g)
+            // pace card: the ONLY thing the driver knows about corners
+            ctx.fillStyle = 'rgba(4,7,13,0.72)'
+            ctx.fillRect(6, 6, 118, 14 + Math.min(4, g.card.length) * 13)
+            ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#8b93a3'
+            ctx.textAlign = 'left'
+            ctx.fillText('NOTES', 12, 15)
+            g.card.slice(-4).forEach((n, i) => {
+                const age = g.tick - n.t
+                const a = Math.max(0.25, Math.min(1, 1.4 - age / 500))
+                // 1 unit = 0.15 m (the same conversion as the km/h readout)
+                const d = n.atS == null ? null : Math.round(distAhead(g.stage, g.car.s, n.atS) * 0.15)
+                const label = callLabel({ dir: n.dir, sev: n.sev })
+                ctx.globalAlpha = a
+                ctx.fillStyle = n.dir < 0 ? '#7ec8ff' : n.dir > 0 ? '#ffd27e' : '#dcd8cc'
+                ctx.font = 'bold 10px monospace'
+                ctx.fillText(label, 12, 28 + i * 13)
+                ctx.fillStyle = '#8b93a3'
+                ctx.font = '9px monospace'
+                if (d != null) ctx.fillText(`${Math.max(0, Math.round(d))}m`, 62, 28 + i * 13)
+                if (n.via === 'voice') { ctx.fillStyle = '#7ee0a3'; ctx.fillText('♪', 96, 28 + i * 13) }
+            })
+            ctx.globalAlpha = 1
+            // lap + time
+            ctx.textAlign = 'right'
+            ctx.font = 'bold 10px monospace'
+            ctx.fillStyle = '#dcd8cc'
+            ctx.fillText(`LAP ${Math.min(g.lapsDone + 1, g.LAPS)}/${g.LAPS}`, W - 10, 16)
+            ctx.font = 'bold 12px monospace'
+            ctx.fillText(fmtTime(st.score), W - 10, 30)
+            if (best.t != null) {
+                ctx.font = '9px monospace'
+                ctx.fillStyle = '#8b93a3'
+                ctx.fillText(`BEST ${fmtTime(best.t)}`, W - 10, 42)
+            }
+            // speed
+            ctx.textAlign = 'right'
+            ctx.font = 'bold 14px monospace'
+            ctx.fillStyle = '#dcd8cc'
+            const kmh = Math.round(g.car.v * KM_PER_UNIT)
+            ctx.fillText(`${kmh}`, W - 34, H - 12)
+            ctx.font = '8px monospace'
+            ctx.fillStyle = '#8b93a3'
+            ctx.fillText('km/h', W - 10, H - 12)
+            // speed bar
+            ctx.fillStyle = 'rgba(4,7,13,0.72)'
+            ctx.fillRect(W - 108, H - 30, 64, 6)
+            ctx.fillStyle = g.car.v > VMAX * 0.85 ? '#c23b31' : '#7ec8ff'
+            ctx.fillRect(W - 107, H - 29, 62 * (g.car.v / VMAX), 4)
+            // co-driver chip
+            ctx.textAlign = 'left'
+            ctx.font = '9px monospace'
+            const coLabel = voice.on ? 'CO-D: VOICE' : g.co.kind === 'human' ? 'CO-D: KEYS' : 'CO-D: CPU'
+            ctx.fillStyle = 'rgba(4,7,13,0.72)'
+            ctx.fillRect(6, H - 24, 86, 18)
+            ctx.fillStyle = '#8b93a3'
+            ctx.fillText(coLabel, 11, H - 15)
+            if (voice.on) {
+                ctx.fillStyle = voice.ok ? '#7ee0a3' : '#c23b31'
+                ctx.fillText(voice.said ? voice.said.slice(0, 12) : 'listening…', 11, H - 8)
+            }
+            // hint, first seconds only
+            if (g.tick < hintUntil.t) {
+                ctx.textAlign = 'center'
+                ctx.font = '9px monospace'
+                ctx.fillStyle = 'rgba(220,216,204,0.75)'
+                ctx.fillText('C: co-driver keys · V: voice · ? help', W / 2, H - 10)
+            }
+            // the say() line: one message, never over the HUD corners
+            if (performance.now() < sayUntil) {
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = '#ffd27e'
+                ctx.fillText(sayText, W / 2, 52)
+            }
+            ctx.textAlign = 'left'
+        }
+
+        const drawAttract = (g) => {
+            drawWorld(g)
+            // dim the world so the title owns the frame
+            ctx.fillStyle = 'rgba(4,6,12,0.55)'
+            ctx.fillRect(0, 0, W, H)
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 26px monospace'
+            ctx.fillStyle = '#dcd8cc'
+            ctx.fillText('RALLY CO-DRIVER', W / 2, 96)
+            ctx.font = 'bold 10px monospace'
+            ctx.fillStyle = '#7ec8ff'
+            ctx.fillText('AN ORIGINAL NIGHT RALLY · 2 SEATS · 1 PAIR OF EARS', W / 2, 116)
+            // one message at a time (ART rule), cycling
+            const msg = ATTRACT_MSGS[Math.floor(performance.now() / 2600) % ATTRACT_MSGS.length]
+            ctx.font = 'bold 11px monospace'
+            ctx.fillStyle = '#ffd27e'
+            ctx.fillText(msg, W / 2, 168)
+            ctx.font = '10px monospace'
+            ctx.fillStyle = 'rgba(220,216,204,0.8)'
+            ctx.fillText('PRESS ANY KEY · TAP TO START', W / 2, 208)
+            ctx.textAlign = 'left'
+        }
+
+        const drawOver = (g) => {
+            drawWorld(g)
+            ctx.fillStyle = 'rgba(4,6,12,0.7)'
+            ctx.fillRect(0, 0, W, H)
+            const st = state(g)
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 22px monospace'
+            ctx.fillStyle = '#dcd8cc'
+            ctx.fillText('STAGE COMPLETE', W / 2, 74)
+            ctx.font = 'bold 18px monospace'
+            ctx.fillStyle = '#7ec8ff'
+            ctx.fillText(fmtTime(st.score), W / 2, 104)
+            if (best.t != null && best.t === st.score) {
+                ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = '#ffd27e'
+                ctx.fillText('NEW BEST', W / 2, 120)
+            }
+            const s = st.stats
+            ctx.font = '11px monospace'
+            ctx.fillStyle = '#dcd8cc'
+            ctx.fillText(`NOTES ${s.called} · OK ${s.correct} · LATE ${s.late} · MISSED ${s.missed}`, W / 2, 148)
+            ctx.fillText(`OFF-TRACK ${Math.round(s.offTicks / 60)}s`, W / 2, 166)
+            ctx.font = '10px monospace'
+            ctx.fillStyle = 'rgba(220,216,204,0.8)'
+            ctx.fillText('SPACE TO RUN IT AGAIN', W / 2, 204)
+            ctx.textAlign = 'left'
+        }
+
+        const drawAll = () => {
+            if (screenRef.cur === 'attract') drawAttract(attract.g)
+            else if (screenRef.cur === 'over') drawOver(play.g)
+            else { drawWorld(play.g); drawHud(play.g) }
+        }
+
+        const loop = (now) => {
+            raf = requestAnimationFrame(loop)
+            const dt = now - last
+            last = now
+            if (contractHoldsLoop()) { acc = 0; drawAll(); return }
+            acc += Math.min(dt, 250)
+            while (acc >= SIM_MS) { acc -= SIM_MS; simStep() }
+            drawAll()
+        }
+        raf = requestAnimationFrame(loop)
+
+        // ---- the contract -------------------------------------------------------
+        exposeGame({
+            id: 'rally-co-driver',
+            players: 2,
+            method: 'dpad',
+            buttons: ['up', 'down', 'left', 'right', 'a'],
+            reads: ['up', 'down', 'left', 'right', 'a'],
+            sources: () => [{ kind: 'model' }, { kind: play.g.co.kind }],
+            reset: (seed, players = 2) => {
+                seedRef.cur = ((seed ?? 1) >>> 0) % 997 || 1
+                play.g = createSim(seedRef.cur, players)
+                play.g.co.kind = players >= 2 ? 'cpu' : 'off'
+                setCoMode(play.g.co.kind)
+                voiceStop()
+                keys.up = keys.down = keys.left = keys.right = keys.a = false
+                offWas = false
+                setScreenBoth('play')
+            },
+            tick: (pad, pads) => {
+                const g = play.g
+                const d = { up: !!pad.up, down: !!pad.down, left: !!pad.left, right: !!pad.right, a: !!pad.a }
+                const c = pads && pads[1] != null ? pads[1] : coPad(g)
+                tickSim(g, [d, c])
+            },
+            state: () => state(play.g),
+            canvas: () => canvas,
+        })
+        window.__rallyTest = {
+            state: () => state(play.g),
+            hash: () => stateHash(play.g),
+            gs: () => play.g,
+            start: () => startRace(),
+            // headless voice: the same path speechListen feeds (#1287's law —
+            // CI has no speech engine, the downstream of the words is proven)
+            voiceCall: (text) => {
+                const call = parseCoCall(text)
+                if (call) applyCallEvent(play.g, call, 'voice')
+                return call
+            },
+            coCall: (call) => applyCallEvent(play.g, call, 'human'),
+        }
+
+        return () => {
+            cancelAnimationFrame(raf)
+            window.removeEventListener('keydown', kd)
+            window.removeEventListener('keyup', ku)
+            canvas.removeEventListener('pointerdown', tap)
+            voiceStop()
+            unexposeGame()
+            delete window.__rallyTest
+            canvas.remove()
+        }
+    }, [])
+
+    return (
+        <div ref={wrapRef} className="relative w-full h-full flex items-center justify-center bg-black">
+            {screen === 'play' && !paused && <VirtualControls visible secondAction={undefined} />}
+            {paused && <PauseOverlay entry={G} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
+            {voiceUi && (
+                <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] font-mono">
+                    <span className={voiceUi.ok ? 'text-emerald-300' : 'text-red-400'}>
+                        MIC {voiceUi.on ? 'ON' : 'OFF'}{voiceUi.label ? ` · ${voiceUi.label}` : ''}
+                    </span>
+                </div>
+            )}
+        </div>
+    )
+}

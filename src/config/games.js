@@ -216,6 +216,9 @@ const TalkMeDownGame = lazy(() => import('../games/TalkMeDown'))
 // Fire Crew: the seed, rules, look and autopilot all chunk with the game (#1254).
 const FireCrewGame = lazy(() => import('../games/FireCrew'))
 
+// Rally Co-Driver: the night-rally sim chunks with the game (#1251).
+const RallyCoDriverGame = lazy(() => import('../games/RallyCoDriver'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -1222,5 +1225,17 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original co-op firefighting game (#1254): a night warehouse, six people trapped, and a crew that cannot see through the smoke. FIRE SPREADS CELL BY CELL, biased by a wind that shifts without warning - watch the vane or the flame front arrives from behind. FLOORS GIVE WAY: a tile that burns out its fuel opens into a hole, and routes replan themselves mid-run. The seats see DIFFERENT THINGS - the hose cuts a flashlight cone, the rescue worker has a lamp, and only the LADDER seat has eyes on the LOFT, so the one person who can shout "victim up there" is the one holding the stick. HOSE soaks and refills at the hydrant, RESCUE grabs and carries to the ambulance, LADDER raises the stick and BRACES it when a gale tries to slip it. Any seat can be human, CPU or model: solo is one firefighter and two autopilots, couch play takes three keyboards. Two minutes on the structure clock, six victims out, seeded so a replay or a trained model can take any seat later.',
         controls: ['Seat 1 HOSE - Arrows / d-pad walk and aim, SPACE / A soaks (tank drains, stand at the hydrant to refill), B / FLARE lights a burst through the smoke', 'Seat 2 RESCUE (2P keyboard) - WASD walk, F grab a victim on your tile, F again at the ambulance; walking onto a victim grabs, walking into the ambulance hands over', 'Seat 3 LADDER (3P keyboard) - IJKL walk the truck line, U holds the stick up (and braces it in a gale), O lowers', 'Attract: any key or tap - LEFT/RIGHT size the crew 1-3, SPACE / tap sends the engine', 'Two-minute structure clock; burned floors collapse - a victim that falls is lost, three knocks drag a firefighter out for four seconds', '?: pause and read the dispatch card'],
+    },
+    {
+        path: '/rally-co-driver',
+        builtBy: 'forge',
+        added: '2026-10-31',
+        visibility: 'private',
+        tapStart: false,
+        component: RallyCoDriverGame,
+        label: 'RALLY CO-DRIVER',
+        theme: 'dark',
+        description: 'An original night rally (#1251) where the road hides itself: fog and blind crests eat the line of sight, and the only thing that tells you what is over the next hill is the co-driver\'s pace notes. The stage is a seeded ribbon of two hidden laps; the score is the clock, and the car must hold the ribbon (gravel beyond the white studs bleeds speed). Seat 1 is the driver - throttle, brake, handbrake, steer - who can only SEE what the fog admits. Seat 2 is the co-driver: CPU by default, or the shared keyboard (Q/W/E = left 1/2/3, A/S/D = right 1/2/3, Z = straight) or spoken notes (V opens the mic: "left two", "hard right", "straight on"). A note that reaches the driver late is the co-driver\'s fault - the stage report grades every corner called, late or missed, so a great stage is a fast one the two of you talked your way through. The whole stage is seeded and deterministic, and the attract demo is the CPU pair the harness proves against.',
+        controls: ['Arrows / d-pad: steer (A = handbrake - looser line, slower)', 'SPACE / A-button: handbrake', 'Up arrow: throttle - Down: brake - lift before the flat, the notes say where', 'C: seat 2 switches CO-D CPU / KEYS (QWE left, ASD right, Z straight - a tap is a note)', 'V: speak the notes (mic consent first) - "left two", "hard right", "straight on"', 'Watch the NOTES card top-left: it is all you know about the road ahead', 'Two hidden laps; off-track bleeds speed; the clock is the score', '?: pause and read the stage rules'],
     },
 ]

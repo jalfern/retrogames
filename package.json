@@ -63,6 +63,7 @@
     "bombcheck": "node scripts/bombcheck.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
     "sosplay": "node scripts/sosplay.mjs",
+    "rallycheck": "node scripts/rallycheck.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",
     "padlayoutcheck": "node scripts/padlayoutcheck.mjs",
