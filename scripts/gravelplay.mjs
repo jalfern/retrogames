@@ -87,7 +87,9 @@ try {
     await sleep(80)
     await page.keyboard.press('KeyB') // DUMP
     for (let i = 0; i < 40 && (await sim()).plant.hopper === 0; i++) await sleep(50)
-    ok('real B dumps the bucket into the hopper', (await sim()).plant.hopper >= 1, JSON.stringify((await sim()).plant))
+    const sD = await sim()
+    ok('real B dumps the bucket into the hopper', sD.plant.hopper >= 1,
+        `plant=${JSON.stringify(sD.plant)} digger=${JSON.stringify(sD.digger)} tick=${sD.tick}`)
     const oldCell = await pixelAt(...cellCenter(3, 3))
     ok('the cell it left is bare again', isDirtish(oldCell), `rgb(${oldCell.join(',')})`)
     fs.writeFileSync('/tmp/forge-gy-play.png', await page.locator('canvas').screenshot())

@@ -211,6 +211,56 @@ console.log('— orders and the clock —')
     ok('shift ends at the whistle', (() => { const b = createGame(1, 1); b.nextOrder = SHIFT_TICKS + 999; step(b, [{}, {}, {}], SHIFT_TICKS); return b.done && !b.win })())
 }
 
+console.log('— #1380: steer through cooldown; refills never entomb —')
+{
+    // Inputs held during a step used to be swallowed whole: stepMachine returned
+    // at moveCd > 0 BEFORE the steering block, so facing never changed mid-step
+    // and bump-then-act sequences died on the face guard (gravelplay's
+    // dump-at-hopper was red at main). Pin the engine's own contract: blocked
+    // moves still steer. Layout-free — state is set directly.
+    const gs = createGame(1, 1)
+    const d = gs.digger
+    d.x = 5; d.y = 5; d.face = 'right'; d.moveCd = 5
+    step(gs, [{ up: true }, {}, {}], 1)
+    ok('held input steers through moveCd (face changes, position held)',
+        d.face === 'up' && d.x === 5 && d.y === 5 && d.moveCd === 4,
+        `face=${d.face} at=(${d.x},${d.y}) cd=${d.moveCd}`)
+
+    // seed-5 freeze shape: digger parked on a pile cell whose only driveable
+    // exit is the yard's last spare cell. Refill used to tip into it unconditionally,
+    // walls sealed, bfs found no path, CPU sat full-bucket to the whistle.
+    // (3,1) sits fence-above with pile neighbours — assert the fixture first.
+    const ent = createGame(5, 1)
+    ok('fixture: (3,1) is pile with fence at (3,0)',
+        cellKind(3, 1) === 'pile' && cellKind(3, 0) === 'fence',
+        `kind(3,1)=${cellKind(3, 1)} kind(3,0)=${cellKind(3, 0)}`)
+    ent.digger.x = 3; ent.digger.y = 1; ent.digger.face = 'down'; ent.digger.moveCd = 0
+    const EXIT = [3, 2]
+    // the machine stands on a dug-out flat cell; its exit is the ONLY other
+    // spare cell — and driveable() says a pile cell seals at units >= 1, so a
+    // single tip on the exit entombs the machine.
+    for (const c of ent.pile) c.units =
+        (c.x === 3 && c.y === 1) || (c.x === EXIT[0] && c.y === EXIT[1]) ? 0 : 4
+    ok('fixture: digger sits flat with one open exit',
+        driveable(ent, 3, 1, ent.digger.seat) &&
+        [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) =>
+            driveable(ent, 3 + dx, 1 + dy, ent.digger.seat)).length === 1,
+        `exits=${[[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dy]) => driveable(ent, 3 + dx, 1 + dy, ent.digger.seat)).length}`)
+    let entombed = false, tippedExit = false
+    for (let r = 0; r < 30 && !entombed; r++) {
+        ent.refillT = 1
+        step(ent, [{}, {}, {}], 2)
+        const ex = ent.pile.find((c) => c.x === EXIT[0] && c.y === EXIT[1])
+        if (ex.units > 0) tippedExit = true // any tip seals: driveable needs units === 0
+        const hasExit = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) =>
+            driveable(ent, ent.digger.x + dx, ent.digger.y + dy, ent.digger.seat))
+        if (!hasExit) entombed = true
+    }
+    ok('refills never tip the last exit of a parked machine (#1380)',
+        !tippedExit && !entombed,
+        `tippedExit=${tippedExit} entombed=${entombed}`)
+}
+
 console.log('— win proof (CPU crew) —')
 {
     let wins = 0

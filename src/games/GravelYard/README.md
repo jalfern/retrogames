@@ -26,13 +26,19 @@ cols 0/15
   face (dig at the pile, load at a bay, cycle the gate at the console stand);
   B releases (bucket into the hopper, bed at the dock, and it JOGS a jammed
   screen). The operator seat (seat 3) also uses LEFT/RIGHT to cycle the gate.
+- **Steer during cooldown** (#1306): a direction held while the machine's step
+  is still running turns the FACE but not the treads — the move lands when the
+  cooldown ends. Swallowing the input entirely made bump-then-act sequences
+  (dump at the hopper) die on the face guard; gravelplay's dump step ran red
+  on it at main until this rule shipped.
 - **Grades**: gate WIDE separates ~75% coarse, MEDIUM ~50%, NARROW ~20%.
   A batch needs hopper ≥ 2 and takes 120+15·units ticks. Rates: coarse 30C/u,
   fines 22C/u, plus a punctuality bonus (≤40C) per filled order.
 - **Wet seams**: digging a wet cell puts wet units in the hopper; a wet batch
   rolls a jam (25% per wet unit, cap 90%) ~1s in. A jam FREEZES the batch —
   jog it (B) `1 + wet` times. 60 ticks after the shift starts, a spare load
-  tips onto the pile every 15 s (never onto a parked machine).
+  tips onto the pile every 15 s — never onto a parked machine, and never onto
+  a cell that would wall one in (#1306: seed-5 entombment froze the CPU digger).
 - **Refusals**: tipping a grade no open order wants is REFUSED — a strike, and
   three strikes ruin the shift. The load stays in the bed. Mixed loads are
   refused at the bay instead (no mixing). Bay overflow (-$ at spill) and
