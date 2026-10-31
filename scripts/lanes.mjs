@@ -8,11 +8,15 @@
 //   KICK_A=1
 //   KICK_B=1
 //   QA_STUDIO_QUEUE=0
+//   QA_MINI_QUEUE=0
 //   LADDER=8
 //
 // Values are integers or `-` only (warden eval's this output; nothing else can
 // cross). --help prints usage; a stdin that isn't JSON exits 1 loudly (the
 // warden then keeps its own fallback ladder rather than idling).
+//
+// --studio-up 0|1 (#1290): the studio QA lane is idle, up, and will consume
+// one queue item this tick — mini reserves it before falling through itself.
 
 import { lanePlan } from './lib/lanes.mjs'
 
@@ -22,7 +26,7 @@ const flag = (name, dflt) => {
     return i >= 0 && argv[i + 1] !== undefined ? argv[i + 1] : dflt
 }
 if (argv.includes('--help')) {
-    console.log('usage: <issues.json> lanes.mjs --free-a 0|1 --free-b 0|1 --b-loaded 0|1')
+    console.log('usage: <issues.json> lanes.mjs --free-a 0|1 --free-b 0|1 --b-loaded 0|1 --studio-up 0|1')
     process.exit(0)
 }
 
@@ -46,10 +50,12 @@ const plan = lanePlan({
     freeA: flag('free-a', '0') === '1',
     freeB: flag('free-b', '0') === '1',
     bLoaded: flag('b-loaded', '1') === '1',
+    studioUp: flag('studio-up', '1') === '1',
 })
 console.log(`A_TARGET=${plan.targets.a ?? '-'}`)
 console.log(`B_TARGET=${plan.targets.b ?? '-'}`)
 console.log(`KICK_A=${plan.kick.a ? 1 : 0}`)
 console.log(`KICK_B=${plan.kick.b ? 1 : 0}`)
 console.log(`QA_STUDIO_QUEUE=${plan.qaStudioQueue ? 1 : 0}`)
+console.log(`QA_MINI_QUEUE=${plan.qaMiniQueue ? 1 : 0}`)
 console.log(`LADDER=${plan.counts.ladder}`)
