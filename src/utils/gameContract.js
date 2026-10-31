@@ -27,6 +27,11 @@ let liveFeed = null
 // window.__voiceFlush so a download can await the mic's final chunk.
 let voice = null
 let voiceExtra = null
+// #1249: while a recorder runs, recognized spoken calls bank into the file's
+// `voiceCmd` channel ({ t, said, intent, ok } — words → meaning → consented
+// intent; what the seat DID is already slots[seat].pads on the same clock).
+// Metadata like the ping trace: replay ignores it, v1 files stay valid.
+let liveCmdFeed = null
 
 export const contractHoldsLoop = () => loopLock
 
@@ -38,6 +43,9 @@ export const contractHoldsLoop = () => loopLock
 // device view, same hash cadence — so a live capture replays hash-equal.
 export const recordLiveTick = (pads) => { if (liveFeed) liveFeed(pads) }
 export const isRecording = () => !!recorder
+// #1249: one recognized spoken call, banked when it happens. Entry shape
+// { t, said, intent|null, ok, dir?, why? } — see recording.js `voiceCmd`.
+export const recordVoiceCmd = (entry) => { if (liveCmdFeed && entry) liveCmdFeed(entry) }
 
 // `spec.method` is the game's input method ('dpad' | 'stick' | 'pointer', #420)
 // and `spec.reads` the one-pad fields it actually consumes. Both surface on
@@ -85,6 +93,7 @@ export function exposeGame(spec) {
     // same file the harness would record. rawsFor reads the live device; a
     // keyboard/dpad seat has no analog device so its raw mirrors the pad.
     liveFeed = (pads) => { if (recorder) { recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks) } }
+    liveCmdFeed = (e) => { if (recorder) recorder.addVoiceCmd(e) }
     const api = {
         meta: {
             id: spec.id,
@@ -219,6 +228,7 @@ export function unexposeGame() {
     loopLock = false
     recorder = null
     liveFeed = null
+    liveCmdFeed = null
     voice = null
     voiceExtra = null
     if (exposed && window.__game === exposed) delete window.__game

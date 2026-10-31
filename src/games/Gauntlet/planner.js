@@ -14,6 +14,7 @@
 
 import { makeGame, step, stateHash, CFG, doorAt } from './sim.js'
 import { LEVELS, W, H, MONSTERS } from './levels.js'
+import { DIRS } from './voicecalls.js'
 
 // #950: the pilot plans conservatively — breakable and trap walls are stone to
 // it (a level must not REQUIRE the hammer or the vanishing cycle to be won);
@@ -231,7 +232,10 @@ export function plan(seed = 0, opts = {}) {    const gs = makeGame(seed, opts.he
 // waits at a locked door instead of grinding its face, cuts what walks into its
 // reach, and breaks away for food when it is hurting. Pure and deterministic:
 // same seed, same pads, same hash.
-export function partnerPad(gs, prevA = false) {
+// An optional spoken command (#1249, third arg from applyCall) overrides the
+// follow doctrine — still only ever emitting a pad, so the sim cannot tell a
+// voice-driven seat from a human one.
+export function partnerPad(gs, prevA = false, cmd = null) {
     const pad = { left: false, right: false, up: false, down: false, a: false }
     const p = gs.partner, h = gs.hero
     if (!p || p.down || gs.end || !h || h.deadT > 0) return pad
@@ -287,6 +291,25 @@ export function partnerPad(gs, prevA = false) {
         }
     }
     const pr = Math.floor(p.y), pc = Math.floor(p.x)
+    // VOICE CALLS (#1249): a spoken command replaces the follow doctrine until
+    // the next call. Survival still outranks an order (the food break above —
+    // a dead partner guards nothing), and the cut pulse keeps firing on every
+    // path through here, so "hold here" means stand your ground and swing, not
+    // stand still and die. Goals were resolved at call time (applyCall); a
+    // target that vanished (the hero took the key first) or a corridor sealed
+    // by a lock ends in the same honest place: wait where you were sent, like
+    // a player who can't get through either.
+    if (cmd && cmd.kind !== 'follow') {
+        if (cmd.kind === 'hold') return pad
+        const goal = cmd.goal
+        if (goal) {
+            if (cmd.kind === 'key' && !gs.items.some((it) => !it.taken && it.t === 'key' && Math.floor(it.x) === goal[0] && Math.floor(it.y) === goal[1])) return pad
+            if (pr === goal[1] && pc === goal[0]) return pad // took the ground — hold it
+            const gpath = padPath(gs, pr, pc, goal[1], goal[0])
+            if (gpath.length) { steerOnPath(pad, p, gpath, 0.25); return pad }
+            return pad // sealed by a lock: wait at the threshold
+        }
+    }
     let path = padPath(gs, pr, pc, Math.floor(ty), Math.floor(tx))
     if (!path.length) path = padPath(gs, pr, pc, Math.floor(h.y), Math.floor(h.x))
     if (path.length) {
@@ -307,16 +330,83 @@ export function partnerPad(gs, prevA = false) {
 // BFS on the partner's walk rules: stone blocks; a slam door ('D') counts as
 // open (it can push it — the seat's own push-to-open, #275); a LOCKED door
 // ('L') blocks: the partner never spends the hero's key, it waits for him.
-function padPath(gs, sr, sc, tr, tc) {
-    const passable = (c, r) => {
-        const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
-        if (ch === '#' || ch === 'B' || ch === 'T') return false
-        if (ch === 'L') {
-            const d = doorAt(gs, c, r)
-            return !!d && (d.open || d.broken)
-        }
-        return true
+const padPassable = (gs, c, r) => {
+    const ch = gs.levelData.grid[r] ? gs.levelData.grid[r][c] : '#'
+    if (ch === '#' || ch === 'B' || ch === 'T') return false
+    if (ch === 'L') {
+        const d = doorAt(gs, c, r)
+        return !!d && (d.open || d.broken)
     }
+    return true
+}
+
+// quadrantGoal (#1249) — "take the upper right" means the far side of that
+// corner, not its doorstep: among walkable cells inside the quadrant, the one
+// FARTHEST from where the partner stands, the first of those with a lane (ties
+// break on scan order, never on chance). upper/lower split the rows, left/right
+// the columns; rows grow downward so "upper" is the small-r half.
+function quadrantGoal(gs, pc, pr, dir) {
+    const [v, hd] = dir.split('-')
+    const inQuad = (c, r) => (v === 'upper' ? r < H / 2 : r >= H / 2) && (hd === 'right' ? c >= W / 2 : c < W / 2)
+    const cands = []
+    for (let r = 0; r < H; r++) {
+        for (let c = 0; c < W; c++) {
+            if ((c === pc && r === pr) || !inQuad(c, r) || !padPassable(gs, c, r)) continue
+            cands.push([c, r, Math.abs(c - pc) + Math.abs(r - pr)])
+        }
+    }
+    cands.sort((a, b) => b[2] - a[2] || a[1] - b[1] || a[0] - b[0])
+    for (const [c, r] of cands) {
+        if (padPath(gs, pr, pc, r, c).length) return [c, r]
+    }
+    return null
+}
+
+// keyGoal — the nearest untaken key the seat can actually walk to.
+function keyGoal(gs, pc, pr) {
+    const cands = gs.items
+        .filter((it) => !it.taken && it.t === 'key')
+        .map((it) => [Math.floor(it.x), Math.floor(it.y), Math.abs(Math.floor(it.x) - pc) + Math.abs(Math.floor(it.y) - pr)])
+        .sort((a, b) => a[2] - b[2] || a[1] - b[1] || a[0] - b[0])
+    for (const [c, r] of cands) {
+        if ((c === pc && r === pr) || padPath(gs, pr, pc, r, c).length) return [c, r]
+    }
+    return null
+}
+
+// applyCall (#1249) — freeze an intent (parseCall output, or a model's) into
+// the seat's live command at call time: the goal cell is chosen from the
+// partner's CURRENT position, so the same call at the same tick always steers
+// the same lane. Returns { ok, why? } — a call the seat cannot honour (no key
+// on the level, no lane into that corner) is refused honestly, and the seat
+// keeps doing what it was doing.
+export function applyCall(gs, intent) {
+    if (!intent) return { ok: false, why: 'NO CALL' }
+    const p = gs.partner
+    if (!p || p.down || gs.end) return { ok: false, why: 'NO PARTNER' }
+    const pc = Math.floor(p.x), pr = Math.floor(p.y)
+    if (intent.kind === 'goto') {
+        if (!DIRS.includes(intent.dir)) return { ok: false, why: 'NO WAY' }
+        const goal = quadrantGoal(gs, pc, pr, intent.dir)
+        if (!goal) return { ok: false, why: 'NO WAY' }
+        gs._vCmd = { kind: 'goto', goal }
+        return { ok: true }
+    }
+    if (intent.kind === 'key') {
+        const goal = keyGoal(gs, pc, pr)
+        if (!goal) return { ok: false, why: 'NO KEY' }
+        gs._vCmd = { kind: 'key', goal }
+        return { ok: true }
+    }
+    if (intent.kind === 'follow' || intent.kind === 'hold') {
+        gs._vCmd = { kind: intent.kind, goal: null }
+        return { ok: true }
+    }
+    return { ok: false, why: 'NO CALL' }
+}
+
+function padPath(gs, sr, sc, tr, tc) {
+    const passable = (c, r) => padPassable(gs, c, r)
     if (!passable(sc, sr) || !passable(tc, tr)) return []
     if (sr === tr && sc === tc) return []
     const prev = new Map()
