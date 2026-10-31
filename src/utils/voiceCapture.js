@@ -107,13 +107,19 @@ export function createVoiceSession(opts = {}) {
     let chunks = []
     let startMs = 0
     let clockCursor = 0
+    // QA/prod-safe breadcrumbs: the last voice session's outcome, no secrets —
+    // "why is there no audio in my recording?" answers itself.
+    const dbg = (where) => {
+        if (typeof window === 'undefined') return
+        window.__voiceDebug = { where, phase, consent: { ...consent }, mime, chunks: chunks.length, bytes: chunks.reduce((a, b) => a + b.size, 0), ticks: clock.lastTick() }
+    }
 
     const ready = Promise.resolve(ask(opts.consentOpts || {})).then((c) => {
         consent.consent = !!(c && c.consent)
         consent.headset = !!(c && c.headset)
         if (c && c.reason) consent.reason = c.reason
-        if (!consent.consent) { phase = 'declined'; return null }
-        if (!voiceSupported()) { phase = 'failed'; consent.reason = 'unsupported'; return null }
+        if (!consent.consent) { phase = 'declined'; dbg('asked'); return null }
+        if (!voiceSupported()) { phase = 'failed'; consent.reason = 'unsupported'; dbg('unsupported'); return null }
         return navigator.mediaDevices.getUserMedia({
             audio: {
                 channelCount: { ideal: 1 },
@@ -137,9 +143,9 @@ export function createVoiceSession(opts = {}) {
             clock.markStart()
             startMs = now()
             rec.start(1000)
-            phase = 'recording'
+            phase = 'recording'; dbg('mic-open')
             return null
-        }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; return null })
+        }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; dbg('mic-denied'); return null })
     })
 
     return {
@@ -164,7 +170,7 @@ export function createVoiceSession(opts = {}) {
         // shape, or null when there is nothing honest to store.
         finalize() {
             if (phase === 'done') return Promise.resolve(null)
-            if (phase !== 'recording') { phase = 'done'; return Promise.resolve(null) }
+            if (phase !== 'recording') { phase = 'done'; dbg('finalize-idle'); return Promise.resolve(null) }
             phase = 'done'
             const ms = Math.round(now() - startMs)
             return new Promise((resolve) => {
@@ -179,11 +185,11 @@ export function createVoiceSession(opts = {}) {
                         clock: samples,
                         b64: text,
                     })
-                    if (!samples.length || !chunks.length) { resolve(null); return }
+                    if (!samples.length || !chunks.length) { dbg('finalize-empty'); resolve(null); return }
                     const blob = new Blob(chunks, { type: mime || 'audio/webm' })
                     chunks = []
-                    if (blob.size === 0) { resolve(null); return }
-                    blob.arrayBuffer().then((buf) => resolve(b64From(b64FromBytes(new Uint8Array(buf))))).catch(() => resolve(null))
+                    if (blob.size === 0) { dbg('finalize-blob-empty'); resolve(null); return }
+                    blob.arrayBuffer().then((buf) => { dbg('track-ready'); resolve(b64From(b64FromBytes(new Uint8Array(buf)))) }).catch(() => { dbg('arraybuffer-failed'); resolve(null) })
                 }
                 try {
                     if (rec && rec.state !== 'inactive') { rec.onstop = settle; rec.stop() }

@@ -202,6 +202,8 @@
     "slotcheck": "node scripts/slotcheck.mjs",
     "lint:rec": "eslint src/utils scripts/replaycheck.mjs scripts/recmethods.mjs",
     "replaycheck": "node scripts/replaycheck.mjs",
+    "voicecheck": "node scripts/voicecheck.mjs",
+    "voicedrive": "node scripts/voicedrive.mjs",
     "recmethods": "node scripts/recmethods.mjs",
     "feedbackcheck": "node scripts/feedbackcheck.mjs",
     "nightlyheal": "node scripts/nightly-heal.mjs --selftest",

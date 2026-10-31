@@ -32,9 +32,10 @@
 export const VOICE_CLOCK_EVERY = 60      // clock samples: ~1 per second at 60 Hz
 export const TICK_MS = 1000 / 60
 
-// Wire budget: relay caps whole messages at 512 bytes; keep payloads at 480
-// chars so the JSON envelope ({t,k,s,m,i,z,x}) never crosses the limit.
-export const VOICE_CHUNK = 480
+// Wire budget: relay caps whole messages at 512 bytes. The JSON envelope
+// ({"t":"pad","k":"v","s":1,"m":"a","i":..,"z":..,"x":".."}) costs ~64 bytes
+// itself, so payload stays at 440 — measured, not guessed (voicecheck pins it).
+export const VOICE_CHUNK = 440
 
 // --- clock ---------------------------------------------------------------------
 // A clock trace maps tick -> ms since the track's mic started. `createVoiceClock`
@@ -46,26 +47,29 @@ export function createVoiceClock(opts = {}) {
     const every = Number.isInteger(opts.every) && opts.every > 0 ? opts.every : VOICE_CLOCK_EVERY
     const samples = []
     let start = 0
+    let started = false // a clock whose now() begins at 0 is still started (the number alone can't prove it)
     let nextAt = 0
+    let lastSeen = 0
     return {
-        get started() { return start !== 0 },
-        markStart() { start = now(); samples.length = 0; nextAt = 0 },
+        get started() { return started },
+        markStart() { start = now(); started = true; samples.length = 0; nextAt = 0; lastSeen = 0 },
         onTick(t) {
-            if (!start || !Number.isInteger(t) || t < 1) return
+            if (!started || !Number.isInteger(t) || t < 1) return
+            lastSeen = t
             if (t >= nextAt) {
                 samples.push({ t, ms: Math.round(now() - start) })
                 nextAt = t + every
             }
         },
-        // Close the trace: a final sample at the newest tick so consumers can
-        // align events all the way to the end of the session.
+        // Close the trace: a final sample at the newest tick seen so consumers
+        // can align events all the way to the end of the session.
         finish() {
-            if (!start || !samples.length) return samples
+            if (!started || !samples.length) return samples
             const last = samples[samples.length - 1]
-            if (last.t !== this.lastTick()) samples.push({ t: this.lastTick(), ms: Math.round(now() - start) })
+            if (lastSeen !== last.t) samples.push({ t: lastSeen, ms: Math.round(now() - start) })
             return samples
         },
-        lastTick() { return samples.length ? samples[samples.length - 1].t : 0 },
+        lastTick() { return lastSeen },
         samples() { return samples },
     }
 }

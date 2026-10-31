@@ -34,7 +34,7 @@ import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, isRecording } from '../../utils/gameContract'
 import { makeVoiceInbox, packVoiceAudio } from '../../utils/voice'
 import { createVoiceSession } from '../../utils/voiceCapture'
 
@@ -337,6 +337,14 @@ const GauntletGame = () => {
         const doSim = (inp, pInp = null) => {
             step(gs, inp, pInp)
             handleEvents(gs.events.splice(0))
+            // #527 live capture, wired at last: every loop-owned sim tick banks
+            // its consumed inputs (pad.a = sword, pad.b = arrow, seat 2 = the
+            // partner's consumed input). The contract's own step() banks via the
+            // loop lock, so exactly one path writes per tick — never both.
+            if (isRecording() && !contractHoldsLoop()) recordLiveTick([
+                { left: !!inp.left, right: !!inp.right, up: !!inp.fwd, down: !!inp.back, a: !!inp.sword, b: !!inp.arrow },
+                pInp ? { left: !!pInp.left, right: !!pInp.right, up: !!pInp.fwd, down: !!pInp.back, a: !!pInp.sword, b: !!pInp.arrow } : {},
+            ])
             const na = nearArch(gs)
             if (na && !naPrev) FX_TONES.warpNear.notes.forEach((f, i) => audioController.playTone(f, 0.09, 'triangle', 0.05, i * 0.07))
             naPrev = na

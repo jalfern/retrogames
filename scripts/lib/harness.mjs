@@ -74,7 +74,7 @@ export async function launch(opts = {}) {
         return await chromium.launch({
             channel,
             headless: opts.headless ?? true,
-            args: ['--autoplay-policy=no-user-gesture-required', ...frameArgs, ...ciArgs],
+            args: ['--autoplay-policy=no-user-gesture-required', ...frameArgs, ...ciArgs, ...(opts.extraArgs || [])],
         })
     } catch (e) {
         console.error(`Could not launch browser (channel="${channel}").`)
