@@ -191,7 +191,6 @@ function pushOrder(gs) {
 }
 
 function radio(gs, who, text) { gs.fx.push({ k: 'radio', who, text, tick: gs.tick }) }
-function toast(gs, msg) { gs.fx.push({ k: 'toast', msg, tick: gs.tick }) }
 
 // --- helpers -------------------------------------------------------------------
 const frontOf = (m) => [m.x + DIRS[m.face][0], m.y + DIRS[m.face][1]]
@@ -269,7 +268,7 @@ function stepPlant(gs) {
 }
 
 // --- tip at the dock -----------------------------------------------------------
-function tip(gs, m) {
+function tip(gs) {
     if (gs.truck.bed <= 0) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
     const match = gs.orders.find((o) => o.grade === gs.bedGrade)
     if (!match) {
@@ -348,7 +347,7 @@ function actSeatB(gs, seat) {
         }
     }
     if (seat === 1) { // truck tip at dock
-        if (DOCK_SPOTS.some(([sx, sy]) => sx === m.x && sy === m.y) && gs.truck.bed > 0) { tip(gs, m); return }
+        if (DOCK_SPOTS.some(([sx, sy]) => sx === m.x && sy === m.y) && gs.truck.bed > 0) { tip(gs); return }
     }
     gs.fx.push({ k: 'deny', tick: gs.tick })
 }
