@@ -102,6 +102,9 @@ npm run voicecmdcheck           # #1249 spoken co-op: grammar, obey/refuse,
                                 #      pad-law, determinism, voiceCmd format,
                                 #      quest won with 20 calls shouted (mutant
                                 #      red: --mutate makes the seat deaf)
+npm run voicecoopdrive          # advisory headless drive: consent → V → heard
+                                #      banner → seat walks the order → recorded
+                                #      file with voiceCmd replays hash-exact
 npm run slotcheck -- --mutate     # #494 seat determinism: cpu pads recorded,
                                       # replayed through model seats, hash-equal
 npm run gauntletplay              # advisory browser drive (needs npm run dev)

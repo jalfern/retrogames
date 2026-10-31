@@ -176,19 +176,17 @@ console.log('determinism — same seed, same pads, same call, same hash:')
 console.log('recording — the voiceCmd channel:')
 {
     const r = createRecorder({ gameId: 'gauntlet', method: 'stick', seed: 3, players: 2, build: 'check' })
-    r.addVoiceCmd({ t: 1, said: 'grab the key', intent: 'key', ok: true })
+    r.addVoiceCmd({ said: 'grab the key', intent: 'key', ok: true })
     for (let t = 0; t < 300; t++) r.addTick([{ up: true }, {}], null, t % 30 === 29 ? t : null)
-    r.addVoiceCmd({ t: 300, said: 'fly to the moon', intent: null, ok: false, why: 'NOT SURE' })
+    r.addVoiceCmd({ said: 'fly to the moon', intent: null, ok: false, why: 'NOT SURE' })
     const rec = r.finish(4242)
+    ok(rec.voiceCmd[0].t === 1 && rec.voiceCmd[1].t === 300, 'calls stamp the RECORDER clock (game tick irrelevant)', JSON.stringify(rec.voiceCmd.map((c) => c.t)))
     ok(validate(rec) === null, 'a v1 file with voiceCmd still validates (metadata, like ping)', validate(rec) || '')
     ok(rec.voiceCmd.length === 2 && rec.voiceCmd[1].intent === null && rec.voiceCmd[1].why === 'NOT SURE', 'said/understood/ok all banked')
     ok(recDownload(rec).filename.includes('seed3'), 'download names still flow')
     let threw = ''
-    try { createRecorder({ gameId: 'x', seed: 1 }).addVoiceCmd({ t: 5, intent: 'key', ok: true }) } catch (e) { threw = e.message }
+    try { createRecorder({ gameId: 'x', seed: 1 }).addVoiceCmd({ intent: 'key', ok: true }) } catch (e) { threw = e.message }
     ok(threw.includes('said'), 'an entry without the words is refused')
-    threw = ''
-    try { createRecorder({ gameId: 'x', seed: 1 }).addVoiceCmd({ t: 0, said: 'x', intent: null, ok: true }) } catch (e) { threw = e.message }
-    ok(threw.includes('t'), 'a call before tick 1 is refused')
     ok(validate({ format: 'retrogames-rec/v1', game: 'gauntlet', method: 'stick', seed: 1, players: 1, ticks: 5, hashEvery: 30, slots: [{ source: { kind: 'model' }, pads: [{}, {}, {}, {}, {}], raw: [{}, {}, {}, {}, {}] }], hashes: [], voiceCmd: [{ t: 2, said: 'go', intent: 7, ok: true }] }) !== null, 'a non-string intent fails the format gate')
 }
 

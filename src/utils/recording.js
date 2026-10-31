@@ -158,13 +158,15 @@ export function createRecorder(opts = {}) {
             if (hash !== null && hash !== undefined && ticks % hashEvery === 0) hashes.push({ t: ticks, h: hash })
         },
         addVoiceCmd(e) {
-            if (!e || !Number.isInteger(e.t) || e.t < 1) throw new Error('recorder: voiceCmd t must be a positive integer')
-            if (typeof e.said !== 'string' || !e.said) throw new Error('recorder: voiceCmd said must be the words that were said')
+            if (!e || typeof e.said !== 'string' || !e.said) throw new Error('recorder: voiceCmd said must be the words that were said')
             if (typeof e.ok !== 'boolean') throw new Error('recorder: voiceCmd ok must be a boolean')
             if (!(e.intent === null || e.intent === undefined || typeof e.intent === 'string')) throw new Error('recorder: voiceCmd intent must be a string or null')
-            const last = voiceCmd[voiceCmd.length - 1]
-            if (last && e.t < last.t) throw new Error('recorder: voiceCmd ticks must not go backwards')
-            const entry = { t: e.t, said: e.said, intent: e.intent || null, ok: e.ok }
+            // Stamp on the RECORDER's clock, never the caller's: a recorder
+            // started mid-run sees game tick 437 inside a 180-tick capture
+            // (the #1249 live drive caught exactly this). A call is attributed
+            // to the last tick actually banked — honest "as of then".
+            const t = Math.max(1, ticks)
+            const entry = { t, said: e.said, intent: e.intent || null, ok: e.ok }
             if (e.dir) entry.dir = String(e.dir)
             if (e.why) entry.why = String(e.why)
             voiceCmd.push(entry)
@@ -186,7 +188,8 @@ export function createRecorder(opts = {}) {
                 hashes,
             }
             if (voice) rec.voice = voice
-            if (voiceCmd.length) rec.voiceCmd = voiceCmd
+            const cmds = voiceCmd.filter((c) => c.t <= ticks) // calls before the first bank carry no tick — drop, not corrupt
+            if (cmds.length) rec.voiceCmd = cmds
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
                 hashes.push({ t: ticks, h: finalHash })
             }

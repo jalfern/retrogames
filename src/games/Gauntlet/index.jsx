@@ -412,7 +412,6 @@ const GauntletGame = () => {
             voiceCtl.why = res.ok ? '' : res.why || 'NO CALL'
             voiceCtl.okT = 200
             recordVoiceCmd({
-                t: Math.max(1, gs.tick),
                 said: raw.slice(0, 80),
                 intent: res.ok ? res.intent.kind : null,
                 ok: !!res.ok,
@@ -1348,7 +1347,7 @@ const GauntletGame = () => {
             )}
             {/* #1249: the voice seat's badge — listening, and the order it is
                 under. Bottom-right, mirror of the guest-mic pill. */}
-            {voiceUi && screen === 'play' && !paused && (
+            {voiceUi && (screen === 'play' || screen === 'select') && !paused && (
                 <div
                     data-voice-coop="on"
                     data-voice-order={voiceUi.label}

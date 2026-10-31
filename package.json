@@ -206,6 +206,7 @@
     "replaycheck": "node scripts/replaycheck.mjs",
     "voicecheck": "node scripts/voicecheck.mjs",
     "voicecmdcheck": "node scripts/voicecmdcheck.mjs",
+    "voicecoopdrive": "node scripts/voicecoopdrive.mjs",
     "voicedrive": "node scripts/voicedrive.mjs",
     "recmethods": "node scripts/recmethods.mjs",
     "feedbackcheck": "node scripts/feedbackcheck.mjs",
