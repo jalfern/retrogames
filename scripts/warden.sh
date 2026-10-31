@@ -225,14 +225,23 @@ main() {
     # step (no manual launchctl dance for the trial). A `revert` verdict from
     # the 48 h trial ends the slot until Jon removes the verdict file.
     if [[ "$HALTED" != yes && "$DRY" != 1 && "$VERDICT" != revert* ]] \
-       && ! launchctl print "gui/$(id -u)/$SLOTB_JOB" >/dev/null 2>&1 \
-       && [[ -f "$REPO/scripts/$SLOTB_JOB.plist" ]]; then
-        cp "$REPO/scripts/$SLOTB_JOB.plist" "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" 2>/dev/null
-        if launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" >> "$LOG" 2>&1; then
-            log "installed $SLOTB_JOB (#1258 slot b)"
-            ACTIONS+=("slotb-installed")
+       && ! launchctl print "gui/$(id -u)/$SLOTB_JOB" >/dev/null 2>&1; then
+        # Read the plist from origin/main, NOT from $REPO/scripts/: this whole
+        # script runs via `git show origin/main:... | zsh -s`, and the main
+        # checkout's working tree lags behind origin/main until someone checks
+        # it out — an on-disk `-f` check would silently never fire, and the
+        # slot would never install (caught at write time by the dry tick).
+        if git -C "$REPO" show "origin/main:scripts/$SLOTB_JOB.plist" \
+               > "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" 2>/dev/null; then
+            if launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" >> "$LOG" 2>&1; then
+                log "installed $SLOTB_JOB (#1258 slot b)"
+                ACTIONS+=("slotb-installed")
+            else
+                log "$SLOTB_JOB bootstrap failed"
+                rm -f "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist"
+            fi
         else
-            log "$SLOTB_JOB bootstrap failed"
+            log "no $SLOTB_JOB.plist on origin/main (pre-#1258 main?)"
         fi
     fi
     B_LOADED=0
