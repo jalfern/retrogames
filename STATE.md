@@ -1,46 +1,64 @@
-# STATE — session 63 (2026-10-31, slot a)
+# STATE — session 65 (2026-10-31, slot b)
 
 ## Shipped this session
-**TALK ME DOWN landed on main and is prod-verified** — `d9be8bd` (PR #1304),
-index bundle `index-BaDzxMn6.js` carries the registry entry, lazy chunk
-`index-DPnHMmMW.js` answers 200. Live: https://jalfern.com/retrogames/talk-me-down
-(private visibility until Jon promotes, #379). #1252 closed shipped; QA polish
-#1305 already filed (#1305 is its own feedback issue — no re-file needed).
-This was a warden-assigned resume (#1252): slot b's session had built and gated
-the game; the remaining rule-5 merge, prod-check and issue labels were mine.
+**FIRE CREW live** — https://jalfern.com/retrogames/fire-crew (#1254, closed
+shipped). Slot a built the whole game (seeded fire/wind/collapse sim, 3-seat
+info-split co-op, runtime art, firecrewcheck 33 gates, drive green) and parked
+PR #1360 at the #601 freeze waiting on `static`. Warden assigned #1254 to
+slot b; slot a's claim was 162 min stale so the takeover claim succeeded.
+Independent re-verification on port 5178 BEFORE merging: firecrewcheck 33/33,
+firecrewplay DRIVE GREEN (start/play/pause/contract/die/restart, zero page
+errors), contractcheck fire-crew section green, attractcheck 694/0, three
+scoped lint gates + build green. Slot a's rule-5 merge loop fired at 19:30Z
+(`cca1dc4`, static green 9m55s); slot b verified prod bundle contains the game
+and the route returns 200.
+- RALLY CO-DRIVER (#1251 → `f35a63c`) merged on top during this session by
+  another lane — not ours, but it explains why main moved twice.
+- Filed **#1361** FIRE CREW polish pass (voice capture unwired #1247, static
+  smoke field, seat-3 parked truck, water-cone juice, loft bucket-brigade,
+  ART.md pass).
+- Filed **#1362** TALK ME DOWN broken: contractcheck deterministically red at
+  main — seeded run dies at tick 461/600 and `seed` is never recorded
+  (reproduced 3/3). QA lane: do this one first; it is not polish, it is breakage.
 
-## The #1252 double-drive (worth keeping)
-Both builder slots ended tonight on #1252: the warden kicked ME to claim it (arbiter
-granted — session-61's last checkpoint was >90 min old), while live slot b legitimately
-resumed it via FORGE step-1b's corpse path — resumption runs no arbiter, so nothing
-could see the collision. GitHub serialized: one squash, zero damage; only noise was two
-FORGE lines on one build. Rule: at step-1b resumption, check
-`gh pr view <the game's PR> --json mergeStateStatus` first and don't start a merge loop
-if a merge is already in flight or merged. Clearing stale `[main]` pins in finished
-worktrees is safe plumbing for any lane (gh's post-merge auto-switch leaves them; a
-held `main` wedges the next merge).
+## Lessons worth keeping
+- A stale claim can host a LIVE merge loop. Before charging into a "stale"
+  game, `pgrep -fl main-ok.sh` in addition to the claim-liveness check. If a
+  rule-5 loop is in flight: verify independently, let it fire — racing two
+  `gh pr merge` calls buys nothing.
+- Prod verification: poll the Vercel alias (`retrogames-psi.vercel.app`) as
+  well as `www.jalfern.com` — the same bundle hash read different contents at
+  the edge minutes apart. When they disagree, the alias is the deploy, the
+  .com edge is a cache.
 
 ## Next goal
-Game queue (oldest first): **#1254 FIRE CREW, #1259 forge-watch hardening**.
-#1141 is platform-lane. Rule-4 watch: reset — game code merged this session.
+Game queue is nearly empty — one real game left: **#1291 SHORT ORDER SHOUT
+stage 2 — online kitchen lobby** (game-queue). The rest of `game-queue` is
+PLATFORM (#1290, #1299, #1354) and #1141 stays stalled on platform. After
+#1291 the builder runs dry unless Jon refills — next-but-one builder should
+expect the flagship polish stage (#841) and derive the pick honestly with
+`scripts/lib/idle.mjs`.
 
-## Harness
-- `scripts/forge-claim.sh` shipped WITHOUT the exec bit — bare invocations (the
-  warden prompt AND FORGE step 2 both call it bare) died with exit 126, which
-  reads like a REFUSED claim. Fixed (+x) in this PR; `bash <script>` remains
-  the fallback.
-- `bombcheck`/`bombdrive` are on main via #1304; talk-me-down wired in contractGames.
-
-## Environment notes
-- Slot a worked in `~/Dev/retrogames-forge-bomb-defuse` (resume of slot b's
-  branch); port 5173 untouched — a merge-only finish needs no dev server.
-- Fresh clones of this repo still self-heal via `rm -rf node_modules && npm ci`
-  if the SPA serves corrupt (duplicate React).
+## Rule-4 watch
+Counter reset — FIRE CREW is merged game code this session (63 game, 64
+platform, 65 game).
 
 ## Open questions for Jon
-- none from this session (games lane). #1286 sits AWAITING on the qa lane;
-  #737 still waiting-jon from earlier lanes.
+- none from this session. #1286 sits AWAITING on the qa lane; #737 still
+  waiting-jon from earlier lanes.
 
 ## Carry-over
-- #1305 QA polish pass on TALK ME DOWN; #1287 GAUNTLET voice polish.
-- #1266/#1275 QA follow-ups; #1141 stage 4.
+- QA: **#1362 first** (talk-me-down breakage), then #1305, #1292, #1295,
+  #1306, #1351–#1353 first-time-player passes, #1361 FIRE CREW polish,
+  #1287 GAUNTLET voice polish, #1266/#1275 follow-ups.
+- Platform: #1358 (shoreperf cancel poisons nightly verdicts), #1359 (mutants
+  left in tree after SIGTERM — until fixed, mutate runs need ≥8 min budgets),
+  #1141 stage 4.
+- Live `forge` dashboard adoption: `scripts/watch.sh --kill; scripts/watch.sh
+  --live` to rebuild panes (old-format panes are logged-only).
+
+## Environment notes
+- Slot b built in `~/Dev/retrogames-forge-fire-crew` (shared with slot a across
+  the handoff; node_modules symlinked to main checkout). Slot b's dev server on
+  5178 stopped after verification; slot a owns 5173 (untouched). Main checkout
+  left detached ✓; STATE.md rides its own PR per the #1308/#1311 pattern.
