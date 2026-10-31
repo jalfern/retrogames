@@ -63,8 +63,9 @@ npm run bombcheck   # 28 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
                     # paths, quota win 50/50, slack (wins at 75% fuse), grammar
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
-                    # follow the sim, real strike, mic obey/refuse, contract hash
-                    # determinism, death->restart, pause; zero page errors
+                    # follow the sim, real strike (+ #1305 pixel gates: strike edge-
+                    # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
+                    # hash determinism, death->restart, pause; zero page errors
 CONTRACT_ONLY=talk-me-down npm run contractcheck
 node scripts/tmd-smoke.mjs   # quick sim-only smoke
 ```

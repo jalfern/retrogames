@@ -42,13 +42,19 @@ export function segDigit(g, x, y, d, color, dim = P.fuseDim) {
         g.fillRect(x + s[0], y + s[1], s[2], s[3])
     })
 }
-export function drawFuse(g, x, y, secs, urgent) {
+export function drawFuse(g, x, y, secs, urgent, tick = 0) {
     const mm = Math.max(0, Math.floor(secs / 60))
     const ss = Math.max(0, secs % 60)
     const col = urgent ? (secs % 2 ? '#ff5b5b' : P.fuseRed) : P.fuseRed
     ;[Math.floor(mm / 10), mm % 10].forEach((d, i) => { if (i > 0 || mm >= 10) segDigit(g, x + i * 10, y, d, col) })
     g.fillStyle = col; g.fillRect(x + 21, y + 12, 2, 2); g.fillRect(x + 21, y + 6, 2, 2)
     ;[Math.floor(ss / 10), ss % 10].forEach((d, i) => segDigit(g, x + 26 + i * 10, y, d, col))
+    // #1305: last-10-s urgency — the whole fuse bezel throbs, not just digits.
+    // Pulse alpha never reaches 0 so a screenshot at any phase catches it.
+    if (urgent) {
+        g.strokeStyle = `rgba(255,47,47,${(0.45 + 0.55 * (0.5 + 0.5 * Math.sin(tick / 5))).toFixed(2)})`
+        g.lineWidth = 2; g.strokeRect(x - 8, y - 6, 112, 34); g.lineWidth = 1
+    }
 }
 
 // ---- bench + panel -----------------------------------------------------------
@@ -274,7 +280,14 @@ export function moduleFrame(g, r, m, selected, cursorFlash, tick) {
     g.fillStyle = '#26292e'; g.fillRect(r.x, r.y, r.w, r.h)
     g.fillStyle = '#181a1e'; g.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
     if (m.solved) {
-        g.fillStyle = P.safe; g.fillRect(r.x + 4, r.y + 4, 6, 6)
+        // #1305: a real panel lamp — bezel ring + soft halo, readable at a glance
+        // next to the red lock strobe. (Was a flat 6px square.)
+        const lx = r.x + 7, ly = r.y + 7
+        g.fillStyle = 'rgba(65,224,90,0.10)'; g.beginPath(); g.arc(lx, ly, 10, 0, 7); g.fill()
+        g.fillStyle = 'rgba(65,224,90,0.22)'; g.beginPath(); g.arc(lx, ly, 6, 0, 7); g.fill()
+        g.fillStyle = '#101a12'; g.beginPath(); g.arc(lx, ly, 4.5, 0, 7); g.fill()
+        g.fillStyle = P.safe; g.beginPath(); g.arc(lx, ly, 3, 0, 7); g.fill()
+        g.fillStyle = '#d6ffdd'; g.fillRect(lx - 1, ly - 2, 2, 1)
         g.font = FONT(7); g.fillStyle = '#2f7d43'; g.fillText('SAFE', r.x + 14, r.y + 11)
         if (m.flash > 0 && tick % 8 < 4) { g.fillStyle = 'rgba(65,224,90,0.18)'; g.fillRect(r.x, r.y, r.w, r.h) }
     } else if (m.locked > 0 && tick % 16 < 8) {
@@ -356,13 +369,20 @@ export function drawManual(g, page, line, stamps, tick, hidden) {
 }
 
 // ---- chrome bits -----------------------------------------------------------
-export function drawOrderRail(g, order, flag) {
+export function drawOrderRail(g, order, flag, flicker = 0) {
     const y = PANEL.y + PANEL.h - 32
     g.fillStyle = '#0a0d0b'; g.fillRect(PANEL.x + 8, y, PANEL.w - 16, 22)
     g.fillStyle = P.lcd; g.fillRect(PANEL.x + 10, y + 2, PANEL.w - 20, 18)
+    // #1305: an arriving order lands with a 2-frame LCD flicker (the glass
+    // stutters before the text settles), synced to the partner blip.
+    if (flicker > 0) {
+        if (flicker % 2 === 0) { g.fillStyle = 'rgba(120,255,150,0.18)'; g.fillRect(PANEL.x + 10, y + 2, PANEL.w - 20, 18) }
+        g.fillStyle = 'rgba(120,255,150,0.5)'
+        g.fillRect(PANEL.x + 10, y + 4 + ((flicker * 7) % 14), PANEL.w - 20, 2)
+    }
     g.font = FONT(7); g.fillStyle = P.lcdTxt
     const msg = order ? `PARTNER: ${order}` : (flag ? `READ RULE ${flag}` : 'PARTNER HOLDING THE MANUAL...')
-    g.fillText(msg.slice(0, 42), PANEL.x + 14, y + 14)
+    if (!(flicker > 2 && flicker % 2 === 0)) g.fillText(msg.slice(0, 42), PANEL.x + 14, y + 14)
 }
 
 export function drawBanner(g, text, ok, tick) {
