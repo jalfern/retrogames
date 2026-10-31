@@ -202,6 +202,9 @@ const BritanniaGame = lazy(() => import('../games/Britannia'))
 const PickRushGame = lazy(() => import('../games/PickRush'))
 const TidyBotGame = lazy(() => import('../games/TidyBot'))
 const RobotLabGame = lazy(() => import('../games/RobotLab'))
+// Floor Boss: its planner (the CPU floor manager) and the whole dispatch sim
+// ride in their own chunk, same lesson as Lemmings.
+const FloorBossGame = lazy(() => import('../games/FloorBoss'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1144,5 +1147,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'The Plaicraft robot-sim kit (issue #1141 stage 1), on a dollhouse workbench: a 4-joint arm with a real parallel gripper, a drawer on real rails, and a spring-hinged cabinet. The crate goes in the drawer and the drawer closes; the can goes in the cabinet and the door swings shut. Real physics underneath — the drawer refuses to close on a crate left on the track (STAND CLEAR), the gripper grabs nothing when it closes on air, and everything you carry swings with real mass. Every run records a Plaicraft EPISODE (seed, one pad per tick per slot, object-pose track, success flag) for training-data export. Any of three input styles: analog stick, keys, or tap-to-point ("pick that, put it there").',
         controls: ['Stick / Arrows: move the gripper (left/right, reach in/out)', 'SHIFT / B (held): stick moves UP/DOWN instead (lift mode)', 'SPACE / A: close the gripper — grab a crate or can, latch a drawer/door handle; press again to release', 'Tap an object: arm drives to it and grabs - tap an open drawer/cabinet: opens it - tap a spot while holding: carries and drops it there', 'Win both tasks: CRATE then drawer then close - CAN then cabinet then door shut', '?: pause and read the rules'],
+    },
+    {
+        path: '/floor-boss',
+        pad: { layout: 'dpad', buttons: [{ label: 'PICK', code: 'Space' }, { label: 'TOOL', code: 'KeyB' }], reason: 'cursor with the dpad, PICK clicks (dispatch/repair/nudge), TOOL cycles rack/hire' },
+        builtBy: 'forge',
+        added: '2026-10-30',
+        visibility: 'private',
+        tapStart: false,
+        component: FloorBossGame,
+        label: 'FLOOR BOSS',
+        theme: 'dark',
+        description: 'An original robot-warehouse management sim on the Plaicraft sim kit (#1144) — think SimCity for a fulfillment floor. You run the night shift: an intake conveyor feeds a stow arm, hauler robots stock orange pallet racks, and orders with deadlines pour in from the right rail. Everything is pointer-first: click a bot then a rack to dispatch it, click a broken bot repeatedly to turbo-repair, click a jammed aisle to back one bot off. Spend throughput on racks and new robots — a tight layout ships more, and a stow arm with nowhere to put cargo stalls the whole belt. Rush-hour waves pay 1.5× on top of everything; expired orders strike against you, and three strikes means the boss ends your shift early. Beat the quota (1000 units in 150 seconds) for the clean shift report. Auto-dispatch keeps the floor moving while you manage the exceptions; pin an order card to make its picks first. The whole floor is seeded and deterministic, and every shift saves a Plaicraft episode, so one seat can be a model playing the manager slot against you. The attract demo is the CPU floor manager the harness proves against.',
+        controls: ['Arrows / d-pad: move the floor cursor', 'SPACE / PICK: click a bot to select · click a rack to dispatch the selected bot · click a DOWN bot to repair, a JAM bot to back it off', 'Click a rack with no selection: peek its stock · click an order card: pin it as priority', 'B / TOOL: cycle build tool (rack $60 → hire bot $150 → off), then PICK a floor cell to place', 'Top bar chips: AUTO (F) toggles auto-dispatch · RACK (R) · BOT (H)', 'Watch the wear bars — a worn-out bot stops until clicked; two stuck bots make a JAM', 'Rush hour pays 1.5×; three expired orders and you are fired; make quota 1000 before the clock runs out', '?: pause and read the shift rules'],
     },
 ]
