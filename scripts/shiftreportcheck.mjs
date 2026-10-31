@@ -365,7 +365,7 @@ ok('telemetry job runs shiftreport every 4 h', read('scripts/telemetry.sh').incl
 ok('telemetry samples record per-sample slot liveness: pgrep identities (#1269)',
     /T_UP=false; pgrep -f 'opencode run\.\*THE FORGE on slot b\\\.'/.test(read('scripts/telemetry.sh')))
 ok('telemetry samples record per-sample slot liveness: pulse field (#1269)',
-    /\\\"slots\\\":\{\\\"a\\\":\$S_UP,\\\"b\\\":\$T_UP\}/.test(read('scripts/telemetry.sh')))
+    /\\\"slots\\\":\{\\\"a\\\":\$S_UP,\\\"b\\\":\$T_UP,\\\"qaStudio\\\":\$Q_UP,\\\"qaMini\\\":\$M_UP\}/.test(read('scripts/telemetry.sh')))
 ok('report page renders the slot split on the fleet line (#1269)', /st\.merged\.slots/.test(read('src/pages/ShiftReport.jsx')))
 ok('fixture carries the slot rollup summing to the builder count (#1269)', (() => {
     const f = JSON.parse(read('public/forge/report-fixture.json'))
