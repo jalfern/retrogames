@@ -206,6 +206,9 @@ const RobotLabGame = lazy(() => import('../games/RobotLab'))
 // ride in their own chunk, same lesson as Lemmings.
 const FloorBossGame = lazy(() => import('../games/FloorBoss'))
 
+// Short Order Shout: the co-op kitchen sim chunks with the game (#1248).
+const ShortOrderShoutGame = lazy(() => import('../games/ShortOrderShout'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -1160,5 +1163,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original robot-warehouse management sim on the Plaicraft sim kit (#1144) — think SimCity for a fulfillment floor. You run the night shift: an intake conveyor feeds a stow arm, hauler robots stock orange pallet racks, and orders with deadlines pour in from the right rail. Everything is pointer-first: click a bot then a rack to dispatch it, click a broken bot repeatedly to turbo-repair, click a jammed aisle to back one bot off. Spend throughput on racks and new robots — a tight layout ships more, and a stow arm with nowhere to put cargo stalls the whole belt. Rush-hour waves pay 1.5× on top of everything; expired orders strike against you, and three strikes means the boss ends your shift early. Beat the quota (1000 units in 150 seconds) for the clean shift report. Auto-dispatch keeps the floor moving while you manage the exceptions; pin an order card to make its picks first. The whole floor is seeded and deterministic, and every shift saves a Plaicraft episode, so one seat can be a model playing the manager slot against you. The attract demo is the CPU floor manager the harness proves against.',
         controls: ['Arrows / d-pad: move the floor cursor', 'SPACE / PICK: click a bot to select · click a rack to dispatch the selected bot · click a DOWN bot to repair, a JAM bot to back it off', 'Click a rack with no selection: peek its stock · click an order card: pin it as priority', 'B / TOOL: cycle build tool (rack $60 → hire bot $150 → off), then PICK a floor cell to place', 'Top bar chips: AUTO (F) toggles auto-dispatch · RACK (R) · BOT (H)', 'Watch the wear bars — a worn-out bot stops until clicked; two stuck bots make a JAM', 'Rush hour pays 1.5×; three expired orders and you are fired; make quota 1000 before the clock runs out', '?: pause and read the shift rules'],
+    },
+    {
+        path: '/short-order-shout',
+        pad: { layout: 'dpad', buttons: [{ label: 'TAKE', code: 'Space' }, { label: 'TOSS', code: 'KeyB' }], reason: 'kitchen work on a grid: arrows walk, TAKE grabs/uses/stirs/serves at whatever you face, TOSS flings ingredients and dishes over the counter' },
+        builtBy: 'forge',
+        added: '2026-10-31',
+        visibility: 'private',
+        tapStart: false,
+        component: ShortOrderShoutGame,
+        label: 'SHORT ORDER SHOUT',
+        theme: 'dark',
+        description: 'An original co-op cook-up (#1248): an all-night diner cut in two by a long pass counter. One side has the walk-in cooler, chop board, two burners, tap and ONE shared soup pot; the only service window is across the counter - dishes cross by hand around the end or mid-air over the top. That is the shout: SOUP needs potato, then tomato, then two stirs while it rolls (ignore it and it boils over - rinse the pot and start again). A MELT needs the board: bun down, tomato sliced on it, seared patty last, then someone carries it to the window while someone else keeps the burners honest. Leave a patty past its sear and the burner catches fire - cup of water from the tap, douse it, before it spreads. Drop anything on the floor and stations refuse it until you rinse. Tickets print on the dot-matrix rail with timer bars; serve the matching dish for points plus a time tip (tomato garnish +25), and three expired tickets get you fired before the 150-second whistle. Any seat can be you: 1-4 cooks, seat 2 optionally shares the keyboard (WASD + F/G), CPU cooks play by the same pads you do, and the whole shift is seeded and deterministic so a trained model can take the pass seat later.',
+        controls: ['Arrows / d-pad: walk the cook (you face where you walk)', 'SPACE / TAKE: take from the cooler - fill the cup at the tap - sear patties on a burner - board builds - stir the boiling pot - ladle ready soup - rinse a ruined pot or a dirty item - serve at the window', 'B / TOSS: fling what you hold over the counter - ingredients land on stations that accept them; a dish caught by a runner is one step from the window', 'Attract: any key or tap - Select: arrows pick 1-4 cooks, P makes seat 2 HUMAN (WASD + F take + G toss), SPACE starts the shift', 'One item per cook - handoffs and timing ARE the game; solo works, two cooks shout', '3 strikes (expired tickets) ends the shift; quota 900 wins the CLEAN SHIFT stamp', '?: pause and read the house rules'],
     },
 ]

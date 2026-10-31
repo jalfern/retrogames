@@ -255,6 +255,7 @@ function actA(gs, c) {
     // POT -------------------------------------------------------------
     if (fk === 'pot') {
         const p = gs.pot
+        if (c.dirty && (c.holding === 'pot' || c.holding === 'tom')) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
         if (p.state === 'empty' && c.holding === 'pot') { p.state = 'veg'; p.t = 0; c.holding = null; gs.fx.push({ k: 'potAdd', n: 1, tick: gs.tick }); return }
         if (p.state === 'veg' && c.holding === 'tom') { p.state = 'boiling'; p.t = 0; p.since = 0; p.stir = 0; p.need = 2; c.holding = null; gs.fx.push({ k: 'boil', tick: gs.tick }); return }
         if (p.state === 'boiling') { p.stir++; p.since = 0; gs.fx.push({ k: 'stir', n: p.stir, tick: gs.tick }); return }
@@ -266,13 +267,17 @@ function actA(gs, c) {
     if (fk === 'burner') {
         const bi = fx === 6 ? 0 : 1
         const b = gs.burners[bi]
-        if (c.holding === 'patty' && b.state === 'empty') { b.state = 'cooking'; b.t = 0; c.holding = null; gs.fx.push({ k: 'sear', n: bi, tick: gs.tick }); return }
+        if (c.holding === 'patty' && b.state === 'empty') {
+            if (c.dirty) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
+            b.state = 'cooking'; b.t = 0; c.holding = null; gs.fx.push({ k: 'sear', n: bi, tick: gs.tick }); return
+        }
         if (b.state === 'ready' && !c.holding) { c.holding = 'pattyC'; b.state = 'empty'; b.t = 0; gs.fx.push({ k: 'take', tick: gs.tick }); return }
         if (b.state === 'burnt' && !c.holding) { c.holding = 'ruin'; b.state = 'empty'; b.t = 0; gs.fx.push({ k: 'take', tick: gs.tick }); return }
     }
 
     // BOARD ------------------------------------------------------------
     if (fk === 'board') {
+        if (c.dirty && (c.holding === 'bun' || c.holding === 'tom' || c.holding === 'pattyC')) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
         if (c.holding === 'bun' && gs.board === 'none') { gs.board = 'bun'; c.holding = null; gs.fx.push({ k: 'board', s: 'bun', tick: gs.tick }); return }
         if (c.holding === 'tom' && (gs.board === 'bun' || gs.board === 'none')) { gs.board = gs.board === 'bun' ? 'buntom' : 'none'; c.holding = null; if (gs.board === 'buntom') gs.fx.push({ k: 'chop', tick: gs.tick }); return }
         if (c.holding === 'pattyC' && (gs.board === 'bun' || gs.board === 'buntom')) {
