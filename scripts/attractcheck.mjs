@@ -300,6 +300,17 @@ const REACT_TITLES = [
         wrap: `    'WIND DRIFTS YOUR HOVER',\n`,
         leak: `    'BANK AT THE HIVE BEFORE SUNSET',\n`,
     },
+    {
+        label: 'FIRE CREW',
+        jsx: 'src/games/FireCrew/index.jsx',
+        mf: 'src/games/FireCrew/attract.js',
+        import: '../src/games/FireCrew/attract.js',
+        slot: '<AttractMessage className="mb-6 text-orange-100/80" messages={MESSAGES} />',
+        blinkFrom: `animate-pulse text-white">{PRESS}</p>`,
+        dimFrom: 'bg-black/55',
+        wrap: `    'BURNED FLOORS GIVE WAY',\n`,
+        leak: `    'FIRE SPREADS WITH THE WIND',\n`,
+    },
 ]
 
 const WIDTHS = [320, 600]
