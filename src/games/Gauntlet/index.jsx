@@ -35,6 +35,8 @@ import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { makeVoiceInbox, packVoiceAudio } from '../../utils/voice'
+import { createVoiceSession } from '../../utils/voiceCapture'
 
 const PW = 64, HT = 40
 const CW = VW + PW, CH = VH + HT
@@ -129,6 +131,7 @@ const GauntletGame = () => {
 
         const netEnd = (phase) => {
             net.phase = phase
+            netVoiceEnd() // #1247: stop + release the guest mic when the race ends
             netPush()
         }
 
@@ -146,7 +149,7 @@ const GauntletGame = () => {
             },
             on: {
                 gone: () => {
-                    if (net.phase === 'play' || net.phase === 'waiting') { net.phase = 'gone'; netPush() }
+                    if (net.phase === 'play' || net.phase === 'waiting') { net.phase = 'gone'; netVoiceEnd(); netPush() }
                     audioController.playSweep(660, 180, 0.25, 'square', 0.07)
                 },
                 hs: (m) => {
@@ -154,6 +157,7 @@ const GauntletGame = () => {
                     if (r && r.desync !== undefined) netDesync(r.desync)
                 },
                 pad: (m) => {
+                    if (m && m.k === 'v') { if (net.role === 'host') netVoiceIn.feed(m); return } // #1247 voice, not a pad
                     if (net.lock) net.lock.gotPad(m.k, m.p)
                 },
             },
@@ -174,6 +178,49 @@ const GauntletGame = () => {
             keys.swordEdge = false; keys.arrowEdge = false
             seatPrev.a = false
             setSlotKind(p2slot, 'remote')
+            if (netRole === 'host') netVoiceIn.reset() // fresh race, fresh remote tracks
+        }
+
+        // #1247 VOICE on the wire: the guest's device records its own player
+        // (consent asked at race start, cached) and streams raw opus chunks to
+        // the host riding the relay's already-forwarded `pad` type as a k:'v'
+        // subkind (sig-style framing, no relay redeploy). The host assembles
+        // every remote track with a voice.js inbox and the contract merges them
+        // into its recording via spec.voiceExtra — plus the host's own local
+        // track (contract capture, narrowed to slot 0 in net play: the phones
+        // of link-pad players are separate devices, see README honest gaps).
+        const netVoiceIn = makeVoiceInbox()
+        let guestVoice = null
+
+        const netVoiceSend = (m) => { try { if (net.room) net.room.send('pad', m) } catch { /* gone */ } }
+
+        const netVoiceBegin = () => {
+            if (netRole !== 'guest' || guestVoice) return
+            guestVoice = createVoiceSession({
+                slots: [1],
+                onData: (b64) => { for (const m of packVoiceAudio(1, b64)) netVoiceSend(m) },
+            })
+            guestVoice.ready.then(() => {
+                if (!guestVoice) return
+                if (guestVoice.phase === 'recording') netVoiceSend({ t: 'pad', k: 'v', s: 1, m: 'i', x: JSON.stringify(guestVoice.intro()) })
+                else if (guestVoice.phase === 'declined') netVoiceSend({ t: 'pad', k: 'v', s: 1, m: 'x' })
+            })
+        }
+
+        const netVoiceTick = () => {
+            if (!guestVoice || guestVoice.phase !== 'recording') return
+            guestVoice.onTick(gs.tick)
+            for (const c of guestVoice.drainClock()) netVoiceSend({ t: 'pad', k: 'v', s: 1, m: 'c', a: c.t, b: c.ms })
+        }
+
+        const netVoiceEnd = () => {
+            if (!guestVoice) return
+            const sv = guestVoice
+            guestVoice = null
+            sv.finalize().then((track) => {
+                if (track) netVoiceSend({ t: 'pad', k: 'v', s: 1, m: 'e', a: track.ms })
+                else if (sv.consent.consent === false && sv.consent.reason === 'declined') netVoiceSend({ t: 'pad', k: 'v', s: 1, m: 'x' })
+            })
         }
 
         const netBegin = (seed, hero, peerHero) => {
@@ -183,6 +230,7 @@ const GauntletGame = () => {
             gs.partnerHuman = false
             demoAt = 0
             netStartLock()
+            netVoiceBegin()
             net.phase = 'play'
             netPush()
             setMode('play')
@@ -222,6 +270,7 @@ const GauntletGame = () => {
                 const r = net.lock.hash(gs.tick, stateHash(gs))
                 if (r && r.desync !== undefined) netDesync(r.desync)
             }
+            netVoiceTick()
             net.lock.prune(k)
         }
 
@@ -1000,6 +1049,9 @@ const GauntletGame = () => {
                 // at record-stop. Seat 1 arrives via the contract (external pad
                 // stream = model); seat 2 is model while the contract drives it.
                 sources: () => [{ kind: 'model' }, { kind: modelP2 ? 'model' : p2slot.kind }],
+                // #1247: online host — this device's mic covers seat 0 only,
+                // and the guest's relayed track joins every recording.
+                ...(netRole === 'host' ? { voice: { slots: [0] }, voiceExtra: () => netVoiceIn.voiceSection() } : {}),
                 reset: (seed, players = 1) => {
                     gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', players >= 2 ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
                     gs.partnerOn = players >= 2; gs.partnerMode = players >= 2 ? 'cpu' : 'off'; gs.partnerHuman = false
@@ -1093,6 +1145,7 @@ const GauntletGame = () => {
         return () => {
             cancelAnimationFrame(raf)
             unexposeFeedbackState()
+            netVoiceEnd() // #1247: never leave the mic hot after unmount
             if (net.room) { try { net.room.clearRetry(); net.room.reset() } catch { /* gone */ } }
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
