@@ -364,8 +364,12 @@ ok('board links the shift report', read('src/pages/ForgeBoard.jsx').includes('to
 ok('telemetry job runs shiftreport every 4 h', read('scripts/telemetry.sh').includes('last-shiftreport') && read('scripts/telemetry.sh').includes('shiftreport.mjs'))
 ok('telemetry samples record per-sample slot liveness: pgrep identities (#1269)',
     /T_UP=false; pgrep -f 'opencode run\.\*THE FORGE on slot b\\\.'/.test(read('scripts/telemetry.sh')))
-ok('telemetry samples record per-sample slot liveness: pulse field (#1269)',
-    /\\\"slots\\\":\{\\\"a\\\":\$S_UP,\\\"b\\\":\$T_UP\}/.test(read('scripts/telemetry.sh')))
+// #1299 extended the pulse slots object with the two QA lanes; the pin carries
+// all four fields so the next extension trips this deliberately instead of
+// reddening main (the nightly freeze backstop is the only gate a scripts-only
+// PR sees — isDocs swallows scripts/, so a stale shape hides here until then).
+ok('telemetry samples record per-sample slot liveness: pulse field (#1269, +#1299 qa lanes)',
+    /\\\"slots\\\":\{\\\"a\\\":\$S_UP,\\\"b\\\":\$T_UP,\\\"qaStudio\\\":\$Q_UP,\\\"qaMini\\\":\$M_UP\}/.test(read('scripts/telemetry.sh')))
 ok('report page renders the slot split on the fleet line (#1269)', /st\.merged\.slots/.test(read('src/pages/ShiftReport.jsx')))
 ok('fixture carries the slot rollup summing to the builder count (#1269)', (() => {
     const f = JSON.parse(read('public/forge/report-fixture.json'))
