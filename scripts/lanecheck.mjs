@@ -15,14 +15,16 @@
 // (mini would collide with studio on the last item). Both verified by hand.
 // For #1372 the flagship tail flips the same way: change `<=` to `<` in the
 // qaMiniFlagship line — A9b goes red (mini would idle while studio's reserve
-// covers the only queue item).
+// covers the only queue item). For #1377 turn the reboot `break` in
+// floor.js throughputLine into `continue` — B5c goes red (a counter delta
+// across a server reboot is nonsense, never a rate).
 
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
-import { slotsLine } from '../src/pages/floor.js'
+import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
     usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
 
@@ -305,6 +307,71 @@ section('B. board slots + trial verdict')
         'B4t no perf -> pre-#1299 metric-honesty paragraph stays word-for-word')
 }
 
+// B5 — live aggregate throughput (#1377): throughputLine over telemetry-shaped
+// fixtures — hour-window deltas off the servers' cumulative counters, reboot
+// resets, honest drops, stream mean, freshness. No browser, no clock.
+{
+    // B5a null-safety: junk in, hidden line out — never a throw
+    ok(throughputLine(null) === null && throughputLine(undefined) === null
+        && throughputLine([]) === null && throughputLine([{}, { ts: 'x' }]) === null,
+        'B5a malformed samples hide the line')
+
+    // B5b plain deltas + stream mean. studio 1M->4M over 1200 s = 9.0M/hr;
+    // mini flat = honest 0/hr; n = round(mean(3,4,2)) = 3.
+    const smp = (ts, omlx, mini) => ({
+        ts,
+        tps: {
+            omlx: { tot: omlx[0], n: omlx[1] },
+            omlxmini: { tot: mini[0], n: mini[1] },
+        },
+    })
+    const rows5 = [smp(0, [1e6, 2], [250000, 1]), smp(600, [2e6, 3], [500000, 1]), smp(1200, [4e6, 1], [750000, 1])]
+    const t5 = throughputLine(rows5, 1200 * 1000)
+    ok(t5 && t5.text === 'throughput: studio 9.0M/hr · mini 1.5M/hr (n=3)',
+        `B5b per-box hour deltas + stream mean: ${t5 && t5.text}`)
+
+    // B5c reboot guard: counters are cumulative-since-boot; 9e8@300 -> 1e6@600
+    // means the server restarted. Walk back stops at ts 600: 3M over 600 s
+    // = 18.0M/hr. The 50@0 row is the OLD session's own early counter — small
+    // enough to pass a naive tot<=last check, and the break must never reach
+    // it (mutant proof: delete the break -> first becomes ts 0 at 50/hr).
+    const t5c = throughputLine([
+        { ts: 0, tps: { omlx: { tot: 50, n: 1 }, omlxmini: { tot: null, n: 0 } } },
+        { ts: 300, tps: { omlx: { tot: 9e8, n: 1 }, omlxmini: { tot: null, n: 0 } } },
+        smp(600, [1e6, 1], [null, 0]), smp(1200, [4e6, 1], [null, 0])], 1200 * 1000)
+    ok(t5c && t5c.boxes.length === 1 && t5c.boxes[0].rate === 18e6,
+        `B5c counter reset walks back to the boot boundary: ${t5c && JSON.stringify(t5c.boxes)}`)
+
+    // B5d honest drops: span < 5 min, only one tot row, tot missing on every
+    // row (pre-#1299 schema), or tot null (stats unreachable) all hide.
+    ok(throughputLine([smp(0, [1, 1], [null, 0]), smp(100, [2, 1], [null, 0])], 100 * 1000) === null,
+        'B5d sub-5-min window is too young to extrapolate')
+    ok(throughputLine([{ ts: 0, tps: { omlx: { n: 1 }, omlxmini: { n: 0 } } },
+        { ts: 600, tps: { omlx: { n: 1 }, omlxmini: { n: 0 } } },
+        { ts: 1200, tps: { omlx: { n: 1 }, omlxmini: { n: 0 } } }], 1200 * 1000) === null,
+        'B5e tot missing/null on every row (pre-#1299) hides the whole line')
+
+    // B5f freshness: a newest sample past 2x FRESH_MS is yesterday's weather.
+    ok(throughputLine(rows5, 1200 * 1000 + 2 * 15 * 60 * 1000 + 1) === null,
+        'B5f stale sample window hides the line (injected now)')
+
+    // B5g hour window: rows older than the newest minus 3600 s are ignored —
+    // rate is the hour's delta (5760/hr), not since-boot (3600/hr).
+    const t5g = throughputLine([
+        { ts: 0, tps: { omlx: { tot: 0, n: 0 } } },
+        { ts: 2400, tps: { omlx: { tot: 1200, n: 0 } } },
+        { ts: 3600, tps: { omlx: { tot: 1800, n: 0 } } },
+        { ts: 6600, tps: { omlx: { tot: 6600, n: 0 } } },
+    ], 6600 * 1000)
+    ok(t5g && t5g.boxes.length === 1 && t5g.boxes[0].rate === 5760,
+        `B5g trailing-hour window bounds the delta: ${t5g && JSON.stringify(t5g.boxes)}`)
+
+    // B5h stream suffix is honest: no `n` fields anywhere -> no "(n=…)".
+    const t5h = throughputLine([{ ts: 0, tps: { omlx: { tot: 0 } } }, { ts: 600, tps: { omlx: { tot: 2000 } } }], 600 * 1000)
+    ok(t5h && !/\(n=/.test(t5h.text) && t5h.text === 'throughput: studio 12.0k/hr',
+        `B5h no stream counts -> no (n=) suffix, k-format: ${t5h && t5h.text}`)
+}
+
 section('C. wiring tripwires')
 const read = (f) => readFileSync(join(here, f), 'utf8')
 const warden = read('warden.sh'), forge = read('forge.sh'), qac = read('qa-claim.sh')
@@ -364,6 +431,10 @@ ok(telem.includes("board['slots']") && telem.includes('opencode run.*THE FORGE o
     'telemetry bakes live slots into board.json')
 ok(floor.includes('export const slotsLine'), 'floor.js owns the pure slotsLine')
 ok(board.includes('slotsLine') && board.includes('data-slots'), 'ForgeBoard renders the slots line')
+ok(floor.includes('export const throughputLine'), 'floor.js owns the pure throughputLine (#1377)')
+ok(board.includes('throughputLine') && board.includes('data-throughput'),
+    'ForgeBoard renders the throughput line (#1377)')
+ok(telem.includes("'samples': samples"), 'telemetry.sh feeds board.json samples — the #1377 source')
 ok(fcli.includes('builder-b') && fcli.includes('studiotrial.mjs'), 'forge status names slots and shows the trial')
 
 ok(forgeMd.includes('scripts/forge-claim.sh') && !forgeMd.includes('gh issue edit <n> --add-label building'),

@@ -121,6 +121,62 @@ export const slotsLine = (slots) => {
     return { text: parts.join(' · ') + (fleet ? ` · fleet:${fleet}` : ''), busy, total: 2, fleet }
 }
 
+// throughputLine (#1377) — the live tokens/hr picture on the SLOTS row:
+// tokens/hr per box over the trailing hour of board.json `samples`, from the
+// servers' own cumulative counters (`tps.tot` — the same #1299 source the
+// trial report measures). Pure and defensive like slotsLine: a box with no
+// valid delta drops out of the line (tot missing = pre-#1299 rows, null =
+// stats unreachable, a counter DECREASE = server reboot — walk back to the
+// boot boundary; span < 5 min = too young to extrapolate), and with zero
+// boxes the whole line hides. `n` = mean total active streams (`tps.n` summed
+// over the boxes per sample) over the window — free math from the same rows.
+// Staleness: a newest sample older than 2x FRESH_MS is yesterday's weather,
+// so the line hides (`now` injected, per this file's freshness convention).
+// Pinned by lanecheck B5.
+const TP_BOXES = [['omlx', 'studio'], ['omlxmini', 'mini'], ['omlxmbp', 'mbp']]
+const TP_WINDOW_S = 3600
+const TP_MIN_SPAN_S = 300
+const tpKfmt = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
+    : v >= 1e3 ? `${(v / 1e3).toFixed(1)}k` : `${Math.round(v)}`)
+export const throughputLine = (samples, now = Date.now()) => {
+    if (!Array.isArray(samples) || samples.length === 0) return null
+    const rows = samples.filter((r) => r && Number.isFinite(r.ts))
+    if (rows.length === 0) return null
+    const newest = rows.reduce((m, r) => Math.max(m, r.ts), -Infinity)
+    if (!Number.isFinite(now) || now - newest * 1000 > 2 * FRESH_MS) return null
+    const windowed = rows.filter((r) => r.ts >= newest - TP_WINDOW_S)
+    const boxes = []
+    for (const [key, name] of TP_BOXES) {
+        const withTot = windowed.filter(
+            (r) => r.tps?.[key] && Number.isFinite(r.tps[key].tot))
+        if (withTot.length < 2) continue
+        const last = withTot[withTot.length - 1]
+        // the counter is cumulative since server boot: walk back over the
+        // window to the oldest row of THIS boot session (a higher `tot` means
+        // the server restarted in between — a delta across that is nonsense).
+        let first = null
+        for (let i = withTot.length - 2; i >= 0; i--) {
+            if (withTot[i].tps[key].tot > last.tps[key].tot) break
+            first = withTot[i]
+        }
+        const span = last.ts - (first ? first.ts : last.ts)
+        if (!first || span < TP_MIN_SPAN_S) continue
+        const rate = (last.tps[key].tot - first.tps[key].tot) / span * 3600
+        if (Number.isFinite(rate) && rate >= 0) boxes.push({ name, rate })
+    }
+    if (boxes.length === 0) return null
+    const totals = windowed
+        .map((r) => TP_BOXES
+            .map(([key]) => r.tps?.[key]?.n)
+            .filter((v) => Number.isFinite(v)))
+        .filter((ns) => ns.length > 0)
+        .map((ns) => ns.reduce((a, b) => a + b, 0))
+    const n = totals.length ? Math.round(totals.reduce((a, b) => a + b, 0) / totals.length) : null
+    const text = `throughput: ${boxes.map((b) => `${b.name} ${tpKfmt(b.rate)}/hr`).join(' · ')}`
+        + (n != null ? ` (n=${n})` : '')
+    return { text, boxes, n }
+}
+
 // sleepBanner (#1354) — the red strip atop /forge when the Studio itself was
 // asleep. Input is the newest pulse's kv block (asleep=HH:MM-HH:MM asleepm=N
 // [naps=N]); the warden only echoes a window for 24 h after it ends, so the
