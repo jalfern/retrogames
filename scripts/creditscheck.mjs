@@ -23,7 +23,7 @@
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
-import { readFileSync, existsSync } from 'node:fs'
+import { readFileSync, existsSync, readdirSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
@@ -80,6 +80,19 @@ function staticLayer() {
   ok('credits.js keeps the caption clear of the tag (#1078)',
     /function reserveCaption\(\)/.test(cj) &&
     /maxWidth/.test(cj) && /addEventListener\('resize', reserveCaption\)/.test(cj))
+  // #737 demo half: every demo page carries the FEEDBACK button injector too.
+  // Derive the list from the directory (new demos are covered the day they land),
+  // index.html excluded — the gallery is not a demo title, so no button there.
+  const fbPath = resolve(ROOT, 'public/demos/feedback.js')
+  ok('feedback.js exists', existsSync(fbPath))
+  const DEMO_FILES = readdirSync(resolve(ROOT, 'public/demos'))
+    .filter((f) => f.endsWith('.html') && f !== 'index.html')
+    .map((f) => f.replace(/\.html$/, ''))
+  for (const d of DEMO_FILES) {
+    const html = readFileSync(resolve(ROOT, `public/demos/${d}.html`), 'utf8')
+    ok(`${d}: loads feedback.js (relative)`, /<script src="feedback\.js">/.test(html))
+  }
+
   const reg = readFileSync(resolve(ROOT, 'src/config/games.js'), 'utf8')
 
   for (const d of DEMOS) {
@@ -165,18 +178,56 @@ async function browserLayer() {
       stamped.links.join(' '))
     pageErrsTotal += errs.length
 
-    // --- one demo: tag opens the card ---
+    // --- one demo: tag opens the card. ?feedback=1: the real relay probe can
+    // never win CORS from file://, and the console would log the blocked fetch —
+    // the probe's real paths are gated in feedbackcheck (Node) and on prod. ---
     const page2 = await ctx.newPage()
     const errs2 = []
     page2.on('pageerror', e => errs2.push('pageerror: ' + e.message))
     page2.on('console', m => { if (m.type() === 'error') errs2.push('console: ' + m.text().split('\n')[0]) })
-    await page2.goto('file://' + resolve(ROOT, 'public/demos/campfire.html'), { waitUntil: 'load' })
+    await page2.goto('file://' + resolve(ROOT, 'public/demos/campfire.html') + '?feedback=1', { waitUntil: 'load' })
     const mounted = await page2.evaluate(() => {
       const t = document.getElementById('credits-tag')
       const c = document.getElementById('credits-card')
       return !!t && !!c && getComputedStyle(t).pointerEvents === 'auto' && !c.classList.contains('open')
     })
     ok('demo mounts a closed corner tag (clickable)', mounted)
+
+    // #737: the demo FEEDBACK button — probe forced on (?feedback=1) because
+    // file:// can never reach the cross-origin relay and CI must stay
+    // deterministic; the probe-off path is gated in feedbackcheck (Node).
+    const fpage = await ctx.newPage()
+    const fErrs = []
+    fpage.on('pageerror', e => fErrs.push('pageerror: ' + e.message))
+    fpage.on('console', m => { if (m.type() === 'error') fErrs.push('console: ' + m.text().split('\n')[0]) })
+    await fpage.goto('file://' + resolve(ROOT, 'public/demos/campfire.html') + '?feedback=1', { waitUntil: 'load' })
+    const fbTag = await fpage.evaluate(() => {
+      const t = document.getElementById('dfeedback-tag')
+      const c = document.getElementById('credits-tag')
+      if (!t) return { miss: true }
+      const tr = t.getBoundingClientRect()
+      const cr = c ? c.getBoundingClientRect() : null
+      return {
+        miss: false, h: tr.height,
+        stacked: cr ? tr.bottom <= cr.top : false,
+        panelAbsent: !document.getElementById('dfeedback-card') || !document.getElementById('dfeedback-card').classList.contains('open'),
+      }
+    })
+    ok('demo mounts the FEEDBACK tag (probe forced on)', !fbTag.miss && fbTag.h >= 32, fbTag.miss ? 'no tag' : `height=${fbTag.h.toFixed(1)}px`)
+    ok('demo FEEDBACK tag stacks above the credits tag (bottom-right column)', fbTag.stacked)
+    ok('demo FEEDBACK panel stays closed until tapped', fbTag.panelAbsent)
+    await fpage.click('#dfeedback-tag')
+    const fbPanel = await fpage.evaluate(() => {
+      const c = document.getElementById('dfeedback-card')
+      return { open: c.classList.contains('open'), hasNote: !!c.querySelector('[data-feedback="note"]'), hasSend: !!c.querySelector('[data-feedback="send"]') }
+    })
+    ok('demo FEEDBACK tag opens the panel (note + send)', fbPanel.open && fbPanel.hasNote && fbPanel.hasSend)
+    await fpage.click('#dfeedback-card')
+    ok('demo FEEDBACK panel closes on tap-out', await fpage.evaluate(() => !document.getElementById('dfeedback-card').classList.contains('open')))
+    ok('demo feedback mounts with zero page errors', fErrs.length === 0, fErrs[0])
+    pageErrsTotal += fErrs.length
+    await fpage.close()
+
     await page2.click('#credits-tag')
     const opened = await page2.evaluate(() => {
       const c = document.getElementById('credits-card')
@@ -203,9 +254,14 @@ async function browserLayer() {
     const errs3 = []
     phone.on('pageerror', e => errs3.push('pageerror: ' + e.message))
     phone.on('console', m => { if (m.type() === 'error') errs3.push('console: ' + m.text().split('\n')[0]) })
-    await phone.goto('file://' + resolve(ROOT, 'public/demos/campfire.html'), { waitUntil: 'load' })
+    await phone.goto('file://' + resolve(ROOT, 'public/demos/campfire.html') + '?feedback=1', { waitUntil: 'load' })
     const tagH = await phone.evaluate(() => document.getElementById('credits-tag').getBoundingClientRect().height)
     ok('phone 390px: tag tap-target >= 32px tall', tagH >= 32, `height=${tagH.toFixed(1)}px`)
+    const fbH = await phone.evaluate(() => {
+      const t = document.getElementById('dfeedback-tag')
+      return t ? t.getBoundingClientRect().height : 0
+    })
+    ok('phone 390px: FEEDBACK tag tap-target >= 32px tall', fbH >= 32, `height=${fbH.toFixed(1)}px`)
     const fit = async (label) => {
       await phone.click('#credits-tag')
       await phone.waitForTimeout(320)
