@@ -1,52 +1,64 @@
-# STATE — session 59 (2026-10-31)
+# STATE — session 60 (2026-10-30, slot b)
 
 ## Shipped this session
-**FLOOR BOSS — robot warehouse management sim** (Closes #1144, PR #1274,
-squash-merged a933a26). LIVE: https://jalfern.com/retrogames/floor-boss
-(prod bundle index-DyP15u6Z.js carries it; route 200; visibility private per
-#379 — Jon promotes when he wants it listed).
+**GAUNTLET speaks — #1249 voiced co-op merged** — `981d2ba` (PR #1284), prod
+verified (`assets/index-Djz9wMLv.js` carries `V SUMMONS THE VOICE`; live at
+`/retrogames/gauntlet`).
 
-- Original management sim on the Plaicraft kit: conveyor→stow-arm→racks→
-  haulers→dock pipeline, orders with deadlines + 3-strike firing, layout
-  purchases (rack $60 / robot $150 out of score), JAM escalation + click
-  clear, wear breakdowns with turbo-click repair, rush waves ×1.5 pay,
-  quota 1000 vs a 150 s shift. Pointer-first with full keyboard-cursor parity
-  (phone playable). Every shift saves a kit episode (manifest rev pinned).
-- Rules were balanced empirically this session: hands-off play now gets FIRED
-  (2/3 seeds), the pad-driven autopilot wins every seed (min 1017 vs 1000) —
-  the manager's work is triage + layout + hire timing.
-- Harness: `npm run floorbosscheck` (boot/rules/win/determinism/episode,
-  mutant-proven via the blocked()-rack-arm deletion), `npm run floorbossplay`
-  (real Chrome keys/taps incl. pixel-tracks-sim proof), contract entry (14/14).
-  All three lint gates + lanecheck (46) + build green.
-- Rule-4 streak RESET: this PR is game code (`src/games/FloorBoss/**`).
-- QA polish pass filed: #1278 (trucks, belt depth, bot motion, arm arc, card
-  motion, rush atmospherics, hum loop, first-run teaching).
+- A human shouts, the CPU seat obeys: **"take the upper right" / "grab the
+  key" / "follow me" / "hold here"**. Mic → `speechListen.js` (Web Speech,
+  continuous + auto-restart) → `Gauntlet/voicecalls.js` (pure grammar, null
+  when unsure) → `applyCall` freezes the goal cell → `partnerPad(gs, prevA,
+  cmd)` steers. **The seat still emits only pads** — the sim never learns a
+  voice exists; a trained model drops into the same intent→pad seat later.
+- Look & feel: heard-call banner (`"GRAB THE KEY" -> THE KEY`, green obeyed /
+  red refused + why), blinking VOICE dot, `MIC ON · <order>` pill, synth
+  obey/refuse blips. V toggles (consent = the #1247 ask, never auto-fired);
+  CPU seat only, solo halls only; attract line + registry controls added.
+- Recording: additive `voiceCmd: [{t, said, intent, ok, dir?, why?}]` in the
+  rec file (metadata like `ping` — v1 stays valid, replay ignores it; what
+  the seat DID is `slots[1].pads` on the same clock). **Stamps on the
+  recorder's clock** — the live drive caught game-tick stamps pointing past
+  a mid-run capture.
+- Harness: `voicecmdcheck` 59 gates (grammar, obey in all four quadrants +
+  key-walk, hold-zero-movement, pad-law, determinism, format round-trip, and
+  the PROVEN QUEST WON with 20 calls issued); mutant (deaf seat) dies ×10,
+  exit 1. `voicecoopdrive` 13/13 headless: consent click, real V key, seat
+  walks 18 cells under one order, nonsense refused, recorded file replays
+  hash-exact. Two real bugs caught by driving for real (stamp clock, and
+  contract-step capture losing the CPU seat's consumed pads — capture a
+  cpu-partner run through the game's OWN loop, seeded).
+- #1249 closed shipped; polish pass filed as **#1287** (phone tap-to-talk V,
+  first-run phrase-hint card, banner juice + VU, goto auto-release on hero
+  arrival, `attack that guy` intent, link-pad phone voice over the relay).
 
 ## Next goal
-**#1141 stage 4** — still the unblocked one (Jon answered #1241: HF meshes
-fine, link-index only, don't vendor big files). It still carries `stalled`;
-strip the label at claim time and take it via the FORGE.md step-1b ladder.
-Deep game queue behind it: #1248, #1249, #1251-1254, #1259, #1127 — and slot
-b takes queue items on its own kicks now.
+Game queue (oldest first per the ladder): **#1252 BOMB DEFUSE, #1253 GRAVEL
+YARD, #1254 FIRE CREW, #1259 forge-watch hardening**. #1141 is platform-lane,
+not a builder candidate. Rule-4 watch: reset — game code merged this session.
 
 ## Harness
-No harness growth this session (rule 6 held): two small scripts + one alias
-set for the new game, plus the contractGames list row.
+- `voicecmdcheck`/`voicecoopdrive` join the voice pair (voicecheck/voicedrive).
+- Lesson pinned in README + drive comments: **recording for replay must start
+  at a seeded reset and run through the loop-owned capture** — the contract
+  step banks only the pads you pass it, and a seat the game fills itself
+  (cpu) has its consumed pads banked solely by `doSim`'s live feed.
 
 ## Environment notes
-- This lane worked in `~/Dev/retrogames-forge-floor-boss` (forge/floor-boss;
-  branch deleted on merge — worktree now detached at origin/main). Main
-  checkout untouched/detached at a933a26.
-- Slot-a dev server was left RUNNING on :5173 (strictPort) — reuse or kill it
-  before the next kick; never touch :5178.
-- `gh pr checks` was named (1274) in the merge wait loop per session 58's
-  race note; merge went clean.
+- Slot b worked in `~/Dev/retrogames-forge-gauntlet-voice-coop` (branch merged,
+  worktree now detached at origin/main). Port 5178,
+  `npm run dev -- --port 5178 --strictPort`; dev server stopped at session end.
+- Headless Chrome HAS `webkitSpeechRecognition` but no speech SERVICE —
+  `voiceMode().supported` can be true with nothing recognizing; everything
+  downstream of the words is CI-proved via `__gauntletTest.voiceCall()`.
+- jalfern.com apex 301s to www — poll prod with `curl -L` (reconfirmed);
+  lazy chunks are named `index-<hash>.js`, find the game's chunk by scanning
+  the strings inside.
 
 ## Open questions for Jon
-- none open (jonq games list empty).
+- none open from this session (#737 still sits waiting-jon from earlier lanes).
 
 ## Carry-over
-- #1141 stage 4 — un-stall + claim (HF meshes allowed, link-index only).
-- #1266 + #1257 + new #1278 — QA-lane work, not builder lanes (#1258 rule).
-- 48 h slot-b fleet trial verdict (~Nov 1) posts on #1258; watch it.
+- #1287 QA polish pass on GAUNTLET voiced co-op (feedback — QA lane's job).
+- #1141 stage 4 (platform lane), #1266/#1275 QA follow-ups, 48 h trial verdict
+  (~Nov 1) posts on #1258.
