@@ -15,11 +15,12 @@
 # Detach with Ctrl-b then d; everything keeps running.
 #
 # Panes: left column, one per machine, top to bottom, refreshed every 5 s:
-#   BUILDER  (Studio, model on :8000)  — the log the builder process actually
-#             has open. Not /tmp/forge/last.log: a launchd fire that skips (a
-#             session is already running) repoints last.log at a stub. When
-#             no game is waiting, QA spills into this slot (node builder) and
-#             this pane shows that session instead.
+#   BUILDER·A (Studio, model on :8000) — the log the slot-a builder process
+#             actually has open. Not /tmp/forge/last.log: a launchd fire that
+#             skips (a session is already running) repoints last.log at a stub.
+#             When no game is waiting, QA spills into this slot (node builder)
+#             and this pane shows that session instead.
+#   BUILDER·B (Studio, #1258) — the second builder slot, same model feed.
 #   QA·MINI  (model via the :18000 tunnel) — the session using omlxmini/...
 #   QA·MBP   (model via the :18001 tunnel) — the session using omlxmbp/...
 #             (parked 2026-10-19; the pane stays and shows idle/DOWN)
@@ -39,9 +40,26 @@
 # pane's command text. `pgrep -f` matches full command lines, so the pane
 # itself would match: the warden and forge.sh / forge-qa.sh would then think
 # the lane is busy and never start it (that bug shipped once, 2026-10-12).
-# The panes pass the pattern in two halves through the environment instead.
+# The panes keep their config — pattern halves included — in scripts baked
+# into /tmp/forge/watch/, never in the pane command line (#1259).
+#
+# #1259 — a lane pane must NEVER vanish. On Oct 30 the BUILDER pane's redraw
+# loop ended and the pane closed for good; nobody noticed until the LIVE pane
+# took over the row. So every pane runs a script baked in $WDIR with
+# remain-on-exit set, and a detached supervisor ($WDIR/supervise.zsh, started
+# here) checks every 5 s: any dead pane is logged to $WDIR/pane.log — with
+# tmux's exit status when it reports one — and respawned from its baked
+# script, same pane id, same slot, same config. A pane whose loop ends comes
+# back within one refresh and says why. Loop bodies are hardened against the
+# two known killers besides an external kill: a pane squeezed to a few rows
+# (`tput lines` no longer feeds arithmetic unchecked) and garbage from oMLX's
+# activity feed (lines must match `G <int> <int>` / `P <int> <int> <int>`
+# before anything parses them). Proven by `npm run watchcheck`.
+# FORGE_WATCH_SESSION builds into another session name, so the check never
+# disturbs the real dashboard.
 
-SESSION=forge
+SESSION=${FORGE_WATCH_SESSION:-forge}
+WDIR=/tmp/forge/watch/$SESSION  # per session: a test sandbox never clobbers the real dashboard
 
 if [[ "${1:-}" == "--kill" ]]; then
     tmux kill-session -t "$SESSION" 2>/dev/null
@@ -51,13 +69,77 @@ fi
 LIVE=0
 [[ "${1:-}" == "--live" ]] && LIVE=1
 
+mkdir -p "$WDIR"
+
+# The supervisor: one loop OUTSIDE tmux (a pane cannot resurrect itself).
+# Reads panes.tsv (`pane_id <TAB> name <TAB> script`) and respawns any dead
+# pane by re-running its baked script. Every event lands in pane.log.
+cat > "$WDIR/supervise.zsh" <<'SUPER'
+#!/bin/zsh
+S=${SESSION:-forge}
+W=${WDIR:-/tmp/forge/watch}
+spec=$W/panes.tsv
+log=$W/pane.log
+warned=""
+while tmux has-session -t "$S" 2>/dev/null; do
+    while IFS='|' read -r dead id; do
+        [[ "$dead" == 1 ]] || continue
+        line=$(awk -F '\t' -v id="$id" '$1==id {print $2"\t"$3}' "$spec" 2>/dev/null)
+        if [[ -z "$line" ]]; then
+            # A pane this supervisor never recorded (a session built before
+            # #1259): nothing to respawn from. Say it once per pane, no spam.
+            [[ "$warned" == *"|$id"* ]] || { warned+="|$id"
+                print -r -- "$(date '+%F %T') pane $id died (not in panes.tsv — rebuild: watch.sh --kill, then reopen)" >> "$log"
+            }
+            continue
+        fi
+        name=${line%%$'\t'*}; script=${line#*$'\t'}
+        rc=$(tmux display -p -t "$id" '#{pane_dead_status}' 2>/dev/null)
+        rs=$(tmux display -p -t "$id" '#{pane_dead_reason}' 2>/dev/null)
+        print -r -- "$(date '+%F %T') pane $name ($id) ended ${rs:+reason=$rs }rc=${rc:-unknown} — respawning" >> "$log"
+        tmux respawn-pane -k -t "$id" "zsh '$script'" 2>>"$log"
+    done < <(tmux list-panes -t "$S:0" -F '#{pane_dead}|#{pane_id}' 2>/dev/null)
+    sleep 5
+done
+SUPER
+
+supervise_is_live() { pgrep -f "$WDIR/supervise.zsh" >/dev/null; }
+start_supervisor() { supervise_is_live || { SESSION="$SESSION" WDIR="$WDIR" nohup zsh "$WDIR/supervise.zsh" >/dev/null 2>&1 &! } }
+
 if tmux has-session -t "$SESSION" 2>/dev/null; then
+    # already open: adopt it — remain-on-exit + supervisor even if it was
+    # built before #1259 (a pane that dies in it then at least gets logged).
+    tmux set-option -t "$SESSION" remain-on-exit on 2>/dev/null
+    start_supervisor
     (( LIVE )) && ! tmux list-panes -t "$SESSION" -F '#{pane_title}' | grep -q '^LIVE' \
         && { echo "watch is already open without the live pane: scripts/watch.sh --kill, then --live"; sleep 2; }
     exec tmux attach -t "$SESSION"
 fi
 
-# The lane pane. Per pane, from the environment: L (label), PORT (that
+# bake <key> <name> <body-file> [ENV=VALUE...] — write the pane's script:
+# config lines + the shared body + an EXIT trap logging a clean loop end
+# (the supervisor catches what cannot log itself — a kill). Config, including
+# the pattern halves, lives only on disk here, never in a pane command line.
+bake() {
+    local key=$1 name=$2 body=$3; shift 3
+    {
+        print -r -- '#!/bin/zsh'
+        print -r -- "trap 'print -r -- \"\$(date +%F\\ %T) pane $name exited rc=\$?\" >> $WDIR/pane.log' EXIT"
+        local k v; for kv in "$@"; do k=${kv%%=*}; v=${kv#*=}; printf "%s='%s'\n" "$k" "$v"; done
+        cat "$body"
+    } > "$WDIR/$key.zsh"
+}
+
+# pane <key> <name> <body-file> <split-args...> — bake, then create the pane
+# running just `zsh <script>` (the one allowed command text: no patterns).
+pane() {
+    local key=$1 name=$2 body=$3; shift 3
+    bake "$key" "$name" "$body" "${ENVK[@]}"
+    local id; id=$(tmux split-window "$@" -P -F '#{pane_id}' "zsh '$WDIR/$key.zsh'")
+    print -r -- "$id	$name	$WDIR/$key.zsh" >> "$WDIR/panes.tsv"
+}
+
+# The lane pane body. Per pane from the baked config: L (label), PORT (that
 # machine's oMLX, via its tunnel), PROV (its provider in opencode.json, for
 # the API key) and P1/P2 (the session pattern in halves). Header line, live
 # from oMLX's own dashboard feed (/admin/api/activity, API key as Bearer):
@@ -66,7 +148,10 @@ fi
 #   QA·MBP  DOWN                                    (no answer: asleep/off)
 # The sparkline is gen t/s sampled every 5 s (last 2 minutes). "ctx" is the
 # prompt size: watch it grow and the t/s fall. An oMLX without that feed
-# still shows up/DOWN.
+# still shows up/DOWN. #1259 hardening: activity lines must be
+# `G <int> <int>` / `P <int> <int> <int>` or they are dropped before any
+# parsing, and `tput lines` is clamped, so neither garbage from oMLX nor a
+# pane squeezed to a few rows can stop the redraw.
 lane_pane() {
     cat <<'PANE'
 G=$'\e[32m' R=$'\e[1;31m' Y=$'\e[33m' C=$'\e[36m' D=$'\e[2m' B=$'\e[1m' N=$'\e[0m'
@@ -75,7 +160,8 @@ key=$(jq -r ".provider.$PROV.options.apiKey // empty" ~/.config/opencode/opencod
 while true; do
     rows=("${(@f)$(curl -s -m 2 -H "Authorization: Bearer $key" "http://127.0.0.1:$PORT/admin/api/activity" \
         | jq -r '.active_models.models[]? | (.generating[]? | "G \(.tokens_per_second|floor) \(.prompt_tokens // 0)"),
-                 (.prefilling[]? | "P \(.processed // 0) \(.total // 0) \(.speed // 0 | floor)")' 2>/dev/null)}")
+                 (.prefilling[]? | "P \(.processed // 0) \(.total // 0) \(.speed // 0 | floor)")' 2>/dev/null \
+        | grep -E '^(G [0-9]+ [0-9]+|P [0-9]+ [0-9]+ [0-9]+)$')}")
     code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$PORT/v1/models")
     if [[ "$code" == 000 ]]; then state="${R}DOWN${N}"; hist=()
     else
@@ -101,7 +187,8 @@ while true; do
     else
         log=$(lsof -p "$pid" 2>/dev/null | awk '/\/tmp\/forge\/.*\.log/ {print $NF; exit}')
         print -r -- "${D}pid $pid · up $(ps -o etime= -p $pid | tr -d ' ') · ${log:-no log}${N}"
-        [[ -n "$log" ]] && tail -n $(( $(tput lines) - 3 )) "$log" | cut -c1-$(tput cols)
+        ln=$(tput lines 2>/dev/null); [[ $ln == <-> ]] || ln=4; (( ln < 4 )) && ln=4
+        tail -n $(( ln - 3 )) "$log" | cut -c1-$(tput cols)
     fi
     sleep 5
 done
@@ -111,8 +198,8 @@ PANE
 # WARDEN also owns the layout of the left column. Every 5 s it checks which
 # machines have a live session; when that changes it resizes the column:
 # an idle machine shrinks to 3 rows, the warden itself to 4, and the busy
-# machines share the rest equally. (Lane patterns arrive in halves through
-# the environment, the same as the lane panes, so this pane never matches.)
+# machines share the rest equally. A column with the wrong pane count means
+# one vanished (#1259): log it — the supervisor will have them back anyway.
 warden_pane() {
     cat <<'PANE'
 live() { pgrep -f "$1$2" >/dev/null && echo 1 || echo 0; }
@@ -121,20 +208,24 @@ while true; do
     clear
     w=$(ls -t /tmp/forge/warden-2*.log 2>/dev/null | head -1)
     echo "WARDEN ${w##*/}"
-    [[ -n "$w" ]] && tail -n $(( $(tput lines) - 2 )) "$w" | cut -c1-$(tput cols)
+    ln=$(tput lines 2>/dev/null); [[ $ln == <-> ]] || ln=6; (( ln < 6 )) && ln=6
+    [[ -n "$w" ]] && tail -n $(( ln - 2 )) "$w" | cut -c1-$(tput cols)
     state="$(live "$A1" "$Z1")$(live "$A2" "$Z2")$(live "$A3" "$Z3")$(live "$A4" "$Z4")$(live "$A5" "$Z5")"
     if [[ "$state" != "$last" ]]; then
         last=$state
         # left-column panes, top to bottom: builder-a, builder-b, mini, mbp, studio, warden
         cols=("${(@f)$(tmux list-panes -F '#{pane_left} #{pane_top} #{pane_id} #{pane_height}' | awk '$1==0' | sort -n -k2)}")
         n=5
-        if (( ${#cols} == n + 1 )); then
+        if (( ${#cols} != n + 1 )); then
+            print -r -- "$(date '+%F %T') warden: ${#cols} panes at x=0, expected $(( n + 1 )) — a lane pane vanished" >> "${PWLOG:-/tmp/forge/watch/pane.log}"
+        else
             ids=(); total=$n
             for c in "${cols[@]}"; do set -- ${=c}; ids+=($3); total=$(( total + $4 )); done
             busy=0; for i in {1..$n}; do busy=$(( busy + ${state[$i]} )); done
             free=$(( total - n - 4 - 3 * (n - busy) ))
+            (( free < 0 )) && free=0
             for i in {1..$n}; do
-                if (( ${state[$i]} )); then h=$(( free / busy ))
+                if (( ${state[$i]} )); then h=$(( busy > 0 ? free / busy : 3 )); (( h < 3 )) && h=3
                 elif (( busy == 0 && i == 1 )); then h=$(( free + 3 ))
                 else h=3; fi
                 tmux resize-pane -t "${ids[$i]}" -y $h
@@ -154,6 +245,7 @@ live_pane() {
     cat <<'PANE'
 D=$'\e[2m' B=$'\e[1m' R=$'\e[1;31m' N=$'\e[0m'
 printf '\e]2;LIVE\e\\'
+mkdir -p /tmp/forge
 f=/tmp/forge/stream-$LANE.log
 code=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$TAPPORT/v1/models")
 if [[ "$code" == 000 ]]; then t="${R}tap DOWN${N}${D} (sessions go direct)"
@@ -166,38 +258,55 @@ PANE
 # Left column, top to bottom: BUILDER·A, BUILDER·B, QA·MINI, QA·MBP,
 # QA·STUDIO, WARDEN (sizes are set by the warden pane, above). A's pattern
 # matches slot a (or a pre-#1258 session) OR a QA item spilled into the
-# builder's slot; B is the second Studio builder (#1258). Patterns go to the
-# panes in halves through the environment — never in the pane command text.
-LANE="$(lane_pane)"
-BA='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' BZ='\.'
-BB='opencode run.*THE FORGE on slot b' BBZ='\.'
-SA='opencode run.*QA MASTER on node ' SZ='studio\.'
-tmux new-session -d -s "$SESSION" -e L=BUILDER·A -e PORT=8000 -e PROV=omlx \
-    -e P1="$BA" -e P2="$BZ" zsh -c "$LANE"
-tmux split-window -v -l 70% -t "$SESSION:0.0" -e L=BUILDER·B -e PORT=8000 -e PROV=omlx \
-    -e P1="$BB" -e P2="$BBZ" zsh -c "$LANE"
-tmux split-window -v -l 75% -t "$SESSION:0.1" -e L=QA·MINI -e PORT=18000 -e PROV=omlxmini \
-    -e P1='opencode run.*omlx' -e P2='mini' zsh -c "$LANE"
-tmux split-window -v -l 66% -t "$SESSION:0.2" -e L=QA·MBP -e PORT=18001 -e PROV=omlxmbp \
-    -e P1='opencode run.*omlx' -e P2='mbp' zsh -c "$LANE"
-tmux split-window -v -l 50% -t "$SESSION:0.3" -e L=QA·STUDIO -e PORT=8000 -e PROV=omlx \
-    -e P1="$SA" -e P2="$SZ" zsh -c "$LANE"
-tmux split-window -v -l 4 -t "$SESSION:0.4" \
-    -e A1="$BA" -e Z1="$BZ" -e A2="$BB" -e Z2="$BBZ" -e A3='opencode run.*omlx' -e Z3='mini' \
-    -e A4='opencode run.*omlx' -e Z4='mbp' -e A5="$SA" -e Z5="$SZ" zsh -c "$(warden_pane)"
+# builder's slot; B is the second Studio builder (#1258).
+LANE_BODY=$WDIR/body-lane.zsh;     lane_pane   > "$LANE_BODY"
+WARDEN_BODY=$WDIR/body-warden.zsh; warden_pane > "$WARDEN_BODY"
+LIVE_BODY=$WDIR/body-live.zsh;     live_pane   > "$LIVE_BODY"
+: > "$WDIR/panes.tsv"
+
+# First pane: new-session can't use `pane`, so bake it and record it by hand.
+bake builder-a 'BUILDER·A' "$LANE_BODY" L='BUILDER·A' PORT=8000 PROV=omlx \
+    P1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' P2='\.'
+FIRST=$(tmux new-session -d -s "$SESSION" -P -F '#{pane_id}' "zsh '$WDIR/builder-a.zsh'")
+print -r -- "$FIRST	BUILDER·A	$WDIR/builder-a.zsh" >> "$WDIR/panes.tsv"
+# #1259: dead panes stay in place (with their ids) so the supervisor can
+# respawn them. Set before any pane can die.
+tmux set-option -t "$SESSION" remain-on-exit on
+
+ENVK=(L='BUILDER·B' PORT=8000 PROV=omlx P1='opencode run.*THE FORGE on slot b' P2='\.')
+pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 70% -t "$FIRST"
+ENVK=(L='QA·MINI' PORT=18000 PROV=omlxmini P1='opencode run.*omlx' P2='mini')
+pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "$SESSION:0.1"
+ENVK=(L='QA·MBP' PORT=18001 PROV=omlxmbp P1='opencode run.*omlx' P2='mbp')
+pane qa-mbp 'QA·MBP' "$LANE_BODY" -v -l 66% -t "$SESSION:0.2"
+ENVK=(L='QA·STUDIO' PORT=8000 PROV=omlx P1='opencode run.*QA MASTER on node ' P2='studio\.')
+pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "$SESSION:0.3"
+ENVK=(A1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' Z1='\.'
+      A2='opencode run.*THE FORGE on slot b' Z2='\.'
+      A3='opencode run.*omlx' Z3='mini'
+      A4='opencode run.*omlx' Z4='mbp'
+      A5='opencode run.*QA MASTER on node ' Z5='studio\.' PWLOG=$WDIR/pane.log)
+pane warden 'WARDEN' "$WARDEN_BODY" -v -l 4 -t "$SESSION:0.4"
+
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
-BUILDER_PANE=$(tmux display -p -t "$SESSION:0.0" '#{pane_id}')
-tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -t "$SESSION" \
-    "env -u TMUX tmux new-session -A -s retro -c $HOME/Dev/retrogames"
+# No patterns inside, so nothing to leak; baked so the supervisor can rebuild
+# the pane (never the chat itself — nested session, separate lifecycle).
+bake retro RETRO /dev/null
+print -r -- "exec env -u TMUX tmux new-session -A -s retro -c \$HOME/Dev/retrogames" >> "$WDIR/retro.zsh"
+RETRO_PANE=$(tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -P -F '#{pane_id}' -t "$SESSION" "zsh '$WDIR/retro.zsh'")
+print -r -- "$RETRO_PANE	RETRO	$WDIR/retro.zsh" >> "$WDIR/panes.tsv"
+
 # LIVE: right half of the BUILDER row. It shares that row, so the warden's
 # resizing of BUILDER moves it too (the warden only lays out the x=0 column).
 # #1268: QA·STUDIO gets the same treatment for its own tap (:8011).
-(( LIVE )) && tmux split-window -h -l 50% -t "$BUILDER_PANE" \
-    -e L=BUILDER -e LANE=builder -e TAPPORT=8010 zsh -c "$(live_pane)"
-STUDIO_PANE=$(tmux display -p -t "$SESSION:0.4" '#{pane_id}')
-(( LIVE )) && tmux split-window -h -l 50% -t "$STUDIO_PANE" \
-    -e L=QA·STUDIO -e LANE=studio -e TAPPORT=8011 zsh -c "$(live_pane)"
+if (( LIVE )); then
+    ENVK=(L='BUILDER' LANE=builder TAPPORT=8010)
+    pane live-builder 'LIVE-BUILDER' "$LIVE_BODY" -h -l 50% -t "$FIRST"
+    ENVK=(L='QA·STUDIO' LANE=studio TAPPORT=8011)
+    pane live-studio 'LIVE-STUDIO' "$LIVE_BODY" -h -l 50% -t "$SESSION:0.4"
+fi
+
 # Mouse: on server-wide (-g), so the nested RETRO session gets it too. With it
 # off there, the wheel over RETRO dropped the outer pane into copy-mode: the
 # chat froze, scrolled junk, and typing seemed dead until `q`. And scrolling a
@@ -207,4 +316,5 @@ tmux set-option -g mouse on
 tmux bind-key -n WheelUpPane if-shell -F '#{||:#{pane_in_mode},#{mouse_any_flag}}' \
     'send-keys -M' 'copy-mode -e'
 tmux bind-key -T copy-mode Escape send-keys -X cancel
+start_supervisor
 exec tmux attach -t "$SESSION"
