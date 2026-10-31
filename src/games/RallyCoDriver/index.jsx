@@ -65,8 +65,8 @@ export default function RallyCoDriver() {
     const canvasRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    const pausedRef = useRef(false) // shared by the loop (sim gate) and PauseOverlay resume
     const [voiceUi, setVoiceUi] = useState(null) // { on, said, ok, label }
-    const [coMode, setCoMode] = useState('cpu') // cpu | human (voice rides the cpu seat)
 
     useEffect(() => {
         const wrap = wrapRef.current
@@ -87,7 +87,6 @@ export default function RallyCoDriver() {
 
         const screenRef = { cur: 'attract' }
         const setScreenBoth = (s) => { screenRef.cur = s; setScreen(s) }
-        const pausedRef = { cur: false }
 
         let seedRef = { cur: 1 }
         let attractSeed = 0x5eed
@@ -106,7 +105,6 @@ export default function RallyCoDriver() {
         const startRace = () => {
             play.g = createSim(seedRef.cur, 2)
             play.g.co.kind = 'cpu'
-            setCoMode('cpu')
             voice.said = ''; voice.ok = false; voice.label = ''
             pushVoice()
             hintUntil.t = play.g.tick + 420
@@ -162,24 +160,23 @@ export default function RallyCoDriver() {
 
         const onKey = (e, down) => {
             if (down && e.repeat) return
-            const code = e.code
+            const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(code)) e.preventDefault()
             if (code === 'Question' || code === 'Escape' || code === 'Backquote') {
                 if (down && screenRef.cur !== 'attract') {
-                    pausedRef.cur = !pausedRef.cur
-                    setPaused(pausedRef.cur)
-                    if (pausedRef.cur) voiceStop()
+                    pausedRef.current = !pausedRef.current
+                    setPaused(pausedRef.current)
+                    if (pausedRef.current) voiceStop()
                 }
                 return
             }
-            if (pausedRef.cur) return
+            if (pausedRef.current) return
             if (screenRef.cur === 'attract') { if (down) startRace(); return }
             if (screenRef.cur === 'over') { if (down && (code === 'Space' || code === 'Enter')) startRace(); return }
             // play
             if (code === 'KeyC' && down) {
                 if (voice.on) voiceStop()
                 play.g.co.kind = play.g.co.kind === 'cpu' ? 'human' : 'cpu'
-                setCoMode(play.g.co.kind)
                 say(play.g.co.kind === 'human' ? 'SEAT 2: QWE LEFT · ASD RIGHT · Z STRAIGHT' : 'SEAT 2: CO-D CPU')
                 return
             }
@@ -199,7 +196,7 @@ export default function RallyCoDriver() {
         const kd = (e) => onKey(e, true)
         const ku = (e) => onKey(e, false)
         const tap = () => {
-            if (pausedRef.cur) return
+            if (pausedRef.current) return
             if (screenRef.cur === 'attract') startRace()
             else if (screenRef.cur === 'over') startRace()
         }
@@ -238,6 +235,7 @@ export default function RallyCoDriver() {
         let offWas = false
 
         const simStep = () => {
+            if (pausedRef.current) return
             if (screenRef.cur === 'attract') {
                 const g = attract.g
                 tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
@@ -616,7 +614,6 @@ export default function RallyCoDriver() {
                 seedRef.cur = ((seed ?? 1) >>> 0) % 997 || 1
                 play.g = createSim(seedRef.cur, players)
                 play.g.co.kind = players >= 2 ? 'cpu' : 'off'
-                setCoMode(play.g.co.kind)
                 voiceStop()
                 keys.up = keys.down = keys.left = keys.right = keys.a = false
                 offWas = false
@@ -632,6 +629,7 @@ export default function RallyCoDriver() {
             canvas: () => canvas,
         })
         window.__rallyTest = {
+            screen: () => screenRef.cur,
             state: () => state(play.g),
             hash: () => stateHash(play.g),
             gs: () => play.g,
@@ -661,7 +659,7 @@ export default function RallyCoDriver() {
     return (
         <div ref={wrapRef} className="relative w-full h-full flex items-center justify-center bg-black">
             {screen === 'play' && !paused && <VirtualControls visible secondAction={undefined} />}
-            {paused && <PauseOverlay entry={G} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
+            {paused && <PauseOverlay game={G} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
             {voiceUi && (
                 <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] font-mono">
                     <span className={voiceUi.ok ? 'text-emerald-300' : 'text-red-400'}>

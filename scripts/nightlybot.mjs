@@ -94,6 +94,7 @@ export const GAMES = [
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
     { id: 'fire-crew', path: '/fire-crew' },
+    { id: 'rally-co-driver', path: '/rally-co-driver' },
 ]
 const CAP = 9000
 
