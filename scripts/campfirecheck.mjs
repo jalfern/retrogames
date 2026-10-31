@@ -22,6 +22,8 @@
 // (`i * 7.31 + SEED`) -> burst gate red two ways: floor(s*4) grouping gave
 // cluster=1 (no bursts), floor(s/100) on the old layout gave cluster=14
 // (whole-field pulse) — the two-sided window catches both.
+// Mutant 3 (fidelity PR, 2026-10-30): ground shadow floor mix(0.55,1,sh) ->
+// mix(0.22,1,sh) -> leopard-print gate red (avg 0.435 vs fixed 0.312).
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -218,6 +220,27 @@ async function main() {
       const litWarm = (r, g, b) => r > 70 && r - b > 25
       const groundWarm = countIn(img, Math.round(W * 0.15), Math.round(H * 0.60), Math.round(W * 0.85), Math.round(H * 0.92), litWarm)
       ok('fire lights the ground around the pit', groundWarm > 15000, `${groundWarm} warm-lit ground px`)
+      // Fidelity PR (2026-10-30): aliased ground noise x hard shadow floor used
+      // to crush the warm-lit ring into a near-black leopard print (tight-box
+      // darkFrac 0.429 pre-PR). Footprint-attenuated detail, relaxed relief
+      // normals and a bounce-lit shadow floor keep it graded (~0.28 after).
+      // Averaged over 3 frames because the flicker swings brightness run-to-run.
+      const darkFracOf = (im) => {
+        let tot = 0, n = 0
+        for (let y = Math.round(im.h * 0.70); y < Math.round(im.h * 0.84); y += 2)
+          for (let x = Math.round(im.w * 0.30); x < Math.round(im.w * 0.70); x += 2) {
+            tot++; if (px(im, x, y)[0] < 34) n++
+          }
+        return n / tot
+      }
+      const darkFrac = darkFracOf(img)
+      await page.waitForTimeout(180)
+      const dfImg2 = darkFracOf(decodePng(await page.screenshot()))
+      await page.waitForTimeout(180)
+      const dfImg3 = darkFracOf(decodePng(await page.screenshot()))
+      const darkFracAvg = (darkFrac + dfImg2 + dfImg3) / 3
+      ok('lit ground graded, not leopard-print (<34% crushed black)', darkFracAvg < 0.34,
+        `darkFrac avg=${darkFracAvg.toFixed(3)} (${darkFrac.toFixed(3)}/${dfImg2.toFixed(3)}/${dfImg3.toFixed(3)})`)
       // ...and the far world stays dark
       const cornerL = meanRGB(img, 0, Math.round(H * 0.05), Math.round(W * 0.12), Math.round(H * 0.30))
       const cornerR = meanRGB(img, Math.round(W * 0.88), Math.round(H * 0.05), W, Math.round(H * 0.30))

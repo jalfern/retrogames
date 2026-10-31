@@ -272,8 +272,8 @@ float softShadow(vec3 p){
     vec3 sp = p + dir * t;
     float d = sceneSdf(sp);
     if (d < 0.004) { shade = 0.0; break; }
-    shade = min(shade, 3.2 * d / t);
-    t += max(d, 0.035);
+    shade = min(shade, 2.2 * d / t);
+    t += max(d, 0.024);
     if (t > dist || shade < 0.01) break;
   }
   return clamp(shade, 0.0, 1.0);
@@ -281,23 +281,37 @@ float softShadow(vec3 p){
 
 vec3 groundColor(vec3 p, vec3 n, vec3 rd){
   float dist = length(p.xz);
-  float grain = fbm2(p.xz * 26.0);
-  float fine = fbm2(p.xz * 110.0);
-  float peb = smoothstep(0.86, 0.94, hash12(floor(p.xz * 150.0)));
+  // Screen-space footprint attenuation: the 110x fbm and 150x pebble hash sat
+  // far above Nyquist at grazing angles and beat into shimmering vertical
+  // moire bars across the lit ground. Fade each term toward its mean once a
+  // screen pixel spans less than about one noise cell (px = world units/pixel).
+  vec2 fw = fwidth(p.xz);
+  float pxm = max(fw.x, fw.y);
+  float aaGrain = 1.0 - smoothstep(0.22, 0.55, pxm * 26.0);
+  float aaFine = 1.0 - smoothstep(0.22, 0.70, pxm * 110.0);
+  float aaPeb = 1.0 - smoothstep(0.16, 0.55, pxm * 150.0);
+  float grain = mix(0.5, fbm2(p.xz * 26.0), aaGrain);
+  float fine = mix(0.5, fbm2(p.xz * 110.0), aaFine);
+  float peb = smoothstep(0.86, 0.94, hash12(floor(p.xz * 150.0))) * aaPeb;
   float grass = smoothstep(0.68, 0.92, fbm2(p.xz * 6.0 + 2.0)) * smoothstep(1.5, 2.4, dist);
   vec3 dirt = mix(vec3(0.080, 0.058, 0.040), vec3(0.108, 0.082, 0.058), grain * 0.8 + fine * 0.2);
   dirt = mix(dirt, vec3(0.15, 0.14, 0.12), peb * 0.7);
   dirt = mix(dirt, vec3(0.09, 0.085, 0.045), grass * 0.12);
+  // Authored pit structure: soot-darkened bowl inside the ring, pale trodden
+  // sand band just outside it — one graded circle, not pure noise.
+  dirt *= 1.0 - 0.5 * smoothstep(0.62, 0.24, dist);
+  dirt = mix(dirt, vec3(0.135, 0.115, 0.088),
+             smoothstep(0.50, 0.72, dist) * smoothstep(1.10, 0.86, dist) * 0.55);
   vec3 lp = vec3(0.0, 0.30, 0.0);
   vec3 L = lp - p;
   float dL = length(L);
   vec3 ldir = L / dL;
   float ndl = max(dot(n, ldir), 0.0);
   float fall = 1.0 / (0.55 + dL * dL * 0.85);
-  float sh = softShadow(p + n * 0.01);
-  float emb = smoothstep(0.62, 0.16, dist) * (0.35 + 0.65 * fbm2(p.xz * 7.0 + uTime * 0.35));
+  float sh = softShadow(p + vec3(0.0, 0.012, 0.0));
+  float emb = smoothstep(0.55, 0.10, dist) * (0.60 + 0.40 * fbm2(p.xz * 7.0 + uTime * 0.35));
   vec3 warm = vec3(1.0, 0.52, 0.16);
-  vec3 c = dirt * (warm * ndl * fall * uFlare * mix(0.22, 1.0, sh) * 5.2
+  vec3 c = dirt * (warm * ndl * fall * uFlare * mix(0.55, 1.0, sh) * 5.2
                   + warm * emb * uFlare * 1.15 * fall
                   + vec3(0.010, 0.014, 0.026));
   float spec = pow(max(dot(reflect(-ldir, n), -rd), 0.0), 26.0);
@@ -321,15 +335,19 @@ vec3 solidColor(vec3 p, vec3 n, vec3 rd, int hitLogs){
     float bark = smoothstep(0.35, 0.75, fbm3(p * vec3(30.0, 30.0, 90.0)));
     albedo *= 0.75 + 0.5 * bark;
     c = albedo * (warm * ndl * fall * uFlare * mix(0.10, 1.0, sh) * 5.6);
-    float nearb = smoothstep(0.42, 0.12, length(p.xz)) * smoothstep(0.30, 0.02, p.y);
+    // Ember char along the whole length buried in the flame, not just the coal
+    // bed: fire-side wood glows, and dark log tips poking out of the flame
+    // read as dead sticks instead of burning ones.
+    float heat = smoothstep(0.78, 0.08, p.y) * smoothstep(0.52, 0.12, length(p.xz));
     float burn = pow(max(0.0, fbm3(p * 13.0 + vec3(0.0, -uTime * 0.25, 0.0))), 2.0);
-    c += mix(vec3(0.6, 0.10, 0.01), vec3(1.0, 0.45, 0.06), burn) * nearb * burn * uFlare * 2.2;
+    c += mix(vec3(0.6, 0.10, 0.01), vec3(1.0, 0.45, 0.06), burn) * heat * burn * uFlare * 2.6;
+    c += vec3(1.0, 0.62, 0.18) * pow(heat, 3.0) * pow(max(0.0, fbm3(p * 7.0 + 4.0)), 1.5) * uFlare * 1.4;
   } else {
     float tex = fbm3(p * 16.0);
     float streak = smoothstep(0.3, 0.7, fbm3(p * vec3(6.0, 14.0, 6.0)));
     vec3 base = mix(vec3(0.040, 0.040, 0.044), vec3(0.105, 0.100, 0.098), tex);
     base = mix(base, vec3(0.070, 0.072, 0.075), streak);
-    c = base * (warm * ndl * fall * uFlare * mix(0.10, 1.0, sh) * 5.2 + vec3(0.008, 0.010, 0.018));
+    c = base * (warm * ndl * fall * uFlare * mix(0.55, 1.0, sh) * 5.2 + vec3(0.012, 0.015, 0.026));
     float spec = pow(max(dot(reflect(-ldir, n), -rd), 0.0), 40.0);
     c += warm * spec * fall * uFlare * 0.5 * sh;
   }
@@ -424,7 +442,11 @@ void main(){
       float e = 0.02;
       float gx = fbm2(p.xz + vec2(e, 0.0)) - fbm2(p.xz - vec2(e, 0.0));
       float gz = fbm2(p.xz + vec2(0.0, e)) - fbm2(p.xz - vec2(0.0, e));
-      vec3 n = normalize(vec3(-gx * 1.8, e * 2.2, -gz * 1.8));
+      // Relief normals fade with distance as well: at grazing angles the same
+      // aliased noise made ndl a leopard print under the point light.
+      vec2 gfw = fwidth(p.xz);
+      float relK = 1.2 * (1.0 - smoothstep(0.22, 0.55, max(gfw.x, gfw.y) * 26.0));
+      vec3 n = normalize(vec3(-gx * relK, e * 2.2, -gz * relK));
       bg = groundColor(p, n, rd);
     } else {
       vec2 e2 = vec2(0.0015, 0.0);
