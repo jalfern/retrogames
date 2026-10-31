@@ -81,7 +81,7 @@ function syncMicBadge() {
 // ~1.2 s of level meter; the peak lands on window.__voiceVu for the harness.
 function runVuMeter(stream, ms = 1200) {
     if (typeof document === 'undefined') return
-    const AC = typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null)
+    const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
     if (!AC) return
     let ctx = null
     try { ctx = new AC() } catch { return }
