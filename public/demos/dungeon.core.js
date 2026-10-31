@@ -741,9 +741,7 @@ void main(){
       gl.viewport(0, 0, w, h);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-      const F = norm3(-Math.sin(view.yaw), Math.cos(view.yaw), -0.05);
-      const R = [F[1], -F[0], 0];
-      const U = norm3(-F[0] * F[2], -F[1] * F[2], 1 - F[2] * F[2]);
+      const { F, R, U } = camBasis(view.yaw);
       const eye = [view.x, view.y, api.eyeZ];
       const aspect = (w / Math.max(1, h)) || 1.333;
       const tanV = Math.tan(FOV_V / 2);
@@ -863,5 +861,18 @@ void main(){
     return api;
   }
 
-  return { create, cellBlocks, viewCells, buildAtlas, MAT, CELL, WALL_H, EYE_H, RANGE };
+  // Camera axes for a yaw in the grid frame (x=east, y=south, z=up — the
+  // repo's map/canvas orientation). R is SCREEN-RIGHT: face south (+y) and
+  // the right hand points west (-x), so R = (-F.y, F.x). The old sign
+  // (F.y, -F.x) mirrored every frame; players felt it as swapped left/right
+  // controls (#1293). Pure — deepglasscheck pins the algebra in Node.
+  function camBasis(yaw) {
+    const n3 = (x, y, z) => { const l = Math.hypot(x, y, z) || 1; return [x / l, y / l, z / l]; };
+    const F = n3(-Math.sin(yaw), Math.cos(yaw), -0.05);
+    const R = [-F[1], F[0], 0];
+    const U = n3(-F[0] * F[2], -F[1] * F[2], 1 - F[2] * F[2]);
+    return { F, R, U };
+  }
+
+  return { create, cellBlocks, viewCells, buildAtlas, camBasis, MAT, CELL, WALL_H, EYE_H, RANGE };
 })();

@@ -115,6 +115,11 @@ const pure = await T(page, () => {
     oob: D.cellBlocks(m, -1, 0),
     seesAhead: has(2, 1),
     seesBehindWall: has(2, 2),
+    // camera handedness (#1293): grid frame is x=east, y=south, z=up. At yaw 0
+    // the eye faces +y (south); the right hand points west (-x). R must be
+    // (-F.y, F.x) — the old sign mirrored every frame into swapped controls.
+    b0: (() => { const b = D.camBasis(0); return { fy: b.F[1], rx: b.R[0], ry: b.R[1] } })(),
+    b90: (() => { const b = D.camBasis(Math.PI / 2); return { fx: b.F[0], rx: b.R[0], ry: b.R[1] } })(),
   }
 })
 ok('rules: walls block', pure.wall)
@@ -123,6 +128,10 @@ ok('rules: open door passes', !pure.openDoor)
 ok('rules: out-of-bounds blocks', pure.oob)
 ok('rules: LOS sees open cells', pure.seesAhead)
 ok('rules: LOS blocked by walls', !pure.seesBehindWall)
+ok('camera: facing south (+y) puts screen-right at west (-x) (#1293)',
+    pure.b0.fy > 0.9 && pure.b0.rx < -0.9 && Math.abs(pure.b0.ry) < 0.01, JSON.stringify(pure.b0))
+ok('camera: facing west (-x) puts screen-right at north (-y) (#1293)',
+    pure.b90.fx < -0.9 && pure.b90.ry < -0.9 && Math.abs(pure.b90.rx) < 0.01, JSON.stringify(pure.b90))
 
 /* ---------------- 2b. RULES (in the page) ---------------- */
 await T(page, () => window.__deepglassTest.goto(5.5, 4.5, 0, Math.PI))

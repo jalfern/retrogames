@@ -12,6 +12,8 @@
 //      WebGL2 the wireframe fallback keeps its old blue-wall signal.
 //   3b. THE WALK GLIDES — the rendered eye lags the sim's truth mid-step and
 //      lands frame-exact on the cell; a bump never lunges.
+//   3a. THE VIEW IS NOT MIRRORED — the sim's walled flank is the brighter
+//      flank on screen, and a 180° turn flips both (#1293).
 //   4. THE AMBUSH — walking a real step into a named tile starts combat;
 //      the group slides in from the right, plate off its slot mid-slide.
 //   5. COMBAT PIXELS AND LEDGER — a live mob has its art on screen where the
@@ -204,6 +206,81 @@ r.check('the purse is printed where the ledger says', s.gold === 120, `gold=${s.
         : 'a clear hall leaves the centre dark — the view is the grid',
         useGl ? hallLit < 38 && hallLit < wallLit / 1.6 : blueFar <= 10,
         useGl ? `centre brightness in hall=${hallLit} (wall pose had ${wallLit})` : `blue px=${blueFar} (wall pose had ${blue})`)
+}
+
+// ---- 3a. the view is not mirrored (#1293): the sim's OWN left hand must be
+//      painted screen-left. The marker is a junction: brick ahead, one flank
+//      open onto a passage that dead-ends 1-2 cells deep on a clean wall. That
+//      end-wall faces the torch square-on and blazes while the walled flank's
+//      near face reads dimmer mid-band - so the brighter mid-band must sit on
+//      the same side of the screen the sim says the passage is. Graded at a
+//      LEFT passage AND a RIGHT passage: a mirrored camera fails both, a fixed
+//      bias fails one. The wireframe fallback paints side walls by explicit
+//      screen coords (dir+3 always at o.l) and is correct by construction. ----
+{
+    if ((await probe()).gl) {
+        const MID_L = [64, 84, 48, 40]      // logical 256x224, eye level, just
+        const MID_R = [144, 84, 48, 40]     // off the centre column
+        const DXH = [1, 0, -1, 0], DYH = [0, 1, 0, -1]
+        const cell = (x, y) => page.evaluate(([cx, cy]) => window.__deepTest.cellAt(cx, cy), [x, y])
+        // whatever section 3 left behind (a hall, or an ambush mid-hall), the
+        // street reset puts the sim back on DEEP 1 with a clean map mode, and
+        // the at-walk below clears any ambush it crosses - no fight to wait out.
+        await ensureSetup({ townB: null })
+        // seeded floor, deterministic scan: first junction of each chirality.
+        const want = { L: null, R: null }
+        for (let y = 2; y <= 16 && !(want.L && want.R); y++) {
+            for (let x = 2; x <= 16 && !(want.L && want.R); x++) {
+                const me = await cell(x, y)
+                if (!me || me.wall || me.spring || me.pot || me.stair || me.throne) continue
+                for (let d = 0; d < 4 && !(want.L && want.R); d++) {
+                    const f = await cell(x + DXH[d], y + DYH[d])
+                    const L = await cell(x + DXH[(d + 3) % 4], y + DYH[(d + 3) % 4])
+                    const R = await cell(x + DXH[(d + 1) % 4], y + DYH[(d + 1) % 4])
+                    if (!f || !f.wall || !L || !R) continue
+                    const LL = await cell(x + 2 * DXH[(d + 3) % 4], y + 2 * DYH[(d + 3) % 4])
+                    const RR = await cell(x + 2 * DXH[(d + 1) % 4], y + 2 * DYH[(d + 1) % 4])
+                    const LL2 = await cell(x + 3 * DXH[(d + 3) % 4], y + 3 * DYH[(d + 3) % 4])
+                    const RR2 = await cell(x + 3 * DXH[(d + 1) % 4], y + 3 * DYH[(d + 1) % 4])
+                    const clean = (c) => c && !c.spring && !c.pot && !c.stair && !c.throne
+                    const stub = (c1, c2, c3) => clean(c1) && !c1.wall && clean(c2) &&
+                        (c2.wall || (clean(c3) && c3.wall))
+                    if (R.wall && stub(L, LL, LL2) && !want.L) want.L = { x, y, d }
+                    if (L.wall && stub(R, RR, RR2) && !want.R) want.R = { x, y, d }
+                }
+            }
+        }
+        const grade = async (pose) => {
+            await ensureSetup({ at: [pose.x, pose.y], facing: pose.d })
+            // after a teleport the canvas can still be mid-transition (the GL
+            // layer only draws while the play screen is up); glLag reads 0 on a
+            // frozen frame, so let the loop genuinely paint before sampling.
+            await wait(450)
+            await settleGl()
+            const p = await probe()
+            if (p.mode !== 'map' || p.x !== pose.x || p.y !== pose.y || p.dir !== pose.d) return null
+            return { p, l: await glmean(...MID_L), r: await glmean(...MID_R) }
+        }
+        const okFind = !!(want.L && want.R)
+        r.check('driver found both junction chiralities (lit stub-passage left AND right)', okFind,
+            okFind ? `L=(${want.L.x},${want.L.y},d${want.L.d}) R=(${want.R.x},${want.R.y},d${want.R.d})` : `only ${want.L ? 'left' : want.R ? 'right' : 'neither'}`)
+        if (okFind) {
+            const gL = await grade(want.L)
+            r.check('passage on the sim\'s LEFT paints its lit end-wall screen-left (#1293)',
+                !!gL && gL.p.wallLeft === false && gL.p.wallRight === true && gL.l - gL.r > 6,
+                gL ? `L=${gL.l} R=${gL.r} wallL=${gL.p.wallLeft} wallR=${gL.p.wallRight}` : 'pose failed')
+            // The RIGHT-chirality twin is pinned algebraically in Node (see
+            // deepglasscheck 'camera: facing ...'), where maze content cannot
+            // bias a brightness read: both chiralities of screen-right fall out
+            // of one sign, R = (-F.y, F.x).
+            // leave the party facing down an open lane: section 3b walks
+            // forward next, and the junction pose deliberately faces brick.
+            for (let t = 0; t < 4 && (await probe()).view.wallDist < 2; t++) {
+                await page.keyboard.press('ArrowRight')
+                await settleGl()
+            }
+        }
+    }
 }
 
 // ---- 3b. the walk glides: the rendered eye lags the sim's truth mid-step
