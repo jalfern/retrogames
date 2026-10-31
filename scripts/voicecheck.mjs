@@ -157,6 +157,13 @@ console.log('wire — consent, partial tracks, seat sanity:')
     ok(decodePadPacket({ t: 'pad', k: 'v', s: 1, m: 'i', x: '{}' }) === null, "k:'v' is never mistaken for a pad by the padlink decoder")
     inbox2.reset()
     ok(inbox2.seats().length === 0, 'inbox resets between races')
+    // #1257 host pill: consent state per seat, visible without opening the file.
+    ok(inbox2.voiceState(1) === null, 'voiceState: silent guest is null (no claim either way)')
+    inbox2.feed({ t: 'pad', k: 'v', s: 1, m: 'i', x: '{"mime":"audio/webm;codecs=opus"}' })
+    ok(inbox2.voiceState(1) === 'rec', 'voiceState: intro -> rec (host pill shows the friend is live)')
+    inbox2.feed({ t: 'pad', k: 'v', s: 2, m: 'x' })
+    ok(inbox2.voiceState(2) === 'off', 'voiceState: declined -> off (host pill shows NO)')
+    ok(inbox2.voiceState(3) === null, 'voiceState: unknown seat stays null')
 }
 
 console.log('bytes — base64 round-trip and re-export:')

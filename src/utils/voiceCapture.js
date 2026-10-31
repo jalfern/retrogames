@@ -29,6 +29,104 @@ function pickMime() {
     return ''
 }
 
+// --- device preference (#1257) — the player picks their mic once; every later
+// session honors it until they pick again. localStorage because the choice
+// survives reloads (the headsets-vs-built-in decision is per machine).
+const DEVICE_PREF_KEY = 'retrogames:voice-device'
+
+function readDevicePref() {
+    try { return localStorage.getItem(DEVICE_PREF_KEY) || '' } catch { return '' }
+}
+function saveDevicePref(id) {
+    try { if (id) localStorage.setItem(DEVICE_PREF_KEY, id); else localStorage.removeItem(DEVICE_PREF_KEY) } catch { /* private mode */ }
+}
+
+// --- mic badge (#1257) — a silent-but-recording state must be VISIBLE: a dot
+// per page/device while a voice session lives. Green while the mic is open,
+// grey when declined/denied. Refcounted: one page can bank two sessions
+// (recorder + online guest stream); the dot shows rec while ANY is live.
+const liveSessions = new Set()
+
+function badgeEl() {
+    if (typeof document === 'undefined') return null
+    let el = document.querySelector('[data-voice-mic]')
+    if (!el) {
+        el = document.createElement('div')
+        el.setAttribute('data-voice-mic', '')
+        el.style.cssText = 'position:fixed;z-index:9998;top:10px;left:10px;display:flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;background:rgba(6,4,16,0.72);border:1px solid rgba(255,255,255,0.18);font-family:"Press Start 2P",monospace;font-size:7px;color:#cfc4ee;pointer-events:none'
+        el.innerHTML = '<span data-voice-dot style="width:9px;height:9px;border-radius:50%;display:inline-block"></span><span data-voice-label></span>'
+        document.body.appendChild(el)
+    }
+    return el
+}
+
+function syncMicBadge() {
+    if (typeof document === 'undefined') return
+    const el = document.querySelector('[data-voice-mic]')
+    const rec = [...liveSessions].some((s) => s.phase === 'recording')
+    const off = liveSessions.size > 0
+    if (!off) { if (el) el.remove(); return }
+    const b = el || badgeEl()
+    if (!b) return
+    const dot = b.querySelector('[data-voice-dot]')
+    const label = b.querySelector('[data-voice-label]')
+    b.setAttribute('data-state', rec ? 'rec' : 'off')
+    dot.style.background = rec ? '#38e07b' : '#6b6b78'
+    dot.style.boxShadow = rec ? '0 0 8px rgba(56,224,123,0.9)' : 'none'
+    label.textContent = rec ? 'REC' : 'MIC OFF'
+}
+
+// --- VU bar (#1257) — the mic just opened after a YES; prove in THAT second
+// that it actually hears something, before a 30-min session dies quietly.
+// ~1.2 s of level meter; the peak lands on window.__voiceVu for the harness.
+function runVuMeter(stream, ms = 1200) {
+    if (typeof document === 'undefined') return
+    const AC = typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : null)
+    if (!AC) return
+    let ctx = null
+    try { ctx = new AC() } catch { return }
+    try {
+        const src = ctx.createMediaStreamSource(stream)
+        const an = ctx.createAnalyser
+            ? ctx.createAnalyser()
+            : null
+        if (!an) { try { ctx.close() } catch { /* gone */ } return }
+        an.fftSize = 512
+        src.connect(an)
+        const data = new Uint8Array(an.fftSize)
+        let bar = document.querySelector('#vc-vu')
+        if (!bar) {
+            bar = document.createElement('div')
+            bar.id = 'vc-vu'
+            bar.setAttribute('aria-hidden', 'true')
+            bar.style.cssText = 'position:fixed;z-index:9998;top:32px;left:10px;width:120px;height:8px;background:rgba(6,4,16,0.72);border:1px solid rgba(255,255,255,0.18);border-radius:4px;overflow:hidden;pointer-events:none'
+            bar.innerHTML = '<i data-voice-vu-fill style="display:block;height:100%;width:0%;background:#38e07b;border-radius:3px"></i>'
+            document.body.appendChild(bar)
+        }
+        const fill = bar.querySelector('[data-voice-vu-fill]')
+        const t0 = Date.now()
+        window.__voiceVu = 0
+        const step = () => {
+            an.getByteTimeDomainData(data)
+            let peak = 0
+            for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
+            const lvl = Math.min(1, (peak / 128) * 2.5)
+            if (lvl > window.__voiceVu) window.__voiceVu = Math.round(lvl * 100) / 100
+            fill.style.width = `${Math.round(lvl * 100)}%`
+            if (Date.now() - t0 >= ms) {
+                bar.remove()
+                try { src.disconnect(); an.disconnect(); ctx.close() } catch { /* gone */ }
+                return
+            }
+            requestAnimationFrame(step)
+        }
+        requestAnimationFrame(step)
+    } catch {
+        try { ctx.close() } catch { /* gone */ }
+    }
+}
+
+
 // askVoiceConsent — the prompt that fires BEFORE getUserMedia (browsers cache
 // permission, so the permission bubble is not consent; this one is ours, is
 // answered per player per session, and its result is saved in the recording).
@@ -70,6 +168,7 @@ export function askVoiceConsent(opts = {}) {
                 <input type="checkbox" id="vc-headset" style="transform:scale(1.4);margin-right:8px;vertical-align:middle">
                 I'm using a headset
             </label>
+            <select id="vc-device" style="display:none;font-family:inherit;font-size:8px;padding:6px 8px;background:#1b0f3d;color:#e8e0ff;border:1px solid #7c4dff;border-radius:4px;margin-bottom:14px;max-width:100%" aria-label="Microphone input"></select>
             <div style="display:flex;gap:12px;justify-content:center">
                 <button id="vc-yes" style="font-family:inherit;font-size:10px;padding:10px 14px;background:#7c4dff;color:#fff;border:0;border-radius:4px;cursor:pointer">YES, RECORD</button>
                 <button id="vc-no" style="font-family:inherit;font-size:10px;padding:10px 14px;background:#2a1b4d;color:#b9a8e8;border:0;border-radius:4px;cursor:pointer">NO MIC</button>
@@ -77,7 +176,27 @@ export function askVoiceConsent(opts = {}) {
         overlay.appendChild(box)
         document.body.appendChild(overlay)
         const headset = box.querySelector('#vc-headset')
-        box.querySelector('#vc-yes').addEventListener('click', () => done({ consent: true, headset: !!headset.checked }))
+        const device = box.querySelector('#vc-device')
+        // Fill the mic picker without ever blocking the YES/NO decision: devices
+        // (and their labels) appear when enumerate answers; headless boxes with
+        // no input list keep the default device silently.
+        navigator.mediaDevices.enumerateDevices().then((list) => {
+            if (!overlay.isConnected) return
+            const ins = (list || []).filter((d) => d.kind === 'audioinput')
+            if (!ins.length) return
+            const saved = readDevicePref()
+            device.innerHTML = ''
+            ins.forEach((d, i) => {
+                const o = document.createElement('option')
+                o.value = d.deviceId
+                o.textContent = d.label || `Microphone ${i + 1}`
+                device.appendChild(o)
+            })
+            const def = ins.find((d) => d.deviceId === saved) || ins.find((d) => d.deviceId === 'default') || ins[0]
+            device.value = def.deviceId
+            device.style.display = 'inline-block'
+        }).catch(() => { /* no list: default device it is */ })
+        box.querySelector('#vc-yes').addEventListener('click', () => { if (device && device.value) saveDevicePref(device.value); done({ consent: true, headset: !!headset.checked }) })
         box.querySelector('#vc-no').addEventListener('click', () => done({ consent: false, headset: !!headset.checked, reason: 'declined' }))
         const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); done({ consent: false, headset: !!headset.checked, reason: 'declined' }) } }
         document.addEventListener('keydown', onKey)
@@ -100,6 +219,7 @@ export function createVoiceSession(opts = {}) {
     const bitrate = opts.bitrate || 24000
     const clock = createVoiceClock({ now })
     const consent = { consent: false, headset: false, reason: 'unasked' }
+    const reg = { get phase() { return phase } } // badge refcount view of this session
     let phase = 'asking' // asking | recording | declined | failed | done
     let rec = null
     let stream = null
@@ -118,16 +238,22 @@ export function createVoiceSession(opts = {}) {
         consent.consent = !!(c && c.consent)
         consent.headset = !!(c && c.headset)
         if (c && c.reason) consent.reason = c.reason
-        if (!consent.consent) { phase = 'declined'; dbg('asked'); return null }
+        if (!consent.consent) { phase = 'declined'; liveSessions.add(reg); syncMicBadge(); dbg('asked'); return null }
         if (!voiceSupported()) { phase = 'failed'; consent.reason = 'unsupported'; dbg('unsupported'); return null }
-        return navigator.mediaDevices.getUserMedia({
-            audio: {
-                channelCount: { ideal: 1 },
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-            },
-        }).then((s) => {
+        const audioBase = {
+            channelCount: { ideal: 1 },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+        }
+        // #1257: honor the picked device; a stale deviceId (headset unplugged)
+        // falls back to the system default rather than killing the take.
+        const pref = readDevicePref()
+        const openMic = pref
+            ? navigator.mediaDevices.getUserMedia({ audio: { ...audioBase, deviceId: { exact: pref } } })
+                .catch(() => navigator.mediaDevices.getUserMedia({ audio: audioBase }))
+            : navigator.mediaDevices.getUserMedia({ audio: audioBase })
+        return openMic.then((s) => {
             stream = s
             mime = pickMime()
             rec = mime ? new MediaRecorder(s, { mimeType: mime, audioBitsPerSecond: bitrate }) : new MediaRecorder(s)
@@ -144,8 +270,10 @@ export function createVoiceSession(opts = {}) {
             startMs = now()
             rec.start(1000)
             phase = 'recording'; dbg('mic-open')
+            liveSessions.add(reg); syncMicBadge()
+            runVuMeter(s) // #1257: prove this mic hears something, right now
             return null
-        }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; dbg('mic-denied'); return null })
+        }).catch(() => { phase = 'failed'; consent.consent = false; consent.reason = 'mic-denied'; liveSessions.add(reg); syncMicBadge(); dbg('mic-denied'); return null })
     })
 
     return {
@@ -170,6 +298,7 @@ export function createVoiceSession(opts = {}) {
         // shape, or null when there is nothing honest to store.
         finalize() {
             if (phase === 'done') return Promise.resolve(null)
+            liveSessions.delete(reg); syncMicBadge()
             if (phase !== 'recording') { phase = 'done'; dbg('finalize-idle'); return Promise.resolve(null) }
             phase = 'done'
             const ms = Math.round(now() - startMs)

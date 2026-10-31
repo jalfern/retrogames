@@ -207,6 +207,13 @@ export function makeVoiceInbox() {
             }
         },
         get(seat) { return bySeat.get(seat) || null },
+        // Host-pill state (#1257): 'rec' once the guest's intro lands (mic live),
+        // 'off' once it declines, null until the guest says anything.
+        voiceState(seat) {
+            const tr = bySeat.get(seat | 0)
+            if (!tr) return null
+            return tr.declined ? 'off' : 'rec'
+        },
         seats() { return [...bySeat.keys()].sort() },
         // Host view for the file: consented, assembled tracks (audio bytes
         // present) + the list of seats that explicitly declined.
