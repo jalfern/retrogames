@@ -1,62 +1,63 @@
-# STATE — session 66 (2026-10-31, slot a)
+# STATE — session 67 (2026-10-31, slot a)
 
 ## Shipped this session
-**RALLY CO-DRIVER is live and its pause path is FIXED** — the game merged as
-`f35a63c` (PR #1307, the QA lanes' build, ~7 min after my claim; GitHub
-serialized, no damage). My post-merge real-drive review found the shipped
-pause path broken four ways; the hotfix merged as `97091bf` (PR #1364).
-Live: https://jalfern.com/retrogames/rally-co-driver (private until Jon
-promotes, #379). QA polish #1365 filed.
+**SHORT ORDER SHOUT is ONLINE** — stage 2 (#1291) merged as `2b2197a` (PR
+#1375): `?net=host` opens a room (shared Lobby #1039, QR included), guests
+join `?net=join&room=CODE`, each browser drives the seat its relay slot owns
+(mobile players get their own cook — VirtualControls feeds `ownSeat`, not
+always seat 1), open seats are CPU, host keeps a WASD+F/G partner seat (P).
+Live: https://jalfern.com/retrogames/short-order-shout (private until Jon
+promotes, #379 — the lobby IS proven, promote whenever).
 
-## The four pause bugs (worth keeping)
-CI never presses `?` — `static` doesn't lint `src/games/**` and rallycheck is
-Node-only — so the shipped build had: (1) `pausedRef.current` referenced in
-JSX but defined only inside the effect → RESUME click threw ReferenceError;
-(2) `simStep` never checked pause → the stage ran behind the overlay;
-(3) no `Shift+/`→`Question` normalization → `?` never fired on a real
-keyboard — and THIS hid (4): `<PauseOverlay entry={G}>` should be `game={G}`,
-a React-tree crash the moment `?` did fire. Fix + regression proof =
-`scripts/rallydrive.mjs` (`npm run rallydrive`, 16 real-key assertions incl.
-"sim FROZEN while paused" and "RESUME click without error").
-Candidate for the shared drive kit: every game's drive step should press `?`
-and click RESUME.
+## The online core (src/games/ShortOrderShout/net.js, pure)
+- Sampling law #531 kept: pads sampled ONCE, D=10 ticks ahead, batched every
+  2nd tick as 6-bit masks (~30 Hz/member); whole-sim hash every 60 ticks must
+  agree with EVERY peer.
+- Desync heals without reload: mismatch → `res:req` → host snapshot
+  (`snapshotGame/restoreGame` added to engine — additive, rng continuation via
+  closure peek, tick hashes unchanged), chunked ≤380B; dead friend (3 s stall)
+  → host re-kicks fresh seed.
+- Wire: FORWARD_TYPES only, ≤512B, ~93 msg/s worst case at 4 members.
+- `npm run soslinkcheck` (31 assertions, no browser/network): full 150 s shift
+  over the wire ends score-identical to the LOCAL reference run (2851=2851,
+  quota win, final hash equal); injection detect+heal proven; mutant (neuter
+  check()) red x3.
 
-## Collision notes (#1258 growing pains, two ways)
-- Studio pruned the `qa/rally-co-driver` worktree (merging #1307) while I was
-  verifying that same branch — two uncommitted fixes lost, rebuilt in minutes.
-  Rule: never verify or edit in another lane's worktree; copy the branch into
-  YOUR lane worktree first.
-- Slot b's session-65 lesson adopted: `pgrep -fl main-ok.sh` before treating a
-  stale claim as dead; and prod verification = poll the Vercel alias
-  (`retrogames-psi.vercel.app/retrogames/`) as the deploy of record, the
-  jalfern.com edge can serve torn bundles minutes apart. Alias rally chunk
-  carried both fix markers (`shiftKey&&"Slash"→"Question"`, no `entry:`).
-- #1307's merge skipped the nightlybot roster entry for rally-co-driver —
-  #1364 carried it; without it the next nightly repeats #1350's red.
+## Harness lessons (worth keeping)
+- The in-memory relay in a Node harness must be fed a VIRTUAL clock — the real
+  relay guards a 240 msg/REAL-second window, and a synchronous loop blows
+  through it at tick ~240 and everything after silently refuses (#1290 sibling
+  lesson: a refused message is invisible unless you count refusals).
+- A CPU "human" over a wire must be a RECORDED local pad stream, not a live
+  emitter behind the D-delay: live emitters mis-time their own landing checks
+  and crawl (0 served); recorded thumbs replay the determinism law exactly —
+  online result equals local reference run by construction.
+- `assemble()` strict-equality bug (`m === undefined` vs null-initialised)
+  silently zeroed every remote pad — caught at tick 60 by the boundary hash.
+- Never `git add -A` blindly: a debug script (`scripts/_dbg2.mjs`) rode the
+  checkpoint commit to main; removal PR follows immediately.
+
+## Claim notes (#1258)
+Warden assigned #1290; claim REFUSED (slot b holds it, comment 10 min old) —
+normal ladder → #1291 claimed and shipped. Slot b's mini-queue corpse untouched.
 
 ## Next goal
-Game queue: **#1291 SHORT ORDER SHOUT stage 2 — online kitchen lobby**
-(the last real game; #1354/#1299/#1290 are platform-lane). If it's taken,
-expect the flagship polish stage (#841) — derive the pick with
-`scripts/lib/idle.mjs`, not memory. Builder refills will be thin after #1291.
+Game queue is now empty of unclaimed games (#1291 was the last; #1299/#1354
+are platform-lane). Expect the flagship polish stage (#841) next session —
+derive the pick with `scripts/lib/idle.mjs`, not memory.
 
 ## Harness
-- `rallydrive` added (npm alias); rallycheck mutant-proven red once
-  (off-track speed cap) and restored. nightlybot roster includes rally.
+soslinkcheck added (npm alias); soscheck still 36/0; contractcheck unchanged.
 
 ## Environment notes
-- Slot a worked in `~/Dev/retrogames-forge-rally-co-driver`; port 5173
-  reclaimed from the dead fire-crew lane's leaked dev server (#1360 shipped,
-  session gone — killing it is plumbing). node_modules symlink to the main
-  checkout served eslint/rallycheck/build/drive fine.
+Slot a worked in ~/Dev/retrogames-forge-sos-lobby (node_modules symlink), port
+5173; dev server left running at session end — reclaim or kill it next session.
 
 ## Open questions for Jon
-- none from this session (games lane). #1286 sits AWAITING on the qa lane;
-  #737 still waiting-jon from earlier lanes.
+- none from this session (games lane). #1286 AWAITING on qa lane; #737 older.
 
 ## Carry-over
-- #1362 TALK ME DOWN contractcheck red at main (QA lane first — it's
-  breakage, not polish, filed by slot b).
-- #1365 RALLY CO-DRIVER polish (online lobby, model seat arm, voice field QA,
-  ART.md juice); #1361 FIRE CREW polish; #1305 TALK ME DOWN polish;
-  #1287 GAUNTLET voice polish. #1266/#1275 QA follow-ups; #1141 stage 4.
+- #1362 TALK ME DOWN contractcheck red at main (QA lane first).
+- #1365 RALLY polish; #1361 FIRE CREW polish; #1305 TALK ME DOWN polish;
+  #1287 GAUNTLET voice polish; #1266/#1275 QA follow-ups; #1141 stage 4.
+- SOS voice/PTT filed on the SOS QA polish issue (this session).
