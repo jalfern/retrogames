@@ -19,9 +19,10 @@ import {
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
-import { playFx } from './audio.js'
+import { playFx, dinerBar, resetDiner } from './audio.js'
 
 const FIXED_DT = 1000 / 60
+const IS_TOUCH = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0)
 const SEAT_KEYS_HUMAN2 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }
 const ATTRACT_MSGS = [
     'THE COUNTER SPLITS THE KITCHEN',
@@ -48,7 +49,7 @@ export default function ShortOrderShout() {
     const selectRef = useRef(2)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0 })
+    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0, walk: {}, pops: [], slide: {}, bump: 0, stamp: 0 })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -62,6 +63,9 @@ export default function ShortOrderShout() {
         seedRef.current = seed
         gsRef.current = createGame(seed, players)
         emittersRef.current = freshEmitters(players)
+        const hud = hudRef.current
+        hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0
+        resetDiner() // fresh 4-bar loop from bar 0 (#1292)
         setScreen('play')
         specRef.current.players = players
         playFx({ k: 'start' })
@@ -124,7 +128,10 @@ export default function ShortOrderShout() {
         pumpHudRef.current = (f) => {
             const hud = hudRef.current
             if (f.k === 'toast') { hud.toast = f.msg; hud.toastT = 110 }
-            if (f.k === 'serve') { hud.popT = 24 }
+            if (f.k === 'serve') { hud.popT = 24; hud.pops.push({ k: 'serve', x: f.x, y: f.y, t: 0, pts: f.pts || 0 }); hud.bump = 14 }
+            if (f.k === 'catch') hud.pops.push({ k: 'catch', x: f.x, y: f.y, t: 0 })
+            if (f.k === 'douse') hud.pops.push({ k: 'douse', x: f.x, y: f.y, t: 0 })
+            if (f.k === 'boilover') hud.pops.push({ k: 'splat', x: STATION.pot[0], y: 0, t: 0 })
             if (f.k === 'boilover' || f.k === 'fire' || f.k === 'expire' || f.k === 'fired') hud.shake = f.k === 'fired' ? 40 : 18
         }
 
@@ -225,6 +232,10 @@ export default function ShortOrderShout() {
             stepGame(g, pads)
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
+            dinerBar(g) // 4-bar diner loop under gameplay, ducked by alarms (#1292)
+            const hud = hudRef.current
+            if (g.score >= QUOTA && hud.lastScore < QUOTA) hud.stamp = 96 // big stamp the moment quota is made
+            hud.lastScore = g.score
             if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
         }
 
@@ -258,6 +269,9 @@ export default function ShortOrderShout() {
         raf = requestAnimationFrame(loop)
 
         // ---------- drawing ----------
+        let parts = [] // render-only particles (#1292); the sim never sees them
+        let vs = 90210
+        const rv = () => ((vs = (Math.imul(vs, 1664525) + 1013904223) >>> 0) / 4294967296)
         const draw = (t) => {
             const ctx = cvs.getContext('2d')
             ctx.imageSmoothingEnabled = false
@@ -319,6 +333,23 @@ export default function ShortOrderShout() {
                 ctx.fillRect(px + 4, py + TILE - 3, Math.round((TILE - 8) * (1 - g.pot.since / 80)), 2)
             }
 
+            // Distinct alarm patterns for color-blind players (#1292): FIRE blinks
+            // fast with an exclamation mark; a ruined (boiled-over) pot blinks slow
+            // with a bubble squiggle. Different rate AND shape, not just hue.
+            for (let bi = 0; bi < 2; bi++) {
+                if (g.burners[bi].state === 'fire') {
+                    const px = KITCHEN_X + (6 + bi) * TILE, py = KITCHEN_Y
+                    if (t % 8 < 4) { ctx.strokeStyle = '#f8d038'; ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2) }
+                    ctx.fillStyle = '#f8d038'; ctx.fillRect(px + TILE / 2, py - 5, 2, 4); ctx.fillRect(px + TILE / 2, py + 1, 2, 2)
+                }
+            }
+            if (g.pot.state === 'ruined') {
+                const px = KITCHEN_X + STATION.pot[0] * TILE, py = KITCHEN_Y
+                if (t % 16 < 8) { ctx.strokeStyle = '#f8a038'; ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2) }
+                ctx.fillStyle = '#f8a038'
+                ctx.fillRect(px + 5, py - 3, 3, 2); ctx.fillRect(px + 10, py - 5, 3, 2); ctx.fillRect(px + 15, py - 3, 3, 2)
+            }
+
             // floor items
             for (const f of g.floors) {
                 const px = KITCHEN_X + f.x * TILE, py = KITCHEN_Y + f.y * TILE
@@ -341,30 +372,113 @@ export default function ShortOrderShout() {
                 ctx.drawImage(S.item[pr.item] || S.item.bun, px + 6, py + 4)
             }
 
-            // cooks
+            // cooks — #1292: glide between cells, 2-frame paddle-walk flipping
+            // every 4 ticks, and a squash flourish when a cook turns to face.
             for (const c of g.cooks) {
-                const px = KITCHEN_X + c.x * TILE - 0, py = KITCHEN_Y + c.y * TILE - 6
-                const moving = c.moveCd > 0
-                const frame = moving ? Math.floor(t / 6) % 4 : 0
+                let a = hud.walk[c.seat]
+                if (!a) a = hud.walk[c.seat] = { x: c.x, y: c.y, face: c.face, turn: 0 }
+                const ddx = c.x - a.x, ddy = c.y - a.y
+                const moving = Math.abs(ddx) + Math.abs(ddy) > 0.04
+                a.x += ddx * 0.34; a.y += ddy * 0.34
+                if (a.face !== c.face) { a.turn = 5; a.face = c.face }
+                if (a.turn > 0) a.turn--
+                const px = KITCHEN_X + a.x * TILE, py = KITCHEN_Y + a.y * TILE - 6 - (moving ? (((t >> 2) + c.seat) % 2) : 0)
+                const frame = moving ? (Math.floor(t / 4) + c.seat) % 4 : 0
                 const img = S.cook[c.seat % 4][frame]
-                if (c.face === 'left') {
-                    ctx.save(); ctx.translate(px + TILE / 2, 0); ctx.scale(-1, 1)
-                    ctx.drawImage(img, -8, py)
-                    ctx.restore()
-                } else ctx.drawImage(img, px + (TILE - 16) / 2, py)
+                const sq = a.turn > 0 ? 0.82 : 1
+                ctx.save()
+                ctx.translate(px + TILE / 2, 0)
+                ctx.scale((c.face === 'left' ? -1 : 1) * sq, 1)
+                ctx.drawImage(img, -8, py)
+                ctx.restore()
                 // facing pip (eyes)
                 ctx.fillStyle = '#181018'
                 if (c.face === 'down') { ctx.fillRect(px + 6, py + 7, 2, 2); ctx.fillRect(px + 10, py + 7, 2, 2) }
                 else if (c.face === 'right') ctx.fillRect(px + 11, py + 7, 2, 2)
                 else if (c.face === 'left') ctx.fillRect(px + 5, py + 7, 2, 2)
-                // carried item above head
+                // carried item above head (rocking with the step)
                 if (c.holding) {
-                    ctx.drawImage(S.item[c.holding] || S.item.bun, px + 6, py - 11)
+                    ctx.drawImage(S.item[c.holding] || S.item.bun, px + 6 + (moving ? (((t >> 3) + c.seat) % 2) * 2 - 1 : 0), py - 11)
                     if (c.dirty) { ctx.fillStyle = '#6a5030'; ctx.fillRect(px + 5, py - 2, 14, 2) }
                 }
             }
 
             ctx.restore()
+
+            // ---------- particles + impact pops (#1292, pure render juice) ----------
+            // fire drifts 2-frame smoke and flicks embers along the counter line;
+            // burnt patties smoulder; a ruined pot puffs.
+            for (let bi = 0; bi < 2; bi++) {
+                const b = g.burners[bi]
+                const bx = KITCHEN_X + (6 + bi) * TILE, by = KITCHEN_Y + TILE - 10
+                if (b.state === 'fire') {
+                    if (t % 4 === (bi ? 2 : 0)) parts.push({ k: 's', x: bx + 6 + rv() * 10, y: by - 4, vx: 0.14 + rv() * 0.1, vy: -0.36, life: 42 })
+                    if (t % 7 === bi) parts.push({ k: 'e', x: bx + 5 + rv() * 14, y: by - 8, vx: (rv() - 0.5) * 0.6, vy: -0.9, life: 24 })
+                } else if (b.state === 'burnt' && t % 12 === bi) {
+                    parts.push({ k: 's', x: bx + 10, y: by - 6, vx: 0.1, vy: -0.22, life: 30 })
+                }
+            }
+            if (g.pot.state === 'ruined' && t % 14 === 0) parts.push({ k: 's', x: KITCHEN_X + STATION.pot[0] * TILE + 8, y: KITCHEN_Y + 14, vx: 0.12, vy: -0.2, life: 28 })
+            if (parts.length > 90) parts.splice(0, parts.length - 90)
+            for (let i = parts.length - 1; i >= 0; i--) {
+                const p = parts[i]
+                p.x += p.vx; p.y += p.vy
+                if (--p.life <= 0) { parts.splice(i, 1); continue }
+                if (p.k === 's') {
+                    ctx.globalAlpha = (p.life / 42) * 0.5
+                    ctx.fillStyle = '#c8c0c8'
+                    const sz = 2 + ((42 - p.life) >> 3) // 2-frame-ish growth
+                    ctx.fillRect(Math.round(p.x), Math.round(p.y + ((42 - p.life) % 2)), sz, sz)
+                } else {
+                    ctx.globalAlpha = p.life / 24
+                    ctx.fillStyle = p.life > 10 ? '#f8d038' : '#f07820'
+                    ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 2)
+                }
+            }
+            ctx.globalAlpha = 1
+            // impact pops: catch rings, serve plates, douse steam, boil-over splat
+            for (let i = hud.pops.length - 1; i >= 0; i--) {
+                const p = hud.pops[i]
+                p.t++
+                const lifeMax = p.k === 'serve' ? 44 : 24
+                if (p.t > lifeMax) { hud.pops.splice(i, 1); continue }
+                const wx = KITCHEN_X + p.x * TILE + TILE / 2, wy = KITCHEN_Y + p.y * TILE + TILE / 2
+                if (p.k === 'catch') {
+                    ctx.globalAlpha = 1 - p.t / lifeMax
+                    ctx.strokeStyle = '#fff8d0'
+                    ctx.strokeRect(wx - 4 - p.t, wy - 4 - p.t, 8 + p.t * 2, 8 + p.t * 2)
+                    ctx.globalAlpha = 1
+                } else if (p.k === 'serve') {
+                    const rise = Math.round(Math.sin(Math.min(1, p.t / 40) * Math.PI) * 16)
+                    ctx.globalAlpha = 1 - p.t / lifeMax * 0.6
+                    ctx.fillStyle = 'rgba(255,248,208,0.30)'
+                    ctx.fillRect(wx - 14, wy - 12 - rise, 28, 18)
+                    ctx.fillStyle = '#f0ead8' // plate stack rising off the window
+                    ctx.fillRect(wx - 8, wy - 4 - rise, 16, 3)
+                    ctx.fillRect(wx - 6, wy - 7 - rise, 12, 3)
+                    ctx.fillStyle = '#ffd54f'
+                    ctx.font = '6px "Press Start 2P", monospace'
+                    ctx.fillText(`+${p.pts}`, wx - 8, wy - 12 - rise)
+                    ctx.globalAlpha = 1
+                } else if (p.k === 'douse') {
+                    ctx.globalAlpha = 1 - p.t / lifeMax
+                    ctx.fillStyle = '#e8f0f4'
+                    ctx.fillRect(wx - 6, wy - 4 - p.t, 4, 3)
+                    ctx.fillRect(wx + 1, wy - 7 - p.t, 5, 4)
+                    ctx.globalAlpha = 1
+                } else if (p.k === 'splat') {
+                    ctx.globalAlpha = 1 - p.t / lifeMax
+                    ctx.fillStyle = '#7c5820'
+                    ctx.fillRect(wx - 10, wy + 10, 5, 2); ctx.fillRect(wx + 4, wy + 12, 6, 2); ctx.fillRect(wx - 2, wy + 14, 4, 2)
+                    ctx.globalAlpha = 1
+                }
+            }
+            // window plate-stack bump right after a serve
+            if (hud.bump > 0) {
+                hud.bump--
+                ctx.strokeStyle = hud.bump % 4 < 2 ? '#ffe082' : '#58d048'
+                ctx.strokeRect(KITCHEN_X + 1, KITCHEN_Y + STATION.window[1] * TILE + 1, TILE - 2, TILE - 2)
+            }
 
             // ---------- HUD ----------
             ctx.fillStyle = '#20101a'
@@ -383,22 +497,48 @@ export default function ShortOrderShout() {
             ctx.fillStyle = remain < 900 && Math.floor(t / 20) % 2 ? '#ff5252' : '#e8e0d0'
             ctx.fillText(`${mm}:${ss < 10 ? '0' : ''}${ss}`, 6, 38)
             ctx.fillStyle = hud.popT > 0 ? '#ffe082' : '#e8e0d0'
-            ctx.fillText(`SCORE ${g.score}`, 130, 12)
+            ctx.font = '10px "Press Start 2P", monospace'
+            ctx.fillText(`SCORE ${g.score}`, 130, 13)
+            ctx.font = '9px "Press Start 2P", monospace'
             ctx.fillStyle = '#c8bfa4'
             ctx.fillText(`QUOTA ${QUOTA}`, 130, 24)
             for (let i = 0; i < MAX_STRIKES; i++) {
                 ctx.fillStyle = i < g.strikes ? '#ff5252' : '#3a2430'
                 ctx.fillRect(130 + i * 12, 30, 8, 8)
             }
-            // ticket rail
+            // diner tip meter (#1292): a ketchup bottle that fills toward the next
+            // 5-serve streak; when it's full the next streak ding is earned.
+            {
+                const fill = (g.served % 5) / 5
+                const bx = 170
+                ctx.fillStyle = '#3a2430'; ctx.fillRect(bx, 8, 14, 32)
+                ctx.fillStyle = '#8a2018'
+                const fh = Math.round(26 * fill)
+                if (fh > 0) ctx.fillRect(bx + 2, 36 - fh, 10, fh)
+                ctx.fillStyle = '#d03828'; ctx.fillRect(bx + 3, 3, 8, 5); ctx.fillRect(bx + 5, 1, 4, 2) // cap + nozzle
+                ctx.fillStyle = '#f0ead8'; ctx.fillRect(bx + 2, 16, 10, 5) // label band
+                if (fill === 0 && g.served > 0 && Math.floor(t / 8) % 2) { ctx.strokeStyle = '#ffd54f'; ctx.strokeRect(bx - 1, 2, 16, 39) }
+            }
+            // ticket rail — new slips slide in from the right (#1292), fanfare print
             const rail = g.tickets.slice(0, 3)
+            {
+                const ids = new Set(g.tickets.map((tk) => tk.id))
+                for (const k of Object.keys(hud.slide)) if (!ids.has(Number(k))) delete hud.slide[k]
+            }
             rail.forEach((tk, i) => {
-                const tx = 196 + i * 42, ty = 4
+                let s = hud.slide[tk.id]
+                if (s === undefined) s = hud.slide[tk.id] = 0
+                const entering = s < 18
+                const off = entering ? Math.round((1 - s / 18) * 64) : 0
+                hud.slide[tk.id] = s + 1
+                const tx = 196 + i * 42 + off, ty = 4
+                if (entering) ctx.globalAlpha = 0.35 + 0.65 * (s / 18)
                 ctx.drawImage(S.slip[tk.dish], tx, ty)
                 const frac = Math.max(0, tk.left / tk.total)
                 ctx.fillStyle = '#20101a'; ctx.fillRect(tx + 3, ty + 22, 28, 4)
                 ctx.fillStyle = frac > 0.5 ? '#58d048' : frac > 0.25 ? '#f8d038' : '#f05030'
                 ctx.fillRect(tx + 3, ty + 22, Math.round(28 * frac), 4)
+                ctx.globalAlpha = 1
             })
 
             // bottom strip
@@ -421,6 +561,25 @@ export default function ShortOrderShout() {
 
             // ---------- screens ----------
             const sc = screenRef.current
+            // quota made: a big stamp slams down (#1292)
+            if (hud.stamp > 0 && sc === 'play') {
+                hud.stamp--
+                ctx.save()
+                ctx.globalAlpha = hud.stamp < 14 ? hud.stamp / 14 : 1
+                ctx.translate(CANVAS_W / 2, 116 + (hud.stamp > 86 ? (96 - hud.stamp) * 2 - 10 : 0))
+                ctx.rotate(-0.05)
+                ctx.fillStyle = 'rgba(20,8,16,0.88)'
+                ctx.fillRect(-92, -16, 184, 32)
+                ctx.strokeStyle = Math.floor(t / 4) % 2 ? '#ffd54f' : '#ff8fb0'
+                ctx.lineWidth = 2
+                ctx.strokeRect(-90, -14, 180, 28)
+                ctx.font = '10px "Press Start 2P", monospace'
+                ctx.textAlign = 'center'
+                ctx.fillStyle = '#58d048'
+                ctx.fillText('QUOTA MADE!', 0, 4)
+                ctx.textAlign = 'left'
+                ctx.restore()
+            }
             if (sc !== 'play' && sc !== 'over') {
                 ctx.fillStyle = 'rgba(10,5,10,0.82)'
                 ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
@@ -436,6 +595,9 @@ export default function ShortOrderShout() {
                 ctx.fillStyle = '#e8e0d0'
                 const msg = ATTRACT_MSGS[Math.floor(t / 150) % ATTRACT_MSGS.length]
                 ctx.fillText(msg, CANVAS_W / 2, 136)
+                ctx.font = '6px "Press Start 2P", monospace'
+                ctx.fillStyle = '#8a7a8a'
+                ctx.fillText('"CALL OUT ORDERS" — VOICE ORDERS COMING SOON', CANVAS_W / 2, 152)
                 if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 168) }
                 ctx.textAlign = 'left'
             } else if (sc === 'select') {
@@ -457,6 +619,10 @@ export default function ShortOrderShout() {
                 ctx.fillText('ARROWS PICK   SPACE START', CANVAS_W / 2, 146)
                 ctx.fillStyle = partnerHumanRef.current ? '#58d048' : '#8a7a8a'
                 ctx.fillText(`P: SEAT 2 ${partnerHumanRef.current ? 'HUMAN (WASD F/G)' : 'CPU'}`, CANVAS_W / 2, 162)
+                if (IS_TOUCH) {
+                    ctx.fillStyle = '#8a7a8a'
+                    ctx.fillText('ON TOUCH: PAD DRIVES SEAT 1 — SEAT 2 NEEDS A KEYBOARD', CANVAS_W / 2, 178)
+                }
                 ctx.textAlign = 'left'
             } else if (sc === 'over') {
                 const g2 = gsRef.current

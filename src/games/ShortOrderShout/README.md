@@ -68,6 +68,19 @@ Known CPU reference results (engine seeds): 2P CPU pair reaches quota on
   contract's #1247 voice path banks raw per-seat mic audio (consent prompt
   on real activation) into v2 files.
 
+## Polish pass #1292 (QA studio, 2026-10-31)
+
+All renderer/audio, engine untouched (tick hashes unchanged): 2-frame paddle-walk
+with smooth glide + turn squash; tossed items spin, catches flash a ring + pop;
+serve plates flash + window bump + `+pts` float; quota completion slams a big
+stamp. Fire drifts smoke + embers (distinct fast-blink `!` border), ruined pot
+smoulders with a slow-blink bubble squiggle — alarm patterns differ by rate AND
+shape for color-blind players. New tickets slide in with a bell ding; ketchup
+bottle tip-meter tracks the 5-serve streak; attract teases `"CALL OUT ORDERS"`
+(voice stage); the seat-select screen states out loud that touch drives seat 1
+only (seat 2 wants a keyboard). A 4-bar synthesized diner loop (`dinerBar`,
+audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
+
 ## Honest gaps
 
 - **Online seats through the lobby = stage 2 (#1291).** The slots expose `remote`

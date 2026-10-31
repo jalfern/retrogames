@@ -5,10 +5,43 @@ import { audioController as AC } from '../../utils/AudioController'
 
 const PENTA = [523, 587, 659, 784, 880]
 
+// --- diner BGM: a 4-bar loop, scheduled per bar from the game loop (#1292) ----
+// No assets: two voices of AC.playTone (melody square + triangle bass), one bar
+// per 120 sim ticks (2 s). Ducked ~3 dB while the kitchen alarm is active.
+const BAR_TICKS = 120
+const MELODY = [
+    [523, 0, 659, 0, 784, 659, 587, 523],
+    [440, 0, 523, 0, 659, 523, 494, 440],
+    [392, 0, 523, 0, 587, 523, 494, 392],
+    [440, 494, 523, 587, 659, 0, 523, 0],
+]
+const BASS = [
+    [131, 196, 131, 196],
+    [110, 165, 110, 165],
+    [98, 147, 98, 147],
+    [110, 165, 131, 196],
+]
+let lastBar = -1
+export function barTicks() { return BAR_TICKS }
+export function dinerBar(gs) {
+    if (!gs || gs.done) { lastBar = -1; return }
+    const bar = Math.floor(gs.tick / BAR_TICKS)
+    if (bar === lastBar) return
+    lastBar = bar
+    const duck = gs.burners.some((b) => b.state === 'fire') || gs.pot.state === 'ruined' ? 0.7 : 1 // -3 dB
+    const mel = MELODY[bar % 4]
+    for (let i = 0; i < 8; i++) if (mel[i]) AC.playTone(mel[i], 0.18, 'square', 0.035 * duck, i * 0.25)
+    const bas = BASS[bar % 4]
+    for (let j = 0; j < 4; j++) AC.playTone(bas[j], 0.3, 'triangle', 0.05 * duck, j * 0.5)
+}
+export function resetDiner() { lastBar = -1 }
+
 export function playFx(f) {
     switch (f.k) {
-        case 'print': // dot-matrix ticket zip
+        case 'print': // dot-matrix ticket zip + service bell ding (#1292)
             for (let i = 0; i < 4; i++) AC.playTone(1200 + i * 140, 0.03, 'square', 0.035, i * 0.045)
+            AC.playTone(1568, 0.14, 'triangle', 0.05, 0.2)
+            AC.playTone(2093, 0.1, 'triangle', 0.025, 0.22)
             break
         case 'take': AC.playTone(660, 0.05, 'square', 0.06); break
         case 'pick': AC.playTone(520, 0.05, 'square', 0.05); break
