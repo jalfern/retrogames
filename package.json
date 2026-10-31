@@ -57,6 +57,8 @@
     "robokitcheck": "node scripts/robokitcheck.mjs",
     "floorbosscheck": "node scripts/floorbosscheck.mjs",
     "floorbossplay": "node scripts/floorbossplay.mjs",
+    "soscheck": "node scripts/soscheck.mjs",
+    "sosplay": "node scripts/sosplay.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",
     "padlayoutcheck": "node scripts/padlayoutcheck.mjs",
