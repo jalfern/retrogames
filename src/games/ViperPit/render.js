@@ -154,6 +154,14 @@ export function buildFighter(def) {
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
 const ease = (t) => t * t * (3 - 2 * t)
 
+// Engine spec (fighting.js): +x = right, facing 1 = facing right. Rigs are built
+// facing +z (jaw/lapel/toes ahead, hood behind) and the fight camera looks from
+// +z, so screen-right is world +x: facing right is the yaw that carries local +z
+// onto world +x — sin(yaw) = +facing. ViperPit shipped the mirrored sign since
+// e39ea51; both fighters walked mooning backwards (#1298). Pinned as rigYaw so
+// viperpitcheck proves the algebra, not just the spelling.
+export const rigYaw = (facing) => (facing === 1 ? Math.PI / 2 : -Math.PI / 2)
+
 export const SHIMMER_FRAMES = 18
 export const SHATTER_FRAMES = 26
 
@@ -627,7 +635,7 @@ export function createScene(canvas) {
                 const f = m.fighters[i], rig = rigs[i]
                 if (rig.hitHint && f.st !== 'hitstun' && f.st !== 'hitair') rig.hitHint = null
                 rig.root.position.x = f.x
-                rig.root.rotation.y = f.facing === 1 ? -Math.PI / 2 : Math.PI / 2
+                rig.root.rotation.y = rigYaw(f.facing)
                 if (cine && cine.side === i) poseFinisherBeat(rig, cine.kind, cine.k)
                 else poseFighter(rig, f, tSec)
                 rig.shadow.position.x = f.x
