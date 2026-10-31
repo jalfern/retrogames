@@ -9,6 +9,7 @@
 //     · the fire lights the ground around it (warm-lit band under the pit)
 //     · the world beyond the ring falls to darkness (top corners stay dark)
 //     · embers glow outside the flame silhouette and move
+//     · sparks burst in clusters with ballistic fall; heat-haze knob wired
 //     · the sky is dark but carries star pinpoints
 //     · the camera pose moves the world
 //   3. LAW    — self-contained single file; NOT registered in games.js
@@ -24,6 +25,11 @@
 // (whole-field pulse) — the two-sided window catches both.
 // Mutant 3 (fidelity PR, 2026-10-30): ground shadow floor mix(0.55,1,sh) ->
 // mix(0.22,1,sh) -> leopard-print gate reddens (meanR falls far under 55).
+// Mutant 4 (fidelity PR 3, 2026-10-30): remove the setHeat/heat DEV hooks ->
+// heat-haze knob gate reddens. A pixel-physics haze gate was tried and
+// abandoned: flame self-flicker between screenshots (ratio 1.10-1.46) fully
+// overlaps the wobble=0 mutant (1.13), so shimmer can't be pixel-proved here —
+// it is verified visually and the hook contract is what's gated.
 
 import { spawn } from 'node:child_process'
 import { guardChrome } from './chromecleanup.mjs'
@@ -258,6 +264,31 @@ async function main() {
       const imgB = decodePng(await page.screenshot())
       const eB = scanEmber(imgB, centB)
       ok('embers glow outside the flame silhouette', eA > 8 && eB > 8, `${eA} / ${eB} ember px`)
+      // #670 fidelity 3 note: an automated "spark streak" pixel gate was built
+      // and discarded. Every plume box above the pit is dominated by the flame
+      // tip's own glow — dimming spark emission to 1/12 left the box count
+      // unchanged (88 px before vs 89 after), so any such gate measures the
+      // flame, not the sparks. Streak visibility is verified visually; spark
+      // correctness stays covered by the 'embers glow' + burst-cluster gates.
+
+      // #670 fidelity 3: heat haze. A pixel-physics gate was attempted and
+      // abandoned with data: toggling uHeat between adjacent frames gives
+      // ratio-to-baseline 1.10-1.46 in normal runs — the SAME range as the
+      // wobble=0 mutant (1.13) — because flame self-flicker between two
+      // screenshots is indistinguishable from haze displacement at this scale.
+      // Honest deterministic contract instead: the QA knob exists, round-trips,
+      // ships enabled; the ripple itself is visually verified (stills with
+      // heat 0 vs 4 show dramatic plume distortion).
+      const heatRT = await page.evaluate(async () => {
+        const t = window.__campfireTest
+        if (typeof t.setHeat !== 'function' || typeof t.heat !== 'function') return { ok: false, why: 'no hook' }
+        const dflt = t.heat()
+        t.setHeat(0.5)
+        const got = t.heat()
+        t.setHeat(1)
+        return { ok: got === 0.5 && dflt === 1, why: `default=${dflt} roundtrip=${got}` }
+      })
+      ok('heat haze knob present and wired', heatRT.ok, heatRT.why)
       const drift = centA.length && centB.length
         ? Math.hypot(
           centA.reduce((a, c) => a + c[0], 0) / centA.length - centB.reduce((a, c) => a + c[0], 0) / centB.length,
