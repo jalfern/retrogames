@@ -208,6 +208,7 @@ const FloorBossGame = lazy(() => import('../games/FloorBoss'))
 
 // Short Order Shout: the co-op kitchen sim chunks with the game (#1248).
 const ShortOrderShoutGame = lazy(() => import('../games/ShortOrderShout'))
+const GravelYardGame = lazy(() => import('../games/GravelYard'))
 
 // Game Registry
 // Theme 'dark' = white text (background is black)
@@ -1176,5 +1177,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original co-op cook-up (#1248): an all-night diner cut in two by a long pass counter. One side has the walk-in cooler, chop board, two burners, tap and ONE shared soup pot; the only service window is across the counter - dishes cross by hand around the end or mid-air over the top. That is the shout: SOUP needs potato, then tomato, then two stirs while it rolls (ignore it and it boils over - rinse the pot and start again). A MELT needs the board: bun down, tomato sliced on it, seared patty last, then someone carries it to the window while someone else keeps the burners honest. Leave a patty past its sear and the burner catches fire - cup of water from the tap, douse it, before it spreads. Drop anything on the floor and stations refuse it until you rinse. Tickets print on the dot-matrix rail with timer bars; serve the matching dish for points plus a time tip (tomato garnish +25), and three expired tickets get you fired before the 150-second whistle. Any seat can be you: 1-4 cooks, seat 2 optionally shares the keyboard (WASD + F/G), CPU cooks play by the same pads you do, and the whole shift is seeded and deterministic so a trained model can take the pass seat later.',
         controls: ['Arrows / d-pad: walk the cook (you face where you walk)', 'SPACE / TAKE: take from the cooler - fill the cup at the tap - sear patties on a burner - board builds - stir the boiling pot - ladle ready soup - rinse a ruined pot or a dirty item - serve at the window', 'B / TOSS: fling what you hold over the counter - ingredients land on stations that accept them; a dish caught by a runner is one step from the window', 'Attract: any key or tap - Select: arrows pick 1-4 cooks, P makes seat 2 HUMAN (WASD + F take + G toss), SPACE starts the shift', 'One item per cook - handoffs and timing ARE the game; solo works, two cooks shout', '3 strikes (expired tickets) ends the shift; quota 900 wins the CLEAN SHIFT stamp', '?: pause and read the house rules'],
+    },
+    {
+        path: '/gravel-yard',
+        pad: { layout: 'dpad', buttons: [{ label: 'DIG', code: 'Space' }, { label: 'DUMP', code: 'KeyB' }], reason: 'the yard runs on one law: arrows drive where you face, DIG works the cell in front (cut gravel at the pile, load at a bay, cycle the gate at the console), DUMP lets it go (into the hopper, at the dock, and it also jogs a jammed screen)' },
+        builtBy: 'forge',
+        added: '2026-10-31',
+        visibility: 'private',
+        tapStart: false,
+        component: GravelYardGame,
+        label: 'GRAVEL YARD',
+        theme: 'dark',
+        description: 'An original co-op heavy-metal sandbox (#1253): a golden-hour gravel yard where the information is cut three ways. The DIGGER sees the pile and its wet seams - wet gravel jams the screen plant. The SCREEN wears the grade chart - gate WIDE pours coarse, NARROW pours fines - but knows no orders. The TRUCK owns the order board at the gate - grade x units before the deadline - and shouts it on the radio. Nobody alone knows the whole job: run the chain (dig, dump into the hopper, batch it through the gate into the two graded bays, load, tip at the trailer) and talk to your crew. Jammed? Jog it. Wrong grade at the gate is a refusal, and three refusals ruin the shift; lapsed orders cost credit. 180-second shifts, 600C makes the CLEAN SHIFT stamp. 1-3 hands: you always start on the digger; the truck seat can share the keyboard (WASD + F/G); unfilled seats run CPU crew members that emit the same pads you do - and every radio call they make is what THEIR seat would see, so solo you play by ear.',
+        controls: ['Arrows / d-pad: drive the digger (you work the cell you face)', 'SPACE / DIG: cut gravel facing the pile - load a bay facing it - cycle the gate WIDE/MED/NARROW at the console (the pad you pull up onto, right of the funnel)', 'B / DUMP: tip the bucket into the hopper from the pad below the funnel - tip the truck bed at the trailer spots - jog a JAMMED screen (also starts a batch from the console pad)', 'The radio banner says what the other seats see: orders (TRUCK), jams and spill (SCREEN), wet seams (DIGGER)', 'Attract: any key or tap - Select: arrows pick 1-3 hands, P makes the truck seat HUMAN (WASD + F/G), SPACE starts the shift', 'Three refusals at the gate ruin the shift; lapsed orders cost 20C; 600C before the 3:00 whistle stamps the CLEAN SHIFT', '?: pause and read the yard rules'],
     },
 ]

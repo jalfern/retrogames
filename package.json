@@ -58,6 +58,8 @@
     "floorbosscheck": "node scripts/floorbosscheck.mjs",
     "floorbossplay": "node scripts/floorbossplay.mjs",
     "soscheck": "node scripts/soscheck.mjs",
+    "gravelcheck": "node scripts/gravelcheck.mjs",
+    "gravelplay": "node scripts/gravelplay.mjs",
     "sosplay": "node scripts/sosplay.mjs",
     "padlinkcheck": "node scripts/padlinkcheck.mjs",
     "padlinkdrive": "node scripts/padlinkdrive.mjs",
