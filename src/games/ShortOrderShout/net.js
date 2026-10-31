@@ -117,6 +117,7 @@ export function createSosSync(opts = {}) {
     const send = typeof opts.send === 'function' ? opts.send : () => {}
     const KEEP = 480
     let nextSample = 0
+    let pending = [] // unsent per-tick samples, flushed in SAMPLE_EVERY batches
     let own = new Map() // seat -> Map(k -> mask) (own samples, absolute ticks)
     let remote = new Map() // seat -> Map(k -> mask)
     let ours = new Map() // k -> h
@@ -140,22 +141,34 @@ export function createSosSync(opts = {}) {
         reset(k0 = 0) {
             own = new Map(); remote = new Map(); ours = new Map(); peerH = new Map()
             nextSample = k0
+            pending.length = 0
             stalls = 0; stallRun = 0; maxStallRun = 0
             snapInbox.reset()
         },
-        // Sample every tick up to target (simTick + delay), stamp with the
-        // ABSOLUTE tick, send batches every SAMPLE_EVERY ticks — final, once.
+        // Sample EVERY tick up to target (simTick + delay) — the engine consumes
+        // pads at tick granularity — but only put a batch on the wire every
+        // SAMPLE_EVERY ticks (~30 Hz/member, rate-safe at four seats). The wire
+        // carries arrays; receivers expand them back to per-tick masks.
         pumpTo(target, readKeys) {
             while (nextSample <= target) {
                 const k = nextSample++
-                if (k % SAMPLE_EVERY !== 0) continue
                 const mm = {}
-                for (const seat of opts.mySeats || []) {
-                    const m = padMask(readKeys(seat))
+                for (const seat of api.mySeats) {
+                    const m = padMask(readKeys(seat, k))
                     omap(seat).set(k, m)
                     mm[seat] = m
                 }
-                if (Object.keys(mm).length) send('pad', { k, mm })
+                if (Object.keys(mm).length) pending.push({ k, mm })
+                if (pending.length >= SAMPLE_EVERY) {
+                    const kk = pending[0].k
+                    const out = {}
+                    for (const [seatStr] of Object.entries(pending[0].mm)) {
+                        const s = seatStr | 0
+                        out[s] = pending.map((p) => p.mm[s])
+                    }
+                    send('pad', { k: kk, mm: out })
+                    pending.length = 0
+                }
             }
         },
         gotPad(msg) {
@@ -163,7 +176,10 @@ export function createSosSync(opts = {}) {
             const mm = msg.mm || {}
             for (const s of Object.keys(mm)) {
                 const seat = s | 0
-                if (seat >= 0 && seat < SEATS) rmap(seat).set(msg.k, mm[s] | 0)
+                if (seat < 0 || seat >= SEATS) continue
+                const v = mm[s]
+                if (Array.isArray(v)) v.forEach((mask, i) => rmap(seat).set(msg.k + i, mask | 0))
+                else rmap(seat).set(msg.k, v | 0)
             }
         },
         // May tick k run? Every non-CPU seat must have a mask for k.
@@ -183,11 +199,14 @@ export function createSosSync(opts = {}) {
         assemble(k, cpuMasks = {}) {
             const pads = []
             for (let seat = 0; seat < SEATS; seat++) {
+                // m == null (loose): a seat absent from own must fall through to
+                // remote, then CPU — a strict undefined-check here once silently
+                // zeroed every remote pad (soslinkcheck caught it at tick 60).
                 let m = null
                 if (own.has(seat)) m = own.get(seat).get(k)
-                if (m === undefined && remote.has(seat)) m = remote.get(seat).get(k)
-                if (m === undefined && cpuMasks[seat] !== undefined) m = cpuMasks[seat]
-                pads.push(unmaskPad(m === undefined || m === null ? 0 : m))
+                if (m == null && remote.has(seat)) m = remote.get(seat).get(k)
+                if (m == null && cpuMasks[seat] !== undefined) m = cpuMasks[seat]
+                pads.push(unmaskPad(m == null ? 0 : m))
             }
             return pads
         },
@@ -216,9 +235,17 @@ export function createSosSync(opts = {}) {
             for (const [, m] of own) shrink(m, k)
             for (const [, m] of remote) shrink(m, k)
         },
+        // harness/debug view: who has a sample for tick k.
+        debug(k) {
+            const d = { nextSample, stalls, stallRun }
+            for (const seat of api.watchSeats) d[`s${seat}`] = `${(own.get(seat) || new Map()).has(k) ? 'o' : '-'}${(remote.get(seat) || new Map()).has(k) ? 'r' : '-'}`
+            return d
+        },
     }
     // seats whose pads must arrive (humans); refreshed by the caller whenever
-    // the roster changes. CPU seats never gate a tick.
+    // the roster changes. CPU seats never gate a tick. Own seats are refreshed
+    // the same way — both change when a friend joins or a couch partner sits.
     api.watchSeats = (opts.watchSeats || []).slice()
+    api.mySeats = (opts.mySeats || []).slice()
     return api
 }
