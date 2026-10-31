@@ -71,6 +71,8 @@ uniform mat4 uVP;
 uniform vec2 uRes;
 uniform vec2 uWind;
 uniform float uFlare;
+uniform float uTrail;   // age offset for this trail draw (0 = head)
+uniform float uDim;     // intensity factor for this trail draw
 in float aSeed;
 out vec3 vCol;
 out float vI;
@@ -87,6 +89,16 @@ void main(){
   float gage = h1(grp * 1.71 + 5.13);
   float life = 1.4 + h1(grp * 9.31) * 1.8;
   float age = mod(uTime * (0.55 + h1(grp * 7.7) * 0.5) + gage * life + h1(s) * 0.32, life);
+  // #670 fidelity 3: trails — each spark is drawn k times at decreasing age;
+  // heads not yet born in a tail sample vanish off-screen
+  if (age < uTrail) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    gl_PointSize = 0.0;
+    vI = 0.0;
+    vCol = vec3(0.0);
+    return;
+  }
+  age -= uTrail;
   float an = age / life;
   float a0 = h1(s * 13.3) * 6.2831853;
   float r0 = 0.05 + h1(s * 17.1) * 0.16;
@@ -101,11 +113,13 @@ void main(){
   p.z += cos(age * 1.7 + w2) * 0.10 * an + uWind.y * v0 * age * 1.2 + curl * 0.06 * cos(w1 * 2.0);
   vec4 cp = uVP * vec4(p, 1.0);
   gl_Position = cp;
-  float sz = (1.4 + h1(s * 41.1) * 2.2) * (1.0 - an * 0.5);
+  float sz = (1.4 + h1(s * 41.1) * 2.2) * (1.0 - an * 0.5) * (0.6 + 0.4 * uDim);
   gl_PointSize = clamp(sz * uRes.y / max(cp.w, 0.1) * 0.004, 1.0, 6.0);
   float tw = 0.55 + 0.45 * sin(age * (14.0 + h1(s * 3.7) * 26.0) + w1) * sin(age * 7.3 + w2);
-  // #695: spark brightness rides the global flare surge
-  vI = max(0.0, tw) * pow(1.0 - an, 1.4) * (0.35 + 0.95 * uFlare) * (0.6 + h1(s * 61.7));
+  // #670 fidelity 3: bursts pop with the flare surge, per-group so pops are
+  // staggered — a sap pop throws its cluster the moment the fire surges
+  float pop = 1.0 + 1.5 * max(0.0, uFlare - 1.05) * (0.4 + 0.6 * h1(grp * 4.7 + 9.13));
+  vI = max(0.0, tw) * pow(1.0 - an, 1.4) * (0.35 + 0.95 * uFlare) * (0.6 + h1(s * 61.7)) * uDim * pop;
   float hot = 1.0 - an;
   vCol = mix(vec3(0.55, 0.10, 0.02), vec3(1.0, 0.55, 0.16), hot * hot);
 }`;
@@ -215,14 +229,14 @@ float fireDensity(vec3 p, float h, out float temp){
 }
 
 float smokeDensity(vec3 p, float h){
-  if (h < HMAX * 0.9) return 0.0;
+  if (h < HMAX * 0.85) return 0.0;
   vec3 q = p;
-  q.xz -= uWind * h * h * 1.35 + vec2(0.0, sin(uTime * 0.23) * 0.05);
+  q.xz -= uWind * h * h * 1.6 + vec2(0.0, sin(uTime * 0.23) * 0.05);
   q.y -= uTime * 0.55;
   float hn = h / HMAX;
-  float col = smoothstep(0.9 + hn * 1.6, 0.2, length(q.xz));
-  float wisp = smoothstep(0.55, 0.92, fbm3(q * vec3(2.6, 1.9, 2.6)));
-  float fade = exp(-max(h - HMAX, 0.0) * 1.2) * smoothstep(HMAX * 0.9, HMAX * 1.4, h);
+  float col = smoothstep(0.9 + hn * 2.2, 0.2, length(q.xz));
+  float wisp = smoothstep(0.50, 0.90, fbm3(q * vec3(2.6, 1.9, 2.6)));
+  float fade = exp(-max(h - HMAX, 0.0) * 0.95) * smoothstep(HMAX * 0.85, HMAX * 1.3, h);
   return col * wisp * fade * 0.22;
 }
 
@@ -516,13 +530,28 @@ uniform sampler2D uHdr;
 uniform sampler2D uBloom;
 uniform float uGain;
 uniform float uTime;
+uniform float uHeat;
 out vec4 o;
 vec3 aces(vec3 x){
   return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float luma(vec3 c){ return max(c.r, max(c.g, c.b)); }
 void main(){
-  vec3 c = texture(uHdr, vUv).rgb + texture(uBloom, vUv).rgb * uGain;
+  // #670 fidelity 3: heat shimmer — light refracts through the hot updraft
+  // over the fire. The plume column is centred at screen x=0.5 (the camera
+  // always looks at the fire centre). Mask: something hot within a downward
+  // ray below here, this pixel itself not part of the flame body.
+  vec3 here3 = texture(uHdr, vUv).rgb;
+  float here = luma(here3);
+  float below = luma(texture(uHdr, vUv + vec2(0.0, -0.02)).rgb);
+  below = max(below, luma(texture(uHdr, vUv + vec2(0.0, -0.07)).rgb) * 0.85);
+  below = max(below, luma(texture(uHdr, vUv + vec2(0.0, -0.15)).rgb) * 0.70);
+  float hx = 1.0 - smoothstep(0.04, 0.11, abs(vUv.x - 0.5));
+  float heat = smoothstep(0.25, 0.9, below) * (1.0 - smoothstep(1.2, 2.4, here)) * hx * uHeat;
+  vec2 wob = vec2(sin(vUv.y * 82.0 + uTime * 7.3) * 0.9 + sin(vUv.y * 211.0 - uTime * 11.7) * 0.45,
+                 cos(vUv.y * 57.0 + uTime * 5.1) * 0.5) * 0.0035 * heat;
+  vec3 c = texture(uHdr, vUv - wob).rgb + texture(uBloom, vUv).rgb * uGain;
   c = aces(c * 1.06);
   c = pow(c, vec3(1.0 / 2.2));
   vec2 q = vUv - 0.5;
@@ -748,6 +777,7 @@ function scheduleCrackle(){
 let t0 = performance.now();
 let frames = 0, perfAcc = 0, perfN = 0, perfMax = 0, lastFrame = 0;
 let readyFlag = false;
+let heatAmt = 1; // heat-haze wobble scale (QA gate toggles it, DEV hook too)
 
 const rot4 = new Float32Array(16);
 const vp4 = new Float32Array(16);
@@ -811,7 +841,13 @@ function frame(){
   gl.uniform2f(ue('uRes'), W, H);
   gl.uniform2f(ue('uWind'), wind[0], wind[1]);
   gl.uniform1f(ue('uFlare'), flare);
-  gl.drawArrays(gl.POINTS, 0, NEM);
+  // #670 fidelity 3: streak trails — head + three fading tail samples taken
+  // backwards along the (analytic) ballistic path
+  for (const [trail, dim] of [[0, 1], [0.045, 0.5], [0.09, 0.24], [0.14, 0.1]]){
+    gl.uniform1f(ue('uTrail'), trail);
+    gl.uniform1f(ue('uDim'), dim);
+    gl.drawArrays(gl.POINTS, 0, NEM);
+  }
   gl.depthMask(true);
   gl.disable(gl.BLEND);
   gl.disable(gl.DEPTH_TEST);
@@ -852,6 +888,7 @@ function frame(){
   gl.uniform1i(uc('uBloom'), 1);
   gl.uniform1f(uc('uGain'), 1.0);
   gl.uniform1f(uc('uTime'), t);
+  gl.uniform1f(uc('uHeat'), heatAmt);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   readyFlag = true;
@@ -891,6 +928,8 @@ window.__campfireTest = {
     if (p.dist !== undefined) cam.dist = p.dist;
     cam.touched = performance.now();
   },
+  setHeat(x){ heatAmt = +x; },
+  heat(){ return heatAmt; },
 };
 </script>
 <script>
