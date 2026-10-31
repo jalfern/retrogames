@@ -29,6 +29,10 @@
 // Definitions (identical to the reference comment — keep them):
 //   Window: last 48 h, America/Los_Angeles, 48 hour buckets keyed "MM-DDTHH".
 //   Lane of a merged PR = head-branch prefix: forge… = builder, qa… = QA, else ops.
+//   Slot of a builder merge (#1269): the slot alive at merge time — the nearest
+//   pulse sample (5 min cadence, 30 s grace) from telemetry's per-sample
+//   slots {a,b}; 'both' when two slots were live, null when none was or the
+//   sample predates slot data. Stats roll it up as stats.merged.slots.
 //   Builder idle band: last builder merge in the window until the next telemetry
 //   sample with tasks.builder != null (window end when the builder never ran again).
 //   Machines: samples rolled up per hour. mini/mbp busy fraction = whole-box
@@ -105,6 +109,35 @@ export function laneOf(branch) {
     if (b.startsWith('forge')) return 'builder'
     if (b.startsWith('qa')) return 'qa'
     return 'ops'
+}
+
+// #1269 — per-merge slot attribution. laneOf() can only say "builder" from the
+// branch prefix; the fleet runs two builder slots (#1258). The pulse samples
+// record which slots were alive every 5 min (telemetry.sh `slots`), and a slot
+// is alive while it merges, so the nearest in-cadence sample names the slot
+// that merged. Ties go to the EARLIER sample (it witnessed the state still
+// live at the merge; the later one may already have caught a slot that left).
+// 'both' = both slots live (honest ambiguity, not a guess); null = no slot
+// live at merge time, no sample in range, or a pre-fleet sample without data.
+const SLOT_TOL_MS = 330 * 1000
+export function slotOf(pull, samples) {
+    const at = pull?.merged_at ? Date.parse(pull.merged_at) : NaN
+    if (!Number.isFinite(at)) return null
+    let best = null
+    let bestD = Infinity
+    for (const s of samples || []) {
+        const t = (s?.ts || 0) * 1000
+        if (!t) continue
+        const d = Math.abs(t - at)
+        if (d < bestD) { bestD = d; best = s }
+    }
+    if (!best || bestD > SLOT_TOL_MS) return null
+    const a = !!best.slots?.a
+    const b = !!best.slots?.b
+    if (a && b) return 'both'
+    if (a) return 'a'
+    if (b) return 'b'
+    return null
 }
 
 const median = xs => {
@@ -462,6 +495,16 @@ export function buildReport({ now, pulls = [], issues = [], runs = [], samples =
     const split = { builder: 0, qa: 0, ops: 0 }
     for (const p of merged) split[laneOf(p.head?.ref || p.headBranch)]++
 
+    // #1269 — the fleet line shows slots, not just lanes: attribute each
+    // builder merge to the slot alive at merge time (null = unattributable).
+    const slots = { a: 0, b: 0, both: 0, unknown: 0 }
+    let slotSeen = 0
+    for (const p of merged) {
+        if (laneOf(p.head?.ref || p.headBranch) !== 'builder') continue
+        slotSeen++
+        slots[slotOf(p, samples) || 'unknown']++
+    }
+
     let overnight = 0
     for (const p of merged) {
         const h = pacificParts(Date.parse(p.merged_at)).hour
@@ -514,7 +557,7 @@ export function buildReport({ now, pulls = [], issues = [], runs = [], samples =
         look,
         strips,
         stats: {
-            merged: { total: merged.length, ...split },
+            merged: { total: merged.length, ...split, ...(slotSeen ? { slots } : {}) },
             issues: { closed: issuesClosed, opened: issuesOpened },
             overnight,
             medianMergeMin: medianMinutes(openMin),

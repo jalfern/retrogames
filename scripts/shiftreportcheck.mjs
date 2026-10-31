@@ -3,7 +3,8 @@
 // against fixtures: the hour window, lane-from-branch, stacked hour rows, the
 // builder idle band, machine rollups (busy>60, load/16, dashed missing hours),
 // CI medians/cancels/main-reds, theme grouping (game labels first, keyword
-// buckets, <3 merges fold, private games hidden), and the notes contract
+// buckets, <3 merges fold, private games hidden), per-merge slot attribution
+// (#1269: the fleet line shows slot a/b, not just lanes), and the notes contract
 // (model supplies headline+lede+notes; without them the script writes a plain
 // fallback headline and later regenerations carry the previous session's).
 // Plus source tripwires: npm alias, /forge/report route, board link,
@@ -21,7 +22,7 @@ const ok = (name, cond) => { if (cond) pass++; else fails.push(name) }
 
 const m = await import('./shiftreport.mjs')
 
-for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
+for (const fn of ['hourKey', 'hourKeys', 'laneOf', 'slotOf', 'medianMinutes', 'p90Minutes', 'buildRows', 'idleBand',
     'machineRows', 'ciStats', 'themeOf', 'buildThemes', 'parsePrivateLabels', 'parseGameLabels', 'parseGameEntries',
     'validateLook', 'buildGoLook', 'goLookCandidates', 'lookRoutes', 'buildReport', 'pushContents', 'validateStrips']) {
     ok(`boot: exports ${fn}`, typeof m[fn] === 'function')
@@ -261,6 +262,50 @@ ok('carry-over chains stay stable', replaced.notes[0].text === 'Fleet ran hot.')
 const overwritten = m.buildReport({ now: NOW + 2 * H, pulls: [], issues: [], runs: [], samples: [], gamesSrc: '', notes: { headline: 'Second shift', lede: '', notes: [{ tag: 'w', text: 'New note' }] }, prev: carried })
 ok('new session notes replace carried ones', overwritten.headline === 'Second shift' && overwritten.notes[0].text === 'New note' && !overwritten.notesCarried)
 
+// ---- #1269: per-merge slot attribution — the fleet line shows slots, not just lanes ----
+// Pulse samples carry per-sample slot liveness (telemetry.sh `slots {a,b}`); a
+// builder merge is attributed to the slot alive at merge time (the nearest
+// 5-min sample, 30 s grace). Both live = 'both' (honest ambiguity); no slot
+// live, no sample in range, or pre-fleet sample without data = null.
+const TS0 = Math.floor(NOW / 1000)
+// 5-min cadence like the real pulse; the tie pin needs two consecutive
+// in-cadence samples (150 s from each — inside the 330 s tolerance).
+const slotSamples = [
+    { ts: TS0 - 3000, slots: { a: false, b: true }, tasks: { builder: {}, mini: null, mbp: null } },
+    { ts: TS0 - 2400, slots: { a: true, b: false }, tasks: { builder: {}, mini: null, mbp: null } },
+    { ts: TS0 - 600, slots: { a: true, b: true }, tasks: { builder: {}, mini: null, mbp: null } },
+    { ts: TS0, slots: { a: false, b: false }, tasks: { builder: null, mini: null, mbp: null } },
+]
+const sp = (n, agoMs, ref) => ({ number: n, merged_at: iso(NOW - agoMs), head: { ref } })
+ok('slotOf: merge 2 min after the slot-a sample -> a', m.slotOf(sp(1, 38 * 60000, 'forge/x'), slotSamples) === 'a')
+ok('slotOf: exact tie goes to the earlier sample (still live at the merge) -> b',
+    m.slotOf(sp(2, 45 * 60000, 'forge/x'), slotSamples) === 'b')
+ok('slotOf: both slots live at merge time -> both, never a guess', m.slotOf(sp(3, 10 * 60000, 'forge/x'), slotSamples) === 'both')
+ok('slotOf: neither slot live -> null', m.slotOf(sp(4, 30 * 1000, 'forge/x'), slotSamples) === null)
+ok('slotOf: no sample within cadence + grace -> null', m.slotOf(sp(5, 2 * 3600 * 1000, 'forge/x'), slotSamples) === null)
+ok('slotOf: pre-fleet sample without slot data -> null',
+    m.slotOf(sp(6, 48 * 60000, 'forge/x'), [{ ts: TS0 - 3000, tasks: {} }]) === null)
+ok('slotOf: no merged_at -> null', m.slotOf({ number: 7, head: { ref: 'forge/x' } }, slotSamples) === null)
+const slotRep = m.buildReport({
+    now: NOW,
+    pulls: [
+        { ...sp(1, 38 * 60000, 'forge/a'), title: 'SSX: rails' },
+        { ...sp(2, 45 * 60000, 'forge/b'), title: 'SSX: snow' },
+        { ...sp(3, 10 * 60000, 'forge/c'), title: 'SSX: audio' },
+        { ...sp(4, 30 * 1000, 'forge/d'), title: 'SSX: hud' },
+        { ...sp(5, 38 * 60000, 'qa/q'), title: 'QA — SSX' },
+    ],
+    issues: [], runs: [], samples: slotSamples, gamesSrc: GAME_FIXTURE,
+})
+ok('fleet line: builder merges split a / b / both / unknown',
+    slotRep.stats.merged.builder === 4 && slotRep.stats.merged.qa === 1 &&
+    slotRep.stats.merged.slots.a === 1 && slotRep.stats.merged.slots.b === 1 &&
+    slotRep.stats.merged.slots.both === 1 && slotRep.stats.merged.slots.unknown === 1)
+ok('fleet line: slot rollup sums to the builder count',
+    (() => { const s = slotRep.stats.merged.slots; return s.a + s.b + s.both + s.unknown === slotRep.stats.merged.builder })())
+ok('fleet line: no builder merges -> no slots key',
+    m.buildReport({ now: NOW, pulls: [sp(9, 5 * 60000, 'qa/z')], issues: [], runs: [], samples: slotSamples, gamesSrc: '' }).stats.merged.slots === undefined)
+
 // ---- film strips (#1132): telemetry-pinned hrefs, carried like notes ----
 const STRIP_URL = 'https://raw.githubusercontent.com/jalfern/forge-telemetry/main/strips/PR100-tetris-abc1234-20261028T200000.png'
 ok('validateStrips: telemetry strips .png accepted',
@@ -317,6 +362,16 @@ ok('npm alias shiftreportcheck exists', JSON.parse(read('package.json')).scripts
 ok('App routes /forge/report to ShiftReport', /\/forge\/report/.test(read('src/App.jsx')) && /ShiftReport/.test(read('src/App.jsx')))
 ok('board links the shift report', read('src/pages/ForgeBoard.jsx').includes('to="/forge/report"'))
 ok('telemetry job runs shiftreport every 4 h', read('scripts/telemetry.sh').includes('last-shiftreport') && read('scripts/telemetry.sh').includes('shiftreport.mjs'))
+ok('telemetry samples record per-sample slot liveness: pgrep identities (#1269)',
+    /T_UP=false; pgrep -f 'opencode run\.\*THE FORGE on slot b\\\.'/.test(read('scripts/telemetry.sh')))
+ok('telemetry samples record per-sample slot liveness: pulse field (#1269)',
+    /\\\"slots\\\":\{\\\"a\\\":\$S_UP,\\\"b\\\":\$T_UP\}/.test(read('scripts/telemetry.sh')))
+ok('report page renders the slot split on the fleet line (#1269)', /st\.merged\.slots/.test(read('src/pages/ShiftReport.jsx')))
+ok('fixture carries the slot rollup summing to the builder count (#1269)', (() => {
+    const f = JSON.parse(read('public/forge/report-fixture.json'))
+    const s = f.stats.merged.slots
+    return !!s && s.a + s.b + s.both + s.unknown === f.stats.merged.builder
+})())
 ok('reference look is committed', read('docs/forge/shift-report-ref.html').includes('SHIFT REPORT'))
 ok('FORGE.md tells sessions to publish notes', read('scripts/FORGE.md').includes('SHIFTREPORT_NOTES'))
 ok('FORGE.md documents the look picks', read('scripts/FORGE.md').includes('look'))
