@@ -468,6 +468,9 @@ export function drainEvents(gs) { return gs.events.splice(0) }
 export function simState(gs) {
     return {
         tick: gs.tick,
+        // #1362: recordStart() requires state().seed to be an integer (#527);
+        // simState omitted it, so captures and the contract seed gate refused.
+        seed: gs.seed,
         score: gs.score,
         done: gs.done,
         won: gs.won,

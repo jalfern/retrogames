@@ -97,7 +97,14 @@ const PATTERNS = {
     'short-order-shout': (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, up: i % 43 < 10, down: i % 43 >= 18 && i % 43 < 28, a: i % 19 < 2, b: i % 37 < 2 }),
     'rally-co-driver': (i) => ({ left: i % 120 < 14, right: i % 120 >= 28 && i % 120 < 42, up: true, down: false, a: i % 241 === 0, b: false }),
     'gravel-yard': (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, up: i % 43 < 10, down: i % 43 >= 18 && i % 43 < 28, a: i % 19 < 2, b: i % 37 < 2 }),
-    'talk-me-down': (i) => ({ left: i % 47 < 11, right: i % 47 >= 18 && i % 47 < 30, up: i % 31 < 7, down: i % 31 >= 12 && i % 31 < 20, a: i % 23 < 2, b: i % 53 < 2 }),
+    // #1362: every wrong verb is a strike and three strikes end the bomb, so an
+    // a-spam pattern died at tick 461 and the run never reached the 600-tick
+    // determinism sample. Like pick-rush/tidy-bot, guard the presses: exactly two
+    // A taps per run — at ticks where NO direction is held (the defuser acts on
+    // one verb per tick, directions first), so the cut/press/SET verb actually
+    // fires: the first tap sparks (strike + 3 s module lock), the second lands
+    // inside that lock and exercises the refusal. ≤2 strikes keep it alive to 600.
+    'talk-me-down': (i) => ({ left: i % 47 < 11, right: i % 47 >= 18 && i % 47 < 30, up: i % 31 < 7, down: i % 31 >= 12 && i % 31 < 20, a: i === 411 || i === 454, b: i % 53 < 2 }),
     'fire-crew': (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 36, up: i % 43 < 10, down: i % 43 >= 16 && i % 43 < 28, a: i % 7 < 4, b: i % 97 < 3 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
