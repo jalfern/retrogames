@@ -596,6 +596,38 @@ if (MUT) {
         `walk arms counter-swing scaled by gait (${(rg(vF, 'armR') / 2).toFixed(2)}/${(rg(nF, 'armR') / 2).toFixed(2)})`)
 }
 
+// ---- #1298 facing-yaw gate (Part A, plain Node) -------------------------------------
+// Field report (Safari, build 4925114): "people face backwards and controls might
+// be swapped". The engine spec is +x = right, facing 1 = facing right (fighting.js
+// line 20); rigs are built facing +z (jaw/lapel/necklace/toes at +z, hood at −z);
+// the fight camera sits on the +z side, so screen-right is world +x. A fighter
+// facing right must therefore yaw local +z onto world +x: sin(rigYaw(1)) = +1.
+// ViperPit shipped the mirrored sign since e39ea51 — both fighters rendered 180°
+// out, moonwalking toward the foe they had their backs to (one line, both
+// complaints: the walk direction was right, the faces pointed backwards). The yaw
+// is exported as rigYaw so this gate checks algebra, not just source text.
+// Mutant: legacy = the shipped sign → gate bites.
+{
+    const fs = await import('node:fs')
+    const rsrc = fs.readFileSync(path.join(HERE, '../src/games/ViperPit/render.js'), 'utf8')
+    const esrc = fs.readFileSync(path.join(HERE, '../src/engine/fighting.js'), 'utf8')
+    const esm = await import(bust('../src/games/ViperPit/render.js'))
+    ok(/jaw\.position\.set\(0, 0\.0, 0\.08\)/.test(rsrc) && /lapel\.position\.set\(0, 0\.3 \* H, 0\.24 \* B\)/.test(rsrc) && /hood\.position\.set\(0, 0\.13, -0\.05\)/.test(rsrc),
+        'facing gate: the rig is built facing +z (front features at +z, hood behind)')
+    ok(/cam\.position\.z = Math\.max\(5\.5/.test(rsrc), 'facing gate: the fight camera sits on the +z side (screen-right = world +x)')
+    ok(/1 = facing right/.test(esrc), 'facing gate: the engine spec pins facing 1 = right (+x)')
+    ok(!/facing === 1 \? -Math\.PI \/ 2/.test(rsrc), 'facing gate: no mirrored yaw sign left in render.js (the #1298 bug)')
+    ok(typeof esm.rigYaw === 'function', 'facing gate: render.js exports rigYaw(facing)')
+    if (typeof esm.rigYaw === 'function') {
+        const noseX = (facing) => Math.sin(esm.rigYaw(facing))
+        ok(noseX(1) > 0.99 && Math.abs(Math.cos(esm.rigYaw(1))) < 0.02 && noseX(-1) < -0.99,
+            `facing gate: facing right points the nose screen-right (${noseX(1).toFixed(2)} / ${noseX(-1).toFixed(2)})`)
+        const legacy = (facing) => (facing === 1 ? -Math.PI / 2 : Math.PI / 2)
+        ok(!(Math.sin(legacy(1)) > 0.99), 'mutant: the shipped-until-#1298 sign puts the nose screen-left — gate bites (harness proves)')
+    }
+    ok(/rig\.root\.rotation\.y = rigYaw\(f\.facing\)/.test(rsrc), 'facing gate: the sync loop yaws every rig through rigYaw')
+}
+
 // ---- #1106 HUD juice gate -----------------------------------------------------------
 // Chips must be visible and K.O.s staged like the original: the health bar
 // flashes on every hit, the K.O. freeze drops letterbox bars, steps the world
