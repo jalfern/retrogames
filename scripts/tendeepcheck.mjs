@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -906,6 +906,7 @@ if (MUT) {
             ['fog ring 2 -> 5 (fog forgets to dim)', "ring <= 2 ? '#3c466e'", "ring <= 5 ? '#3c466e'"],
             ['the memory ledger re-inks every look', '!st.marks.some(m => m.floor === st.floor && m.kind === \'stairs\')', 'true'],
             ['the memory ledger forgets the throne', '!st.marks.some(m => m.floor === st.floor && m.kind === \'throne\')', 'true'],
+            ['pad B forgets the town exit', "st.town.b ? { label: 'LEAVE', code: 'KeyL' }", "st.town.b ? { label: 'DESCEND', code: 'KeyF' }"],
         ]
         for (const [name, from, to] of mutants) {
             ok(orig.includes(from), `mutant anchor missing: ${name}`)
@@ -916,6 +917,25 @@ if (MUT) {
             ok(res.status !== 0, `${name} SURVIVED — the automap gates stopped touching this rule`)
         }
     }
+}
+
+// #1275 — the mode-aware B button, pinned in the only place its five cases
+// can be enumerated without a browser: sim truth in, pad verb out. The pad
+// render itself is graded in tendeeppplay (the DOM carries these codes).
+{
+    const g = makeRun()
+    ok(g.mode === 'town' && !g.town.b, 'padB anchor: a run opens on the RIM street')
+    ok(padB(g, null).label === 'DESCEND' && padB(g, null).code === 'KeyF', `street B must carry DESCEND/KeyF, got ${JSON.stringify(padB(g, null))}`)
+    step(g, 'enter-T')
+    ok(g.town.b === 'T', 'padB anchor: the tavern door opens')
+    ok(padB(g, null).label === 'LEAVE' && padB(g, null).code === 'KeyL', `inside a building B must carry LEAVE/KeyL — a phone had NO way out, got ${JSON.stringify(padB(g, null))}`)
+    step(g, 'leave')
+    step(g, 'down')
+    ok(g.mode === 'map', 'padB anchor: the well takes the party down')
+    ok(padB(g, null).label === 'DRINK' && padB(g, null).code === 'KeyP', `corridor B must carry DRINK/KeyP, got ${JSON.stringify(padB(g, null))}`)
+    g.mode = 'combat'   // padB reads only mode/town/dmgId — last section, no rewind needed
+    ok(padB(g, 'firebolt').label === SPELLS.firebolt.name && padB(g, 'firebolt').code === 'KeyF', `battle B with fire must carry the spell, got ${JSON.stringify(padB(g, 'firebolt'))}`)
+    ok(padB(g, null).label === 'GUARD' && padB(g, null).code === 'KeyG', `battle B without a letter must carry GUARD/KeyG, got ${JSON.stringify(padB(g, null))}`)
 }
 
 console.log(`\ntendeepcheck: ${pass}/${pass + fails.length} checks passed${fails.length ? `  — ${fails.length} FAILED` : '  — OK'}`)

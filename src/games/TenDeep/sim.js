@@ -45,6 +45,18 @@ export const CFG = {
 
 export const purse = (st) => st.party.reduce((n, h) => n + h.gold, 0)
 
+// #1275 — the mode-aware B button. The touch pad budget is arrows + A + B,
+// so B carries the verb this mode actually misses on a phone: DRINK in the
+// corridor (P was keyboard-only), LEAVE inside a town building (L was the
+// only way out — a phone had none), DESCEND on the street, and in battle the
+// company's fire — or GUARD when no living hero can work a letter. Pure, so
+// tendeepcheck pins all five cases without a browser.
+export const padB = (st, dmgId) => {
+    if (st.mode === 'combat') return dmgId ? { label: SPELLS[dmgId].name, code: 'KeyF' } : { label: 'GUARD', code: 'KeyG' }
+    if (st.mode === 'town') return st.town.b ? { label: 'LEAVE', code: 'KeyL' } : { label: 'DESCEND', code: 'KeyF' }
+    return { label: 'DRINK', code: 'KeyP' }
+}
+
 // the founding six — every one now a person on paper: race, class, alignment,
 // affinity. The spellbook is whatever the class ladder has unlocked at their
 // level; the preset company starts as the stage-1/2 roster grew it.

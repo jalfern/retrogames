@@ -21,7 +21,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -304,6 +304,11 @@ const TenDeepGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    // #1275 — the mode-aware B button (padB in sim.js is the law; this is
+    // its live echo). A ref guards the comparison so the 100ms HUD sync only
+    // re-renders React when the verb actually changes.
+    const [bAct, setBAct] = useState(null)
+    const bActRef = useRef(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -365,6 +370,7 @@ const TenDeepGame = () => {
         }
         const glOn = () => !!R && (screenRef.current === 'play' || screenRef.current === 'attract') && gs.mode === 'map' && !!gs.map
         let glWasOn = false
+        let lastBeacons = 0
         const syncGl = () => {
             if (!R) return
             const on = glOn()
@@ -398,6 +404,18 @@ const TenDeepGame = () => {
                 const d = Math.hypot(gs.map.throne.x + 0.5 - gs.x, gs.map.throne.y + 0.5 - gs.y)
                 if (d < 7) R.light(gs.map.throne.x + 0.5, gs.map.throne.y + 0.5, 0, 1.0, 0.16, 0.10, 5.0, 90)
             }
+            // #1275: springs get a faint cyan beacon (the throne-crimson
+            // pattern) — the water shimmer tells at arm's length, the torch
+            // falls off before it does, and the one healing light in the deep
+            // should be findable from the next hall over. A DRUNK spring is
+            // spent: gs.springs, not gs.map.springs, owns the beacon list.
+            let bc = gs.map.throne && Math.hypot(gs.map.throne.x + 0.5 - gs.x, gs.map.throne.y + 0.5 - gs.y) < 7 ? 1 : 0
+            for (const t of gs.springs) {
+                const sx = t % SIZE, sy = (t - sx) / SIZE
+                const d = Math.hypot(sx + 0.5 - gs.x, sy + 0.5 - gs.y)
+                if (d < 6) { R.light(sx + 0.5, sy + 0.5, 0, 0.22, 0.62, 0.72, 3.5, 90); bc++ }
+            }
+            lastBeacons = bc
             R.frame(dt)
         }
 
@@ -842,6 +860,12 @@ const TenDeepGame = () => {
                 ? (gs.town.b ? (gs.town.b === 'T' && gs.town.cand ? '↑↓ paper · ←→ way · R reroll · SPACE accept · L leave' : '↑↓ hero · ←→ service · SPACE buys · L leave') : '←→ doors · SPACE enter · F descends')
                 : gs.mode === 'combat' ? `SPACE attack · G guard · F ${pickSpell('dmg') ? SPELLS[pickSpell('dmg')].name : 'no fire'} · H ${pickSpell('heal') ? SPELLS[pickSpell('heal')].name : 'no heal'} · P drink · L flee` : 'ARROWS walk · SPACE use · P potion'
             if (h.dir) h.dir.textContent = ['EAST', 'SOUTH', 'WEST', 'NORTH'][gs.dir]
+            // keep the pad's B verb honest with the mode (#1275): DRINK in the
+            // corridor, LEAVE in a building, DESCEND on the street, fire/GUARD
+            // in battle. React only re-renders when the verb actually changes.
+            const nb = padB(gs, gs.mode === 'combat' ? pickSpell('dmg') : null)
+            const ob = bActRef.current
+            if (!ob || ob.label !== nb.label || ob.code !== nb.code) { bActRef.current = nb; setBAct(nb) }
             if (toast > 0 && !pausedRef.current) toast--
         }
 
@@ -1024,6 +1048,15 @@ const TenDeepGame = () => {
                     ledger: { ...gs.ledger },
                     potTiles: gs.ledger.potTiles.slice(),
                     springTiles: gs.ledger.springTiles.slice(),
+                    glBeacons: lastBeacons,
+                    springsNear: (() => {
+                        let n = 0
+                        for (const t of gs.springs) { const sx = t % SIZE, sy = (t - sx) / SIZE; if (Math.hypot(sx + 0.5 - gs.x, sy + 0.5 - gs.y) < 6) n++ }
+                        return n
+                    })(),
+                    springCells: [...gs.springs].map((t) => [t % SIZE, (t - (t % SIZE)) / SIZE]),
+                    throneNear: !!(gs.map && gs.map.throne && Math.hypot(gs.map.throne.x + 0.5 - gs.x, gs.map.throne.y + 0.5 - gs.y) < 7),
+                    padB: padB(gs, gs.mode === 'combat' ? pickSpell('dmg') : null),
                     automapCursor: [gs.x * 5, gs.y * 5],
                     evLog: evLog.slice(-140),
                 }),
@@ -1138,7 +1171,13 @@ const TenDeepGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <h1 className="text-5xl font-black tracking-widest mb-6" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>TEN-DEEP</h1>
-                    <AttractMessage className="mb-6 text-indigo-100/80" messages={MESSAGES} />
+                    {/* #1275: the attract demo runs over a TORCH-LIT wall now,
+                        not the old dark RIM — ART rule 6 contrast: the cycling
+                        line carries its own shadow so it stays readable on the
+                        brightest brick. */}
+                    <span className="mb-6 inline-block" style={{ textShadow: '0 2px 8px #000, 0 0 22px #000' }}>
+                        <AttractMessage className="text-indigo-100/80" messages={MESSAGES} />
+                    </span>
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                 </div>
             )}
@@ -1153,7 +1192,7 @@ const TenDeepGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'TEN-DEEP')} onResume={handleResume} />}
-            <VirtualControls visible={play && !paused} />
+            <VirtualControls visible={play && !paused} secondAction={bAct || undefined} />
         </div>
     )
 }
