@@ -275,7 +275,7 @@ const workerSrc = readFileSync(new URL('../relay/worker.js', import.meta.url), '
 ok('wiring: worker preflights OPTIONS on the HTTP endpoints', /req\.method === 'OPTIONS'/.test(workerSrc) && /corsHeaders/.test(workerSrc))
 ok('wiring: /status + /feedback answers carry corsHeaders', (workerSrc.match(/json\(/g) || []).length >= 6 && !/Response\.json\(\{ ok: true, service/.test(workerSrc))
 ok('wiring: /status advertises jonKey presence (boolean, no value)', /jonKey:\s*!!env\.JON_KEY/.test(workerSrc) && !/jonKey:\s*env\.JON_KEY[^?]/.test(workerSrc))
-ok('wiring: upload failure routes its status into the issue', /screenshotMarkdown\(null, up\.status\)/.test(workerSrc))
+ok('wiring: upload failure routes its status + reason into the issue', /screenshotMarkdown\(null, up\.status, up\.err\)/.test(workerSrc))
 const chromeSrc = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
 ok('panel: opening the feedback panel toggles the game pause', /onClick=\{toggle\}/.test(chromeSrc) && /const toggle = \(\) => \{[\s\S]*?dispatchPause\(\)/.test(chromeSrc))
 
@@ -381,7 +381,7 @@ ok('wiring: uploads ride release assets, never the dead issue-assets endpoint',
 // bodies and 422 "Bad Size" to canonical multipart at any size (live-reproduced with
 // a valid token) — the relay files screenshots as RELEASE assets instead. Drive the
 // whole flow against a fake GitHub and prove the URL that lands in the issue.
-import { uploadScreenshot, screenshotContentType, screenshotAssetName, FB_ASSET_TAG } from '../relay/core.js'
+import { uploadScreenshot, screenshotContentType, screenshotAssetName, screenshotErrorReason, FB_ASSET_TAG } from '../relay/core.js'
 
 const PNG1x1 = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
 const JPG1x1 = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD//dFmYWtlAAC40wAAAA==.jpeg'
@@ -449,6 +449,44 @@ const okRelease = { id: 42, draft: false, upload_url: UP_URL }
     const f = ghStub({})
     const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 11, dataUrl: PNG1x1, headers: H, now: 1 })
     ok('shot1222: release create refused (read-only token) fails honest', up.url === null && !up.url)
+}
+// ── #1295: a bare "(http 403)" hid the real cause for three nights ──────────
+// Every production upload since #1222 failed with a status and no reason, so
+// the scope gap in the relay's GITHUB_TOKEN was unprovable from the issue. The
+// server's own words now ride the honest line: a scope gap says
+// "Must have push access…", a rate limit says so too — self-diagnosing.
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: okRelease,
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: false, status: 403, json: async () => ({ message: 'Must have push access of the repository to access this endpoint.' }) }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 14, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1295: a rejected upload carries the server reason, not just the status',
+        up.url === null && up.status === 403 && /push access/.test(up.err || ''))
+    ok('shot1295: the honest line says WHY (debuggable from the issue alone)',
+        /http 403: Must have push access of the repository to access this endpoint\./.test(screenshotMarkdown(null, up.status, up.err)))
+}
+{
+    const f = ghStub({
+        [`GET https://api.github.com/repos/r/r/releases/tags/${FB_ASSET_TAG}`]: okRelease,
+        [`POST https://uploads.github.com/repos/r/r/releases/42/assets`]: () => ({ ok: false, status: 403, json: async () => { throw new Error('not json') }, text: async () => '<?xml version="1.0"?>\n<Error><Code>AccessDenied</Code></Error>' }),
+    })
+    const up = await uploadScreenshot({ fetchImpl: f, apiUrl: 'https://api.github.com', repo: 'r/r', number: 15, dataUrl: PNG1x1, headers: H, now: 1 })
+    ok('shot1295: a non-JSON body degrades to a trimmed snippet',
+        up.url === null && up.status === 403 && /AccessDenied/.test(up.err || '') && up.err.length <= 160)
+}
+{
+    // Real-Response shape: text() read ONCE, JSON parsed from the text — a
+    // consumed body must never be read twice.
+    let reads = 0
+    const res = { status: 403, ok: false, text: async () => { reads++; return JSON.stringify({ message: 'Resource not accessible by integration' }) } }
+    const why = await screenshotErrorReason(res)
+    ok('shot1295: a real Response body is read once and its JSON message extracted',
+        reads === 1 && why === 'Resource not accessible by integration'
+        && /http 403: Resource not accessible/.test(screenshotMarkdown(null, 403, why)))
+    const noReason = await screenshotErrorReason({ status: 500, text: async () => '' })
+    ok('shot1295: an empty body leaves err blank (status-only line, as before)',
+        noReason === '' && !screenshotMarkdown(null, 500, noReason).includes('http 500:'))
 }
 {
     const boom = async () => { throw new Error('network down') }
