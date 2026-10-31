@@ -44,7 +44,10 @@ export default function TalkMeDown() {
     const selectRef = useRef(1)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ shake: 0, sparks: [], banner: null, pulse: null, popT: 0, winTick: 0, boomTick: 0 })
+    const hudRef = useRef({
+        shake: 0, sparks: [], banner: null, pulse: null, popT: 0, winTick: 0, boomTick: 0,
+        flash: 0, zap: null, lcdFx: 0, lastOrder: null, humT: 0, beatT: 0, // #1305 juice
+    })
     const manualHiddenRef = useRef(false)
     const voiceRef = useRef({ on: false, listen: null })
     const voiceLogRef = useRef([])
@@ -149,7 +152,9 @@ export default function TalkMeDown() {
     }, [voiceCall])
 
     // one spec object, built in the effect (its `players` stays live via getter)
-    const makeSpec = () => ({
+    const makeSpec = () => {
+        let prevPad = {}
+        return {
             id: 'talk-me-down',
             method: 'dpad',
             get players() { return seatsRef.current },
@@ -167,9 +172,16 @@ export default function TalkMeDown() {
                 if (!g || g.done) return
                 const merged = [pads && pads[0] ? pads[0] : pad]
                 if (g.players > 1) merged.push((pads && pads[1]) || {})
+                // #1305: is this tick a dial turn? (shell-only — sound choice,
+                // never sim state: cursor module is D and a left/right edge moves it)
+                const cm = g.modules[g.cursor.mod]
+                const dialTurn = !!cm && cm.type === 'D' && !cm.solved && cm.locked === 0 &&
+                    ((merged[0].left && !prevPad.left) || (merged[0].right && !prevPad.right))
+                prevPad = { ...merged[0] }
                 step(g, merged)
                 for (const f of drainEvents(g)) {
-                    if (sfx[f.k]) sfx[f.k]()
+                    if (f.k === 'key' && dialTurn) sfx.dial()
+                    else if (sfx[f.k]) sfx[f.k]()
                     pumpHud(f)
                 }
                 if (g.done && screenRef.current === 'play') { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
@@ -179,16 +191,29 @@ export default function TalkMeDown() {
                 return { ...simState(g), players: seatsRef.current }
             },
             canvas: () => canvasRef.current,
-    })
+        }
+    }
 
     const pumpHud = (f) => {
         const hud = hudRef.current
         if (f.k === 'strike') {
             hud.shake = 14
+            hud.flash = 30 // #1305: red screen-edge flinch on the wrong verb
             hud.sparks = Array.from({ length: 16 }, () => ({
                 x: ART.PANEL.x + 40 + Math.random() * 320, y: ART.PANEL.y + 90 + Math.random() * 180,
                 vx: (Math.random() - 0.5) * 5, vy: -Math.random() * 4, life: 18 + Math.random() * 14,
             }))
+            // #1305: a fat 500 V arc jumps the terminal strips of the struck
+            // NEON module at the wire the player just cut wrong.
+            const gs = gsRef.current
+            const m = gs && gs.modules[gs.cursor.mod]
+            if (m && m.type === 'N' && !m.solved) {
+                const r = ART.moduleRect(gs.cursor.mod, gs.modules.length)
+                const n = m.wires.length
+                const wi = Math.max(0, m.wires.findIndex(w => !w.cut))
+                hud.zap = { x: r.x + 22 + wi * Math.floor((r.w - 56) / Math.max(1, n - 1)),
+                    top: r.y + Math.max(20, (r.h - 148) / 2), bot: r.y + Math.max(20, (r.h - 148) / 2) + 148, t: 14 }
+            }
             hud.banner = { text: `STRIKE! ${f.why.toUpperCase()}`, ok: false }
         }
         if (f.k === 'clear') hud.popT = 40
@@ -312,11 +337,23 @@ export default function TalkMeDown() {
                 if (gs) {
                     drawBombView(g, gs, tick)
                     ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1)
-                    ART.drawOrderRail(g, gs.order, gs.manual.flag)
+                    // #1305: new order arriving? stutter the LCD glass for 6 frames.
+                    if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
+                    hud.lastOrder = gs.order
+                    ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx)
                     drawSparks(g, hud)
+                    drawZap(g, hud)
                     if (hud.banner) ART.drawBanner(g, hud.banner.text, hud.banner.ok, tick)
+                    if (screenRef.current === 'play' && !gs.done && !pausedRef.current) {
+                        // #1305: hum bed + a heartbeat below 10 s (shell clock only)
+                        if (++hud.humT % 30 === 0) sfx.hum()
+                        if (Math.ceil(gs.fuse / 60) <= 10 && ++hud.beatT % 60 === 0) sfx.heart()
+                    }
                 }
                 if (hud.shake > 0) hud.shake -= 0.5
+                if (hud.lcdFx > 0) hud.lcdFx -= 1
+                if (hud.zap && --hud.zap.t <= 0) hud.zap = null
+                if (hud.flash > 0) hud.flash -= 1
                 hud.sparks = hud.sparks.filter(s => --s.life > 0)
                 if (hud.pulse && --hud.pulse.t <= 0) hud.pulse = null
             } else if (screenRef.current === 'attract') {
@@ -368,6 +405,7 @@ export default function TalkMeDown() {
                 const scoreStr = `SCORE ${gs.score}`
                 g.fillText(scoreStr, ART.W - 10 - scoreStr.length * 7, ART.H - 4)
             }
+            drawEdgeFlash(g, hudRef.current)
         }
 
         const drawBombView = (g, gs, tick) => {
@@ -376,7 +414,7 @@ export default function TalkMeDown() {
             ART.drawBoltColor(g, gs.features.bolt)
             ART.drawStrikes(g, gs.strikes)
             const secs = Math.ceil(gs.fuse / 60)
-            ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done)
+            ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
             g.font = '8px "Press Start 2P", monospace'; g.fillStyle = '#0f1113'
             g.fillText('SER ' + gs.features.serial, ART.PANEL.x + 136, ART.PANEL.y + 24)
             const hud = hudRef.current
@@ -407,6 +445,36 @@ export default function TalkMeDown() {
                 g.fillStyle = s.life > 10 ? '#ffe66b' : '#ff7a4d'
                 g.fillRect(s.x, s.y, 2, 2)
             }
+        }
+
+        // #1305: the strike arc — a jagged bolt jumping the struck module's
+        // terminal strips. Geometry-free jitter is fine here: it is the shell
+        // (Math.random lives outside the sim, #494), never state.
+        const drawZap = (g, hud) => {
+            const z = hud.zap
+            if (!z) return
+            const a = z.t / 14
+            for (const [w, col] of [[5, `rgba(255,120,60,${(0.5 * a).toFixed(2)})`], [2, '#fff2b0'], [1, '#fff']]) {
+                g.strokeStyle = col; g.lineWidth = w
+                g.beginPath(); g.moveTo(z.x, z.top + 2)
+                let y = z.top + 2
+                while (y < z.bot - 4) {
+                    y += 10 + Math.random() * 8
+                    g.lineTo(z.x + (Math.random() - 0.5) * 14, Math.min(y, z.bot - 2))
+                }
+                g.stroke()
+            }
+            g.lineWidth = 1
+        }
+
+        // #1305: red screen-edge flinch. Drawn OUTSIDE the shake translate so
+        // the geometry is stable and a harness can pin it by pixels.
+        const drawEdgeFlash = (g, hud) => {
+            if (hud.flash <= 0) return
+            const a = (0.12 + 0.5 * (hud.flash / 30)).toFixed(3)
+            g.fillStyle = `rgba(255,40,30,${a})`
+            g.fillRect(0, 0, ART.W, 14); g.fillRect(0, ART.H - 14, ART.W, 14)
+            g.fillRect(0, 0, 14, ART.H); g.fillRect(ART.W - 14, 0, 14, ART.H)
         }
 
         raf = requestAnimationFrame(loop)

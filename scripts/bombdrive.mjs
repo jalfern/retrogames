@@ -95,9 +95,30 @@ await page.screenshot({ path: '/tmp/forge/tmd-play.png' })
 await page.evaluate(() => window.__tmdTest.start(7, 1))
 await sleep(250)
 await page.keyboard.press('Space')
-await sleep(220)
+// #1305 pixel gate: the strike must flinch the screen edges red (~500 ms
+// window; poll so screenshot latency cannot decide the verdict).
+let edgePeak = 0
+for (let i = 0; i < 12 && edgePeak < 5000; i++) {
+    edgePeak = Math.max(edgePeak, await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+        let n = 0
+        const inBand = (x, y) => y < 12 || y >= c.height - 12 || x < 12 || x >= c.width - 12
+        for (let y = 0; y < c.height; y += 2) {
+            for (let x = 0; x < c.width; x += 2) {
+                if (!inBand(x, y)) continue
+                const i4 = (y * c.width + x) * 4
+                if (d[i4] > 100 && d[i4] > d[i4 + 1] + 40 && d[i4] > d[i4 + 2] + 40) n += 4
+            }
+        }
+        return n
+    }))
+    await sleep(30)
+}
+await sleep(120)
 const strikeSt = await page.evaluate(() => window.__tmdTest.state())
 ok('a wrong verb at the panel trips a strike for real', strikeSt.strikes === 1, `strikes=${strikeSt.strikes}`)
+ok('the strike flinches the screen edges red (pixels, #1305)', edgePeak > 5000, `peak=${edgePeak}`)
 
 // mic grammar path (no speech service in headless — phrase injection, #1249 lesson)
 const micOn = await page.evaluate(() => { window.__tmdTest.call('cut purple'); return window.__tmdTest.voiceLog().slice(-1)[0] })
@@ -121,6 +142,29 @@ const h = await page.evaluate(() => {
     return { last, again, id: g.meta.id }
 })
 ok('contract id + deterministic hashes', h.id === 'talk-me-down' && h.last === h.again, JSON.stringify(h))
+
+// #1305 pixel gate: below 10 s the fuse bezel must throb red whether or not
+// the pulse sine is caught at its peak (alpha floor 0.45). Drive the clock with
+// the contract, then sample the ring rows just outside the housing.
+await page.evaluate(() => {
+    const g = window.__game
+    g.reset(7, 1); g.release()
+    for (let t = 0; t < 3500; t++) g.step({}) // seed 7 round 1: fuse 65 s -> ~6 s left
+})
+await sleep(150)
+const bezelRed = await page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+    let n = 0
+    const hot = (x, y) => {
+        const i4 = (y * c.width + x) * 4
+        return d[i4] > 140 && d[i4 + 1] < 90 && d[i4 + 2] < 90
+    }
+    for (const row of [14, 48]) for (let x = 16; x <= 128; x++) if (hot(x, row)) n++
+    for (const col of [16, 128]) for (let y = 14; y <= 48; y++) if (hot(col, y)) n++
+    return n
+})
+ok('the last 10 s throbs a red bezel around the fuse (pixels, #1305)', bezelRed > 120, `ring pixels=${bezelRed}`)
 
 // die for real via the contract clock, then restart with a real key
 await page.evaluate(() => {
