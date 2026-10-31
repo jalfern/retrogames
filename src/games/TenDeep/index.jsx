@@ -27,6 +27,7 @@ import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
+import { fitSize, fitTwoCols } from './hudfit.js'
 
 const SIM_MS = 1000 / 60
 const DEMO_MS = 170
@@ -782,22 +783,30 @@ const TenDeepGame = () => {
             else paintMap()
             ctx.restore()
             ctx.fillStyle = '#000'; ctx.fillRect(0, 200, W, H - 200)
-            // six mini panels along the foot
+            // six mini panels along the foot — text is measured, never assumed
+            // (#1282): names grow to the largest size that fits the 34px panel so
+            // they read on a phone, and the level/class row is sized so its two
+            // columns never collide or clip. See TenDeep/hudfit.js.
             gs.party.forEach((h, i) => {
                 const px = 4 + i * 42
                 ctx.fillStyle = h.alive ? '#0c1024' : '#1a0d12'
                 ctx.fillRect(px, 204, 38, 18)
+                const name = fitSize(h.name, 34, [7, 6, 5], ctx)
                 ctx.fillStyle = h.alive ? '#9fb4ff' : '#6b4050'
-                ctx.font = '6px monospace'; ctx.textAlign = 'left'
-                ctx.fillText(h.name.slice(0, 7), px + 2, 210)
+                ctx.font = `${name.size}px monospace`; ctx.textAlign = 'left'
+                ctx.fillText(name.text, px + 2, 210)
                 ctx.fillStyle = '#333'; ctx.fillRect(px + 2, 213, 34, 2)
                 ctx.fillStyle = '#e5484d'; ctx.fillRect(px + 2, 213, 34 * Math.max(0, h.hp / h.maxHp), 2)
                 ctx.fillStyle = '#224'; ctx.fillRect(px + 2, 216, 34, 2)
                 ctx.fillStyle = '#4f9dff'; ctx.fillRect(px + 2, 216, 34 * (h.mp / h.maxMp), 2)
-                ctx.fillStyle = '#ffd54f'; ctx.fillText('L' + h.lvl, px + 2, 221)
+                const clsTag = CLASSES[h.cls].abbr + (Object.keys(CLASSES[h.cls].spells).length ? '*' : '')
+                const row = fitTwoCols('L' + h.lvl, clsTag, 17, 15, [6, 5], ctx)
+                ctx.font = `${row.size}px monospace`
+                ctx.fillStyle = '#ffd54f'; ctx.textAlign = 'left'
+                ctx.fillText(row.left, px + 2, 221)
                 ctx.fillStyle = h.alive && Object.keys(CLASSES[h.cls].spells).length ? '#7fc4ff' : '#6b7699'
                 ctx.textAlign = 'right'
-                ctx.fillText(CLASSES[h.cls].abbr + (Object.keys(CLASSES[h.cls].spells).length ? '*' : ''), px + 36, 221)
+                ctx.fillText(row.right, px + 36, 221)
                 ctx.textAlign = 'left'
             })
             drawAutomap()
