@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import FactoryFloor from './FactoryFloor'
 import Telemetry from './Telemetry'
-import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sparkline } from './floor'
+import { applyOrder, deriveFloor, labelOf, runwayBadge, runwayMath, runwayTrend, sparkline, slotsLine } from './floor'
 
 const REPO = 'jalfern/retrogames'
 // ONE anonymous CDN fetch. The board used to fire ~6 api.github.com queries
@@ -78,6 +78,7 @@ const ForgeBoard = () => {
     const [boredom, setBoredom] = useState(null)
     const [runway, setRunway] = useState(null)
     const [runwayOpen, setRunwayOpen] = useState(false)
+    const [slots, setSlots] = useState(null)   // #1258 live slots
     const reload = useRef(() => {})
 
     useEffect(() => {
@@ -112,6 +113,7 @@ const ForgeBoard = () => {
                 setSamples(d.samples ?? [])
                 setGenerated(d.generated ?? null)
                 setRunway(d.runway ?? null)
+                setSlots(d.slots ?? null)
                 try {
                     const lr = await fetch(`${LOG_RAW}?t=${Math.floor(Date.now() / 60000)}`)
                     if (lr.ok) setDaily(await lr.json())
@@ -213,6 +215,18 @@ const ForgeBoard = () => {
                             : 'never fetched'}
                     </div>
                 </div>
+
+                {slots && (() => {
+                    // #1258 — the fleet at a glance: 2 builder slots + the QA
+                    // lanes, up/idle straight from board.json (telemetry.sh).
+                    const s = slotsLine(slots)
+                    if (!s) return null
+                    return (
+                        <div data-slots={s.busy} className="text-[10px] tracking-wider text-gray-500 mb-2 text-center">
+                            ⚙ SLOTS — {s.text}
+                        </div>
+                    )
+                })()}
 
                 {runway && (() => {
                     const b = runwayBadge(runway, now)

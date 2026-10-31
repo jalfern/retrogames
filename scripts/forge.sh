@@ -1,19 +1,49 @@
 #!/bin/zsh
 # The FORGE driver — one session = one game. Invoked by launchd
-# (com.jalfern.forge) or by hand: scripts/forge.sh
-# Logs land in /tmp/forge/<timestamp>.log, newest symlinked at /tmp/forge/last.log
+# (com.jalfern.forge / com.jalfern.forge-b) or by hand:
+#   scripts/forge.sh [a|b] [--foreground]
+# Logs land in /tmp/forge/<timestamp>.log (slot a, newest symlinked at
+# last.log) and /tmp/forge/forge-b<timestamp>.log (slot b, newest at
+# last-forge-b.log).
+#
+# #1258 — the Studio runs TWO builder slots on its model. A slot's identity
+# lives in its prompt ("THE FORGE on slot a|b."), the same trick QA nodes use:
+# locks, watch panes and `forge status` pgrep that, so slots never block each
+# other. Slot a's lock also matches pre-#1258 prompts ("THE FORGE.") so a
+# session in flight across the deploy still owns its slot.
 
 set -u
+SLOT=a
+FG=0
+for a in "$@"; do
+    case "$a" in
+        --foreground) FG=1 ;;
+        a|b) SLOT=$a ;;
+    esac
+done
+
 REPO="$HOME/Dev/retrogames"
 LOG_DIR="/tmp/forge"
 mkdir -p "$LOG_DIR"
 STAMP=$(date +%Y%m%d-%H%M%S)
-LOG="$LOG_DIR/$STAMP.log"
-ln -sf "$LOG" "$LOG_DIR/last.log"
+if [[ "$SLOT" == a ]]; then
+    LOG="$LOG_DIR/$STAMP.log"
+    ln -sf "$LOG" "$LOG_DIR/last.log"
+    SLOT_PAT="THE FORGE( on slot a)?\\."
+else
+    LOG="$LOG_DIR/forge-b$STAMP.log"
+    ln -sf "$LOG" "$LOG_DIR/last-forge-b.log"
+    SLOT_PAT="THE FORGE on slot b\\."
+    # slot b shares the model server with slot a; no model, no session.
+    if ! curl -s -m 3 "http://127.0.0.1:8000/v1/models" >/dev/null 2>&1; then
+        echo "$(date): studio model unreachable on :8000, slot b skipping" >> "$LOG"
+        exit 0
+    fi
+fi
 
-# one forge session at a time
-if pgrep -f "opencode run.*THE FORGE" >/dev/null; then
-    echo "$(date): a forge session is already running, skipping" >> "$LOG"
+# one session per slot (the other slot may run beside it — #1258)
+if pgrep -f "opencode run.*$SLOT_PAT" >/dev/null; then
+    echo "$(date): a slot-$SLOT forge session is already running, skipping" >> "$LOG"
     exit 0
 fi
 
@@ -28,7 +58,13 @@ cd "$REPO" || exit 1
 
 # #907 backstop: a killed session can orphan headless Chrome under launchd.
 # Sweep only Forge's own profiles (/tmp/forge/), never a normal Chrome.
-pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+# #1258: profiles are shared per-check-script across lanes, so sweeping while
+# another builder slot is live would kill ITS browser — sweep only when every
+# builder slot is idle (an orphan from the dead slot b then waits for slot a's
+# next restart; honest small gap, noted in docs/HARNESS.md).
+if [[ "$SLOT" == a ]] && ! pgrep -f "opencode run.*THE FORGE" >/dev/null; then
+    pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/" 2>/dev/null || true
+fi
 
 # halt (#605): a `halt` label on any open issue is Jon freezing the factory.
 # The warden already refuses to kick; this catches launchd's own timer and any
@@ -54,12 +90,32 @@ if [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] \
 fi
 echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
 
-PROMPT="You are THE FORGE. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
+PROMPT="You are THE FORGE on slot $SLOT. Open scripts/FORGE.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 3 hours."
+# #1258: the slot names its port and its claim script — the playbook's ladder
+# stays the same, only claim mechanics and the dev server differ per slot.
+if [[ "$SLOT" == a ]]; then DEV_PORT_B=5173; else DEV_PORT_B=5178; fi
+export DEV_PORT=$DEV_PORT_B
+PROMPT="$PROMPT Slot notes (#1258): claim with scripts/forge-claim.sh <n> $SLOT \"<plan>\"; your dev server port is $DEV_PORT_B — start yours with \`npm run dev -- --port $DEV_PORT_B --strictPort\` (DEV_PORT is exported; browser scripts read it). Never use or stop another lane's port."
+
+# target (#1258): the warden writes its assignment to /tmp/forge/target-<slot>
+# right before kickstart; fresh (<20 min) means it belongs to THIS fire. A
+# session takes it FIRST but still via forge-claim.sh — a stale assignment
+# (another lane claimed it since) is refused there and the ladder takes over.
+TARGET=""
+tf="$LOG_DIR/target-$SLOT"
+if [[ -n "$(find "$tf" -maxdepth 0 -mmin -20 2>/dev/null)" ]]; then
+    TARGET=$(head -1 "$tf" 2>/dev/null | tr -dc '0-9')
+    rm -f "$tf"   # consumed — the next needed kick rewrites it
+fi
+if [[ -n "$TARGET" ]]; then
+    echo "$(date): warden target #$TARGET for slot $SLOT" >> "$LOG"
+    PROMPT="$PROMPT TARGET (#1258): the warden assigned issue #$TARGET to your slot — at the claim step take it first with scripts/forge-claim.sh $TARGET $SLOT; if that is REFUSED, run the normal ladder."
+fi
 
 # steer (#605): jalfern's `steer` label outranks `next` at the cycle boundary
 # (warden step 4 already ranks it; this names it so the session claims it
 # without re-deriving the order).
-if [[ -f "$REPO/scripts/jonq.mjs" ]]; then
+if [[ -z "$TARGET" ]] && [[ -f "$REPO/scripts/jonq.mjs" ]]; then
     STEER=$(node "$REPO/scripts/jonq.mjs" steer 2>/dev/null)
     if [[ -n "$STEER" ]]; then
         echo "$(date): steer $STEER — taking it ahead of the queue this session" >> "$LOG"
@@ -84,8 +140,8 @@ fi
 # far was started by the warden (a live parent), never by launchd itself.
 # So: launchd must run opencode IN THE FOREGROUND (--foreground); the warden
 # calls this script plain and gets the old non-blocking behaviour.
-if [[ "${1:-}" == "--foreground" ]]; then
-    echo "$(date): FOREGROUND session pid=$$ log=$LOG" >> "$LOG"
+if (( FG )); then
+    echo "$(date): FOREGROUND session pid=$$ log=$LOG slot=$SLOT" >> "$LOG"
     /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1
     STATUS=$?
     echo "$(date): session exit=$STATUS" >> "$LOG"
@@ -95,7 +151,7 @@ fi
 nohup /opt/homebrew/bin/opencode run "${MODEL_ARGS[@]}" --auto "$PROMPT" >> "$LOG" 2>&1 &
 BG=$!
 STATUS=0
-echo "$(date): kicked forge session pid=$BG log=$LOG" >> "$LOG"
+echo "$(date): kicked forge session pid=$BG log=$LOG slot=$SLOT" >> "$LOG"
 
 {
     echo "=== forge $STAMP exit=$STATUS ==="
@@ -103,6 +159,7 @@ echo "$(date): kicked forge session pid=$BG log=$LOG" >> "$LOG"
     gh issue list --repo jalfern/retrogames --label game-queue --json number,title --jq '.[] | "queued #\(.number) \(.title)"' 2>/dev/null
 } >> "$LOG"
 
-# prune to the newest 50 runs
+# prune to the newest 50 runs (both slots)
 ls -t "$LOG_DIR"/2*.log 2>/dev/null | tail -n +51 | xargs rm -f 2>/dev/null
+ls -t "$LOG_DIR"/forge-b2*.log 2>/dev/null | tail -n +51 | xargs rm -f 2>/dev/null
 exit $STATUS

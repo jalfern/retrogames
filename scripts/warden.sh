@@ -115,7 +115,12 @@ main() {
     [[ "$PULSE" =~ ^[0-9]+$ ]] || { log "pulse lookup failed (got: ${PULSE:-empty}) — aborting, no duplicate"; return 1; }
 
     pulse_line() {   # $1 = alive word, $2 = actions
-        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT actions=$2"
+        # #1258: `builders=N/2` — how many builder slots are running right now
+        # (a and b are pgrep'd the way the slots themselves are locked).
+        local nb=0
+        pgrep -f "opencode run.*THE FORGE( on slot a)?\\." >/dev/null && nb=$((nb + 1))
+        pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && nb=$((nb + 1))
+        echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT builders=$nb/2 actions=$2"
     }
     comment() {      # $1 = issue number, $2 = text
         act gh api "repos/$GH/issues/$1/comments" -f body="$2" --silent || log "comment on #$1 failed"
@@ -204,49 +209,99 @@ main() {
         [[ -n "$N" ]] && (( N > 0 )) && ACTIONS+=("questions:$N")
     fi
 
-    # ---- 4. BUILDER -----------------------------------------------------
-    # Work waiting = a half-built game (building) or a queued one. A game
-    # labeled `stalled` is waiting for Jon and never counts. jalfern's
-    # `steer` (#605) ranks after a corpse but before `next`: it is "do this
-    # next at the cycle boundary", and a cycle boundary is now. A question
-    # (waiting-jon/question) is never a work item.
-    TARGET=$(print -r -- "$ISSUES" | jq -r --arg owner "$OWNER" '
-        [.[] | select(any(.labels[]; .name == "stalled") | not)] as $ok
-        | ([$ok[] | select(any(.labels[]; .name == "building"))]
-           + [$ok[] | select(any(.labels[]; .name == "steer")
-                              and .user.login == $owner
-                              and ((any(.labels[]; .name == "waiting-jon")
-                                  or any(.labels[]; .name == "question")) | not))]
-           + [$ok[] | select(any(.labels[]; .name == "next"))]
-           + ([$ok[] | select(any(.labels[]; .name == "game-queue"))] | sort_by(.created_at)))
-        | .[0].number // empty')
-    [[ "$HALTED" == yes ]] && TARGET=""
-
-    # A QA item running in the builder's slot (node builder) finishes first;
-    # the game builds on the next tick after it ends (Jon, 2026-10-19).
-    if pgrep -f "opencode run.*QA MASTER on node builder\\." >/dev/null; then BSLOT_QA=1; else BSLOT_QA=0; fi
-    if [[ "$ALIVE" == no && -n "$TARGET" ]] && (( BSLOT_QA )); then
-        log "builder slot is finishing a QA item; #$TARGET builds after it"
-    elif [[ "$ALIVE" == no && -n "$TARGET" ]]; then
-        # Three kicks with no FORGE: comment in between = the builder keeps
-        # dying before it reports anything. Stop kicking; that is Jon's call.
-        # Any comment that is not the warden's own (a FORGE: report, or Jon's
-        # go-ahead after un-stalling) restarts the count: on 2026-10-15 #295
-        # was re-stalled the moment Jon cleared it, by kicks from that morning.
-        KICKS=$(gh api "repos/$GH/issues/$TARGET/comments?per_page=100" --jq '
-            [.[] | .body] | (map(startswith("WARDEN") | not) | rindex(true)) as $last
-            | .[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder idle"))) | length')
-        if (( KICKS >= 3 )); then
-            add_label "$TARGET" stalled
-            comment "$TARGET" "WARDEN: kicked 3 times with no FORGE progress in between. Labeled stalled; Jon, please take a look."
-            ACTIONS+=("stalled:1"); log "#$TARGET -> stalled"
+    # ---- 4. BUILDER SLOTS (#1258: two builders on the Studio) ------------
+    # Slot identity = "THE FORGE on slot a|b." in the session prompt (the QA
+    # node trick). Slot a's pattern also matches pre-#1258 prompts, so a
+    # session in flight across the deploy still owns its slot. Claim order
+    # comes from scripts/lanes.mjs (pure core, pinned by lanecheck): games
+    # first, then feedback — the whole queue, every lane. Work that waits for
+    # a lane that is NOT idle (a half-built game `building`) outranks; a game
+    # `stalled` waits for Jon. jalfern's `steer` (#605) ranks after a corpse
+    # but before `next`. A question (waiting-jon/question) is never a work item.
+    SLOTB_JOB=com.jalfern.forge-b
+    VERDICT=""
+    [[ -f "$LOG_DIR/studio-lanes.verdict" ]] && VERDICT=$(head -1 "$LOG_DIR/studio-lanes.verdict" 2>/dev/null)
+    # Self-bootstrap the slot-b job from main: merging this code IS the install
+    # step (no manual launchctl dance for the trial). A `revert` verdict from
+    # the 48 h trial ends the slot until Jon removes the verdict file.
+    if [[ "$HALTED" != yes && "$DRY" != 1 && "$VERDICT" != revert* ]] \
+       && ! launchctl print "gui/$(id -u)/$SLOTB_JOB" >/dev/null 2>&1 \
+       && [[ -f "$REPO/scripts/$SLOTB_JOB.plist" ]]; then
+        cp "$REPO/scripts/$SLOTB_JOB.plist" "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" 2>/dev/null
+        if launchctl bootstrap "gui/$(id -u)" "$HOME/Library/LaunchAgents/$SLOTB_JOB.plist" >> "$LOG" 2>&1; then
+            log "installed $SLOTB_JOB (#1258 slot b)"
+            ACTIONS+=("slotb-installed")
         else
-            act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
-            comment "$TARGET" "WARDEN: builder idle, kicked a session"
-            ACTIONS+=("kicked:1"); log "kicked builder for #$TARGET"
-            ALIVE=kicked
+            log "$SLOTB_JOB bootstrap failed"
         fi
     fi
+    B_LOADED=0
+    [[ "$VERDICT" != revert* ]] && launchctl print "gui/$(id -u)/$SLOTB_JOB" >/dev/null 2>&1 && B_LOADED=1
+
+    # A QA item running in the builder's slot (node builder) holds slot a; it
+    # finishes first, the game builds on the next tick after it ends.
+    if pgrep -f "opencode run.*QA MASTER on node builder\\." >/dev/null; then BSLOT_QA=1; else BSLOT_QA=0; fi
+    A_IDLE=1; B_IDLE=0
+    pgrep -f "opencode run.*THE FORGE( on slot a)?\\." >/dev/null && A_IDLE=0
+    (( BSLOT_QA )) && A_IDLE=0
+    if (( B_LOADED )); then
+        B_IDLE=1
+        pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && B_IDLE=0
+    fi
+
+    A_TARGET=""; B_TARGET=""; QA_STUDIO_QUEUE=0; TARGET=""
+    if [[ "$HALTED" != yes ]]; then
+        PLAN=$(print -r -- "$ISSUES" | node "$REPO/scripts/lanes.mjs" \
+              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" 2>>"$LOG" | tail -8)
+        if [[ -n "$PLAN" ]]; then
+            eval "$PLAN"   # int/- values only; lanes.mjs guarantees
+            [[ "${A_TARGET:-}" == "-" ]] && A_TARGET=""
+            [[ "${B_TARGET:-}" == "-" ]] && B_TARGET=""
+        else
+            # planner missing/broken: keep the factory moving on the pre-#1258
+            # inline ladder, slot a only (the fallback cannot name two targets).
+            A_TARGET=$(print -r -- "$ISSUES" | jq -r --arg owner "$OWNER" '
+                [.[] | select(any(.labels[]; .name == "stalled") | not)] as $ok
+                | ([$ok[] | select(any(.labels[]; .name == "building"))]
+                   + [$ok[] | select(any(.labels[]; .name == "steer")
+                                      and .user.login == $owner
+                                      and ((any(.labels[]; .name == "waiting-jon")
+                                          or any(.labels[]; .name == "question")) | not))]
+                   + [$ok[] | select(any(.labels[]; .name == "next"))]
+                   + ([$ok[] | select(any(.labels[]; .name == "game-queue"))] | sort_by(.created_at)))
+                | .[0].number // empty')
+            log "lanes.mjs failed — legacy single-slot ladder: ${A_TARGET:-none}"
+        fi
+        TARGET=${A_TARGET:-}
+        log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE"
+    fi
+
+    kick_slot() {   # $1 = slot a|b, $2 = issue number, $3 = launchd job
+        local s=$1 n=$2 job=$3
+        [[ -z "$n" ]] && return 0
+        # Three kicks with no FORGE: comment in between = the slot keeps dying
+        # before it reports anything. Stop kicking; that is Jon's call. Any
+        # non-WARDEN comment restarts the count (per-slot since #1258: two
+        # slots, two counters — one slow slot must not stall the other's game).
+        local KICKS
+        KICKS=$(gh api "repos/$GH/issues/$n/comments?per_page=100" --jq '
+            [.[] | .body] | (map(startswith("WARDEN") | not) | rindex(true)) as $last
+            | .[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length' 2>/dev/null)
+        KICKS=${KICKS:-0}
+        if (( KICKS >= 3 )); then
+            add_label "$n" stalled
+            comment "$n" "WARDEN: kicked 3 times with no FORGE progress in between. Labeled stalled; Jon, please take a look."
+            ACTIONS+=("stalled:$s"); log "#$n -> stalled (slot $s)"
+        else
+            [[ "$DRY" != 1 ]] && print -r -- "$n" > "$LOG_DIR/target-$s"
+            act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
+            comment "$n" "WARDEN: builder $s idle, kicked a session"
+            ACTIONS+=("kicked:$s"); log "kicked builder $s for #$n"
+            ALIVE=kicked
+        fi
+    }
+    kick_slot a "${A_TARGET:-}" com.jalfern.forge
+    kick_slot b "${B_TARGET:-}" "$SLOTB_JOB"
 
     # ---- 4b. IDLE FLAGSHIP KICK (#869) ---------------------------------
     # #841's "never idle" lives inside the FORGE session, but a session only
@@ -285,7 +340,11 @@ main() {
         | select(any(.labels[]; .name == "needs-approval" or .name == "building-qa" or .name == "waiting-jon") | not)] | length')
     LANES=("mini 18000 QA_WAITING 1 com.jalfern.forge-qa"
            "studio 8000 UNCLAIMED 1 com.jalfern.forge-qa-studio")
-    [[ "$ALIVE" == no && -z "$TARGET" ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
+    # #1258: the builder-slot QA spill is superseded while slot b is loaded —
+    # a free second builder is worth more than a QA item, and the whole-queue
+    # rule reaches feedback through slot b anyway. Reverting the trial restores
+    # the spill (B_LOADED stays 0, nothing else to do).
+    [[ "$ALIVE" == no && -z "$TARGET" && "$B_LOADED" == 0 ]] && LANES+=("builder 8000 UNCLAIMED 2 com.jalfern.forge-qa-builder")
     [[ "$HALTED" == yes ]] && LANES=()   # #605: halt freezes every lane, not just the builder
     STUDIO_KICKED=0
     for spec in "${LANES[@]}"; do
@@ -293,7 +352,11 @@ main() {
         have=${(P)var}
         curl -s -m 3 "http://127.0.0.1:$port/v1/models" >/dev/null 2>&1 || continue
         pgrep -f "opencode run.*QA MASTER on node $node\\." >/dev/null && continue
-        (( have >= need )) || continue
+        # studio also earns a session for the QUEUE (#1258 whole queue): no
+        # free feedback but more queued games than free builder slots — the
+        # QA session takes the oldest one (FORGE-QA.md 2f), and qa-claim.sh's
+        # unified namespace keeps it off any builder's game (#878).
+        (( have >= need )) || { [[ "$node" == studio && "$QA_STUDIO_QUEUE" == 1 ]] || continue; }
         launchctl print "gui/$(id -u)/$job" >/dev/null 2>&1 || continue
         act launchctl kickstart "gui/$(id -u)/$job" >> "$LOG" 2>&1
         [[ "$node" == studio ]] && STUDIO_KICKED=1
@@ -309,7 +372,7 @@ main() {
     # when the builder is busy (4b owns the flagship otherwise) and not halted;
     # the builder and Studio can never be pointed at the same game (#878: one
     # lane per game, enforced in qaIdleStage).
-    if [[ "$HALTED" != yes && "$ALIVE" == yes ]] && (( ! STUDIO_KICKED )); then
+    if [[ "$HALTED" != yes && "$ALIVE" == yes && "$QA_STUDIO_QUEUE" != 1 ]] && (( ! STUDIO_KICKED )); then
         pgrep -f "opencode run.*QA MASTER on node studio\\." >/dev/null \
             || ! curl -s -m 3 "http://127.0.0.1:8000/v1/models" >/dev/null 2>&1 \
             || ! launchctl print "gui/$(id -u)/com.jalfern.forge-qa-studio" >/dev/null 2>&1 \
@@ -319,6 +382,17 @@ main() {
                      comment "$PULSE" "WARDEN: feedback empty, ${STAGE#KICK } unowned — kicked Studio QA to the flagship gap (#878)"
                      ACTIONS+=("qa-flagship:studio"); log "kicked Studio QA to flagship ${STAGE#KICK }"
                  fi; }
+    fi
+
+    # ---- 5b. STUDIO LANES TRIAL (#1258) ---------------------------------
+    # Clock + 48 h verdict. `tick` records the trial start the first time the
+    # new fleet code runs on main, and at 48 h posts items/day before-vs-after
+    # on #1258, writing keep/revert to /tmp/forge/studio-lanes.verdict — step 4
+    # reads that verdict and stops kicking slot b on `revert`.
+    if [[ "$HALTED" != yes && "$DRY" != 1 ]]; then
+        TRI=$(node "$REPO/scripts/studiotrial.mjs" tick 2>>"$LOG" | tail -1)
+        log "studiotrial: $TRI"
+        [[ "$TRI" == reported* ]] && ACTIONS+=("trial:$(print -r -- "$TRI" | awk '{print $2}')")
     fi
 
     # ---- 6. FOLLOW-UP PULSE -----------------------------------------------

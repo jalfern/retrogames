@@ -25,16 +25,25 @@ sessions() {
         args=$(ps -o args= -p $pid 2>/dev/null)
         case "$args" in
             *"QA MASTER on node "*) lane="QA $(print -r -- "$args" | sed -E 's/.*QA MASTER on node ([a-z]+).*/\1/')" ;;
-            *"THE FORGE"*)          lane="builder" ;;
+            *"THE FORGE on slot b"*) lane="builder-b" ;;
+            *"THE FORGE"*)          lane="builder-a" ;;
             *)                      lane="other opencode run" ;;
         esac
-        printf '  %-8s %-16s up %s\n' $pid "$lane" $etime
+        printf '  %-10s %-16s up %s\n' $pid "$lane" $etime
     done
 }
 
 show() {
     local h=$(halts | paste -sd' ' -)
     if [[ -n "$h" ]]; then echo "forge: HALTED (#${h// / #})"; else echo "forge: running"; fi
+    # #1258: the fleet is 2 builder slots + QA lanes; show the trial state.
+    local n=0
+    pgrep -f "opencode run.*THE FORGE( on slot a)?\." >/dev/null && n=$((n + 1))
+    pgrep -f "opencode run.*THE FORGE on slot b\." >/dev/null && n=$((n + 1))
+    echo "builders: $n/2 slots busy"
+    if [[ -f "$HOME/Dev/retrogames/scripts/studiotrial.mjs" ]]; then
+        echo "trial: $(node "$HOME/Dev/retrogames/scripts/studiotrial.mjs" status 2>/dev/null)"
+    fi
     local s=$(sessions)
     if [[ -n "$s" ]]; then echo "sessions:"; print -r -- "$s"; else echo "sessions: none"; fi
 }

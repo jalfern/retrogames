@@ -14,16 +14,19 @@ n=${1:-}; node=${2:-}; plan=${3:-}
 repo=jalfern/retrogames
 [ -n "$n" ] && [ -n "$node" ] || { echo "usage: qa-claim.sh <issue> <node> \"<plan>\""; exit 2; }
 
-# newest live claim on the issue as "<node> <minutes since the newest LIVENESS comment>"
-# (#1234) liveness = claimed/checkpoint only: bookkeeping notes ("claim dead",
-# "yielding") must not extend the 90-min lockout on the very item they free.
+# newest live claim on the issue as "<lane-id> <minutes since the newest
+# LIVENESS comment>" (#1234) liveness = claimed/checkpoint only: bookkeeping
+# notes ("claim dead", "yielding") must not extend the 90-min lockout on the
+# very item they free. #1258: the namespace is UNIFIED — a builder-held item
+# (`FORGE (<slot>):`) is as held as a QA-held one, so a QA lane reaching into
+# the game queue can never step onto a builder's game (#878), and vice versa.
 holder() {
   ${GH:-gh} api --paginate "repos/$repo/issues/$n/comments?per_page=100" | jq -rs '
     (add // []) as $all
-    | ([$all[] | select(.body | test("^QA \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
-    | ([$all[] | select(.body | test("^QA \\([a-z0-9-]+\\): claimed"))] | last) as $c
+    | ([$all[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): (claimed|checkpoint)"))] | last) as $q
+    | ([$all[] | select(.body | test("^(QA|FORGE) \\([a-z0-9-]+\\): claimed"))] | last) as $c
     | if $c == null then empty else
-        "\($c.body | capture("^QA \\((?<n>[a-z0-9-]+)\\)").n) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)"
+        "\($c.body | capture("^(QA|FORGE) \\((?<n>[a-z0-9-]+)\\)").n) \(((now - ($q.created_at | fromdateiso8601)) / 60) | floor)"
       end'
 }
 
@@ -43,6 +46,12 @@ note=""
 body="QA ($node): claimed $(date -u +%Y-%m-%dT%H:%MZ)$note — plan: $plan"
 if [ -n "${QA_CLAIM_DRY:-}" ]; then echo "DRY: would label building-qa and post: $body"; exit 0; fi
 ${GH:-gh} api -X POST "repos/$repo/issues/$n/labels" -f 'labels[]=building-qa' >/dev/null
+# #1258 whole queue: when QA takes a game-queue item, it leaves the builder's
+# pool the moment QA claims it (idempotent; noise failures here are harmless —
+# the claim comment is the lock, and forge-claim.sh cross-checks it anyway).
+for l in game-queue next steer; do
+  ${GH:-gh} api -X DELETE "repos/$repo/issues/$n/labels/$l" --silent >/dev/null 2>&1 || true
+done
 ${GH:-gh} api "repos/$repo/issues/$n/comments" -f body="$body" >/dev/null
 
 # a claim that landed with ours: the newest one wins, the other yields
