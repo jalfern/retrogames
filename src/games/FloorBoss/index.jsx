@@ -19,9 +19,10 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { createEpisode, saveEpisode, episodeStats, MANIFEST_REV } from '../../utils/robot/episode.js'
+import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
+import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
-    makeGame, step, state, stateHash, createAutopilot, clickCell, setTool, cycleTool,
+    makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot,
     COLS, ROWS, SHIFT, QUOTA, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
     BAY_CELL, OUT_CELLS, ARM_CELL, MAX_ROBOTS,
@@ -262,7 +263,6 @@ const FloorBossGame = () => {
             ctx.fillStyle = '#5f7280'; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill()
             // two-link arm reaches toward the bay when loaded, rests otherwise
             const pose = gs.arm.pose
-            const tx = PX(BAY_CELL.x) + TILE / 2, ty = PY(BAY_CELL.y) + TILE / 2
             const restA = -2.2, workA = -0.9
             const ang = restA + (workA - restA) * pose
             const L1 = 16, L2 = 14
@@ -331,7 +331,7 @@ const FloorBossGame = () => {
                 // amber eye toward heading
                 const d = [[0, -2], [2.5, 0], [0, 2], [-2.5, 0]][b.dir % 4]
                 ctx.fillStyle = b.broken ? '#ff5a4f' : tick % 100 < 5 ? '#fff2a0' : '#ffc23f'
-                ctx.beginPath(); ctx.arc(x + d[0], y - 1 + d[1], 2); ctx.fill()
+                ctx.beginPath(); ctx.arc(x + d[0], y - 1 + d[1], 2, 0, Math.PI * 2); ctx.fill()
                 // status glyphs
                 if (b.broken) {
                     ctx.strokeStyle = '#ff5a4f'; ctx.lineWidth = 2

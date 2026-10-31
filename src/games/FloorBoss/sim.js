@@ -25,6 +25,7 @@ export const STRIKES = 3
 export const CELL = {
     FLOOR: 0, WALL: 1, CONVEYOR: 2, ARM: 3, OUT: 4, INTAKE: 5,
 }
+export const ARM_CELL = { x: 16, y: 1 }
 
 export const KINDS = ['crate', 'can', 'coil']
 export const BASE_PAY = { crate: 20, can: 15, coil: 25 }
@@ -49,7 +50,6 @@ const JAM_AUTO = 300 // self-resolve after 5 s
 const REPAIR_TICKS = 1200
 const TURBO_CUT = 15
 const CURSOR_STEP = 4 // keyboard/mobile cursor: one cell per 4 ticks
-const ARM_CELL = { x: 16, y: 1 }
 export const BAY_CELL = { x: 16, y: 2 }
 export const OUT_CELLS = [{ x: 23, y: 13 }, { x: 24, y: 13 }]
 export const INTAKE_CELL = { x: 0, y: 1 }
