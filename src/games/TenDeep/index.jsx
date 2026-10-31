@@ -28,6 +28,7 @@ import { nextAction, playOut } from './solver.js'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { fitSize, fitTwoCols } from './hudfit.js'
+import { vpadSize } from '../../components/vpadSize'
 
 const SIM_MS = 1000 / 60
 const DEMO_MS = 170
@@ -265,11 +266,13 @@ const paintInterior = (ctx, gs, bob) => {
     })
     if (gs.town.b === 'T' && gs.town.cand) {
         paintBench(ctx, gs)
-        ctx.fillStyle = '#0c1024'; ctx.fillRect(0, H - 24, W, 24)
+        // #1351: the footer sits at 176..200 (the rim's convention) — the old
+        // H-24 band is the party strip's, which overpainted these lines
+        ctx.fillStyle = '#0c1024'; ctx.fillRect(0, 176, W, 24)
         ctx.fillStyle = '#ffd54f'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-        ctx.fillText(`PURSE ${purse(gs)}g · ACCEPT ${createPriceFor()}g`, 128, H - 14)
+        ctx.fillText(`PURSE ${purse(gs)}g · ACCEPT ${createPriceFor()}g`, 128, 184)
         ctx.fillStyle = '#9fb4ff'
-        ctx.fillText('↑↓ PAPER · ←→ WAY · R REROLL · SPACE ACCEPT · L LEAVE', 128, H - 5)
+        ctx.fillText('↑↓ PAPER · ←→ WAY · R REROLL · SPACE ACCEPT · L LEAVE', 128, 194)
         return
     }
     ctx.textAlign = 'right'
@@ -291,11 +294,11 @@ const paintInterior = (ctx, gs, bob) => {
             ctx.font = 'bold 7px monospace'
         }
     })
-    ctx.fillStyle = '#0c1024'; ctx.fillRect(0, H - 24, W, 24)
+    ctx.fillStyle = '#0c1024'; ctx.fillRect(0, 176, W, 24)
     ctx.fillStyle = '#ffd54f'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
-    ctx.fillText(`PURSE ${purse(gs)}g · POTIONS ${gs.potions}`, 128, H - 14)
+    ctx.fillText(`PURSE ${purse(gs)}g · POTIONS ${gs.potions}`, 128, 184)
     ctx.fillStyle = '#9fb4ff'
-    ctx.fillText('↑↓ HERO · ←→ SERVICE · SPACE BUY · L LEAVE', 128, H - 5)
+    ctx.fillText('↑↓ HERO · ←→ SERVICE · SPACE BUY · L LEAVE', 128, 194)
     void b
 }
 
@@ -426,6 +429,8 @@ const TenDeepGame = () => {
         let uiSel = 0
         const evLog = []
         let shake = 0, flashHit = 0
+        // #1351: a wall bump gets a short darken beat — "wall", not "stuck"
+        let bumpFade = 0
         // presentation-only combat feedback (never in gs/stateHash): a bolt on a
         // cast, sparkles on a heal, a dissolve + XP floater on a kill.
         const fxList = []
@@ -493,7 +498,7 @@ const TenDeepGame = () => {
                 else if (e.type === 'pickup') { audioController.playTone(880, 0.09, 'square', 0.05); say('A POTION!') }
                 else if (e.type === 'spring') { audioController.playSweep(240, 640, 0.4, 'sine', 0.06); say('THE SPRING RESTORES YOUR POWER') }
                 else if (e.type === 'descend') audioController.playSweep(600, 120, 0.6, 'triangle', 0.08)
-                else if (e.type === 'bump') audioController.playTone(90, 0.05, 'square', 0.05)
+                else if (e.type === 'bump') { audioController.playTone(90, 0.05, 'square', 0.05); shake = 3; bumpFade = 12 }
                 else if (e.type === 'fled') audioController.playSweep(500, 150, 0.3, 'square', 0.06)
                 else if (e.type === 'noback') say('THERE IS NO FLIGHT FROM THE KING')
                 else if (e.type === 'empty') audioController.playTone(70, 0.06, 'triangle', 0.05)
@@ -540,6 +545,9 @@ const TenDeepGame = () => {
         }
 
         const doFrameSim = () => {
+            // #1351: the toast decays per SIM frame (60 Hz), not per 100 ms HUD
+            // sync — 150 frames is 2.5 s of screen time, not 15 s
+            if (toast > 0) toast--
             if (screenRef.current === 'attract') {
                 demoAcc += SIM_MS
                 if (demoAcc >= DEMO_MS) { demoAcc = 0; tickDemo() }
@@ -781,6 +789,11 @@ const TenDeepGame = () => {
                 ctx.fillRect(CX - 4, 100, 9, 1); ctx.fillRect(CX, 96, 1, 9)
             }
             else paintMap()
+            if (bumpFade > 0) {
+                ctx.fillStyle = `rgba(0,0,0,${(0.32 * bumpFade / 12).toFixed(3)})`
+                ctx.fillRect(-6, 0, W + 12, 200)
+                bumpFade--
+            }
             ctx.restore()
             ctx.fillStyle = '#000'; ctx.fillRect(0, 200, W, H - 200)
             // six mini panels along the foot — text is measured, never assumed
@@ -799,12 +812,15 @@ const TenDeepGame = () => {
                 ctx.fillStyle = '#e5484d'; ctx.fillRect(px + 2, 213, 34 * Math.max(0, h.hp / h.maxHp), 2)
                 ctx.fillStyle = '#224'; ctx.fillRect(px + 2, 216, 34, 2)
                 ctx.fillStyle = '#4f9dff'; ctx.fillRect(px + 2, 216, 34 * (h.mp / h.maxMp), 2)
-                const clsTag = CLASSES[h.cls].abbr + (Object.keys(CLASSES[h.cls].spells).length ? '*' : '')
-                const row = fitTwoCols('L' + h.lvl, clsTag, 17, 15, [6, 5], ctx)
+                const row = fitTwoCols('L' + h.lvl, `${h.hp}/${h.maxHp}`, 16, 17, [6, 5], ctx)
                 ctx.font = `${row.size}px monospace`
                 ctx.fillStyle = '#ffd54f'; ctx.textAlign = 'left'
                 ctx.fillText(row.left, px + 2, 221)
-                ctx.fillStyle = h.alive && Object.keys(CLASSES[h.cls].spells).length ? '#7fc4ff' : '#6b7699'
+                // #1351: HP figures where the class tag used to sit — the strip
+                // is the only party read in combat, and a newcomer must see the
+                // number, not just a bar. The class still prints in full on
+                // every town screen.
+                ctx.fillStyle = h.alive ? '#e8ecf5' : '#e05555'
                 ctx.textAlign = 'right'
                 ctx.fillText(row.right, px + 36, 221)
                 ctx.textAlign = 'left'
@@ -820,8 +836,15 @@ const TenDeepGame = () => {
             cv.style.display = inDeep && screenRef.current === 'play' ? 'block' : 'none'
             if (!inDeep) return
             const g = cv.getContext('2d')
-            const C = 5
+            // #1351: cells grow to 6 px — the map fills its box instead of
+            // floating in it, and the stairs/throne marks keep their ink
+            const C = 6
             g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height)
+            // a faint dot grid fills the box: the 19x19 field reads as a map
+            // before a single cell is inked. Uniform dots reveal no walls —
+            // the explored ink is still the only truth
+            g.fillStyle = '#182040'
+            for (let y = 0; y < SIZE; y++) for (let x = 0; x < SIZE; x++) g.fillRect(x * C + 2, y * C + 2, 2, 2)
             for (const t of gs.explored) {
                 const x = t % SIZE, y = Math.floor(t / SIZE)
                 g.fillStyle = automapShade(automapRing(x, y, gs.x, gs.y))
@@ -875,7 +898,6 @@ const TenDeepGame = () => {
             const nb = padB(gs, gs.mode === 'combat' ? pickSpell('dmg') : null)
             const ob = bActRef.current
             if (!ob || ob.label !== nb.label || ob.code !== nb.code) { bActRef.current = nb; setBAct(nb) }
-            if (toast > 0 && !pausedRef.current) toast--
         }
 
         const frame = (ts) => {
@@ -976,9 +998,17 @@ const TenDeepGame = () => {
         const resize = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
-            const sc = Math.min(r.width / W, r.height / (H + 40))
+            // #1351: on touch the pad band owns the bottom of the screen —
+            // the fixed d-pad (vpadSize's stick, the band's tallest member)
+            // left, the face buttons right. The party strip must sit above
+            // the whole band, so the letterbox reserves it and lifts the
+            // stage. Keyboard play keeps the old 40 px breathing room.
+            const touch = window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window
+            const reserve = touch ? vpadSize(r.width, r.height).stick + 24 : 40
+            const sc = Math.min(r.width / W, r.height / (H + reserve))
             holder.style.width = `${W * sc}px`
             holder.style.height = `${H * sc}px`
+            holder.style.marginBottom = touch ? `${reserve}px` : '0px'
             if (R && glWasOn) R.resize()
         }
         window.addEventListener('resize', resize)
@@ -989,6 +1019,7 @@ const TenDeepGame = () => {
             window.__deepTest = {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
+                    toast: toast > 0, bump: bumpFade > 0,
                     ease: easeOff(),
                     gl: !!R,
                     glFrames: R ? R.frameCount : 0,
@@ -1071,7 +1102,7 @@ const TenDeepGame = () => {
                     springCells: [...gs.springs].map((t) => [t % SIZE, (t - (t % SIZE)) / SIZE]),
                     throneNear: !!(gs.map && gs.map.throne && Math.hypot(gs.map.throne.x + 0.5 - gs.x, gs.map.throne.y + 0.5 - gs.y) < 7),
                     padB: padB(gs, gs.mode === 'combat' ? pickSpell('dmg') : null),
-                    automapCursor: [gs.x * 5, gs.y * 5],
+                    automapCursor: [gs.x * 6, gs.y * 6],
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
@@ -1176,9 +1207,9 @@ const TenDeepGame = () => {
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
-            <canvas ref={mapRef} data-deep-map="1" width={115} height={95}
+            <canvas ref={mapRef} data-deep-map="1" width={134} height={114}
                 className="absolute bottom-3 left-3 border border-indigo-500/40 bg-black/80 rounded opacity-90 pointer-events-none"
-                style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '143px', height: '118px' }} />
+                style={{ imageRendering: 'pixelated', display: play ? 'block' : 'none', width: '162px', height: '144px' }} />
 
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">

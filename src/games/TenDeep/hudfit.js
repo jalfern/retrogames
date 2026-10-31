@@ -15,14 +15,28 @@
 export const monoAdvance = 0.62
 export const estWidth = (size, len) => Math.ceil(size * monoAdvance * len)
 
+// Measure `text` at EXACTLY `size` px. The ctx's current font is NOT the
+// candidate — callers enter with whatever the HUD left behind (a 7 px name
+// makes a 5-char string "too wide" for a column that holds it fine at 5 px —
+// #1351 printed "40…" where "40/40" belongs). The Node estimator was already
+// size-aware; the real ctx had to be too.
+const measure = (size, text, ctx) => {
+    if (ctx && ctx.measureText) {
+        const prev = ctx.font
+        ctx.font = `${size}px monospace`
+        const w = ctx.measureText(text).width
+        ctx.font = prev
+        return w
+    }
+    return estWidth(size, text.length)
+}
+
 // Pick the largest size from `sizes` (descending) at which `text` fits `maxW`,
 // then ellipsize with '…' until it truly fits at that size.
 // Returns { size, text } — `text` is guaranteed ≤ maxW unless even the smallest
 // size cannot hold one plus the ellipsis (then it is as short as possible).
 export const fitSize = (text, maxW, sizes = [7, 6, 5], ctx = null) => {
-    const width = (s, t) => (ctx && ctx.measureText
-        ? ctx.measureText(t).width
-        : estWidth(s, t.length))
+    const width = (s, t) => measure(s, t, ctx)
     const list = [...sizes].sort((a, b) => b - a)
     let chosen = list[list.length - 1]
     for (const s of list) {
@@ -48,9 +62,7 @@ export const fitSize = (text, maxW, sizes = [7, 6, 5], ctx = null) => {
 // returns the shared largest size (so the two columns align) at which BOTH fit
 // with no collision, ellipsizing whichever side is still too long.
 export const fitTwoCols = (left, right, leftMax, rightMax, sizes = [7, 6, 5], ctx = null) => {
-    const width = (s, t) => (ctx && ctx.measureText
-        ? ctx.measureText(t).width
-        : estWidth(s, t.length))
+    const width = (s, t) => measure(s, t, ctx)
     const list = [...sizes].sort((a, b) => b - a)
     let size = list[list.length - 1]
     for (const s of list) {
