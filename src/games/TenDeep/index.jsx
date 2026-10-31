@@ -1,14 +1,18 @@
-// TEN-DEEP — the arcade shell. Everything is runtime art: a shaded
-// painter's-algorithm wireframe of the same grid the sim walks (256x224),
-// bitmap-plate monster sprites, an automap built from the explored set.
+// TEN-DEEP — the arcade shell. Everything is runtime art: the corridor is the
+// SHARED WebGL2 dungeon renderer (#1129 → #1127 stage 4: torch-lit brick,
+// fog, animated steps), and every other surface (RIM, interiors, bench,
+// combat plates, automap, HUD) is painted on a 2D layer stacked above it
+// (256x224). No WebGL2 → the original shaded wireframe painter stands in.
 // The attract demo is the Node-proven solver driving THIS state machine
 // live — tendeepcheck's witness and the demo are the same code.
 //
 // Layout: 1. projection + sprites 2. fixed-timestep shell (commands are
 // discrete; the clock only drives fades/bob) 3. input 4. DEV hook + DebugKit
-// 5. React HUD. The pixel contract the harness samples: wall immediately
-// ahead ⇒ the screen centre is wall-blue; open corridor ⇒ the centre is the
-// dark end of the hall.
+// 5. React HUD. The pixel contract the harness samples: the GL view paints
+// the corridor at cell centres (pose x+0.5, yaw = (dir−1)·π/2); a wall one
+// pace ahead puts LIT BRICK in the centre column (the torch lights what is
+// near), a clear hall leaves the centre DARK (light falls off into fog) —
+// the mirror image of the wireframe's blue-wall signal, on purpose.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -16,6 +20,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
 import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
@@ -309,15 +314,92 @@ const TenDeepGame = () => {
     useEffect(() => {
         const wrap = stageRef.current
         if (!wrap) return undefined
+        // holder div: in-flow, letterboxed exactly like the old bare canvas;
+        // the GL view sits absolute underneath, the 2D HUD layer relative on
+        // top (paint order: positioned-with-z-index beats static).
+        const holder = document.createElement('div')
+        holder.style.position = 'relative'
+        holder.className = 'block'
+        wrap.appendChild(holder)
+        const glCanvas = document.createElement('canvas')
+        glCanvas.dataset.deepGl = '1'
+        glCanvas.className = 'absolute inset-0 w-full h-full'
+        glCanvas.style.touchAction = 'none'
+        glCanvas.style.display = 'none'
+        glCanvas.width = W * 2; glCanvas.height = H * 2   // sane readback size until R.resize() lands
+        holder.appendChild(glCanvas)
         const canvas = document.createElement('canvas')
         canvas.dataset.deepView = '1'
         canvas.width = W; canvas.height = H
-        canvas.className = 'block w-full h-full'
+        canvas.className = 'block relative w-full h-full'
         canvas.style.imageRendering = 'pixelated'
         canvas.style.touchAction = 'none'
-        wrap.appendChild(canvas)
+        canvas.style.zIndex = '1'
+        holder.appendChild(canvas)
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
+
+        // --- the shared dungeon renderer (#1129), loaded on demand ----------
+        // The sim never learns rendering exists: R only ever receives poses
+        // the sim already took. No WebGL2 (or loader failure) leaves R null
+        // and the wireframe paintMap below paints exactly as before.
+        let R = null
+        let glSync = null          // last pose pushed to R { x, y, dir, floor }
+        let disposed = false
+        loadDungeonRenderer().then((DR) => {
+            if (disposed || !DR) return
+            R = DR.create(glCanvas, { dpr: Math.min(window.devicePixelRatio || 1, 2) })
+            // sizing happens in syncGl the first time the view is actually
+            // visible — a hidden canvas measures zero
+        })
+
+        const YAW = (dir) => (dir - 1) * Math.PI / 2
+        const glMaze = (map) => {
+            const cells = map.grid.slice()
+            if (map.stairs) cells[map.stairs.y * SIZE + map.stairs.x] = 5    // real steps down
+            for (const sp of map.springs) {                                    // a spring reads as water
+                const t = sp.y * SIZE + sp.x
+                if (cells[t] === 0) cells[t] = 3
+            }
+            return { w: SIZE, h: SIZE, cells }
+        }
+        const glOn = () => !!R && (screenRef.current === 'play' || screenRef.current === 'attract') && gs.mode === 'map' && !!gs.map
+        let glWasOn = false
+        const syncGl = () => {
+            if (!R) return
+            const on = glOn()
+            // become visible BEFORE measuring: a hidden canvas has no clientWidth
+            glCanvas.style.display = on ? 'block' : 'none'
+            if (on && !glWasOn) R.resize()
+            glWasOn = on
+            R.drawing = on
+            if (!on) { glSync = null; return }
+            if (glSync && glSync.floor === gs.floor && glSync.x === gs.x && glSync.y === gs.y && glSync.dir === gs.dir) return
+            // pose mismatch with no act() animation registered (run start,
+            // descend, wipe, dev setup): snap — the renderer never guesses.
+            R.setMaze(glMaze(gs.map))
+            R.snapTo(gs.x + 0.5, gs.y + 0.5, 0, YAW(gs.dir))
+            glSync = { x: gs.x, y: gs.y, dir: gs.dir, floor: gs.floor }
+        }
+        const glideGl = () => {
+            // act() moved/turned the party; the eye glides to the truth. A
+            // floor change snaps — you do not glide between deeps.
+            if (!R || !glOn()) return
+            if (!glSync || glSync.floor !== gs.floor) { syncGl(); return }
+            if (glSync.x === gs.x && glSync.y === gs.y && glSync.dir === gs.dir) return
+            R.animateTo(gs.x + 0.5, gs.y + 0.5, 0, YAW(gs.dir), gs.dir !== glSync.dir ? 190 : 250)
+            glSync = { x: gs.x, y: gs.y, dir: gs.dir, floor: gs.floor }
+        }
+        const glFrame = (dt) => {
+            if (!R) return
+            syncGl()
+            if (!glOn()) return
+            if (gs.map.throne) {
+                const d = Math.hypot(gs.map.throne.x + 0.5 - gs.x, gs.map.throne.y + 0.5 - gs.y)
+                if (d < 7) R.light(gs.map.throne.x + 0.5, gs.map.throne.y + 0.5, 0, 1.0, 0.16, 0.10, 5.0, 90)
+            }
+            R.frame(dt)
+        }
 
         let gs = makeRun()
         let raf = 0, last = 0, acc = 0, demoAcc = 0, bob = 0
@@ -426,6 +508,7 @@ const TenDeepGame = () => {
             if (bm === 'map' && gs.mode === 'map' && gs.dir === bd && (gs.x !== bx || gs.y !== by)) {
                 ease = { from: (gs.x - bx) === DX[bd] && (gs.y - by) === DY[bd] ? 1 : -1, t0: performance.now() }
             }
+            if (bm === 'map' && gs.mode === 'map' && (gs.x !== bx || gs.y !== by || gs.dir !== bd)) glideGl()
             handleEvents(gs.events.splice(0))
             // the attract demo may win or die — that is theatre, not a game over;
             // only the PLAYER's run ends the screen
@@ -670,6 +753,14 @@ const TenDeepGame = () => {
             ctx.save(); ctx.translate(sx, sy)
             if (gs.mode === 'town') { if (gs.town.b) paintInterior(ctx, gs, bob); else paintRim(ctx, gs, bob, uiSel) }
             else if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
+            else if (glOn()) {
+                // the WebGL corridor draws through from the layer below; the 2D
+                // frame keeps only the sighter over it (the party strip, automap
+                // and FX already paint opaquely over their own rows above)
+                ctx.clearRect(0, 0, W, 200)
+                ctx.fillStyle = 'rgba(255,255,255,0.35)'
+                ctx.fillRect(CX - 4, 100, 9, 1); ctx.fillRect(CX, 96, 1, 9)
+            }
             else paintMap()
             ctx.restore()
             ctx.fillStyle = '#000'; ctx.fillRect(0, 200, W, H - 200)
@@ -764,6 +855,7 @@ const TenDeepGame = () => {
                 while (acc >= SIM_MS) { doFrameSim(); acc -= SIM_MS }
             }
             paint()
+            glFrame(ft)
             syncHud()
         }
 
@@ -852,8 +944,9 @@ const TenDeepGame = () => {
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
             const sc = Math.min(r.width / W, r.height / (H + 40))
-            canvas.style.width = `${W * sc}px`
-            canvas.style.height = `${H * sc}px`
+            holder.style.width = `${W * sc}px`
+            holder.style.height = `${H * sc}px`
+            if (R && glWasOn) R.resize()
         }
         window.addEventListener('resize', resize)
         resize()
@@ -864,6 +957,14 @@ const TenDeepGame = () => {
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     ease: easeOff(),
+                    gl: !!R,
+                    glFrames: R ? R.frameCount : 0,
+                    glLag: (() => {
+                        if (!R) return 0
+                        const p = R.pose(), e = R.renderPose()
+                        return Math.hypot(p.x - e.x, p.y - e.y)
+                            + Math.abs(((p.yaw - e.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
+                    })(),
                     slide: gs.combat ? slideRemain(gs.combat.mobs.length) : 0,
                     slideX: (() => {
                         if (!gs.combat || !gs.combat.mobs.length) return null
@@ -1003,12 +1104,13 @@ const TenDeepGame = () => {
         }
 
         return () => {
+            disposed = true
             if (import.meta.env.DEV) { if (window.__deepTest) delete window.__deepTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
-            canvas.remove()
+            holder.remove()
         }
     }, [setMode])
 
