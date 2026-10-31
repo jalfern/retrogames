@@ -237,7 +237,8 @@ ok(qaIdleStage({ issues: allHeldByQa, gapsByGame: REAL_GAPS }) === null,
 // --- B. the wiring says what the protocol promises --------------------
 const warden = read('warden.sh')
 ok(/HALTED=yes/.test(warden) && warden.includes('LANES=()'), 'warden: halt zeroes the QA lanes')
-ok(warden.includes('TARGET=""') && /\[\[ "\$HALTED" == yes \]\] && TARGET=""/.test(warden), 'warden: halt suppresses the builder target')
+ok(warden.includes('TARGET=""') && /if \[\[ "\$HALTED" != yes \]\]; then/.test(warden),
+    'warden: halt suppresses the builder plan (#1258 moved the ladder into lanes.mjs; halt skips it whole)')
 ok(warden.includes('.name == "steer"') && warden.includes('$owner'), 'warden: the steer tier is in TARGET, gated on the owner')
 ok(warden.includes('jonq.mjs" sweep') && warden.includes('no sweep, no kicks'), 'warden: the sweep runs each tick, unless halted')
 ok(/halted=\$HALTED/.test(warden) && /questions=\$QWAIT/.test(warden), 'warden: the pulse line reports halted + questions')
