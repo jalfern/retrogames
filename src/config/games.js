@@ -213,6 +213,9 @@ const GravelYardGame = lazy(() => import('../games/GravelYard'))
 // Talk Me Down: the split-info bomb sim chunks with the game (#1252).
 const TalkMeDownGame = lazy(() => import('../games/TalkMeDown'))
 
+// Fire Crew: the seed, rules, look and autopilot all chunk with the game (#1254).
+const FireCrewGame = lazy(() => import('../games/FireCrew'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -1206,5 +1209,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original split-info bomb puzzle (#1252): ONE SEES THE BOMB, THE OTHER HOLDS THE MANUAL. The panel shows only facts - a serial plate, a bar of LEDs, a colored bolt, modules stamped N3 / D1 / G2 - and never a rule. The manual is a typewritten rulebook whose entries answer exactly those stamps: NEON means cut ONE wire, DIAL means set the number then SET, GLYPH means press three symbols in order. Neither seat can solve a bomb alone; between two humans there is only the couch - or the mic (V: shout "cut red" and the right wire pulses green). Solo, a CPU partner holds the manual and prints orders on the LCD rail. Wrong verbs spark: the module locks, five seconds burn off the fuse, and one of three breakers trips. Bombs get meaner - more modules, deeper rule variants, shorter fuses - and five cleared wins the SQUAD CHIEF stamp. Seeded and deterministic (seed + per-seat pads => identical hashes) so a trained model can take either seat later.',
         controls: ['Seat 1 DEFUSER - Arrows / d-pad: UP/DOWN pick a module, LEFT/RIGHT pick a wire, dial number or glyph', 'SPACE / A: the verb - cut the wire - press SET on the dial - press the glyph', 'B / PAGE: hide or show the manual rail (solo); mic V shouts: "cut red", "turn to seven", "press star", "set"', 'Seat 2 MANUAL (2P keyboard) - WASD page and line, F flags a rule: the defuser sees READ N3 on the module', 'Attract: any key or tap - LEFT/RIGHT pick 1P or 2P - SPACE starts', 'Three strikes or a zero fuse ends the run; 5 bombs = SQUAD CHIEF', '?: pause and read the squad card'],
+    },
+    {
+        path: '/fire-crew',
+        pad: { layout: 'dpad', aLabel: 'SOAK', buttons: [{ label: 'FLARE', code: 'KeyB' }], reason: 'the hose is the thumb business: arrows aim the nozzle, SOAK opens the line, FLARE punches light through the smoke; rescue and ladder ride autopilot on phones' },
+        builtBy: 'forge',
+        added: '2026-10-31',
+        visibility: 'private',
+        tapStart: false,
+        component: FireCrewGame,
+        label: 'FIRE CREW',
+        theme: 'dark',
+        description: 'An original co-op firefighting game (#1254): a night warehouse, six people trapped, and a crew that cannot see through the smoke. FIRE SPREADS CELL BY CELL, biased by a wind that shifts without warning - watch the vane or the flame front arrives from behind. FLOORS GIVE WAY: a tile that burns out its fuel opens into a hole, and routes replan themselves mid-run. The seats see DIFFERENT THINGS - the hose cuts a flashlight cone, the rescue worker has a lamp, and only the LADDER seat has eyes on the LOFT, so the one person who can shout "victim up there" is the one holding the stick. HOSE soaks and refills at the hydrant, RESCUE grabs and carries to the ambulance, LADDER raises the stick and BRACES it when a gale tries to slip it. Any seat can be human, CPU or model: solo is one firefighter and two autopilots, couch play takes three keyboards. Two minutes on the structure clock, six victims out, seeded so a replay or a trained model can take any seat later.',
+        controls: ['Seat 1 HOSE - Arrows / d-pad walk and aim, SPACE / A soaks (tank drains, stand at the hydrant to refill), B / FLARE lights a burst through the smoke', 'Seat 2 RESCUE (2P keyboard) - WASD walk, F grab a victim on your tile, F again at the ambulance; walking onto a victim grabs, walking into the ambulance hands over', 'Seat 3 LADDER (3P keyboard) - IJKL walk the truck line, U holds the stick up (and braces it in a gale), O lowers', 'Attract: any key or tap - LEFT/RIGHT size the crew 1-3, SPACE / tap sends the engine', 'Two-minute structure clock; burned floors collapse - a victim that falls is lost, three knocks drag a firefighter out for four seconds', '?: pause and read the dispatch card'],
     },
 ]

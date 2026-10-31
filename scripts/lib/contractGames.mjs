@@ -46,6 +46,7 @@ const GAMES = [
     { id: 'short-order-shout', path: '/short-order-shout' },
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
+    { id: 'fire-crew', path: '/fire-crew' },
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -95,6 +96,7 @@ const PATTERNS = {
     'short-order-shout': (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, up: i % 43 < 10, down: i % 43 >= 18 && i % 43 < 28, a: i % 19 < 2, b: i % 37 < 2 }),
     'gravel-yard': (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, up: i % 43 < 10, down: i % 43 >= 18 && i % 43 < 28, a: i % 19 < 2, b: i % 37 < 2 }),
     'talk-me-down': (i) => ({ left: i % 47 < 11, right: i % 47 >= 18 && i % 47 < 30, up: i % 31 < 7, down: i % 31 >= 12 && i % 31 < 20, a: i % 23 < 2, b: i % 53 < 2 }),
+    'fire-crew': (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 36, up: i % 43 < 10, down: i % 43 >= 16 && i % 43 < 28, a: i % 7 < 4, b: i % 97 < 3 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

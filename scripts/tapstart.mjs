@@ -56,6 +56,7 @@ const GAMES = [
     ['/dogfight', 'canvas', 'DOG FIGHT'],
     ['/paperboy', 'canvas', 'PAPERBOY'],
     ['/ten-deep', 'canvas', 'TEN-DEEP'],
+    ['/fire-crew', 'canvas', 'FIRE CREW'],
     ['/spy-hunter', 'canvas', 'SPY HUNTER'],
     ['/excitebike', 'canvas', 'EXCITEBIKE'],
     ['/mario-kart', 'canvas', 'MARIO KART'],

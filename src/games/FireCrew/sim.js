@@ -160,16 +160,15 @@ export const inLoft = (y) => y <= LOFT_Y1
 const walkable = (g, x, y, loftOK) => {
     if (x < 1 || y < 0 || x >= W - 1 || y >= H) return false
     const i = y * W + x
+    if (g.cell[i] && g.cell[i].gone) return false // a collapsed hole swallows any tile
     if (y <= LOFT_Y1) {
         if (!loftOK) return false
         if (g.tile[i] === WALL || g.tile[i] === OUT) return false
-        if (g.tile[i] === FUEL && g.cell[i] && g.cell[i].gone) return false
         return true
     }
     if (y >= 16) return true // street always safe
     const t = g.tile[i]
     if (t === WALL || t === OUT) return false
-    if (t === FUEL && g.cell[i] && g.cell[i].gone) return false
     return true
 }
 
@@ -230,6 +229,7 @@ function windBias(g, dx, dy) {
     if (d[0] === -dx && d[1] === -dy) return 0.35
     return 1
 }
+export { windBias }
 
 function spreadAndBurn(g) {
     const rng = g.rng
@@ -290,8 +290,8 @@ export function lightAt(g, x, y, seat) {
     if (cf && cf.seat === 1 && Math.abs(cf.x - x) + Math.abs(cf.y - y) <= 2) best = Math.max(best, 0.5)
     if (cf && !isDown(g, cf)) {
         const d = DIRS[cf.face]
-        if (Math.sign(x - cf.x) === d[0] && d[0] !== 0 && Math.abs(y - cf.y) <= 1) best = Math.max(best, 0.85)
-        if (Math.sign(y - cf.y) === d[1] && d[1] !== 0 && Math.abs(x - cf.x) <= 1) best = Math.max(best, 0.85)
+        if (Math.sign(x - cf.x) === d[0] && d[0] !== 0 && Math.abs(y - cf.y) <= 1 && Math.abs(x - cf.x) <= 6) best = Math.max(best, 0.85)
+        if (Math.sign(y - cf.y) === d[1] && d[1] !== 0 && Math.abs(x - cf.x) <= 1 && Math.abs(y - cf.y) <= 6) best = Math.max(best, 0.85)
     }
     if (rf && !isDown(g, rf) && Math.abs(rf.x - x) + Math.abs(rf.y - y) <= 3) best = Math.max(best, 0.8)
     if (lf && Math.abs(lf.x - x) + Math.abs(lf.y - y) <= 2) best = Math.max(best, 0.6)

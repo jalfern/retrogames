@@ -93,6 +93,7 @@ export const GAMES = [
     { id: 'short-order-shout', path: '/short-order-shout' },
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
+    { id: 'fire-crew', path: '/fire-crew' },
 ]
 const CAP = 9000
 
