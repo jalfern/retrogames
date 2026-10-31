@@ -30,6 +30,12 @@
 // ignores it; validate() accepts files with or without it, so v1 files written
 // before link pads stay valid.
 //
+// The voiceCmd channel (#1249) is metadata the same way: a file recorded with
+// spoken co-op carries a sparse `voiceCmd: [{t, said, intent|null, ok, dir?,
+// why?}]` — one entry per heard call: what was said, what the seat understood,
+// whether it obeyed. What the seat DID is slots[seat].pads on the same tick
+// clock; the raw audio is the voice section's tracks. Replay ignores it.
+//
 // Compact pads omit every false/zero field; decoding routes through normalizePad,
 // so decode(encode(p)) === normalizePad(p) for any pad — the one-pad's own
 // idempotence makes the round trip exact, no separate schema needed.
@@ -127,6 +133,11 @@ export function createRecorder(opts = {}) {
 
     const slots = Array.from({ length: seats }, () => ({ source: null, pads: [], raw: [], ping: [] }))
     const hashes = []
+    // #1249: recognized spoken calls on the same tick clock — metadata like
+    // the ping trace (replay ignores it, v1 files stay valid). One entry per
+    // call: { t, said, intent|null, ok, dir?, why? }. "What the seat did" is
+    // not repeated here: slots[1].pads already carries it, tick-aligned.
+    const voiceCmd = []
     let ticks = 0
 
     return {
@@ -146,6 +157,18 @@ export function createRecorder(opts = {}) {
             ticks++
             if (hash !== null && hash !== undefined && ticks % hashEvery === 0) hashes.push({ t: ticks, h: hash })
         },
+        addVoiceCmd(e) {
+            if (!e || !Number.isInteger(e.t) || e.t < 1) throw new Error('recorder: voiceCmd t must be a positive integer')
+            if (typeof e.said !== 'string' || !e.said) throw new Error('recorder: voiceCmd said must be the words that were said')
+            if (typeof e.ok !== 'boolean') throw new Error('recorder: voiceCmd ok must be a boolean')
+            if (!(e.intent === null || e.intent === undefined || typeof e.intent === 'string')) throw new Error('recorder: voiceCmd intent must be a string or null')
+            const last = voiceCmd[voiceCmd.length - 1]
+            if (last && e.t < last.t) throw new Error('recorder: voiceCmd ticks must not go backwards')
+            const entry = { t: e.t, said: e.said, intent: e.intent || null, ok: e.ok }
+            if (e.dir) entry.dir = String(e.dir)
+            if (e.why) entry.why = String(e.why)
+            voiceCmd.push(entry)
+        },
         finish(finalHash = null, voice = null) {
             const srcs = resolveSources()
             if (!srcs.every((s) => SLOT_KINDS.includes(s.kind))) throw new Error('recorder: unknown source kind')
@@ -163,6 +186,7 @@ export function createRecorder(opts = {}) {
                 hashes,
             }
             if (voice) rec.voice = voice
+            if (voiceCmd.length) rec.voiceCmd = voiceCmd
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
                 hashes.push({ t: ticks, h: finalHash })
             }
@@ -208,6 +232,20 @@ export function validate(rec) {
         last = x.t
     }
     if (rec.ticks > 0 && rec.hashes.length > 0 && rec.hashes[rec.hashes.length - 1].t !== rec.ticks) return 'final checkpoint must be at the last tick'
+    if (rec.voiceCmd !== undefined) {
+        // #1249 spoken-call trace: metadata like ping — v1 or v2, optional,
+        // non-decreasing ticks; intent is the parsed meaning (null = the words
+        // reached the mic but meant nothing to the seat).
+        if (!Array.isArray(rec.voiceCmd)) return 'voiceCmd must be an array'
+        let lastCt = 0
+        for (const x of rec.voiceCmd) {
+            if (!x || !Number.isInteger(x.t) || x.t < 1 || x.t > rec.ticks || x.t < lastCt) return 'voiceCmd ticks must be non-decreasing within ticks'
+            if (typeof x.said !== 'string' || !x.said) return 'voiceCmd entries must carry what was said'
+            if (typeof x.ok !== 'boolean') return 'voiceCmd entries must carry ok'
+            if (!(x.intent === null || typeof x.intent === 'string')) return 'voiceCmd intent must be a string or null'
+            lastCt = x.t
+        }
+    }
     if (rec.voice !== undefined) {
         const bv = validateVoice(rec.voice, rec.players)
         if (bv) return bv
