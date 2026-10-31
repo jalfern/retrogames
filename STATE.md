@@ -1,57 +1,46 @@
-# STATE — session 62 (2026-10-31, slot b)
+# STATE — session 63 (2026-10-31, slot a)
 
 ## Shipped this session
-**TALK ME DOWN — one sees the bomb, one holds the manual.** `d9be8bd` (PR
-#1304), prod verified (`assets/index-BaDzxMn6.js` carries it; live at
-`/retrogames/talk-me-down`), #1252 closed shipped.
+**TALK ME DOWN landed on main and is prod-verified** — `d9be8bd` (PR #1304),
+index bundle `index-BaDzxMn6.js` carries the registry entry, lazy chunk
+`index-DPnHMmMW.js` answers 200. Live: https://jalfern.com/retrogames/talk-me-down
+(private visibility until Jon promotes, #379). #1252 closed shipped; QA polish
+#1305 already filed (#1305 is its own feedback issue — no re-file needed).
+This was a warden-assigned resume (#1252): slot b's session had built and gated
+the game; the remaining rule-5 merge, prod-check and issue labels were mine.
 
-- Original split-info co-op puzzle: seat 1 (DEFUSER) owns panel + verbs, seat 2
-  (MANUAL) owns the typewritten rulebook, never the hands. NEON (cut one wire),
-  DIAL (set + SET), GLYPH (three symbols) — stamps index the rulebook; every
-  rule a printed pure function of visible facts (serial digit, LEDs, bolt, lit
-  wires). Strikes lock modules + burn fuse; 5 bombs = SQUAD CHIEF.
-- Solo: CPU manual partner prints orders on the LCD rail; 2P: WASD+F rulebook
-  seat flags `READ N3` on the panel. Voice (#1247): V mic, heard calls pulse the
-  right wire green or refuse with a why (`NO BLUE WIRE`, `MODULE LOCKED`).
-- Harness: `bombcheck` 28 gates (rules-as-printed x200 seeds, determinism,
-  strikes/lock/fuse-cut, both loss paths, quota win 50/50, SLACK at 75% fuse,
-  grammar 19 pins; fuse-tick mutant dies x2). `bombdrive` 18/18 x3 real-key
-  runs on the rebased tree. Contract + contractcheck wired.
-
-**Also tonight (parallel lanes):** SHORT ORDER SHOUT #1288 (slot a) and GRAVEL
-YARD #1303 merged; ViperPit #1309 and Ten-Deep #1302 landed while I merged.
-
-## Slot-collision story (worth keeping)
-The warden aimed BOTH builder slots at #1248. forge-claim.sh granted it to me
-because slot a's checkpoints used `FORGE (a): <sha> —` (NOT the liveness format)
-so the 90-min window looked expired — but slot a was a live process with PR
-#1288 open. I yielded (deleted my claim comment + posted why), took the ladder
-(#1252), and both games shipped. **Use the literal word `checkpoint` in
-liveness comments.**
+## The #1252 double-drive (worth keeping)
+Both builder slots ended tonight on #1252: the warden kicked ME to claim it (arbiter
+granted — session-61's last checkpoint was >90 min old), while live slot b legitimately
+resumed it via FORGE step-1b's corpse path — resumption runs no arbiter, so nothing
+could see the collision. GitHub serialized: one squash, zero damage; only noise was two
+FORGE lines on one build. Rule: at step-1b resumption, check
+`gh pr view <the game's PR> --json mergeStateStatus` first and don't start a merge loop
+if a merge is already in flight or merged. Clearing stale `[main]` pins in finished
+worktrees is safe plumbing for any lane (gh's post-merge auto-switch leaves them; a
+held `main` wedges the next merge).
 
 ## Next goal
 Game queue (oldest first): **#1254 FIRE CREW, #1259 forge-watch hardening**.
 #1141 is platform-lane. Rule-4 watch: reset — game code merged this session.
 
 ## Harness
-- `bombcheck`/`bombdrive` join the suite; talk-me-down in contractGames.
-- Drive lesson: the 100ms min-hold latch = 6 ticks, which nets ZERO on a mod-3
-  cursor — assert intermediate state while the key is down, and screenshot
-  across blink phases, never net position.
+- `scripts/forge-claim.sh` shipped WITHOUT the exec bit — bare invocations (the
+  warden prompt AND FORGE step 2 both call it bare) died with exit 126, which
+  reads like a REFUSED claim. Fixed (+x) in this PR; `bash <script>` remains
+  the fallback.
+- `bombcheck`/`bombdrive` are on main via #1304; talk-me-down wired in contractGames.
 
 ## Environment notes
-- Fresh-lane worktree: APFS-cloned node_modules served a corrupt SPA
-  ("Invalid hook call") — `rm -rf node_modules && npm ci` fixed it (clone
-  looked fine, was not).
-- `gh pr create` has no `--jq`. gh merge loop auto-switches the worktree onto
-  main after --delete-branch — re-detach at once (done).
-- Slot b worked in `~/Dev/retrogames-forge-bomb-defuse`, port 5178 (stopped).
-- Parallel lanes renamed sessions concurrently (campfire said 62, gravel said 61
-  after it); this report is 62 by main-tip precedence, not by calendar.
+- Slot a worked in `~/Dev/retrogames-forge-bomb-defuse` (resume of slot b's
+  branch); port 5173 untouched — a merge-only finish needs no dev server.
+- Fresh clones of this repo still self-heal via `rm -rf node_modules && npm ci`
+  if the SPA serves corrupt (duplicate React).
 
 ## Open questions for Jon
-- none from this session. #1286 AWAITING (qa lane); #737 still waiting-jon.
+- none from this session (games lane). #1286 sits AWAITING on the qa lane;
+  #737 still waiting-jon from earlier lanes.
 
 ## Carry-over
-- #1305 QA polish pass on TALK ME DOWN (filed this session).
-- #1287 GAUNTLET voice polish, #1266/#1275 QA follow-ups, #1141 stage 4.
+- #1305 QA polish pass on TALK ME DOWN; #1287 GAUNTLET voice polish.
+- #1266/#1275 QA follow-ups; #1141 stage 4.
