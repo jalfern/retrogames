@@ -249,3 +249,28 @@ start); link-pad phone mics are separate devices and are NOT captured (the
 host mic covers seat 0 only in net play); production has no recorder yet —
 the transport runs in prod builds today but only DEV/harness sessions save
 audio until the Plaicraft sink (#1141) lands.
+
+## Voice feedback layer (#1257)
+
+- **Mic badge** (`src/utils/voiceCapture.js`): `[data-voice-mic]` dot, top-left
+  — green `REC` while ANY voice session on the page holds the mic open, grey
+  `MIC OFF` while one exists but is declined/denied, removed when the last
+  take finalizes. Refcounted, because a page can bank two sessions (recorder +
+  online guest stream).
+- **VU bar** (`#vc-vu`): ~1.2 s of level meter right after YES — proves the
+  chosen input actually hears sound before a 30-min session dies quietly.
+  Peak level lands on `window.__voiceVu` (voicedrive pins > 0).
+- **Device pick**: the consent overlay carries a `#vc-device` select
+  (filled async from `enumerateDevices`; hidden when the list is empty);
+  the choice persists in `localStorage['retrogames:voice-device']` and every
+  later `getUserMedia` asks `deviceId.exact`, falling back to the default when
+  the saved device is gone (headset unplugged must not kill the take).
+- **Host consent pill** (Gauntlet): `voice: P2 ✓/✗` bottom-left during an
+  online race once the guest's intro/declined message lands — driven by
+  `netVoiceIn.voiceState(seat)` (voice.js). Exposed as
+  `__gauntletTest.voiceGuest()`.
+
+Gates: voicecheck +4 (voiceState truth table), voicedrive +7 (badge rec/off,
+no-badge-pending-consent, badge gone after take, VU bar + signal, picker
+present, deviceId reaches gUM). Deferred here, still open on #1257: the
+two-page `voicedrive --online` wire proof and the link-pad phone voice stream.

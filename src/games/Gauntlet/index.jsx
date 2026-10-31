@@ -98,6 +98,7 @@ const GauntletGame = () => {
         const q = new URLSearchParams(window.location.search)
         const netRole = lobbyRole(window.location.search)
         const netRelay = relayFromQuery(window.location.search)
+        let netVoiceIn = null // hoisted above netPush (#1257 pill); assigned below
         const net = {
             phase: netRole === 'host' ? 'connecting' : netRole === 'guest' ? (decodeCode(q.get('room')) ? 'connecting' : 'entry') : 'idle',
             role: netRole,
@@ -116,6 +117,9 @@ const GauntletGame = () => {
             phase: net.phase, code: net.code, role: net.role, joinHref: net.joinHref,
             info: net.desyncTick ? `tick ${net.desyncTick}` : (net.info || ''),
             seats: net.role ? seatModel(2, net.room ? net.room.slots : (net.role === 'host' ? [0] : [])) : null,
+            // #1257: the host sees whether the friend's mic is in — consent
+            // must be visible on the host, not just buried in the file.
+            voice: net.role === 'host' && netVoiceIn ? netVoiceIn.voiceState(1) : null,
         })
         if (netRole) netPush()
 
@@ -157,7 +161,7 @@ const GauntletGame = () => {
                     if (r && r.desync !== undefined) netDesync(r.desync)
                 },
                 pad: (m) => {
-                    if (m && m.k === 'v') { if (net.role === 'host') netVoiceIn.feed(m); return } // #1247 voice, not a pad
+                    if (m && m.k === 'v') { if (net.role === 'host') { const was = netVoiceIn.voiceState(1); netVoiceIn.feed(m); if (netVoiceIn.voiceState(1) !== was) netPush() } return } // #1247 voice, not a pad
                     if (net.lock) net.lock.gotPad(m.k, m.p)
                 },
             },
@@ -189,7 +193,7 @@ const GauntletGame = () => {
         // into its recording via spec.voiceExtra — plus the host's own local
         // track (contract capture, narrowed to slot 0 in net play: the phones
         // of link-pad players are separate devices, see README honest gaps).
-        const netVoiceIn = makeVoiceInbox()
+        netVoiceIn = makeVoiceInbox()
         let guestVoice = null
 
         const netVoiceSend = (m) => { try { if (net.room) net.room.send('pad', m) } catch { /* gone */ } }
@@ -1103,6 +1107,7 @@ const GauntletGame = () => {
                 restart: () => { gs = makeGame(0, 'warrior', { topDown: true }) },
                 startHero: (hk) => startPlay(hk),
                 events: () => evLog,
+                voiceGuest: () => (netVoiceIn ? netVoiceIn.voiceState(1) : null), // #1257 host view of the guest mic
                 probe: () => ({
                     tick: gs.tick, screen: screenRef.current, select: selectHero, select2: selectHero2, partnerHuman: gs.partnerHuman, seat: p2slot.kind, score: gs.score, lives: gs.lives, level: gs.level, keys: gs.keys, gold: gs.gold,
                     hash: stateHash(gs),
@@ -1216,6 +1221,18 @@ const GauntletGame = () => {
             <VirtualControls
                 visible={screen === 'play' && !paused && (netPhase === 'idle' || netPhase === 'play')}
             />
+            {/* #1257: the host's view of the friend's consent — green when the
+                guest's mic stream is in, grey when they said no. Bottom-left,
+                clear of the pad and the local mic badge. */}
+            {netPhase === 'play' && netUi.voice && (
+                <div
+                    data-voice-guest={netUi.voice}
+                    className="fixed z-[61] bottom-3 left-3 font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={{ color: netUi.voice === 'rec' ? '#38e07b' : '#8b8b98', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)' }}
+                >
+                    voice: P2 {netUi.voice === 'rec' ? '✓' : '✗'}
+                </div>
+            )}
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>
     )

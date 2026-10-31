@@ -46,6 +46,7 @@ await context.addInitScript(({ tryHw }) => {
     const orig = navigator.mediaDevices && navigator.mediaDevices.getUserMedia
         ? navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices) : null
     const gUM = async (c) => {
+        window.__lastGum = c // #1257: assert the deviceId we asked for actually arrives
         if (tryHw && orig) { try { const s = await orig(c); if (s && s.getAudioTracks().length) return s } catch { /* fall through to synth */ } }
         return synth()
     }
@@ -65,14 +66,22 @@ await page.waitForTimeout(900)
 // Real user gesture (F1 shows DebugKit; a click on REC carries activation) —
 // scripted recordStart() would (by design) skip voice entirely.
 const recBtn = page.getByRole('button', { name: 'REC', exact: true })
+// #1257: a saved device preference must reach getUserMedia as deviceId.exact.
+await page.evaluate(() => localStorage.setItem('retrogames:voice-device', 'qa-stored-mic'))
 await page.keyboard.press('F1')
 await page.waitForTimeout(300)
 await recBtn.click()
 await page.waitForTimeout(400)
 
 r.check('consent overlay appeared before any mic', await page.locator('#vc-yes').count() === 1)
+r.check('consent overlay offers a mic picker', await page.locator('#vc-device').count() === 1)
+r.check('no mic badge while consent is still pending', await page.locator('[data-voice-mic]').count() === 0)
 await page.click('#vc-yes')
 await page.waitForTimeout(300)
+r.check('green mic badge while recording', await page.locator('[data-voice-mic][data-state="rec"]').count() === 1)
+r.check('VU bar appears right after YES', await page.locator('#vc-vu').count() === 1)
+const gum = await page.evaluate(() => window.__lastGum || null)
+r.check('picked device reaches getUserMedia', !!(gum && gum.audio && gum.audio.deviceId && gum.audio.deviceId.exact), JSON.stringify(gum))
 
 // play a moment so the tick clock accrues samples beside live audio
 for (const code of ['ArrowRight', 'ArrowUp', 'Space']) {
@@ -81,8 +90,13 @@ for (const code of ['ArrowRight', 'ArrowUp', 'Space']) {
     await page.keyboard.up(code)
 }
 
+// the VU meter ran for ~1.2 s after YES — its peak is the "this mic hears
+// you" proof, pinned on window.__voiceVu by voiceCapture.
+r.check('VU meter saw signal from the fake mic', await page.evaluate(() => (window.__voiceVu || 0) > 0), await page.evaluate(() => JSON.stringify(window.__voiceVu || 0)))
+
 await recBtn.click() // stop + save (download fires; we read the parked file)
 await page.waitForTimeout(1200)
+r.check('mic badge gone when the take ends', await page.locator('[data-voice-mic]').count() === 0)
 
 const rec = await page.evaluate(async () => {
     if (window.__voiceFlush) { try { await window.__voiceFlush } catch { /* noop */ } }
@@ -104,6 +118,23 @@ if (rec) {
     const { validate } = await import('../src/utils/recording.js')
     r.check('the live-captured file validates', validate(rec) === null, validate(rec) || '')
 }
+// #1257 declined path: fresh page (consent cache is per page), NO MIC must
+// leave a grey badge so the player knows their recording will be silent.
+const page2 = await context.newPage()
+page2.setDefaultTimeout(60000)
+page2.on('pageerror', (e) => errors.push(String(e)))
+await page2.goto(URL, { waitUntil: 'load' })
+await page2.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+await page2.keyboard.press('ArrowRight')
+await page2.waitForTimeout(900)
+await page2.keyboard.press('F1')
+await page2.waitForTimeout(300)
+await page2.getByRole('button', { name: 'REC', exact: true }).click()
+await page2.waitForTimeout(400)
+await page2.click('#vc-no')
+await page2.waitForTimeout(300)
+r.check('grey mic badge after declining', await page2.locator('[data-voice-mic][data-state="off"]').count() === 1)
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 
 r.exit(browser)
