@@ -10,14 +10,18 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
 import { normalizePad } from '../../utils/onePad'
+import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
+import { makeTransport } from '../../utils/linkPeers.js'
 import {
-    createGame, stepGame, simState, drainFx, makeCpuEmitter,
+    createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
+import { createSosSync, packSnap, padMask } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
 import { playFx, dinerBar, resetDiner } from './audio.js'
 
@@ -53,6 +57,8 @@ export default function ShortOrderShout() {
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
+    const [netUi, setNetUi] = useState(null) // #1291 lobby state for the shared Lobby overlay
+    const netStartRef = useRef(null)
 
     const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
     const freshEmitters = (seats) => Array.from({ length: seats }, (_, i) => makeCpuEmitter(i))
@@ -160,11 +166,17 @@ export default function ShortOrderShout() {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             if (pausedRef.current) return
             const sc = screenRef.current
+            if (net.active) {
+                if (ev.code === 'KeyP' && net.role === 'host') { partnerHumanRef.current = !partnerHumanRef.current; pushNetUi() }
+                if (sc === 'over' && net.role === 'host' && performance.now() - overAtRef.current > 900 && (ev.code === 'Space' || ev.code === 'Enter')) onlineStart()
+                return
+            }
             if (sc === 'attract') { selectRef.current = 2; setScreen('select'); playFx({ k: 'ui' }); return }
             if (sc === 'select') {
                 if (ev.code === 'ArrowLeft') selectRef.current = Math.max(1, selectRef.current - 1)
                 if (ev.code === 'ArrowRight') selectRef.current = Math.min(4, selectRef.current + 1)
                 if (ev.code === 'KeyP') partnerHumanRef.current = !partnerHumanRef.current
+                if (ev.code === 'KeyP' && net.active && net.role === 'host') pushNetUi()
                 if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'Digit1') {
                     startPlay(seedRef.current, selectRef.current, partnerHumanRef.current)
                 }
@@ -210,6 +222,106 @@ export default function ShortOrderShout() {
         window.addEventListener('keyup', onKeyUp)
         cvs.addEventListener('pointerdown', onPointer)
 
+        // ------------------------------------------------------------ online ----
+        // #1291 lockstep kitchen on the #1039 shared lobby: ?net=host /
+        // ?net=join&room=CODE / ?relay=ws(s)://host. Every browser drives the
+        // seat its relay slot owns (the host may keep one extra keyboard seat);
+        // pads ride D ticks ahead, the whole-sim hash guards desync, and the
+        // host snapshot heals without a reload. Protocol + proofs: ./net.js,
+        // scripts/soslinkcheck.mjs.
+        const nq = new URLSearchParams(window.location.search)
+        const netRole = lobbyRole(window.location.search)
+        const relayUrl = relayFromQuery(window.location.search)
+        const net = {
+            active: !!netRole, role: netRole, slot: 0, seats: 1, partnerSeat: -1,
+            humans: [], mySeats: [], state: null, desyncFrozen: false,
+        }
+        net.sync = createSosSync({
+            send: (t, p) => { if (net.room) net.room.send(t, p) },
+            mySeats: [], watchSeats: [],
+        })
+        const pushNetUi = () => setNetUi(net.active && net.state ? { ...net.state } : null)
+
+        const netToast = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 110 }
+        const hostSnap = () => {
+            const g = gsRef.current
+            if (!g || g.done) return
+            for (const c of packSnap(JSON.stringify(snapshotGame(g)), g.tick)) net.room.send('res', c)
+        }
+        const netDesync = () => {
+            if (screenRef.current !== 'play') return
+            if (net.role === 'host') hostSnap()
+            else net.room.send('res', { e: 'req' })
+            netToast('DESYNC — RESYNCING')
+        }
+        const startNetMatch = (m) => {
+            const seats = Math.max(1, Math.min(4, (m.seats | 0) || 2))
+            net.seats = seats
+            net.partnerSeat = net.role === 'host' ? (m.partnerSeat ?? -1) : -1
+            net.humans = Array.isArray(m.humans) ? m.humans.filter((x) => x < seats) : [0]
+            net.slot = net.room.yourSlot
+            net.mySeats = net.role === 'host'
+                ? [0, ...(net.partnerSeat > 0 && net.partnerSeat < seats ? [net.partnerSeat] : [])]
+                : [net.slot]
+            seedRef.current = (m.seed >>> 0) || 1
+            gsRef.current = createGame(seedRef.current, seats)
+            emittersRef.current = freshEmitters(seats)
+            net.sync.mySeats = net.mySeats.slice()
+            net.sync.watchSeats = net.humans.slice()
+            net.sync.reset(0)
+            const hud = hudRef.current
+            hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0
+            resetDiner()
+            setScreen('play')
+            specRef.current.players = seats
+            playFx({ k: 'start' })
+        }
+        // The host opens the shift: humans own their slot seats, open seats are
+        // CPU, and the host's keyboard partner (P) gets the last seat while the
+        // room has room for one.
+        const onlineStart = () => {
+            if (!net.lobby || net.role !== 'host' || !net.room) return
+            const humans = net.room.slots.slice().sort((a, b) => a - b)
+            const wantPartner = partnerHumanRef.current && humans.length < 4
+            const seats = Math.max(1, humans.length + (wantPartner ? 1 : 0))
+            const partnerSeat = wantPartner ? seats - 1 : -1
+            net.room.setPhase('waiting') // allow a re-kick after the previous shift
+            net.lobby.start({ seed: ((seedRef.current * 1103515245 + 12345) >>> 0) || 1, seats, partnerSeat, humans })
+        }
+        netStartRef.current = onlineStart
+        if (net.active) {
+            net.lobby = createLobby({
+                slug: 'short-order-shout',
+                cap: 4,
+                relay: relayUrl,
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (st) => { net.state = st; net.slot = st.slot; pushNetUi() },
+                onStart: (m) => startNetMatch(m),
+                onLeave: () => pushNetUi(),
+                onJoin: () => pushNetUi(),
+                on: {
+                    pad: (mm) => net.sync.gotPad(mm),
+                    hs: (mm) => { const r = net.sync.gotHash(mm.k | 0, mm.h >>> 0, mm.s | 0); if (r && r.desync !== undefined) netDesync() },
+                    res: (mm) => {
+                        if (mm.e === 'req') { if (net.role === 'host') hostSnap() }
+                        else if (mm.e === 'snp') {
+                            const got = net.sync.snapInbox.push(mm)
+                            if (got && screenRef.current === 'play') {
+                                gsRef.current = restoreGame(got.snap)
+                                emittersRef.current = freshEmitters(gsRef.current.seats)
+                                netToast('RE-SYNCED TO HOST')
+                            }
+                        }
+                    },
+                },
+            })
+            net.room = net.lobby.room
+            if (net.role === 'host') net.lobby.open()
+            else net.lobby.join(nq.get('room'))
+            pushNetUi()
+        }
+
         // ---------- the loop ----------
         let raf = 0
         let last = performance.now()
@@ -239,6 +351,46 @@ export default function ShortOrderShout() {
             if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
         }
 
+        // Online frame: sample own seats D ahead, wait for every human stream,
+        // step on identical seed + pads, hash-guard the boundary. A 3 s stall
+        // means a dead friend: the host re-kicks the shift on a fresh seed.
+        const netTick = () => {
+            const g = gsRef.current
+            if (!g || g.done) return
+            const k = g.tick
+            net.sync.prune(k)
+            const ownSeat = net.role === 'host' ? 0 : net.slot
+            net.sync.pumpTo(k + net.sync.delay, (seat) => {
+                if (seat === ownSeat) return keys1 // arrows/pad drive this device's seat, whatever slot it owns
+                if (seat === net.partnerSeat && net.role === 'host') return keys2
+                return {}
+            })
+            const cpuMasks = {}
+            for (let s2 = 0; s2 < g.seats; s2++) {
+                if (net.humans.indexOf(s2) < 0) {
+                    const em = emittersRef.current[s2]
+                    cpuMasks[s2] = padMask(em ? em({ gs: g, tick: k }) : {})
+                }
+            }
+            if (!net.sync.ready(k, cpuMasks)) {
+                if (net.sync.stats().stallRun > 180 && net.role === 'host') { netToast('FRIEND LOST — RESTARTING SHIFT'); onlineStart() }
+                return
+            }
+            const pads = net.sync.assemble(k, cpuMasks)
+            stepGame(g, pads)
+            recordLiveTick(pads)
+            for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
+            dinerBar(g)
+            const hud = hudRef.current
+            if (g.score >= QUOTA && hud.lastScore < QUOTA) hud.stamp = 96
+            hud.lastScore = g.score
+            if (k > 0 && k % net.sync.hashEvery === 0) {
+                const r = net.sync.hash(k, hashState(g))
+                if (r && r.desync !== undefined) netDesync()
+            }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
+        }
+
         const attractTick = () => {
             const a = attractRef.current
             if (!a) return
@@ -259,7 +411,7 @@ export default function ShortOrderShout() {
                 steps++
                 if (!pausedRef.current && !contractHoldsLoop()) {
                     tickN++
-                    if (screenRef.current === 'play') liveTick()
+                    if (screenRef.current === 'play') (net.active ? netTick() : liveTick())
                     else if (screenRef.current === 'attract') attractTick()
                     else if (screenRef.current === 'over' || screenRef.current === 'select') attractTick()
                 }
@@ -545,9 +697,16 @@ export default function ShortOrderShout() {
             ctx.fillStyle = '#20101a'; ctx.fillRect(0, KITCHEN_Y + GRID_H * TILE, CANVAS_W, CANVAS_H - (KITCHEN_Y + GRID_H * TILE))
             ctx.font = '6px "Press Start 2P", monospace'
             ctx.fillStyle = '#8a7a8a'
-            const legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
+            let legend
+            if (net.active) {
+                const ownSeat = net.role === 'host' ? 0 : net.slot
+                legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : ' CPU'}`).join(' ')
+                if (net.room && net.room.code) ctx.fillText(`ROOM ${net.room.code}${net.sync.stats().stallRun > 8 ? ' SYNC...' : ''}`, 150, CANVAS_H - 3)
+            } else {
+                legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
+                ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
+            }
             ctx.fillText(legend, 6, CANVAS_H - 3)
-            ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
 
             // toast
             if (hud.toastT > 0 && hud.toast) {
@@ -652,6 +811,7 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), stalls: net.sync.stats() } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',
@@ -707,6 +867,16 @@ export default function ShortOrderShout() {
                 aria-label="Short Order Shout"
             />
             {paused && game && <PauseOverlay game={game} onResume={() => setPaused(false)} />}
+            {netUi && uiScreen !== 'play' && uiScreen !== 'over' && (
+                <Lobby
+                    state={netUi}
+                    title="SHORT ORDER"
+                    names={['HOST', 'COOK 2', 'COOK 3', 'COOK 4']}
+                    startHint={netUi.role === 'host' ? 'SPACE STARTS THE SHIFT (P: SEAT 2 KEYBOARD PARTNER)' : 'WAITING FOR THE HOST…'}
+                    onStart={() => netStartRef.current && netStartRef.current()}
+                    accent={{ text: 'text-pink-50', dim: 'text-pink-200/70', live: 'border-pink-300/40 text-pink-100' }}
+                />
+            )}
             <VirtualControls secondAction={{ label: 'TOSS', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
         </div>
     )
