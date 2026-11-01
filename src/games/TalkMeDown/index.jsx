@@ -22,6 +22,11 @@ import { sfx } from './audio.js'
 import * as ART from './art.js'
 
 const FIXED_DT = 1000 / 60
+// #1373: tap-to-talk is gated to touch surfaces (the #1287 lesson: phones
+// have no V key). `?touch=1` forces it so a desktop browser harness can pin
+// the pill without emulating a tablet.
+const TOUCH_UI = typeof window !== 'undefined' && !!((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints || 0) > 0)
+const URL_TOUCH = typeof window !== 'undefined' && /[?&]touch=1/.test(window.location.search)
 const ATTRACT_MSGS = [
     'ONE SEES THE BOMB',
     'THE OTHER HOLDS THE MANUAL',
@@ -37,6 +42,7 @@ export default function TalkMeDown() {
     const pausedRef = useRef(false)
     pausedRef.current = paused
     const [uiScreen, setUiScreen] = useState('attract')
+    const [micOn, setMicOn] = useState(false) // #1373: pill label mirrors the mic
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const attractRef = useRef(null)
@@ -47,6 +53,7 @@ export default function TalkMeDown() {
     const hudRef = useRef({
         shake: 0, sparks: [], banner: null, pulse: null, popT: 0, winTick: 0, boomTick: 0,
         flash: 0, zap: null, lcdFx: 0, lastOrder: null, humT: 0, beatT: 0, // #1305 juice
+        curtain: null, // #1373: BOMB n INBOUND round-transition screen
     })
     const manualHiddenRef = useRef(false)
     const voiceRef = useRef({ on: false, listen: null })
@@ -65,6 +72,7 @@ export default function TalkMeDown() {
         manualHiddenRef.current = false
         hudRef.current.pulse = null
         hudRef.current.banner = null
+        hudRef.current.curtain = null
         voiceLogRef.current = []
         setScreen('play')
         sfx.start()
@@ -146,6 +154,7 @@ export default function TalkMeDown() {
     const toggleVoice = useCallback(() => {
         const v = voiceRef.current
         v.on = !v.on
+        setMicOn(v.on) // #1373: the touch pill's label must track the mic
         if (v.on) {
             v.listen = startSpeechListen({ onPhrase: (p) => voiceCall(p), onError: () => { /* badge tells the truth */ } })
         } else if (v.listen) { v.listen.stop(); v.listen = null }
@@ -210,13 +219,21 @@ export default function TalkMeDown() {
             if (m && m.type === 'N' && !m.solved) {
                 const r = ART.moduleRect(gs.cursor.mod, gs.modules.length)
                 const n = m.wires.length
+                const span = Math.min(148, r.h - 24) // #1373: clamp to the bay
                 const wi = Math.max(0, m.wires.findIndex(w => !w.cut))
+                const top = r.y + Math.max(20, (r.h - span) / 2)
                 hud.zap = { x: r.x + 22 + wi * Math.floor((r.w - 56) / Math.max(1, n - 1)),
-                    top: r.y + Math.max(20, (r.h - 148) / 2), bot: r.y + Math.max(20, (r.h - 148) / 2) + 148, t: 14 }
+                    top: top, bot: top + span, t: 14 }
             }
             hud.banner = { text: `STRIKE! ${f.why.toUpperCase()}`, ok: false }
         }
-        if (f.k === 'clear') hud.popT = 40
+        if (f.k === 'clear') {
+            hud.popT = 40
+            // #1373: a 1 s curtain between bombs — "BOMB DOWN!" no longer
+            // flashes over the already-armed next panel; the squad breathes.
+            const gs = gsRef.current
+            if (gs && !gs.done) hud.curtain = { n: gs.bombsCleared + 1, t: 62 }
+        }
         if (f.k === 'boom') hud.boomTick = 1
         if (f.k === 'flag') hud.banner = { text: `READ RULE ${f.stamp}`, ok: true }
     }
@@ -233,20 +250,19 @@ export default function TalkMeDown() {
         const keys2 = keys2Ref.current
         const clearKeys = () => { for (const k of Object.keys(keys1)) keys1[k] = false; for (const k of Object.keys(keys2)) keys2[k] = false }
 
-        // 100 ms min-hold latch (shared shell lesson): a fast tap between two
-        // 60 Hz samples must still move the sim.
-        const MIN_MS = 100
-        const pressMin = (keys, field) => {
-            keys[field] = true
-            keys[field + '_at'] = performance.now()
-            if (keys[field + '_t']) clearTimeout(keys[field + '_t'])
-            keys[field + '_t'] = setTimeout(() => { keys[field] = false }, MIN_MS)
-        }
-        const releaseMin = (keys, field) => {
-            const heldMs = performance.now() - (keys[field + '_at'] || 0)
-            if (keys[field + '_t']) clearTimeout(keys[field + '_t'])
-            if (heldMs >= MIN_MS) keys[field] = false
-            else keys[field + '_t'] = setTimeout(() => { keys[field] = false }, MIN_MS - heldMs)
+        // #1373: a tap must guarantee ONE engine tick, not synthesise a 6-tick
+        // hold. The old MIN_MS=100 latch made every quick tap move cyclic
+        // cursors 6 steps — net ZERO at page depth 3 and wire depth 3, so a
+        // tap on the manual page flip was silently a no-op. An early release
+        // now defers the clear to the next sim sample: the tap lands 1-2
+        // engine ticks whatever the frame rate, and held keys still repeat
+        // only while physically held.
+        const pressMin = (keys, field) => { keys[field] = true; keys[field + '_rel'] = false }
+        const releaseMin = (keys, field) => { keys[field + '_rel'] = true }
+        const settleReleases = (keys) => {
+            for (const k of Object.keys(keys)) {
+                if (k.endsWith('_rel') && keys[k]) keys[k.slice(0, -4)] = false
+            }
         }
 
         const S1 = { ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Space: 'a', KeyB: 'b' }
@@ -322,7 +338,12 @@ export default function TalkMeDown() {
             }
             if (screenRef.current !== 'play' || pausedRef.current) return
             if (contractHoldsLoop()) return
-            spec.tick(padFrom(keys1Ref.current), seatsRef.current > 1 ? [padFrom(keys1Ref.current), padFrom(keys2Ref.current)] : undefined)
+            const p1 = padFrom(keys1Ref.current)
+            spec.tick(p1, seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : undefined)
+            // the tick above consumed the pads — releases waiting for their
+            // guaranteed sample can settle now (#1373)
+            settleReleases(keys1Ref.current)
+            settleReleases(keys2Ref.current)
         }
 
         const drawScene = (g, now) => {
@@ -336,7 +357,7 @@ export default function TalkMeDown() {
                 const gs = gsRef.current
                 if (gs) {
                     drawBombView(g, gs, tick)
-                    ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1)
+                    ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag)
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
@@ -360,6 +381,12 @@ export default function TalkMeDown() {
                 const a = attractRef.current
                 if (a) drawBombView(g, a, tick)
                 g.fillStyle = 'rgba(10,8,14,0.62)'; g.fillRect(0, 0, ART.W, ART.H)
+                // #1373: the GLYPH keys in the demo panel fight the title —
+                // silhouette the marquee band so the name always reads clean.
+                g.fillStyle = 'rgba(6,4,10,0.72)'
+                g.fillRect(124, 104, 372, 64)
+                g.fillStyle = '#3a1f2a'
+                g.fillRect(124, 104, 372, 1); g.fillRect(124, 167, 372, 1)
                 g.font = '24px "Press Start 2P", monospace'; g.fillStyle = '#ffd23e'
                 g.fillText('TALK ME DOWN', 150, 130)
                 g.font = '8px "Press Start 2P", monospace'; g.fillStyle = '#ff6a5e'
@@ -383,6 +410,10 @@ export default function TalkMeDown() {
                 g.font = '8px "Press Start 2P", monospace'; g.fillStyle = '#9aa0aa'
                 g.fillText('LEFT / RIGHT PICK   SPACE START', 180, 260)
                 g.fillText('V = MIC (SOLO OR 2P)', 240, 284)
+                // #1373: spell the seat-2 keyboard out on screen — nobody
+                // should have to read a README to know their other half's keys.
+                g.fillStyle = '#7dffb0'
+                g.fillText('P2 KEYS: WASD MOVE · F FLAG', 176, 308)
             }
             if (screenRef.current === 'over' && gsRef.current && gsRef.current.done) {
                 const t = Math.floor((now - overAtRef.current) / 16)
@@ -399,6 +430,35 @@ export default function TalkMeDown() {
             // HUD legend line
             g.restore()
             const gs = gsRef.current
+            // #1373: the last 10 s sink into a red vignette — pressure you feel
+            // before you read it. Screen-space (outside the shake), pulsing
+            // with the sim tick; purely cosmetic, the sim never sees it.
+            if (screenRef.current === 'play' && gs && !gs.done && Math.ceil(gs.fuse / 60) <= 10) {
+                const k = 0.20 + 0.06 * Math.sin(tick / 6) // steady pressure, gentle throb
+                const vg = g.createRadialGradient(ART.W / 2, ART.H / 2, 110, ART.W / 2, ART.H / 2, 360)
+                vg.addColorStop(0, 'rgba(24,2,2,0)')
+                vg.addColorStop(1, `rgba(24,2,2,${k.toFixed(3)})`)
+                g.fillStyle = vg
+                g.fillRect(0, 0, ART.W, ART.H)
+            }
+            // #1373: the round-transition curtain over the bomb panel.
+            if (hudRef.current.curtain) {
+                if (screenRef.current !== 'play' || !gs || gs.done) hudRef.current.curtain = null
+                else {
+                    const c = hudRef.current.curtain
+                    const a = 0.74 * Math.min(1, c.t / 16)
+                    g.fillStyle = `rgba(10,8,14,${a.toFixed(3)})`
+                    g.fillRect(ART.PANEL.x + 2, ART.PANEL.y + 2, ART.PANEL.w - 4, ART.PANEL.h - 4)
+                    const txt = `BOMB ${c.n} INBOUND`
+                    g.font = '10px "Press Start 2P", monospace'
+                    g.fillStyle = c.t % 14 < 9 ? '#ffffff' : '#ffd23e'
+                    g.fillText(txt, ART.PANEL.x + (ART.PANEL.w - txt.length * 10) / 2, ART.PANEL.y + ART.PANEL.h / 2 - 4)
+                    g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#7dffb0'
+                    const sub = 'STAND BY'
+                    g.fillText(sub, ART.PANEL.x + (ART.PANEL.w - sub.length * 7) / 2, ART.PANEL.y + ART.PANEL.h / 2 + 16)
+                    if (--c.t <= 0) hudRef.current.curtain = null
+                }
+            }
             g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#8a8f98'
             if (screenRef.current === 'play' && gs) {
                 g.fillText(`R${gs.round}  BOMBS ${gs.bombsCleared}/${QUOTA_BOMBS}  STRIKES ${gs.strikes}/${MAX_STRIKES}`, 10, ART.H - 4)
@@ -492,6 +552,7 @@ export default function TalkMeDown() {
                 hash: () => { const g = gsRef.current; return g ? hash(g) : 0 },
                 voiceLog: () => voiceLogRef.current.slice(),
                 voiceMode: () => ({ on: voiceRef.current.on, supported: speechSupported(), listening: !!(voiceRef.current.listen && voiceRef.current.listen.active) }),
+                hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0 }), // #1373
                 solveStep: () => { const g = gsRef.current; if (g && !g.done) spec.tick(solvePad(g)) },
                 rulesFor: () => Object.keys(RULEBOOK).map(k => RULEBOOK[k].map(r => ({ id: r.id, text: r.text }))),
             }
@@ -554,6 +615,23 @@ export default function TalkMeDown() {
                 style={{ imageRendering: 'pixelated', aspectRatio: `${ART.W} / ${ART.H}`, width: 'min(100vw, calc(100vh * 16 / 9))' }}
             />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'TALK ME DOWN')} onResume={() => setPaused(false)} />}
+            {/* #1373: tap-to-talk for seat 1 (#1287 pattern) — phones have no
+                V key, and the mic IS this game's co-op mechanic. Bottom-centre
+                keeps it clear of the d-pad (left) and A/PAGE (right). */}
+            {(TOUCH_UI || URL_TOUCH || micOn) && (uiScreen === 'play' || uiScreen === 'select') && !paused && (
+                <button
+                    type="button"
+                    data-voice-coop={micOn ? 'on' : 'off'}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleVoice() }}
+                    className="fixed z-[62] bottom-3 left-1/2 -translate-x-1/2 font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={micOn
+                        ? { color: '#7dffb0', borderColor: 'rgba(125,255,176,0.55)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }
+                        : { color: '#8b8b98', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }}
+                >
+                    {micOn ? 'MIC ON — SHOUT' : 'MIC · TAP'}
+                </button>
+            )}
             <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={uiScreen === 'play'} />
         </div>
     )

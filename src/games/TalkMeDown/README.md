@@ -75,6 +75,11 @@ Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
 
 ## Honest gaps
 
+- #1373 (polish pass) wired the tap-to-talk pill, the BOMB INBOUND curtain,
+  the vignette, paperclip + mic-hint page, seat-2 key drive — and fixed the
+  tap latch: it now guarantees one engine tick instead of ~6 (a quick tap used
+  to wrap cyclic cursors a multiple of 3 — the page flip was a no-op).
+  `voiceCmd` in recordings remains open below.
 - 2P requires a shared keyboard (seat 2 = WASD + F); no online lobby yet —
   `#494` remote seats are reserved plumbing like SOS (#1248).
 - Headless CI can hear nothing (no speech service): mic *delivery* is proved
