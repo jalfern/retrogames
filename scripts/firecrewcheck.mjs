@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, W, H, LOFT_Y1, LADDER_X,
-    FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS,
+    FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 
@@ -195,6 +195,82 @@ console.log('rules — water pressure arcs with the tank (#1411)')
     const noFan = mkTarget(16, 11, 50)
     spray(noFan, 45, 6)
     ok(noFan.target.heat === 100, 'no fan below half pressure', `heat ${noFan.target.heat}`)
+}
+
+console.log('rules — the ladder is mobile (#1424)')
+{
+    // all-human lab: no autopilot, so the base law is what moves the base
+    const g = setSources(makeRun(7), ['human', 'human', 'human'])
+    for (const c of g.cell) if (c) { c.burning = false; c.heat = 0; c.out = true }
+    g.wind = { dir: -1, gust: 0, next: 1e9 }
+    g.ladder = 1
+    const bx = g.ladderX
+    const rf = g.crew[1]
+    rf.x = bx; rf.y = LOFT_Y1; rf.fx = rf.x; rf.fy = rf.y // the rescue goes up
+    for (let n = 0; n < 40; n++) step(g, {}, [{ right: true }, {}, { right: true }])
+    ok(g.ladderX === bx, 'the base holds while the rescue is on the loft', `${bx} -> ${g.ladderX}`)
+    ok(inLoft(rf.y), 'the rescue is still up there', `${rf.y}`)
+    for (let n = 0; n < 60 && inLoft(rf.y); n++) step(g, {}, [{}, { down: true }, {}])
+    ok(!inLoft(rf.y), 'the rescue comes back down through the gate', `${rf.x},${rf.y}`)
+    const bx2 = g.ladderX
+    for (let n = 0; n < 60; n++) step(g, {}, [{}, {}, { right: true }])
+    ok(g.ladderX > bx2, 'the base follows seat 3 once the loft line is clear', `${bx2} -> ${g.ladderX}`)
+    ok(!!stepToward(g, g.ladderX, LOFT_Y1 + 1, g.ladderX, LOFT_Y1, true), 'the climb gate rides the base', `x=${g.ladderX}`)
+    ok(state(g).ladderX === g.ladderX, 'the state contract carries the base column')
+}
+
+console.log('rules — the ladder shaft carries water up (#1424)')
+{
+    const mkShaft = (ladder, hx) => {
+        const g = setSources(makeRun(7), ['human', 'human', 'human'])
+        for (const c of g.cell) if (c) { c.burning = false; c.heat = 0; c.out = true }
+        g.wind = { dir: -1, gust: 0, next: 1e9 }
+        g.ladderX = 20
+        g.ladder = ladder
+        const f = g.crew[0]
+        f.x = hx; f.y = 9; f.fx = hx; f.fy = 9; f.face = 0 // facing east
+        f.tank = 100
+        // seat 3 stands under the base: the follow law holds the column put
+        g.crew[2].x = 20; g.crew[2].fx = 20
+        g.cell[LOFT_Y1 * W + 20] = { fuel: 9000, heat: 100, burning: true, out: false }
+        return g
+    }
+    const soak = (g, n) => { for (let i = 0; i < n; i++) { g.crew[0].tank = 100; step(g, { a: true }) } }
+    const up = mkShaft(1, 16) // column 20 is r=4 dead ahead — the stream crosses it
+    soak(up, 12)
+    const cu = up.cell[LOFT_Y1 * W + 20]
+    ok(!cu.burning, 'the stream climbs the shaft and soaks the loft column', `heat ${cu.heat}`)
+    ok(up.doused >= 1, 'a shaft-soaked cell counts as doused', `${up.doused}`)
+    const down = mkShaft(0, 16)
+    soak(down, 12)
+    ok(down.cell[LOFT_Y1 * W + 20].burning, 'a lowered stick closes the shaft')
+    const miss = mkShaft(1, 3) // column 20 is 17 tiles east — beyond any range
+    soak(miss, 12)
+    ok(miss.cell[LOFT_Y1 * W + 20].heat === 100, 'a stream that misses the column never touches the loft')
+    // the vertical stance: standing IN the base column, aimed straight up
+    const mkVert = (ladder) => {
+        const g = mkShaft(ladder, 20)
+        g.crew[0].face = 3 // in the column, facing up
+        return g
+    }
+    const vert = mkVert(1)
+    soak(vert, 12)
+    ok(!vert.cell[LOFT_Y1 * W + 20].burning, 'a stream aimed up the base climbs the shaft', `heat ${vert.cell[LOFT_Y1 * W + 20].heat}`)
+    const vertDown = mkVert(0)
+    soak(vertDown, 12)
+    ok(vertDown.cell[LOFT_Y1 * W + 20].burning, 'the vertical shaft closes with the stick down')
+}
+
+console.log('rules — the CPU bucket brigade douses the loft (#1424)')
+{
+    const g = setSources(makeRun(7), ['cpu', 'cpu', 'cpu'])
+    for (const c of g.cell) if (c) { c.burning = false; c.heat = 0; c.out = true }
+    g.wind = { dir: -1, gust: 0, next: 1e9 }
+    g.cell[2 * W + 3] = { fuel: 9000, heat: 100, burning: true, out: false } // a lone loft fire, far from the base
+    for (const v of g.victims) if (v.loft) v.state = 'rescued' // the fire is the ladder's only reason
+    let n = 0
+    while (!g.done && n++ < 4000 && g.cell[2 * W + 3].burning) step(g, {})
+    ok(!g.cell[2 * W + 3].burning, 'the CPU douses a loft fire (the bucket brigade)', `tick ${g.tick}, heat ${g.cell[2 * W + 3].heat}`)
 }
 
 console.log('rules — the radio carries the split (#1361)')

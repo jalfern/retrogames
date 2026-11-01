@@ -446,7 +446,8 @@ export default function FireCrew() {
                     <p className="text-xs text-slate-400 leading-5">
                         SEAT 1 HOSE: ARROWS + SPACE SOAK, B FLARE<br />
                         SEAT 2 RESCUE: WASD + F GRAB · SPACE AT WRECK<br />
-                        SEAT 3 LADDER: IJKL · U RAISE &amp; BRACE · O LOWER<br />
+                        SEAT 3 LADDER: IJKL WALKS THE LADDER · U RAISE &amp; BRACE · O LOWER<br />
+                        WATER CLIMBS A RAISED LADDER — AIM THE STREAM AT ITS COLUMN<br />
                         V RADIO — SHOUT WHAT YOU SEE: "VICTIM ON THE LEFT" · "LADDER UP"<br />
                         EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER
                     </p>
