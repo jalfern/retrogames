@@ -7,9 +7,10 @@
 // autopilot (nextDigs) — the demo can never cheat with a rule the gate
 // did not certify.
 //
-// Cursor-play so one code path serves keyboard and phone: arrows/WASD
+// Cursor-play so one code path serves keyboard, mouse and phone: arrows/WASD
 // move the cursor, Space/A digs (auto-chord on a satisfied number), B/
-// Shift/⚑ flags. Tapping a cell moves the cursor there and digs it.
+// Shift/⚑ flags. A left click/tap digs the cell under it; a right click (or
+// a long-press on touch) flags it, like the original (#1353).
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
@@ -22,6 +23,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx } from './minefield.js'
 
 const SIM_MS = 1000 * FIXED_DT
+const PAD_TOP = 72 // px of fixed chrome band above the board (ARCADE / FEEDBACK)
+const HUD_H = 32 // px reserved for the mine-count/timer bar riding above the board
 const CUR = {
     l: ['ArrowLeft', 'KeyA'], r: ['ArrowRight', 'KeyD'],
     u: ['ArrowUp', 'KeyW'], d: ['ArrowDown', 'KeyS'],
@@ -62,12 +65,16 @@ const MinesweeperGame = () => {
         let toast = 0, toastMsg = ''
         let plantPending = null
         let overDelay = 0
+        let lastPadEl = null, lastPadH = 0
         const say = (m) => { toastMsg = m; toast = 100 }
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
             canvas = document.createElement('canvas')
             canvas.dataset.sweepStage = '1'
+            // the board rescales to fit any aspect — letterboxing never
+            // happens here, so the rotate prompt has nothing to say (#1353)
+            canvas.dataset.adaptive = '1'
             canvas.width = d.w * d.cell
             canvas.height = d.h * d.cell
             canvas.className = 'block'
@@ -76,6 +83,8 @@ const MinesweeperGame = () => {
             wrap.appendChild(canvas)
             ctx = canvas.getContext('2d')
             ctx.imageSmoothingEnabled = false
+            // right-click must not open the browser menu over the board
+            canvas.addEventListener('contextmenu', (e) => e.preventDefault())
             resize()
         }
 
@@ -135,7 +144,6 @@ const MinesweeperGame = () => {
                 finish(gs)
                 return
             }
-            const d = DIFFS[gs.diffIdx]
             say('SCANNING MINEFIELD...')
             paint()
             plantPending = { x, y }
@@ -148,8 +156,9 @@ const MinesweeperGame = () => {
                 plantMs = Math.round(performance.now() - t0)
                 handleEvents(gs)
                 finish(gs)
-                say(`FAIR BOARD PLANTED IN ${plantMs}ms — GUESS-FREE BY CONSTRUCTION`)
-                void d
+                // #1353: the plant timing was dev text a first-time player
+                // could not parse; the honest line teaches the mouse verbs.
+                say('CLICK TO DIG · RIGHT-CLICK TO FLAG')
             }, 30)
         }
 
@@ -303,6 +312,12 @@ const MinesweeperGame = () => {
             if (h.time) h.time.textContent = String(s.sec).padStart(3, '0')
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
+            // the pad mounts/unmounts on keyboard-vs-touch use without firing a
+            // resize — watch its presence so the board refits the moment the
+            // band appears or clears (#1353)
+            const pe = document.querySelector('[data-vc="1"]')
+            const ph = pe ? Math.round(pe.getBoundingClientRect().height) : 0
+            if (pe !== lastPadEl || ph !== lastPadH) { lastPadEl = pe; lastPadH = ph; resize() }
         }
 
         const frame = (ts) => {
@@ -362,6 +377,13 @@ const MinesweeperGame = () => {
                 actFlag(gs.cursor.x, gs.cursor.y)
             }
         }
+        // #1353: mouse and touch verbs, as in the original — left digs,
+        // right flags, and a touch long-press flags (phones have no right
+        // button). A touch therefore digs on release, so the long-press
+        // timer can cancel the dig before it lands.
+        const LONGPRESS_MS = 450
+        let lpTimer = null, lpFired = false, lpPt = null
+        const clearLongPress = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null } }
         const onPointer = (e) => {
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(0); return }
@@ -379,18 +401,51 @@ const MinesweeperGame = () => {
             const y = Math.floor((e.clientY - r.top) / r.height * gs.h)
             if (x < 0 || y < 0 || x >= gs.w || y >= gs.h) return
             gs.cursor.x = x; gs.cursor.y = y
+            if (e.pointerType === 'mouse' && e.button !== 0) {
+                if (e.button === 2) actFlag(x, y)
+                return
+            }
+            if (e.pointerType === 'touch' && gs.planted && !gs.end) {
+                clearLongPress()
+                lpFired = false
+                lpPt = { cx: e.clientX, cy: e.clientY, x, y }
+                lpTimer = setTimeout(() => { lpTimer = null; lpFired = true; actFlag(x, y) }, LONGPRESS_MS)
+                return
+            }
             actDig(x, y)
         }
+        const onPointerUp = (e) => {
+            if (!lpTimer) return
+            clearLongPress()
+            if (lpFired || !lpPt || screenRef.current !== 'play' || pausedRef.current) return
+            if (Math.hypot(e.clientX - lpPt.cx, e.clientY - lpPt.cy) > 14) return
+            actDig(lpPt.x, lpPt.y)
+        }
+        const onPointerMove = (e) => {
+            if (lpTimer && lpPt && Math.hypot(e.clientX - lpPt.cx, e.clientY - lpPt.cy) > 14) clearLongPress()
+        }
+        // the context-menu suppression lives on each canvas (buildCanvas)
         window.addEventListener('keydown', onDown)
         window.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointerup', onPointerUp)
+        window.addEventListener('pointermove', onPointerMove)
+        window.addEventListener('pointercancel', clearLongPress)
 
         const resize = () => {
             if (!canvas) return
             const r = wrap.getBoundingClientRect()
             if (!r.width || !r.height) return
-            const s = Math.min((r.width - 8) / canvas.width, (r.height - 60) / canvas.height)
+            // #1353: keep the board clear of everything that overlays it — the
+            // corner chrome up top (ARCADE / PAUSE / FEEDBACK) and the touch
+            // pad's bottom band whenever the pad is actually mounted.
+            const padEl = document.querySelector('[data-vc="1"]')
+            const padBand = padEl ? Math.round(padEl.getBoundingClientRect().height) + 8 : 72
+            if (wrap.style.paddingBottom !== `${padBand}px`) wrap.style.paddingBottom = `${padBand}px`
+            const s = Math.min((r.width - 8) / canvas.width, (r.height - PAD_TOP - HUD_H - padBand) / canvas.height)
             canvas.style.width = `${Math.max(1, Math.floor(canvas.width * s))}px`
             canvas.style.height = `${Math.max(1, Math.floor(canvas.height * s))}px`
+            const bar = hudRef.current.bar
+            if (bar) bar.style.width = canvas.style.width
         }
         window.addEventListener('resize', resize)
 
@@ -405,6 +460,7 @@ const MinesweeperGame = () => {
                     seed, opened: gs.opened, flags: gs.flags, totalMines: gs.totalMines,
                     end: gs.end, why: gs.why, cursor: { ...gs.cursor }, plantMs,
                     sec: gs.sec, w: gs.w, h: gs.h,
+                    toast: hudRef.current.toast ? hudRef.current.toast.textContent : '',
                 }) : { screen: screenRef.current, seed },
                 start: (di = 0, sd) => startPlay(di, sd === undefined ? seed : (seed = sd >>> 0, sd)),
                 move: (dx, dy) => moveCursor(dx, dy),
@@ -429,6 +485,7 @@ const MinesweeperGame = () => {
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
                 openCells: () => Array.from(gs.open).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
+                flagCells: () => Array.from(gs.flag).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
                 mineCells: () => Array.from(gs.mines).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
             }
             mountDbg({
@@ -455,6 +512,10 @@ const MinesweeperGame = () => {
             if (import.meta.env.DEV) { if (window.__sweepTest) delete window.__sweepTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointerup', onPointerUp)
+            window.removeEventListener('pointermove', onPointerMove)
+            window.removeEventListener('pointercancel', clearLongPress)
+            clearLongPress()
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             if (canvas) canvas.remove()
@@ -466,17 +527,26 @@ const MinesweeperGame = () => {
     const play = screen === 'play'
     return (
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
-            <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
-
-            <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
-                <div className="absolute top-2 left-3 right-3 flex items-center gap-3 text-white font-mono text-xs">
+            {/* #1353: the HUD lives in the stage column, directly above the
+                board, so the mine counter and timer ride the board instead of
+                hiding under the ARCADE/PAUSE corner chrome — and the stage
+                reserves the top chrome band and the pad band (resize), so no
+                overlay ever sits on top of a cell. */}
+            <div ref={stageRef} className="absolute inset-0 flex flex-col items-center justify-center" style={{ paddingTop: `${PAD_TOP}px` }}>
+                <div
+                    data-sweep-hud="1"
+                    className={`flex items-center justify-center gap-3 font-mono text-xs text-white transition-opacity duration-300 mb-1.5 ${play ? 'opacity-100' : 'opacity-0'}`}
+                    style={{ height: HUD_H }}
+                >
                     <span ref={setHud('mines')} className="text-red-400 font-bold" style={{ textShadow: '0 0 8px #f04' }}>010</span>
                     <span className="text-white/50">mines</span>
                     <span ref={setHud('diff')} className="border border-amber-300/60 text-amber-200 px-2 py-0.5 rounded bg-black/40">{DIFFS[diffIdx].name}</span>
-                    <span className="text-white/40 hidden sm:inline">zero-guess board</span>
-                    <span ref={setHud('time')} className="text-cyan-300 ml-auto" style={{ textShadow: '0 0 8px #08f' }}>000</span>
+                    <span ref={setHud('time')} className="text-cyan-300 font-bold" style={{ textShadow: '0 0 8px #08f' }}>000</span>
                 </div>
-                <div ref={setHud('toast')} className="absolute inset-x-0 top-12 text-center text-amber-100 font-mono font-bold text-sm transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
+            </div>
+
+            <div className={`absolute inset-x-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`} style={{ top: 40 }}>
+                <div ref={setHud('toast')} className="text-center text-amber-100 font-mono font-bold text-sm transition-opacity duration-500" style={{ opacity: 0, textShadow: '0 0 12px #f60' }} />
             </div>
 
             {screen === 'attract' && (

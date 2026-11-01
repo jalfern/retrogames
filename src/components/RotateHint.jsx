@@ -21,6 +21,9 @@ export default function RotateHint() {
         mq.addEventListener('change', onMq)
         const scan = () => {
             for (const c of document.querySelectorAll('canvas')) {
+                // adaptive canvases rescale to any aspect (MINESWEEPER) — the
+                // letterbox problem this hint exists for cannot occur (#1353)
+                if (c.dataset.adaptive) continue
                 if (c.width > 0 && c.height > 0 && c.width / c.height >= MIN_ASPECT) { setWide(true); return }
             }
             setWide(false)
