@@ -75,8 +75,16 @@ routes through the wind law"); restore afterwards.
 
 1. Seat 3 human movement is near-pointless (the truck is parked); consider
    a mobile ladder or wind-noise cue instead of walking.
-2. Smoke drift is a static darkness field; real advected smoke (downwind
-   thickening) would sell the wind harder.
-3. Water is a straight 3-tile cone; pressure arc by tank level, and water
-   reaching the loft through the ladder shaft, are unclaimed juice.
-4. CPU never douses the loft (no bucket brigade) — a model seat could.
+2. Water reaching the loft through the ladder shaft is unclaimed juice
+   (the pressure arc #1411 covers the ground floor only), and the CPU
+   never douses the loft (no bucket brigade) — a model seat could.
+
+Shipped since the first pass (#1411): advected smoke — a seeded field that
+drifts downwind one tile every 5/9/14 ticks (gale/calm-breeze/calm), pools
+against walls, vents at the doors, and dims crew-lamp light up to 30% while
+sources above 0.9 (fire, flares) pierce it; and the hose pressure arc —
+range 4/3/2/1 by tank level with a wide nozzle fan above 60%. `advectSmoke`
+is rng-free, so replays and the hashes are unchanged in kind.
+Mutant-on-file: `sed -i '' 's/^    advectSmoke(g)$/    void g \&\& 0/'
+src/games/FireCrew/sim.js` turns the five drift gates red; restoring the
+one line is green.

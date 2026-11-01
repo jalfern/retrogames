@@ -131,6 +131,7 @@ export function makeRun(seed) {
     const g = {
         seed: seed >>> 0, tick: 0, rng: mulberry32((seed ^ 0x9e3779b9) >>> 0),
         tile, cell, victims, wind,
+        smoke: new Float32Array(W * H), // advected density 0..1 (#1411) — seeded, never rng
         ladder: 0, // 0..1 raised fraction
         ladderNeed: false, braceHeld: false, slipT: 0,
         crew: [firefighter(1, 14, 18, 'hose'), firefighter(2, 16, 18, 'rescue'), firefighter(3, 13, 18, 'ladder')],
@@ -274,6 +275,49 @@ function doWind(g) {
     g.wind.next = g.tick + 900 + Math.floor(rng() * 600)
 }
 
+// --- smoke (#1411): the wind made visible --------------------------------------
+// Fire seeds smoke; the plume ADVECTS one tile downwind every few ticks —
+// faster in a gale, a crawl when calm — pools against walls, and vents out the
+// street doors. A gale both drives and holds the smoke (slower decay), so the
+// gust cycle reads as thickening before the fire even moves. No rng: the field
+// is a pure function of state, so replays and the autopilot stay identical.
+export const SMOKE_DIM = 0.3 // light above 0.9 (fire, flares) pierces it untouched
+
+function advectSmoke(g) {
+    const sm = g.smoke
+    const gust = g.wind.gust
+    const decay = gust === 2 ? 0.9975 : 0.995 // a gale holds the smoke in
+    for (let i = 0; i < W * H; i++) {
+        const c = g.cell[i]
+        if (c && c.burning) sm[i] = Math.min(1, sm[i] + 0.05 + gust * 0.015)
+        sm[i] *= decay
+        if (sm[i] < 0.004) sm[i] = 0
+    }
+    const period = g.wind.dir === CALM ? 14 : gust === 2 ? 5 : 9 // ticks per tile
+    if (g.tick % period) return
+    const d = g.wind.dir === CALM ? null : DIRS[g.wind.dir]
+    const out = new Float32Array(W * H)
+    for (let i = 0; i < W * H; i++) {
+        const s = sm[i]
+        if (s <= 0) continue
+        if (!d) { out[i] = Math.min(1, out[i] + s); continue }
+        const x = i % W; const y = (i / W) | 0
+        const tx = x + d[0]; const ty = y + d[1]
+        const open = tx >= 1 && tx < W - 1 && ty >= 0 && ty < 16 &&
+            g.tile[ty * W + tx] !== WALL && g.tile[ty * W + tx] !== OUT
+        if (!open) out[i] = Math.min(1, out[i] + s) // pooled against the wall (or venting out)
+        else { out[ty * W + tx] = Math.min(1, out[ty * W + tx] + s * 0.85); out[i] = Math.min(1, out[i] + s * 0.15) }
+    }
+    // the flame column keeps its core even as the plume blows off (gales pin
+    // ~0.45 at the fire, so a burning cell always reads as its own smoke source)
+    for (let i = 0; i < W * H; i++) {
+        const c = g.cell[i]
+        if (c && c.burning) out[i] = Math.max(out[i], gust === 2 ? 0.45 : 0.55)
+    }
+    g.smoke = out
+}
+export { advectSmoke }
+
 // --- visibility (the information split) --------------------------------------
 // Returns a per-tile light value 0..1 for drawing AND for the rules that ask
 // "could THIS seat see that?".
@@ -289,7 +333,12 @@ export const sweepCovers = (side, x, y) => {
 
 export function lightAt(g, x, y, seat) {
     if (y >= 16) return 1
-    const raw = lightAtRaw(g, x, y, seat)
+    let raw = lightAtRaw(g, x, y, seat)
+    // advected smoke dims the ground floor (#1411) — but light above 0.9 is a
+    // source (fire, flares) and pierces it, and the loft window rules are the
+    // ladder seat's own, so only crew lamps and ambient dark get eaten.
+    const s = g.smoke[y * W + x]
+    if (s > 0 && y > LOFT_Y1 && raw < 0.9) raw *= 1 - SMOKE_DIM * s
     // the radio's flashlight sweep: light the side called out, through the
     // same rule that finds victims and draws the darkness
     if (g.sweep && g.sweep.t > 0 && sweepCovers(g.sweep.side, x, y)) return Math.max(0.6, raw)
@@ -393,17 +442,29 @@ function crewA(g, f, pad) {
         if (pad.a && f.tank > 0 && !hydrantNear(f)) {
             f.tank = Math.max(0, f.tank - 0.55)
             const d = DIRS[f.face]
-            for (let r = 1; r <= 3; r++) {
-                const x = f.x + d[0] * r; const y = f.y + d[1] * r
-                if (inLoft(y)) continue
+            // pressure arc (#1411): the stream reaches by tank level and loses
+            // muscle along its length; near-empty is a dribble at the nozzle.
+            const range = f.tank > 90 ? 4 : f.tank > 30 ? 3 : f.tank > 12 ? 2 : 1
+            const cool = (x, y, strength) => {
+                if (x < 1 || x > W - 2 || y < 0 || y > 15 || inLoft(y)) return
                 const c = g.cell[y * W + x]
                 if (c && !c.gone && c.heat > 0) {
-                    c.heat = Math.max(0, c.heat - 16)
+                    c.heat = Math.max(0, c.heat - strength)
                     if (c.burning && c.heat <= 25) { c.burning = false; c.out = true; g.doused++ }
                     if (!c.burning && c.heat <= 5) c.out = true
                 }
             }
-            g.drops.push({ x: f.x + d[0] * 2, y: f.y + d[1] * 2, t: 8 })
+            for (let r = 1; r <= range; r++) {
+                const x = f.x + d[0] * r; const y = f.y + d[1] * r
+                cool(x, y, Math.max(6, 18 - 3 * r))
+                g.drops.push({ x, y, t: 8 })
+            }
+            // nozzle fan: full pressure sprays wide — the two cells beside the
+            // first, perpendicular to the stream (d is axis-aligned)
+            if (f.tank > 60) {
+                cool(f.x + d[0] + d[1], f.y + d[1] + d[0], 8)
+                cool(f.x + d[0] - d[1], f.y + d[1] - d[0], 8)
+            }
         }
         if (hydrantNear(f)) f.tank = Math.min(100, f.tank + 1.4)
         if (pad.b && f.battery >= 30) { f.battery -= 30; g.flares.push({ x: f.x, y: f.y, t: 220 }) }
@@ -564,6 +625,7 @@ export function step(g, pad, pads) {
     g.tick++
     spreadAndBurn(g)
     doWind(g)
+    advectSmoke(g)
     // ladder physics: gales try to slip a raised, unbraced ladder with a climber
     if (g.wind.gust === 2 && g.ladder > 0.9 && !g.braceHeld) {
         g.slipT++
@@ -664,6 +726,7 @@ export function stateHash(g) {
     }
     for (const f of g.crew) { mix(f.x); mix(f.y); mix(f.face); mix(f.knocks); mix((f.tank / 4) | 0) }
     for (const v of g.victims) { mix(v.x); mix(v.y); mix(v.state.length) }
+    for (let i = 0; i < W * H; i += 7) mix((g.smoke[i] * 200) | 0) // coarse smoke field rides the hash
     mix(g.ladder * 50); mix(g.wind.dir + 4); mix(g.wind.gust); mix(g.tick); mix(g.rescued); mix(g.lost)
     return h >>> 0
 }

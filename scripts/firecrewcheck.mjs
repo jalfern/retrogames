@@ -122,6 +122,81 @@ console.log('rules — the loft needs the ladder')
     ok(g.crew[1].y > LOFT_Y1, 'no loft without the stick')
 }
 
+console.log('rules — smoke drifts with the wind (#1411)')
+{
+    const src = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
+    ok(/advectSmoke\(g\)/.test(src), 'the step loop runs the smoke transport')
+    // lab: one tough ignition mid-room, wind pinned (dir -1 = calm; next far out)
+    const mkLab = (dir, gust) => {
+        const g = makeRun(7)
+        for (const c of g.cell) if (c) { c.burning = false; c.heat = 0; c.out = true }
+        g.wind = { dir, gust, next: 1e9 }
+        g.cell[13 * W + 5] = { fuel: 9000, heat: 100, burning: true, out: false }
+        return g
+    }
+    const gale = mkLab(0, 2) // east gale — row 13 is the clear channel (the x=24 wall has its gap there)
+    for (let n = 0; n < 120; n++) step(gale, {})
+    ok(gale.smoke[13 * W + 5] > 0.2, 'fire seeds smoke at its source', `${gale.smoke[13 * W + 5]}`)
+    ok(gale.smoke[13 * W + 9] > 0.02, 'the plume drifts downwind (east)', `${gale.smoke[13 * W + 9]}`)
+    ok(gale.smoke[13 * W + 2] < gale.smoke[13 * W + 9], 'smoke is thicker downwind than upwind')
+    ok(gale.smoke[13 * W + 25] > 0.05, 'a gale drives the plume across the whole floor', `${gale.smoke[13 * W + 25]}`)
+    const calm = mkLab(0, 0) // same seed, no gust: same direction, slower and thinner
+    for (let n = 0; n < 120; n++) step(calm, {})
+    ok(calm.smoke[13 * W + 25] < 0.02, 'without the gale the plume never reaches the far wall', `${calm.smoke[13 * W + 25]}`)
+    const holdGale = mkLab(-1, 2); const holdCalm = mkLab(-1, 0) // calm: decay only
+    holdGale.smoke[13 * W + 5] = 0.6; holdCalm.smoke[13 * W + 5] = 0.6
+    for (const c of holdGale.cell) if (c) { c.burning = false; c.heat = 0 }
+    for (const c of holdCalm.cell) if (c) { c.burning = false; c.heat = 0 }
+    for (let n = 0; n < 100; n++) { step(holdGale, {}); step(holdCalm, {}) }
+    ok(holdGale.smoke[13 * W + 5] > holdCalm.smoke[13 * W + 5], 'a gale holds the smoke in thicker', `${holdGale.smoke[13 * W + 5]} vs ${holdCalm.smoke[13 * W + 5]}`)
+    // smoke eats light — but only crew lamps and ambient, never a source
+    const dim = makeRun(7)
+    dim.smoke[12 * W + 20] = 1
+    ok(lightAt(dim, 20, 12, 0) < lightAt(makeRun(7), 20, 12, 0), 'dense smoke deepens the dark')
+    dim.crew[0].x = 20; dim.crew[0].y = 13; dim.crew[0].face = 3
+    const withSmoke = lightAt(dim, 20, 12, 0)
+    dim.smoke[12 * W + 20] = 0
+    const clear = lightAt(dim, 20, 12, 0)
+    ok(withSmoke < clear && withSmoke > 0.5, 'the hose cone still reaches through smoke, but fainter', `${withSmoke} vs ${clear}`)
+    dim.smoke[12 * W + 20] = 1
+    dim.flares.push({ x: 20, y: 12, t: 100 })
+    ok(lightAt(dim, 20, 12, 0) > 0.9, 'a flare pierces the smoke untouched')
+    dim.flares.length = 0
+    dim.sweep = { side: 'east', t: 60 } // x=20 is the east half
+    ok(lightAt(dim, 20, 12, 0) >= 0.6, 'the radio sweep floors light above the smoke')
+}
+
+console.log('rules — water pressure arcs with the tank (#1411)')
+{
+    const mkTarget = (tx, ty, tank) => {
+        const g = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+        for (const c of g.cell) if (c) { c.burning = false; c.heat = 0; c.out = true }
+        g.cell[ty * W + tx] = { fuel: 9000, heat: 100, burning: true, out: false }
+        const f = g.crew[0]
+        f.x = 15; f.y = 12; f.fx = 15; f.fy = 12; f.face = 3 // facing north up the column
+        f.tank = tank
+        g.wind = { dir: -1, gust: 0, next: 1e9 }
+        return { g, f, target: g.cell[ty * W + tx] }
+    }
+    const spray = (lab, tank, n) => { for (let i = 0; i < n; i++) { lab.f.tank = tank; step(lab.g, { a: true }) } }
+    const full = mkTarget(15, 8, 100) // dead ahead, r = 4
+    spray(full, 100, 6)
+    ok(full.target.heat < 100, 'full pressure reaches four tiles out', `heat ${full.target.heat}`)
+    const half = mkTarget(15, 8, 50)
+    spray(half, 45, 6)
+    ok(half.target.heat === 100, 'half pressure cannot reach the 4th tile', `heat ${half.target.heat}`)
+    const low = mkTarget(15, 10, 8) // r = 2
+    spray(low, 8, 6)
+    ok(low.target.heat === 100, 'a nearly empty tank dribbles short', `heat ${low.target.heat}`)
+    ok(low.target.burning, 'and the fire it cannot reach keeps burning')
+    const fan = mkTarget(16, 11, 100) // beside the column — off the straight line
+    spray(fan, 100, 6)
+    ok(fan.target.heat < 100, 'full pressure fans wide at the nozzle', `heat ${fan.target.heat}`)
+    const noFan = mkTarget(16, 11, 50)
+    spray(noFan, 45, 6)
+    ok(noFan.target.heat === 100, 'no fan below half pressure', `heat ${noFan.target.heat}`)
+}
+
 console.log('rules — the radio carries the split (#1361)')
 {
     // the grammar: exact phrasings a crew would shout, and the honesty floor
