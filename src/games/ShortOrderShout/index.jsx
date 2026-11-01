@@ -17,6 +17,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../
 import { normalizePad } from '../../utils/onePad'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { makeTransport } from '../../utils/linkPeers.js'
+import { askVoiceConsent } from '../../utils/voiceCapture'
+import { b64FromBytes, bytesFromB64 } from '../../utils/voice.js'
+import { createPttSender, createPttInbox } from './ptt.js'
 import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
@@ -200,6 +203,7 @@ export default function ShortOrderShout() {
             if (k2 && partnerHumanRef.current) keys2[k2] = true
             if (ev.code === 'KeyF' && partnerHumanRef.current) pressMin(keys2, 'a')
             if (ev.code === 'KeyG' && partnerHumanRef.current) pressMin(keys2, 'b')
+            if (ev.code === 'KeyV' && !ev.repeat && net.active) { ev.preventDefault(); talkStart() }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowUp') keys1.up = false
@@ -212,6 +216,7 @@ export default function ShortOrderShout() {
             if (k2) keys2[k2] = false
             if (ev.code === 'KeyF') releaseMin(keys2, 'a')
             if (ev.code === 'KeyG') releaseMin(keys2, 'b')
+            if (ev.code === 'KeyV' && net.active) talkEnd()
         }
         const onPointer = () => {
             const sc = screenRef.current
@@ -243,6 +248,76 @@ export default function ShortOrderShout() {
         // latency ping (#1416 gap 3): HUD-only echo RTT riding pad/hs — the
         // sim never reads it, so the sampling law and hashes are untouched.
         net.rtt = createRttTracker({ mySlot: () => (net.room ? net.room.yourSlot : -1) })
+        // PTT voice (#1416 gap 1): hold V, talk, release — one walkie-talkie
+        // message at a time. Frames ride the forwarded `pad` type as k:'v'
+        // (the #1247 framing; gotPad reads numeric k only, so lockstep never
+        // sees them — soslinkcheck proves it). Half-duplex rules, chunking and
+        // the rate budget live in ./ptt.js (pure); this is the thin DOM half.
+        net.ptt = createPttSender({ now: () => performance.now() })
+        net.voice = { stream: null, rec: null, chunks: [], mime: '', consent: null, flash: null }
+        let vctx = null
+        const playUtterance = (utt) => {
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext
+                if (!AC) return
+                if (!vctx) vctx = new AC()
+                if (vctx.state === 'suspended') vctx.resume()
+                const bytes = bytesFromB64(utt.b64)
+                vctx.decodeAudioData(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+                    .then((buf) => {
+                        const src = vctx.createBufferSource()
+                        src.buffer = buf
+                        src.connect(vctx.destination)
+                        src.start()
+                    })
+                    .catch(() => { /* undecodable take: honest silence, never a fake play */ })
+            } catch { /* no audio engine on this box */ }
+        }
+        net.vin = createPttInbox({
+            onUtterance: (u) => {
+                net.voice.flash = { seat: u.slot, t: 100 }
+                net.voice.heard = { seat: u.slot, ms: u.ms, bytes: u.b64.length }
+                playUtterance(u)
+            },
+        })
+        const talkStart = async () => {
+            if (!net.room || net.ptt.holding || net.ptt.pending) return
+            if (!net.voice.consent) net.voice.consent = await askVoiceConsent()
+            if (!net.voice.consent.consent) { if (!net.voice.stream) netToast('MIC OFF — NO VOICE'); return }
+            if (!net.voice.stream) {
+                try {
+                    net.voice.stream = await navigator.mediaDevices.getUserMedia({
+                        audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+                    })
+                } catch { net.voice.consent = { consent: false, headset: false, reason: 'mic-denied' }; netToast('MIC BLOCKED'); return }
+            }
+            if (!net.ptt.press()) return
+            try {
+                net.voice.chunks = []
+                net.voice.rec = net.voice.mime
+                    ? new MediaRecorder(net.voice.stream, { mimeType: net.voice.mime, audioBitsPerSecond: 24000 })
+                    : new MediaRecorder(net.voice.stream, { audioBitsPerSecond: 24000 })
+                net.voice.mime = net.voice.rec.mimeType || 'audio/webm'
+                net.voice.rec.ondataavailable = (e) => { if (e.data && e.data.size) net.voice.chunks.push(e.data) }
+                net.voice.rec.start(500)
+                net.voice.live = true
+            } catch { net.ptt.release('') } // recorder refused: free the walkie-talkie
+        }
+        const talkEnd = () => {
+            const rec = net.voice.rec
+            if (!net.ptt.holding) return
+            if (!rec || rec.state === 'inactive') { net.ptt.release(''); net.voice.live = false; return }
+            rec.onstop = () => {
+                net.voice.live = false
+                const blob = new Blob(net.voice.chunks, { type: net.voice.mime || 'audio/webm' })
+                net.voice.chunks = []
+                blob.arrayBuffer()
+                    .then((buf) => net.ptt.release(b64FromBytes(new Uint8Array(buf)),
+                        { mime: blob.type || net.voice.mime, headset: !!(net.voice.consent && net.voice.consent.headset) }))
+                    .catch(() => net.ptt.release(''))
+            }
+            try { rec.stop() } catch { net.ptt.release(''); net.voice.live = false }
+        }
         const pushNetUi = () => setNetUi(net.active && net.state ? { ...net.state } : null)
 
         const netToast = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 110 }
@@ -273,6 +348,8 @@ export default function ShortOrderShout() {
             net.sync.watchSeats = net.humans.slice()
             net.sync.reset(0)
             net.rtt.reset()
+            net.ptt.reset()
+            net.vin.reset()
             const hud = hudRef.current
             hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null
             net.dropped = []
@@ -306,7 +383,7 @@ export default function ShortOrderShout() {
                 onLeave: () => pushNetUi(),
                 onJoin: () => pushNetUi(),
                 on: {
-                    pad: (mm) => { net.rtt.onRecv(mm); net.sync.gotPad(mm) },
+                    pad: (mm) => { net.rtt.onRecv(mm); if (mm.k === 'v') { net.vin.feed(mm); return } net.sync.gotPad(mm) },
                     hs: (mm) => { net.rtt.onRecv(mm); const r = net.sync.gotHash(mm.k | 0, mm.h >>> 0, mm.s | 0); if (r && r.desync !== undefined) netDesync() },
                     res: (mm) => {
                         if (mm.e === 'req') { if (net.role === 'host') hostSnap() }
@@ -364,6 +441,10 @@ export default function ShortOrderShout() {
             if (!g || g.done) return
             const k = g.tick
             net.sync.prune(k)
+            // walkie-talkie drain (#1416 gap 1): spread a finished take over the
+            // wire inside the rate budget; the whole-sim sim never reads this.
+            if (net.ptt.pending) net.ptt.drain((m) => { if (net.room) net.room.send('pad', m) })
+            if (net.voice.flash && net.voice.flash.t > 0) net.voice.flash.t--
             const ownSeat = net.role === 'host' ? 0 : net.slot
             net.sync.pumpTo(k + net.sync.delay, (seat) => {
                 if (seat === ownSeat) return keys1 // arrows/pad drive this device's seat, whatever slot it owns
@@ -391,6 +472,7 @@ export default function ShortOrderShout() {
                         && net.sync.demote(gone)) {
                         net.humans = net.humans.filter((x) => x !== gone)
                         net.dropped.push(gone)
+                        net.vin.drop(gone) // a departed seat's half-spoken take is dead, never played late
                         net.sync.watchSeats = net.humans.slice()
                         const hud2 = hudRef.current
                         hud2.dropFlash = { seat: gone, t: 120 }
@@ -745,6 +827,20 @@ export default function ShortOrderShout() {
                     ctx.fillStyle = ms === undefined ? '#4a3a4a' : net.rtt.color(ms)
                     ctx.fillRect(px + 14, CANVAS_H - 8, 4, 5)
                 })
+                // PTT mic light + heard-flash (#1416 gap 1): your own live mic
+                // blinks green; a friend's finished take flashes seat + length.
+                if (net.voice.live) {
+                    ctx.fillStyle = Math.floor(performance.now() / 250) % 2 ? '#38e07b' : '#1d7a44'
+                    ctx.fillText('MIC LIVE', 150, CANVAS_H - 11)
+                } else {
+                    ctx.fillStyle = '#5a4a5a'
+                    ctx.fillText('V=TALK', 150, CANVAS_H - 11)
+                }
+                const vf = net.voice.flash
+                if (vf && vf.t > 0 && Math.floor(vf.t / 8) % 2) {
+                    ctx.fillStyle = '#7ee0ff'
+                    ctx.fillText(`P${vf.seat + 1} SPOKE ${(vf.ms / 1000).toFixed(1)}s`, 230, CANVAS_H - 11)
+                }
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
                 ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
@@ -871,7 +967,7 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
-                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips() } : null),
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',
@@ -912,6 +1008,10 @@ export default function ShortOrderShout() {
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
             clearKeys()
+            if (net.voice.stream) {
+                try { net.voice.stream.getTracks().forEach((t) => t.stop()) } catch { /* gone */ }
+                net.voice.stream = null
+            }
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__sosTest }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
