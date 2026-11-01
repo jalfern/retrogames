@@ -1,63 +1,53 @@
-# STATE — session 67 (2026-10-31, slot a)
+# STATE — session 79 (2026-10-31, slot a)
 
 ## Shipped this session
-**SHORT ORDER SHOUT is ONLINE** — stage 2 (#1291) merged as `2b2197a` (PR
-#1375): `?net=host` opens a room (shared Lobby #1039, QR included), guests
-join `?net=join&room=CODE`, each browser drives the seat its relay slot owns
-(mobile players get their own cook — VirtualControls feeds `ownSeat`, not
-always seat 1), open seats are CPU, host keeps a WASD+F/G partner seat (P).
-Live: https://jalfern.com/retrogames/short-order-shout (private until Jon
-promotes, #379 — the lobby IS proven, promote whenever).
+**LEARNED WALK demo** (#1205) → PR #1434 → prod:
+`https://jalfern.com/retrogames/demos/learnedwalk.html`. The #1204 XPBD biped
+with its hand-written controller removed: one 23→16→16→3 MLP (mirrored legs,
+707 params) trained in-repo walks **3.4 m net in 10 s** (bare rig 0.1 m),
+survives 442 vs 119 ticks, stands ~25% of ticks, topples on all seeds —
+forward-lurch, honestly framed in-page. `node scripts/learnedwalk-train.mjs`
+reproduces `learnedwalk.policy.js` byte-for-byte.
 
-## The online core (src/games/ShortOrderShout/net.js, pure)
-- Sampling law #531 kept: pads sampled ONCE, D=10 ticks ahead, batched every
-  2nd tick as 6-bit masks (~30 Hz/member); whole-sim hash every 60 ticks must
-  agree with EVERY peer.
-- Desync heals without reload: mismatch → `res:req` → host snapshot
-  (`snapshotGame/restoreGame` added to engine — additive, rng continuation via
-  closure peek, tick hashes unchanged), chunked ≤380B; dead friend (3 s stall)
-  → host re-kicks fresh seed.
-- Wire: FORWARD_TYPES only, ≤512B, ~93 msg/s worst case at 4 members.
-- `npm run soslinkcheck` (31 assertions, no browser/network): full 150 s shift
-  over the wire ends score-identical to the LOCAL reference run (2851=2851,
-  quota win, final hash equal); injection detect+heal proven; mutant (neuter
-  check()) red x3.
+## Session path
+- Warden target #1359 REFUSED (slot b live, PR #1426 — merged since). Ladder
+  → #1205: its hold ("game-queue back when #1204 ships") was fulfilled by
+  #1217, so `game-queue` label + comment, then normal claim.
+- Training evolution (all in `scripts/learnedwalk-train.mjs` header): uniform
+  CEM → every sample fell faster than zero → elite-mean CEM diluted winners →
+  (1+1)-ES + Cauchy mutation + 1/5-breathing + stagnation bounce. Stand→walk→
+  refine curriculum, fitness seeds disjoint from report eval.
+- **Knife-edge lesson (keep):** an unrounded 2.98 m policy face-planted at
+  tick 35 after JSON round-trip to 4 decimals. Trainer now searches in
+  quantized space and re-checks the *serialized* bytes vs the bare rig
+  (ship-honesty gate) before accepting. #1204's rounding-warning generalized.
+- `npm run learnedwalkcheck` = 30 gates, 30/30; mirror mutant
+  (`hipR: a[0]*CAP`→`hipR: 0`) reddens six gates, demonstrated + restored.
+- Drive-by: `creditscheck` DEMOS list drifted (deepglass/stickwalk/learnedwalk
+  missing) — fixed; now 152/153, the one red is pre-existing reef index-card
+  staleness ([902] vs page [1050,1093]) left for its lane.
 
-## Harness lessons (worth keeping)
-- The in-memory relay in a Node harness must be fed a VIRTUAL clock — the real
-  relay guards a 240 msg/REAL-second window, and a synchronous loop blows
-  through it at tick ~240 and everything after silently refuses (#1290 sibling
-  lesson: a refused message is invisible unless you count refusals).
-- A CPU "human" over a wire must be a RECORDED local pad stream, not a live
-  emitter behind the D-delay: live emitters mis-time their own landing checks
-  and crawl (0 served); recorded thumbs replay the determinism law exactly —
-  online result equals local reference run by construction.
-- `assemble()` strict-equality bug (`m === undefined` vs null-initialised)
-  silently zeroed every remote pad — caught at tick 60 by the boundary hash.
-- Never `git add -A` blindly: a debug script (`scripts/_dbg2.mjs`) rode the
-  checkpoint commit to main; removal PR follows immediately.
+## Rule-4 honest count
+Game/demo code merged: PR #1434 (`public/demos/learnedwalk.*`). Not idle.
 
-## Claim notes (#1258)
-Warden assigned #1290; claim REFUSED (slot b holds it, comment 10 min old) —
-normal ladder → #1291 claimed and shipped. Slot b's mini-queue corpse untouched.
+## Notes for the next lane
+- QA polish-pass issue #1435 filed for learnedwalk (label `feedback`) — QA lane only
+  (2026-10-19 decision).
+- reef index card in `public/demos/index.html` still says issues [902]; page
+  says [1050,1093] — creditscheck's only red. One-line fix for whoever's near.
+- `game-queue` now EMPTY again; flagship README gaps all CLOSED (verified this
+  session via `scripts/lib/idle.mjs`). Next kick may be idle-legal unless Jon
+  or QA files items.
+- #1421 and #1404 AWAITING (deadline 2026-11-03) — never wait on them; their
+  defaults already match observed behavior.
 
-## Next goal
-Game queue is now empty of unclaimed games (#1291 was the last; #1299/#1354
-are platform-lane). Expect the flagship polish stage (#841) next session —
-derive the pick with `scripts/lib/idle.mjs`, not memory.
+## Environment
+Main checkout `~/Dev/retrogames` detached at origin/main, clean (STATE.md
+commit rode this PR). Slot-a worktree `~/Dev/retrogames-forge-learned-walk`
+kept at detached origin/main after merge. Dev server on **5173** stopped at
+session end; other lanes' 5174/5176 untouched. Trainer + recorder live in the
+repo; nothing else in /tmp is load-bearing except this STATE copy.
 
-## Harness
-soslinkcheck added (npm alias); soscheck still 36/0; contractcheck unchanged.
-
-## Environment notes
-Slot a worked in ~/Dev/retrogames-forge-sos-lobby (node_modules symlink), port
-5173; dev server left running at session end — reclaim or kill it next session.
-
-## Open questions for Jon
-- none from this session (games lane). #1286 AWAITING on qa lane; #737 older.
-
-## Carry-over
-- #1362 TALK ME DOWN contractcheck red at main (QA lane first).
-- #1365 RALLY polish; #1361 FIRE CREW polish; #1305 TALK ME DOWN polish;
-  #1287 GAUNTLET voice polish; #1266/#1275 QA follow-ups; #1141 stage 4.
-- SOS voice/PTT filed on the SOS QA polish issue (this session).
+## Open questions
+None filed this session (no taste/priority/hard-to-undo items; #1404/#1421
+cover empty-board + rule-4 posture with defaults already in force).
