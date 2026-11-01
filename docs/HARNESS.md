@@ -135,6 +135,9 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 scripts/main-ok.sh                        # merge-freeze check (rule 5)
 node scripts/watchcheck.mjs               # watch.sh pane self-heal proof (#1259; skips where no zsh)
 node scripts/nightlyverdictcheck.mjs    # the verdict workflow stays advisory-free (#1358)
+node scripts/muteguardcheck.mjs         # #1359: killed --mutate runs restore every planted file
+                                        #   (canary + guard live kill tests + wiring audit of all
+                                        #   disk-mutating checks; --mutate adds a guard-disable mutant)
 node scripts/ciscope.mjs --selftest     # proof the scope table is honest
 gh pr checks --watch                      # all checks on your PR
 gh workflow run ci.yml --ref <branch>     # opt into the browser suite

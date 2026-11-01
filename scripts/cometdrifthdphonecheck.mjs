@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const SHARD = resolve(HERE, '../src/games/CometDriftHD/index.jsx')
@@ -38,12 +39,12 @@ let classifymut = false
 if (args.includes('--mutate-classify')) {
     const src = readFileSync(SHARD, 'utf8')
     if (!src.includes(CLS)) { console.error('MUTATE_CLASSIFY: classification line not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SHARD, src.replace(CLS, CLSMUT))
+    plant(SHARD, src.replace(CLS, CLSMUT))
     classifymut = true
     console.log('  ..    mutated: backend always claims webgpu — the fallback gates MUST report FAILs')
     process.on('exit', () => {
         if (classifymut) {
-            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(CLSMUT, CLS))
+            pull(SHARD)
             console.log('  ..    classification mutation restored')
         }
     })

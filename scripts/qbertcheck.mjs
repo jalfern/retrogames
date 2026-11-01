@@ -22,6 +22,7 @@ import { Report } from './lib/harness.mjs'
 import { MESSAGES, PRESS } from '../src/games/QBert/attract.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const r = new Report('qbertcheck')
 r.info('boot', 'sim.js + planner.js imported in Node, zero DOM, zero Math.random')
@@ -907,11 +908,11 @@ if (process.argv.includes('--mutate')) {
     for (const [name, file, from, to] of MUTANTS) {
         const orig = readFileSync(file, 'utf8')
         if (!orig.includes(from)) { r.check(`mutant anchor: ${name}`, false, file); continue }
-        writeFileSync(file, orig.replace(from, to))
+        plant(file, orig.replace(from, to))
         const res = spawnSync(process.execPath, [ATTRACT.CHILD], { encoding: 'utf8' })
         if (res.status !== 0) { died++; r.check(`mutant dies: ${name}`, true) }
         else r.check(`mutant dies: ${name}`, false, 'child passed despite the bug')
-        writeFileSync(file, orig)
+        pull(file)
     }
     r.check(`all ${MUTANTS.length} attract mutants die`, died === MUTANTS.length, `${died}/${MUTANTS.length}`)
 }

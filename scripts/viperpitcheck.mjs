@@ -16,7 +16,7 @@
 //   npm run viperpitcheck -- --mutate  # prove red
 //   needs `npm run dev` for Part B (VIPERPIT_URL to point elsewhere)
 
-import { writeFileSync, unlinkSync } from 'node:fs'
+import { plantNew, pull } from './lib/mutateguard.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { launch, requireDevServer, relayNoise } from './lib/harness.mjs'
@@ -44,7 +44,7 @@ if (MUT) {
             'if (m.juggle && airborne && def.juggled >= (globalThis.__VIPER_NOLOCK__ ? 99 : 1)) {')
     ok(mutated.includes('__VIPER_NOGUARD__'), 'mutate: guard gate line found to patch')
     ok(mutated.includes('__VIPER_NOLOCK__'), 'mutate: juggle lock gate line found to patch')
-    writeFileSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
+    plantNew(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
 const e = await import(bust(ENG_PATH))
@@ -318,7 +318,7 @@ if (MUT) {
     for (let i = 0; i < 12; i++) { m.fighters[1].x = m.fighters[0].x + 1.2; if (m.fighters[1].y < 0.8) m.fighters[1].y = 0.8; e.step(m, [P(), P()]) }
     ok(mutJuggle >= 8 && hp - m.fighters[1].hp >= 8, `MUTANT check: juggle cap removed → unlimited air juggles (${mutJuggle} then ${hp - m.fighters[1].hp})`)
     globalThis.__VIPER_NOLOCK__ = false
-    unlinkSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
+    pull(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
 
 // ---- #1106 audio wiring gate ---------------------------------------------------------
@@ -720,13 +720,13 @@ if (MUT) {
     ok(!/shatterFx\[e\.by\] = SHATTER_FRAMES/.test(mutBrk), 'mutant: stripped break flash fails the gate (harness bites)')
     const MUT = path.join(HERE, '../src/games/ViperPit/.render-mut-guardfx.mjs')
     try {
-        fs.writeFileSync(MUT, rsrc.replace('spread: p * 1.7', 'spread: 0').replace('Math.sin(Math.PI * p) * 0.85', '0'))
+        plantNew(MUT, rsrc.replace('spread: p * 1.7', 'spread: 0').replace('Math.sin(Math.PI * p) * 0.85', '0'))
         const mm = await import(bust('../src/games/ViperPit/.render-mut-guardfx.mjs'))
         const mSpread = [1, 0.75, 0.5, 0.25, 0].map(mm.guardShatter)
         const mShim = [1, 0.75, 0.5, 0.25, 0].map(mm.guardShimmer)
         ok(!(mSpread.every((s, i) => i === 0 || s.spread > mSpread[i - 1].spread)), 'mutant: frozen shard spread fails the fly-apart pin (harness bites)')
         ok(!(mShim[2].a > 0.5), 'mutant: dead shimmer alpha fails the ramp pin (harness bites)')
-    } finally { fs.unlinkSync(MUT) }
+    } finally { pull(MUT) }
 }
 
 // ---- #1106 select-screen gate -----------------------------------------------------

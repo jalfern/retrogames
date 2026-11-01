@@ -20,6 +20,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const MODULES = [
     { label: 'PONG', file: 'src/games/Pong/attract.js', import: '../src/games/Pong/attract.js' },
@@ -434,11 +435,11 @@ async function auditReact({ label, jsx: jsxPath, mf, import: spec, slot, wrap, l
         for (const [name, file, from, to] of mutants) {
             const orig = readFileSync(file, 'utf8')
             if (!orig.includes(from)) { ok(false, `${label} anchor: ${name}`, `missing: ${from}`); continue }
-            writeFileSync(file, orig.replace(from, to))
+            plant(file, orig.replace(from, to))
             const res = spawnSync(process.execPath, ['scripts/attractcheck.mjs'], { encoding: 'utf8' })
             if (res.status !== 0) { died++; ok(true, `${label} mutant dies: ${name}`) }
             else { ok(false, `${label} mutant dies: ${name}`, 'child passed despite the bug') }
-            writeFileSync(file, orig)
+            pull(file)
         }
         ok(died === mutants.length, `${label}: all ${mutants.length} attract mutants die`, `${died}/${mutants.length}`)
     }
@@ -456,11 +457,11 @@ async function run() {
             for (const [name, from, to] of MUTANTS) {
                 const orig = readFileSync(file, 'utf8')
                 if (!orig.includes(from)) { ok(false, `${label} anchor: ${name}`, `missing: ${from}`); continue }
-                writeFileSync(file, orig.replace(from, to))
+                plant(file, orig.replace(from, to))
                 const res = spawnSync(process.execPath, ['scripts/attractcheck.mjs'], { encoding: 'utf8' })
                 if (res.status !== 0) { died++; ok(true, `${label} mutant dies: ${name}`) }
                 else { ok(false, `${label} mutant dies: ${name}`, 'child passed despite the bug') }
-                writeFileSync(file, orig)
+                pull(file)
             }
             ok(died === MUTANTS.length, `${label}: all ${MUTANTS.length} attract mutants die`, `${died}/${MUTANTS.length}`)
         }

@@ -13,6 +13,7 @@
 // must go RED (and restore the file whatever happens).
 
 import { readFileSync, writeFileSync } from 'node:fs'
+import { plant, pull } from './lib/mutateguard.mjs'
 import { inflateSync } from 'node:zlib'
 import { deflateSync } from 'node:zlib'
 import { REFERENCES, bestShapeDistance, normalize, resample, shapeDistance } from '../src/games/CometDrift/reference.js'
@@ -1213,12 +1214,12 @@ if (process.argv.includes('--mutate')) {
             else console.log(`  MUTANT SURVIVED — ${label}: the #534 selector gate is BLIND`)
         }
         try {
-            writeFileSync(SELJS, selSrc
+            plant(SELJS, selSrc
                 .replace('const off = Math.round(88 * hs)', 'const off = 0')
                 .replace('const hw = Math.max(1, Math.round(32 * hs))', 'const hw = Math.max(1, Math.round(6 * hs))')
                 .replace('const hh = Math.max(1, Math.round(20 * hs))', 'const hh = Math.max(1, Math.round(6 * hs))'))
             await died('the chevrons shrink onto the centre (no thumb target, no start zone)', async () => selectorGate(await loadSelector(Date.now())))
-        } finally { writeFileSync(SELJS, selSrc) }
+        } finally { pull(SELJS) }
     }
 
     // break the checkpoint gate in sim.js and demand the shortcut probe above
@@ -1238,7 +1239,7 @@ if (process.argv.includes('--mutate')) {
         return P.lap
     }
     try {
-        writeFileSync(path, src.replace('if (crossed && k.cp === (1 << CHECKPOINTS.length) - 1) {', 'if (crossed) {'))
+        plant(path, src.replace('if (crossed && k.cp === (1 << CHECKPOINTS.length) - 1) {', 'if (crossed) {'))
         const lap = await shortcut()
         if (lap > 0) {
             console.log('  MUTANT DIED — with the gate removed the infield cut banks a lap (lap=%d): the gate is load-bearing and this file went RED on it, by design', lap)
@@ -1247,7 +1248,7 @@ if (process.argv.includes('--mutate')) {
             console.log('  MUTANT SURVIVED — removing the gate changed nothing: cometcheck is BLIND')
         }
     } finally {
-        writeFileSync(path, src)
+        pull(path)
     }
 
     // #518 mutant: kill the slope term and the downhill/uphill proof above
@@ -1272,7 +1273,7 @@ if (process.argv.includes('--mutate')) {
         return runAt(dn) - runAt(up)
     }
     try {
-        writeFileSync(path, src.replace('slopeK: 0.42,', 'slopeK: 0,'))
+        plant(path, src.replace('slopeK: 0.42,', 'slopeK: 0,'))
         const gap = await slopeProbe()
         if (gap < 0.6) {
             console.log(`  MUTANT DIED — with slopeK=0 downhill and uphill match again (gap ${gap.toFixed(2)}): the #518 gravity gate is load-bearing`)
@@ -1281,12 +1282,12 @@ if (process.argv.includes('--mutate')) {
             console.log('  MUTANT SURVIVED — removing slopeK changed nothing: the gravity gate is BLIND')
         }
     } finally {
-        writeFileSync(path, src)
+        pull(path)
     }
 
     // #426 mutant: silence the tier announcements and the announce gate dies.
     try {
-        writeFileSync(path, src.replace("if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })", ''))
+        plant(path, src.replace("if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })", ''))
         const announceProbe = async () => {
             const mm = await loadSim()
             selectCourse('sandbank')
@@ -1306,12 +1307,12 @@ if (process.argv.includes('--mutate')) {
             console.log(`  MUTANT SURVIVED — ${got} tier events without the push: the announce gate is BLIND`)
         }
     } finally {
-        writeFileSync(path, src)
+        pull(path)
     }
 
     // #478 mutant: restore the time-based accrual and the straight gate must die.
     try {
-        writeFileSync(path, src.replace('k.charge = k.charge < 0 ? bendW : k.charge + bendW', 'k.charge = Math.max(k.charge, k.driftT)'))
+        plant(path, src.replace('k.charge = k.charge < 0 ? bendW : k.charge + bendW', 'k.charge = Math.max(k.charge, k.driftT)'))
         const straightProbe = async () => {
             const mm = await loadSim()
             selectCourse('gulch')
@@ -1346,12 +1347,12 @@ if (process.argv.includes('--mutate')) {
             console.log(`  MUTANT SURVIVED — old accrual banked only ${pr.maxC.toFixed(1)} on the straight: the #478 gate is BLIND`)
         }
     } finally {
-        writeFileSync(path, src)
+        pull(path)
     }
 
     // #426 mutant: brake lights never light and the brake-read gate must go blind.
     try {
-        writeFileSync(path, src.replace('k.braking = brk > 0 ? 1 : 0', 'k.braking = 0'))
+        plant(path, src.replace('k.braking = brk > 0 ? 1 : 0', 'k.braking = 0'))
         const brakeProbe = async () => {
             const mm = await loadSim()
             selectCourse('gulch')
@@ -1371,7 +1372,7 @@ if (process.argv.includes('--mutate')) {
             console.log(`  MUTANT SURVIVED — ${lit} braking ticks with the term pinned off: the brake-read gate is BLIND`)
         }
     } finally {
-        writeFileSync(path, src)
+        pull(path)
     }
 
     // #440 mutants: the drift-authority gate is load-bearing. Re-plant each
@@ -1403,25 +1404,25 @@ if (process.argv.includes('--mutate')) {
     }
     // cap removed → the straight spin returns
     try {
-        writeFileSync(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 100,'))
+        plant(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 100,'))
         const q = (await headingMut('straight', 33)).maxoff
         if (q >= 90) { console.log(`  MUTANT DIED — with the yaw cap removed a straight held drift spins again (Δ${q.toFixed(0)}°): the #440 cap gate is load-bearing`); R.fail++ }
         else console.log(`  MUTANT SURVIVED — cap removal still carves ${q.toFixed(0)}°: the cap gate is BLIND`)
-    } finally { writeFileSync(path, src) }
+    } finally { pull(path) }
     // decay removed → a held drift stops straightening (late yaw = early yaw)
     try {
-        writeFileSync(path, src.replace('driftDecayT: 90,', 'driftDecayT: 1e9,'))
+        plant(path, src.replace('driftDecayT: 90,', 'driftDecayT: 1e9,'))
         const s = await headingMut('straight', 165)
         if (s.late >= s.early * 0.6) { console.log(`  MUTANT DIED — without authority decay a held drift never straightens (early ${s.early.toFixed(0)}° late ${s.late.toFixed(0)}°): the #440 decay gate is load-bearing`); R.fail++ }
         else console.log(`  MUTANT SURVIVED — decay removal still straightens (early ${s.early.toFixed(0)}° late ${s.late.toFixed(0)}°): the decay gate is BLIND`)
-    } finally { writeFileSync(path, src) }
+    } finally { pull(path) }
     // cap tightened to zero → the drift can no longer carve at all
     try {
-        writeFileSync(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 0.0005,'))
+        plant(path, src.replace('driftYawCap: 0.03,', 'driftYawCap: 0.0005,'))
         const cv = (await headingMut('straight', 33)).maxoff
         if (cv < 10) { console.log(`  MUTANT DIED — an over-tight cap neuters the drift (Δ${cv.toFixed(0)}° carve): the #440 carve floor is load-bearing`); R.fail++ }
         else console.log(`  MUTANT SURVIVED — over-tight cap still carves Δ${cv.toFixed(0)}°: the carve floor is BLIND`)
-    } finally { writeFileSync(path, src) }
+    } finally { pull(path) }
 
     // #440 own-font mutants: re-plant a system-fallback draw / a broken glyph
     // and the gate above MUST go red. R.fail delta > 0 means the mutant died.
@@ -1434,25 +1435,25 @@ if (process.argv.includes('--mutate')) {
         else console.log(`  MUTANT SURVIVED — ${label}: the own-font gate is BLIND`)
     }
     try {
-        writeFileSync(IDXJS, idxSrc.replace(`drawText(ctx, 'POS', Math.round(5 * hs), Math.round(11 * hs), '#b08460', dsz(8))`, `ctx.font = 'bold 8px monospace'; ctx.fillText('POS', Math.round(5 * hs), Math.round(11 * hs))`))
+        plant(IDXJS, idxSrc.replace(`drawText(ctx, 'POS', Math.round(5 * hs), Math.round(11 * hs), '#b08460', dsz(8))`, `ctx.font = 'bold 8px monospace'; ctx.fillText('POS', Math.round(5 * hs), Math.round(11 * hs))`))
         await died('a HUD readout falls back to browser monospace fillText', hudUsesOwnFont)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace(`import { drawText } from './font.js'`, `import { textW as _tw } from './font.js'`))
+        plant(IDXJS, idxSrc.replace(`import { drawText } from './font.js'`, `import { textW as _tw } from './font.js'`))
         await died('index.jsx stops importing its own font', hudUsesOwnFont)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
     try {
-        writeFileSync(FONTJS, fontSrc.replace(`    '3': ['111', '001', '011', '001', '111'],`, `    '3': ['111', '001', '011', '001'],`))
+        plant(FONTJS, fontSrc.replace(`    '3': ['111', '001', '011', '001', '111'],`, `    '3': ['111', '001', '011', '001'],`))
         await died('a glyph loses a pixel row', fontIntegrity)
-    } finally { writeFileSync(FONTJS, fontSrc) }
+    } finally { pull(FONTJS) }
     try {
-        writeFileSync(FONTJS, fontSrc.replace(`    '8': ['111', '101', '111', '101', '111'],`, `    '8': ['010', '101', '101', '101', '010'],`))
+        plant(FONTJS, fontSrc.replace(`    '8': ['111', '101', '111', '101', '111'],`, `    '8': ['010', '101', '101', '101', '010'],`))
         await died('two digits collapse to the same glyph', fontIntegrity)
-    } finally { writeFileSync(FONTJS, fontSrc) }
+    } finally { pull(FONTJS) }
     try {
-        writeFileSync(FONTJS, fontSrc.replace('return n === 0 ? 0 : n * (CW + 1) - 1', 'return n === 0 ? 0 : n * (CW + 1) + 1'))
+        plant(FONTJS, fontSrc.replace('return n === 0 ? 0 : n * (CW + 1) - 1', 'return n === 0 ? 0 : n * (CW + 1) + 1'))
         await died('textW stops measuring the trailing gap', fontIntegrity)
-    } finally { writeFileSync(FONTJS, fontSrc) }
+    } finally { pull(FONTJS) }
 
     // #440 item-4 sun mutants: re-plant each regression into art.js/index.jsx
     // and demand the azimuth gate above goes red.
@@ -1464,21 +1465,21 @@ if (process.argv.includes('--mutate')) {
     }
     const artSrc = readFileSync(ARTJS, 'utf8')
     try {
-        writeFileSync(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half + d * W * 0.66'))
+        plant(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half + d * W * 0.66'))
         await sunDied('the linear azimuth map returns (westbound glow-band without a disc)', sunAudit)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half'))
+        plant(ARTJS, artSrc.replace('const sunX = half + pp * Math.tan(d)', 'const sunX = half'))
         await sunDied('the sun is nailed to screen centre for the whole lap', sunAudit)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(ARTJS, artSrc.replace('wrapAz(SUN_AZ - camA)', 'wrapAz(SUN_AZ - camA * 0.9)'))
+        plant(ARTJS, artSrc.replace('wrapAz(SUN_AZ - camA)', 'wrapAz(SUN_AZ - camA * 0.9)'))
         await sunDied('the sun azimuth is no longer fixed in world space', sunAudit)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace('const sunX = sun.visible ? sun.sunX : W + 4096', 'const sunX = sun.sunX'))
+        plant(IDXJS, idxSrc.replace('const sunX = sun.visible ? sun.sunX : W + 4096', 'const sunX = sun.sunX'))
         await sunDied('the renderer drops the visibility gate (glow bleeds without the disc)', sunWired)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
 
     // #440 item-5 rival-sfx mutants: re-plant the silence / a flat law and
     // demand the distant-sweep gate above goes red.
@@ -1490,25 +1491,25 @@ if (process.argv.includes('--mutate')) {
         else console.log(`  MUTANT SURVIVED — ${label}: the rival-sfx gate is BLIND`)
     }
     try {
-        writeFileSync(SIM, simSfxSrc.replace('const prox = Math.max(0, 1 - dist / RIVAL_BOOST.mute)', 'const prox = 1'))
+        plant(SIM, simSfxSrc.replace('const prox = Math.max(0, 1 - dist / RIVAL_BOOST.mute)', 'const prox = 1'))
         await sfxDied('every rival boost is full volume regardless of distance', sfxLaw)
-    } finally { writeFileSync(SIM, simSfxSrc) }
+    } finally { pull(SIM) }
     try {
-        writeFileSync(SIM, simSfxSrc.replace('RIVAL_BOOST.maxVol * (0.45 + tier * 0.275) * prox', 'RIVAL_BOOST.maxVol * 0.72 * prox'))
+        plant(SIM, simSfxSrc.replace('RIVAL_BOOST.maxVol * (0.45 + tier * 0.275) * prox', 'RIVAL_BOOST.maxVol * 0.72 * prox'))
         await sfxDied('gold and blue releases sound identical', sfxLaw)
-    } finally { writeFileSync(SIM, simSfxSrc) }
+    } finally { pull(SIM) }
     try {
-        writeFileSync(SIM, simSfxSrc.replace('maxVol: 0.07', 'maxVol: 0.2'))
+        plant(SIM, simSfxSrc.replace('maxVol: 0.07', 'maxVol: 0.2'))
         await sfxDied('a rival release is louder than the player\'s own boost', sfxLaw)
-    } finally { writeFileSync(SIM, simSfxSrc) }
+    } finally { pull(SIM) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace("if (ev.e === 'boost' && ev.who !== 'COMET') {", "if (false && ev.e === 'boost' && ev.who !== 'COMET') {"))
+        plant(IDXJS, idxSrc.replace("if (ev.e === 'boost' && ev.who !== 'COMET') {", "if (false && ev.e === 'boost' && ev.who !== 'COMET') {"))
         await sfxDied('rival boosts are silent again (the #440 regression)', sfxWired)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
     try {
-        writeFileSync(SIM, simSfxSrc.replace('mute: 700', 'mute: 1e9'))
+        plant(SIM, simSfxSrc.replace('mute: 700', 'mute: 1e9'))
         await sfxDied('the mute radius vanishes — a rival across the map still pops', sfxLaw)
-    } finally { writeFileSync(SIM, simSfxSrc) }
+    } finally { pull(SIM) }
 
     // #440 item-2 readability mutants: re-plant the blinding sprite and a
     // flat law and demand the readability gate above goes red.
@@ -1519,21 +1520,21 @@ if (process.argv.includes('--mutate')) {
         else console.log(`  MUTANT SURVIVED — ${label}: the readability gate is BLIND`)
     }
     try {
-        writeFileSync(ARTJS, artSrc.replace('const s = frac > RIVAL_VIEW.capFrac ? RIVAL_VIEW.capFrac / frac : 1', 'const s = 1'))
+        plant(ARTJS, artSrc.replace('const s = frac > RIVAL_VIEW.capFrac ? RIVAL_VIEW.capFrac / frac : 1', 'const s = 1'))
         await viewDied('the blinding portrait sprite returns (no shrink)', viewLaw)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(ARTJS, artSrc.replace('const alpha = Math.max(RIVAL_VIEW.minAlpha, 1 - over * 1.1)', 'const alpha = 1'))
+        plant(ARTJS, artSrc.replace('const alpha = Math.max(RIVAL_VIEW.minAlpha, 1 - over * 1.1)', 'const alpha = 1'))
         await viewDied('close rivals stay fully opaque — the road is gone', viewLaw)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(ARTJS, artSrc.replace('dampFrac: 0.25', 'dampFrac: 0.02'))
+        plant(ARTJS, artSrc.replace('dampFrac: 0.25', 'dampFrac: 0.02'))
         await viewDied('far rivals ghost too (threshold swallowed the field)', viewLaw)
-    } finally { writeFileSync(ARTJS, artSrc) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace('it.o ? rivalViewFx(h, H) : { s: 1, alpha: 1 }', '{ s: 1, alpha: 1 }'))
+        plant(IDXJS, idxSrc.replace('it.o ? rivalViewFx(h, H) : { s: 1, alpha: 1 }', '{ s: 1, alpha: 1 }'))
         await viewDied('the renderer bypasses the law (the #440 item-2 regression)', viewWired)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
 
     // #440 item-6 engine-voice mutants: re-plant the plastic gear-step, the
     // dead pitch, the silent drift, the glass-cutting sand and the bypass.
@@ -1545,25 +1546,25 @@ if (process.argv.includes('--mutate')) {
         else console.log(`  MUTANT SURVIVED — ${label}: the engine-voice gate is BLIND`)
     }
     try {
-        writeFileSync(SFXJS, sfx6Src.replace('const period = Math.max(3, 15 - v)', 'const period = Math.max(3, 15 - Math.round(v))'))
+        plant(SFXJS, sfx6Src.replace('const period = Math.max(3, 15 - v)', 'const period = Math.max(3, 15 - Math.round(v))'))
         await sfx6Died('the round(v) gear-step is back in the pop rate', engineLaw)
-    } finally { writeFileSync(SFXJS, sfx6Src) }
+    } finally { pull(SFXJS) }
     try {
-        writeFileSync(SFXJS, sfx6Src.replace('const wob = ENGINE.wob1 * Math.sin(tick * ENGINE.wobR1) + ENGINE.wob2 * Math.sin(tick * ENGINE.wobR2)', 'const wob = 0'))
+        plant(SFXJS, sfx6Src.replace('const wob = ENGINE.wob1 * Math.sin(tick * ENGINE.wobR1) + ENGINE.wob2 * Math.sin(tick * ENGINE.wobR2)', 'const wob = 0'))
         await sfx6Died('pitch is dead-steady again — no wobble', engineLaw)
-    } finally { writeFileSync(SFXJS, sfx6Src) }
+    } finally { pull(SFXJS) }
     try {
-        writeFileSync(SFXJS, sfx6Src.replace('if (driftT <= 0 || v <= SCRAPE.minV) return null', 'if (v <= SCRAPE.minV) return null'))
+        plant(SFXJS, sfx6Src.replace('if (driftT <= 0 || v <= SCRAPE.minV) return null', 'if (v <= SCRAPE.minV) return null'))
         await sfx6Died('scrape fires on straight wheels (driftT ignored)', engineLaw)
-    } finally { writeFileSync(SFXJS, sfx6Src) }
+    } finally { pull(SFXJS) }
     try {
-        writeFileSync(SFXJS, sfx6Src.replace('freq: 300 + 500 * speed', 'freq: 3000 + 500 * speed'))
+        plant(SFXJS, sfx6Src.replace('freq: 300 + 500 * speed', 'freq: 3000 + 500 * speed'))
         await sfx6Died('sand reads brighter than kerb — cutoff swapped above the scrape', engineLaw)
-    } finally { writeFileSync(SFXJS, sfx6Src) }
+    } finally { pull(SFXJS) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace('engAcc += 1 / e.period', 'engAcc += 1 / (15 - Math.round(P.v))'))
+        plant(IDXJS, idxSrc.replace('engAcc += 1 / e.period', 'engAcc += 1 / (15 - Math.round(P.v))'))
         await sfx6Died('the engine loop bypasses the law\'s period (the #440 item-6 regression)', engineWired)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
 
     // #517 zig-zag-hint mutants: re-plant the silence (the pre-#517 game,
     // where the failed-drift player got no lesson), the spam (lesson taught on
@@ -1601,22 +1602,22 @@ if (process.argv.includes('--mutate')) {
         check(`#517 probe under mutant (events=${r.n}, hintT=${r.hintT})`, r.n === 1 && r.hintT > 120)
     }
     try {
-        writeFileSync(SIM, sim517Src.replace('g.zigHintT = 240', 'g.zigHintT = 0'))
+        plant(SIM, sim517Src.replace('g.zigHintT = 240', 'g.zigHintT = 0'))
         await zig517Died('the hint fires but never reaches the screen (silence, the pre-#517 game)', zigRun)
-    } finally { writeFileSync(SIM, sim517Src) }
+    } finally { pull(SIM) }
     try {
-        writeFileSync(SIM, sim517Src.replace('!g.zigHint && ', ''))
+        plant(SIM, sim517Src.replace('!g.zigHint && ', ''))
         await zig517Died('every failed dump re-fires the lesson (no once-per-race guard)', zigRun)
-    } finally { writeFileSync(SIM, sim517Src) }
+    } finally { pull(SIM) }
     try {
-        writeFileSync(SIM, sim517Src.replace('if (g.zigHintT > 0) g.zigHintT--', 'if (false) g.zigHintT--'))
+        plant(SIM, sim517Src.replace('if (g.zigHintT > 0) g.zigHintT--', 'if (false) g.zigHintT--'))
         const mm = await import('../src/games/CometDrift/sim.js' + '?m=' + Math.random())
         const gg = mm.makeGame(7)
         gg.zigHint = 1; gg.zigHintT = 240
         for (let i = 0; i < 300; i++) mm.step(gg, { u: false })
         await zig517Died('the hint never expires (permanent HUD clutter)',
             () => check(`#517 expiry under mutant (hintT=${gg.zigHintT})`, gg.zigHintT === 0))
-    } finally { writeFileSync(SIM, sim517Src) }
+    } finally { pull(SIM) }
 
     // #511 item-3/-5 mutants: re-plant the shared arch at the Dunes line,
     // flatten and symmetrise the crest law, clone the dawn ambience onto the
@@ -1631,25 +1632,25 @@ if (process.argv.includes('--mutate')) {
         else console.log(`  MUTANT SURVIVED — ${label}: the #511 gate is BLIND`)
     }
     try {
-        writeFileSync(TRACKJS, track511Src.replace("landmark: 'dune',", "landmark: 'arch',"))
+        plant(TRACKJS, track511Src.replace("landmark: 'dune',", "landmark: 'arch',"))
         await d511Died("Corkscomb shares the Gulch's arch again (landmark reverted)", duneLaw)
-    } finally { writeFileSync(TRACKJS, track511Src) }
+    } finally { pull(TRACKJS) }
     try {
-        writeFileSync(ARTJS, art511Src.replace('return Math.max(0, base + rip)', 'return 0.5'))
+        plant(ARTJS, art511Src.replace('return Math.max(0, base + rip)', 'return 0.5'))
         await d511Died('the crest law flattens to a berm', duneLaw)
-    } finally { writeFileSync(ARTJS, art511Src) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(ARTJS, art511Src.replace('windW: 0.18, slipW: 0.12', 'windW: 0.12, slipW: 0.18'))
+        plant(ARTJS, art511Src.replace('windW: 0.18, slipW: 0.12', 'windW: 0.12, slipW: 0.18'))
         await d511Died('the slipface is milder than the windward side (asymmetry flipped)', duneLaw)
-    } finally { writeFileSync(ARTJS, art511Src) }
+    } finally { pull(ARTJS) }
     try {
-        writeFileSync(SFXJS, sfx6Src.replace("dawn: { freq: 74, type: 'sine', vol: 0.008, period: 52 },", "dawn: { freq: 98, type: 'triangle', vol: 0.011, period: 36 },"))
+        plant(SFXJS, sfx6Src.replace("dawn: { freq: 74, type: 'sine', vol: 0.008, period: 52 },", "dawn: { freq: 98, type: 'triangle', vol: 0.011, period: 36 },"))
         await d511Died('dawn is the dusk hum again (one ambience for every light)', ambienceLaw)
-    } finally { writeFileSync(SFXJS, sfx6Src) }
+    } finally { pull(SFXJS) }
     try {
-        writeFileSync(IDXJS, idxSrc.replace('ambAcc += 1 / am.period', 'ambAcc += 1 / 36'))
+        plant(IDXJS, idxSrc.replace('ambAcc += 1 / am.period', 'ambAcc += 1 / 36'))
         await d511Died('the pad ignores the law (hard-coded period back in the loop)', ambienceLaw)
-    } finally { writeFileSync(IDXJS, idxSrc) }
+    } finally { pull(IDXJS) }
 }
 
 // ---- #502 item 4: banking cue -------------------------------------------------------

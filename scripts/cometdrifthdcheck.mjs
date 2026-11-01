@@ -19,6 +19,7 @@ import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, makeStreakPool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats, bloomDiscs, BLOOM2D_MIN_LUMA } from '../src/games/CometDriftHD/scene.js'
 import { selectorGeom, selectorHit } from '../src/games/CometDrift/selector.js'
 import * as THREE from 'three'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const args = process.argv.slice(2)
 const MUTATE = args.includes('--mutate')
@@ -41,12 +42,12 @@ let mutated = false
 if (MUTATE) {
     const src = readFileSync(SHARD, 'utf8')
     if (!src.includes(LINE)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SHARD, src.replace(LINE, MUTIL))
+    plant(SHARD, src.replace(LINE, MUTIL))
     mutated = true
     console.log('  ..    mutated: particle spawning is dead — this run MUST report a FAIL')
     process.on('exit', () => {
         if (mutated) {
-            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(MUTIL, LINE))
+            pull(SHARD)
             console.log('  ..    mutation restored')
         }
     })
@@ -61,12 +62,12 @@ let chimemutat = false
 if (MUTATE_CHIME) {
     const csrc = readFileSync(AUDIO, 'utf8')
     if (!csrc.includes(CLINE)) { console.error('MUTATE_CHIME: gold-bell line not found — probing stale code.'); process.exit(2) }
-    writeFileSync(AUDIO, csrc.replace(CLINE, CUTIL))
+    plant(AUDIO, csrc.replace(CLINE, CUTIL))
     chimemutat = true
     console.log('  ..    mutated: gold bell no longer rings on top — the chime gate MUST report a FAIL')
     process.on('exit', () => {
         if (chimemutat) {
-            writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(CUTIL, CLINE))
+            pull(AUDIO)
             console.log('  ..    chime mutation restored')
         }
     })
@@ -81,12 +82,12 @@ let musicmutat = false
 if (MUTATE_MUSIC) {
     const msrc = readFileSync(ACMUS, 'utf8')
     if (!msrc.includes(QLINE)) { console.error('MUTATE_MUSIC: comet lead not found — probing stale code.'); process.exit(2) }
-    writeFileSync(ACMUS, msrc.replace(QLINE, QUTIL))
+    plant(ACMUS, msrc.replace(QLINE, QUTIL))
     musicmutat = true
     console.log('  ..    mutated: the comet hook has an off-key tone — the in-key music gate MUST report a FAIL')
     process.on('exit', () => {
         if (musicmutat) {
-            writeFileSync(ACMUS, readFileSync(ACMUS, 'utf8').replace(QUTIL, QLINE))
+            pull(ACMUS)
             console.log('  ..    music mutation restored')
         }
     })
@@ -100,12 +101,12 @@ let bloommutat = false
 if (MUTATE_BLOOM) {
     const bsrc = readFileSync(SHARD, 'utf8')
     if (!bsrc.includes(BLINE)) { console.error('MUTATE_BLOOM: chain line not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SHARD, bsrc.replace(BLINE, BUTIL))
+    plant(SHARD, bsrc.replace(BLINE, BUTIL))
     bloommutat = true
     console.log('  ..    mutated: the post chain never builds — the bloom gates MUST report a FAIL')
     process.on('exit', () => {
         if (bloommutat) {
-            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(BUTIL, BLINE))
+            pull(SHARD)
             console.log('  ..    bloom mutation restored')
         }
     })
@@ -119,12 +120,12 @@ let bloom2dmutat = false
 if (args.includes('--mutate-bloom2d')) {
     const b2src = readFileSync(SHARD, 'utf8')
     if (!b2src.includes(B2LINE)) { console.error('MUTATE_BLOOM2D: fallback flag not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SHARD, b2src.replace(B2LINE, B2UTIL))
+    plant(SHARD, b2src.replace(B2LINE, B2UTIL))
     bloom2dmutat = true
     console.log('  ..    mutated: the refuge 2D bloom never paints — the gold-payoff gates MUST report a FAIL')
     process.on('exit', () => {
         if (bloom2dmutat) {
-            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(B2UTIL, B2LINE))
+            pull(SHARD)
             console.log('  ..    bloom2d mutation restored')
         }
     })
@@ -144,7 +145,7 @@ if (args.includes('--mutate-select')) {
     process.on('exit', () => {
         if (selectmutat) {
             const p = resolve(HERE, '../src/games/CometDriftHD/scene.js')
-            writeFileSync(p, readFileSync(p, 'utf8').replace(OUTIL, OLINE))
+            pull(p)
             console.log('  ..    selector mutation restored')
         }
     })
@@ -160,12 +161,12 @@ let spinmutat = false
 if (args.includes('--mutate-spin')) {
     const ssrc = readFileSync(SCENE, 'utf8')
     if (!ssrc.includes(SLINE)) { console.error('MUTATE_SPIN: blur law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, ssrc.replace(SLINE, SUTIL))
+    plant(SCENE, ssrc.replace(SLINE, SUTIL))
     spinmutat = true
     console.log('  ..    mutated: spokes never blur — the kart-feel gates MUST report a FAIL')
     process.on('exit', () => {
         if (spinmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(SUTIL, SLINE))
+            pull(SCENE)
             console.log('  ..    spin mutation restored')
         }
     })
@@ -179,12 +180,12 @@ let ghostmutat = false
 if (args.includes('--mutate-ghost')) {
     const gsrc = readFileSync(SCENE, 'utf8')
     if (!gsrc.includes(GHLINE)) { console.error('MUTATE_GHOST: ghost base not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, gsrc.replace(GHLINE, GHUTIL))
+    plant(SCENE, gsrc.replace(GHLINE, GHUTIL))
     ghostmutat = true
     console.log('  ..    mutated: the ghost never gains opacity — the reflection gates MUST report a FAIL')
     process.on('exit', () => {
         if (ghostmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(GHUTIL, GHLINE))
+            pull(SCENE)
             console.log('  ..    ghost mutation restored')
         }
     })
@@ -198,12 +199,12 @@ let msmutat = false
 if (args.includes('--mutate-mesashadow')) {
     const msrc = readFileSync(SCENE, 'utf8')
     if (!msrc.includes(MSLINE)) { console.error('MUTATE_MESASHADOW: shadow law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, msrc.replace(MSLINE, MSUTIL))
+    plant(SCENE, msrc.replace(MSLINE, MSUTIL))
     msmutat = true
     console.log('  ..    mutated: mesa shadows cannot reach the min length — the mesa-shadow gates MUST report a FAIL')
     process.on('exit', () => {
         if (msmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(MSUTIL, MSLINE))
+            pull(SCENE)
             console.log('  ..    mesa-shadow mutation restored')
         }
     })
@@ -217,12 +218,12 @@ let streakmutat = false
 if (args.includes('--mutate-streak')) {
     const ssrc = readFileSync(SCENE, 'utf8')
     if (!ssrc.includes(SLAW)) { console.error('MUTATE_STREAK: streak law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, ssrc.replace(SLAW, SUTIL2))
+    plant(SCENE, ssrc.replace(SLAW, SUTIL2))
     streakmutat = true
     console.log('  ..    mutated: streaks never stretch — the gold-dash gates MUST report a FAIL')
     process.on('exit', () => {
         if (streakmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(SUTIL2, SLAW))
+            pull(SCENE)
             console.log('  ..    streak mutation restored')
         }
     })
@@ -238,12 +239,12 @@ let footmutat = false
 if (args.includes('--mutate-buggy')) {
     const fsrc = readFileSync(SCENE, 'utf8')
     if (!fsrc.includes(FLINE) || !fsrc.includes(ILINE)) { console.error('MUTATE_BUGGY: footprint/lamp lines not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, fsrc.replace(FLINE, FUTIL).replace(ILINE, IUTIL))
+    plant(SCENE, fsrc.replace(FLINE, FUTIL).replace(ILINE, IUTIL))
     footmutat = true
     console.log('  ..    mutated: shadow is a disc again and lamps are dead — the #481 gates MUST report FAILs')
     process.on('exit', () => {
         if (footmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(FUTIL, FLINE).replace(IUTIL, ILINE))
+            pull(SCENE)
             console.log('  ..    buggy mutation restored')
         }
     })
@@ -257,12 +258,12 @@ let starmutat = false
 if (args.includes('--mutate-stars')) {
     const tsrc = readFileSync(SCENE, 'utf8')
     if (!tsrc.includes(TLAW)) { console.error('MUTATE_STARS: twinkle law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, tsrc.replace(TLAW, TUTIL))
+    plant(SCENE, tsrc.replace(TLAW, TUTIL))
     starmutat = true
     console.log('  ..    mutated: stars never twinkle — the dusk-sky gates MUST report a FAIL')
     process.on('exit', () => {
         if (starmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(TUTIL, TLAW))
+            pull(SCENE)
             console.log('  ..    star mutation restored')
         }
     })
@@ -276,12 +277,12 @@ let wallmutat = false
 if (args.includes('--mutate-wall')) {
     const wsrc = readFileSync(SCENE, 'utf8')
     if (!wsrc.includes(WLINE)) { console.error('MUTATE_WALL: tint step count not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, wsrc.replace(WLINE, WUTIL))
+    plant(SCENE, wsrc.replace(WLINE, WUTIL))
     wallmutat = true
     console.log('  ..    mutated: the wall tint never varies — the variety gates MUST report a FAIL')
     process.on('exit', () => {
         if (wallmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(WUTIL, WLINE))
+            pull(SCENE)
             console.log('  ..    wall mutation restored')
         }
     })
@@ -295,12 +296,12 @@ let skinmutat = false
 if (args.includes('--mutate-skin')) {
     const ksrc = readFileSync(SCENE, 'utf8')
     if (!ksrc.includes(KLINE)) { console.error('MUTATE_SKIN: tintFor law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, ksrc.replace(KLINE, KUTIL))
+    plant(SCENE, ksrc.replace(KLINE, KUTIL))
     skinmutat = true
     console.log('  ..    mutated: every course wears the dusk skin — the per-course skin gates MUST report FAILs')
     process.on('exit', () => {
         if (skinmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(KUTIL, KLINE))
+            pull(SCENE)
             console.log('  ..    skin mutation restored')
         }
     })
@@ -314,12 +315,12 @@ let regmutat = false
 if (args.includes('--mutate-register')) {
     const rsrc = readFileSync(AUDIO, 'utf8')
     if (!rsrc.includes(RLINE)) { console.error('MUTATE_REGISTER: engine ladder not found — probing stale code.'); process.exit(2) }
-    writeFileSync(AUDIO, rsrc.replace(RLINE, RUTIL))
+    plant(AUDIO, rsrc.replace(RLINE, RUTIL))
     regmutat = true
     console.log('  ..    mutated: Sandbank runs at the dusk register — the ladder gate MUST report a FAIL')
     process.on('exit', () => {
         if (regmutat) {
-            writeFileSync(AUDIO, readFileSync(AUDIO, 'utf8').replace(RUTIL, RLINE))
+            pull(AUDIO)
             console.log('  ..    register mutation restored')
         }
     })
@@ -334,12 +335,12 @@ let envmutat = false
 if (args.includes('--mutate-env')) {
     const esrc = readFileSync(SCENE, 'utf8')
     if (!esrc.includes(ELINE)) { console.error('MUTATE_ENV: envWashFor law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, esrc.replace(ELINE, EUTIL))
+    plant(SCENE, esrc.replace(ELINE, EUTIL))
     envmutat = true
     console.log('  ..    mutated: every course reflects the dusk wash — the env-wash gates MUST report FAILs')
     process.on('exit', () => {
         if (envmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(EUTIL, ELINE))
+            pull(SCENE)
             console.log('  ..    env mutation restored')
         }
     })
@@ -354,12 +355,12 @@ let gantrymutat = false
 if (args.includes('--mutate-gantry')) {
     const gsrc = readFileSync(SCENE, 'utf8')
     if (!gsrc.includes(GLINE)) { console.error('MUTATE_GANTRY: landmark dispatch not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, gsrc.replace(GLINE, GUTIL))
+    plant(SCENE, gsrc.replace(GLINE, GUTIL))
     gantrymutat = true
     console.log('  ..    mutated: Sandbank gets the Gulch arch back — the line-structure gates MUST report FAILs')
     process.on('exit', () => {
         if (gantrymutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(GUTIL, GLINE))
+            pull(SCENE)
             console.log('  ..    gantry mutation restored')
         }
     })
@@ -374,12 +375,12 @@ let brakemutat = false
 if (args.includes('--mutate-brakecue')) {
     const bsrc = readFileSync(SCENE, 'utf8')
     if (!bsrc.includes(CUELINE)) { console.error('MUTATE_BRAKECUE: brakeCue def not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, bsrc.replace(CUELINE, CUEUTIL))
+    plant(SCENE, bsrc.replace(CUELINE, CUEUTIL))
     brakemutat = true
     console.log('  ..    mutated: the Bus Stop cue is gone — the barrier gates MUST report FAILs')
     process.on('exit', () => {
         if (brakemutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(CUEUTIL, CUELINE))
+            pull(SCENE)
             console.log('  ..    brake-cue mutation restored')
         }
     })
@@ -393,12 +394,12 @@ let floormutat = false
 if (args.includes('--mutate-floor')) {
     const fsrc = readFileSync(SCENE, 'utf8')
     if (!fsrc.includes(FLRLINE)) { console.error('MUTATE_FLOOR: floor law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, fsrc.replace(FLRLINE, FLRLINE_UTIL))
+    plant(SCENE, fsrc.replace(FLRLINE, FLRLINE_UTIL))
     floormutat = true
     console.log('  ..    mutated: the floor is the flat -1.5 plane again — the #718 gates MUST report FAILs')
     process.on('exit', () => {
         if (floormutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(FLRLINE_UTIL, FLRLINE))
+            pull(SCENE)
             console.log('  ..    floor mutation restored')
         }
     })
@@ -1015,12 +1016,12 @@ let hudmutat = false
 if (args.includes('--mutate-hud')) {
     const hsrc = readFileSync(SCENE, 'utf8')
     if (!hsrc.includes(HLAW)) { console.error('MUTATE_HUD: portrait lift not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, hsrc.replace(HLAW, HUTIL))
+    plant(SCENE, hsrc.replace(HLAW, HUTIL))
     hudmutat = true
     console.log('  ..    mutated: portrait phones stop scaling the HUD up — the readability gates MUST report a FAIL')
     process.on('exit', () => {
         if (hudmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(HUTIL, HLAW))
+            pull(SCENE)
             console.log('  ..    hud mutation restored')
         }
     })
@@ -1459,12 +1460,12 @@ let attractmutat = false
 if (args.includes('--mutate-attract')) {
     const asrc = readFileSync(SCENE, 'utf8')
     if (!asrc.includes(ALAW)) { console.error('MUTATE_ATTRACT: gap law not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SCENE, asrc.replace(ALAW, AUTIL))
+    plant(SCENE, asrc.replace(ALAW, AUTIL))
     attractmutat = true
     console.log('  ..    mutated: attract blocks collide by design — the stack gates MUST report FAILs')
     process.on('exit', () => {
         if (attractmutat) {
-            writeFileSync(SCENE, readFileSync(SCENE, 'utf8').replace(AUTIL, ALAW))
+            pull(SCENE)
             console.log('  ..    attract mutation restored')
         }
     })
@@ -1517,12 +1518,12 @@ let healmutat = false
 if (args.includes('--mutate-heal')) {
     const hsrc = readFileSync(SHARD, 'utf8')
     if (!hsrc.includes(HL2LINE)) { console.error('MUTATE_HEAL: heal guard not found — probing stale code.'); process.exit(2) }
-    writeFileSync(SHARD, hsrc.replace(HL2LINE, HL2UTIL))
+    plant(SHARD, hsrc.replace(HL2LINE, HL2UTIL))
     healmutat = true
     console.log('  ..    mutated: the self-heal never rebuilds — the device-loss gates MUST report FAILs')
     process.on('exit', () => {
         if (healmutat) {
-            writeFileSync(SHARD, readFileSync(SHARD, 'utf8').replace(HL2UTIL, HL2LINE))
+            pull(SHARD)
             console.log('  ..    heal mutation restored')
         }
     })

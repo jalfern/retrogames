@@ -19,6 +19,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
@@ -287,9 +288,9 @@ if (process.argv.includes('--mutate')) {
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
         if (!originals.get(file).includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        writeFileSync(file, originals.get(file).replace(from, to))
+        plant(file, originals.get(file).replace(from, to))
         const res = spawnSync('node', ['scripts/dugcheck.mjs'], { encoding: 'utf8' })
-        writeFileSync(file, originals.get(file))
+        pull(file)
         if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
         else ok(false, `mutant ${name} SURVIVED`)
     }

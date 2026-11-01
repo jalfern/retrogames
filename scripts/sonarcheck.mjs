@@ -31,6 +31,7 @@
 import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import * as s from '../src/games/Sonar/sim.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const args = process.argv.slice(2)
 const MUT = args.includes('--mutate')
@@ -324,12 +325,12 @@ if (MUT) {
     ]
     for (const [name, path, orig, from, to] of attractMutants) {
         if (!orig.includes(from)) { ok(false, `attract mutant anchor: ${name}`); continue }
-        writeFileSync(path, orig.replace(from, to))
+        plant(path, orig.replace(from, to))
         try {
             const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
             ok(child.status !== 0, `attract mutant SURVIVED: ${name}`)
         } finally {
-            writeFileSync(path, orig)
+            pull(path)
         }
     }
 }

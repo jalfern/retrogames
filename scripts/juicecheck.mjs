@@ -19,6 +19,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, dirname } from 'node:path'
+import { plant, pull } from './lib/mutateguard.mjs'
 import {
     frameDiff, actionVerdict, gameScore, silentActions, buildReport,
     BURST_MIN, IDLE_EXCEED, PIXEL_TOL, STATE_NOISE, WINDOW_TICKS, TRIALS,
@@ -96,7 +97,7 @@ if (!NO_BROWSER) {
     let mutated = null
     if (MUTATE) {
         mutated = src
-        writeFileSync(AC, src.replace('        this.sfx++\n        const bufferSize', '        const bufferSize'))
+        plant(AC, src.replace('        this.sfx++\n        const bufferSize', '        const bufferSize'))
         console.log(`MUTANT: SFX counter stripped from AudioController.playNoise — the live sound gates must go RED`)
     }
     const browser = await launch()
@@ -123,7 +124,7 @@ if (!NO_BROWSER) {
         ok('lunar-lander: the page ran clean', errs.length === 0, errs.join(' | '))
         await page.close()
     } finally {
-        if (mutated) { writeFileSync(AC, mutated); console.log('mutant restored.') }
+        if (mutated) { pull(AC); console.log('mutant restored.') }
         await browser.close()
     }
 }

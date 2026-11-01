@@ -23,6 +23,7 @@ import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/game
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
 import { fitSize, fitTwoCols, estWidth } from '../src/games/TenDeep/hudfit.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const MUT = process.argv.includes('--mutate')
@@ -967,9 +968,9 @@ if (MUT) {
         ]
         for (const [name, from, to] of mutants) {
             ok(orig.includes(from), `mutant anchor missing: ${name}`)
-            writeFileSync(simFile, orig.replace(from, to))
+            plant(simFile, orig.replace(from, to))
             const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
-            writeFileSync(simFile, orig)
+            pull(simFile)
             console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
             ok(res.status !== 0, `${name} SURVIVED — the automap gates stopped touching this rule`)
         }
@@ -990,9 +991,9 @@ if (MUT) {
         ]
         for (const [name, from, to] of hudMutants) {
             ok(hudOrig.includes(from), `hudfit mutant anchor missing: ${name}`)
-            writeFileSync(hudFile, hudOrig.replace(from, to))
+            plant(hudFile, hudOrig.replace(from, to))
             const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
-            writeFileSync(hudFile, hudOrig)
+            pull(hudFile)
             console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
             ok(res.status !== 0, `${name} SURVIVED — the party-strip text-fit gate stopped touching this rule`)
         }

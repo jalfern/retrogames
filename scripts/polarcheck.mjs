@@ -18,6 +18,7 @@ import { makeGame, step, decide, volleyOK, survives, CFG, stateHash, L, D } from
 import { REGISTRY, resolvePath, MAX_STEP, W } from '../src/games/Polarity/paths.js'
 import { WAVES } from '../src/games/Polarity/waves.js'
 import { plan } from '../src/games/Polarity/planner.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const MUT = process.argv.includes('--mutate')
 let pass = 0
@@ -496,12 +497,12 @@ if (MUT) {
     ]
     for (const [name, path, orig, from, to] of attractMutants) {
         if (!orig.includes(from)) { ok(false, `attract mutant anchor: ${name}`); continue }
-        writeFileSync(path, orig.replace(from, to))
+        plant(path, orig.replace(from, to))
         try {
             const child = spawnSync(process.execPath, [process.argv[1]], { encoding: 'utf8' })
             ok(child.status !== 0, `attract mutant SURVIVED: ${name}`)
         } finally {
-            writeFileSync(path, orig)
+            pull(path)
         }
     }
 }

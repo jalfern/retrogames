@@ -23,6 +23,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
@@ -691,12 +692,12 @@ if (process.argv.includes('--mutate')) {
     let died = 0
     for (const [name, from, to] of MUTANTS) {
         if (!orig.includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        writeFileSync(SIM, orig.replace(from, to))
+        plant(SIM, orig.replace(from, to))
         const res = spawnSync('node', ['scripts/smashcheck.mjs'], { encoding: 'utf8' })
         if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
         else ok(false, `mutant ${name} SURVIVED`)
     }
-    writeFileSync(SIM, orig)
+    pull(SIM)
     ok(died === MUTANTS.length, 'all mutants die', `${died}/${MUTANTS.length}`)
 }
 

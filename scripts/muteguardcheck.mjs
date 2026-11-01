@@ -131,9 +131,12 @@ function audit() {
     let checked = 0
     for (const f of files) {
         const src = readFileSync(join(HERE, f), 'utf8')
-        if (!src.includes('--mutate') || !src.includes('writeFileSync(')) continue
+        if (!src.includes('--mutate')) continue
+        // A converted script plants through the guard instead of writeFileSync —
+        // the audit must see BOTH states, or a retrofit would delete its own candidates.
+        if (!src.includes('writeFileSync(') && !src.includes('mutateguard')) continue
         if (SAFE[f]) { checked++; ok(true, `${f}: SAFE — ${SAFE[f]}`); continue }
-        const wired = src.includes('lib/mutateguard.mjs') && /\b(plant|guardExit)\(/.test(src)
+        const wired = src.includes('lib/mutateguard.mjs') && /\b(plant\w*|pull|guardExit)\(/.test(src)
         ok(wired, `${f}: disk mutator is wired to the guard`,
             wired ? '' : 'no lib/mutateguard.mjs import — a SIGTERM here leaves a corpse (#1359)')
         checked++
