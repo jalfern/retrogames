@@ -87,15 +87,22 @@ fi
 
 PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes.$EXTRA"
 
-# TAP-studio (#1268): the studio lane gets its own live stream, like the
-# builders' :8010 tap. Merge = install, warden's slot-b pattern: the job plist
-# comes from origin/main (never the lagging working tree), and the provider is
-# cloned from omlxtap with only the port changed (no secret in the repo).
+# TAP (#1268 studio, #1356 mini): lanes with their own model stream get their
+# own live stream, like the builders' :8010 tap. Merge = install, warden's
+# slot-b pattern: the job plist comes from origin/main (never the lagging
+# working tree), and the provider is cloned from a provider with only the port
+# changed (no secret in the repo — mini's key differs from the Studio's, so
+# mini clones from omlxmini, studio from omlxtap).
 # Fail-open everywhere: no job, no tap, no provider -> the session talks to
-# oMLX direct, exactly forge.sh's behaviour.
+# its model direct, exactly forge.sh's behaviour.
 MODEL_ARGS=(--model "$MODEL")
+TAPPORT=""
 if [[ "$NODE" == studio ]]; then
-    JOB=com.jalfern.tap-studio
+    JOB=com.jalfern.tap-studio; TAPPROV=omlxtapstudio; TAPPORT=8011; SRC_PROV=omlxtap
+elif [[ "$NODE" == mini ]]; then
+    JOB=com.jalfern.tap-mini; TAPPROV=omlxtapmini; TAPPORT=8013; SRC_PROV=omlxmini
+fi
+if [[ -n "$TAPPORT" ]]; then
     LA="$HOME/Library/LaunchAgents/$JOB.plist"
     if ! launchctl print "gui/$(id -u)/$JOB" >/dev/null 2>&1; then
         mkdir -p "$HOME/Library/LaunchAgents"
@@ -105,18 +112,18 @@ if [[ "$NODE" == studio ]]; then
         fi
     fi
     OCFG="$HOME/.config/opencode/opencode.json"
-    if jq -e '.provider.omlxtap' "$OCFG" >/dev/null 2>&1 && ! jq -e '.provider.omlxtapstudio' "$OCFG" >/dev/null 2>&1; then
-        T=$(mktemp) && jq '.provider.omlxtapstudio = (.provider.omlxtap | .options.baseURL = "http://127.0.0.1:8011/v1")' "$OCFG" > "$T" \
+    if jq -e ".provider.$SRC_PROV" "$OCFG" >/dev/null 2>&1 && ! jq -e ".provider.$TAPPROV" "$OCFG" >/dev/null 2>&1; then
+        T=$(mktemp) && jq ".provider.$TAPPROV = (.provider.$SRC_PROV | .options.baseURL = \"http://127.0.0.1:$TAPPORT/v1\")" "$OCFG" > "$T" \
             && mv "$T" "$OCFG" || rm -f "$T"
     fi
     for i in 1 2 3; do
-        TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:8011/v1/models)
+        TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$TAPPORT/v1/models")
         [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] && break
         sleep 1
     done
     if [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] \
-       && jq -e '.provider.omlxtapstudio' "$OCFG" >/dev/null 2>&1; then
-        MODEL_ARGS=(--model "omlxtapstudio/${STUDIO_MODEL#*/}")
+       && jq -e ".provider.$TAPPROV" "$OCFG" >/dev/null 2>&1; then
+        MODEL_ARGS=(--model "$TAPPROV/${MODEL#*/}")
     fi
 fi
 echo "$(date): model route: ${MODEL_ARGS[*]}" >> "$LOG"

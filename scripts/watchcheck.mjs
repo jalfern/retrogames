@@ -5,10 +5,13 @@
 // It builds the real layout into a sandbox tmux session (FORGE_WATCH_SESSION,
 // per-session /tmp/forge/watch/<session>/ dir, so the live `forge` dashboard
 // is never touched), then proves three things:
-//   A. boot    — 9 panes land (6 left-column lanes incl. BUILDER·B (#1258),
-//                2 LIVE, RETRO), remain-on-exit is on, the supervisor runs,
-//                and no pane command line contains a lane pattern (the 2026-10-12
-//                self-match rule).
+//   A. boot    — 11 panes land (6 left-column lanes incl. BUILDER·B (#1258),
+//                4 LIVE (#1356), RETRO), remain-on-exit is on, the supervisor
+//                runs, and no pane command line contains a lane pattern (the
+//                2026-10-12 self-match rule). Every LIVE pane must share its
+//                own lane's row — the #1356 bug was QA·STUDIO's live pane
+//                targeting index 0.4 after live-builder's split had shifted
+//                every index by one, landing it beside QA·MBP.
 //   B. rules   — SIGKILL a lane pane: it is back within one refresh (8 s) and
 //                pane.log says why; a pane squeezed to 2 rows survives a kill
 //                too; garbage from an oMLX-shaped feed cannot kill a pane loop.
@@ -78,7 +81,7 @@ console.log('watchcheck (#1259) — the watch dashboard never loses a pane')
 runWatch()
 sleep(1500)
 const panes = tmux('list-panes', '-t', `${SESSION}:0`, '-F', '#{pane_id}').split('\n').filter(Boolean)
-ok(panes.length === 9, `boot: ${panes.length}/9 panes (${MUTATE ? 'mutant copy' : 'watch.sh'})`)
+ok(panes.length === 11, `boot: ${panes.length}/11 panes (${MUTATE ? 'mutant copy' : 'watch.sh'})`)
 const names = tsv().map(p => p.name)
 ok(names.includes('BUILDER·B'), 'boot: panes follow #1258 — the second builder slot is there')
 ok(names.includes('WARDEN') && names.includes('RETRO'), 'boot: WARDEN and RETRO recorded')
@@ -88,6 +91,31 @@ ok(supOut.stdout.trim().length > 0, 'boot: the supervisor process is running')
 const cmdLines = tmux('list-panes', '-t', SESSION, '-a', '-F', '#{pane_start_command}')
     + tmux('display', '-p', '-t', `${SESSION}:0.0`, '#{pane_current_command}')
 ok(!cmdLines.includes('THE FORGE'), 'boot: no lane pattern in any pane command line (2026-10-12 rule)')
+
+// ── A2. rows (#1356) ───────────────────────────────────────────────────────
+// Each LIVE pane must open BESIDE its own lane, sharing that lane's row.
+// tmux inserts a split pane right after its target, so an index target that
+// ignores earlier insertions names the wrong row — the shipped #1356 bug.
+// One geometry snapshot so a mid-check warden resize cannot shift one pane
+// between the two reads.
+const byName = Object.fromEntries(tsv().map(p => [p.name, p.id]))
+const geom = {}
+for (const l of tmux('list-panes', '-t', `${SESSION}:0`, '-F', '#{pane_id}|#{pane_top}|#{pane_left}').split('\n').filter(Boolean)) {
+    const [id, top, left] = l.split('|')
+    geom[id] = { top: Number(top), left: Number(left) }
+}
+for (const [live, lane] of [
+    ['LIVE-BUILDER', 'BUILDER·A'], ['LIVE-BUILDER·B', 'BUILDER·B'],
+    ['LIVE-QA·MINI', 'QA·MINI'], ['LIVE-STUDIO', 'QA·STUDIO'],
+]) {
+    const L = geom[byName[live]], P = geom[byName[lane]]
+    ok(L && P && L.top === P.top && L.left > P.left,
+        `#1356: ${live} opens beside ${lane}'s row (same top, further right)`)
+}
+// the warden's resize math wants exactly the six lanes at x=0 — no LIVE pane
+// may land in the left column.
+ok(Object.values(geom).filter(g => g.left === 0).length === 6,
+    '#1356: left column holds exactly the 6 lane panes (LIVE panes sit right of x=0)')
 
 // ── B. rules ───────────────────────────────────────────────────────────────
 const B = tsv().find(p => p.name === 'BUILDER·B')

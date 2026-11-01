@@ -4,9 +4,10 @@
 #   scripts/watch.sh          # open it (or re-attach if it is already running)
 #   scripts/watch.sh --kill   # close it
 #   scripts/watch.sh --live   # also show the model's tokens as they generate
-#                             # (a live pane right of BUILDER·A and of
-#                             # QA·STUDIO; needs the taps — see scripts/tap.mjs
-#                             # and tap-studio. Switching layouts: --kill first.)
+#                             # (a live pane right of BUILDER·A, BUILDER·B,
+#                             # QA·MINI and QA·STUDIO — one tap per stream, see
+#                             # scripts/tap.mjs and the com.jalfern.tap-*.plist
+#                             # jobs. Switching layouts: --kill first.)
 #
 # Works from anywhere you can SSH into the Studio (phone over Tailscale too):
 # the tmux session lives here, so every device attaches to the same panes.
@@ -132,10 +133,18 @@ bake() {
 
 # pane <key> <name> <body-file> <split-args...> — bake, then create the pane
 # running just `zsh <script>` (the one allowed command text: no patterns).
+# #1356: capture the new pane's id. tmux inserts a split pane right AFTER its
+# target, so every index after any split shifts by one — a later `-t
+# "$SESSION:0.N"` can name a different row than the one it was written for
+# (that is how LIVE·STUDIO landed beside QA·MBP: live-builder's split pushed
+# 0.4 from QA·STUDIO down to QA·MBP). Anything that targets a lane must use
+# the id captured when that lane was created, never an index.
+typeset -A PANEID
 pane() {
     local key=$1 name=$2 body=$3; shift 3
     bake "$key" "$name" "$body" "${ENVK[@]}"
     local id; id=$(tmux split-window "$@" -P -F '#{pane_id}' "zsh '$WDIR/$key.zsh'")
+    PANEID[$key]=$id
     print -r -- "$id	$name	$WDIR/$key.zsh" >> "$WDIR/panes.tsv"
 }
 
@@ -268,25 +277,26 @@ LIVE_BODY=$WDIR/body-live.zsh;     live_pane   > "$LIVE_BODY"
 bake builder-a 'BUILDER·A' "$LANE_BODY" L='BUILDER·A' PORT=8000 PROV=omlx \
     P1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' P2='\.'
 FIRST=$(tmux new-session -d -s "$SESSION" -P -F '#{pane_id}' "zsh '$WDIR/builder-a.zsh'")
+PANEID[builder-a]=$FIRST
 print -r -- "$FIRST	BUILDER·A	$WDIR/builder-a.zsh" >> "$WDIR/panes.tsv"
 # #1259: dead panes stay in place (with their ids) so the supervisor can
 # respawn them. Set before any pane can die.
 tmux set-option -t "$SESSION" remain-on-exit on
 
 ENVK=(L='BUILDER·B' PORT=8000 PROV=omlx P1='opencode run.*THE FORGE on slot b' P2='\.')
-pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 70% -t "$FIRST"
+pane builder-b 'BUILDER·B' "$LANE_BODY" -v -l 70% -t "${PANEID[builder-a]}"
 ENVK=(L='QA·MINI' PORT=18000 PROV=omlxmini P1='opencode run.*omlx' P2='mini')
-pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "$SESSION:0.1"
+pane qa-mini 'QA·MINI' "$LANE_BODY" -v -l 75% -t "${PANEID[builder-b]}"
 ENVK=(L='QA·MBP' PORT=18001 PROV=omlxmbp P1='opencode run.*omlx' P2='mbp')
-pane qa-mbp 'QA·MBP' "$LANE_BODY" -v -l 66% -t "$SESSION:0.2"
+pane qa-mbp 'QA·MBP' "$LANE_BODY" -v -l 66% -t "${PANEID[qa-mini]}"
 ENVK=(L='QA·STUDIO' PORT=8000 PROV=omlx P1='opencode run.*QA MASTER on node ' P2='studio\.')
-pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "$SESSION:0.3"
+pane qa-studio 'QA·STUDIO' "$LANE_BODY" -v -l 50% -t "${PANEID[qa-mbp]}"
 ENVK=(A1='opencode run.*(THE FORGE( on slot a)?|QA MASTER on node builder)' Z1='\.'
       A2='opencode run.*THE FORGE on slot b' Z2='\.'
       A3='opencode run.*omlx' Z3='mini'
       A4='opencode run.*omlx' Z4='mbp'
       A5='opencode run.*QA MASTER on node ' Z5='studio\.' PWLOG=$WDIR/pane.log)
-pane warden 'WARDEN' "$WARDEN_BODY" -v -l 4 -t "$SESSION:0.4"
+pane warden 'WARDEN' "$WARDEN_BODY" -v -l 4 -t "${PANEID[qa-studio]}"
 
 # RETRO: a full-height pane on the right, 60% wide. `env -u TMUX` lets tmux
 # nest; -A attaches to "retro" if it exists, otherwise creates it in the repo.
@@ -297,14 +307,21 @@ print -r -- "exec env -u TMUX tmux new-session -A -s retro -c \$HOME/Dev/retroga
 RETRO_PANE=$(tmux split-window -h -f -l $(( LIVE ? 40 : 60 ))% -P -F '#{pane_id}' -t "$SESSION" "zsh '$WDIR/retro.zsh'")
 print -r -- "$RETRO_PANE	RETRO	$WDIR/retro.zsh" >> "$WDIR/panes.tsv"
 
-# LIVE: right half of the BUILDER row. It shares that row, so the warden's
-# resizing of BUILDER moves it too (the warden only lays out the x=0 column).
-# #1268: QA·STUDIO gets the same treatment for its own tap (:8011).
+# LIVE: right half of a lane's row. Each pane shares its lane's row, so the
+# warden's resizing of that lane moves it too (the warden only lays out the
+# x=0 column). One tap per stream: builder-a :8010, studio :8011 (#1268),
+# builder-b :8012 and mini :8013 (#1356). Every target is the PANEID captured
+# at creation — an index would name the wrong row once any earlier pane has
+# been split (the #1356 bug: live-studio at 0.4 fell onto QA·MBP's row).
 if (( LIVE )); then
     ENVK=(L='BUILDER' LANE=builder TAPPORT=8010)
-    pane live-builder 'LIVE-BUILDER' "$LIVE_BODY" -h -l 50% -t "$FIRST"
+    pane live-builder 'LIVE-BUILDER' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-a]}"
+    ENVK=(L='BUILDER·B' LANE=builderb TAPPORT=8012)
+    pane live-builderb 'LIVE-BUILDER·B' "$LIVE_BODY" -h -l 50% -t "${PANEID[builder-b]}"
+    ENVK=(L='QA·MINI' LANE=mini TAPPORT=8013)
+    pane live-mini 'LIVE-QA·MINI' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-mini]}"
     ENVK=(L='QA·STUDIO' LANE=studio TAPPORT=8011)
-    pane live-studio 'LIVE-STUDIO' "$LIVE_BODY" -h -l 50% -t "$SESSION:0.4"
+    pane live-studio 'LIVE-STUDIO' "$LIVE_BODY" -h -l 50% -t "${PANEID[qa-studio]}"
 fi
 
 # Mouse: on server-wide (-g), so the nested RETRO session gets it too. With it

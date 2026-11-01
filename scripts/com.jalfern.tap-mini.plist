@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- TAP for QA·MINI (#1356): :8013 -> the Mac mini's oMLX through the :18000
+     tunnel, copying streamed tokens to /tmp/forge/stream-mini.log for
+     `watch.sh --live`. KeepAlive restarts it within a second if it ever exits.
+     See scripts/tap.mjs.
+     Install: forge-qa.sh bootstraps this from origin/main (merge = install,
+     the tap-studio pattern). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.tap-mini</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/jon/Dev/retrogames/scripts/tap.mjs</string>
+        <string>--listen</string>
+        <string>8013</string>
+        <string>--upstream</string>
+        <string>18000</string>
+        <string>--out</string>
+        <string>/tmp/forge/stream-mini.log</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/tap-mini.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/tap-mini.err</string>
+</dict>
+</plist>

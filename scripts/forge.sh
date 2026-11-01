@@ -77,19 +77,44 @@ if [[ -f "$REPO/scripts/jonq.mjs" ]] && [[ "$(node "$REPO/scripts/jonq.mjs" halt
     exit 0
 fi
 
-# TAP (scripts/tap.mjs, launchd com.jalfern.tap-builder): when the tap answers
-# AND an `omlxtap` provider exists in ~/.config/opencode/opencode.json, route
-# this session through it so `watch.sh --live` shows tokens as they generate.
+# TAP (scripts/tap.mjs): when the slot's tap answers AND its provider exists
+# in ~/.config/opencode/opencode.json, route this session through it so
+# `watch.sh --live` shows tokens as they generate. #1356: each slot gets its
+# OWN tap (:8010 slot a, :8012 slot b) so the live panes don't mix streams.
 # Fail-open: no tap, or no provider -> the session talks to oMLX directly, as
 # before. (The model string still contains no lane pattern: see watch.sh.)
+if [[ "$SLOT" == a ]]; then
+    TAPPORT=8010; TAPPROV=omlxtap; TAPJOB=com.jalfern.tap-builder
+else
+    TAPPORT=8012; TAPPROV=omlxtapb; TAPJOB=com.jalfern.tap-builderb
+fi
+# merge = install (the tap-studio pattern): slot b's tap plist comes from
+# origin/main, never the lagging working tree.
+OCFG="$HOME/.config/opencode/opencode.json"
+if [[ "$SLOT" == b ]]; then
+    LA="$HOME/Library/LaunchAgents/$TAPJOB"
+    if ! launchctl print "gui/$(id -u)/$TAPJOB" >/dev/null 2>&1; then
+        mkdir -p "$HOME/Library/LaunchAgents"
+        if { [[ -f "$LA" ]] || git -C "$REPO" show "origin/main:scripts/$TAPJOB.plist" > "$LA" 2>/dev/null; } \
+           && launchctl bootstrap "gui/$(id -u)" "$LA" >/dev/null 2>&1; then
+            echo "$(date): bootstrapped $TAPJOB" >> "$LOG"
+        fi
+    fi
+    # clone the provider from omlx so the apiKey stays on the machine (#1356)
+    if jq -e '.provider.omlx' "$OCFG" >/dev/null 2>&1 && ! jq -e '.provider.omlxtapb' "$OCFG" >/dev/null 2>&1; then
+        T=$(mktemp) && jq '.provider.omlxtapb = (.provider.omlx | .options.baseURL = "http://127.0.0.1:8012/v1")' "$OCFG" > "$T" \
+            && mv "$T" "$OCFG" || rm -f "$T"
+    fi
+fi
+OCFG="$HOME/.config/opencode/opencode.json"
 MODEL_ARGS=()
 # (Any HTTP answer counts, even a 401 from oMLX's key check; 000 = tap down,
 # 502 = tap up but oMLX behind it down.)
-TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' http://127.0.0.1:8010/v1/models)
+TAP_CODE=$(curl -s -o /dev/null -m 2 -w '%{http_code}' "http://127.0.0.1:$TAPPORT/v1/models")
 if [[ "$TAP_CODE" != 000 && "$TAP_CODE" != 502 ]] \
-   && jq -e '.provider.omlxtap' "$HOME/.config/opencode/opencode.json" >/dev/null 2>&1; then
+   && jq -e ".provider.$TAPPROV" "$OCFG" >/dev/null 2>&1; then
     M=$(jq -r '.model' "$REPO/opencode.json")
-    MODEL_ARGS=(--model "omlxtap/${M#*/}")
+    MODEL_ARGS=(--model "$TAPPROV/${M#*/}")
 fi
 echo "$(date): model route: ${MODEL_ARGS[*]:-direct (no tap)}" >> "$LOG"
 

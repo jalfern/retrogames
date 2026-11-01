@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- TAP for BUILDER·B (#1356): :8012 -> oMLX :8000, copying streamed tokens to
+     /tmp/forge/stream-builderb.log for `watch.sh --live`. Its own instance because
+     slot a's sessions own :8010 — one tap per stream keeps the panes clean
+     (the :8010 tap used to mix both slots). KeepAlive restarts it within a
+     second if it ever exits. See scripts/tap.mjs.
+     Install: forge.sh bootstraps this from origin/main (merge = install). -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.jalfern.tap-builderb</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/homebrew/bin/node</string>
+        <string>/Users/jon/Dev/retrogames/scripts/tap.mjs</string>
+        <string>--listen</string>
+        <string>8012</string>
+        <string>--upstream</string>
+        <string>8000</string>
+        <string>--out</string>
+        <string>/tmp/forge/stream-builderb.log</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>1</integer>
+    <key>StandardOutPath</key>
+    <string>/tmp/forge/tap-builderb.out</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/forge/tap-builderb.err</string>
+</dict>
+</plist>
