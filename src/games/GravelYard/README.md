@@ -98,6 +98,17 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   forward routing), so tight squeezes are handled by replanning, not backing up.
 - #1306 polish shipped the mid-game feel pass (amber cones + cast shadow,
   wet-cell 2-frame shimmer, diesel idle drone at a 48-tick cadence, per-seat
-  radio voice formants, cents ticker + CLEAN SHIFT stamp). Attract tip-seeding,
-  boom/bed animation, shaker life and the mic voice hooks (#1247) were split
-  into a follow-up polish issue at ship time.
+  radio voice formants, cents ticker + CLEAN SHIFT stamp).
+- #1390 polish shipped the machines' life: the digger boom swings through 4
+  bite frames (S.diggerDig, indexed by `digSwingFrame(job.t)`), dust bursts
+  over the pile cell on a dig bite; the dump truck bed raises through a 3-frame
+  rear-pivot tip cycle with a sliding load (`tipSeqFrame`, TIP_TICKS=24);
+  the shaker wears bouncing deck stones while a batch runs, grey stack smoke
+  while jammed, and a discharge plume sized to the batch (~500ms of fx after
+  batchEnd — visual-only, `hashState` unchanged); the attract sim is seeded
+  past the first dump/tip/batch-end so the marquee opens mid-chain; a gate
+  aperture icon sits in the top HUD bar. Render state is probeable via
+  `__gyTest.anim()` + deterministic staging via `__gyTest.prime('dig'|'tip'|
+  'batch'|'jam')`; gravelcheck proves the swing/tip/stones/plume/smoke plus
+  the pure frame mappers. Remaining from #1390: in-game push-to-talk voice
+  orders for the truck seat (#1247/#1249 pattern).

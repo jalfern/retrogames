@@ -493,6 +493,20 @@ export function stepGame(gs, pads) {
     return gs
 }
 
+// --- render-frame helpers (pure, hash-independent; #1390) -----------------------
+// Boom swing across a dig job: progress through DIG_TICKS maps to 4 frames
+// (0 raised -> 3 full bite). The renderer picks S.diggerDig[k].
+export function digSwingFrame(jobT) {
+    const p = Math.max(0, Math.min(1, 1 - jobT / DIG_TICKS))
+    return Math.min(3, Math.floor(p * 4))
+}
+// Bed-tip cycle across TIP_TICKS: raise, hold up, lower.
+export const TIP_TICKS = 24
+const TIP_SEQ = [0, 1, 2, 2, 1, 0] // 4 ticks each
+export function tipSeqFrame(age) {
+    return TIP_SEQ[Math.max(0, Math.min(TIP_SEQ.length - 1, Math.floor(age / 4)))]
+}
+
 // --- state for the contract ---------------------------------------------------------
 export function simState(gs) {
     return {
