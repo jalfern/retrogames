@@ -91,6 +91,9 @@ main() {
     # disproves it (log lines say `held=1` on a tick that carried rather than
     # re-observed), the pulse window rides as `churnwin=N` so the board never
     # mirrors the arithmetic, and the digest answers "asleep RIGHT NOW".
+    # v4 (#1406): adjacent raw tick-gap segments COALESCE into one night's
+    # window (a staged recovery is still one outage), and the tick line reports
+    # the pmset log's visible span once per day (logspan=N [+ logshort=1]).
     # The board banner (floor.js) and the questions digest (jonq digest) read
     # the same ledger. Backfill runs ONCE (no ledger yet) so the incident that
     # motivated #1354 goes on the record honestly, from pmset history.
@@ -117,6 +120,10 @@ main() {
         # #1401: a tick that CARRIED the stamp through silence (held=1) is the
         # deep-dark story in the log — the field stayed true across the dark.
         [[ "$SREC" == *held=1* ]] && log "sleepwatch v3: $SREC -> ${ASLEEP:-no field}"
+        # #1406: once per UTC day the tick names how far the visible pmset log
+        # actually reaches (logspan=N min; logshort=1 = it cannot cover the 48 h
+        # horizon, so validated-hold's ceiling is on the record, not invisible).
+        [[ "$SREC" == *logspan=* ]] && log "sleepwatch v4: $SREC"
     fi
 
     # ---- 1. COUNT -----------------------------------------------------

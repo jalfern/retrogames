@@ -8,6 +8,17 @@
 
 export const FRESH_MS = 15 * 60 * 1000
 
+// LIVE_SHOWN_MS (#1406) — how long a board may render the LIVE sleep strips
+// off a pulse it cannot otherwise vouch for. Deliberately the SAME horizon
+// the wire uses to retire retro windows (24 h), not a tick budget: a true
+// deep outage IS silence — the pulse cannot refresh while the box sleeps —
+// and the banner must survive exactly that outage it exists to name (#1354).
+// What this closes is the opposite lie: a two-day-old wire still shouting
+// "ASLEEP SINCE" for a box long awake (the ledger cleared at the Wake, but
+// the board is reading a frozen pulse). Mirrored by convention, not import:
+// the board never imports the backend script — the wire is the contract.
+export const LIVE_SHOWN_MS = 24 * 60 * 60 * 1000
+
 export const kv = line => Object.fromEntries(line.split(/\s+/).slice(1).map(t => t.split('=')))
 
 export const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
@@ -62,7 +73,6 @@ export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.n
 
     const age = pulses[0] ? now - Date.parse(pulses[0].updated_at) : Infinity
     const fresh = Number.isFinite(age) && age < FRESH_MS
-
     const anvil = {
         glow: building.length > 0,
         spark: fresh,
@@ -83,7 +93,10 @@ export function deriveFloor({ issues = null, prs = [], pulses = [], now = Date.n
     const shipDelta = pulse && prev ? (+pulse.shipped || 0) - (+prev.shipped || 0) : 0
     const cart = shipDelta > 0 ? { count: shipDelta } : null
 
-    return { queued, building, shipped, pulse, anvil, gate, cart, shelf: shipped }
+    // pulseAge (#1406): the SAME age the WARDEN lamp derives (Infinity = no
+    // pulse yet) rides out to the banner caller — the freshness math lives
+    // once, and sleepBanner's live strips answer to it.
+    return { queued, building, shipped, pulse, pulseAge: age, anvil, gate, cart, shelf: shipped }
 }
 
 // runwayBadge (#1201) — the runway strip's { text, tone } from board.json's
@@ -193,10 +206,21 @@ export const throughputLine = (samples, now = Date.now()) => {
 //     reads the window W off the wire instead of hardcoding the cadence. The
 //     board side must still never import a backend script — the pulse token is
 //     the whole contract.
-export const sleepBanner = (pulse) => {
+// v4 (#1406) threads the PULSE AGE in: `sleepBanner(pulse, pulseAge)`, age in
+// ms since the pulse was written (deriveFloor already computes it for the
+// WARDEN lamp — one clock, two readers). Beyond LIVE_SHOWN_MS the LIVE strips
+// (ASLEEP SINCE / CHURNING) drop: the board cannot vouch for "right now" off
+// a wire older than the horizon the system itself promises. A missing (null)
+// age keeps v3 behavior — callers that do not know the age are not made liars;
+// an UNPARSEABLE age is stale (no age claim = no freshness claim). Retroactive
+// WAS ASLEEP survives staleness: history baked at write time.
+export const sleepBanner = (pulse, age = null) => {
     if (!pulse) return null
+    const liveOk = age == null || (Number.isFinite(age) && age <= LIVE_SHOWN_MS)
     if (pulse.asleep === 'true' && /^\d{2}:\d{2}$/.test(pulse.since || '')) {
-        return { text: `STUDIO ASLEEP SINCE ${pulse.since}`, minutes: null, live: true, severe: true, hint: 'nothing can ship while the Mac sleeps' }
+        return liveOk
+            ? { text: `STUDIO ASLEEP SINCE ${pulse.since}`, minutes: null, live: true, severe: true, hint: 'nothing can ship while the Mac sleeps' }
+            : null
     }
     if (typeof pulse.asleep === 'string' && /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(pulse.asleep)) {
         const min = Number(pulse.asleepm)
@@ -217,8 +241,9 @@ export const sleepBanner = (pulse) => {
     // v3 tokens ship `churnwin` and are threshold-gated at the source, so
     // presence is the claim. A v2-era token (no churnwin) carried the raw
     // trailing count — interpret it with the legacy minimum until every
-    // pulse on the wire is v3.
-    if (Number.isFinite(churn) && churn >= (pulse.churnwin ? 1 : 3)) {
+    // pulse on the wire is v3. "in the last W min" is a NOW-claim: stale
+    // wires drop it like the live stamp (#1406).
+    if (Number.isFinite(churn) && churn >= (pulse.churnwin ? 1 : 3) && liveOk) {
         const win = Number(pulse.churnwin) || 30
         return { text: `STUDIO CHURNING — ${churn} sleeps in the last ${win} min`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
     }

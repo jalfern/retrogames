@@ -29,6 +29,25 @@
 //   - HINT: the digest sentence closes with the one-liner that fixes it —
 //     `sudo pmset -a sleep 0`. Keeping the shared Mac awake stays Jon's call.
 //
+// v4 (#1406) closes the honest gaps v3 leaves open:
+//   - COALESCE: one long deep-dark night with ticks resuming in stages used to
+//     record MULTIPLE back-to-back raw tickgap windows (the deep-dark e2e
+//     itself showed ×3 segments for one night). coalesceWindows() merges
+//     adjacent raw windows ≤ COALESCE_GAP_MIN apart into one, and drops raw
+//     windows a later-arriving pmset window fully covers — the named truth
+//     wins outright. The LEDGER holds the coalesced story, so the pulse, the
+//     digest sentence and the board banner all tell the whole night.
+//   - AGE: the board's live strip rode any pulse, whatever its age — a 2-day-old
+//     wire could say "ASLEEP SINCE" for a box long awake. sleepBanner now takes
+//     the pulse age and drops live claims beyond the 24 h show-horizon (the
+//     budget floor.js owns; a real outage is silence, so the budget must be the
+//     system's own horizon, not one tick).
+//   - COVERAGE: nothing pinned that `pmset -g log` actually reaches the 48 h
+//     horizon; on a short-log box validated-hold degraded to "cleared, never
+//     carried" in silence. pmsetCoverage() measures the visible span and the
+//     tick line reports it once per day: `logspan=<min>` (+ ` logshort=1` when
+//     the log cannot cover the horizon). Reporting only — no rule changes.
+//
 // v3 (#1401) closes the honest gaps v2 leaves open:
 //   - PERSIST: `asleep=true since=HH:MM` used to decay after ONSET_STALE_MIN
 //     of silence — silence produced by the very deep sleep the field describes.
@@ -146,6 +165,48 @@ export function windowsForGap(gap, events) {
     const inside = events.filter((e) => e.ms >= gap.from - pad && e.ms <= gap.to)
     const ws = buildWindows(inside, { until: gap.to })
     return ws.length ? ws : [gap]
+}
+
+// ---- coalesce (#1406) ------------------------------------------------------
+
+// Two ticks' worth of seam: a raw segment ends when a tick LANDED and the next
+// begins from that same tick, so back-to-back segments touch (gap ≈ 0); the 2×
+// slack covers a resumed-in-stages night where a couple of ticks slipped in.
+export const COALESCE_GAP_MIN = 2 * TICK_MIN
+
+// coalesceWindows(windows, { maxGapMin }) -> the honest night, told once.
+// Raw tick-gap windows are claims bounded by tick landings, not by observed
+// power events: on a long dark night whose ticks resume in stages, one outage
+// records several back-to-back segments (each ≥ GAP_MIN, seams ≤ maxGapMin).
+// Adjacent RAW runs (src 'tickgap') with a seam ≤ maxGapMin merge into one —
+// chained — summing naps; the merged span is no more dishonest than the
+// segments were individually (a tick inside a seam proves a brief alive
+// instant, exactly like a dark wake inside a pmset window proves nothing).
+// pmset-named windows are the observed truth: they never merge, they break a
+// raw run, and a raw window FULLY covered by a named one (±tolMs) is dropped
+// — when the real story arrives, the scaffolding retires. Unknown shapes
+// (no src) are left alone and break runs: never merge what you cannot name.
+export function coalesceWindows(windows, { maxGapMin = COALESCE_GAP_MIN, tolMs = 60000 } = {}) {
+    const ws = (windows || []).filter((w) => w && Number.isFinite(w.from) && Number.isFinite(w.to))
+        .slice().sort((a, b) => a.from - b.from)
+    const named = ws.filter((w) => w.src === 'pmset')
+    const raw = (w) => w.src === 'tickgap'
+    const covered = (w) => named.some((p) => p.from <= w.from + tolMs && p.to >= w.to - tolMs)
+    const out = []
+    for (const w of ws) {
+        if (raw(w) && covered(w)) continue
+        const prev = out[out.length - 1]
+        if (raw(w) && prev && raw(prev) && w.from - prev.to <= maxGapMin * 60000) {
+            const to = Math.max(prev.to, w.to)
+            const naps = (prev.naps || 0) + (w.naps || 0)
+            out[out.length - 1] = {
+                ...prev, to, naps,
+                min: Math.max(1, Math.round((to - prev.from) / 60000)),
+                reason: prev.reason || w.reason || null,
+            }
+        } else out.push({ ...w })
+    }
+    return out
 }
 
 // ---- churn (#1392) ---------------------------------------------------------
@@ -348,13 +409,17 @@ export function liveLine(asleep, now = Date.now()) {
 }
 
 // addWindows(ledger, fresh, now) -> new windows list: append, dedupe
-// (same start minute = same outage seen twice), prune LEDGER_KEEP_H + cap.
+// (same start minute = same outage seen twice), COALESCE (#1406 — adjacent raw
+// segments become one night; raw claims a pmset window covers drop), prune
+// LEDGER_KEEP_H + cap. The ledger itself holds the coalesced truth, so every
+// reader (pulse token, digest sentence, board banner) tells the whole night.
 export function addWindows(existing, fresh, now = Date.now()) {
     let list = Array.isArray(existing) ? existing.slice() : []
     for (const w of fresh || []) {
         if (!list.some((e) => Math.abs(e.from - w.from) < 60000)) list.push(w)
     }
     list = list.filter((w) => Number.isFinite(w.from) && Number.isFinite(w.to) && now - w.to <= LEDGER_KEEP_H * 3600000)
+    list = coalesceWindows(list)
     list.sort((a, b) => a.from - b.from)
     return list.slice(-200)
 }
@@ -374,6 +439,27 @@ export function addChurn(existing, fresh, now = Date.now()) {
     return list.slice(-200)
 }
 
+// ---- coverage honesty (#1406) ----------------------------------------------
+
+// utcDay(ms) -> 'YYYY-MM-DD' (UTC) — the once-per-day key for the span report.
+export const utcDay = (ms) => new Date(ms).toISOString().slice(0, 10)
+
+// pmsetCoverage(events, {now, keepH}) -> {oldest, spanMin, covers} for the
+// visible log, or null when nothing is visible (a failed capture cannot
+// measure itself — you cannot report the reach of what you cannot see). The
+// `pmset -g log` horizon varies with log SIZE, not just days: on a box whose
+// log only reaches hours, resolveAsleep's validated-hold quietly degrades to
+// "cleared, never carried" — the v2 silence again, silently. `covers` says
+// whether the oldest visible event reaches the keep-horizon, so the tick line
+// can name the ceiling once per day instead of leaving the doubt invisible.
+export function pmsetCoverage(events, { now = Date.now(), keepH = LEDGER_KEEP_H } = {}) {
+    const past = (events || []).filter((e) => e && Number.isFinite(e.ms) && e.ms <= now)
+    if (!past.length) return null
+    const oldest = past.reduce((m, e) => Math.min(m, e.ms), Infinity)
+    const spanMin = Math.floor((now - oldest) / 60000)
+    return { oldest, spanMin, covers: spanMin >= keepH * 60 }
+}
+
 // ---- CLI (what warden.sh runs; ledger IO lives here, not in the pure core)
 
 const arg = (argv, name) => {
@@ -384,7 +470,9 @@ const arg = (argv, name) => {
 const has = (argv, name) => argv.some((a) => a === `--${name}` || a.startsWith(`--${name}=`))
 
 // Ledger v2 shape {windows, churns, asleep}; v1 files ({windows} only) read
-// fine — the extra fields just start empty (never wipe what IS there).
+// fine — the extra fields just start empty (never wipe what IS there). v4
+// (#1406) adds `spanDay`: the UTC day the pmset coverage span was last
+// reported, so the ceiling rides the tick line once per day, not per tick.
 function readLedger(file) {
     try {
         const j = JSON.parse(fs.readFileSync(file, 'utf8'))
@@ -392,8 +480,9 @@ function readLedger(file) {
             windows: Array.isArray(j.windows) ? j.windows : [],
             churns: Array.isArray(j.churns) ? j.churns : [],
             asleep: j.asleep && Number.isFinite(j.asleep.since) && Number.isFinite(j.asleep.seen) ? j.asleep : null,
+            spanDay: typeof j.spanDay === 'string' ? j.spanDay : null,
         }
-    } catch { return { windows: [], churns: [], asleep: null } }
+    } catch { return { windows: [], churns: [], asleep: null, spanDay: null } }
 }
 function writeLedger(file, led) {
     const tmp = `${file}.tmp`
@@ -401,6 +490,7 @@ function writeLedger(file, led) {
         windows: led.windows || [],
         churns: led.churns || [],
         asleep: led.asleep || null,
+        spanDay: led.spanDay || null,
     }, null, 1) + '\n')
     fs.renameSync(tmp, file)
 }
@@ -432,6 +522,7 @@ function run(argv) {
             windows: addWindows(led.windows, ws, NOW),
             churns: addChurn(led.churns, cs, NOW),
             asleep: as,
+            spanDay: led.spanDay,
         })
         console.log(`backfilled=${ws.length} churn=${cs.length}${dry ? ' dry' : ''}`)
         return
@@ -447,7 +538,14 @@ function run(argv) {
         // v3 (#1401): the stamp is RESOLVED, not re-detected — a failed pmset
         // capture (we are in the dark) or a wake-free covered log carries it.
         const asleepNow = resolveAsleep(before.asleep, events || [], { now: NOW, pmsetOk: events !== null })
-        if (!dry) writeLedger(file, { windows: after, churns: afterC, asleep: asleepNow })
+        // #1406 coverage honesty: once per UTC day, say how far the visible
+        // pmset log actually reaches — `logspan=<min>`, plus ` logshort=1` when
+        // it cannot cover the 48 h horizon the validators assume.
+        const cov = pmsetCoverage(events || [], { now: NOW })
+        const day = utcDay(NOW)
+        const reportSpan = cov && before.spanDay !== day
+        if (reportSpan) before.spanDay = day
+        if (!dry) writeLedger(file, { windows: after, churns: afterC, asleep: asleepNow, spanDay: before.spanDay })
         // report what was ADDED (dedupe can swallow a re-seen outage, and an
         // already-recorded gap must not fire the warden's slept action twice).
         // churn=N is the LIVE trailing-window count, at/above the threshold —
@@ -456,9 +554,14 @@ function run(argv) {
         // fully woke since the stamped onset; held=1 says v3 carried it
         // through this tick's silence instead of re-observing the chain.
         const liveChurn = churnCount(events || [], { now: NOW })
-        console.log(`recorded=${after.length - before.windows.length} src=${ws[0]?.src || 'none'} `
+        // coalescing can RETIRE raw windows once the named truth arrives —
+        // the count of NEW outages floors at 0, never goes negative.
+        const added = Math.max(0, after.length - before.windows.length)
+        console.log(`recorded=${added} src=${ws[0]?.src || 'none'} `
             + `churn=${liveChurn >= CHURN_SLEEPS ? liveChurn : 0} asleep=${asleepNow ? 1 : 0}`
-            + `${asleepNow?.persisted ? ' held=1' : ''}${dry ? ' dry' : ''}`)
+            + `${asleepNow?.persisted ? ' held=1' : ''}`
+            + `${reportSpan && cov ? ` logspan=${cov.spanMin}${cov.covers ? '' : ' logshort=1'}` : ''}`
+            + `${dry ? ' dry' : ''}`)
         return
     }
     if (cmd === 'pulse') {

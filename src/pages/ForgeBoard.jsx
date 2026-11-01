@@ -154,8 +154,10 @@ const ForgeBoard = () => {
     const { queued, shipped, pulse, building } = floor
     // #1354 — when the warden's ticks show the Studio itself was asleep, say
     // it at the TOP of the board: 11 h of "nothing shipped" reads very
-    // differently once you see the Mac was down.
-    const sleep = sleepBanner(pulse)
+    // differently once you see the Mac was down. #1406: the LIVE strips answer
+    // to the pulse's age — a wire older than the 24 h horizon no longer gets
+    // to claim what is true RIGHT NOW.
+    const sleep = sleepBanner(pulse, floor.pulseAge)
     // #1377 — live aggregate throughput from the same samples pipe: tokens/hr
     // per box over the trailing hour, from the servers' own usage counters.
     const throughput = throughputLine(samples, now)
