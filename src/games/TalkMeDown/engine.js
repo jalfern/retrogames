@@ -488,6 +488,10 @@ export function simState(gs) {
             dial: m.dial,
         })),
         manualPage: gs.manual.page,
+        // #1373: harness visibility into seat 2 — where the manual cursor is
+        // and what rule its flag clipped. Additive; hash() is untouched.
+        manualLine: gs.manual.line,
+        flag: gs.manual.flag,
         hash: hash(gs),
     }
 }

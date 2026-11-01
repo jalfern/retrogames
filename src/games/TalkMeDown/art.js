@@ -142,26 +142,32 @@ function stampPlate(g, r, stamp) {
     g.fillText(stamp, r.x + r.w - 35, r.y + 14)
 }
 
-function drawWireShape(g, x0, y0, x1, y1, color, lit, pulse) {
+// #1373: `sag` bows the wire sideways at mid-span — loose wire hangs, it does
+// not run in ruler-straight parallel lines. Deterministic per wire index, so
+// every frame draws the same snake.
+function drawWireShape(g, x0, y0, x1, y1, color, lit, pulse, sag = 0) {
     const midY = (y0 + y1) / 2
     g.strokeStyle = lit ? P.wireHi[color] : P.wire[color]
     g.lineWidth = 3
     if (pulse) { g.strokeStyle = '#ffffff'; g.lineWidth = 4 }
     g.beginPath(); g.moveTo(x0, y0)
-    g.bezierCurveTo(x0, midY, x1, midY, x1, y1)
+    g.bezierCurveTo(x0 + sag, midY, x1 + sag, midY, x1, y1)
     g.stroke()
     g.lineWidth = 1
     if (lit) { // filament glow core
         g.strokeStyle = 'rgba(255,255,220,0.75)'
         g.beginPath(); g.moveTo(x0, y0)
-        g.bezierCurveTo(x0, midY, x1, midY, x1, y1)
+        g.bezierCurveTo(x0 + sag, midY, x1 + sag, midY, x1, y1)
         g.stroke()
     }
 }
 
 export function drawNeon(g, r, m, cursorSub, pulseWire, tick) {
-    const top = r.y + Math.max(20, (r.h - 148) / 2)
-    const bot = top + 148
+    // #1373 fix: the 148 px span only fits a one-module bomb; from round 3
+    // (two bays) modules are ~115 px tall and the wires + lower strip spilled
+    // into the bay below. Scale the span to the module instead.
+    const top = r.y + Math.max(20, (r.h - Math.min(148, r.h - 24)) / 2)
+    const bot = top + Math.min(148, r.h - 24)
     // terminal strips top and bottom
     g.fillStyle = '#8a8f98'
     g.fillRect(r.x + 6, bot - 2, r.w - 12, 4)
@@ -170,14 +176,23 @@ export function drawNeon(g, r, m, cursorSub, pulseWire, tick) {
     m.wires.forEach((w, i) => {
         const x = r.x + 22 + i * Math.floor((r.w - 56) / Math.max(1, n - 1))
         const lit = w.lit && !m.solved
+        // #1373: strain-relief nubs where the wire leaves each terminal strip
+        // (rubber grommets keep the sag honest), plus a per-wire sideways bow.
+        const sag = ((i * 5 + n) % 7) - 3
+        g.fillStyle = '#141416'
+        g.fillRect(x - 3, top + 3, 7, 3)
+        g.fillRect(x - 3, bot - 6, 7, 3)
+        g.fillStyle = '#565b63'
+        g.fillRect(x - 3, top + 3, 7, 1)
+        g.fillRect(x - 3, bot - 6, 7, 1)
         if (w.cut) { // severed: two stubs + dangling end
             const midY = (top + bot) / 2
             g.strokeStyle = P.wire[w.color]; g.lineWidth = 3
-            g.beginPath(); g.moveTo(x, top + 2); g.lineTo(x - 3, midY - 6); g.stroke()
-            g.beginPath(); g.moveTo(x + 1, bot - 2); g.lineTo(x + 5, midY + 10); g.stroke()
+            g.beginPath(); g.moveTo(x, top + 2); g.quadraticCurveTo(x - 4 + sag, midY - 16, x - 3, midY - 6); g.stroke()
+            g.beginPath(); g.moveTo(x + 1, bot - 2); g.quadraticCurveTo(x + 6 + sag, midY + 4, x + 5, midY + 10); g.stroke()
             g.lineWidth = 1
         } else {
-            drawWireShape(g, x, top + 2, x + 2, bot - 2, w.color, lit, pulseWire === i && tick % 12 < 6)
+            drawWireShape(g, x, top + 2, x + 2, bot - 2, w.color, lit, pulseWire === i && tick % 12 < 6, sag)
         }
         if (cursorSub === i && !m.solved) {
             g.fillStyle = tick % 20 < 12 ? '#ffe66b' : '#fff'
@@ -279,6 +294,22 @@ export function drawSeqDots(g, r, pressed) {
 export function moduleFrame(g, r, m, selected, cursorFlash, tick) {
     g.fillStyle = '#26292e'; g.fillRect(r.x, r.y, r.w, r.h)
     g.fillStyle = '#181a1e'; g.fillRect(r.x + 2, r.y + 2, r.w - 4, r.h - 4)
+    // #1373: brushed-aluminium grain — horizontal streaks seeded from the
+    // stamp so the texture is welded to the module, not a per-frame shimmer.
+    const seed = m.stamp.charCodeAt(0) * 31 + m.stamp.charCodeAt(1)
+    for (let i = 0; i < 8; i++) {
+        const gy = r.y + 5 + ((seed * (i + 3) * 17) % Math.max(1, r.h - 10))
+        g.fillStyle = i % 2 ? 'rgba(255,255,255,0.030)' : 'rgba(255,255,255,0.018)'
+        g.fillRect(r.x + 4, gy, r.w - 8, 1)
+    }
+    // corner screws, bottom edge (top corners carry the label + lamp)
+    for (const sx of [r.x + 5, r.x + r.w - 5]) {
+        const sy = r.y + r.h - 5
+        g.fillStyle = '#6b7078'; g.beginPath(); g.arc(sx, sy, 2.5, 0, 7); g.fill()
+        g.fillStyle = '#22252a'
+        g.fillRect(sx - 2, sy - 0.5, 4, 1)
+        g.fillRect(sx - 0.5, sy - 2, 1, 4)
+    }
     if (m.solved) {
         // #1305: a real panel lamp — bezel ring + soft halo, readable at a glance
         // next to the red lock strobe. (Was a flat 6px square.)
@@ -323,7 +354,7 @@ const FOOTER = {
 
 // drawManual — the typewritten page seat 2 owns. page: 0 N / 1 D / 2 G,
 // line = seat-2 cursor, stamps = live module stamps (highlight what matters).
-export function drawManual(g, page, line, stamps, tick, hidden) {
+export function drawManual(g, page, line, stamps, tick, hidden, flag) {
     bevel(g, RAIL, '#5d4a2f', '#2e2415')
     if (hidden) {
         g.fillStyle = '#2b2e33'; g.fillRect(RAIL.x + 6, RAIL.y + 6, RAIL.w - 12, RAIL.h - 12)
@@ -360,10 +391,30 @@ export function drawManual(g, page, line, stamps, tick, hidden) {
         g.fillText(rule.id, RAIL.x + 34, y)
         g.fillStyle = P.ink
         lines.forEach((ln, li) => g.fillText(ln, RAIL.x + 58, y + li * 10))
+        // #1373: seat 2's flag (A/F) leaves a paperclip on the rule line —
+        // the page itself records what the manual player shouted about.
+        if (flag && flag === rule.id) {
+            const clipX = RAIL.x + RAIL.w - 22
+            const clipY = y - 11
+            g.strokeStyle = '#9aa0aa'; g.lineWidth = 1
+            g.beginPath()
+            g.moveTo(clipX + 1, clipY + 11)
+            g.lineTo(clipX + 1, clipY + 3)
+            g.arc(clipX + 3, clipY + 3, 2, Math.PI, 0)
+            g.lineTo(clipX + 5, clipY + 13)
+            g.lineTo(clipX + 2.5, clipY + 13)
+            g.lineTo(clipX + 2.5, clipY + 6)
+            g.stroke()
+        }
         y += lines.length * 10 + 8
     })
     g.font = FONT(6); g.fillStyle = '#6b6350'
-    FOOTER[key].forEach((ln, i) => g.fillText(ln, RAIL.x + 30, RAIL.y + RAIL.h - 64 + i * 9))
+    FOOTER[key].forEach((ln, i) => g.fillText(ln, RAIL.x + 30, RAIL.y + RAIL.h - 73 + i * 9))
+    // #1373: the accepted-call shapes, printed right on the page (#1247) —
+    // a manual player who never read a screen knows exactly what to shout.
+    g.fillStyle = '#4a4436'
+    g.fillText('MIC: "CUT RED" "DIAL 7"', RAIL.x + 30, RAIL.y + RAIL.h - 35)
+    g.fillText('"SET"  "PRESS STAR"', RAIL.x + 30, RAIL.y + RAIL.h - 26)
     g.font = FONT(6); g.fillStyle = '#8a8168'
     g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)
 }
