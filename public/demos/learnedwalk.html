@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<link rel="icon" href="data:,">
+<title>LEARNED WALK — labs</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0714; overflow: hidden; touch-action: none; }
+  #c { display: block; width: 100vw; height: 100vh; }
+  #hud {
+    position: fixed; top: 10px; left: 12px; z-index: 5; pointer-events: none;
+    font: 11px/1.5 ui-monospace, Menlo, monospace; color: #d9b8ff;
+    text-shadow: 0 0 6px rgba(0,0,0,0.9);
+  }
+  #hud .k { color: #6f5a8d; }
+  #scrub {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
+    background: rgba(11,7,20,0.82); border-top: 1px solid rgba(199,125,255,0.35);
+    padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); color: #d9b8ff;
+    font: 10px/1.4 ui-monospace, monospace; letter-spacing: 0.06em;
+  }
+  #track { position: relative; height: 18px; margin-top: 4px; cursor: ew-resize; }
+  #rline { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(199,125,255,0.25); }
+  #tick { position: absolute; top: 3px; width: 2px; height: 12px; background: rgba(199,125,255,0.55); }
+  #thumb { position: absolute; top: 0; width: 10px; height: 18px; margin-left: -5px; background: #c77dff; border-radius: 2px; box-shadow: 0 0 8px rgba(199,125,255,0.8); }
+  #btns { position: fixed; top: 10px; right: 12px; z-index: 8; display: flex; gap: 6px; }
+  .btn {
+    font: 10px ui-monospace, monospace; color: #d9b8ff; padding: 5px 8px; cursor: pointer;
+    border: 1px solid rgba(199,125,255,0.4); background: rgba(11,7,20,0.65); letter-spacing: 0.08em;
+  }
+  #honesty {
+    position: fixed; top: 40px; right: 12px; z-index: 9; width: min(320px, 82vw);
+    background: rgba(11,7,20,0.92); border: 1px solid rgba(199,125,255,0.4);
+    color: #cbb6e8; font: 10px/1.6 ui-monospace, monospace; padding: 10px 12px;
+    display: none;
+  }
+  #honesty b { color: #7dffb2; }
+  #honesty i { color: #ffb86b; font-style: normal; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud"></div>
+<div id="btns">
+  <div class="btn" id="bExport">EXPORT EPISODE</div>
+  <div class="btn" id="bHonest">HONESTY</div>
+</div>
+<div id="honesty"></div>
+<div id="scrub">
+  <div>TRAINING PROGRESS — drag to replay what the network knew at each stage: <span id="ckLabel"></span></div>
+  <div id="track"><div id="rline"></div><div id="thumb"></div></div>
+</div>
+<script src="physicswalk.core.js?v=1"></script>
+<script src="learnedwalk.core.js?v=1"></script>
+<script src="learnedwalk.policy.js?v=1"></script>
+<script>
+(() => {
+  'use strict'
+  const cv = document.getElementById('c')
+  const ctx = cv.getContext('2d')
+  const hud = document.getElementById('hud')
+  const LW = window.LearnedWalk
+  const POL = window.LEARNED_WALK_POLICY
+  const CK = POL && POL.checkpoints && POL.checkpoints.length ? POL.checkpoints : []
+  const N = LW.PW.N
+
+  let W = 0, HH = 0, dpr = 1
+  function resize() {
+    dpr = Math.min(2, window.devicePixelRatio || 1)
+    W = cv.width = Math.floor(window.innerWidth * dpr)
+    HH = cv.height = Math.floor(window.innerHeight * dpr)
+  }
+  resize()
+  window.addEventListener('resize', resize)
+
+  let screen = 'attract'
+  let frames = 0
+  let ckIdx = CK.length ? CK.length - 1 : -1
+
+  // ---- audio (synth only, unlocked on first press) ----
+  let ac = null
+  function unlock() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); ac.resume && ac.resume() } }
+  function thud(v) {
+    if (!ac) return
+    const o = ac.createOscillator(), g = ac.createGain()
+    o.type = 'sine'
+    o.frequency.setValueAtTime(120 + 40 * v, ac.currentTime)
+    o.frequency.exponentialRampToValueAtTime(45, ac.currentTime + 0.12)
+    g.gain.setValueAtTime(Math.min(0.16, 0.05 + v * 0.1), ac.currentTime)
+    g.gain.exponentialRampToValueAtTime(0.0001, ac.currentTime + 0.14)
+    o.connect(g).connect(ac.destination)
+    o.start(); o.stop(ac.currentTime + 0.16)
+  }
+  window.addEventListener('pointerdown', unlock)
+  window.addEventListener('keydown', unlock)
+
+  // ---- episode recorder (#1141 robot-kit format: retrogames-rec/v1 +
+  //      episode block; inline because demos are dependency-free — the kit's
+  //      validateEpisode in src/utils/robot/episode.js accepts these files) ----
+  const P_NAMES = LW.PW.P_NAMES
+  function fnv(s) {
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+    return h
+  }
+  function stateHash(sim) {
+    let s = ''
+    for (let i = 0; i < N; i++) s += Math.round(sim.p[i * 2] * 1000) + ',' + Math.round(sim.p[i * 2 + 1] * 1000) + ';'
+    return fnv(s)
+  }
+  let ep = null
+  function epStart(seed) {
+    ep = { seed, ticks: 0, hashes: [], poses: [], methods: [], lastExport: null }
+  }
+  function epTick(sim, rawThisTick) {
+    if (!ep) return
+    ep.ticks++
+    if (rawThisTick) { ep.raw = ep.raw || []; ep.raw[ep.ticks - 1] = rawThisTick; if (!ep.methods.includes('pointer')) ep.methods.push('pointer') }
+    if (ep.ticks % 6 === 0) ep.hashes.push({ t: ep.ticks, h: stateHash(sim) })
+    if (ep.ticks % 6 === 0) {
+      const o = {}
+      for (let i = 0; i < N; i++) o[P_NAMES[i]] = { p: [+sim.p[i * 2].toFixed(4), +sim.p[i * 2 + 1].toFixed(4), 0], q: [0, 0, 0, 1] }
+      ep.poses.push({ t: ep.ticks, o })
+    }
+  }
+  function epFinish(sim, success, score) {
+    if (!ep) return null
+    const last = stateHash(sim)
+    if (!ep.hashes.length || ep.hashes[ep.hashes.length - 1].t !== ep.ticks) ep.hashes.push({ t: ep.ticks, h: last })
+    const file = {
+      format: 'retrogames-rec/v1',
+      build: 'unknown',
+      game: 'learnedwalk',
+      method: 'pointer',
+      seed: ep.seed,
+      players: 1,
+      ticks: ep.ticks,
+      hashEvery: 6,
+      slots: [{ source: { kind: 'model' }, pads: Array.from({ length: ep.ticks }, () => ({})), raw: Array.from({ length: ep.ticks }, (_, i) => (ep.raw && ep.raw[i]) || {}) }],
+      hashes: ep.hashes,
+    }
+    file.episode = {
+      task: 'learned-walk',
+      success: !!success,
+      score: +score.toFixed(3),
+      poseEvery: 6,
+      poseCount: ep.poses.length,
+      poses: ep.poses,
+      methodsUsed: ep.methods.length ? ep.methods : ['pointer'],
+      assets: 'physicswalk.core.js/v1 (XPBD biped #1204) + CEM-trained policy #1205',
+    }
+    ep.lastExport = file
+    ep = null
+    return file
+  }
+  window.__lastEpisode = null
+
+  // ---- the walker ----
+  let seed = 1 + Math.floor(Math.random() * 99999)
+  let lw = LW.create(CK.length ? CK[ckIdx].params : new Float64Array(LW.NP), { seed })
+  const trail = []
+  let camX = 0
+  let pushRawPending = null
+
+  function startRun() {
+    seed = 1 + Math.floor(Math.random() * 99999)
+    lw = LW.create(CK.length ? CK[ckIdx].params : new Float64Array(LW.NP), { seed })
+    trail.length = 0
+    camX = 0
+    screen = 'play'
+    epStart(seed)
+  }
+
+  function pushWalker(v, raw) {
+    if (screen !== 'play') { startRun(); return }
+    if (lw.sim.mode === 'fallen') { const s = seed; lw = LW.create(lw.pp, { seed: s }); trail.length = 0; epStart(s); return }
+    LW.PW.push(lw.sim, v, 0)
+    thud(Math.min(1, v / 3))
+    if (raw) pushRawPending = raw
+    if (!window.__keysOnly) epTickPush(raw)
+  }
+  function epTickPush(raw) { pushRawPending = pushRawPending || raw }
+
+  window.addEventListener('pointerdown', (e) => {
+    if (e.target.closest && e.target.closest('#scrub,#btns,#honesty')) return
+    unlock()
+    const frac = Math.min(1, Math.max(0, e.clientX / window.innerWidth))
+    pushWalker(0.4 + 2.6 * frac, { px: Math.round(e.clientX), py: Math.round(e.clientY) })
+  })
+  window.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' || e.code === 'Enter') { window.__keysOnly = true; unlock(); pushWalker(1.4); e.preventDefault() }
+    if (e.code === 'BracketLeft') setCk(ckIdx - 1)
+    if (e.code === 'BracketRight') setCk(ckIdx + 1)
+    if (e.code === 'KeyH') toggleHonest()
+  })
+
+  // ---- checkpoint scrubber ----
+  const track = document.getElementById('track')
+  const thumb = document.getElementById('thumb')
+  const ckLabel = document.getElementById('ckLabel')
+  function drawTicks() {
+    for (const el of track.querySelectorAll('#tick')) el.remove()
+    if (CK.length < 2) return
+    for (let i = 0; i < CK.length; i++) {
+      const t = document.createElement('div'); t.id = 'tick'
+      t.style.left = (i / (CK.length - 1) * 100) + '%'
+      t.style.background = CK[i].fell ? 'rgba(255,120,120,0.5)' : 'rgba(125,255,178,0.5)'
+      track.appendChild(t)
+    }
+  }
+  function setCk(i) {
+    if (!CK.length) return
+    ckIdx = Math.min(CK.length - 1, Math.max(0, i))
+    thumb.style.left = (ckIdx / (CK.length - 1) * 100) + '%'
+    const ck = CK[ckIdx]
+    ckLabel.textContent = 'gen ' + ck.gen + ' (' + ck.stage + ') — walked ' + ck.meters + ' m, topples on ' + ck.fell + '/' + (POL.facts.eval ? 5 : '?') + ' test seeds'
+    lw.pp.set(Float64Array.from(ck.params))
+    if (screen === 'play') startRun()
+  }
+  drawTicks()
+  setCk(ckIdx)
+  function scrubTo(clientX) {
+    if (!CK.length) return
+    const r = track.getBoundingClientRect()
+    setCk(Math.round((clientX - r.left) / r.width * (CK.length - 1)))
+  }
+  let scrubbing = false
+  track.addEventListener('pointerdown', (e) => { scrubbing = true; scrubTo(e.clientX); e.preventDefault() })
+  window.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e.clientX) })
+  window.addEventListener('pointerup', () => { scrubbing = false })
+
+  // ---- honesty panel + export ----
+  const honesty = document.getElementById('honesty')
+  function honestText() {
+    const f = POL.facts
+    return '<b>LEARNED end to end (reward only):</b> balance, step timing, propulsion and push ' +
+      'recovery — one 23→16→16→3 MLP, mirrored to both legs. No hand-written balance term runs at play.<br><br>' +
+      '<i>Scripted plumbing (not learned):</i> reset after falls, tap-to-push, the scrubber, the ' +
+      'episode recorder, sound effects. Arms are unactuated pendulums (real physics, no motor).<br><br>' +
+      '<b>Training:</b> ' + f.method + '<br>population ' + f.pop + ', elites ' + f.elite +
+      ', gens ' + f.gensA + '+' + f.gensB + ', seed ' + f.seed + ', deterministic.' +
+      '<br>Best policy: stage ' + f.bestStage + ' gen ' + f.bestGen + ' — walked ' +
+      (f.eval ? f.eval.advanced : '?') + ' m in 10 s test, stands ' + (f.eval ? Math.round(f.eval.uprightFrac * 100) : '?') + '% of ticks.' +
+      '<br><br>Honest gaps: flat ground only; quality is a stagger-walk, not striding; ' +
+      'reward shaping (survive + stand tall) is training-time scaffolding — the shipped ' +
+      'controller is purely the network.'
+  }
+  function toggleHonest() { honesty.style.display = honesty.style.display === 'block' ? 'none' : 'block'; honesty.innerHTML = honestText() }
+  document.getElementById('bHonest').addEventListener('pointerdown', (e) => { e.stopPropagation(); toggleHonest() })
+  document.getElementById('bExport').addEventListener('pointerdown', (e) => {
+    e.stopPropagation()
+    const rec = window.__lastEpisode || epFinish(lw.sim, lw.sim.com[0] - lw.sim.x0 >= 1, lw.sim.com[0] - lw.sim.x0)
+    if (!rec) return
+    const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' })
+    const a = document.createElement('a')
+    a.href = URL.createObjectURL(blob)
+    a.download = `learnedwalk-ep-seed${rec.seed}-t${rec.ticks}-${rec.episode.success ? 'win' : 'loss'}.json`
+    a.click()
+  })
+
+  // ---- render ----
+  const PPS = () => HH * 0.42
+  function project(x, y) {
+    const sx = (x - camX) * PPS() + W * 0.38
+    const sy = HH * 0.88 - y * PPS()
+    return [sx, sy]
+  }
+  function line(a, b, w, col) {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.lineCap = 'round'
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke()
+  }
+  const B = LW.PW.BONES
+
+  function frame() {
+    frames++
+    const sim = lw.sim
+    // physics + policy at fixed dt
+    if (screen === 'play') {
+      const prevMode = sim.mode
+      LW.step(lw, 1 / 60)
+      if (sim.events.landL || sim.events.landR) thud(0.4)
+      epTick(sim, pushRawPending)
+      pushRawPending = null
+      void prevMode
+      if (sim.mode === 'fallen') {
+        const score = sim.com[0] - sim.x0
+        window.__lastEpisode = epFinish(sim, false, score)
+      } else if (lw.tick >= 720) {
+        const score = sim.com[0] - sim.x0
+        window.__lastEpisode = epFinish(sim, score >= 1, score)
+        startRun()
+      }
+      trail.push([sim.com[0], sim.com[1]])
+      if (trail.length > 240) trail.shift()
+      camX += (sim.com[0] - 0.3 - camX) * 0.06
+    } else {
+      // attract: idle flails of the FINAL policy while falling/recovering
+      if (frames % 4 === 0) {
+        LW.step(lw, 1 / 60)
+        if (sim.mode === 'fallen') { startAttractReset() }
+      }
+      camX += (sim.com[0] - 0.3 - camX) * 0.06
+    }
+
+    ctx.fillStyle = '#0b0714'
+    ctx.fillRect(0, 0, W, HH)
+    // grid floor + scrolling metre marks
+    const g0 = Math.floor(camX) - 2
+    ctx.strokeStyle = 'rgba(120,90,170,0.25)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(0, HH * 0.88); ctx.lineTo(W, HH * 0.88); ctx.stroke()
+    for (let m = g0; m < camX + 6; m++) {
+      const s = project(m, 0)
+      ctx.strokeStyle = m % 5 === 0 ? 'rgba(199,125,255,0.5)' : 'rgba(120,90,170,0.25)'
+      ctx.beginPath(); ctx.moveTo(s[0], HH * 0.88); ctx.lineTo(s[0], HH * 0.88 + (m % 5 === 0 ? 10 : 5) * dpr); ctx.stroke()
+    }
+    // CoM trail
+    ctx.strokeStyle = 'rgba(125,255,178,0.35)'
+    ctx.lineWidth = 1.5 * dpr
+    ctx.beginPath()
+    for (let i = 0; i < trail.length; i++) {
+      const s = project(trail[i][0], trail[i][1])
+      if (i === 0) ctx.moveTo(s[0], s[1]); else ctx.lineTo(s[0], s[1])
+    }
+    ctx.stroke()
+    // bones
+    const col = sim.mode === 'fallen' ? 'rgba(255,120,120,0.9)' : 'rgba(217,184,255,0.95)'
+    for (const [a, b] of B) line(project(sim.p[a * 2], sim.p[a * 2 + 1]), project(sim.p[b * 2], sim.p[b * 2 + 1]), 2.5 * dpr, col)
+    // joint glow = policy output (green extend / amber flex) at hip/knee/ankle
+    const act = lw.act
+    const jointGlow = (i, v) => {
+      const s = project(sim.p[i * 2], sim.p[i * 2 + 1])
+      ctx.fillStyle = v > 0 ? `rgba(125,255,178,${Math.min(0.9, Math.abs(v))})` : `rgba(255,184,107,${Math.min(0.9, Math.abs(v))})`
+      ctx.beginPath(); ctx.arc(s[0], s[1], (3 + 4 * Math.abs(v)) * dpr, 0, 7); ctx.fill()
+    }
+    jointGlow(4, act[1]); jointGlow(8, act[1]); jointGlow(5, act[2]); jointGlow(9, act[2])
+    // heads
+    const hs = project(sim.p[2 * 2], sim.p[2 * 2 + 1])
+    ctx.fillStyle = col
+    ctx.beginPath(); ctx.arc(hs[0], hs[1], 7 * dpr, 0, 7); ctx.fill()
+
+    // HUD
+    if (screen === 'play') {
+      const m = sim.com[0] - sim.x0
+      hud.innerHTML = '<span class="k">policy</span> gen ' + (CK.length ? CK[ckIdx].gen : '-') +
+        ' &nbsp; <span class="k">walked</span> ' + m.toFixed(2) + ' m' +
+        ' &nbsp; <span class="k">pitch</span> ' + sim.phi.toFixed(2) +
+        '<br><span class="k">tap / space</span> = push &nbsp; <span class="k">[ ]</span> = training generation' +
+        (sim.mode === 'fallen' ? '<br><b style="color:#ff8a8a">TOPPLED — motors cut; he stands back up</b>' : '')
+    } else {
+      hud.innerHTML = '<span style="font-size:' + (22 * dpr) + 'px;color:#c77dff">LEARNED WALK</span><br>' +
+        'the PHYSICS WALK body — <b>but the balance controller is a neural<br>network trained on this machine.</b><br><br>' +
+        'any key / tap to start &nbsp;·&nbsp; bottom bar scrubs through training'
+    }
+  }
+  function startAttractReset() { lw = LW.create(CK.length ? CK[CK.length - 1].params : new Float64Array(LW.NP), { seed: 12345 }); trail.length = 0 }
+
+  function loop() { frame(); requestAnimationFrame(loop) }
+  requestAnimationFrame(loop)
+  function startFromInput(e) {
+    if (screen === 'attract' && !(e && e.target && e.target.closest && e.target.closest('#scrub,#btns,#honesty'))) startRun()
+  }
+  window.addEventListener('pointerdown', startFromInput)
+  window.addEventListener('keydown', startFromInput)
+
+  // ---- DEV / harness hook ----
+  window.__learnedwalkTest = {
+    ready: true,
+    frames: () => frames,
+    screen: () => screen,
+    start: () => startRun(),
+    push: (v) => pushWalker(v),
+    reset: () => startRun(),
+    setCheckpoint: (i) => setCk(i),
+    checkpoint: () => ckIdx,
+    generations: () => CK.length,
+    metrics: () => ({
+      mode: lw.sim.mode, phi: +lw.sim.phi.toFixed(3), margin: +lw.sim.margin.toFixed(3),
+      com: [+lw.sim.com[0].toFixed(3), +lw.sim.com[1].toFixed(3)],
+      comV: [+lw.sim.comV[0].toFixed(3), +lw.sim.comV[1].toFixed(3)],
+      advanced: +(lw.sim.com[0] - lw.sim.x0).toFixed(3),
+      ticks: lw.tick, act: Array.from(lw.act, (x) => +x.toFixed(3)),
+      gen: CK.length ? CK[ckIdx].gen : -1,
+    }),
+    state: () => Array.from(lw.sim.p),
+    lastEpisode: () => window.__lastEpisode,
+    policyFacts: () => (POL ? POL.facts : null),
+  }
+})();
+</script>
+<script>
+window.DEMO_CREDITS = {
+  name: 'LEARNED WALK', accent: '#c77dff',
+  issues: [1205], span: '~4 d', shipped: '2026-11-01',
+  assist: 'solo',
+  note: 'goal-only brief: same body and physics as PHYSICS WALK, but the balance controller is one small net trained here with CEM — tap to push, scrub the training.',
+};
+</script>
+<script src="credits.js"></script>
+<script src="feedback.js"></script>
+</body>
+</html>
