@@ -19,7 +19,7 @@
 import { newRoom, join, leave, relay, rosterOf } from '../relay/core.js'
 import { createLobby } from '../src/utils/lobby.js'
 import { createGame, stepGame, hashState, snapshotGame, restoreGame, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
-import { createSosSync, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX } from '../src/games/ShortOrderShout/net.js'
+import { createSosSync, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE } from '../src/games/ShortOrderShout/net.js'
 
 let pass = 0, fail = 0
 const ok = (c, msg, extra = '') => { if (c) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg} ${extra}`) } }
@@ -172,6 +172,10 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         const slots = ep.slots || []
         ep.mySeats = seatsOf(ep.lobby.room.yourSlot, ep.partner)
         ep.sync.mySeats = ep.mySeats.slice()
+        // #1416 mirror: mid-race, watch seats shrink ONLY through the grace'd
+        // demote path in ep.step (exactly what index.jsx does). An immediate
+        // roster shrink would hide the stale-pad hole the takeover has to close.
+        if (ep.playing) return
         const humans = slots.filter((s) => s < seats)
         ep.watch = humans
         ep.sync.watchSeats = humans.slice()
@@ -227,6 +231,18 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
             }
         }
         if (!ep.sync.ready(k, cpuMasks)) {
+            // #1416 gap 2 mirror: hand a stalled seat to the CPU once its
+            // player is gone from the roster and the grace has run (index.jsx).
+            const st = ep.sync.stats()
+            if (st.stallRun > DROP_GRACE && ep.slots) {
+                const gone = st.stalledSeat
+                if (gone >= 0 && gone !== ep.lobby.room.yourSlot && gone !== (ep.isHost && ep.partner ? seats - 1 : -1)
+                    && ep.watch.indexOf(gone) >= 0 && ep.slots.indexOf(gone) < 0
+                    && ep.sync.demote(gone)) {
+                    ep.watch = ep.watch.filter((x) => x !== gone)
+                    ep.demoted = (ep.demoted || []).concat(gone)
+                }
+            }
             if (process.env.SOS_DBG && ep.sync.stats().stallRun === 50) {
                 console.log('STALL', id, JSON.stringify(ep.sync.debug(k)), 'cpu', JSON.stringify(Object.keys(cpuMasks)), 'my', ep.mySeats, 'hub', JSON.stringify(ep.hub.count || 0), 'refused', ep.hub.refused || 0, 'tx', ep.txCount())
             }
@@ -377,6 +393,15 @@ console.log('# four cooks: rate window, join/leave grace')
     runTogether([a, b], 600)
     ok(a.gs.tick > 2100 && b.gs.tick > 2100, `shift survives a walkaway (${a.gs.tick}/${b.gs.tick})`)
     ok(a.desyncs.length === 0 && b.desyncs.length === 0, 'no desync from the walkaway (CPU takeover)')
+    // #1416 gap 2: the takeover is a visible DEMOTE, not a silent one — both
+    // surviving boxes flip seat 2 through the grace'd rule, not a roster hack.
+    ok((a.demoted || []).join() === '2' && (b.demoted || []).join() === '2', 'seat 2 demoted to CPU on BOTH surviving boxes', JSON.stringify([a.demoted, b.demoted]))
+    ok(a.watch.indexOf(2) < 0 && b.watch.indexOf(2) < 0, 'watch list shrank on both boxes (seat 2 no longer gates ticks)')
+    const mA = a.sync.stats().maxStallRun, mB = b.sync.stats().maxStallRun
+    ok(mA < NOTICE_AT && mB < NOTICE_AT, `takeover lands before the re-kick notice (max stall ${mA}/${mB} < ${NOTICE_AT})`)
+    const scoreBefore = a.gs.score
+    runTogether([a, b], 600)
+    ok(a.gs.score >= scoreBefore && a.gs.score === b.gs.score, `cooking continues after the takeover (${a.gs.score}=${b.gs.score})`)
 }
 
 // =============================== 5. RE-KICK HANDOFF =============================
@@ -388,6 +413,28 @@ console.log('# re-kick handoff (#1379 gap 6): a stalled box says so, it does not
     ok(stallNotice(STALL_MAX, 'host') === 'FRIEND LOST — RESTARTING SHIFT', 'host shows FRIEND LOST at/after the re-kick bar')
     ok(stallNotice(STALL_MAX, 'guest') === 'HOST RESTARTING SHIFT', 'guest still points at the host at the re-kick bar')
     ok(NOTICE_AT < STALL_MAX, 'guest is told BEFORE the host re-kicks (notice precedes restart)')
+}
+
+// ================= 6. WALKAWAY TAKEOVER (#1416 gap 2) =========================
+console.log('# walkaway takeover: demote is once-only, stall-free and un-poisonable')
+{
+    ok(DROP_GRACE < NOTICE_AT && NOTICE_AT < STALL_MAX, `grace(${DROP_GRACE}) < notice(${NOTICE_AT}) < re-kick(${STALL_MAX}) — takeover beats the restart`)
+    const s = createSosSync({ mySeats: [0], watchSeats: [0, 1] })
+    s.pumpTo(0, () => ({})) // seat 0 has its own sample at k=0
+    ok(s.ready(0, {}) === false && s.stats().stalledSeat === 1, 'stalled seat is identified (seat 1 has no pads)')
+    ok(s.demote(1) === true, 'demote hands the stalled seat to the CPU')
+    ok(s.ready(0, {}) === true && s.stats().stallRun === 0, 'tick runs again the frame the seat is demoted')
+    ok(s.demote(1) === false, 'demote is once-only per seat')
+    ok(createSosSync({ mySeats: [0], watchSeats: [0, 1] }).demote(3) === false, 'demote refuses a seat it does not watch')
+    // stale-pad poisoning: a pad buffered for a demoted seat must NOT be applied
+    // after the takeover — assemble() prefers remote over the CPU mask, so this
+    // is the hole that would silently break hash equality across boxes.
+    const s3 = createSosSync({ mySeats: [0], watchSeats: [1] })
+    s3.gotPad({ k: 7, mm: { 1: 16 } })
+    s3.demote(1)
+    ok(padMask(s3.assemble(7, { 1: 3 })[1]) === 3, 'after demote the CPU mask drives the seat')
+    s3.gotPad({ k: 8, mm: { 1: 16 } }) // a straggler batch from the departed friend
+    ok(padMask(s3.assemble(8, { 1: 3 })[1]) === 3, 'a straggler pad post-demote is ignored (remote buffer dropped)')
 }
 
 console.log(`\nsoslinkcheck: ${pass} passed, ${fail} failed`)

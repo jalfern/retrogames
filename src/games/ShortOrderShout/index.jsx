@@ -21,9 +21,9 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
-import { createSosSync, packSnap, padMask, stallNotice } from './net.js'
+import { createSosSync, packSnap, padMask, stallNotice, DROP_GRACE } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
-import { playFx, dinerBar, resetDiner } from './audio.js'
+import { playFx, dinerBar, resetDiner, seatDropFx } from './audio.js'
 
 const FIXED_DT = 1000 / 60
 const IS_TOUCH = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0)
@@ -53,7 +53,7 @@ export default function ShortOrderShout() {
     const selectRef = useRef(2)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0, walk: {}, pops: [], slide: {}, bump: 0, stamp: 0 })
+    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0, walk: {}, pops: [], slide: {}, bump: 0, stamp: 0, dropFlash: null })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -234,7 +234,7 @@ export default function ShortOrderShout() {
         const relayUrl = relayFromQuery(window.location.search)
         const net = {
             active: !!netRole, role: netRole, slot: 0, seats: 1, partnerSeat: -1,
-            humans: [], mySeats: [], state: null, desyncFrozen: false,
+            humans: [], mySeats: [], state: null, desyncFrozen: false, dropped: [],
         }
         net.sync = createSosSync({
             send: (t, p) => { if (net.room) net.room.send(t, p) },
@@ -270,7 +270,8 @@ export default function ShortOrderShout() {
             net.sync.watchSeats = net.humans.slice()
             net.sync.reset(0)
             const hud = hudRef.current
-            hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0
+            hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null
+            net.dropped = []
             resetDiner()
             setScreen('play')
             specRef.current.players = seats
@@ -373,6 +374,26 @@ export default function ShortOrderShout() {
                 }
             }
             if (!net.sync.ready(k, cpuMasks)) {
+                // #1416 gap 2 — walkaway takeover: a seat blocked >grace whose
+                // player LEFT the roster gets handed to the CPU (the NET tag
+                // flips, a hand-off blip sounds) and the shift cooks on. A seat
+                // that is merely lagging while still in the roster stays on the
+                // old path: the notice overlay, then the host's re-kick.
+                const st = net.sync.stats()
+                if (st.stallRun > DROP_GRACE && net.room) {
+                    const gone = st.stalledSeat
+                    if (gone >= 0 && gone !== net.room.yourSlot && gone !== net.partnerSeat
+                        && net.humans.indexOf(gone) >= 0 && net.room.slots.indexOf(gone) < 0
+                        && net.sync.demote(gone)) {
+                        net.humans = net.humans.filter((x) => x !== gone)
+                        net.dropped.push(gone)
+                        net.sync.watchSeats = net.humans.slice()
+                        const hud2 = hudRef.current
+                        hud2.dropFlash = { seat: gone, t: 120 }
+                        netToast(`P${gone + 1} LEFT — CPU TAKES OVER`)
+                        seatDropFx()
+                    }
+                }
                 // the notice is now a persistent overlay (stallNotice, drawn in the HUD);
                 // only the host can restart — it re-kicks the shift at the stall limit.
                 if (net.sync.stats().stallRun > 180 && net.role === 'host') onlineStart()
@@ -702,7 +723,10 @@ export default function ShortOrderShout() {
             let legend
             if (net.active) {
                 const ownSeat = net.role === 'host' ? 0 : net.slot
-                legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : ' CPU'}`).join(' ')
+                const df = hud.dropFlash
+                if (df && df.t > 0) df.t--
+                legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : df && df.seat === i && df.t > 0 ? ' CPU!' : ' CPU'}`).join(' ')
+                if (df && df.t > 0 && Math.floor(df.t / 6) % 2) ctx.fillStyle = '#ffd23f'
                 if (net.room && net.room.code) ctx.fillText(`ROOM ${net.room.code}${net.sync.stats().stallRun > 8 ? ' SYNC...' : ''}`, 150, CANVAS_H - 3)
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
@@ -830,7 +854,7 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
-                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), stalls: net.sync.stats() } : null),
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats() } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',

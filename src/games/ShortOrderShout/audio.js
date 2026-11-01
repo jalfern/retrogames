@@ -36,6 +36,16 @@ export function dinerBar(gs) {
 }
 export function resetDiner() { lastBar = -1 }
 
+// #1416 gap 2: a friend's seat just fell to the CPU mid-shift. Distinct from
+// the join chime (which rises) — this one is a rising hand-off blip + a short
+// noise "clatter" like a basket sliding down the pass counter.
+export function seatDropFx() {
+    AC.playTone(392, 0.06, 'square', 0.05)
+    AC.playTone(523, 0.06, 'square', 0.05, 0.08)
+    AC.playTone(659, 0.10, 'square', 0.05, 0.16)
+    AC.playNoise(0.08, 0.12)
+}
+
 export function playFx(f) {
     switch (f.k) {
         case 'print': // dot-matrix ticket zip + service bell ding (#1292)

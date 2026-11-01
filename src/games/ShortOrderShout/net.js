@@ -34,6 +34,9 @@ export const SAMPLE_EVERY = 2    // sample/send granularity; the UI latches A/B
 export const HASH_EVERY = 60     // ~1 s whole-sim hash boundary
 export const STALL_MAX = 180     // ~3 s of missing pads => host gives up, re-kicks
 export const NOTICE_AT = 120     // ~2 s: the re-kick is coming — say so, don't freeze
+export const DROP_GRACE = 30     // ~0.5 s of missing pads for a seat whose player
+                                 // LEFT the roster => hand it to the CPU and keep
+                                 // cooking (#1416 gap 2) — a walkaway is not a crash
 export const CHUNK = 380         // relay budget 512B, sig-lesson sizing
 
 // the six fields the kitchen reads — one byte on the wire.
@@ -133,6 +136,10 @@ export function createSosSync(opts = {}) {
     let ours = new Map() // k -> h
     let peerH = new Map() // k -> Map(seat -> h)
     let stalls = 0, stallRun = 0, maxStallRun = 0
+    let stalledSeat = -1 // which watch seat blocked the last ready() check
+    const dropped = new Set() // demoted seats: their wire pads are DEAD — gotPad
+                              // must not resurrect them (a straggler batch would
+                              // outrank the CPU mask in assemble and poison the hash)
     const snapInbox = makeSnapInbox()
 
     const shrink = (map, k) => { for (const key of map.keys()) if (key < k - KEEP) map.delete(key) }
@@ -143,7 +150,24 @@ export function createSosSync(opts = {}) {
         delay,
         hashEvery,
         snapInbox,
-        stats: () => ({ stalls, stallRun, maxStallRun, nextSample }),
+        stats: () => ({ stalls, stallRun, maxStallRun, nextSample, stalledSeat }),
+        // Walkaway takeover (#1416 gap 2): hand watch seat `seat` to the CPU.
+        // Every box stalls at the SAME tick — the first the departed member ever
+        // failed to sample, since the relay FIFO-delivers their last pad batch to
+        // all members before the roster change — so demoting while stalled keeps
+        // pad streams identical everywhere. Dropping the seat's stale remote
+        // samples is the load-bearing part: assemble() prefers remote over the
+        // CPU mask, and a resurrected pad would break hash equality.
+        demote(seat) {
+            const i = (api.watchSeats || []).indexOf(seat)
+            if (i < 0) return false
+            api.watchSeats.splice(i, 1)
+            dropped.add(seat)
+            own.delete(seat)
+            remote.delete(seat)
+            if (stalledSeat === seat) { stalledSeat = -1; stallRun = 0 }
+            return true
+        },
         // Fresh shift only (new seed on 'go'): every buffer starts clean.
         // A DESYNC resync must NOT call this — pad samples already sent are
         // final (the sampling law) and peers may have consumed ticks past the
@@ -153,6 +177,8 @@ export function createSosSync(opts = {}) {
             nextSample = k0
             pending.length = 0
             stalls = 0; stallRun = 0; maxStallRun = 0
+            stalledSeat = -1
+            dropped.clear()
             snapInbox.reset()
         },
         // Sample EVERY tick up to target (simTick + delay) — the engine consumes
@@ -187,6 +213,7 @@ export function createSosSync(opts = {}) {
             for (const s of Object.keys(mm)) {
                 const seat = s | 0
                 if (seat < 0 || seat >= SEATS) continue
+                if (dropped.has(seat)) continue // #1416: pads from a handed-off seat are dead
                 const v = mm[s]
                 if (Array.isArray(v)) v.forEach((mask, i) => rmap(seat).set(msg.k + i, mask | 0))
                 else rmap(seat).set(msg.k, v | 0)
@@ -195,11 +222,12 @@ export function createSosSync(opts = {}) {
         // May tick k run? Every non-CPU seat must have a mask for k.
         ready(k, cpuMasks = {}) {
             let ok = true
+            stalledSeat = -1
             for (const seat of api.watchSeats || []) {
                 if (cpuMasks[seat] !== undefined) continue // CPU: computed locally at k
                 const mine = (own.get(seat) || new Map()).has(k)
                 const theirs = (remote.get(seat) || new Map()).has(k)
-                if (!mine && !theirs) ok = false
+                if (!mine && !theirs) { ok = false; if (stalledSeat < 0) stalledSeat = seat }
             }
             if (ok) stallRun = 0
             else { stalls++; stallRun++; if (stallRun > maxStallRun) maxStallRun = stallRun }
