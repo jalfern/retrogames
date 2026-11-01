@@ -59,13 +59,17 @@ the couch — or the mic.
 ## Verify
 
 ```bash
-npm run bombcheck   # 28 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 35 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
-                    # paths, quota win 50/50, slack (wins at 75% fuse), grammar
+                    # paths, quota win 50/50, slack (wins at 75% fuse), grammar,
+                    # voiceCmd banking (#1415: recorder trace lands, file stays
+                    # valid v1, replay hash-exact, hint==grammar one-source)
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
-                    # hash determinism, death->restart, pause; zero page errors
+                    # hash determinism, death->restart, pause; #1415: live capture
+                    # banks voiceCmd mid-run and replays exact, LCD-rail call-hint
+                    # footer pixel gates (steel off / green on); zero page errors
 CONTRACT_ONLY=talk-me-down npm run contractcheck
 node scripts/tmd-smoke.mjs   # quick sim-only smoke
 ```
@@ -79,13 +83,26 @@ Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
   the vignette, paperclip + mic-hint page, seat-2 key drive — and fixed the
   tap latch: it now guarantees one engine tick instead of ~6 (a quick tap used
   to wrap cyclic cursors a multiple of 3 — the page flip was a no-op).
-  `voiceCmd` in recordings remains open below.
 - 2P requires a shared keyboard (seat 2 = WASD + F); no online lobby yet —
   `#494` remote seats are reserved plumbing like SOS (#1248).
 - Headless CI can hear nothing (no speech service): mic *delivery* is proved
   by badge state only; the grammar + obey/refuse path is injected.
-- `voiceCmd` is not yet written into `retrogames-rec/v1` recordings (Gauntlet's
-  #1249 pattern would extend it — polish pass candidate).
+- `voiceCmd` is written into `retrogames-rec` recordings (#1415, Gauntlet's
+  #1249 pattern): `voiceCall` banks every heard call — obey, refuse-with-why
+  and NO CALL (`intent: null`) — via `recordVoiceCmd`, and the natural rAF
+  loop feeds `recordLiveTick` under `isRecording() && !contractHoldsLoop()`
+  so a live capture holds ticks/pads/hashes AND the trace. Stamps ride the
+  recorder's clock; replay ignores the channel (bombdrive proves the file
+  replays hash-exact with the trace inside). A capture must OPEN on tick
+  zero (reset+release+recordStart in one evaluate) or banked hashes land
+  ahead of the replay clock.
+- The defuser's LCD rail footer etches the accepted call shapes (#1415 —
+  the manual page got them at #1373, seat 1 had nothing): one shared
+  `ACCEPTED_HINT` const in voice.js (page, footer and grammar can never
+  drift; bombcheck pins the shapes against `parseCall`). The rail frame
+  grows 22->32px flush with the panel bottom — glass and order-text pixels
+  keep their coordinates — and the footer glows LCD-green while the mic
+  listens, dim steel while off (the hint doubles as a mic-state echo).
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
   dial module is intentionally not cross-referenced (first dial wins).
 - No bomb-shape variety beyond one panel; deeper rounds could add a second
