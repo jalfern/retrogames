@@ -138,6 +138,10 @@ export function makeRun(seed) {
         rescued: 0, lost: 0, doused: 0, score: 0,
         searchSeen: new Set(),
         done: false, win: false, message: '', messageT: 0,
+        // radio (#1361): external calls, like pads — never from the rng.
+        // sweep: the flashlight call lights one side (the lightAt rule finds
+        // what it reveals); voiceLadder/radioHoldT drive the CPU seats.
+        sweep: null, voiceLadder: null, radioHoldT: 0,
         players: 1, sources: ['human', 'cpu', 'cpu'],
     }
     return g
@@ -273,9 +277,27 @@ function doWind(g) {
 // --- visibility (the information split) --------------------------------------
 // Returns a per-tile light value 0..1 for drawing AND for the rules that ask
 // "could THIS seat see that?".
+// Which side of the house a radio sweep lights (see applyRadio).
+export const sweepCovers = (side, x, y) => {
+    if (side === 'west') return x < W / 2
+    if (side === 'east') return x >= W / 2
+    if (side === 'back') return y > LOFT_Y1 && y <= 7
+    if (side === 'front') return y >= 11
+    if (side === 'loft') return inLoft(y)
+    return true // 'all' — the whole house
+}
+
 export function lightAt(g, x, y, seat) {
-    const i = y * W + x
     if (y >= 16) return 1
+    const raw = lightAtRaw(g, x, y, seat)
+    // the radio's flashlight sweep: light the side called out, through the
+    // same rule that finds victims and draws the darkness
+    if (g.sweep && g.sweep.t > 0 && sweepCovers(g.sweep.side, x, y)) return Math.max(0.6, raw)
+    return raw
+}
+
+function lightAtRaw(g, x, y, seat) {
+    const i = y * W + x
     if (g.tile[i] === WALL || g.tile[i] === OUT) return 0.5
     if (g.cell[i] && g.cell[i].burning) return 1
     const f = g.crew[Math.max(0, seat - 1)]
@@ -470,6 +492,7 @@ function cpuRescue(g) {
         if (nx.y < f.y) pad.up = true
         if (nx.y > f.y) pad.down = true
     }
+    if (g.radioHoldT > 0 && !f.carrying) return pad // radio hold: stand down
     if (f.carrying) {
         if (ambulanceAt(f.x, f.y)) { pad.b = true; return pad }
         drive(stepToward(g, f.x, f.y, AMBULANCE.x0 + 1, AMBULANCE.y0 + 1, inLoft(f.y)))
@@ -518,6 +541,12 @@ function cpuRescue(g) {
 
 function cpuLadder(g) {
     const pad = {}
+    // the radio drives this seat: a human shout outranks the autopilot
+    if (g.voiceLadder && g.voiceLadder.t > 0) {
+        if (g.voiceLadder.dir === 'down') pad.b = true
+        else pad.a = true // 'up' and 'brace' both hold U (raise and brace)
+        return pad
+    }
     const loftNeed = g.victims.some((v) => v.loft && v.state !== 'rescued' && v.state !== 'lost')
     const someoneInLoft = g.crew.some((f) => inLoft(f.y))
     const waitingAtBase = g.crew[1].y === LOFT_Y1 + 1 && Math.abs(g.crew[1].x - LADDER_X) <= 1 && loftNeed
@@ -568,12 +597,59 @@ export function step(g, pad, pads) {
     if (!isDown(g, rf)) g.searchSeen.add(rf.y * W + rf.x)
     g.flares = g.flares.filter((fl) => --fl.t > 0)
     g.drops = g.drops.filter((d) => --d.t > 0)
+    if (g.sweep && !--g.sweep.t) g.sweep = null
+    if (g.voiceLadder && !--g.voiceLadder.t) g.voiceLadder = null
+    g.radioHoldT = Math.max(0, g.radioHoldT - 1)
     g.messageT = Math.max(0, g.messageT - 1)
     g.score = g.rescued * 1000 + g.doused * 10 + (g.done && g.win ? Math.floor((CLOCK - g.tick) / 10) : 0)
     const unresolved = g.victims.filter((v) => v.state !== 'rescued' && v.state !== 'lost').length
     if (unresolved === 0) { g.done = true; g.win = g.rescued > 0 }
     if (g.tick >= CLOCK) { g.done = true; g.win = false; g.message = 'THE STRUCTURE CLOCK RAN OUT' }
     return g
+}
+
+// --- the radio (#1361) -------------------------------------------------------
+// External input like the pads: the shell (mic) or the harness calls this with
+// a parsed intent; it never reads the rng, so determinism holds.
+//
+// A spot call is a FLASHLIGHT SWEEP, not a cheat: it lights one side through
+// the same lightAt rule that finds victims and draws the darkness, and it
+// costs the hose seat's battery (15 — light is fuel, the flare's law). A shout
+// about a corner the sweep cannot light delivers nothing but the echo.
+// Ladder and hold calls drive the CPU seats through their pads; against a
+// human seat they are an echo only — a human seat answers only to pads.
+export const SWEEP_TICKS = 120
+export const SWEEP_COST = 15
+export const VOICE_DRIVE_TICKS = 90
+
+export function applyRadio(g, intent) {
+    if (!g || g.done || !intent) return { ok: false, why: intent ? 'GAME OVER' : 'NO CALL', msg: '' }
+    if (intent.kind === 'spot') {
+        if (g.crew[0].battery < SWEEP_COST) {
+            g.message = 'RADIO: LIGHT DEAD — NO BATTERY'; g.messageT = 120
+            return { ok: false, why: 'LIGHT DEAD', msg: g.message }
+        }
+        g.crew[0].battery -= SWEEP_COST
+        g.sweep = { side: intent.side || 'all', t: SWEEP_TICKS }
+        g.message = `RADIO: VICTIM ${intent.side === 'all' ? 'SPOTTED' : intent.side.toUpperCase()}`
+        g.messageT = 120
+        return { ok: true, side: intent.side || 'all', msg: g.message }
+    }
+    if (intent.kind === 'ladder') {
+        const cpu = g.sources[2] !== 'human'
+        g.voiceLadder = cpu ? { dir: intent.dir, t: VOICE_DRIVE_TICKS } : null
+        g.message = `RADIO: LADDER ${intent.dir.toUpperCase()}${cpu ? '' : ' (SEAT 3)'}`
+        g.messageT = 120
+        return { ok: true, dir: intent.dir, drove: cpu, msg: g.message }
+    }
+    if (intent.kind === 'hold') {
+        const cpu = g.sources[1] !== 'human'
+        if (cpu) g.radioHoldT = VOICE_DRIVE_TICKS
+        g.message = `RADIO: HOLD${cpu ? '' : ' (SEAT 2)'}`
+        g.messageT = 120
+        return { ok: true, drove: cpu, msg: g.message }
+    }
+    return { ok: false, why: 'NO CALL', msg: '' }
 }
 
 // --- state/hash for the harness ---------------------------------------------
@@ -598,6 +674,7 @@ export function state(g) {
         players: g.sources.filter((s) => s === 'human').length,
         rescued: g.rescued, lost: g.lost, doused: g.doused,
         wind: { dir: g.wind.dir, gust: g.wind.gust }, ladder: Math.round(g.ladder * 100) / 100,
+        sweep: g.sweep ? g.sweep.side : null,
         tank: Math.round(g.crew[0].tank), battery: Math.round(g.crew[0].battery),
         hash: stateHash(g),
     }

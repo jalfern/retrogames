@@ -8,8 +8,9 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, W, H, LOFT_Y1, LADDER_X,
-    FUEL, stepToward, lightAt,
+    FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS,
 } from '../src/games/FireCrew/sim.js'
+import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 let passes = 0
@@ -121,6 +122,68 @@ console.log('rules — the loft needs the ladder')
     ok(g.crew[1].y > LOFT_Y1, 'no loft without the stick')
 }
 
+console.log('rules — the radio carries the split (#1361)')
+{
+    // the grammar: exact phrasings a crew would shout, and the honesty floor
+    ok(JSON.stringify(parseRadio('victim on the left')) === JSON.stringify({ kind: 'spot', side: 'west' }), '"victim on the left" is a west spot call')
+    ok(JSON.stringify(parseRadio('there is a person by the west crates')) === JSON.stringify({ kind: 'spot', side: 'west' }), 'a longer west spot call parses')
+    ok(JSON.stringify(parseRadio("someone's trapped up there")) === JSON.stringify({ kind: 'spot', side: 'loft' }), '"up there" is the loft')
+    ok(JSON.stringify(parseRadio('body in the back room')) === JSON.stringify({ kind: 'spot', side: 'back' }), 'a back spot call parses')
+    ok(JSON.stringify(parseRadio('a man by the door')) === JSON.stringify({ kind: 'spot', side: 'front' }), 'a front spot call parses')
+    ok(JSON.stringify(parseRadio('I see a body')) === JSON.stringify({ kind: 'spot', side: 'all' }), 'a spot call with no side sweeps everything')
+    ok(JSON.stringify(parseRadio('ladder up')) === JSON.stringify({ kind: 'ladder', dir: 'up' }), '"ladder up" parses')
+    ok(JSON.stringify(parseRadio('bring the ladder down')) === JSON.stringify({ kind: 'ladder', dir: 'down' }), '"bring the ladder down" parses')
+    ok(JSON.stringify(parseRadio('hold the ladder')) === JSON.stringify({ kind: 'ladder', dir: 'brace' }), '"hold the ladder" is a brace, never a hold')
+    ok(JSON.stringify(parseRadio('hold')) === JSON.stringify({ kind: 'hold' }), 'a bare "hold" stands the seat down')
+    ok(parseRadio('fire on the left') === null, 'fire is visible — it is never the call')
+    ok(parseRadio('the wind smells funny') === null, 'chatter is no call')
+    ok(radioLabel({ kind: 'spot', side: 'west' }) === 'VICTIM WEST', 'the HUD label is short and unmistakable')
+
+    // the honesty law: a shout is a flashlight sweep through the SAME light
+    // rule that finds victims — it costs battery and cannot beat the dark
+    const g = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    const v = g.victims.find((x) => !x.loft && x.state === 'hidden')
+    v.x = 3; v.y = 12 // a dark corner (0.08) on the west side
+    ok(lightAt(g, 3, 12, 0) < 0.5, 'the test corner is genuinely dark')
+    g.crew[0].battery = 0
+    const dead = applyRadio(g, { kind: 'spot', side: 'west' })
+    ok(!dead.ok && dead.why === 'LIGHT DEAD', 'a sweep costs battery — dead light is refused')
+    g.crew[0].battery = 100
+    const armed = applyRadio(g, { kind: 'spot', side: 'west' })
+    ok(armed.ok && g.sweep && g.sweep.side === 'west', 'a spot call arms the flashlight sweep')
+    ok(g.crew[0].battery === 100 - SWEEP_COST, 'the sweep spends the hose seat\'s battery', `${g.crew[0].battery}`)
+    ok(lightAt(g, 3, 12, 0) >= 0.6, 'the sweep lights the named side')
+    ok(lightAt(g, 26, 12, 0) < 0.6, 'the far side stays dark')
+    for (let n = 0; n < 30 && v.state !== 'found'; n++) step(g, {})
+    ok(v.state === 'found', 'the sweep finds the victim through the same light rule')
+
+    const g2 = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    const v2 = g2.victims.find((x) => !x.loft && x.state === 'hidden')
+    v2.x = 2; v2.y = 13
+    g2.crew[0].battery = 100
+    applyRadio(g2, { kind: 'spot', side: 'east' })
+    for (let n = 0; n < 30; n++) step(g2, {})
+    ok(v2.state === 'hidden', 'a sweep of the wrong side delivers nothing')
+    ok(!sweepCovers('east', 2, 13) && sweepCovers('west', 2, 13), 'sweepCovers only covers the named side')
+
+    // ladder and hold calls drive the CPU seats through their pads
+    const g3 = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    for (const x of g3.victims) { x.loft = false; if (x.y <= LOFT_Y1) x.y = 12 } // nothing above: autopilot would lower
+    g3.ladder = 0.5
+    applyRadio(g3, { kind: 'ladder', dir: 'up' })
+    step(g3, {})
+    ok(g3.ladder > 0.5, 'a "ladder up" call drives the CPU ladder seat up', `${g3.ladder}`)
+    for (let n = 0; n < VOICE_DRIVE_TICKS + 1 && !g3.done; n++) step(g3, {})
+    ok(!g3.voiceLadder, 'the call wears off after its ticks')
+
+    const g4 = setSources(makeRun(7), ['human', 'cpu', 'cpu'])
+    for (let n = 0; n < 200 && !g4.done; n++) step(g4, {})
+    const p0 = `${g4.crew[1].x},${g4.crew[1].y}`
+    applyRadio(g4, { kind: 'hold' })
+    for (let n = 0; n < 30 && !g4.done; n++) step(g4, {})
+    ok(`${g4.crew[1].x},${g4.crew[1].y}` === p0 || !!g4.crew[1].carrying, 'a "hold" call stands the rescue seat down', p0)
+}
+
 console.log('wins')
 {
     let wins = 0; const detail = []
@@ -168,6 +231,15 @@ console.log('roster + registry wiring')
     const idx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
     ok(idx.includes('<AttractMessage className="mb-6 text-orange-100/80" messages={MESSAGES} />'), 'attract slot anchor present')
     ok(/id: 'fire-crew'/.test(idx), 'the contract id is wired in the shell')
+    // radio wiring (#1361): consent before any mic, the mic never auto-asks
+    ok(/import \{ parseRadio \} from '\.\/voiceradio\.js'/.test(idx), 'the shell parses radio calls')
+    ok(/KeyV/.test(idx), 'the radio toggles on V')
+    ok(idx.includes('askVoiceConsent') && idx.includes('startSpeechListen'), 'consent is asked before the mic opens')
+    ok(idx.includes('createVoiceSession') && idx.includes('voiceExtra'), 'the raw mic track rides the recording')
+    ok(idx.includes('recordVoiceCmd'), 'every spoken call banks into the recording')
+    const sim = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
+    ok(/export function applyRadio/.test(sim), 'the sim owns the radio entry point')
+    ok(/export const sweepCovers/.test(sim) && /g\.sweep && g\.sweep\.t > 0/.test(sim), 'the sweep rides the lightAt rule')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
