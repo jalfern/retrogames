@@ -110,9 +110,19 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
   otherwise outrank the CPU mask and poison the boundary hash. A merely lagging
   seat (still in the roster) stays notice-then-re-kick territory.
 - Wire discipline: only FORWARD_TYPES, <=512B, ~93 msg/s worst case (4 members)
-  against the relay's 240/s window — proven by `npm run soslinkcheck` (49
+  against the relay's 240/s window — proven by `npm run soslinkcheck` (62
   assertions incl. full-shift score equality with the local reference run and
   the walkaway takeover; mutant: neuter `check()` or `demote()` => red).
+- Latency ping (#1416 gap 3): pad/hs payloads carry `c` (the sender's own
+  clock) and `a` (recent peer clocks echoed back, <=3 pairs) — when your own
+  `c` returns, `now()-c` is a true round trip; cross-box clock skew can never
+  enter because only your OWN clock is ever echoed. `createRttTracker` (net.js)
+  smooths it (EMA 0.7/0.3), expires seats after `RTT_STALE_MS` silence and
+  colors pips at `RTT_GOOD_MS`. HUD-only: one order-light per remote human in
+  the bottom strip (`Pn ▪`), the sim never reads it — proven in §7: honest ms
+  through simulated 45ms legs, 899 s skew, silence decay, and a full laggy
+  shift whose score+hash still equal the local reference (mutant: never attach
+  `a` => the 4 pip assertions red).
 
 ## Honest gaps
 

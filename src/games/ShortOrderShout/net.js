@@ -20,6 +20,12 @@
 //                                  host drives seat 1 locally too)
 //   {t:'res',  e:'req'}            "put me back in sync" (any member -> host)
 //   {t:'res',  e:'snp', i, z, p}  host snapshot chunk
+//   pad/hs carry {c, a}            latency ping rides the existing types (#1416
+//                                  gap 3): c = sender's own clock, a = [[slot, c]]
+//                                  acks of recently seen peer clocks. Only your
+//                                  OWN clock returns to you, so no cross-clock
+//                                  skew can poison the sample — NTP by echo, no
+//                                  new relay type (FORWARD_TYPES unchanged).
 // Rate math: batches ride every SAMPLE_EVERY ticks (~30 Hz/member) + hashes
 // ~1 Hz; four members stay well under the relay's 240 msg/s room window.
 //
@@ -285,5 +291,73 @@ export function createSosSync(opts = {}) {
     // the same way — both change when a friend joins or a couch partner sits.
     api.watchSeats = (opts.watchSeats || []).slice()
     api.mySeats = (opts.mySeats || []).slice()
+    return api
+}
+
+// ---- latency ping (#1416 gap 3) ----------------------------------------------
+// Honest per-seat RTT without touching the deterministic core and without a new
+// relay type: every pad/hs already crosses the room at ~30 Hz, so the sender
+// stamps its own clock (`c`) on those messages and echoes back the newest clock
+// seen from each peer (`a: [[slot, c], …]`). When your own `c` comes back to
+// you, now() - c is a real round trip — both legs crossed the relay and both
+// ends' scheduling. Skew never enters: the echoed number is always the sender's
+// own clock. HUD-only state — the sim never reads any of it, hashes unchanged.
+export const RTT_STALE_MS = 5000 // no acks this long => the link went quiet — no pip
+export const RTT_GOOD_MS = 120   // pip colours: green / amber / red
+
+export function createRttTracker(opts = {}) {
+    const mySlot = typeof opts.mySlot === 'function' ? opts.mySlot : () => -1
+    const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
+    const ACK_MAX = 3            // one pair per peer (3 peers max) — tiny on the wire
+    const toAck = new Map()     // peerSlot -> newest c seen from them
+    const ema = new Map()       // peerSlot -> smoothed RTT ms
+    const lastAck = new Map()   // peerSlot -> when the last echo landed
+    const samples = new Map()   // peerSlot -> count (first pip needs one honest sample)
+
+    const api = {
+        // wrap an outgoing pad/hs payload; other types pass through untouched.
+        decorate(type, payload) {
+            const p = payload || {}
+            if (type !== 'pad' && type !== 'hs') return p
+            const a = []
+            for (const [slot, c] of toAck.entries()) {
+                if (a.length >= ACK_MAX) break
+                a.push([slot | 0, c])
+            }
+            return Object.assign({}, p, { c: now(), a })
+        },
+        // every inbound room message with a slot goes through here (before sync —
+        // sync ignores c/a; this only watches).
+        onRecv(msg) {
+            if (!msg || typeof msg.s !== 'number') return
+            if (typeof msg.c === 'number') toAck.set(msg.s, msg.c)
+            if (!Array.isArray(msg.a)) return
+            const me = mySlot()
+            for (const pair of msg.a) {
+                if (!Array.isArray(pair) || (pair[0] | 0) !== me) continue
+                const rtt = now() - pair[1]
+                if (!(rtt >= 0) || rtt > 60000) continue // impossible sample — drop it
+                const prev = ema.get(msg.s) // the ack came from msg.s
+                ema.set(msg.s, prev == null ? rtt : prev * 0.7 + rtt * 0.3)
+                lastAck.set(msg.s, now())
+                samples.set(msg.s, (samples.get(msg.s) || 0) + 1)
+            }
+        },
+        // fresh seat -> smoothed ms, only while the link is alive and honest.
+        pips() {
+            const out = {}
+            const t = now()
+            for (const [slot, v] of ema) {
+                if (t - (lastAck.get(slot) || 0) > RTT_STALE_MS) continue
+                out[slot] = Math.round(v)
+            }
+            return out
+        },
+        color(ms) {
+            return ms <= RTT_GOOD_MS ? '#58d048' : ms <= RTT_GOOD_MS * 2 ? '#f8d038' : '#f05030'
+        },
+        reset() { toAck.clear(); ema.clear(); lastAck.clear(); samples.clear() },
+        stats: () => ({ acked: toAck.size, samples: samples.size }),
+    }
     return api
 }
