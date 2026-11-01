@@ -56,7 +56,7 @@ export default function ShortOrderShout() {
     const selectRef = useRef(2)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0, walk: {}, pops: [], slide: {}, bump: 0, stamp: 0, dropFlash: null })
+    const hudRef = useRef({ toast: '', toastT: 0, shake: 0, lastScore: 0, popT: 0, walk: {}, pops: [], slide: {}, bump: 0, stamp: 0, dropFlash: null, desync: null })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -321,6 +321,11 @@ export default function ShortOrderShout() {
         const pushNetUi = () => setNetUi(net.active && net.state ? { ...net.state } : null)
 
         const netToast = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 110 }
+        // #1416 gap 5: a desync is no longer a plain toast. The notice prints
+        // off the ticket rail as a paper receipt (drawn in the HUD pass) and
+        // the kitchen gets a short rewind flicker while the sims heal.
+        const showDesyncNotice = () => { hudRef.current.desync = { phase: 'print', t: 0 } }
+        const markResynced = () => { hudRef.current.desync = { phase: 'ok', t: 0 } }
         const hostSnap = () => {
             const g = gsRef.current
             if (!g || g.done) return
@@ -330,7 +335,7 @@ export default function ShortOrderShout() {
             if (screenRef.current !== 'play') return
             if (net.role === 'host') hostSnap()
             else net.room.send('res', { e: 'req' })
-            netToast('DESYNC — RESYNCING')
+            showDesyncNotice()
         }
         const startNetMatch = (m) => {
             const seats = Math.max(1, Math.min(4, (m.seats | 0) || 2))
@@ -351,7 +356,7 @@ export default function ShortOrderShout() {
             net.ptt.reset()
             net.vin.reset()
             const hud = hudRef.current
-            hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null
+            hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null; hud.desync = null
             net.dropped = []
             resetDiner()
             setScreen('play')
@@ -392,7 +397,7 @@ export default function ShortOrderShout() {
                             if (got && screenRef.current === 'play') {
                                 gsRef.current = restoreGame(got.snap)
                                 emittersRef.current = freshEmitters(gsRef.current.seats)
-                                netToast('RE-SYNCED TO HOST')
+                                markResynced()
                             }
                         }
                     },
@@ -741,6 +746,22 @@ export default function ShortOrderShout() {
                 ctx.strokeRect(KITCHEN_X + 1, KITCHEN_Y + STATION.window[1] * TILE + 1, TILE - 2, TILE - 2)
             }
 
+            // desync rewind flicker (#1416 gap 5): while the receipt prints —
+            // and for the snap-forward when the snapshot lands — the kitchen
+            // tears like rewinding tape: screen-space slice offsets plus a
+            // travelling scanline, deterministic off the frame counter.
+            const dz = hud.desync
+            if (dz && (dz.phase === 'print' || (dz.phase === 'ok' && dz.t < 8))) {
+                const kH = GRID_H * TILE
+                for (let i = 0; i < 3; i++) {
+                    const sy = KITCHEN_Y + ((t * 37 + i * 53) % (kH - 6))
+                    const dxoff = ((t + i) % 2 ? 1 : -1) * (2 + ((t * 13 + i * 7) % 5))
+                    ctx.drawImage(cvs, 0, sy, CANVAS_W, 6, dxoff, sy, CANVAS_W, 6)
+                }
+                ctx.fillStyle = Math.floor(t / 2) % 2 ? 'rgba(126,224,255,0.35)' : 'rgba(240,80,48,0.30)'
+                ctx.fillRect(0, KITCHEN_Y + ((t * 29) % kH), CANVAS_W, 1)
+            }
+
             // ---------- HUD ----------
             ctx.fillStyle = '#20101a'
             ctx.fillRect(0, 0, CANVAS_W, 44)
@@ -857,6 +878,62 @@ export default function ShortOrderShout() {
                 ctx.fillText(hud.toast, CANVAS_W / 2 - w / 2, 63)
             }
 
+            // desync receipt (#1416 gap 5): the NET warning prints from the
+            // rail in paper and ink like the order slips — red DESYNC while the
+            // sims heal, green RE-SYNCED when the host snapshot lands, then it
+            // tears off. 46 = just under the rail; hold out past 3 s in case
+            // the heal never comes (dead link — the notice still clears).
+            if (hud.desync && screenRef.current === 'play') {
+                const d = hud.desync
+                d.t++
+                let drawH = 34, dy = 0, alpha = 1
+                if (d.phase === 'print') {
+                    drawH = Math.max(2, Math.round(34 * Math.min(1, d.t / 14)))
+                    if (d.t >= 14) { d.phase = 'hold'; d.t = 0 }
+                } else if (d.phase === 'ok') {
+                    if (d.t >= 26) { d.phase = 'tear'; d.t = 0 }
+                } else if (d.phase === 'hold') {
+                    if (d.t >= 180) { d.phase = 'tear'; d.t = 0 }
+                } else if (d.phase === 'tear') {
+                    dy = Math.round(d.t * 1.5); alpha = Math.max(0, 1 - d.t / 16)
+                    if (d.t >= 16) hud.desync = null
+                }
+                if (hud.desync) {
+                    const rw = 76, rx = Math.round((CANVAS_W - rw) / 2), ry = 46 + dy
+                    ctx.save()
+                    ctx.globalAlpha = alpha
+                    ctx.fillStyle = '#f0ead8'; ctx.fillRect(rx, ry, rw, drawH) // thermal paper
+                    ctx.fillStyle = '#dcd4be'
+                    for (let yy = ry + 2; yy < ry + drawH; yy += 3) ctx.fillRect(rx, yy, rw, 1) // printer scan
+                    ctx.fillStyle = '#c8bfa4'
+                    for (let xx = 0; xx < rw; xx += 4) ctx.fillRect(rx + xx, ry + drawH - 2, 2, 2) // torn edge
+                    ctx.fillStyle = '#38d058'; ctx.fillRect(rx, ry, rw, 1) // rail clip glint
+                    if (drawH >= 16) {
+                        ctx.font = '8px "Press Start 2P", monospace'
+                        if (d.phase === 'ok') {
+                            ctx.fillStyle = '#2a8a28'
+                            const s = 'RE-SYNCED'
+                            ctx.fillText(s, rx + Math.round((rw - ctx.measureText(s).width) / 2), ry + 14)
+                            if (drawH >= 28) {
+                                ctx.fillStyle = '#50484a'; ctx.font = '6px "Press Start 2P", monospace'
+                                const s2 = 'BACK ON'
+                                ctx.fillText(s2, rx + Math.round((rw - ctx.measureText(s2).width) / 2), ry + 26)
+                            }
+                        } else {
+                            ctx.fillStyle = '#d03828'
+                            const s = 'DESYNC'
+                            ctx.fillText(s, rx + Math.round((rw - ctx.measureText(s).width) / 2), ry + 14)
+                            if (drawH >= 28 && Math.floor(t / 12) % 2) {
+                                ctx.fillStyle = '#50484a'; ctx.font = '6px "Press Start 2P", monospace'
+                                const s2 = 'RESYNC..'
+                                ctx.fillText(s2, rx + Math.round((rw - ctx.measureText(s2).width) / 2), ry + 26)
+                            }
+                        }
+                    }
+                    ctx.restore()
+                }
+            }
+
             // ---------- screens ----------
             const sc = screenRef.current
             // quota made: a big stamp slams down (#1292)
@@ -967,6 +1044,9 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                desyncDrill: () => showDesyncNotice(),
+                resyncDrill: () => markResynced(),
+                notice: () => (hudRef.current.desync ? { phase: hudRef.current.desync.phase, t: hudRef.current.desync.t } : null),
                 net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
             }
             mountDbg({
