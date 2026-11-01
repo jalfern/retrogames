@@ -478,7 +478,7 @@ async function abortSquatter(sq) {
     }
     writeFileSync('/tmp/forge/nightly.json', JSON.stringify(doc, null, 1))
     console.error(`nightlybot: ABORT — :${sq.port} is ${sq.state}` +
-        (sq.pid != null ? ` (pid ${sq.pid}, chain ${sq.listenerChain.join(' < ')})` : '') +
+        (sq.pid != null ? ` (pid ${sq.pid}${sq.listenerChain.length ? `, chain ${sq.listenerChain.join(' < ')}` : ''})` : '') +
         ' — no games played, no per-game issues filed')
     if (process.env.NIGHTLY_FILE) {
         const open = JSON.parse(execFileSync('gh', ['issue', 'list', '--repo', 'jalfern/retrogames', '--state', 'open',

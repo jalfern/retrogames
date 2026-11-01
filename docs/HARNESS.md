@@ -287,10 +287,16 @@ failed — a warning, not a defect). Seed echo and score drops are warnings, not
 (engines legitimately fold seeds — Lemmings picks levels by seed, Gauntlet mods by 97).
 Results push `nightly.json` to forge-telemetry (`/forge` shows a ✓/✗ row per game with
 fail-streaks); each NEW failure shape files one `feedback` + `lane:qa` issue, deduped
-against open ones. `npm run nightlybotcheck` (pure
-selftest, 24 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, streaks, roster pinned against
+against open ones. Port ownership is proved before a single page loads (#1355): a listener on :5199
+before spawn is a squatter by definition, and the post-spawn answering PID must descend (lsof + `ps`
+ancestor walk) from the `npm run dev` leader the bot spawned — otherwise the run aborts *before* playing
+and files ONE `nightly-bot: :5199 is squatted by pid N` infra issue (digit-masked dedupe), never
+per-game ones (#1312 filed 37 in 48 s against an orphan vite). `npm run nightlybotcheck` (pure
+selftest, 33 checks: policy purity, verdicts incl. endurance-vs-stuck, filing dedup, squatter states
+incl. chain membership + infra dedupe, streaks, roster pinned against
 contractcheck's GAMES) runs in `static`; `NIGHTLY_MUTATE=stuck` proves the softlock gate is
-load-bearing (it goes silent and a frozen run flips red→green). launchd
+load-bearing (it goes silent and a frozen run flips red→green); `NIGHTLY_MUTATE=squatter` does the
+same for the ownership gate. launchd
 `com.jalfern.nightly-bot` (03:30 local) starts its own dev server on :5199 so lane servers
 never collide, then pushes + files. The soak closes itself: `nightly.json` carries a
 `greenStreak` (mutated runs never count) and the third consecutive fully-green night closes
