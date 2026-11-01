@@ -76,18 +76,22 @@ different seed → different state.
 
 ## Harness
 
-- `npm run rallycheck` — pure Node, 127 gates: stage sanity + crest
+- `npm run rallycheck` — pure Node, 152 gates: stage sanity + crest
   honesty, co-driver honesty + ledger, note grammar, determinism,
   off-track penalty, win gate (every curated stage), the #1365 feel signals
   (stepped-RPM gears via `gearOf`, crest `slopeAt` crossings per seed, lap
-  splits that sum to the stage time), and the #1407 variety signals (the
+  splits that sum to the stage time), the #1407 variety signals (the
   weather presets only ever take away — fog ≤ 1, grip ≥ 1; rain flings a
   hands-off corner wider; fair play holds in mist+rain; the NOTES lap strip
-  shows only the corners already driven), and the #1427 depth signals (the
+  shows only the corners already driven), the #1427 depth signals (the
   checkpoint clock stamps one S-split per lap inside its lap and rides the
   determinism digest; reflector posts vary beyond the studs — severity-scaled
   amber mouths, inside exit count-markers, crest pairs only on true
-  reversals). No dev server needed. Wired into
+  reversals), and the #1427 model-seat signals (the pace-card sensor never
+  reports a corner past `vis`, crests provably bite the spine too, the brain
+  only names `pad` with contract keys, its progress currency is monotonic and
+  stalls with a stuck car, and the spine finishes two laps on every curated
+  seed with a digest-stable repeat). No dev server needed. Wired into
   CI: the `rally` scope in `scripts/checks.mjs` + the KEYS-gated step in
   ci.yml (the alias existed but nothing ran it — #1395's lesson).
 - contractcheck (browser, advisory): `rally-co-driver` is wired in
@@ -127,7 +131,14 @@ different seed → different state.
   pure sim data, rallycheck-pinned (86 → 127): S-splits sit inside their laps,
   the clock rides the determinism digest, exit markers live on the inside,
   crest posts only on real terrain reversals.
-- Remaining polish (still on #1427): model-seat sensor arm for the nightly/RL
-  soak, voice field QA + #1263 mic-badge parity, online through the lobby.
+- #1427 model seat shipped: seat 1 runs the docs/AI.md spine —
+  `sensors/pacecard.js` (`senseRally` → Percept: pace card as the message
+  channel, corners only through `vis`, ego pose, laps) and `agent/pacebrain.js`
+  (`createPaceBrain` — AgentLoop contract: sense/step/skills/progress; one
+  skill `pad` emitting the contract's driver keys). `?seat=model` hands the
+  seat to the spine in the browser; `__rallyTest.modelSeat()/sense()/modelPad()`
+  expose it for nightly/RL soak. rallycheck proves honesty and 2-lap wins.
+- Remaining polish (still on #1427): voice field QA + #1263 mic-badge parity,
+  online through the lobby.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.

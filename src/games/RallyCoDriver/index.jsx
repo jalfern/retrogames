@@ -23,6 +23,8 @@ import {
     WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
+import { senseRally } from './sensors/pacecard.js'
+import { createPaceBrain, modelSeatPad } from './agent/pacebrain.js'
 
 const SIM_MS = 1000 / 60
 const W = 480
@@ -134,7 +136,19 @@ export default function RallyCoDriver() {
             setScreenBoth('play')
         }
 
-        const driverPad = () => ({
+        // model seat (#1427): ?seat=model hands seat 1 to the docs/AI.md spine
+        // (pace-card sensor → pace brain → pad keys) instead of fingers — the
+        // seam nightly/RL soak beyond cpuDriverPad. The sim owns the clock;
+        // the brain only answers for the pad each tick.
+        const modelSeat = { on: qs.get('seat') === 'model', brain: null }
+        const modelPad = (g) => {
+            if (!modelSeat.brain || modelSeat.brain.gs !== g) {
+                modelSeat.brain = Object.assign(createPaceBrain(g), { gs: g })
+            }
+            return modelSeatPad(g, modelSeat.brain)
+        }
+
+        const driverPad = () => (modelSeat.on ? modelPad(play.g) : {
             up: keys.up, down: keys.down, left: keys.left, right: keys.right, a: keys.a,
         })
 
@@ -960,6 +974,12 @@ export default function RallyCoDriver() {
             weather: () => play.g.weather,
             gs: () => play.g,
             start: () => startRace(),
+            // model seat (#1427): the spine exposed for nightly/RL — sense()
+            // returns the honest Percept, drive(on) toggles the seat,
+            // modelPad() is the next spine decision (for step-through soak).
+            modelSeat: (on = true) => { modelSeat.on = !!on; if (!on) modelSeat.brain = null; return modelSeat.on },
+            sense: () => senseRally(play.g),
+            modelPad: () => modelPad(play.g),
             // headless voice: the same path speechListen feeds (#1287's law —
             // CI has no speech engine, the downstream of the words is proven)
             voiceCall: (text) => {
