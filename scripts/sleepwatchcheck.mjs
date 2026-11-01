@@ -19,17 +19,21 @@
 //      on a REAL pulse line;
 //   D. the digest — digestText puts the sleep line FIRST, under the header,
 //      before any question (a sleeping Mac outranks every open question), and
-//      the #1392 churn line right after it;
+//      the #1392 churn line right after it; the #1401 live line outranks both;
 //   E. the CLI end-to-end (fixture pmset file, temp ledger, no network, no
 //      pmset) — backfill/tick/pulse/line contract, dedupe, dry-run leaves no
-//      ledger, the v2 churn-no-gap night, and v1 ledger files still loading;
+//      ledger, the v2 churn-no-gap night, the v3 deep-dark night (the stamp
+//      rides through a failed pmset capture and a lookback-aged chain, and
+//      dies only to a visible Wake), and v1 ledger files still loading;
 //   F. source wiring — warden step 0 + pulse field + slept/churn/onset actions
-//      + dry guard, jonq digest reads the ledger, board imports the banners,
-//      checks.mjs/ci.yml/package.json carry the alias.
+//      + dry guard + the v3 held line, jonq digest reads the ledger, board
+//      imports the banners, checks.mjs/ci.yml/package.json carry the alias.
 //
 // Mutant proofs (required one): CHURN_SLEEPS 3→90 reddens §A churn + §B
 // incident churn pins; GAP_MIN 30→90 still reddens §A gap + §B incident.
-// Verified by hand.
+// v3 (#1401): inverting the disprove comparison in resolveAsleep (wake never
+// clears) reddens §A resolve + §E wake-tick pins; hardcoding CHURN_WINDOW_MIN
+// to 45 reddens the derive pin and every churnwin token pin. Verified by hand.
 
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -37,9 +41,9 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-    CAFFEINATE_HINT, CHURN_SLEEPS, CHURN_WINDOW_MIN, GAP_MIN, LEDGER_KEEP_H, ONSET_LOOKBACK_MIN, ONSET_STALE_MIN, PULSE_SHOW_H,
+    CAFFEINATE_HINT, CHURN_SLEEPS, CHURN_WINDOW_MIN, GAP_MIN, LEDGER_KEEP_H, ONSET_LOOKBACK_MIN, ONSET_STALE_MIN, PULSE_SHOW_H, TICK_MIN,
     addChurn, addWindows, asleepField, buildChurn, buildWindows, churnCount, churnField, churnLine, detectAsleep, detectGap,
-    fmtDur, fmtHM, parsePmset, pulseField, sleepLine, windowsForGap,
+    fmtDur, fmtHM, liveLine, liveValid, parsePmset, pulseField, resolveAsleep, sleepLine, windowsForGap,
 } from './sleepwatch.mjs'
 import { deriveFloor, sleepBanner } from '../src/pages/floor.js'
 import { digestText } from './lib/runway.mjs'
@@ -164,9 +168,10 @@ section('A. pure core')
 
     // ---- churn + onset (#1392) ------------------------------------------
     eq(CHURN_SLEEPS, 3, 'churn needs at least three sleeps')
-    eq(CHURN_WINDOW_MIN, 30, 'the churn window is three tick intervals')
+    eq(CHURN_WINDOW_MIN, CHURN_SLEEPS * TICK_MIN, 'the churn window DERIVES from the cadence (three tick intervals, one place)')
+    eq(CHURN_WINDOW_MIN, 30, 'and lands on 30 min at the current 10-min tick')
     eq(ONSET_LOOKBACK_MIN, 60, 'the live onset trusts sleep evidence at most 1 h old')
-    eq(ONSET_STALE_MIN, 30, 'the onset stamp decays after two missed ticks')
+    eq(ONSET_STALE_MIN, 3 * TICK_MIN, 'the fresh onset stamp decays at three tick intervals (derived, #1401)')
 
     // a churning night: dark wake every ~9 min, NO full wake — ticks land, the
     // box is effectively down (the exact case the tick-gap cannot see)
@@ -209,12 +214,51 @@ section('A. pure core')
 
     // pulse tokens
     eq(asleepField({ since: at('00:00:00'), seen: CN - 5 * 60000 }, CN), `asleep=true since=${hm(at('00:00:00'))}`, 'the live token rides while the tick reporting it stays fresh')
-    eq(asleepField({ since: at('00:00:00'), seen: CN - (ONSET_STALE_MIN + 1) * 60000 }, CN), '', 'the live token decays with the silent box')
+    eq(asleepField({ since: at('00:00:00'), seen: CN - (ONSET_STALE_MIN + 1) * 60000 }, CN), '', 'a FRESH token decays with the silent box')
+    eq(asleepField({ since: at('00:00:00'), seen: CN - (ONSET_STALE_MIN + 1) * 60000, persisted: true }, CN), `asleep=true since=${hm(at('00:00:00'))}`,
+        'a v3 PERSISTED stamp ignores the stale-seen decay — truth survives the dark (#1401)')
+    eq(asleepField({ since: at('00:00:00'), seen: at('00:20:00'), persisted: true }, at('00:20:00') + (LEDGER_KEEP_H + 1) * 3600000), '',
+        'even persistence bows to the 48 h keep-horizon')
     eq(asleepField(null, CN), '', 'no stamp, no token')
     eq(asleepField({ since: 'junk', seen: CN }, CN), '', 'junk stamps never ride the pulse')
-    eq(churnField(chEp, CN), 'churn=13', 'the churn token names the newest episode')
+    eq(churnField(chEp, CN), 'churn=13 churnwin=30', 'the churn token names the newest episode AND carries its window (#1401)')
     eq(churnField(chEp, CN + (PULSE_SHOW_H + 1) * 3600000), '', 'churn drops off the pulse 24 h after the episode')
     eq(churnField([], CN), '', 'a well-behaved night has no churn token')
+
+    // ---- persistent live stamp (resolveAsleep, #1401) -------------------
+    const DK_S = CN - 10 * 60000 // a sleep ten minutes before the churn-now
+    const dkSleep = [{ kind: 'sleep', ms: DK_S, durSecs: 10 }]
+    const dkWake = { kind: 'wake', ms: at('03:00:00') }
+    const freshStamp = resolveAsleep(null, dkSleep, { now: CN })
+    eq(freshStamp?.since, DK_S, 'a visible chain raises the stamp (v2 behaviour kept)')
+    eq(freshStamp?.seen, CN, 'fresh stamps stamp their sighting')
+    eq(freshStamp?.persisted, undefined, 'a re-observed stamp is not persisted')
+    const carried = resolveAsleep(freshStamp, [], { now: CN + 6 * 3600000, pmsetOk: false })
+    eq(carried?.persisted, true, 'a FAILED pmset capture is the dark — carry the stamp (#1401)')
+    eq(carried?.seen, CN, 'carry freezes `seen`: the box was NOT verifiably awake')
+    eq(carried?.since, DK_S, 'and the onset minute is the night\'s honest one')
+    eq(liveValid(carried, CN + 6 * 3600000), true, 'a carried stamp is live-valid hours into the dark')
+    const aged = resolveAsleep(freshStamp, dkSleep, { now: at('03:00:00') })
+    eq(aged?.persisted, true, 'a chain aged past the lookback but wake-free and covered VALIDATES the hold')
+    eq(aged?.since, DK_S, 'validated holds keep the original onset')
+    eq(resolveAsleep(freshStamp, dkSleep.concat([dkWake]), { now: dkWake.ms + 60000 }), null, 'a visible full Wake DISPROVES the stamp — cleared')
+    eq(resolveAsleep(freshStamp, [{ kind: 'sleep', ms: at('02:30:00'), durSecs: 10 }], { now: at('05:30:00') }), null,
+        'a log that no longer covers the onset cannot validate it — cleared, never carried on faith')
+    const reSleep = resolveAsleep(freshStamp, [dkWake, { kind: 'sleep', ms: at('03:30:00'), durSecs: 10 }], { now: at('03:40:00') })
+    eq(reSleep?.since, at('03:30:00'), 'a wake-then-new-sleep restarts the story at the new chain')
+    eq(reSleep?.persisted, undefined, 'and the restart is a fresh sighting, not a carry')
+    const earlier = resolveAsleep({ since: at('01:10:00'), seen: CN }, dkSleep, { now: CN })
+    eq(earlier?.since, at('01:10:00'), 'an undisproved prev keeps the EARLIER onset when the chain re-reports')
+    eq(resolveAsleep({ since: DK_S, seen: CN }, [], { now: CN + (LEDGER_KEEP_H + 1) * 3600000, pmsetOk: false }), null,
+        'persistence still bows to the 48 h horizon')
+    eq(resolveAsleep({ since: 'junk' }, dkSleep, { now: CN })?.since, DK_S, 'junk prev is ignored, the chain still speaks')
+    eq(liveValid({ since: DK_S, seen: CN - (ONSET_STALE_MIN + 1) * 60000 }, CN), false, 'a stale unpersisted stamp is not live-valid')
+    const LL = liveLine({ since: DK_S, seen: CN, persisted: true }, CN + 3 * 3600000 + 21 * 60000)
+    ok(LL === `😴 Studio is asleep RIGHT NOW — since ${hm(DK_S)} (3h 31m) · ${CAFFEINATE_HINT}`, `digest live sentence: ${LL}`)
+    eq(liveLine({ since: DK_S, seen: CN - (ONSET_STALE_MIN + 1) * 60000 }, CN), null, 'a stale stamp never says RIGHT NOW')
+    eq(liveLine(null, CN), null, 'no stamp, no live sentence')
+    ok(liveLine({ since: DK_S, seen: CN, persisted: true }, CN + 11 * 3600000).includes('11h'),
+        'a persisted stamp names the true elapsed hours in the digest')
 
     // digest sentences
     const cl = churnLine(chEp, CN)
@@ -296,10 +340,16 @@ section('C. the board banner (floor.js)')
     eq(sleepBanner({ asleep: 'true' }), null, 'asleep=true without a since is junk, hidden')
     eq(sleepBanner({ asleep: 'true', since: '3:1' }), null, 'a malformed since never renders')
     const chB = sleepBanner({ churn: '7' })
-    eq(chB?.text, 'STUDIO CHURNING — 7 sleeps in the last half hour', 'churn gets its own amber strip')
+    eq(chB?.text, 'STUDIO CHURNING — 7 sleeps in the last 30 min', 'churn gets its own amber strip')
     eq(chB?.severe, false, 'churn is not an outage — amber, not red')
-    eq(sleepBanner({ churn: '2' }), null, 'below the churn contract (3) there is no banner')
+    eq(sleepBanner({ churn: '2' }), null, 'a v2-era token below the legacy minimum (3) still shows no banner')
     eq(sleepBanner({ churn: 'junk' }), null, 'junk churn never renders')
+    // #1401: the window rides the wire, and the emitter owns the threshold —
+    // a v3 token (with churnwin) is the claim itself, whatever the cadence is.
+    const chW = sleepBanner({ churn: '8', churnwin: '45' })
+    eq(chW?.text, 'STUDIO CHURNING — 8 sleeps in the last 45 min', 'churnwin reads the window off the wire — no mirrored arithmetic (#1401)')
+    eq(chW?.live, true, 'churn is news happening, marked live')
+    eq(sleepBanner({ churn: '4', churnwin: '30' })?.text, 'STUDIO CHURNING — 4 sleeps in the last 30 min', 'a v3 token carries its own window')
     const both = sleepBanner({ asleep: '00:17-11:35', asleepm: '678', naps: '77', churn: '5' })
     ok(both?.text.startsWith('STUDIO WAS ASLEEP'), 'when the outage is named it outranks the churn token')
 
@@ -315,7 +365,11 @@ section('C. the board banner (floor.js)')
     eq(sleepBanner(dl.pulse).text, 'STUDIO ASLEEP SINCE 03:12', 'the live strip composes straight off the wire')
     const churnLine2 = '04:00 alive=yes queue=2 building=1 shipped=41 main=abc1234 qa=8 mini=up gate=none halted=no questions=0 builders=2/2 churn=5 actions=churn:1'
     eq(sleepBanner(deriveFloor({ pulses: [{ body: churnLine2, updated_at: '2026-10-31T04:00:00Z', created_at: '2026-10-31T04:00:00Z' }], now: Date.parse('2026-10-31T04:01:00Z') }).pulse).text,
-        'STUDIO CHURNING — 5 sleeps in the last half hour', 'churn reads off a real pulse line too')
+        'STUDIO CHURNING — 5 sleeps in the last 30 min', 'a v2-era churn line still renders (legacy wire compat)')
+    const churnLine3 = '04:00 alive=yes queue=2 building=1 shipped=41 main=abc1234 qa=8 mini=up gate=none halted=no questions=0 builders=2/2 churn=5 churnwin=45 actions=churn:1'
+    const dc3 = deriveFloor({ pulses: [{ body: churnLine3, updated_at: '2026-10-31T04:00:00Z', created_at: '2026-10-31T04:00:00Z' }], now: Date.parse('2026-10-31T04:01:00Z') })
+    eq(dc3.pulse.churnwin, '45', 'the churn window token survives the kv wire')
+    eq(sleepBanner(dc3.pulse).text, 'STUDIO CHURNING — 5 sleeps in the last 45 min', 'a v3 churn line renders its own window off a real pulse')
     const JSX = read(path.join('..', 'src', 'pages', 'ForgeBoard.jsx'))
     ok(JSX.includes('sleepBanner') && JSX.includes('data-sleep'), 'ForgeBoard imports sleepBanner and renders the strip')
     ok(JSX.includes('data-live') && JSX.includes('sleep.hint'), 'ForgeBoard marks the live strip and renders its hint (#1392)')
@@ -343,6 +397,21 @@ section('D. the questions digest')
     const co = digestText({ questions: q, churn: CHS, now: new Date('2026-10-31T12:00:00Z') })
     eq(co.split('\n')[1], CHS, 'churn alone still outranks every question')
     ok(!digestText({ questions: q }).includes('🌀'), 'no churn ledger, no churn sentence')
+
+    // #1401 — the live sentence outranks its own retrospective: "RIGHT NOW"
+    // sits above "was asleep", which sits above churn, above the questions.
+    const LVS = '😴 Studio is asleep RIGHT NOW — since 00:17 (11h 43m) · keep it awake: sudo pmset -a sleep 0'
+    const all3 = digestText({
+        questions: q, live: LVS, sleep: '😴 Studio was asleep 00:17–11:35 (11h 18m)', churn: CHS,
+        now: new Date('2026-10-31T12:00:00Z'),
+    })
+    const a3 = all3.split('\n')
+    eq(a3[1], LVS, 'the live line leads the digest — the present outranks the past')
+    eq(a3[2], '😴 Studio was asleep 00:17–11:35 (11h 18m)', 'the retrospective follows')
+    eq(a3[3], CHS, 'churn follows, then the questions')
+    const liveOnly = digestText({ questions: q, live: LVS, now: new Date('2026-10-31T12:00:00Z') })
+    eq(liveOnly.split('\n')[1], LVS, 'a live stamp alone outranks every question (#1401)')
+    ok(!digestText({ questions: q }).includes('RIGHT NOW'), 'no live stamp, no live sentence')
 }
 
 section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
@@ -402,9 +471,10 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     const CHN = Math.floor(at('00:20:00') / 1000)
     eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${churnLed}`), 'recorded=0 src=none churn=3 asleep=1',
         'a churning night with landing ticks records NO window but names churn and the live onset')
-    eq(sw('pulse', `--out=${churnLed}`, `--now=${CHN}`), `asleep=true since=${hm(at('00:00:00'))} churn=3`, 'the live pulse rides while the churn is current')
+    eq(sw('pulse', `--out=${churnLed}`, `--now=${CHN}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30`, 'the live pulse rides while the churn is current')
     ok(sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('🌀 Studio churned 3 sleep cycles'), 'the churn sentence reaches the digest line with no 😴 window behind it')
-    eq(sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('😴'), false, 'no window fabricated for an open churn chain')
+    ok(!sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('was asleep'), 'no window fabricated for an open churn chain')
+    ok(sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('asleep RIGHT NOW'), 'the digest still answers "sleeping now?" while churn is live (#1401)')
     const wakeLedger = JSON.parse(fs.readFileSync(churnLed, 'utf8'))
     eq(wakeLedger.windows.length, 0, 'the churn ledger holds no outage windows')
     eq(wakeLedger.churns.length, 1, 'the churn episode is on the ledger')
@@ -413,7 +483,43 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     fs.writeFileSync(calmPm, `${churnLines}\n2026-10-31 00:25:00 +0000 Wake                \tWake from Deep Idle [CDNVA] : due to HID Activity Using AC`)
     eq(sw('tick', `--last=${CHN}`, `--now=${Math.floor(at('00:26:00') / 1000)}`, `--pmset=${calmPm}`, `--out=${churnLed}`), 'recorded=0 src=none churn=3 asleep=0',
         'the full Wake clears the live flag on the next tick')
-    eq(sw('pulse', `--out=${churnLed}`, `--now=${Math.floor(at('00:26:00') / 1000)}`), 'churn=3', 'after the wake only the churn token remains')
+    eq(sw('pulse', `--out=${churnLed}`, `--now=${Math.floor(at('00:26:00') / 1000)}`), 'churn=3 churnwin=30', 'after the wake only the churn token remains')
+
+    // #1401 deep-dark night end-to-end: the churn raises the stamp, then the
+    // box falls into a LONG dark sleep — ticks vanish, pmset goes unreachable.
+    // v2's field would have decayed at 30 min of silence; v3 carries it, the
+    // gap path names the windows retroactively, and only the visible full Wake
+    // ends the story. The pulse leads with the live truth the whole while.
+    const ddLed = path.join(dir, 'deepdark.json')
+    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=0 src=none churn=3 asleep=1',
+        'deep-dark setup: the churn raises a fresh live stamp')
+    const D3 = Math.floor(at('03:20:00') / 1000)
+    eq(sw('tick', `--last=${CHN}`, `--now=${D3}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=1 held=1',
+        'three hours of silence: the gap names the window AND the stamp survives, validated (no Wake, log covers the onset)')
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${D3 + 300}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30`,
+        'the live stamp leads the pulse three hours into the dark — the field v2 lost at 30 min (#1401)')
+    // pmset unreachable (PATH stripped — the capture failing IS the deep dark)
+    const swNoPmset = (...a) => execFileSync(process.execPath, [cli, ...a], { encoding: 'utf8', env: { PATH: '/nonexistent-forge-path' } }).trim()
+    const D5 = Math.floor(at('05:20:00') / 1000)
+    eq(swNoPmset('tick', `--last=${D3}`, `--now=${D5}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=1 held=1',
+        'a failed pmset capture carries the stamp rather than clearing it (#1401)')
+    const ddLine = sw('line', `--out=${ddLed}`, `--now=${Math.floor(at('05:21:00') / 1000)}`)
+    ok(ddLine.includes(`😴 Studio is asleep RIGHT NOW — since ${hm(at('00:00:00'))} (5h 21m)`), `deep-dark digest leads with the true elapsed: ${ddLine.split('\n')[0]}`)
+    ok(ddLine.includes('🌀 Studio churned 3 sleep cycles'), 'the churn episode rides alongside')
+    const ddPm = path.join(dir, 'deepdark-wake.txt')
+    fs.writeFileSync(ddPm, `${churnLines}\n2026-10-31 11:29:00 +0000 Wake                \tWake from Deep Idle [CDNVA] : due to HID Activity Using AC`)
+    const DW = Math.floor(at('11:30:00') / 1000)
+    eq(sw('tick', `--last=${D5}`, `--now=${DW}`, `--pmset=${ddPm}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=0',
+        'the visible Wake ends the vigil: asleep drops off the tick report, no held token')
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${DW}`), `asleep=${hm(at('05:20:00'))}-${hm(at('11:30:00'))} asleepm=370 churn=3 churnwin=30`,
+        'after the wake the pulse tells the retroactive window plus the night\'s churn')
+    const ddLedger = JSON.parse(fs.readFileSync(ddLed, 'utf8'))
+    eq(ddLedger.asleep, null, 'the ledger stamp dies with the Wake it could not dodge')
+    // an empty log validates NOTHING — the stamp is never carried on faith
+    const faithLed = path.join(dir, 'faith.json')
+    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${faithLed}`), 'recorded=0 src=none churn=3 asleep=1', 'stamp raised')
+    eq(sw('tick', `--last=${CHN}`, `--now=${Math.floor(at('00:35:00') / 1000)}`, `--pmset=${path.join(dir, 'empty.txt')}`, `--out=${faithLed}`), 'recorded=0 src=none churn=0 asleep=0',
+        'a reachable-but-empty log cannot cover the onset — cleared, never carried on trust')
 
     // a v1 ledger ({windows} only) still reads — the new fields just start empty
     const v1Led = path.join(dir, 'v1.json')
@@ -436,17 +542,20 @@ section('F. wiring tripwires')
     ok(W.includes('slept:1'), 'a recorded outage is an ACTIONS entry (follow-up pulse + log line)')
     ok(W.includes('churn:1') && W.includes('onset:1'), '#1392: churn and live onset are ACTIONS entries too')
     ok(W.includes('sleepwatch v2:'), 'churn/onset news reaches the warden log even with no gap to record')
+    ok(W.includes('held=1') && W.includes('sleepwatch v3:'), '#1401: a tick that carried the stamp through silence names itself in the log')
     ok(W.includes('[[ -s "$SW" ]]'), 'warden guards on a NON-empty materialised script (git-show failures leave 0-byte files)')
     ok(W.includes(`[[ "$DRY" != 1 ]] && print -r -- "$NOWN" > "$LOG_DIR/warden.lasttick"`), 'dry ticks never touch the lasttick stamp')
     ok(W.includes('origin/main:scripts/sleepwatch.mjs'), 'warden materialises sleepwatch from origin/main (launchd-safe)')
 
     const jq = read(path.join('jonq.mjs'))
-    ok(jq.includes("import { churnLine, sleepLine } from './sleepwatch.mjs'"), 'jonq digest imports both sleep sentences')
+    ok(jq.includes("import { churnLine, liveLine, sleepLine } from './sleepwatch.mjs'"), 'jonq digest imports all three sleep sentences (#1401 live joins)')
     ok(jq.includes('FORGE_ASLEEP'), 'jonq reads the ledger (path overridable for harness/other machines)')
     ok(jq.includes('churnLine(led.churns'), 'jonq derives the churn sentence from the ledger')
-    ok(jq.includes('digestText({ questions, runway, sleep, churn, now }'), 'jonq passes the churn line into the digest')
+    ok(jq.includes('liveLine(led.asleep'), 'jonq derives the live sentence from the stamp (#1401)')
+    ok(jq.includes('digestText({ questions, runway, sleep, churn, live, now }'), 'jonq passes the live+churn lines into the digest')
 
     const RW = read(path.join('lib', 'runway.mjs'))
+    ok(RW.indexOf('if (live) lines.push(live)') < RW.indexOf('if (sleep) lines.push(sleep)'), 'the live line outranks its own retrospective (#1401)')
     ok(RW.indexOf('if (sleep) lines.push(sleep)') < RW.indexOf('if (churn) lines.push(churn)'), 'digestText places churn right after sleep')
     ok(RW.indexOf('if (churn) lines.push(churn)') < RW.indexOf('if (questions.length === 0)'), '…and still before the questions')
 

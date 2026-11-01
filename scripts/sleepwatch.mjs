@@ -29,6 +29,20 @@
 //   - HINT: the digest sentence closes with the one-liner that fixes it —
 //     `sudo pmset -a sleep 0`. Keeping the shared Mac awake stays Jon's call.
 //
+// v3 (#1401) closes the honest gaps v2 leaves open:
+//   - PERSIST: `asleep=true since=HH:MM` used to decay after ONSET_STALE_MIN
+//     of silence — silence produced by the very deep sleep the field describes.
+//     resolveAsleep() now carries the stamp through unverifiable dark (failed
+//     pmset capture) and validates it on every reachable tick: only a visible
+//     full Wake after `since` (or a log that can no longer cover the onset)
+//     clears it, capped by the 48 h ledger horizon.
+//   - DERIVE: CHURN_WINDOW_MIN = CHURN_SLEEPS * TICK_MIN from one place; the
+//     pulse carries `churnwin=W` so floor.js reads the window off the wire,
+//     and live `churn=N` is emitted only at/above the threshold — the emitter
+//     owns the minimum, consumers mirror nothing.
+//   - NOW: the digest answers "is it sleeping RIGHT NOW?" — liveLine() rides
+//     the digest ahead of the retrospective sentences.
+//
 // Keeping the Mac awake stays Jon's call (the box is shared with Joy) —
 // this only REPORTS. Pure exports are pinned by scripts/sleepwatchcheck.mjs;
 // the CLI below is what scripts/warden.sh materialises to /tmp and runs
@@ -137,10 +151,13 @@ export function windowsForGap(gap, events) {
 // ---- churn (#1392) ---------------------------------------------------------
 
 export const CHURN_SLEEPS = 3        // ≥3 Sleeps inside the window = churning
-export const CHURN_WINDOW_MIN = 30   // three tick intervals; dark wakes ~every 9
-//                                     min rack up 3+ sleeps well inside it
+// v3 (#1401): the window DERIVES from the cadence — three tick intervals.
+// Change TICK_MIN (the launchd interval) once and the churn window, the
+// stale-stamp decay and the pulse token all follow; floor.js reads the
+// window off the wire (`churnwin=`) instead of mirroring this arithmetic.
+export const CHURN_WINDOW_MIN = CHURN_SLEEPS * TICK_MIN
 export const ONSET_LOOKBACK_MIN = 60 // "asleep now" needs a sleep seen within 1 h
-export const ONSET_STALE_MIN = 30    // the stamp decays with 2 missed dark wakes
+export const ONSET_STALE_MIN = 3 * TICK_MIN // decays with 3 missed ticks — unless v3 persisted it
 
 // buildChurn(events, {now}) -> churn episodes [{from,to,n,src}]. Consecutive
 // Sleep events ≤ maxGapMin apart form one episode; episodes with < minSleeps
@@ -190,6 +207,41 @@ export function detectAsleep(events, { now = Date.now() } = {}) {
     return { since: chain.since }
 }
 
+// resolveAsleep(prev, events, {now, pmsetOk}) -> the v3 PERSISTENT live stamp
+// (#1401). v2 let `asleep=true` decay after ONSET_STALE_MIN of silence — but
+// silence is exactly what deep sleep produces, so the field went dark while the
+// loudest truth was still on the table. v3 keeps the stamp until the world
+// DISPROVES it:
+//   - fresh chain visible (v2 detectAsleep)          -> {since, seen: now}; an
+//     undisproved prev keeps the EARLIER since (the night's true onset);
+//   - a full Wake after prev.since in the visible log -> cleared (the story
+//     moves to the retroactive window the tick-gap records);
+//   - pmset unreachable (pmsetOk false — the capture that failed IS the dark)
+//     -> prev carried forward, `seen` frozen, `persisted: true`;
+//   - chain aged past the lookback but the log still covers since and names no
+//     Wake -> validated hold: still provably asleep, persist it;
+//   - anything else (log truncated so it no longer covers since, junk prev,
+//     stamp older than the 48 h horizon) -> cleared. Persistence may only ever
+//     EXTEND a stamp that detectAsleep raised honestly; it never invents one.
+export function resolveAsleep(prev, events, { now = Date.now(), pmsetOk = true } = {}) {
+    const okStamp = prev && Number.isFinite(prev.since) && Number.isFinite(prev.seen)
+    const disproved = okStamp && (events || []).some((e) => e.kind === 'wake' && e.ms > prev.since)
+    const chain = detectAsleep(events || [], { now })
+    if (chain) {
+        // detectAsleep guarantees no Wake since chain.since; a prev only adds
+        // an earlier onset when nothing woke in between (else the story restarts
+        // at this chain — the box genuinely woke and fell asleep again).
+        const keepPrev = okStamp && !disproved && prev.since < chain.since
+        return { since: keepPrev ? prev.since : chain.since, seen: now }
+    }
+    if (okStamp && !disproved && now - prev.since <= LEDGER_KEEP_H * 3600000) {
+        if (!pmsetOk) return { ...prev, persisted: true }
+        const oldest = (events || []).reduce((m, e) => Math.min(m, e.ms), Infinity)
+        if (oldest <= prev.since) return { ...prev, persisted: true }
+    }
+    return null
+}
+
 // ---- pure presentation ----------------------------------------------------
 
 export const fmtHM = (ms) => {
@@ -215,23 +267,34 @@ export function pulseField(windows, now = Date.now()) {
     return `asleep=${fmtHM(w.from)}-${fmtHM(w.to)} asleepm=${min}${w.naps ? ` naps=${w.naps}` : ''}`
 }
 
-// asleepField(asleep, now) -> the LIVE onset token (#1392). The stamp only
-// survives as long as the ticks reporting it stay fresh (the field lands on a
-// pulse only when the warden runs, i.e. during a dark wake; ONSET_STALE_MIN of
-// silence means the chain closed or the box went fully dark — either way the
-// window/tick-gap path takes over the story).
+// liveValid(asleep, now) — one validity rule for the live stamp everywhere it
+// speaks (pulse token, digest sentence): fresh seen, or v3-persisted within
+// the 48 h keep-horizon.
+export function liveValid(asleep, now = Date.now()) {
+    if (!asleep || !Number.isFinite(asleep.since) || !Number.isFinite(asleep.seen)) return false
+    return asleep.persisted
+        ? now - asleep.since <= LEDGER_KEEP_H * 3600000
+        : now - asleep.seen <= ONSET_STALE_MIN * 60000
+}
+
+// asleepField(asleep, now) -> the LIVE onset token (#1392). A fresh stamp
+// survives as long as the ticks reporting it stay recent (ONSET_STALE_MIN);
+// a v3 PERSISTED stamp (#1401) has already been re-validated by
+// resolveAsleep, so it rides through the dark until the 48 h horizon —
+// precisely the silence that used to erase the truest field.
 export function asleepField(asleep, now = Date.now()) {
-    if (!asleep || !Number.isFinite(asleep.since) || !Number.isFinite(asleep.seen)) return ''
-    if (now - asleep.seen > ONSET_STALE_MIN * 60000) return ''
+    if (!liveValid(asleep, now)) return ''
     return `asleep=true since=${fmtHM(asleep.since)}`
 }
 
-// churnField(churns, now) -> `churn=N` for the newest episode ≤ PULSE_SHOW_H
-// old ("" when the box has been sleeping properly — or awake properly).
+// churnField(churns, now) -> `churn=N churnwin=W` for the newest episode ≤
+// PULSE_SHOW_H old ("" when the box has been sleeping properly — or awake
+// properly). The window token (#1401) carries the derivation to the board so
+// floor.js never has to mirror CHURN_SLEEPS/CHURN_WINDOW_MIN arithmetic.
 export function churnField(churns, now = Date.now()) {
     const recent = (churns || []).filter((e) => now - e.to <= PULSE_SHOW_H * 3600000)
     if (!recent.length) return ''
-    return `churn=${recent[recent.length - 1].n}`
+    return `churn=${recent[recent.length - 1].n} churnwin=${CHURN_WINDOW_MIN}`
 }
 
 // sleepLine(windows, now) -> the digest/board sentence, or null. It closes
@@ -270,6 +333,18 @@ export function churnLine(churns, now = Date.now()) {
     const total = es.reduce((s, e) => s + (e.n || 0), 0)
     return `🌀 Studio churned ×${es.length} in ${LEDGER_KEEP_H} h, ${total} cycles`
         + ` · latest ${last.n} ${fmtHM(last.from)}–${fmtHM(last.to)} — dark wakes are not uptime · ${CAFFEINATE_HINT}`
+}
+
+// liveLine(asleep, now) -> the digest sentence for a box that is asleep
+// RIGHT NOW (#1401). v2 put the live stamp on the pulse but the digest could
+// still not answer "is it sleeping right now?" without the board; and after
+// persistence the stamp can honestly be many hours old, so the sentence says
+// how long. Same validity rules as the pulse token (liveValid): a stopped
+// warden that never proved sleep yields nothing — the digest never cries wolf.
+export function liveLine(asleep, now = Date.now()) {
+    if (!liveValid(asleep, now)) return null
+    const min = Math.max(1, Math.round((now - asleep.since) / 60000))
+    return `😴 Studio is asleep RIGHT NOW — since ${fmtHM(asleep.since)} (${fmtDur(min)}) · ${CAFFEINATE_HINT}`
 }
 
 // addWindows(ledger, fresh, now) -> new windows list: append, dedupe
@@ -351,12 +426,12 @@ function run(argv) {
         if (!events || !events.length) { console.log('backfilled=0 churn=0'); return }
         const ws = buildWindows(events, { until: NOW }).filter((w) => NOW - w.to <= LEDGER_KEEP_H * 3600000)
         const cs = buildChurn(events, { now: NOW })
-        const as = detectAsleep(events, { now: NOW })
         const led = readLedger(file)
+        const as = resolveAsleep(led.asleep, events, { now: NOW, pmsetOk: true })
         if (!dry) writeLedger(file, {
             windows: addWindows(led.windows, ws, NOW),
             churns: addChurn(led.churns, cs, NOW),
-            asleep: as ? { since: as.since, seen: NOW } : led.asleep,
+            asleep: as,
         })
         console.log(`backfilled=${ws.length} churn=${cs.length}${dry ? ' dry' : ''}`)
         return
@@ -366,18 +441,24 @@ function run(argv) {
         const events = arg(argv, 'pmset') ? parsePmset(fs.readFileSync(arg(argv, 'pmset'), 'utf8')) : capturePmset()
         const ws = gap ? windowsForGap(gap, events || []) : []
         const cs = buildChurn(events || [], { now: NOW })
-        const as = detectAsleep(events || [], { now: NOW })
         const before = readLedger(file)
         const after = addWindows(before.windows, ws, NOW)
         const afterC = addChurn(before.churns, cs, NOW)
-        const asleepNow = as ? { since: as.since, seen: NOW } : null
+        // v3 (#1401): the stamp is RESOLVED, not re-detected — a failed pmset
+        // capture (we are in the dark) or a wake-free covered log carries it.
+        const asleepNow = resolveAsleep(before.asleep, events || [], { now: NOW, pmsetOk: events !== null })
         if (!dry) writeLedger(file, { windows: after, churns: afterC, asleep: asleepNow })
         // report what was ADDED (dedupe can swallow a re-seen outage, and an
         // already-recorded gap must not fire the warden's slept action twice).
-        // churn=N is the LIVE trailing-window count (not the ledger episode),
-        // asleep=1 says the box never fully woke since the stamped onset.
+        // churn=N is the LIVE trailing-window count, at/above the threshold —
+        // below it the box sleeps properly, churn=0 (the emitter owns the
+        // minimum; consumers never mirror it). asleep=1 says the box never
+        // fully woke since the stamped onset; held=1 says v3 carried it
+        // through this tick's silence instead of re-observing the chain.
+        const liveChurn = churnCount(events || [], { now: NOW })
         console.log(`recorded=${after.length - before.windows.length} src=${ws[0]?.src || 'none'} `
-            + `churn=${churnCount(events || [], { now: NOW })} asleep=${asleepNow ? 1 : 0}${dry ? ' dry' : ''}`)
+            + `churn=${liveChurn >= CHURN_SLEEPS ? liveChurn : 0} asleep=${asleepNow ? 1 : 0}`
+            + `${asleepNow?.persisted ? ' held=1' : ''}${dry ? ' dry' : ''}`)
         return
     }
     if (cmd === 'pulse') {
@@ -390,7 +471,7 @@ function run(argv) {
     }
     if (cmd === 'line') {
         const led = readLedger(file)
-        console.log([sleepLine(led.windows, NOW), churnLine(led.churns, NOW)].filter(Boolean).join('\n'))
+        console.log([liveLine(led.asleep, NOW), sleepLine(led.windows, NOW), churnLine(led.churns, NOW)].filter(Boolean).join('\n'))
         return
     }
     console.error('usage: sleepwatch.mjs backfill|tick|pulse|line [--last s] [--now s] [--pmset f] [--out f] [--dry]')
