@@ -21,7 +21,7 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
-import { createSosSync, packSnap, padMask } from './net.js'
+import { createSosSync, packSnap, padMask, stallNotice } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
 import { playFx, dinerBar, resetDiner } from './audio.js'
 
@@ -373,7 +373,9 @@ export default function ShortOrderShout() {
                 }
             }
             if (!net.sync.ready(k, cpuMasks)) {
-                if (net.sync.stats().stallRun > 180 && net.role === 'host') { netToast('FRIEND LOST — RESTARTING SHIFT'); onlineStart() }
+                // the notice is now a persistent overlay (stallNotice, drawn in the HUD);
+                // only the host can restart — it re-kicks the shift at the stall limit.
+                if (net.sync.stats().stallRun > 180 && net.role === 'host') onlineStart()
                 return
             }
             const pads = net.sync.assemble(k, cpuMasks)
@@ -738,6 +740,23 @@ export default function ShortOrderShout() {
                 ctx.fillText('QUOTA MADE!', 0, 4)
                 ctx.textAlign = 'left'
                 ctx.restore()
+            }
+            // #1379 gap 6: a friend's pads have stopped — the host re-kicks the
+            // shift at the stall limit. Say so on every box (blinking) instead of
+            // freezing on the last frame; a guest can't restart on its own.
+            if (net.active && sc === 'play') {
+                const notice = stallNotice(net.sync.stats().stallRun, net.role)
+                if (notice) {
+                    ctx.save()
+                    ctx.fillStyle = 'rgba(20,8,16,0.72)'
+                    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
+                    ctx.textAlign = 'center'
+                    ctx.font = '10px "Press Start 2P", monospace'
+                    ctx.fillStyle = Math.floor(net.sync.stats().stallRun / 12) % 2 ? '#ffd54f' : '#ff8fb0'
+                    ctx.fillText(notice, CANVAS_W / 2, CANVAS_H / 2)
+                    ctx.textAlign = 'left'
+                    ctx.restore()
+                }
             }
             if (sc !== 'play' && sc !== 'over') {
                 ctx.fillStyle = 'rgba(10,5,10,0.82)'
