@@ -125,7 +125,7 @@ everything. The scope table lives in `scripts/checks.mjs` (one source of truth:
 | `static` | every PR | required check (branch protection). Scoped lints/checks per the table, **no `--mutate`**; shared code runs the full set; docs/scripts-only PRs run only `ciscope --selftest` (< 1 min). |
 | `smoke` | every PR | the per-game real-key smokes for the touched games (+ `vpadboot`/`tapstartcheck` on shared changes). Advisory: a flake means `gh run rerun <id> --failed` once, then move on — never fix-in-a-new-PR, never wait on it. |
 | `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
-| Nightly `full-static`/`full-smoke` | schedule + manual | every lint, every check with `--mutate`, `build`, then the whole smoke set on main. A red night files/refreshes one issue and **freezes merges** until green. |
+| Nightly `full-static`/`full-smoke` | schedule + manual | every lint, every check with `--mutate`, `build`, then the whole smoke set on main. A red night files/refreshes one issue and **freezes merges** until green. Verdict jobs only (#1358): advisory perf — `shoreperf-nightly.yml`, same cron, own concurrency group — lives outside, because GitHub ends a run `cancelled` when a job cancels at scheduling even with `continue-on-error`. |
 
 Pushes to `main` no longer re-run CI — the merge commit is the tree the PR just
 proved; main's full proof is the nightly. Before ANY merge a lane runs
@@ -134,6 +134,7 @@ proved; main's full proof is the nightly. Before ANY merge a lane runs
 ```bash
 scripts/main-ok.sh                        # merge-freeze check (rule 5)
 node scripts/watchcheck.mjs               # watch.sh pane self-heal proof (#1259; skips where no zsh)
+node scripts/nightlyverdictcheck.mjs    # the verdict workflow stays advisory-free (#1358)
 node scripts/ciscope.mjs --selftest     # proof the scope table is honest
 gh pr checks --watch                      # all checks on your PR
 gh workflow run ci.yml --ref <branch>     # opt into the browser suite

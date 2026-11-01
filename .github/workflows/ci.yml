@@ -147,6 +147,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run nightlyheal
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run nightlyverdictcheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run lint:polar
         if: contains(fromJSON(env.KEYS), 'polar')
       - run: npm run polarcheck
