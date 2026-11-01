@@ -138,7 +138,21 @@ different seed → different state.
   skill `pad` emitting the contract's driver keys). `?seat=model` hands the
   seat to the spine in the browser; `__rallyTest.modelSeat()/sense()/modelPad()`
   expose it for nightly/RL soak. rallycheck proves honesty and 2-lap wins.
-- Remaining polish (still on #1427): voice field QA + #1263 mic-badge parity,
-  online through the lobby.
+- #1427 voice field QA shipped: the spoken grammar takes the accent mis-hears
+  a recognizer produces ("left tree"=L3, "right free"=R3, "write two"=R2,
+  "too left"=L2, "won"=1); NEGATION is silence ("no left", "not right three",
+  "no three" fire nothing — a negated note played as a note is worse than
+  none; mutant-proven: dropping the rule reddens 3 gates); "caution"/"crest"/
+  "blind" is a warning word — alone it is a CAUTION card (dir 0, sev 2,
+  amber, low double beat, links to no corner), with a side it floors severity
+  at 2 and stamps the call `crest`. #1263 mic-badge parity: voiceCapture now
+  exports `acquireListenBadge()` — the shared refcounted dot shows LISTEN
+  (blue) while speech recognition holds the mic, LISTEN ≠ REC because
+  recognition is not recording. Rally takes it on V-after-consent, releases
+  on stop/unmount; `__rallyTest.micBadge()` exposes the state. rallycheck
+  152 → 169.
+- Honest gaps still on #1427: the #1257 VU bar proves level from a recorder
+  stream, and speechListen exposes no stream (recorder-backed VU belongs with
+  the lobby take); online through the lobby.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.

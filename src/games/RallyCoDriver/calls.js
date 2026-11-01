@@ -24,6 +24,7 @@ export const LATE_WINDOW = 45
 
 export function callLabel(call) {
     if (!call) return ''
+    if (call.crest) return 'CAUTION'
     if (call.dir === 0) return 'STRAIGHT'
     return (call.dir < 0 ? 'L' : 'R') + call.sev
 }
@@ -78,7 +79,7 @@ export function applyCallEvent(gs, call, via = 'cpu') {
         co.nextIdx = linked + 1
     }
     gs.card.push({
-        dir: call.dir, sev: call.sev, t: gs.tick, via, linked,
+        dir: call.dir, sev: call.sev, t: gs.tick, via, linked, crest: !!call.crest,
         atS: linked >= 0 ? st.corners[linked].s : null,
     })
     if (gs.card.length > 6) gs.card.shift()
@@ -120,18 +121,27 @@ export function coCallFromPad(prev, pad) {
 // parseCoCall(text) → call | null — the spoken grammar.
 //   "left two" / "a left two" / "two left" / "hard left" (3) / "left" (1)
 //   "right three", "straight on", "keep straight"
-const WORDS = { one: 1, '1': 1, two: 2, '2': 2, three: 3, '3': 3, hard: 3, medium: 2, slow: 1 }
+// Field QA (#1427): a recognizer mangles an accent the SAME way every time,
+// so the grammar takes the common mis-hears — "tree"/"free" (three),
+// "to"/"too" (two), "won" (one), "write" (right). NEGATION is silence:
+// "no left", "not right three", "no three" name no note and must not fire —
+// a negated note played as a note is worse than no note. "caution"/"crest"
+// is a warning word: alone it is a CAUTION card (dir 0, sev 2); with a side
+// it floors severity at 2 and stamps the call `crest`.
+const WORDS = { one: 1, won: 1, '1': 1, two: 2, to: 2, too: 2, '2': 2, three: 3, tree: 3, free: 3, '3': 3, hard: 3, medium: 2, slow: 1 }
 export function parseCoCall(text) {
     const t = String(text || '').toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim()
     if (!t) return null
+    if (/\bno\b|\bnot\b|\bnone\b|\bdon'?t\b|\bcancel\b|\bignore\b|\bretract\b/.test(t)) return null
     if (/\bstraight\b|\bkeep (on |going )?(straight|flat)\b|\bon (it |through|straight)\b/.test(t)) return { dir: 0, sev: 1 }
+    const crest = /\bcaution\b|\bcrest\b|\bblind\b/.test(t)
     let dir = 0
     if (/\bleft\b|\bl\b/.test(t)) dir = -1
-    else if (/\bright\b|\br\b/.test(t)) dir = 1
-    else if (!/\bcorner\b|\bnext\b/.test(t)) return null // a number with no side is noise
-    let sev = 1
-    for (const [w, n] of Object.entries(WORDS)) if (new RegExp(`\\b${w}\\b`).test(t)) sev = n
+    else if (/\bright\b|\br\b|\bwrite\b|\brite\b/.test(t)) dir = 1
+    else if (!crest && !/\bcorner\b|\bnext\b/.test(t)) return null // a number with no side is noise
+    let sev = crest ? 2 : 1
+    for (const [w, n] of Object.entries(WORDS)) if (new RegExp(`\\b${w}\\b`).test(t)) sev = Math.max(sev, n)
     if (/\bhard\b/.test(t)) sev = 3
     if (/\bsharp\b|\bsnap\b/.test(t)) sev = 3
-    return { dir, sev }
+    return crest ? { dir, sev, crest: true } : { dir, sev }
 }
