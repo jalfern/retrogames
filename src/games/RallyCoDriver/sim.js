@@ -10,11 +10,11 @@
 // ribbon never ends, so there is no win-by-reach goal to game — the stage
 // ends when two laps are done, and the only score is the clock.
 
-import { makeStage, stageAt, visibleAhead, distAhead, cornerAhead, kappaAt, slopeAt, STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE } from './stage.js'
+import { makeStage, stageAt, visibleAhead, distAhead, cornerAhead, kappaAt, slopeAt, postsFor, STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE } from './stage.js'
 import { mulberry32 } from './stage.js'
 import { decideCoCall, applyCallEvent, resolvePassed, coCallFromPad, leadDist, LATE_WINDOW, callLabel } from './calls.js'
 
-export { STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE, visibleAhead, stageAt, distAhead, cornerAhead, kappaAt, slopeAt, mulberry32, leadDist, LATE_WINDOW, callLabel }
+export { STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE, visibleAhead, stageAt, distAhead, cornerAhead, kappaAt, slopeAt, postsFor, mulberry32, leadDist, LATE_WINDOW, callLabel }
 
 // physics constants (per tick at 60 Hz)
 export const VMAX = 4.6
@@ -61,6 +61,25 @@ export function gearOf(v) {
     return { gear: i, frac: Math.max(0, Math.min(1, (v - lo) / (hi - lo))) }
 }
 
+// controlS(st) → s of the lap's time-control mark (#1427 depth): the midpoint
+// of the straight farthest from the start line (score = distance of the gap
+// midpoint to s=0 on either side), so the flyspeaker sits mid-lap — never a
+// step past the lap line, which would stamp a bogus near-zero S-split. Far from
+// any corner too, so the mark never reads as a note. Pure geometry off the
+// corner list — zero rng draws, identical across weather presets (rallycheck).
+export function controlS(st) {
+    const cs = st.corners.map((c) => c.s).sort((a, b) => a - b)
+    let best = st.L / 2, bestScore = -1
+    for (let i = 0; i < cs.length; i++) {
+        const a = cs[i]
+        const b = i + 1 < cs.length ? cs[i + 1] : cs[0] + st.L
+        const m = (a + b) / 2 % st.L
+        const score = Math.min(m, st.L - m) // how mid-lap the midpoint sits
+        if (score > bestScore) { bestScore = score; best = m }
+    }
+    return best
+}
+
 // createSim(seed, players, weather) — weather is a preset key of WEATHERS
 // (default 'clear'); an unknown key degrades to clear rather than throwing,
 // so a stale shell state can never take the sim down. Weather changes NO
@@ -98,6 +117,10 @@ export function createSim(seed = 1, players = 2, weather = 'clear') {
         timeMs: 0,
         lastLapMs: 0,
         splits: [], // per-lap split times in ms (the lap-line banner reads these)
+        // #1427 checkpoint clock: one time-control mark per lap at gs.control;
+        // controlMs records the stage clock at each crossing (the S-splits)
+        control: controlS(stage),
+        controlMs: [],
         vis: 0,
         events: [], // { t, kind, ... } for juice + juiceaudit
     }
@@ -250,6 +273,19 @@ export function tickSim(gs, pads) {
         // reset here; resolvePassed cleared each corner's stamp on the pass
     }
 
+    // ---- time control (#1427) — one crossing per lap --------------------
+    // same straddle shape as the corner grading: the mark sat within this
+    // tick's travel ahead of prevS and is now just behind s. The length-vs-
+    // lapsDone guard lets each lap stamp exactly one S-split.
+    if (gs.controlMs.length === gs.lapsDone) {
+        const aC = distAhead(st, car.prevS, gs.control)
+        const bC = distAhead(st, car.s, gs.control)
+        if (aC <= 5 && bC >= st.L - 10) {
+            gs.controlMs.push(Math.round(gs.timeMs))
+            gs.events.push({ t: gs.tick, kind: 'control', ms: gs.controlMs[gs.controlMs.length - 1] })
+        }
+    }
+
     // ---- visibility (crest honesty; the fog wall shortens in weather) --------
     gs.vis = visibleAhead(st, car.s, FOG_RANGE * gs.w.fog)
 
@@ -285,6 +321,7 @@ export function stateHash(gs) {
         gs.stats.called, gs.stats.correct, gs.stats.late, gs.stats.missed, gs.stats.offTicks,
         gs.card.length + ':' + gs.card.map((n) => n.linked + n.dir + n.sev).join(','),
         gs.done ? 1 : 0,
+        gs.controlMs.length + ':' + gs.controlMs.join(','),
     ].join('|')
     let hv = 2166136261 >>> 0
     for (let i = 0; i < h.length; i++) {
@@ -317,6 +354,8 @@ export function state(gs) {
         })),
         stats: { ...gs.stats },
         splits: [...gs.splits],
+        control: Math.round(gs.control),
+        controls: [...gs.controlMs],
         hash: stateHash(gs),
     }
 }

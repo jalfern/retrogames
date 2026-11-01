@@ -258,3 +258,40 @@ export function cornerAhead(st, s0, look = 1200) {
     out.sort((a, b) => a.d - b.d)
     return out
 }
+
+// postsFor(st) → roadside reflector posts sorted by s (#1427 depth). Beyond
+// the white/red edge studs (drawn per road sample), the ribbon carries three
+// kinds of hardware, all derived from geometry — no rng, so a seed's posts
+// are byte-stable and weather never moves them:
+//   'amber' — severity-scaled mouth warning on the OUTSIDE of a hard corner:
+//             sev 2 gets the two shipped posts (mouth, +4), sev 3 gets a third
+//   'exit'  — count-down markers on the INSIDE just past the apex, one per
+//             severity point above 1: the exit tells you how hard you just turned
+//   'crest' — a matched pair at a true crest (a zero-crossing of the slope,
+//             bracketed by a real climb behind and a real drop ahead, the
+//             #1365 feel-check pattern), min 150 units apart. Terrain only:
+//             posts describe the road, never what hides behind it (rallycheck).
+export function postsFor(st) {
+    const posts = []
+    const wrap = (s) => ((s % st.L) + st.L) % st.L
+    for (const c of st.corners) {
+        if (c.sev < 2) continue
+        for (let k = 0; k < Math.min(3, c.sev + 1); k++)
+            posts.push({ s: wrap(c.s - 8 + k * 12), side: -c.dir, kind: 'amber', sev: c.sev })
+        for (let k = 0; k < c.sev - 1; k++)
+            posts.push({ s: wrap(c.s + 14 + k * 12), side: c.dir, kind: 'exit', sev: c.sev })
+    }
+    let lastCrest = -1e9
+    for (let i = 1; i < st.N; i++) {
+        const s = i * st.ds
+        const sl = slopeAt(st, s)
+        const prevSl = slopeAt(st, s - st.ds)
+        if (prevSl > 0 && sl <= 0 && slopeAt(st, s - 40) > 0.01 && slopeAt(st, s + 40) < -0.01 &&
+            s - lastCrest > 150) {
+            posts.push({ s, side: 0, kind: 'crest' })
+            lastCrest = s
+        }
+    }
+    posts.sort((a, b) => a.s - b.s)
+    return posts
+}
