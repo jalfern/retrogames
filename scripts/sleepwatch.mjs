@@ -48,6 +48,23 @@
 //     tick line reports it once per day: `logspan=<min>` (+ ` logshort=1` when
 //     the log cannot cover the horizon). Reporting only — no rule changes.
 //
+// v5 (#1413) closes the honest gaps v4 leaves open — one theme: a token must
+// not lie about WHEN.
+//   - SELF-DATE: churnField rode `churn=N churnwin=W` for 24 h after an episode
+//     ended, and the board read it as "N sleeps in the last W min" — wrong six
+//     hours on. The token now carries `churnage=<min>` (minutes since the last
+//     sleep seen) whenever the episode is older than its own window; a live
+//     episode keeps the v3/v4 wire byte-identical. The board says CHURNING
+//     while it is true and CHURNED · latest Xh ago after.
+//   - CLIP: coalesce retired raw windows a named window FULLY covered, but a
+//     partial overlap (raw 00:20–05:20 + named 03:00–06:00) double-counted
+//     03:00–05:20 in every total. Raw claims now clip to their parts UNCOVERED
+//     by named truth (a tail past the named end survives as a second piece;
+//     pieces under a minute are noise and drop). Honesty both ways: uncovered
+//     claims byte-identical, described spans counted once.
+//   - (the third gap — the stale-wire display hint — lives on the board side,
+//     floor.js sleepBanner, per the runwayBadge precedent.)
+//
 // v3 (#1401) closes the honest gaps v2 leaves open:
 //   - PERSIST: `asleep=true since=HH:MM` used to decay after ONSET_STALE_MIN
 //     of silence — silence produced by the very deep sleep the field describes.
@@ -184,28 +201,64 @@ export const COALESCE_GAP_MIN = 2 * TICK_MIN
 // instant, exactly like a dark wake inside a pmset window proves nothing).
 // pmset-named windows are the observed truth: they never merge, they break a
 // raw run, and a raw window FULLY covered by a named one (±tolMs) is dropped
-// — when the real story arrives, the scaffolding retires. Unknown shapes
-// (no src) are left alone and break runs: never merge what you cannot name.
+// — when the real story arrives, the scaffolding retires. A PARTIAL overlap
+// (#1413) clips instead of shrinking silently-to-nothing: the raw claim keeps
+// exactly its parts UNCOVERED by named truth (before/after the named span),
+// because the named clock SAW those events and the tick-gap only infers them.
+// The sum of what remains is the union — no span counted twice. Clip pieces
+// that round below 1 min are measurement noise against a minute-resolution
+// claim and drop (buildWindows drops short naps for the same reason). Unknown
+// shapes (no src) are left alone and break runs: never merge what you cannot
+// name — and never clip what you cannot name a witness for, either.
 export function coalesceWindows(windows, { maxGapMin = COALESCE_GAP_MIN, tolMs = 60000 } = {}) {
     const ws = (windows || []).filter((w) => w && Number.isFinite(w.from) && Number.isFinite(w.to))
         .slice().sort((a, b) => a.from - b.from)
     const named = ws.filter((w) => w.src === 'pmset')
     const raw = (w) => w.src === 'tickgap'
     const covered = (w) => named.some((p) => p.from <= w.from + tolMs && p.to >= w.to - tolMs)
+    // seamFree(a, b): no named window overlaps the gap between two raw rows.
+    // Without this, the two pieces of ONE clipped window (seam = the named
+    // span between them) would re-merge whenever that span ≤ maxGapMin —
+    // swallowing named truth right back into raw scaffolding.
+    const seamFree = (a, b) => !named.some((p) => p.from < b.from && p.to > a.to)
+    // clipRaw(w) -> the pieces of raw window w that NO named window covers.
+    // The leading piece inherits naps/reason (the claimed front stays with the
+    // claim); a tail piece carries none of the front's naps — those sleeps,
+    // if any, sit on the yielded side.
+    const clipRaw = (w) => {
+        let pieces = [{ ...w }]
+        for (const p of named) {
+            const next = []
+            for (const q of pieces) {
+                if (p.to <= q.from || p.from >= q.to) { next.push(q); continue }
+                if (q.from < p.from) next.push({ ...q, to: p.from, min: Math.round((p.from - q.from) / 60000) })
+                if (q.to > p.to) next.push({ ...q, from: p.to, min: Math.round((q.to - p.to) / 60000), naps: 0 })
+            }
+            pieces = next
+        }
+        return pieces.filter((q) => q.min >= 1)
+    }
     const out = []
     for (const w of ws) {
         if (raw(w) && covered(w)) continue
-        const prev = out[out.length - 1]
-        if (raw(w) && prev && raw(prev) && w.from - prev.to <= maxGapMin * 60000) {
-            const to = Math.max(prev.to, w.to)
-            const naps = (prev.naps || 0) + (w.naps || 0)
-            out[out.length - 1] = {
-                ...prev, to, naps,
-                min: Math.max(1, Math.round((to - prev.from) / 60000)),
-                reason: prev.reason || w.reason || null,
-            }
-        } else out.push({ ...w })
+        const items = raw(w) ? clipRaw(w) : [w]
+        for (const it of items) {
+            const prev = out[out.length - 1]
+            if (raw(it) && prev && raw(prev) && it.from - prev.to <= maxGapMin * 60000 && seamFree(prev, it)) {
+                const to = Math.max(prev.to, it.to)
+                const naps = (prev.naps || 0) + (it.naps || 0)
+                out[out.length - 1] = {
+                    ...prev, to, naps,
+                    min: Math.max(1, Math.round((to - prev.from) / 60000)),
+                    reason: prev.reason || it.reason || null,
+                }
+            } else out.push({ ...it })
+        }
     }
+    // clip pieces inherit their raw window's position, not their own minute —
+    // re-sort so every reader (pulse latest, digest totals, ledger) sees the
+    // story chronologically.
+    out.sort((a, b) => a.from - b.from)
     return out
 }
 
@@ -352,10 +405,18 @@ export function asleepField(asleep, now = Date.now()) {
 // PULSE_SHOW_H old ("" when the box has been sleeping properly — or awake
 // properly). The window token (#1401) carries the derivation to the board so
 // floor.js never has to mirror CHURN_SLEEPS/CHURN_WINDOW_MIN arithmetic.
+// v5 (#1413): when the episode is OLDER than its own window it also carries
+// `churnage=<min>` — minutes since the last sleep seen — so a six-hours-ago
+// churn cannot read as "N sleeps in the last W min". A live episode (last
+// sleep ≤ W ago) keeps the wire byte-identical to v3/v4; the board switches
+// to past tense off churnage. The tick-line's live `churn=` trailing count is
+// untouched — that one really is "last W min" by construction.
 export function churnField(churns, now = Date.now()) {
     const recent = (churns || []).filter((e) => now - e.to <= PULSE_SHOW_H * 3600000)
     if (!recent.length) return ''
-    return `churn=${recent[recent.length - 1].n} churnwin=${CHURN_WINDOW_MIN}`
+    const e = recent[recent.length - 1]
+    const ageMin = Math.max(0, Math.round((now - e.to) / 60000))
+    return `churn=${e.n} churnwin=${CHURN_WINDOW_MIN}${ageMin > CHURN_WINDOW_MIN ? ` churnage=${ageMin}` : ''}`
 }
 
 // sleepLine(windows, now) -> the digest/board sentence, or null. It closes
