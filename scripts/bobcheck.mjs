@@ -24,6 +24,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
@@ -472,11 +473,11 @@ if (process.argv.includes('--mutate')) {
     for (const [name, file, from, to] of MUTANTS) {
         files[file] = files[file] || readFileSync(file, 'utf8')
         if (!files[file].includes(from)) { ok(false, `mutant ${name}: anchor missing`); continue }
-        writeFileSync(file, files[file].replace(from, to))
+        plant(file, files[file].replace(from, to))
         const res = spawnSync('node', ['scripts/bobcheck.mjs'], { encoding: 'utf8' })
         if (res.status !== 0) { died++; ok(true, `mutant ${name} caught`) }
         else ok(false, `mutant ${name} SURVIVED`)
-        writeFileSync(file, files[file])
+        pull(file)
     }
     ok(died === MUTANTS.length, 'all mutants die', `${died}/${MUTANTS.length}`)
 }

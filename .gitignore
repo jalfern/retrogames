@@ -14,3 +14,5 @@ scripts/.shots/**/*.jpeg
 .wrangler/
 scripts/.strips/**/*.png
 scripts/.strips/**/*.jpg
+# #1359 scratch files for muteguardcheck's kill tests (fixture + sentinel bytes)
+.muteguard-tmp/

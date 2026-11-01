@@ -12,6 +12,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 const SIM = 'src/games/Arkanoid/sim.js'
 let fails = 0, passes = 0
@@ -192,15 +193,15 @@ if (process.argv.includes('--mutate')) {
             src = src.replace(m.from, m.to)
         }
         if (missing) { ok(false, `attract mutant anchor: ${name}`, `anchor missing: ${missing}`); continue }
-        writeFileSync(attractPath, src)
+        plant(attractPath, src)
         try {
             const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { encoding: 'utf8' })
             ok(r.status !== 0, `attract mutant dies: ${name}`, r.status === 0 ? 'child passed despite the bug' : (r.stdout.match(/FAIL .*/) || [''])[0])
         } finally {
-            writeFileSync(attractPath, originalAttract)
+            pull(attractPath)
         }
     }
-    writeFileSync(attractPath, originalAttract)
+    pull(attractPath)
 }
 
 if (process.argv.includes('--mutate')) {
@@ -221,15 +222,15 @@ if (process.argv.includes('--mutate')) {
             src = src.replace(m.from, m.to)
         }
         if (missing) { ok(false, `mutant anchor: ${name}`, `anchor missing: ${missing}`); continue }
-        writeFileSync(simPath, src)
+        plant(simPath, src)
         try {
             const r = spawnSync(process.execPath, [new URL(import.meta.url).pathname], { encoding: 'utf8' })
             ok(r.status !== 0, `mutant dies: ${name}`, r.status === 0 ? 'child passed despite the bug' : (r.stdout.match(/FAIL .*/) || [''])[0])
         } finally {
-            writeFileSync(simPath, original)
+            pull(simPath)
         }
     }
-    writeFileSync(simPath, original)
+    pull(simPath)
 }
 
 console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'} — ${passes} passed, ${fails} failed`)

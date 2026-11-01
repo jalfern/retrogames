@@ -14,6 +14,7 @@ import { MUSIC } from '../src/utils/AudioController.js'
 import { computeStandings } from '../src/games/SSX/net.js'
 import * as THREE from 'three'
 import { MUSIC_TRACKS, MUSIC_STEP, START_VISTA, propYaw, buildScenery, PLACEHOLDER_IDS, primitivesToKeep, swapPlaceholders, surfaceInfo, windAt, flagSway, crowdPlan, crowdHop, crowdHype, animateDecor, CROWD, makeRider, poseRider } from '../src/games/SSX/art.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let pass = 0, fail = 0
 const ok = (name, cond) => { if (cond) { pass++; console.log(`PASS ${name}`) } else { fail++; console.log(`FAIL ${name}`) } }
@@ -27,14 +28,14 @@ const YAW_BAD = 'p.th - Math.sign(e.x) * Math.PI / 2'
 if (process.argv.includes('--mutate')) {
     let src = readFileSync(ART_SRC, 'utf8')
     if (!src.includes(YAW_GOOD)) { console.error('MUTATE: facing law not found — stale code.'); process.exit(2) }
-    writeFileSync(ART_SRC, src.replace(YAW_GOOD, YAW_BAD))
+    plant(ART_SRC, src.replace(YAW_GOOD, YAW_BAD))
     let done = false
     try {
         const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
         done = child.status !== 0
         console.log(done ? 'ok  mutant detected: child run failed as demanded' : 'FAIL mutant escaped: child run still green')
     } finally {
-        writeFileSync(ART_SRC, readFileSync(ART_SRC, 'utf8').replace(YAW_BAD, YAW_GOOD))
+        pull(ART_SRC)
     }
     process.exit(done ? 0 : 1)
 }

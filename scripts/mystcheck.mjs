@@ -12,6 +12,7 @@ import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/My
 import { domeHeight, SEL_CRESTS, DOME } from '../src/games/Myst/terrain.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++; console.log(`  ok ${name}`) } else { fail++; console.error(`  FAIL ${name}`) } }
@@ -1105,11 +1106,11 @@ if (process.argv.includes('--mutate')) {
   for (const [name, f, from, to] of MUTANTS) {
     const orig = readFileSync(f, 'utf8')
     if (!orig.includes(from)) { ok(false, `mutant anchor: ${name}`, `missing in ${f}`); continue }
-    writeFileSync(f, orig.replace(from, to))
+    plant(f, orig.replace(from, to))
     const res = spawnSync(process.execPath, ['scripts/mystcheck.mjs'], { encoding: 'utf8' })
     if (res.status !== 0) { died++; ok(true, `mutant dies: ${name}`) }
     else { ok(false, `mutant dies: ${name}`, 'child passed despite the bug') }
-    writeFileSync(f, orig)
+    pull(f)
   }
   ok(died === MUTANTS.length, `all ${MUTANTS.length} mutants die`, `${died}/${MUTANTS.length}`)
 }

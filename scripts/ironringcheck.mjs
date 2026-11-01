@@ -11,7 +11,7 @@
 //   npm run ironringcheck -- --mutate  # prove red
 //   needs `npm run dev` for Part B (IRONRING_URL to point elsewhere)
 
-import { writeFileSync, unlinkSync } from 'node:fs'
+import { plantNew, pull } from './lib/mutateguard.mjs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { launch, requireDevServer, relayNoise } from './lib/harness.mjs'
@@ -37,7 +37,7 @@ if (MUT) {
         "if (!mv || f.phase !== 'active' || !mv.box) return null",
         "if (!mv || f.phase !== 'active' || !mv.box) return null; if (globalThis.__IRONRING_NOHIT__) return null")
     ok(mutated !== before, 'mutate: hitbox gate line found to patch')
-    writeFileSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
+    plantNew(path.join(HERE, '../src/engine/.mutant-fighting.mjs'), mutated)
     globalThis.__IRONRING_NOHIT__ = true
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
@@ -190,7 +190,7 @@ if (MUT) {
     for (let i = 0; i < 16; i++) e.step(m, [P(), P()])
     ok(m.fighters[1].hp === hp, 'MUTANT check: with the patched gate no damage ever lands (harness bites)')
     globalThis.__IRONRING_NOHIT__ = false
-    unlinkSync(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
+    pull(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
 }
 
 console.log(`part A: ${pass} ok, ${fail} fail`)

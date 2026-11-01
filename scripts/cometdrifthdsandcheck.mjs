@@ -15,7 +15,8 @@
 //   npm run cometdrifthdsandcheck -- --mutate   # stamps become no-ops, the
 //                                               # ribbon never moves and fresh
 //                                               # ruts kick no dust — MUST go red
-import { readFileSync, writeFileSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
+import { plant, pull } from './lib/mutateguard.mjs'
 import { spawnSync } from 'node:child_process'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -42,7 +43,7 @@ if (MUTATE) {
     let src = readFileSync(SAND_SRC, 'utf8')
     if (!PAIRS.every(([good]) => src.includes(good))) { console.error('MUTATE: load-bearing lines not found — stale code.'); process.exit(2) }
     for (const [good, bad] of PAIRS) src = src.replace(good, bad)
-    writeFileSync(SAND_SRC, src)
+    plant(SAND_SRC, src)
     console.log('  ..    mutated: the desert forgets, the rim flattens, the ruts kick no dust — the child run MUST be red')
     let done = false
     try {
@@ -50,9 +51,7 @@ if (MUTATE) {
         done = child.status !== 0
         console.log(done ? '  ok  mutant detected: child run failed as demanded' : '  FAIL mutant escaped: child run still green')
     } finally {
-        let s = readFileSync(SAND_SRC, 'utf8')
-        for (const [good, bad] of PAIRS) s = s.replace(bad, good)
-        writeFileSync(SAND_SRC, s)
+        pull(SAND_SRC)
         console.log('  ..    mutation restored')
     }
     process.exit(done ? 0 : 1)

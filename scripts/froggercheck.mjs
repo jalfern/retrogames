@@ -8,6 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
@@ -78,11 +79,11 @@ if (process.argv.includes('--mutate')) {
     for (const [name, from, to] of MUTANTS) {
         const orig = readFileSync(F, 'utf8')
         if (!orig.includes(from)) { ok(false, `mutant anchor: ${name}`, `missing: ${from}`); continue }
-        writeFileSync(F, orig.replace(from, to))
+        plant(F, orig.replace(from, to))
         const res = spawnSync(process.execPath, ['scripts/froggercheck.mjs'], { encoding: 'utf8' })
         if (res.status !== 0) { died++; ok(true, `mutant dies: ${name}`) }
         else { ok(false, `mutant dies: ${name}`, 'child passed despite the bug') }
-        writeFileSync(F, orig)
+        pull(F)
     }
     ok(died === MUTANTS.length, `all ${MUTANTS.length} attract mutants die`, `${died}/${MUTANTS.length}`)
 }
