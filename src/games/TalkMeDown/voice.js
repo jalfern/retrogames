@@ -64,6 +64,12 @@ export function parseCall(text) {
     return null
 }
 
+// ACCEPTED_HINT — the shapes the grammar accepts, one line for every surface
+// that must say them: the manual page (#1373) and the defuser's LCD-rail
+// footer (#1415). Grammar and hint share this const so they can never drift
+// (same law as RULEBOOK: text and truth from one source).
+export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR"'
+
 // intentLabel — what the "HEARD" banner shows (ART rule: short, unmistakable).
 export function intentLabel(intent) {
     if (!intent) return '?'

@@ -11,7 +11,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd } from '../../utils/gameContract'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createGame, step, simState, solvePad, computeTarget, hash, drainEvents,
@@ -97,10 +97,15 @@ export default function TalkMeDown() {
             hudRef.current.popT = 0
             sfx.refused()
             voiceLogRef.current.push(entry)
+            // #1415: words that reached the mic but meant nothing still bank
+            // (intent null, why NO CALL) — the trace records the shout, #1249.
+            recordVoiceCmd({ said: text.slice(0, 80), intent: null, ok: false, why: 'NO CALL' })
             return
         }
         const m = gs.modules[gs.cursor.mod]
+        let whyText = ''
         const refuse = (why) => {
+            whyText = why
             hud.banner = { text: `${intentLabel(intent)} -> ${why}`, ok: false }
             sfx.refused()
         }
@@ -149,6 +154,17 @@ export default function TalkMeDown() {
         }
         entry.ok = !!(hud.banner && hud.banner.ok)
         voiceLogRef.current.push(entry)
+        // #1415: every heard call banks into the live capture (#1249 pattern).
+        // The recorder stamps t on its own clock; what the seat DID next is
+        // in slots[0].pads on the same clock, so the entry carries only the
+        // words, the meaning and the consent (dir = wire index on a cut).
+        recordVoiceCmd({
+            said: text.slice(0, 80),
+            intent: intent.kind,
+            ok: entry.ok,
+            ...(entry.ok && entry.dir !== undefined ? { dir: entry.dir } : {}),
+            ...(!entry.ok ? { why: whyText || 'REFUSED' } : {}),
+        })
     }, [])
 
     const toggleVoice = useCallback(() => {
@@ -339,7 +355,13 @@ export default function TalkMeDown() {
             if (screenRef.current !== 'play' || pausedRef.current) return
             if (contractHoldsLoop()) return
             const p1 = padFrom(keys1Ref.current)
-            spec.tick(p1, seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : undefined)
+            const pads = seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : [p1]
+            spec.tick(p1, pads)
+            // #1415: this loop bypasses the contract's step(), so a live
+            // capture (DebugKit RECORD, #527 item 1) must be fed here — the
+            // Gauntlet funnel (#1249). While the loop-lock is held, step()
+            // banks the ticks itself; never both.
+            if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
             // the tick above consumed the pads — releases waiting for their
             // guaranteed sample can settle now (#1373)
             settleReleases(keys1Ref.current)
@@ -361,7 +383,7 @@ export default function TalkMeDown() {
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
-                    ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx)
+                    ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx, voiceRef.current.on)
                     drawSparks(g, hud)
                     drawZap(g, hud)
                     if (hud.banner) ART.drawBanner(g, hud.banner.text, hud.banner.ok, tick)
