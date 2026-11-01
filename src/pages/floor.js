@@ -21,6 +21,16 @@ export const LIVE_SHOWN_MS = 24 * 60 * 60 * 1000
 
 export const kv = line => Object.fromEntries(line.split(/\s+/).slice(1).map(t => t.split('=')))
 
+// hhmm — local HH:MM zero-padded (sleepBanner's `as of` stamp, #1413). Local
+// on purpose: the window tokens in the pulse were formatted warden-local at
+// bake time, and this fleet is one Mac — the reader and the emitter share a
+// clock zone. The harness pins it portably (en-GB), like fmtHM's §A pin.
+const hhmm = (ms) => {
+    const d = new Date(ms)
+    const p = (n) => String(n).padStart(2, '0')
+    return `${p(d.getHours())}:${p(d.getMinutes())}`
+}
+
 export const labelOf = (issue, name) => issue.labels.some(l => l.name === name)
 
 export const shortName = title => {
@@ -214,9 +224,27 @@ export const throughputLine = (samples, now = Date.now()) => {
 // age keeps v3 behavior — callers that do not know the age are not made liars;
 // an UNPARSEABLE age is stale (no age claim = no freshness claim). Retroactive
 // WAS ASLEEP survives staleness: history baked at write time.
-export const sleepBanner = (pulse, age = null) => {
+// v5 (#1413) makes that survival honest: a self-dated strip (WAS ASLEEP, or
+// the past-tense CHURNED below) off a wire OLDER than LIVE_SHOWN_MS carries
+// `stale: true` and a `· as of HH:MM` suffix — the minute the wire was baked
+// (`now - age`) — so yesterday's weather reads as yesterday's instead of news
+// (the runwayBadge dim-stale precedent). `now` joins the other injected
+// clocks; an unknown age gets NO stale claim either way (keys absent, text
+// byte-identical to v3/v4). The churn branch also gains the wire's own
+// self-dating: `churnage=<min>` (emitted by sleepwatch v5 when the episode
+// outlived its window) renders STUDIO CHURNED — N sleeps in W-min bursts ·
+// latest Xh ago — past tense, `live: false`, surviving a stale wire like any
+// other history, while the present-tense CHURNING strip stays gated on wire
+// freshness. A junk (or negative) churnage never renders.
+export const sleepBanner = (pulse, age = null, now = Date.now()) => {
     if (!pulse) return null
     const liveOk = age == null || (Number.isFinite(age) && age <= LIVE_SHOWN_MS)
+    // #1413: the bake verdict for self-dated strips. Known age -> an honest
+    // boolean; unknown age (v3-era caller) -> NO stale claim at all, which
+    // also means no `as of` suffix (we cannot name the minute we don't know).
+    const stale = age == null ? null : (Number.isFinite(age) && age > LIVE_SHOWN_MS)
+    const staleAdd = stale == null ? {} : { stale }
+    const asOf = stale === true && Number.isFinite(now) ? ` · as of ${hhmm(now - age)}` : ''
     if (pulse.asleep === 'true' && /^\d{2}:\d{2}$/.test(pulse.since || '')) {
         return liveOk
             ? { text: `STUDIO ASLEEP SINCE ${pulse.since}`, minutes: null, live: true, severe: true, hint: 'nothing can ship while the Mac sleeps' }
@@ -229,10 +257,11 @@ export const sleepBanner = (pulse, age = null) => {
             const dur = h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
             const naps = Number(pulse.naps) || 0
             return {
-                text: `STUDIO WAS ASLEEP ${pulse.asleep.replace('-', '–')} · ${dur}${naps ? ` · ${naps} dark wakes` : ''}`,
+                text: `STUDIO WAS ASLEEP ${pulse.asleep.replace('-', '–')} · ${dur}${naps ? ` · ${naps} dark wakes` : ''}${asOf}`,
                 minutes: min,
                 live: false,
                 severe: min >= 120,
+                ...staleAdd,
                 hint: 'nothing can ship while the Mac sleeps',
             }
         }
@@ -242,9 +271,29 @@ export const sleepBanner = (pulse, age = null) => {
     // presence is the claim. A v2-era token (no churnwin) carried the raw
     // trailing count — interpret it with the legacy minimum until every
     // pulse on the wire is v3. "in the last W min" is a NOW-claim: stale
-    // wires drop it like the live stamp (#1406).
-    if (Number.isFinite(churn) && churn >= (pulse.churnwin ? 1 : 3) && liveOk) {
+    // wires drop it like the live stamp (#1406). A v5 `churnage` past the
+    // window re-tenses it instead — history self-dated off the wire itself,
+    // so it survives the wire's own age like WAS ASLEEP does (#1413).
+    if (Number.isFinite(churn) && churn >= (pulse.churnwin ? 1 : 3)) {
         const win = Number(pulse.churnwin) || 30
+        if (pulse.churnage != null) {
+            const cAge = Number(pulse.churnage)
+            if (!Number.isFinite(cAge) || cAge < 0) return null
+            if (cAge > win) {
+                const hh = Math.floor(cAge / 60)
+                return {
+                    text: `STUDIO CHURNED — ${churn} sleeps in ${win}-min bursts · latest ${hh ? `${hh}h` : `${cAge}m`} ago${asOf}`,
+                    minutes: null, live: false, severe: false, ...staleAdd,
+                    hint: 'lanes crawled between dark wakes',
+                }
+            }
+            // churnage within the window: the episode was still live at the
+            // bake — a NOW-claim, so it answers to the wire budget like the
+            // present-tense token below.
+            if (!liveOk) return null
+            return { text: `STUDIO CHURNING — ${churn} sleeps in the last ${win} min`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
+        }
+        if (!liveOk) return null
         return { text: `STUDIO CHURNING — ${churn} sleeps in the last ${win} min`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
     }
     return null
