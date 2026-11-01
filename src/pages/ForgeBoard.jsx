@@ -224,9 +224,10 @@ const ForgeBoard = () => {
                 </div>
 
                 {sleep && (
-                    <div data-sleep={sleep.minutes}
+                    <div data-sleep={sleep.minutes == null ? 'live' : sleep.minutes}
+                        data-live={sleep.live ? 'true' : undefined}
                         className={`border-2 px-3 py-2 mb-4 text-center text-[11px] tracking-wider ${sleep.severe ? 'border-[#f55] text-[#f88] animate-pulse' : 'border-[#ffb347] text-[#ffb347]'}`}>
-                        ⚠ {sleep.text} — nothing can ship while the Mac sleeps
+                        ⚠ {sleep.text} — {sleep.hint || 'nothing can ship while the Mac sleeps'}
                     </div>
                 )}
 

@@ -162,9 +162,12 @@ export function computeRunway({ issues, closedBuilder = [], closedQa = [], now =
 // #1354: a `sleep` line (when the Studio was down) rides FIRST, right under
 // the header — a sleeping machine outranks every open question, because it
 // explains why none of them moved.
-export function digestText({ questions = [], runway = null, sleep = null, now = new Date() }) {
+// #1392: the `churn` line rides right after it — same family of excuse
+// (the ticks landed, but a dark-wake-churning box shipped nothing either).
+export function digestText({ questions = [], runway = null, sleep = null, churn = null, now = new Date() }) {
     const lines = [`FORGE QUESTIONS DIGEST — ${now.toISOString().slice(0, 10)}`]
     if (sleep) lines.push(sleep)
+    if (churn) lines.push(churn)
     if (questions.length === 0) lines.push('(no open questions)')
     for (const q of questions) {
         lines.push(`#${q.number} [${q.state}] ${q.lane ? `lane:${q.lane}` : 'lane:?'} — ${q.title}`)

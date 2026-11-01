@@ -182,19 +182,38 @@ export const throughputLine = (samples, now = Date.now()) => {
 // [naps=N]); the warden only echoes a window for 24 h after it ends, so the
 // banner never needs its own clock math beyond the injected minutes. Pure and
 // defensive: a missing or malformed field returns null (no banner, no throw).
+// v2 (#1392) reads two more shapes off the same wire:
+//   asleep=true since=HH:MM  — the LIVE onset: the box never fully woke since
+//     the stamped sleep, and the warden is telling you this during a dark wake;
+//   churn=N (no usable asleep field) — a churning night: ≥N sleeps inside half
+//     an hour with ticks landing, so NOT an outage — an amber strip instead of
+//     the red one. CHURN_SLEEPS (≥3) mirrors scripts/sleepwatch.mjs: the board
+//     side must never import a backend script, the pulse token is the contract.
 export const sleepBanner = (pulse) => {
-    if (!pulse || typeof pulse.asleep !== 'string') return null
-    if (!/^\d{2}:\d{2}-\d{2}:\d{2}$/.test(pulse.asleep)) return null
-    const min = Number(pulse.asleepm)
-    if (!Number.isFinite(min) || min <= 0) return null
-    const h = Math.floor(min / 60), m = min % 60
-    const dur = h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
-    const naps = Number(pulse.naps) || 0
-    return {
-        text: `STUDIO WAS ASLEEP ${pulse.asleep.replace('-', '–')} · ${dur}${naps ? ` · ${naps} dark wakes` : ''}`,
-        minutes: min,
-        severe: min >= 120,
+    if (!pulse) return null
+    if (pulse.asleep === 'true' && /^\d{2}:\d{2}$/.test(pulse.since || '')) {
+        return { text: `STUDIO ASLEEP SINCE ${pulse.since}`, minutes: null, live: true, severe: true, hint: 'nothing can ship while the Mac sleeps' }
     }
+    if (typeof pulse.asleep === 'string' && /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(pulse.asleep)) {
+        const min = Number(pulse.asleepm)
+        if (Number.isFinite(min) && min > 0) {
+            const h = Math.floor(min / 60), m = min % 60
+            const dur = h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
+            const naps = Number(pulse.naps) || 0
+            return {
+                text: `STUDIO WAS ASLEEP ${pulse.asleep.replace('-', '–')} · ${dur}${naps ? ` · ${naps} dark wakes` : ''}`,
+                minutes: min,
+                live: false,
+                severe: min >= 120,
+                hint: 'nothing can ship while the Mac sleeps',
+            }
+        }
+    }
+    const churn = Number(pulse.churn)
+    if (Number.isFinite(churn) && churn >= 3) {
+        return { text: `STUDIO CHURNING — ${churn} sleeps in the last half hour`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
+    }
+    return null
 }
 
 // runwayMath (#1233) — the strip's hover/tap reveal as pure data: one row per
