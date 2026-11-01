@@ -8,7 +8,9 @@ import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents,
     RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS,
 } from '../src/games/TalkMeDown/engine.js'
-import { parseCall, intentLabel } from '../src/games/TalkMeDown/voice.js'
+import { parseCall, intentLabel, ACCEPTED_HINT } from '../src/games/TalkMeDown/voice.js'
+import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
+import { readFileSync } from 'node:fs'
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -254,6 +256,40 @@ const ok = (name, cond, extra = '') => {
     ok(`grammar resolves ${pins.length} pinned phrasings`, !bad, bad)
     ok('labels read like shouts', intentLabel({ kind: 'cut', color: 'red' }) === 'CUT RED' && intentLabel(null) === '?')
     ok('no lookahead regex tricks leak (dial beats bare set)', parseCall('set nine').kind === 'dial')
+}
+
+// ---- 12. voiceCmd banking + hint source (#1415) -----------------------------
+{
+    // The shell banks one entry per heard call into the recorder's voiceCmd
+    // channel (#1249 Gauntlet pattern). Drive the REAL recorder with the same
+    // entry shapes voiceCall emits and prove: the trace lands, the file stays
+    // valid v1 (metadata, like the ping trace), and replay ignores the
+    // channel — the same seeded pads still hash-exact.
+    const rec = createRecorder({ gameId: 'talk-me-down', method: 'dpad', seed: 7, players: 1, hashEvery: 30 })
+    const gs = createGame(7, 1)
+    for (let i = 0; i < 90; i++) { step(gs, {}); rec.addTick([{}], null, gs.tick % 30 === 0 ? hash(gs) : null) }
+    rec.addVoiceCmd({ said: 'cut red', intent: 'cut', ok: true, dir: 2 })
+    rec.addVoiceCmd({ said: 'dial 7', intent: 'dial', ok: false, why: 'NO DIAL HERE' })
+    rec.addVoiceCmd({ said: 'hello there', intent: null, ok: false, why: 'NO CALL' })
+    const file = rec.finish(hash(gs))
+    ok('a v1 talk-me-down file with a voiceCmd trace validates', validate(file) === null, validate(file) || '')
+    ok('no voice attempted keeps the file v1', file.format === 'retrogames-rec/v1', file.format)
+    const vc = file.voiceCmd || []
+    ok('obey + refuse + no-call bank with why/dir', vc.length === 3 && vc[0].ok === true && vc[0].intent === 'cut' && vc[0].dir === '2' &&
+        vc[1].why === 'NO DIAL HERE' && vc[2].intent === null && vc[2].why === 'NO CALL', JSON.stringify(vc))
+    ok('voiceCmd ticks ride the recorder clock', vc.every(c => Number.isInteger(c.t) && c.t >= 1 && c.t <= file.ticks) && vc[0].t <= vc[1].t && vc[1].t <= vc[2].t)
+    const rp = verifyRecording(file, {
+        reset: (seed) => { globalThis.__rp = createGame(seed, 1) },
+        step: (pads) => step(globalThis.__rp, pads),
+        state: () => ({ tick: globalThis.__rp.tick, hash: hash(globalThis.__rp) }),
+    })
+    ok('the file replays hash-exact — replay ignores the trace', rp.ok, JSON.stringify(rp.mismatch || rp.error))
+    // The hint line the footer and the page share must describe calls the
+    // grammar actually accepts (one source, text == truth).
+    ok('ACCEPTED_HINT names shapes the grammar accepts', ['cut red', 'dial 7', 'set', 'press star'].every(s => parseCall(s)) &&
+        ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"'), ACCEPTED_HINT)
+    const artSrc = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
+    ok('the LCD-rail footer draws the shared const (not a literal)', /ACCEPTED_HINT/.test(artSrc))
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)

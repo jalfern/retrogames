@@ -143,6 +143,57 @@ ok('a colour shout is understood (obey or refuse-with-why, never silent)', obey 
 const mode = await page.evaluate(() => window.__tmdTest.voiceMode())
 ok('voice badge reports support state', typeof mode.supported === 'boolean')
 
+// #1415: a LIVE capture banks voiceCmd (#1249 Gauntlet pattern, now for TMD).
+// recordStart, then let the NATURAL loop tick (loop-lock released -> tickSim
+// feeds recordLiveTick), injecting obey + refuse + no-call calls mid-capture.
+// Audit: every heard call lands in the trace, and __game.replay still matches
+// hashes at every checkpoint (replay ignores the metadata channel).
+// Capture must OPEN on tick zero: reset, release and recordStart in ONE
+// evaluate — no rAF frame between them — so recorder ticks and sim ticks
+// share an origin and the banked hashes replay-exact (a capture opened
+// mid-run would stamp every checkpoint ~N ticks ahead of the replay clock).
+await page.evaluate(() => { const g = window.__game; g.reset(7, 1); g.release(); g.recordStart(30) })
+await sleep(400) // natural rAF ticks bank pads + hashes
+await page.evaluate(() => window.__tmdTest.call('cut red'))
+await sleep(120)
+await page.evaluate(() => window.__tmdTest.call('hello there'))
+await sleep(350) // keep ticking after the calls so their recorder-clock stamps fit
+const recRes = await page.evaluate(() => {
+    const rec = window.__game.recordStop()
+    window.__tmdRec = rec
+    return rec ? { fmt: rec.format, ticks: rec.ticks, hashes: rec.hashes.length, cmds: (rec.voiceCmd || []).map(c => ({ ...c })) } : null
+})
+ok('the natural loop feeds a live capture (ticks banked)', recRes && recRes.ticks >= 20 && recRes.hashes >= 1, JSON.stringify(recRes && { t: recRes.ticks, h: recRes.hashes }))
+ok('heard calls bank into voiceCmd (obey + no-call)', recRes && Array.isArray(recRes.cmds) && recRes.cmds.length === 2 &&
+    recRes.cmds[0].intent === 'cut' && recRes.cmds[1].intent === null && recRes.cmds[1].why === 'NO CALL', JSON.stringify(recRes && recRes.cmds))
+const recReplay = await page.evaluate(() => window.__game.replay(window.__tmdRec))
+ok('the captured file replays hash-exact with the trace inside', recReplay.ok, JSON.stringify(recReplay.mismatch || recReplay.error))
+
+// #1415 pixel gate: the defuser's LCD rail footer etches the accepted call
+// shapes under the glass — bright ink on the near-black frame (rows just under
+// the glass; the glass itself ends at y+20). Dim steel while the mic is off,
+// LCD green while it listens: the hint doubles as a mic-state echo.
+const footerInk = (green) => page.evaluate((wantGreen) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(16, 333, 320, 10).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g0 = d[i + 1], b = d[i + 2]
+        if (wantGreen ? (g0 > 110 && g0 > r + 40 && g0 > b + 40) : (r > 70 && g0 > 70 && b > 70 && Math.abs(r - g0) < 30)) n++
+    }
+    return n
+}, green)
+await page.evaluate(() => { const g = window.__game; g.reset(7, 1); g.release() })
+await sleep(200)
+const inkOff = await footerInk(false)
+ok('the call-hint footer is etched on the LCD rail (pixels, mic off)', inkOff > 60, `ink=${inkOff}`)
+await page.keyboard.press('KeyV') // mic on
+await sleep(200)
+const inkOn = await footerInk(true)
+ok('the footer glows green while the mic listens (pixels)', inkOn > 60, `ink=${inkOn}`)
+await page.keyboard.press('KeyV') // mic off again
+await sleep(150)
+
 // #1373: clearing a bomb must drop a BOMB n INBOUND curtain for ~1 s — the
 // old BOMB DOWN! flash landed on the already-armed next panel instead.
 await page.evaluate(() => window.__tmdTest.start(9, 1))

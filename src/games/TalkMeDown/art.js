@@ -2,6 +2,7 @@
 // aesthetic: beveled steel panel, red 7-seg fuse, colored wire arcs, a cream
 // typewritten manual with rule numbers in the red margin. 640x360 native.
 import { WIRE_COLORS, GLYPHS, RULEBOOK, variantPool } from './engine.js'
+import { ACCEPTED_HINT } from './voice.js'
 
 export const W = 640
 export const H = 360
@@ -420,9 +421,16 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag) {
 }
 
 // ---- chrome bits -----------------------------------------------------------
-export function drawOrderRail(g, order, flag, flicker = 0) {
+// #1415: the defuser's LCD rail carries the accepted call shapes etched under
+// the glass — the manual page got them at #1373, seat 1 had nothing. Text is
+// the shared ACCEPTED_HINT const (grammar/page/footer can never drift). The
+// frame grows downward (flush with the panel bottom) so the glass and the
+// order-text pixels keep their exact coordinates — existing pixel gates stay
+// pinned. The footer glows LCD-green while the mic listens, dim steel while
+// it is off: the hint doubles as a quiet mic-state echo.
+export function drawOrderRail(g, order, flag, flicker = 0, micOn = false) {
     const y = PANEL.y + PANEL.h - 32
-    g.fillStyle = '#0a0d0b'; g.fillRect(PANEL.x + 8, y, PANEL.w - 16, 22)
+    g.fillStyle = '#0a0d0b'; g.fillRect(PANEL.x + 8, y, PANEL.w - 16, 32)
     g.fillStyle = P.lcd; g.fillRect(PANEL.x + 10, y + 2, PANEL.w - 20, 18)
     // #1305: an arriving order lands with a 2-frame LCD flicker (the glass
     // stutters before the text settles), synced to the partner blip.
@@ -434,6 +442,8 @@ export function drawOrderRail(g, order, flag, flicker = 0) {
     g.font = FONT(7); g.fillStyle = P.lcdTxt
     const msg = order ? `PARTNER: ${order}` : (flag ? `READ RULE ${flag}` : 'PARTNER HOLDING THE MANUAL...')
     if (!(flicker > 2 && flicker % 2 === 0)) g.fillText(msg.slice(0, 42), PANEL.x + 14, y + 14)
+    g.font = FONT(6); g.fillStyle = micOn ? '#5fd680' : '#6f747d'
+    g.fillText(ACCEPTED_HINT, PANEL.x + 12, y + 29)
 }
 
 export function drawBanner(g, text, ok, tick) {
