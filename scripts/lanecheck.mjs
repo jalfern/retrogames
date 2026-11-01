@@ -419,14 +419,35 @@ ok(tapStudio.includes('<string>com.jalfern.tap-studio</string>') && /<string>801
     && /<string>8000<\/string>/.test(tapStudio) && tapStudio.includes('stream-studio.log')
     && tapStudio.includes('<key>KeepAlive</key>'),
     'tap-studio plist: :8011 -> :8000 -> stream-studio.log, KeepAlive')
-ok(qafa.includes('http://127.0.0.1:8011/v1/models') && qafa.includes('omlxtapstudio')
-    && qafa.includes('!= 502'),
+ok(qafa.includes('TAPPORT=8011') && qafa.includes('omlxtapstudio') && qafa.includes('!= 502')
+    && qafa.includes('http://127.0.0.1:$TAPPORT/v1/models'),
     'forge-qa.sh routes the studio session through tap :8011, fail-open (#1268)')
 ok(qafa.includes('JOB=com.jalfern.tap-studio') && qafa.includes('origin/main:scripts/$JOB.plist')
     && qafa.includes('launchctl bootstrap'),
     'forge-qa.sh self-bootstraps tap-studio from origin/main (merge = install, slot-b pattern)')
 ok(watch.includes('LANE=studio') && watch.includes('TAPPORT=8011'),
     'watch.sh --live splits a live pane on QA·STUDIO over its own stream')
+const tapB = read('com.jalfern.tap-builderb.plist'), tapMini = read('com.jalfern.tap-mini.plist')
+ok(tapB.includes('<string>com.jalfern.tap-builderb</string>') && /<string>8012<\/string>/.test(tapB)
+    && /<string>8000<\/string>/.test(tapB) && tapB.includes('stream-builderb.log')
+    && tapB.includes('<key>KeepAlive</key>'),
+    'tap-builderb plist: :8012 -> :8000 -> stream-builderb.log, KeepAlive (#1356)')
+ok(tapMini.includes('<string>com.jalfern.tap-mini</string>') && /<string>8013<\/string>/.test(tapMini)
+    && /<string>18000<\/string>/.test(tapMini) && tapMini.includes('stream-mini.log')
+    && tapMini.includes('<key>KeepAlive</key>'),
+    'tap-mini plist: :8013 -> :18000 -> stream-mini.log, KeepAlive (#1356)')
+ok(forge.includes('8012') && forge.includes('omlxtapb') && forge.includes('com.jalfern.tap-builderb')
+    && forge.includes('origin/main:scripts/$TAPJOB.plist') && forge.includes('launchctl bootstrap'),
+    'forge.sh routes slot b through its own tap :8012 and self-bootstraps the plist (#1356)')
+ok(qafa.includes('TAPPORT=8013') && qafa.includes('omlxtapmini')
+    && qafa.includes('SRC_PROV=omlxmini') && qafa.includes('!= 502'),
+    'forge-qa.sh routes the mini session through tap :8013, cloned from omlxmini, fail-open (#1356)')
+ok(watch.includes('typeset -A PANEID') && watch.includes('PANEID[$key]=$id')
+    && watch.includes('-t "${PANEID[qa-studio]}"') && !/live-studio[^\n]*"\$SESSION:0\./.test(watch),
+    'watch.sh targets lanes by captured pane id, never the shifted 0.N index (#1356)')
+ok(watch.includes('LANE=builderb') && watch.includes('TAPPORT=8012')
+    && watch.includes('LANE=mini') && watch.includes('TAPPORT=8013'),
+    'watch.sh --live gives BUILDER·B and QA·MINI their own live panes (#1356)')
 ok(telem.includes("board['slots']") && telem.includes('opencode run.*THE FORGE on slot b'),
     'telemetry bakes live slots into board.json')
 ok(floor.includes('export const slotsLine'), 'floor.js owns the pure slotsLine')
