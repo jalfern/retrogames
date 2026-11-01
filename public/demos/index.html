@@ -191,6 +191,19 @@
     <div class="meta"><span>CANVAS 2D · XPBD RIGID-BODY DYNAMICS</span><span>2026-10-28</span></div>
   </a>
 
+  <a class="card" id="learnedwalk" style="margin-top:18px">
+    <div class="row">
+      <span class="name">LEARNED WALK</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">The rung above PHYSICS WALK, from the opposite direction: the same 18-mass XPBD body and the same gravity, motors and friction —
+      but here the balance controller is <b>a neural network trained on this machine</b>, not a hand-written PD. One small net reads proprioception
+      (pitch, support margin, contacts, limb deltas) and writes the six leg torques; propulsion, balance and step timing all come from reward alone —
+      survive, stand tall, go forward. Tap to push and it fights the shove. Drag the bottom bar to scrub through training itself: generation 0 flails,
+      mid-runs stumble, the final policy walks. EXPORT EPISODE saves the run in the robot-kit format (#1141).</p>
+    <div class="meta"><span>CANVAS 2D · RL-TRAINED BALANCE POLICY</span><span>2026-11-01</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -214,6 +227,7 @@
   document.getElementById('deepglass').href = base + 'deepglass.html'
   document.getElementById('stickwalk').href = base + 'stickwalk.html'
   document.getElementById('physicswalk').href = base + 'physicswalk.html'
+  document.getElementById('learnedwalk').href = base + 'learnedwalk.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
@@ -229,6 +243,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'deepglass', issues: [1129], span: '~1 h', assist: 'solo' },
   { el: 'stickwalk', issues: [1150], span: '~2 h', assist: 'solo' },
   { el: 'physicswalk', issues: [1204], span: '~3 h', assist: 'solo' },
+  { el: 'learnedwalk', issues: [1205], span: '~9 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>
