@@ -15,7 +15,7 @@
 
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
-    visibleAhead, distAhead,
+    visibleAhead, distAhead, gearOf, slopeAt,
     STAGE_L, FOG_RANGE, VMAX, OFF_CAP, LATE_WINDOW,
 } from '../src/games/RallyCoDriver/sim.js'
 import { makeStage, kappaAt } from '../src/games/RallyCoDriver/stage.js'
@@ -176,6 +176,47 @@ for (const seed of [7, 11, 23, 42]) {
     const st = state(g)
     ok(`seed ${seed}: CPU pair finishes two laps`, g.done && g.win && st.laps === st.LAPS,
         `done=${g.done} laps=${st.laps} t=${t} stats=${JSON.stringify(st.stats)}`)
+}
+
+// ---- 6. feel signals (#1365 polish) — gears, crests, lap splits ------------
+console.log('feel:')
+{
+    // stepped-RPM: several distinct gears over the range, monotonic in v
+    // (a single continuous sweep would collapse to one gear / jitter)
+    const gears = new Set()
+    let mono = true
+    for (let v = 0; v <= VMAX; v += 0.05) {
+        const { gear, frac } = gearOf(v)
+        gears.add(gear)
+        if (gear < gearOf(Math.max(0, v - 0.05)).gear || frac < 0 || frac > 1) mono = false
+    }
+    ok('engine: stepped gears cover the range', gears.size >= 4, `${gears.size} gears`)
+    ok('engine: gear never drops while speeding up, frac in [0,1]', mono)
+}
+for (const seed of SEEDS) {
+    // every seed must have a crest the landing thud can fire on: the slope
+    // falls from climb to drop across a 48-unit window (the shell keys the
+    // sound off exactly this, armed once per crest)
+    const st = makeStage(seed)
+    let crests = 0, armed = true
+    for (let i = 0; i < 3600; i++) {
+        const s = (i / 3600) * STAGE_L
+        const over = slopeAt(st, s - 48) > 0.015 && slopeAt(st, s) < -0.015
+        if (over && armed) { crests++; armed = false }
+        if (!over) armed = true
+    }
+    ok(`seed ${seed}: crests to land on`, crests >= 1, `${crests}`)
+}
+for (const seed of [7, 11, 23, 42]) {
+    // lap-line banner data: splits recorded per lap, summing to the clock
+    const g = createSim(seed, 2)
+    let t = 0
+    while (!g.done && t < 20000) { tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)]); t++ }
+    const st = state(g)
+    ok(`seed ${seed}: lap splits recorded and sum to the stage time`,
+        st.splits.length === st.LAPS && st.splits.every((x) => x > 1000) &&
+        Math.abs(st.splits.reduce((a, b) => a + b, 0) - st.score) <= 40,
+        `splits=${JSON.stringify(st.splits)} score=${st.score}`)
 }
 
 console.log(`\nrallycheck: ${pass} passed, ${fail} failed`)

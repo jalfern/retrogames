@@ -74,6 +74,7 @@ export const SCOPES = {
   frogger: { dirs: ['src/games/Frogger'], lint: ['lint:frogger'], checks: [['froggercheck', true]], smoke: [] },
   attract: { dirs: [], anyAttract: true, lint: ['lint:attract'], checks: [['attractcheck', true]], smoke: [] },
   comet: { dirs: ['src/games/CometDrift'], lint: ['lint:comet'], checks: ['cometcheck'], smoke: [] },
+  rally: { dirs: ['src/games/RallyCoDriver'], lint: [], checks: [['rallycheck', true]], smoke: [] },
 };
 
 // #887: code that EVERY game page loads. A PR touching any of it pays the

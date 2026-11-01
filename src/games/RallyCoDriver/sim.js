@@ -10,11 +10,11 @@
 // ribbon never ends, so there is no win-by-reach goal to game — the stage
 // ends when two laps are done, and the only score is the clock.
 
-import { makeStage, stageAt, visibleAhead, distAhead, cornerAhead, kappaAt, STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE } from './stage.js'
+import { makeStage, stageAt, visibleAhead, distAhead, cornerAhead, kappaAt, slopeAt, STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE } from './stage.js'
 import { mulberry32 } from './stage.js'
 import { decideCoCall, applyCallEvent, resolvePassed, coCallFromPad, leadDist, LATE_WINDOW, callLabel } from './calls.js'
 
-export { STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE, visibleAhead, stageAt, distAhead, cornerAhead, kappaAt, mulberry32, leadDist, LATE_WINDOW, callLabel }
+export { STAGE_L, ROAD_HALF, SHOULDER, FOG_RANGE, visibleAhead, stageAt, distAhead, cornerAhead, kappaAt, slopeAt, mulberry32, leadDist, LATE_WINDOW, callLabel }
 
 // physics constants (per tick at 60 Hz)
 export const VMAX = 4.6
@@ -30,6 +30,17 @@ export const LAPS = 2
 // outward, and the driver must counter-steer (and brake for severity) to
 // keep the line. Without it the ribbon is a straight with labels on it.
 export const DRIFT_K = 1.8
+
+// Gears for the engine note (shell audio, but pure so rallycheck can pin it):
+// stepped-RPM — pitch snaps between ratios instead of one continuous sweep.
+export const GEAR_STEPS = [0, 0.9, 1.6, 2.3, 3.1, 3.9]
+// gearOf(v) → { gear: 0..GEAR_STEPS.length-2, frac: 0..1 within the gear }
+export function gearOf(v) {
+    let i = 0
+    while (i < GEAR_STEPS.length - 1 && v >= GEAR_STEPS[i + 1]) i++
+    const lo = GEAR_STEPS[i], hi = GEAR_STEPS[i + 1]
+    return { gear: i, frac: Math.max(0, Math.min(1, (v - lo) / (hi - lo))) }
+}
 
 export function createSim(seed = 1, players = 2) {
     const stage = makeStage(seed)
@@ -59,6 +70,8 @@ export function createSim(seed = 1, players = 2) {
         card: [],
         stats: { called: 0, correct: 0, late: 0, missed: 0, offTicks: 0 },
         timeMs: 0,
+        lastLapMs: 0,
+        splits: [], // per-lap split times in ms (the lap-line banner reads these)
         vis: 0,
         events: [], // { t, kind, ... } for juice + juiceaudit
     }
@@ -195,7 +208,10 @@ export function tickSim(gs, pads) {
     // ---- laps -------------------------------------------------------------
     if (car.prevS > car.s) {
         gs.lapsDone++
-        gs.events.push({ t: gs.tick, kind: 'lap', laps: gs.lapsDone })
+        const split = Math.round(gs.timeMs - gs.lastLapMs)
+        gs.lastLapMs = gs.timeMs
+        gs.splits.push(split)
+        gs.events.push({ t: gs.tick, kind: 'lap', laps: gs.lapsDone, split })
         if (gs.lapsDone >= gs.LAPS) {
             gs.done = true
             gs.win = true
@@ -257,6 +273,7 @@ export function state(gs) {
             d: n.atS == null ? null : Math.round(distAhead(gs.stage, c.s, n.atS)),
         })),
         stats: { ...gs.stats },
+        splits: [...gs.splits],
         hash: stateHash(gs),
     }
 }

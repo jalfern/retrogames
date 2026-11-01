@@ -208,6 +208,13 @@ export function elevAt(st, s) {
     return stageAt(st, s).elev
 }
 
+// slopeAt(st, s) — elevation gradient (rise per unit) over a ±8-unit window.
+// Positive = climbing. The shell uses the + → − crossing as the crest landing
+// (the thud moment) and negative slope for the headlight bloom downhill.
+export function slopeAt(st, s) {
+    return (elevAt(st, s + 8) - elevAt(st, s - 8)) / 16
+}
+
 // distAhead(st, s0, s1) — forward road distance from s0 to s1 (0..L)
 export function distAhead(st, s0, s1) {
     const d = (((s1 - s0) % st.L) + st.L) % st.L

@@ -76,9 +76,13 @@ different seed → different state.
 
 ## Harness
 
-- `npm run rallycheck` — pure Node, 50 gates: stage sanity + crest
+- `npm run rallycheck` — pure Node, 61 gates: stage sanity + crest
   honesty, co-driver honesty + ledger, note grammar, determinism,
-  off-track penalty, win gate. No dev server needed.
+  off-track penalty, win gate, and the #1365 feel signals (stepped-RPM
+  gears via `gearOf`, crest `slopeAt` crossings per seed, lap splits
+  that sum to the stage time). No dev server needed. Wired into CI:
+  the `rally` scope in `scripts/checks.mjs` + the KEYS-gated step in
+  ci.yml (the alias existed but nothing ran it — #1395's lesson).
 - contractcheck (browser, advisory): `rally-co-driver` is wired in
   `scripts/lib/contractGames.mjs` (2 seats; the pattern holds throttle
   with brief steering).
@@ -88,7 +92,17 @@ different seed → different state.
 
 ## Stages / follow-ups
 
+- #1365 polish shipped: 3-2-1-GO start lights, lap-line banner + per-lap split,
+  gravel roost off-track, body lean into turn-in + brake-flare tails, headlight
+  bloom down a crest, chevron pop-in, seeded roadside silhouettes + start-line
+  grandstand, stepped-RPM gears, tyre chatter at the grip limit, crest thud.
+  The shell owns the fx; the provable parts (`gearOf`, `slopeAt`, lap splits)
+  live in the pure sim and rallycheck pins them.
 - Lobby seats (online co-driver over the relay) — the sim already treats
   the co seat as pads, lockstep-ready; file when Jon wants it.
+- Remaining polish (filed as the follow-up feedback issue): model-seat sensor
+  arm for the nightly/RL soak, voice field QA + #1263 mic-badge parity,
+  weather presets / checkpoint-clock format, lap-progress strip on the NOTES
+  card, and reflector-post variation beyond the amber corner mouths.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.
