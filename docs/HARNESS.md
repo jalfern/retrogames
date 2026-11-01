@@ -118,11 +118,21 @@ everything. The scope table lives in `scripts/checks.mjs` (one source of truth:
 `ci.yml` gates on it, `scripts/ciscope.mjs` turns a diff into gate keys,
 `scripts/run-checks.mjs` replays the whole table with mutants nightly —
 `node scripts/ciscope.mjs --selftest` fails if the table references a dead alias).
+Since #1387 the table is self-pinning: ~25 checks read the raw TEXT of script
+files (`read('scripts/telemetry.sh')` & friends), and scripts/** was docs to the
+classifier — so #1299 rode through with a stale pin and reddened main for a day.
+`checks.mjs` now derives `PINS` from the checks themselves (every file-path
+literal read by a CI-run check maps to the scopes that execute it, and a check
+script maps to the scopes that run IT); `classify()` refuses to call a pinned
+file docs. `--selftest` re-derives the map on every PR — including docs-only
+ones — and fails on an empty derivation, a lost anchor (`telemetry.sh`,
+`main-ok.sh` → core), or any pin whose file classify still calls docs.
+The list is derived, so it can never go stale itself.
 
 | Job | Trigger | What it does |
 |-----|---------|--------------|
 | `scope` | every PR | diff vs base → `docs` flag + gate-key list (shared code or an unknown `src/games/<Dir>` fans out to everything). |
-| `static` | every PR | required check (branch protection). Scoped lints/checks per the table, **no `--mutate`**; shared code runs the full set; docs/scripts-only PRs run only `ciscope --selftest` (< 1 min). |
+| `static` | every PR | required check (branch protection). Scoped lints/checks per the table, **no `--mutate`**; shared code runs the full set; docs/scripts-only PRs run only `ciscope --selftest` (< 1 min) — unless a changed file is **pinned** (below). |
 | `smoke` | every PR | the per-game real-key smokes for the touched games (+ `vpadboot`/`tapstartcheck` on shared changes). Advisory: a flake means `gh run rerun <id> --failed` once, then move on — never fix-in-a-new-PR, never wait on it. |
 | `verify` | **manual** (`workflow_dispatch`) | boots `npm run dev`, runs `npm run verify -- --full` (audcheck + mariocheck + autopilotcheck + plantcheck + levelcheck + aicheck + zorkcheck + fpscheck + evocheck + doscheck), then builds and `npm run prodsmoke` against the production bundle; uploads `scripts/.shots/`, dumps the vite/preview logs on failure. |
 | Nightly `full-static`/`full-smoke` | schedule + manual | every lint, every check with `--mutate`, `build`, then the whole smoke set on main. A red night files/refreshes one issue and **freezes merges** until green. Verdict jobs only (#1358): advisory perf — `shoreperf-nightly.yml`, same cron, own concurrency group — lives outside, because GitHub ends a run `cancelled` when a job cancels at scheduling even with `continue-on-error`. |

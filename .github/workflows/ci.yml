@@ -3,7 +3,9 @@ name: CI
 # #601: a PR pays only for what it changed.
 #   scope   — git diff -> gate list (scripts/ciscope.mjs + scripts/checks.mjs)
 #   static  — REQUIRED check. Scoped lints/checks, no `--mutate` (those run
-#             nightly). Docs/scripts-only PRs: selftest + nothing else.
+#             nightly). Docs/scripts-only PRs: selftest + nothing else —
+#             except pinned text (#1387): editing a file a check reads raw
+#             (scripts/telemetry.sh etc) faces that check in this very PR.
 #   smoke   — advisory browser steps, scoped the same way.
 #   prsmokes — #887 advisory: shared-code PRs run the nightly play-smoke set.
 # Push to main no longer re-runs the PR suite (the merge commit is the tree the
