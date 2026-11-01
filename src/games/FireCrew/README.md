@@ -18,6 +18,13 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
   shell drives juice only (never reaches state).
 - `attract.js` — rule-6 copy. `scripts/attractcheck.mjs` anchors on these
   exact strings; reword here and there together.
+- `voiceradio.js` — the crew radio (#1361): the spoken grammar, pure Node.
+  `parseRadio` turns a shouted call into an intent (spot / ladder / hold),
+  the same law voicecalls.js is for GAUNTLET. A spot call is a flashlight
+  SWEEP in sim.js — it lights one side through `lightAt` and costs the hose
+  seat 15 battery (light is fuel), so the mic can never beat the darkness;
+  ladder/hold calls drive the CPU seats through their pads. Fire is never
+  the call — it glows through any smoke.
 - `art.js` — prerendered backdrop (planks/crates/asphalt from a hash noise),
   3-frame fire, waving victims, 2-frame walk, engine/ladder/ambulance/hydrant,
   per-tile darkness pass + warm fire bleed + flare radial light.
@@ -40,11 +47,19 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
   standing on a collapsing tile is lost. The structure clock is 2:00.
 - Gales slip an unbraced, raised ladder (150 ticks) — seat 3 holds U to raise
   AND brace. This is why the third seat exists.
+- The crew radio (#1361): V toggles the mic (consent first, #1247's ask, never
+  auto-asked). A spot call is a flashlight sweep — it lights the named side
+  through `lightAt` (the SAME rule that finds victims and draws the darkness)
+  and costs the hose seat 15 battery, so a shout can only carry what a
+  flashlight could reach; a dead battery is refused. Ladder and hold calls
+  drive the CPU seats through their pads; against a human seat they are an
+  echo only. Every call banks into the recording as `voiceCmd` + the raw
+  track (`spec.voiceExtra`).
 
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring (33)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring (65)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -58,13 +73,10 @@ routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
 
-1. Voice capture (#1247): the mic pill is NOT wired yet — the issue asks for
-   voice from day one; needs a pass reusing `utils/voiceCapture` like
-   GAUNTLET's (#1287). Filed with the polish issue.
-2. Seat 3 human movement is near-pointless (the truck is parked); consider
+1. Seat 3 human movement is near-pointless (the truck is parked); consider
    a mobile ladder or wind-noise cue instead of walking.
-3. Smoke drift is a static darkness field; real advected smoke (downwind
+2. Smoke drift is a static darkness field; real advected smoke (downwind
    thickening) would sell the wind harder.
-4. Water is a straight 3-tile cone; pressure arc by tank level, and water
+3. Water is a straight 3-tile cone; pressure arc by tank level, and water
    reaching the loft through the ladder shaft, are unclaimed juice.
-5. CPU never douses the loft (no bucket brigade) — a model seat could.
+4. CPU never douses the loft (no bucket brigade) — a model seat could.

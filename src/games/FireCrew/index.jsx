@@ -13,9 +13,12 @@ import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd } from '../../utils/gameContract'
 import { audioController } from '../../utils/AudioController'
-import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft } from './sim.js'
+import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio } from './sim.js'
+import { parseRadio } from './voiceradio.js'
+import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
+import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { VW, VH, drawBackdrop, drawCrew, drawVictim, drawFire, drawFx, drawDarkness, drawProps, drawHud } from './art.js'
 
 const FIXED_DT = 1000 / 60
@@ -34,6 +37,8 @@ const sfx = {
     win: () => [523, 659, 784, 1046].forEach((f, i) => audioController.playTone(f, 0.16, 'square', 0.09, i * 0.12)),
     lose: () => [392, 330, 262, 196].forEach((f, i) => audioController.playTone(f, 0.22, 'square', 0.08, i * 0.16)),
     move: () => audioController.playTone(520, 0.05, 'square', 0.05),
+    radio: () => { audioController.playTone(660, 0.06, 'square', 0.05); audioController.playTone(990, 0.08, 'square', 0.05, 0.06) },
+    radioNo: () => audioController.playTone(233, 0.12, 'sawtooth', 0.05),
 }
 
 export default function FireCrew() {
@@ -43,6 +48,7 @@ export default function FireCrew() {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const [seats, setSeats] = useState(1)
+    const [voiceHints, setVoiceHints] = useState(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const seatsRef = useRef(1)
@@ -54,6 +60,10 @@ export default function FireCrew() {
     const keys2Ref = useRef({})
     const keys3Ref = useRef({})
     const prevRef = useRef(null)
+    // voice radio (#1361): the mic is a seat, like any slot — consent first
+    // (never auto-asked), one raw track for the whole run, spoken calls feed
+    // the sim through applyRadio so the mic can never beat the darkness.
+    const voiceRef = useRef({ on: false, listen: null, session: null, track: null, hintsT: 0 })
 
     useEffect(() => { screenRef.current = screen }, [screen])
     useEffect(() => { pausedRef.current = paused }, [paused])
@@ -63,6 +73,7 @@ export default function FireCrew() {
         const n = Math.max(1, Math.min(3, players | 0 || 1))
         const src = ['cpu', 'cpu', 'cpu']
         for (let i = 0; i < n; i++) src[i] = 'human'
+        voiceRef.current.track = null // fresh run, fresh voice
         gsRef.current = setSources(makeRun(seed >>> 0 || 1), src)
         prevRef.current = null
         seatsRef.current = n
@@ -81,8 +92,23 @@ export default function FireCrew() {
         setUiScreen('attract')
     }, [])
 
+    const endVoice = useCallback((finalize) => {
+        const v = voiceRef.current
+        v.on = false
+        clearTimeout(v.hintsT)
+        if (v.listen) { v.listen.stop(); v.listen = null }
+        if (v.session) {
+            const s = v.session
+            v.session = null
+            if (finalize) s.finalize().then((track) => { if (track) voiceRef.current.track = track }).catch(() => { /* no honest audio */ })
+        }
+        setVoiceHints(false)
+    }, [])
+
     const finish = useCallback((g) => {
         if (screenRef.current === 'over') return
+        // #1249 law: never leave the mic hot on the GAME OVER screen
+        if (voiceRef.current.on || voiceRef.current.session) endVoice(true)
         const won = g.win && g.rescued > 0
         setEnd({ win: won, rescued: g.rescued, lost: g.lost, doused: g.doused, score: g.score })
         prevRef.current = won ? 'win' : 'lose'
@@ -91,7 +117,7 @@ export default function FireCrew() {
         setScreen('over')
         setUiScreen('over')
         overAtRef.current = performance.now()
-    }, [])
+    }, [endVoice])
 
     const padFrom = (keys) => ({
         left: !!keys.left, right: !!keys.right, up: !!keys.up, down: !!keys.down,
@@ -132,6 +158,7 @@ export default function FireCrew() {
             },
             state: () => (gsRef.current ? state(gsRef.current) : { tick: 0, score: 0, done: false, players: 1 }),
             canvas: () => canvasRef.current,
+            voiceExtra: () => (voiceRef.current.track ? { tracks: [voiceRef.current.track] } : null),
         }
     }
 
@@ -178,6 +205,7 @@ export default function FireCrew() {
                 return
             }
             if (pausedRef.current) return
+            if (e.code === 'KeyV') { e.preventDefault(); voiceToggle(); return } // crew radio (#1361)
             const maps = MAPS()
             const keysets = [keys1, keys2, keys3]
             for (let i = 0; i < 3; i++) {
@@ -197,6 +225,56 @@ export default function FireCrew() {
             if (screenRef.current === 'attract') { clearKeys(); screenRef.current = 'select'; setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
             else if (screenRef.current === 'select') startPlay(1 + Math.floor(Math.random() * 65535), selectRef.current)
+        }
+
+        // VOICE RADIO (#1361): V toggles the crew radio. Consent first (the
+        // #1247 ask, never auto-asked); one raw mic track for the whole run
+        // (banked into the recording via spec.voiceExtra); every spoken call
+        // runs parseRadio -> applyRadio — the same pure path the harness
+        // drives, so the mic can only say what the sim lets through.
+        const say = (msg) => { const g = gsRef.current; if (g && !g.done) { g.message = msg; g.messageT = 120 } }
+        const radioCall = (raw) => {
+            const g = gsRef.current
+            const text = String(raw || '').trim()
+            if (!g || g.done || !text) return
+            const intent = parseRadio(text)
+            const res = applyRadio(g, intent)
+            if (res.ok) sfx.radio(); else sfx.radioNo()
+            recordVoiceCmd({
+                said: text.slice(0, 80),
+                intent: intent ? intent.kind : null,
+                ok: !!res.ok,
+                ...(res.ok && intent && intent.kind === 'spot' ? { side: res.side } : {}),
+                ...(res.ok && intent && intent.kind === 'ladder' ? { dir: res.dir } : {}),
+                ...(!res.ok && res.why ? { why: res.why } : {}),
+            })
+        }
+        const voiceToggle = async () => {
+            const v = voiceRef.current
+            if (screenRef.current !== 'play') return
+            if (v.on) { endVoice(true); return }
+            if (!speechSupported()) { say('NO RADIO ON THIS DEVICE'); sfx.radioNo(); return }
+            const consent = await askVoiceConsent()
+            if (screenRef.current !== 'play') return // moved on while the prompt was up
+            if (!consent.consent) { say('NO MIC, NO RADIO'); sfx.radioNo(); return }
+            v.session = createVoiceSession({ slots: [0], ask: () => Promise.resolve(consent) })
+            v.on = true
+            v.listen = startSpeechListen({
+                onPhrase: (p) => radioCall(p),
+                onError: () => { /* the mic badge already tells the truth */ },
+            })
+            sfx.radio()
+            say('RADIO ON — SHOUT WHAT YOU SEE')
+            // #1287 pattern: a player who YES'd the mic but never read the
+            // manual still knows what to shout — one-time card, exact words.
+            let seen = ''
+            try { seen = localStorage.getItem('retrogames:firecrew-voice-hints') || '' } catch { /* private mode */ }
+            if (!seen) {
+                try { localStorage.setItem('retrogames:firecrew-voice-hints', '1') } catch { /* private mode */ }
+                setVoiceHints(true)
+                clearTimeout(v.hintsT)
+                v.hintsT = setTimeout(() => setVoiceHints(false), 7000)
+            }
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -218,6 +296,7 @@ export default function FireCrew() {
             if (!g) return
             if (g.done) { finish(g); return }
             step(g, pads[0], pads)
+            if (voiceRef.current.session) voiceRef.current.session.onTick(g.tick)
             listenEvents(g)
             const h = padFrom(keys1)
             if (h.a && g.crew[0].tank > 0 && g.tick % 4 === 0) sfx.spray()
@@ -268,6 +347,12 @@ export default function FireCrew() {
                 start: (seed, players) => startPlay(seed >>> 0 || 1, players || 1),
                 screen: () => screenRef.current,
                 state: () => (gsRef.current ? state(gsRef.current) : null),
+                radio: (text) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    const intent = parseRadio(text)
+                    return { intent, ...applyRadio(g, intent) }
+                },
                 resolveAll: () => {
                     const g = gsRef.current
                     if (!g) return { error: 'no run' }
@@ -311,6 +396,7 @@ export default function FireCrew() {
 
         return () => {
             cancelAnimationFrame(raf)
+            endVoice(true) // never leave the mic hot on unmount
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('pointerdown', onPointer)
@@ -321,7 +407,7 @@ export default function FireCrew() {
             }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [startPlay, startAttract, finish, listenEvents])
+    }, [startPlay, startAttract, finish, listenEvents, endVoice])
 
     return (
         <div className="min-h-screen bg-black flex items-center justify-center relative select-none">
@@ -360,6 +446,7 @@ export default function FireCrew() {
                         SEAT 1 HOSE: ARROWS + SPACE SOAK, B FLARE<br />
                         SEAT 2 RESCUE: WASD + F GRAB · SPACE AT WRECK<br />
                         SEAT 3 LADDER: IJKL · U RAISE &amp; BRACE · O LOWER<br />
+                        V RADIO — SHOUT WHAT YOU SEE: "VICTIM ON THE LEFT" · "LADDER UP"<br />
                         EMPTY SEATS RUN ON AUTOPILOT — ANY SEAT CAN BE A MODEL LATER
                     </p>
                     <p className="mt-4 text-base font-bold animate-pulse text-white">SPACE / TAP — GO!</p>
@@ -372,6 +459,16 @@ export default function FireCrew() {
                     <p className="text-slate-300 text-sm mb-1">RESCUED {end.rescued}/6 · LOST {end.lost} · CELLS SOAKED {end.doused}</p>
                     <p className="text-orange-300 text-lg font-bold mb-4">SCORE {end.score}</p>
                     <p className="text-xs animate-pulse text-white">ANY KEY / TAP — NEXT ALARM</p>
+                </div>
+            )}
+
+            {voiceHints && (
+                <div className="absolute top-14 inset-x-0 flex justify-center pointer-events-none z-10">
+                    <div className="bg-slate-950/90 border-2 border-orange-400 rounded px-5 py-3 text-center font-mono text-xs text-orange-100 leading-6 shadow-lg">
+                        RADIO ON — SHOUT WHAT YOU SEE:<br />
+                        <span className="text-yellow-300 font-bold">"VICTIM ON THE LEFT" · "SOMEONE&apos;S UP THERE" · "LADDER UP" · "HOLD"</span>
+                        <div className="text-slate-400 mt-1">each sweep spends 15 battery · fire is visible — no radio needed</div>
+                    </div>
                 </div>
             )}
 
