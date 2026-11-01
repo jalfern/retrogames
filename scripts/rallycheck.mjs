@@ -19,8 +19,10 @@ import {
     STAGE_L, FOG_RANGE, VMAX, OFF_CAP, LATE_WINDOW,
     WEATHERS, WEATHER_ORDER, CURATED,
 } from '../src/games/RallyCoDriver/sim.js'
-import { makeStage, kappaAt } from '../src/games/RallyCoDriver/stage.js'
+import { makeStage, kappaAt, cornerAhead } from '../src/games/RallyCoDriver/stage.js'
 import { parseCoCall, coCallFromPad, decideCoCall, applyCallEvent, leadDist } from '../src/games/RallyCoDriver/calls.js'
+import { senseRally } from '../src/games/RallyCoDriver/sensors/pacecard.js'
+import { createPaceBrain, modelSeatPad } from '../src/games/RallyCoDriver/agent/pacebrain.js'
 
 const SEEDS = [1, 7, 11, 23, 42]
 
@@ -386,6 +388,67 @@ for (const seed of SEEDS) {
     ok(`seed ${seed}: posts vary beyond the amber`,
         posts.some((p) => p.kind === 'exit') && posts.some((p) => p.kind === 'crest'))
 }
+
+
+// ---- 8. #1427 model seat: the docs/AI.md spine drives seat 1 -----------------
+// sensor (pacecard) + brain (pacebrain) — the seat nightly/RL soak. The spine
+// must be honest (never see past the crest), legal (declared skills, contract
+// keys), alive (finishes the stage), deterministic, and stall-honest (its
+// progress currency stops when the car stops, so AgentLoop's watchdog bites).
+const LEGAL_KEYS = new Set(['up', 'down', 'left', 'right', 'a'])
+const modelRun = (seed, maxTicks = 60 * 260) => {
+    const gs = createSim(seed, 2)
+    const brain = createPaceBrain(gs)
+    let bad = 0, off = 0, hidden = 0, mono = true, lastProg = -1
+    while (!gs.done && gs.tick < maxTicks) {
+        const p = senseRally(gs)
+        const d = brain.step(p, {})
+        if (!d || d.skill !== 'pad' || Object.keys(d.args).some((k) => !LEGAL_KEYS.has(k))) bad++
+        if (p.extra.corners.some((c) => c.d > p.extra.fog)) bad++
+        // a real corner inside 400 units that the percept does NOT report:
+        // the crest ate it. The trim must actually bite, not just exist.
+        if (cornerAhead(gs.stage, gs.car.s, 400).length && !p.extra.corners.length) hidden++
+        const prog = brain.progress(p)
+        if (prog < lastProg) mono = false
+        lastProg = prog
+        if (gs.car.off) off++
+        tickSim(gs, [d && d.skill === 'pad' ? d.args : {}, null])
+    }
+    return { gs, bad, off, hidden, mono, ticks: gs.tick }
+}
+ok('model seat: percept carries every spine field',
+    ['room', 'ego', 'actors', 'inventory', 'message', 'score', 'moves', 'extra', 'ts', 'sensor']
+        .every((k) => k in senseRally(createSim(7, 2))))
+ok('model seat: a silent co-driver is a null+conf-0 hole, not a missing key',
+    senseRally(createSim(7, 2)).message.text === null && senseRally(createSim(7, 2)).message.conf === 0)
+{
+    const fresh = createSim(7, 2)
+    const b = createPaceBrain(fresh)
+    ok('model seat: modelSeatPad mirrors step→skill exactly',
+        JSON.stringify(modelSeatPad(fresh, b)) === JSON.stringify(b.step(b.sense('ram'), {}).args))
+    ok('model seat: progress stalls with a stuck car (the watchdog still bites)',
+        b.progress(senseRally(fresh)) === b.progress(senseRally(fresh)))
+}
+const modelRuns = SEEDS.map((seed) => modelRun(seed))
+ok('model seat: percepts never leak past the sightline (all seeds)',
+    modelRuns.every((r) => r.bad === 0))
+ok('model seat: crests bite the spine too — corners hidden behind hills go unreported',
+    modelRuns.reduce((n, r) => n + r.hidden, 0) > 0)
+ok('model seat: the pace brain names only its declared skill, with contract keys',
+    modelRuns.every((r) => r.bad === 0))
+ok('model seat: progress currency is monotonic across the lap wrap',
+    modelRuns.every((r) => r.mono))
+for (const [i, seed] of SEEDS.entries()) {
+    const r = modelRuns[i]
+    ok(`seed ${seed}: the pace brain finishes two laps (seat 1 via the spine)`,
+        r.gs.done, `tick ${r.ticks}, laps ${r.gs.lapsDone}`)
+    ok(`seed ${seed}: spine-driven off-track share stays under 10%`,
+        r.off / Math.max(1, r.ticks) < 0.10, `${(100 * r.off / Math.max(1, r.ticks)).toFixed(1)}%`)
+}
+ok('model seat: determinism — identical spine runs digest identical',
+    stateHash(modelRun(7).gs) === stateHash(modelRun(7).gs))
+ok('model seat: the spine digest rides the same determinism law on a second seed',
+    stateHash(modelRun(11).gs) === stateHash(modelRun(11).gs))
 
 
 console.log(`\nrallycheck: ${pass} passed, ${fail} failed`)
