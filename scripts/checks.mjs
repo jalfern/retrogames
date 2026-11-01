@@ -4,6 +4,9 @@
 // Every alias here must exist in package.json — ciscope --selftest proves it,
 // and any src/games/<Dir> NOT owned by a scope escalates to "all" so a new
 // game can never quietly dodge its gates.
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
@@ -89,6 +92,92 @@ export const SHARED = [
   'public/sw.js', 'relay/', 'scripts/lib/',
 ];
 
+// #1387: scripts/** is docs to isDocs() below (#601), but ~25 harness checks
+// pin the RAW TEXT of script files (`read('scripts/telemetry.sh')` & friends).
+// A scripts-only PR therefore ran only ciscope --selftest while the checks
+// those edits can stale never faced it (#1299 stale-broke the #1269 pin and
+// red-shitted main for ~24 h). Fix: derive the pin map from the checks
+// themselves — scan every CI-run check script for file-path literals it reads,
+// and map each target to the scope keys that execute the reading check (and a
+// check script to the scopes that run IT, so editing a check faces its gates).
+// Derived, not hand-kept: the list can never go stale itself.
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+// package.json -> Map<'scripts/x.mjs', Set<alias>> of scripts CI can invoke.
+function aliasFiles() {
+  const pkg = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8'));
+  const out = new Map();
+  for (const [alias, cmd] of Object.entries(pkg.scripts)) {
+    for (const m of cmd.matchAll(/node\s+(?:--\S+\s+)*(scripts\/[\w./-]+\.mjs)/g)) {
+      if (!out.has(m[1])) out.set(m[1], new Set());
+      out.get(m[1]).add(alias);
+    }
+  }
+  return out;
+}
+
+// Map<'scripts/x.mjs', Set<key>> — which CI scopes run each check script.
+function checkScopes() {
+  const byAlias = new Map();
+  const add = (key, entries) => {
+    for (const e of entries) {
+      const a = Array.isArray(e) ? e[0] : e;
+      if (!byAlias.has(a)) byAlias.set(a, new Set());
+      byAlias.get(a).add(key);
+    }
+  };
+  add('core', [...CORE.lint, ...CORE.checks, ...CORE.smoke]);
+  for (const [k, s] of Object.entries(SCOPES)) add(k, [...s.lint, ...s.checks, ...s.smoke]);
+  const out = new Map();
+  for (const [file, aliases] of aliasFiles()) {
+    const keys = new Set();
+    for (const a of aliases) for (const k of byAlias.get(a) ?? []) keys.add(k);
+    if (keys.size) out.set(file, keys);
+  }
+  return out;
+}
+
+// File-path literals a check source reads: repo-relative ('scripts/x.sh'),
+// '../'-relative, bare filenames (the local `read` helpers anchor scripts/),
+// and all-literal `join(here|ROOT, ...)` forms. Deliberately literal-only:
+// variable paths resolve to fixtures/temp dirs, never to pinned repo text.
+const READ_PATHS = [
+  /(?:readFileSync|readFile|read)\(\s*['"]((?:scripts|docs|public|relay|src)\/[^'"]+)['"]/g,
+  /(?:readFileSync|readFile|read)\(\s*['"](\.\.\/[\w./-]+)['"]/g,
+  /(?:readFileSync|readFile|read)\(\s*['"]([\w-]+\.(?:sh|mjs|md|tsv))['"]/g,
+  /join\(\s*(ROOT|root|HERE|here)\b((?:\s*,\s*'[^']*')+)\s*\)/g,
+];
+
+export function derivePins() {
+  const scopes = checkScopes();
+  const pins = {};
+  const put = (f, keys) => {
+    const rel = normalize(f).replace(/^\.\//, '');
+    if (!existsSync(join(HERE, '..', rel))) return;  // fixtures/typos: no pin
+    (pins[rel] ??= new Set());
+    for (const k of keys) pins[rel].add(k);
+  };
+  for (const [file, keys] of scopes) {
+    put(file, keys);                      // a check script faces its own gates
+    const src = readFileSync(join(HERE, '..', file), 'utf8');
+    for (const re of READ_PATHS) {
+      for (const m of src.matchAll(re)) {
+        const target = m[2] !== undefined
+          ? [m[1].toLowerCase().startsWith('root') ? '' : 'scripts',
+             ...m[2].match(/'([^']*)'/g).map((s) => s.slice(1, -1))].filter(Boolean).join('/')
+          : (m[1].startsWith('..') ? join('scripts', m[1])
+            : (m[1].includes('/') ? m[1] : join('scripts', m[1])));
+        const rel = normalize(target);
+        if (isDocs(rel) && !scopes.has(rel)) put(rel, keys);  // docs-swallowed only
+      }
+    }
+  }
+  return Object.fromEntries(Object.entries(pins).map(([f, k]) => [f, [...k].sort()]));
+}
+
+// computed at the bottom of this file: derivePins() consults DOCS/isDocs.
+export let PINS = {};
+
 export function touchesShared(files) {
   return files.some((f) => SHARED.some((p) => f === p || f.startsWith(p)));
 }
@@ -100,20 +189,27 @@ export function classify(files) {
   const keys = new Set();
   let docs = true;
   for (const f of files) {
-    if (isDocs(f)) continue;
-    docs = false;
-    let hit = false;
-    for (const p of CORE.paths) if (f.startsWith(p)) { hit = true; keys.add('core'); break; }
-    if (hit) continue;
-    if (/^src\/games\/[^/]+\/attract\.js$/.test(f)) keys.add('attract');
-    const ownedDir = (d) => f === d || f.startsWith(d.replace(/\/$/, '') + '/');
-    for (const [k, s] of Object.entries(SCOPES)) {
-      if (s.dirs.some(ownedDir)) keys.add(k);
-    }
-    // an unknown game dir must never dodge its gates — escalate.
-    if (/^src\/games\//.test(f) && !keys.has('core')) {
-      const owned = Object.values(SCOPES).some((s) => s.dirs.some(ownedDir));
-      if (!owned) return { docs: false, keys: ALL() };
+    if (isDocs(f)) {
+      // #1387: docs-shaped but pinned — some CI check reads this file's raw
+      // text, so a change here can stale that pin. Not docs: run its checks.
+      const pk = PINS[f];
+      if (pk) { docs = false; for (const k of pk) keys.add(k); }
+      else continue;
+    } else {
+      docs = false;
+      let hit = false;
+      for (const p of CORE.paths) if (f.startsWith(p)) { hit = true; keys.add('core'); break; }
+      if (hit) continue;
+      if (/^src\/games\/[^/]+\/attract\.js$/.test(f)) keys.add('attract');
+      const ownedDir = (d) => f === d || f.startsWith(d.replace(/\/$/, '') + '/');
+      for (const [k, s] of Object.entries(SCOPES)) {
+        if (s.dirs.some(ownedDir)) keys.add(k);
+      }
+      // an unknown game dir must never dodge its gates — escalate.
+      if (/^src\/games\//.test(f) && !keys.has('core')) {
+        const owned = Object.values(SCOPES).some((s) => s.dirs.some(ownedDir));
+        if (!owned) return { docs: false, keys: ALL() };
+      }
     }
   }
   if (keys.has('core')) return { docs: false, keys: ALL() };
@@ -125,3 +221,7 @@ function isDocs(f) {
   if (f.startsWith('.github/workflows/')) return false;
   return DOCS.some((r) => r.test(f));
 }
+
+// PINS must exist before classify() runs, but derivePins() needs isDocs —
+// initialize here, at module bottom, where both exist. (#1387)
+PINS = derivePins();
