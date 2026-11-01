@@ -100,10 +100,19 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
   (`snapshotGame`, rng closure peek — additive, hashes unchanged) chunked
   <=380B over `res`; guests restore + rebuild CPU plans and play continues,
   no reload. A dead friend (3 s stall) makes the host re-kick on a fresh seed.
+- Walkaway takeover (#1416 gap 2): a seat whose pads stall > `DROP_GRACE` (0.5 s)
+  AND whose player left the roster is demoted to CPU at the stalled tick — the
+  NET tag flips to a blinking `CPU!`, a hand-off blip sounds (`seatDropFx`),
+  and the shift cooks on instead of re-kicking. Every box stalls at the SAME
+  tick (relay FIFO delivers the departed's last pad batch before the roster
+  change), so the takeover is deterministic; `net.demote` also kills the seat's
+  remote pad buffer (gotPad + assemble ignore it) — a straggler pad would
+  otherwise outrank the CPU mask and poison the boundary hash. A merely lagging
+  seat (still in the roster) stays notice-then-re-kick territory.
 - Wire discipline: only FORWARD_TYPES, <=512B, ~93 msg/s worst case (4 members)
-  against the relay's 240/s window — proven by `npm run soslinkcheck` (31
-  assertions incl. full-shift score equality with the local reference run;
-  mutant: neuter `check()` => red).
+  against the relay's 240/s window — proven by `npm run soslinkcheck` (49
+  assertions incl. full-shift score equality with the local reference run and
+  the walkaway takeover; mutant: neuter `check()` or `demote()` => red).
 
 ## Honest gaps
 
