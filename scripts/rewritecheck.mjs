@@ -35,7 +35,11 @@ export function matchSource(source, path) {
     if (/\/:[A-Za-z_]\w*\*$/.test(source)) {
         const prefix = source.replace(/\/:[A-Za-z_]\w*\*$/, '')
         if (path === prefix) return ['']            // zero-or-more matches the bare route too
-        return path.startsWith(prefix + '/') ? [path.slice(prefix.length + 1)] : null
+        const rest = path.startsWith(prefix + '/') ? path.slice(prefix.length + 1) : null
+        // Vercel's `:path*` does NOT match a trailing empty segment — prod-proven:
+        // /retrogames/mario/ is 404 even with the catch-all. That is why the repo
+        // pairs explicit `/x/` rules (demos, retrogames, and #1395's forge).
+        return rest !== null && rest !== '' && !rest.endsWith('/') ? [rest] : null
     }
     if (source.includes('(')) {
         const m = new RegExp(`^${source}$`).exec(path)
@@ -82,9 +86,12 @@ if (process.argv.includes('--selftest')) {
         resolveEdge('/retrogames/forge', [OLD, SPA]) === '/forge/')
     ok('selftest: extension-scoped rule lets the bare route fall through to the SPA',
         resolveEdge('/retrogames/forge', [NEW, SPA]) === '/index.html')
-    ok('selftest: page sub-routes and trailing slash fall through too',
-        resolveEdge('/retrogames/forge/log', [NEW, SPA]) === '/index.html' &&
-        resolveEdge('/retrogames/forge/', [NEW, SPA]) === '/index.html')
+    ok('selftest: page sub-routes fall through to the SPA',
+        resolveEdge('/retrogames/forge/log', [NEW, SPA]) === '/index.html')
+    ok('selftest: :path* NEVER matches a trailing slash (prod scar: /retrogames/mario/ is 404 even via the catch-all)',
+        resolveEdge('/retrogames/forge/', [NEW, SPA]) === null && resolveEdge('/retrogames/mario/', [SPA]) === null)
+    ok('selftest: trailing slashes need explicit rules (repo convention: /demos/ plus #1395 /forge/)',
+        resolveEdge('/retrogames/forge/', [NEW, { source: '/retrogames/forge/', destination: '/index.html' }, SPA]) === '/index.html')
     ok('selftest: extension-scoped rule still rewrites the JSON assets',
         resolveEdge('/retrogames/forge/juice.json', [NEW, SPA]) === '/forge/juice.json')
     ok('selftest: first-match wins (an earlier broad rule beats a later narrow one)',
@@ -110,8 +117,9 @@ if (existsSync(join(ROOT, 'public/forge/boredom.json'))) {
 // paths under /forge are disk assets. The old `:path*` rule resolved the bare
 // route to /forge/ (nothing there) and the edge answered 404.
 console.log('forge route resolution (#1395)')
-ok('/retrogames/forge and /forge/ resolve to the SPA shell',
-    resolveEdge('/retrogames/forge', vc.rewrites) === '/index.html' &&
+ok('/retrogames/forge resolves to the SPA shell',
+    resolveEdge('/retrogames/forge', vc.rewrites) === '/index.html')
+ok('/retrogames/forge/ resolves via the explicit trailing-slash rule (:path* never matches it)',
     resolveEdge('/retrogames/forge/', vc.rewrites) === '/index.html')
 ok('/forge/log and /forge/report client routes resolve to the SPA shell',
     resolveEdge('/retrogames/forge/log', vc.rewrites) === '/index.html' &&
