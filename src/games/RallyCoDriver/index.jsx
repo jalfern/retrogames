@@ -18,8 +18,8 @@ import { askVoiceConsent } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
-    stageAt, distAhead,
-    ROAD_HALF, SHOULDER, FOG_RANGE, VMAX,
+    stageAt, distAhead, slopeAt, gearOf, mulberry32,
+    ROAD_HALF, SHOULDER, FOG_RANGE, VMAX, STAGE_L,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
 
@@ -95,6 +95,13 @@ export default function RallyCoDriver() {
         const best = { t: null }
         const hintUntil = { t: 0 }
 
+        // ---- juice state (shell-side: lights, banners, gravel, feel) --------
+        const cd = { t: 0 } // 3-2-1-GO in sim ticks (4 s); reset()/contract skip it
+        const banner = { until: 0, main: '', sub: '' } // lap-line banner + split
+        const spray = [] // gravel particles, screen space { x, y, vx, vy, life }
+        const fxRng = mulberry32(0xb10cf1e5) // screen fx only — never the sim's rng
+        let crestArmed = true
+
         // driver input: held keys (keyboard + VirtualControls dispatch the
         // same keydown events, so phones and keys share one path)
         const keys = { up: false, down: false, left: false, right: false, a: false }
@@ -108,9 +115,11 @@ export default function RallyCoDriver() {
             voice.said = ''; voice.ok = false; voice.label = ''
             pushVoice()
             hintUntil.t = play.g.tick + 420
+            cd.t = 240 // the lights hold the car: 3 — 2 — 1 — GO
+            spray.length = 0
+            banner.until = 0
+            crestArmed = true
             setScreenBoth('play')
-            audioController.playTone(440, 0.07, 'square', 0.06)
-            audioController.playTone(660, 0.09, 'square', 0.06, 0.08)
         }
 
         const driverPad = () => ({
@@ -213,6 +222,9 @@ export default function RallyCoDriver() {
                 } else if (e.kind === 'noisecall') {
                     audioController.playTone(220, 0.1, 'sawtooth', 0.04)
                 } else if (e.kind === 'lap') {
+                    banner.main = e.laps >= g.LAPS ? 'FINAL PASS' : `LAP ${e.laps + 1}/${g.LAPS}`
+                    banner.sub = e.split != null ? fmtTime(e.split) : ''
+                    banner.until = g.tick + 200
                     audioController.playTone(523, 0.08, 'square', 0.06)
                     audioController.playTone(784, 0.1, 'square', 0.06, 0.09)
                 } else if (e.kind === 'finish') {
@@ -223,8 +235,12 @@ export default function RallyCoDriver() {
                 }
             }
             g.events.length = 0
+            // stepped-RPM engine: pitch snaps between gear ratios instead of
+            // one continuous sweep (gearOf is pure — rallycheck pins it)
             if (g.tick % 5 === 0 && g.car.v > 0.4 && screenRef.cur === 'play') {
-                audioController.playTone(44 + g.car.v * 26, 0.04, 'sawtooth', 0.011)
+                const { gear, frac } = gearOf(g.car.v)
+                audioController.playTone(34 + gear * 13 + frac * 26, 0.045, 'sawtooth', 0.012)
+                if (frac > 0.92 && gear < 3) audioController.playTone(34 + (gear + 1) * 13 + 26, 0.02, 'square', 0.005)
             }
         }
 
@@ -247,10 +263,48 @@ export default function RallyCoDriver() {
             }
             if (screenRef.cur !== 'play') return
             const g = play.g
+            // the lights: physics holds until GO (pause holds the lights too)
+            if (cd.t > 0) {
+                const t0 = cd.t
+                cd.t--
+                if (t0 > 180 && cd.t <= 180) audioController.playTone(330, 0.09, 'square', 0.06)
+                if (t0 > 120 && cd.t <= 120) audioController.playTone(330, 0.09, 'square', 0.06)
+                if (t0 > 60 && cd.t <= 60) audioController.playTone(880, 0.16, 'square', 0.07)
+                return
+            }
+            // crest landing: the slope falls from climb to drop across a
+            // 48-unit window (rallycheck pins that every seed has these)
+            const slope = slopeAt(g.stage, g.car.s)
+            const over = slopeAt(g.stage, g.car.s - 48) > 0.015 && slope < -0.015
+            if (over && crestArmed && g.car.v > 1.5) {
+                crestArmed = false
+                audioController.playNoise(0.14, 0.04)
+                audioController.playTone(52, 0.09, 'triangle', 0.05)
+            }
+            if (!over) crestArmed = true
+            // tyre chatter near the grip limit (big slip angle at speed, on road)
+            if (!g.car.off && g.car.v > 2.4 && Math.abs(g.car.align) > 0.5 && g.tick % 4 === 0) {
+                audioController.playNoise(0.06, 0.016)
+            }
             if (g.car.off && !offWas) audioController.playNoise(0.12, 0.03)
             offWas = g.car.off
             tickSim(g, [driverPad(), coPad(g)])
             juice(g)
+            // gravel spray: roost off the rear wheels while on the shoulder
+            if (!LITE && g.car.off && g.car.v > 0.4 && spray.length < 90) {
+                const ang = stageAt(g.stage, g.car.s).heading + g.car.align
+                const bx = -Math.cos(ang), by = -Math.sin(ang) // travel-backwards
+                for (let i = 0; i < 2; i++) {
+                    const side = i === 0 ? -1 : 1
+                    spray.push({
+                        x: W / 2 + g.car.lat * SC + bx * 6 + Math.sin(ang) * side * 4,
+                        y: CY + by * 6 - Math.cos(ang) * side * 4 + (fxRng() - 0.5) * 2,
+                        vx: bx * (0.5 + fxRng() * 1.4) * g.car.v + (fxRng() - 0.5) * 0.6,
+                        vy: by * (0.5 + fxRng() * 1.4) * g.car.v + (fxRng() - 0.5) * 0.6,
+                        life: 12 + Math.floor(fxRng() * 14),
+                    })
+                }
+            }
             if (g.done) {
                 const t = state(g).score
                 if (best.t == null || t < best.t) best.t = t
@@ -314,7 +368,30 @@ export default function RallyCoDriver() {
 
         let cam = { x: 0, y: 0 }
 
-        const drawWorld = (g) => {
+        // seeded roadside silhouettes (trees/rocks/bushes) — screen fx only,
+        // built once per seed and cached; the sim's rng is never touched here
+        const decoCache = new Map()
+        const decoFor = (seed) => {
+            let d = decoCache.get(seed)
+            if (!d) {
+                const rng = mulberry32((seed ^ 0x51dea7) | 0)
+                d = []
+                for (let i = 0; i < 130; i++) {
+                    const r = rng()
+                    d.push({
+                        s: rng() * STAGE_L,
+                        side: rng() < 0.5 ? -1 : 1,
+                        kind: r < 0.45 ? 'tree' : r < 0.75 ? 'rock' : 'bush',
+                        off: ROAD_HALF + SHOULDER + 5 + rng() * 24,
+                        size: 0.6 + rng() * 0.9,
+                    })
+                }
+                decoCache.set(seed, d)
+            }
+            return d
+        }
+
+        const drawWorld = (g, brake = false) => {
             const car = g.car
             const p0 = stageAt(g.stage, car.s)
             const nx0 = -Math.sin(p0.heading), ny0 = Math.cos(p0.heading)
@@ -373,12 +450,14 @@ export default function RallyCoDriver() {
                     ctx.fillRect(sx - 1, sy - 1, 2, 2)
                 }
             }
-            // corner chevrons on the outside, a beat before the corner
+            // corner chevrons on the outside, a beat before the corner;
+            // they pop in — scale up over the first ~36 units they become visible
             for (const c of g.stage.corners) {
                 const d = distAhead(g.stage, car.s, c.s)
                 if (d > vis || d < -20) continue
                 const a = fogAlpha(Math.max(0, d))
                 if (a <= 0.03) continue
+                const pop = 0.6 + 0.5 * Math.min(1, Math.max(0, (vis + 10 - d) / 36))
                 for (let k = 0; k < 3; k++) {
                     const cs = c.s - 70 + k * 26
                     const cd = distAhead(g.stage, car.s, cs)
@@ -392,12 +471,85 @@ export default function RallyCoDriver() {
                     ctx.fillStyle = k % 2 ? '#dcd8cc' : '#c23b31'
                     const dirx = -Math.sin(p.heading + Math.PI / 2 * c.dir)
                     const diry = Math.cos(p.heading + Math.PI / 2 * c.dir)
+                    const q = pop * (k === 1 ? 1.15 : 1) // middle chevron leads
                     ctx.beginPath()
-                    ctx.moveTo(sx + dirx * 3, sy + diry * 3)
-                    ctx.lineTo(sx - dirx * 2 - ny * 3 * c.dir, sy - diry * 2 - nx * 3 * c.dir)
-                    ctx.lineTo(sx - dirx * 2 + ny * 3 * c.dir, sy - diry * 2 + nx * 3 * c.dir)
+                    ctx.moveTo(sx + dirx * 3 * q, sy + diry * 3 * q)
+                    ctx.lineTo(sx - dirx * 2 * q - ny * 3 * q * c.dir, sy - diry * 2 * q - nx * 3 * q * c.dir)
+                    ctx.lineTo(sx - dirx * 2 * q + ny * 3 * q * c.dir, sy - diry * 2 * q + nx * 3 * q * c.dir)
                     ctx.closePath()
                     ctx.fill()
+                }
+                // amber warning reflectors flanking the mouth of hard corners
+                if (c.sev >= 2) {
+                    for (let k = 0; k < 2; k++) {
+                        const cs = c.s - 8 + k * 12
+                        const cd = distAhead(g.stage, car.s, cs)
+                        if (cd > vis || cd < -20) continue
+                        const p = stageAt(g.stage, cs)
+                        const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                        const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * -c.dir * (ROAD_HALF + 4), p.y + ny * -c.dir * (ROAD_HALF + 4))
+                        ctx.globalAlpha = fogAlpha(Math.max(0, cd))
+                        ctx.fillStyle = '#ffb03a'
+                        ctx.fillRect(sx - 1, sy - 1, 2, 2)
+                    }
+                }
+            }
+            ctx.globalAlpha = 1
+
+            // roadside silhouettes + the start-line grandstand (LITE drops them)
+            if (!LITE) {
+                for (const it of decoFor(g.seed)) {
+                    const d = distAhead(g.stage, car.s, it.s)
+                    if (d > vis || d < -24) continue
+                    const a = fogAlpha(Math.max(0, d)) * 0.95
+                    if (a <= 0.03) continue
+                    const p = stageAt(g.stage, it.s)
+                    const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                    const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * it.side * it.off, p.y + ny * it.side * it.off)
+                    ctx.globalAlpha = a
+                    const k = it.size
+                    if (it.kind === 'tree') {
+                        ctx.fillStyle = '#0c1119'
+                        ctx.beginPath()
+                        ctx.moveTo(sx, sy - 9 * k); ctx.lineTo(sx - 2.5 * k, sy); ctx.lineTo(sx + 2.5 * k, sy)
+                        ctx.closePath(); ctx.fill()
+                    } else if (it.kind === 'rock') {
+                        ctx.fillStyle = '#10151f'
+                        ctx.fillRect(sx - 2 * k, sy - 1.5 * k, 4 * k, 3 * k)
+                    } else {
+                        ctx.fillStyle = '#0e1420'
+                        ctx.fillRect(sx - k, sy - k, 2.2 * k, 1.8 * k)
+                    }
+                }
+                // grandstand patch beside the start line + a beacon gantry across it
+                const d0 = distAhead(g.stage, car.s, 0)
+                if (d0 <= vis + 16) {
+                    for (let ri = 0; ri < 6; ri++) {
+                        for (let ci = 0; ci < 5; ci++) {
+                            const ss = 4 + ri * 8 + ci * 2.2
+                            const dd = distAhead(g.stage, car.s, ss)
+                            const a = fogAlpha(Math.min(dd, vis)) * 0.9
+                            if (a <= 0.03) continue
+                            const p = stageAt(g.stage, ss)
+                            const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                            const off = ROAD_HALF + SHOULDER + 5 + ri * 2.4
+                            const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * off, p.y + ny * off)
+                            ctx.globalAlpha = a
+                            ctx.fillStyle = (ri + ci) % 4 === 0 ? '#ffd27e' : '#39415a'
+                            ctx.fillRect(sx - 1, sy - 1, 2, 2)
+                        }
+                    }
+                    const pa = fogAlpha(Math.min(d0, vis)) * 0.8
+                    if (pa > 0.03) {
+                        const p = stageAt(g.stage, 1)
+                        const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
+                        ctx.globalAlpha = pa
+                        ctx.fillStyle = '#dcd8cc'
+                        for (let off = -ROAD_HALF; off <= ROAD_HALF; off += 9) {
+                            const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * off, p.y + ny * off)
+                            ctx.fillRect(sx - 0.5, sy - 0.5, 1.5, 1.5)
+                        }
+                    }
                 }
             }
             ctx.globalAlpha = 1
@@ -417,18 +569,22 @@ export default function RallyCoDriver() {
             const carSx = W / 2 + car.lat * SC
             const carSy = CY + (car.off ? Math.sin(g.tick * 0.9) * 0.7 : 0)
             const angle = p0.heading + car.align
-            // headlight beams (before the car, additive)
+            // headlight beams (before the car, additive); the light spills
+            // farther when the road tips downhill — the bloom over a crest
             ctx.save()
             ctx.translate(carSx, carSy)
             ctx.rotate(angle)
             ctx.globalCompositeOperation = 'lighter'
             if (!LITE) {
-                const beam = ctx.createLinearGradient(6, 0, 130, 0)
-                beam.addColorStop(0, 'rgba(255,236,180,0.16)')
+                const down = Math.max(0, -slopeAt(g.stage, car.s))
+                const reach = Math.min(260, 130 + down * 900)
+                const sp = 34 * reach / 130
+                const beam = ctx.createLinearGradient(6, 0, reach, 0)
+                beam.addColorStop(0, `rgba(255,236,180,${(0.16 + Math.min(0.12, down * 0.8)).toFixed(3)})`)
                 beam.addColorStop(1, 'rgba(255,236,180,0)')
                 ctx.fillStyle = beam
                 ctx.beginPath()
-                ctx.moveTo(6, -2.5); ctx.lineTo(130, -34); ctx.lineTo(130, 34); ctx.lineTo(6, 2.5)
+                ctx.moveTo(6, -2.5); ctx.lineTo(reach, -sp); ctx.lineTo(reach, sp); ctx.lineTo(6, 2.5)
                 ctx.closePath(); ctx.fill()
             }
             ctx.restore()
@@ -440,6 +596,8 @@ export default function RallyCoDriver() {
             ctx.fillStyle = '#0b0d12'
             ctx.fillRect(-4.5, -4.2, 3.4, 2); ctx.fillRect(1.4, -4.2, 3.4, 2)
             ctx.fillRect(-4.5, 2.2, 3.4, 2); ctx.fillRect(1.4, 2.2, 3.4, 2)
+            // lean: the body rolls toward the outside of the turn (wheels planted)
+            ctx.translate(0, -Math.max(-1.2, Math.min(1.2, car.align * 1.1 * (car.v / VMAX))))
             ctx.fillStyle = '#2f5fc4'
             ctx.fillRect(-6, -3, 12, 6)
             ctx.fillStyle = '#27488f'
@@ -450,7 +608,26 @@ export default function RallyCoDriver() {
             ctx.fillRect(4.8, -2.6, 1.4, 1.6); ctx.fillRect(4.8, 1, 1.4, 1.6)
             ctx.fillStyle = '#c23b31'
             ctx.fillRect(-6.4, -2.4, 1, 1.6); ctx.fillRect(-6.4, 0.8, 1, 1.6)
+            if (brake) { // brake flare: hot tails + a red wash behind the bumper
+                ctx.fillStyle = '#ff7a66'
+                ctx.fillRect(-6.6, -2.6, 1.4, 2); ctx.fillRect(-6.6, 0.6, 1.4, 2)
+                ctx.globalCompositeOperation = 'lighter'
+                ctx.fillStyle = 'rgba(255,70,45,0.22)'
+                ctx.fillRect(-11, -3.2, 4.4, 6.4)
+                ctx.globalCompositeOperation = 'source-over'
+            }
             ctx.restore()
+
+            // gravel roost behind the wheels (screen space, dies in ~0.5 s)
+            for (let i = spray.length - 1; i >= 0; i--) {
+                const p = spray[i]
+                p.x += p.vx; p.y += p.vy; p.vx *= 0.92; p.vy *= 0.92
+                if (--p.life <= 0 || p.x < -4 || p.x > W + 4 || p.y < -4 || p.y > H + 4) { spray.splice(i, 1); continue }
+                ctx.globalAlpha = Math.min(1, p.life / 14) * 0.9
+                ctx.fillStyle = p.life % 3 ? '#6a5a3d' : '#4a3f2c'
+                ctx.fillRect(p.x - 1, p.y - 1, 2, 2)
+            }
+            ctx.globalAlpha = 1
         }
 
         // ---- HUD ---------------------------------------------------------------
@@ -490,6 +667,20 @@ export default function RallyCoDriver() {
                 ctx.font = '9px monospace'
                 ctx.fillStyle = '#8b93a3'
                 ctx.fillText(`BEST ${fmtTime(best.t)}`, W - 10, 42)
+            }
+            // lap-line banner: the crossing + the split of the lap just done
+            if (banner.until > g.tick) {
+                const flash = (g.tick % 20) < 13
+                ctx.fillStyle = 'rgba(4,7,13,0.78)'
+                ctx.fillRect(W / 2 - 62, 60, 124, 26)
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 12px monospace'
+                ctx.fillStyle = '#ffd27e'
+                ctx.fillText(banner.main, W / 2, 72)
+                ctx.font = 'bold 10px monospace'
+                ctx.fillStyle = flash ? '#7ec8ff' : '#4f85b8'
+                ctx.fillText(banner.sub, W / 2, 82)
+                ctx.textAlign = 'right'
             }
             // speed
             ctx.textAlign = 'right'
@@ -585,10 +776,32 @@ export default function RallyCoDriver() {
             ctx.textAlign = 'left'
         }
 
+        // 3-2-1-GO start lights: three lamps fill, GO flashes green
+        const drawStartLights = () => {
+            const n = cd.t > 180 ? 3 : cd.t > 120 ? 2 : cd.t > 60 ? 1 : 0
+            ctx.fillStyle = 'rgba(4,7,13,0.78)'
+            ctx.fillRect(W / 2 - 40, 22, 80, 44)
+            for (let i = 0; i < 3; i++) {
+                ctx.fillStyle = n === 0 ? '#41d98a' : i < n ? '#c23b31' : 'rgba(194,59,49,0.22)'
+                ctx.beginPath()
+                ctx.arc(W / 2 - 16 + i * 16, 36, 4.5, 0, Math.PI * 2)
+                ctx.fill()
+            }
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 20px monospace'
+            ctx.fillStyle = n === 0 ? '#41d98a' : '#dcd8cc'
+            ctx.fillText(n === 0 ? 'GO' : String(n), W / 2, 60)
+            ctx.textAlign = 'left'
+        }
+
         const drawAll = () => {
             if (screenRef.cur === 'attract') drawAttract(attract.g)
             else if (screenRef.cur === 'over') drawOver(play.g)
-            else { drawWorld(play.g); drawHud(play.g) }
+            else {
+                drawWorld(play.g, keys.down || keys.a || cd.t > 0)
+                drawHud(play.g)
+                if (cd.t > 0) drawStartLights()
+            }
         }
 
         const loop = (now) => {
@@ -617,6 +830,10 @@ export default function RallyCoDriver() {
                 voiceStop()
                 keys.up = keys.down = keys.left = keys.right = keys.a = false
                 offWas = false
+                cd.t = 0 // harness starts under the lights already green
+                spray.length = 0
+                banner.until = 0
+                crestArmed = true
                 setScreenBoth('play')
             },
             tick: (pad, pads) => {
