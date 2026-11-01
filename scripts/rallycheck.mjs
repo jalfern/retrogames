@@ -15,7 +15,7 @@
 
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
-    visibleAhead, distAhead, gearOf, slopeAt, lapProgress,
+    visibleAhead, distAhead, gearOf, slopeAt, lapProgress, postsFor, controlS,
     STAGE_L, FOG_RANGE, VMAX, OFF_CAP, LATE_WINDOW,
     WEATHERS, WEATHER_ORDER, CURATED,
 } from '../src/games/RallyCoDriver/sim.js'
@@ -327,6 +327,66 @@ for (const k of ['mist', 'rain']) {
     ok('strip: fills to the full corner count within every lap', filled)
     ok('strip: monotone within a lap', mono)
 }
+
+// ---- 8. depth: checkpoint clock + reflector posts (#1427) -------------------
+console.log('depth (#1427):')
+for (const seed of SEEDS) {
+    const st = makeStage(seed)
+    const ctl = controlS(st)
+    const minCorner = Math.min(...st.corners.map((c) => Math.min(distAhead(st, ctl, c.s), distAhead(st, c.s, ctl))))
+    ok(`seed ${seed}: time control sits off the corners`, ctl > 0 && ctl < st.L && minCorner >= 150,
+        `ctl=${ctl.toFixed(0)} nearestCorner=${minCorner.toFixed(0)}`)
+    ok(`seed ${seed}: time control sits mid-lap`, Math.min(ctl, st.L - ctl) >= st.L / 4,
+        `ctl=${ctl.toFixed(0)}`)
+    const cl = createSim(seed, 2, 'clear'), rn = createSim(seed, 2, 'rain')
+    ok(`seed ${seed}: control mark identical in rain`, cl.control === rn.control)
+}
+// the win clock stamps S-splits: exactly one crossing per lap, monotonic,
+// S1 lands inside lap 1 and S2 inside lap 2 — real rally checkpoint behaviour
+const winRun = (seed) => {
+    const g = createSim(seed, 2)
+    let t = 0
+    while (!g.done && t < 20000) { tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)]); t++ }
+    return state(g)
+}
+for (const seed of [7, 42]) {
+    const st = winRun(seed)
+    ok(`seed ${seed}: two laps stamp two time controls`,
+        st.controls.length === st.LAPS && st.controls.every((x, i) => i === 0 || x > st.controls[i - 1]),
+        `controls=${JSON.stringify(st.controls)}`)
+    ok(`seed ${seed}: S-splits sit inside their laps`,
+        st.controls.length === st.LAPS &&
+        st.controls[0] > 5000 && st.controls[0] < st.splits[0] &&
+        st.controls[1] > st.splits[0] && st.controls[1] < st.splits[0] + st.splits[1],
+        `controls=${JSON.stringify(st.controls)} splits=${JSON.stringify(st.splits)}`)
+    ok(`seed ${seed}: checkpoint clock is deterministic`,
+        JSON.stringify(winRun(seed).controls) === JSON.stringify(st.controls))
+}
+for (const seed of SEEDS) {
+    const st = makeStage(seed)
+    const posts = postsFor(st)
+    ok(`seed ${seed}: posts sorted, in range, sides valid`,
+        posts.length > 0 && posts.every((p, i) => (i === 0 || p.s >= posts[i - 1].s) &&
+            p.s >= 0 && p.s < st.L && [-1, 0, 1].includes(p.side)))
+    // variation beyond the shipped amber: severity-scaled mouth warns (sev 3
+    // outnumbers sev 2), inside exit count-markers, and crest pairs on real
+    // terrain reversals — posts describe the road, never what hides behind it
+    const hard = st.corners.filter((c) => c.sev >= 2)
+    const pastApex = (c, p) => (((p.s - c.s) % st.L) + st.L) % st.L
+    ok(`seed ${seed}: every hard corner gets a severity-scaled mouth warn`,
+        hard.every((c) => posts.filter((p) => p.kind === 'amber' && p.sev === c.sev && p.side === -c.dir &&
+            Math.min(pastApex(c, p), st.L - pastApex(c, p)) <= 20).length === Math.min(3, c.sev + 1)))
+    ok(`seed ${seed}: hard corners get exit count-markers on the inside`,
+        hard.every((c) => posts.filter((p) => p.kind === 'exit' && p.side === c.dir &&
+            pastApex(c, p) > 0 && pastApex(c, p) <= 30).length === c.sev - 1))
+    const crests = posts.filter((p) => p.kind === 'crest')
+    ok(`seed ${seed}: crest posts sit only on true reversals`,
+        crests.length >= 1 && crests.every((p) => slopeAt(st, p.s - 40) > 0 && slopeAt(st, p.s + 40) < 0),
+        `${crests.length} crest posts`)
+    ok(`seed ${seed}: posts vary beyond the amber`,
+        posts.some((p) => p.kind === 'exit') && posts.some((p) => p.kind === 'crest'))
+}
+
 
 console.log(`\nrallycheck: ${pass} passed, ${fail} failed`)
 process.exit(fail ? 1 : 0)

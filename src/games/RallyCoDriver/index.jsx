@@ -18,7 +18,7 @@ import { askVoiceConsent } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
-    stageAt, distAhead, slopeAt, gearOf, mulberry32,
+    stageAt, distAhead, slopeAt, gearOf, mulberry32, postsFor,
     ROAD_HALF, SHOULDER, FOG_RANGE, VMAX, STAGE_L,
     WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
@@ -252,6 +252,13 @@ export default function RallyCoDriver() {
                     banner.until = g.tick + 200
                     audioController.playTone(523, 0.08, 'square', 0.06)
                     audioController.playTone(784, 0.1, 'square', 0.06, 0.09)
+                } else if (e.kind === 'control') {
+                    // time-control crossing (#1427): the S-split stamps on the card
+                    banner.main = `S${g.controlMs.length}`
+                    banner.sub = fmtTime(e.ms)
+                    banner.until = g.tick + 150
+                    audioController.playTone(880, 0.06, 'square', 0.05)
+                    audioController.playTone(1174, 0.07, 'square', 0.04, 0.07)
                 } else if (e.kind === 'finish') {
                     audioController.playTone(523, 0.09, 'square', 0.07)
                     audioController.playTone(659, 0.09, 'square', 0.07, 0.1)
@@ -507,19 +514,23 @@ export default function RallyCoDriver() {
                     ctx.closePath()
                     ctx.fill()
                 }
-                // amber warning reflectors flanking the mouth of hard corners
-                if (c.sev >= 2) {
-                    for (let k = 0; k < 2; k++) {
-                        const cs = c.s - 8 + k * 12
-                        const cd = distAhead(g.stage, car.s, cs)
-                        if (cd > vis || cd < -20) continue
-                        const p = stageAt(g.stage, cs)
-                        const nx = -Math.sin(p.heading), ny = Math.cos(p.heading)
-                        const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p.x + nx * -c.dir * (ROAD_HALF + 4), p.y + ny * -c.dir * (ROAD_HALF + 4))
-                        ctx.globalAlpha = fogAlpha(Math.max(0, cd))
-                        ctx.fillStyle = '#ffb03a'
-                        ctx.fillRect(sx - 1, sy - 1, 2, 2)
-                    }
+            }
+            // reflector posts (#1427): severity-scaled amber mouth warns, white
+            // exit count-markers past the apex, and matched pairs at true crests.
+            // Pure data (postsFor, rallycheck-pinned); fog decides what exists.
+            if (!g._posts) g._posts = postsFor(g.stage)
+            for (const p of g._posts) {
+                const pd = distAhead(g.stage, car.s, p.s)
+                if (pd > vis || pd < -20) continue
+                const a = fogAlpha(Math.max(0, pd))
+                if (a <= 0.03) continue
+                const p2 = stageAt(g.stage, p.s)
+                const nx = -Math.sin(p2.heading), ny = Math.cos(p2.heading)
+                ctx.globalAlpha = a
+                ctx.fillStyle = p.kind === 'amber' ? '#ffb03a' : p.kind === 'exit' ? '#dcd8cc' : '#8f9aab'
+                for (const sd of (p.side === 0 ? [-1, 1] : [p.side])) {
+                    const [sx, sy] = worldToScreen(ctx, cam.x, cam.y, p2.x + nx * sd * (ROAD_HALF + 4), p2.y + ny * sd * (ROAD_HALF + 4))
+                    ctx.fillRect(sx - 1, sy - 1, 2, 2)
                 }
             }
             ctx.globalAlpha = 1
@@ -745,6 +756,14 @@ export default function RallyCoDriver() {
                 ctx.fillStyle = '#8b93a3'
                 ctx.fillText(`BEST ${fmtTime(best.t)}`, W - 10, 42)
             }
+            // next time-control countdown (#1427): the honest distance to the
+            // flyspeaker — road position, not hidden stage truth
+            if (g.controlMs.length < g.LAPS) {
+                const dCtl = Math.round(distAhead(g.stage, g.car.s, g.control))
+                ctx.font = '9px monospace'
+                ctx.fillStyle = '#6f7a8c'
+                ctx.fillText(`S${g.controlMs.length + 1} IN ${dCtl}`, W - 10, best.t != null ? 54 : 42)
+            }
             // lap-line banner: the crossing + the split of the lap just done
             if (banner.until > g.tick) {
                 const flash = (g.tick % 20) < 13
@@ -854,6 +873,11 @@ export default function RallyCoDriver() {
             ctx.fillStyle = '#dcd8cc'
             ctx.fillText(`NOTES ${s.called} · OK ${s.correct} · LATE ${s.late} · MISSED ${s.missed}`, W / 2, 148)
             ctx.fillText(`OFF-TRACK ${Math.round(s.offTicks / 60)}s`, W / 2, 166)
+            if (st.controls.length) {
+                // the checkpoint clock readout (#1427): S-splits beside the total
+                ctx.fillStyle = '#6f7a8c'
+                ctx.fillText(st.controls.map((t, i) => `S${i + 1} ${fmtTime(t)}`).join('  ·  '), W / 2, 182)
+            }
             ctx.font = '10px monospace'
             ctx.fillStyle = 'rgba(220,216,204,0.8)'
             ctx.fillText('SPACE: AGAIN · B: STAGE SELECT', W / 2, 204)

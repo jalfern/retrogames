@@ -76,14 +76,18 @@ different seed → different state.
 
 ## Harness
 
-- `npm run rallycheck` — pure Node, 86 gates: stage sanity + crest
+- `npm run rallycheck` — pure Node, 127 gates: stage sanity + crest
   honesty, co-driver honesty + ledger, note grammar, determinism,
   off-track penalty, win gate (every curated stage), the #1365 feel signals
   (stepped-RPM gears via `gearOf`, crest `slopeAt` crossings per seed, lap
   splits that sum to the stage time), and the #1407 variety signals (the
   weather presets only ever take away — fog ≤ 1, grip ≥ 1; rain flings a
   hands-off corner wider; fair play holds in mist+rain; the NOTES lap strip
-  shows only the corners already driven). No dev server needed. Wired into
+  shows only the corners already driven), and the #1427 depth signals (the
+  checkpoint clock stamps one S-split per lap inside its lap and rides the
+  determinism digest; reflector posts vary beyond the studs — severity-scaled
+  amber mouths, inside exit count-markers, crest pairs only on true
+  reversals). No dev server needed. Wired into
   CI: the `rally` scope in `scripts/checks.mjs` + the KEYS-gated step in
   ci.yml (the alias existed but nothing ran it — #1395's lesson).
 - contractcheck (browser, advisory): `rally-co-driver` is wired in
@@ -113,9 +117,17 @@ different seed → different state.
   CPU fair play in both wet presets.
 - Lobby seats (online co-driver over the relay) — the sim already treats
   the co seat as pads, lockstep-ready; file when Jon wants it.
-- Remaining polish (carved to a follow-up feedback issue): model-seat sensor
-  arm for the nightly/RL soak, voice field QA + #1263 mic-badge parity,
-  checkpoint-clock format alongside the two-lap run, and reflector-post
-  variation beyond the amber corner mouths.
+- #1427 depth shipped: a checkpoint clock (one time-control mark per lap at
+  the midpoint of the stage's longest straight — `controlS` is pure geometry,
+  far from any corner, weather-stable; crossings stamp S-splits, echoed as a
+  `S1 IN nnn` countdown in the HUD, a banner at the mark, and `S1 · S2` lines
+  on the over screen) and reflector-post variation (`postsFor`: severity-scaled
+  amber mouth warns — sev 3 gets a third post, inside white exit count-markers
+  past hard apexes, and matched crest pairs at true slope reversals). Both are
+  pure sim data, rallycheck-pinned (86 → 127): S-splits sit inside their laps,
+  the clock rides the determinism digest, exit markers live on the inside,
+  crest posts only on real terrain reversals.
+- Remaining polish (still on #1427): model-seat sensor arm for the nightly/RL
+  soak, voice field QA + #1263 mic-badge parity, online through the lobby.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.
