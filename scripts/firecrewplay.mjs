@@ -63,9 +63,17 @@ await press('Backquote')
 
 // sprite matches logic: drive via the contract; the drawn frame must change
 // with the sim even though the rAF loop is locked while the contract holds it
-const tickBefore = await page.evaluate(() => window.__game.state().tick)
+// (#1415-era nightly fix): the baseline tick must be read in the SAME JS task
+// as the locking step()s. A separate page.evaluate left the rAF loop open for
+// the screenshot digest between them, and CI's software renderer slipped one
+// extra tickSim frame in (the 100 -> 131 nightly fail). The lock persists
+// until release(), so reading tickAfter after the batch stays clean.
 const dA = await digest()
-await page.evaluate(() => { for (let i = 0; i < 30; i++) window.__game.step({ right: true }) })
+const tickBefore = await page.evaluate(() => {
+    const t0 = window.__game.state().tick
+    for (let i = 0; i < 30; i++) window.__game.step({ right: true })
+    return t0
+})
 await new Promise((r) => setTimeout(r, 150)) // let the rAF draw land after the contract steps
 const dB = await digest()
 const tickAfter = await page.evaluate(() => window.__game.state().tick)
