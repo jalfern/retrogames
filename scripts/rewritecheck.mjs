@@ -8,6 +8,10 @@
 // route (path-to-regexp zero-or-more) and, being first-match, killed the
 // /forge PAGE. So the guard now resolves paths, not just prefixes: see
 // resolveEdge below. Pure Node, no browser.
+// #1402 is the third scar: `:path*` never matches trailing-empty segments,
+// so /retrogames/mario/ 404ed; vercel.json now carries one generic
+// `/retrogames/:path+/` -> /index.html rule before the catch-all, and the
+// resolver models `:name+/` so the pins prove it.
 //
 // Fail-it-once proof lives in --selftest: the same checker run against an
 // in-memory vercel.json missing the last rewrite must report it.
@@ -41,6 +45,19 @@ export function matchSource(source, path) {
         // pairs explicit `/x/` rules (demos, retrogames, and #1395's forge).
         return rest !== null && rest !== '' && !rest.endsWith('/') ? [rest] : null
     }
+    if (/\/:[A-Za-z_]\w*\+\/$/.test(source)) {
+        // `/:path+/` — one-or-more segments followed by a literal slash (#1402).
+        // The wildcard absorbs full segments (never empty, never a trailing
+        // slash of its own), so /x/:path+/ matches /x/a/ and /x/a/b/ but not
+        // /x/ (zero segments) nor /x/a (no slash). This is the generic fix for
+        // the prod scar above: Vercel's `:path*` cannot see trailing slashes,
+        // so a `+` rule before the catch-all sends every client route with a
+        // trailing slash to the SPA shell.
+        const prefix = source.replace(/\/:[A-Za-z_]\w*\+\/$/, '/')
+        if (!path.startsWith(prefix)) return null
+        const mid = path.slice(prefix.length, -1)
+        return /^[^/]+(\/[^/]+)*$/.test(mid) ? [mid] : null
+    }
     if (source.includes('(')) {
         const m = new RegExp(`^${source}$`).exec(path)
         return m ? m.slice(1) : null
@@ -54,7 +71,7 @@ export function resolveEdge(path, rewrites) {
         if (!caps) continue
         return String(r.destination || '')
             .replace(/\$\d+/g, (t) => caps[Number(t.slice(1)) - 1] ?? '')
-            .replace(/:[A-Za-z_]\w*\*?/, () => caps[0] ?? '')
+            .replace(/:[A-Za-z_]\w*\*?\+?/, () => caps[0] ?? '')
     }
     return null
 }
@@ -98,6 +115,23 @@ if (process.argv.includes('--selftest')) {
         resolveEdge('/retrogames/forge/x.json', [OLD, NEW, SPA]) === '/forge/x.json')
     ok('selftest: exact rules match whole paths only',
         resolveEdge('/retrogames/forgeX', [{ source: '/retrogames/forge', destination: '/x' }]) === null)
+    // #1402 — the generic trailing-slash rule `/:path+/` (one-or-more segments).
+    const SLASH = { source: '/retrogames/:path+/', destination: '/index.html' }
+    ok('selftest: :path+/ matches a one-segment route with a trailing slash (#1402)',
+        resolveEdge('/retrogames/mario/', [SLASH]) === '/index.html')
+    ok('selftest: :path+/ matches multi-segment routes',
+        resolveEdge('/retrogames/forge/log/', [SLASH]) === '/index.html')
+    ok('selftest: :path+ needs one segment — /retrogames/ falls to its explicit rule',
+        resolveEdge('/retrogames/', [SLASH]) === null &&
+        resolveEdge('/retrogames/', [{ source: '/retrogames/', destination: '/index.html' }]) === '/index.html')
+    ok('selftest: :path+/ does NOT match a slash-less route (the catch-all keeps those)',
+        resolveEdge('/retrogames/mario', [SLASH, SPA]) === '/index.html')
+    ok('selftest: :path+/ needs the trailing slash — mid-path double slashes are not segments',
+        resolveEdge('/retrogames/mario//', [SLASH]) === null)
+    ok('selftest: an earlier file-proxy rule still wins over the generic slash rule (first-match)',
+        resolveEdge('/retrogames/forge/juice.json', [NEW, SLASH, SPA]) === '/forge/juice.json')
+    ok('selftest: explicit /x/ rules placed first keep their own destinations (/demos/ -> demos index)',
+        resolveEdge('/retrogames/demos/', [{ source: '/retrogames/demos/', destination: '/demos/index.html' }, SLASH]) === '/demos/index.html')
     console.log(`\nrewritecheck --selftest: ${failed ? `${failed} FAILED` : 'OK'}`)
     process.exit(failed ? 1 : 0)
 }
@@ -128,6 +162,28 @@ ok('forge JSON assets resolve to files that exist on disk',
     ['juice.json', 'boredom.json'].every((f) =>
         resolveEdge(`/retrogames/forge/${f}`, vc.rewrites) === `/forge/${f}` &&
         existsSync(join(ROOT, 'public/forge', f))))
+
+// #1402 — every OTHER client route with a trailing slash still 404ed at the
+// edge (:path* never matches trailing-empty segments). One generic
+// `/retrogames/:path+/` rule before the catch-all fixes the whole family
+// without touching the file proxies (first-match) or `/retrogames/` itself
+// (`+` needs one-or-more segments).
+console.log('trailing-slash client routes (#1402)')
+const sources = (vc.rewrites || []).map((r) => String(r.source || ''))
+const generic = sources.indexOf('/retrogames/:path+/')
+ok('exactly one generic /retrogames/:path+/ rule exists',
+    sources.filter((s) => s === '/retrogames/:path+/').length === 1)
+ok('the generic rule sits before the SPA catch-all (and after /retrogames/)',
+    generic > sources.indexOf('/retrogames/') && generic < catchAll)
+ok('/retrogames/mario/ resolves to the SPA shell (was 404: the issue repro)',
+    resolveEdge('/retrogames/mario/', vc.rewrites) === '/index.html')
+ok('multi-segment client routes with a trailing slash resolve to the SPA shell',
+    resolveEdge('/retrogames/forge/log/', vc.rewrites) === '/index.html')
+ok('the generic rule does not shadow file proxies: /retrogames/forge/juice.json still resolves to the file',
+    resolveEdge('/retrogames/forge/juice.json', vc.rewrites) === '/forge/juice.json' &&
+    existsSync(join(ROOT, 'public/forge/juice.json')))
+ok('explicit /demos/ keeps its own destination ahead of the generic rule',
+    resolveEdge('/retrogames/demos/', vc.rewrites) === '/demos/index.html')
 
 console.log(`\nrewritecheck: ${failed ? `${failed} FAILED` : 'OK'}`)
 process.exit(failed ? 1 : 0)
