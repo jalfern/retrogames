@@ -31,8 +31,9 @@ export const PAD_DELAY = 10      // ~167 ms of input delay: past relay round-tri
 export const SAMPLE_EVERY = 2    // sample/send granularity; the UI latches A/B
                                  // presses >=100ms (~6 ticks), so a 2-tick sampler
                                  // can never miss an action edge
-export const HASH_EVERY = 60     // whole-sim hash boundary (~1 s)
-export const STALL_MAX = 180     // ~3 s of missing pads => give up waiting
+export const HASH_EVERY = 60     // ~1 s whole-sim hash boundary
+export const STALL_MAX = 180     // ~3 s of missing pads => host gives up, re-kicks
+export const NOTICE_AT = 120     // ~2 s: the re-kick is coming — say so, don't freeze
 export const CHUNK = 380         // relay budget 512B, sig-lesson sizing
 
 // the six fields the kitchen reads — one byte on the wire.
@@ -60,6 +61,15 @@ export function seatsOf(slot, hostPartner) {
     const out = slot >= 0 && slot < SEATS ? [slot] : []
     if (slot === 0 && hostPartner && out.indexOf(1) < 0) out.push(1)
     return out
+}
+
+// pure: what a box holds on screen while a human's pads have stopped arriving
+// (null = keep cooking, no notice). Only the HOST can restart the shift (it
+// re-kicks at STALL_MAX); a guest has no lever of its own, so it shows that the
+// host is on it instead of sitting frozen on the last frame (#1379 gap 6).
+export function stallNotice(stallRun, role) {
+    if (!(stallRun >= NOTICE_AT)) return null
+    return role === 'host' ? 'FRIEND LOST — RESTARTING SHIFT' : 'HOST RESTARTING SHIFT'
 }
 
 // seedFromRoom rolls a 32-bit match seed on the host at kickoff.

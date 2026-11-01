@@ -19,7 +19,7 @@
 import { newRoom, join, leave, relay, rosterOf } from '../relay/core.js'
 import { createLobby } from '../src/utils/lobby.js'
 import { createGame, stepGame, hashState, snapshotGame, restoreGame, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
-import { createSosSync, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY } from '../src/games/ShortOrderShout/net.js'
+import { createSosSync, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX } from '../src/games/ShortOrderShout/net.js'
 
 let pass = 0, fail = 0
 const ok = (c, msg, extra = '') => { if (c) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg} ${extra}`) } }
@@ -377,6 +377,17 @@ console.log('# four cooks: rate window, join/leave grace')
     runTogether([a, b], 600)
     ok(a.gs.tick > 2100 && b.gs.tick > 2100, `shift survives a walkaway (${a.gs.tick}/${b.gs.tick})`)
     ok(a.desyncs.length === 0 && b.desyncs.length === 0, 'no desync from the walkaway (CPU takeover)')
+}
+
+// =============================== 5. RE-KICK HANDOFF =============================
+console.log('# re-kick handoff (#1379 gap 6): a stalled box says so, it does not freeze')
+{
+    ok(stallNotice(0, 'guest') === null, 'no notice while pads are flowing (stallRun 0)')
+    ok(stallNotice(NOTICE_AT - 1, 'guest') === null, `no notice just under the bar (stallRun ${NOTICE_AT - 1})`)
+    ok(stallNotice(NOTICE_AT, 'guest') === 'HOST RESTARTING SHIFT', 'guest shows HOST RESTARTING SHIFT at the notice bar')
+    ok(stallNotice(STALL_MAX, 'host') === 'FRIEND LOST — RESTARTING SHIFT', 'host shows FRIEND LOST at/after the re-kick bar')
+    ok(stallNotice(STALL_MAX, 'guest') === 'HOST RESTARTING SHIFT', 'guest still points at the host at the re-kick bar')
+    ok(NOTICE_AT < STALL_MAX, 'guest is told BEFORE the host re-kicks (notice precedes restart)')
 }
 
 console.log(`\nsoslinkcheck: ${pass} passed, ${fail} failed`)
