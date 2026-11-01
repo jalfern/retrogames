@@ -21,6 +21,7 @@ import { newRoom, join, leave, relay, rosterOf } from '../relay/core.js'
 import { createLobby } from '../src/utils/lobby.js'
 import { createGame, stepGame, hashState, snapshotGame, restoreGame, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
 import { createSosSync, createRttTracker, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE, RTT_STALE_MS } from '../src/games/ShortOrderShout/net.js'
+import { createPttSender, createPttInbox, createRateBudget, PTT_MIN_B64 } from '../src/games/ShortOrderShout/ptt.js'
 
 let pass = 0, fail = 0
 const ok = (c, msg, extra = '') => { if (c) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg} ${extra}`) } }
@@ -137,6 +138,11 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
     // #1416 gap 3 mirror: the same echo-RTT tracker the browser wires, on the
     // harness virtual clock (Date.now is shimmed to vnow at module top).
     ep.rtt = createRttTracker({ mySlot: () => (ep.lobby ? ep.lobby.room.yourSlot : -1) })
+    // #1416 gap 1 mirror: the same PTT machines the browser wires; utters is
+    // what this box HEARD (completed utterances).
+    ep.ptt = createPttSender({ now: () => vnow })
+    ep.utters = []
+    ep.vin = createPttInbox({ onUtterance: (u) => ep.utters.push(u) })
     ep.sync = createSosSync({
         send: (t, p) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send(t, ep.rtt.decorate(t, p)) },
         mySeats: [],
@@ -154,7 +160,7 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         onLeave: () => ep.ownersChanged(),
         onStart: (m) => ep.startMatch(m),
         on: {
-            pad: (m) => { ep.rtt.onRecv(m); ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
+            pad: (m) => { ep.rtt.onRecv(m); if (m.k === 'v') { ep.vin.feed(m); return } ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
             hs: (m) => {
                 ep.rtt.onRecv(m)
                 const r = ep.sync.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
@@ -200,6 +206,8 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         ep.sync.reset(0)
         ep.sync.snapInbox.reset()
         ep.rtt.reset()
+        ep.ptt.reset()
+        ep.vin.reset()
         ep.mySeats = seatsOf(ep.lobby.room.yourSlot, ep.partner)
         ep.sync.mySeats = ep.mySeats.slice()
         ep.watch = (ep.slots || [0]).slice()
@@ -228,6 +236,7 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         if (!ep.playing || !ep.gs || ep.gs.done) return
         const k = ep.gs.tick
         ep.sync.prune(k)
+        if (ep.ptt.pending) ep.ptt.drain((m) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send('pad', m) })
         ep.sync.pumpTo(k + ep.sync.delay, ep.readKeys)
         const cpuMasks = {}
         for (let s = 0; s < seats; s++) {
@@ -246,6 +255,7 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
                     && ep.watch.indexOf(gone) >= 0 && ep.slots.indexOf(gone) < 0
                     && ep.sync.demote(gone)) {
                     ep.watch = ep.watch.filter((x) => x !== gone)
+                    ep.vin.drop(gone)
                     ep.demoted = (ep.demoted || []).concat(gone)
                 }
             }
@@ -492,6 +502,93 @@ console.log('# latency ping: echo RTT is honest, skew-proof, passthrough-clean, 
     ok(host.rtt.pips()[1] >= 85 && host.rtt.pips()[1] <= 145, `host's pip for the guest reads ${host.rtt.pips()[1]}ms (truth: 2x45 + answer delay)`)
     ok(guest.rtt.pips()[0] >= 85 && guest.rtt.pips()[0] <= 145, `guest's pip for the host reads ${guest.rtt.pips()[0]}ms`)
     ok(hub.oversize === 0 && hub.maxBytes <= 512, `ping fields keep every message inside the relay guards (max ${hub.maxBytes}B)`)
+}
+
+// ================= 8. PTT VOICE (#1416 gap 1) ============================
+console.log('# walkie-talkie voice: k:v frames cross the room, lockstep never notices, torn takes never play')
+{
+    // Pure machine rules first (index.jsx mirrors these exactly), on the
+    // harness virtual clock.
+    const tx = createPttSender({ now: () => vnow })
+    ok(tx.press() === true && tx.holding, 'press takes the mic')
+    ok(tx.press() === false, 'half-duplex: a second press while holding is ignored')
+    const take = 'Q+' + 'B'.repeat(6000) // ~4.5 KB of fake opus bytes
+    const q = tx.release(take)
+    ok(q >= 14, `a 6 KB take packs to ${q} relay frames (>=14)`)
+    ok(tx.pending === q && tx.holding === false, 'the utterance queues whole on release')
+    ok(tx.press() === false, 'half-duplex end: no new talk while the take is draining')
+    const rx = createPttInbox()
+    let maxWire = 0, utt = null
+    const deliver = (m) => {
+        const str = JSON.stringify(Object.assign({ t: 'pad', s: 2 }, m)) // room stamps the slot
+        maxWire = Math.max(maxWire, str.length)
+        const r = rx.feed(JSON.parse(str))
+        if (r) utt = r
+    }
+    let guard = 0
+    while (tx.pending && guard++ < 50) { const before = tx.pending; tx.drain(deliver); if (tx.pending === before) vnow += 1000 }
+    ok(maxWire <= 512, `voice frames fit the relay budget (max ${maxWire}B <= 512)`)
+    ok(utt && utt.b64 === take, 'byte-exact round trip: the friend hears exactly what was said')
+    ok(utt && utt.slot === 2, 'the inbox knows WHICH seat spoke')
+    ok(tx.press() === true, 'the mic frees once the queue drains')
+    ok(tx.release('AAAA') === 0 && tx.pending === 0, `a sub-${PTT_MIN_B64}-char click is dropped whole (never a chirp on the wire)`)
+    // torn takes never play; a fresh intro supersedes; drop() kills a departed seat's half
+    const rx2 = createPttInbox()
+    rx2.feed({ k: 'v', s: 1, m: 'i', x: JSON.stringify({ mime: 'audio/webm' }) })
+    rx2.feed({ k: 'v', s: 1, m: 'a', i: 0, z: 3, x: 'AA==' })
+    ok(rx2.feed({ k: 'v', s: 1, m: 'e', a: 700 }) === null && rx2.lostUtterances === 1, 'END without every part => lost, never half-played')
+    rx2.feed({ k: 'v', s: 1, m: 'i', x: JSON.stringify({ mime: 'audio/webm' }) })
+    rx2.feed({ k: 'v', s: 1, m: 'a', i: 0, z: 2, x: 'gg==' })
+    rx2.feed({ k: 'v', s: 1, m: 'i', x: JSON.stringify({ mime: 'audio/webm' }) })
+    rx2.feed({ k: 'v', s: 1, m: 'e', a: 90 })
+    ok(rx2.lostUtterances === 2 && rx2.inflight === 0, 'a fresh intro supersedes the torn parts (old tail cannot complete the new take)')
+    rx2.feed({ k: 'v', s: 1, m: 'i', x: JSON.stringify({ mime: 'audio/webm' }) })
+    rx2.feed({ k: 'v', s: 1, m: 'a', i: 0, z: 1, x: 'ZZ==' })
+    rx2.drop(1)
+    ok(rx2.feed({ k: 'v', s: 1, m: 'e', a: 400 }) === null && rx2.heardUtterances === 0, 'drop(seat) kills an in-flight take (demoted seat never speaks late)')
+    ok(rx2.feed({ k: 'v', s: 0, m: 'a', i: 0, z: 1, x: 'x' }) === null, 'audio with no intro is not our conversation')
+    const bud = createRateBudget({ now: () => vnow })
+    let takes = 0
+    while (bud.take()) { takes++; if (takes > 50) break }
+    ok(takes === 14, `voice budget caps at 14 msgs/s/member (got ${takes}) — 4 talkers + pads stay under 240/s`)
+}
+{
+    // Wire proof: a whole shift while both boxes talk mid-service. Voice frames
+    // ride THROUGH the lockstep stream and the kitchen must not notice.
+    const rec = recordRun(777, 2)
+    const hub = makeMemRelay()
+    const host = makeEndpoint({ id: 'h', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: true, stream: rec.stream })
+    const guest = makeEndpoint({ id: 'g', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: false, stream: rec.stream })
+    host.lobby.open()
+    for (let i = 0; i < 4; i++) { host.pumpWire(); guest.pumpWire() }
+    guest.lobby.join(host.lobby.room.code)
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    host.lobby.start({ seed: 777, partner: false })
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    runTogether([host, guest], 300)
+    ok(host.gs.tick > 250 && host.desyncs.length === 0, 'shift cooking, no voice yet')
+    const desyncBefore = host.desyncs.length + guest.desyncs.length
+    // the guest orders up mid-shift
+    guest.ptt.press()
+    const takeG = 'G+' + 'aV'.repeat(2000) // ~8 KB take
+    guest.ptt.release(takeG)
+    runTogether([host, guest], 400)
+    ok(guest.ptt.pending === 0, 'the take drains while the kitchen keeps running')
+    ok(host.utters.length === 1 && host.utters[0].b64 === takeG, 'the host hears the guest byte-exact mid-shift')
+    ok(host.utters[0].slot === 1, 'the host knows seat 1 spoke')
+    // the host answers — seat 0 on the wire, a direction the #1247 recorder never sent
+    host.ptt.press()
+    const takeH = 'h'.repeat(2200)
+    host.ptt.release(takeH)
+    runTogether([host, guest], 500)
+    ok(guest.utters.length === 1 && guest.utters[0].b64 === takeH && guest.utters[0].slot === 0, 'the guest hears the host too — every direction, not just guest->host')
+    ok(host.desyncs.length + guest.desyncs.length === desyncBefore, 'zero desyncs while voice rides through the middle of the shift')
+    const n = runTogether([host, guest], 12000, (eps) => eps[0].gs.done && eps[1].gs.done)
+    ok(n >= 0 && hashState(host.gs) === hashState(rec.gs) && host.gs.score === rec.gs.score,
+        `shift ends identical to the local reference through the conversation (${host.gs.score}=${rec.gs.score})`)
+    ok(hub.oversize === 0 && hub.refused === 0 && hub.maxBytes <= 512, `voice keeps every message inside the relay guards (max ${hub.maxBytes}B)`)
+    const rate = (host.txCount() + guest.txCount()) / (host.gs.tick / 60)
+    ok(rate < 240, `room rate under the 240/s window with two talking members (~${Math.round(rate)}/s)`)
 }
 
 console.log(`\nsoslinkcheck: ${pass} passed, ${fail} failed`)
