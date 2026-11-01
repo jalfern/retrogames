@@ -34,6 +34,9 @@
 //
 // Fail it once by hand: `NIGHTLY_MUTATE=stuck node scripts/nightlybot.mjs` swallows the
 // softlock gate — any frozen run flips red→green, proving the gate is load-bearing.
+// `NIGHTLY_MUTATE=squatter` does the same for the :5199 ownership proof (#1355): the bot
+// plays against whatever squats its port again, which is exactly how #1312 filed 37
+// bogus issues in 48 seconds against an orphan vite.
 
 import { spawn } from 'node:child_process'
 import { writeFileSync, readFileSync } from 'node:fs'
@@ -91,10 +94,10 @@ export const GAMES = [
     { id: 'robot-lab', path: '/robot-lab' },
     { id: 'floor-boss', path: '/floor-boss' },
     { id: 'short-order-shout', path: '/short-order-shout' },
+    { id: 'rally-co-driver', path: '/rally-co-driver' },
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
     { id: 'fire-crew', path: '/fire-crew' },
-    { id: 'rally-co-driver', path: '/rally-co-driver' },
 ]
 const CAP = 9000
 
@@ -178,6 +181,39 @@ export function planFilings(results, openTitles) {
     return out
 }
 
+// ---------- port ownership (#1355) ----------
+//
+// The bot owns :5199 — but owning a port number is not the same as knowing the
+// server answering it is yours. #1312: an orphan vite squatted :5199, strictPort
+// killed our spawn, waitDev happily got 200s from the stranger, and 37 per-game
+// issues filed in 48 s. Two proofs, one pure classifier:
+//   pre  — anything already LISTENing before we spawn is a squatter by definition
+//          (our strictPort bind would die silently while the stranger answers).
+//   post — after waitDev, lsof names the answering PID; walking its ancestors must
+//          reach the detached `npm run dev` leader we spawned (vite is its
+//          grandchild, so ancestry, not equality). A chain that cannot is foreign.
+// `prePid` is the PID heard before spawn (null = port free); `chain` is the
+// answering PID followed by its ancestors (empty = nothing listening); `childPid`
+// is the PID we spawned. `mutate === 'squatter'` swallows the verdict — the
+// standing mutant that proves the gate is load-bearing.
+export function classifyPort(prePid, chain, childPid, mutate) {
+    if (mutate === 'squatter') return { state: 'port-ok', pid: null }
+    if (prePid != null) return { state: 'squatted', pid: prePid }
+    if (!chain || chain.length === 0) return { state: 'foreign-pid', pid: null }
+    if (chain.includes(childPid)) return { state: 'port-ok', pid: chain[0] }
+    return { state: 'foreign-pid', pid: chain[0] }
+}
+
+// One infra issue per squatter condition, never per-game. Digits are masked on
+// both sides (same shape math as failureShape), so pid churn night-to-night — or
+// a re-spawned squatter with a new pid — does not re-file.
+export const squatterTitle = (port, pid) => `nightly-bot: :${port} is squatted by pid ${pid}`
+export function planInfraFiling(squatter, openTitles) {
+    const shape = failureShape(squatterTitle(squatter.port, squatter.pid))
+    if (openTitles.some(t => failureShape(t) === shape)) return null
+    return { title: squatterTitle(squatter.port, squatter.pid), shape }
+}
+
 // Consecutive fully-green runs. #1040's Done line is "3 nights unattended":
 // the third green night closes the issue itself (see soakClose), so no human
 // has to remember the soak ended.
@@ -237,6 +273,21 @@ function selftest() {
         ['QA — tetris: nightly ' + failureShape(F[0].flags[0])]).length === 0,
         'same defect at different ticks/scores dedupes (digits masked)')
     ok(planFilings(F, ['QA — galaga: nightly softlock']).length === 1, 'another game open does not dedupe this one')
+    // #1355 — port ownership, pure: the three states the live shells feed it.
+    ok(classifyPort(null, [500, 499, 400], 400).state === 'port-ok', 'a listener descended from our spawned child is ours')
+    ok(classifyPort(4242, [], 400).state === 'squatted' && classifyPort(4242, [], 400).pid === 4242,
+        'a listener before spawn is a squatter and its pid is reported')
+    ok(classifyPort(null, [777, 776, 1], 400).state === 'foreign-pid' && classifyPort(null, [777, 776, 1], 400).pid === 777,
+        'a post-spawn listener we cannot trace to our child is foreign-pid')
+    ok(classifyPort(null, [], 400).state === 'foreign-pid', 'nothing answering lsof after waitDev cannot be proven ours')
+    ok(classifyPort(null, [777, 776], 400, 'squatter').state === 'port-ok',
+        'mutant squatter plays against a stranger — the ownership gate is load-bearing')
+    ok(planInfraFiling({ port: 5199, pid: 4242 }, []).title === 'nightly-bot: :5199 is squatted by pid 4242',
+        'a fresh squatter files one infra issue naming the pid')
+    ok(planInfraFiling({ port: 5199, pid: 9021 }, ['nightly-bot: :5199 is squatted by pid 4242']) === null,
+        'the same squatter shape with a new pid does not re-file')
+    ok(planInfraFiling({ port: 5199, pid: 4242 }, ['QA — tetris: nightly softlock']).title !== null,
+        'unrelated open issues do not dedupe the infra alarm')
     const streaks = updateStreaks({ games: [{ id: 'tetris', failStreak: 2 }] }, F)
     ok(streaks.tetris === 3, 'fail streak increments')
     ok(updateStreaks({ games: [{ id: 'tetris', failStreak: 3 }] }, [{ id: 'tetris', pass: true }]).tetris === 0,
@@ -247,7 +298,12 @@ function selftest() {
     const ccSrc = readFileSync(path.join(ROOT, 'scripts/lib/contractGames.mjs'), 'utf8')
     const ccIds = [...ccSrc.matchAll(/\{ id: '([^']+)', path: '([^']+)' \}/g)].map(m => `${m[1]}@${m[2]}`)
     const mine = GAMES.map(g => `${g.id}@${g.path}`)
-    ok(JSON.stringify(ccIds) === JSON.stringify(mine),
+    // SET equality, not order: append order legitimately differs when separate PRs
+    // grow the two lists (fixing one drift, #1350, only set up the second by 2026-10-31).
+    // Sorted comparison still catches every add/remove/dup — seeds take indexOf offsets,
+    // which vary nightly anyway (the seed rides in the repro command itself).
+    ok(ccIds.length === new Set(ccIds).size && mine.length === new Set(mine).size &&
+        JSON.stringify([...ccIds].sort()) === JSON.stringify([...mine].sort()),
         `roster matches contractcheck (${mine.length} games)`)
     const selfSrc = readFileSync(fileURLToPath(import.meta.url), 'utf8')
     const declAt = selfSrc.search(/const failed = results\.filter/)
@@ -274,7 +330,39 @@ async function waitDev(base) {
     throw new Error(`dev server never came up on :${PORT}`)
 }
 
-async function startDev() {
+// Thin shells over lsof/ps — the DECISION is classifyPort (pure, selftested).
+// lsof exits 1 with empty output when nothing listens; that is port-free, not an error.
+function portListenerPid(port) {
+    try {
+        const out = execFileSync('lsof', ['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'], { encoding: 'utf8' })
+        const pid = parseInt(out.split('\n')[0], 10)
+        return Number.isFinite(pid) ? pid : null
+    } catch { return null }
+}
+
+// [pid, parent, grandparent, ...] up to launchd; bounded in case a pid vanishes mid-walk.
+function ancestorChain(pid) {
+    const chain = []
+    let p = pid
+    for (let i = 0; i < 12 && Number.isFinite(p) && p > 0; i++) {
+        chain.push(p)
+        try { p = parseInt(execFileSync('ps', ['-o', 'ppid=', '-p', String(p)], { encoding: 'utf8' }).trim(), 10) } catch { break }
+    }
+    return chain
+}
+
+function squatterError(port, pid, state, chain) {
+    const e = new Error(`:${port} answered but is not ours (${state}${pid != null ? `, pid ${pid}` : ''}) — aborting before playing; see #1355`)
+    e.squatter = { port, pid, state, listenerChain: chain }
+    return e
+}
+
+async function startDev(mutate) {
+    // Stage 1 (#1355): never even spawn onto a squatted port — strictPort would
+    // kill our child while waitDev played against the stranger.
+    const pre = portListenerPid(PORT)
+    const early = classifyPort(pre, [], 0, mutate)
+    if (early.state === 'squatted') throw squatterError(PORT, early.pid, early.state, [])
     const child = spawn('npm', ['run', 'dev', '--', '--port', String(PORT), '--strictPort'],
         { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true })
     let log = ''
@@ -284,6 +372,14 @@ async function startDev() {
     } catch (e) {
         child.kill('SIGKILL')
         throw new Error(`${e.message}\n${log.slice(-1500)}`)
+    }
+    // Stage 2: something answers — prove it descends from the process we spawned.
+    const listener = portListenerPid(PORT)
+    const chain = listener == null ? [] : ancestorChain(listener)
+    const cls = classifyPort(pre, chain, child.pid, mutate)
+    if (cls.state !== 'port-ok') {
+        try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone / never bound */ }
+        throw squatterError(PORT, cls.pid, cls.state, chain)
     }
     return () => { try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } }
 }
@@ -367,9 +463,56 @@ async function fetchPrev() {
     } catch { return null }
 }
 
+// A squatter night aborts BEFORE the play loop: zero per-game verdicts, zero
+// per-game issues (#1312's 37-in-48s is structurally impossible now). ONE infra
+// issue, shape-deduped night-to-night; the CDN push is skipped so the board and
+// sleepwatch keep the last known-good picture instead of a fake all-red night.
+async function abortSquatter(sq) {
+    const doc = {
+        generated: new Date().toISOString(),
+        seed: SEED,
+        squatter: sq,
+        aborted: `:${sq.port} is not ours (${sq.state}${sq.pid != null ? `, pid ${sq.pid}` : ''})`,
+        greenStreak: 0,
+        games: [],
+    }
+    writeFileSync('/tmp/forge/nightly.json', JSON.stringify(doc, null, 1))
+    console.error(`nightlybot: ABORT — :${sq.port} is ${sq.state}` +
+        (sq.pid != null ? ` (pid ${sq.pid}${sq.listenerChain.length ? `, chain ${sq.listenerChain.join(' < ')}` : ''})` : '') +
+        ' — no games played, no per-game issues filed')
+    if (process.env.NIGHTLY_FILE) {
+        const open = JSON.parse(execFileSync('gh', ['issue', 'list', '--repo', 'jalfern/retrogames', '--state', 'open',
+            '--label', 'feedback', '--json', 'title'], { encoding: 'utf8' })).map(i => i.title)
+        const plan = planInfraFiling(sq, open)
+        if (plan) {
+            const body = `Found by the nightly bot run (${doc.generated}).\n\n` +
+                `**what happened:** the bot's port :${sq.port} was answered by a server it did not spawn ` +
+                `(state \`${sq.state}\`, pid ${sq.pid}, ancestor chain \`${sq.listenerChain.join(' < ') || 'unknown'}\`). ` +
+                `The run aborted before playing — the bot cannot judge games against a server it does not own.\n` +
+                `**why:** #1312 — a squatter once answered :5199 and 37 bogus per-game issues filed in 48 s. ` +
+                `This abort and the single-issue rule are the fix (verdict math: \`classifyPort\` in nightlybot.mjs).\n` +
+                `**repro:** \`lsof -nP -iTCP:${sq.port} -sTCP:LISTEN\`, then \`node scripts/nightlybot.mjs\` ` +
+                `(must abort with ":${sq.port} is not ours", never per-game failures)\n` +
+                `_Filed automatically by scripts/nightlybot.mjs (#1355)._`
+            execFileSync('gh', ['issue', 'create', '--repo', 'jalfern/retrogames', '--label', 'feedback', '--label', 'lane:qa',
+                '--title', plan.title, '--body', body])
+            console.log(`filed infra issue: ${plan.title}`)
+        } else {
+            console.log('squatter already has an open infra issue — not re-filing')
+        }
+    }
+    process.exit(1)
+}
+
 async function main() {
     const base = `http://localhost:${PORT}/retrogames`
-    const stopDev = await startDev()
+    let stopDev
+    try {
+        stopDev = await startDev(MUTATE)
+    } catch (e) {
+        if (!e.squatter) throw e
+        await abortSquatter(e.squatter) // never returns
+    }
     const browser = await launch()
     const games = ONLY ? GAMES.filter(g => g.id === ONLY) : GAMES
     if (ONLY && games.length === 0) { console.error(`NIGHTLY_ONLY="${ONLY}" matched no game`); process.exit(2) }
