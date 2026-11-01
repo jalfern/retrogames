@@ -14,7 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { askVoiceConsent } from '../../utils/voiceCapture'
+import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
@@ -119,7 +119,7 @@ export default function RallyCoDriver() {
         // same keydown events, so phones and keys share one path)
         const keys = { up: false, down: false, left: false, right: false, a: false }
 
-        const voice = { on: false, listen: null }
+        const voice = { on: false, listen: null, badge: null }
         const pushVoice = () => setVoiceUi(voice.on ? { on: true, said: voice.said, ok: voice.ok, label: voice.label } : null)
 
         const startRace = () => {
@@ -158,6 +158,7 @@ export default function RallyCoDriver() {
         const voiceStop = () => {
             voice.on = false
             if (voice.listen) { voice.listen.stop(); voice.listen = null }
+            if (voice.badge) { voice.badge(); voice.badge = null } // #1263 parity: the LISTEN dot leaves with the mic
             pushVoice()
         }
         const voiceOn = async () => {
@@ -169,6 +170,7 @@ export default function RallyCoDriver() {
             if (!consent.consent) { say('NO MIC, NO NOTES'); return }
             voice.on = true
             voice.label = 'LISTENING'
+            voice.badge = acquireListenBadge() // #1263 parity: mic-live must be visible
             voice.listen = startSpeechListen({
                 onPhrase: (p) => {
                     if (screenRef.cur !== 'play') return
@@ -178,8 +180,14 @@ export default function RallyCoDriver() {
                     voice.label = call ? callLabel(call) : 'NO NOTE'
                     if (call) {
                         applyCallEvent(play.g, call, 'voice')
-                        audioController.playTone(880, 0.06, 'square', 0.05)
-                        audioController.playTone(1318, 0.08, 'square', 0.04, 0.06)
+                        if (call.crest) {
+                            // caution: a low double beat — warning, not a corner ping
+                            audioController.playTone(330, 0.07, 'square', 0.05)
+                            audioController.playTone(262, 0.09, 'square', 0.05, 0.09)
+                        } else {
+                            audioController.playTone(880, 0.06, 'square', 0.05)
+                            audioController.playTone(1318, 0.08, 'square', 0.04, 0.06)
+                        }
                     } else audioController.playTone(233, 0.1, 'sawtooth', 0.04)
                     pushVoice()
                 },
@@ -725,7 +733,7 @@ export default function RallyCoDriver() {
                 const d = n.atS == null ? null : Math.round(distAhead(g.stage, g.car.s, n.atS) * 0.15)
                 const label = callLabel({ dir: n.dir, sev: n.sev })
                 ctx.globalAlpha = a
-                ctx.fillStyle = n.dir < 0 ? '#7ec8ff' : n.dir > 0 ? '#ffd27e' : '#dcd8cc'
+                ctx.fillStyle = n.crest ? '#ffb03a' : n.dir < 0 ? '#7ec8ff' : n.dir > 0 ? '#ffd27e' : '#dcd8cc'
                 ctx.font = 'bold 10px monospace'
                 ctx.fillText(label, 12, 28 + i * 13)
                 ctx.fillStyle = '#8b93a3'
@@ -987,6 +995,8 @@ export default function RallyCoDriver() {
                 if (call) applyCallEvent(play.g, call, 'voice')
                 return call
             },
+            // #1263 parity: the shared mic badge's state ('rec'|'listen'|'off'|null)
+            micBadge: () => (typeof document !== 'undefined' ? document.querySelector('[data-voice-mic]')?.getAttribute('data-state') ?? null : null),
             coCall: (call) => applyCallEvent(play.g, call, 'human'),
         }
 

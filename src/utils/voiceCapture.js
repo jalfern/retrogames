@@ -64,16 +64,28 @@ function syncMicBadge() {
     if (typeof document === 'undefined') return
     const el = document.querySelector('[data-voice-mic]')
     const rec = [...liveSessions].some((s) => s.phase === 'recording')
+    const listen = !rec && [...liveSessions].some((s) => s.phase === 'listening')
     const off = liveSessions.size > 0
     if (!off) { if (el) el.remove(); return }
     const b = el || badgeEl()
     if (!b) return
     const dot = b.querySelector('[data-voice-dot]')
     const label = b.querySelector('[data-voice-label]')
-    b.setAttribute('data-state', rec ? 'rec' : 'off')
-    dot.style.background = rec ? '#38e07b' : '#6b6b78'
-    dot.style.boxShadow = rec ? '0 0 8px rgba(56,224,123,0.9)' : 'none'
-    label.textContent = rec ? 'REC' : 'MIC OFF'
+    b.setAttribute('data-state', rec ? 'rec' : listen ? 'listen' : 'off')
+    dot.style.background = rec ? '#38e07b' : listen ? '#7ec8ff' : '#6b6b78'
+    dot.style.boxShadow = rec ? '0 0 8px rgba(56,224,123,0.9)' : listen ? '0 0 8px rgba(126,200,255,0.9)' : 'none'
+    label.textContent = rec ? 'REC' : listen ? 'LISTEN' : 'MIC OFF'
+}
+
+// acquireListenBadge (#1263/#1257 parity, #1427) — a mic that is LIVE for
+// speech recognition is a silent-but-heard state too, even when no recorder
+// backs it. Register one so the SAME refcounted dot shows LISTEN while the
+// speech engine holds the mic; the returned release() takes it away. The
+// honesty holds: LISTEN (blue) ≠ REC (green) — recognition is not recording.
+export function acquireListenBadge() {
+    const reg = { phase: 'listening' }
+    liveSessions.add(reg); syncMicBadge()
+    return () => { liveSessions.delete(reg); syncMicBadge() }
 }
 
 // --- VU bar (#1257) — the mic just opened after a YES; prove in THAT second

@@ -20,7 +20,7 @@ import {
     WEATHERS, WEATHER_ORDER, CURATED,
 } from '../src/games/RallyCoDriver/sim.js'
 import { makeStage, kappaAt, cornerAhead } from '../src/games/RallyCoDriver/stage.js'
-import { parseCoCall, coCallFromPad, decideCoCall, applyCallEvent, leadDist } from '../src/games/RallyCoDriver/calls.js'
+import { parseCoCall, coCallFromPad, decideCoCall, applyCallEvent, callLabel, leadDist } from '../src/games/RallyCoDriver/calls.js'
 import { senseRally } from '../src/games/RallyCoDriver/sensors/pacecard.js'
 import { createPaceBrain, modelSeatPad } from '../src/games/RallyCoDriver/agent/pacebrain.js'
 
@@ -136,6 +136,32 @@ console.log('grammar:')
     P('two', null)          // a number with no side is noise
     P('hello', null)
     P('', null)
+    // field QA (#1427): accent mis-hears are deterministic — the recognizer
+    // mangles the same word the same way, so the grammar takes the mis-hear.
+    P('left tree', { dir: -1, sev: 3 })    // "three" with a flattened TH
+    P('right free', { dir: 1, sev: 3 })    // th-fronting can also free the F
+    P('write two', { dir: 1, sev: 2 })     // "right" homophone
+    P('too left', { dir: -1, sev: 2 })     // "two" heard as a homophone
+    P('right won', { dir: 1, sev: 1 })     // "one" with a W-onset
+    // caution/crest: a warning word. Alone it is a CAUTION card (dir 0,
+    // sev 2); with a side it floors severity at 2 and stamps the call.
+    P('caution crest', { dir: 0, sev: 2, crest: true })
+    P('blind crest', { dir: 0, sev: 2, crest: true })
+    P('caution left', { dir: -1, sev: 2, crest: true })
+    P('caution right three', { dir: 1, sev: 3, crest: true })
+    ok('CAUTION labels the crest card', callLabel({ dir: 0, sev: 2, crest: true }) === 'CAUTION')
+    // negation is silence: a negated note played as a note is worse than none
+    P('no left', null)
+    P('not right three', null)
+    P('no three', null)
+    P('don\'t take it flat', null)
+    P('cancel left', null)
+    // a caution reaches the card but links to no corner (it names no side)
+    const g = createSim(7, 2)
+    const linked = applyCallEvent(g, parseCoCall('caution crest'), 'voice')
+    ok('caution card: unlinked, crest-stamped',
+        linked === -1 && g.card.length === 1 && g.card[0].crest === true && g.card[0].atS === null)
+    ok('a straight call never sets crest', (() => { const c = parseCoCall('straight on'); return c && !c.crest })())
     // the pad edge: a note is a moment, not a hold
     ok('pad edge: left tap → left 1', JSON.stringify(coCallFromPad({}, { left: true })) === JSON.stringify({ dir: -1, sev: 1 }))
     ok('pad edge: right+b → right 3', JSON.stringify(coCallFromPad({}, { right: true, b: true })) === JSON.stringify({ dir: 1, sev: 3 }))
