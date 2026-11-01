@@ -95,64 +95,16 @@
   window.addEventListener('pointerdown', unlock)
   window.addEventListener('keydown', unlock)
 
-  // ---- episode recorder (#1141 robot-kit format: retrogames-rec/v1 +
-  //      episode block; inline because demos are dependency-free — the kit's
-  //      validateEpisode in src/utils/robot/episode.js accepts these files) ----
-  const P_NAMES = LW.PW.P_NAMES
-  function fnv(s) {
-    let h = 0x811c9dc5
-    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
-    return h
-  }
-  function stateHash(sim) {
-    let s = ''
-    for (let i = 0; i < N; i++) s += Math.round(sim.p[i * 2] * 1000) + ',' + Math.round(sim.p[i * 2 + 1] * 1000) + ';'
-    return fnv(s)
-  }
+  // ---- episode recorder: the shared inline kit-format codec in
+  //      learnedwalk.core.js (makeEpisode) — same code the harness validates.
   let ep = null
-  function epStart(seed) {
-    ep = { seed, ticks: 0, hashes: [], poses: [], methods: [], lastExport: null }
-  }
-  function epTick(sim, rawThisTick) {
-    if (!ep) return
-    ep.ticks++
-    if (rawThisTick) { ep.raw = ep.raw || []; ep.raw[ep.ticks - 1] = rawThisTick; if (!ep.methods.includes('pointer')) ep.methods.push('pointer') }
-    if (ep.ticks % 6 === 0) ep.hashes.push({ t: ep.ticks, h: stateHash(sim) })
-    if (ep.ticks % 6 === 0) {
-      const o = {}
-      for (let i = 0; i < N; i++) o[P_NAMES[i]] = { p: [+sim.p[i * 2].toFixed(4), +sim.p[i * 2 + 1].toFixed(4), 0], q: [0, 0, 0, 1] }
-      ep.poses.push({ t: ep.ticks, o })
-    }
-  }
+  function epStart(seed) { ep = LW.makeEpisode(seed) }
+  function epTick(sim, raw) { if (ep) ep.tick(sim, raw) }
   function epFinish(sim, success, score) {
     if (!ep) return null
-    const last = stateHash(sim)
-    if (!ep.hashes.length || ep.hashes[ep.hashes.length - 1].t !== ep.ticks) ep.hashes.push({ t: ep.ticks, h: last })
-    const file = {
-      format: 'retrogames-rec/v1',
-      build: 'unknown',
-      game: 'learnedwalk',
-      method: 'pointer',
-      seed: ep.seed,
-      players: 1,
-      ticks: ep.ticks,
-      hashEvery: 6,
-      slots: [{ source: { kind: 'model' }, pads: Array.from({ length: ep.ticks }, () => ({})), raw: Array.from({ length: ep.ticks }, (_, i) => (ep.raw && ep.raw[i]) || {}) }],
-      hashes: ep.hashes,
-    }
-    file.episode = {
-      task: 'learned-walk',
-      success: !!success,
-      score: +score.toFixed(3),
-      poseEvery: 6,
-      poseCount: ep.poses.length,
-      poses: ep.poses,
-      methodsUsed: ep.methods.length ? ep.methods : ['pointer'],
-      assets: 'physicswalk.core.js/v1 (XPBD biped #1204) + CEM-trained policy #1205',
-    }
-    ep.lastExport = file
+    const f = ep.finish(sim, success, score)
     ep = null
-    return file
+    return f
   }
   window.__lastEpisode = null
 
@@ -238,10 +190,11 @@
       'recovery — one 23→16→16→3 MLP, mirrored to both legs. No hand-written balance term runs at play.<br><br>' +
       '<i>Scripted plumbing (not learned):</i> reset after falls, tap-to-push, the scrubber, the ' +
       'episode recorder, sound effects. Arms are unactuated pendulums (real physics, no motor).<br><br>' +
-      '<b>Training:</b> ' + f.method + '<br>population ' + f.pop + ', elites ' + f.elite +
-      ', gens ' + f.gensA + '+' + f.gensB + ', seed ' + f.seed + ', deterministic.' +
+      '<b>Training:</b> ' + f.method + '<br>population ' + f.pop +
+      ', gens ' + f.gensA + '+' + f.gensB + '+' + f.gensC + ', seed ' + f.seed + ', deterministic.' +
       '<br>Best policy: stage ' + f.bestStage + ' gen ' + f.bestGen + ' — walked ' +
-      (f.eval ? f.eval.advanced : '?') + ' m in 10 s test, stands ' + (f.eval ? Math.round(f.eval.uprightFrac * 100) : '?') + '% of ticks.' +
+      (f.eval ? f.eval.advanced : '?') + ' m in 10 s test, stands ' + (f.eval ? Math.round(f.eval.uprightFrac * 100) : '?') +
+      '% of ticks, topples on ' + (f.eval ? f.eval.falls : '?') + '/5 test seeds.' +
       '<br><br>Honest gaps: flat ground only; quality is a stagger-walk, not striding; ' +
       'reward shaping (survive + stand tall) is training-time scaffolding — the shipped ' +
       'controller is purely the network.'
@@ -392,9 +345,9 @@
 <script>
 window.DEMO_CREDITS = {
   name: 'LEARNED WALK', accent: '#c77dff',
-  issues: [1205], span: '~4 d', shipped: '2026-11-01',
+  issues: [1205], span: '~9 h', shipped: '2026-10-31',
   assist: 'solo',
-  note: 'goal-only brief: same body and physics as PHYSICS WALK, but the balance controller is one small net trained here with CEM — tap to push, scrub the training.',
+  note: 'goal-only brief: same body and physics as PHYSICS WALK, but the balance controller is one small net trained here with evolution — tap to push, scrub the training.',
 };
 </script>
 <script src="credits.js"></script>

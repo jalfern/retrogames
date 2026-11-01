@@ -44,6 +44,8 @@ loaded by relative `<script src>` — never absolute URLs (the per-demo `*check`
 - `ocean.stars.js` — Yale BSC star data for OCEAN/MOUNTAINS skies
   (`node scripts/build-ocean-stars.mjs` regenerates).
 - `physicswalk.core.js` — PHYSICS WALK engine (#1204), below.
+- `learnedwalk.core.js` + `learnedwalk.policy.js` + `learnedwalk.html` —
+  LEARNED WALK, the rig steered by a trained MLP (#1205), below.
 
 ## physicswalk.core.js engine notes (#1204)
 
@@ -68,6 +70,38 @@ Determinism is guaranteed (no RNG). Gated by `npm run physicswalkcheck`
 Honest gaps: planar balance only (no lateral DOF); sustained steady walking
 settles into a stagger, not a stride cycle; collision uses point feet
 (no toe-ramp mesh).
+
+## learnedwalk.html engine notes (#1205)
+
+LEARNED WALK puts a trained network at the controls of the PHYSICS WALK rig
+(#1204): the hand-written balance/step controller is *not* used — instead one
+23→16→16→3 MLP (mirrored to both legs, 707 params, motors as virtual-work torque
+pairs through `sim.extra`) emits hip/knee/ankle torques from 23 sensor
+readings (pitch, pitch rate, heights, leg phases, contact flags, CoM velocity).
+Training is in-repo, deterministic Node: `node scripts/learnedwalk-train.mjs`
+reproduces `learnedwalk.policy.js` byte-for-byte (mulberry32 seed 3). Method:
+(1+1)-ES with Cauchy mutation (heavy tails reach the O(1..5) reflex gains;
+uniform mutation was tried first — every uniform sample fell faster than the
+zero net), 1/5-success breathing + stagnation bounce, stand→walk→refine
+curriculum (A: survive+hip height; B: + metres with random pushes; C:
+metres-weighted hill-climb at tight sigma on fresh seeds). Fitness seeds are
+disjoint from the 5-seed report eval. The zero-torque net (bare rig) ships as
+the baseline: it holds ~118 ticks and goes nowhere; the trained policy walks
+~3.4 m net in 10 s and survives longer on every seed.
+Honest gaps (also shown in the demo's HONESTY panel): the gait is a
+forward-lurch, not a striding cycle — uprightFrac stays low and the policy
+still topples on every test seed after a few seconds; planar only (#1204's
+2D rig); no lateral DOF, no recovery steps; arms stay unactuated pendulums;
+~3.4 m in 10 s is far from the scripted controller's pace. Learning happened
+on metres+survival reward only — no imitation of the scripted controller.
+Candidates are searched in rounded (4-decimal) space because serialization
+rounding flips knife-edge gaits: an unrounded 2.98 m policy face-planted at
+tick 35 once written to disk, so the trainer quantizes before scoring and
+re-checks the serialized bytes against the bare rig.
+The demo scrubber replays real checkpoints (gen 0 flails, falls faster than
+the final policy). Gated by `npm run learnedwalkcheck` (30 gates incl. a
+mirror mutant — flip `hipR: a[0] * CAP` to `hipR: 0` in learnedwalk.core.js
+torquesOf and six gates go RED — demonstrated 2026-10-31, then restored).
 
 ## blackhole.html engine notes
 

@@ -137,12 +137,18 @@
     return lw
   }
 
-  // one frame at policy rate; physics substeps inside PW.step
+  // one frame at policy rate; physics substeps inside PW.step.
+  // A fallen figure's motors CUT — same ragdoll honesty as PHYSICS WALK.
   function step(lw, dt) {
-    obsInto(lw.sim, lw.prev, lw.obs)
-    forward(lw.pp, lw.obs, lw.act)
-    lw.prev.set(lw.act)
-    lw.sim.extra = torquesOf(lw.act)
+    if (lw.sim.mode !== 'fallen') {
+      obsInto(lw.sim, lw.prev, lw.obs)
+      forward(lw.pp, lw.obs, lw.act)
+      lw.prev.set(lw.act)
+      lw.sim.extra = torquesOf(lw.act)
+    } else {
+      lw.sim.extra = torquesOf(lw.act.fill(0))
+      lw.prev.fill(0)
+    }
     PW.step(lw.sim, dt)
     lw.tick++
     return lw
@@ -222,8 +228,67 @@
     }
   }
 
+  /* ---- inline Plaicraft episode recorder (#1141 format: retrogames-rec/v1
+     + optional episode block; src/utils/robot/episode.js's validateEpisode
+     accepts these files. Demos are dependency-free, so the codec is mirrored
+     here and exercised by learnedwalkcheck). ---- */
+  const P_NAMES = PW.P_NAMES
+  function fnv(s) {
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+    return h
+  }
+  function stateHash(sim) {
+    let s = ''
+    for (let i = 0; i < PW.N; i++) s += Math.round(sim.p[i * 2] * 1000) + ',' + Math.round(sim.p[i * 2 + 1] * 1000) + ';'
+    return fnv(s)
+  }
+  function makeEpisode(seed) {
+    let ticks = 0
+    const hashes = [], poses = [], raws = [], methods = []
+    return {
+      tick(sim, raw) {
+        ticks++
+        if (raw) { raws[ticks - 1] = raw; if (!methods.includes('pointer')) methods.push('pointer') }
+        if (ticks % 6 === 0) {
+          hashes.push({ t: ticks, h: stateHash(sim) })
+          const o = {}
+          for (let i = 0; i < PW.N; i++) o[P_NAMES[i]] = { p: [+sim.p[i * 2].toFixed(4), +sim.p[i * 2 + 1].toFixed(4), 0], q: [0, 0, 0, 1] }
+          poses.push({ t: ticks, o })
+        }
+      },
+      finish(sim, success, score) {
+        if (!hashes.length || hashes[hashes.length - 1].t !== ticks) hashes.push({ t: ticks, h: stateHash(sim) })
+        const file = {
+          format: 'retrogames-rec/v1',
+          build: 'unknown',
+          game: 'learnedwalk',
+          method: 'pointer',
+          seed,
+          players: 1,
+          ticks,
+          hashEvery: 6,
+          slots: [{ source: { kind: 'model' }, pads: Array.from({ length: ticks }, () => ({})), raw: Array.from({ length: ticks }, (_, i) => raws[i] || {}) }],
+          hashes,
+        }
+        file.episode = {
+          task: 'learned-walk',
+          success: !!success,
+          score: +score.toFixed(3),
+          poseEvery: 6,
+          poseCount: poses.length,
+          poses,
+          methodsUsed: methods.length ? methods : ['pointer'],
+          assets: 'physicswalk.core.js/v1 (XPBD biped #1204) + trained policy #1205',
+        }
+        return file
+      },
+    }
+  }
+
   global.LearnedWalk = {
     PW, OBS, HID, ACT, NP, CAP,
     rng, clamp, obsInto, forward, torquesOf, create, reset, step, runEpisode, evaluate,
+    stateHash, makeEpisode,
   }
 })(typeof window !== 'undefined' ? window : globalThis)
