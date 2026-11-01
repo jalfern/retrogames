@@ -76,12 +76,15 @@ different seed → different state.
 
 ## Harness
 
-- `npm run rallycheck` — pure Node, 61 gates: stage sanity + crest
+- `npm run rallycheck` — pure Node, 86 gates: stage sanity + crest
   honesty, co-driver honesty + ledger, note grammar, determinism,
-  off-track penalty, win gate, and the #1365 feel signals (stepped-RPM
-  gears via `gearOf`, crest `slopeAt` crossings per seed, lap splits
-  that sum to the stage time). No dev server needed. Wired into CI:
-  the `rally` scope in `scripts/checks.mjs` + the KEYS-gated step in
+  off-track penalty, win gate (every curated stage), the #1365 feel signals
+  (stepped-RPM gears via `gearOf`, crest `slopeAt` crossings per seed, lap
+  splits that sum to the stage time), and the #1407 variety signals (the
+  weather presets only ever take away — fog ≤ 1, grip ≥ 1; rain flings a
+  hands-off corner wider; fair play holds in mist+rain; the NOTES lap strip
+  shows only the corners already driven). No dev server needed. Wired into
+  CI: the `rally` scope in `scripts/checks.mjs` + the KEYS-gated step in
   ci.yml (the alias existed but nothing ran it — #1395's lesson).
 - contractcheck (browser, advisory): `rally-co-driver` is wired in
   `scripts/lib/contractGames.mjs` (2 seats; the pattern holds throttle
@@ -98,11 +101,21 @@ different seed → different state.
   grandstand, stepped-RPM gears, tyre chatter at the grip limit, crest thud.
   The shell owns the fx; the provable parts (`gearOf`, `slopeAt`, lap splits)
   live in the pure sim and rallycheck pins them.
+- #1407 stage variety shipped: curated stages (R on the attract cycles five
+  named, rallycheck-proven seeds — LAKE/PINE/TARN/MIRE/FELL), weather presets
+  (T cycles clear/mist/rain: mist shortens the fog wall, rain also loosens the
+  `DRIFT_K` grip law so a hands-off corner flings wider), and the NOTES-card
+  lap-progress strip (corners already driven, colored by dir; the rest stay
+  dim — it shows progress, never what is ahead). B on the over screen returns
+  to stage select; `?stage=PINE&wx=rain` lands a shared URL on a named stage
+  in the rain. The provable parts (`WEATHERS`, `CURATED`, `lapProgress`) live
+  in the pure sim and rallycheck pins them, including the no-leak law and
+  CPU fair play in both wet presets.
 - Lobby seats (online co-driver over the relay) — the sim already treats
   the co seat as pads, lockstep-ready; file when Jon wants it.
-- Remaining polish (filed as the follow-up feedback issue): model-seat sensor
+- Remaining polish (carved to a follow-up feedback issue): model-seat sensor
   arm for the nightly/RL soak, voice field QA + #1263 mic-badge parity,
-  weather presets / checkpoint-clock format, lap-progress strip on the NOTES
-  card, and reflector-post variation beyond the amber corner mouths.
+  checkpoint-clock format alongside the two-lap run, and reflector-post
+  variation beyond the amber corner mouths.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.
