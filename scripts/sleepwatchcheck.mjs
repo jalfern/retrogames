@@ -36,6 +36,16 @@
 // night to the merged truth (asleep=00:20→11:30, not the last 6 h) and pins
 // once-per-day span reporting + suppression; §F threads pulseAge/pulse v4 log.
 //
+// v5 (#1413): §A gains churnage self-dating on the churn token and the CLIP
+// of partially-overlapping raw windows (uncovered pieces survive, sub-minute
+// noise drops, totals become honest unions, clipping is idempotent); §C gains
+// past-tense STUDIO CHURNED off churnage, junk-churnage refusal, and the
+// `· as of HH:MM` stale hint on self-dated strips off an expired wire (the
+// runwayBadge precedent); §E re-pins the deep-dark pulse with churnage and
+// adds the ledger-clip end-to-end (a named night arriving over a raw claim
+// clips it and the digest total stops double-counting); §C pins ForgeBoard
+// dims the stale strip.
+//
 // Mutant proofs (required one): CHURN_SLEEPS 3→90 reddens §A churn + §B
 // incident churn pins; GAP_MIN 30→90 still reddens §A gap + §B incident.
 // v3 (#1401): inverting the disprove comparison in resolveAsleep (wake never
@@ -48,6 +58,11 @@
 // deleting the `covered(w)` drop reddens exactly the scaffolding-retirement
 // pin (1 — correctly narrow); removing the once-per-day span gate reddens 5
 // suppression pins. Verified by hand, all restored green (274/0).
+// v5 (#1413): neutralizing clipRaw (`raw(w) ? clipRaw(w) : [w]` → `[w]`)
+// reddens 15 gates (the clip/seam/noise pins, both union-total pins, the §E
+// ledger-clip); inverting the tense switch in floor.js (`cAge > win` →
+// `cAge < win`) reddens 6 §C gates — every tense claim moves together.
+// Verified by hand, all restored green (314/0).
 
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -197,12 +212,36 @@ section('A. pure core')
     eq(coalesceWindows([RW('00:20:00', '03:20:00', { reason: 'Idle Sleep' }), RW('03:20:00', '05:20:00')])[0].reason, 'Idle Sleep', 'a claimed reason survives the merge')
     const NAMED = (f, t) => ({ from: at(f), to: at(t), min: Math.round((at(t) - at(f)) / 60000), naps: 1, reason: 'Software Sleep', src: 'pmset' })
     const inter = coalesceWindows([RW('00:20:00', '03:20:00'), NAMED('03:00:00', '03:15:00'), RW('03:25:00', '05:25:00')])
-    eq(inter.length, 3, 'a pmset-named window BREAKS a raw run — raw segments across named truth do not merge')
+    eq(inter.length, 4, 'a pmset-named window BREAKS a raw run — and clips it: RW1 splits around the named span (#1413), the segments across it do not merge')
+    eq(JSON.stringify([inter[0]?.from, inter[0]?.to]), JSON.stringify([at('00:20:00'), at('03:00:00')]), 'the raw front stays claimed up to the named start')
+    eq(JSON.stringify([inter[1]?.from, inter[1]?.to, inter[1]?.src]), JSON.stringify([at('03:00:00'), at('03:15:00'), 'pmset']), 'the named window sits where it was observed')
+    eq(JSON.stringify([inter[2]?.from, inter[2]?.to, inter[2]?.min]), JSON.stringify([at('03:15:00'), at('03:20:00'), 5]), 'the five minutes of tick silence the named window does NOT explain stay claimed (clipped tail, sorted after its named witness)')
+    eq(inter[3]?.src, 'tickgap', 'and the run resumes raw after the named truth')
     eq(coalesceWindows([NAMED('00:00:00', '02:00:00'), NAMED('02:00:00', '04:00:00')]).length, 2, 'pmset-named windows NEVER merge — the observed truth wins outright')
     const retire = coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:20:00', '05:20:00'), NAMED('00:17:00', '11:35:00')])
     eq(retire.length, 1, 'raw scaffolding a pmset window fully covers is DROPPED when the named truth arrives')
     eq(retire[0].src, 'pmset', 'and the survivor is the named window (reason and naps and all)')
-    eq(coalesceWindows([RW('00:20:00', '05:20:00'), NAMED('03:00:00', '06:00:00')]).length, 2, 'partial overlap is not coverage — the raw claim stays (never quietly shrink a claimed outage)')
+
+    // ---- partial-overlap CLIP (#1413) — the union told once ------------
+    const clip1 = coalesceWindows([RW('00:20:00', '05:20:00'), NAMED('03:00:00', '06:00:00')])
+    eq(clip1.length, 2, 'partial overlap is not coverage — but the raw claim now YIELDS the shared span (#1413)')
+    eq(JSON.stringify([clip1[0].from, clip1[0].to, clip1[0].min, clip1[0].src]), JSON.stringify([at('00:20:00'), at('03:00:00'), 160, 'tickgap']), 'raw clips at the named start — its uncovered front survives byte-honest')
+    eq(clip1[1].src, 'pmset', 'the named window rides unchanged')
+    const clip1Line = sleepLine(clip1, at('12:00:00'))
+    ok((clip1Line || "").includes('total 5h 40m') && !clip1Line.includes('8h'), `the digest total is the UNION, 03:00–05:20 counted once (pre-v5 read 8h): ${clip1Line}`)
+    const clip2 = coalesceWindows([RW('00:20:00', '08:00:00'), NAMED('03:00:00', '06:00:00')])
+    eq(clip2.length, 3, 'a raw claim wrapping the named one splits into TWO uncovered pieces')
+    eq(JSON.stringify([clip2[2]?.from, clip2[2]?.to, clip2[2]?.min]), JSON.stringify([at('06:00:00'), at('08:00:00'), 120]), 'the tail past the named end survives as its own claim')
+    const clip2Line = sleepLine(clip2, at('12:00:00'))
+    ok((clip2Line || "").includes('total 7h 40m'), `160+180+120 = the honest 00:20→08:00 union: ${clip2Line}`)
+    const clipStage = coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:20:00', '05:20:00'), NAMED('03:00:00', '06:00:00')])
+    eq(clipStage.length, 2, 'a staged raw night under a later-named morning: front clip + covered segment retire together')
+    eq(JSON.stringify([clipStage[0]?.to, clipStage[1]?.src]), JSON.stringify([at('03:00:00'), 'pmset']), 'and the ledger still ends as raw-front + named')
+    const clipNoise = coalesceWindows([RW('00:20:00', '05:20:00'), NAMED('00:30:00', '05:19:40')])
+    eq(JSON.stringify([clipNoise.length, clipNoise[0]?.min, clipNoise[clipNoise.length - 1]?.src]), JSON.stringify([2, 10, 'pmset']), 'a 20-second tail piece is noise against a minute-resolution claim and drops; the 10-min uncovered front stands')
+    eq(JSON.stringify(coalesceWindows(clip1)), JSON.stringify(clip1), 'clipping is idempotent — re-coalescing the honest ledger changes nothing (#1413)')
+    const clipSeam = coalesceWindows([RW('00:20:00', '03:20:00'), NAMED('03:00:00', '03:15:00')])
+    eq(JSON.stringify([clipSeam.length, clipSeam[clipSeam.length - 1]?.from, clipSeam[clipSeam.length - 1]?.to]), JSON.stringify([3, at('03:15:00'), at('03:20:00')]), 'raw pieces NEVER re-merge across the named span that separated them, even when that seam ≤ the budget')
     const legacy = coalesceWindows([RW('00:20:00', '03:20:00'), { from: at('03:20:00'), to: at('04:20:00'), min: 60 }, RW('04:20:00', '06:20:00')])
     eq(legacy.length, 3, 'windows with unknown src are left alone AND break raw runs — never merge what you cannot name')
     const ledRaw = addWindows([RW('00:20:00', '03:20:00')], [RW('03:20:00', '05:20:00')], at('05:30:00'))
@@ -280,6 +319,11 @@ section('A. pure core')
     eq(churnField(chEp, CN), 'churn=13 churnwin=30', 'the churn token names the newest episode AND carries its window (#1401)')
     eq(churnField(chEp, CN + (PULSE_SHOW_H + 1) * 3600000), '', 'churn drops off the pulse 24 h after the episode')
     eq(churnField([], CN), '', 'a well-behaved night has no churn token')
+    // v5 self-dating (#1413): churnage rides only when the episode outlived
+    // its own window — a live episode keeps the v3/v4 wire byte-identical.
+    eq(churnField(chEp, at('02:18:00')), 'churn=13 churnwin=30', 'last sleep EXACTLY a window ago is still live — "in the last 30 min" honest, no churnage')
+    eq(churnField(chEp, at('02:19:00')), 'churn=13 churnwin=30 churnage=31', 'one minute past the window and the token self-dates (#1413)')
+    eq(churnField(chEp, CN + (PULSE_SHOW_H - 1) * 3600000), 'churn=13 churnwin=30 churnage=1392', 'churn news still rides at 23 h WITH an honest age — why v5 carries churnage instead of gating the token out')
 
     // ---- persistent live stamp (resolveAsleep, #1401) -------------------
     const DK_S = CN - 10 * 60000 // a sleep ten minutes before the churn-now
@@ -424,6 +468,32 @@ section('C. the board banner (floor.js)')
     ok(staleRetro?.text.startsWith('STUDIO WAS ASLEEP'), 'a retroactive window survives a stale wire — history baked at write time is still history')
     eq(staleRetro?.live, false, 'and it is not a live claim, so the budget does not bind it')
 
+    // #1413 — self-dated strips say WHEN they were baked (runwayBadge precedent)
+    // and churn self-tenses off the wire's own churnage token.
+    const NOWR = Date.parse('2026-10-31T18:33:00Z')
+    const OLDWIRE = LIVE_SHOWN_MS + 3600000
+    const oldRetro = sleepBanner({ asleep: '00:17-11:35', asleepm: '678' }, OLDWIRE, NOWR)
+    ok(oldRetro?.text === `STUDIO WAS ASLEEP 00:17–11:35 · 11h 18m · as of ${hm(NOWR - OLDWIRE)}`,
+        `a retro off a 25-h-old wire names its bake minute — yesterday's weather reads as yesterday's: ${oldRetro?.text}`)
+    eq(oldRetro?.stale, true, 'the stale flag rides for the JSX dim')
+    eq(sleepBanner({ asleep: '00:17-11:35', asleepm: '678' }, 60000, NOWR).text, 'STUDIO WAS ASLEEP 00:17–11:35 · 11h 18m', 'a fresh wire keeps the v4 bytes — the hint appears only past the budget')
+    eq(sleepBanner({ asleep: '00:17-11:35', asleepm: '678' }, 60000, NOWR).stale, false, 'fresh retro says so, honestly')
+    eq('stale' in sleepBanner({ asleep: '00:17-11:35', asleepm: '678' }), false, 'unknown age = no stale claim either way — v3 callers are not made liars')
+
+    const chOld = sleepBanner({ churn: '13', churnwin: '30', churnage: '360' })
+    eq(chOld?.text, 'STUDIO CHURNED — 13 sleeps in 30-min bursts · latest 6h ago', 'churnage past the window re-tenses the strip (#1413)')
+    eq(chOld?.live, false, 'past tense — not a NOW-claim')
+    eq(chOld?.severe, false, 'still amber, not red')
+    const chOldShort = sleepBanner({ churn: '5', churnwin: '30', churnage: '45' })
+    eq(chOldShort?.text, 'STUDIO CHURNED — 5 sleeps in 30-min bursts · latest 45m ago', 'sub-hour ages read in minutes')
+    eq(sleepBanner({ churn: '5', churnwin: '30', churnage: '12' })?.text, 'STUDIO CHURNING — 5 sleeps in the last 30 min', 'churnage inside the window keeps the present tense — the claim is true')
+    eq(sleepBanner({ churn: '5', churnwin: '30', churnage: '12' }, LIVE_SHOWN_MS + 1), null, 'a present-tense churn off a stale wire still drops — NOW-claims answer to the budget')
+    eq(sleepBanner({ churn: '13', churnwin: '30', churnage: '360' }, OLDWIRE, NOWR)?.text,
+        `STUDIO CHURNED — 13 sleeps in 30-min bursts · latest 6h ago · as of ${hm(NOWR - OLDWIRE)}`, 'past-tense churn survives the stale wire (self-dated history) and names its bake minute too')
+    eq(sleepBanner({ churn: '13', churnwin: '30', churnage: 'soon' }), null, 'a junk churnage never renders')
+    eq(sleepBanner({ churn: '13', churnwin: '30', churnage: '-4' }), null, 'a negative churnage is junk, not "live"')
+    eq(sleepBanner({ churn: '7', churnwin: '30' }, LIVE_SHOWN_MS + 1), null, 'the v2/v3 no-age token past budget still drops exactly as v4 pinned (no retrograde change for wires that carry no churnage)')
+
     // round trip: a REAL pulse line -> deriveFloor -> banner
     const line = '12:32 alive=yes queue=3 building=1 shipped=42 main=36adbf9 qa=9 mini=up gate=none halted=no questions=0 builders=2/2 asleep=00:17-11:35 asleepm=678 naps=77 actions=slept:1'
     const d = deriveFloor({ pulses: [{ body: line, updated_at: '2026-10-31T18:32:00Z', created_at: '2026-10-31T18:32:00Z' }], now: Date.parse('2026-10-31T18:33:00Z') })
@@ -450,6 +520,7 @@ section('C. the board banner (floor.js)')
     ok(JSX.includes('sleepBanner') && JSX.includes('data-sleep'), 'ForgeBoard imports sleepBanner and renders the strip')
     ok(JSX.includes('data-live') && JSX.includes('sleep.hint'), 'ForgeBoard marks the live strip and renders its hint (#1392)')
     ok(JSX.includes('sleepBanner(pulse, floor.pulseAge)'), 'ForgeBoard threads the pulse age into the banner — the live strip answers to wire freshness (#1406)')
+    ok(JSX.includes('data-stale') && JSX.includes('sleep.stale'), 'ForgeBoard marks and dims the stale strip (#1413)')
 }
 
 section('D. the questions digest')
@@ -574,8 +645,8 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     const D3 = Math.floor(at('03:20:00') / 1000)
     eq(sw('tick', `--last=${CHN}`, `--now=${D3}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=1 held=1',
         'three hours of silence: the gap names the window AND the stamp survives, validated (no Wake, log covers the onset); span already named today')
-    eq(sw('pulse', `--out=${ddLed}`, `--now=${D3 + 300}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30`,
-        'the live stamp leads the pulse three hours into the dark — the field v2 lost at 30 min (#1401)')
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${D3 + 300}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30 churnage=203`,
+        'the live stamp leads the pulse three hours into the dark — the field v2 lost at 30 min (#1401); v5 self-dates the churn: last sleep 3h23m ago, well past the 30-min window (#1413)')
     // pmset unreachable (PATH stripped — the capture failing IS the deep dark)
     const swNoPmset = (...a) => execFileSync(process.execPath, [cli, ...a], { encoding: 'utf8', env: { PATH: '/nonexistent-forge-path' } }).trim()
     const D5 = Math.floor(at('05:20:00') / 1000)
@@ -591,8 +662,12 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     const DW = Math.floor(at('11:30:00') / 1000)
     eq(sw('tick', `--last=${D5}`, `--now=${DW}`, `--pmset=${ddPm}`, `--out=${ddLed}`), 'recorded=0 src=tickgap churn=0 asleep=0',
         'the visible Wake ends the vigil: asleep drops off the tick report, no held token — and the last segment merges into the night, so no NEW outage count')
-    eq(sw('pulse', `--out=${ddLed}`, `--now=${DW}`), `asleep=${hm(at('00:20:00'))}-${hm(at('11:30:00'))} asleepm=670 churn=3 churnwin=30`,
-        'after the wake the pulse tells the WHOLE night — 00:20→11:30, the night that began at 00:20 (was 05:20–11:30 pre-#1406) — plus the churn')
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${DW}`), `asleep=${hm(at('00:20:00'))}-${hm(at('11:30:00'))} asleepm=670 churn=3 churnwin=30 churnage=688`,
+        'after the wake the pulse tells the WHOLE night — 00:20→11:30, the night that began at 00:20 (was 05:20–11:30 pre-#1406) — plus the churn, aged 11h28m past its window and saying so (#1413)')
+    // #1413 self-dating end-to-end: the churn token six hours after the box
+    // settled must not read as "sleeps in the last 30 min".
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${Math.floor(at('06:02:02') / 1000) + 3600 + 1}`), `asleep=${hm(at('00:20:00'))}-${hm(at('11:30:00'))} asleepm=670 churn=3 churnwin=30 churnage=420`,
+        'six hours on, the churn token carries its age (420 min ≫ the 30-min window) — the board can now tense it honestly (#1413)')
     const ddLedger = JSON.parse(fs.readFileSync(ddLed, 'utf8'))
     eq(ddLedger.asleep, null, 'the ledger stamp dies with the Wake it could not dodge')
     eq(ddLedger.windows.length, 1, 'the deep-dark night is ONE window on the ledger (#1406)')
@@ -628,6 +703,28 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
         'a 3-day log covers the horizon — logspan says so and NO logshort flag rides')
     const covBlind = swNoPmset('tick', `--last=${NOWS - 600}`, `--now=${NOWS}`, `--out=${covOk}`)
     ok(!covBlind.includes('logspan'), `a failed capture cannot measure its own reach — no span token: ${covBlind}`)
+
+    // #1413 ledger-clip end-to-end: a raw tick-gap night sits on the ledger,
+    // the named truth arrives later — the shared span must be told ONCE.
+    const clipLed = path.join(dir, 'clip.json')
+    fs.writeFileSync(clipLed, JSON.stringify({
+        windows: [{ from: at('00:20:00'), to: at('05:20:00'), min: 300, naps: 0, reason: null, src: 'tickgap' }],
+        churns: [], asleep: null, spanDay: null,
+    }))
+    const clipPm = path.join(dir, 'clip-named.txt')
+    fs.writeFileSync(clipPm, [
+        `2026-10-31 03:00:00 +0000 Sleep               \tEntering Sleep state due to 'Software Sleep': Using AC`,
+        `2026-10-31 06:00:00 +0000 Wake                \tWake from Deep Idle : due to HID Activity`,
+    ].join('\n'))
+    eq(sw('backfill', `--pmset=${clipPm}`, `--out=${clipLed}`, `--now=${Math.floor(at('07:00:00') / 1000)}`), 'backfilled=1 churn=0', 'the named morning arrives over the raw claim')
+    const clipJson = JSON.parse(fs.readFileSync(clipLed, 'utf8')).windows
+    eq(JSON.stringify([clipJson.length, clipJson[0]?.to, clipJson[0]?.min, clipJson[1]?.src]), JSON.stringify([2, at('03:00:00'), 160, 'pmset']),
+        'the ledger holds the CLIPPED raw (00:20→03:00) + the named truth — scaffolding yielded the shared span (#1413)')
+    const clipLineOut = sw('line', `--out=${clipLed}`, `--now=${Math.floor(at('12:00:00') / 1000)}`)
+    ok(clipLineOut.includes('total 5h 40m') && !clipLineOut.includes('8h'),
+        `the digest total is the union — pre-v5 this exact ledger read 8h 00m: ${clipLineOut}`)
+    eq(sw('backfill', `--pmset=${clipPm}`, `--out=${clipLed}`, `--now=${Math.floor(at('07:00:00') / 1000)}`), 'backfilled=1 churn=0', 're-backfill changes nothing (idempotent through the CLI dedupe)')
+    eq(JSON.stringify(JSON.parse(fs.readFileSync(clipLed, 'utf8')).windows.map((w) => [w.from, w.to, w.src])), JSON.stringify(clipJson.map((w) => [w.from, w.to, w.src])), 'and the ledger shape survives the second pass untouched')
 
     // a v1 ledger ({windows} only) still reads — the new fields just start empty
     const v1Led = path.join(dir, 'v1.json')
