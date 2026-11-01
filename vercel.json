@@ -91,6 +91,7 @@
     { "source": "/retrogames/apple-touch-icon-152.png", "destination": "/apple-touch-icon-152.png" },
     { "source": "/retrogames", "destination": "/index.html" },
     { "source": "/retrogames/", "destination": "/index.html" },
+    { "source": "/retrogames/:path+/", "destination": "/index.html" },
     { "source": "/retrogames/:path*", "destination": "/index.html" }
   ]
 }
