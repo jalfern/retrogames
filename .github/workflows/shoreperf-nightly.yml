@@ -1,0 +1,76 @@
+name: Shoreperf nightly (perf trend, advisory)
+
+# #1358: shoreperf used to be a `continue-on-error` job inside nightly.yml, and
+# that was not enough. When the macos-14 pool failed to provision a runner for a
+# dispatched run, the job went `cancelled` at start (0 steps) — and GitHub
+# propagates a CANCELLED job to the run conclusion even when it is advisory
+# (continue-on-error only neutralizes *failures*: `heal` ran and passed, yet the
+# runs ended `cancelled`). Green-main evidence died with it: two dispatched
+# proof-runs on 4e303c2 reset the nightly green-streak although static+smoke
+# were green. The fix is blast radius, not flags: advisory perf lives here, in
+# its own workflow, so a macOS capacity flake can cost one trend point but
+# never the verdict trail. nightly.yml now contains only verdict jobs.
+#
+# The concurrency-vs-dispatch half of #1358 was verified and ruled out: both
+# poisoned runs (41219217859, 41231552162) started full-static ~3 s after run
+# creation (nothing queued), this family has no job-level concurrency groups,
+# and the workflow-level groups use cancel-in-progress: false with no
+# overlapping runs. Mechanism = macos-14 provisioning at dispatch time;
+# scheduled runs reach the pool fine (41057899832).
+#
+# Advisory in every direction: continue-on-error keeps a perf blip a SUCCESS
+# run, and no gate reads this workflow's verdict — scripts/main-ok.sh consults
+# nightly.yml only. Proven by `npm run nightlyverdictcheck` (ci.yml, core).
+
+on:
+  schedule:
+    - cron: '15 6 * * *'   # same quiet-hours window as Nightly (#680)
+  workflow_dispatch:
+
+concurrency:
+  group: shoreperf-nightly
+  cancel-in-progress: true   # fresh numbers beat a stale queued backlog
+
+jobs:
+  shoreperf:
+    # #680: quiet-box desktop/qhd/phone numbers land nightly on a dedicated
+    # runner — all three profiles shoreperf ships, not just qhd, so bullet 1's
+    # "desktop/qhd/phone averages vs origin/main" has a quiet home and the trend
+    # covers the 60fps-target retina desktop window too, not only the qhd cap.
+    # The dev boxes all run local LLM inference, so shoreperf's guard always says
+    # CONTENDED there and the absolute fps is context, never verdict. The runner
+    # must have a real GPU: qhd is 3200x2000 and the Linux CI SwiftShader path
+    # boots WebGPU but cannot drive a single counted frame through the sim in the
+    # window (n=0, no timestamp-query) — verified 2026-10-22 on ubuntu-latest.
+    # macOS runners are quiet and Metal-backed (the known-good combo from local
+    # qhd runs), so the nightly series there is the real trend line #680 asks
+    # for. Advisory: continue-on-error so a perf blip never freezes merges.
+    continue-on-error: true
+    runs-on: macos-14
+    env:
+      # A GitHub-hosted runner is a dedicated box: no local LLM inference and no
+      # foreign headless Chrome (the two things quietscan actually screens for).
+      # Its loadavg just after checkout/npm-ci reflects Spotlight indexing of the
+      # fresh clone + the build, not GPU contention, so the loadavg heuristic lies
+      # here — this is the documented "dedicated runners" case for the escape hatch.
+      SHOREPERF_ASSUME_QUIET: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # npm >=11, see the note in ci.yml's static job
+          cache: npm
+      - run: npm ci
+      - name: Install headless Chromium (Linux only)
+        if: runner.os != 'macOS'
+        run: npx playwright-core install --with-deps chromium
+      - name: shoreperf desktop/qhd/phone
+        run: |
+          set -o pipefail
+          node scripts/shoreperf.mjs --profile desktop,qhd,phone --secs 6 2>&1 | tee /tmp/shoreperf.log
+          { echo "## shoreperf desktop/qhd/phone (#680)"; echo '```'; cat /tmp/shoreperf.log; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shoreperf
+          path: /tmp/shoreperf.log

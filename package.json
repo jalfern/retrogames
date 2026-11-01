@@ -223,6 +223,7 @@
     "recmethods": "node scripts/recmethods.mjs",
     "feedbackcheck": "node scripts/feedbackcheck.mjs",
     "nightlyheal": "node scripts/nightly-heal.mjs --selftest",
+    "nightlyverdictcheck": "node scripts/nightlyverdictcheck.mjs",
     "lint:smash": "eslint src/games/SmashTV src/components src/utils src/config src/main.jsx scripts/smashcheck.mjs scripts/smashplay.mjs scripts/lib",
     "smashcheck": "node scripts/smashcheck.mjs",
     "smashplay": "node scripts/smashplay.mjs",
