@@ -254,9 +254,9 @@ function build() {
     }
 
     // --- digger (facing right; ~40x30, rotated by the renderer) -------------
-    S.digger = []
-    for (let frame = 0; frame < 2; frame++) {
-        const [c, g] = mk(40, 30)
+    // #1390: body and boom draw separately so the dig job can swing the boom —
+    // four frames the renderer indexes by dig progress (digSwingFrame).
+    const diggerBody = (g, frame) => {
         // tracks
         g.fillStyle = PAL.track
         g.fillRect(4, 18, 28, 9)
@@ -278,25 +278,42 @@ function build() {
         g.fillRect(11, 3, 10, 5)
         g.fillStyle = PAL.glassHi
         g.fillRect(11, 3, 10, 1)
-        // boom to the right
+    }
+    const diggerBoom = (g, drop) => {
+        // boom + bucket lowered `drop` px into the pile
         g.fillStyle = PAL.yellow
-        g.fillRect(28, 10, 10, 4)
+        g.fillRect(28, 10 + drop, 10, 4)
         g.fillStyle = PAL.yellowLo
-        g.fillRect(28, 13, 10, 2)
+        g.fillRect(28, 13 + drop, 10, 2)
         // bucket at the tip
         g.fillStyle = PAL.steelLo
-        g.fillRect(35, 13, 5, 7)
+        g.fillRect(35, 13 + drop, 5, 7)
         g.fillStyle = PAL.steel
-        g.fillRect(35, 13, 5, 3)
+        g.fillRect(35, 13 + drop, 5, 3)
         g.fillStyle = PAL.ink
-        g.fillRect(30, 14, 4, 3) // dipper joint
+        g.fillRect(30, 14 + drop, 4, 3) // dipper joint
+    }
+    S.digger = []
+    for (let frame = 0; frame < 2; frame++) {
+        const [c, g] = mk(40, 30)
+        diggerBody(g, frame)
+        diggerBoom(g, 0)
         S.digger.push(c)
+    }
+    S.diggerDig = [] // 0 = raised, 3 = full bite
+    for (const drop of [0, 2, 4, 6]) {
+        const [c, g] = mk(40, 30)
+        diggerBody(g, 0)
+        diggerBoom(g, drop)
+        if (drop >= 4) { // gravel riding in the bucket on the deep frames
+            g.fillStyle = PAL.gravelHi
+            g.fillRect(35, 11 + drop, 5, 2)
+        }
+        S.diggerDig.push(c)
     }
 
     // --- dump truck (facing right; 42x26) --------------------------------------
-    S.truck = []
-    for (let frame = 0; frame < 2; frame++) {
-        const [c, g] = mk(42, 26)
+    const truckBase = (g, frame) => {
         // wheels
         g.fillStyle = PAL.track
         for (const wx of [8, 16, 30, 38]) { g.fillRect(wx - 3, 20, 6, 6) }
@@ -305,13 +322,6 @@ function build() {
         // chassis
         g.fillStyle = PAL.ink
         g.fillRect(4, 16, 36, 4)
-        // bed
-        g.fillStyle = PAL.redLo
-        g.fillRect(18, 4, 22, 12)
-        g.fillStyle = PAL.red
-        g.fillRect(18, 4, 22, 9)
-        g.fillStyle = PAL.redHi
-        g.fillRect(18, 4, 22, 2)
         // cab
         g.fillStyle = PAL.red
         g.fillRect(6, 6, 12, 10)
@@ -321,7 +331,40 @@ function build() {
         g.fillRect(7, 8, 7, 5)
         g.fillStyle = PAL.glassHi
         g.fillRect(7, 8, 7, 1)
+    }
+    const truckBed = (g, angle) => {
+        // bed, raised `angle` rad around the rear pivot (40,16) when tipping
+        g.save()
+        if (angle) { g.translate(40, 16); g.rotate(angle); g.translate(-40, -16) }
+        g.fillStyle = PAL.redLo
+        g.fillRect(18, 4, 22, 12)
+        g.fillStyle = PAL.red
+        g.fillRect(18, 4, 22, 9)
+        g.fillStyle = PAL.redHi
+        g.fillRect(18, 4, 22, 2)
+        g.restore()
+    }
+    S.truck = []
+    for (let frame = 0; frame < 2; frame++) {
+        const [c, g] = mk(42, 26)
+        truckBase(g, frame)
+        truckBed(g, 0)
         S.truck.push(c)
+    }
+    // #1390: bed raised while tipping (3 frames, rear-dump pivot at x=40);
+    // the load slides out the back on the raised frames.
+    S.truckTip = []
+    for (const [angle, spill] of [[0.18, false], [0.35, true], [0.52, true]]) {
+        const [c, g] = mk(42, 26)
+        truckBase(g, 0)
+        truckBed(g, angle)
+        if (spill) {
+            g.fillStyle = PAL.gravel
+            for (const [sx, sy, ss] of [[36, 18, 3], [33, 22, 2], [38, 23, 2]]) g.fillRect(sx, sy, ss, ss)
+            g.fillStyle = PAL.gravelHi
+            g.fillRect(35, 20, 2, 2)
+        }
+        S.truckTip.push(c)
     }
     // gravel mound that rides in the truck bed (drawn over the bed)
     S.bedLoad = []

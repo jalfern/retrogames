@@ -18,6 +18,7 @@ import {
     SHIFT_TICKS, QUOTA, MAX_STRIKES, MAX_ORDERS, HOPPER_CAP, BED_CAP, BAY_CAP,
     PILE, DIG_TICKS, DUMP_TICKS, LOAD_TICKS,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD, DOCK_SPOTS,
+    digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from '../src/games/GravelYard/engine.js'
 
 const URL = process.env.GY_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/gravel-yard`
@@ -293,6 +294,23 @@ console.log('— #1306: diesel drone cadence, radio voice ID, cents payout —')
     ok('orderDone fx carries cents = units*rate + bonus', !!done && done.cents === 2 * 30 + 40, JSON.stringify(done))
 }
 
+console.log('— #1390: boom swing + bed tip frame mappers —')
+{
+    // the renderer indexes S.diggerDig/S.truckTip through these pure mappers,
+    // so their coverage is provable in Node. Mutant: pin digSwingFrame to 0
+    // and the swing assertion goes red; pin tipSeqFrame below 2 and the tip
+    // assertion goes red.
+    const swing = []
+    for (let t = DIG_TICKS - 1; t > 0; t--) swing.push(digSwingFrame(t))
+    ok('boom swing covers 4 frames across a dig', new Set(swing).size === 4 && swing[0] === 0 && swing[swing.length - 1] === 3,
+        `n=${new Set(swing).size}`)
+    const seq = []
+    for (let age = 0; age < TIP_TICKS; age++) seq.push(tipSeqFrame(age))
+    ok('bed tip raises to frame 2 and comes back down',
+        Math.max(...seq) === 2 && seq[0] === 0 && seq[seq.length - 1] === 0 && seq.join(',') === '0,0,0,0,1,1,1,1,2,2,2,2,2,2,2,2,1,1,1,1,0,0,0,0',
+        seq.join(','))
+}
+
 console.log('— win proof (CPU crew) —')
 {
     let wins = 0
@@ -328,6 +346,9 @@ if (!process.env.GY_SKIP_BROWSER) {
         await page.waitForFunction(() => !!window.__gyTest, null, { timeout: 20000 })
         ok('boot: __gyTest answers', true)
         ok('boot: attract running', await page.evaluate(() => window.__gyTest.screen() === 'attract'))
+        // #1390: attract sim is seeded near a pay-off (not standing empty at boot)
+        const aTick = await page.evaluate(() => window.__gyTest.state().tick)
+        ok('attract sim seeded past the first pay-off (tick >= 1100)', aTick >= 1100, `tick=${aTick}`)
         const meta = await page.evaluate(() => window.__game && window.__game.meta)
         ok('contract meta id', meta && meta.id === 'gravel-yard', JSON.stringify(meta))
 
@@ -363,6 +384,66 @@ if (!process.env.GY_SKIP_BROWSER) {
 
         const png = await page.evaluate(() => window.__game.frame())
         ok('frame() returns a PNG', typeof png === 'string' && png.startsWith('data:image/png') && png.length > 4000)
+
+        // ---------- #1390 render life: boom swing, bed tip, shaker ----------
+        // dig job swings the boom through all four sprite frames
+        const boomRun = await page.evaluate(() => {
+            window.__gyTest.start(9, 1, false)
+            window.__gyTest.prime('dig')
+            const frames = []
+            window.__game.step({ a: true })
+            for (let i = 0; i < 44; i++) { window.__game.step({}); frames.push(window.__gyTest.anim().boom) }
+            return frames
+        })
+        const mid = boomRun.filter((f) => f >= 0)
+        ok('dig job swings the boom through 4 frames', new Set(mid).size === 4 && mid[0] === 0 && boomRun[boomRun.length - 1] === -1, JSON.stringify(boomRun))
+
+        // bed tip: the CPU truck tips at the dock and the bed animates through
+        // the raise cycle; bed pixels at rest vs at full raise must differ
+        const tipRun = await page.evaluate(async () => {
+            window.__gyTest.start(9, 1, false)
+            const px = () => {
+                const g = document.querySelector('canvas').getContext('2d')
+                const d = g.getImageData(410, 268, 44, 30).data
+                let h = 0
+                for (let i = 0; i < d.length; i += 4) h = (Math.imul(h, 31) + d[i] * 3 + d[i + 1] * 5 + d[i + 2] * 7) >>> 0
+                return h
+            }
+            window.__gyTest.prime('tip')
+            const hRest = px()
+            let wired = false
+            for (let i = 0; i < 120; i++) { window.__game.step({}); if (window.__gyTest.anim().tip >= 0) { wired = true; break } }
+            if (!wired) return { wired: false }
+            const up = await new Promise((res, rej) => {
+                const t0 = performance.now()
+                const iv = setInterval(() => {
+                    const a = window.__gyTest.anim() // rAF draws decrement the cycle
+                    if (a.tip === 2) { clearInterval(iv); res(a) }
+                    else if (performance.now() - t0 > 3000) { clearInterval(iv); rej(new Error('bed never reached full raise')) }
+                }, 16)
+            })
+            return { wired: true, peakTip: up.tip, hUp: px(), score: window.__gyTest.state().score }
+        })
+        ok('tip drives the bed through the raise cycle', tipRun.wired && tipRun.peakTip === 2 && tipRun.score > 0, JSON.stringify(tipRun))
+        ok('tipping bed changes drawn pixels', typeof tipRun.hUp === 'number' && tipRun.hUp !== tipRun.hRest, `${tipRun.hUp} vs ${tipRun.hRest}`)
+
+        // shaker life: stones while a batch runs, plume when it ends, smoke when jammed
+        const shaker = await page.evaluate(() => {
+            window.__gyTest.start(9, 1, false)
+            window.__gyTest.prime('batch')
+            let stones = 0, plumes = 0
+            for (let i = 0; i < 400; i++) {
+                window.__game.step({})
+                const a = window.__gyTest.anim()
+                if (a.stones) stones++
+                if (a.plumes > plumes) plumes = a.plumes
+            }
+            window.__gyTest.prime('jam')
+            return { running: stones > 0, plumes, smoke: window.__gyTest.anim().smoke }
+        })
+        ok('deck stones bounce while the screen runs', shaker.running, JSON.stringify(shaker))
+        ok('batch end spits an output plume sized to the batch', shaker.plumes >= 1, `plumes=${shaker.plumes}`)
+        ok('jam puts smoke on the stack', shaker.smoke === 1)
 
         ok('zero page errors', errors.length === 0, errors.join(' | '))
     } finally {

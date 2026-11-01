@@ -19,7 +19,7 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, BAY_CAP, cellKind,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD,
-    DOCK_SPOTS,
+    DOCK_SPOTS, digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from './engine.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, WORLD_X, WORLD_Y } from './art.js'
 import { playFx } from './audio.js'
@@ -35,6 +35,8 @@ const ATTRACT_MSGS = [
     'ANY SEAT: HUMAN, CPU OR MODEL',
 ]
 const GRADE_COLOR = { coarse: '#b09878', fines: '#e0c898' }
+const PAL_DECK_A = '#a08658' // deck stones, two gravel tints (#1390)
+const PAL_DECK_B = '#d8bc84'
 
 export default function GravelYard() {
     const canvasRef = useRef(null)
@@ -52,7 +54,7 @@ export default function GravelYard() {
     const selectRef = useRef(1)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, popCents: 0, boardShake: 0, stampT: 0, jamFlash: 0 })
+    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, popCents: 0, boardShake: 0, stampT: 0, jamFlash: 0, tipT: 0, puffs: [], plumes: [] })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -73,8 +75,20 @@ export default function GravelYard() {
     }, [])
 
     const startAttract = useCallback(() => {
-        attractRef.current = createGame(1000 + Math.floor(Math.random() * 9999), 3)
-        attractEmittersRef.current = freshEmitters()
+        const a = createGame(1000 + Math.floor(Math.random() * 9999), 3)
+        const ems = freshEmitters()
+        // #1390: seed the attract sim near a pay-off — run it to the first
+        // dump/tip/batch-end (then a beat more) so the marquee opens mid-chain
+        // instead of standing empty. Capped so boot never lags.
+        let payoff = false
+        for (let i = 0; i < 4000 && !a.done; i++) {
+            stepGame(a, ems.map((em) => em({ gs: a, tick: a.tick })))
+            const fx = drainFx(a)
+            if (!payoff && fx.some((f) => f.k === 'dump' || f.k === 'tip' || f.k === 'batchEnd')) payoff = true
+            if (payoff && a.tick >= 1200) break
+        }
+        attractRef.current = a
+        attractEmittersRef.current = ems
         setScreen('attract')
     }, [])
 
@@ -143,6 +157,12 @@ export default function GravelYard() {
             if (f.k === 'spill' || f.k === 'refuse') hud.shake = 16
             if (f.k === 'refuse') hud.boardShake = 22 // the order board rattles on a strike
             if (f.k === 'ruined') hud.shake = 40
+            // #1390 mid-game juice: dust at the bite, bed-tip cycle, chute plumes
+            if (f.k === 'digStart') hud.puffs.push({ x: f.x, y: f.y, t: 22 })
+            if (f.k === 'tip') hud.tipT = TIP_TICKS
+            if (f.k === 'batchEnd') hud.plumes.push({ c: f.c, f: f.f, t: 28 })
+            if (hud.puffs.length > 8) hud.puffs.splice(0, hud.puffs.length - 8)
+            if (hud.plumes.length > 2) hud.plumes.splice(0, hud.plumes.length - 2)
         }
 
         const keys1 = keys1Ref.current
@@ -249,7 +269,10 @@ export default function GravelYard() {
             if (!a) return
             const pads = attractEmittersRef.current.map((em) => em({ gs: a, tick: a.tick }))
             stepGame(a, pads)
-            drainFx(a)
+            // marquee gets the visual juice but stays silent (no radio/toast)
+            for (const f of drainFx(a)) {
+                if (f.k === 'digStart' || f.k === 'tip' || f.k === 'batchEnd') pumpHudRef.current(f)
+            }
             if (a.done) startAttract()
         }
 
@@ -288,6 +311,11 @@ export default function GravelYard() {
             if (hud.stampT > 0) hud.stampT--
             if (hud.shake > 0) hud.shake--
             if (hud.jamFlash > 0) hud.jamFlash--
+            if (hud.tipT > 0) hud.tipT--
+            for (const p of hud.puffs) p.t--
+            hud.puffs = hud.puffs.filter((p) => p.t > 0)
+            for (const p of hud.plumes) p.t--
+            hud.plumes = hud.plumes.filter((p) => p.t > 0)
 
             ctx.fillStyle = '#1a120c'
             ctx.fillRect(0, 0, CANVAS_W, CANVAS_H)
@@ -320,6 +348,40 @@ export default function GravelYard() {
             const plantX = WORLD_X + 7 * TILE
             const plantY = WORLD_Y + 1 * TILE + (g.plant.running && !g.plant.jammed ? Math.floor(t / 3) % 2 : 0)
             ctx.drawImage(S.plant, plantX, plantY)
+            // #1390 shaker life: stones bounce on the deck while it runs...
+            if (g.plant.running && !g.plant.jammed) {
+                for (let i = 0; i < 5; i++) {
+                    const ph = [0, 2, 3, 1, 0][Math.floor((t + i * 4) / 3) % 5]
+                    ctx.fillStyle = i % 2 ? PAL_DECK_A : PAL_DECK_B
+                    ctx.fillRect(plantX + 10 + i * 15, plantY + 3 - ph, 2, 2)
+                }
+            }
+            // ...grey smoke puffs off the stack while jammed...
+            if (g.plant.jammed) {
+                for (let k = 0; k < 3; k++) {
+                    const age = (t + k * 8) % 24
+                    ctx.globalAlpha = 0.5 - age / 60
+                    ctx.fillStyle = '#9a9a9a'
+                    ctx.beginPath(); ctx.arc(plantX + 12 + k + Math.floor(age / 4), plantY - 2 - age, 2 + age / 8, 0, Math.PI * 2); ctx.fill()
+                }
+                ctx.globalAlpha = 1
+            }
+            // ...and a discharge plume sized to the batch, coarse top / fines low
+            for (const pl of hud.plumes) {
+                const p = 1 - pl.t / 28
+                for (let i = 0; i < 8; i++) {
+                    const isC = i < pl.c && pl.c >= pl.f
+                    if (i >= Math.max(pl.c, pl.f)) break
+                    const q = Math.min(1, p * 1.4 - i * 0.07)
+                    if (q <= 0) continue
+                    const bayC = isC ? BAY.coarse : BAY.fines
+                    const [sx2, sy2] = [plantX + 90, plantY + (isC ? 26 : 42)]
+                    const [tx2, ty2] = cellPx(bayC[0], bayC[1])
+                    ctx.fillStyle = isC ? '#8d7a60' : '#c8a878'
+                    ctx.fillRect(Math.round(sx2 + (tx2 + 14 - sx2) * q),
+                        Math.round(sy2 + (ty2 + 14 - sy2) * q - Math.sin(q * Math.PI) * 10), 2, 2)
+                }
+            }
             // gate dial on the console face
             {
                 const [cx, cy] = cellPx(CONSOLE_FRONT[0], CONSOLE_FRONT[1])
@@ -371,6 +433,20 @@ export default function GravelYard() {
                 }
             }
 
+            // #1390 bite-dust: a puff bursts over the pile cell being dug
+            for (const pf of hud.puffs) {
+                const [px, py] = cellPx(pf.x, pf.y)
+                const a = pf.t / 22
+                ctx.globalAlpha = a * 0.5
+                ctx.fillStyle = '#c8a878'
+                for (let i = 0; i < 4; i++) {
+                    ctx.beginPath()
+                    ctx.arc(px + 16 + (i - 1.5) * 6 * (1.3 - a), py + 20 - (22 - pf.t) * 0.8 - (i % 2) * 4, 2 + (1 - a) * 2, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+                ctx.globalAlpha = 1
+            }
+
             // machines (sprites face right; rotate to facing)
             const ROTS = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }
             const drawMachine = (m, sprite, w, h, extra) => {
@@ -384,7 +460,8 @@ export default function GravelYard() {
                 if (extra) extra(ctx)
                 ctx.restore()
             }
-            drawMachine(g.digger, S.digger, 40, 30)
+            drawMachine(g.digger, g.digger.job && g.digger.job.kind === 'dig'
+                ? [S.diggerDig[digSwingFrame(g.digger.job.t)]] : S.digger, 40, 30)
             // bucket indicator above the digger (count, wet tint)
             {
                 const [px, py] = cellPx(g.digger.x, g.digger.y)
@@ -393,8 +470,9 @@ export default function GravelYard() {
                     for (let i = 0; i < g.digger.bucket; i++) ctx.fillRect(px + 8 + i * 6, py - 4, 5, 5)
                 }
             }
-            drawMachine(g.truck, S.truck, 42, 26, (ctx) => {
-                if (g.truck.bed > 0) {
+            const tipK = hud.tipT > 0 ? tipSeqFrame(TIP_TICKS - hud.tipT) : -1
+            drawMachine(g.truck, tipK >= 0 ? S.truckTip : S.truck, 42, 26, (ctx) => {
+                if (g.truck.bed > 0 && tipK < 1) { // load rides until the bed gets steep
                     ctx.drawImage(S.bedLoad[g.truck.bed - 1], -12, -12)
                     if (g.bedGrade === 'fines') { ctx.fillStyle = '#e0c898'; ctx.fillRect(-10, -13, 20, 2) }
                 }
@@ -447,6 +525,24 @@ export default function GravelYard() {
                 ctx.fillStyle = frac > 0.5 ? '#58d048' : frac > 0.25 ? '#f8d038' : '#f05030'
                 ctx.fillRect(ox + 2, oy + 20, Math.round(68 * frac), 5)
             })
+
+            // gate-state icon (#1390): an aperture preview of the screen's gate
+            {
+                const gx = 396, gy = 8
+                ctx.font = '6px "Press Start 2P", monospace'
+                ctx.fillStyle = '#8a7458'
+                ctx.fillText('GATE', gx, gy + 4)
+                ctx.fillStyle = '#c8b890'
+                ctx.beginPath()
+                ctx.moveTo(gx, gy + 8); ctx.lineTo(gx + 18, gy + 8); ctx.lineTo(gx + 12, gy + 18); ctx.lineTo(gx + 6, gy + 18)
+                ctx.closePath(); ctx.fill()
+                const slotW = g.plant.gate === 'wide' ? 7 : g.plant.gate === 'medium' ? 4 : 2
+                ctx.fillStyle = '#120c08'; ctx.fillRect(gx + 9 - (slotW >> 1), gy + 16, slotW, 3)
+                ctx.fillStyle = g.plant.running ? '#58d048' : '#3a281c'
+                ctx.fillRect(gx + 9 - (slotW >> 1), gy + 17, Math.max(1, slotW - 1), 1)
+                ctx.fillStyle = '#a89878'
+                ctx.fillText(g.plant.gate === 'wide' ? 'WIDE' : g.plant.gate === 'medium' ? 'MED' : 'NARO', gx + 22, gy + 18)
+            }
 
             // radio banner
             if (hud.radioT > 0 && hud.radio) {
@@ -564,6 +660,39 @@ export default function GravelYard() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                // #1390 render-animation probes + deterministic staging for gravelcheck
+                anim: () => {
+                    const g = gsRef.current
+                    if (!g) return null
+                    const hud = hudRef.current
+                    return {
+                        boom: g.digger.job && g.digger.job.kind === 'dig' ? digSwingFrame(g.digger.job.t) : -1,
+                        tip: hud.tipT > 0 ? tipSeqFrame(TIP_TICKS - hud.tipT) : -1,
+                        stones: g.plant.running && !g.plant.jammed ? 1 : 0,
+                        smoke: g.plant.jammed ? 1 : 0,
+                        plumes: hud.plumes.length,
+                        puffs: hud.puffs.length,
+                    }
+                },
+                prime: (what) => {
+                    const g = gsRef.current
+                    if (!g) return false
+                    if (what === 'tip') {
+                        g.truck.bed = 2; g.bedGrade = 'coarse'
+                        if (!g.orders.some((o) => o.grade === 'coarse')) g.orders.push({ id: 999, grade: 'coarse', units: 4, left: 1000, total: 1000 })
+                        g.truck.x = DOCK_SPOTS[0][0]; g.truck.y = DOCK_SPOTS[0][1]; g.truck.face = 'left'
+                        return true
+                    }
+                    if (what === 'batch') { g.plant.hopper = 4; g.plant.hopperWet = 0; return true }
+                    if (what === 'jam') { g.plant.jammed = true; g.plant.jamNeed = 2; return true }
+                    if (what === 'dig') {
+                        g.digger.x = 3; g.digger.y = 3; g.digger.face = 'up'
+                        const c = g.pile.find((pc) => pc.x === 3 && pc.y === 2)
+                        if (c) { c.units = Math.max(1, c.units); c.wet = false }
+                        return true
+                    }
+                    return false
+                },
             }
             mountDbg({
                 title: 'GRAVEL YARD',
