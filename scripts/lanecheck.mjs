@@ -419,8 +419,8 @@ ok(tapStudio.includes('<string>com.jalfern.tap-studio</string>') && /<string>801
     && /<string>8000<\/string>/.test(tapStudio) && tapStudio.includes('stream-studio.log')
     && tapStudio.includes('<key>KeepAlive</key>'),
     'tap-studio plist: :8011 -> :8000 -> stream-studio.log, KeepAlive')
-ok(qafa.includes('http://127.0.0.1:8011/v1/models') && qafa.includes('omlxtapstudio')
-    && qafa.includes('!= 502'),
+ok(qafa.includes('TAPPORT=8011') && qafa.includes('omlxtapstudio') && qafa.includes('!= 502')
+    && qafa.includes('http://127.0.0.1:$TAPPORT/v1/models'),
     'forge-qa.sh routes the studio session through tap :8011, fail-open (#1268)')
 ok(qafa.includes('JOB=com.jalfern.tap-studio') && qafa.includes('origin/main:scripts/$JOB.plist')
     && qafa.includes('launchctl bootstrap'),
@@ -439,7 +439,7 @@ ok(tapMini.includes('<string>com.jalfern.tap-mini</string>') && /<string>8013<\/
 ok(forge.includes('8012') && forge.includes('omlxtapb') && forge.includes('com.jalfern.tap-builderb')
     && forge.includes('origin/main:scripts/$TAPJOB.plist') && forge.includes('launchctl bootstrap'),
     'forge.sh routes slot b through its own tap :8012 and self-bootstraps the plist (#1356)')
-ok(qafa.includes('http://127.0.0.1:8013/v1/models') && qafa.includes('omlxtapmini')
+ok(qafa.includes('TAPPORT=8013') && qafa.includes('omlxtapmini')
     && qafa.includes('SRC_PROV=omlxmini') && qafa.includes('!= 502'),
     'forge-qa.sh routes the mini session through tap :8013, cloned from omlxmini, fail-open (#1356)')
 ok(watch.includes('typeset -A PANEID') && watch.includes('PANEID[$key]=$id')
