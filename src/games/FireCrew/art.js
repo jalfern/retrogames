@@ -3,7 +3,7 @@
 // darkness pass is the game's signature: the interior is smoke-black and only
 // the crew's lights (hose cone, rescue lamp, flares) and the fire itself punch
 // through — the same lightAt() laws the sim uses to decide who can SEE what.
-import { W, H, T, LOFT_Y1, LADDER_X, HYDRANT, AMBULANCE, ENGINE, STREET, WALL, OUT, FUEL, EMPTY, lightAt } from './sim.js'
+import { W, H, T, LOFT_Y1, HYDRANT, AMBULANCE, ENGINE, STREET, WALL, OUT, FUEL, EMPTY, lightAt } from './sim.js'
 
 export const VW = W * T
 export const VH = H * T
@@ -244,7 +244,7 @@ export function drawProps(ctx, g, t) {
     ctx.fillRect(ex - 1.7 * T, ey + 1.1 * T, 8, 6)
     ctx.fillRect(ex + 0.7 * T, ey + 1.1 * T, 8, 6)
     for (let k = 0; k < 3; k++) if (Math.floor(t / 20 + k) % 3) { ctx.fillStyle = '#ff3b30'; ctx.fillRect(ex - T + k * 8, ey - T - 4, 5, 3) } // beacons
-    const lx = LADDER_X * T + 8
+    const lx = g.ladderX * T + 8
     ctx.strokeStyle = '#aab4c2'
     ctx.lineWidth = 3
     ctx.beginPath(); ctx.moveTo(lx, ey - T)

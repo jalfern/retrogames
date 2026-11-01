@@ -195,6 +195,10 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'tendeep')
       - run: npm run tendeepcheck
         if: contains(fromJSON(env.KEYS), 'tendeep')
+      - run: npm run lint:firecrew
+        if: contains(fromJSON(env.KEYS), 'firecrew')
+      - run: npm run firecrewcheck
+        if: contains(fromJSON(env.KEYS), 'firecrew')
       - run: npm run builtbycheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run navcheck
