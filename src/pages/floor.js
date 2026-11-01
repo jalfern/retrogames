@@ -184,11 +184,15 @@ export const throughputLine = (samples, now = Date.now()) => {
 // defensive: a missing or malformed field returns null (no banner, no throw).
 // v2 (#1392) reads two more shapes off the same wire:
 //   asleep=true since=HH:MM  — the LIVE onset: the box never fully woke since
-//     the stamped sleep, and the warden is telling you this during a dark wake;
-//   churn=N (no usable asleep field) — a churning night: ≥N sleeps inside half
-//     an hour with ticks landing, so NOT an outage — an amber strip instead of
-//     the red one. CHURN_SLEEPS (≥3) mirrors scripts/sleepwatch.mjs: the board
-//     side must never import a backend script, the pulse token is the contract.
+//     the stamped sleep, and the warden is telling you this during a dark wake
+//     (v3 #1401 keeps this riding through the deep dark — the stamp only dies
+//     when a full Wake disproves it, capped by the 48 h ledger horizon);
+//   churn=N churnwin=W (no usable asleep field) — a churning night. The
+//     emitter owns the threshold (sleepwatch only names churn at/above it),
+//     so the board trusts presence of N instead of mirroring the count, and
+//     reads the window W off the wire instead of hardcoding the cadence. The
+//     board side must still never import a backend script — the pulse token is
+//     the whole contract.
 export const sleepBanner = (pulse) => {
     if (!pulse) return null
     if (pulse.asleep === 'true' && /^\d{2}:\d{2}$/.test(pulse.since || '')) {
@@ -210,8 +214,13 @@ export const sleepBanner = (pulse) => {
         }
     }
     const churn = Number(pulse.churn)
-    if (Number.isFinite(churn) && churn >= 3) {
-        return { text: `STUDIO CHURNING — ${churn} sleeps in the last half hour`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
+    // v3 tokens ship `churnwin` and are threshold-gated at the source, so
+    // presence is the claim. A v2-era token (no churnwin) carried the raw
+    // trailing count — interpret it with the legacy minimum until every
+    // pulse on the wire is v3.
+    if (Number.isFinite(churn) && churn >= (pulse.churnwin ? 1 : 3)) {
+        const win = Number(pulse.churnwin) || 30
+        return { text: `STUDIO CHURNING — ${churn} sleeps in the last ${win} min`, minutes: null, live: true, severe: false, hint: 'lanes crawl between dark wakes' }
     }
     return null
 }

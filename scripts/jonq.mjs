@@ -29,7 +29,7 @@ import {
     openQuestions, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
 import { computeRunway, digestText } from './lib/runway.mjs'
-import { churnLine, sleepLine } from './sleepwatch.mjs'
+import { churnLine, liveLine, sleepLine } from './sleepwatch.mjs'
 
 const REPO = process.env.JONQ_REPO || 'jalfern/retrogames'
 const OWNER = process.env.JONQ_OWNER || 'jalfern'
@@ -218,14 +218,18 @@ switch (cmd) {
         // for other machines; a missing file is just a machine that stayed up.
         // #1392 — the churn ledger rides right after: ticks landed, but a box
         // dark-waking every few minutes was effectively down too.
+        // #1401 — and the LIVE stamp rides before both: "asleep RIGHT NOW
+        // since HH:MM" is the excuse that outranks its own retrospective.
         let sleep = null
         let churn = null
+        let live = null
         try {
             const led = JSON.parse(readFileSync(process.env.FORGE_ASLEEP || '/tmp/forge/asleep.json', 'utf8'))
             sleep = sleepLine(led.windows, now)
             churn = churnLine(led.churns, now)
+            live = liveLine(led.asleep, now.getTime())
         } catch { /* no ledger: nothing to report */ }
-        console.log(digestText({ questions, runway, sleep, churn, now }))
+        console.log(digestText({ questions, runway, sleep, churn, live, now }))
         break
     }
     default:

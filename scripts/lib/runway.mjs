@@ -164,8 +164,11 @@ export function computeRunway({ issues, closedBuilder = [], closedQa = [], now =
 // explains why none of them moved.
 // #1392: the `churn` line rides right after it — same family of excuse
 // (the ticks landed, but a dark-wake-churning box shipped nothing either).
-export function digestText({ questions = [], runway = null, sleep = null, churn = null, now = new Date() }) {
+// #1401: the `live` line rides FIRST of them all — "is it sleeping RIGHT
+// NOW?" outranks "it slept earlier"; the live stamp answers it directly.
+export function digestText({ questions = [], runway = null, sleep = null, churn = null, live = null, now = new Date() }) {
     const lines = [`FORGE QUESTIONS DIGEST — ${now.toISOString().slice(0, 10)}`]
+    if (live) lines.push(live)
     if (sleep) lines.push(sleep)
     if (churn) lines.push(churn)
     if (questions.length === 0) lines.push('(no open questions)')

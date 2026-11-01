@@ -86,6 +86,11 @@ main() {
     # minutes lets these ticks land while staying effectively down — the same
     # capture now also stamps `churn=N` (≥3 sleeps inside half an hour) and
     # `asleep=true since=HH:MM` (open sleep chain, live onset) onto the pulse.
+    # v3 (#1401): the live stamp PERSISTS through the dark — a failed pmset
+    # capture or a wake-free log carries `asleep=true since` until a full Wake
+    # disproves it (log lines say `held=1` on a tick that carried rather than
+    # re-observed), the pulse window rides as `churnwin=N` so the board never
+    # mirrors the arithmetic, and the digest answers "asleep RIGHT NOW".
     # The board banner (floor.js) and the questions digest (jonq digest) read
     # the same ledger. Backfill runs ONCE (no ledger yet) so the incident that
     # motivated #1354 goes on the record honestly, from pmset history.
@@ -109,6 +114,9 @@ main() {
         # #1392: churn/onset news must reach the log even with no tick-gap to
         # record — that is precisely the night the gap path is blind to.
         [[ "$SREC" == *churn=[1-9]* || "$SREC" == *asleep=1* ]] && log "sleepwatch v2: $SREC -> ${ASLEEP:-no field}"
+        # #1401: a tick that CARRIED the stamp through silence (held=1) is the
+        # deep-dark story in the log — the field stayed true across the dark.
+        [[ "$SREC" == *held=1* ]] && log "sleepwatch v3: $SREC -> ${ASLEEP:-no field}"
     fi
 
     # ---- 1. COUNT -----------------------------------------------------
