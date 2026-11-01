@@ -133,8 +133,9 @@ export function makeRun(seed) {
         tile, cell, victims, wind,
         smoke: new Float32Array(W * H), // advected density 0..1 (#1411) — seeded, never rng
         ladder: 0, // 0..1 raised fraction
+        ladderX: LADDER_X, // mobile base column (#1424): seat 3's x while the loft line is clear
         ladderNeed: false, braceHeld: false, slipT: 0,
-        crew: [firefighter(1, 14, 18, 'hose'), firefighter(2, 16, 18, 'rescue'), firefighter(3, 13, 18, 'ladder')],
+        crew: [firefighter(1, 14, 18, 'hose'), firefighter(2, 16, 18, 'rescue'), firefighter(3, LADDER_X, 18, 'ladder')],
         flares: [], drops: [], embers: [],
         rescued: 0, lost: 0, doused: 0, score: 0,
         searchSeen: new Set(),
@@ -209,7 +210,7 @@ export function stepToward(g, x, y, tx, ty, loftOK) {
         for (const d of DIRS) {
             const nx = cx + d[0]; const ny = cy + d[1]
             if (!walkable(g, nx, ny, loftOK)) continue
-            if (inLoft(cy) !== inLoft(ny) && !(nx === LADDER_X && g.ladder > 0.9)) continue
+            if (inLoft(cy) !== inLoft(ny) && !(nx === g.ladderX && g.ladder > 0.9)) continue
             const ni = ny * W + nx
             if (dist[ni] >= 0) continue
             const h = heatAt(g, nx, ny)
@@ -399,8 +400,8 @@ function moveCrew(g, f, pad) {
     const allowed = (tx, ty) => {
         if (!walkable(g, tx, ty, loftOK)) return false
         if (inLoft(f.y) !== inLoft(ty)) {
-            // crossing the loft line only at the ladder tile, only with the stick up
-            if (tx !== LADDER_X || g.ladder < 0.9 || !loftOK) return false
+            // crossing the loft line only at the ladder column, only with the stick up
+            if (tx !== g.ladderX || g.ladder < 0.9 || !loftOK) return false
         }
         return true
     }
@@ -445,8 +446,10 @@ function crewA(g, f, pad) {
             // pressure arc (#1411): the stream reaches by tank level and loses
             // muscle along its length; near-empty is a dribble at the nozzle.
             const range = f.tank > 90 ? 4 : f.tank > 30 ? 3 : f.tank > 12 ? 2 : 1
-            const cool = (x, y, strength) => {
-                if (x < 1 || x > W - 2 || y < 0 || y > 15 || inLoft(y)) return
+            const onLoft = inLoft(f.y)
+            const cool = (x, y, strength, loftOK) => {
+                if (x < 1 || x > W - 2 || y < 0 || y > 15) return
+                if (inLoft(y) && !loftOK && !onLoft) return // a ground line never cheats the decking
                 const c = g.cell[y * W + x]
                 if (c && !c.gone && c.heat > 0) {
                     c.heat = Math.max(0, c.heat - strength)
@@ -456,15 +459,29 @@ function crewA(g, f, pad) {
             }
             for (let r = 1; r <= range; r++) {
                 const x = f.x + d[0] * r; const y = f.y + d[1] * r
-                cool(x, y, Math.max(6, 18 - 3 * r))
+                cool(x, y, Math.max(6, 18 - 3 * r), onLoft)
                 g.drops.push({ x, y, t: 8 })
             }
             // nozzle fan: full pressure sprays wide — the two cells beside the
             // first, perpendicular to the stream (d is axis-aligned)
             if (f.tank > 60) {
-                cool(f.x + d[0] + d[1], f.y + d[1] + d[0], 8)
-                cool(f.x + d[0] - d[1], f.y + d[1] - d[0], 8)
+                cool(f.x + d[0] + d[1], f.y + d[1] + d[0], 8, onLoft)
+                cool(f.x + d[0] - d[1], f.y + d[1] - d[0], 8, onLoft)
             }
+            // the ladder shaft (#1424): a raised stick is a water column. A
+            // stream crossing the base column — or the hose standing in the
+            // column aimed straight up — climbs it and soaks the loft rows
+            // above, one cell of run per loft row (the hose seat's way up).
+            const soakShaft = () => {
+                for (let k = 0; k < LOFT_Y1; k++) {
+                    cool(g.ladderX, LOFT_Y1 - k, Math.max(6, 18 - 3 * k), true)
+                    g.drops.push({ x: g.ladderX, y: LOFT_Y1 - k, t: 8 })
+                }
+            }
+            if (d[0] !== 0 && g.ladder > 0.9) {
+                for (let r = 1; r <= range; r++) if (f.x + d[0] * r === g.ladderX) { soakShaft(); break }
+            }
+            if (d[0] === 0 && d[1] < 0 && f.x === g.ladderX && g.ladder > 0.9) soakShaft()
         }
         if (hydrantNear(f)) f.tank = Math.min(100, f.tank + 1.4)
         if (pad.b && f.battery >= 30) { f.battery -= 30; g.flares.push({ x: f.x, y: f.y, t: 220 }) }
@@ -513,6 +530,38 @@ function cpuHose(g) {
     }
     if (hydrantNear(f) && f.tank < 95) return pad // wait at the hydrant
     if (f.tank < 25) { drive(stepToward(g, f.x, f.y, HYDRANT.x, HYDRANT.y, false)); return pad }
+    // the bucket brigade (#1424): with the stick up, a loft fire is the hose
+    // seat's job — climb the shaft, stand beside the flames, and spray.
+    if (g.ladder > 0.9) {
+        let fire = null; let bestD = 1e9
+        for (let i = 0; i < W * H; i++) {
+            const c = g.cell[i]
+            if (!c || (!c.burning && c.heat < 30) || c.gone) continue
+            const x = i % W; const y = (i / W) | 0
+            if (!inLoft(y)) continue
+            const d = Math.abs(f.x - x) + Math.abs(f.y - y)
+            if (d < bestD) { bestD = d; fire = { x, y } }
+        }
+        if (fire) {
+            const d = DIRS[f.face]
+            const inFront = (tx, ty) => {
+                const dx = tx - f.x; const dy = ty - f.y
+                return Math.abs(dx) + Math.abs(dy) <= 3 &&
+                    ((d[0] !== 0 && Math.sign(dx || d[0]) === d[0] && dy === 0) || (d[1] !== 0 && Math.sign(dy || d[1]) === d[1] && dx === 0))
+            }
+            if (inFront(fire.x, fire.y)) { pad.a = true; return pad }
+            // walk to the best stand-and-spray cell beside the fire, on the deck
+            let spot = null; let spotD = 1e9
+            for (const dd of DIRS) {
+                const sx = fire.x + dd[0]; const sy = fire.y + dd[1]
+                if (!walkable(g, sx, sy, true) || burningAt(g, sx, sy)) continue
+                const dd2 = Math.abs(f.x - sx) + Math.abs(f.y - sy)
+                if (dd2 < spotD) { spotD = dd2; spot = { x: sx, y: sy } }
+            }
+            if (spot) drive(stepToward(g, f.x, f.y, spot.x, spot.y, true))
+            return pad
+        }
+    }
     // nearest fire reachable on this floor
     let fire = null; let bestD = 1e9
     for (let i = 0; i < W * H; i++) {
@@ -570,7 +619,7 @@ function cpuRescue(g) {
     }
     if (!target) {
         if (loftNeed) {
-            if (g.ladder < 0.9) { drive(stepToward(g, f.x, f.y, LADDER_X, LOFT_Y1 + 1, false)); return pad }
+            if (g.ladder < 0.9) { drive(stepToward(g, f.x, f.y, g.ladderX, LOFT_Y1 + 1, false)); return pad }
             let lv = null; let lvD = 1e9
             for (const v of g.victims) {
                 if (!v.loft || v.state === 'rescued' || v.state === 'lost') continue
@@ -600,6 +649,30 @@ function cpuRescue(g) {
     return pad
 }
 
+function loftGateX(g) {
+    // the climbable loft column nearest the loft work: a victim first, else a
+    // burning loft cell. Pillar lines are no-go — the deck is WALL there, and
+    // the base must leave the gate walkable for whoever climbs.
+    let best = null; let bestD = 1e9
+    const consider = (x) => {
+        if (x < 1 || x > W - 2) return
+        if (g.tile[LOFT_Y1 * W + x] === WALL || g.tile[LOFT_Y1 * W + x] === OUT) return
+        const d = Math.abs(g.crew[1].x - x)
+        if (d < bestD) { bestD = d; best = x }
+    }
+    for (const v of g.victims) if (v.loft && v.state !== 'rescued' && v.state !== 'lost') consider(v.x)
+    if (best === null) {
+        for (let i = 0; i < W * H; i++) {
+            const c = g.cell[i]
+            if (!c || (!c.burning && c.heat < 30) || c.gone) continue
+            const y = (i / W) | 0
+            if (!inLoft(y)) continue
+            consider(i % W)
+        }
+    }
+    return best
+}
+
 function cpuLadder(g) {
     const pad = {}
     // the radio drives this seat: a human shout outranks the autopilot
@@ -608,12 +681,28 @@ function cpuLadder(g) {
         else pad.a = true // 'up' and 'brace' both hold U (raise and brace)
         return pad
     }
+    const f = g.crew[2]
     const loftNeed = g.victims.some((v) => v.loft && v.state !== 'rescued' && v.state !== 'lost')
+    let loftFire = false
+    for (let i = 0; i < W * H; i++) {
+        const c = g.cell[i]
+        if (c && c.burning && inLoft((i / W) | 0)) { loftFire = true; break }
+    }
     const someoneInLoft = g.crew.some((f) => inLoft(f.y))
-    const waitingAtBase = g.crew[1].y === LOFT_Y1 + 1 && Math.abs(g.crew[1].x - LADDER_X) <= 1 && loftNeed
-    const need = loftNeed || someoneInLoft || waitingAtBase
+    const waitingAtBase = g.crew[1].y === LOFT_Y1 + 1 && Math.abs(g.crew[1].x - g.ladderX) <= 1 && loftNeed
+    // a burning loft cell is a ladder need too: the bucket brigade (#1424)
+    const need = loftNeed || loftFire || someoneInLoft || waitingAtBase
     if (need) {
         pad.a = true // hold to raise; at full height under a gale this is the brace
+        // base walk (#1424): march the base under the loft work — the follow
+        // law in step() carries the column, and it holds while anyone is up.
+        if (!someoneInLoft) {
+            const gx = loftGateX(g)
+            if (gx !== null) {
+                if (gx < f.x) pad.left = true
+                else if (gx > f.x) pad.right = true
+            }
+        }
     } else if (g.ladder > 0) pad.b = true
     return pad
 }
@@ -653,6 +742,10 @@ export function step(g, pad, pads) {
         moveCrew(g, f, driven)
         crewA(g, f, driven)
     }
+    // the mobile ladder's follow law (#1424): seat 3's x IS the base column
+    // while the loft line is clear; the base holds while anyone is up (a base
+    // pulled out from under a climber would strand them).
+    if (!g.crew.some((f) => inLoft(f.y))) g.ladderX = g.crew[2].x
     autoCarry(g); autoDrop(g)
     for (const f of g.crew) if (f.carrying) { f.carrying.x = f.x; f.carrying.y = f.y }
     const rf = g.crew[1]
@@ -727,7 +820,7 @@ export function stateHash(g) {
     for (const f of g.crew) { mix(f.x); mix(f.y); mix(f.face); mix(f.knocks); mix((f.tank / 4) | 0) }
     for (const v of g.victims) { mix(v.x); mix(v.y); mix(v.state.length) }
     for (let i = 0; i < W * H; i += 7) mix((g.smoke[i] * 200) | 0) // coarse smoke field rides the hash
-    mix(g.ladder * 50); mix(g.wind.dir + 4); mix(g.wind.gust); mix(g.tick); mix(g.rescued); mix(g.lost)
+    mix(g.ladder * 50); mix(g.ladderX); mix(g.wind.dir + 4); mix(g.wind.gust); mix(g.tick); mix(g.rescued); mix(g.lost)
     return h >>> 0
 }
 
@@ -736,7 +829,7 @@ export function state(g) {
         tick: g.tick, score: g.score, done: g.done, win: g.win, seed: g.seed,
         players: g.sources.filter((s) => s === 'human').length,
         rescued: g.rescued, lost: g.lost, doused: g.doused,
-        wind: { dir: g.wind.dir, gust: g.wind.gust }, ladder: Math.round(g.ladder * 100) / 100,
+        wind: { dir: g.wind.dir, gust: g.wind.gust }, ladder: Math.round(g.ladder * 100) / 100, ladderX: g.ladderX,
         sweep: g.sweep ? g.sweep.side : null,
         tank: Math.round(g.crew[0].tank), battery: Math.round(g.crew[0].battery),
         hash: stateHash(g),
