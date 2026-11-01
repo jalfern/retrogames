@@ -19,7 +19,7 @@ import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRa
 import { parseRadio } from './voiceradio.js'
 import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
-import { VW, VH, drawBackdrop, drawCrew, drawVictim, drawFire, drawFx, drawDarkness, drawProps, drawHud } from './art.js'
+import { VW, VH, drawBackdrop, drawCrew, drawVictim, drawFire, drawFx, drawSmoke, drawDarkness, drawProps, drawHud } from './art.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -313,6 +313,7 @@ export default function FireCrew() {
             drawVictim2(g, sim)
             for (const f of sim.crew) drawCrew(g, f, t)
             drawFx(g, sim, t)
+            drawSmoke(g, sim)
             drawDarkness(g, sim)
             drawHud(g, sim, CLOCK)
             if (screenRef.current === 'attract') {

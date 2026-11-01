@@ -182,6 +182,27 @@ export function drawFx(ctx, g, t) {
     }
 }
 
+// --- smoke: the wind, drawn (#1411) -------------------------------------------
+// Tile haze from the sim's advected field, jittered per frame so the plume
+// reads as moving even between drift ticks. Sits under the darkness pass so
+// lights still punch through it; fire glow (drawn last) bleeds over both.
+
+export function drawSmoke(ctx, g) {
+    const t = (g.tick >> 2) & 1023
+    for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < W; x++) {
+            const s = g.smoke[y * W + x]
+            if (s <= 0.04) continue
+            const jx = ((hash(x, y, t) - 0.5) * 6) | 0
+            const jy = ((hash(y, x, t ^ 0x5a) - 0.5) * 6) | 0
+            ctx.globalAlpha = Math.min(0.5, s * 0.48)
+            ctx.fillStyle = s > 0.55 ? '#8f8883' : '#6e6a66'
+            ctx.fillRect(x * T + jx, y * T + jy, T, T)
+        }
+    }
+    ctx.globalAlpha = 1
+}
+
 // --- darkness: the information split, drawn ------------------------------------
 
 export function drawDarkness(ctx, g) {
