@@ -12,14 +12,15 @@
 //      reload, hashes agree again for the rest of the shift.
 // Plus: wire sanity (every message fits the relay's 512B budget and the room
 // rate window with four members) and drop-grace (a guest leaving mid-shift
-// leaves the host cooking on with CPUs).
+// leaves the host cooking on with CPUs) and the latency ping (#1416 gap 3:
+// echo RTT is honest through simulated relay legs and never perturbs lockstep).
 //
 // npm run soslinkcheck — no browser, no network, deterministic.
 
 import { newRoom, join, leave, relay, rosterOf } from '../relay/core.js'
 import { createLobby } from '../src/utils/lobby.js'
 import { createGame, stepGame, hashState, snapshotGame, restoreGame, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
-import { createSosSync, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE } from '../src/games/ShortOrderShout/net.js'
+import { createSosSync, createRttTracker, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE, RTT_STALE_MS } from '../src/games/ShortOrderShout/net.js'
 
 let pass = 0, fail = 0
 const ok = (c, msg, extra = '') => { if (c) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg} ${extra}`) } }
@@ -51,7 +52,7 @@ Date.now = () => vnow
 // ---- in-memory relay (relay/core.js rules, zero sockets) ----------------------
 function makeMemRelay() {
     const rooms = new Map()
-    const hub = { maxBytes: 0, oversize: 0, refused: 0 }
+    const hub = { maxBytes: 0, oversize: 0, refused: 0, latMs: 0 } // latMs: simulated one-way relay latency (#1416 gap 3)
     hub.connect = (code, cap, id) => {
         let r = rooms.get(code)
         if (!r) { r = { core: newRoom(code, cap || 2), socks: new Map() }; rooms.set(code, r) }
@@ -68,10 +69,10 @@ function makeMemRelay() {
                 out.tx = (out.tx || 0) + 1
                 for (const peerId of res.to) {
                     const peer = r.socks.get(peerId)
-                    if (peer) peer.deliver(str)
+                    if (peer) peer.deliver(str, hub.latMs ? vnow + hub.latMs : 0)
                 }
             },
-            deliver(str) { inbox.push(str) },
+            deliver(str, due = 0) { inbox.push({ s: str, d: due }) },
             onMessage(cb) { out.cb = cb },
             onClose() { /* sockets do not drop in memory */ },
             close() {
@@ -87,7 +88,7 @@ function makeMemRelay() {
                 if (lr.empty) rooms.delete(code)
             },
             pump() {
-                while (inbox.length) { const s = inbox.shift(); if (out.cb) out.cb(s) }
+                while (inbox.length && inbox[0].d <= vnow) { const { s } = inbox.shift(); if (out.cb) out.cb(s) }
             },
         }
         r.socks.set(id, out)
@@ -133,8 +134,11 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         const em = ep.emitters[seat]
         return em && ep.gs ? em({ gs: ep.gs, tick: ep.gs.tick }) : {}
     }
+    // #1416 gap 3 mirror: the same echo-RTT tracker the browser wires, on the
+    // harness virtual clock (Date.now is shimmed to vnow at module top).
+    ep.rtt = createRttTracker({ mySlot: () => (ep.lobby ? ep.lobby.room.yourSlot : -1) })
     ep.sync = createSosSync({
-        send: (t, p) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send(t, p) },
+        send: (t, p) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send(t, ep.rtt.decorate(t, p)) },
         mySeats: [],
         watchSeats: [],
     })
@@ -150,8 +154,9 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         onLeave: () => ep.ownersChanged(),
         onStart: (m) => ep.startMatch(m),
         on: {
-            pad: (m) => { ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
+            pad: (m) => { ep.rtt.onRecv(m); ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
             hs: (m) => {
+                ep.rtt.onRecv(m)
                 const r = ep.sync.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
                 if (r && r.desync !== undefined) ep.onDesync(r)
             },
@@ -194,6 +199,7 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         }
         ep.sync.reset(0)
         ep.sync.snapInbox.reset()
+        ep.rtt.reset()
         ep.mySeats = seatsOf(ep.lobby.room.yourSlot, ep.partner)
         ep.sync.mySeats = ep.mySeats.slice()
         ep.watch = (ep.slots || [0]).slice()
@@ -435,6 +441,57 @@ console.log('# walkaway takeover: demote is once-only, stall-free and un-poisona
     ok(padMask(s3.assemble(7, { 1: 3 })[1]) === 3, 'after demote the CPU mask drives the seat')
     s3.gotPad({ k: 8, mm: { 1: 16 } }) // a straggler batch from the departed friend
     ok(padMask(s3.assemble(8, { 1: 3 })[1]) === 3, 'a straggler pad post-demote is ignored (remote buffer dropped)')
+}
+
+// ================= 7. LATENCY PING (#1416 gap 3) ============================
+console.log('# latency ping: echo RTT is honest, skew-proof, passthrough-clean, and decays on silence')
+{
+    // Two boxes whose clocks are 15 minutes apart: only your OWN clock ever
+    // echoes back, so both pips must still read the true round trip.
+    let t = 0
+    const OFF = 899000
+    const A = createRttTracker({ mySlot: () => 0, now: () => t })
+    const B = createRttTracker({ mySlot: () => 1, now: () => t + OFF })
+    const LEG = 45 // simulated one-way relay leg, ms
+    for (let i = 0; i < 40; i++) {
+        t += 17; const pa = A.decorate('pad', { k: i, mm: { 0: [1, 2] } })
+        t += LEG; B.onRecv(Object.assign({ s: 0 }, pa))
+        t += 17; const pb = B.decorate('pad', { k: i, mm: { 1: [4, 8] } })
+        t += LEG; A.onRecv(Object.assign({ s: 1 }, pb))
+    }
+    ok(A.pips()[1] >= 100 && A.pips()[1] <= 114, `echo RTT reads honest: 45ms legs => ~107ms (got ${A.pips()[1]})`)
+    ok(B.pips()[0] >= 100 && B.pips()[0] <= 114, `symmetric despite a ${OFF}ms clock skew (got ${B.pips()[0]}) — only your own clock returns`)
+    const req = { e: 'req' }
+    ok(A.decorate('res', req) === req && !('c' in req), 'res payloads pass through untouched (snapshot budget invariant)')
+    const p0 = { k: 1, mm: { 0: [0] } }
+    const q = A.decorate('pad', p0)
+    ok(q !== p0 && typeof q.c === 'number' && Array.isArray(q.a), 'pad payload gains c+a without mutating the caller object')
+    t += RTT_STALE_MS + 1
+    ok(A.pips()[1] === undefined, `a silent friend's pip goes out after ${RTT_STALE_MS}ms`)
+}
+{
+    // Wire proof: a whole shift through a relay simulating 45ms one-way legs.
+    const rec = recordRun(777, 2)
+    const hub = makeMemRelay()
+    hub.latMs = 45
+    const host = makeEndpoint({ id: 'h', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: true, stream: rec.stream })
+    const guest = makeEndpoint({ id: 'g', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: false, stream: rec.stream })
+    const advance = (n) => { for (let i = 0; i < n; i++) { vnow += 17; host.pumpWire(); guest.pumpWire() } }
+    host.lobby.open()
+    advance(8)
+    guest.lobby.join(host.lobby.room.code)
+    advance(8)
+    ok(!!host.lobby.room.code && guest.lobby.room.yourSlot === 1, `lobby handshake survives ${hub.latMs}ms legs (code ${host.lobby.room.code})`)
+    host.lobby.start({ seed: 777, partner: false })
+    advance(8)
+    ok(host.playing && guest.playing, 'go starts the shift on both boxes over a laggy link')
+    const n = runTogether([host, guest], 12000, (eps) => eps[0].gs.done && eps[1].gs.done)
+    ok(n >= 0, `shift ran to the whistle at ${hub.latMs}ms legs (${n} frames)`)
+    ok(hashState(host.gs) === hashState(rec.gs) && host.gs.score === rec.gs.score, 'latency does not perturb lockstep: score and final hash identical to the local reference run')
+    ok(host.sync.stats().maxStallRun <= 12 && guest.sync.stats().maxStallRun <= 12, `a 45ms leg stays inside the 10-tick pad lead (max stalls ${host.sync.stats().maxStallRun}/${guest.sync.stats().maxStallRun})`)
+    ok(host.rtt.pips()[1] >= 85 && host.rtt.pips()[1] <= 145, `host's pip for the guest reads ${host.rtt.pips()[1]}ms (truth: 2x45 + answer delay)`)
+    ok(guest.rtt.pips()[0] >= 85 && guest.rtt.pips()[0] <= 145, `guest's pip for the host reads ${guest.rtt.pips()[0]}ms`)
+    ok(hub.oversize === 0 && hub.maxBytes <= 512, `ping fields keep every message inside the relay guards (max ${hub.maxBytes}B)`)
 }
 
 console.log(`\nsoslinkcheck: ${pass} passed, ${fail} failed`)

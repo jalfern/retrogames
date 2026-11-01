@@ -21,7 +21,7 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
-import { createSosSync, packSnap, padMask, stallNotice, DROP_GRACE } from './net.js'
+import { createSosSync, createRttTracker, packSnap, padMask, stallNotice, DROP_GRACE } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
 import { playFx, dinerBar, resetDiner, seatDropFx } from './audio.js'
 
@@ -237,9 +237,12 @@ export default function ShortOrderShout() {
             humans: [], mySeats: [], state: null, desyncFrozen: false, dropped: [],
         }
         net.sync = createSosSync({
-            send: (t, p) => { if (net.room) net.room.send(t, p) },
+            send: (t, p) => { if (net.room) net.room.send(t, net.rtt.decorate(t, p)) },
             mySeats: [], watchSeats: [],
         })
+        // latency ping (#1416 gap 3): HUD-only echo RTT riding pad/hs — the
+        // sim never reads it, so the sampling law and hashes are untouched.
+        net.rtt = createRttTracker({ mySlot: () => (net.room ? net.room.yourSlot : -1) })
         const pushNetUi = () => setNetUi(net.active && net.state ? { ...net.state } : null)
 
         const netToast = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 110 }
@@ -269,6 +272,7 @@ export default function ShortOrderShout() {
             net.sync.mySeats = net.mySeats.slice()
             net.sync.watchSeats = net.humans.slice()
             net.sync.reset(0)
+            net.rtt.reset()
             const hud = hudRef.current
             hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null
             net.dropped = []
@@ -302,8 +306,8 @@ export default function ShortOrderShout() {
                 onLeave: () => pushNetUi(),
                 onJoin: () => pushNetUi(),
                 on: {
-                    pad: (mm) => net.sync.gotPad(mm),
-                    hs: (mm) => { const r = net.sync.gotHash(mm.k | 0, mm.h >>> 0, mm.s | 0); if (r && r.desync !== undefined) netDesync() },
+                    pad: (mm) => { net.rtt.onRecv(mm); net.sync.gotPad(mm) },
+                    hs: (mm) => { net.rtt.onRecv(mm); const r = net.sync.gotHash(mm.k | 0, mm.h >>> 0, mm.s | 0); if (r && r.desync !== undefined) netDesync() },
                     res: (mm) => {
                         if (mm.e === 'req') { if (net.role === 'host') hostSnap() }
                         else if (mm.e === 'snp') {
@@ -728,6 +732,19 @@ export default function ShortOrderShout() {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : df && df.seat === i && df.t > 0 ? ' CPU!' : ' CPU'}`).join(' ')
                 if (df && df.t > 0 && Math.floor(df.t / 6) % 2) ctx.fillStyle = '#ffd23f'
                 if (net.room && net.room.code) ctx.fillText(`ROOM ${net.room.code}${net.sync.stats().stallRun > 8 ? ' SYNC...' : ''}`, 150, CANVAS_H - 3)
+                // latency pips (#1416 gap 3): one order-light per remote human,
+                // lit green/amber/red by honest echo RTT, dim until the link
+                // answers (or goes quiet past RTT_STALE_MS).
+                const pips = net.rtt.pips()
+                const remote = net.humans.filter((i) => i !== ownSeat && i !== net.partnerSeat)
+                remote.forEach((seat, i) => {
+                    const px = CANVAS_W - 8 - (remote.length - i) * 20
+                    ctx.fillStyle = '#5a4a5a'
+                    ctx.fillText(`P${seat + 1}`, px, CANVAS_H - 3)
+                    const ms = pips[seat]
+                    ctx.fillStyle = ms === undefined ? '#4a3a4a' : net.rtt.color(ms)
+                    ctx.fillRect(px + 14, CANVAS_H - 8, 4, 5)
+                })
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
                 ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
@@ -854,7 +871,7 @@ export default function ShortOrderShout() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
-                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats() } : null),
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips() } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',
