@@ -20,6 +20,7 @@ import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
     stageAt, distAhead, slopeAt, gearOf, mulberry32,
     ROAD_HALF, SHOULDER, FOG_RANGE, VMAX, STAGE_L,
+    WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
 
@@ -89,9 +90,18 @@ export default function RallyCoDriver() {
         const setScreenBoth = (s) => { screenRef.cur = s; setScreen(s) }
 
         let seedRef = { cur: 1 }
-        let attractSeed = 0x5eed
-        const play = { g: createSim(seedRef.cur, 2) }
-        const attract = { g: createSim(attractSeed, 2) }
+        // Stage variety (#1407): the player picks a curated stage (seed) and a
+        // weather preset from the attract (R cycles the stage, T the weather).
+        // A shared URL can land on a named stage in the rain: ?stage=PINE&wx=rain
+        const qs = new URLSearchParams(location.search)
+        let wxIdx = WEATHER_ORDER.indexOf(qs.get('wx'))
+        if (wxIdx < 0) wxIdx = 0
+        let stageIdx = CURATED.findIndex((c) => c.name.toLowerCase() === String(qs.get('stage') || '').toLowerCase())
+        if (stageIdx < 0) stageIdx = 0
+        const selectedWeather = () => WEATHER_ORDER[wxIdx]
+        const selectedSeed = () => CURATED[stageIdx].seed
+        const play = { g: createSim(selectedSeed(), 2, selectedWeather()) }
+        const attract = { g: createSim(selectedSeed(), 2, selectedWeather()) }
         const best = { t: null }
         const hintUntil = { t: 0 }
 
@@ -99,6 +109,7 @@ export default function RallyCoDriver() {
         const cd = { t: 0 } // 3-2-1-GO in sim ticks (4 s); reset()/contract skip it
         const banner = { until: 0, main: '', sub: '' } // lap-line banner + split
         const spray = [] // gravel particles, screen space { x, y, vx, vy, life }
+        const rainDrops = [] // rain streaks, screen space (the rain preset, #1407)
         const fxRng = mulberry32(0xb10cf1e5) // screen fx only — never the sim's rng
         let crestArmed = true
 
@@ -110,7 +121,8 @@ export default function RallyCoDriver() {
         const pushVoice = () => setVoiceUi(voice.on ? { on: true, said: voice.said, ok: voice.ok, label: voice.label } : null)
 
         const startRace = () => {
-            play.g = createSim(seedRef.cur, 2)
+            seedRef.cur = selectedSeed()
+            play.g = createSim(seedRef.cur, 2, selectedWeather())
             play.g.co.kind = 'cpu'
             voice.said = ''; voice.ok = false; voice.label = ''
             pushVoice()
@@ -180,8 +192,21 @@ export default function RallyCoDriver() {
                 return
             }
             if (pausedRef.current) return
-            if (screenRef.cur === 'attract') { if (down) startRace(); return }
-            if (screenRef.cur === 'over') { if (down && (code === 'Space' || code === 'Enter')) startRace(); return }
+            if (screenRef.cur === 'attract') {
+                if (down) {
+                    // R cycles the curated stage, T the weather preset; any other
+                    // key starts the race on the current selection
+                    if (code === 'KeyR') { stageIdx = (stageIdx + 1) % CURATED.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
+                    if (code === 'KeyT') { wxIdx = (wxIdx + 1) % WEATHER_ORDER.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
+                    startRace()
+                }
+                return
+            }
+            if (screenRef.cur === 'over') {
+                if (down && (code === 'Space' || code === 'Enter')) { startRace(); return }
+                if (down && code === 'KeyB') { setScreenBoth('attract'); attract.g = createSim(selectedSeed(), 2, selectedWeather()); voiceStop(); return }
+                return
+            }
             // play
             if (code === 'KeyC' && down) {
                 if (voice.on) voiceStop()
@@ -256,8 +281,9 @@ export default function RallyCoDriver() {
                 const g = attract.g
                 tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
                 if (g.done) {
-                    attractSeed = (attractSeed * 1103515245 + 12345) & 0x7fffffff
-                    attract.g = createSim(attractSeed, 2)
+                    // loop the selected stage + weather (the attract is a preview
+                    // of exactly what the player will start)
+                    attract.g = createSim(selectedSeed(), 2, selectedWeather())
                 }
                 return
             }
@@ -288,6 +314,8 @@ export default function RallyCoDriver() {
             }
             if (g.car.off && !offWas) audioController.playNoise(0.12, 0.03)
             offWas = g.car.off
+            // rain: a soft near-continuous hiss under the engine (preset #1407)
+            if (g.weather === 'rain' && g.tick % 18 === 0) audioController.playNoise(0.15, 0.016)
             tickSim(g, [driverPad(), coPad(g)])
             juice(g)
             // gravel spray: roost off the rear wheels while on the shoulder
@@ -628,14 +656,39 @@ export default function RallyCoDriver() {
                 ctx.fillRect(p.x - 1, p.y - 1, 2, 2)
             }
             ctx.globalAlpha = 1
+
+            // weather (preset #1407): rain = slanted streaks; mist = a cold
+            // wash over the frame (the shortened fog wall does the depth work)
+            if (g.weather === 'rain' && !LITE) {
+                if (rainDrops.length === 0) {
+                    for (let i = 0; i < 42; i++) {
+                        rainDrops.push({ x: fxRng() * W, y: fxRng() * H, len: 4 + fxRng() * 6, spd: 7 + fxRng() * 6 })
+                    }
+                }
+                ctx.strokeStyle = '#96aecd'
+                ctx.lineWidth = 1
+                for (const d of rainDrops) {
+                    d.y += d.spd; d.x -= d.spd * 0.35
+                    if (d.y > H) { d.y = -d.len; d.x = fxRng() * W }
+                    if (d.x < -8) { d.x = W + 4; d.y = fxRng() * H }
+                    ctx.globalAlpha = 0.26
+                    ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x + d.len * 0.35, d.y - d.len); ctx.stroke()
+                }
+                ctx.globalAlpha = 1
+            }
+            if (g.weather === 'mist') {
+                ctx.fillStyle = 'rgba(120,140,175,0.10)'
+                ctx.fillRect(0, 0, W, H)
+            }
         }
 
         // ---- HUD ---------------------------------------------------------------
         const drawHud = (g) => {
             const st = state(g)
             // pace card: the ONLY thing the driver knows about corners
+            const cardH = 14 + Math.min(4, g.card.length) * 13
             ctx.fillStyle = 'rgba(4,7,13,0.72)'
-            ctx.fillRect(6, 6, 118, 14 + Math.min(4, g.card.length) * 13)
+            ctx.fillRect(6, 6, 118, cardH + 9)
             ctx.font = 'bold 8px monospace'
             ctx.fillStyle = '#8b93a3'
             ctx.textAlign = 'left'
@@ -656,6 +709,30 @@ export default function RallyCoDriver() {
                 if (n.via === 'voice') { ctx.fillStyle = '#7ee0a3'; ctx.fillText('♪', 96, 28 + i * 13) }
             })
             ctx.globalAlpha = 1
+            // lap-progress strip (#1407): the corners already driven, colored by
+            // dir; the rest stay dim — the strip shows progress, never what's ahead
+            const prog = st.progress
+            if (prog && prog.total > 0) {
+                const tickW = 3, gap = 1
+                const stripY = 6 + cardH + 3
+                for (let i = 0; i < prog.total; i++) {
+                    if (i < prog.done.length) {
+                        const d = prog.done[i].dir
+                        ctx.fillStyle = d < 0 ? '#7ec8ff' : '#ffd27e'
+                    } else {
+                        ctx.fillStyle = '#262c3a'
+                    }
+                    ctx.fillRect(12 + i * (tickW + gap), stripY, tickW, 4)
+                }
+            }
+            // stage + weather chip (#1407): the player can always see what they're in
+            {
+                const stName = (CURATED.find((c) => c.seed === g.seed) || {}).name || `SEED ${g.seed}`
+                ctx.textAlign = 'center'
+                ctx.font = 'bold 9px monospace'
+                ctx.fillStyle = g.weather === 'rain' ? '#7ec8ff' : g.weather === 'mist' ? '#a9b8d8' : '#8b93a3'
+                ctx.fillText(`${stName} · ${g.weather.toUpperCase()}`, W / 2, 15)
+            }
             // lap + time
             ctx.textAlign = 'right'
             ctx.font = 'bold 10px monospace'
@@ -737,11 +814,18 @@ export default function RallyCoDriver() {
             ctx.font = 'bold 10px monospace'
             ctx.fillStyle = '#7ec8ff'
             ctx.fillText('AN ORIGINAL NIGHT RALLY · 2 SEATS · 1 PAIR OF EARS', W / 2, 116)
+            // the selection: what you see is what you start (#1407 stage variety)
+            ctx.font = 'bold 13px monospace'
+            ctx.fillStyle = '#ffd27e'
+            ctx.fillText(`STAGE ${CURATED[stageIdx].name}  ·  ${WEATHER_ORDER[wxIdx].toUpperCase()}`, W / 2, 140)
+            ctx.font = '9px monospace'
+            ctx.fillStyle = '#8b93a3'
+            ctx.fillText('R: STAGE    T: WEATHER', W / 2, 154)
             // one message at a time (ART rule), cycling
             const msg = ATTRACT_MSGS[Math.floor(performance.now() / 2600) % ATTRACT_MSGS.length]
             ctx.font = 'bold 11px monospace'
             ctx.fillStyle = '#ffd27e'
-            ctx.fillText(msg, W / 2, 168)
+            ctx.fillText(msg, W / 2, 178)
             ctx.font = '10px monospace'
             ctx.fillStyle = 'rgba(220,216,204,0.8)'
             ctx.fillText('PRESS ANY KEY · TAP TO START', W / 2, 208)
@@ -772,7 +856,7 @@ export default function RallyCoDriver() {
             ctx.fillText(`OFF-TRACK ${Math.round(s.offTicks / 60)}s`, W / 2, 166)
             ctx.font = '10px monospace'
             ctx.fillStyle = 'rgba(220,216,204,0.8)'
-            ctx.fillText('SPACE TO RUN IT AGAIN', W / 2, 204)
+            ctx.fillText('SPACE: AGAIN · B: STAGE SELECT', W / 2, 204)
             ctx.textAlign = 'left'
         }
 
@@ -825,7 +909,7 @@ export default function RallyCoDriver() {
             sources: () => [{ kind: 'model' }, { kind: play.g.co.kind }],
             reset: (seed, players = 2) => {
                 seedRef.cur = ((seed ?? 1) >>> 0) % 997 || 1
-                play.g = createSim(seedRef.cur, players)
+                play.g = createSim(seedRef.cur, players, selectedWeather())
                 play.g.co.kind = players >= 2 ? 'cpu' : 'off'
                 voiceStop()
                 keys.up = keys.down = keys.left = keys.right = keys.a = false
@@ -849,6 +933,7 @@ export default function RallyCoDriver() {
             screen: () => screenRef.cur,
             state: () => state(play.g),
             hash: () => stateHash(play.g),
+            weather: () => play.g.weather,
             gs: () => play.g,
             start: () => startRace(),
             // headless voice: the same path speechListen feeds (#1287's law —

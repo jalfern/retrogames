@@ -25,6 +25,25 @@ export const OFF_DRAG = 0.965
 export const OFF_CAP = 2.5
 export const STEER = 0.078
 export const LAPS = 2
+
+// Stage variety (#1407): curated seeds (every one rallycheck-proven to have
+// >= 10 corners and to be CPU-winnable) and weather presets. Weather scales
+// two sim laws — the fog wall (fog multiplier on FOG_RANGE, fed to
+// visibleAhead) and grip (a multiplier on the DRIFT_K centrifugal term).
+// It changes HOW the same ribbon drives, never the ribbon itself.
+export const WEATHERS = {
+    clear: { fog: 1.0, grip: 1.0 },
+    mist: { fog: 0.62, grip: 1.0 },
+    rain: { fog: 0.8, grip: 1.22 },
+}
+export const WEATHER_ORDER = ['clear', 'mist', 'rain']
+export const CURATED = [
+    { seed: 1, name: 'LAKE' },
+    { seed: 7, name: 'PINE' },
+    { seed: 11, name: 'TARN' },
+    { seed: 23, name: 'MIRE' },
+    { seed: 42, name: 'FELL' },
+]
 // DRIFT_K — the centrifugal pull of a curve: lat += v·sin(align) − v²·κ·K.
 // This is what makes corners REAL: a curve of curvature κ flings the car
 // outward, and the driver must counter-steer (and brake for severity) to
@@ -42,7 +61,12 @@ export function gearOf(v) {
     return { gear: i, frac: Math.max(0, Math.min(1, (v - lo) / (hi - lo))) }
 }
 
-export function createSim(seed = 1, players = 2) {
+// createSim(seed, players, weather) — weather is a preset key of WEATHERS
+// (default 'clear'); an unknown key degrades to clear rather than throwing,
+// so a stale shell state can never take the sim down. Weather changes NO
+// rng draws: the stage geometry is byte-identical across presets.
+export function createSim(seed = 1, players = 2, weather = 'clear') {
+    const w = WEATHERS[weather] || WEATHERS.clear
     const stage = makeStage(seed)
     const rng = mulberry32((seed ^ 0x9e3779b9) | 0)
     // the co-driver's bookkeeping is per-corner, independent of laps: called
@@ -60,6 +84,8 @@ export function createSim(seed = 1, players = 2) {
         seed,
         stage,
         rng,
+        weather: WEATHERS[weather] ? weather : 'clear',
+        w,
         tick: 0,
         done: false,
         win: false,
@@ -75,7 +101,7 @@ export function createSim(seed = 1, players = 2) {
         vis: 0,
         events: [], // { t, kind, ... } for juice + juiceaudit
     }
-    gs.vis = visibleAhead(stage, 0)
+    gs.vis = visibleAhead(stage, 0, FOG_RANGE * w.fog)
     return gs
 }
 
@@ -183,7 +209,9 @@ export function tickSim(gs, pads) {
 
     const ds = car.v * Math.cos(car.align)
     const dlat = car.v * Math.sin(car.align)
-    const drift = car.v * car.v * kappaAt(st, car.s) * DRIFT_K
+    // rain loosens the grip law (grip > 1 flings the car wider in a curve);
+    // a preset never removes grip, it only takes some of it away
+    const drift = car.v * car.v * kappaAt(st, car.s) * DRIFT_K * gs.w.grip
     car.prevS = car.s
     car.s = (car.s + ds) % st.L
     if (car.s < 0) car.s += st.L
@@ -222,8 +250,8 @@ export function tickSim(gs, pads) {
         // reset here; resolvePassed cleared each corner's stamp on the pass
     }
 
-    // ---- visibility (crest honesty) ---------------------------------------
-    gs.vis = visibleAhead(st, car.s)
+    // ---- visibility (crest honesty; the fog wall shortens in weather) --------
+    gs.vis = visibleAhead(st, car.s, FOG_RANGE * gs.w.fog)
 
     // card aging: entries whose corner is behind the car fall off
     gs.card = gs.card.filter((n) => {
@@ -231,6 +259,19 @@ export function tickSim(gs, pads) {
         return distAhead(st, car.s, n.atS) > 0
     })
     return gs
+}
+
+// lapProgress(gs) → { total, done } — the NOTES-card lap-progress strip.
+// `total` is the stage's corner count; `done` lists, in track order, the
+// corners the car has ALREADY PASSED this lap (each with the true dir/sev).
+// The no-leak law: a corner enters `done` only once it is at or behind the
+// car (distAhead(car → corner) === 0), so the strip can never show the shape
+// of what is ahead — only how much of this lap is done. rallycheck pins it.
+export function lapProgress(gs) {
+    const st = gs.stage
+    const done = st.corners.filter((c) => c.s <= gs.car.s + 1e-9)
+        .map((c) => ({ dir: c.dir, sev: c.sev }))
+    return { total: st.corners.length, done }
 }
 
 // stateHash — the determinism digest (quantized, stable across platforms).
@@ -263,11 +304,13 @@ export function state(gs) {
         win: gs.win,
         players: gs.co.kind === 'off' ? 1 : 2,
         seed: gs.seed,
+        weather: gs.weather,
         laps: gs.lapsDone,
         LAPS: gs.LAPS,
         speed: Math.round(c.v * 100) / 100,
         off: c.off,
         vis: Math.round(gs.vis),
+        progress: lapProgress(gs),
         card: gs.card.map((n) => ({
             label: callLabel({ dir: n.dir, sev: n.sev }),
             d: n.atS == null ? null : Math.round(distAhead(gs.stage, c.s, n.atS)),
