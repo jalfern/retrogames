@@ -164,6 +164,123 @@ await wait(120)
 const h2 = await page.evaluate((sd) => { window.__sweepTest.start(0, sd); return window.__sweepTest.hash() }, seed)
 r.check('same seed -> same board', h1 === h2 && h1 !== 0, `hash ${h1} vs ${h2}`)
 
+console.log('\nMOUSE FIRST-RUN — #1353: right-click flags, the menu dies, pads say DIG/FLAG, the first dig teaches the mouse')
+await page.goto(URL, { waitUntil: 'load' })
+await page.waitForFunction(() => !!window.__sweepTest, null, { timeout: 15000 })
+await page.evaluate(() => {
+    window.__cm = null
+    window.addEventListener('contextmenu', (e) => { window.__cm = e.defaultPrevented })
+})
+let mb = await page.evaluate(() => {
+    const r = document.querySelector('canvas').getBoundingClientRect()
+    return { x: r.left, y: r.top, w: r.width, h: r.height }
+})
+// All-mouse: no trusted key ever fires, so the virtual pad stays mounted.
+await page.mouse.click(mb.x + mb.w / 2, mb.y + mb.h / 2)
+const dismissible = () => document.querySelector('[data-nav="rotate-dismiss"]')
+if (await page.evaluate(() => !!document.querySelector('[data-nav="rotate-dismiss"]'))) {
+    await page.evaluate(() => document.querySelector('[data-nav="rotate-dismiss"]').click())
+}
+mb = await page.evaluate(() => {
+    const r = document.querySelector('canvas').getBoundingClientRect()
+    return { x: r.left, y: r.top, w: r.width, h: r.height }
+})
+await page.mouse.click(mb.x + mb.w / 2, mb.y + mb.h / 2)
+// the plant lands on a page timer — wait on the state, not on the clock
+let m = await page.waitForFunction(() => window.__sweepTest.probe().planted, null, { timeout: 8000 })
+    .then(() => probe())
+r.check('a mouse tap leaves the marquee and a left click plants', m.screen === 'play' && m.planted === true && m.opened > 1,
+    `screen=${m.screen} planted=${m.planted} opened=${m.opened}`)
+r.check('no rotate prompt ever covers this adaptive board in portrait',
+    !(await page.evaluate(() => !!document.querySelector('[data-nav="rotate-dismiss"]'))),
+    'RotateHint must skip data-adaptive canvases')
+r.check('the first dig teaches the mouse verbs, not dev jargon',
+    /RIGHT-CLICK TO FLAG/.test(m.toast || '') && !/ms —/.test(m.toast || ''), `toast=${m.toast}`)
+const pads = await page.evaluate(() => {
+    const t = (s) => { const el = document.querySelector(s); return el ? el.textContent : null }
+    return { a: t('[data-vc="a"]'), b: t('[data-vc="b"]') }
+})
+r.check('the A pad says DIG', (pads.a || '').includes('DIG'), `a=${pads.a}`)
+r.check('the B pad says FLAG', (pads.b || '').includes('FLAG'), `b=${pads.b}`)
+const hudClear = await page.evaluate(() => {
+    const bar = document.querySelector('[data-sweep-hud="1"]')
+    const arcade = document.querySelector('[data-nav="arcade"]')
+    const pause = document.querySelector('[data-nav="pause"]')
+    if (!bar || !arcade || !pause) return { err: 'missing bar/chrome' }
+    const b = bar.getBoundingClientRect(), a = arcade.getBoundingClientRect(), p = pause.getBoundingClientRect()
+    const hit = (q) => !(q.right <= b.left || q.left >= b.right || q.bottom <= b.top || q.top >= b.bottom)
+    return { overlap: hit(a) || hit(p), bar: [b.top | 0, b.left | 0, b.right | 0] }
+})
+r.check('the mine counter + timer ride above the board, clear of the corner chrome',
+    !hudClear.err && !hudClear.overlap, JSON.stringify(hudClear))
+// right-click a hidden cell: it flags, opens nothing, opens no menu
+const pick = await page.evaluate(() => {
+    const cv = document.querySelector('canvas')
+    const r = cv.getBoundingClientRect()
+    const st = window.__sweepTest.probe()
+    const open = new Set(window.__sweepTest.openCells())
+    let cell = -1
+    for (let i = 0; i < st.w * st.h; i++) if (!open.has(i)) { cell = i; break }
+    const x = cell % st.w, y = (cell / st.w) | 0
+    return { cx: r.left + (x + 0.5) * (r.width / st.w), cy: r.top + (y + 0.5) * (r.height / st.h), cell }
+})
+const beforeRC = await probe()
+await page.mouse.click(pick.cx, pick.cy, { button: 'right' })
+try {
+    await page.waitForFunction((f) => window.__sweepTest.probe().flags === f, beforeRC.flags + 1, { timeout: 5000 })
+} catch { /* graded below */ }
+m = await probe()
+r.check('right-click PLANTED a flag instead of digging',
+    m.flags === beforeRC.flags + 1 && m.opened === beforeRC.opened,
+    `cell=${pick.cell} flags=${beforeRC.flags}->${m.flags} opened=${beforeRC.opened}->${m.opened}`)
+r.check('right-click opened no browser context menu', (await page.evaluate(() => window.__cm)) === true,
+    `defaultPrevented=${await page.evaluate(() => window.__cm)}`)
+
+console.log('\nTOUCH — tap digs on release, long-press flags (synthetic touch through the real handlers)')
+const touchRes = await page.evaluate(async () => {
+    const cv = document.querySelector('canvas')
+    const rect = cv.getBoundingClientRect()
+    const st = window.__sweepTest.probe()
+    const at = (x, y) => ({ cx: rect.left + (x + 0.5) * (rect.width / st.w), cy: rect.top + (y + 0.5) * (rect.height / st.h) })
+    const fire = (type, p) => cv.dispatchEvent(new PointerEvent(type, {
+        pointerId: 7, pointerType: 'touch', button: 0, clientX: p.cx, clientY: p.cy, bubbles: true, cancelable: true,
+    }))
+    // dig ONLY the solver-derived safe cell — any covered cell can be a mine,
+    // and a dead board mid-section poisons every later gesture check
+    const nx = window.__sweepTest.nextSafe()
+    const p1 = at(nx.x, nx.y)
+    const before = window.__sweepTest.probe()
+    fire('pointerdown', p1)
+    fire('pointerup', p1)
+    const tDug = Date.now() + 3000
+    while (window.__sweepTest.probe().opened === before.opened && Date.now() < tDug) {
+        await new Promise((r) => setTimeout(r, 50))
+    }
+    const tapped = window.__sweepTest.probe()
+    const skip = new Set(window.__sweepTest.openCells())
+    for (const f of window.__sweepTest.flagCells()) skip.add(f)
+    let cell2 = -1
+    for (let i = 0; i < st.w * st.h; i++) if (!skip.has(i)) { cell2 = i; break }
+    const p2 = at(cell2 % st.w, (cell2 / st.w) | 0)
+    fire('pointerdown', p2)
+    const tEnd = Date.now() + 3000
+    while (window.__sweepTest.probe().flags === tapped.flags && Date.now() < tEnd) {
+        await new Promise((r) => setTimeout(r, 50))
+    }
+    fire('pointerup', p2)
+    await new Promise((r) => setTimeout(r, 120))
+    const held = window.__sweepTest.probe()
+    return {
+        beforeOpened: before.opened, beforeFlags: before.flags,
+        tapOpened: tapped.opened, tapFlags: tapped.flags,
+        holdOpened: held.opened, holdFlags: held.flags,
+    }
+})
+r.check('a quick tap dug on release',
+    touchRes.tapOpened > touchRes.beforeOpened && touchRes.tapFlags === touchRes.beforeFlags, JSON.stringify(touchRes))
+r.check('a long-press flagged without digging',
+    touchRes.holdFlags === touchRes.tapFlags + 1 && touchRes.holdOpened === touchRes.tapOpened, JSON.stringify(touchRes))
+
 if (errors.length) r.check('no page errors during play', false, errors.slice(0, 4).join(' | '))
 else r.check('no page errors during play', true)
 
