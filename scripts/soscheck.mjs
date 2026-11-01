@@ -215,6 +215,32 @@ if (!process.env.SOS_SKIP_BROWSER) {
     ok('browser contract is deterministic', st.hash === st2.hash, `${st.hash} vs ${st2.hash}`)
     const frame = await page.evaluate(() => window.__game.frame())
     ok('frame() returns PNG data', typeof frame === 'string' && frame.startsWith('data:image/png'), String(frame).slice(0, 40))
+    // desync receipt (#1416 gap 5): the NET warning is no longer a plain toast
+    // — it prints off the ticket rail as a paper slip, flips green on resync,
+    // then tears off. Drilled through the DEV seam (no live pair needed).
+    const dz = await page.evaluate(async () => {
+        const T = window.__sosTest
+        T.start(7, 2)
+        const raf = () => new Promise((r) => requestAnimationFrame(r))
+        await raf(); await raf()
+        T.desyncDrill()
+        const p0 = T.notice()
+        for (let i = 0; i < 18; i++) await raf()
+        const p1 = T.notice()
+        let paper = 0
+        const img = document.querySelector('canvas').getContext('2d').getImageData(124, 48, 72, 30).data
+        for (let i = 0; i < img.length; i += 4) if (img[i] > 225 && img[i + 1] > 215 && img[i + 2] > 190 && img[i + 2] < 235) paper++
+        T.resyncDrill()
+        const p2 = T.notice()
+        for (let i = 0; i < 70; i++) await raf()
+        const p3 = T.notice()
+        return { p0, p1, p2, p3, paper }
+    })
+    ok('desync receipt prints from the rail', dz.p0 && dz.p0.phase === 'print', JSON.stringify(dz.p0))
+    ok('receipt reaches hold after printing', dz.p1 && (dz.p1.phase === 'hold' || dz.p1.phase === 'ok'), JSON.stringify(dz.p1))
+    ok('receipt is thermal paper on the rail', dz.paper > 400, `paper px=${dz.paper}`)
+    ok('resync flips the receipt green', dz.p2 && dz.p2.phase === 'ok', JSON.stringify(dz.p2))
+    ok('receipt tears off after resync', dz.p3 === null, JSON.stringify(dz.p3))
     ok('no page errors', errs.length === 0, errs.slice(0, 3).join(' | '))
     await browser.close()
 }

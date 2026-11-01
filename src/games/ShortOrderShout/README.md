@@ -124,11 +124,22 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
   shift whose score+hash still equal the local reference (mutant: never attach
   `a` => the 4 pip assertions red).
 
+- Desync notice (#1416 gap 5): the plain "DESYNC — RESYNCING" toast is gone.
+   A hash mismatch prints a receipt off the ticket rail — thermal paper with
+   scan texture, torn bottom edge, red `DESYNC` ink and a blinking `RESYNC..`
+   line — while the kitchen gets a ~0.25 s rewind flicker (deterministic
+   screen-space slice tears + a travelling scanline off the frame counter).
+   When the host snapshot lands it prints `RE-SYNCED / BACK ON` in green and
+   the slip tears off; if no heal arrives within 3 s (dead link) it still
+   clears. HUD-only, drawn in the canvas pass; proven by 5 soscheck browser
+   assertions through the `__sosTest` drill seam (mutant: resync lands as
+   `hold` => the green + tear-off assertions red).
+
 ## Honest gaps
 
-- **Voice/PTT over the relay** (issue item 3) is not wired — the relay is
-  data-only and rate-guarded; filed with the QA polish pass. The #1247 record
-  path still banks per-seat mic audio.
+- **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
+  #1432); full-duplex/WebRTC audio is still deferred, and the #1247 recorder
+  path keeps banking per-seat mic audio alongside it.
 - **Voice**: the recording path carries raw per-seat voice (#1247 via
   `gameContract.recordStart`); an in-game production voice toggle arrives
   with online stage 2.
