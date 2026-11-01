@@ -29,11 +29,25 @@
 //      + dry guard + the v3 held line, jonq digest reads the ledger, board
 //      imports the banners, checks.mjs/ci.yml/package.json carry the alias.
 //
+// v4 (#1406): §A gains coalesceWindows (adjacent raw tick-gap segments merge
+// into ONE night; a later pmset window retires the raw scaffolding it covers)
+// and pmsetCoverage/utcDay (the log's visible span, reported once per day);
+// §C gains the pulse-age budget on the LIVE strips; §E re-pins the deep-dark
+// night to the merged truth (asleep=00:20→11:30, not the last 6 h) and pins
+// once-per-day span reporting + suppression; §F threads pulseAge/pulse v4 log.
+//
 // Mutant proofs (required one): CHURN_SLEEPS 3→90 reddens §A churn + §B
 // incident churn pins; GAP_MIN 30→90 still reddens §A gap + §B incident.
 // v3 (#1401): inverting the disprove comparison in resolveAsleep (wake never
 // clears) reddens §A resolve + §E wake-tick pins; hardcoding CHURN_WINDOW_MIN
-// to 45 reddens the derive pin and every churnwin token pin. Verified by hand.
+// to 45 reddens the derive pin and every churnwin token pin.
+// v4 (#1406): widening the coalesce seam test `<= maxGapMin` to `>=` reddens
+// 15 gates (budget pins + the whole deep-dark night); inverting the freshness
+// budget in floor.js (`age <= LIVE_SHOWN_MS` → `>=`) reddens 6 §C gates (fresh
+// strips die, stale ones return); disabling the merge branch reddens 15;
+// deleting the `covered(w)` drop reddens exactly the scaffolding-retirement
+// pin (1 — correctly narrow); removing the once-per-day span gate reddens 5
+// suppression pins. Verified by hand, all restored green (274/0).
 
 import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
@@ -41,11 +55,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
-    CAFFEINATE_HINT, CHURN_SLEEPS, CHURN_WINDOW_MIN, GAP_MIN, LEDGER_KEEP_H, ONSET_LOOKBACK_MIN, ONSET_STALE_MIN, PULSE_SHOW_H, TICK_MIN,
-    addChurn, addWindows, asleepField, buildChurn, buildWindows, churnCount, churnField, churnLine, detectAsleep, detectGap,
-    fmtDur, fmtHM, liveLine, liveValid, parsePmset, pulseField, resolveAsleep, sleepLine, windowsForGap,
+    CAFFEINATE_HINT, CHURN_SLEEPS, CHURN_WINDOW_MIN, COALESCE_GAP_MIN, GAP_MIN, LEDGER_KEEP_H, ONSET_LOOKBACK_MIN, ONSET_STALE_MIN, PULSE_SHOW_H, TICK_MIN,
+    addChurn, addWindows, asleepField, buildChurn, buildWindows, churnCount, churnField, churnLine, coalesceWindows, detectAsleep, detectGap,
+    fmtDur, fmtHM, liveLine, liveValid, parsePmset, pmsetCoverage, pulseField, resolveAsleep, sleepLine, utcDay, windowsForGap,
 } from './sleepwatch.mjs'
-import { deriveFloor, sleepBanner } from '../src/pages/floor.js'
+import { deriveFloor, LIVE_SHOWN_MS, sleepBanner } from '../src/pages/floor.js'
 import { digestText } from './lib/runway.mjs'
 import { CORE } from './checks.mjs'
 
@@ -165,6 +179,48 @@ section('A. pure core')
     const CAPBASE = 1_793_000_000_000
     const many = Array.from({ length: 260 }, (_, i) => ({ from: CAPBASE + i * 600000, to: CAPBASE + i * 600000 + 60000, min: 1 }))
     eq(addWindows(many, [], many[many.length - 1].to).length, 200, 'the ledger is capped (newest survive)')
+
+    // ---- coalesce (#1406) — one outage night told once ----------------
+    eq(COALESCE_GAP_MIN, 2 * TICK_MIN, 'the raw seam budget DERIVES from the cadence: two tick intervals, one place')
+    const RW = (f, t, extra = {}) => ({ from: at(f), to: at(t), min: Math.round((at(t) - at(f)) / 60000), naps: 0, reason: null, src: 'tickgap', ...extra })
+    eq(coalesceWindows([]).length, 0, 'coalescing nothing yields nothing')
+    const seg2 = coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:20:00', '05:20:00')])
+    eq(seg2.length, 1, 'two back-to-back raw segments are ONE outage')
+    eq(JSON.stringify([seg2[0].from, seg2[0].to]), JSON.stringify([at('00:20:00'), at('05:20:00')]), 'the merged window spans the whole night, not its last segment')
+    eq(seg2[0].min, 300, 'and its minutes are the FULL span')
+    const seg3 = coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:20:00', '05:20:00'), RW('05:20:00', '11:30:00')])
+    eq(seg3.length === 1 ? seg3[0].min : null, 670, 'merging is chained: the ×3 staged night becomes one 11h 10m story')
+    eq(coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:40:00', '05:40:00')]).length, 1, 'a seam of exactly COALESCE_GAP_MIN still merges (≤)')
+    eq(coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:41:00', '05:41:00')]).length, 2, 'a seam one minute over the budget stays TWO outages')
+    const napM = coalesceWindows([RW('00:20:00', '03:20:00', { naps: 2 }), RW('03:20:00', '05:20:00', { naps: 3 })])
+    eq(napM[0].naps, 5, 'naps from merged segments sum')
+    eq(coalesceWindows([RW('00:20:00', '03:20:00', { reason: 'Idle Sleep' }), RW('03:20:00', '05:20:00')])[0].reason, 'Idle Sleep', 'a claimed reason survives the merge')
+    const NAMED = (f, t) => ({ from: at(f), to: at(t), min: Math.round((at(t) - at(f)) / 60000), naps: 1, reason: 'Software Sleep', src: 'pmset' })
+    const inter = coalesceWindows([RW('00:20:00', '03:20:00'), NAMED('03:00:00', '03:15:00'), RW('03:25:00', '05:25:00')])
+    eq(inter.length, 3, 'a pmset-named window BREAKS a raw run — raw segments across named truth do not merge')
+    eq(coalesceWindows([NAMED('00:00:00', '02:00:00'), NAMED('02:00:00', '04:00:00')]).length, 2, 'pmset-named windows NEVER merge — the observed truth wins outright')
+    const retire = coalesceWindows([RW('00:20:00', '03:20:00'), RW('03:20:00', '05:20:00'), NAMED('00:17:00', '11:35:00')])
+    eq(retire.length, 1, 'raw scaffolding a pmset window fully covers is DROPPED when the named truth arrives')
+    eq(retire[0].src, 'pmset', 'and the survivor is the named window (reason and naps and all)')
+    eq(coalesceWindows([RW('00:20:00', '05:20:00'), NAMED('03:00:00', '06:00:00')]).length, 2, 'partial overlap is not coverage — the raw claim stays (never quietly shrink a claimed outage)')
+    const legacy = coalesceWindows([RW('00:20:00', '03:20:00'), { from: at('03:20:00'), to: at('04:20:00'), min: 60 }, RW('04:20:00', '06:20:00')])
+    eq(legacy.length, 3, 'windows with unknown src are left alone AND break raw runs — never merge what you cannot name')
+    const ledRaw = addWindows([RW('00:20:00', '03:20:00')], [RW('03:20:00', '05:20:00')], at('05:30:00'))
+    eq(ledRaw.length, 1, 'addWindows coalesces: the LEDGER holds the merged night, so every reader tells it once')
+    eq(ledRaw[0].min, 300, 'the merged ledger row spans both staged segments')
+
+    // ---- coverage honesty (#1406) -----------------------------------------
+    eq(COALESCE_GAP_MIN, 20, 'and lands on 20 min at the current 10-min tick')
+    eq(pmsetCoverage([]), null, 'no visible events = no measurable log')
+    eq(pmsetCoverage(null), null, 'a failed capture cannot report its own reach')
+    eq(pmsetCoverage([{ kind: 'wake', ms: at('12:10:00') }], { now: at('12:00:00') }), null, 'future-only events measure nothing')
+    const cov1 = pmsetCoverage([{ kind: 'wake', ms: at('11:20:00') }, { kind: 'sleep', ms: at('11:30:00') }], { now: at('12:00:00') })
+    eq(cov1.spanMin, 40, 'the span is oldest-visible-event -> now')
+    eq(cov1.covers, false, '40 min of log does not cover a 48 h horizon')
+    eq(pmsetCoverage([{ kind: 'wake', ms: at('12:00:00') - LEDGER_KEEP_H * 3600000 }], { now: at('12:00:00') })?.covers, true, 'exactly-horizon coverage covers')
+    eq(pmsetCoverage([{ kind: 'wake', ms: at('12:00:00') - LEDGER_KEEP_H * 3600000 + 60000 }], { now: at('12:00:00') })?.covers, false, 'one minute short of the horizon is short')
+    eq(utcDay(Date.parse('2026-10-31T23:59:00Z')), '2026-10-31', 'utcDay is the UTC calendar day')
+    eq(utcDay(Date.parse('2026-11-01T00:00:00Z')), '2026-11-01', '…and rolls over at the UTC midnight')
 
     // ---- churn + onset (#1392) ------------------------------------------
     eq(CHURN_SLEEPS, 3, 'churn needs at least three sleeps')
@@ -353,6 +409,21 @@ section('C. the board banner (floor.js)')
     const both = sleepBanner({ asleep: '00:17-11:35', asleepm: '678', naps: '77', churn: '5' })
     ok(both?.text.startsWith('STUDIO WAS ASLEEP'), 'when the outage is named it outranks the churn token')
 
+    // #1406 pulse-age budget: LIVE claims answer to the pulse's age.
+    eq(LIVE_SHOWN_MS, 24 * 60 * 60 * 1000, 'the board vouches for LIVE strips exactly as long as the wire shows windows (24 h)')
+    const LIVE_SHAPE = { asleep: 'true', since: '03:12' }
+    eq(sleepBanner(LIVE_SHAPE, 10 * 60000)?.text, 'STUDIO ASLEEP SINCE 03:12', 'a 10-min-old pulse carries the live strip — the warden just vouched')
+    eq(sleepBanner(LIVE_SHAPE, LIVE_SHOWN_MS)?.text, 'STUDIO ASLEEP SINCE 03:12', 'exactly the budget is still shown (≤)')
+    eq(sleepBanner(LIVE_SHAPE, LIVE_SHOWN_MS + 1), null, 'a live stamp past the budget is yesterday\'s weather — the strip drops')
+    eq(sleepBanner(LIVE_SHAPE, Infinity), null, 'an unparseable pulse age claims no freshness — live strips drop')
+    eq(sleepBanner(LIVE_SHAPE, NaN), null, 'junk age is stale age, not unknown age')
+    eq(sleepBanner(LIVE_SHAPE)?.live, true, 'age UNKNOWN (v3-era caller) keeps v3 behavior — unknowing callers are not made liars')
+    eq(sleepBanner({ churn: '7', churnwin: '30' }, LIVE_SHOWN_MS + 1), null, '"sleeps in the last W min" is also a NOW-claim — stale wires drop churn too')
+    eq(sleepBanner({ churn: '7', churnwin: '30' }, 60000)?.live, true, 'fresh churn still renders')
+    const staleRetro = sleepBanner({ asleep: '00:17-11:35', asleepm: '678' }, 2 * LIVE_SHOWN_MS)
+    ok(staleRetro?.text.startsWith('STUDIO WAS ASLEEP'), 'a retroactive window survives a stale wire — history baked at write time is still history')
+    eq(staleRetro?.live, false, 'and it is not a live claim, so the budget does not bind it')
+
     // round trip: a REAL pulse line -> deriveFloor -> banner
     const line = '12:32 alive=yes queue=3 building=1 shipped=42 main=36adbf9 qa=9 mini=up gate=none halted=no questions=0 builders=2/2 asleep=00:17-11:35 asleepm=678 naps=77 actions=slept:1'
     const d = deriveFloor({ pulses: [{ body: line, updated_at: '2026-10-31T18:32:00Z', created_at: '2026-10-31T18:32:00Z' }], now: Date.parse('2026-10-31T18:33:00Z') })
@@ -363,6 +434,11 @@ section('C. the board banner (floor.js)')
     eq(dl.pulse.asleep, 'true', 'the live shape survives the kv wire')
     eq(dl.pulse.since, '03:12', 'the onset minute rides as its own token')
     eq(sleepBanner(dl.pulse).text, 'STUDIO ASLEEP SINCE 03:12', 'the live strip composes straight off the wire')
+    eq(dl.pulseAge, 60000, 'deriveFloor exposes the pulse age the WARDEN lamp already derives — one clock, two readers (#1406)')
+    eq(sleepBanner(dl.pulse, dl.pulseAge)?.text, 'STUDIO ASLEEP SINCE 03:12', 'fresh off the wire, the threaded age keeps the strip')
+    const staleDl = deriveFloor({ pulses: [{ body: liveLine, updated_at: '2026-10-29T03:20:00Z', created_at: '2026-10-29T03:20:00Z' }], now: Date.parse('2026-10-31T03:21:00Z') })
+    eq(staleDl.pulse.asleep, 'true', 'the two-day-old wire still carries the token…')
+    eq(sleepBanner(staleDl.pulse, staleDl.pulseAge), null, '…but the board reads its age and drops the live strip — no "ASLEEP SINCE" for a box that woke two days ago (#1406)')
     const churnLine2 = '04:00 alive=yes queue=2 building=1 shipped=41 main=abc1234 qa=8 mini=up gate=none halted=no questions=0 builders=2/2 churn=5 actions=churn:1'
     eq(sleepBanner(deriveFloor({ pulses: [{ body: churnLine2, updated_at: '2026-10-31T04:00:00Z', created_at: '2026-10-31T04:00:00Z' }], now: Date.parse('2026-10-31T04:01:00Z') }).pulse).text,
         'STUDIO CHURNING — 5 sleeps in the last 30 min', 'a v2-era churn line still renders (legacy wire compat)')
@@ -373,6 +449,7 @@ section('C. the board banner (floor.js)')
     const JSX = read(path.join('..', 'src', 'pages', 'ForgeBoard.jsx'))
     ok(JSX.includes('sleepBanner') && JSX.includes('data-sleep'), 'ForgeBoard imports sleepBanner and renders the strip')
     ok(JSX.includes('data-live') && JSX.includes('sleep.hint'), 'ForgeBoard marks the live strip and renders its hint (#1392)')
+    ok(JSX.includes('sleepBanner(pulse, floor.pulseAge)'), 'ForgeBoard threads the pulse age into the banner — the live strip answers to wire freshness (#1406)')
 }
 
 section('D. the questions digest')
@@ -443,12 +520,13 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
         `2026-10-31 11:20:00 +0000 Sleep               \tEntering Sleep state due to 'Idle Sleep': Using AC`,
         `2026-10-31 11:55:00 +0000 Wake                \tWake from Deep Idle : due to HID Activity`,
     ].join('\n'))
-    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${led}`), 'recorded=1 src=pmset churn=0 asleep=0', 'tick records a new gap window')
-    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${led}`), 'recorded=0 src=pmset churn=0 asleep=0', 'the same gap re-ticked adds nothing (dedupe)')
+    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${led}`), 'recorded=1 src=pmset churn=0 asleep=0 logspan=40 logshort=1',
+        'tick records a new gap window (+ the UTC day\'s first coverage report: 40 min of log, far short of 48 h — #1406)')
+    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${led}`), 'recorded=0 src=pmset churn=0 asleep=0', 'the same gap re-ticked adds nothing (dedupe) — and the span was already named today (once-per-day, #1406)')
     eq(sw('tick', `--last=${NOWS - 600}`, `--now=${NOWS}`, `--out=${led}`), 'recorded=0 src=none churn=0 asleep=0', 'a normal 10-min tick records nothing')
     eq(sw('tick', `--last=`, `--now=${NOWS}`, `--out=${led}`), 'recorded=0 src=none churn=0 asleep=0', 'empty --last (first tick ever) records nothing')
     const dryLed = path.join(dir, 'dry.json')
-    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${dryLed}`, '--dry').replace(/ dry$/, ''), 'recorded=1 src=pmset churn=0 asleep=0', 'dry tick reports the same shape…')
+    eq(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${dryLed}`, '--dry').replace(/ dry$/, ''), 'recorded=1 src=pmset churn=0 asleep=0 logspan=40 logshort=1', 'dry tick reports the same shape…')
     ok(sw('tick', `--last=${NOWS - 3600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${dryLed}`, '--dry').endsWith(' dry'), '…and marks itself dry')
     eq(fs.existsSync(dryLed), false, '--dry writes no ledger')
 
@@ -469,8 +547,8 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     ].flat().join('\n')).join('\n')
     fs.writeFileSync(churnPm, churnLines)
     const CHN = Math.floor(at('00:20:00') / 1000)
-    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${churnLed}`), 'recorded=0 src=none churn=3 asleep=1',
-        'a churning night with landing ticks records NO window but names churn and the live onset')
+    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${churnLed}`), 'recorded=0 src=none churn=3 asleep=1 logspan=20 logshort=1',
+        'a churning night with landing ticks records NO window but names churn, the live onset, and the day\'s log span')
     eq(sw('pulse', `--out=${churnLed}`, `--now=${CHN}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30`, 'the live pulse rides while the churn is current')
     ok(sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('🌀 Studio churned 3 sleep cycles'), 'the churn sentence reaches the digest line with no 😴 window behind it')
     ok(!sw('line', `--out=${churnLed}`, `--now=${CHN}`).includes('was asleep'), 'no window fabricated for an open churn chain')
@@ -491,35 +569,65 @@ section('E. CLI end-to-end (fixture pmset, temp ledger, no network)')
     // gap path names the windows retroactively, and only the visible full Wake
     // ends the story. The pulse leads with the live truth the whole while.
     const ddLed = path.join(dir, 'deepdark.json')
-    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=0 src=none churn=3 asleep=1',
-        'deep-dark setup: the churn raises a fresh live stamp')
+    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=0 src=none churn=3 asleep=1 logspan=20 logshort=1',
+        'deep-dark setup: the churn raises a fresh live stamp (and names the day\'s span)')
     const D3 = Math.floor(at('03:20:00') / 1000)
     eq(sw('tick', `--last=${CHN}`, `--now=${D3}`, `--pmset=${churnPm}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=1 held=1',
-        'three hours of silence: the gap names the window AND the stamp survives, validated (no Wake, log covers the onset)')
+        'three hours of silence: the gap names the window AND the stamp survives, validated (no Wake, log covers the onset); span already named today')
     eq(sw('pulse', `--out=${ddLed}`, `--now=${D3 + 300}`), `asleep=true since=${hm(at('00:00:00'))} churn=3 churnwin=30`,
         'the live stamp leads the pulse three hours into the dark — the field v2 lost at 30 min (#1401)')
     // pmset unreachable (PATH stripped — the capture failing IS the deep dark)
     const swNoPmset = (...a) => execFileSync(process.execPath, [cli, ...a], { encoding: 'utf8', env: { PATH: '/nonexistent-forge-path' } }).trim()
     const D5 = Math.floor(at('05:20:00') / 1000)
-    eq(swNoPmset('tick', `--last=${D3}`, `--now=${D5}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=1 held=1',
-        'a failed pmset capture carries the stamp rather than clearing it (#1401)')
+    eq(swNoPmset('tick', `--last=${D3}`, `--now=${D5}`, `--out=${ddLed}`), 'recorded=0 src=tickgap churn=0 asleep=1 held=1',
+        'a failed pmset capture carries the stamp rather than clearing it (#1401); the new segment COALESCES onto the open night (#1406) — extending a known outage is not a new one, and a blind capture reports no span')
     const ddLine = sw('line', `--out=${ddLed}`, `--now=${Math.floor(at('05:21:00') / 1000)}`)
     ok(ddLine.includes(`😴 Studio is asleep RIGHT NOW — since ${hm(at('00:00:00'))} (5h 21m)`), `deep-dark digest leads with the true elapsed: ${ddLine.split('\n')[0]}`)
+    ok(!ddLine.includes('×2') && !ddLine.includes('×3'), `the staged recovery tells the night ONCE, not as stacked segments: ${ddLine.split('\n')[1] || 'no retro line'}`)
+    ok((ddLine.split('\n')[1] || '').includes(`${hm(at('00:20:00'))}–${hm(at('05:20:00'))}`), 'the retro sentence spans the merged outage, not its last segment')
     ok(ddLine.includes('🌀 Studio churned 3 sleep cycles'), 'the churn episode rides alongside')
     const ddPm = path.join(dir, 'deepdark-wake.txt')
     fs.writeFileSync(ddPm, `${churnLines}\n2026-10-31 11:29:00 +0000 Wake                \tWake from Deep Idle [CDNVA] : due to HID Activity Using AC`)
     const DW = Math.floor(at('11:30:00') / 1000)
-    eq(sw('tick', `--last=${D5}`, `--now=${DW}`, `--pmset=${ddPm}`, `--out=${ddLed}`), 'recorded=1 src=tickgap churn=0 asleep=0',
-        'the visible Wake ends the vigil: asleep drops off the tick report, no held token')
-    eq(sw('pulse', `--out=${ddLed}`, `--now=${DW}`), `asleep=${hm(at('05:20:00'))}-${hm(at('11:30:00'))} asleepm=370 churn=3 churnwin=30`,
-        'after the wake the pulse tells the retroactive window plus the night\'s churn')
+    eq(sw('tick', `--last=${D5}`, `--now=${DW}`, `--pmset=${ddPm}`, `--out=${ddLed}`), 'recorded=0 src=tickgap churn=0 asleep=0',
+        'the visible Wake ends the vigil: asleep drops off the tick report, no held token — and the last segment merges into the night, so no NEW outage count')
+    eq(sw('pulse', `--out=${ddLed}`, `--now=${DW}`), `asleep=${hm(at('00:20:00'))}-${hm(at('11:30:00'))} asleepm=670 churn=3 churnwin=30`,
+        'after the wake the pulse tells the WHOLE night — 00:20→11:30, the night that began at 00:20 (was 05:20–11:30 pre-#1406) — plus the churn')
     const ddLedger = JSON.parse(fs.readFileSync(ddLed, 'utf8'))
     eq(ddLedger.asleep, null, 'the ledger stamp dies with the Wake it could not dodge')
+    eq(ddLedger.windows.length, 1, 'the deep-dark night is ONE window on the ledger (#1406)')
+    eq(JSON.stringify([ddLedger.windows[0].from, ddLedger.windows[0].to]), JSON.stringify([CHN * 1000, DW * 1000]), 'merged span: first tick that vanished to the tick that landed awake')
+    eq(ddLedger.windows[0].src, 'tickgap', 'still honestly raw — pmset never named this night')
     // an empty log validates NOTHING — the stamp is never carried on faith
     const faithLed = path.join(dir, 'faith.json')
-    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${faithLed}`), 'recorded=0 src=none churn=3 asleep=1', 'stamp raised')
+    eq(sw('tick', `--last=${CHN - 600}`, `--now=${CHN}`, `--pmset=${churnPm}`, `--out=${faithLed}`), 'recorded=0 src=none churn=3 asleep=1 logspan=20 logshort=1', 'stamp raised (span named)')
     eq(sw('tick', `--last=${CHN}`, `--now=${Math.floor(at('00:35:00') / 1000)}`, `--pmset=${path.join(dir, 'empty.txt')}`, `--out=${faithLed}`), 'recorded=0 src=none churn=0 asleep=0',
-        'a reachable-but-empty log cannot cover the onset — cleared, never carried on trust')
+        'a reachable-but-empty log cannot cover the onset — cleared, never carried on trust (and an empty log has no span to report)')
+
+    // #1406 coverage honesty end-to-end: the span rides the tick line ONCE per
+    // UTC day, re-arms the next day, names covers honestly, and a blind
+    // capture (deep dark) stays silent.
+    const covLed = path.join(dir, 'coverage.json')
+    eq(sw('tick', `--last=${NOWS - 600}`, `--now=${NOWS}`, `--pmset=${gapPm}`, `--out=${covLed}`), 'recorded=0 src=none churn=0 asleep=0 logspan=40 logshort=1',
+        'a normal tick with a short log reports the day\'s ceiling: 40 min visible, short of 48 h')
+    eq(sw('tick', `--last=${NOWS - 600}`, `--now=${NOWS + 300}`, `--pmset=${gapPm}`, `--out=${covLed}`), 'recorded=0 src=none churn=0 asleep=0',
+        'the next tick the same day stays quiet — once per day, not per tick')
+    const NEXTDAY = NOWS + 86400
+    eq(sw('tick', `--last=${NEXTDAY - 600}`, `--now=${NEXTDAY}`, `--pmset=${gapPm}`, `--out=${covLed}`), 'recorded=0 src=none churn=0 asleep=0 logspan=1480 logshort=1',
+        'the next UTC day re-arms the report, now 24h40m of visible log — still short of the horizon')
+    const covLedger = JSON.parse(fs.readFileSync(covLed, 'utf8'))
+    eq(covLedger.spanDay, utcDay(NEXTDAY * 1000), 'the ledger keeps the day the span was named')
+    const longPm = path.join(dir, 'pmset-long.txt')
+    fs.writeFileSync(longPm, [
+        `${new Date(NOWS * 1000 - 3 * 86400000).toISOString().slice(0, 19).replace('T', ' ')} +0000 Wake                \tWake from Deep Idle : due to HID Activity Using AC`,
+        `2026-10-31 11:20:00 +0000 Sleep               \tEntering Sleep state due to 'Idle Sleep': Using AC`,
+        `2026-10-31 11:55:00 +0000 Wake                \tWake from Deep Idle : due to HID Activity`,
+    ].join('\n'))
+    const covOk = path.join(dir, 'coverage-ok.json')
+    eq(sw('tick', `--last=${NOWS - 600}`, `--now=${NOWS}`, `--pmset=${longPm}`, `--out=${covOk}`), 'recorded=0 src=none churn=0 asleep=0 logspan=4320',
+        'a 3-day log covers the horizon — logspan says so and NO logshort flag rides')
+    const covBlind = swNoPmset('tick', `--last=${NOWS - 600}`, `--now=${NOWS}`, `--out=${covOk}`)
+    ok(!covBlind.includes('logspan'), `a failed capture cannot measure its own reach — no span token: ${covBlind}`)
 
     // a v1 ledger ({windows} only) still reads — the new fields just start empty
     const v1Led = path.join(dir, 'v1.json')
@@ -543,6 +651,7 @@ section('F. wiring tripwires')
     ok(W.includes('churn:1') && W.includes('onset:1'), '#1392: churn and live onset are ACTIONS entries too')
     ok(W.includes('sleepwatch v2:'), 'churn/onset news reaches the warden log even with no gap to record')
     ok(W.includes('held=1') && W.includes('sleepwatch v3:'), '#1401: a tick that carried the stamp through silence names itself in the log')
+    ok(W.includes('*logspan=*') && W.includes('sleepwatch v4:'), '#1406: the once-per-day coverage report reaches the warden log')
     ok(W.includes('[[ -s "$SW" ]]'), 'warden guards on a NON-empty materialised script (git-show failures leave 0-byte files)')
     ok(W.includes(`[[ "$DRY" != 1 ]] && print -r -- "$NOWN" > "$LOG_DIR/warden.lasttick"`), 'dry ticks never touch the lasttick stamp')
     ok(W.includes('origin/main:scripts/sleepwatch.mjs'), 'warden materialises sleepwatch from origin/main (launchd-safe)')
