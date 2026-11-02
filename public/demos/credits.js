@@ -50,7 +50,9 @@
 
   var css =
     '#credits-tag{position:fixed;right:max(12px,env(safe-area-inset-right));' +
-    'bottom:max(12px,env(safe-area-inset-bottom));z-index:7;pointer-events:auto;' +
+    // demos with a bottom HUD bar (e.g. LEARNED WALK's scrubber) lift the tag
+    // by setting --credits-bottom on :root, so the tag never sits on their controls
+    'bottom:calc(var(--credits-bottom,0px) + max(12px,env(safe-area-inset-bottom)));z-index:7;pointer-events:auto;' +
     'display:inline-flex;align-items:center;box-sizing:border-box;min-height:32px;' +
     'font:9px/1 ui-monospace,Menlo,monospace;letter-spacing:.28em;text-transform:uppercase;' +
     'color:rgba(255,255,255,.55);background:rgba(6,8,14,.55);border:1px solid rgba(255,255,255,.16);' +

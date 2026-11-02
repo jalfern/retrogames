@@ -216,15 +216,72 @@ ok('boots: any key leaves attract', true)
   })
   ok('episode: a browser run exports a kit-format episode', !!epi && epi.ticks > 30 && epi.task === 'learned-walk', JSON.stringify(epi))
 }
+{
+  // #1435: export names carry a UTC ms run-stamp — two exports of the same
+  // episode can no longer collide across runs
+  const names = await page.evaluate(async () => {
+    const out = []
+    const btn = document.getElementById('bExport')
+    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    out.push(window.__lastExportName)
+    await new Promise((r) => requestAnimationFrame(r))
+    btn.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+    out.push(window.__lastExportName)
+    return out
+  })
+  ok('episode: export name is run-stamped and unique per export',
+    names.length === 2 && !!names[0] && names[0] !== names[1] &&
+    /^learnedwalk-ep-seed\d+-t\d+-(win|loss)-\d{17}\.json$/.test(names[0]),
+    names.join(' vs '))
+}
 await page.screenshot({ path: resolve(shots, 'play.png') })
 ok('boots: no page errors', pageErrors.length === 0, pageErrors.join(' | '))
 await page.close()
 {
   const p = await open({ width: 390, height: 844 }, true)
+  ok('phone: attract copy fits 390px (no clipped lines)',
+    await p.evaluate(() => window.__learnedwalkTest.attractFit()))
   await p.touchscreen.tap(195, 300)
   await p.waitForFunction(() => window.__learnedwalkTest.screen() === 'play', null, { timeout: 8000 })
   await p.waitForFunction(() => window.__learnedwalkTest.frames() > 40, null, { timeout: 15000 })
   ok('phone: boots, starts on tap, draws at 390x844', true)
+  {
+    // #1435: the whole bottom bar is one fat scrub target — label row and the
+    // old dead band at the very bottom must both change the checkpoint
+    const geo = await p.evaluate(() => {
+      const s = document.getElementById('scrub').getBoundingClientRect()
+      return { h: Math.round(s.height), top: Math.round(s.top) }
+    })
+    ok('phone: scrub bar is a fat touch target (>= 52px)', geo.h >= 52, `${geo.h}px`)
+    const c0 = await p.evaluate(() => window.__learnedwalkTest.checkpoint())
+    await p.touchscreen.tap(60, geo.top + 4)
+    const c1 = await p.evaluate(() => window.__learnedwalkTest.checkpoint())
+    await p.touchscreen.tap(330, geo.top + geo.h - 3)
+    const c2 = await p.evaluate(() => window.__learnedwalkTest.checkpoint())
+    ok('phone: scrubbing works edge to edge — no dead band',
+      c1 < c0 && c2 > c1 && c2 < c0, `ck ${c0} -> ${c1} -> ${c2}`)
+  }
+  {
+    // #1435: taps on the HUD buttons must NOT push the walker; canvas taps must
+    await p.evaluate(() => {
+      const cc = document.getElementById('credits-card')
+      if (cc) cc.classList.remove('open')
+      window.__learnedwalkTest.start()
+    })
+    await p.waitForFunction(() => window.__learnedwalkTest.frames() > 45, null, { timeout: 15000 })
+    const p0 = await p.evaluate(() => window.__learnedwalkTest.pushes())
+    const btn = await p.evaluate(() => {
+      const r = document.getElementById('bHonest').getBoundingClientRect()
+      return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) }
+    })
+    await p.touchscreen.tap(btn.x, btn.y)
+    const p1 = await p.evaluate(() => window.__learnedwalkTest.pushes())
+    const honestOpen = await p.evaluate(() => getComputedStyle(document.getElementById('honesty')).display === 'block')
+    ok('phone: HONESTY tap opens the panel without pushing the walker', honestOpen && p1 === p0, `pushes ${p0}->${p1}, open=${honestOpen}`)
+    await p.touchscreen.tap(195, 560)
+    const p2 = await p.evaluate(() => window.__learnedwalkTest.pushes())
+    ok('phone: a canvas tap still pushes', p2 > p1, `pushes ${p1}->${p2}`)
+  }
   await p.close()
 }
 

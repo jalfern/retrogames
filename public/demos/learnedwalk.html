@@ -15,15 +15,15 @@
   }
   #hud .k { color: #6f5a8d; }
   #scrub {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 7;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 7; cursor: ew-resize;
     background: rgba(11,7,20,0.82); border-top: 1px solid rgba(199,125,255,0.35);
-    padding: 8px 14px calc(10px + env(safe-area-inset-bottom)); color: #d9b8ff;
+    padding: 12px 14px calc(14px + env(safe-area-inset-bottom)); color: #d9b8ff;
     font: 10px/1.4 ui-monospace, monospace; letter-spacing: 0.06em;
   }
-  #track { position: relative; height: 18px; margin-top: 4px; cursor: ew-resize; }
-  #rline { position: absolute; left: 0; right: 0; top: 8px; height: 2px; background: rgba(199,125,255,0.25); }
-  #tick { position: absolute; top: 3px; width: 2px; height: 12px; background: rgba(199,125,255,0.55); }
-  #thumb { position: absolute; top: 0; width: 10px; height: 18px; margin-left: -5px; background: #c77dff; border-radius: 2px; box-shadow: 0 0 8px rgba(199,125,255,0.8); }
+  #track { position: relative; height: 26px; margin-top: 4px; cursor: ew-resize; }
+  #rline { position: absolute; left: 0; right: 0; top: 12px; height: 2px; background: rgba(199,125,255,0.25); }
+  #tick { position: absolute; top: 7px; width: 2px; height: 12px; background: rgba(199,125,255,0.55); }
+  #thumb { position: absolute; top: 4px; width: 10px; height: 18px; margin-left: -5px; background: #c77dff; border-radius: 2px; box-shadow: 0 0 8px rgba(199,125,255,0.8); }
   #btns { position: fixed; top: 10px; right: 12px; z-index: 8; display: flex; gap: 6px; }
   .btn {
     font: 10px ui-monospace, monospace; color: #d9b8ff; padding: 5px 8px; cursor: pointer;
@@ -78,6 +78,14 @@
   let frames = 0
   let ckIdx = CK.length ? CK.length - 1 : -1
 
+  // attract copy — kept short so no line exceeds the 390px phone text width
+  const ATTRACT_LINES = [
+    ['', 'the PHYSICS WALK body — balance'],
+    ['bold', 'by a neural net trained on this machine.'],
+    ['bold', 'any key / tap to start'],
+    ['', 'bottom bar scrubs the training'],
+  ]
+
   // ---- audio (synth only, unlocked on first press) ----
   let ac = null
   function unlock() { if (!ac) { ac = new (window.AudioContext || window.webkitAudioContext)(); ac.resume && ac.resume() } }
@@ -124,9 +132,11 @@
     epStart(seed)
   }
 
+  let pushCount = 0
   function pushWalker(v, raw) {
     if (screen !== 'play') { startRun(); return }
     if (lw.sim.mode === 'fallen') { const s = seed; lw = LW.create(lw.pp, { seed: s }); trail.length = 0; epStart(s); return }
+    pushCount++
     LW.PW.push(lw.sim, v, 0)
     thud(Math.min(1, v / 3))
     if (raw) pushRawPending = raw
@@ -169,6 +179,7 @@
     ckLabel.textContent = 'gen ' + ck.gen + ' (' + ck.stage + ') — walked ' + ck.meters + ' m, topples on ' + ck.fell + '/' + (POL.facts.eval ? 5 : '?') + ' test seeds'
     lw.pp.set(Float64Array.from(ck.params))
     if (screen === 'play') startRun()
+    liftCreditsTag()
   }
   drawTicks()
   setCk(ckIdx)
@@ -178,7 +189,18 @@
     setCk(Math.round((clientX - r.left) / r.width * (CK.length - 1)))
   }
   let scrubbing = false
-  track.addEventListener('pointerdown', (e) => { scrubbing = true; scrubTo(e.clientX); e.preventDefault() })
+  // the whole bottom bar is the scrub target — an 18px strip is a miss on a
+  // phone, and taps just outside #track landed in a dead band (#1435)
+  const scrubBar = document.getElementById('scrub')
+  function liftCreditsTag() {
+    // the shared credits tag sits bottom-right — on this demo it would cover
+    // the bar's right edge, so keep it lifted above the HUD bar (#1435)
+    const bar = document.getElementById('scrub')
+    document.documentElement.style.setProperty('--credits-bottom', Math.round(bar.getBoundingClientRect().height + 10) + 'px')
+  }
+  window.addEventListener('resize', liftCreditsTag)
+  liftCreditsTag()
+  scrubBar.addEventListener('pointerdown', (e) => { scrubbing = true; scrubTo(e.clientX); e.preventDefault() })
   window.addEventListener('pointermove', (e) => { if (scrubbing) scrubTo(e.clientX) })
   window.addEventListener('pointerup', () => { scrubbing = false })
 
@@ -208,7 +230,11 @@
     const blob = new Blob([JSON.stringify(rec)], { type: 'application/json' })
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = `learnedwalk-ep-seed${rec.seed}-t${rec.ticks}-${rec.episode.success ? 'win' : 'loss'}.json`
+    // run-stamp (UTC, ms) so repeated exports of the same seed+length don't
+    // collide across runs (#1435)
+    const stamp = new Date().toISOString().replace(/\D/g, '')
+    a.download = `learnedwalk-ep-seed${rec.seed}-t${rec.ticks}-${rec.episode.success ? 'win' : 'loss'}-${stamp}.json`
+    window.__lastExportName = a.download
     a.click()
   })
 
@@ -303,8 +329,7 @@
         (sim.mode === 'fallen' ? '<br><b style="color:#ff8a8a">TOPPLED — motors cut; he stands back up</b>' : '')
     } else {
       hud.innerHTML = '<span style="font-size:' + (22 * dpr) + 'px;color:#c77dff">LEARNED WALK</span><br>' +
-        'the PHYSICS WALK body — <b>but the balance controller is a neural<br>network trained on this machine.</b><br><br>' +
-        'any key / tap to start &nbsp;·&nbsp; bottom bar scrubs through training'
+        ATTRACT_LINES.map(([w, s]) => (w === 'bold' ? '<b>' + s + '</b>' : s)).join('<br>')
     }
   }
   function startAttractReset() { lw = LW.create(CK.length ? CK[CK.length - 1].params : new Float64Array(LW.NP), { seed: 12345 }); trail.length = 0 }
@@ -328,6 +353,14 @@
     setCheckpoint: (i) => setCk(i),
     checkpoint: () => ckIdx,
     generations: () => CK.length,
+    pushes: () => pushCount,
+    attractFit: () => {
+      const probe = document.createElement('canvas').getContext('2d')
+      return ATTRACT_LINES.every(([w, s]) => {
+        probe.font = (w === 'bold' ? 'bold ' : '') + '11px ui-monospace, Menlo, monospace'
+        return probe.measureText(s).width <= window.innerWidth - 24
+      })
+    },
     metrics: () => ({
       mode: lw.sim.mode, phi: +lw.sim.phi.toFixed(3), margin: +lw.sim.margin.toFixed(3),
       com: [+lw.sim.com[0].toFixed(3), +lw.sim.com[1].toFixed(3)],
