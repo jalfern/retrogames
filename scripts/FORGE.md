@@ -12,10 +12,14 @@ AGENTS.md wins.
    so a lone dirty `STATE.md` is a report, NOT a corpse. Park it, then refresh
    the checkout the way the law prescribes — detached, never a checkout of
    `main` (AGENTS.md, "Worktrees only"):
-   `mkdir -p /tmp/forge && cp STATE.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md && git fetch --prune origin && git checkout --detach origin/main`
+   `mkdir -p /tmp/forge && cp STATE.md /tmp/forge/STATE.<slot>.parked.md /tmp/forge/STATE.parked.md && git checkout -- STATE.md && git fetch --prune origin && git checkout --detach origin/main`
    (both checkouts are scoped: the first to STATE.md, the one file this lane
    owns; the second moves only the detached HEAD. No corpse can be wiped by
-   either). **Anything else dirty IS a corpse:**
+   either). #1430: park the slot-scoped copy FIRST — with only the shared path,
+   a parallel slot's step 1 can revert STATE.md and re-park stale content before
+   you finish reading. If STATE.md already matches HEAD when you meant to be
+   reading a report, run `node scripts/statepark.mjs read` — it prints the
+   newest park whose content differs from HEAD, or `NO-REPORT` (none pending). **Anything else dirty IS a corpse:**
    `git status --porcelain -- . ':(exclude)STATE.md'` must print nothing —
    if it does, STOP and report (the previous session died mid-edit; do not
    guess what was in flight). Never build in this checkout — after the claim,
@@ -170,9 +174,12 @@ AGENTS.md wins.
    merged this session (`git commit` on main is otherwise forbidden — if no
    game merged, leave STATE.md written but uncommitted and say why in it —
     step 1 knows that dirt from a corpse, and the QA lane parks it at
-    `/tmp/forge/STATE.parked.md`; if that copy is newer than what you read
-    at step 1, fold its open questions into your report so nothing
-    evaporates between lanes).
+    `/tmp/forge/STATE.parked.md`; #1430 — right after writing, also run
+     `node scripts/statepark.mjs park <slot>` so the handoff lands on your
+     slot-scoped path, where no parallel lane's step-1 revert or stale re-park
+     can touch it; if `node scripts/statepark.mjs read` answers a report newer
+     than what you read at step 1, fold its open questions into your report so
+     nothing evaporates between lanes).
 
 ## Hard rules (each one learned in a postmortem)
 
