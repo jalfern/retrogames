@@ -100,6 +100,28 @@ export function makeRing(windowMs = FB_WINDOW_MS) {
     }
 }
 
+// Dictation (#737 "type OR dictate"): pure glue between a spoken phrase and the
+// note being composed. Final transcripts append with exactly one space between
+// existing text and the new phrase (typing then dictating must not glue words),
+// whitespace inside the phrase collapses, blank phrases change nothing, and the
+// result never exceeds `maxLen` (the panel's textarea maxLength) — when a
+// phrase would overflow, the note keeps what it had rather than half a word.
+export function appendPhrase(note, phrase, maxLen = 2000) {
+    const clean = String(phrase == null ? '' : phrase).replace(/\s+/g, ' ').trim()
+    const base = String(note == null ? '' : note)
+    if (!clean) return base
+    const joined = base && !/\s$/.test(base) ? `${base} ${clean}` : `${base}${clean}`
+    if (joined.length > maxLen) return base.length <= maxLen ? base : base.slice(0, maxLen)
+    return joined
+}
+
+// Does this device have a speech recognizer at all? The panel hides its mic
+// button when false (Safari, headless CI) — same self-gating style as the
+// relay probe, so the fallback (typing) is never obscured by a dead button.
+export function dictationSupported(win = HAS_WIN ? window : null) {
+    return !!(win && (win.SpeechRecognition || win.webkitSpeechRecognition))
+}
+
 // Keyboard input logger: a global keydown/keyup bridge so EVERY game that answers
 // arrows/space banks real input with zero per-game wiring (VirtualControls already
 // dispatches these as KeyboardEvents). Returns a stop() that removes the listeners.
