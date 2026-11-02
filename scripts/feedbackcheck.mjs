@@ -12,8 +12,9 @@
 //   node scripts/feedbackcheck.mjs        # green when the contract holds
 //   node scripts/feedbackcheck.mjs --mutate   # RED by design (drop the size cap)
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
+import { seedFromQuery } from '../src/utils/gameContract.js'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
     corsOrigin, corsHeaders, CORS_ALLOW_HEADERS, FB_SHOT_PLACEHOLDER, screenshotMarkdown,
@@ -722,6 +723,33 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     backdropClick({ target: card, stopPropagation() {} })
     ok('panel1452: a tap on the backdrop (target === card) still closes it', card.classList.contains('open') === false)
 }
+
+// ── #737 seed-pin law: a reported seed must be replayable ──────────────────
+// A game that files its seed via __feedbackInfo but ignores ?seed=N at start
+// ships a decorative seed: feedbackreplay opens the game with the report's
+// seed and the game rolls a new world. Static law per game: if the file wires
+// exposeFeedbackState with a seed key, it must also consume seedFromQuery.
+const gcSrc = readFileSync(new URL('../src/utils/gameContract.js', import.meta.url), 'utf8')
+ok('seedpin: gameContract exports seedFromQuery (the shared half)', /export function seedFromQuery/.test(gcSrc))
+ok('seedpin: helper takes integers only (junk -> null, keep own RNG)',
+    seedFromQuery('?seed=42') === 42 && seedFromQuery('?seed=0') === 0
+    && seedFromQuery('?seed=1.5') === null && seedFromQuery('?seed=NaN') === null
+    && seedFromQuery('?seed=-3') === null && seedFromQuery('?seed=x') === null
+    && seedFromQuery('?x=1') === null && seedFromQuery('') === null)
+const unpinneable = []
+let reportingGames = 0
+for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFileTypes: true })) {
+    if (!d.isDirectory()) continue
+    const f = new URL(`../src/games/${d.name}/index.jsx`, import.meta.url)
+    let src = ''
+    try { src = readFileSync(f, 'utf8') } catch { continue }
+    const reportsSeed = /exposeFeedbackState\([\s\S]*?\bseed:/.test(src)
+    const pinsSeed = /seedFromQuery\s*\(/.test(src)
+    if (reportsSeed) reportingGames++
+    if (reportsSeed && !pinsSeed) unpinneable.push(d.name)
+}
+ok('seedpin: every seed-reporting game honors seedFromQuery', unpinneable.length === 0, unpinneable.join(','))
+ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 0, `${reportingGames} reporting`)
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator

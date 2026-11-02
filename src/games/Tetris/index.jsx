@@ -13,7 +13,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
@@ -108,7 +108,9 @@ const TetrisGame = () => {
         const startPlay = (level, seed) => {
             lastLevelRef.current = level
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
-            gs = newGame(level, seed === undefined ? seedCounter : seed >>> 0)
+            // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
+            const pin = seed === undefined ? seedFromQuery() : null
+            gs = newGame(level, (pin != null ? pin : seed === undefined ? seedCounter : seed) >>> 0)
             lockFlash = { cells: null, t: 0 }
             wasResting = false
             setFinalInfo(null)

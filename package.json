@@ -224,7 +224,7 @@
     "voicedrive": "node scripts/voicedrive.mjs",
     "recmethods": "node scripts/recmethods.mjs",
     "feedbackcheck": "node scripts/feedbackcheck.mjs",
-    "feedbackreplay": "node scripts/feedbackreplay.mjs",
+    "feedbackreplay": "node scripts/feedbackreplay.mjs --selftest",
     "nightlyheal": "node scripts/nightly-heal.mjs --selftest",
     "nightlyverdictcheck": "node scripts/nightlyverdictcheck.mjs",
     "lint:smash": "eslint src/games/SmashTV src/components src/utils src/config src/main.jsx scripts/smashcheck.mjs scripts/smashplay.mjs scripts/lib",

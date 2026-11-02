@@ -145,6 +145,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run feedbackcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run feedbackreplay
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run pulsecheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run nightlyheal
