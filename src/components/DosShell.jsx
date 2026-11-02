@@ -34,7 +34,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from './PauseOverlay'
 import { GAMES } from '../config/games'
 import { installDosKeys, resetDosKeys, pressKey, pressArrow, typeText, keysReady, keysDebug, KEY } from '../utils/dosKeys'
-import { findCanvas, sampleBuffer, toDataUrl, framePrint, focusEmulator } from '../utils/dosCanvas'
+import { findCanvas, sampleBuffer, toDataUrl, framePrint, subPrint, bandProfile, regionStats, focusEmulator } from '../utils/dosCanvas'
 import { mountDos } from '../utils/jsdos'
 
 // Full keyboard sheet: every letter Ultima's parsers take, then the digits
@@ -141,6 +141,9 @@ function DosShell({ bundleUrl, label, keys = [] }) {
         return { w: buf.w, h: buf.h, meanLuma: Math.round(lum / px), nonBlack: +(lit / px).toFixed(3) }
       },
       print: () => framePrint(rootRef.current),
+      subPrint: (opts) => subPrint(rootRef.current, opts),
+      bandProfile: (opts) => bandProfile(rootRef.current, opts),
+      regionStats: (opts) => regionStats(rootRef.current, opts),
       // What the touch pad actually offers — the harness asserts this, not a
       // screenshot: arrows + ESC/↵/␣ + the title's primary verbs + the sheet.
       pad: () => ({ arrows: true, basics: ['esc', 'enter', 'space'], keys, sheet: SHEET_KEYS }),

@@ -288,17 +288,18 @@ for (const game of games) {
   }
 
   if (game === 'ultima1' && dosHooked) {
-    // The whole point of #1451: a key press must reach DOSBox. Take a resting
-    // baseline FIRST — if the screen animates on its own, a bare hash change
-    // proves nothing — then require the press to move the frame past that drift.
+    // #1463: Prove the guest REACTED, not just that the handler fired.
     //
-    // KNOWN OPEN (filed, #see PR): on a cold boot this reads jump=0 against
-    // restDrift=0 — the frame is static because js-dos is still loading (it
-    // boots at 40-90 s headless; this block runs ~25 s in). Do NOT relax the
-    // margin: the next step is to gate on the guest having actually booted
-    // (frame churn after ci-ready, or Dos.instance onEvent 'emulator-started')
-    // before taking the baseline. A key that changes nothing AFTER boot is the
-    // bug worth failing on; a key pressed into a loading bar is not a test.
+    // The problem: Ultima's title screen animates flames across the full frame.
+    // Full-frame printDistance gives restDrift≈9 while a keypress jump≈9 — the
+    // noise and signal are inseparable.
+    //
+    // The fix: sample ONLY the lower region (y≥90) where menu items and text
+    // appear. Flames live at y<90; they contribute nothing here. Then either:
+    //   (a) subPrint distance exceeds sub-region rest drift → the screen content
+    //       changed in the area that matters (a screen advance or new text appeared), or
+    //   (b) bandProfile.highlight shifts after an arrow press → the menu
+    //       selection moved, proving interactive reaction to the input.
     const h0 = await page.evaluate(() => window.__dosTest.print())
     if (!h0) {
       r.check('ultima1: the guest frame is readable for the key test', false, 'print() returned null (no canvas yet)')
@@ -319,30 +320,64 @@ for (const game of games) {
       if (!live) {
         r.info('ultima1: guest frame never churned — key routing not testable on this boot')
       } else {
-        // Measured 2026-11-02: this title ANIMATES at rest (restDrift=9.23) and
-        // a keypress lands inside that noise (jump=8.95), so no brightness-block
-        // margin can separate "the menu advanced" from "the flames flickered".
-        // The distance metric that proves King's Quest moves is blind here, so
-        // the numbers are recorded instead of asserted into a permanent false
-        // red. Proving keys reach Ultima's guest needs a different sensor (the
-        // menu-highlight row, or OCR of the command line) — filed as feedback so
-        // it stays a real question instead of a guess. The actuator itself IS
-        // proven above: keysDebug().captured + the shared dosKeys path that
-        // moves Graham in kingsquest below.
+        // --- Sub-region reaction proof (#1463) ---
+        // Sample the lower half (y=90, h=110): excludes animated flames that
+        // occupy the top. This is where menus and text appear in Ultima I–V.
+        const SUB = { x: 0, y: 90, w: 320, h: 110, cols: 10, rows: 8 }
         await page.waitForTimeout(2500)
-        const h0b = await page.evaluate(() => window.__dosTest.print())
-        const restDrift = await page.evaluate(({ a, b }) => {
-          const d = (x, y) => { let s = 0; for (let i = 0; i < x.length; i++) s += Math.abs(x[i] - y[i]); return s / x.length }
-          return +d(a, b).toFixed(2)
-        }, { a: prev.blocks, b: h0b.blocks })
+        const s0 = await page.evaluate((cfg) => window.__dosTest.subPrint(cfg), SUB)
+        // Measure rest drift in the sub-region only (no flames here)
+        await page.waitForTimeout(2000)
+        const s1 = await page.evaluate((cfg) => window.__dosTest.subPrint(cfg), SUB)
+        let subRestDrift = Infinity
+        if (s0 && s1) {
+          subRestDrift = await page.evaluate(({ a, b }) => {
+            let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length
+          }, { a: s0.blocks, b: s1.blocks })
+        }
+        // Press Enter to advance (title→menu) or interact
         await page.evaluate(() => { window.__dosTest.focus(); window.__dosTest.press({ keyCode: 13 }) })
         await page.waitForTimeout(2500)
+        const s2 = await page.evaluate((cfg) => window.__dosTest.subPrint(cfg), SUB)
+        let subJump = Infinity
+        if (s1 && s2) {
+          subJump = await page.evaluate(({ a, b }) => {
+            let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length
+          }, { a: s1.blocks, b: s2.blocks })
+        }
+        // Gate: sub-region jump must exceed sub-region rest drift by a clear margin.
+        // subRestDrift should be low (≤1.5) since we excluded flames; subJump should
+        // be high (>2) if a screen advance or text change happened.
+        const subDist = s1 && s2 ? s1.hash !== s2.hash : false
+        const reacted = subJump > Math.max(subRestDrift + 1.0, 2.0)
+        r.check('ultima1: guest REACTED to Enter (sub-region y≥90, excluding flames)',
+          reacted,
+          `subJump=${subJump.toFixed(2)} subRestDrift=${subRestDrift.toFixed(2)} hash ${s1?.hash}->${s2?.hash} subDist=${subDist}`)
+
+        // Secondary check: if on main menu, ↓ should shift the highlight band.
+        // bandProfile detects which horizontal band is brightest (the selected item).
+        const BAND_CFG = { y: 100, x: 40, w: 240, itemHeight: 14, count: 6 }
+        const bpBefore = await page.evaluate((cfg) => window.__dosTest.bandProfile(cfg), BAND_CFG)
+        await page.evaluate(() => { window.__dosTest.focus(); window.__dosTest.press({ keyCode: 40 }) })
+        await page.waitForTimeout(1500)
+        const bpAfter = await page.evaluate((cfg) => window.__dosTest.bandProfile(cfg), BAND_CFG)
+        if (bpBefore && bpAfter && bpBefore.highlight !== null && bpAfter.highlight !== null) {
+          r.check('ultima1: ↓ shifted the menu highlight (bandProfile highlight slot changed)',
+            bpBefore.highlight !== bpAfter.highlight,
+            `highlight ${bpBefore.highlight}->${bpAfter.highlight}`)
+        } else {
+          // Not on a visible menu yet (title screen still animating, or submenu) —
+          // the primary subPrint check above is the load-bearing gate; bandProfile
+          // is bonus evidence that strengthens confidence.
+          r.info(`ultima1: bandProfile inconclusive (before=${bpBefore?.highlight}, after=${bpAfter?.highlight}) — not on a menu screen`)
+        }
+
+        // Record the full-frame numbers for regression tracking
         const h1 = await page.evaluate(() => window.__dosTest.print())
-        const jump = await page.evaluate(({ a, b }) => {
-          const d = (x, y) => { let s = 0; for (let i = 0; i < x.length; i++) s += Math.abs(x[i] - y[i]); return s / x.length }
-          return +d(a, b).toFixed(2)
-        }, { a: prev.blocks, b: h1.blocks })
-        r.info(`ultima1: ENTER landed (hash ${prev.hash} -> ${h1.hash}, jump=${jump}, restDrift=${restDrift}) — animated title, advance not provable by frame distance; see filed issue`)
+        const fullJump = prev && h1 ? await page.evaluate(({ a, b }) => {
+          let s = 0; for (let i = 0; i < a.length; i++) s += Math.abs(a[i] - b[i]); return s / a.length
+        }, { a: prev.blocks, b: h1.blocks }) : 0
+        r.info(`ultima1: full-frame context (fullJump=${fullJump.toFixed(2)}, subRestDrift=${subRestDrift.toFixed(2)}, subJump=${subJump.toFixed(2)})`)
       }
     }
   }
