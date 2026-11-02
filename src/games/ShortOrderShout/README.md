@@ -209,14 +209,28 @@ off-by-one below. All of it re-verified from scratch; b credited in the PR.
    `SOS_MUTANT=arrival` flips on message arrival instead of the anchored tick
    => flip mismatch (215 vs 219) + red boundary assertions.
 
+## Strip ergonomics + juice (#1468 QA, 2026-11-02)
+
+All renderer/audio/harness; engine + wire untouched (shift hashes unchanged).
+Host seat chips answer a tap with a mustard shrink-countdown until the anchored
+tick (`cmd.stats().pending` — no more silence during the ~0.5 s CMD_LEAD) and
+refusals say why (`NO CPU FOR YOU`, `Pn GONE — GONE`). Promote got its own
+ascending apron-bell (`seatBackFx`). Hit boxes are thumb standard: chips 20 px
+tall inside `CHIP_ZONE`, MIC 18x20, VOX 22x20, RTT pips in `PIP_ZONE` — the
+four zones are disjoint constants in art.js, asserted by 6 soscheck checks.
+The tag of a seat that is AUDIBLE blinks cyan: your own live mic (self-mirror
+of `Pn SPOKE`) and a friend's take while it plays (so echo refusals name a
+face). soslinkcheck pins the countdown contract (+4 => 137).
+
 ## Honest gaps
 
 - **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
   #1432); full-duplex/WebRTC audio is still deferred, and the #1247 recorder
   path keeps banking per-seat mic audio alongside it.
 - **Voice ops**: the production toggle (M arm, VOX, echo gate) is proven at
-  the machine/wire tier; its canvas chips are drawn at 8 px text and the
-  mic-hit zone is 14x12 canvas px — thumb-friendly tuning is QA's.
+  the machine/wire tier. Thumb tuning shipped (#1468): MIC/VOX/seat-chip hit
+  boxes are >=20 canvas px in disjoint zones (`art.js` + soscheck asserts);
+  the soslinkdrive browser tier for these surfaces still awaits a Chrome box.
 - Seats 3–4 are CPU-only locally (a third keyboard pad is what online
   unlocks); the pad is d-pad-only movement (no analog).
 - The patty-burn chain (burnt→fire) has no "cool the pan" counterplay

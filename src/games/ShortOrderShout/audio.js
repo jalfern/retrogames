@@ -46,6 +46,16 @@ export function seatDropFx() {
     AC.playNoise(0.08, 0.12)
 }
 
+// #1468 QA: the counterpart of seatDropFx — a demoted seat promoted back to
+// its human mid-shift. Apron-bell flavour: a rising triangle triad capped by
+// the bell's top harmonic, no clatter (the counter just cleaned itself).
+export function seatBackFx() {
+    AC.playTone(523, 0.07, 'triangle', 0.05)
+    AC.playTone(659, 0.07, 'triangle', 0.05, 0.09)
+    AC.playTone(784, 0.07, 'triangle', 0.05, 0.18)
+    AC.playTone(1568, 0.18, 'triangle', 0.04, 0.27)
+}
+
 export function playFx(f) {
     switch (f.k) {
         case 'print': // dot-matrix ticket zip + service bell ding (#1292)

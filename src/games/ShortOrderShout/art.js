@@ -9,6 +9,19 @@ export const CANVAS_H = 224
 export const KITCHEN_X = 4
 export const KITCHEN_Y = 48
 
+// Bottom-strip ergonomics (#1468 QA): the tappable boxes as DATA, exported so
+// the Node harness can prove the thumb standard — nothing tappable is shorter
+// than CHIP_MIN_H, and the seat-chip / MIC / VOX / RTT-pip zones never touch.
+// The hit box may exceed the drawn glyph; thumbs graze, icons don't have to.
+export const CHIP_MIN_H = 20
+export const MIC_RECT = { x: CANVAS_W - 18, y: CANVAS_H - CHIP_MIN_H - 2, w: 18, h: CHIP_MIN_H }
+export const VOX_RECT = { x: CANVAS_W - 42, y: CANVAS_H - CHIP_MIN_H - 2, w: 22, h: CHIP_MIN_H }
+// RTT pips draw inside PIP_ZONE (max 3 remote humans); host seat chips draw
+// and hit inside CHIP_ZONE. Zones are disjoint — see soscheck asserts.
+export const PIP_ZONE = { x: CANVAS_W - 112, y: CANVAS_H - 12, w: 64, h: 12 }
+export const CHIP_ZONE = { x: 0, y: CANVAS_H - CHIP_MIN_H - 2, w: CANVAS_W - 112, h: CHIP_MIN_H }
+export const rectsOverlap = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+
 const PAL = {
     floorA: '#e8d8a0', floorB: '#c25a48', grout: '#8a6a48',
     wall: '#3a2626', wallHi: '#543636', wallLo: '#241616',

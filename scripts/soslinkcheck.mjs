@@ -704,11 +704,19 @@ console.log('# seat control: host demotes/promotes seats mid-shift, flips anchor
     ok(guest.seatCmd(0, 'cpu') === false, 'a guest cannot command seats')
     ok(host.seatCmd(1, 'cpu') === true, 'the host demotes seat 1 mid-shift')
     const at1 = host.cmd.stats().pending[0].at
+    // #1468 QA: the HUD's pending countdown reads exactly this contract —
+    // cmd.stats().pending {seat,mode,at} plus sync.stats().nextSample — from
+    // tap until the anchor; a second tap debounces so one countdown shows.
+    const pend1 = host.cmd.stats().pending
+    ok(pend1.length === 1 && pend1[0].seat === 1 && pend1[0].mode === 'cpu', 'pending reports the in-flight flip (seat+mode) for the countdown')
+    ok(pend1[0].at > host.sync.stats().nextSample && pend1[0].at - host.sync.stats().nextSample <= CMD_LEAD, 'the countdown starts full: at is <= CMD_LEAD ticks ahead of nextSample')
+    ok(host.seatCmd(1, 'cpu') === false && host.cmd.stats().pending.length === 1, 'a second tap while one is in flight debounces (chip keeps a single countdown)')
     runTogether([host, guest], 400)
     ok(host.flips.cpu1 !== undefined && guest.flips.cpu1 === host.flips.cpu1,
         `both boxes flip seat 1 at the SAME sim tick (${host.flips.cpu1}/${guest.flips.cpu1})`)
     ok(Math.abs(host.flips.cpu1 - at1) <= 2, `the flip lands at the anchored tick (at ${at1}, applied ${host.flips.cpu1})`)
     ok(host.demoted.join() === '1' && guest.demoted.join() === '1', 'seat 1 -> CPU on both boxes')
+    ok(host.cmd.stats().pending.length === 0 && guest.cmd.stats().pending.length === 0, '#1468 pending drains at the anchor — the HUD countdown clears on both boxes')
     ok(host.sync.hasPad(1, host.flips.cpu1 + 3) === false, 'pads in flight across the flip never revive the demoted seat')
     ok(host.desyncs.length === 0 && guest.desyncs.length === 0, 'zero desyncs across the anchored demote', JSON.stringify([host.desyncs[0], guest.desyncs[0]]))
     // forged command on the wire from the guest slot: refused everywhere

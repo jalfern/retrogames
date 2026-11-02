@@ -9,6 +9,7 @@
 //      SOS_SKIP_BROWSER=1 npm run soscheck   (rule/determinism/win only)
 
 import { createGame, stepGame, simState, makeCpuEmitter, cellKind, SHIFT_TICKS, QUOTA, RUNNER_POST } from '../src/games/ShortOrderShout/engine.js'
+import { MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE, CHIP_MIN_H, rectsOverlap } from '../src/games/ShortOrderShout/art.js'
 
 const URL = process.env.SOS_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/short-order-shout`
 
@@ -44,6 +45,18 @@ ok('counter solid cols 0..10', [...Array(11).keys()].every((x) => cellKind(x, 3)
 ok('gap at cols 11-12', cellKind(11, 3) === 'floor' && cellKind(12, 3) === 'floor')
 ok('window on pass side', cellKind(0, 5) === 'window')
 ok('stations in wall row', cellKind(0, 0) === 'cooler' && cellKind(4, 0) === 'board' && cellKind(6, 0) === 'burner' && cellKind(9, 0) === 'pot' && cellKind(11, 0) === 'tap')
+
+// 1b. bottom-strip ergonomics (#1468 QA): thumb-standard hit boxes, no zones
+// touching. The renderer sizes seat chips from CHIP_ZONE/CHIP_MIN_H and draws
+// pips inside PIP_ZONE — so zone disjointness = no chip can ever eat a tap.
+{
+    ok('#1468 MIC/VOX chips meet the thumb standard (>=20px tall)', MIC_RECT.h >= CHIP_MIN_H && VOX_RECT.h >= CHIP_MIN_H && MIC_RECT.w >= 16 && VOX_RECT.w >= 20, JSON.stringify({ mic: MIC_RECT, vox: VOX_RECT }))
+    ok('#1468 MIC and VOX boxes are separated', !rectsOverlap(MIC_RECT, VOX_RECT))
+    ok('#1468 seat-chip zone clears MIC/VOX', !rectsOverlap(CHIP_ZONE, MIC_RECT) && !rectsOverlap(CHIP_ZONE, VOX_RECT))
+    ok('#1468 seat-chip zone clears RTT pips', !rectsOverlap(CHIP_ZONE, PIP_ZONE))
+    ok('#1468 voice chips clear RTT pips', !rectsOverlap(PIP_ZONE, MIC_RECT) && !rectsOverlap(PIP_ZONE, VOX_RECT))
+    ok('#1468 all zones sit on the canvas', [MIC_RECT, VOX_RECT, CHIP_ZONE, PIP_ZONE].every((r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= 320 && r.y + r.h <= 224))
+}
 
 // 2. determinism: same seed + pads => identical hash
 {
