@@ -11,6 +11,7 @@ import {
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
+import { drawFire, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE } from '../src/games/FireCrew/art.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 let passes = 0
@@ -391,6 +392,63 @@ console.log('roster + registry wiring')
     const sim = readFileSync(path.join(HERE, '../src/games/FireCrew/sim.js'), 'utf8')
     ok(/export function applyRadio/.test(sim), 'the sim owns the radio entry point')
     ok(/export const sweepCovers/.test(sim) && /g\.sweep && g\.sweep\.t > 0/.test(sim), 'the sweep rides the lightAt rule')
+}
+
+console.log('night art pass (#1440)')
+{
+    // A minimal recording 2D surface: drawFire only fills and strokeRects, so
+    // the art pass is provable in plain Node — same law as the sim gates.
+    const rec = () => {
+        const ops = []
+        return {
+            ops,
+            fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, globalAlpha: 1,
+            fillRect(x, y, w, h) { ops.push({ op: 'fill', style: this.fillStyle, x, y, w, h }) },
+            strokeRect(x, y, w, h) { ops.push({ op: 'stroke', style: this.strokeStyle, x, y, w, h }) },
+        }
+    }
+    // one named burning cell on a seed-7 layout, everything else cold
+    const cellsWith = (spots) => {
+        const g = makeRun(7)
+        g.cell.forEach((c) => { if (c) { c.burning = false; c.heat = 0 } })
+        for (const [x, y, fuel] of spots) {
+            g.cell[y * W + x] = { fuel, heat: 100, burning: true }
+        }
+        return g
+    }
+    const styles = (r) => new Set(r.ops.map((o) => o.style))
+
+    // flame character per fuel type
+    const loft = rec(); drawFire(loft, cellsWith([[8, 2, 70]]), 0) // loft decking row
+    const crate = rec(); drawFire(crate, cellsWith([[8, 12, 70]]), 0) // ground furniture
+    ok(styles(loft).has('#c8371a') && !styles(loft).has('#e84a12'), 'loft decking burns heavy-timber amber')
+    ok(styles(crate).has('#e84a12') && !styles(crate).has('#c8371a'), 'ground crates burn white-hot (distinct palette)')
+
+    // collapse telegraph: a starving cell warns before the sim opens the hole
+    const starv = rec(); drawFire(starv, cellsWith([[8, 12, COLLAPSE_WARN_FUEL - 13]]), 4)
+    const healthy = rec(); drawFire(healthy, cellsWith([[8, 12, 70]]), 4)
+    ok(starv.ops.some((o) => o.style === COLLAPSE_CRACK), 'a starving floor telegraphs sag cracks')
+    ok(starv.ops.some((o) => o.op === 'stroke' && o.style === COLLAPSE_RIM), 'the hole-rim blinks before the drop')
+    ok(!healthy.ops.some((o) => o.style === COLLAPSE_CRACK || o.style === COLLAPSE_RIM), 'a healthy floor shows no collapse warning')
+    const baseOf = (r) => r.ops.find((o) => o.style === '#e84a12')
+    ok(baseOf(starv).y > baseOf(healthy).y && baseOf(starv).h < baseOf(healthy).h, 'the flame sinks toward the joists as fuel starves')
+
+    // gale embers: gust 2 throws bright streaks downwind; calm never does
+    const gusted = cellsWith([[8, 12, 70]]); gusted.wind = { dir: 0, gust: 2, next: 9999 }
+    const calm = cellsWith([[8, 12, 70]]); calm.wind = { dir: 0, gust: 0, next: 9999 }
+    let galeSeen = false
+    const calmOps = rec()
+    for (let t = 0; t < 60; t++) {
+        const r = rec(); drawFire(r, gusted, t)
+        if (r.ops.some((o) => o.style === EMBER_GALE)) galeSeen = true
+        drawFire(calmOps, calm, t)
+    }
+    ok(galeSeen, 'a gale strips ember streaks off the canopy')
+    ok(!calmOps.ops.some((o) => o.style === EMBER_GALE), 'no gale streaks when the wind is not gusting')
+    const streakRun = rec(); for (let t = 0; t < 60; t++) drawFire(streakRun, gusted, t)
+    const gale = streakRun.ops.filter((o) => o.style === EMBER_GALE)
+    ok(gale.length >= 3 && gale.some((o, i) => gale[i + 2] && gale[i + 1].x === o.x + 3 && gale[i + 2].x === o.x + 6 && gale[i + 1].y === o.y && gale[i + 2].y === o.y),
+        'the streak runs downwind (E at dir 0), not at the player')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
