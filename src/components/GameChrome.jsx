@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { GAMES } from '../config/games'
 import { dispatchPause } from '../utils/pauseEvent'
-import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeedback, installTypingGuard, saveJonKey, readJonKey } from '../utils/feedback'
+import { makeRing, startKeyboardRing, captureFeedback, submitFeedback, probeFeedback, installTypingGuard, saveJonKey, readJonKey, appendPhrase, dictationSupported } from '../utils/feedback'
+import { startSpeechListen } from '../utils/speechListen'
 import RotateHint from './RotateHint'
 
 // Shared in-game chrome (#437): two always-visible corner buttons on every game
@@ -35,6 +36,14 @@ const FeedbackButton = ({ theme }) => {
     const [note, setNote] = useState('')
     const [status, setStatus] = useState(null)
     const [toast, setToast] = useState(null)
+    // Dictation (#737 "type OR dictate"): final transcripts append to the note,
+    // interim words only flicker in the status line. The button hides itself
+    // where no recognizer exists (Safari, headless CI) — typing always works.
+    const micOk = dictationSupported()
+    const listenRef = useRef(null)
+    const [listening, setListening] = useState(false)
+    const [heard, setHeard] = useState('')
+    const [micErr, setMicErr] = useState(null)
     const [keySaved, setKeySaved] = useState(() => {
         try { return !!readJonKey(window.localStorage) } catch { return false }
     })
@@ -52,11 +61,22 @@ const FeedbackButton = ({ theme }) => {
         return startKeyboardRing(ring)
     }, [ready])
 
+    const stopDictation = useCallback(() => {
+        if (listenRef.current) { listenRef.current.stop(); listenRef.current = null }
+        setListening(false)
+        setHeard('')
+    }, [])
+
+    // Unmount must silence the mic too — a left-running recognizer keeps the
+    // orange dot lit after the game screen is gone.
+    useEffect(() => stopDictation, [stopDictation])
+
     const closePanel = useCallback(() => {
         setOpen(false)
         setStatus(null)
+        stopDictation()
         dispatchPause()
-    }, [])
+    }, [stopDictation])
 
     // #905: the panel is its OWN screen, not a card floating over the game/help
     // overlay, and its keys never reach the game (capture-phase guard) — Space
@@ -83,6 +103,32 @@ const FeedbackButton = ({ theme }) => {
         } else {
             setStatus(`failed: ${res.err}`)
         }
+    }
+
+    const toggleDictation = () => {
+        if (listening) { stopDictation(); return }
+        setMicErr(null)
+        setHeard('')
+        const h = startSpeechListen({
+            onPhrase: (p) => setNote((n) => appendPhrase(n, p)),
+            onHeard: (partial) => setHeard(partial),
+            onError: (code) => {
+                // Soft wobbles (no-speech/aborted/network) self-rearm inside
+                // speechListen; a hard failure lands `active:false` — then the
+                // button drops back to idle and says why typing still works.
+                if (!h.active) {
+                    listenRef.current = null
+                    setListening(false)
+                    setHeard('')
+                    setMicErr(code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture'
+                        ? 'mic blocked — type instead'
+                        : `mic stopped (${code})`)
+                }
+            },
+        })
+        if (!h.supported) { setMicErr('no mic on this browser'); return }
+        listenRef.current = h
+        setListening(true)
     }
 
     const saveKey = () => {
@@ -177,6 +223,11 @@ const FeedbackButton = ({ theme }) => {
                                 </>
                             )}
                         </div>
+                        {(listening || micErr) && (
+                            <div data-feedback="heard" className={`mt-2 text-[10px] font-mono truncate ${dark ? 'text-white/70' : 'text-black/60'}`}>
+                                {micErr || (listening ? `listening… ${heard}` : '')}
+                            </div>
+                        )}
                         <div className="mt-3 flex items-center justify-between gap-2">
                             <button
                                 data-feedback="send"
@@ -186,6 +237,15 @@ const FeedbackButton = ({ theme }) => {
                             >
                                 SEND
                             </button>
+                            {micOk && (
+                                <button
+                                    data-feedback="mic"
+                                    onClick={toggleDictation}
+                                    className={`text-[10px] font-mono tracking-widest px-2 py-1 rounded border ${edge} ${listening ? 'opacity-100' : ''}`}
+                                >
+                                    {listening ? '■ STOP' : 'DICTATE'}
+                                </button>
+                            )}
                             {status && <span className="text-[10px] font-mono opacity-70 truncate">{status}</span>}
                         </div>
                     </div>

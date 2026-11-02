@@ -23,7 +23,7 @@ import {
 import {
     makeRing, captureFeedback, submitFeedback, probeFeedback, FB_RELAY,
     storeJonKey, readJonKey, saveJonKey, JONKEY_STORE,
-    startKeyboardRing, installTypingGuard,
+    startKeyboardRing, installTypingGuard, appendPhrase, dictationSupported,
 } from '../src/utils/feedback.js'
 import { REC_FORMAT, validate, verifyRecording, decodePad, encodePad } from '../src/utils/recording.js'
 import { makeGame, step, stateHash } from '../src/games/Gauntlet/sim.js'
@@ -756,6 +756,83 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // Tempest, LunarLander, Lemmings) → 11 reporting+pinning titles. Dropping
 // below is a regression, so pin it.
 ok('seedpin: rollout floor — at least 11 games report+pin seeds', reportingGames >= 11, `${reportingGames} reporting`)
+
+// ── #737 "type OR dictate": the mic half of the note ────────────────────────
+// Dictation is how a mid-game phone report gets written. The recognizer wrapper
+// is drivable without a mic: makeDictation takes an injected window, so a fake
+// SpeechRecognition proves the whole pipeline — config, interim-vs-final
+// routing, permission disarm, silence rearm, and stop() staying stopped. The
+// append rule is what keeps typed+dictated text readable; the wiring gates pin
+// that BOTH surfaces (in-game panel + demo credits card) carry the mic button,
+// stop recognition when the panel closes, and hide it where no API exists.
+ok('dictate: appendPhrase joins typed + spoken text with one space',
+    appendPhrase('black flash', 'on resize') === 'black flash on resize'
+    && appendPhrase('black flash ', 'on resize') === 'black flash on resize'
+    && appendPhrase('', 'it stutters') === 'it stutters')
+ok('dictate: a blank phrase never rewrites the note',
+    appendPhrase('keep me', '   ') === 'keep me' && appendPhrase('keep me', null) === 'keep me')
+ok('dictate: overflow keeps the existing note intact (no half words)',
+    appendPhrase('x'.repeat(1995), 'a phrase too far', 2000) === 'x'.repeat(1995))
+ok('dictate: supported() gates on the API existing (Safari/CI hide the mic)',
+    dictationSupported({ webkitSpeechRecognition: class {} }) === true
+    && dictationSupported({ SpeechRecognition: class {} }) === true
+    && dictationSupported({}) === false && dictationSupported(null) === false)
+{
+    const made = []
+    class FakeSR {
+        constructor() { made.push(this); this.started = 0 }
+        start() { this.started++ }
+        stop() {}
+    }
+    const d = dfb.makeDictation({ SpeechRecognition: FakeSR })
+    ok('dictate: unsupported window never starts (start() false, no instance)',
+        dfb.makeDictation({}).supported() === false && dfb.makeDictation({}).start({}) === false && made.length === 0)
+    ok('dictate: start arms continuous en-US recognition with interim results',
+        d.start({ onText: () => {}, onHeard: () => {}, done: () => {} }) === true
+        && d.active() === true && made.length === 1 && made[0].started === 1
+        && made[0].lang === 'en-US' && made[0].continuous === true && made[0].interimResults === true)
+    const texts = [], heardList = []
+    const d2 = dfb.makeDictation({ SpeechRecognition: FakeSR })
+    const doneSeen = []
+    d2.start({ onText: (t) => texts.push(t), onHeard: (p) => heardList.push(p), done: (w) => doneSeen.push(w) })
+    const inst = made[made.length - 1]
+    inst.onresult({ resultIndex: 0, results: [{ 0: { transcript: 'stutters ' }, isFinal: false }] })
+    const afterInterim = texts.length
+    inst.onresult({ resultIndex: 0, results: [{ isFinal: true, transcript: ' after wave 3 ' }] })
+    ok('dictate: interim words stream live; final transcripts reach the note',
+        afterInterim === 0 && heardList.join('|') === 'stutters' && texts.join('|') === 'after wave 3')
+    inst.onerror({ error: 'no-speech' })
+    ok('dictate: a silence wobble does NOT disarm (rearm is the answer)', d2.active() === true && doneSeen.length === 0)
+    inst.onend()
+    await new Promise((r) => setTimeout(r, 200))
+    ok('dictate: Chrome silence-end rearms while armed (a second recognizer)',
+        made.length === 3 && d2.active() === true)
+    d2.stop()
+    const n = made.length
+    ok('dictate: stop() detaches the end handler (no rearm can fire)', made[n - 1].onend === null)
+    await new Promise((r) => setTimeout(r, 200))
+    ok('dictate: stop() disarms for good — no recognizer after it',
+        d2.active() === false && made.length === n)
+    const d3 = dfb.makeDictation({ SpeechRecognition: FakeSR })
+    d3.start({ onText: () => {}, done: (w) => doneSeen.push(w) })
+    made[made.length - 1].onerror({ error: 'not-allowed' })
+    ok('dictate: permission refusal disarms and names the reason',
+        d3.active() === false && doneSeen[doneSeen.length - 1] === 'not-allowed')
+}
+{
+    const chromeSrc = readFileSync(new URL('../src/components/GameChrome.jsx', import.meta.url), 'utf8')
+    ok('dictate wire: the in-game panel mounts a mic button via the house recognizer',
+        /data-feedback="mic"/.test(chromeSrc) && /from '\.\.\/utils\/speechListen'/.test(chromeSrc)
+        && /startSpeechListen\(/.test(chromeSrc))
+    ok('dictate wire: in-game finals append with appendPhrase; interim stays in the status line',
+        /onPhrase:\s*\(p\)\s*=>\s*setNote\(\(n\)\s*=>\s*appendPhrase\(n,\s*p\)\)/.test(chromeSrc)
+        && /onHeard:\s*\(partial\)\s*=>\s*setHeard\(partial\)/.test(chromeSrc))
+    ok('dictate wire: closing the in-game panel silences the mic',
+        /closePanel[\s\S]{0,200}stopDictation\(\)/.test(chromeSrc))
+    ok('dictate wire: the demo card carries the same law — mic button, stop on close',
+        /data-feedback="mic"/.test(fbSrc) && /closePanel[\s\S]{0,160}stopDictation\(\)/.test(fbSrc)
+        && /dictation\.supported\(\)/.test(fbSrc))
+}
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
