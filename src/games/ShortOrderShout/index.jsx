@@ -24,13 +24,17 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, snapshotGame, restoreGame, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
-import { createSosSync, createRttTracker, packSnap, padMask, stallNotice, DROP_GRACE } from './net.js'
+import { createSosSync, createRttTracker, createSeatCtl, packSnap, padMask, stallNotice, DROP_GRACE, PAD_DELAY, CMD_LEAD } from './net.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
 import { playFx, dinerBar, resetDiner, seatDropFx } from './audio.js'
 
 const FIXED_DT = 1000 / 60
 const IS_TOUCH = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0)
 const SEAT_KEYS_HUMAN2 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }
+// Voice chips in the bottom strip (#1416 voice stage): a hold-to-talk mic for
+// touch and an arm/disarm chip for every input. Canvas-space hit rects.
+const MIC_RECT = { x: CANVAS_W - 14, y: CANVAS_H - 16, w: 14, h: 12 }
+const VOX_RECT = { x: CANVAS_W - 36, y: CANVAS_H - 16, w: 20, h: 12 }
 const ATTRACT_MSGS = [
     'THE COUNTER SPLITS THE KITCHEN',
     'SHOUT. TOSS. SERVE.',
@@ -171,13 +175,21 @@ export default function ShortOrderShout() {
             const sc = screenRef.current
             if (net.active) {
                 if (ev.code === 'KeyP' && net.role === 'host') { partnerHumanRef.current = !partnerHumanRef.current; pushNetUi() }
+                if (ev.code === 'KeyM' && !ev.repeat) { toggleVoiceArm(); return }
                 // #1416 gap 7 find: the lobby PROMISES "SPACE STARTS THE SHIFT"
                 // but the net branch only ever handled the over-screen re-kick —
                 // a desktop host pressing Space got silence. Honor the hint:
                 // Space/Enter in the lobby (never mid-play) kicks the shift.
                 if ((ev.code === 'Space' || ev.code === 'Enter') && net.role === 'host' && sc !== 'play' && sc !== 'over') { ev.preventDefault(); onlineStart(); return }
                 if (sc === 'over' && net.role === 'host' && performance.now() - overAtRef.current > 900 && (ev.code === 'Space' || ev.code === 'Enter')) onlineStart()
-                return
+                // #1416 gap-2 stage find: this branch used to return EVERY key.
+                // Since the lobby landed the online kitchen was DEAF — arrows,
+                // Space, partner keys and the V line below (which required
+                // net.active under the return — dead code by construction) never
+                // reached the play handler; VirtualControls' dispatched events
+                // died the same death on phones. Only lobby/attract/over keys
+                // are net-screen keys now; play falls through.
+                if (sc !== 'play') return
             }
             if (sc === 'attract') { selectRef.current = 2; setScreen('select'); playFx({ k: 'ui' }); return }
             if (sc === 'select') {
@@ -223,14 +235,35 @@ export default function ShortOrderShout() {
             if (ev.code === 'KeyG') releaseMin(keys2, 'b')
             if (ev.code === 'KeyV' && net.active) talkEnd()
         }
-        const onPointer = () => {
+        let chipRects = [] // tappable seat-tag rects from the host's last frame
+        let micHold = false
+        const canvasPt = (ev) => {
+            const r = cvs.getBoundingClientRect()
+            if (!r.width || !r.height) return null
+            return { x: (ev.clientX - r.left) * (CANVAS_W / r.width), y: (ev.clientY - r.top) * (CANVAS_H / r.height) }
+        }
+        const inRect = (p, rc) => !!p && p.x >= rc.x && p.x <= rc.x + rc.w && p.y >= rc.y && p.y <= rc.y + rc.h
+        const onPointerDown = (ev) => {
             const sc = screenRef.current
+            const p = canvasPt(ev)
+            if (sc === 'play' && net.active) {
+                if (net.role === 'host') {
+                    for (const c of chipRects) {
+                        if (inRect(p, c.rect)) { seatCmd(c.seat, c.tap); return }
+                    }
+                }
+                if (inRect(p, MIC_RECT)) { micHold = true; talkStart(); return }
+                if (inRect(p, VOX_RECT)) { toggleVoiceArm(); return }
+            }
             if (sc === 'attract') { selectRef.current = 2; setScreen('select') }
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) { seedRef.current = (seedRef.current + 1) >>> 0; setScreen('select') }
         }
+        const onPointerUp = () => { if (micHold) { micHold = false; talkEnd() } }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
-        cvs.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointerup', onPointerUp)
+        window.addEventListener('pointercancel', onPointerUp)
+        cvs.addEventListener('pointerdown', onPointerDown)
 
         // ------------------------------------------------------------ online ----
         // #1291 lockstep kitchen on the #1039 shared lobby: ?net=host /
@@ -253,13 +286,38 @@ export default function ShortOrderShout() {
         // latency ping (#1416 gap 3): HUD-only echo RTT riding pad/hs — the
         // sim never reads it, so the sampling law and hashes are untouched.
         net.rtt = createRttTracker({ mySlot: () => (net.room ? net.room.yourSlot : -1) })
+        // host seat control (#1416 gap-2 remainder): anchored demote/promote
+        // commands queued from the host's seat-tag taps, mirrored from the wire
+        // on guests; sync consults the accept-floor when pads arrive for a
+        // seat that is still dropped but armed to come back.
+        net.cmd = createSeatCtl({ delay: PAD_DELAY })
+        net.sync.acceptFloor = (seat, k) => net.cmd.accept(seat, k)
         // PTT voice (#1416 gap 1): hold V, talk, release — one walkie-talkie
         // message at a time. Frames ride the forwarded `pad` type as k:'v'
         // (the #1247 framing; gotPad reads numeric k only, so lockstep never
         // sees them — soslinkcheck proves it). Half-duplex rules, chunking and
         // the rate budget live in ./ptt.js (pure); this is the thin DOM half.
-        net.ptt = createPttSender({ now: () => performance.now() })
-        net.voice = { stream: null, rec: null, chunks: [], mime: '', consent: null, flash: null }
+        net.ptt = createPttSender({
+            now: () => performance.now(),
+            // production gate (#1416 voice stage): disarmed mic or a friend
+            // audible on these speakers => no new take (echo never re-records)
+            canPress: () => net.voice.enabled && !net.vin.speaking(),
+        })
+        net.voice = {
+            stream: null, rec: null, chunks: [], mime: '', consent: null, flash: null,
+            // mic arm state (#1416 voice stage): M / the VOX chip; persisted so
+            // a muted player stays muted across reloads.
+            enabled: (() => { try { return localStorage.getItem('sos-mic-off') === null } catch { return true } })(),
+        }
+        const toggleVoiceArm = () => {
+            net.voice.enabled = !net.voice.enabled
+            try {
+                if (net.voice.enabled) localStorage.removeItem('sos-mic-off')
+                else localStorage.setItem('sos-mic-off', '1')
+            } catch { /* private mode: session-only mute is still honest */ }
+            netToast(net.voice.enabled ? 'MIC ARMED — V TALKS' : 'MIC MUTED — M TO ARM')
+            playFx({ k: 'ui' })
+        }
         let vctx = null
         const playUtterance = (utt) => {
             try {
@@ -287,6 +345,8 @@ export default function ShortOrderShout() {
         })
         const talkStart = async () => {
             if (!net.room || net.ptt.holding || net.ptt.pending) return
+            if (!net.voice.enabled) { netToast(IS_TOUCH ? 'MIC OFF — TAP THE MIC CHIP' : 'MIC OFF — PRESS M'); return }
+            if (net.vin.speaking()) { netToast(`P${Math.max(2, net.vin.lastHeardSeat + 1)} TALKING — WAIT`); return }
             if (!net.voice.consent) net.voice.consent = await askVoiceConsent()
             if (!net.voice.consent.consent) { if (!net.voice.stream) netToast('MIC OFF — NO VOICE'); return }
             if (!net.voice.stream) {
@@ -360,6 +420,7 @@ export default function ShortOrderShout() {
             net.rtt.reset()
             net.ptt.reset()
             net.vin.reset()
+            net.cmd.clear()
             const hud = hudRef.current
             hud.walk = {}; hud.pops = []; hud.slide = {}; hud.stamp = 0; hud.bump = 0; hud.lastScore = 0; hud.dropFlash = null; hud.desync = null
             net.dropped = []
@@ -381,6 +442,48 @@ export default function ShortOrderShout() {
             net.lobby.start({ seed: ((seedRef.current * 1103515245 + 12345) >>> 0) || 1, seats, partnerSeat, humans })
         }
         netStartRef.current = onlineStart
+        // Host seat taps (#1416 gap-2 remainder): a remote human tag demotes,
+        // a connected CPU tag promotes. The command rides the pad wire with an
+        // anchored tick; EVERY box (host included) flips state only when its
+        // sim clock reaches `at` — see createSeatCtl in ./net.js for the two
+        // wire orderings that make the flip tick-identical everywhere.
+        const seatCmd = (seat, mode) => {
+            if (!net.room || net.role !== 'host' || screenRef.current !== 'play') return false
+            const ownSeat = net.slot
+            if (mode === 'cpu' && (seat === ownSeat || seat === net.partnerSeat || seat === 0)) return false
+            if (mode === 'hum' && !(net.dropped.indexOf(seat) >= 0 && net.room.slots.indexOf(seat) >= 0)) return false
+            const msg = { k: 'd', s: 0, seat, mode, at: net.sync.stats().nextSample + CMD_LEAD }
+            if (!net.cmd.queue(msg)) return false
+            net.room.send('pad', msg)
+            return true
+        }
+        const applyCmd = (c) => {
+            const ownSeat = net.role === 'host' ? 0 : net.slot
+            if (c.mode === 'cpu') {
+                if (net.humans.indexOf(c.seat) < 0 || c.seat === net.partnerSeat || c.seat === 0) return
+                if (!net.sync.demote(c.seat)) return
+                net.humans = net.humans.filter((x) => x !== c.seat)
+                net.mySeats = net.mySeats.filter((x) => x !== c.seat)
+                net.sync.mySeats = net.sync.mySeats.filter((x) => x !== c.seat)
+                net.dropped.push(c.seat)
+                net.cmd.clearFloor(c.seat)
+                net.vin.drop(c.seat) // a half-spoken take from a demoted seat dies
+                net.sync.watchSeats = net.humans.slice()
+                hudRef.current.dropFlash = { seat: c.seat, t: 120 }
+                netToast(c.seat === ownSeat ? 'YOU TO CPU — HOST CALL' : `P${c.seat + 1} TO CPU — ${net.role === 'host' ? 'DEMOTED' : 'HOST CALL'}`)
+                seatDropFx()
+            } else {
+                if (net.humans.indexOf(c.seat) >= 0 || c.seat === 0) return
+                if (!net.sync.promote(c.seat)) return
+                net.humans.push(c.seat); net.humans.sort((a, b) => a - b)
+                net.dropped = net.dropped.filter((x) => x !== c.seat)
+                net.cmd.clearFloor(c.seat)
+                net.sync.watchSeats = net.humans.slice()
+                hudRef.current.dropFlash = { seat: c.seat, t: 120, up: true }
+                netToast(c.seat === ownSeat ? 'YOU\x27RE BACK ON — COOK!' : `P${c.seat + 1} BACK ON NET`)
+                playFx({ k: 'ui' })
+            }
+        }
         if (net.active) {
             net.lobby = createLobby({
                 slug: 'short-order-shout',
@@ -393,7 +496,7 @@ export default function ShortOrderShout() {
                 onLeave: () => pushNetUi(),
                 onJoin: () => pushNetUi(),
                 on: {
-                    pad: (mm) => { net.rtt.onRecv(mm); if (mm.k === 'v') { net.vin.feed(mm); return } net.sync.gotPad(mm) },
+                    pad: (mm) => { net.rtt.onRecv(mm); if (mm.k === 'v') { net.vin.feed(mm); return } if (mm.k === 'd') { net.cmd.queue(mm); return } net.sync.gotPad(mm) },
                     hs: (mm) => { net.rtt.onRecv(mm); const r = net.sync.gotHash(mm.k | 0, mm.h >>> 0, mm.s | 0); if (r && r.desync !== undefined) netDesync() },
                     res: (mm) => {
                         if (mm.e === 'req') { if (net.role === 'host') hostSnap() }
@@ -456,6 +559,15 @@ export default function ShortOrderShout() {
             if (net.ptt.pending) net.ptt.drain((m) => { if (net.room) net.room.send('pad', m) })
             if (net.voice.flash && net.voice.flash.t > 0) net.voice.flash.t--
             const ownSeat = net.role === 'host' ? 0 : net.slot
+            // seat-control boundaries (#1416 gap-2 remainder): resume sampling
+            // one pump ahead of the anchor (the pointer must still be at or
+            // below tick `at`), flip human/watch state at the anchor tick —
+            // both BEFORE this tick's pads are sampled, so the flip lands at
+            // exactly tick `at` on every box.
+            for (const seat of net.cmd.resume(k)) {
+                if (seat === ownSeat && net.sync.mySeats.indexOf(seat) < 0) net.sync.mySeats.push(seat)
+            }
+            for (const c of net.cmd.due(k)) applyCmd(c)
             net.sync.pumpTo(k + net.sync.delay, (seat) => {
                 if (seat === ownSeat) return keys1 // arrows/pad drive this device's seat, whatever slot it owns
                 if (seat === net.partnerSeat && net.role === 'host') return keys2
@@ -837,16 +949,39 @@ export default function ShortOrderShout() {
                 const ownSeat = net.role === 'host' ? 0 : net.slot
                 const df = hud.dropFlash
                 if (df && df.t > 0) df.t--
-                legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : df && df.seat === i && df.t > 0 ? ' CPU!' : ' CPU'}`).join(' ')
-                if (df && df.t > 0 && Math.floor(df.t / 6) % 2) ctx.fillStyle = '#ffd23f'
+                // #1416 gap-2 remainder — the seat tags ARE the chips for the
+                // host: remote-human tags carry a mustard dotted underline
+                // (tap = demote to CPU), connected-demoted tags a green one
+                // (tap = promote back). Guests see the same tags, no marks.
+                const canTap = net.role === 'host' && screenRef.current === 'play'
+                chipRects = []
+                let cx = 6
+                for (let i = 0; i < g.seats; i++) {
+                    const txt = `P${i + 1}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : df && df.seat === i && df.t > 0 ? (df.up ? ' NET!' : ' CPU!') : ' CPU'}`
+                    const w = ctx.measureText(txt).width
+                    ctx.fillStyle = df && df.seat === i && df.t > 0 && Math.floor(df.t / 6) % 2 ? '#ffd23f' : '#8a7a8a'
+                    ctx.fillText(txt, cx, CANVAS_H - 3)
+                    if (canTap) {
+                        let tap = null
+                        if (net.humans.indexOf(i) >= 0 && i !== ownSeat && i !== net.partnerSeat) tap = 'cpu'
+                        else if (net.humans.indexOf(i) < 0 && net.dropped.indexOf(i) >= 0 && net.room && net.room.slots.indexOf(i) >= 0) tap = 'hum'
+                        if (tap) {
+                            ctx.fillStyle = tap === 'cpu' ? '#e8b028' : '#58d048'
+                            for (let dx = 0; dx < w; dx += 3) ctx.fillRect(cx + dx, CANVAS_H - 1, Math.min(2, w - dx), 1)
+                            chipRects.push({ seat: i, tap, rect: { x: cx - 2, y: CANVAS_H - 10, w: w + 4, h: 10 } })
+                        }
+                    }
+                    cx += w + 6
+                }
+                ctx.fillStyle = '#8a7a8a'
                 if (net.room && net.room.code) ctx.fillText(`ROOM ${net.room.code}${net.sync.stats().stallRun > 8 ? ' SYNC...' : ''}`, 150, CANVAS_H - 3)
                 // latency pips (#1416 gap 3): one order-light per remote human,
                 // lit green/amber/red by honest echo RTT, dim until the link
-                // answers (or goes quiet past RTT_STALE_MS).
+                // answers (or goes quiet past RTT_STALE_MS). Left of the mic.
                 const pips = net.rtt.pips()
                 const remote = net.humans.filter((i) => i !== ownSeat && i !== net.partnerSeat)
                 remote.forEach((seat, i) => {
-                    const px = CANVAS_W - 8 - (remote.length - i) * 20
+                    const px = CANVAS_W - 32 - (remote.length - i) * 20
                     ctx.fillStyle = '#5a4a5a'
                     ctx.fillText(`P${seat + 1}`, px, CANVAS_H - 3)
                     const ms = pips[seat]
@@ -865,13 +1000,34 @@ export default function ShortOrderShout() {
                 const vf = net.voice.flash
                 if (vf && vf.t > 0 && Math.floor(vf.t / 8) % 2) {
                     ctx.fillStyle = '#7ee0ff'
-                    ctx.fillText(`P${vf.seat + 1} SPOKE ${(vf.ms / 1000).toFixed(1)}s`, 230, CANVAS_H - 11)
+                    ctx.fillText(`P${vf.seat + 1} SPOKE ${(vf.ms / 1000).toFixed(1)}s`, 230, CANVAS_H - 19)
+                }
+                // voice chips (#1416 voice stage): the VOX arm chip (M) and a
+                // hold-to-talk mic — phones finally get walkie-talkie; mouse
+                // users can drive both too.
+                if (screenRef.current === 'play') {
+                    const armed = net.voice.enabled
+                    ctx.fillStyle = '#241420'
+                    ctx.fillRect(VOX_RECT.x, VOX_RECT.y, VOX_RECT.w, VOX_RECT.h)
+                    ctx.fillRect(MIC_RECT.x, MIC_RECT.y, MIC_RECT.w, MIC_RECT.h)
+                    ctx.strokeStyle = armed ? '#3f7a4c' : '#7a3f44'
+                    ctx.strokeRect(VOX_RECT.x + 0.5, VOX_RECT.y + 0.5, VOX_RECT.w - 1, VOX_RECT.h - 1)
+                    ctx.strokeRect(MIC_RECT.x + 0.5, MIC_RECT.y + 0.5, MIC_RECT.w - 1, MIC_RECT.h - 1)
+                    ctx.fillStyle = armed ? '#8ce098' : '#e08888'
+                    ctx.fillText(armed ? 'ON' : 'OFF', VOX_RECT.x + 6, CANVAS_H - 8)
+                    const live = net.voice.live && Math.floor(performance.now() / 200) % 2
+                    ctx.fillStyle = live ? '#38e07b' : (armed ? '#8ad8a0' : '#6a4a52')
+                    const mx = MIC_RECT.x + 5, my = MIC_RECT.y + 1
+                    ctx.fillRect(mx + 1, my, 2, 1) // capsule dome
+                    ctx.fillRect(mx, my + 1, 4, 5) // capsule
+                    ctx.fillRect(mx - 2, my + 4, 1, 3); ctx.fillRect(mx + 5, my + 4, 1, 3) // yoke
+                    ctx.fillRect(mx + 1, my + 7, 4, 1); ctx.fillRect(mx + 2, my + 8, 2, 1); ctx.fillRect(mx + 1, my + 9, 4, 1) // stem + base
                 }
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
                 ctx.fillText('ARROWS MOVE SPACE TAKE B TOSS', 150, CANVAS_H - 3)
             }
-            ctx.fillText(legend, 6, CANVAS_H - 3)
+            if (legend) ctx.fillText(legend, 6, CANVAS_H - 3)
 
             // toast
             if (hud.toastT > 0 && hud.toast) {
@@ -1053,7 +1209,7 @@ export default function ShortOrderShout() {
                 resyncDrill: () => markResynced(),
                 netStart: () => netStartRef.current && netStartRef.current(),
                 notice: () => (hudRef.current.desync ? { phase: hudRef.current.desync.phase, t: hudRef.current.desync.t } : null),
-                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), cmd: net.cmd.stats(), chips: chipRects.map((c) => ({ seat: c.seat, tap: c.tap })), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, enabled: !!net.voice.enabled, speaking: net.vin.speaking(), inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',
@@ -1092,7 +1248,9 @@ export default function ShortOrderShout() {
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
-            cvs.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointerup', onPointerUp)
+            window.removeEventListener('pointercancel', onPointerUp)
+            cvs.removeEventListener('pointerdown', onPointerDown)
             clearKeys()
             // #1416 gap 7: unmount must hand the seat BACK. Without this the
             // dev StrictMode remount left a ghost socket parked on a relay slot

@@ -20,6 +20,12 @@
 //                                  host drives seat 1 locally too)
 //   {t:'res',  e:'req'}            "put me back in sync" (any member -> host)
 //   {t:'res',  e:'snp', i, z, p}  host snapshot chunk
+//   pad k:'d'  {seat,mode,at}     host seat-control cmd (#1416 gap-2 remainder):
+//                                  flip seat `seat` to CPU ('cpu') or back to
+//                                  human ('hum'), applied at the ANCHORED tick
+//                                  k >= at on every box — never on arrival, which
+//                                  would flip different ticks per box. Rides the
+//                                  forwarded `pad` type like voice k:'v'.
 //   pad/hs carry {c, a}            latency ping rides the existing types (#1416
 //                                  gap 3): c = sender's own clock, a = [[slot, c]]
 //                                  acks of recently seen peer clocks. Only your
@@ -174,6 +180,18 @@ export function createSosSync(opts = {}) {
             if (stalledSeat === seat) { stalledSeat = -1; stallRun = 0 }
             return true
         },
+        // PROMOTE (#1416 gap-2 remainder): the mirror of demote. The seat goes
+        // back on the watch list and its wire pads live again; the caller owns
+        // the accept-floor (pads stamped before the anchored tick `at` must be
+        // rejected identically everywhere — see createSeatCtl).
+        promote(seat) {
+            if (!dropped.delete(seat)) return false
+            if ((api.watchSeats || []).indexOf(seat) < 0) {
+                api.watchSeats.push(seat)
+                api.watchSeats.sort((a, b) => a - b)
+            }
+            return true
+        },
         // Fresh shift only (new seed on 'go'): every buffer starts clean.
         // A DESYNC resync must NOT call this — pad samples already sent are
         // final (the sampling law) and peers may have consumed ticks past the
@@ -216,13 +234,17 @@ export function createSosSync(opts = {}) {
         gotPad(msg) {
             if (!msg || typeof msg.k !== 'number') return
             const mm = msg.mm || {}
+            const floorOk = (seat, k) => !dropped.has(seat) || (api.acceptFloor && api.acceptFloor(seat, k))
             for (const s of Object.keys(mm)) {
                 const seat = s | 0
                 if (seat < 0 || seat >= SEATS) continue
-                if (dropped.has(seat)) continue // #1416: pads from a handed-off seat are dead
                 const v = mm[s]
-                if (Array.isArray(v)) v.forEach((mask, i) => rmap(seat).set(msg.k + i, mask | 0))
-                else rmap(seat).set(msg.k, v | 0)
+                // #1416: pads from a handed-off seat are dead — unless an anchored
+                // PROMOTE command set an accept-floor (gap-2 remainder): pads it
+                // stamped at/after `at` trail the command through the FIFO relay
+                // and must enter the buffer BEFORE the flip tick runs.
+                if (Array.isArray(v)) v.forEach((mask, i) => { if (floorOk(seat, msg.k + i)) rmap(seat).set(msg.k + i, mask | 0) })
+                else if (floorOk(seat, msg.k)) rmap(seat).set(msg.k, v | 0)
             }
         },
         // May tick k run? Every non-CPU seat must have a mask for k.
@@ -278,6 +300,10 @@ export function createSosSync(opts = {}) {
             shrink(ours, k); shrink(peerH, k)
             for (const [, m] of own) shrink(m, k)
             for (const [, m] of remote) shrink(m, k)
+        },
+        // harness peek: does any buffer hold a pad for seat@tick? (floor proof)
+        hasPad(seat, k) {
+            return (own.get(seat) || new Map()).has(k) || (remote.get(seat) || new Map()).has(k)
         },
         // harness/debug view: who has a sample for tick k.
         debug(k) {
@@ -360,4 +386,74 @@ export function createRttTracker(opts = {}) {
         stats: () => ({ acked: toAck.size, samples: samples.size }),
     }
     return api
+}
+
+// ---- host seat control (#1416 gap-2 remainder) ------------------------------
+// The host demotes/promotes seats MID-SHIFT from the seat tags. A flip changes
+// which masks feed the deterministic engine, so every box must flip at the SAME
+// tick — the command therefore carries an anchored future tick `at`, chosen by
+// the host as nextSample + CMD_LEAD. Correctness rests on two orderings:
+//  * DEMOTE: pads the departed-ish seat still sends for ticks >= at trail the
+//    command on the FIFO wire and land while the seat is already `dropped` on
+//    every box (apply happens at tick at; pads for k < at were sent at
+//    k <= at-1-PAD_DELAY, i.e. reach everyone ~PAD_DELAY before that);
+//  * PROMOTE: the box owning the seat resumes sampling at k >= at - PAD_DELAY
+//    - 1 (one pump AHEAD — at at - delay the pointer already sits past tick
+//    at), so the ordinary pump samples tick at and its first resumed batch
+//    covers tick `at`. Only stamps >= at ever pass the floor,
+//    and those provably trail the command, so all buffers fill identically.
+export const CMD_LEAD = 30 // ~0.5 s of runway: the cmd outruns the flip tick
+
+export function createSeatCtl(opts = {}) {
+    const delay = Number.isFinite(opts.delay) ? opts.delay : PAD_DELAY
+    const hostSlot = opts.hostSlot === undefined ? 0 : opts.hostSlot | 0
+    let pend = [] // {seat, mode:'cpu'|'hum', at, resumed}
+    const floors = new Map() // promoted seat -> smallest accepted pad tick
+
+    const valid = (msg) => !!msg && msg.k === 'd'
+        && Number.isInteger(msg.seat) && msg.seat >= 0 && msg.seat < SEATS
+        && (msg.mode === 'cpu' || msg.mode === 'hum')
+        && Number.isInteger(msg.at) && msg.at > 0
+
+    return {
+        LEAD: CMD_LEAD,
+        // Accept a command: the host's own click (msg.s = hostSlot) or the
+        // relay-borne copy of it on a guest. One flight per seat — a second
+        // order while one is anchored must wait its turn (chip taps debounce).
+        queue(msg) {
+            if (!valid(msg)) return false
+            if ((msg.s | 0) !== hostSlot) return false // only the host commands
+            if (pend.some((c) => c.seat === msg.seat)) return false
+            pend.push({ seat: msg.seat | 0, mode: msg.mode, at: msg.at | 0, resumed: false })
+            if (msg.mode === 'hum') floors.set(msg.seat | 0, msg.at | 0)
+            return true
+        },
+        // Flip state for every box when its sim clock reaches the anchor.
+        due(k) {
+            const hit = pend.filter((c) => k >= c.at)
+            if (hit.length) pend = pend.filter((c) => k < c.at)
+            return hit
+        },
+        // The box driving a promoted seat must be back on the wire EARLY enough
+        // that tick `at` still lies ahead of the sample pointer: pumpTo advances
+        // nextSample every tick even while the seat is absent, so at k = at -
+        // delay the pointer already sits at at + 1. Resume one pump ahead
+        // (k >= at - delay - 1) and the ordinary pump then samples tick at.
+        resume(k) {
+            const out = []
+            for (const c of pend) {
+                if (c.mode === 'hum' && !c.resumed && k >= c.at - delay - 1) { c.resumed = true; out.push(c.seat) }
+            }
+            return out
+        },
+        // pad accept-floor for gotPad: only an armed promote accepts pads while
+        // the seat is still dropped, and only from its anchor tick up.
+        accept(seat, k) {
+            const f = floors.get(seat | 0)
+            return f !== undefined && k >= f
+        },
+        clearFloor(seat) { floors.delete(seat | 0) },
+        clear() { pend = []; floors.clear() },
+        stats: () => ({ pending: pend.map((c) => ({ seat: c.seat, mode: c.mode, at: c.at })) }),
+    }
 }
