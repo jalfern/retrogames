@@ -12,7 +12,7 @@ export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
-    'pulsecheck', 'shiftreportcheck', 'feedbackcheck', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
+    'pulsecheck', 'shiftreportcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
     'runwaycheck', 'claimcheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchcheck', ['watchcheck', true], 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck'],
   smoke: ['vpadboot', 'tapstartcheck'],
   paths: [

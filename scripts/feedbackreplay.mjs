@@ -7,10 +7,13 @@
 // and it re-runs the exact key stream against the live game in headless
 // Chrome, watching the DEV contract while it plays.
 //
-//   npm run feedbackreplay -- 1472              # replay what issue #1472 filed
-//   npm run feedbackreplay -- --payload f.json  # replay a saved payload/body
-//   npm run feedbackreplay -- --selftest        # prove the extractor + gates can fail
-//   npm run feedbackreplay -- 1472 --url http://localhost:5178   # dev server
+//   node scripts/feedbackreplay.mjs 1472           # replay what issue #1472 filed
+//   node scripts/feedbackreplay.mjs --payload f.json  # replay a saved payload/body
+//   npm run feedbackreplay                         # CI gate = the --selftest below
+//   node scripts/feedbackreplay.mjs 1472 --url http://localhost:5178  # dev server
+//
+// The npm alias bakes in --selftest (the nightlyheal precedent): the live drive
+// needs a dev server + Chrome, so CI gates the extractor/gates themselves.
 //
 // Reports without an input block (games/demos on the graceful-fallback path)
 // exit 0 with a loud SKIP — there is nothing to replay, and that is honest.
@@ -249,11 +252,12 @@ async function main() {
     const payloadFile = opt(args, '--payload', null)
     let body = ''
     let gameId = ''
-    let route = ''
     if (num) {
         const { execFileSync } = await import('node:child_process')
         const ghBin = process.env.GH || 'gh'
-        const json = execFileSync(ghBin, ['issue', 'view', num, '--repo', 'jalfern/retrogames', '--json', 'title,body,url'], { encoding: 'utf8' })
+        // gh api (not `issue view --json`): the raw REST shape works on real gh
+        // AND the curl-gh shim on DNS-poisoned QA boxes (shim has no `view`).
+        const json = execFileSync(ghBin, ['api', `repos/jalfern/retrogames/issues/${num}`], { encoding: 'utf8' })
         const issue = JSON.parse(json)
         body = issue.body || ''
         gameId = (/^FEEDBACK ([^:]+):/.exec(issue.title || '') || [])[1] || ''
