@@ -646,6 +646,83 @@ ok('demo: injector exposes __demoFeedback in plain Node',
     ok('demo key: same store as the game side (one origin, one key)', dfb.JONKEY_STORE === JONKEY_STORE)
 }
 
+// ── #1452: a tap on the note box must not close the panel ────────────────────
+// The card is a backdrop that closes on click; the note textarea sits INSIDE
+// it, so a tap-to-focus on the box bubbles to the card and closed the panel
+// before a word could be typed. The DOM mount is real code the fake-window
+// section above skips (no document), so give it a minimal document: mount()
+// attaches its real listeners onto these fakes, and the gate drives the REAL
+// card click handler with a synthetic click — open the panel, click the
+// textarea, assert it is still open; then the backdrop (target === card)
+// still closes it, so the fix cannot delete the close-on-tap-away behavior.
+{
+    let uid = 0
+    const allEls = []
+    const qselCache = new Map()
+    const mkEl = (tag) => {
+        const el = {
+            tag, id: '', className: '', textContent: '', _innerHTML: '',
+            _uid: ++uid, attrs: {}, children: [], listeners: {}, parent: null,
+            setAttribute(k, v) { el.attrs[k] = String(v); if (k === 'id') el.id = String(v) },
+            appendChild(c) { c.parent = el; el.children.push(c); return c },
+            addEventListener(t, fn) { (el.listeners[t] = el.listeners[t] || []).push(fn) },
+            removeEventListener() {},
+            contains(n) { for (let c = n; c; c = c.parent) if (c === el) return true; return false },
+            querySelector(sel) {
+                const key = el._uid + '|' + sel
+                if (!qselCache.has(key)) {
+                    const m = mkEl('sel:' + sel)
+                    m.parent = el
+                    qselCache.set(key, m)
+                }
+                return qselCache.get(key)
+            },
+            get innerHTML() { return el._innerHTML },
+            set innerHTML(v) { el._innerHTML = String(v) },
+        }
+        el.classList = {
+            _s: new Set(),
+            add(c) { el.classList._s.add(c) },
+            remove(c) { el.classList._s.delete(c) },
+            contains(c) { return el.classList._s.has(c) },
+        }
+        allEls.push(el)
+        return el
+    }
+    const fdoc = {
+        readyState: 'complete',
+        head: mkEl('head'),
+        body: mkEl('body'),
+        listeners: {},
+        createElement: (t) => mkEl(t),
+        getElementById: (id) => allEls.find((e) => e.id === id) || null,
+        addEventListener(t, fn) { (fdoc.listeners[t] = fdoc.listeners[t] || []).push(fn) },
+        querySelectorAll: () => [],
+    }
+    const dwin = {
+        location: { pathname: '/retrogames/demos/ocean.html', search: '?feedback=1' },
+        navigator: { userAgent: 'DemoPhone Safari/605.1.15' },
+        localStorage: memStorage(),
+        requestAnimationFrame: () => {},
+    }
+    new Function('window', 'document', 'fetch', fbSrc)(dwin, fdoc, undefined)
+    await new Promise((r) => setImmediate(r)) // let probe().then(mount) run
+    const card = fdoc.getElementById('dfeedback-card')
+    ok('panel1452: the injector mounted the card (box inside) into the page',
+        !!card && card.children.length === 1)
+    const note = card.children[0].querySelector('[data-feedback="note"]')
+    ok('panel1452: the card carries exactly one click handler (the backdrop close)',
+        Array.isArray(card.listeners.click) && card.listeners.click.length === 1)
+    const backdropClick = card.listeners.click[0]
+    card.classList.add('open')
+    backdropClick({ target: note, stopPropagation() {} })
+    ok('panel1452: tapping the note box does NOT close the panel', card.classList.contains('open') === true)
+    backdropClick({ target: note, stopPropagation() {} })
+    ok('panel1452: tapping the note box again still does not close it', card.classList.contains('open') === true)
+    backdropClick({ target: card, stopPropagation() {} })
+    ok('panel1452: a tap on the backdrop (target === card) still closes it', card.classList.contains('open') === false)
+}
+
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator
     // that still enforces FB_MAX_PADS refuses it (green); remove the cap and this
