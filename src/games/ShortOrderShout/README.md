@@ -161,14 +161,62 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
    padlinkdrive's 8789 never collides. (Mutant: accent back to pink-50 =>
    the paper/pink assertions red.)
 
+## Seat control + voice production (#1416 final stage, 2026-11-02)
+
+Assembly note: the engine half was drafted by slot b's session, which died
+mid-edit without pushing (design comment on #1416 at 18:41Z is its blueprint);
+slot a salvaged the worktree, re-derived the proof tier, and found+fixed the
+off-by-one below. All of it re-verified from scratch; b credited in the PR.
+
+- **Host DEMOTE/PROMOTE mid-shift (gap-2 remainder).** For the host, the
+   seat tags in the bottom strip are chips: a remote `Pn NET` tag carries a
+   mustard dotted underline (tap = hand that seat to the CPU), a demoted tag
+   whose player is still in the roster gets a green one (tap = promote back).
+   The flip changes which masks feed the deterministic engine, so it is
+   tick-anchored, never arrival-anchored: the command rides the pad wire as
+   `{t:'pad',k:'d',seat,mode,at}` with `at = nextSample + CMD_LEAD` (30 ticks
+   ≈0.5 s) and EVERY box applies at `k >= at` (`createSeatCtl`, net.js).
+   Demote reuses `sync.demote`; promote re-arms the seat and an accept-floor
+   admits only pads stamped `>= at` — those provably trail the command through
+   the FIFO relay, so all buffers fill identically. A departed socket is NOT
+   promotable (roster guard). Fixed during harness bring-up: `resume()` at
+   `at - PAD_DELAY` was ONE tick too late — pumpTo advances the sample pointer
+   every tick even while the seat is absent, so tick `at` was already behind
+   it and the owner's first resumed batch missed the anchor (deadlock at the
+   flip). The boundary is `at - PAD_DELAY - 1`; the harness pins both
+   (floor admits at `at`, owner's pad for `at` reaches peers before `at` runs).
+- **Voice production stage.** `M` arms/disarms the mic, persisted
+   (`localStorage sos-mic-off`) — while disarmed, presses answer `MIC OFF —
+   PRESS M` / `TAP THE MIC CHIP`. Phones finally get the walkie-talkie the
+   strip promised: a hold-to-talk MIC button (+ a VOX chip toggling the same
+   arm) in the bottom-right of the canvas. Echo etiquette: while a friend's
+   take is PLAYING on your box, your press is refused (`Pn TALKING — WAIT`) —
+   one voice on the kitchen speakers at a time, and the speaker-to-mic echo
+   loop is closed by construction (`createPttInbox.speaking()`, tail
+   `ECHO_TAIL_MS`; `createPttSender` gains the `canPress` production gate).
+- **Keys unblocked (a real bug the salvage found):** the net branch of
+   `onKeyDown` ended in an unconditional `return`, so EVERY play key —
+   arrows, Space, the partner keys and the V line that required `net.active`
+   below that return — was unreachable while online. VirtualControls'
+   dispatched events died the same death on phones. Only lobby/attract/over
+   keys are net-screen keys now; play falls through.
+- Harness: `soslinkcheck` grew §9 seat control + §10 voice production to 133
+   assertions (was 86): anchored flip at the SAME tick on both boxes through
+   45 ms legs, straggler pads dead across the demote, promote round trip with
+   the resumed pads landing before the anchor, forgery (`s=1`) refused,
+   departed-seat promote refused, arm state + echo window on the wire, and the
+   shift still ending hash-identical to the local reference. Mutant:
+   `SOS_MUTANT=arrival` flips on message arrival instead of the anchored tick
+   => flip mismatch (215 vs 219) + red boundary assertions.
+
 ## Honest gaps
 
 - **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,
   #1432); full-duplex/WebRTC audio is still deferred, and the #1247 recorder
   path keeps banking per-seat mic audio alongside it.
-- **Voice**: the recording path carries raw per-seat voice (#1247 via
-  `gameContract.recordStart`); an in-game production voice toggle arrives
-  with online stage 2.
+- **Voice ops**: the production toggle (M arm, VOX, echo gate) is proven at
+  the machine/wire tier; its canvas chips are drawn at 8 px text and the
+  mic-hit zone is 14x12 canvas px — thumb-friendly tuning is QA's.
 - Seats 3–4 are CPU-only locally (a third keyboard pad is what online
   unlocks); the pad is d-pad-only movement (no analog).
 - The patty-burn chain (burnt→fire) has no "cool the pan" counterplay

@@ -13,15 +13,22 @@
 // Plus: wire sanity (every message fits the relay's 512B budget and the room
 // rate window with four members) and drop-grace (a guest leaving mid-shift
 // leaves the host cooking on with CPUs) and the latency ping (#1416 gap 3:
-// echo RTT is honest through simulated relay legs and never perturbs lockstep).
+// echo RTT is honest through simulated relay legs and never perturbs lockstep)
+// and host seat control (#1416 gap-2 remainder: demote/promote flip at the
+// SAME anchored tick on every box — stragglers rejected, round-trips clean,
+// forgeries ignored — and the voice production gate: mic arm + echo etiquette,
+// one voice on the kitchen speakers at a time).
+// Proven to fail: SOS_MUTANT=arrival flips seats on message ARRIVAL instead of
+// at the anchored tick — under latency legs the boxes flip at different ticks
+// and the boundary hashes go red (restore by unsetting the env var).
 //
 // npm run soslinkcheck — no browser, no network, deterministic.
 
 import { newRoom, join, leave, relay, rosterOf } from '../relay/core.js'
 import { createLobby } from '../src/utils/lobby.js'
 import { createGame, stepGame, hashState, snapshotGame, restoreGame, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
-import { createSosSync, createRttTracker, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE, RTT_STALE_MS } from '../src/games/ShortOrderShout/net.js'
-import { createPttSender, createPttInbox, createRateBudget, PTT_MIN_B64 } from '../src/games/ShortOrderShout/ptt.js'
+import { createSosSync, createRttTracker, seatsOf, packSnap, padMask, unmaskPad, SEATS, PAD_DELAY, stallNotice, NOTICE_AT, STALL_MAX, DROP_GRACE, RTT_STALE_MS, createSeatCtl, CMD_LEAD } from '../src/games/ShortOrderShout/net.js'
+import { createPttSender, createPttInbox, createRateBudget, PTT_MIN_B64, ECHO_TAIL_MS } from '../src/games/ShortOrderShout/ptt.js'
 
 let pass = 0, fail = 0
 const ok = (c, msg, extra = '') => { if (c) { pass++; console.log(`  ok  ${msg}`) } else { fail++; console.log(`  FAIL ${msg} ${extra}`) } }
@@ -49,6 +56,10 @@ function recordRun(seed, seats, maxTicks = 12000) {
 const REAL_NOW = Date.now
 let vnow = REAL_NOW()
 Date.now = () => vnow
+
+// Prove-the-harness-can-fail switch: flip seats on ARRIVAL (per-box ticks
+// differ under latency) instead of at the anchored tick. Expect red.
+const MUTANT = process.env.SOS_MUTANT === 'arrival'
 
 // ---- in-memory relay (relay/core.js rules, zero sockets) ----------------------
 function makeMemRelay() {
@@ -140,14 +151,23 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
     ep.rtt = createRttTracker({ mySlot: () => (ep.lobby ? ep.lobby.room.yourSlot : -1) })
     // #1416 gap 1 mirror: the same PTT machines the browser wires; utters is
     // what this box HEARD (completed utterances).
-    ep.ptt = createPttSender({ now: () => vnow })
+    // #1416 voice stage mirror: the production gate index.jsx wires — disarmed
+    // mic (M / VOX chip) or a friend audible on these speakers => no press.
+    ep.micArmed = true
+    ep.ptt = createPttSender({ now: () => vnow, canPress: () => ep.micArmed && !ep.vin.speaking() })
     ep.utters = []
     ep.vin = createPttInbox({ onUtterance: (u) => ep.utters.push(u) })
+    // #1416 gap-2 remainder mirror: host seat control, tick-anchored flips.
+    ep.cmd = createSeatCtl({ delay: PAD_DELAY })
+    ep.flips = {} // "<mode><seat>" -> sim tick this box applied the flip
+    ep.demoted = []
+    ep.promoted = []
     ep.sync = createSosSync({
         send: (t, p) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send(t, ep.rtt.decorate(t, p)) },
         mySeats: [],
         watchSeats: [],
     })
+    ep.sync.acceptFloor = (seat, k) => ep.cmd.accept(seat, k)
 
     ep.lobby = createLobby({
         slug,
@@ -160,7 +180,7 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         onLeave: () => ep.ownersChanged(),
         onStart: (m) => ep.startMatch(m),
         on: {
-            pad: (m) => { ep.rtt.onRecv(m); if (m.k === 'v') { ep.vin.feed(m); return } ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
+            pad: (m) => { ep.rtt.onRecv(m); if (m.k === 'v') { ep.vin.feed(m); return } if (m.k === 'd') { if (MUTANT) { if (ep.gs) ep.applyCmd({ seat: m.seat | 0, mode: m.mode }, ep.gs.tick) } else if (!ep.cmd.queue(m)) ep.forgedDropped = (ep.forgedDropped || 0) + 1; return } ep.padRcv = (ep.padRcv || 0) + 1; if (process.env.SOS_DBG && ep.padRcv <= 3) console.log('PADRX', id, JSON.stringify(m).slice(0, 100)); ep.sync.gotPad(m) },
             hs: (m) => {
                 ep.rtt.onRecv(m)
                 const r = ep.sync.gotHash(m.k | 0, m.h >>> 0, m.s | 0)
@@ -208,6 +228,10 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         ep.rtt.reset()
         ep.ptt.reset()
         ep.vin.reset()
+        ep.cmd.clear()
+        ep.flips = {}
+        ep.demoted = []
+        ep.promoted = []
         ep.mySeats = seatsOf(ep.lobby.room.yourSlot, ep.partner)
         ep.sync.mySeats = ep.mySeats.slice()
         ep.watch = (ep.slots || [0]).slice()
@@ -231,12 +255,53 @@ function makeEndpoint({ id, slug, relayHub, seats = SEATS, isHost, partner = fal
         ep.lastSnapTick = tick
     }
 
+    // #1416 gap-2 remainder mirror of index.jsx seatCmd/applyCmd: the host
+    // flips seats with a command anchored at nextSample + CMD_LEAD; every box
+    // applies at the SAME sim tick. The harness records that tick (ep.flips) —
+    // flipping on arrival would show up as mismatched flips + desyncs.
+    ep.seatCmd = (seat, mode) => {
+        if (!ep.isHost || !ep.playing || !ep.gs) return false
+        const own = ep.lobby.room.yourSlot
+        if (mode === 'cpu' && (seat === own || seat === (ep.partner ? seats - 1 : -1) || seat === 0)) return false
+        if (mode === 'hum' && !(ep.watch.indexOf(seat) < 0 && ep.slots && ep.slots.indexOf(seat) >= 0)) return false
+        const msg = { k: 'd', s: 0, seat, mode, at: ep.sync.stats().nextSample + CMD_LEAD }
+        if (!ep.cmd.queue(msg)) return false
+        ep.lobby.room.send('pad', msg)
+        if (MUTANT) ep.applyCmd({ seat, mode }, ep.gs.tick)
+        return true
+    }
+    ep.applyCmd = (c, k) => {
+        if (c.mode === 'cpu') {
+            if (ep.watch.indexOf(c.seat) < 0 || !ep.sync.demote(c.seat)) return
+            ep.watch = ep.watch.filter((x) => x !== c.seat)
+            ep.mySeats = ep.mySeats.filter((x) => x !== c.seat)
+            ep.sync.mySeats = ep.sync.mySeats.filter((x) => x !== c.seat)
+            ep.cmd.clearFloor(c.seat)
+            ep.vin.drop(c.seat)
+            ep.demoted.push(c.seat)
+            ep.flips['cpu' + c.seat] = k
+        } else {
+            if (ep.watch.indexOf(c.seat) >= 0 || !ep.sync.promote(c.seat)) return
+            ep.watch = ep.watch.concat(c.seat).sort((a, b) => a - b)
+            ep.cmd.clearFloor(c.seat)
+            ep.promoted.push(c.seat)
+            ep.flips['hum' + c.seat] = k
+        }
+    }
+
     // one fixed-timestep frame, the way the browser loop drives it
     ep.step = () => {
         if (!ep.playing || !ep.gs || ep.gs.done) return
         const k = ep.gs.tick
         ep.sync.prune(k)
         if (ep.ptt.pending) ep.ptt.drain((m) => { if (ep.lobby && ep.lobby.room) ep.lobby.room.send('pad', m) })
+        // seat-control boundaries (mirror of index.jsx netTick): resume the
+        // owner's sampling at the pump boundary, flip state at the anchor —
+        // both before this tick's pads are sampled.
+        for (const seat of ep.cmd.resume(k)) {
+            if (seat === ep.lobby.room.yourSlot && ep.sync.mySeats.indexOf(seat) < 0) ep.sync.mySeats.push(seat)
+        }
+        for (const c of ep.cmd.due(k)) ep.applyCmd(c, k)
         ep.sync.pumpTo(k + ep.sync.delay, ep.readKeys)
         const cpuMasks = {}
         for (let s = 0; s < seats; s++) {
@@ -589,6 +654,160 @@ console.log('# walkie-talkie voice: k:v frames cross the room, lockstep never no
     ok(hub.oversize === 0 && hub.refused === 0 && hub.maxBytes <= 512, `voice keeps every message inside the relay guards (max ${hub.maxBytes}B)`)
     const rate = (host.txCount() + guest.txCount()) / (host.gs.tick / 60)
     ok(rate < 240, `room rate under the 240/s window with two talking members (~${Math.round(rate)}/s)`)
+}
+
+// ============ 9. HOST SEAT CONTROL (#1416 gap-2 remainder) =============
+console.log('# seat control: host demotes/promotes seats mid-shift, flips anchored to one tick')
+{
+    // Pure machine first (index.jsx mirrors these exactly).
+    const c = createSeatCtl({ delay: PAD_DELAY })
+    ok(c.queue({ k: 'd', s: 1, seat: 1, mode: 'cpu', at: 50 }) === false, 'forgery: a command from a non-host slot is refused')
+    ok(c.queue({ k: 'd', s: 0, seat: 9, mode: 'cpu', at: 50 }) === false, 'a seat outside the board is refused')
+    ok(c.queue({ k: 'd', s: 0, seat: 1, mode: 'x', at: 50 }) === false, 'an unknown mode is refused')
+    ok(c.queue({ k: 'd', s: 0, seat: 1, mode: 'cpu', at: 50 }) === true, 'the host anchors a demote at tick 50')
+    ok(c.queue({ k: 'd', s: 0, seat: 1, mode: 'hum', at: 90 }) === false, 'one flight per seat: a second order waits its turn')
+    ok(c.due(49).length === 0, 'the flip waits while k < at')
+    ok(c.due(50).length === 1 && c.due(50).length === 0, 'the flip fires once, exactly at the anchor')
+    const c2 = createSeatCtl({ delay: PAD_DELAY })
+    c2.queue({ k: 'd', s: 0, seat: 1, mode: 'hum', at: 100 })
+    ok(c2.resume(100 - PAD_DELAY - 2).length === 0 && c2.resume(100 - PAD_DELAY - 1).join() === '1',
+        'the promoted seat returns to the wire one pump ahead, so tick at is still ahead of the sample pointer')
+    ok(c2.accept(1, 99) === false && c2.accept(1, 100) === true, 'accept-floor opens exactly at the anchor tick')
+    c2.clearFloor(1)
+    ok(c2.accept(1, 140) === false, 'clearFloor closes the window')
+    // the floor wired through the sync machine: dropped + armed admits k >= at only
+    const s = createSosSync({ mySeats: [0], watchSeats: [0, 1] })
+    s.demote(1)
+    s.acceptFloor = (seat, k) => k >= 60
+    s.gotPad({ k: 59, mm: { 1: 1 } })
+    s.gotPad({ k: 60, mm: { 1: 1 } })
+    ok(s.hasPad(1, 59) === false, 'while dropped, pads stamped below the anchor stay dead')
+    ok(s.hasPad(1, 60) === true, 'an armed floor admits the straggler pads that trail the command')
+}
+{
+    // Wire proof through 45ms legs: demote and promote must flip on BOTH boxes
+    // at the same sim tick, with zero desyncs and the CPU-taken shift scoring
+    // identically on every view.
+    const rec = recordRun(777, 2)
+    const hub = makeMemRelay()
+    hub.latMs = 45
+    const host = makeEndpoint({ id: 'h', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: true, stream: rec.stream })
+    const guest = makeEndpoint({ id: 'g', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: false, stream: rec.stream })
+    host.lobby.open()
+    for (let i = 0; i < 4; i++) { host.pumpWire(); guest.pumpWire() }
+    guest.lobby.join(host.lobby.room.code)
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    host.lobby.start({ seed: 777, partner: false })
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    runTogether([host, guest], 220)
+    ok(host.gs.tick > 180 && host.desyncs.length === 0, 'shift cooking before any flip')
+    ok(guest.seatCmd(0, 'cpu') === false, 'a guest cannot command seats')
+    ok(host.seatCmd(1, 'cpu') === true, 'the host demotes seat 1 mid-shift')
+    const at1 = host.cmd.stats().pending[0].at
+    runTogether([host, guest], 400)
+    ok(host.flips.cpu1 !== undefined && guest.flips.cpu1 === host.flips.cpu1,
+        `both boxes flip seat 1 at the SAME sim tick (${host.flips.cpu1}/${guest.flips.cpu1})`)
+    ok(Math.abs(host.flips.cpu1 - at1) <= 2, `the flip lands at the anchored tick (at ${at1}, applied ${host.flips.cpu1})`)
+    ok(host.demoted.join() === '1' && guest.demoted.join() === '1', 'seat 1 -> CPU on both boxes')
+    ok(host.sync.hasPad(1, host.flips.cpu1 + 3) === false, 'pads in flight across the flip never revive the demoted seat')
+    ok(host.desyncs.length === 0 && guest.desyncs.length === 0, 'zero desyncs across the anchored demote', JSON.stringify([host.desyncs[0], guest.desyncs[0]]))
+    // forged command on the wire from the guest slot: refused everywhere
+    guest.lobby.room.send('pad', { k: 'd', s: 1, seat: 0, mode: 'cpu', at: at1 + 500 })
+    runTogether([host, guest], 60)
+    ok((host.forgedDropped || 0) >= 1 && host.cmd.stats().pending.length === 0, 'a forged seat-cmd (s=1) is rejected on the wire')
+    ok(host.desyncs.length === 0 && guest.desyncs.length === 0, 'the forgery never touched the kitchen')
+    // promote the (still-connected) seat back
+    ok(guest.slots.indexOf(1) >= 0, 'the demoted player is still on the roster (promotable)')
+    ok(host.seatCmd(1, 'hum') === true, 'the host promotes seat 1 back to human')
+    const at2 = host.cmd.stats().pending[0].at
+    runTogether([host, guest], 500)
+    ok(host.flips.hum1 !== undefined && host.flips.hum1 === guest.flips.hum1,
+        `promote flips at the same tick on both boxes (${guest.flips.hum1})`)
+    ok(host.flips.hum1 - at2 <= 2, `promote lands at its anchor too (at ${at2}, applied ${host.flips.hum1})`)
+    ok(host.sync.hasPad(1, at2) === true, 'resumed pads reach the peer buffer at the anchor tick through the floor')
+    ok(guest.sync.mySeats.indexOf(1) >= 0, 'the owner box is back on the wire for its seat')
+    ok(host.desyncs.length === 0 && guest.desyncs.length === 0, 'the demote/promote round trip costs zero desyncs', JSON.stringify([host.desyncs[0], guest.desyncs[0]]))
+    const before = host.gs.score
+    runTogether([host, guest], 600)
+    ok(host.gs.score >= before && host.gs.score === guest.gs.score, `cooking on after the round trip (${host.gs.score}=${guest.gs.score})`)
+}
+{
+    // A departed seat is NOT promotable — its socket is gone (walkaway first,
+    // then the host tries, and cooking survives either way).
+    const rec = recordRun(555, 2)
+    const hub = makeMemRelay()
+    const host = makeEndpoint({ id: 'h', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: true, stream: rec.stream })
+    const guest = makeEndpoint({ id: 'g', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: false, stream: rec.stream })
+    host.lobby.open()
+    for (let i = 0; i < 4; i++) { host.pumpWire(); guest.pumpWire() }
+    guest.lobby.join(host.lobby.room.code)
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    host.lobby.start({ seed: 555, partner: false })
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    runTogether([host, guest], 200)
+    guest.lobby.close()
+    runTogether([host], 120)
+    ok((host.demoted.join() === '1' || host.watch.indexOf(1) < 0), 'the walkaway seat fell to CPU by the grace rule')
+    ok(host.seatCmd(1, 'hum') === false, 'a departed seat cannot be promoted back (the socket is gone)')
+    const tickAtRefuse = host.gs.tick
+    runTogether([host], 400)
+    ok(((host.gs.done && host.gs.tick > tickAtRefuse) || host.gs.tick > tickAtRefuse + 100) && host.desyncs.length === 0, `the host kitchen keeps running after the refused promote (tick ${tickAtRefuse} -> ${host.gs.tick}${host.gs.done ? ', shift won' : ''})`)
+}
+
+// ============ 10. VOICE PRODUCTION GATE (#1416 voice stage) =============
+console.log('# production gate: mic arm (M) and walkie-talkie echo etiquette')
+{
+    // Pure machines on the virtual clock.
+    let armed = false
+    const g1 = createPttSender({ now: () => vnow, canPress: () => armed })
+    ok(g1.press() === false, 'a disarmed mic cannot press to talk')
+    armed = true
+    ok(g1.press() === true, 'arming frees the mic (M / the VOX chip)')
+    g1.release('')
+    const rx = createPttInbox({ now: () => vnow })
+    rx.feed({ k: 'v', s: 2, m: 'i', x: JSON.stringify({ mime: 'audio/webm' }) })
+    rx.feed({ k: 'v', s: 2, m: 'a', i: 0, z: 1, x: 'AA==' })
+    rx.feed({ k: 'v', s: 2, m: 'e', a: 600 })
+    ok(rx.speaking() === true && rx.lastHeardSeat === 2, 'the inbox knows a friend is audible right now')
+    vnow += 600 + ECHO_TAIL_MS - 1
+    ok(rx.speaking() === true, 'the echo window spans the take plus the tail')
+    vnow += 2
+    ok(rx.speaking() === false, 'the window closes after take + tail')
+}
+{
+    // Wire proof: while the host's take plays on the guest, the guest's press
+    // is refused; the mic frees after the take — and the kitchen never notices.
+    const rec = recordRun(777, 2)
+    const hub = makeMemRelay()
+    const host = makeEndpoint({ id: 'h', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: true, stream: rec.stream })
+    const guest = makeEndpoint({ id: 'g', slug: 'short-order-shout', relayHub: hub, seats: 2, isHost: false, stream: rec.stream })
+    host.lobby.open()
+    for (let i = 0; i < 4; i++) { host.pumpWire(); guest.pumpWire() }
+    guest.lobby.join(host.lobby.room.code)
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    host.lobby.start({ seed: 777, partner: false })
+    for (let i = 0; i < 6; i++) { host.pumpWire(); guest.pumpWire() }
+    runTogether([host, guest], 300)
+    guest.micArmed = false
+    ok(guest.ptt.press() === false, 'a phone with the mic disarmed (M) is refused before the wire')
+    guest.micArmed = true
+    ok(guest.ptt.press() === true && guest.ptt.release('') !== undefined, 're-arming (M again) brings the mic back')
+    const desyncBefore = host.desyncs.length + guest.desyncs.length
+    host.ptt.press()
+    runTogether([host, guest], 20) // hold the mic ~a third of a second of virtual time
+    host.ptt.release('h'.repeat(3000))
+    runTogether([host, guest], 25)
+    ok(guest.utters.length === 1 && guest.vin.speaking() === true, "the guest is playing the host's take right now")
+    ok(guest.ptt.press() === false, 'walkie-talkie etiquette: pressing while a friend is audible is refused (no echo loop)')
+    runTogether([host, guest], 90)
+    ok(guest.vin.speaking() === false, 'the kitchen falls silent after the take')
+    ok(guest.ptt.press() === true, 'and the mic frees for the reply')
+    guest.ptt.release('a'.repeat(2200))
+    runTogether([host, guest], 300)
+    ok(host.utters.length === 1 && host.utters[0].slot === 1, 'the reply reaches the host')
+    ok(host.desyncs.length + guest.desyncs.length === desyncBefore, 'zero desyncs through the whole conversation')
+    const n = runTogether([host, guest], 12000, (eps) => eps[0].gs.done && eps[1].gs.done)
+    ok(n >= 0 && hashState(host.gs) === hashState(rec.gs), 'the shift still ends identical to the local reference (hash law)')
 }
 
 console.log(`\nsoslinkcheck: ${pass} passed, ${fail} failed`)
