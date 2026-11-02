@@ -135,6 +135,32 @@ audio.js) plays under gameplay, ducked ~3 dB while any alarm is active.
    assertions through the `__sosTest` drill seam (mutant: resync lands as
    `hold` => the green + tear-off assertions red).
 
+- Lobby theming (#1416 gap 4): the online lobby wears the cabinet, not the
+   generic cyan/pink placeholder — paper-cream text (#f0ead8), paperLo labels,
+   apron-red live borders, a sign-tube room code (red + mustard split shadow),
+   mustard warn / fire-red bad, and the QR in PAL.ink modules inside a PAL.chrome
+   frame. All hex literals (Tailwind must scan them); Lobby stays cyan for every
+   other game. Found while theming: `qrcode.js` capped at v4-L (78B), so ANY
+   relay-shared join href (~95–106B) silently lost its QR — the encoder now
+   covers v5/v6 (106B/134B, still single RS block; padlinkcheck round-trips
+   the exact relay href through jsQR).
+
+- Space starts the shift (#1416 gap 7 find): the lobby promised "SPACE STARTS
+   THE SHIFT" but the net key branch only handled the over-screen re-kick —
+   a desktop host pressing Space got silence. Space/Enter as host now kicks
+   (never mid-play). Unmount also `lobby.close()`s: the dev StrictMode remount
+   used to leave a ghost socket parked on a relay slot (first friend joined in
+   seat 3 behind their own ghost; prod leaked a zombie member when leaving the
+   page).
+
+- Two-browser CI tier (#1416 gap 7): `npm run soslinkdrive` proves what Node
+   cannot see — two headless pages (desktop host + phone guest) ride the real
+   relay beside the dev server: real lobby DOM (chips, QR, diner palette),
+   real keystroke start, lockstep past tick 120 with hash guards live, RTT
+   pips populated, drop-without-stop. Relay on `DRIVE_RELAY_PORT` (8791) so
+   padlinkdrive's 8789 never collides. (Mutant: accent back to pink-50 =>
+   the paper/pink assertions red.)
+
 ## Honest gaps
 
 - **Voice**: half-duplex hold-V PTT over the pad wire shipped (#1416 gap 1,

@@ -5,9 +5,11 @@
 // No third-party lib, no assets: it synthesizes the module grid itself.
 //
 // Scope (the join URL is short and fixed-shape, so a tiny subset covers it):
-// QR Model 2, byte mode (ISO-8859-1), error-correction level L, versions 1..4
-// — each of which is a SINGLE Reed-Solomon block, so no block interleaving.
-// A payload longer than v4-L can hold returns null; callers fall back to the
+// QR Model 2, byte mode (ISO-8859-1), error-correction level L, versions 1..6
+// — each of which is a SINGLE Reed-Solomon block, so no block interleaving
+// (v5/v6 joined the set in #1416 gap 4: relay-shared game lobbies carry a
+// full `...?net=join&room=CODE&relay=ws://host` href that overflows v4-L).
+// A payload longer than v6-L (134 bytes) returns null; callers fall back to the
 // text code. Mask selection is the standard four-rule penalty, so the grid is
 // a real, spec-conformant QR (not just "some black-and-white pattern").
 //
@@ -25,6 +27,8 @@ const VERSIONS = [
     { v: 2, size: 25, cw: 44, ec: 10, align: [6, 18] },
     { v: 3, size: 29, cw: 70, ec: 15, align: [6, 22] },
     { v: 4, size: 33, cw: 100, ec: 20, align: [6, 26] },
+    { v: 5, size: 37, cw: 134, ec: 26, align: [6, 30] },
+    { v: 6, size: 41, cw: 172, ec: 36, align: [6, 34] },
 ]
 
 // The join target the pill points at; the phone reads ?room= (pages/PadLink.jsx).
