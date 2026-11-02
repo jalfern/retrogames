@@ -750,6 +750,12 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
 }
 ok('seedpin: every seed-reporting game honors seedFromQuery', unpinneable.length === 0, unpinneable.join(','))
 ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 0, `${reportingGames} reporting`)
+// #1473 rollout floor: #1472 shipped Gauntlet/QBert/Tetris/PickRush (PickRush
+// pins but doesn't yet report a seed, so the law's counter sees 3 of them);
+// batch 1 adds 8 (SSX, CometDrift, CometDriftHD, SmashTV, ShortOrderShout,
+// Tempest, LunarLander, Lemmings) → 11 reporting+pinning titles. Dropping
+// below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 11 games report+pin seeds', reportingGames >= 11, `${reportingGames} reporting`)
 
 if (mutate) {
     // Mutant (nightly): tamper = a report one pad over the hard cap. A validator

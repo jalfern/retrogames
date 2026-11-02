@@ -13,7 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
@@ -389,8 +389,12 @@ const LunarLanderGame = () => {
 
         // ------------------------------------------------------------- input ----
         const goPlay = () => {
-            gs = makeGame(0); demoAt = 0
-            stars = makeStars(0)
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // terrain set (genTerrain derives every pad from seed + level index).
+            const pin = seedFromQuery()
+            const gseed = pin != null ? pin >>> 0 : 0
+            gs = makeGame(gseed); demoAt = 0
+            stars = makeStars(gseed)
             parts.length = 0
             shake = 0; flash = 0; zoom = false
             setMode('play')
@@ -487,7 +491,11 @@ const LunarLanderGame = () => {
 
         last = performance.now()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, cycle: gs.cycle }))
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (heatWorker) heatWorker.terminate()
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)

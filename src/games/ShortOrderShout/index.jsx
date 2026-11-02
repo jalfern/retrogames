@@ -13,7 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { normalizePad } from '../../utils/onePad'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { makeTransport } from '../../utils/linkPeers.js'
@@ -70,6 +70,10 @@ export default function ShortOrderShout() {
     const freshEmitters = (seats) => Array.from({ length: seats }, (_, i) => makeCpuEmitter(i))
 
     const startPlay = useCallback((seed, players, partnerHuman) => {
+        // #1473: honor ?seed=N so a filed feedback report's seed replays this kitchen
+        // ticket-for-ticket (the whole sim — tickets, fires, customers — derives from it).
+        const pin = seedFromQuery()
+        if (pin != null) seed = pin >>> 0 || 1
         seatsRef.current = players
         partnerHumanRef.current = !!partnerHuman
         seedRef.current = seed
@@ -136,6 +140,11 @@ export default function ShortOrderShout() {
         cvs.width = CANVAS_W; cvs.height = CANVAS_H
         startAttract()
         if (import.meta.env.DEV) exposeGame(specRef.current)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => {
+            const g = gsRef.current || attractRef.current || createGame(1, 2)
+            return { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, players: seatsRef.current }
+        })
 
         pumpHudRef.current = (f) => {
             const hud = hudRef.current
@@ -1274,6 +1283,7 @@ export default function ShortOrderShout() {
         }
 
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

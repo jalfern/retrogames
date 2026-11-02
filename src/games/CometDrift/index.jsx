@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN } from './track.js'
 import { selectorGeom, selectorHit, previewBox } from './selector.js'
@@ -890,7 +890,10 @@ export default function CometDrift() {
         }
 
         const resetTo = (screen) => {
-            Object.assign(g, makeGame(0))
+            // #1473: honor ?seed=N at race start so a filed feedback report's seed
+            // replays this exact field (attract/reset-to-title keeps seed 0).
+            const pin = screen === 'race' ? seedFromQuery() : null
+            Object.assign(g, makeGame(pin != null ? pin >>> 0 : 0))
             st.screen = screen; screenRef.current = screen
             st.plan = screen === 'attract'
             st.endT = 0
@@ -1069,7 +1072,18 @@ export default function CometDrift() {
             restore: (s) => { Object.assign(g, s) },
         })
 
+        // #1473: production-safe feedback state (seed for replay), every build —
+        // same core shape as the contract state() above.
+        exposeFeedbackState(() => {
+            const P = g.karts[0]
+            return {
+                tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
+                seed: g.seed, course: COURSE.id,
+            }
+        })
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (ro) ro.disconnect()
             window.removeEventListener('resize', onWinResize)

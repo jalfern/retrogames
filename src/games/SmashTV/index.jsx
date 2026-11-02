@@ -13,7 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
@@ -703,7 +703,10 @@ const SmashTVGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, { players: seatMode === 'off' ? 1 : 2 })
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // arena (rng derives from any integer seed); unpin = the original 0..96 roll.
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : Math.floor(Math.random() * 1000) % 97, { players: seatMode === 'off' ? 1 : 2 })
             floor = buildFloor(0, gs.seed)
             demoAt = 0
             roomTotal = 0; roomBump = 0; clearedAt = -1
@@ -849,7 +852,11 @@ const SmashTVGame = () => {
 
         last = performance.now()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, room: gs.room }))
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)

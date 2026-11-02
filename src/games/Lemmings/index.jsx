@@ -17,7 +17,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { currentPad, setPointer, pointerGesture } from '../../utils/onePad'
 import { makeFitCanvas } from '../../utils/fitCanvas'
 import { LEVELS, buildLevel } from './levels.js'
@@ -412,7 +412,11 @@ const LemGame = () => {
 
         // ---------- input ----------
         const startPlay = () => {
-            loadLevel(0, true)
+            // #1473: honor ?seed=N so a filed report's seed reopens the level it was
+            // filed from (this game has zero runtime randomness — levels are fixed
+            // data — so seed == starting level index, matching reset(seed)'s semantics).
+            const pin = seedFromQuery()
+            loadLevel(pin != null ? pin : 0, true)
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -631,7 +635,11 @@ const LemGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: levelIdx, level: meta.name }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV && window.__lemTest) delete window.__lemTest
             if (import.meta.env.DEV) { unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
