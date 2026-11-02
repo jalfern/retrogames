@@ -40,6 +40,7 @@
 //   npm run doscheck
 //   node scripts/doscheck.mjs [--boot 200] [--quick]   (--quick = kingsquest only)
 
+import { readFile } from 'node:fs/promises'
 import { opt, requireDevServer, launch, Report, URL_DEFAULT } from './lib/harness.mjs'
 
 const args = process.argv.slice(2)
@@ -56,6 +57,22 @@ const browser = await launch()
 const r = new Report('doscheck')
 
 const ESC = 27
+
+// #1451 static gate — the control-surface wiring every Ultima shell must have,
+// asserted without booting an emulator. Jon's iPhone report ("we have space esc
+// and enter only") was invisible to every check in the repo because none of
+// them looked at the DOS bar: five byte-identical shells offered three keys and
+// no arrows, and no code path failed. If a shell ever detaches from the shared
+// DosShell (or drops its command keys), this fails before a browser opens.
+for (const n of [1, 2, 3, 4, 5]) {
+  let src = ''
+  try { src = await readFile(new URL(`../src/games/Ultima${n}/index.jsx`, import.meta.url), 'utf8') } catch { /* missing = fail below */ }
+  const viaShell = /from\s+'[^']*components\/DosShell'/.test(src)
+  const verbs = (src.match(/keys=\{\[([^\]]*)\]\}/) || [, ''])[1]
+  const verbCount = (verbs.match(/'[A-Z]'/g) || []).length
+  r.check(`ultima${n}: shell = shared DosShell (dosKeys pad, not a 3-key bar)`,
+    viaShell && verbCount >= 6, `DosShell=${viaShell} primaryKeys=${verbCount}`)
+}
 
 const until = (page, fn, secs, arg) =>
   page.waitForFunction(fn, arg, { timeout: secs * 1000 }).then(() => true).catch(() => false)
@@ -146,6 +163,30 @@ for (const game of games) {
   }
 
   const hooked = await hasHook(page)
+  // #1451: the Ultima shells expose `__dosTest` (same seam shape as __kqTest).
+  // Assert the touch pad is real — declared keys, captured handler, visible
+  // buttons — because "the bar renders" was never the bug; "it drives nothing"
+  // was.
+  const dosHooked = game === 'ultima1' ? await until(page, () => !!window.__dosTest, 25) : false
+  if (game === 'ultima1') {
+    r.check('ultima1: __dosTest hook exists', dosHooked, errors.slice(0, 1).join(' | '))
+    if (dosHooked) {
+      const padDef = await page.evaluate(() => window.__dosTest.pad())
+      r.check('ultima1: pad offers arrows + ESC/↵/␣ + command letters + the ⌨ sheet',
+        padDef.arrows === true && padDef.keys.length >= 6 && padDef.sheet.length === 36,
+        JSON.stringify({ keys: padDef.keys, sheet: padDef.sheet.length }))
+      const dom = await page.evaluate(() => ({
+        dpad: !!document.querySelector('[data-dos="dpad"]'),
+        keys: document.querySelectorAll('[data-doskey]').length,
+        sheetToggle: !!document.querySelector('[data-dos="sheet-toggle"]'),
+      }))
+      r.check('ultima1: the pad is on screen (d-pad, verb buttons, ⌨ toggle)',
+        dom.dpad && dom.keys >= 6 && dom.sheetToggle, JSON.stringify(dom))
+      const seen = await until(page, () => window.__dosTest.keysDebug().captured, bootTimeout)
+      r.check('ultima1: pad wired to the captured window handler',
+        seen, JSON.stringify(await page.evaluate(() => window.__dosTest.keysDebug())))
+    }
+  }
   if (hooked && game === 'kingsquest') {
     // Honesty gate. The badge must not advertise a sense the title does not
     // have: King's Quest declares `sensors: []` until stage 3 puts an eye in
@@ -235,6 +276,34 @@ for (const game of games) {
 
     const scene = await bestFrame(page)
     r.check('kingsquest: a real scene is on screen', !!scene && scene.lit > 0.15, JSON.stringify(scene))
+  }
+
+  if (game === 'ultima1' && dosHooked) {
+    // The whole point of #1451: a key press must reach DOSBox. Take a resting
+    // baseline FIRST — if the screen animates on its own, a bare hash change
+    // proves nothing — then require the press to move the frame past that drift.
+    const h0 = await page.evaluate(() => window.__dosTest.print())
+    await page.waitForTimeout(2500)
+    const h0b = await page.evaluate(() => window.__dosTest.print())
+    const restDrift = await page.evaluate(({ a, b }) => {
+      const d = (x, y) => { let s = 0; for (let i = 0; i < x.blocks.length; i++) s += Math.abs(x.blocks[i] - y.blocks[i]); return s / x.blocks.length }
+      return +d(a, b).toFixed(2)
+    }, { a: h0.blocks, b: h0b.blocks })
+    await page.evaluate(() => { window.__dosTest.focus(); window.__dosTest.press({ keyCode: 13 }) })
+    await page.waitForTimeout(2500)
+    let h1 = await page.evaluate(() => window.__dosTest.print())
+    if (h1.hash === h0.hash) {
+      await page.evaluate(() => window.__dosTest.press({ keyCode: 32 }))
+      await page.waitForTimeout(2500)
+      h1 = await page.evaluate(() => window.__dosTest.print())
+    }
+    const jump = await page.evaluate(({ a, b }) => {
+      const d = (x, y) => { let s = 0; for (let i = 0; i < x.blocks.length; i++) s += Math.abs(x.blocks[i] - y.blocks[i]); return s / x.blocks.length }
+      return +d(a, b).toFixed(2)
+    }, { a: h0.blocks, b: h1.blocks })
+    r.check('ultima1: an injected key advanced the guest past resting drift (dosKeys → DOSBox)',
+      h1.hash !== h0.hash && jump > restDrift + 0.5,
+      `${h0.hash} -> ${h1.hash} jump=${jump} restDrift=${restDrift}`)
   }
 
   r.check(`${game}: no page errors`, errors.length === 0, errors.slice(0, 2).join(' | '))
