@@ -22,7 +22,12 @@ confuse the two queues.
    AGENTS.md ("the law") keeps `~/Dev/retrogames` detached at `origin/main`;
    never check out or edit `main` there. `STATE.md` is the FORGE lane's file
    (its step 9 leaves it dirty on purpose): never author changes to it, and
-   never count its dirt as a corpse. Refresh the main checkout:
+   never count its dirt as a corpse. The forge handoff survives in the park — a parallel slot's
+    step-1 checkout can revert STATE.md before you read it (#1430), so take
+    the handoff from `node scripts/statepark.mjs read` in the main checkout
+    (`NO-REPORT` = none pending; it picks the newest of STATE.md and
+    `/tmp/forge/STATE.*.parked.md` that differs from HEAD).
+    Refresh the main checkout:
    `git -C "$HOME/Dev/retrogames" fetch --prune origin && git -C "$HOME/Dev/retrogames" checkout --detach origin/main`;
    if anything tracked besides `STATE.md` is dirty there, STOP and comment on
    the newest open `building`/`building-qa` issue what you found — do not

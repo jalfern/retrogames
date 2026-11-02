@@ -17,13 +17,18 @@
 // qaMiniFlagship line — A9b goes red (mini would idle while studio's reserve
 // covers the only queue item). For #1377 turn the reboot `break` in
 // floor.js throughputLine into `continue` — B5c goes red (a counter delta
-// across a server reboot is nonsense, never a rate).
+// across a server reboot is nonsense, never a rate). For #1430 drop the
+// `content !== headContent` guard in lib/statepark.mjs newestReport — D2a goes
+// red (a checkout-reverted STATE.md is the newest file on disk and would
+// masquerade as the fresh report).
 
 import { execFileSync } from 'node:child_process'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, utimesSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { builderLadder, lanePlan } from './lib/lanes.mjs'
+import { parkPath, newestReport, readReport, parkReport } from './lib/statepark.mjs'
 import { slotsLine, throughputLine } from '../src/pages/floor.js'
 import { trialVerdict, reportText, laneSplit, VERDICT_FILE,
     usageWindow, spark, streamStats, laneOfClaims, boxMisses, parseSpanName, BOX_MIN } from './studiotrial.mjs'
@@ -465,6 +470,81 @@ ok(qaMd.includes('Queue build (#1258'), 'FORGE-QA.md carries the queue fallthrou
 ok(pkg.includes('"lanecheck"'), 'package.json carries the lanecheck alias')
 ok(checks.includes("'lanecheck'"), 'checks.mjs CORE replays lanecheck nightly')
 ok(ci.includes('npm run lanecheck'), 'ci.yml static job runs lanecheck')
+
+section('D. statepark — race-proof STATE.md handoff (#1430)')
+
+// D1 — parks are slot-scoped; the shared legacy path stays separate
+{
+    ok(parkPath('a') !== parkPath('b') && /STATE\.a\.parked\.md$/.test(parkPath('a')),
+        'D1a each slot parks on its own path')
+    let threw = false
+    try { parkPath('A b') } catch { threw = true }
+    ok(threw, 'D1b a bad slot name throws instead of colliding')
+}
+
+// D2 — the #1430 failure mode, pinned: after a parallel checkout reverted
+// STATE.md, the reverted copy is the NEWEST file but is HEAD content — never
+// serve it as a fresh report (mutant line: drop the `!== headContent` test in
+// lib/statepark.mjs newestReport and this goes red).
+{
+    const head = '# STATE — session 67\nold report\n'
+    const rep72 = '# STATE — session 72\nthe handoff\n'
+    const r = newestReport([
+        { path: 'STATE.md', mtimeMs: 300, content: head },
+        { path: '/p/STATE.b.parked.md', mtimeMs: 200, content: rep72 },
+        { path: '/p/STATE.parked.md', mtimeMs: 100, content: head },
+    ], head)
+    ok(r && r.path === '/p/STATE.b.parked.md' && r.content === rep72,
+        `D2a checkout-reverted STATE.md cannot masquerade: got ${r && r.path}`)
+    ok(newestReport([{ path: 'STATE.md', mtimeMs: 300, content: head }], head) === null,
+        'D2b nothing differs from HEAD -> NO-REPORT, never a stale one')
+}
+
+// D3 — full fs simulation of the two lanes kicked on one tick: slot a parks
+// old content and reverts STATE.md while slot b's report is in flight; b's
+// next-session read must still find its report on the slot path.
+{
+    const dir = mkdtempSync(join(tmpdir(), 'statepark-'))
+    try {
+        const head = 'session-67 report\n'
+        const rep72 = 'session-72 REPORT — the live handoff\n'
+        const st = join(dir, 'STATE.md')
+        const put = (p, c, t) => { writeFileSync(p, c); utimesSync(p, t / 1000, t / 1000) }
+        put(st, head, 1000)                                     // HEAD copy on disk
+        put(join(dir, 'STATE.parked.md'), head, 1100)          // a parks old content
+        put(st, rep72, 2000)                                   // b writes its report (step 9)
+        parkReport({ content: rep72, slot: 'b', parkDir: dir, legacy: false,
+            fs: { mkdirSync: () => {}, writeFileSync: (p, c) => put(p, c, 2100) } })
+        put(st, head, 3000)                                    // a's step-1 revert lands LAST
+        const { report } = readReport({ statePath: st, parkDir: dir, headContent: head })
+        ok(report && report.content === rep72 && report.path === join(dir, 'STATE.b.parked.md'),
+            `D3a parallel-lane race loses nothing: got ${report && `${report.path}`}`)
+        ok(report && report.mtimeMs === 2100,
+            `D3b freshness is the slot park, not the reverted STATE.md: ${report && report.mtimeMs}`)
+        // a legacy-only writer (old playbook text, pre-merge sessions) is still found
+        rmSync(join(dir, 'STATE.b.parked.md'))
+        const { report: legacy } = readReport({ statePath: st, parkDir: dir, headContent: head })
+        ok(legacy === null,
+            'D3c migration stays honest: only HEAD-equal copies left -> NO-REPORT')
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+}
+
+// D4 — the playbook commands exist and name the tool, so sessions actually run
+// them: step 1 parks slot-scoped first, step 9 self-parks, QA reads via the CLI.
+{
+    ok(forgeMd.includes('STATE.<slot>.parked.md /tmp/forge/STATE.parked.md')
+        && forgeMd.includes('node scripts/statepark.mjs read'),
+        'D4a FORGE.md step 1 parks slot-scoped before reverting and names the reader')
+    ok(forgeMd.includes('node scripts/statepark.mjs park <slot>'),
+        'D4b FORGE.md step 9 parks the report it just wrote')
+    ok(qaMd.includes('node scripts/statepark.mjs read'),
+        'D4c FORGE-QA.md step 1 takes the handoff from the park reader (QA is a reader)')
+    const cliDir = mkdtempSync(join(tmpdir(), 'statepark-cli-'))
+    const out = execFileSync('node', [join(here, 'statepark.mjs'), 'read'],
+        { cwd: cliDir, encoding: 'utf8', env: { ...process.env, STATEPARK_DIR: cliDir } })
+    ok(out.trim() === 'NO-REPORT', `D4d empty checkout reads honest NO-REPORT: got ${out.trim()}`)
+    rmSync(cliDir, { recursive: true, force: true })
+}
 
 console.log(`\x1b[1m\nlanecheck: ${pass} gates, ${fails.length} failures\x1b[0m`)
 for (const f of fails) console.error(`FAIL ${f}`)
