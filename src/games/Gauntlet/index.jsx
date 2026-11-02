@@ -35,7 +35,7 @@ import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, seedFromQuery } from '../../utils/gameContract'
 import { makeVoiceInbox, packVoiceAudio } from '../../utils/voice'
 import { createVoiceSession, askVoiceConsent } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -1068,7 +1068,9 @@ const GauntletGame = () => {
                 return
             }
             const peerHero = online ? HERO_ORDER[(selectHero + 1) % 4] : undefined
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two || online, topDown: true, partnerKey: online ? peerHero : (two ? HERO_ORDER[selectHero2] : undefined) })
+            // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin % 97 : Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn || two || online, topDown: true, partnerKey: online ? peerHero : (two ? HERO_ORDER[selectHero2] : undefined) })
             gs.partnerOn = pOn || two || online
             gs.partnerMode = pm
             gs.partnerHuman = two

@@ -13,7 +13,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { makeGame, step, padDiagonals, stateHash, cubeXY, id, ROWS, CUBES, neededCubes, W, H, FIXED_DT, HOP_TICKS, TUNNEL } from './sim.js'
 import { plan } from './planner.js'
@@ -113,7 +113,9 @@ const QBertGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame({ seed: (Date.now() & 0xffff) | 1 })
+            // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? { seed: pin >>> 0 || 1 } : { seed: (Date.now() & 0xffff) | 1 })
             parts = []
             popups = []
             lastActive = 0

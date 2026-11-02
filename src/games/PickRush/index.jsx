@@ -16,7 +16,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
@@ -675,7 +675,8 @@ const PickRushGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame((Math.random() * 2 ** 31) | 0, 2)
+            // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
+            gs = makeGame(seedFromQuery() ?? ((Math.random() * 2 ** 31) | 0), 2)
             parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
             setEnd(null)
             setMode('play')

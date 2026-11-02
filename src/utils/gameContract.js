@@ -12,9 +12,9 @@
 // before simulating — the driver owns the clock while it is closed. The loop
 // keeps drawing, so frame() always shows the live canvas.
 
-import { normalizePad, rawPad } from './onePad'
-import { createRecorder, verifyRecording, DEFAULT_HASH_EVERY } from './recording'
-import { createVoiceSession } from './voiceCapture'
+import { normalizePad, rawPad } from './onePad.js'
+import { createRecorder, verifyRecording, DEFAULT_HASH_EVERY } from './recording.js'
+import { createVoiceSession } from './voiceCapture.js'
 
 let loopLock = false
 let exposed = null
@@ -254,4 +254,21 @@ export function exposeFeedbackState(stateFn) {
 
 export function unexposeFeedbackState() {
     if (typeof window !== 'undefined') delete window.__feedbackInfo
+}
+
+// #737 — seed pinning for feedback replays. A filed report carries its seed
+// (via __feedbackInfo), and scripts/feedbackreplay.mjs drives the live game at
+// `<route>?seed=N`. A game that only reports the seed but ignores it cannot be
+// replayed: the pin helper gives every seed-reporting game the other half of
+// the contract. Returns the integer seed or null — null means "keep your own
+// RNG". Production-safe by design: seeding procedural content from the URL is
+// exactly what the harness already does with ?lite=1; there is no score to
+// cheat here. Games use it at their human-start site:
+//   makeGame(seedFromQuery() ?? randomSeed(), ...)
+export function seedFromQuery(search = (typeof window !== 'undefined' ? window.location.search : '')) {
+    let v = null
+    try { v = new URLSearchParams(search).get('seed') } catch { return null }
+    if (v == null) return null
+    const n = Number(v)
+    return Number.isInteger(n) && n >= 0 && n <= 0xffffffff ? n : null
 }
