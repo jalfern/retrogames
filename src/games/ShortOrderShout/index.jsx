@@ -25,16 +25,15 @@ import {
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, cellKind, STATION, RUNNER_POST,
 } from './engine.js'
 import { createSosSync, createRttTracker, createSeatCtl, packSnap, padMask, stallNotice, DROP_GRACE, PAD_DELAY, CMD_LEAD } from './net.js'
-import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y } from './art.js'
-import { playFx, dinerBar, resetDiner, seatDropFx } from './audio.js'
+import { sprites, TILE, CANVAS_W, CANVAS_H, KITCHEN_X, KITCHEN_Y, MIC_RECT, VOX_RECT, CHIP_ZONE, CHIP_MIN_H } from './art.js'
+import { playFx, dinerBar, resetDiner, seatDropFx, seatBackFx } from './audio.js'
 
 const FIXED_DT = 1000 / 60
 const IS_TOUCH = typeof window !== 'undefined' && (('ontouchstart' in window) || (navigator.maxTouchPoints || 0) > 0)
 const SEAT_KEYS_HUMAN2 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }
 // Voice chips in the bottom strip (#1416 voice stage): a hold-to-talk mic for
-// touch and an arm/disarm chip for every input. Canvas-space hit rects.
-const MIC_RECT = { x: CANVAS_W - 14, y: CANVAS_H - 16, w: 14, h: 12 }
-const VOX_RECT = { x: CANVAS_W - 36, y: CANVAS_H - 16, w: 20, h: 12 }
+// touch and an arm/disarm chip for every input. Canvas-space hit rects live in
+// art.js (#1468 QA) so the Node harness can prove the thumb standard.
 const ATTRACT_MSGS = [
     'THE COUNTER SPLITS THE KITCHEN',
     'SHOUT. TOSS. SERVE.',
@@ -237,6 +236,7 @@ export default function ShortOrderShout() {
         }
         let chipRects = [] // tappable seat-tag rects from the host's last frame
         let micHold = false
+        let voxPress = 0 // #1468 QA: short press-depress frame for the VOX chip
         const canvasPt = (ev) => {
             const r = cvs.getBoundingClientRect()
             if (!r.width || !r.height) return null
@@ -253,7 +253,7 @@ export default function ShortOrderShout() {
                     }
                 }
                 if (inRect(p, MIC_RECT)) { micHold = true; talkStart(); return }
-                if (inRect(p, VOX_RECT)) { toggleVoiceArm(); return }
+                if (inRect(p, VOX_RECT)) { voxPress = 6; toggleVoiceArm(); return }
             }
             if (sc === 'attract') { selectRef.current = 2; setScreen('select') }
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) { seedRef.current = (seedRef.current + 1) >>> 0; setScreen('select') }
@@ -450,8 +450,10 @@ export default function ShortOrderShout() {
         const seatCmd = (seat, mode) => {
             if (!net.room || net.role !== 'host' || screenRef.current !== 'play') return false
             const ownSeat = net.slot
-            if (mode === 'cpu' && (seat === ownSeat || seat === net.partnerSeat || seat === 0)) return false
-            if (mode === 'hum' && !(net.dropped.indexOf(seat) >= 0 && net.room.slots.indexOf(seat) >= 0)) return false
+            // #1468 QA: refusals tell the host WHY — silent false left the tap
+            // feeling broken. These paths never reach the wire, no anchors move.
+            if (mode === 'cpu' && (seat === ownSeat || seat === net.partnerSeat || seat === 0)) { netToast('NO CPU FOR YOU'); return false }
+            if (mode === 'hum' && !(net.dropped.indexOf(seat) >= 0 && net.room.slots.indexOf(seat) >= 0)) { netToast(`P${seat + 1} GONE — GONE`); return false }
             const msg = { k: 'd', s: 0, seat, mode, at: net.sync.stats().nextSample + CMD_LEAD }
             if (!net.cmd.queue(msg)) return false
             net.room.send('pad', msg)
@@ -481,7 +483,7 @@ export default function ShortOrderShout() {
                 net.sync.watchSeats = net.humans.slice()
                 hudRef.current.dropFlash = { seat: c.seat, t: 120, up: true }
                 netToast(c.seat === ownSeat ? 'YOU\x27RE BACK ON — COOK!' : `P${c.seat + 1} BACK ON NET`)
-                playFx({ k: 'ui' })
+                seatBackFx() // #1468 QA: distinct "back on the line" chime
             }
         }
         if (net.active) {
@@ -955,11 +957,24 @@ export default function ShortOrderShout() {
                 // (tap = promote back). Guests see the same tags, no marks.
                 const canTap = net.role === 'host' && screenRef.current === 'play'
                 chipRects = []
+                // #1468 QA: a tapped command rides the wire until its anchor tick
+                // (~0.5 s away) — a mustard shrink-countdown under the chip shows
+                // the order is in flight. HUD-only; reads cmd/sync stats.
+                const pend = canTap ? net.cmd.stats().pending : []
+                const kNow = net.sync.stats().nextSample
+                const audible = net.vin.speaking()
+                const heardSeat = net.vin.lastHeardSeat
                 let cx = 6
                 for (let i = 0; i < g.seats; i++) {
                     const txt = `P${i + 1}${i === ownSeat || i === net.partnerSeat ? ' YOU' : net.humans.indexOf(i) >= 0 ? ' NET' : df && df.seat === i && df.t > 0 ? (df.up ? ' NET!' : ' CPU!') : ' CPU'}`
                     const w = ctx.measureText(txt).width
-                    ctx.fillStyle = df && df.seat === i && df.t > 0 && Math.floor(df.t / 6) % 2 ? '#ffd23f' : '#8a7a8a'
+                    // #1468 QA: the tag blinks cyan while that seat is AUDIBLE —
+                    // your own live mic (self-mirror of the remote Pn SPOKE
+                    // flash) or a friend's take playing back, so an echo refusal
+                    // (`Pn TALKING — WAIT`) has a face on the strip.
+                    const hot = (net.voice.live && i === ownSeat) || (audible && heardSeat === i)
+                    ctx.fillStyle = df && df.seat === i && df.t > 0 && Math.floor(df.t / 6) % 2 ? '#ffd23f'
+                        : hot && Math.floor(performance.now() / 180) % 2 ? '#7ee0ff' : '#8a7a8a'
                     ctx.fillText(txt, cx, CANVAS_H - 3)
                     if (canTap) {
                         let tap = null
@@ -968,7 +983,14 @@ export default function ShortOrderShout() {
                         if (tap) {
                             ctx.fillStyle = tap === 'cpu' ? '#e8b028' : '#58d048'
                             for (let dx = 0; dx < w; dx += 3) ctx.fillRect(cx + dx, CANVAS_H - 1, Math.min(2, w - dx), 1)
-                            chipRects.push({ seat: i, tap, rect: { x: cx - 2, y: CANVAS_H - 10, w: w + 4, h: 10 } })
+                            // #1468 QA: thumb-tall hit box (was a 6px graze strip)
+                            chipRects.push({ seat: i, tap, rect: { x: cx - 2, y: CHIP_ZONE.y, w: w + 4, h: CHIP_MIN_H } })
+                        }
+                        const pc = pend.find((c) => c.seat === i)
+                        if (pc) {
+                            const frac = Math.max(0, Math.min(1, (pc.at - kNow) / net.cmd.LEAD))
+                            ctx.fillStyle = Math.floor(performance.now() / 120) % 2 ? '#e8b028' : '#7a5c14'
+                            ctx.fillRect(cx, CANVAS_H - 2, Math.max(2, Math.round(w * frac)), 2)
                         }
                     }
                     cx += w + 6
@@ -981,12 +1003,14 @@ export default function ShortOrderShout() {
                 const pips = net.rtt.pips()
                 const remote = net.humans.filter((i) => i !== ownSeat && i !== net.partnerSeat)
                 remote.forEach((seat, i) => {
-                    const px = CANVAS_W - 32 - (remote.length - i) * 20
+                    // #1468 QA: pips draw inside PIP_ZONE — clear of the bigger
+                    // MIC/VOX hit boxes (art.js zone asserts).
+                    const px = CANVAS_W - 48 - (remote.length - i) * 20
                     ctx.fillStyle = '#5a4a5a'
                     ctx.fillText(`P${seat + 1}`, px, CANVAS_H - 3)
                     const ms = pips[seat]
                     ctx.fillStyle = ms === undefined ? '#4a3a4a' : net.rtt.color(ms)
-                    ctx.fillRect(px + 14, CANVAS_H - 8, 4, 5)
+                    ctx.fillRect(px + 12, CANVAS_H - 8, 4, 5)
                 })
                 // PTT mic light + heard-flash (#1416 gap 1): your own live mic
                 // blinks green; a friend's finished take flashes seat + length.
@@ -1006,22 +1030,27 @@ export default function ShortOrderShout() {
                 // hold-to-talk mic — phones finally get walkie-talkie; mouse
                 // users can drive both too.
                 if (screenRef.current === 'play') {
+                    if (voxPress > 0) voxPress-- // #1468 QA press-depress countdown
                     const armed = net.voice.enabled
+                    const voxDown = voxPress > 0
+                    // #1468 QA: thumb-standard chips (art.js MIC/VOX rects,
+                    // >=20px tall) with a press-depress frame on both chips.
                     ctx.fillStyle = '#241420'
-                    ctx.fillRect(VOX_RECT.x, VOX_RECT.y, VOX_RECT.w, VOX_RECT.h)
-                    ctx.fillRect(MIC_RECT.x, MIC_RECT.y, MIC_RECT.w, MIC_RECT.h)
+                    ctx.fillRect(VOX_RECT.x, VOX_RECT.y + (voxDown ? 1 : 0), VOX_RECT.w, VOX_RECT.h)
+                    ctx.fillRect(MIC_RECT.x, MIC_RECT.y + (micHold ? 1 : 0), MIC_RECT.w, MIC_RECT.h)
                     ctx.strokeStyle = armed ? '#3f7a4c' : '#7a3f44'
-                    ctx.strokeRect(VOX_RECT.x + 0.5, VOX_RECT.y + 0.5, VOX_RECT.w - 1, VOX_RECT.h - 1)
-                    ctx.strokeRect(MIC_RECT.x + 0.5, MIC_RECT.y + 0.5, MIC_RECT.w - 1, MIC_RECT.h - 1)
+                    ctx.strokeRect(VOX_RECT.x + 0.5, VOX_RECT.y + (voxDown ? 1.5 : 0.5), VOX_RECT.w - 1, VOX_RECT.h - 1)
+                    ctx.strokeRect(MIC_RECT.x + 0.5, MIC_RECT.y + (micHold ? 1.5 : 0.5), MIC_RECT.w - 1, MIC_RECT.h - 1)
                     ctx.fillStyle = armed ? '#8ce098' : '#e08888'
-                    ctx.fillText(armed ? 'ON' : 'OFF', VOX_RECT.x + 6, CANVAS_H - 8)
+                    ctx.fillText(armed ? 'ON' : 'OFF', VOX_RECT.x + 5, VOX_RECT.y + 13 + (voxDown ? 1 : 0))
                     const live = net.voice.live && Math.floor(performance.now() / 200) % 2
                     ctx.fillStyle = live ? '#38e07b' : (armed ? '#8ad8a0' : '#6a4a52')
-                    const mx = MIC_RECT.x + 5, my = MIC_RECT.y + 1
+                    const mx = MIC_RECT.x + 6, my = MIC_RECT.y + 4 + (micHold ? 1 : 0)
                     ctx.fillRect(mx + 1, my, 2, 1) // capsule dome
                     ctx.fillRect(mx, my + 1, 4, 5) // capsule
                     ctx.fillRect(mx - 2, my + 4, 1, 3); ctx.fillRect(mx + 5, my + 4, 1, 3) // yoke
                     ctx.fillRect(mx + 1, my + 7, 4, 1); ctx.fillRect(mx + 2, my + 8, 2, 1); ctx.fillRect(mx + 1, my + 9, 4, 1) // stem + base
+                    if (micHold) { ctx.strokeStyle = '#7ee0ff'; ctx.strokeRect(MIC_RECT.x - 1.5, MIC_RECT.y + 1.5, MIC_RECT.w + 3, MIC_RECT.h - 3) }
                 }
             } else {
                 legend = ['1', '2', '3', '4'].slice(0, g.seats).map((n, i) => `P${n}${i === 0 ? ' YOU' : partnerHumanRef.current && i === 1 && screenRef.current === 'play' ? ' YOU' : ' CPU'}`).join(' ')
@@ -1209,7 +1238,7 @@ export default function ShortOrderShout() {
                 resyncDrill: () => markResynced(),
                 netStart: () => netStartRef.current && netStartRef.current(),
                 notice: () => (hudRef.current.desync ? { phase: hudRef.current.desync.phase, t: hudRef.current.desync.t } : null),
-                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), cmd: net.cmd.stats(), chips: chipRects.map((c) => ({ seat: c.seat, tap: c.tap })), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, enabled: !!net.voice.enabled, speaking: net.vin.speaking(), inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
+                net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), cmd: net.cmd.stats(), chips: chipRects.map((c) => ({ seat: c.seat, tap: c.tap, rect: { ...c.rect } })), mic: { ...MIC_RECT }, vox: { ...VOX_RECT }, voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, enabled: !!net.voice.enabled, speaking: net.vin.speaking(), inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
             }
             mountDbg({
                 title: 'SHORT ORDER SHOUT',
