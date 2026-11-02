@@ -83,6 +83,17 @@ Determinism law: every random the SIM consumes comes from the seed (rng.js,
 mulberry32). `Math.random()` may drive juice only — particles, shake, star
 twinkle — nothing that reaches `state()`.
 
+Seed pinning (#737): a game that reports its seed in production
+(`exposeFeedbackState(() => ({ ..., seed }))` — every build, not DEV-only) must
+also ACCEPT a seed back, or the reported seed is decorative and
+`scripts/feedbackreplay.mjs` cannot re-run what the report captured. At the
+human-start site use `seedFromQuery()` from gameContract:
+`makeGame(seedFromQuery() ?? randomSeed(), ...)` — it returns the integer
+`?seed=N` or null (null = keep your own RNG). Production-safe: seeding
+procedural content from the URL is the same affordance as `?lite=1`.
+`feedbackcheck` enforces the law statically (games reporting a seed must
+consume seedFromQuery); `npm run feedbackreplay` gates the replay tool.
+
 Wired games (rollout #391, `npm run contractcheck`): Lunar Lander, Tempest (pilots)
 + Arkanoid, Galaga, Dig Dug, Missile Battle, Spy Hunter, Paperboy. New games must wire
 it too (AGENTS.md, "Adding a game" step 4). Galaga omits `snapshot`/`restore` — its
