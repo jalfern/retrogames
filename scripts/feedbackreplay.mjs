@@ -115,7 +115,7 @@ function selftest() {
     r.check('extract: state block', !!ex.state && ex.state.score === 150)
     r.check('shape: good stream green', shape(ex.input).length === 0)
     r.check('shape: ticks/pads mismatch red', shape({ ...ex.input, ticks: 599 }).length > 0)
-    r.check('shape: sparse stream red', shape({ ...ex.input, pads: [{ t: 2, pad: {} }] }).length > 0)
+    r.check('shape: sparse stream red', shape({ ...ex.input, ticks: 1, pads: [{ t: 2, pad: {} }] }).length > 0)
     r.check('shape: fractional seed red', shape({ ...ex.input, seed: 1.5 }).length > 0)
     r.check('shape: unknown pad bit red', shape({ ...ex.input, pads: [{ t: 1, pad: { wiggle: true } }] }).length > 0)
     r.check('fallback report SKIPs cleanly (no input)', shape(null).length === 1 && /graceful-fallback/.test(shape(null)[0]))
