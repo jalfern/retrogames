@@ -51,9 +51,12 @@ export function createRateBudget(opts = {}) {
 // createPttSender: the press machine. The component starts/stops the recorder
 // and hands release() the finished blob's base64; drain() spreads it over the
 // wire inside the rate budget (called from the sim loop, one send per take).
+// opts.canPress (#1416 voice stage) is the production gate the DOM half wires:
+// mic disarmed (M / VOX chip) or a friend audible on the speakers => refusal.
 export function createPttSender(opts = {}) {
     const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
     const budget = opts.budget || createRateBudget({ now })
+    const canPress = typeof opts.canPress === 'function' ? opts.canPress : () => true
     let holding = false, cutFlag = false, sent = 0, startedMs = 0
     let queued = []
     return {
@@ -62,9 +65,11 @@ export function createPttSender(opts = {}) {
         get cut() { return cutFlag },
         get sentMsgs() { return sent },
         // press V: start an utterance. false while one is held or still
-        // draining — a walkie-talkie has one message on the wire at a time.
+        // draining — a walkie-talkie has one message on the wire at a time —
+        // or when the production gate (arm state / echo) says no.
         press() {
             if (holding || queued.length) return false
+            if (!canPress()) return false
             holding = true; cutFlag = false; startedMs = now()
             return true
         },
@@ -97,10 +102,21 @@ export function createPttSender(opts = {}) {
 // fires onUtterance({ slot, mime, ms, b64 }) the moment one is WHOLE. A torn
 // take (END without every part) counts as lost, never half-played; a fresh
 // INTRO from the same slot supersedes whatever was in flight.
+//
+// Echo gating (#1416 voice stage): walkie-talkie etiquette — while a friend's
+// take is PLAYING on this box, new presses are refused. That also kills the
+// speaker-to-mic echo loop: your own take can never record a voice you are
+// hearing. `speaking()` is an honest estimate (playback starts at delivery;
+// ECHO_TAIL_MS covers decode latency + room echo); the DOM half enforces it.
+export const ECHO_TAIL_MS = 250
+
 export function createPttInbox(opts = {}) {
     const onUtterance = typeof opts.onUtterance === 'function' ? opts.onUtterance : () => {}
+    const now = typeof opts.now === 'function' ? opts.now : () => Date.now()
+    const tailMs = Number.isFinite(opts.echoTail) ? opts.echoTail : ECHO_TAIL_MS
     const pending = new Map() // slot -> { meta, parts, z }
     let lost = 0, heard = 0
+    let heardUntil = 0, heardSeat = -1
     return {
         feed(msg) {
             if (!msg || msg.k !== 'v' || typeof msg.s !== 'number') return null
@@ -126,6 +142,8 @@ export function createPttInbox(opts = {}) {
                 if (!(p.z > 0) || have < p.z) { lost++; return null }
                 const utter = { slot, mime: p.meta.mime, ms: Math.max(0, Math.round(msg.a || 0)), b64: p.parts.slice(0, p.z).join('') }
                 heard++
+                heardSeat = slot
+                heardUntil = now() + utter.ms + tailMs
                 onUtterance(utter)
                 return utter
             }
@@ -133,9 +151,12 @@ export function createPttInbox(opts = {}) {
         },
         // a departed/demoted seat's half-take is dead — never play it later.
         drop(slot) { pending.delete(slot | 0) },
-        reset() { pending.clear(); lost = 0; heard = 0 },
+        reset() { pending.clear(); lost = 0; heard = 0; heardUntil = 0; heardSeat = -1 },
         get inflight() { return pending.size },
         get lostUtterances() { return lost },
         get heardUtterances() { return heard },
+        // true while a friend's take is (approximately) playing on this box.
+        speaking() { return now() < heardUntil },
+        get lastHeardSeat() { return heardSeat },
     }
 }
