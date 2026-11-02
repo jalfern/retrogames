@@ -77,6 +77,15 @@ for (const n of [1, 2, 3, 4, 5]) {
 const until = (page, fn, secs, arg) =>
   page.waitForFunction(fn, arg, { timeout: secs * 1000 }).then(() => true).catch(() => false)
 
+// #1451: interval polling for the DEV-hook/wiring waits. waitForFunction's
+// default raf polling only evaluates on animation frames — a page that has not
+// started its rAF loop yet (DOS shells idle until the emulator boots) never
+// gets evaluated, so the hook "does not exist" for 25 s while it actually
+// does. Measured here: every __*_Test hook missed with raf polling, all found
+// with a 500 ms interval.
+const untilPoll = (page, fn, secs, arg) =>
+  page.waitForFunction(fn, arg, { timeout: secs * 1000, polling: 500 }).then(() => true).catch(() => false)
+
 /**
  * Best frame seen over several samples. AGI fades to black between screens, so
  * one sample at an arbitrary moment can legitimately be all black — a single
@@ -112,7 +121,7 @@ const frameOf = (page) => page.evaluate(() => {
   return { w: c.width, h: c.height, lit: +(lit / 640).toFixed(3) }
 })
 
-const hasHook = (page) => until(page, () => !!window.__kqTest, 25)
+const hasHook = (page) => untilPoll(page, () => !!window.__kqTest, 25)
 
 for (const game of games) {
   const page = await browser.newPage({ viewport: { width: 820, height: 640 } })
@@ -128,7 +137,7 @@ for (const game of games) {
   if (game === 'zork') {
     // The browser half of the Zork agent: zorkcheck.mjs proves the brain works in
     // Node, this proves the GlkAdapter + DEV hook the player actually gets.
-    const ok = await until(page, () => !!window.__zorkTest, 40)
+    const ok = await untilPoll(page, () => !!window.__zorkTest, 40)
     r.check('zork: __zorkTest hook exists', ok, errors.slice(0, 1).join(' | '))
     if (ok) {
       // send() resolves when the VM is resumed; the reply lands a beat later,
@@ -154,7 +163,7 @@ for (const game of games) {
   if (game === 'mario') {
     // js-dos is loaded on demand now, so the games that never needed it must
     // not be pulling in a ~300 KB emulator (and 1.4 MB of wasm) any more.
-    await page.waitForFunction(() => !!window.__marioTest, null, { timeout: 20000 }).catch(() => {})
+    await page.waitForFunction(() => !!window.__marioTest, null, { timeout: 20000, polling: 500 }).catch(() => {})
     const dos = await page.evaluate(() => typeof window.Dos)
     const hook = await page.evaluate(() => !!window.__marioTest)
     r.check('mario renders without js-dos', hook && dos === 'undefined', `__marioTest=${hook} window.Dos=${dos}`)
@@ -167,7 +176,7 @@ for (const game of games) {
   // Assert the touch pad is real — declared keys, captured handler, visible
   // buttons — because "the bar renders" was never the bug; "it drives nothing"
   // was.
-  const dosHooked = game === 'ultima1' ? await until(page, () => !!window.__dosTest, 25) : false
+  const dosHooked = game === 'ultima1' ? await untilPoll(page, () => !!window.__dosTest, 25) : false
   if (game === 'ultima1') {
     r.check('ultima1: __dosTest hook exists', dosHooked, errors.slice(0, 1).join(' | '))
     if (dosHooked) {
@@ -182,7 +191,7 @@ for (const game of games) {
       }))
       r.check('ultima1: the pad is on screen (d-pad, verb buttons, ⌨ toggle)',
         dom.dpad && dom.keys >= 6 && dom.sheetToggle, JSON.stringify(dom))
-      const seen = await until(page, () => window.__dosTest.keysDebug().captured, bootTimeout)
+      const seen = await untilPoll(page, () => window.__dosTest.keysDebug().captured, bootTimeout)
       r.check('ultima1: pad wired to the captured window handler',
         seen, JSON.stringify(await page.evaluate(() => window.__dosTest.keysDebug())))
     }
