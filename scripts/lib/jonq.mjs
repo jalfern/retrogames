@@ -27,7 +27,21 @@ export const MAX_OPEN_PER_LANE = 3
 // Comments the factory writes itself. Anything NOT written by one of these
 // is Jon (or Claude for him) speaking, and Jon outranks his own default —
 // the answer-wins rule copied from FORGE-QA.md step 2.
-export const ROBOT_PREFIXES = ['FORGE:', 'WARDEN:', 'QA:', 'QA (']
+//
+// #1418: the old prefix list ('FORGE:', 'WARDEN:', 'QA:', 'QA (') missed the
+// slot-suffixed shape — `FORGE (a): claimed …`, and worse the comma form
+// `FORGE (b), rule-4 …` that forge-claim.sh/status comments actually post —
+// so every slot-prefixed bot comment on an open question parsed as Jon's
+// reply and false-closed it (#1403 victim). One regex, exhaustive over the
+// bot grammar: name + optional slot tag + delimiter. Author equality is NOT
+// provenance (gh authenticates as jalfern for the factory too), so this
+// content shape is the only defense — keep it the superset of every comment
+// the lanes write (claimed/checkpoint/status/yielding/answered notes).
+// Delimiters: bare name + `:` (`FORGE:`), or name + slot tag + `:`/`,`
+// (`FORGE (a):`, `FORGE (b),` — the exact #1403 shape). A plain space after
+// the bare name is NOT a bot delimiter, so Jon prose like "FORGE ahead, …"
+// still counts as his answer.
+export const ROBOT_SHAPE = /^(FORGE|QA|WARDEN)( \([a-z0-9-]+\)[ :,]|:)/
 
 export const laneLabel = (lane) => `lane:${lane}`
 const has = (issue, label) => (issue.labels || []).includes(label)
@@ -97,7 +111,7 @@ export function validateAsk({ lane, question, options = [], defaultText }) {
 }
 
 // ---- per-question state -----------------------------------------------
-export const isAnswer = (comment) => !ROBOT_PREFIXES.some((p) => String(comment.body || '').trim().startsWith(p))
+export const isAnswer = (comment) => !ROBOT_SHAPE.test(String(comment.body || '').trim())
 export const isDefaultNote = (comment) => String(comment.body || '').trim().startsWith('FORGE: no answer')
 export const isOverdue = (deadline, now) => !!deadline && now.getTime() > deadline.getTime()
 
