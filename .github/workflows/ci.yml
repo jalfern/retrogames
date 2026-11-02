@@ -163,6 +163,10 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'sim')
       - run: npm run citycheck
         if: contains(fromJSON(env.KEYS), 'sim')
+      - run: npm run lint:britannia
+        if: contains(fromJSON(env.KEYS), 'britannia')
+      - run: npm run britanniacheck
+        if: contains(fromJSON(env.KEYS), 'britannia')
       - run: npm run lint:outpost
         if: contains(fromJSON(env.KEYS), 'outpost')
       - run: npm run outpostcheck
