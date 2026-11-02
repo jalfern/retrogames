@@ -136,7 +136,25 @@ export function drawVictim(ctx, v, _t) {
 
 // --- fire, water, smoke --------------------------------------------------------
 
+// Night-art pass (#1440): fuel type reads as flame character. Loft decking is
+// heavy timber (deep amber, wide base); ground furniture is kindling-crated
+// stock (brighter, white-hot core). A FUEL cell running out of fuel is the
+// floor about to give way (gap 5): it telegraphs with sinking flame, sag
+// cracks and a blinking rim before the sim opens the hole.
+export const COLLAPSE_WARN_FUEL = 18 // below this, a burning fuel cell telegraphs
+export const COLLAPSE_CRACK = '#ff5030' // sagging plank crack on a starving floor
+export const COLLAPSE_RIM = '#ff9040' // blinking hole-rim warning
+export const EMBER_CALM = '#ffab40'
+export const EMBER_GALE = '#ffe08a' // wind-carried streaked embers, gust 2 only
+const FLAME = {
+    loft: { base: '#c8371a', mid: '#ff7a1a', core: '#ffd24a' }, // heavy timber
+    crate: { base: '#e84a12', mid: '#ffa040', core: '#fff2c0' }, // kindling — white-hot
+}
+const WIND_DIR = [[1, 0], [0, 1], [-1, 0], [0, -1]] // E S W N (mirrors sim DIRS)
+
 export function drawFire(ctx, g, t) {
+    const gale = g.wind.gust === 2 && g.wind.dir >= 0
+    const wd = gale ? WIND_DIR[g.wind.dir] : null
     for (let i = 0; i < W * H; i++) {
         const c = g.cell[i]
         if (!c) continue
@@ -154,15 +172,40 @@ export function drawFire(ctx, g, t) {
         if (c.heat > 0 && !c.burning) { ctx.fillStyle = `rgba(20,8,4,${Math.min(0.7, c.heat / 100)})`; ctx.fillRect(px, py, T, T) }
         if (!c.burning) continue
         const f = Math.floor(t / 7 + hash(x, y, 5) * 3) % 3
-        ctx.fillStyle = '#c8371a'
-        ctx.fillRect(px + 1 + (f === 1 ? 1 : 0), py + 3, T - 2, T - 4)
-        ctx.fillStyle = '#ff7a1a'
-        ctx.fillRect(px + 2 + (f === 2 ? -1 : 1), py + 4 - f, T - 6, T - 7)
-        ctx.fillStyle = '#ffd24a'
-        ctx.fillRect(px + 5 + (f === 0 ? 1 : 0), py + 6 - (f === 2 ? 1 : 0), T - 10, T - 11)
+        const pal = y <= LOFT_Y1 ? FLAME.loft : FLAME.crate
+        // gap 5 (#1440): a starving fuel cell IS the floor giving way — sink the
+        // flame toward the joists, crack the planks, blink the rim it will drop.
+        const warn = c.fuel < COLLAPSE_WARN_FUEL
+        const sag = warn ? Math.min(6, Math.ceil((COLLAPSE_WARN_FUEL - c.fuel) / 3)) : 0
+        ctx.fillStyle = pal.base
+        ctx.fillRect(px + 1 + (f === 1 ? 1 : 0), py + 3 + sag, T - 2, T - 4 - sag)
+        ctx.fillStyle = pal.mid
+        ctx.fillRect(px + 2 + (f === 2 ? -1 : 1), py + 4 - f + sag, T - 6, T - 7 - sag)
+        ctx.fillStyle = pal.core
+        ctx.fillRect(px + 5 + (f === 0 ? 1 : 0), py + 6 - (f === 2 ? 1 : 0) + sag, T - 10, Math.max(2, T - 11 - sag))
+        if (warn) {
+            ctx.fillStyle = COLLAPSE_CRACK
+            ctx.fillRect(px + (hash(x, y, 9) * 6 | 0), py + 9, 6 + (hash(x, y, 10) * 4 | 0), 1)
+            ctx.fillRect(px + 3 + (hash(y, x, 11) * 5 | 0), py + 12, 4 + (hash(y, x, 12) * 4 | 0), 1)
+            if (Math.floor(t / 4) % 2) {
+                ctx.strokeStyle = COLLAPSE_RIM
+                ctx.strokeRect(px + 0.5, py + 0.5, T - 1, T - 1)
+                ctx.strokeStyle = '#fff'
+            }
+        }
         if (hash(x, y, Math.floor(t / 12)) < 0.14) {
-            ctx.fillStyle = '#ffab40'
+            ctx.fillStyle = EMBER_CALM
             ctx.fillRect(px + (hash(x + 1, y, t | 0) * 12) | 0, py - 3 - (hash(x, y + 1, t | 0) * 4) | 0, 2, 2) // ember
+        }
+        // gale (#1440): the wind strips embers off the canopy and carries them
+        // downwind in bright streaks — the gust is visible before the spread is.
+        if (gale && hash(x, y, Math.floor(t / 5)) < 0.45) {
+            const ex = px + (hash(x + 3, y, t | 0) * 12) | 0
+            const ey = py - 2 - (hash(x, y + 3, t | 0) * 5) | 0
+            ctx.fillStyle = EMBER_GALE
+            ctx.fillRect(ex, ey, 2, 2)
+            ctx.fillRect(ex + wd[0] * 3, ey + wd[1] * 3, 2, 2)
+            ctx.fillRect(ex + wd[0] * 6, ey + wd[1] * 6, 1, 1)
         }
     }
 }

@@ -71,7 +71,7 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring (65)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art (104)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -85,14 +85,24 @@ routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
 
-1. **Night art pass (#1424 remainder):** check the drawn night against
-   docs/ART.md exemplars — flame palette variety per fuel type, ember
-   particles on gale shifts, and the collapse hole needs a clearer
-   telegraph before it drops.
-2. The ladder has no wind-noise cue yet: seat 3 reads gales from the HUD
+1. The ladder has no wind-noise cue yet: seat 3 reads gales from the HUD
    vane and the ladder physics, not from sound.
 
 Shipped since the first pass:
+- **#1440 — night art pass (gap 4):** flame palette per fuel (loft decking
+  burns heavy-timber amber, ground crates burn white-hot), gale shifts throw
+  bright ember streaks downwind (gust 2 only, calm never), and a starving
+  FUEL cell telegraphs its collapse before the sim opens the hole: the flame
+  sinks toward the joists, sag cracks etch the planks, and the hole-rim
+  blinks. Nine gates in firecrewcheck drive `drawFire` through a recording
+  ctx stub — the art pass is provable in plain Node. Mutants (one line each,
+  in `art.js`):
+  - palette: `sed -i '' 's/y <= LOFT_Y1 ? FLAME.loft : FLAME.crate/FLAME.loft/' src/games/FireCrew/art.js`
+    — "ground crates burn white-hot" goes red.
+  - telegraph: `sed -i '' 's/const warn = c.fuel < COLLAPSE_WARN_FUEL/const warn = false/' src/games/FireCrew/art.js`
+    — the cracks, rim and sink gates (three) go red.
+  - gale: `sed -i '' 's/if (gale && hash(x, y, Math.floor(t \/ 5)) < 0.45)/if (false)/' src/games/FireCrew/art.js`
+    — both streak gates go red.
 - **#1424 — the three meat gaps:** the mobile ladder (base follows seat 3,
   holds under a climber, `loftGateX` keeps the base off the pillar lines),
   the ladder shaft (stream crossing the base column soaks the loft above —
