@@ -1046,6 +1046,7 @@ export default function ShortOrderShout() {
                 hash: () => simState(gsRef.current).hash,
                 desyncDrill: () => showDesyncNotice(),
                 resyncDrill: () => markResynced(),
+                netStart: () => netStartRef.current && netStartRef.current(),
                 notice: () => (hudRef.current.desync ? { phase: hudRef.current.desync.phase, t: hudRef.current.desync.t } : null),
                 net: () => (net.active ? { role: net.role, code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : 'idle', slot: net.slot, seats: net.seats, humans: net.humans.slice(), dropped: net.dropped.slice(), stalls: net.sync.stats(), rtt: net.rtt.pips(), voice: { held: net.ptt.holding, pending: net.ptt.pending, live: !!net.voice.live, inflight: net.vin.inflight, lost: net.vin.lostUtterances, heard: net.vin.heardUtterances, heardLast: net.voice.heard } } : null),
             }
@@ -1114,7 +1115,23 @@ export default function ShortOrderShout() {
                     names={['HOST', 'COOK 2', 'COOK 3', 'COOK 4']}
                     startHint={netUi.role === 'host' ? 'SPACE STARTS THE SHIFT (P: SEAT 2 KEYBOARD PARTNER)' : 'WAITING FOR THE HOST…'}
                     onStart={() => netStartRef.current && netStartRef.current()}
-                    accent={{ text: 'text-pink-50', dim: 'text-pink-200/70', live: 'border-pink-300/40 text-pink-100' }}
+                    accent={{
+                        // #1416 gap 4: the neon-diner lobby wears the cabinet's
+                        // OWN tokens (art.js PAL; hex literals so Tailwind can
+                        // scan them): paper f0ead8, paperLo c8bfa4, apron-red
+                        // d83830, mustard e8b028, chrome d8e4ec, ink 181018.
+                        // The code glows like a sign tube: red + mustard split
+                        // shadows; QR = ink modules on white, chrome frame.
+                        text: 'text-[#f0ead8]',
+                        dim: 'text-[#c8bfa4]',
+                        live: 'border-[#d83830]/60 text-[#ffe9e4]',
+                        warn: '#e8b028',
+                        bad: '#f05848',
+                        btn: 'border-[#e8b028] text-[#ffe9a8]',
+                        codeGlow: { color: '#f0ead8', textShadow: '3px 0 0 #d83830, -3px 0 0 #e8b028' },
+                        qr: '#181018',
+                        qrFrame: '#d8e4ec',
+                    }}
                 />
             )}
             <VirtualControls secondAction={{ label: 'TOSS', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
