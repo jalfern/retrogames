@@ -43,8 +43,10 @@ Game code merged: PR #1446 (`src/games/TalkMeDown/*`). Not idle.
 - game-queue EMPTY. Feedback board: #1451/#1441 `building-qa`, #1448 (rally
   polish v3, `lane:qa`), #1435 (learnedwalk, `lane:demos`), #1430/#737
   (platform). Builders' ladder lands on feedback — but Jon's 2026-10-19
-  decision keeps builder lanes off QA tasks; flagship polish stage (#841,
-  `scripts/lib/idle.mjs flagshipStage`) is the next legal builder work.
+  decision keeps builder lanes off QA tasks. Flagship stage verified THIS
+  session via `idle.mjs flagshipStage` with live board data: SSX 0, Emberwood
+  0, Comet 0, Myst 0 open gaps (every README bullet carries a shipped
+  `CLOSED by #` marker) → STAGE null. **STOP is legal until Jon/QA file.**
 
 ## Environment
 Main checkout detached at origin/main, clean; this STATE reaches main via its
