@@ -231,6 +231,82 @@
     return key
   }
 
+  // Dictation glue (#737 "type OR dictate") — twin of appendPhrase in
+  // src/utils/feedback.js: final transcripts append with exactly one space,
+  // blank phrases change nothing, overflow keeps the existing note intact.
+  function appendPhrase(note, phrase, maxLen) {
+    var ml = maxLen == null ? 2000 : maxLen
+    var clean = String(phrase == null ? '' : phrase).replace(/\s+/g, ' ').trim()
+    var base = String(note == null ? '' : note)
+    if (!clean) return base
+    var joined = base && !/\s$/.test(base) ? base + ' ' + clean : base + clean
+    if (joined.length > ml) return base.length <= ml ? base : base.slice(0, ml)
+    return joined
+  }
+
+  // Dictation twin of speechListen.js (#737 "type OR dictate"): en-US
+  // continuous recognition on an injected window — interim words stream to
+  // onHeard for the live status line, final transcripts to onText, hard
+  // failures (permission/capture) disarm and report; Chrome ends recognition
+  // on silence, so while armed the ring rearms. Node-buildable so the harness
+  // drives it with a fake recognizer; the DOM section binds it to the panel.
+  function makeDictation(win) {
+    var armed = false, rec = null, timer = 0, cb = {}
+    function supported() { return !!(win && (win.SpeechRecognition || win.webkitSpeechRecognition)) }
+    function startOne() {
+      if (!armed) return
+      var SRx = win.SpeechRecognition || win.webkitSpeechRecognition
+      try { rec = new SRx() } catch (e) { armed = false; if (cb.done) cb.done('init-failed'); return }
+      rec.lang = 'en-US'
+      rec.continuous = true
+      rec.interimResults = true
+      rec.maxAlternatives = 1
+      rec.onresult = function (ev) {
+        if (!armed) return
+        for (var i = ev.resultIndex; i < ev.results.length; i++) {
+          var res = ev.results[i]
+          if (res.isFinal) {
+            var t = String(res.transcript || '').trim()
+            if (t && cb.onText) cb.onText(t)
+          } else if (cb.onHeard) {
+            var p = String((res[0] && res[0].transcript) || '').trim()
+            if (p) cb.onHeard(p)
+          }
+        }
+      }
+      rec.onerror = function (ev) {
+        var code = (ev && ev.error) || 'error'
+        if (code === 'not-allowed' || code === 'service-not-allowed' || code === 'audio-capture') {
+          armed = false
+          if (cb.done) cb.done(code)
+        }
+      }
+      rec.onend = function () {
+        rec = null
+        if (!armed) return
+        clearTimeout(timer)
+        timer = setTimeout(startOne, 150)
+      }
+      try { rec.start() } catch (e) { /* already starting — onend rearms */ }
+    }
+    return {
+      supported: supported,
+      start: function (opts) {
+        if (!supported() || armed) return false
+        cb = opts || {}
+        armed = true
+        startOne()
+        return true
+      },
+      stop: function () {
+        armed = false
+        clearTimeout(timer)
+        if (rec) { rec.onend = null; try { rec.stop() } catch (e) { /* gone */ } rec = null }
+      },
+      active: function () { return armed },
+    }
+  }
+
   var api = {
     makeFrameRing: makeFrameRing,
     gpuInfo: gpuInfo,
@@ -239,6 +315,8 @@
     captureDemoFeedback: captureDemoFeedback,
     probe: probe,
     submit: submit,
+    appendPhrase: appendPhrase,
+    makeDictation: makeDictation,
     storeJonKey: storeJonKey,
     readJonKey: readJonKey,
     saveJonKey: saveJonKey,
@@ -289,13 +367,44 @@
     return null
   }
 
-  var statusEl, noteEl, toastEl, keyInputEl
+  // Dictation bound to the real page window; the panel button toggles it.
+  var dictation = makeDictation(win)
+
+  function stopDictation() {
+    dictation.stop()
+    if (micBtnEl) micBtnEl.textContent = 'DICTATE'
+    if (heardEl) heardEl.textContent = ''
+  }
+
+  function toggleDictation() {
+    if (dictation.active()) { stopDictation(); return }
+    var ok = dictation.start({
+      onText: function (t) { if (noteEl) noteEl.value = appendPhrase(noteEl.value, t) },
+      onHeard: function (p) { if (heardEl) heardEl.textContent = 'listening\u2026 ' + p },
+      done: function (why) {
+        if (micBtnEl) micBtnEl.textContent = 'DICTATE'
+        if (heardEl) {
+          heardEl.textContent = why
+            ? (why === 'not-allowed' || why === 'service-not-allowed' || why === 'audio-capture'
+              ? 'mic blocked \u2014 type instead'
+              : 'mic stopped (' + why + ')')
+            : ''
+        }
+      },
+    })
+    if (!ok) { if (heardEl) heardEl.textContent = 'no mic on this browser'; return }
+    if (micBtnEl) micBtnEl.textContent = '\u25a0 STOP'
+    if (heardEl) heardEl.textContent = 'listening\u2026'
+  }
+
+  var statusEl, noteEl, toastEl, keyInputEl, micBtnEl, heardEl
   function setStatus(t) { if (statusEl) statusEl.textContent = t }
 
   function closePanel() {
     var card = doc.getElementById('dfeedback-card')
     if (card) card.classList.remove('open')
     setStatus('')
+    stopDictation()
   }
 
   function send() {
@@ -405,7 +514,9 @@
       '<div class="dfeedback-row" id="dfeedback-keyrow"></div>' +
       '<div class="dfeedback-row">' +
       '<button class="dfeedback-btn" data-feedback="send">SEND</button>' +
-      '<span class="dfeedback-status" data-feedback="status"></span></div>'
+      (dictation.supported() ? '<button class="dfeedback-btn" data-feedback="mic" aria-label="Dictate a note">DICTATE</button>' : '') +
+      '<span class="dfeedback-status" data-feedback="status"></span></div>' +
+      '<div class="dfeedback-status" data-feedback="heard"></div>'
 
     var card = doc.createElement('div')
     card.id = 'dfeedback-card'
@@ -417,6 +528,8 @@
 
     noteEl = box.querySelector('[data-feedback="note"]')
     statusEl = box.querySelector('[data-feedback="status"]')
+    heardEl = box.querySelector('[data-feedback="heard"]')
+    micBtnEl = box.querySelector('[data-feedback="mic"]')
     var sendBtn = box.querySelector('[data-feedback="send"]')
 
     var hasKey = false
@@ -445,6 +558,7 @@
     // bubbles here and used to close the panel before a word was typed (#1452)
     card.addEventListener('click', function (e) { if (e.target === card) closePanel() })
     sendBtn.addEventListener('click', function (e) { e.stopPropagation(); send() })
+    if (micBtnEl) micBtnEl.addEventListener('click', function (e) { e.stopPropagation(); toggleDictation() })
     box.querySelector('#dfeedback-keyrow').addEventListener('click', function (e) { e.stopPropagation() })
     var kb2 = box.querySelector('[data-feedback="keysave"]')
     if (kb2) kb2.addEventListener('click', function (e) { e.stopPropagation(); saveKey() })
