@@ -11,7 +11,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, stateHash, TARGET_WAVES, LEVELS } from './sim.js'
 import { plan } from './planner.js'
 import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, drawZaps, drawRimWarn, posAt } from './art.js'
@@ -235,7 +235,10 @@ const TempestGame = () => {
 
         // ------------------------------------------------------------- input ----
         const goPlay = () => {
-            gs = makeGame(Math.floor(Math.random() * 1e9) + 1)
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // wave set (vortex layouts, stars and enemy AI all derive from it).
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : Math.floor(Math.random() * 1e9) + 1)
             demoAt = 0
             stars = makeStars(gs.seed)
             parts.length = 0
@@ -323,7 +326,11 @@ const TempestGame = () => {
 
         last = performance.now()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, level: gs.level }))
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)

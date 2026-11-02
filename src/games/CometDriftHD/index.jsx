@@ -7,7 +7,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS } from '../CometDrift/sim.js'
 import { bankVoices, engineRegister, crowdSwellGain, nearestStandPx, CROWD_GAIN, CROWD_PERIOD, CROWD_BURST, CROWD_FREQ } from './audio.js'
 import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse, crestDust } from '../CometDrift/track.js'
@@ -1591,7 +1591,10 @@ export default function CometDriftHD() {
         }
 
         const resetTo = (screen) => {
-            Object.assign(g, makeGame(0))
+            // #1473: honor ?seed=N at race start so a filed feedback report's seed
+            // replays this exact field (attract/reset-to-title keeps seed 0).
+            const pin = screen === 'race' ? seedFromQuery() : null
+            Object.assign(g, makeGame(pin != null ? pin >>> 0 : 0))
             st.screen = screen; screenRef.current = screen
             st.plan = screen === 'attract'
             st.endT = 0
@@ -1816,7 +1819,18 @@ export default function CometDriftHD() {
             restore: (s) => { Object.assign(g, s) },
         })
 
+        // #1473: production-safe feedback state (seed for replay), every build —
+        // same core shape as the contract state() above.
+        exposeFeedbackState(() => {
+            const P = g.karts[0]
+            return {
+                tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
+                seed: g.seed, course: COURSE.id,
+            }
+        })
+
         return () => {
+            unexposeFeedbackState()
             disposed = true
             cancelAnimationFrame(raf)
             bloomEl.remove()

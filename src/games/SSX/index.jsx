@@ -21,6 +21,7 @@ import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/l
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
@@ -875,7 +876,11 @@ const SSXGame = () => {
         }
 
         const startPlay = (mode) => {
-            g = makeGame(mode)
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // tour. Offline races run seed 0 (deterministic tour); net races keep the
+            // lobby's seed — overriding there would desync the seats.
+            const pin = seedFromQuery()
+            g = makeGame(mode, pin != null ? pin >>> 0 : 0)
             shownHeat = g.heat
             setCourseVisuals()
             keys.clear()
@@ -1222,7 +1227,14 @@ const SSXGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build.
+        exposeFeedbackState(() => ({
+            tick: g.tick, score: g.riders[0].score, done: !!g.end,
+            seed: g.seed, heat: g.heat, mode: g.mode,
+        }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { delete window.__ssxTest; unmountDbg() }
             room.reset()
             if (ws) { try { ws.close() } catch { /* gone */ } }
