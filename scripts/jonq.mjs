@@ -25,8 +25,8 @@ import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import {
     DEFAULT_DEADLINE_HOURS, MAX_OPEN_PER_LANE, WAITING_LABEL, QUESTION_LABEL,
-    claimOrder, decide, defaultComment, formatQuestion, halted, laneLabel,
-    openQuestions, steerIssue, validateAsk,
+    claimOrder, decide, defaultComment, formatQuestion, halted, isAnswer,
+    laneLabel, openQuestions, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
 import { computeRunway, digestText } from './lib/runway.mjs'
 import { churnLine, liveLine, sleepLine } from './sleepwatch.mjs'
@@ -121,6 +121,15 @@ function cmdSweep(opts, now) {
         if (opts.lane && opts.lane !== 'all' && !issue.labels.includes(laneLabel(opts.lane))) continue
         if (state === 'ANSWERED') {
             // Jon's word beats the default — the question is resolved, close it.
+            // #1418 sweep-hardening: author equality is NOT provenance (gh is
+            // authenticated as jalfern for the factory too), so the only proof
+            // Jon spoke is a comment whose CONTENT is not factory bookkeeping.
+            // decide() gates on that via isAnswer/ROBOT_SHAPE; re-assert at the
+            // close site so this cannot regress silently.
+            if (!issue.comments.some(isAnswer)) {
+                console.log(`#${issue.number} ANSWERED with no human-shaped comment — skipped (#1418 tripwire)`)
+                continue
+            }
             if (opts.dry) { console.log(`DRY #${issue.number} answered — un-park + close`); actions++; continue }
             gh(['-X', 'DELETE', `repos/${REPO}/issues/${issue.number}/labels/${WAITING_LABEL}`])
             closeQuestion(issue.number, "FORGE: answered — closing the question; Jon's reply above is the record.")

@@ -20,8 +20,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import {
-    claimOrder, decide, defaultComment, formatQuestion, halted, openQuestions,
-    capReached, parseQuestion, steerIssue, validateAsk,
+    claimOrder, decide, defaultComment, formatQuestion, halted, isAnswer,
+    openQuestions, capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
 import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames, qaIdleStage } from './lib/idle.mjs'
 
@@ -75,6 +75,26 @@ ok(decide({ ...Q(5), comments: [{ author: 'jalfern', body: 'A please' }] }, NOW)
 for (const p of ['FORGE:', 'WARDEN:', 'QA:', 'QA (mini):']) {
     ok(decide({ ...Q(6), comments: [{ author: 'jalfern', body: `${p} noise` }] }, NOW).state === 'AWAITING', `robot comment "${p}…" is not an answer`)
 }
+// #1418: the slot-suffixed bot grammar false-closed #1403 — forge-claim.sh
+// posts `FORGE (b): claimed …` AS jalfern, and a status comment once came in
+// the comma form `FORGE (b), rule-4 …`. Every shape a lane writes must stay
+// non-answer regardless of slot suffix or delimiter; Jon's bare replies must
+// still parse. Author equality proves nothing (gh authenticates as jalfern).
+for (const b of [
+    'FORGE (a): claimed 2026-11-01T02:09Z — plan: jonq fix + jonqcheck fixtures',
+    'FORGE (b), rule-4 count line — game code merged this session',
+    'WARDEN (x): builder b idle, kicked a session',
+    'QA (studio): checkpoint 2026-11-02T01:00Z',
+    'FORGE (b): yielding to QA (studio)',
+    'FORGE: no answer by 2026-11-03, took keep the duplicate',
+]) {
+    ok(!isAnswer({ body: b }), `#1418: bot shape not an answer: "${b.slice(0, 40)}…"`)
+}
+for (const b of ['A — cross-lane', 'B', 'yes — ship it', 'FORGE ahead, but take option B']) {
+    ok(isAnswer({ body: b }), `#1418: Jon's prose still answers: "${b}"`)
+}
+ok(decide({ ...Q(60), comments: [{ author: 'jalfern', body: 'FORGE (b), rule-4 count line — game code merged' }] }, LATE).state === 'OVERDUE',
+    '#1418: the exact #1403 victim event — a slot-prefixed comma comment does not steal Jon\'s decision; the overdue question defaults instead of false-closing ANSWERED')
 ok(decide({ ...Q(7), comments: [{ author: 'jalfern', body: defaultComment('keep the duplicate', LATE) }] }, LATE).state === 'DEFAULTED', 'a taken default reads DEFAULTED, not ANSWERED')
 ok(decide({ ...Q(8), body: '**Lane:** games\nno markers here' }, LATE).state === 'MALFORMED', 'no Default line: MALFORMED (nothing can time out)')
 ok(defaultComment('keep the duplicate', LATE) === 'FORGE: no answer by 2026-10-22, took keep the duplicate', 'default note matches the spec wording exactly')
