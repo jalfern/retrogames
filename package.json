@@ -297,7 +297,8 @@
     "lint:viper": "eslint src/games/ViperPit src/components src/utils src/config src/main.jsx scripts/viperpitcheck.mjs",
     "viperpitcheck": "node scripts/viperpitcheck.mjs",
     "soslinkcheck": "node scripts/soslinkcheck.mjs",
-    "soslinkdrive": "node scripts/soslinkdrive.mjs"
+    "soslinkdrive": "node scripts/soslinkdrive.mjs",
+    "reactcheck": "node scripts/reactcheck.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

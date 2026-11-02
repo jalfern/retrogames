@@ -145,3 +145,132 @@ export function printDistance(a, b) {
   for (let i = 0; i < a.blocks.length; i++) d += Math.abs(a.blocks[i] - b.blocks[i])
   return d / a.blocks.length
 }
+
+/**
+ * Sub-region variant of framePrint (#1463): computes the block fingerprint of a
+ * rectangular area of the guest framebuffer, identified by its top-left corner
+ * (x, y) and dimensions (w, h) in emulator coordinates (320×200).
+ *
+ * WHY: Ultima I–V's animated title flames fill the top ~40% of the screen and
+ * produce restDrift as large as a menu advance. By restricting the fingerprint to
+ * the lower area where the menu is drawn, the distance metric becomes sensitive to
+ * state changes while the flame noise is excluded entirely.
+ *
+ * @param {Element} root - container element to find the canvas within
+ * @param {object} opts
+ * @param {number} opts.x - left edge of sub-region (emulator coords)
+ * @param {number} opts.y - top edge of sub-region (emulator coords)
+ * @param {number} opts.w - width of sub-region
+ * @param {number} opts.h - height of sub-region
+ * @param {number} [opts.cols=10] - number of horizontal blocks in the sub-grid
+ * @param {number} [opts.rows=8] - number of vertical blocks in the sub-grid
+ * @returns {{ cols, rows, blocks, hash, x, y, w, h }|null}
+ */
+export function subPrint(root, { x = 0, y = 0, w = VGA.w, h = VGA.h, cols = 10, rows = 8 } = {}) {
+  const buf = sampleBuffer(root)
+  if (!buf) return null
+  const sx = Math.max(0, Math.min(x, buf.w - 1))
+  const sy = Math.max(0, Math.min(y, buf.h - 1))
+  const sw = Math.max(1, Math.min(w, buf.w - sx))
+  const sh = Math.max(1, Math.min(h, buf.h - sy))
+  const bw = Math.floor(sw / cols)
+  const bh = Math.floor(sh / rows)
+  if (bw < 1 || bh < 1) return null
+  const out = []
+  for (let ry = 0; ry < rows; ry++) {
+    for (let rx = 0; rx < cols; rx++) {
+      let lum = 0
+      let n = 0
+      for (let py = sy + ry * bh; py < sy + (ry + 1) * bh; py += 2) {
+        for (let px = sx + rx * bw; px < sx + (rx + 1) * bw; px += 2) {
+          const i = (py * buf.w + px) * 4
+          lum += (buf.data[i] * 299 + buf.data[i + 1] * 587 + buf.data[i + 2] * 114) / 1000
+          n++
+        }
+      }
+      out.push(n ? Math.round(lum / n / 16) : 0)
+    }
+  }
+  return { cols, rows, blocks: out, hash: hashBlocks(out), x: sx, y: sy, w: sw, h: sh }
+}
+
+/**
+ * Per-band luminance profile for a vertical stack of equal-height horizontal
+ * strips (#1463). Designed to detect a menu-highlight bar: one strip has a
+ * distinctly higher mean luminance (the selected item's background).
+ *
+ * @param {Element} root - container element
+ * @param {object} opts
+ * @param {number} opts.y - top of the first band
+ * @param {number} [opts.x=0] - left edge of sampled columns
+ * @param {number} [opts.w=320] - width of sampled columns
+ * @param {number} [opts.itemHeight=16] - height of each menu item in pixels
+ * @param {number} [opts.count=5] - number of menu bands to sample
+ * @returns {{ bands: Array<{ index, meanLuma, peakLuma, litRatio }>, highlight: number|null }|null}
+ */
+export function bandProfile(root, { y = 0, x = 0, w = VGA.w, itemHeight = 16, count = 5 } = {}) {
+  const buf = sampleBuffer(root)
+  if (!buf) return null
+  const bands = []
+  for (let i = 0; i < count; i++) {
+    const bandY = Math.min(y + i * itemHeight, buf.h - 1)
+    const bandH = Math.min(itemHeight, buf.h - bandY)
+    if (bandH < 1) { bands.push({ index: i, meanLuma: 0, peakLuma: 0, litRatio: 0 }); continue }
+    let sum = 0, peak = 0, lit = 0, n = 0
+    for (let py = bandY; py < bandY + bandH; py++) {
+      for (let px = x; px < Math.min(x + w, buf.w); px += 2) {
+        const idx = (py * buf.w + px) * 4
+        const l = (buf.data[idx] * 299 + buf.data[idx + 1] * 587 + buf.data[idx + 2] * 114) / 1000
+        sum += l
+        if (l > peak) peak = l
+        if (l > 80) lit++
+        n++
+      }
+    }
+    bands.push({ index: i, meanLuma: n ? sum / n : 0, peakLuma: peak, litRatio: n ? lit / n : 0 })
+  }
+  const maxLuma = bands.length ? Math.max(...bands.map(b => b.meanLuma)) : 0
+  const highlight = bands.length ? bands.find(b => b.meanLuma === maxLuma && maxLuma > 40)?.index ?? null : null
+  return { bands, highlight }
+}
+
+/**
+ * Mean color + saturation stats for a rectangular sub-region (#1463).
+ * Unlike framePrint (which quantizes to 4-bit brightness), this preserves color
+ * identity: a highlight bar that swaps black background for white is unambiguous
+ * regardless of brightness-level changes elsewhere on the screen.
+ *
+ * @param {Element} root - container element
+ * @param {object} opts
+ * @param {number} opts.x - left edge (emulator coords)
+ * @param {number} opts.y - top edge
+ * @param {number} opts.w - width
+ * @param {number} opts.h - height
+ * @returns {{ meanR, meanG, meanB, meanLuma, colorDistance }|null}
+ *   colorDistance = sqrt((R-G)² + (G-B)² + (R-B)²) — a cheap hue+saturation metric
+ */
+export function regionStats(root, { x = 0, y = 0, w = VGA.w, h = VGA.h } = {}) {
+  const buf = sampleBuffer(root)
+  if (!buf) return null
+  const sx = Math.max(0, Math.min(x, buf.w - 1))
+  const sy = Math.max(0, Math.min(y, buf.h - 1))
+  const sw = Math.max(1, Math.min(w, buf.w - sx))
+  const sh = Math.max(1, Math.min(h, buf.h - sy))
+  let rSum = 0, gSum = 0, bSum = 0, n = 0
+  for (let py = sy; py < sy + sh; py += 2) {
+    for (let px = sx; px < sx + sw; px += 2) {
+      const i = (py * buf.w + px) * 4
+      rSum += buf.data[i]
+      gSum += buf.data[i + 1]
+      bSum += buf.data[i + 2]
+      n++
+    }
+  }
+  if (!n) return null
+  const meanR = rSum / n, meanG = gSum / n, meanB = bSum / n
+  const meanLuma = (meanR * 299 + meanG * 587 + meanB * 114) / 1000
+  const colorDistance = Math.sqrt(
+    (meanR - meanG) ** 2 + (meanG - meanB) ** 2 + (meanR - meanB) ** 2
+  )
+  return { meanR, meanG, meanB, meanLuma, colorDistance }
+}
