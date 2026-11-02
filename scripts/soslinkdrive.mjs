@@ -35,26 +35,51 @@ await host.waitForFunction(() => {
     const n = window.__sosTest && window.__sosTest.net()
     return !!(n && n.role === 'host' && n.code.length === 4)
 }, null, { timeout: 20000 })
+// Dev StrictMode remounts the game (two lobby opens, first socket aborted); the
+// live code only settles with mount 2's roster. Read DOM + code AFTER the
+// lobby is painted: four chips, cabinet paper on screen, QR raster present.
+await host.waitForFunction(() => {
+    const n = window.__sosTest && window.__sosTest.net()
+    return !!(n && n.role === 'host' && n.phase === 'waiting'
+        && document.querySelectorAll('[data-seat]').length === 4
+        && document.querySelector('svg[shape-rendering="crispEdges"] path'))
+}, null, { timeout: 20000 })
 const code = await host.evaluate(() => window.__sosTest.net().code)
 r.check(`host opens room ${code} in a real browser`, code.length === 4)
 
 // gap-4 theming: the lobby must wear the cabinet, not the placeholder pink.
-// #f0ead8 = PAL.paper (lobby text), QR = PAL.ink modules in a PAL.chrome frame.
+// #f0ead8 = PAL.paper (lobby text), QR = PAL.ink modules in a PAL.chrome
+// frame. And the old placeholder must be GONE: pink-50 rgb(253,242,248) on
+// any element fails the gate (a paper-only probe would let accent regressions
+// hide behind the code's inline glow — proven by fail-it-once).
 const themed = await host.evaluate(() => {
     const root = document.querySelector('.font-mono.absolute.inset-0')
-    const ink = (el) => el ? getComputedStyle(el).color : ''
-    const paper = root && [...root.querySelectorAll('p,div')].some((el) => ink(el) === 'rgb(240, 234, 216)')
+    // Serialize candidate and observed colors through the SAME probe so the
+    // comparison survives Tailwind v4 oklch vs hex-rgb formats.
+    const probe = document.createElement('span')
+    document.body.appendChild(probe)
+    const resolve = (c) => { probe.style.color = c; return getComputedStyle(probe).color }
+    const pinkRef = resolve('var(--color-pink-50)')
+    const paperRef = resolve('#f0ead8')
+    const ink = (el) => (el ? resolve(getComputedStyle(el).color) : '')
+    const els = root ? [root, ...root.querySelectorAll('p,div,span')] : []
+    const colors = els.map(ink)
+    probe.remove()
+    const paper = colors.includes(paperRef)
+    const pink = colors.includes(pinkRef)
     const svg = document.querySelector('svg[shape-rendering="crispEdges"] path')
     const frame = svg ? svg.closest('div[style]') : null
     const border = frame ? getComputedStyle(frame).borderTopColor : ''
     return {
-        paper: !!paper,
+        paper,
+        pink,
         qrInk: svg ? svg.getAttribute('fill') : '',
         qrFrame: border,
         chips: document.querySelectorAll('[data-seat]').length,
     }
 })
 r.check('lobby text wears the cabinet paper #f0ead8', themed.paper, JSON.stringify(themed))
+r.check('no placeholder pink-50 survives in the lobby', !themed.pink, JSON.stringify(themed))
 r.check('QR modules wear ink #181018', themed.qrInk === '#181018', themed.qrInk)
 r.check('QR wears the chrome frame #d8e4ec', themed.qrFrame === 'rgb(216, 228, 236)', themed.qrFrame)
 r.check('four seat chips render in the lobby', themed.chips === 4, `${themed.chips}`)
@@ -70,15 +95,21 @@ await guest.waitForFunction(() => {
 r.check('phone joins by code and takes seat 2', true)
 
 await host.waitForFunction(() => {
-    const n = window.__sosTest.net()
-    return n.humans.filter((h) => h >= 0).length >= 2
+    // `data-joined` marks PEER seats (never your own): the host page must show
+    // its guest's seat as joined while its own chip stays HOST/YOU.
+    return document.querySelectorAll('[data-seat][data-joined]').length >= 1
 }, null, { timeout: 15000 })
 const roster = await host.evaluate(() => {
-    const n = window.__sosTest.net()
-    return { humans: n.humans.slice(), chipKinds: [...document.querySelectorAll('[data-seat]')].map((el) => el.textContent) }
+    const chips = [...document.querySelectorAll('[data-seat]')]
+    return {
+        joined: chips.filter((el) => el.dataset.joined === '1').length,
+        kinds: chips.map((el) => el.textContent),
+    }
 })
-r.check('host roster shows both humans', roster.humans.filter((h) => h >= 0).length >= 2, JSON.stringify(roster.humans))
-r.check('chips label seats HOST and COOK 2', roster.chipKinds.some((t) => t.includes('HOST')) && roster.chipKinds.some((t) => t.includes('COOK 2')), JSON.stringify(roster.chipKinds))
+r.check('a peer seat shows as joined on the host', roster.joined >= 1, JSON.stringify(roster))
+r.check('chips label seats HOST and COOK 2 (both humans present)',
+    roster.kinds.some((t) => t.includes('HOSTYOU')) && roster.kinds.some((t) => t.includes('HUMAN') && t.includes('COOK 2')),
+    JSON.stringify(roster.kinds))
 
 // ---- host starts with a real keystroke; both kitchens cook ------------------
 await host.bringToFront()
@@ -98,7 +129,7 @@ await guest.waitForFunction(() => window.__sosTest.state().tick > 120, null, { t
 const beat = await Promise.all([host, guest].map((p) => p.evaluate(() => {
     const s = window.__sosTest.state()
     const n = window.__sosTest.net()
-    return { tick: s.tick, hash: window.__sosTest.hash(), notice: window.__sosTest.notice(), dropped: n.dropped.slice(), pips: n.rtt.filter((p) => typeof p === 'number' && p > 0).length }
+    return { tick: s.tick, hash: window.__sosTest.hash(), notice: window.__sosTest.notice(), dropped: n.dropped.slice(), pips: Object.values(n.rtt).filter((v) => typeof v === 'number' && v > 0).length }
 })))
 r.check('both kitchens ticked past 120', beat.every((b) => b.tick > 120), JSON.stringify(beat.map((b) => b.tick)))
 r.check('no desync notice in either browser', beat.every((b) => !b.notice), JSON.stringify(beat.map((b) => b.notice)))

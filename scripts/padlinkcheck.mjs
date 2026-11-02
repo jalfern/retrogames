@@ -505,12 +505,26 @@ async function scenarioQr() {
         assert.equal(decode(res), url)
     })
 
+    ok('QR round-trips a game-lobby relay href (v5, #1416 gap 4)', () => {
+        // the exact shape Lobby shows as a QR when the host shares its relay:
+        // ~106 bytes, past the old v4-L ceiling.
+        const url = 'http://localhost:5173/retrogames/short-order-shout?net=join&room=E2XL&relay=ws://localhost:8791'
+        const res = qrEncode(url)
+        assert.ok(res, '106B payload must fit v5-L')
+        assert.equal(res.size, 37)
+        assert.equal(decode(res), url)
+    })
+
     ok('QR picks the smallest version that fits (short=v1, 44B=v3)', () => {
         assert.equal(qrEncode('PAD123').size, 21)          // v1 (17B) holds this
         assert.equal(qrEncode(joinUrl('ABCD')).size, 29)    // 44B -> v3
     })
-    ok('QR refuses payloads past v4-L (caller falls back to the text code)', () => {
-        assert.equal(qrEncode('x'.repeat(79)), null)
+    ok('QR sizes v5/v6 land on the spec boundaries (106B / 134B, #1416)', () => {
+        assert.equal(qrEncode('x'.repeat(106)).size, 37)    // v5-L holds exactly 106B
+        assert.equal(qrEncode('x'.repeat(134)).size, 41)    // v6-L holds exactly 134B
+    })
+    ok('QR refuses payloads past v6-L (caller falls back to the text code)', () => {
+        assert.equal(qrEncode('x'.repeat(135)), null)
     })
 }
 

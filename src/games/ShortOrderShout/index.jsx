@@ -171,6 +171,11 @@ export default function ShortOrderShout() {
             const sc = screenRef.current
             if (net.active) {
                 if (ev.code === 'KeyP' && net.role === 'host') { partnerHumanRef.current = !partnerHumanRef.current; pushNetUi() }
+                // #1416 gap 7 find: the lobby PROMISES "SPACE STARTS THE SHIFT"
+                // but the net branch only ever handled the over-screen re-kick —
+                // a desktop host pressing Space got silence. Honor the hint:
+                // Space/Enter in the lobby (never mid-play) kicks the shift.
+                if ((ev.code === 'Space' || ev.code === 'Enter') && net.role === 'host' && sc !== 'play' && sc !== 'over') { ev.preventDefault(); onlineStart(); return }
                 if (sc === 'over' && net.role === 'host' && performance.now() - overAtRef.current > 900 && (ev.code === 'Space' || ev.code === 'Enter')) onlineStart()
                 return
             }
@@ -1089,6 +1094,11 @@ export default function ShortOrderShout() {
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
             clearKeys()
+            // #1416 gap 7: unmount must hand the seat BACK. Without this the
+            // dev StrictMode remount left a ghost socket parked on a relay slot
+            // — the first friend joining then landed in seat 3 behind their own
+            // ghost, and leaving the game page kept a zombie client in the room.
+            if (net.lobby) { try { net.lobby.close() } catch { /* gone */ } }
             if (net.voice.stream) {
                 try { net.voice.stream.getTracks().forEach((t) => t.stop()) } catch { /* gone */ }
                 net.voice.stream = null
