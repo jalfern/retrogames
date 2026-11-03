@@ -14,7 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 import { ROUNDS } from './rounds.js'
@@ -288,7 +288,8 @@ const ArkanoidGame = () => {
 
         // ---------------------------------------------------------------- input ----
         const startPlay = () => {
-            gs = makeGame(0)
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : 0)
             setMode('play')
             say(ROUNDS[0].name)
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -365,10 +366,19 @@ const ArkanoidGame = () => {
             })
         }
 
+        // #1473 seedpin: every build reports the run's seed so a filed feedback
+        // note replays the exact board; the sim is pure, so seedFromQuery at
+        // startPlay reproduces it tick for tick.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.score, done: gs.end !== null,
+            seed: gs.seed, lives: gs.lives, round: gs.round,
+        }))
+
         last = performance.now()
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

@@ -11,7 +11,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     W, H, HUD_H, HORIZON, MAP,
     LEVELS,
@@ -499,7 +499,8 @@ const MagicCarpetGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame((performance.now() * 977) >>> 0)
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : (performance.now() * 977) >>> 0)
             demoT = 0
             if (renderer) renderer.resetWorld()
             keys.l = keys.r = keys.u = keys.d = false
@@ -586,6 +587,14 @@ const MagicCarpetGame = () => {
             paint()
         }
         raf = requestAnimationFrame(frame)
+
+        // #1473 seedpin: the world is a seeded LCG heightmap (sim.js) and the
+        // human start used wall-clock entropy — ?seed=N now outranks it, and
+        // every build reports the seed so filed notes replay the exact world.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.score, done: gs.end !== null,
+            seed: gs.seed, level: gs.level, bank: Math.floor(gs.bank),
+        }))
 
         if (import.meta.env.DEV) {
             window.__carpetTest = {
@@ -692,6 +701,7 @@ const MagicCarpetGame = () => {
         }
 
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__carpetTest) delete window.__carpetTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

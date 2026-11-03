@@ -23,6 +23,7 @@ import { attractFrame, DIM } from './attract.js'
 import { plan } from './planner.js'
 import { buildSprites, makeBackdrop } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 const HORIZON = Math.round(H * 0.42)
@@ -352,7 +353,8 @@ const OutRunGame = () => {
         // ------------------------------------------------------------- input ----
         const goRadio = () => { setMode('radio'); audioController.stopMusic() }
         const goPlay = () => {
-            gs = makeGame(0); gearRef.current = 1; demoAt = 0
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : 0); gearRef.current = 1; demoAt = 0
             backdrop = makeBackdrop(gs.stage.theme)
             lean = 0; shake = 0; flash = 0
             audioController.startMusic(RADIOS[radioRef.current].track)
@@ -426,10 +428,18 @@ const OutRunGame = () => {
             })
         }
 
+        // #1473 seedpin: the road is a seeded LCG (sim.js) — report the seed and
+        // honor ?seed=N at goPlay, so a filed note replays the exact run.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.score, done: !!gs.end,
+            seed: gs.seed, stages: gs.stagesDone, km: Math.round(gs.distanceKm),
+        }))
+
         last = performance.now()
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
