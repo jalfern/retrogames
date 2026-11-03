@@ -30,15 +30,17 @@ console.log('seeded field: the mushroom garden replays')
     ok(field(4242) === field(4242), 'same seed → identical 40-mushroom field')
     ok(field(4242) !== field(4243), 'different seed → different field')
     let bad = 0
+    const playerTop = 640 - 150 // the zapper's strip (index.jsx safe zone)
     for (let s = 1; s <= 12; s++) {
         for (const m of mushroomField(seedRng(s * 7919), 480, 640)) {
             if (m.x % CELL_SIZE !== 0) bad++
             if (!(m.x >= 0 && m.x < 480)) bad++
-            if (!(m.y >= 50 && m.y < 640)) bad++ // keeps the spawn band clear
+            if (m.y < 50) bad++ // top band (the centipede's spawn lane) stays clear
+            if (m.y + CELL_SIZE > playerTop) bad++ // the zapper's strip stays clear
             if (m.health !== 3) bad++
         }
     }
-    ok(bad === 0, 'field sits on the grid, below the spawn band, full health (12 seeds)', `${bad}`)
+    ok(bad === 0, 'field sits on the grid, above the zapper strip, below the spawn band (12 seeds)', `${bad}`)
     ok(mushroomField(seedRng(1), 64, 96).length === 40, 'field size is the port baseline (40)')
     ok(seedFromQuery('?seed=777') === 777, '?seed=N parses for the pin')
 }
@@ -75,6 +77,9 @@ console.log('component wiring: pin, lives, head rule, terminal')
     ok(/lives--/.test(src) && /lives <= 0[\s\S]*?over = true/.test(src), 'touch takes a life; zero ends the run')
     ok(/if \(playerAlive\(\) && tickN >= invulnUntil/.test(src), 'centipede-vs-player honors the respawn grace')
     ok(/!playerAlive\(\) && tickN >= respawnAt/.test(src), 'the zapper returns after the death pause')
+    const respawn = src.match(/if \(!playerAlive\(\) && tickN >= respawnAt\) \{[\s\S]*?\n            \}/)
+    ok(!!respawn && /resetPlayer\(\)/.test(respawn[0]) && /spawnCentipede\(\)/.test(respawn[0]) && !/init\(\)/.test(respawn[0]),
+        'death respawns the zapper + restarts the centipede without touching the field (mushrooms persist)')
     const sr = src.match(/const startRun = \(\) => \{[\s\S]*?\n        \}/)
     ok(!!sr && /state\.score = 0/.test(sr[0]) && /lives = START_LIVES/.test(sr[0]),
         'startRun resets score and lives (pre-batch the score was DEAD code)')
@@ -100,6 +105,9 @@ if (process.argv.includes('--mutant')) {
         ['field scatters off Math.random again', S,
             `x: Math.floor(rand() * cols) * CELL_SIZE,`,
             `x: Math.floor(Math.random() * cols) * CELL_SIZE,`],
+        ['opening field intrudes the zapper\u2019s strip (walled-in start)', S,
+            `const span = Math.max(1, bottom - top)`,
+            `const span = Math.max(1, Math.floor(height / CELL_SIZE) - top)`],
         ['head shots pay body price (table corrupted)', S,
             `isHead ? 100 : 10`,
             `isHead ? 5 : 10`],
@@ -110,6 +118,11 @@ if (process.argv.includes('--mutant')) {
             `lives--
             if (lives <= 0) {`,
             `if (lives <= -99) {`],
+        ['death hard-resets the field (mushrooms no longer persist)', I,
+            `                resetPlayer()
+                spawnCentipede()`,
+            `                resetPlayer()
+                init()`],
         ['restart keeps the score', I,
             `            state.score = 0
             lives = START_LIVES`,

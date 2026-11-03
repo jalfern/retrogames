@@ -28,8 +28,8 @@ buttons `up/down`.
 
 ## Verify
 ```
-npm run pongcheck            # attract rule-6 + seedpin law (28 checks)
-npm run pongcheck -- --mutant   # 5 attract + 4 seedpin mutants, all must die
+npm run pongcheck            # attract rule-6 + seedpin law (29 checks)
+npm run pongcheck -- --mutant   # 5 attract + 5 seedpin mutants, all must die
 npm run lint:pong
 ```
 
