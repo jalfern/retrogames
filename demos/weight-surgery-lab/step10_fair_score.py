@@ -33,7 +33,8 @@ def run(tag, gguf, pp, probs, setname, cap):
             r.update(llm.loop_score_text(r["text"]))
             ok, got, gold = C.grade(r["text"], p["gold"], p["tag"])
             rec = dict(i=i, ok=ok, got=got, gold=gold, cap_hit=r["hit_cap"],
-                       loop=r["looped"], ntok=r["ntok"])
+                       loop=r["looped"], ntok=r["ntok"], problem=p["problem"][:200],
+                       text=r["text"][:600])
             f.write(json.dumps(rec) + "\n")
         f.flush()
         print(f"[{tag}/{setname}] {len(done) + cs + len(chunk)}/{len(probs)} tps={tps}", flush=True)
