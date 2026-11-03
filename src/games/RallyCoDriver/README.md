@@ -133,9 +133,16 @@ different seed → different state.
   Join flow: `/retrogames/rally-co-driver?net=host` (code on screen, QR,
   share link) / `?net=join&room=CODE`; guest plays seat 1 only (QWE/ASD/Z keys,
   arrow taps on the pad, V voice) — the driver curates stage + weather.
-- #1427 honest gaps still open: the #1257 recorder-backed VU bar (speechListen
-  exposes no stream; a live level meter mid-race needs one wired alongside
-  recognition — still owed).
+- #1448 recorder-backed VU shipped: `voiceCapture.startLevelMeter()` opens the
+  mic alongside speech recognition (Chrome shares it), drives the shared
+  `#vc-vu` bar (#1257 markup, now `ensureVuBar()`) live until V-mode stops,
+  and records NOTHING — no MediaRecorder, no bytes, badge stays LISTEN ≠ REC.
+  Gated on the engine (no recognizer = no second mic held open) and on
+  #1247 consent (called only after a YES). Rally opens it on V-after-consent,
+  voice-stop closes it (no orphan mic); `__rallyTest.vuBar()/vuLevel()`
+  expose it. rallylinkcheck tier-8 static audit +7 (43 → 50): import, open
+  after badge, close on stop, hooks, export, records-nothing honesty,
+  one-bar markup. RED on the pre-fix source (the natural mutant).
 - #1427 depth shipped: a checkpoint clock (one time-control mark per lap at
   the midpoint of the stage's longest straight — `controlS` is pure geometry,
   far from any corner, weather-stable; crossings stamp S-splits, echoed as a
@@ -166,8 +173,7 @@ different seed → different state.
   recognition is not recording. Rally takes it on V-after-consent, releases
   on stop/unmount; `__rallyTest.micBadge()` exposes the state. rallycheck
   152 → 169.
-- Honest gaps still on #1427: the #1257 VU bar proves level from a recorder
-  stream, and speechListen exposes no stream (recorder-backed VU still owed —
-  see the #1448 note above).
+- #1257 honesty gap CLOSED (#1448, above): the mid-race VU bar now rides a
+  live analyser stream alongside recognition — level only, nothing recorded.
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.

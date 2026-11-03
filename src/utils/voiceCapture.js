@@ -91,6 +91,22 @@ export function acquireListenBadge() {
 // --- VU bar (#1257) — the mic just opened after a YES; prove in THAT second
 // that it actually hears something, before a 30-min session dies quietly.
 // ~1.2 s of level meter; the peak lands on window.__voiceVu for the harness.
+// ensureVuBar — the shared #vc-vu markup: one bar element per page, reused by
+// the recorder's 1.2 s proof and the live mid-game meter (#1448) alike.
+function ensureVuBar() {
+    if (typeof document === 'undefined') return null
+    let bar = document.querySelector('#vc-vu')
+    if (!bar) {
+        bar = document.createElement('div')
+        bar.id = 'vc-vu'
+        bar.setAttribute('aria-hidden', 'true')
+        bar.style.cssText = 'position:fixed;z-index:9998;top:32px;left:10px;width:120px;height:8px;background:rgba(6,4,16,0.72);border:1px solid rgba(255,255,255,0.18);border-radius:4px;overflow:hidden;pointer-events:none'
+        bar.innerHTML = '<i data-voice-vu-fill style="display:block;height:100%;width:0%;background:#38e07b;border-radius:3px"></i>'
+        document.body.appendChild(bar)
+    }
+    return bar
+}
+
 function runVuMeter(stream, ms = 1200) {
     if (typeof document === 'undefined') return
     const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
@@ -106,15 +122,8 @@ function runVuMeter(stream, ms = 1200) {
         an.fftSize = 512
         src.connect(an)
         const data = new Uint8Array(an.fftSize)
-        let bar = document.querySelector('#vc-vu')
-        if (!bar) {
-            bar = document.createElement('div')
-            bar.id = 'vc-vu'
-            bar.setAttribute('aria-hidden', 'true')
-            bar.style.cssText = 'position:fixed;z-index:9998;top:32px;left:10px;width:120px;height:8px;background:rgba(6,4,16,0.72);border:1px solid rgba(255,255,255,0.18);border-radius:4px;overflow:hidden;pointer-events:none'
-            bar.innerHTML = '<i data-voice-vu-fill style="display:block;height:100%;width:0%;background:#38e07b;border-radius:3px"></i>'
-            document.body.appendChild(bar)
-        }
+        const bar = ensureVuBar()
+        if (!bar) { try { src.disconnect(); an.disconnect(); ctx.close() } catch { /* gone */ } return }
         const fill = bar.querySelector('[data-voice-vu-fill]')
         const t0 = Date.now()
         window.__voiceVu = 0
@@ -136,6 +145,78 @@ function runVuMeter(stream, ms = 1200) {
     } catch {
         try { ctx.close() } catch { /* gone */ }
     }
+}
+
+
+// startLevelMeter (#1448) — a LIVE meter without the recorder. Games whose
+// mic is held by speech recognition (Rally's V mode: speechListen exposes no
+// stream of its own) still owe the #1257 proof mid-game — "is the mic hearing
+// you?" answered while you drive, not just at recorder start. It opens the mic
+// (the CALLER owns consent, #1247 — never call this before a YES), feeds the
+// same #vc-vu bar until stop(), and records NOTHING: no MediaRecorder, no
+// bytes — so the honest badge stays whatever the session already shows
+// (LISTEN for recognition). Honesty note: Chrome shares the mic between
+// recognition and this analyser; decline/failure degrades to a no-op handle.
+// opts.ms caps the meter (0/default = live until stop).
+export function startLevelMeter(opts = {}) {
+    const AC = typeof AudioContext !== 'undefined' ? AudioContext : (globalThis.webkitAudioContext || null)
+    if (typeof window === 'undefined' || typeof document === 'undefined' || !AC
+        || typeof navigator === 'undefined' || !(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+        return { supported: false, level: () => null, stop() {} }
+    }
+    const liveUntil = opts.ms ? Date.now() + opts.ms : 0
+    let closed = false
+    let stream = null
+    let ctx = null
+    let raf = 0
+    const bar = ensureVuBar()
+    const fill = bar ? bar.querySelector('[data-voice-vu-fill]') : null
+    window.__voiceVu = 0
+    const close = () => {
+        if (closed) return
+        closed = true
+        if (raf) cancelAnimationFrame(raf)
+        if (stream) stream.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } })
+        stream = null
+        try { if (ctx) ctx.close() } catch { /* gone */ }
+        ctx = null
+        if (bar) bar.remove()
+    }
+    const audioBase = {
+        channelCount: { ideal: 1 },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+    }
+    const pref = readDevicePref()
+    const openMic = pref
+        ? navigator.mediaDevices.getUserMedia({ audio: { ...audioBase, deviceId: { exact: pref } } })
+            .catch(() => navigator.mediaDevices.getUserMedia({ audio: audioBase }))
+        : navigator.mediaDevices.getUserMedia({ audio: audioBase })
+    openMic.then((s) => {
+        if (closed) { s.getTracks().forEach((t) => { try { t.stop() } catch { /* gone */ } }); return }
+        stream = s
+        try { ctx = new AC() } catch { ctx = null }
+        if (!ctx || !ctx.createAnalyser || !fill) { close(); return }
+        const src = ctx.createMediaStreamSource(stream)
+        const an = ctx.createAnalyser()
+        an.fftSize = 512
+        src.connect(an)
+        const data = new Uint8Array(an.fftSize)
+        const step = () => {
+            if (closed) return
+            an.getByteTimeDomainData(data)
+            let peak = 0
+            for (let i = 0; i < data.length; i++) peak = Math.max(peak, Math.abs(data[i] - 128))
+            const lvl = Math.min(1, (peak / 128) * 2.5)
+            if (lvl > window.__voiceVu) window.__voiceVu = Math.round(lvl * 100) / 100
+            fill.style.width = `${Math.round(lvl * 100)}%`
+            if (liveUntil && Date.now() >= liveUntil) { close(); return }
+            raf = requestAnimationFrame(step)
+        }
+        raf = requestAnimationFrame(step)
+    }).catch(() => { closed = true; if (bar) bar.remove() })
+    return { supported: true, level: () => window.__voiceVu, stop: close }
 }
 
 
