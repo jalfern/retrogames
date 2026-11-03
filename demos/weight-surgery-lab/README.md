@@ -143,3 +143,35 @@ Still open after this rescore: repeat-onset d (needs horizons where loops
 actually re-form — MIT saw them at 32k), o_proj/unembed ablation paths, Q4
 quantized scoring for ~2× speed, and MIT's published edit as a comparison row
 (open only after our numbers are written — issue rule).
+
+## ROUND 2 (#1533, session 117 slot-a) — MIT's horizon on GPU via oMLX
+The GPU path is alive at the oMLX server (Metal works in the GUI session even
+while sandboxed processes keep #737). Everything round-2 runs through oMLX:
+- `r2_convert.py` — HF→MLX bf16 conversion with `mx.set_default_device(mx.cpu)`
+  (convert otherwise dies on MTLCompilerService in the sandbox). Base and the
+  rebuilt MIT p50c staged under `~/models/weightlab/` and registered into the
+  LIVE server via `POST /admin/api/reload` (admin key in `~/.omlx/settings.json`;
+  `/api/reload` routes are mounted under `/admin`, not `/api`).
+- p50c built with MIT's `apply_edit.py` — both tensor hashes verified against
+  the pinned base before and after (their manifest + ours agree).
+- `r2_common.py` — think35 over `/v1/chat/completions` (temp .6 top_p .95 top_k
+  20 pp 1.5, `chat_template_kwargs:{enable_thinking:true}`, seed 0, cap 32768),
+  fixed 100+100 held-out (`random.Random(1533)` over the local math500/test
+  files), grading = last \boxed{} through vendored math-verify 0.9.0
+  (`~/Dev/weight-lab/mathverify_pkgs` — `extract_operators` kwarg does NOT exist
+  in 0.9.0, plain parse/verify does).
+- `r2_probe.py` — PROBE OK: thinking on, presence_penalty provably applied
+  (seed-0 pp0 vs pp1.5 differ), Flash-Next still loaded (256 GB box).
+- `r2_bench.py` — 16 train problems @32K: 284 tps aggregate (4 streams),
+  14/16 cut off (= MIT's ~93% base-cut neighborhood), est 5.7 h/row → the
+  100+100 set holds (6-h rule).
+- `r2_score.py` / `r2_gate.py` / `r2_run_step1.sh` / `r2_detach.py` — detached,
+  resumable step-1 rows (`results/r2/scores_<tag>_<set>.jsonl`) + the frozen
+  neighborhood gate (`r2_gate.py` CLAIMS), logs to `/tmp/forge/ws-r2-step1.log`.
+- `r2_directions.py` — step-2 sketch (PASSES G1/R1 ONLY, gated on the step-1
+  gate): practice-only corpus from MIT's `practice/`, pass budget logged; the
+  R1 capture is a labeled SKETCH — next lane replaces the magnitude capture
+  with per-token write vectors (step3_capture.py reference) before any edit.
+- Page: `build_demo.mjs` renders the ROUND 2 section with honest pending rows;
+  `ws3check.mjs` (npm run ws3check) — 13 gates, mutants caught incl a by-hand
+  row-id break (went red, restored).
