@@ -204,6 +204,19 @@
     <div class="meta"><span>CANVAS 2D · RL-TRAINED BALANCE POLICY</span><span>2026-11-01</span></div>
   </a>
 
+  <a class="card" id="weightsurgery" style="margin-top:18px">
+    <div class="row">
+      <span class="name">WEIGHT SURGERY</span>
+      <span class="play">OPEN ▸</span>
+    </div>
+    <p class="desc">Can a forge Qwen fix another Qwen by <b>editing its weights</b>, no training? MIT CSAIL showed a frontier model lifting
+      Qwen3.5-0.8B's math by deleting one loop-causing direction from two MLP layers (0.016% of the weights). This is our honest attempt on the
+      pinned model, run on a laptop-class CPU: read the weights, watch the loops (36/36 problems never terminate), localize the direction yourself,
+      cut it out, re-run — and report what happened <b>either way</b>. Includes the full batch log of every forward pass with what it ruled out,
+      a heatmap of exactly which weights were touched, and the harness trap we fell into mid-experiment (a duplicated sampling flag faking a fix) — caught by re-running the clean version.</p>
+    <div class="meta"><span>LLM LAB · GRADIENT-FREE WEIGHT EDIT + NEGATIVE RESULT</span><span>2026-11-03</span></div>
+  </a>
+
   <p class="more">MORE DEMOS COMING SOON</p>
 
   <footer>
@@ -228,6 +241,7 @@
   document.getElementById('stickwalk').href = base + 'stickwalk.html'
   document.getElementById('physicswalk').href = base + 'physicswalk.html'
   document.getElementById('learnedwalk').href = base + 'learnedwalk.html'
+  document.getElementById('weightsurgery').href = base + 'weightsurgery.html'
 </script>
 <script>
 window.DEMO_INDEX = { demos: [
@@ -244,6 +258,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'stickwalk', issues: [1150], span: '~2 h', assist: 'solo' },
   { el: 'physicswalk', issues: [1204], span: '~3 h', assist: 'solo' },
   { el: 'learnedwalk', issues: [1205], span: '~9 h', assist: 'solo' },
+  { el: 'weightsurgery', issues: [1493], span: '~3 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>

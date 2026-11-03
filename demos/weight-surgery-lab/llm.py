@@ -16,7 +16,18 @@ def _cli_one(gguf, problem, cap, extra=None, seed=SEED):
            "-n", str(cap), "--seed", seed, "--single-turn",
            "--no-display-prompt", "--verbose", "--threads", "2", *SAMP_ARGS]
     if extra:
-        cmd += extra
+        # extras may override SAMP_ARGS flags: drop each overridden flag AND its value
+        drop = {extra[i] for i in range(0, len(extra) - 1, 2) if extra[i].startswith("--")}
+        cleaned, skip = [], False
+        for a in cmd:
+            if skip:
+                skip = False
+                continue
+            if a in drop:
+                skip = True
+                continue
+            cleaned.append(a)
+        cmd = cleaned + extra
     t0 = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True,

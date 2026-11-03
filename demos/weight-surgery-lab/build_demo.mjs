@@ -72,7 +72,8 @@ const vExtra = read("results/variants_extra.json", {});
 const prac = Object.entries({ ...variants, ...vExtra }).map(([k, s]) =>
   `<tr><td>${k}</td><td>${s.terminated}/12</td><td>${s.correct}/12</td><td>${s.mean_ntok ?? "≥1024"}</td></tr>`).join("\n");
 const pracHtml = prac ? `<h2>PRACTICE VARIANTS (gsm_train, 12 paired problems, cap 1024)</h2>
-<table><tr><th>variant</th><th>terminated</th><th>correct</th><th>mean tokens</th></tr>${prac}</table>` : "";
+<table><tr><th>variant</th><th>terminated</th><th>correct</th><th>mean tokens</th></tr>${prac}</table>
+<p class="note">…except <code>sampfix2.0</code>: its flag was duplicated (<code>--presence-penalty 1.5</code> still in the command). The clean rerun is the honest one.</p>` : "";
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -136,9 +137,10 @@ ${pairHtml}
 ${batchRows}
 </table>
 
-<h2>VERDICT</h2>
-<p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not a tight attractor: the direction we could localize at this scale apparently isn't the one MIT found over 32k-token loops. Qwen's own model-card sampling fix (presence penalty 2.0) <b>did</b> fix termination (12/12 practice) — the honest row in the table above.</p>
-<p class="note">What we would change next: capture at the horizon where loops actually close (2–8k tokens), take d from the repeat-onset positions rather than a whole-sequence mean, and score on the full MATH-500. Negative result stands: on this box, weight surgery ≠ a free lunch; the free lunch was in the model card.</p>
+<h2>VERDICT — a clean negative, and a harness trap we fell into and caught</h2>
+<p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not the tight attractor MIT traced over 32k-token horizons: what we could localize at this scale isn't the thing they cut.</p>
+<p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12. Held-out scoring, run before we noticed, shows the same: presence 2.0 still hits the cap on 95% of MATH and 100% of GSM8K problems.</p>
+<p class="note">Bottom line: on a laptop CPU, at a 1024-token cap, with a whole-sequence mean direction — <b>neither weight surgery nor the model card's own sampling settings break the non-termination</b>. MIT's numbers stand (their logs are public); reproducing them needs their horizon (32k), their batch sizes, and probably their localization method (repeat-onset contrast, not sequence mean). Next: capture at 2–8k horizons from the moment loops start, ablate through o_proj/unembed too, score full MATH-500, then compare against MIT's published edit — in that order.</p>
 
 <h2>SOURCES</h2>
 <p><a href="https://jalfern.com/retrogames/issues/1493" rel="noopener">Issue #1493</a> ·

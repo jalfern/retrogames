@@ -7,8 +7,8 @@ Sets: MATH-500 (fixed-seed n) + GSM8K test (fixed-seed n). Sizes documented.
 import json, os, random, sys
 import common as C, llm
 
-N_MATH = 120   # fixed-seed subsample of the 500-problem set (laptop compute; documented)
-N_GSM = 120    # fixed-seed subsample of the 1319-problem GSM8K test split
+N_MATH = 80    # fixed-seed subsample (laptop compute; documented)
+N_GSM = 80     # fixed-seed subsample (documented)
 
 def run(tag, gguf, extra, probs, setname):
     path = f"{C.RESULTS}/score_{tag}_{setname}.jsonl"
