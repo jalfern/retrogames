@@ -219,11 +219,89 @@ const v2pair = v2loops && v2loops.loop?.length && v2loops.end?.length ? `
   <div class="pane"><h3>II · TERMINATED at cap 4096 (${v2loops.end[0].ntok} tok) ${v2loops.end[0].hit_cap ? "✗" : "✓"}</h3><pre>${esc(v2loops.end[0].text.slice(0, 700))}…</pre></div>
 </div>` : "";
 const v2acc = ["A", "B", "C"].filter(k => v2[k] && v2.base && v2[k].correct > v2.base.correct);
+
+// #1515-1: depth-heat — ‖removed d‖ per FA layer (edit_reports/v2_A.json), on a
+// 24-slot board so the linear-attention interleave (every 4th layer) is visible.
+const depthHtml = (() => {
+  const A = v2reports.A;
+  if (!A) return "";
+  const fa = Object.keys(A.layers).map(Number).sort((a, b) => a - b);
+  const vals = fa.map(L => A.layers[L].norm_removed ?? 0);
+  const mx = Math.max(...vals, 0.001);
+  const slots = Array.from({ length: 24 }, (_, L) => {
+    const v = vals[fa.indexOf(L)];
+    if (v === undefined) return `<i class="lin" title="layer ${L}: linear-attention (no FA MLP write in d)"></i>`;
+    return `<i style="height:${4 + 44 * v / mx}px" title="layer ${L}: ‖removed d‖ ${v.toFixed(4)}"></i>`;
+  }).join("");
+  return `<div class="hrow"><span>depth structure — ‖removed d‖ at the six FA layers ${fa.join("/")} (bars), grey slots = linear-attention layers; raw onset-contrast ‖d‖ grows monotonically with depth, L3 0.089 → L23 0.932 (README) — the loop write is concentrated deep, MIT's 15/19 catches only part</span><div class="cells">${slots}</div></div>`;
+})();
+
+// #1515-2: onset story — n-gram reuse vs token position for the worst looping
+// text (same SUST=16 mirror as step8/ws2check), with the detected onset marked.
+const onsetHtml = (() => {
+  const t = v2loops?.loop?.[0];
+  if (!t?.text) return "";
+  const words = t.text.split(/\s+/);
+  const SUST = 16;
+  const reuse = (upto) => { // longest exact span ≥SUST ending before `upto` that reappears at/after it
+    let best = 0;
+    for (let p = 4; p <= 128; p++)
+      for (let j = Math.max(0, upto - 2 * p); j + p <= upto; j++) {
+        let k = 0;
+        while (k < p && words[j + k] === words[upto + k]) k++;
+        if (k > best) best = k;
+        if (best >= p) break;
+      }
+    return best >= SUST ? best : 0;
+  };
+  const N = 60, last = words.length - SUST - 1;
+  const pts = Array.from({ length: N }, (_, i) => reuse(Math.floor((i + 1) * last / N)));
+  const mx = Math.max(...pts, 1);
+  const bars = pts.map(v => `<i style="height:${2 + 44 * v / mx}px" title="reuse ${v} words"></i>`).join("");
+  const on = t.onset_tok != null ? `<span class="onmark" style="left:${100 * Math.min(1, t.onset_tok / (t.ntok || 4096))}%" title="detected onset token ${t.onset_tok}"></span>` : "";
+  return `<div class="hrow"><span>why “no strict onset” — longest exact n-gram reuse vs token position for one capped 4k loop (${(t.problem || "").slice(0, 48)}…): reuse stays ragged, the flag (≥16-word run, SUST=16) appears only late at token ${t.onset_tok ?? "?"} of ${t.ntok} — verbose rambling reaches repetition late, unlike MIT's tight attractor at 32k</span><div class="cells onset">${bars}${on}</div></div>`;
+})();
+
+// #1515-3: A/B/C edit-map thumbnails — where each variant cuts.
+const editmapsHtml = (() => {
+  const cell = (lit, on, title) => `<b class="${on ? "ed" : ""}" title="${title}">${lit}</b>`;
+  const mk = (v, name) => {
+    if (!v) return "";
+    const ops = [
+      cell("emb", !!v.embed, v.embed ? `embed_tokens rank-1 strip — ${v.embed.rows} rows, ‖d‖ ${v.embed.norm_removed}` : "embed untouched"),
+      cell("o_proj", false, ""),
+      ...["3", "7", "11", "15", "19", "23"].map(L => {
+        const Ld = v.layers?.[L] || {};
+        return cell(`L${L}`, !!Ld.norm_removed || !!Ld.o_proj_norm_removed,
+          `layer ${L}: ${Ld.norm_removed ? `down_proj top-${Ld.K} cols, ‖d‖ ${Ld.norm_removed}` : ""}${Ld.o_proj_norm_removed ? `${Ld.norm_removed ? " + " : ""}o_proj rank-1, ‖d‖ ${Ld.o_proj_norm_removed}` : ""}`);
+      }),
+      cell("lm_h", !!v.embed, "lm_head (tied to embed)"),
+    ];
+    return `<div class="emap"><h4>${name} — ${v.pct_changed}% of weights</h4><div class="ecells">${ops.join("")}</div></div>`;
+  };
+  // fix o_proj cells per layer for B/C after the fact
+  let html = mk(v2reports.A, "A · upstream (write path)")
+    + mk(v2reports.B, "B · downstream (read path)")
+    + mk(v2reports.C, "C · both ends");
+  return html ? `<div class="emaps">${html}</div>` : "";
+})();
+
+// #1515-4: Q4_0 scorer speed strip (measured in-lab, README L97-99, recipe on #1506).
+const speedHtml = `
+<div class="kpi" id="speedkpi">
+  <div><b>1.8×</b>generation speed</div>
+  <div><b>2.4×</b>prefill speed</div>
+  <div><b>844 MB</b>Q4_0 scorer — embed + the six FA ffn_down kept fp16, rest Q4</div>
+</div>
+<p class="note">the on-the-way win: a Q4_0 build of the model that scores these problems runs ~2× faster than f16 on this CPU box (measured under load, lab README; quant recipe posted to <a href="https://jalfern.com/retrogames/issues/1506" rel="noopener">#1506</a>).</p>`;
 const v2Html = `
 <h2>SURGERY II — repeat-onset d, all six attention layers, both ends (#1505)</h2>
 <p>Round I localized <b>d</b> as a whole-sequence mean at a 1024-token horizon — verbose reasoning, not the attractor. Round II changes all three inputs at once: capture at <b>cap 4096</b> (penalty-free, seed 23, train-only), take d as <b>mean(write during the loop) − mean(write before it)</b> from the detected repeat-onset, and operate on all six full-attention layers <code>{3,7,11,15,19,23}</code> (this model interleaves linear attention every 4th layer). Variant <b>B</b> cuts the <i>read</i> side instead: <code>embed_tokens</code> rows (unembed is tied) and <code>o_proj</code> rank-1, so the residual stream can no longer be expressed in logits or written by attention along d. <em>${v2cap}</em></p>
 ${v2pair}
+${depthHtml || onsetHtml ? `<div id="heat2">${depthHtml}${onsetHtml}</div>` : ""}
+${editmapsHtml}
 <table><tr><th>variant</th><th>terminated</th><th>looped</th><th>correct</th><th>mean tokens</th></tr>${v2rows || "<tr><td colspan=5>v2 runs pending</td></tr>"}</table>
+${speedHtml}
 ${v2reports.B ? `<p class="note">weights edited — A: ${(v2reports.A?.pct_changed ?? 0).toFixed(3)}% · B: ${v2reports.B.pct_changed.toFixed(3)}% (embed ‖d‖ energy removed ${v2reports.B.embed?.norm_removed ?? "?"}) · C: ${(v2reports.C?.pct_changed ?? 0).toFixed(3)}%</p>` : ""}
 <p class="note">${v2signal
   ? "VERDICT II: a variant terminates more held-out problems AND scores higher than base at the fair horizon — the second cut lands. Details above."
@@ -250,9 +328,19 @@ const html = `<!DOCTYPE html>
   #heat .cells { display:flex; align-items:flex-end; gap:1px; height:48px; }
   #heat i { flex:1; background:#7dffb2; min-width:2px; opacity:.85; }
   #heat .firstpass .cells i { background:#5a4a78; }
+  #heat2 .hrow { margin:10px 0; }
+  #heat2 .cells { display:flex; align-items:flex-end; gap:1px; height:48px; position:relative; border-bottom:1px solid rgba(199,125,255,.25); }
+  #heat2 i { flex:1; background:#7dffb2; min-width:2px; opacity:.85; }
+  #heat2 i.lin { background:#241a38; min-height:3px; opacity:.6; }
+  #heat2 .onmark { position:absolute; top:-2px; bottom:0; width:2px; background:#ffb86b; }
+  .emaps { display:flex; gap:14px; flex-wrap:wrap; margin:14px 0; }
+  .emap h4 { margin:0 0 6px; font-size:11px; color:#c77dff; letter-spacing:.06em; }
+  .ecells { display:flex; gap:2px; }
+  .ecells b { font-weight:400; font-size:9px; padding:4px 3px; border:1px solid rgba(199,125,255,.25); color:#6f5a8d; }
+  .ecells b.ed { background:rgba(125,255,178,.16); border-color:#7dffb2; color:#7dffb2; }
   .banner { border:1px solid #ffb86b; color:#ffb86b; padding:10px 14px; margin:18px 0; }
   .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
-  @media (max-width:700px){ .pair{grid-template-columns:1fr;} }
+  @media (max-width:700px){ .pair{grid-template-columns:1fr;} .pane pre{max-height:200px;} }
   .pane { border:1px solid rgba(199,125,255,.3); padding:10px; min-width:0; }
   .pane h3 { font-size:11px; letter-spacing:.08em; margin:0 0 8px; color:#ffb86b; }
   .pane pre { white-space:pre-wrap; word-break:break-word; font-size:11px; max-height:300px; overflow:auto; color:#cbb6e8; margin:0; }

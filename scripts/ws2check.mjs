@@ -87,6 +87,14 @@ console.log('ws2check — WEIGHT SURGERY II harness (#1505)')
     ok(!html.includes('v2 runs pending'), 'build: committed lab renders real rows, not the pending fallback')
     ok(html.includes('Sparks of Weight-Space Programming'), 'build: sources intact')
     ok(html.includes('#1505'), 'build: links issue #1505')
+    // #1515 visual-polish presence gates (depth heat, onset plot, edit maps, speed strip, mobile cap)
+    ok(html.includes('id="heat2"') && html.includes('class="lin"'), 'build: depth-heat renders with linear-attn interleave slots')
+    ok(html.includes('n-gram reuse') && html.includes('class="cells onset"'), 'build: onset-reuse plot renders')
+    ok((html.match(/class="emap"/g) || []).length === 3, 'build: A/B/C edit-map thumbnails all render')
+    ok(html.includes('id="speedkpi"') && html.includes('1.8×'), 'build: Q4 speed KPI strip present')
+    ok(html.includes('.pane pre{max-height:200px;}'), 'build: mobile 700px pane pre-cap present')
+    const idx = readFileSync('public/demos/index.html', 'utf8')
+    ok(/WEIGHT SURGERY[\s\S]*Round II/.test(idx), 'index: WEIGHT SURGERY card copy mentions Round II')
     const empty = mkdtempSync(join(tmpdir(), 'ws2empty-'))
     cpSync(join(LAB, 'build_demo.mjs'), join(empty, 'build_demo.mjs'))
     writeFileSync(join(empty, 'batches.jsonl'), '')
@@ -136,7 +144,8 @@ console.log('ws2check — WEIGHT SURGERY II harness (#1505)')
     if (existsSync(join(real, 'results/v2_variants.json'))) {
         const variants = JSON.parse(readFileSync(join(real, 'results/v2_variants.json'), 'utf8'))
         const rb = readFileSync(join(real, 'batches.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
-        ok(validateArtifacts({ batches: rb, variants }).length === 0, 'local: real lab v2 artifacts consistent')
+        ok(validateArtifacts({ batches: rb, variants }).length === 0, 'local: real lab v2 artifacts consistent',
+            validateArtifacts({ batches: rb, variants }).join('; '))
         ok(variants.base !== undefined, 'local: base row present in real v2 results')
     } else {
         console.log('  skip local lab proof (not this machine / not built yet)')
@@ -154,6 +163,19 @@ if (process.argv.includes('--mutate')) {
     ]
     for (const [name, data] of mutants)
         ok(validateArtifacts(data).length > 0, `mutant caught: ${name}`)
+    // html-level mutants: removing each #1515 feature marker must fail its gate
+    const { html } = build(LAB)
+    const feats = [
+        ['depth-heat', 'id="heat2"', h => h.includes('id="heat2"') && h.includes('class="lin"')],
+        ['onset-plot', 'class="cells onset"', h => h.includes('n-gram reuse') && h.includes('class="cells onset"')],
+        ['edit-maps', 'class="emap"', h => (h.match(/class="emap"/g) || []).length === 3],
+        ['speed-strip', 'id="speedkpi"', h => h.includes('id="speedkpi"') && h.includes('1.8×')],
+        ['mobile-pre-cap', '.pane pre{max-height:200px;}', h => h.includes('.pane pre{max-height:200px;}')],
+    ]
+    for (const [name, marker, pred] of feats) {
+        ok(pred(html), `feature present: ${name}`)
+        ok(!pred(html.replace(marker, '')), `mutant caught: ${name} removed`)
+    }
 }
 
 console.log(`\nws2check: ${passes} passed, ${fails} failed`)
