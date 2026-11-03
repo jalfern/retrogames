@@ -15,6 +15,10 @@ bouncing off anything it touches; you're the zapper at the bottom.
   restarts from the top — the arcade death, not a hard reset. Zero lives =
   GAME OVER (`done: true`); any key/click/tap starts a fresh run
   (`startRun`: score 0, lives 3, NEW seeded field).
+- **Field bands (#1524)**: the opening field stays out of the top band where
+  the centipede spawns AND out of the bottom strip the zapper owns — the
+  arcade never plants mushrooms in the player zone (a walled-in start).
+  `mushroomField` in `sim.js` clamps both edges; centipedechek sweeps 12 seeds.
 - Mushrooms take three hits (port baseline) and shrink per state.
 
 ## Seeding (#1473 batch 16)
@@ -26,8 +30,8 @@ Report `{tick, score, done, seed, lives}`; QA contract `exposeGame` id
 
 ## Verify
 ```
-npm run centipedechek            # field replay + scoring law + wiring (26)
-npm run centipedechek -- --mutant  # 7 mutants, all must die
+npm run centipedechek            # field replay + scoring law + wiring (27)
+npm run centipedechek -- --mutant  # 9 mutants, all must die
 npm run lint:centipede
 ```
 

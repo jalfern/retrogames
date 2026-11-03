@@ -15,15 +15,19 @@ export const scoreForSegment = (isHead) => (isHead ? 100 : 10)
 export const MUSHROOM_POINTS = 1
 
 // The opening mushroom field: the port's baseline of 40, scattered on the
-// run's stream, kept off the top band where the centipede spawns.
+// run's stream, kept off the top band where the centipede spawns AND off the
+// bottom strip the zapper owns — the arcade never plants the field in the
+// player zone, and a walled-in start is no start at all.
 export function mushroomField(rand, width, height) {
-    const rows = Math.floor(height / CELL_SIZE)
     const cols = Math.floor(width / CELL_SIZE)
+    const top = Math.ceil(50 / CELL_SIZE)                    // clear the spawn band
+    const bottom = Math.floor((height - 150) / CELL_SIZE)    // clear the zapper strip
+    const span = Math.max(1, bottom - top)
     const field = []
     for (let i = 0; i < 40; i++) {
         field.push({
             x: Math.floor(rand() * cols) * CELL_SIZE,
-            y: Math.floor(rand() * Math.max(1, rows - 5)) * CELL_SIZE + 50,
+            y: (top + Math.floor(rand() * span)) * CELL_SIZE,
             health: 3,
         })
     }

@@ -53,12 +53,17 @@ try {
 let browser
 try {
     browser = await chromium.launch({
-        channel,
+        // channel omitted (pass --channel "") → playwright's headless shell,
+        // which boots where full Chrome dies on launchd-restricted nodes.
+        ...(channel ? { channel } : {}),
         headless: true,
         args: [
             '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
             '--disable-renderer-backgrounding',
             ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
+            // machine-level launch flags (e.g. "--single-process" where the
+            // Mach bootstrap rendezvous is refused: #737-class nodes)
+            ...(process.env.SHOT_EXTRA_ARGS ? process.env.SHOT_EXTRA_ARGS.split(/\s+/).filter(Boolean) : []),
         ],
     })
 } catch (e) {

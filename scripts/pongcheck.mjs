@@ -91,6 +91,8 @@ console.log('seedpin: one stream, honest terminal')
         /rand = seedRng\(seed\)/.test(src), 'startRun regenerates the seed and honors ?seed=N')
     ok(/done: over, seed: seed/.test(src), 'production report carries the seed + honest terminal')
     ok(/tick: tickN, score: state\.leftPaddle\.score/.test(src), 'report carries tick and the player score')
+    const speedups = (src.match(/state\.ball\.dx \*= -1\.05/g) || []).length
+    ok(speedups === 2, 'the rally accelerates the ball on BOTH paddle returns (1.05×/hit)', `${speedups}/2`)
     const sr = src.match(/const startRun = \(\) => \{[\s\S]*?\n        \}/)
     ok(!!sr && /state\.leftPaddle\.score = 0/.test(sr[0]) && /state\.rightPaddle\.score = 0/.test(sr[0]),
         'startRun resets BOTH scores (pre-port the comment literally asked "Reset score? Maybe")')
@@ -121,6 +123,9 @@ if (process.argv.includes('--mutant')) {
             state.rightPaddle.score = 0
             over = false`,
             `            over = false`],
+        ['the rally stops accelerating (flat 1.00× return)', I,
+            `                state.ball.dx *= -1.05 // Slight speed up`,
+            `                state.ball.dx *= -1`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
