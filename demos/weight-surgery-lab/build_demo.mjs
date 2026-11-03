@@ -44,6 +44,22 @@ if (EDITTAG !== "edit") {
     }
   }
 }
+// #1520-iii: per-problem drill-down excerpts — first 10 scored problems per set,
+// text capped at 600 chars (honest size; no weights). Prefer the committed lab-root
+// copy so every build (CI, live lab) renders byte-identical drill-downs.
+const excerpts = (() => {
+  const fx = read("fair_excerpts.json", null);
+  if (fx) return fx;
+  const out = {};
+  for (const [k, recs] of Object.entries(fair)) {
+    out[k] = recs.slice(0, 10).map(r => ({
+      i: r.i, ok: !!r.ok, cap: !!r.cap_hit, ntok: r.ntok,
+      q: (r.problem || "").slice(0, 140),
+      x: (r.text || "").slice(0, 600),
+    }));
+  }
+  return out;
+})();
 const reports = {};
 for (const v of ["edited_a1k64", "edited_a1k256"]) {
   reports[v] = read(`${v}/edit_report.json`);
@@ -77,6 +93,16 @@ let pair = null;
 }
 
 const pct = (v) => v === undefined ? "—" : `${v}%`;
+const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
+
+// #1520-iii: expandable per-problem block under a fair-table row (item iii).
+const ddRow = (run, set, total) => {
+  const rows = excerpts[`${run === "edit" ? EDITTAG : run}_${set}`];
+  if (!rows || !rows.length) return "";
+  const nOk = rows.filter(r => r.ok).length;
+  const blocks = rows.map(r => `<div class="ddp1${r.ok ? " ok" : ""}"><b>#${r.i}${r.ok ? " ✓" : ""}${r.cap ? " · cap" : ""} · ${r.ntok} tok</b><span>${esc(r.q)}</span><pre>${esc(r.x)}…</pre></div>`).join("");
+  return `\n<tr class="ddrow"><td colspan=6><details class="dd"><summary>drill down — first ${rows.length}/${total} scored, ${nOk}/${rows.length} correct (text excerpts ≤600 chars)</summary><div class="ddp">${blocks}</div></details></td></tr>`;
+};
 const tbl = Object.entries(finals).map(([k, s]) =>
   `<tr><td>${k.replace("_", " · ")}</td><td>${pct(s.acc)}</td><td>${pct(s.terminated)}</td><td>${pct(s.hit_cap_pct)}</td><td>${pct(s.looped_pct)}</td></tr>`).join("\n");
 
@@ -89,7 +115,7 @@ const fairTbl = (() => {
       const n = recs.length;
       const label = run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run;
       if (n < 100) {   // mid-run row: status only — interim metrics would ship numbers the final run may not repeat
-        rows.push(`<tr><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>`);
+        rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>${ddRow(run, set, n)}`);
         continue;
       }
       const s = {
@@ -98,13 +124,15 @@ const fairTbl = (() => {
         cap: 100 * recs.filter(r => r.cap_hit).length / n,
         loop: 100 * recs.filter(r => r.loop).length / n,
       };
-      rows.push(`<tr><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>≥${s.term.toFixed(1)}%†</td><td>≤${s.cap.toFixed(1)}%†</td><td>${s.loop.toFixed(1)}%</td></tr>`);
+      rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>≥${s.term.toFixed(1)}%†</td><td>≤${s.cap.toFixed(1)}%†</td><td>${s.loop.toFixed(1)}%</td></tr>${ddRow(run, set, n)}`);
     }
   }
   return rows.join("\n");
 })();
 const fairReady = fairScores && fairScores.rows && Object.keys(fairScores.rows).length >= 6;
 
+// #1520-iv: tap-to-see-layer readout under each heat board (bars carry data-info).
+const readout = (id) => `<div class="hread" id="${id}">tap or hover a bar — layer readout</div>`;
 // heat: old (layers 15/19) + fair (all-layer t ranking + touched layers)
 const heat = (() => {
   const parts = [];
@@ -113,16 +141,16 @@ const heat = (() => {
     const bars = Array.from({ length: 24 }, (_, L) => {
       const e = ranking.ranking.find(r => r.layer === L);
       const v = e ? e.t : 0;
-      return `<i style="height:${4 + 44 * v / mx}px" title="layer ${L}: t ${v.toFixed(4)}"></i>`;
+      return `<i data-info="layer ${L}: t ${v.toFixed(4)}" style="height:${4 + 44 * v / mx}px" title="layer ${L}: t ${v.toFixed(4)}"></i>`;
     }).join("");
     const top = ranking.ranking.slice(0, 3).map(r => `${r.layer} (t=${r.t})`).join(", ");
-    parts.push(`<div class="hrow"><span>ALL-LAYER scan — loop-vs-finished MLP-write separability t per layer (our own localization, no 15/19 prior; top: ${top})</span><div class="cells">${bars}</div></div>`);
+    parts.push(`<div class="hrow"><span>ALL-LAYER scan — loop-vs-finished MLP-write separability t per layer (our own localization, no 15/19 prior; top: ${top})</span><div class="cells" data-readout="heatreadout">${bars}</div></div>`);
   }
   if (fairEdit) {
     for (const L of Object.keys(fairEdit.layers)) {
       const top = fairEdit.layers[L].proj_top.map(Math.abs);
       const mx = Math.max(...top);
-      parts.push(`<div class="hrow"><span>layer ${L} · down_proj cols touched · |d·w| ${fairEdit.layers[L].t_score !== undefined ? "(scan t " + fairEdit.layers[L].t_score + ")" : ""}</span><div class="cells">${top.map(v => `<i style="height:${8 + 40 * v / mx}px" title="|d·w| ${v.toFixed(4)}"></i>`).join("")}</div></div>`);
+      parts.push(`<div class="hrow"><span>layer ${L} · down_proj cols touched · |d·w| ${fairEdit.layers[L].t_score !== undefined ? "(scan t " + fairEdit.layers[L].t_score + ")" : ""}</span><div class="cells" data-readout="heatreadout">${top.map(v => `<i data-info="|d·w| ${v.toFixed(4)}" style="height:${8 + 40 * v / mx}px" title="|d·w| ${v.toFixed(4)}"></i>`).join("")}</div></div>`);
     }
     parts.push(`<div class="note">fair edit: ${fairEdit.pct_changed.toFixed(4)}% of 752M weights — per-layer d removed from top-${fairEdit.topk} down_proj columns of layers ${Object.keys(fairEdit.layers).join("/")}</div>`);
   }
@@ -131,20 +159,26 @@ const heat = (() => {
     for (const L of [15, 19]) {
       const top = r.layers[L].proj_top.map(Math.abs);
       const mx = Math.max(...top);
-      parts.push(`<div class="hrow firstpass"><span>first pass · layer ${L} · ${r.pct_changed.toFixed(4)}% of weights (cap-1024 attempt)</span><div class="cells dim">${top.map(v => `<i style="height:${8 + 40 * v / mx}px" title="|d·w| ${v.toFixed(4)}"></i>`).join("")}</div></div>`);
+      parts.push(`<div class="hrow firstpass"><span>first pass · layer ${L} · ${r.pct_changed.toFixed(4)}% of weights (cap-1024 attempt)</span><div class="cells dim" data-readout="heatreadout">${top.map(v => `<i data-info="|d·w| ${v.toFixed(4)}" style="height:${8 + 40 * v / mx}px" title="|d·w| ${v.toFixed(4)}"></i>`).join("")}</div></div>`);
     }
   }
-  return `<div id="heat">${parts.join("")}</div>`;
+  return `<div id="heat">${parts.join("")}${readout("heatreadout")}</div>`;
 })();
 
+// #1520-v: score-fair rows jump to their table row; first-pass score rows that a
+// later score-fair row re-measured get dimmed (kept visible — corrections are the story).
+const splitOf = (b) => b.split ?? (b.run ? `${b.run} · ${b.set}` : "—");
+const supKeys = new Set(batches.filter(b => b.phase === "score-fair").map(splitOf));
 const batchRows = batches.map(b => {
-  const split = b.split ?? (b.run ? `${b.run} · ${b.set}` : "—");
+  const split = splitOf(b);
+  let anchorKey = split.replace(/ · /g, "_");
+  if (anchorKey.startsWith(`${EDITTAG}_`)) anchorKey = `edit_${anchorKey.slice(EDITTAG.length + 1)}`;
+  const splitCell = b.phase === "score-fair" && fair[anchorKey] && excerpts[anchorKey] ? `<a href="#h-${anchorKey}">${split}</a>` : split;
+  const cls = b.phase === "score" && supKeys.has(split) ? ' class="ovr"' : '';
   const purpose = b.purpose ?? (b.phase === "score-fair" ? `fair hold-out row — acc ${b.acc}% terminated ${b.terminated}%`
     : b.phase === "score" ? `first-pass hold-out row — acc ${b.acc}% terminated ${b.terminated}%` : "");
-  return `<tr><td>${b.ts ? b.ts.slice(11, 19) : ""}</td><td>${b.phase}</td><td>${split}</td><td>${b.batch}</td><td>${b.cap}</td><td>${purpose}${b.ruled_out && b.ruled_out !== "nothing yet" ? `<br><span class="ruled">ruled out: ${b.ruled_out}</span>` : ""}</td></tr>`;
+  return `<tr${cls}><td>${b.ts ? b.ts.slice(11, 19) : ""}</td><td>${b.phase}</td><td>${splitCell}</td><td>${b.batch}</td><td>${b.cap}</td><td>${purpose}${b.ruled_out && b.ruled_out !== "nothing yet" ? `<br><span class="ruled">ruled out: ${b.ruled_out}</span>` : ""}</td></tr>`;
 }).join("\n");
-
-const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
 const pairHtml = pair ? `
 <div class="pair">
   <div class="pane"><h3>BASE — ${pair.base.cap_hit || pair.base.cap ? `ran to the token cap (${pair.base.ntok} tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
@@ -233,10 +267,10 @@ const depthHtml = (() => {
   const mx = Math.max(...vals, 0.001);
   const slots = Array.from({ length: 24 }, (_, L) => {
     const v = vals[fa.indexOf(L)];
-    if (v === undefined) return `<i class="lin" title="layer ${L}: linear-attention (no FA MLP write in d)"></i>`;
-    return `<i style="height:${4 + 44 * v / mx}px" title="layer ${L}: ‖removed d‖ ${v.toFixed(4)}"></i>`;
+    if (v === undefined) return `<i data-info="layer ${L}: linear-attention (no FA MLP write in d)" class="lin" title="layer ${L}: linear-attention (no FA MLP write in d)"></i>`;
+    return `<i data-info="layer ${L}: ‖removed d‖ ${v.toFixed(4)}" style="height:${4 + 44 * v / mx}px" title="layer ${L}: ‖removed d‖ ${v.toFixed(4)}"></i>`;
   }).join("");
-  return `<div class="hrow"><span>depth structure — ‖removed d‖ at the six FA layers ${fa.join("/")} (bars), grey slots = linear-attention layers; raw onset-contrast ‖d‖ grows monotonically with depth, L3 0.089 → L23 0.932 (README) — the loop write is concentrated deep, MIT's 15/19 catches only part</span><div class="cells">${slots}</div></div>`;
+  return `<div class="hrow"><span>depth structure — ‖removed d‖ at the six FA layers ${fa.join("/")} (bars), grey slots = linear-attention layers; raw onset-contrast ‖d‖ grows monotonically with depth, L3 0.089 → L23 0.932 (README) — the loop write is concentrated deep, MIT's 15/19 catches only part</span><div class="cells" data-readout="heat2readout">${slots}</div></div>`;
 })();
 
 // #1515-2: onset story — n-gram reuse vs token position for the worst looping
@@ -260,9 +294,9 @@ const onsetHtml = (() => {
   const N = 60, last = words.length - SUST - 1;
   const pts = Array.from({ length: N }, (_, i) => reuse(Math.floor((i + 1) * last / N)));
   const mx = Math.max(...pts, 1);
-  const bars = pts.map(v => `<i style="height:${2 + 44 * v / mx}px" title="reuse ${v} words"></i>`).join("");
+  const bars = pts.map(v => `<i data-info="reuse ${v} words" style="height:${2 + 44 * v / mx}px" title="reuse ${v} words"></i>`).join("");
   const on = t.onset_tok != null ? `<span class="onmark" style="left:${100 * Math.min(1, t.onset_tok / (t.ntok || 4096))}%" title="detected onset token ${t.onset_tok}"></span>` : "";
-  return `<div class="hrow"><span>why “no strict onset” — longest exact n-gram reuse vs token position for one capped 4k loop (${(t.problem || "").slice(0, 48)}…): reuse stays ragged, the flag (≥16-word run, SUST=16) appears only late at token ${t.onset_tok ?? "?"} of ${t.ntok} — verbose rambling reaches repetition late, unlike MIT's tight attractor at 32k</span><div class="cells onset">${bars}${on}</div></div>`;
+  return `<div class="hrow"><span>why “no strict onset” — longest exact n-gram reuse vs token position for one capped 4k loop (${(t.problem || "").slice(0, 48)}…): reuse stays ragged, the flag (≥16-word run, SUST=16) appears only late at token ${t.onset_tok ?? "?"} of ${t.ntok} — verbose rambling reaches repetition late, unlike MIT's tight attractor at 32k</span><div class="cells onset" data-readout="heat2readout">${bars}${on}</div></div>`;
 })();
 
 // #1515-3: A/B/C edit-map thumbnails — where each variant cuts.
@@ -301,7 +335,7 @@ const v2Html = `
 <h2>SURGERY II — repeat-onset d, all six attention layers, both ends (#1505)</h2>
 <p>Round I localized <b>d</b> as a whole-sequence mean at a 1024-token horizon — verbose reasoning, not the attractor. Round II changes all three inputs at once: capture at <b>cap 4096</b> (penalty-free, seed 23, train-only), take d as <b>mean(write during the loop) − mean(write before it)</b> from the detected repeat-onset, and operate on all six full-attention layers <code>{3,7,11,15,19,23}</code> (this model interleaves linear attention every 4th layer). Variant <b>B</b> cuts the <i>read</i> side instead: <code>embed_tokens</code> rows (unembed is tied) and <code>o_proj</code> rank-1, so the residual stream can no longer be expressed in logits or written by attention along d. <em>${v2cap}</em></p>
 ${v2pair}
-${depthHtml || onsetHtml ? `<div id="heat2">${depthHtml}${onsetHtml}</div>` : ""}
+${depthHtml || onsetHtml ? `<div id="heat2">${depthHtml}${onsetHtml}${readout("heat2readout")}</div>` : ""}
 ${editmapsHtml}
 <table><tr><th>variant</th><th>terminated</th><th>looped</th><th>correct</th><th>mean tokens</th></tr>${v2rows || "<tr><td colspan=5>v2 runs pending</td></tr>"}</table>
 ${speedHtml}
@@ -328,12 +362,12 @@ const html = `<!DOCTYPE html>
   th { color:#c77dff; background:rgba(199,125,255,.08); }
   .big { font-size:22px; color:#7dffb2; }
   #heat .hrow { margin:10px 0; }
-  #heat .cells { display:flex; align-items:flex-end; gap:1px; height:48px; }
-  #heat i { flex:1; background:#7dffb2; min-width:2px; opacity:.85; }
+  #heat .cells { display:flex; align-items:flex-end; gap:3px; height:48px; }
+  #heat i { flex:1; background:#7dffb2; min-width:6px; opacity:.85; }
   #heat .firstpass .cells i { background:#5a4a78; }
   #heat2 .hrow { margin:10px 0; }
-  #heat2 .cells { display:flex; align-items:flex-end; gap:1px; height:48px; position:relative; border-bottom:1px solid rgba(199,125,255,.25); }
-  #heat2 i { flex:1; background:#7dffb2; min-width:2px; opacity:.85; }
+  #heat2 .cells { display:flex; align-items:flex-end; gap:3px; height:48px; position:relative; border-bottom:1px solid rgba(199,125,255,.25); }
+  #heat2 i { flex:1; background:#7dffb2; min-width:6px; opacity:.85; }
   #heat2 i.lin { background:#241a38; min-height:3px; opacity:.6; }
   #heat2 .onmark { position:absolute; top:-2px; bottom:0; width:2px; background:#ffb86b; }
   .emaps { display:flex; gap:14px; flex-wrap:wrap; margin:14px 0; }
@@ -362,6 +396,19 @@ const html = `<!DOCTYPE html>
   .kpi { display:flex; gap:18px; flex-wrap:wrap; margin:14px 0; }
   .kpi div { border:1px solid rgba(199,125,255,.3); padding:8px 14px; }
   .kpi b { display:block; font-size:20px; color:#7dffb2; }
+  .hread { font-size:11px; color:#ffb86b; margin-top:4px; min-height:14px; }
+  details.fn { margin:8px 0; }
+  details.fn summary { cursor:pointer; color:#8f7aad; font-size:11px; }
+  details.dd summary { cursor:pointer; color:#7dffb2; font-size:11px; }
+  .ddrow td { background:rgba(199,125,255,.04); }
+  .ddp { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px; }
+  @media (max-width:700px){ .ddp{grid-template-columns:1fr;} }
+  .ddp1 { border:1px solid rgba(199,125,255,.18); padding:6px; min-width:0; }
+  .ddp1 b { color:#c77dff; font-size:10px; letter-spacing:.04em; }
+  .ddp1.ok b { color:#7dffb2; }
+  .ddp1 span { display:block; font-size:10px; color:#9c86bd; margin:2px 0; }
+  .ddp1 pre { white-space:pre-wrap; word-break:break-word; font-size:10px; max-height:110px; overflow:auto; color:#8f7aad; margin:0; }
+  .ovr { opacity:.55; }
 </style>
 </head>
 <body><div class="wrap">
@@ -386,7 +433,8 @@ ${pracHtml}
 <tr><th>run · set</th><th>n</th><th>accuracy</th><th>terminated</th><th>hit cap</th><th>repeated (loop)</th></tr>
 ${fairTbl || `<tr><td colspan=6>scoring in progress — runs launch as the edit lands; resumable runner, numbers post to #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>`}
 </table>
-<p class="note">† token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p>
+<details class="fn"><summary>† the terminated / hit-cap bounds — why they are bounds, not points</summary>
+<p class="note">token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p></details>
 
 <h2>ONE PROBLEM, BEFORE / AFTER</h2>
 ${pairHtml}
@@ -414,6 +462,18 @@ ${v2Html}
 <a href="https://rikiyat.github.io/blog/weight-space-programming/" rel="noopener">Sparks of Weight-Space Programming</a> (MIT CSAIL) ·
 <a href="https://github.com/RikiyaT/lm_understand-logs" rel="noopener">experiment logs</a> ·
 lab scripts: <code>demos/weight-surgery-lab/</code> in the repo.</p>
+<script>
+(function(){ /* #1520-iv: heat-bar tap readout — click a bar, its layer lands in the readout line */
+  document.querySelectorAll('#heat .cells,#heat2 .cells').forEach(function(cs){
+    cs.addEventListener('click',function(e){
+      var b=e.target;
+      if(b.tagName!=='I'||!b.dataset.info)return;
+      var rd=document.getElementById(cs.getAttribute('data-readout')||'');
+      if(rd)rd.textContent=b.dataset.info;
+    });
+  });
+})();
+</script>
 </div></body></html>`;
 
 const out = process.argv[2] || `${LAB}/weightsurgery.html`;
