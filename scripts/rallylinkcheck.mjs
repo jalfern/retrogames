@@ -320,14 +320,20 @@ console.log('walkaway:')
     // missing tick is one past that; a stalled tick does NOT advance, so all
     // DROP_GRACE stalled ticks happen AT that same tick — the demote fires on
     // the 30th stall, at k = lastRemote + 1.
+    // Under --mutate the demote call above is neutered, so these four go RED
+    // by DESIGN — that is the proof the law has teeth. Invert them mutant-dies
+    // style (watchcheck convention); counting them as plain failures made every
+    // mutate run exit 1 no matter what (#1525: first nightly red).
     const lastRemote = tBefore + PAD_DELAY
-    ok('the demote fires after exactly DROP_GRACE stalled ticks',
+    const okW = (name, cond, extra = '') =>
+        MUTATE ? ok(`mutant dies: ${name}`, !cond) : ok(name, cond, extra)
+    okW('the demote fires after exactly DROP_GRACE stalled ticks',
         demotedAt === lastRemote + 1 && demoteMiss === DROP_GRACE,
         `demotedAt=${demotedAt} expected=${lastRemote + 1} miss=${demoteMiss}`)
-    ok('the seat is CPU now: watch list empty', host.net.watchSeats.length === 0)
-    ok('the CPU co took over and kept the note flow going', host.g.co.nextIdx > nextIdxBefore,
+    okW('the seat is CPU now: watch list empty', host.net.watchSeats.length === 0)
+    okW('the CPU co took over and kept the note flow going', host.g.co.nextIdx > nextIdxBefore,
         `nextIdx ${nextIdxBefore} -> ${host.g.co.nextIdx}`)
-    ok('the stage ran out solo (degrade to the solo demo, not a freeze)', host.g.done === true && host.g.win === true)
+    okW('the stage ran out solo (degrade to the solo demo, not a freeze)', host.g.done === true && host.g.win === true)
 }
 
 // ---- 6. a desync resyncs ----------------------------------------------------
