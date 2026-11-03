@@ -1,0 +1,18 @@
+{
+ "source": "MIT exp8 runs/p50c (apply_edit.py, all hashes verified against pinned base 2fc06364)",
+ "layers": [
+  "15",
+  "19"
+ ],
+ "tensors": "2 down_proj tensors (layers 15/19)",
+ "entries": "130,188 entries \u00b7 128 columns",
+ "forms": [
+  "sparse",
+  "sparse"
+ ],
+ "rel_change": [
+  0.10635984688997269,
+  0.08106115460395813
+ ],
+ "hash_verified": true
+}
