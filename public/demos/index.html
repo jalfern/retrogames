@@ -213,7 +213,9 @@
       Qwen3.5-0.8B's math by deleting one loop-causing direction from two MLP layers (0.016% of the weights). This is our honest attempt on the
       pinned model, run on a laptop-class CPU: read the weights, watch the loops (36/36 problems never terminate), localize the direction yourself,
       cut it out, re-run — and report what happened <b>either way</b>. Includes the full batch log of every forward pass with what it ruled out,
-      a heatmap of exactly which weights were touched, and the harness trap we fell into mid-experiment (a duplicated sampling flag faking a fix) — caught by re-running the clean version.</p>
+      a heatmap of exactly which weights were touched, and the harness trap we fell into mid-experiment (a duplicated sampling flag faking a fix) — caught by re-running the clean version.
+      <b>Round II</b> takes the second cut at a fair 4k horizon: repeat-onset directions across all six attention layers, both the write and the read path —
+      the honest negative stands, but removing d from the read path lifts accuracy 3→5/12, and the detour yielded a ~2× faster Q4 scorer.</p>
     <div class="meta"><span>LLM LAB · GRADIENT-FREE WEIGHT EDIT + NEGATIVE RESULT</span><span>2026-11-03</span></div>
   </a>
 
