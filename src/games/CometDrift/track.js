@@ -37,7 +37,8 @@ export const TEX_S = TEX / TX      // texture px per world px
 // 128px ribbon; there was no room to drift or pass. The #513 narrowing to 64 was
 // for the old 2560 world where wide roads overlapped at the hairpins; that
 // constraint is gone, so the surface opens back up while every centerline stays
-// true to its reference. WALL_R stays under the HD wall floor (220px sim clamp).
+// true to its reference. WALL_R is the historic ring; passability is the
+// per-side escape law wallLatAt (220..300px outside bends, #1498).
 export const ROAD_R = 96              // half-width of asphalt — fits two karts + drift room (#782)
 export const KERB_R = ROAD_R + 14    // painted kerb strip
 export const WALL_R = ROAD_R + 36    // sand ends, cliff face: the wall
@@ -559,7 +560,7 @@ export function courseIndex(id = currentId) {
 // centerline's bbox span, three-tap smoothed (the far-cap can't kill the
 // hairpin spikes). Gulch has no traced map: the wobble ring stands alone.
 const BAND_CACHE = new Map()
-function bandContext(id) {
+export function bandContext(id) {
     if (BAND_CACHE.has(id)) return BAND_CACHE.get(id)
     const b = BANDS[id]
     let ctx = null

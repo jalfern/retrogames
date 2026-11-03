@@ -23,6 +23,8 @@ const TRACKMOD = '../src/games/CometDrift/track.js'
 
 const Tmod = await import(TRACKMOD)
 const { COURSES, selectCourse } = Tmod
+const BUMP_CAP = { gulch: 2, sandbank: 4, corkscomb: 2, drylake: 2 }
+const ARTMOD = await import('../src/games/CometDrift/art.js')
 const { KART } = await import('../src/games/CometDrift/art.js')
 
 const R = { fail: 0 }
@@ -91,6 +93,35 @@ function drawSideBySide(path, refPts, gamePts) {
 const loadSim = async () => {
     const m = await import('../src/games/CometDrift/sim.js' + '?c=' + Math.random())
     return m
+}
+
+// #1498: the corridor the sim escapes to is the corridor the art draws.
+// The measured escape law (track.js wallLatAt: 220..300px outside bends, the
+// #542 evolute cap inside) replaced the #513 constant, and the SD strata rim
+// lands on it point-for-point — an invisible wall mid-run-off cannot come
+// back, and the course cannot silently re-narrow. Reusable for the mutants.
+const lawGates = (c, T, A, check) => {
+    let outLo = Infinity; let outHi = -Infinity; let rimBad = 0; let monoBad = 0
+    for (let i = 0; i < T.TRACK.N; i++) {
+        for (const s of [1, -1]) {
+            const w = T.wallLatAt(i, s)
+            if (T.TRACK.pts[i].k * s <= 0) { outLo = Math.min(outLo, w); outHi = Math.max(outHi, w) }
+            const b = A.strataAt(i, s)
+            // the painted rim is the clamp, except where the evolute fold buries
+            // the road (law < the kerb line): there the art stops at the kerb and
+            // the sim stops the kart short — rock never paints OVER the asphalt,
+            // and the kart never passes the paint.
+            const fold = w < T.KERB_R + 8 - 1e-9 && Math.abs(b[0] - (T.KERB_R + 8)) < 1e-9
+            if (Math.abs(b[0] - w) > 1e-6 && !fold) rimBad++
+            if (!(b[0] >= b[1] && b[1] >= b[2] && b[2] >= b[3] && b[3] >= T.KERB_R + 8)) monoBad++
+        }
+    }
+    check(`${c.id}: escape corridor is the measured law — ${T.WALL_FLOOR}..${T.WALL_CEIL}px outside bends (#1498)`,
+        outLo >= T.WALL_FLOOR - 1e-9 && outHi <= T.WALL_CEIL + 1e-9, `outside bend escape ${outLo.toFixed(0)}..${outHi.toFixed(0)}px`)
+    check(`${c.id}: the drawn wall sits on the sim's escape law point-for-point (#1498)`,
+        rimBad === 0, `${rimBad} points where the painted rim ≠ the clamp`)
+    check(`${c.id}: rock strata stay monotone through the hairpin folds (#1498)`,
+        monoBad === 0, `${monoBad} folded strata`)
 }
 
 // ---- per-course audits ------------------------------------------------------
@@ -178,7 +209,7 @@ for (const c of COURSES) {
             flat / T.len >= 0.35, `${((flat / T.len) * 100).toFixed(0)}% flat`)
     }
 
-    const HALF = T.WALL_R + 16
+    const HALF = Tmod.WALL_CEIL + 16
     let crossings = 0
     for (let i = 0; i < T.N; i += 2) {
         for (let j = 0; j < T.N; j += 2) {
@@ -201,7 +232,7 @@ for (const c of COURSES) {
     // two karts side-by-side (pass room), yet the wall must stay outside the HD
     // sim clamp so the cliff ring never drifts into the drivable band.
     check(`${c.id}: asphalt fits two karts side-by-side — room to pass (#782)`, 2 * T.ROAD_R >= 2 * KART.w + 24, `${2 * T.ROAD_R}px asphalt vs ${2 * KART.w}px two karts + 24px slip`)
-    check(`${c.id}: wall ring clear of the 220px HD sim clamp (#782)`, T.WALL_R + 16 <= 220, `wall ring ${T.WALL_R + 16}px`)
+    { lawGates(c, Tmod, ARTMOD, check) }
     const nearestPt = (arc) => {
         let bp = T.pts[0]; let bd = Infinity
         for (const p of T.pts) { const d = Math.abs(p.s - arc); if (d < bd) { bd = d; bp = p } }
@@ -249,7 +280,7 @@ for (const c of COURSES) {
         check(`${c.id}: props sit on their terrain — elev is that leg's ground height (#530 item 5)`, maxOff < 1e-6,
             `max |elev - pts[si].h| ${maxOff.toFixed(2)}px`)
         check(`${c.id}: that leg is the prop's lateral neighbour (not a distant leg) (#530 item 5)`,
-            maxRun <= T.WALL_R + 190 + 120 + 5, `max prop-to-centreline ${maxRun.toFixed(0)}px`)
+            maxRun <= Tmod.WALL_CEIL + 240 + 120 + 5, `max prop-to-centreline ${maxRun.toFixed(0)}px`)
         let emin = Infinity; let emax = -Infinity
         for (const s of sc) { emin = Math.min(emin, s.elev); emax = Math.max(emax, s.elev) }
         check(`${c.id}: props elevate with the ground they stand on (#530 item 5)`, emax - emin >= 25,
@@ -326,6 +357,17 @@ for (const c of COURSES) {
         return g
     }
     console.log(`— ${c.id}: the win (autopilot from P7) —`)
+    // #1498: the widen must pay AT RACE SPEED. Jon: "at race speed with rivals
+    // around, find where it turns into wall-bumping." The autopilot GPs above
+    // are the probe: total player bumps across the four seeds stay inside the
+    // budget pinned here (the narrow pre-#1498 132px clamp blows it — mutant).
+    let bumpTot = 0
+    for (const seed of [0, 7, 9, 42]) {
+        const g = race(seed)
+        bumpTot += g.events.filter(ev => ev.e === 'bump' && ev.who === sim.PLAYER.name).length
+    }
+    check(`${c.id}: autopilot holds the widened corridor at race speed — player bumps ${bumpTot} <= ${BUMP_CAP[c.id] ?? 8} across 4 GPs (#1498)`,
+        bumpTot <= (BUMP_CAP[c.id] ?? 8), `player bumps ${bumpTot}`)
     const results = []
     for (const seed of [0, 7, 9, 42]) {
         const g = race(seed)
@@ -1202,6 +1244,51 @@ selectorGate(await loadSelector())
 }
 
 if (process.argv.includes('--mutate')) {
+    // #1498 mutants: (1) restore the narrow 132px clamp — the corridor the
+    // maps drew escapes *past* the paint at race speed, and the autopilot's
+    // wall-bump budget must blow; (2) decouple the painted rim from the law —
+    // the rim-coherence gate must go blind-free.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const artPath = fileURLToPath(new URL('../src/games/CometDrift/art.js', import.meta.url))
+        const m1498 = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1498 corridor gate is load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1498 corridor gate is BLIND`)
+        }
+        const simSrcN = readFileSync(SIM, 'utf8')
+        const SIMP = fileURLToPath(SIM)
+        try {
+            plant(SIMP, simSrcN.replace('const lim = wallLatAt(surf.i, side)', 'const lim = Math.min(132, wallLatAt(surf.i, side))'))
+            await m1498('the sim clamp is shoved back to the old 132px corridor', async () => {
+                const m = await loadSim()
+                for (const c of COURSES) {
+                    selectCourse(c.id); selectCourse(c.id)
+                    let tot = 0
+                    for (const seed of [0, 7, 9, 42]) {
+                        const g = m.makeGame(seed)
+                        let n = 0
+                        while (!g.end && n < 60 * 300) { m.step(g, m.decide(g)); n++ }
+                        tot += g.events.filter(ev => ev.e === 'bump' && ev.who === m.PLAYER.name).length
+                    }
+                    check(`${c.id}: narrow-clamp mutant overruns the bump budget (#1498)`, tot > (BUMP_CAP[c.id] ?? 8), `bumps ${tot}`)
+                }
+            })
+        } finally { pull(SIMP) }
+        const artSrcN = readFileSync(artPath, 'utf8')
+        try {
+            plant(artPath, artSrcN.replace('export function strataAt(i, side) {\n    const w = wallLatAt(i, side)', 'export function strataAt(i, side) {\n    const w = WALL_R'))
+            await m1498('the painted rim ignores the escape law (constant 132 ring again)', async () => {
+                const A = await import('../src/games/CometDrift/art.js' + '?m=' + Math.random())
+                for (const c of COURSES) {
+                    selectCourse(c.id); selectCourse(c.id)
+                    lawGates(c, Tmod, A, check)
+                }
+            })
+        } finally { pull(artPath) }
+    }
+
     // #534 mutant: collapse the chevrons onto the centre — no thumb target, no
     // flanking, and the centre is no longer the clear start zone. The selector
     // gate must go red. Re-imports the mutated file via a bust query.
@@ -1670,7 +1757,10 @@ if (process.argv.includes('--mutate')) {
     let bad = 0
     for (const d of dots) {
         const n = Tmod.TRACK.nearest(d.x, d.y, d.i)
-        if (Math.sign(n.lat) !== d.side || Math.abs(n.lat) > Tmod.WALL_R + 2 || Math.abs(n.lat) < Tmod.ROAD_R) bad++
+        // #1498: the rim dots sit on the escape law (the drawn cliff foot),
+        // not the old 132px constant ring.
+        const want = Math.abs(Tmod.wallLatAt(d.i, d.side) - 5)
+        if (Math.sign(n.lat) !== d.side || Math.abs(n.lat) > want + 2 || Math.abs(n.lat) < Tmod.ROAD_R) bad++
     }
     check('#502 bank: rim shadows hug the outside of banked bends', dots.length >= N * 0.1 && bad === 0,
         `${dots.length} dots, ${bad} misplaced`)
@@ -1704,7 +1794,7 @@ if (process.argv.includes('--mutate')) {
         const ny = d.y + Math.sin(d.a + Math.PI / 2) * d.side * (art.APRON_IN - 4)
         const n = Tmod.TRACK.nearest(nx, ny, d.i)
         const a = Math.abs(n.lat)
-        const surf = a <= Tmod.ROAD_R ? 'road' : a <= Tmod.KERB_R ? 'kerb' : a <= Tmod.WALL_R ? 'sand' : 'wall'
+        const surf = a <= Tmod.ROAD_R ? 'road' : a <= Tmod.KERB_R ? 'kerb' : a <= Tmod.wallLatAt(n.i, Math.sign(n.lat) || 1) ? 'sand' : 'wall'
         if (Math.sign(n.lat) !== d.side || surf !== 'sand') bad++
         signs.add(d.side)
     }

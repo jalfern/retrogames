@@ -10,7 +10,7 @@
 // circuit in Node without a DOM.
 
 import * as THREE from 'three'
-import { TRACK, SCENERY, bankAt, bandRatioAt, wallLatAt } from '../CometDrift/track.js'
+import { TRACK, SCENERY, bankAt, bandRatioAt, wallLatAt, bandContext } from '../CometDrift/track.js'
 import { REFERENCES } from '../CometDrift/reference.js'
 import { selectorGeom } from '../CometDrift/selector.js'
 
@@ -36,15 +36,7 @@ export const kerbOuterAt = (i, side) => {
 // margin), ceiling 300px so trackside props (placed from 306px) always stand
 // on the plateau, never inside the wall band (#675 floating-prop lesson), and
 // capped so a hairpin inside never exceeds 0.8·R (the folded-fin fix).
-export const wallOffSideAt = (i, side) => {
-    const r = bandRatioAt(i, side)
-    let w = wallOffAt(i)
-    if (r !== null) w = Math.min(300, Math.max(220, w * r))
-    const p = T.pts[i]
-    const R = 1 / Math.max(Math.abs(p.k), 1e-6)
-    if (p.k * side > 0) w = Math.max(170, Math.min(w, R * 0.8))
-    return w
-}
+export const wallOffSideAt = (i, side) => wallLatAt(i, side)
 
 // #530 item 4: the `?ref=1` debug overlay — the traced real-map centerline
 // (reference.js) fitted onto the shipped circuit: uniform scale to the
@@ -123,7 +115,7 @@ export const roadRollAt = (i) => T.pts[i].bank
 const wallTopAt = (i) => 2.07 + Math.sin(i * 0.37 + 1.7) * 0.35 + Math.sin(i * 0.131) * 0.25
 // #513 floor: the sim clamps karts at 216px, so the face must never dip
 // inside it, whatever the shared road width does — 4px of visible margin.
-const wallOffAt = (i) => Math.max(220, T.WALL_R + 16 + Math.sin(i * 0.53) * 4 + Math.sin(i * 0.19 + 4) * 3)
+const wallOffAt = (i) => wallLatAt(i, 1)
 // #518: plateau/wall tops are ABSOLUTE world Y now — the terrain rides the
 // course height profile, so anything standing on it (scenery, the camera
 // collision lip) reads the elevated value.

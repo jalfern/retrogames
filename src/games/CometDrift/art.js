@@ -303,6 +303,47 @@ function offsetPath(lat) {
     return p
 }
 
+// ---- #1498: the drawn wall IS the escape law --------------------------------
+// A constant-width stroke can only paint a constant ring, but the passable
+// wall is now the per-side measured escape (track.js wallLatAt). So the rock
+// strata are filled as annulus regions between per-point offset loops: the
+// rim lifts to the cliff foot the sim actually stops you at (220..300px on
+// the mapped courses), and the strata stretch with it — a wide run-off reads
+// as a taller canyon wall. The strata boundaries stay monotone (an inside
+// evolute fold, #542, collapses them onto the dark foot instead of inverting
+// the rock), and the sand/kerb/asphalt lines stay painted at the road.
+export function strataAt(i, side) {
+    const w = wallLatAt(i, side)
+    const grow = Math.max(0, w - WALL_R)
+    const b3 = Math.max(KERB_R + 8, KERB_R + 8 + grow * 0.3)   // rockDark foot
+    const b2 = Math.max(b3, w - 14)                              // rockMid
+    const b1 = Math.max(b2, w - 4)                               // rockLight
+    const b0 = Math.max(b1, w)                                   // rim
+    return [b0, b1, b2, b3]
+}
+
+// closed loop at per-point signed lateral distance
+function lawPath(latOf) {
+    const p = new Path2D()
+    for (let i = 0; i < TRACK.N; i++) {
+        const q = TRACK.pts[i]
+        const lat = latOf(i)
+        const x = q.x + Math.cos(q.a + Math.PI / 2) * lat
+        const y = q.y + Math.sin(q.a + Math.PI / 2) * lat
+        if (i === 0) p.moveTo(x, y); else p.lineTo(x, y)
+    }
+    p.closePath()
+    return p
+}
+
+// both-side annulus between two per-point distance laws, for evenodd fill
+function lawBand(outOf, inOf) {
+    const p = new Path2D()
+    p.addPath(lawPath((i) => outOf(i, 1))); p.addPath(lawPath((i) => inOf(i, 1)))
+    p.addPath(lawPath((i) => -outOf(i, -1))); p.addPath(lawPath((i) => -inOf(i, -1)))
+    return p
+}
+
 // #502 item 4: rim shadow through the banked sweepers. Where bankAt() says
 // the bowl leans (see track.js), the tall outside wall throws a dark band
 // along the canyon rim — the eye reads "banked" before the tyres do. Pure
@@ -316,10 +357,11 @@ export function bankRimDefs() {
         if (b < 0.6) continue
         const p = TRACK.pts[i]
         const side = -Math.sign(p.k) || 1
+        const r = wallLatAt(i, side) - 5
         out.push({
             i,
-            x: p.x + Math.cos(p.a + Math.PI / 2) * side * RIM_SHADOW_R,
-            y: p.y + Math.sin(p.a + Math.PI / 2) * side * RIM_SHADOW_R,
+            x: p.x + Math.cos(p.a + Math.PI / 2) * side * r,
+            y: p.y + Math.sin(p.a + Math.PI / 2) * side * r,
             a: p.a, side, bank: +b.toFixed(3),
         })
     }
@@ -416,18 +458,45 @@ export function buildGround(pal = PALETTE) {
     }
 
     // strata: foot-shadow out to the lit rim, then the sand apron, then the
-    // crumbled sandstone edge nibbling the last pixels of asphalt
-    band(P.rimLit, WALL_R)
-    band(P.rockLight, WALL_R - 4)
-    band(P.rockMid, WALL_R - 14)
-    band(P.rockDark, KERB_R + 22)
+    // crumbled sandstone edge nibbling the last pixels of asphalt.
+    // #1498: the four rock strata ride the escape law — the rim lands exactly
+    // where the sim clamps a kart (wallLatAt), so nothing drives past a painted
+    // wall and every widened run-off shows the canyon it escaped into.
+    const S1 = (i, s) => strataAt(i, s)[1]
+    const S2 = (i, s) => strataAt(i, s)[2]
+    const S3 = (i, s) => strataAt(i, s)[3]
+    const RIM = (i, s) => strataAt(i, s)[0]
+    const fillLaw = (color, outOf, inOf) => { x.fillStyle = color; x.fill(lawBand(outOf, inOf), 'evenodd') }
+    fillLaw(P.rimLit, RIM, S1)
+    fillLaw(P.rockLight, S1, S2)
+    fillLaw(P.rockMid, S2, S3)
+    fillLaw(P.rockDark, S3, () => KERB_R + 8)
     band(P.rockShadow, KERB_R + 8)
     band(P.apronShade, ROAD_R + 16)
     band(P.apronMid, ROAD_R + 12)
     band(P.apron, ROAD_R + 7)
-    // strata cracks: dashed strokes laying vertical fractures across the rock
-    band(P.crack, WALL_R - 4, [4, 26])
-    band(P.crack, KERB_R + 22, [3, 41])
+    // strata cracks: radial fractures through the rock, laid along the seams
+    // at the old dash density (a 4px fracture every ~30px of arc at the foot,
+    // sparser at the darker foot line)
+    const cracks = (from, stride) => {
+        x.strokeStyle = P.crack; x.lineWidth = 2
+        let next = -1
+        for (let i = 0; i < TRACK.N; i++) {
+            const q = TRACK.pts[i]
+            if (q.s < next) continue
+            next = q.s + stride
+            for (const s of [1, -1]) {
+                const b = strataAt(i, s)
+                const ca = Math.cos(q.a + Math.PI / 2); const sa = Math.sin(q.a + Math.PI / 2)
+                x.beginPath()
+                x.moveTo(q.x + ca * s * b[3], q.y + sa * s * b[3])
+                x.lineTo(q.x + ca * s * b[from], q.y + sa * s * b[from])
+                x.stroke()
+            }
+        }
+    }
+    cracks(0, 30)
+    cracks(2, 44)
     // #502 item 4: the banking cue — the outside rim goes dark through the
     // banked sweepers (tall wall, long shadow), straights stay lit rim-to-rim
     x.fillStyle = 'rgba(28, 14, 8, 0.5)'
