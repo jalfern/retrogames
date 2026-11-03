@@ -4,7 +4,14 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { serveBall, paddleStart, paddleSpin, BASE_SPEED, AI_SPEED, PADDLE_WIDTH, PADDLE_HEIGHT, BALL_SIZE, PADDLE_OFFSET } from './sim.js'
 
+// PONG (#1473 batch 16) — the Feb port had no terminal, no restart and dice
+// off Math.random. Restored: one seeded stream per run (serve dir/angle,
+// paddle starts, paddle-hit spin), play-to-quit terminal (`q`/Escape, per the
+// 1972 machine having no enforced cap), fresh-score starts from any key,
+// click or tap, report {tick,score,done,seed,opp} and the QA contract.
 const PongGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
@@ -23,14 +30,6 @@ const PongGame = () => {
         const ctx = canvas.getContext('2d')
         let animationFrameId
 
-        // Game constants
-        const PADDLE_WIDTH = 10
-        const PADDLE_HEIGHT = 80
-        const BALL_SIZE = 8
-        const PADDLE_OFFSET = 20
-        const BASE_SPEED = 4
-        const AI_SPEED = 3.5
-
         // Game state
         let state = {
             ball: { x: 0, y: 0, dx: BASE_SPEED, dy: BASE_SPEED },
@@ -40,17 +39,29 @@ const PongGame = () => {
             height: 0
         }
 
+        // #1473: one seeded stream per run. seed is regenerated at every
+        // human start; ?seed=N pins it (the reported seed replays the match).
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
+        let isAttractMode = true
+        let over = false
         const resetBall = () => {
-            state.ball = {
-                x: state.width / 2,
-                y: state.height / 2,
-                dx: (Math.random() > 0.5 ? 1 : -1) * BASE_SPEED,
-                dy: (Math.random() * 2 - 1) * BASE_SPEED
-            }
-            // Randomize paddle positions
-            const maxPaddleY = state.height - PADDLE_HEIGHT
-            state.leftPaddle.y = Math.random() * maxPaddleY
-            state.rightPaddle.y = Math.random() * maxPaddleY
+            state.ball = serveBall(rand, state.width, state.height)
+            // Randomize paddle positions (on the run's stream)
+            state.leftPaddle.y = paddleStart(rand, state.height)
+            state.rightPaddle.y = paddleStart(rand, state.height)
+        }
+
+        // Fresh match: score zero, stream regenerated honoring ?seed=N.
+        const startRun = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            state.leftPaddle.score = 0
+            state.rightPaddle.score = 0
+            over = false
+            isAttractMode = false
+            resetBall()
         }
 
         const resize = () => {
@@ -73,7 +84,6 @@ const PongGame = () => {
         }
 
         // INPUT
-        let isAttractMode = true
         let attractTick = 0
         const keys = { ArrowUp: false, ArrowDown: false }
 
@@ -86,9 +96,14 @@ const PongGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode) {
-                isAttractMode = false;
-                // Reset score? Maybe
+            if (over) { startRun(); return }
+            if (isAttractMode) { startRun(); return }
+            // play-to-quit terminal (#1473): the machine had no cap, so a quit
+            // press ends the match honestly and the score stays visible.
+            if (e.code === 'KeyQ' || e.code === 'Escape') {
+                over = true
+                audioController.playTone(160, 0.25, 'sawtooth')
+                return
             }
             if (keys[e.code] !== undefined) keys[e.code] = true
         }
@@ -97,12 +112,22 @@ const PongGame = () => {
             if (keys[e.code] !== undefined) keys[e.code] = false
         }
 
+        // Phones: any tap starts a fresh match (tap-to-start) or restarts after quit.
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (over || isAttractMode) startRun()
+        }
+
         window.addEventListener('resize', resize)
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
+        canvas.addEventListener('pointerdown', handleCanvasTap)
         resize() // Initial sizing
 
         const update = () => {
+            tickN++
+            if (over) return
+
             // Move ball
             state.ball.x += state.ball.dx
             state.ball.y += state.ball.dy
@@ -150,8 +175,8 @@ const PongGame = () => {
             ) {
                 state.ball.dx *= -1.05 // Slight speed up
                 state.ball.x = PADDLE_OFFSET + PADDLE_WIDTH + 1 // Push out to avoid sticking
-                // Add slight vertical randomness to prevent loops
-                state.ball.dy += (Math.random() * 4 - 2) // Increased spin
+                // Add slight vertical randomness to prevent loops (seeded spin)
+                state.ball.dy += paddleSpin(rand)
                 audioController.playTone(400, 0.1, 'square')
             }
 
@@ -164,7 +189,7 @@ const PongGame = () => {
             ) {
                 state.ball.dx *= -1.05
                 state.ball.x = state.width - PADDLE_OFFSET - PADDLE_WIDTH - BALL_SIZE - 1
-                state.ball.dy += (Math.random() * 4 - 2) // Increased spin
+                state.ball.dy += paddleSpin(rand) // seeded spin
                 audioController.playTone(400, 0.1, 'square')
             }
 
@@ -202,7 +227,8 @@ const PongGame = () => {
             ctx.strokeStyle = '#333333' // Very subtle net (dark grey)
             ctx.stroke()
 
-            // Draw minimal score (optional, keep it clean)
+            // Score numerals — the original's big faint digits, kept on screen
+            // through the quit screen like the table kept showing them.
             ctx.textAlign = 'center'
             if (isAttractMode) {
                 attractTick++
@@ -219,6 +245,13 @@ const PongGame = () => {
                 ctx.fillStyle = '#333333'
                 ctx.fillText(state.leftPaddle.score, state.width / 4, 50)
                 ctx.fillText(state.rightPaddle.score, 3 * state.width / 4, 50)
+                if (over && Math.floor(tickN / 30) % 2 === 0) {
+                    ctx.font = '16px monospace'
+                    ctx.fillStyle = '#ffffff'
+                    ctx.fillText('MATCH OVER  YOU WIN', state.width / 2, state.height / 2)
+                    ctx.font = '12px monospace'
+                    ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, state.height / 2 + 24)
+                }
             }
         }
 
@@ -241,11 +274,54 @@ const PongGame = () => {
         }
         animationFrameId = requestAnimationFrame(loop)
 
+        // QA contract (#377): deterministic reset/tick/state so bots and
+        // replays drive this table like every other title.
+        exposeGame({
+            id: 'pong',
+            buttons: ['up', 'down'],
+            reset: (s) => {
+                seed = s >>> 0
+                rand = seedRng(seed)
+                state.leftPaddle.score = 0
+                state.rightPaddle.score = 0
+                over = false
+                isAttractMode = false
+                keys.ArrowUp = keys.ArrowDown = false
+                if (state.width > 0) resetBall()
+            },
+            tick: (pad) => {
+                if (over) { tickN += 1; return }
+                keys.ArrowUp = !!pad.up
+                keys.ArrowDown = !!pad.down
+                update()
+            },
+            state: () => ({
+                tick: tickN,
+                score: state.leftPaddle.score,
+                done: over,
+                seed: seed,
+                opp: state.rightPaddle.score,
+                ballX: Math.round(state.ball.x),
+                ballY: Math.round(state.ball.y),
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: the seeded rand closure cannot JSON
+            // round-trip (#391 — optional half of the contract).
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score: state.leftPaddle.score, done: over, seed: seed, opp: state.rightPaddle.score,
+        }))
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [])
 
