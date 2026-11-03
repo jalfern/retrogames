@@ -1,80 +1,71 @@
-# STATE — session 109 (2026-11-03, slot b)
+# STATE — session 110 (2026-11-03, slot a)
 
-## SHIPPED: SEEDPIN batch 13 — Space Invaders rebuilt + pinned (#1473)
-- Live: https://jalfern.com/retrogames/invaders — verified in the prod bundle
-  (`index-CIX17h8R.js` carries the new `SCORE<1>` header string).
-- Merged as `48b19d9` (PR #1494, 06:53:26Z). Contents = b's branch
-  `forge/seedpin-rollout-b13` at `c934468` (3 commits), diff-verified
-  content-identical to main. Engine was extracted to pure `sim.js` (zero
-  Math.random), faithful terminal model restored (30/20/20/10 rows, mystery
-  UFO 50–300, 3 lives + respawn grace, landing ends run, waves faster/lower),
-  `seedRng(seedFromQuery() ?? random)` regenerated at every human start,
-  production report `{tick,score,done,seed,lives,wave}`, contract
-  `id:'invaders'` + DebugKit + ART-bar pass (overlay palette, accelerating
-  descending-four march, deterministic kill bursts; RETRO declared).
-- Proof: `npm run invaderscheck` 34 green; 2 mutants RED→GREEN (incl. the
-  survived-mutant lesson: the first score assertion derived its expectation
-  from `ROW_SCORE` itself — check now pins literal `30/20/20/10`);
-  feedbackcheck 223/223 with pin floor **43→44**; lint gates + build green.
-- QA polish pass filed (by the colliding session, valid): **#1495**
-  (`feedback`+`building-qa`+`lane:games`) — do not duplicate.
-
-## The lane collision (full story on #1473, comment 6597997045)
-- b built live 06:03–06:53Z while waiting out slot-a's lock (last checkpoint
-  05:54:54Z). Warden idle-kicked at 06:26 (claim-based idle detection cannot
-  see unclaimed-but-building work); the rescue session read b's pushed branch
-  as a session-108 corpse, resumed it, merged, LIVE-verified, filed #1495 and
-  committed STATE-as-109 (`6d0d2bc`) — before b's rightful claim landed at
-  07:25:50Z (lock had just staled; ship comments don't extend locks).
-- Outcome: healthy (game shipped, verified twice), zero rework. Process gap
-  noted on #1473: make branch pushes count toward liveness so alive-but-
-  unclaimed builders stop looking dead to the warden and to step 1b. Not
-  filed as an issue (not a taste/priority fork; STATE + comment is the lane).
-
-## Slot-b feed question
-- #1490 forensics: it auto-closed 05:55:58Z because session 108's escalation
-  prose didn't match ROBOT_SHAPE and parsed as an answer (jonq `isAnswer`
-  false positive, #1403 class). No option was ever chosen.
-- Refiled as **#1492** (AWAITING, deadline 11-05, default B serialize) with
-  bot-shaped evidence; keep commentary there prefixed `FORGE (b):`.
-
-## Rule-4 honest count
-- Slot-b dry streak (106–108) BROKEN: game code merged this session.
-- Loop is healthy: batches 12–13 landed 06:09–06:53Z Nov 3.
+## Shipped this session (one merge on #1473 — pin floor 44→45)
+**Batch 14 (`9668b57`, PR #1496)** — ROGUE seed-param port. Warden TARGET #1493
+(WEIGHT SURGERY) was REFUSED — slot b held it live (checkpoint 07:08Z); ladder:
+no steer/next/game-queue, sole feedback #1495 un-borrowable (two QA MASTER
+sessions live), flagship gaps all owned → resumed own held #1473 ("already
+yours") with the STATE-planned batch-14 anchor.
+Sim.js extracted from the 1314-line component (batch-13 template): zero
+Math.random/Date.now (monster ids dlvl*1000+i / -1-turn). **Audit find:** the
+naive module-stream port fails byte-identity when two same-seed worlds step
+INTERLEAVED (shared stream position drifts). Fix: mulberry32 position travels
+INSIDE the state (`randState`, restore/bank at every `stepGame`); roguecheck
+proves interleaved replays identical with junk worlds stepping between them.
+Pin via freshSeed() at every human start; report {tick,score,done,seed,
+dungeon,hp}, tick=turn counter (TURN_ACTIONS set in reducer). DebugKit mounted
+(real-reducer cheats only); gameover gained tap-to-restart (phones).
+Gates: roguecheck 48/48 (NEW; mutant descend-guard flip → 4 red incl.
+winnability 20/20→0/20; restore green), feedbackcheck 223/223 floor 45,
+eslint clean, lint:mario/fps/ai green, build green, Vite browser-path serves
+(index.jsx/sim.js transform). Merged via rule-5 (static GREEN, Vercel GREEN).
+Live: entry `index-iS1rQ6-O.js` fingerprinted (`Dungeons of Doom`,
+`randState`). Prod-check path note: jalfern.com apex → 301 www, assets under
+`/retrogames/assets/` — grep there, `https://www.jalfern.com/retrogames/`.
+QA polish pass filed as #1502 (doors are fake, no Amulet win, no ranged,
+no light radius, silent combat).
 
 ## Board (end of session)
-- main = `6d0d2bc` + this STATE commit. #1473 open (`building`, b's claim was
-  07:25:50Z; stales 08:55:50Z unless this STATE commit counts — it isn't a
-  checkpoint shape, so next lane can claim after 08:55Z, or RESUME #1473 per
-  the claim script's "already yours" only if slot b). ~10 titles remain.
-- Merged-residue branch `forge/seedpin-rollout-b13` deleted remote-side this
-  session (was a false-corpse risk). b13 worktree pruned; node_modules was a
-  symlink (untouched target).
-- Open issues: #1473 (building), #1492 (waiting-jon), #1495 (building-qa —
-  QA lane owns Space Invaders polish until done), #1141 (stalled, Jon), #838
-  (Myst umbrella, not adoptable), #795 (pulse), #737 (waiting-jon, Chrome),
-  #549 (parked). Flagship README gaps: all closed at `dd62c58`, unchanged.
+- main = `9668b57` (+ this STATE commit). #1473 stays `building` (multi-stage):
+  ~10 arcade titles remain. Batch-15 tiers (per b14 PR body):
+  - **Dead terminals → b13 restoration template first**: Pong (no win cap),
+    Asteroids (no score/lives), Centipede (dead `score: 0`), Defender (no
+    score). SuperMario + RaccoonHeist the big ones.
+  - **Terminals exist → mechanical port**: Pacman, Frogger, Adventure,
+    MissileCommand — verify terminals per-title at read time before claiming.
+- Open issues: #1473 (slot-a, LIVE — checkpoint 08:0xZ), #1493 (slot-b
+  building), #1502 (new ROGUE QA), #1497 SSX `building-qa` (QA owns — flagship
+  stage skips SSX), #1498/#1499/#1500 (new lane:qa feedback — QA's next jobs,
+  don't borrow while QA streams run), #1492 (waiting-jon, AWAITING, deadline
+  11-05, default B; do NOT re-ask), #1141 (stalled), #838 (Jon's Myst, not
+  adoptable), #795 (pulse), #737 (waiting-jon), #549 (parked). No open PRs.
 
-## Batch 14 map for the next lane (audited live this session at dd62c58)
-- Mechanical seedpins (terminals EXIST): Pacman (`gameOver`+lives+score),
-  Frogger (`gameOverFlag`+lives+score), Adventure (explicit WIN CONDITION
-  ~L651), MissileCommand (`playing/waveEnd/gameOver`+score).
-- Terminal-restoration FIRST (dead terminals — don't report a fake `done`):
-  Pong (points tracked, NO win cap), Asteroids (no score, no lives),
-  Centipede (`score:0` never touched), Defender (no score at all).
-  Space Invaders' batch-13 PR is the template.
-- Rogue: rich faithful bestiary + one `randInt` chokepoint feeding dungeon
-  gen — the highest-value pin; verify death/victory (Amulet) before reporting.
+## Rule-4 count
+NOT tripped: batch 14 merged game code (`src/games/Rogue/**`) this session;
+dry streak = 0 for slot a.
 
-## ENV
-- `source /tmp/forge/netenv` before gh (gh-shim; no `issue view`; `--paginate`
-  needed — un-paginated comments reads return OLD pages). git origin ops need
-  `-c http.proxy=http://127.0.0.1:18229` (note: `git -c` goes BEFORE the
-  subcommand; `push -c` fails). Quote URLs in zsh (`?` globs).
-- Port 5178 free this session's end (dev server killed). `pgrep` broken:
-  `ps aux | grep "QA MASTER"`. Chrome dead (#737): browser tiers advisory;
-  Node harnesses carry the proof.
+## Notes for the next lane
+- Rogue's `randState` is the reference pattern for any turn-based/reducer
+  game ported next (Adventure, Pacman if it stays reducer-shaped): keep the
+  stream position IN state; harness must replay with a junk world interleaved.
+- Report-shape regex trap (#1473, unchanged): `seed:` text in DEV blocks AFTER
+  exposeFeedbackState reads as a seed report; seedless reports go after the DEV
+  block (MomentumRunner pattern).
+- react-hooks/refs lint now REJECTS ref writes during render (`ref.current =`
+  in body) and passing refs into lazy initializers — seed in the initializer
+  expression directly, update mirror refs inside a commit effect.
+- ENV: `source /tmp/forge/netenv` before gh (proxy + gh-shim: no `issue view`,
+  `--max-redir` unsupported — follow apex→www redirect manually). macOS: no
+  `timeout`/`setsid`; `pgrep` broken → `ps aux | grep "QA MASTER"`.
+  Dev-server launch that works: background tool-call `npm run dev -- --port
+  5173 --strictPort` (nohup+subshell got "can't detach from console").
+- Worktree node_modules: `ln -sfn /Users/jon/Dev/retrogames/node_modules` into
+  the worktree. Box Chrome still SIGABRT (#737) — static + Node tiers carry.
+- Dev server 5173 stopped at session end. Worktrees b5/b7/b11/b12/b13 + b14
+  accumulate under ~/Dev — candidates for a janitor pass sometime.
 
 ## Open questions
-- #1492 — slot-b feed on #1473 (split vs serialize; refile after #1490's
-  false-answer auto-close). AWAITING, default B. Body on GitHub.
+- #1492 — slot-b feed on #1473 (split vs serialize). AWAITING; link only.
+
+Game merged this session ⇒ STATE.md committed to main (rule 9), parked via
+`statepark.mjs park a`.
