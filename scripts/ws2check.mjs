@@ -171,6 +171,8 @@ if (process.argv.includes('--mutate')) {
         ['edit-maps', 'class="emap"', h => (h.match(/class="emap"/g) || []).length === 3],
         ['speed-strip', 'id="speedkpi"', h => h.includes('id="speedkpi"') && h.includes('1.8×')],
         ['mobile-pre-cap', '.pane pre{max-height:200px;}', h => h.includes('.pane pre{max-height:200px;}')],
+        ['scoring-bar', 'class="prog"', h => h.includes('class="prog"') && h.includes('@keyframes sweep')],
+        ['pair-skeleton', 'skelpair', h => h.includes('class="pair skelpair"') && h.includes('class="skel w80"')],
     ]
     for (const [name, marker, pred] of feats) {
         ok(pred(html), `feature present: ${name}`)
