@@ -98,6 +98,7 @@ export const GAMES = [
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
     { id: 'fire-crew', path: '/fire-crew' },
+    { id: 'invaders', path: '/invaders' }, // SEEDPIN b13 (#1494) grew contractGames; the soak roster missed it (#1525)
 ]
 const CAP = 9000
 

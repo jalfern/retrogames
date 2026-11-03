@@ -119,6 +119,7 @@ const SAFE = {
     'kartcheck.mjs': 'mutates copies under /tmp (mut-sim.mjs)',
     'outpostcheck.mjs': 'writes mutant copies into a mkdtemp dir',
     'paperscheck.mjs': 'writes mutant copies into a mkdtemp dir',
+    'ws2check.mjs': 'mkdtemp fixture dirs + tmpdir html only; mutants run in memory',
     'sweepcheck.mjs': 'mutant copy under /tmp (ms-mut-*.mjs)',
     'watchcheck.mjs': 'mutates a copy at /tmp/forge/watch/, never scripts/watch.sh',
     'recmethods.mjs': 'writes JSON replay stamps, not source mutants',
