@@ -11,7 +11,7 @@ export const HOLD = 144
 export const INFO_MSGS = [
     'ARROWS: THRUST & TURN',
     'SPACE: FIRE',
-    'RESCUE THE LANDERS',
+    'RESCUE THE HUMANS',
     'WATCH THE MINIMAP',
 ]
 
