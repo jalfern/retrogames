@@ -107,3 +107,39 @@ Honest gaps for the polish pass: full MATH-500 scoring (budget), MIT's HF
 model comparison (blocked until our numbers ship — issue rule), and 8k horizon
 capture if the demo lane returns with more compute.
 
+## Rescore #1506 (session 112, slot a) — fair horizon, all layers
+Jon's hold on #1493 (08:01:53Z) required steps the shipped pass skipped. This
+branch runs them; step5 finishes overnight.
+
+- `step7_caps.py` — cap sweep (batches 19-21): base penalty-free finishes
+  **9/12 @4096** (10/12 @8192; pp1.5: 6/12). Fair cap = 4096. At 1024 nothing
+  finishes — the shipped #1504 verdict measured truncation, not the fix.
+- `step8_direction_all.py` — corpus: **0/3 cap-hits repeat ≥24 words** at the
+  fair cap (long-winded, not tight loops). Direction: per-layer d over ALL 24
+  layers, loop-tail-vs-finished contrast (fixes step3's pooling layers 15+19
+  into one shared d). Ranking: L23 t=7.68 (||d||=1.57), L19 t=5.90, L6 5.82;
+  **L19 = MIT's layer rediscovered without the prior; L15 not favored**.
+- `step9_edit_all.py` — per-layer ablation `w_j -= α·d_L·(d_L·w_j)` on top-K
+  down_proj cols of the top-ranked layers; k256 = 0.0697%, k512 = 0.1394%.
+- `step5b_variants_fair.py` — practice b22-24 @4096 pp0: base 4/12 finished,
+  k256 2/12 (+3 loop-flagged), k512 3/12. **The edit hurts termination.**
+  Confound (honest): loop-tail positions are "not about to end"; finished
+  texts include the ending — so d carries an about-to-end component, most at
+  L23 (writes straight into the final norm). Removing it damages EOS rather
+  than the loop. With tight loops nearly absent at this cap, position and
+  loop-state are entangled — the repeat-onset contrast (Next item 1) is now
+  REQUIRED before any larger claim, not just better practice.
+- `step10_fair_score.py` — the one held-out score: fixed 100 MATH-500 +
+  100 GSM8K-test (seed 20261103, identical rows), cap 4096, base / k256 /
+  sampfix(pp1.5), penalty-free baseline rows. Overnight runner
+  (`run_fair_overnight.sh` + `detach_runner.sh`; nested launchctl is refused
+  in warden contexts — the runner double-forks to reparent to launchd).
+  Resumable: `results/fair_<row>_<set>.jsonl`, done-marker
+  `results/FAIR_SCORING_DONE`.
+- `build_demo.mjs` v2 — fair tables + verdict; supersede banner frames the
+  cap-1024 section; batch log unchanged.
+
+Still open after this rescore: repeat-onset d (needs horizons where loops
+actually re-form — MIT saw them at 32k), o_proj/unembed ablation paths, Q4
+quantized scoring for ~2× speed, and MIT's published edit as a comparison row
+(open only after our numbers are written — issue rule).
