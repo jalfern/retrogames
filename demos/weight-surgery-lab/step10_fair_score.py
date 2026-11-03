@@ -44,10 +44,11 @@ def summarize(tag, setname, cap, n_units):
     recs = [json.loads(l) for l in open(f"{C.RESULTS}/fair_{tag}_{setname}.jsonl")]
     n = len(recs)
     summ = dict(phase="score-fair", run=tag, set=setname, cap=cap, batch=n_units,
-                n=n, acc=round(100 * sum(r["ok"] for r in recs) / max(n, 1), 1),
+                                n=n, acc=round(100 * sum(r["ok"] for r in recs) / max(n, 1), 1),
                 terminated=round(100 * sum(not r["cap_hit"] for r in recs) / max(n, 1), 1),
                 hit_cap_pct=round(100 * sum(r["cap_hit"] for r in recs) / max(n, 1), 1),
                 looped_pct=round(100 * sum(r["loop"] for r in recs) / max(n, 1), 1))
+    summ["purpose"] = f"fair hold-out row — acc {summ['acc']}% terminated {summ['terminated']}%"
     C.log_batch(summ)
     print(json.dumps(summ), flush=True)
     return summ

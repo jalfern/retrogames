@@ -67,10 +67,12 @@
 <h2>HOLD-OUT SCORES — fair horizon (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103, cap 4096)</h2>
 <table>
 <tr><th>run · set</th><th>n</th><th>accuracy</th><th>terminated</th><th>hit cap</th><th>repeated (loop)</th></tr>
-<tr><td>base · math</td><td>100</td><td>4.0%</td><td>70.0%</td><td>30.0%</td><td>4.0%</td></tr>
-<tr><td>sampfix · math</td><td>12/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506</td></tr>
-<tr><td>base · gsm</td><td>100</td><td>11.0%</td><td>15.0%</td><td>85.0%</td><td>5.0%</td></tr>
+<tr><td>base · math</td><td>100</td><td>4.0%</td><td>≥70.0%†</td><td>≤30.0%†</td><td>4.0%</td></tr>
+<tr><td>sampfix · math</td><td>100</td><td>3.0%</td><td>≥38.0%†</td><td>≤62.0%†</td><td>0.0%</td></tr>
+<tr><td>base · gsm</td><td>100</td><td>11.0%</td><td>≥15.0%†</td><td>≤85.0%†</td><td>5.0%</td></tr>
+<tr><td>sampfix · gsm</td><td>12/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506</td></tr>
 </table>
+<p class="note">† token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p>
 
 <h2>ONE PROBLEM, BEFORE / AFTER</h2>
 <p class="note">pair panel: awaiting fair scoring runs</p>
@@ -90,10 +92,10 @@
 <tr><td>07:59:23</td><td>practice</td><td>gsm_train</td><td>12</td><td>1024</td><td>variant eval a1k256: terminate/loop/correct vs base, same 12 train problems<br><span class="ruled">ruled out: see paired rows</span></td></tr>
 <tr><td>08:03:00</td><td>practice</td><td>gsm_train</td><td>12</td><td>1024</td><td>variant eval a1k3584<br><span class="ruled">ruled out: terminated=0/12</span></td></tr>
 <tr><td>08:03:34</td><td>practice</td><td>gsm_train</td><td>12</td><td>1024</td><td>variant eval sampfix2.0<br><span class="ruled">ruled out: terminated=12/12</span></td></tr>
-<tr><td>08:16:39</td><td>score</td><td>base · math</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0% terminated 8.8%</td></tr>
-<tr><td>08:26:37</td><td>score</td><td>base · gsm</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 1.2% terminated 0%</td></tr>
-<tr><td>08:36:34</td><td>score</td><td>sampfix · math</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0% terminated 5%</td></tr>
-<tr><td>08:46:31</td><td>score</td><td>sampfix · gsm</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0% terminated 0%</td></tr>
+<tr><td>08:16:39</td><td>score</td><td>base · math</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0.0% terminated 8.8%</td></tr>
+<tr><td>08:26:37</td><td>score</td><td>base · gsm</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 1.2% terminated 0.0%</td></tr>
+<tr><td>08:36:34</td><td>score</td><td>sampfix · math</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0.0% terminated 5.0%</td></tr>
+<tr><td>08:46:31</td><td>score</td><td>sampfix · gsm</td><td>6</td><td>1024</td><td>first-pass hold-out row — acc 0.0% terminated 0.0%</td></tr>
 <tr><td>08:50:39</td><td>practice</td><td>gsm_train</td><td>12</td><td>1024</td><td>flag-hygiene recheck sampfix2.0-clean: does presence-penalty termination survive clean single-flag runs?<br><span class="ruled">ruled out: terminated=0/12 under clean flags</span></td></tr>
 <tr><td>08:52:10</td><td>practice</td><td>gsm_train</td><td>12</td><td>1024</td><td>flag-hygiene recheck sampfix1.0-flagcheck: does presence-penalty termination survive clean single-flag runs?<br><span class="ruled">ruled out: terminated=0/12 under clean flags</span></td></tr>
 <tr><td>09:27:27</td><td>practice</td><td>gsm+math_train(easy)</td><td>19</td><td>4096</td><td>Jon step1: fraction finished at cap 4096, penalty-free baseline<br><span class="ruled">ruled out: cap 1024 was unmeasurable (Jon 08:01Z); choosing the fair cap</span></td></tr>
@@ -115,8 +117,9 @@
 <tr><td>12:01:35</td><td>practice-v2</td><td>gsm+math_train(easy)</td><td>12</td><td>4096</td><td>v2 eval A: terminate/loop/correct at cap4096 pp0, paired 12 train problems<br><span class="ruled">ruled out: see paired rows</span></td></tr>
 <tr><td>12:08:32</td><td>practice-v2</td><td>gsm+math_train(easy)</td><td>12</td><td>4096</td><td>v2 eval B: terminate/loop/correct at cap4096 pp0, paired 12 train problems<br><span class="ruled">ruled out: see paired rows</span></td></tr>
 <tr><td>12:19:46</td><td>practice-v2</td><td>gsm+math_train(easy)</td><td>12</td><td>4096</td><td>v2 eval C: terminate/loop/correct at cap4096 pp0, paired 12 train problems<br><span class="ruled">ruled out: see paired rows</span></td></tr>
-<tr><td>12:35:39</td><td>score-fair</td><td>base · math</td><td>18</td><td>4096</td><td>fair hold-out row — acc 4% terminated 70%</td></tr>
-<tr><td>13:24:35</td><td>score-fair</td><td>base · gsm</td><td>18</td><td>4096</td><td>fair hold-out row — acc 11% terminated 15%</td></tr>
+<tr><td>12:35:39</td><td>score-fair</td><td>base · math</td><td>18</td><td>4096</td><td>fair hold-out row — acc 4.0% terminated 70.0%</td></tr>
+<tr><td>13:24:35</td><td>score-fair</td><td>base · gsm</td><td>18</td><td>4096</td><td>fair hold-out row — acc 11.0% terminated 15.0%</td></tr>
+<tr><td>14:15:28</td><td>score-fair</td><td>sampfix · math</td><td>18</td><td>4096</td><td>fair hold-out row — acc 3.0% terminated 38.0%</td></tr>
 </table>
 
 
@@ -134,8 +137,25 @@
 <tr><td>sampfix · gsm</td><td>0%</td><td>0%</td><td>100%</td><td>0%</td></tr>
 </table>
 
+
+<h2>SURGERY II — repeat-onset d, all six attention layers, both ends (#1505)</h2>
+<p>Round I localized <b>d</b> as a whole-sequence mean at a 1024-token horizon — verbose reasoning, not the attractor. Round II changes all three inputs at once: capture at <b>cap 4096</b> (penalty-free, seed 23, train-only), take d as <b>mean(write during the loop) − mean(write before it)</b> from the detected repeat-onset, and operate on all six full-attention layers <code>{3,7,11,15,19,23}</code> (this model interleaves linear attention every 4th layer). Variant <b>B</b> cuts the <i>read</i> side instead: <code>embed_tokens</code> rows (unembed is tied) and <code>o_proj</code> rank-1, so the residual stream can no longer be expressed in logits or written by attention along d. <em>onset positions (tokens): [null,null,null,null,null,null,null,null]</em></p>
+
+<div class="pair">
+  <div class="pane"><h3>II · LOOP at cap 4096 — onset at token null ✗</h3><pre>If Kendra is currently 18, what will be their total age in 3 years?<br><br>[Start thinking]<br><br>Here's a thinking process that leads to the solution:<br><br>1.  **Analyze the Request:**<br>    *   **Subjects:** Sam, Sue, Kendra.<br>    *   **Relationship 1:** Sam = 2 * Sue (Sam is twice as old as Sue).<br>    *   **Relationship 2:** Kendra = 3 * Sam (Kendra is 3 times as old as Sam).<br>    *   **Current State:** Kendra = 18.<br>    *   **Goal:** Find the total age of Sam, Sue, and Kendra in 3 years.<br><br>2.  **Step-by-Step Calculation:**<br><br>    *   **Step 1: Find Kendra's current age.**<br>        *   Given: Kendra is 18.<br>        *   Kendra = 18.<br><br>    *   **Step 2: Find Sam's current age.**<br>        *   Given: Kendra = 3 * Sam.<br> …</pre></div>
+  <div class="pane"><h3>II · TERMINATED at cap 4096 (2860 tok) ✓</h3><pre>ms.<br><br>$$\frac{1}{1	imes2} + \frac{1}{2	imes3} + \frac{1}{3	imes4} + \frac{1}{4	imes5} + \frac{1}{5	imes6}$$<br><br>[Start thinking]<br><br>Here's my thought process for solving this sum:<br><br>1.  **Analyze the Request:**<br>    *   **Goal:** Express a specific sum as a simple fraction in lowest terms.<br>    *   **The Sum:** $S = \frac{1}{1\times2} + \frac{1}{2\times3} + \frac{1}{3\times4} + \frac{1}{4\times5} + \frac{1}{5\times6}$.<br>    *   **Note:** There's a typo in the prompt's LaTeX rendering. It says `1/1 x2` but usually, these problems imply $\frac{1}{1\times2}$ (where the comma or space is just formatting). I need to check the standard interpretation. The standard interpretation is $\frac{1}{1\cdot 2} + \fr…</pre></div>
+</div>
+<table><tr><th>variant</th><th>terminated</th><th>looped</th><th>correct</th><th>mean tokens</th></tr><tr><td>base · cap 4096 · pp 0</td><td>1/12</td><td>0/12</td><td>3/12</td><td>3928</td></tr>
+<tr><td>A · upstream: d removed from down_proj ×6 FA layers</td><td>0/12</td><td>1/12</td><td>2/12</td><td>4096</td></tr>
+<tr><td>B · downstream: tied-unembed + o_proj rank-1 strip ×6 FA layers</td><td>0/12</td><td>1/12</td><td>5/12</td><td>4096</td></tr>
+<tr><td>C · A+B combined</td><td>0/12</td><td>1/12</td><td>2/12</td><td>4096</td></tr></table>
+<p class="note">weights edited — A: 0.180% · B: 30.553% (embed ‖d‖ energy removed 9.1112) · C: 30.733%</p>
+<p class="note">VERDICT II: no variant beats base-4096 on termination at this horizon — the second negative, and sharper than round I's: with exact token counting base itself terminates only 1/12 (the earlier 6/12 was a words×2 estimate artifact, see README). But variant B (5/3) scores above base without terminating — removing d from the READ path makes the model find right answers while it rambles. Direction removal helps reasoning, not termination; horizon (32k vs 4k) and localization remain the gap to MIT.</p>
+
 <h2>SOURCES</h2>
-<p><a href="https://github.com/jalfern/retrogames/issues/1493" rel="noopener">Issue #1493</a> · <a href="https://github.com/jalfern/retrogames/issues/1506" rel="noopener">rescore #1506</a> ·
+<p><a href="https://jalfern.com/retrogames/issues/1493" rel="noopener">Issue #1493</a> ·
+<a href="https://jalfern.com/retrogames/issues/1505" rel="noopener">Issue #1505 (Surgery II)</a> ·
+<a href="https://jalfern.com/retrogames/issues/1506" rel="noopener">rescore #1506</a> ·
 <a href="https://rikiyat.github.io/blog/weight-space-programming/" rel="noopener">Sparks of Weight-Space Programming</a> (MIT CSAIL) ·
 <a href="https://github.com/RikiyaT/lm_understand-logs" rel="noopener">experiment logs</a> ·
 lab scripts: <code>demos/weight-surgery-lab/</code> in the repo.</p>

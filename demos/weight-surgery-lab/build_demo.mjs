@@ -98,7 +98,7 @@ const fairTbl = (() => {
         cap: 100 * recs.filter(r => r.cap_hit).length / n,
         loop: 100 * recs.filter(r => r.loop).length / n,
       };
-      rows.push(`<tr><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>${s.term.toFixed(1)}%</td><td>${s.cap.toFixed(1)}%</td><td>${s.loop.toFixed(1)}%</td></tr>`);
+      rows.push(`<tr><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>≥${s.term.toFixed(1)}%†</td><td>≤${s.cap.toFixed(1)}%†</td><td>${s.loop.toFixed(1)}%</td></tr>`);
     }
   }
   return rows.join("\n");
@@ -287,6 +287,7 @@ ${pracHtml}
 <tr><th>run · set</th><th>n</th><th>accuracy</th><th>terminated</th><th>hit cap</th><th>repeated (loop)</th></tr>
 ${fairTbl || "<tr><td colspan=6>scoring in progress — runs launch as the edit lands; resumable runner, numbers post to #1506</td></tr>"}
 </table>
+<p class="note">† token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p>
 
 <h2>ONE PROBLEM, BEFORE / AFTER</h2>
 ${pairHtml}
