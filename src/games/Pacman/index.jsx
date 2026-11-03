@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin, makeFruitTracker, stepFruit, FRUIT_BLINK } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -40,6 +40,7 @@ const PacmanGame = () => {
         // Entities
         const pacman = makePacman()
         const gs = { map, pacman, score: 0 }
+        const fruitTr = makeFruitTracker() // bonus fruit (#1517)
 
         let ghosts = [
             { id: 1, x: 13, y: 11, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0 },
@@ -75,6 +76,9 @@ const PacmanGame = () => {
             }
             wallContours = null  // recompute on next draw
             resetPositions()
+            // new stage, new fruit schedule (#1517); a death (resetPositions)
+            // does NOT reset it — the arcade fruit timer rides through lives
+            fruitTr.pellets = 0; fruitTr.dropped = 0; fruitTr.fruit = null
         }
 
         const resetGame = () => {
@@ -166,6 +170,17 @@ const PacmanGame = () => {
             } else if (eaten === 'power') {
                 ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
                 audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
+            }
+
+            // BONUS FRUIT (#1517) — drops at the 70th/170th pellet, worth 100,
+            // lives ~10 s on the world timer. The attract demo never drops fruit.
+            if (!isAttractMode) {
+                gs.score += stepFruit(fruitTr, eaten === 'dot' || eaten === 'power', pacman, {
+                    eat: () => {
+                        audioController.playTone(1200, 0.09, 'square', 0.18)
+                        audioController.playTone(1600, 0.12, 'square', 0.18)
+                    }
+                })
             }
 
             // GHOST AI — pure per-ghost step from ./move (seeded stream; see
@@ -368,14 +383,18 @@ const PacmanGame = () => {
             ctx.save()
             ctx.translate(x + CELL_SIZE / 2, y + CELL_SIZE / 2)
             if (state === 'dead') {
+                // eyes-only ghost heading home: the pupils LOOK along the direction
+                // of travel — the arcade's dead-ghost direction cue (#1517)
+                const ex = dir?.x * 1.2 || 0
+                const ey = dir?.y * 1.2 || 0
                 ctx.fillStyle = 'white'
                 ctx.beginPath()
                 ctx.arc(-4, -2, 3, 0, Math.PI * 2); ctx.fill()
                 ctx.arc(4, -2, 3, 0, Math.PI * 2); ctx.fill()
                 ctx.fillStyle = 'black'
                 ctx.beginPath()
-                ctx.arc(-4, -2, 1, 0, Math.PI * 2); ctx.fill()
-                ctx.arc(4, -2, 1, 0, Math.PI * 2); ctx.fill()
+                ctx.arc(-4 + ex, -2 + ey, 1, 0, Math.PI * 2); ctx.fill()
+                ctx.arc(4 + ex, -2 + ey, 1, 0, Math.PI * 2); ctx.fill()
                 ctx.restore()
                 return
             }
@@ -445,6 +464,36 @@ const PacmanGame = () => {
                         }
                     }
                 }
+            }
+
+            // Bonus fruit — arcade cherries: two red orbs, joined stems, a leaf.
+            // Blinks near expiry on the WORLD timer, never the wall clock.
+            if (fruitTr.fruit &&
+                (fruitTr.fruit.timer > FRUIT_BLINK || Math.floor(fruitTr.fruit.timer / 10) % 2 === 0)) {
+                const fx = fruitTr.fruit.x * CELL_SIZE + CELL_SIZE / 2
+                const fy = fruitTr.fruit.y * CELL_SIZE + CELL_SIZE / 2
+                ctx.strokeStyle = '#00c000'
+                ctx.lineWidth = 1.5
+                ctx.beginPath()
+                ctx.moveTo(fx - 4, fy + 2)
+                ctx.quadraticCurveTo(fx - 1, fy - 7, fx + 2, fy - 8)
+                ctx.moveTo(fx + 4, fy + 2)
+                ctx.quadraticCurveTo(fx + 3, fy - 5, fx + 2, fy - 8)
+                ctx.stroke()
+                ctx.fillStyle = '#30d030'
+                ctx.beginPath()
+                ctx.ellipse(fx + 4, fy - 8, 3, 1.5, -0.4, 0, Math.PI * 2)
+                ctx.fill()
+                ctx.fillStyle = '#ff2020'
+                ctx.beginPath()
+                ctx.arc(fx - 4, fy + 2, 3.5, 0, Math.PI * 2)
+                ctx.arc(fx + 4, fy + 2, 3.5, 0, Math.PI * 2)
+                ctx.fill()
+                ctx.fillStyle = '#ff9090'
+                ctx.beginPath()
+                ctx.arc(fx - 5, fy + 1, 1, 0, Math.PI * 2)
+                ctx.arc(fx + 3, fy + 1, 1, 0, Math.PI * 2)
+                ctx.fill()
             }
 
             // Draw Entities
@@ -574,6 +623,7 @@ const PacmanGame = () => {
                 `score ${gs.score}  lives ${lives}  power ${pacman.poweredUp ? pacman.powerTimer : '-'}  over ${gameOver}`,
                 `pac ${pacman.x},${pacman.y} p${pacman.progress.toFixed(2)} dir ${pacman.dir.x},${pacman.dir.y}`,
                 `ghosts ${ghosts.map(g => `${g.type}:${g.x},${g.y}/${g.state}`).join(' ')}`,
+                `fruit ${fruitTr.fruit ? `@${fruitTr.fruit.x},${fruitTr.fruit.y} t${fruitTr.fruit.timer}` : '-'} pellets ${fruitTr.pellets} dropped ${fruitTr.dropped}`,
                 `seed ${seed}  tick ${tickN}`,
             ],
             actions: [
