@@ -13,7 +13,8 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost } from '../src/games/Pacman/move.js'
+import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
@@ -216,6 +217,57 @@ console.log('attract (rule 6)')
     ok(pressMsg(true) === 'TAP TO START' && pressMsg(false).includes('ARROW'), 'touch phones get TAP, keyboards get ARROW (#420)')
 }
 
+// ------------------------------------------------------- seed pin (#1473 b15) ----
+console.log('seed pin: the ghost world replays from its seed')
+{
+    const initGhosts = () => [
+        { id: 1, x: 13, y: 11, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'chase', type: 'blinky', penTimer: 0 },
+        { id: 2, x: 13, y: 14, color: '#ffb8ff', path: [], progress: 0, speed: 0.075, state: 'pen', type: 'pinky', penTimer: 120 },
+        { id: 3, x: 12, y: 14, color: '#00ffff', path: [], progress: 0, speed: 0.07, state: 'pen', type: 'inky', penTimer: 360 },
+        { id: 4, x: 15, y: 14, color: '#ffb852', path: [], progress: 0, speed: 0.06, state: 'pen', type: 'clyde', penTimer: 600 },
+    ]
+    // pinned pacman: the ghosts' whole world is the seeded stream, so two runs
+    // with one seed must be byte-identical, and different seeds must diverge.
+    const ghostRun = (seed, ticks) => {
+        const rand = seedRng(seed)
+        const map = cloneMap()
+        const pacman = { ...makePacman(), x: 1, y: 4, progress: 0, dir: { x: 1, y: 0 }, nextDir: { x: 1, y: 0 } }
+        const ghosts = initGhosts()
+        const trace = []
+        for (let t = 0; t < ticks; t++) {
+            ghosts.forEach(g => stepGhost(g, { map, pacman }, rand, {}))
+            trace.push(ghosts.map(g => `${g.x},${g.y},${g.progress.toFixed(6)},${g.state},${g.nextDir ? g.nextDir.x + ',' + g.nextDir.y : '-'}`).join('|'))
+        }
+        return trace
+    }
+    const a = ghostRun(4242, 900).join('|')
+    const b = ghostRun(4242, 900).join('|')
+    ok(a === b, 'same seed → byte-identical 900-tick ghost world', a === b ? '' : 'traces diverge')
+    const c = ghostRun(4243, 900).join('|')
+    ok(a !== c, 'different seed → different ghost world')
+    let inWall = 0, outCols = 0
+    for (let s = 1; s <= 12; s++) {
+        const rand = seedRng(s * 7919)
+        const map = cloneMap()
+        const pacman = { ...makePacman(), x: 6, y: 11, progress: 0, dir: { x: 0, y: -1 }, nextDir: { x: 0, y: -1 } }
+        const ghosts = initGhosts()
+        for (let t = 0; t < 600; t++) {
+            ghosts.forEach(g => {
+                stepGhost(g, { map, pacman }, rand, {})
+                if (g.x >= 0 && g.x < COLS && map[Math.round(g.y)][Math.round(g.x)] === 1) inWall++
+                if (g.x < 0 || g.x >= COLS) outCols++
+            })
+        }
+    }
+    ok(inWall === 0, 'ghosts never stand in a wall (12 seeds × 600 ticks)', `${inWall}`)
+    ok(outCols === 0, 'ghosts never leave the board (tunnel wraps)', `${outCols}`)
+    ok(seedFromQuery('?seed=777') === 777, '?seed=N parses for the pin')
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(src) &&
+        /rand = seedRng\(seed\)/.test(src), 'human start regenerates the seed and honors ?seed=N')
+    ok(/seed: seed/.test(src), 'production report carries the seed')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -223,6 +275,12 @@ if (process.argv.includes('--mutate')) {
     console.log('mutants (must die)')
     const F = 'src/games/Pacman/move.js'
     const MUTANTS = [
+        ['human start ignores ?seed (pin removed)', 'src/games/Pacman/index.jsx',
+            `seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)`,
+            `seed = Math.floor(Math.random() * 1000000)`],
+        ['production report drops the seed', 'src/games/Pacman/index.jsx',
+            `done: gameOver, seed: seed, lives: lives,`,
+            `done: gameOver, lives: lives,`],
         ['fixed-priority decode (pre-#472: the diagonal keeps ONE axis)', F,
             `        } else if (held.length > 1) {
             // diagonal: keep the heading, pre-turn the other axis
