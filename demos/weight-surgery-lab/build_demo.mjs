@@ -76,10 +76,10 @@ const pracHtml = prac ? `<h2>PRACTICE VARIANTS (gsm_train, 12 paired problems, c
 <p class="note">…except <code>sampfix2.0</code>: its flag was duplicated (<code>--presence-penalty 1.5</code> still in the command). The clean rerun is the honest one.</p>` : "";
 
 // ---- SURGERY II (#1505): longer-horizon capture + downstream removal ----
-const v2 = read("results/v2_variants.json", {});
-const v2loops = read("results/v2_loop_texts.json", null);
+const v2 = read("results/v2_variants.json", null) || read("variants_v2.json", {});
+const v2loops = read("results/v2_loop_texts.json", null) || read("v2_loop_texts.json", null);
 const v2reports = {};
-for (const v of ["A", "B", "C"]) v2reports[v] = read(`edited2_${v}/edit_report.json`);
+for (const v of ["A", "B", "C"]) v2reports[v] = read(`edited2_${v}/edit_report.json`) || read(`edit_reports/v2_${v}.json`);
 const V2LBL = { base: "base · cap 4096 · pp 0", A: "A · upstream: d removed from down_proj ×6 FA layers", B: "B · downstream: tied-unembed + o_proj rank-1 strip ×6 FA layers", C: "C · A+B combined" };
 const v2rows = Object.entries(v2).map(([k, s]) => {
   const mean = s.rows ? Math.round(s.rows.reduce((a, r) => a + r.ntok, 0) / s.rows.length) : "—";

@@ -53,3 +53,41 @@ verbose reasoning, not the tight-loop attractor MIT localized at 32k.
    (only open it after your own numbers are written — issue rule).
 4. `llama-quantize` the GGUFs (Q4_0, keep layers 15/19 down_proj fp16) for
    ~2× faster scoring.
+
+## Surgery II (#1505, session 112) — longer horizon, both ends
+Scripts: `step8_longcapture.py` (cap-4096 generation + repeat-onset contrast at
+ALL six full-attention layers {3,7,11,15,19,23}; `full_attention_interval: 4`,
+tied unembed), `step8b_onset.py` (loose n-gram-reuse onset refinement),
+`step9_edit2.py` (variants: A upstream = down_proj top-256 columns × 6 FA
+layers; B downstream = tied-embed rank-1 row strip + o_proj rank-1 × 6 FA
+layers; C = A+B), `step10_eval2.py` (paired 12-problem eval at cap 4096 pp0,
+eval seed 77), `scripts/ws2check.mjs` (`npm run ws2check`).
+
+Measurements so far (batches 22–, log in `batches.jsonl`):
+- **4/12 terminate at cap 4096 penalty-free** (vs 0–8.8% at cap 1024) — Jon's
+  fair horizon exists; #1506 measures the exact fraction in parallel.
+- **No strict periodic onset in any cap-hit** (period ≤256, sustain ≥64 tokens;
+  step8b relaxes to period ≤1024/sustain ≥32 + windowed n-gram reuse):
+  at ≤4k the non-termination is verbose rambling, not a fixed attractor —
+  the attractor lives beyond this horizon (MIT's claim was made at 32k).
+  Refinement gives 3/8 looping texts a real onset (tokens 685/2451/3819 —
+  loops start LATE), and d from true onsets ≈ d from the half-split
+  (L23 raw ‖d‖ 0.974 vs 0.932): the direction is segmentation-robust.
+- Depth structure in ‖d‖: raw onset-contrast norm grows monotonically with
+  layer depth (L3 0.089 → L23 0.932): the loop-ness write is concentrated in
+  the DEEP FA layers; MIT's 15/19 choice catches only part of it.
+- Edit sizes: A 0.18%, B 30.55% (rank-1 correction spans the whole 248k×1024
+  tied embed — low-rank, but touches every row), C 30.73%.
+- **Q4_0 scorer** `q35-v2-q4k.gguf` (844MB): `--tensor-type "token_embd.weight=f16"`
+  + `--tensor-type "blk\.(3|7|11|15|19|23)\.ffn_down\.weight=f16"` — measured
+  1.8× generation / 2.4× prefill vs f16 under load (recipe posted to #1506).
+- **Harness bug caught (#8 family):** llm.py's `| N tokens` regex never matched
+  llama v0.3.0 (pipe summary removed upstream) — every llm.py ntok since #1493
+  was the words×2 estimate, making `hit_cap` coarse. step10_eval2 parses the
+  exact slash form (`eval time = X ms / N tokens`) and flags `est` rows; fix
+  posted to #1506 (shared llm.py left to its owner).
+
+Honest gaps for the polish pass: full MATH-500 scoring (budget), MIT's HF
+model comparison (blocked until our numbers ship — issue rule), and 8k horizon
+capture if the demo lane returns with more compute.
+

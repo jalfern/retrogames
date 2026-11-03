@@ -1,0 +1,32 @@
+{
+ "variant": "B",
+ "method": "embed rank-1 + o_proj rank-1 x 6 FA layers",
+ "layers": {
+  "3": {
+   "o_proj_norm_removed": 0.0123
+  },
+  "7": {
+   "o_proj_norm_removed": 0.0152
+  },
+  "11": {
+   "o_proj_norm_removed": 0.0175
+  },
+  "15": {
+   "o_proj_norm_removed": 0.0141
+  },
+  "19": {
+   "o_proj_norm_removed": 0.0221
+  },
+  "23": {
+   "o_proj_norm_removed": 0.0243
+  }
+ },
+ "embed": {
+  "op": "tied embed_tokens rank-1 row strip",
+  "norm_removed": 9.1112,
+  "rows": 248320
+ },
+ "weights_changed": 266862592,
+ "weights_total": 873438784,
+ "pct_changed": 30.5531
+}
