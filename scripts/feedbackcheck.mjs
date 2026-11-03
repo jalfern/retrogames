@@ -786,9 +786,14 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // silently re-init'ed and `score` was dead; rebuilt faithful: 30/20/20/10
 // row bands, mystery UFO, 3 lives + respawn, landing ends the run, faster
 // waves; sim.js extracted zero-entropy, seedRng pin at every human start)
-// → 44 reporting+pinning titles. Dropping below is a regression,
-// so pin it.
-ok('seedpin: rollout floor — at least 44 games report+pin seeds', reportingGames >= 44, `${reportingGames} reporting`)
+// → 44 reporting+pinning titles; batch 14 adds Rogue (turn-based ur-dungeon —
+// sim.js extracted with the mulberry32 stream position CARRIED IN STATE
+// (`randState`), so parallel worlds provably never interleave entropy; the
+// whole RNG surface — layout, dice, ciphers, monster ids — flows from one
+// integer, regenerated at every human start honoring ?seed=N; turn counter
+// lands in the report as `tick`) → 45 reporting+pinning titles. Dropping
+// below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 45 games report+pin seeds', reportingGames >= 45, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
