@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { attractFrame, DIM } from './attract.js'
 
 const PitfallGame = () => {
@@ -674,6 +675,7 @@ const PitfallGame = () => {
                 lives = 3
                 score = 2000
                 timeLeft = 20 * 60
+                gameTime = 0
                 collectedTreasures = new Set()
                 player.x = 50
                 player.y = GROUND_Y
@@ -1487,7 +1489,14 @@ const PitfallGame = () => {
         }
         init()
 
+        // #1473: production-safe feedback state, every build. The jungle is fixed
+        // by design — screen layout, screen cycle (fixed-seed LFSR) and treasure
+        // placement contain zero Math.random — so there is no per-run seed to
+        // report: this carries {tick,score,done,lives} for filed reports.
+        exposeFeedbackState(() => ({ tick: gameTime, score: score, done: gameOver, lives: lives }))
+
         return () => {
+            unexposeFeedbackState()
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)

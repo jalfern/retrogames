@@ -19,6 +19,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { buildArt, toCanvas, drawText, textWidth, rng } from './art'
 import { LEVELS, WALL_TEX } from './levels'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
 const RW = 320            // internal render width (Wolf3D)
 const RH = 200            // internal render height
@@ -121,7 +122,12 @@ const IronKeepGame = () => {
         let bob = 0, bobAmp = 0, flick = 0, clock = 0, msgT = 0, msg = ''
         let frameMs = 0, frameN = 0, frameMax = 0
         let frozen = false               // harness: stop the loop, drive update() by hand
-        let rand = rng(1337)
+        // #1473: every entropy source in this engine flows through rng(seed) — guard
+        // cooldowns, shot spread, crits, prop bob, flicker. Base 1337 keeps the old
+        // default world byte-identical; startPlay reseeds per run and honors ?seed=N.
+        let seed = 1337
+        let rand = rng(seed)
+        let runTick = 0
 
         const input = {
             fwd: 0, turn: 0, strafe: 0, fire: false, queued: false, use: false, run: false,
@@ -439,6 +445,7 @@ const IronKeepGame = () => {
                 bobAmp = 0
                 return
             }
+            runTick++
             if (mode === 'dying') {
                 dieT += dt
                 if (dieT > 1.4) {
@@ -1136,6 +1143,12 @@ const IronKeepGame = () => {
         const onKeyUp = (e) => applyKey(e.code, false)
 
         function startPlay() {
+            // #1473: reseed at every human start so ?seed=N replays the exact guard
+            // cadence (attract frames would otherwise consume rand() unevenly).
+            const q = seedFromQuery(window.location.search)
+            if (q != null) seed = q
+            rand = rng(seed)
+            runTick = 0
             mode = 'play'
             audioController.startMusic('keep')
             reqLock()
@@ -1225,7 +1238,7 @@ const IronKeepGame = () => {
                 fieldAt: (x, y) => field[y * W + x],
                 los: (x0, y0, x1, y1) => los(x0, y0, x1, y1),
                 solidAt: (x, y) => isSolid(x | 0, y | 0),
-                seed: (n) => { rand = rng(n) },
+                seed: (n) => { seed = n | 0; rand = rng(seed) },
                 art: () => ({
                     sprites: Object.keys(art.sprites).length,
                     textures: Object.keys(art.textures).length,
@@ -1262,7 +1275,17 @@ const IronKeepGame = () => {
         canvas.focus()
         raf = requestAnimationFrame(loop)
 
+        // #1473: production-safe feedback state, every build. IronKeep is seeded,
+        // not random: all gameplay entropy flows through rng(seed) (base 1337,
+        // reseeded at startPlay, ?seed=N honored), so a filed report replays the
+        // exact guard cadence, spread and crits.
+        exposeFeedbackState(() => ({
+            tick: runTick, score: score, done: mode === 'dead' || mode === 'win',
+            seed: seed, level: li,
+        }))
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

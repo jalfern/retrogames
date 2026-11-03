@@ -20,6 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, T, newCity, step, stateHash, litSet, moveCursor, tapInbox } from './sim.js'
 import { W, H, SCEN } from './scen.js'
 import { plan } from './planner.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 const TILE = 28
@@ -363,7 +364,14 @@ const SimCityMinGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. The city starts from
+        // a fixed scenario grid (scen.js tables, zero Math.random in the whole
+        // engine — even fires and tornadoes follow deterministic rules), so there
+        // is no per-run seed to report: {tick,score,done,year,pop} only.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, year: gs.year, pop: gs.pop }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__scTest) delete window.__scTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)

@@ -767,8 +767,33 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // six dungeons are fixed floors by design. Batch 6 adds 2 honest-seed sims
 // (GardenGuard — sim.js is "deterministic from a single integer seed"; RobotLab
 // — createRobotSim mulberry32, its Date.now rolls at human start now lose to
-// the pin) → 38. Dropping below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 38 games report+pin seeds', reportingGames >= 38, `${reportingGames} reporting`)
+// the pin) → 38. Batch 7 adds IronKeep: the keep's every entropy source (guard
+// cooldowns, shot spread, crits, prop bob, flicker) already flows through a fixed
+// seed rng(1337) in art.js — it starts honoring ?seed=N at startPlay now, so it
+// joins the reporting+pinning count → 39. Dropping below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 39 games report+pin seeds', reportingGames >= 39, `${reportingGames} reporting`)
+
+// #1473 seedless law: fixed-world titles — audited zero Math.random across every
+// file in the title's directory — carry {tick,score,done} so a filed report can
+// pinpoint the run even where there is no world to re-seed. BardsTale's static
+// dungeons proved the pattern (batch 5); batch 7 adds Pitfall (fixed screen cycle:
+// fixed-seed LFSR), SimCityMin (scenario tables — even fire/tornado follow fixed
+// rules), Excitebike (fixed track tables + scripted rivals) and LodeRunnerLite
+// (hand-authored vaults). Two laws per title: the report shape AND the audit
+// premise itself. If anyone later feeds these engines randomness without a seed,
+// both laws go RED — that is the point.
+const SEEDLESS7 = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite']
+for (const t of SEEDLESS7) {
+    const dir = new URL(`../src/games/${t}/`, import.meta.url)
+    const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
+    const all = files.map((f) => readFileSync(new URL(f, dir), 'utf8')).join('\n')
+    const code = all.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')
+    ok(`seedless: ${t} engine stays entropy-free (audit premise: no Math.random)`, !/Math\.random/.test(code))
+    ok(`seedless: ${t} reports {tick,score,done}`,
+        /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\btick:/.test(all)
+        && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bscore:/.test(all)
+        && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
+}
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper
