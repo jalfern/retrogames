@@ -12,6 +12,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { LEVELS, W, H, HEROES, HERO_ORDER, MONSTERS } from '../Gauntlet/levels.js'
 import { makeGame, step, stateHash, CFG, doorAt } from '../Gauntlet/sim.js'
 import { plan, decide } from '../Gauntlet/planner.js'
@@ -467,7 +468,11 @@ const FourHallsGame = () => {
         }
         const startPlay = (hk) => {
             const pOn = gs._pSel === 1
-            gs = makeGame(Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, levelCount: 4 })
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // four-halls layout (Gauntlet form: pin outranks the wall-clock roll; the
+            // sim derives its rng from seed % 97, so keep the same domain here).
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin % 97 : Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, levelCount: 4 })
             gs.partnerOn = pOn
             setMode('play')
             say(`${HEROES[hk].WHO} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · /, '')}`)
@@ -566,7 +571,10 @@ const FourHallsGame = () => {
 
         last = performance.now()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, hero: gs.heroKey, level: gs.level }))
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
