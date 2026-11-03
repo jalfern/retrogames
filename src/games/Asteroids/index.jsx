@@ -3,7 +3,15 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { SHIP_SIZE, BULLET_SPEED, ROTATION_SPEED, ACCELERATION, FRICTION, START_LIVES, RESPAWN_DELAY, INVULN_TICKS, scoreForSize, makeAsteroid, spawnWave, livesForScore } from './sim.js'
 
+// ASTEROIDS (#1473 batch 16) — the Feb port had no score, no lives and no
+// terminal: the ship could not die and the field never refilled. Restored to
+// the 1979 arcade law: 20/50/100 per rock size, 3 lives + one bonus life every
+// 10,000, respawn grace, wave regen, GAME OVER with restart from any key,
+// click or tap — and every die (shape, velocity, position) on one seeded
+// stream honoring ?seed=N.
 const AsteroidsGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
@@ -22,13 +30,6 @@ const AsteroidsGame = () => {
         const ctx = canvas.getContext('2d')
         let animationFrameId
 
-        // Game Constants
-        const SHIP_SIZE = 20
-        const BULLET_SPEED = 6
-        const ROTATION_SPEED = 0.08
-        const ACCELERATION = 0.1
-        const FRICTION = 0.99
-
         // State
         let state = {
             width: 0,
@@ -45,45 +46,48 @@ const AsteroidsGame = () => {
             isAttractMode: true
         }
 
-        // Input State
-        const keys = {
-            ArrowUp: false,
-            ArrowLeft: false,
-            ArrowRight: false,
-            Space: false
-        }
+        // #1473 run state: one seeded stream; arcade score/lives/wave; honest
+        // terminal at 0 lives (over). Respawn: dark for RESPAWN_DELAY ticks,
+        // then a blinking INVULN_TICKS grace.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
+        let score = 0
+        let lives = START_LIVES
+        let bonusLives = 0
+        let wave = 1
+        let over = false
+        let respawnAt = -1        // tick the ship returns from, -1 = alive
+        let invulnUntil = 0
 
-        const createAsteroid = (x, y, size) => {
-            const vertices = []
-            const numVertices = 8 + Math.random() * 4
-            for (let i = 0; i < numVertices; i++) {
-                const angle = (i / numVertices) * Math.PI * 2
-                const r = size * (0.8 + Math.random() * 0.4)
-                vertices.push({ x: Math.cos(angle) * r, y: Math.sin(angle) * r })
-            }
-            return {
-                x: x || Math.random() * state.width,
-                y: y || Math.random() * state.height,
-                vx: (Math.random() - 0.5) * 2,
-                vy: (Math.random() - 0.5) * 2,
-                size,
-                vertices
-            }
-        }
-
-        const initGame = () => {
+        const resetShip = () => {
             state.ship.x = state.width / 2
             state.ship.y = state.height / 2
             state.ship.vx = 0
             state.ship.vy = 0
             state.ship.angle = -Math.PI / 2 // Point up by default
+        }
 
-            state.asteroids = []
-            for (let i = 0; i < 6; i++) {
-                state.asteroids.push(createAsteroid(null, null, 40))
-            }
+        const initGame = () => {
+            resetShip()
+            respawnAt = -1
+            invulnUntil = 0
+            state.asteroids = spawnWave(rand, wave, state.width, state.height)
             state.bullets = []
             state.particles = []
+        }
+
+        // Fresh run: seed regenerated (?seed=N wins), whole board rebuilt.
+        const startRun = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            score = 0
+            lives = START_LIVES
+            bonusLives = 0
+            wave = 1
+            over = false
+            state.isAttractMode = false
+            initGame()
         }
 
         let initialized = false
@@ -108,6 +112,12 @@ const AsteroidsGame = () => {
         resize()
 
         // Input Handling
+        const keys = {
+            ArrowUp: false,
+            ArrowLeft: false,
+            ArrowRight: false,
+            Space: false
+        }
         const handleKeyDown = (e) => {
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 const newState = !pausedRef.current
@@ -117,31 +127,61 @@ const AsteroidsGame = () => {
             }
             if (pausedRef.current) return
 
-            if (keys.hasOwnProperty(e.code)) {
+            if (over || state.isAttractMode) { startRun(); return }
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 keys[e.code] = true
-                state.isAttractMode = false
             }
         }
         const handleKeyUp = (e) => {
-            if (keys.hasOwnProperty(e.code)) {
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 keys[e.code] = false
             }
         }
+        // Phones: any tap starts or restarts the run.
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (over || state.isAttractMode) startRun()
+        }
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
+        canvas.addEventListener('pointerdown', handleCanvasTap)
 
         const spawnParticles = (x, y, count = 5) => {
             for (let i = 0; i < count; i++) {
                 state.particles.push({
                     x, y,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
+                    vx: (rand() - 0.5) * 2,
+                    vy: (rand() - 0.5) * 2,
                     life: 1.0
                 })
             }
         }
 
+        const shipAlive = () => respawnAt < 0
+
+        const killShip = () => {
+            spawnParticles(state.ship.x, state.ship.y, 14)
+            audioController.playNoise(0.4, 0.4)
+            lives--
+            if (lives <= 0) {
+                lives = 0
+                over = true
+            } else {
+                respawnAt = tickN + RESPAWN_DELAY
+            }
+        }
+
         const update = () => {
+            tickN++
+            if (over) return
+
+            // Respawn handling: dark pause, then return at center with grace.
+            if (!shipAlive() && tickN >= respawnAt) {
+                resetShip()
+                respawnAt = -1
+                invulnUntil = tickN + INVULN_TICKS
+            }
+
             // --- AI Logic (Attract Mode) ---
             if (state.isAttractMode) {
                 // Find nearest asteroid
@@ -178,7 +218,7 @@ const AsteroidsGame = () => {
                                 life: 60
                             })
                             state.ship.cooldown = 15
-                            audioController.playTone(800 - Math.random() * 200, 0.05, 'sawtooth', 0.1)
+                            audioController.playTone(800 - rand() * 200, 0.05, 'sawtooth', 0.1)
                             // Recoil
                             state.ship.vx -= Math.cos(state.ship.angle) * 0.1
                             state.ship.vy -= Math.sin(state.ship.angle) * 0.1
@@ -193,22 +233,22 @@ const AsteroidsGame = () => {
                         state.ship.vy += Math.sin(state.ship.angle) * ACCELERATION * 0.5
                     }
                 } else {
-                    if (Math.random() < 0.01) initGame() // Respawn if empty
+                    if (rand() < 0.01) initGame() // Respawn field if empty
                 }
-            } else {
+            } else if (shipAlive()) {
                 // --- Manual Control ---
                 if (keys.ArrowLeft) state.ship.angle -= ROTATION_SPEED
                 if (keys.ArrowRight) state.ship.angle += ROTATION_SPEED
                 if (keys.ArrowUp) {
                     state.ship.vx += Math.cos(state.ship.angle) * ACCELERATION
                     state.ship.vy += Math.sin(state.ship.angle) * ACCELERATION
-                    // Thruster particles?
-                    if (Math.random() > 0.5) {
+                    // Thruster particles (on the run's stream)
+                    if (rand() > 0.5) {
                         state.particles.push({
                             x: state.ship.x - Math.cos(state.ship.angle) * SHIP_SIZE,
                             y: state.ship.y - Math.sin(state.ship.angle) * SHIP_SIZE,
-                            vx: -Math.cos(state.ship.angle) + (Math.random() - 0.5),
-                            vy: -Math.sin(state.ship.angle) + (Math.random() - 0.5),
+                            vx: -Math.cos(state.ship.angle) + (rand() - 0.5),
+                            vy: -Math.sin(state.ship.angle) + (rand() - 0.5),
                             life: 0.5
                         })
                     }
@@ -222,7 +262,7 @@ const AsteroidsGame = () => {
                         life: 60
                     })
                     state.ship.cooldown = 15
-                    audioController.playTone(800 - Math.random() * 200, 0.05, 'sawtooth', 0.1)
+                    audioController.playTone(800 - rand() * 200, 0.05, 'sawtooth', 0.1)
                     // Recoil
                     state.ship.vx -= Math.cos(state.ship.angle) * 0.1
                     state.ship.vy -= Math.sin(state.ship.angle) * 0.1
@@ -271,7 +311,8 @@ const AsteroidsGame = () => {
             })
             state.particles = state.particles.filter(p => p.life > 0)
 
-            // Collisions
+            // Collisions: bullets vs rocks — arcade table 20/50/100 by size,
+            // big rocks split into two mediums, mediums into two smalls.
             state.bullets.forEach(b => {
                 state.asteroids.forEach(a => {
                     const dx = b.x - a.x
@@ -281,11 +322,14 @@ const AsteroidsGame = () => {
                         // Hit
                         b.life = 0
                         a.hit = true
+                        score += scoreForSize(a.size)
+                        const earned = livesForScore(score)
+                        if (earned > bonusLives) { lives += earned - bonusLives; bonusLives = earned }
 
                         // Split?
                         if (a.size > 15) {
-                            state.asteroids.push(createAsteroid(a.x, a.y, a.size / 2))
-                            state.asteroids.push(createAsteroid(a.x, a.y, a.size / 2))
+                            state.asteroids.push(makeAsteroid(rand, a.x, a.y, a.size / 2, state.width, state.height))
+                            state.asteroids.push(makeAsteroid(rand, a.x, a.y, a.size / 2, state.width, state.height))
                         }
 
                         // Particle FX
@@ -297,6 +341,25 @@ const AsteroidsGame = () => {
 
             // Clean up hit asteroids
             state.asteroids = state.asteroids.filter(a => !a.hit)
+
+            // Ship vs rocks (1979 law — the pre-batch ship could not die).
+            if (shipAlive() && tickN >= invulnUntil && !state.isAttractMode) {
+                for (const a of state.asteroids) {
+                    const dx = a.x - state.ship.x
+                    const dy = a.y - state.ship.y
+                    if (Math.sqrt(dx * dx + dy * dy) < a.size + SHIP_SIZE * 0.4) {
+                        killShip()
+                        break
+                    }
+                }
+            }
+
+            // Wave clear: the field empties → next wave (arcade refill).
+            if (!state.isAttractMode && !over && state.asteroids.length === 0) {
+                wave++
+                state.asteroids = spawnWave(rand, wave, state.width, state.height)
+                audioController.playSweep(300, 900, 0.5, 'sine')
+            }
         }
 
         const draw = () => {
@@ -307,17 +370,20 @@ const AsteroidsGame = () => {
             ctx.strokeStyle = '#ffffff'
             ctx.lineWidth = 1.5
 
-            // Draw Ship
-            ctx.save()
-            ctx.translate(state.ship.x, state.ship.y)
-            ctx.rotate(state.ship.angle)
-            ctx.beginPath()
-            ctx.moveTo(SHIP_SIZE, 0)
-            ctx.lineTo(-SHIP_SIZE / 2, SHIP_SIZE / 2)
-            ctx.lineTo(-SHIP_SIZE / 2, -SHIP_SIZE / 2)
-            ctx.closePath()
-            ctx.stroke()
-            ctx.restore()
+            // Draw Ship (hidden while dark; blinks through the respawn grace)
+            const invulnBlink = tickN < invulnUntil && Math.floor(tickN / 6) % 2 === 0
+            if (shipAlive() && !invulnBlink) {
+                ctx.save()
+                ctx.translate(state.ship.x, state.ship.y)
+                ctx.rotate(state.ship.angle)
+                ctx.beginPath()
+                ctx.moveTo(SHIP_SIZE, 0)
+                ctx.lineTo(-SHIP_SIZE / 2, SHIP_SIZE / 2)
+                ctx.lineTo(-SHIP_SIZE / 2, -SHIP_SIZE / 2)
+                ctx.closePath()
+                ctx.stroke()
+                ctx.restore()
+            }
 
             // Draw Asteroids
             state.asteroids.forEach(a => {
@@ -346,6 +412,26 @@ const AsteroidsGame = () => {
                 ctx.globalAlpha = 1.0
             })
 
+            // HUD — score left, wave center, spare ships right (the arcade's
+            // row of bow-ships, drawn as small triangles).
+            if (!state.isAttractMode) {
+                ctx.fillStyle = '#ffffff'
+                ctx.font = '14px monospace'
+                ctx.textAlign = 'left'
+                ctx.fillText(`SCORE ${score}`, 10, 20)
+                ctx.textAlign = 'center'
+                ctx.fillText(`WAVE ${wave}`, state.width / 2, 20)
+                for (let i = 0; i < Math.max(0, lives - 1); i++) {
+                    const bx = state.width - 18 - i * 16
+                    ctx.beginPath()
+                    ctx.moveTo(bx, 10)
+                    ctx.lineTo(bx - 6, 20)
+                    ctx.lineTo(bx + 6, 20)
+                    ctx.closePath()
+                    ctx.stroke()
+                }
+            }
+
             // UI
             if (state.isAttractMode) {
                 ctx.fillStyle = '#ffffff'
@@ -353,6 +439,18 @@ const AsteroidsGame = () => {
                 ctx.textAlign = 'center'
                 ctx.fillText("PRESS ANY KEY TO START", state.width / 2, state.height - 50)
                 ctx.fillText("ATTRACT MODE", state.width / 2, 50)
+            }
+            if (over) {
+                ctx.fillStyle = '#ffffff'
+                ctx.textAlign = 'center'
+                ctx.font = '22px monospace'
+                ctx.fillText('GAME OVER', state.width / 2, state.height / 2 - 8)
+                ctx.font = '14px monospace'
+                ctx.fillText(`FINAL SCORE ${score}`, state.width / 2, state.height / 2 + 14)
+                if (Math.floor(tickN / 30) % 2 === 0) {
+                    ctx.font = '12px monospace'
+                    ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, state.height / 2 + 36)
+                }
             }
         }
 
@@ -375,11 +473,52 @@ const AsteroidsGame = () => {
         }
         animationFrameId = requestAnimationFrame(loop)
 
+        // QA contract (#377)
+        exposeGame({
+            id: 'asteroids',
+            buttons: ['left', 'right', 'up', 'a'],
+            reset: (s) => {
+                seed = s >>> 0
+                rand = seedRng(seed)
+                score = 0
+                lives = START_LIVES
+                bonusLives = 0
+                wave = 1
+                over = false
+                state.isAttractMode = false
+                keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.Space = false
+                if (state.width > 0) initGame()
+            },
+            tick: (pad) => {
+                if (over) { tickN += 1; return }
+                keys.ArrowLeft = !!pad.left
+                keys.ArrowRight = !!pad.right
+                keys.ArrowUp = !!pad.up
+                keys.Space = !!pad.a
+                update()
+            },
+            state: () => ({
+                tick: tickN, score, done: over, seed: seed, lives, wave,
+                shipX: Math.round(state.ship.x), shipY: Math.round(state.ship.y),
+                rocks: state.asteroids.length,
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: rand closure is not JSON-serializable (#391).
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score, done: over, seed: seed, lives, wave,
+        }))
+
         return () => {
-            window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
+            window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [])
 
