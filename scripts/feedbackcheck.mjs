@@ -781,9 +781,14 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // seedFromQuery() ?? 0 — score = moons visited) and IronRing (pure seeded
 // engine per the #531 netcode law; offline startFight used a Date.now LCG —
 // the pin wins when the caller passes no seed, explicit online seeds
-// untouched) → 43 reporting+pinning titles. Dropping below is a regression,
+// untouched) → 43 reporting+pinning titles; batch 13 adds Space Invaders
+// (the Feb-2026 port had NO terminal at all — hits/landings/wave-clears all
+// silently re-init'ed and `score` was dead; rebuilt faithful: 30/20/20/10
+// row bands, mystery UFO, 3 lives + respawn, landing ends the run, faster
+// waves; sim.js extracted zero-entropy, seedRng pin at every human start)
+// → 44 reporting+pinning titles. Dropping below is a regression,
 // so pin it.
-ok('seedpin: rollout floor — at least 43 games report+pin seeds', reportingGames >= 43, `${reportingGames} reporting`)
+ok('seedpin: rollout floor — at least 44 games report+pin seeds', reportingGames >= 44, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
