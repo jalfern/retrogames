@@ -31,6 +31,19 @@ const corpus = read("results/corpus_check.json", null);
 const capSweep = read("results/cap_sweep.json", {});
 const fairEdit = read("edited_fair/edit_report.json", null);
 const variantsFair = read("results/variants_fair.json", null);
+// The fair runner writes the surgical row under its variant tag (k256/k512);
+// the page language is base/edit/penalty — alias the chosen tag to `edit`.
+const EDITTAG = ["edit", "k256", "k512"].find(t =>
+  Object.keys(fair).some(k => k.startsWith(`${t}_`)) ||
+  (fairScores && fairScores.rows && Object.keys(fairScores.rows).some(k => k.startsWith(`${t}_`)))) || "edit";
+if (EDITTAG !== "edit") {
+  for (const set of ["math", "gsm"]) {
+    if (!fair[`edit_${set}`] && fair[`${EDITTAG}_${set}`]) fair[`edit_${set}`] = fair[`${EDITTAG}_${set}`];
+    if (fairScores?.rows && !fairScores.rows[`edit_${set}`] && fairScores.rows[`${EDITTAG}_${set}`]) {
+      fairScores.rows[`edit_${set}`] = fairScores.rows[`${EDITTAG}_${set}`];
+    }
+  }
+}
 const reports = {};
 for (const v of ["edited_a1k64", "edited_a1k256"]) {
   reports[v] = read(`${v}/edit_report.json`);
@@ -80,7 +93,7 @@ const fairTbl = (() => {
         cap: 100 * recs.filter(r => r.cap_hit).length / n,
         loop: 100 * recs.filter(r => r.loop).length / n,
       };
-      rows.push(`<tr><td>${run} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>${s.term.toFixed(1)}%</td><td>${s.cap.toFixed(1)}%</td><td>${s.loop.toFixed(1)}%</td></tr>`);
+      rows.push(`<tr><td>${run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>${s.term.toFixed(1)}%</td><td>${s.cap.toFixed(1)}%</td><td>${s.loop.toFixed(1)}%</td></tr>`);
     }
   }
   return rows.join("\n");
@@ -125,7 +138,7 @@ const batchRows = batches.map(b =>
 const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
 const pairHtml = pair ? `
 <div class="pair">
-  <div class="pane"><h3>BASE — ${pair.base.cap_hit ? `ran to the token cap (${pair.base.ntok} tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
+  <div class="pane"><h3>BASE — ${pair.base.cap_hit || pair.base.cap ? `ran to the token cap (${pair.base.ntok} tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
   <div class="pane"><h3>${pair.edit.gold !== undefined ? "EDITED" : "EDITED"} — terminated${pair.edit.ok ? `, correct answer: ${esc(pair.edit.gold)}` : ""} ✓ (${pair.edit.ntok} tok)</h3><pre>${esc(pair.edit.text)}…</pre></div>
 </div>` : `<p class="note">pair panel: awaiting fair scoring runs</p>`;
 
@@ -167,9 +180,9 @@ ${(() => {
     : (e && b && e.acc <= b.acc + 1)
       ? `At cap ${FAIRC}, where ${b.term.toFixed(0)}% of base answers finish, our weight edit changed accuracy ${b.acc.toFixed(1)}% → ${e.acc.toFixed(1)}% and termination ${b.term.toFixed(1)}% → ${e.term.toFixed(1)}%. <b>The honest negative stands — now provable, not provisional:</b> removing our localized loop direction does not fix the non-termination even when the horizon is fair. MIT's improvement must come from what their localization found at 32k horizons (repeat-onset contrast), not from what a sequence-mean direction at 4k horizons captures.`
       : `Mixed rows — see table; verdict prose pending full per-row review.`;
-  return `<div class="kpi">${rowline("base (pp0)", b)}${rowline("edit", e)}${rowline("penalty-only (pp1.5)", p)}</div><p>${verdictLine}</p>`;
+  return `<div class="kpi">${rowline("base (pp0)", b)}${rowline(`edit${EDITTAG !== "edit" ? ` (${EDITTAG})` : ""}`, e)}${rowline("penalty-only (pp1.5)", p)}</div><p>${verdictLine}</p>`;
 })()}
-<p class="note">Fair deviations: cap ${FAIRC}, not MIT's 32,768 (this box is CPU-only, ~150 tok/s); fixed 100 MATH-500 + 100 GSM8K-test (seed 20261103, identical rows before/after); grader = boxed-extraction + numeric match; d = per-layer loop-tail-vs-finished contrast over all 24 layers (repeat-onset positions approximated by the last 1024 tokens of capped generations).</p>` : `
+<p class="note">Fair deviations: cap ${FAIRC}, not MIT's 32,768 (this box is CPU-only, ~150 tok/s); fixed 100 MATH-500 + 100 GSM8K-test (seed 20261103, identical rows before/after); grader = boxed-extraction + numeric match; d = per-layer loop-tail-vs-finished contrast over all 24 layers (repeat-onset positions approximated by the last 1024 tokens of capped generations). Backend: the six scored rows ran on one <code>llama-server</code> with continuous batching (24 slots, ~4× the aggregate throughput of the 12-separate-process harness, which is RAM-bandwidth-bound) — same seed and sampling args on every row; a partially-scored CPU-harness row was archived and never mixed into these tables.</p>` : `
 <div class="banner">⚠ The verdict below was measured at cap 1024 — a horizon where 91–100% of base answers hit the cap. Per Jon's steer on #1493 it is <b>not a measurement of the fix</b>: answers there were cut off, not looping. The fair-horizon rescore (#1506, cap ${FAIRC}, fixed 100+100, base/edit/penalty rows) is ${fairTbl ? "partially complete" : "running"} — this page updates when its numbers land.</div>
 <h2>VERDICT (first pass, cap 1024 — SUPERSEDED)</h2>
 <p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not the tight attractor MIT traced over 32k-token horizons.</p>
