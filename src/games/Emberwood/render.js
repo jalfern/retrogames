@@ -12,6 +12,7 @@
 
 import * as THREE from 'three'
 import { SCREENS, TS, SW, SH, tileAt } from './world.js'
+import { up2 } from './art.js'
 
 const WALL_H = 12
 const FX = (x) => SW * TS - x
@@ -78,7 +79,9 @@ export function paintNpc(n) {
         g.fillStyle = L.face; g.fillRect(4, 1, 6, 5)
         g.fillStyle = (n.kind === 'shop' ? L.cap : L.hair); g.fillRect(3, 0, 8, 2)
     }
-    return cnv
+    // #1511 the townsfolk ride the same 2x pass as the floor, or they read
+    // chunkier than the vale around them on the first screen.
+    return up2(cnv)
 }
 
 // #829 crisp: full quality renders at device resolution (css px x dpr, capped)
@@ -568,7 +571,8 @@ void main(){
         g.fillStyle = '#6e6a7e'; g.fillRect(1, 1, 12, 12)
         g.fillStyle = '#84809a'; g.fillRect(2, 2, 10, 4)
         g.strokeStyle = '#3f3c4c'; g.strokeRect(1.5, 1.5, 11, 11)
-        b.mat.map = makeTex(cnv); b.mat.needsUpdate = true
+        // #1511 the push-block rides the 2x pass too (attract pushes it live).
+        b.mat.map = makeTex(up2(cnv)); b.mat.needsUpdate = true
         blockBBs.push(b)
     }
 

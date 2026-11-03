@@ -554,10 +554,14 @@ export default function Emberwood() {
     )
 }
 
+// #1511 first-minute goal clarity: a newcomer must leave the attract knowing
+// (1) the vale is explored screen by screen, (2) the goal — find the shrine —
+// and (3) the three verbs with their buttons: A sword, hold-A bow, B bomb.
+// The old lines were evocative but indirect; these teach, in the vale's voice.
 const LINES = [
-    'THE CINDER WYRM STIRS BENEATH THE SHRINE...',
-    'SWORD, BOW, BOMB — THE VALE REMEMBERS YOUR NAME',
-    'THE HUSK ONLY FALLS TO STEEL FROM BEHIND',
-    'BLAST THE CRACKED WALLS — OLD GIFTS WAIT INSIDE',
-    'FIRE AN ARROW INTO THE WYRM\u2019S OPENING MAW',
+    'WANDER THE VALE — EVERY SCREEN HIDES ITS GIFTS',
+    'FIND THE SHRINE — THE CINDER WYRM SLEEPS BENEATH',
+    'A — SLASH WITH YOUR SWORD',
+    'HOLD A — DRAW THE BOW, RELEASE TO LOOSE',
+    'B — BOMB THE CRACKED WALLS',
 ]
