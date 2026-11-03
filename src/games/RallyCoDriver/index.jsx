@@ -15,7 +15,7 @@ import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
-import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
+import { askVoiceConsent, acquireListenBadge, startLevelMeter } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { makeTransport } from '../../utils/linkPeers.js'
@@ -130,7 +130,7 @@ export default function RallyCoDriver() {
         // same keydown events, so phones and keys share one path)
         const keys = { up: false, down: false, left: false, right: false, a: false }
 
-        const voice = { on: false, listen: null, badge: null }
+        const voice = { on: false, listen: null, badge: null, vu: null }
         const pushVoice = () => setVoiceUi(voice.on ? { on: true, said: voice.said, ok: voice.ok, label: voice.label } : null)
 
         const startRace = () => {
@@ -170,6 +170,7 @@ export default function RallyCoDriver() {
             voice.on = false
             if (voice.listen) { voice.listen.stop(); voice.listen = null }
             if (voice.badge) { voice.badge(); voice.badge = null } // #1263 parity: the LISTEN dot leaves with the mic
+            if (voice.vu) { voice.vu.stop(); voice.vu = null } // #1448: the live meter leaves with the mic
             pushVoice()
         }
         const voiceOn = async () => {
@@ -182,6 +183,13 @@ export default function RallyCoDriver() {
             voice.on = true
             voice.label = 'LISTENING'
             voice.badge = acquireListenBadge() // #1263 parity: mic-live must be visible
+            // #1448: mid-race proof the mic hears you. speechListen exposes no
+            // stream of its own, so open one alongside recognition (Chrome
+            // shares the mic) and drive the shared #vc-vu bar. Level only —
+            // nothing is recorded here; the badge stays LISTEN, not REC.
+            // Gated on the engine: no recognizer = no notes = no reason to
+            // hold a second mic open.
+            if (speechSupported()) voice.vu = startLevelMeter()
             voice.listen = startSpeechListen({
                 onPhrase: (p) => {
                     if (screenRef.cur !== 'play') return
@@ -1257,6 +1265,10 @@ export default function RallyCoDriver() {
             },
             // #1263 parity: the shared mic badge's state ('rec'|'listen'|'off'|null)
             micBadge: () => (typeof document !== 'undefined' ? document.querySelector('[data-voice-mic]')?.getAttribute('data-state') ?? null : null),
+            // #1448: the live VU meter — whether the bar is on screen mid-race
+            // and the peak level (#1257 convention) the analyser has seen.
+            vuBar: () => (typeof document !== 'undefined' ? !!document.querySelector('#vc-vu') : false),
+            vuLevel: () => (typeof window !== 'undefined' ? window.__voiceVu ?? null : null),
             coCall: (call) => applyCallEvent(play.g, call, 'human'),
         }
 

@@ -25,7 +25,10 @@
 //                                UNMOUNTED — code that could not be played),
 //                                the relay socket closes on unmount, the guest's
 //                                touch pad carries the severity modifier, and
-//                                tap-arrows map to co notes
+//                                tap-arrows map to co notes, and the V-mode
+//                                live VU meter (#1448) is wired end to end —
+//                                open after consent, closed with the mic,
+//                                honesty: level only, no recorder
 //
 // The protocol's guarantee is about SIM TICKS, not wall time: the boxes may
 // sit a tick or two apart in real time (that is what ready()/stall is for),
@@ -450,6 +453,25 @@ console.log('shell audit:')
     ok('the go payload carries seed + weather', /lobby\.start\(\{ seed: selectedSeed\(\), wx: selectedWeather\(\) \}\)/.test(src))
     ok('the guest never drives the car (driver keys host-only)',
         /if \(!net\.active \|\| net\.role === 'host'\) \{/.test(src))
+    // #1448 VU wiring — the recorder-backed level meter (voiceCapture #1257)
+    // must ride Rally's V mode: speechListen has no stream of its own, so the
+    // shell opens one alongside recognition AFTER consent and closes it with
+    // the mic. Unwired = the owed gap silently returns (natural mutant).
+    ok('the shell imports the live meter from voiceCapture',
+        /import \{[^}]*startLevelMeter[^}]*\} from '\.\.\/\.\.\/utils\/voiceCapture'/.test(src))
+    ok('V-mode opens the meter after consent + badge',
+        /voice\.vu = startLevelMeter\(\)/.test(src))
+    ok('voice-stop closes the meter (no orphan mic)',
+        /if \(voice\.vu\) \{ voice\.vu\.stop\(\); voice\.vu = null \}/.test(src))
+    ok('the harness can see the meter (vuBar/vuLevel hooks)',
+        /vuBar: \(\) =>/.test(src) && /vuLevel: \(\) =>/.test(src))
+    const vc = readFileSync(new URL('../src/utils/voiceCapture.js', import.meta.url), 'utf8')
+    const sm = vc.slice(vc.indexOf('export function startLevelMeter'), vc.indexOf('export function askVoiceConsent'))
+    ok('voiceCapture exports startLevelMeter', sm.length > 100)
+    ok('the level meter records NOTHING (no MediaRecorder, no REC badge)',
+        !/MediaRecorder|liveSessions/.test(sm))
+    ok('one shared bar markup (ensureVuBar, not a second #vc-vu)',
+        /function ensureVuBar\(\)/.test(vc) && (vc.match(/bar\.id = 'vc-vu'/g) || []).length === 1)
 }
 
 Date.now = realNow
