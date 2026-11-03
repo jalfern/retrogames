@@ -164,7 +164,9 @@ export function generateDungeon(dungeonLevel) {
     rooms.push({ x, y, w, h })
   }
 
-  // Connect rooms with L-shaped corridors
+  // Connect rooms with L-shaped corridors (segment list kept for door
+  // placement below — doors are a pure function of the dug layout)
+  const segments = []
   for (let i = 0; i < rooms.length - 1; i++) {
     const a = rooms[i], b = rooms[i + 1]
     const ax = rng(a.x + 1, a.x + a.w - 2)
@@ -172,10 +174,14 @@ export function generateDungeon(dungeonLevel) {
     const bx = rng(b.x + 1, b.x + b.w - 2)
     const by = rng(b.y + 1, b.y + b.h - 2)
     if (rng(0, 1) === 0) {
+      segments.push({ x1: ax, x2: bx, y: ay })
       digH(map, ax, bx, ay)
+      segments.push({ y1: ay, y2: by, x: bx })
       digV(map, ay, by, bx)
     } else {
+      segments.push({ y1: ay, y2: by, x: ax })
       digV(map, ay, by, ax)
+      segments.push({ x1: ax, x2: bx, y: by })
       digH(map, ax, bx, by)
     }
   }
@@ -185,6 +191,33 @@ export function generateDungeon(dungeonLevel) {
   const stairsX = rng(lastRoom.x + 1, lastRoom.x + lastRoom.w - 2)
   const stairsY = rng(lastRoom.y + 1, lastRoom.y + lastRoom.h - 2)
   map[stairsY][stairsX] = '%'
+
+  // Doors (#1502): one per corridor segment, at the segment midpoint, only on
+  // stone ('#') — the doorway cells where a corridor crosses a room wall, plus
+  // mid-corridor stone in the gaps. A pure function of the dug layout (no new
+  // rolls), so the entropy stream and every existing seed's layout are
+  // untouched — doors simply appear on the same dungeon. In the 1980 original
+  // a closed door blocks and is opened by bumping; here corridors are walkable
+  // stone, so a door cell is the only obstacle on them.
+  const doors = []
+  const placeDoor = (x, y) => {
+    if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return
+    if (map[y][x] !== '#') return
+    if (doors.some(d => d.x === x && d.y === y)) return
+    map[y][x] = '+'
+    doors.push({ x, y })
+  }
+  for (const seg of segments) {
+    if ('x1' in seg) {
+      const len = Math.abs(seg.x2 - seg.x1)
+      if (len < 2) continue
+      placeDoor(seg.x1 + Math.floor((seg.x2 - seg.x1) / 2), seg.y)
+    } else {
+      const len = Math.abs(seg.y2 - seg.y1)
+      if (len < 2) continue
+      placeDoor(seg.x, seg.y1 + Math.floor((seg.y2 - seg.y1) / 2))
+    }
+  }
 
   // Items
   const items = []
