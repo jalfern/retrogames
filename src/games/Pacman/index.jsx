@@ -4,8 +4,10 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost } from './move'
 import { attractFrame, DIM } from './attract.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
 // Touch devices have no arrow keys — the attract prompt must say TAP, not keys (#420).
 const TOUCH = typeof window !== 'undefined' &&
@@ -49,71 +51,13 @@ const PacmanGame = () => {
         let gameOver = false
         let lives = 3
 
-        // --- AI UTILS ---
-        const getValidMoves = (x, y) => {
-            const moves = []
-            if (y === 14) {
-                if (x <= 1) { moves.push({ x: -1, y: 0 }); moves.push({ x: 1, y: 0 }); }
-                else if (x >= COLS - 2) { moves.push({ x: 1, y: 0 }); moves.push({ x: -1, y: 0 }); }
-            }
-            if (x < COLS - 1 && map[y][x + 1] !== 1) moves.push({ x: 1, y: 0 })
-            if (x > 0 && map[y][x - 1] !== 1) moves.push({ x: -1, y: 0 })
-            if (y < ROWS - 1 && map[y + 1][x] !== 1 && map[y + 1][x] !== 4) moves.push({ x: 0, y: 1 })
-            if (y > 0 && map[y - 1][x] !== 1) moves.push({ x: 0, y: -1 })
-            return moves
-        }
-
-        const bfs = (startX, startY, targetType, targetPos = null) => {
-            let queue = [{ x: startX, y: startY, path: [] }]
-            let visited = new Set(`${startX},${startY}`)
-            let iterations = 0;
-            const MAX_ITER = 600;
-
-            while (queue.length > 0 && iterations++ < MAX_ITER) {
-                let curr = queue.shift()
-                if (targetType === 'dot' && map[curr.y][curr.x] === 2) return curr.path[0]
-                if (targetType === 'power' && map[curr.y][curr.x] === 3) return curr.path[0]
-                if (targetType === 'pacman' && curr.x === Math.round(pacman.x) && curr.y === Math.round(pacman.y)) return curr.path[0]
-                if (targetType === 'home' && curr.x === 13 && curr.y === 14) return curr.path[0]
-                if (targetType === 'pos' && curr.x === targetPos.x && curr.y === targetPos.y) return curr.path[0]
-
-                const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
-                for (let d of dirs) {
-                    let nx = curr.x + d.x, ny = curr.y + d.y
-                    if (ny === 14 && (nx < 0 || nx >= COLS)) continue;
-                    if (ny >= 0 && ny < ROWS && nx >= 0 && nx < COLS && map[ny][nx] !== 1 && !visited.has(`${nx},${ny}`)) {
-                        visited.add(`${nx},${ny}`)
-                        queue.push({ x: nx, y: ny, path: [...curr.path, d] })
-                    }
-                }
-            }
-            return null
-        }
-
-        const getNearestGhostDist = (x, y) => {
-            let minDist = Infinity
-            ghosts.forEach(g => {
-                const dist = Math.sqrt(Math.pow(g.x - x, 2) + Math.pow(g.y - y, 2))
-                if (dist < minDist) minDist = dist
-            })
-            return minDist
-        }
-
-        const getSafeMove = (x, y) => {
-            const moves = getValidMoves(x, y)
-            if (moves.length === 0) return { x: 0, y: 0 }
-            let bestMove = null
-            let maxScore = -Infinity
-            moves.forEach(m => {
-                const nx = x + m.x
-                const ny = y + m.y
-                const ghostDist = getNearestGhostDist(nx, ny)
-                const isReverse = (m.x === -pacman.dir.x && m.y === -pacman.dir.y)
-                const score = ghostDist - (isReverse ? 2 : 0)
-                if (score > maxScore) { maxScore = score; bestMove = m }
-            })
-            return bestMove
-        }
+        // ---------- world + seed (#1473 seed-param, batch 15) ----------
+        // Every gameplay die (ghost wander, inky coin flip, attract picks) draws
+        // from one seeded mulberry32 stream; the seed regenerates at every human
+        // start and ?seed=N replays the exact ghost script.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
 
         const resetPositions = () => {
             Object.assign(pacman, makePacman())
@@ -167,9 +111,10 @@ const PacmanGame = () => {
         resize()
 
         const update = () => {
+            tickN++
             if (pausedRef.current) return
             if (gameOver) {
-                if (Math.random() < 0.05) resetGame();
+                if (rand() < 0.05) resetGame();
                 return
             }
 
@@ -187,17 +132,17 @@ const PacmanGame = () => {
                 const mapY = Math.round(pacman.y)
                 let dangerGhost = ghosts.find(g => g.state === 'chase' && Math.sqrt(Math.pow(g.x - mapX, 2) + Math.pow(g.y - mapY, 2)) < 8)
                 if (dangerGhost) {
-                    pacman.nextDir = getSafeMove(mapX, mapY)
+                    pacman.nextDir = safeMove(map, pacman, ghosts, mapX, mapY)
                 } else {
-                    const nearbyPower = bfs(mapX, mapY, 'power')
+                    const nearbyPower = bfsDir(map, mapX, mapY, 'power')
                     if (nearbyPower && !pacman.poweredUp) {
                         pacman.nextDir = nearbyPower
                     } else {
-                        const nextDot = bfs(mapX, mapY, 'dot')
+                        const nextDot = bfsDir(map, mapX, mapY, 'dot')
                         if (nextDot) pacman.nextDir = nextDot
                         else {
-                            const moves = getValidMoves(mapX, mapY)
-                            if (moves.length > 0) pacman.nextDir = moves[Math.floor(Math.random() * moves.length)]
+                            const moves = validMoves(map, mapX, mapY)
+                            if (moves.length > 0) pacman.nextDir = moves[Math.floor(rand() * moves.length)]
                         }
                     }
                 }
@@ -217,134 +162,30 @@ const PacmanGame = () => {
             }
             const eaten = stepPlayer(gs, held)
             if (eaten === 'dot') {
-                audioController.playTone(300 + Math.random() * 200, 0.05, 'triangle', 0.1)
+                audioController.playTone(300 + rand() * 200, 0.05, 'triangle', 0.1)
             } else if (eaten === 'power') {
                 ghosts.forEach(g => { if (g.state === 'chase') g.state = 'scared' })
                 audioController.playSweep(600, 800, 0.5, 'sine', 0.1)
             }
 
-            // GHOST AI
+            // GHOST AI — pure per-ghost step from ./move (seeded stream; see
+            // move.js). Scoring, lives and the respawn stay here at the door.
             ghosts.forEach(g => {
-                // Pen countdown
-                if (g.state === 'pen') {
-                    g.penTimer--
-                    if (g.penTimer <= 0) {
-                        g.state = 'exiting'
-                    } else {
-                        // Bounce up and down inside pen
-                        if (g.progress === 0) {
-                            if (!g.penBounceDir) g.penBounceDir = -1
-                            const ny = Math.round(g.y) + g.penBounceDir
-                            if (ny < 13 || ny > 15 || map[ny][Math.round(g.x)] === 1) {
-                                g.penBounceDir *= -1
-                            }
-                            g.nextDir = { x: 0, y: g.penBounceDir }
-                        }
-                        g.progress += g.speed * 0.5
-                        if (g.progress >= 1) {
-                            g.y += g.nextDir.y
-                            g.y = Math.round(g.y)
-                            g.progress = 0
-                        }
-                        return
-                    }
-                }
-
-                // Exiting pen — path to just above the door
-                if (g.state === 'exiting') {
-                    if (g.progress === 0) {
-                        const gx = Math.round(g.x)
-                        const gy = Math.round(g.y)
-                        if (gy <= 11) {
-                            // Made it out
-                            g.state = 'chase'
-                        } else {
-                            // Path toward door exit: first align to col 13, then go up
-                            if (gx < 13) g.nextDir = { x: 1, y: 0 }
-                            else if (gx > 13) g.nextDir = { x: -1, y: 0 }
-                            else g.nextDir = { x: 0, y: -1 }
-                        }
-                    }
-                    if (g.state === 'exiting') {
-                        g.progress += g.speed
-                        if (g.progress >= 1) {
-                            g.x += g.nextDir.x
-                            g.y += g.nextDir.y
-                            g.x = Math.round(g.x)
-                            g.y = Math.round(g.y)
-                            g.progress = 0
-                        }
-                        return
-                    }
-                }
-
-                if (g.progress === 0) {
-                    let move = null
-                    if (g.state === 'dead') {
-                        move = bfs(Math.round(g.x), Math.round(g.y), 'home')
-                        if (!move) { g.state = 'pen'; g.penTimer = 120; }
-                    } else if (g.state === 'scared') {
-                        const moves = getValidMoves(Math.round(g.x), Math.round(g.y))
-                        move = moves[Math.floor(Math.random() * moves.length)]
-                    } else {
-                        if (g.type === 'blinky') {
-                            move = bfs(Math.round(g.x), Math.round(g.y), 'pacman')
-                        } else if (g.type === 'pinky') {
-                            const targetX = Math.round(pacman.x + pacman.dir.x * 4)
-                            const targetY = Math.round(pacman.y + pacman.dir.y * 4)
-                            const tx = Math.max(0, Math.min(COLS - 1, targetX))
-                            const ty = Math.max(0, Math.min(ROWS - 1, targetY))
-                            move = bfs(Math.round(g.x), Math.round(g.y), 'pos', { x: tx, y: ty })
-                            if (!move) move = bfs(Math.round(g.x), Math.round(g.y), 'pacman')
-                        } else {
-                            if (Math.random() > 0.5) {
-                                move = bfs(Math.round(g.x), Math.round(g.y), 'pacman')
-                            } else {
-                                const moves = getValidMoves(Math.round(g.x), Math.round(g.y))
-                                if (moves.length > 0) move = moves[Math.floor(Math.random() * moves.length)]
-                            }
-                        }
-                    }
-                    if (move) g.nextDir = move
-                    else {
-                        const moves = getValidMoves(Math.round(g.x), Math.round(g.y))
-                        if (moves.length > 0) g.nextDir = moves[Math.floor(Math.random() * moves.length)]
-                    }
-                }
-                if (g.nextDir) {
-                    let currentSpeed = g.speed
-                    if (g.state === 'scared') currentSpeed *= 0.6
-                    if (g.state === 'dead') currentSpeed *= 3.0
-                    g.progress += currentSpeed
-                    if (g.progress >= 1) {
-                        g.x += g.nextDir.x
-                        g.y += g.nextDir.y
-                        g.progress = 0
-                        g.x = Math.round(g.x)
-                        g.y = Math.round(g.y)
-                        if (g.x <= -1) g.x = COLS - 1
-                        if (g.x >= COLS) g.x = 0
-                    }
-                }
-                const dx = (g.x + (g.nextDir?.x || 0) * g.progress) - (pacman.x + pacman.dir.x * pacman.progress)
-                const dy = (g.y + (g.nextDir?.y || 0) * g.progress) - (pacman.y + pacman.dir.y * pacman.progress)
-                if (Math.sqrt(dx * dx + dy * dy) < 0.8) {
-                    if (g.state === 'scared') {
-                        g.state = 'dead'
+                stepGhost(g, { map, pacman }, rand, {
+                    eat: () => {
                         gs.score += 200
                         audioController.playTone(800, 0.1, 'square', 0.2)
-                    } else if (g.state === 'chase') {
+                    },
+                    hit: () => {
                         lives--
                         if (lives <= 0) {
                             gameOver = true
-                            gs.score = 0
                             lives = 3
                         }
                         audioController.playSweep(400, 100, 0.5, 'sawtooth', 0.2)
                         resetPositions()
-                        return
                     }
-                }
+                })
             })
         }
 
@@ -689,15 +530,16 @@ const PacmanGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode) {
-                isAttractMode = false
+            if (isAttractMode || gameOver) {
+                // every human start regenerates the seed (?seed=N wins) and
+                // clears the run — the attract demo never spends the seed (#1473)
+                seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+                rand = seedRng(seed)
                 resetLevel()
-            }
-            if (gameOver) {
-                resetLevel()
-                gameOver = false
                 gs.score = 0
                 lives = 3
+                gameOver = false
+                isAttractMode = false
             }
             // #420: desktop keys write THE one pad (the touch d-pad does the same);
             // update() reads currentPad('dpad') — one pad per tick, one source.
@@ -720,11 +562,32 @@ const PacmanGame = () => {
         window.addEventListener('resize', resize)
         animationFrameId = requestAnimationFrame(loop)
 
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score: gs.score, done: gameOver, seed: seed, lives: lives,
+        }))
+
+        mountDbg({
+            title: 'PAC-MAN',
+            getState: () => [
+                `score ${gs.score}  lives ${lives}  power ${pacman.poweredUp ? pacman.powerTimer : '-'}  over ${gameOver}`,
+                `pac ${pacman.x},${pacman.y} p${pacman.progress.toFixed(2)} dir ${pacman.dir.x},${pacman.dir.y}`,
+                `ghosts ${ghosts.map(g => `${g.type}:${g.x},${g.y}/${g.state}`).join(' ')}`,
+                `seed ${seed}  tick ${tickN}`,
+            ],
+            actions: [
+                { label: 'Reset positions', run: () => resetPositions() },
+                { label: 'Force game over', run: () => { gameOver = true } },
+            ],
+        })
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(animationFrameId)
+            unexposeFeedbackState()
+            unmountDbg()
         }
     }, [])
 

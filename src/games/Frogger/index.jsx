@@ -4,6 +4,9 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
+import { CELL, COLS, W, DIVE_CYCLE, makeLane } from './sim.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
 const FroggerGame = () => {
     const canvasRef = useRef(null)
@@ -23,9 +26,7 @@ const FroggerGame = () => {
         let animationFrameId
 
         // FIXED INTERNAL RESOLUTION: 13 columns of 20px, 12 play rows + HUD strip
-        const CELL = 20
-        const COLS = 13
-        const W = COLS * CELL
+        // (CELL/COLS/W/DIVE_CYCLE and the seeded lane dice live in ./sim.js)
         const HUD_H = 26
         const ROWS = 12
         const H = HUD_H + ROWS * CELL
@@ -44,7 +45,6 @@ const FroggerGame = () => {
         const HOP_ANIM = 9
         const DIE_ANIM = 55
         const HOME_ANIM = 45
-        const DIVE_CYCLE = 4.5 * 60
         const DIVE_UP = 3.3 * 60
 
         canvas.width = W
@@ -58,25 +58,6 @@ const FroggerGame = () => {
         // LANES. Items live at continuous x; draw/hit-test through a modulo
         // of the lane's cycle length, so the traffic line never shows a hole.
         // ------------------------------------------------------------------
-        const makeLane = ({ dir, speed, kind, widths, gap, phase = 0, dive = false }) => {
-            const pattern = [...widths]
-            let list = []
-            let cycle = 0
-            let guard = 0
-            while (cycle < W + 4 * CELL && guard++ < 20) {
-                list = list.concat(pattern)
-                cycle = list.reduce((s, w) => s + (w + gap) * CELL, 0)
-            }
-            const maxW = Math.max(...list)
-            const items = []
-            let x = phase * CELL
-            for (const w of list) {
-                items.push({ x, w })
-                x += (w + gap) * CELL
-            }
-            return { dir, speed, kind, items, cycle, maxW, dive, t: Math.floor(Math.random() * DIVE_CYCLE) }
-        }
-
         const RIVER_CFG = [
             { dir: 1, speed: 0.6, kind: 'log', widths: [3], gap: 2.4 },
             { dir: -1, speed: 0.75, kind: 'turtle', widths: [2, 2], gap: 2.6, dive: true },
@@ -91,6 +72,14 @@ const FroggerGame = () => {
         }
 
         const HOUSE_COLS = [1, 4, 6, 8, 11]
+
+        // ---------- world + seed (#1473 seed-param, batch 15) ----------
+        // Lane dive offsets and the bonus fly house are the engine's only dice;
+        // both draw from one seeded stream regenerated at every human start,
+        // so ?seed=N replays the exact traffic.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
 
         let riverLanes = []
         let roadLanes = {}
@@ -162,11 +151,11 @@ const FroggerGame = () => {
         }
 
         const buildWorld = () => {
-            riverLanes = RIVER_CFG.map(makeLane)
+            riverLanes = RIVER_CFG.map(c => makeLane(c, rand))
             roadLanes = {}
-            for (const r of Object.keys(ROAD_CFG)) roadLanes[r] = makeLane(ROAD_CFG[r])
+            for (const r of Object.keys(ROAD_CFG)) roadLanes[r] = makeLane(ROAD_CFG[r], rand)
             houses = HOUSE_COLS.map(() => ({ filled: false, fly: false }))
-            const flyIdx = Math.floor(Math.random() * houses.length)
+            const flyIdx = Math.floor(rand() * houses.length)
             houses[flyIdx].fly = true
         }
 
@@ -292,17 +281,17 @@ const FroggerGame = () => {
 
             if (r === START_ROW || (r > ROAD_TOP && !roadLanes[r])) {
                 if (upClear(r - 1)) hop(0, -1)
-                else if (Math.random() < 0.25) hop(Math.random() < 0.5 ? -1 : 1, 0)
+                else if (rand() < 0.25) hop(rand() < 0.5 ? -1 : 1, 0)
             } else if (r >= ROAD_TOP) {
                 const lane = roadLanes[r]
                 const incoming = lane && spansOf(lane).some(s =>
                     lane.dir === 1 ? (s.x + s.w >= frog.x - 4 * CELL && s.x < frog.x) : (s.x <= frog.x + 4 * CELL && s.x + s.w > frog.x))
                 if (upClear(r - 1) && !incoming) hop(0, -1)
-                else if (Math.random() < 0.3) hop(Math.random() < 0.5 ? -1 : 1, 0)
+                else if (rand() < 0.3) hop(rand() < 0.5 ? -1 : 1, 0)
             } else if (r === MEDIAN_ROW) {
                 if (supportAt(RIVER_BOT, frog.x)) hop(0, -1)
-                else if (Math.random() < 0.3) {
-                    const d = Math.random() < 0.5 ? -1 : 1
+                else if (rand() < 0.3) {
+                    const d = rand() < 0.5 ? -1 : 1
                     if (supportAt(RIVER_BOT, frog.x + d * CELL)) hop(d, 0)
                 }
             } else {
@@ -312,7 +301,7 @@ const FroggerGame = () => {
                 if (fwd && !diving && supportAt(r, frog.x + CELL)) hop(1, -1)
                 else if (fwd && !diving && supportAt(r, frog.x)) hop(0, -1)
                 else if (diving) {
-                    const d = Math.random() < 0.5 ? -1 : 1
+                    const d = rand() < 0.5 ? -1 : 1
                     const s = spansOf(lane).some(sp => frog.x + d * CELL >= sp.x + 2 && frog.x + d * CELL <= sp.x + sp.w - 2)
                     if (s && frog.x + d * CELL > CELL && frog.x + d * CELL < W - CELL) hop(d, 0)
                 }
@@ -321,6 +310,7 @@ const FroggerGame = () => {
 
         // ------------------------------------------------------------------
         const update = () => {
+            tickN++
             if (frog.animT > 0) frog.animT--
             const m = speedMult()
             riverLanes.forEach(lane => {
@@ -600,6 +590,10 @@ const FroggerGame = () => {
         // ------------------------------------------------------------------
         const startGame = () => {
             isAttractMode = false
+            // every human start regenerates the seed (?seed=N wins) — the
+            // attract demo never spends the run's traffic (#1473)
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
             resetGame()
             audioController.playSweep(220, 440, 0.15, 'square', 0.1)
         }
@@ -691,11 +685,32 @@ const FroggerGame = () => {
         }
         init()
 
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score: score, done: gameOverFlag, seed: seed, lives: lives, level: level,
+        }))
+
+        mountDbg({
+            title: 'FROGGER',
+            getState: () => [
+                `score ${score}  level ${level}  lives ${lives}  time ${timeLeft}  over ${gameOverFlag}`,
+                `frog ${Math.round(frog.x)},${frog.row} state ${frog.state} riding ${frog.riding}`,
+                `houses ${houses.map(h => (h.filled ? 'F' : h.fly ? 'f' : '.')).join('')}  fly bonus live ${houses.some(h => h.fly)}`,
+                `seed ${seed}  tick ${tickN}`,
+            ],
+            actions: [
+                { label: 'Hop up', run: () => hop(0, -1) },
+                { label: 'Force game over', run: () => { lives = 1; die('time') } },
+            ],
+        })
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('resize', resize)
             canvas.removeEventListener('pointerdown', handlePointerDown)
             cancelAnimationFrame(animationFrameId)
+            unexposeFeedbackState()
+            unmountDbg()
         }
     }, [])
 

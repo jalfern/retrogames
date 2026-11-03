@@ -791,9 +791,18 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // (`randState`), so parallel worlds provably never interleave entropy; the
 // whole RNG surface — layout, dice, ciphers, monster ids — flows from one
 // integer, regenerated at every human start honoring ?seed=N; turn counter
-// lands in the report as `tick`) → 45 reporting+pinning titles. Dropping
-// below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 45 games report+pin seeds', reportingGames >= 45, `${reportingGames} reporting`)
+// lands in the report as `tick`) → 45 reporting+pinning titles; batch 15 adds
+// the three mechanical classic ports whose terminals already existed but whose
+// dice ran naked off Math.random — Pacman (the whole ghost brain — pen timers,
+// chase BFS, inky coin flip, scared wander — extracted to pure stepGhost in
+// move.js on one seeded stream, and the score now survives the GAME OVER
+// screen like the arcade), Frogger (sim.js: lane dive-phase offsets + the
+// bonus fly house seeded, so the traffic itself replays), and MissileCommand
+// (sim.js: every warhead's target, trail entry and start on the stream — and
+// the port had NO restart at all, so startRun now rebuilds the whole board
+// from any key, click or tap) → 48 reporting+pinning titles.
+// Dropping below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 48 games report+pin seeds', reportingGames >= 48, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can

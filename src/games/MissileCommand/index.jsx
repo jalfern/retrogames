@@ -4,6 +4,9 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
+import { chooseEnemySpawn } from './sim.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
 const MissileCommandGame = () => {
     const canvasRef = useRef(null)
@@ -35,6 +38,15 @@ const MissileCommandGame = () => {
         // GAME STATE
         let score = 0
         let wave = 1
+
+        // ---------- world + seed (#1473 seed-param, batch 15) ----------
+        // Every warhead's target and trail, the deco explosion colour and the
+        // attract pilot's trigger finger draw from ONE seeded stream; the seed
+        // regenerates at every human start and ?seed=N replays the exact raid.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
+
         let missilesLeftInWave = 10
         let spawning = true
         let spawnTimer = 0
@@ -72,7 +84,6 @@ const MissileCommandGame = () => {
         // MOUSE INPUT
         const handleMouseMove = (e) => {
             if (pausedRef.current) return
-            if (isAttractMode) isAttractMode = false
             const rect = canvas.getBoundingClientRect()
             const scaleX = SCREEN_WIDTH / rect.width
             const scaleY = SCREEN_HEIGHT / rect.height
@@ -80,13 +91,20 @@ const MissileCommandGame = () => {
             crosshair.y = (e.clientY - rect.top) * scaleY
         }
 
+        // phones: a tap on the board starts/restarts the raid (rule: any tap)
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (isAttractMode || gameOver) startRun()
+        }
+
         const handleClick = () => {
             if (pausedRef.current) return
             if (isAttractMode) {
-                isAttractMode = false
+                startRun()
                 return
             }
-            if (gameOver || gameState !== 'playing') return
+            if (gameOver) { startRun(); return }
+            if (gameState !== 'playing') return
 
             // Find nearest silo with ammo
             let bestSilo = null
@@ -126,7 +144,7 @@ const MissileCommandGame = () => {
                 x, y,
                 radius: 1,
                 growing: true,
-                color: Math.random() > 0.5 ? '#ffffff' : '#ff0000'
+                color: rand() > 0.5 ? '#ffffff' : '#ff0000'
             })
             audioController.playTone(100, 0.2, 'noise', 0.5) // Boom
         }
@@ -162,6 +180,26 @@ const MissileCommandGame = () => {
             }
         }
 
+        // fresh raid: new seed (?seed=N wins), whole board rebuilt — called on
+        // every human start, key, click or tap (#1473)
+        const startRun = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            cities.forEach(c => { c.alive = true })
+            silos.forEach(s => { s.alive = true; s.ammo = 10 })
+            playerMissiles = []
+            enemyMissiles = []
+            explosions = []
+            score = 0
+            wave = 1
+            gameOver = false
+            isAttractMode = false
+            crosshair.x = SCREEN_WIDTH / 2
+            crosshair.y = SCREEN_HEIGHT / 2
+            startWave()
+            audioController.playSweep(220, 440, 0.15, 'square', 0.1)
+        }
+
         const handleKeyDown = (e) => {
             if (e.key === '?' || (e.shiftKey && e.key === '/')) {
                 const newState = !pausedRef.current
@@ -169,12 +207,15 @@ const MissileCommandGame = () => {
                 setPaused(newState)
                 return
             }
-            if (keys.hasOwnProperty(e.code)) keys[e.code] = true
+            if (pausedRef.current) return
+            if (gameOver) { startRun(); return }
+            if (isAttractMode && (e.code === 'Space' || e.code === 'Enter')) { startRun(); return }
+            if (e.code in keys) keys[e.code] = true
             if (e.code === 'Space') handleClick() // Fire
         }
 
         const handleKeyUp = (e) => {
-            if (keys.hasOwnProperty(e.code)) keys[e.code] = false
+            if (e.code in keys) keys[e.code] = false
         }
 
         const init = () => {
@@ -187,6 +228,7 @@ const MissileCommandGame = () => {
             window.addEventListener('mousemove', handleMouseMove)
             window.addEventListener('mousedown', handleClick)
             window.addEventListener('resize', resize)
+            canvas.addEventListener('pointerdown', handleCanvasTap)
 
             // cleanup needs to remove keydown too, effectively done in return but logic structure is init-return separate here.
             // Actually `init` is called once. The return of useEffect is where cleanup is.
@@ -216,6 +258,7 @@ const MissileCommandGame = () => {
         }
 
         const update = () => {
+            tickN++
             if (gameState === 'gameOver') return
 
             // --- AI LOGIC (ATTRACT MODE) ---
@@ -244,7 +287,7 @@ const MissileCommandGame = () => {
                     crosshair.y += dy * 0.1
 
                     // Fire?
-                    if (Math.random() < 0.05 && Math.abs(dx) < 20 && Math.abs(dy) < 20) {
+                    if (rand() < 0.05 && Math.abs(dx) < 20 && Math.abs(dy) < 20) {
                         // AI Fire
                         let bestSilo = null
                         let maxAmmo = -1
@@ -290,13 +333,13 @@ const MissileCommandGame = () => {
                         // Pick Target
                         const targets = [...cities, ...silos].filter(t => t.alive)
                         if (targets.length > 0) {
-                            const target = targets[Math.floor(Math.random() * targets.length)]
+                            const pick = chooseEnemySpawn(rand, targets)
                             enemyMissiles.push({
-                                x: Math.random() * SCREEN_WIDTH,
+                                x: pick.x,
                                 y: 0,
-                                startX: Math.random() * SCREEN_WIDTH, startY: 0,
-                                targetX: target.x,
-                                targetY: target.y,
+                                startX: pick.startX, startY: 0,
+                                targetX: pick.target.x,
+                                targetY: pick.target.y,
                                 speed: MISSILE_SPEED_ENEMY_BASE + (wave * 0.1),
                                 color: '#ff0000',
                                 active: true
@@ -587,13 +630,34 @@ const MissileCommandGame = () => {
         }
         init()
 
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score: score, done: gameState === 'gameOver', seed: seed, wave: wave,
+        }))
+
+        mountDbg({
+            title: 'MISSILE COMMAND',
+            getState: () => [
+                `score ${score}  wave ${wave}  state ${gameState}`,
+                `cities ${cities.filter(c => c.alive).length}/6  ammo ${silos.map(s => (s.alive ? s.ammo : 'x')).join(',')}  warheads ${enemyMissiles.length}`,
+                `seed ${seed}  tick ${tickN}`,
+            ],
+            actions: [
+                { label: 'Fire at crosshair', run: () => handleClick() },
+                { label: 'Force game over', run: () => { cities.forEach(c => { c.alive = false }); checkGameOver() } },
+            ],
+        })
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('mousemove', handleMouseMove)
             window.removeEventListener('mousedown', handleClick)
             window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeFeedbackState()
+            unmountDbg()
         }
     }, [])
 
