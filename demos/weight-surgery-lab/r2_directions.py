@@ -152,21 +152,22 @@ def pass_r1(recs, smoke=False):
     C._remove_capture(model)   # reads CAPTURE_LAYERS — restore AFTER removing hooks
     C.CAPTURE_LAYERS = old_layers
 
-    D, ACT = [], []
+    D, ACT, GAP = [], [], []
     for L in FA_LAYERS:
         cl, cf = acc[L]["loop"], acc[L]["fin"]
         if not cl or not cf:
             raise RuntimeError(f"layer {L}: empty bucket (loop={len(cl)} fin={len(cf)})"
                              " — G1 label buckets too small (need finished runs)")
-        dl = np.concatenate(cl).mean(0) - np.concatenate(cf).mean(0)
-        dl = dl / (np.linalg.norm(dl) + 1e-12)
+        raw = np.concatenate(cl).mean(0) - np.concatenate(cf).mean(0)
+        GAP.append(float(np.linalg.norm(raw)))      # layer strength BEFORE normalizing
+        dl = raw / (np.linalg.norm(raw) + 1e-12)
         act = np.concatenate(acc[L]["absact"]).mean(0) if acc[L]["absact"] else np.zeros_like(dl)
         D.append(dl)
         ACT.append(act)
     d = np.stack(D)                       # [6, hidden] — per-layer unit write directions
     act = np.stack(ACT)                  # [6, hidden] — mean |MLP input| for col ranking
     out_path = f"{R.RESULTS}/r2_directions_smoke.npz" if smoke else OUT
-    np.savez(out_path, d=d, mean_abs_act=act,
+    np.savez(out_path, d=d, mean_abs_act=act, gap_norm=np.array(GAP),
              fa_layers=np.array(FA_LAYERS),
              loop_texts=len(loops), fin_texts=len(fins))
     if smoke:
