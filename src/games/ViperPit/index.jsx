@@ -17,7 +17,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games.js'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER, introQuotes, koQuotes, voiceNotes } from './fighters.js'
@@ -243,7 +243,16 @@ const ViperPitGame = () => {
             mode = m
             mySeat = net.active ? (net.role === 'host' ? 0 : 1) : 0
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
-            const sd = (seed === undefined ? seedCounter : seed) >>> 0
+            // #1473: offline fights honor ?seed=N so a filed report replays the
+            // same matchup (the engine is pure — seed drives every roll). Online
+            // matches keep the lobby seed — overriding a live seat would desync
+            // (the SSX rule, #1473 batch 1).
+            let sd0 = seed
+            if (sd0 === undefined && m !== 'online') {
+                const pin = seedFromQuery()
+                if (pin != null) sd0 = pin >>> 0
+            }
+            const sd = (sd0 === undefined ? seedCounter : sd0) >>> 0
             stage = STAGES[sd % STAGES.length]
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
@@ -1080,9 +1089,16 @@ const ViperPitGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build.
+        // Score is rounds won by P1; character select has no match yet.
+        exposeFeedbackState(() => gs
+            ? { tick: gs.tick, score: gs.fighters[0].wins, done: gs.winner != null, seed: gs.seed, round: gs.round }
+            : { tick: 0, score: 0, done: false, seed: 0 })
+
         return () => {
             alive = false
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             audioController.stopMusic()
             clearTimeout(retryTimer)
             window.removeEventListener('keydown', onKeyDown)
