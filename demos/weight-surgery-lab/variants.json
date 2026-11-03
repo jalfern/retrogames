@@ -1,0 +1,47 @@
+{
+ "base": {
+  "n": 8,
+  "phase": "practice",
+  "split": "gsm_train",
+  "batch": 12,
+  "cap": 1024,
+  "tps": 200.9,
+  "model": "base",
+  "terminated": 0,
+  "looped": 0,
+  "correct": 0,
+  "purpose": "variant eval base: terminate/loop/correct vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T07:56:17Z"
+ },
+ "a1k64": {
+  "n": 9,
+  "phase": "practice",
+  "split": "gsm_train",
+  "batch": 12,
+  "cap": 1024,
+  "tps": 194.8,
+  "model": "a1k64",
+  "terminated": 0,
+  "looped": 0,
+  "correct": 0,
+  "purpose": "variant eval a1k64: terminate/loop/correct vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T07:57:50Z"
+ },
+ "a1k256": {
+  "n": 10,
+  "phase": "practice",
+  "split": "gsm_train",
+  "batch": 12,
+  "cap": 1024,
+  "tps": 198.4,
+  "model": "a1k256",
+  "terminated": 0,
+  "looped": 0,
+  "correct": 0,
+  "purpose": "variant eval a1k256: terminate/loop/correct vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T07:59:23Z"
+ }
+}

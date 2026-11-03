@@ -16,18 +16,19 @@ def main():
     alpha = float(sys.argv[1]); topk = int(sys.argv[2]); outdir = sys.argv[3]
     z = np.load(os.path.join(LAB, "results/directions.npz"))
     d = z["d"].astype(np.float32)
-    mean_act = z["mean_abs_act"].astype(np.float32)
     src = os.path.join(BASE, "model.safetensors-00001-of-00001.safetensors")
     sd = load_file(src)
     total_changed = 0
-    report = {"alpha": alpha, "topk": topk, "layers": {}}
+    report = {"alpha": alpha, "topk": topk, "method":
+              "w_j -= alpha * d * (d.w_j) for top-K columns by |d.w_j|; layers 15,19 down_proj",
+              "layers": {}}
     import torch
     for L in (15, 19):
         key = f"model.language_model.layers.{L}.mlp.down_proj.weight"
         W = sd[key]
         Wf = W.float().numpy()                     # [1024, 3584]
         proj = d @ Wf                             # [3584] alignment of each column with d
-        score = np.abs(proj) * mean_act           # contribution of neuron j to direction d
+        score = np.abs(proj)                      # column alignment with loop direction
         cols = np.argsort(-score)[:topk]
         before = Wf[:, cols].copy()
         Wf[:, cols] -= alpha * np.outer(d, proj[cols])

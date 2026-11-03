@@ -29,8 +29,9 @@ def main():
         mx.eval(out)
         n_pass += 1
         for L in (15, 19):
-            c, a = stash[L][0]          # [1,S,1024], [1,S,3584]
-            cn = np.array(c[0]); an = np.abs(np.array(a[0]))
+            c, a = stash[L][0]          # [1,S,1024], [1,S,3584] bf16
+            cn = np.array(c[0].astype(mx.float32))
+            an = np.abs(np.array(a[0].astype(mx.float32)))
             s = len(prompt)
             body = cn[s:]              # contributions over the generation
             body_a = an[s:]
