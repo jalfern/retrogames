@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
-import { CELL, COLS, W, DIVE_CYCLE, makeLane } from './sim.js'
+import { CELL, COLS, W, DIVE_CYCLE, makeLane, deathStyle } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 
@@ -188,8 +188,13 @@ const FroggerGame = () => {
             frog.cause = cause
             frog.deadT = DIE_ANIM
             frog.riding = -1
-            audioController.playSweep(320, 60, 0.35, 'sawtooth', 0.15)
-            audioController.playNoise(0.25, 0.15)
+            if (cause === 'off') {
+                // off the board: a dry descending thud, no water splash (#1508)
+                audioController.playSweep(420, 90, 0.22, 'square', 0.14)
+            } else {
+                audioController.playSweep(320, 60, 0.35, 'sawtooth', 0.15)
+                audioController.playNoise(0.25, 0.15)
+            }
         }
 
         const nextLife = () => {
@@ -516,12 +521,22 @@ const FroggerGame = () => {
                 }
             } else if (frog.state === 'dying') {
                 const p = 1 - frog.deadT / DIE_ANIM
-                if (frog.cause === 'car') {
-                    ctx.fillStyle = '#5adb5a'
+                const st = deathStyle(frog.cause)
+                ctx.lineWidth = 2
+                if (st.kind === 'squash') {
+                    ctx.fillStyle = st.color
                     ctx.fillRect(frog.x - 12 * p - 2, frog.row === 0 ? 0 : rowMid(frog.row) - 3, 24 * p + 4, 6)
+                } else if (st.kind === 'splat') {
+                    // off-board: a warm X that bursts — distinct from the water ring (#1508)
+                    const yy = frog.row === 0 ? HUD_H + 6 : rowMid(frog.row)
+                    const s = 4 + 9 * p
+                    ctx.strokeStyle = st.color
+                    ctx.beginPath()
+                    ctx.moveTo(frog.x - s, yy - s); ctx.lineTo(frog.x + s, yy + s)
+                    ctx.moveTo(frog.x + s, yy - s); ctx.lineTo(frog.x - s, yy + s)
+                    ctx.stroke()
                 } else {
-                    ctx.strokeStyle = frog.cause === 'time' ? '#ffe14d' : 'rgba(160,210,255,0.9)'
-                    ctx.lineWidth = 2
+                    ctx.strokeStyle = st.color
                     ctx.beginPath()
                     ctx.arc(frog.x, rowMid(frog.row), 3 + 10 * p, 0, Math.PI * 2)
                     ctx.stroke()

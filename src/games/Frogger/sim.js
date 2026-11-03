@@ -9,6 +9,17 @@ export const COLS = 13
 export const W = COLS * CELL
 export const DIVE_CYCLE = 4.5 * 60
 
+// Death feedback, as pure data so froggercheck can gate it without a browser.
+// The arcade distinguishes its deaths: a car crush squashes, a splash/time-out
+// rings, and going OFF the board is its own mark — it must NOT reuse the water
+// ripple (the whole point of #1508's "distinct off-board splat").
+export function deathStyle(cause) {
+    if (cause === 'car') return { kind: 'squash', color: '#5adb5a' }
+    if (cause === 'time') return { kind: 'ripple', color: '#ffe14d' }
+    if (cause === 'off') return { kind: 'splat', color: '#ff7a5c' }
+    return { kind: 'ripple', color: 'rgba(160,210,255,0.9)' } // water / default
+}
+
 export function makeLane({ dir, speed, kind, widths, gap, phase = 0, dive = false }, rand) {
     const pattern = [...widths]
     let list = []

@@ -4,7 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { press, release, currentPad } from '../../utils/onePad'
-import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost } from './move'
+import { MAP, COLS, ROWS, CELL_SIZE, makePacman, stepPlayer, validMoves, bfsDir, safeMove, stepGhost, scaredSkin } from './move'
 import { attractFrame, DIM } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -364,7 +364,7 @@ const PacmanGame = () => {
             }
         }
 
-        const drawGhost = (ctx, x, y, color, state, dir) => {
+        const drawGhost = (ctx, x, y, color, state, dir, powerTimer) => {
             ctx.save()
             ctx.translate(x + CELL_SIZE / 2, y + CELL_SIZE / 2)
             if (state === 'dead') {
@@ -379,9 +379,10 @@ const PacmanGame = () => {
                 ctx.restore()
                 return
             }
+            const skin = state === 'scared' ? scaredSkin(powerTimer) : null
             if (state === 'scared') {
-                ctx.fillStyle = (Date.now() % 400 < 200) ? '#2121ff' : 'white'
-                ctx.strokeStyle = (ctx.fillStyle === '#2121ff') ? 'white' : '#ff0000'
+                ctx.fillStyle = skin === 'white' ? 'white' : '#2121ff'
+                ctx.strokeStyle = skin === 'white' ? '#ff0000' : 'white'
             } else {
                 ctx.fillStyle = color
                 ctx.strokeStyle = 'white'
@@ -394,7 +395,7 @@ const PacmanGame = () => {
             ctx.fill()
 
             if (state === 'scared') {
-                ctx.fillStyle = (ctx.fillStyle === 'white') ? 'black' : 'white'
+                ctx.fillStyle = skin === 'white' ? 'black' : 'white'
                 ctx.fillRect(-3, -2, 2, 2); ctx.fillRect(1, -2, 2, 2)
                 ctx.beginPath();
                 ctx.moveTo(-3, 2); ctx.lineTo(-1, 0); ctx.lineTo(1, 2); ctx.lineTo(3, 0);
@@ -465,7 +466,7 @@ const PacmanGame = () => {
             ghosts.forEach(g => {
                 const gx = (g.x + (g.nextDir?.x || 0) * g.progress) * CELL_SIZE
                 const gy = (g.y + (g.nextDir?.y || 0) * g.progress) * CELL_SIZE
-                drawGhost(ctx, gx, gy, g.color, g.state, g.nextDir || g.dir)
+                drawGhost(ctx, gx, gy, g.color, g.state, g.nextDir || g.dir, pacman.powerTimer)
             })
 
             if (gameOver) {

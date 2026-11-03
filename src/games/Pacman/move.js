@@ -23,6 +23,19 @@ export const TUNNEL_ROW = 14
 export const CORNER_PX = 4
 export const CORNER = CORNER_PX / CELL_SIZE
 
+// The power pellet is 600 ticks of scared ghosts. The arcade keeps them solid
+// blue for the bulk of that and only flashes white in the final seconds to warn
+// the power is expiring — a two-stage tell, not a constant strobe. Driven by the
+// world timer (powerTimer), never wall-clock, so a clock-driven harness sees both
+// stages at deterministic ticks (pacmancheck gates this). (#1508)
+export const POWER_TICKS = 600
+export const SCARED_FLASH_AT = 180
+export const SCARED_BLINK = 20
+export function scaredSkin(powerTimer) {
+    if (powerTimer > SCARED_FLASH_AT) return 'blue'
+    return Math.floor(powerTimer / SCARED_BLINK) % 2 === 0 ? 'blue' : 'white'
+}
+
 // 0: Path, 1: Wall Block, 2: Dot, 3: Power, 4: Ghost-house Door
 export const MAP = [
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
@@ -177,7 +190,7 @@ export function stepPlayer(gs, held) {
                         gs.map[my][mx] = 0
                         gs.score += 50
                         P.poweredUp = true
-                        P.powerTimer = 600
+                        P.powerTimer = POWER_TICKS
                         eaten = 'power'
                     }
                 }
