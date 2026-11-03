@@ -18,7 +18,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     TS, MW, MH, VIEW_W, VIEW_H, EMPTY, ROCK, CRACK, BULK, SPIKE,
     PLAYER, LAYERS, GROUND_GRACE, makeGame, planRun, step, footCell,
@@ -501,7 +501,14 @@ const MetroidGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. MetroidLite's world
+        // generation and sim contain zero Math.random (contractSeed names a seed the
+        // deterministic sim simply ignores) — seedless by truth, not by choice:
+        // {tick,score,done,deaths}.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, deaths: gs.deaths }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV && window.__metroidTest) delete window.__metroidTest
             if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)

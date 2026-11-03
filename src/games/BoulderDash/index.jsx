@@ -21,6 +21,7 @@ import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, planRun, planStep, step, playerMove, stateHash, CFG, W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE } from './sim.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const TS = 16
 const CW = W * TS
@@ -341,7 +342,14 @@ const DashGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. BoulderDash caves are
+        // hand-authored grids and the sim states it plainly ("There is no RNG") —
+        // zero Math.random in the whole title — so no per-run seed exists:
+        // {tick,score,done,gold}.
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.score : 0, done: !!gs && gs.end != null, gold: gs ? gs.have : 0 }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { delete window.__dashTest; unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

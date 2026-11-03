@@ -20,6 +20,7 @@ import { makeGame, step, stateHash, WAVES, LAVA_TOP, GROUND_Y, FIXED_DT } from '
 import { plan } from './planner.js'
 import { SFX } from './sounds.js'
 import { riderSprite, eggSprite, handSprite, stoneTile, text5, textWidth, paintSky, paintLava, lifeGlyph } from './art.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = FIXED_DT
 const W = 256, H = 224
@@ -435,7 +436,13 @@ const JoustGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Joust's sim (sim.js)
+        // is audited zero-Math.random/zero-Date — the same tick sequence in Node and
+        // the tab — so there is no per-run seed to report: {tick,score,done,wave}.
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.total : 0, done: !!gs && gs.end != null, wave: gs ? gs.wave : 0 }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__joustTest) delete window.__joustTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

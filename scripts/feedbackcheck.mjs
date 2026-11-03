@@ -784,9 +784,14 @@ ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGam
 // rules), Excitebike (fixed track tables + scripted rivals) and LodeRunnerLite
 // (hand-authored vaults). Two laws per title: the report shape AND the audit
 // premise itself. If anyone later feeds these engines randomness without a seed,
-// both laws go RED — that is the point.
-const SEEDLESS7 = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite']
-for (const t of SEEDLESS7) {
+// both laws go RED — that is the point. Batch 9 adds six sim-shell ports whose
+// sim.js headers already promised determinism — a comment-grep of the old audit
+// that flagged them "gameplay Math.random" was reading those very promises; the
+// code after comment-stripping is clean: Joust, MetroidLite, BoulderDash,
+// Paperboy, SpyHunter, MissileBattle.
+const SEEDLESS = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite',
+    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle']
+for (const t of SEEDLESS) {
     const dir = new URL(`../src/games/${t}/`, import.meta.url)
     const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
     const all = files.map((f) => readFileSync(new URL(f, dir), 'utf8')).join('\n')
@@ -797,6 +802,14 @@ for (const t of SEEDLESS7) {
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bscore:/.test(all)
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
 }
+let seedlessReporters = 0
+for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFileTypes: true })) {
+    if (!d.isDirectory()) continue
+    let src = ''
+    try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
+    if (/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)) seedlessReporters++
+}
+ok('seedless: at least 11 titles report without a seed (BardsTale + the fixed-world batches)', seedlessReporters >= 11, `${seedlessReporters} seedless reporters`)
 
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per
