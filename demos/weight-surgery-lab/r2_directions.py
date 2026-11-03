@@ -20,6 +20,7 @@ import time
 import numpy as np
 
 import common as C
+import llm
 import r2_common as R
 
 MIT_PRACTICE = os.path.expanduser("~/Dev/weight-lab/mit-exp8/exp8_math/practice")
@@ -73,7 +74,7 @@ def pass_g1(model="qwen35-base"):
     def work(ip):
         i, (set_name, q, _gold) = ip
         g = R.ask(model, q, cap=32768)
-        lm = C.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
+        lm = llm.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
         return {"i": i, "set": set_name, "ntok": g["ntok"], "finished": g["finished"],
                 "looped": lm["looped"], "text": (g["reasoning"] + "\n" + (g["text"] or ""))[-4096:], **lm}
 

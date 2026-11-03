@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import r2_common as R
 import common as C
+import llm  # loop_score_text lives in llm.py (round-1 split)
 
 PAR = int(os.environ.get("WS_R2_PARALLEL", "4"))
 
@@ -61,7 +62,7 @@ def run_row(tag, model, pp):
                 g = R.ask(model, prob, cap=32768, pp=pp)
                 pred = C.extract_boxed(g["text"] or "") or C.extract_boxed(g["reasoning"] or "")
                 ok, method = R.grade(gold, pred)
-                lm = C.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
+                lm = llm.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
                 return {"id": pid, "ok": ok, "method": method, "ntok": g["ntok"],
                         "finished": g["finished"], "pred": pred, **lm,
                         "t_wall": round(time.time() - t1, 1)}
