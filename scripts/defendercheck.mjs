@@ -16,7 +16,7 @@ import {
     createSim, wrapDelta, groundAt, makeTerrain, makeHumans, spawnWave,
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
-    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT,
+    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -275,6 +275,35 @@ console.log('component wiring: pin, report, contract, terminal UI')
     ok(/README\.md/.test('README.md') && readFileSync('src/games/Defender/README.md', 'utf8').includes('Honest gaps'), 'README carries engine notes + honest gaps')
 }
 
+// ---------------------------------------------------- feel pass (#1531) -------
+console.log('feel pass #1531: death pause, telegraph, thrust voice, radar flicker')
+{
+    ok(DEATH_FREEZE === 30, 'the death pause is ~0.5 s (30 ticks, like the cabinet)')
+
+    const s = newSim(53)
+    s.enemies = [{ x: s.player.x, y: s.player.y, vx: 0, vy: 0, type: 'mutant', state: 'hunt', carry: null }]
+    s.step({})
+    ok(s.freeze === DEATH_FREEZE && s.events.some((e) => e.t === 'die'), 'a death arms the freeze')
+    const snap = () => `${s.player.x}|${s.player.y}|${s.enemies[0].x}|${s.enemies[0].y}|${s.humans.map((h) => h.x.toFixed(3)).join(',')}|${s.particles.length}`
+    const before = snap()
+    const tickBefore = s.tick
+    for (let i = 0; i < 10; i++) s.step({ right: true, fire: true })
+    ok(snap() === before, 'the whole world holds still while the wreck is on screen', snap() === before ? '' : `${snap()} != ${before}`)
+    ok(s.tick === tickBefore + 10 && s.freeze === DEATH_FREEZE - 10, 'the freeze burns one tick per step', `tick+${s.tick - tickBefore} freeze=${s.freeze}`)
+    const px = s.player.x
+    for (let i = 0; i < DEATH_FREEZE + 5; i++) s.step({ right: true })
+    ok(s.freeze === 0 && s.player.x !== px, 'the world resumes when the pause expires')
+    ok(!s.over && s.lives === START_LIVES - 1, 'the pause costs nothing beyond the life itself')
+
+    const src = readFileSync('src/games/Defender/index.jsx', 'utf8')
+    ok(/thrustFacing !== 0[\s\S]{0,140}?playTone\(/.test(src), 'thrust has a voice: hum plays while accelerating (docs/ART.md rule 4)')
+    ok(/state === 'descend'[\s\S]{0,160}?playSweep\(/.test(src), 'a diving lander pulses a telegraph hum')
+    ok(/rgba\(120,220,255/.test(src) && /descend/.test(src), 'the tractor-beam telegraph is drawn over the dive')
+    ok(/500 \+ Math\.min\(500, sim\.wave \* 80\)/.test(src), 'the wave fanfare pitch ramps per wave')
+    ok(/drawHuman\(h, h\.state === 'walk'\)/.test(src), 'walking humans get the 2-frame shuffle')
+    ok(/% 24 > 3/.test(src) && /% 18 > 2/.test(src), 'radar dots flicker on the scanner')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutant')) {
     console.log('mutants (each MUST die)')
@@ -308,6 +337,18 @@ if (process.argv.includes('--mutant')) {
         ['gravity runs backwards (falling humans float up)', S,
             `h.vy += 0.05`,
             `h.vy -= 0.05`],
+        ['the death pause is deleted (#1531 feel regressed)', S,
+            `if (s.freeze > 0) { s.freeze -= 1; return s }`,
+            `if (false) { s.freeze -= 1; return s }`],
+        ['thrust goes silent again', I,
+            `audioController.playTone(50 + Math.abs(sim.player.vx) * 8, 0.1, 'sawtooth', 0.045)`,
+            `/* silent */`],
+        ['the abduction telegraph hum is muted', I,
+            `audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)`,
+            `/* muted */`],
+        ['the tractor beam is invisible', I,
+            `ctx.strokeStyle = (tickN >> 2) % 2 === 0 ? 'rgba(120,220,255,0.45)' : 'rgba(120,220,255,0.2)'`,
+            `ctx.strokeStyle = '#cccccc'`],
         ['terrain is friendly (pre-port invincibility)', S,
             `if (p.dark <= 0 && p.invuln <= 0 && ceil - p.y < 8) { die(); return s }`,
             `if (false) { die(); return s }`],

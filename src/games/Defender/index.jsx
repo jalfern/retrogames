@@ -88,7 +88,7 @@ const DefenderGame = () => {
                 else if (ev.t === 'killMutant') { audioController.playTone(90, 0.14, 'sawtooth', 0.22); audioController.playNoise(0.08, 0.12) }
                 else if (ev.t === 'catch') audioController.playSweep(300, 700, 0.12, 'triangle', 0.12)
                 else if (ev.t === 'deliver') { audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08) }
-                else if (ev.t === 'wave') { audioController.playSweep(200, 800, 0.25, 'square', 0.12) }
+                else if (ev.t === 'wave') audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.12) // pitch ramps per wave (#1531)
                 else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
                 else if (ev.t === 'over') audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
                 else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
@@ -154,21 +154,31 @@ const DefenderGame = () => {
             thrustFacing = input.left ? -1 : input.right ? 1 : 0
             sim.step(input)
             soundEvents()
+            // #1531 feel: thrust was silent — hum while the fighter accelerates,
+            // and pulse the abduction telegraph while any lander is diving.
+            if (!sim.over && sim.player.dark <= 0 && thrustFacing !== 0 && tickN % 5 === 0) {
+                audioController.playTone(50 + Math.abs(sim.player.vx) * 8, 0.1, 'sawtooth', 0.045)
+            }
+            if (!sim.over && tickN % 14 === 0 && sim.enemies.some((e) => e.state === 'descend')) {
+                audioController.playSweep(140, 70, 0.2, 'triangle', 0.06)
+            }
             if (sim.score > hiScore) {
                 hiScore = sim.score
                 try { localStorage.setItem(HI_KEY, String(hiScore)) } catch { /* private mode */ }
             }
         }
 
-        const drawHuman = (h) => {
+        const drawHuman = (h, anim) => {
             ctx.strokeStyle = '#ffd23f'
             ctx.lineWidth = 1
             ctx.beginPath()
             ctx.arc(h.x, h.y - 5, 2, 0, Math.PI * 2)
             ctx.moveTo(h.x, h.y - 3); ctx.lineTo(h.x, h.y + 2)
             ctx.moveTo(h.x - 3, h.y - 1); ctx.lineTo(h.x + 3, h.y - 1)
-            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x - 2, h.y + 5)
-            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x + 2, h.y + 5)
+            // 2-frame walk (original humanoid shuffles; frozen when carried).
+            const step = anim ? ((tickN >> 3) % 2 === 0 ? 1 : -1) : 0
+            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x - 2 + step, h.y + 5)
+            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x + 2 + step, h.y + 5)
             ctx.stroke()
         }
 
@@ -177,17 +187,32 @@ const DefenderGame = () => {
             ctx.lineWidth = 2
             ctx.save()
             ctx.translate(e.x, e.y)
+            // #1531: the machine's sprites pulsed — legs/wings flare every few frames.
+            const pulse = (tickN >> 3) % 2 === 0 ? 0 : 2
+            // Abduction telegraph: a flickering tractor beam down to the human
+            // being dive-targeted, so the chain reads before the grab (#1531).
+            if (e.type === 'lander' && e.state === 'descend' && e.target != null && sim.humans[e.target] && sim.humans[e.target].state === 'walk') {
+                const len = sim.humans[e.target].y - e.y
+                if (len > 12) {
+                    ctx.strokeStyle = (tickN >> 2) % 2 === 0 ? 'rgba(120,220,255,0.45)' : 'rgba(120,220,255,0.2)'
+                    ctx.beginPath()
+                    ctx.moveTo(-4, 10); ctx.lineTo(-8, len)
+                    ctx.moveTo(4, 10); ctx.lineTo(8, len)
+                    ctx.stroke()
+                    ctx.strokeStyle = '#cccccc'
+                }
+            }
             ctx.beginPath()
             if (e.type === 'mutant') {
                 // Diamond with wings — the mutated shell, meaner silhouette.
                 ctx.moveTo(0, -10); ctx.lineTo(12, 0); ctx.lineTo(0, 10); ctx.lineTo(-12, 0); ctx.closePath()
-                ctx.moveTo(-12, 0); ctx.lineTo(-18, -6)
-                ctx.moveTo(12, 0); ctx.lineTo(18, -6)
+                ctx.moveTo(-12, 0); ctx.lineTo(-18, -6 - pulse)
+                ctx.moveTo(12, 0); ctx.lineTo(18, -6 - pulse)
             } else {
                 // Lander shell with legs and the tractor bar beneath.
                 ctx.rect(-10, -10, 20, 20)
-                ctx.moveTo(-10, 10); ctx.lineTo(-10, 5); ctx.lineTo(10, 5); ctx.lineTo(10, 10)
-                ctx.moveTo(-5, 0); ctx.lineTo(5, 0)
+                ctx.moveTo(-10, 10); ctx.lineTo(-10, 5 + pulse); ctx.lineTo(10, 5 + pulse); ctx.lineTo(10, 10)
+                ctx.moveTo(-5 - pulse, 0); ctx.lineTo(5 + pulse, 0)
                 if (e.carry !== null) { ctx.moveTo(-6, 12); ctx.lineTo(6, 12) }
             }
             ctx.stroke()
@@ -242,7 +267,7 @@ const DefenderGame = () => {
             // Humans
             sim.humans.forEach((h) => {
                 if (h.state === 'dead') return
-                atSeam((off) => { if (h.x + off >= cameraX - 20 && h.x + off <= camR + 20) { ctx.save(); ctx.translate(off, 0); drawHuman(h); ctx.restore() } })
+                atSeam((off) => { if (h.x + off >= cameraX - 20 && h.x + off <= camR + 20) { ctx.save(); ctx.translate(off, 0); drawHuman(h, h.state === 'walk'); ctx.restore() } })
             })
 
             // Enemies
@@ -291,7 +316,7 @@ const DefenderGame = () => {
                 ctx.restore()
                 if (sim.carrying !== null) {
                     const h = sim.humans[sim.carrying]
-                    ctx.save(); ctx.translate(0, 0); drawHuman({ x: h.x, y: h.y }); ctx.restore()
+                    ctx.save(); ctx.translate(0, 0); drawHuman({ x: h.x, y: h.y }, false); ctx.restore()
                 }
             }
 
@@ -313,9 +338,9 @@ const DefenderGame = () => {
                 if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
             }
             ctx.stroke()
-            // radar dots
-            sim.humans.forEach((h) => { if (h.state !== 'dead') { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
-            sim.enemies.forEach((e) => { ctx.fillStyle = e.type === 'mutant' ? '#ff5555' : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) })
+            // radar dots flicker like the CRT scanner (#1531)
+            sim.humans.forEach((h, i) => { if (h.state !== 'dead' && (tickN + i * 7) % 24 > 3) { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
+            sim.enemies.forEach((e, i) => { if ((tickN + i * 5) % 18 > 2) { ctx.fillStyle = e.type === 'mutant' ? '#ff5555' : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) } })
             ctx.fillStyle = '#ffffff'
             ctx.fillRect(p.x * sc - 2, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, p.y * 0.05 + 3)), 4, 3)
             // camera window (may split across the seam)
