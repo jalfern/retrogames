@@ -1,62 +1,64 @@
-# STATE — session 105 (2026-11-03, slot a)
+# STATE — session 108 (2026-11-03, slot a)
 
-## Shipped this session (one merge on #1473 — reporters 12→18)
-**Batch 11 (`f78ced8`, PR #1489)** — the DECO-aware law + SIX seedless reporters:
-Galaga, IceClimber, Polarity, Dogfight, Zelda, SuperMarioClassic. Key finding:
-batch 10's "7/8/8/2 REAL gameplay sites" counted Math.random CALL SITES of pure
-decoration (starfield init, blast jitter, camera shake, twinkle, hammer spark);
-comment-stripped audit shows every sim.js/levels.js/waves.js is zero-entropy
-(fixed wave tables, scripted escorts/patrols). Seeding decoration = fake pin →
-seedless reports instead. Zelda joins the plain SEEDLESS loop (world.js tables,
-real dead/win terminals; restart is Object.assign keeping the global tick —
-verified). MarioClassic admitted via the deco law STATE predicted (coin sparkle
-phase + brick-debris scatter). feedbackcheck 205→217 (DECO law 2/title +
-Zelda×2 + floor 12→18). Mutants ×3 proven RED→GREEN (strip report →
-report+floor; sim.js entropy inject → premise; Mario gameplay-RNG inject →
-stray). Node tier: zeldacheck 29/0, icecheck 42/42, polarcheck 154/154,
-dogfightcheck 69/69. Rebased once mid-PR (Rally VU #1488 landed; clean ancestor).
+## Shipped this session (one merge on #1473 — pin 40→43, seedless 18→21)
+**Batch 12 (`20529ce`, PR #1491)** — six titles join the seedpin contract:
+PIN+REPORT ×3 whose seed machinery already existed: RallyCoDriver (STATE-noted
+3× — report `{tick,timeMs,done,seed,lap}`, offline pin, lobby authority online),
+Britannia (PREMISE UPGRADE: `fresh(seed)` is the whole world — human start was
+hardcoded seed 0), IronRing (pin beats the Date.now LCG only when caller passes
+no seed; online untouched). SEEDLESS ×3: MarioKart + PrinceOfPersia (rnd=0 whole
+dirs, plain fixed worlds) and MomentumRunner (PREMISE CORRECTION: `makeGame()`
+takes no seed, contractSeed inert → honest seedless report + joins DECO law;
+6 audited deco lines, sim.js/attract.js zero entropy). feedbackcheck 217→223;
+floors 40→43 + 18→21. Mutants ×2 RED→GREEN (pin ripped→honor law; report
+ripped→deco+floor). Node tier: rallycheck 169, britanniacheck, runnercheck 175,
+kartcheck, popcheck 366, ironringcheck part A 25/0. Live: entry `index-DsxTqety.js`,
+Vercel green for `20529ce`. Box Chrome still aborts (mach_port, #737) — part B
+and shot.mjs both unusable locally; static+Node tiers carry the proof load.
 
 ## Board (end of session)
-- main = `f78ced8`. #1473 stays `building` (multi-stage), lock = a's last checkpoint.
-  No open PRs, no halt, jonq: none open.
-- 40 report+pin titles (floor 40) + 18 seedless reporters. feedbackcheck 217.
+- main = `20529ce` (this session's STATE commits on top if pushed). #1473 stays
+  `building` (multi-stage): ~12 arcade titles remain, ALL pure-RNG classic ports
+  needing real work (no quick wins left among the easy 18).
+- Remaining backlog (audited rnd counts at `dd62c58`): Asteroids 14, SuperMario 11,
+  Defender 12, Frogger 9, Adventure 8, Pacman 7, Pong 6, RaccoonHeist 6,
+  MissileCommand 5, SpaceInvaders 2, Centipede 2, Rogue 3. Plus 7 js-dos/ifvms
+  shells (KingsQuest, Ultima1–5, Zork) — treat as out of scope (emulator owns
+  the world; no JS-side report semantics).
+- Rogue (rnd=3) is the natural batch 13 anchor: 3 Math.random lines = classic
+  seed-param port (DonkeyKong precedent: move gameplay RNG into seedRng(seed),
+  regenerate at every human start, seedparam laws like the DK block).
+- Open issues: #1473 (slot-a), #1490 (waiting-jon/question — AWAITING, deadline
+  11-05; do NOT re-ask), #1141 (stalled, Jon), #838 (lane:games — likely
+  completable, NOT adoptable), #795 (pulse), #737 (waiting-jon), #549 (parked).
 
-## Honest remaining #1473 scope
-- **NO-terminal classics need a win rule FIRST (design stage, not plumbing):**
-  Pong (scores forever), SpaceInvaders/Centipede (init-restart on death),
-  Pacman, Frogger, Defender, Asteroids, MissileCommand. Seeding/reporting them
-  now would fake `done`. (Pacman/Frogger have lives? re-verify terminals when
-  starting that stage — batch-7 note may overstate.)
-- PrinceOfPersia: no terminal state found. RallyCoDriver awaits #1448 stages.
-- MomentumRunner/IronRing decorative seeds stay out (seeds decor only).
-
-## Rule-4 honest count
-ONE game-code merge this session (six titles' index.jsx + law). Streak intact.
-
-## ENVIRONMENT (this Mac — unchanged from session 104 unless noted)
-- `source /tmp/forge/netenv` (gh-shim at /tmp/forge/bin/gh; real gh cannot reach
-  GitHub). git origin ops need `-c http.proxy=http://127.0.0.1:18229`.
-- Shim quirks: `gh issue view` UNSUPPORTED (use `gh api repos/.../issues/<n>/comments`);
-  paginate returns concatenated arrays (parse per-array, not one JSON).
-- static can sit IN_PROGRESS >10 min when CI is busy — run the rule-5 wait in
-  background with a 25 min budget (600 s foreground timed out this session).
-- Chrome dead (#737): browser tiers advisory. BSD sed no `,+Np`; STATE write+commit
-  +push as one verified op.
-- Dev server: slot a port 5173; worktree `~/Dev/retrogames-forge-seedpin-b11`
-  (node_modules symlinked — reusable).
+## Rule-4 count
+NOT tripped: batch 12 merged game-adjacent code this session (dry streak = 0;
+sessions 106/107 were dry on b but 108 shipped). PR variant: last 4 merged PRs
+(#1486–#1489 + #1491) all touch src/games/**.
 
 ## Notes for the next lane
-- Reuse worktree `~/Dev/retrogames-forge-seedpin-b11` (re-detach at origin/main
-  after merge); old b7–b10 worktrees on disk are all ⊆ main, safe to prune.
-- Next candidates on #1473: the no-terminal classics bucket is DESIGN work (win
-  rules); if starting it, one title per stage, README notes + rules proven in the
-  game's own check script. Alternatively MarioKart terminal verification was left
-  open (batch-9 note).
-- deco law patterns are strict per-title line regexes — when a title's decoration
-  legitimately changes, update DECO patterns AND re-prove the stray-line mutant.
+- Batch 13 candidates ranked: Rogue (seed-param, 3 sites) → SpaceInvaders (2:
+  shooter pick — may be DECO-unfit, it's gameplay → seed-param) → Centipede (2:
+  mushroom spawn = gameplay → seed-param) → Pong (6: serve/spin = gameplay →
+  seed-param) → then the big ones (Defender/Asteroids/Frogger/Pacman/MissileCommand/
+  Adventure/SuperMario/RaccoonHeist). Audit per title whether each Math.random line
+  is gameplay (→ seed-param port + seedparam law) or deco (→ DECO law).
+- Report-shape regex trap (#1473): the seedless counter and honor-law scan the
+  file TEXT — `seed:` inside DEV-only exposeGame state AFTER an
+  exposeFeedbackState call reads as a seed report. Put seedless reports AFTER the
+  DEV block (see MomentumRunner) or the title is forced into the pin law.
+- ENV: `source /tmp/forge/netenv` before gh (proxy + gh-shim: no `issue view`,
+  no `pulls?state=open` short path — use `repos/jalfern/retrogames/pulls`; quote
+  URLs in zsh). macOS: no `timeout`, `cat -A`; `cp a b c` treats last arg as dir.
+  `pgrep` broken — QA liveness = `ps aux | grep "QA MASTER"`.
+- Worktree node_modules: symlink the main checkout's (`ln -sfn`), lockfile identical;
+  ironringcheck part A then runs. ironringcheck part B + shot.mjs need Chrome (#737).
+- slot-a shipped; slot-b starvation question remains #1490 (answer/default will
+  decide whether b gets sub-issue slices).
 
 ## Open questions
-- none (no jonq filed; deco-vs-seed was an auditable technical call, not taste).
+- #1490 — slot-b feed on #1473 (split vs serialize). Link only; body on GitHub.
 
-## Why STATE.md ships committed
-Batch 11 merged this session — step 9 permits the STATE commit on main.
+Game merged this session ⇒ STATE.md committed to main (rule 9), parked via
+`statepark.mjs park a`.
