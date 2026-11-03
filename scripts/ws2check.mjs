@@ -39,7 +39,9 @@ const ok = (cond, name, detail = '') => {
 export function validateArtifacts({ batches, variants }) {
     const errs = []
     for (const [i, b] of batches.entries()) {
-        if (!b.purpose && b.phase !== "score") errs.push(`batch ${i}: missing purpose`)
+        // score/fair-score lines are mechanical readouts — the WHY lives on the
+        // decision line; the fair rescore (#1506) phase name must be exempt too
+        if (!b.purpose && b.phase !== "score" && b.phase !== "score-fair") errs.push(`batch ${i}: missing purpose`)
         if (b.n !== undefined && b.terminated !== undefined && b.looped !== undefined) {
             if (b.looped > b.n) errs.push(`batch ${i}: looped>n`)
             if (b.terminated + (b.hit_cap ?? 0) > b.n && b.hit_cap !== undefined)
