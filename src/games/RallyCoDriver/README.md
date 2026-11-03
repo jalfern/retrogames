@@ -119,8 +119,23 @@ different seed → different state.
   in the rain. The provable parts (`WEATHERS`, `CURATED`, `lapProgress`) live
   in the pure sim and rallycheck pins them, including the no-leak law and
   CPU fair play in both wet presets.
-- Lobby seats (online co-driver over the relay) — the sim already treats
-  the co seat as pads, lockstep-ready; file when Jon wants it.
+- Lobby seats (online co-driver over the relay) — shipped #1448 (stage 2 of 3):
+  `net.js` is the pure 2-seat lockstep (host = driver seat 0, guest = co-driver
+  seat 1, one seed from the `go`, pads sampled 10 ticks ahead, whole-sim hash
+  every 60). `scripts/rallylinkcheck.mjs` (43 gates, `npm run rallylinkcheck`,
+  CI `rally` scope) proves codec round-trip, snapshot resync (chunked ≤380
+  chars), jitter (stall-not-desync at a 128 ms leg), walkaway→CPU degrade and
+  rejoin — over the relay's real rules in-memory (relay/core.js, fake clock).
+  A static shell audit (tier 8) pins the wiring the protocol can't see: the
+  shared `<Lobby>` overlay mounted, socket closed on unmount, guest touch pad
+  carries the severity modifier (A/B = sev 2/3 over arrow taps), host tap/Space
+  kicks the room. Mutant: walkaway never demotes → 4 gates RED.
+  Join flow: `/retrogames/rally-co-driver?net=host` (code on screen, QR,
+  share link) / `?net=join&room=CODE`; guest plays seat 1 only (QWE/ASD/Z keys,
+  arrow taps on the pad, V voice) — the driver curates stage + weather.
+- #1427 honest gaps still open: the #1257 recorder-backed VU bar (speechListen
+  exposes no stream; a live level meter mid-race needs one wired alongside
+  recognition — still owed).
 - #1427 depth shipped: a checkpoint clock (one time-control mark per lap at
   the midpoint of the stage's longest straight — `controlS` is pure geometry,
   far from any corner, weather-stable; crossings stamp S-splits, echoed as a
@@ -152,7 +167,7 @@ different seed → different state.
   on stop/unmount; `__rallyTest.micBadge()` exposes the state. rallycheck
   152 → 169.
 - Honest gaps still on #1427: the #1257 VU bar proves level from a recorder
-  stream, and speechListen exposes no stream (recorder-backed VU belongs with
-  the lobby take); online through the lobby.
+  stream, and speechListen exposes no stream (recorder-backed VU still owed —
+  see the #1448 note above).
 - A `rallyplay` browser-drive gate could mirror sosplay if the lane needs
   a second surface.
