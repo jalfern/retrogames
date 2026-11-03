@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { attractFrame, DIM } from './attract.js'
 
 const DonkeyKongGame = () => {
@@ -156,6 +157,19 @@ const DonkeyKongGame = () => {
         let dkThrowTimer = 0
         let tickCount = 0
 
+        // #1473 seed-param: DonkeyKong's two randomness sites (barrel spacing and
+        // the original's "random chance to take a ladder") now draw from a seeded
+        // mulberry32 stream. The attract AI runs the SAME sim, so the seed is
+        // (re)generated at every human start; ?seed=N replays the exact run.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        const newRun = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            tickCount = 0
+        }
+        newRun()
+
         const resetPlayer = () => {
             player.x = 24
             player.y = 216
@@ -212,12 +226,13 @@ const DonkeyKongGame = () => {
 
             if (isAttractMode) {
                 isAttractMode = false
-                resetPlayer()
+                newRun()
             }
             if (gameOver) {
                 gameOver = false
                 score = 0
                 lives = 3
+                newRun()
                 resetPlayer()
             }
             if (keys.hasOwnProperty(e.code)) {
@@ -432,7 +447,7 @@ const DonkeyKongGame = () => {
             barrelTimer--
             if (barrelTimer <= 0) {
                 spawnBarrel()
-                barrelTimer = 150 + Math.floor(Math.random() * 100)
+                barrelTimer = 150 + Math.floor(rand() * 100)
             }
 
             for (let i = barrels.length - 1; i >= 0; i--) {
@@ -558,7 +573,7 @@ const DonkeyKongGame = () => {
                     // yTop is 8px below the upper platform, so barrel feet ~ yTop - 8
                     if (Math.abs(cx - l.x) < 6 && Math.abs((b.y + b.h) - (l.yTop - 8)) < 6) {
                         // Random chance to take ladder (like the original)
-                        if (Math.random() < 0.35) {
+                        if (rand() < 0.35) {
                             b.onLadder = true
                             b.x = l.x - b.w / 2
                             b.vx = 0
@@ -943,7 +958,14 @@ const DonkeyKongGame = () => {
         }
         animationFrameId = requestAnimationFrame(loop)
 
+        // #1473: production-safe feedback state, every build. DonkeyKong is a
+        // seed-param port now: barrel spacing + ladder chance draw from
+        // seedRng(seed), regenerated at every human start, ?seed=N honored —
+        // a filed report replays the exact barrel pattern.
+        exposeFeedbackState(() => ({ tick: tickCount, score: score, done: gameOver, seed: seed, lives: lives }))
+
         return () => {
+            unexposeFeedbackState()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
