@@ -74,6 +74,52 @@ export const MAP = [
 export const ROWS = MAP.length
 export const COLS = MAP[0].length
 
+// ---------------------------------------------------------------------------
+// FRUIT (#1517) — the arcade drops bonus fruit twice per stage: it appears the
+// moment Pac-Man eats the 70th and 170th pellet (of 240), sits just below the
+// ghost house for ~10 s (600 fixed ticks), is worth 100 on stage 1, blinks
+// near the end, then vanishes. The timer is WORLD ticks — never wall-clock —
+// so the harness sees the blink phase and the lifetime exactly (AGENTS rule:
+// waits/budgets are world seconds). Pure + Node-testable: pacmancheck gates
+// thresholds, lifetime, eating and the maze placement.
+// ---------------------------------------------------------------------------
+export const FRUIT_TICKS = 600            // ~10 s at the fixed 60 Hz timestep
+export const FRUIT_BLINK = 120          // blink for the last 2 s before expiry
+export const FRUIT_POINTS = 100         // cherries, stage 1
+export const FRUIT_AT = [70, 170]       // pellet counts that drop the fruit
+// tile just below the ghost house, on the open corridor under it (arcade spot,
+// mapped onto this maze; pacmancheck asserts it is open floor)
+export const FRUIT_POS = { x: 13, y: 17 }
+
+export function makeFruitTracker() {
+    return { pellets: 0, dropped: 0, fruit: null }
+}
+
+// One tick of the fruit state machine.
+// ate     : true when THIS tick consumed a pellet (dot or power)
+// pacPos  : Pac-Man's current tile { x, y } (rounded)
+// returns fruit points scored this tick (0 when nothing happens).
+export function stepFruit(tr, ate, pacPos, hooks = {}) {
+    if (ate) {
+        tr.pellets++
+        if (!tr.fruit && tr.dropped < FRUIT_AT.length && tr.pellets >= FRUIT_AT[tr.dropped]) {
+            tr.dropped++
+            tr.fruit = { x: FRUIT_POS.x, y: FRUIT_POS.y, timer: FRUIT_TICKS }
+            hooks.drop?.()
+            return 0 // the drop tick does not also age the fruit
+        }
+    }
+    if (!tr.fruit) return 0
+    tr.fruit.timer--
+    if (pacPos && Math.round(pacPos.x) === tr.fruit.x && Math.round(pacPos.y) === tr.fruit.y) {
+        tr.fruit = null
+        hooks.eat?.()
+        return FRUIT_POINTS
+    }
+    if (tr.fruit.timer <= 0) tr.fruit = null
+    return 0
+}
+
 export const cloneMap = () => MAP.map(row => [...row])
 
 // The spawn sits on the two-tile gap under the ghost house (the classic

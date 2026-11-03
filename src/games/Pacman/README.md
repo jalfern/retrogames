@@ -17,16 +17,22 @@ other axis; a 180 is instant; turns start up to 4px early).
   DebugKit (F1) shows the live seed and can reset positions / force game over.
 - Score fidelity: the score is no longer zeroed when the last life is lost —
   it stays on the GAME OVER screen like the arcade and clears only at restart.
+- **Fruit (#1517):** bonus cherries drop at the 70th and 170th pellet (once per
+  threshold), sit at `FRUIT_POS` below the ghost house for `FRUIT_TICKS` (600
+  world ticks — the blink phase reads the timer, never `Date.now()`), pay 100,
+  and blink for the last `FRUIT_BLINK` ticks. The fruit timer rides through
+  lives (only a new stage resets it), like the arcade. Dead ghosts now render
+  pupils facing their heading — the classic eyes-home direction cue.
 
 ## Verify
 ```
-npm run pacmancheck            # 48 checks: input rules, maze, attract, seed replay
-npm run pacmancheck -- --mutate  # 12 mutants, all must die
+npm run pacmancheck            # 72 checks: input rules, maze, attract, seed replay, fruit, eyes-home
+npm run pacmancheck -- --mutate  # 21 mutants, all must die
 npm run feedbackcheck          # pin law + rollout floor (48)
 ```
 
 ## Honest gaps
-- No fruit, no intermission, ghost speed stages per score are fixed at one
-  speed class; scared flash uses the power timer, not the arcade's 2-stage flash.
+- No intermission ("brief") screen; ghost speed per score stage is fixed at one
+  speed class. Fruit is cherries-only (stage-keyed fruit art/types are open).
 - Chrome on this dev box aborts (#737), so browser-tier drive is advisory;
   the Node gate carries the proof.

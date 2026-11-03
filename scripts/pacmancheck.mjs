@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS, makeFruitTracker, stepFruit, FRUIT_TICKS, FRUIT_AT, FRUIT_POS, FRUIT_BLINK } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -292,6 +292,82 @@ console.log('scared flash: two-stage tell on the world timer')
     ok(!/Date\.now\(\) % 400 < 200\) \? '#2121ff'/.test(src), 'the scared flash left the wall clock')
 }
 
+// ------------------------------------------------------- fruit (#1517) ----
+// The arcade drops bonus fruit twice a stage at the 70th and 170th pellet, it
+// sits below the ghost house for ~10 s of WORLD ticks, is worth 100, then goes.
+// stepFruit is the pure machine the component runs every tick.
+console.log('fruit: thresholds, lifetime, eating, placement (#1517)')
+{
+    ok(MAP[FRUIT_POS.y][FRUIT_POS.x] === 0, 'the fruit tile is open floor below the ghost house', `${FRUIT_POS.x},${FRUIT_POS.y}=${MAP[FRUIT_POS.y][FRUIT_POS.x]}`)
+    ok(tileOpen(MAP, FRUIT_POS.x, FRUIT_POS.y, V.left) || tileOpen(MAP, FRUIT_POS.x, FRUIT_POS.y, V.right),
+        'the fruit tile sits on a reachable corridor (opens left or right)')
+
+    // first drop exactly at the 70th pellet
+    const tr = makeFruitTracker()
+    let spawnAt = -1
+    for (let i = 1; i <= 75 && spawnAt < 0; i++) {
+        stepFruit(tr, true, { x: 1, y: 1 })
+        if (tr.fruit) spawnAt = i
+    }
+    ok(spawnAt === FRUIT_AT[0], `first fruit drops at pellet ${FRUIT_AT[0]}`, spawnAt === -1 ? 'never dropped' : `dropped at ${spawnAt}`)
+    ok(tr.fruit === null || (tr.fruit.x === FRUIT_POS.x && tr.fruit.y === FRUIT_POS.y), 'fruit lands on the mapped spot')
+
+    // lifetime: ~10 s of fixed ticks, then gone even if Pac-Man never arrives
+    let ticks = 0
+    while (tr.fruit && ticks < FRUIT_TICKS + 10) { stepFruit(tr, false, { x: 0, y: 0 }); ticks++ }
+    ok(tr.fruit === null, 'fruit vanishes at the end of its timer', `after ${ticks} ticks`)
+    ok(Math.abs(ticks - (FRUIT_TICKS - 1)) <= 1, 'the timer is FRUIT_TICKS of world ticks', `${ticks}`)
+
+    // second drop at 170; never a third. Pellets arrive every ~10 ticks here,
+    // so the first fruit lives out its timer long before the second threshold —
+    // as in a real stage (the fruit is gone for ages by the 170th pellet).
+    const tr2 = makeFruitTracker()
+    let drops = 0
+    for (let i = 1; i <= 3000; i++) {
+        stepFruit(tr2, i % 10 === 0, { x: 0, y: 0 })
+        if (tr2.fruit && tr2.fruit.timer === FRUIT_TICKS) drops++
+    }
+    ok(drops === FRUIT_AT.length && tr2.dropped === FRUIT_AT.length, 'drops exactly twice per stage', `${tr2.dropped}`)
+
+    // eating pays the arcade value (literal 100, pinned — not FRUIT_POINTS, or
+    // a mutant that zeroes it moves the goalposts) and clears it
+    const tr3 = makeFruitTracker()
+    for (let i = 1; i <= 70 && !tr3.fruit; i++) stepFruit(tr3, true, { x: 0, y: 0 })
+    let eatHook = false
+    const scored = stepFruit(tr3, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }, { eat: () => { eatHook = true } })
+    ok(scored === 100 && tr3.fruit === null && eatHook, 'eating the fruit pays 100, fires the hook and clears it', `got ${scored}`)
+    ok(stepFruit(tr3, false, { x: FRUIT_POS.x, y: FRUIT_POS.y }) === 0, 'a gone fruit scores nothing after')
+
+    // blink phase exists on the world timer (renderer reads timer, see src check below)
+    ok(FRUIT_BLINK < FRUIT_TICKS, 'the blink phase covers only the tail of the timer')
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/fruitTr\.fruit\.timer > FRUIT_BLINK \|\| Math\.floor\(fruitTr\.fruit\.timer \/ 10\) % 2 === 0/.test(src), 'the fruit blink reads the world timer, not Date.now()')
+    ok(/stepFruit\(fruitTr, eaten === 'dot' \|\| eaten === 'power'/.test(src), 'the live loop feeds the fruit the pellet events')
+}
+
+// ------------------------------------------------- dead-ghost eyes (#1517) ----
+console.log('dead ghosts: eyes race home and re-enter the pen (#1517)')
+{
+    const mk = (x, y) => ({ id: 1, x, y, color: '#ff0000', path: [], progress: 0, speed: 0.08, state: 'dead', type: 'blinky', penTimer: 0, nextDir: null })
+    const pac = { x: 1, y: 20, dir: { x: 1, y: 0 }, progress: 0 }
+    for (const [sx, sy] of [[1, 1], [26, 29], [13, 11], [1, 29]]) {
+        const g = mk(sx, sy)
+        const rand = seedRng(1517)
+        let t = 0
+        while (g.state === 'dead' && t < 400) { stepGhost(g, { map: cloneMap(), pacman: pac }, rand, {}); t++ }
+        ok(g.state !== 'dead', `eyes from ${sx},${sy} reach home within 400 ticks`, `state=${g.state} t=${t}`)
+    }
+    // and they travel FAST: 3x — from (1,1) home is ~25 tiles; at 1x that needs
+    // >300 ticks, so a timeout under 200 proves the speed boost is on
+    const g = mk(1, 1)
+    const rand = seedRng(1517)
+    let t = 0
+    while (g.state === 'dead' && t < 400) { stepGhost(g, { map: cloneMap(), pacman: pac }, rand, {}); t++ }
+    ok(t < 200, 'the dead ghost moves at the boosted 3x home speed', `${t} ticks`)
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/if \(state === 'dead'\) \{[\s\S]{0,400}?dir\?\.x[\s\S]{0,800}?return/.test(src), 'dead eyes look along their heading (direction cue in the renderer)')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -349,6 +425,26 @@ if (process.argv.includes('--mutate')) {
         ['scared flash back on the wall clock (#1508 regression)', 'src/games/Pacman/index.jsx',
             `                ctx.fillStyle = skin === 'white' ? 'white' : '#2121ff'`,
             `                ctx.fillStyle = (Date.now() % 400 < 200) ? '#2121ff' : 'white'`],
+        ['fruit drops on the first pellet instead of the 70th (#1517)', F,
+            `tr.dropped < FRUIT_AT.length && tr.pellets >= FRUIT_AT[tr.dropped]`,
+            `tr.dropped < FRUIT_AT.length`],
+        ['fruit never expires (hangs on the board)', F,
+            `    if (tr.fruit.timer <= 0) tr.fruit = null`,
+            `    if (false) tr.fruit = null`],
+        ['a third fruit drops', F,
+            `tr.dropped < FRUIT_AT.length && tr.pellets >= FRUIT_AT[tr.dropped]`,
+            `tr.pellets >= FRUIT_AT[Math.min(tr.dropped, FRUIT_AT.length - 1)]`],
+        ['fruit pays nothing', F,
+            `export const FRUIT_POINTS = 100`,
+            `export const FRUIT_POINTS = 0`],
+        ['dead ghosts crawl home (3x boost lost) (#1517)', F,
+            `        if (g.state === 'dead') currentSpeed *= 3.0`,
+            ``],
+        ['dead eyes stare blank (no heading cue) (#1517)', 'src/games/Pacman/index.jsx',
+            `                const ex = dir?.x * 1.2 || 0
+                const ey = dir?.y * 1.2 || 0`,
+            `                const ex = 0
+                const ey = 0`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
