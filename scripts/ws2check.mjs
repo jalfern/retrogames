@@ -42,6 +42,11 @@ export function validateArtifacts({ batches, variants }) {
         if (s.terminated > (s.batch ?? 12)) errs.push(`variant ${k}: terminated>n`)
         if (s.correct > (s.batch ?? 12)) errs.push(`variant ${k}: correct>n`)
         if (s.batch && s.rows && s.rows.length !== s.batch) errs.push(`variant ${k}: rows!=batch`)
+        // a row that "terminated" with zero parsed tokens and no est flag is the
+        // dead-regex signature (llama v0.3.0 pipe-form) — never trust it
+        if (s.rows) for (const [i, r] of s.rows.entries())
+            if (r.ntok === 0 && r.cap === false && r.est === false)
+                errs.push(`variant ${k}: row ${i} ntok=0 & est=false but not capped — token parse was broken for this row`)
     }
     return errs
 }
@@ -71,15 +76,22 @@ function build(labDir) {
 
 console.log('ws2check — WEIGHT SURGERY II harness (#1505)')
 
-// 1. boot from the committed lab copy (no results/) — honest fallbacks
+// 1. boot from the committed lab copy — v2 artifacts are committed, so the page
+//    must render real v2 rows; an EMPTY lab must still build with honest fallbacks
 {
     const { rc, html, err } = build(LAB)
     ok(rc === 0, 'build: committed lab exits 0', err?.slice(0, 120))
     ok(html.includes('WEIGHT SURGERY'), 'build: page has title')
     ok(html.includes('SURGERY II'), 'build: SURGERY II section present')
-    ok(html.includes('v2 runs pending'), 'build: pending fallback when no v2 artifacts')
+    ok(html.includes('VERDICT II'), 'build: committed lab renders a v2 verdict')
+    ok(!html.includes('v2 runs pending'), 'build: committed lab renders real rows, not the pending fallback')
     ok(html.includes('Sparks of Weight-Space Programming'), 'build: sources intact')
     ok(html.includes('#1505'), 'build: links issue #1505')
+    const empty = mkdtempSync(join(tmpdir(), 'ws2empty-'))
+    cpSync(join(LAB, 'build_demo.mjs'), join(empty, 'build_demo.mjs'))
+    writeFileSync(join(empty, 'batches.jsonl'), '')
+    const e2 = build(empty)
+    ok(e2.rc === 0 && e2.html.includes('v2 runs pending'), 'build: empty lab falls back honestly')
 }
 
 // 2. boot from a fixture lab WITH synthetic v2 artifacts — must show SIGNAL
@@ -138,6 +150,7 @@ if (process.argv.includes('--mutate')) {
         ['correct>n', { batches: [], variants: { X: { terminated: 2, correct: 13, batch: 12 } } }],
         ['purposeless batch', { batches: [{ n: 12, terminated: 0 }], variants: {} }],
         ['rows!=batch', { batches: [], variants: { X: { terminated: 1, correct: 0, batch: 12, rows: [{ ok: false, cap: true, loop: true, ntok: 1 }] } } }],
+        ['ntok0-fake-terminate', { batches: [], variants: { X: { terminated: 12, correct: 0, batch: 12, rows: Array.from({ length: 12 }, () => ({ ok: false, cap: false, loop: false, ntok: 0, est: false })) } } }],
     ]
     for (const [name, data] of mutants)
         ok(validateArtifacts(data).length > 0, `mutant caught: ${name}`)

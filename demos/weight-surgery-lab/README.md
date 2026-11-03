@@ -63,9 +63,25 @@ layers; B downstream = tied-embed rank-1 row strip + o_proj rank-1 × 6 FA
 layers; C = A+B), `step10_eval2.py` (paired 12-problem eval at cap 4096 pp0,
 eval seed 77), `scripts/ws2check.mjs` (`npm run ws2check`).
 
-Measurements so far (batches 22–, log in `batches.jsonl`):
-- **4/12 terminate at cap 4096 penalty-free** (vs 0–8.8% at cap 1024) — Jon's
-  fair horizon exists; #1506 measures the exact fraction in parallel.
+Measurements (log in `batches.jsonl`; eval rows with exact token counts):
+
+| model | terminated/12 | looped | correct | cap/pp/seed |
+|---|---|---|---|---|
+| base f16 | **1** | 0 | 3 | 4096 / 0 / 42 |
+| A upstream ×6 FA | 0 | 1 | 2 | 〃 |
+| B downstream ×6 FA | 0 | 1 | **5** | 〃 |
+| C = A+B | 0 | 1 | 2 | 〃 |
+
+- **Termination is not fixed at 4096** — and honestly: only 1/12 problems
+  terminate even unedited. The step-8 corpus's "4/12 finished" (seed 23) was
+  the words×2 estimate (see harness bug below) and overcounts; the exact-parse
+  eval is authoritative. #1506 is measuring the larger-sample fraction with
+  its own runs.
+- **First accuracy signal of the experiment: B = 5/12 vs base 3/12.** Removing
+  d from the READ path (tied unembed rows + o_proj) doesn't stop the rambling
+  but helps the model reach correct answers inside it (boxed outputs present in
+  capped generations). A (upstream, ×6 layers) does nothing; C inherits A's
+  damage — closing both ends silences rather than cures.
 - **No strict periodic onset in any cap-hit** (period ≤256, sustain ≥64 tokens;
   step8b relaxes to period ≤1024/sustain ≥32 + windowed n-gram reuse):
   at ≤4k the non-termination is verbose rambling, not a fixed attractor —

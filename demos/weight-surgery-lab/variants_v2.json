@@ -1,0 +1,410 @@
+{
+ "base": {
+  "n": 34,
+  "phase": "practice-v2",
+  "split": "gsm+math_train(easy)",
+  "batch": 12,
+  "cap": 4096,
+  "pp": 0,
+  "tps": 106.4,
+  "model": "base",
+  "terminated": 1,
+  "looped": 0,
+  "correct": 3,
+  "rows": [
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": false,
+    "loop": false,
+    "ntok": 2075,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   }
+  ],
+  "purpose": "v2 eval base: terminate/loop/correct at cap4096 pp0, paired 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T11:54:24Z"
+ },
+ "A": {
+  "n": 35,
+  "phase": "practice-v2",
+  "split": "gsm+math_train(easy)",
+  "batch": 12,
+  "cap": 4096,
+  "pp": 0,
+  "tps": 113.9,
+  "model": "A",
+  "terminated": 0,
+  "looped": 1,
+  "correct": 2,
+  "rows": [
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": true,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   }
+  ],
+  "purpose": "v2 eval A: terminate/loop/correct at cap4096 pp0, paired 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T12:01:35Z"
+ },
+ "B": {
+  "n": 36,
+  "phase": "practice-v2",
+  "split": "gsm+math_train(easy)",
+  "batch": 12,
+  "cap": 4096,
+  "pp": 0,
+  "tps": 117.9,
+  "model": "B",
+  "terminated": 0,
+  "looped": 1,
+  "correct": 5,
+  "rows": [
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": true,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   }
+  ],
+  "purpose": "v2 eval B: terminate/loop/correct at cap4096 pp0, paired 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T12:08:32Z"
+ },
+ "C": {
+  "n": 37,
+  "phase": "practice-v2",
+  "split": "gsm+math_train(easy)",
+  "batch": 12,
+  "cap": 4096,
+  "pp": 0,
+  "tps": 72.9,
+  "model": "C",
+  "terminated": 0,
+  "looped": 1,
+  "correct": 2,
+  "rows": [
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": true,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": true,
+    "ntok": 4096,
+    "est": false
+   },
+   {
+    "ok": false,
+    "cap": true,
+    "loop": false,
+    "ntok": 4096,
+    "est": false
+   }
+  ],
+  "purpose": "v2 eval C: terminate/loop/correct at cap4096 pp0, paired 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T12:19:46Z"
+ }
+}
