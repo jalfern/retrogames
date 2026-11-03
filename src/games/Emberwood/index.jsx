@@ -399,6 +399,21 @@ export default function Emberwood() {
                 // the win screen without clearing the game (portrait audits).
                 give: (items) => { Object.assign(sim.items, items || {}); return true },
                 winNow: (dawn) => { sim.win = true; sim.flags.dawnheart = !!dawn; return true },
+                // #1511 QA hooks: the attract's teaching lines (the goal-clarity
+                // gate reads them straight off the screen's source), and a duel
+                // set — the hero above a 1-hp cinderling, blade ready — so the
+                // hit-feel gate can watch the rendered hit tell mid-swing.
+                attractLines: () => LINES.slice(),
+                duel: () => {
+                    spawnRoom(sim, 'd1-e0', [7, 8])
+                    rend.buildScreen(sim.screen, sim.flags, sim.cut)
+                    const e = sim.enemies.find(x => x.type === 'cinderling' && !x.dead)
+                    if (!e) return false
+                    e.hp = 1
+                    sim.hero.x = e.x; sim.hero.y = e.y + 12; sim.hero.dir = 'up'
+                    sim.cool = 0
+                    return true
+                },
             }
             mountDbg({
                 title: 'EMBERWOOD',

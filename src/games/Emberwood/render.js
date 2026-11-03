@@ -1049,6 +1049,24 @@ void main(){
             const n = (SCREENS['ow-11'].npcs || []).find(x => x.id === id)
             return n ? paintNpc(n).toDataURL() : null
         },
+        // #1511 — report the live texture resolution and the rendered hit tell.
+        // The 2x pass doubles every painted buffer before the GPU stretch, so
+        // the audit can pin the buffer sizes; the hit tell counts the enemy
+        // billboards currently wearing the hot tint. The tint sets G/B to 1.1
+        // while R stays the local light (or vice-versa in bright spots), so the
+        // signature is a split between channels: an unlit-by-hit billboard has
+        // R and G set from the very same float, bit-identical.
+        texInfo: () => {
+            if (!TEX) return null
+            const n = (SCREENS['ow-11'].npcs || [])[0]
+            const npc = n ? paintNpc(n) : null
+            return {
+                heroW: TEX.hero.up.w1.width, heroH: TEX.hero.up.w1.height,
+                tileW: TEX.grass.width, tileH: TEX.grass.height,
+                npcW: npc ? npc.width : 0, npcH: npc ? npc.height : 0,
+            }
+        },
+        hitTell: () => bbPool.reduce((n, b) => n + (b.mesh.visible && Math.abs(b.mat.color.g - b.mat.color.r) > 1e-3 ? 1 : 0), 0),
         // #981 — report each visible town npc's live pose so the gates can prove
         // the idle breath, foot-anchored squash, rhythm spread and hero-facing;
         // #994 adds the live walk position + flag.
