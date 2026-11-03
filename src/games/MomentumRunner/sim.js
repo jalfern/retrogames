@@ -36,6 +36,8 @@ export const CFG = {
     landProject: true,     // landings project velocity onto the new tangent
     jumpCut: true,         // releasing the jump key early clips the apex
     pitDeath: true,        // below a zone's floor is dying
+    breakFlats: true,      // rolling crests break flat expanses in the tail (#1499)
+
     pitWalls: true,        // a pit's far side is a WALL: a body below the lip falls in, never climbs out
     boostPads: true,       // floor strips that add speed along the slope
     zoneTally: true,       // each goal counts up a time bonus + a ring bonus
@@ -394,6 +396,40 @@ const TWEAKED = (fn, zi) => {
     return args ? (x, y) => fn(x, y, ...args) : fn
 }
 
+// A crest: quarter arc UP + quarter arc DOWN from the same height, tangent-flat
+// at both ends (the mirror of the valley arcs), so inserting one into a flat
+// changes ground SHAPE only — never a beat's endpoints or chaining height.
+const CREST_H = 55
+const CREST_RUN = 2 * ARC_R * Math.sin(Math.acos(1 - CREST_H / ARC_R))
+function breakFlatRuns(z, tailX, rwEnd) {
+    for (let iter = 0; iter < 30 && z.segs.length; iter++) {
+        const runs = []
+        let cur = null
+        z.segs.forEach((sg, i) => {
+            const flat = Math.abs(sg[3] - sg[1]) < 0.5
+            const gap = i > 0 && sg[0] - z.segs[i - 1][2] >= 30
+            const cont = cur && flat && Math.abs(sg[1] - cur.y) < 0.5 && Math.abs(sg[0] - cur.end) < 1
+            if (cont) { cur.end = sg[2]; cur.i1 = i }
+            else { if (cur) runs.push(cur); cur = flat ? { y: sg[1], start: sg[0], end: sg[2], i0: i, i1: i, gap } : null }
+        })
+        if (cur) runs.push(cur)
+        const allowOf = r => Math.max(rwEnd, r.gap ? r.start + 1200 : r.start)
+        const tgt = runs.find(r => r.start >= tailX - 2 &&
+            r.end - Math.max(r.start, allowOf(r)) >= 600)
+        if (!tgt) return
+        const a = Math.max(tgt.start, allowOf(tgt)), b = tgt.end
+        const m = a + (b - a - CREST_RUN) / 2
+        const u = arcPipe(m, tgt.y, CREST_H, 3, false)
+        const d = arcPipe(m + u.run, tgt.y - CREST_H, CREST_H, 3, true)
+        const rep = []
+        if (tgt.start < a) rep.push([tgt.start, tgt.y, a, tgt.y])
+        if (m > a + 1) rep.push([a, tgt.y, m, tgt.y])
+        rep.push(...u.segs, ...d.segs)
+        if (m + CREST_RUN < b - 1) rep.push([m + CREST_RUN, tgt.y, b, tgt.y])
+        z.segs.splice(tgt.i0, tgt.i1 - tgt.i0 + 1, ...rep)
+    }
+}
+
 // append each zone's program and push its goal to the end, so the autopilot
 // spends 60-90s in a sector on all-different terrain.
 for (const [zi, z] of ZONES.entries()) {
@@ -418,6 +454,15 @@ for (const [zi, z] of ZONES.entries()) {
         x = b.x1
     }
     z.goal = x - 20
+
+    // #1499 "too many flat expanses": tangent-flat beat JOINS chain two beats'
+    // exits into one slab the player reads as dead ground (~1000px straights).
+    // Break every unjustified flat run in the program tail with a rolling crest
+    // (quarter arc up + quarter arc down, ends tangent-flat at the same height,
+    // so nothing shifts: x1, chaining, forks, pits and springs all untouched).
+    // Justified architecture keeps its flats: the fork speed runway and the
+    // landing apron after each pit (ballistics need a flat catch).
+    if (CFG.breakFlats) breakFlatRuns(z, tailX, tailX + 2600)
 
     // the fork (#550): above the first fastBoost stretch — AFTER its sprint
     // strip, so committing means you carried (or made) speed there. The deck
