@@ -20,7 +20,7 @@ import AttractMessage from '../../components/AttractMessage'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { newGame, step, autopilot, windAt, CFG, FIXED_DT, GARDENS } from './sim.js'
 import { PRESS, MESSAGES } from './attract.js'
 
@@ -350,9 +350,18 @@ const BeeGame = () => {
         }
 
         const restart = (autoNext) => {
-            if (!autoNext) gardenIdx = 0
-            else gardenIdx = (gardenIdx + 1) % 2
-            gs = newGame(gardenIdx)
+            if (!autoNext) {
+                // #1473: honor ?seed=N so a filed report replays this exact garden
+                // (garden index + nectar shift both derive from the seed; unpin =
+                // garden 0 exactly as before, reported honestly as seed 0).
+                const pin = seedFromQuery()
+                contractSeed = pin != null ? pin >>> 0 : 0
+                gardenIdx = contractSeed % GARDENS.length
+                gs = newGame(gardenIdx, contractSeed)
+            } else {
+                gardenIdx = (gardenIdx + 1) % GARDENS.length
+                gs = newGame(gardenIdx)
+            }
             buildWorldNodes(gs.world)
             paintUv(false)
             demoT = 0
@@ -522,6 +531,8 @@ const BeeGame = () => {
         window.addEventListener('resize', resize)
         resize()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.t, score: gs.score, done: !!gs.end, seed: contractSeed, garden: gs.world.name, delivered: gs.delivered, health: gs.health }))
 
         // ---------- DEV hook (read-only probe; only keys act) ----------
         if (import.meta.env.DEV) {
@@ -608,6 +619,7 @@ const BeeGame = () => {
         }
 
         const cleanup = () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV && window.__beeTest) delete window.__beeTest
             if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)

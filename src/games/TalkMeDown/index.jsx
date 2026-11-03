@@ -11,7 +11,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createGame, step, simState, solvePad, computeTarget, hash, drainEvents,
@@ -35,6 +35,13 @@ const ATTRACT_MSGS = [
     'THREE STRIKES AND THE BLOCK GLOWS',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
 ]
+
+// #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+// bomb set (rng derives from any integer seed); unpin = the original 1..65535 roll.
+const humanSeed = () => {
+    const pin = seedFromQuery()
+    return pin != null ? (pin >>> 0 || 1) : 1 + Math.floor(Math.random() * 65535)
+}
 
 export default function TalkMeDown() {
     const canvasRef = useRef(null)
@@ -294,7 +301,7 @@ export default function TalkMeDown() {
             if (screenRef.current === 'over') { if (performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() } return }
             if (screenRef.current === 'select') {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { selectRef.current = selectRef.current === 1 ? 2 : 1; sfx.move() }
-                if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startPlay(1 + Math.floor(Math.random() * 65535), selectRef.current) }
+                if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startPlay(humanSeed(), selectRef.current) }
                 return
             }
             // play
@@ -316,7 +323,7 @@ export default function TalkMeDown() {
         const onPointer = () => {
             if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
-            else if (screenRef.current === 'select') startPlay(1 + Math.floor(Math.random() * 65535), selectRef.current)
+            else if (screenRef.current === 'select') startPlay(humanSeed(), selectRef.current)
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -561,6 +568,14 @@ export default function TalkMeDown() {
 
         raf = requestAnimationFrame(loop)
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => {
+            const g = gsRef.current
+            return g
+                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, round: g.round, strikes: g.strikes }
+                : { tick: 0, score: 0, done: false, seed: 0, round: 1, strikes: 0 }
+        })
+
         // DEV hooks + DebugKit
         let dbgMounted = false
         if (import.meta.env.DEV) {
@@ -614,6 +629,7 @@ export default function TalkMeDown() {
 
         const v = voiceRef.current
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

@@ -17,7 +17,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
     tileOf, CATALOG, NEEDS, SFX,
@@ -321,6 +321,11 @@ const HomebodyGame = () => {
 
         const startPlay = (sd) => {
             if (sd !== undefined) seed = sd >>> 0
+            else {
+                // #1473: honor ?seed=N so a filed report replays this exact street
+                const pin = seedFromQuery()
+                if (pin != null) seed = pin >>> 0
+            }
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
@@ -392,6 +397,10 @@ const HomebodyGame = () => {
         demoG = freshDemo()
         buildCanvas()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => gs
+            ? { tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed, money: gs.money, day: gs.day }
+            : { tick: 0, score: 0, done: false, seed, money: 0, day: 1 })
 
         // ------------------------------------------------------------ hooks ----
         function state() {
@@ -456,6 +465,7 @@ const HomebodyGame = () => {
         }
 
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__homebodyTest) delete window.__homebodyTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

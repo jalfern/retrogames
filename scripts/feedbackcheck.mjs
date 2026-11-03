@@ -753,9 +753,11 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // #1473 rollout floor: #1472 shipped Gauntlet/QBert/Tetris/PickRush (PickRush
 // pins but doesn't yet report a seed, so the law's counter sees 3 of them);
 // batch 1 adds 8 (SSX, CometDrift, CometDriftHD, SmashTV, ShortOrderShout,
-// Tempest, LunarLander, Lemmings) → 11 reporting+pinning titles. Dropping
-// below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 11 games report+pin seeds', reportingGames >= 11, `${reportingGames} reporting`)
+// Tempest, LunarLander, Lemmings) → 11; batch 2 adds 10 (Sonar, TenDeep,
+// Beezee, GravelYard, FloorBoss, TidyBot, FireCrew, TalkMeDown, Minesweeper,
+// Homebody) → 21 reporting+pinning titles. Dropping below is a regression,
+// so pin it.
+ok('seedpin: rollout floor — at least 21 games report+pin seeds', reportingGames >= 21, `${reportingGames} reporting`)
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper
