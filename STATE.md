@@ -1,66 +1,81 @@
-# STATE — session 86 (2026-11-02, slot a)
+# STATE — session 99 (2026-11-03, slot a)
 
 ## Shipped this session
-**SHORT ORDER SHOUT final stage (#1416)** — merged as `5ce653c` (PR #1467).
-Tick-anchored host DEMOTE/PROMOTE seat chips mid-shift + voice production
-(M mic arm persisted, phone MIC/VOX chips, echo-etiquette gate) + the
-online-keyboard fix (net branch returned EVERY key; arrows/Space/V dead
-mid-shift online). `soslinkcheck` 86 -> **133** assertions, mutant
-`SOS_MUTANT=arrival` proven red then green. Issue #1416 closed shipped.
-Polish pass filed: **#1468** (QA lane: chip ergonomics, pending-anchor
-feedback, browser drive tier for the new surfaces).
+**SEEDPIN batch 3 (#1473)** — merged as `d7c5cec` (PR #1477). Outpost, BlobBattle
+and PapersPleaseMin now report `{tick,score,done,seed,…}` in production via
+`exposeFeedbackState` and honor `?seed=N` at their human-start site (`seedFromQuery`).
+BlobBattle pins OFFLINE only — online keeps the lobby seed (SSX desync rule); digit
+picks (Outpost Digit2-4, papers NEXT WEEK) stay explicit. Papers gets a play-frame
+`simTick` counter. `feedbackcheck` rollout floor 21 → 24.
+Proofs: feedbackcheck 176/176, mutant `strip seedFromQuery from Outpost → law RED →
+restore GREEN`; outpostcheck 627/627, blobcheck 62/0, paperscheck 6495/6495; lint
+mario/fps/ai/forge + eslint + build green. Prod content-verified: entry
+`index-CUi8eENP.js` → chunks `index-Cfu9poVU` (outpost baseSeed report),
+`index-CY-gwObS` (papers seed+day), `index-aRy7-P0q` (blob wells[0]+wells[1] round
+report). Shift report pushed (“Seed pinning reaches 24 titles”).
+#1473 stays OPEN `building` (multi-stage, PR said “Part of”).
 
-## Salvage note (important precedent)
-Slot b's session on #1416 died mid-edit WITHOUT pushing; its worktree
-(`~/Dev/retrogames-forge-sos-voice`, branch `forge/sos-voice` @ a2101c8) held
-the complete uncommitted diff of b's 18:41Z design. Slot a applied the diff to
-`forge/sos-final`, re-derived the proof tier (which caught a real off-by-one:
-promote deadlocked at the flip tick; resume boundary is `at - PAD_DELAY - 1`,
-not `at - PAD_DELAY`), credited b in commit + PR + issue. **A lane's unpushed
-worktree IS recoverable — check the filesystem, not just origin, before
-"rebuild from comment".** b's worktree left in place untouched; patch copy at
-`/tmp/forge/sos-b-salvage.patch`.
+## How the takeover went (precedent note)
+TARGET #1473 claim at 01:18Z → REFUSED (b held; newest b claimed/checkpoint
+00:08:49Z — b’s “batch 2 MERGED” comment at 00:37 does NOT extend the lock:
+holder() counts `claimed|checkpoint` only). Ladder dry (no steer/next, game-queue
+empty, #1448 building-qa), QA-borrow refused (live QA-mini pid 10317),
+`flagshipStage` null (all four flagship READMEs zero open gaps — parseGaps +
+raw eyeball). WAITED OUT THE WINDOW and re-claimed at 01:39:07Z: **CLAIMED** —
+b silent 90 min, batch 3 never pushed, no b process. A fresh slot-b session was
+kicked the SAME warden cycle (pid 76910) aimed at #1473; the earlier claim wins
+per #878 — say so on the issue when it happens.
+
+## Watcher surprise (both slots should know)
+The lane watcher (`/tmp/forge/watch/forge/`) AUTO-PUSHED my rebased worktree
+commit and AUTO-OPENED PR #1477 (generated body) before my own push/`gh pr
+create` — my explicit push said “Everything up-to-date”, PR create got HTTP 422
+(PR exists). Not a bug I chased: verify an auto-PR’s head SHA + files match your
+commit, read its body, then merge via rule-5. Two rewrites happened en route:
+`6b19443 → a440105` (rebase onto origin/main — branch base was pre-squash
+`22e2364`, making #1477 show batch-2 files and report `dirty` on the shared
+feedbackcheck floor region; force-with-lease per b’s 00:13 precedent).
 
 ## Ladder history this session
-- TARGET #1416 claimed per warden (b's lock expired: last checkpoint 18:23Z,
-  147 min stale at claim; b reappeared, took #737 at 20:47Z, PR #1466 open
-  "Part of #737" — alive there).
-- halt/steer/next empty; #1141 stalled + Jon-flagged (not builder candidate).
-- jonq: #1456 AWAITING (backlog question) — unchanged, not re-asked.
-
-## ENVIRONMENT — read before your network commands (this Mac)
-System DNS is POISONED (router 192.168.1.1 returns bogus IPs; UDP/53 even to
-1.1.1.1 intercepted — TCP/443 clean) and the GUI/launchd session services are
-broken (sysmond, keychain trust, AuthorizationCreate all fail) => the real
-`gh` cannot run (Go TLS keychain path) and **headless Chrome SIGABRTs** under
-every flag set. Working setup built this session (persists while the box is up):
-- `source /tmp/forge/netenv` — exports PATH+GH for the curl-based gh shim at
-  `/tmp/forge/bin/gh` (supports the repo's api/issue/pr/run subset; honors
-  `GH` env used by forge-claim.sh) and HTTP(S)_PROXY=127.0.0.1:18229 — a
-  DoH DNS proxy (`/private/var/folders/41/gz22zd5d55g08jn448xnd90m0000gn/T/opencode/dnsproxy3.mjs`,
-  resolves via Cloudflare DoH, TLS-by-IP). Proxy was LEFT RUNNING; recreate
-  from those paths if gone. Browser tiers (soslinkdrive, sosverify, smoke)
-  cannot run locally — rely on CI advisory jobs + node harnesses and say so.
-- STATE.md writes to the MAIN checkout can be LOST between edit and commit
-  (multi-lane state race, cf #1430): write + `git add` + commit in ONE shell
-  command, and `git diff`-verify right before pushing.
+- TARGET #1473 refused 01:18Z → ladder → waited window → claimed 01:39Z.
+- halt/steer/next empty; jonq #1456 AWAITING (deadline 2026-11-04T17:44Z) —
+  not re-asked; nothing ANSWERED/DEFAULTED to execute.
+- #1141 stalled+flagged, #838/#795 unlabeled, #549 parked — never adopt.
 
 ## Rule-4 honest count
-Game code merged THIS session (`5ce653c`). Streak healthy.
+Slot-a game code MERGED this session (`d7c5cec`) — the five-idle streak
+(sessions 94–98) is broken. Studio rule 4 green.
 
 ## Notes for the next lane
-- Slot b holds #737 (PR #1466); check b's checkpoint cadence before touching.
-- #1468 items 1-7 are code+Node fixable; item 8 (browser drive tier) needs
-  working browsers — CI-side only while this Mac's Chrome is dead.
-- b's abandoned `forge/sos-voice` branch/worktree: content is in main via
-  #1467; harmless, warden may prune.
+- #1473 batch 4 candidates (from b’s 00:37 comment, still true): big engines
+  Emberwood/Myst/BardsTale/CivilizationV, fixed-layout ports (seed covers spawn
+  tables), PickRush function-ref expose restructure so the counter sees its seed.
+  RallyCoDriver rejoins when #1448 ships. FourHalls-style inline
+  `Math.random()%97` starts hide from the counter — grep for them.
+- #1473 lock after this session = slot-a, newest checkpoint ~01:57Z. If you are
+  slot b and read this: yield until 90 min past it, then claim honestly.
+- The warden double-kicked both slots at #1473 this cycle; expect the fresh b
+  session (pid 76910 at claim time) to have taken the ladder or idled.
+- PR-file-list-vs-diff on squashed-stack branches shows pre-squash history files;
+  merge anyway iff mergeable:true and content verified (or rebase onto origin/main
+  + force-with-lease to clean it, as done here).
+
+## ENVIRONMENT — read before your network commands (this Mac)
+- `source /tmp/forge/netenv` — PATH+GH for the curl gh shim at `/tmp/forge/bin/gh`
+  (api subset; NO `issue view`; `pulls/…/check-runs` jq shape differs — poll prod
+  content instead). HTTP(S)_PROXY=127.0.0.1:18229 DoH proxy (running; recreate
+  from dnsproxy3.mjs path if gone). git needs `-c http.proxy=http://127.0.0.1:18229`.
+- Real `gh` broken (keychain TLS), headless Chrome SIGABRTs (#737) — browser tiers
+  CI-advisory only. `pgrep` broken, `ps ax` works.
+- Ports: a=5173 (unused this session — Node tier sufficed), b=5178, QA=5174.
+- STATE writes: write + add + commit in ONE shell command; verify before push.
 
 ## Open questions
-- #1456 (AWAITING, deadline 2026-11-04): backlog empty — what should builder
-  lanes self-commission? (Not re-asked; already open.)
+- #1456 (AWAITING, deadline 2026-11-04T17:44Z): self-commission policy for dry
+  boards — already open, not re-asked.
 
 ## Environment
-Main checkout detached at `5ce653c` = origin/main after this STATE commit.
-Slot-a dev server ran on 5173 (drive attempt) and was stopped at session end —
-5173 free for the next lane's strictPort start; b uses 5178. Worktree
-`~/Dev/retrogames-forge-sos-final` re-detached to origin/main per the law.
+Main checkout detached at `d7c5cec` = origin/main. STATE committed to main ONLY
+because game code merged this session (step 9), parked via statepark park a.
+Lane worktree `~/Dev/retrogames-forge-seedpin-rollout` re-detached to
+origin/main after the merge.
