@@ -87,13 +87,18 @@ const fairTbl = (() => {
       const recs = fair[`${run}_${set}`];
       if (!recs || !recs.length) continue;
       const n = recs.length;
+      const label = run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run;
+      if (n < 100) {   // mid-run row: status only — interim metrics would ship numbers the final run may not repeat
+        rows.push(`<tr><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506</td></tr>`);
+        continue;
+      }
       const s = {
         acc: 100 * recs.filter(r => r.ok).length / n,
         term: 100 * recs.filter(r => !r.cap_hit).length / n,
         cap: 100 * recs.filter(r => r.cap_hit).length / n,
         loop: 100 * recs.filter(r => r.loop).length / n,
       };
-      rows.push(`<tr><td>${run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>${s.term.toFixed(1)}%</td><td>${s.cap.toFixed(1)}%</td><td>${s.loop.toFixed(1)}%</td></tr>`);
+      rows.push(`<tr><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>${s.term.toFixed(1)}%</td><td>${s.cap.toFixed(1)}%</td><td>${s.loop.toFixed(1)}%</td></tr>`);
     }
   }
   return rows.join("\n");
@@ -183,7 +188,7 @@ ${(() => {
   return `<div class="kpi">${rowline("base (pp0)", b)}${rowline(`edit${EDITTAG !== "edit" ? ` (${EDITTAG})` : ""}`, e)}${rowline("penalty-only (pp1.5)", p)}</div><p>${verdictLine}</p>`;
 })()}
 <p class="note">Fair deviations: cap ${FAIRC}, not MIT's 32,768 (this box is CPU-only, ~150 tok/s); fixed 100 MATH-500 + 100 GSM8K-test (seed 20261103, identical rows before/after); grader = boxed-extraction + numeric match; d = per-layer loop-tail-vs-finished contrast over all 24 layers (repeat-onset positions approximated by the last 1024 tokens of capped generations). Backend: the six scored rows ran on one <code>llama-server</code> with continuous batching (24 slots, ~4× the aggregate throughput of the 12-separate-process harness, which is RAM-bandwidth-bound) — same seed and sampling args on every row; a partially-scored CPU-harness row was archived and never mixed into these tables.</p>` : `
-<div class="banner">⚠ The verdict below was measured at cap 1024 — a horizon where 91–100% of base answers hit the cap. Per Jon's steer on #1493 it is <b>not a measurement of the fix</b>: answers there were cut off, not looping. The fair-horizon rescore (#1506, cap ${FAIRC}, fixed 100+100, base/edit/penalty rows) is ${fairTbl ? "partially complete" : "running"} — this page updates when its numbers land.</div>
+<div class="banner">⚠ The verdict below was measured at cap 1024 — a horizon where 91–100% of base answers hit the cap. Per Jon's steer on #1493 it is <b>not a measurement of the fix</b>: answers there were cut off, not looping. The fair-horizon rescore (#1506, cap ${FAIRC}, fixed 100+100, base/edit/penalty rows) is ${fairTbl ? "partially complete" : "running"} — final numbers post to #1506, and the page refreshes on the deploy after they land.</div>
 <h2>VERDICT (first pass, cap 1024 — SUPERSEDED)</h2>
 <p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not the tight attractor MIT traced over 32k-token horizons.</p>
 <p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12.</p>`;
