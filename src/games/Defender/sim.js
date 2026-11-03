@@ -12,7 +12,8 @@
 // deliver it back to the surface (+500); a human that hits the ground is gone
 // for the whole game. A lander that reaches the ground empty mutates into a
 // mutant (1500) and hunts the ship. Clearing every lander and mutant resurfaces
-// the wave (+1000). 3 lives, extra ship every 10,000, respawn grace, and the
+// the wave (+1000). 3 lives, extra ship every 10,000, ~0.5 s death freeze
+// (#1531), respawn grace, and the
 // run ends honestly at GAME OVER. Documented gaps (see README): smart bomb,
 // hyperspace, meteor-swarm bonus; collisions at the wrap seam are skipped.
 
@@ -34,6 +35,8 @@ export const BONUS_LIFE_EVERY = 10000
 export const START_LIVES = 3
 export const RESPAWN_DELAY = 60     // ~1 s dark before the ship returns
 export const INVULN_TICKS = 120     // ~2 s blinking grace after respawn
+export const DEATH_FREEZE = 30      // ~0.5 s the machine holds the dead frame
+                                    // before the respawn countdown (#1531)
 
 // Shortest signed distance on the wrap-around planet.
 export function wrapDelta(dx, width = WORLD_WIDTH) {
@@ -121,6 +124,7 @@ export function createSim({ rand, height }) {
         particles: [],
         player: { x: 200, y: 200, vx: 3, vy: 0, facing: 1, cooldown: 0, dark: 0, invuln: 0 },
         carrying: null,
+        freeze: 0,
         events: [],
     }
     s.humans = makeHumans(rand, s.terrain)
@@ -153,6 +157,7 @@ export function createSim({ rand, height }) {
         s.player.vy = 0
         s.player.dark = RESPAWN_DELAY
         s.player.invuln = RESPAWN_DELAY + INVULN_TICKS
+        s.freeze = DEATH_FREEZE // the machine holds the explosion on screen
         // A ship captured at death is dropped; if it falls through the ground
         // it dies, like everything else that hits the surface.
         if (s.carrying !== null) { s.humans[s.carrying].state = 'falling'; s.humans[s.carrying].vy = 1; s.carrying = null }
@@ -162,6 +167,10 @@ export function createSim({ rand, height }) {
         s.tick += 1
         s.events = []
         if (s.over) return s
+        // Death pause (#1531): the cabinet froze the screen with the wreck on
+        // it for half a second before the respawn countdown — nothing moves,
+        // particles included; only the clock runs.
+        if (s.freeze > 0) { s.freeze -= 1; return s }
 
         const p = s.player
 

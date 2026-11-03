@@ -17,9 +17,14 @@ on one seeded stream.
   surface (+500). A lander that reaches the ground **empty mutates into a
   mutant (1500)** and chases you; a lander that lands holding a human kills it.
 - **Arcade score table**: lander 150, mutant 1500, catch 250, delivery 500,
-  wave clear 1000, extra ship every 10,000. 3 lives, ~1 s dark + ~2 s blinking
-  respawn grace. Wave clear resurfaces the wave (8 landers at wave 1, +1 per
-  wave cap 12). Friendly fire is real — your own shots kill humans, like the original.
+  wave clear 1000, extra ship every 10,000. 3 lives, ~0.5 s death freeze (the
+  cabinet holds the wreck on screen) + ~1 s dark + ~2 s blinking respawn grace.
+  Wave clear resurfaces the wave (8 landers at wave 1, +1 per wave cap 12).
+  Friendly fire is real — your own shots kill humans, like the original.
+- **Feel (#1531)**: thrust hums while accelerating, diving landers flash a
+  flickering tractor beam at their target with a low telegraph pulse, wave
+  fanfares ramp pitch per wave, lander/mutant sprites pulse, humans shuffle on
+  a 2-frame walk, radar dots flicker on the scanner.
 - **Look** (docs/ART.md, RETRO): black starfield with twinkle, white mountain
   wireframe, grey lander shells with tractor bar, red diamond mutants, small
   yellow humanoids, thrust flame, red/yellow score sheet under the radar.
