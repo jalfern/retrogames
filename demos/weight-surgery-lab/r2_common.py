@@ -56,10 +56,27 @@ def _mv():
     return math_verify
 
 
+def gold_answer(gold):
+    """Canonical final answer of a gold string. Our loader keeps MATH's gold as
+    the full SOLUTION and GSM8K's as 'question... #### N'; MIT grades against
+    the FINAL answer. Extract boxed{} (MATH) or the #### tail (GSM) first —
+    passing raw solutions to math_verify produced silent False on correct
+    predictions (#1533 session 118: base/math showed 0.0% until this was fixed)."""
+    g = str(gold)
+    if "####" in g:
+        g = g.split("####")[-1]
+    else:
+        b = C.extract_boxed(g)
+        if b:
+            g = b
+    return g.strip()
+
+
 def grade(gold, pred):
     """MIT semantics: verify(parse(gold), parse(pred)); numeric fallback recorded."""
-    if pred is None:
+    if pred is None or not str(pred).strip():
         return False, "no-answer"
+    gold = gold_answer(gold)
     try:
         _mv()
         from math_verify import parse, verify

@@ -64,6 +64,37 @@ export function validateR2({ scores, gate }) {
     return errs
 }
 
+// row-level invariants for scores_*.jsonl (session 118 grading fix #1533):
+// no-answer rows can never be ok, and gold_answer mirrors r2_common.py: a gold
+// that is a full solution must collapse to its \boxed{}/#### tail.
+export function validateRows(recs) {
+    const errs = []
+    for (const r of recs) {
+        if (r.method === 'no-answer' && r.ok !== false) errs.push(`${r.id}: no-answer but ok`)
+        if (!r.ok && r.method === 'math-verify' && (r.pred === '' || r.pred == null))
+            errs.push(`${r.id}: math-verify verdict with empty pred`)
+    }
+    return errs
+}
+
+export function goldAnswer(gold) {
+    let g = String(gold)
+    if (g.includes('####')) g = g.split('####').pop()
+    else {
+        const i = g.lastIndexOf('\\boxed{')
+        if (i >= 0) {
+            let depth = 1, j = i + 7, out = ''
+            while (j < g.length && depth > 0) {
+                if (g[j] === '{') depth++
+                else if (g[j] === '}') { depth--; if (!depth) break }
+                out += g[j]; j++
+            }
+            if (!depth) g = out
+        }
+    }
+    return g.trim()
+}
+
 // #1533 anti-corruption: step1_gate.json may exist ONLY when every row file is
 // complete. A gate written while a killed runner left partial rows is a fake.
 export function validateGateVsRows(counts, gate) {
@@ -133,6 +164,20 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(validateGateVsRows({ base: { math: 86, gsm: 0 }, p50c: { math: 0, gsm: 0 } },
         { pass: true }).length > 0,
         'mutant caught: gate against incomplete rows')
+    // 2c. grading invariants (#1533: raw-solution gold silently zeroed accuracy)
+    ok(goldAnswer('blah \\boxed{(1, 2)} blah') === '(1, 2)', 'rules: gold_answer extracts boxed')
+    ok(goldAnswer('q. blah #### 42') === '42', 'rules: gold_answer extracts #### tail')
+    ok(goldAnswer('42') === '42', 'rules: gold_answer passes plain answers')
+    {
+        const p = join(LAB, 'results/r2/scores_base_math.jsonl')
+        if (existsSync(p)) {
+            const recs = readFileSync(p, 'utf8').split('\n').filter(l => l.trim()).map(l => JSON.parse(l))
+            ok(validateRows(recs).length === 0, 'rules: base/math rows grading-consistent',
+                validateRows(recs).slice(0, 3).join('; '))
+        }
+    }
+    ok(validateRows([{ id: 'x', ok: true, method: 'no-answer', pred: null }]).length > 0,
+        'mutant caught: no-answer row marked ok')
 }
 
 // 3. synthetic win path + mutants
