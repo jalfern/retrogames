@@ -48,6 +48,7 @@ const GAMES = [
     { id: 'gravel-yard', path: '/gravel-yard' },
     { id: 'talk-me-down', path: '/talk-me-down' },
     { id: 'fire-crew', path: '/fire-crew' },
+    { id: 'invaders', path: '/invaders' },
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -57,6 +58,7 @@ const LIVE = ['tetris', 'robot-lab']
 
 const PATTERNS = {
     'lunar-lander': (i) => ({ left: i % 71 < 16, right: false, up: i % 37 < 18 }),
+    invaders: (i) => ({ left: i % 83 < 30, right: i % 83 >= 40 && i % 83 < 70, a: i % 7 < 3 }),
     tempest: (i) => ({ left: i % 53 < 12, right: i % 53 >= 20 && i % 53 < 34, a: i % 9 < 4 }),
     arkanoid: (i) => ({ left: i % 43 < 21, right: i % 43 >= 24 && i % 43 < 40, a: i % 29 < 3 }),
     galaga: (i) => ({ left: i % 47 < 18, right: i % 47 >= 23 && i % 47 < 40, a: i % 7 < 3, up: i % 97 < 2 }),
