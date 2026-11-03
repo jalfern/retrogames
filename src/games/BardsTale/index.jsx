@@ -13,6 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     makeRun, step, stateHash, cloneState, CFG, SPELLS, SONGS, GEAR, knownSpells, DX, DY, BANDS,
 } from './sim.js'
@@ -301,7 +302,17 @@ const BardsTaleGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. The six dungeons
+        // are fixed by design (seeded constants in dungeons.js — the original's
+        // static floors), so there is no per-run seed to report: this carries
+        // {tick,score,done,deepest} for filed reports. Seedless by design.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.ledger.goldEarned, done: gs.end != null,
+            deepest: gs.deepest,
+        }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__bardsTest) delete window.__bardsTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
