@@ -811,7 +811,14 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // regen) and Centipede (score was dead code, one touch hard-reset the board, cut
 // bodies never grew heads; restored 100/10/1, the chain-head rule and the
 // 3-life persist-field death).
-ok('seedpin: rollout floor — at least 51 games report+pin seeds', reportingGames >= 51, `${reportingGames} reporting`)
+// Batch 17 adds Defender — the fourth dead terminal of the arcade shelf: the
+// Feb shell could not score, lose a life or die, and its terrain/wave dice ran
+// off Math.random. The whole engine now lives in src/games/Defender/sim.js on
+// one mulberry32 stream: wrap-around terrain, 5 humans, the abduction chain
+// (lander 150, falling-human catch 250, delivery 500), lander→mutant mutation
+// (1500), wave clear 1000, 3 lives + bonus@10k + respawn grace + honest GAME
+// OVER — ?seed=N replays the exact planet → 52 reporting+pinning titles.
+ok('seedpin: rollout floor — at least 52 games report+pin seeds', reportingGames >= 52, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can

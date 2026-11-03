@@ -3,7 +3,11 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { createSim, wrapDelta, WORLD_WIDTH, START_LIVES } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
+
+const HI_KEY = 'retrogames-defender-hi'
 
 const DefenderGame = () => {
     const canvasRef = useRef(null)
@@ -24,108 +28,74 @@ const DefenderGame = () => {
         let animationFrameId
 
         // GAME CONSTANTS
-        const WORLD_WIDTH = 4000
         const MINIMAP_HEIGHT = 50
-        const GROUND_HEIGHT = 50
-        const PLAYER_SPEED = 0.5
-        const PLAYER_MAX_SPEED = 8
-        const LASER_SPEED = 20
 
-        // GAME STATE
+        // RUN STATE
+        let viewWidth = 0
+        let viewHeight = 0
         let cameraX = 0
-        let gameTime = 0
         let isAttractMode = true
         let attractTick = 0
+        let tickN = 0
+        let seed = 0
+        let rand = seedRng(1)
+        let sim = null
+        let thrustFacing = 0
+        let hiScore = 0
+        try { hiScore = Number(localStorage.getItem(HI_KEY)) || 0 } catch { hiScore = 0 }
 
         // INPUT
-        const keys = {
-            ArrowUp: false,
-            ArrowDown: false,
-            ArrowLeft: false,
-            ArrowRight: false,
-            Space: false
+        const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
+
+        const startRun = (forcedSeed) => {
+            seed = forcedSeed !== undefined && forcedSeed !== null
+                ? forcedSeed >>> 0
+                : (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))
+            rand = seedRng(seed)
+            const h = viewHeight || (containerRef.current ? containerRef.current.getBoundingClientRect().height : 600)
+            sim = createSim({ rand, height: h })
+            isAttractMode = false
+            Object.keys(keys).forEach((k) => { keys[k] = false })
         }
 
-        // ENTITIES
-        let player = {
-            x: 200,
-            y: 300,
-            vx: 3, // Initial velocity so game "starts" moving
-            vy: 0,
-            facing: 1, // 1 or -1
-            cooldown: 0
-        }
-
-        let lasers = []
-        let particles = []
-        let enemies = []
-
-        // TERRAIN GENERATION
-        // Simple heightmap
-        const terrain = []
-        const generateTerrain = (width, height) => {
-            let y = height - 100
-            for (let x = 0; x < width; x += 10) {
-                terrain.push({ x, y })
-                y += (Math.random() - 0.5) * 40
-                if (y > height - 20) y = height - 20
-                if (y < height - 200) y = height - 200
-            }
-            terrain.push({ x: width, y: height - 100 })
-        }
-
-        // SPAWN ENEMIES
-        const spawnEnemies = (h) => {
-            const height = h || window.innerHeight
-            for (let i = 0; i < 15; i++) {
-                enemies.push({
-                    x: Math.random() * WORLD_WIDTH,
-                    y: Math.random() * (height - 200) + 50,
-                    vx: (Math.random() - 0.5) * 2,
-                    vy: (Math.random() - 0.5) * 2,
-                    type: 'lander'
-                })
-            }
-        }
-
-        // INIT
-        const init = () => {
-            resize()
-            if (containerRef.current) {
-                generateTerrain(WORLD_WIDTH, containerRef.current.getBoundingClientRect().height)
-                spawnEnemies(containerRef.current.getBoundingClientRect().height)
+        // Attract demo: fly the route, chase the nearest enemy, shoot when level.
+        const autopilot = () => {
+            const input = { left: false, right: false, up: false, down: false, fire: false }
+            const p = sim.player
+            let best = null
+            let bestD = Infinity
+            sim.enemies.forEach((e) => {
+                const d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 2
+                if (d < bestD) { bestD = d; best = e }
+            })
+            if (best) {
+                const dx = wrapDelta(best.x - p.x)
+                const dy = best.y - p.y
+                input.right = dx > 8
+                input.left = dx < -8
+                input.up = dy < -10
+                input.down = dy > 10
+                if (Math.abs(dy) < 24 && Math.abs(dx) < 320) input.fire = tickN % 5 === 0
             } else {
-                generateTerrain(WORLD_WIDTH, window.innerHeight)
-                spawnEnemies(window.innerHeight)
+                input.right = true
             }
-
-            window.addEventListener('keydown', handleKeyDown)
-            window.addEventListener('keyup', handleKeyUp)
-            window.addEventListener('resize', resize)
-
-            // Force focus
-            canvas.focus()
-
-            // Start Loop
-            animationFrameId = requestAnimationFrame(loop)
+            return input
         }
 
-        let viewWidth = 0, viewHeight = 0
-        const resize = () => {
-            if (!canvas || !ctx || !containerRef.current) return
-            const { width, height } = containerRef.current.getBoundingClientRect()
-            const dpr = window.devicePixelRatio || 1
-            canvas.width = width * dpr
-            canvas.height = height * dpr
-            canvas.style.width = `${width}px`
-            canvas.style.height = `${height}px`
-            ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-            viewWidth = width
-            viewHeight = height
-
-            ctx.imageSmoothingEnabled = false
-            ctx.shadowBlur = 4
-            ctx.shadowColor = 'rgba(255, 255, 255, 0.5)'
+        const soundEvents = () => {
+            for (const ev of sim.events) {
+                if (ev.t === 'killLander') audioController.playTone(150, 0.1, 'sawtooth', 0.2)
+                else if (ev.t === 'killMutant') { audioController.playTone(90, 0.14, 'sawtooth', 0.22); audioController.playNoise(0.08, 0.12) }
+                else if (ev.t === 'catch') audioController.playSweep(300, 700, 0.12, 'triangle', 0.12)
+                else if (ev.t === 'deliver') { audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08) }
+                else if (ev.t === 'wave') { audioController.playSweep(200, 800, 0.25, 'square', 0.12) }
+                else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
+                else if (ev.t === 'over') audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
+                else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
+                else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
+                else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
+                else if (ev.t === 'humanDied') audioController.playSweep(500, 120, 0.2, 'sawtooth', 0.14)
+            }
         }
 
         const handleKeyDown = (e) => {
@@ -137,10 +107,7 @@ const DefenderGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode) {
-                isAttractMode = false
-                Object.keys(keys).forEach(k => keys[k] = false)
-            }
+            if (isAttractMode || sim.over) { startRun(); return }
             if (e.code === 'Space') keys.Space = true
             if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = true
             if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = true
@@ -156,275 +123,228 @@ const DefenderGame = () => {
             if (e.code === 'ArrowRight' || e.key === 'd') keys.ArrowRight = false
         }
 
-        const update = () => {
-            // --- AI LOGIC ---
-            if (isAttractMode) {
-                // Find nearest enemy
-                let target = null
-                let minDist = Infinity
-                enemies.forEach(e => {
-                    const dist = Math.abs(e.x - player.x)
-                    if (dist < minDist) {
-                        minDist = dist
-                        target = e
-                    }
-                })
-
-                if (target) {
-                    const dx = target.x - player.x
-                    const dy = target.y - player.y
-
-                    // Horizontal Move
-                    if (dx > 0) { keys.ArrowRight = true; keys.ArrowLeft = false }
-                    else { keys.ArrowLeft = true; keys.ArrowRight = false }
-
-                    // Vertical Move
-                    if (dy > 10) { keys.ArrowDown = true; keys.ArrowUp = false }
-                    else if (dy < -10) { keys.ArrowUp = true; keys.ArrowDown = false }
-                    else { keys.ArrowUp = false; keys.ArrowDown = false }
-
-                    // Shoot
-                    // If facing target and aligned
-                    if ((dx > 0 && player.facing === 1) || (dx < 0 && player.facing === -1)) {
-                        if (Math.abs(dy) < 50 && Math.random() < 0.1) keys.Space = true
-                        else keys.Space = false
-                    }
-                } else {
-                    // Patrol
-                    keys.ArrowRight = true
-                    keys.ArrowLeft = false
-                }
-            }
-
-            // Player Physics
-            if (keys.ArrowLeft) player.vx -= PLAYER_SPEED
-            if (keys.ArrowRight) player.vx += PLAYER_SPEED
-            if (keys.ArrowUp) player.vy -= PLAYER_SPEED
-            if (keys.ArrowDown) player.vy += PLAYER_SPEED
-
-            // Friction
-            player.vx *= 0.98
-            player.vy *= 0.95
-
-            // Max Speed
-            if (player.vx > PLAYER_MAX_SPEED) player.vx = PLAYER_MAX_SPEED
-            if (player.vx < -PLAYER_MAX_SPEED) player.vx = -PLAYER_MAX_SPEED
-            if (player.vy > PLAYER_MAX_SPEED) player.vy = PLAYER_MAX_SPEED
-            if (player.vy < -PLAYER_MAX_SPEED) player.vy = -PLAYER_MAX_SPEED
-
-            // Movement
-            player.x += player.vx
-            player.y += player.vy
-
-            // Boundaries
-            if (player.x < 0) player.x = 0
-            if (player.x > WORLD_WIDTH) player.x = WORLD_WIDTH
-            if (player.y < MINIMAP_HEIGHT + 20) player.y = MINIMAP_HEIGHT + 20
-            if (player.y > viewHeight - 20) player.y = viewHeight - 20
-
-            // Facing
-            if (keys.ArrowLeft) player.facing = -1
-            if (keys.ArrowRight) player.facing = 1
-
-            // Camera Follow
-            cameraX = player.x - viewWidth / 2
-            if (cameraX < 0) cameraX = 0
-            if (cameraX > WORLD_WIDTH - viewWidth) cameraX = WORLD_WIDTH - viewWidth
-
-            // Shooting
-            if (keys.Space && player.cooldown <= 0) {
-                lasers.push({
-                    x: player.x + (player.facing === 1 ? 20 : -20),
-                    y: player.y,
-                    vx: player.facing * LASER_SPEED,
-                    life: 60
-                })
-                player.cooldown = 10
-                audioController.playTone(400, 0.05, 'square', 0.1) // Pew
-            }
-            if (player.cooldown > 0) player.cooldown--
-
-            // Entities
-            lasers.forEach(l => {
-                l.x += l.vx
-                l.life--
-            })
-            lasers = lasers.filter(l => l.life > 0)
-
-            enemies.forEach(e => {
-                e.x += e.vx
-                e.y += e.vy
-
-                // Bounce
-                if (e.y < MINIMAP_HEIGHT || e.y > viewHeight - 50) e.vy *= -1
-                if (e.x < 0 || e.x > WORLD_WIDTH) e.vx *= -1
-
-                // Random jitter
-                if (Math.random() < 0.02) e.vy = (Math.random() - 0.5) * 2
-            })
-
-            // Collision
-            lasers.forEach(l => {
-                enemies.forEach(e => {
-                    if (Math.abs(l.x - e.x) < 20 && Math.abs(l.y - e.y) < 20) {
-                        e.dead = true
-                        l.life = 0
-                        // Explosion particles
-                        for (let i = 0; i < 10; i++) {
-                            particles.push({
-                                x: e.x, y: e.y,
-                                vx: (Math.random() - 0.5) * 10,
-                                vy: (Math.random() - 0.5) * 10,
-                                life: 30
-                            })
-                        }
-                        audioController.playTone(150, 0.1, 'sawtooth', 0.2) // Boom
-                    }
-                })
-            })
-            enemies = enemies.filter(e => !e.dead)
-
-            // Particles
-            particles.forEach(p => {
-                p.x += p.vx
-                p.y += p.vy
-                p.life--
-            })
-            particles = particles.filter(p => p.life > 0)
+        // Phones: any tap starts or restarts the run.
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (isAttractMode || sim.over) startRun()
         }
 
-        const draw = () => {
-            // Background
-            ctx.fillStyle = 'black'
-            ctx.fillRect(0, 0, viewWidth, viewHeight)
+        const resize = () => {
+            if (!canvas || !ctx || !containerRef.current) return
+            const { width, height } = containerRef.current.getBoundingClientRect()
+            const dpr = window.devicePixelRatio || 1
+            canvas.width = width * dpr
+            canvas.height = height * dpr
+            canvas.style.width = `${width}px`
+            canvas.style.height = `${height}px`
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+            viewWidth = width
+            viewHeight = height
+            ctx.imageSmoothingEnabled = false
+        }
 
-            // --- MAIN VIEW ---
-            ctx.save()
-            ctx.translate(-cameraX, 0)
-
-            // Stars (Static parallax?)
-            // Just random white dots for now, scrolling slower
-            // Actually, static world stars:
-            // Stars (Dynamic Twinkle)
-            ctx.fillStyle = 'white'
-            for (let i = 0; i < 100; i++) {
-                // deterministic stars based on i, but with twinkle
-                if ((Date.now() + i * 100) % 1000 < 200) continue; // Twinkle effect (skip drawing sometimes)
-
-                const sx = (i * 137) % WORLD_WIDTH
-                const sy = (i * 53) % viewHeight
-
-                // Parallax scrolling (slower than foreground)
-                let parallaxX = sx - cameraX * 0.5
-                if (parallaxX < 0) parallaxX += WORLD_WIDTH
-                if (parallaxX > viewWidth) parallaxX -= WORLD_WIDTH
-
-                if (parallaxX >= 0 && parallaxX <= viewWidth) {
-                    ctx.fillRect(parallaxX, sy, 2, 2)
-                }
+        const update = () => {
+            tickN += 1
+            const input = isAttractMode
+                ? autopilot()
+                : sim.over
+                    ? { left: false, right: false, up: false, down: false, fire: false }
+                    : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space }
+            if (isAttractMode) sim.player.invuln = 999999 // the demo does not die
+            thrustFacing = input.left ? -1 : input.right ? 1 : 0
+            sim.step(input)
+            soundEvents()
+            if (sim.score > hiScore) {
+                hiScore = sim.score
+                try { localStorage.setItem(HI_KEY, String(hiScore)) } catch { /* private mode */ }
             }
+        }
 
-            // Terrain
-            ctx.strokeStyle = 'white'
+        const drawHuman = (h) => {
+            ctx.strokeStyle = '#ffd23f'
             ctx.lineWidth = 1
             ctx.beginPath()
-            ctx.moveTo(0, viewHeight)
-            terrain.forEach(p => ctx.lineTo(p.x, p.y))
-            ctx.lineTo(WORLD_WIDTH, viewHeight)
+            ctx.arc(h.x, h.y - 5, 2, 0, Math.PI * 2)
+            ctx.moveTo(h.x, h.y - 3); ctx.lineTo(h.x, h.y + 2)
+            ctx.moveTo(h.x - 3, h.y - 1); ctx.lineTo(h.x + 3, h.y - 1)
+            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x - 2, h.y + 5)
+            ctx.moveTo(h.x, h.y + 2); ctx.lineTo(h.x + 2, h.y + 5)
             ctx.stroke()
+        }
 
-            // Player
-            ctx.strokeStyle = '#ffffff'
+        const drawLander = (e) => {
+            ctx.strokeStyle = e.type === 'mutant' ? '#ff5555' : '#cccccc'
             ctx.lineWidth = 2
             ctx.save()
-            ctx.translate(player.x, player.y)
-            ctx.scale(player.facing, 1)
+            ctx.translate(e.x, e.y)
             ctx.beginPath()
-            // Simple ship shape
-            ctx.moveTo(10, 0); ctx.lineTo(-10, -5); ctx.lineTo(-10, 5); ctx.lineTo(10, 0)
-            ctx.moveTo(-10, -5); ctx.lineTo(-15, 0); ctx.lineTo(-10, 5) // Thruster
-            ctx.moveTo(0, -3); ctx.lineTo(0, -8) // Top fin
-            ctx.stroke()
-
-            // Thrust flame
-            if ((player.facing === 1 && keys.ArrowRight) || (player.facing === -1 && keys.ArrowLeft)) {
-                ctx.beginPath()
-                ctx.moveTo(-15, 0)
-                ctx.lineTo(-25 - Math.random() * 10, 0)
-                ctx.strokeStyle = Math.random() > 0.5 ? 'white' : 'gray'
-                ctx.stroke()
-            }
-            ctx.restore()
-
-            // Lasers
-            ctx.strokeStyle = 'white' // Colorful lasers? Grayscale requested.
-            // Actually defender has colorful lasers. But user asked for greyscale.
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            lasers.forEach(l => {
-                ctx.moveTo(l.x, l.y)
-                ctx.lineTo(l.x + 40 * (l.vx > 0 ? 1 : -1), l.y)
-            })
-            ctx.stroke()
-
-            // Enemies
-            ctx.strokeStyle = '#cccccc'
-            enemies.forEach(e => {
-                ctx.save()
-                ctx.translate(e.x, e.y)
-                ctx.beginPath()
-                // Lander shape
+            if (e.type === 'mutant') {
+                // Diamond with wings — the mutated shell, meaner silhouette.
+                ctx.moveTo(0, -10); ctx.lineTo(12, 0); ctx.lineTo(0, 10); ctx.lineTo(-12, 0); ctx.closePath()
+                ctx.moveTo(-12, 0); ctx.lineTo(-18, -6)
+                ctx.moveTo(12, 0); ctx.lineTo(18, -6)
+            } else {
+                // Lander shell with legs and the tractor bar beneath.
                 ctx.rect(-10, -10, 20, 20)
                 ctx.moveTo(-10, 10); ctx.lineTo(-10, 5); ctx.lineTo(10, 5); ctx.lineTo(10, 10)
                 ctx.moveTo(-5, 0); ctx.lineTo(5, 0)
+                if (e.carry !== null) { ctx.moveTo(-6, 12); ctx.lineTo(6, 12) }
+            }
+            ctx.stroke()
+            ctx.restore()
+        }
+
+        // Draw world objects at x and x±W so the seam wraps seamlessly.
+        const atSeam = (fn) => {
+            fn(0)
+            fn(-WORLD_WIDTH)
+            fn(WORLD_WIDTH)
+        }
+
+        const draw = () => {
+            ctx.fillStyle = 'black'
+            ctx.fillRect(0, 0, viewWidth, viewHeight)
+
+            const p = sim.player
+            // Camera follows across the wrap seam.
+            cameraX = ((p.x - viewWidth / 2) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+            const camR = cameraX + viewWidth
+
+            ctx.save()
+            ctx.translate(-cameraX, 0)
+
+            // Stars: fixed on the planet, gentle twinkle.
+            ctx.fillStyle = 'white'
+            for (let i = 0; i < 120; i++) {
+                if ((tickN + i * 17) % 240 < 60) continue
+                const sx = (i * 137) % WORLD_WIDTH
+                const sy = (i * 53) % viewHeight
+                atSeam((off) => {
+                    const x = sx + off
+                    if (x >= cameraX - 2 && x <= camR + 2) ctx.fillRect(x, sy, 2, 2)
+                })
+            }
+
+            // Terrain wireframe, twice for the seam.
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = 1
+            atSeam((off) => {
+                ctx.beginPath()
+                for (let i = 0; i < sim.terrain.length; i++) {
+                    const x = i * 10 + off
+                    if (x < cameraX - 12 || x > camR + 12) continue
+                    if (i === 0) ctx.moveTo(x, sim.terrain[i])
+                    else ctx.lineTo(x, sim.terrain[i])
+                }
                 ctx.stroke()
-                ctx.restore()
+            })
+
+            // Humans
+            sim.humans.forEach((h) => {
+                if (h.state === 'dead') return
+                atSeam((off) => { if (h.x + off >= cameraX - 20 && h.x + off <= camR + 20) { ctx.save(); ctx.translate(off, 0); drawHuman(h); ctx.restore() } })
+            })
+
+            // Enemies
+            sim.enemies.forEach((e) => {
+                atSeam((off) => { if (e.x + off >= cameraX - 24 && e.x + off <= camR + 24) { ctx.save(); ctx.translate(off, 0); drawLander(e); ctx.restore() } })
+            })
+
+            // Lasers
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = 2
+            sim.lasers.forEach((l) => {
+                atSeam((off) => {
+                    const x = l.x + off
+                    if (x >= cameraX - 44 && x <= camR + 44) {
+                        ctx.beginPath()
+                        ctx.moveTo(x, l.y)
+                        ctx.lineTo(x + 40 * (l.vx > 0 ? 1 : -1), l.y)
+                        ctx.stroke()
+                    }
+                })
             })
 
             // Particles
             ctx.fillStyle = 'white'
-            particles.forEach(p => ctx.fillRect(p.x, p.y, 2, 2))
+            sim.particles.forEach((pt) => ctx.fillRect(pt.x, pt.y, 2, 2))
+
+            // Player — the Jupiter fighter (dark during respawn blink).
+            if (p.dark <= 0 && !(p.invuln > 0 && Math.floor(tickN / 6) % 2 === 0)) {
+                ctx.strokeStyle = '#ffffff'
+                ctx.lineWidth = 2
+                ctx.save()
+                ctx.translate(p.x, p.y)
+                ctx.scale(p.facing, 1)
+                ctx.beginPath()
+                ctx.moveTo(14, 0); ctx.lineTo(-12, -6); ctx.lineTo(-12, 6); ctx.lineTo(14, 0)
+                ctx.moveTo(-12, -6); ctx.lineTo(-18, 0); ctx.lineTo(-12, 6)
+                ctx.moveTo(2, -4); ctx.lineTo(2, -10)
+                ctx.stroke()
+                if (thrustFacing === p.facing && thrustFacing !== 0) {
+                    ctx.beginPath()
+                    ctx.moveTo(-18, 0)
+                    ctx.lineTo(-28 - (tickN % 3) * 3, 0)
+                    ctx.strokeStyle = tickN % 2 ? 'white' : 'gray'
+                    ctx.stroke()
+                }
+                ctx.restore()
+                if (sim.carrying !== null) {
+                    const h = sim.humans[sim.carrying]
+                    ctx.save(); ctx.translate(0, 0); drawHuman({ x: h.x, y: h.y }); ctx.restore()
+                }
+            }
 
             ctx.restore()
 
-            // --- SCANNER (MINIMAP) ---
-            // Top of screen
-            const scannerScale = viewWidth / WORLD_WIDTH
-            const scannerH = MINIMAP_HEIGHT
-
-            // Frame
+            // --- SCANNER (radar): the whole planet compressed up top ---
+            const sc = viewWidth / WORLD_WIDTH
             ctx.fillStyle = 'black'
-            ctx.fillRect(0, 0, viewWidth, scannerH)
-            ctx.strokeStyle = 'white'
-            ctx.lineWidth = 2
-            ctx.beginPath()
-            ctx.moveTo(0, scannerH); ctx.lineTo(viewWidth, scannerH)
-            ctx.stroke()
-
-            // Terrain on Scanner
-            ctx.strokeStyle = '#666666'
+            ctx.fillRect(0, 0, viewWidth, MINIMAP_HEIGHT)
+            ctx.strokeStyle = '#444444'
             ctx.lineWidth = 1
+            ctx.strokeRect(1, 1, viewWidth - 2, MINIMAP_HEIGHT - 2)
+            // terrain silhouette on the radar
+            ctx.strokeStyle = '#3f7f3f'
             ctx.beginPath()
-            terrain.forEach((p, i) => {
-                if (i === 0) ctx.moveTo(p.x * scannerScale, p.y * (scannerH / viewHeight * 0.5) + scannerH / 2)
-                else ctx.lineTo(p.x * scannerScale, p.y * 0.15 + 10)
-            })
+            for (let i = 0; i < sim.terrain.length; i++) {
+                const x = i * 10 * sc
+                const y = MINIMAP_HEIGHT - 4 - (viewHeight - sim.terrain[i]) * 0.06
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y)
+            }
             ctx.stroke()
+            // radar dots
+            sim.humans.forEach((h) => { if (h.state !== 'dead') { ctx.fillStyle = '#ffd23f'; ctx.fillRect(h.x * sc - 1, MINIMAP_HEIGHT - 8, 2, 2) } })
+            sim.enemies.forEach((e) => { ctx.fillStyle = e.type === 'mutant' ? '#ff5555' : '#aaaaaa'; ctx.fillRect(e.x * sc - 1, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, e.y * 0.05 + 3)), 2, 2) })
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(p.x * sc - 2, Math.max(3, Math.min(MINIMAP_HEIGHT - 3, p.y * 0.05 + 3)), 4, 3)
+            // camera window (may split across the seam)
+            ctx.strokeStyle = '#ffffff'
+            ctx.strokeRect(cameraX * sc, 2, Math.min(viewWidth, WORLD_WIDTH - cameraX) * sc, MINIMAP_HEIGHT - 4)
+            if (cameraX + viewWidth > WORLD_WIDTH) ctx.strokeRect(0, 2, (cameraX + viewWidth - WORLD_WIDTH) * sc, MINIMAP_HEIGHT - 4)
 
-            // Entities on Scanner
-            // Player
-            ctx.fillStyle = 'white'
-            ctx.fillRect(player.x * scannerScale, player.y * 0.15 + 10, 4, 4)
-
-            // Enemies
-            ctx.fillStyle = '#aaaaaa'
-            enemies.forEach(e => {
-                ctx.fillRect(e.x * scannerScale, e.y * 0.15 + 10, 2, 2)
-            })
-
-            // Camera Box
-            ctx.strokeStyle = 'white'
-            ctx.strokeRect(cameraX * scannerScale, 2, viewWidth * scannerScale, scannerH - 4)
+            // --- HUD: score sheet under the radar, arcade-style ---
+            ctx.textAlign = 'left'
+            ctx.font = '14px monospace'
+            ctx.fillStyle = '#ff5555'
+            ctx.fillText(String(sim.score).padStart(6, '0'), 8, MINIMAP_HEIGHT + 16)
+            ctx.fillStyle = '#ffd23f'
+            ctx.fillText(String(hiScore).padStart(6, '0'), 8, MINIMAP_HEIGHT + 32)
+            ctx.textAlign = 'right'
+            ctx.fillStyle = '#9fe39f'
+            ctx.fillText(`WAVE ${sim.wave}`, viewWidth - 8, MINIMAP_HEIGHT + 16)
+            ctx.fillStyle = '#ffffff'
+            ctx.fillText(`${sim.humans.filter((h) => h.state !== 'dead').length}/${sim.humans.length}`, viewWidth - 8, MINIMAP_HEIGHT + 32)
+            // remaining ships
+            for (let i = 0; i < sim.lives - 1; i++) {
+                ctx.strokeStyle = '#ffffff'
+                ctx.lineWidth = 1
+                ctx.beginPath()
+                const bx = viewWidth - 16 - i * 18
+                const by = MINIMAP_HEIGHT + 44
+                ctx.moveTo(bx, by); ctx.lineTo(bx - 10, by + 4); ctx.lineTo(bx - 10, by - 4); ctx.closePath()
+                ctx.stroke()
+            }
 
             if (isAttractMode) {
                 attractTick++
@@ -437,6 +357,34 @@ const DefenderGame = () => {
                     ctx.fillText(l.text, l.x, l.y)
                 }
             }
+
+            if (!isAttractMode && sim.over) {
+                ctx.fillStyle = 'rgba(0,0,0,0.6)'
+                ctx.fillRect(0, 0, viewWidth, viewHeight)
+                ctx.textAlign = 'center'
+                ctx.fillStyle = '#ff5555'
+                ctx.font = `bold ${Math.max(22, Math.floor(viewWidth * 0.09))}px monospace`
+                ctx.fillText('GAME OVER', viewWidth / 2, viewHeight / 2 - 10)
+                ctx.fillStyle = '#ffffff'
+                ctx.font = '14px monospace'
+                ctx.fillText(`SCORE ${sim.score}  WAVE ${sim.wave}`, viewWidth / 2, viewHeight / 2 + 16)
+                ctx.fillStyle = '#ffd23f'
+                ctx.fillText('ANY KEY / TAP TO RESTART', viewWidth / 2, viewHeight / 2 + 40)
+            }
+        }
+
+        const init = () => {
+            resize()
+            startRun()
+            isAttractMode = true // the first run demos itself until a key or tap
+
+            window.addEventListener('keydown', handleKeyDown)
+            window.addEventListener('keyup', handleKeyUp)
+            window.addEventListener('resize', resize)
+            canvas.addEventListener('pointerdown', handleCanvasTap)
+            canvas.focus()
+
+            animationFrameId = requestAnimationFrame(loop)
         }
 
         let lastTime = 0
@@ -458,11 +406,57 @@ const DefenderGame = () => {
         }
         init()
 
+        // QA contract (#377)
+        exposeGame({
+            id: 'defender',
+            buttons: ['left', 'right', 'up', 'down', 'a'],
+            reset: (s) => {
+                tickN = 0
+                startRun(s >>> 0)
+            },
+            tick: (pad) => {
+                if (sim.over) { tickN += 1; return }
+                if (isAttractMode) startRun()
+                keys.ArrowLeft = !!pad.left
+                keys.ArrowRight = !!pad.right
+                keys.ArrowUp = !!pad.up
+                keys.ArrowDown = !!pad.down
+                keys.Space = !!pad.a
+                update()
+            },
+            state: () => ({
+                tick: tickN,
+                score: sim ? sim.score : 0,
+                done: sim ? sim.over : false,
+                seed,
+                lives: sim ? sim.lives : START_LIVES,
+                wave: sim ? sim.wave : 1,
+                humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
+                enemies: sim ? sim.enemies.length : 0,
+                playerX: sim ? Math.round(sim.player.x) : 0,
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: the seeded rand closure is not JSON-serializable (#391).
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN,
+            score: sim ? sim.score : 0,
+            done: sim ? sim.over : false,
+            seed: seed,
+            lives: sim ? sim.lives : START_LIVES,
+            wave: sim ? sim.wave : 1,
+        }))
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [])
 
