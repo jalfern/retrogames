@@ -35,6 +35,35 @@ export const UFO_SPEED = 1
 export const UFO_Y = 26
 export const UFO_POINTS = [50, 100, 150, 300]
 
+// The 1978 bunkers: four destructible forts of 2x2 bricks (11x8 cells =
+// 22x16 px each), dome corners cut, a 6x4 slot in the crown. They sit
+// between the fleet and the player. A shot eats exactly ONE brick and is
+// lost; a shot whose path is hollow (slot or already chewed) passes. A
+// descended invader erases whatever bricks it walks over. A cleared wave
+// does NOT rebuild them — only a new game restores the forts (original).
+export const BUNKER_W = 22
+export const BUNKER_H = 16
+export const BUNKER_ROWS = 8
+export const BUNKER_Y = 208
+export const BUNKER_X = [23, 75, 127, 179]
+export const BUNKER_SHAPE = [
+    0b01111111110, // crown, corners cut
+    0b11111001111, // the 6px slot in the crown (cells 4-5, centered)
+    0b11111001111,
+    0b11111111111,
+    0b11111111111,
+    0b11111111111,
+    0b11111111111,
+    0b11111111111,
+]
+
+export const newBunkers = () => BUNKER_X.map((x) => ({ x, y: BUNKER_Y, cells: BUNKER_SHAPE.slice() }))
+export const bunkerBricks = (s) => {
+    let n = 0
+    for (const b of s.bunkers) for (const m of b.cells) { let r = m; while (r) { n += r & 1; r >>>= 1 } }
+    return n
+}
+
 // mulberry32 lives in gameContract (seedRng); the sim takes any () => [0,1).
 
 export const makeWorld = (rand, opts = {}) => {
@@ -52,6 +81,7 @@ export const makeWorld = (rand, opts = {}) => {
         playerBullet: null, // original: one shot on screen at a time
         ufo: null,          // { x, points }
         ufoNext: 900 + Math.floor(rand() * 600),
+        bunkers: newBunkers(),
         phase: 'play',      // play | dying | over
         respawn: 0,
         overTick: 0,
@@ -141,6 +171,8 @@ export const step = (s, input, rand) => {
             return s
         }
     }
+    // the fleet grinds the forts down as it descends (original overwrite)
+    stompBunkers(s)
 
     // --- invader fire (seeded gameplay entropy) ---
     if (rand() < fireChance(s.wave)) {
@@ -158,19 +190,24 @@ export const step = (s, input, rand) => {
         if (s.ufo.x > GW + 16) s.ufo = null
     }
 
+    // sweep origins before the bullets move (a fast shot skips 2px brick rows)
+    const pb0 = s.playerBullet ? s.playerBullet.y : null
+    const eb0 = s.enemyBullets.map((b) => b.y)
     advanceBullets(s)
 
     // --- collisions ---
     if (s.playerBullet) {
         const b = s.playerBullet
-        let consumed = false
-        for (const i of s.invaders) {
-            if (!i.alive) continue
-            if (b.x >= i.x && b.x <= i.x + INVADER_W && b.y <= i.y + INVADER_H && b.y + BULLET_H >= i.y) {
-                i.alive = false
-                s.score += ROW_SCORE[i.row]
-                consumed = true
-                break
+        let consumed = shotVsBunkers(s, Math.floor(b.x), b.y, pb0 + BULLET_H, false) // swept up
+        if (!consumed) {
+            for (const i of s.invaders) {
+                if (!i.alive) continue
+                if (b.x >= i.x && b.x <= i.x + INVADER_W && b.y <= i.y + INVADER_H && b.y + BULLET_H >= i.y) {
+                    i.alive = false
+                    s.score += ROW_SCORE[i.row]
+                    consumed = true
+                    break
+                }
             }
         }
         if (!consumed && s.ufo &&
@@ -182,7 +219,13 @@ export const step = (s, input, rand) => {
         if (consumed) s.playerBullet = null
     }
 
-    for (const b of s.enemyBullets) {
+    for (let k = 0; k < s.enemyBullets.length; k++) {
+        const b = s.enemyBullets[k]
+        // the forts shield the player: a falling shot eats one brick and is lost
+        if (shotVsBunkers(s, Math.floor(b.x), eb0[k], b.y + BULLET_H, true)) {
+            b.y = GH + 99 // consumed by the fort
+            continue
+        }
         if (b.y >= PLAYER_Y && b.y <= PLAYER_Y + PLAYER_H &&
             b.x >= s.playerX && b.x <= s.playerX + PLAYER_W) {
             b.y = GH + 99 // consumed
@@ -201,6 +244,51 @@ const advanceBullets = (s) => {
         if (s.playerBullet.y < 0) s.playerBullet = null
     }
     for (const b of s.enemyBullets) b.y += 2.5
+}
+
+// One shot eats exactly ONE brick: the first filled 2x2 cell the swept 1px
+// column crosses, scanning from the leading edge (the shot's tip). A pixel
+// sitting on a brick boundary tries the right-hand neighbour. If no filled
+// cell is crossed — a slot, or a gap already chewed through — the shot
+// passes on to what is behind the fort.
+const shotVsBunkers = (s, x, yTop, yBottom, down) => {
+    for (const b of s.bunkers) {
+        if (x + 1 <= b.x || x >= b.x + BUNKER_W) continue
+        const top = Math.max(yTop, b.y) - b.y
+        const bot = Math.min(yBottom, b.y + BUNKER_H) - b.y
+        if (bot < top) continue
+        const r0 = Math.floor(top / 2)
+        const r1 = Math.floor((bot - 0.001) / 2)
+        const c0 = Math.floor((x - b.x) / 2)
+        for (let r = down ? r1 : r0; r !== (down ? r0 - 1 : r1 + 1); r += down ? -1 : 1) {
+            for (const c of [c0, c0 + 1]) {
+                if (c < 0 || c > 10) continue
+                if ((b.cells[r] >> c) & 1) { b.cells[r] &= ~(1 << c); return true }
+            }
+        }
+    }
+    return false
+}
+
+// A descended invader erases every brick its body overlaps (original
+// overwrite — the fleet does not shoot the forts, it walks them down).
+const stompBunkers = (s) => {
+    for (const i of s.invaders) {
+        if (!i.alive) continue
+        for (const b of s.bunkers) {
+            if (i.x + INVADER_W <= b.x || i.x >= b.x + BUNKER_W) continue
+            if (i.y + INVADER_H <= b.y || i.y >= b.y + BUNKER_H) continue
+            const c0 = Math.max(0, Math.floor((i.x - b.x) / 2))
+            const c1 = Math.min(10, Math.floor((i.x + INVADER_W - b.x - 0.001) / 2))
+            const r0 = Math.max(0, Math.floor((i.y - b.y) / 2))
+            const r1 = Math.min(7, Math.floor((i.y + INVADER_H - b.y - 0.001) / 2))
+            for (let r = r0; r <= r1; r++) {
+                let mask = 0
+                for (let c = c0; c <= c1; c++) mask |= 1 << c
+                b.cells[r] &= ~mask
+            }
+        }
+    }
 }
 
 export const loseLife = (s) => {
@@ -223,6 +311,11 @@ export const hash = (s) => {
     mix(s.score); mix(s.lives); mix(Math.round(s.playerX * 100))
     mix(s.dir); mix(s.phase === 'over' ? 7 : s.phase === 'dying' ? 3 : 1)
     for (const i of s.invaders) mix((i.alive ? 1 : 0) * 91 + i.x + i.y * 512)
+    for (const b of s.bunkers) {
+        let m = b.x
+        for (let r = 0; r < BUNKER_ROWS; r++) m = (Math.imul(m, 31) + b.cells[r]) >>> 0
+        mix(m)
+    }
     for (const b of s.enemyBullets) mix(b.x + b.y * 512)
     mix(s.playerBullet ? s.playerBullet.x + s.playerBullet.y * 512 : -1)
     mix(s.ufo ? Math.round(s.ufo.x * 10) : -2)

@@ -11,7 +11,7 @@ four-tone march accelerates as the fleet shrinks.
 
 | File | Job | Proven by |
 |------|-----|-----------|
-| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival + bounty) drawn from the injected `rand` stream | `npm run invaderscheck` (34 checks incl. 2 mutants proven RED→GREEN) |
+| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival + bounty) drawn from the injected `rand` stream | `npm run invaderscheck` (42 checks incl. 4 mutants proven RED→GREEN) |
 | `index.jsx` | render (pixel sprites from bit-rows, 2-frame march), input, seed lifecycle, attract autopilot, harness contract | eslint + `feedbackcheck` laws |
 | `attract.js` | attract screen frames | intact from the original port |
 
@@ -29,6 +29,29 @@ batch rebuilt the original's honest end-of-run model:
   does the third death. The score you die with is the score you report.
 - Waves rebuild full and march faster (`0.8 + 0.25·wave`), start 8px lower
   per wave up to +48, and fire more often (capped 5%/tick).
+
+## The forts (#1495)
+
+The original's four destructible bunkers, restored to the sim:
+
+- Four forts of **2x2 bricks** (11x8 cells = 22x16 px each), dome corners
+  cut, a 6x4 slot in the crown, at x = 23/75/127/179 on the line y = 208 —
+  between the fleet and the player. Green, like the original's overlay.
+- **A shot eats exactly one brick and is lost.** The 1px column is swept
+  from the previous to the current position (a 5px shot skips brick rows),
+  scanned from the leading edge; a pixel on a brick boundary tries the
+  right-hand neighbour. A hollow path (slot or chewed gap) lets the shot
+  through to what is behind the fort.
+- **The forts shield the player:** a falling invader shot that meets a brick
+  is consumed by the fort. The fleet's fire chews the forts down for free.
+- **A descended invader grinds the bricks it walks over** (original
+  overwrite) — the last rows of a run eat the forts before the landing
+  ends the game.
+- **A cleared wave does NOT rebuild the forts** — only a new game restores
+  them (original behavior).
+
+The contract state reports `bunkerBricks` (0–328); DebugKit gains a
+"Wipe forts" action and the brick count on the status line.
 
 ## Seed pinning (#1473)
 
@@ -48,7 +71,6 @@ npm run feedbackcheck          # the seedpin law incl. this title
 
 ## Honest gaps
 
-- No bunkers/shields — the original's four destructible forts are absent.
 - 4 rows × 8 = 32 invaders; the original opens with 55 and grows per wave.
 - The UFO bounty is uniform-random from the four values; the original's
   mystery score came from a shot-count table.
