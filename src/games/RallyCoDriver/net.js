@@ -4,8 +4,10 @@
 // boxes run the SAME sim from one seed (the 'go' kickoff) and sample each
 // other's pads D ticks ahead (the SOS sampling law, #531): pad streams are
 // absolute per tick, so seed + pads => the same hash on both boxes (the
-// determinism law, rallycheck). The 4-s start lights hold the car while the
-// first pad batches cross the relay — the sync buffer.
+// determinism law, rallycheck). Online the lights are skipped (cd.t = 0 in
+// the shell): the ready gate IS the sync buffer — a box may not run a tick
+// until the peer's pad for that tick is in, so the first ticks hold a frame
+// or two while the first batches cross the relay (test 3 pins it).
 //
 // Wire (FORWARD_TYPES only — no relay redeploy):
 //   {t:'go',  seed, wx}             host kickoff (curated seed + weather key)
@@ -307,6 +309,10 @@ export function createRallySync(opts = {}) {
 
 // The CPU fallback for a seat no one drives (never joined, or dropped after
 // the grace): the same emitters the attract uses, computed at tick time.
+// Returns the wire MASK, not the raw pad: assemble() treats cpuMasks values
+// as masks (unmaskPad does `m | 0`), and a raw pad object masks to NaN -> 0,
+// a permanently released pad — the demoted co would never call a note again
+// (the walkaway test pins the note flow after the flip).
 export function cpuSeatPad(g, seat) {
-    return seat === 1 ? cpuCoDriverPad(g) : cpuDriverPad(g)
+    return padMask(seat === 1 ? cpuCoDriverPad(g) : cpuDriverPad(g))
 }

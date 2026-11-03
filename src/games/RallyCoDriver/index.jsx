@@ -11,11 +11,14 @@
 import { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { askVoiceConsent, acquireListenBadge } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
+import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
+import { makeTransport } from '../../utils/linkPeers.js'
 import {
     createSim, tickSim, state, stateHash, cpuDriverPad, cpuCoDriverPad,
     stageAt, distAhead, slopeAt, gearOf, mulberry32, postsFor,
@@ -23,6 +26,10 @@ import {
     WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
+import {
+    createRallySync, cpuSeatPad, snapshotGame, restoreGame, packSnap,
+    DROP_GRACE, SEATS,
+} from './net.js'
 import { senseRally } from './sensors/pacecard.js'
 import { createPaceBrain, modelSeatPad } from './agent/pacebrain.js'
 
@@ -70,6 +77,9 @@ export default function RallyCoDriver() {
     const [paused, setPaused] = useState(false)
     const pausedRef = useRef(false) // shared by the loop (sim gate) and PauseOverlay resume
     const [voiceUi, setVoiceUi] = useState(null) // { on, said, ok, label }
+    const [netUi, setNetUi] = useState(null) // #1448 lobby state for the shared Lobby overlay
+    const netEntryRef = useRef(null) // guest code entry -> lobby.join (set in the effect)
+    const wrapTapRef = useRef(null) // host tap-to-start over the lobby (set in the effect)
 
     useEffect(() => {
         const wrap = wrapRef.current
@@ -106,6 +116,7 @@ export default function RallyCoDriver() {
         const attract = { g: createSim(selectedSeed(), 2, selectedWeather()) }
         const best = { t: null }
         const hintUntil = { t: 0 }
+        const overAt = { t: 0 } // over-screen re-kick debounce (net mode)
 
         // ---- juice state (shell-side: lights, banners, gravel, feel) --------
         const cd = { t: 0 } // 3-2-1-GO in sim ticks (4 s); reset()/contract skip it
@@ -179,7 +190,11 @@ export default function RallyCoDriver() {
                     voice.ok = !!call
                     voice.label = call ? callLabel(call) : 'NO NOTE'
                     if (call) {
-                        applyCallEvent(play.g, call, 'voice')
+                        // online guest: the note rides the co pad stream (both
+                        // boxes register the call through the same sim edge);
+                        // local/solo: inject it straight into this box's sim
+                        if (net.active && net.role === 'guest') coNotePad(call)
+                        else applyCallEvent(play.g, call, 'voice')
                         if (call.crest) {
                             // caution: a low double beat — warning, not a corner ping
                             audioController.playTone(330, 0.07, 'square', 0.05)
@@ -201,6 +216,132 @@ export default function RallyCoDriver() {
         let sayText = ''
         const say = (t) => { sayText = t; sayUntil = performance.now() + 1800 }
 
+        // ---- online (#1448): the 2-seat lockstep over the shared lobby -------
+        // ?net=host / ?net=join&room=CODE / ?relay=wss://host. Host = the
+        // driver (seat 0), guest = the co-driver (seat 1); both boxes run the
+        // SAME sim from the 'go' seed + weather and sample each other's pads
+        // D ticks ahead (the sampling law, #531). The protocol is pure and
+        // node-proven end to end: ./net.js + scripts/rallylinkcheck.mjs.
+        const nq = new URLSearchParams(location.search)
+        const netRole = lobbyRole(location.search)
+        const net = {
+            active: !!netRole, role: netRole, state: null, room: null, lobby: null,
+            roomGiven: !!nq.get('room'), desyncFrozen: false,
+        }
+        const sync = createRallySync({
+            mySeat: netRole === 'host' ? 0 : 1,
+            watchSeats: netRole === 'host' ? [1] : [0],
+            send: (t, p) => { if (net.room) net.room.send(t, p) },
+        })
+        // the guest's co notes as a pad stream: a note is a TAP — one sample
+        // tick high, exactly like the CPU co ('one tick high, next tick low';
+        // the coCallFromPad edge IS the call). Taps queue until the next
+        // sample tick consumes them (~180 ms after the finger lifts).
+        const coQueue = []
+        const coNotePad = (call) => {
+            const p = {}
+            if (call.dir < 0) p.left = true
+            else if (call.dir > 0) p.right = true
+            else p.up = true
+            if (call.sev >= 3) p.b = true
+            else if (call.sev === 2) p.a = true
+            if (coQueue.length >= 8) coQueue.shift()
+            coQueue.push(p)
+        }
+        const coQueueRead = () => (coQueue.length ? coQueue.shift() : {})
+        let netMiss = 0
+        const pushNetUi = () => setNetUi(net.active && net.state ? { ...net.state } : null)
+        const hostSnap = () => {
+            if (!net.room || screenRef.cur !== 'play') return
+            // the authority's truth, chunked <=380 chars (the relay's 512B budget)
+            for (const c of packSnap(JSON.stringify(snapshotGame(play.g)), play.g.tick)) net.room.send('res', c)
+        }
+        const netDesync = () => {
+            if (screenRef.cur !== 'play') return
+            if (net.role === 'host') hostSnap()
+            else { net.desyncFrozen = true; net.room.send('res', { e: 'req' }) }
+            say('LINK DESYNC — RESYNCING')
+        }
+        const startNetMatch = (m) => {
+            const seed = (m.seed >>> 0) || 1
+            const wx = WEATHER_ORDER.indexOf(m.wx) >= 0 ? m.wx : WEATHER_ORDER[0]
+            seedRef.cur = seed
+            play.g = createSim(seed, 2, wx)
+            play.g.co.kind = 'cpu' // the wire (or the CPU after a walkaway) feeds the co pad
+            voice.said = ''; voice.ok = false; voice.label = ''
+            pushVoice()
+            hintUntil.t = play.g.tick + (netRole === 'guest' ? 2400 : 420)
+            cd.t = 0 // no light-hold online: the ready gate IS the sync buffer
+            spray.length = 0
+            banner.until = 0
+            crestArmed = true
+            offWas = false
+            overAt.t = 0
+            coQueue.length = 0
+            netMiss = 0
+            net.desyncFrozen = false
+            const mySeat = netRole === 'host' ? 0 : 1
+            const humans = (net.room && net.room.slots) ? net.room.slots.slice() : [mySeat]
+            sync.watchSeats = humans.filter((s) => s !== mySeat).sort((a, b) => a - b)
+            sync.reset(0)
+            setScreenBoth('play')
+        }
+        const onlineStart = () => {
+            if (!net.lobby || netRole !== 'host' || !net.room) return
+            if (net.room.phase !== 'waiting') net.room.setPhase('waiting') // re-kick after the previous stage
+            net.lobby.start({ seed: selectedSeed(), wx: selectedWeather() })
+        }
+        if (net.active) {
+            net.lobby = createLobby({
+                slug: 'rally-co-driver',
+                cap: 2,
+                relay: relayFromQuery(location.search),
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (st) => {
+                    net.state = st
+                    // a bare ?net=join with no code gets the shared entry card
+                    if (netRole === 'guest' && !net.roomGiven && st.phase === 'idle' && !st.code) st.phase = 'entry'
+                    pushNetUi()
+                },
+                onStart: (m) => startNetMatch(m),
+                onJoin: () => pushNetUi(),
+                onLeave: () => {
+                    pushNetUi()
+                    // the peer is gone: a pending resync could wait forever —
+                    // drive on; the seat demotes through the stall law below
+                    net.desyncFrozen = false
+                },
+                on: {
+                    pad: (mm) => sync.gotPad(mm),
+                    hs: (mm) => { const d = sync.gotHash(mm.k | 0, mm.h >>> 0); if (d) netDesync() },
+                    res: (mm) => {
+                        if (mm.e === 'req') { if (netRole === 'host') hostSnap() }
+                        else if (mm.e === 'snp') {
+                            const got = sync.snapInbox.push(mm)
+                            if (got && netRole === 'guest' && net.desyncFrozen) {
+                                // restore at the host's tick; the pad streams are
+                                // PRESERVED (the sampling law) — no sync.reset
+                                play.g = restoreGame(got.snap)
+                                net.desyncFrozen = false
+                            }
+                        }
+                    },
+                },
+            })
+            net.room = net.lobby.room
+            netEntryRef.current = (code) => { net.lobby.join(code) }
+            wrapTapRef.current = (e) => {
+                if (netRole !== 'host' || screenRef.cur === 'play' || screenRef.cur === 'over') return
+                const t = e.target
+                if (t && (t.tagName === 'INPUT' || t.tagName === 'BUTTON' || (t.closest && t.closest('[role="button"]')))) return
+                onlineStart()
+            }
+            if (netRole === 'host') net.lobby.open()
+            else net.lobby.join(nq.get('room'))
+            pushNetUi()
+        }
+
         const onKey = (e, down) => {
             if (down && e.repeat) return
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
@@ -216,6 +357,17 @@ export default function RallyCoDriver() {
             if (pausedRef.current) return
             if (screenRef.cur === 'attract') {
                 if (down) {
+                    if (net.active) {
+                        // the lobby owns the attract: the host curates (R the
+                        // stage, T the weather) and kicks (Space/Enter); the
+                        // guest just waits for the 'go'
+                        if (net.role === 'host') {
+                            if (code === 'KeyR') { stageIdx = (stageIdx + 1) % CURATED.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
+                            if (code === 'KeyT') { wxIdx = (wxIdx + 1) % WEATHER_ORDER.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
+                            if (code === 'Space' || code === 'Enter') onlineStart()
+                        }
+                        return
+                    }
                     // R cycles the curated stage, T the weather preset; any other
                     // key starts the race on the current selection
                     if (code === 'KeyR') { stageIdx = (stageIdx + 1) % CURATED.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
@@ -225,34 +377,60 @@ export default function RallyCoDriver() {
                 return
             }
             if (screenRef.cur === 'over') {
+                if (net.active) {
+                    // the host (re-)kicks the room; the guest's over screen waits
+                    // for it — one shared stage, chosen by the driver
+                    if (down && (code === 'Space' || code === 'Enter') && net.role === 'host'
+                        && overAt.t > 0 && performance.now() - overAt.t > 500) onlineStart()
+                    return
+                }
                 if (down && (code === 'Space' || code === 'Enter')) { startRace(); return }
                 if (down && code === 'KeyB') { setScreenBoth('attract'); attract.g = createSim(selectedSeed(), 2, selectedWeather()); voiceStop(); return }
                 return
             }
             // play
             if (code === 'KeyC' && down) {
+                if (net.active) return // online: the co seat is the wire, not a toggle
                 if (voice.on) voiceStop()
                 play.g.co.kind = play.g.co.kind === 'cpu' ? 'human' : 'cpu'
                 say(play.g.co.kind === 'human' ? 'SEAT 2: QWE LEFT · ASD RIGHT · Z STRAIGHT' : 'SEAT 2: CO-D CPU')
                 return
             }
-            if (code === 'KeyV' && down) { voiceOn(); return }
-            if (code === 'ArrowUp') keys.up = down
-            if (code === 'ArrowDown') keys.down = down
-            if (code === 'ArrowLeft') keys.left = down
-            if (code === 'ArrowRight') keys.right = down
-            if (code === 'Space') keys.a = down
-            // human co-driver: a note is a tap
-            if (down && play.g.co.kind === 'human' && CO_KEYS[code]) {
-                const call = CO_KEYS[code]
-                applyCallEvent(play.g, call, 'human')
-                audioController.playTone(call.dir === 0 ? 520 : 620 + call.sev * 90, 0.05, 'square', 0.05)
+            if (code === 'KeyV' && down) {
+                if (net.active && net.role === 'host') return // the host's co seat is the guest
+                voiceOn(); return
+            }
+            // the driver's held keys are the host seat's (or the solo player's);
+            // the guest's own fingers drive only the co notes below
+            if (!net.active || net.role === 'host') {
+                if (code === 'ArrowUp') keys.up = down
+                if (code === 'ArrowDown') keys.down = down
+                if (code === 'ArrowLeft') keys.left = down
+                if (code === 'ArrowRight') keys.right = down
+                if (code === 'Space') keys.a = down
+            }
+            // a co note is a tap: online guest -> the pad stream over the wire;
+            // local human co -> a direct call into this box's sim
+            if (down && CO_KEYS[code]) {
+                if (net.active && net.role === 'guest') {
+                    const call = CO_KEYS[code]
+                    coNotePad(call)
+                    audioController.playTone(call.dir === 0 ? 520 : 620 + call.sev * 90, 0.05, 'square', 0.05)
+                } else if (!net.active && play.g.co.kind === 'human') {
+                    const call = CO_KEYS[code]
+                    applyCallEvent(play.g, call, 'human')
+                    audioController.playTone(call.dir === 0 ? 520 : 620 + call.sev * 90, 0.05, 'square', 0.05)
+                }
             }
         }
         const kd = (e) => onKey(e, true)
         const ku = (e) => onKey(e, false)
         const tap = () => {
             if (pausedRef.current) return
+            if (net.active) {
+                if (net.role === 'host' && screenRef.cur !== 'play') onlineStart()
+                return
+            }
             if (screenRef.cur === 'attract') startRace()
             else if (screenRef.cur === 'over') startRace()
         }
@@ -345,7 +523,42 @@ export default function RallyCoDriver() {
             offWas = g.car.off
             // rain: a soft near-continuous hiss under the engine (preset #1407)
             if (g.weather === 'rain' && g.tick % 18 === 0) audioController.playNoise(0.15, 0.016)
-            tickSim(g, [driverPad(), coPad(g)])
+            if (net.active) {
+                // THE TICK CONTRACT (rallylinkcheck pins it box by box):
+                // sample own seat D ahead -> ready gate -> assemble -> tick ->
+                // hash-guard the boundary. Solo mode ticks the two local pads.
+                if (net.desyncFrozen) return // hold for the host's truth
+                const k = g.tick + 1
+                sync.pumpTo(k + sync.delay, net.role === 'host' ? driverPad : coQueueRead)
+                // CPU masks ONLY for seats no one watches: a watched seat must
+                // present its real wire pad for k or the box stalls — stalling
+                // (not guessing) is the protocol's law under lag.
+                const cpuMasks = {}
+                for (let seat = 0; seat < SEATS; seat++) {
+                    if (sync.watchSeats.indexOf(seat) < 0) cpuMasks[seat] = cpuSeatPad(g, seat)
+                }
+                if (!sync.ready(k, cpuMasks)) {
+                    // the walkaway law (#1416 gap 2): DROP_GRACE stalled ticks
+                    // in a row => the missing seat is CPU, on EVERY box at the
+                    // SAME tick (the relay FIFO'd its last batch before the
+                    // roster change) — a lost link degrades to the solo demo
+                    netMiss++
+                    if (netMiss >= DROP_GRACE) {
+                        const seat = sync.stats().stalledSeat
+                        if (seat >= 0 && sync.demote(seat)) {
+                            netMiss = 0
+                            say(seat === 1 ? 'CO LOST — CPU CO TAKES OVER' : 'HOST LOST — CPU DRIVES ON')
+                        }
+                    }
+                    return
+                }
+                netMiss = 0
+                tickSim(g, sync.assemble(k, cpuMasks))
+                sync.prune(g.tick)
+                if (g.tick % sync.hashEvery === 0 && sync.hash(g.tick, stateHash(g))) netDesync()
+            } else {
+                tickSim(g, [driverPad(), coPad(g)])
+            }
             juice(g)
             // gravel spray: roost off the rear wheels while on the shoulder
             if (!LITE && g.car.off && g.car.v > 0.4 && spray.length < 90) {
@@ -365,6 +578,7 @@ export default function RallyCoDriver() {
             if (g.done) {
                 const t = state(g).score
                 if (best.t == null || t < best.t) best.t = t
+                overAt.t = performance.now()
                 setScreenBoth('over')
                 voiceStop()
             }
@@ -814,24 +1028,37 @@ export default function RallyCoDriver() {
             ctx.fillRect(W - 108, H - 30, 64, 6)
             ctx.fillStyle = g.car.v > VMAX * 0.85 ? '#c23b31' : '#7ec8ff'
             ctx.fillRect(W - 107, H - 29, 62 * (g.car.v / VMAX), 4)
-            // co-driver chip
+            // co-driver chip (online: the link state IS the chip, #1448)
             ctx.textAlign = 'left'
             ctx.font = '9px monospace'
-            const coLabel = voice.on ? 'CO-D: VOICE' : g.co.kind === 'human' ? 'CO-D: KEYS' : 'CO-D: CPU'
+            let coLabel
+            if (net.active && net.role === 'host') {
+                coLabel = sync.watchSeats.indexOf(1) >= 0 ? 'CO-D: LINKED' : 'CO-D: CPU'
+            } else if (net.active) {
+                coLabel = voice.on ? 'CO-D: VOICE' : 'CO-D: YOU'
+            } else {
+                coLabel = voice.on ? 'CO-D: VOICE' : g.co.kind === 'human' ? 'CO-D: KEYS' : 'CO-D: CPU'
+            }
             ctx.fillStyle = 'rgba(4,7,13,0.72)'
             ctx.fillRect(6, H - 24, 86, 18)
-            ctx.fillStyle = '#8b93a3'
+            ctx.fillStyle = coLabel === 'CO-D: LINKED' ? '#7ec8ff' : coLabel === 'CO-D: CPU' && net.active ? '#c23b31' : '#8b93a3'
             ctx.fillText(coLabel, 11, H - 15)
             if (voice.on) {
                 ctx.fillStyle = voice.ok ? '#7ee0a3' : '#c23b31'
                 ctx.fillText(voice.said ? voice.said.slice(0, 12) : 'listening…', 11, H - 8)
             }
-            // hint, first seconds only
+            // hint, first seconds only (the guest's co keys stay up longer —
+            // a first-time co-driver needs the map while the stage is young)
             if (g.tick < hintUntil.t) {
+                const hint = net.active && net.role === 'guest'
+                    ? 'QWE LEFT · ASD RIGHT · Z STRAIGHT · V VOICE'
+                    : net.active
+                        ? 'CO-D LINKED · ? HELP'
+                        : 'C: co-driver keys · V: voice · ? help'
                 ctx.textAlign = 'center'
                 ctx.font = '9px monospace'
                 ctx.fillStyle = 'rgba(220,216,204,0.75)'
-                ctx.fillText('C: co-driver keys · V: voice · ? help', W / 2, H - 10)
+                ctx.fillText(hint, W / 2, H - 10)
             }
             // the say() line: one message, never over the HUD corners
             if (performance.now() < sayUntil) {
@@ -869,7 +1096,12 @@ export default function RallyCoDriver() {
             ctx.fillText(msg, W / 2, 178)
             ctx.font = '10px monospace'
             ctx.fillStyle = 'rgba(220,216,204,0.8)'
-            ctx.fillText('PRESS ANY KEY · TAP TO START', W / 2, 208)
+            // the lobby overlay owns the net attract; the line under it says
+            // what THIS seat can do there (solo: the classic any-key start)
+            const startLine = net.active
+                ? (net.role === 'host' ? 'HOST: R STAGE · T WEATHER · SPACE KICKS' : 'GUEST: WAITING FOR THE HOST TO KICK…')
+                : 'PRESS ANY KEY · TAP TO START'
+            ctx.fillText(startLine, W / 2, 208)
             ctx.textAlign = 'left'
         }
 
@@ -902,7 +1134,12 @@ export default function RallyCoDriver() {
             }
             ctx.font = '10px monospace'
             ctx.fillStyle = 'rgba(220,216,204,0.8)'
-            ctx.fillText('SPACE: AGAIN · B: STAGE SELECT', W / 2, 204)
+            // online: one shared stage, re-kicked by the host (the guest's
+            // over screen simply waits); solo: the classic restart line
+            const overLine = net.active
+                ? (net.role === 'host' ? 'SPACE: NEXT RALLY (HOST KICKS) · B: STAGE SELECT' : 'WAITING FOR THE HOST TO KICK THE NEXT RALLY…')
+                : 'SPACE: AGAIN · B: STAGE SELECT'
+            ctx.fillText(overLine, W / 2, 204)
             ctx.textAlign = 'left'
         }
 
