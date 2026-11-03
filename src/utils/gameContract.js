@@ -272,3 +272,18 @@ export function seedFromQuery(search = (typeof window !== 'undefined' ? window.l
     const n = Number(v)
     return Number.isInteger(n) && n >= 0 && n <= 0xffffffff ? n : null
 }
+
+// #1473 seed-param helper: the RNG half of the contract. mulberry32 — 32-bit,
+// one integer in, deterministic [0,1) stream out. Paired with seedFromQuery it
+// gives engine seed-param ports one import for both halves:
+//   const rand = seedRng(seedFromQuery() ?? Math.floor(Math.random() * 1e6))
+// so gameplay randomness (not just decor) replays from the reported seed.
+export function seedRng(seed) {
+    let s = seed | 0
+    return () => {
+        s = (s + 0x6D2B79F5) | 0
+        let t = Math.imul(s ^ (s >>> 15), 1 | s)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+}

@@ -14,7 +14,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { seedFromQuery } from '../src/utils/gameContract.js'
+import { seedFromQuery, seedRng } from '../src/utils/gameContract.js'
 import {
     validateFeedback, feedbackLabels, buildFeedbackIssue, FB_MAX_PADS,
     corsOrigin, corsHeaders, CORS_ALLOW_HEADERS, FB_SHOT_PLACEHOLDER, screenshotMarkdown,
@@ -770,8 +770,11 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // the pin) → 38. Batch 7 adds IronKeep: the keep's every entropy source (guard
 // cooldowns, shot spread, crits, prop bob, flicker) already flows through a fixed
 // seed rng(1337) in art.js — it starts honoring ?seed=N at startPlay now, so it
-// joins the reporting+pinning count → 39. Dropping below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 39 games report+pin seeds', reportingGames >= 39, `${reportingGames} reporting`)
+// joins the reporting+pinning count → 39. Batch 8 is the first SEED-PARAM port:
+// DonkeyKong's gameplay randomness (barrel spacing, ladder chance) moved from raw
+// Math.random into seedRng(seed) regenerated at every human start → 40. Dropping
+// below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGames >= 40, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
@@ -793,6 +796,26 @@ for (const t of SEEDLESS7) {
         /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\btick:/.test(all)
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bscore:/.test(all)
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
+}
+
+// #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
+// -> same stream, different seed -> different stream, values in [0,1)), then per
+// port: every Math.random in the file must sit on a seed-generation line, so ALL
+// gameplay randomness provably flows through seedRng(seed). DonkeyKong is the
+// first such port — its barrel spacing + ladder chance used to be raw Math.random.
+const r1 = seedRng(424242)
+const r2 = seedRng(424242)
+const stream1 = [r1(), r1(), r1(), r1(), r1()]
+const stream2 = [r2(), r2(), r2(), r2(), r2()]
+ok('seedparam: seedRng is deterministic (same seed -> same stream)', stream1.join() === stream2.join())
+ok('seedparam: seedRng actually varies with the seed', seedRng(1)() !== seedRng(2)() && seedRng(7)() !== seedRng(8)())
+ok('seedparam: seedRng stays in [0,1)', stream1.every((v) => v >= 0 && v < 1))
+{
+    const dk = readFileSync(new URL('../src/games/DonkeyKong/index.jsx', import.meta.url), 'utf8')
+    const stray = dk.split('\n').filter((l) => /Math\.random/.test(l) && !/seed/i.test(l))
+    ok('seedparam: DonkeyKong — Math.random only on seed-generation lines', stray.length === 0, stray.map((l) => l.trim()).join(' | '))
+    ok('seedparam: DonkeyKong — gameplay draws from the seeded stream', /rand\(\)/.test(dk) && /seedRng\(seed\)/.test(dk))
+    ok('seedparam: DonkeyKong — seed regenerated at every human start', /newRun\(\)/.test(dk) && (dk.match(/newRun\(\)/g) || []).length >= 3)
 }
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
