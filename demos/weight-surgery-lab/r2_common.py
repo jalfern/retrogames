@@ -61,11 +61,10 @@ def grade(gold, pred):
     if pred is None:
         return False, "no-answer"
     try:
-        mv = _mv()
-        from latex2sympy2_extended import NormalizationConfig  # noqa: F401
-        from math_verify import LatexExtractionConfig, parse, verify
-        g = parse(gold, extraction_config=[LatexExtractionConfig(extract_operators=False)])
-        x = parse(pred, extraction_config=[LatexExtractionConfig(extract_operators=False)])
+        _mv()
+        from math_verify import parse, verify
+        g = parse(gold)
+        x = parse(pred)
         if g and x:
             return bool(verify(g, x)), "math-verify"
         return False, "math-verify-unparseable"
