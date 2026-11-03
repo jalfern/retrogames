@@ -64,6 +64,18 @@ export function validateR2({ scores, gate }) {
     return errs
 }
 
+// #1533 anti-corruption: step1_gate.json may exist ONLY when every row file is
+// complete. A gate written while a killed runner left partial rows is a fake.
+export function validateGateVsRows(counts, gate) {
+    const errs = []
+    const complete = ['base', 'p50c'].every(
+        t => (counts[t]?.math ?? 0) >= CLAIM_N.math && (counts[t]?.gsm ?? 0) >= CLAIM_N.gsm)
+    if (gate && !complete) errs.push('gate exists while rows incomplete — fake gate')
+    return errs
+}
+
+export const CLAIM_N = { math: 100, gsm: 100 }
+
 function build(labDir) {
     const out = join(tmpdir(), `ws3-${Date.now()}-${Math.random()}.html`)
     const r = spawnSync('node', [join(LAB, 'build_demo.mjs'), out], {
@@ -102,6 +114,25 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         ok(validateR2({ scores, gate }).length === 0, 'rules: committed r2 artifacts consistent',
             validateR2({ scores, gate }).join('; '))
     } else console.log('  skip committed r2 artifacts (runs not landed yet)')
+    // 2b. live anti-corruption: gate file vs actual jsonl row counts
+    const counts = {}
+    for (const tag of ['base', 'p50c']) {
+        counts[tag] = {}
+        for (const set of ['math', 'gsm']) {
+            const p = join(LAB, 'results/r2', `scores_${tag}_${set}.jsonl`)
+            counts[tag][set] = existsSync(p)
+                ? readFileSync(p, 'utf8').split('\n').filter(l => l.trim()).length : 0
+        }
+    }
+    const liveGate = existsSync(gateP) ? JSON.parse(readFileSync(gateP, 'utf8')) : null
+    ok(validateGateVsRows(counts, liveGate).length === 0,
+        'rules: no gate file while rows incomplete',
+        validateGateVsRows(counts, liveGate).join('; ') + ` (counts ${JSON.stringify(counts)})`)
+    ok(validateGateVsRows({ base: { math: 100, gsm: 100 }, p50c: { math: 100, gsm: 100 } },
+        { pass: true }).length === 0, 'win: complete rows + gate accepted')
+    ok(validateGateVsRows({ base: { math: 86, gsm: 0 }, p50c: { math: 0, gsm: 0 } },
+        { pass: true }).length > 0,
+        'mutant caught: gate against incomplete rows')
 }
 
 // 3. synthetic win path + mutants

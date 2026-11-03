@@ -165,13 +165,33 @@ while sandboxed processes keep #737). Everything round-2 runs through oMLX:
 - `r2_bench.py` — 16 train problems @32K: 284 tps aggregate (4 streams),
   14/16 cut off (= MIT's ~93% base-cut neighborhood), est 5.7 h/row → the
   100+100 set holds (6-h rule).
+- Jon speed-up (issue 18:53Z, session 118): oMLX scheduler now takes 32
+  concurrent (`scheduler.max_concurrent_requests: 32` — probe: 8 short parallel
+  requests all complete; 32×1024-cap = 410 tps agg, 25-28 tps/stream). Step-1
+  rows rerun at `WS_R2_PARALLEL=32`: first full-horizon wave = 32×32768 tok in
+  ~31 min ≈ 520 tps aggregate (~2.6× the 4-stream rate; per-stream t_wall ~2010s).
+  Row rate ≈ 60/h → step-1 (both rows) ≈ 3.3 h instead of ~11.
+  CAUTION recorded the hard way: `/admin/api/stats.total_completion_tokens` is
+  server-global — it includes Flash-Next (this agent!) — NEVER use it as the
+  lab's throughput signal; measure from scores jsonl t_wall/ntok instead.
 - `r2_score.py` / `r2_gate.py` / `r2_run_step1.sh` / `r2_detach.py` — detached,
   resumable step-1 rows (`results/r2/scores_<tag>_<set>.jsonl`) + the frozen
   neighborhood gate (`r2_gate.py` CLAIMS), logs to `/tmp/forge/ws-r2-step1.log`.
-- `r2_directions.py` — step-2 sketch (PASSES G1/R1 ONLY, gated on the step-1
-  gate): practice-only corpus from MIT's `practice/`, pass budget logged; the
-  R1 capture is a labeled SKETCH — next lane replaces the magnitude capture
-  with per-token write vectors (step3_capture.py reference) before any edit.
+  Session 118 race fix: killing r2_score.py made the wrapper run the gate on
+  partial rows and write a fake STOP gate — `r2_gate.py` now recomputes acc/fin
+  from the jsonl itself and REFUSES to write (exit 3) unless all four files hold
+  100 rows, and `r2_run_step1.sh` aborts before the gate when the scorer dies.
+- `r2_directions.py` — step-2 capture (PASSES G1/R1 ONLY, gated on the step-1
+  gate): practice-only corpus from MIT's `practice/`, pass budget logged; R1 is a
+  per-token write-vector capture (`C._install_capture`, step3_capture.py pattern,
+  all six FA layers, loop-vs-finished buckets), plumbing-proven via
+  `R2_R1_SMOKE=1` (writes only r2_directions_smoke.npz, consumes no budget).
+  G1 generations run at `WS_R2_PARALLEL` (Jon speed-up: same parallelism everywhere).
+- `r2_edit.py` — step-2 own-edit builder from `r2_directions.npz`; selection rule
+  FROZEN in the module docstring (top-2 FA layers by activity-weighted direction
+  occupancy; top-K=128 cols/layer by |d·w_j|·act_j; W -= alpha·outer(d, d·w_j) —
+  sparse, no forbidden tensors, no whole-tensor scaling; MIT edit tensors never read).
+  `r2_register.py` registers the converted model with the live oMLX.
 - Page: `build_demo.mjs` renders the ROUND 2 section with honest pending rows;
-  `ws3check.mjs` (npm run ws3check) — 13 gates, mutants caught incl a by-hand
+  `ws3check.mjs` (npm run ws3check) — 16 gates, mutants caught incl a by-hand
   row-id break (went red, restored).

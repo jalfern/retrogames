@@ -5,7 +5,7 @@
 cd "$(dirname "$0")" || exit 1
 V=./.venv/bin/python
 echo "[step1] start $(date -u +%FT%TZ)"
-$V r2_score.py base:qwen35-base p50c:qwen35-p50c-mlx
+$V r2_score.py base:qwen35-base p50c:qwen35-p50c-mlx || { echo "[step1] scorer died — gate skipped"; exit 1; }
 echo "[step1] rows done $(date -u +%FT%TZ)"
 $V r2_gate.py
 echo "[step1] gate written $(date -u +%FT%TZ)"
