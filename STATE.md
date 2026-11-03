@@ -1,61 +1,70 @@
-# STATE — session 113 (2026-11-03, slot a)
+# STATE — session 114 (2026-11-03, slot b)
 
-## Shipped this session
-- **WEIGHT SURGERY rescore stage 1** merged `2101f8e` (PR #1510): live at
-  https://jalfern.com/retrogames/demos/weightsurgery.html (32KB). Fair-horizon
-  base rows (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103, cap 4096, pp0):
-  MATH acc 4.0% term ≥70.0%† · GSM acc 11.0% term ≥15.0%† († = word×2-estimate
-  bounds — #1505 found llama v0.3 killed llm.py's exact token regex lab-wide;
-  acc + loop-flag exact). All-layer heat, cap-sweep/corpus tables, superseded
-  cap-1024 verdict, batch log with purpose fields; rebased over b's SURGERY II
-  (merged cleanly, ws2check 16/16, static green). #1520 QA polish pass filed.
-- Shift report pushed ("the honest denominator is live").
+## What shipped
+**SEEDPIN batch 16 — dead-terminal restoration tier (#1473)** — merged
+`6b3eaa9` via PR #1522. Live: entry `index-CeHG3U4F.js` carries Pong's unique
+`MATCH OVER  YOU WIN`; routes /pong /asteroids /centipede → 200.
+- **PONG**: serve dir/angle, paddle scatter, hit-spin → one seeded stream
+  (`sim.js`); play-to-quit honest terminal (q/Esc); score finally resets on
+  start (the port's literal "Reset score? Maybe" is gone); tap/key restart;
+  report {tick,score,done,seed,opp} + exposeGame.
+- **ASTEROIDS** (had NO score/lives/terminal — ship could not die): 1979 law
+  20/50/100 + pinned 520 big-rock chain, 3 lives + bonus@10k + grace respawn
+  + wave regen, GAME OVER + restart; seeded shapes/velocities/positions.
+  Map said 10/50/20; arcade pays 20/50/100 — fidelity beat the map (#237 law,
+  disagreement recorded on #1473 before shipping).
+- **CENTIPEDE** (score was dead code): 100/10/1 arcade table; chain rule —
+  segment behind each cut grows a new head (eyes); arcade death = life lost,
+  mushrooms persist, centipede restarts top; GAME OVER + restart; seeded field.
+- Platform: feedbackcheck floor **48→51**; exposeGame ids pong/asteroids/
+  centipede; READMEs with honest gaps per title; registry untouched.
+- Harness: pongcheck 28 (+9 mutants), asteroidscheck 24 NEW (+6),
+  centipedechek 26 NEW (+7), aliases + lint:asteroids/centipede.
+  feedbackcheck 223/223; lint:mario/fps/ai green; build green.
 
-## Stage 2 runbook for next lane (close #1506)
-1. Lab: `~/Dev/weight-lab/qwen-forge`. Check `results/FAIR_SCORING_DONE` +
-   `fair_scores.json` (6 rows; step10 writes it, wrapper touches marker). Runner
-   order base→sampfix→k256, watchdog relaunches every 15 min (resumable jsonl;
-   base rows DONE at 100/100 each). ETA last row ~16:00–17:00Z.
-   **NOTE:** tonight's sampfix/k256 summaries in batches.jsonl lack `purpose`
-   (running process predates the generator patch) — normalize before build:
-   add `purpose` to score/score-fair lines (one-liner, see 2101f8d parent commit)
-   or ws2check's rules gate goes red.
-2. **Exact-token rerun** (the honest part): est ntok ≠ exact (bounds only).
-   Regenerate the six rows with exact stderr parsing (b's step10_eval2 has the
-   v0.3-safe regex; llm.py itself still unparsed). ~600 gens ≈ 1.5–2 h at ~150 tps.
-   Then VERDICT (builder fairReady branch): edit ≥ base+5 ⇒ partial reproduction;
-   ≤ base+1 ⇒ provable negative superseding #1504's; between ⇒ mixed.
-   k256 = layers 23+19, k=0.0697%. Practice evidence already says edit HURTS
-   termination (b22-24) — verdict prose is ready for either outcome.
-3. Rebuild page (`LAB_DIR=… node demos/weight-surgery-lab/build_demo.mjs
-   public/demos/weightsurgery.html`), sync artifacts snapshot (batches.jsonl,
-   variants*.json), rule-5 merge, prod-verify (`VERDICT (fair horizon` in live
-   html), comment live URL, #1506 building→shipped + close. #1520 stays for QA lane.
+## How the session went
+- TARGET #1506 claim **REFUSED** (slot a live, 37 min) → normal ladder: no
+  steer/next/game-queue; the three open feedbacks sit with live QA streams
+  (studio+mini running; #1502 building-qa) → flagship stage null-ish;
+  #1473's b-lock was stale and b15 had mapped batch 16 explicitly → claimed
+  via forge-claim.sh (CLAIMED, later checkpoints every increment). Slot a
+  meanwhile shipped #1506 stage 1 (`2101f8e`) — untouched by me, as required.
+- Chrome dead all session (#737; launch EPERM) → browser tier advisory;
+  Node tier + Vite-transform checks + prod-string verify carried proof
+  (b15 precedent).
+
+## GH rescue-shim repair (this session's plumbing yield)
+Four real defects fixed in `/tmp/forge/rescue/bin/gh` (each exercised by this
+lane afterwards; rule-5 merge now works verbatim):
+1. `-f k=v` handler indexed `m[3]` on a 2-group regex → every `-f` POST sent
+   `null` (forge-claim died on the labels POST).
+2. PR-by-head lookup built the path without the leading `/` → malformed
+   request line → GitHub WAF 400 page; and used `owner/repo:branch` instead
+   of `owner:branch`.
+3. `pulls/<n>/check-runs` (an object `{check_runs:[…]}`) was paginated as a
+   bare array → `runs.map is not a function`.
+Gotchas: plain `/tmp/pr.md` invisible to shim cwd context — file bodies under
+`/tmp/forge/`; prod verify needs proxy + `www.` host (apex 308s).
 
 ## Board (end of session)
-- main tip `2101f8e`. #1506 building (slot a; stage 2 left). #1520 feedback (new).
-  #1502/#1497/#1498 QA lanes per main's STATE. #1473 b16 map in b's STATE.
-  #1492 AWAITING (deadline 11-05, default B) — link only, do NOT re-ask.
-- Rule-4: slot-a merged demos code TODAY ✓ streak clean.
-- Runner + watchdog must survive my exit (detached to launchd — verified pattern).
-  If next lane finds them dead: re-detach via `detach_runner.sh` (double-fork;
-  nested launchctl refused from warden contexts).
+- main tip `569954c` (+ this STATE). Today's merges: ROGUE doors #1518,
+  PAC-MAN fruit #1519, b16 `6b3eaa9`, SURGERY-II visual QA #1523, plus
+  slot a's #1506 stage1 `2101f8e`.
+- #1473 open (`building`): b17 candidates — **Defender** (4th dead terminal,
+  deferred here — b15's "4-up too big" held; audit fresh at session start!),
+  Adventure (explicit win ~L651), then the big two SuperMario/RaccoonHeist.
+- #1524 QA b16 terminal&feel pass filed (feedback, lane:qa). #1517 done
+  (#1519). #1492 AWAITING (deadline 11-05, default B — do NOT re-ask).
+  #1473 stays `building`; #1141 stalled (Jon); #838 Myst umbrella; #737
+  blocks browser tier everywhere.
+- Rules: 4 green (game code merged); 9 — STATE committed (game merged ✓).
 
-## ENV (this box — persists across sessions until reboot fixes Tailscale)
-- System DNS = dead MagicDNS (tailscaled refuses prefs); gh Go-TLS = `x509
-  OSStatus -26276`; macOS path_helper re-prepends /opt/homebrew/bin so PATH
-  shims are bypassed inside zsh scripts (main-ok.sh = false-green; verify
-  nightly via API). Working GitHub stack lives in `/tmp/forge/`:
-  `dnsguard.mjs` (run first: `node /tmp/forge/dnsguard.mjs &`… actually use the
-  double-fork detach pattern), `ghapi` + `gh` (explicit-path ONLY), git via
-  `git -c http.proxy=http://127.0.0.1:18080`, curl via `-x`/HTTPS_PROXY.
-  REST `ready_for_review` is a SILENT NO-OP with this token — GraphQL
-  `markPullRequestReadyForReview` works. Test `gh api octocat` first; if it
-  works, all of the above is unnecessary.
-- pgrep broken (use `ps aux | grep`); never put literal process names in the
-  same command as a kill-grep (self-match SIGTERM footgun); zsh eats leading `=`.
-- llama-server --cont-batching: stalled-gen quirk at parallel ≥12 on this box;
-  "fast" benches were slot-context truncation. CPU-only ~55–150 tps aggregate.
+## ENV
+- `. /tmp/forge/env.sh` for gh; proxy prod-verify recipe above; no `timeout`
+  on macOS; `ps aux | grep` not pgrep; my dev server 5178 killed at exit;
+  worktree `~/Dev/retrogames-forge-seedpin-rollout-b16` left detached
+  (node_modules symlink — never delete its target).
 
 ## Open questions
-- #1492 — link only (AWAITING, default B, slot-b thread).
+- #1492 — slot-b feed on #1473 (AWAITING, default B). Link only; no new
+  questions filed this session.
