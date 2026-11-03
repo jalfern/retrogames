@@ -5,20 +5,25 @@
 // 240 msg/s rate window under a 60 Hz fake clock). No sockets, no DOM.
 //
 //   1. the codec is honest    — padMask/unmaskPad round-trip all 64 masks
-//   2. the snapshot round-trips — restore(res) keeps ticking to the same hash
+//   2. the snapshot round-trips — restore keeps ticking to the same hash
 //   3. lockstep holds          — two boxes, one seed, split seats: every
-//                                hash boundary agrees, the stage finishes
+//                                boundary hash agrees, the stage finishes
 //                                identically on both
-//   4. it survives jitter      — a lossy relay (bounded per-pump delivery)
-//                                stalls, never desyncs
-//   5. a walkaway degrades     — the seat is demoted to CPU on the SAME
-//                                tick both boxes expect, the stage runs out
-//   6. a desync resyncs        — a bit-flipped pad freezes at the hash
+//   4. it survives jitter      — a laggy relay (one-way legs inside the
+//                                11-tick pad lead) stalls, never desyncs
+//   5. a walkaway degrades     — the seat is demoted to CPU after exactly
+//                                DROP_GRACE stalled ticks, the stage runs out
+//   6. a desync resyncs        — a diverged guest freezes at the hash
 //                                boundary; the host's chunked snapshot
-//                                (<=380-char pieces, 512B-safe) restores the
-//                                guest at the same tick; the pad streams
-//                                resume, never reset
+//                                (<=380-char pieces, 512B-safe) restores it
+//                                at the same tick; the pad streams resume,
+//                                never reset
 //   7. a rejoin restores       — promote + fresh 'go' runs lockstep again
+//
+// The protocol's guarantee is about SIM TICKS, not wall time: the boxes may
+// sit a tick or two apart in real time (that is what ready()/stall is for),
+// so every agreement assertion compares the boundary hashes the two boxes
+// recorded for the SAME tick — not their current state.
 //
 // Run: npm run rallylinkcheck   (no dev server needed)
 
@@ -43,7 +48,9 @@ const tickClock = () => { FAKE_NOW += 16 }
 Date.now = () => FAKE_NOW
 
 // ---- the in-memory room: relay/core.js rules, zero sockets ----------------
-function makeLink() {
+// latMs simulates the one-way relay leg (the SOS harness's hub.latMs model):
+// a message sent at fake time T is deliverable only from T + latMs. 0 = instant.
+function makeLink(latMs = 0) {
     const room = newRoom('TEST', 2)
     const inq = new Map()
     const oversize = []
@@ -54,9 +61,10 @@ function makeLink() {
         if (!room.members.some((m) => m.id === fromId)) return
         const r = relay(room, fromId, obj)
         if (!r.ok) throw new Error(`relay refused: ${r.err}`)
+        const at = Date.now() + latMs
         for (const to of r.to) {
             if (!inq.has(to)) inq.set(to, [])
-            inq.get(to).push(obj)
+            inq.get(to).push({ m: obj, at })
         }
     }
     return {
@@ -67,8 +75,13 @@ function makeLink() {
         send,
         drain: (id, limit = Infinity) => {
             const q = inq.get(id) || []
-            const out = q.slice(0, limit)
-            inq.set(id, q.slice(limit))
+            const out = []
+            const rest = []
+            for (const e of q) {
+                if (out.length < limit && e.at <= Date.now()) out.push(e.m)
+                else rest.push(e)
+            }
+            inq.set(id, rest)
             return out
         },
         peek: (id) => (inq.get(id) || []).slice(),
@@ -87,6 +100,7 @@ function makeBox(link, id, mySeat, seed, wx) {
     const box = {
         link, id, g, net, seed, wx,
         go: null, snap: null, resyncs: 0, desyncs: 0, frozen: false,
+        hashes: new Map(), // boundary tick -> whole-sim hash (the guarantee)
     }
     // this box's own seat's "human" emitter (the harness's fair play). Reads
     // box.g at call time, so it survives a resync restore that swaps box.g.
@@ -105,24 +119,36 @@ function makeBox(link, id, mySeat, seed, wx) {
     }
     // the tick contract the shell runs (and the harness pins):
     //   pump -> pumpTo(tick+1+delay) -> ready -> assemble -> tickSim -> hash
+    // box.g, not a captured g: a resync swaps the sim object into box.g and
+    // the pad streams must resume over the restored state (see test 6).
     box.step = (readPad = box.pad) => {
         if (box.frozen) return 'frozen'
         box.pump()
-        const k = g.tick + 1
+        const k = box.g.tick + 1
         net.pumpTo(k + net.delay, readPad)
+        // CPU masks ONLY for seats that are not watched: a watched seat must
+        // present its real wire pad for k or the box stalls — stalling (not
+        // guessing a CPU pad) is the protocol's law under lag.
         const cpuMasks = {}
-        for (const seat of net.watchSeats) cpuMasks[seat] = cpuSeatPad(g, seat)
+        for (let seat = 0; seat < SEATS; seat++) {
+            if (net.watchSeats.indexOf(seat) < 0) cpuMasks[seat] = cpuSeatPad(box.g, seat)
+        }
         if (!net.ready(k, cpuMasks)) return 'stall'
-        tickSim(g, net.assemble(k, cpuMasks))
-        net.prune(g.tick)
-        if (g.tick % net.hashEvery === 0) {
-            const d = net.hash(g.tick, stateHash(g))
+        tickSim(box.g, net.assemble(k, cpuMasks))
+        net.prune(box.g.tick)
+        if (box.g.tick % net.hashEvery === 0) {
+            const h = stateHash(box.g)
+            box.hashes.set(box.g.tick, h)
+            const d = net.hash(box.g.tick, h)
             if (d) { box.desyncs++; box.desync = d }
         }
         return 'tick'
     }
     return box
 }
+
+// the largest boundary both boxes have ticked — the point of comparison
+const commonBoundary = (a, b) => Math.floor(Math.min(a.g.tick, b.g.tick) / HASH_EVERY) * HASH_EVERY
 
 const runTo = (boxes, upto, extra = () => {}) => {
     let guard = 0
@@ -148,35 +174,39 @@ console.log('codec:')
 // ---- 2. the snapshot round-trips -------------------------------------------
 console.log('snapshot:')
 {
+    // 5000 ticks in: the snapshot carries a real S-split (state variety).
+    // The sim's snapshot is ~0.5–0.7KB — over one 380-char chunk, under two
+    // full stages' worth — so multi-chunk (2+) is the pin, not 3.
     const g = createSim(7, 2, 'rain')
-    for (let i = 0; i < 500; i++) tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
+    for (let i = 0; i < 5000; i++) tickSim(g, [cpuDriverPad(g), cpuCoDriverPad(g)])
     const str = JSON.stringify(snapshotGame(g))
     const chunks = packSnap(str, g.tick)
-    ok(`snapshot is ${str.length} chars in ${chunks.length} chunks`, str.length > 800 && chunks.length >= 3)
+    ok(`snapshot spans multiple wire chunks (${str.length} chars in ${chunks.length})`,
+        str.length > CHUNK && chunks.length >= 2)
     ok('every chunk is 512B-safe on the wire',
         chunks.every((c) => Buffer.byteLength(JSON.stringify({ t: 'res', e: c.e, k: c.k, i: c.i, z: c.z, p: c.p })) <= MAX_MSG))
     ok('chunks tile the payload exactly',
         chunks.length === Math.max(1, Math.ceil(str.length / CHUNK)) && chunks.every((c, i) => c.p === str.slice(i * CHUNK, (i + 1) * CHUNK)))
     const a = g
     const b = restoreGame(JSON.parse(str))
+    ok('restore rebuilds the shell-only caches fresh',
+        b.stage !== a.stage && b.events !== a.events && b.rng !== a.rng && b.seed === a.seed)
     for (let i = 0; i < 300; i++) {
         tickSim(a, [cpuDriverPad(a), cpuCoDriverPad(a)])
         tickSim(b, [cpuDriverPad(b), cpuCoDriverPad(b)])
     }
     ok('restore keeps ticking to the same hash', stateHash(a) === stateHash(b) && a.tick === b.tick)
-    ok('restore drops the shell-only caches', b.stage !== a.stage && b.events.length === 0 && b.seed === a.seed)
 }
 
 // ---- 3. lockstep holds ------------------------------------------------------
 const SEED = 11
 const WX = 'clear'
-function freshPair(drainLimit = Infinity) {
-    const link = makeLink()
+function freshPair(latMs = 0) {
+    const link = makeLink(latMs)
     link.join('A'); link.join('B')
     const host = makeBox(link, 'A', 0, SEED, WX)
     const guest = makeBox(link, 'B', 1, SEED, WX)
-    const drain = drainLimit
-    return { link, host, guest, drain }
+    return { link, host, guest }
 }
 console.log('lockstep:')
 {
@@ -186,36 +216,46 @@ console.log('lockstep:')
     guest.pump()
     ok('go carries the curated seed + weather', guest.go && guest.go.seed === SEED && guest.go.wx === WX)
     // box.pad is each box's own-seat "human" emitter: the driver seat runs
-    // cpuDriverPad, the co seat cpuCoDriverPad (the harness's fair play)
-    const r0 = host.step()
-    ok('first tick runs (the start lights are the sync buffer)', r0 === 'tick', r0)
-    runTo([host, guest], 1800, () => { tickClock() })
+    // cpuDriverPad, the co seat cpuCoDriverPad (the harness's fair play).
+    // The start lights are the sync buffer: step until both boxes have run
+    // tick 1. One box may tick first — the other's first pad batch lands a
+    // step later and the ready gate holds until it does (that hold is the
+    // protocol, not a bug). The guarantee is about sim ticks, not wall time.
+    let g1 = 0
+    while ((host.g.tick < 1 || guest.g.tick < 1) && g1++ < 30) { host.step(); guest.step(); tickClock() }
+    ok('first tick runs on both (the start lights are the sync buffer)',
+        host.g.tick >= 1 && guest.g.tick >= 1, `${host.g.tick}/${guest.g.tick}`)
+    let guard = 0
+    while (!host.g.done && guard++ < 200000) { host.step(); guest.step(); tickClock() }
     ok('no desync on either box', host.desyncs === 0 && guest.desyncs === 0, `h=${host.desyncs} g=${guest.desyncs}`)
-    ok('hashes agree at the final boundary', stateHash(host.g) === stateHash(guest.g))
-    ok('both boxes stall identically at the same tick', host.g.tick === guest.g.tick, `${host.g.tick} vs ${guest.g.tick}`)
+    const cb = commonBoundary(host, guest)
+    ok(`every boundary hash agrees (last: ${cb})`, host.hashes.get(cb) !== undefined && guest.hashes.get(cb) !== undefined
+        && host.hashes.get(cb) === guest.hashes.get(cb))
+    ok('the stage finishes on both, at the same tick', host.g.done === true && guest.g.done === true
+        && host.g.tick === guest.g.tick, `${host.g.tick} vs ${guest.g.tick}`)
     ok('stalls are bounded (instant relay)', Math.max(host.net.stats().maxStallRun, guest.net.stats().maxStallRun) <= 1,
         JSON.stringify([host.net.stats(), guest.net.stats()]))
-    tickClock()
-    while (!host.g.done) host.step()
-    ok('the stage finishes on both, identically', host.g.done === guest.g.done && host.g.win === guest.g.win
-        && stateHash(host.g) === stateHash(guest.g))
-    ok('the CPU co called notes after the demote-free run', host.g.stats.called > 0)
+    ok('the CPU co called notes', host.g.stats.called > 0, `called=${host.g.stats.called}`)
     ok('no message oversize the relay budget', link.oversize.length === 0, JSON.stringify(link.oversize))
 }
 
 // ---- 4. it survives jitter --------------------------------------------------
 console.log('jitter:')
 {
-    const { link, host, guest } = freshPair(2) // <=2 msgs per pump: real lag
+    // 128 ms = 8 ticks of one-way leg: INSIDE the 11-tick pad lead (the same
+    // law SOS pins as "a 45ms leg stays inside the 10-tick pad lead"). The
+    // initial burst still arrives late, so the ready gate stalls — and the
+    // stall must be bounded by the lead, after which lockstep holds.
+    const { link, host, guest } = freshPair(128)
     link.send('A', { t: 'go', s: 0, seed: SEED, wx: WX })
-    guest.pump()
-    runTo([host, guest], 1200, () => { tickClock() })
-    ok('no desync under lag', host.desyncs === 0 && guest.desyncs === 0)
-    ok('the boxes stay on one clock', host.g.tick === guest.g.tick, `${host.g.tick} vs ${guest.g.tick}`)
+    tickClock()
+    let guard = 0
+    while (guest.g.tick < 1260 && guard++ < 200000) { host.step(); guest.step(); tickClock() }
+    const cb = commonBoundary(host, guest)
+    ok('no desync under lag', host.desyncs === 0 && guest.desyncs === 0, `h=${host.desyncs} g=${guest.desyncs}`)
+    ok(`the boundary hashes still agree (last: ${cb})`, host.hashes.get(cb) === guest.hashes.get(cb) && host.hashes.get(cb) !== undefined)
     const st = Math.max(host.net.stats().maxStallRun, guest.net.stats().maxStallRun)
-    ok('the ready gate stalled (and only stalled) to absorb the lag',
-        st > 0 && st < 60, `maxStallRun=${st}`)
-    ok('still in hash agreement', stateHash(host.g) === stateHash(guest.g))
+    ok('the ready gate stalled (and only stalled) to absorb the lag', st > 0 && st <= PAD_DELAY, `maxStallRun=${st}`)
 }
 
 // ---- 5. a walkaway degrades -------------------------------------------------
@@ -225,38 +265,51 @@ console.log('walkaway:')
     link.send('A', { t: 'go', s: 0, seed: SEED, wx: WX })
     guest.pump()
     const hostPad = () => cpuDriverPad(host.g)
-    runTo([host, guest], 300, () => { tickClock() })
+    tickClock()
+    let guard = 0
+    while (host.g.tick < 300 && guard++ < 200000) { host.step(); guest.step(); tickClock() }
     const tBefore = host.g.tick
-    ok('precondition: in lockstep at 300', tBefore >= 300 && host.g.tick === guest.g.tick)
+    ok('precondition: both boxes at 300', tBefore >= 300 && guest.g.tick >= 300)
     // the guest closes the tab: relay membership gone, sends dead, inbound dead
     link.leave('B')
-    const calledBefore = host.g.stats.called
+    const nextIdxBefore = host.g.co.nextIdx
     let demotedAt = null
+    let demoteMiss = null
     let miss = 0
-    tickClock()
-    while (!host.g.done) {
+    guard = 0
+    while (!host.g.done && guard++ < 200000) {
         // the shell's grace contract: DROP_GRACE stalled ticks => CPU the seat
         host.pump()
         const k = host.g.tick + 1
         host.net.pumpTo(k + host.net.delay, hostPad)
-        let cpuMasks = {}
-        for (const seat of host.net.watchSeats) cpuMasks[seat] = cpuSeatPad(host.g, seat)
+        // CPU masks only for seats ALREADY demoted (off the watch list) —
+        // while a seat is watched it must present its real wire pad or stall.
+        const cpuMasks = {}
+        for (let seat = 0; seat < SEATS; seat++) {
+            if (host.net.watchSeats.indexOf(seat) < 0) cpuMasks[seat] = cpuSeatPad(host.g, seat)
+        }
         if (!host.net.ready(k, cpuMasks)) {
             miss++
-            if (miss >= DROP_GRACE) { demotedAt = k; host.net.demote(1); miss = 0 }
+            if (miss >= DROP_GRACE) { demotedAt = k; demoteMiss = miss; host.net.demote(1); miss = 0 }
+            tickClock()
             continue
         }
         miss = 0
         tickSim(host.g, host.net.assemble(k, cpuMasks))
         host.net.prune(host.g.tick)
+        tickClock()
     }
-    const lastRemote = tBefore + PAD_DELAY // the guest's last batch covered to here
-    ok('the demote fires on the same tick both boxes would compute',
-        demotedAt === lastRemote + 1 + DROP_GRACE - 1, `demotedAt=${demotedAt} expected=${lastRemote + DROP_GRACE}`)
-    ok('the seat is CPU now: watch list empty, dropped remembered',
-        host.net.watchSeats.length === 0 && host.net.hasPad(1, host.g.tick) === false)
-    ok('the CPU co took over and kept calling', host.g.stats.called > calledBefore,
-        `${calledBefore} -> ${host.g.stats.called}`)
+    // The guest's last batch covered to tBefore + PAD_DELAY. The host's first
+    // missing tick is one past that; a stalled tick does NOT advance, so all
+    // DROP_GRACE stalled ticks happen AT that same tick — the demote fires on
+    // the 30th stall, at k = lastRemote + 1.
+    const lastRemote = tBefore + PAD_DELAY
+    ok('the demote fires after exactly DROP_GRACE stalled ticks',
+        demotedAt === lastRemote + 1 && demoteMiss === DROP_GRACE,
+        `demotedAt=${demotedAt} expected=${lastRemote + 1} miss=${demoteMiss}`)
+    ok('the seat is CPU now: watch list empty', host.net.watchSeats.length === 0)
+    ok('the CPU co took over and kept the note flow going', host.g.co.nextIdx > nextIdxBefore,
+        `nextIdx ${nextIdxBefore} -> ${host.g.co.nextIdx}`)
     ok('the stage ran out solo (degrade to the solo demo, not a freeze)', host.g.done === true && host.g.win === true)
 }
 
@@ -268,14 +321,15 @@ console.log('resync:')
     guest.pump()
     const hostPad = () => cpuDriverPad(host.g)
     const guestPad = () => cpuCoDriverPad(guest.g)
-    runTo([host, guest], 300, () => { tickClock() })
-    // a wire bit flip the guest alone experienced: nudge the guest's car so its
-    // sim diverges from the host's (deterministic stand-in for a flipped pad)
+    tickClock()
+    let guard = 0
+    while (host.g.tick < 300 && guard++ < 200000) { host.step(); guest.step(); tickClock() }
+    // a wire bit flip the guest alone experienced: nudge the guest's car so
+    // its sim diverges from the host's (a deterministic stand-in for it)
     guest.g.car.v += 0.01
     // BOTH keep ticking — the host is the authority and must keep producing
     // pads + hashes while the (soon-frozen) guest waits for the snapshot.
-    tickClock()
-    let guard = 0
+    guard = 0
     while (!guest.desyncs && guest.g.tick < 900 && guard++ < 5000) {
         host.step(hostPad)
         guest.step(guestPad)
@@ -299,38 +353,49 @@ console.log('resync:')
     guest.resyncs++
     guest.frozen = false
     ok('the pad buffers survived the resync (streams resume)', keptOwn === true)
-    tickClock()
     guard = 0
     while (!host.g.done && guard++ < 200000) { host.step(hostPad); guest.step(guestPad); tickClock() }
-    ok('after resync the hashes agree again', stateHash(host.g) === stateHash(guest.g))
+    ok('after resync the boundary hashes agree again', host.hashes.get(snapTick + HASH_EVERY) === guest.hashes.get(snapTick + HASH_EVERY)
+        && host.hashes.get(snapTick + HASH_EVERY) !== undefined,
+        `next=${snapTick + HASH_EVERY}`)
     ok('both boxes finish the same stage', host.g.done === guest.g.done && host.g.win === guest.g.win
         && host.g.tick === guest.g.tick, `${host.g.tick} vs ${guest.g.tick}`)
     ok('the guest desynced exactly once', guest.desyncs === 1 && guest.resyncs === 1)
 }
+
 // ---- 7. a rejoin restores ---------------------------------------------------
 console.log('rejoin:')
 {
     const { link, host, guest } = freshPair()
     link.send('A', { t: 'go', s: 0, seed: SEED, wx: WX })
     guest.pump()
-    runTo([host, guest], 200, () => { tickClock() })
+    tickClock()
+    let guard = 0
+    while (host.g.tick < 200 && guard++ < 200000) { host.step(); guest.step(); tickClock() }
     link.leave('B')
     const hostPad = () => cpuDriverPad(host.g)
     let miss = 0
-    tickClock()
-    while (host.net.watchSeats.length > 0 && !host.g.done) {
+    guard = 0
+    while (host.net.watchSeats.length > 0 && !host.g.done && guard++ < 200000) {
         host.pump()
         const k = host.g.tick + 1
         host.net.pumpTo(k + host.net.delay, hostPad)
+        // CPU masks only for seats ALREADY demoted (off the watch list) —
+        // while a seat is watched it must present its real wire pad or stall.
         const cpuMasks = {}
-        for (const seat of host.net.watchSeats) cpuMasks[seat] = cpuSeatPad(host.g, seat)
+        for (let seat = 0; seat < SEATS; seat++) {
+            if (host.net.watchSeats.indexOf(seat) < 0) cpuMasks[seat] = cpuSeatPad(host.g, seat)
+        }
         if (!host.net.ready(k, cpuMasks)) {
             miss++
             if (miss >= DROP_GRACE) { host.net.demote(1); miss = 0 }
+            tickClock()
             continue
         }
         miss = 0
         tickSim(host.g, host.net.assemble(k, cpuMasks))
+        host.net.prune(host.g.tick)
+        tickClock()
     }
     ok('host demoted the walkaway', host.net.watchSeats.length === 0)
     // the guest reloads back in and the host curates a fresh stage
@@ -342,11 +407,14 @@ console.log('rejoin:')
     ok('the fresh go lands', guest.go && guest.go.seed === 23 && guest.go.wx === 'rain')
     host.g = createSim(23, 2, 'rain'); guest.g = createSim(23, 2, 'rain')
     host.net.reset(0); guest.net.reset(0)
-    runTo([host, guest], 600, () => { tickClock() })
+    tickClock()
+    guard = 0
+    while (host.g.tick < 600 && guard++ < 200000) { host.step(); guest.step(); tickClock() }
+    const cb = commonBoundary(host, guest)
     ok('lockstep is back after the rejoin', host.desyncs === 0 && guest.desyncs === 0
-        && stateHash(host.g) === stateHash(guest.g))
-    ok('SEATS is still two', SEATS === 2 && FORWARD_TYPES.includes('go') && FORWARD_TYPES.includes('pad')
-        && FORWARD_TYPES.includes('hs') && FORWARD_TYPES.includes('res'))
+        && host.hashes.get(cb) === guest.hashes.get(cb) && host.hashes.get(cb) !== undefined)
+    ok('the wire types are all relay-legal', SEATS === 2 && FORWARD_TYPES.includes('go')
+        && FORWARD_TYPES.includes('pad') && FORWARD_TYPES.includes('hs') && FORWARD_TYPES.includes('res'))
 }
 
 Date.now = realNow

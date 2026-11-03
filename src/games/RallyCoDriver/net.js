@@ -149,7 +149,11 @@ export function createRallySync(opts = {}) {
     const hashEvery = Number.isFinite(opts.hashEvery) ? opts.hashEvery : HASH_EVERY
     const send = typeof opts.send === 'function' ? opts.send : () => {}
     const KEEP = 480
-    let nextSample = 0
+    // Sampling starts at tick 1: the sim's first consumed tick is 1 (tick 0's
+    // pad is never read), and starting at 0 shifts every SAMPLE_EVERY batch
+    // by one — the last sent batch then covers tick-1 of the box's last tick,
+    // which moves the walkaway demote off the exact DROP_GRACE boundary.
+    let nextSample = 1
     let pending = [] // unsent masks, flushed in SAMPLE_EVERY batches
     let own = new Map()    // k -> mask (own seat's samples)
     let remote = new Map() // k -> mask (the peer's seat)
@@ -202,7 +206,7 @@ export function createRallySync(opts = {}) {
         // the snapshot. Resync restores the sim and lets the streams resume.
         reset(k0 = 0) {
             own = new Map(); remote = new Map(); ours = new Map(); peerH = new Map()
-            nextSample = k0
+            nextSample = k0 + 1 // the fresh sim sits at k0; its first tick is k0+1
             pending.length = 0
             stalls = 0; stallRun = 0; maxStallRun = 0
             stalledSeat = -1
