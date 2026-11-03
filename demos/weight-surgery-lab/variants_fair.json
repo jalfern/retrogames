@@ -1,0 +1,50 @@
+{
+ "base": {
+  "phase": "practice",
+  "split": "gsm+math_train(easy)",
+  "batch": 22,
+  "cap": 4096,
+  "pp": 0.0,
+  "tps": 135.4,
+  "model": "base",
+  "n": 12,
+  "terminated": 4,
+  "looped": 0,
+  "correct": 0,
+  "purpose": "fair-cap variant eval base vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T10:08:06Z"
+ },
+ "k256": {
+  "phase": "practice",
+  "split": "gsm+math_train(easy)",
+  "batch": 23,
+  "cap": 4096,
+  "pp": 0.0,
+  "tps": 143.7,
+  "model": "k256",
+  "n": 12,
+  "terminated": 2,
+  "looped": 3,
+  "correct": 0,
+  "purpose": "fair-cap variant eval k256 vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T10:14:27Z"
+ },
+ "k512": {
+  "phase": "practice",
+  "split": "gsm+math_train(easy)",
+  "batch": 24,
+  "cap": 4096,
+  "pp": 0.0,
+  "tps": 139.6,
+  "model": "k512",
+  "n": 12,
+  "terminated": 3,
+  "looped": 2,
+  "correct": 0,
+  "purpose": "fair-cap variant eval k512 vs base, same 12 train problems",
+  "ruled_out": "see paired rows",
+  "ts": "2026-11-03T10:20:30Z"
+ }
+}
