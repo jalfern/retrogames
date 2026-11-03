@@ -6,14 +6,18 @@
 // same anonymous CDN pipe (no Vercel build-quota burn, no API limit in the
 // browser). Headlines are PR/issue titles: script-generated, never model prose.
 //
-// Run from origin/main by the launchd telemetry job (stdin, like telemetry.sh):
-//   git -C ~/Dev/retrogames show origin/main:scripts/dailylog.mjs | DAILYLOG_PUSH=1 node --input-type=module -
+// Run from origin/main by the launchd telemetry job (materialised into
+// /tmp/forge, the runway pattern — a stdin module cannot resolve the
+// relative scrub import below):
+//   git -C ~/Dev/retrogames show origin/main:scripts/dailylog.mjs > /tmp/forge/dailylog-run.mjs
+//   DAILYLOG_PUSH=1 node /tmp/forge/dailylog-run.mjs
 // Manual:  DAILYLOG_PUSH=1 node scripts/dailylog.mjs   (or without the env to dry-run to /tmp)
 //
-// Self-contained on purpose (zero imports): launchd pipes it to node on stdin,
-// where relative imports cannot resolve. The pure core (window math, entry
-// building, games.js parsing) is exported for scripts/dailylogcheck.mjs, which
-// pins every rule against fixtures without touching the network.
+// One import on purpose (#1536): the shared secret scrub — the payload is
+// scrubbed at the push gate, because run commit subjects and issue/PR titles
+// are lane text heading for a PUBLIC repo. The pure core (window math, entry
+// building, games.js parsing) is exported for scripts/dailylogcheck.mjs,
+// which pins every rule against fixtures without touching the network.
 //
 // Sections per day:
 //   shipped   merged PRs in the window; screenshots attached from the
@@ -36,6 +40,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
+import { scrub } from './lib/scrub.mjs'
 
 const REPO = 'repos/jalfern/retrogames'
 const OUT = 'repos/jalfern/forge-telemetry'
@@ -274,7 +279,9 @@ async function main() {
         console.log('dry-run: /tmp/forge/dailylog-preview.json', log.live.headline)
         return
     }
-    const data = Buffer.from(JSON.stringify(log)).toString('base64')
+    // #1536 — scrub at the publish gate: run commit subjects and issue/PR
+    // titles are lane text, and the destination repo is public.
+    const data = Buffer.from(scrub(JSON.stringify(log))).toString('base64')
     const body = { message: 'board', content: data, branch: 'main' }
     let sha = ''
     try {
@@ -286,7 +293,8 @@ async function main() {
 }
 
 // Direct run (`node scripts/dailylog.mjs`) always runs — dry without
-// DAILYLOG_PUSH. Under launchd the file arrives via stdin, so the env flag
-// is what fires main there; the harness imports the module and fires neither.
+// DAILYLOG_PUSH. Under launchd the materialised copy is dailylog-run.mjs
+// (not "dailylog.mjs"), so only the env flag fires main there; the harness
+// imports the module and fires neither.
 const DIRECT = (process.argv[1] || '').endsWith('dailylog.mjs')
 if (DIRECT || process.env.DAILYLOG_PUSH) await main()

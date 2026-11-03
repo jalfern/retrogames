@@ -44,6 +44,7 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { launch, relayNoise } from './lib/harness.mjs'
+import { scrub } from './lib/scrub.mjs'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = 'repos/jalfern/forge-telemetry'
@@ -559,7 +560,9 @@ async function main() {
     }
 
     if (process.env.NIGHTLY_PUSH && !MUTATE) {
-        const data = Buffer.from(JSON.stringify(doc)).toString('base64')
+        // #1536 — scrub at the publish gate: page-error details and flags
+        // are lane text, and the destination repo is public.
+        const data = Buffer.from(scrub(JSON.stringify(doc))).toString('base64')
         const body = { message: 'nightly', content: data, branch: 'main' }
         let sha = ''
         try { sha = execFileSync('gh', ['api', `${OUT}/contents/nightly.json?ref=main`, '--jq', '.sha'], { encoding: 'utf8' }).trim() } catch { /* first write */ }

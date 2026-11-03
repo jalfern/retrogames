@@ -17,14 +17,18 @@
 // ("N merges in 48 hours") — a fallback, never fake prose.
 //
 // Run from origin/main by the launchd telemetry job (every tick, self-gated to
-// one run per 4 h via /tmp/forge/last-shiftreport):
-//   git -C ~/Dev/retrogames show origin/main:scripts/shiftreport.mjs \
-//     | SHIFTREPORT_PUSH=1 node --input-type=module -
+// one run per 4 h via /tmp/forge/last-shiftreport), materialised into
+// /tmp/forge like dailylog — a stdin module cannot resolve the relative
+// scrub import below:
+//   git -C ~/Dev/retrogames show origin/main:scripts/shiftreport.mjs > /tmp/forge/shiftreport-run.mjs
+//   SHIFTREPORT_PUSH=1 node /tmp/forge/shiftreport-run.mjs
 // Manual dry-run: node scripts/shiftreport.mjs  ->  /tmp/forge/report-preview.json
 //
-// Self-contained on purpose (zero imports) — launchd pipes it to node on stdin.
-// The pure core is exported for scripts/shiftreportcheck.mjs, which pins every
-// rule against fixtures offline (npm run shiftreportcheck).
+// One import on purpose (#1536): the shared secret scrub — model-written
+// notes and PR titles are lane text heading for a PUBLIC repo, so the
+// payload is scrubbed at the push gate. The pure core is exported for
+// scripts/shiftreportcheck.mjs, which pins every rule against fixtures
+// offline (npm run shiftreportcheck).
 //
 // Definitions (identical to the reference comment — keep them):
 //   Window: last 48 h, America/Los_Angeles, 48 hour buckets keyed "MM-DDTHH".
@@ -54,6 +58,8 @@
 //   vercel.json has no cleanUrls, #809) ranked by merge count. Carried picks
 //   die the moment none of their paths merged in the window (fall back to
 //   computed, #809). Plumbing-only windows yield no picks.
+
+import { scrub } from './lib/scrub.mjs'
 
 const WINDOW_HOURS = 48
 const TZ = 'America/Los_Angeles'
@@ -641,7 +647,9 @@ async function main() {
         console.log('dry-run: /tmp/forge/report-preview.json', report.headline)
         return
     }
-    const data = Buffer.from(JSON.stringify(report)).toString('base64')
+    // #1536 — scrub at the publish gate: model-written notes and PR titles
+    // are lane text, and the destination repo is public.
+    const data = Buffer.from(scrub(JSON.stringify(report))).toString('base64')
     const attempts = pushContents({
         readSha: () => execFileSync('gh', ['api', `${OUT}/contents/report.json?ref=main`, '--jq', '.sha'], { encoding: 'utf8' }),
         put: (sha) => {

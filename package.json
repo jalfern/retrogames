@@ -294,6 +294,7 @@
     "nightlychecks": "node scripts/run-checks.mjs",
     "nightlysmokes": "node scripts/run-checks.mjs --smoke",
     "shiftreportcheck": "node scripts/shiftreportcheck.mjs",
+    "scrubcheck": "node scripts/scrubcheck.mjs",
     "runwaycheck": "node scripts/runwaycheck.mjs",
     "ssxmountaincheck": "node scripts/ssxmountaincheck.mjs",
     "ssxterraincheck": "node scripts/ssxterraincheck.mjs",

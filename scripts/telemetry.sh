@@ -77,6 +77,18 @@ git -C /Users/jon/Dev/retrogames show origin/main:scripts/tps.mjs > /tmp/forge/t
 TPS=$(node /tmp/forge/tps.mjs 2>/dev/null)
 [[ "$TPS" == \{* ]] || TPS=null
 
+# #1536 — the shared secret scrub (scripts/lib/scrub.mjs), materialised from
+# origin/main like tps.mjs. Every publish gate in this script (telemetry.json,
+# board.json) and in the materialised dailylog/shiftreport shells below pipes
+# its payload through it BEFORE anything is written to the public
+# forge-telemetry repo (a lane line with an Authorization: Bearer header once
+# leaked through the board's act lines). A failed materialisation keeps the
+# previous good copy; a scrub failure at a gate SKIPS the push — a stale
+# board beats a public leak.
+mkdir -p /tmp/forge/lib
+git -C /Users/jon/Dev/retrogames show origin/main:scripts/lib/scrub.mjs 2>/dev/null \
+    > /tmp/forge/lib/scrub.mjs.new && mv /tmp/forge/lib/scrub.mjs.new /tmp/forge/lib/scrub.mjs
+
 S_UP=false; pgrep -f 'opencode run.*THE FORGE( on slot a)?\.' >/dev/null 2>&1 && S_UP=true
 T_UP=false; pgrep -f 'opencode run.*THE FORGE on slot b\.' >/dev/null 2>&1 && T_UP=true
 # QA lanes too (#1299): the tokens ledger carries all four slot flags so the
@@ -138,7 +150,19 @@ try:
     lines = open('/tmp/forge/telemetry.jsonl').read().splitlines()[-288:]
 except FileNotFoundError:
     lines = [sys.argv[1]]
-data = base64.b64encode('\n'.join(lines).encode()).decode()
+# #1536 — the shared secret scrub at the publish gate: the samples carry the
+# lanes' terminal lines (act) and commit subjects, so nothing lane-shaped
+# reaches the public repo unscrubbed. A scrub failure (or empty output —
+# which would clobber the board with an empty file) skips the push.
+scrubbed = None
+r = subprocess.run(['node', '/tmp/forge/lib/scrub.mjs'], input='\n'.join(lines),
+                   text=True, capture_output=True)
+if r.returncode == 0 and r.stdout:
+    scrubbed = r.stdout
+if scrubbed is None:
+    print('telemetry push skipped: scrub failed', (r.stderr or 'empty output')[:150])
+    sys.exit(0)
+data = base64.b64encode(scrubbed.encode()).decode()
 OUT = 'repos/jalfern/forge-telemetry'
 args = ['gh', 'api', '-X', 'PUT', f'{OUT}/contents/telemetry.json',
         '--input', '-']
@@ -275,35 +299,48 @@ except Exception:
     pass
 board['slots'] = slots
 
-data = base64.b64encode(json.dumps(board).encode()).decode()
-body = {'message': 'board', 'content': data, 'branch': 'main'}
-sha = subprocess.run(['gh', 'api', f'{OUT}/contents/board.json?ref=main',
-                      '--jq', '.sha'], capture_output=True, text=True)
-# gh prints the 404 JSON BODY to stdout, so 'gh:' never prefixes a miss —
-# the first create silently poisoned body['sha'] and the PUT was rejected
-# while the script exited 0. Trust nothing but a bare hex sha.
-if sha.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', sha.stdout.strip()):
-    body['sha'] = sha.stdout.strip()
-r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{OUT}/contents/board.json', '--input', '-'],
-                   input=json.dumps(body), text=True, capture_output=True)
-if r.returncode != 0:
-    print('board push failed:', r.stderr[:300])
+# #1536 — the same gate as telemetry.json: the board carries the samples
+# (act lines, commit subjects) plus issue bodies/comments — lane text.
+# Empty output would clobber the board with an empty file — skip the push.
+s = subprocess.run(['node', '/tmp/forge/lib/scrub.mjs'], input=json.dumps(board),
+                   text=True, capture_output=True)
+if s.returncode != 0 or not s.stdout:
+    print('board push skipped: scrub failed', (s.stderr or 'empty output')[:150])
+else:
+    data = base64.b64encode(s.stdout.encode()).decode()
+    body = {'message': 'board', 'content': data, 'branch': 'main'}
+    sha = subprocess.run(['gh', 'api', f'{OUT}/contents/board.json?ref=main',
+                          '--jq', '.sha'], capture_output=True, text=True)
+    # gh prints the 404 JSON BODY to stdout, so 'gh:' never prefixes a miss —
+    # the first create silently poisoned body['sha'] and the PUT was rejected
+    # while the script exited 0. Trust nothing but a bare hex sha.
+    if sha.returncode == 0 and re.fullmatch(r'[0-9a-f]{40}', sha.stdout.strip()):
+        body['sha'] = sha.stdout.strip()
+    r = subprocess.run(['gh', 'api', '-X', 'PUT', f'{OUT}/contents/board.json', '--input', '-'],
+                       input=json.dumps(body), text=True, capture_output=True)
+    if r.returncode != 0:
+        print('board push failed:', r.stderr[:300])
 PYB
 
-# daily log (#516) — log.json rides the same CDN pipe as board.json. Run the
-# generator from origin/main over stdin (same pattern as this whole script:
-# launchd pipes telemetry.sh itself from origin/main, so a merge lands the
-# next tick without touching any working tree). DAILYLOG_PUSH selects the
-# push path; the module's pure core is pinned by npm run dailylogcheck.
+# daily log (#516) — log.json rides the same CDN pipe as board.json. The
+# generator now imports the shared scrub (#1536), and a stdin module cannot
+# resolve relative imports — so materialise it from origin/main into
+# /tmp/forge (the runway pattern; its ./lib/scrub.mjs import resolves against
+# the materialised tree). A merge lands the next tick without touching any
+# working tree. DAILYLOG_PUSH selects the push path; the module's pure core
+# is pinned by npm run dailylogcheck.
 git -C /Users/jon/Dev/retrogames fetch -q origin main 2>/dev/null || true
 git -C /Users/jon/Dev/retrogames show origin/main:scripts/dailylog.mjs \
-    | DAILYLOG_PUSH=1 node --input-type=module - || echo 'dailylog failed'
+    > /tmp/forge/dailylog-run.mjs 2>/dev/null \
+    && DAILYLOG_PUSH=1 node /tmp/forge/dailylog-run.mjs || echo 'dailylog failed'
 
 # shift report (#614) — report.json on the same pipe, self-gated to one run
-# per 4 h (this script ticks every 5 min). SHIFTREPORT_PUSH selects the push
-# path; the pure core is pinned by npm run shiftreportcheck.
+# per 4 h (this script ticks every 5 min). Materialised like dailylog (#1536:
+# it imports the shared scrub). SHIFTREPORT_PUSH selects the push path; the
+# pure core is pinned by npm run shiftreportcheck.
 if [[ ! -f /tmp/forge/last-shiftreport ]] || (( $(date +%s) - $(stat -f %m /tmp/forge/last-shiftreport) >= 14400 )); then
     git -C /Users/jon/Dev/retrogames show origin/main:scripts/shiftreport.mjs \
-        | SHIFTREPORT_PUSH=1 node --input-type=module - && touch /tmp/forge/last-shiftreport \
+        > /tmp/forge/shiftreport-run.mjs 2>/dev/null \
+        && SHIFTREPORT_PUSH=1 node /tmp/forge/shiftreport-run.mjs && touch /tmp/forge/last-shiftreport \
         || echo 'shiftreport failed'
 fi
