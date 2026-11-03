@@ -128,12 +128,12 @@ const AsteroidsGame = () => {
             if (pausedRef.current) return
 
             if (over || state.isAttractMode) { startRun(); return }
-            if (keys.hasOwnProperty(e.code)) {
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 keys[e.code] = true
             }
         }
         const handleKeyUp = (e) => {
-            if (keys.hasOwnProperty(e.code)) {
+            if (Object.prototype.hasOwnProperty.call(keys, e.code)) {
                 keys[e.code] = false
             }
         }
