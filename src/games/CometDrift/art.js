@@ -9,7 +9,7 @@
 // CALLED, so the harness can grade PALETTE / MESA_* / KART / LIVERY without
 // a DOM.
 
-import { TRACK, TX, TEX, ROAD_R, KERB_R, WALL_R, bankAt } from './track.js'
+import { TRACK, TX, TEX, ROAD_R, KERB_R, WALL_R, bankAt, wallLatAt } from './track.js'
 
 export const PALETTE = {
     // the dusk sky, top to horizon: plum to ember

@@ -10,9 +10,8 @@
 // circuit in Node without a DOM.
 
 import * as THREE from 'three'
-import { TRACK, SCENERY, bankAt } from '../CometDrift/track.js'
+import { TRACK, SCENERY, bankAt, bandRatioAt, wallLatAt } from '../CometDrift/track.js'
 import { REFERENCES } from '../CometDrift/reference.js'
-import { BANDS } from '../CometDrift/bands.js'
 import { selectorGeom } from '../CometDrift/selector.js'
 
 export const S = 1 / 60
@@ -22,53 +21,9 @@ const PERP = (a) => [-Math.sin(a), Math.cos(a)]
 // #530 item 2: the road BAND from the real maps (bands.js ← comet-bands.mjs).
 // The published track maps paint asphalt + kerbs + run-off, and the band is
 // wider at the banked escape areas, narrower where the road threads the trees.
-// Half-band fractions of the map span convert to course px with the live
-// centerline's bbox span (the arcade layouts sit on the un-mirrored map —
-// cometcheck's own alignment rule — so map LEFT/RIGHT ride scene side -1/+1).
-// Widths normalise by the lap median, because the arcade asphalt is fatter
-// than the map's drawn road: what transfers is the corner-to-corner RATIO.
-// Three-tap smoothing kills the hairpin spikes the far-cap can't (two lap
-// sections reading as one wide escape), and the inside-of-bend clamp keeps the
-// ribbon from folding. Gulch has no traced map: ratio null, rings stay constant.
-const BAND_CACHE = new Map()
-function bandContext(id = T.id) {
-    if (BAND_CACHE.has(id)) return BAND_CACHE.get(id)
-    const b = BANDS[id]
-    let ctx = null
-    if (b) {
-        let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity
-        for (const p of T.pts) {
-            x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
-            y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
-        }
-        const span = Math.max(x1 - x0, y1 - y0)
-        const med = (arr) => { const s = [...arr].sort((u, v) => u - v); return s[Math.floor(s.length / 2)] * span }
-        ctx = { span, medL: med(b.left), medR: med(b.right) }
-    }
-    BAND_CACHE.set(id, ctx)
-    return ctx
-}
-
-// smoothed measured half-band ratio (0.7..1.7) for one side at point i, or
-// null when the course has no traced map. `side` is the ribbon side (+1 PERP).
-export function bandRatioAt(i, side, courseId = T.id) {
-    const ctx = bandContext(courseId)
-    if (!ctx) return null
-    const b = BANDS[courseId]
-    const arr = side > 0 ? b.right : b.left
-    const N = T.N
-    const at = (k) => {
-        const u = (((k / N) % 1) + 1) % 1
-        const len = arr.length
-        const x = u * len
-        const i0 = Math.floor(x) % len
-        const i1 = (i0 + 1) % len
-        return arr[i0] + (arr[i1] - arr[i0]) * (x - Math.floor(x))
-    }
-    const med = side > 0 ? ctx.medR : ctx.medL
-    const r = (at(i - 2) + at(i) + at(i + 2)) * ctx.span / (3 * med)
-    return Math.min(1.7, Math.max(0.7, r))
-}
+// The ratio law itself lives in track.js (#1498 — the sim's passable wall
+// shares it), re-exported here for the renderer's kerb/wall builders.
+export { bandRatioAt, wallLatAt }
 
 // painted kerb outer radius: uniform 12px on the Gulch, 8..18px on the
 // measured courses (wide escapes get the deeper kerb run).

@@ -27,6 +27,7 @@
 // ROAD COURSE centerline and CORKSCOMB the traced Laguna Seca (reference.js);
 // the harness grades the match. Shape is uniform-scaling invariant, so the
 // reference gates ride through untouched.
+import { BANDS } from './bands.js'
 export const TX = 8192
 export const TY = 8192
 export const TEX = 2560             // bake resolution — decoupled from the world (#542)
@@ -40,6 +41,18 @@ export const TEX_S = TEX / TX      // texture px per world px
 export const ROAD_R = 96              // half-width of asphalt — fits two karts + drift room (#782)
 export const KERB_R = ROAD_R + 14    // painted kerb strip
 export const WALL_R = ROAD_R + 36    // sand ends, cliff face: the wall
+
+// #1498: the passable wall is NOT a constant — it is the escape the map
+// measures (bands.js), the same law the HD renderer draws (220px floor,
+// 300px ceiling, hairpin-inside cap). The #513 constant (132) predated the
+// band work: HD drew a 220-300px run-off while the sim still clamped at 132,
+// so a full-speed escape punched an invisible wall mid-run-off — the course
+// read as "wall-bumping at race speed". Corridor = drawn wall on the outside
+// of bends; on the INSIDE the #542 evolute guarantee holds (never past
+// Rloc-48, so a clamped kart stays on a real circle it can slide off).
+// Gulch has no traced map: the constant 220 ring the HD has always drawn.
+export const WALL_FLOOR = 220
+export const WALL_CEIL = 300
 
 export const COURSE_KEY = 'retrogames:comet.course'
 
@@ -539,10 +552,75 @@ export function courseIndex(id = currentId) {
     return i < 0 ? 0 : i
 }
 
+// ---- #1498: the per-side escape law (corridor = the wall the maps drew) ----
+// The measured half-band (bands.js) is a RATIO of the lap median: what
+// transfers from the real maps is the corner-to-corner shape — wide at the
+// banked escape areas, tight where the road threads. Normalised by the live
+// centerline's bbox span, three-tap smoothed (the far-cap can't kill the
+// hairpin spikes). Gulch has no traced map: the wobble ring stands alone.
+const BAND_CACHE = new Map()
+function bandContext(id) {
+    if (BAND_CACHE.has(id)) return BAND_CACHE.get(id)
+    const b = BANDS[id]
+    let ctx = null
+    if (b) {
+        let x0 = Infinity; let x1 = -Infinity; let y0 = Infinity; let y1 = -Infinity
+        for (const p of TRACK.pts) {
+            x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x)
+            y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y)
+        }
+        const span = Math.max(x1 - x0, y1 - y0)
+        const med = (arr) => { const s = [...arr].sort((u, v) => u - v); return s[Math.floor(s.length / 2)] * span }
+        ctx = { span, medL: med(b.left), medR: med(b.right) }
+    }
+    BAND_CACHE.set(id, ctx)
+    return ctx
+}
+
+// smoothed measured half-band ratio (0.7..1.7) for one side at point i, or
+// null when the course has no traced map. `side` is the ribbon side (+1 PERP).
+export function bandRatioAt(i, side, courseId = TRACK.id) {
+    const ctx = bandContext(courseId)
+    if (!ctx) return null
+    const b = BANDS[courseId]
+    const arr = side > 0 ? b.right : b.left
+    const N = TRACK.N
+    const at = (k) => {
+        const u = (((k / N) % 1) + 1) % 1
+        const len = arr.length
+        const x = u * len
+        const i0 = Math.floor(x) % len
+        const i1 = (i0 + 1) % len
+        return arr[i0] + (arr[i1] - arr[i0]) * (x - Math.floor(x))
+    }
+    const med = side > 0 ? ctx.medR : ctx.medL
+    const r = (at(i - 2) + at(i) + at(i + 2)) * ctx.span / (3 * med)
+    return Math.min(1.7, Math.max(0.7, r))
+}
+
+// #1498: the passable wall offset for one side at one point — where the sim
+// stops the kart AND where both renderers draw the cliff foot. Outside of a
+// bend: the measured escape (220..300 on the mapped courses, the wobble ring
+// on the Gulch). Inside of a bend: the evolute cap keeps the clamp a real
+// circle (Rloc-48, the #542 law) so a clamped kart slides off instead of
+// orbiting the corner center — and never wider than the drawn escape.
+export function wallLatAt(i, side) {
+    const p = TRACK.pts[i]
+    let w = WALL_FLOOR
+    const r = bandRatioAt(i, side, TRACK.id)
+    if (r !== null) w = Math.min(WALL_CEIL, Math.max(WALL_FLOOR, w * r))
+    if (p.k * side > 0) {
+        const Rloc = Math.abs(p.k) > 1e-9 ? 1 / Math.abs(p.k) : Infinity
+        w = Math.min(w, Math.max(48, Rloc - 48))
+    }
+    return w
+}
+
 export function surfaceAt(x, y, hint) {
     const n = TRACK.nearest(x, y, hint)
     const a = Math.abs(n.lat)
-    const surf = a <= ROAD_R ? 'road' : a <= KERB_R ? 'kerb' : a <= WALL_R ? 'sand' : 'wall'
+    const side = n.lat >= 0 ? 1 : -1
+    const surf = a <= ROAD_R ? 'road' : a <= KERB_R ? 'kerb' : a <= wallLatAt(n.i, side) ? 'sand' : 'wall'
     return { ...n, surf }
 }
 
