@@ -19,6 +19,7 @@ import { W, H, PY, ROAD_L, ROAD_R, RIVER_X, makeGame, step, stateHash } from './
 import { STAGES } from './script.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 
@@ -460,7 +461,13 @@ const SpyHunterGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. SpyHunter's road is a
+        // fixed stage script (sim.js: nothing here reads the clock or Math.random) —
+        // no per-run seed exists: {tick,score,done,lives,stage}.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, lives: gs.lives, stage: gs.stage }))
+
         return () => {
+            unexposeFeedbackState()
             clearTimeout(t)
             if (import.meta.env.DEV) { if (window.__spyTest) delete window.__spyTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)

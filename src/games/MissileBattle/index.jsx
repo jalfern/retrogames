@@ -22,6 +22,7 @@ import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan, decide } from './planner.js'
 import { WAVES } from './waves.js'
 import { PRESS, MESSAGES } from './attract.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 
@@ -437,7 +438,13 @@ const MissileBattleGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. MissileBattle waves
+        // come from fixed tables (waves.js) and the sim is plain deterministic data —
+        // zero Math.random in the whole title: {tick,score,done,wave}.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, wave: gs.wave }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__mbTest) delete window.__mbTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

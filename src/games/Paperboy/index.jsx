@@ -20,6 +20,7 @@ import { W, H, CFG, PEDAL, G, makeGame, step, stateHash } from './sim.js'
 import { STAGES, PALETTES } from './levels.js'
 import { solveGame } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 const YB = 186                 // screen y of the boy (t = 0)
@@ -551,7 +552,13 @@ const PaperboyGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Paperboy's street is a
+        // fixed script (sim.js header: "Two identical scripts must produce" identical
+        // runs — zero Math.random): {tick,score,done,delivered,lives}.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, delivered: gs.delivered, lives: gs.lives }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__paperTest) delete window.__paperTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
