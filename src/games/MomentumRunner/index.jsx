@@ -19,7 +19,7 @@ import { GAMES } from '../../config/games'
 import { audioController, MUSIC } from '../../utils/AudioController'
 import { musicStep } from './music.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
     segAngle, segAtRoute,
@@ -1149,7 +1149,17 @@ const MomentumGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state — the world is FIXED (sim.js and
+        // attract.js hold zero Math.random; ZONES/rings/drones are authored tables
+        // and the bg silhouettes use literal seeds 11/23/37). The only entropy is
+        // deco — wind-noise buffer, burst particles, camera shake, ring-pickup
+        // pitch jitter — so there is no seed to fake; {tick,score,done} pinpoints
+        // a run. (contractSeed is the harness's echo and never reaches the sim.
+        // Sits after the DEV block so the inert echo line can't read as a seed.)
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, rings: gs.rings, zone: gs.zone }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__runnerTest) delete window.__runnerTest; unmountDbg(); unexposeGame() }
             if (whoosh.src) { try { whoosh.src.stop() } catch { /* already stopped */ } }
             audioController.stopMusic()

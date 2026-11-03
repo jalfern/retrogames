@@ -772,9 +772,18 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // seed rng(1337) in art.js — it starts honoring ?seed=N at startPlay now, so it
 // joins the reporting+pinning count → 39. Batch 8 is the first SEED-PARAM port:
 // DonkeyKong's gameplay randomness (barrel spacing, ladder chance) moved from raw
-// Math.random into seedRng(seed) regenerated at every human start → 40. Dropping
-// below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGames >= 40, `${reportingGames} reporting`)
+// Math.random into seedRng(seed) regenerated at every human start → 40. Batch
+// 12 adds 3 whose seed machinery already existed and only lacked the report +
+// pin: RallyCoDriver (createSim drives every curve/pack/grip call from go.seed
+// — rnd=0 across the whole title; offline starts honor ?seed=N, the lobby seed
+// keeps authority online), Britannia (fresh(seed) selects the spawn gate +
+// every weather/ambient/foam hash; the human start was hardcoded seed 0, now
+// seedFromQuery() ?? 0 — score = moons visited) and IronRing (pure seeded
+// engine per the #531 netcode law; offline startFight used a Date.now LCG —
+// the pin wins when the caller passes no seed, explicit online seeds
+// untouched) → 43 reporting+pinning titles. Dropping below is a regression,
+// so pin it.
+ok('seedpin: rollout floor — at least 43 games report+pin seeds', reportingGames >= 43, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
@@ -795,7 +804,14 @@ ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGam
 // object) keeps the global tick — so {tick,score=rupees collected,done,screen}
 // pinpoints a run without any seed to fake.
 const SEEDLESS = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite',
-    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle', 'ArenaArchery', 'Zelda']
+    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle', 'ArenaArchery', 'Zelda',
+    // Batch 12: MarioKart — one authored track, items by standing on fixed
+    // cycles, scripted CPU, and even the screen jitter is jit(tick) (rnd=0
+    // across all 5 files). PrinceOfPersia — twelve hand-authored rooms
+    // (levels.js tables; guards/pots/chomps/mirror scripted, the art grain a
+    // pure hash of position, the crackle tick arithmetic; rnd=0 across 6
+    // files), score = level reached, done at win/lost.
+    'MarioKart', 'PrinceOfPersia']
 for (const t of SEEDLESS) {
     const dir = new URL(`../src/games/${t}/`, import.meta.url)
     const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
@@ -827,6 +843,11 @@ const DECO = {
     Polarity: [/stars\.push/, /sp = 0\.6 \+ Math\.random/, /\* shake : 0/, /0\.25 \+ 0\.5 \* a \* Math\.random/],
     Dogfight: [/camGoal\.[xy] \+= \(Math\.random\(\) - 0\.5\) \* shake/],
     SuperMarioClassic: [/anim: Math\.random\(\) \* 6/, /vy: -3 - Math\.random\(\) \* 2/],
+    // Batch 12: MomentumRunner — sim.js/attract.js are zero-entropy (authored
+    // ZONES tables; bg silhouettes use literal seeds 11/23/37), and the six
+    // index.jsx lines are wind-noise PCM fill, burst-particle angle/speed,
+    // ring-pickup pitch jitter and camera shake: nothing the sim reads.
+    MomentumRunner: [/d\[i\] = Math\.random\(\) \* 2 - 1/, /const a = Math\.random\(\) \* Math\.PI \* 2, sp = 1 \+ Math\.random/, /1046 \+ Math\.random\(\) \* 120/, /shake > 0 \? \(Math\.random\(\) - 0\.5\) \* shake : 0/],
 }
 for (const [t, pats] of Object.entries(DECO)) {
     const dir = new URL(`../src/games/${t}/`, import.meta.url)
@@ -856,7 +877,7 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
     try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
     if (/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)) seedlessReporters++
 }
-ok('seedless: at least 18 titles report without a seed (BardsTale + the fixed-world and deco-decorated batches)', seedlessReporters >= 18, `${seedlessReporters} seedless reporters`)
+ok('seedless: at least 21 titles report without a seed (BardsTale + the fixed-world and deco-decorated batches)', seedlessReporters >= 21, `${seedlessReporters} seedless reporters`)
 
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per
