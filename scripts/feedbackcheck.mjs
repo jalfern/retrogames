@@ -755,9 +755,10 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // batch 1 adds 8 (SSX, CometDrift, CometDriftHD, SmashTV, ShortOrderShout,
 // Tempest, LunarLander, Lemmings) → 11; batch 2 adds 10 (Sonar, TenDeep,
 // Beezee, GravelYard, FloorBoss, TidyBot, FireCrew, TalkMeDown, Minesweeper,
-// Homebody) → 21 reporting+pinning titles. Dropping below is a regression,
-// so pin it.
-ok('seedpin: rollout floor — at least 21 games report+pin seeds', reportingGames >= 21, `${reportingGames} reporting`)
+// Homebody) → 21 reporting+pinning titles; batch 3 adds 3 (Outpost, BlobBattle
+// — offline only, online keeps the lobby seed — PapersPleaseMin) → 24. Dropping
+// below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 24 games report+pin seeds', reportingGames >= 24, `${reportingGames} reporting`)
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper

@@ -14,6 +14,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, newRun, step, stateHash, current, autopilot } from './sim.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
 import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, wallRows } from './layout.js'
 
@@ -52,6 +53,7 @@ const PapersPleaseMinGame = () => {
 
         let gs = newRun(0)
         let raf = 0, last = 0, acc = 0
+        let simTick = 0           // #1473: play-frame counter for the feedback report
         let stamp = null            // {ok, why, ticks}
         let banner = null           // {text, sub, ticks}
         let demoScript = null, demoAt = 0, demoWait = 0, demoSeed = 0
@@ -89,7 +91,13 @@ const PapersPleaseMinGame = () => {
         }
 
         const startPlay = (seed = 0) => {
+            // #1473: honor ?seed=N at the default human-start so a filed
+            // report replays this exact week (applicants, rules and all).
+            // Digit2-4 stay explicit picks; the report carries gs.seed.
+            const pin = seedFromQuery()
+            if (seed === 0 && pin != null) seed = pin >>> 0
             gs = newRun(seed)
+            simTick = 0
             demoSeed = seed
             evLog.length = 0
             stamp = null; banner = null
@@ -121,6 +129,7 @@ const PapersPleaseMinGame = () => {
                 }
                 return
             }
+            simTick++
             if (stamp && stamp.ticks > 0) stamp.ticks--
             if (banner && banner.ticks > 0) banner.ticks--
         }
@@ -369,7 +378,11 @@ const PapersPleaseMinGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: simTick, score: gs.score, done: !!gs.end, seed: gs.seed, day: gs.day }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__ppTest) delete window.__ppTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)

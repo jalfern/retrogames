@@ -17,7 +17,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { CFG, newRun, step, stateHash } from './sim.js'
 import { W, H, ROCK, STAIRS } from './cave.js'
 import { plan, autopilot, decide as decideTick } from './planner.js'
@@ -262,6 +262,12 @@ const OutpostGame = () => {
         }
 
         const startPlay = (seed = 0) => {
+            // #1473: honor ?seed=N at the default human-start (tap / any key /
+            // Digit1 all begin at seed 0) so a filed report replays this exact
+            // outpost. Digit2-4 stay explicit picks — the report always carries
+            // the seed the world was actually built with (gs.baseSeed).
+            const pin = seedFromQuery()
+            if (seed === 0 && pin != null) seed = pin >>> 0
             gs = newRun(seed)
             evLog.length = 0
             toolIdx = 0; designTap = null; denyFlash = null
@@ -395,7 +401,11 @@ const OutpostGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.ore, done: !!gs.end, seed: gs.baseSeed, depth: gs.depth }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__opTest) delete window.__opTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('pointerdown', onPointer)
