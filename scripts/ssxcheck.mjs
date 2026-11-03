@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT } from '../src/games/SSX/sim.js'
+import { makeGame, step, CFG, PLACE_PTS, cloneGame, stateHash, CARVE_FADE, grabKindFor, GRAB_NAMES, GRAB_POSES, flipDirFromTilt, bodyFromTilt, STICK_TILT, trickPreview } from '../src/games/SSX/sim.js'
 import { decide, PACE, SKILL, MISS, missChance } from '../src/games/SSX/planner.js'
 import { buildCourse, terrainY, slopePos, COURSE_COUNT, HEATS, tournament, rotationName, gapAt, expressAt, chuteAt, GAP_X, EXPRESS, DS, WALL_X, sceneryPlan, SHELF_PROPS, outcropAt, gladeDefs } from '../src/games/SSX/course.js'
 import { MUSIC } from '../src/utils/AudioController.js'
@@ -1390,6 +1390,48 @@ for (let c = 0; c < COURSE_COUNT; c++) {
     const cv = posed({ ...AIR, air: false, flip: 0, invert: 0, steerSm: 1 })
     ok('#904 carving lifts a rail while the nose stays down the fall line — tilt about x',
         Math.abs(cv.noseY) < 0.1 && Math.abs(cv.upZ) > 0.1)
+}
+
+// #1497: live trick naming — the screen must spell the trick WHILE it is
+// being built, not only on landing. trickPreview is a pure mirror of
+// evalTrick's naming block: same tables, same order, and a rotation names
+// only once locked (spin past the 175° bank threshold; flip/invert inside
+// the ±55° window the bail checks forgive) so the label never promises what
+// landing won't pay.
+{
+    const R = (o) => ({ air: true, spin: 0, flip: 0, invert: 0, invertSign: 1, grab: 0, grabKind: 0, takeSpin: 0, over: false, ...o })
+    ok('#1497 names nothing on the ground — the line belongs to the air',
+        trickPreview(R({ air: false })) === '')
+    ok('#1497 an unlocked jump reads plain AIR',
+        trickPreview(R({ spin: 90, flip: 40 })) === 'AIR')
+    ok('#1497 a spin names at its bank threshold (174° silent, 175° pays 180)',
+        trickPreview(R({ spin: 174 })) === 'AIR' && trickPreview(R({ spin: 175 })) === '180')
+    ok('#1497 spins count the ledger to the 1080 cap',
+        trickPreview(R({ spin: 540 })) === '540' && trickPreview(R({ spin: -1080 })) === '1080' &&
+        trickPreview(R({ spin: 1300 })) === '1080')
+    ok('#1497 a grab names before the spin — METHOD 540, the evalTrick order',
+        trickPreview(R({ spin: 540, grab: 1, grabKind: 2 })) === `${GRAB_NAMES[2]} 540`)
+    ok('#1497 a half flip stays unnamed (200°) and locks inside the bail-forgiven window (330°)',
+        trickPreview(R({ flip: 200 })) === 'AIR' && trickPreview(R({ flip: 330 })) === 'BACKFLIP AIR')
+    ok('#1497 flip direction and doubles read live — FRONT and DOUBLE',
+        trickPreview(R({ flip: -330 })) === 'FRONTFLIP AIR' &&
+        trickPreview(R({ flip: 770 })) === 'DOUBLE BACKFLIP AIR')
+    ok('#1497 inverts name by sign and count (after the grab), and a half roll (200°) stays silent',
+        trickPreview(R({ invert: 400, grab: 1, grabKind: 2 })) === `${GRAB_NAMES[2]} NIKE INVERT AIR` &&
+        trickPreview(R({ invert: -760, invertSign: -1, grab: 1, grabKind: 2 })) === `${GRAB_NAMES[2]} DOUBLE SOLID INVERT AIR` &&
+        !trickPreview(R({ invert: 200, grab: 1 })).includes('INVERT'))
+    ok('#1497 OVER heads the label while the meter still reads full',
+        trickPreview(R({ over: true, spin: 360 })) === 'OVER!! 360')
+    ok('#1497 a committed opposite spin previews REVERT (and only that)',
+        trickPreview(R({ takeSpin: 1, spin: -420 })) === 'REVERT 360' &&
+        !trickPreview(R({ takeSpin: 1, spin: -100 })).startsWith('REVERT') &&
+        !trickPreview(R({ takeSpin: 1, spin: 420 })).startsWith('REVERT'))
+    ok('#1497 the preview is pure — same ledger, same name',
+        trickPreview(R({ spin: 720, grab: 1, grabKind: 5 })) === trickPreview(R({ spin: 720, grab: 1, grabKind: 5 })))
+    const idx = readFileSync(join(SRC_DIR, 'games', 'SSX', 'index.jsx'), 'utf8')
+    ok('#1497 the HUD renders the live preview on the air line and the probe reports it',
+        /trickPreview\(p\)/.test(idx) && /liveTrick:\s*trickPreview\(p\)/.test(idx) &&
+        /h\.air\.textContent\s*=\s*named \? pv : 'A I R'/.test(idx))
 }
 
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
