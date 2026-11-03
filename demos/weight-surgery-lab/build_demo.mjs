@@ -75,6 +75,38 @@ const pracHtml = prac ? `<h2>PRACTICE VARIANTS (gsm_train, 12 paired problems, c
 <table><tr><th>variant</th><th>terminated</th><th>correct</th><th>mean tokens</th></tr>${prac}</table>
 <p class="note">…except <code>sampfix2.0</code>: its flag was duplicated (<code>--presence-penalty 1.5</code> still in the command). The clean rerun is the honest one.</p>` : "";
 
+// ---- SURGERY II (#1505): longer-horizon capture + downstream removal ----
+const v2 = read("results/v2_variants.json", null) || read("variants_v2.json", {});
+const v2loops = read("results/v2_loop_texts.json", null) || read("v2_loop_texts.json", null);
+const v2reports = {};
+for (const v of ["A", "B", "C"]) v2reports[v] = read(`edited2_${v}/edit_report.json`) || read(`edit_reports/v2_${v}.json`);
+const V2LBL = { base: "base · cap 4096 · pp 0", A: "A · upstream: d removed from down_proj ×6 FA layers", B: "B · downstream: tied-unembed + o_proj rank-1 strip ×6 FA layers", C: "C · A+B combined" };
+const v2rows = Object.entries(v2).map(([k, s]) => {
+  const mean = s.rows ? Math.round(s.rows.reduce((a, r) => a + r.ntok, 0) / s.rows.length) : "—";
+  return `<tr><td>${V2LBL[k] || k}</td><td>${s.terminated}/12</td><td>${s.looped}/12</td><td>${s.correct}/12</td><td>${mean}</td></tr>`;
+}).join("\n");
+const v2signal = ["A", "B", "C"].some(k => v2[k] && v2.base &&
+  (v2[k].terminated > v2.base.terminated && v2[k].correct > v2.base.correct));
+const v2cap = (() => {
+  const cap = batches.find(b => b.phase === "capture-v2");
+  return cap ? `onset positions (tokens): ${JSON.stringify(cap.onsets)}` : "capture pending";
+})();
+const v2pair = v2loops && v2loops.loop?.length && v2loops.end?.length ? `
+<div class="pair">
+  <div class="pane"><h3>II · LOOP at cap 4096 — onset at token ${v2loops.loop[0].onset_tok} ✗</h3><pre>${esc(v2loops.loop[0].text.slice(0, 700))}…</pre></div>
+  <div class="pane"><h3>II · TERMINATED at cap 4096 (${v2loops.end[0].ntok} tok) ${v2loops.end[0].hit_cap ? "✗" : "✓"}</h3><pre>${esc(v2loops.end[0].text.slice(0, 700))}…</pre></div>
+</div>` : "";
+const v2acc = ["A", "B", "C"].filter(k => v2[k] && v2.base && v2[k].correct > v2.base.correct);
+const v2Html = `
+<h2>SURGERY II — repeat-onset d, all six attention layers, both ends (#1505)</h2>
+<p>Round I localized <b>d</b> as a whole-sequence mean at a 1024-token horizon — verbose reasoning, not the attractor. Round II changes all three inputs at once: capture at <b>cap 4096</b> (penalty-free, seed 23, train-only), take d as <b>mean(write during the loop) − mean(write before it)</b> from the detected repeat-onset, and operate on all six full-attention layers <code>{3,7,11,15,19,23}</code> (this model interleaves linear attention every 4th layer). Variant <b>B</b> cuts the <i>read</i> side instead: <code>embed_tokens</code> rows (unembed is tied) and <code>o_proj</code> rank-1, so the residual stream can no longer be expressed in logits or written by attention along d. <em>${v2cap}</em></p>
+${v2pair}
+<table><tr><th>variant</th><th>terminated</th><th>looped</th><th>correct</th><th>mean tokens</th></tr>${v2rows || "<tr><td colspan=5>v2 runs pending</td></tr>"}</table>
+${v2reports.B ? `<p class="note">weights edited — A: ${(v2reports.A?.pct_changed ?? 0).toFixed(3)}% · B: ${v2reports.B.pct_changed.toFixed(3)}% (embed ‖d‖ energy removed ${v2reports.B.embed?.norm_removed ?? "?"}) · C: ${(v2reports.C?.pct_changed ?? 0).toFixed(3)}%</p>` : ""}
+<p class="note">${v2signal
+  ? "VERDICT II: a variant terminates more held-out problems AND scores higher than base at the fair horizon — the second cut lands. Details above."
+  : `VERDICT II: no variant beats base-4096 on termination at this horizon — the second negative, and sharper than round I's: with exact token counting base itself terminates only 1/12 (the earlier 6/12 was a words×2 estimate artifact, see README). ${v2acc.length ? `But ${v2acc.map(k => `variant ${k} (${v2[k].correct}/${v2.base.correct})`).join(", ")} scores above base without terminating — removing d from the READ path makes the model find right answers while it rambles. Direction removal helps reasoning, not termination; horizon (32k vs 4k) and localization remain the gap to MIT.` : "No variant even improves accuracy; horizon (32k vs 4k) and localization remain the gap to MIT."}`}</p>`;
+
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -142,8 +174,11 @@ ${batchRows}
 <p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12. Held-out scoring, run before we noticed, shows the same: presence 2.0 still hits the cap on 95% of MATH and 100% of GSM8K problems.</p>
 <p class="note">Bottom line: on a laptop CPU, at a 1024-token cap, with a whole-sequence mean direction — <b>neither weight surgery nor the model card's own sampling settings break the non-termination</b>. MIT's numbers stand (their logs are public); reproducing them needs their horizon (32k), their batch sizes, and probably their localization method (repeat-onset contrast, not sequence mean). Next: capture at 2–8k horizons from the moment loops start, ablate through o_proj/unembed too, score full MATH-500, then compare against MIT's published edit — in that order.</p>
 
+${v2Html}
+
 <h2>SOURCES</h2>
 <p><a href="https://jalfern.com/retrogames/issues/1493" rel="noopener">Issue #1493</a> ·
+<a href="https://jalfern.com/retrogames/issues/1505" rel="noopener">Issue #1505 (Surgery II)</a> ·
 <a href="https://rikiyat.github.io/blog/weight-space-programming/" rel="noopener">Sparks of Weight-Space Programming</a> (MIT CSAIL) ·
 <a href="https://github.com/RikiyaT/lm_understand-logs" rel="noopener">experiment logs</a> ·
 lab scripts: <code>demos/weight-surgery-lab/</code> in the repo.</p>
