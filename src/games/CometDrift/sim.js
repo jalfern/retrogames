@@ -6,7 +6,7 @@
 // drive() runs the player and every rival; brains differ only in skill and
 // in who computes the input (keys, the seeded rival mistakes, or decide()).
 
-import { TRACK, CHECKPOINTS, surfaceAt, TX, TY, COURSE, courseIndex } from './track.js'
+import { TRACK, CHECKPOINTS, surfaceAt, TX, TY, COURSE, courseIndex, wallLatAt } from './track.js'
 
 export const LAPS = 4
 
@@ -262,19 +262,14 @@ function drive(g, k, inp) {
         }
         if (surf.surf === 'wall') {
             // clamp EVERY tick: a one-shot clamp lets speed sneak past the
-            // cliff between cooldowns
+            // cliff between cooldowns. #1498: the wall is the per-side escape
+            // law (track.js wallLatAt) — the same 220-300px run-off the
+            // renderers draw, with the #542 evolute cap on the inside of
+            // bends kept inside it, so a clamped kart stays on a real circle
+            // it can slide along and escape.
             const p = T.pts[surf.i]
             const side = Math.sign(surf.lat)
-            // #542: a constant lateral clamp folds through the corner center
-            // wherever the turn radius is tighter than the wall limit (the
-            // hairpin evolute) — karts that touched it orbited forever. On the
-            // INSIDE of a bend cap the clamp by the local radius: the cliff
-            // bulges into the apex (it's a canyon hairpin) and the clamp
-            // stays a real circle the kart can slide along and escape.
-            const Rloc = Math.abs(p.k) > 1e-9 ? 1 / Math.abs(p.k) : Infinity
-            const lim = (p.k * side > 0
-                ? Math.max(48, Math.min(CFG.wallLimit, Rloc - 48))
-                : CFG.wallLimit) - Math.min(24, (k.wpress || 0) * 0.8)
+            const lim = wallLatAt(surf.i, side) - Math.min(24, (k.wpress || 0) * 0.8)
             k.x = p.x + Math.cos(p.a + Math.PI / 2) * side * lim
             k.y = p.y + Math.sin(p.a + Math.PI / 2) * side * lim
             k.wpress = (k.wpress || 0) + 1
