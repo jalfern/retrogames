@@ -19,6 +19,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import * as THREE from 'three'
 import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
@@ -764,7 +765,7 @@ const CivilizationVGame = () => {
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'Enter', 'Home'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(1); return }
+            if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
             if (e.code === 'Space' || e.code === 'Enter') { endTurn(); return }
@@ -811,7 +812,7 @@ const CivilizationVGame = () => {
             ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY })
             edgeOn = false
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(1); return }
+            if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (ptrs.size === 2) { drag = null; const [a, b] = [...ptrs.values()]; pinch = { d: Math.max(12, Math.hypot(a.x - b.x, a.y - b.y)), dist: cam.dist, mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, az: cam.az, el: cam.el }; return }
             drag = { x: e.clientX, y: e.clientY, t: performance.now(), moved: 0, az: cam.az, el: cam.el, btn: e.button, tx: cam.tx, tz: cam.tz }
@@ -845,7 +846,7 @@ const CivilizationVGame = () => {
         const onPointerLeave = () => { edgeOn = false; held.clear(); drag = null; pinch = null; ptrs.clear() }
         const onKeyUp = (e) => held.delete(e.code)
 
-        const startPlay = (seed = 1) => {
+        const startPlay = (seed = seedFromQuery() ?? 1) => {
             gs = newGame(seed, 0); view = reinitView(gs)
             const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
             if (s) { gs.selected = s.id; const w = view.hexToWorld(s.c, s.r); cam.tx = w.x; cam.tz = w.z; clampTgt() }
@@ -986,7 +987,16 @@ const CivilizationVGame = () => {
         }
         const capSizeOf = (g) => { const c = g.cities.find((x) => x.civ === 0 && x.capital); return c ? c.size : 0 }
 
+        // #1473: production-safe feedback state (seed for replay), every build.
+        // Score is accumulated culture; done mirrors victory/defeat. Attract
+        // runs the fixed demo world, so its seed is the demo's, not a pin's.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: Math.floor(gs.civs[0].cultureEarned || 0),
+            done: gs.end != null, seed: gs.seed, turn: gs.turn,
+        }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__civTest) delete window.__civTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onKeyUp)
