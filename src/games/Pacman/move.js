@@ -186,3 +186,185 @@ export function stepPlayer(gs, held) {
     }
     return eaten
 }
+
+// ---------------------------------------------------------------------------
+// GHOST AI — #1473 seedpin batch 15. The whole ghost brain lives here as pure
+// functions: the map, pacman and the ghosts arrive through gs, every die roll
+// comes from the injected rand (seedRng(seed) upstream). stepGhost is exactly
+// what the shipped loop runs per ghost per tick, so the Node harness proves the
+// real thing: same seed → byte-identical wander; seeded worlds replay.
+// ---------------------------------------------------------------------------
+
+export function validMoves(map, x, y) {
+    const moves = []
+    if (y === 14) {
+        if (x <= 1) { moves.push({ x: -1, y: 0 }); moves.push({ x: 1, y: 0 }); }
+        else if (x >= COLS - 2) { moves.push({ x: 1, y: 0 }); moves.push({ x: -1, y: 0 }); }
+    }
+    if (x < COLS - 1 && map[y][x + 1] !== 1) moves.push({ x: 1, y: 0 })
+    if (x > 0 && map[y][x - 1] !== 1) moves.push({ x: -1, y: 0 })
+    if (y < ROWS - 1 && map[y + 1][x] !== 1 && map[y + 1][x] !== 4) moves.push({ x: 0, y: 1 })
+    if (y > 0 && map[y - 1][x] !== 1) moves.push({ x: 0, y: -1 })
+    return moves
+}
+
+export function bfsDir(map, startX, startY, targetType, targetPos = null, pacPos = null) {
+    let queue = [{ x: startX, y: startY, path: [] }]
+    let visited = new Set(`${startX},${startY}`)
+    let iterations = 0
+    const MAX_ITER = 600
+
+    while (queue.length > 0 && iterations++ < MAX_ITER) {
+        let curr = queue.shift()
+        if (targetType === 'dot' && map[curr.y][curr.x] === 2) return curr.path[0]
+        if (targetType === 'power' && map[curr.y][curr.x] === 3) return curr.path[0]
+        if (targetType === 'pacman' && pacPos && curr.x === pacPos.x && curr.y === pacPos.y) return curr.path[0]
+        if (targetType === 'home' && curr.x === 13 && curr.y === 14) return curr.path[0]
+        if (targetType === 'pos' && curr.x === targetPos.x && curr.y === targetPos.y) return curr.path[0]
+
+        const dirs = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+        for (let d of dirs) {
+            let nx = curr.x + d.x, ny = curr.y + d.y
+            if (ny === 14 && (nx < 0 || nx >= COLS)) continue
+            if (ny >= 0 && ny < ROWS && nx >= 0 && nx < COLS && map[ny][nx] !== 1 && !visited.has(`${nx},${ny}`)) {
+                visited.add(`${nx},${ny}`)
+                queue.push({ x: nx, y: ny, path: [...curr.path, d] })
+            }
+        }
+    }
+    return null
+}
+
+export function nearestGhostDist(ghosts, x, y) {
+    let minDist = Infinity
+    ghosts.forEach(g => {
+        const dist = Math.sqrt(Math.pow(g.x - x, 2) + Math.pow(g.y - y, 2))
+        if (dist < minDist) minDist = dist
+    })
+    return minDist
+}
+
+// attract autopilot panic: move away from the nearest ghost, no instant reverse
+export function safeMove(map, pacman, ghosts, x, y) {
+    const moves = validMoves(map, x, y)
+    if (moves.length === 0) return { x: 0, y: 0 }
+    let bestMove = null
+    let maxScore = -Infinity
+    moves.forEach(m => {
+        const nx = x + m.x
+        const ny = y + m.y
+        const ghostDist = nearestGhostDist(ghosts, nx, ny)
+        const isReverse = (m.x === -pacman.dir.x && m.y === -pacman.dir.y)
+        const score = ghostDist - (isReverse ? 2 : 0)
+        if (score > maxScore) { maxScore = score; bestMove = m }
+    })
+    return bestMove
+}
+
+// one ghost, one tick: pen timers, exit path, per-tile decision (all rand
+// draws), grid movement, tunnel wrap, and the touch predicate — in the same
+// order, with the same rand consumption as before the extraction (scared rolls
+// its die even on an empty move list; the fallback roll only fires when the
+// decision came up empty).
+export function stepGhost(g, gs, rand, hooks = {}) {
+    const { map, pacman } = gs
+    if (g.state === 'pen') {
+        g.penTimer--
+        if (g.penTimer <= 0) {
+            g.state = 'exiting'
+        } else {
+            if (g.progress === 0) {
+                if (!g.penBounceDir) g.penBounceDir = -1
+                const ny = Math.round(g.y) + g.penBounceDir
+                if (ny < 13 || ny > 15 || map[ny][Math.round(g.x)] === 1) g.penBounceDir *= -1
+                g.nextDir = { x: 0, y: g.penBounceDir }
+            }
+            g.progress += g.speed * 0.5
+            if (g.progress >= 1) {
+                g.y += g.nextDir.y
+                g.y = Math.round(g.y)
+                g.progress = 0
+            }
+            return
+        }
+    }
+
+    if (g.state === 'exiting') {
+        if (g.progress === 0) {
+            const gx = Math.round(g.x)
+            const gy = Math.round(g.y)
+            if (gy <= 11) g.state = 'chase'
+            else if (gx < 13) g.nextDir = { x: 1, y: 0 }
+            else if (gx > 13) g.nextDir = { x: -1, y: 0 }
+            else g.nextDir = { x: 0, y: -1 }
+        }
+        if (g.state === 'exiting') {
+            g.progress += g.speed
+            if (g.progress >= 1) {
+                g.x += g.nextDir.x
+                g.y += g.nextDir.y
+                g.x = Math.round(g.x)
+                g.y = Math.round(g.y)
+                g.progress = 0
+            }
+            return
+        }
+    }
+
+    if (g.progress === 0) {
+        let move = null
+        const rx = Math.round(g.x), ry = Math.round(g.y)
+        const pacPos = { x: Math.round(pacman.x), y: Math.round(pacman.y) }
+        if (g.state === 'dead') {
+            move = bfsDir(map, rx, ry, 'home')
+            if (!move) { g.state = 'pen'; g.penTimer = 120 }
+        } else if (g.state === 'scared') {
+            const moves = validMoves(map, rx, ry)
+            move = moves[Math.floor(rand() * moves.length)]
+        } else if (g.type === 'blinky') {
+            move = bfsDir(map, rx, ry, 'pacman', null, pacPos)
+        } else if (g.type === 'pinky') {
+            const tx = Math.max(0, Math.min(COLS - 1, Math.round(pacman.x + pacman.dir.x * 4)))
+            const ty = Math.max(0, Math.min(ROWS - 1, Math.round(pacman.y + pacman.dir.y * 4)))
+            move = bfsDir(map, rx, ry, 'pos', { x: tx, y: ty }, pacPos)
+            if (!move) move = bfsDir(map, rx, ry, 'pacman', null, pacPos)
+        } else {
+            if (rand() > 0.5) {
+                move = bfsDir(map, rx, ry, 'pacman', null, pacPos)
+            } else {
+                const moves = validMoves(map, rx, ry)
+                if (moves.length > 0) move = moves[Math.floor(rand() * moves.length)]
+            }
+        }
+        if (move) g.nextDir = move
+        else {
+            const moves = validMoves(map, rx, ry)
+            if (moves.length > 0) g.nextDir = moves[Math.floor(rand() * moves.length)]
+        }
+    }
+    if (g.nextDir) {
+        let currentSpeed = g.speed
+        if (g.state === 'scared') currentSpeed *= 0.6
+        if (g.state === 'dead') currentSpeed *= 3.0
+        g.progress += currentSpeed
+        if (g.progress >= 1) {
+            g.x += g.nextDir.x
+            g.y += g.nextDir.y
+            g.progress = 0
+            g.x = Math.round(g.x)
+            g.y = Math.round(g.y)
+            if (g.x <= -1) g.x = COLS - 1
+            if (g.x >= COLS) g.x = 0
+        }
+    }
+    const dx = (g.x + (g.nextDir?.x || 0) * g.progress) - (pacman.x + pacman.dir.x * pacman.progress)
+    const dy = (g.y + (g.nextDir?.y || 0) * g.progress) - (pacman.y + pacman.dir.y * pacman.progress)
+    if (Math.sqrt(dx * dx + dy * dy) < 0.8) {
+        if (g.state === 'scared') {
+            g.state = 'dead'
+            hooks.eat?.()
+        } else if (g.state === 'chase') {
+            hooks.hit?.()
+        }
+    }
+}
