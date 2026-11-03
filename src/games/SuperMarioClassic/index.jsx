@@ -4,6 +4,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 // =====================================================================
 // SUPER MARIO BROS  -  World 1-1 & 1-2
@@ -981,7 +982,15 @@ const SuperMarioGame = () => {
         state = 'attract'
         animationFrameId = requestAnimationFrame(loop)
 
+        // #1473: production-safe feedback state, every build. This engine's level
+        // is authored (fixed level table, scripted pipe warps, fixed Goomba/Koopa
+        // patrols), so there is no per-run seed to report; the only Math.random in
+        // this file is decoration that cannot reach gameplay — coin sparkle phase
+        // and brick-debris scatter. Seedless: {tick,score,done,level,lives,coins}.
+        exposeFeedbackState(() => ({ tick: tick, score: score, done: state === 'gameover' || state === 'win', level: levelIndex + 1, lives: lives, coins: coins }))
+
         return () => {
+            unexposeFeedbackState()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)

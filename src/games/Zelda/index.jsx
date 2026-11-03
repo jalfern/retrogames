@@ -3,6 +3,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { makeGame, step } from './sim'
 import { screenOf, TILE, COLS, ROWS } from './world'
 
@@ -286,7 +287,16 @@ export default function Zelda() {
         window.addEventListener('keyup', ku)
         raf = requestAnimationFrame(frame)
         window.__zeldaTest = { game: () => gameRef.current, screen: () => stateRef.current.screen, paused: () => pausedRef.current, keys, press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 120) } }
-        return () => { cancelAnimationFrame(raf); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); delete window.__zeldaTest }
+        // #1473: production-safe feedback state, every build. Zelda's sim (sim.js/
+        // world.js) is audited zero-Math.random — every screen, enemy script and
+        // drop is authored in tables, so there is no per-run seed to report. The
+        // gameover restart mutates the live object (Object.assign(g, makeGame()))
+        // while keeping the global tick, so tick identifies the whole session;
+        // score is rupees collected (ledger, monotonic). Seedless:
+        // {tick,score,done,screen,triforce}.
+        exposeFeedbackState(() => ({ tick: g.tick, score: g.ledger.rupeeGot, done: g.end != null, screen: g.scr, triforce: g.flags.triforce }))
+
+        return () => { unexposeFeedbackState(); cancelAnimationFrame(raf); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); delete window.__zeldaTest }
     }, [])
 
     return (

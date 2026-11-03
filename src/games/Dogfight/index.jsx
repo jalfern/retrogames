@@ -25,7 +25,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { CFG, FIXED_DT, newGame, step, pilotInput, recordMission, replay, stateHash, cloneGame } from './sim.js'
 import { MISSION_COUNT } from './levels.js'
 
@@ -532,7 +532,15 @@ const DogfightGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Dogfight's sim
+        // (sim.js) is audited zero-Math.random/zero-Date — patrols are scripted
+        // proofs (see README); the only Math.random left in this file is camera
+        // shake, which reads state but never writes it. No world to re-seed, so
+        // the report is seedless: {tick,done,score=bandits downed,mission}.
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, done: !!gs && gs.end != null, score: gs ? gs.foes.filter((f) => !f.alive).length : 0, mission }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__dogTest) delete window.__dogTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
