@@ -76,6 +76,15 @@ const fxSound = (e) => {
             case 'spore': ac.playFilteredNoise(0.16, 0.05, 600); break
             case 'mantle': ac.playSweep(200, 60, 0.3, 'square', 0.09); ac.playNoise(0.2, 0.09); ac.duckMusic(0.4, 0.4); break
             case 'roar': ac.playSweep(140, 50, 0.5, 'sawtooth', 0.11); ac.duckMusic(0.25, 0.8); break
+            // #1500 first-time player pass: these sim moments were silent — the bomb's
+            // signature B tap, chest openings, the bow draw, crate pushes and the heavy
+            // impact thunk all fired with no cue. A newcomer reads silence as "nothing
+            // happened"; every action must be felt.
+            case 'placebomb': ac.playTone(130, 0.05, 'sine', 0.07); ac.playTone(2100, 0.015, 'square', 0.02, 0.04); break
+            case 'chest': ac.playSweep(190, 330, 0.18, 'triangle', 0.05); ac.playNoise(0.09, 0.04); break
+            case 'draw': ac.playSweep(230, 400, 0.12, 'triangle', 0.035); break
+            case 'push': ac.playFilteredNoise(0.14, 0.05, 320); break
+            case 'thunk': ac.playTone(95, 0.11, 'sine', 0.1); break
         }
     } catch { /* audio locked */ }
 }
