@@ -19,6 +19,13 @@
 //                                at the same tick; the pad streams resume,
 //                                never reset
 //   7. a rejoin restores       — promote + fresh 'go' runs lockstep again
+//   8. the shell is wired      — static audit of index.jsx: the shared Lobby
+//                                overlay is mounted (a dead session left the
+//                                protocol provably correct but the overlay
+//                                UNMOUNTED — code that could not be played),
+//                                the relay socket closes on unmount, the guest's
+//                                touch pad carries the severity modifier, and
+//                                tap-arrows map to co notes
 //
 // The protocol's guarantee is about SIM TICKS, not wall time: the boxes may
 // sit a tick or two apart in real time (that is what ready()/stall is for),
@@ -26,6 +33,8 @@
 // recorded for the SAME tick — not their current state.
 //
 // Run: npm run rallylinkcheck   (no dev server needed)
+// Mutant proof: npm run rallylinkcheck -- --mutate  (the walkaway never
+//              demotes: test 5's stage never runs out — the law has teeth)
 
 import { createSim, tickSim, stateHash, cpuDriverPad, cpuCoDriverPad } from '../src/games/RallyCoDriver/sim.js'
 import {
@@ -33,6 +42,9 @@ import {
     packSnap, cpuSeatPad, PAD_DELAY, HASH_EVERY, DROP_GRACE, SEATS, CHUNK,
 } from '../src/games/RallyCoDriver/net.js'
 import { newRoom, join, leave, relay, MAX_MSG, FORWARD_TYPES } from '../relay/core.js'
+import { readFileSync } from 'node:fs'
+
+const MUTATE = process.argv.indexOf('--mutate') >= 0
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -290,7 +302,9 @@ console.log('walkaway:')
         }
         if (!host.net.ready(k, cpuMasks)) {
             miss++
-            if (miss >= DROP_GRACE) { demotedAt = k; demoteMiss = miss; host.net.demote(1); miss = 0 }
+            // MUTATE: the walkaway never demotes — every walkaway gate below
+            // goes RED (the stage never runs out: a lost link freezes frames).
+            if (miss >= DROP_GRACE && !MUTATE) { demotedAt = k; demoteMiss = miss; host.net.demote(1); miss = 0 }
             tickClock()
             continue
         }
@@ -415,6 +429,27 @@ console.log('rejoin:')
         && host.hashes.get(cb) === guest.hashes.get(cb) && host.hashes.get(cb) !== undefined)
     ok('the wire types are all relay-legal', SEATS === 2 && FORWARD_TYPES.includes('go')
         && FORWARD_TYPES.includes('pad') && FORWARD_TYPES.includes('hs') && FORWARD_TYPES.includes('res'))
+}
+
+// ---- 8. the shell is wired (static audit) ------------------------------------
+// The protocol above is provable in Node; the SHELL that rides it is not,
+// locally (Chrome SIGABRT, #737). So the wiring gets a cheap source audit —
+// the exact defects a dead session left behind: a correct protocol with the
+// Lobby overlay never mounted is a game nobody can join.
+console.log('shell audit:')
+{
+    const src = readFileSync(new URL('../src/games/RallyCoDriver/index.jsx', import.meta.url), 'utf8')
+    ok('the shared Lobby overlay is MOUNTED (state=netUi)',
+        /<Lobby\b[\s\S]{0,400}?state=\{netUi\}/.test(src))
+    ok('the relay socket closes on unmount', /net\.lobby\.close\(\)/.test(src))
+    ok('the guest touch pad carries the severity modifier (B)',
+        /secondAction=\{[^}]*guest[^}]*KeyB/.test(src))
+    ok('guest tap-arrows synthesize co notes', /code === 'ArrowLeft' \? -1 : code === 'ArrowRight' \? 1/.test(src))
+    ok('the wrapper tap kicks the room for the host',
+        /onPointerDown=\{[^}]*wrapTapRef/.test(src))
+    ok('the go payload carries seed + weather', /lobby\.start\(\{ seed: selectedSeed\(\), wx: selectedWeather\(\) \}\)/.test(src))
+    ok('the guest never drives the car (driver keys host-only)',
+        /if \(!net\.active \|\| net\.role === 'host'\) \{/.test(src))
 }
 
 Date.now = realNow

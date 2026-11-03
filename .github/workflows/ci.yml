@@ -237,6 +237,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'qbert')
       - run: npm run rallycheck
         if: contains(fromJSON(env.KEYS), 'rally')
+      - run: npm run rallylinkcheck
+        if: contains(fromJSON(env.KEYS), 'rally')
       - run: npm run lint:ark
         if: contains(fromJSON(env.KEYS), 'ark')
       - run: npm run arkcheck

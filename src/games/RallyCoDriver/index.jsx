@@ -238,6 +238,7 @@ export default function RallyCoDriver() {
         // the coCallFromPad edge IS the call). Taps queue until the next
         // sample tick consumes them (~180 ms after the finger lifts).
         const coQueue = []
+        const netMod = { a: false, b: false } // guest touch severity modifiers
         const coNotePad = (call) => {
             const p = {}
             if (call.dir < 0) p.left = true
@@ -278,6 +279,8 @@ export default function RallyCoDriver() {
             offWas = false
             overAt.t = 0
             coQueue.length = 0
+            netMod.a = false
+            netMod.b = false
             netMiss = 0
             net.desyncFrozen = false
             const mySeat = netRole === 'host' ? 0 : 1
@@ -382,6 +385,9 @@ export default function RallyCoDriver() {
                     // for it — one shared stage, chosen by the driver
                     if (down && (code === 'Space' || code === 'Enter') && net.role === 'host'
                         && overAt.t > 0 && performance.now() - overAt.t > 500) onlineStart()
+                    if (down && code === 'KeyB' && net.role === 'host') {
+                        setScreenBoth('attract'); attract.g = createSim(selectedSeed(), 2, selectedWeather()); return
+                    }
                     return
                 }
                 if (down && (code === 'Space' || code === 'Enter')) { startRace(); return }
@@ -408,6 +414,23 @@ export default function RallyCoDriver() {
                 if (code === 'ArrowLeft') keys.left = down
                 if (code === 'ArrowRight') keys.right = down
                 if (code === 'Space') keys.a = down
+            }
+            // guest on a phone (VirtualControls): Arrow taps are notes —
+            // dir from the tap, severity from the held modifier (A = 2,
+            // B = 3). The same taps the desktop QWE/ASD/Z keys make,
+            // arriving as the pad codes the pad emits instead.
+            if (net.active && net.role === 'guest') {
+                if (code === 'Space') netMod.a = down
+                if (code === 'KeyB') netMod.b = down
+                if (down && (code === 'ArrowLeft' || code === 'ArrowRight' || code === 'ArrowUp')) {
+                    const call = {
+                        dir: code === 'ArrowLeft' ? -1 : code === 'ArrowRight' ? 1 : 0,
+                        sev: netMod.b ? 3 : netMod.a ? 2 : 1,
+                    }
+                    coNotePad(call)
+                    audioController.playTone(call.dir === 0 ? 520 : 620 + call.sev * 90, 0.05, 'square', 0.05)
+                    return
+                }
             }
             // a co note is a tap: online guest -> the pad stream over the wire;
             // local human co -> a direct call into this box's sim
@@ -1051,7 +1074,7 @@ export default function RallyCoDriver() {
             // a first-time co-driver needs the map while the stage is young)
             if (g.tick < hintUntil.t) {
                 const hint = net.active && net.role === 'guest'
-                    ? 'QWE LEFT · ASD RIGHT · Z STRAIGHT · V VOICE'
+                    ? 'QWE/ASD/Z or TAP ARROWS · HOLD A/B FOR SEV 2/3 · V VOICE'
                     : net.active
                         ? 'CO-D LINKED · ? HELP'
                         : 'C: co-driver keys · V: voice · ? help'
@@ -1242,6 +1265,7 @@ export default function RallyCoDriver() {
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
             canvas.removeEventListener('pointerdown', tap)
+            if (net.lobby) net.lobby.close() // #1448: don't leave the relay socket open
             voiceStop()
             unexposeGame()
             delete window.__rallyTest
@@ -1250,9 +1274,39 @@ export default function RallyCoDriver() {
     }, [])
 
     return (
-        <div ref={wrapRef} className="relative w-full h-full flex items-center justify-center bg-black">
-            {screen === 'play' && !paused && <VirtualControls visible secondAction={undefined} />}
+        <div
+            ref={wrapRef}
+            className="relative w-full h-full flex items-center justify-center bg-black"
+            onPointerDown={(e) => { if (wrapTapRef.current) wrapTapRef.current(e) }}
+        >
+            {screen === 'play' && !paused && (
+                <VirtualControls
+                    visible
+                    secondAction={netUi && netUi.role === 'guest' ? { label: '3', code: 'KeyB' } : undefined}
+                />
+            )}
             {paused && <PauseOverlay game={G} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
+            {netUi && screen === 'attract' && (
+                <Lobby
+                    state={netUi}
+                    title="RALLY"
+                    names={['DRIVER', 'CO-DRIVER']}
+                    waitHint="WAITING FOR THE DRIVER TO KICK…"
+                    startHint="R STAGE · T WEATHER · SPACE/TAP KICKS"
+                    onEntry={(c) => netEntryRef.current && netEntryRef.current(c)}
+                    accent={{
+                        text: 'text-amber-50',
+                        dim: 'text-amber-200/70',
+                        live: 'border-amber-300/40 text-amber-100',
+                        warn: '#ffd23f',
+                        bad: '#ff5d5d',
+                        btn: 'border-amber-300/60 text-amber-100',
+                        qr: '#1a1206',
+                        qrFrame: '#ffd23f88',
+                        codeGlow: { textShadow: '3px 0 0 #d97b1f, -3px 0 0 #bfe3ff' },
+                    }}
+                />
+            )}
             {voiceUi && (
                 <div className="absolute top-2 right-2 rounded bg-black/70 px-2 py-1 text-[10px] font-mono">
                     <span className={voiceUi.ok ? 'text-emerald-300' : 'text-red-400'}>
