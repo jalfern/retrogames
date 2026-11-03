@@ -524,6 +524,28 @@ positive. **Mutant proof (done once, by hand):** swap the two signs in
   because longer faces put wedge edges under harder sun — the old binary 1.18
   pop drew a shade line over the groomed piste past the continuity guard.
 
+## Live trick naming mid-air (#1497 — QA polish pass)
+
+The original spells your trick WHILE you build it — "Method 540" grows as the
+grab latches and the spins stack. This game only named tricks on landing
+(`pop`), so the aerial screen showed a static `A I R` and the player flew
+blind through their own input. `sim.js` exports `trickPreview(r)` — a pure
+mirror of `evalTrick`'s naming block (same tables, same order: OVER!!, REVERT,
+flip, grab, invert, spin, AIR fallback). It names a rotation only once LOCKED:
+spins past the 175° bank threshold, flips/inverts once the count is complete or
+inside the ±55° window the bail checks forgive — so the label never promises
+what landing won't pay, and a half-done flip stays silently dangerous. No new
+sim state, nothing rides `stateHash`; the physics, scoring and the landing pop
+are untouched. `index.jsx` rides it on the air HUD line (wide-tracked `A I R`
+until something locks, then the name at normal tracking) and `__ssxTest.probe()`
+carries `liveTrick`. ssxcheck section #1497 (+12 gates, 346): ground silence,
+the AIR floor, the spin threshold and 1080 cap, evalTrick order (grab before
+spin), half-flip silence vs 330° lock, FRONT/DOUBLE naming, invert sign/count
+after the grab, the OVER head, live REVERT commit (and its negatives), purity,
+and the HUD/probe mount. Mutant proof (done once, by hand): narrow the lock
+window `55→0` in `revolvedLocked` → the two flip-lock gates go red; restore →
+346 green.
+
 ## Honest gaps (filed as the polish pass)
 
 - **CLOSED by #980**: Board decals reach every rider and the boot weld is solved, not posed

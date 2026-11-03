@@ -214,6 +214,36 @@ function evalTrick(g, r, impact = 0) {
     return { crash: false, pts: pts + revertBonus }
 }
 
+// #1497: live trick naming. The original spells the trick as you build it —
+// "Method 540" grows mid-air — while this game only named tricks on landing,
+// so the screen never showed the player what they were inputting. Pure
+// function of the rider ledger: no new state, nothing rides stateHash.
+// It mirrors evalTrick's naming block exactly (same tables, same order), and
+// counts a rotation only once it is locked — past the bank threshold for
+// spins, inside the ±55° window flipCheck/invertCheck forgive for flips and
+// inverts — so the label only ever says what landing will actually pay. A
+// half-done flip stays unnamed in the air: the same lethal warning the real
+// thing gives.
+function revolvedLocked(deg) {
+    const a = Math.abs(deg)
+    const q = Math.round(a / 360)
+    if (q > 0 && Math.abs(a - q * 360) <= 55) return q
+    return Math.floor(a / 360)
+}
+
+export function trickPreview(r) {
+    if (!r.air) return ''
+    const sp = Math.min(6, Math.floor(Math.abs(r.spin) / 175))
+    const fl = revolvedLocked(r.flip)
+    const iv = revolvedLocked(r.invert)
+    const revert = r.takeSpin !== 0 && r.spin * r.takeSpin < 0 && Math.abs(r.spin) >= CFG.revertSpin
+    const spinName = SPINS[sp] || ''
+    const flipName = fl > 0 ? `${fl > 1 ? 'DOUBLE ' : ''}${r.flip < 0 ? 'FRONT' : 'BACK'}FLIP ` : ''
+    const grabName = r.grab ? GRABS[r.grabKind].name + ' ' : ''
+    const invName = iv > 0 ? `${iv > 1 ? 'DOUBLE ' : ''}${r.invertSign < 0 ? 'SOLID' : 'NIKE'} INVERT ` : ''
+    return `${r.over ? 'OVER!! ' : ''}${revert ? 'REVERT ' : ''}${flipName}${grabName}${invName}${spinName}${spinName ? '' : 'AIR'}`.trim()
+}
+
 function crash(g, r, what) {
     if (r.tumble > 0) return
     r.tumble = 70

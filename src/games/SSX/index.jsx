@@ -15,7 +15,7 @@ import { PRESS, MESSAGES } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES, flipDirFromTilt, bodyFromTilt } from './sim.js'
+import { makeGame, step, loadHeat, CFG, fmtTime, RIDER_COLORS, cloneGame, stateHash, CARVE_FADE, GRAB_NAMES, flipDirFromTilt, bodyFromTilt, trickPreview } from './sim.js'
 import { decide } from './planner.js'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
@@ -862,7 +862,19 @@ const SSXGame = () => {
                 h.aPop.textContent = pop
                 h.aPop.style.opacity = show ? '1' : '0'
             }
-            if (h.air) h.air.style.opacity = p.air && p.airT > 0.25 ? '1' : '0'
+            // #1497: the air line spells the trick WHILE it is being built
+            // (the original's live naming) — "METHOD 540" grows mid-jump, so
+            // the player sees what landing will pay and can read a flip that
+            // is still half-done. Falls back to the wide-tracked A I R label
+            // until something locks. trickPreview is pure sim state.
+            if (h.air) {
+                const showAir = p.air && p.airT > 0.25
+                const pv = showAir ? trickPreview(p) : ''
+                const named = pv && pv !== 'AIR'
+                h.air.textContent = named ? pv : 'A I R'
+                h.air.style.letterSpacing = named ? '0.12em' : '0.35em'
+                h.air.style.opacity = showAir ? '1' : '0'
+            }
             if (h.count) {
                 if (g.phase === 'count' && !g.end) {
                     const n = Math.ceil(g.count / 60)
@@ -975,7 +987,7 @@ const SSXGame = () => {
                     const p = g.riders[0]
                     return {
                         screen: screenRef.current, end: g.end, why: g.why, mode: g.mode, heat: g.heat, tick: g.tick, phase: g.phase,
-                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, bobble: p.bobble, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, invert: p.invert, lastTrick: p.lastTrick, carves: p.carves.length },
+                        p: { s: p.s, x: p.x, y: p.y, v: p.v, air: p.air, spin: p.spin, flip: p.flip, tumble: p.tumble, meter: p.meter, chain: p.chain, score: p.score, tricks: p.tricksLanded, crashes: p.crashes, place: p.place, finished: p.finished, tuck: p.tuck, scrub: p.scrub, boost: p.boost, boostHum: p.boostHum, press: p.press, takeSpin: p.takeSpin, stomp: p.stomp, stompPow: p.stompPow, bobble: p.bobble, grabKind: p.grab, grab: p.grabKind, grabName: p.grab ? GRAB_NAMES[p.grabKind] : null, invert: p.invert, lastTrick: p.lastTrick, liveTrick: trickPreview(p), carves: p.carves.length },
                         standings: [...g.standings], hash: stateHash(g),
                     }
                 },
