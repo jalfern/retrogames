@@ -894,6 +894,26 @@ const nodeResult = { pass, fail }
     ok(/shelfShared\.has\(o\.geometry\)/.test(src), 'shared shelf geometry survives screen rebuilds (dispose guard)')
 }
 
+// ---- 6d. #1500 every fx the sim emits is audible — a silent mid-game moment
+// reads as "nothing happened" to a new player ----
+{
+    const src = readFileSync(new URL('../src/games/Emberwood/index.jsx', import.meta.url), 'utf8')
+    const start = src.indexOf('const fxSound')
+    const body = src.slice(start, src.indexOf('\n}', start))
+    const handled = new Set([...body.matchAll(/case '([a-zA-Z]+)'/g)].map(m => m[1]))
+    // 'mote' is ambient sparkle — audible motes would be spam. Whitelist is explicit.
+    const SILENT = new Set(['mote'])
+    const emitted = new Set()
+    for (const f of ['sim.js', 'world.js', 'art.js', 'bot.js']) {
+        const s = readFileSync(new URL(`../src/games/Emberwood/${f}`, import.meta.url), 'utf8')
+        for (const m of s.matchAll(/emit\(sim, '([a-zA-Z]+)'/g)) emitted.add(m[1])
+    }
+    const mute = [...emitted].filter(k => !handled.has(k) && !SILENT.has(k))
+    ok(mute.length === 0, `every emitted fx event has an fxSound case (silent: ${mute.join(', ') || 'none'})`)
+    ok(handled.has('placebomb') && handled.has('chest') && handled.has('draw'),
+        'bomb placement, chest opening and bow draw are audible (#1500)')
+}
+
 // ---- 7. the Chrome leg: start, play, die, restart, zero page errors ----
 const SKIP_BROWSER = process.env.EMBERWOOD_NO_BROWSER === '1'
 let browser = null, page = null, chromePass = 0, chromeFail = 0
