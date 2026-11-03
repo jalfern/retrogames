@@ -89,7 +89,7 @@ const fairTbl = (() => {
       const n = recs.length;
       const label = run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run;
       if (n < 100) {   // mid-run row: status only — interim metrics would ship numbers the final run may not repeat
-        rows.push(`<tr><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506</td></tr>`);
+        rows.push(`<tr><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>`);
         continue;
       }
       const s = {
@@ -149,7 +149,10 @@ const pairHtml = pair ? `
 <div class="pair">
   <div class="pane"><h3>BASE — ${pair.base.cap_hit || pair.base.cap ? `ran to the token cap (${pair.base.ntok} tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
   <div class="pane"><h3>${pair.edit.gold !== undefined ? "EDITED" : "EDITED"} — terminated${pair.edit.ok ? `, correct answer: ${esc(pair.edit.gold)}` : ""} ✓ (${pair.edit.ntok} tok)</h3><pre>${esc(pair.edit.text)}…</pre></div>
-</div>` : `<p class="note">pair panel: awaiting fair scoring runs</p>`;
+</div>` : `<div class="pair skelpair">
+  <div class="pane dim"><h3>BASE — awaiting fair scoring</h3><div class="skel"></div><div class="skel w80"></div><div class="skel w60"></div></div>
+  <div class="pane dim"><h3>EDITED — awaiting fair scoring</h3><div class="skel"></div><div class="skel w80"></div><div class="skel w60"></div></div>
+</div>`;
 
 const vExtra = read("results/variants_extra.json", {});
 const prac = Object.entries({ ...variants, ...vExtra }).map(([k, s]) =>
@@ -341,6 +344,14 @@ const html = `<!DOCTYPE html>
   .banner { border:1px solid #ffb86b; color:#ffb86b; padding:10px 14px; margin:18px 0; }
   .pair { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
   @media (max-width:700px){ .pair{grid-template-columns:1fr;} .pane pre{max-height:200px;} }
+  .prog{display:inline-block;width:72px;height:6px;background:#141414;border:1px solid #333;margin-left:8px;vertical-align:middle}
+  .prog i{display:block;height:100%;width:30%;background:#0af;animation:sweep 1.6s linear infinite}
+  @keyframes sweep{from{margin-left:-30%}to{margin-left:100%}}
+  .pane.dim{opacity:.5}
+  .skel{height:10px;background:#1d1d1d;margin:8px 0}
+  .skel.w80{width:80%}
+  .skel.w60{width:60%}
+  @media (prefers-reduced-motion:reduce){ .prog i{animation:none;width:100%;background:#555} }
   .pane { border:1px solid rgba(199,125,255,.3); padding:10px; min-width:0; }
   .pane h3 { font-size:11px; letter-spacing:.08em; margin:0 0 8px; color:#ffb86b; }
   .pane pre { white-space:pre-wrap; word-break:break-word; font-size:11px; max-height:300px; overflow:auto; color:#cbb6e8; margin:0; }
@@ -373,7 +384,7 @@ ${pracHtml}
 <h2>HOLD-OUT SCORES — fair horizon (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103, cap ${FAIRC})</h2>
 <table>
 <tr><th>run · set</th><th>n</th><th>accuracy</th><th>terminated</th><th>hit cap</th><th>repeated (loop)</th></tr>
-${fairTbl || "<tr><td colspan=6>scoring in progress — runs launch as the edit lands; resumable runner, numbers post to #1506</td></tr>"}
+${fairTbl || `<tr><td colspan=6>scoring in progress — runs launch as the edit lands; resumable runner, numbers post to #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>`}
 </table>
 <p class="note">† token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p>
 
