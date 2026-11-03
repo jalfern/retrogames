@@ -11,7 +11,7 @@ def main():
     probs_all = C.load_problems()
     rng = random.Random(4242)
     batch = rng.sample(probs_all["gsm_train"], 6) + \
-        rng.sample([p for p in probs_all["math_train"] if str(p.get("level")) in ("1", "2")], 6)
+        rng.sample([p for p in probs_all["math_train"] if str(p.get("level", "")).startswith(("Level 1", "Level 2"))], 6)
     extra = ["-c", str(cap + 512), "--presence-penalty", "0.0"]
     out = {}
     n = 22
