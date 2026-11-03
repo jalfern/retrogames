@@ -107,6 +107,18 @@ export function validateGateVsRows(counts, gate) {
 
 export const CLAIM_N = { math: 100, gsm: 100 }
 
+// step-2 wiring (#1533 session-119 audit): scoring the own model may only happen
+// after a CONFIRMED register+load — a blind curl+sleep once let a half-registered
+// model reach the scorer path. Static check, CI-safe (no server needed).
+export function wiringProblems(step2Src) {
+    const errs = []
+    const reg = step2Src.search(/r2_register\.py\s+\S+\s+--load/)
+    const score = step2Src.search(/r2_score\.py\s+own:/)
+    if (reg < 0) errs.push('step2 never registers the own model with --load')
+    else if (score >= 0 && reg > score) errs.push('step2 scores own before registering')
+    return errs
+}
+
 function build(labDir) {
     const out = join(tmpdir(), `ws3-${Date.now()}-${Math.random()}.html`)
     const r = spawnSync('node', [join(LAB, 'build_demo.mjs'), out], {
@@ -206,6 +218,25 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ]
     for (const [name, pred] of mutants) ok(pred(), `mutant caught: ${name}`)
     ok(!(html.replace("ROUND 2 — MIT'S HORIZON", '—')).includes("ROUND 2 — MIT'S HORIZON"), 'mutant caught: section marker removed')
+}
+
+// 4. pipeline wiring (session-119 audit): Jon's concurrency knob reaches G1
+//    (regression: session 118 claimed WS_R2_PARALLEL@G1 but the file still had
+//    max_workers=4), registration is confirm-before-score, and the chain runner
+//    only launches step 2 after a PASS gate.
+{
+    const dir = s => readFileSync(join(LAB, s), 'utf8')
+    ok(/WS_R2_PARALLEL/.test(dir('r2_directions.py')) && /max_workers=PAR\b/.test(dir('r2_directions.py')),
+        'rules: G1 honors WS_R2_PARALLEL')
+    ok(wiringProblems(dir('r2_run_step2.sh')).length === 0, 'rules: step2 registers model before scoring',
+        wiringProblems(dir('r2_run_step2.sh')).join('; '))
+    ok(wiringProblems(dir('r2_run_step2.sh').replace(/r2_register\.py qwen35-own --load/, 'sleep 5')).length > 0,
+        'mutant caught: score without confirm-load')
+    ok(wiringProblems('r2_score.py own:x').length > 0, 'mutant caught: score with no registration at all')
+    const chain = dir('r2_chain.sh')
+    ok(/step1_stop\.marker/.test(chain) && chain.search(/gate PASS/) < chain.search(/r2_run_step2\.sh/)
+        && chain.search(/gate STOP/) < chain.search(/step 2 forbidden/),
+        'rules: chain gates step2 on PASS, marker-only on STOP')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

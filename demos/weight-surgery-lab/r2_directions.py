@@ -27,6 +27,9 @@ MIT_PRACTICE = os.path.expanduser("~/Dev/weight-lab/mit-exp8/exp8_math/practice"
 FA_LAYERS = (3, 7, 11, 15, 19, 23)
 MLX_DIR = os.path.expanduser("~/models/weightlab/qwen35-base")
 OUT = f"{R.RESULTS}/r2_directions.npz"
+# Jon's speed-up (#1533): same oMLX concurrency knob as r2_score.py — the server
+# handles 32 concurrent requests (proven session 118); default 4 keeps old behavior.
+PAR = int(os.environ.get("WS_R2_PARALLEL", "4"))
 
 
 def log_pass(no, kind, n, ruled, extra=None):
@@ -79,7 +82,7 @@ def pass_g1(model="qwen35-base"):
                 "looped": lm["looped"], "text": (g["reasoning"] + "\n" + (g["text"] or ""))[-4096:], **lm}
 
     t0 = time.time()
-    with open(path, "a") as out, ThreadPoolExecutor(max_workers=4) as ex:
+    with open(path, "a") as out, ThreadPoolExecutor(max_workers=PAR) as ex:
         for rec in ex.map(work, todo):
             out.write(json.dumps(rec) + "\n")
             out.flush()
