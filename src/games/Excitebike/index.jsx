@@ -22,6 +22,7 @@ import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST } from './levels.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
 const g2s = (h) => (H - 46) - (h - 40) * 0.95
@@ -416,7 +417,14 @@ const ExcitebikeGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Every track is a
+        // fixed table (levels.js) and the rivals run a deterministic script — the
+        // whole engine contains zero Math.random — so there is no per-run seed to
+        // report: {tick,score,done,rank} only.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, rank: gs.rank }))
+
         return () => {
+            unexposeFeedbackState()
             clearTimeout(t)
             if (import.meta.env.DEV) { if (window.__bikeTest) delete window.__bikeTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)

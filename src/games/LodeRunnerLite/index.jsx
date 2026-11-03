@@ -37,6 +37,7 @@ import {
 } from './sim.js'
 import { LEVELS, buildLevel } from './levels.js'
 import { buildArt, CW, CH } from './art.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 15
 const PXW = W * CW
@@ -488,7 +489,14 @@ const LodeRunnerLiteGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Every vault is a
+        // hand-authored grid (levels.js) and guard routing is deterministic — the
+        // whole engine contains zero Math.random — so there is no per-run seed to
+        // report: {tick,score,done,level,gold} only.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: gs.end != null, level: levelIdx, gold: gs.have }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__lodeTest) delete window.__lodeTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
