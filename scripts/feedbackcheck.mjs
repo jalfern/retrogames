@@ -802,7 +802,16 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // the port had NO restart at all, so startRun now rebuilds the whole board
 // from any key, click or tap) → 48 reporting+pinning titles.
 // Dropping below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 48 games report+pin seeds', reportingGames >= 48, `${reportingGames} reporting`)
+// → 51 at batch 16: the dead-terminal restoration tier — Pong (serve dir/angle,
+// paddle scatter and hit spin onto one stream; no terminal existed and the score
+// persisted across runs under a literal 'Reset score? Maybe' comment — now a
+// play-to-quit honest terminal), Asteroids (the port had NO score, NO lives, NO
+// terminal — the ship could not die; restored the 1979 law: 20/50/100 rocks with
+// the pinned 520 big-rock chain, 3 lives + bonus@10k + grace respawn + wave
+// regen) and Centipede (score was dead code, one touch hard-reset the board, cut
+// bodies never grew heads; restored 100/10/1, the chain-head rule and the
+// 3-life persist-field death).
+ok('seedpin: rollout floor — at least 51 games report+pin seeds', reportingGames >= 51, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can

@@ -4,7 +4,16 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import { CELL_SIZE, START_LIVES, INVULN_TICKS, scoreForSegment, MUSHROOM_POINTS, mushroomField } from './sim.js'
 
+// CENTIPEDE (#1473 batch 16) — the Feb port's score was dead, one touch was
+// instant hard-reset, cut bodies never grew heads, and the mushroom field
+// scattered off Math.random. Restored to the 1981 arcade law: body 10 / head
+// 100 / mushroom 1; the segment behind every cut becomes a new head; three
+// lives — death respawns the zapper at the bottom and restarts the centipede
+// from the top while the field persists; GAME OVER at zero lives restarts
+// from any key, click or tap; the field is seeded and honors ?seed=N.
 const CentipedeGame = () => {
     const canvasRef = useRef(null)
     const containerRef = useRef(null)
@@ -24,9 +33,6 @@ const CentipedeGame = () => {
         let animationFrameId
 
         // Game Constants
-        const CELL_SIZE = 16
-        const COLS = 30
-        const ROWS = 30
         const PLAYER_SPEED = 4
         const BULLET_SPEED = 8
         const CENTIPEDE_SPEED = 2
@@ -34,7 +40,7 @@ const CentipedeGame = () => {
         let state = {
             width: 0,
             height: 0,
-            player: { x: 0, y: 0, w: 16, h: 16, dead: false },
+            player: { x: 0, y: 0, w: 16, h: 16 },
             bullets: [],
             mushrooms: [], // {x, y, health}
             centipedes: [], // Array of Segments {x, y, vx, vy, head}
@@ -42,22 +48,14 @@ const CentipedeGame = () => {
             frame: 0
         }
 
-        const init = () => {
-            // Player Start
-            state.player.x = state.width / 2
-            state.player.y = state.height - 30
-
-            // Random Mushrooms
-            state.mushrooms = []
-            for (let i = 0; i < 40; i++) {
-                const mx = Math.floor(Math.random() * (state.width / CELL_SIZE)) * CELL_SIZE
-                const my = Math.floor(Math.random() * (state.height / CELL_SIZE - 5)) * CELL_SIZE + 50
-                state.mushrooms.push({ x: mx, y: my, health: 3 })
-            }
-
-            // Spawn Centipede (1 Head + 9 Body)
-            spawnCentipede()
-        }
+        // #1473 run state: seeded field, arcade lives loop, honest terminal.
+        let seed = Math.floor(Math.random() * 1000000)
+        let rand = seedRng(seed)
+        let tickN = 0
+        let lives = START_LIVES
+        let over = false
+        let respawnAt = -1       // tick the zapper returns, -1 = alive
+        let invulnUntil = 0
 
         const spawnCentipede = () => {
             state.centipedes = []
@@ -67,6 +65,34 @@ const CentipedeGame = () => {
             for (let i = 1; i < 10; i++) {
                 state.centipedes.push({ x: state.width / 2 - i * CELL_SIZE, y: 0, vx: CENTIPEDE_SPEED, vy: 0, head: false })
             }
+        }
+
+        const resetPlayer = () => {
+            state.player.x = state.width / 2
+            state.player.y = state.height - 30
+            respawnAt = -1
+            invulnUntil = tickN + INVULN_TICKS
+        }
+
+        const init = () => {
+            // Fresh board: zapper + seeded mushroom field + a centipede on top
+            respawnAt = -1
+            invulnUntil = 0
+            state.player.x = state.width / 2
+            state.player.y = state.height - 30
+            state.mushrooms = mushroomField(rand, state.width, state.height)
+            spawnCentipede()
+        }
+
+        // Fresh run: seed regenerated (?seed=N wins), score and lives reset.
+        const startRun = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            state.score = 0
+            lives = START_LIVES
+            over = false
+            isAttractMode = false
+            init()
         }
 
         let initialized = false
@@ -103,24 +129,24 @@ const CentipedeGame = () => {
             }
             if (pausedRef.current) return
 
-            if (isAttractMode) {
-                isAttractMode = false
-                // Reset keys
-                Object.keys(keys).forEach(k => keys[k] = false)
-            }
+            if (over || isAttractMode) { startRun(); return }
             if (keys[e.code] !== undefined) keys[e.code] = true
-            if (e.code === 'Space') {
-                if (state.player.dead) init();
-                else fireBullet();
-            }
+            if (e.code === 'Space') fireBullet()
         }
         const handleUp = (e) => {
             if (keys[e.code] !== undefined) keys[e.code] = false
         }
+        // Phones: any tap starts or restarts the run.
+        const handleCanvasTap = () => {
+            if (pausedRef.current) return
+            if (over || isAttractMode) startRun()
+        }
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleUp)
+        canvas.addEventListener('pointerdown', handleCanvasTap)
 
         const fireBullet = () => {
+            if (respawnAt >= 0 || over) return
             if (state.bullets.length < 3) { // Limit bullets
                 state.bullets.push({
                     x: state.player.x + 8,
@@ -132,15 +158,34 @@ const CentipedeGame = () => {
             }
         }
 
+        const playerAlive = () => respawnAt < 0
+
+        const killPlayer = () => {
+            audioController.playSweep(800, 200, 1.0, 'sawtooth')
+            if (isAttractMode) { respawnAt = tickN + 60; return }
+            lives--
+            if (lives <= 0) {
+                lives = 0
+                over = true
+            } else {
+                respawnAt = tickN + 60
+            }
+        }
+
         const update = () => {
             state.frame++
-            if (state.player.dead) {
-                if (isAttractMode && state.frame % 120 === 0) init() // Auto restart in attract mode
-                return
+            tickN++
+            if (over) return
+
+            // Respawn: back to the bottom pad, centipede restarts on top,
+            // mushrooms persist (arcade death — not a hard reset).
+            if (!playerAlive() && tickN >= respawnAt) {
+                resetPlayer()
+                spawnCentipede()
             }
 
             // --- AI LOGIC ---
-            if (isAttractMode) {
+            if (isAttractMode && playerAlive()) {
                 // Find lowest centipede
                 let target = null
                 let maxY = -1
@@ -165,17 +210,19 @@ const CentipedeGame = () => {
             }
 
             // Player Move
-            if (keys.ArrowLeft) state.player.x -= PLAYER_SPEED
-            if (keys.ArrowRight) state.player.x += PLAYER_SPEED
-            if (keys.ArrowUp) state.player.y -= PLAYER_SPEED
-            if (keys.ArrowDown) state.player.y += PLAYER_SPEED
+            if (playerAlive()) {
+                if (keys.ArrowLeft) state.player.x -= PLAYER_SPEED
+                if (keys.ArrowRight) state.player.x += PLAYER_SPEED
+                if (keys.ArrowUp) state.player.y -= PLAYER_SPEED
+                if (keys.ArrowDown) state.player.y += PLAYER_SPEED
 
-            // Clamp Player to bottom area
-            const safeZone = state.height - 150
-            if (state.player.y < safeZone) state.player.y = safeZone
-            if (state.player.y > state.height - 16) state.player.y = state.height - 16
-            if (state.player.x < 0) state.player.x = 0
-            if (state.player.x > state.width - 16) state.player.x = state.width - 16
+                // Clamp Player to bottom area
+                const safeZone = state.height - 150
+                if (state.player.y < safeZone) state.player.y = safeZone
+                if (state.player.y > state.height - 16) state.player.y = state.height - 16
+                if (state.player.x < 0) state.player.x = 0
+                if (state.player.x > state.width - 16) state.player.x = state.width - 16
+            }
 
             // Bullets
             state.bullets.forEach((b, i) => {
@@ -193,6 +240,7 @@ const CentipedeGame = () => {
                     state.mushrooms[hitMushroom].health--
                     if (state.mushrooms[hitMushroom].health <= 0) {
                         state.mushrooms.splice(hitMushroom, 1)
+                        state.score += MUSHROOM_POINTS // arcade: 1 pt per mushroom
                         audioController.playNoise(0.1, 0.1)
                     } else {
                         audioController.playTone(200, 0.05, 'triangle')
@@ -210,21 +258,16 @@ const CentipedeGame = () => {
                 })
 
                 if (hitSeg !== -1) {
-                    // Kill Segment
+                    // Kill the segment: it turns into a mushroom where it fell,
+                    // and the arcade table pays 100 for the head, 10 for body.
                     const seg = state.centipedes[hitSeg]
-                    // Create Mushroom at death spot
+                    state.score += scoreForSegment(seg.head)
                     state.mushrooms.push({ x: Math.floor(seg.x / CELL_SIZE) * CELL_SIZE, y: Math.floor(seg.y / CELL_SIZE) * CELL_SIZE, health: 3 })
 
-                    // Split: The segment BEHIND becomes a new head
-                    // Actually, if we hit a middle segment, the one BEHIND it in array (which is physically behind?) 
-                    // No, usually drawing order.
-                    // Simple Logic: Hit segment dies. Next segment becomes head.
-
+                    // The segment behind the gap becomes a new head — the
+                    // arcade's chain rule (the pre-batch code punted on it).
                     state.centipedes.splice(hitSeg, 1)
-
-                    // If chaos, just make everything head? No, keep it simple.
-                    // Identify new heads?
-                    // Just let them flow.
+                    if (state.centipedes[hitSeg]) state.centipedes[hitSeg].head = true
 
                     audioController.playNoise(0.2, 0.3)
                     state.bullets.splice(i, 1)
@@ -260,10 +303,9 @@ const CentipedeGame = () => {
                     }
                 }
 
-                // Collision with Player
-                if (Math.abs(c.x - state.player.x) < 12 && Math.abs(c.y - state.player.y) < 12) {
-                    state.player.dead = true
-                    audioController.playSweep(800, 200, 1.0, 'sawtooth')
+                // Collision with Player (honors the respawn grace)
+                if (playerAlive() && tickN >= invulnUntil && Math.abs(c.x - state.player.x) < 12 && Math.abs(c.y - state.player.y) < 12) {
+                    killPlayer()
                 }
             })
 
@@ -300,7 +342,7 @@ const CentipedeGame = () => {
                 ctx.arc(c.x + 8, c.y + 8, 7, 0, Math.PI * 2)
                 ctx.fill()
                 // Eyes if head
-                if (c.head || true) { // Draw eyes on all for creep factor
+                if (c.head) { // heads earn their eyes now that cuts spawn heads
                     ctx.fillStyle = 'black'
                     ctx.fillRect(c.x + 4, c.y + 4, 2, 2)
                     ctx.fillRect(c.x + 10, c.y + 4, 2, 2)
@@ -322,8 +364,9 @@ const CentipedeGame = () => {
                 ctx.fillRect(b.x, b.y, 2, 8)
             })
 
-            // Player (Ship)
-            if (!state.player.dead) {
+            // Player (Ship) — hidden dark, blinks through the invuln grace
+            const blink = tickN < invulnUntil && Math.floor(tickN / 6) % 2 === 0
+            if (playerAlive() && !blink) {
                 ctx.fillStyle = 'white'
                 // Triangle
                 ctx.beginPath()
@@ -333,12 +376,33 @@ const CentipedeGame = () => {
                 ctx.fill()
             }
 
-            // UI
+            // UI — title + score right, spare lives bottom-left (arcade layout)
             ctx.fillStyle = 'white'
             ctx.font = '14px monospace'
+            ctx.textAlign = 'left'
             ctx.fillText("CENTIPEDE", 10, 20)
-            if (state.player.dead) {
-                ctx.fillText("PRESS SPACE", state.width / 2 - 40, state.height / 2)
+            if (!isAttractMode) {
+                ctx.textAlign = 'right'
+                ctx.fillText(`SCORE ${state.score}`, state.width - 10, 20)
+                ctx.textAlign = 'left'
+                for (let i = 0; i < Math.max(0, lives - 1); i++) {
+                    ctx.beginPath()
+                    ctx.arc(16 + i * 18, state.height - 12, 6, 0, Math.PI * 2)
+                    ctx.fill()
+                }
+            }
+
+            if (over) {
+                ctx.fillStyle = '#ffffff'
+                ctx.textAlign = 'center'
+                ctx.font = '22px monospace'
+                ctx.fillText('GAME OVER', state.width / 2, state.height / 2 - 8)
+                ctx.font = '14px monospace'
+                ctx.fillText(`FINAL SCORE ${state.score}`, state.width / 2, state.height / 2 + 14)
+                if (Math.floor(tickN / 30) % 2 === 0) {
+                    ctx.font = '12px monospace'
+                    ctx.fillText('PRESS ANY KEY TO PLAY AGAIN', state.width / 2, state.height / 2 + 36)
+                }
             }
 
             if (isAttractMode) {
@@ -374,11 +438,54 @@ const CentipedeGame = () => {
         }
         animationFrameId = requestAnimationFrame(loop)
 
+        // QA contract (#377)
+        exposeGame({
+            id: 'centipede',
+            buttons: ['left', 'right', 'up', 'down', 'a'],
+            reset: (s) => {
+                seed = s >>> 0
+                rand = seedRng(seed)
+                state.score = 0
+                lives = START_LIVES
+                over = false
+                isAttractMode = false
+                keys.ArrowLeft = keys.ArrowRight = keys.ArrowUp = keys.ArrowDown = keys.Space = false
+                if (state.width > 0) init()
+            },
+            tick: (pad) => {
+                if (over) { tickN += 1; return }
+                keys.ArrowLeft = !!pad.left
+                keys.ArrowRight = !!pad.right
+                keys.ArrowUp = !!pad.up
+                keys.ArrowDown = !!pad.down
+                if (pad.a) fireBullet()
+                update()
+            },
+            state: () => ({
+                tick: tickN, score: state.score, done: over, seed: seed, lives,
+                segments: state.centipedes.length,
+                heads: state.centipedes.filter(c => c.head).length,
+                mushrooms: state.mushrooms.length,
+                playerX: Math.round(state.player.x),
+                playerY: Math.round(state.player.y),
+            }),
+            canvas: () => canvas,
+            // snapshot/restore omitted: rand closure is not JSON-serializable (#391).
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick: tickN, score: state.score, done: over, seed: seed, lives,
+        }))
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleUp)
             window.removeEventListener('resize', resize)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [])
 

@@ -77,9 +77,9 @@ console.log('component wiring: pin, terminal, restart, HUD')
         'no die leaves the stream (only the two seed generations)', `${dice.length}/${seedDraws.length}`)
     ok(/seed = seedFromQuery\(window\.location\.search\) \?\? Math\.floor\(Math\.random\(\) \* 1000000\)/.test(src) &&
         /rand = seedRng\(seed\)/.test(src), 'startRun regenerates the seed and honors ?seed=N')
-    ok(/exposeFeedbackState\(\(\) => \(\{[\s\S]{0,120}?done: over, seed, lives, wave/.test(src),
+    ok(/exposeFeedbackState\(\(\) => \(\{[\s\S]{0,120}?done: over, seed: seed, lives, wave/.test(src),
         'production report carries seed + terminal + lives + wave')
-    ok(/state: \(\) => \(\{[\s\S]{0,160}?tick: tickN, score, done: over, seed, lives, wave/.test(src),
+    ok(/state: \(\) => \(\{[\s\S]{0,160}?tick: tickN, score, done: over, seed: seed, lives, wave/.test(src),
         'QA contract state carries seed + terminal + lives + wave too')
     ok(/score \+= scoreForSize\(a\.size\)/.test(src), 'bullet kills score through the arcade table')
     ok(/lives--/.test(src) && /lives <= 0[\s\S]*?over = true/.test(src), 'ship death decrements lives; zero ends the run')
@@ -106,7 +106,7 @@ if (process.argv.includes('--mutant')) {
             `seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)`,
             `seed = Math.floor(Math.random() * 1000000)`],
         ['production report drops the seed', I,
-            `tick: tickN, score, done: over, seed, lives, wave,`,
+            `tick: tickN, score, done: over, seed: seed, lives, wave,`,
             `tick: tickN, score, done: over, lives, wave,`],
         ['rock shapes leave the stream', S,
             `const r = size * (0.8 + rand() * 0.4)`,

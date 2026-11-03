@@ -498,7 +498,7 @@ const AsteroidsGame = () => {
                 update()
             },
             state: () => ({
-                tick: tickN, score, done: over, seed, lives, wave,
+                tick: tickN, score, done: over, seed: seed, lives, wave,
                 shipX: Math.round(state.ship.x), shipY: Math.round(state.ship.y),
                 rocks: state.asteroids.length,
             }),
@@ -508,7 +508,7 @@ const AsteroidsGame = () => {
 
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
-            tick: tickN, score, done: over, seed, lives, wave,
+            tick: tickN, score, done: over, seed: seed, lives, wave,
         }))
 
         return () => {
