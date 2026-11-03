@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { attractFrame, DIM } from './attract.js'
-import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, makeWorld, step, hash, done, activeCount } from './sim.js'
+import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, bunkerBricks, makeWorld, step, hash, done, activeCount } from './sim.js'
 
 // SPACE INVADERS (Taito 1978) — world sim lives in sim.js (Node-provable).
 // Pixel title: draws at the original's 224x256 world resolution, integer-scaled
@@ -252,6 +252,15 @@ const SpaceInvadersGame = () => {
                 drawSprite(ctx, sp, i.x + (INVADER_W - sp[0].length) / 2, i.y, ROW_COL[i.row])
             }
 
+            // the four destructible forts (original overlay green), 2x2 bricks
+            ctx.fillStyle = '#00ff00'
+            for (const b of world.bunkers) {
+                for (let r = 0; r < BUNKER_ROWS; r++) {
+                    const m = b.cells[r]
+                    for (let c = 0; c < 11; c++) if ((m >> c) & 1) ctx.fillRect(b.x + c * 2, b.y + r * 2, 2, 2)
+                }
+            }
+
             // UFO (red)
             if (world.ufo) drawSprite(ctx, SPR.ufo, world.ufo.x, UFO_Y, '#ff3b30')
 
@@ -334,6 +343,7 @@ const SpaceInvadersGame = () => {
                 tick: world.tick, score: world.score, done: done(world),
                 seed: seed, wave: world.wave, lives: world.lives,
                 invadersLeft: activeCount(world), playerX: Math.round(world.playerX),
+                bunkerBricks: bunkerBricks(world),
                 phase: world.phase, hash: hash(world),
             }),
             canvas: () => canvas,
@@ -351,12 +361,13 @@ const SpaceInvadersGame = () => {
             title: 'SPACE INVADERS',
             getState: () => [
                 `wave ${world.wave}  score ${world.score}  lives ${world.lives}  phase ${world.phase}`,
-                `player ${Math.round(world.playerX)}  fleet ${activeCount(world)}/32  shots on field ${world.enemyBullets.length + (world.playerBullet ? 1 : 0)}`,
+                `player ${Math.round(world.playerX)}  fleet ${activeCount(world)}/32  fort bricks ${bunkerBricks(world)}/328`,
                 `seed ${seed}  tick ${world.tick}  hash ${hash(world)}`,
             ],
             actions: [
                 { label: 'Clear wave', run: () => { world.invaders.forEach((i) => { i.alive = false }) } },
                 { label: 'Spawn UFO', run: () => { world.ufo = { x: 20, points: 100 } } },
+                { label: 'Wipe forts', run: () => { world.bunkers.forEach((b) => { b.cells = b.cells.map(() => 0) }) } },
                 { label: 'Force game over', run: () => { world.lives = 0; world.phase = 'over' } },
             ],
         })

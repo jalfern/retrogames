@@ -1,9 +1,12 @@
-// invaderscheck — proves SPACE INVADERS boots, its rules hold, it can be won,
-// and ?seed=N replays exactly, without a browser (#1473 batch 13).
+// invaderscheck — proves SPACE INVADERS boots, its rules hold, its forts
+// work, it can be won, and ?seed=N replays exactly, without a browser
+// (#1473 batch 13; bunkers #1495).
 // Prove-it-can-fail (run once by hand, watch RED, restore):
 //   1. sim.js ROW_SCORE squid 30 → 0          (score law RED)
 //   2. index.jsx strip the seed: key from the feedback report (contract RED)
 //   3. sim.js drop the lives-- in loseLife    (terminal RED)
+//   4. sim.js buildFormation calls newBunkers() (wave REBUILDS the forts → RED)
+//   5. sim.js shotVsBunkers return true without clearing a bit (no chew → RED)
 
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -11,6 +14,7 @@ import { dirname, join } from 'node:path'
 import { seedRng } from '../src/utils/gameContract.js'
 import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
+    BUNKER_W, BUNKER_ROWS, bunkerBricks,
     makeWorld, step, loseLife, hash, done, activeCount, waveSpeed,
 } from '../src/games/SpaceInvaders/sim.js'
 
@@ -26,9 +30,12 @@ const ok = (cond, msg) => { console.log(`${cond ? 'PASS' : 'FAIL'}  ${msg}`); if
 {
     const r = seedRng(11)
     let s = makeWorld(r)
+    ok(s.bunkers.length === 4 && bunkerBricks(s) === 328,
+        'boots: four intact forts, 328 bricks (original: 4x 22x16 of 2x2 brick, dome crown + slot)')
     for (let t = 0; t < 300; t++) s = step(s, {}, r)
     ok(s.tick === 300, `boots: 300 idle ticks (tick=${s.tick})`)
     ok(s.invaders.length === 32 && activeCount(s) === 32, 'boots: 4x8 formation alive at start')
+    ok(bunkerBricks(s) <= 328, 'boots: forts only lose bricks (the fleet\'s fire eats them)')
     ok(!done(s), 'boots: still playing when idle')
 }
 
@@ -133,14 +140,75 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
     ok(a.marks.join() !== c.marks.join(), 'a different seed diverges (the seed actually steers the sim)')
 }
 
-// ---------- 9. winnable: scripted flight clears wave 1 and reaches the terminal ----------
+// ---------- 9. the forts: one brick per shot, the fleet grinds, waves don't rebuild ----------
 {
+    // (a) a player shot rising into the fort base eats exactly one brick and is lost
+    const r = seedRng(21)
+    const s = makeWorld(r)
+    const a0 = bunkerBricks(s)
+    s.playerBullet = { x: 34, y: 226 } // cell column of fort 0, rising from just below
+    step(s, {}, r)
+    ok(!s.playerBullet && bunkerBricks(s) === a0 - 1,
+        `player shot eats one brick and is consumed (${a0} -> ${bunkerBricks(s)})`)
+
+    // (b) a falling invader shot eats one brick too — the forts shield the player
+    s.playerBullet = null
+    const b0 = bunkerBricks(s)
+    s.enemyBullets = [{ x: 31, y: 202 }] // dropping into fort 0's crown
+    step(s, {}, r)
+    ok(s.enemyBullets.length === 0 && bunkerBricks(s) === b0 - 1,
+        `invader shot eats one brick and is consumed (${b0} -> ${bunkerBricks(s)})`)
+
+    // (c) a fort with no bricks left lets the shot through (no absorption)
+    s.playerBullet = null
+    s.bunkers[0].cells = s.bunkers[0].cells.map(() => 0)
+    s.playerBullet = { x: 34, y: 226 }
+    step(s, {}, r)
+    ok(!!s.playerBullet, 'a chewed-through fort lets the shot pass (hollow path, no brick)')
+
+    // (d) a descended invader grinds the bricks it walks over
+    const r2 = seedRng(77)
+    const s2 = makeWorld(r2)
+    s2.invaders.forEach((i) => { if (i.row !== 3) i.alive = false })
+    const low = s2.invaders.find((i) => i.row === 3)
+    low.x = 23; low.y = 214
+    const c0 = bunkerBricks(s2)
+    step(s2, {}, r2)
+    ok(c0 - bunkerBricks(s2) >= 10,
+        `a descended invader grinds the fort it walks over (${c0} -> ${bunkerBricks(s2)})`)
+
+    // (e) a cleared wave does NOT rebuild the forts (original: only a new game does)
+    const r3 = seedRng(8)
+    const s3 = makeWorld(r3)
+    s3.bunkers.forEach((b) => { b.cells = b.cells.map(() => 0) })
+    s3.invaders.forEach((i) => { i.alive = false })
+    step(s3, {}, r3)
+    ok(s3.wave === 2 && bunkerBricks(s3) === 0,
+        'a cleared wave does NOT rebuild the forts (only a new game restores them)')
+}
+
+// ---------- 10. winnable: scripted flight clears wave 1 and reaches the terminal ----------
+{
+    // filled bricks between a pixel column and the player line (0 = open lane)
+    const laneCells = (s, px, ty) => {
+        let n = 0
+        for (const b of s.bunkers) {
+            if (px + 1 <= b.x || px >= b.x + BUNKER_W) continue
+            const c0 = Math.floor((px - b.x) / 2)
+            const r0 = Math.max(0, Math.floor((Math.max(ty, b.y) - b.y) / 2))
+            const r1 = Math.min(BUNKER_ROWS - 1, Math.floor((PLAYER_Y - b.y - 0.001) / 2))
+            for (let rr = r0; rr <= r1; rr++) for (const c of [c0, c0 + 1]) {
+                if (c >= 0 && c < 11 && (b.cells[rr] >> c) & 1) n++
+            }
+        }
+        return n
+    }
     const smartRun = (seed) => {
         const r = seedRng(seed)
         let s = makeWorld(r)
         let clearedWave1 = false
         let t = 0
-        for (; t < 20000 && !done(s); t++) {
+        for (; t < 60000 && !done(s); t++) {
             const act = s.invaders.filter((i) => i.alive)
             const input = {}
             if (act.length) {
@@ -150,8 +218,14 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
                     .sort((x, y) => y.y - x.y)[0]
                 if (danger) { if (danger.x > cx) input.left = true; else input.right = true }
                 else {
-                    const tgt = act.reduce((m, i) =>
-                        (i.y > m.y || (i.y === m.y && Math.abs(i.x + 6 - cx) < Math.abs(m.x + 6 - cx))) ? i : m, act[0])
+                    // play the forts like a 1978 player: lowest invader first, an
+                    // open lane is free, a walled one costs its bricks (chew it)
+                    const w = (i) => {
+                        const px = Math.floor(i.x + 6)
+                        const cells = laneCells(s, px, i.y)
+                        return -i.y * 100 + Math.abs(i.x + 6 - cx) + cells * 8
+                    }
+                    const tgt = act.reduce((m, i) => w(i) < w(m) ? i : m, act[0])
                     const sp = waveSpeed(s.wave)
                     const travel = (PLAYER_Y - tgt.y) / 5
                     let lead = s.dir * sp * travel
@@ -170,18 +244,19 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
         return { clearedWave1, over: done(s), score: s.score, wave: s.wave }
     }
     const runs = [1, 7, 42].map(smartRun)
-    ok(runs.every((r) => r.clearedWave1), 'scripted flight clears wave 1 on seeds 1/7/42')
+    ok(runs.every((r) => r.clearedWave1), 'scripted flight chews the forts and clears wave 1 on seeds 1/7/42')
     ok(runs.every((r) => r.over && r.score >= 320),
         `scripted flight ends in the terminal with a wave-1 score (got ${runs.map((r) => r.score).join('/')})`)
 }
 
-// ---------- 10. seed-param + report contract (static, index.jsx) ----------
+// ---------- 11. seed-param + report contract (static, index.jsx) ----------
 {
     ok(/seedFromQuery\(window\.location\.search\)/.test(jsx), 'index.jsx honors ?seed=N at the human-start site')
     ok(/exposeFeedbackState\([\s\S]*?\bseed:/.test(jsx), 'production feedback report carries the seed')
     ok(/exposeFeedbackState\([\s\S]*?\bdone:/.test(jsx), 'production feedback report carries done')
     ok(/unexposeFeedbackState\(\)/.test(jsx), 'feedback report unmounted in cleanup')
     ok(/id:\s*'invaders'/.test(jsx), 'harness contract exposes id invaders')
+    ok(/bunkerBricks:/.test(jsx), 'harness state reports the forts\' brick count')
     ok(/reset:/.test(jsx) && /tick:/.test(jsx) && /state:/.test(jsx) && /canvas:/.test(jsx),
         'harness contract ships reset/tick/state/canvas')
     ok(/unexposeGame\(\)/.test(jsx), 'harness contract unmounted in cleanup')
