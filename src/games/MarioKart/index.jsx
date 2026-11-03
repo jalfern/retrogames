@@ -11,6 +11,7 @@ import { buildGround, buildSky, buildSprites, KART } from './art.js'
 import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
 import { currentPad } from '../../utils/onePad'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 // =====================================================================
 // SUPER MARIO KART — the arcade's Mode 7 title. The ground is ONE 2048²
@@ -118,6 +119,12 @@ export default function MarioKart() {
             return CROWD[(((wx * 7) + (dy * 13)) % 6 + 6) % 6]
         }
         const g = makeGame()
+        // #1473: production-safe feedback state — the world is FIXED (rnd=0
+        // across the whole title: one authored track, items by standing on a
+        // fixed cycle, scripted CPU; the screen jitter is a pure function of
+        // the tick), so there is no seed to fake — {tick,score,done} pinpoints
+        // a run, score = the player's standing (1 = checkered flag first).
+        exposeFeedbackState(() => ({ tick: g.tick, score: g.karts[0].place, done: !!g.end }))
         gameRef.current = g
         const keys = keysRef.current
         const st = { screen: 'attract', endT: 0 }
@@ -593,6 +600,7 @@ export default function MarioKart() {
             window.removeEventListener('resize', onWinResize)
             window.removeEventListener('keydown', kd)
             window.removeEventListener('keyup', ku)
+            unexposeFeedbackState()
             unmount()
             delete window.__kartTest
         }

@@ -4,6 +4,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { drawScene, VW, VH, fitAttractFont } from './art.js'
@@ -73,6 +74,11 @@ const PrinceOfPersiaGame = () => {
         const ctx = canvas.getContext('2d')
 
         let g = makeGame(0)
+        // #1473: production-safe feedback state — the twelve rooms are authored
+        // (rnd=0 across the title; guards, pots, chomps and the mirror live in
+        // fixed tables, and the crackle/jitter are pure tick arithmetic), so no
+        // seed to fake; score = the level reached (0..11), done at win or lost.
+        exposeFeedbackState(() => ({ tick: g.tick, score: g.levelIndex, done: g.status === 'win' || g.status === 'lost' }))
         let attract = true
         let attractT = 0
         let endAttract = 0
@@ -374,6 +380,7 @@ const PrinceOfPersiaGame = () => {
             window.removeEventListener('keydown', handleRestartKey)
             window.removeEventListener('keyup', handleKeyUp)
             canvas.removeEventListener('pointerdown', handleCanvasPointer)
+            unexposeFeedbackState()
             unmountDbg()
             audioController.stopMusic()
             delete window.__popTest

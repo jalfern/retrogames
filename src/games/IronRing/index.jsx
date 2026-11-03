@@ -14,7 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
 import { ROSTER, BY_ID, LADDER } from './fighters.js'
@@ -208,7 +208,12 @@ const IronRingGame = () => {
             mode = m
             mySeat = net.active ? (net.role === 'host' ? 0 : 1) : 0
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
-            const sd = (seed === undefined ? seedCounter : seed) >>> 0
+            // #1473: offline starts honor ?seed=N (online passes its seed
+            // explicitly — the lobby seed keeps authority, Outpost precedent).
+            // The engine is pure and seeded (#531 law), so a filed report +
+            // this seed replays the same stage, pace and jitter.
+            const pin = seedFromQuery()
+            const sd = (seed === undefined ? (pin != null ? (pin >>> 0) || 1 : seedCounter) : seed) >>> 0
             stage = STAGES[sd % STAGES.length]
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
@@ -665,6 +670,14 @@ const IronRingGame = () => {
 
         raf = requestAnimationFrame(loop)
 
+        // #1473: production-safe feedback state (every build, not DEV-only) —
+        // the engine is pure and seeded (#531 law): gs.seed drives stage pick,
+        // AI pace and every jitter, so a filed report + seed replays the fight.
+        exposeFeedbackState(() => (gs
+            ? { tick: gs.tick, score: gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp), done: gs.phase === 'done', seed: gs.seed >>> 0 }
+            : { tick: 0, score: 0, done: false, seed: 0 }))
+
+
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
@@ -727,6 +740,7 @@ const IronRingGame = () => {
             window.removeEventListener('resize', resize)
             wrap.removeEventListener('pointerdown', onPointer)
             if (net.lobby && net.lobby.destroy) net.lobby.destroy()
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__ironRingTest }
             scene.renderer.dispose()
             if (wrap.contains(gl)) wrap.removeChild(gl)

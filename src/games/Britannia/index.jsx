@@ -16,7 +16,7 @@ import { cycleAttract } from '../../utils/attractLines'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { containMap } from '../../utils/fitCanvas'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
 import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } from './weather.js'
@@ -768,7 +768,12 @@ const BritanniaGame = () => {
             Digit5: 'k5', Digit6: 'k6', Digit7: 'k7', Digit8: 'k8',
         }
         const startGame = () => {
-            S = fresh()
+            // #1473: honor ?seed=N at the human-start — every part of the land
+            // (moongate spawn, weather, ambient, foam, flocks) is a pure hash3
+            // function of this seed (rnd=0 across all files), so a filed report
+            // replays this exact Britannia. No pin -> the classic seed-0 world.
+            const pin = seedFromQuery()
+            S = fresh(pin != null ? pin >>> 0 : 0)
             // the goal is also the first thing the new pilgrim is told (#1352)
             S.toast = 300; S.toastMsg = 'GOAL: find and ride all eight moongates'
             setMode('play')
@@ -838,6 +843,10 @@ const BritanniaGame = () => {
         window.addEventListener('pointermove', onMove)
         canvas.addEventListener('pointerdown', onTap)
 
+        // #1473: production-safe feedback state (every build, not DEV-only) —
+        // the world IS the seed, so the report carries it; score = moons visited.
+        exposeFeedbackState(() => ({ tick: S ? S.tick : 0, score: S ? S.visited.size : 0, done: S ? !!S.done : false, seed: S ? S.seed : 0 }))
+
         // --- DEV hooks + contract ---
         if (import.meta.env.DEV) {
             exposeGame({
@@ -895,6 +904,7 @@ const BritanniaGame = () => {
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('pointermove', onMove)
             canvas.remove()
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__britanniaTest) delete window.__britanniaTest; unmountDbg(); unexposeGame() }
         }
     }, [setMode])

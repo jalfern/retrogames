@@ -14,7 +14,7 @@ import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { askVoiceConsent, acquireListenBadge, startLevelMeter } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
@@ -134,7 +134,13 @@ export default function RallyCoDriver() {
         const pushVoice = () => setVoiceUi(voice.on ? { on: true, said: voice.said, ok: voice.ok, label: voice.label } : null)
 
         const startRace = () => {
-            seedRef.cur = selectedSeed()
+            // #1473: honor ?seed=N at the offline human-start (keys and taps all
+            // land here — every online path starts via onlineStart/startNetMatch),
+            // so a filed report replays this exact stage + weather. The lobby
+            // seed keeps authority online (Outpost precedent); seedRef.cur is
+            // what the feedback report carries, in both modes.
+            const pin = seedFromQuery()
+            seedRef.cur = pin != null ? (pin >>> 0) || 1 : selectedSeed()
             play.g = createSim(seedRef.cur, 2, selectedWeather())
             play.g.co.kind = 'cpu'
             voice.said = ''; voice.ok = false; voice.label = ''
@@ -1214,6 +1220,11 @@ export default function RallyCoDriver() {
         raf = requestAnimationFrame(loop)
 
         // ---- the contract -------------------------------------------------------
+        // #1473: production-safe feedback state — the seed IS the stage (rnd=0:
+        // createSim drives every curve, pack and grip call from it), and the only
+        // score is the clock (ms), so {tick,score,done,seed} pinpoints a run.
+        exposeFeedbackState(() => ({ tick: play.g.tick, score: Math.round(play.g.timeMs), done: !!play.g.done, seed: seedRef.cur, lap: play.g.lap }))
+
         exposeGame({
             id: 'rally-co-driver',
             players: 2,
@@ -1280,6 +1291,7 @@ export default function RallyCoDriver() {
             if (net.lobby) net.lobby.close() // #1448: don't leave the relay socket open
             voiceStop()
             unexposeGame()
+            unexposeFeedbackState()
             delete window.__rallyTest
             canvas.remove()
         }
