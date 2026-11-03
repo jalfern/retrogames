@@ -13,7 +13,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost } from '../src/games/Pacman/move.js'
+import { MAP, COLS, ROWS, CORNER_PX, makePacman, stepPlayer, tileOpen, cloneMap, stepGhost, scaredSkin, SCARED_FLASH_AT, SCARED_BLINK, POWER_TICKS } from '../src/games/Pacman/move.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -268,6 +268,30 @@ console.log('seed pin: the ghost world replays from its seed')
     ok(/seed: seed/.test(src), 'production report carries the seed')
 }
 
+// ------------------------------------------------------- scared flash (#1508) ----
+// ART.md fidelity + the fixed-timestep rule: the arcade flashes the frightened
+// ghosts white only in the final seconds (two-stage), driven by the world timer,
+// not wall-clock. scaredSkin() is the pure decision the renderer uses.
+console.log('scared flash: two-stage tell on the world timer')
+{
+    let midBlue = 0
+    for (let t = SCARED_FLASH_AT + 1; t <= POWER_TICKS; t++) if (scaredSkin(t) === 'blue') midBlue++
+    ok(midBlue === POWER_TICKS - SCARED_FLASH_AT, 'solid blue through the bulk of the power-up', `${midBlue}/${POWER_TICKS - SCARED_FLASH_AT}`)
+
+    const late = new Set()
+    for (let t = 0; t <= SCARED_FLASH_AT; t++) late.add(scaredSkin(t))
+    ok(late.has('blue') && late.has('white'), 'two-stage white/blue flash near expiry', [...late].join(','))
+
+    ok(scaredSkin(47) === scaredSkin(47), 'the flash is a pure function of the world timer')
+    let flips = 0
+    for (let t = 1; t <= SCARED_FLASH_AT; t++) if (scaredSkin(t) !== scaredSkin(t - 1)) flips++
+    ok(flips === Math.floor(SCARED_FLASH_AT / SCARED_BLINK), 'the flash alternates on the SCARED_BLINK tick grid', `${flips} flips`)
+
+    const src = readFileSync('src/games/Pacman/index.jsx', 'utf8')
+    ok(/scaredSkin\(\s*powerTimer\s*\)/.test(src), 'drawGhost colours the scared ghost from the timer')
+    ok(!/Date\.now\(\) % 400 < 200\) \? '#2121ff'/.test(src), 'the scared flash left the wall clock')
+}
+
 console.log(`\n${passes} passed, ${fails} failed`)
 
 // ----------------------------------------------------------------------- mutants ----
@@ -316,6 +340,15 @@ if (process.argv.includes('--mutate')) {
         ['keyboards are told to TAP (#420 regression)', 'src/games/Pacman/attract.js',
             `touch ? 'TAP TO START' : 'PRESS ARROW KEYS TO START'`,
             `'PRESS ARROW KEYS TO START'`],
+        ['scared flash never leaves blue (loses the two-stage tell)', F,
+            `    return Math.floor(powerTimer / SCARED_BLINK) % 2 === 0 ? 'blue' : 'white'`,
+            `    return 'blue'`],
+        ['scared flash strobes the whole power-up', F,
+            `    if (powerTimer > SCARED_FLASH_AT) return 'blue'`,
+            `    if (false) return 'blue'`],
+        ['scared flash back on the wall clock (#1508 regression)', 'src/games/Pacman/index.jsx',
+            `                ctx.fillStyle = skin === 'white' ? 'white' : '#2121ff'`,
+            `                ctx.fillStyle = (Date.now() % 400 < 200) ? '#2121ff' : 'white'`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

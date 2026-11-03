@@ -8,7 +8,7 @@
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { attractFrame, INFO_MSGS, HOLD, PRESS, DIM, HUD, estWidth } from '../src/games/Frogger/attract.js'
-import { makeLane, DIVE_CYCLE } from '../src/games/Frogger/sim.js'
+import { makeLane, DIVE_CYCLE, deathStyle } from '../src/games/Frogger/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -91,6 +91,23 @@ console.log('seed pin: the seeded traffic replays')
     ok(!/Math\.random\(\) \* houses\.length/.test(src), 'the bonus fly house is drawn from the seeded stream')
 }
 
+// ------------------------------------------ off-board death is distinct (#1508) ----
+// ART.md feel: going OFF the board must not read as a water splash. deathStyle()
+// is the pure decision the renderer + audio branch on, so this is provable in
+// plain Node without a browser.
+console.log('off-board death is distinct from a water splash')
+{
+    const off = deathStyle('off')
+    const water = deathStyle('water')
+    ok(off.kind !== water.kind, 'off-board death does not reuse the water ripple', `${off.kind} vs ${water.kind}`)
+    ok(off.color !== water.color, 'off-board death carries its own colour', `${off.color} vs ${water.color}`)
+    ok(deathStyle('car').kind === 'squash' && deathStyle('water').kind === 'ripple',
+        'car squashes and water rings (regression anchors)')
+    const src = readFileSync('src/games/Frogger/index.jsx', 'utf8')
+    ok(/deathStyle\(\s*frog\.cause\s*\)/.test(src), 'the death animation consults deathStyle(cause)')
+    ok(!/cause === 'time' \? '#ffe14d' : 'rgba\(160,210,255/.test(src), 'no hard-coded blue ring for every death')
+}
+
 if (process.argv.includes('--mutate')) {
     console.log('mutants (each MUST die)')
     const F = 'src/games/Frogger/attract.js'
@@ -122,6 +139,14 @@ if (process.argv.includes('--mutate')) {
         ['no dim behind the attract text',
             `export const DIM = 'rgba(0,0,0,0.55)'`,
             `export const DIM = 'rgba(0,0,0,0)'`],
+        ['off-board death collapses to the water ripple (#1508 regression)',
+            `    if (cause === 'off') return { kind: 'splat', color: '#ff7a5c' }`,
+            `    if (cause === 'off') return { kind: 'ripple', color: 'rgba(160,210,255,0.9)' }`,
+            'src/games/Frogger/sim.js'],
+        ['the death animation ignores deathStyle',
+            `const st = deathStyle(frog.cause)`,
+            `const st = { kind: 'ripple', color: 'rgba(160,210,255,0.9)' }`,
+            'src/games/Frogger/index.jsx'],
     ]
     let died = 0
     for (const [name, from, to, file = F] of MUTANTS) {
