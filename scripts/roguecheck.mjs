@@ -109,7 +109,7 @@ console.log('rules')
     // bump kill: wounded kestrel on an open tile in front; the d20 is the
     // d20, so sweep seeds until the mace connects (a hit at ac-7 kestrel-hp-1
     // must remove it and bank xp in the SAME turn)
-    let bumpOk = false, before = 0
+    let bumpOk = false, before = 0, killFx = false
     for (let seed = 1; seed <= 50 && !bumpOk; seed++) {
         let w = createInitialState(seed)
         const open = [[1, 0], [0, 1], [-1, 0], [0, -1]].find(([dx, dy]) =>
@@ -119,9 +119,11 @@ console.log('rules')
         const t = stepGame(w, { type: 'MOVE', dx: open[0], dy: open[1] })
         if (/defeated the kestrel/.test(t.messages.join('\n'))) {
             bumpOk = t.monsters.length === 0 && t.player.exp >= 1 && t.turn === before + 1
+            killFx = t.fx.some(f => f.k === 'kill')
         }
     }
     ok('bump into a wounded kestrel kills it and banks xp (same turn)', bumpOk)
+    ok('the kill emits its fx (#1502 audibility gate)', killFx)
 
     // level-up: one kill worth 10 xp at exp 0 crosses the 10-xp table step
     let s2 = createInitialState(777)
@@ -168,6 +170,7 @@ console.log('rules')
     d = stepGame(d, { type: 'DESCEND' })
     ok('> on stairs descends and consumes a turn', d.dungeonLevel === 2 && d.turn === before2 + 1 && d.player.x !== undefined)
     ok('descended level carries its own stairs', d.map.flat().includes('%'))
+    ok('descending emits its fx (#1502 audibility gate)', d.fx.some(f => f.k === 'descend'))
     const wrong = stepGame(createInitialState(4242), { type: 'DESCEND' })
     ok('> off stairs is refused ("You see no stairs here.")', wrong.dungeonLevel === 1 && /no stairs/.test(wrong.messages[wrong.messages.length - 1]))
 
@@ -194,6 +197,7 @@ console.log('rules')
     q2 = { ...q2, player: { ...q2.player, hp: 4, inventory: [{ type: '!', subtype: 0 }] } }
     q2 = stepGame(q2, { type: 'QUAFF_ITEM', index: 0 })
     ok('quaffing the healing potion raises hp and identifies it', q2.player.hp > 4 && q2.identifiedPotions[0] === true)
+    ok('quaffing emits its fx (#1502 audibility gate)', q2.fx.some(f => f.k === 'quaff'))
 
     // enchant weapon scroll: +1 with a glowing confirmation
     let r2 = createInitialState(15)
@@ -209,6 +213,84 @@ console.log('rules')
     ok('teleportation scroll moves the hero onto walkable ground', t2.map[t2.player.y][t2.player.x] !== ' ' && `${t2.player.x},${t2.player.y}` !== oldPos)
 }
 
+// ── 4b. doors (#1502): the 1980 mechanic — open / block / hidden / search ──
+console.log('doors (1980: closed blocks, bump opens, hidden found by search or stumble)')
+{
+    // Layout: every level digs visible + hidden doors, hidden ⊂ doors, all on stone
+    let layoutOk = true
+    for (let seed = 1; seed <= 10; seed++) {
+        const s = createInitialState(seed)
+        if (s.doors.length < 2 || s.hiddenDoors.length < 2) layoutOk = false
+        for (const d of s.doors) if (s.map[d.y][d.x] !== '+') layoutOk = false
+        for (const h of s.hiddenDoors) if (!s.doors.some(d => d.x === h.x && d.y === h.y)) layoutOk = false
+    }
+    ok('every level digs visible + hidden doors (hidden ⊂ doors, all on stone)', layoutOk)
+
+    // Closed door: the bump opens it — one turn, no move, stone restored
+    let s = createInitialState(12345)
+    s = { ...s, monsters: [] }
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+    const dir = dirs.find(([dx, dy]) =>
+        (s.map[s.player.y + dy]?.[s.player.x + dx] === '.' || s.map[s.player.y + dy]?.[s.player.x + dx] === '#'))
+    const nx = s.player.x + dir[0], ny = s.player.y + dir[1]
+    const cMap = s.map.map(r => [...r]); cMap[ny][nx] = '+'
+    s = { ...s, map: cMap, doors: [...s.doors, { x: nx, y: ny }] }
+    const t0 = s.turn
+    const opened = stepGame(s, { type: 'MOVE', dx: dir[0], dy: dir[1] })
+    ok('a closed door blocks the step; the bump opens it (1 turn, no move)',
+        opened.player.x === s.player.x && opened.player.y === s.player.y && opened.turn === t0 + 1)
+    ok('the opened door restores corridor stone (#, not floor .)', opened.map[ny][nx] === '#')
+    ok('the next step walks straight through the opened door',
+        stepGame(opened, { type: 'MOVE', dx: dir[0], dy: dir[1] }).player.x === nx)
+    ok('opening a door fires the door-open fx (audibility gate)', opened.fx.some(f => f.k === 'door-open'))
+
+    // Monsters vs doors: a closed VISIBLE door blocks the chase; an unfound
+    // hidden one does not (creatures know their own doors, 1980 rule)
+    const doorScenario = (kind) => {
+        let w = createInitialState(222)
+        w = { ...w, monsters: [] }
+        const pm = w.map.map(r => [...r])
+        const wx = w.player.x + 1, wy = w.player.y
+        if (kind !== 'none') pm[wy][wx] = '+'
+        pm[wy][wx + 1] = '.'
+        if (kind !== 'none') w = { ...w, doors: [...w.doors, { x: wx, y: wy }] }
+        if (kind === 'hidden') w = { ...w, hiddenDoors: [...w.hiddenDoors, { x: wx, y: wy }] }
+        w = { ...w, map: pm }
+        w = { ...w, monsters: [{ id: 1, x: wx + 1, y: wy, letter: 'K', name: 'kestrel', hp: 5, maxHp: 5, dmg: '1d3', ac: 7, xp: 1, chasing: true }] }
+        const rest = stepGame(w, { type: 'MOVE', dx: 0, dy: 0 })
+        return { mon: rest.monsters.find(m => m.id === 1), door: { x: wx, y: wy } }
+    }
+    const scVis = doorScenario('visible')
+    const scHid = doorScenario('hidden')
+    const scNone = doorScenario('none')
+    ok('control: on open ground the chasing kestrel reaches the door cell',
+        scNone.mon.x === scNone.door.x && scNone.mon.y === scNone.door.y)
+    ok('a closed visible door blocks the chase',
+        !(scVis.mon.x === scVis.door.x && scVis.mon.y === scVis.door.y))
+    ok('an unfound hidden door passes the creatures (they know their doors)',
+        scHid.mon.x === scHid.door.x && scHid.mon.y === scHid.door.y)
+
+    // Hidden doors: invisible until found — by SEARCH (3x3) or by stumbling in
+    let hd = createInitialState(12345)
+    const r0 = hd.rooms[0]
+    const h = hd.hiddenDoors.find(d => d.x > r0.x && d.x < r0.x + r0.w - 1 && (d.y === r0.y || d.y === r0.y + r0.h - 1))
+    ok('the golden seed hides a door on the start room wall', Boolean(h))
+    const gridHidden = buildGrid(hd)
+    ok('an unfound hidden door draws as wall, not a door', gridHidden[h.y][h.x].char === '#')
+    const under = { x: h.x, y: h.y === r0.y ? h.y + 1 : h.y - 1 }
+    let f = { ...hd, player: { ...hd.player, x: under.x, y: under.y }, monsters: [] }
+    const searched = stepGame(f, { type: 'SEARCH' })
+    ok('SEARCH reveals a hidden door within the 3x3', !searched.hiddenDoors.some(d => d.x === h.x && d.y === h.y))
+    ok('search consumes a turn', searched.turn === f.turn + 1)
+    ok('a found door stands closed until bumped', searched.map[h.y][h.x] === '+')
+    ok('the found door now draws as a door', buildGrid(searched)[h.y][h.x].char === '+')
+    ok('finding the door fires the door-found fx (audibility gate)', searched.fx.some(e => e.k === 'door-found'))
+    const stumbled = stepGame(f, { type: 'MOVE', dx: h.x - under.x, dy: h.y - under.y })
+    ok('walking into a hidden door opens it under the hero',
+        stumbled.player.x === h.x && stumbled.player.y === h.y && stumbled.map[h.y][h.x] === '#'
+        && !stumbled.hiddenDoors.some(d => d.x === h.x && d.y === h.y))
+}
+
 // ── 5. terminals ─────────────────────────────────────────────────────────────
 console.log('terminals')
 {
@@ -221,15 +303,16 @@ console.log('terminals')
     ok('gameover locks every action but NEW_GAME', locked.phase === 'gameover' && locked.player.x === q.player.x)
 
     // death by monster is a terminal: run seeds until a hit finishes it
-    let dead = false
+    let dead = false, dragonFx = false
     for (let seed = 1; seed <= 200 && !dead; seed++) {
         let w = createInitialState(seed)
         w = { ...w, monsters: [{ id: 1, x: w.player.x + 1, y: w.player.y, letter: 'D', name: 'dragon', hp: 30, maxHp: 30, dmg: '3d8', ac: -1, xp: 100, chasing: true }], player: { ...w.player, hp: 1 } }
         w = stepGame(w, { type: 'MOVE', dx: 1, dy: 0 })   // bump the dragon first
         const t = stepGame(w, { type: 'MOVE', dx: 0, dy: 0 })  // then let it swing
-        if (done(t)) dead = true
+        if (done(t)) { dead = true; dragonFx = t.fx.some(f => f.k === 'die' && f.killer === 'D') }
     }
     ok('a dragon adjacent to a 1-hp hero eventually ends the run (death terminal)', dead)
+    ok('the dragon death emits the die fx with its letter (#1502 audibility gate)', dragonFx)
 }
 
 // ── 6. won for real: BFS autopilot descends; death stays the deep-run risk ──
@@ -285,7 +368,9 @@ console.log('winnability (BFS autopilot, 20 seeds)')
     // slowest winner still holds >= 500 of its starting 1500: one fewer ration
     // (800) is free slack the perfect script doesn't even spend.
     ok('slack: winners keep >= 500 food without ever eating (800 ration of slack)', minFood >= 500, `min food left ${minFood}`)
-    ok('turn economy sane: 3 descents in under 250 turns', maxTurn < 250, `max ${maxTurn}`)
+    // #1502: every closed door crossed costs one opening turn (bump, then pass)
+    // on top of the BFS route — the pre-door budget was 250, doors add ~10-20.
+    ok('turn economy sane: 3 descents in under 300 turns (incl. door-open overhead)', maxTurn < 300, `max ${maxTurn}`)
 }
 
 // ── 7. drawn grid matches logical state ──────────────────────────────────────

@@ -34,29 +34,50 @@ Dungeons of Doom keep whatever you bring them.
 ## Verify
 
 ```bash
-npm run roguecheck        # 48 checks: boot+purity, determinism (incl.
+npm run roguecheck        # 68 checks: boot+purity, determinism (incl.
                          # interleaved replays), BFS stairs-reachability on 40
                          # seeds, combat/xp/hunger/descend/pickup/wield/eat/
-                         # quaff/scroll rules, both terminals, BFS autopilot
-                         # wins (20/20 reach dlvl 2, ≥15 reach dlvl 4), draw-
-                         # vs-logic, rng bounds
+                         # quaff/scroll rules, the door mechanic (closed
+                         # blocks, bump opens, hidden ⊂ doors, search +
+                         # stumble reveal, monsters vs doors), both terminals,
+                         # BFS autopilot wins (20/20 reach dlvl 2, ≥15 reach
+                         # dlvl 4), draw-vs-logic, rng bounds, and the #1502
+                         # audibility gate (hit/kill/die/descend/quaff/door
+                         # fx all asserted in the sim)
 npm run feedbackcheck    # seedpin law + floor (Rogue = title 45)
 ```
 
 Mutant proof: flipping the descend guard in `handleDescend` (`!== '%'` →
 `=== '%'`) turns roguecheck red on 4 checks incl. winnability 20/20 → 0/20.
-Restore → green.
+Collapsing the search-reveal radius in `handleSearch` kills 3 door checks
+(reveal / drawn `+` / door-found fx). Restore → green.
+
+## Doors and sound (#1502)
+
+- **Doors are a mechanic, not art.** Corridor gaps get one closed door each;
+  every room wall hides one more (top/bottom middle, never on a corridor
+  path). Both are pure functions of the dug layout — zero new rolls, so the
+  entropy stream and every seeded dungeon are untouched. A closed door blocks
+  hero and monsters; bumping it opens it (one turn, no move, it stays open,
+  1980 rule). An unfound hidden door draws as wall and is walkable —
+  creatures know their own doors (1980 rule); the hero finds one by `s`
+  SEARCH (the 3x3 around him; found doors stand closed until bumped) or by
+  stumbling into the cell, which swings it open under his feet.
+- **The dungeon is loud.** The sim records every audible moment in
+  `state.fx` (hit, kill, hurt, die+killer, levelup, quaff, eat, gold,
+  descend, door-open, door-found); index.jsx drains it into
+  `audioController` synth (Emberwood #1512 pattern). roguecheck's
+  audibility gate asserts the sim fires them — a silent build goes red.
+  The death screen names the killer ("Killed by a dragon").
 
 ## Honest gaps (vs the 1980 original)
 
-- Doors `+` are drawn but never opened/blocked — the generator digs rooms whose
-  perimeters stay walls; doors are decorative floor art on room edges.
 - No ranged combat: wands `/`, rings `=` and thrown missiles are named in the
   legend but never generated; ammo (`!`) potions cover the spell slot loosely.
 - Monsters never flee, and `moved` bookkeeping is per-frame rather than the
   original's per-monster energy (fast/ slow creature races).
-- `s` search is flavor text — no hidden doors or detected traps; there are no
-  traps at all (no rings of warning, no trap SPIRIT).
+- No traps at all: search finds hidden doors, but the original's trap floor
+  (no rings of warning, no trap SPIRIT) is absent.
 - No Amulet of Yendor win condition: the original's goal object and "you win"
   terminal don't exist; descending forever + the QUIT score tally is the loop.
   (Win/lose semantics: dlvl≥2 reached on every seed, death terminal proven;

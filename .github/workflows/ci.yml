@@ -239,6 +239,10 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'rally')
       - run: npm run rallylinkcheck
         if: contains(fromJSON(env.KEYS), 'rally')
+      - run: npm run lint:rogue
+        if: contains(fromJSON(env.KEYS), 'rogue')
+      - run: npm run roguecheck
+        if: contains(fromJSON(env.KEYS), 'rogue')
       - run: npm run lint:ark
         if: contains(fromJSON(env.KEYS), 'ark')
       - run: npm run arkcheck

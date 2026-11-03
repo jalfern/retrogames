@@ -1,6 +1,7 @@
 import { useReducer, useEffect, useCallback, useRef, useState } from 'react'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { audioController } from '../../utils/AudioController'
 import {
   COLORS,
   createInitialState, stepGame, buildGrid,
@@ -17,6 +18,33 @@ import {
 // Roll the seed for the next world: the pin wins, else fresh entropy.
 function freshSeed() {
   return seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+}
+
+// #1502: the sim RECORDS audible moments in state.fx (the audibility gate in
+// roguecheck asserts they fire); the view turns them into synth (Emberwood's
+// #1512 pattern). Green-phosphor machine, so the palette is low square/saw
+// blips — a dragon's death roars, the door creak is a thud.
+const fxSound = (e) => {
+  const ac = audioController
+  try {
+    switch (e.k) {
+      case 'hit':       ac.playNoise(0.06, 0.10); ac.playTone(170, 0.05, 'square', 0.06); break
+      case 'kill':      ac.playSweep(520, 110, 0.18, 'square', 0.07); break
+      case 'hurt':      ac.playSweep(220, 90, 0.16, 'sawtooth', 0.09); break
+      case 'die':
+        if (e.killer === 'D') { ac.playSweep(150, 35, 0.6, 'sawtooth', 0.13); ac.playNoise(0.45, 0.09) }
+        else ac.playSweep(300, 50, 0.5, 'sawtooth', 0.1)
+        break
+      case 'levelup':   [440, 550, 660, 880].forEach((f, i) => ac.playTone(f, 0.09, 'square', 0.05, i * 0.08)); break
+      case 'quaff':     ac.playSweep(320, 720, 0.18, 'sine', 0.06); break
+      case 'eat':       ac.playNoise(0.05, 0.05); ac.playTone(200, 0.07, 'triangle', 0.05); break
+      case 'gold':      ac.playTone(988, 0.05, 'square', 0.05); ac.playTone(1319, 0.07, 'square', 0.05, 0.05); break
+      case 'descend':   ac.playSweep(420, 110, 0.3, 'triangle', 0.06); break
+      case 'door-open': ac.playNoise(0.05, 0.06); ac.playTone(260, 0.07, 'triangle', 0.05); break
+      case 'door-found': ac.playTone(660, 0.06, 'triangle', 0.05); ac.playTone(990, 0.09, 'triangle', 0.05, 0.06); break
+      default: break
+    }
+  } catch { /* audio is best-effort — never break a turn over a tone */ }
 }
 
 // ============================================================
@@ -108,6 +136,19 @@ export default function RogueGame() {
   // latest state for the feedback report (mounted once, read per report)
   const stateRef = useRef(state)
   useEffect(() => { stateRef.current = state })
+
+  // #1502: drain the sim's fx log into audio. The log grows through the run
+  // and resets to [] on NEW_GAME — the length compare handles both.
+  const fxSeenRef = useRef(0)
+  useEffect(() => {
+    const n = state.fx.length
+    let seen = fxSeenRef.current
+    if (seen > n) seen = 0
+    if (seen < n) {
+      state.fx.slice(seen, n).forEach(fxSound)
+      fxSeenRef.current = n
+    }
+  }, [state])
 
   useEffect(() => {
     const check = () => {
@@ -251,7 +292,7 @@ export default function RogueGame() {
     dispatch(action)
   }, [])
 
-  const { player, phase, messages, dungeonLevel, finalScore } = state
+  const { player, phase, messages, dungeonLevel, finalScore, killer } = state
 
   const base = {
     background: '#000',
@@ -276,6 +317,9 @@ export default function RogueGame() {
            onPointerDown={() => dispatch({ type: 'NEW_GAME', seed: freshSeed() })}>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
           <div style={{ color: '#ff4444', fontSize: '30px', letterSpacing: '4px' }}>✝  GAME OVER  ✝</div>
+          <div style={{ color: '#ff6644', fontSize: '20px', letterSpacing: '1px' }}>
+            {killer === 'starvation' ? 'Starved to death' : killer ? `Killed by a ${killer}` : ''}
+          </div>
           <div style={{ color: '#aaa', marginTop: '8px' }}>Slain in the Dungeons of Doom!</div>
           <div style={{ marginTop: '16px', color: '#ccc' }}>
             <div>Dungeon Level: <span style={{ color: '#ffff55' }}>{dungeonLevel}</span></div>
