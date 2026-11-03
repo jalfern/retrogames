@@ -93,68 +93,104 @@ def pass_g1(model="qwen35-base"):
     return recs
 
 
-def pass_r1(recs):
-    """teacher-forced read pass: per-FA-layer loop-vs-finished MLP-write contrast.
+def pass_r1(recs, smoke=False):
+    """teacher-forced read pass: per-FA-layer loop-vs-finished MLP-write vectors.
 
     mlx on CPU device (sandbox Metal dead). Input texts: loop-tail excerpts (capped
-    runs) vs finished-answer excerpts from pass G1, each truncated to 2048 tokens-ish.
+    runs) vs finished-answer excerpts from pass G1, each teacher-forced as
+    chat-prompt + up to 2048 generation tokens. Replaces the round-2 SKETCH:
+    captures the MLP residual contribution o (what the layer WRITES into the
+    residual stream) per token — step3_capture.py (round 1) is the reference,
+    generalized here to all six FA layers and both label buckets.
+    d_L = mean(o over loop tokens) - mean(o over finished tokens), unit-normalized.
     """
     import mlx.core as mx
     mx.set_default_device(mx.cpu)
     from mlx_lm import load
 
     model, tok = load(MLX_DIR)
-    loops = [r for r in recs if not r["finished"]][:48]
-    fins = [r for r in recs if r["finished"]][:48]
-    writes = {L: {"loop": [], "fin": []} for L in FA_LAYERS}
+    # _install_capture reads C.CAPTURE_LAYERS at call time — point it at our layers
+    old_layers = C.CAPTURE_LAYERS
+    C.CAPTURE_LAYERS = FA_LAYERS
+    stash = C._install_capture(model)
+    # G1 record i indexes practice_problems() (seed-fixed) — rebuild for prompts
+    probs = practice_problems()
+    n = (2, 2) if smoke else (48, 48)
+    loops = [r for r in recs if not r["finished"]][: n[0]]
+    fins = [r for r in recs if r["finished"]][: n[1]]
+    acc = {L: {"loop": [], "fin": [], "absact": []} for L in FA_LAYERS}
 
-    def capture(text, bucket):
-        ids = mx.array([tok.encode(text[-2400:], add_special_tokens=False)])
-        feats = {}
-
-        def hook(layer_idx):
-            def fn(_m, _inp, out):
-                feats[layer_idx] = out[0] if isinstance(out, tuple) else out
-            return fn
-
-        hs = model.model.layers
-        olds = {}
+    def capture(rec, bucket):
+        q = probs[rec["i"]][1]
+        p_ids = tok.apply_chat_template([{"role": "user", "content": q}],
+                                       add_generation_prompt=True)
+        g_ids = tok.encode(rec["text"][-2400:], add_special_tokens=False)[:2048]
+        if len(g_ids) < 8:
+            return
+        full = p_ids + g_ids
         for L in FA_LAYERS:
-            # capture the MLP down_proj INPUT = act_fn(gate(x)) * up(x): easiest stable
-            # proxy at this granularity is the post-MLP residual delta:
-            olds[L] = hs[L].__class__.__call__
-
-        def wrap(L, orig):
-            def call(self, x, *a, **k):
-                y = orig(self, x, *a, **k)
-                writes[L][bucket].append((np.asarray(mx.abs(y - x).sum(axis=-1)).mean(axis=0),))
-                return y
-            return call
-
+            stash[L].clear()
+        model(mx.array([full]))
+        mx.eval(model.parameters())
+        s = len(p_ids)
         for L in FA_LAYERS:
-            hs[L].__class__.__call__ = wrap(L, olds[L])
-        try:
-            model.generate_to_file if False else model(ids)  # single forward pass
-            mx.eval(model.parameters())
-        finally:
-            for L in FA_LAYERS:
-                hs[L].__class__.__call__ = olds[L]
+            if not stash[L]:
+                raise RuntimeError(f"layer {L}: capture stash empty — hook dead")
+            o, a = stash[L][0]                      # [1,S,hidden] per step3_capture
+            on = np.array(o[0].astype(mx.float32))[s:]
+            an = np.abs(np.array(a[0].astype(mx.float32))[s:])
+            if len(on) == 0:
+                raise RuntimeError(f"layer {L}: no generation-token rows after prompt")
+            acc[L][bucket].append(on[64:] if len(on) > 64 else on)
+            if bucket == "loop":
+                acc[L]["absact"].append(an[64:] if len(an) > 64 else an)
 
     for r in loops:
-        capture(r["text"], "loop")
+        capture(r, "loop")
     for r in fins:
-        capture(r["text"], "fin")
-    # NOTE: direction vectors d_L require the *write content* (hidden delta), captured
-    # per token above as scalar magnitudes ONLY — the next lane must replace this
-    # sketch's magnitude capture with per-column mean-write deltas (step3_capture.py
-    # from round 1 is the reference implementation) before producing an edit.
-    log_pass(2, "teacher-forced read x96 texts", len(loops) + len(fins),
-             "SKETCH: magnitudes only — replace with per-token write vectors (see NOTE)")
-    print("pass R1 done (sketch):", {L: len(v["loop"]) for L, v in writes.items()})
+        capture(r, "fin")
+    C._remove_capture(model)   # reads CAPTURE_LAYERS — restore AFTER removing hooks
+    C.CAPTURE_LAYERS = old_layers
+
+    D, ACT = [], []
+    for L in FA_LAYERS:
+        cl, cf = acc[L]["loop"], acc[L]["fin"]
+        if not cl or not cf:
+            raise RuntimeError(f"layer {L}: empty bucket (loop={len(cl)} fin={len(cf)})"
+                             " — G1 label buckets too small (need finished runs)")
+        dl = np.concatenate(cl).mean(0) - np.concatenate(cf).mean(0)
+        dl = dl / (np.linalg.norm(dl) + 1e-12)
+        act = np.concatenate(acc[L]["absact"]).mean(0) if acc[L]["absact"] else np.zeros_like(dl)
+        D.append(dl)
+        ACT.append(act)
+    d = np.stack(D)                       # [6, hidden] — per-layer unit write directions
+    act = np.stack(ACT)                  # [6, hidden] — mean |MLP input| for col ranking
+    out_path = f"{R.RESULTS}/r2_directions_smoke.npz" if smoke else OUT
+    np.savez(out_path, d=d, mean_abs_act=act,
+             fa_layers=np.array(FA_LAYERS),
+             loop_texts=len(loops), fin_texts=len(fins))
+    if smoke:
+        print("R1 SMOKE ok:", out_path, d.shape,
+              "row norms:", np.round(np.linalg.norm(d, axis=1), 4).tolist())
+        return d
+    log_pass(2, "teacher-forced read x96 texts @FA layers", len(loops) + len(fins),
+             "loop direction outside all six FA-layer MLP write paths "
+             "(would show as |d_L|~0 for every L)")
+    print("pass R1 done:", {L: (len(acc[L]["loop"]), len(acc[L]["fin"])) for L in FA_LAYERS})
+    return d
 
 
 if __name__ == "__main__":
     import sys
+    if os.environ.get("R2_R1_SMOKE") == "1":
+        # Plumbing proof ONLY: synthetic recs, writes r2_directions_smoke.npz,
+        # never the real OUT, consumes no generation budget, logs no pass.
+        recs = [{"i": 0, "finished": False, "text": "So " * 300},
+                {"i": 1, "finished": False, "text": "Wait, let me check " * 200},
+                {"i": 2, "finished": True, "text": "Total is 42 apples. The answer is \\boxed{42}."},
+                {"i": 3, "finished": True, "text": "7 + 5 = 12, the answer is \\boxed{12}."}]
+        pass_r1(recs, smoke=True)
+        sys.exit(0)
     if os.path.exists(f"{R.RESULTS}/step1_gate.json"):
         gate = json.load(open(f"{R.RESULTS}/step1_gate.json"))
         if not gate.get("pass"):
