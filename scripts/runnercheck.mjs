@@ -63,6 +63,7 @@ const MUTANTS = {
     drones: 'drones stop existing — patrols and hovers never touch the runner',
     multiLoop: 'only the first loop per zone is honoured — the second loop is never taken',
     routeFork: 'fast lanes stop opening — the high deck and its rings are unreachable at any speed',
+    breakFlats: 'the tail re-flattens — beat joins chain back into dead straights (#1499)',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -500,6 +501,39 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
         for (const sg of z.segs) if (Math.abs(sg[3] - sg[1]) < 2 && sg[2] - sg[0] >= 400) flat += sg[2] - sg[0]
         const frac = flat / (x1 - x0)
         ok(frac < 0.45, `${z.name}: ${(frac * 100).toFixed(1)}% of the ground is flat expanse (>=400px slab) — #900 asked for fewer flats (was 56-63%)`)
+    }
+
+    // #1499 — FLAT-RUNS: FLATNESS counts per-segment flats, but tangent-flat
+    // beat JOINS chain two beats' exits into one slab a player reads as dead
+    // ground ("too many flat expanses"). Measure contiguous flat RUNS on the
+    // low line. Justified flats: the fork speed runway (detected via its
+    // 600px boost strip — the zone's first) and the 1200px landing apron
+    // after each pit (ballistics need a flat catch). Everything else past
+    // 600px must bend. Mutant breakFlats re-flattens the tail -> this is red.
+    for (const z of ZONES) {
+        const segs = z.segs
+        // Mutant mode: count the gentle crest arcs as flat too — if the
+        // humps were not terrain, the dead straights would measure back.
+        const isFlat = CFG.breakFlats === false
+            ? sg => Math.abs(sg[3] - sg[1]) < 2 || Math.abs(sg[3] - sg[1]) / (sg[2] - sg[0]) < 0.35
+            : sg => Math.abs(sg[3] - sg[1]) < 2
+        const rwStart = Math.min(...z.boosts.filter(b => b[1] - b[0] === 600).map(b => b[0])) - 900
+        const rwEnd = rwStart + 2600
+        const runs = []
+        let cur = null
+        segs.forEach((sg, i) => {
+            const fl = isFlat(sg)
+            const gap = i > 0 && sg[0] - segs[i - 1][2] >= 30
+            const cont = cur && fl && Math.abs(sg[1] - cur.y) < (CFG.breakFlats === false ? 60 : 2) && Math.abs(sg[0] - cur.end) < 1
+            if (cont) cur.end = sg[2]
+            else { if (cur) runs.push(cur); cur = fl ? { y: sg[1], start: sg[0], end: sg[2], gap } : null }
+        })
+        if (cur) runs.push(cur)
+        for (const r of runs) {
+            const allow = Math.max(rwEnd, r.gap ? r.start + 1200 : r.start)
+            const viol = r.end - Math.max(r.start, allow)
+            ok(viol < 600, `${z.name}: ${Math.round(viol)}px of unjustified flat ground @ ${Math.round(Math.max(r.start, allow))} — #1499: no dead straights outside the fork runway and pit landing aprons`)
+        }
     }
 
     // #900 — SPRING-HIGH: the deck routes. A fast sprung body lands on the
