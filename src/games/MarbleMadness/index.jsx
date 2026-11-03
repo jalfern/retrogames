@@ -8,6 +8,7 @@ import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2 } from './levels.js'
 import { plan, bfsPath, press } from './planner.js'
 import { padState } from '../../utils/padState'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
 // MARBLE MADNESS (Atari 1984) — iso heightmap course, inertial trackball.
 // All physics/rules live in sim.js (pure, deterministic); this file is painter
@@ -135,7 +136,8 @@ const MarbleMadnessGame = () => {
         }
 
         const startRun = () => {
-            gs = makeGame(0)
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : 0)
             mode = 'play'
             script = null
             particles = []
@@ -506,10 +508,18 @@ const MarbleMadnessGame = () => {
         })
         window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx }
 
+        // #1473 seedpin: report the run seed every build (hazard waves are pure
+        // tick functions; seed travels with the state for exact replays).
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.score, done: gs.end !== null,
+            seed: gs.seed, race: gs.raceIdx, lives: gs.lives,
+        }))
+
         startAttract()
         raf = requestAnimationFrame(loop)
 
         return () => {
+            unexposeFeedbackState()
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             canvas.removeEventListener('pointerdown', onPointerDown)

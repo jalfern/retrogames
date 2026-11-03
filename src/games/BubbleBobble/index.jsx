@@ -15,7 +15,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { CELL, COLS, W, H, FIELD_Y0, FLOOR_ROW, LETTERS } from './levels.js'
 import { makeGame, step, stateHash, CFG } from './sim.js'
 import { plan, decide } from './planner.js'
@@ -532,7 +532,8 @@ const Bob = () => {
         const startPlay = (mode) => {
             modeRef.current = mode
             setSlotKind(p2slot, mode === 2 ? 'cpu' : mode === 3 ? 'human' : 'off')
-            gs = makeGame(0, { players: mode === 1 || mode === 2 ? mode : 2 })
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : 0, { players: mode === 1 || mode === 2 ? mode : 2 })
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -649,10 +650,18 @@ const Bob = () => {
             })
         }
 
+        // #1473 seedpin: all modes are local-sim (dino direction derives from
+        // the seed), so the pin replays every mode; reports carry it.
+        exposeFeedbackState(() => ({
+            tick: gs.tick, score: gs.score, done: gs.end !== null,
+            seed: gs.seed, lives: gs.lives, level: gs.level, players: gs.playersN,
+        }))
+
         last = performance.now()
         raf = requestAnimationFrame(frame)
         return () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
