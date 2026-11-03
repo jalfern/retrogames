@@ -10,6 +10,34 @@ const mk = (w, h) => {
     return [c, g]
 }
 
+// #1511 Jon called the art too pixelated. The buffers already render at device
+// resolution (#829) — the chunkiness lives in the textures themselves: 16px
+// tiles stretched ~4.5x on a phone buffer. Every texture is painted into its
+// small canvas exactly as before (determinism and the sim are untouched), then
+// the whole tree is doubled to a crisp 2x canvas at the end: same art, half
+// the pixel chunk, no nearest-neighbor stretch across a device-sized quad.
+// Texture dimensions never drive world size (the renderer hardcodes its quad
+// planes), so doubling is geometry-safe.
+const up2 = (c) => {
+    const b = document.createElement('canvas')
+    b.width = c.width * 2; b.height = c.height * 2
+    const g = b.getContext('2d')
+    g.imageSmoothingEnabled = false
+    g.drawImage(c, 0, 0, b.width, b.height)
+    return b
+}
+const doubleTree = (o) => {
+    if (o instanceof HTMLCanvasElement) return up2(o)
+    if (Array.isArray(o)) return o.map(doubleTree)
+    if (o && typeof o === 'object') {
+        const r = {}
+        for (const k of Object.keys(o)) r[k] = doubleTree(o[k])
+        return r
+    }
+    return o
+}
+export { up2 }
+
 let seedN = 12345
 const rnd = () => { seedN = (seedN * 16807) % 2147483647; return (seedN - 1) / 2147483646 }
 
@@ -338,8 +366,12 @@ export function makeTextures() {
         // torso
         g.fillStyle = body; g.fillRect(4, 7, 8, 7)
         g.fillStyle = bodyD; g.fillRect(4, 12, 8, 2)
+        // #1511 the hero is the vale's focus: a sunlit seam and a buckle read at
+        // double resolution instead of one flat green slab.
+        g.fillStyle = '#46a86c'; g.fillRect(4, 7, 8, 1)
         // belt
         g.fillStyle = '#8a6236'; g.fillRect(4, 11, 8, 1)
+        g.fillStyle = '#c9a24a'; g.fillRect(7, 11, 2, 1)
         // head
         g.fillStyle = skin; g.fillRect(5, 2, 6, 5)
         g.fillStyle = hair; g.fillRect(4, 1, 8, 2)
@@ -352,6 +384,13 @@ export function makeTextures() {
             if (dir === 'left') g.fillRect(2, 8, 2, 2)
             else if (dir === 'right') g.fillRect(12, 8, 2, 2)
             else g.fillRect(dir === 'up' ? 7 : 12, 5, 2, 2)
+            // #1511 a bright blade on the slash pose — the swing's verb must
+            // read at a glance (the swipe arc is additive and easy to miss).
+            g.fillStyle = '#e8f4ff'
+            if (dir === 'left') { g.fillRect(0, 9, 2, 1); g.fillRect(1, 8, 1, 1) }
+            else if (dir === 'right') { g.fillRect(14, 9, 2, 1); g.fillRect(14, 8, 1, 1) }
+            else if (dir === 'up') { g.fillRect(7, 3, 1, 2); g.fillRect(8, 4, 1, 1) }
+            else { g.fillRect(8, 12, 1, 2); g.fillRect(9, 12, 1, 1) }
         }
         if (pose === 'draw') {
             g.fillStyle = '#8a6236'
@@ -686,7 +725,7 @@ export function makeTextures() {
             return c
         })(),
     }
-    return T
+    return doubleTree(T)
 }
 
 // particle palette for the renderer's juice layer

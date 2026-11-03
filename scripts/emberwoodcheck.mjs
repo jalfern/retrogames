@@ -130,6 +130,35 @@ function blastHitStop(seed) {
 }
 ok(blastHitStop(7) > 0 && blastHitStop(7) === blastHitStop(7), `a bomb blast hits stop even with nothing to kill (peak=${blastHitStop(7)})`)
 
+// #1511 hit-feel (sim half): a landed slash must PUSH the enemy 5px along the
+// swing and freeze it in the hit-flash (hitT=8) — the deterministic core of
+// "knockback + flash read". hitT pins the enemy, so the push is exact.
+function knockScript(seed) {
+    const s = createSim(seed)
+    spawnRoom(s, 'd1-e0', [7, 8])
+    const e = s.enemies.find(x => x.type === 'cinderling' && !x.dead)
+    if (!e) return 'noenemy'
+    e.hitT = 80 // freeze its AI (hitT halts it) so the push reads exact
+    s.hero.x = e.x; s.hero.y = e.y + 12; s.hero.dir = 'up'
+    s.cool = 0
+    const x0 = e.x, y0 = e.y, hp0 = e.hp
+    stepSim(s, inp({ ap: true }))
+    stepSim(s, inp({ ar: true }))
+    let hit = null
+    for (let i = 0; i < 12 && !hit; i++) {
+        if (e.hp < hp0) hit = { dx: +(e.x - x0).toFixed(2), dy: +(e.y - y0).toFixed(2), hitT: e.hitT }
+        stepSim(s, inp({}))
+    }
+    return hit
+}
+{
+    const k = knockScript(7)
+    ok(k !== 'noenemy' && k !== null, 'a sword hit lands on the cinderling (hit window observed)')
+    ok(k !== null && k !== 'noenemy' && k.dx === 0 && k.dy === -5, `the hit KNOCKS the enemy 5px along the swing (dx=${k && k.dx}, dy=${k && k.dy})`)
+    ok(k !== null && k !== 'noenemy' && k.hitT > 0, `the hit carries the flash window (hitT=${k && k.hitT} ticks frozen)`)
+    ok(JSON.stringify(knockScript(7)) === JSON.stringify(knockScript(7)), 'knock + flash is seed-deterministic')
+}
+
 // ---- 4c. swipe arc: a sword swing leaves a deterministic directional trail ----
 function arcScript(seed) {
     const s = createSim(seed)
@@ -1064,6 +1093,23 @@ if (!SKIP_BROWSER) {
         page.on('console', m => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push('console.error: ' + m.text()) })
         cok(true, 'the page boots and __emberwoodTest answers')
 
+        // #1511 goal clarity: a newcomer must leave the attract knowing how the
+        // vale plays — explore screen by screen, find the shrine, and the three
+        // verbs on their buttons. The line on screen must come from the teaching
+        // array, and the array must teach all three things in the vale's voice.
+        // (The lines cycle every 4s; line 0 is on screen at boot.)
+        await page.waitForTimeout(300)
+        const firstLine = await page.evaluate(() => document.querySelector('.text-emerald-200')?.textContent?.trim() || '')
+        const srcLines = await page.evaluate(() => (window.__emberwoodTest.attractLines || (() => []))())
+        cok(srcLines.length >= 4, `attract carries ${srcLines.length} teaching lines (floor 4)`)
+        cok(firstLine === srcLines[0] && firstLine.length > 10, `the attract screen renders line one ("${firstLine}")`)
+        const teach = srcLines.join(' ')
+        cok(/SHRINE/i.test(teach), 'a line names the goal (find the shrine)')
+        cok(/WANDER|EVERY SCREEN/i.test(teach), 'a line teaches the vale is explored screen by screen')
+        cok(/SWORD/i.test(teach) && /BOW/i.test(teach) && /BOMB/i.test(teach), 'all three verbs are named (sword, bow, bomb)')
+        cok(/A\s*—/.test(teach) && /B\s*—/.test(teach), 'the verbs are pinned to their buttons (A …, B …)')
+        cok(/HOLD A/i.test(teach), 'the bow is taught as a hold, not a tap')
+
         // #965: the attract screen owes phones a CONTINUE affordance (the pad has
         // no third button and tap-to-start means "new journey"). The control only
         // exists when a save exists, and tapping it must load the save, not a
@@ -1150,6 +1196,27 @@ if (!SKIP_BROWSER) {
         })
         cok(notBlank, 'the canvas drew a lit diorama (frame() shows light, not black)')
 
+        // #1511 hit-feel on touch: the sim's hit-stop and knockback are already
+        // gated in Node (4b); the RENDERED tell must be real too — the enemy
+        // billboard wears a hot tint for the whole hitT, so a swinging player
+        // SEES the hit land on a phone. Pre-fix the audit had no way to say so.
+        cok(await page.evaluate(() => window.__emberwoodTest.duel()), 'a duel is set (hero above a 1-hp cinderling)')
+        const tell = await page.evaluate(async () => {
+            const T = window.__emberwoodTest
+            const raf = () => new Promise(r => requestAnimationFrame(r))
+            T.step(1, { a: true }); await raf()   // aPressed — the swing arms
+            T.step(1, {}); await raf()            // aReleased
+            let seen = 0, swung = false
+            for (let i = 0; i < 40; i++) {
+                T.step(1, {}); await raf()
+                if (T.state().arc) swung = true
+                if (T.hitTell() > 0) seen++
+            }
+            return { seen, swung }
+        })
+        cok(tell.swung, 'the swing ran (an arc was live during the window)')
+        cok(tell.seen >= 3, `the enemy wears the hit tint for a readable window (seen ${tell.seen} drawn frames)`)
+
         // #773 brightness gates: an overworld frame must READ at phone brightness
         // and a dungeon frame must stay moody-but-lantern. Pre-fix the composite
         // shipped the vale near-black (town measured mean 15.8/255, 85% dead
@@ -1195,6 +1262,18 @@ if (!SKIP_BROWSER) {
             `buffer aspect matches the canvas (${(info.bufferW / info.bufferH).toFixed(3)} vs ${(info.cssW / info.cssH).toFixed(3)})`)
         cok(!info.gl2 || info.samples >= 1,
             `scene pass runs with MSAA on WebGL2 (samples=${info.samples}, gl2=${info.gl2})`)
+
+        // #1511 art resolution: Jon called the vale too pixelated. Every painted
+        // buffer is doubled to a crisp 2x canvas before the GPU stretch (16px
+        // source tiles -> 32px), so the first screen stops reading as a blown-up
+        // pixel stamp. Pre-fix these were the raw 16px buffers.
+        const tex = await page.evaluate(() => window.__emberwoodTest.texInfo())
+        cok(!!tex && tex.heroW === 32 && tex.heroH === 36,
+            `hero art ships at 2x (16x18 -> ${tex ? tex.heroW + 'x' + tex.heroH : 'no TEX'})`)
+        cok(!!tex && tex.tileW === 32 && tex.tileH === 32,
+            `floor tiles ship at 2x (16x16 -> ${tex ? tex.tileW + 'x' + tex.tileH : 'no TEX'})`)
+        cok(!!tex && tex.npcW === 28 && tex.npcH === 36,
+            `town NPCs ship at 2x (14x18 -> ${tex ? tex.npcW + 'x' + tex.npcH : 'no NPC'})`)
 
         // the lite path (CI software boxes) must stay pinned at the logical buffer
         await page.goto(`${URL}?lite=1`, { waitUntil: 'load' })
