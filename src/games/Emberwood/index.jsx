@@ -7,7 +7,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import VirtualControls from '../../components/VirtualControls'
 import PauseOverlay from '../../components/PauseOverlay'
 import { GAMES } from '../../config/games'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { audioController } from '../../utils/AudioController'
 import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from './sim.js'
@@ -286,7 +286,9 @@ export default function Emberwood() {
         raf = requestAnimationFrame(loop)
 
         const startPlay = () => {
-            const fresh = createSim(11)
+            // #1473: human-start honors ?seed=N so a filed report replays the
+            // same Vale (the pure sim seeds every room roll from sim.seed).
+            const fresh = createSim(seedFromQuery() ?? 11)
             Object.assign(sim, fresh)
             sim._winSeen = false
             lastSaveScreen = sim.screen
@@ -336,6 +338,13 @@ export default function Emberwood() {
         const onKeyUp = (e) => { keys.delete(e.code) }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
+
+        // #1473: production-safe feedback state (seed for replay), every build.
+        // Score is embers banked; attract runs on the default world, not a run.
+        exposeFeedbackState(() => ({
+            tick: sim.tick, score: sim.score, done: !!(sim.death || sim.win),
+            seed: sim.seed, screen: sim.screen,
+        }))
 
         if (import.meta.env.DEV) {
             exposeGame({
@@ -405,6 +414,7 @@ export default function Emberwood() {
 
         const cleanup = () => {
             cancelAnimationFrame(raf)
+            unexposeFeedbackState()
             window.removeEventListener('resize', onWinResize)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

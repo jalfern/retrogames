@@ -760,9 +760,13 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // adds 6 (Arkanoid, BubbleBobble — local modes only, DigDug, OutRun,
 // MarbleMadness, MagicCarpet — the pure-sim classic ports, seeded LCG worlds)
 // → 30; FourHalls joins (it rolls its seed inline as Math.random()%97 at start
-// — hid from the batch inventory, flagged #1473 at 00:01Z) → 31 reporting+pinning
-// titles. Dropping below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 31 games report+pin seeds', reportingGames >= 31, `${reportingGames} reporting`)
+// — hid from the batch inventory, flagged #1473 at 00:01Z) → 31; batch 5 adds 5
+// pure engines (Emberwood, ViperPit — offline only — CivilizationV, Myst, and
+// PickRush, whose #1472 pin finally becomes visible to this counter via the
+// inline report) → 36 reporting+pinning titles. BardsTale reports seedless: its
+// six dungeons are fixed floors by design. Dropping below is a regression, so
+// pin it.
+ok('seedpin: rollout floor — at least 36 games report+pin seeds', reportingGames >= 36, `${reportingGames} reporting`)
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper

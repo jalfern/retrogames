@@ -19,7 +19,8 @@ import { containMap } from '../../utils/fitCanvas'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews } from './state.js'
-import { seedFromSearch, notebookSeed, storeSeed, loadSeed } from './codes.js'
+import { notebookSeed, storeSeed, loadSeed } from './codes.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
 import { drawVision } from './visions.js'
@@ -87,14 +88,16 @@ const MystGame = () => {
     const { root, hot, anim, mech } = buildWorld(NODE_IDS)
     scene.add(root)
 
-    let gs = freshState(seedFromSearch())
+    // #1473: the URL pin arrives through the shared contract (seedFromQuery is
+    // the same integer parser codes.js used); no pin = a fresh random island.
+    let gs = freshState(seedFromQuery())
     let seedStamp = -1
     const syncStars = () => { if (gs.seed !== seedStamp) { seedStamp = gs.seed; updateTrueStars(root, gs.codes.star); updateWheel(root, gs.codes.wheel) } }
     syncStars()
     const toneBulbs = []
     root.traverse((o) => { if (o.userData && o.userData.tone != null && o.material) toneBulbs.push(o) })
     let sing = null
-    let raf = 0, last = 0, acc = 0, wt = 0
+    let raf = 0, last = 0, acc = 0, wt = 0, playTick = 0
     let fade = 1, fadeDir = -1
     let attractIx = 0, attractT = 0, hudStamp = -1
     let lookYaw = 0
@@ -365,6 +368,7 @@ const MystGame = () => {
       while (acc >= SIM_MS) {
         acc -= SIM_MS
         wt += SIM_MS / 1000
+        if (screenRef.current === 'play') playTick++ // #1473: play-frame clock for reports
         updateMech(gs, SIM_MS / 1000)
         if (screenRef.current === 'play' && gs.link && !gs.ride) {
           const lr = dispatch(gs, { t: 'tick' })
@@ -609,8 +613,16 @@ const MystGame = () => {
       })
     }
 
+    // #1473: production-safe feedback state (seed for replay), every build.
+    // Score is journal pages gathered; the notebook keeps the seed across visits.
+    exposeFeedbackState(() => ({
+      tick: playTick, score: Object.keys(gs.pages).length, done: !!gs.ending,
+      seed: gs.seed, node: gs.node,
+    }))
+
     return () => {
       cancelAnimationFrame(raf)
+      unexposeFeedbackState()
       window.removeEventListener('mystclose', onCloseEv)
       window.removeEventListener('keydown', onKeyDown)
       window.removeEventListener('virtualcontrols', onPad)

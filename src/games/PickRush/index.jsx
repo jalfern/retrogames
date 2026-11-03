@@ -783,8 +783,18 @@ const PickRushGame = () => {
         })
 
         // DEV hook
-        // #1200: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(simState)
+        // #1200: production-safe feedback state (seed for replay), every build.
+        // #1473: inline the object so the seedpin law's counter sees the seed
+        // PickRush has pinned since #1472 — a function reference was invisible
+        // to the static scan. simState stays as-is for the DEV contract.
+        exposeFeedbackState(() => {
+            const s = simState()
+            return {
+                tick: s.tick, score: s.score, done: s.done, seed: s.seed,
+                players: s.players, shift: s.shift, quota: s.quota,
+                correct: s.correct, combo: s.combo, fusesLeft: s.fusesLeft,
+            }
+        })
 
         if (import.meta.env.DEV) {
             window.__pickrushTest = {
