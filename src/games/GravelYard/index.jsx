@@ -13,7 +13,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { normalizePad } from '../../utils/onePad'
 import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate,
@@ -193,6 +193,9 @@ export default function GravelYard() {
                 if (ev.code === 'ArrowRight') selectRef.current = Math.min(3, selectRef.current + 1)
                 if (ev.code === 'KeyP') partnerHumanRef.current = !partnerHumanRef.current
                 if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'Digit1') {
+                    // #1473: honor ?seed=N so a filed report replays this exact yard
+                    const pin = seedFromQuery()
+                    if (pin != null) seedRef.current = pin >>> 0
                     startPlay(seedRef.current, selectRef.current, partnerHumanRef.current)
                 }
                 return
@@ -294,6 +297,13 @@ export default function GravelYard() {
             draw(tickN)
         }
         raf = requestAnimationFrame(loop)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => {
+            const g = gsRef.current
+            return g
+                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, strikes: g.strikes }
+                : { tick: tickN, score: 0, done: false, seed: seedRef.current, strikes: 0 }
+        })
 
         // ---------- drawing ----------
         const cellPx = (x, y) => [WORLD_X + x * TILE, WORLD_Y + y * TILE]
@@ -726,6 +736,7 @@ export default function GravelYard() {
         }
 
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

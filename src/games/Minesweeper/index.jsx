@@ -21,6 +21,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx } from './minefield.js'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
 const SIM_MS = 1000 * FIXED_DT
 const PAD_TOP = 72 // px of fixed chrome band above the board (ARCADE / FEEDBACK)
@@ -342,6 +343,11 @@ const MinesweeperGame = () => {
         const startPlay = (di, sd) => {
             setDiff(di)
             if (sd !== undefined) seed = sd >>> 0
+            else {
+                // #1473: honor ?seed=N so a filed report replays this exact board
+                const pin = seedFromQuery()
+                if (pin != null) seed = pin >>> 0
+            }
             newBoard(di, seed)
             setEndInfo(null)
             overDelay = 0
@@ -451,6 +457,8 @@ const MinesweeperGame = () => {
 
         buildDemo()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.score : 0, done: !!(gs && gs.end), seed: seed, diff: gs ? gs.diff : DIFFS[0].name, opened: gs ? gs.opened : 0 }))
 
         // -------------------------------------------------- DEV hook ----
         if (import.meta.env.DEV) {
@@ -517,6 +525,7 @@ const MinesweeperGame = () => {
             window.removeEventListener('pointercancel', clearLongPress)
             clearLongPress()
             window.removeEventListener('resize', resize)
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             if (canvas) canvas.remove()
         }

@@ -18,7 +18,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
 import { MANIFEST_REV } from '../../utils/robot/assets.js'
 import {
@@ -747,7 +747,9 @@ const FloorBossGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeGame((Math.random() * 2 ** 31) | 0)
+            // #1473: honor ?seed=N so a filed report replays this exact shift
+            const pin = seedFromQuery()
+            gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0)
             parts.length = 0
             setEnd(null)
             setMode('play')
@@ -892,8 +894,11 @@ const FloorBossGame = () => {
         window.addEventListener('keyup', onKeyUp)
         canvas.addEventListener('pointerdown', onPointerDown)
         raf = requestAnimationFrame(loop)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed }))
 
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)

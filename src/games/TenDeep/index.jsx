@@ -20,6 +20,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
+import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
 import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
@@ -424,6 +425,9 @@ const TenDeepGame = () => {
         }
 
         let gs = makeRun()
+        // #1473: the run's STARTING seed — st.townSeed advances as candidate
+        // heroes are dealt, so reports must carry this, not the live value.
+        let runSeed = gs.townSeed
         let raf = 0, last = 0, acc = 0, demoAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
         let uiSel = 0
@@ -915,7 +919,12 @@ const TenDeepGame = () => {
         }
 
         const startPlay = () => {
-            gs = makeRun()
+            // #1473: honor ?seed=N so a filed report replays this exact town deal
+            // (candidate heroes are dealt from townSeed; the ten deeps themselves
+            // are fixed seeded layouts).
+            const pin = seedFromQuery()
+            gs = makeRun(pin != null ? { townSeed: pin >>> 0 } : {})
+            runSeed = gs.townSeed
             uiSel = 0
             evLog.length = 0
             setMode('play')
@@ -1190,7 +1199,11 @@ const TenDeepGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: gs.tick, score: purse(gs), done: !!gs.end, seed: runSeed, floor: gs.floor, mode: gs.mode }))
+
         return () => {
+            unexposeFeedbackState()
             disposed = true
             if (import.meta.env.DEV) { if (window.__deepTest) delete window.__deepTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)

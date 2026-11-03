@@ -18,7 +18,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     CFG, W, H, ROCK, DIRS, idx, cx, cy,
     genCave, makeGame, planRun, planStep, playerMove, ping, step, stateHash, known, eelContacts, eelCell,
@@ -252,7 +252,10 @@ const SonarGame = () => {
 
         // ---------- input ----------
         const startPlay = () => {
-            seed = (Date.now() ^ (Math.floor(performance.now() * 1000) << 8)) >>> 0
+            // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+            // cave set (caves are pure functions of seed + depth).
+            const pin = seedFromQuery()
+            seed = pin != null ? pin >>> 0 : (Date.now() ^ (Math.floor(performance.now() * 1000) << 8)) >>> 0
             runScore = 0; livesCarry = CFG.lives
             loadDepth(1, true)
             setMode('play')
@@ -306,6 +309,8 @@ const SonarGame = () => {
         window.addEventListener('resize', resize)
         resize()
         raf = requestAnimationFrame(frame)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: tickBase + gs.tick, score: runScore + gs.score, done: !!gs.end, seed: seed, depth, lives: gs.lives }))
 
         // ---------- DEV hook: read-only probe + planner hint ----------
         if (import.meta.env.DEV) {
@@ -402,6 +407,7 @@ const SonarGame = () => {
         }
 
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV && window.__sonarTest) delete window.__sonarTest
             if (import.meta.env.DEV) unexposeGame()
             window.removeEventListener('keydown', onDown)

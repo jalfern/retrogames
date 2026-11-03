@@ -13,7 +13,7 @@ import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { audioController } from '../../utils/AudioController'
 import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio } from './sim.js'
 import { parseRadio } from './voiceradio.js'
@@ -39,6 +39,13 @@ const sfx = {
     move: () => audioController.playTone(520, 0.05, 'square', 0.05),
     radio: () => { audioController.playTone(660, 0.06, 'square', 0.05); audioController.playTone(990, 0.08, 'square', 0.05, 0.06) },
     radioNo: () => audioController.playTone(233, 0.12, 'sawtooth', 0.05),
+}
+
+// #1473: honor ?seed=N so a filed feedback report's seed replays this exact
+// shift (rng derives from any integer seed); unpin = the original 1..65535 roll.
+const humanSeed = () => {
+    const pin = seedFromQuery()
+    return pin != null ? (pin >>> 0 || 1) : 1 + Math.floor(Math.random() * 65535)
 }
 
 export default function FireCrew() {
@@ -200,7 +207,7 @@ export default function FireCrew() {
                 if (e.code === 'Digit3') { selectRef.current = 3; setSeats(3); sfx.move() }
                 if (e.code === 'Space' || e.code === 'Enter') {
                     e.preventDefault()
-                    startPlay(1 + Math.floor(Math.random() * 65535), selectRef.current)
+                    startPlay(humanSeed(), selectRef.current)
                 }
                 return
             }
@@ -224,7 +231,7 @@ export default function FireCrew() {
         const onPointer = () => {
             if (screenRef.current === 'attract') { clearKeys(); screenRef.current = 'select'; setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
-            else if (screenRef.current === 'select') startPlay(1 + Math.floor(Math.random() * 65535), selectRef.current)
+            else if (screenRef.current === 'select') startPlay(humanSeed(), selectRef.current)
         }
 
         // VOICE RADIO (#1361): V toggles the crew radio. Consent first (the
@@ -341,6 +348,13 @@ export default function FireCrew() {
             drawScene(g2, now)
         }
         raf = requestAnimationFrame(loop)
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => {
+            const g = gsRef.current
+            return g
+                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, rescued: g.rescued }
+                : { tick: 0, score: 0, done: false, seed: 0, rescued: 0 }
+        })
 
         let dbgMounted = false
         if (import.meta.env.DEV) {
@@ -396,6 +410,7 @@ export default function FireCrew() {
         }
 
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             endVoice(true) // never leave the mic hot on unmount
             window.removeEventListener('keydown', onKeyDown)
