@@ -131,6 +131,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run shiftreportcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run scrubcheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run jonqcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run runwaycheck
