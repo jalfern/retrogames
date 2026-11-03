@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.jalfern.ws-fair-score</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/jon/Dev/weight-lab/qwen-forge/run_fair_overnight.sh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>WS_FAIR_RUNS</key>
+    <string>base:q35-f16.gguf k256:q35-fair-k256.gguf sampfix:q35-f16.gguf:pp=1.5</string>
+  </dict>
+  <key>WorkingDirectory</key><string>/Users/jon/Dev/weight-lab/qwen-forge</string>
+  <key>StandardOutPath</key><string>/tmp/forge/ws-launchd-out.log</string>
+  <key>StandardErrorPath</key><string>/tmp/forge/ws-launchd-err.log</string>
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+</dict>
+</plist>

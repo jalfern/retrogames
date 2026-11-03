@@ -1,0 +1,27 @@
+{
+ "fair_cap": 4096,
+ "row": "cap4096_pp0.0",
+ "corpus": [
+  {
+   "problem": "One of the activities in Grade 6 PE class is to get the average weight of the st",
+   "words": 2503,
+   "longest_repeat_words": 13,
+   "repeat_onset": 0.276,
+   "word_loop": false
+  },
+  {
+   "problem": "Jon\u2019s textbooks weigh three times as much as Brandon\u2019s textbooks. Jon has four t",
+   "words": 2160,
+   "longest_repeat_words": 13,
+   "repeat_onset": 0.719,
+   "word_loop": false
+  },
+  {
+   "problem": "How many portions of 200 ml milk can Jasmine pour from a full 2-liter container ",
+   "words": 2318,
+   "longest_repeat_words": 13,
+   "repeat_onset": 0.245,
+   "word_loop": false
+  }
+ ]
+}
