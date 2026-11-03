@@ -167,8 +167,24 @@ const SpaceInvadersGame = () => {
 
         // ---------- sim driving ----------
         let uiOverMirror = false
+
+        // Decor juice (index.jsx only; sim stays pure). Kill bursts are
+        // deterministic from tick — no entropy outside the audited default-seed draw.
+        const parts = []
+        const burst = (x, y) => {
+            for (let k = 0; k < 6; k++) {
+                const a = ((x + y + k * 37) % 62) / 62 * Math.PI * 2 // pseudo-angle from state, no RNG
+                parts.push({ x, y, vx: Math.cos(a) * 1.6, vy: Math.sin(a) * 1.6, life: 18 })
+            }
+        }
+        const MARCH_TONES = [110, 98, 87, 78] // the original's descending four
+        let marchStep = 0
+        let marchAt = 0
+        let prevShot = false
+
         const doSim = (input) => {
             const was = world.phase
+            const before = world.invaders.map((i) => i.alive)
             const prevCount = activeCount(world)
             const prevScore = world.score
             world = step(world, input, rand)
@@ -176,14 +192,37 @@ const SpaceInvadersGame = () => {
             else if (prevScore === world.score && was === 'play' && world.phase === 'dying') audioController.playNoise(0.4, 0.25)
             if (was === 'play' && world.phase === 'over') audioController.playSweep(400, 80, 0.5)
             if (prevCount > 0 && activeCount(world) === 0) audioController.playSweep(200, 600, 0.3)
-            if (world.phase === 'over' && !uiOverMirror) { uiOverMirror = true; setUiOver(true) }
+            // kill detection by index identity -> burst at the death spot
+            for (let k = 0; k < before.length; k++) {
+                if (before[k] && !world.invaders[k].alive) burst(world.invaders[k].x + 6, world.invaders[k].y + 4)
+            }
+            // fire tone: the shot appearing is the event
+            const shotNow = !!world.playerBullet
+            if (shotNow && !prevShot) audioController.playTone(980, 0.04, 'square', 0.08)
+            prevShot = shotNow
+            // the descending four, faster as the fleet shrinks — the signature
+            if (world.phase === 'play' && prevCount > 0) {
+                const frac = activeCount(world) / 32
+                const interval = Math.max(8, Math.round(10 + frac * 22))
+                if (world.tick - marchAt >= interval) {
+                    marchAt = world.tick
+                    audioController.playTone(MARCH_TONES[marchStep % 4], 0.07, 'square', 0.06)
+                    marchStep++
+                }
+            }
+            updateParts()
+            if (world.phase === 'over' && !isAttractMode && !uiOverMirror) { uiOverMirror = true; setUiOver(true) }
+        }
+        const updateParts = () => {
+            for (const p of parts) { p.x += p.vx; p.y += p.vy; p.life-- }
+            for (let k = parts.length - 1; k >= 0; k--) if (parts[k].life <= 0) parts.splice(k, 1)
         }
 
         const update = () => {
             if (isAttractMode) {
                 attractTick++
-                world = step(world, attractInput(world), rand)
-                if (done(world)) { newRun(); attractTick = 0 }
+                doSim(attractInput(world))
+                if (done(world)) { newRun(); uiOverMirror = false; attractTick = 0 }
                 return
             }
             doSim({ left: keys.ArrowLeft, right: keys.ArrowRight, fire: keys.Space })
@@ -197,28 +236,35 @@ const SpaceInvadersGame = () => {
             ctx.fillStyle = '#000000'
             ctx.fillRect(0, 0, GW, GH)
 
-            // original-style score header
-            ctx.fillStyle = '#ffffff'
+            // original-style score header (red zone of the overlay)
+            ctx.fillStyle = '#ff3b30'
             ctx.font = '8px monospace'
             ctx.textAlign = 'left'
             ctx.fillText(`SCORE<1> ${String(world.score).padStart(4, '0')}`, 40, 10)
             ctx.fillText(`HI ${String(Math.max(world.score, 0)).padStart(4, '0')}`, 160, 10)
 
-            // invaders, marching 2-frame animation
+            // invaders, marching 2-frame animation; overlay zone colors
             const frame = Math.floor(world.tick / 16) % 2
+            const ROW_COL = ['#ff3b30', '#ffffff', '#ffffff', '#ffffff']
             for (const i of world.invaders) {
                 if (!i.alive) continue
                 const sp = SPR[ROW_SPRITE[i.row]][frame]
-                drawSprite(ctx, sp, i.x + (INVADER_W - sp[0].length) / 2, i.y, '#ffffff')
+                drawSprite(ctx, sp, i.x + (INVADER_W - sp[0].length) / 2, i.y, ROW_COL[i.row])
             }
 
-            // UFO
-            if (world.ufo) drawSprite(ctx, SPR.ufo, world.ufo.x, UFO_Y, '#ffffff')
+            // UFO (red)
+            if (world.ufo) drawSprite(ctx, SPR.ufo, world.ufo.x, UFO_Y, '#ff3b30')
 
             // shots
             ctx.fillStyle = '#ffffff'
             if (world.playerBullet) ctx.fillRect(world.playerBullet.x, world.playerBullet.y, BULLET_W, BULLET_H)
             for (const b of world.enemyBullets) ctx.fillRect(b.x, b.y, BULLET_W, BULLET_H)
+
+            // kill bursts (deterministic decor)
+            for (const p of parts) {
+                ctx.fillStyle = p.life > 9 ? '#ff3b30' : '#ffffff'
+                ctx.fillRect(Math.round(p.x), Math.round(p.y), 1, 1)
+            }
 
             // player cannon — blinks during respawn
             const blink = world.phase === 'dying' && Math.floor(world.tick / 6) % 2 === 0
@@ -230,7 +276,7 @@ const SpaceInvadersGame = () => {
 
             // remaining lives (original shows n-1 spare cannons bottom-left)
             for (let l = 0; l < world.lives - 1 && world.phase !== 'over'; l++) {
-                drawSprite(ctx, SPR.player, 4 + l * 16, GH - 8, '#ffffff')
+                drawSprite(ctx, SPR.player, 4 + l * 16, GH - 8, '#00e5ff')
             }
             ctx.fillStyle = '#ffffff'
             ctx.font = '8px monospace'

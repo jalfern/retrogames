@@ -1,8 +1,11 @@
 # SPACE INVADERS
 
-Taito 1978, the formation shooter (route `/invaders`). The world is a fixed
-**224×256** grid (the original's rotated-panel resolution), integer-scaled to
-the canvas with smoothing off, fixed 60 Hz timestep.
+**Bar: RETRO.** Taito 1978, the formation shooter (route `/invaders`). The
+world is a fixed **224×256** grid (the original's rotated-panel resolution),
+integer-scaled to the canvas with smoothing off, fixed 60 Hz timestep. The
+overlay palette is honored: red score zone + red top row + red saucer, green
+base line, cyan spare cannons, everything else white on black; the descending
+four-tone march accelerates as the fleet shrinks.
 
 ## Modules
 
@@ -50,5 +53,5 @@ npm run feedbackcheck          # the seedpin law incl. this title
 - The UFO bounty is uniform-random from the four values; the original's
   mystery score came from a shot-count table.
 - No 100-point bonus life; no tilt/coin mechanics; one UFO type.
-- Sound is minimal synthesized beeps (studio-wide audio law), not the
-  original's 4-tone descending marching loop.
+- Sound is the synthesized descending four + effect blips (studio audio law);
+  the original's exact march waveform and the bonus-life jingle are absent.
