@@ -759,8 +759,10 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // — offline only, online keeps the lobby seed — PapersPleaseMin) → 24; batch 4
 // adds 6 (Arkanoid, BubbleBobble — local modes only, DigDug, OutRun,
 // MarbleMadness, MagicCarpet — the pure-sim classic ports, seeded LCG worlds)
-// → 30. Dropping below is a regression, so pin it.
-ok('seedpin: rollout floor — at least 30 games report+pin seeds', reportingGames >= 30, `${reportingGames} reporting`)
+// → 30; FourHalls joins (it rolls its seed inline as Math.random()%97 at start
+// — hid from the batch inventory, flagged #1473 at 00:01Z) → 31 reporting+pinning
+// titles. Dropping below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 31 games report+pin seeds', reportingGames >= 31, `${reportingGames} reporting`)
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper
