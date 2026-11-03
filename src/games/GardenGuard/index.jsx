@@ -17,7 +17,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     FIXED_DT, W, H, ROWS, TRAY_H, GLY, rowY, colX, HOUSE_X,
     tileOf, PLANTS,
@@ -302,6 +302,10 @@ const GardenGuardGame = () => {
         // ---------------------------------------------------------- start ----
         const startPlay = (sd) => {
             if (sd !== undefined) seed = sd >>> 0
+            // #1473: honor ?seed=N — a filed feedback report's seed replays this exact
+            // garden (the sim is deterministic from one integer; the pin outranks the
+            // stored/rotated seed, an explicit harness seed still wins).
+            else { const pin = seedFromQuery(); if (pin !== null) seed = pin >>> 0 }
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
@@ -423,7 +427,13 @@ const GardenGuardGame = () => {
             }
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => (gs
+            ? { tick: gs.tick, score: gs.score, done: !!gs.done, seed: gs.seed, level: gs.level, win: gs.done === 'win' }
+            : { tick: 0, score: 0, done: false, seed, level: 0, win: false }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__gardenTest) delete window.__gardenTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

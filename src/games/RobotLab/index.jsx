@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import VirtualControls from '../../components/VirtualControls'
 import PauseOverlay from '../../components/PauseOverlay'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -173,7 +173,9 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         let ep = null
         let lastSlips = 0
         let shake = 0
+        let runSeed = 1
         const startRun = (seed) => {
+            runSeed = seed >>> 0
             sim = createRobotSim(seed)
             ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
             lastSlips = 0
@@ -183,14 +185,14 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         const onKey = (ev) => {
             if (ev.code === 'KeyC' && phaseRef.current !== 'won') { wristRef.current = !wristRef.current; setWristOn(wristRef.current); return }
             if ((ev.code === 'KeyQ' || ev.code === 'Slash') && phaseRef.current === 'play') { setPaused((p) => !p); return }
-            if (phaseRef.current === 'attract' || phaseRef.current === 'won' || phaseRef.current === 'lost') { setPhase('play'); startRun((Date.now() % 100000) | 0); audioController.playTone(660, 0.08, 'square'); return }
+            if (phaseRef.current === 'attract' || phaseRef.current === 'won' || phaseRef.current === 'lost') { setPhase('play'); startRun(((seedFromQuery() ?? (Date.now() % 100000)) | 0)); audioController.playTone(660, 0.08, 'square'); return }
             if (ev.code in KEYS) { keys.add(ev.code); ev.preventDefault() }
         }
         const onUp = (ev) => { if (ev.code in KEYS) keys.delete(ev.code) }
         window.addEventListener('keydown', onKey)
         window.addEventListener('keyup', onUp)
         const onTapStart = () => {
-            if (phaseRef.current === 'attract') { setPhase('play'); startRun((Date.now() % 100000) | 0) }
+            if (phaseRef.current === 'attract') { setPhase('play'); startRun(((seedFromQuery() ?? (Date.now() % 100000)) | 0)) }
         }
         canvas.addEventListener('pointerdown', onTapStart)
 
@@ -244,7 +246,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                         }
                     }
                     if (phaseRef.current === 'attract' && (sim.done || sim.tick > 1400)) {
-                        sim = createRobotSim(((performance.now() | 0) % 9973) | 0)
+                        runSeed = ((performance.now() | 0) % 9973) | 0
+                        sim = createRobotSim(runSeed)
                         autopilot = createAutopilot(sim)
                     }
                 }
@@ -298,6 +301,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 buttons: ['a', 'b'],
                 reads: ['x', 'y'],
                 reset: (seed) => {
+                    runSeed = seed >>> 0
                     sim = createRobotSim(seed); autopilot = createAutopilot(sim)
                     ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
                     lastSlips = 0; shake = 0
@@ -319,7 +323,11 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build
+        exposeFeedbackState(() => ({ tick: sim.tick, score: sim.state().score, done: !!sim.done, seed: runSeed, wrist: !!wristRef.current }))
+
         return () => {
+            unexposeFeedbackState()
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKey)
             window.removeEventListener('keyup', onUp)

@@ -764,9 +764,11 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // pure engines (Emberwood, ViperPit — offline only — CivilizationV, Myst, and
 // PickRush, whose #1472 pin finally becomes visible to this counter via the
 // inline report) → 36 reporting+pinning titles. BardsTale reports seedless: its
-// six dungeons are fixed floors by design. Dropping below is a regression, so
-// pin it.
-ok('seedpin: rollout floor — at least 36 games report+pin seeds', reportingGames >= 36, `${reportingGames} reporting`)
+// six dungeons are fixed floors by design. Batch 6 adds 2 honest-seed sims
+// (GardenGuard — sim.js is "deterministic from a single integer seed"; RobotLab
+// — createRobotSim mulberry32, its Date.now rolls at human start now lose to
+// the pin) → 38. Dropping below is a regression, so pin it.
+ok('seedpin: rollout floor — at least 38 games report+pin seeds', reportingGames >= 38, `${reportingGames} reporting`)
 
 // ── #737 "type OR dictate": the mic half of the note ────────────────────────
 // Dictation is how a mid-game phone report gets written. The recognizer wrapper
