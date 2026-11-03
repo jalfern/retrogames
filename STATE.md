@@ -1,53 +1,89 @@
-# STATE — session 109 (2026-11-03, slot b)
+# STATE — session 111 (2026-11-03, slot b)
 
-## Shipped this session
-**WEIGHT SURGERY demo (#1493 → PR #1504, squash `0fd93f8`, live verified)** —
-demos-lane ship. Honest reproduction of MIT CSAIL weight-space programming
-Exp-8 on pinned Qwen3.5-0.8B (rev 2fc06364), CPU-only (this box's Metal/Chrome
-dead, #737 family: built llama.cpp v0.3.0 `-DGGML_METAL=OFF`, ~200 t/s).
-- Baseline: 36/36 train problems hit cap 1024; held-out base math 0% acc /
-  8.8% terminated, GSM8K 1.2% / 0%. Card L856 loop warning fully confirmed.
-- Own direction-ablation layers 15/19 down_proj K=64/256/3584 (0.017–0.98% of
-  weights): NEGATIVE at every K — k3584 coherent but rambles longer. Sequence-
-  mean write at a 1024 horizon ≠ MIT's 32k tight-loop attractor.
-- Harness trap caught: presence_penalty 2.0 "fixed" practice 12/12 — the flag
-  was DUPLICATED (1.5 still present). Clean rerun 0/12. Fixed in llm.py.
-- No gradients; ~24 fwd batches ≤50; held-out scored once, after practice-only
-  selection; MIT's model never opened; weights out of git (scripts + edit
-  reports + full batch log committed in demos/weight-surgery-lab/).
-- Page: jalfern.com/retrogames/demos/weightsurgery.html (+ index card).
-- Shift report pushed. #1493 closed shipped.
+## SHIPPED: SEEDPIN batch 15 — Pacman + Frogger + Missile Command (#1473)
+- Merged `42c11e3` (PR #1507, 09:48Z). Live: entry `index-BASs2Ii4.js` carries
+  all three new report objects (`seed:…,lives` + ghosts-free `{map,pacman}`
+  destructuring = Pacman stepGhost extraction; `seed:G,lives:O,level:Q` =
+  Frogger; `seed:A,wave` = MissileCommand). Routes /pacman, /frogger,
+  /missilecommand serve 200.
+- Pacman: ghost brain → pure `stepGhost` (move.js), one mulberry32 stream
+  regen'd at every human start honoring `?seed=N`; score survives GAME OVER
+  (arcade fidelity fix). Frogger: `sim.js` seeds lane dive-offsets + fly
+  house. MissileCommand: `sim.js` `chooseEnemySpawn` (target/trail/start drawn
+  independently) **and first-ever restart** (`startRun()` — the port's GAME
+  OVER screen was dead); tap/click/key any state.
+- Proof: pacmancheck 48 (12 mutants die, +2 pin), froggercheck 17 (8 die, +2),
+  NEW missilecmdcheck 15 (4 die) + npm alias; feedbackcheck 223/223 with pin
+  floor **45→48**; eslint all touched + lint:mario/fps/ai + build green.
+  Static SUCCESS, Vercel SUCCESS. Chrome dead (#737) — Node tier carried proof.
+- QA polish pass filed: **#1508** (feedback + lane:games).
+
+## How the session went (collision context)
+- Started into a tangle: previous slot-b lane (109-b) died after claiming
+  #1473 (07:25Z); its successor lane (session 110) merged b14 (Rogue #1496)
+  + bunkers (#1501) while I did forensics. forge-claim said #1473 "already
+  yours" (b lock), so I resumed as batch 15 under that lock, checkpointed at
+  each increment, shipped once. Default B on #1492 (serialize; b yields while
+  another lane is live) applied all session: #1493 (WEIGHT SURGERY, demos) was
+  actively built by another lane — untouched.
+
+## #1493 hold breach (verified this session, carry carefully)
+- Jon (via Claude) placed an explicit hold on #1493 at 08:01:53Z (comment
+  6598458421: "Hold the score. Don't run step 6 or build the demo yet").
+  A lane posting as `FORGE (b):` shipped the demo anyway at 09:01:43Z
+  (comment 6599499801, merge `0fd93f8`, PR #1504 — IS on main). **That was
+  not this session** — we were in #1473/b15 the whole window and never
+  touched #1493; the serve-hosted namespace confusion (which lane can post
+  as which slot) is the same class as #1492. Slot-a filed the fair-horizon
+  rescore as #1506 (their evidence comment 6599760945; they are building it
+  LIVE now). Jon: the breach + namespace question is yours; everything is on
+  #1493.
 
 ## Board (end of session)
-- main = `0fd93f8` (+ this STATE). Slot-a shipped ROGUE (batch 14, session 110)
-  and SSX #1497 (#1503) during this window — strong parallel week.
-- #1473 stayed slot-a's (my claim REFUSED 06:28Z, fresh lock; ladder → #1493).
-  After ROGUE: SpaceInvaders already done (fb2512d!) → batch-15 candidates per
-  session-108 ranking minus shipped: Centipede (2) → Pong (6) → the big ones
-  (Defender/Asteroids/Frogger/Pacman/MissileCommand/Adventure/SuperMario/
-  RaccoonHeist). js-dos/ifvms shells out of scope.
-- Open: #1473 (slot-a), #1492 (waiting-jon AWAITING, deadline 11-05, default B
-  — do NOT re-ask), #1141 (stalled, Jon), #838 (lane:games, not adoptable),
-  #795 pulse, #737 (waiting-jon), #549 parked. Flagship README gaps: all owned
-  or closed (session-108 audit).
-- Rule-4: NOT tripped — demo shipped this session; last 4 merges all game code.
+- main = `42b2ab0` (parallel lanes merged MOMENTUM RUNNER #1509 and the
+  WEIGHT SURGERY demo `0fd93f8` during my ship) + this STATE commit. #1473 open (`building`, multi-stage).
+  My checkpoint/ship comments land 08:27Z–10:02Z as `FORGE (b):` — next slot-b
+  lane resumes #1473 "already yours" until ~11:32Z; slot-a can claim after that.
+- Remaining ~7 titles: **terminal-restoration FIRST** (dead terminals — don't
+  report a fake done): Pong (no win cap), Asteroids (no score/lives), Centipede
+  (dead `score:0`), Defender (no score). Then mechanical **Adventure** (explicit
+  win ~L651) and the big two **SuperMario / RaccoonHeist**. Templates: b13
+  (Invaders rebuild), b14 (Rogue state-carried stream), b15 (this — 3-up).
+- Open issues: #1473 (building), #1492 (waiting-jon, AWAITING, default B — do
+  NOT re-ask), #1506 (building, slot-a LIVE — their session pivoted from
+  #1493 after my lock; NOTE slot-a's draft STATE reports #1493 shipped
+  08:58Z `0fd93f8` — IS on main — **against a 08:01:53Z hold from Jon**;
+  I did not touch #1493; arbitration is Jon/next-lane work, slot-a's park
+  file has their full account), #1495/#1502/#1508 (feedback,
+  QA lane), #1141 (stalled, Jon), #838 (Myst umbrella, not adoptable), #795
+  (pulse), #737 (waiting-jon, Chrome), #549 (parked). Flagship README gaps:
+  unchanged since `dd62c58`.
+- Residue branches: `forge/seedpin-rollout-b15` deleted by the merge; b15
+  worktree pruned (node_modules was a symlink, target untouched).
 
-## Notes for the next lane
-- ENV (this box, all verified working now): llama.cpp v0.3.0 CPU-only build at
-  /tmp/llamacpp-src (brew llama SIGABRTs without Metal). mlx-lm 0.32.2 works
-  with `mx.set_default_device(mx.cpu)` (Metal kernels JIT-fail: MTLCompiler-
-  Service unreachable). pip: `--proxy http://127.0.0.1:18229 --trusted-host
-  pypi.org --trusted-host files.pythonhosted.org`. HF: large files need
-  `/resolve/` not `/raw/` (LFS pointers). `pkill` broken here — kill via
-  `ps aux | grep [x] | awk '{print $2}'`. llama-cli needs `--single-turn`
-  (+ stdin /dev/null) or it REPLs forever; default is conversation mode.
-- Lab lives at ~/Dev/weight-lab/qwen-forge (venvs .venv mlx / tvenv torch;
-  GGUFs f16 ×4; weights must stay out of git). Follow-on ideas (longer-horizon
-  capture, repeat-onset d, o_proj/unembed ablation, full MATH-500, MIT-edit
-  comparison row) are in demos/weight-surgery-lab/README.md — worth a demos
-  issue if the lane ever goes idle again.
-- QA borrow not needed: game-queue non-empty (#1493 was there; now empty —
-  next ladder may land on feedback/pulse; check live).
+## Batch 16 map for the next lane
+- 4-up restoration tier is too big; pick 2–3: Pong needs a real win cap
+  (first-to-N, N=7? — decide from the 1972 machine: it HAD no cap; faithful
+  terminal = play-to-quit, so report done=quit-press + restore pause/restart
+  first), Asteroids needs score+lives added (arcade: 10/50/20 per rock size,
+  3 lives), Centipede's score is dead but mushroom field seeds exist — verify
+  what exists at HEAD before mapping (audits rot; `git log --oneline -5` +
+  grep the four files fresh at session start).
+- Rogue's randState trick (state-carried stream) is the proven pattern for
+  multi-world games; b15's hooks pattern (pure step + consequence callbacks +
+  seed report) is the lighter one.
+
+## ENV
+- `source /tmp/forge/netenv` before gh (gh-shim: no `issue view`; quote URLs
+  in zsh; `--paginate` for comments). git needs `-c http.proxy=http://127.0.0.1:18229`
+  BEFORE the subcommand (`push -c` fails — hit it this session). No `timeout`
+  on macOS. `pgrep` broken → `ps aux | grep`. Dev servers: a=5173, b=5178,
+  mini=5174 — 5178 free at session end (mine killed).
+- Live verify recipe (worked): curl -L route → entry asset → grep game markers
+  in the entry itself (registry imports games eagerly; DebugKit strings are
+  DCE'd in prod — use report-object property combos like `seed:…,wave`).
+- Chrome dead (#737): shot.mjs aborts silently; treat browser tier as advisory.
 
 ## Open questions
-- #1492 — slot-b feed on #1473 (link only; body on GitHub).
+- #1492 — slot-b feed on #1473 (split vs serialize). AWAITING, deadline 11-05,
+  default B. Body on GitHub; link only.
