@@ -19,7 +19,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, L, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 
@@ -403,7 +403,16 @@ const PolarityGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Polarity's sim
+        // (sim.js) is audited zero-Math.random/zero-Date — mazes are fixed tables
+        // and escorts are scripted; the only Math.random left in this file is
+        // decoration that cannot reach gameplay: starfield init, explosion particle
+        // jitter, camera shake and aurora twinkle. No world to re-seed, so the
+        // report is seedless: {tick,score,done,wave,lives}.
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.score : 0, done: !!gs && gs.end != null, wave: gs ? gs.wave : 0, lives: gs ? gs.lives : 0 }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__polarTest) delete window.__polarTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

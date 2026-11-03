@@ -23,7 +23,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, cloneGame } from './sim.js'
 import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
@@ -418,7 +418,21 @@ const IceGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. IceClimber's sim
+        // (sim.js/levels.js) is audited zero-Math.random — mountains come from
+        // buildLevel tables and timers are fixed ticks; the only Math.random left
+        // in this file is decoration that cannot reach gameplay: starfield init,
+        // exhaust puff, camera shake and hammer spark. No world to re-seed, so the
+        // report is seedless: {tick,score,done,level,lives}. 'clear' is transient —
+        // advance() resolves it to the next mountain or win inside the same step.
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0, score: gs ? gs.score : 0,
+            done: !!gs && (gs.end === 'win' || gs.end === 'dead'),
+            level: gs ? gs.level : 0, lives: gs ? gs.lives : 0,
+        }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__iceTest) delete window.__iceTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

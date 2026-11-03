@@ -790,8 +790,12 @@ ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGam
 // code after comment-stripping is clean: Joust, MetroidLite, BoulderDash,
 // Paperboy, SpyHunter, MissileBattle. Batch 10 adds ArenaArchery (the two-player
 // duel sim pins collision order so both keyboards resolve identically — zero RNG).
+// Batch 11 adds Zelda: 3x3 Hyrule is fully authored (world.js tables, scripted
+// enemy casts per room), and the gameover restart (Object.assign over the live
+// object) keeps the global tick — so {tick,score=rupees collected,done,screen}
+// pinpoints a run without any seed to fake.
 const SEEDLESS = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite',
-    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle', 'ArenaArchery']
+    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle', 'ArenaArchery', 'Zelda']
 for (const t of SEEDLESS) {
     const dir = new URL(`../src/games/${t}/`, import.meta.url)
     const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
@@ -803,6 +807,48 @@ for (const t of SEEDLESS) {
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bscore:/.test(all)
         && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
 }
+
+// #1473 DECO-aware law (batch 11): some classic engines are fully deterministic
+// but decorate the screen with unseeded Math.random — starfields, explosion
+// particles, camera shake, sparkle phase. A seed param there would be a FAKE pin
+// (nothing in the replay depends on it), so these titles report seedless instead.
+// The DECO law proves the decoration is confined: after comment-stripping, every
+// Math.random line in index.jsx must match that title's audited deco pattern, and
+// every other file in the directory (the sim itself) must hold zero Math.random.
+// Anyone later feeding these games gameplay RNG fails both halves — new logic
+// lines do not read like starfield init or camera shake. Batch 11 audited
+// Galaga/IceClimber/Polarity/Dogfight — batch 10's "7/8/8/2 sites" note counted
+// CALL SITES of pure decoration (stars ×3, blast ×2, shake ×2, …) — and
+// SuperMarioClassic (coin sparkle phase + brick-debris scatter), the candidate
+// STATE.md parked for exactly this law variant.
+const DECO = {
+    Galaga: [/stars\.push/, /sp = 0\.6 \+ Math\.random/, /\* shake : 0/],
+    IceClimber: [/starSeed\.push/, /sp = 0\.6 \+ Math\.random/, /\* shake : 0/, /fillRect\(-2 \+ \(Math\.random/],
+    Polarity: [/stars\.push/, /sp = 0\.6 \+ Math\.random/, /\* shake : 0/, /0\.25 \+ 0\.5 \* a \* Math\.random/],
+    Dogfight: [/camGoal\.[xy] \+= \(Math\.random\(\) - 0\.5\) \* shake/],
+    SuperMarioClassic: [/anim: Math\.random\(\) \* 6/, /vy: -3 - Math\.random\(\) \* 2/],
+}
+for (const [t, pats] of Object.entries(DECO)) {
+    const dir = new URL(`../src/games/${t}/`, import.meta.url)
+    const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
+    let stray = 0
+    let engineEntropy = 0
+    const all = files.map((f) => {
+        const src = readFileSync(new URL(f, dir), 'utf8')
+        src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '').split('\n').forEach((l) => {
+            if (!/Math\.random/.test(l)) return
+            if (f !== 'index.jsx') engineEntropy++
+            else if (!pats.some((p) => p.test(l))) stray++
+        })
+        return src
+    }).join('\n')
+    ok(`deco: ${t} Math.random stays audited decoration (zero stray index lines, zero outside index.jsx)`,
+        stray === 0 && engineEntropy === 0, `${stray} stray, ${engineEntropy} outside index`)
+    ok(`deco: ${t} reports {tick,score,done}`,
+        /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\btick:/.test(all)
+        && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bscore:/.test(all)
+        && /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{[^)]*?\bdone:/.test(all))
+}
 let seedlessReporters = 0
 for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFileTypes: true })) {
     if (!d.isDirectory()) continue
@@ -810,7 +856,7 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
     try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
     if (/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)) seedlessReporters++
 }
-ok('seedless: at least 12 titles report without a seed (BardsTale + the fixed-world batches)', seedlessReporters >= 12, `${seedlessReporters} seedless reporters`)
+ok('seedless: at least 18 titles report without a seed (BardsTale + the fixed-world and deco-decorated batches)', seedlessReporters >= 18, `${seedlessReporters} seedless reporters`)
 
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per

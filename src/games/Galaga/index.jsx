@@ -20,7 +20,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan } from './planner.js'
 import { WAVES } from './waves.js'
@@ -386,7 +386,16 @@ const GalagaGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. Galaga's sim (sim.js)
+        // is audited zero-Math.random/zero-Date (its waves are fixed tables and the
+        // diving escorts are scripted — see README); the only Math.random left in
+        // this file is decoration that cannot reach gameplay: starfield init,
+        // explosion particle jitter and camera shake. No world to re-seed, so the
+        // report is seedless: {tick,score,done,wave,lives}.
+        exposeFeedbackState(() => ({ tick: gs ? gs.tick : 0, score: gs ? gs.score : 0, done: !!gs && gs.end != null, wave: gs ? gs.wave : 0, lives: gs ? gs.lives : 0 }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__galagaTest) delete window.__galagaTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
