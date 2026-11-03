@@ -137,8 +137,12 @@ const heat = (() => {
   return `<div id="heat">${parts.join("")}</div>`;
 })();
 
-const batchRows = batches.map(b =>
-  `<tr><td>${b.ts ? b.ts.slice(11, 19) : ""}</td><td>${b.phase}</td><td>${b.split}</td><td>${b.batch}</td><td>${b.cap}</td><td>${b.purpose}${b.ruled_out && b.ruled_out !== "nothing yet" ? `<br><span class="ruled">ruled out: ${b.ruled_out}</span>` : ""}</td></tr>`).join("\n");
+const batchRows = batches.map(b => {
+  const split = b.split ?? (b.run ? `${b.run} · ${b.set}` : "—");
+  const purpose = b.purpose ?? (b.phase === "score-fair" ? `fair hold-out row — acc ${b.acc}% terminated ${b.terminated}%`
+    : b.phase === "score" ? `first-pass hold-out row — acc ${b.acc}% terminated ${b.terminated}%` : "");
+  return `<tr><td>${b.ts ? b.ts.slice(11, 19) : ""}</td><td>${b.phase}</td><td>${split}</td><td>${b.batch}</td><td>${b.cap}</td><td>${purpose}${b.ruled_out && b.ruled_out !== "nothing yet" ? `<br><span class="ruled">ruled out: ${b.ruled_out}</span>` : ""}</td></tr>`;
+}).join("\n");
 
 const esc = (s) => (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>");
 const pairHtml = pair ? `
