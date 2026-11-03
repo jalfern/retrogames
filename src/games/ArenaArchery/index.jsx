@@ -25,6 +25,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, makeGame, step, botInput, recordMatch, replay, stateHash, cloneGame } from './sim.js'
 import { ARENAS_COUNT, buildArena } from './levels.js'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 30
 const CW = CFG.cell
@@ -364,7 +365,14 @@ const ArenaArcheryGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state, every build. ArenaArchery duels
+        // are deterministic (sim.js: two-player collisions "resolve identically" —
+        // zero Math.random in the whole title, fixed arena tables): the report
+        // carries P1's score + the winner slot: {tick,score,done,winner}.
+        exposeFeedbackState(() => ({ tick: gs.tick, score: gs.p[0].score, done: gs.end != null, winner: gs.winner }))
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__archeryTest) delete window.__archeryTest; unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)

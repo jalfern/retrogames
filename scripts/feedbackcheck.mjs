@@ -788,9 +788,10 @@ ok('seedpin: rollout floor — at least 40 games report+pin seeds', reportingGam
 // sim.js headers already promised determinism — a comment-grep of the old audit
 // that flagged them "gameplay Math.random" was reading those very promises; the
 // code after comment-stripping is clean: Joust, MetroidLite, BoulderDash,
-// Paperboy, SpyHunter, MissileBattle.
+// Paperboy, SpyHunter, MissileBattle. Batch 10 adds ArenaArchery (the two-player
+// duel sim pins collision order so both keyboards resolve identically — zero RNG).
 const SEEDLESS = ['Pitfall', 'SimCityMin', 'Excitebike', 'LodeRunnerLite',
-    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle']
+    'Joust', 'MetroidLite', 'BoulderDash', 'Paperboy', 'SpyHunter', 'MissileBattle', 'ArenaArchery']
 for (const t of SEEDLESS) {
     const dir = new URL(`../src/games/${t}/`, import.meta.url)
     const files = readdirSync(dir).filter((f) => /\.jsx?$/.test(f))
@@ -809,7 +810,7 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
     try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
     if (/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)) seedlessReporters++
 }
-ok('seedless: at least 11 titles report without a seed (BardsTale + the fixed-world batches)', seedlessReporters >= 11, `${seedlessReporters} seedless reporters`)
+ok('seedless: at least 12 titles report without a seed (BardsTale + the fixed-world batches)', seedlessReporters >= 12, `${seedlessReporters} seedless reporters`)
 
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per
