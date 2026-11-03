@@ -19,6 +19,16 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const LAB = 'demos/weight-surgery-lab'
+// how many first-pass score rows the committed batches prove superseded —
+// the gate counts exactly this (the committed lab lags the live lab; hardcoding 4 here would)
+const ovrExpected = (() => {
+  try {
+    const bs = readFileSync(join(LAB, 'batches.jsonl'), 'utf8').trim().split('\n').map(l => JSON.parse(l))
+    const sp = (b) => b.split ?? (b.run ? `${b.run} · ${b.set}` : '—')
+    const sup = new Set(bs.filter(b => b.phase === 'score-fair').map(sp))
+    return bs.filter(b => b.phase === 'score' && sup.has(sp(b))).length
+  } catch { return 0 }
+})()
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
     if (cond) { passes++; console.log(`  ok   ${name}`) }
@@ -93,6 +103,17 @@ console.log('ws2check — WEIGHT SURGERY II harness (#1505)')
     ok((html.match(/class="emap"/g) || []).length === 3, 'build: A/B/C edit-map thumbnails all render')
     ok(html.includes('id="speedkpi"') && html.includes('1.8×'), 'build: Q4 speed KPI strip present')
     ok(html.includes('.pane pre{max-height:200px;}'), 'build: mobile 700px pane pre-cap present')
+    // #1520 polish items ii–v presence gates
+    ok(html.includes('<details class="fn"'), 'build: † estimate footnote collapses to one line (item ii)')
+    ok(html.includes('<details class="fn"><summary>† the terminated'), 'build: the collapse carries the bounds story in its summary (item ii)')
+    ok(html.includes('id="heatreadout"') && html.includes('id="heat2readout"') && html.includes('data-info='), 'build: heat-bar tap readout on both boards (item iv)')
+    ok((html.match(/min-width:6px/g) || []).length === 2 && (html.match(/gap:3px/g) || []).length === 2, 'build: heat bars padded to touch targets both boards (item iv)')
+    ok((html.match(/class="ovr"/g) || []).length === ovrExpected && ovrExpected >= 2, 'build: every provably superseded score row is dimmed, not deleted (item v)')
+    const fxq = JSON.parse(readFileSync(join(LAB, 'fair_excerpts.json'), 'utf8'))
+    ok(['base_math', 'sampfix_math', 'base_gsm', 'sampfix_gsm'].every(k => Array.isArray(fxq[k]) && fxq[k].length === 10),
+        'data: fair_excerpts covers the four finished fair runs, 10 problems each (item iii)')
+    ok(Object.values(fxq).flat().every(r => r.x.length <= 600 && r.q.length <= 140 && Number.isInteger(r.ntok)),
+        'data: excerpts capped (text ≤600, problem ≤140) — drill-down ships text, not weights (item iii)')
     const idx = readFileSync('public/demos/index.html', 'utf8')
     ok(/WEIGHT SURGERY[\s\S]*Round II/.test(idx), 'index: WEIGHT SURGERY card copy mentions Round II')
     const empty = mkdtempSync(join(tmpdir(), 'ws2empty-'))
@@ -117,10 +138,18 @@ console.log('ws2check — WEIGHT SURGERY II harness (#1505)')
     const rd = join(dir, 'results')
     mkdirSync(rd, { recursive: true })
     writeFileSync(join(rd, 'v2_variants.json'), JSON.stringify(fx))
+    // #1520-iii/v: a finished fair run — rows must carry ids, expand to per-problem
+    // excerpts, and the score-fair log row must link here (fixture: real excerpts, synthetic n)
+    const frecs = Array.from({ length: 100 }, (_, i) => ({ i, ok: i < 4, cap_hit: i >= 70, loop: i === 5, ntok: 2000 + i, problem: `p${i}`, text: `t${i}` }))
+    writeFileSync(join(rd, 'fair_base_math.jsonl'), frecs.map(r => JSON.stringify(r)).join('\n'))
     const { rc, html } = build(dir)
     ok(rc === 0, 'build: fixture lab exits 0')
     ok(html.includes('5/12'), 'win: fixture C row renders 5/12 terminated')
     ok(/VERDICT II: a variant terminates/.test(html), 'win: SIGNAL verdict shown when a variant beats base')
+    ok(html.includes('id="h-base_math"'), 'win: finished fair row carries its batch-anchor id (item iii/v)')
+    ok((html.match(/<details class="dd">/g) || []).length === 1 && html.includes('drill down — first 10/100 scored'),
+        'win: fair row expands to 10 per-problem excerpts (item iii)')
+    ok(html.includes('href="#h-base_math"'), 'win: score-fair log row links to its table row (item v)')
 }
 
 // 3. rules — committed batch log invariants + onset mirror
@@ -173,10 +202,27 @@ if (process.argv.includes('--mutate')) {
         ['mobile-pre-cap', '.pane pre{max-height:200px;}', h => h.includes('.pane pre{max-height:200px;}')],
         ['scoring-bar', 'class="prog"', h => h.includes('class="prog"') && h.includes('@keyframes sweep')],
         ['pair-skeleton', 'skelpair', h => h.includes('class="pair skelpair"') && h.includes('class="skel w80"')],
+        ['fn-collapse', '<details class="fn"', h => h.includes('<details class="fn"><summary>† the terminated')],
+        ['heat-readout', 'id="heatreadout"', h => h.includes('id="heatreadout"') && h.includes('id="heat2readout"')],
+        ['touch-targets', 'min-width:6px', h => (h.match(/min-width:6px/g) || []).length === 2 && (h.match(/gap:3px/g) || []).length === 2],
+        ['ovr-dim', 'class="ovr"', h => (h.match(/class="ovr"/g) || []).length === ovrExpected],
     ]
     for (const [name, marker, pred] of feats) {
         ok(pred(html), `feature present: ${name}`)
         ok(!pred(html.replace(marker, '')), `mutant caught: ${name} removed`)
+        if (name === 'fn-collapse') ok(!pred(html.replace('<summary>† the terminated / hit-cap bounds — why they are bounds, not points</summary>', '<p>† bounds</p>')), 'mutant caught: fn summary gutted')
+    }
+    { // item iii/v on a lab that proves them: finished fair row → id + drill-down + anchor;
+      //  removing the excerpts artifact must kill the drill-down but keep the row honest
+      const dir3 = mkdtempSync(join(tmpdir(), 'ws2anchor-'))
+      cpSync(LAB, dir3, { recursive: true })
+      const rd3 = join(dir3, 'results'); mkdirSync(rd3, { recursive: true })
+      writeFileSync(join(rd3, 'fair_base_math.jsonl'), Array.from({ length: 100 }, (_, i) => JSON.stringify({ i, ok: i < 4, cap_hit: i >= 70, loop: false, ntok: 2000 + i, problem: 'p', text: 't' })).join('\n'))
+      const ha = build(dir3).html
+      ok(ha.includes('id="h-base_math"') && ha.includes('href="#h-base_math"') && (ha.match(/<details class="dd">/g) || []).length === 1,
+          'feature present: anchor + drill-down (item iii/v, fixture)')
+      ok(!(ha.replace(/href="#h-base_math"/g, 'href="#gone"')).includes('href="#h-base_math"'), 'mutant caught: log-anchor retargeted')
+      ok(((ha.replace('<details class="dd">', '')).match(/<details class="dd">/g) || []).length === 0, 'mutant caught: drill-down details removed (item iii)')
     }
 }
 
