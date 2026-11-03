@@ -15,7 +15,7 @@ import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { fitFill } from '../../utils/fitCanvas'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep } from '../../utils/lockstep.js'
@@ -211,7 +211,15 @@ const BlobBattleGame = () => {
             if (tier) cpuTier = tier
             mySeat = net.active ? net.slot : 0
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
-            gs = newGame(seed === undefined ? seedCounter : seed >>> 0, m === 'local' ? 2 : 1)
+            // #1473: offline starts honor ?seed=N so a filed report replays the
+            // same garbage order. Online matches keep the lobby seed — overriding
+            // a live seat would desync (the SSX rule, #1473 batch 1).
+            let sd = seed
+            if (sd === undefined && m !== 'online') {
+                const pin = seedFromQuery()
+                if (pin != null) sd = pin >>> 0
+            }
+            gs = newGame(sd === undefined ? seedCounter : sd >>> 0, m === 'local' ? 2 : 1)
             gs._cpu1 = makeCpu(gs.seed)
             gs._cpu2 = makeCpu(gs.seed ^ 0xbeef, cpuTier)
             ls.reset()
@@ -707,7 +715,14 @@ const BlobBattleGame = () => {
             })
         }
 
+        // #1473: production-safe feedback state (seed for replay), every build.
+        // Score is the match total across both wells; attract has no match yet.
+        exposeFeedbackState(() => gs
+            ? { tick: gs.tick, score: gs.wells[0].score + gs.wells[1].score, done: gs.over, seed: gs.seed, round: gs.round }
+            : { tick: 0, score: 0, done: false, seed: 0 })
+
         return () => {
+            unexposeFeedbackState()
             if (import.meta.env.DEV) { if (window.__blobbattleTest) delete window.__blobbattleTest; unmountDbg(); unexposeGame() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
