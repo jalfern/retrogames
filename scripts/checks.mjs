@@ -77,6 +77,9 @@ export const SCOPES = {
   frogger: { dirs: ['src/games/Frogger'], lint: ['lint:frogger'], checks: [['froggercheck', true]], smoke: [] },
   attract: { dirs: [], anyAttract: true, lint: ['lint:attract'], checks: [['attractcheck', true]], smoke: [] },
   comet: { dirs: ['src/games/CometDrift'], lint: ['lint:comet'], checks: ['cometcheck'], smoke: [] },
+  // #1502: Rogue dodged its gate since the batch-14 port — the dir was
+  // unowned (escalate-to-all ran every OTHER suite but never roguecheck).
+  rogue: { dirs: ['src/games/Rogue'], lint: ['lint:rogue'], checks: [['roguecheck', true]], smoke: [] },
   rally: { dirs: ['src/games/RallyCoDriver'], lint: [], checks: [['rallycheck', true], ['rallylinkcheck', true]], smoke: [] },
 };
 

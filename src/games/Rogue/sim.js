@@ -208,14 +208,55 @@ export function generateDungeon(dungeonLevel) {
     doors.push({ x, y })
   }
   for (const seg of segments) {
+    // Walk the segment, find the contiguous stone ('#') run — the corridor
+    // gap between the two rooms — and door its middle. (Corridors only dig
+    // through ' ', so the stone run is exactly the between-rooms gap; room
+    // floor stays '.' and is never doored.)
+    const cells = []
     if ('x1' in seg) {
-      const len = Math.abs(seg.x2 - seg.x1)
-      if (len < 2) continue
-      placeDoor(seg.x1 + Math.floor((seg.x2 - seg.x1) / 2), seg.y)
+      const step = seg.x1 <= seg.x2 ? 1 : -1
+      for (let x = seg.x1; x !== seg.x2 + step; x += step) cells.push([x, seg.y])
     } else {
-      const len = Math.abs(seg.y2 - seg.y1)
-      if (len < 2) continue
-      placeDoor(seg.x, seg.y1 + Math.floor((seg.y2 - seg.y1) / 2))
+      const step = seg.y1 <= seg.y2 ? 1 : -1
+      for (let y = seg.y1; y !== seg.y2 + step; y += step) cells.push([seg.x, y])
+    }
+    let run = []
+    const flush = () => {
+      if (run.length >= 2) placeDoor(run[Math.floor(run.length / 2)][0], run[Math.floor(run.length / 2)][1])
+      run = []
+    }
+    for (const [x, y] of cells) {
+      if (map[y][x] === '#') run.push([x, y])
+      else flush()
+    }
+    flush()
+  }
+
+  // Hidden doors (#1502, 1980 mechanic): one per room on its wall (top middle,
+  // falling back to bottom middle), never on a corridor path or an existing
+  // door. Invisible and walkable until found — SEARCH in the 3x3 around the
+  // hero, or stumbling into the cell, which swings it open under his feet.
+  // Found without the hero on the cell it stands closed ('+'). Pure function
+  // of the layout again: zero new rolls, the entropy stream stays untouched.
+  const hiddenDoors = []
+  const onPath = (x, y) => segments.some(sg =>
+    'x1' in sg
+      ? sg.y === y && x >= Math.min(sg.x1, sg.x2) && x <= Math.max(sg.x1, sg.x2)
+      : sg.x === x && y >= Math.min(sg.y1, sg.y2) && y <= Math.max(sg.y1, sg.y2))
+  for (const r of rooms) {
+    const spots = [
+      [r.x + Math.floor(r.w / 2), r.y],
+      [r.x + Math.floor(r.w / 2), r.y + r.h - 1],
+    ]
+    for (const [hx, hy] of spots) {
+      if (hx < 0 || hx >= MAP_W || hy < 0 || hy >= MAP_H) continue
+      if (map[hy][hx] !== '#') continue
+      if (doors.some(d => d.x === hx && d.y === hy)) continue
+      if (onPath(hx, hy)) continue
+      map[hy][hx] = '+'
+      doors.push({ x: hx, y: hy })
+      hiddenDoors.push({ x: hx, y: hy })
+      break
     }
   }
 
@@ -279,7 +320,7 @@ export function generateDungeon(dungeonLevel) {
   const explored = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
   const visible = Array.from({ length: MAP_H }, () => Array(MAP_W).fill(false))
 
-  return { map, rooms, items, monsters, startX, startY, explored, visible }
+  return { map, rooms, doors, hiddenDoors, items, monsters, startX, startY, explored, visible }
 }
 
 export function digH(map, x1, x2, y) {
@@ -344,7 +385,7 @@ function shuffle(arr) {
 export function createInitialState(seed) {
   setSeed(seed)
   const dungeon = generateDungeon(1)
-  const { map, rooms, items, monsters, startX, startY, explored, visible } = dungeon
+  const { map, rooms, doors, hiddenDoors, items, monsters, startX, startY, explored, visible } = dungeon
 
   const potionColorMap = {}
   const shuffledColors = shuffle(POTION_COLORS)
@@ -362,8 +403,12 @@ export function createInitialState(seed) {
     turn: 0,
     randState: getRandState(),
     dungeonLevel: 1,
-    map, rooms, items, monsters,
+    map, rooms, doors, hiddenDoors, items, monsters,
     explored, visible,
+    // fx log (#1502): one event per audible moment (hit, kill, door, ...).
+    // The sim only RECORDS — index.jsx drains it into audioController tones,
+    // and roguecheck asserts the events fire (the audibility gate).
+    fx: [],
     player: {
       x: startX, y: startY,
       hp: 12, maxHp: 12,
@@ -391,6 +436,16 @@ export function createInitialState(seed) {
 // ============================================================
 export function addMsg(state, msg) {
   return { ...state, messages: [...state.messages.slice(-9), msg] }
+}
+
+// An fx event: the sim's one-way ticket to the speakers (see state.fx).
+const emitFx = (s, k, extra = {}) => ({ ...s, fx: [...s.fx, { k, ...extra }] })
+
+// #1502: a hidden door is a door the hero has not found yet. While hidden it
+// is invisible (buildGrid draws wall) and walkable for EVERYONE — the 1980
+// rule that the dungeon's creatures know their own doors.
+export function doorIsHidden(state, x, y) {
+  return state.hiddenDoors?.some(d => d.x === x && d.y === y) === true
 }
 
 export function getItemName(item, state) {
@@ -458,7 +513,10 @@ export function buildGrid(state) {
             char = itm.type
             color = COLORS[itm.type] || '#aaaaaa'
           } else {
+            // #1502: an unfound hidden door draws as wall — it is found,
+            // not seen.
             char = map[y][x]
+            if (char === '+' && doorIsHidden(state, x, y)) char = '#'
             if (char === '.') color = '#3a5a3a'
             else if (char === '#') color = '#666'
             else if (char === '+') color = '#cc8833'
@@ -467,6 +525,7 @@ export function buildGrid(state) {
           }
         } else if (isExp) {
           char = map[y][x]
+          if (char === '+' && doorIsHidden(state, x, y)) char = '#'
           if (char === '.') color = '#223322'
           else if (char === '#') color = '#444'
           else if (char === '+') color = '#664400'
@@ -534,6 +593,9 @@ export function playerAttack(state, mIdx) {
 
   let s = { ...state, player: newPlayer, monsters: newMonsters }
   for (const m of msgs) s = addMsg(s, m)
+  if (msgs.some((m) => m.startsWith('You hit'))) s = emitFx(s, 'hit')
+  if (msgs.some((m) => m.startsWith('You defeated'))) s = emitFx(s, 'kill')
+  if (msgs.some((m) => m.startsWith('Welcome to level'))) s = emitFx(s, 'levelup')
   return s
 }
 
@@ -554,7 +616,8 @@ export function monsterAttack(state, mIdx) {
       const stolen = Math.min(player.gold, rng(1, 10) * state.dungeonLevel + 5)
       let s = addMsg(state, `The ${mon.name} hits you and steals ${stolen} gold!`)
       s = { ...s, player: { ...player, hp: newHp, gold: player.gold - stolen } }
-      if (newHp <= 0) return { ...s, phase: 'gameover', finalScore: s.player.gold + state.dungeonLevel * 50 }
+      s = emitFx(s, 'hurt')
+      if (newHp <= 0) return { ...emitFx(s, 'die', { killer: mon.letter }), phase: 'gameover', killer: mon.name, finalScore: s.player.gold + state.dungeonLevel * 50 }
       return s
     }
 
@@ -567,8 +630,9 @@ export function monsterAttack(state, mIdx) {
 
     let s = addMsg(state, `The ${mon.name} hits you for ${dmg} damage.`)
     const newPlayer = { ...player, hp: newHp }
+    s = emitFx(s, 'hurt')
     if (newHp <= 0) {
-      return { ...s, player: newPlayer, phase: 'gameover', finalScore: player.gold + state.dungeonLevel * 50 }
+      return { ...emitFx(s, 'die', { killer: mon.letter }), player: newPlayer, phase: 'gameover', killer: mon.name, finalScore: player.gold + state.dungeonLevel * 50 }
     }
     return { ...s, player: newPlayer }
   } else {
@@ -621,6 +685,9 @@ export function advanceMonsters(state, skipId = -1) {
           if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue
           const tile = map[ny][nx]
           if (tile === ' ') continue
+          // closed VISIBLE doors block monsters; hidden doors are known to
+          // the creatures (1980 rule) and pass
+          if (tile === '+' && !doorIsHidden(s, nx, ny)) continue
           if (newMonsters.some(other => other !== m && other.x === nx && other.y === ny)) continue
           if (nx === player.x && ny === player.y) {
             // Attack
@@ -644,7 +711,8 @@ export function advanceMonsters(state, skipId = -1) {
       if (rng(0, 2) === 0) {
         const dx = rng(-1, 1), dy = rng(-1, 1)
         const nx = m.x + dx, ny = m.y + dy
-        if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && map[ny][nx] !== ' ') {
+        if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && map[ny][nx] !== ' '
+            && !(map[ny][nx] === '+' && !doorIsHidden(s, nx, ny))) {
           if (!newMonsters.some((other, ii) => ii !== i && other.x === nx && other.y === ny)) {
             if (!(nx === player.x && ny === player.y)) {
               newMonsters[i] = { ...newMonsters[i], x: nx, y: ny }
@@ -673,7 +741,7 @@ export function tickHunger(state) {
     player = { ...player, hp: Math.max(1, player.hp - dmg), food: 0, hunger: 'faint' }
     s = addMsg(s, 'You faint from hunger!')
     if (player.hp <= 1) {
-      return { ...s, player, phase: 'gameover', finalScore: player.gold + state.dungeonLevel * 50 }
+      return { ...emitFx(s, 'die', { killer: 'starvation' }), player, phase: 'gameover', killer: 'starvation', finalScore: player.gold + state.dungeonLevel * 50 }
     }
   } else {
     if (food < 150 && hunger !== 'faint') {
@@ -704,11 +772,12 @@ export function handlePickup(state) {
   const item = items[idx]
 
   if (item.type === '*') {
-    return addMsg({
+    const s = addMsg({
       ...state,
       player: { ...player, gold: player.gold + item.amount },
       items: items.filter((_, i) => i !== idx),
     }, `You pick up ${item.amount} gold pieces.`)
+    return emitFx(s, 'gold')
   }
 
   if (player.inventory.length >= 26) return addMsg(state, "Your pack is full!")
@@ -754,8 +823,9 @@ export function handleQuaff(state, invIndex) {
     default: break
   }
 
-  return addMsg({ ...state, phase: 'playing', player: p, identifiedPotions: newIdent },
+  const s = addMsg({ ...state, phase: 'playing', player: p, identifiedPotions: newIdent },
     `You drink the ${state.potionColorMap[item.subtype]} potion. ${potion.desc}`)
+  return emitFx(s, 'quaff')
 }
 
 export function handleRead(state, invIndex) {
@@ -849,11 +919,12 @@ export function handleEat(state, invIndex) {
   if (invIndex < 0 || invIndex >= player.inventory.length) return { ...state, phase: 'playing' }
   const item = player.inventory[invIndex]
   if (item.type !== ':') return { ...state, phase: 'playing' }
-  return addMsg({
+  const s = addMsg({
     ...state,
     phase: 'playing',
     player: { ...player, food: Math.min(2000, player.food + 800), hunger: 'full', inventory: player.inventory.filter((_, i) => i !== invIndex) },
   }, "You eat the food ration. You feel satisfied.")
+  return emitFx(s, 'eat')
 }
 
 export function handleDescend(state) {
@@ -862,13 +933,41 @@ export function handleDescend(state) {
   const newLevel = state.dungeonLevel + 1
   const d = generateDungeon(newLevel)
   revealAround(d.startX, d.startY, d.map, d.visible, d.explored, d.rooms)
-  return addMsg({
+  const s = emitFx({
     ...state,
     dungeonLevel: newLevel,
-    map: d.map, rooms: d.rooms, items: d.items, monsters: d.monsters,
+    map: d.map, rooms: d.rooms, doors: d.doors, hiddenDoors: d.hiddenDoors,
+    items: d.items, monsters: d.monsters,
     visible: d.visible, explored: d.explored,
     player: { ...player, x: d.startX, y: d.startY },
-  }, `You descend to dungeon level ${newLevel}.`)
+  }, 'descend')
+  return addMsg(s, `You descend to dungeon level ${newLevel}.`)
+}
+
+// SEARCH (1980): one turn, and the 3x3 around the hero is raked over for
+// hidden doors. Found without the hero on the cell, a door stands closed
+// ('+') from that moment — the creatures may keep passing through; if one is
+// actually on the cell, the door is thrown open for it instead.
+export function handleSearch(state) {
+  let s = state
+  const near = (d) => Math.abs(d.x - s.player.x) <= 1 && Math.abs(d.y - s.player.y) <= 1
+  const found = s.hiddenDoors.filter(near)
+  if (found.length > 0) {
+    let map = s.map
+    for (const d of found) {
+      if (s.monsters.some(m => m.x === d.x && m.y === d.y)) {
+        if (map === s.map) map = s.map.map(r => [...r])
+        map[d.y][d.x] = '#'
+      }
+    }
+    s = addMsg({ ...s, map, hiddenDoors: s.hiddenDoors.filter(d => !near(d)) }, 'You found a hidden door!')
+    s = emitFx(s, 'door-found')
+  } else {
+    s = addMsg(s, 'You search the area.')
+  }
+  s = tickHunger(s)
+  if (s.phase === 'gameover') return s
+  return advanceMonsters(s)
 }
 
 // ============================================================
@@ -904,7 +1003,9 @@ export function reducer(state, action) {
       if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return state
       if (map[ny][nx] === ' ') return state
 
-      // Check monster bump
+      // Check monster bump (BEFORE the door logic: a monster can stand on a
+      // hidden door cell — creatures know their own doors — and a bump is a
+      // swing, not a stumble)
       const mIdx = monsters.findIndex(m => m.x === nx && m.y === ny)
       if (mIdx >= 0) {
         s = playerAttack(s, mIdx)
@@ -912,6 +1013,30 @@ export function reducer(state, action) {
         // Skip this monster in advanceMonsters
         s = tickHunger(s)
         return advanceMonsters(s, state.monsters[mIdx].id)
+      }
+
+      // Doors (#1502, 1980 rules): a closed door blocks; bumping it opens it —
+      // one turn, no move, and it stays open. A hidden door is invisible and
+      // walkable until found: the hero stumbles into the cell and it swings
+      // open under his feet.
+      if (map[ny][nx] === '+') {
+        if (doorIsHidden(s, nx, ny)) {
+          const openMap = s.map.map(r => [...r])
+          openMap[ny][nx] = '#'
+          s = addMsg({
+            ...s, map: openMap,
+            hiddenDoors: s.hiddenDoors.filter(d => d.x !== nx || d.y !== ny),
+          }, "You stumble into a hidden door!")
+          s = emitFx(s, 'door-found')
+        } else {
+          const openMap = s.map.map(r => [...r])
+          openMap[ny][nx] = '#'
+          s = addMsg({ ...s, map: openMap }, "You open the door.")
+          s = emitFx(s, 'door-open')
+          s = tickHunger(s)
+          if (s.phase === 'gameover') return s
+          return advanceMonsters(s)
+        }
       }
 
       // Move player
@@ -922,7 +1047,7 @@ export function reducer(state, action) {
       if (player.confused > 0) {
         const rdx = rng(-1, 1), rdy = rng(-1, 1)
         const cx = player.x + rdx, cy = player.y + rdy
-        if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H && map[cy][cx] !== ' ') {
+        if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H && map[cy][cx] !== ' ' && map[cy][cx] !== '+') {
           finalX = cx; finalY = cy
         }
         newPlayer.confused = player.confused - 1
@@ -988,7 +1113,7 @@ export function reducer(state, action) {
 
     case 'TAKE_OFF': return handleTakeOff(state)
     case 'DESCEND': return handleDescend(state)
-    case 'SEARCH': return addMsg(state, "You search the area.")
+    case 'SEARCH': return handleSearch(state)
 
     case 'SHOW_EAT': {
       if (!state.player.inventory.some(i => i.type === ':')) return addMsg(state, "You have nothing to eat.")
