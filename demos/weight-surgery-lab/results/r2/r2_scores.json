@@ -32,5 +32,17 @@
   "t_hours": 1.84,
   "pp": 1.5,
   "model": "qwen35-p50c-mlx"
+ },
+ "p50cw": {
+  "math": {
+   "n": 100,
+   "acc": 31.0,
+   "finished": 51.0,
+   "mean_ntok": 24012
+  },
+  "t_hours": 0.8,
+  "pp": 1.5,
+  "pp_ctx": 32768,
+  "model": "qwen35-p50c-mlx"
  }
 }

@@ -25,13 +25,20 @@ export const CLAIMS = {
     p50c: { math: [40, 56], gsm: [59, 75], fin: [40, 80] },
 }
 
+export const SETS = { p50cw: ['math'] } // #1547: option C rerun is math-only
+
 export function validateR2({ scores, gate }) {
     const errs = []
     for (const [tag, row] of Object.entries(scores)) {
         if (tag === '_hold') continue
+        const want = SETS[tag] || ['math', 'gsm']
         for (const set of ['math', 'gsm']) {
             const t = row[set]
-            if (!t) { errs.push(`${tag}.${set}: missing`); continue }
+            if (!t) {
+                if (want.includes(set)) errs.push(`${tag}.${set}: missing`)
+                continue
+            }
+            if (!want.includes(set)) { errs.push(`${tag}.${set}: unexpected set for ${tag}`); continue }
             if (!(t.n > 0)) errs.push(`${tag}.${set}: n must be > 0`)
             if (!(t.acc >= 0 && t.acc <= 100)) errs.push(`${tag}.${set}: acc out of range`)
             if (!(t.finished >= 0 && t.finished <= 100)) errs.push(`${tag}.${set}: finished out of range`)
@@ -302,6 +309,46 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         JSON.stringify(mit.rows))
     ok(!mitOk({ ...mit, rows: { ...mit.rows, math500_10: { ...mit.rows.math500_10, mit_correct: false } } }),
         'mutant caught: grader witness row flipped')
+}
+
+// 8. #1547 option C verdict: the p50cw rerun rows, the frozen summary, MIT's
+//    regrade and the page must all tell the same story.
+{
+    const scores = JSON.parse(readFileSync(join(LAB, 'results/r2/r2_scores.json'), 'utf8'))
+    const w = scores.p50cw && scores.p50cw.math
+    ok(w && w.n === 100 && w.finished >= w.acc, 'rules: p50cw math row complete and sane')
+    const rows = readFileSync(join(LAB, 'results/r2/scores_p50cw_math.jsonl'), 'utf8')
+        .split('\n').filter(l => l.trim()).map(l => JSON.parse(l))
+    const mism = (t, rs) => rs.length !== t.n
+        || Math.abs(100 * rs.filter(r => r.ok).length / rs.length - t.acc) > 0.05
+        || Math.abs(100 * rs.filter(r => r.finished).length / rs.length - t.finished) > 0.05
+    ok(!mism(w, rows), 'rules: p50cw summary recomputes from the committed jsonl',
+        `rows=${rows.length} acc=${100 * rows.filter(r => r.ok).length / rows.length} fin=${100 * rows.filter(r => r.finished).length / rows.length}`)
+    ok(mism({ ...w, acc: w.acc + 5 }, rows), 'mutant caught: summary acc bumped off the rows')
+    ok(mism(w, rows.slice(0, 80)), 'mutant caught: truncated row file still claims n=100')
+    ok(w && scores.p50cw.pp_ctx === 32768 && scores.p50cw.pp === 1.5 && scores.p50cw.model === scores.p50c.model,
+        'rules: p50cw row records the fixed window + same model as p50c')
+    const mit = JSON.parse(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8'))
+    const rg = mit.regrade && mit.regrade['p50cw:math']
+    ok(rg && rg.n === 100 && rg.mit_acc >= rg.ours_acc,
+        'rules: MIT regrade covers all 100 p50cw rows', JSON.stringify(rg && { ours: rg.ours_acc, mit: rg.mit_acc }))
+    const knownOk = r => ['math500_10', 'math500_36', 'math500_88'].every(id =>
+        r.diffs.some(d => d.id === id && d.mit.ok && !d.ours.ok
+            && String(d.mit.pred) === String(d.ours.pred)))
+    ok(rg && knownOk(rg),
+        'rules: the three #1539 rows survive MIT-correct/ours-wrong on the rerun too')
+    ok(rg && !knownOk({ ...rg, diffs: rg.diffs.map(d => d.id === 'math500_36'
+        ? { ...d, ours: { ...d.ours, ok: true } } : d) }),
+        'mutant caught: a known misgrade silently "fixed"')
+    ok(validateR2({ scores: { ...scores, p50cw: { ...scores.p50cw, gsm: { n: 100, acc: 0, finished: 0 } } } }).length > 0,
+        'mutant caught: a gsm set smuggled under the math-only p50cw tag')
+    const { rc, html } = build(LAB)
+    ok(rc === 0 && html.includes('id="r2-p50cw"') &&
+        html.includes('id="r2-p50cw"><td rowspan=1>#1547 option C — penalty window ctx 32768</td><td>math</td><td>100</td><td>31.0%</td>') &&
+        html.includes('51.0%'),
+        'build: p50cw row renders scored (31.0% acc / 51.0% finished)')
+    ok(html.includes('45.8%') && /penalizes every generated token|whole-generation/.test(html),
+        'copy: page states the MIT same-100 reference and the window finding')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

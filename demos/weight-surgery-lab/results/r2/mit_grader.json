@@ -31,6 +31,103 @@
    }
   }
  },
- "regrade": {},
+ "regrade": {
+  "p50cw:math": {
+   "n": 100,
+   "ours_acc": 31.0,
+   "mit_acc": 37.0,
+   "pred_none_finished_sidecar_ok": 9,
+   "diffs": [
+    {
+     "id": "math500_10",
+     "ours": {
+      "pred": "[-2, 7]",
+      "ok": false
+     },
+     "mit": {
+      "pred": "[-2, 7]",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_36",
+     "ours": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_65",
+     "ours": {
+      "pred": "x^8 - x^7 + 1",
+      "ok": true
+     },
+     "mit": {
+      "pred": "x^8 - x^7 + 1",
+      "ok": false
+     }
+    },
+    {
+     "id": "math500_69",
+     "ours": {
+      "pred": "x^3+3x-6",
+      "ok": false
+     },
+     "mit": {
+      "pred": "x^3+3x-6",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_74",
+     "ours": {
+      "pred": "\\mathbb{R} \\setminus [2, 3]",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\mathbb{R} \\setminus [2, 3]",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_88",
+     "ours": {
+      "pred": "C",
+      "ok": false
+     },
+     "mit": {
+      "pred": "C",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_94",
+     "ours": {
+      "pred": "(8, -2)",
+      "ok": false
+     },
+     "mit": {
+      "pred": "(8, -2)",
+      "ok": true
+     }
+    },
+    {
+     "id": "math500_99",
+     "ours": {
+      "pred": "E",
+      "ok": false
+     },
+     "mit": {
+      "pred": "E",
+      "ok": true
+     }
+    }
+   ]
+  }
+ },
  "all_match_mit": true
 }

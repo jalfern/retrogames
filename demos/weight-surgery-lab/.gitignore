@@ -1,3 +1,4 @@
 .venv
-data/
-results/r2/scores_p50cw_math.jsonl
+data
+# (bare "data" also matches the symlink; "data/" alone would not)
+# p50cw rows are committed since the rerun completed (#1547)
