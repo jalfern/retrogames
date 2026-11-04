@@ -9,6 +9,7 @@ usage: r2_score.py TAG:MODEL[:pp=X] [TAG:MODEL:pp=X ...]
 Budget note: step-3 scoring passes are NOT part of Astra's 50-pass budget (MIT logs
 them separately), but every pass still lands in batches.jsonl for provenance.
 """
+import hashlib
 import json
 import os
 import sys
@@ -20,6 +21,14 @@ import common as C
 import llm  # loop_score_text lives in llm.py (round-1 split)
 
 PAR = int(os.environ.get("WS_R2_PARALLEL", "4"))
+# #1547 C2/C3: WS_R2_SETS restricts which sets a row runs (default math,gsm);
+# WS_R2_SAVETEXT=1 writes each row's FULL text+reasoning to a sidecar OUTSIDE
+# the repo (a 32K-token answer is ~60KB; 100 rows would bloat the repo ~10x the
+# whole lab). Committed rows carry {bytes, sha} pointers; r2_mit_grade.py can
+# re-grade the sidecars with MIT's own mathqa.py at any later time.
+SETS = [s.strip() for s in os.environ.get("WS_R2_SETS", "math,gsm").split(",") if s.strip()]
+SAVETEXT = os.environ.get("WS_R2_SAVETEXT") == "1"
+TEXTDIR = os.path.expanduser(os.environ.get("WS_R2_TEXTDIR", "~/Dev/weight-lab/r2_text"))
 
 
 def log_batch(purpose, ruled_out, model, n, tokens, hours):
@@ -50,21 +59,31 @@ def run_row(tag, model, pp):
     t0 = time.time()
     tok_total = 0
     summary = {}
-    for set_name in ("math", "gsm"):
+    for set_name in SETS:
         want = [r for r in rows if r[0] == set_name]
         path = f"{R.RESULTS}/scores_{tag}_{set_name}.jsonl"
         done = existing(path)
         todo = [r for r in want if r[1] not in done]
-        with open(path, "a") as out:
+        tpath = f"{TEXTDIR}/{tag}_{set_name}.jsonl"
+        if SAVETEXT:
+            os.makedirs(TEXTDIR, exist_ok=True)
+        with open(path, "a") as out, (open(tpath, "a") if SAVETEXT else None) as tout:
             def work(rec):
                 st, pid, prob, gold = rec
                 t1 = time.time()
                 g = R.ask(model, prob, cap=32768, pp=pp)
                 pred = C.extract_boxed(g["text"] or "") or C.extract_boxed(g["reasoning"] or "")
                 lm = llm.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
-                return {"id": pid, "pred": pred, "ntok": g["ntok"],
-                        "finished": g["finished"], **lm,
-                        "t_wall": round(time.time() - t1, 1)}
+                raw = {"id": pid, "pred": pred, "ntok": g["ntok"],
+                      "finished": g["finished"], **lm,
+                      "t_wall": round(time.time() - t1, 1)}
+                if tout is not None:  # full text lives in the sidecar, not the repo
+                    body = json.dumps({"text": g["text"], "reasoning": g["reasoning"]})
+                    tout.write(json.dumps({"id": pid, **json.loads(body)}) + "\n")
+                    tout.flush()
+                    raw["text"] = {"bytes": len(body.encode()),
+                                  "sha": hashlib.sha256(body.encode()).hexdigest()[:12]}
+                return raw
             with ThreadPoolExecutor(max_workers=PAR) as ex:
                 raws = list(ex.map(work, todo))
             # grading ONLY on the main thread: math_verify.parse() uses
@@ -88,6 +107,7 @@ def run_row(tag, model, pp):
     dt = time.time() - t0
     summary["t_hours"] = round(dt / 3600, 2)
     summary["pp"] = pp
+    summary["pp_ctx"] = R.PP_CTX  # #1547 C1: 0 = legacy server default (20-token window)
     summary["model"] = model
     # rewrite aggregate
     agg = {}
@@ -96,12 +116,13 @@ def run_row(tag, model, pp):
     agg[tag] = summary
     with open(f"{R.RESULTS}/r2_scores.json", "w") as f:
         json.dump(agg, f, indent=1)
-    m, gsn = summary["math"], summary["gsm"]
-    print(f"ROW {tag}: MATH {m['acc']}% acc / {m['finished']}% finished; "
-          f"GSM {gsn['acc']}% / {gsn['finished']}%  ({summary['t_hours']} h)")
-    log_batch(f"held-out scoring row {tag} ({model}, think35 pp={pp})",
+    desc = "; ".join(f"{s.upper()} {summary[s]['acc']}% acc / {summary[s]['finished']}% fin"
+                    for s in SETS if s in summary)
+    print(f"ROW {tag}: {desc}  ({summary['t_hours']} h)")
+    n_tot = sum(summary[s]["n"] for s in SETS if s in summary)
+    log_batch(f"held-out scoring row {tag} ({model}, think35 pp={pp} pp_ctx={R.PP_CTX})",
               "step-1 gate vs MIT expectations happens after base+p50c rows",
-              model, m["n"] + gsn["n"], tok_total, dt / 3600)
+              model, n_tot, tok_total, dt / 3600)
 
 
 if __name__ == "__main__":

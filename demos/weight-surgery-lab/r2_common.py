@@ -30,6 +30,14 @@ SUFFIX = "\nPlease reason step by step, and put your final answer within \\boxed
 SET_SEED = 1533
 N_MATH, N_GSM = 100, 100
 
+# #1547 option C1 audit: the mlx-lm bundled in oMLX applies presence_penalty over
+# only the LAST `presence_context_size` tokens (server.py body default 20;
+# sample_utils.py does tokens[-context_size:]) — vLLM (MIT's backend) penalizes
+# EVERY generated token. Our think35 rows therefore had pp1.5 looking only 20
+# tokens back: the loop-escape pressure reset continuously. PP_CTX > 0 sends the
+# window explicitly so the penalty covers the whole generation. 0 = old behaviour.
+PP_CTX = int(os.environ.get("WS_R2_PP_CTX", "0"))
+
 
 def api_key():
     with open(os.path.expanduser("~/.omlx/settings.json")) as f:
@@ -96,8 +104,14 @@ def grade(gold, pred):
             return str(gold).strip() == str(pred).strip(), f"string(fallback:{type(e).__name__})"
 
 
-def ask(model, problem, cap=32768, pp=1.5, seed=0, timeout=2400):
-    """One think35 generation via oMLX /v1/chat/completions."""
+def ask(model, problem, cap=32768, pp=1.5, seed=0, timeout=2400, pp_ctx=None):
+    """One think35 generation via oMLX /v1/chat/completions.
+
+    pp_ctx: presence-penalty token window (#1547 C1). None -> WS_R2_PP_CTX env
+    (0 = server default 20, the windowed behaviour that differs from vLLM).
+    Set to >= max_tokens to cover the whole generation like MIT's vLLM did.
+    """
+    ctx = PP_CTX if pp_ctx is None else pp_ctx
     body = {
         "model": model,
         "messages": [{"role": "user", "content": problem.strip() + SUFFIX}],
@@ -105,6 +119,8 @@ def ask(model, problem, cap=32768, pp=1.5, seed=0, timeout=2400):
         "presence_penalty": pp, "max_tokens": cap, "seed": seed,
         "chat_template_kwargs": {"enable_thinking": True},
     }
+    if ctx and pp:
+        body["presence_context_size"] = int(ctx)
     req = urllib.request.Request(
         f"{OMLX_URL}/v1/chat/completions", data=json.dumps(body).encode(),
         headers={"content-type": "application/json",
