@@ -36,6 +36,7 @@ import { GAMES } from '../config/games'
 import { installDosKeys, resetDosKeys, pressKey, pressArrow, typeText, keysReady, keysDebug, KEY } from '../utils/dosKeys'
 import { findCanvas, sampleBuffer, toDataUrl, framePrint, subPrint, bandProfile, regionStats, focusEmulator } from '../utils/dosCanvas'
 import { mountDos } from '../utils/jsdos'
+import { exposeFeedbackState, unexposeFeedbackState } from '../utils/gameContract'
 
 // Full keyboard sheet: every letter Ultima's parsers take, then the digits
 // (spell levels, quantities). Uppercase keyCodes are what DOS hardware sent;
@@ -55,16 +56,23 @@ function DosShell({ bundleUrl, label, keys = [] }) {
 
   useEffect(() => {
     if (!rootRef.current) return
-    // `before` re-installs the key-handler capture on every mount (loadJsDos
-    // installs once per page; a remount must re-arm it — see utils/dosKeys).
+    let tick = 0
+    let alive = true
+    const raf = () => { if (alive) { tick++; requestAnimationFrame(raf) } }
+    requestAnimationFrame(raf)
+    // Seedless report (#1473): emulator titles run binary ROMs — no seed to pin,
+    // tick is elapsed frames and score is 0 (game memory unreadable from js-dos).
+    exposeFeedbackState(() => ({ tick, score: 0, done: false }))
     const dos = mountDos(rootRef.current, bundleUrl, {
       before: () => installDosKeys(),
       onReady: () => setLoading(false),
       onError: (e) => setError(e.message),
     })
     return () => {
+      alive = false
       dos.stop()
       resetDosKeys()
+      unexposeFeedbackState()
     }
   }, [bundleUrl])
 

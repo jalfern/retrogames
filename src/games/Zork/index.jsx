@@ -6,6 +6,7 @@ import AiBadge from '../../components/AiBadge'
 import { AgentLoop } from '../../ai/loop'
 import { ZorkExplorer } from './agent/explorer'
 import { GAMES } from '../../config/games'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { TranscriptSensor } from './sensors/transcript'
 import { effectiveArm, armsForGame, setArm as selectArm, getArm } from '../../ai/arms'
 
@@ -169,6 +170,21 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
     loadGame()
     return () => { cancelled = true }
   }, [storyFile, label])
+
+  // Seedless report (#1473): the story file is a static ROM — no seed to pin.
+  // tick is elapsed frames; score/done stay honest zeros (the transcript, not a
+  // scalar, describes a Zork run). Same pattern as components/DosShell.jsx.
+  useEffect(() => {
+    let tick = 0
+    let alive = true
+    const raf = () => { if (alive) { tick++; requestAnimationFrame(raf) } }
+    requestAnimationFrame(raf)
+    exposeFeedbackState(() => ({ tick, score: 0, done: false }))
+    return () => {
+      alive = false
+      unexposeFeedbackState()
+    }
+  }, [])
 
   // The single actuator for this game: humans reach it through the form, the AI
   // (and every check) reach it through __zorkTest.send. Keeping one path means

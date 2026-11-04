@@ -29,6 +29,7 @@ import { GAMES } from '../../config/games'
 import { installDosKeys, resetDosKeys, pressKey, pressArrow, typeText, keysReady, keysDebug, KEY } from '../../utils/dosKeys'
 import { findCanvas, sampleBuffer, toDataUrl, framePrint, focusEmulator } from '../../utils/dosCanvas'
 import { mountDos } from '../../utils/jsdos'
+import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { effectiveArm, setArm as selectArm, getArm, armsForGame } from '../../ai/arms'
 import AiBadge from '../../components/AiBadge'
 
@@ -60,6 +61,22 @@ function DosGame({ bundleUrl, label }) {
       resetDosKeys()
     }
   }, [bundleUrl])
+
+  // Seedless report (#1473): King's Quest runs a binary AGI ROM in js-dos — no
+  // seed to pin and game memory is unreadable from the shell. tick is elapsed
+  // frames; score/done stay honest zeros so a filed report still pinpoints when
+  // the run happened. Same pattern as components/DosShell.jsx (Ultima I–V).
+  useEffect(() => {
+    let tick = 0
+    let alive = true
+    const raf = () => { if (alive) { tick++; requestAnimationFrame(raf) } }
+    requestAnimationFrame(raf)
+    exposeFeedbackState(() => ({ tick, score: 0, done: false }))
+    return () => {
+      alive = false
+      unexposeFeedbackState()
+    }
+  }, [])
 
   // Pause handler
   useEffect(() => {

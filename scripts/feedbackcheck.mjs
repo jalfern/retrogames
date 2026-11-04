@@ -837,6 +837,31 @@ ok('seedpin: rollout floor — at least 54 games report+pin seeds', reportingGam
 // but never reported a seed. Seed now generated at every human start honoring
 // ?seed=N and threaded into createEngine → 55 reporting+pinning titles.
 ok('seedpin: rollout floor — at least 55 games report+pin seeds', reportingGames >= 55, `${reportingGames} reporting`)
+// Batch 21 is the EMULATOR tier — js-dos / ifvms titles run binary ROMs: there
+// is no JS RNG to seed and no game memory to read, so they join the rollout
+// SEEDLESS (the pattern BardsTale proved). DosShell.jsx (shared by Ultima I–V)
+// and the hand-rolled mounts in KingsQuest (js-dos AGI) and Zork (ifvms ZVM)
+// each report {tick,score:0,done:false} while the emulator is mounted — tick is
+// elapsed frames, score/done are honest zeros, never a fake. The seedless
+// counter below counts them (it resolves the DosShell import); this law proves
+// the shell reports the shape without a seed and un-exposes on cleanup.
+const dosShellSrc = readFileSync(new URL('../src/components/DosShell.jsx', import.meta.url), 'utf8')
+ok('dos: DosShell reports seedless {tick,score,done} while mounted and cleans up',
+    /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{\s*tick\b/.test(dosShellSrc)
+    && /score: 0/.test(dosShellSrc) && /done: false/.test(dosShellSrc)
+    && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(dosShellSrc)
+    && /unexposeFeedbackState\(\)/.test(dosShellSrc))
+// The two hand-rolled emulator mounts carry the same honest shape in their own
+// files (they cannot reuse DosShell: KingsQuest has its own key/pixel seams,
+// Zork is a story VM with no canvas at all).
+for (const t of ['KingsQuest', 'Zork']) {
+    const src = readFileSync(new URL(`../src/games/${t}/index.jsx`, import.meta.url), 'utf8')
+    ok(`dos: ${t} reports seedless {tick,score,done} and cleans up`,
+        /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{\s*tick\b/.test(src)
+        && /score: 0/.test(src) && /done: false/.test(src)
+        && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)
+        && /unexposeFeedbackState\(\)/.test(src))
+}
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
@@ -928,9 +953,12 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
     if (!d.isDirectory()) continue
     let src = ''
     try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
+    // Emulator titles mount through the shared shell (Ultima I–V, batch 21):
+    // the report lives in DosShell.jsx, so resolve that import before judging.
+    if (!/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && /from ['"][^'"]*components\/DosShell['"]/.test(src)) src += '\n' + dosShellSrc
     if (/exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src) && !/exposeFeedbackState\([\s\S]*?\bseed:/.test(src)) seedlessReporters++
 }
-ok('seedless: at least 21 titles report without a seed (BardsTale + the fixed-world and deco-decorated batches)', seedlessReporters >= 21, `${seedlessReporters} seedless reporters`)
+ok('seedless: at least 28 titles report without a seed (BardsTale + fixed-world + deco batches + the emulator tier: Ultima I–V, KingsQuest, Zork)', seedlessReporters >= 28, `${seedlessReporters} seedless reporters`)
 
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per
