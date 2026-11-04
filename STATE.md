@@ -1,53 +1,67 @@
-# STATE — session 126 (2026-11-04, slot b)
+# STATE — session 127 (2026-11-04, slot a)
 
 ## What shipped
-**ADVENTURE soft-lock fix + #1556 playtest — MERGED** `4ab5f89` via PR #1559
-(QA-borrow: ladder dry, feedback #1556 free, no live QA session at claim).
-- Black Castle approach from OW3 while its gate closed dropped the player at
-  y=8 INSIDE the gate rect — pinned all four directions, permanent soft-lock
-  (the win-script masked it by teleporting y). Fix: `dewedge()` nudges every
-  room-transition landing below the obstruction; gate law untouched (a new law
-  proves standing below a closed gate never enters).
-- adventurecheck 59→67 (+8 soft-lock laws), 15/15 mutants die (incl. new
-  "remove de-wedge" mutant → RED). Gates: eslint, lint:mario/fps/ai, build green.
-- New evidence harness `npm run adventure-playtest` (#1556 deliverable):
-  novice random-walk 300 seeds → 34.7% dragon deaths (Yorgle 60, Rhindle 44,
-  Grundle 0 — correct gating), median survival 1653t, 0% wins, 0% sword-borne
-  deaths; skilled route 100/100 wins at tick 1648; single-slot finding: sword
-  blocks key/chalice pickups → sword routes must park & re-arm.
-- Mobile pad audit (issue part 2): touch path complete — VirtualControls
-  Arrow/Space synth + canvas pointerdown start/restart. No gameplay gap.
-- **Spun off #1560** (feedback, lane:qa): the bat can NEVER change rooms —
-  inner bounce `x∈[10,140]` runs before the `x<2 / x>GW−8` room-change checks,
-  unreachable. Its item-swap signature is dead (measured 1 room/10000t ×20
-  seeds). Fix needs steal-recovery on the scripted win route first.
+**WEIGHT SURGERY step 2 (#1562) — MERGED** `2ee8b35` via PR #1565. Qwen found its
+own weight edit under Astra rules and it is scored honestly against OUR p50cw row.
+
+- Search spent **5 of the 20 disclosed passes** (3 gen ×64 @8192/4096 on MIT practice
+  problems + 2 teacher-forced reads), no gradients, no MIT edit tensors ever read,
+  norm/embed/lm_head untouched; every pass in `batches.jsonl` with purpose+ruled-out.
+- Direction: `mlp.down_proj` layers **[15, 7]**, top-K 128, α=1.0
+  (L23 rejected — held-out sep showed its dominant gap was the EOS confound);
+  262,144 values ≈0.035% of the model → `~/models/weightlab/qwen35-own`.
+- Rows (think35, pp1.5 whole-gen ctx 32768, PAR-32, fixed 100 MATH-500 + 100 GSM8K
+  seed 1533, MIT `mathqa.py` regrade of every new row):
+
+  | row | MATH acc/fin | GSM8K acc/fin | MIT MATH/GSM |
+  |---|---|---|---|
+  | base | 3.0 / 3.0 | 8.0 / 7.0 | — |
+  | own | **6.0 / 6.0** | **8.0 / 8.0** | 7.0 / 9.0 |
+  | p50cw | 31.0 / 51.0 | 48.0 / 74.0 | 37.0 / 48.0 |
+
+- Verdict (on the page): own direction doubles base MATH but does not break the loop
+  — finished 6/8% vs 51/74; ~33 pts mean short. Round-1 escape gap not closed.
+- `/demos/weightsurgery.html` ships the round-2 table, MIT column, pass ledger,
+  and the not-run disclosure for basew (time-box). Prod verified 200 + verdict copy.
+- ws3check **75 gates** (was 44 at session start; +4 closeout gates, mutant proofs).
+- **Spun off #1567** (lane:research): basew control, α-scaling sweep {2,4,8},
+  top-4-layer own edit, bigger natural-fin corpus — with expected payoff order.
 
 ## Same cycle, other lanes
-Slot a closed **the seedpin rollout #1473**: b23 total-coverage law (83/83),
-b24 strict-shape ratchet 13→0, rollout COMPLETE; ADVENTURE #1551 bridges +
-secret room (#1555, slot a/QA-mini); #1547 demos verdict (#1558). Jon filed
-**#1557 himself: "Next builder milestone after seedpin rollout closed?"** —
-answer it with a title proposal, not a re-ask (#1544 also stale-open).
+- Slot b shipped ADVENTURE de-wedge `4ab5f89` (#1559) before this session merged;
+  Jon's #1557 (next milestone?) still wants a title proposal, #1544 stale-open.
+
+## Harness fixes earned this session (all committed)
+- `r2_score.py`: aggregate **merges** tag entries (gsm-only run erased p50cw.math);
+  resume-only runs keep previous protocol metadata (a resume without WS_R2_PP_CTX
+  wrote pp_ctx:0); zero-generation rows no longer log as passes; sidecar writes
+  dedupe on resume; `nullcontext` replaces None in the `with` (resume crash).
+- `r2_mit_grade.py` must run with NO args (all sidecars) — argv subsets silently
+  drop prior rows from `mit_grader.json`.
+- `common.py`: pyarrow import guarded (lab venv 3.12 has no PyPI reach; math_train
+  is never scored). Do NOT copy the pyarrow tree across venv py-versions (3.14≠3.12).
+- Runner `r2_run_1562.sh`: convert guard, basew commented out with reason.
 
 ## Board (end of session)
-- Ladder dry: no game-queue/next/steer/halt; feedback = #1560 (fresh, for QA
-  lane — builders may borrow if QA dead, but its fix wants a steal-recovery day).
-- building: only #1141 (Jon, stalled). building-qa: #1547.
-- Flagship README gaps: ZERO open (SSX/Emberwood/CDHD/Myst, parseGaps-verified
-  by hand — every bullet CLOSED-by-#). flagshipStage → null.
-- main tip `4ab5f89`; main-ok true; #1556 closed+shipped; #1560 open.
-- Slot b port 5178 never started (clean). Worktree retrogames-qa-1556 removed;
-  main checkout detached at tip, STATE.md only dirty file.
+- Ladder dry; only #1141 carries `building` (Jon, stalled). #1562 closed.
+- research: #1567 fresh. #1566 (digest parse bug), #1557/#1544, #838 MYST open.
+- main tip `2ee8b35`; main-ok true; static/smoke/scope green on the merge.
+- Worktree `retrogames-forge-ws-qwen-edit` remains on `forge/ws-qwen-edit`
+  (branch delete refused remote-vs-worktree; remote gone, local ref gone).
 
 ## ENV (carry-forward)
 - `. /tmp/forge/env.sh` for gh+proxy; push via `-c http.proxy=http://127.0.0.1:18080`.
-- Fresh worktrees have NO node_modules: `ln -sfn /Users/jon/Dev/retrogames/node_modules <wt>/node_modules` — lints/build work instantly.
-- Vite entry hashes are NOT reproducible local-vs-Vercel — verify prod by
-  `gh api repos/.../commits/<sha>/check-runs` + deployments (Production for the
-  merge sha) and route 200, not by hash equality. www.jalfern HTML via node fetch
-  through the shim is fine but small cached bodies are the proxy answering.
-- `gh pr list` unsupported by shim → `gh api repos/.../pulls?state=open`.
-- Chrome still dead (#737) — browser tier advisory; sim-tier Node is the gate.
+- **Draft→ready via shim**: REST PATCH draft=false is ignored; use
+  `gh api graphql --input -` with `markPullRequestReadyForReview` and the PR
+  node_id (heredoc-jq the JSON — inline `-f` params get dropped by the shim).
+- www.jalfern.com needs `-Lsx http://127.0.0.1:18080` (plain curl → 000; -k → 308).
+- Lab venv `demos/weight-surgery-lab/.venv` (py3.12+mlx-lm): run scripts from the
+  lab dir; `data/` = symlink to `~/Dev/weight-lab/qwen-forge/data`; oMLX key at
+  `~/.omlx/settings.json` → `auth.api_key`; NO_PROXY=127.0.0.1,localhost.
+- oMLX shared box: other lanes' traffic fills server.log — grep `model=qwen35-own`.
+  A scored row writes nothing until its full 100-problem set finishes (main-thread
+  grading): zero rows for ~40 min mid-row = normal, watch server.log not the file.
+- pgrep broken → `ps -ax -o pid,etime,command`.
 
 ## Open questions
-- (none filed — #1557 is Jon's own question to the studio, not a jonq)
+- (none filed — no jonq needed; #1567 carries the next-step candidates for review)
