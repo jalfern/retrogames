@@ -4,6 +4,7 @@ import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 
 // =====================================================================
 // SUPER MARIO BROS  -  World 1-1 & 1-2
@@ -418,6 +419,7 @@ const SuperMarioGame = () => {
         let warpReturnCol = 0
 
         let mario = null
+        let seed, rand = seedRng(1)
         let enemies = []
         let coinsArr = []
         let shrooms = []
@@ -467,7 +469,7 @@ const SuperMarioGame = () => {
                 })
             }
             coinsArr = (def.coinArcs || []).map(cc => ({
-                x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: Math.random() * 6,
+                x: cc.c * TILE + 4, y: cc.r * TILE + 4, w: 8, h: 8, taken: false, anim: rand() * 6,
             }))
             shrooms = []
             // Firebars are pure geometry: a pivot, an angle, and `len` flame balls strung
@@ -511,6 +513,9 @@ const SuperMarioGame = () => {
         }
 
         const resetGame = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
+            rand = seedRng(seed)
+            tick = 0
             score = 0; coins = 0; lives = 3
             mario = spawnMario('small')
             loadLevel(0)
@@ -599,6 +604,12 @@ const SuperMarioGame = () => {
         window.addEventListener('keydown', handleKeyDown)
         window.addEventListener('keyup', handleKeyUp)
 
+        const handleCanvasTap = () => {
+            if (state === 'attract') { mode = 'play'; apHold = 0; resetGame(); audioController.init() }
+            else if (state === 'gameover' || state === 'win') { mode = 'play'; apHold = 0; resetGame(); audioController.init() }
+        }
+        canvas.addEventListener('pointerdown', handleCanvasTap)
+
         // ---- helpers ----
         const solidAt = (c, r) => {
             if (r < 0 || r >= ROWS || c < 0 || c >= level.cols) return false
@@ -616,7 +627,7 @@ const SuperMarioGame = () => {
             for (let i = 0; i < 4; i++) {
                 particles.push({
                     x: c * TILE + 4 + (i % 2) * 6, y: r * TILE + 4 + Math.floor(i / 2) * 6,
-                    vx: (i % 2 ? 1.5 : -1.5), vy: -3 - Math.random() * 2, life: 40, color: C.brick,
+                    vx: (i % 2 ? 1.5 : -1.5), vy: -3 - rand() * 2, life: 40, color: C.brick,
                 })
             }
             audioController.playNoise(0.12, 0.25)
@@ -624,9 +635,9 @@ const SuperMarioGame = () => {
 
         const spark = (x, y, colors, n, spread) => {
             for (let i = 0; i < n; i++) {
-                const a = (Math.PI * 2 * i) / n + Math.random() * 0.6
-                const s = (spread || 2) + Math.random() * 1.6
-                particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 18 + Math.random() * 12, max: 30, color: colors[i % colors.length], spark: true, g: 0.12 })
+                const a = (Math.PI * 2 * i) / n + rand() * 0.6
+                const s = (spread || 2) + rand() * 1.6
+                particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, life: 18 + rand() * 12, max: 30, color: colors[i % colors.length], spark: true, g: 0.12 })
             }
         }
 
@@ -780,9 +791,9 @@ const SuperMarioGame = () => {
         let bestEverFit = 0, bestEverWeights = null, bestCol = 0, evoBanner = 0, lastBestAtGen = 0
         let evoBonus = 0, evoH = new Float64Array(NH), evoShowcase = false, evoMuted = false
         const clamp = (v, a, b) => Math.max(a, Math.min(b, v))
-        const randWeights = () => { const w = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) w[i] = (Math.random() * 2 - 1) * 0.6; return w }
-        const crossover = (a, b) => { const c = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) c[i] = Math.random() < 0.5 ? a[i] : b[i]; return c }
-        const mutate = (w, sigma) => { for (let i = 0; i < WLEN; i++) if (Math.random() < 0.15) w[i] += (Math.random() * 2 - 1) * sigma; return w }
+        const randWeights = () => { const w = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) w[i] = (rand() * 2 - 1) * 0.6; return w }
+        const crossover = (a, b) => { const c = new Float64Array(WLEN); for (let i = 0; i < WLEN; i++) c[i] = rand() < 0.5 ? a[i] : b[i]; return c }
+        const mutate = (w, sigma) => { for (let i = 0; i < WLEN; i++) if (rand() < 0.15) w[i] += (rand() * 2 - 1) * sigma; return w }
         const evoSigma = (g) => clamp(0.7 * Math.pow(0.985, g), 0.12, 0.7)
         const evoFitness = (won) => {
             let f = maxCol + coins * 10 + evoBonus + (won ? 6000 : 0)
@@ -888,8 +899,8 @@ const SuperMarioGame = () => {
             resetGame(); state = 'play'
         }
         const tournament = () => {
-            let best = Math.floor(Math.random() * POP)
-            for (let k = 0; k < 2; k++) { const c = Math.floor(Math.random() * POP); if (fitArr[c] > fitArr[best]) best = c }
+            let best = Math.floor(rand() * POP)
+            for (let k = 0; k < 2; k++) { const c = Math.floor(rand() * POP); if (fitArr[c] > fitArr[best]) best = c }
             return best
         }
         const saveEvo = () => { try { localStorage.setItem(EVO_KEY, JSON.stringify({ gen, best: Array.from(bestEverWeights || pop[0]), fit: bestEverFit, col: bestCol })) } catch { /* ignore */ } }
@@ -2148,13 +2159,57 @@ const SuperMarioGame = () => {
             }
         }
 
+        // QA contract (#377)
+        exposeGame({
+            id: 'supermario',
+            buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+            reset: () => { mode = 'play'; resetGame() },
+            tick: (pad) => {
+                if (state === 'attract' || state === 'gameover' || state === 'win') { resetGame(); return }
+                keys.left = !!pad.left
+                keys.right = !!pad.right
+                keys.jump = !!pad.a
+                keys.run = !!pad.up
+                keys.down = !!pad.down
+                firePressed = !!pad.b
+                if (keys.jump && mario && mario.onGround) mario.jumpPressed = true
+                update()
+            },
+            state: () => ({
+                tick,
+                score,
+                done: state === 'gameover' || state === 'win',
+                seed: seed ?? 0,
+                lives,
+                coins,
+                level: level ? level.id : 'unknown',
+                col: mario ? Math.round(mario.x / TILE) : 0,
+                power: mario ? mario.power : 'small',
+            }),
+            canvas: () => canvas,
+        })
+
+        // production report carries the seed (#1473)
+        exposeFeedbackState(() => ({
+            tick,
+            score,
+            done: state === 'gameover' || state === 'win',
+            seed: seed ?? 0,
+            lives,
+            coins,
+            level: level ? level.id : 'unknown',
+        }))
+
         return () => {
             apiRef.current = null
             audioController.stopMusic()
             window.removeEventListener('resize', resize)
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
+            canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [])
 

@@ -826,7 +826,12 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // rooms get a top gap blocked by the gate rect while closed. Whole engine now
 // in src/games/Adventure/sim.js on one mulberry32 stream; scripted run wins
 // 10/10 seeds at identical tick → 53 reporting+pinning titles.
-ok('seedpin: rollout floor — at least 53 games report+pin seeds', reportingGames >= 53, `${reportingGames} reporting`)
+// Batch 19 adds SuperMario — the arcade's flagship had no seed, no report and no
+// exposeGame; coin anim phase, brick-debris scatter, explosion particles, and the
+// evolutionary AI's weights/crossover/tournament all ran naked off Math.random.
+// All 10 sites now draw from seedRng(seed) regenerated at every human start;
+// ?seed=N replays identical AI opponents → 54 reporting+pinning titles.
+ok('seedpin: rollout floor — at least 54 games report+pin seeds', reportingGames >= 54, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
