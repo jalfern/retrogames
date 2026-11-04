@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS } from '../src/games/Adventure/sim.js'
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -192,6 +192,30 @@ console.log('gray dot + sealed door: the original easter egg (#1551)')
     ok(bt.bat.room === R.DRAGON_LAIR, 'the bat cannot slip through the sealed door either')
 }
 
+console.log('bat roam: the purple bat changes rooms and roves the world (#1560)')
+{
+    // The 1993 bat's signature is roving rooms and swapping items. Pre-fix,
+    // the inner bounce (|x| in [10, GW-20]) fired before the room-change
+    // thresholds (x<2 / x>GW-8) could ever be reached — measured median
+    // 1 room visited / 10000 ticks.
+    for (const sd of [1, 42, 1337]) {
+        const s = createSim(seedRng(sd))
+        const seen = new Set([s.bat.room])
+        for (let i = 0; i < 6000; i++) { step(s, {}); seen.add(s.bat.room) }
+        ok(seen.size >= 3, `seed ${sd}: the bat roams — ${seen.size} distinct rooms in 6000 ticks`)
+    }
+    // The portcullis holds for the bat too: the gate sits at the courtyard's
+    // top gap, and the foyer is only ever reached through an open gate.
+    const gate = createSim(seedRng(99))
+    gate.bat.room = R.BLACK_CASTLE; gate.bat.x = 80; gate.bat.y = 1; gate.bat.vy = -1.5
+    step(gate, {})
+    ok(gate.bat.room === R.BLACK_CASTLE, 'a closed portcullis blocks the bat (the gate holds for it too)')
+    gate.gateOpen.blackKey = true
+    gate.bat.y = 1; gate.bat.vy = -1.5
+    step(gate, {})
+    ok(gate.bat.room === R.BLACK_FOYER, 'an open gate lets the bat into the foyer')
+}
+
 console.log('gates: park the key in front of its gate')
 {
     const s = createSim(seedRng(5))
@@ -323,6 +347,98 @@ console.log('win: the chalice home to the Gold Castle')
         for (let i = 0; i < maxTicks && sim.room !== want && !sim.won; i++) step(sim, { dx: v[0], dy: v[1] })
         return sim.room === want
     }
+    // #1560 steal recovery. The bat now roams for real and steals
+    // route-critical items in the player's room. A drop always lands in the
+    // player's room (the bat only swaps onto a loose partner), so recovery is:
+    // if the bat still carries the item, walk to the nearest room holding a
+    // loose partner (and no dragon) and wait for the swap; then walk to the
+    // drop spot and come back to the route's continuation point. The walk
+    // obeys the same laws as the player: bridge-only walls, the sealed secret
+    // door, and the portcullis (only through an open gate).
+    const sideSolid = (room, dir) => ROOMS[room].walls.some((w) => dir === 'up' ? w.y === 0 && w.w === GW
+        : dir === 'down' ? w.y + w.h === GH && w.w === GW
+        : dir === 'left' ? w.x === 0 && w.h === GH
+        : w.x + w.w === GW && w.h === GH)
+    const neighbors = (sim, room) => {
+        const es = []
+        for (const d of ['up', 'down', 'left', 'right']) {
+            let to = -1
+            if (d === 'up' && ROOMS[room].gate && CASTLE_INSIDES[room] !== undefined) {
+                if (sim.gateOpen[ROOMS[room].gateKey]) to = CASTLE_INSIDES[room]
+            } else {
+                const ex = EXITS[room]
+                if (ex && ex[d] !== undefined && ex[d] >= 0) to = ex[d]
+            }
+            if (to < 0) continue
+            if (sideSolid(room, d) && !sim.bridged.has(`${room}:${d}`)) continue
+            if (!sim.secretOpen && ((room === R.DRAGON_LAIR && to === R.SECRET) || (room === R.SECRET && to === R.DRAGON_LAIR))) continue
+            es.push([d, to])
+        }
+        return es
+    }
+    const hop = (sim, from, to) => {  // walk one room edge: anchor, then push
+        const edge = neighbors(sim, from).find(([, n]) => n === to)
+        if (!edge) return false
+        const d = edge[0]
+        if (d === 'up' && !driveTo(sim, 80, 16)) return false
+        if (d === 'down' && !driveTo(sim, 80, GH - 24)) return false
+        if (d === 'left' && !driveTo(sim, 16, SIDE_GAP_Y + SIDE_GAP_H / 2)) return false
+        if (d === 'right' && !driveTo(sim, GW - 24, SIDE_GAP_Y + SIDE_GAP_H / 2)) return false
+        return cross(sim, d, to, 400)
+    }
+    const walkTo = (sim, from, to, avoidDragons = true) => {
+        // prefer paths that never cross a dragon's home room (the shelters
+        // already exclude them, but the route between can — a smart player
+        // detours around Yorgle when the map allows); fall back to the plain
+        // graph when the dragon rooms are the only way.
+        const bfs = (skipDragons) => {
+            const prev = new Map([[from, null]])
+            const order = [from]
+            for (let i = 0; i < order.length; i++) {
+                for (const [, n] of neighbors(sim, order[i])) {
+                    if (prev.has(n)) continue
+                    if (skipDragons && n !== to && sim.dragons.some((dg) => dg.alive && dg.room === n)) continue
+                    prev.set(n, order[i]); order.push(n)
+                }
+            }
+            return prev.has(to) ? prev : null
+        }
+        const prev = bfs(avoidDragons) || bfs(false)
+        if (!prev) return false
+        const path = [to]
+        while (prev.get(path[0]) !== null) path.unshift(prev.get(path[0]))
+        for (let i = 0; i + 1 < path.length; i++) if (!hop(sim, path[i], path[i + 1])) return false
+        return sim.room === to
+    }
+    function recover(sim, id, backX, backY, budget = 8000) {
+        if (sim.carrying === id) return true
+        const item = sim.items.find((i) => i.id === id)
+        const startRoom = sim.room
+        if (item.carried) {
+            const prev = new Map([[startRoom, null]])
+            const order = [startRoom]
+            for (let i = 0; i < order.length; i++) {
+                for (const [, n] of neighbors(sim, order[i])) {
+                    if (!prev.has(n)) { prev.set(n, order[i]); order.push(n) }
+                }
+            }
+            const shelter = order.find((room) =>
+                sim.items.some((i) => i.id !== id && i.room === room && !i.carried) &&
+                !sim.dragons.some((dg) => dg.alive && dg.room === room))
+            if (shelter === undefined) return false
+            if (!walkTo(sim, startRoom, shelter)) return false
+            for (let i = 0; i < budget && sim.bat.carrying === id; i++) {
+                step(sim, {})
+                if (sim.dead || sim.won) return false
+            }
+            if (sim.bat.carrying === id) return false
+        }
+        if (!walkTo(sim, sim.room, item.room)) return false
+        if (!driveTo(sim, item.x, item.y)) return false
+        if (sim.carrying !== id) return false  // re-stolen mid-walk
+        if (!walkTo(sim, sim.room, startRoom)) return false
+        return driveTo(sim, backX, backY)
+    }
     function winRun(seed) {
         const sim = createSim(seedRng(seed))
         const T = (tx, ty) => driveTo(sim, tx, ty)
@@ -335,7 +451,9 @@ console.log('win: the chalice home to the Gold Castle')
         if (!T(140, 90) || !T(140, 170) || !T(80, 170)) return { ok: false, why: 'lab1 descent' }
         if (!cross(sim, 'down', R.BLUE_LAB_2)) return { ok: false, why: 'lab2' }
         T(76, 92)
-        if (sim.carrying !== 'blackKey') return { ok: false, why: 'no blackKey' }
+        if (sim.carrying !== 'blackKey') {
+            if (!recover(sim, 'blackKey', 76, 92)) return { ok: false, why: 'no blackKey' }
+        }
         T(80, 16)
         if (!cross(sim, 'up', R.BLUE_LAB_1)) return { ok: false, why: 'lab1b' }
         if (!T(140, 168) || !T(140, 44) || !T(110, 16) || !T(80, 16)) return { ok: false, why: 'lab1 climb' }
@@ -355,7 +473,9 @@ console.log('win: the chalice home to the Gold Castle')
         if (!cross(sim, 'up', R.OVERWORLD_2)) return { ok: false, why: 'ow2c' }
         sim.player.y = 70; sim.player.x = 95
         T(96, 76)
-        if (sim.carrying !== 'bridge') return { ok: false, why: 'no bridge' }
+        if (sim.carrying !== 'bridge') {
+            if (!recover(sim, 'bridge', 96, 76)) return { ok: false, why: 'no bridge' }
+        }
         sim.player.y = 90
         if (!cross(sim, 'down', R.OVERWORLD_3)) return { ok: false, why: 'ow3c' }
         if (!cross(sim, 'down', R.BLACK_CASTLE)) return { ok: false, why: 'castleB2' }
@@ -366,7 +486,9 @@ console.log('win: the chalice home to the Gold Castle')
         step(sim, { drop: true })                       // no-op: the bridge placed itself at the crossing
         if (sim.carrying !== null) return { ok: false, why: 'bridge drop failed' }
         if (!T(66, 86)) return { ok: false, why: 'red lower corridor' }
-        if (sim.carrying !== 'whiteKey') return { ok: false, why: 'no whiteKey' }
+        if (sim.carrying !== 'whiteKey') {
+            if (!recover(sim, 'whiteKey', 66, 86)) return { ok: false, why: 'no whiteKey' }
+        }
         if (!T(140, 86)) return { ok: false, why: 'red lower right' }
         if (!T(140, 12)) return { ok: false, why: 'red right column up' }
         if (!T(80, 12)) return { ok: false, why: 'red top exit' }
@@ -386,7 +508,9 @@ console.log('win: the chalice home to the Gold Castle')
         if (!sim.gateOpen.whiteKey) return { ok: false, why: 'gateW' }
         if (!cross(sim, 'up', R.WHITE_FOYER)) return { ok: false, why: 'foyerW' }
         T(80, 88)
-        if (sim.carrying !== 'chalice') return { ok: false, why: 'no chalice' }
+        if (sim.carrying !== 'chalice') {
+            if (!recover(sim, 'chalice', 80, 88)) return { ok: false, why: 'no chalice' }
+        }
         T(80, 12)
         if (!cross(sim, 'up', R.WHITE_CASTLE)) return { ok: false, why: 'castleW out' }
         sim.player.y = 150
@@ -538,6 +662,22 @@ if (process.argv.includes('--mutant')) {
             sim.player.y += 2
         }`,
             `        // de-wedge removed`],
+        ['the inner bounce re-traps the bat in one room (roam removed)', SM,
+            `        const { bat } = sim
+        bat.x += bat.vx
+        bat.y += bat.vy
+
+        // Bat randomly changes direction (seeded dice, #1473)`,
+            `        const { bat } = sim
+        bat.x += bat.vx
+        bat.y += bat.vy
+        if (bat.x < 10 || bat.x > GW - 20) bat.vx *= -1
+        if (bat.y < 10 || bat.y > GH - 20) bat.vy *= -1
+
+        // Bat randomly changes direction (seeded dice, #1473)`],
+        ['the portcullis no longer holds for the bat (gate check removed)', SM,
+            `                return sim.gateOpen[ROOMS[bat.room].gateKey] ? CASTLE_INSIDES[bat.room] : -1`,
+            `                return CASTLE_INSIDES[bat.room]  // gate check removed`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

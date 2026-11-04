@@ -1,7 +1,8 @@
 // Throwaway playtest driver for #1556 (ADVENTURE difficulty curve / bat routing /
-// sword findability). Not a new framework — numbers only; any law that comes out
-// of it lands in adventurecheck. Run from the qa worktree root.
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED } from '../src/games/Adventure/sim.js'
+// sword findability) + #1560 (bat roam + steal recovery). Not a new framework —
+// numbers only; any law that comes out of it lands in adventurecheck.
+// Run from the qa worktree root.
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 
 const S = PLAYER_SPEED
@@ -88,6 +89,95 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         for (let i = 0; i < maxTicks && sim.room !== want && !sim.won; i++) step(sim, { dx: v[0], dy: v[1] })
         return sim.room === want
     }
+    // #1560 steal recovery (same helper as adventurecheck's winRun): the bat
+    // now roams and steals route-critical items in the player's room; a drop
+    // always lands in the player's room (the bat swaps onto a loose partner),
+    // so recovery = walk to the nearest room with a loose partner (no dragon),
+    // wait for the swap, walk to the drop spot, return to the route point.
+    const sideSolid = (room, dir) => ROOMS[room].walls.some((w) => dir === 'up' ? w.y === 0 && w.w === GW
+        : dir === 'down' ? w.y + w.h === GH && w.w === GW
+        : dir === 'left' ? w.x === 0 && w.h === GH
+        : w.x + w.w === GW && w.h === GH)
+    const neighbors = (sim, room) => {
+        const es = []
+        for (const d of ['up', 'down', 'left', 'right']) {
+            let to = -1
+            if (d === 'up' && ROOMS[room].gate && CASTLE_INSIDES[room] !== undefined) {
+                if (sim.gateOpen[ROOMS[room].gateKey]) to = CASTLE_INSIDES[room]
+            } else {
+                const ex = EXITS[room]
+                if (ex && ex[d] !== undefined && ex[d] >= 0) to = ex[d]
+            }
+            if (to < 0) continue
+            if (sideSolid(room, d) && !sim.bridged.has(`${room}:${d}`)) continue
+            if (!sim.secretOpen && ((room === R.DRAGON_LAIR && to === R.SECRET) || (room === R.SECRET && to === R.DRAGON_LAIR))) continue
+            es.push([d, to])
+        }
+        return es
+    }
+    const hop = (sim, from, to) => {
+        const edge = neighbors(sim, from).find(([, n]) => n === to)
+        if (!edge) return false
+        const d = edge[0]
+        if (d === 'up' && !driveTo(sim, 80, 16)) return false
+        if (d === 'down' && !driveTo(sim, 80, GH - 24)) return false
+        if (d === 'left' && !driveTo(sim, 16, SIDE_GAP_Y + SIDE_GAP_H / 2)) return false
+        if (d === 'right' && !driveTo(sim, GW - 24, SIDE_GAP_Y + SIDE_GAP_H / 2)) return false
+        return cross(sim, d, to, 400)
+    }
+    const walkTo = (sim, from, to, avoidDragons = true) => {
+        // prefer paths that never cross a dragon's home room (the shelters
+        // already exclude them, but the route between can — a smart player
+        // detours around Yorgle when the map allows); fall back to the plain
+        // graph when the dragon rooms are the only way.
+        const bfs = (skipDragons) => {
+            const prev = new Map([[from, null]])
+            const order = [from]
+            for (let i = 0; i < order.length; i++) {
+                for (const [, n] of neighbors(sim, order[i])) {
+                    if (prev.has(n)) continue
+                    if (skipDragons && n !== to && sim.dragons.some((dg) => dg.alive && dg.room === n)) continue
+                    prev.set(n, order[i]); order.push(n)
+                }
+            }
+            return prev.has(to) ? prev : null
+        }
+        const prev = bfs(avoidDragons) || bfs(false)
+        if (!prev) return false
+        const path = [to]
+        while (prev.get(path[0]) !== null) path.unshift(prev.get(path[0]))
+        for (let i = 0; i + 1 < path.length; i++) if (!hop(sim, path[i], path[i + 1])) return false
+        return sim.room === to
+    }
+    function recover(sim, id, backX, backY, budget = 8000) {
+        if (sim.carrying === id) return true
+        const item = sim.items.find((i) => i.id === id)
+        const startRoom = sim.room
+        if (item.carried) {
+            const prev = new Map([[startRoom, null]])
+            const order = [startRoom]
+            for (let i = 0; i < order.length; i++) {
+                for (const [, n] of neighbors(sim, order[i])) {
+                    if (!prev.has(n)) { prev.set(n, order[i]); order.push(n) }
+                }
+            }
+            const shelter = order.find((room) =>
+                sim.items.some((i) => i.id !== id && i.room === room && !i.carried) &&
+                !sim.dragons.some((dg) => dg.alive && dg.room === room))
+            if (shelter === undefined) return false
+            if (!walkTo(sim, startRoom, shelter)) return false
+            for (let i = 0; i < budget && sim.bat.carrying === id; i++) {
+                step(sim, {})
+                if (sim.dead || sim.won) return false
+            }
+            if (sim.bat.carrying === id) return false
+        }
+        if (!walkTo(sim, sim.room, item.room)) return false
+        if (!driveTo(sim, item.x, item.y)) return false
+        if (sim.carrying !== id) return false
+        if (!walkTo(sim, sim.room, startRoom)) return false
+        return driveTo(sim, backX, backY)
+    }
     function swordTrip(sim) {
         // from BLACK_CASTLE start position: grab goldKey at OW4, park at gold gate, take sword
         const T = (tx, ty) => driveTo(sim, tx, ty)
@@ -115,13 +205,21 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         if (!cross(sim, 'down', R.BLACK_CASTLE)) return 'blackcastle'
         return 'ok'
     }
-    function winRun(sd, withSword) {
+    function winRun(sd, withSword, trackSteals = false) {
         const sim = createSim(seedRng(sd))
         const T = (tx, ty) => driveTo(sim, tx, ty)
         let yorgleTicks = 0, yorgleSeen = 0
+        let critSteals = 0
+        const CRIT = ['blackKey', 'whiteKey', 'bridge', 'chalice', 'goldKey', 'sword']
         const wrapped = sim.step.bind(sim)
-        // count ticks spent in the same room as living yorgle
-        sim.step = (inp) => { wrapped(inp); const y = sim.dragons[0]; if (sim.room === y.room && y.alive) { yorgleTicks++; yorgleSeen = 1 } }
+        // count ticks spent in the same room as living yorgle + (#1560) steals
+        // of route-critical items by the bat
+        sim.step = (inp) => {
+            wrapped(inp)
+            const y = sim.dragons[0]
+            if (sim.room === y.room && y.alive) { yorgleTicks++; yorgleSeen = 1 }
+            if (trackSteals && sim.events.includes('steal') && CRIT.includes(sim.bat.carrying)) critSteals++
+        }
         sim.player.x = 80
         if (withSword) {
             const r = swordTrip(sim); if (r !== 'ok') return { ok: false, why: `sword:${r}` }
@@ -134,7 +232,9 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         if (!T(140, 90) || !T(140, 170) || !T(80, 170)) return { ok: false, why: 'lab1 descent' }
         if (!cross(sim, 'down', R.BLUE_LAB_2)) return { ok: false, why: 'lab2' }
         T(76, 92)
-        if (sim.carrying !== 'blackKey') return { ok: false, why: 'no blackKey' }
+        if (sim.carrying !== 'blackKey') {
+            if (!recover(sim, 'blackKey', 76, 92)) return { ok: false, why: 'no blackKey' }
+        }
         if (sim.dragons[0].alive && sim.room === sim.dragons[0].room) return { ok: false, why: 'yorgle blocked lab exit' }
         T(80, 16)
         if (!cross(sim, 'up', R.BLUE_LAB_1)) return { ok: false, why: 'lab1b' }
@@ -154,7 +254,9 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         if (!cross(sim, 'up', R.OVERWORLD_2)) return { ok: false, why: 'ow2c' }
         sim.player.y = 70; sim.player.x = 95
         T(96, 76)
-        if (sim.carrying !== 'bridge') return { ok: false, why: 'no bridge' }
+        if (sim.carrying !== 'bridge') {
+            if (!recover(sim, 'bridge', 96, 76)) return { ok: false, why: 'no bridge' }
+        }
         sim.player.y = 90
         if (!cross(sim, 'down', R.OVERWORLD_3)) return { ok: false, why: 'ow3c' }
         if (!cross(sim, 'down', R.BLACK_CASTLE)) return { ok: false, why: 'castleB2' }
@@ -164,7 +266,9 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         if (!T(140, 86)) return { ok: false, why: 'red right column' }
         step(sim, { drop: true })
         if (!T(66, 86)) return { ok: false, why: 'red lower corridor' }
-        if (sim.carrying !== 'whiteKey') return { ok: false, why: 'no whiteKey' }
+        if (sim.carrying !== 'whiteKey') {
+            if (!recover(sim, 'whiteKey', 66, 86)) return { ok: false, why: 'no whiteKey' }
+        }
         if (!T(140, 86)) return { ok: false, why: 'red lower right' }
         if (!T(140, 12)) return { ok: false, why: 'red column up' }
         if (!T(80, 12)) return { ok: false, why: 'red top exit' }
@@ -182,7 +286,9 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         if (!sim.gateOpen.whiteKey) return { ok: false, why: 'gateW' }
         if (!cross(sim, 'up', R.WHITE_FOYER)) return { ok: false, why: 'foyerW' }
         T(80, 88)
-        if (sim.carrying !== 'chalice') return { ok: false, why: 'no chalice' }
+        if (sim.carrying !== 'chalice') {
+            if (!recover(sim, 'chalice', 80, 88)) return { ok: false, why: 'no chalice' }
+        }
         T(80, 12)
         if (!cross(sim, 'up', R.WHITE_CASTLE)) return { ok: false, why: 'castleW out' }
         sim.player.y = 150
@@ -190,7 +296,7 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         sim.player.x = 80
         if (!cross(sim, 'up', R.OVERWORLD_1)) return { ok: false, why: 'ow1 home' }
         for (let i = 0; i < 200 && !sim.won; i++) step(sim, { dx: 0, dy: -S })
-        return sim.won ? { ok: true, tick: sim.tick, yorgleTicks, yorgleSeen } : { ok: false, why: `end room=${sim.room} carry=${sim.carrying} dead=${sim.dead}` }
+        return sim.won ? { ok: true, tick: sim.tick, yorgleTicks, yorgleSeen, critSteals } : { ok: false, why: `end room=${sim.room} carry=${sim.carrying} dead=${sim.dead}` }
     }
     for (const withSword of [false]) {
         // NOTE (playtest finding): the sword detour is scriptable but cannot
@@ -200,42 +306,48 @@ console.log('=== A. NOVICE random-walk, 300 seeds x 5000 ticks ===')
         // constraint (#1556 finding in the issue note); measuring the full
         // park/re-arm route is left to the follow-up playtest pass.
         const N = 50, why = {}
-        let wins = 0
+        let wins = 0, bSteals = 0
         const ticks = [], yorgle = []
         for (let sd = 1; sd <= N; sd++) {
-            const r = winRun(sd, withSword)
-            if (r.ok) { wins++; ticks.push(r.tick); yorgle.push(r.yorgleTicks) } else why[r.why] = (why[r.why] || 0) + 1
+            const r = winRun(sd, withSword, true)
+            if (r.ok) { wins++; ticks.push(r.tick); yorgle.push(r.yorgleTicks); bSteals += r.critSteals } else why[r.why] = (why[r.why] || 0) + 1
         }
         console.log(`=== B. skilled route ${withSword ? 'WITH sword detour' : 'no sword'} (${N} seeds) ===`)
-        console.log(`wins ${pct(wins, N)} ${wins ? `win ticks median ${pctl(ticks, 0.5)} p90 ${pctl(ticks, 0.9)}` : JSON.stringify(why)}`)
+        console.log(`wins ${pct(wins, N)} ${wins ? `win ticks median ${pctl(ticks, 0.5)} p90 ${pctl(ticks, 0.9)}` : ''} ${Object.keys(why).length ? `failures ${JSON.stringify(why)}` : ''}  bat route-critical steals ${bSteals}`)
         if (wins) console.log(`ticks shared-room with living Yorgle: median ${pctl(yorgle, 0.5)} p90 ${pctl(yorgle, 0.9)}`)
     }
-}
-
-// ------------------------------------------------------ C. BAT KEY THIEVERY ----
-// The skilled route assumes keys sit where they fell. How often does the bat
-// move blackKey/whiteKey/bridge off their template spot before the route needs
-// them, and can the run recover?
-{
-    console.log('=== C. bat interference with route-critical items, 100 seeds ===')
-    let stolenBeforeNeeded = 0, neverRecovered = 0
+    // C.1 + C.2 live in this block: C.2 needs winRun (block-scoped above).
+    console.log('=== C.1 bat room visits, 20 seeds x 10000 ticks (parked player) ===')
+    const visits = []
+    for (let sd = 1; sd <= 20; sd++) {
+        const sim = createSim(seedRng(sd))
+        const seen = new Set([sim.bat.room])
+        for (let t = 0; t < 10000; t++) { step(sim, { dx: 0, dy: 0 }); seen.add(sim.bat.room) }
+        visits.push(seen.size)
+    }
+    console.log(`distinct rooms visited: median ${pctl(visits, 0.5)}  p10 ${pctl(visits, 0.1)}  p90 ${pctl(visits, 0.9)}  (pre-fix: 1)`)
+    console.log('=== C.2 route-critical steals + recovery on the skilled route, 100 seeds ===')
+    let wins = 0, totalCritSteals = 0, recoveredRuns = 0
+    const why = {}
     const N = 100
     for (let sd = 1; sd <= N; sd++) {
-        const sim = createSim(seedRng(sd))
-        let stealTarget = 0, recovered = 0
-        for (let t = 0; t < 8000; t++) {
-            step(sim, { dx: 0, dy: 0 })
-            if (sim.events.includes('steal')) {
-                const b = sim.bat
-                if (['blackKey', 'whiteKey', 'bridge'].includes(b.carrying)) stealTarget = sim.tick
-            }
-            // recovery: bat drops by stealing another loose item in same room
-            if (stealTarget && !sim.bat.carrying && sim.tick > stealTarget) { recovered = 1; stealTarget = 0 }
-            if (sim.dead && sim.deathTimer <= 0) break
-        }
-        const bat = sim.bat
-        const critCarried = ['blackKey', 'whiteKey', 'bridge'].includes(bat.carrying)
-        if (critCarried) { stolenBeforeNeeded++; if (!recovered) neverRecovered++ }
+        const r = winRun(sd, false, true)
+        if (r.ok) {
+            wins++
+            totalCritSteals += r.critSteals
+            if (r.critSteals > 0) recoveredRuns++
+        } else why[r.why] = (why[r.why] || 0) + 1
     }
-    console.log(`route-critical item in bat claws at tick 8000: ${pct(stolenBeforeNeeded, N)}; never dropped all run: ${pct(neverRecovered, N)}`)
+    console.log(`wins ${pct(wins, N)} ${Object.keys(why).length ? `failures ${JSON.stringify(why)}` : ''}`)
+    console.log(`route-critical steals total ${totalCritSteals}  (${pct(recoveredRuns, N)} of runs needed recovery)`)
 }
+
+// ------------------------------------------------------ C. BAT ROAM (#1560) ----
+// The bat's 1993 signature: roving the world and swapping items. Pre-#1560
+// the inner bounce kept it in ONE room for the whole run (median 1 room /
+// 10000 ticks, 20 seeds) and its item-steal almost never fired. C.1 measures
+// the roam itself (parked player — the roam is player-independent); C.2
+// measures interference on the skilled route: how often the bat takes a
+// route-critical item and whether steal-recovery keeps the run green (the
+// numbers size the recovery budget). Both run inside the B block above —
+// C.2 needs the block-scoped winRun.
