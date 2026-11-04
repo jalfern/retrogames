@@ -1,59 +1,51 @@
-# STATE — session 122, slot a (2026-11-04)
+# STATE — session 123 (2026-11-04, slot a)
 
-## Shipped this session
-**SEEDPIN b18 — ADVENTURE** (Atari 2600, 1993). PR #1543 squash-merged to main
-(`1f8560f`), live at https://jalfern.com/retrogames/adventure. Issue #1473 stays
-open (multi-stage rollout). Pin floor now **53** (`feedbackcheck` 223/223 green).
+## What shipped
+**SEEDPIN b19 MERGED** — `fba3401` via PR #1546. SuperMario seedpin wiring:
+- All 10 `Math.random` sites (coin anim phase, brick-debris scatter, explosion
+  particles, evolutionary AI weights/crossover/mutation/tournament) replaced with
+  `seedRng(seed)` regenerated at every human start (resetGame).
+- `exposeGame` id `supermario` (first-ever harness hook for the flagship).
+- `exposeFeedbackState` report `{tick, score, done, seed, lives, coins, level}`.
+- Canvas `pointerdown` tap-to-start (phone parity — the game had keyboard-only start).
+- feedbackcheck floor 53→54.
 
-- Whole engine extracted to `src/games/Adventure/sim.js` on ONE injected mulberry32
-  stream (entropy-free, Rogue/Defender precedent); shell pins
-  `seedFromQuery() ?? random`, reports `{tick,score,done,seed,room,carrying}`,
-  `exposeGame` id `adventure`, tap-to-start, attract on fixed stream 1979.
-- **Fidelity restoration (the big one):** pre-port castles had a full-width solid
-  TOP wall + gate rect as extra collision → foyers unreachable, chalice home run
-  provably impossible (room-level BFS, ~2.5M states). Gate rooms now use top-gap
-  walls; the gate rect blocks only while closed. Post-fix BFS wins; scripted harness
-  win 10/10 seeds at identical tick 1721, score 4.
-- `adventurecheck`: 39 gates + 7 mutants, all green. README written (score honesty,
-  honest gaps). QA polish pass filed: **#1545** (two bridges, magnet attract, dragon
-  respawn, secret-room egg, first-human difficulty curve).
+**SEEDPIN b20 MERGED** — `259cdd3` via PR #1548. RaccoonHeist seedpin wiring:
+- `createEngine` now accepts optional `seed` parameter (xorshift guard timing).
+- `seedFromQuery()` generated at every human start (start + next functions).
+- `exposeGame` id `raccoonheist`; report `{tick, score=deliveredValue, done, seed, job}`.
+- Canvas pointerdown already existed (camera drag doubles as tap-to-start).
+- feedbackcheck floor 54→55.
 
-## Playable now
-Arcade + 53 seeded/pinned games incl. `/retrogames/adventure`
-(`?seed=4242` pins; every seed winnable — the run must collect bridge→black key→
-white key→chalice home to Gold Castle).
+## b18 recovery (context)
+Resumed slot-b's corpse (`forge/seedpin-rollout-b18` — Adventure sim extraction
+pushed but PR #1543 was already merged by slot-b before it died). Verified 39 gates
++ 7 mutants green. No further action needed for b18.
 
-## Next: SEEDPIN b19 (take #1473 again via warden TARGET)
-Remaining on the rollout map: **SuperMario** and **RaccoonHeist** — the big two,
-each likely a full session (big sims; keep existing checks green by REWIRING them
-to the pinned stream, not rewriting). Order suggestion: SuperMario first (bigger
-harness already exists: mario check suite). Pattern per title (b17/b18 template):
-sim.js extraction with injected stream → shell pin+report+contract+tap → own check
-green → feedbackcheck floor 53→54 (→55) → README honest-gaps.
+## Next lane (fresh claim)
+Normal `forge-claim.sh` ladder. Target: **#1473** (building, lane:platform).
+**b21 branch pushed** (`forge/seedpin-rollout-b21`): DosShell seedless report
+`{tick, score:0, done:false}` — covers all 5 Ultima games in one file. PR needed.
+Then KingsQuest + Zork (seedless wiring, more complex: custom emulator APIs, not DosShell).
+After those, remaining non-emulator titles to classify: audit for DECO eligibility
+(any game with Math.random in non-index files fails the current DECO law and needs
+either sim.js extraction or seedRng seeding).
 
-## Lessons earned this session
-- **An unreachable level is a testable property.** The gate bug shipped because no
-  check asked "is the goal reachable?" — BFS the room graph BEFORE porting mechanics
-  onto a broken layout. Unfalsifiable layouts are the clue, not noise (rule-8).
-- **Own forge branches may need rebase+force-with-lease** when main moves under them
-  (remote had the pre-rebase checkpoint; local rebased onto `5a3d0eb`). Verify
-  game-file content is unchanged before forcing; `--force-with-lease` only.
-- **gh-shim merge needs the PR number explicitly** when HEAD is detached:
-  `gh pr checks 1543` / `gh pr merge 1543 ...` inside the rule-5 loop.
-- **PR-exists trap:** re-runs of `gh pr create` 422; find the open PR via
-  `gh api pulls?head=` and `gh pr edit --body-file` instead. Never leave
-  `Closes #<rollout>` in a multi-stage PR body — use "Part of #1473".
-- **Prod verify without hashes:** Vercel env hashes differ from local builds; compare
-  *marker profiles* (string occurrence counts of b18-only literals: Sword/slay/steal/
-  gate/pickup) between prod chunk and local build of the merge sha. Also: rescue
-  proxy answers curl `-o /dev/null` with 405 — use webfetch for prod checks.
-- feedbackcheck counts only reports with explicit `seed:` key — shorthand `seed,`
-  is invisible to its regex.
+## Board (end of session)
+- #1473 open (building): floor 55, seedless 21+ (b21 pushes DosShell for Ultima1–5).
+- No halt labels, no steer, no jonq AWAITING.
+- Slot-a port 5173 freed. b21 branch pushed, unmerged.
+- main-ok true at exit.
 
-## Open questions for Jon
-None (none filed via jonq this session).
+## ENV (carry-forward)
+- `. /tmp/forge/env.sh` for gh (shim `/tmp/forge/gh`).
+- Push via `-c http.proxy=http://127.0.0.1:18080`.
+- Prod verify: use webfetch (different egress), not curl through proxy — rescue proxy
+  caches jalfern.com HTML (STATE session 121 lesson).
+- Worktree: `~/Dev/retrogames-forge-seedpin-rollout-b18` (node_modules symlink),
+  currently detached at `259cdd3`. b21 branch on it.
+- pgrep broken (use `ps -ax`).
+- `gh pr checks <N>` needs explicit PR number (worktree on non-default branch).
 
-## Board
-#1473 open (b19 next: SuperMario, RaccoonHeist). #1545 open (QA ADVENTURE polish,
-lane:qa — QA lane's work, not builder's). No halt/steer issues seen. main nightly:
-not yet run on `1f8560f` (main-ok treats as OK).
+## Open questions
+- (none open — no jonq filed)
