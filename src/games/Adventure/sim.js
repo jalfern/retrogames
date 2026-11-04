@@ -362,6 +362,19 @@ export function createSim(rand) {
         sim.events.push('bridge')
     }
 
+    // #1556 soft-lock fix: room warps land without collision checks, and the
+    // Black Castle approach from OW3 drops the player at y=8 — inside the
+    // closed gate's rect (56,0,48,30), where every direction collides and the
+    // run is pinned forever (repro: OW3 x=80 walk down, blackKey still in the
+    // lab). The original never traps the dot: nudge a wedged landing down
+    // until it is clear of the obstruction, so the player can walk back out.
+    const dewedge = () => {
+        const rm = ROOMS[sim.room]
+        for (let i = 0; i < 24 && collidesWithWalls(rm, sim.player.x, sim.player.y, sim.player.w, sim.player.h); i++) {
+            sim.player.y += 2
+        }
+    }
+
     const tryTransition = () => {
         const room = ROOMS[sim.room]
         const ex = EXITS[sim.room]
@@ -374,12 +387,14 @@ export function createSim(rand) {
                 placeBridgeAt('up', CASTLE_INSIDES[sim.room])
                 sim.room = CASTLE_INSIDES[sim.room]
                 sim.player.y = GH - sim.player.h - 8
+                dewedge()
                 return
             }
             if (ex.up >= 0) {
                 placeBridgeAt('up', ex.up)
                 sim.room = ex.up
                 sim.player.y = GH - sim.player.h - 8
+                dewedge()
             } else {
                 sim.player.y = 0
             }
@@ -390,6 +405,7 @@ export function createSim(rand) {
                 placeBridgeAt('down', ex.down)
                 sim.room = ex.down
                 sim.player.y = 8
+                dewedge()
             } else {
                 sim.player.y = GH - sim.player.h
             }
@@ -400,6 +416,7 @@ export function createSim(rand) {
                 placeBridgeAt('left', ex.left)
                 sim.room = ex.left
                 sim.player.x = GW - sim.player.w - 8
+                dewedge()
             } else {
                 sim.player.x = 0
             }
@@ -410,6 +427,7 @@ export function createSim(rand) {
                 placeBridgeAt('right', ex.right)
                 sim.room = ex.right
                 sim.player.x = 8
+                dewedge()
             } else {
                 sim.player.x = GW - sim.player.w
             }
