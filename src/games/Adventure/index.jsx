@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED } from './sim.js'
+import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H } from './sim.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -127,6 +127,8 @@ const AdventureGame = () => {
                 else if (ev === 'slay') { audioController.playNoise(0.2, 0.3); audioController.playSweep(800, 200, 0.3, 'sawtooth') }
                 else if (ev === 'death') { audioController.playNoise(0.4, 0.5); audioController.playSweep(500, 50, 0.5, 'sawtooth') }
                 else if (ev === 'steal') audioController.playTone(900, 0.04, 'triangle')
+                else if (ev === 'bridge') audioController.playNoise(0.1, 0.25)
+                else if (ev === 'secret') { audioController.playSweep(300, 900, 0.5, 'triangle'); audioController.playTone(1200, 0.1, 'square') }
                 else if (ev === 'win') audioController.playSweep(400, 1200, 1.0, 'square')
             }
             sim.events.length = 0
@@ -184,6 +186,20 @@ const AdventureGame = () => {
                     ctx.strokeStyle = room.gateColor
                     ctx.lineWidth = 2
                     ctx.strokeRect(58, 0, 44, 6)
+                }
+            }
+
+            // The secret door: a sealed barrier until the dot rite, then a
+            // blinking gap (the original's rapidly flashing barrier)
+            if (room.id === R.DRAGON_LAIR || room.id === R.SECRET) {
+                const doorX = room.id === R.DRAGON_LAIR ? 0 : GW - WALL_T
+                if (!sim.secretOpen) {
+                    ctx.fillStyle = room.bg === COLORS.black ? '#333333' : darken(room.bg)
+                    ctx.fillRect(doorX, SIDE_GAP_Y, WALL_T, SIDE_GAP_H)
+                } else if (sim.tick % 10 < 5) {
+                    ctx.fillStyle = COLORS.cyan
+                    ctx.fillRect(doorX, SIDE_GAP_Y, WALL_T, 2)
+                    ctx.fillRect(doorX, SIDE_GAP_Y + SIDE_GAP_H - 2, WALL_T, 2)
                 }
             }
         }
@@ -255,6 +271,13 @@ const AdventureGame = () => {
                 ctx.fillStyle = COLORS.red
                 ctx.fillRect(item.x, item.y + item.h - 3, 3, 3)
                 ctx.fillRect(item.x + item.w - 3, item.y + item.h - 3, 3, 3)
+            } else if (item.id === 'dot') {
+                // The gray dot: one pixel, visible only loose in the sealed
+                // Red Maze — the original dot is invisible in most rooms
+                // (and invisible while carried)
+                if (sim.room !== R.RED_LAB_1 && sim.room !== R.RED_LAB_2) return
+                ctx.fillStyle = COLORS.grey
+                ctx.fillRect(item.x, item.y, 1, 1)
             } else {
                 ctx.fillRect(item.x, item.y, item.w, item.h)
             }
@@ -383,6 +406,17 @@ const AdventureGame = () => {
 
             // Player
             drawPlayer()
+
+            // The creator's room — "Created by Warren Robinett", the text
+            // changing color continuously, per the original easter egg
+            if (sim.room === R.SECRET && !isAttractMode) {
+                const cols = [COLORS.red, COLORS.yellow, COLORS.green, COLORS.cyan, COLORS.purple, COLORS.white]
+                ctx.fillStyle = cols[Math.floor(sim.tick / 15) % cols.length]
+                ctx.font = '8px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText('Created by', GW / 2, GH / 2 - 8)
+                ctx.fillText('Warren Robinett', GW / 2, GH / 2 + 4)
+            }
 
             // UI overlays
             if (isAttractMode) {

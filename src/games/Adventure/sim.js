@@ -16,19 +16,27 @@
 // carrying the chalice to the Gold Castle.
 //
 //
-// HONESTY (score): the 1993 cart has NO score counter and nothing here
+// HONESTY (score): the original cart has NO score counter and nothing here
 // changes on-screen. `score` is a report-only progress metric — distinct
-// items picked up this run (0..7) — so a filed report can pinpoint a run
+// items picked up this run (0..8) — so a filed report can pinpoint a run
 // (Britannia's moons-visited precedent, #1473 batch 12). Restored in the
 // #1545 polish pass: the magnet attracts nearby loose items (MAGNET_RANGE /
 // MAGNET_PULL) and a slain dragon respawns to its lair (DRAGON_RESPAWN_TICKS).
-// Remaining honest gaps (see README): one bridge, not two; no secret-room dot
-// reward / pen-shaped dragon sounds; collisions ignore exact room-warp edges.
+// Restored in the #1551 polish pass: the bridge is PLACED on the wall it
+// spans (a permanent, re-pickable crossing — the original bridge law, so the
+// single bridge can no longer strand itself), and the gray dot + sealed-door
+// rite opens the creator's room (see README "Honest gaps"). Remaining gap:
+// collisions ignore exact room-warp edges.
 
 export const GW = 160  // Atari 2600 resolution (approx)
 export const GH = 192
 export const PLAYER_SPEED = 1.8
-export const MAX_ITEMS = 7   // sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet
+export const MAX_ITEMS = 8   // sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet, gray dot
+
+// Wall geometry shared by makeWalls() and the secret-door barrier rect.
+export const WALL_T = 4      // wall thickness
+export const SIDE_GAP_Y = 70 // side gap position
+export const SIDE_GAP_H = 50 // side gap height
 
 // Original-fidelity constants, restored in the #1545 polish pass. The magnet
 // pulls nearby loose items toward the player while it is carried (in the 1993
@@ -66,11 +74,11 @@ export const R = {
 // =============================================
 const makeWalls = (openTop, openBot, openLeft, openRight) => {
     const walls = []
-    const T = 4  // wall thickness
+    const T = WALL_T
     const gapL = 60  // gap position/size for top/bottom
     const gapW = 40
-    const sideGapY = 70
-    const sideGapH = 50
+    const sideGapY = SIDE_GAP_Y
+    const sideGapH = SIDE_GAP_H
 
     // Top wall
     if (!openTop) {
@@ -194,7 +202,8 @@ export const ROOMS = [
     { id: R.WHITE_FOYER, name: 'White Foyer', bg: '#a0a0a0', walls: makeWalls(true, false, false, false) },
     // 16: Dragon Lair
     { id: R.DRAGON_LAIR, name: 'Dragon Lair', bg: '#300030', walls: makeWalls(true, false, true, false) },
-    // 17: Secret room (easter egg dot)
+    // 17: Secret room — the creator's room behind the sealed door
+    // (the original easter egg; the door opens via the dot rite)
     { id: R.SECRET, name: '???', bg: '#000000', walls: makeWalls(false, false, true, false) },
 ]
 
@@ -240,6 +249,11 @@ const ITEM_TEMPLATES = [
     { id: 'chalice', name: 'Chalice', room: R.WHITE_FOYER, x: 80, y: 100, w: 10, h: 16, color: COLORS.gold },
     { id: 'bridge', name: 'Bridge', room: R.OVERWORLD_2, x: 100, y: 80, w: 28, h: 6, color: COLORS.purple },
     { id: 'magnet', name: 'Magnet', room: R.BLACK_FOYER, x: 80, y: 90, w: 10, h: 12, color: COLORS.white },
+    // The gray dot (original easter egg): a one-pixel object sealed along the
+    // south wall of the bridge-only room — in the original, the Black
+    // Castle's sealed catacombs chamber. It is not attracted by the magnet,
+    // unlike all other inanimate objects (noMagnet).
+    { id: 'dot', name: 'Gray Dot', room: R.RED_LAB_1, x: 30, y: GH - 5, w: 1, h: 1, color: COLORS.grey, noMagnet: true },
 ]
 
 const DRAGON_TEMPLATES = [
@@ -277,10 +291,25 @@ export function createSim(rand) {
         bat: { room: R.OVERWORLD_3, x: 90, y: 50, vx: 1.5, vy: 0.8, carrying: null, swapTimer: 0 },
         pickedUp: {},
         events: [],            // one-tick sound events, drained by the shell
+        // Placed-bridge crossings ("roomId:side"), permanent for the run:
+        // the original bridge stays on the wall it spans and keeps the
+        // crossing open (re-pickable, never stranded — #1551).
+        bridged: new Set(),
+        // The secret door (Dragon Lair <-> ???) is sealed until the dot rite.
+        secretOpen: false,
     }
+
+    // Which side of the room a wall rect belongs to (null for interior maze
+    // walls). A side is passable for the whole run once a bridge is placed
+    // there (the coarse port spans the full side, like its wall-pass).
+    const wallSide = (wall) => (wall.y === 0 ? 'up'
+        : wall.y + wall.h === GH ? 'down'
+        : wall.x === 0 ? 'left'
+        : wall.x + wall.w === GW ? 'right' : null)
 
     const collidesWithWalls = (room, x, y, w, h) => {
         for (const wall of room.walls) {
+            if (sim.bridged.has(`${room.id}:${wallSide(wall)}`)) continue
             if (rectsOverlap(x, y, w, h, wall.x, wall.y, wall.w, wall.h)) {
                 return true
             }
@@ -292,7 +321,45 @@ export function createSim(rand) {
                 return true
             }
         }
+        // The secret door: the sealed barrier the original easter egg
+        // requires — it holds until the dot rite opens it.
+        if (!sim.secretOpen) {
+            if (room.id === R.DRAGON_LAIR && rectsOverlap(x, y, w, h, 0, SIDE_GAP_Y, WALL_T, SIDE_GAP_H)) {
+                return true
+            }
+            if (room.id === R.SECRET && rectsOverlap(x, y, w, h, GW - WALL_T, SIDE_GAP_Y, WALL_T, SIDE_GAP_H)) {
+                return true
+            }
+        }
         return false
+    }
+
+    const REV = { up: 'down', down: 'up', left: 'right', right: 'left' }
+    const sideIsSolid = (room, dir) => room.walls.some((wl) => dir === 'up'
+        ? wl.y === 0 && wl.w === GW
+        : dir === 'down' ? wl.y + wl.h === GH && wl.w === GW
+        : dir === 'left' ? wl.x === 0 && wl.h === GH
+        : wl.x + wl.w === GW && wl.h === GH)
+
+    // The original bridge law (cartridge record): the bridge stays on the
+    // wall it is pushed into and the crossing stays open for the rest of the
+    // run. Without this, the single bridge strands itself past the wall it
+    // just crossed (#1551). Called BEFORE the room changes, so `sim.room` is
+    // still the wall's own room.
+    const placeBridgeAt = (dir, toRoom) => {
+        if (sim.carrying !== 'bridge' || !sideIsSolid(ROOMS[sim.room], dir)) return
+        const from = sim.room
+        const item = sim.items.find((i) => i.id === 'bridge')
+        item.carried = false
+        sim.carrying = null
+        item.room = from
+        if (dir === 'up') { item.x = sim.player.x - 14; item.y = WALL_T }
+        else if (dir === 'down') { item.x = sim.player.x - 14; item.y = GH - WALL_T - 6 }
+        else if (dir === 'left') { item.x = WALL_T; item.y = sim.player.y - 14 }
+        else { item.x = GW - WALL_T - 6; item.y = sim.player.y - 14 }
+        sim.bridged.add(`${from}:${dir}`)
+        if (toRoom >= 0) sim.bridged.add(`${toRoom}:${REV[dir]}`)
+        sim.events.push('bridge')
     }
 
     const tryTransition = () => {
@@ -304,11 +371,13 @@ export function createSim(rand) {
         if (sim.player.y < 0) {
             // Castle: going up through gate enters foyer
             if (room.gate && sim.gateOpen[room.gateKey] && CASTLE_INSIDES[sim.room] !== undefined) {
+                placeBridgeAt('up', CASTLE_INSIDES[sim.room])
                 sim.room = CASTLE_INSIDES[sim.room]
                 sim.player.y = GH - sim.player.h - 8
                 return
             }
             if (ex.up >= 0) {
+                placeBridgeAt('up', ex.up)
                 sim.room = ex.up
                 sim.player.y = GH - sim.player.h - 8
             } else {
@@ -318,6 +387,7 @@ export function createSim(rand) {
         // Bottom exit
         if (sim.player.y + sim.player.h > GH) {
             if (ex.down >= 0) {
+                placeBridgeAt('down', ex.down)
                 sim.room = ex.down
                 sim.player.y = 8
             } else {
@@ -327,6 +397,7 @@ export function createSim(rand) {
         // Left exit
         if (sim.player.x < 0) {
             if (ex.left >= 0) {
+                placeBridgeAt('left', ex.left)
                 sim.room = ex.left
                 sim.player.x = GW - sim.player.w - 8
             } else {
@@ -336,6 +407,7 @@ export function createSim(rand) {
         // Right exit
         if (sim.player.x + sim.player.w > GW) {
             if (ex.right >= 0) {
+                placeBridgeAt('right', ex.right)
                 sim.room = ex.right
                 sim.player.x = 8
             } else {
@@ -411,7 +483,9 @@ export function createSim(rand) {
         // is full, so nothing is auto-picked up until the magnet is dropped).
         if (sim.carrying === 'magnet') {
             for (const item of sim.items) {
-                if (item.room === sim.room && !item.carried) {
+                // The original: the dot is not attracted to the magnet,
+                // unlike all other inanimate objects.
+                if (item.room === sim.room && !item.carried && !item.noMagnet) {
                     const adx = player.x - item.x
                     const ady = player.y - item.y
                     const adist = Math.sqrt(adx * adx + ady * ady)
@@ -453,6 +527,20 @@ export function createSim(rand) {
                         sim.events.push('gate')
                     }
                 }
+            }
+        }
+
+        // ---- SECRET DOOR RITE (original easter egg) ----
+        // The original: bring the gray dot — with two or more other objects
+        // in the room (carried one at a time, dropped in place) — to the end
+        // of the corridor by the sealed door; the barrier blinks and the
+        // player pushes through to the creator's room. Here the sealed door
+        // is the Dragon Lair's left wall; the door stays open for the run.
+        if (!sim.secretOpen && sim.room === R.DRAGON_LAIR && sim.carrying === 'dot' && player.x < 24) {
+            const others = sim.items.filter((i) => i.id !== 'dot' && i.room === sim.room && !i.carried).length
+            if (others >= 2) {
+                sim.secretOpen = true
+                sim.events.push('secret')
             }
         }
 
@@ -527,9 +615,11 @@ export function createSim(rand) {
             bat.vy = (rand() - 0.5) * 3
         }
 
-        // Bat can roam between rooms
-        if (bat.x < 2) { const ex = EXITS[bat.room]; if (ex && ex.left >= 0) { bat.room = ex.left; bat.x = GW - 20 } else bat.vx *= -1 }
-        if (bat.x > GW - 8) { const ex = EXITS[bat.room]; if (ex && ex.right >= 0) { bat.room = ex.right; bat.x = 10 } else bat.vx *= -1 }
+        // Bat can roam between rooms — but the sealed door holds for it too.
+        const doorSealed = (from, to) => !sim.secretOpen
+            && ((from === R.DRAGON_LAIR && to === R.SECRET) || (from === R.SECRET && to === R.DRAGON_LAIR))
+        if (bat.x < 2) { const ex = EXITS[bat.room]; if (ex && ex.left >= 0 && !doorSealed(bat.room, ex.left)) { bat.room = ex.left; bat.x = GW - 20 } else bat.vx *= -1 }
+        if (bat.x > GW - 8) { const ex = EXITS[bat.room]; if (ex && ex.right >= 0 && !doorSealed(bat.room, ex.right)) { bat.room = ex.right; bat.x = 10 } else bat.vx *= -1 }
         if (bat.y < 2) { const ex = EXITS[bat.room]; if (ex && ex.up >= 0) { bat.room = ex.up; bat.y = GH - 20 } else bat.vy *= -1 }
         if (bat.y > GH - 8) { const ex = EXITS[bat.room]; if (ex && ex.down >= 0) { bat.room = ex.down; bat.y = 10 } else bat.vy *= -1 }
 

@@ -95,6 +95,103 @@ console.log('bridge: the wall-pass, and the foyer floor it unlocks')
     ok(br.room === R.RED_LAB_1, 'carrying the bridge, pushing down crosses the solid floor into the Red Maze')
 }
 
+console.log('bridge: placed on the wall it spans — a permanent, re-pickable crossing (#1551)')
+{
+    const s = createSim(seedRng(21))
+    s.room = R.BLACK_FOYER; s.player.x = 80; s.player.y = 178
+    s.carrying = 'bridge'
+    s.items.find((i) => i.id === 'bridge').carried = true
+    for (let i = 0; i < 120 && s.room !== R.RED_LAB_1; i++) step(s, { dx: 0, dy: S })
+    const b = s.items.find((i) => i.id === 'bridge')
+    ok(s.room === R.RED_LAB_1 && s.carrying === null, 'crossing with the bridge leaves it placed (the hands are empty again)')
+    ok(b.room === R.BLACK_FOYER && !b.carried, 'the placed bridge stays on the wall side — not stranded past the wall')
+    ok(s.bridged.has(`${R.BLACK_FOYER}:down`) && s.bridged.has(`${R.RED_LAB_1}:up`),
+        'the crossed wall is recorded as bridged (both sides)')
+
+    const t = createSim(seedRng(21))
+    t.bridged.add(`${R.BLACK_FOYER}:down`)
+    t.bridged.add(`${R.RED_LAB_1}:up`)
+    t.room = R.BLACK_FOYER; t.player.x = 80; t.player.y = 178
+    for (let i = 0; i < 120 && t.room !== R.RED_LAB_1; i++) step(t, { dx: 0, dy: S })
+    ok(t.room === R.RED_LAB_1, 'a bridged crossing stays open for the run — no second bridge needed')
+
+    const p = createSim(seedRng(21))
+    const pb = p.items.find((i) => i.id === 'bridge')
+    pb.room = R.BLACK_FOYER; pb.carried = false
+    pb.x = 80 - 14; pb.y = GH - 10
+    p.room = R.BLACK_FOYER; p.player.x = pb.x; p.player.y = GH - 14
+    step(p, {})
+    ok(p.carrying === 'bridge', 'the placed bridge is re-pickable from the wall')
+}
+
+console.log('gray dot + sealed door: the original easter egg (#1551)')
+{
+    const s = createSim(seedRng(33))
+    const dot = s.items.find((i) => i.id === 'dot')
+    ok(!!dot && dot.w === 1 && dot.h === 1, 'the world carries the one-pixel gray dot')
+    ok(dot.room === R.RED_LAB_1 && dot.y >= GH - 8,
+        'the dot is sealed along the south wall of the bridge-only room (the Red Maze)')
+
+    const m = createSim(seedRng(33))
+    const mdot = m.items.find((i) => i.id === 'dot')
+    m.room = R.RED_LAB_1
+    m.player.x = mdot.x; m.player.y = GH - 20
+    m.carrying = 'magnet'
+    m.items.find((i) => i.id === 'magnet').carried = true
+    m.bat.room = R.GOLD_CASTLE; m.bat.x = 5; m.bat.y = 5
+    const dx0 = mdot.x, dy0 = mdot.y
+    for (let i = 0; i < 40; i++) step(m, {})
+    ok(mdot.x === dx0 && mdot.y === dy0, 'the magnet does not attract the dot (original law)')
+
+    const d = createSim(seedRng(33))
+    const ddot = d.items.find((i) => i.id === 'dot')
+    d.room = R.RED_LAB_1; d.player.x = ddot.x; d.player.y = GH - 14
+    step(d, {})
+    ok(d.carrying === 'dot', 'walking the south wall picks up the dot')
+
+    // The rite: the dot, with two or more other objects in the room (carried
+    // one at a time, dropped in place), at the end of the corridor by the
+    // sealed door — the original's "Created by Warren Robinett" trigger.
+    const rite = (n) => {
+        const r = createSim(seedRng(44))
+        r.dragons.forEach((dg) => { dg.room = R.BLUE_LAB_2 })   // keep the lair dragon out
+        r.room = R.DRAGON_LAIR
+        r.player.x = 12; r.player.y = 90
+        r.carrying = 'dot'
+        r.items.find((i) => i.id === 'dot').carried = true
+        const donors = ['goldKey', 'whiteKey', 'blackKey']
+        donors.slice(0, n).forEach((id, i) => {
+            const it = r.items.find((x) => x.id === id)
+            it.room = R.DRAGON_LAIR; it.carried = false
+            it.x = 60 + i * 12; it.y = 140
+        })
+        r.step({})
+        return r
+    }
+    ok(!rite(1).secretOpen, 'dot + one other object does not open the door (original: two or more)')
+    const r2 = rite(2)
+    ok(r2.secretOpen && r2.events.includes('secret'),
+        'dot + two other objects at the sealed door opens it (the "secret" sound event fires)')
+
+    const blk = createSim(seedRng(55))
+    blk.dragons.forEach((dg) => { dg.room = R.BLUE_LAB_2 })
+    blk.room = R.DRAGON_LAIR; blk.player.x = 6; blk.player.y = 90
+    for (let i = 0; i < 60; i++) step(blk, { dx: -S, dy: 0 })
+    ok(blk.room === R.DRAGON_LAIR && blk.player.x >= 0, 'the sealed door holds: pushing left cannot reach the secret room')
+
+    const op = createSim(seedRng(55))
+    op.secretOpen = true
+    op.dragons.forEach((dg) => { dg.room = R.BLUE_LAB_2 })
+    op.room = R.DRAGON_LAIR; op.player.x = 6; op.player.y = 90
+    for (let i = 0; i < 60 && op.room !== R.SECRET; i++) step(op, { dx: -S, dy: 0 })
+    ok(op.room === R.SECRET, 'an open secret door lets the player into the creator\'s room')
+
+    const bt = createSim(seedRng(66))
+    bt.bat.room = R.DRAGON_LAIR; bt.bat.x = 3; bt.bat.y = 90; bt.bat.vx = -1.5
+    step(bt, {})
+    ok(bt.bat.room === R.DRAGON_LAIR, 'the bat cannot slip through the sealed door either')
+}
+
 console.log('gates: park the key in front of its gate')
 {
     const s = createSim(seedRng(5))
@@ -266,7 +363,7 @@ console.log('win: the chalice home to the Gold Castle')
         if (!cross(sim, 'down', R.RED_LAB_1)) return { ok: false, why: 'red floor' }
         if (!T(140, 12)) return { ok: false, why: 'red enter' }
         if (!T(140, 86)) return { ok: false, why: 'red right column' }
-        step(sim, { drop: true })                       // bridge parks in the corner for good
+        step(sim, { drop: true })                       // no-op: the bridge placed itself at the crossing
         if (sim.carrying !== null) return { ok: false, why: 'bridge drop failed' }
         if (!T(66, 86)) return { ok: false, why: 'red lower corridor' }
         if (sim.carrying !== 'whiteKey') return { ok: false, why: 'no whiteKey' }
@@ -386,6 +483,21 @@ if (process.argv.includes('--mutant')) {
         ['the slain dragon never comes back (respawn removed)', SM,
             `                if (sim.tick >= dragon.respawnAt) {`,
             `                if (false) {`],
+        ['the placed bridge is removed (crossing re-strands the bridge)', SM,
+            '        sim.bridged.add(`${from}:${dir}`)',
+            '        if (false) sim.bridged.add(`${from}:${dir}`)'],
+        ['the magnet attracts the dot (original law broken)', SM,
+            '!item.carried && !item.noMagnet',
+            '!item.carried'],
+        ['the secret door opens with a single object (rite threshold broken)', SM,
+            'if (others >= 2) {',
+            'if (others >= 1) {'],
+        ['the sealed door is a mirage (barrier removed)', SM,
+            '        if (!sim.secretOpen) {',
+            '        if (false) {  // barrier removed'],
+        ['the dot is a visible block, not a hidden pixel', SM,
+            'w: 1, h: 1, color: COLORS.grey',
+            'w: 4, h: 4, color: COLORS.grey'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
