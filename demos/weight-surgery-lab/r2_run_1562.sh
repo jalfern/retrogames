@@ -34,9 +34,13 @@ $V r2_register.py qwen35-own --load || { echo "[1562] STOP: qwen35-own register/
 WS_R2_SETS=math,gsm $V r2_score.py own:qwen35-own || exit 1
 # required baseline: MIT p50c GSM8K at these settings (math exists = p50cw row)
 WS_R2_SETS=gsm $V r2_score.py p50cw:qwen35-p50c-mlx || exit 1
-$V r2_mit_grade.py own:math own:gsm p50cw:gsm || echo "[1562] mit regrade incomplete (non-fatal)"
-# optional (issue: 'if time allows'): base at these settings — runs last, kill freely
-WS_R2_SETS=math,gsm $V r2_score.py basew:qwen35-base || exit 1
+# no args = regrade EVERY sidecar on disk: passing only the new tags rebuilt
+# mit_grader.json from scratch and silently dropped the p50cw:math entry (#1562)
+$V r2_mit_grade.py || echo "[1562] mit regrade incomplete (non-fatal)"
+# optional (issue: 'if time allows'): base at these settings. #1562 verdict:
+# NOT RUN — the 3 h session time-box was already past when the own+p50cw rows
+# landed (own row alone took 1.73 h); page discloses it as "not run (time-box)".
+# WS_R2_SETS=math,gsm $V r2_score.py basew:qwen35-base || exit 1
 
 touch results/r2/R2_1562_DONE
 echo "[1562] done $(date -u +%FT%TZ) — next: page rebuild + ws3check + merge lane"

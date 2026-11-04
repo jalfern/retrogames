@@ -404,6 +404,8 @@ const jonGo = read("results/r2/jon_go_1562.json", null);
 const r2Tbl = R2ROWS.map(([tag, label]) => {
   const s = r2s && r2s[tag];
   if (!s) {
+    if (tag === "basew")
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">not run — optional control dropped at the session time-box (required rows took 2.3 h)</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     if (tag === "own" && r2gate && !r2gate.pass && !jonGo)
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
@@ -447,8 +449,15 @@ const r2Verdict = (() => {
     const fmt = (s) => ["math", "gsm"].filter(k => s && s[k])
       .map(k => `${s[k].n >= (r2s._hold || 100) ? s[k].acc.toFixed(1) + "%" : s[k].n + "/… scoring"} ${k}`).join(" · ")
     const base = r2s.basew || null
-    if (o && o.math && o.gsm && o.math.n >= (r2s._hold || 100) && o.gsm.n >= (r2s._hold || 100))
-      return `<p class="note"><b>#1562 — THE OWN EDIT, JUDGED HONESTLY.</b> Qwen's own direction (found in 5 measured passes, never reading MIT's edit tensors) scores ${fmt(o)}${base ? `, base-with-window ${fmt(base)}` : ""} and MIT's edit on our box is ${w ? fmt(w) : "—"} on the same rows and settings — the comparison the issue asked for, same silicon, same protocol. Verdict text lands after the MIT-checker regrade.</p>`
+    const passes = batches.filter(b => typeof b.purpose === "string" && b.purpose.startsWith("#1562 own-direction search")).length
+    if (o && o.math && o.gsm && o.math.n >= (r2s._hold || 100) && o.gsm.n >= (r2s._hold || 100)) {
+      const rg = r2mit && r2mit.regrade || {}
+      const mit = (k) => rg[k] ? rg[k].mit_acc.toFixed(1) + "%" : "—"
+      const fin = (s) => ["math", "gsm"].filter(k => s && s[k]).map(k => s[k].finished.toFixed(0) + "%").join("/")
+      const wacc = w ? ["math", "gsm"].filter(k => w[k]) : []
+      const wmean = wacc.length ? wacc.reduce((a, k) => a + w[k].acc, 0) / wacc.length : null
+      return `<p class="note"><b>#1562 — THE OWN EDIT, JUDGED HONESTLY.</b> Qwen's own direction — found in ${passes} of the disclosed 20 forward passes, never reading MIT's edit tensors — scores <b>${fmt(o)}</b> (MIT-checker: ${mit("own:math")} math · ${mit("own:gsm")} gsm) against base ${fmt(r2s.base)} and <b>our p50cw reproduction of MIT's edit at identical settings: ${fmt(w)}</b> (MIT-checker: ${mit("p50cw:math")} math · ${mit("p50cw:gsm")} gsm). Same silicon, same 100+100 held-out problems, same window — the comparison the issue asked for. Verdict: <b>the own direction moves MATH (base ${r2s.base.math.acc.toFixed(0)}% → ${o.math.acc.toFixed(0)}%, doubled) but does not break the loop</b> — finished stays at ${fin(o)} vs the edit's ${fin(w) || "—"}, GSM8K sits at base level (${o.gsm.acc.toFixed(0)}% vs ${w && w.gsm ? w.gsm.acc.toFixed(0) + "%" : "—"}). ${wmean !== null ? Math.round(wmean - (o.math.acc + o.gsm.acc) / 2) : "?"} points of mean accuracy short: ${passes} passes of honest search reproduced <i>some</i> escape signal — direction [L15, L7] down_proj, held-out-validated — but MIT's edit does ~${wmean ? Math.round(wmean / Math.max((o.math.acc + o.gsm.acc) / 2, 0.1)) : "?"}× the job. The escape gap round 1 diagnosed is not closed by our search; it lives in the finished column, exactly as before. Optional base-with-window control: not run (session time-box).</p>`
+    }
     return `<p class="note"><b>#1562 — STEP 2 IN FLIGHT.</b> Jon re-opened step 2 (#1562): the edit is judged against <b>our own p50cw row</b> — same box, same settings — not MIT's published numbers, so the backend gap cancels. Search budget: at most <b>20 forward passes</b> (a pass = one generation batch of ≤64 practice problems or one teacher-forced read; this run spends 5, each logged in the batch log above with what it tested and ruled out). Rows land as they score.</p>`
   }
   if (r2gate && !r2gate.pass && !jonGo) return `<p class="note">STEP-1 GATE: our reproduction did NOT land in MIT's neighborhood — ${r2gate.detail} Per Jon's rule we stopped before step 2; diagnosis posted to <a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">#1533</a>.</p>`;

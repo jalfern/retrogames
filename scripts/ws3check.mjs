@@ -25,7 +25,7 @@ export const CLAIMS = {
     p50c: { math: [40, 56], gsm: [59, 75], fin: [40, 80] },
 }
 
-export const SETS = { p50cw: ['math'] } // #1547: option C rerun is math-only
+export const SETS = { p50cw: ['math', 'gsm'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row
 
 export function validateR2({ scores, gate }) {
     const errs = []
@@ -347,13 +347,20 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(rg && !knownOk({ ...rg, diffs: rg.diffs.map(d => d.id === 'math500_36'
         ? { ...d, ours: { ...d.ours, ok: true } } : d) }),
         'mutant caught: a known misgrade silently "fixed"')
-    ok(validateR2({ scores: { ...scores, p50cw: { ...scores.p50cw, gsm: { n: 100, acc: 0, finished: 0 } } } }).length > 0,
-        'mutant caught: a gsm set smuggled under the math-only p50cw tag')
+    ok(validateR2({ scores: { ...scores, p50cw: { gsm: scores.p50cw.gsm } } }).length > 0,
+        'mutant caught: dropping p50cw math from the two-set row is caught')
     const { rc, html } = build(LAB)
     ok(rc === 0 && html.includes('id="r2-p50cw"') &&
-        html.includes('id="r2-p50cw"><td rowspan=1>#1547 option C — penalty window ctx 32768</td><td>math</td><td>100</td><td>31.0%</td>') &&
+        html.includes('id="r2-p50cw"><td rowspan=2>#1547 option C — penalty window ctx 32768</td><td>math</td><td>100</td><td>31.0%</td>') &&
         html.includes('51.0%'),
         'build: p50cw row renders scored (31.0% acc / 51.0% finished)')
+    ok(html.includes('id="r2-p50cw-gsm"') && html.includes('<td>gsm</td><td>100</td><td>48.0%</td><td>74.0%</td>'),
+        'build: p50cw gsm row renders (#1562 GSM8K baseline 48.0% / 74.0%)')
+    ok(/regrade.*p50cw:gsm/s.test(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')) &&
+        JSON.parse(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')).regrade['p50cw:gsm'].n === 100,
+        'rules: MIT regrade covers the p50cw gsm row too (#1562)')
+    ok(html.includes('not run — optional control dropped at the session time-box'),
+        'rules: basew disclosed as not-run, never pending-forever (#1562 time-box)')
     ok(html.includes('45.8%') && /penalizes every generated token|whole-generation/.test(html),
         'copy: page states the MIT same-100 reference and the window finding')
 }
@@ -424,6 +431,11 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         'win: scored own + p50cw renders the honest verdict, not the in-flight note')
     ok(done.html.includes('12.0% math · 20.0% gsm') && done.html.includes('31.0% math'),
         'win: verdict states own per-set acc and the p50cw baseline it is judged against')
+    const doneReal = build(LAB)
+    ok(doneReal.html.includes('5 of the disclosed 20 forward passes') &&
+        doneReal.html.includes('7.0% math · 9.0% gsm') &&
+        doneReal.html.includes('37.0% math · 48.0% gsm'),
+        'copy: #1562 verdict states passes used + MIT-checker numbers for both rows')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

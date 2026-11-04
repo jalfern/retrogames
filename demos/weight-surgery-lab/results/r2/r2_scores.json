@@ -40,9 +40,9 @@
    "finished": 74.0,
    "mean_ntok": 17835
   },
-  "t_hours": 0.0,
+  "t_hours": 1.33,
   "pp": 1.5,
-  "pp_ctx": 0,
+  "pp_ctx": 32768,
   "model": "qwen35-p50c-mlx",
   "math": {
    "n": 100,

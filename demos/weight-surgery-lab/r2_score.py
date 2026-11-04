@@ -124,6 +124,15 @@ def run_row(tag, model, pp):
     # math entry (#1562: p50cw math vanished when its gsm-only row landed)
     prev = agg.get(tag, {})
     merged = {**prev, **summary}
+    if not n_new and prev:
+        # resume-only run: previous measured metadata wins — a resume's env
+        # (e.g. a missing WS_R2_PP_CTX once wrote pp_ctx:0 over p50cw's real
+        # 32768) must not overwrite the protocol that produced the cached rows
+        for k in ("pp", "pp_ctx", "t_hours"):
+            if k in prev:
+                merged[k] = prev[k]
+    else:
+        merged["t_hours"] = round(prev.get("t_hours", 0) + summary["t_hours"], 2)
     merged["model"] = model
     agg[tag] = merged
     with open(f"{R.RESULTS}/r2_scores.json", "w") as f:
