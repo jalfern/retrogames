@@ -4,25 +4,86 @@ import { seedRng } from '../src/utils/gameContract.js'
 const S = PLAYER_SPEED
 const step = (sim, inp) => { sim.step(inp); sim.events.length = 0 }
 const log = (...a) => console.log(...a)
+const CELL = 4
+const GWc = Math.ceil(GW / CELL), GHc = Math.ceil(GH / CELL)
+const gridCache = new Map()
+const freeGrid = (room) => {
+    if (!gridCache.has(room)) {
+        const walls = ROOMS[room].walls
+        const g = new Array(GWc * GHc)
+        for (let cy = 0; cy < GHc; cy++) for (let cx = 0; cx < GWc; cx++) {
+            const px = cx * CELL + CELL / 2 - 3, py = cy * CELL + CELL / 2 - 5
+            g[cy * GWc + cx] = !walls.some((w) => px < w.x + w.w && px + 6 > w.x && py < w.y + w.h && py + 10 > w.y)
+        }
+        gridCache.set(room, g)
+    }
+    return gridCache.get(room)
+}
+const cellPath = (sim, fx, fy, tx, ty) => {
+    const g = freeGrid(sim.room)
+    const cc = (v, n) => Math.max(0, Math.min(n - 1, v))
+    const gx = cc(Math.floor(tx / CELL), GWc), gy = cc(Math.floor(ty / CELL), GHc)
+    const sx0 = cc(Math.floor(fx / CELL), GWc), sy0 = cc(Math.floor(fy / CELL), GHc)
+    let starts = [[sx0, sy0]]
+    if (!g[sy0 * GWc + sx0]) {
+        starts = []
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue
+            const nx = cc(sx0 + dx, GWc), ny = cc(sy0 + dy, GHc)
+            if (g[ny * GWc + nx]) starts.push([nx, ny])
+        }
+    }
+    const prev = new Map()
+    const order = []
+    for (const [cx, cy] of starts) { const k = cy * GWc + cx; if (!prev.has(k)) { prev.set(k, -1); order.push(k) } }
+    for (let i = 0; i < order.length; i++) {
+        const s = order[i], cx = s % GWc, cy = (s - cx) / GWc
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = cx + dx, ny = cy + dy
+            if (nx < 0 || ny < 0 || nx >= GWc || ny >= GHc) continue
+            const k = ny * GWc + nx
+            if (prev.has(k) || !g[k]) continue
+            prev.set(k, s); order.push(k)
+        }
+    }
+    const goal = gy * GWc + gx
+    if (!prev.has(goal)) return []
+    const path = []
+    let k = goal
+    while (k !== -1) { path.unshift([k % GWc, (k - (k % GWc)) / GWc]); k = prev.get(k) }
+    return path
+}
 function driveTo(sim, tx, ty, stop = 1.2) {
     const p = sim.player
+    // (tx,ty) is the player's corner (as before); the grid plans on centers
+    const txc = tx + p.w / 2, tyc = ty + p.h / 2
+    let path = [], stuck = 0
+    const plan = () => { path = cellPath(sim, p.x + p.w / 2, p.y + p.h / 2, txc, tyc); stuck = 0 }
+    plan()
     for (let i = 0; i < 5000; i++) {
         const ddx = tx - p.x, ddy = ty - p.y
         if (Math.abs(ddx) <= stop && Math.abs(ddy) <= stop) return true
-        const r0 = sim.room
-        const ux = Math.sign(ddx) * S, uy = Math.sign(ddy) * S
-        const attempt = (dx, dy) => {
-            const px = p.x, py = p.y
-            step(sim, { dx, dy })
-            if (sim.room !== r0) return true
-            return Math.abs(p.x - px) > 0.01 || Math.abs(p.y - py) > 0.01
+        let wx = txc, wy = tyc
+        while (path.length) {
+            const [cx, cy] = path[0]
+            if (Math.floor((p.x + p.w / 2) / CELL) === cx && Math.floor((p.y + p.h / 2) / CELL) === cy) { path.shift(); continue }
+            wx = cx * CELL + CELL / 2; wy = cy * CELL + CELL / 2
+            break
         }
-        let moved = false
-        if (Math.abs(ddx) > stop && Math.abs(ddy) > stop) moved = attempt(ux, uy) || attempt(ux, 0) || attempt(0, uy)
-        else if (Math.abs(ddx) > stop) moved = attempt(ux, 0)
-        else moved = attempt(0, uy)
-        if (!moved) return false
+        const dpx = wx - (p.x + p.w / 2), dpy = wy - (p.y + p.h / 2)
+        const ux = Math.abs(dpx) > 0.3 ? Math.min(S, Math.abs(dpx)) * Math.sign(dpx) : 0
+        const uy = Math.abs(dpy) > 0.3 ? Math.min(S, Math.abs(dpy)) * Math.sign(dpy) : 0
+        const r0 = sim.room
+        const px = p.x, py = p.y
+        const moved = (dx, dy) => {
+            if (dx === 0 && dy === 0) return false
+            step(sim, { dx, dy })
+            return sim.room !== r0 || Math.abs(p.x - px) > 0.01 || Math.abs(p.y - py) > 0.01
+        }
+        const m = moved(ux, uy) || moved(ux, 0) || moved(0, uy)
+        if (sim.room !== r0) return true
         if (sim.dead || sim.won) return false
+        if (!m) { if (++stuck > 6) { if (!path.length) return false; plan() } } else stuck = 0
     }
     return false
 }
@@ -52,44 +113,56 @@ const neighbors = (sim, room) => {
     }
     return es
 }
-const hop = (sim, from, to) => {
-    const edge = neighbors(sim, from).find(([, n]) => n === to)
-    if (!edge) { log(`  hop ${from}->${to}: no edge`); return false }
-    const d = edge[0]
-    if (d === 'up' && !driveTo(sim, 80, 16)) { log(`  hop ${from}->${to}: anchor up failed (dead=${sim.dead})`); return false }
-    if (d === 'down' && !driveTo(sim, 80, GH - 24)) { log(`  hop ${from}->${to}: anchor down failed (dead=${sim.dead})`); return false }
-    if (d === 'left' && !driveTo(sim, 16, SIDE_GAP_Y + SIDE_GAP_H / 2)) { log(`  hop ${from}->${to}: anchor left failed (dead=${sim.dead})`); return false }
-    if (d === 'right' && !driveTo(sim, GW - 24, SIDE_GAP_Y + SIDE_GAP_H / 2)) { log(`  hop ${from}->${to}: anchor right failed (dead=${sim.dead})`); return false }
-    const okc = cross(sim, d, to, 400)
-    if (!okc) log(`  hop ${from}->${to}: cross ${d} failed, now room=${sim.room} dead=${sim.dead}`)
-    return okc
-}
-const walkTo = (sim, from, to, avoidDragons = true, tag = '') => {
-    const bfs = (skipDragons) => {
-        const prev = new Map([[from, null]])
-        const order = [from]
-        for (let i = 0; i < order.length; i++) {
-            for (const [, n] of neighbors(sim, order[i])) {
-                if (prev.has(n)) continue
-                if (skipDragons && n !== to && sim.dragons.some((dg) => dg.alive && dg.room === n)) continue
-                prev.set(n, order[i]); order.push(n)
-            }
-        }
-        return prev.has(to) ? prev : null
+    const ANCHORS = {
+        up: [[80, 16], [70, 16], [90, 16]],
+        down: [[80, GH - 24], [70, GH - 24], [90, GH - 24]],
+        left: [[16, SIDE_GAP_Y + SIDE_GAP_H / 2], [16, SIDE_GAP_Y], [16, SIDE_GAP_Y + SIDE_GAP_H]],
+        right: [[GW - 24, SIDE_GAP_Y + SIDE_GAP_H / 2], [GW - 24, SIDE_GAP_Y], [GW - 24, SIDE_GAP_Y + SIDE_GAP_H]],
     }
-    const prev = bfs(avoidDragons) || bfs(false)
-    if (!prev) { log(`  walkTo ${tag}: no path ${from}->${to}`); return false }
-    const path = [to]
-    while (prev.get(path[0]) !== null) path.unshift(prev.get(path[0]))
-    log(`  walkTo ${tag}: path [${path.join('->')}]`)
-    for (let i = 0; i + 1 < path.length; i++) if (!hop(sim, path[i], path[i + 1])) return false
-    return sim.room === to
-}
+    const hop = (sim, from, to) => {  // walk one room edge: anchor, then push
+        const edge = neighbors(sim, from).find(([, n]) => n === to)
+        if (!edge) return false
+        const d = edge[0]
+        // maze rooms don't always reach a single anchor — try the gap's points
+        const okA = ANCHORS[d].some(([ax, ay]) => driveTo(sim, ax, ay))
+        if (!okA) { console.log(`  hop ${from}->${to} dir=${d}: ALL ANCHORS FAILED, player now (${sim.player.x.toFixed(0)},${sim.player.y.toFixed(0)}) room=${sim.room} dead=${sim.dead}`); return false }
+        const okC = cross(sim, d, to, 400)
+        if (!okC) console.log(`  hop ${from}->${to} dir=${d}: cross FAILED, room=${sim.room} dead=${sim.dead}`)
+        return okC
+    }
+    const walkTo = (sim, to, avoidDragons = true) => {
+        // prefer paths that never cross a dragon's home room (the shelters
+        // already exclude them, but the route between can — a smart player
+        // detours around Yorgle when the map allows); if a preferred path's
+        // hops fail (maze dead-end), retry on the plain graph.
+        const bfs = (skipDragons, from) => {
+            const prev = new Map([[from, null]])
+            const order = [from]
+            for (let i = 0; i < order.length; i++) {
+                for (const [, n] of neighbors(sim, order[i])) {
+                    if (prev.has(n)) continue
+                    if (skipDragons && n !== to && sim.dragons.some((dg) => dg.alive && dg.room === n)) continue
+                    prev.set(n, order[i]); order.push(n)
+                }
+            }
+            return prev.has(to) ? prev : null
+        }
+        for (const skip of (avoidDragons ? [true, false] : [false])) {
+            const prev = bfs(skip, sim.room)
+            if (!prev) continue
+            const path = [to]
+            while (prev.get(path[0]) !== null) path.unshift(prev.get(path[0]))
+            let ok = true
+            for (let i = 0; i + 1 < path.length && ok; i++) ok = hop(sim, path[i], path[i + 1])
+            if (ok) return sim.room === to
+        }
+        return false
+    }
 
 // ---- replicate trip 1 to the blackKey checkpoint, seed 30 ----
 const sim = createSim(seedRng(30))
 sim.player.x = 80
-cross(sim, 'down', R.OVERWORLD_1); cross(sim, 'down', R.OVERWORLD_2)
+cross(sim, 'down', R.OVERWORLD_2)
 sim.player.y = 90
 cross(sim, 'left', R.BLUE_LAB_1)
 driveTo(sim, 140, 90); driveTo(sim, 140, 170); driveTo(sim, 80, 170)
@@ -113,11 +186,13 @@ const shelter = order.find((room) =>
     sim.items.some((i) => i.id !== id && i.room === room && !i.carried) &&
     !sim.dragons.some((dg) => dg.alive && dg.room === room))
 console.log(`shelter order [${order.slice(0, 8).join(',')}] shelter=${shelter}`)
-if (!walkTo(sim, startRoom, shelter, true, 'to-shelter')) console.log('walkTo shelter FAILED')
+if (!walkTo(sim, shelter)) console.log('walkTo shelter FAILED')
 else {
     const t0 = sim.tick
     let waited = 0
-    for (let i = 0; i < 8000 && sim.bat.carrying === id; i++) {
+    const visits = {7:0, 3:0, overlaps: 0}
+    for (let i = 0; i < 60000 && sim.bat.carrying === id; i++) {
+        if (sim.bat.room === 3) { visits[3]++; const b = sim.bat, br = sim.items.find(i2 => i2.id === 'bridge'); if (b.x < br.x + br.w && b.x + 10 > br.x && b.y < br.y + br.h && b.y + 10 > br.y) visits.overlaps++ }
         step(sim, {})
         waited++
         if (sim.dead || sim.won) break
@@ -125,7 +200,7 @@ else {
     console.log(`wait: ${waited} ticks; bat now carries=${sim.bat.carrying} bat.room=${sim.bat.room} player.room=${sim.room} dead=${sim.dead}`)
     if (sim.bat.carrying !== id) {
         console.log(`item at (${item.room},${item.x.toFixed(0)},${item.y.toFixed(0)}) carried=${item.carried}`)
-        const okw = walkTo(sim, sim.room, item.room, true, 'to-item')
+        const okw = walkTo(sim, item.room, true)
         if (okw) {
             const okd = driveTo(sim, item.x, item.y)
             console.log(`driveTo drop spot ok=${okd} carrying=${sim.carrying} dead=${sim.dead}`)
