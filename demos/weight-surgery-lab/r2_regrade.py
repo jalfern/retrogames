@@ -35,7 +35,28 @@ def regrade(path):
     os.replace(tmp, path)
     n = len(out)
     acc = sum(1 for r in out if r["ok"]) / max(n, 1) * 100
+    refresh_agg(path, tag, out)
     print(f"{os.path.basename(path)}: {n} rows regraded, {flips} flipped -> acc {acc:.1f}%")
+
+
+def refresh_agg(path, set_name, recs):
+    """Keep r2_scores.json (the page's table source) in step with regraded jsonl.
+    Session 119: live rows were fallback-graded; after main-thread re-grade the
+    aggregate must not carry the stale numbers."""
+    agg_path = f"{R.RESULTS}/r2_scores.json"
+    agg = json.load(open(agg_path)) if os.path.exists(agg_path) else {}
+    tag = os.path.basename(path).removeprefix("scores_").removesuffix(f"_{set_name}.jsonl")
+    stats = {
+        "n": len(recs),
+        "acc": round(sum(1 for r in recs if r["ok"]) / max(len(recs), 1) * 100, 1),
+        "finished": round(sum(1 for r in recs if r["finished"]) / max(len(recs), 1) * 100, 1),
+        "mean_ntok": round(sum(r["ntok"] for r in recs) / max(len(recs), 1)),
+    }
+    row = agg.setdefault(tag, {})
+    row[set_name] = stats
+    row.setdefault("model", "?")
+    with open(agg_path, "w") as f:
+        json.dump(agg, f, indent=1)
 
 
 if __name__ == "__main__":

@@ -195,3 +195,32 @@ while sandboxed processes keep #737). Everything round-2 runs through oMLX:
 - Page: `build_demo.mjs` renders the ROUND 2 section with honest pending rows;
   `ws3check.mjs` (npm run ws3check) — 16 gates, mutants caught incl a by-hand
   row-id break (went red, restored).
+
+## Session 119 (2026-11-03/04): threading grading bug, step-1 FINAL, gate STOP
+
+- **Second silent-grader bug:** `math_verify.parse()` uses `signal.alarm()` for its
+  timeout → raises `ValueError` in ANY worker thread. The threaded scorer therefore
+  graded every live row through the numeric/string fallback (methods showed
+  `math-verify: 0`). Fix: `r2_score.py` now joins the thread pool FIRST and grades
+  serially on the main thread; `r2_regrade.py` also refreshes `r2_scores.json`.
+  ws3check 27→29 (`rules: scorer grades on the main thread` + mutant).
+- **Step-1 rows FINAL (all four, main-thread re-graded):**
+  base  math 3.0 / fin 3.0 ✓   base gsm 8.0 / fin 7.0 ✓   (neighborhood PASS)
+  p50c  math 30.0 / fin 41.0  ✗ acc floor 40   ✗ gsm 54.0 / fin 75.0 (floor 59)
+  → `step1_gate.json` = STOP (`step1_stop.marker`). Per Jon's rule step 2 is
+  forbidden — the chain runner was killed before it could act on the gate.
+- Gap analysis (posted on #1533): weights are hash-verified against MIT's pinned
+  base; base rows reproduce the MIT loop profile (acc at/near floors, cap-hit
+  signature 97%/93%); p50c finished-rates land INSIDE [40,80] and math
+  precision-per-finished matches MIT's (30/41 ≈ 73% vs ~48/67 ≈ 72%) — the deficit
+  is per-problem LOOP-ESCAPE probability, the quantity most sensitive to the
+  sampling pipeline: oMLX runs MTP speculative decoding while MIT ran plain-AR HF;
+  under presence_penalty 1.5 draft-acceptance shifts realized escape paths. Prime
+  next probe: re-run p50c/math with speculation disabled (backend-identifying, NOT
+  protocol-tuning — tuning the knobs to clear the gate stays forbidden).
+- Resume path: wait for Jon's jonq answer (probe vs close-as-negative-result) or
+  take the default at deadline; the chain (`r2_chain.sh`, gate-guarded) restarts via
+  `./.venv/bin/python r2_detach.py r2_chain.sh /tmp/forge/ws-r2-chain.log` only if
+  a PASSING gate ever lands. Page rebuild + merge wait on it.
+- `r2_chain.sh` (detached): waits for step1_gate.json; PASS → step 2/3 at
+  WS_R2_PARALLEL=32; STOP → marker copy only. Pidfile-guarded, session-proof.

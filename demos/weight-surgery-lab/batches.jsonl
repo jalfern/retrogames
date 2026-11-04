@@ -47,3 +47,4 @@
 {"phase": "score-fair", "run": "k256", "set": "math", "cap": 4096, "batch": 18, "n": 100, "acc": 8.0, "terminated": 67.0, "hit_cap_pct": 33.0, "looped_pct": 2.0, "ts": "2026-11-03T15:57:14Z"}
 {"phase": "score-fair", "run": "k256", "set": "gsm", "cap": 4096, "batch": 18, "n": 100, "acc": 11.0, "terminated": 12.0, "hit_cap_pct": 88.0, "looped_pct": 20.0, "ts": "2026-11-03T16:48:57Z"}
 {"ts": "2026-11-03T22:55:14Z", "run": "r2 (#1533)", "purpose": "held-out scoring row base (qwen35-base, think35 pp=1.5)", "ruled_out": "step-1 gate vs MIT expectations happens after base+p50c rows", "model": "qwen35-base", "n": 200, "total_tokens": 6252790, "t_hours": 0.981}
+{"ts": "2026-11-04T00:46:02Z", "run": "r2 (#1533)", "purpose": "held-out scoring row p50c (qwen35-p50c-mlx, think35 pp=1.5)", "ruled_out": "step-1 gate vs MIT expectations happens after base+p50c rows", "model": "qwen35-p50c-mlx", "n": 200, "total_tokens": 4394380, "t_hours": 1.844}
