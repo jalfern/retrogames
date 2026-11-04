@@ -14,23 +14,26 @@
   eslint clean, build green. Prod verified: entry `index-DJeNIW1h.js` carries all
   three `score:0,done:!1` reports; /ultima1 /ultima5 /kingsquest /zork 200.
 
-## Rollout status (#1473) — INVENTORY FACT (this session's audit)
-**All 83 game dirs now call exposeFeedbackState — zero non-reporters.**
-Law accounting: 55 report+pin seeds (floor 55), 28 seedless (floor 28). The issue's
-"~78 titles" is satisfied. Remaining work is TIGHTENING, not coverage:
-- 13 titles' reports don't match the strict `() => ({` shape law (block-body or
-  sibling-module reports: BlobBattle, CometDrift, CometDriftHD, FireCrew,
-  GardenGuard, GravelYard, Homebody, IronRing, PickRush, Rogue, ShortOrderShout,
-  TalkMeDown, ViperPit). They land in the seed-count via the loose seed regex —
-  next batch: normalize shapes (or widen the law honestly + prove each pin) so
-  every title is covered by an exact-shape law, then a total-coverage floor law
-  `reporters === dirs`.
+**SEEDPIN b23 MERGED** — `97a3de1` via PR #1552 (law-only, no runtime change).
+- TOTAL-COVERAGE law: every `src/games/<Name>` dir must file a feedback report
+  (loose scan, DosShell-import resolved). Floor: reporters === dirs, dirs ≥ 83.
+- Strict-shape ratchet: `UNSTRICT` named list ≤13 (block-body/sibling-module
+  reports); shrink-only — a new silent or unlisted-shape title goes RED.
+- Mutant proof: silencing Rogue → coverage 82/83 + pin floor 55→54 (227/229 RED); restored green.
+
+## Rollout board (#1473) — end of session
+pin floor **55** · seedless floor **28** · coverage **83/83** · non-strict budget **13**.
+Next batches: retire UNSTRICT names (normalize to `() => ({` shape): BlobBattle,
+CometDrift, CometDriftHD, FireCrew, GardenGuard, GravelYard, Homebody, IronRing,
+PickRush, Rogue, ShortOrderShout, TalkMeDown, ViperPit. Careful with the
+multiplayer ones (CometDriftHD/IronRing/BlobBattle/ViperPit: online seeds keep
+authority — normalize shape without touching netcode, keep their checks green).
 
 ## Board (end of session)
-- #1473 open (building, lane:platform) — multi-stage; b23 = shape-normalization above.
-- No halt/steer/next/game-queue/feedback issues; no jonq AWAITING; no building-qa.
-- main tip `741e2e9`, main-ok true at exit. Slot-a port 5173 freed.
-- b21/b22 worktree removed; main checkout detached at tip, clean.
+- #1473 open (building, lane:platform) — multi-stage. No other open issues on the
+  ladder; no halt/steer/next/game-queue/feedback; no jonq AWAITING; no building-qa.
+- main tip `97a3de1`, main-ok true at exit. Slot-a port 5173 freed, dev server killed.
+- b21/b22/b23 worktrees removed; main checkout detached at tip, clean.
 
 ## ENV (carry-forward)
 - `. /tmp/forge/env.sh` for gh (shim `/tmp/forge/gh`).
