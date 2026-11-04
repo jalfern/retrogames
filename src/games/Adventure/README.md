@@ -21,6 +21,17 @@ Gold Castle.
   `x∈(40,120)`) and it opens for the whole run. The bridge passes walls:
   while carried, movement adds `d×0.3` *after* collision — enough to leak
   through the black foyer's stone floor into the Red Maze.
+- Bridge law (#1551): crossing a solid wall *with* the bridge **places it on
+  that wall** (`placeBridgeAt`) — the hands are empty again, the bridge stays
+  on the wall side (re-pickable), and the crossing is recorded in
+  `sim.bridged` as passable for the rest of the run, both directions. The
+  original's one bridge works this way: it stays where it is set and keeps
+  the gap crossed, so it can never strand itself past the wall it made.
+- Secret door (#1551): the Dragon Lair ↔ ??? gap is a sealed barrier
+  (`sim.secretOpen`) until the dot rite: carry the gray dot to the door end
+  (`x<24`) with two or more other objects lying in the room → the barrier
+  opens for the run and the `secret` event fires. The ??? room shows
+  "Created by Warren Robinett" in continuously changing colors.
 
 ### The b18 restoration — openable gates
 
@@ -36,19 +47,21 @@ through (the pre-port clamp at `y<0` for gate rooms stands).
 
 ## Score honesty
 
-The 1993 cart has **no score counter**; nothing about the score appears
+The original cart has **no score counter**; nothing about the score appears
 on-screen. The production report's `score` is a report-only progress metric
-— **distinct items picked up this run (0..7)** — so a filed feedback report
-can pinpoint a run (Britannia's moons-visited precedent, #1473). A full win
-scores 4 (bridge, black key, white key, chalice).
+— **distinct items picked up this run (0..8, the 8th being the gray dot)** —
+so a filed feedback report can pinpoint a run (Britannia's moons-visited
+precedent, #1473). A full win scores 4 (bridge, black key, white key,
+chalice).
 
 ## Harness
 
 ```bash
-npm run adventurecheck          # 45 gates: determinism, gate/key/bridge/dragon law,
+npm run adventurecheck          # 59 gates: determinism, gate/key/bridge/dragon law,
+                                # placed-bridge law, gray dot + sealed-door rite,
                                 # magnet attract, dragon respawn, scripted chalice
                                 # win on 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +9 mutants — every one must turn the suite red
+npm run adventurecheck -- --mutant   # +14 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -58,11 +71,15 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 
 ## Honest gaps (vs the original)
 
-- One bridge, not two — the original had a second one; the single bridge is
-  enough now that gates open properly, but it can only be placed once.
-- No pen-shaped dragon sounds, no dot reward in the secret room (the room
-  exists, its easter egg does not).
 - Collisions ignore exact room-warp edges (dragons never follow between rooms).
+- The original duplicates the **chalice** (a second one sits in its Blue
+  Castle); this 18-room port keeps a single chalice and no Blue Castle. Note
+  the #1545 gap list's "two bridges" was a misremembering — the original has
+  ONE bridge (cartridge record, verified 2026-11); its duplication is the
+  chalice, not the bridge.
+- The original is a silent cart; the #1545 "pen-shaped dragon sounds" item has
+  no documented counterpart to restore. New sim events (`bridge`, `secret`)
+  carry synthesized audio where the port adds meaning (placement, door rite).
 
 ### Restored in the #1545 polish pass
 
@@ -74,3 +91,22 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 Both are gated in `adventurecheck` (a gate each, plus a mutant that re-removes
 the behavior and must turn the suite red). The scripted chalice route is
 unaffected: it never carries the sword (no slays → no respawns) nor the magnet.
+
+### Restored in the #1551 polish pass
+
+- The bridge is **placed, not consumed**: crossing a wall with it leaves it on
+  the wall it spans, the crossing stays open for the run, and the bridge is
+  re-pickable from the wall (the original bridge law — the single bridge can
+  no longer strand itself past the Red Maze floor).
+- The **secret-room easter egg**: the one-pixel gray dot sealed along the
+  south wall of the Red Maze (the bridge-only room — the original's sealed
+  catacombs chamber), invisible outside the Red Maze and not
+  magnet-attracted. The dot + two or more other objects at the sealed door
+  (Dragon Lair left wall) opens the barrier — the original's rite — and
+  reveals the creator's room: "Created by Warren Robinett" in continuously
+  changing colors. New sim events `bridge` (placement) and `secret` (door
+  opens) drive `audioController` in `index.jsx`.
+
+Gated in `adventurecheck`: five placed-bridge gates and nine dot/door gates,
+plus five mutants (stranded bridge, magnet-on-dot, rite threshold, removed
+barrier, visible dot).
