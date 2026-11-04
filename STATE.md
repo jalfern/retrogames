@@ -1,49 +1,59 @@
-# STATE — session 121 (2026-11-04, slot a)
+# STATE — session 122, slot a (2026-11-04)
 
-## What shipped
-**#1506 CLOSED shipped** — WEIGHT SURGERY fair verdict live at
-`https://jalfern.com/retrogames/demos/weightsurgery.html` (squash-merge 67359c2, PR #1541).
-- Verdict table leads the page: base / presence penalty / k256 edit × MATH/GSM8K
-  (acc · finished · loop), all six rows n=100 seed 20261103 cap 4096 one backend.
-  Lead (computed from fair_scores.json): **the edit did not fix it** — MATH 4.0→8.0%,
-  GSM8K 11.0→11.0% (noise at n=100), GSM8K loop flags UP 5→20%; penalty worse everywhere.
-- First-pass cap-1024 verdict retired into a collapsed SUPERSEDED block. "MIT's edit
-  never opened" audited: never existed on page/repo branches — affirmative replacement
-  shipped instead (all-layer scan ranked L19 #2 of 24 without MIT's prior).
-- Exact-token rerun judged NOT quick (~10 h / 600 gens) → ≥/≤ bounds kept per Jon step 3,
-  footnote explains why; stale "refreshes on next deploy" promise removed.
-- Honesty: 8 llama-cli banner rows on all three MATH runs (ids 4,8,20,27,28,50,63,87)
-  disclosed (fair_honesty.json), excluded from drill-downs; GSM clean; no verdict flips.
-- Committed lab now renders the whole page offline (fair_scores.json + six-run excerpts +
-  batches union); demos index card carries the scorecard.
-- Harness: ws2check 40 gates + 39 mutants green (5 new #1506 gates). eslint/lint gates/
-  build green. Rule-4 watch RESET: src change class `public/demos/**` counts (rule 4 text).
+## Shipped this session
+**SEEDPIN b18 — ADVENTURE** (Atari 2600, 1993). PR #1543 squash-merged to main
+(`1f8560f`), live at https://jalfern.com/retrogames/adventure. Issue #1473 stays
+open (multi-stage rollout). Pin floor now **53** (`feedbackcheck` 223/223 green).
 
-## Next lane (fresh claim)
-Normal `forge-claim.sh` ladder (steer → next → oldest game-queue → oldest feedback).
-No steer/next/halt open at my start; game-queue items for the games lane unverified this
-session — if the ladder tops out at demos/feedback again, rule-4 wording is satisfied but
-Jon still prefers a src/games flagship: check `gh issue list --label game-queue` first.
+- Whole engine extracted to `src/games/Adventure/sim.js` on ONE injected mulberry32
+  stream (entropy-free, Rogue/Defender precedent); shell pins
+  `seedFromQuery() ?? random`, reports `{tick,score,done,seed,room,carrying}`,
+  `exposeGame` id `adventure`, tap-to-start, attract on fixed stream 1979.
+- **Fidelity restoration (the big one):** pre-port castles had a full-width solid
+  TOP wall + gate rect as extra collision → foyers unreachable, chalice home run
+  provably impossible (room-level BFS, ~2.5M states). Gate rooms now use top-gap
+  walls; the gate rect blocks only while closed. Post-fix BFS wins; scripted harness
+  win 10/10 seeds at identical tick 1721, score 4.
+- `adventurecheck`: 39 gates + 7 mutants, all green. README written (score honesty,
+  honest gaps). QA polish pass filed: **#1545** (two bridges, magnet attract, dragon
+  respawn, secret-room egg, first-human difficulty curve).
 
-## Board (end of session)
-- #1506 CLOSED completed, shipped,lane:demos. #1540 open (QA lane: r2 page polish —
-  now can cite the live verdict page). #1473 building (platform), #1141 building+stalled.
-- No halt labels. Slot-a port 5173 freed at exit; slot b's zombie opencode pid 95619
-  (18 h old, past timebox) was alive but silent — warden may want to reap it.
-- main-ok true at exit.
+## Playable now
+Arcade + 53 seeded/pinned games incl. `/retrogames/adventure`
+(`?seed=4242` pins; every seed winnable — the run must collect bridge→black key→
+white key→chalice home to Gold Castle).
 
-## ENV (carry-forward)
-- `. /tmp/forge/env.sh` for gh (shim /tmp/forge/gh). **NEW: the rescue proxy caches
-  jalfern.com HTML and ignores cache-buster query strings** — curl polls lied "stale"
-  for ~20 min while the page was live. Verify prod with webfetch (different egress),
-  or poll a hashed asset instead of public/*.html.
-- Headless Chrome SIGABRTs in this session's launchd context (interactive Chrome pid
-  83103 owns the box; #737 family). Browser suites: run from the tmux lane context.
-  `npm run ws1506play` committed for QA (phone+desktop verdict-page drive).
-- Lab `~/Dev/weight-lab/qwen-forge`: batches.jsonl got 3 score-fair `purpose` fields
-  restored; lab-only lines (r2 #1533 rows, banner/honesty files) stay out of the demo
-  page log by design (#1533 is its own story).
-- Push via `-c http.proxy=http://127.0.0.1:18080`; pgrep broken (use ps -ax).
+## Next: SEEDPIN b19 (take #1473 again via warden TARGET)
+Remaining on the rollout map: **SuperMario** and **RaccoonHeist** — the big two,
+each likely a full session (big sims; keep existing checks green by REWIRING them
+to the pinned stream, not rewriting). Order suggestion: SuperMario first (bigger
+harness already exists: mario check suite). Pattern per title (b17/b18 template):
+sim.js extraction with injected stream → shell pin+report+contract+tap → own check
+green → feedbackcheck floor 53→54 (→55) → README honest-gaps.
 
-## Open questions
-- (none open — no jonq filed; #1506 closed with everything asked computed)
+## Lessons earned this session
+- **An unreachable level is a testable property.** The gate bug shipped because no
+  check asked "is the goal reachable?" — BFS the room graph BEFORE porting mechanics
+  onto a broken layout. Unfalsifiable layouts are the clue, not noise (rule-8).
+- **Own forge branches may need rebase+force-with-lease** when main moves under them
+  (remote had the pre-rebase checkpoint; local rebased onto `5a3d0eb`). Verify
+  game-file content is unchanged before forcing; `--force-with-lease` only.
+- **gh-shim merge needs the PR number explicitly** when HEAD is detached:
+  `gh pr checks 1543` / `gh pr merge 1543 ...` inside the rule-5 loop.
+- **PR-exists trap:** re-runs of `gh pr create` 422; find the open PR via
+  `gh api pulls?head=` and `gh pr edit --body-file` instead. Never leave
+  `Closes #<rollout>` in a multi-stage PR body — use "Part of #1473".
+- **Prod verify without hashes:** Vercel env hashes differ from local builds; compare
+  *marker profiles* (string occurrence counts of b18-only literals: Sword/slay/steal/
+  gate/pickup) between prod chunk and local build of the merge sha. Also: rescue
+  proxy answers curl `-o /dev/null` with 405 — use webfetch for prod checks.
+- feedbackcheck counts only reports with explicit `seed:` key — shorthand `seed,`
+  is invisible to its regex.
+
+## Open questions for Jon
+None (none filed via jonq this session).
+
+## Board
+#1473 open (b19 next: SuperMario, RaccoonHeist). #1545 open (QA ADVENTURE polish,
+lane:qa — QA lane's work, not builder's). No halt/steer issues seen. main nightly:
+not yet run on `1f8560f` (main-ok treats as OK).
