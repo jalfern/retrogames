@@ -143,3 +143,35 @@ Still open after this rescore: repeat-onset d (needs horizons where loops
 actually re-form — MIT saw them at 32k), o_proj/unembed ablation paths, Q4
 quantized scoring for ~2× speed, and MIT's published edit as a comparison row
 (open only after our numbers are written — issue rule).
+
+## Closeout #1506 (session 121, slot a) — verdict published, issue closed
+
+All six fair rows finished (fair_scores.json, n=100/set, seed 20261103, cap 4096,
+one llama-server). Page rebuilt (`build_demo.mjs` v3): the verdict now LEADS with
+the plain answer — **the edit did not fix it**: MATH acc 4→8% (noise at n=100),
+GSM8K 11→11% unchanged, GSM8K loop flags UP 5→20%; presence penalty (sampfix)
+worse everywhere (MATH 4→3, GSM 11→5, finished down both sets). First-pass
+cap-1024 verdict retired into a collapsed SUPERSEDED block (Jon: retire or mark
+superseded — done, kept for the record). Replacement for the "MIT's edit never
+opened" phrasing Jon asked to remove: our all-layer scan independently ranked
+L19 #2 of 24 — the edit still targeted the layers named in MIT's write-up.
+(Note: that exact phrase was never on the page or in the repo — audited #1493/
+#1505/#1506 branches and the live page; nothing to delete, so the affirmative
+sentence went in instead.)
+
+Honesty artifacts committed at lab root: `fair_scores.json` (six-row summary —
+the committed lab renders the full page without per-row jsonl), `fair_honesty.json`
+(**8 llama-cli banner-contaminated rows on all three MATH runs — same problem ids
+4,8,20,27,28,50,63,87; server-worker restarts during the run captured the CLI
+startup banner instead of an answer.** They grade wrong and count as finished:
+excluding them lifts MATH acc ≤0.7 pp and lowers finished 8 pp; GSM8K clean;
+no comparison flips), and `fair_excerpts.json` regenerated for all six runs,
+banner rows excluded.
+
+Exact-token rerun NOT run (Jon's step 3 only-if-quick): 600 regenerations ≈10 h at
+~150 tok/s, and #1506 closes with no new experiments — ≥/≤ bounds kept and the
+footnote says why. Lab-side fix: score-fair rows in batches.jsonl got their
+`purpose` fields restored (three were missing; validateArtifacts now catches that
+class via the purposeless-batch mutant). ws2check: 40 gates + 39 mutants, incl.
+5 new #1506 gates (verdict-on-top, plain-answer lead, verdict table, bounds-kept,
+stale-claims-gone).
