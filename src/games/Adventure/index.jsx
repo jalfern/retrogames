@@ -500,7 +500,7 @@ const AdventureGame = () => {
             tick: sim.tick,
             score: sim.score,
             done: sim.won || (sim.dead && sim.deathTimer <= 0),
-            seed,
+            seed: seed,
             room: sim.room,
             carrying: sim.carrying,
         }))
