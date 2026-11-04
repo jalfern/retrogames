@@ -98,7 +98,7 @@ def make_refs(n=96):
     recs = [{"i": i, "set": s, "ntok": len(sol), "finished": True, "looped": False,
              "pred": "ref", "text": sol[-3000:], "_pool": "ref"}
             for i, (s, _q, sol) in enumerate(refs)]
-    return refs
+    return recs
 
 
 def gen_pass(pass_no, probs, cap, tag):
