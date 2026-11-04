@@ -818,7 +818,15 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // (lander 150, falling-human catch 250, delivery 500), lander→mutant mutation
 // (1500), wave clear 1000, 3 lives + bonus@10k + respawn grace + honest GAME
 // OVER — ?seed=N replays the exact planet → 52 reporting+pinning titles.
-ok('seedpin: rollout floor — at least 52 games report+pin seeds', reportingGames >= 52, `${reportingGames} reporting`)
+// Batch 18 adds Adventure — the dice (dragon wander, bat course-change) ran
+// naked, and the castle exteriors carried full-width solid TOP walls with the
+// gate rect as extra collision, so no parked key could ever open a foyer:
+// room-level BFS proved the chalice home run impossible (single bridge,
+// three wall crossings needing it). Restored per the port's own comment: gate
+// rooms get a top gap blocked by the gate rect while closed. Whole engine now
+// in src/games/Adventure/sim.js on one mulberry32 stream; scripted run wins
+// 10/10 seeds at identical tick → 53 reporting+pinning titles.
+ok('seedpin: rollout floor — at least 53 games report+pin seeds', reportingGames >= 53, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can
