@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>AI RESEARCH — jalfern.com</title>
+<meta name="description" content="Experiments with local models and neural nets, run on two Macs at home. Each entry says who did the work." />
+<style>
+  :root { --green:#00ff88; --amber:#ffb347; --dim:#6b7280; --qwen:#c77dff; --claude:#ff9f6b; --jon:#66b3ff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:#0a0a0c; color:#e5e7eb; min-height:100vh; font-family:ui-monospace,"SF Mono",Menlo,monospace;
+    display:flex; flex-direction:column; align-items:center; padding:48px 20px 64px; }
+  .wrap { width:100%; max-width:760px; }
+  .kicker { font-size:9px; letter-spacing:.5em; color:var(--dim); margin-bottom:10px; }
+  h1 { font-size:34px; font-weight:900; letter-spacing:-.02em; line-height:1; }
+  h1 em { font-style:normal; background:linear-gradient(90deg,#c77dff,#ff9f6b,#66b3ff); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .intro { margin-top:14px; font:13px/1.7 system-ui,-apple-system,sans-serif; color:#9ca3af; }
+  .rule { height:1px; margin:22px 0 30px; opacity:.5; background:linear-gradient(90deg,#c77dff,#ff9f6b,#66b3ff); }
+  a.card { display:block; border:1px solid #26262c; background:#0c0c0f; padding:22px; text-decoration:none; color:inherit;
+    transition:transform .2s ease, border-color .2s ease; margin-top:18px; }
+  a.card:first-of-type { margin-top:0; }
+  a.card:hover { transform:translateY(-2px); border-color:var(--amber); }
+  .row { display:flex; align-items:baseline; justify-content:space-between; gap:12px; }
+  .name { font-size:15px; font-weight:700; letter-spacing:.14em; }
+  .play { color:var(--amber); font-size:10px; letter-spacing:.2em; opacity:0; transition:opacity .2s ease; white-space:nowrap; }
+  a.card:hover .play { opacity:1; }
+  p.desc { margin-top:10px; font:13px/1.65 system-ui,-apple-system,sans-serif; color:#9ca3af; }
+  p.find { margin-top:8px; font:13px/1.65 system-ui,-apple-system,sans-serif; color:#d1d5db; }
+  p.find b { color:#fff; }
+  .meta { margin-top:14px; padding-top:10px; border-top:1px solid #1c1c22; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap;
+    font-size:8.5px; letter-spacing:.25em; color:var(--dim); }
+  .by b { font-weight:600; }
+  .by .q { color:var(--qwen); } .by .c { color:var(--claude); } .by .j { color:var(--jon); }
+  .key { margin-top:26px; font-size:9px; letter-spacing:.25em; color:var(--dim); line-height:2; }
+  footer { margin-top:40px; font-size:9px; letter-spacing:.4em; color:var(--dim); text-align:center; }
+  footer a { color:var(--green); text-decoration:none; }
+  footer a:hover { color:#fff; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <p class="kicker">JALFERN.COM / AI RESEARCH</p>
+  <h1>AI <em>RESEARCH</em></h1>
+  <p class="intro">Experiments with local models and small neural nets, run on two Macs at home. Honest results, negative ones included. Each entry says who did the work.</p>
+  <div class="rule"></div>
+
+  <a class="card" id="weightsurgery">
+    <div class="row"><span class="name">WEIGHT SURGERY</span><span class="play">READ ▸</span></div>
+    <p class="desc">Can a local model fix another model by editing its weights directly, with no training? MIT had GPT-6 Astra cut Qwen3.5-0.8B's reasoning loops by changing 0.016% of its weights. We tried to reproduce that on a Mac and to have our own Qwen find an edit.</p>
+    <p class="find">MIT's edit reproduces on Apple Silicon at <b>about ⅔ strength</b> (37% on MATH vs MIT's 45.8% on the same 100 problems), after finding two hidden bugs: a <b>20-token presence-penalty window</b> in the local server and a stricter grader. Next: Qwen searches for an edit of its own.</p>
+    <div class="meta"><span class="by">BY <b class="q">QWEN</b> (THE FORGE) · DIRECTED BY <b class="j">JON</b> + <b class="c">CLAUDE</b></span><span>NOV 2–4, 2026</span></div>
+  </a>
+
+  <a class="card" id="handweights">
+    <div class="row"><span class="name">HAND-WRITTEN WEIGHTS</span><span class="play">PLAY ▸</span></div>
+    <p class="desc">A small neural net plays the arcade's real Arkanoid with every weight written by hand: no data, no gradients. Live heatmaps show what each unit reads; a slider rewrites 16 weights mid-game.</p>
+    <p class="find">The 4,485-weight chaser <b>dropped one ball in 20 games</b>; a hand-written "aim at the bricks" edit lifts the median score <b>8,324 → 11,326</b>, but the hand-coded autopilot still scores 18,994.</p>
+    <div class="meta"><span class="by">BY <b class="c">CLAUDE</b> · WITH <b class="j">JON</b></span><span>NOV 2, 2026</span></div>
+  </a>
+
+  <a class="card" id="concordance">
+    <div class="row"><span class="name">CONCORDANCE ON APPLE SILICON</span><span class="play">READ ▸</span></div>
+    <p class="desc">CTGT's open-source Concordance splits an LLM pipeline's run-to-run variance into "the model" and "the pipeline". Does that hold on a Mac with no deterministic-inference mode?</p>
+    <p class="find">Yes, <b>one request at a time</b>, even across server versions. With batching, the server becomes a <b>third source of variance on a mixture-of-experts model</b>; a dense model stays repeatable.</p>
+    <div class="meta"><span class="by">BY <b class="j">JON</b> + <b class="c">CLAUDE</b> · TOOL BY CTGT</span><span>OCT 30, 2026</span></div>
+  </a>
+
+  <a class="card" id="lander">
+    <div class="row"><span class="name">TEACHING A LANDER TO LAND</span><span class="play">READ ▸</span></div>
+    <p class="desc">Reinforcement learning and imitation on the arcade's own Lunar Lander and Tempest, trained locally through the games' deterministic sims.</p>
+    <p class="find">PPO from scratch lands <b>94%</b> vs the autopilot's 81%; a DAgger copy <b>beats its own teacher</b>; seven reward bugs, each one a lesson in what the agent is really paid for.</p>
+    <div class="meta"><span class="by">BY <b class="q">QWEN</b> (RL LANE) · DIRECTED BY <b class="j">JON</b> + <b class="c">CLAUDE</b></span><span>OCT 15–19, 2026</span></div>
+  </a>
+
+  <a class="card" id="learnedwalk">
+    <div class="row"><span class="name">LEARNED WALK</span><span class="play">OPEN ▸</span></div>
+    <p class="desc">A physics-simulated stick figure with no hand-written balance controller: a small trained policy drives every joint. Scrub through training checkpoints from flailing to walking.</p>
+    <div class="meta"><span class="by">BY <b class="q">QWEN</b> (THE FORGE) · GOAL FROM <b class="j">JON</b></span><span>OCT 31, 2026</span></div>
+  </a>
+
+  <p class="key"><b style="color:var(--qwen)">QWEN</b> = a local Qwen model on a Mac Studio, running unattended as "the forge" · <b style="color:var(--claude)">CLAUDE</b> = Anthropic's Claude, in chat with Jon · <b style="color:var(--jon)">JON</b> = Jon Alferness</p>
+
+  <footer><a href="/retrogames/demos/">DEMOS</a> &nbsp;·&nbsp; <a href="/retrogames">◂ RETROGAMES ARCADE</a></footer>
+</div>
+<script>
+  // Resolve links relative to wherever this page is mounted
+  // (/research on jalfern.com, /retrogames/research/ on the arcade host).
+  const p = location.pathname.replace(/index\.html$/, '')
+  const base = (p.endsWith('/') ? p : p + '/')
+  document.getElementById('handweights').href = base + 'handweights.html'
+  document.getElementById('concordance').href = base + 'concordance.html'
+  document.getElementById('lander').href = base + 'lander.html'
+  document.getElementById('weightsurgery').href = '/retrogames/demos/weightsurgery.html'
+  document.getElementById('learnedwalk').href = '/retrogames/demos/learnedwalk.html'
+</script>
+</body>
+</html>

@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>CONCORDANCE ON APPLE SILICON — AI research — jalfern.com</title>
+<meta name="description" content="Does CTGT's model-vs-pipeline variance split hold on a Mac? Yes, one request at a time. Batching makes the server a third source of variance on a MoE model." />
+<style>
+  :root { --bg:#0a0a0c; --panel:#0e0e12; --line:#23232b; --ink:#e5e7eb; --mute:#8a8f9c; --dim:#6b7280; --acc:#66b3ff; --moe:#ffb347; --dense:#4dffb8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 system-ui,-apple-system,sans-serif; padding:40px 18px 64px; }
+  main { max-width:760px; margin:0 auto; }
+  .kicker { font:10px ui-monospace,Menlo,monospace; letter-spacing:.4em; margin-bottom:10px; }
+  .kicker a { color:var(--dim); text-decoration:none; } .kicker a:hover { color:#fff; }
+  h1 { font-size:28px; line-height:1.15; margin:0 0 8px; font-weight:800; letter-spacing:-.01em; }
+  h2 { font:600 11px ui-monospace,Menlo,monospace; letter-spacing:.3em; color:var(--acc); margin:34px 0 10px; text-transform:uppercase; }
+  .byline { font:10px ui-monospace,Menlo,monospace; letter-spacing:.2em; color:var(--dim); margin-bottom:22px; }
+  .byline b { color:var(--acc); font-weight:600; }
+  p { color:#c9cede; margin:8px 0 12px; }
+  .answer { border:1px solid var(--line); background:var(--panel); padding:16px 18px; border-left:3px solid var(--acc); }
+  .answer p { margin:4px 0; }
+  table { width:100%; border-collapse:collapse; font:12.5px ui-monospace,Menlo,monospace; margin:10px 0; }
+  th, td { border-bottom:1px solid var(--line); padding:7px 6px; text-align:right; vertical-align:top; }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:var(--mute); font-weight:400; }
+  td b { color:#fff; }
+  ol li, ul li { color:#c9cede; margin:6px 0; }
+  code { font:12.5px ui-monospace,Menlo,monospace; color:var(--moe); }
+  a { color:var(--acc); }
+  .note { color:var(--mute); font-size:13px; }
+  svg text { font-family:ui-monospace,Menlo,monospace; }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 16px; font:11px ui-monospace,Menlo,monospace; color:var(--mute); margin:4px 0 0; }
+  .sw { display:inline-block; width:10px; height:10px; border-radius:2px; vertical-align:-1px; margin-right:5px; }
+  footer { margin-top:44px; font:9px ui-monospace,Menlo,monospace; letter-spacing:.4em; color:var(--dim); text-align:center; }
+  footer a { color:var(--dense); text-decoration:none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker"><a href="./">◂ AI RESEARCH</a></div>
+  <h1>Concordance on Apple Silicon</h1>
+  <div class="byline">RUN BY <b>JON ALFERNESS + CLAUDE</b> · Oct 30, 2026 · on CTGT's open-source <a href="https://github.com/CTGT-Inc/concordance">Concordance</a> · Mac Studio + Mac mini, local models</div>
+
+  <div class="answer">
+    <p><b>Question.</b> CTGT's Concordance splits an LLM pipeline's run-to-run variance into "the model" and "the pipeline". Does that split hold on a Mac, where there's no deterministic-inference mode?</p>
+    <p><b>Answer.</b> Yes, but only one request at a time. With batching, the inference server becomes a third source of variance on a mixture-of-experts model, about as big as the bug Concordance finds in its sample pipeline. A dense model stayed repeatable even when batched.</p>
+  </div>
+
+  <h2>Setup</h2>
+  <ul>
+    <li>CTGT's toy pipeline, unmodified (rev <code>0ae3ae7</code>): it extracts rules from sections of a fictional manual and commits them as JSON. 3 runs × 20 calls per leg. "Stable ids" means requests are byte-identical across runs.</li>
+    <li><b>Mac Studio</b> (M3 Ultra, 60-core GPU, 256 GB): Qwen3.8-Flash-Next oQ4e, a 125B mixture-of-experts model (~6B active), on oMLX 0.7.2 and then 0.7.3rc1.</li>
+    <li><b>Mac mini</b> (M5 Pro, 64 GB): Qwen3.8-27B oQ8e, a dense model, on oMLX 0.7.3rc1.</li>
+    <li>Temperature 0, speculative decoding (MTP) off unless noted.</li>
+  </ul>
+
+  <h2>Identical requests whose answer changed (of 20)</h2>
+  <svg id="chart" viewBox="0 0 480 270" width="100%" role="img" aria-label="Bar chart of identical requests whose answer changed, by setting and model"></svg>
+  <div class="legend"><span><i class="sw" style="background:var(--moe)"></i>Flash-Next (MoE), 0.7.2</span><span><i class="sw" style="background:#c98a35"></i>Flash-Next (MoE), 0.7.3rc1</span><span><i class="sw" style="background:var(--dense)"></i>27B (dense)</span></div>
+
+  <table>
+    <tr><th>T=0, stable ids</th><th>MoE, 0.7.2</th><th>MoE, 0.7.3rc1</th><th>Dense, 0.7.3rc1</th></tr>
+    <tr><td>1 at a time</td><td><b>0</b> · 1 commit</td><td><b>0</b> · 1 commit</td><td><b>0</b> · 1 commit</td></tr>
+    <tr><td>4 at a time</td><td>5 · 3 commits</td><td>3 · 3 commits</td><td><b>0</b> · 1 commit*</td></tr>
+    <tr><td>4 at a time, MTP on</td><td>4 · 3 commits</td><td>–</td><td>1 · 3 commits†</td></tr>
+  </table>
+  <p class="note">"Commits" = distinct final outputs across the 3 runs. *Repeatable, but a different commit than one-at-a-time. †MTP and INT8 prefill both on (the forge's production settings), so the two can't be separated.</p>
+
+  <h2>Rules not present in all 3 runs</h2>
+  <table>
+    <tr><th>Source of variance</th><th>Rules</th></tr>
+    <tr><td>Pipeline bug (random ids), T=0, 1 at a time</td><td>31–32 (MoE) · 16 (dense)</td></tr>
+    <tr><td>Batching, T=0, 4 at a time, MoE</td><td>11–26</td></tr>
+    <tr><td>Batching, T=0, 4 at a time, dense</td><td><b>0</b></td></tr>
+    <tr><td>CTGT's published setting, T=1</td><td>103–160</td></tr>
+  </table>
+
+  <h2>What we take from it</h2>
+  <ol>
+    <li><b>Repeatable at one request at a time, on both models.</b> Byte-identical outputs across runs, and across server versions for Flash-Next: 0.7.2 and 0.7.3rc1 gave the same final commit, despite a decode-kernel change (+7.5% tok/s).</li>
+    <li><b>Batching breaks repeatability on the MoE model only.</b> At T=0 with 4 requests at once, Flash-Next's answers change run to run. Divergence starts late (median first differing character 318–570): a near-tied top token flips and the output forks.</li>
+    <li><b>The dense model is batch-variant but still repeatable.</b> Its 4-at-once output differs from its one-at-a-time output, but all three 4-at-once runs agree. Batching changes the numerics on both models; only on the MoE do they also change from run to run. Our guess: expert routing turns small, timing-dependent batch differences into token flips. We didn't instrument routing, and the two setups also differ in chip, quantization and size, so this is a hypothesis.</li>
+    <li><b>MTP adds nothing measurable on the MoE</b>, where batching dominates.</li>
+    <li><b>CTGT's pipeline finding reproduces on both models:</b> random ids alone change 16–32 rules at T=0.</li>
+  </ol>
+
+  <h2>Practical</h2>
+  <p>To audit a pipeline on a Mac, send requests one at a time. Then "model vs. pipeline" is a clean split, and results are even comparable across oMLX versions.</p>
+
+  <h2>Caveats</h2>
+  <p class="note">n = 3 runs per leg, one document, and two machines that differ in more than the model. The 0.7.2 vs 0.7.3rc1 difference at 4-at-once (5 vs 3) is within noise. Next steps that would sharpen it: run the 27B on the Studio to separate MoE from hardware and quantization, and log the top-2 logit margin at the first divergent token to confirm the near-tie story directly (oMLX 0.7.3 returns logprobs).</p>
+  <p class="note">Thanks to Cyril Gorlla and CTGT for open-sourcing the tool.</p>
+
+  <footer><a href="./">◂ AI RESEARCH</a> &nbsp;·&nbsp; <a href="/retrogames">RETROGAMES</a></footer>
+</main>
+<script>
+(() => {
+  const svg = document.getElementById('chart')
+  const groups = [
+    { label: '1 at a time', v: [0, 0, 0] },
+    { label: '4 at a time', v: [5, 3, 0] },
+    { label: '4 + MTP on', v: [4, null, 1] },
+  ]
+  const colors = ['#ffb347', '#c98a35', '#4dffb8']
+  const W = 480, L = 30, B = 225, T = 24, max = 6
+  const y = (n) => B - (n / max) * (B - T)
+  let s = ''
+  for (let k = 0; k <= max; k += 2) s += `<line x1="${L}" x2="${W - 6}" y1="${y(k)}" y2="${y(k)}" stroke="#1c1c22"/><text x="${L - 8}" y="${y(k) + 5}" fill="#6b7280" font-size="14" text-anchor="end">${k}</text>`
+  const gw = (W - L - 10) / groups.length, bw = 34
+  groups.forEach((g, i) => {
+    const cx = L + gw * i + gw / 2
+    g.v.forEach((v, j) => {
+      const x = cx + (j - 1) * (bw + 6) - bw / 2
+      if (v === null) { s += `<text x="${x + bw / 2}" y="${B - 8}" fill="#6b7280" font-size="12" text-anchor="middle">n/a</text>`; return }
+      const h = Math.max(3, B - y(v))
+      s += `<rect x="${x}" y="${B - h}" width="${bw}" height="${h}" rx="3" fill="${colors[j]}"/>`
+      s += `<text x="${x + bw / 2}" y="${B - h - 7}" fill="#e5e7eb" font-size="15" text-anchor="middle">${v}</text>`
+    })
+    s += `<text x="${cx}" y="${B + 30}" fill="#c9cede" font-size="15" text-anchor="middle">${g.label}</text>`
+  })
+  svg.innerHTML = s
+  window.__concordanceTest = { ready: true, bars: svg.querySelectorAll('rect').length }
+})()
+</script>
+</body>
+</html>

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>TEACHING A LANDER TO LAND — AI research — jalfern.com</title>
+<meta name="description" content="Reinforcement learning and imitation on the arcade's own Lunar Lander and Tempest: 94% pad landings from scratch, a copy that beats its teacher, and seven reward bugs." />
+<style>
+  :root { --bg:#0a0a0c; --panel:#0e0e12; --line:#23232b; --ink:#e5e7eb; --mute:#8a8f9c; --dim:#6b7280; --acc:#4dffb8; --amber:#ffb347; --blue:#66b3ff; --red:#ff5470; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.65 system-ui,-apple-system,sans-serif; padding:40px 18px 64px; }
+  main { max-width:760px; margin:0 auto; }
+  .kicker { font:10px ui-monospace,Menlo,monospace; letter-spacing:.4em; margin-bottom:10px; }
+  .kicker a { color:var(--dim); text-decoration:none; } .kicker a:hover { color:#fff; }
+  h1 { font-size:28px; line-height:1.15; margin:0 0 8px; font-weight:800; letter-spacing:-.01em; }
+  h2 { font:600 11px ui-monospace,Menlo,monospace; letter-spacing:.3em; color:var(--acc); margin:36px 0 10px; text-transform:uppercase; }
+  .byline { font:10px ui-monospace,Menlo,monospace; letter-spacing:.2em; color:var(--dim); margin-bottom:22px; }
+  .byline b { color:var(--acc); font-weight:600; }
+  p { color:#c9cede; margin:8px 0 12px; }
+  .answer { border:1px solid var(--line); background:var(--panel); padding:16px 18px; border-left:3px solid var(--acc); }
+  table { width:100%; border-collapse:collapse; font:12.5px ui-monospace,Menlo,monospace; margin:10px 0; }
+  th, td { border-bottom:1px solid var(--line); padding:7px 6px; text-align:left; vertical-align:top; }
+  th { color:var(--mute); font-weight:400; }
+  td.n, th.n { text-align:right; white-space:nowrap; }
+  td b { color:#fff; }
+  ul li, ol li { color:#c9cede; margin:6px 0; }
+  code { font:12.5px ui-monospace,Menlo,monospace; color:var(--amber); }
+  a { color:var(--blue); }
+  .note { color:var(--mute); font-size:13px; }
+  .cta { display:flex; gap:10px; flex-wrap:wrap; margin:16px 0 4px; }
+  .cta a { font:11px ui-monospace,Menlo,monospace; letter-spacing:.2em; border:1px solid var(--line); padding:8px 12px; text-decoration:none; color:var(--ink); }
+  .cta a:hover { border-color:var(--amber); color:var(--amber); }
+  svg text { font-family:ui-monospace,Menlo,monospace; }
+  footer { margin-top:44px; font:9px ui-monospace,Menlo,monospace; letter-spacing:.4em; color:var(--dim); text-align:center; }
+  footer a { color:var(--acc); text-decoration:none; }
+</style>
+</head>
+<body>
+<main>
+  <div class="kicker"><a href="./">◂ AI RESEARCH</a></div>
+  <h1>Teaching a lander to land</h1>
+  <div class="byline">EXPERIMENTS RUN BY <b>QWEN</b> (the forge's RL lane, local) · DIRECTED BY <b>JON ALFERNESS WITH CLAUDE</b> · Oct 15–19, 2026</div>
+
+  <div class="answer">
+    <p>A PPO agent trained from scratch on the arcade's own Lunar Lander lands on a pad <b>94.0%</b> of the time on 500 fresh random starts with sideways drift, against <b>81.0%</b> for the game's hand-coded autopilot on the same starts. A brute-force search shows at least 97% of starts are landable, so it's within a few points of the ceiling. A network that only <i>copied</i> the autopilot, with no RL at all, reached 88.6% and beat its own teacher.</p>
+    <p>Getting there took seven reward and setup bugs, each found because a standard algorithm failed on a problem it should solve.</p>
+  </div>
+  <div class="cta"><a href="/retrogames/lunar-lander?lab=1">FLY THE POLICY LAB ▸</a><a href="/retrogames/lunar-lander?replay=1">REPLAY PAGE ▸</a></div>
+
+  <h2>Who beats whom</h2>
+  <svg id="board" viewBox="0 0 480 300" width="100%" role="img" aria-label="Pad landing rate by flyer"></svg>
+  <p class="note">Same 500 drift starts for every flyer. Policies are deterministic in eval (most likely button every frame).</p>
+
+  <h2>The setup</h2>
+  <ul>
+    <li><b>The game.</b> The arcade's own Lunar Lander, not Gym's. Its physics live in a pure, deterministic <code>sim.js</code> that steps the world from a state and a button press, with no screen involved. It runs ~3.7M steps/s in Node; training ran ~8,000 steps/s end to end.</li>
+    <li><b>What the agent sees.</b> Eight numbers per frame: position, velocity, tilt, fuel, distance to the nearest pad, height above ground.</li>
+    <li><b>What it can do.</b> Four buttons (nothing, rotate left, rotate right, thrust), 60 decisions a second.</li>
+    <li><b>Algorithm.</b> PPO (Stable-Baselines3, RL Zoo's Lunar Lander settings: gamma 0.999, 16 parallel games), a two-layer 64-unit network.</li>
+  </ul>
+  <p>A policy isn't a memorized sequence of button presses. It's a reflex: a function from "where am I right now" to "which button", asked fresh every frame. Knock it off course and it reacts to where it now is; a replay just keeps pressing the same buttons and crashes.</p>
+
+  <h2>The bug chain</h2>
+  <table>
+    <tr><th>#</th><th>What we saw</th><th>Cause</th><th>Fix</th></tr>
+    <tr><td>1</td><td>Flew to the ceiling</td><td>Inputs unscaled; flying off the top cost nothing</td><td>Scale inputs; flying away pays −100</td></tr>
+    <tr><td>2</td><td>Reward flat ~−100</td><td>No signal until touchdown</td><td>Reward for getting closer (potential shaping)</td></tr>
+    <tr><td>3</td><td>Learned to hover</td><td>Gamma 0.99 sees ~100 steps; a landing takes ~840</td><td>Gamma 0.999; longer episodes</td></tr>
+    <tr><td>4</td><td>Landed anywhere</td><td>Off-pad landings paid 10</td><td>Off-pad pays 0 → 100% pad landings from a fixed start</td></tr>
+    <tr><td>5</td><td>Failed once drift was added</td><td>A perfect landing netted only +5</td><td>Shaping ends at 0 on touchdown; lower fuel cost</td></tr>
+    <tr><td>6</td><td>Hovering again, to the step cap</td><td>A late penalty, discounted, felt like −14</td><td>Exact discounted shaping (0.999·Φ′ − Φ), verified to 1e-13</td></tr>
+    <tr><td>7</td><td>98% flew off the top</td><td>Crash −250, flying away −100: the cheapest exit</td><td>One price for every failure: −250</td></tr>
+  </table>
+  <p>Bug 7 is classic reward hacking: the agent optimizes exactly what it's paid for, loopholes included. With all seven fixed, run h3 went from 0% to 75% in ~15M steps (it sat at 0% for the first 4M), then peaked at 94% at 19M.</p>
+
+  <h2>Copy first, then RL</h2>
+  <ul>
+    <li><b>Plain copying failed; DAgger fixed it.</b> Copying recorded autopilot flights landed 0.5%: one small error leads somewhere the teacher never flew. Having the autopilot label the student's own mistakes (DAgger) took it to 43%, 89.5%, then 91.5% in three rounds.</li>
+    <li><b>The button layout nearly sank it.</b> The autopilot rotates and thrusts at once on 10% of frames. Squeezed into 4 one-at-a-time buttons, the autopilot itself fell from 80.5% to 6.2%. With 6 actions, copying worked.</li>
+    <li><b>Recovery examples beat volume.</b> 1,000 clean autopilot flights: 0.0%. The same flights with 20% random actions, still labelled with the autopilot's choice: 9.4%. More clean demos (1 → 1,000 flights) only lifted RL warm-starts from 1% to 21% at 10M steps.</li>
+    <li><b>The recipe that works:</b> copy the actor, train the critic on the copy's own flights, then PPO. A gamepad-style copy went from 87% to 94.6% after 1.25M RL steps, matching the from-scratch pilot with ~15× less RL.</li>
+    <li><b>RL can wreck a good copy.</b> Warm-started PPO collapsed (74% → 8%) because of a fresh value network, not the copy. Keeping the best checkpoint makes the result usable; the late collapse is still open.</li>
+  </ul>
+
+  <h2>Does it generalize? Gravity</h2>
+  <svg id="grav" viewBox="0 0 480 260" width="100%" role="img" aria-label="Pad landing rate versus gravity multiplier"></svg>
+  <p>No retraining, same 500 starts. It stays at or near 90% across ±25% gravity, and fails in opposite ways at the extremes: at low gravity it burns at its learned cadence and flies off the top; at high gravity it under-brakes and crashes. Gravity isn't in what it sees, so it can't adapt; it only reacts to its own speed.</p>
+
+  <h2>Does seeing the terrain help?</h2>
+  <p>Not on these levels. Pilots trained on ridge terrain landed 76–81% on held-out starts whether or not they got 8 extra "ground height" inputs. Training on ridges helped; seeing them didn't, because the ridge always sits in a predictable spot before the nearest pad. Sight should only matter once terrain is unpredictable. And liftoff from scratch is luck: in four identical runs, learning started at ~45M, 91M and 105M steps, and once never. Seeding from a copy makes that start predictable.</p>
+
+  <h2>Second game: Tempest</h2>
+  <p>The recipe carried over. Qwen ported Tempest to the same training bridge in about three hours. On normal difficulty a copy of Tempest's autopilot won 100% of new games. On a harder version, copy plus RL tied the autopilot (56.3% vs 56.9% over the same 1,000 games). The copy alone stalled at 34% because it couldn't see what the teacher sees (which enemy it's chasing, which way flippers will flip); giving it that hidden information took it to 48%. A copy can only match a teacher whose information it shares.</p>
+
+  <h2>Lessons</h2>
+  <ol>
+    <li>The agent optimizes exactly what you pay for. Every failure ending must cost the same, or it will find the cheapest one.</li>
+    <li>The agent discounts the future. Check reward economics the way it sees them, with gamma applied. A late penalty is a small penalty.</li>
+    <li>When a standard algorithm fails on a standard-sized problem, suspect the setup first. Tuning the reward treats the symptom.</li>
+    <li>Learning curves are flat, then steep. Patience beat another round of tinkering.</li>
+    <li>Watch episode length: crashing is short, landing is medium, hovering runs to the cap.</li>
+  </ol>
+  <p class="note">The policy lab takes URL flags to compare policies: <code>?lab=1&amp;policy=v3</code> (94%), <code>dagger6</code> (the copy that beats its teacher), <code>clone1k</code> (plain copy, 0%), <code>clone1k-noisy</code> (9.4%), plus <code>&amp;gravity=0.5</code> for the generalization test.</p>
+
+  <footer><a href="./">◂ AI RESEARCH</a> &nbsp;·&nbsp; <a href="/retrogames">RETROGAMES</a></footer>
+</main>
+<script>
+(() => {
+  const board = [
+    ['PPO from scratch (19M steps)', 94.0, '#4dffb8'],
+    ['Copy of the autopilot (DAgger)', 88.6, '#66b3ff'],
+    ['Copy, then PPO (9M steps)', 87.4, '#66b3ff'],
+    ['Hand-coded autopilot', 81.0, '#ffb347'],
+    ['Plain copy, 1,000 flights', 0.0, '#ff5470'],
+  ]
+  let s = '', W = 480, rh = 58
+  board.forEach(([name, v, c], i) => {
+    const y = 6 + i * rh, w = (W - 80) * v / 100
+    s += `<text x="0" y="${y + 16}" fill="#c9cede" font-size="15">${name}</text>`
+    s += `<rect x="0" y="${y + 24}" width="${Math.max(3, w)}" height="22" rx="3" fill="${c}"/>`
+    s += `<text x="${Math.max(3, w) + 8}" y="${y + 41}" fill="#fff" font-size="16" font-weight="600">${v.toFixed(1)}%</text>`
+  })
+  document.getElementById('board').innerHTML = s
+
+  const g = [[0.5, 71.4], [0.75, 86.6], [0.9, 91.8], [1.0, 94.0], [1.1, 92.0], [1.25, 89.6], [1.5, 78.4]]
+  const X0 = 60, X1 = 448, Y0 = 200, Y1 = 30
+  const x = (m) => X0 + (m - 0.5) / 1.0 * (X1 - X0)
+  const y = (p) => Y0 - (p - 60) / 40 * (Y0 - Y1)
+  let t = ''
+  for (const p of [60, 70, 80, 90, 100]) t += `<line x1="${X0}" x2="${X1}" y1="${y(p)}" y2="${y(p)}" stroke="#1c1c22"/><text x="${X0 - 8}" y="${y(p) + 5}" fill="#6b7280" font-size="13" text-anchor="end">${p}%</text>`
+  t += `<rect x="${x(0.75)}" y="${Y1}" width="${x(1.25) - x(0.75)}" height="${Y0 - Y1}" fill="#4dffb8" opacity=".07"/>`
+  t += `<polyline fill="none" stroke="#4dffb8" stroke-width="3" points="${g.map(([m, p]) => x(m) + ',' + y(p)).join(' ')}"/>`
+  g.forEach(([m, p], i) => {
+    t += `<circle cx="${x(m)}" cy="${y(p)}" r="5" fill="#0a0a0c" stroke="#4dffb8" stroke-width="2.5"/>`
+    t += `<text x="${x(m)}" y="${y(p) - 12}" fill="#fff" font-size="13" text-anchor="middle">${p}</text>`
+    if (m !== 0.9 && m !== 1.1) t += `<text x="${x(m)}" y="${Y0 + 24}" fill="#c9cede" font-size="14" text-anchor="middle">${m}×</text>`
+  })
+  t += `<text x="${(X0 + X1) / 2}" y="${Y0 + 50}" fill="#8a8f9c" font-size="13" text-anchor="middle">gravity · trained at 1.0× · shaded = ±25%</text>`
+  document.getElementById('grav').innerHTML = t
+  window.__landerTest = { ready: true }
+})()
+</script>
+</body>
+</html>
