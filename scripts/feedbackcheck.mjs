@@ -963,13 +963,17 @@ ok('seedless: at least 28 titles report without a seed (BardsTale + fixed-world 
 // Batch 23 — the TOTAL-COVERAGE law. After b22 (the emulator tier) every title on
 // the board files at least one feedback state; measured, not remembered: 83/83.
 // This turns that audit result into a law — a new game cannot merge without a
-// report. The strict-shape ratchet tightens the remaining slack: 13 titles report
-// through block-body callbacks or sibling-module helpers the `() => ({` parsers
-// cannot see; that tolerated count may only SHRINK (drop a name when it is
-// normalized — a new silent or unlisted-shape title goes RED immediately).
-const UNSTRICT = new Set(['BlobBattle', 'CometDrift', 'CometDriftHD', 'FireCrew',
-    'GardenGuard', 'GravelYard', 'Homebody', 'IronRing', 'PickRush', 'Rogue',
-    'ShortOrderShout', 'TalkMeDown', 'ViperPit'])
+// report. The strict-shape ratchet tightened the remaining slack: 13 titles reported
+// through block-body callbacks or ternary fallbacks the `() => ({` parsers could
+// not see. Batch 24 RETIRES that slack: all 13 (BlobBattle, CometDrift,
+// CometDriftHD, FireCrew, GardenGuard, GravelYard, Homebody, IronRing, PickRush,
+// Rogue, ShortOrderShout, TalkMeDown, ViperPit) were normalized to expression-body
+// reports — gs-null fallbacks moved into per-field guards, so the reported VALUES
+// are unchanged (multiplayer titles keep their online-seed authority: this touched
+// report shape only, never netcode). The list may not grow again: a new title that
+// reports outside the strict shape goes RED immediately, and any future unlisted
+// non-strict reporter fails the per-directory law above this one.
+const UNSTRICT = new Set([])
 let dirsTotal = 0, looseReporters = 0, strictReporters = 0
 for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFileTypes: true })) {
     if (!d.isDirectory()) continue

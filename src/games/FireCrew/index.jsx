@@ -349,12 +349,13 @@ export default function FireCrew() {
         }
         raf = requestAnimationFrame(loop)
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => {
-            const g = gsRef.current
-            return g
-                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, rescued: g.rescued }
-                : { tick: 0, score: 0, done: false, seed: 0, rescued: 0 }
-        })
+        exposeFeedbackState(() => ({
+            tick: gsRef.current ? gsRef.current.tick : 0,
+            score: gsRef.current ? gsRef.current.score : 0,
+            done: gsRef.current ? !!gsRef.current.done : false,
+            seed: gsRef.current ? gsRef.current.seed : 0,
+            rescued: gsRef.current ? gsRef.current.rescued : 0,
+        }))
 
         let dbgMounted = false
         if (import.meta.env.DEV) {

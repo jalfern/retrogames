@@ -141,10 +141,15 @@ export default function ShortOrderShout() {
         startAttract()
         if (import.meta.env.DEV) exposeGame(specRef.current)
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => {
-            const g = gsRef.current || attractRef.current || createGame(1, 2)
-            return { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, players: seatsRef.current }
-        })
+        const fbFallback = createGame(1, 2)
+        const fbGame = () => gsRef.current || attractRef.current || fbFallback
+        exposeFeedbackState(() => ({
+            tick: fbGame().tick,
+            score: fbGame().score,
+            done: !!fbGame().done,
+            seed: fbGame().seed,
+            players: seatsRef.current,
+        }))
 
         pumpHudRef.current = (f) => {
             const hud = hudRef.current

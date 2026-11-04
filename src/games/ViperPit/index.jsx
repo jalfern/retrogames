@@ -1091,9 +1091,13 @@ const ViperPitGame = () => {
 
         // #1473: production-safe feedback state (seed for replay), every build.
         // Score is rounds won by P1; character select has no match yet.
-        exposeFeedbackState(() => gs
-            ? { tick: gs.tick, score: gs.fighters[0].wins, done: gs.winner != null, seed: gs.seed, round: gs.round }
-            : { tick: 0, score: 0, done: false, seed: 0 })
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0,
+            score: gs ? gs.fighters[0].wins : 0,
+            done: gs ? gs.winner != null : false,
+            seed: gs ? gs.seed : 0,
+            round: gs ? gs.round : 0,
+        }))
 
         return () => {
             alive = false

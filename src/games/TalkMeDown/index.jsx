@@ -569,12 +569,14 @@ export default function TalkMeDown() {
         raf = requestAnimationFrame(loop)
 
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => {
-            const g = gsRef.current
-            return g
-                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, round: g.round, strikes: g.strikes }
-                : { tick: 0, score: 0, done: false, seed: 0, round: 1, strikes: 0 }
-        })
+        exposeFeedbackState(() => ({
+            tick: gsRef.current ? gsRef.current.tick : 0,
+            score: gsRef.current ? gsRef.current.score : 0,
+            done: gsRef.current ? !!gsRef.current.done : false,
+            seed: gsRef.current ? gsRef.current.seed : 0,
+            round: gsRef.current ? gsRef.current.round : 1,
+            strikes: gsRef.current ? gsRef.current.strikes : 0,
+        }))
 
         // DEV hooks + DebugKit
         let dbgMounted = false

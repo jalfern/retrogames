@@ -298,12 +298,13 @@ export default function GravelYard() {
         }
         raf = requestAnimationFrame(loop)
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => {
-            const g = gsRef.current
-            return g
-                ? { tick: g.tick, score: g.score, done: !!g.done, seed: g.seed, strikes: g.strikes }
-                : { tick: tickN, score: 0, done: false, seed: seedRef.current, strikes: 0 }
-        })
+        exposeFeedbackState(() => ({
+            tick: gsRef.current ? gsRef.current.tick : tickN,
+            score: gsRef.current ? gsRef.current.score : 0,
+            done: gsRef.current ? !!gsRef.current.done : false,
+            seed: gsRef.current ? gsRef.current.seed : seedRef.current,
+            strikes: gsRef.current ? gsRef.current.strikes : 0,
+        }))
 
         // ---------- drawing ----------
         const cellPx = (x, y) => [WORLD_X + x * TILE, WORLD_Y + y * TILE]
