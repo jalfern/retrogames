@@ -1,0 +1,14 @@
+{
+ "model": "qwen35-base",
+ "seed": 0,
+ "cap": 1024,
+ "pp0": {
+  "ntok": 1024,
+  "finished": false
+ },
+ "pp15": {
+  "ntok": 1024,
+  "finished": false
+ },
+ "identical": false
+}

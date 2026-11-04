@@ -216,7 +216,8 @@
       a heatmap of exactly which weights were touched, and the harness trap we fell into mid-experiment (a duplicated sampling flag faking a fix) — caught by re-running the clean version.
       <b>Round II</b> takes the second cut at a fair 4k horizon: repeat-onset directions across all six attention layers, both the write and the read path —
       the honest negative stands, but removing d from the read path lifts accuracy 3→5/12, and the detour yielded a ~2× faster Q4 scorer.
-      <b>Final scorecard</b> (n=100 per set, one backend, one seed): the edit did <b>not</b> fix the loops — MATH 4→8% and GSM8K 11→11% sit inside noise, GSM8K loop flags went <i>up</i> 5→20%, and the presence penalty made every number worse.</p>
+      <b>Final scorecard</b> (n=100 per set, one backend, one seed): the edit did <b>not</b> fix the loops — MATH 4→8% and GSM8K 11→11% sit inside noise, GSM8K loop flags went <i>up</i> 5→20%, and the presence penalty made every number worse.
+      <b>Round 2</b> runs MIT's full 32,768-token horizon on the GPU: the base rows reproduce MIT's loop profile, the rebuilt p50c edit scores 30% MATH accuracy vs MIT's 48% — an honest partial, with the full evidence chain (hash-verified weights, twice-fixed grading, MTP ruled out twice).</p>
     <div class="meta"><span>LLM LAB · GRADIENT-FREE WEIGHT EDIT + NEGATIVE RESULT</span><span>2026-11-04</span></div>
   </a>
 
@@ -261,7 +262,7 @@ window.DEMO_INDEX = { demos: [
   { el: 'stickwalk', issues: [1150], span: '~2 h', assist: 'solo' },
   { el: 'physicswalk', issues: [1204], span: '~3 h', assist: 'solo' },
   { el: 'learnedwalk', issues: [1205], span: '~9 h', assist: 'solo' },
-  { el: 'weightsurgery', issues: [1493, 1505], span: '~3 h', assist: 'solo' },
+  { el: 'weightsurgery', issues: [1493, 1505, 1506, 1533, 1540], span: '~3 h', assist: 'solo' },
 ]};
 </script>
 <script src="credits.js"></script>

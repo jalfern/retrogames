@@ -1,0 +1,11 @@
+{
+ "tag": "p50cvlm",
+ "model": "qwen35-p50c",
+ "engine_note": "vlm engine, HF names, MTP disabled at runtime (admin PUT verified plain-AR)",
+ "n": 100,
+ "acc": 27.0,
+ "finished": 47.0,
+ "mean_ntok": 25018,
+ "par": 32,
+ "t_hours": 1.96
+}
