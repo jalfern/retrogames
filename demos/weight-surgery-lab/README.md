@@ -325,7 +325,7 @@ stale-claims-gone).
   with what C ruled out (#1540 page, ROUND 2 section); #1547 closes with this PR.
 - Sidecars (~10MB) live outside the repo: `~/Dev/weight-lab/r2_text/p50cw_math.jsonl`.
 
-## #1562 step 2 (in flight, session 127 slot-a) — Qwen finds its own edit
+## #1562 step 2 (complete, session 127 slot-a) — Qwen finds its own edit
 Jon re-opened step 2 (#1562, 2026-11-04): judged against OUR p50cw row (#1547),
 same box + settings, so MIT-vs-our backend gap cancels. `step1_gate.json` stays
 STOPped and untouched; the search runs under explicit `WS_R2_JON_GO=1`.
@@ -349,17 +349,46 @@ teacher-forced read) — spends 5:
   finished); EOS hygiene: loop tails cut 256, fin tails cut 128 (#1506 confound fix).
 - P5 teacher-forced held-out x~72 — x·d_L separation on unseen texts; layers with
   |sep|<1 ruled out; edit takes top-2 separating layers.
-Numbers land here + `results/r2/r2_directions_1562.npz` when P4/P5 finish.
+Final separation: layers [15, 7] chosen (L23's dominant gap was the EOS-position
+confound — rejected by held-out sep 0.72); all five passes in `batches.jsonl` with
+purpose + ruled-out, directions in `results/r2/r2_directions_1562.npz`.
 
 Scoring (once): own MATH+GSM8K, p50cw GSM8K (MATH exists), optional base@ctx32768
 last; PAR-32, PP_CTX=32768, sidecars → MIT mathqa.py regrade of every new row.
 Rows land in `results/r2/r2_scores.json` (tags `own`, `p50cw.gsm`, `basew`);
 completion marker `results/r2/R2_1562_DONE`.
 
-Gotchas found (each gated in ws3check, 44→71): make_refs returned tuples not records
+Gotchas found (each gated in ws3check, 44→75): make_refs returned tuples not records
 (killed attempt 1); fin-pool split by FIT_N starved validation (killed attempt 2);
 resumed runs re-log P1–P3 into batches.jsonl — dedupe by pass_no when the round
-closes (real budget spend = 3 gen + 2 read passes).
+closes (real budget spend = 3 gen + 2 read passes); the lab venv lacks pyarrow
+(and PyPI is unreachable — don't copy the wheel across python versions either;
+`load_problems` now guards the import since `math_train` is never scored); a
+gsm-only run of `r2_score.py` overwrote the p50cw tag and erased its math entry
+(aggregate now merges, and resume-only runs keep the previous protocol metadata —
+one resume without `WS_R2_PP_CTX` had written `pp_ctx:0` over the real 32768);
+`r2_mit_grade.py` rebuilds `mit_grader.json` from argv, so run it with NO args
+(all sidecars) or it silently drops prior rows' regrades; scoring rows write
+their jsonl only when the full set finishes (`ex.map` collects before grading —
+math_verify is main-thread-only), so zero rows for ~40 min mid-row is normal.
+
+RESULT (2026-11-04, all rows scored, MIT regrade agrees):
+
+| row (think35, pp1.5, ctx 32768, PAR-32) | MATH acc / fin | GSM8K acc / fin |
+|---|---|---|
+| base | 3.0 / 3.0 | 8.0 / 7.0 |
+| own edit (this issue: layers [15,7], top-K 128, α=1.0) | **6.0 / 6.0** | **8.0 / 8.0** |
+| p50cw (MIT edit, same protocol) | 31.0 / 51.0 | 48.0 / 74.0 |
+| own / p50cw by MIT's mathqa.py | 7.0 / 37.0 | 9.0 / 48.0 |
+
+Honest verdict: the self-found direction is real but small — it doubles base
+MATH (3→6) and nothing else; finished stays at 6–8% (vs 51/74), GSM8K sits at
+base level. 33 points of mean accuracy short of the p50cw row on identical
+rows and settings. 5 of the 20 disclosed passes spent (ledger deduped; edit
+apply logged once). basew (optional base@ctx32768 control) not run — session
+time-box; page discloses it as such. The escape gap round 1 diagnosed is not
+closed by search from practice data alone; `step1_gate.json` stays STOPped and
+`R2_1562_DONE` records completion.
 
 Environment addendum (#1562): `data/` is untracked problem data — symlink it:
 `ln -sfn ~/Dev/weight-lab/qwen-forge/data data`. qwen35 tensor keys are
