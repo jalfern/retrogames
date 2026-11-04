@@ -1,57 +1,49 @@
-# STATE — session 115 (2026-11-03, slot b)
+# STATE — session 121 (2026-11-04, slot a)
 
 ## What shipped
-**SEEDPIN batch 17 — DEFENDER dead-terminal restoration (#1473)** — merged
-`38c9b2ac` via PR #1529. Live: entry `index-BlYtvtNY.js` carries
-`RESCUE THE HUMANS`; https://jalfern.com/retrogames/defender verified.
-- Whole engine extracted to `src/games/Defender/sim.js` (pure, one mulberry32
-  stream): wrap-around terrain + radar, 5 humans, abduction chain (lander 150,
-  catch 250, deliver 500), empty-lander→mutant mutation (1500), wave clear
-  +1000, 3 lives + bonus@10k + dark/blink grace, terrain crash, friendly fire,
-  honest GAME OVER + restart from key/click/tap. `?seed=N` replays the planet.
-- Shell rebuilt: seam-aware triple-draw renderer, colored radar dots, arcade
-  score sheet, invulnerable attract autopilot, `seedFromQuery` pin,
-  `exposeGame` id `defender`, report {tick,score,done,seed,lives,wave};
-  attract copy fixed ("RESCUE THE HUMANS").
-- Harness: defendercheck 43 gates NEW (+7 mutants, all die) + alias +
-  lint:defender. Two real bugs found by gates mid-build and fixed: human frozen
-  mid-air when a hauler loses its dive target; top-of-screen kill with no
-  humanDied event (silent). feedbackcheck floor 51→52; 223/223.
-- #1531 QA polish pass filed (thrust sound, tractor telegraph, animation,
-  smart-bomb question, seam blind spot).
+**#1506 CLOSED shipped** — WEIGHT SURGERY fair verdict live at
+`https://jalfern.com/retrogames/demos/weightsurgery.html` (squash-merge 67359c2, PR #1541).
+- Verdict table leads the page: base / presence penalty / k256 edit × MATH/GSM8K
+  (acc · finished · loop), all six rows n=100 seed 20261103 cap 4096 one backend.
+  Lead (computed from fair_scores.json): **the edit did not fix it** — MATH 4.0→8.0%,
+  GSM8K 11.0→11.0% (noise at n=100), GSM8K loop flags UP 5→20%; penalty worse everywhere.
+- First-pass cap-1024 verdict retired into a collapsed SUPERSEDED block. "MIT's edit
+  never opened" audited: never existed on page/repo branches — affirmative replacement
+  shipped instead (all-layer scan ranked L19 #2 of 24 without MIT's prior).
+- Exact-token rerun judged NOT quick (~10 h / 600 gens) → ≥/≤ bounds kept per Jon step 3,
+  footnote explains why; stale "refreshes on next deploy" promise removed.
+- Honesty: 8 llama-cli banner rows on all three MATH runs (ids 4,8,20,27,28,50,63,87)
+  disclosed (fair_honesty.json), excluded from drill-downs; GSM clean; no verdict flips.
+- Committed lab now renders the whole page offline (fair_scores.json + six-run excerpts +
+  batches union); demos index card carries the scorecard.
+- Harness: ws2check 40 gates + 39 mutants green (5 new #1506 gates). eslint/lint gates/
+  build green. Rule-4 watch RESET: src change class `public/demos/**` counts (rule 4 text).
 
-## How the session went
-- Warden TARGET #1473 claim **CLAIMED** first try (b-lock stale from b16).
-- Prompt said "main red, fix main first" — slot a owned #1525 and shipped it
-  (`457134e`, nightly run #35 GREEN) while I built b17. Zero file overlap with
-  main's two later merges — never duplicated the main fix; merged only after
-  the freeze demonstrably lifted (main-ok.sh is FALSE-GREEN via shim gh run
-  list — verify nightly via `gh api …/workflows/390968467/runs?branch=main`).
-- Chrome dead all session (#737) → browser tier advisory; Node + Vite-transform
-  + prod-string proof carried (b15/b16 precedent).
-- Rules: 4 green (game merged); 9 — STATE committed (game merged ✓).
+## Next lane (fresh claim)
+Normal `forge-claim.sh` ladder (steer → next → oldest game-queue → oldest feedback).
+No steer/next/halt open at my start; game-queue items for the games lane unverified this
+session — if the ladder tops out at demos/feedback again, rule-4 wording is satisfied but
+Jon still prefers a src/games flagship: check `gh issue list --label game-queue` first.
 
 ## Board (end of session)
-- main tip `38c9b2ac`. Today's merges: b15/a's #1506-s1, ROGUE #1518, PAC-MAN
-  #1519, b16 `6b3eaa9`, SURGERY-II #1523, fix-main #1526, EMBERWOOD-QA #1527,
-  b17 `38c9b2ac` (+ STATE commits).
-- #1473 open (`building`): b18 candidates — **Adventure** (explicit win ~L651,
-  audit fresh at claim!), then the big two SuperMario/RaccoonHeist.
-- #1531 QA DEFENDER (feedback, lane:qa). #1524 QA b16 live. #1525 closed
-  shipped. #1492 AWAITING (deadline 11-05, default B — do NOT re-ask).
-  #1141 stalled (Jon); #838 Myst umbrella; #737 blocks browser tier everywhere.
+- #1506 CLOSED completed, shipped,lane:demos. #1540 open (QA lane: r2 page polish —
+  now can cite the live verdict page). #1473 building (platform), #1141 building+stalled.
+- No halt labels. Slot-a port 5173 freed at exit; slot b's zombie opencode pid 95619
+  (18 h old, past timebox) was alive but silent — warden may want to reap it.
+- main-ok true at exit.
 
-## ENV
-- `. /tmp/forge/env.sh` for gh; git push via `-c http.proxy=http://127.0.0.1:18080`;
-  prod verify: HTTPS_PROXY=…:18080 + `www.` host (apex 308s); no `timeout` on
-  macOS; `ps aux | grep` not pgrep; shim jq chokes on `sha[0:8]` slices —
-  plain keys only. My dev server 5178 killed at exit. Worktree
-  `~/Dev/retrogames-forge-seedpin-rollout-b17` left detached at `38c9b2ac`
-  (node_modules symlink — never delete its target).
-- gh shim caveat seen this session: `gh pr merge` may print "cannot delete
-  branch used by worktree" yet still merge + delete remote — verify via
-  `gh api pulls/<n>` before retrying anything.
+## ENV (carry-forward)
+- `. /tmp/forge/env.sh` for gh (shim /tmp/forge/gh). **NEW: the rescue proxy caches
+  jalfern.com HTML and ignores cache-buster query strings** — curl polls lied "stale"
+  for ~20 min while the page was live. Verify prod with webfetch (different egress),
+  or poll a hashed asset instead of public/*.html.
+- Headless Chrome SIGABRTs in this session's launchd context (interactive Chrome pid
+  83103 owns the box; #737 family). Browser suites: run from the tmux lane context.
+  `npm run ws1506play` committed for QA (phone+desktop verdict-page drive).
+- Lab `~/Dev/weight-lab/qwen-forge`: batches.jsonl got 3 score-fair `purpose` fields
+  restored; lab-only lines (r2 #1533 rows, banner/honesty files) stay out of the demo
+  page log by design (#1533 is its own story).
+- Push via `-c http.proxy=http://127.0.0.1:18080`; pgrep broken (use ps -ax).
 
 ## Open questions
-- #1492 — slot-b feed on #1473 (AWAITING, default B). Link only; no new
-  questions filed this session.
+- (none open — no jonq filed; #1506 closed with everything asked computed)
