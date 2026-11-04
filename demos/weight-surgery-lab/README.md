@@ -225,30 +225,35 @@ while sandboxed processes keep #737). Everything round-2 runs through oMLX:
 - `r2_chain.sh` (detached): waits for step1_gate.json; PASS → step 2/3 at
   WS_R2_PARALLEL=32; STOP → marker copy only. Pidfile-guarded, session-proof.
 
-## Session 120 (2026-11-04): MTP hypothesis refuted by forensics; engine probe
+## Session 120 (2026-11-04): MTP ruled out twice; clean engine A/B lands NEGATIVE — close-as-partial
 
 - **Forensics (no GPU):** the scored backend `qwen35-p50c-mlx` cannot speculate —
   safetensors index has 0 `mtp`/`nextn` tensors (HF container `qwen35-p50c` has 15;
   `r2_convert.py`'s `mlx_lm.convert` drops the MTP module), oMLX admin reports
   `mtp_compatible: false`, Nov-3 server.log shows plain BatchedEngine loads, and
-  `~/.omlx/model_settings.json` had `mtp_enabled: false` for `-mlx` before the run
-  (the `true` belongs to the OTHER id, `qwen35-p50c`, which the runner never used).
-  So #1539's "MTP-off rerun" was a no-op by construction; MTP is RULED OUT by
-  inspection. s119's prime suspect dies without spending a minute of GPU.
-- **Remaining suspect:** BatchedEngine PAR-32 numerics (32 concurrent bf16 streams,
-  reduction-order diffs) vs MIT's plain single-sequence HF, amplified by temp-0.6
-  sampling over 32K thinking chains on a ~0.8B model.
-- **`r2_probe_engine.py`** (isolated tag `p50cvlm`): same fixed held-out set,
-  math-only, identical think35 protocol + main-thread grading, against
-  `qwen35-p50c` (vlm engine, MTP-capable container). NEVER writes
-  `scores_p50c_math.jsonl` / `r2_scores.json` — protocol rows stay frozen and
-  `r2_gate.py` keeps reading them. Run: `./.venv/bin/python r2_detach.py
-  r2_run_probe.sh /tmp/ws-r2-probe-engine.log` (~45 min @32).
-  - acc ∈ [40,56] → engine numerics identified as the gap source; honest repair is
-    re-running BOTH rows on one engine-matched container (step 2 still gated).
-  - acc ≈ 30 → backend candidates exhausted → close #1533 as honest partial
-    reproduction per STATE.md (base rows + MIT p50c reproduce-shape documented,
-    demo page records the negative result).
+  `~/.omlx/model_settings.json` had `mtp_enabled: false` for `-mlx` before the run.
+  #1539's "MTP-off rerun" was thus a no-op BY CONSTRUCTION; s119's prime suspect
+  dies without spending GPU on it.
+- **Runtime settings gotcha:** the first probe attempt (vlm container, PAR-32) ran
+  `Lightning MTP batch` anyway (accept 72–91%, 9.4 tok/s/stream) even though the
+  settings FILE said false — the running oMLX server caches per-model settings, file
+  edits don't reach it. Fix + verification recipe: PUT
+  `/admin/api/models/<id>/settings {"mtp_enabled": false}` + reload, then confirm
+  zero new `MTP` lines in server.log for a warm request. Killed the MTP-on attempt
+  (conflated variables + would have overrun the session).
+- **Clean A/B result (NEGATIVE):** `r2_probe_engine.py` tag `p50cvlm`: same fixed
+  held-out set, math-only, identical think35 protocol + main-thread grading,
+  plain-AR, PAR-32, on the HF-name/vlm container → FINAL: acc 27.0% / finished
+  47.0% vs the frozen BatchedEngine row 30.0%/41.0%. Per-id A/B on shared ids:
+  20 vs 10/7 symmetric flips — two engines, same ceiling.
+  Container/engine numerics RULED OUT. Finished-share drifts (+6pt escape
+  on shared ids) but escapes don't convert to accuracy.
+- **Landing:** #1533 closes as honest partial reproduction (base rows + MIT loop
+  signature reproduce; p50c lift tops out ~27.0% vs MIT 48%). Untouched:
+  `step1_gate.json` (STOP), protocol rows, `r2_scores.json` — the probe lives in
+  `scores_p50cvlm_math.jsonl` + `probe_engine.json`. #1539 closes resolved-by-
+  investigation. Demo-page polish issue filed for the QA lane (present the negative
+  honestly on `/demos/weightsurgery.html`). PR #1535 closed unmerged; artifacts stay.
 - Harness caveat found: this box's agent transport corrupts `strftime` `%`-sequences
   inside written files (`%m-` arrived as `%umb-`); `r2_probe_engine.py` uses
   `datetime.isoformat()` instead. Prefer `%`-free timestamp construction in scripts.
