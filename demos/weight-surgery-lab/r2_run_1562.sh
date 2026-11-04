@@ -22,7 +22,12 @@ fi
 LAYERS=$($V -c "import numpy as np;print(','.join(map(str,np.load('results/r2/r2_directions_1562.npz')['chosen_layers'])))")
 echo "[1562] edit layers (held-out sep winners): $LAYERS"
 $V r2_edit.py 1.0 128 edited_own "$LAYERS" || { echo "[1562] STOP: own edit failed"; exit 1; }
-$V r2_convert.py edited_own "$HOME/models/weightlab/qwen35-own" || exit 1
+if [ -f "$HOME/models/weightlab/qwen35-own/config.json" ] \
+   && ls "$HOME/models/weightlab/qwen35-own"/*.safetensors >/dev/null 2>&1; then
+  echo "[1562] qwen35-own already converted — skipping convert (idempotency)"
+else
+  $V r2_convert.py edited_own "$HOME/models/weightlab/qwen35-own" || exit 1
+fi
 $V r2_register.py qwen35-own --load || { echo "[1562] STOP: qwen35-own register/load"; exit 1; }
 
 # headline row first: Qwen's own edit on both sets
