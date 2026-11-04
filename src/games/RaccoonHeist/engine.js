@@ -56,10 +56,10 @@ const CHASE = { guard: 2.95, dog: 3.85, cop: 3.1 }
 /** Brass filings off a lock that is nearly through. One shared material, many sprites. */
 const SPARK_MAT = new THREE.MeshBasicMaterial({ color: 0xffd98a, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })
 
-export function createEngine({ level, world, camera, audio = null, onEvent = null }) {
+export function createEngine({ level, world, camera, audio = null, onEvent = null, seed = null }) {
     const L = level
     const group = new THREE.Group()
-    const rnd = rng(L.w * 131 + L.h * 7 + 3)
+    const rnd = rng(seed ?? (L.w * 131 + L.h * 7 + 3))
     const cellNameOf = (wx, wz) => { const [cx, cy] = cellOf(L, wx, wz); return CELL_NAME[at(L, cx, cy)] || '??' }
 
     const emit = (e) => { if (onEvent) onEvent(e); return e }
