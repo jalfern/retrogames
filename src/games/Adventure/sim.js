@@ -624,8 +624,6 @@ export function createSim(rand) {
         const { bat } = sim
         bat.x += bat.vx
         bat.y += bat.vy
-        if (bat.x < 10 || bat.x > GW - 20) bat.vx *= -1
-        if (bat.y < 10 || bat.y > GH - 20) bat.vy *= -1
 
         // Bat randomly changes direction (seeded dice, #1473)
         if (rand() < 0.02) {
@@ -633,13 +631,30 @@ export function createSim(rand) {
             bat.vy = (rand() - 0.5) * 3
         }
 
-        // Bat can roam between rooms — but the sealed door holds for it too.
+        // The bat roams between rooms (#1560): the edge blocks own the walls
+        // (flip when the wall has no opening — the inner bounce used to fire
+        // first and made the room-change thresholds unreachable, trapping the
+        // bat in one room for the whole run). The bat obeys the same barriers
+        // as the player: the sealed secret door AND the closed portcullis
+        // (the gate sits at the courtyard's top gap; the foyer is only ever
+        // reached through an open gate, so the foyer side passes freely).
         const doorSealed = (from, to) => !sim.secretOpen
             && ((from === R.DRAGON_LAIR && to === R.SECRET) || (from === R.SECRET && to === R.DRAGON_LAIR))
-        if (bat.x < 2) { const ex = EXITS[bat.room]; if (ex && ex.left >= 0 && !doorSealed(bat.room, ex.left)) { bat.room = ex.left; bat.x = GW - 20 } else bat.vx *= -1 }
-        if (bat.x > GW - 8) { const ex = EXITS[bat.room]; if (ex && ex.right >= 0 && !doorSealed(bat.room, ex.right)) { bat.room = ex.right; bat.x = 10 } else bat.vx *= -1 }
-        if (bat.y < 2) { const ex = EXITS[bat.room]; if (ex && ex.up >= 0) { bat.room = ex.up; bat.y = GH - 20 } else bat.vy *= -1 }
-        if (bat.y > GH - 8) { const ex = EXITS[bat.room]; if (ex && ex.down >= 0) { bat.room = ex.down; bat.y = 10 } else bat.vy *= -1 }
+        const batPass = (dir) => {
+            if (dir === 'up' && ROOMS[bat.room].gate && CASTLE_INSIDES[bat.room] !== undefined) {
+                return sim.gateOpen[ROOMS[bat.room].gateKey] ? CASTLE_INSIDES[bat.room] : -1
+            }
+            const ex = EXITS[bat.room]
+            if (!ex) return -1
+            const to = ex[dir]
+            if (to === undefined || to < 0) return -1
+            if (doorSealed(bat.room, to)) return -1
+            return to
+        }
+        if (bat.x < 2) { const to = batPass('left'); if (to >= 0) { bat.room = to; bat.x = GW - 20 } else bat.vx *= -1 }
+        if (bat.x > GW - 8) { const to = batPass('right'); if (to >= 0) { bat.room = to; bat.x = 10 } else bat.vx *= -1 }
+        if (bat.y < 2) { const to = batPass('up'); if (to >= 0) { bat.room = to; bat.y = GH - 20 } else bat.vy *= -1 }
+        if (bat.y > GH - 8) { const to = batPass('down'); if (to >= 0) { bat.room = to; bat.y = 10 } else bat.vy *= -1 }
 
         bat.swapTimer--
 
