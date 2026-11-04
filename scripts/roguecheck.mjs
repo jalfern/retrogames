@@ -30,9 +30,10 @@ console.log('boot + entropy purity')
     const stray = idxSrc.split('\n').filter((l) => /Math\.random/.test(l) && !/seed/i.test(l))
     ok('index.jsx — Math.random only on seed-generation lines', stray.length === 0, stray.map((l) => l.trim()).join(' | '))
     ok('index.jsx — honors the pin (seedFromQuery at human start)', /seedFromQuery\s*\(/.test(idxSrc))
-    ok('index.jsx — reports {tick,score,done,seed}',
-        /tick:\s*s\.turn/.test(idxSrc) && /score:\s*runScore\(s\)/.test(idxSrc)
-        && /done:\s*done\(s\)/.test(idxSrc) && /seed:\s*s\.seed/.test(idxSrc))
+    ok('index.jsx — reports {tick,score,done,seed} in the strict shape (b24)',
+        /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(idxSrc)
+        && /tick:\s*stateRef\.current\.turn/.test(idxSrc) && /score:\s*runScore\(stateRef\.current\)/.test(idxSrc)
+        && /done:\s*done\(stateRef\.current\)/.test(idxSrc) && /seed:\s*stateRef\.current\.seed/.test(idxSrc))
     ok('index.jsx — restart regenerates the seed at every human start',
         (idxSrc.match(/freshSeed\(\)/g) || []).length >= 2)
 
