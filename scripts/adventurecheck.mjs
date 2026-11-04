@@ -422,6 +422,41 @@ console.log('win: the chalice home to the Gold Castle')
     ok(won.tick === t0, 'the win terminal freezes the sim')
 }
 
+// ------------------------------------------------------- #1556 playtest fix ----
+console.log('#1556 playtest fix: gate-mouth de-wedge (Black Castle soft-lock)')
+{
+    // The scripted playtest sweep (scripts/adventure-playtest.mjs, #1556) found a
+    // SOFT-LOCK: OW3's bottom exit drops the player into Black Castle at y=8 —
+    // inside the closed gate's rect (56,0,48,30) — with all four directions
+    // colliding. The win-script masked it (it teleports y); a real player who
+    // approaches the castle before the key is free is pinned there forever.
+    // The fix nudges a wedged landing below the obstruction.
+    for (const sd of [7, 42, 1337]) {
+        const sim = createSim(seedRng(sd))
+        sim.room = R.OVERWORLD_3; sim.player.x = 80; sim.player.y = 150
+        for (let i = 0; i < 400 && sim.room !== R.BLACK_CASTLE; i++) step(sim, { dx: 0, dy: S })
+        ok(sim.room === R.BLACK_CASTLE && sim.player.y >= 30,
+            `seed ${sd}: arrival at the closed black gate de-wedges below the gate`, `room=${sim.room} y=${sim.player.y}`)
+        for (let i = 0; i < 200 && sim.room === R.BLACK_CASTLE; i++) step(sim, { dx: 0, dy: S })
+        ok(sim.room === R.OVERWORLD_3, `seed ${sd}: soft-lock gone — the player walks back out to OW3`, `room=${sim.room}`)
+    }
+    // De-wedge must not smuggle anyone through: standing below a closed gate,
+    // pressing up never enters the foyer and never crosses y<30.
+    const keep = createSim(seedRng(7))
+    keep.room = R.OVERWORLD_3; keep.player.x = 80; keep.player.y = 150
+    for (let i = 0; i < 400 && keep.room !== R.BLACK_CASTLE; i++) step(keep, { dx: 0, dy: S })
+    let breached = 0
+    for (let i = 0; i < 200; i++) { step(keep, { dx: 0, dy: -S }); if (keep.player.y < 30 - 0.01) breached++ }
+    ok(breached === 0 && keep.room === R.BLACK_CASTLE, 'the closed gate still blocks the foyer approach (de-wedge sits OUTSIDE the gate law)', `breach ticks=${breached}`)
+    // Determinism survives the fix: identical replays for one pinned seed.
+    const replay = (sd) => {
+        const s = createSim(seedRng(sd)); s.room = R.OVERWORLD_3; s.player.x = 80; s.player.y = 150
+        for (let i = 0; i < 500; i++) step(s, { dx: 0, dy: i < 120 ? S : -S })
+        return `${s.room}:${s.player.x.toFixed(4)}:${s.player.y.toFixed(4)}:${s.tick}`
+    }
+    ok(replay(7) === replay(7), 'de-wedge replays identically for a pinned seed', replay(7))
+}
+
 // ------------------------------------------------------------- static law ----
 console.log('#1473 wiring: report + pin + contract (static)')
 {
@@ -498,6 +533,11 @@ if (process.argv.includes('--mutant')) {
         ['the dot is a visible block, not a hidden pixel', SM,
             'w: 1, h: 1, color: COLORS.grey',
             'w: 4, h: 4, color: COLORS.grey'],
+        ['the soft-lock de-wedge is removed (gate-mouth pin returns)', SM,
+            `        for (let i = 0; i < 24 && collidesWithWalls(rm, sim.player.x, sim.player.y, sim.player.w, sim.player.h); i++) {
+            sim.player.y += 2
+        }`,
+            `        // de-wedge removed`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

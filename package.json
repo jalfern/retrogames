@@ -173,6 +173,7 @@
     "asteroidscheck": "node scripts/asteroidscheck.mjs",
     "centipedechek": "node scripts/centipedechek.mjs",
     "defendercheck": "node scripts/defendercheck.mjs",
+    "adventure-playtest": "node scripts/adventure-playtest.mjs",
     "adventurecheck": "node scripts/adventurecheck.mjs",
     "froggercheck": "node scripts/froggercheck.mjs",
     "attractcheck": "node scripts/attractcheck.mjs",
