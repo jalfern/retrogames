@@ -2,3 +2,8 @@
 data
 # (bare "data" also matches the symlink; "data/" alone would not)
 # p50cw rows are committed since the rerun completed (#1547)
+
+# #1562: converted model (1.4G) + search-gen practice texts (~1.5M) stay out of the repo
+edited_own/
+weightsurgery.html
+results/r2/p1562_gen_*.jsonl

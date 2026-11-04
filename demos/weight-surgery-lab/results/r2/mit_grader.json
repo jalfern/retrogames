@@ -32,6 +32,51 @@
   }
  },
  "regrade": {
+  "own:gsm": {
+   "n": 100,
+   "ours_acc": 8.0,
+   "mit_acc": 9.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": [
+    {
+     "id": "gsm8ktest_44",
+     "ours": {
+      "pred": "\\$14",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\$14",
+      "ok": true
+     }
+    }
+   ]
+  },
+  "own:math": {
+   "n": 100,
+   "ours_acc": 6.0,
+   "mit_acc": 7.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": [
+    {
+     "id": "math500_36",
+     "ours": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": true
+     }
+    }
+   ]
+  },
+  "p50cw:gsm": {
+   "n": 100,
+   "ours_acc": 48.0,
+   "mit_acc": 48.0,
+   "pred_none_finished_sidecar_ok": 9,
+   "diffs": []
+  },
   "p50cw:math": {
    "n": 100,
    "ours_acc": 31.0,

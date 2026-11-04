@@ -34,15 +34,39 @@
   "model": "qwen35-p50c-mlx"
  },
  "p50cw": {
+  "gsm": {
+   "n": 100,
+   "acc": 48.0,
+   "finished": 74.0,
+   "mean_ntok": 17835
+  },
+  "t_hours": 1.33,
+  "pp": 1.5,
+  "pp_ctx": 32768,
+  "model": "qwen35-p50c-mlx",
   "math": {
    "n": 100,
    "acc": 31.0,
    "finished": 51.0,
    "mean_ntok": 24012
+  }
+ },
+ "own": {
+  "math": {
+   "n": 100,
+   "acc": 6.0,
+   "finished": 6.0,
+   "mean_ntok": 31061
   },
-  "t_hours": 0.8,
+  "gsm": {
+   "n": 100,
+   "acc": 8.0,
+   "finished": 8.0,
+   "mean_ntok": 30254
+  },
+  "t_hours": 1.73,
   "pp": 1.5,
   "pp_ctx": 32768,
-  "model": "qwen35-p50c-mlx"
+  "model": "qwen35-own"
  }
 }

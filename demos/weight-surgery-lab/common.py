@@ -33,15 +33,20 @@ def load_problems():
                           lambda r: {"tag": "gsm"})
     out["gsm_test"] = jl(f"{DATA}/test.jsonl", "question", "answer",
                          lambda r: {"tag": "gsm"})
-    import pyarrow.parquet as pq
-    import glob
-    mrows = []
-    for f in sorted(glob.glob(f"{DATA}/math/*.parquet")):
-        t = pq.read_table(f)
-        for r in t.to_pylist():
-            mrows.append(dict(problem=r["problem"], gold=r["solution"],
-                             tag="math", level=r.get("level"), type=r.get("type")))
-    out["math_train"] = mrows
+    # math_train needs parquet; scoring never uses it. On boxes without
+    # pyarrow (lab venv is 3.12, no PyPI reach) degrade to empty.
+    try:
+        import pyarrow.parquet as pq
+        import glob
+        mrows = []
+        for f in sorted(glob.glob(f"{DATA}/math/*.parquet")):
+            t = pq.read_table(f)
+            for r in t.to_pylist():
+                mrows.append(dict(problem=r["problem"], gold=r["solution"],
+                                 tag="math", level=r.get("level"), type=r.get("type")))
+        out["math_train"] = mrows
+    except ImportError:
+        out["math_train"] = []
     out["math500"] = jl(f"{DATA}/math500.jsonl", "problem", "solution",
                         lambda r: {"tag": "math", "level": r.get("level"),
                                   "type": r.get("type")})

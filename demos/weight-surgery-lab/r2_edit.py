@@ -29,12 +29,14 @@ import sys
 import numpy as np
 
 LAB = os.path.dirname(os.path.abspath(__file__))
-BASE = os.path.join(LAB, "base")
-NPZ = os.path.join(LAB, "results/r2/r2_directions.npz")
+# #1562: the HF original lives at ~/models/weightlab/qwen35-base (MIT's base_model
+# dir ships LFS pointers only; s117's LAB/base path predates the actual run).
+BASE = os.environ.get("R2_BASE_DIR") or os.path.expanduser("~/models/weightlab/qwen35-base")
+NPZ = os.environ.get("R2_NPZ") or os.path.join(LAB, "results/r2/r2_directions.npz")
 sys.path.insert(0, os.path.expanduser("~/Dev/weight-lab/mit-exp8/exp8_math/code"))
 import st_numpy as S  # noqa: E402  (torch-free safetensors I/O; no MIT tensors read)
 
-DOWN = "model.language_model.layers.{L}.mlp.down_proj.weight"
+DOWN = "language_model.model.layers.{L}.mlp.down_proj.weight"
 
 
 def edit_model(tensors, d_by_layer, layers, alpha, topk):
@@ -95,9 +97,11 @@ def main():
         unicheck()
         return
     gate_path = os.path.join(LAB, "results/r2/step1_gate.json")
-    gate = json.load(open(gate_path))
-    if not gate.get("pass"):
-        sys.exit("step-1 gate did NOT pass — own edit is forbidden (issue rule #1533)")
+    if os.environ.get("WS_R2_JON_GO") != "1":
+        gate = json.load(open(gate_path))
+        if not gate.get("pass"):
+            sys.exit("step-1 gate did NOT pass — own edit is forbidden unless "
+                     "WS_R2_JON_GO=1 (Jon authorized step 2 against OUR p50c row, #1562)")
     alpha = float(sys.argv[1]); topk = int(sys.argv[2]); outdir = sys.argv[3]
     z = np.load(NPZ)
     d_all = z["d"].astype(np.float32)
@@ -110,6 +114,11 @@ def main():
     print("own-edit layers:", layers,
           "gap:", [round(float(gap[fa.index(L)]), 4) for L in layers])
     src = os.path.join(BASE, "model.safetensors-00001-of-00001.safetensors")
+    if not os.path.exists(src):  # qwen35-base ships a single model.safetensors (#1562)
+        cands = [f for f in os.listdir(BASE) if f.endswith(".safetensors")]
+        if len(cands) != 1:
+            raise SystemExit(f"cannot resolve single safetensors in {BASE}: {cands}")
+        src = os.path.join(BASE, cands[0])
     tensors = S.load(src)
     d_by_layer = {L: d_all[fa.index(L)] for L in layers}
     out, report = edit_model(tensors, d_by_layer, layers, alpha, topk)

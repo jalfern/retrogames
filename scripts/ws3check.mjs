@@ -7,7 +7,7 @@
 //           markers removed — MUST all be caught.
 // Run: node scripts/ws3check.mjs | node scripts/ws3check.mjs -- --mutate
 
-import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, cpSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdtempSync, mkdirSync, cpSync, existsSync, rmSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -25,7 +25,7 @@ export const CLAIMS = {
     p50c: { math: [40, 56], gsm: [59, 75], fin: [40, 80] },
 }
 
-export const SETS = { p50cw: ['math'] } // #1547: option C rerun is math-only
+export const SETS = { p50cw: ['math', 'gsm'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row
 
 export function validateR2({ scores, gate }) {
     const errs = []
@@ -166,8 +166,13 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(html.includes('3.0%') && html.includes('30.0%') && html.includes('41.0%') && html.includes('75.0%'),
         'build: final step-1 numbers on the page (base 3.0 · p50c 30.0/41.0 · 54.0/75.0)')
     const ownRow = html.slice(html.indexOf('id="r2-own"'), html.indexOf('id="r2-own"') + 300)
-    ok(ownRow.includes('forbidden — step-1 gate STOP'),
-        'build: own row definitive under the STOP gate (never an open-ended pending)')
+    const liveGo = existsSync(join(LAB, 'results/r2/jon_go_1562.json'))
+    if (liveGo)
+        ok(ownRow.includes('pending — rows land') || ownRow.includes('%'),
+            'build: own row shows pending/scored under Jon-GO (#1562 reopened step 2)')
+    else
+        ok(ownRow.includes('forbidden — step-1 gate STOP'),
+            'build: own row definitive under the STOP gate (never an open-ended pending)')
     // #1540: the four honesty copy blocks the issue requires, with load-bearing facts.
     ok(['WHAT REPRODUCES.', 'WHAT DOES NOT.', 'WHY IT IS HONEST.', 'THE FIVE-SECOND TELL.']
         .every(m => html.includes(m)), 'copy: all four honesty blocks present')
@@ -231,6 +236,8 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
 {
     const dir = mkdtempSync(join(tmpdir(), 'ws3fix-'))
     cpSync(LAB, dir, { recursive: true })
+    if (existsSync(join(dir, 'results/r2/jon_go_1562.json')))
+        rmSync(join(dir, 'results/r2/jon_go_1562.json')) // PASS-gate scenario: no GO needed
     const rd = join(dir, 'results/r2'); mkdirSync(rd, { recursive: true })
     const scores = {
         _hold: 100,
@@ -340,15 +347,95 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(rg && !knownOk({ ...rg, diffs: rg.diffs.map(d => d.id === 'math500_36'
         ? { ...d, ours: { ...d.ours, ok: true } } : d) }),
         'mutant caught: a known misgrade silently "fixed"')
-    ok(validateR2({ scores: { ...scores, p50cw: { ...scores.p50cw, gsm: { n: 100, acc: 0, finished: 0 } } } }).length > 0,
-        'mutant caught: a gsm set smuggled under the math-only p50cw tag')
+    ok(validateR2({ scores: { ...scores, p50cw: { gsm: scores.p50cw.gsm } } }).length > 0,
+        'mutant caught: dropping p50cw math from the two-set row is caught')
     const { rc, html } = build(LAB)
     ok(rc === 0 && html.includes('id="r2-p50cw"') &&
-        html.includes('id="r2-p50cw"><td rowspan=1>#1547 option C — penalty window ctx 32768</td><td>math</td><td>100</td><td>31.0%</td>') &&
+        html.includes('id="r2-p50cw"><td rowspan=2>#1547 option C — penalty window ctx 32768</td><td>math</td><td>100</td><td>31.0%</td>') &&
         html.includes('51.0%'),
         'build: p50cw row renders scored (31.0% acc / 51.0% finished)')
+    ok(html.includes('id="r2-p50cw-gsm"') && html.includes('<td>gsm</td><td>100</td><td>48.0%</td><td>74.0%</td>'),
+        'build: p50cw gsm row renders (#1562 GSM8K baseline 48.0% / 74.0%)')
+    ok(/regrade.*p50cw:gsm/s.test(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')) &&
+        JSON.parse(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')).regrade['p50cw:gsm'].n === 100,
+        'rules: MIT regrade covers the p50cw gsm row too (#1562)')
+    ok(html.includes('not run — optional control dropped at the session time-box'),
+        'rules: basew disclosed as not-run, never pending-forever (#1562 time-box)')
     ok(html.includes('45.8%') && /penalizes every generated token|whole-generation/.test(html),
         'copy: page states the MIT same-100 reference and the window finding')
+}
+
+// 9. #1562 step 2 (Jon re-opened): runner pins, directions source purity, and the
+//    Jon-GO semantics on the page (gate STOP + jon_go + no own row => IN FLIGHT,
+//    never "forbidden"; forbidden returns only when the GO marker is absent).
+{
+    const dir = s => readFileSync(join(LAB, s), 'utf8')
+    const envOnly = t => t.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+    const run = dir('r2_run_1562.sh')
+    ok(/WS_R2_JON_GO=1/.test(envOnly(run)), 'rules: #1562 runner exports the explicit Jon-GO override (env, not comment)')
+    const pinsOk = t => /WS_R2_PARALLEL=32/.test(t) && /WS_R2_PP_CTX=32768/.test(t)
+        && /WS_R2_SAVETEXT=1/.test(t)
+    ok(pinsOk(envOnly(run)), 'rules: #1562 runner pins PAR-32 + whole-generation window + text sidecars', run)
+    ok(!pinsOk(envOnly(run).replace(/WS_R2_PP_CTX=32768/, 'WS_R2_PP_CTX=0')),
+        'mutant caught: #1562 runner without the window pin')
+    ok(/WS_R2_SETS=math,gsm \$V r2_score\.py own:qwen35-own/.test(run)
+        && /WS_R2_SETS=gsm \$V r2_score\.py p50cw:/.test(run)
+        && run.search(/own:qwen35-own/) < run.search(/p50cw:/),
+        'rules: #1562 scores own (both sets) first, then p50c GSM8K — headline before baseline')
+    ok(wiringProblems(run).length === 0, 'rules: #1562 registers qwen35-own before scoring', wiringProblems(run).join('; '))
+    ok(wiringProblems(run.replace(/r2_register\.py qwen35-own --load/, 'sleep 5')).length > 0,
+        'mutant caught: #1562 scores own without confirm-load')
+    // directions source purity: practice + base only, never MIT's edited tensors
+    const dirs = dir('r2_directions_1562.py')
+    ok(!/apply_edit|edited_tensors|edited\/|load\(.*edited/.test(dirs),
+        'rules: directions never reference MIT edit tensors (source is our measurements)')
+    ok(/MIT_PRACTICE/.test(dirs) && /practice/.test(dirs) && /WS_R2_JON_GO/.test(dirs),
+        'rules: directions gate on Jon-GO and draw only from MIT practice problems')
+    ok(dirs.search(/step1_gate/) < dirs.search(/WS_R2_JON_GO/),
+        'rules: step-1 gate still consulted first; GO only overrides its STOP')
+    ok(/return recs\b/.test(dirs) && !/return refs\b/.test(dirs),
+        'rules: make_refs returns record dicts, not raw tuples (crash caught live first attempt)')
+    ok(/fin_pool\[:FIT_FIN\]/.test(dirs) && /fin_pool\[FIT_FIN:/.test(dirs)
+        && !/fin_pool\[:FIT_N\]/.test(dirs),
+        'rules: fin pool splits by FIT_FIN — validation fin cannot be starved (crash 2 fixed)')
+    // Jon-GO page semantics (fixture dirs — live lab already in flight)
+    const base = mkdtempSync(join(tmpdir(), 'ws3go-'))
+    cpSync(LAB, base, { recursive: true })
+    const bd = join(base, 'results/r2'); mkdirSync(bd, { recursive: true })
+    if (existsSync(join(bd, 'jon_go_1562.json'))) rmSync(join(bd, 'jon_go_1562.json'))
+    const scores = { _hold: 100,
+        base: { math: { n: 100, acc: 3.0, finished: 3.0, mean_ntok: 31842 }, gsm: { n: 100, acc: 8.0, finished: 7.0, mean_ntok: 30686 } },
+        p50c: { math: { n: 100, acc: 30.0, finished: 41.0, mean_ntok: 26100 }, gsm: { n: 100, acc: 54.0, finished: 75.0, mean_ntok: 17844 } },
+        p50cw: { math: { n: 100, acc: 31.0, finished: 51.0, mean_ntok: 24012 } } }
+    writeFileSync(join(bd, 'r2_scores.json'), JSON.stringify(scores))
+    writeFileSync(join(bd, 'step1_gate.json'),
+        JSON.stringify({ pass: false, detail: 'p50c math acc outside [40,56].', rows: {} }))
+    const noGo = build(base)
+    ok(noGo.rc === 0 && noGo.html.includes('forbidden — step-1 gate STOPped'),
+        'rules: gate STOP + no GO => own row forbidden (never ran)')
+    writeFileSync(join(bd, 'jon_go_1562.json'), JSON.stringify({ by: 'jon #1562' }))
+    const go = build(base)
+    ok(go.rc === 0 && !go.html.includes('forbidden — step-1 gate STOPped')
+        && go.html.includes('#1562 — STEP 2 IN FLIGHT'),
+        'rules: gate STOP + Jon-GO + no own row => pending/IN FLIGHT, forbidden lifted')
+    rmSync(join(bd, 'jon_go_1562.json'))
+    const rev = build(base)
+    ok(rev.html.includes('forbidden — step-1 gate STOPped'),
+        'mutant caught: dropping Jon-GO re-forbids the own row')
+    const scored = { ...scores, own: { math: { n: 100, acc: 12.0, finished: 30.0, mean_ntok: 20000 }, gsm: { n: 100, acc: 20.0, finished: 45.0, mean_ntok: 12000 } } }
+    writeFileSync(join(bd, 'jon_go_1562.json'), JSON.stringify({ by: 'jon #1562' }))
+    writeFileSync(join(bd, 'r2_scores.json'), JSON.stringify(scored))
+    const done = build(base)
+    ok(done.rc === 0 && /THE OWN EDIT, JUDGED HONESTLY/.test(done.html)
+        && !/STEP 2 IN FLIGHT/.test(done.html),
+        'win: scored own + p50cw renders the honest verdict, not the in-flight note')
+    ok(done.html.includes('12.0% math · 20.0% gsm') && done.html.includes('31.0% math'),
+        'win: verdict states own per-set acc and the p50cw baseline it is judged against')
+    const doneReal = build(LAB)
+    ok(doneReal.html.includes('5 of the disclosed 20 forward passes') &&
+        doneReal.html.includes('7.0% math · 9.0% gsm') &&
+        doneReal.html.includes('37.0% math · 48.0% gsm'),
+        'copy: #1562 verdict states passes used + MIT-checker numbers for both rows')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

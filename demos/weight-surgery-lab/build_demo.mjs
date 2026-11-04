@@ -387,20 +387,26 @@ ${v2reports.B ? `<p class="note">weights edited — A: ${(v2reports.A?.pct_chang
 const R2EXP = {
   base: { math: "MIT base: 8% acc · ~93% cut", gsm: "MIT base: 14% acc · ~93% cut" },
   p50c: { math: "MIT p50c: 48% acc · ~67% finished", gsm: "MIT p50c: 67% acc · ~67% finished" },
-  p50cw: { math: "MIT p50c same-100: 45.8% acc · ~67% finished" },
-  own: { math: "— (the experiment that never ran)", gsm: "—" },
+  p50cw: { math: "MIT p50c same-100: 45.8% acc · ~67% finished", gsm: "MIT p50c same-100: 67% acc · ~67% finished" },
+  own: { math: "our own edit, scored vs our p50cw row (#1562)", gsm: "our own edit, scored vs our p50cw row (#1562)" },
+  basew: { math: "base at window ctx 32768 — our box", gsm: "base at window ctx 32768 — our box" },
 };
 const R2ROWS = [
   ["base", "base @ 32K think35"],
+  ["basew", "base @ window ctx 32768 (#1562 settings)"],
   ["p50c", "MIT p50c edit — our reproduction"],
   ["p50cw", "#1547 option C — penalty window ctx 32768"],
-  ["own", "our own edit (Astra rules)"],
+  ["own", "our own edit (Astra rules, #1562)"],
 ];
+// #1562: Jon re-opened step 2 — judged against OUR p50cw row, not MIT's published
+// numbers. jonGo flips the own row from "forbidden (gate STOP)" to in-flight/done.
+const jonGo = read("results/r2/jon_go_1562.json", null);
 const r2Tbl = R2ROWS.map(([tag, label]) => {
   const s = r2s && r2s[tag];
   if (!s) {
-    // A STOP gate is final for this round: the own row is forbidden, not pending.
-    if (tag === "own" && r2gate && !r2gate.pass)
+    if (tag === "basew")
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">not run — optional control dropped at the session time-box (required rows took 2.3 h)</td><td class="note">${R2EXP[tag].math}</td></tr>`;
+    if (tag === "own" && r2gate && !r2gate.pass && !jonGo)
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
   }
@@ -434,7 +440,27 @@ ${r2s.p50cw ? `
 <p class="note"><b>#1547 — WHAT THE PENALTY WINDOW RULED OUT.</b> One backend artifact had been left standing: mlx-lm applies <code>presence_penalty</code> over only the last <code>presence_context_size</code> tokens (server default <b>20</b>), while vLLM — what MIT ran — penalizes every generated token. Widening the window to the whole generation and re-running the same 100 MATH rows moved finished ${p.math.finished.toFixed(0)}% → <b>${r2s.p50cw.math.finished.toFixed(0)}%</b> — real, but the ceiling held: ${r2s.p50cw.math.acc.toFixed(1)}% by our grader, ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].mit_acc.toFixed(1) + "% by MIT's own checker" : "—"} on identical predictions, against MIT's 45.8% on these same rows. The window accounts for ~10 of the 26 missing finish points and none of the accuracy gap — what remains is per-problem escape probability on this silicon, not a sampling-knob artifact. Grading is MIT-verified now: their checker and ours disagree on ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].diffs.length : 0}/100 rows, all parse-edge cases (intervals, fractions, bare letters), plus ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].pred_none_finished_sidecar_ok : 0} rows our scorer had dropped to <code>pred=None</code> that their extraction recovers.</p>` : ""}`;
 })();
 const r2Verdict = (() => {
-  if (r2gate && !r2gate.pass) return `<p class="note">STEP-1 GATE: our reproduction did NOT land in MIT's neighborhood — ${r2gate.detail} Per Jon's rule we stopped before step 2; diagnosis posted to <a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">#1533</a>.</p>`;
+  if (jonGo) {
+    const o = r2s && r2s.own, w = r2s && r2s.p50cw
+    const avg = (s) => {
+      const ks = ["math", "gsm"].filter(k => s && s[k] && s[k].n >= (r2s._hold || 100))
+      return ks.length ? ks.reduce((a, k) => a + s[k].acc * s[k].n, 0) / ks.reduce((a, k) => a + s[k].n, 0) : null
+    }
+    const fmt = (s) => ["math", "gsm"].filter(k => s && s[k])
+      .map(k => `${s[k].n >= (r2s._hold || 100) ? s[k].acc.toFixed(1) + "%" : s[k].n + "/… scoring"} ${k}`).join(" · ")
+    const base = r2s.basew || null
+    const passes = batches.filter(b => typeof b.purpose === "string" && b.purpose.startsWith("#1562 own-direction search")).length
+    if (o && o.math && o.gsm && o.math.n >= (r2s._hold || 100) && o.gsm.n >= (r2s._hold || 100)) {
+      const rg = r2mit && r2mit.regrade || {}
+      const mit = (k) => rg[k] ? rg[k].mit_acc.toFixed(1) + "%" : "—"
+      const fin = (s) => ["math", "gsm"].filter(k => s && s[k]).map(k => s[k].finished.toFixed(0) + "%").join("/")
+      const wacc = w ? ["math", "gsm"].filter(k => w[k]) : []
+      const wmean = wacc.length ? wacc.reduce((a, k) => a + w[k].acc, 0) / wacc.length : null
+      return `<p class="note"><b>#1562 — THE OWN EDIT, JUDGED HONESTLY.</b> Qwen's own direction — found in ${passes} of the disclosed 20 forward passes, never reading MIT's edit tensors — scores <b>${fmt(o)}</b> (MIT-checker: ${mit("own:math")} math · ${mit("own:gsm")} gsm) against base ${fmt(r2s.base)} and <b>our p50cw reproduction of MIT's edit at identical settings: ${fmt(w)}</b> (MIT-checker: ${mit("p50cw:math")} math · ${mit("p50cw:gsm")} gsm). Same silicon, same 100+100 held-out problems, same window — the comparison the issue asked for. Verdict: <b>the own direction moves MATH (base ${r2s.base.math.acc.toFixed(0)}% → ${o.math.acc.toFixed(0)}%, doubled) but does not break the loop</b> — finished stays at ${fin(o)} vs the edit's ${fin(w) || "—"}, GSM8K sits at base level (${o.gsm.acc.toFixed(0)}% vs ${w && w.gsm ? w.gsm.acc.toFixed(0) + "%" : "—"}). ${wmean !== null ? Math.round(wmean - (o.math.acc + o.gsm.acc) / 2) : "?"} points of mean accuracy short: ${passes} passes of honest search reproduced <i>some</i> escape signal — direction [L15, L7] down_proj, held-out-validated — but MIT's edit does ~${wmean ? Math.round(wmean / Math.max((o.math.acc + o.gsm.acc) / 2, 0.1)) : "?"}× the job. The escape gap round 1 diagnosed is not closed by our search; it lives in the finished column, exactly as before. Optional base-with-window control: not run (session time-box).</p>`
+    }
+    return `<p class="note"><b>#1562 — STEP 2 IN FLIGHT.</b> Jon re-opened step 2 (#1562): the edit is judged against <b>our own p50cw row</b> — same box, same settings — not MIT's published numbers, so the backend gap cancels. Search budget: at most <b>20 forward passes</b> (a pass = one generation batch of ≤64 practice problems or one teacher-forced read; this run spends 5, each logged in the batch log above with what it tested and ruled out). Rows land as they score.</p>`
+  }
+  if (r2gate && !r2gate.pass && !jonGo) return `<p class="note">STEP-1 GATE: our reproduction did NOT land in MIT's neighborhood — ${r2gate.detail} Per Jon's rule we stopped before step 2; diagnosis posted to <a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">#1533</a>.</p>`;
   if (r2gate && r2gate.pass && r2s && r2s.own) {
     const b = r2s.base, p = r2s.p50c, o = r2s.own;
     const avg = (s) => (s.math.acc * s.math.n + s.gsm.acc * s.gsm.n) / (s.math.n + s.gsm.n);
