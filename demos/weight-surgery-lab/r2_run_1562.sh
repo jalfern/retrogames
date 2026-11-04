@@ -12,7 +12,13 @@ export NO_PROXY=127.0.0.1,localhost no_proxy=127.0.0.1,localhost
 export R2_NPZ="$PWD/results/r2/r2_directions_1562.npz"
 echo "[1562] start $(date -u +%FT%TZ)"
 
-$V r2_directions_1562.py || { echo "[1562] STOP: directions refused/failed"; exit 1; }
+# Search runs once; if the directions npz is already present (a prior attempt
+# completed P1-P5 and logged them), do NOT re-spend the 5-pass budget.
+if [ ! -f results/r2/r2_directions_1562.npz ]; then
+  $V r2_directions_1562.py || { echo "[1562] STOP: directions refused/failed"; exit 1; }
+else
+  echo "[1562] directions npz present — reusing 5 passes already logged (not re-spending)"
+fi
 LAYERS=$($V -c "import numpy as np;print(','.join(map(str,np.load('results/r2/r2_directions_1562.npz')['chosen_layers'])))")
 echo "[1562] edit layers (held-out sep winners): $LAYERS"
 $V r2_edit.py 1.0 128 edited_own "$LAYERS" || { echo "[1562] STOP: own edit failed"; exit 1; }

@@ -36,7 +36,7 @@ NPZ = os.environ.get("R2_NPZ") or os.path.join(LAB, "results/r2/r2_directions.np
 sys.path.insert(0, os.path.expanduser("~/Dev/weight-lab/mit-exp8/exp8_math/code"))
 import st_numpy as S  # noqa: E402  (torch-free safetensors I/O; no MIT tensors read)
 
-DOWN = "model.language_model.layers.{L}.mlp.down_proj.weight"
+DOWN = "language_model.model.layers.{L}.mlp.down_proj.weight"
 
 
 def edit_model(tensors, d_by_layer, layers, alpha, topk):

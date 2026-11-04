@@ -360,3 +360,8 @@ Gotchas found (each gated in ws3check, 44→71): make_refs returned tuples not r
 (killed attempt 1); fin-pool split by FIT_N starved validation (killed attempt 2);
 resumed runs re-log P1–P3 into batches.jsonl — dedupe by pass_no when the round
 closes (real budget spend = 3 gen + 2 read passes).
+
+Environment addendum (#1562): `data/` is untracked problem data — symlink it:
+`ln -sfn ~/Dev/weight-lab/qwen-forge/data data`. qwen35 tensor keys are
+`language_model.model.layers.*` (HF multi-modal container) — r2_edit's DOWN
+template matched the write-up's `model.language_model.*` and died on first run.
