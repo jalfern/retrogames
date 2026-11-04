@@ -832,6 +832,11 @@ ok('seedpin: the law covers the games that report seeds (>0)', reportingGames > 
 // All 10 sites now draw from seedRng(seed) regenerated at every human start;
 // ?seed=N replays identical AI opponents → 54 reporting+pinning titles.
 ok('seedpin: rollout floor — at least 54 games report+pin seeds', reportingGames >= 54, `${reportingGames} reporting`)
+// Batch 20 adds RaccoonHeist — a 3D stealth game whose engine already ran on an
+// xorshift seeded from level dimensions (guard blink/patrol timing deterministic),
+// but never reported a seed. Seed now generated at every human start honoring
+// ?seed=N and threaded into createEngine → 55 reporting+pinning titles.
+ok('seedpin: rollout floor — at least 55 games report+pin seeds', reportingGames >= 55, `${reportingGames} reporting`)
 
 // #1473 seedless law: fixed-world titles — audited zero Math.random across every
 // file in the title's directory — carry {tick,score,done} so a filed report can

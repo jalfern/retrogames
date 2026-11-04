@@ -37,6 +37,7 @@ import { createEngine } from './engine.js'
 import { heistAudio } from './audio.js'
 import { padState } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
+import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
 /**
  * The one key table. Handlers read it, the attract card and the pause card are written
@@ -205,6 +206,7 @@ const RaccoonHeistGame = () => {
         let world = null
         let engine = null
         let level = null
+        let seed = null
         // Lamp lights: three pooled PointLights re-bound every 0.2 s to the three
         // lamps nearest the player. Lighting all 8 by real light would be 8 more
         // lights in every fragment shader; two pools read identically at night.
@@ -241,7 +243,7 @@ const RaccoonHeistGame = () => {
             level = LEVELS[index]
             world = buildWorld(level)
             scene.add(world.group)
-            engine = createEngine({ level, world, camera, audio: heistAudio, onEvent: onEngineEvent })
+            engine = createEngine({ level, world, camera, audio: heistAudio, onEvent: onEngineEvent, seed: seed ?? undefined })
             // The engine owns the cast — crew, guards, loot, the cat — in its own group.
             // Mounting the world and forgetting the cast is the nastiest bug this file
             // has had: the level looked perfect, the harness went green, and the
@@ -429,6 +431,7 @@ const RaccoonHeistGame = () => {
             const scr = screenRef.current
             if (scr === 'attract') {
                 started = true
+                seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
                 setMode('brief')
                 heistAudio.start('sneak')
                 mountJob(jobRef.current)
@@ -508,6 +511,7 @@ const RaccoonHeistGame = () => {
             setHud(engine ? engine.snapshot() : null)
         }
         const next = () => {
+            seed = seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000)
             const win = engine?.st.result?.win
             switchJob(win ? Math.min(LEVELS.length - 1, jobRef.current + 1) : jobRef.current)
         }
@@ -680,6 +684,44 @@ const RaccoonHeistGame = () => {
         }
         if (import.meta.env.DEV) window.__heistTest = api
 
+        exposeGame({
+            id: 'raccoonheist',
+            buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
+            reset: () => { start() },
+            tick: (pad) => {
+                if (screenRef.current === 'attract' || screenRef.current === 'brief') { start(); return }
+                if (screenRef.current === 'clear' || screenRef.current === 'bust') { next(); return }
+                const inp = { keys: new Set(), actions: [], hold: false }
+                if (pad.left) inp.keys.add('ArrowLeft')
+                if (pad.right) inp.keys.add('ArrowRight')
+                if (pad.up) inp.keys.add('ArrowUp')
+                if (pad.down) inp.keys.add('ArrowDown')
+                if (pad.a) inp.actions.push('grab')
+                if (pad.b) inp.actions.push('throw')
+                inputRef.current = inp
+            },
+            state: () => ({
+                tick: Math.round(elapsed * 60),
+                score: engine ? engine.st.deliveredValue : 0,
+                done: screenRef.current === 'clear' || screenRef.current === 'bust',
+                seed: seed ?? 0,
+                job: jobRef.current,
+                phase: engine ? engine.st.phase : 'brief',
+                delivered: engine ? engine.st.delivered : 0,
+                caught: engine ? engine.st.caught : 0,
+            }),
+            canvas: () => canvas,
+        })
+
+        exposeFeedbackState(() => ({
+            tick: Math.round(elapsed * 60),
+            score: engine ? engine.st.deliveredValue : 0,
+            done: screenRef.current === 'clear' || screenRef.current === 'bust',
+            seed: seed ?? 0,
+            job: jobRef.current,
+            delivered: engine ? engine.st.delivered : 0,
+        }))
+
         raf = requestAnimationFrame(frame)
 
         return () => {
@@ -704,6 +746,8 @@ const RaccoonHeistGame = () => {
             renderer.dispose()
             // NB: deliberately NOT forceContextLoss() — see the canvas comment above.
             if (canvas.parentNode === wrap) wrap.removeChild(canvas)
+            unexposeGame()
+            unexposeFeedbackState()
         }
     }, [setMode])
 
