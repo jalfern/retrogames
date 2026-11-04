@@ -224,3 +224,31 @@ while sandboxed processes keep #737). Everything round-2 runs through oMLX:
   a PASSING gate ever lands. Page rebuild + merge wait on it.
 - `r2_chain.sh` (detached): waits for step1_gate.json; PASS → step 2/3 at
   WS_R2_PARALLEL=32; STOP → marker copy only. Pidfile-guarded, session-proof.
+
+## Session 120 (2026-11-04): MTP hypothesis refuted by forensics; engine probe
+
+- **Forensics (no GPU):** the scored backend `qwen35-p50c-mlx` cannot speculate —
+  safetensors index has 0 `mtp`/`nextn` tensors (HF container `qwen35-p50c` has 15;
+  `r2_convert.py`'s `mlx_lm.convert` drops the MTP module), oMLX admin reports
+  `mtp_compatible: false`, Nov-3 server.log shows plain BatchedEngine loads, and
+  `~/.omlx/model_settings.json` had `mtp_enabled: false` for `-mlx` before the run
+  (the `true` belongs to the OTHER id, `qwen35-p50c`, which the runner never used).
+  So #1539's "MTP-off rerun" was a no-op by construction; MTP is RULED OUT by
+  inspection. s119's prime suspect dies without spending a minute of GPU.
+- **Remaining suspect:** BatchedEngine PAR-32 numerics (32 concurrent bf16 streams,
+  reduction-order diffs) vs MIT's plain single-sequence HF, amplified by temp-0.6
+  sampling over 32K thinking chains on a ~0.8B model.
+- **`r2_probe_engine.py`** (isolated tag `p50cvlm`): same fixed held-out set,
+  math-only, identical think35 protocol + main-thread grading, against
+  `qwen35-p50c` (vlm engine, MTP-capable container). NEVER writes
+  `scores_p50c_math.jsonl` / `r2_scores.json` — protocol rows stay frozen and
+  `r2_gate.py` keeps reading them. Run: `./.venv/bin/python r2_detach.py
+  r2_run_probe.sh /tmp/ws-r2-probe-engine.log` (~45 min @32).
+  - acc ∈ [40,56] → engine numerics identified as the gap source; honest repair is
+    re-running BOTH rows on one engine-matched container (step 2 still gated).
+  - acc ≈ 30 → backend candidates exhausted → close #1533 as honest partial
+    reproduction per STATE.md (base rows + MIT p50c reproduce-shape documented,
+    demo page records the negative result).
+- Harness caveat found: this box's agent transport corrupts `strftime` `%`-sequences
+  inside written files (`%m-` arrived as `%umb-`); `r2_probe_engine.py` uses
+  `datetime.isoformat()` instead. Prefer `%`-free timestamp construction in scripts.
