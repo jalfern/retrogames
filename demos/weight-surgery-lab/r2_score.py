@@ -9,6 +9,7 @@ usage: r2_score.py TAG:MODEL[:pp=X] [TAG:MODEL:pp=X ...]
 Budget note: step-3 scoring passes are NOT part of Astra's 50-pass budget (MIT logs
 them separately), but every pass still lands in batches.jsonl for provenance.
 """
+import contextlib
 import hashlib
 import json
 import os
@@ -58,6 +59,7 @@ def run_row(tag, model, pp):
     assert R.load_done(model), f"{model} not loaded"
     t0 = time.time()
     tok_total = 0
+    n_new = 0
     summary = {}
     for set_name in SETS:
         want = [r for r in rows if r[0] == set_name]
@@ -67,7 +69,10 @@ def run_row(tag, model, pp):
         tpath = f"{TEXTDIR}/{tag}_{set_name}.jsonl"
         if SAVETEXT:
             os.makedirs(TEXTDIR, exist_ok=True)
-        with open(path, "a") as out, (open(tpath, "a") if SAVETEXT else None) as tout:
+        # None is not a context manager: a resume run without SAVETEXT crashed
+        # here (TypeError in (open(...) if False else None)); nullcontext fixes it.
+        with open(path, "a") as out, \
+                (open(tpath, "a") if SAVETEXT else contextlib.nullcontext()) as tout:
             def work(rec):
                 st, pid, prob, gold = rec
                 t1 = time.time()
@@ -77,7 +82,8 @@ def run_row(tag, model, pp):
                 raw = {"id": pid, "pred": pred, "ntok": g["ntok"],
                       "finished": g["finished"], **lm,
                       "t_wall": round(time.time() - t1, 1)}
-                if tout is not None:  # full text lives in the sidecar, not the repo
+                if SAVETEXT and pid not in done:  # full text in sidecar, not repo;
+                    # `done` guards against resume duplicate writes
                     body = json.dumps({"text": g["text"], "reasoning": g["reasoning"]})
                     tout.write(json.dumps({"id": pid, **json.loads(body)}) + "\n")
                     tout.flush()
@@ -95,6 +101,7 @@ def run_row(tag, model, pp):
                 raw.update(ok=ok, method=method)
                 out.write(json.dumps(raw) + "\n")
                 out.flush()
+                n_new += 1
         recs = [json.loads(l) for l in open(path)]
         n = len(recs)
         summary[set_name] = {
@@ -113,16 +120,24 @@ def run_row(tag, model, pp):
     agg = {}
     if os.path.exists(f"{R.RESULTS}/r2_scores.json"):
         agg = json.load(open(f"{R.RESULTS}/r2_scores.json"))
-    agg[tag] = summary
+    # merge, don't clobber: a WS_R2_SETS=gsm run must not erase the tag's
+    # math entry (#1562: p50cw math vanished when its gsm-only row landed)
+    prev = agg.get(tag, {})
+    merged = {**prev, **summary}
+    merged["model"] = model
+    agg[tag] = merged
     with open(f"{R.RESULTS}/r2_scores.json", "w") as f:
         json.dump(agg, f, indent=1)
     desc = "; ".join(f"{s.upper()} {summary[s]['acc']}% acc / {summary[s]['finished']}% fin"
                     for s in SETS if s in summary)
     print(f"ROW {tag}: {desc}  ({summary['t_hours']} h)")
     n_tot = sum(summary[s]["n"] for s in SETS if s in summary)
-    log_batch(f"held-out scoring row {tag} ({model}, think35 pp={pp} pp_ctx={R.PP_CTX})",
-              "step-1 gate vs MIT expectations happens after base+p50c rows",
-              model, n_tot, tok_total, dt / 3600)
+    # a fully-resumed row generated nothing: it is NOT a pass and must not
+    # land in batches.jsonl (pass accounting under Astra's cap stays honest)
+    if n_new:
+        log_batch(f"held-out scoring row {tag} ({model}, think35 pp={pp} pp_ctx={R.PP_CTX})",
+                  "step-1 gate vs MIT expectations happens after base+p50c rows",
+                  model, n_tot, tok_total, dt / 3600)
 
 
 if __name__ == "__main__":
