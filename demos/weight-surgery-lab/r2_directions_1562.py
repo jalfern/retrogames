@@ -46,7 +46,8 @@ PAR = int(os.environ.get("WS_R2_PARALLEL", "4"))
 GEN_MODEL = "qwen35-base"
 CAP_LOOP, CAP_FIN = 8192, 4096
 TAIL_LOOP, TAIL_FIN = 256, 128          # tokens cut from bucket ends (EOS/cap hygiene)
-FIT_N = 48                              # fit-corpus texts per bucket (rest => P5 validate)
+FIT_N = 48                              # fit-corpus loop texts (rest => P5 validate)
+FIT_FIN = 20                            # fit-corpus fin texts (rest => P5 validate)
 SEED = 1562
 
 
@@ -95,9 +96,9 @@ def make_refs(n=96):
             refs.append((set_name, q, sol))
     random.Random(SEED + 2).shuffle(refs)
     refs = refs[:n]
-    recs = [{"i": i, "set": s, "ntok": len(sol), "finished": True, "looped": False,
-             "pred": "ref", "text": sol[-3000:], "_pool": "ref"}
-            for i, (s, _q, sol) in enumerate(refs)]
+    recs = [{"i": i, "set": s, "q": q, "ntok": len(sol), "finished": True,
+             "looped": False, "pred": "ref", "text": sol[-3000:], "_pool": "ref"}
+            for i, (s, q, sol) in enumerate(refs)]
     return recs
 
 
@@ -190,9 +191,10 @@ def tf_read(model, tok, items, fit, val, d_val=None, probs_by_pool=None):
     import mlx.core as mx
     pbs = practice_batches()
     if probs_by_pool is None:
-        probs_by_pool = {"8k_a": pbs[0], "8k_b": pbs[1], "4k": pbs[2], "ref": make_refs()}
+        probs_by_pool = {"8k_a": pbs[0], "8k_b": pbs[1], "4k": pbs[2]}
     for rec, bucket, phase in items:
-        q = probs_by_pool[rec["_pool"]][rec["i"]][1]
+        # ref records carry their q inline; gen records index the fixed batches
+        q = rec.get("q") or probs_by_pool[rec["_pool"]][rec["i"]][1]
         p_ids = tok.apply_chat_template([{"role": "user", "content": q}],
                                        add_generation_prompt=True)
         g_ids = tok.encode(rec["text"][-3000:], add_special_tokens=False)[:2048]
@@ -269,10 +271,12 @@ if __name__ == "__main__":
     rng = random.Random(SEED + 1)
     rng.shuffle(loop_pool)
     rng.shuffle(fin_pool)
+    if len(fin_pool) < FIT_FIN + 8:
+        sys.exit(f"fin pool {len(fin_pool)} too small to split fit({FIT_FIN})+val(>=8)")
     fit_items = ([(r, "loop", "fit") for r in loop_pool[:FIT_N]]
-                 + [(r, "fin", "fit") for r in fin_pool[:FIT_N]])
+                 + [(r, "fin", "fit") for r in fin_pool[:FIT_FIN]])
     val_items = ([(r, "loop", "val") for r in loop_pool[FIT_N:FIT_N + 48]]
-                 + [(r, "fin", "val") for r in fin_pool[FIT_N:FIT_N + 24]])
+                 + [(r, "fin", "val") for r in fin_pool[FIT_FIN:FIT_FIN + 24]])
     n_ref_fit = sum(1 for x in fit_items if x[0].get("pred") == "ref")
     n_ref_val = sum(1 for x in val_items if x[0].get("pred") == "ref")
     print(f"fit texts: {sum(1 for x in fit_items if x[1] == 'loop')} loop + "

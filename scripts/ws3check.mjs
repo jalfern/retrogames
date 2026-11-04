@@ -388,6 +388,9 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         'rules: step-1 gate still consulted first; GO only overrides its STOP')
     ok(/return recs\b/.test(dirs) && !/return refs\b/.test(dirs),
         'rules: make_refs returns record dicts, not raw tuples (crash caught live first attempt)')
+    ok(/fin_pool\[:FIT_FIN\]/.test(dirs) && /fin_pool\[FIT_FIN:/.test(dirs)
+        && !/fin_pool\[:FIT_N\]/.test(dirs),
+        'rules: fin pool splits by FIT_FIN — validation fin cannot be starved (crash 2 fixed)')
     // Jon-GO page semantics (fixture dirs — live lab already in flight)
     const base = mkdtempSync(join(tmpdir(), 'ws3go-'))
     cpSync(LAB, base, { recursive: true })
