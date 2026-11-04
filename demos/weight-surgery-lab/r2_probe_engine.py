@@ -12,7 +12,14 @@ p50c math deficit (30.0 vs MIT ~48, finished-rate passes, precision-per-
 finished matches) is BatchedEngine PAR-32 numerics vs MIT's plain-AR HF.
 
 This probe scores the SAME fixed held-out set, math only, same think35
-protocol and main-thread grading, against qwen35-p50c (vlm engine).
+protocol and main-thread grading, against qwen35-p50c (vlm engine) with
+MTP explicitly DISABLED at runtime: PUT /admin/api/models/qwen35-p50c/settings
+{"mtp_enabled": false}. (First attempt at 17:09 local ran MTP-ON despite
+model_settings.json saying false — the running server caches settings; file
+edits do NOT reach it. Verified plain-AR after the PUT: zero new MTP log
+lines for warm requests. The kill also cut a 9.4-tok/s MTP-overhead run that
+would have overrun the session.) Result vs the frozen 30.0 A/Bs container/
+engine numerics under identical plain-AR semantics.
 Isolated artifacts — scores_p50cvlm_math.jsonl + probe_engine.json:
   it never writes scores_p50c_math.jsonl nor r2_scores.json (CLAIMS law:
   the protocol rows stay byte-identical; the step-1 gate keeps reading them).
@@ -30,7 +37,7 @@ import json
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import r2_common as R
 import common as C
@@ -84,6 +91,7 @@ def main():
 
     t0 = time.time()
     tok_total = 0
+    by_id = {r[1]: r for r in todo}
     with open(path, "a") as out:
         def work(rec):
             st, pid, prob, gold = rec
@@ -94,14 +102,19 @@ def main():
             return {"id": pid, "pred": pred, "ntok": g["ntok"],
                     "finished": g["finished"], **lm,
                     "t_wall": round(time.time() - t1, 1)}
+        # incremental: grade + persist each row as it completes, so a budget
+        # abort mid-run still leaves gradable rows (resumable via id-skip).
+        # grading ONLY on the main thread (math_verify signal.alarm() rule, s119);
+        # a lock keeps grading exclusive to the main thread's consumption loop.
         with ThreadPoolExecutor(max_workers=PAR) as ex:
-            raws = list(ex.map(work, todo))
-        # grading ONLY on the main thread (math_verify signal.alarm() rule, s119)
-        for rec, raw in zip(todo, raws):
-            ok, method = R.grade(rec[3], raw["pred"])
-            raw.update(ok=ok, method=method)
-            out.write(json.dumps(raw) + "\n")
-            out.flush()
+            futs = {ex.submit(work, rec): rec for rec in todo}
+            for fut in as_completed(futs):
+                raw = fut.result()
+                rec = by_id[raw["id"]]
+                ok, method = R.grade(rec[3], raw["pred"])
+                raw.update(ok=ok, method=method)
+                out.write(json.dumps(raw) + "\n")
+                out.flush()
 
     recs = [json.loads(l) for l in open(path)]
     n = len(recs)
