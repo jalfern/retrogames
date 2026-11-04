@@ -324,3 +324,39 @@ stale-claims-gone).
 - Verdict per the issue rule: NOT near MIT → #1533 step 2 stays closed; page updated
   with what C ruled out (#1540 page, ROUND 2 section); #1547 closes with this PR.
 - Sidecars (~10MB) live outside the repo: `~/Dev/weight-lab/r2_text/p50cw_math.jsonl`.
+
+## #1562 step 2 (in flight, session 127 slot-a) — Qwen finds its own edit
+Jon re-opened step 2 (#1562, 2026-11-04): judged against OUR p50cw row (#1547),
+same box + settings, so MIT-vs-our backend gap cancels. `step1_gate.json` stays
+STOPped and untouched; the search runs under explicit `WS_R2_JON_GO=1`.
+
+Scripts: `r2_directions_1562.py` (P1–P5 search), `r2_edit.py` (+`R2_NPZ` +
+`R2_BASE_DIR` — MIT's `base_model/` ships LFS pointers; the HF original lives at
+`~/models/weightlab/qwen35-base`, single-file safetensors), `r2_run_1562.sh`
+(detach: `./.venv/bin/python r2_detach.py r2_run_1562.sh /tmp/forge/ws-r2-1562.log`).
+Env: fresh `.venv` (py3.12 + mlx-lm) — pip needs the MITM proxy (`/tmp/forge/netenv`),
+direct DNS dead (#737 family).
+
+Pass budget (Jon cap: 20 passes, a pass = gen batch ≤64 practice problems or one
+teacher-forced read) — spends 5:
+- P1/P2 gen x64 @cap 8192 (think35 pp1.5 ctx32768, PAR-32): escape 6/64 + 2/64
+  (9.4%/3.1% — loop corpus 178 texts).
+- P3 gen x64 @cap 4096: escape 6/64; fin bucket = 14 model-finished (all with boxed
+  answers; step-1 escape ntok median ~2k ⇒ cap 4096 catches natural stops) + 26
+  reference-solutions read as continuations of the same prompts (MIT-prompt
+  sanctioned dense measurement; flagged `pred:"ref"` in the npz — honest split).
+- P4 teacher-forced fit x68 — per-FA-layer d = mean(MLP write loop) − mean(write
+  finished); EOS hygiene: loop tails cut 256, fin tails cut 128 (#1506 confound fix).
+- P5 teacher-forced held-out x~72 — x·d_L separation on unseen texts; layers with
+  |sep|<1 ruled out; edit takes top-2 separating layers.
+Numbers land here + `results/r2/r2_directions_1562.npz` when P4/P5 finish.
+
+Scoring (once): own MATH+GSM8K, p50cw GSM8K (MATH exists), optional base@ctx32768
+last; PAR-32, PP_CTX=32768, sidecars → MIT mathqa.py regrade of every new row.
+Rows land in `results/r2/r2_scores.json` (tags `own`, `p50cw.gsm`, `basew`);
+completion marker `results/r2/R2_1562_DONE`.
+
+Gotchas found (each gated in ws3check, 44→71): make_refs returned tuples not records
+(killed attempt 1); fin-pool split by FIT_N starved validation (killed attempt 2);
+resumed runs re-log P1–P3 into batches.jsonl — dedupe by pass_no when the round
+closes (real budget spend = 3 gen + 2 read passes).
