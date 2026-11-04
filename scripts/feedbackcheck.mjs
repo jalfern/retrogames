@@ -960,6 +960,35 @@ for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFil
 }
 ok('seedless: at least 28 titles report without a seed (BardsTale + fixed-world + deco batches + the emulator tier: Ultima I–V, KingsQuest, Zork)', seedlessReporters >= 28, `${seedlessReporters} seedless reporters`)
 
+// Batch 23 — the TOTAL-COVERAGE law. After b22 (the emulator tier) every title on
+// the board files at least one feedback state; measured, not remembered: 83/83.
+// This turns that audit result into a law — a new game cannot merge without a
+// report. The strict-shape ratchet tightens the remaining slack: 13 titles report
+// through block-body callbacks or sibling-module helpers the `() => ({` parsers
+// cannot see; that tolerated count may only SHRINK (drop a name when it is
+// normalized — a new silent or unlisted-shape title goes RED immediately).
+const UNSTRICT = new Set(['BlobBattle', 'CometDrift', 'CometDriftHD', 'FireCrew',
+    'GardenGuard', 'GravelYard', 'Homebody', 'IronRing', 'PickRush', 'Rogue',
+    'ShortOrderShout', 'TalkMeDown', 'ViperPit'])
+let dirsTotal = 0, looseReporters = 0, strictReporters = 0
+for (const d of readdirSync(new URL('../src/games/', import.meta.url), { withFileTypes: true })) {
+    if (!d.isDirectory()) continue
+    let src = ''
+    try { src = readFileSync(new URL(`../src/games/${d.name}/index.jsx`, import.meta.url), 'utf8') } catch { continue }
+    dirsTotal++
+    const strictHere = /exposeFeedbackState\(\s*\(\)\s*=>\s*\(\{/.test(src)
+    const viaShell = !strictHere && /from ['"][^'"]*components\/DosShell['"]/.test(src)
+    if (strictHere || viaShell) strictReporters++
+    const anyInDir = strictHere || viaShell || readdirSync(new URL(`../src/games/${d.name}/`, import.meta.url))
+        .some((f) => /\.jsx?$/.test(f) && /exposeFeedbackState\s*\(/.test(readFileSync(new URL(`../src/games/${d.name}/${f}`, import.meta.url), 'utf8')))
+    if (anyInDir) looseReporters++
+    if (!strictHere && !viaShell && !UNSTRICT.has(d.name)) {
+        ok(`coverage: ${d.name} reports in a shape the parsers see (or is on the ratchet list)`, false, 'unlisted non-strict reporter')
+    }
+}
+ok('coverage: every game directory files a feedback report (#1473 total-rollout floor)', looseReporters === dirsTotal && dirsTotal >= 83, `${looseReporters}/${dirsTotal}`)
+ok(`coverage: strict-shape ratchet — at most ${UNSTRICT.size} titles report outside the () => ({ shape`, dirsTotal - strictReporters <= UNSTRICT.size, `${dirsTotal - strictReporters} of ${dirsTotal} non-strict`)
+
 // #1473 seed-param law: the shared mulberry32 helper is proven first (same seed
 // -> same stream, different seed -> different stream, values in [0,1)), then per
 // port: every Math.random in the file must sit on a seed-generation line, so ALL
