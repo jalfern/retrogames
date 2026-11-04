@@ -208,6 +208,7 @@
     "arkcheck": "node scripts/arkanoidcheck.mjs",
     "ws2check": "node scripts/ws2check.mjs",
     "ws1506play": "node scripts/ws1506play.mjs",
+    "ws3check": "node scripts/ws3check.mjs",
     "lint:dug": "eslint src/games/DigDug src/components src/utils src/config src/main.jsx scripts/dugcheck.mjs scripts/lib",
     "dugcheck": "node scripts/dugcheck.mjs",
     "lint:bob": "eslint src/games/BubbleBobble src/components src/utils src/config src/main.jsx scripts/bobcheck.mjs scripts/bubbleplay.mjs scripts/lib",

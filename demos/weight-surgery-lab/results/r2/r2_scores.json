@@ -1,0 +1,36 @@
+{
+ "base": {
+  "math": {
+   "n": 100,
+   "acc": 3.0,
+   "finished": 3.0,
+   "mean_ntok": 31842
+  },
+  "gsm": {
+   "n": 100,
+   "acc": 8.0,
+   "finished": 7.0,
+   "mean_ntok": 30686
+  },
+  "t_hours": 0.98,
+  "pp": 1.5,
+  "model": "qwen35-base"
+ },
+ "p50c": {
+  "math": {
+   "n": 100,
+   "acc": 30.0,
+   "finished": 41.0,
+   "mean_ntok": 26100
+  },
+  "gsm": {
+   "n": 100,
+   "acc": 54.0,
+   "finished": 75.0,
+   "mean_ntok": 17844
+  },
+  "t_hours": 1.84,
+  "pp": 1.5,
+  "model": "qwen35-p50c-mlx"
+ }
+}

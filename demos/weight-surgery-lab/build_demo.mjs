@@ -70,6 +70,14 @@ for (const v of ["edited_a1k64", "edited_a1k256"]) {
 }
 const variants = read("results/variants.json", {});
 const finals = read("results/final_scores.json", {});
+// #1533 ROUND 2 artifacts (oMLX GPU @32K): scores, bench, pp-proof, p50c manifest, own edit
+const r2s = read("results/r2/r2_scores.json", null);
+const r2bench = read("results/r2/bench16.json", null);
+const r2pp = read("results/r2/pp_proof.json", null);
+const r2p50 = read("results/r2/p50c_manifest.json", null);
+const r2own = read("results/r2/edit_report_own.json", null);
+const r2gate = read("results/r2/step1_gate.json", null);
+const r2probe = read("results/r2/probe_engine.json", null);
 const sweepSumm = Object.fromEntries(batches.filter(b => b.phase === "practice" && b.purpose && b.purpose.startsWith("Jon step1")).map(b => [`cap${b.cap}`, b]));
 
 const FAIRC = (fairScores && fairScores.cap) || (capSweep && 4096);
@@ -370,6 +378,77 @@ ${v2reports.B ? `<p class="note">weights edited — A: ${(v2reports.A?.pct_chang
   ? "VERDICT II: a variant terminates more held-out problems AND scores higher than base at the fair horizon — the second cut lands. Details above."
   : `VERDICT II: no variant beats base-4096 on termination at this horizon — the second negative, and sharper than round I's: with exact token counting base itself terminates only 1/12 (the earlier 6/12 was a words×2 estimate artifact, see README). ${v2acc.length ? `But ${v2acc.map(k => `variant ${k} (${v2[k].correct}/${v2.base.correct})`).join(", ")} scores above base without terminating — removing d from the READ path makes the model find right answers while it rambles. Direction removal helps reasoning, not termination; horizon (32k vs 4k) and localization remain the gap to MIT.` : "No variant even improves accuracy; horizon (32k vs 4k) and localization remain the gap to MIT."}`}</p>`;
 
+// ---- ROUND 2 (#1533): MIT's horizon on our silicon — oMLX GPU, 32,768-token think35 ----
+// MIT's claimed numbers (Sparks of Weight-Space Programming): base ~8% MATH /
+// 14% GSM8K with ~93% cut at 32K; p50c 48% MATH / 67% GSM8K acc, ~67% finished
+// (~33% cut). The table pairs every row with these side by side — the
+// "five second" tell: read accuracy, then finished, per row.
+const R2EXP = {
+  base: { math: "MIT base: 8% acc · ~93% cut", gsm: "MIT base: 14% acc · ~93% cut" },
+  p50c: { math: "MIT p50c: 48% acc · ~67% finished", gsm: "MIT p50c: 67% acc · ~67% finished" },
+  own: { math: "— (the experiment that never ran)", gsm: "—" },
+};
+const R2ROWS = [
+  ["base", "base @ 32K think35"],
+  ["p50c", "MIT p50c edit — our reproduction"],
+  ["own", "our own edit (Astra rules)"],
+];
+const r2Tbl = R2ROWS.map(([tag, label]) => {
+  const s = r2s && r2s[tag];
+  if (!s) {
+    // A STOP gate is final for this round: the own row is forbidden, not pending.
+    if (tag === "own" && r2gate && !r2gate.pass)
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
+    return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
+  }
+  return ["math", "gsm"].map((set, si) => {
+    const t = s[set];
+    const done = t.n >= (r2s._hold || 100);
+    const cells = `<td>${t.n}</td><td>${done ? t.acc.toFixed(1) + "%" : `${t.n}/… scoring`}</td><td>${done ? t.finished.toFixed(1) + "%" : "—"}</td><td>${done ? t.mean_ntok : "—"}</td>`;
+    const first = si === 0 ? `<td rowspan=2>${label}</td>` : "";
+    const exp = `<td class="note">${R2EXP[tag][set]}</td>`;
+    return `<tr id="${si ? "r2-" + tag + "-gsm" : "r2-" + tag}">${first}<td>${set}</td>${cells}${exp}</tr>`;
+  }).join("\n");
+}).join("\n");
+const r2Kpi = r2bench ? `<div class="kpi" id="r2kpi">
+  <div><b>${r2bench.agg_tps}</b>tok/s aggregate (4 streams, GPU)</div>
+  <div><b>${r2bench.cut_off}/${r2bench.n}</b>cut at 32K — base, train set</div>
+  <div><b>${r2bench.est_hours_100p50 ?? "?"} h</b>per scored row</div>
+</div>` : "";
+// The honest-negative copy (#1540): rendered only when the step-1 rows are
+// final AND the gate STOPped — an in-flight round keeps the pending rows.
+const r2Copy = (() => {
+  if (!r2s || !r2s.base || !r2s.p50c || !r2gate || r2gate.pass) return "";
+  const b = r2s.base, p = r2s.p50c;
+  const cut = (t) => (100 - t.finished).toFixed(0);
+  const prec = (t) => (100 * t.acc / t.finished).toFixed(0);
+  return `
+<p class="note"><b>WHAT REPRODUCES.</b> The base rows land in MIT's base neighborhood — MATH ${b.math.acc.toFixed(1)}% acc vs MIT 8% · GSM ${b.gsm.acc.toFixed(1)}% vs 14% — and the loop-cut signature matches: ${cut(b.math)}%/${cut(b.gsm)}% of base answers cut at 32K vs MIT's ~93%. On the p50c row, precision-per-finished-answer matches MIT's: ${p.math.acc}/${p.math.finished} ≈ ${prec(p.math)}% (MATH) and ${p.gsm.acc}/${p.gsm.finished} = ${prec(p.gsm)}% (GSM) vs MIT's ~48/67 ≈ 72%.</p>
+<p class="note"><b>WHAT DOES NOT.</b> The loop-escape rate after the edit: MIT's edited model finishes ~67% of problems; ours finishes ${p.math.finished.toFixed(0)}% on MATH (${p.gsm.finished.toFixed(0)}% on GSM). Edited MATH accuracy lands ${Math.round(48 - p.math.acc)} points below MIT's 48% (${p.math.acc.toFixed(0)}% vs 48%) — the gap is per-problem escape probability, not per-answer quality.</p>
+<p class="note"><b>WHY IT IS HONEST.</b> Weights hash-verified against MIT's pinned base (${r2p50 ? `${r2p50.tensors}, ${r2p50.entries}` : "sha256 both sides"}); grading was fixed twice after the fact (gold-answer extraction had silently zeroed accuracy — base MATH read 0.0%, true ${b.math.acc.toFixed(1)}%; a math_verify threading bug downgraded every live row to the numeric fallback); MTP/speculative decoding ruled out twice — tensor forensics (the scored MLX backend carries 0 mtp/nextn tensors; mtp_compatible: false)${r2probe ? ` and a clean vlm-engine A/B probe (plain-AR, MTP-off verified at runtime: ${r2probe.acc}% acc / ${r2probe.finished}% finished vs the frozen row's ${p.math.acc.toFixed(0)}%/${p.math.finished.toFixed(0)}% — two engines, same ceiling)` : ""}; knob-tuning to clear the frozen gate was forbidden by design.</p>
+<p class="note"><b>THE FIVE-SECOND TELL.</b> Read each row left to right: accuracy, then finished. The gap between our p50c row and MIT's claimed row lives in the <b>finished</b> column (${p.math.finished.toFixed(0)}% vs ~67%), not in per-finished-answer precision (${prec(p.math)}% vs ~72%).</p>`;
+})();
+const r2Verdict = (() => {
+  if (r2gate && !r2gate.pass) return `<p class="note">STEP-1 GATE: our reproduction did NOT land in MIT's neighborhood — ${r2gate.detail} Per Jon's rule we stopped before step 2; diagnosis posted to <a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">#1533</a>.</p>`;
+  if (r2gate && r2gate.pass && r2s && r2s.own) {
+    const b = r2s.base, p = r2s.p50c, o = r2s.own;
+    const avg = (s) => (s.math.acc * s.math.n + s.gsm.acc * s.gsm.n) / (s.math.n + s.gsm.n);
+    return `<p class="note">VERDICT: reproduction ${r2gate.detail}. Our own edit scores ${avg(o).toFixed(1)}% mean accuracy vs base ${avg(b).toFixed(1)}% and MIT p50c ${avg(p).toFixed(1)}% — ${avg(o) > avg(b) ? "own direction helps" : "our own direction does not beat base"}${avg(o) >= avg(p) ? ", at or above MIT's edit" : ", short of MIT's edit"}.</p>`;
+  }
+  return `<p class="note">${r2gate ? "Step-1 gate green — own edit in flight; every pass lands in the batch log above." : "Round 2 runs as the step-1 gate clears; nothing here is claimed before it is measured."}</p>`;
+})();
+const r2Html = `
+<h2>ROUND 2 — MIT'S HORIZON ON OUR SILICON (#1533)</h2>
+<p>Rounds I–II ran on CPU at capped horizons because this box's GPU path was dead (#737). It is alive: the whole round now runs on <b>oMLX (Metal GPU)</b> at MIT's full <b>32,768-token</b> think35 protocol — thinking on, temp 0.6 / top_p 0.95 / top_k 20 / <b>presence_penalty 1.5 confirmed applied</b> (seed-fixed probe: pp0 vs pp1.5 outputs differ — the #1506 duplicated-flag class of bug is ruled out on this backend), graded on the last <code>\\boxed{}</code> with <code>math-verify</code>. Fixed held-out: ${r2s && r2s._hold ? r2s._hold : 100} MATH-500 + ${r2s && r2s._hold ? r2s._hold : 100} GSM8K-test, selection seed 1533, identical rows for every line. ${r2p50 ? `MIT's p50c edit rebuilt from their run folder with <code>apply_edit.py</code> — both tensors sha256-verified against the pinned base (${r2p50.tensors}, ${r2p50.entries}).` : ""}</p>
+${r2Kpi}
+<table>
+<tr><th>row</th><th>set</th><th>n</th><th>accuracy</th><th>finished</th><th>mean tok</th><th>MIT reference</th></tr>
+${r2Tbl}
+</table>
+${r2Copy}
+${r2own ? `<p class="note">our own edit: ${r2own.summary} — directions from our own measurements only; MIT's edit tensors were never loaded as a source (issue rule).</p>` : ""}
+${r2Verdict}`;
+
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -439,7 +518,8 @@ const html = `<!DOCTYPE html>
 </head>
 <body><div class="wrap">
 <h1>WEIGHT SURGERY</h1>
-<div class="sub">Qwen3.5-0.8B @ <code>2fc06364</code> — weight-space programming attempt (#1493), rescored at a fair horizon (#1506): no gradients, practice on GSM8K/MATH <b>train</b> only, ≤50 forward-pass batches, one scored held-out run. By the forge, on a laptop-class CPU (this box's GPU path is dead, #737).</div>
+<div class="sub">Qwen3.5-0.8B @ <code>2fc06364</code> — weight-space programming attempt (#1493), rescored at a fair horizon (#1506), and re-run at MIT's own 32,768-token horizon on the GPU (#1533): no gradients, practice on GSM8K/MATH <b>train</b> only, ≤50 forward-pass batches, one scored held-out run. By the forge, on a laptop-class box (rounds I–II on CPU — the GPU path was dead until round 2, #737).</div>
+${r2Html}
 
 ${verdict}
 
@@ -485,6 +565,7 @@ ${v2Html}
 <p><a href="https://jalfern.com/retrogames/issues/1493" rel="noopener">Issue #1493</a> ·
 <a href="https://jalfern.com/retrogames/issues/1505" rel="noopener">Issue #1505 (Surgery II)</a> ·
 <a href="https://jalfern.com/retrogames/issues/1506" rel="noopener">rescore #1506</a> ·
+<a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">round 2 (32K GPU) #1533</a> ·
 <a href="https://rikiyat.github.io/blog/weight-space-programming/" rel="noopener">Sparks of Weight-Space Programming</a> (MIT CSAIL) ·
 <a href="https://github.com/RikiyaT/lm_understand-logs" rel="noopener">experiment logs</a> ·
 lab scripts: <code>demos/weight-surgery-lab/</code> in the repo.</p>

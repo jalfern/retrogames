@@ -1,0 +1,26 @@
+{
+ "pass": false,
+ "detail": "p50c math acc 30.0 outside [40,56]; p50c gsm acc 54.0 outside [59,75]. ",
+ "rows": {
+  "base": {
+   "math": {
+    "acc": 3.0,
+    "finished": 3.0
+   },
+   "gsm": {
+    "acc": 8.0,
+    "finished": 7.0
+   }
+  },
+  "p50c": {
+   "math": {
+    "acc": 30.0,
+    "finished": 41.0
+   },
+   "gsm": {
+    "acc": 54.0,
+    "finished": 75.0
+   }
+  }
+ }
+}
