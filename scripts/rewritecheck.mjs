@@ -184,6 +184,11 @@ ok('the generic rule does not shadow file proxies: /retrogames/forge/juice.json 
     existsSync(join(ROOT, 'public/forge/juice.json')))
 ok('explicit /demos/ keeps its own destination ahead of the generic rule',
     resolveEdge('/retrogames/demos/', vc.rewrites) === '/demos/index.html')
+ok('explicit /research/ keeps its own destination ahead of the generic rule',
+    resolveEdge('/retrogames/research/', vc.rewrites) === '/research/index.html')
+ok('/retrogames/research/<page>.html resolves to the research file',
+    resolveEdge('/retrogames/research/handweights.html', vc.rewrites) === '/research/handweights.html' &&
+    existsSync(join(ROOT, 'public/research/handweights.html')))
 
 console.log(`\nrewritecheck: ${failed ? `${failed} FAILED` : 'OK'}`)
 process.exit(failed ? 1 : 0)

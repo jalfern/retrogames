@@ -66,6 +66,24 @@
       "headers": [
         { "key": "Cache-Control", "value": "no-store" }
       ]
+    },
+    {
+      "source": "/retrogames/research",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/retrogames/research/",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/retrogames/research/:file(.+\\.html?)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
     }
   ],
   "redirects": [
@@ -82,6 +100,9 @@
     { "source": "/retrogames/demos", "destination": "/demos/index.html" },
     { "source": "/retrogames/demos/", "destination": "/demos/index.html" },
     { "source": "/retrogames/demos/:path*", "destination": "/demos/:path*" },
+    { "source": "/retrogames/research", "destination": "/research/index.html" },
+    { "source": "/retrogames/research/", "destination": "/research/index.html" },
+    { "source": "/retrogames/research/:path*", "destination": "/research/:path*" },
     { "source": "/retrogames/manifest.webmanifest", "destination": "/manifest.webmanifest" },
     { "source": "/retrogames/sw.js", "destination": "/sw.js" },
     { "source": "/retrogames/icon-192.png", "destination": "/icon-192.png" },

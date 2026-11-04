@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HAND-WRITTEN WEIGHTS — AI research — jalfern.com</title>
+<meta name="description" content="A neural network with every weight written by hand, no training, plays the real retrogames Arkanoid.">
+<style>
+:root{--bg:#0d0f17;--panel:#151925;--line:#262c3d;--ink:#e6e8ef;--mute:#8a93ab;--pos:#3fd6b0;--neg:#ff7a59;--acc:#ffd23f}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 system-ui,-apple-system,sans-serif}
+main{max-width:980px;margin:0 auto;padding:18px 14px 60px}
+h1{font-size:22px;margin:4px 0 2px;font-weight:600}
+h2{font-size:15px;margin:0 0 10px;font-weight:600;color:var(--acc);letter-spacing:.02em}
+p{margin:6px 0 10px;color:#c9cede}
+.sub{color:var(--mute);font-size:13px;margin-bottom:6px}
+.kicker{font:10px ui-monospace,Menlo,monospace;letter-spacing:.4em;margin-bottom:10px}.kicker a{color:var(--mute);text-decoration:none}.kicker a:hover{color:#fff}
+.byline{font:10px ui-monospace,Menlo,monospace;letter-spacing:.2em;color:var(--mute);margin-bottom:16px}.byline b{color:var(--acc);font-weight:600}
+main a{color:var(--acc)}
+.grid{display:grid;grid-template-columns:1fr;gap:14px}
+@media(min-width:860px){.grid{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px}
+canvas{image-rendering:pixelated;display:block}
+#game{width:100%;aspect-ratio:256/224;background:#000;border-radius:6px}
+.hud{display:flex;gap:14px;flex-wrap:wrap;font:13px ui-monospace,'SF Mono',Menlo,monospace;color:var(--mute);margin:8px 0 2px}
+.hud b{color:var(--ink);font-weight:600}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
+button,select{background:#1d2333;color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:7px 11px;font:13px system-ui,-apple-system,sans-serif;cursor:pointer}
+button.on{border-color:var(--acc);color:var(--acc)}
+input[type=range]{flex:1;min-width:140px;accent-color:var(--acc)}
+.lbl{font:12px ui-monospace,'SF Mono',Menlo,monospace;color:var(--mute)}
+.maps{display:grid;grid-template-columns:repeat(5,1fr);gap:6px}
+.maps figure{margin:0}
+.maps canvas{width:100%;aspect-ratio:32/28;border:1px solid var(--line);border-radius:4px;background:#0a0c12}
+.maps figcaption{font:11px ui-monospace,'SF Mono',Menlo,monospace;color:var(--mute);text-align:center;margin-top:3px}
+.units{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 6px}
+.units button{padding:4px 7px;font:11px ui-monospace,'SF Mono',Menlo,monospace}
+.bars{font:12px ui-monospace,'SF Mono',Menlo,monospace}
+.bar{display:grid;grid-template-columns:92px 1fr 46px;gap:8px;align-items:center;margin:3px 0}
+.track{height:10px;background:#0a0c12;border-radius:5px;position:relative;overflow:hidden}
+.track i{position:absolute;top:0;bottom:0;left:50%;background:var(--pos)}
+.track i.n{background:var(--neg)}
+.track::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:#3a4157}
+table{width:100%;border-collapse:collapse;font:13px ui-monospace,'SF Mono',Menlo,monospace}
+td,th{padding:6px 6px;border-bottom:1px solid var(--line);text-align:right}
+td:first-child,th:first-child{text-align:left}
+th{color:var(--mute);font-weight:400}
+.note{font-size:13px;color:var(--mute)}
+.legend{display:flex;gap:12px;font:11px ui-monospace,'SF Mono',Menlo,monospace;color:var(--mute);margin-top:6px}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;vertical-align:-1px;margin-right:4px}
+ol{padding-left:20px;margin:6px 0}
+li{margin:4px 0;color:#c9cede}
+code{font:12.5px ui-monospace,'SF Mono',Menlo,monospace;color:var(--acc)}
+</style>
+</head>
+<body>
+<main>
+<div class="kicker"><a href="./">◂ AI RESEARCH</a></div>
+<h1>Hand-written weights play Arkanoid</h1>
+<div class="sub">A tiny neural net steers the paddle in the real retrogames Arkanoid sim. Nothing was trained: every weight was written by reasoning about the game.</div>
+<div class="byline">BUILT BY <b>CLAUDE</b> (Opus 5.5, Anthropic) · with Jon Alferness · Nov 2, 2026 · not built by the forge</div>
+
+<div class="grid">
+<section class="card">
+  <canvas id="game" width="256" height="224"></canvas>
+  <div class="hud"><span>score <b id="sc">0</b></span><span>round <b id="rd">1</b></span><span>lives <b id="lv">3</b></span><span>tick <b id="tk">0</b></span></div>
+  <div class="row">
+    <button id="mV1">Chaser (v1)</button>
+    <button id="mV4" class="on">Chaser + aim edit (v4)</button>
+  </div>
+  <div class="row">
+    <span class="lbl">aim offset</span><input id="aim" type="range" min="0" max="14" step="1" value="5"><span class="lbl" id="aimv">5 px</span>
+  </div>
+  <div class="row">
+    <span class="lbl">speed</span>
+    <button data-sp="1">1×</button><button data-sp="4" class="on">4×</button><button data-sp="16">16×</button><button data-sp="64">64×</button>
+    <button id="pause">Pause</button><button id="reset">New game</button>
+  </div>
+  <p class="note" id="aimnote" style="margin-top:10px">The slider rewrites 16 weights in layer 2 while the game runs. At 0 px you get the plain chaser. Past about 10 px the ball starts landing off the paddle's edge.</p>
+</section>
+
+<section class="card">
+  <h2>Inside the network</h2>
+  <div class="note">Pick a layer-1 unit to see its weights over the 5 input channels (28×32 grid, 8 px per cell). <span style="color:var(--pos)">Teal</span> = positive, <span style="color:var(--neg)">coral</span> = negative, each channel scaled to its own largest weight. White dots mark the cells that are lit right now.</div>
+  <div class="units" id="units"></div>
+  <div class="maps" id="maps"></div>
+  <div class="note" id="unitdesc" style="margin-top:8px"></div>
+  <h2 style="margin-top:14px">Live activations</h2>
+  <div class="bars" id="bars"></div>
+</section>
+</div>
+
+<div class="grid" style="margin-top:14px">
+<section class="card">
+  <h2>Results on 20 unseen serves (60,000 ticks each)</h2>
+  <table>
+    <tr><th>player</th><th>weights ≠ 0</th><th>mean</th><th>median</th><th>balls lost</th></tr>
+    <tr><td>random paddle</td><td>–</td><td>13</td><td>–</td><td>3 / 3</td></tr>
+    <tr><td>v1 chaser</td><td>4,485</td><td>8,515</td><td>8,324</td><td>1 in 20 runs</td></tr>
+    <tr><td>v4 chaser + aim</td><td>20,645</td><td>9,960</td><td>11,326</td><td>0</td></tr>
+    <tr><td>repo autopilot (code)</td><td>–</td><td>18,994</td><td>–</td><td>0</td></tr>
+  </table>
+  <p class="note">The network has 144,547 weights; v4 uses 14% of them. The autopilot is <code>planner.js</code>, a hand-written algorithm that predicts the landing point and picks which brick to hit. It clears all 7 rounds in 61,472 ticks.</p>
+  <p class="note">The aim edit helped most runs (best run 16,881) but caused a new failure: in 2 of 20 runs the ball locked into a repeating loop on round 1 and never finished it. That is the next edit to try.</p>
+</section>
+
+<section class="card">
+  <h2>How it was built</h2>
+  <ol>
+    <li><b>v1, chaser.</b> Layer 1 reads positions as ramps across the grid (unit <code>ball x</code> = column position of the lit ball cell). Layer 2 compares ball x to paddle x. The outputs pick left, stay or right, with a dead zone so the paddle doesn't jitter.</li>
+    <li><b>Probe.</b> v1 never drops the ball, but it catches it dead-centre, so the ball climbs almost vertically. The last 1–3 bricks of a round take most of the time.</li>
+    <li><b>v2, constant aim.</b> Always catch the ball off-centre. Made things worse: the ball locked into repeating loops.</li>
+    <li><b>v3, aim at bricks.</b> Eight column bands, each a pair of units that only "speaks" when the ball is in that band. It reports whether more bricks are to the left or right. Small gain.</li>
+    <li><b>v4, fix the endgame.</b> In v3 a single remaining brick barely registered (tanh(0.03)). Making one brick count fully gave the biggest jump.</li>
+    <li><b>v5, aim harder at distant bricks.</b> Cleared round 1 in a third of the time, but dropped more balls. Rejected.</li>
+  </ol>
+  <p class="note">11 practice evaluations on serves 1–6, then one held-out run on serves 101–120. The setup follows MIT's <a href="https://rikiyat.github.io/blog/weight-space-programming/">"weight-space programming"</a> experiments (Takehi et al., Nov 2026): no gradients, no training, a small evaluation budget. The sim is copied unchanged from the arcade's <code>src/games/Arkanoid/sim.js</code>.</p>
+</section>
+</div>
+</main>
+
+<script>
+// ARKANOID — round data. Every round is authored as ASCII so the harness
+// (scripts/arkanoidcheck.mjs) can audit reachability before anyone plays:
+//   '.' empty   '#' standard brick (1 hit)   's' silver (3 hits)   'g' gold (indestructible)
+//   capsule carriers (each type ships EXACTLY once across the game):
+//   'L' LASER  'S' SLOW  'D' DISRUPT(3 balls)   'C' CATCH  'B' BREAK  'E' EXPAND   '+' extra life
+// The final round has no destructibles — it belongs to DOH.
+
+const COLS = 15
+
+const ROUNDS = [
+    {
+        name: 'ROUND 1',
+        gates: [80, 176],
+        enemyPeriod: 900,
+        enemyCap: 2,
+        rows: [
+            '#g##L#####S##g#',
+            '#g###g###g###g#',
+            '#g###g#Dg###g##',
+        ],
+    },
+    {
+        name: 'ROUND 2',
+        gates: [64, 192],
+        enemyPeriod: 760,
+        enemyCap: 3,
+        rows: [
+            '......#C#......',
+            '.....#sBs#.....',
+            '....#s###s#....',
+            '...#s#E##s#....',
+            '..#s#.....#s#..',
+        ],
+    },
+    {
+        name: 'ROUND 3',
+        gates: [48, 208],
+        enemyPeriod: 640,
+        enemyCap: 3,
+        rows: [
+            '.######.######.',
+            '.g#s#s#+#s#s#g.',
+            '.g#.........#g.',
+            '.g#s#s###s#s#g.',
+            '.g...........g.',
+        ],
+    },
+    {
+        name: 'ROUND 4',
+        gates: [128],
+        enemyPeriod: 520,
+        enemyCap: 4,
+        rows: [
+            '#s#s#s#s#s#s#s#',
+            's#s#s#s#s#s#s#s',
+            '#s#s#s#s#s#s#s#',
+            'sssssssssssssss',
+        ],
+    },
+    {
+        name: 'ROUND 5',
+        gates: [56, 200],
+        enemyPeriod: 460,
+        enemyCap: 4,
+        rows: [
+            'g#g#g#g#g#g#g#g',
+            '#s###s###s###s#',
+            '##s###s###s###s',
+            '#s###s###s###s#',
+            '##s###s###s###s',
+        ],
+    },
+    {
+        name: 'ROUND 6',
+        gates: [48, 128, 208],
+        enemyPeriod: 380,
+        enemyCap: 5,
+        rows: [
+            'g#g#g#g#g#g#g#g',
+            '#s#s#s#s#s#s#s#',
+            '###############',
+            '#s#s#s#s#s#s#s#',
+            '###############',
+        ],
+    },
+    {
+        name: 'DOH',
+        boss: true,
+        gates: [48, 208],
+        enemyPeriod: 620,
+        enemyCap: 2,
+        rows: [
+            'gg...........gg',
+        ],
+    },
+]
+
+// ARKANOID — pure simulation. (state, input) -> state, zero Math.random():
+// every capsule sits on a brick the round author placed, every enemy dive
+// picks its moment from tick arithmetic, so a run replays hash-for-hash and
+// scripts/arkanoidcheck.mjs can audit the whole game in Node.
+//
+// The load-bearing rules (the ones the harness pins):
+//   - paddle bounce is POSITIONAL: where the ball lands on the Vaus sets the
+//     angle; edges ~52 deg, dead center straight up. |vx| <= 0.78*speed
+//     everywhere so a reflection can never seal a horizontal forever-ball.
+//   - '#' dies in 1 hit, 's' (silver) in 3, 'g' (gold) NEVER but reflects.
+//   - every capsule type ships exactly once across the game (rounds.js).
+//   - BREAK advances the round and salvages (pays out) what remains.
+//   - DOH answers only to its eyes: 3 + 5 + 7 hits, head reflects unharmed.
+
+
+const W = 256
+const H = 224
+
+const CFG = {
+    wallX: 8,          // side walls: x < 8 or x > W-8
+    ceilY: 8,
+    paddleY: 200,      // paddle top
+    paddleH: 8,
+    paddleW: 32,
+    paddleWExp: 50,
+    paddleSpeed: 4,
+    ballR: 3,
+    baseSpeed: 2.15,
+    speedStep: 0.12,
+    slowFactor: 0.62,
+    maxVxFrac: 0.78,   // reflection angle cap (~52 deg from vertical)
+    minVyFrac: 0.55,   // no horizontal forever-balls
+    capsuleSpeed: 1.1,
+    powerTicks: 600,   // EXPAND / SLOW duration
+    laserCool: 9,
+    gridX0: 8,
+    gridY0: 48,
+    colW: 16,
+    rowH: 8,
+    roundScores: [1, 3, 5, 7, 9, 11, 13],
+    clearBonus: 300,
+    bossEyeR: 6,
+    bossHalfW: 40,
+    bossH: 40,
+    bossY: 14,
+    bossSway: 44,
+    bossSwaySpeed: 47,
+    bossShoot: 200,
+    bossSpawn: 460,
+    bossPhases: [[-24, 0, 24], [-32, -16, 0, 16, 32], [-36, -24, -12, 0, 12, 24, 36]],
+    clearGrace: 90,
+    maxLives: 5,
+}
+
+const CAPS = 'LSDCB+E'
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v)
+
+function makeGame(seed = 0) {
+    const gs = {
+        seed,
+        tick: 0,
+        round: 0,
+        lives: 3,
+        score: 0,
+        paddle: { x: W / 2, w: CFG.paddleW },
+        pvel: 0,
+        balls: [],
+        bricks: [],
+        capsules: [],
+        lasers: [],
+        bullets: [],
+        enemies: [],
+        boss: null,
+        power: { laser: 0, catch: 0, expandAt: 0, slowAt: 0 },
+        laserCd: 0,
+        enemySeq: 0,
+        spawnT: 0,
+        dry: 0,
+        clearAt: 0,
+        end: null,
+        events: [],
+    }
+    buildRound(gs)
+    return gs
+}
+
+function speedOf(gs) {
+    const base = CFG.baseSpeed + CFG.speedStep * gs.round
+    return gs.power.slowAt > gs.tick ? base * CFG.slowFactor : base
+}
+
+function buildRound(gs) {
+    const R = ROUNDS[gs.round]
+    gs.bricks = []
+    R.rows.forEach((row, r) => {
+        for (let c = 0; c < COLS; c++) {
+            const ch = row[c]
+            if (ch === '.') continue
+            const b = {
+                col: c, row: r,
+                x: CFG.gridX0 + c * CFG.colW,
+                y: CFG.gridY0 + r * CFG.rowH,
+                kind: ch === 'g' ? 'gold' : ch === 's' ? 'silver' : 'norm',
+                hp: ch === 's' ? 3 : 1,
+                capsule: CAPS.includes(ch) ? ch : null,
+                alive: true,
+            }
+            gs.bricks.push(b)
+        }
+    })
+    gs.capsules = []
+    gs.lasers = []
+    gs.bullets = []
+    gs.enemies = []
+    gs.spawnT = Math.floor(R.enemyPeriod / 2)
+    gs.clearAt = 0
+    gs.pvel = 0
+    gs.power.expandAt = 0
+    gs.power.slowAt = 0
+    gs.paddle.w = CFG.paddleW
+    gs.boss = R.boss
+        ? {
+            swayT: 0,
+            x: W / 2,
+            y: CFG.bossY,
+            phase: 0,
+            eyes: CFG.bossPhases[0].map((dx) => ({ dx, alive: true })),
+            shootT: CFG.bossShoot,
+            spawnT: CFG.bossSpawn,
+        }
+        : null
+    stickNewBall(gs)
+}
+
+function stickNewBall(gs) {
+    gs.balls = [{ x: gs.paddle.x, y: CFG.paddleY - CFG.ballR, vx: 0, vy: 0, stuck: true, held: 0 }]
+}
+
+function destructibles(gs) {
+    return gs.bricks.filter((b) => b.alive && b.kind !== 'gold').length
+}
+
+function launchBall(gs, b) {
+    const sp = speedOf(gs)
+    const rel = clamp(gs.pvel * 0.35 / sp, -CFG.maxVxFrac, CFG.maxVxFrac)
+    b.vx = rel * sp
+    b.vy = -Math.sqrt(Math.max(sp * sp - b.vx * b.vx, sp * sp * CFG.minVyFrac * CFG.minVyFrac))
+    b.stuck = false
+    gs.events.push({ type: 'launch', x: Math.round(b.x), y: Math.round(b.y) })
+}
+
+function addScore(gs, ev) {
+    gs.events.push(ev)
+    gs.score += ev.value
+}
+
+function killBall(gs) {
+    gs.balls = gs.balls.filter((b) => !(b.y - CFG.ballR > H))
+    if (gs.balls.length) return
+    gs.lives--
+    gs.events.push({ type: 'death', lives: gs.lives })
+    gs.power.laser = 0
+    gs.power.catch = 0
+    gs.power.expandAt = 0
+    gs.power.slowAt = 0
+    gs.paddle.w = CFG.paddleW
+    gs.capsules = []
+    gs.lasers = []
+    gs.bullets = []
+    if (gs.lives <= 0) { gs.end = 'over'; return }
+    stickNewBall(gs)
+}
+
+function applyCapsule(gs, kind) {
+    addScore(gs, { type: 'capsule', kind, value: 20 })
+    if (kind === 'L') gs.power.laser = 1
+    else if (kind === 'C') gs.power.catch = 1
+    else if (kind === 'E') gs.power.expandAt = gs.tick + CFG.powerTicks
+    else if (kind === 'S') gs.power.slowAt = gs.tick + CFG.powerTicks
+    else if (kind === 'D') {
+        const lead = gs.balls.find((b) => !b.stuck) || gs.balls[0]
+        const sp = speedOf(gs)
+        while (gs.balls.length < 3 && lead) {
+            const a = Math.atan2(lead.vy || -1, lead.vx || 0) + (gs.balls.length === 1 ? 0.5 : -0.5)
+            gs.balls.push({ x: lead.x, y: lead.y, vx: Math.cos(a) * sp, vy: -Math.abs(Math.sin(a) * sp), stuck: false, held: 0 })
+        }
+    } else if (kind === '+') gs.lives = Math.min(CFG.maxLives, gs.lives + 1)
+    else if (kind === 'B') advanceRound(gs, 'break')
+}
+
+function salvage(gs) {
+    const v = ROUNDS[gs.round].boss ? 0 : destructibles(gs) * CFG.roundScores[gs.round]
+    if (v > 0) addScore(gs, { type: 'salvage', value: v, n: destructibles(gs) })
+}
+
+function advanceRound(gs, by) {
+    salvage(gs)
+    if (by === 'clear') addScore(gs, { type: 'clear', value: CFG.clearBonus })
+    gs.round++
+    if (gs.round >= ROUNDS.length) { gs.end = 'win'; return }
+    gs.events.push({ type: 'round', to: gs.round, by })
+    buildRound(gs)
+}
+
+function spawnEnemy(gs) {
+    const R = ROUNDS[gs.round]
+    const gate = R.gates[gs.enemySeq % R.gates.length]
+    const patrolY = 100 + ((gs.enemySeq % 3) * 14)
+    gs.enemies.push({
+        x: gate,
+        y: CFG.ceilY + 4,
+        vx: gs.enemySeq % 2 ? 1.1 : -1.1,
+        vy: 1.2,
+        state: 'enter',
+        patrolY,
+        diveAt: gs.tick + 130 + (gs.enemySeq % 4) * 45,
+        dir: gs.enemySeq % 2 ? 1 : -1,
+    })
+    gs.enemySeq++
+    gs.events.push({ type: 'enemySpawn', x: gate })
+}
+
+function killEnemy(gs, e) {
+    e.state = 'dead'
+    addScore(gs, { type: 'enemy', value: 50 * (gs.round + 1), x: Math.round(e.x), y: Math.round(e.y) })
+}
+
+// circle vs axis-aligned rect; returns axis of least penetration or null
+function hitRect(bx, by, r, x, y, w, h) {
+    const nx = clamp(bx, x, x + w)
+    const ny = clamp(by, y, y + h)
+    const dx = bx - nx
+    const dy = by - ny
+    if (dx * dx + dy * dy > r * r) return null
+    const overX = w / 2 + r - Math.abs(bx - (x + w / 2))
+    const overY = h / 2 + r - Math.abs(by - (y + h / 2))
+    return overX < overY ? 'x' : 'y'
+}
+
+// velocity hygiene after any reflection: |vx| capped so no horizontal
+// forever-ball, |vy| floored, total speed normalised back to sp
+function clampSpeed(b, sp) {
+    b.vx = clamp(b.vx, -CFG.maxVxFrac * sp, CFG.maxVxFrac * sp)
+    const vyMin = CFG.minVyFrac * sp
+    if (Math.abs(b.vy) < vyMin) b.vy = Math.sign(b.vy || -1) * vyMin
+    const s = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || sp
+    if (s > sp) { b.vx *= sp / s; b.vy *= sp / s }
+}
+
+function stepBoss(gs, sp) {
+    const bo = gs.boss
+    bo.swayT++
+    bo.x = W / 2 + Math.sin(bo.swayT / CFG.bossSwaySpeed) * CFG.bossSway
+    bo.shootT--
+    if (bo.shootT <= 0) {
+        bo.shootT = CFG.bossShoot - gs.round * 4
+        gs.bullets.push({
+            x: bo.x, y: bo.y + CFG.bossH,
+            vx: clamp((gs.paddle.x - bo.x) / 90, -0.8, 0.8),
+            vy: 2.0,
+        })
+        gs.events.push({ type: 'bossShoot' })
+    }
+    bo.spawnT--
+    if (bo.spawnT <= 0 && gs.enemies.length < ROUNDS[gs.round].enemyCap) {
+        bo.spawnT = CFG.bossSpawn
+        spawnEnemy(gs)
+    }
+    for (const b of gs.balls) {
+        if (b.stuck) continue
+        const ax = hitRect(b.x, b.y, CFG.ballR, bo.x - CFG.bossHalfW, bo.y, CFG.bossHalfW * 2, CFG.bossH)
+        if (ax) {
+            let hitEye = null
+            if (b.y >= bo.y + CFG.bossH / 2) {
+                for (const e of bo.eyes) {
+                    if (!e.alive) continue
+                    if (Math.abs(b.x - (bo.x + e.dx)) <= CFG.bossEyeR + CFG.ballR) { hitEye = e; break }
+                }
+            }
+            if (ax === 'x') {
+                b.vx = b.x < bo.x ? -Math.abs(b.vx) : Math.abs(b.vx)
+                b.x = b.x < bo.x ? bo.x - CFG.bossHalfW - CFG.ballR : bo.x + CFG.bossHalfW + CFG.ballR
+            } else {
+                b.vy = b.y < bo.y + CFG.bossH / 2 ? -Math.abs(b.vy) : Math.abs(b.vy)
+                b.y = b.y < bo.y + CFG.bossH / 2 ? bo.y - CFG.ballR : bo.y + CFG.bossH + CFG.ballR
+            }
+            clampSpeed(b, sp)
+            if (hitEye) {
+                hitEye.alive = false
+                addScore(gs, { type: 'bossEye', value: 100, phase: bo.phase, left: bo.eyes.filter((e) => e.alive).length })
+                if (bo.eyes.every((e) => !e.alive)) {
+                    addScore(gs, { type: 'bossPhase', value: 500, phase: bo.phase })
+                    bo.phase++
+                    if (bo.phase > 2) {
+                        gs.boss = null
+                        gs.events.push({ type: 'bossDead' })
+                        addScore(gs, { type: 'win', value: 2000 })
+                        gs.end = 'win'
+                        return
+                    }
+                    bo.eyes = CFG.bossPhases[bo.phase].map((dx) => ({ dx, alive: true }))
+                }
+            } else {
+                gs.dry++
+                gs.events.push({ type: 'bossThud' })
+            }
+        }
+    }
+}
+
+function step(gs, inp) {
+    if (gs.end) return gs
+    gs.tick++
+    const sp = speedOf(gs)
+
+    // ---- paddle
+    const prevX = gs.paddle.x
+    if (gs.power.expandAt > gs.tick) gs.paddle.w = CFG.paddleWExp
+    else if (gs.power.expandAt && gs.power.expandAt <= gs.tick) gs.paddle.w = CFG.paddleW
+    if (inp.l) gs.paddle.x -= CFG.paddleSpeed
+    if (inp.r) gs.paddle.x += CFG.paddleSpeed
+    gs.paddle.x = clamp(gs.paddle.x, CFG.wallX + gs.paddle.w / 2, W - CFG.wallX - gs.paddle.w / 2)
+    gs.pvel = gs.paddle.x - prevX
+
+    // ---- fire edge
+    if (inp.fire) {
+        const stuck = gs.balls.find((b) => b.stuck)
+        if (stuck) launchBall(gs, stuck)
+        else if (gs.power.laser && gs.laserCd <= 0) {
+            gs.laserCd = CFG.laserCool
+            gs.lasers.push({ x: gs.paddle.x - 8, y: CFG.paddleY }, { x: gs.paddle.x + 8, y: CFG.paddleY })
+            gs.events.push({ type: 'laser' })
+        }
+    }
+    if (gs.laserCd > 0) gs.laserCd--
+
+    // ---- stuck balls ride the paddle
+    for (const b of gs.balls) {
+        if (b.stuck) {
+            b.x = gs.paddle.x
+            b.y = CFG.paddleY - CFG.ballR
+            b.held++
+        }
+    }
+
+    // ---- balls
+    for (const b of gs.balls) {
+        if (b.stuck) continue
+        b.x += b.vx
+        b.y += b.vy
+        // walls
+        if (b.x - CFG.ballR < CFG.wallX) {
+            b.x = CFG.wallX + CFG.ballR
+            b.vx = Math.abs(b.vx)
+            if (gs.dry >= 10) b.vx = (0.30 + (gs.dry % 5) * 0.1) * sp
+            clampSpeed(b, sp)
+        }
+        if (b.x + CFG.ballR > W - CFG.wallX) {
+            b.x = W - CFG.wallX - CFG.ballR
+            b.vx = -Math.abs(b.vx)
+            if (gs.dry >= 10) b.vx = -(0.30 + (gs.dry % 5) * 0.1) * sp
+            clampSpeed(b, sp)
+        }
+        if (b.y - CFG.ballR < CFG.ceilY) {
+            b.y = CFG.ceilY + CFG.ballR
+            b.vy = Math.abs(b.vy)
+            if (gs.dry >= 10) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
+            else if (Math.abs(b.vx) < 0.08 * sp) b.vx = (gs.tick % 2 ? 1 : -1) * 0.12 * sp
+            gs.events.push({ type: 'ceiling' })
+        }
+
+        // paddle
+        if (b.vy > 0 && b.y + CFG.ballR >= CFG.paddleY && b.y + CFG.ballR <= CFG.paddleY + CFG.paddleH + 2
+            && Math.abs(b.x - gs.paddle.x) <= gs.paddle.w / 2 + CFG.ballR * 0.8) {
+            if (gs.power.catch) {
+                b.stuck = true
+                b.held = 0
+                b.vx = 0
+                b.vy = 0
+                b.y = CFG.paddleY - CFG.ballR
+                gs.events.push({ type: 'caught' })
+            } else {
+                const rel = clamp((b.x - gs.paddle.x) / (gs.paddle.w / 2), -1, 1)
+                b.vx = rel * CFG.maxVxFrac * sp
+                if (Math.abs(b.vx) < 0.08 * sp) b.vx = (gs.tick % 2 ? 1 : -1) * 0.12 * sp
+                gs.dry++
+                if (gs.dry >= 60 && Math.abs(b.vx) < 0.2 * sp) b.vx = (gs.dry % 2 ? 1 : -1) * (0.30 + (gs.dry % 5) * 0.1) * sp
+                b.vy = -Math.sqrt(Math.max(sp * sp - b.vx * b.vx, 0))
+                if (Math.abs(b.vy) < CFG.minVyFrac * sp) b.vy = -CFG.minVyFrac * sp
+                b.y = CFG.paddleY - CFG.ballR
+                gs.events.push({ type: 'paddle' })
+            }
+        }
+
+        // bricks (first hit per tick; one reflection is all a tick can honour)
+        for (const br of gs.bricks) {
+            if (!br.alive) continue
+            const ax = hitRect(b.x, b.y, CFG.ballR, br.x, br.y, CFG.colW, CFG.rowH)
+            if (!ax) continue
+            if (ax === 'x') { b.vx = b.x < br.x + CFG.colW / 2 ? -Math.abs(b.vx) : Math.abs(b.vx); b.x = b.x < br.x + CFG.colW / 2 ? br.x - CFG.ballR : br.x + CFG.colW + CFG.ballR }
+            else { b.vy = b.y < br.y + CFG.rowH / 2 ? -Math.abs(b.vy) : Math.abs(b.vy); b.y = b.y < br.y + CFG.rowH / 2 ? br.y - CFG.ballR : br.y + CFG.rowH + CFG.ballR }
+            clampSpeed(b, sp)
+            if (br.kind === 'gold') { gs.dry++; gs.events.push({ type: 'goldHit' }); break }
+            br.hp--
+            if (br.hp > 0) { gs.dry = 0; gs.events.push({ type: 'silverHit', x: br.x, y: br.y }); break }
+            br.alive = false
+            gs.dry = 0
+            addScore(gs, { type: 'brick', value: CFG.roundScores[gs.round] * (br.kind === 'silver' ? 3 : 1), kind: br.kind, x: br.x + CFG.colW / 2, y: br.y + CFG.rowH / 2 })
+            if (br.capsule) {
+                gs.capsules.push({ x: br.x + CFG.colW / 2, y: br.y + CFG.rowH, kind: br.capsule })
+                gs.events.push({ type: 'capsuleDrop', kind: br.capsule })
+            }
+            break
+        }
+
+        // enemies (the ball eats them and never slows)
+        for (const e of gs.enemies) {
+            if (e.state === 'dead') continue
+            if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 <= (CFG.ballR + 7) ** 2) killEnemy(gs, e)
+        }
+
+        if (gs.boss) stepBoss(gs, sp)
+        if (gs.end === 'win') return gs
+    }
+
+    // ---- balls that fell past the floor
+    const before = gs.balls.length
+    gs.balls = gs.balls.filter((b) => b.y - CFG.ballR <= H)
+    if (gs.balls.length < before) {
+        gs.events.push({ type: 'ballLost' })
+        if (!gs.balls.length) killBall(gs)
+        if (gs.end) return gs
+    }
+
+    // ---- lasers
+    for (const l of gs.lasers) l.y -= 5
+    gs.lasers = gs.lasers.filter((l) => l.y > CFG.ceilY)
+    for (const e of gs.enemies) {
+        if (e.state === 'dead') continue
+        for (const l of gs.lasers) {
+            if ((l.x - e.x) ** 2 + (l.y - e.y) ** 2 <= 8 * 8) { killEnemy(gs, e); l.y = -99; break }
+        }
+    }
+    gs.lasers = gs.lasers.filter((l) => l.y > -50)
+
+    // ---- capsules
+    for (const c of gs.capsules) c.y += CFG.capsuleSpeed
+    gs.capsules = gs.capsules.filter((c) => {
+        if (c.y > H) return false
+        if (Math.abs(c.x - gs.paddle.x) <= gs.paddle.w / 2 + 5 && c.y > CFG.paddleY - 4 && c.y < CFG.paddleY + CFG.paddleH) {
+            applyCapsule(gs, c.kind)
+            return false
+        }
+        return true
+    })
+
+    // ---- enemy bullets
+    for (const u of gs.bullets) { u.x += u.vx; u.y += u.vy }
+    gs.bullets = gs.bullets.filter((u) => u.y < H)
+    if (gs.bullets.some((u) => Math.abs(u.x - gs.paddle.x) <= gs.paddle.w / 2 + 2 && u.y > CFG.paddleY - 2 && u.y < CFG.paddleY + CFG.paddleH)) {
+        gs.bullets = []
+        killBall(gs)
+        return gs
+    }
+
+    // ---- enemies
+    for (const e of gs.enemies) {
+        if (e.state === 'dead') continue
+        if (e.state === 'enter') {
+            e.y += e.vy
+            if (e.y >= e.patrolY) { e.state = 'patrol'; e.vy = 0 }
+        } else if (e.state === 'patrol') {
+            e.x += e.vx
+            if (e.x < CFG.wallX + 8) { e.x = CFG.wallX + 8; e.vx = Math.abs(e.vx) }
+            if (e.x > W - CFG.wallX - 8) { e.x = W - CFG.wallX - 8; e.vx = -Math.abs(e.vx) }
+            if (gs.tick >= e.diveAt) {
+                e.state = 'dive'
+                e.vx = clamp((gs.paddle.x - e.x) / 60, -1.4, 1.4)
+                e.vy = 1.7
+            }
+        } else if (e.state === 'dive') {
+            e.x += e.vx
+            e.y += e.vy
+            if (e.y > H) {
+                e.state = 'enter'
+                e.y = CFG.ceilY + 4
+                e.x = ROUNDS[gs.round].gates[gs.enemySeq % ROUNDS[gs.round].gates.length]
+                e.vy = 1.2
+                e.diveAt = gs.tick + 140 + (gs.enemySeq % 4) * 40
+                gs.enemySeq++
+            }
+        }
+        // touching the Vaus is death
+        if (Math.abs(e.x - gs.paddle.x) <= gs.paddle.w / 2 + 6 && Math.abs(e.y - (CFG.paddleY + 3)) <= CFG.paddleH + 4) {
+            gs.events.push({ type: 'enemyTouch' })
+            gs.enemies = gs.enemies.filter((x) => x !== e)
+            killBall(gs)
+            return gs
+        }
+    }
+    gs.enemies = gs.enemies.filter((e) => e.state !== 'dead')
+
+    // ---- spawning
+    if (!ROUNDS[gs.round].boss && gs.clearAt === 0) {
+        gs.spawnT--
+        if (gs.spawnT <= 0 && gs.enemies.length < ROUNDS[gs.round].enemyCap) {
+            gs.spawnT = ROUNDS[gs.round].enemyPeriod
+            spawnEnemy(gs)
+        }
+    }
+
+    // ---- round clear
+    if (!ROUNDS[gs.round].boss) {
+        if (destructibles(gs) === 0) {
+            if (gs.clearAt === 0) gs.clearAt = gs.tick
+            else if (gs.tick - gs.clearAt >= CFG.clearGrace) advanceRound(gs, 'clear')
+        }
+    }
+    return gs
+}
+
+// ------------------------------------------------------------------ hash ----
+function fnv(str) {
+    let h = 0x811c9dc5
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0 }
+    return h.toString(16)
+}
+
+function stateHash(gs) {
+    const parts = [
+        gs.tick, gs.round, gs.lives, gs.score,
+        Math.round(gs.paddle.x * 100), gs.paddle.w,
+        gs.balls.length,
+        ...gs.balls.map((b) => `${b.x.toFixed(2)},${b.y.toFixed(2)},${b.vx.toFixed(4)},${b.vy.toFixed(4)},${b.stuck ? 1 : 0}`),
+        gs.bricks.filter((b) => b.alive).length, gs.bricks.reduce((s, b) => s + (b.alive ? b.hp : 0), 0),
+        ...gs.capsules.map((c) => `${c.kind}${c.y.toFixed(2)}`),
+        ...gs.enemies.map((e) => `${e.state}${e.x.toFixed(2)},${e.y.toFixed(2)}`),
+        ...gs.bullets.map((u) => `${u.x.toFixed(2)},${u.y.toFixed(2)}`),
+        gs.boss ? `p${gs.boss.phase}:${gs.boss.eyes.filter((e) => e.alive).length}@${gs.boss.x.toFixed(2)}` : '-',
+        gs.power.laser, gs.power.catch, gs.power.expandAt, gs.power.slowAt, gs.end || '-',
+    ]
+    return fnv(parts.join('|'))
+}
+
+// Headless Arkanoid harness for weight-space experiments.
+// Uses the real game sim (jalfern/retrogames src/games/Arkanoid/sim.js) unchanged.
+
+const GW = 32, GH = 28, CELL = 8          // 8px cells over the 256x224 screen
+const CH = ['ball', 'trail', 'paddle', 'bricks', 'hazards']
+const NC = CH.length
+const NIN = NC * GH * GW
+const TRAIL = 8                          // trail = where the ball was 8 ticks ago
+
+const cellOf = (x, y) => {
+    const c = Math.max(0, Math.min(GW - 1, Math.floor(x / CELL)))
+    const r = Math.max(0, Math.min(GH - 1, Math.floor(y / CELL)))
+    return r * GW + c
+}
+const idx = (ch, r, c) => ch * GH * GW + r * GW + c
+
+// Sparse observation: list of active input indices (all values are 1).
+function observe(gs, hist) {
+    const on = new Set()
+    for (const b of gs.balls) on.add(0 * GH * GW + cellOf(b.x, b.y))
+    const old = hist.length > TRAIL ? hist[hist.length - 1 - TRAIL] : hist[0]
+    if (old) for (const p of old) on.add(1 * GH * GW + cellOf(p.x, p.y))
+    on.add(2 * GH * GW + cellOf(gs.paddle.x, CFG.paddleY + 2))
+    for (const br of gs.bricks) if (br.alive) {
+        on.add(3 * GH * GW + cellOf(br.x + 4, br.y + 4))
+        on.add(3 * GH * GW + cellOf(br.x + 12, br.y + 4))
+    }
+    for (const e of gs.enemies) if (e.state !== 'dead') on.add(4 * GH * GW + cellOf(e.x, e.y))
+    for (const u of gs.bullets) on.add(4 * GH * GW + cellOf(u.x, u.y))
+    return [...on]
+}
+
+
+// Tiny tanh MLP: 4480 inputs -> 32 -> 32 -> 3 (left, stay, right).
+// Inputs are binary and sparse, so layer 1 sums only the active columns.
+
+const H1 = 32, H2 = 32, NOUT = 3
+
+function zeros() {
+    return {
+        W1: Array.from({ length: H1 }, () => new Float32Array(NIN)), b1: new Float32Array(H1),
+        W2: Array.from({ length: H2 }, () => new Float32Array(H1)), b2: new Float32Array(H2),
+        W3: Array.from({ length: NOUT }, () => new Float32Array(H2)), b3: new Float32Array(NOUT),
+    }
+}
+
+function forward(net, on) {
+    const a1 = new Float32Array(H1), a2 = new Float32Array(H2), out = new Float32Array(NOUT)
+    for (let j = 0; j < H1; j++) { let s = net.b1[j]; const w = net.W1[j]; for (const i of on) s += w[i]; a1[j] = Math.tanh(s) }
+    for (let j = 0; j < H2; j++) { let s = net.b2[j]; const w = net.W2[j]; for (let i = 0; i < H1; i++) s += w[i] * a1[i]; a2[j] = Math.tanh(s) }
+    for (let j = 0; j < NOUT; j++) { let s = net.b3[j]; const w = net.W3[j]; for (let i = 0; i < H2; i++) s += w[i] * a2[i]; out[j] = s }
+    return { a1, a2, out }
+}
+
+const argmax = (o) => { let k = 0; for (let i = 1; i < o.length; i++) if (o[i] > o[k]) k = i; return k }
+const policyOf = (net) => (on) => argmax(forward(net, on).out)
+
+function stats(net) {
+    let total = 0, nz = 0
+    for (const M of [net.W1, net.W2, net.W3]) for (const row of M) for (const v of row) { total++; if (v !== 0) nz++ }
+    for (const b of [net.b1, net.b2, net.b3]) for (const v of b) { total++; if (v !== 0) nz++ }
+    return { total, nonzero: nz }
+}
+
+function diff(a, b) {
+    let changed = 0
+    const k = ['W1', 'W2', 'W3']
+    for (const m of k) a[m].forEach((row, j) => row.forEach((v, i) => { if (v !== b[m][j][i]) changed++ }))
+    for (const m of ['b1', 'b2', 'b3']) a[m].forEach((v, i) => { if (v !== b[m][i]) changed++ })
+    return changed
+}
+
+function clone(net) {
+    const c = zeros()
+    for (const m of ['W1', 'W2', 'W3']) net[m].forEach((row, j) => c[m][j].set(row))
+    for (const m of ['b1', 'b2', 'b3']) c[m].set(net[m])
+    return c
+}
+
+// Hand-written weights. No data, no gradients, no search: every number below
+// comes from reasoning about the game and is written down directly.
+// The generator loops only fill in repetitive patterns (e.g. "weight = column
+// position") so 143K numbers don't have to be typed one by one.
+
+const u = (c) => ((c + 0.5) / GW) * 2 - 1      // column -> [-1, 1]
+const v = (r) => ((r + 0.5) / GH) * 2 - 1      // row    -> [-1, 1]
+const A = 0.25                                  // keep layer-1 tanh near-linear
+
+// Layer-1 unit map (shared by all versions)
+const L1 = { BX: 0, BY: 1, TX: 2, TY: 3, PX: 4 }
+const L1_NAMES = ['ball x', 'ball y', 'trail x', 'trail y', 'paddle x']
+
+// ---- v1: "chaser" -----------------------------------------------------------
+// L1 reads positions as weighted sums over the grid: a ramp from -A to +A
+// across the columns (x) or rows (y) of one channel.
+// L2 unit 0 compares ball x to paddle x; the outputs turn that into
+// left / right with a dead zone so the paddle doesn't jitter.
+function v1() {
+    const n = zeros()
+    for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) {
+        n.W1[L1.BX][idx(0, r, c)] = A * u(c)
+        n.W1[L1.BY][idx(0, r, c)] = A * v(r)
+        n.W1[L1.TX][idx(1, r, c)] = A * u(c)
+        n.W1[L1.TY][idx(1, r, c)] = A * v(r)
+        n.W1[L1.PX][idx(2, r, c)] = A * u(c)
+    }
+    // L2 g0 = tanh(64 * (ballx - paddlex)): saturates ~1.5 cells off-centre
+    n.W2[0][L1.BX] = 64
+    n.W2[0][L1.PX] = -64
+    // outputs: left = -g0, stay = 0.5, right = +g0
+    n.W3[0][0] = -1
+    n.b3[1] = 0.5
+    n.W3[2][0] = 1
+    return n
+}
+
+// ---- v2: "aim" edit on top of v1 -----------------------------------------
+// Problem seen in v1 probes: the chaser catches the ball dead-centre, the
+// paddle bounce is positional, so the ball goes nearly straight up and rounds
+// take 2-3x longer than the planner. Fix: catch the ball OFF-centre so it
+// rebounds toward the far side of the screen.
+// New L1 unit 5 = sign(ball x) (same ramp as unit 0, but steep so it saturates).
+// New L2 weight g0 <- unit 5 shifts the paddle's target by d pixels toward the
+// near wall, so the ball strikes the inner half of the paddle and flies across.
+// Pixel -> weight: g0 = 64*(u0 - u4), u0 = A*x/128, so d px = 64*A*d/128 = 0.125*d.
+function v2(d = 10) {
+    const n = v1()
+    for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) n.W1[5][idx(0, r, c)] = 4 * u(c)
+    n.W2[0][5] = 0.125 * d
+    return n
+}
+
+// ---- v3: "aim at the bricks" edit on top of v1 ------------------------------
+// v2 probe result: a constant aim locks the ball into repeating loops (6
+// practice runs, no deaths, but stuck on round 1-2). The aim has to depend on
+// where the bricks are relative to the ball.
+// L1 can't multiply "brick here" by "ball here", so it uses 8 column bands.
+// For band k (4 grid columns wide), a PAIR of units computes
+//   tanh(ALPHA*lean_k +/- BETA*(ballInBand_k - 1))
+// where lean_k = (#brick cells right of band k) - (#brick cells left of it).
+// When the ball is in band k both units read tanh(ALPHA*lean_k); when it isn't,
+// one is ~ -1 and the other ~ +1, so the pair cancels. L2 unit 0 adds all
+// pairs, so only the ball's own band speaks.
+// Effect: the paddle's target shifts d px against the brick side, the ball hits
+// the inner half of the paddle and rebounds toward the bricks.
+const BANDS = 8
+function v3(d = 8, ALPHA = 0.03, BETA = 6) {
+    const n = v1()
+    const bandW = GW / BANDS
+    for (let k = 0; k < BANDS; k++) {
+        const lo = k * bandW, hi = lo + bandW, mid = lo + bandW / 2
+        for (const [j, sgn] of [[5 + 2 * k, 1], [6 + 2 * k, -1]]) {
+            for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++) {
+                n.W1[j][idx(3, r, c)] = ALPHA * Math.sign(c + 0.5 - mid)    // brick lean
+                if (c >= lo && c < hi) n.W1[j][idx(0, r, c)] = sgn * BETA  // ball in band
+            }
+            n.b1[j] = -sgn * BETA
+            // pair sum ~ 2*tanh(ALPHA*lean); paddle target moves -d px per unit lean
+            n.W2[0][j] = -0.125 * d / 2
+        }
+    }
+    return n
+}
+
+// ---- v4: fix v3's endgame -----------------------------------------------------
+// v3 trace: the last 1-3 bricks of a round take most of the time. With
+// ALPHA = 0.03 a single brick gives tanh(0.03) = 0.03, so the aim vanishes
+// exactly when it matters. Make one brick count (ALPHA 1.5 -> tanh = 0.9) and
+// raise BETA to 100 so the off-band pairs still cancel to exactly 0.
+const v4 = (d = 8) => v3(d, 1.5, 100)
+
+// ---- v5: aim harder at bricks that are further away -----------------------------
+// v4 trace: down to 1 brick by tick ~5000 in round 1, then 17,000 more ticks to
+// hit it. A fixed +/-d offset sends the ball the same distance sideways every
+// time; a lone brick 100 px away needs a steeper shot. Geometry: the ball
+// climbs ~150 px to the bricks, the paddle throws vx = 0.78*rel*speed, so the
+// offset that lands it dx px sideways is about 0.137*dx px. Weight each brick
+// cell by its distance from the band centre (saturating at 12 columns), and
+// set the slope so small distances get ~0.137 px of offset per px.
+function v5(d = 10, GAMMA = 1.1) {
+    const n = v4(d)
+    const bandW = GW / BANDS
+    for (let k = 0; k < BANDS; k++) {
+        const mid = k * bandW + bandW / 2
+        for (const j of [5 + 2 * k, 6 + 2 * k])
+            for (let r = 0; r < GH; r++) for (let c = 0; c < GW; c++)
+                n.W1[j][idx(3, r, c)] = GAMMA * Math.max(-1, Math.min(1, (c + 0.5 - mid) / 12))
+    }
+    return n
+}
+
+
+const $ = (id) => document.getElementById(id)
+const gctx = $('game').getContext('2d')
+let model = 'v4', aimPx = 5, speed = 4, paused = false
+let net = buildNet()
+let gs, hist, serve, last
+let selUnit = 0
+
+function buildNet() { return model === 'v1' ? v1() : v4(aimPx) }
+
+function newGame() { gs = makeGame(0); hist = []; serve = null; last = null }
+
+function policyStep() {
+  const stuck = gs.balls.some((b) => b.stuck)
+  if (stuck) {
+    if (!serve) serve = { x: 30 + Math.random() * (W - 60), wait: 20 + Math.floor(Math.random() * 90) }
+    const dx = serve.x - gs.paddle.x
+    if (Math.abs(dx) > 3) return { l: dx < 0, r: dx > 0 }
+    if (serve.wait-- > 0) return {}
+    serve = null
+    return { fire: true }
+  }
+  const on = observe(gs, hist)
+  const f = forward(net, on)
+  last = { on, ...f }
+  const a = argmax(f.out)
+  return { l: a === 0, r: a === 2 }
+}
+
+function tick() {
+  if (gs.end) { newGame(); return }
+  step(gs, policyStep())
+  gs.events.length = 0
+  hist.push(gs.balls.map((b) => ({ x: b.x, y: b.y })))
+  if (hist.length > 40) hist.shift()
+}
+
+const ROWCOL = ['#ff5db0', '#ffa23f', '#ffd23f', '#5de07a', '#5dc8ff', '#a58bff', '#ff7a7a']
+function draw() {
+  const c = gctx
+  c.fillStyle = '#05060a'; c.fillRect(0, 0, W, H)
+  c.fillStyle = '#2a3150'; c.fillRect(0, 0, W, CFG.ceilY); c.fillRect(0, 0, CFG.wallX, H); c.fillRect(W - CFG.wallX, 0, CFG.wallX, H)
+  for (const b of gs.bricks) if (b.alive) {
+    c.fillStyle = b.kind === 'gold' ? '#c99a2e' : b.kind === 'silver' ? '#b8c0d4' : ROWCOL[b.row % ROWCOL.length]
+    c.fillRect(b.x + 0.5, b.y + 0.5, CFG.colW - 1, CFG.rowH - 1)
+  }
+  if (gs.boss) {
+    const bo = gs.boss
+    c.fillStyle = '#6b4fd8'; c.fillRect(bo.x - CFG.bossHalfW, bo.y, CFG.bossHalfW * 2, CFG.bossH)
+    for (const e of bo.eyes) if (e.alive) { c.fillStyle = '#ffd23f'; c.beginPath(); c.arc(bo.x + e.dx, bo.y + CFG.bossH - 6, CFG.bossEyeR, 0, 7); c.fill() }
+  }
+  c.fillStyle = '#ff7a59'; for (const e of gs.enemies) { c.beginPath(); c.arc(e.x, e.y, 6, 0, 7); c.fill() }
+  c.fillStyle = '#ff3b3b'; for (const u of gs.bullets) c.fillRect(u.x - 1, u.y - 3, 2, 6)
+  for (const k of gs.capsules) { c.fillStyle = '#5dc8ff'; c.fillRect(k.x - 6, k.y - 3, 12, 6) }
+  c.fillStyle = '#ffffff'; for (const l of gs.lasers) c.fillRect(l.x, l.y - 4, 1, 6)
+  c.fillStyle = '#9fb3ff'; c.fillRect(gs.paddle.x - gs.paddle.w / 2, CFG.paddleY, gs.paddle.w, CFG.paddleH)
+  c.fillStyle = '#ff5db0'; c.fillRect(gs.paddle.x - 3, CFG.paddleY, 6, CFG.paddleH)
+  c.fillStyle = '#fff'; for (const b of gs.balls) { c.beginPath(); c.arc(b.x, b.y, CFG.ballR, 0, 7); c.fill() }
+  $('sc').textContent = gs.score; $('rd').textContent = gs.round + 1; $('lv').textContent = gs.lives; $('tk').textContent = gs.tick
+}
+
+// ---------- weight maps
+const UNIT_INFO = [
+  ['ball x', 'Ramp across the columns of the ball channel: reads where the ball is horizontally.'],
+  ['ball y', 'Ramp down the rows of the ball channel: reads the ball\'s height.'],
+  ['trail x', 'Same ramp on the trail channel (where the ball was 8 ticks ago). Not used by the v1/v4 decision. It is there for a lead-the-ball edit.'],
+  ['trail y', 'Height of the trail. Spare, like trail x.'],
+  ['paddle x', 'Ramp across the paddle channel. Layer 2 subtracts this from ball x.'],
+]
+for (let k = 0; k < 8; k++) for (const s of ['+', '−'])
+  UNIT_INFO.push([`band ${k}${s}`, `Aim pair for column band ${k}. Coral/teal ramp on the brick channel = bricks right minus bricks left. The big block on the ball channel switches it on only when the ball is in this band. Its partner cancels it otherwise.`])
+const maps = []
+function buildMapUI() {
+  const ub = $('units'); ub.innerHTML = ''
+  UNIT_INFO.forEach(([name], j) => {
+    const b = document.createElement('button'); b.textContent = name
+    if (j === selUnit) b.classList.add('on')
+    b.onclick = () => { selUnit = j; buildMapUI(); renderMaps() }
+    ub.appendChild(b)
+  })
+  const m = $('maps'); m.innerHTML = ''; maps.length = 0
+  CH.forEach((name) => {
+    const f = document.createElement('figure'); const cv = document.createElement('canvas'); cv.width = 32 * 6; cv.height = 28 * 6
+    const cap = document.createElement('figcaption'); cap.textContent = name
+    f.appendChild(cv); f.appendChild(cap); m.appendChild(f); maps.push(cv.getContext('2d'))
+  })
+  $('unitdesc').textContent = UNIT_INFO[selUnit][1]
+}
+function renderMaps() {
+  const w = net.W1[selUnit]
+  const lit = new Set(last ? last.on : [])
+  for (let ch = 0; ch < NC; ch++) {
+    let mx = 1e-9; for (let i = ch * GH * GW; i < (ch + 1) * GH * GW; i++) mx = Math.max(mx, Math.abs(w[i]))
+    const c = maps[ch]; c.fillStyle = '#0a0c12'; c.fillRect(0, 0, 192, 168)
+    for (let r = 0; r < GH; r++) for (let col = 0; col < GW; col++) {
+      const i = idx(ch, r, col), v = w[i]
+      if (v) {
+        const t = Math.min(1, Math.sqrt(Math.abs(v) / mx))
+        c.fillStyle = v > 0 ? `rgba(63,214,176,${t})` : `rgba(255,122,89,${t})`
+        c.fillRect(col * 6, r * 6, 6, 6)
+      }
+      if (lit.has(i)) { c.fillStyle = '#fff'; c.fillRect(col * 6 + 2, r * 6 + 2, 2, 2) }
+    }
+  }
+}
+function renderBars() {
+  if (!last) { $('bars').innerHTML = '<span class="note">waiting for the serve…</span>'; return }
+  const rows = []
+  const add = (name, v, scale = 1) => {
+    const p = Math.max(-1, Math.min(1, v / scale)) * 50
+    rows.push(`<div class="bar"><span>${name}</span><div class="track"><i class="${p < 0 ? 'n' : ''}" style="${p < 0 ? `left:${50 + p}%;width:${-p}%` : `width:${p}%`}"></i></div><span>${v.toFixed(2)}</span></div>`)
+  }
+  for (let j = 0; j < 5; j++) add(UNIT_INFO[j][0], last.a1[j], 0.3)
+  let aim = 0; for (let j = 5; j < 21; j++) aim += net.W2[0][j] * last.a1[j]
+  add('aim shift', aim, 2)
+  add('L2 steer', last.a2[0])
+  add('out left', last.out[0], 1.5); add('out stay', last.out[1], 1.5); add('out right', last.out[2], 1.5)
+  $('bars').innerHTML = rows.join('')
+}
+
+// ---------- controls
+function setModel(m) {
+  model = m; net = buildNet()
+  $('mV1').classList.toggle('on', m === 'v1'); $('mV4').classList.toggle('on', m === 'v4')
+  $('aim').disabled = m === 'v1'
+  renderMaps()
+}
+$('mV1').onclick = () => setModel('v1')
+$('mV4').onclick = () => setModel('v4')
+$('aim').oninput = (e) => { aimPx = +e.target.value; $('aimv').textContent = aimPx + ' px'; if (model === 'v4') { net = buildNet(); renderMaps() } }
+document.querySelectorAll('[data-sp]').forEach((b) => b.onclick = () => {
+  speed = +b.dataset.sp; document.querySelectorAll('[data-sp]').forEach((x) => x.classList.toggle('on', x === b))
+})
+$('pause').onclick = () => { paused = !paused; $('pause').textContent = paused ? 'Resume' : 'Pause' }
+$('reset').onclick = () => newGame()
+
+newGame(); buildMapUI(); renderMaps()
+window.__handweightsTest = { ready: true, state: () => ({ tick: gs.tick, score: gs.score, round: gs.round, lives: gs.lives, model, aimPx }), run: (n) => { for (let i = 0; i < n; i++) tick() }, nonzero: () => { let k = 0; for (const M of [net.W1, net.W2, net.W3]) for (const r of M) for (const v of r) if (v) k++; return k } }
+let frame = 0
+function loop() {
+  if (!paused) for (let i = 0; i < speed; i++) tick()
+  draw()
+  if (frame++ % 6 === 0) { renderBars(); renderMaps() }
+  requestAnimationFrame(loop)
+}
+loop()
+</script>
+</body>
+</html>
