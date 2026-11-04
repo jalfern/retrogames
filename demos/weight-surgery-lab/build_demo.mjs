@@ -1,7 +1,8 @@
-// WEIGHT SURGERY demo page builder v2 (#1493 + fair-horizon rescore #1506).
+// WEIGHT SURGERY demo page builder v3 (#1493 + fair-horizon rescore #1506).
 // Reads lab artifacts, writes a self-contained demo HTML. No weights embedded.
-// When results/fair_scores.json exists, the fair-cap verdict replaces the
-// cap-1024 first-pass verdict (kept, labeled superseded).
+// With fair scores in (results/fair_scores.json live, lab-root copy committed),
+// the six-row verdict LEADS the page and the cap-1024 first-pass verdict is
+// retired into a collapsed SUPERSEDED block.
 import fs from "node:fs";
 
 const LAB = process.env.LAB_DIR || ".";
@@ -25,7 +26,10 @@ for (const f of fs.existsSync(`${LAB}/results`) ? fs.readdirSync(`${LAB}/results
   const m = f.match(/^fair_(.+)_(math|gsm)\.jsonl$/);
   if (m) fair[`${m[1]}_${m[2]}`] = lines(`results/${f}`);
 }
-const fairScores = read("results/fair_scores.json", null);
+const fairScores = read("results/fair_scores.json", null) || read("fair_scores.json", null);
+// #1506 closeout: banner-contamination honesty artifact (8 llama-cli banner rows on
+// the MATH runs, same problem ids in all three runs; GSM8K clean).
+const honesty = read("results/fair_honesty.json", null) || read("fair_honesty.json", null);
 const ranking = read("results/layer_ranking.json", null);
 const corpus = read("results/corpus_check.json", null);
 const capSweep = read("results/cap_sweep.json", {});
@@ -52,7 +56,7 @@ const excerpts = (() => {
   if (fx) return fx;
   const out = {};
   for (const [k, recs] of Object.entries(fair)) {
-    out[k] = recs.slice(0, 10).map(r => ({
+    out[k] = recs.filter(r => !/Loading model/.test(r.text || "")).slice(0, 10).map(r => ({
       i: r.i, ok: !!r.ok, cap: !!r.cap_hit, ntok: r.ntok,
       q: (r.problem || "").slice(0, 140),
       x: (r.text || "").slice(0, 600),
@@ -70,11 +74,14 @@ const sweepSumm = Object.fromEntries(batches.filter(b => b.phase === "practice" 
 
 const FAIRC = (fairScores && fairScores.cap) || (capSweep && 4096);
 
-// pick the demo pair from the FAIR runs: base capped, edit terminated (correct preferred)
+// pick the demo pair from the FAIR runs: base capped, edit terminated (correct preferred).
+// #1506 b18 fix (finished by slot a): llama-cli startup-banner rows ("Loading model…")
+// are harness contamination, never pair material.
+const bannerFree = (x) => !/Loading model/.test(x?.text || "");
 let pair = null;
 {
-  const bM = fair["base_math"] || [];
-  const eM = fair["edit_math"] || [];
+  const bM = (fair["base_math"] || []).filter(bannerFree);
+  const eM = (fair["edit_math"] || []).filter(bannerFree);
   for (const want_ok of [true, false]) {
     for (const b of bM) {
       const e = eM.find(x => x.i === b.i);
@@ -110,21 +117,29 @@ const fairTbl = (() => {
   const rows = [];
   for (const set of ["math", "gsm"]) {
     for (const run of ["base", "edit", "sampfix"]) {
-      const recs = fair[`${run}_${set}`];
-      if (!recs || !recs.length) continue;
-      const n = recs.length;
-      const label = run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})` : run;
-      if (n < 100) {   // mid-run row: status only — interim metrics would ship numbers the final run may not repeat
-        rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>${ddRow(run, set, n)}`);
-        continue;
+      const key = `${run === "edit" ? EDITTAG : run}_${set}`;
+      const recs = fair[key];
+      const label = run === "edit" && EDITTAG !== "edit" ? `edit (${EDITTAG})`
+        : run === "sampfix" ? "penalty (pp1.5)" : run;
+      let n, acc, term, cap, loop;
+      if (recs && recs.length) {
+        n = recs.length;
+        if (n < 100) {   // mid-run row: status only — interim metrics would ship numbers the final run may not repeat
+          rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}/100</td><td colspan=4 class="note">scoring in progress — final row lands on #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>${ddRow(run, set, n)}`);
+          continue;
+        }
+        acc = 100 * recs.filter(r => r.ok).length / n;
+        term = 100 * recs.filter(r => !r.cap_hit).length / n;
+        cap = 100 * recs.filter(r => r.cap_hit).length / n;
+        loop = 100 * recs.filter(r => r.loop).length / n;
+      } else {
+        // committed lab copy carries no per-row jsonl (size) — render the row from the
+        // scored summary artifact instead, identical numbers to the live-lab recomputation
+        const s = fairScores?.rows?.[key];
+        if (!s) continue;
+        n = s.n; acc = s.acc; term = s.terminated; cap = s.hit_cap_pct; loop = s.looped_pct;
       }
-      const s = {
-        acc: 100 * recs.filter(r => r.ok).length / n,
-        term: 100 * recs.filter(r => !r.cap_hit).length / n,
-        cap: 100 * recs.filter(r => r.cap_hit).length / n,
-        loop: 100 * recs.filter(r => r.loop).length / n,
-      };
-      rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}</td><td>${s.acc.toFixed(1)}%</td><td>≥${s.term.toFixed(1)}%†</td><td>≤${s.cap.toFixed(1)}%†</td><td>${s.loop.toFixed(1)}%</td></tr>${ddRow(run, set, n)}`);
+      rows.push(`<tr id="h-${run}_${set}"><td>${label} · ${set}</td><td>${n}</td><td>${acc.toFixed(1)}%</td><td>≥${term.toFixed(1)}%†</td><td>≤${cap.toFixed(1)}%†</td><td>${loop.toFixed(1)}%</td></tr>${ddRow(run, set, n)}`);
     }
   }
   return rows.join("\n");
@@ -173,7 +188,10 @@ const batchRows = batches.map(b => {
   const split = splitOf(b);
   let anchorKey = split.replace(/ · /g, "_");
   if (anchorKey.startsWith(`${EDITTAG}_`)) anchorKey = `edit_${anchorKey.slice(EDITTAG.length + 1)}`;
-  const splitCell = b.phase === "score-fair" && fair[anchorKey] && excerpts[anchorKey] ? `<a href="#h-${anchorKey}">${split}</a>` : split;
+  // committed excerpts key by the raw variant tag (k256_math); log anchors use the page
+  // tag (edit_math) — accept either when deciding whether to link.
+  const exHas = (k) => !!excerpts[k] || (k.startsWith("edit_") && !!excerpts[`${EDITTAG}_${k.slice(5)}`]);
+  const splitCell = b.phase === "score-fair" && (fair[anchorKey] || fairScores?.rows?.[anchorKey]) && exHas(anchorKey) ? `<a href="#h-${anchorKey}">${split}</a>` : split;
   const cls = b.phase === "score" && supKeys.has(split) ? ' class="ovr"' : '';
   const purpose = b.purpose ?? (b.phase === "score-fair" ? `fair hold-out row — acc ${b.acc}% terminated ${b.terminated}%`
     : b.phase === "score" ? `first-pass hold-out row — acc ${b.acc}% terminated ${b.terminated}%` : "");
@@ -181,8 +199,8 @@ const batchRows = batches.map(b => {
 }).join("\n");
 const pairHtml = pair ? `
 <div class="pair">
-  <div class="pane"><h3>BASE — ${pair.base.cap_hit || pair.base.cap ? `ran to the token cap (${pair.base.ntok} tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
-  <div class="pane"><h3>${pair.edit.gold !== undefined ? "EDITED" : "EDITED"} — terminated${pair.edit.ok ? `, correct answer: ${esc(pair.edit.gold)}` : ""} ✓ (${pair.edit.ntok} tok)</h3><pre>${esc(pair.edit.text)}…</pre></div>
+  <div class="pane"><h3>BASE — ${pair.base.cap_hit || pair.base.cap ? `ran to the token cap (${pair.base.ntok} est tok)` : "terminated"} ✗</h3><pre>${esc(pair.base.text)}…</pre></div>
+  <div class="pane"><h3>EDITED — terminated${pair.edit.ok ? `, correct answer: ${esc(pair.edit.gold)}` : " but wrong answer"} ${pair.edit.ok ? "✓" : "±"} (${pair.edit.ntok} est tok)</h3><pre>${esc(pair.edit.text)}…</pre></div>
 </div>` : `<div class="pair skelpair">
   <div class="pane dim"><h3>BASE — awaiting fair scoring</h3><div class="skel"></div><div class="skel w80"></div><div class="skel w60"></div></div>
   <div class="pane dim"><h3>EDITED — awaiting fair scoring</h3><div class="skel"></div><div class="skel w80"></div><div class="skel w60"></div></div>
@@ -205,34 +223,42 @@ ${Object.entries(sweepSumm).map(([k, b]) => `<tr><td>${k}${b.pp > 0 ? ` @pp${b.p
 const corpusHtml = corpus ? `<p class="note">corpus check: ${corpus.corpus.length ? `${corpus.corpus.filter(c => c.longest_repeat_words >= 24).length}/${corpus.corpus.length} cap-hit texts contain an exact repeated span ≥24 words (tight-loop signature); longest repeat median ${[...corpus.corpus].sort((a, b) => a.longest_repeat_words - b.longest_repeat_words)[Math.floor(corpus.corpus.length / 2)].longest_repeat_words} words. The rest are long-winded: progress without exact repetition.` : "no cap-hits at the fair cap — the loop class largely dissolves once answers can finish."}</p>` : "";
 
 const verdict = fairReady ? `
-<h2>VERDICT (fair horizon, cap ${FAIRC})</h2>
+<h2 id="verdictfair">VERDICT — fair horizon, cap ${FAIRC} (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103)</h2>
 ${(() => {
   const r = fairScores.rows;
-  const avg = (run) => {
-    const m = r[`${run}_math`], g = r[`${run}_gsm`];
-    if (!m || !g) return null;
-    const n = m.n + g.n;
-    return {
-      acc: (m.acc * m.n + g.acc * g.n) / n,
-      term: (m.terminated * m.n + g.terminated * g.n) / n,
-      cap: (m.hit_cap_pct * m.n + g.hit_cap_pct * g.n) / n,
-      loop: (m.looped_pct * m.n + g.looped_pct * g.n) / n, n,
-    };
-  };
-  const b = avg("base"), e = avg("edit"), p = avg("sampfix");
-  const rowline = (nm, s) => s ? `<div><b>${nm}</b> acc ${s.acc.toFixed(1)}% · terminated ${s.term.toFixed(1)}% · hit-cap ${s.cap.toFixed(1)}% · loop ${s.loop.toFixed(1)}%</div>` : "";
-  const verdictLine = (e && b && e.acc >= b.acc + 5)
-    ? `The edit <b>moved the needle</b> at a horizon where answers can finish (${b.acc.toFixed(1)}% → ${e.acc.toFixed(1)}% accuracy, terminated ${b.term.toFixed(1)}% → ${e.term.toFixed(1)}%). ${e.acc >= 40 ? "Astra-scale improvement: reproduced." : "Short of MIT's 48.1% — partial reproduction."}`
-    : (e && b && e.acc <= b.acc + 1)
-      ? `At cap ${FAIRC}, where ${b.term.toFixed(0)}% of base answers finish, our weight edit changed accuracy ${b.acc.toFixed(1)}% → ${e.acc.toFixed(1)}% and termination ${b.term.toFixed(1)}% → ${e.term.toFixed(1)}%. <b>The honest negative stands — now provable, not provisional:</b> removing our localized loop direction does not fix the non-termination even when the horizon is fair. MIT's improvement must come from what their localization found at 32k horizons (repeat-onset contrast), not from what a sequence-mean direction at 4k horizons captures.`
-      : `Mixed rows — see table; verdict prose pending full per-row review.`;
-  return `<div class="kpi">${rowline("base (pp0)", b)}${rowline(`edit${EDITTAG !== "edit" ? ` (${EDITTAG})` : ""}`, e)}${rowline("penalty-only (pp1.5)", p)}</div><p>${verdictLine}</p>`;
-})()}
-<p class="note">Fair deviations: cap ${FAIRC}, not MIT's 32,768 (this box is CPU-only, ~150 tok/s); fixed 100 MATH-500 + 100 GSM8K-test (seed 20261103, identical rows before/after); grader = boxed-extraction + numeric match; d = per-layer loop-tail-vs-finished contrast over all 24 layers (repeat-onset positions approximated by the last 1024 tokens of capped generations). Backend: the six scored rows ran on one <code>llama-server</code> with continuous batching (24 slots, ~4× the aggregate throughput of the 12-separate-process harness, which is RAM-bandwidth-bound) — same seed and sampling args on every row; a partially-scored CPU-harness row was archived and never mixed into these tables.</p>` : `
-<div class="banner">⚠ The verdict below was measured at cap 1024 — a horizon where 91–100% of base answers hit the cap. Per Jon's steer on #1493 it is <b>not a measurement of the fix</b>: answers there were cut off, not looping. The fair-horizon rescore (#1506, cap ${FAIRC}, fixed 100+100, base/edit/penalty rows) is ${fairTbl ? "partially complete" : "running"} — final numbers post to #1506, and the page refreshes on the deploy after they land.</div>
-<h2>VERDICT (first pass, cap 1024 — SUPERSEDED)</h2>
+  const g = (run, set) => r[`${run === "edit" ? EDITTAG : run}_${set}`];
+  const bm = g("base", "math"), bg = g("base", "gsm");
+  const em = g("edit", "math"), eg = g("edit", "gsm");
+  const pm = g("sampfix", "math"), pg = g("sampfix", "gsm");
+  const f1 = (v) => v.toFixed(1);
+  const td = (s) => `<td>${f1(s.acc)}%</td><td>≥${f1(s.terminated)}%†</td><td>${f1(s.looped_pct)}%</td>`;
+  const signal = bm && bg && em && eg &&
+    ((em.acc >= bm.acc + 5 && em.terminated >= bm.terminated + 10) ||
+     (eg.acc >= bg.acc + 5 && eg.terminated >= bg.terminated + 10));
+  const lead = signal
+    ? `The edit <b>moved the needle</b> at a horizon where answers can finish — see the per-set table for where. Short of MIT's 48.1%: partial reproduction.`
+    : `The edit <b>did not fix it.</b> MATH accuracy ${f1(bm.acc)}% → ${f1(em.acc)}% and GSM8K ${f1(bg.acc)}% → ${f1(eg.acc)}% — both differences sit inside the ≈±10 pp noise band at n=100 per set — while loop flags on GSM8K <b>went up</b>, ${f1(bg.looped_pct)}% → ${f1(eg.looped_pct)}%. The presence penalty (the model card's sampling-side fix) made <b>every number worse</b>: MATH ${f1(bm.acc)}% → ${f1(pm.acc)}%, GSM8K ${f1(bg.acc)}% → ${f1(pg.acc)}%, and finished rates fell on both sets.`;
+  return `<p id="verdictlead">${lead}</p>
+<table id="verdictfairtbl">
+<tr><th>run</th><th>MATH acc</th><th>MATH finished</th><th>MATH loop</th><th>GSM8K acc</th><th>GSM8K finished</th><th>GSM8K loop</th></tr>
+<tr id="v-base"><td>base (pp0)</td>${td(bm)}${td(bg)}</tr>
+<tr id="v-pen"><td>presence penalty (pp1.5)</td>${td(pm)}${td(pg)}</tr>
+<tr id="v-edit"><td>edit · per-layer d, top-256 cols${EDITTAG !== "edit" ? ` (${EDITTAG})` : ""}</td>${td(em)}${td(eg)}</tr>
+</table>
+<p>What this settles: our all-layer scan independently ranked <b>L19 — one of MIT's two layers — second of 24</b> without using their prior, so the edit still targeted the layers named in their write-up; the negative is not a wrong-address miss. At cap ${FAIRC} the non-terminating texts are verbose rambling, not MIT's tight 32k attractor (corpus check: 0 cap-hits repeat ≥24 words), and both fixes — sampling-side and weight-side — move termination the wrong way. One backend, one seed, one penalty policy across all six rows: the comparison is apples-to-apples.</p>
+<p class="note">Our numbers are now on the record, which releases the issue-rule lock on MIT's published HF model — a future lab pass may score their edit as a comparison row.</p>
+<details class="fn"><summary>VERDICT (first pass, cap 1024) — SUPERSEDED: at that horizon 91–100% of base answers were cut off before finishing, so it measured truncation, not the fix. Kept for the record.</summary>
 <p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not the tight attractor MIT traced over 32k-token horizons.</p>
-<p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12.</p>`;
+<p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12.</p>
+</details>
+<p class="note">Fair deviations: cap ${FAIRC}, not MIT's 32,768 (this box is CPU-only, ~150 tok/s); fixed 100 MATH-500 + 100 GSM8K-test (seed 20261103, identical rows before/after); grader = boxed-extraction + numeric match; d = per-layer loop-tail-vs-finished contrast over all 24 layers (repeat-onset positions approximated by the last 1024 tokens of capped generations). Backend: the six scored rows ran on one <code>llama-server</code> with continuous batching (24 slots, ~4× the aggregate throughput of the 12-separate-process harness, which is RAM-bandwidth-bound) — same seed and sampling args on every row; a partially-scored CPU-harness row was archived and never mixed into these tables.</p>`;
+})()}`
+ : `
+<div class="banner">⚠ The verdict below was measured at cap 1024 — a horizon where 91–100% of base answers hit the cap. Per Jon's steer on #1493 it is <b>not a measurement of the fix</b>: answers there were cut off, not looping. The fair-horizon rescore (#1506, cap ${FAIRC}, fixed 100+100, base/edit/penalty rows) is ${fairTbl ? "partially complete" : "running"} — final numbers post to #1506, and the page refreshes on the deploy after they land.</div>
+<details class="fn"><summary>VERDICT (first pass, cap 1024 — SUPERSEDED by the fair-horizon rescore)</summary>
+<p>The Astra recipe <b>did not reproduce</b> with our budget and our localization. Removing our loop-write direction from layers 15/19 — even from <i>all</i> columns (0.98% of weights) — left 12/12 practice problems non-terminating; the ablated model stayed coherent but rambled <i>longer</i>. Within a 1024-token horizon, 9,220 "looping" positions look like verbose self-questioning, not the tight attractor MIT traced over 32k-token horizons.</p>
+<p>The control row caught us out. An early run looked like the model-card fix (presence penalty 2.0) suddenly terminating 12/12 — too good. It was a <b>harness artifact</b>: the override flag was appended <i>after</i> the standard 1.5, so the command carried <code>--presence-penalty 1.5 --presence-penalty 2.0</code>. With the override applied cleanly (single flag), termination collapsed to 0/12.</p>
+</details>`;
 
 // ---- SURGERY II (#1505): longer-horizon capture + downstream removal ----
 const v2 = read("results/v2_variants.json", null) || read("variants_v2.json", {});
@@ -415,6 +441,8 @@ const html = `<!DOCTYPE html>
 <h1>WEIGHT SURGERY</h1>
 <div class="sub">Qwen3.5-0.8B @ <code>2fc06364</code> — weight-space programming attempt (#1493), rescored at a fair horizon (#1506): no gradients, practice on GSM8K/MATH <b>train</b> only, ≤50 forward-pass batches, one scored held-out run. By the forge, on a laptop-class CPU (this box's GPU path is dead, #737).</div>
 
+${verdict}
+
 <h2>THE BUG — and the cap that hid it</h2>
 <p>Qwen's own model card (L856) warns Qwen3.5-0.8B falls into <b>thinking loops</b>. The first pass measured at a 1024-token cap: <span class="big">36/36</span> train problems hit the cap — including "What is 17×23?". But the cap itself was the confound (Jon's steer, #1493): at cap 4096, penalty-free, the same base model finishes:</p>
 ${sweepHtml}
@@ -434,7 +462,7 @@ ${pracHtml}
 ${fairTbl || `<tr><td colspan=6>scoring in progress — runs launch as the edit lands; resumable runner, numbers post to #1506 <span class="prog" aria-hidden="true"><i></i></span></td></tr>`}
 </table>
 <details class="fn"><summary>† the terminated / hit-cap bounds — why they are bounds, not points</summary>
-<p class="note">token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). The exact-count rerun refreshes these rows on the next deploy.</p></details>
+<p class="note">token counts in these rows come from llm.py's word×2 estimate (the exact llama token counter regex died on llama v0.3 — #1505 found it lab-wide): estimate ≥ real tokens, so <b>terminated is a true lower bound, hit-cap a true upper bound</b>. accuracy and loop-flag are exact (graded on full text). An exact-count rerun would regenerate all 600 generations (~10 h on this box) — deliberately not run: #1506 closes by direction with no new experiments, and no conclusion here flips at either bound.${honesty ? ` One more thing in the open: on the three MATH runs the same ${honesty.base_math.banner_rows} problems (ids ${honesty.base_math.banner_idx.join(", ")}) were captured as llama-cli startup banners instead of model answers — they grade wrong and count as finished; excluding them lifts each MATH accuracy by ≤0.7 pp and lowers MATH finished rates by ${honesty.base_math.banner_rows} pp, and changes no comparison. GSM8K rows are banner-free (${honesty.base_gsm.banner_rows + honesty.k256_gsm.banner_rows + honesty.sampfix_gsm.banner_rows} contaminated rows across the three).` : ""} Drill-downs skip contaminated rows; <code>fair_honesty.json</code> carries the per-row detail.</p></details>
 
 <h2>ONE PROBLEM, BEFORE / AFTER</h2>
 ${pairHtml}
@@ -444,8 +472,6 @@ ${pairHtml}
 <tr><th>time</th><th>phase</th><th>split</th><th>n</th><th>cap</th><th>purpose</th></tr>
 ${batchRows}
 </table>
-
-${verdict}
 
 <h2>FIRST-PASS HELD-OUT (cap 1024 — kept for the record; unmeasurable horizon)</h2>
 <table>

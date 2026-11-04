@@ -215,8 +215,9 @@
       cut it out, re-run — and report what happened <b>either way</b>. Includes the full batch log of every forward pass with what it ruled out,
       a heatmap of exactly which weights were touched, and the harness trap we fell into mid-experiment (a duplicated sampling flag faking a fix) — caught by re-running the clean version.
       <b>Round II</b> takes the second cut at a fair 4k horizon: repeat-onset directions across all six attention layers, both the write and the read path —
-      the honest negative stands, but removing d from the read path lifts accuracy 3→5/12, and the detour yielded a ~2× faster Q4 scorer.</p>
-    <div class="meta"><span>LLM LAB · GRADIENT-FREE WEIGHT EDIT + NEGATIVE RESULT</span><span>2026-11-03</span></div>
+      the honest negative stands, but removing d from the read path lifts accuracy 3→5/12, and the detour yielded a ~2× faster Q4 scorer.
+      <b>Final scorecard</b> (n=100 per set, one backend, one seed): the edit did <b>not</b> fix the loops — MATH 4→8% and GSM8K 11→11% sit inside noise, GSM8K loop flags went <i>up</i> 5→20%, and the presence penalty made every number worse.</p>
+    <div class="meta"><span>LLM LAB · GRADIENT-FREE WEIGHT EDIT + NEGATIVE RESULT</span><span>2026-11-04</span></div>
   </a>
 
   <p class="more">MORE DEMOS COMING SOON</p>

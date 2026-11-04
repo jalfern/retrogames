@@ -1,0 +1,84 @@
+{
+ "note": "#1506 b18 honesty artifacts: banner contamination + estimation fallback for the six fair rows",
+ "banner_marker": "Loading model",
+ "base_math": {
+  "n": 100,
+  "banner_rows": 8,
+  "banner_idx": [
+   4,
+   8,
+   20,
+   27,
+   28,
+   50,
+   63,
+   87
+  ],
+  "raw_acc_pct": 4.0,
+  "banner_excluded_acc_pct": 4.3
+ },
+ "k256_math": {
+  "n": 100,
+  "banner_rows": 8,
+  "banner_idx": [
+   4,
+   8,
+   20,
+   27,
+   28,
+   50,
+   63,
+   87
+  ],
+  "raw_acc_pct": 8.0,
+  "banner_excluded_acc_pct": 8.7
+ },
+ "sampfix_math": {
+  "n": 100,
+  "banner_rows": 8,
+  "banner_idx": [
+   4,
+   8,
+   20,
+   27,
+   28,
+   50,
+   63,
+   87
+  ],
+  "raw_acc_pct": 3.0,
+  "banner_excluded_acc_pct": 3.3
+ },
+ "base_gsm": {
+  "n": 100,
+  "banner_rows": 0,
+  "banner_idx": [],
+  "raw_acc_pct": 11.0,
+  "banner_excluded_acc_pct": 11.0
+ },
+ "k256_gsm": {
+  "n": 100,
+  "banner_rows": 0,
+  "banner_idx": [],
+  "raw_acc_pct": 11.0,
+  "banner_excluded_acc_pct": 11.0
+ },
+ "sampfix_gsm": {
+  "n": 100,
+  "banner_rows": 0,
+  "banner_idx": [],
+  "raw_acc_pct": 5.0,
+  "banner_excluded_acc_pct": 5.0
+ },
+ "banner_idx_math": [
+  4,
+  8,
+  20,
+  27,
+  28,
+  50,
+  63,
+  87
+ ],
+ "all_fair_rows_words2_estimate": true
+}
