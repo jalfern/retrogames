@@ -398,9 +398,14 @@ const HomebodyGame = () => {
         buildCanvas()
         raf = requestAnimationFrame(frame)
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => gs
-            ? { tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed, money: gs.money, day: gs.day }
-            : { tick: 0, score: 0, done: false, seed, money: 0, day: 1 })
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0,
+            score: gs ? gs.content : 0,
+            done: gs ? gs.done || false : false,
+            seed: gs ? gs.seed : seed,
+            money: gs ? gs.money : 0,
+            day: gs ? gs.day : 1,
+        }))
 
         // ------------------------------------------------------------ hooks ----
         function state() {

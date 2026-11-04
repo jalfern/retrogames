@@ -673,9 +673,12 @@ const IronRingGame = () => {
         // #1473: production-safe feedback state (every build, not DEV-only) —
         // the engine is pure and seeded (#531 law): gs.seed drives stage pick,
         // AI pace and every jitter, so a filed report + seed replays the fight.
-        exposeFeedbackState(() => (gs
-            ? { tick: gs.tick, score: gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp), done: gs.phase === 'done', seed: gs.seed >>> 0 }
-            : { tick: 0, score: 0, done: false, seed: 0 }))
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0,
+            score: gs ? gs.fighters[0].wins * 1000 + Math.round(gs.fighters[0].hp) : 0,
+            done: gs ? gs.phase === 'done' : false,
+            seed: gs ? gs.seed >>> 0 : 0,
+        }))
 
 
         // ---- dev hooks -----------------------------------------------------------------------

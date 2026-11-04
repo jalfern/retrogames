@@ -717,9 +717,13 @@ const BlobBattleGame = () => {
 
         // #1473: production-safe feedback state (seed for replay), every build.
         // Score is the match total across both wells; attract has no match yet.
-        exposeFeedbackState(() => gs
-            ? { tick: gs.tick, score: gs.wells[0].score + gs.wells[1].score, done: gs.over, seed: gs.seed, round: gs.round }
-            : { tick: 0, score: 0, done: false, seed: 0 })
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0,
+            score: gs ? gs.wells[0].score + gs.wells[1].score : 0,
+            done: gs ? gs.over : false,
+            seed: gs ? gs.seed : 0,
+            round: gs ? gs.round : 0,
+        }))
 
         return () => {
             unexposeFeedbackState()

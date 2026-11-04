@@ -1821,13 +1821,13 @@ export default function CometDriftHD() {
 
         // #1473: production-safe feedback state (seed for replay), every build —
         // same core shape as the contract state() above.
-        exposeFeedbackState(() => {
-            const P = g.karts[0]
-            return {
-                tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
-                seed: g.seed, course: COURSE.id,
-            }
-        })
+        exposeFeedbackState(() => ({
+            tick: g.tick,
+            score: Math.round(g.karts[0].lap * T.len + T.pts[g.karts[0].idx].s),
+            done: !!g.end,
+            seed: g.seed,
+            course: COURSE.id,
+        }))
 
         return () => {
             unexposeFeedbackState()

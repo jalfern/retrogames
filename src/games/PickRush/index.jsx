@@ -787,14 +787,18 @@ const PickRushGame = () => {
         // #1473: inline the object so the seedpin law's counter sees the seed
         // PickRush has pinned since #1472 — a function reference was invisible
         // to the static scan. simState stays as-is for the DEV contract.
-        exposeFeedbackState(() => {
-            const s = simState()
-            return {
-                tick: s.tick, score: s.score, done: s.done, seed: s.seed,
-                players: s.players, shift: s.shift, quota: s.quota,
-                correct: s.correct, combo: s.combo, fusesLeft: s.fusesLeft,
-            }
-        })
+        exposeFeedbackState(() => ({
+            tick: gs.tick,
+            score: gs.score,
+            done: !!gs.end,
+            seed: gs.seed,
+            players: gs.players,
+            shift: gs.shift,
+            quota: SHIFTS[Math.min(gs.shift, SHIFTS.length - 1)].quota,
+            correct: gs.correct,
+            combo: gs.combo,
+            fusesLeft: FUSES - gs.warnings,
+        }))
 
         if (import.meta.env.DEV) {
             window.__pickrushTest = {

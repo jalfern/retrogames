@@ -168,13 +168,14 @@ export default function RogueGame() {
 
   // production report carries the seed + turn count (#1473)
   useEffect(() => {
-    exposeFeedbackState(() => {
-      const s = stateRef.current
-      return {
-        tick: s.turn, score: runScore(s), done: done(s), seed: s.seed,
-        dungeon: s.dungeonLevel, hp: s.player.hp,
-      }
-    })
+    exposeFeedbackState(() => ({
+      tick: stateRef.current.turn,
+      score: runScore(stateRef.current),
+      done: done(stateRef.current),
+      seed: stateRef.current.seed,
+      dungeon: stateRef.current.dungeonLevel,
+      hp: stateRef.current.player.hp,
+    }))
 
     mountDbg({
       title: 'ROGUE',

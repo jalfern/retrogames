@@ -428,9 +428,14 @@ const GardenGuardGame = () => {
         }
 
         // #1473: production-safe feedback state (seed for replay), every build
-        exposeFeedbackState(() => (gs
-            ? { tick: gs.tick, score: gs.score, done: !!gs.done, seed: gs.seed, level: gs.level, win: gs.done === 'win' }
-            : { tick: 0, score: 0, done: false, seed, level: 0, win: false }))
+        exposeFeedbackState(() => ({
+            tick: gs ? gs.tick : 0,
+            score: gs ? gs.score : 0,
+            done: gs ? !!gs.done : false,
+            seed: gs ? gs.seed : seed,
+            level: gs ? gs.level : 0,
+            win: gs ? gs.done === 'win' : false,
+        }))
 
         return () => {
             unexposeFeedbackState()
