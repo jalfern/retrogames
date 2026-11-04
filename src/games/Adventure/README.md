@@ -45,9 +45,10 @@ scores 4 (bridge, black key, white key, chalice).
 ## Harness
 
 ```bash
-npm run adventurecheck          # 39 gates: determinism, gate/key/bridge/dragon law,
-                                # scripted chalice win on 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +7 mutants — every one must turn the suite red
+npm run adventurecheck          # 45 gates: determinism, gate/key/bridge/dragon law,
+                                # magnet attract, dragon respawn, scripted chalice
+                                # win on 10 seeds, static wiring
+npm run adventurecheck -- --mutant   # +9 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -59,8 +60,17 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 
 - One bridge, not two — the original had a second one; the single bridge is
   enough now that gates open properly, but it can only be placed once.
-- The magnet has no attract behavior (decoration you can carry).
-- Dragons do not respawn after being slain; dying restarts the whole world.
 - No pen-shaped dragon sounds, no dot reward in the secret room (the room
   exists, its easter egg does not).
 - Collisions ignore exact room-warp edges (dragons never follow between rooms).
+
+### Restored in the #1545 polish pass
+
+- The magnet **attracts** nearby loose items toward the player while carried
+  (was decoration you could carry) — `MAGNET_RANGE` / `MAGNET_PULL` in `sim.js`.
+- A slain dragon **respawns** to its lair after a delay (was dead for the whole
+  run) — `DRAGON_RESPAWN_TICKS` in `sim.js`.
+
+Both are gated in `adventurecheck` (a gate each, plus a mutant that re-removes
+the behavior and must turn the suite red). The scripted chalice route is
+unaffected: it never carries the sword (no slays → no respawns) nor the magnet.

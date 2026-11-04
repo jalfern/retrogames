@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS } from '../src/games/Adventure/sim.js'
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -146,6 +146,54 @@ console.log('dragons: bite kills, sword slays, gold key repels Yorgle')
     flee.carrying = 'goldKey'
     step(flee, {})
     ok(y.x < x0, 'Yorgle flees the carried gold key')
+}
+
+console.log('magnet: pulls nearby loose items toward the player (original attract)')
+{
+    const s = createSim(seedRng(13))
+    const key = s.items.find((i) => i.id === 'goldKey')
+    s.room = R.OVERWORLD_4
+    s.player.x = 100; s.player.y = 90
+    key.room = R.OVERWORLD_4; key.carried = false; key.x = 130; key.y = 90
+    s.carrying = 'magnet'
+    s.items.find((i) => i.id === 'magnet').carried = true
+    s.bat.room = R.SECRET; s.bat.x = 5; s.bat.y = 5   // keep the bat out of the test room
+    const kx0 = key.x
+    for (let i = 0; i < 40; i++) step(s, {})
+    ok(key.x < kx0, 'while carried, the magnet pulls a nearby loose item toward the player')
+
+    // attraction is room-local: a loose item in ANOTHER room is left alone
+    const far = createSim(seedRng(13))
+    far.room = R.OVERWORLD_4
+    far.player.x = 100; far.player.y = 90
+    const fkey = far.items.find((i) => i.id === 'goldKey')
+    fkey.room = R.OVERWORLD_2; fkey.carried = false; fkey.x = 130; fkey.y = 90
+    far.carrying = 'magnet'
+    far.items.find((i) => i.id === 'magnet').carried = true
+    far.bat.room = R.SECRET; far.bat.x = 5; far.bat.y = 5
+    const fkx0 = fkey.x
+    for (let i = 0; i < 40; i++) step(far, {})
+    ok(fkey.x === fkx0, 'the magnet only attracts items in the player\'s own room')
+}
+
+console.log('dragons: a slain dragon respawns to its lair after the delay')
+{
+    const s = createSim(seedRng(11))
+    const g = s.dragons.find((d) => d.id === 'grundle')
+    s.room = g.room; s.player.x = g.x + 5; s.player.y = g.y
+    s.carrying = 'sword'
+    const hx = g.x, hy = g.y
+    step(s, {})
+    ok(!g.alive, 'pre: the sword slays the dragon within reach')
+    // retreat the player (and the sword) out of the lair so the respawned dragon
+    // is not instantly re-slain; the other two dragons live in other rooms.
+    s.room = R.OVERWORLD_5; s.player.x = 80; s.player.y = 150
+    let waits = 0
+    while (!g.alive && waits < DRAGON_RESPAWN_TICKS + 20) { step(s, {}); waits++ }
+    ok(g.alive, `a slain dragon returns to play after ~${DRAGON_RESPAWN_TICKS} ticks`, `resumed after ${waits} ticks`)
+    ok(g.room === R.RED_LAB_2 && Math.abs(g.x - hx) < 1 && Math.abs(g.y - hy) < 1,
+        'the respawned dragon is back in its home room at its home position')
+    ok(s.dragons.every((d) => d.alive), 'after the respawn all three dragons are in play')
 }
 
 console.log('win: the chalice home to the Gold Castle')
@@ -332,6 +380,12 @@ if (process.argv.includes('--mutant')) {
             player.y += dy * 0.3`,
             `player.x += 0  // no pass
             player.y += 0`],
+        ['the magnet is just decoration (attract removed)', SM,
+            `        if (sim.carrying === 'magnet') {`,
+            `        if (false) { // no attract`],
+        ['the slain dragon never comes back (respawn removed)', SM,
+            `                if (sim.tick >= dragon.respawnAt) {`,
+            `                if (false) {`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

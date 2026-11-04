@@ -19,14 +19,25 @@
 // HONESTY (score): the 1993 cart has NO score counter and nothing here
 // changes on-screen. `score` is a report-only progress metric — distinct
 // items picked up this run (0..7) — so a filed report can pinpoint a run
-// (Britannia's moons-visited precedent, #1473 batch 12). Documented gaps
-// (see README): magnet has no attract behavior yet, dying respawns nothing
-// fancy, no dragon respawn timer, secret-room dot unimplemented reward.
+// (Britannia's moons-visited precedent, #1473 batch 12). Restored in the
+// #1545 polish pass: the magnet attracts nearby loose items (MAGNET_RANGE /
+// MAGNET_PULL) and a slain dragon respawns to its lair (DRAGON_RESPAWN_TICKS).
+// Remaining honest gaps (see README): one bridge, not two; no secret-room dot
+// reward / pen-shaped dragon sounds; collisions ignore exact room-warp edges.
 
 export const GW = 160  // Atari 2600 resolution (approx)
 export const GH = 192
 export const PLAYER_SPEED = 1.8
 export const MAX_ITEMS = 7   // sword, goldKey, blackKey, whiteKey, chalice, bridge, magnet
+
+// Original-fidelity constants, restored in the #1545 polish pass. The magnet
+// pulls nearby loose items toward the player while it is carried (in the 1993
+// cart it is active loot-magnetism, not decoration), and a slain dragon returns
+// to its lair after a delay (the original keeps the dragons in play rather than
+// removing them for the whole run).
+export const MAGNET_RANGE = 40          // attract radius (world units)
+export const MAGNET_PULL = 1.5          // pull distance per tick
+export const DRAGON_RESPAWN_TICKS = 300 // slain → back in play (~5 s at 60 fps)
 
 // Room IDs
 export const R = {
@@ -259,7 +270,10 @@ export function createSim(rand) {
         player: { x: 80, y: 150, w: 6, h: 10 },
         gateOpen: { goldKey: false, blackKey: false, whiteKey: false },
         items: ITEM_TEMPLATES.map((t) => ({ ...t, carried: false })),
-        dragons: DRAGON_TEMPLATES.map((t) => ({ ...t, alive: true, mouthOpen: false })),
+        dragons: DRAGON_TEMPLATES.map((t) => ({
+            ...t, alive: true, mouthOpen: false,
+            homeRoom: t.room, homeX: t.x, homeY: t.y, respawnAt: Infinity,
+        })),
         bat: { room: R.OVERWORLD_3, x: 90, y: 50, vx: 1.5, vy: 0.8, carrying: null, swapTimer: 0 },
         pickedUp: {},
         events: [],            // one-tick sound events, drained by the shell
@@ -391,6 +405,24 @@ export function createSim(rand) {
             }
         }
 
+        // ---- MAGNET ATTRACT (original: pulls nearby loose items to the player) ----
+        // The magnet is carried like any item, but while it is held every loose
+        // item in the same room within range drifts toward the player (the slot
+        // is full, so nothing is auto-picked up until the magnet is dropped).
+        if (sim.carrying === 'magnet') {
+            for (const item of sim.items) {
+                if (item.room === sim.room && !item.carried) {
+                    const adx = player.x - item.x
+                    const ady = player.y - item.y
+                    const adist = Math.sqrt(adx * adx + ady * ady)
+                    if (adist > 0.5 && adist < MAGNET_RANGE) {
+                        item.x += (adx / adist) * MAGNET_PULL
+                        item.y += (ady / adist) * MAGNET_PULL
+                    }
+                }
+            }
+        }
+
         // ---- ITEM PICKUP ----
         if (!sim.carrying) {
             for (const item of sim.items) {
@@ -426,7 +458,16 @@ export function createSim(rand) {
 
         // ---- DRAGON AI ----
         for (const dragon of sim.dragons) {
-            if (!dragon.alive) continue
+            if (!dragon.alive) {
+                // Original: a slain dragon returns to its lair after a delay.
+                if (sim.tick >= dragon.respawnAt) {
+                    dragon.alive = true
+                    dragon.room = dragon.homeRoom
+                    dragon.x = dragon.homeX
+                    dragon.y = dragon.homeY
+                    dragon.mouthOpen = false
+                } else continue
+            }
 
             if (dragon.room === sim.room) {
                 // Chase player
@@ -436,8 +477,9 @@ export function createSim(rand) {
 
                 // Check if player has sword
                 if (sim.carrying === 'sword' && dist < 14) {
-                    // Slay the dragon!
+                    // Slay the dragon! (it respawns to its lair after the delay)
                     dragon.alive = false
+                    dragon.respawnAt = sim.tick + DRAGON_RESPAWN_TICKS
                     sim.events.push('slay')
                     continue
                 }
