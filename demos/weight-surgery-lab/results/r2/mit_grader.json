@@ -1,0 +1,36 @@
+{
+ "source": "jalfern #1539 comment 6620997026 (rows 10/36/88)",
+ "grader": "MIT exp8 code/mathqa.py is_correct (math-verify) + is_equiv",
+ "rows": {
+  "math500_10": {
+   "our_pred": "[-2, 7]",
+   "gold_final": "x \\in [-2,7]",
+   "mit_correct": true,
+   "mit_equiv": false,
+   "ours_correct": false,
+   "ours_method": "math-verify-unparseable"
+  },
+  "math500_36": {
+   "our_pred": "\\frac{11+9a}{20}",
+   "gold_final": "\\frac{11+9a}{20}",
+   "mit_correct": true,
+   "mit_equiv": true,
+   "ours_correct": false,
+   "ours_method": "math-verify-unparseable"
+  },
+  "math500_88": {
+   "our_pred": "C",
+   "gold_final": "\\text{(C)}",
+   "mit_correct": true,
+   "mit_equiv": false,
+   "ours_correct": false,
+   "ours_method": "math-verify-unparseable",
+   "mit_pred_variant": {
+    "pred": "(C)",
+    "mit_correct": true
+   }
+  }
+ },
+ "regrade": {},
+ "all_match_mit": true
+}

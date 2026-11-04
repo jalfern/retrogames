@@ -1,0 +1,39 @@
+{
+ "model": "qwen35-p50c-mlx",
+ "cap": 1024,
+ "seed": 0,
+ "audit": {
+  "file": "oMLX.app/Contents/Resources/Python/framework-mlx-base/lib/python3.11/site-packages/mlx_lm",
+  "finding": "presence penalty = tokens[-presence_context_size:], server body default 20; vLLM penalizes every generated token",
+  "fix": "pass presence_context_size >= max_tokens (r2_common.ask pp_ctx / WS_R2_PP_CTX)"
+ },
+ "arms": {
+  "pp1.5_ctx20": {
+   "ntok": 1024,
+   "finished": false,
+   "sha": "eb94a1374554",
+   "repeat_frac": 0.0,
+   "tail_uniq": 0.567,
+   "looped": false
+  },
+  "pp1.5_ctx1024": {
+   "ntok": 1024,
+   "finished": false,
+   "sha": "bc00f1e367bb",
+   "repeat_frac": 0.0,
+   "tail_uniq": 0.608,
+   "looped": false
+  },
+  "pp0": {
+   "ntok": 1024,
+   "finished": false,
+   "sha": "5398a0dc1e3a",
+   "repeat_frac": 0.021,
+   "tail_uniq": 0.575,
+   "looped": false
+  }
+ },
+ "accepted": true,
+ "window_changes_output": true,
+ "t_seconds": 9.0
+}

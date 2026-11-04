@@ -271,5 +271,38 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         'mutant caught: R.grade back inside the worker')
 }
 
+// 5. #1547 option C: presence-window audit + MIT grader + sidecar plumbing
+{
+    const dir = s => readFileSync(join(LAB, s), 'utf8')
+    const common = dir('r2_common.py')
+    ok(/WS_R2_PP_CTX/.test(common) && /presence_context_size/.test(common)
+        && /if ctx and pp:/.test(common),
+        'rules: ask() sends presence_context_size only when PP_CTX>0 (vLLM-parity window opt-in)')
+    const rerun = dir('r2_run_rerun.sh')
+    // env ASSIGNMENTS only — prose comments must not satisfy (or absorb mutations of) the pin
+    const envOnly = t => t.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+    const rerunOk = t => /WS_R2_PARALLEL=32/.test(t) && /WS_R2_PP_CTX=32768/.test(t)
+        && /WS_R2_SETS=math/.test(t) && /WS_R2_SAVETEXT=1/.test(t) && /p50cw:qwen35-p50c-mlx/.test(t)
+    ok(rerunOk(envOnly(rerun)), 'rules: rerun runner pins PAR-32 + full window + math + text sidecars', rerun)
+    ok(!rerunOk(envOnly(rerun).replace('WS_R2_PP_CTX=32768', 'WS_R2_PP_CTX=0')),
+        'mutant caught: rerun without the window fix')
+    const score = dir('r2_score.py')
+    ok(/WS_R2_SAVETEXT/.test(score) && /sha256/.test(score) && /r2_text/.test(score),
+        'rules: scorer saves full-text sidecars outside the repo with sha pointers')
+    ok(!(/WS_R2_SETS/.test(score.replace(/WS_R2_SETS/g, 'X'))), 'mutant caught: set-limit env dropped')
+    const win = JSON.parse(readFileSync(join(LAB, 'results/r2/pp_window.json'), 'utf8'))
+    ok(win.accepted && win.window_changes_output,
+        'rules: oMLX accepts presence_context_size and the window changes generation')
+    ok(!(win.accepted && { ...win, window_changes_output: false }).window_changes_output,
+        'mutant caught: window probe inverted')
+    const mit = JSON.parse(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8'))
+    const mitOk = m => m.all_match_mit && ['math500_10', 'math500_36', 'math500_88']
+        .every(id => m.rows[id]?.mit_correct === true && m.rows[id]?.ours_correct === false)
+    ok(mitOk(mit), 'rules: MIT grader confirms the three #1539 misgrades (rows 10/36/88)',
+        JSON.stringify(mit.rows))
+    ok(!mitOk({ ...mit, rows: { ...mit.rows, math500_10: { ...mit.rows.math500_10, mit_correct: false } } }),
+        'mutant caught: grader witness row flipped')
+}
+
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)

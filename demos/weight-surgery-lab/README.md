@@ -288,3 +288,29 @@ footnote says why. Lab-side fix: score-fair rows in batches.jsonl got their
 class via the purposeless-batch mutant). ws2check: 40 gates + 39 mutants, incl.
 5 new #1506 gates (verdict-on-top, plain-answer lead, verdict table, bounds-kept,
 stale-claims-gone).
+
+## #1547 option C (session 124, QA studio) — presence window found; MIT grader verified; p50cw rerun launched
+- **C1 audit (the headline).** oMLX-bundled mlx-lm applies presence_penalty over
+  `tokens[-presence_context_size:]` — **server body default 20**
+  (`server.py` L1331; `sample_utils.make_presence_penalty`). vLLM (MIT's backend)
+  penalizes EVERY generated token. All round-2 think35 rows ran pp1.5 through a
+  20-token window: loop-escape pressure reset every step — the prime mechanism for
+  the escape gap (ours fin 41% vs MIT ~67%). The param IS exposed:
+  `/v1/chat/completions` accepts `presence_context_size` (probe `pp_window.json`:
+  3 arms seed0 cap1024, ctx20 vs ctx1024 outputs differ → live). Fix:
+  `r2_common.ask(pp_ctx=)` / `WS_R2_PP_CTX`; re-run uses 32768 (vLLM parity).
+- **C2 MIT grader.** Vendored `~/Dev/weight-lab/mit-exp8/exp8_math/code/mathqa.py`
+  imported CPU-only (`mit_shim/mcqa.py` stubs the tarball-missing `mcqa.loop_signals`
+  — telemetry only, grading path untouched). `r2_mit_grade.py` reproduces jalfern's
+  three rows under MIT's checker: math500_10 / 36 / 88 = MIT correct, ours wrong
+  (`results/r2/mit_grader.json`; witnesses pinned by ws3check). The six
+  finished-with-pred=None rows CANNOT be re-graded — step-1 rows never saved text.
+- **C3 re-run p50cw** (math-only, pp1.5 ctx32768, PAR-32, seed0, same 100 rows):
+  launched detached 2026-11-04 ~07:51Z via `r2_detach.py r2_run_rerun.sh
+  /tmp/forge/ws-r2-rerun1547.log`, resumable. Full text+reasoning sidecars to
+  `~/Dev/weight-lab/r2_text/p50cw_math.jsonl` (outside the repo: ~60KB/row);
+  committed rows carry `{bytes, sha}` pointers. When it lands: re-grade with
+  `r2_mit_grade.py p50cw:math`, compare vs MIT 45.8/~67 — near MIT → reopen
+  #1533 step 2; short → update the #1540 page with what C ruled out, close #1547.
+- ws3check 36→44 gates (window opt-in, runner pins, sidecar plumbing, probe +
+  grader witnesses + 3 new mutants incl. the comment-absorbs-mutation trap).
