@@ -119,6 +119,17 @@ export function wiringProblems(step2Src) {
     return errs
 }
 
+// #1533 session-119: math_verify.parse() uses signal.alarm() → ValueError in worker
+// threads. The scorer must join the pool BEFORE calling R.grade (main-thread grading);
+// threaded grading silently fell back to numeric compare and undercounted p50c/math.
+export function threadingProblems(scoreSrc) {
+    const errs = []
+    const span = scoreSrc.match(/def work\(rec\)[\s\S]*?ex\.map\(work/)
+    if (!span) errs.push('scorer shape changed: no ex.map(work) join found')
+    else if (/R\.grade\(/.test(span[0])) errs.push('R.grade inside the threaded worker')
+    return errs
+}
+
 function build(labDir) {
     const out = join(tmpdir(), `ws3-${Date.now()}-${Math.random()}.html`)
     const r = spawnSync('node', [join(LAB, 'build_demo.mjs'), out], {
@@ -237,6 +248,10 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(/step1_stop\.marker/.test(chain) && chain.search(/gate PASS/) < chain.search(/r2_run_step2\.sh/)
         && chain.search(/gate STOP/) < chain.search(/step 2 forbidden/),
         'rules: chain gates step2 on PASS, marker-only on STOP')
+    ok(threadingProblems(dir('r2_score.py')).length === 0, 'rules: scorer grades on the main thread',
+        threadingProblems(dir('r2_score.py')).join('; '))
+    ok(threadingProblems('def work(rec):\n ok, m = R.grade(gold, pred)\nwith ThreadPoolExecutor(max_workers=4) as ex:\n raws = list(ex.map(work, todo))').length > 0,
+        'mutant caught: R.grade back inside the worker')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

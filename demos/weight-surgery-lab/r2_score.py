@@ -61,15 +61,21 @@ def run_row(tag, model, pp):
                 t1 = time.time()
                 g = R.ask(model, prob, cap=32768, pp=pp)
                 pred = C.extract_boxed(g["text"] or "") or C.extract_boxed(g["reasoning"] or "")
-                ok, method = R.grade(gold, pred)
                 lm = llm.loop_score_text((g["reasoning"] + " " + (g["text"] or "")).strip())
-                return {"id": pid, "ok": ok, "method": method, "ntok": g["ntok"],
-                        "finished": g["finished"], "pred": pred, **lm,
+                return {"id": pid, "pred": pred, "ntok": g["ntok"],
+                        "finished": g["finished"], **lm,
                         "t_wall": round(time.time() - t1, 1)}
             with ThreadPoolExecutor(max_workers=PAR) as ex:
-                for rec in ex.map(work, todo):
-                    out.write(json.dumps(rec) + "\n")
-                    out.flush()
+                raws = list(ex.map(work, todo))
+            # grading ONLY on the main thread: math_verify.parse() uses
+            # signal.alarm() and raises ValueError in any worker thread — threaded
+            # grading silently fell back to numeric/string compare and
+            # undercounted acc (session 119: p50c/math read 30.0 live).
+            for rec, raw in zip(todo, raws):
+                ok, method = R.grade(rec[3], raw["pred"])
+                raw.update(ok=ok, method=method)
+                out.write(json.dumps(raw) + "\n")
+                out.flush()
         recs = [json.loads(l) for l in open(path)]
         n = len(recs)
         summary[set_name] = {
