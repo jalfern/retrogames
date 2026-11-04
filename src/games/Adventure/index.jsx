@@ -523,6 +523,10 @@ const AdventureGame = () => {
                 seed,
                 room: sim.room,
                 carrying: sim.carrying,
+                // #1568: live position carrier — boredomaudit's POSITION_KEYS. Without
+                // x/y the audit calls a sprinting world BLIND (motion is measured, not inferred).
+                x: sim.player.x,
+                y: sim.player.y,
                 lives: null, // the 1993 cart has no lives — one bite kills (#1473 honesty)
             }),
             canvas: () => canvas,
@@ -537,6 +541,8 @@ const AdventureGame = () => {
             seed: seed,
             room: sim.room,
             carrying: sim.carrying,
+            x: sim.player.x, // #1568 motion carrier for the production report too
+            y: sim.player.y,
         }))
 
         return () => {

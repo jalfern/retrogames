@@ -49,6 +49,7 @@ const GAMES = [
     { id: 'talk-me-down', path: '/talk-me-down' },
     { id: 'fire-crew', path: '/fire-crew' },
     { id: 'invaders', path: '/invaders' },
+    { id: 'adventure', path: '/adventure' }, // POLISH #1568: join the spine — invisible to every shared harness before this
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -108,6 +109,10 @@ const PATTERNS = {
     // inside that lock and exercises the refusal. ≤2 strikes keep it alive to 600.
     'talk-me-down': (i) => ({ left: i % 47 < 11, right: i % 47 >= 18 && i % 47 < 30, up: i % 31 < 7, down: i % 31 >= 12 && i % 31 < 20, a: i === 411 || i === 454, b: i % 53 < 2 }),
     'fire-crew': (i) => ({ left: i % 53 < 14, right: i % 53 >= 20 && i % 53 < 36, up: i % 43 < 10, down: i % 43 >= 16 && i % 43 < 28, a: i % 7 < 4, b: i % 97 < 3 }),
+    // #1568: Adventure's pad verb is DROP (a). Safe to press: a no-op while empty-handed,
+    // and a placed item is always re-pickable (bridge law #1551), so a spammed drop can
+    // never strand the run. Same seed + same script replays bit-identical (seeded rand).
+    adventure: (i) => ({ left: i % 47 < 15, right: i % 47 >= 20 && i % 47 < 34, up: i % 53 < 12, down: i % 53 >= 28 && i % 53 < 38, a: i % 97 < 2 }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 
