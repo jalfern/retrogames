@@ -74,6 +74,7 @@ const finals = read("results/final_scores.json", {});
 const r2s = read("results/r2/r2_scores.json", null);
 const r2bench = read("results/r2/bench16.json", null);
 const r2pp = read("results/r2/pp_proof.json", null);
+const r2mit = read("results/r2/mit_grader.json", null);
 const r2p50 = read("results/r2/p50c_manifest.json", null);
 const r2own = read("results/r2/edit_report_own.json", null);
 const r2gate = read("results/r2/step1_gate.json", null);
@@ -386,11 +387,13 @@ ${v2reports.B ? `<p class="note">weights edited — A: ${(v2reports.A?.pct_chang
 const R2EXP = {
   base: { math: "MIT base: 8% acc · ~93% cut", gsm: "MIT base: 14% acc · ~93% cut" },
   p50c: { math: "MIT p50c: 48% acc · ~67% finished", gsm: "MIT p50c: 67% acc · ~67% finished" },
+  p50cw: { math: "MIT p50c same-100: 45.8% acc · ~67% finished" },
   own: { math: "— (the experiment that never ran)", gsm: "—" },
 };
 const R2ROWS = [
   ["base", "base @ 32K think35"],
   ["p50c", "MIT p50c edit — our reproduction"],
+  ["p50cw", "#1547 option C — penalty window ctx 32768"],
   ["own", "our own edit (Astra rules)"],
 ];
 const r2Tbl = R2ROWS.map(([tag, label]) => {
@@ -401,11 +404,11 @@ const r2Tbl = R2ROWS.map(([tag, label]) => {
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
   }
-  return ["math", "gsm"].map((set, si) => {
+  return ["math", "gsm"].filter(set => s[set]).map((set, si, arr) => {
     const t = s[set];
     const done = t.n >= (r2s._hold || 100);
     const cells = `<td>${t.n}</td><td>${done ? t.acc.toFixed(1) + "%" : `${t.n}/… scoring`}</td><td>${done ? t.finished.toFixed(1) + "%" : "—"}</td><td>${done ? t.mean_ntok : "—"}</td>`;
-    const first = si === 0 ? `<td rowspan=2>${label}</td>` : "";
+    const first = si === 0 ? `<td rowspan=${arr.length}>${label}</td>` : "";
     const exp = `<td class="note">${R2EXP[tag][set]}</td>`;
     return `<tr id="${si ? "r2-" + tag + "-gsm" : "r2-" + tag}">${first}<td>${set}</td>${cells}${exp}</tr>`;
   }).join("\n");
@@ -426,7 +429,9 @@ const r2Copy = (() => {
 <p class="note"><b>WHAT REPRODUCES.</b> The base rows land in MIT's base neighborhood — MATH ${b.math.acc.toFixed(1)}% acc vs MIT 8% · GSM ${b.gsm.acc.toFixed(1)}% vs 14% — and the loop-cut signature matches: ${cut(b.math)}%/${cut(b.gsm)}% of base answers cut at 32K vs MIT's ~93%. On the p50c row, precision-per-finished-answer matches MIT's: ${p.math.acc}/${p.math.finished} ≈ ${prec(p.math)}% (MATH) and ${p.gsm.acc}/${p.gsm.finished} = ${prec(p.gsm)}% (GSM) vs MIT's ~48/67 ≈ 72%.</p>
 <p class="note"><b>WHAT DOES NOT.</b> The loop-escape rate after the edit: MIT's edited model finishes ~67% of problems; ours finishes ${p.math.finished.toFixed(0)}% on MATH (${p.gsm.finished.toFixed(0)}% on GSM). Edited MATH accuracy lands ${Math.round(48 - p.math.acc)} points below MIT's 48% (${p.math.acc.toFixed(0)}% vs 48%) — the gap is per-problem escape probability, not per-answer quality.</p>
 <p class="note"><b>WHY IT IS HONEST.</b> Weights hash-verified against MIT's pinned base (${r2p50 ? `${r2p50.tensors}, ${r2p50.entries}` : "sha256 both sides"}); grading was fixed twice after the fact (gold-answer extraction had silently zeroed accuracy — base MATH read 0.0%, true ${b.math.acc.toFixed(1)}%; a math_verify threading bug downgraded every live row to the numeric fallback); MTP/speculative decoding ruled out twice — tensor forensics (the scored MLX backend carries 0 mtp/nextn tensors; mtp_compatible: false)${r2probe ? ` and a clean vlm-engine A/B probe (plain-AR, MTP-off verified at runtime: ${r2probe.acc}% acc / ${r2probe.finished}% finished vs the frozen row's ${p.math.acc.toFixed(0)}%/${p.math.finished.toFixed(0)}% — two engines, same ceiling)` : ""}; knob-tuning to clear the frozen gate was forbidden by design.</p>
-<p class="note"><b>THE FIVE-SECOND TELL.</b> Read each row left to right: accuracy, then finished. The gap between our p50c row and MIT's claimed row lives in the <b>finished</b> column (${p.math.finished.toFixed(0)}% vs ~67%), not in per-finished-answer precision (${prec(p.math)}% vs ~72%).</p>`;
+<p class="note"><b>THE FIVE-SECOND TELL.</b> Read each row left to right: accuracy, then finished. The gap between our p50c row and MIT's claimed row lives in the <b>finished</b> column (${p.math.finished.toFixed(0)}% vs ~67%), not in per-finished-answer precision (${prec(p.math)}% vs ~72%).</p>
+${r2s.p50cw ? `
+<p class="note"><b>#1547 — WHAT THE PENALTY WINDOW RULED OUT.</b> One backend artifact had been left standing: mlx-lm applies <code>presence_penalty</code> over only the last <code>presence_context_size</code> tokens (server default <b>20</b>), while vLLM — what MIT ran — penalizes every generated token. Widening the window to the whole generation and re-running the same 100 MATH rows moved finished ${p.math.finished.toFixed(0)}% → <b>${r2s.p50cw.math.finished.toFixed(0)}%</b> — real, but the ceiling held: ${r2s.p50cw.math.acc.toFixed(1)}% by our grader, ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].mit_acc.toFixed(1) + "% by MIT's own checker" : "—"} on identical predictions, against MIT's 45.8% on these same rows. The window accounts for ~10 of the 26 missing finish points and none of the accuracy gap — what remains is per-problem escape probability on this silicon, not a sampling-knob artifact. Grading is MIT-verified now: their checker and ours disagree on ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].diffs.length : 0}/100 rows, all parse-edge cases (intervals, fractions, bare letters), plus ${r2mit && r2mit.regrade && r2mit.regrade["p50cw:math"] ? r2mit.regrade["p50cw:math"].pred_none_finished_sidecar_ok : 0} rows our scorer had dropped to <code>pred=None</code> that their extraction recovers.</p>` : ""}`;
 })();
 const r2Verdict = (() => {
   if (r2gate && !r2gate.pass) return `<p class="note">STEP-1 GATE: our reproduction did NOT land in MIT's neighborhood — ${r2gate.detail} Per Jon's rule we stopped before step 2; diagnosis posted to <a href="https://jalfern.com/retrogames/issues/1533" rel="noopener">#1533</a>.</p>`;

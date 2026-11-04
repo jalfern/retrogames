@@ -314,3 +314,13 @@ stale-claims-gone).
   #1533 step 2; short → update the #1540 page with what C ruled out, close #1547.
 - ws3check 36→44 gates (window opt-in, runner pins, sidecar plumbing, probe +
   grader witnesses + 3 new mutants incl. the comment-absorbs-mutation trap).
+
+## #1547 option C — VERDICT (session 125, QA studio): window explains ~10 of 26 finish points, not the gap
+- C3 landed: `scores_p50cw_math.jsonl` (math-only, pp1.5 ctx32768, PAR-32, seed 0,
+  same fixed 100): **acc 31.0 / fin 51.0** vs the frozen p50c row (30.0 / 41.0).
+  The widened penalty window moved finish-rate +10 pts; accuracy ceiling held.
+- MIT's own grader on identical predictions: **37.0%** (ours 31.0; 8 diff rows, all
+  parse-edge cases + 9 recovered pred=None). MIT same-100 reference: 45.8/~67.
+- Verdict per the issue rule: NOT near MIT → #1533 step 2 stays closed; page updated
+  with what C ruled out (#1540 page, ROUND 2 section); #1547 closes with this PR.
+- Sidecars (~10MB) live outside the repo: `~/Dev/weight-lab/r2_text/p50cw_math.jsonl`.
