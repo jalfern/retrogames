@@ -260,6 +260,20 @@ each turns the suite red.
   page cover as its own sound phase, and crisped the streaks at DPR>1. Residual:
   the original also flew the starfield on the red and blue books' trap pulls —
   ours still cut to the ending screens.
+- **CLOSED by #838 (stage)** — the trap pulls fly. Touching Sirrus's red book or
+  Achenar's blue with the white page armed no longer cuts to the fate screen: it
+  starts a real linking flight on the #1031 machinery (`link = trapRed | trapBlue`,
+  `linkT = LINK_TICKS`) and parks the fate in `state.pending`; the loop's own tick
+  moves it into `ending` on the exact tick the field clears, so the overlay's last
+  frame and the fate screen agree — no cut, no dead beat. `LINK_PALETTE` gained the
+  two trap skies and `mix` (how hard the stars take the palette's light): a normal
+  leap mixes 0.18 (the Ages' light leaks at the edges), a trap mixes 0.42 — its
+  field *is* the brother's colour, crimson for Sirrus, cobalt for Achenar, as the
+  1993 trap books each linked in their own hue. Mid-trap every input but the loop's
+  tick is refused (the same law the rocket ride runs by): you cannot step back out
+  of a trap. `soundplan` answers `link:trap*` apart from an Age leap — a heavier
+  cover slam and a sweep that FALLS (1250→65 Hz) where a leap rises (90→1400):
+  the trap takes you in, not somewhere.
 - **CLOSED by #1033** — SELENITIC is sculpted ground: `terrain.js` is a pure
   heightfield (`domeHeight`) — a grass-covered grey dome with a crest, smooth
   flanks and a skirt that dips below the waterline, so the shared ocean meets a

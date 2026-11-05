@@ -23,6 +23,17 @@ export const WHEEL_TONES = [98, 131, 165]
 export const THAW_TONES = { selenitic: 262, stoneship: 330, mechanical: 392, channelwood: 494 }
 
 export function plan(ev) {
+  // #838 — a trap book does not carry you somewhere: it takes you IN. So the
+  // trap flights answer apart from an Age leap (#1031's rising whoosh): a
+  // heavier cover SLAM, a rush that FALLS instead of rising, and a low stone
+  // rumble held under it for the whole crimson/cobalt pull.
+  if (typeof ev === 'string' && /^link:trap/.test(ev)) {
+    return [
+      { type: 'fnoise', dur: 0.2, vol: 0.16, freq: 850 },
+      { type: 'sweep', f0: 1250, f1: 65, dur: 1.05, wave: 'sawtooth', vol: 0.09 },
+      { type: 'fnoise', dur: 0.7, vol: 0.11, freq: 300 },
+    ]
+  }
   // A linking-book leap is a whole other event than a walk. #1035 splits it into
   // two audible phases: first the page cover SNAPS up (a short, bright lowpass
   // sheet — the book's face whipping over the view), then the long rising WHOOSH
