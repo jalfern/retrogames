@@ -59,7 +59,9 @@ model/machine can reproduce it (it is not an external tool):
 
 | Script | What it does |
 |--------|--------------|
-| `scripts/shot.mjs` | Drives **system Chrome** (via `playwright-core`) to screenshot the dev server and drive the game through `window.__marioTest`. |
+| `scripts/shot.mjs` | Screenshots the dev server and drives the game through `window.__marioTest` (via `playwright-core`). #1622: launches through `lib/chromeboot.mjs`'s ladder — system Chrome, then `--single-process`, then the bundled headless shell — so lanes get shots even on nodes with no Aqua GUI session. |
+| `scripts/chromesmoke.mjs` | #1622 session-start smoke (~1 s): boot a browser, shoot a blank page, close. Verdict lands in `/tmp/forge/chrome-smoke.json` and rides the warden's pulse as `shots=ok(mode)` / `shots=broken(reason)` — dead screenshot capability is announced, never silently skipped. `--pulse` prints the field. |
+| `scripts/chromesmokecheck.mjs` | Pins chromeboot's ladder order/caching and the pulse field, and proves the fallback live (bogus channel still boots) plus the pulse telling truth about a broken status file. |
 | `scripts/audcheck.mjs` | Starts the game and asserts the chiptune engine steps + produces an `AnalyserNode` signal; exits **non-zero** on failure (CI-friendly). |
 | `scripts/verify.mjs` | Runs the browser suite and summarises; non-zero exit on any failure (`npm run verify [-- --full]`). |
 | `scripts/mariocheck.mjs` | Title/menu/touch regression: lone Shift must not start, `?`/OPTIONS open the menu, keys 1–4, BACK/ESC, gamepad hidden on menus. |
@@ -68,7 +70,7 @@ model/machine can reproduce it (it is not an external tool):
 | `scripts/levelcheck.mjs` | Geometry audit of every world in `LEVELS`: no pit wider than a running jump, a landing chain that actually reaches the flagpole, every firebar clear of the tilemap, lava over real holes. Catches the one level bug a screenshot cannot — a jump that is simply impossible. |
 | `scripts/evocheck.mjs` | Mario option 4 must learn (clean cold-start fitness after 60 gens, and ≥1.5x its own gen-1 — the ratio is the real gate, the GA is stochastic; post-#107 `evoTrain` goes through `startEpisode` so fitness is per-episode, not cumulative coins) and its HUD must actually render. |
 | `scripts/evoprobe.mjs` | Per-genome scalpel: one episode with a named/random/evolved controller → `maxCol`, jumps, trace. |
-| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch (`SHOT_CHANNEL`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
+| `scripts/lib/harness.mjs` | Shared plumbing: dev-server preflight, Chrome launch via `lib/chromeboot.mjs` (`SHOT_CHANNEL` + #1622 fallback ladder; the booted mode lands on `browser.__bootMode`), DEV-hook wait (`openMario`, or `openGame(browser, { hook })` for other titles), pass/fail `Report`. |
 | `scripts/fpscheck.mjs` | IronKeep (the FPS): key-gated reachability audit of all three halls, then a driven play-through — collision, doors and keys, hitscan, pathfinding without line of sight, lives, the Warden, reaching `win`, and a frame-time budget. |
 | `scripts/keepplay.mjs` | IronKeep feel probe: real key events only (no frozen-frame shortcuts), so input-path bugs that deterministic stepping cannot see — a quick tap swallowed between two 60Hz samples — still show up. |
 | `scripts/heistcheck.mjs` | Raccoon Heist **in Node** (no browser): every job's carved grid audited for reachability of the cart, the gate, every marker and every coin; that each locked door is *load-bearing* (run the reachability twice, once with doors shut — the difference is the proof); patrol routes that actually walk; torch beams that cross floor; cover within two cells of every loot pile; and the stealth model itself. `--map N` dumps a job as ASCII, `--mutate` seals the vault and requires the audit to complain. |
