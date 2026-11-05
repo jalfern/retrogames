@@ -39,11 +39,11 @@ const SUBGOALS = {
     doorClosed: 50,
 }
 
-export function createRobotSim(seed = 0) {
+export function createRobotSim(seed = 0, opts = {}) {
     const world = createWorld()
     const mats = installMaterials(world)
     createBench(world, mats)
-    const arm = createArm(world, mats, { base: BASE })
+    const arm = createArm(world, mats, { base: BASE, mobileBase: !!opts.mobileBase })
     const drawer = createDrawer(world, mats)
     const cabinet = createCabinet(world, mats)
     const rng = mulberry32((seed * 2654435761 >>> 0) ^ 0x9e3779b9)
@@ -56,6 +56,15 @@ export function createRobotSim(seed = 0) {
     const can = createCan(world, mats, { x: 0.42 + rng() * 0.04, y: BENCH_TOP + 0.045 + 0.02, z: -0.05 + rng() * 0.04 })
 
     const tracked = [crate, can, drawer.body, cabinet.body, arm.bodies.hand]
+    // Snapshot/restore must carry the whole dynamic chain (stage 4a): the
+    // state() hash covers the hand, but the link bodies' motion is what
+    // makes the next step replayable.
+    const snapBodies = () => {
+        const extra = [arm.bodies.yoke, arm.bodies.upper, arm.bodies.fore, arm.bodies.fingerL, arm.bodies.fingerR]
+        if (arm.bodies.basePlate) extra.push(arm.bodies.basePlate)
+        if (arm.rigid && arm.bodies.base.mass > 0) extra.push(arm.bodies.base)
+        return tracked.concat(extra)
+    }
     const goals = { drawerOpen: false, crateIn: false, drawerClosed: false, doorOpen: false, canIn: false, doorClosed: false }
     const methods = []
     const queue = []
@@ -212,6 +221,8 @@ export function createRobotSim(seed = 0) {
         gap: Math.round(arm.gap * 1000) / 1000,
         torque: arm.torquePct(),
         sat: arm.satCount(),
+        baseStrainN: arm.baseStrainN ? arm.baseStrainN() : 0,
+        baseDelta: arm.baseDelta ? arm.baseDelta() : null,
         slips,
         gripN: arm.weld ? Math.round(arm.weld.slipS * 10) / 10 : 0,
         budgetN: arm.weld ? Math.round(arm.weld.holdBudgetN * 10) / 10 : null,
@@ -302,7 +313,7 @@ export function createRobotSim(seed = 0) {
                     }
                     : null,
                 queue: queue.map((q) => ({ ...q })),
-                bodies: tracked.map((b) => ({
+                bodies: snapBodies().map((b) => ({
                     id: b.id,
                     p: [b.position.x, b.position.y, b.position.z],
                     q: [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w],
@@ -524,4 +535,4 @@ export function createAutopilot(sim) {
     return driver
 }
 
-export const KIT_VERSION = 'stage3'
+export const KIT_VERSION = 'stage4a'
