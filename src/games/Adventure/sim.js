@@ -52,6 +52,15 @@ export const DRAGON_RESPAWN_TICKS = 300 // slain → back in play (~5 s at 60 fp
 // Single source of truth for the rule, the affordance hint and the mat draw.
 export const GATE_ZONE = { x: 40, y: 0, w: 80, h: 60 }
 
+// #1588 juice windows. The 1993 cart redraws each room with a hard flash, its
+// dragons snap their jaws while hunting, and the Enchanted Chalice is the one
+// object worth a glint. These two constants are the ONE source of truth for
+// both the sim's cosmetic signals and the shell's drawing, so the animation and
+// the harness can never drift apart. Purely cosmetic — they feed no rule, no
+// dice and never consume `rand`, so a pinned seed replays byte-identical.
+export const CHEW_TICKS = 10       // a hunting maw alternates open/closed across this window
+export const ROOM_WIPE_TICKS = 7  // length of the room-change flash (the cart's redraw)
+
 // #1572 item 3 — the variant selector. The original cart boots to SELECT
 // GAME with 30+ variants; the minimum honest slice is three:
 //   V1 CLASSIC — the 1993 default: the tuned dragon pace, the fixed layout.
@@ -358,6 +367,17 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
         // matching closed gate carrying it). Pure output — it feeds neither
         // the rules nor the dice; the renderer glints the mat from it.
         afford: null,
+        // #1588 juice signals — cosmetic, pure output derived from state + tick.
+        // None of these feed a rule or consume `rand`, so a pinned seed replays
+        // byte-identical, and stateHash (which ignores them) still tracks only
+        // the gameplay. The shell animates the maw, the carried-chalice glint
+        // and the room-change flash from these; adventurecheck proves each one
+        // fires ONLY in its own state (and a mutant that strips it turns red).
+        chew: false,       // a live dragon hunts with an open maw in the player's room, on a chew frame
+        sparkle: false,    // the Enchanted Chalice is being carried (worth a glint in hand)
+        wipe: false,       // a room-change flash is sweeping this tick
+        wipeAt: -999,      // tick of the last room change (wipe covers wipeAt..wipeAt+ROOM_WIPE_TICKS)
+        prevRoom: R.GOLD_CASTLE, // room last tick, so no wipe fires on the opening draw
     }
 
     // Which side of the room a wall rect belongs to (null for interior maze
@@ -774,6 +794,23 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
             sim.won = true
             sim.events.push('win')
         }
+
+        // ---- #1588 JUICE SIGNALS ----
+        // Pure output, computed last so room/carrying/dragon maws are final for
+        // this tick. Reads state + tick only — never `rand` — so it cannot tilt
+        // a replay, and stateHash ignores these keys so the nightly digest stays
+        // a gameplay fingerprint. The shell (index.jsx) draws from them.
+        //   chew: a live dragon in the player's room has its bite-maw open
+        //         (i.e. is hunting close), and the frame parity says "jaws apart"
+        //         — that alternation IS the chew. A calm/deep/distant dragon and
+        //         a slain one never chew.
+        const hunting = sim.dragons.some((d) => d.alive && d.room === sim.room && d.mouthOpen)
+        sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)
+        //   sparkle: the chalice is literally in hand (the goal item glints).
+        sim.sparkle = sim.carrying === 'chalice'
+        //   wipe: arm a short flash the instant the room actually changes.
+        if (sim.room !== sim.prevRoom) { sim.prevRoom = sim.room; sim.wipeAt = sim.tick }
+        sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS
     }
 
     return sim
