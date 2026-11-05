@@ -120,7 +120,14 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
    dim Selenitic keeps a clear green floor (a brighter, greener at-rest sky),
    and the Selenitic lightning stays a brief 160 ms window of its 6.4 s cycle —
    its flash colour lives only in the Selenitic painter so no second lens
-    strobes in step.
+    strobes in step. #838 item 7 grows the dome: a fifth pane of MYST itself at
+   dusk (stars, the low moon, the clock tower slim on the ridge with its one
+   breathing warm dial, the jade dome-crag across the bay — the sea.js landmark
+   laws painted small), live from the first opening because you stand on it;
+   and the two brothers' portraits (`drawPortrait`), painted in link.js's trap
+   colours, their static healing two tears per page returned to the right book
+   and the face resolving calm at 4/4 (`portraitViews` in state.js carries the
+   count — the paintings heal, they free nobody).
 - `sea.js` — the sea wears each Age (#838 item 2): `SEA_VIEWS` per sea view
   carries its water level, multiply-tint colour, swell amplitude and texture
   drift; `seaSwell(x, z, t, view)` is a deterministic three-sine swell bounded
@@ -155,8 +162,8 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   the loop's own `tick`. Six touch-points link (`linkingBook(node, id)`):
   the tower's cogs book → Mechanical, the fireplace → Selenitic, the safe →
   Stoneship, the cave's wood door → Channelwood, and Channelwood keeps its own
-  way home (hub book and landing panel) — the brothers' books are voices, not
-  doors. `state.link`/`state.linkT` are pure sim: the node swaps instantly
+  way home (hub book and landing panel) — the brothers' books fly too, each in
+  its own trap colour (#838 stage, see Honest gaps). `state.link`/`state.linkT` are pure sim: the node swaps instantly
   UNDER the cover (opaque envelope across the swap window, zero exactly on the
   clearing tick), and the shell mutes keys and pad through the leap. The star
   table is a deterministic hash (no `Math.random` — the linking light is a
@@ -177,8 +184,9 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   DPR-aware backing (capped at 2×, the Spectator lenses' trick) so thin streaks
   stay hairlines. `mystcheck` proves the returns link, the wobble shimmers yet
   stays bounded, the pull never reverses and ends steep, the snap is its own voice,
-  and the shell draws on a `devicePixelRatio` backing. Residual: the red and blue
-  brothers' trap pulls still cut to their ending screens (voices, not doors).
+  and the shell draws on a `devicePixelRatio` backing. The trap pulls fly too
+  (#838 stage): the red and blue books start a real linking flight in their
+  own crimson/cobalt before the fate screen.
 - `textures.js` — fbm value noise per material palette; `SKIES` gradients with
   seeded starfields (dusk/selenitic) and soft cloud banks (day/stoneship/dusk).
 - Atmosphere (#928): the shared `DirectionalLight` rides the camera and casts a
@@ -200,7 +208,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (114 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (128 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -355,3 +363,16 @@ mirroring clouds or seating land — each turns the suite red.
    mystcheck's item 6 section proves anchorage, fog-limit seating, the slim-and-tall
    inverse of the isle law, the jade/warm hue laws, layered separation from headlands
    and the scene wiring; 7 new mutants all die.
+  **CLOSED by #838 item 7** —
+    the dome carries home and the brothers: the Spectator's fifth optic is the
+    island itself at dusk — stars, the low moon, the clock tower slim on the
+    ridge with its one warm breathing dial, the jade dome-crag across the bay
+    (one seat, the same law as the skyline) — never sealed, because the player
+    is standing in it; and Sirrus and Achenar hang beside it in trap crimson
+    and cobalt, the corrupted static healing exactly two tears per page
+    returned to the right book, the face resolving at 4/4 — the visual twin of
+    the message-clearing law the books already run. Freeing a brother still
+    costs the white page; the paintings change nothing but what you see.
+    mystcheck's item 7 section proves the pane live-and-clocked, the landmark
+    hues, the heal-count monotone, the face law, the trap palettes and the
+    shell wiring; 7 new mutants all die.

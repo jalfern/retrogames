@@ -3,8 +3,8 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews } from '../src/games/Myst/state.js'
-import { drawVision } from '../src/games/Myst/visions.js'
+import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews, portraitViews } from '../src/games/Myst/state.js'
+import { drawVision, drawPortrait, PORTRAIT_TEAR0 } from '../src/games/Myst/visions.js'
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
@@ -1473,6 +1473,71 @@ console.log('MYST — the skyline carries landmarks (#838 item 6: the clock towe
   }
 }
 
+console.log('MYST — the dome carries home and the brothers (#838 item 7: the island optics, the portraits)')
+{
+  // — portrait bookkeeping is pure and rides the right book's pages
+  let s = freshState()
+  ok(JSON.stringify(portraitViews(s)) === JSON.stringify(portraitViews(s)), 'portraitViews is pure — same state, same paintings')
+  ok(portraitViews(s).map((p) => `${p.who}:${p.placed}`).join(',') === 'sirrus:0,achenar:0', 'a fresh island hangs both portraits ragged')
+  s.placed.red = 3; s.placed.blue = 1
+  ok(portraitViews(s).map((p) => `${p.who}:${p.placed}`).join(',') === 'sirrus:3,achenar:1', 'the paintings count pages returned to their own book')
+  s.placed.red = 9
+  ok(portraitViews(s)[0].placed === 4, 'a portrait never promises more than four')
+
+  // — the painters: recorder ctx, same law as the #1024 lenses
+  function recCtx() {
+    const ops = []
+    const num = (x) => (typeof x === 'number' ? x.toFixed(3) : String(x))
+    const grad = { addColorStop: (...a) => ops.push('stop:' + a.map(num).join(',')) }
+    const ctx = { ops }
+    for (const m of ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']) ctx[m] = (...a) => ops.push(m + ':' + a.map(num).join(','))
+    ctx.createLinearGradient = (...a) => { ops.push('lin:' + a.map(num).join(',')); return grad }
+    ctx.createRadialGradient = (...a) => { ops.push('rad:' + a.map(num).join(',')); return grad }
+    for (const p of ['fillStyle', 'strokeStyle']) {
+      let v = ''
+      Object.defineProperty(ctx, p, { get: () => v, set: (x) => { v = x; ops.push(p + ':' + x) } })
+    }
+    ctx.lineWidth = 0
+    return ctx
+  }
+  const runV = (age, t, un) => { const c = recCtx(); drawVision(c, age, t, un, 152, 114); return c.ops.join('|') }
+  const runP = (book, t, p) => { const c = recCtx(); drawPortrait(c, book, t, p, 76, 114); return c.ops.join('|') }
+
+  // — the home optic: live, clocked, and wearing the island\u2019s own landmark laws
+  ok(runV('myst', 1, true).includes('clip:'), 'the island looks through glass like the other lenses')
+  ok(runV('myst', 1, true) === runV('myst', 1, true), 'the island lens paints the same picture at the same instant')
+  ok(runV('myst', 1, true) !== runV('myst', 9.25, true), 'the island lens answers to the world clock')
+  ok(runV('myst', 2, true) !== runV('myst', 2, false), 'the home optic is never the sealed churn — you stand on it')
+  for (const age of ['selenitic', 'stoneship', 'mechanical', 'channelwood']) {
+    ok(runV('myst', 1, true) !== runV(age, 1, true), `the island wears its own dusk, not ${age}`)
+  }
+  ok(runV('myst', 1, true).includes('255,176,90'), 'the clock tower wears the warm dial (r > b — brass catching dusk)')
+  ok(runV('myst', 1, true).includes('110,220,150'), 'across the bay the dome-crag wears its jade (sea.js\u2019s landmark law, one hue)')
+
+  // — the portraits: deterministic ruin, healing tears, trap-colour palettes
+  ok(runP('red', 1, 0) === runP('red', 1, 0), 'a portrait is deterministic — same instant, the same ruin')
+  ok(runP('red', 1, 0) !== runP('red', 9.25, 0), 'the static crawls — the ruin answers to the clock')
+  ok(runP('red', 1, 0) !== runP('blue', 1, 0), 'the brothers do not share a face (crimson is not cobalt)')
+  ok(runP('red', 1, 2).includes('255,62,54'), 'Sirrus wears his trap crimson (the link.js law, one source)')
+  ok(runP('blue', 1, 2).includes('70,106,255'), 'Achenar wears his trap cobalt (the link.js law, one source)')
+  const tears = (book, p) => runP(book, 1, p).split('|').filter((o) => o.startsWith('fillRect:')).length - 2 // minus sky + glass
+  ok(tears('red', 0) === PORTRAIT_TEAR0, `ragged at 0/4 — ${PORTRAIT_TEAR0} tears in Sirrus\u2019s face`)
+  for (let p = 1; p <= 4; p++) ok(tears('red', p) === tears('red', p - 1) - 2, `every page home heals exactly two tears (${p}/4)`)
+  ok(tears('blue', 0) === PORTRAIT_TEAR0 && tears('blue', 4) === 0, 'the blue ruin follows the same law')
+  ok(runP('red', 1, 4).includes('230,220,210'), 'at 4/4 the face resolves — calm and pale')
+  for (const p of [0, 1, 2, 3]) ok(!runP('red', 1, p).includes('230,220,210'), `below four pages the face stays ruined (${p}/4)`)
+  ok(runP('red', 1, 4) !== runP('red', 1, 3), 'the resolved portrait is another picture than the wounded one')
+  ok(plan('thaw:myst').length === 0, 'the home optic never sings a thaw — it was never frozen')
+
+  // — the shell hangs them
+  const srcJX = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  const srcVI = readFileSync('src/games/Myst/visions.js', 'utf8')
+  ok(/data-vision="myst"/.test(srcJX), 'the dome hangs its island pane')
+  ok(/data-portrait=\{pv\.book\}/.test(srcJX), 'the dome hangs both portraits')
+  ok(/drawPortrait\(cv\.getContext/.test(srcJX), 'the loop paints the portraits while the sphere is open')
+  ok(/SCENES = \{ selenitic, stoneship, mechanical, channelwood, myst \}/.test(srcVI), 'the island painter is registered beside the Ages')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1839,6 +1904,25 @@ if (process.argv.includes('--mutate')) {
     ['the dial freezes (the last sun stops breathing on the brass)', 'src/games/Myst/scene.js',
       'dial.material.opacity = 0.55 + 0.28 * Math.sin(t * 0.7 + lm.h)',
       'dial.material.opacity = 0.8'],
+    // #838 item 7 — the dome carries home and the brothers
+    ['the portraits get raggeder with every page home (healing runs backwards)', VI,
+      'const tears = PORTRAIT_TEAR0 - 2 * p', 'const tears = 2 * p'],
+    ['the blue brother steals the crimson (one trap colour for both)', VI,
+      "const pal = book === 'blue' ? LINK_PALETTE.trapBlue : LINK_PALETTE.trapRed",
+      'const pal = LINK_PALETTE.trapRed'],
+    ['the face resolves at a single page (the ruin is a fake)', VI,
+      'if (p >= 4) {', 'if (p >= 1) {'],
+    ['the dome forgets home (the island pane only churns)', VI,
+      'const SCENES = { selenitic, stoneship, mechanical, channelwood, myst }',
+      'const SCENES = { selenitic, stoneship, mechanical, channelwood }'],
+    ['the ruin freezes — static that never crawls', VI,
+      'const x = w * (0.06 + hsh(seedK, 7) * 0.88) + Math.sin(t * 2 + k * 1.7) * w * 0.006',
+      'const x = w * (0.06 + hsh(seedK, 7) * 0.88)'],
+    ['the portraits forget whose pages healed them (both count red)', ST,
+      'placed: Math.max(0, Math.min(AGE_LIST.length, s.placed.blue | 0))',
+      'placed: Math.max(0, Math.min(AGE_LIST.length, s.placed.red | 0))'],
+    ['the dome never hangs the portraits', JX,
+      'data-portrait={pv.book}', 'data-portrai={pv.book}'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
