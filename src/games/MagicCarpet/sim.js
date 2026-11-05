@@ -31,6 +31,7 @@ export const SPILLS = [
     { id: 'slow', name: 'SLOW TIME', cost: 30 },
     { id: 'telekinesis', name: 'TELEKINESIS', cost: 12 },
     { id: 'invisibility', name: 'INVISIBILITY', cost: 20 },
+    { id: 'volcano', name: 'VOLCANO', cost: 60 },
 ]
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
@@ -320,6 +321,36 @@ function blast(gs, x, y, r, depth, dmg) {
     gs.events.push({ type: 'boom', x, y })
 }
 
+// Volcano (#1612 item 5, the 8th spell): the ground tears open where you look.
+// One main hot vent plus three secondary hot craters scatter around it; each
+// ignites huts in reach, splashes damage, and showers fire marks. All vents are
+// hot, so they glow with cooling lava (CRATER_GLOW) and flood if sunk below
+// sea — the eruption uses the exact crater machinery every blast already has.
+// rng() only, so the eruption is deterministic from the seed.
+export function volcanoErupt(gs, x, y) {
+    const mx = wrap(x, MAP), my = wrap(y, MAP)
+    crater(gs, mx, my, 18, 12, 1)
+    toppleTower(gs, mx, my)
+    igniteHuts(gs, mx, my)
+    applySplash(gs, mx, my, 20)
+    for (let k = 0; k < 8; k++) {
+        const a = rnd(gs) * 6.28, d = rnd(gs) * 26
+        gs.fireMarks.push({ x: wrap(mx + Math.cos(a) * d, MAP), y: wrap(my + Math.sin(a) * d, MAP), t: gs.tick })
+    }
+    const vents = [{ x: mx, y: my }]
+    for (let k = 0; k < 3; k++) {
+        const a = rnd(gs) * 6.28, d = 14 + rnd(gs) * 22
+        const vx = wrap(mx + Math.cos(a) * d, MAP), vy = wrap(my + Math.sin(a) * d, MAP)
+        crater(gs, vx, vy, 8 + rnd(gs) * 5, 6 + rnd(gs) * 3, 1)
+        igniteHuts(gs, vx, vy)
+        applySplash(gs, vx, vy, 14)
+        gs.fireMarks.push({ x: vx, y: vy, t: gs.tick })
+        vents.push({ x: vx, y: vy })
+        gs.events.push({ type: 'boom', x: vx, y: vy })
+    }
+    gs.events.push({ type: 'volcano', x: mx, y: my, vents })
+}
+
 function castHand(gs, hand) {
     const id = gs.hands[hand]
     const cool = hand === 'L' ? gs.coolL : gs.coolR
@@ -365,6 +396,9 @@ function castHand(gs, hand) {
         gs.wizSlow = 300
     } else if (id === 'invisibility') {
         gs.invis = INVIS_T
+    } else if (id === 'volcano') {
+        const lp = lookPoint(gs)
+        volcanoErupt(gs, lp.x, lp.y)
     } else if (id === 'telekinesis') {
         if (gs.heldEnt) {
             const e = gs.heldEnt
@@ -858,8 +892,11 @@ export function autopilot(gs) {
         }
     }
     // Altitude is armor (the original's lesson, #1610 sweep): when hurt and a
-    // wolf is closing, climb — wolves only bite carpets flying low.
-    if (gs.hp < 55 && gs.monsters.some((m) => m.kind === 'wolf' &&
+    // wolf is closing, climb — wolves only bite carpets flying low. Only climb
+    // while genuinely low: past safe clearance the pack can't reach you, and a
+    // pin-up rule with no floor-free ceiling check strands the bot above its
+    // pearls when a wolf pack learns to shadow the carpet (#1612 sweep fix).
+    if (gs.hp < 55 && gs.alt < sampleH(gs, gs.x, gs.y) + 12 && gs.monsters.some((m) => m.kind === 'wolf' &&
         Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 24)) pad.up = true
     return pad
 }

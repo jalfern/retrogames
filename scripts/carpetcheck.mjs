@@ -12,7 +12,7 @@ import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
-    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF,
+    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -28,8 +28,8 @@ const run = (seed, maxTicks, scriptFn = autopilot) => {
 
 // ---- boot
 const fresh = makeGame(7)
-r.check('world 1 built: 56 pearls, wizard hoards 80, 7 books, one known spell, empty vault',
-    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 7 &&
+r.check('world 1 built: 56 pearls, wizard hoards 80, 8 books, one known spell, empty vault',
+    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 8 &&
     fresh.learned.length === 1 && fresh.bank === 0 && fresh.level === 0,
     `pearls=${fresh.pearls.length} hoard=${fresh.wizard.mana} books=${fresh.books.length} bank=${fresh.bank}`)
 const g0 = run(7, 600, () => ({}))
@@ -342,9 +342,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 }
 
 // ---- roster + INVISIBILITY (#1610): the original's veil, done whole
+// (#1612 item 5 grew the roster to eight with VOLCANO.)
 {
-    r.check('seven signature spells with costs', SPILLS.length === 7 &&
-        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility'].every((id) => spellById(id)?.cost > 0))
+    r.check('eight signature spells with costs', SPILLS.length === 8 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano'].every((id) => spellById(id)?.cost > 0))
 
     const veilUp = (gs) => {
         gs.learned.push('invisibility')
@@ -471,6 +472,12 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         gs.learned.push('invisibility')
         const wolf = gs.monsters.find((m) => m.kind === 'wolf')
         const gi = gs.monsters.find((m) => m.kind === 'giant')
+        // Composition-proof (#1612): the volcano book shifted world-gen rng, so
+        // seed 7 now rolls a 2nd giant (and 2nd wolf) that can sit inside sight
+        // of the parked carpet and emit stray `lost` events. Keep exactly the
+        // one giant + one wolf this rig places — the gate is about the cue, not
+        // about how many monsters the seed happens to roll.
+        gs.monsters = gs.monsters.filter((m) => m === wolf || m === gi)
         const wz = gs.wizard
         gs.x = wrap(wz.x + (placeFar ? 120 : 20), MAP); gs.y = wz.y
         wolf.x = wrap(gs.x + (placeFar ? 120 : 8), MAP); wolf.y = gs.y
@@ -518,6 +525,58 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         }
         r.check('60-seed balance sweep: the autopilot still restores all three worlds, all 60 seeds',
             wins === 60, `wins ${wins}/60, slowest ${slowest} ticks`)
+    }
+}
+
+// ---- #1612 item 5: VOLCANO — the ground tears open where you look.
+{
+    r.check('volcano is the 8th spell: cost 60, a grimoire waits in the world',
+        SPILLS.length === 8 && spellById('volcano').cost === 60 &&
+        fresh.books.some((b) => b.id === 'volcano'), `n=${SPILLS.length}`)
+    {
+        const gv = makeGame(7)
+        gv.learned.push('volcano')
+        gv.mana = 100
+        gv.coolL = 0
+        setHand(gv, 'L', 'volcano')
+        const before = gv.craters.length
+        step(gv, { castL: true })
+        const ev = gv.events.filter((e) => e.type === 'volcano')
+        r.check('cast tears 4 hot vents open and pays 60 mana',
+            gv.craters.length - before === 4 && gv.craters.every((c) => c.hot === 1) && gv.mana === 40 && ev.length === 1 && ev[0].vents.length === 4,
+            `craters +${gv.craters.length - before} mana=${gv.mana} vents=${ev[0]?.vents.length}`)
+        const mainC = gv.craters[before]
+        r.check('fresh vents glow with lava and cool over CRATER_GLOW',
+            glowOf(gv, mainC) > 0 && glowOf({ ...gv, tick: gv.tick + CRATER_GLOW }, mainC) === 0,
+            `glow now=${glowOf(gv, mainC).toFixed(2)}`)
+    }
+    {
+        const gm = makeGame(7)
+        gm.learned.push('volcano')
+        gm.mana = 30
+        setHand(gm, 'L', 'volcano')
+        const bm = gm.craters.length
+        step(gm, { castL: true })
+        r.check('no mana, no mountain: denied, ground untouched',
+            gm.craters.length === bm && gm.events.some((e) => e.type === 'nomana'), `craters=${gm.craters.length}`)
+    }
+    {
+        const gt = makeGame(7)
+        volcanoErupt(gt, gt.wizard.tx, gt.wizard.ty)
+        r.check('an eruption at the tower base topples it (wizard takes the fall)',
+            gt.towerDown === true && gt.wizard.hp < LEVELS[0].wizHp, `down=${gt.towerDown} hp=${gt.wizard.hp}`)
+    }
+    {
+        const eruptOnce = () => {
+            const g = makeGame(7)
+            g.learned.push('volcano'); g.mana = 100; g.coolL = 0
+            setHand(g, 'L', 'volcano')
+            step(g, { castL: true })
+            for (let i = 0; i < 50; i++) step(g, {})
+            return stateHash(g)
+        }
+        const h1 = eruptOnce(), h2 = eruptOnce()
+        r.check('eruptions are deterministic: same seed + same cast → identical hash', h1 === h2, `${h1} vs ${h2}`)
     }
 }
 

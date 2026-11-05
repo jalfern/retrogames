@@ -581,6 +581,10 @@ void main(){
         spawn(x, h + 1.5, y, 'flare', 0, 0, 0, 7, 12, col)
     }
 
+    // Volcano vents (#1612 item 5): live lava fountains for a while after an
+    // eruption. Presentation-only; the sim's hot craters carry the truth.
+    const vents = []
+
     const makeBolt = (gs, x, y) => {
         const base = heightAt(gs, x, y)
         let ax = x, ay = y, az = base + 90
@@ -609,6 +613,10 @@ void main(){
     const handleEvents = (evts, gs) => {
         for (const e of evts) {
             if (e.type === 'boom') { spawnBurst(gs, e.x, e.y, 10, [1.6, 0.6, 0.2]); addScorch(e.x, e.y, 12, 0.4) }
+            else if (e.type === 'volcano') {
+                spawnBurst(gs, e.x, e.y, 30, [1.9, 0.55, 0.15]); addScorch(e.x, e.y, 24, 0.6)
+                for (const v of e.vents) vents.push({ x: v.x, y: v.y, t: gs.tick })
+            }
             else if (e.type === 'zap') { makeBolt(gs, e.x, e.y); addScorch(e.x, e.y, 8, 0.3) }
             else if (e.type === 'ignite') { addScorch(e.x, e.y, 5, 0.3) }
             else if (e.type === 'hutDown') { spawnBurst(gs, e.x, e.y, 5, [1.2, 0.5, 0.2]); addScorch(e.x, e.y, 6, 0.4) }
@@ -762,6 +770,16 @@ void main(){
                 spawn(px, heightAt(gs, px, py) + 0.8, py, 'fire', 0, 0.8 + Math.random() * 0.8, 0, 1.6 + Math.random() * 1.4, 20)
                 if (Math.random() < 0.3) spawn(px, heightAt(gs, px, py) + 3, py, 'smoke', 0, 0.9, 0, 2.6, 90)
             }
+        }
+        for (let i = vents.length - 1; i >= 0; i--) {
+            const v = vents[i]
+            const age = gs.tick - v.t
+            if (age > 160) { vents.splice(i, 1); continue }
+            const puff = 1 - age / 160
+            const vx = v.x + (Math.random() - 0.5) * 4, vy = v.y + (Math.random() - 0.5) * 4
+            spawn(vx, heightAt(gs, vx, vy) + 1, vy, 'fire', 0, 1.8 + Math.random() * 2, 0, 1.8 + Math.random() * 1.6 * puff + 0.6, 26, [1.9, 0.5, 0.18])
+            if (Math.random() < 0.55) spawn(vx, heightAt(gs, vx, vy) + 5, vy, 'smoke', (Math.random() - 0.5) * 0.3, 1.1 + Math.random() * 0.6, 0, 3 + Math.random() * 2.5, 120)
+            if (Math.random() < 0.3 * puff) spawn(vx, heightAt(gs, vx, vy) + 3, vy, 'ember', (Math.random() - 0.5) * 1.6, 2 + Math.random() * 2.4, (Math.random() - 0.5) * 1.6, 0.8, 40, [1.7, 0.5, 0.2])
         }
         for (const p of gs.projs) {
             if (p.kind === 'fireball' && Math.random() < 0.9) spawn(p.x, p.y, p.z, 'fire', -p.vx * 0.1, 0.15, -p.vy * 0.1, 1.1, 14, [1.5, 0.7, 0.25])
