@@ -11,7 +11,7 @@ import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
-    setHand, INVIS_T,
+    setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -472,6 +472,86 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         }
         r.check('60-seed balance sweep: the autopilot still restores all three worlds, all 60 seeds',
             wins === 60, `wins ${wins}/60, slowest ${slowest} ticks`)
+    }
+}
+
+// ---- #1612 mobile spellbook: the HUD itself equips hands, like the original's
+// mouse-first UI. hudTap is pure (sim.js), so the whole touch path — slots cycle,
+// gold book tab opens the tray, learned cells assign the left hand, click-out
+// closes without casting — is proven without a browser. The tray is UI state:
+// it must never disturb the sim hash. Mutation guide: make hudTap return 'world'
+// for a slotL tap (the pre-fix behavior) and the slot gates go red; mix gs.book
+// into stateHash and the determinism gate goes red.
+{
+    const ctr = (r) => [r[0] + r[2] / 2, r[1] + r[3] / 2]
+    const [slx, sly] = ctr(TAP.slotL)
+    const [srx, sry] = ctr(TAP.slotR)
+    const [bkx, bky] = ctr(TAP.book)
+    const gs = makeGame(7)
+    gs.learned.push('heal', 'invisibility')
+    r.check('tapping a hand slot cycles that hand through learned spells (touch parity with 1-7/Q)',
+        hudTap(gs, slx, sly) === 'slotL' && gs.hands.L === 'heal' &&
+        hudTap(gs, slx, sly) === 'slotL' && gs.hands.L === 'invisibility' &&
+        hudTap(gs, slx, sly) === 'slotL' && gs.hands.L === 'fireball' &&
+        hudTap(gs, srx, sry) === 'slotR' && gs.hands.R === 'fireball' &&
+        hudTap(gs, srx, sry) === 'slotR' && gs.hands.R === 'heal',
+        `L=${gs.hands.L} R=${gs.hands.R}`)
+    r.check('slot taps emit equip events (the shell sounds and names them)',
+        gs.events.filter((e) => e.type === 'equip').length === 5)
+    const handsBefore = `${gs.hands.L}/${gs.hands.R}`
+    r.check('a world tap stays a cast — nothing equips above the strip',
+        hudTap(gs, 160, 80) === 'world' && `${gs.hands.L}/${gs.hands.R}` === handsBefore)
+    r.check('the dead HUD strip never fires a stray cast',
+        hudTap(gs, 100, H - HUD_H + 8) === 'none')
+    r.check('the gold book tab toggles the spell tray',
+        hudTap(gs, bkx, bky) === 'book' && gs.book === true &&
+        hudTap(gs, bkx, bky) === 'book' && gs.book === false)
+    {
+        gs.book = true
+        const i = SPILLS.findIndex((sp) => sp.id === 'invisibility')
+        const cx = TRAY[0] + i * 14 + 7, cy = TRAY[1] + 8
+        r.check('tapping a learned tray cell assigns the LEFT hand and closes the book',
+            hudTap(gs, cx, cy) === 'equip' && gs.hands.L === 'invisibility' && gs.book === false)
+        gs.book = true
+        const j = SPILLS.findIndex((sp) => !gs.learned.includes(sp.id))
+        const ux = TRAY[0] + j * 14 + 7, uy = TRAY[1] + 8
+        r.check('unlearned tray cells are inert — no equip, book stays open',
+            hudTap(gs, ux, uy) === 'none' && gs.hands.L === 'invisibility' && gs.book === true)
+        gs.hands.L = 'fireball'
+        r.check('clicking out while the tray is open closes it WITHOUT casting',
+            hudTap(gs, 160, 60) === 'close' && gs.book === false && gs.hands.L === 'fireball')
+    }
+    r.check('every touch hit box lives inside the 320×200 HUD',
+        [...Object.values(TAP), TRAY].every((b) => b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= W && b[1] + b[3] <= H))
+    {
+        const a = makeGame(9)
+        const b = makeGame(9)
+        // Open/close the tray mid-run: pure UI, the sim must not notice.
+        // (Equipping is NOT tested here — it changes hands on purpose.)
+        for (let i = 0; i < 300; i++) {
+            step(a, {}); step(b, {})
+            if (i === 50) hudTap(b, bkx, bky)
+            if (i === 90) hudTap(b, 160, 60)
+            if (i === 200) hudTap(b, bkx, bky)
+        }
+        r.check('the spellbook UI never disturbs the simulation — hashes match a clean run',
+            stateHash(a) === stateHash(b) && b.book === true,
+            `${stateHash(a)} vs ${stateHash(b)} (book ${b.book})`)
+    }
+    {
+        const gs2 = makeGame(7)
+        gs2.book = true
+        gs2.learned.push('slow')
+        // Bank the whole world-1 quota at the castle: the level transition must
+        // close an open book along with the rest of the world state.
+        gs2.mana = gs2.quota + 20
+        let t = 0
+        while (gs2.level === 0 && t < 400) {
+            gs2.x = gs2.castle.x; gs2.y = gs2.castle.y // hover: pin over the castle
+            step(gs2, {}); t++
+        }
+        r.check('a world regen closes an open spellbook', gs2.level === 1 && gs2.book === false,
+            `level ${gs2.level + 1} book ${gs2.book} bank ${Math.floor(gs2.bank)} at t=${t}`)
     }
 }
 
