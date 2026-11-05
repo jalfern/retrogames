@@ -57,9 +57,9 @@ export function domeHeight(x, z, view = 'selenitic') {
 // (null where the view has no sea, e.g. the tower floor).
 export const AGE_GROUND = {
   stoneship:        { base: 0,   water: 0.02, crest: { x: 0, z: -14, core: 6, rim: 26, h: 4 }, drop: 3.5, skirt: 16, flats: [{ x0: -9, x1: 9, z0: -27, z1: 3, soft: 5 }] },
-  stoneDeck:        { base: 0,   water: 0.02, crest: { x: 0, z: -8, core: 8, rim: 24, h: 3 }, drop: 3.5, skirt: 16, flats: [{ x0: -8, x1: 8, z0: -13, z1: -5, soft: 4 }] },
+  stoneDeck:        { base: 0,   water: 0.02, crest: { x: 0, z: 40, core: 10, rim: 22, h: 4 }, drop: 3.5, skirt: 16, flats: [{ x0: -14, x1: 14, z0: -18, z1: 16, soft: 4 }] },
   stoneObservatory: { base: 5.1, water: -1.5, crest: { x: 0, z: 3, core: 5, rim: 16, h: 1.5 }, drop: 7.5, skirt: 18, flats: [{ x0: -9, x1: 9, z0: -8, z1: 1, soft: 5 }] },
-  mechanical:       { base: 0,   water: null, crest: { x: 2, z: 34, core: 10, rim: 30, h: 3.5 }, drop: 3.5, skirt: 16, flats: [{ x0: -12, x1: 12, z0: -17, z1: 12, soft: 6 }] },
+  mechanical:       { base: 0,   water: null, crest: { x: 2, z: 34, core: 10, rim: 30, h: 3.5 }, drop: 3.5, skirt: 16, flats: [{ x0: -16, x1: 16, z0: -17, z1: 12, soft: 6 }] },
   mechWalk:         { base: 0,   water: null, crest: { x: 0, z: 12, core: 6, rim: 22, h: 5 }, drop: 3.5, skirt: 16, flats: [{ x0: -10, x1: 10, z0: -12, z1: 8, soft: 5 }] },
   channelwood:      { base: 0,   water: 0.02, crest: { x: 0, z: -15, core: 5, rim: 20, h: 5 }, drop: 3.5, skirt: 16, flats: [{ x0: -8, x1: 8, z0: -28, z1: -13.5, soft: 4 }] },
   chanChannels:     { base: 0,   water: 0.02, crest: { x: 0, z: -20, core: 10, rim: 30, h: 5.5 }, drop: 3.5, skirt: 16, flats: [{ x0: -10, x1: 10, z0: -44, z1: -21, soft: 4 }] },

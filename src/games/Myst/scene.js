@@ -596,7 +596,8 @@ const BUILDERS = {
     for (let i = 0; i < 5; i++) mesh(new THREE.BoxGeometry(0.6, 0.3, 1.6), mat(TX.plank), -2 + i * 1.2, 0.2, -4 + i * 0.9, g)
     crate(g, -3.4, 0.3, -1.4, 1, 0.4); barrel(g, 3.2, 0.4, -2, 0.8); crate(g, 4.4, 0.28, 0.4, 0.8, 1.1)
     lantern(g, -4.6, 0, -2.8)
-    boulder(g, TX.grey, -13.5, 0.9, -4, 1.3, 0.7); boulder(g, TX.grey, 13.8, 1.1, -3, 1.5, 0.2)
+    // shore rocks where the coast meets the sea, flanking the sightline
+    boulder(g, TX.grey, -18, 0.9, 4, 1.3, 0.7); boulder(g, TX.grey, 18, 1.1, 4, 1.5, 0.2)
     tuft(g, -8, 0.04, -2, 1.2); tuft(g, 8, 0.04, -1, 1)
   },
   stoneDeck(g) {
@@ -632,9 +633,11 @@ const BUILDERS = {
     const cupola = mesh(new THREE.SphereGeometry(2.0, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(TX.grey), 0, 9.2, 3, g)
     cupola.userData.spot = 'observatory'; cupola.userData.landmark = 'observatory'
     const slit = mesh(new THREE.BoxGeometry(0.7, 1.6, 0.4), mat(TX.grey, { color: 0x3a4048 }), 0, 9.7, 1.6, g); slit.userData.noPick = true
+    // the balustrade follows the ridge: each post seats on the sculpt where it stands
     for (let k = 0; k < 9; k++) {
       const a = k * (Math.PI / 8) - Math.PI / 2
-      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 9.5, 5.6, -4 + Math.cos(a) * 9.5, g).userData.noPick = true
+      const px = Math.sin(a) * 9.5, pz = -4 + Math.cos(a) * 9.5
+      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), px, groundHeight(px, pz, 'stoneObservatory') + 0.5, pz, g).userData.noPick = true
     }
     boulder(g, TX.grey, -9, 5.6, -2, 1.4, 0.6); boulder(g, TX.grey, 9.4, 5.6, -3, 1.5, 1.1)
   },
@@ -870,12 +873,13 @@ const BUILDERS = {
     g.add(star)
     wheelAssembly(g, 0, 4, -16.5, 2.6)
     mesh(new THREE.BoxGeometry(0.7, 4.0, 0.7), mat(TX.grey), 0, 2, -16, g).userData.landmark = 'starWheel'
-    for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-5, 7, 2.4]]) {
-      const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
+    // driftwood seats on the bank wherever it lies
+    for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-6, 5, 2.4]]) {
+      const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, groundHeight(lx, lz, 'channelwood') + 0.12, lz, g)
       log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
     }
-    tuft(g, -8.5, 0.06, 4, 1.3, 0x2f6a44); tuft(g, 8.6, 0.06, -6, 1.2, 0x2f6a44); tuft(g, 6, 0.06, 6, 1, 0x2f6a44)
-    boulder(g, TX.chand, -10, 0.8, -8, 1.4, 0.6); boulder(g, TX.chand, 11, 0.6, 8, 1.2, 1.3)
+    tuft(g, -8.5, 0.06, 4, 1.3, 0x2f6a44); tuft(g, 8.6, groundHeight(8.6, -6, 'channelwood') + 0.06, -6, 1.2, 0x2f6a44); tuft(g, -6, 0.06, -20, 1, 0x2f6a44)
+    boulder(g, TX.chand, -10, groundHeight(-10, -8, 'channelwood') + 0.84, -8, 1.4, 0.6); boulder(g, TX.chand, 11, groundHeight(11, 8, 'channelwood') + 0.72, 8, 1.2, 1.3)
   },
   chanChannels(g) {
     terrainField(g, TX.chand, 'chanChannels')
@@ -920,7 +924,8 @@ const BUILDERS = {
     // parapet along the terrace lip over the falls
     for (let k = 0; k < 14; k++) {
       const a = k * (Math.PI / 13) - Math.PI / 2
-      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), Math.sin(a) * 10.5, 2.7, -56 + Math.cos(a) * 10.5, g).userData.noPick = true
+      const px = Math.sin(a) * 10.5, pz = -56 + Math.cos(a) * 10.5
+      mesh(new THREE.BoxGeometry(0.5, 1, 0.5), mat(TX.grey), px, groundHeight(px, pz, 'chanWheel') + 0.5, pz, g).userData.noPick = true
     }
     // the great stone star, close at hand on this terrace — a five-spoke axle
     // lock (#1017): the notched ray tipped with iron, the housing below wearing
@@ -986,7 +991,8 @@ const BUILDERS = {
     plaque.userData.spot = 'starDrum'
     mesh(new THREE.TorusGeometry(0.42, 0.05, 6, 14), mat(TX.brass, { metalness: 0.7 }), 2.4, 5.6, -56.1, g).rotation.x = 1.2
     for (const [rx, rz] of [[-3.4, 0.5], [3.6, -0.4]]) mesh(new THREE.BoxGeometry(2.2, 0.5, 1.6), mat(TX.stoneD), rx, 4.65, -63.5 + rz, g).userData.noPick = true
-    for (let k = 0; k < 10; k++) { const a = k * (Math.PI / 9) + Math.PI / 2; mesh(new THREE.BoxGeometry(0.45, 0.9, 0.45), mat(TX.grey), Math.sin(a) * 9.5, 4.85, -66 + Math.cos(a) * 9.5, g).userData.noPick = true }
+    // the ledge balustrade follows the ground where it stands
+    for (let k = 0; k < 10; k++) { const a = k * (Math.PI / 9) + Math.PI / 2; const px = Math.sin(a) * 9.5, pz = -66 + Math.cos(a) * 9.5; mesh(new THREE.BoxGeometry(0.45, 0.9, 0.45), mat(TX.grey), px, groundHeight(px, pz, 'chanObs') + 0.45, pz, g).userData.noPick = true }
     tuft(g, -5.2, 4.46, -68, 1.2, 0x2f6a44); tuft(g, 5.6, 4.46, -66, 1, 0x2f6a44)
     boulder(g, TX.chand, -4.4, 4.9, -70, 1.1, 0.7); boulder(g, TX.chand, 4.8, 5.1, -71, 1.3, 1.2)
   },
