@@ -85,13 +85,14 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   this port ships exactly ONE fixed ruleset — no variant knob exists in
   `attract.js`, `index.jsx` or `sim.js` (grep-verified #1568). A variant table
   (at least slow/fast dragons + seeded-layout shuffle) is owed.
-- The drop-the-key gate rite has zero discoverability. A first-timer probe
+- The drop-the-key gate rite keeps no written manual. A first-timer probe
   (#1568: 200 novice seeds x 5000 ticks, seeded random-walk in Node):
   56/200 seeds pick up the gold key, but **0/200 open any castle gate** and
-  **0/200 open the secret rite** — nothing distinguishes "drop the key inside
-  the gate zone" (`sim.js` gate law: `!key.carried`, y<60, x∈(40,120)) from a
-  dead drop. The pad's only verb is a generic drop; the zone is invisible.
-  A visual affordance at gate thresholds (a mat, a glint) is the owed fix.
+  **0/200 open the secret rite**. The #1572 feel pass added a visible
+  threshold mat that glints while the matching key is carried at the gate
+  (see Restored below) — teaching where the drop counts; actually performing
+  the rite is still the player's discovery, and the secret rite stays
+  Robinett's (no hint by design).
 - No guidance surface. The original shipped a fold-out map and hint sheet (the
   manual was half the game); this port's only in-game text is `PauseOverlay`'s
   control list. First-timer metrics back the need: median 6/18 rooms seen,
@@ -127,3 +128,21 @@ unaffected: it never carries the sword (no slays → no respawns) nor the magnet
 Gated in `adventurecheck`: five placed-bridge gates and nine dot/door gates,
 plus five mutants (stranded bridge, magnet-on-dot, rite threshold, removed
 barrier, visible dot).
+
+### Restored in the #1572 feel pass
+
+- The **gate-rite affordance**: a threshold mat sits below each closed
+  portcullis (the `GATE_ZONE` in `sim.js` — the drop-the-key law's rect is
+  now one shared constant for rule, hint and renderer). Quiet at rest
+  (25% alpha of the castle's gate color); while the player stands at the
+  threshold carrying the matching key it glints at 90% alpha with a
+  blinking white tick — the drop that opens the gate is one Space away.
+  The hint lives in the sim as `sim.afford` (the key id, or null), set
+  purely from state — it feeds no rule and no dice, so replays are
+  byte-identical — and rides in `state().afford` for the harness.
+
+Gated in `adventurecheck`: seven affordance gates (fires only for the
+matching key, only inside the zone, only while the gate is closed, silence
+after the drop, the full walk-up→glint→open rite, determinism) plus four
+mutants (glint removed, any-key fires, zone ignored, glint persists once
+open).

@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H } from './sim.js'
+import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE } from './sim.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -181,6 +181,20 @@ const AdventureGame = () => {
                     for (let gy = 4; gy < 28; gy += 6) {
                         ctx.fillRect(58, gy, 44, 2)
                     }
+                    // #1572 gate-rite affordance: a threshold mat below the
+                    // portcullis marks where dropping the key opens the gate.
+                    // Quiet at rest; while the player stands there carrying the
+                    // matching key it glints (blinking white tick) — the rite
+                    // is one Space away. Teaches the verb without a manual.
+                    const glint = sim.afford === room.gateKey
+                    ctx.globalAlpha = glint ? 0.9 : 0.25
+                    ctx.fillStyle = room.gateColor
+                    ctx.fillRect(56, 30, 48, 8)
+                    if (glint && sim.tick % 14 < 7) {
+                        ctx.fillStyle = COLORS.white
+                        ctx.fillRect(56, 30, 48, 2)
+                    }
+                    ctx.globalAlpha = 1
                 } else {
                     // Open gate — just the frame
                     ctx.strokeStyle = room.gateColor
@@ -523,6 +537,7 @@ const AdventureGame = () => {
                 seed,
                 room: sim.room,
                 carrying: sim.carrying,
+                afford: sim.afford, // #1572: key whose gate the player can open from here (null otherwise)
                 // #1568: live position carrier — boredomaudit's POSITION_KEYS. Without
                 // x/y the audit calls a sprinting world BLIND (motion is measured, not inferred).
                 x: sim.player.x,
