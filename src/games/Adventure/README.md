@@ -57,11 +57,11 @@ chalice).
 ## Harness
 
 ```bash
-npm run adventurecheck          # 59 gates: determinism, gate/key/bridge/dragon law,
-                                # placed-bridge law, gray dot + sealed-door rite,
-                                # magnet attract, dragon respawn, scripted chalice
-                                # win on 10 seeds, static wiring
-npm run adventurecheck -- --mutant   # +14 mutants — every one must turn the suite red
+npm run adventurecheck          # 163 gates: determinism, gate/key/bridge/dragon law,
+                                # placed-bridge law, gray dot + sealed-door rite, magnet
+                                # attract, dragon respawn, variants, gate-rite affordance,
+                                # juice signals, scripted chalice win on 10 seeds, static wiring
+npm run adventurecheck -- --mutant   # +42 mutants — every one must turn the suite red
 npm run lint:adventure
 ```
 
@@ -165,3 +165,38 @@ states the bridge and magnet laws, leaks no secret, and the shared
 `PauseOverlay` gates the tab on `game?.guide?.length`) plus four mutants
 (drop rite removed, magnet law removed, secret leaked, tab shown for every
 game).
+
+### Restored in the #1588 juice pass
+
+The look/juice half of the #1572 polish list (item 4), spun to its own issue.
+Three mid-game effects, all pure output computed in the sim from state + tick
+(never `rand`) so a pinned seed still replays byte-identical and `stateHash`
+(which ignores the new signals) stays a gameplay fingerprint:
+
+- **Dragon maws chew.** While a live dragon hunts with its bite-maw open
+  (`sim.chew`), the jaws alternate open/closed on `CHEW_TICKS` — a 2-frame
+  chew, not a frozen grin. A calm/distant dragon keeps the closed head; a slain
+  dragon keeps its mouth shut.
+- **The chalice sparkles in hand.** `sim.sparkle` (true only while the chalice
+  is carried) drives a white/yellow star glint on the carried cup — the goal
+  item reads as the prize. A dropped chalice, or any other item, stays quiet.
+- **Rooms cut with a flash.** The cart redraws each new room hard; crossing a
+  doorway now sweeps a bright band top-to-bottom, fading over `ROOM_WIPE_TICKS`
+  (`sim.wipe`, armed the instant the room actually changes, never in attract).
+  The phase is tick-driven, so screenshots and replays stay stable.
+
+`CHEW_TICKS` / `ROOM_WIPE_TICKS` are exported from `sim.js` as the one source
+of truth the renderer reads, so the animation and the harness cannot drift. All
+three colours come from the existing 1993 palette (`COLORS.white`/`yellow`) — no
+new hues. Gated in `adventurecheck`: twenty-one juice gates (fourteen
+sim-behaviour gates — each fires only in its own state: no chew with nothing
+hunting, no chew on a corpse, sparkle only for the carried chalice, wipe only
+after a real room change and only inside its window, the timeline deterministic
+and non-vacuous — plus seven static renderer/palette gates) and nine mutants
+(each juice signal removed, made unconditional, or ignored by the renderer — all
+turn the suite red).
+
+The boredomaudit/juiceaudit number for `adventure` moves with this (the audit
+measures on-screen change through the contract canvas); regenerating the board
+is advisory and needs headless Chrome (#737), so the Node gates above are the
+merge bar for this change.

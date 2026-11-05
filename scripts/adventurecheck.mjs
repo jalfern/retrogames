@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, stateHash } from '../src/games/Adventure/sim.js'
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, ROOM_WIPE_TICKS, stateHash } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -1043,6 +1043,99 @@ console.log('#1591 contract state().hash + the nightly softlock regression')
     }
 }
 
+// ------------------------------------------------------------- #1588 juice ----
+console.log('#1588 juice: maw chew, carried-chalice sparkle, room-change wipe (sim signals)')
+{
+    // CHEW — only a hunting dragon (an open bite-maw in the player's room)
+    // chews. Nothing hunting → no chew; a dead dragon → no chew; hunting → the
+    // signal alternates (the chew), it never sits stuck on one frame.
+    const idle = createSim(seedRng(5))   // at rest the three dragons live in other rooms
+    let chewIdle = 0
+    for (let i = 0; i < 200; i++) { step(idle, { dx: 0, dy: 0 }); if (idle.chew) chewIdle++ }
+    ok(chewIdle === 0, 'no chew while nothing hunts the player (the maws stay calm)', `chew ticks=${chewIdle}`)
+
+    const chase = createSim(seedRng(5))
+    const ch = chase.dragons.find((d) => d.id === 'rhindle')
+    chase.room = ch.room
+    chase.player.x = ch.x + 22; chase.player.y = ch.y   // close enough to hunt (mouthOpen), outside bite range
+    let hi = 0, lo = 0
+    for (let i = 0; i < 60; i++) { step(chase, { dx: 0, dy: 0 }); if (chase.chew) hi++; else lo++ }
+    ok(chase.dragons.some((d) => d.mouthOpen) && hi > 0 && lo > 0,
+        'while hunted, the maw alternates open/closed — a chew, not a frozen jaw', `hi=${hi} lo=${lo}`)
+
+    const dead = createSim(seedRng(5))
+    const gr = dead.dragons.find((d) => d.id === 'grundle')
+    dead.room = gr.room; dead.player.x = gr.x + 10; dead.player.y = gr.y   // within sword reach (<14), outside bite (<8)
+    dead.carrying = 'sword'; dead.items.find((i) => i.id === 'sword').carried = true
+    step(dead, {})                                   // sword slays it (it was hunting, maw open)
+    ok(!gr.alive, 'setup: the sword slays the hunting dragon')
+    let chewDead = 0
+    for (let i = 0; i < 60; i++) { step(dead, { dx: 0, dy: 0 }); if (dead.chew) chewDead++ }
+    ok(chewDead === 0, 'a slain dragon never chews (a corpse keeps its mouth shut)', `chew ticks=${chewDead}`)
+
+    // SPARKLE — only the chalice IN HAND sparkles. Test away from the Gold
+    // Castle (chalice + castle would win and freeze the sim mid-test).
+    const sp = createSim(seedRng(5))
+    sp.room = R.OVERWORLD_4; sp.player.x = 80; sp.player.y = 90
+    ok(sp.sparkle === false, 'nothing sparkles with empty hands')
+    sp.carrying = 'sword'; step(sp, { dx: 0, dy: 0 })
+    ok(sp.sparkle === false, 'a carried sword does NOT sparkle (only the goal item glints)')
+    sp.carrying = 'chalice'; step(sp, { dx: 0, dy: 0 })
+    ok(sp.sparkle === true, 'the carried chalice sparkles')
+    // Drop it, then walk away so it is not instantly re-picked off the feet —
+    // the glint is a property of being carried, not of the chalice existing.
+    sp.items.find((i) => i.id === 'chalice').carried = true
+    step(sp, { drop: true })
+    for (let i = 0; i < 12; i++) step(sp, { dx: 0, dy: -S })   // step off the dropped cup
+    ok(sp.carrying === null && sp.sparkle === false, 'a chalice no longer carried stops sparkling (the glint is in the hand)', `carry=${sp.carrying}`)
+
+    // WIPE — fires for a few ticks after a real room change, then rests.
+    const wp = createSim(seedRng(5))
+    ok(wp.wipe === false, 'no wipe on the opening draw (the world opens clean, not mid-flash)')
+    wp.room = R.OVERWORLD_1; wp.player.x = 80; wp.player.y = GH - 8
+    for (let i = 0; i < 40 && wp.room === R.OVERWORLD_1; i++) step(wp, { dx: 0, dy: S })
+    ok(wp.room === R.OVERWORLD_2, 'the scripted walk crosses OW1 -> OW2 (a real room change)')
+    ok(wp.wipe === true, 'the room change arms the wipe flash')
+    let wipeTicks = 1   // the transition tick already read wipe===true above
+    for (let i = 0; i < ROOM_WIPE_TICKS + 6; i++) { step(wp, { dx: 0, dy: 0 }); if (wp.wipe) wipeTicks++ }
+    ok(wp.wipe === false && wipeTicks >= 1 && wipeTicks <= ROOM_WIPE_TICKS,
+        'the wipe fades out within its window (a flash, not a stuck white screen)', `ticks=${wipeTicks}`)
+
+    // ENTROPY-FREE — the juice reads state + tick only, never `rand`, so the
+    // seeded world is untouched: run it twice, the whole juice timeline matches,
+    // and the scripted wander really does cross doorways (so the wipe gate is
+    // not vacuously satisfied by a player who never leaves a room).
+    const jseq = (sd) => {
+        const s = createSim(seedRng(sd))
+        s.room = R.OVERWORLD_2; s.player.x = 80; s.player.y = GH - 6   // start on the bottom edge so the weave crosses doorways
+        let q = ''
+        for (let i = 0; i < 200; i++) {
+            step(s, { dx: 0, dy: i % 16 < 8 ? S : -S })   // weave down/up across room edges
+            q += (s.chew ? '1' : '0') + (s.sparkle ? 'a' : 'b') + (s.wipe ? 'X' : '_')
+        }
+        return q
+    }
+    ok(jseq(7) === jseq(7), 'the juice timeline is deterministic — it never pollutes the seeded stream')
+    ok(jseq(7).includes('X'), 'the scripted wander really does cross a doorway (the wipe gate is not vacuous)', jseq(7).slice(0, 40))
+}
+
+console.log('#1588 juice: the renderer draws each effect only on its signal (static)')
+{
+    const src = readFileSync(IDX, 'utf8')
+    ok(/if \(sim\.chew\) \{/.test(src), 'the maw chews ONLY on the chew signal (renderer gate — a hunt alternates the jaws)')
+    ok(/if \(sim\.sparkle\) \{/.test(src), 'the chalice glint draws ONLY while it is carried (renderer gate)')
+    ok(/if \(sim\.wipe && !isAttractMode\) \{/.test(src), 'the room-change wipe draws only on a fresh transition, never in attract (renderer gate)')
+    ok(/const phase = \(sim\.tick - sim\.wipeAt\) \/ ROOM_WIPE_TICKS/.test(src),
+        'the wipe sweeps on a deterministic tick phase (no wall clock — screenshots stay stable)')
+    ok(/ROOM_WIPE_TICKS/.test(src), 'the shell imports the wipe window from the sim (drawing and harness cannot drift)')
+    // 1993-cart palette law: the new juice animates with existing palette tokens
+    // only. Assert the sparkle uses white/yellow and the wipe uses white.
+    ok(/sim\.sparkle[\s\S]*COLORS\.white[\s\S]*COLORS\.yellow/.test(src),
+        'the carried-chalice sparkle stays inside the 1993 palette (white + yellow)')
+    ok(/sim\.wipe[\s\S]*ctx\.fillStyle = COLORS\.white/.test(src),
+        'the room-change flash stays inside the 1993 palette (white)')
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
@@ -1168,6 +1261,33 @@ if (process.argv.includes('--mutant')) {
         ['#1591: stateHash is constant (a live world looks frozen → endurance never proves)', SM,
             '    return h >>> 0\n}',
             '    return 2166136261\n}'],
+        ['#1588: the maw stops chewing (the chew signal is removed)', SM,
+            'sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)',
+            'sim.chew = false'],
+        ['#1588: the maw chews even with nothing hunting (a calm room grins)', SM,
+            'sim.chew = hunting && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)',
+            'sim.chew = true && (sim.tick % CHEW_TICKS < CHEW_TICKS / 2)'],
+        ['#1588: the carried chalice never sparkles (the goal item loses its glint)', SM,
+            "sim.sparkle = sim.carrying === 'chalice'",
+            'sim.sparkle = false'],
+        ['#1588: every carried item sparkles (the sword lies about being the prize)', SM,
+            "sim.sparkle = sim.carrying === 'chalice'",
+            'sim.sparkle = !!sim.carrying'],
+        ['#1588: the room-change flash never fires (the hard-cut returns)', SM,
+            'sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS',
+            'sim.wipe = false'],
+        ['#1588: the room-change flash never ends (a stuck white screen)', SM,
+            'sim.wipe = sim.tick - sim.wipeAt < ROOM_WIPE_TICKS',
+            'sim.wipe = true'],
+        ['#1588: the renderer ignores the chew signal (the maw sits frozen)', I,
+            'if (sim.chew) {',
+            'if (false) {'],
+        ['#1588: the renderer ignores the carried-chalice sparkle', I,
+            'if (sim.sparkle) {',
+            'if (false) {'],
+        ['#1588: the renderer never draws the room-change flash', I,
+            'if (sim.wipe && !isAttractMode) {',
+            'if (false) {'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

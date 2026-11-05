@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, VARIANTS, DEFAULT_VARIANT, stateHash } from './sim.js'
+import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, ROOM_WIPE_TICKS, VARIANTS, DEFAULT_VARIANT, stateHash } from './sim.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -283,10 +283,26 @@ const AdventureGame = () => {
                 ctx.fillRect(item.x + 3, item.y + 3, 4, 2)
                 ctx.fillRect(item.x + 4, item.y + 5, 2, 5)
                 ctx.fillRect(item.x + 2, item.y + 10, 6, 2)
-                // Sparkle
+                // A quiet twinkle on the resting cup (the chalice is always the
+                // brightest thing in its room).
                 if (sim.tick % 20 < 10) {
                     ctx.fillStyle = COLORS.white
                     ctx.fillRect(item.x + 3, item.y + 1, 1, 1)
+                }
+                // #1588: the goal item sparkles harder in hand — a white/yellow
+                // star that alternates while carried (sim.sparkle is true only
+                // when the chalice is being held). Palette law: only COLORS.white
+                // and COLORS.yellow, no new hues.
+                if (sim.sparkle) {
+                    if (sim.tick % 16 < 8) {
+                        ctx.fillStyle = COLORS.white
+                        ctx.fillRect(item.x + 4, item.y - 2, 2, 8)
+                        ctx.fillRect(item.x + 1, item.y + 1, 8, 2)
+                    } else {
+                        ctx.fillStyle = COLORS.yellow
+                        ctx.fillRect(item.x + 4, item.y - 1, 2, 6)
+                        ctx.fillRect(item.x + 2, item.y + 1, 6, 2)
+                    }
                 }
             } else if (item.id === 'bridge') {
                 // Bridge: horizontal plank
@@ -331,19 +347,29 @@ const AdventureGame = () => {
             // Body
             ctx.fillRect(dx, dy, 12, 16)
 
-            // Head (with mouth)
+            // Head (with mouth). #1588: while the dragon hunts with its maw open
+            // the jaws alternate on sim.chew — a 2-frame chew, not a frozen grin.
+            // A calm/distant/slain dragon keeps the closed head drawn below.
             if (dragon.mouthOpen) {
-                // Open mouth — top jaw
-                ctx.fillRect(dx + 10, dy - 2, 10, 5)
-                // Bottom jaw
-                ctx.fillRect(dx + 10, dy + 6, 10, 5)
-                // Teeth
-                ctx.fillStyle = COLORS.white
-                ctx.fillRect(dx + 16, dy + 3, 2, 2)
-                ctx.fillRect(dx + 16, dy + 6, 2, 2)
-                ctx.fillStyle = dragon.color
+                if (sim.chew) {
+                    // Wide open — the bite frame: top jaw, bottom jaw, fangs.
+                    ctx.fillRect(dx + 10, dy - 2, 10, 5)
+                    ctx.fillRect(dx + 10, dy + 6, 10, 5)
+                    ctx.fillStyle = COLORS.white
+                    ctx.fillRect(dx + 16, dy + 3, 2, 2)
+                    ctx.fillRect(dx + 16, dy + 6, 2, 2)
+                    ctx.fillStyle = dragon.color
+                } else {
+                    // Snapped shut mid-chew: both jaws close onto the gap so the
+                    // mouth visibly clamps as it chews.
+                    ctx.fillRect(dx + 10, dy + 1, 10, 4)
+                    ctx.fillRect(dx + 10, dy + 5, 10, 4)
+                    ctx.fillStyle = COLORS.white
+                    ctx.fillRect(dx + 16, dy + 4, 2, 2)
+                    ctx.fillStyle = dragon.color
+                }
             } else {
-                // Closed mouth
+                // Closed mouth (not hunting)
                 ctx.fillRect(dx + 10, dy + 2, 8, 6)
             }
 
@@ -502,6 +528,21 @@ const AdventureGame = () => {
                     const item = sim.items.find((i) => i.id === sim.carrying)
                     ctx.fillText(item ? item.name : '', GW - 4, 7)
                 }
+            }
+
+            // #1588 room-change flash: the cart redraws a new room with a hard
+            // burst. Sweep a bright band top-to-bottom and fade it across the wipe
+            // window so crossing a doorway reads as a cut, not a slow dissolve.
+            // Never in attract (there is no run to transition into). The phase is
+            // tick-driven (no wall clock), so replays and screenshots are stable.
+            if (sim.wipe && !isAttractMode) {
+                const phase = (sim.tick - sim.wipeAt) / ROOM_WIPE_TICKS
+                const band = 14
+                const wy = phase * (GH + band) - band
+                ctx.globalAlpha = 0.85 * (1 - phase)
+                ctx.fillStyle = COLORS.white
+                ctx.fillRect(0, wy, GW, band)
+                ctx.globalAlpha = 1
             }
 
             ctx.restore()
