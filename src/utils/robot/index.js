@@ -338,6 +338,7 @@ export function createRobotSim(seed = 0, opts = {}) {
             methods.length = 0; methods.push(...s.methods)
             Object.assign(goals, s.goals)
             Object.assign(arm.joints, s.joints)
+            if (arm._yawRebase) arm._yawRebase() // continuous-yaw accumulator re-syncs to the restored pose
             Object.assign(arm.spin, s.spin || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
             Object.assign(arm.integral, s.integ || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
             Object.assign(arm.target, s.target)

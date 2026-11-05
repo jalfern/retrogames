@@ -179,7 +179,36 @@ The drawer **refuses to close** when the crate sits on the rail track
    published-spec estimates and the game renders its own meshes.
 2. Modem-level juice: drawer rumble, latch clunks on the prop side (the arm
    side landed in stage 4a: sparks/dust/whine/click/shake).
-3. Knock-recovery basin: a hard hammer push can flip the pose solver's elbow
-   branch and crawl home from the wrong basin (documented in robokitcheck
-   gate 16, assertion deferred honestly — fix the basin, then restore it).
+3. Hammer-tier wedges (post-#1570-tail residual): the classic basin-flip is
+   closed — the kit keeps TRUE hinge twist inside the joint box, and the
+   documented 0.3 N·s knock (both directions) returns home every seed
+   (robokitcheck gate 16). But ≥0.8 N·s lateral knocks can hook the fingers
+   on the stand post and jam the chain in-box (no over-range, so no stop
+   fires); a game-side "unstick" (retarget around the post) is the fix.
+   Note the tier response is non-monotonic (0.6 recovers everywhere, 0.8
+   worst) — real compliant-structure behaviour, not a solver bug.
+
+## Stage 4a knock-recovery tail (#1570, slot a)
+Root cause of the basin-flip finding: cannon-es hinges carry no joint limits,
+and a hard lateral push leaned the compliant chain out of its yaw plane; the
+planar decomposition readJoints performs then reported mirror-pose φs — yaw
+at the ±π atan2 seam, where the servo error flips sign every tick, averaging
+recovery torque to zero (measured a persistent spin limit cycle, ω≈3.7 rad/s).
+Three laws close it, each invisible to the tuned routes:
+- Continuous yaw (#1570): the controller tracks an unwrapped yaw accumulator;
+  within one turn it equals the measurement bit-for-bit, after a wrap the
+  error follows one direction so the servo unwinds instead of pumping.
+  Re-synced by `arm._yawRebase()` (also wired into sim restore).
+- Servo endstops (`ENDSTOP`, exported): decided from the TRUE hinge twist
+  (`arm._twist`, tilt-immune, exported for harness visibility) with a 0.13 rad
+  deadband absorbing measured compliance overtravel (≤0.113 rad on the
+  hardest legit pushes) — soft inside, hard at τmax outside. A hard on/off
+  deadband edge parks the wrist in a chatter cycle; the deadband value is
+  load-bearing, not tuning slack.
+- Anti-lean + stuck-retract: a persistent (>90-tick, hysteresis 0.2/0.1)
+  common lean gets a plane-restoring torque pair; a far+quiet+still-target
+  hold (the wedge signature) ramps a 120 mm retract to unhook the fingers.
+Harness: gate 16 asserts the knock-recovery tiers (0.3 N·s both directions,
+fresh sim each) and the `_twist` wiring (mutant-proven: dropping the hinge
+registry turns the gate red).
 
