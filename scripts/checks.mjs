@@ -105,6 +105,9 @@ export const MANUAL_CHECKS = [
   "scripts/campfirecheck.mjs",
   "scripts/carpetcheck.mjs",
   "scripts/chromeguardcheck.mjs",
+  // #1622: needs playwright's bundled headless shell installed — CI runners
+  // get system Chrome only, so the ladder's shell fallback can't be proven there.
+  "scripts/chromesmokecheck.mjs",
   "scripts/civcheck.mjs",
   "scripts/cometdrifthdcheck.mjs",
   "scripts/cometdrifthdphonecheck.mjs",
