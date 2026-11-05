@@ -30,9 +30,14 @@ export const SPILLS = [
     { id: 'protect', name: 'PROTECTION', cost: 25 },
     { id: 'slow', name: 'SLOW TIME', cost: 30 },
     { id: 'telekinesis', name: 'TELEKINESIS', cost: 12 },
+    { id: 'invisibility', name: 'INVISIBILITY', cost: 20 },
 ]
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
+
+// Invisibility (#1610): the original's veil — while it holds, the enemies are
+// blind to the carpet. Duration in WORLD ticks so it is deterministic.
+export const INVIS_T = 420
 
 const smooth = (t) => t * t * (3 - 2 * t)
 const lerp = (a, b, t) => a + (b - a) * t
@@ -167,6 +172,7 @@ export function makeGame(seed, level = 0) {
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
+        invis: 0,
         heights: null, events: [], score: 0,
         quota: LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))].quota,
     }
@@ -224,6 +230,7 @@ export function genWorld(gs) {
     gs.fireMarks = []
     gs.craters = []
     gs.towerDown = false
+    gs.invis = 0
     return gs
 }
 
@@ -355,6 +362,8 @@ function castHand(gs, hand) {
         gs.shield = 150
     } else if (id === 'slow') {
         gs.wizSlow = 300
+    } else if (id === 'invisibility') {
+        gs.invis = INVIS_T
     } else if (id === 'telekinesis') {
         if (gs.heldEnt) {
             const e = gs.heldEnt
@@ -410,6 +419,7 @@ export function step(gs, inp) {
     if (gs.shield > 0) gs.shield--
     if (gs.wizSlow > 0) gs.wizSlow--
     if (gs.safeT > 0) gs.safeT--
+    if (gs.invis > 0) { gs.invis--; if (gs.invis === 0) gs.events.push({ type: 'invisEnd' }) }
     if (gs.holdT > 0 && gs.heldEnt) { gs.holdT--; if (gs.holdT === 0) { gs.heldEnt.ref.grabbed = false; gs.heldEnt = null } }
 
     const steer = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
@@ -522,7 +532,9 @@ export function step(gs, inp) {
                 if (d < 5) { p.alive = false; wz.mana += p.m; gs.events.push({ type: 'absorb', m: p.m }) }
             }
         }
-        gs.wizFire--
+        // The veil: a blinded wizard holds his shot — and a held fuse does not
+        // run down, so fire resumes on its cadence the tick you become visible.
+        if (gs.invis <= 0) gs.wizFire--
         const pd = Math.hypot(wrapD(gs.x - wz.x), wrapD(gs.y - wz.y))
         if (gs.wizFire <= 0 && pd < 75) {
             gs.wizFire = gs.wizSlow > 0 ? 150 : 55
@@ -553,6 +565,7 @@ export function step(gs, inp) {
         const m = gs.monsters[i]
         if (m.grabbed) continue
         const pd = Math.hypot(wrapD(gs.x - m.x), wrapD(gs.y - m.y))
+        const seen = gs.invis <= 0 // the veil: monsters lose the carpet entirely
         m.wanderT++
         if (m.kind === 'giant') {
             if (m.wanderT > 60) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
@@ -560,7 +573,7 @@ export function step(gs, inp) {
             if (gcd < 55) m.dir = Math.atan2(wrapD(m.y - gs.castle.y), wrapD(m.x - gs.castle.x))
             m.x = wrap(m.x + Math.cos(m.dir) * 0.35, MAP); m.y = wrap(m.y + Math.sin(m.dir) * 0.35, MAP)
             if (m.cool > 0) m.cool--
-            if (pd < 70 && m.cool <= 0) {
+            if (seen && pd < 70 && m.cool <= 0) {
                 m.cool = 90
                 const a = Math.atan2(wrapD(gs.y - m.y), wrapD(gs.x - m.x))
                 gs.projs.push({ kind: 'rock', from: 'm', x: m.x, y: m.y, z: sampleH(gs, m.x, m.y) + 8, vx: Math.cos(a) * 1.8, vy: Math.sin(a) * 1.8, dmg: 8, life: 80 })
@@ -569,12 +582,12 @@ export function step(gs, inp) {
         } else if (m.kind === 'wolf') {
             const cd = Math.hypot(wrapD(gs.castle.x - m.x), wrapD(gs.castle.y - m.y))
             if (cd < 34) m.dir = Math.atan2(wrapD(m.y - gs.castle.y), wrapD(m.x - gs.castle.x))
-            else if (pd < 45) m.dir = Math.atan2(wrapD(gs.y - m.y), wrapD(gs.x - m.x))
+            else if (seen && pd < 45) m.dir = Math.atan2(wrapD(gs.y - m.y), wrapD(gs.x - m.x))
             else if (m.wanderT > 50) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
-            const sp = pd < 45 ? 1.0 : 0.4
+            const sp = seen && pd < 45 ? 1.0 : 0.4
             m.x = wrap(m.x + Math.cos(m.dir) * sp, MAP); m.y = wrap(m.y + Math.sin(m.dir) * sp, MAP)
             if (m.cool > 0) m.cool--
-            if (pd < 6 && m.cool <= 0 && gs.alt < sampleH(gs, m.x, m.y) + 10) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite' }) }
+            if (seen && pd < 6 && m.cool <= 0 && gs.alt < sampleH(gs, m.x, m.y) + 10) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite' }) }
         } else {
             if (m.wanderT > 90) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
             m.x = wrap(m.x + Math.cos(m.dir) * 0.25, MAP); m.y = wrap(m.y + Math.sin(m.dir) * 0.25, MAP)
@@ -673,7 +686,7 @@ export function step(gs, inp) {
             blast(gs, p.x, p.y, 14, 10, p.dmg)
         }
         if (!gone && p.from !== 'p') {
-            if (Math.hypot(wrapD(p.x - gs.x), wrapD(gs.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
+            if (gs.invis <= 0 && Math.hypot(wrapD(p.x - gs.x), wrapD(gs.y - gs.y)) < 6 && Math.abs(p.z - gs.alt) < 7) {
                 hurtPlayer(gs, p.dmg)
                 gone = true
             }
@@ -765,6 +778,7 @@ export function stateHash(gs) {
     mix(gs.level); mix(gs.bank); mix(gs.spilled)
     mix(gs.x.toFixed(1)); mix(gs.y.toFixed(1)); mix(gs.alt.toFixed(1)); mix(gs.yaw.toFixed(3))
     mix(gs.hp); mix(gs.shield); mix(gs.mana); mix(gs.castleStage)
+    mix(gs.invis)
     mix(gs.wizard.alive ? gs.wizard.hp : 'x'); mix(gs.wizard.mana)
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
     mix(gs.pearls.filter((p) => p.alive).length)
