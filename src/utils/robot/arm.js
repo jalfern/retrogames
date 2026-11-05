@@ -28,6 +28,9 @@ export const LIMITS = {
     phi2: [-2.4, 0.4],
     gamw: [-0.9, 0.9],
 }
+// Servo endstops (rigid chain): return torque applied when the TRUE hinge
+// twist leaves LIMITS+deadband (see actuateRigid). k/d are the hard return.
+export const ENDSTOP = { k: 60, d: 4, dead: 0.13 }
 
 // Stage 3: per-joint actuator spec. τ_max/inertia/rated speed are desk-arm
 // class figures (280 mm reach class, ~250 g rated payload scaled to the kit's
@@ -317,6 +320,17 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     const integral = { yaw: 0, phi1: 0, phi2: 0, gamw: 0 }
     const torqueNow = { yaw: 0, phi1: 0, phi2: 0, gamw: 0 }
     const saturated = { yaw: false, phi1: false, phi2: false, gamw: false }
+    // Continuous yaw (#1570 knock-recovery tail): unwrapped accumulator of
+    // the measured yaw. The atan2 ±π seam pumped the yaw servo after hard
+    // knocks — the arm entered a spin limit cycle (measured ω≈3.7 rad/s):
+    // each seam crossing jumped the raw error ~2π, and the bang toward the
+    // short side added energy every revolution instead of removing it. The
+    // accumulator agrees with the raw measurement to the last bit within one
+    // turn (normal routes never see it); after a wrap the error follows one
+    // continuous direction so the servo unwinds. Reset via _yawRebase when
+    // state is restored mid-run.
+    let yawCont = null
+    let yawPrev = 0
 
     // Stage 4a (rigid chain): joints are read from the body poses; the stage-3
     // torque law becomes an equal-and-opposite actuator pair across each
@@ -341,6 +355,27 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         return { yaw, phi1, phi2, gamw }
     }
 
+    // True hinge twist (#1570 knock-recovery tail): relative rotation about
+    // each hinge's real pin axis — tilt-immune, unlike the planar projection
+    // above. The planar readings remain the control sensor (the shipped
+    // routes' tuning is entangled with their ~0.02 rad tilt conflation, and
+    // changing that semantics would need a full route re-tune, not a tail
+    // fix); the twist is the TRUTH-of-exception used by the hard-stop servo
+    // to decide when a joint is genuinely past LIMITS versus when the planar
+    // sensor is just seeing the chain's legitimate compliance lean (measured
+    // ≤0.18 rad on the hardest push-close).
+    const hingeRec = {}
+    const twistOf = (h) => {
+        const inv = h.par.quaternion.conjugate()
+        const R = inv.mult(h.ch.quaternion)
+        const a = h.axP
+        return 2 * Math.atan2(R.x * a.x + R.y * a.y + R.z * a.z, R.w)
+    }
+    const trueTwist = () => {
+        if (!hingeRec.yaw) return null
+        return { yaw: twistOf(hingeRec.yaw), phi1: twistOf(hingeRec.phi1), phi2: twistOf(hingeRec.phi2), gamw: twistOf(hingeRec.gamw) }
+    }
+
     const jointOmega = (prox, dist, axisLocal) => {
         const aw = dist.quaternion.vmult(axisLocal)
         return (dist.angularVelocity.x - prox.angularVelocity.x) * aw.x
@@ -350,7 +385,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
 
     const wake = (b) => { b.sleepState = 0 }
 
-    const actuateRigid = (name, desired, tauComp, prox, dist, axisLocal, ja, w) => {
+    const actuateRigid = (name, desired, tauComp, prox, dist, axisLocal, ja, w, tw) => {
         const sp = JOINT_SPECS[name]
         const lim = LIMITS[name]
         const e = clamp(desired, lim[0], lim[1]) - ja[name]
@@ -379,11 +414,78 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         saturated[name] = Math.abs(effort) > sp.tauMax
         if (saturated[name] && Math.sign(effort) === Math.sign(iTerm)) iTerm = integral[name] // anti-windup: don't grow into a wall
         integral[name] = iTerm
-        const tau = clamp(effort, -sp.tauMax, sp.tauMax)
+        // Hard-stop servo (stage 4a tail, #1570): real hardware has fixed end
+        // stops and cannon-es hinges have none — measured, a ≥1 N·s hammer push
+        // leaned the compliant chain out of plane until the planar sensor saw
+        // mirror-pose φs (yaw at the ±π atan2 seam, where the error sign flips
+        // every tick) and the arm parked in a back basin the servo could not
+        // sense. The endstop decides from the TRUE hinge twist (tilt-immune):
+        // genuine over-range gets a stiff return torque, closing the basin.
+        // A deadband absorbs real compliance overtravel measured on the
+        // hardest legit pushes (0.113 rad worst across the 12 winning
+        // autopilot seeds — routes push near their limits, so a spring from
+        // the limit itself measurably degrades them), so normal routes never
+        // feel it; past the deadband the stop is hard, saturating with the
+        // joint's own τmax.
+        let tau = clamp(effort, -sp.tauMax, sp.tauMax)
+        if (tw) {
+            const tr = tw[name]
+            const over = tr < lim[0] ? tr - lim[0] : tr > lim[1] ? tr - lim[1] : 0
+            const m = Math.abs(over) - ENDSTOP.dead
+            if (m > 0) tau = clamp(tau - Math.sign(over) * ENDSTOP.k * m - ENDSTOP.d * w, -sp.tauMax, sp.tauMax)
+        }
         torqueNow[name] = tau
         const aw = dist.quaternion.vmult(axisLocal)
         dist.applyTorque(new CANNON.Vec3(aw.x * tau, aw.y * tau, aw.z * tau))
         prox.applyTorque(new CANNON.Vec3(-aw.x * tau, -aw.y * tau, -aw.z * tau))
+    }
+
+    // Anti-lean recovery servo (#1570 knock-recovery tail). The hinges keep
+    // parent/child pin axes mutually parallel, but a COMMON lean of the chain
+    // out of its yaw plane sails through them untouched — a real arm carries
+    // that load as housing/link stiffness, which the kit lacked: hard knocks
+    // left the chain leaning, the planar sensor misread it, and the arm parked
+    // wedged off-target. Legit pushes lean too (transiently, self-recovering
+    // when contact releases), so the servo only engages on PERSISTENT lean
+    // (>90 ticks beyond sinθ 0.2, disengaging under 0.1 — hysteresis), and
+    // then pulls every hinge pin back to the plane normal while damping the
+    // off-pin spin. Routes never see it (their leans are sub-second).
+    const LEAN_ON = 0.2
+    const LEAN_OFF = 0.1
+    const LEAN_TICKS = 90
+    const leanHold = { yoke: 0, upper: 0, fore: 0, hand: 0 }
+    let stuckN = 0
+    let lift = 0
+    const tgtPrev = { x: 0, y: 0, z: 0 }
+    const antiLean = () => {
+        const nHat = new CANNON.Vec3(-Math.cos(yawCont), 0, Math.sin(yawCont))
+        let engaged = false
+        for (const seg of Object.keys(leanHold)) {
+            const p = bodies[seg].quaternion.vmult(SEG_AXIS)
+            const mag = p.cross(nHat).length()
+            if (mag > LEAN_ON) leanHold[seg]++
+            else if (mag < LEAN_OFF) leanHold[seg] = 0
+            if (leanHold[seg] >= LEAN_TICKS) engaged = true
+        }
+        if (!engaged) return
+        const chain = [[bodies.base, bodies.yoke], [bodies.yoke, bodies.upper], [bodies.upper, bodies.fore], [bodies.fore, bodies.hand]]
+        for (const [par, ch] of chain) {
+            const seg = Object.keys(bodies).find((k) => bodies[k] === ch)
+            if (!seg || leanHold[seg] < LEAN_TICKS) continue
+            const p = ch.quaternion.vmult(SEG_AXIS)
+            const corr = p.cross(nHat)
+            const wRel = new CANNON.Vec3(ch.angularVelocity.x - par.angularVelocity.x, ch.angularVelocity.y - par.angularVelocity.y, ch.angularVelocity.z - par.angularVelocity.z)
+            const pd = p.dot(p) || 1
+            const off = new CANNON.Vec3(wRel.x - (wRel.dot(p) / pd) * p.x, wRel.y - (wRel.dot(p) / pd) * p.y, wRel.z - (wRel.dot(p) / pd) * p.z)
+            const tx = 30 * corr.x - 1.6 * off.x
+            const ty = 30 * corr.y - 1.6 * off.y
+            const tz = 30 * corr.z - 1.6 * off.z
+            const m = Math.hypot(tx, ty, tz)
+            const cap = ch === bodies.hand ? 3 : 8
+            const k = m > cap ? cap / m : 1
+            ch.applyTorque(new CANNON.Vec3(tx * k, ty * k, tz * k))
+            if (par !== bodies.base) par.applyTorque(new CANNON.Vec3(-tx * k, -ty * k, -tz * k))
+        }
     }
 
     // The carried payload's net load on the hand: weight + inertial demand of
@@ -460,7 +562,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         const t = arm.target
         const dx = t.x - shoulder.x
         const dzw = t.z - shoulder.z
-        const dy = t.y - shoulder.y
+        const dy = t.y - shoulder.y + lift
         const payloadKg = arm.weld ? arm.weld.payloadKg : 0
         const yawd = Math.atan2(dx, Math.max(0.06, dzw))
         const f = Math.max(1e-6, Math.hypot(dx, dzw))
@@ -475,17 +577,48 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         const gamd = clamp(-(phi1d + phi2dC), LIMITS.gamw[0], LIMITS.gamw[1])
         if (rigid) {
             const ja = readJoints()
+            const tw = trueTwist()
             Object.assign(arm.joints, ja)
+            if (yawCont === null) { yawCont = ja.yaw }
+            else {
+                let dy = ja.yaw - yawPrev
+                if (dy > Math.PI) dy -= 2 * Math.PI
+                else if (dy < -Math.PI) dy += 2 * Math.PI
+                yawCont += dy
+            }
+            yawPrev = ja.yaw
+            const jaC = { ...ja, yaw: yawCont }
+            const twC = tw ? { ...tw, yaw: yawCont } : tw
+            arm._twist = twC // harness visibility: tilt-immune twist of the chain
             // Real gravity acts on the link bodies; the feedforward (90% of the
             // taught payload load) is the only gravity term the controller adds.
             const tc = gravityTorques(ja, payloadKg * PAYLOAD_COMP)
             for (const b of linkBodies()) wake(b)
             if (bodies.basePlate) { wake(bodies.basePlate); wake(bodies.base) }
-            actuateRigid('yaw', yawd, tc.yaw, bodies.base, bodies.yoke, YAW_AXIS, ja, jointOmega(bodies.base, bodies.yoke, YAW_AXIS))
-            actuateRigid('phi1', phi1d, tc.phi1, bodies.yoke, bodies.upper, SEG_AXIS, ja, jointOmega(bodies.yoke, bodies.upper, SEG_AXIS))
-            actuateRigid('phi2', phi2dC, tc.phi2, bodies.upper, bodies.fore, SEG_AXIS, ja, jointOmega(bodies.upper, bodies.fore, SEG_AXIS))
-            actuateRigid('gamw', gamd, tc.gamw, bodies.fore, bodies.hand, SEG_AXIS, ja, jointOmega(bodies.fore, bodies.hand, SEG_AXIS))
+            actuateRigid('yaw', yawd, tc.yaw, bodies.base, bodies.yoke, YAW_AXIS, jaC, jointOmega(bodies.base, bodies.yoke, YAW_AXIS), twC)
+            actuateRigid('phi1', phi1d, tc.phi1, bodies.yoke, bodies.upper, SEG_AXIS, ja, jointOmega(bodies.yoke, bodies.upper, SEG_AXIS), tw)
+            actuateRigid('phi2', phi2dC, tc.phi2, bodies.upper, bodies.fore, SEG_AXIS, ja, jointOmega(bodies.upper, bodies.fore, SEG_AXIS), tw)
+            actuateRigid('gamw', gamd, tc.gamw, bodies.fore, bodies.hand, SEG_AXIS, ja, jointOmega(bodies.fore, bodies.hand, SEG_AXIS), tw)
             applyPayloadLoad()
+            antiLean()
+            // Stuck-retract (#1570 tail): wedged poses (fingers hooked on a
+            // fixture) sit far from the target, quiet, with the target held
+            // still — torque alone can't lift them clear. What an operator
+            // does: raise the arm until it unhooks, then lower back onto the
+            // target. All three signatures must hold for 60 ticks — a route
+            // phase that freezes carry-offsets parks the hand nearer (the
+            // 0.20 m floor) and re-targets often (the still-target clause),
+            // so winning routes never trip it.
+            const gp = arm.graspPoint()
+            const errQ = Math.hypot(gp[0] - t.x, gp[1] - (t.y + lift), gp[2] - t.z)
+            let wMaxQ = 0
+            for (const b of linkBodies()) wMaxQ = Math.max(wMaxQ, Math.hypot(b.angularVelocity.x, b.angularVelocity.y, b.angularVelocity.z))
+            const tgtMoved = Math.hypot(t.x - tgtPrev.x, t.y - tgtPrev.y, t.z - tgtPrev.z) > 0.002
+            Object.assign(tgtPrev, t)
+            if (errQ > 0.20 && wMaxQ < 0.3 && !tgtMoved) stuckN++
+            else stuckN = 0
+            if (stuckN > 60) lift = Math.min(lift + 0.0015, 0.12)
+            else if (errQ < 0.05) lift = Math.max(0, lift - 0.004)
         } else {
             const j = arm.joints
             const tg = gravityTorques(j, payloadKg)
@@ -528,6 +661,10 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         arm.target.z = z
         clampTarget()
     }
+
+    // Re-sync the continuous-yaw accumulator to the pose about to be loaded
+    // (snapshot/restore and harness injection move the rig discontinuously).
+    arm._yawRebase = () => { yawCont = null; lift = 0; stuckN = 0; for (const k of Object.keys(leanHold)) leanHold[k] = 0 }
 
     // Stick drive: x lateral, y depth (forward +); holding b flips y to lift.
     arm.drive = (pad) => {
@@ -837,9 +974,13 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
             // Order matters: constraints[0] is the yaw hinge (the strain tap).
             const yawHinge = addHinge(bodies.base, bodies.yoke, [shoulder.x, shoulder.y, shoulder.z], YAW_AXIS)
             arm.yawHinge = yawHinge
-            addHinge(bodies.yoke, bodies.upper, shoulderPos, SEG_AXIS)
-            addHinge(bodies.upper, bodies.fore, fk.elbow, SEG_AXIS)
-            addHinge(bodies.fore, bodies.hand, fk.wrist, SEG_AXIS)
+            hingeRec.yaw = { par: bodies.base, ch: bodies.yoke, axP: yawHinge.axisA }
+            const shoulderHinge = addHinge(bodies.yoke, bodies.upper, shoulderPos, SEG_AXIS)
+            hingeRec.phi1 = { par: bodies.yoke, ch: bodies.upper, axP: shoulderHinge.axisA }
+            const elbowHinge = addHinge(bodies.upper, bodies.fore, fk.elbow, SEG_AXIS)
+            hingeRec.phi2 = { par: bodies.upper, ch: bodies.fore, axP: elbowHinge.axisA }
+            const wristHinge = addHinge(bodies.fore, bodies.hand, fk.wrist, SEG_AXIS)
+            hingeRec.gamw = { par: bodies.fore, ch: bodies.hand, axP: wristHinge.axisA }
             const mkFingerLock = (finger) => {
                 const c = new CANNON.LockConstraint(bodies.hand, finger, { maxForce: 1e6 })
                 c.collideConnected = false
