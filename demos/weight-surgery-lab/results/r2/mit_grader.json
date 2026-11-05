@@ -46,6 +46,20 @@
    "pred_none_finished_sidecar_ok": 0,
    "diffs": []
   },
+  "ob:gsm": {
+   "n": 100,
+   "ours_acc": 10.0,
+   "mit_acc": 10.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
+  "ob:math": {
+   "n": 100,
+   "ours_acc": 5.0,
+   "mit_acc": 5.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
   "openbook:gsm": {
    "n": 100,
    "ours_acc": 4.0,

@@ -90,7 +90,8 @@
 <tr id="r2-own-gsm"><td>gsm</td><td>100</td><td>8.0%</td><td>8.0%</td><td>30254</td><td class="note">our own edit, scored vs our p50cw row (#1562)</td></tr>
 <tr id="r2-openbook"><td rowspan=2>DIAGNOSIS-AS-PROMPT CONTROL — base + MIT's written diagnosis in context (#1580)</td><td>math</td><td>100</td><td>2.0%</td><td>3.0%</td><td>31876</td><td class="note">unedited base + MIT's written diagnosis (#1580)</td></tr>
 <tr id="r2-openbook-gsm"><td>gsm</td><td>100</td><td>4.0%</td><td>4.0%</td><td>31504</td><td class="note">unedited base + MIT's written diagnosis (#1580)</td></tr>
-<tr id="r2-ob"><td>OPEN-BOOK EDIT — MIT's written diagnosis executed as weights by us (#1585)</td><td colspan=4 class="note">#1585 open-book edit — layers <b>15 + 19</b>, own top-64 <code>down_proj</code> columns per layer, α chosen on practice; the ONE held-out row lands as it scores <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">open-book weight edit — our columns from MIT's diagnosis (#1585)</td></tr>
+<tr id="r2-ob"><td rowspan=2>OPEN-BOOK EDIT — MIT's written diagnosis executed as weights by us (#1585)</td><td>math</td><td>100</td><td>5.0%</td><td>4.0%</td><td>31565</td><td class="note">open-book weight edit — our columns from MIT's diagnosis (#1585)</td></tr>
+<tr id="r2-ob-gsm"><td>gsm</td><td>100</td><td>10.0%</td><td>9.0%</td><td>30156</td><td class="note">open-book weight edit — our columns from MIT's diagnosis (#1585)</td></tr>
 </table>
 
 <p class="note"><b>WHAT REPRODUCES.</b> The base rows land in MIT's base neighborhood — MATH 3.0% acc vs MIT 8% · GSM 8.0% vs 14% — and the loop-cut signature matches: 97%/93% of base answers cut at 32K vs MIT's ~93%. On the p50c row, precision-per-finished-answer matches MIT's: 30/41 ≈ 73% (MATH) and 54/75 = 72% (GSM) vs MIT's ~48/67 ≈ 72%.</p>
@@ -144,10 +145,10 @@
 <tr><th>three rungs — same 100+100, same protocol</th><th>MATH acc</th><th>MATH fin</th><th>GSM8K acc</th><th>GSM8K fin</th><th>MIT-checker math / gsm</th></tr>
 <tr id="r5-prompt"><td>rung 0 — diagnosis-as-prompt control (#1580)</td><td>2.0%</td><td>3.0%</td><td>4.0%</td><td>4.0%</td><td class="note">3.0% / 4.0%</td></tr>
 <tr id="r5-closedbook"><td>rung 1 — closed-book edit: own direction, our search (#1567)</td><td>12.0%</td><td>10.0%</td><td>15.0%</td><td>15.0%</td><td class="note">13.0% / 15.0%</td></tr>
-<tr id="r5-obedit"><td><b>rung 2 — open-book edit: MIT's written recipe, our weights (#1585)</b></td><td colspan=5 class="note">pending — lands as it scores <span class="prog" aria-hidden="true"><i></i></span></td></tr>
+<tr id="r5-obedit"><td><b>rung 2 — open-book edit: MIT's written recipe, our weights (#1585)</b></td><td>5.0%</td><td>4.0%</td><td>10.0%</td><td>9.0%</td><td class="note">5.0% / 10.0%</td></tr>
 <tr id="r5-mit"><td>rung 3 — MIT's edit, our weights (reference)</td><td>31.0%</td><td>51.0%</td><td>48.0%</td><td>74.0%</td><td class="note">37.0% / 48.0%</td></tr>
 </table>
-<p class="note" id="ws5-verdict"><b>#1585 — OPEN-BOOK EDIT IN FLIGHT.</b> the recipe from MIT's text, rebuilt with our columns and α chosen on practice; the ONE held-out row lands as it scores. Nothing is claimed before it is measured.</p>
+<p class="note" id="ws5-verdict"><b>#1585 — OPEN-BOOK EDIT VERDICT.</b> layers 15+19 × own top-64 <code>down_proj</code> columns, α=2, scored ONCE at the full protocol: <b>MATH 5.0% acc / 4.0% fin · GSM8K 10.0% / 9.0% fin</b> (MIT-checker 5.0% math · 10.0% gsm) — vs closed-book own α4 13.5% mean and p50cw 39.5% mean; finished 7%. Verdict: <b>the open-book recipe, executed by us, does not beat our own closed-book edit</b> (Δ-6.0 pts) — even MIT's own written procedure, rebuilt by hand, recreates only part of what their tensors do. Which ingredient the text omits is the next question. Three practice passes + one held-out row logged in the batch log above (pick: ob2).</p>
 
 
 <h2 id="verdictfair">VERDICT — fair horizon, cap 4096 (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103)</h2>
@@ -288,6 +289,7 @@
 <tr><td>09:15:50</td><td>practice</td><td>r5 (#1585) · undefined</td><td>undefined</td><td>undefined</td><td>#1585 open-book edit practice scoring ob2 (qwen35-ob-a2) — alpha selection on practice ONLY (held-out is scored once)<br><span class="ruled">ruled out: open-book alpha variants at practice acc 6.2 / finished 4.7 on the fresh 64-math batch</span></td></tr>
 <tr><td>09:22:46</td><td>practice</td><td>r5 (#1585) · undefined</td><td>undefined</td><td>undefined</td><td>#1585 open-book edit practice scoring ob4 (qwen35-ob-a4) — alpha selection on practice ONLY (held-out is scored once)<br><span class="ruled">ruled out: open-book alpha variants at practice acc 4.7 / finished 4.7 on the fresh 64-math batch</span></td></tr>
 <tr><td>09:29:46</td><td>practice</td><td>r5 (#1585) · undefined</td><td>undefined</td><td>undefined</td><td>#1585 open-book edit practice scoring ob8 (qwen35-ob-a8) — alpha selection on practice ONLY (held-out is scored once)<br><span class="ruled">ruled out: open-book alpha variants at practice acc 0.0 / finished 0.0 on the fresh 64-math batch</span></td></tr>
+<tr><td>11:20:28</td><td>undefined</td><td>r2 (#1533) · undefined</td><td>undefined</td><td>undefined</td><td>held-out scoring row ob (qwen35-ob-a2, think35 pp=1.5 pp_ctx=32768)<br><span class="ruled">ruled out: step-1 gate vs MIT expectations happens after base+p50c rows</span></td></tr>
 </table>
 
 <h2>FIRST-PASS HELD-OUT (cap 1024 — kept for the record; unmeasurable horizon)</h2>

@@ -501,3 +501,31 @@ page provenance/honest-revert mutants. One crash caught writing it: dropping the
 window base control while the open-book row was complete crashed the verdict on
 `null.toFixed` — the verdict now explicitly *needs its control* (mutant-gated): no
 control, no claim, honest IN FLIGHT instead.
+
+## #1585 step 5 (session 139, studio) — open-book WEIGHT edit: the RECIPE vs the tensor
+The complement of #1580: the words did nothing to the base; can the words be *executed*
+as weights by us? `r5_openbook_edit.sh` rebuilds MIT's written footprint (their
+`final_answer.md`, still the only MIT artifact read — L15+L19, top-64 `down_proj`
+columns per layer, counteract the repetition direction) with OUR columns (own contrast
+projection ranks the 64; the scan independently corroborates the diagnosis — L19 is #2
+of 24 layers at t=5.90, L15 at t=5.27), our algebra
+`w_j −= α·d_L·(d_L·w_j)`, α∈{2,4,8} chosen on a fresh practice batch (math[160:223],
+passes 13–15; frozen rule → **α=2**, 6.2%/4.7% vs base 0.0% on the same batch). The
+winner alone earned the ONE held-out row: `ob` tag, 100+100 @ think35 pp1.5 ctx32768
+PAR-32, sidecars + MIT regrade no-args.
+**Result (scored ONCE):** MATH **5.0 acc / 4.0 fin** (MIT-checker 5.0, 0 diffs),
+GSM8K **10.0 / 9.0** (MIT-checker 10.0, 0 diffs). Mean 7.5 — vs prompt-control 3.0,
+same-window base 8.0, own closed-book α4 **13.5**, p50cw **39.5**; mean_tokens
+31.6K/30.2K, finished 4%/9%: still loops to the cap.
+**Verdict: the recipe, executed by us, does not beat our own closed-book edit
+(Δ−6.0 pts mean) and sits 32.0 pts below MIT's edit.** The text names the right
+layers — it is not knowledge the text conveys. What separates MIT's result from
+anything we can rebuild from their prose is *which* columns and which vector: the
+specifics live in their tensors, not their notes. Three-rung ladder (closed-book →
+open-book → MIT) now reads honestly on the page.
+Harness: ws3check §12–14 — trust boundary (L15/L19 lock, exactly 64 own-contrast
+columns/layer, command-level ban on MIT `edit/`·`turns/`·manifest·`final_report`),
+ONE held-out row for the practice winner only, ob aggregate recomputed from rows,
+row claims exactly the practice-winner model, ledger-once, DONE-marker chain, and a
+committed-page-vs-fresh-build guard (§1) so a skeleton page can never ship again;
+mutants for ladder revert, model-claim swap and dropped aggregate all die.
