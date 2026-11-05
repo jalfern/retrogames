@@ -32,7 +32,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
   the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots + gold SPELLS tab with seven-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with eight-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -72,7 +72,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 - Two hands: left (Space/A) and right (X/Z/B); 1–6 assign left, Q cycles right;
   casting SPENDS the carried pouch, not the vault. #1612 made the HUD itself the
   equip surface for touch: tap a hand slot to cycle that hand through learned
-  spells, tap the gold SPELLS tab to open the seven-spell tray, tap a learned
+  spells, tap the gold SPELLS tab to open the eight-spell tray, tap a learned
   icon to assign the LEFT hand (unlearned icons dimmed and inert; click-out
   closes without casting — the original's mouse-first equipping, phone-sized).
   Routing lives in `sim.js` (`hudTap`, `TAP`, `TRAY`) so the whole touch path is
@@ -135,7 +135,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 59 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 85 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
@@ -166,14 +166,37 @@ gate on the wizard fuse turns only the veil-targeting check red
 (`veiled fire=true`); restored after. #1612 mutant (2026-11-05): making `hudTap`
 return `'world'` for a slotL tap (the pre-fix keyboard-only behavior) turns
 exactly the two slot gates red; restored after. Balance: autopilot wins 60/60 seeds
-(slowest ~24.7k ticks — the veil + evasive-climb rules made the bot strictly
-safer than the pre-#1610 ~26.5k).
+(slowest ~26.5k ticks — the veil + evasive-climb rules made the bot strictly
+safer than the pre-#1610 ~26.5k; the 8th book's rng shift re-based the sweep,
+see item 5).
+
+## #1612 item 5: VOLCANO (2026-11-05, QA studio)
+
+- The 8th spell, cost 60 from the pouch: the ground tears open at your look
+  point — a main hot vent (r18 d12) plus 3 deterministic secondary hot craters
+  (`volcanoErupt` reuses the crater/glow/ignite/topple machinery: scorch marks,
+  hut ignition, `fireMarks`, tower topple if it lands at the base). Fired via
+  Digit8 / tray slot 8 / left hand; the GL pass draws lava-vent fountains for
+  ~160 ticks; the shell adds a sub-bass rumble + long camera shake + banner.
+  Six Node gates: roster, cast+pays, glow-cool, deny, topple, determinism.
+- The 8th grimoire shifts world-gen rng (one more `findSpot` draw), so every
+  seed's monsters/pearls land differently. Two harness consequences fixed here:
+  - `lostRig` is now composition-proof — it keeps exactly one giant + one wolf
+    (seed 7 now rolls a 2nd giant that sat in sight of the parked carpet and
+    emitted a stray `lost`).
+  - Autopilot deadlock on seed 2: the evasive-climb rule (`hp<55 && wolf<24 →
+    climb`) had no clearance check, so a wolf pack that shadowed the carpet over
+    a ridge pinned the bot at the ceiling for 24k ticks (can't descend, can't
+    afford the veil). The rule now only climbs while genuinely low
+    (`alt < ground + 12`) — faithful to the bite rule it defends against
+    (wolves only bite carpets flying low). Balance after: 60/60 seeds,
+    slowest 26,503 ticks.
 
 ## Honest gaps (the polish pass owns these)
 
-- Six spells remain: no clone/dissolve/shatter/volcano, and no raise-terrain
+- Five spells remain: no clone/dissolve/shatter, and no raise-terrain
   spell (the original's later games added one; MC1 itself only craters and
-  floods). Invisibility shipped #1610.
+  floods). Invisibility shipped #1610, volcano #1612 item 5.
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.

@@ -892,8 +892,11 @@ export function autopilot(gs) {
         }
     }
     // Altitude is armor (the original's lesson, #1610 sweep): when hurt and a
-    // wolf is closing, climb — wolves only bite carpets flying low.
-    if (gs.hp < 55 && gs.monsters.some((m) => m.kind === 'wolf' &&
+    // wolf is closing, climb — wolves only bite carpets flying low. Only climb
+    // while genuinely low: past safe clearance the pack can't reach you, and a
+    // pin-up rule with no floor-free ceiling check strands the bot above its
+    // pearls when a wolf pack learns to shadow the carpet (#1612 sweep fix).
+    if (gs.hp < 55 && gs.alt < sampleH(gs, gs.x, gs.y) + 12 && gs.monsters.some((m) => m.kind === 'wolf' &&
         Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 24)) pad.up = true
     return pad
 }

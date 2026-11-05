@@ -342,9 +342,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 }
 
 // ---- roster + INVISIBILITY (#1610): the original's veil, done whole
+// (#1612 item 5 grew the roster to eight with VOLCANO.)
 {
-    r.check('seven signature spells with costs', SPILLS.length === 7 &&
-        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility'].every((id) => spellById(id)?.cost > 0))
+    r.check('eight signature spells with costs', SPILLS.length === 8 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano'].every((id) => spellById(id)?.cost > 0))
 
     const veilUp = (gs) => {
         gs.learned.push('invisibility')
@@ -471,6 +472,12 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         gs.learned.push('invisibility')
         const wolf = gs.monsters.find((m) => m.kind === 'wolf')
         const gi = gs.monsters.find((m) => m.kind === 'giant')
+        // Composition-proof (#1612): the volcano book shifted world-gen rng, so
+        // seed 7 now rolls a 2nd giant (and 2nd wolf) that can sit inside sight
+        // of the parked carpet and emit stray `lost` events. Keep exactly the
+        // one giant + one wolf this rig places — the gate is about the cue, not
+        // about how many monsters the seed happens to roll.
+        gs.monsters = gs.monsters.filter((m) => m === wolf || m === gi)
         const wz = gs.wizard
         gs.x = wrap(wz.x + (placeFar ? 120 : 20), MAP); gs.y = wz.y
         wolf.x = wrap(gs.x + (placeFar ? 120 : 8), MAP); wolf.y = gs.y
