@@ -36,6 +36,12 @@ const T = 0.012
 export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
     const half = [0.20, 0.045, 0.16]
     const shapeBottom = new CANNON.Box(new CANNON.Vec3(half[0] - T, T / 2, half[2] - T))
+    // Drawer is ghosted to the links (#1570 tiers): the scripted pull/push
+    // paths latch on the handle and drag through the delta law; a solid front
+    // deflects the grasp at the latch moment and the whole task collapses
+    // (measured: crateIn dead on all 12 seeds with the drawer solid). Cargo
+    // still rides the cavity for real — the cavity walls are the drawer's own
+    // shapes, solid against anything that is not a link.
     const drawer = new CANNON.Body({ mass: assetFor('drawer').physics.massKg, material: mats.steel, collisionFilterGroup: COLLISION.FIXTURE })
     drawer.addShape(shapeBottom, new CANNON.Vec3(0, -half[1] + T / 2, 0))
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, half[1], half[2])), new CANNON.Vec3(-half[0] + T / 2, 0, 0))
@@ -107,6 +113,11 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     const restH = w - 2 * T - 0.004
     const doorZ = z + d + 0.016
     const hinge = { x: x + w - T, y: y0 + H / 2, z: doorZ }
+    // Door is environment for the links (#1570 collision tiers): pushing a
+    // 26 cm panel with the palm blocks the handle latch (the fingers land ON
+    // the panel, contact shoves the grasp out of latch radius, and the open
+    // detent fights back). The door is worked through its handle by the
+    // latch-drag law and closed by the spring/detent — never by palm contact.
     const door = new CANNON.Body({ mass: assetFor('door').physics.massKg, material: mats.steel, collisionFilterGroup: COLLISION.FIXTURE })
     door.addShape(new CANNON.Box(new CANNON.Vec3(restH, H / 2 - T, T / 2)))
     door.position.set(hinge.x - restH, hinge.y, hinge.z)
@@ -145,7 +156,7 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
             // Hard hinge stop: a free door can never pass ~90°. The kinematic
             // hand used to whip it to -2.0 rad and strand it past reach (the
             // latchDoorClose miss); clamp position to the arc + kill velocity.
-            if (a < -1.55 || a > 0.15) { self.driveAngle(Math.max(-1.55, Math.min(0.15, a))); return }
+            if (a < -1.55 || a > 0.15) { self.driveAngle(Math.max(-1.55, Math.min(0.15, a))); door.angularVelocity.set(0, 0, 0); return }
             // Hinge bushing cap: a kinematic hand glancing off an open door
             // used to inject flail-energy (angle ran to -2.17 past any stop).
             if (door.angularVelocity.y > 3) door.angularVelocity.y = 3
@@ -157,9 +168,12 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
                 // control (not += accel): the hinge constraint eats
                 // acceleration-level pushes and the door crawled open at
                 // 0.005 rad/tick when dragged half-shut (seed 9 stall).
-                // Only a latched driveAngle release may close it.
+                // Sign convention (measured on the real hinge, #1570): the body
+                // angle θ = −a, so closing is ω_y < 0. Holding at −1.42 needs
+                // ω = (a + 1.42)·0.8 — the old −1.42−a form pushed the door
+                // backwards through its own detent (the +0.15 pin).
                 const err = -1.42 - a
-                door.angularVelocity.y = Math.max(-2, Math.min(2, err * 0.8))
+                door.angularVelocity.y = Math.max(-2, Math.min(2, -err * 0.8))
                 return
             }
             if (Math.abs(a) >= 0.6) {
@@ -167,7 +181,7 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
                 return
             }
             if (Math.abs(a) > 0.06) {
-                const sign = a > 0 ? -1 : 1
+                const sign = a > 0 ? 1 : -1
                 door.angularVelocity.y += sign * 0.9 * TICK
                 door.torque.y += sign * 0.012
             }

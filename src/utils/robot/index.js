@@ -97,7 +97,13 @@ export function createRobotSim(seed = 0, opts = {}) {
             return true
         }
         const ch = cabinet.handlePos()
-        if (Math.hypot(gp[0] - ch.x, gp[1] - ch.y, gp[2] - ch.z) < 0.08) {
+        // 0.10 latch radius (was 0.08): the handle is a marker point on the
+        // panel — a 70 mm palm that centers within 100 mm of it can reach the
+        // handle for the drag law regardless of flex in the wrist. 0.08 was
+        // tuned when the hand landed instantly (kinematic stage 3); the rigid
+        // chain settles with a few cm of flex and the close-latch missed at
+        // 0.09-0.11 on seeds 3/9/10 while physically straddling the handle.
+        if (Math.hypot(gp[0] - ch.x, gp[1] - ch.y, gp[2] - ch.z) < 0.10) {
             arm.latchTo(cabinet.body)
             cabinet.setHeld(true)
             latchNote = 'door'
@@ -430,7 +436,7 @@ export function createAutopilot(sim) {
         D('overCavity', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z - 0.02, () => st().goals.crateIn || (Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.05 && Math.abs(st().hand[2] - (sim.drawer.body.position.z - 0.02)) < 0.05), 400),
         L('settleDrop', 1.02, () => st().goals.crateIn || st().hand[1] < 1.03, 60),
         D('toHandle2', () => dh().x, () => dh().z + 0.02, () => Math.abs(st().hand[0] - dh().x) < 0.03 && Math.abs(st().hand[2] - (dh().z + 0.02)) < 0.03, 352),
-        L('lowerHandle2', () => dh().y + 0.045, () => st().hand[1] < dh().y + 0.055, 88),
+        L('lowerHandle2', () => dh().y + 0.03, () => st().hand[1] < dh().y + 0.04, 88),
         P('reLatch', () => st().held === 'drawer', 26),
         S('pushIn', 1, () => st().goals.drawerClosed, 704),
         P('releaseHandle2', () => st().held === null, 26),
@@ -502,10 +508,13 @@ export function createAutopilot(sim) {
                 return pad
             }
             if (arrived) {
-                // Dwell: keep nudging toward the target for a few ticks after
-                // arrival so the servo actually lands ON it before the next
-                // phase (plane-tolerance + press-offset stacked up and starved
-                // the 3D latch gates — the door latch never fired).
+                // Dwell: keep nudging toward the target after arrival so the
+                // servo actually lands ON it before the next phase (plane-
+                // tolerance + press-offset stacked up and starved the 3D latch
+                // gates — the door latch never fired). Stage 4a: a rigid chain
+                // settles in ~30 ticks where the kinematic arm landed in ~8,
+                // so presses fired at 8-tick dwell grabbed 30 mm high (canIn
+                // misses on seeds 3/10). 20 ticks + servo-quiet arrivals.
                 if (ph.kind === 'drive' || ph.kind === 'lift') {
                     if ((ph.dw || 0) < 8) { ph.dw = (ph.dw || 0) + 1 }
                     else { idx++; continue }

@@ -44,10 +44,10 @@ export const LIMITS = {
 // exact reflected inertia, which swings with pose and payload; the velocity
 // form bounds joint speed regardless, so saturation and reaction stay honest.
 export const JOINT_SPECS = {
-    yaw: { tauMax: 8.0, inertia: 0.055, omegaMax: 2.6, kp: 12, kd: 1.7, servoK: 3.2, ki: 3, intCap: 1.0 },
-    phi1: { tauMax: 12.0, inertia: 0.045, omegaMax: 2.4, kp: 16, kd: 1.9, servoK: 4.0, ki: 3, intCap: 1.5 },
-    phi2: { tauMax: 8.0, inertia: 0.022, omegaMax: 2.8, kp: 8, kd: 1.0, servoK: 4.2, ki: 3, intCap: 0.8 },
-    gamw: { tauMax: 2.5, inertia: 0.006, omegaMax: 3.0, kp: 2, kd: 0.25, servoK: 5.0, ki: 3, intCap: 0.3 },
+    yaw: { tauMax: 8.0, inertia: 0.055, omegaMax: 2.6, kp: 12, kd: 1.7, servoK: 3.2, ki: 3, intCap: 1.5 },
+    phi1: { tauMax: 12.0, inertia: 0.045, omegaMax: 2.4, kp: 16, kd: 1.9, servoK: 4.0, ki: 3, intCap: 3.0 },
+    phi2: { tauMax: 8.0, inertia: 0.022, omegaMax: 2.8, kp: 8, kd: 1.0, servoK: 4.2, ki: 3, intCap: 2.0 },
+    gamw: { tauMax: 2.5, inertia: 0.006, omegaMax: 3.0, kp: 2, kd: 0.25, servoK: 5.0, ki: 3, intCap: 0.8 },
 }
 
 // Reflected rotor/gearbox inertia floors (kg·m² about the joint axis). Real
@@ -363,10 +363,12 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         // springing the chain if a real obstacle pins it.
         const intCap = sp.intCap
         let iTerm = integral[name]
-        // Integrate only NEAR the target (where the residual lives): ramping
-        // Ki through a transit move is textbook windup — it overshoots and the
-        // chain limit-cycles (measured: ki=8 ungated regressed every seed).
-        if (intCap > 0 && Math.abs(e) < 0.08) {
+        // Integrate at rest only (|ω| small): sag lives in the settled pose,
+        // while transit is exactly when Ki must stay quiet (ki ungated by rate
+        // wound up and flailed the pull-open — measured). |e| window covers the
+        // sag band (seed-3's 0.1-rad droop sat outside a 0.08 gate and never
+        // integrated away); caps bound whatever does accumulate.
+        if (intCap > 0 && Math.abs(e) < 0.3 && Math.abs(w) < 0.25) {
             iTerm = clamp(iTerm + sp.ki * e * TICK_DT, -intCap, intCap)
         } else iTerm *= 0.95 // target moved away: bleed the stale hold torque
         const wDes = clamp(e * sp.servoK, -sp.omegaMax, sp.omegaMax)
@@ -431,7 +433,9 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     // Payload compensation share: the controller compensates the links fully
     // and the taught payload at 90% — a carried crate still sags the wrist a
     // few millimetres (real pendant arms droop under untaught mass), visible
-    // on the effort bars but inside the pick tolerances.
+    // on the effort bars but inside the pick tolerances. (Full compensation
+    // was tried against the rigid chain's lift-out stall and regressed more
+    // seeds than it fixed — the residual belongs to the integral, not the ff.)
     const PAYLOAD_COMP = 0.9
 
     const actuate = (name, desired, tauG, tauComp) => {
@@ -496,7 +500,11 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     // Radial reach clamp: commanding beyond L1+L2+LG sends the DLS upside
     // down (phi1 parks at 2.0, the pose flails between two branches). The
     // work box alone isn't enough — its corners are outside the sphere.
-    const R_MAX = 0.63
+    // 0.65 (was 0.63): the open cabinet handle sits 0.647 from the shoulder,
+    // and the old conservative sphere stopped the final-close latch 17 mm
+    // short on the far seeds. The planar solver self-clamps at L1+L2−2 mm,
+    // so the sphere only needs to guard the yaw-plane corner cases.
+    const R_MAX = 0.65
     const clampTarget = () => {
         let tx = clamp(arm.target.x, arm.work.x[0], arm.work.x[1])
         let ty = clamp(arm.target.y, arm.work.y[0], arm.work.y[1])
