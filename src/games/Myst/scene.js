@@ -586,7 +586,7 @@ const BUILDERS = {
   },
   stoneship(g) {
     terrainField(g, TX.grey, 'stoneship')
-    seaPlane(g, 0.02, 500, 0.9)
+    seaPlane(g, -0.3, 500, 0.9)
     // a low grey ridge: the observatory sits on top and is the island's clear landmark
     rocks(g, TX.grey, [[0, 2, -14, 14, 4, 8, 0], [-10, 2, -8, 6, 4, 4, 0.4], [11, 2.4, -9, 5, 5, 4, -0.5]])
     const tower = mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.8, 12), mat(TX.grey), 0, 5.9, -14, g)
@@ -603,7 +603,7 @@ const BUILDERS = {
   stoneDeck(g) {
     // the becalmed ship on its rock shelf, seen from the quarterdeck: the mast is the landmark
     terrainField(g, TX.grey, 'stoneDeck')
-    seaPlane(g, 0.02, 400, 0.9)
+    seaPlane(g, -0.3, 400, 0.9)
     rocks(g, TX.grey, [[0, 1.4, -16, 18, 3, 5, 0], [-11, 1.2, -4, 6, 3, 4, 0.3], [12, 1.5, -5, 5, 3.5, 4, -0.4]])
     const ship = new THREE.Group()
     const hull = mesh(new THREE.BoxGeometry(3.2, 2.4, 11), mat(TX.plank, { roughness: 0.85 }), 0, 0, 0, ship)
@@ -855,7 +855,7 @@ const BUILDERS = {
   },
   channelwood(g) {
     terrainField(g, TX.chand, 'channelwood')
-    seaPlane(g, 0.02, 240, 0.7)
+    seaPlane(g, -0.3, 240, 0.7)
     const fall = mesh(new THREE.PlaneGeometry(14, 5, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 2.5, -13, g)
     fall.userData.fall = true
     rocks(g, TX.chand, [[0, 1.5, -14, 16, 3, 3, 0]])
@@ -883,7 +883,7 @@ const BUILDERS = {
   },
   chanChannels(g) {
     terrainField(g, TX.chand, 'chanChannels')
-    seaPlane(g, 0.02, 200, 0.7)
+    seaPlane(g, -0.3, 200, 0.7)
     // three cut channels running toward the sluice; water rides them when flooded
     for (const cx of [-5.4, 0, 5.4]) {
       const lipL = mesh(new THREE.BoxGeometry(0.5, 0.9, 12), mat(TX.grey), cx - 1.5, 0.45, -30, g); lipL.userData.noPick = true
