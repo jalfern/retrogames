@@ -456,11 +456,27 @@ export function createAutopilot(sim) {
         L('lowerCan', () => sim.can.position.y + 0.09, () => st().hand[1] < sim.can.position.y + 0.105, 150),
         P('grabCan', () => st().held === 'can', 48, 'retreatCan'),
         L('lift6', TRANSIT, () => st().hand[1] > 1.25, 88),
-        // Weld offset (measured ~+0.04x +0.08z from grasp to can) is near-
-        // constant after grab, so the cabinet route aims the HAND offset back
-        // to land the CAN at the cavity target. (A live gp-can compensation
-        // here became a servo feedback loop and destabilized the whole run.)
-        D('toCabinet', () => -0.30, () => -0.245, () => Math.abs(sim.can.position.x + 0.26) < 0.06 && Math.abs(sim.can.position.z + 0.165) < 0.06, 528),
+        // Three-leg cabinet route (#1570; replaced the old single straight
+        // transit, which dragged the can through the column∧cabinet V-groove —
+        // seeds 3/10 wedged it against column+cabinet+drawer, measured live
+        // contacts on all three — and a z=0.12 front pass, which plowed the
+        // panel's swing zone and slammed the OPEN door shut mid-carry: at
+        // -1.42 rad the panel stands along z -0.074..+0.147 at x -0.13..-0.17,
+        // and the world can-grasp offset rotates with the hand (yaw flips
+        // +1.2 at the pick to -1.4 at the doorway), so no single hand-offset
+        // constant aims the can at both ends.
+        // Leg 1 lifts out FORWARD at the pocket (z 0.26 clears door tip+rim
+        // 0.175 with servo lag). Leg 2 crosses the panel x-span at that safe
+        // z, exiting the moment the can's right face is left of the panel's
+        // whole span. Leg 3 pushes straight back through the open doorway at
+        // x=-0.26 — left of the panel, left of the drawer edge, clear of the
+        // groove; can targets carry the freeze-at-boundary offset.
+        D('toFront', () => st().hand[0], () => 0.26 - (canOff ? canOff.z : 0.05),
+            () => sim.can.position.z > 0.20, 220),
+        D('toSide', () => -0.26 - (canOff ? canOff.x : 0.03), () => 0.26 - (canOff ? canOff.z : 0.05),
+            () => sim.can.position.x < -0.20 && sim.can.position.z > 0.15, 330),
+        D('toDoorway', () => -0.26 - (canOff ? canOff.x : 0.03), () => -0.225 - (canOff ? canOff.z : 0.05),
+            () => Math.abs(sim.can.position.x + 0.26) < 0.06 && Math.abs(sim.can.position.z + 0.225) < 0.06, 396),
         L('lowerCanIn', 1.045, () => st().hand[1] < 1.055, 88),
         P('dropCan', () => st().held === null, 26),
         L('lift7', TRANSIT + 0.02, () => st().hand[1] > 1.27, 88),
@@ -480,11 +496,21 @@ export function createAutopilot(sim) {
     let idx = 0
     let pressT = 0
     let lastA = false
+    // Carry offset (can pose minus grasp point, world axes) re-measured at
+    // each phase boundary while the can is held and FROZEN inside a phase.
+    // The weld is rigid, so the offset is exact at the boundary pose; it
+    // rotates with the hand between poses (pick yaw +1.2 vs doorway yaw -1.4),
+    // which is why a grab-time constant mis-aimed the doorway by ~90 mm. A
+    // per-tick live compensation became a servo feedback loop (old note) —
+    // boundary freezing keeps the aim honest without closing the loop.
+    let canOff = null
+    let canOffPhase = -1
 
     const driver = function autopilot() {
         const pad = { x: 0, y: 0, b: false, a: false }
         if (pressT > 0) { pressT--; pad.a = true; return pad }
-        if (st().done || st().timeout) return pad
+        const snap = st()
+        if (snap.done || snap.timeout) return pad
         while (idx < phases.length) {
             const ph = phases[idx]
             ph.t++
@@ -527,6 +553,10 @@ export function createAutopilot(sim) {
                 return pad
             }
             if (ph.kind === 'drive') {
+                if (snap.held === 'can' && canOffPhase !== idx) {
+                    canOff = { x: snap.canPos.x - snap.hand[0], z: snap.canPos.z - snap.hand[2] }
+                    canOffPhase = idx
+                }
                 const tx = typeof ph.x === 'function' ? ph.x() : ph.x
                 const tz = typeof ph.z === 'function' ? ph.z() : ph.z
                 pad.x = clampv((tx - st().hand[0]) * 5)
