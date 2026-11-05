@@ -172,7 +172,7 @@ export function makeGame(seed, level = 0) {
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
-        invis: 0,
+        invis: 0, book: false,
         heights: null, events: [], score: 0,
         quota: LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))].quota,
     }
@@ -231,6 +231,7 @@ export function genWorld(gs) {
     gs.craters = []
     gs.towerDown = false
     gs.invis = 0
+    gs.book = false
     return gs
 }
 
@@ -409,6 +410,60 @@ export function cycleR(gs) {
     if (!list.length) return
     const i = list.indexOf(gs.hands.R)
     setHand(gs, 'R', list[(i + 1) % list.length])
+}
+
+export function cycleL(gs) {
+    const list = gs.learned
+    if (!list.length) return
+    const i = list.indexOf(gs.hands.L)
+    setHand(gs, 'L', list[(i + 1) % list.length])
+}
+
+// #1612 mobile spellbook: the original was mouse-first — you CLICKED the HUD to
+// equip hands. The HUD-space hit map and the tap's effect live here (pure, so
+// carpetcheck proves the whole touch path without a browser). hudTap routes a
+// tap at HUD coords (0..W, 0..H):
+//   'world'  above the strip and outside any open tray → cast (the shell maps
+//            pointer button to left/right hand)
+//   'slotL' / 'slotR'  tap a hand slot → cycle that hand through learned spells
+//   'book'   tap the gold tab → open the spell tray
+//   'equip'  tray open, tap a LEARNED spell → assign LEFT hand, tray closes
+//   'close'  tray open, tap anywhere else → tray closes without casting (like
+//            the original's click-out); unlearned icons are inert ('none'), and
+//            dead HUD strip between the hit boxes does nothing ('none')
+// Only equip/cycle/toggle mutate gs (same events setHand pushes); the sim's
+// rules and the state hash are untouched by the tray itself.
+export const TAP = {
+    slotL: [258, H - HUD_H, 22, HUD_H],
+    slotR: [280, H - HUD_H, 22, HUD_H],
+    book: [258, H - HUD_H - 16, 44, 16],
+}
+export const TRAY = [Math.floor((W - SPILLS.length * 14) / 2), H - HUD_H - 17, SPILLS.length * 14, 17]
+
+export function hudTap(gs, x, y) {
+    if (gs.end) return 'none'
+    if (x < 0 || x >= W || y < 0 || y >= H) return 'world' // letterbox margin = still the world
+    const hit = (r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+    if (gs.book) {
+        if (hit(TAP.book)) { gs.book = false; return 'book' }
+        if (hit(TRAY)) {
+            const i = Math.floor((x - TRAY[0]) / 14)
+            const sp = SPILLS[i]
+            if (sp && gs.learned.includes(sp.id)) {
+                setHand(gs, 'L', sp.id)
+                gs.book = false
+                return 'equip'
+            }
+            return 'none' // unlearned cell: inert, tray stays open
+        }
+        gs.book = false
+        return 'close' // click-out closes without casting
+    }
+    if (hit(TAP.book)) { gs.book = true; return 'book' }
+    if (hit(TAP.slotL)) { cycleL(gs); return 'slotL' }
+    if (hit(TAP.slotR)) { cycleR(gs); return 'slotR' }
+    if (y >= H - HUD_H) return 'none' // dead HUD strip: never a stray cast
+    return 'world'
 }
 
 export function step(gs, inp) {
