@@ -5,6 +5,7 @@
 import { NODES, AGE_LIST } from './nodes.js'
 import { deriveCodes, freshSeed, safeWords, NUMBER_WORDS } from './codes.js'
 import { linkingBook, LINK_TICKS, TRAP_LINK } from './link.js'
+import { GEARS, gearFlag, gearHeld, seatedCount, galleryOpen } from './gears.js'
 
 export const SAFE_LEN = 3
 export const SWITCH_LINKS = [
@@ -59,6 +60,9 @@ export function freshState(seed) {
     flags: {},
     pages: {},
     placed: { red: 0, blue: 0 },
+    // #838 item 9 — the gear gallery: which of the four carried gears the hand
+    // has set into the tower's wall. MYST's own slot is not here: it never left.
+    gearsSeated: {},
     safeDial: '000',
     sphereDial: [-1, -1, -1, -1],
     starDial: [0, 0, 0, 0],
@@ -87,7 +91,7 @@ const AGE_OF = { selenitic: 'selenitic', stoneship: 'stoneship', mechanical: 'me
 function has(s, f) { return !!s.flags[f] }
 
 export function dispatch(st, a) {
-  const s = { ...st, flags: { ...st.flags }, pages: { ...st.pages }, placed: { ...st.placed } }
+  const s = { ...st, flags: { ...st.flags }, pages: { ...st.pages }, placed: { ...st.placed }, gearsSeated: { ...st.gearsSeated } }
   const ev = []
   s.time += 1
 
@@ -106,7 +110,7 @@ export function dispatch(st, a) {
   // — or an ending — takes hold. In the saddle it is still your call.
   if (st.ride && st.ride !== 'seated' && st.ride !== 'landed') {
     if (a.t !== 'tick') return { state: st, events: [] }
-    const s = { ...st, flags: { ...st.flags }, pages: { ...st.pages }, placed: { ...st.placed } }
+    const s = { ...st, flags: { ...st.flags }, pages: { ...st.pages }, placed: { ...st.placed }, gearsSeated: { ...st.gearsSeated } }
     s.time += 1
     s.rideT += 1
     if (s.ride === 'ignite' && s.rideT >= RIDE.ignite) { s.ride = 'liftoff'; s.rideT = 0; s.message = 'IGNITION. The whole silo becomes a drum — flame pours down the shaft and the rocket rises, slowly at first, then all at once, dusk falling off you in sheets of fire.'; ev.push('rocketLift') }
@@ -165,6 +169,31 @@ export function dispatch(st, a) {
       }
       if (spot.act) return act(s, spot, ev)
       return { state: st, events: [] }
+    }
+    case 'seat': {
+      // #838 item 9 — the gallery wall. A gear goes into the slot it is stamped
+      // for, or comes back out; nothing else about the save moves. MYST's own
+      // gear is refused: the island's slot was carved shut around it.
+      const g = GEARS.find((x) => x.key === a.key)
+      if (!g) return { state: st, events: [] }
+      if (g.fixed) { s.message = 'The fifth slot wears the island\u2019s own gear, and it will not come. Bronze and clock tower are one casting — MYST keeps its own time.'; ev.push('blocked'); break }
+      if (s.gearsSeated[g.key]) {
+        s.gearsSeated[g.key] = false
+        s.message = `You lift ${g.sigil} out of ${g.age}\u2019s slot. The drive stops where it hung, and behind the wall the counting starts again.`
+        ev.push('gearLift')
+        break
+      }
+      if (!gearHeld(s, g.key)) { s.message = `${g.age}\u2019s slot waits under ${g.sigil} — and you carry nothing stamped with that mark.`; ev.push('blocked'); break }
+      s.gearsSeated[g.key] = true
+      ev.push(`gearSeat:${g.key}`)
+      if (galleryOpen(s)) {
+        s.flags.nicheOpen = true; s.panelOpen = null
+        s.message = 'FIVE. The last gear drops home and the whole wall turns at once — house-sized cogs above you, the drive of the tower you walked into. Somewhere behind the bronze a seal that has held since Atrus went away grinds aside, and the niche stands open.'
+        ev.push('nicheOpen')
+      } else {
+        s.message = `${g.sigil} settles into ${g.age}\u2019s slot and the drive takes it with a shudder. ${seatedCount(s)} of five ride the wall now.`
+      }
+      break
     }
     case 'closePanel': s.panelOpen = null; s.bookOpen = null; ev.push('page'); break
     case 'dial': {
@@ -447,6 +476,33 @@ function act(s, spot, ev) {
       // returning glance is silent. Sealed lenses never sing.
       for (const a of known) { const k = `sawThaw_${a}`; if (!has(s, k)) { s.flags[k] = true; ev.push(`thaw:${a}`) } }
       break
+    }
+    case 'takeGearShip': {
+      // #838 item 9 — the ridge dome turns on a brass drive-gear. The chart says
+      // who bolted it there; the hand comes after the note, not before.
+      if (has(s, gearFlag('stoneship'))) return { state: s, events: [] }
+      s.flags[gearFlag('stoneship')] = true
+      s.message = 'You haul the drive-gear off the dome\u2019s axle — brass the colour of old honey, stamped with a wave and a ship\u2019s wheel. The dome stops mid-sweep, its sun left hanging. Three of five, it said on the tower of Mechanical. Five, to open something that should stay shut.'
+      ev.push('gearTake'); break
+    }
+    case 'takeGearMech': {
+      // #838 item 9 — the lid the switch chain unlatches is not a page alcove.
+      // It is the tower\u2019s own gear, still warm from the drive it came off.
+      if (has(s, gearFlag('mechanical'))) return { state: s, events: [] }
+      s.flags[gearFlag('mechanical')] = true
+      s.message = 'Behind the lid the switches unsealed sits the tower\u2019s own gear, brass the colour of old honey, stamped with three meshed cogs. It is still warm. Four of five, it said on the tower of Mechanical. Five, to open something that should stay shut.'
+      ev.push('gearTake'); break
+    }
+    case 'gearWall': {
+      s.panelOpen = 'gears'
+      const n = seatedCount(s)
+      s.message = `Five brass slots in the tower's wall, each stamped with a sigil \u2014 ${GEARS.map((g) => g.sigil).join(', ')}. ${n} of five ride the drive now.${has(s, 'nicheOpen') ? ' The niche behind them stands open, and the air off it is cold.' : ' Behind the bronze, something counts to five.'}`
+      ev.push('panel'); break
+    }
+    case 'nicheBook': {
+      s.flags.nicheRead = true
+      s.message = 'One book, sealed in wax the colour of old honey: a Descriptive book of MYST itself — the island\u2019s own copy, the one Atrus dared not destroy and dared not read. You break the seal and open the page — and the island does not fold. You cannot link to where you already stand. That is what five gears were shut for.'
+      ev.push('look', 'nicheRead'); break
     }
     // ---- SELENITIC: the sounding path, the sun-and-moon throne, the gear ----
     case 'toneStone': {
