@@ -16,7 +16,8 @@ import {
     W, H, HUD_H, HORIZON, MAP,
     LEVELS,
     SPILLS, spellById,
-    makeGame, step, autopilot, stateHash, setHand, cycleR, crater, INVIS_T,
+    makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, INVIS_T,
+    hudTap, TAP, TRAY,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
 
@@ -92,7 +93,8 @@ const MagicCarpetGame = () => {
         canvas.className = 'absolute block'
         canvas.style.imageRendering = 'pixelated'
         canvas.style.touchAction = 'none'
-        canvas.style.pointerEvents = 'none'
+        // #1612: the HUD is the pointer surface now — taps below the horizon
+        // equip spells (hudTap in sim.js), taps on the world still cast.
         wrap.appendChild(canvas)
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
@@ -180,6 +182,11 @@ const MagicCarpetGame = () => {
                     audioController.playTone(659, 0.09, 'square', 0.06, 0.09)
                     audioController.playTone(784, 0.14, 'square', 0.06, 0.18)
                     say(`${spellById(e.id).name} LEARNED!`)
+                } else if (e.type === 'equip') {
+                    // Any equip (keys, pad or the touch spellbook) names its spell.
+                    audioController.playTone(540, 0.04, 'triangle', 0.045)
+                    audioController.playTone(760, 0.06, 'triangle', 0.04, 0.05)
+                    say(spellById(e.id)?.name ?? 'SPELL READY')
                 } else if (e.type === 'fizzle') {
                     audioController.playSweep(420, 130, 0.24, 'triangle', 0.06)
                     say('THE SPELL ELUDES YOU')
@@ -379,6 +386,23 @@ const MagicCarpetGame = () => {
             ctx.beginPath(); ctx.arc(17, y0 + 14, 11, 0, Math.PI * 2); ctx.fill()
             ctx.strokeStyle = '#5a66aa'
             ctx.stroke()
+            if (gs.invis > 0) {
+                // Veil cue (#1612): the radar reads cyan behind the veil — tinted
+                // glass plus a sweeping arc, so "they cannot see you" shows at a glance.
+                ctx.fillStyle = 'rgba(168, 236, 255, 0.10)'
+                ctx.beginPath(); ctx.arc(17, y0 + 14, 10, 0, Math.PI * 2); ctx.fill()
+                const sweep = gs.tick * 0.07
+                ctx.strokeStyle = '#a8ecff'
+                ctx.lineWidth = 1
+                for (let k = 0; k < 3; k++) {
+                    ctx.globalAlpha = 0.5 - k * 0.15
+                    ctx.beginPath()
+                    ctx.moveTo(17, y0 + 14)
+                    ctx.arc(17, y0 + 14, 10, sweep - k * 0.55, sweep - k * 0.55 + 0.16)
+                    ctx.closePath(); ctx.stroke()
+                }
+                ctx.globalAlpha = 1
+            }
             const sc = 11 / 240
             const dot = (wx, wy, col, sz = 1) => {
                 const dx = ((wx - gs.x + MAP / 2) % MAP + MAP) % MAP - MAP / 2
@@ -453,6 +477,57 @@ const MagicCarpetGame = () => {
             }
             slot(262, gs.hands.L, gs.coolL, 'A')
             slot(284, gs.hands.R, gs.coolR, 'X')
+            // Spellbook tab (#1612): the original equipped hands by CLICKING the
+            // HUD — this gold tab is that door for touch. Tapping it (or the two
+            // hand slots) works on a phone; keys 1–7/Q stay as they were.
+            {
+                const [bx, by, bw, bh] = TAP.book
+                ctx.fillStyle = '#0e1a38'
+                ctx.fillRect(bx, by, bw, bh)
+                ctx.strokeStyle = gs.book ? '#ffe9a0' : '#5a66aa'
+                ctx.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1)
+                ctx.fillStyle = gs.learned.length > 1 ? '#ffd860' : '#6a6fa0'
+                ctx.fillRect(bx + 4, by + 3, 6, 10)
+                ctx.fillRect(bx + 11, by + 3, 6, 10)
+                ctx.fillStyle = '#0e1a38'
+                ctx.fillRect(bx + 9, by + 3, 3, 10)
+                ctx.fillStyle = gs.book ? '#ffe9a0' : '#8890c0'
+                ctx.font = '5px monospace'
+                ctx.fillText('SPELLS', bx + 20, by + 11)
+                if (gs.learned.length > 1 && !gs.book) {
+                    ctx.globalAlpha = 0.25 + Math.sin(gs.tick * 0.12) * 0.15
+                    ctx.strokeStyle = '#ffd860'
+                    ctx.strokeRect(bx - 0.5, by - 0.5, bw + 1, bh + 1)
+                    ctx.globalAlpha = 1
+                }
+            }
+            if (gs.book) {
+                // The tray: all seven spells, unlearned dimmed, left-hand pick
+                // boxed gold; mana cost under each icon (green-gold when payable).
+                const [tx, ty, tw, th] = TRAY
+                ctx.fillStyle = 'rgba(14, 20, 60, 0.92)'
+                ctx.fillRect(tx - 4, ty - 4, tw + 8, th + 8)
+                ctx.strokeStyle = '#5a66aa'
+                ctx.strokeRect(tx - 3.5, ty - 3.5, tw + 7, th + 7)
+                ctx.fillStyle = '#8890c0'
+                ctx.font = '5px monospace'
+                ctx.fillText('LEFT HAND', tx, ty - 6)
+                SPILLS.forEach((sp, i) => {
+                    const known = gs.learned.includes(sp.id)
+                    const cx = tx + i * 14 + 7
+                    ctx.globalAlpha = known ? 1 : 0.3
+                    if (known && gs.hands.L === sp.id) {
+                        ctx.strokeStyle = '#ffd84a'
+                        ctx.strokeRect(tx + i * 14 + 0.5, ty + 0.5, 13, th - 1)
+                    }
+                    drawSpellIcon(ctx, sp.id, cx, ty + 7, 4)
+                    ctx.fillStyle = known && gs.mana >= sp.cost ? '#ffe9a0' : '#6a6fa0'
+                    ctx.textAlign = 'center'
+                    ctx.fillText(String(sp.cost), cx, ty + th - 2)
+                    ctx.textAlign = 'left'
+                    ctx.globalAlpha = 1
+                })
+            }
             // score
             ctx.fillStyle = '#fff'
             ctx.font = '7px monospace'
@@ -578,8 +653,17 @@ const MagicCarpetGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc === 'play' && !pausedRef.current) {
-                if (e.button === 2) throwR = true
-                else if (e.button === 0) throwL = true
+                // Map the tap into HUD space (the canvas is letterboxed in the
+                // stage) and let sim.js route it: world taps cast, strip taps
+                // cycle the hands, the book tab opens the tray (#1612).
+                const rect = canvas.getBoundingClientRect()
+                const hit = hudTap(gs,
+                    ((e.clientX - rect.left) / rect.width) * W,
+                    ((e.clientY - rect.top) / rect.height) * H)
+                if (hit === 'world') {
+                    if (e.button === 2) throwR = true
+                    else throwL = true
+                }
             }
         }
         const onCtx = (e) => e.preventDefault()
@@ -587,6 +671,7 @@ const MagicCarpetGame = () => {
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         glCanvas.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onPointer)
         glCanvas.addEventListener('contextmenu', onCtx)
 
         const resize = () => {
@@ -641,8 +726,10 @@ const MagicCarpetGame = () => {
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
+                    invis: gs.invis, book: gs.book,
                 }),
                 start: startPlay,
+                tap: (x, y) => hudTap(gs, x, y),
                 hash: () => stateHash(gs),
                 gl2: () => !!renderer,
                 digHot: () => {
@@ -702,7 +789,7 @@ const MagicCarpetGame = () => {
             let contractSeed = 0
             exposeGame({
                 id: 'magic-carpet',
-                buttons: ['left', 'right', 'up', 'down', 'a', 'b', 'boost'],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b', 'boost', 'cycleL', 'cycleR', 'book'],
                 reset: (seed) => {
                     contractSeed = seed >>> 0
                     gs = makeGame(contractSeed)
@@ -719,6 +806,9 @@ const MagicCarpetGame = () => {
                     boostOn = !!pad.boost
                     if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
                     boostPrev = boostOn
+                    if (pad.cycleL) cycleL(gs)
+                    if (pad.cycleR) cycleR(gs)
+                    if (pad.book) gs.book = !gs.book
                     doSim({ left: pad.left, right: pad.right, up: pad.up, down: pad.down, castL: pad.a, castR: pad.b, boost: boostOn })
                 },
                 state: () => ({
@@ -726,7 +816,7 @@ const MagicCarpetGame = () => {
                     seed: contractSeed, mana: Math.floor(gs.mana), hp: Math.round(gs.hp),
                     bank: Math.floor(gs.bank), level: gs.level,
                     deaths: gs.deaths, kills: gs.kills, wizAlive: gs.wizard.alive,
-                    stage: gs.castleStage, hash: stateHash(gs),
+                    stage: gs.castleStage, hash: stateHash(gs), book: gs.book,
                 }),
                 canvas: () => glCanvas,
                 snapshot: () => JSON.parse(JSON.stringify(gs)),
@@ -742,6 +832,7 @@ const MagicCarpetGame = () => {
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
             glCanvas.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onPointer)
             glCanvas.removeEventListener('contextmenu', onCtx)
             cancelAnimationFrame(raf)
             if (renderer) renderer.dispose()
@@ -767,6 +858,7 @@ const MagicCarpetGame = () => {
                         messages={[
                             'ARROWS STEER THE CARPET · IT BANKS AND CANNOT CRASH',
                             'A CASTS YOUR LEFT HAND · X YOUR RIGHT',
+                            'TAP THE BOOK OR HAND SLOTS TO CHANGE SPELLS',
                             'GATHER MANA PEARLS · HOVER YOUR CASTLE TO FILL THE VAULT',
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
