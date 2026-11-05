@@ -8,7 +8,7 @@ import { drawVision, drawPortrait, PORTRAIT_TEAR0 } from '../src/games/Myst/visi
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues, ambCues, SKY_TUNE } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW } from '../src/games/Myst/sea.js'
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
@@ -1692,6 +1692,59 @@ console.log('MYST — the gear gallery (#838 item 9: five slots, four carried, o
   ok(JSON.stringify(plan('gearLift')) !== JSON.stringify(plan('gearSeat:selenitic')), 'a gear lifted out is not a gear dropping in')
 }
 
+console.log('MYST — the ambience wears the Age (#838 item 10: a voice per view, distinct across the Ages)')
+{
+  // — every node's ambience kind resolves to a real voice
+  const AMB_KINDS = [...new Set(Object.values(NODES).map((n) => n.amb))]
+  ok(AMB_KINDS.length === 9, 'the island graph uses nine distinct ambience kinds', AMB_KINDS.sort().join(','))
+  ok(Object.entries(NODES).every(([v, n]) => ambCues(n.amb, v).length > 0),
+    'every node\'s ambience kind actually schedules a voice')
+  ok(AMB_KINDS.every((k) => ambCues(k, 'dock').length > 0), 'each ambience kind resolves at a real view')
+  ok(ambCues('nonsense', 'dock').length === 0 && ambCues('', 'dock').length === 0,
+    'an unknown ambience kind is silent (never a fallback hum)')
+  // — the seven sky families each tune the voice apart: seven distinct pitches
+  ok(new Set(Object.values(SKY_TUNE).map((t) => t.pitch)).size === Object.keys(SKY_TUNE).length,
+    'no two Ages share a pitch — every sky bends the voice its own way')
+  ok(new Set(Object.values(SKY_TUNE).map((t) => t.pitch)).size === Object.keys(SKY_TUNE).length,
+    'no two Ages share a pitch — every sky bends the voice its own way')
+  ok(Object.values(SKY_TUNE).every((t) => t.pitch > 0.5 && t.pitch < 1.5 && t.gain > 0 && t.gain <= 1.2),
+    'every sky stays in a sane tuning range — a voice a player can actually hear')
+  // — distinct kinds never collapse into one another at the same view
+  {
+    const sig = (k) => JSON.stringify(ambCues(k, 'dock'))
+    ok(new Set(AMB_KINDS.map(sig)).size === AMB_KINDS.length, 'no two ambience kinds sound alike', AMB_KINDS.map(sig).join(' '))
+  }
+  // — the SAME kind reads apart across the Ages: wind on six skies, six voices
+  {
+    const WIND = ['cliffPath', 'landing', 'selThrone', 'stoneObservatory', 'chanWheel', 'cabin']
+    ok(new Set(WIND.map((v) => JSON.stringify(ambCues('wind', v)))).size === WIND.length,
+      'wind is one voice on six skies and six voices apart — the wind wears the Age',
+      WIND.map((v) => `${v}:${NODES[v].sky}`).join(' '))
+    const SEA = ['dock', 'beach', 'stoneship', 'stoneDeck']
+    ok(ambCues('sea', 'dock') !== null && JSON.stringify(ambCues('sea', 'dock')) !== JSON.stringify(ambCues('sea', 'stoneship')),
+      'the dusk wash is not the Atlantic surge — the sea\'s own voice wears the Age too')
+    // Selenitic's wind carries the caldera moan no other Age has
+    ok(ambCues('wind', 'selThrone').length === ambCues('wind', 'cliffPath').length + 1,
+      'the green caldera throws the wind back — Selenitic wind has the moan, the bay does not')
+    // each stone chamber drips at its own pitch, never two alike
+    const DRIP = ['library', 'cave', 'rocketSilo']
+    ok(new Set(DRIP.map((v) => JSON.stringify(ambCues('drip', v)))).size === DRIP.length,
+      'no two chambers fall the same drop — the drip is per-view')
+  }
+  // — determinism and the view still reaching the law through plan()
+  ok(JSON.stringify(ambCues('wind', 'selThrone')) === JSON.stringify(ambCues('wind', 'selThrone')),
+    'ambCues is deterministic — the same view sings the same voice every time')
+  ok(JSON.stringify(plan('amb:wind:dock')) === JSON.stringify(ambCues('wind', 'dock')),
+    'plan() routes amb: events through the pure law')
+  ok(plan('amb:nonsense:dock').length === 0, 'an unknown kind is silent through the event bus too')
+  // — the browser layer dispatches through the law and keeps threading the view
+  {
+    const sd = readFileSync('src/games/Myst/sound.js', 'utf8')
+    ok(/amb:\$\{kind\}:\$\{view\}/.test(sd), 'the ambience layer routes each view through the pure law')
+    ok(!/const AMB = \{/.test(sd), 'the old un-provable AMB table is gone (voices live in soundplan.js)')
+  }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1706,6 +1759,7 @@ if (process.argv.includes('--mutate')) {
   const TR = 'src/games/Myst/terrain.js'
   const LK = 'src/games/Myst/link.js'
   const SEA = 'src/games/Myst/sea.js'
+  const SD = 'src/games/Myst/sound.js'
   const MUTANTS = [
     ['every sea wears Myst again (the island turns Selenitic green)', SEA,
       'dock:             { water: 0,    color: [0.98, 0.80, 0.60], swell: 0.16',
@@ -2114,6 +2168,25 @@ if (process.argv.includes('--mutate')) {
       "ev.push('gearLift')", "ev.push('gearSeat:' + g.key)"],
     ['the fifth gear never lands the seal (a niche that stays shut forever)', ST,
       'if (galleryOpen(s)) {', 'if (false && galleryOpen(s)) {'],
+    // #838 item 10 — the ambience wears the Age
+    ['every sky tunes alike (the wind stops wearing the Age)', SP,
+      'selenitic:   { pitch: 0.80, gain: 1.15 }, // low, loud, the green caldera',
+      'selenitic:   { pitch: 1.00, gain: 1.00 }, // low, loud, the green caldera'],
+    ['the caldera moan vanishes (Selenitic wind is just the bay wash)', SP,
+      "  if (kind === 'wind' && node && node.sky === 'selenitic') {",
+      "  if (false && kind === 'wind' && node && node.sky === 'selenitic') {"],
+    ['a kind goes voiceless (the fireplace stops crackling)', SP,
+      "  fire:   () => [{ type: 'fnoise', dur: 0.25, vol: 0.05, freq: 800 }],",
+      "  fireXX: () => [{ type: 'fnoise', dur: 0.25, vol: 0.05, freq: 800 }],"],
+    ['every chamber drips at one pitch (the cave, library and silo collapse)', SP,
+      'const f = Math.round((900 + h01(String(view)) * 500) * tune.pitch)',
+      'const f = Math.round(900 * tune.pitch)'],
+    ['the ambience stops wearing the sky (voices ignore the tune)', SP,
+      'const tune = SKY_TUNE[node ? node.sky : \'\'] || { pitch: 1, gain: 1 }',
+      'const tune = { pitch: 1, gain: 1 }'],
+    ['the ambience drops the view (every age gets the neutral voice)', SD,
+      'for (const c of plan(`amb:${kind}:${view}`)) play(c)',
+      'for (const c of plan(`amb:${kind}:`)) play(c)'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

@@ -12,6 +12,7 @@
 
 import { SEA_VIEWS } from './sea.js'
 import { seatWeight } from './gears.js'
+import { NODES } from './nodes.js'
 
 export const TONES = [196, 262, 330, 392]
 // The sounding path of SELENITIC: six stones, biggest sings lowest. Strictly
@@ -55,9 +56,92 @@ export function thunderCues() {
   ]
 }
 
+// #838 item 10 — the ambience wears the Age. Every node carries an `amb` kind
+// (sea, wind, fire, …), but the 1993 original never sounded the same in two
+// Ages: wind in the dusk bay is a soft wash, wind in green Selenitic is a low
+// caldera moan, wind on the Stoneship Atlantic is a bright salt breeze. These
+// voices live HERE (pure) so the harness can prove a kind resolves, no two
+// kinds collapse into one another, and the SAME kind reads apart across the
+// Ages. The old browser-layer table could be silently identical for every view
+// and no gate would ever know.
+
+// Each sky tunes the shared voice: `pitch` bends every frequency, `gain` scales
+// every volume. Seven families, seven distinct pitches — no two Ages agree.
+export const SKY_TUNE = {
+  dusk:        { pitch: 1.00, gain: 1.00 }, // Myst at sunset
+  day:         { pitch: 1.08, gain: 0.90 }, // the landing above the tree line
+  selenitic:   { pitch: 0.80, gain: 1.15 }, // low, loud, the green caldera
+  stoneship:   { pitch: 1.12, gain: 1.05 }, // bright salt Atlantic breeze
+  channelwood: { pitch: 1.25, gain: 0.80 }, // thin air on a cloud world
+  mechanical:  { pitch: 0.70, gain: 1.00 }, // deep forge rumble under everything
+  interior:    { pitch: 0.90, gain: 0.60 }, // muffled behind stone and timber
+}
+
+// tiny deterministic string hash → 0..1 (the pure law never calls Math.random)
+const h01 = (s) => {
+  let x = 2166136261 >>> 0
+  for (let i = 0; i < s.length; i++) { x ^= s.charCodeAt(i); x = Math.imul(x, 16777619) }
+  return ((x >>> 0) % 1000) / 1000
+}
+
+// the nine ambience kinds every node resolves to — a kind is a voice SHAPE.
+const KINDS = {
+  sea:    () => [{ type: 'fnoise', dur: 1.4, vol: 0.05, freq: 300 }, { type: 'sweep', f0: 70, f1: 50, dur: 1.6, wave: 'sine', vol: 0.04 }],
+  wind:   () => [{ type: 'fnoise', dur: 1.8, vol: 0.045, freq: 520 }],
+  birds:  () => [{ type: 'sweep', f0: 1600, f1: 2400, dur: 0.12, wave: 'sine', vol: 0.04 }, { type: 'sweep', f0: 2100, f1: 1500, dur: 0.1, wave: 'sine', vol: 0.03 }],
+  fire:   () => [{ type: 'fnoise', dur: 0.25, vol: 0.05, freq: 800 }],
+  drip:   () => [{ type: 'tone', dur: 0.06, wave: 'sine', vol: 0.05 }],
+  gears:  () => [{ type: 'tone', f: 90, dur: 0.05, wave: 'square', vol: 0.05 }, { type: 'noise', dur: 0.08, vol: 0.04 }],
+  sphere: () => [{ type: 'tone', f: 174, dur: 1.2, wave: 'sine', vol: 0.03 }],
+  stones: () => [{ type: 'fnoise', dur: 1.8, vol: 0.035, freq: 600 }],
+  falls:  () => [{ type: 'fnoise', dur: 1.6, vol: 0.07, freq: 700 }],
+}
+
+// bend a cue by the sky tune — frequencies (and volume) wear the Age.
+function tuneCue(c, tune) {
+  const out = { ...c }
+  if (c.vol != null) out.vol = +(c.vol * tune.gain).toFixed(4)
+  if (c.f != null) out.f = +(c.f * tune.pitch).toFixed(2)
+  if (c.f0 != null) out.f0 = +(c.f0 * tune.pitch).toFixed(2)
+  if (c.f1 != null) out.f1 = +(c.f1 * tune.pitch).toFixed(2)
+  if (c.freq != null) out.freq = Math.round(c.freq * tune.pitch)
+  return out
+}
+
+// The view's own ambience voice. Unknown kind is silent (never a fallback hum —
+// the same law the thaw and gear-seat voices keep); an unknown view keeps the
+// base voice at neutral tune so ambience never dies entirely.
+export function ambCues(kind, view) {
+  const base = KINDS[kind]
+  if (!base) return []
+  const node = NODES[view]
+  const tune = SKY_TUNE[node ? node.sky : ''] || { pitch: 1, gain: 1 }
+  const cues = base().map((c) => tuneCue(c, tune))
+  // The sounding field of stones hums under the wind — the corridor of rock is
+  // alive before you touch it, and it wears the green sky like everything else.
+  if (kind === 'stones') cues.push(...plan('hum').map((c) => tuneCue(c, tune)))
+  // Selenitic's wind is a caldera moan: the green dome throws it back a fifth
+  // under, an extra sub-tone no other Age has.
+  if (kind === 'wind' && node && node.sky === 'selenitic') {
+    cues.push({ type: 'tone', f: +(58 * tune.pitch).toFixed(2), dur: 2.0, wave: 'triangle', vol: +(0.02 * tune.gain).toFixed(3) })
+  }
+  // Each stone chamber drips at its own pitch (deterministic per view, so the
+  // cave, the library and the silo never fall the same drop).
+  if (kind === 'drip') {
+    const f = Math.round((900 + h01(String(view)) * 500) * tune.pitch)
+    cues.forEach((c) => { if (c.type === 'tone') c.f = f })
+  }
+  return cues
+}
+
 export function plan(ev) {
   // #838 item 8 — the storm's voice (pure, above): the caldera crack + roll.
   if (ev === 'thunder') return thunderCues()
+  // #838 item 10 — the ambience layer asks for one view's voice: `amb:wind:dock`.
+  if (typeof ev === 'string' && ev.startsWith('amb:')) {
+    const [, kind, view] = ev.split(':')
+    return ambCues(kind, view)
+  }
   // #1587 — per-view swell rumble: `swell:stoneship` is louder than
   // `swell:channelwood`, the pitch is the Age's water (pure, above).
   if (typeof ev === 'string' && ev.startsWith('swell:')) {
