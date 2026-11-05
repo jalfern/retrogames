@@ -4,7 +4,7 @@
 //   node scripts/ciscope.mjs --selftest              -> fixture assertions
 import { readFileSync, appendFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { classify, touchesShared, CORE, SCOPES, PINS } from './checks.mjs';
+import { classify, touchesShared, CORE, SCOPES, PINS, aliasFiles, checkScopes, MANUAL_CHECKS } from './checks.mjs';
 
 if (process.argv.includes('--selftest')) {
   const cases = [
@@ -75,7 +75,31 @@ if (process.argv.includes('--selftest')) {
       console.log(`FAIL pin ${f} -> [${ks}] classify docs=${c.docs} keys=${c.keys.length > 4 ? '[all]' : `[${c.keys}]`}`); bad++;
     }
   }
-  console.log(bad ? `ciscope: ${bad} FAILURES` : `ciscope: ${cases.length + 1} cases + ${pinEntries.length} pins ok (selftest)`);
+  // #1575 check-join audit: an aliased scripts/*check.mjs must face its own
+  // audit — run by a scope (checks.mjs) or parked in MANUAL_CHECKS. Neither
+  // = the ws3check hole (2ee8b35 shipped a check no CI step ever ran). This
+  // step is the one docs-only PRs always run, so a new check cannot join
+  // silently un-audited. Reverse: a stale park entry (no alias, or already
+  // scoped) also reds, so the list can never rot.
+  const aliased = aliasFiles();
+  const scopedFiles = checkScopes();
+  const park = new Set(MANUAL_CHECKS);
+  let audited = 0;
+  for (const [f, aliases] of [...aliased].sort()) {
+    if (!/check\.mjs$/.test(f)) continue;
+    audited++;
+    if (!scopedFiles.has(f) && !park.has(f)) {
+      console.log(`FAIL audit ${f} (${[...aliases].sort().join(',')}) has an alias but no scope runs it and it is not in MANUAL_CHECKS (#1575)`); bad++;
+    } else if (scopedFiles.has(f) && park.has(f)) {
+      console.log(`FAIL audit ${f} is in MANUAL_CHECKS but a scope runs it — stale park entry (#1575)`); bad++;
+    }
+  }
+  for (const f of MANUAL_CHECKS) {
+    if (!/check\.mjs$/.test(f) || !aliased.has(f)) {
+      console.log(`FAIL audit MANUAL_CHECKS lists ${f} with no check alias — stale park entry (#1575)`); bad++;
+    }
+  }
+  console.log(bad ? `ciscope: ${bad} FAILURES` : `ciscope: ${cases.length + 1} cases + ${pinEntries.length} pins + ${audited} checks audited ok (selftest)`);
   process.exit(bad ? 1 : 0);
 }
 
