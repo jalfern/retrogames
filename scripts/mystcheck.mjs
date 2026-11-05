@@ -13,6 +13,7 @@ import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, gro
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW, shipFloat, SHIP_ROCK, SHIP_VIEWS } from '../src/games/Myst/sea.js'
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
 import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSeated, seatedCount, galleryOpen, gearRows } from '../src/games/Myst/gears.js'
+import { FORGE, FORGE_VIEWS, FORGE_SEATS, forgeBreath, forgeLight, ventPuff, VENT, forgeSparks, SPARK } from '../src/games/Myst/forge.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1838,9 +1839,88 @@ console.log('MYST — the ship floats (#838 item 12: hull on its swell, deck on 
   ok(paneOk, 'pane and Age rock the ship in step — the lens paints the hull\u2019s own heave and roll (item 8 law, one clock)')
 }
 
+console.log('MYST — the forge breathes (#838 item 13: MECHANICAL lit from its own furnace)')
+{
+  // — the breath: deterministic, bounded, and never flat
+  ok(forgeBreath(2.2) === forgeBreath(2.2), 'the breath is deterministic — same instant, same fire')
+  ok(new Set(Array.from({ length: 400 }, (_, k) => forgeBreath(k / 40))).size > 200, 'the fire really flickers — hundreds of distinct brightenings under way')
+  let bmin = 1e9, bmax = -1e9
+  for (let k = 0; k <= 4000; k++) { const b = forgeBreath(k / 40); bmin = Math.min(bmin, b); bmax = Math.max(bmax, b) }
+  ok(bmin >= FORGE.min && bmax <= FORGE.max, 'the envelope is bounded — the fire gutters but never goes out')
+  ok(bmin < 0.8 && bmax > 0.95, 'the bellows pump — the breath crosses its own mean, low and high')
+
+  // — scope: the forge stays home (item 8's rule, on light)
+  const nonForge = Object.keys(SEA_VIEWS).filter((v) => !FORGE_VIEWS.includes(v))
+  ok(nonForge.every((v) => forgeLight(3.3, 0, 0, v) === 0), 'the forge stays home — every non-Mechanical view answers gain 0')
+  ok(FORGE_VIEWS.join(',') === 'mechanical,mechWalk,mechCar,mechTop,mechRoom', 'exactly the five Mechanical views burn')
+  ok(FORGE_VIEWS.every((v) => forgeLight(3.3, FORGE_SEATS[v][0], FORGE_SEATS[v][1], v) > 0), 'every Mechanical view seats its furnace')
+
+  // — the distance law: near brass hot, far ground rust, nothing past the reach
+  let fallOk = true, farZero = true
+  for (const v of FORGE_VIEWS) {
+    const [sx, sz] = FORGE_SEATS[v]
+    for (let k = 0; k < 60; k++) {
+      const t = k * 0.37
+      const near = forgeLight(t, sx, sz, v)
+      const mid = forgeLight(t, sx + FORGE.reach * 0.5, sz, v)
+      const out = forgeLight(t, sx + FORGE.reach, sz, v)
+      if (!(near > mid && mid > out)) fallOk = false
+      if (out !== 0) farZero = false
+    }
+  }
+  ok(fallOk, 'near brass glows hot and the far ground cools — the gain falls off from the seat in every Mechanical view')
+  ok(farZero, 'past the reach the forge is only fog-light: gain exactly 0')
+
+  // — vents: bounded, resting, and each on its own cadence
+  ok(ventPuff(1.1, 'mechBlueVent') === ventPuff(1.1, 'mechBlueVent'), 'a vent puffs the same show every time')
+  let vmin = 1e9, vmax = -1e9
+  for (let k = 0; k <= 4000; k++) { const p = ventPuff(k / 40, 'mechBlueVent'); vmin = Math.min(vmin, p); vmax = Math.max(vmax, p) }
+  ok(vmin >= 0 && vmax <= 1, 'the puff envelope stays inside 0..1')
+  ok(vmin === 0, 'the vent rests between puffs — a leak is not a valve')
+  ok(vmax > 0.5, 'the vent really swells, not just whispers')
+  const peakGaps = (key) => {
+    const times = []
+    let high = false
+    for (let k = 1; k <= 2400; k++) {
+      const t = k / 40
+      const p = ventPuff(t, key)
+      if (!high && p > 0.5) { high = true; times.push(t) } else if (high && p === 0) high = false
+    }
+    if (times.length < 3) return null
+    return (times[times.length - 1] - times[0]) / (times.length - 1)
+  }
+  const gaps = ['mechBlueVent', 'towerA', 'towerB', 'gantry', 'roomFloor'].map(peakGaps)
+  ok(gaps.every((g) => g !== null), 'every vent keeps a repeating cadence')
+  const sortedGaps = gaps.slice().sort((a, b) => a - b)
+  let clusters = 1
+  for (let i = 1; i < sortedGaps.length; i++) if (sortedGaps[i] - sortedGaps[i - 1] > 0.15) clusters++
+  ok(clusters >= 3, `vents puff on their own rhythms — ${clusters} distinct cadence clusters in five vents`)
+
+  // — sparks: deterministic, climbing, dying, seated on the furnace
+  const sp0 = forgeSparks(8, 4.4, 'mechanical')
+  ok(JSON.stringify(sp0) === JSON.stringify(forgeSparks(8, 4.4, 'mechanical')), 'the spark pool is deterministic')
+  ok(sp0.length === 8, 'the pool holds the number it asked for')
+  ok(sp0.every((s) => s.life >= 0 && s.life <= 1 && s.y >= 0 && s.y <= SPARK.rise), 'every spark lives inside its rise and its life')
+  let climbMax = 0, lifeMin = 1
+  for (let k = 0; k <= 800; k++) for (const s of forgeSparks(8, k / 40, 'mechanical')) { climbMax = Math.max(climbMax, s.y); lifeMin = Math.min(lifeMin, s.life) }
+  ok(climbMax >= SPARK.rise * 0.9, `sparks climb nearly the whole ${SPARK.rise} m before they die`)
+  ok(lifeMin < 0.1, 'sparks burn out — none of them hangs there forever')
+  ok(sp0.every((s) => Math.abs(s.x - FORGE_SEATS.mechanical[0]) <= 1.05 && Math.abs(s.z - FORGE_SEATS.mechanical[1]) <= 1.05), 'sparks drift off the furnace, not across the Age')
+  ok(forgeSparks(6, 3.3, 'stoneDeck').length === 0, 'no sparks off a moored longship — the pool is Mechanical-only')
+
+  // — the shell drives it: lamps, bounce, pools and vents all wired in scene.js
+  const srcSC = readFileSync('src/games/Myst/scene.js', 'utf8')
+  ok(/if \(o\.isLight && o\.userData\.forge\) anim\.push/.test(srcSC) && /o\.intensity = FORGE\.lamp \* forgeBreath\(t\)/.test(srcSC), 'the anim loop breathes every forge lamp on the law')
+  ok((srcSC.match(/forgeLamp\(g, '/g) || []).length === 5, 'one forge lamp in each of the five Mechanical views')
+  ok((srcSC.match(/forgeSparksPool\(g, '/g) || []).length === 5, 'one spark pool in each Mechanical view')
+  ok((srcSC.match(/forgeBounce\(/g) || []).length >= 3 && /o\.material\.emissive\.setRGB\(FORGE\.bounce\[0\] \* b/.test(srcSC), 'near brass wears the hot bounce, tinted by the breath')
+  ok(/if \(o\.userData\.sparks\) anim\.push/.test(srcSC) && /pa\.setXYZ\(i, sp\[i\]\.x, 0\.6 \+ sp\[i\]\.y, sp\[i\]\.z\)/.test(srcSC), 'the scene rewrites each spark pool from the law every frame')
+  ok(/ventPuff\(t, o\.userData\.steamKey/.test(srcSC) && /steamKey = 'mechBlueVent'/.test(srcSC), 'the blue-page vent puffs on its own cadence')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
-  console.log('MYST — mutants (each MUST die)')
+console.log('MYST — mutants (each MUST die)')
   const MF = 'src/games/Myst/attract.js'
   const JX = 'src/games/Myst/index.jsx'
   const SP = 'src/games/Myst/soundplan.js'
@@ -1853,6 +1933,7 @@ if (process.argv.includes('--mutate')) {
   const LK = 'src/games/Myst/link.js'
   const SEA = 'src/games/Myst/sea.js'
   const SD = 'src/games/Myst/sound.js'
+  const FG = 'src/games/Myst/forge.js'
   const MUTANTS = [
     ['every sea wears Myst again (the island turns Selenitic green)', SEA,
       'dock:             { water: 0,    color: [0.98, 0.80, 0.60], swell: 0.16',
@@ -2305,6 +2386,43 @@ if (process.argv.includes('--mutate')) {
     ['the deck does not lift (the player stays on the shelf)', JX,
       'camera.position.y = NODES.stoneDeck.pos[1] + fr.heave',
       'camera.position.y = NODES.stoneDeck.pos[1]'],
+    // #838 item 13 — the forge breathes
+    ['the forge holds one brightness (the bellows are dead)', FG,
+      'return Math.min(FORGE.max, Math.max(FORGE.min, pump + flick))',
+      'return 0.85'],
+    ['the forge travels (Selenitic suddenly smiths)', FG,
+      'if (!FORGE_VIEWS.includes(view)) return 0',
+      'if (false) return 0'],
+    ['far brass stays hot (the distance law flattens)', FG,
+      'const fall = Math.max(0, 1 - d / FORGE.reach) ** 2',
+      'const fall = 1'],
+    ['all vents share one cadence (the valve bank hisses in step)', FG,
+      'const period = VENT.period0 + h01(k) * VENT.period1',
+      'const period = VENT.period0'],
+    ['a vent sticks open (a leak, not a valve)', FG,
+      'if (phase >= VENT.duty) return 0\n  const u = Math.sin((Math.PI * phase) / VENT.duty)\n  return u * u',
+      'const u = Math.sin((Math.PI * phase) / VENT.duty)\n  return u * u + 0.2'],
+    ['sparks freeze on the gear (they never climb)', FG,
+      'y: u * SPARK.rise,',
+      'y: 0,'],
+    ['sparks never die (life pinned at birth)', FG,
+      'life: out0,',
+      'life: 1,'],
+    ['sparks wander the whole Age (the furnace is forgotten)', FG,
+      'x: sx + (h01(`${view}x${i}`) - 0.5) * 2 * SPARK.spread * (0.4 + u)\n        + SPARK.swirl * Math.sin(t * 2.3 + i * 1.7) * u,',
+      'x: sx + (h01(`${view}x${i}`) - 0.5) * 2 * SPARK.spread * (0.4 + u) * 8\n        + SPARK.swirl * Math.sin(t * 2.3 + i * 1.7) * u,'],
+    ['the scene stops driving the lamps (the law lives only in the module)', 'src/games/Myst/scene.js',
+      'o.intensity = FORGE.lamp * forgeBreath(t)',
+      'o.intensity = FORGE.lamp'],
+    ['the landing loses its forge (mechTop goes dark)', 'src/games/Myst/scene.js',
+      "forgeLamp(g, 'mechTop') // the landing burns on the forge-breath (item 13)",
+      ''],
+    ['the drum stops wearing the bounce (one slab of brass stays cold)', 'src/games/Myst/scene.js',
+      'forgeBounce(tower) // the drum under the forge-breath (item 13)',
+      ''],
+    ['the steam ignores its cadence (the puff is pinned shut)', 'src/games/Myst/scene.js',
+      "const p = ventPuff(t, o.userData.steamKey || 'default')",
+      'const p = 0'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
