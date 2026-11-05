@@ -50,6 +50,9 @@ eslint clean on touched files; lint:mario/fps/ai OK; build OK; carpetcheck 49/49
 Node (browser gates CI-only — Chrome #737 SIGABRTs both channels on this box).
 
 ## Notes for the next slot-b session
+- This session's dev server (port 5179, worktree's checkout) is still running —
+  harmless, but it blocks 5179; next session starts at 5178's owner check and
+  falls through to 5180 if needed.
 - The gh/cli rescue env is MANDATORY here: `. /tmp/forge/env.sh` (system DNS
   dead; Go-TLS OSStatus -26276). `gh pr create/checks/merge` all work through
   /tmp/forge/rescue/bin/gh (636-line shim, jalfern token).
