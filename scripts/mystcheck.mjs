@@ -8,13 +8,14 @@ import { drawVision, drawPortrait, PORTRAIT_TEAR0 } from '../src/games/Myst/visi
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues, ambCues, SKY_TUNE } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues, gullCues, ambCues, SKY_TUNE } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW, shipFloat, SHIP_ROCK, SHIP_VIEWS } from '../src/games/Myst/sea.js'
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
 import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSeated, seatedCount, galleryOpen, gearRows } from '../src/games/Myst/gears.js'
 import { FORGE, FORGE_VIEWS, FORGE_SEATS, forgeBreath, forgeLight, ventPuff, VENT, forgeSparks, SPARK } from '../src/games/Myst/forge.js'
 import { CLOUD, CLOUD_VIEWS, CLOUD_SEATS, BOUNCE_TINT, cloudBounce, cloudShade, deckLight } from '../src/games/Myst/cloudlight.js'
+import { STONE_VIEWS, GULLS, GULLCRY, WASH, gullsAt, gullCry, hullWash } from '../src/games/Myst/stone.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -2013,7 +2014,63 @@ console.log('MYST — the cloud floor breathes (#838 item 14: CHANNELWOOD lit fr
   ok(/if \(o\.isLight && o\.userData\.cloud\) anim\.push/.test(srcCL) && /o\.intensity = CLOUD\.lamp \* cloudBounce\(t, o\.userData\.cloud\)/.test(srcCL), 'the anim loop breathes every cloud lamp on the law')
   ok((srcCL.match(/cloudLamp\(g, '/g) || []).length === 4, 'one uplight seated in each of the four Channelwood views')
   ok((srcCL.match(/cloudDeck\((?!\s*o,)/g) || []).length >= 7, 'decks, driftwood and shelter are all wired to the light under them')
-  ok(/if \(o\.userData\.cloudDeck\) anim\.push/.test(srcCL) && /deckLight\(t, o\.position\.x, o\.position\.z, o\.userData\.cloudDeck\)/.test(srcCL), 'every deck re-reads the light under its own boards each frame')
+    ok(/if \(o\.userData\.cloudDeck\) anim\.push/.test(srcCL) && /deckLight\(t, o\.position\.x, o\.position\.z, o\.userData\.cloudDeck\)/.test(srcCL), 'every deck re-reads the light under its own boards each frame')
+}
+
+console.log('MYST — the harbour lives (#838 item 15: gulls wheel, the Atlantic washes the hull — STONESHIP look pass)')
+{
+  ok(gullsAt(3.3, 'stoneship').length === GULLS.n && gullsAt(9.1, 'stoneDeck').length === GULLS.n, 'the pier and the quarterdeck both sit under the ring — one harbour, two seats')
+  ok(['stoneObservatory', 'selenitic', 'selSound', 'dock', 'beach', 'mechanical', 'chanWheel', 'mechRoom'].every((v) => gullsAt(4.4, v).length === 0), 'the birds stay home — the ridge above and every other Age keep their own sky')
+  ok(JSON.stringify(gullsAt(12.37, 'stoneship')) === JSON.stringify(gullsAt(12.37, 'stoneship')), 'the sky is deterministic — same instant, same wheel (the harness replays it)')
+  let inR = true, inH = true, inF = true
+  for (let k = 0; k <= 800; k++) {
+    for (const g of gullsAt(k / 20, 'stoneship')) {
+      const r = Math.hypot(g.x, g.z)
+      if (r < GULLS.r0 - 0.01 || r > GULLS.r0 + GULLS.r1 + 0.01) inR = false
+      if (g.y < GULLS.h0 - 0.6 || g.y > GULLS.h0 + GULLS.h1 + 0.6) inH = false
+      if (g.flap < 0 || g.flap > 1) inF = false
+    }
+  }
+  ok(inR, 'every bird stays on its ring — a bounded circuit of the mooring, never a departure')
+  ok(inH, 'glide heights bounded — the loiter band over the harbour')
+  ok(inF, 'the wing envelope is bounded 0..1')
+  const ring0 = gullsAt(0, 'stoneship')
+  ok(new Set(ring0.map((g) => `${g.x.toFixed(2)},${g.z.toFixed(2)}`)).size === GULLS.n, 'three birds, three seats — no two gulls share an orbit')
+  ok(new Set(ring0.map((g) => g.y.toFixed(2))).size === GULLS.n, 'each bird glides at its own height')
+  const later = gullsAt(6.5, 'stoneship')
+  ok(later.some((g, i) => Math.hypot(g.x - ring0[i].x, g.z - ring0[i].z) > 1), 'the ring wheels — gulls painted at fixed points are decoration')
+  const flaps = new Set()
+  for (let k = 0; k < 400; k++) flaps.add(gullsAt(k / 40, 'stoneship')[0].flap.toFixed(3))
+  ok(flaps.size > 30, 'the wings beat — hundreds of distinct flap phases under way')
+  ok([0, 1, 2].every((i) => gullCry(2.2, 'selenitic', i) === 0 && gullCry(9.9, 'dock', i) === 0), 'no cries outside the harbour — the scope law, on birds')
+  ok(gullCry(7.77, 'stoneDeck', 1) === gullCry(7.77, 'stoneDeck', 1), 'a cry is deterministic')
+  let cryHi = false, cryZero = false, alive = 0, tot = 0
+  for (let k = 0; k <= 1200; k++) { const e = gullCry(k / 20, 'stoneship', 0); tot++; if (e > 0.5) { cryHi = true; alive++ } if (e === 0) cryZero = true }
+  ok(cryHi, 'the harbour does hear a cry — the cadence actually calls')
+  ok(cryZero, 'and it rests between calls — a gull that never stops is a smoke alarm, not a bird')
+  ok(alive / tot <= GULLCRY.duty + 0.02, 'duty kept — short cries, long silences (the vent rule, item 13, on birds)')
+  ok(hullWash(3.1, 'stoneship') === 0 && hullWash(3.1, 'stoneObservatory') === 0 && hullWash(3.1, 'beach') === 0, 'the wash runs exactly where a hull floats — pier, ridge and the beached island boat stay dry')
+  let wMin = 9, wMax = -9, wOk = true
+  for (let k = 0; k <= 2400; k++) { const w = hullWash(k / 20, 'stoneDeck'); if (!Number.isFinite(w)) { wOk = false; break } wMin = Math.min(wMin, w); wMax = Math.max(wMax, w) }
+  ok(wOk && wMin >= 0 && wMax <= 1, `the wash is bounded 0..1 (${wMin.toFixed(2)}..${wMax.toFixed(2)})`)
+  ok(wMax > 0.05, 'the Atlantic really laps the plank — a hull that never wets is a museum ship')
+  ok(wMin < 0.01, 'and the water slides back off — a wash that only rises is a flood')
+  ok(hullWash(17.25, 'stoneDeck') === hullWash(17.25, 'stoneDeck'), 'the wash is deterministic')
+  const srcSN = readFileSync('src/games/Myst/stone.js', 'utf8')
+  ok(/shipFloat/.test(srcSN) && /seaSwell/.test(srcSN) && /SHIP_ROCK/.test(srcSN), 'the wash is built on item 12\u2019s float law — wash and hull read the very same sea')
+  const src15 = readFileSync('src/games/Myst/scene.js', 'utf8')
+  ok(/gullBirds\(g, 'stoneship'\)/.test(src15) && /gullBirds\(g, 'stoneDeck'\)/.test(src15), 'the ring is seated over both harbour views')
+  ok(/foamWash\(g, 'stoneDeck'\)/.test(src15), 'wash foam seated along the floating hull\u2019s flank')
+  ok(/if \(o\.userData\.gull\) anim\.push/.test(src15) && /gullsAt\(t, o\.userData\.gull\)\[o\.userData\.gullIndex\]/.test(src15), 'the anim loop wheels every gull on the pure law')
+  ok(/o\.children\[1\]\.rotation\.z = \(b\.flap - 0\.5\)/.test(src15) && /o\.children\[2\]\.rotation\.z = \(0\.5 - b\.flap\)/.test(src15), 'the wings counter-flap — left up as right comes down')
+  ok(/if \(o\.userData\.wash\) anim\.push/.test(src15) && /hullWash\(t, o\.userData\.wash\)/.test(src15), 'the anim loop floods the flank quads on the wash law')
+  ok(/if \(ev === 'gull'\) return gullCues\(\)/.test(readFileSync('src/games/Myst/soundplan.js', 'utf8')), 'the cry is a scheduled event in the plan, not an ad-hoc beep')
+  const gc = gullCues()
+  ok(gc.length === 2 && gc.every((c) => c.type === 'tone' && c.f > 700), 'the cry sits high — above the crack, the swell and every mechanism in Myst')
+  ok(gc[1].delay > 0.05 && gc[1].f < gc[0].f, 'two syllables, the second lower a hand-beat later — the kye-ow')
+  const srcJX15 = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  ok(/STONE_VIEWS\.includes\(gs\.node\)/.test(srcJX15) && /gullCry\(wt, gs\.node, gi\)/.test(srcJX15) && /e > 0\.5 && gullPrev\[gi\] <= 0\.5\) sfx\('gull'\)/.test(srcJX15), 'the loop fires a cry on each bird\u2019s rising edge, off the sim clock')
+  ok(WASH.scale > 0 && GULLCRY.duty > 0 && GULLCRY.duty < 0.5 && STONE_VIEWS.length === 2, 'the law table is sane — short duty, a real scale, exactly two harbour seats')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -2028,6 +2085,7 @@ console.log('MYST — mutants (each MUST die)')
   const VI = 'src/games/Myst/visions.js'
   const GG = 'src/games/Myst/gears.js'
   const TR = 'src/games/Myst/terrain.js'
+  const SN = 'src/games/Myst/stone.js'
   const LK = 'src/games/Myst/link.js'
   const SEA = 'src/games/Myst/sea.js'
   const SD = 'src/games/Myst/sound.js'
@@ -2551,6 +2609,25 @@ console.log('MYST — mutants (each MUST die)')
       'if (o.isLight && o.userData.cloud) anim.push', 'if (false && o.isLight && o.userData.cloud) anim.push'],
     ['the boards stop reading their light (colour frozen while banks pass)', 'src/games/Myst/scene.js',
       'if (o.userData.cloudDeck) anim.push', 'if (false && o.userData.cloudDeck) anim.push'],
+    // #838 item 15 — the harbour lives
+    ['gulls invade every sky (Selenitic wears the harbour ring)', SN,
+      "if (!STONE_VIEWS.includes(view)) return []", 'if (false) return []'],
+    ['the ring is painted, not wheeling (angles frozen at birth)', SN,
+      'const a = a0 + dir * ((t / per) % 1) * Math.PI * 2', 'const a = a0'],
+    ['the harbour never hushes (a cry that never rests)', SN,
+      'if (phase >= GULLCRY.duty) return 0', 'if (phase >= Infinity) return 0'],
+    ['the wash lets go (water climbs and stays — the hull drowns standing up)', SN,
+      'return Math.min(1, (s / seats.length) / WASH.scale)', 'return Math.min(1, 1)'],
+    ['the scene stops wheeling its gulls (silhouettes welded to the sky)', 'src/games/Myst/scene.js',
+      'if (o.userData.gull) anim.push', 'if (false && o.userData.gull) anim.push'],
+    ['the flank foam freezes (a dry hull wearing a painted waterline)', 'src/games/Myst/scene.js',
+      'if (o.userData.wash) anim.push', 'if (false && o.userData.wash) anim.push'],
+    ['the pier loses its ring (the harbour is only seen from the ship)', 'src/games/Myst/scene.js',
+      "gullBirds(g, 'stoneship')", 'void 0'],
+    ['wings stop beating (gliding on stone)', 'src/games/Myst/scene.js',
+      'o.children[1].rotation.z = (b.flap - 0.5) * 1.3', 'o.children[1].rotation.z = 0'],
+    ['the loop forgets the cry (birds wheel in total silence)', 'src/games/Myst/index.jsx',
+      "if (e > 0.5 && gullPrev[gi] <= 0.5) sfx('gull')", 'if (false && gullPrev[gi]) sfx(\'gull\')'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
