@@ -10,7 +10,7 @@ import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSe
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
-import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell } from '../src/games/Myst/sea.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1312,6 +1312,93 @@ console.log('MYST — the island wears real shores too (#838 item 3: sculpted gr
   }
 }
 
+console.log('MYST — the horizon is not empty (#838 item 5: mirrored cloud banks + land on the skyline)')
+{
+  const allSea = Object.keys(SEA_VIEWS)
+  // — the mirror lives past the deep, never on the shore
+  ok(allSea.every((v) => cloudMirror(0, 30, 4.4, v) === 0 && cloudMirror(40, 120, 2.2, v) === 0 && cloudMirror(0, 379, 1.1, v) === 0),
+    'the cloud mirror never touches shore water — the items 2/3 shoreline is untouched')
+  ok(cloudMirror(500, 80, 7.7, 'mechanical') === 0 && cloudTint('mechanical') === null,
+    'a dry Age mirrors nothing — Mechanical keeps its dry forge horizon')
+  // — deterministic and alive
+  ok(cloudMirror(500, 80, 7.7, 'stoneship') === cloudMirror(500, 80, 7.7, 'stoneship'),
+    'cloudMirror is deterministic — same instant paints the same sky')
+  ok(cloudMirror(500, 80, 7.7, 'stoneship') !== cloudMirror(500, 80, 13.1, 'stoneship'),
+    'the mirrored banks drift — the Atlantic sky moves on the water')
+  ok(cloudMirror(520, 60, 7.7, 'stoneship') !== cloudMirror(520, 60, 7.7, 'dock'),
+    'no two seas wear one cloud at the same instant')
+  // — broken clumps, not a flat varnish: at the horizon ring every sea shows
+  // bright cotton and dark gaps between them
+  {
+    const ringVar = (v) => {
+      let mn = 2, mx = -1
+      for (let a = 0; a < Math.PI * 2; a += 0.05) {
+        const q = cloudMirror(Math.sin(a) * 520, Math.cos(a) * 520, 6.6, v)
+        if (q < mn) mn = q
+        if (q > mx) mx = q
+      }
+      return [mn, mx]
+    }
+    ok(allSea.every((v) => { const [mn, mx] = ringVar(v); return mx - mn > 0.08 && mx > 0.2 && mn < 0.12 }),
+      'the mirror is broken cotton — bright clumps with dark gaps, never a uniform sheet',
+      allSea.map((v) => ringVar(v).map((x) => x.toFixed(2)).join('..')).join(' '))
+    ok(allSea.every((v) => {
+      for (let a = 0; a < Math.PI * 2; a += 0.05) {
+        const q = cloudMirror(Math.sin(a) * 520, Math.cos(a) * 520, 6.6, v)
+        if (q < 0 || q > 1) return false
+      }
+      return true }),
+    'the mirror stays bounded 0..1 — cotton, not lightning')
+  }
+  // — the hue laws ride up the mirror: every bank keeps its sky
+  ok(SKY_CLOUD.dusk[0] > SKY_CLOUD.dusk[1] && SKY_CLOUD.dusk[1] > SKY_CLOUD.dusk[2],
+    'dusk banks take the sunset — rose over the amber sea')
+  ok(SKY_CLOUD.stoneship[2] > SKY_CLOUD.stoneship[1],
+    'the Atlantic banks run cool — silver-grey, not gold')
+  ok(SKY_CLOUD.selenitic[1] > SKY_CLOUD.selenitic[0] && SKY_CLOUD.selenitic[1] > SKY_CLOUD.selenitic[2],
+    'Selenitic banks stay green in the haze')
+  ok(SKY_CLOUD.channelwood.every((c) => c >= 0.9),
+    'Channelwood sits on its cloud floor — the brightest mirror of all')
+  ok(cloudTint('dock') === SKY_CLOUD.dusk && cloudTint('stoneDeck') === SKY_CLOUD.stoneship &&
+    cloudTint('selSound') === SKY_CLOUD.selenitic && cloudTint('chanWheel') === SKY_CLOUD.channelwood,
+    'every sea view resolves to its sky\u2019s cloud colour through the pure law')
+  // — land on the skyline
+  ok(islesFor('selenitic').length === 0 && islesFor('selSound').length === 0,
+    'Selenitic\u2019s horizon is its caldera dome — no neighbouring land stands before it')
+  ok(islesFor('channelwood').length === 0 && islesFor('chanObs').length === 0,
+    'Channelwood floats above the clouds — no coast on its skyline')
+  ok(islesFor('mechanical').length === 0 && islesFor('towerTop').length === 0,
+    'dry views keep a dry skyline')
+  const bay = ['dock', 'cliffPath', 'beach', 'stairTop']
+  for (const v of bay) {
+    const L = islesFor(v)
+    ok(L.length >= 2, `${v}: the dusk bay frames itself with Myst\u2019s own headlands`, String(L.length))
+    ok(L.every((i) => i.h > 0 && i.w > i.h && Math.hypot(i.x, i.z) >= ISL_LIMIT.min && Math.hypot(i.x, i.z) <= ISL_LIMIT.far),
+      `${v}: every headland breaks the horizon low and wide, inside the fog\u2019s reach — land, not a floating boulder`)
+  }
+  for (const v of ['stoneship', 'stoneDeck', 'stoneObservatory']) {
+    ok(islesFor(v).length === 2, `${v}: two low islands ride the far Atlantic`, String(islesFor(v).length))
+  }
+  {
+    const sig = (v) => JSON.stringify(islesFor(v))
+    const withLand = allSea.filter((v) => bay.includes(v) || v.startsWith('stone'))
+    ok(new Set(withLand.map(sig)).size === withLand.length,
+      'no two sea views share one skyline — each pose turns its own world')
+    ok(JSON.stringify(islesFor('dock')) === JSON.stringify(islesFor('dock')),
+      'islesFor is deterministic — replayable silhouettes, hash-born not random')
+  }
+  // — the scene paints the sky and seats the land through the pure law
+  {
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    ok(/cloudMirror\(base\[i \* 3\], -base\[i \* 3 \+ 1\], t, id\)/.test(sc) && /cloudTint\(id\)/.test(sc),
+      'dressSea drifts the mirrored banks across the deep through sea.js — the clouds live in the pure law')
+    ok(/for \(const isl of islesFor\(id\)\)/.test(sc) && /isle\.scale\.set\(isl\.w \/ 2, isl\.h, isl\.w \/ 2\)/.test(sc),
+      'the scene seats its skyline domes through sea.js — the law sizes them, not the builder')
+    ok(/isl\.x, prof\.water, isl\.z/.test(sc),
+      'every isle sits ON its view\u2019s waterline — land rising out of its own sea')
+  }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1632,6 +1719,34 @@ if (process.argv.includes('--mutate')) {
     ['the beach copies the dock sculpt (two island shores share one ground)', TR,
       `{ base: 0.12, water: 0,   crest: { x: -14, z: 36, core: 5, rim: 15, h: 0.7 }, drop: 3.2, skirt: 20, flats: [{ x0: -23, x1: -5, z0: 16, z1: 31, soft: 4 }] }`,
       `{ base: 0,    water: 0,   crest: { x: 0, z: 44, core: 0, rim: 10, h: 4.8 }, drop: 3.5, skirt: 12, flats: [] }`],
+    // #838 item 5 — mirrored clouds + the skyline
+    ['the cloud mirror bleeds onto the shore (the foam zone wears sky)', SEA,
+      'if (r <= SEA_DEEP.mirror) return 0', 'if (r <= -1) return 0'],
+    ['the mirrored banks freeze (the sky stops moving on the water)', SEA,
+      'const ph = t * v.drift * 11', 'const ph = t * 0 * 11'],
+    ['the clouds flatten to a uniform varnish (no cotton at the horizon)', SEA,
+      'return ramp * q * q', 'return ramp * 0.5'],
+    ['dusk banks turn cold (the mirror forgets the sunset)', SEA,
+      'dusk:        [0.99, 0.72, 0.66], // rose-lit cirrus over the amber sea',
+      'dusk:        [0.72, 0.86, 0.95], // rose-lit cirrus over the amber sea'],
+    ['the skyline vanishes (the sea is empty again)', SEA,
+      `dusk:      { n: 3,`, 'dusk:      { n: 0,'],
+    ['Selenitic grows neighbouring coasts (its dome is not the horizon)', SEA,
+      `const ISLE_LAW = {\n  dusk:`,
+      `const ISLE_LAW = {\n  selenitic: { n: 2, base: 380, span: 180, w0: 90, h0: 14, tint: [0.16, 0.11, 0.16] },\n  dusk:`],
+    ['a headland drowns (silhouette sinks under its own sea)', SEA,
+      'const h = law.h0 + hash01(`${view}:isle${i}:h`) * 20',
+      'const h = law.h0 - 54 + hash01(`${view}:isle${i}:h`) * 20'],
+    ['the islands drift past the fog (a skyline no eye ever sees)', SEA,
+      'const d = law.base + hash01(`${view}:isle${i}:d`) * law.span',
+      'const d = law.base + 340 + hash01(`${view}:isle${i}:d`) * law.span'],
+    ['the scene stops mirroring clouds (deep water forgets the sky)', 'src/games/Myst/scene.js',
+      'const lift = cloudMirror(base[i * 3], -base[i * 3 + 1], t, id) * 0.55',
+      'const lift = 0'],
+    ['the scene stops seating its skyline (empty horizon on every sea)', 'src/games/Myst/scene.js',
+      'for (const isl of islesFor(id))', 'for (const isl of [])'],
+    ['an isle floats 60 units above the water (a boulder, not a coast)', 'src/games/Myst/scene.js',
+      'isl.x, prof.water, isl.z, group)', 'isl.x, prof.water + 60, isl.z, group)'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
