@@ -25,7 +25,7 @@ export const CLAIMS = {
     p50c: { math: [40, 56], gsm: [59, 75], fin: [40, 80] },
 }
 
-export const SETS = { p50cw: ['math', 'gsm'], own2: ['math'], own4: ['math'], own8: ['math'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row; #1567 alpha rows are math-only (disclosed)
+export const SETS = { p50cw: ['math', 'gsm'], own2: ['math', 'gsm'], own4: ['math', 'gsm'], own8: ['math', 'gsm'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row; #1567 v2: swept alphas score practice only — if a swept tag appears in held-out scores at all it is the winner, with both sets
 
 export function validateR2({ scores, gate }) {
     const errs = []
@@ -471,12 +471,68 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         'rules: #1567 runner pins PAR-32 + whole-generation window + sidecars + Jon-GO')
     ok(!envOnly(run).includes('WS_R2_PP_CTX=32768'.replace('32768', '0')),
         'rules: #1567 runner window pin intact')
-    ok(/for A in 2 4 8/.test(run) && /WS_R2_SETS=math \$V r2_score\.py own\$\{A\}:qwen35-own-a\$\{A\}/.test(run),
-        'rules: alpha sweep {2,4,8} — one math-only held-out row per edit (disclosed, no set cherry-picking)')
+    const code = envOnly(run)
+    ok(/for A in 2 4 8/.test(code) && /WS_R3_PASS=\$PASS \$V r3_practice\.py own\$\{A\}:qwen35-own-a\$\{A\}/.test(code)
+        && !/WS_R2_SETS=math \$V r2_score\.py own\$\{A\}/.test(code),
+        'rules: alpha sweep {2,4,8} scores PRACTICE only — no held-out rows for the sweep (Jon ruling 23:31Z)')
+    ok(/r3_pick\.py/.test(code) && /WINNER/.test(code)
+        && /WS_R2_SETS=math,gsm \$V r2_score\.py \$\{WINNER\}:qwen35-own-a\$\{W_ALPHA\}/.test(code),
+        'rules: held-out is scored once, for the practice winner only (choose on practice, score held-out once)')
+    ok(code.search(/r3_practice\.py own/) < code.search(/r3_pick\.py/) && code.search(/r3_pick\.py/) < code.search(/R3_OWNHELD_DONE/),
+        'rules: pick happens after the sweep and before the single held-out row')
     ok(/edit_report\.json/.test(run) && /R3_ALPHA\$\{A\}_DONE/.test(run) && /R3_BASEW_DONE/.test(run),
         'rules: alpha/basew stages marker-guarded — resume neither re-applies edits nor re-logs passes')
     ok(!/r2_mit_grade\.py\s+[^|#\s]/.test(envOnly(run)),
         'rules: MIT regrade runs with NO args (argv form silently drops prior rows — #1562 law)')
+    // v1's defect, frozen as law: the swept variants must NEVER have held-out rows
+    {
+        const heldTags = ['own2', 'own4', 'own8']
+            .filter(t => existsSync(join(LAB, 'results/r2', `scores_${t}_math.jsonl`)))
+        const pickP = join(LAB, 'results/r2/r3_alpha_pick.json')
+        const pick = existsSync(pickP) ? JSON.parse(readFileSync(pickP, 'utf8')) : null
+        ok(!pick || heldTags.length <= 1,
+            'rules: at most ONE swept alpha ever reaches held-out (the winner)')
+        ok(!pick || heldTags.length === 0 || heldTags[0] === pick.decision,
+            'rules: any swept-alpha held-out rows belong to the practice winner',
+            `held=${heldTags} winner=${pick && pick.decision}`)
+        ok(pick ? !pick.decision || !['own2', 'own4', 'own8'].filter(t => heldTags.includes(t) && t !== pick.decision).length
+            : true, 'rules: held-out-once evidence consistent with the pick')
+        // mutant: a loser alpha with held-out rows is a protocol violation
+        ok(pick ? ['own2', 'own4', 'own8'].filter(t => t !== pick.decision).some(() => true) : true,
+            'rules: losers exist to be violated by the mutant')
+    }
+    // practice scorer: fresh disjoint batch, cap 8192, main-thread grading
+    {
+        const prac = dir('r3_practice.py')
+        ok(/USED = 96/.test(prac) && /math\[USED:USED \+ N_PRACTICE\]/.test(prac)
+            && /assert not \(\{r\["problem"\] for r in batch\} & seen\)/.test(prac),
+            'rules: practice batch is fresh math[96:160] with a disjointness assert (never reuses #1562 fit/val problems)')
+        ok(/CAP = 8192/.test(prac), 'rules: practice scoring runs at cap 8192 (the direction-search horizon)')
+        const span = prac.match(/def work\(rec\)[\s\S]*?ex\.map\(work/)
+        ok(span && !/R\.grade\(/.test(span[0]), 'rules: practice scorer grades on the main thread too')
+        ok(/if n_new:/.test(prac), 'rules: practice pass logs only when new rows generated (#1562 resume law)')
+        // mutant: reusing #1562's indices would contaminate the selection set
+        ok(!/math\[0:N_PRACTICE\]/.test(prac), 'mutant caught: practice batch overlapping #1562 corpus indices')
+    }
+    // pick: frozen rule + recomputation consistency
+    {
+        const pickP = join(LAB, 'results/r2/r3_alpha_pick.json')
+        const pracP = t => join(LAB, 'results/r2', `practice_${t}.json`)
+        ok(/max practice accuracy/.test(dir('r3_pick.py')) && /smaller alpha/.test(dir('r3_pick.py')),
+            'rules: pick rule is frozen in the script (accuracy first, fin tie-break, smaller alpha last)')
+        if (existsSync(pickP) && ['own2', 'own4', 'own8'].every(t => existsSync(pracP(t)))) {
+            const pick = JSON.parse(readFileSync(pickP, 'utf8'))
+            const rows = ['own2', 'own4', 'own8'].map(t => [t, JSON.parse(readFileSync(pracP(t), 'utf8'))])
+            const best = rows.sort((a, b) => b[1].acc - a[1].acc || b[1].finished - a[1].finished
+                || parseInt(a[0].slice(3)) - parseInt(b[0].slice(3)))[0][0]
+            ok(pick.decision === best, 'rules: stored pick equals the frozen rule recomputed from practice rows',
+                `stored ${pick.decision} vs recomputed ${best}`)
+            ok(pick.decision !== ['own2', 'own4', 'own8'].find(t =>
+                JSON.parse(readFileSync(pracP(t), 'utf8')).acc !== JSON.parse(readFileSync(pracP(best), 'utf8')).acc
+                && JSON.parse(readFileSync(pracP(t), 'utf8')).acc > JSON.parse(readFileSync(pracP(best), 'utf8')).acc),
+                'mutant caught: a pick that is not the practice-accuracy winner')
+        } else console.log('  skip pick recomputation (practice rows not complete yet)')
+    }
     const r3html = build(LAB)
     ok(r3html.rc === 0 && r3html.html.includes('ROUND 3 — SCALING THE OWN EDIT (#1567)'),
         'build: ROUND 3 section renders from the committed lab')

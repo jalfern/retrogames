@@ -79,10 +79,13 @@ const r2p50 = read("results/r2/p50c_manifest.json", null);
 const r2own = read("results/r2/edit_report_own.json", null);
 const r2gate = read("results/r2/step1_gate.json", null);
 const r2probe = read("results/r2/probe_engine.json", null);
-// #1567 ROUND 3 artifacts: layer-count ranking (pass P6) + alpha-sweep rows.
-// α rows live inside r2s (r2_score writes every tag there); this round's runner
-// scores them math-only (disclosed below).
+// #1567 ROUND 3 artifacts: layer-count ranking (pass P7), practice rows for the
+// α selection (Jon ruling: choose on practice; held-out is scored ONCE, for the
+// winner only), and the frozen-rule pick.
 const r3Layer = read("results/r2/r3_layer_rank.json", null);
+const r3Pick = read("results/r2/r3_alpha_pick.json", null);
+const r3prac = Object.fromEntries(["base", "own2", "own4", "own8"]
+  .map(t => [t, read(`results/r2/practice_${t}.json`, null)]));
 
 const sweepSumm = Object.fromEntries(batches.filter(b => b.phase === "practice" && b.purpose && b.purpose.startsWith("Jon step1")).map(b => [`cap${b.cap}`, b]));
 
@@ -506,12 +509,25 @@ const r3Hold = (r2s && r2s._hold) || 100
 const r3math = (tag) => { const s = r2s && r2s[tag]; return s && s.math && s.math.n >= r3Hold ? s.math : null }
 const r3mit = (k) => r2mit && r2mit.regrade && r2mit.regrade[k] ? r2mit.regrade[k].mit_acc.toFixed(1) + "%" : "—"
 const r3AlphaRows = [["own", 1], ["own2", 2], ["own4", 4], ["own8", 8]].map(([tag, a]) => {
-  const t = r3math(tag)
-  if (!t) return `<tr id="r3-a${a}"><td>α = ${a}</td><td>math</td><td colspan=4 class="note">pending — the detached chain scores α2 → α4 → α8 (~50 min per row)</td></tr>`
-  const d1 = r3math("own")
-  const dd = d1 ? `${t.acc - d1.acc >= 0 ? "+" : ""}${(t.acc - d1.acc).toFixed(1)} pts vs α=1` : "—"
-  return `<tr id="r3-a${a}"><td>α = ${a}</td><td>math</td><td>${t.n}</td><td>${t.acc.toFixed(1)}% <span class="note">(MIT-checker ${r3mit(`${tag}:math`)})</span></td><td>${t.finished.toFixed(1)}%</td><td>${dd}</td></tr>`
+  const t = r3math(tag)                       // held-out row (α=1 #1562; winner only for the sweep)
+  const prac = tag === "own" ? null : r3prac[tag]
+  const isWin = r3Pick && r3Pick.decision === tag
+  const pracCell = tag === "own"
+    ? `<span class="note">not re-run — basew ${r2s && r2s.basew && r2s.basew.math ? r2s.basew.math.acc.toFixed(1) + "%" : "6.0%"} MATH at the same window already answers α=1 (Jon note 00:25Z)</span>`
+    : (prac ? `${prac.n} · <b>${prac.acc.toFixed(1)}%</b> acc · ${prac.finished.toFixed(1)}% fin`
+      : `<span class="note">pending — practice pass P${9 + Math.log2(a / 2)}</span>`)
+  const heldCell = t
+    ? `${t.n} · ${t.acc.toFixed(1)}% <span class="note">(MIT-checker ${r3mit(`${tag}:math`)})</span> · ${t.finished.toFixed(1)}% fin`
+    : (isWin ? `<span class="note">scoring now — the ONE held-out row this round</span>`
+      : `<span class="note">never — swept variants don't touch held-out</span>`)
+  return `<tr id="r3-a${a}"><td>α = ${a}${isWin ? ' <b class="big" style="font-size:12px">★ winner</b>' : ""}</td><td>${pracCell}</td><td>${heldCell}</td></tr>`
 }).join("\n")
+const r3PickNote = (() => {
+  if (!r3Pick) return `<p class="note"><b>Candidate 2 — α pick: in flight.</b> Base + α∈{2,4,8} score on a fresh practice batch (passes P8–P11); the frozen rule (max practice accuracy, ties → finished-rate, then smaller α) picks one winner, and only the winner earns the held-out 100+100 row.</p>`
+  const w = r3Pick.winner
+  const lift = r3Pick.lift_over_base
+  return `<p class="note"><b>CANDIDATE 2 — THE PICK: α = ${w.alpha}.</b> On the fresh 64-math practice batch (cap 8192, think35 pp1.5 ctx 32768): ${Object.entries(r3Pick.rows).map(([t, s]) => `${t.replace("own", "α=")} ${s.acc.toFixed(1)}% acc / ${s.finished.toFixed(1)}% fin`).join(" · ")}${r3Pick.base_reference ? ` · base ${r3Pick.base_reference.acc.toFixed(1)}% / ${r3Pick.base_reference.finished.toFixed(1)}%` : ""}. Frozen rule (accuracy first) picks <b>α = ${w.alpha}</b>${lift !== null ? `, ${lift >= 0 ? "+" : ""}${lift.toFixed(1)} pts over base on practice` : ""}; its held-out 100+100 row is ${r2s && r2s[r3Pick.decision] && r2s[r3Pick.decision].math && r2s[r3Pick.decision].math.n >= r3Hold ? "landed below" : "scoring now"}.</p>`
+})()
 const r3LayerRows = r3Layer
   ? Object.entries(r3Layer.combined_sep).map(([k, v]) =>
       `<tr><td>${k} — ${r3Layer.sets[k].join("/")}</td><td>${v.toFixed(2)}</td></tr>`).join("\n")
@@ -524,6 +540,8 @@ const r3LayerNote = (() => {
 })()
 const r3BasewNote = (() => {
   const bw = r2s && r2s.basew
+  if (bw && bw.math && bw.math.n >= r3Hold && !(bw.gsm && bw.gsm.n >= r3Hold))
+    return `<p class="note"><b>Candidate 1 — basew control: in flight.</b> MATH landed: base at ctx 32768 gives ${bw.math.acc.toFixed(1)}% acc / ${bw.math.finished.toFixed(1)}% finished — the window lifts base MATH ${r2s.base.math.acc.toFixed(0)} → ${bw.math.acc.toFixed(0)}%: #1562's own-edit "doubling" is matched by the unedited control, so at fair settings the α=1 edit adds nothing on MATH accuracy. The GSM8K row scores now; the full Δfinished verdict lands with it.</p>`
   if (!bw || !bw.math || !bw.gsm || bw.math.n < r3Hold || bw.gsm.n < r3Hold)
     return `<p class="note"><b>Candidate 1 — basew control: in flight.</b> base re-scored at the whole-generation penalty window (ctx 32768), same fixed 100+100 rows — closing the question #1562 disclosed as not-run: does widening the window lift the BASE too? Row lands in the Round 2 table; the verdict clause in the #1562 note updates with it.</p>`
   const dBase = (bw.math.finished + bw.gsm.finished) / 2
@@ -534,14 +552,15 @@ const r3BasewNote = (() => {
 })()
 const r3Html = `
 <h2>ROUND 3 — SCALING THE OWN EDIT (#1567)</h2>
-<p>Round 2's self-found direction doubled base MATH (3→6%) at layers L15/L7 but left the finished column where it was. Step 3 takes three candidates in the issue's expected-payoff order — <b>(1)</b> the basew control: does the whole-generation penalty window lift the base too? <b>(2)</b> direction scaling: is the direction right but underscaled? α ∈ {2, 4, 8} on the identical [L15, L7] top-K 128 recipe — each edit gets one held-out MATH row (GSM8K sat at base level in #1562, so the sweep is MATH-only, disclosed; no cherry-picking of the better set). <b>(3)</b> layer count: P5 separated five of six FA layers, the edit used two. Astra rules unchanged — practice-only, no gradients, norm/embed/lm_head untouched; every pass in the ledger.</p>
+<p>Round 2's self-found direction doubled base MATH (3→6%) at layers L15/L7 but left the finished column where it was. Step 3 takes three candidates in the issue's expected-payoff order — <b>(1)</b> the basew control: does the whole-generation penalty window lift the base too? <b>(2)</b> direction scaling: is the direction right but underscaled? α ∈ {2, 4, 8} on the identical [L15, L7] top-K 128 recipe — chosen on <b>practice</b>, per Jon's ruling mid-round ("scoring several α variants on held-out would be tuning on the test set"): one frozen rule picks a winner from a fresh practice batch, and that winner alone earns a held-out row. <b>(3)</b> layer count: P5 separated five of six FA layers, the edit used two. Astra rules unchanged — practice-only, no gradients, norm/embed/lm_head untouched; every pass in the ledger.</p>
 ${r3BasewNote}
-<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">DIRECTION SCALING — α SWEEP (candidate 2, MATH held-out)</h3>
+<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">DIRECTION SCALING — α SWEEP, CHOSEN ON PRACTICE (candidate 2)</h3>
 <table>
-<tr><th>edit</th><th>set</th><th>n</th><th>accuracy</th><th>finished</th><th>vs α = 1</th></tr>
+<tr><th>edit</th><th>practice — fresh 64 math, cap 8192 (passes P8–P11)</th><th>held-out 100+100 — winner only</th></tr>
 ${r3AlphaRows}
 </table>
-<p class="note">α = 1 removed the d-component outright. The edited footprint is tiny (128 columns × 2 layers ≈ 0.035% of weights) — if the linear model holds, pushing past full removal over-corrects along the same axis and accuracy should climb toward the p50cw reference (31.0% MATH) until the attractor re-asserts. Every α row lands with MIT's own-checker regrade.</p>
+${r3PickNote}
+<p class="note">α = 1 removed the d-component outright; whether scaling past full removal helps was v1's question. Jon's ruling corrected the protocol: picking among α variants on the held-out 100 MATH would be <b>tuning on the test set</b>, so the sweep scores a fresh practice batch (math_train indices 96–159 of the SEED-1562 shuffle — provably disjoint from #1562's fit/validation), and <b>one</b> winner is scored on held-out at the full think35 protocol. The practice batch's base control (P8) measures the lift on the same problems.</p>
 ${r3LayerRows ? `<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">LAYER COUNT — COMBINED HELD-OUT SEPARATION (candidate 3)</h3>
 <table>
 <tr><th>layer set (ranked by P5 per-layer sep)</th><th>combined sep</th></tr>
