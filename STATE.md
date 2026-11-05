@@ -1,59 +1,65 @@
-# STATE — session 139 (2026-11-05, slot b)
+# STATE — session 140 (2026-11-05, slot b)
 
 ## What shipped
-**ROBOTSIM KIT stage 4a (#1570) — gate 6 fixed + juice; PR #1583 squash-merged to main
-`b08cf43`** (static SUCCESS, Vercel SUCCESS). Prod verified: index-CNKt3R0o.js → RobotLab
-chunk `index-DOzSFWol.js` carries `BASE STRAIN`/`ΔX` HUD + `sawtooth` whine live at
-https://jalfern.com/retrogames/robotlab.
-- **Gate 6 root cause was routing, not servo gains** (the old tuning theory was wrong).
-  New cabinet route in `src/utils/robot/index.js` autopilot: lift-out forward to z=0.26 →
-  cross the panel span → push straight through the doorway at x=−0.26. The can↔grasp carry
-  offset is re-frozen at phase boundaries only — per-tick re-compensation was the old
-  feedback-loop failure, and the grab-time constant mis-aims ~90 mm because the offset
-  rotates with hand yaw. **robokitcheck 18/18, all 12 seeds win, max 2647 ticks.**
-- **Item 3 juice (all synthesized, zero new assets):** effort-pitched sawtooth whine (62→260
-  Hz, every 6 ticks while the base slides), additive `THREE.Points` spark/dust pool (amber
-  while strain > 5, grey after drop), grip-click pair, drop thud + 300 ms camera shake.
-  RobotLab HUD now shows `BASE STRAIN … N` + live `ΔX/ΔZ/TILT` (item 2's readout gap).
-  Gate 13 extended to tripwire all of it; mutant proof: RENAMED → red, restored.
-- **Item 4 honest scope:** PickRush/TidyBot import nothing from `src/utils/robot`
-  (self-contained sims); FloorBoss uses only episode/manifest/hash utils. "Carry into the
-  games" = kit reuse where it exists + all suites green: robokitcheck 18/18, floorbosscheck
-  120/120, pickcheck/tidycheck Node gates PASS.
+**MAGIC CARPET INVISIBILITY (#1611) — squash-merged to main `ea44ffd`** (static SUCCESS,
+Vercel Production SUCCESS; prod verified: live shell index-BfsqIGW2.js carries the new
+registry text "INVISIBILITY veils the carpet for seven seconds" + "1–7").
+Play at https://jalfern.com/retrogames/magic-carpet.
+- 7th spell of the original twenty (issue #1610, never-dry rung): cost 20 pouch mana,
+  veil = 420 WORLD ticks (INVIS_T). While veiled the wizard's fuse pauses (no bolts
+  launch; in-flight bolts pass through the ghost carpet), wolves neither chase nor bite,
+  giants refuse slings; own pearls/books/banking/blasts untouched. Fuse resumes on its
+  cadence at expiry (`invisEnd` event).
+- Look/feel all synthesized: carpet+hands shimmer at ~35% alpha (VA factor threaded
+  through paintCarpetAndHands), cyan ripple tint, veil-timer bar under the vault,
+  vanishing-eye icon, rising-shimmer cast + retreating-echo lift, Digit7, attract line.
+- **Autopilot rules (balance):** defensive veil cast (hp<40, threat closing, veil in hand)
+  + evasive climb (hp<55, wolf within 24 — "altitude is armor"). This RESTORED the 60/60
+  seed sweep after the 7th grimoire shifted seed 20's layout (was 59/60), and improved
+  slowest 26.5k → 24,704 ticks.
+- carpetcheck +10 gates (roster-7, cast/expiry, wizard refusal vs LIVE control that
+  fires+hits, in-flight pass-through, resume-at-expiry, wolf + giant refusal vs control,
+  own-pickups-intact, hash-sees-veil, grimoire-every-world, 60-seed sweep): 38 Node
+  PASS / 0 FAIL. Mutant: deleted wizard-blindness gate → exactly the targeting gate red
+  (`veiled fire=true`); restored.
+- QA polish pass filed: **#1612** (world-side veil visuals, **mobile spell equip —
+  1–7/Q are keyboard-only, the worst gap**, radar veil cue, muffled audio behind veil,
+  roster remainder clone/dissolve/shatter/volcano, village life, water/underwater).
 
-## Harness fix (important for every lane)
-`/tmp/forge/rescue/bin/gh` (the gh-shim) **faked `gh pr ready`**: it REST-PATCHed
-`draft:false`, which GitHub's REST silently ignores, and printed ✓ anyway — PRs stayed
-draft and merges 405'd. Fixed: the shim now runs GraphQL `markPullRequestReadyForReview`
-and verifies `isDraft=false` before claiming success. If a shim call says ✓ but state
-disagrees, suspect the shim, not GitHub.
+## Ladder record (slot b)
+Warden target #838 MYST: `forge-claim.sh 838 b` REFUSED (QA studio live claim 50 min).
+Normal ladder: no steer/next, game-queue only #838 (held), feedback empty → flagship
+stage spent (SSX/Emberwood/CDHD/Myst READMEs fully owned) → never-dry weakestStage =
+MAGIC CARPET (score 9) → filed + claimed #1610 → shipped.
 
 ## Playable now
-RobotLab (full 4a sim + juice). #1570 stays open: before/after screenshots (dead Chrome
-#737 blocks all browser paths on this box) + knock-recovery basin (README gaps).
+Magic Carpet (7 spells, Veil live). RobotLab 4a; MYST through item 15 (harbour).
 
 ## Next (priority order)
-1. #1570 finish: before/after screenshots when Chrome returns (`npm run shot`), and
-   consider wiring FloorBoss's arm onto the kit chain as the first real consumer.
-2. Stage 4b candidate: first NEW game built on the kit (door/key puzzle), which would
-   exercise chain+strain+juice end-to-end and prove the kit's API against a fresh author.
-3. #838 MYST item 3 — island shores (slot a's lane; pick up only if slot a is dark).
+1. #838 MYST continues on its own cadence (#1608/1611-era items each PR); when QA's
+   claim lapses (>90 min quiet) a builder may take the NEXT #838 stage — check the
+   README residual: island shores (dock/beach/cliffPath/stairTop).
+2. #1570 still labeled `building` on the board but has NO pushed forge branch
+   (branch deleted after #1583 merged) — stale label; a future lane may re-claim it
+   for the knock-recovery basin (README gaps) if Jon wants stage 4b.
+3. MagicCarpet roster remainder (clone/dissolve/shatter/volcano) — #1612 items 5;
+   strongest next game-code candidates after the veil.
 
 ## Gates/commands as of this session
-eslint clean on touched files; lint:mario/fps/ai OK; build OK; robokitcheck 18/18;
-floorbosscheck green. pick/tidy browser screenshot step dies on #737 (advisory).
-Chrome #737: any script that spawns Chrome SIGABRTs on this box — Node gates are the bar.
-
-## Questions for Jon
-None open. (No taste-level calls came up this session; network-rule for USD/GLB assets
-remains parked in its own future issue per #1570 scope.)
+eslint clean on touched files; lint:mario/fps/ai OK; build OK; carpetcheck 38/38 Node.
+Chrome #737 confirmed: BOTH system Chrome AND bundled chromium SIGABRT on this box —
+browser passes CI-only (SHOT_CHANNEL=chromium does not help here).
 
 ## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-robokit-4a` is detached at origin/main, branch
-  deleted after merge — reuse it for the next robokit step or pick a fresh lane name.
-- `gh pr ready` now works via the shim, but verify state after any shim ✓
-  (`gh pr view --json isDraft`).
-- Dev servers from previous sessions may linger: 5176/5177 (slots a/c), 5178 was slot b.
-- Autopilot edits: change the route legs, not the servo gains. The gain tuning of the
-  previous handoff was a red herring; `canOffPhase` boundary-freezing is the invariant —
-  freezing per-tick re-breaks gate 6 (feedback loop through the carry pose).
+- Worktree `~/Dev/retrogames-forge-carpet-invis` sits detached at origin/main; branch
+  deleted after merge — reuse or remove (`git worktree remove`).
+- gh-shim refuses compound shell commands through the proxy; post issue comments via
+  `gh api -X POST .../comments --input <json>` (build the JSON with python3 -c).
+- `gh api commits/<sha>/check-runs` returns empty — use `.../status` or `deployments`.
+- Prod verification: jalfern.com redirects to www; asset grep must follow -L. Vite
+  game-chunk hashes differ between local and Vercel builds — verify by CONTENT (grep
+  distinctive strings) in the live index shell, not by hash equality with dist/.
+- Dev servers: 5178 was slot b this session (still running, harmless).
+
+## Open questions
+None. (#1557/#1544 remain Jon's own board items, linked for continuity only.)
