@@ -1,65 +1,67 @@
-# STATE — session 140 (2026-11-05, slot b)
+# STATE — session 141 (2026-11-05, slot b)
 
 ## What shipped
-**MAGIC CARPET INVISIBILITY (#1611) — squash-merged to main `ea44ffd`** (static SUCCESS,
-Vercel Production SUCCESS; prod verified: live shell index-BfsqIGW2.js carries the new
-registry text "INVISIBILITY veils the carpet for seven seconds" + "1–7").
+**MAGIC CARPET TOUCH SPELLBOOK + RADAR VEIL CUE (#1612 items 2+3)** — PR #1613
+squash-merged to main `73f6c1e`; prod verified live (game chunk index-iaevs9Ev.js
+carries "LEFT HAND" tray code; shell carries the new controls text).
 Play at https://jalfern.com/retrogames/magic-carpet.
-- 7th spell of the original twenty (issue #1610, never-dry rung): cost 20 pouch mana,
-  veil = 420 WORLD ticks (INVIS_T). While veiled the wizard's fuse pauses (no bolts
-  launch; in-flight bolts pass through the ghost carpet), wolves neither chase nor bite,
-  giants refuse slings; own pearls/books/banking/blasts untouched. Fuse resumes on its
-  cadence at expiry (`invisEnd` event).
-- Look/feel all synthesized: carpet+hands shimmer at ~35% alpha (VA factor threaded
-  through paintCarpetAndHands), cyan ripple tint, veil-timer bar under the vault,
-  vanishing-eye icon, rising-shimmer cast + retreating-echo lift, Digit7, attract line.
-- **Autopilot rules (balance):** defensive veil cast (hp<40, threat closing, veil in hand)
-  + evasive climb (hp<55, wolf within 24 — "altitude is armor"). This RESTORED the 60/60
-  seed sweep after the 7th grimoire shifted seed 20's layout (was 59/60), and improved
-  slowest 26.5k → 24,704 ticks.
-- carpetcheck +10 gates (roster-7, cast/expiry, wizard refusal vs LIVE control that
-  fires+hits, in-flight pass-through, resume-at-expiry, wolf + giant refusal vs control,
-  own-pickups-intact, hash-sees-veil, grimoire-every-world, 60-seed sweep): 38 Node
-  PASS / 0 FAIL. Mutant: deleted wizard-blindness gate → exactly the targeting gate red
-  (`veiled fire=true`); restored.
-- QA polish pass filed: **#1612** (world-side veil visuals, **mobile spell equip —
-  1–7/Q are keyboard-only, the worst gap**, radar veil cue, muffled audio behind veil,
-  roster remainder clone/dissolve/shatter/volcano, village life, water/underwater).
+- The original was mouse-first — you CLICKED the HUD to arm your hands. Now the
+  phone does too: tap a hand slot cycles that hand through learned spells; the
+  gold SPELLS tab opens a seven-spell tray (icon art + mana cost gold-when-
+  payable, unlearned dimmed/inert, L-hand pick boxed gold); tapping a learned
+  icon assigns the LEFT hand; click-out closes WITHOUT casting; dead HUD strip
+  never fires a stray bolt. Keyboard 1–7/Q untouched.
+- Routing is pure sim: `hudTap(gs,x,y)` + `TAP`/`TRAY` hit map + `cycleL`
+  (twin of cycleR) in sim.js; `gs.book` is UI state and NOT mixed into
+  stateHash. The HUD canvas is now the pointer surface (maps client→HUD space;
+  'world' taps still cast L/R by button).
+- Radar behind the veil: cyan tinted glass + sweeping arc (#1612 item 3),
+  beside the existing overlay shimmer/timer bar.
+- Any equip (key/pad/tap) blips and names the spell ('equip' event was silent).
+- Attract line + registry controls mention the touch path.
+- carpetcheck +11 Node gates (49/49, was 38): slot cycles both hands, equip
+  events, world-tap-still-casts, dead strip, book toggle, tray equip/inert/
+  click-out, hit boxes inside 320×200, tray never disturbs the hash, world
+  regen closes the book. Mutant: slotL route → 'world' = exactly the two slot
+  gates red; restored. Balance unchanged: 60/60 seeds, slowest 24,704.
+- Contract gains buttons cycleL/cycleR/book + state.book; __carpetTest.tap(x,y)
+  so browser QA drives the same path.
 
 ## Ladder record (slot b)
-Warden target #838 MYST: `forge-claim.sh 838 b` REFUSED (QA studio live claim 50 min).
-Normal ladder: no steer/next, game-queue only #838 (held), feedback empty → flagship
-stage spent (SSX/Emberwood/CDHD/Myst READMEs fully owned) → never-dry weakestStage =
-MAGIC CARPET (score 9) → filed + claimed #1610 → shipped.
+Warden target #1612: `forge-claim.sh 1612 b` CLAIMED clean (no holder). Shipped
+items 2+3; issue left OPEN with `feedback` restored for the QA lane + precise
+remaining list (items 1, 4–7).
 
 ## Playable now
-Magic Carpet (7 spells, Veil live). RobotLab 4a; MYST through item 15 (harbour).
+Magic Carpet (7 spells, veil, mobile spell equip); RobotLab 4a; MYST through
+item 15 (harbour).
 
 ## Next (priority order)
-1. #838 MYST continues on its own cadence (#1608/1611-era items each PR); when QA's
-   claim lapses (>90 min quiet) a builder may take the NEXT #838 stage — check the
+1. #838 MYST continues on its own cadence; QA studio (#1258) is inside it.
    README residual: island shores (dock/beach/cliffPath/stairTop).
-2. #1570 still labeled `building` on the board but has NO pushed forge branch
-   (branch deleted after #1583 merged) — stale label; a future lane may re-claim it
-   for the knock-recovery basin (README gaps) if Jon wants stage 4b.
-3. MagicCarpet roster remainder (clone/dissolve/shatter/volcano) — #1612 items 5;
-   strongest next game-code candidates after the veil.
+2. #1612 remainder for QA or a future lane: GL ghost shimmer/trail + lost-
+   target cues, muffled-audio veil low-pass, roster clone/dissolve/shatter/
+   volcano, village life, water palette-cycling/underwater/anaglyph.
+3. #1570 still labeled `building` with NO pushed branch (stale since #1583
+   merged) — untouched; a tidy sweep may drop the label.
 
 ## Gates/commands as of this session
-eslint clean on touched files; lint:mario/fps/ai OK; build OK; carpetcheck 38/38 Node.
-Chrome #737 confirmed: BOTH system Chrome AND bundled chromium SIGABRT on this box —
-browser passes CI-only (SHOT_CHANNEL=chromium does not help here).
+eslint clean on touched files; lint:mario/fps/ai OK; build OK; carpetcheck 49/49
+Node (browser gates CI-only — Chrome #737 SIGABRTs both channels on this box).
 
 ## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-carpet-invis` sits detached at origin/main; branch
-  deleted after merge — reuse or remove (`git worktree remove`).
-- gh-shim refuses compound shell commands through the proxy; post issue comments via
-  `gh api -X POST .../comments --input <json>` (build the JSON with python3 -c).
-- `gh api commits/<sha>/check-runs` returns empty — use `.../status` or `deployments`.
-- Prod verification: jalfern.com redirects to www; asset grep must follow -L. Vite
-  game-chunk hashes differ between local and Vercel builds — verify by CONTENT (grep
-  distinctive strings) in the live index shell, not by hash equality with dist/.
-- Dev servers: 5178 was slot b this session (still running, harmless).
+- The gh/cli rescue env is MANDATORY here: `. /tmp/forge/env.sh` (system DNS
+  dead; Go-TLS OSStatus -26276). `gh pr create/checks/merge` all work through
+  /tmp/forge/rescue/bin/gh (636-line shim, jalfern token).
+- Port 5178 was OCCUPIED by retrogames-forge-robokit-4a's dev server (a dead
+  robokit lane's leftover — its branch is merged? check before killing; this
+  lane used 5179 + DEV_PORT=5179 instead of touching it).
+- Worktree `~/Dev/retrogames-forge-carpet-polish` sits detached at origin/main;
+  branch forge/carpet-polish deleted by the merge. Reuse or `git worktree remove`.
+- Prod verify by CONTENT grep through the proxy (jalfern → www redirect; local
+  vs Vercel chunk hashes differ — enumerate shell's `assets/index-*.js` list and
+  grep each for distinctive strings).
+- STATE.md direct-push to main (HEAD:main) still works for lane reports.
 
 ## Open questions
 None. (#1557/#1544 remain Jon's own board items, linked for continuity only.)
