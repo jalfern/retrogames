@@ -60,6 +60,35 @@ physics the USD layer holds (mass/friction/collider) + provenance.
   `state().slips` and the HUD.
 - Manifest rev `simready-manifest/2` (grip block added); episodes pin it.
 
+## Stage 4a — rigid chain, base reaction, juice (issue #1570)
+- **Rigid chain**: every link is a dynamic cannon body joined by solver hinges
+  (base→yoke→upper→fore→hand; fingers lock to the hand with sliding pivots).
+  Joint angles are READ from body poses — collisions and payloads move the
+  chain, not just the readout. The stage-3 torque law survives as an
+  equal-and-opposite actuator PAIR per joint, and the carried cargo's net
+  load (weight + inertial) is applied at the weld point on the hand.
+  Rotor-inertia floors (`INERTIA_FLOORS`) keep cannon's thin-box inertias from
+  turning ±τmax pairs into ±50 rad/s churn; collision tiers (links ghost
+  fixtures, solid vs cargo) keep the drawer/door from pinning the grasp.
+- **Base reaction**: the actuator reactions reach the base — a fixed base
+  reports `state().baseStrainN` (yaw-hinge solved impulse, cached at post-step
+  so snapshot/restore is honest); `mobileBase:true` adds a 2 kg plate that
+  slides/tips (`state().baseDelta`), deterministically. HUD: BASE STRAIN row
+  (+ ΔX/ΔZ/TILT when mobile).
+- **Juice (item 3)**: additive-blend particle pool — cyan sparks on grip
+  catch and slip-grind, tan dust on hard landings and releases; effort-pitched
+  joint whine (sawtooth blips every 6 ticks, pitch = harshest τ%); grip
+  click pair; small camera shake + thud on release. All synthesized, no assets.
+- **Route law for the can (gate 6)**: the open door stands along z
+  −0.074..+0.147 and the column∧cabinet V wedges anything at bench height
+  near x≈0 — the autopilot lifts out FORWARD (z 0.26), crosses the panel span
+  there, and pushes straight through the doorway at x=−0.26, carrying the
+  can↔grasp offset re-frozen at each phase boundary (the offset rotates with
+  hand yaw; per-tick compensation is a servo feedback loop).
+- Gates 16–17 (chain law, base reaction) + gate 6 green 12/12 seeds,
+  max win 2647 ticks. Mutants proven: prox-reaction removal reddens 5 gates;
+  HUD strain-text removal reddens gate 13.
+
 ## Win condition
 Two tasks, all six subgoals: drawerOpen · crateIn · drawerClosed ·
 doorOpen · canIn · doorClosed (score 50/100/50/50/100/50 = 400).
@@ -73,7 +102,7 @@ The drawer **refuses to close** when the crate sits on the rail track
   point-while-holding = carry and drop there.
 
 ## Verify commands
-- `npm run robokitcheck` — sixteen gates, all green: determinism (seed+pads =
+- `npm run robokitcheck` — eighteen gates, all green: determinism (seed+pads =
   identical hashes across processes), analytic servo round-trip (worst |Δ|
   ≤ 50 mm; the near-column dead zone is documented, not hidden), empty-grip
   refusal, stand-clear mechanism (Rail blockFn freezes a slide into an
@@ -148,8 +177,9 @@ The drawer **refuses to close** when the crate sits on the rail track
 1. SimReady mesh pulls: USD→GLB conversion + exact USD-side friction/mass
    transcription is the manual step (outside CI); until pulled, records are
    published-spec estimates and the game renders its own meshes.
-2. Links are torque-serviced in joint space (θ̈ = τ/I); the cannon bodies
-   stay kinematic (anchor+constraint fling, see gotchas). Base reaction and
-   joint flexing would need a full rigid-body chain — a later stage.
-3. Modem-level juice: drawer rumble, latch clicks, carry sway audio.
+2. Modem-level juice: drawer rumble, latch clunks on the prop side (the arm
+   side landed in stage 4a: sparks/dust/whine/click/shake).
+3. Knock-recovery basin: a hard hammer push can flip the pose solver's elbow
+   branch and crawl home from the wrong basin (documented in robokitcheck
+   gate 16, assertion deferred honestly — fix the basin, then restore it).
 

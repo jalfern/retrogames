@@ -15,6 +15,13 @@ export { CANNON }
 
 export const TICK_DT = 1 / 60
 
+// Collision tiers (stage 4a #1570): fixtures are group 4, arm links group 16
+// with fixture/link bits masked off, cargo keeps the default group 1. Links
+// shove cargo; links ghost fixtures (the drawer used to pin the gripper);
+// cargo↔fixture stays solid.
+export const COLLISION = { CARGO: 1, FIXTURE: 4, LINK: 16 }
+export const LINK_MASK = ~(COLLISION.FIXTURE | COLLISION.LINK)
+
 export function mulberry32(seed) {
     let a = seed >>> 0
     return () => {

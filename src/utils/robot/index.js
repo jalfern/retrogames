@@ -19,11 +19,12 @@
 
 import { createWorld, installMaterials, mulberry32, poseHash, poseTrack, boxOverlapsBody, TICK_DT, CANNON } from './physics.js'
 import { createArm } from './arm.js'
+import { applyInertiaFloors } from './arm.js'
 import { createBench, createDrawer, createCabinet, createCrate, createCan, BENCH_TOP } from './props.js'
 
 export { BENCH_TOP }
 export { createEpisode, validateEpisode, episodeDownload, exportEpisodes, saveEpisode, loadEpisodes, episodeStats } from './episode.js'
-export { forwardKinematics, planarIK, forceClosureFor, JOINT_SPECS, LINK_MASSES, SLIP_EMA, SLIP_SLACK, SLIP_GRIND, GRIND_EMA } from './arm.js'
+export { forwardKinematics, planarIK, forceClosureFor, JOINT_SPECS, LINK_MASSES, INERTIA_FLOORS, applyInertiaFloors, SLIP_EMA, SLIP_SLACK, SLIP_GRIND, GRIND_EMA } from './arm.js'
 export { Rail } from './physics.js'
 export { ASSETS, SLOTS, assetFor, gateFor, manifestSummary, MANIFEST_REV, SIMREADY_LIBRARY } from './assets.js'
 
@@ -39,11 +40,11 @@ const SUBGOALS = {
     doorClosed: 50,
 }
 
-export function createRobotSim(seed = 0) {
+export function createRobotSim(seed = 0, opts = {}) {
     const world = createWorld()
     const mats = installMaterials(world)
     createBench(world, mats)
-    const arm = createArm(world, mats, { base: BASE })
+    const arm = createArm(world, mats, { base: BASE, mobileBase: !!opts.mobileBase })
     const drawer = createDrawer(world, mats)
     const cabinet = createCabinet(world, mats)
     const rng = mulberry32((seed * 2654435761 >>> 0) ^ 0x9e3779b9)
@@ -56,6 +57,15 @@ export function createRobotSim(seed = 0) {
     const can = createCan(world, mats, { x: 0.42 + rng() * 0.04, y: BENCH_TOP + 0.045 + 0.02, z: -0.05 + rng() * 0.04 })
 
     const tracked = [crate, can, drawer.body, cabinet.body, arm.bodies.hand]
+    // Snapshot/restore must carry the whole dynamic chain (stage 4a): the
+    // state() hash covers the hand, but the link bodies' motion is what
+    // makes the next step replayable.
+    const snapBodies = () => {
+        const extra = [arm.bodies.yoke, arm.bodies.upper, arm.bodies.fore, arm.bodies.fingerL, arm.bodies.fingerR]
+        if (arm.bodies.basePlate) extra.push(arm.bodies.basePlate)
+        if (arm.rigid && arm.bodies.base.mass > 0) extra.push(arm.bodies.base)
+        return tracked.concat(extra)
+    }
     const goals = { drawerOpen: false, crateIn: false, drawerClosed: false, doorOpen: false, canIn: false, doorClosed: false }
     const methods = []
     const queue = []
@@ -87,7 +97,13 @@ export function createRobotSim(seed = 0) {
             return true
         }
         const ch = cabinet.handlePos()
-        if (Math.hypot(gp[0] - ch.x, gp[1] - ch.y, gp[2] - ch.z) < 0.08) {
+        // 0.10 latch radius (was 0.08): the handle is a marker point on the
+        // panel — a 70 mm palm that centers within 100 mm of it can reach the
+        // handle for the drag law regardless of flex in the wrist. 0.08 was
+        // tuned when the hand landed instantly (kinematic stage 3); the rigid
+        // chain settles with a few cm of flex and the close-latch missed at
+        // 0.09-0.11 on seeds 3/9/10 while physically straddling the handle.
+        if (Math.hypot(gp[0] - ch.x, gp[1] - ch.y, gp[2] - ch.z) < 0.10) {
             arm.latchTo(cabinet.body)
             cabinet.setHeld(true)
             latchNote = 'door'
@@ -212,6 +228,8 @@ export function createRobotSim(seed = 0) {
         gap: Math.round(arm.gap * 1000) / 1000,
         torque: arm.torquePct(),
         sat: arm.satCount(),
+        baseStrainN: arm.baseStrainN ? arm.baseStrainN() : 0,
+        baseDelta: arm.baseDelta ? arm.baseDelta() : null,
         slips,
         gripN: arm.weld ? Math.round(arm.weld.slipS * 10) / 10 : 0,
         budgetN: arm.weld ? Math.round(arm.weld.holdBudgetN * 10) / 10 : null,
@@ -284,10 +302,12 @@ export function createRobotSim(seed = 0) {
                 goals: { ...goals },
                 joints: { ...arm.joints },
                 spin: { ...arm.spin },
+                integ: { ...arm.integral },
                 target: { ...arm.target },
                 gap: arm.gap,
                 gapTarget: arm.gapTarget,
                 held: arm.held,
+                strainN: arm.strainN,
                 tn: { ...arm.torqueNow },
                 sat: { ...arm.saturated },
                 weld: arm.weld
@@ -302,7 +322,7 @@ export function createRobotSim(seed = 0) {
                     }
                     : null,
                 queue: queue.map((q) => ({ ...q })),
-                bodies: tracked.map((b) => ({
+                bodies: snapBodies().map((b) => ({
                     id: b.id,
                     p: [b.position.x, b.position.y, b.position.z],
                     q: [b.quaternion.x, b.quaternion.y, b.quaternion.z, b.quaternion.w],
@@ -319,8 +339,10 @@ export function createRobotSim(seed = 0) {
             Object.assign(goals, s.goals)
             Object.assign(arm.joints, s.joints)
             Object.assign(arm.spin, s.spin || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
+            Object.assign(arm.integral, s.integ || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
             Object.assign(arm.target, s.target)
             arm.gap = s.gap; arm.gapTarget = s.gapTarget; arm.held = s.held
+            arm.strainN = s.strainN || 0
             if (s.tn) { Object.assign(arm.torqueNow, s.tn); Object.assign(arm.saturated, s.sat || {}) }
             arm.weld = null
             queue.length = 0; queue.push(...s.queue.map((q) => ({ ...q })))
@@ -332,6 +354,10 @@ export function createRobotSim(seed = 0) {
                 b.velocity.set(...bs.v)
                 b.angularVelocity.set(...bs.av)
                 b.updateMassProperties()
+                // updateMassProperties recomputes raw box inertia — re-apply
+                // the joint's reflected rotor floor or the restored chain is a
+                // different (unstable) mechanism than the snapshotted one.
+                if (b.kitInertiaFloors) applyInertiaFloors(b)
                 b.updateBoundingRadius()
                 b.aabbNeedsUpdate = true
                 if (bs.sleep === 2) { b.sleepState = 2; b.sleepTicker = 0 } else b.wakeUp()
@@ -410,7 +436,7 @@ export function createAutopilot(sim) {
         D('overCavity', () => sim.drawer.body.position.x, () => sim.drawer.body.position.z - 0.02, () => st().goals.crateIn || (Math.abs(st().hand[0] - sim.drawer.body.position.x) < 0.05 && Math.abs(st().hand[2] - (sim.drawer.body.position.z - 0.02)) < 0.05), 400),
         L('settleDrop', 1.02, () => st().goals.crateIn || st().hand[1] < 1.03, 60),
         D('toHandle2', () => dh().x, () => dh().z + 0.02, () => Math.abs(st().hand[0] - dh().x) < 0.03 && Math.abs(st().hand[2] - (dh().z + 0.02)) < 0.03, 352),
-        L('lowerHandle2', () => dh().y + 0.045, () => st().hand[1] < dh().y + 0.055, 88),
+        L('lowerHandle2', () => dh().y + 0.03, () => st().hand[1] < dh().y + 0.04, 88),
         P('reLatch', () => st().held === 'drawer', 26),
         S('pushIn', 1, () => st().goals.drawerClosed, 704),
         P('releaseHandle2', () => st().held === null, 26),
@@ -430,11 +456,27 @@ export function createAutopilot(sim) {
         L('lowerCan', () => sim.can.position.y + 0.09, () => st().hand[1] < sim.can.position.y + 0.105, 150),
         P('grabCan', () => st().held === 'can', 48, 'retreatCan'),
         L('lift6', TRANSIT, () => st().hand[1] > 1.25, 88),
-        // Weld offset (measured ~+0.04x +0.08z from grasp to can) is near-
-        // constant after grab, so the cabinet route aims the HAND offset back
-        // to land the CAN at the cavity target. (A live gp-can compensation
-        // here became a servo feedback loop and destabilized the whole run.)
-        D('toCabinet', () => -0.30, () => -0.245, () => Math.abs(sim.can.position.x + 0.26) < 0.06 && Math.abs(sim.can.position.z + 0.165) < 0.06, 528),
+        // Three-leg cabinet route (#1570; replaced the old single straight
+        // transit, which dragged the can through the column∧cabinet V-groove —
+        // seeds 3/10 wedged it against column+cabinet+drawer, measured live
+        // contacts on all three — and a z=0.12 front pass, which plowed the
+        // panel's swing zone and slammed the OPEN door shut mid-carry: at
+        // -1.42 rad the panel stands along z -0.074..+0.147 at x -0.13..-0.17,
+        // and the world can-grasp offset rotates with the hand (yaw flips
+        // +1.2 at the pick to -1.4 at the doorway), so no single hand-offset
+        // constant aims the can at both ends.
+        // Leg 1 lifts out FORWARD at the pocket (z 0.26 clears door tip+rim
+        // 0.175 with servo lag). Leg 2 crosses the panel x-span at that safe
+        // z, exiting the moment the can's right face is left of the panel's
+        // whole span. Leg 3 pushes straight back through the open doorway at
+        // x=-0.26 — left of the panel, left of the drawer edge, clear of the
+        // groove; can targets carry the freeze-at-boundary offset.
+        D('toFront', () => st().hand[0], () => 0.26 - (canOff ? canOff.z : 0.05),
+            () => sim.can.position.z > 0.20, 220),
+        D('toSide', () => -0.26 - (canOff ? canOff.x : 0.03), () => 0.26 - (canOff ? canOff.z : 0.05),
+            () => sim.can.position.x < -0.20 && sim.can.position.z > 0.15, 330),
+        D('toDoorway', () => -0.26 - (canOff ? canOff.x : 0.03), () => -0.225 - (canOff ? canOff.z : 0.05),
+            () => Math.abs(sim.can.position.x + 0.26) < 0.06 && Math.abs(sim.can.position.z + 0.225) < 0.06, 396),
         L('lowerCanIn', 1.045, () => st().hand[1] < 1.055, 88),
         P('dropCan', () => st().held === null, 26),
         L('lift7', TRANSIT + 0.02, () => st().hand[1] > 1.27, 88),
@@ -454,11 +496,21 @@ export function createAutopilot(sim) {
     let idx = 0
     let pressT = 0
     let lastA = false
+    // Carry offset (can pose minus grasp point, world axes) re-measured at
+    // each phase boundary while the can is held and FROZEN inside a phase.
+    // The weld is rigid, so the offset is exact at the boundary pose; it
+    // rotates with the hand between poses (pick yaw +1.2 vs doorway yaw -1.4),
+    // which is why a grab-time constant mis-aimed the doorway by ~90 mm. A
+    // per-tick live compensation became a servo feedback loop (old note) —
+    // boundary freezing keeps the aim honest without closing the loop.
+    let canOff = null
+    let canOffPhase = -1
 
     const driver = function autopilot() {
         const pad = { x: 0, y: 0, b: false, a: false }
         if (pressT > 0) { pressT--; pad.a = true; return pad }
-        if (st().done || st().timeout) return pad
+        const snap = st()
+        if (snap.done || snap.timeout) return pad
         while (idx < phases.length) {
             const ph = phases[idx]
             ph.t++
@@ -482,10 +534,13 @@ export function createAutopilot(sim) {
                 return pad
             }
             if (arrived) {
-                // Dwell: keep nudging toward the target for a few ticks after
-                // arrival so the servo actually lands ON it before the next
-                // phase (plane-tolerance + press-offset stacked up and starved
-                // the 3D latch gates — the door latch never fired).
+                // Dwell: keep nudging toward the target after arrival so the
+                // servo actually lands ON it before the next phase (plane-
+                // tolerance + press-offset stacked up and starved the 3D latch
+                // gates — the door latch never fired). Stage 4a: a rigid chain
+                // settles in ~30 ticks where the kinematic arm landed in ~8,
+                // so presses fired at 8-tick dwell grabbed 30 mm high (canIn
+                // misses on seeds 3/10). 20 ticks + servo-quiet arrivals.
                 if (ph.kind === 'drive' || ph.kind === 'lift') {
                     if ((ph.dw || 0) < 8) { ph.dw = (ph.dw || 0) + 1 }
                     else { idx++; continue }
@@ -498,6 +553,10 @@ export function createAutopilot(sim) {
                 return pad
             }
             if (ph.kind === 'drive') {
+                if (snap.held === 'can' && canOffPhase !== idx) {
+                    canOff = { x: snap.canPos.x - snap.hand[0], z: snap.canPos.z - snap.hand[2] }
+                    canOffPhase = idx
+                }
                 const tx = typeof ph.x === 'function' ? ph.x() : ph.x
                 const tz = typeof ph.z === 'function' ? ph.z() : ph.z
                 pad.x = clampv((tx - st().hand[0]) * 5)
@@ -524,4 +583,4 @@ export function createAutopilot(sim) {
     return driver
 }
 
-export const KIT_VERSION = 'stage3'
+export const KIT_VERSION = 'stage4a'

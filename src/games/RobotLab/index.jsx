@@ -127,6 +127,54 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         meshes.handle.userData.kit = 'drawer'
         meshes.knob.userData.kit = 'door'
 
+        // --- stage 4a juice (issue #1570 item 3): contact sparks and dust ----
+        // One additive-blended THREE.Points pool — fade happens in the color
+        // (additive black = invisible), so no per-particle alpha shader and no
+        // new asset files. Sparks are hot cyan and fast; dust is tan, slow,
+        // and settles. Spawn sites: slips (grinding pads), hard landings
+        // (cargo slamming the bench), grip strikes.
+        const P_MAX = 96
+        const pPos = new Float32Array(P_MAX * 3)
+        const pCol = new Float32Array(P_MAX * 3)
+        const pGeo = new THREE.BufferGeometry()
+        pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3))
+        pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3))
+        const points = new THREE.Points(pGeo, new THREE.PointsMaterial({
+            size: 0.016, vertexColors: true, transparent: true, opacity: 0.95,
+            depthWrite: false, blending: THREE.AdditiveBlending,
+        }))
+        points.frustumCulled = false
+        scene.add(points)
+        const parts = []
+        const spawn = (n, p, kind) => {
+            for (let i = 0; i < n && parts.length < P_MAX; i++) {
+                const r = Math.random
+                if (kind === 'spark') {
+                    parts.push({ x: p[0], y: p[1], z: p[2], vx: (r() - 0.5) * 1.6, vy: r() * 1.4, vz: (r() - 0.5) * 1.6, life: 0.22 + r() * 0.14, max: 0.36, c: [0.45, 1.0, 0.9] })
+                } else {
+                    parts.push({ x: p[0] + (r() - 0.5) * 0.03, y: p[1], z: p[2] + (r() - 0.5) * 0.03, vx: (r() - 0.5) * 0.35, vy: 0.12 + r() * 0.25, vz: (r() - 0.5) * 0.35, life: 0.5 + r() * 0.3, max: 0.8, c: [0.5, 0.4, 0.26] })
+                }
+            }
+        }
+        const stepParts = () => {
+            for (let i = parts.length - 1; i >= 0; i--) {
+                const q = parts[i]
+                q.life -= FIXED_DT
+                if (q.life <= 0) { parts.splice(i, 1); continue }
+                q.vy -= (q.c[0] > 0.4 && q.c[1] > 0.9 ? 6.5 : 1.6) * FIXED_DT
+                q.x += q.vx * FIXED_DT; q.y += q.vy * FIXED_DT; q.z += q.vz * FIXED_DT
+            }
+            for (let i = 0; i < P_MAX; i++) {
+                const q = parts[i]
+                if (!q) { pPos[i * 3] = 0; pPos[i * 3 + 1] = -5; pPos[i * 3 + 2] = 0; pCol[i * 3] = pCol[i * 3 + 1] = pCol[i * 3 + 2] = 0; continue }
+                const f = Math.max(0, q.life / q.max)
+                pPos[i * 3] = q.x; pPos[i * 3 + 1] = q.y; pPos[i * 3 + 2] = q.z
+                pCol[i * 3] = q.c[0] * f; pCol[i * 3 + 1] = q.c[1] * f; pCol[i * 3 + 2] = q.c[2] * f
+            }
+            pGeo.attributes.position.needsUpdate = true
+            pGeo.attributes.color.needsUpdate = true
+        }
+
         const sync = () => {
             const st = sim.state()
             const bodies = { ...sim.arm.bodies }
@@ -173,6 +221,9 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         let ep = null
         let lastSlips = 0
         let shake = 0
+        let prevHeld = null
+        let whineT = 0
+        const fall = { crate: null, can: null }
         let runSeed = 1
         const startRun = (seed) => {
             runSeed = seed >>> 0
@@ -180,6 +231,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
             lastSlips = 0
             shake = 0
+            prevHeld = null
+            fall.crate = null; fall.can = null
         }
 
         const onKey = (ev) => {
@@ -227,8 +280,36 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                             shake = 1
                             audioController.playNoise(0.14, 0.4)
                             audioController.playTone(85, 0.22, 'sine', 0.3)
+                            spawn(10, st.hand, 'spark')
                         }
                         lastSlips = st.slips
+                        // Stage 4a juice edges (#1570 item 3): grip catch clicks
+                        // and showers a spark, releasing the load shakes and
+                        // thuds small, the joints whine pitched by the
+                        // harshest torque, and hard landings puff dust.
+                        if (st.held && !prevHeld) {
+                            audioController.playTone(1350, 0.035, 'square', 0.12)
+                            audioController.playTone(720, 0.05, 'square', 0.07, 0.035)
+                            spawn(6, st.hand, 'spark')
+                        } else if (!st.held && prevHeld) {
+                            shake = Math.max(shake, 0.45)
+                            audioController.playTone(105, 0.09, 'sine', 0.16)
+                            spawn(5, st.hand, 'dust')
+                        }
+                        prevHeld = st.held
+                        whineT++
+                        if (whineT % 6 === 0) {
+                            const e = Math.max(Math.abs(st.torque.yaw), Math.abs(st.torque.phi1), Math.abs(st.torque.phi2), Math.abs(st.torque.gamw))
+                            if (e > 12) audioController.playTone(150 + e * 8.5, 0.085, 'sawtooth', 0.03 + e * 0.0005)
+                        }
+                        for (const [name, body] of [['crate', sim.crate], ['can', sim.can]]) {
+                            const vy = (body.position.y - (fall[name] ?? body.position.y)) * 60
+                            if ((fall[`${name}V`] ?? 0) < -1.4 && vy > -0.5 && st.held !== name) {
+                                spawn(7, [body.position.x, body.position.y - 0.02, body.position.z], 'dust')
+                            }
+                            fall[name] = body.position.y
+                            fall[`${name}V`] = vy
+                        }
                         if (st.done && ep.ticks > 0) {
                             const file = ep.finish({ success: true, score: st.score, finalHash: st.hash })
                             saveEpisode(file)
@@ -253,6 +334,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 }
             }
             sync()
+            stepParts()
             if (shake > 0.02) {
                 shake *= 0.86
                 cam.position.set(CAM_BASE[0] + (Math.random() - 0.5) * 0.024 * shake, CAM_BASE[1] + (Math.random() - 0.5) * 0.016 * shake, CAM_BASE[2])
@@ -281,7 +363,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             }
             if (phaseRef.current !== 'attract' && sim.tick % 8 === 0) {
                 const s2 = sim.state()
-                setTq({ t: s2.torque, sat: s2.sat, g: s2.gripN, b: s2.budgetN, s: s2.slips, p: s2.gap, h: s2.held })
+                setTq({ t: s2.torque, sat: s2.sat, g: s2.gripN, b: s2.budgetN, s: s2.slips, p: s2.gap, h: s2.held, sr: s2.baseStrainN, bd: s2.baseDelta })
             }
         }
         raf = requestAnimationFrame(loop)
@@ -305,6 +387,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     sim = createRobotSim(seed); autopilot = createAutopilot(sim)
                     ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
                     lastSlips = 0; shake = 0
+                    prevHeld = null; fall.crate = null; fall.can = null
                     phaseRef.current = 'play'; setPhase('play')
                     return sim.state()
                 },
@@ -379,6 +462,12 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                         )
                     })}
                     {tq.b !== null && <div>GRIP {tq.g.toFixed(1)} / {tq.b.toFixed(0)} N</div>}
+                    <div className={tq.sr > 20 ? 'text-amber-300' : ''}>
+                        BASE STRAIN {tq.sr.toFixed(1)} N{tq.sr > 20 ? ' · REACTION' : ''}
+                    </div>
+                    {tq.bd && (
+                        <div>BASE ΔX {(tq.bd.dx * 1000).toFixed(0)} mm · ΔZ {(tq.bd.dz * 1000).toFixed(0)} mm · TILT {tq.bd.tiltDeg.toFixed(1)}°</div>
+                    )}
                     <div>
                         <span className={`mr-1 inline-block h-[6px] w-[6px] align-middle ${tq.h ? 'bg-emerald-400' : tq.p < 0.07 ? 'bg-amber-300' : 'bg-slate-600'}`} />
                         GRIPPER {tq.h ? `CLOSED · HOLDING ${String(tq.h).toUpperCase()}` : tq.p < 0.07 ? 'CLOSED · EMPTY' : 'OPEN'}
