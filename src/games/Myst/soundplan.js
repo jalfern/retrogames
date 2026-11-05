@@ -40,7 +40,23 @@ export function swellCues(view) {
   ]
 }
 
+// #838 item 8 — thunder: the storm sits INSIDE the caldera, close. The crack
+// comes first — raw, loud, sharp — then a long low rumble rolls around the
+// dome. Two laws the harness proves: thunder is never silent and never a swell
+// voice (surf has no raw crack, and the rumble sits an octave under the sea's
+// 220 Hz wash at higher volume). It lands STORM.rumbleDelay seconds AFTER the
+// flash — you see the strike, then the rocks answer.
+export function thunderCues() {
+  return [
+    { type: 'noise', dur: 0.16, vol: 0.17 },
+    { type: 'fnoise', dur: 2.2, vol: 0.12, freq: 110 },
+    { type: 'sweep', f0: 64, f1: 34, dur: 2.4, wave: 'sine', vol: 0.075 },
+  ]
+}
+
 export function plan(ev) {
+  // #838 item 8 — the storm's voice (pure, above): the caldera crack + roll.
+  if (ev === 'thunder') return thunderCues()
   // #1587 — per-view swell rumble: `swell:stoneship` is louder than
   // `swell:channelwood`, the pitch is the Age's water (pure, above).
   if (typeof ev === 'string' && ev.startsWith('swell:')) {

@@ -155,6 +155,23 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   silhouettes and `dressSea` seats them half-sunk domes on the view's own
   waterline, inside the fog's reach (`ISL_LIMIT`) so haze dresses them, not
   erases them. All deterministic — hash-born, no `Math.random`.
+- `storm.js` — SELENITIC storms LIVE (#838 item 8): pure `stormFlash(t, view)`
+  answers the caldera's lightning — a 6.4 s clock (the exact cycle visions.js
+  paints in the Spectator lens, so the pane and the Age share one storm), a
+  160 ms main stroke decaying from full, lifted mid-decay by a weaker second
+  strike (the original's doubles), clamped to 0..1. The law is Selenitic-only:
+  `STORM_VIEWS` is exactly the five sel* nodes — the island's dusk, the
+  Atlantic, the cloud floor and the forge never flicker — and all five share
+  one clock, so the whole Age lights at once. `skyGain`/`seaGain` say what the
+  flash does: `dressSea`'s sibling `dressStorm` in `scene.js` drives the sky
+  dome past white (tone-mapped light, not an overlay) and catches the sea's
+  emissive in the same pale jade; `index.jsx` lifts the sun past its Age value
+  and lerps the fog toward `STORM_COL` for the strike, restoring
+  `sunBaseI`/`fogBase` exactly when the dark returns. Thunder is the storm's
+  own voice (`thunderCues` in soundplan): a raw crack, then a 2.2 s rumble at
+  110 Hz — an octave under the sea's 220 Hz surf wash and louder than any
+  swell — parked at `STORM.rumbleDelay` (1.7 s) on the sim clock by the loop's
+  own rising-edge watch: you see the strike, then the rocks answer.
 - `link.js` — the LINKING BOOKS (#1031): touching an Age's book no longer cuts.
   The page cover rushes up (Age ink + double-rule border), a seam of light
   opens across it, and a stable starfield wheels outward on a slow swirl until
@@ -208,7 +225,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (128 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (137 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -375,4 +392,12 @@ mirroring clouds or seating land — each turns the suite red.
     costs the white page; the paintings change nothing but what you see.
     mystcheck's item 7 section proves the pane live-and-clocked, the landmark
     hues, the heal-count monotone, the face law, the trap palettes and the
-    shell wiring; 7 new mutants all die.
+    shell wiring; 7 new mutants all die. **CLOSED by #838 item 8** — the storm
+    strikes live: standing in SELENITIC the sky now flashes on the same clock
+    the Spectator lens already ran (`storm.js` — 6.4 s cycle, 160 ms decaying
+    double strike, whole Age at once), the sea catches it, the haze goes jade,
+    and thunder (crack + 110 Hz roll, `thunderCues`) answers 1.7 s after the
+    light off the sim clock. The other Ages never flicker. mystcheck's item 8
+    section proves determinism, the shared lens clock, Age-only scope, the
+    one-sky-at-once law, bounded + doubling envelope, the thunder voice law
+    against every swell, the delay and the wiring; 8 new mutants all die.
