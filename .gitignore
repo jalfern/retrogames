@@ -18,3 +18,6 @@ scripts/.strips/**/*.jpg
 .muteguard-tmp/
 __pycache__/
 *.pyc
+
+# #1567: 1.4GB edited HF snapshots stay local; edit_reports/own_a*.json are the committed evidence
+demos/weight-surgery-lab/edited_own_a*/

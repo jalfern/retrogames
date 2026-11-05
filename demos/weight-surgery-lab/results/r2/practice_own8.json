@@ -1,0 +1,13 @@
+{
+ "tag": "own8",
+ "model": "qwen35-own-a8",
+ "n": 64,
+ "acc": 1.6,
+ "finished": 4.7,
+ "mean_ntok": 7926,
+ "cap": 8192,
+ "pp": 1.5,
+ "pp_ctx": 32768,
+ "set": "fresh math_train 96..159 (SEED-1562 shuffle; disjoint from #1562 fit/val)",
+ "t_minutes": 5.1
+}

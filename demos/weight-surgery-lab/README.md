@@ -394,3 +394,56 @@ Environment addendum (#1562): `data/` is untracked problem data — symlink it:
 `ln -sfn ~/Dev/weight-lab/qwen-forge/data data`. qwen35 tensor keys are
 `language_model.model.layers.*` (HF multi-modal container) — r2_edit's DOWN
 template matched the write-up's `model.language_model.*` and died on first run.
+
+## #1567 step 3 (sessions 134–135, slot a) — controls, scaling, layer count
+Scripts: `r3_seprank.py` (candidate 3, passes P6+P7), `r3_practice.py` +
+`r3_pick.py` + `r3_run_1567.sh` v2 (detached:
+`./.venv/bin/python r2_detach.py r3_run_1567.sh /tmp/forge/ws-r3b-1567.log`).
+Markers: `results/r2/R3_BASEW_DONE`, `R3_PBASE_DONE`, `R3_ALPHA{2,4,8}_DONE`,
+`R3_OWNHELD_DONE`, `R3_1567_DONE`.
+Alpha edits build to `edited_own_a{2,4,8}` -> `~/models/weightlab/qwen35-own-a{2,4,8}`.
+
+**Jon's correction mid-round (23:31Z), applied before relaunch — v2 protocol.**
+v1 scored each α variant on the held-out 100 MATH — picking the best α that way
+is tuning on the test set even when disclosed. v2:
+- **Choose on practice:** base + α∈{2,4,8} score `r3_practice.py`'s FRESH batch —
+  math_train indices 96–159 of the SEED-1562 shuffle. #1562's fit/validation owns
+  indices 0–95 of the same deterministic shuffle; disjointness asserted in code and
+  verified (0 overlap). Cap 8192 (the direction-search horizon — escape at ≤8k is
+  what the direction targets; ~4x cheaper than 32k where loops eat the whole cap).
+  think35 pp1.5 ctx32768 PAR-32 seed 0. Passes P8 (base control) → P9/P10/P11.
+- **Frozen pick before any row existed** (`r3_pick.py`): winner = max practice
+  accuracy (escape without a correct answer is not success); ties → finished-rate,
+  then smaller α.
+- **Score held-out once:** the winner alone earns the 100+100 row at full protocol
+  (cap 32768), then MIT regrade. No swept loser ever gets a held-out row —
+  ws3check proves it: loser α with `scores_own{A}_math.jsonl` on disk is RED.
+Budget after plan: 11/20 Astra passes + rows logged per the #1562 precedent.
+
+**Candidate 3 — layer count: NO, top-2 stands.** `r3_seprank.py` re-reads the P5
+validation texts and computes combined separation for layer sets: per-layer scores
+z-normalized on pooled val stats (label-leak free), summed per set, sep recomputed
+with measured cross-layer covariance (independence not assumed). Frozen rule (fixed
+before the read): top-4 commits scoring passes only at >= 1.10x top-2. Result:
+top2 1.51 / top3 1.47 / top4 1.52 / all6 1.43 — 1.005x, not met; top-3 actually
+DROPS, L3/L11 mostly re-report L15/L7 (see `corr` in `results/r2/r3_layer_rank.json`).
+Plumbing gate: recomputed per-layer seps must equal the P5 npz values (tol 0.05).
+
+**Gotchas found (each gated):**
+- The first aggregation folded the between-bucket mean offset into the pooled
+  variance (z-variance around GLOBAL mu instead of within-bucket): every sep shrank
+  ~sqrt(1+d^2/4) (~0.9x) — caught precisely BECAUSE the reproduce-P5 gate existed;
+  ranking was always consistent. Ledger stays honest: pass 6 kept + annotated
+  defective, pass 7 (deterministic recompute) supersedes it. Raw per-token scores
+  cached at `~/Dev/weight-lab/r2_text/r3_seprank_scores.json` so recomputes spend
+  no new read passes; a cache-hit rewrite must preserve measured metadata
+  (`t_minutes`) — the #1562 resume-clobber law, generalized.
+- Text accounting: 68 val items, 9 shorter than the 64-token floor after tail cuts —
+  `kept + skipped = items` is now a gate.
+
+**Candidate 1 — basew control:** base @ ctx 32768 (same fixed rows). MATH landed:
+**6.0 acc / 5.0 fin** vs base@ctx20 3.0/3.0 — the window lifts base MATH accuracy
+to 6.0, i.e. exactly where #1562's own edit sat (own math 6.0). The own direction's
+"doubled MATH" is matched by the UNEDITED model measured under the fair window;
+p50cw 31.0 towers over the same control, so MIT's lift remains edit-specific.
+GSM row + verdict copy land with the gsm row (chain continues detached).

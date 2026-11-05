@@ -1,0 +1,13 @@
+{
+ "tag": "base",
+ "model": "qwen35-base",
+ "n": 64,
+ "acc": 0.0,
+ "finished": 0.0,
+ "mean_ntok": 8192,
+ "cap": 8192,
+ "pp": 1.5,
+ "pp_ctx": 32768,
+ "set": "fresh math_train 96..159 (SEED-1562 shuffle; disjoint from #1562 fit/val)",
+ "t_minutes": 7.3
+}

@@ -68,5 +68,23 @@
   "pp": 1.5,
   "pp_ctx": 32768,
   "model": "qwen35-own"
+ },
+ "basew": {
+  "math": {
+   "n": 100,
+   "acc": 6.0,
+   "finished": 5.0,
+   "mean_ntok": 31380
+  },
+  "gsm": {
+   "n": 100,
+   "acc": 10.0,
+   "finished": 8.0,
+   "mean_ntok": 30370
+  },
+  "t_hours": 2.04,
+  "pp": 1.5,
+  "pp_ctx": 32768,
+  "model": "qwen35-base"
  }
 }
