@@ -552,12 +552,52 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     rmSync(base, { recursive: true, force: true })
 }
 
+// rows-vs-aggregate evidence, shared by stage E (#1567) and the #1580 open-book
+// row: the jsonl rows are ground truth; the aggregate must recompute from them,
+// the ledger must log the row exactly once, MIT regrade must cover both sets.
+const jp = (root, s) => join(root, 'results/r2', s)
+const sum0 = (xs) => xs.reduce((a, b) => a + b, 0)
+const harvestIssuesFor = (root, tag) => {
+    const errs = []
+    const aggP = jp(root, 'r2_scores.json')
+    const agg = existsSync(aggP) ? JSON.parse(readFileSync(aggP, 'utf8')) : {}
+    const e = agg[tag] || {}
+    for (const set of ['math', 'gsm']) {
+        const rp = jp(root, `scores_${tag}_${set}.jsonl`)
+        if (!existsSync(rp)) { errs.push(`${tag}.${set}: held-out rows missing`); continue }
+        const rows = readFileSync(rp, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+        if (new Set(rows.map(r => r.id)).size !== rows.length) errs.push(`${tag}.${set}: duplicate ids in scores`)
+        const n = rows.length
+        const r1 = (x) => Math.round(x * 10) / 10
+        const acc = r1(rows.filter(r => r.ok).length / Math.max(n, 1) * 100)
+        const fin = r1(rows.filter(r => r.finished).length / Math.max(n, 1) * 100)
+        const mean = Math.round(sum0(rows.map(r => r.ntok)) / Math.max(n, 1))
+        const ent = e[set]
+        if (!ent) { errs.push(`${tag}.${set}: entry missing from r2_scores.json`); continue }
+        if (ent.n !== n) errs.push(`${tag}.${set}: n ${ent.n} != ${n} rows on disk`)
+        if (Math.abs(ent.acc - acc) > 0.05) errs.push(`${tag}.${set}: aggregate acc ${ent.acc} != ${acc} recomputed from rows`)
+        if (Math.abs(ent.finished - fin) > 0.05) errs.push(`${tag}.${set}: aggregate finished ${ent.finished} != ${fin} recomputed`)
+        if (Math.abs(ent.mean_ntok - mean) > 1) errs.push(`${tag}.${set}: mean_ntok drifts from rows`)
+    }
+    const logs = readFileSync(join(root, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l) } catch { return {} } })
+        .filter(b => (b.purpose || '').startsWith(`held-out scoring row ${tag} `))
+    if (logs.length !== 1) errs.push(`batches: ${logs.length} held-out ledger rows for ${tag} — exactly one required`)
+    const mgP = jp(root, 'mit_grader.json')
+    const mg = existsSync(mgP) ? JSON.parse(readFileSync(mgP, 'utf8')) : {}
+    for (const set of ['math', 'gsm']) {
+        const rr = mg.regrade && mg.regrade[`${tag}:${set}`]
+        if (!rr) errs.push(`${tag}:${set}: no MIT regrade row`)
+        else if (!(rr.n === 100 && rr.mit_acc >= 0 && rr.mit_acc <= 100)) errs.push(`${tag}.${set}: regrade incomplete`)
+    }
+    return errs
+}
+
 // 11. #1567 stage E — the winner's ONE held-out row: rows are the evidence
 //     (aggregate recomputed from them), losers never reach held-out, the ledger
 //     logs the row exactly once, MIT regrade covers both sets, and the page
 //     verdict renders from artifacts and reverts honestly when they vanish.
 {
-    const jp = (root, s) => join(root, 'results/r2', s)
     const harvestIssues = (root) => {
         const errs = []
         const pickP = jp(root, 'r3_alpha_pick.json')
@@ -566,40 +606,8 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         for (const t of ['own2', 'own8'])
             if (t !== tag && existsSync(jp(root, `scores_${t}_math.jsonl`)))
                 errs.push(`loser alpha ${t} has held-out rows (held-out is scored once — winner only)`)
-        const aggP = jp(root, 'r2_scores.json')
-        const agg = existsSync(aggP) ? JSON.parse(readFileSync(aggP, 'utf8')) : {}
-        const e = agg[tag] || {}
-        for (const set of ['math', 'gsm']) {
-            const rp = jp(root, `scores_${tag}_${set}.jsonl`)
-            if (!existsSync(rp)) { errs.push(`${tag}.${set}: held-out rows missing`); continue }
-            const rows = readFileSync(rp, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
-            if (new Set(rows.map(r => r.id)).size !== rows.length) errs.push(`${tag}.${set}: duplicate ids in scores`)
-            const n = rows.length
-            const r1 = (x) => Math.round(x * 10) / 10
-            const acc = r1(rows.filter(r => r.ok).length / Math.max(n, 1) * 100)
-            const fin = r1(rows.filter(r => r.finished).length / Math.max(n, 1) * 100)
-            const mean = Math.round(sum0(rows.map(r => r.ntok)) / Math.max(n, 1))
-            const ent = e[set]
-            if (!ent) { errs.push(`${tag}.${set}: entry missing from r2_scores.json`); continue }
-            if (ent.n !== n) errs.push(`${tag}.${set}: n ${ent.n} != ${n} rows on disk`)
-            if (Math.abs(ent.acc - acc) > 0.05) errs.push(`${tag}.${set}: aggregate acc ${ent.acc} != ${acc} recomputed from rows`)
-            if (Math.abs(ent.finished - fin) > 0.05) errs.push(`${tag}.${set}: aggregate finished ${ent.finished} != ${fin} recomputed`)
-            if (Math.abs(ent.mean_ntok - mean) > 1) errs.push(`${tag}.${set}: mean_ntok drifts from rows`)
-        }
-        const logs = readFileSync(join(root, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
-            .map(l => { try { return JSON.parse(l) } catch { return {} } })
-            .filter(b => (b.purpose || '').startsWith(`held-out scoring row ${tag} `))
-        if (logs.length !== 1) errs.push(`batches: ${logs.length} held-out ledger rows for ${tag} — exactly one required`)
-        const mgP = jp(root, 'mit_grader.json')
-        const mg = existsSync(mgP) ? JSON.parse(readFileSync(mgP, 'utf8')) : {}
-        for (const set of ['math', 'gsm']) {
-            const rr = mg.regrade && mg.regrade[`${tag}:${set}`]
-            if (!rr) errs.push(`${tag}:${set}: no MIT regrade row`)
-            else if (!(rr.n === 100 && rr.mit_acc >= 0 && rr.mit_acc <= 100)) errs.push(`${tag}:${set}: regrade incomplete`)
-        }
-        return errs
+        return errs.concat(harvestIssuesFor(root, tag))
     }
-    const sum0 = (xs) => xs.reduce((a, b) => a + b, 0)
     const realPick = existsSync(jp(LAB, 'r3_alpha_pick.json'))
         ? JSON.parse(readFileSync(jp(LAB, 'r3_alpha_pick.json'), 'utf8')).decision : null
     // a committed marker means the row was complete when it was committed —
@@ -701,6 +709,107 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(rowsThere || (!existsSync(join(LAB, 'results/r2/R4_OPENBOOK_DONE'))
         && !existsSync(join(LAB, 'results/r2/R4_1580_DONE'))),
         'rules: no open-book DONE marker without its rows (marker-implies-rows law, #1567)')
+}
+
+// 13. #1580 open-book harvest — the scored-once open-book row: rows are evidence
+//     (§11's shared recomputation), the model claim must stay the UNEDITED base
+//     (an edited model under this tag breaks the control), markers imply rows in
+//     chain order, and the page row/verdict render from artifacts and revert
+//     honestly. The trust boundary itself is policed in §12 — these are the
+//     data-side gates for the same promise.
+{
+    const TAG = 'openbook'
+    const marker = existsSync(jp(LAB, 'R4_1580_DONE'))
+    if (marker) {
+        const h = harvestIssuesFor(LAB, TAG)
+        ok(h.length === 0, 'rules: #1580 committed — open-book rows complete, aggregate recomputed from rows, regrade covered, ledger once', h.join('; '))
+        const agg = JSON.parse(readFileSync(jp(LAB, 'r2_scores.json'), 'utf8'))
+        ok(agg[TAG] && agg[TAG].model === 'qwen35-base',
+            'rules: open-book row claims the UNEDITED base model — an edited model under this tag would be a contaminated control',
+            `model=${agg[TAG] && agg[TAG].model}`)
+        ok(existsSync(jp(LAB, 'R4_OPENBOOK_DONE')), 'rules: R4_1580_DONE implies R4_OPENBOOK_DONE (chain order)')
+    } else console.log('  skip #1580 committed-state gates (R4_1580_DONE not on this tip)')
+    const claimIssue = (root) => {
+        const a = JSON.parse(readFileSync(jp(root, 'r2_scores.json'), 'utf8'))
+        return a[TAG] && a[TAG].model !== 'qwen35-base' ? `open-book row claims ${a[TAG].model}` : null
+    }
+    const fx = mkdtempSync(join(tmpdir(), 'ws3ob-'))
+    cpSync(LAB, fx, { recursive: true })
+    const mkRows = (set, accN) => Array.from({ length: 100 }, (_, i) => JSON.stringify({
+        id: `${set}_${i}`, pred: '1', ok: i < accN, finished: i < accN, ntok: 15000, method: 'test',
+    })).join('\n') + '\n'
+    writeFileSync(jp(fx, `scores_${TAG}_math.jsonl`), mkRows('math', 9))
+    writeFileSync(jp(fx, `scores_${TAG}_gsm.jsonl`), mkRows('gsm', 12))
+    const aggFx = JSON.parse(readFileSync(jp(fx, 'r2_scores.json'), 'utf8'))
+    aggFx[TAG] = {
+        math: { n: 100, acc: 9.0, finished: 9.0, mean_ntok: 15000 },
+        gsm: { n: 100, acc: 12.0, finished: 12.0, mean_ntok: 15000 },
+        t_hours: 1.4, pp: 1.5, pp_ctx: 32768, model: 'qwen35-base',
+    }
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    writeFileSync(join(fx, 'batches.jsonl'),
+        readFileSync(join(fx, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+            .filter(l => { try { return !((JSON.parse(l).purpose) || '').startsWith(`held-out scoring row ${TAG} `) } catch { return true } })
+            .join('\n') + '\n')
+    writeFileSync(join(fx, 'batches.jsonl'),
+        JSON.stringify({ ts: '2026-11-05T08:00:00Z', run: 'r2 (#1533)', purpose: `held-out scoring row ${TAG} (qwen35-base, think35 pp=1.5 pp_ctx=32768)`, ruled_out: 'fixture', model: 'qwen35-base', n: 200, total_tokens: 3000000, t_hours: 1.4 }) + '\n', { flag: 'a' })
+    const mgFx = JSON.parse(readFileSync(jp(fx, 'mit_grader.json'), 'utf8'))
+    mgFx.regrade[`${TAG}:math`] = { n: 100, ours_acc: 9.0, mit_acc: 10.0, pred_none_finished_sidecar_ok: 0, diffs: [] }
+    mgFx.regrade[`${TAG}:gsm`] = { n: 100, ours_acc: 12.0, mit_acc: 12.0, pred_none_finished_sidecar_ok: 0, diffs: [] }
+    writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mgFx))
+    writeFileSync(jp(fx, 'R4_OPENBOOK_DONE'), '')
+    writeFileSync(jp(fx, 'R4_1580_DONE'), '')
+    ok(harvestIssuesFor(fx, TAG).length === 0, 'win: complete open-book fixture is clean', harvestIssuesFor(fx, TAG).join('; '))
+    ok(claimIssue(fx) === null, 'win: honest model claim passes')
+    // mutants
+    aggFx[TAG].math.acc = 77.0
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    ok(harvestIssuesFor(fx, TAG).length > 0, 'mutant caught: open-book aggregate acc no longer matches the rows')
+    aggFx[TAG].math.acc = 9.0
+    aggFx[TAG].model = 'qwen35-own-a4'
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    ok(claimIssue(fx) !== null, 'mutant caught: an edited model claimed under the open-book tag')
+    aggFx[TAG].model = 'qwen35-base'
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    writeFileSync(join(fx, 'batches.jsonl'),
+        JSON.stringify({ purpose: `held-out scoring row ${TAG} (resume double-log)` }) + '\n', { flag: 'a' })
+    ok(harvestIssuesFor(fx, TAG).length > 0, 'mutant caught: open-book row logged twice in the ledger')
+    const keep = readFileSync(join(fx, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+        .filter(l => !(JSON.parse(l).purpose || '').includes('resume double-log'))
+    writeFileSync(join(fx, 'batches.jsonl'), keep.join('\n') + '\n')
+    {
+        const mg2 = JSON.parse(readFileSync(jp(fx, 'mit_grader.json'), 'utf8'))
+        delete mg2.regrade[`${TAG}:gsm`]
+        writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mg2))
+        ok(harvestIssuesFor(fx, TAG).length > 0, 'mutant caught: open-book set without MIT regrade coverage')
+        mg2.regrade[`${TAG}:gsm`] = { n: 100, ours_acc: 12.0, mit_acc: 12.0, pred_none_finished_sidecar_ok: 0, diffs: [] }
+        writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mg2))
+    }
+    rmSync(jp(fx, 'scores_openbook_gsm.jsonl'))
+    ok(harvestIssuesFor(fx, TAG).length > 0, 'mutant caught: DONE marker with a lost gsm row (marker-implies-rows)')
+    writeFileSync(jp(fx, 'scores_openbook_gsm.jsonl'), mkRows('gsm', 12))
+    ok(harvestIssuesFor(fx, TAG).length === 0, 'win: open-book fixture restored — gates are the corruption, not the state')
+    // page: row + verdict render from artifacts; honest revert never leaves a hole
+    const wb = build(fx)
+    ok(wb.rc === 0 && wb.html.includes('id="ob-verdict"') && wb.html.includes('OPEN-BOOK VERDICT')
+        && wb.html.includes('MATH 9.0% acc') && wb.html.includes('id="r4-openbook"'),
+        'build: open-book row + verdict render from artifacts (fixture)')
+    aggFx[TAG].math.acc = 99.0
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    const pb = build(fx)
+    ok(pb.html.includes('99.0% acc') && pb.html.includes('id="ob-verdict"'),
+        'mutant caught: open-book verdict numbers come from the aggregate — an inflated artifact renders inflated (rows gate goes red on real drift)')
+    delete aggFx[TAG]
+    writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+    const rb = build(fx)
+    ok(rb.html.includes('OPEN-BOOK CONTROL IN FLIGHT') && !rb.html.includes('OPEN-BOOK VERDICT'),
+        'mutant caught: dropping the open-book entry reverts the page to honest pending, never a silent hole')
+    rmSync(fx, { recursive: true, force: true })
+    if (marker) {
+        const hb = build(LAB)
+        ok(hb.rc === 0 && hb.html.includes('OPEN-BOOK VERDICT') && hb.html.includes('id="r4-openbook"'),
+            'build: committed open-book artifacts render the row and the verdict on the real page')
+    }
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)
