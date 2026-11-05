@@ -625,6 +625,12 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
             t_hours: 2.5, pp: 1.5, pp_ctx: 32768, model: `qwen35-${tag.replace('own', 'own-a')}`,
         }
         writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+        // fixture independence: strip any REAL held-out row for the tag first —
+        // once stage E lands on main, the fixture must still count exactly its own
+        writeFileSync(join(fx, 'batches.jsonl'),
+            readFileSync(join(fx, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+                .filter(l => !((JSON.parse(l).purpose) || '').startsWith(`held-out scoring row ${tag} `))
+                .join('\n') + '\n')
         writeFileSync(join(fx, 'batches.jsonl'),
             JSON.stringify({ ts: '2026-11-05T04:40:00Z', run: 'r2 (#1533)', purpose: `held-out scoring row ${tag} (qwen35-${tag.replace('own', 'own-a')}, think35 pp=1.5 pp_ctx=32768)`, ruled_out: 'fixture', model: 'qwen35-fixture', n: 200, total_tokens: 4000000, t_hours: 2.5 }) + '\n', { flag: 'a' })
         const mgFx = JSON.parse(readFileSync(jp(fx, 'mit_grader.json'), 'utf8'))
@@ -674,6 +680,27 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
             'mutant caught: dropping the winner row reverts the page to honest pending, never a silent hole')
         rmSync(fx, { recursive: true, force: true })
     }
+}
+
+// 12. #1580 open-book plumbing — static trust-boundary gates (pre-flight; the
+//     row itself lands later and gets its full honest-revert treatment then).
+{
+    const common = readFileSync(join(LAB, 'r2_common.py'), 'utf8')
+    ok(/os\.environ\.get\("WS_SYSTEM_FILE", ""\)/.test(common) && /if _ob:/.test(common),
+        'rules: open-book system turn is env-gated — unset WS_SYSTEM_FILE leaves the payload byte-identical to every pre-#1580 row')
+    const r4 = existsSync(join(LAB, 'r4_openbook.sh')) ? readFileSync(join(LAB, 'r4_openbook.sh'), 'utf8') : ''
+    ok(r4.includes('final_answer.md'), "rules: r4 references ONLY MIT's written diagnosis path")
+    // command-level check: prose documenting the forbidden paths is the boundary's
+    // documentation; the gate polices what the runner actually EXECUTES
+    const r4cmd = r4.split('\n').map(l => l.replace(/#.*$/, '')).join('\n')
+    ok(r4cmd && !/(runs\/p50c\/(edit|turns)\b|frozen_weights_manifest)/.test(r4cmd),
+        'rules: r4 never touches MIT edit tensors / turn logs / weight manifests')
+    ok(/WS_SYSTEM_FILE="\$DIAG" WS_R2_SETS/.test(r4) && !/export WS_SYSTEM_FILE/.test(r4),
+        'rules: the diagnosis injection is scoped to the scored command, never exported (no leakage into other rows)')
+    const rowsThere = existsSync(join(LAB, 'results/r2/scores_openbook_math.jsonl'))
+    ok(rowsThere || (!existsSync(join(LAB, 'results/r2/R4_OPENBOOK_DONE'))
+        && !existsSync(join(LAB, 'results/r2/R4_1580_DONE'))),
+        'rules: no open-book DONE marker without its rows (marker-implies-rows law, #1567)')
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)

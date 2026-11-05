@@ -112,9 +112,17 @@ def ask(model, problem, cap=32768, pp=1.5, seed=0, timeout=2400, pp_ctx=None):
     Set to >= max_tokens to cover the whole generation like MIT's vLLM did.
     """
     ctx = PP_CTX if pp_ctx is None else pp_ctx
+    messages = [{"role": "user", "content": problem.strip() + SUFFIX}]
+    # #1580 open-book control: optional system turn (MIT's WRITTEN diagnosis only,
+    # file path supplied by the runner). WS_SYSTEM_FILE unset => the message payload
+    # is byte-identical to every row scored before #1580.
+    _ob = os.environ.get("WS_SYSTEM_FILE", "")
+    if _ob:
+        with open(_ob) as _f:
+            messages = [{"role": "system", "content": _f.read()}] + messages
     body = {
         "model": model,
-        "messages": [{"role": "user", "content": problem.strip() + SUFFIX}],
+        "messages": messages,
         "temperature": 0.6, "top_p": 0.95, "top_k": 20,
         "presence_penalty": pp, "max_tokens": cap, "seed": seed,
         "chat_template_kwargs": {"enable_thinking": True},
