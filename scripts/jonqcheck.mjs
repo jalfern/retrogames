@@ -296,6 +296,9 @@ ok(sec4b.includes('com.jalfern.forge') && sec4b.includes('$SLOTB_JOB') && /idle-
     '#1615: the never-dry kick reaches BOTH builder jobs and records the slot it kicked')
 ok(sec4b.includes('neverdry-$nd_slot.last'),
     '#1615: each kick stamps its own throttle file — at most one never-dry kick per slot per 30 min')
+ok(sec4b.includes('origin/main:scripts/neverdry.mjs') && sec4b.includes('neverdry-run.mjs')
+   && sec4b.includes('-s "$NDJS"') && sec4b.includes('-s "$LOG_DIR/lib/idle.mjs"'),
+    '#1615: helper + pure lib are materialised from origin/main and only run when non-empty — the main checkout tree lags origin/main on purpose (it parks STATE.md), so $REPO/scripts is NOT the prod path')
 ok(sec4b.includes('never-dry: pick the weakest game'),
     '#1615: the pulse note names the assignment — never-dry: pick the weakest game')
 ok(sec4b.includes('== KICK*') && sec4b.includes('idle-kick'),

@@ -227,7 +227,9 @@ idle and its ladder came up empty, step 4b asks `scripts/idle-kick.mjs` — the 
 pick over the README honest-gaps — and kicks only on `KICK`; `NONE` (every gap owned) leaves
 STOP legal. Since #1615 the kick is per slot, not slot-a-only: `scripts/neverdry.mjs` answers
 which free slots qualify (loaded, no step-4 target, past a 30-minute per-slot throttle in
-`/tmp/forge/neverdry-<slot>.last`), each kick says "never-dry: pick the weakest game" on the
+`/tmp/forge/neverdry-<slot>.last`; helper + pure lib materialised from origin/main into /tmp
+first, like sleepwatch — the lagging main checkout tree is not the prod path), each kick says
+"never-dry: pick the weakest game" on the
 pulse, and `forge.sh` passes the stage it saw into the session prompt. It never calls a model, so it never slows the builder or hangs on oMLX.
 Test any change with `WARDEN_DRY=1 zsh scripts/warden.sh` (reads everything, changes nothing).
 **The daily log** (#516): `scripts/dailylog.mjs` cuts the day at 07:00 Pacific (DST-safe)
