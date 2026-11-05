@@ -528,6 +528,29 @@ const r3PickNote = (() => {
   const lift = r3Pick.lift_over_base
   return `<p class="note"><b>CANDIDATE 2 — THE PICK: α = ${w.alpha}.</b> On the fresh 64-math practice batch (cap 8192, think35 pp1.5 ctx 32768): ${Object.entries(r3Pick.rows).map(([t, s]) => `${t.replace("own", "α=")} ${s.acc.toFixed(1)}% acc / ${s.finished.toFixed(1)}% fin`).join(" · ")}${r3Pick.base_reference ? ` · base ${r3Pick.base_reference.acc.toFixed(1)}% / ${r3Pick.base_reference.finished.toFixed(1)}%` : ""}. Frozen rule (accuracy first) picks <b>α = ${w.alpha}</b>${lift !== null ? `, ${lift >= 0 ? "+" : ""}${lift.toFixed(1)} pts over base on practice` : ""}; its held-out 100+100 row is ${r2s && r2s[r3Pick.decision] && r2s[r3Pick.decision].math && r2s[r3Pick.decision].math.n >= r3Hold ? "landed below" : "scoring now"}.</p>`
 })()
+// Winner's held-out verdict — appears only when the ONE winner row has landed
+// (both sets). Numbers derive from artifacts; nothing here is hardcoded, so the
+// page can never claim a lift the scores don't show.
+const r3WinNote = (() => {
+  if (!r3Pick || !r2s) return ""
+  const tag = r3Pick.decision
+  const e = r2s[tag]
+  if (!e || !e.math || e.math.n < r3Hold || !e.gsm || e.gsm.n < r3Hold) return ""
+  const alpha = r3Pick.winner.alpha
+  const mean = (x) => (x.math.acc + x.gsm.acc) / 2
+  const o = r2s.own && r2s.own.math && r2s.own.gsm ? r2s.own : null
+  const w = r2s.p50cw && r2s.p50cw.math && r2s.p50cw.gsm ? r2s.p50cw : null
+  const lift = o ? mean(e) - mean(o) : null
+  const short = w ? mean(w) - mean(e) : null
+  const survive = lift >= 2
+    ? "the practice gain survived onto the test set — scaling the direction helps"
+    : lift > -2
+      ? "FLAT on the test set — the practice ordering did not generalize; on this model the direction saturates at α = 1"
+      : "the practice gain REVERSED on held-out — the pick over-fit the practice batch"
+  // the held-out row is the pass beyond the newest numbered practice pass (P11)
+  const passes = Math.max(0, ...batches.filter(b => typeof b.pass_no === "number").map(b => b.pass_no)) + 1
+  return `<p class="note" id="r3-verdict"><b>CANDIDATE 2 — VERDICT: THE WINNER HELD OUT, SCORED ONCE.</b> α = ${alpha} earned its single held-out pass at the full think35 pp1.5 ctx 32,768 protocol: <b>MATH ${e.math.acc.toFixed(1)}% acc / ${e.math.finished.toFixed(1)}% fin · GSM8K ${e.gsm.acc.toFixed(1)}% / ${e.gsm.finished.toFixed(1)}% fin</b> (MIT-checker ${r3mit(`${tag}:math`)} math · ${r3mit(`${tag}:gsm`)} gsm on identical predictions). Against α = 1 (#1562, same rows): ${o ? `MATH ${o.math.acc.toFixed(1)}→${e.math.acc.toFixed(1)}%, GSM8K ${o.gsm.acc.toFixed(1)}→${e.gsm.acc.toFixed(1)}%, ${lift >= 0 ? "+" : ""}${lift.toFixed(1)} pts mean — ${survive}` : "no α = 1 row"}${w ? `; still <b>${short.toFixed(1)} pts short of our p50cw reproduction of MIT's edit at the identical protocol (${w.math.acc.toFixed(1)}% math · ${w.gsm.acc.toFixed(1)}% gsm)</b> — MIT's lift remains edit-specific, not a magnitude reachable by scaling our own direction` : ""}. Finished ${e.math.finished.toFixed(1)}% math — ${w && e.math.finished < w.math.finished ? "the loop still holds: scaling moved accuracy only, never escape" : "escape improved as well"}. Ledger: ${passes} of the disclosed 20 Astra passes spent, each logged in the batch log above.</p>`
+})()
 const r3LayerRows = r3Layer
   ? Object.entries(r3Layer.combined_sep).map(([k, v]) =>
       `<tr><td>${k} — ${r3Layer.sets[k].join("/")}</td><td>${v.toFixed(2)}</td></tr>`).join("\n")
@@ -560,6 +583,7 @@ ${r3BasewNote}
 ${r3AlphaRows}
 </table>
 ${r3PickNote}
+${r3WinNote}
 <p class="note">α = 1 removed the d-component outright; whether scaling past full removal helps was v1's question. Jon's ruling corrected the protocol: picking among α variants on the held-out 100 MATH would be <b>tuning on the test set</b>, so the sweep scores a fresh practice batch (math_train indices 96–159 of the SEED-1562 shuffle — provably disjoint from #1562's fit/validation), and <b>one</b> winner is scored on held-out at the full think35 protocol. The practice batch's base control (P8) measures the lift on the same problems.</p>
 ${r3LayerRows ? `<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">LAYER COUNT — COMBINED HELD-OUT SEPARATION (candidate 3)</h3>
 <table>
