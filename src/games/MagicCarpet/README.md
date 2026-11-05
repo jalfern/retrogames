@@ -28,10 +28,11 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   Three per-world palettes (PAL). `frame(gs, {bank,boost,pitch,sink,shakeX,shakeY})`
   — camera banks into turns, pitches with climb/dive, FOV stretches on boost.
 - `index.jsx` — the shell: the 2D HUD overlay canvas (320×200, nearest-scaled,
-  pointer-transparent) with carpet corners/hands/crosshair + carried-orb halo,
-  the blue-stone HUD (radar with hut/fire dots, VAULT bar with per-world ticks
+  and now the pointer surface for the #1612 touch spellbook — hudTap routes
+  strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
+  the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with seven-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -69,7 +70,13 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   book, 80% learn chance per touch with a 90-tick cooldown; failures stay in
   the world and are retryable.
 - Two hands: left (Space/A) and right (X/Z/B); 1–6 assign left, Q cycles right;
-  casting SPENDS the carried pouch, not the vault.
+  casting SPENDS the carried pouch, not the vault. #1612 made the HUD itself the
+  equip surface for touch: tap a hand slot to cycle that hand through learned
+  spells, tap the gold SPELLS tab to open the seven-spell tray, tap a learned
+  icon to assign the LEFT hand (unlearned icons dimmed and inert; click-out
+  closes without casting — the original's mouse-first equipping, phone-sized).
+  Routing lives in `sim.js` (`hudTap`, `TAP`, `TRAY`) so the whole touch path is
+  Node-provable; the shell only maps pointer→HUD space and casts on `world` taps.
 - The carpet cannot crash: it banks (turning bleeds 78% of speed, turn 0.065)
   and auto-rises over ridges; holding down bottoms out above terrain, never below.
 - Wolves only bite carpets flying low (within 10u of the ground) — altitude is
@@ -81,13 +88,15 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   and a bolt already in flight passes through), wolves neither chase nor bite,
   giants refuse their slings. Your own hands work untouched: pearls, grimoires,
   banking, blasts all normal. Cost 20 from the carried pouch; the fuse resumes
-  on its cadence the tick the veil expires.
+  on its cadence the tick the veil expires. Behind the veil the radar reads
+  cyan — tinted glass plus a sweeping arc (#1612) — beside the shimmer and
+  timer bar in the overlay.
 
 ## Verify
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 53 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 49 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
@@ -95,6 +104,11 @@ npm run carpetcheck        # 53 checks: boot, determinism, three-world win,
                            # wolf + giant refusal vs controls, in-flight
                            # pass-through, own pickups intact, hash, 60-seed
                            # balance sweep),
+                           # touch spellbook (#1612: slot cycles, equip events,
+                           # world tap still casts, dead strip never casts,
+                           # book toggle, tray equip/inert/click-out, hit boxes
+                           # inside the HUD, tray never disturbs the hash,
+                           # regen closes the book),
                            # plus a headless-Chrome pass and 9 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
@@ -107,7 +121,9 @@ Mutation proof (done, 2026-10-25): changing the win check to
 `gs.bank >= gs.quota * 100` turns the three equilibrium checks red and nothing
 else; restored after. #1610 mutant (2026-11-05): deleting the `gs.invis <= 0`
 gate on the wizard fuse turns only the veil-targeting check red
-(`veiled fire=true`); restored after. Balance: autopilot wins 60/60 seeds
+(`veiled fire=true`); restored after. #1612 mutant (2026-11-05): making `hudTap`
+return `'world'` for a slotL tap (the pre-fix keyboard-only behavior) turns
+exactly the two slot gates red; restored after. Balance: autopilot wins 60/60 seeds
 (slowest ~24.7k ticks — the veil + evasive-climb rules made the bot strictly
 safer than the pre-#1610 ~26.5k).
 
