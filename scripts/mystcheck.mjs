@@ -1702,6 +1702,7 @@ if (process.argv.includes('--mutate')) {
   const ND = 'src/games/Myst/nodes.js'
   const CD = 'src/games/Myst/codes.js'
   const VI = 'src/games/Myst/visions.js'
+  const GG = 'src/games/Myst/gears.js'
   const TR = 'src/games/Myst/terrain.js'
   const LK = 'src/games/Myst/link.js'
   const SEA = 'src/games/Myst/sea.js'
@@ -2096,6 +2097,23 @@ if (process.argv.includes('--mutate')) {
       'd.material.color.setRGB(1 + g * STORM.color[0]', 'd.material.color.setRGB(1 + 0 * g * STORM.color[0]'],
     ['thunder is scheduled but never rings (the edge detector is deaf)', JX,
       "if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }", 'if (stormAt && wt >= stormAt) { stormAt = 0 }'],
+    // #838 item 9 — the gear gallery
+    ['the niche counts to four (a seal that half-guards is no seal)', GG,
+      'return seatedCount(s) === GEAR_SLOTS', 'return seatedCount(s) >= GEAR_SLOTS - 1'],
+    ['the island\'s gear comes loose (MYST starts stopping)', ST,
+      'if (g.fixed) {', 'if (g.nokey) {'],
+    ['a seat accepts an empty hand (the wall trusts nobody)', ST,
+      'if (!gearHeld(s, g.key)) {', 'if (false && !gearHeld(s, g.key)) {'],
+    ['the dome gear ignores the chart (the keeper plate forgets its key)', 'src/games/Myst/nodes.js',
+      "need: 'obsNote', needMsg: 'A drive-gear", "needMsg: 'A drive-gear"],
+    ['the tower lid ignores the switches (the hasps hang open)', 'src/games/Myst/nodes.js',
+      "need: 'switchPanel', needMsg: 'A steel lid", "needMsg: 'A steel lid"],
+    ['every seat answers at one pitch (five keys, one note)', GG,
+      'export const SEAT_TONES = [98, 110, 131, 165, 196]', 'export const SEAT_TONES = [98, 98, 98, 98, 98]'],
+    ['a lifted gear reports as seated (the wall miscounts what leaves it)', ST,
+      "ev.push('gearLift')", "ev.push('gearSeat:' + g.key)"],
+    ['the fifth gear never lands the seal (a niche that stays shut forever)', ST,
+      'if (galleryOpen(s)) {', 'if (false && galleryOpen(s)) {'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
