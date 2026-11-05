@@ -16,7 +16,7 @@ import {
     W, H, HUD_H, HORIZON, MAP,
     LEVELS,
     SPILLS, spellById,
-    makeGame, step, autopilot, stateHash, setHand, cycleR, crater,
+    makeGame, step, autopilot, stateHash, setHand, cycleR, crater, INVIS_T,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
 
@@ -25,6 +25,7 @@ const FIXED_DT = 1000 / 60
 const SPELL_COLORS = {
     fireball: '#ff7a28', lightning: '#ffe24a', heal: '#ff5060',
     protect: '#58b8ff', slow: '#b070ff', telekinesis: '#58e8d8',
+    invisibility: '#c8ecff',
 }
 
 function drawSpellIcon(ctx, id, x, y, s) {
@@ -47,6 +48,15 @@ function drawSpellIcon(ctx, id, x, y, s) {
         ctx.fillRect(x - s * 0.7, y - s, s * 1.4, s * 0.4)
         ctx.fillRect(x - s * 0.7, y + s * 0.6, s * 1.4, s * 0.4)
         ctx.beginPath(); ctx.moveTo(x - s * 0.45, y - s * 0.5); ctx.lineTo(x + s * 0.45, y - s * 0.5); ctx.lineTo(x, y + s * 0.4); ctx.closePath(); ctx.fill()
+    } else if (id === 'invisibility') {
+        // A vanishing eye: outline and pupil, upper lid fading away.
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.3)
+        ctx.beginPath(); ctx.ellipse(x, y + s * 0.1, s, s * 0.68, 0, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = c; ctx.beginPath(); ctx.arc(x, y + s * 0.1, s * 0.32, 0, Math.PI * 2); ctx.fill()
+        ctx.globalAlpha = 0.4
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.28)
+        ctx.beginPath(); ctx.moveTo(x - s, y - s * 0.5); ctx.lineTo(x + s, y - s * 0.5); ctx.stroke()
+        ctx.globalAlpha = 1
     } else {
         ctx.fillStyle = c
         ctx.fillRect(x - s * 0.8, y + s * 0.2, s * 0.5, s * 0.8)
@@ -147,7 +157,15 @@ const MagicCarpetGame = () => {
                     const id = e.id
                     if (id === 'fireball') audioController.playSweep(640, 180, 0.16, 'sawtooth', 0.07)
                     else if (id === 'telekinesis') audioController.playSweep(260, 520, 0.12, 'sine', 0.06)
+                    else if (id === 'invisibility') {
+                        audioController.playSweep(300, 980, 0.22, 'sine', 0.05)
+                        audioController.playSweep(1400, 360, 0.3, 'triangle', 0.024, 0.1)
+                        say('YOU ARE VEILED')
+                    }
                     else if (id !== 'heal' && id !== 'protect' && id !== 'slow') audioController.playTone(500, 0.05, 'square', 0.05)
+                } else if (e.type === 'invisEnd') {
+                    audioController.playSweep(980, 300, 0.26, 'sine', 0.035)
+                    say('THE VEIL FADES')
                 } else if (e.type === 'zap') {
                     audioController.playNoise(0.16, 0.09)
                     audioController.playSweep(1500, 260, 0.2, 'square', 0.06)
@@ -266,15 +284,19 @@ const MagicCarpetGame = () => {
             const sway = (keys.l ? -3 : keys.r ? 3 : 0) + bk * 26
             const squash = Math.abs(bk) * 4
             const bob = Math.sin(gs.tick * 0.09) * 1.5
+            // The veil (#1610): while invisible the carpet and hands shimmer
+            // at ghost alpha; VA is 1 whenever the veil is down.
+            const VA = gs.invis > 0 ? 0.35 + Math.sin(gs.tick * 0.25) * 0.08 : 1
+            ctx.globalAlpha = VA
             if (boostOn) {
-                ctx.globalAlpha = 0.3
+                ctx.globalAlpha = 0.3 * VA
                 ctx.fillStyle = '#dfe8f5'
                 for (let i = 0; i < 4; i++) {
                     const yy = 40 + ((gs.tick * 3 + i * 37) % (H - HUD_H - 52))
                     ctx.fillRect(6 + i * 5, yy, 1, 7)
                     ctx.fillRect(W - 7 - i * 5, yy + 11, 1, 7)
                 }
-                ctx.globalAlpha = 1
+                ctx.globalAlpha = VA
             }
             const stretch = boostOn ? 4 : 0
             const flut = boostOn ? 2.3 : 1.1
@@ -309,14 +331,14 @@ const MagicCarpetGame = () => {
             if (flashR > 0 && orbR) { ctx.fillStyle = orbR; ctx.beginPath(); ctx.arc(199 + sway, handY(flashR) - 3, 3.4, 0, Math.PI * 2); ctx.fill() }
             const orbReady = (id, cool) => id && cool <= 0 && gs.mana >= (spellById(id)?.cost ?? 99)
             if (!(flashL > 0) && orbReady(gs.hands.L, gs.coolL)) {
-                ctx.globalAlpha = 0.4 + Math.sin(gs.tick * 0.15) * 0.12
+                ctx.globalAlpha = (0.4 + Math.sin(gs.tick * 0.15) * 0.12) * VA
                 ctx.fillStyle = orbL; ctx.beginPath(); ctx.arc(121 + sway, handY(0) - 3, 2.4, 0, Math.PI * 2); ctx.fill()
-                ctx.globalAlpha = 1
+                ctx.globalAlpha = VA
             }
             if (!(flashR > 0) && orbReady(gs.hands.R, gs.coolR)) {
-                ctx.globalAlpha = 0.4 + Math.sin(gs.tick * 0.15 + 2) * 0.12
+                ctx.globalAlpha = (0.4 + Math.sin(gs.tick * 0.15 + 2) * 0.12) * VA
                 ctx.fillStyle = orbR; ctx.beginPath(); ctx.arc(199 + sway, handY(0) - 3, 2.4, 0, Math.PI * 2); ctx.fill()
-                ctx.globalAlpha = 1
+                ctx.globalAlpha = VA
             }
             if (gs.heldEnt) {
                 ctx.fillStyle = '#58e8d8'
@@ -329,12 +351,12 @@ const MagicCarpetGame = () => {
             ctx.fillRect(W / 2 + 3, HORIZON + 16, 2, 1)
             ctx.fillRect(W / 2, HORIZON + 13, 1, 2)
             if (gs.shield > 0) {
-                ctx.globalAlpha = 0.25 + Math.sin(gs.tick * 0.2) * 0.1
+                ctx.globalAlpha = (0.25 + Math.sin(gs.tick * 0.2) * 0.1) * VA
                 ctx.strokeStyle = '#58c8ff'
                 ctx.lineWidth = 1
                 ctx.beginPath(); ctx.ellipse(W / 2, H - HUD_H - 24, 46, 26, 0, 0, Math.PI * 2); ctx.stroke()
-                ctx.globalAlpha = 1
             }
+            ctx.globalAlpha = 1
         }
 
         const paintHud = () => {
@@ -452,6 +474,17 @@ const MagicCarpetGame = () => {
                 ctx.fillRect(0, 0, W, H - HUD_H)
                 ctx.globalAlpha = 1
             }
+            if (gs.invis > 0) {
+                // a cold cyan ripple over the view + a veil-timer bar under the vault
+                ctx.globalAlpha = 0.05 + Math.sin(gs.tick * 0.18) * 0.02
+                ctx.fillStyle = '#a8ecff'
+                ctx.fillRect(0, 0, W, H - HUD_H)
+                ctx.globalAlpha = 1
+                ctx.fillStyle = '#0e1a38'
+                ctx.fillRect(34, y0 + 2, 130, 2)
+                ctx.fillStyle = '#a8ecff'
+                ctx.fillRect(35, y0 + 2, 128 * Math.min(1, gs.invis / INVIS_T), 1)
+            }
             if (hurtFlash > 0) {
                 ctx.globalAlpha = hurtFlash / 24
                 ctx.fillStyle = '#e02030'
@@ -528,7 +561,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
-            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].indexOf(e.code)
+            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].indexOf(e.code)
             if (digit >= 0 && SPILLS[digit]) setHand(gs, 'L', SPILLS[digit].id)
         }
         const onUp = (e) => {
@@ -644,6 +677,7 @@ const MagicCarpetGame = () => {
                 getState: () => [
                     `VAULT ${Math.floor(gs.bank)}/${gs.quota} CARRY ${Math.floor(gs.mana)} WORLD ${gs.level + 1}/${LEVELS.length} stage ${gs.castleStage} hp ${Math.round(gs.hp)} shield ${gs.shield} deaths ${gs.deaths}`,
                     `wizard ${gs.wizard.alive ? `hp ${gs.wizard.hp} hoard ${gs.wizard.mana}` : 'SLAIN'} learned ${gs.learned.join(',')} hands ${gs.hands.L}/${gs.hands.R}`,
+                    `veil ${gs.invis} ticks remaining`,
                     `pos ${gs.x.toFixed(0)},${gs.y.toFixed(0)} alt ${gs.alt.toFixed(0)} yaw ${gs.yaw.toFixed(2)} pearls ${gs.pearls.filter((p) => p.alive).length} monsters ${gs.monsters.length}`,
                     `screen ${screenRef.current} paused ${pausedRef.current} end ${gs.end} score ${gs.score}`,
                 ],
@@ -736,6 +770,7 @@ const MagicCarpetGame = () => {
                             'GATHER MANA PEARLS · HOVER YOUR CASTLE TO FILL THE VAULT',
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
+                            'CAST INVISIBILITY AND WIZARD AND WOLVES LOOK RIGHT THROUGH YOU',
                             'THREE WORLDS · EACH GUARDED BY A RIVAL WIZARD',
                         ]}
                     />

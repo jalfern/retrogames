@@ -11,6 +11,7 @@ import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
+    setHand, INVIS_T,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -26,8 +27,8 @@ const run = (seed, maxTicks, scriptFn = autopilot) => {
 
 // ---- boot
 const fresh = makeGame(7)
-r.check('world 1 built: 56 pearls, wizard hoards 80, 6 books, one known spell, empty vault',
-    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 6 &&
+r.check('world 1 built: 56 pearls, wizard hoards 80, 7 books, one known spell, empty vault',
+    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 7 &&
     fresh.learned.length === 1 && fresh.bank === 0 && fresh.level === 0,
     `pearls=${fresh.pearls.length} hoard=${fresh.wizard.mana} books=${fresh.books.length} bank=${fresh.bank}`)
 const g0 = run(7, 600, () => ({}))
@@ -339,9 +340,140 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         `pearl mana ${before} → ${after} (hoard ${hoard}), tower ground ${hBefore.toFixed(0)} → ${hAfter.toFixed(0)}`)
 }
 
-// ---- the roster is all castable and learnable
-r.check('six signature spells with costs', SPILLS.length === 6 &&
-    ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis'].every((id) => spellById(id)?.cost > 0))
+// ---- roster + INVISIBILITY (#1610): the original's veil, done whole
+{
+    r.check('seven signature spells with costs', SPILLS.length === 7 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility'].every((id) => spellById(id)?.cost > 0))
+
+    const veilUp = (gs) => {
+        gs.learned.push('invisibility')
+        setHand(gs, 'L', 'invisibility')
+        gs.mana = 40
+        step(gs, { castL: true })
+    }
+    // Cast mechanics: spends the pouch, raises the veil for INVIS_T world ticks.
+    {
+        const gs = makeGame(7)
+        veilUp(gs)
+        const castEv = gs.events.some((e) => e.type === 'cast' && e.id === 'invisibility')
+        gs.events.length = 0
+        let expired = false
+        for (let i = 0; i < INVIS_T + 5 && !expired; i++) {
+            expired = gs.events.some((e) => e.type === 'invisEnd'); gs.events.length = 0; step(gs, {})
+        }
+        r.check('INVISIBILITY spends 20 from the pouch and veils for INVIS_T ticks, then lifts cleanly',
+            castEv && gs.invis === 0 && expired, `cast=${castEv} expiry=${expired}`)
+    }
+    // The wizard: control fires at a visible carpet; a veiled one is never shot at,
+    // and a bolt already in flight passes through the veil untouched.
+    const wizRig = (veil, near = true) => {
+        const gs = makeGame(7)
+        for (const m of gs.monsters) if (m.kind !== 'cow') { m.x = wrap(m.x + 231, MAP); m.y = wrap(m.y + 231, MAP) }
+        gs.shield = 500 // separate the hit channel: shieldHit = contact, hurt would mean breach
+        if (veil) veilUp(gs)
+        let fired = false, hit = false
+        const place = () => { gs.x = wrap(gs.wizard.x + 10, MAP); gs.y = wrap(gs.wizard.y + 10, MAP) }
+        for (let i = 0; i < 80; i++) {
+            if (near) place()
+            if (gs.events.some((e) => e.type === 'wizfire')) fired = true
+            if (gs.events.some((e) => e.type === 'shieldHit' || e.type === 'hurt')) hit = true
+            gs.events.length = 0
+            step(gs, {})
+        }
+        return { fired, hit }
+    }
+    const wc = wizRig(false)
+    const wv = wizRig(true)
+    r.check('a visible carpet is shot at; a veiled carpet is never targeted nor hit',
+        wc.fired && wc.hit && !wv.fired && !wv.hit, `ctrl fire=${wc.fired} hit=${wc.hit} veiled fire=${wv.fired} hit=${wv.hit}`)
+    // In-flight refusal: a bolt launched before the veil still passes through.
+    {
+        const gs = makeGame(7)
+        for (const m of gs.monsters) if (m.kind !== 'cow') { m.x = wrap(m.x + 231, MAP); m.y = wrap(m.y + 231, MAP) }
+        gs.shield = 500
+        let hit = false
+        for (let i = 0; i < 80; i++) {
+            gs.x = wrap(gs.wizard.x + 10, MAP); gs.y = wrap(gs.wizard.y + 10, MAP)
+            if (gs.events.some((e) => e.type === 'wizfire')) gs.invis = 40 // veil drops as the bolt flies
+            if (gs.events.some((e) => e.type === 'shieldHit' || e.type === 'hurt')) hit = true
+            gs.events.length = 0
+            step(gs, {})
+        }
+        r.check('a bolt launched before the veil passes through the ghost carpet', !hit, `hit=${hit}`)
+    }
+    // Expiry: the paused fuse resumes on the cadence the tick you become visible.
+    {
+        const gs = makeGame(7)
+        for (const m of gs.monsters) if (m.kind !== 'cow') { m.x = wrap(m.x + 231, MAP); m.y = wrap(gs.wizard.y + 231, MAP) }
+        veilUp(gs)
+        gs.invis = 3
+        let resumed = false
+        for (let i = 0; i < 80 && !resumed; i++) {
+            gs.x = wrap(gs.wizard.x + 10, MAP); gs.y = wrap(gs.wizard.y + 10, MAP)
+            resumed = gs.events.some((e) => e.type === 'wizfire'); gs.events.length = 0; step(gs, {})
+        }
+        r.check('the wizard opens fire again the moment the veil expires', resumed, `resumed=${resumed}`)
+    }
+    // Monsters: wolves chase+bite a visible low carpet; veiled they neither.
+    const wolfRig = (veil) => {
+        const gs = makeGame(7)
+        if (veil) veilUp(gs)
+        const wolf = gs.monsters.find((m) => m.kind === 'wolf')
+        const hp0 = gs.hp
+        for (let i = 0; i < 60; i++) {
+            gs.x = wrap(wolf.x + 2, MAP); gs.y = wrap(wolf.y + 2, MAP); gs.alt = 17
+            step(gs, {}); gs.events.length = 0
+        }
+        return gs.hp < hp0
+    }
+    const giantRig = (veil) => {
+        const gs = makeGame(7)
+        if (veil) veilUp(gs)
+        const gi = gs.monsters.find((m) => m.kind === 'giant')
+        let sling = false
+        for (let i = 0; i < 120 && !sling; i++) {
+            gs.x = wrap(gi.x + 5, MAP); gs.y = wrap(gi.y + 5, MAP)
+            sling = gs.events.some((e) => e.type === 'rocksling'); gs.events.length = 0; step(gs, {})
+        }
+        return sling
+    }
+    r.check('wolves bite a visible low carpet but cannot see a veiled one',
+        wolfRig(false) && !wolfRig(true))
+    r.check('giants sling at a visible carpet and refuse a veiled one',
+        giantRig(false) && !giantRig(true))
+    // Your own hands work untouched behind the veil: pearls still come to you.
+    {
+        const gs = makeGame(7)
+        veilUp(gs)
+        const pearl = gs.pearls.find((p) => p.alive)
+        gs.x = pearl.x; gs.y = pearl.y; gs.alt = pearl.z
+        step(gs, {})
+        r.check('the veil hides you from enemies only — pearls still gather',
+            gs.events.some((e) => e.type === 'pickup'))
+    }
+    // The veil rides the state hash, and the grimoire carries it in every world.
+    {
+        const a = makeGame(7)
+        const b = makeGame(7)
+        veilUp(b)
+        r.check('stateHash sees the veil', stateHash(a) !== stateHash(b))
+        r.check('the INVISIBILITY grimoire spawns in every world',
+            [0, 1, 2].every((lv) => makeGame(7, lv).books.some((bk) => bk.id === 'invisibility')))
+    }
+    // Balance: the veil must not make the autopilot worse — the documented bar
+    // is 60/60 seeds restored (README).
+    {
+        let wins = 0, slowest = 0
+        for (let s = 1; s <= 60; s++) {
+            const gs = makeGame(s)
+            let i = 0
+            while (!gs.end && i < 40000) { step(gs, autopilot(gs)); i++ }
+            if (gs.end === 'win') { wins++; if (i > slowest) slowest = i }
+        }
+        r.check('60-seed balance sweep: the autopilot still restores all three worlds, all 60 seeds',
+            wins === 60, `wins ${wins}/60, slowest ${slowest} ticks`)
+    }
+}
 
 // ---- browser pass: boots in Chrome, starts, drives through the contract, zero errors
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)

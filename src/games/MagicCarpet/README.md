@@ -76,15 +76,25 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   armor, like the original. Giants keep 55u off your castle; respawn is safe.
 - Charge-glide: holding boost (`inp.boost`; Shift, or a held ▲ in the shell)
   flies at 1.6× cruise with turns dampened to 0.55× — wider radius, no mana.
+- INVISIBILITY (#1610, the 7th spell): for `INVIS_T` (420) world ticks the
+  enemies are blind to the carpet — the wizard's fuse pauses (no bolt launches,
+  and a bolt already in flight passes through), wolves neither chase nor bite,
+  giants refuse their slings. Your own hands work untouched: pearls, grimoires,
+  banking, blasts all normal. Cost 20 from the carried pouch; the fuse resumes
+  on its cadence the tick the veil expires.
 
 ## Verify
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 43 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 53 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
+                           # INVISIBILITY veil (#1610: cast/expiry, wizard +
+                           # wolf + giant refusal vs controls, in-flight
+                           # pass-through, own pickups intact, hash, 60-seed
+                           # balance sweep),
                            # plus a headless-Chrome pass and 9 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
@@ -95,13 +105,17 @@ CONTRACT_ONLY=magic-carpet npm run contractcheck
 
 Mutation proof (done, 2026-10-25): changing the win check to
 `gs.bank >= gs.quota * 100` turns the three equilibrium checks red and nothing
-else; restored after. Balance: autopilot wins 60/60 seeds (slowest ~26.5k ticks).
+else; restored after. #1610 mutant (2026-11-05): deleting the `gs.invis <= 0`
+gate on the wizard fuse turns only the veil-targeting check red
+(`veiled fire=true`); restored after. Balance: autopilot wins 60/60 seeds
+(slowest ~24.7k ticks — the veil + evasive-climb rules made the bot strictly
+safer than the pre-#1610 ~26.5k).
 
 ## Honest gaps (the polish pass owns these)
 
-- Six spells, not twenty. No clone/dissolve/shatter/invisibility/volcano, and
-  no raise-terrain spell (the original's later games added one; MC1 itself only
-  craters and floods).
+- Six spells remain: no clone/dissolve/shatter/volcano, and no raise-terrain
+  spell (the original's later games added one; MC1 itself only craters and
+  floods). Invisibility shipped #1610.
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.
