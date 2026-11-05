@@ -15,7 +15,7 @@
 
 import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
-import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H } from '../src/games/Adventure/sim.js'
+import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, stateHash } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
@@ -961,6 +961,88 @@ console.log('#1572 guidance tab: registry guide content + shared renderer gate (
         'the guidance tab renders ONLY for games that register one — every other help screen is untouched')
 }
 
+// -------------------------------------------- #1591 contract hash + nightly softlock ----
+console.log('#1591 contract state().hash + the nightly softlock regression')
+{
+    const src = readFileSync(IDX, 'utf8')
+    ok(/state:\s*\(\)\s*=>\s*\(\{[\s\S]*?hash:\s*stateHash\(sim\),/.test(src),
+        'state() exposes hash: stateHash(sim) — the nightly bot can tell a live world from a frozen one')
+
+    // A live world must change the digest every tick; a frozen one (terminal)
+    // must NOT — that is the exact discrimination the nightly softlock gate uses.
+    // V1's layout is seed-independent (the seed drives only the dragon/bat dice),
+    // so determinism is pinned over IDENTICAL input streams, exactly like a real
+    // replay — and different seeds diverge once those dice have rolled.
+    const hstream = (seed, n = 300) => {
+        const s = createSim(seedRng(seed))
+        const out = []
+        for (let i = 0; i < n; i++) { s.step({ dx: (i % 7 < 3 ? PLAYER_SPEED : -PLAYER_SPEED), dy: 0 }); s.events.length = 0; out.push(stateHash(s)) }
+        return out.join(';')
+    }
+    ok(hstream(3) === hstream(3), 'stateHash replays deterministically: same seed, same pads, identical hash stream')
+    ok(hstream(3) !== hstream(4), 'different seeds diverge once the seeded dice roll')
+    {
+        const live = createSim(seedRng(9))
+        const seq = []
+        for (let i = 0; i < 50; i++) { live.step({ dx: PLAYER_SPEED, dy: 0 }); live.events.length = 0; seq.push(stateHash(live)) }
+        ok(new Set(seq).size === seq.length, 'a moving world changes stateHash every tick (never looks frozen)', `${new Set(seq).size}/${seq.length}`)
+    }
+    {
+        const done = createSim(seedRng(9))
+        done.room = R.GOLD_CASTLE; done.carrying = 'chalice'; done.events.length = 0
+        done.step({ dx: PLAYER_SPEED, dy: 0 })
+        const hWon = stateHash(done)
+        let moved = 0
+        for (let i = 0; i < 20; i++) { done.step({ dx: PLAYER_SPEED, dy: -PLAYER_SPEED }); done.events.length = 0; if (stateHash(done) !== hWon) moved++ }
+        ok(done.won && moved === 0, 'the terminal freezes stateHash too (it tracks sim time, not wall-clock — no Date.now/random)', `moved ${moved}`)
+    }
+
+    // The nightly repro: replay seed 20261149 (the exact bot seed) for the full
+    // cap with nightlybot's pad policy. If the run does not finish — the bot is
+    // a random wanderer and will not solve a full ADVENTURE — the last-30 hashes
+    // MUST NOT collapse to one (the #1591 false positive). This is the gate.
+    const NIGHTLY_CAP = 9000
+    const mul = (aa) => function () {
+        aa |= 0; aa = (aa + 0x6D2B79F5) | 0
+        let t = Math.imul(aa ^ (aa >>> 15), 1 | aa)
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+    const nightlyRun = (seed) => {
+        const sim = createSim(seedRng(seed), 1)
+        const hashes = [stateHash(sim)]
+        let prevTick = sim.tick
+        for (let i = 0; i < NIGHTLY_CAP; i++) {
+            const rng = mul((seed ^ Math.imul(i + 1, 0x9E3779B1)) >>> 0)
+            const r = rng()
+            let left = false, right = false, up = false, down = false
+            if (r < 0.24) left = true
+            else if (r < 0.48) right = true
+            else if (r < 0.60) up = true
+            else if (r < 0.70) down = true
+            const a = rng() < 0.18
+            if (!(sim.won || (sim.dead && sim.deathTimer <= 0))) {
+                sim.step({ dx: (right ? PLAYER_SPEED : 0) - (left ? PLAYER_SPEED : 0), dy: (down ? PLAYER_SPEED : 0) - (up ? PLAYER_SPEED : 0), drop: a })
+                sim.events.length = 0
+            }
+            const isDone = sim.won || (sim.dead && sim.deathTimer <= 0)
+            if (i >= NIGHTLY_CAP - 30) hashes.push(stateHash(sim))
+            prevTick = sim.tick
+            if (isDone) break
+        }
+        const isDone = sim.won || (sim.dead && sim.deathTimer <= 0)
+        return { tick: sim.tick, done: isDone, uniq: new Set(hashes.slice(-30)).size }
+    }
+    for (const sd of [20261149, 20261106, 20261120]) {
+        const r = nightlyRun(sd)
+        ok(r.done || r.tick >= NIGHTLY_CAP || r.uniq > 1,
+            `seed ${sd}: an unfinished run never looks frozen (${r.uniq} distinct last-30 hashes, tick ${r.tick})`)
+        if (!r.done) ok(r.uniq > 1,
+            `seed ${sd}: #1591 regression — last-30 hashes are distinct, the nightly verdict is endurance, not softlock`,
+            `uniq=${r.uniq} tick=${r.tick} — a size-1 set would re-file the softlock`)
+    }
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
@@ -1080,6 +1162,12 @@ if (process.argv.includes('--mutant')) {
         ['#1572: the attract hides the variant (no dot-matrix readout)', AF,
             "{ text: String(variant), x: w / 2, y: h * 0.82, size: 28, col: '#ffff00', glow: 0 },",
             ''],
+        ['#1591: state().hash drops the digest (the nightly false softlock returns)', I,
+            'hash: stateHash(sim),',
+            'hash: undefined,'],
+        ['#1591: stateHash is constant (a live world looks frozen → endurance never proves)', SM,
+            '    return h >>> 0\n}',
+            '    return 2166136261\n}'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
