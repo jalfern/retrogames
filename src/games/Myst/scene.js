@@ -8,6 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
+import { seaProfile, seaSwell, foamLine } from './sea.js'
 
 const GAP = 4000
 
@@ -122,7 +123,40 @@ function seaPlane(group, y = 0, size = 1600, tint) {
   m.map.repeat.set(8, 8)
   const p = mesh(new THREE.PlaneGeometry(size, size, 24, 24), m, 0, y, 0, group)
   p.rotation.x = -Math.PI / 2
+  p.userData.isSea = true
   return p
+}
+
+// #838 item 2 — the sea wears its Age: `dressSea` colours every sea plane the
+// builder placed in the view with that view's multiply-tint (sea.js
+// `SEA_VIEWS`), drifts its texture, heaves it with the pure deterministic
+// swell `seaSwell` (ocean on Stoneship, chop on Selenitic, glass on
+// Channelwood), and seats foam puffs along the coast where the sculpted
+// ground meets its own waterline. Views with no entry (interiors, the cave
+// fall, Mechanical's dry dock) keep the plain plane untouched.
+function dressSea(group, id, anim) {
+  const prof = seaProfile(id)
+  if (!prof) return
+  group.traverse((o) => {
+    if (!o.isMesh || !o.userData.isSea) return
+    o.material.color.setRGB(prof.color[0], prof.color[1], prof.color[2])
+    const pos = o.geometry.attributes.position
+    const base = Float32Array.from(pos.array)
+    anim.push({ o, f: (t) => {
+      if (o.material.map) o.material.map.offset.x = (t * prof.drift) % 1
+      for (let i = 0; i < pos.count; i++) pos.setZ(i, seaSwell(base[i * 3], -base[i * 3 + 1], t, id))
+      pos.needsUpdate = true
+    } })
+  })
+  for (const [fx, fz, fi] of foamLine(id)) {
+    const f = mesh(new THREE.PlaneGeometry(1.7, 0.9),
+      new THREE.MeshBasicMaterial({ color: 0xeaf4ee, transparent: true, opacity: 0.25 + 0.35 * fi, fog: true }),
+      fx, prof.water + 0.04 + seaSwell(fx, -fz, 0, id), fz, group)
+    f.rotation.x = -Math.PI / 2
+    f.userData.noPick = true
+    f.userData.foam = fx * 0.31 + fz * 0.17
+    anim.push({ o: f, f: (t) => { f.material.opacity = 0.22 + 0.3 * fi + 0.12 * Math.sin(t * 1.9 + f.userData.foam) ; f.position.y = prof.water + 0.04 + seaSwell(fx, -fz, t, id) } })
+  }
 }
 
 function rocks(group, tex, list) {
@@ -1008,6 +1042,7 @@ export function buildWorld(ids) {
     g.position.x = idx * GAP
     skyDome(g, idSky(id))
     if (BUILDERS[id]) BUILDERS[id](g)
+    dressSea(g, id, anim)
     const cam = NODES[id].pos
     for (const sp of NODES[id].spots) {
       if (sp.act === 'takePage') {

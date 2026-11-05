@@ -119,6 +119,18 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
    and the Selenitic lightning stays a brief 160 ms window of its 6.4 s cycle —
    its flash colour lives only in the Selenitic painter so no second lens
     strobes in step.
+- `sea.js` — the sea wears each Age (#838 item 2): `SEA_VIEWS` per sea view
+  carries its water level, multiply-tint colour, swell amplitude and texture
+  drift; `seaSwell(x, z, t, view)` is a deterministic three-sine swell bounded
+  by the view's amplitude (no `Math.random`); `foamAt`/`foamLine` hug the
+  coast — foam exists exactly where the sculpted ground (and its RAW, uncarved
+  form, `terrain.groundRaw`) meets the view's own waterline, never on a dry
+  carved pad, never on open water. Hue laws ride the original's light: dusk
+  amber island, green-dominant Selenitic, teal Stoneship ocean (the biggest
+  swell), moss-dark glass Channelwood. `dressSea` in `scene.js` applies it all:
+  colours and heaves every sea plane, drifts its texture, and seats up to 64
+  foam puffs that ride the swell and breathe on their own phases. Mechanical
+  has no entry — its forge floor stays dry.
 - `link.js` — the LINKING BOOKS (#1031): touching an Age's book no longer cuts.
   The page cover rushes up (Age ink + double-rule border), a seam of light
   opens across it, and a stable starfield wheels outward on a slow swirl until
@@ -171,7 +183,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (50 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (84 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -210,7 +222,11 @@ through the leap — each turns the suite red. Five more target the linking poli
 (#1035): a return panel cutting straight home, a seam opening stiff with no
 shimmer, the arrival pull collapsing to a constant swirl, the page-rush cover
 collapsing into the whoosh, and a starfield overlay losing its DPR backing —
-each turns the suite red.
+each turns the suite red. Six target the sea (#838 item 2): the island sea
+turning Selenitic green, the Stoneship ocean flattening to a millpond,
+Channelwood glass growing an ocean swell, a swell that freezes, foam that
+forgets the sculpt (dry pads wearing waterlines), and a scene that stops
+dressing its seas — each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -274,11 +290,19 @@ each turns the suite red.
   of a trap. `soundplan` answers `link:trap*` apart from an Age leap — a heavier
   cover slam and a sweep that FALLS (1250→65 Hz) where a leap rises (90→1400):
   the trap takes you in, not somewhere.
-- **CLOSED by #1033** — SELENITIC is sculpted ground: `terrain.js` is a pure
-  heightfield (`domeHeight`) — a grass-covered grey dome with a crest, smooth
-  flanks and a skirt that dips below the waterline, so the shared ocean meets a
-  real coast instead of running under a flat disc. The landing pad and the
-  sounding-path corridor are carved flat (rings, posts, stones and the gate keep
-  their level bed), and the two views carve their own crest, so the same dome
-  reads correctly from both poses. Residual: the other three Ages still sit on
-  flat ground discs, and the ocean elsewhere is still one tiled plane.
+- **CLOSED by #1033 / #838 item 1 / #838 item 2** — SELENITIC is sculpted
+  ground: `terrain.js` is a pure heightfield (`domeHeight`) — a grass-covered
+  grey dome with a crest, smooth flanks and a skirt that dips below the
+  waterline, so the shared ocean meets a real coast instead of running under a
+  flat disc. The landing pad and the sounding-path corridor are carved flat
+  (rings, posts, stones and the gate keep their level bed), and the two views
+  carve their own crest, so the same dome reads correctly from both poses.
+  #838 item 1 gave the other three Ages the same law (`AGE_GROUND`/`ageHeight`:
+  real coasts, dry-land beds). #838 item 2 closed the last half of the old
+  residual ("the ocean elsewhere is still one tiled plane"): `sea.js` pitches
+  each Age's water — dusk amber island, green Selenitic chop, teal Stoneship
+  ocean, moss-dark Channelwood glass — swells it deterministically, and lays a
+  foam line exactly where the sculpt meets the sea. Residual: the island's own
+  views (dock, beach, cliffs) still prop their shore with rocks and sit on the
+  shared dusk sea un-sculpted, and the deep ocean far from any coast is still
+  one plane (now at least a plane that wears the Age it drowns).
