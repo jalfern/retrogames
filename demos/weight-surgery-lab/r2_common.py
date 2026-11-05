@@ -170,6 +170,10 @@ def load_done(model, wait_s=180):
     except urllib.error.HTTPError as e:  # noqa: PERF203
         if e.code not in (400, 409):
             raise
+    except TimeoutError:
+        # #1585: a slow load POST (resident-model swap) exceeds the 30s read
+        # timeout AFTER the server accepted the load — fall through to the poll.
+        pass
     t0 = time.time()
     while time.time() - t0 < wait_s:
         time.sleep(3)

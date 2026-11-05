@@ -1,0 +1,37 @@
+{
+ "ts": "2026-11-05T09:29:46Z",
+ "issue": 1585,
+ "rule": "winner = max practice accuracy on fresh 64-math @cap8192 (think35 pp1.5 ctx32768); ties -> higher finished-rate, then smaller alpha; held-out 100+100 scored once for the winner only",
+ "rows": {
+  "ob2": {
+   "acc": 6.2,
+   "finished": 4.7,
+   "n": 64,
+   "mean_ntok": 7964
+  },
+  "ob4": {
+   "acc": 4.7,
+   "finished": 4.7,
+   "n": 64,
+   "mean_ntok": 8025
+  },
+  "ob8": {
+   "acc": 0.0,
+   "finished": 0.0,
+   "n": 64,
+   "mean_ntok": 8192
+  }
+ },
+ "base_reference": {
+  "acc": 0.0,
+  "finished": 0.0,
+  "n": 64
+ },
+ "decision": "ob2",
+ "winner": {
+  "alpha": 2,
+  "acc": 6.2,
+  "finished": 4.7
+ },
+ "lift_over_base": 6.2
+}
