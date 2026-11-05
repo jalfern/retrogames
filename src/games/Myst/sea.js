@@ -225,3 +225,78 @@ export function foamLine(view, step = 2, cap = 64) {
   }
   return out
 }
+
+// #838 item 5 — the horizon is not empty. Items 2–4 graded the water and rolled
+// it, but the original's FMV seas were never empty twice over: the water mirrors
+// the sky it sits under, and the horizon carries land. Two laws here, pure like
+// the rest of this file.
+//
+// Mirrored cloud banks: past the mirror edge (SEA_DEEP.mirror) the sky's clouds
+// lay onto the water. Per-sky cloud colours — dusk rose off the island sunset,
+// Selenitic's pale jade haze, the Atlantic's silver-grey banks, Channelwood's
+// near-white cloud floor (it floats ON the clouds). The clumps are a product of
+// two long sine bands squared into broken cotton, drifting at a slow fraction of
+// the texture drift; zero inside the mirror edge, so shore water keeps the
+// items 2/3 law untouched. Deterministic — no Math.random; the harness replays it.
+export const SKY_CLOUD = {
+  dusk:        [0.99, 0.72, 0.66], // rose-lit cirrus over the amber sea
+  selenitic:   [0.72, 0.92, 0.80], // pale jade — the storm haze, lit from behind
+  stoneship:   [0.88, 0.91, 0.95], // silver-grey Atlantic banks
+  channelwood: [0.95, 1.00, 0.98], // cloud-floor white, brightest of all
+}
+// distance from the view's own origin where the banks reach full strength.
+export const MIRROR_RAMP = 120
+
+export function cloudTint(view) {
+  if (!SEA_VIEWS[view]) return null
+  return SKY_CLOUD[skyOf(view)]
+}
+
+// mirrored cloud brightness 0..1 at (x, z) at world time t for `view`; 0 for a
+// dry view and everywhere inside the mirror band.
+export function cloudMirror(x, z, t, view) {
+  const v = SEA_VIEWS[view]
+  if (!v) return 0
+  const r = Math.sqrt(x * x + z * z)
+  if (r <= SEA_DEEP.mirror) return 0
+  const ramp = Math.min(1, (r - SEA_DEEP.mirror) / MIRROR_RAMP)
+  const ph = t * v.drift * 11
+  const u = 0.5 + 0.5 * Math.sin(x * 0.010 + z * 0.004 + ph)
+  const w = 0.5 + 0.5 * Math.sin(x * 0.004 - z * 0.012 + ph * 0.7 + 2.1)
+  const q = u * w
+  return ramp * q * q
+}
+
+// Neighbouring land on the skyline. The island's dusk views look out over the
+// bay of Myst itself — its own coast curving away past the frame reads as dark
+// headlands on the haze line; Stoneship's Atlantic carries two low, far islands
+// past the swell. Selenitic gets none — its horizon is the caldera dome;
+// Channelwood none — it floats above the clouds, not over a shore; Mechanical's
+// forge floor is dry. Deterministic per view (a name hash picks bearings and
+// sizes), and every isle stands inside the fog's reach: past ISL_LIMIT.far the
+// scene's fog swallows it whole, which is exactly the wrong kind of empty.
+export const ISL_LIMIT = { min: 120, far: 640 }
+// The land-bearing skies — the table IS the law: a sky absent from it keeps its
+// own horizon (Selenitic's dome, Channelwood's cloud floor, Mechanical's stone).
+const ISLE_LAW = {
+  dusk:      { n: 3, base: 380, span: 180, w0: 90, h0: 14, tint: [0.16, 0.11, 0.16] }, // Myst's own headlands, basalt-dark in the dusk haze
+  stoneship: { n: 2, base: 240, span: 120, w0: 60, h0: 7,  tint: [0.30, 0.33, 0.38] }, // low far islands, cold Atlantic grey
+}
+
+// [{ x, z, w, h, color[3] }] — silhouettes seated on the view's own waterline,
+// or [] where the Age keeps its own horizon.
+export function islesFor(view) {
+  const v = SEA_VIEWS[view]
+  if (!v) return []
+  const law = ISLE_LAW[skyOf(view)]
+  if (!law) return []
+  const out = []
+  for (let i = 0; i < law.n; i++) {
+    const a = ((18 + 324 * hash01(`${view}:isle${i}:a`)) * Math.PI) / 180
+    const d = law.base + hash01(`${view}:isle${i}:d`) * law.span
+    const w = law.w0 + hash01(`${view}:isle${i}:w`) * 120
+    const h = law.h0 + hash01(`${view}:isle${i}:h`) * 20
+    out.push({ x: Math.sin(a) * d, z: Math.cos(a) * d, w, h, color: law.tint })
+  }
+  return out
+}

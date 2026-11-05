@@ -133,6 +133,21 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   colours and heaves every sea plane, drifts its texture, and seats up to 64
   foam puffs that ride the swell and breathe on their own phases. Mechanical
   has no entry — its forge floor stays dry.
+- `sea.js` item 5 — the horizon is not empty: past the mirror edge the water
+  wears the sky. `cloudMirror(x, z, t, view)` is deterministic broken cotton —
+  a squared product of two long sine banks drifting at a slow fraction of the
+  texture drift — zero inside the mirror band so the items 2/3 shoreline is
+  untouched, and `cloudTint(view)` picks the per-sky cloud colour (`SKY_CLOUD`:
+  dusk rose, Selenitic pale jade, Atlantic silver-grey, Channelwood cloud-floor
+  white). `dressSea` paints it into the deep-ladder vertex colours every frame,
+  lifting the mirror band toward the sky where the banks sit. `ISLE_LAW` names
+  the land-bearing skies — the island's dusk views frame their bay with three
+  dark headlands of Myst's own coast, Stoneship's Atlantic carries two low far
+  islands; a sky absent from the table keeps its own horizon (Selenitic's dome,
+  Channelwood's clouds, Mechanical's stone). `islesFor(view)` answers the
+  silhouettes and `dressSea` seats them half-sunk domes on the view's own
+  waterline, inside the fog's reach (`ISL_LIMIT`) so haze dresses them, not
+  erases them. All deterministic — hash-born, no `Math.random`.
 - `link.js` — the LINKING BOOKS (#1031): touching an Age's book no longer cuts.
   The page cover rushes up (Age ink + double-rule border), a seam of light
   opens across it, and a stable starfield wheels outward on a slow swirl until
@@ -185,7 +200,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (97 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (114 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -231,7 +246,11 @@ forgets the sculpt (dry pads wearing waterlines), and a scene that stops
 dressing its seas — each turns the suite red. Six more target the island shores (#838 item 3):
 the dock shore sinking out from under the pier, the cliff path hanging over a sea with no foot,
 the beach bed drowning, the stair-top plateau tipping out of its carve, the sand reverting to
-a flat plane, and two island shores sharing one sculpt — each turns the suite red.
+a flat plane, and two island shores sharing one sculpt — each turns the suite red. more target the empty horizon (#838 item 5): a cloud mirror bleeding onto the shore, banks
+that freeze over, cotton flattening to a uniform varnish, dusk banks turning cold, a skyline
+that vanishes, Selenitic growing coasts in front of its own dome, a headland drowning,
+drifting past the fog, or floating 60 units up like a boulder, and a scene that stops
+mirroring clouds or seating land — each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -320,6 +339,11 @@ a flat plane, and two island shores sharing one sculpt — each turns the suite 
    band (zero at the shore, ramped to 0.9× the view's swell, wavelengths ~5× the near chop)
    so the ocean heaves hardest away from land. `dressSea` paints the ladder as per-vertex
    colour and adds the far swell to every heave; small planes (the cave fall, Channelwood
-   pools) sit inside the coast band and keep the flat tint. Residual: the original's clouds
-   mirrored on the water and neighbouring islands on the skyline are still not modelled —
-   the deep is now a graded, rolling sea, not a sheet, but an empty one.
+   pools) sit inside the coast band and keep the flat tint. **CLOSED by #838 item 5** — the
+   horizon wears the sky and carries land: `cloudMirror`/`SKY_CLOUD` drift the view's own
+   cloud banks across the mirror band (rose dusk, jade Selenitic, silver Atlantic, white
+   cloud-floor) and `dressSea` lifts the deep toward them per vertex; `ISLE_LAW` sets the
+   dusk bay in a ring of Myst's own dark headlands and Stoneship's ocean in two far islets
+   (`islesFor`), seated on the view's waterline and dressed by its fog. Residual: the
+   original's skyline also carried neighbouring Ages' landmarks faintly (the clock tower
+   from far beaches); ours answers with generic coast, not landmarks.

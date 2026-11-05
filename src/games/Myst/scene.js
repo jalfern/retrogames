@@ -8,7 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor } from './sea.js'
 
 const GAP = 4000
 
@@ -158,6 +158,21 @@ function dressSea(group, id, anim) {
         col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]
       }
       o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3))
+      // #838 item 5 — the mirror band wears the sky: the view's clouds drift
+      // across the horizon, pulling the deep water up toward the cloud colour.
+      const cloud = cloudTint(id)
+      if (cloud) {
+        anim.push({ o, f: (t) => {
+          for (let i = 0; i < pos.count; i++) {
+            const c = deepTint(id, Math.hypot(base[i * 3], base[i * 3 + 1]))
+            const lift = cloudMirror(base[i * 3], -base[i * 3 + 1], t, id) * 0.55
+            col[i * 3] = c[0] + (cloud[0] - c[0]) * lift
+            col[i * 3 + 1] = c[1] + (cloud[1] - c[1]) * lift
+            col[i * 3 + 2] = c[2] + (cloud[2] - c[2]) * lift
+          }
+          o.geometry.attributes.color.needsUpdate = true
+        } })
+      }
     }
     anim.push({ o, f: (t) => {
       if (o.material.map) o.material.map.offset.x = (t * prof.drift) % 1
@@ -189,6 +204,16 @@ function dressSea(group, id, anim) {
       strip.material.opacity = gl.base * (0.55 + 0.45 * Math.sin(t * gl.rate + gl.rot * 3))
       strip.position.y = prof.water + 0.06 + seaSwell(gl.x, -gl.z, t, id) * 0.5
     } })
+  }
+  // #838 item 5 — land on the skyline: dark domes half-sunk in the view's own
+  // waterline, riding the fog out to the haze line (islesFor answers [] where
+  // the Age keeps its own horizon — Selenitic's dome, Channelwood's clouds).
+  for (const isl of islesFor(id)) {
+    const isle = mesh(new THREE.SphereGeometry(1, 12, 8),
+      new THREE.MeshStandardMaterial({ color: new THREE.Color(isl.color[0], isl.color[1], isl.color[2]), roughness: 1, metalness: 0, fog: true }),
+      isl.x, prof.water, isl.z, group)
+    isle.scale.set(isl.w / 2, isl.h, isl.w / 2)
+    isle.userData.noPick = true
   }
 }
 
