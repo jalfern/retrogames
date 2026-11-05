@@ -44,3 +44,43 @@ export function domeHeight(x, z, view = 'selenitic') {
   else h = crest.h * smooth((DOME.rim - d) / (DOME.rim - DOME.core))
   return h * flatMask(x, z, SEL_FLATS[view] || [])
 }
+
+// #838 item 1 — the other three Ages' ground, the same law as the Selenitic
+// dome: a pure height the scene displaces its heightfield with and mystcheck
+// proves against. Each outdoor view carries: the base its flat beds sit on
+// (equal to the old disc's height, so nothing placed on the ground moves),
+// the crest that gives the view its sculpt (the island ridge, the tower's
+// promontory, the falls' lip, the sluice's rise, the ledges under the domes),
+// flat carves under every path and puzzle, and the drop to a seabed below the
+// sea plane so the shared ocean meets a real coast — or the cliff a terrace
+// is cut into — instead of a flat disc edge. `water` is the view's sea level
+// (null where the view has no sea, e.g. the tower floor).
+export const AGE_GROUND = {
+  stoneship:        { base: 0,   water: 0.02, crest: { x: 0, z: -14, core: 6, rim: 26, h: 4 }, drop: 3.5, skirt: 16, flats: [{ x0: -9, x1: 9, z0: -27, z1: 3, soft: 5 }] },
+  stoneDeck:        { base: 0,   water: 0.02, crest: { x: 0, z: -8, core: 8, rim: 24, h: 3 }, drop: 3.5, skirt: 16, flats: [{ x0: -8, x1: 8, z0: -13, z1: -5, soft: 4 }] },
+  stoneObservatory: { base: 5.1, water: -1.5, crest: { x: 0, z: 3, core: 5, rim: 16, h: 1.5 }, drop: 7.5, skirt: 18, flats: [{ x0: -9, x1: 9, z0: -8, z1: 1, soft: 5 }] },
+  mechanical:       { base: 0,   water: null, crest: { x: 2, z: 34, core: 10, rim: 30, h: 3.5 }, drop: 3.5, skirt: 16, flats: [{ x0: -12, x1: 12, z0: -17, z1: 12, soft: 6 }] },
+  mechWalk:         { base: 0,   water: null, crest: { x: 0, z: 12, core: 6, rim: 22, h: 5 }, drop: 3.5, skirt: 16, flats: [{ x0: -10, x1: 10, z0: -12, z1: 8, soft: 5 }] },
+  channelwood:      { base: 0,   water: 0.02, crest: { x: 0, z: -15, core: 5, rim: 20, h: 5 }, drop: 3.5, skirt: 16, flats: [{ x0: -8, x1: 8, z0: -28, z1: -13.5, soft: 4 }] },
+  chanChannels:     { base: 0,   water: 0.02, crest: { x: 0, z: -20, core: 10, rim: 30, h: 5.5 }, drop: 3.5, skirt: 16, flats: [{ x0: -10, x1: 10, z0: -44, z1: -21, soft: 4 }] },
+  chanWheel:        { base: 2.2, water: -0.5, crest: { x: 0, z: -53, core: 3, rim: 12, h: 0.8 }, drop: 3, skirt: 10, flats: [{ x0: -11, x1: 11, z0: -61, z1: -49, soft: 5 }] },
+  chanObs:          { base: 4.4, water: -0.5, crest: { x: 0, z: -57, core: 5, rim: 16, h: 1.2 }, drop: 6, skirt: 18, flats: [{ x0: -10, x1: 10, z0: -72, z1: -61, soft: 5 }] },
+}
+
+export function ageHeight(x, z, view) {
+  const v = AGE_GROUND[view]
+  const c = v.crest
+  const d = Math.hypot(x - c.x, z - c.z)
+  const t = clamp01((c.rim - Math.max(d - c.core, 0)) / (c.rim - c.core))
+  const bump = c.h * smooth(t)
+  const fall = v.drop * clamp01((d - c.rim) / v.skirt)
+  const raw = v.base + bump - fall
+  return v.base + (raw - v.base) * flatMask(x, z, v.flats)
+}
+
+// one entry point the scene displaces with: the Selenitic dome (#1033), or
+// the other three Ages' ground (#838 item 1).
+export function groundHeight(x, z, view) {
+  if (view === 'selenitic' || view === 'selSound') return domeHeight(x, z, view)
+  return ageHeight(x, z, view)
+}

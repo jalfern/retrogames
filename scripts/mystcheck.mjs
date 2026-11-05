@@ -9,7 +9,7 @@ import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, l
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
-import { domeHeight, SEL_CRESTS, DOME } from '../src/games/Myst/terrain.js'
+import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ageHeight } from '../src/games/Myst/terrain.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
