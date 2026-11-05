@@ -10,6 +10,7 @@ import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSe
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1031,6 +1032,77 @@ console.log('MYST — the other Ages’ ground (#838 item 1: beds and coasts, no
     'every outdoor view of the three Ages displaces a heightfield in the scene (no old disc)')
 }
 
+console.log('MYST — the sea wears each Age (#838 item 2: per-Age water, swell, foam line)')
+{
+  const SEA = 'src/games/Myst/sea.js'
+  const SEAV = Object.keys(SEA_VIEWS)
+  ok(SEAV.length === 13 && ['dock', 'cliffPath', 'beach', 'stairTop', 'selenitic', 'selSound',
+    'stoneship', 'stoneDeck', 'stoneObservatory', 'channelwood', 'chanChannels', 'chanWheel', 'chanObs']
+      .every((v) => SEA_VIEWS[v]),
+    'every sea view wears its Age (13 views: island, Selenitic, Stoneship, Channelwood)')
+  ok(!SEA_VIEWS.mechanical && !SEA_VIEWS.mechWalk,
+    'Mechanical keeps a dry forge floor — no sea entry for a smoke-black indoor Age')
+  ok(new Set(SEAV.map((v) => SEA_VIEWS[v].color.join(','))).size >= 9,
+    'no brother Age shares its water — the four Ages read apart at the shoreline')
+  // hue laws, straight from the original's light
+  const hue = (v) => SEA_VIEWS[v].color
+  ok(hue('selenitic')[1] > hue('selenitic')[0] && hue('selenitic')[1] > hue('selenitic')[2],
+    'Selenitic water is green-dominant — it swims in the same haze as its fog')
+  ok(SEAV.filter((v) => v.startsWith('stoneship') || v.startsWith('stone')).every((v) => hue(v)[2] > hue(v)[0] && hue(v)[1] > hue(v)[0]),
+    'Stoneship water is teal — blue and green well over red, the Atlantic of the original')
+  ok(SEAV.filter((v) => v.startsWith('chan')).every((v) => hue(v)[1] > hue(v)[0] && Math.max(...hue(v)) <= 0.8),
+    'Channelwood water is moss-dark — a cloud-world pool lit from cloud, not sun')
+  ok(SEAV.filter((v) => ['dock', 'cliffPath', 'beach', 'stairTop'].includes(v)).every((v) => hue(v)[0] > hue(v)[1] && hue(v)[1] > hue(v)[2]),
+    'the island sea is dusk-amber — warm r > g > b, the same sunset that gilds its fog')
+  // swell: ocean > chop > wash > glass, and nobody's sea is dead
+  const sw = (v) => SEA_VIEWS[v].swell
+  ok(sw('stoneObservatory') > sw('selenitic') && sw('selenitic') > sw('beach') && sw('beach') > sw('channelwood') && sw('channelwood') > 0,
+    'swell is pitched by the Age — Stoneship heaves, Selenitic chops, the island washes, Channelwood is glass')
+  ok(sw('channelwood') <= 0.1, 'Channelwood stays glass — its pools barely ripple')
+  // seaSwell: deterministic, bounded, alive, and pitched per Age
+  {
+    const a = seaSwell(12, -40, 7.5, 'stoneship'), b = seaSwell(12, -40, 7.5, 'stoneship')
+    ok(a === b, 'seaSwell is deterministic — same instant paints the same water')
+    ok(a !== seaSwell(12, -40, 7.5 + 0.31, 'stoneship'), 'the water moves — two instants never match')
+    let mx = 0
+    for (let t = 0; t < 12; t += 0.13) for (let x = -60; x <= 60; x += 7)
+      mx = Math.max(mx, Math.abs(seaSwell(x, -30, t, 'stoneship')))
+    ok(mx > 0.3 && mx <= sw('stoneship') * 1.01, 'the swell is bounded by its Age amplitude', mx.toFixed(3))
+    let mS = 0, mC = 0
+    for (let t = 0; t < 12; t += 0.17) {
+      mS = Math.max(mS, Math.abs(seaSwell(9, -33, t, 'stoneship')))
+      mC = Math.max(mC, Math.abs(seaSwell(9, -33, t, 'channelwood')))
+    }
+    ok(Math.abs(seaSwell(3, -20, 2.2, 'stoneship')) > Math.abs(seaSwell(3, -20, 2.2, 'channelwood')) && mS / mC >= 5,
+      'one world time, two Ages — the ocean rocks where the glass sits still', `${mS.toFixed(3)} vs ${mC.toFixed(3)}`)
+  }
+  // foam: exactly where the sculpted ground meets its own sea
+  ok(foamAt(0, 0, 'selenitic') === 0 && foamAt(0, -24, 'stoneship') === 0 && foamAt(0, -40, 'chanChannels') === 0,
+    'dry carved pads wear no foam — a puzzle bed at sea level is not a beach')
+  ok(['dock', 'beach', 'cliffPath', 'stairTop'].every((v) => foamAt(0, 30, v) === 0 && foamLine(v).length === 0),
+    'the island props its shore with rocks, not foam — no sculpted coast, no waterline')
+  ok(foamAt(0, 120, 'stoneship') === 0 && foamAt(0, 20, 'stoneObservatory') === 0,
+    'foam sits neither on open water below the sea nor on high dry ground')
+  const COAST = ['selenitic', 'selSound', 'stoneship', 'stoneDeck', 'stoneObservatory', 'channelwood', 'chanChannels', 'chanWheel', 'chanObs']
+  for (const v of COAST) {
+    const L = foamLine(v)
+    ok(L.length >= 8, `${v}: its coast wears a foam line`, String(L.length))
+    ok(L.every(([x, z, i]) => i > 0 && Math.abs(groundHeight(x, z, v) - SEA_VIEWS[v].water) < FOAM_BAND),
+      `${v}: every puff hugs the waterline — foam only where land and sea agree`)
+  }
+  const coastSig = (v) => foamLine(v, 3, 20).map(([x, z]) => `${x},${z}`).join('|')
+  ok(new Set(COAST.map(coastSig)).size === COAST.length, 'no two coasts share one foam line')
+  // the scene actually dresses its seas through the pure law
+  {
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    ok(/p\.userData\.isSea = true/.test(sc), 'sea planes mark themselves for dressing')
+    ok(/dressSea\(g, id, anim\)/.test(sc), 'every view dresses its sea at build time')
+    ok(/o\.material\.color\.setRGB\(prof\.color/.test(sc) && /seaSwell\(base\[i \* 3\], -base\[i \* 3 \+ 1\], t, id\)/.test(sc) &&
+       /foamLine\(id\)/.test(sc),
+      'dressSea colours, heaves and foams through sea.js — colour and swell live in the pure law, not the scene')
+  }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1043,7 +1115,23 @@ if (process.argv.includes('--mutate')) {
   const VI = 'src/games/Myst/visions.js'
   const TR = 'src/games/Myst/terrain.js'
   const LK = 'src/games/Myst/link.js'
+  const SEA = 'src/games/Myst/sea.js'
   const MUTANTS = [
+    ['every sea wears Myst again (the island turns Selenitic green)', SEA,
+      'dock:             { water: 0,    color: [0.98, 0.80, 0.60], swell: 0.16',
+      'dock:             { water: 0,    color: [0.52, 0.90, 0.62], swell: 0.16'],
+    ['the Stoneship ocean flattens to a millpond', SEA,
+      'stoneship:        { water: -0.3, color: [0.48, 0.84, 0.98], swell: 0.55',
+      'stoneship:        { water: -0.3, color: [0.48, 0.84, 0.98], swell: 0.06'],
+    ['Channelwood glass grows an ocean swell', SEA,
+      'channelwood:      { water: -0.3, color: [0.42, 0.74, 0.70], swell: 0.06',
+      'channelwood:      { water: -0.3, color: [0.42, 0.74, 0.70], swell: 0.55'],
+    ['the swell freezes — water that never moves', SEA,
+      'return s * (', 'return 0 * ('],
+    ['foam forgets the sculpt (dry pads wear waterlines)', SEA,
+      'if (nearRaw >= FOAM_BAND) return 0', 'if (nearRaw >= Infinity) return 0'],
+    ['the scene stops dressing its seas (one blue plane everywhere)', 'src/games/Myst/scene.js',
+      'dressSea(g, id, anim)', 'void 0'],
     ['the dome has no coast (skirt sits at water level)', TR,
       'seabed: -3.5', 'seabed: 0'],
     ['the sculpt swallows the landing pad (no flat carve)', TR,
