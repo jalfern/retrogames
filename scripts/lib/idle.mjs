@@ -206,3 +206,26 @@ export function heldDirs(games, issues) {
         return (g.label && n.includes(norm(g.label))) || n.includes(dirWords(g.dir)) || n.includes(norm(g.dir))
     })).map((g) => g.dir)
 }
+
+// ---- per-slot never-dry eligibility (#1615) --------------------------
+// The #869 idle-kick predates the second builder slot: the warden asked it
+// under `ALIVE == no` (slot a's pgrep) and kickstarted com.jalfern.forge
+// only, so on Nov 5 the pulse sat at builders=0/2 queue=0 with slot b free
+// and never aimed at a stage. #1615: EVERY free builder slot earns the
+// never-dry kick when its ladder came up empty, throttled to one such kick
+// per slot per 30 minutes so a slot that keeps finding nothing worth doing
+// cannot loop, and a halt still freezes the whole thing.
+// slots: [{ id, free, loaded, target, lastKick }] —
+//   free    no session of this slot is running (and no QA item in its slot)
+//   loaded  its launchd job is installed (slot b's trial can be reverted)
+//   target  step 4 handed this slot real work THIS tick — step 4 owns it
+//   lastKick epoch seconds of this slot's last never-dry kick, null = never
+// Returns the eligible slots in slot order; "queue has a stage" stays
+// idle-kick.mjs's answer — this only says who may be asked to hear it.
+export function neverDrySlots({ halted = false, slots = [], now = 0, throttleSec = 1800 } = {}) {
+    if (halted) return []
+    return slots.filter((s) => s && s.free === true
+        && s.loaded !== false
+        && !s.target
+        && (s.lastKick == null || now - s.lastKick >= throttleSec))
+}

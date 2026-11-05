@@ -389,7 +389,7 @@ main() {
     kick_slot a "${A_TARGET:-}" com.jalfern.forge
     kick_slot b "${B_TARGET:-}" "$SLOTB_JOB"
 
-    # ---- 4b. IDLE NEVER-DRY KICK (#869, shelf-wide #1571) --------------
+    # ---- 4b. IDLE NEVER-DRY KICK (#869, shelf-wide #1571, per-slot #1615) --
     # #841's "never idle" lives inside the FORGE session, but a session only
     # starts when step 4 kicks: an empty TARGET left the builder idle for
     # hours (Oct 23, 02:28-08:00). Ask idle-kick.mjs instead: it answers
@@ -400,17 +400,36 @@ main() {
     # filed — the only dry-queue question Jon ever sees is "which new
     # flagship title?" (jonq, max once a week), and that is the session's
     # call, never the warden's.
-    # A repeated KICK is harmless (kickstart no-ops while the job runs) and
-    # ends once the session files its POLISH issue and TARGET turns non-empty.
-    if [[ "$ALIVE" == no && -z "$TARGET" && "$HALTED" != yes ]] && (( ! BSLOT_QA )); then
-        STAGE=$(node "$REPO/scripts/idle-kick.mjs" 2>>"$LOG" | tail -1)
-        log "idle-kick: $STAGE"
-        if [[ "$STAGE" == KICK* ]]; then
-            act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
-            comment "$PULSE" "WARDEN: queue empty, ${STAGE#KICK } unowned — kicked a never-dry stage session"
-            ACTIONS+=("idle-kick:1"); log "kicked builder for never-dry stage ${STAGE#KICK }"
+    # #1615: that was slot-a-only — the gate pgrep'd slot a (`ALIVE == no`)
+    # and kickstart fired com.jalfern.forge alone, so Nov 5's pulse sat at
+    # builders=0/2 queue=0 with slot b free and never aimed at a stage. Now
+    # neverdry.mjs decides per slot: free, loaded, no step-4 target THIS tick,
+    # and past the 30-minute per-slot throttle (/tmp/forge/neverdry-<slot>.last)
+    # so a slot that keeps finding nothing worth doing cannot loop — kickstart
+    # no-ops while a session runs, but a slot that dies fast used not to. The
+    # note names the assignment: "never-dry: pick the weakest game".
+    if [[ "$HALTED" != yes ]]; then
+        STAGE=""
+        ND=$(node "$REPO/scripts/neverdry.mjs" --dir "$LOG_DIR" \
+              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" \
+              --target-a "${A_TARGET:+1}" --target-b "${B_TARGET:+1}" 2>>"$LOG" | tail -1)
+        log "never-dry: $ND"
+        nd_rest="${ND#KICK }"
+        for nd_slot in ${=nd_rest}; do
+            [[ "$nd_slot" == a || "$nd_slot" == b ]] || continue
+            [[ -n "$STAGE" ]] || STAGE=$(node "$REPO/scripts/idle-kick.mjs" 2>>"$LOG" | tail -1)
+            [[ "$STAGE" == KICK* ]] || break   # NONE = every gap owned, STOP legal
+            nd_job=com.jalfern.forge
+            [[ "$nd_slot" == b ]] && nd_job="$SLOTB_JOB"
+            if [[ "$DRY" != 1 ]]; then
+                print -r -- "$(date +%s)" > "$LOG_DIR/neverdry-$nd_slot.last"
+                print -r -- "${STAGE#KICK }" > "$LOG_DIR/neverdry-$nd_slot"   # forge.sh puts it in the prompt
+            fi
+            act launchctl kickstart "gui/$(id -u)/$nd_job" >> "$LOG" 2>&1
+            comment "$PULSE" "WARDEN: queue empty, builder $nd_slot free — never-dry: pick the weakest game (${STAGE#KICK } unowned) — kicked a never-dry session"
+            ACTIONS+=("idle-kick:$nd_slot"); log "kicked builder $nd_slot for never-dry stage ${STAGE#KICK }"
             ALIVE=kicked
-        fi
+        done
     fi
 
     # ---- 5. QA ----------------------------------------------------------

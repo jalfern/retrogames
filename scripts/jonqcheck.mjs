@@ -23,7 +23,7 @@ import {
     claimOrder, decide, defaultComment, formatQuestion, halted, isAnswer,
     openQuestions, capReached, parseQuestion, steerIssue, validateAsk,
 } from './lib/jonq.mjs'
-import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames, qaIdleStage } from './lib/idle.mjs'
+import { FLAGSHIPS, FLAGSHIP_DIRS, parseGaps, ownsGap, flagshipStage, heldGames, qaIdleStage, neverDrySlots } from './lib/idle.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const read = (p) => readFileSync(join(here, p), 'utf8')
@@ -218,7 +218,7 @@ ok(claimOrder([]) === null && flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: []
 ok(claimOrder([ST(51, 'jalfern', ['game-queue'])]) === 51,
     'idle: a queued issue outranks the flagship stage (stage only runs on a claimOrder miss)')
 
-// --- the warden's idle kick (#869) ---------------------------------------
+// --- the warden's idle kick (#869, per-slot #1615) ---------------------
 // #841's rule never ran: sessions only start on a warden kick, and step 4
 // kicked only when TARGET existed. The kick decision is the same pure logic:
 // empty queue + an unowned gap => KICK, every gap owned => NONE.
@@ -230,6 +230,33 @@ ok(heldGames([{ title: 'QA — comet drift hd polish', body: '' }]).join() === '
     'idle-kick: the held match is case-insensitive')
 ok(claimOrder([]) === null && flagshipStage({ gapsByGame: FIX_GAPS, qaIssues: [QA(913, 'BLOB BATTLE', 'polish pass')], buildingQa: [] }).game === 'SSX',
     '#869: empty queue + unowned gap -> KICK; QA noise on non-flagship games changes nothing')
+
+// --- #1615: every free slot gets the never-dry kick, throttled per slot ---
+// The #869 kick reached only slot a; Nov 5's pulse sat at builders=0/2
+// queue=0 with slot b free. Eligibility is pure: free + loaded + no step-4
+// target + past the 30-min throttle; halt freezes it whole.
+const NDS = (over = {}) => ({ id: 'a', free: true, loaded: true, target: false, lastKick: null, ...over })
+const ids = (r) => r.map((s) => s.id).join(' ')
+ok(ids(neverDrySlots({ slots: [NDS(), NDS({ id: 'b' })] })) === 'a b',
+    '#1615: two free unloaded-target slots — both are kicked, in slot order')
+ok(neverDrySlots({ halted: true, slots: [NDS(), NDS({ id: 'b' })] }).length === 0,
+    '#1615: halt freezes the never-dry kick too')
+ok(ids(neverDrySlots({ slots: [NDS({ free: false }), NDS({ id: 'b' })] })) === 'b',
+    '#1615: a busy slot is skipped; the other free slot still earns its kick (the shared ALIVE flag was the bug)')
+ok(ids(neverDrySlots({ slots: [NDS(), NDS({ id: 'b', loaded: false })] })) === 'a',
+    '#1615: an unloaded slot (slot b reverted) is never kicked')
+ok(ids(neverDrySlots({ slots: [NDS({ target: true }), NDS({ id: 'b' })] })) === 'b',
+    '#1615: a slot that got a step-4 target this tick is not also sent at a stage')
+ok(ids(neverDrySlots({ slots: [NDS({ lastKick: 1000 }), NDS({ id: 'b', lastKick: 1000 })], now: 2800 })) === 'a b',
+    '#1615: exactly 30 min after the last kick — eligible again')
+ok(neverDrySlots({ slots: [NDS({ lastKick: 1000 }), NDS({ id: 'b', lastKick: 1000 })], now: 2799 }).length === 0,
+    '#1615: 1 s inside the 30-min window — throttled, cannot loop')
+ok(ids(neverDrySlots({ slots: [NDS({ lastKick: 2700 }), NDS({ id: 'b' })], now: 2799 })) === 'b',
+    '#1615: the throttle is per slot — a recently-kicked slot does not hold the other one down')
+ok(neverDrySlots({ slots: [] }).length === 0, '#1615: no slots, no kicks')
+const ndh = read('neverdry.mjs')
+ok(ndh.includes('neverDrySlots') && ndh.includes('1800') && ndh.includes("'NONE'") && ndh.includes("neverdry-${id}.last"),
+    '#1615: neverdry.mjs reads the per-slot throttle files, defaults to 1800 s, and answers NONE on any failure')
 
 // --- the unified queue (#878): a free QA lane takes an unowned flagship gap ---
 // Oct 23: the Studio QA stream idled for hours with feedback empty while SSX's
@@ -262,9 +289,16 @@ ok(warden.includes('TARGET=""') && /if \[\[ "\$HALTED" != yes \]\]; then/.test(w
 ok(warden.includes('.name == "steer"') && warden.includes('$owner'), 'warden: the steer tier is in TARGET, gated on the owner')
 ok(warden.includes('jonq.mjs" sweep') && warden.includes('no sweep, no kicks'), 'warden: the sweep runs each tick, unless halted')
 ok(/halted=\$HALTED/.test(warden) && /questions=\$QWAIT/.test(warden), 'warden: the pulse line reports halted + questions')
-ok(/ALIVE" == no && -z "\$TARGET" && "\$HALTED" != yes/.test(warden) && warden.includes('idle-kick.mjs'),
-    '#869: warden asks idle-kick.mjs when the builder is idle, TARGET is empty and nothing is halted')
-ok(warden.includes('== KICK*') && warden.includes('idle-kick'),
+const sec4b = ((warden.split('---- 4b.')[1] || '').split('---- 5.')[0])
+ok(sec4b.includes('neverdry.mjs') && sec4b.includes('idle-kick.mjs') && sec4b.includes('$HALTED'),
+    '#869/#1615: step 4b asks neverdry.mjs which slots qualify, then idle-kick.mjs for the stage, and halt still skips it whole')
+ok(sec4b.includes('com.jalfern.forge') && sec4b.includes('$SLOTB_JOB') && /idle-kick:\$nd_slot/.test(sec4b),
+    '#1615: the never-dry kick reaches BOTH builder jobs and records the slot it kicked')
+ok(sec4b.includes('neverdry-$nd_slot.last'),
+    '#1615: each kick stamps its own throttle file — at most one never-dry kick per slot per 30 min')
+ok(sec4b.includes('never-dry: pick the weakest game'),
+    '#1615: the pulse note names the assignment — never-dry: pick the weakest game')
+ok(sec4b.includes('== KICK*') && sec4b.includes('idle-kick'),
     '#869: the idle kick is gated on the answer — NONE (every gap owned) never starts a session')
 const kick = read('idle-kick.mjs')
 ok(kick.includes('flagshipStage') && kick.includes("'NONE'") && kick.includes('heldGames'),
@@ -280,6 +314,8 @@ ok(!/ghJson\(\[/.test(read('jonq.mjs')) || /Array\.isArray\(args\[0\]\)/.test(re
 ok(/title: i\.title/.test(read('jonq.mjs')), 'jonq.mjs: toIssue keeps the title (list printed undefined without it)')
 ok(fs.includes('jonq.mjs" halt') && fs.includes('stays asleep'), 'forge.sh: refuses to start while halted')
 ok(fs.includes('jonq.mjs" steer') && fs.includes('STEER'), 'forge.sh: names jalfern\'s steer in the prompt')
+ok(fs.includes('neverdry-$SLOT') && fs.includes('NEVER-DRY') && fs.includes('-z "$TARGET"'),
+    '#1615: forge.sh consumes the fresh never-dry marker (only when no real target) and names the assignment in the prompt')
 ok(read('forge-qa.sh').includes('jonq.mjs" halt'), 'forge-qa.sh: refuses to start while halted')
 const law = read('../AGENTS.md')
 ok(/rule 7|7\. Every ~4 hours/.test(law) && law.includes('jonq.mjs ask') && !law.includes('three questions for Jon'), 'AGENTS.md rule 7: questions are issues now, not STATE lines')
