@@ -662,6 +662,70 @@ console.log('#1556 playtest fix: gate-mouth de-wedge (Black Castle soft-lock)')
     ok(replay(7) === replay(7), 'de-wedge replays identically for a pinned seed', replay(7))
 }
 
+// ------------------------------------------------------ #1572 affordance ----
+console.log('#1572 gate-rite affordance: the threshold teaches the drop')
+{
+    const give = (s, id) => {
+        const item = s.items.find((i) => i.id === id)
+        item.room = s.room
+        item.carried = true
+        s.carrying = id
+    }
+    const at = (castle, keyId, y, open = false) => {
+        const s = createSim(seedRng(7))
+        s.room = castle
+        s.player.x = 80
+        s.player.y = y
+        if (open) s.gateOpen[ROOMS[castle].gateKey] = true
+        if (keyId) give(s, keyId)
+        step(s, { dx: 0, dy: 0 })
+        return s
+    }
+    const bk = at(R.BLACK_CASTLE, 'blackKey', 40)
+    ok(bk.afford === 'blackKey', 'the matching key at the threshold glints the black gate')
+    ok(at(R.BLACK_CASTLE, 'goldKey', 40).afford === null, 'the WRONG key at the black gate gives no hint')
+    ok(at(R.BLACK_CASTLE, 'blackKey', 100).afford === null, 'carrying the key far from the threshold gives no hint')
+    ok(at(R.BLACK_CASTLE, 'blackKey', 40, true).afford === null, 'an open gate needs no hint (the mat rests)')
+    ok(at(R.BLACK_CASTLE, null, 40).afford === null, 'empty hands at the threshold give no hint')
+    ok(at(R.OVERWORLD_1, 'blackKey', 40).afford === null, 'a non-gate room never affords, even carrying a key')
+
+    // The full rite the hint teaches: walk up to the closed gate with the key
+    // (mat glints), drop it (the gate law fires), and the hint falls silent.
+    const e2e = createSim(seedRng(42))
+    e2e.room = R.BLACK_CASTLE
+    e2e.player.x = 80
+    e2e.player.y = 150
+    give(e2e, 'blackKey')
+    let sawGlint = 0
+    for (let i = 0; i < 400 && !e2e.gateOpen.blackKey; i++) {
+        step(e2e, { dx: 0, dy: -S })
+        if (e2e.afford === 'blackKey') sawGlint++
+    }
+    ok(sawGlint > 0, 'walking up to the closed gate carrying its key makes the mat glint', `glint ticks=${sawGlint}`)
+    step(e2e, { dx: 0, dy: 0, drop: true })
+    ok(e2e.gateOpen.blackKey, 'the drop the glint pointed at opens the gate (affordance teaches the true rite)')
+    ok(e2e.afford === null, 'the hint falls silent once the gate stands open')
+
+    // Pure output: the hint must not disturb the seeded replay.
+    const aff = (sd) => {
+        const s = createSim(seedRng(sd))
+        give(s, 'blackKey')
+        s.room = R.BLACK_CASTLE
+        s.player.x = 80
+        s.player.y = 150
+        let seq = ''
+        for (let i = 0; i < 300; i++) {
+            // Net-up wander (30 ticks up, 23 back) with a still x: sweeps the
+            // threshold, so the glint window is genuinely crossed, not vacuous.
+            step(s, { dx: 0, dy: i % 53 < 30 ? -S : S })
+            seq += s.afford ? '1' : '0'
+        }
+        return seq
+    }
+    ok(aff(7) === aff(7) && aff(7) !== '', 'the affordance is deterministic — it never pollutes the seeded stream')
+    ok(aff(7).includes('1') && aff(2027).includes('1'), 'the scripted wander actually reaches a glinting threshold (the gate is not vacuously null)', JSON.stringify([aff(7).includes('1'), aff(2027).includes('1')]))
+}
+
 // ------------------------------------------------------------- static law ----
 console.log('#1473 wiring: report + pin + contract (static)')
 {
@@ -700,6 +764,25 @@ console.log('#1568 spine visibility: roster + driving script + position carrier 
         'state() carries live x/y — a POSITION_KEYS carrier; the boredom audit must never call this game BLIND')
     ok(/exposeFeedbackState\([\s\S]*?x:\s*sim\.player\.x,[\s\S]*?y:\s*sim\.player\.y/.test(src),
         'the production report carries position too')
+}
+
+// ---------------------------------------------------- #1572 affordance (static) ----
+console.log('#1572 gate-rite affordance: shared zone + renderer gate (static)')
+{
+    const src = readFileSync(IDX, 'utf8')
+    const simSrc = readFileSync(SIMF, 'utf8')
+    ok(/export const GATE_ZONE = \{ x: 40, y: 0, w: 80, h: 60 \}/.test(simSrc),
+        'the key-drop zone is ONE shared constant — rule, hint and mat cannot drift apart')
+    ok(/key\.y < GATE_ZONE\.y \+ GATE_ZONE\.h && key\.x > GATE_ZONE\.x && key\.x < GATE_ZONE\.x \+ GATE_ZONE\.w/.test(simSrc),
+        'the gate-open rule reads the shared zone (the old magic numbers are gone)')
+    ok(/sim\.afford = gateRoom\.gateKey/.test(simSrc),
+        'sim carries the affordance (matching key at a closed threshold)')
+    ok(/const glint = sim\.afford === room\.gateKey/.test(src),
+        'the mat glints ONLY while carrying the matching key (renderer gate)')
+    ok(/ctx\.globalAlpha = glint \? 0\.9 : 0\.25/.test(src),
+        'the mat is quiet at rest (25%) and bright under the glint (90%)')
+    ok(/state: \(\)\s*=>\s*\(\{[\s\S]*?afford: sim\.afford,/.test(src),
+        'state() carries afford so the harness can watch the hint')
 }
 
 // --------------------------------------------------------------- mutants -----
@@ -779,6 +862,18 @@ if (process.argv.includes('--mutant')) {
                 y: sim.player.y,
                 lives: null,`,
             `                lives: null,`],
+        ['#1572: the glint is removed (the threshold stops teaching the drop)', I,
+            'const glint = sim.afford === room.gateKey',
+            'const glint = false'],
+        ['#1572: the affordance fires for ANY carried item (wrong-key lies)', SM,
+            'sim.carrying === gateRoom.gateKey',
+            'sim.carrying'],
+        ['#1572: the affordance ignores the drop zone (glints anywhere)', SM,
+            'player.y < GATE_ZONE.y + GATE_ZONE.h',
+            'player.y < GH + 999'],
+        ['#1572: the hint persists after the gate opens (stale teaching)', SM,
+            '!sim.gateOpen[gateRoom.gateKey] && sim.carrying',
+            'true && sim.carrying'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

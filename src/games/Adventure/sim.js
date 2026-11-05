@@ -47,6 +47,11 @@ export const MAGNET_RANGE = 40          // attract radius (world units)
 export const MAGNET_PULL = 1.5          // pull distance per tick
 export const DRAGON_RESPAWN_TICKS = 300 // slain → back in play (~5 s at 60 fps)
 
+// Gate-rite drop zone (#1572): the threshold in front of every portcullis
+// where dropping the matching key opens the gate (key y < 60, x 40..120).
+// Single source of truth for the rule, the affordance hint and the mat draw.
+export const GATE_ZONE = { x: 40, y: 0, w: 80, h: 60 }
+
 // Room IDs
 export const R = {
     GOLD_CASTLE: 0,
@@ -297,6 +302,11 @@ export function createSim(rand) {
         bridged: new Set(),
         // The secret door (Dragon Lair <-> ???) is sealed until the dot rite.
         secretOpen: false,
+        // #1572 gate-rite affordance: the id of the key whose gate the player
+        // can open right now by dropping it (standing at the threshold of the
+        // matching closed gate carrying it). Pure output — it feeds neither
+        // the rules nor the dice; the renderer glints the mat from it.
+        afford: null,
     }
 
     // Which side of the room a wall rect belongs to (null for interior maze
@@ -445,6 +455,7 @@ export function createSim(rand) {
 
         if (sim.dead) {
             sim.deathTimer--
+            sim.afford = null
             return
         }
 
@@ -540,12 +551,25 @@ export function createSim(rand) {
                 const key = sim.items.find((i) => i.id === rm.gateKey)
                 if (key && key.room === rm.id && !key.carried && !sim.gateOpen[rm.gateKey]) {
                     // Key is in the castle room — check if near gate area
-                    if (key.y < 60 && key.x > 40 && key.x < 120) {
+                    if (key.y < GATE_ZONE.y + GATE_ZONE.h && key.x > GATE_ZONE.x && key.x < GATE_ZONE.x + GATE_ZONE.w) {
                         sim.gateOpen[rm.gateKey] = true
                         sim.events.push('gate')
                     }
                 }
             }
+        }
+
+        // ---- GATE-RITE AFFORDANCE (#1572) ----
+        // Teach the verb without a manual: while carrying a castle's matching
+        // key and standing at its threshold (the drop zone, below the closed
+        // portcullis), the mat glints — the drop that opens the gate is one
+        // Space away. Dropped/open/wrong-key/outside gives no hint.
+        sim.afford = null
+        const gateRoom = ROOMS[sim.room]
+        if (gateRoom.gate && !sim.gateOpen[gateRoom.gateKey] && sim.carrying === gateRoom.gateKey
+            && player.y < GATE_ZONE.y + GATE_ZONE.h
+            && player.x + player.w > GATE_ZONE.x && player.x < GATE_ZONE.x + GATE_ZONE.w) {
+            sim.afford = gateRoom.gateKey
         }
 
         // ---- SECRET DOOR RITE (original easter egg) ----
