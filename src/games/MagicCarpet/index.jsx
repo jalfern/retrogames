@@ -26,7 +26,7 @@ const FIXED_DT = 1000 / 60
 const SPELL_COLORS = {
     fireball: '#ff7a28', lightning: '#ffe24a', heal: '#ff5060',
     protect: '#58b8ff', slow: '#b070ff', telekinesis: '#58e8d8',
-    invisibility: '#c8ecff',
+    invisibility: '#c8ecff', volcano: '#ff5a20',
 }
 
 function drawSpellIcon(ctx, id, x, y, s) {
@@ -58,6 +58,14 @@ function drawSpellIcon(ctx, id, x, y, s) {
         ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.28)
         ctx.beginPath(); ctx.moveTo(x - s, y - s * 0.5); ctx.lineTo(x + s, y - s * 0.5); ctx.stroke()
         ctx.globalAlpha = 1
+    } else if (id === 'volcano') {
+        // A smoking cone: brown mountain, lava at the crater, one rising puff.
+        ctx.fillStyle = '#7a4a30'
+        ctx.beginPath(); ctx.moveTo(x - s, y + s); ctx.lineTo(x - s * 0.35, y - s * 0.5); ctx.lineTo(x + s * 0.35, y - s * 0.5); ctx.lineTo(x + s, y + s); ctx.closePath(); ctx.fill()
+        ctx.fillStyle = c; ctx.fillRect(x - s * 0.35, y - s * 0.62, s * 0.7, s * 0.35)
+        ctx.fillStyle = '#ffe0a0'; ctx.fillRect(x - s * 0.15, y - s * 0.55, s * 0.3, s * 0.2)
+        ctx.fillStyle = 'rgba(220, 200, 190, 0.75)'
+        ctx.beginPath(); ctx.arc(x, y - s * 1.05, s * 0.4, 0, Math.PI * 2); ctx.fill()
     } else {
         ctx.fillStyle = c
         ctx.fillRect(x - s * 0.8, y + s * 0.2, s * 0.5, s * 0.8)
@@ -202,6 +210,14 @@ const MagicCarpetGame = () => {
                     audioController.playTone(58, 0.28, 'square', 0.032, 0.15)
                     audioController.playTone(46, 0.42, 'square', 0.018, 0.32)
                     shake = Math.max(shake, 4)
+                } else if (e.type === 'volcano') {
+                    // The ground tears open: a long sub-bass rumble under the
+                    // boom chorus, the longest shake the carpet ever feels.
+                    audioController.playNoise(0.9, 0.12)
+                    audioController.playSweep(90, 34, 1.1, 'sawtooth', 0.1)
+                    audioController.playTone(41, 0.9, 'square', 0.05, 0.25)
+                    shake = 10
+                    say('THE EARTH OPENS — A VOLCANO RISES')
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
                 } else if (e.type === 'wizardDown') {
@@ -487,7 +503,7 @@ const MagicCarpetGame = () => {
             slot(284, gs.hands.R, gs.coolR, 'X')
             // Spellbook tab (#1612): the original equipped hands by CLICKING the
             // HUD — this gold tab is that door for touch. Tapping it (or the two
-            // hand slots) works on a phone; keys 1–7/Q stay as they were.
+            // hand slots) works on a phone; keys 1–8/Q stay as they were.
             {
                 const [bx, by, bw, bh] = TAP.book
                 ctx.fillStyle = '#0e1a38'
@@ -510,7 +526,7 @@ const MagicCarpetGame = () => {
                 }
             }
             if (gs.book) {
-                // The tray: all seven spells, unlearned dimmed, left-hand pick
+                // The tray: all eight spells, unlearned dimmed, left-hand pick
                 // boxed gold; mana cost under each icon (green-gold when payable).
                 const [tx, ty, tw, th] = TRAY
                 ctx.fillStyle = 'rgba(14, 20, 60, 0.92)'
@@ -644,7 +660,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
-            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].indexOf(e.code)
+            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].indexOf(e.code)
             if (digit >= 0 && SPILLS[digit]) setHand(gs, 'L', SPILLS[digit].id)
         }
         const onUp = (e) => {
