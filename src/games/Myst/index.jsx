@@ -19,7 +19,9 @@ import { containMap } from '../../utils/fitCanvas'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { gearRows } from './gears.js'
-import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
+import { freshState, dispatch, runSolver, solveScript, watchResume, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { MESSAGES, PRESS } from './attract.js'
@@ -56,6 +58,11 @@ const MystGame = () => {
   const linkRef = useRef(null)
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
+  // #1624 WATCH: the island plays itself on solveScript's proven route.
+  const watchingRef = useRef(false)
+  const [watching, setWatching] = useState(false)
+  const [watchToast, setWatchToast] = useState(null)
+  const watchRef = useRef({ seq: null, i: 0, wait: 0, pending: false, budget: 0 })
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
   const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], gears: gearRows(s), dial: s.safeDial, link: s.link, portraits: portraitViews(s) })
@@ -265,6 +272,55 @@ const MystGame = () => {
     }
     ctl.current = { action: doAction, click: doClick }
 
+    // #1624 WATCH mechanics. Press Y: the island drives itself on solveScript's
+    // suffix (watchResume proves the junction); any key, pad button, canvas tap
+    // or panel close takes the reins back. Real inputs, real speed — the route
+    // off the proven line honestly reports NO_GUIDE instead of faking a demo.
+    let watchToastTimer = null
+    const sayNoGuide = () => {
+      stopWatch()
+      setWatchToast(NO_GUIDE)
+      if (watchToastTimer) clearTimeout(watchToastTimer)
+      watchToastTimer = setTimeout(() => setWatchToast(null), 2600)
+    }
+    const startWatch = () => {
+      if (gs.ending) return
+      const w = watchRef.current
+      w.pending = true
+      w.budget = 120 // let a link/flight finish before judging the position
+      watchingRef.current = true
+      setWatching(true)
+      setWatchToast(null)
+    }
+    const stopWatch = () => {
+      watchingRef.current = false
+      setWatching(false)
+      const w = watchRef.current
+      w.seq = null; w.i = 0; w.pending = false
+    }
+    const watchStep = () => {
+      const w = watchRef.current
+      if (!watchingRef.current) return
+      if (gs.ending) { stopWatch(); return }
+      if (gs.link || (gs.ride && gs.ride !== 'seated' && gs.ride !== 'landed') || gs.pending) {
+        if (w.pending && --w.budget <= 0) sayNoGuide()
+        return
+      }
+      if (w.pending) {
+        w.pending = false
+        const r = watchResume(gs)
+        if (!r || !r.suffix.length) { sayNoGuide(); return }
+        w.seq = r.suffix; w.i = 0; w.wait = 4
+        return
+      }
+      if (!w.seq) return
+      if (w.wait > 0) { w.wait--; return }
+      if (w.i >= w.seq.length) { stopWatch(); return } // watched it whole
+      const a = w.seq[w.i++]
+      doAction(a)
+      w.wait = a.t === 'move' ? 26 : (a.t === 'click' || a.t === 'closePanel' || a.t === 'closeBook' || a.t === 'toggle') ? 10 : 5
+    }
+
     const centerSpot = () => {
       const view = NODES[gs.node].yaw + gs.turn * 90
       let best = null, bd = 999
@@ -284,6 +340,9 @@ const MystGame = () => {
       if (pausedRef.current) return
       if (screenRef.current === 'attract') { if (e.key !== 'Shift' && e.key !== 'Control') startPlay(); return }
       if (screenRef.current === 'ending') { if (e.code === 'Space' || e.key === 'Enter') restart(); return }
+      // #1624 WATCH: Y lets the island play itself; any driving key takes over.
+      if (isWatchKey(e)) { startWatch(); return }
+      if (watchingRef.current && isTakeoverKey(e)) stopWatch()
       if (gs.panelOpen || gs.bookOpen) {
         if (e.key === 'Escape' || e.code === 'Space' || e.key === 'Enter') doAction({ t: gs.bookOpen ? 'closeBook' : 'closePanel' })
         return
@@ -312,6 +371,8 @@ const MystGame = () => {
       if (screenRef.current === 'ending') { restart(); return }
       const c = e.detail?.code
       if (!c) return
+      // #1624: a pad press takes the reins back from the watcher
+      if (watchingRef.current && isTakeoverKey({ code: c })) stopWatch()
       if (gs.panelOpen || gs.bookOpen) { doAction({ t: gs.bookOpen ? 'closeBook' : 'closePanel' }); return }
       if (gs.link) return
       if (c === 'ArrowLeft') doAction({ t: 'turn', dir: 3 })
@@ -341,6 +402,8 @@ const MystGame = () => {
       if (screenRef.current === 'attract') { startPlay(); return }
       if (screenRef.current === 'ending') { restart(); return }
       if (pausedRef.current || gs.panelOpen || gs.bookOpen || gs.link) return
+      // #1624: a tap on the island is you taking the reins back
+      if (watchingRef.current) stopWatch()
       const h = pick(ev)
       if (h) doClick(h.id)
       else sfx('look')
@@ -359,6 +422,7 @@ const MystGame = () => {
     const startPlay = () => {
       gs = freshState(notebookSeed())
       storeSeed(gs.seed)
+      stopWatch()
       sing = null; singRingRef.current = -1; setSingRing(-1)
       syncStars()
       gotoNode(gs.node); aim()
@@ -367,6 +431,7 @@ const MystGame = () => {
     }
     const restart = () => {
       doAction({ t: 'restart' })
+      stopWatch()
       storeSeed(gs.seed)
       gs.message = 'A fresh link, a fresh island — the stone is the same, the locks are new. (seed ' + gs.seed + ')'
       sing = null; singRingRef.current = -1; setSingRing(-1)
@@ -405,6 +470,7 @@ const MystGame = () => {
           if (gs.ending) setMode('ending')
           hudStamp = -1
         }
+        if (screenRef.current === 'play') watchStep() // #1624 the watcher's turn
         if (sing) {
           const el = wt - sing.t0
           let ring = -1, frac = 0, lit = -1
@@ -533,6 +599,8 @@ const MystGame = () => {
     // --------------------------------------------------- DEV hook + kit ----
     if (import.meta.env.DEV) {
       window.__mystTest = {
+        watching: () => watchingRef.current, // #1624 watchcheck
+        watchLen: () => (watchRef.current.seq ? watchRef.current.seq.length - watchRef.current.i : 0),
         state: () => gs,
         action: (a) => { doAction(a); return gs.message },
         click: (id) => doClick(id),
@@ -704,6 +772,7 @@ const MystGame = () => {
       canvas.removeEventListener('pointerdown', onPointer)
       canvas.removeEventListener('pointermove', onMove)
       if (import.meta.env.DEV) { unmountDbg(); delete window.__mystTest }
+      if (watchToastTimer) clearTimeout(watchToastTimer)
       renderer.dispose()
       if (canvas.parentNode === wrap) wrap.removeChild(canvas)
     }
@@ -939,6 +1008,22 @@ const MystGame = () => {
         </div>
       )}
 
+      {/* #1624 WATCH — the island plays itself on the proven route. */}
+      {screen === 'play' && watching && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full pointer-events-none whitespace-nowrap z-50">
+          WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+        </div>
+      )}
+      {watchToast && (
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
+          {watchToast}
+        </div>
+      )}
+      {screen === 'play' && !paused && (
+        <div className="absolute pointer-events-auto z-50" style={{ top: '2.2rem', right: '0.75rem' }}>
+          <WatchButton on={watching} />
+        </div>
+      )}
       <VirtualControls visible={screen === 'play' && !paused && !hud.link} secondAction={{ label: '↺', code: 'KeyX' }} />
 
       {paused && (

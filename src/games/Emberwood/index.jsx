@@ -14,7 +14,9 @@ import { createSim, stepSim, simState, spawnRoom, saveState, loadState } from '.
 import { createRenderer } from './render.js'
 import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
-import { attractBot } from './bot.js'
+import { attractBot, watchSnapshot, watchRestore } from './bot.js'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, WATCH_HELP } from '../../utils/watch'
 import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
 
 const FIXED_DT = 1000 / 60
@@ -107,6 +109,9 @@ export default function Emberwood() {
     const screenRef = useRef('attract')
     const [paused, setPaused] = useState(false)
     const pausedRef = useRef(false)
+    const [watching, setWatching] = useState(false) // #1624 WATCH: the prover walks the vale
+    const watchingRef = useRef(false)
+    const watchSnapRef = useRef(null)
     const [hud, setHud] = useState({ hp: 3, max: 3, embers: 0, items: {}, msg: null, shop: false, sel: 0, death: false, win: false, room: '' })
     const [attractLine, setAttractLine] = useState(0)
     const [hasSave, setHasSave] = useState(() => !!readSave())
@@ -218,7 +223,14 @@ export default function Emberwood() {
                     if (sim.win || sim.death) resetAttract()
                     stepSim(sim, attractBot(sim))
                 } else if (sc === 'play') {
-                    stepSim(sim, readPad())
+                    if (watchingRef.current) {
+                        // #1624 WATCH: the prover walks the route; any input is handled
+                        // by the normal key listeners below and takes the reins back.
+                        if (sim.win || sim.death) stopWatch()
+                        else stepSim(sim, attractBot(sim))
+                    } else {
+                        stepSim(sim, readPad())
+                    }
                 }
             }
             if (contractHoldsLoop()) acc = 0
@@ -300,6 +312,9 @@ export default function Emberwood() {
             const fresh = createSim(seedFromQuery() ?? 11)
             Object.assign(sim, fresh)
             sim._winSeen = false
+            watchingRef.current = false
+            setWatching(false)
+            watchSnapRef.current = null
             lastSaveScreen = sim.screen
             lastSaveTick = sim.tick
             rend.buildScreen(sim.screen, sim.flags, sim.cut)
@@ -323,6 +338,22 @@ export default function Emberwood() {
             setMode('play')
         }
 
+        // #1624 WATCH — the attract autopilot walks the proven route through the
+        // live run (it lends the demo kit; taking over hands your own back).
+        const startWatch = () => {
+            if (sim.death || sim.win) return
+            watchSnapRef.current = watchSnapshot(sim)
+            watchingRef.current = true
+            setWatching(true)
+        }
+        const stopWatch = () => {
+            if (!watchingRef.current) return
+            watchingRef.current = false
+            setWatching(false)
+            if (!sim.win && !sim.death) watchRestore(sim, watchSnapRef.current)
+            watchSnapRef.current = null
+        }
+
         const onKeyDown = (e) => {
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             if (e.code === 'Escape' || e.code === 'Backquote' || e.code === 'Slash') {
@@ -342,6 +373,9 @@ export default function Emberwood() {
                 else setMode('attract')
                 return
             }
+            // #1624 WATCH: Y hands the vale to the prover; any driving key takes it back.
+            if (isWatchKey(e)) { startWatch(); return }
+            if (watchingRef.current && isTakeoverKey(e)) stopWatch()
             keys.add(e.code)
         }
         const onKeyUp = (e) => { keys.delete(e.code) }
@@ -372,6 +406,7 @@ export default function Emberwood() {
                 canvas: () => canvasRef.current,
             })
             window.__emberwoodTest = {
+                watching: () => watchingRef.current, // #1624 watchcheck
                 state: () => simState(sim),
                 heroPos: () => ({ x: sim.hero.x, y: sim.hero.y, dir: sim.hero.dir }),
                 reset: (seed) => { const fresh = createSim(seed || 11); Object.assign(sim, fresh); rend.buildScreen(sim.screen, sim.flags, sim.cut); setMode('play'); return simState(sim) },
@@ -482,6 +517,17 @@ export default function Emberwood() {
                         {hud.items.blade && <div className="text-orange-300 text-xs">EMBER BLADE</div>}
                         {hud.items.gale && <div className="text-cyan-200 text-xs">GALE CHARM</div>}
                     </div>
+                </div>
+            )}
+            {/* #1624 WATCH — the prover walks the vale; any input takes over. */}
+            {inGame && watching && (
+                <div className="absolute top-[calc(3.4rem + var(--sat, 0px))] left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full pointer-events-none whitespace-nowrap" style={{ textShadow: 'none' }}>
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {inGame && !paused && (
+                <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: '0.5rem' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
             {inGame && hud.msg && !hud.shop && (

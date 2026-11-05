@@ -658,3 +658,28 @@ export function runSolver(start = freshState()) {
   }
   return s
 }
+
+// #1624 WATCH — resume the proven route from wherever the player stands.
+// Walk solveScript from the seed's fresh state and find the FIRST prefix whose
+// canonical state equals the player's; replaying the suffix from an identical
+// state re-enacts exactly what the fresh run did, so the resume is provably the
+// same proven route, from the player's position, at the sim's real speed.
+// Volatile view fields (clock, message text, in-flight turn/link/ride) are not
+// progress and are ignored; no junction match means the player is off the
+// proven line — the honest answer there is "no guide yet", never a fake demo.
+export function watchResume(st) {
+  if (st.ending || st.pending) return null
+  const KEYS = ['seed', 'codes', 'node', 'flags', 'pages', 'placed', 'gearsSeated', 'safeDial',
+    'sphereDial', 'starDial', 'wheel', 'wheelDial', 'switches', 'selStone', 'selChair',
+    'ending', 'pending', 'bookOpen', 'panelOpen']
+  const canon = (s) => JSON.stringify(KEYS.map((k) => s[k]))
+  const full = solveScript(st.codes)
+  const target = canon(st)
+  let s = freshState(st.seed)
+  for (let i = 0; i <= full.length; i++) {
+    if (canon(s) === target) return { suffix: full.slice(i) }
+    if (i === full.length) break
+    s = dispatch(s, full[i]).state
+  }
+  return null
+}
