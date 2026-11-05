@@ -79,6 +79,11 @@ const r2p50 = read("results/r2/p50c_manifest.json", null);
 const r2own = read("results/r2/edit_report_own.json", null);
 const r2gate = read("results/r2/step1_gate.json", null);
 const r2probe = read("results/r2/probe_engine.json", null);
+// #1567 ROUND 3 artifacts: layer-count ranking (pass P6) + alpha-sweep rows.
+// α rows live inside r2s (r2_score writes every tag there); this round's runner
+// scores them math-only (disclosed below).
+const r3Layer = read("results/r2/r3_layer_rank.json", null);
+
 const sweepSumm = Object.fromEntries(batches.filter(b => b.phase === "practice" && b.purpose && b.purpose.startsWith("Jon step1")).map(b => [`cap${b.cap}`, b]));
 
 const FAIRC = (fairScores && fairScores.cap) || (capSweep && 4096);
@@ -405,7 +410,7 @@ const r2Tbl = R2ROWS.map(([tag, label]) => {
   const s = r2s && r2s[tag];
   if (!s) {
     if (tag === "basew")
-      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">not run — optional control dropped at the session time-box (required rows took 2.3 h)</td><td class="note">${R2EXP[tag].math}</td></tr>`;
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1567 control row — running detached at PAR-32, lands as it scores</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     if (tag === "own" && r2gate && !r2gate.pass && !jonGo)
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
@@ -454,9 +459,25 @@ const r2Verdict = (() => {
       const rg = r2mit && r2mit.regrade || {}
       const mit = (k) => rg[k] ? rg[k].mit_acc.toFixed(1) + "%" : "—"
       const fin = (s) => ["math", "gsm"].filter(k => s && s[k]).map(k => s[k].finished.toFixed(0) + "%").join("/")
+      const bwClauseBody = (() => {
+        if (!(base && base.math && base.gsm && base.math.n >= (r2s._hold || 100))) return null
+        const dBase = (base.math.finished + base.gsm.finished) / 2
+          - (r2s.base.math.finished + r2s.base.gsm.finished) / 2
+        const p = r2s.p50c
+        const dEdit = p && w && p.math && p.gsm
+          ? (w.math.finished + w.gsm.finished) / 2 - (p.math.finished + p.gsm.finished) / 2
+          : null
+        const inter = dEdit === null ? ""
+          : Math.abs(dBase) >= Math.abs(dEdit)
+            ? " — the window lifts base at least as much as it lifted the edit: much of the p50cw finish-rate is the measurement, not the edit"
+            : dBase <= 0
+              ? " — the window does not lift base at all; the finish-lift is edit-specific, MIT's edit works under whole-generation penalty pressure in a way the raw model does not"
+              : ` — the window lifts base +${dBase.toFixed(0)} pts, the edit +${dEdit.toFixed(0)} pts: the lift is mostly edit-specific`
+        return `The base-with-window control now exists: base at ctx 32768 gives ${fmt(base)} (finished ${fin(base)}, window Δfinished ${dBase >= 0 ? "+" : ""}${dBase.toFixed(0)} pts vs the ctx-20 row)${inter}.`
+      })()
       const wacc = w ? ["math", "gsm"].filter(k => w[k]) : []
       const wmean = wacc.length ? wacc.reduce((a, k) => a + w[k].acc, 0) / wacc.length : null
-      return `<p class="note"><b>#1562 — THE OWN EDIT, JUDGED HONESTLY.</b> Qwen's own direction — found in ${passes} of the disclosed 20 forward passes, never reading MIT's edit tensors — scores <b>${fmt(o)}</b> (MIT-checker: ${mit("own:math")} math · ${mit("own:gsm")} gsm) against base ${fmt(r2s.base)} and <b>our p50cw reproduction of MIT's edit at identical settings: ${fmt(w)}</b> (MIT-checker: ${mit("p50cw:math")} math · ${mit("p50cw:gsm")} gsm). Same silicon, same 100+100 held-out problems, same window — the comparison the issue asked for. Verdict: <b>the own direction moves MATH (base ${r2s.base.math.acc.toFixed(0)}% → ${o.math.acc.toFixed(0)}%, doubled) but does not break the loop</b> — finished stays at ${fin(o)} vs the edit's ${fin(w) || "—"}, GSM8K sits at base level (${o.gsm.acc.toFixed(0)}% vs ${w && w.gsm ? w.gsm.acc.toFixed(0) + "%" : "—"}). ${wmean !== null ? Math.round(wmean - (o.math.acc + o.gsm.acc) / 2) : "?"} points of mean accuracy short: ${passes} passes of honest search reproduced <i>some</i> escape signal — direction [L15, L7] down_proj, held-out-validated — but MIT's edit does ~${wmean ? Math.round(wmean / Math.max((o.math.acc + o.gsm.acc) / 2, 0.1)) : "?"}× the job. The escape gap round 1 diagnosed is not closed by our search; it lives in the finished column, exactly as before. Optional base-with-window control: not run (session time-box).</p>`
+      return `<p class="note"><b>#1562 — THE OWN EDIT, JUDGED HONESTLY.</b> Qwen's own direction — found in ${passes} of the disclosed 20 forward passes, never reading MIT's edit tensors — scores <b>${fmt(o)}</b> (MIT-checker: ${mit("own:math")} math · ${mit("own:gsm")} gsm) against base ${fmt(r2s.base)} and <b>our p50cw reproduction of MIT's edit at identical settings: ${fmt(w)}</b> (MIT-checker: ${mit("p50cw:math")} math · ${mit("p50cw:gsm")} gsm). Same silicon, same 100+100 held-out problems, same window — the comparison the issue asked for. Verdict: <b>the own direction moves MATH (base ${r2s.base.math.acc.toFixed(0)}% → ${o.math.acc.toFixed(0)}%, doubled) but does not break the loop</b> — finished stays at ${fin(o)} vs the edit's ${fin(w) || "—"}, GSM8K sits at base level (${o.gsm.acc.toFixed(0)}% vs ${w && w.gsm ? w.gsm.acc.toFixed(0) + "%" : "—"}). ${wmean !== null ? Math.round(wmean - (o.math.acc + o.gsm.acc) / 2) : "?"} points of mean accuracy short: ${passes} passes of honest search reproduced <i>some</i> escape signal — direction [L15, L7] down_proj, held-out-validated — but MIT's edit does ~${wmean ? Math.round(wmean / Math.max((o.math.acc + o.gsm.acc) / 2, 0.1)) : "?"}× the job. The escape gap round 1 diagnosed is not closed by our search; it lives in the finished column, exactly as before. ${bwClauseBody ?? "Optional base-with-window control: running now (#1567 candidate 1)."}</p>`
     }
     return `<p class="note"><b>#1562 — STEP 2 IN FLIGHT.</b> Jon re-opened step 2 (#1562): the edit is judged against <b>our own p50cw row</b> — same box, same settings — not MIT's published numbers, so the backend gap cancels. Search budget: at most <b>20 forward passes</b> (a pass = one generation batch of ≤64 practice problems or one teacher-forced read; this run spends 5, each logged in the batch log above with what it tested and ruled out). Rows land as they score.</p>`
   }
@@ -479,6 +500,54 @@ ${r2Tbl}
 ${r2Copy}
 ${r2own ? `<p class="note">our own edit: ${r2own.summary} — directions from our own measurements only; MIT's edit tensors were never loaded as a source (issue rule).</p>` : ""}
 ${r2Verdict}`;
+
+// ---- ROUND 3 (#1567): scaling the own edit — basew control, α sweep, layer count ----
+const r3Hold = (r2s && r2s._hold) || 100
+const r3math = (tag) => { const s = r2s && r2s[tag]; return s && s.math && s.math.n >= r3Hold ? s.math : null }
+const r3mit = (k) => r2mit && r2mit.regrade && r2mit.regrade[k] ? r2mit.regrade[k].mit_acc.toFixed(1) + "%" : "—"
+const r3AlphaRows = [["own", 1], ["own2", 2], ["own4", 4], ["own8", 8]].map(([tag, a]) => {
+  const t = r3math(tag)
+  if (!t) return `<tr id="r3-a${a}"><td>α = ${a}</td><td>math</td><td colspan=4 class="note">pending — the detached chain scores α2 → α4 → α8 (~50 min per row)</td></tr>`
+  const d1 = r3math("own")
+  const dd = d1 ? `${t.acc - d1.acc >= 0 ? "+" : ""}${(t.acc - d1.acc).toFixed(1)} pts vs α=1` : "—"
+  return `<tr id="r3-a${a}"><td>α = ${a}</td><td>math</td><td>${t.n}</td><td>${t.acc.toFixed(1)}% <span class="note">(MIT-checker ${r3mit(`${tag}:math`)})</span></td><td>${t.finished.toFixed(1)}%</td><td>${dd}</td></tr>`
+}).join("\n")
+const r3LayerRows = r3Layer
+  ? Object.entries(r3Layer.combined_sep).map(([k, v]) =>
+      `<tr><td>${k} — ${r3Layer.sets[k].join("/")}</td><td>${v.toFixed(2)}</td></tr>`).join("\n")
+  : ""
+const r3LayerNote = (() => {
+  if (!r3Layer) return `<p class="note"><b>Candidate 3 — layer count: in flight.</b> P5 separated five of the six FA layers at |sep| ≥ 1 while the edit took only the top-2. A decision rule frozen before the read (top-4 must beat top-2 combined held-out separation by +10%) decides whether a 4-layer edit earns scoring passes.</p>`
+  const s = r3Layer.combined_sep
+  const ratio = s.top4 / s.top2
+  return `<p class="note"><b>CANDIDATE 3 — MORE LAYERS? ${r3Layer.decision === "top4" ? "YES" : "NO"}.</b> Combined held-out separation on the P5 basis (pooled z-normalization; cross-layer covariance measured from the read, not assumed independent): top-2 ${s.top2.toFixed(2)} · top-3 ${s.top3.toFixed(2)} · top-4 ${s.top4.toFixed(2)} · all-6 ${s.all6.toFixed(2)}. Frozen rule: commit scoring passes to 4 layers only above 1.10× top-2 — measured ${ratio.toFixed(2)}×, ${r3Layer.decision === "top4" ? "MET — a 4-layer edit earns its scoring row next stage" : `NOT met — the layer budget stays ${r3Layer.sets.top2.join("/")}, and the curve says why (top-3 DROPS below top-2: layers 3/11 re-report L15/L7 rather than add)`}. Per-layer separations reproduce P5 ${r3Layer.reproduces_p5_sep ? "within gate tolerance — plumbing green" : "(gate FAILED — do not trust this ranking)"}.</p>`
+})()
+const r3BasewNote = (() => {
+  const bw = r2s && r2s.basew
+  if (!bw || !bw.math || !bw.gsm || bw.math.n < r3Hold || bw.gsm.n < r3Hold)
+    return `<p class="note"><b>Candidate 1 — basew control: in flight.</b> base re-scored at the whole-generation penalty window (ctx 32768), same fixed 100+100 rows — closing the question #1562 disclosed as not-run: does widening the window lift the BASE too? Row lands in the Round 2 table; the verdict clause in the #1562 note updates with it.</p>`
+  const dBase = (bw.math.finished + bw.gsm.finished) / 2
+    - (r2s.base.math.finished + r2s.base.gsm.finished) / 2
+  const p = r2s.p50c, w = r2s.p50cw
+  const dEdit = p && w ? (w.math.finished + w.gsm.finished) / 2 - (p.math.finished + p.gsm.finished) / 2 : null
+  return `<p class="note"><b>CANDIDATE 1 — THE BASEW CONTROL.</b> Base at ctx 32768: MATH ${bw.math.acc.toFixed(1)}% (${bw.math.finished.toFixed(1)}% finished) · GSM ${bw.gsm.acc.toFixed(1)}% (${bw.gsm.finished.toFixed(1)}% finished) — window Δfinished ${dBase >= 0 ? "+" : ""}${dBase.toFixed(0)} pts vs the ctx-20 base row${dEdit === null ? "" : `, against +${dEdit.toFixed(0)} pts on the p50c edit (#1547)`}. ${Math.abs(dBase) >= Math.abs(dEdit === null ? 99 : dEdit) ? "The window lifts base at least as much as it lifted the edit — much of the p50cw finish-rate is measurement, not edit." : dBase <= 0 ? "The window does not lift base at all: the finish-lift is edit-specific — MIT's edit converts whole-generation penalty pressure into escapes in a way the raw model cannot." : `The window lifts base a little (+${dBase.toFixed(0)} pts), the edit much more (+${dEdit.toFixed(0)} pts): the lift is edit-specific.`} This is now the fair baseline for every edited row on this box.</p>`
+})()
+const r3Html = `
+<h2>ROUND 3 — SCALING THE OWN EDIT (#1567)</h2>
+<p>Round 2's self-found direction doubled base MATH (3→6%) at layers L15/L7 but left the finished column where it was. Step 3 takes three candidates in the issue's expected-payoff order — <b>(1)</b> the basew control: does the whole-generation penalty window lift the base too? <b>(2)</b> direction scaling: is the direction right but underscaled? α ∈ {2, 4, 8} on the identical [L15, L7] top-K 128 recipe — each edit gets one held-out MATH row (GSM8K sat at base level in #1562, so the sweep is MATH-only, disclosed; no cherry-picking of the better set). <b>(3)</b> layer count: P5 separated five of six FA layers, the edit used two. Astra rules unchanged — practice-only, no gradients, norm/embed/lm_head untouched; every pass in the ledger.</p>
+${r3BasewNote}
+<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">DIRECTION SCALING — α SWEEP (candidate 2, MATH held-out)</h3>
+<table>
+<tr><th>edit</th><th>set</th><th>n</th><th>accuracy</th><th>finished</th><th>vs α = 1</th></tr>
+${r3AlphaRows}
+</table>
+<p class="note">α = 1 removed the d-component outright. The edited footprint is tiny (128 columns × 2 layers ≈ 0.035% of weights) — if the linear model holds, pushing past full removal over-corrects along the same axis and accuracy should climb toward the p50cw reference (31.0% MATH) until the attractor re-asserts. Every α row lands with MIT's own-checker regrade.</p>
+${r3LayerRows ? `<h3 style="color:#7dffb2;font-size:12px;letter-spacing:.12em;margin:20px 0 6px">LAYER COUNT — COMBINED HELD-OUT SEPARATION (candidate 3)</h3>
+<table>
+<tr><th>layer set (ranked by P5 per-layer sep)</th><th>combined sep</th></tr>
+${r3LayerRows}
+</table>` : ""}
+${r3LayerNote}`;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -551,6 +620,7 @@ const html = `<!DOCTYPE html>
 <h1>WEIGHT SURGERY</h1>
 <div class="sub">Qwen3.5-0.8B @ <code>2fc06364</code> — weight-space programming attempt (#1493), rescored at a fair horizon (#1506), and re-run at MIT's own 32,768-token horizon on the GPU (#1533): no gradients, practice on GSM8K/MATH <b>train</b> only, ≤50 forward-pass batches, one scored held-out run. By the forge, on a laptop-class box (rounds I–II on CPU — the GPU path was dead until round 2, #737).</div>
 ${r2Html}
+${r3Html}
 
 ${verdict}
 

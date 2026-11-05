@@ -4,9 +4,11 @@ P5 (#1562) ranked the six FA layers by held-out text-level separation of the
 per-layer token score s_L = x.d_L and the edit took the TOP-2 ({15,7}); every
 layer except L23 cleared |sep| >= 1, so more than two layers carry signal.
 This script answers the issue's question — "test top-4 layers vs top-2 on
-held-out separation before committing scoring passes" — with ONE teacher-forced
-read pass (declared P6, budget 6 of 20) over the SAME P5 validation texts
-(same seeds, same pools, same tail hygiene):
+held-out separation before committing scoring passes" — with teacher-forced
+reads over the SAME P5 validation texts (same seeds, same pools, same tail
+hygiene): pass P6 ran the read; a first aggregation folded the between-bucket
+mean into the pooled variance (all sep ~0.9x, ranking unchanged), so pass 7 is
+the deterministic recompute that supersedes it (budget: 7 of 20):
 
   * per-layer sep recomputed from raw projections must reproduce the npz values
     (plumbing gate — proves this read sees exactly what P5 saw);
@@ -85,21 +87,14 @@ class Moments:
         self.x = {(L, M): 0.0 for L, M in itertools.combinations(FA, 2)}
 
 
-def main():
+def run_read(items, raw, per_text, d_by):
+    """One teacher-forced read pass over the val items (MLX CPU, #737 sandbox)."""
     import mlx.core as mx
     mx.set_default_device(mx.cpu)
     from mlx_lm import load
     model, tok = load(D.MLX_DIR)
     C.CAPTURE_LAYERS = FA
     stash = C._install_capture(model)
-    d_all = z["d"].astype(np.float32)
-    d_by = {L: d_all[list(z["fa_layers"]).index(L)] for L in FA}
-
-    items = val_corpus()
-    print(f"val texts: {sum(1 for _, b in items if b == 'loop')} loop + "
-          f"{sum(1 for _, b in items if b == 'fin')} fin")
-    raw = {b: Moments() for b in ("loop", "fin")}
-    per_text = []
     t0 = time.time()
     pbs = D.practice_batches()
     probs_by_pool = {"8k_a": pbs[0], "8k_b": pbs[1], "4k": pbs[2]}
@@ -142,7 +137,42 @@ def main():
         if len(per_text) % 12 == 0:
             print(f"  read {len(per_text)}/{len(items)} texts "
                   f"({(time.time() - t0) / 60:.1f} min)")
-    dt = time.time() - t0
+    return time.time() - t0, skipped
+
+
+def main():
+    CACHE = os.path.expanduser("~/Dev/weight-lab/r2_text/r3_seprank_scores.json")
+    items = val_corpus()
+    print(f"val texts: {sum(1 for _, b in items if b == 'loop')} loop + "
+          f"{sum(1 for _, b in items if b == 'fin')} fin")
+    raw = {b: Moments() for b in ("loop", "fin")}
+    skipped = 0
+    d_all = z["d"].astype(np.float32)
+    d_by = {L: d_all[list(z["fa_layers"]).index(L)] for L in FA}
+    cached = os.path.exists(CACHE)
+    if cached:
+        # scores were captured once (pass P6); recompute from cache — a formula
+        # fix must not silently spend another teacher-forced read pass.
+        per_text = json.load(open(CACHE))
+        for rec in per_text:
+            m = raw[rec["bucket"]]
+            vs = {L: np.asarray(rec[f"s{L}"]) for L in FA}
+            n = len(vs[FA[0]])
+            m.n += n
+            for L in FA:
+                m.s[L] += float(vs[L].sum())
+                m.q[L] += float((vs[L] ** 2).sum())
+            for L, M in itertools.combinations(FA, 2):
+                m.x[(L, M)] += float((vs[L] * vs[M]).sum())
+        dt = 0.0
+        skipped = max(len(items) - len(per_text), 0)
+        print(f"cache hit: {len(per_text)} texts — no new read pass spent")
+    else:
+        per_text = []
+        dt, skipped = run_read(items, raw, per_text, d_by)
+        os.makedirs(os.path.dirname(CACHE), exist_ok=True)
+        json.dump(per_text, open(CACHE, "w"))
+        print("scores cached at", CACHE)
 
     # pooled (over BOTH val buckets) mean/sd per layer — the only normalizer used
     n_all = raw["loop"].n + raw["fin"].n
@@ -158,10 +188,14 @@ def main():
             m = raw[b]
             return sum((m.s[L] / m.n - mu[L]) / sd[L] for L in S)
 
-        def zv(m):  # Var(z_S) inside one bucket, from accumulated moments
+        def zv(m):  # Var(z_S) WITHIN one bucket, from accumulated moments.
+            # Diagonal must be var(s_L | bucket) = E[s²]−E[s]², NOT around the
+            # global mu: adding mu-terms folds the between-bucket mean offset
+            # (the signal itself) into the denominator and shrinks every sep
+            # ~sqrt(1+Δ²/4) — caught because recomputed sep must reproduce P5.
             v = 0.0
             for L in S:
-                v += (m.q[L] / m.n - 2 * mu[L] * m.s[L] / m.n + mu[L] ** 2) / sd[L] ** 2
+                v += (m.q[L] / m.n - (m.s[L] / m.n) ** 2) / sd[L] ** 2
             for L, M in itertools.combinations(S, 2):
                 key = (L, M) if (L, M) in m.x else (M, L)
                 cov = m.x[key] / m.n - (m.s[L] / m.n) * (m.s[M] / m.n)
@@ -190,7 +224,10 @@ def main():
     rule = seps["top4"] >= 1.10 * seps["top2"]
     out = {
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "issue": 1567, "pass_no": 6,
+        "issue": 1567, "pass_no": 7,
+        "supersedes": "first-run aggregation folded the between-bucket mean into the "
+                      "pooled variance (all sep ~0.9x, ranking unchanged); pass 7 is a "
+                      "deterministic recompute of the same read",
         "n_texts": len(per_text), "n_skipped": skipped,
         "t_minutes": round(dt / 60, 1),
         "reproduces_p5_sep": gate_ok,
@@ -203,21 +240,40 @@ def main():
         "decision": "top4" if rule else "top2",
         "corr": corr,
     }
+    # (#1562 law, generalized) a recompute must not overwrite measured metadata
+    # the cache cannot know: keep the original read's wall time.
+    if os.path.exists(OUT):
+        try:
+            prev = json.load(open(OUT))
+            if prev.get("t_minutes"):
+                out["t_minutes"] = prev["t_minutes"]
+        except Exception:  # noqa: BLE001
+            pass
     with open(OUT, "w") as f:
         json.dump(out, f, indent=1)
-    with open(C.BATCHLOG, "a") as f:
-        f.write(json.dumps({
-            "ts": out["ts"], "run": "r3 (#1567)", "phase": "step3", "pass_no": 6,
-            "kind": f"teacher-forced read x{len(per_text)} texts @FA layers "
-                   "(combined top-2 vs top-4 held-out separation)",
-            "purpose": "#1567 candidate 3: does carrying 4 layers beat 2 on held-out "
-                      "separation before we commit scoring passes to it",
-            "ruled_out": ("layer sets between top-2 and top-4 that add no separation "
-                         f"(combined sep {seps})" if gate_ok
-                         else "NOTHING — sep did not reproduce P5, plumbing suspect"),
-            "n": len(per_text), "t_hours": round(dt / 3600, 3),
-            "combined_sep": seps, "decision": out["decision"],
-        }) + "\n")
+    # batches.jsonl: log the pass exactly once — the first run's record is
+    # replaced (same read, corrected aggregation), a cache-hit recompute after
+    # the record exists spends nothing and logs nothing.
+    already = os.path.exists(C.BATCHLOG) and any(
+        json.loads(l).get("purpose", "").startswith("#1567 candidate 3")
+        for l in open(C.BATCHLOG) if l.strip())
+    if not already:
+        with open(C.BATCHLOG, "a") as f:
+            f.write(json.dumps({
+                "ts": out["ts"], "run": "r3 (#1567)", "phase": "step3", "pass_no": 7,
+                "kind": f"teacher-forced read x{len(per_text)} texts @FA layers "
+                       "(combined top-2 vs top-4 held-out separation — deterministic "
+                       "recompute superseding pass 6)",
+                "purpose": "#1567 candidate 3: does carrying 4 layers beat 2 on held-out "
+                          "separation before we commit scoring passes to it",
+                "ruled_out": ("layer sets between top-2 and top-4 that add no separation "
+                             f"(combined sep {seps})" if gate_ok
+                             else "NOTHING — sep did not reproduce P5, plumbing suspect"),
+                "supersedes": "pass 6 aggregation (denominator folded the between-bucket "
+                             "mean offset into the pooled variance; ranking unaffected)",
+                "n": len(per_text), "t_hours": round(dt / 3600, 3),
+                "combined_sep": seps, "decision": out["decision"],
+            }) + "\n")
     print(json.dumps({k: out[k] for k in
                      ("reproduces_p5_sep", "layer_sep_recomputed", "combined_sep",
                       "decision")}, indent=1))

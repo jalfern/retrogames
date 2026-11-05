@@ -25,7 +25,7 @@ export const CLAIMS = {
     p50c: { math: [40, 56], gsm: [59, 75], fin: [40, 80] },
 }
 
-export const SETS = { p50cw: ['math', 'gsm'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row
+export const SETS = { p50cw: ['math', 'gsm'], own2: ['math'], own4: ['math'], own8: ['math'] } // #1547 rerun math-only; #1562 adds the GSM8K baseline row; #1567 alpha rows are math-only (disclosed)
 
 export function validateR2({ scores, gate }) {
     const errs = []
@@ -359,8 +359,15 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(/regrade.*p50cw:gsm/s.test(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')) &&
         JSON.parse(readFileSync(join(LAB, 'results/r2/mit_grader.json'), 'utf8')).regrade['p50cw:gsm'].n === 100,
         'rules: MIT regrade covers the p50cw gsm row too (#1562)')
-    ok(html.includes('not run — optional control dropped at the session time-box'),
-        'rules: basew disclosed as not-run, never pending-forever (#1562 time-box)')
+    const bwA = (() => {
+        try { return JSON.parse(readFileSync(join(LAB, 'results/r2/r2_scores.json'), 'utf8')).basew } catch { return null }
+    })()
+    const bwDone = bwA && bwA.math && bwA.gsm && bwA.math.n >= 100 && bwA.gsm.n >= 100
+    ok(bwDone ? html.includes('CANDIDATE 1 — THE BASEW CONTROL') : html.includes('basew control: in flight'),
+        bwDone ? 'rules: basew ran — the candidate-1 verdict renders'
+            : 'rules: basew in flight — honest pending copy while the gsm row scores')
+    ok(!html.includes('not run — optional control dropped'),
+        'rules: stale #1562 "not run" disclosure retired — the control is running or run, never dropped')
     ok(html.includes('45.8%') && /penalizes every generated token|whole-generation/.test(html),
         'copy: page states the MIT same-100 reference and the window finding')
 }
@@ -436,6 +443,57 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
         doneReal.html.includes('7.0% math · 9.0% gsm') &&
         doneReal.html.includes('37.0% math · 48.0% gsm'),
         'copy: #1562 verdict states passes used + MIT-checker numbers for both rows')
+}
+
+// 10. #1567 round 3 — layer-ranking artifact + frozen decision rule, runner pins
+//     and resume idempotency, alpha rows on the page, basew reverts honestly.
+{
+    const dir = s => readFileSync(join(LAB, s), 'utf8')
+    const envOnly = t => t.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+    const rank = JSON.parse(dir('results/r2/r3_layer_rank.json'))
+    ok(rank.reproduces_p5_sep === true,
+        'rules: seprank reproduces the P5 per-layer seps (plumbing gate before any ranking claim)')
+    const ratio = rank.combined_sep.top4 / rank.combined_sep.top2
+    ok((ratio >= 1.10 ? 'top4' : 'top2') === rank.decision,
+        'rules: layer decision is the frozen 1.10x rule applied to the stored curve', `ratio ${ratio.toFixed(3)}`)
+    ok(rank.combined_sep.top2 > 1 && rank.combined_sep.top4 >= rank.combined_sep.top2,
+        'rules: combined sep sane (top-2 separates, top-4 not below top-2)')
+    ok(rank.n_texts >= 48 && rank.n_skipped + rank.n_texts === 68,
+        'rules: seprank text accounting closes (kept + skipped = val items)', `${rank.n_texts}+${rank.n_skipped}`)
+    const c3logs = readFileSync(join(LAB, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+        .map(l => { try { return JSON.parse(l) } catch { return {} } })
+        .filter(b => (b.purpose || '').startsWith('#1567 candidate 3'))
+    ok(c3logs.length === 2 && c3logs.some(b => b.superseded_by === 7) && c3logs.some(b => b.pass_no === 7 && b.supersedes),
+        'rules: defective pass-6 record kept AND annotated; pass 7 supersedes it (ledger is honest about its own fix)')
+    const run = dir('r3_run_1567.sh')
+    ok(/WS_R2_JON_GO=1/.test(envOnly(run)) && /WS_R2_PARALLEL=32/.test(envOnly(run))
+        && /WS_R2_PP_CTX=32768/.test(envOnly(run)) && /WS_R2_SAVETEXT=1/.test(envOnly(run)),
+        'rules: #1567 runner pins PAR-32 + whole-generation window + sidecars + Jon-GO')
+    ok(!envOnly(run).includes('WS_R2_PP_CTX=32768'.replace('32768', '0')),
+        'rules: #1567 runner window pin intact')
+    ok(/for A in 2 4 8/.test(run) && /WS_R2_SETS=math \$V r2_score\.py own\$\{A\}:qwen35-own-a\$\{A\}/.test(run),
+        'rules: alpha sweep {2,4,8} — one math-only held-out row per edit (disclosed, no set cherry-picking)')
+    ok(/edit_report\.json/.test(run) && /R3_ALPHA\$\{A\}_DONE/.test(run) && /R3_BASEW_DONE/.test(run),
+        'rules: alpha/basew stages marker-guarded — resume neither re-applies edits nor re-logs passes')
+    ok(!/r2_mit_grade\.py\s+[^|#\s]/.test(envOnly(run)),
+        'rules: MIT regrade runs with NO args (argv form silently drops prior rows — #1562 law)')
+    const r3html = build(LAB)
+    ok(r3html.rc === 0 && r3html.html.includes('ROUND 3 — SCALING THE OWN EDIT (#1567)'),
+        'build: ROUND 3 section renders from the committed lab')
+    ok(['r3-a1', 'r3-a2', 'r3-a4', 'r3-a8'].every(id => r3html.html.includes(`id="${id}"`)),
+        'build: all four alpha rows present (pending states stay honest)')
+    ok(r3html.html.includes(`MORE LAYERS? ${rank.decision === 'top4' ? 'YES' : 'NO'}`),
+        'build: page verdict agrees with the stored decision')
+    const base = mkdtempSync(join(tmpdir(), 'ws3r3-'))
+    cpSync(LAB, base, { recursive: true })
+    const bd = join(base, 'results/r2')
+    const sc = JSON.parse(readFileSync(join(bd, 'r2_scores.json'), 'utf8'))
+    delete sc.basew
+    writeFileSync(join(bd, 'r2_scores.json'), JSON.stringify(sc))
+    const gone = build(base)
+    ok(gone.rc === 0 && gone.html.includes('basew control: in flight'),
+        'mutant caught: dropping the basew artifact reverts the page to honest pending, never a silent hole')
+    rmSync(base, { recursive: true, force: true })
 }
 
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)
