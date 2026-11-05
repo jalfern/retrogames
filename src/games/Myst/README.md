@@ -98,15 +98,17 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
   gate slab, swiveling throne, sun disc appearing only at the alignment,
   mountain door, gear lifting from its slot) are driven live from `state`
    via `updateMech` (the Channelwood sluice gate, channel water and float ride `chanFlood`).
+   Stoneship (#996) is three sibling views — pier, quarterdeck (the bare mast is the
+   landmark) and the ridge dome — joined by free `to:` travel; since #838 item 12 the
+   hull and deck ride `shipFloat` (see the sea.js notes below), so it is not static
+   like the old builder was.
    The star-wheel (#1014) is one `wheelAssembly` built twice (landing + terrace):
    three symbol rings riding `state.wheelDial` (`chanRing0..2`, shortest way
    round), a bronze mark at the crown, and a hub cover that slides clear on
    `wheelOpen` (`chanHub`) to lay the linking book bare; the observatory drum
    wears the seeded clue-stars (`clueStar`, rebuilt by `updateWheel`). Views face +z: put what the caption promises at
    greater z than the camera, and check the moon's ray — corridor walls,
-   lintels and buttresses silently eat it. Stoneship (#996) is three static
-   sibling views — pier, quarterdeck (the bare mast is the landmark) and the
-   ridge dome — joined by free `to:` travel, with no live mechanism to drive.
+   lintels and buttresses silently eat it.
 - `visions.js` — the SPECTATOR's age-visions (#1024): a circular glass pane painted on a 2D canvas per Age — green storm + dome + sounding rings + a
   timed lightning flash (Selenitic), teal swell + low sun + rocking ship
   (Stoneship), forge glow + two meshed gears + rising sparks (Mechanical),
@@ -225,7 +227,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (137 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (161 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -401,6 +403,25 @@ mirroring clouds or seating land — each turns the suite red.
     section proves determinism, the shared lens clock, Age-only scope, the
     one-sky-at-once law, bounded + doubling envelope, the thunder voice law
     against every swell, the delay and the wiring; 8 new mutants all die.
+    **CLOSED by #838 item 12** — the ship floats: standing on the quarterdeck
+    the longship lifts and heels on the Atlantic instead of sitting welded to
+    its shelf (`stoneDeck` was the one view with “no live mechanism to drive”).
+    Pure `shipFloat(t, view)` in `sea.js` samples `seaSwell` at five seats —
+    centre, both rails, bow, stern of the moored footprint — and answers
+    `{ heave, roll, pitch }`: heave is the average (a sixty-foot hull cannot
+    surf one chop crest), the tilts ride the water's own slope, clamped to
+    `SHIP_ROCK.maxTilt`. Scope is the quarterdeck alone — the island's rotted
+    boat stays beached. The deck carries its cargo (crates, barrel and lantern
+    re-parented onto the hull: a heaving deck that leaves barrels standing is
+    a prop, not a ship), the loop lifts and rolls the camera with the deck
+    (`camGain: 1` — you stand ON it, so the horizon tilts exactly as much as
+    the hull heels), and `visions.js` paints the pane's bob and heel from the
+    SAME law — the Spectator and the Age rock the ship in step, item 8's
+    shared-clock rule on the water. mystcheck's item-12 section proves
+    determinism, footprint-averaged heave, the high-side-lifts sign law
+    (roll AND pitch, axis-mapping spelled out), bounds, real Atlantic motion,
+    Stone-only scope, cargo aboard, camera lift/sway/restore and the pane
+    equality; 10 new mutants all die.
     **CLOSED by #838 item 11** — the fifth gear is provably cast in: the island's
     gear sat fixed by law, but `the island's gear comes loose` (neutering
     `if (g.fixed)` in `state.js`) survived `--mutate` — with the branch gone the

@@ -10,7 +10,7 @@ import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSe
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues, ambCues, SKY_TUNE } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
-import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW } from '../src/games/Myst/sea.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW, shipFloat, SHIP_ROCK, SHIP_VIEWS } from '../src/games/Myst/sea.js'
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
 import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSeated, seatedCount, galleryOpen, gearRows } from '../src/games/Myst/gears.js'
 import { readFileSync, writeFileSync } from 'node:fs'
@@ -1753,6 +1753,91 @@ console.log('MYST — the ambience wears the Age (#838 item 10: a voice per view
   }
 }
 
+console.log('MYST — the ship floats (#838 item 12: hull on its swell, deck on the hull, pane on one clock)')
+{
+  // — the law: deterministic, moving, and the quarterdeck's alone
+  const fr = (t) => shipFloat(t, 'stoneDeck')
+  ok(JSON.stringify(fr(3.3)) === JSON.stringify(fr(3.3)), 'the hull pose is deterministic — same instant, same heel')
+  ok(JSON.stringify(fr(1.1)) !== JSON.stringify(fr(3.7)), 'the hull really moves — two instants wear different poses')
+  const shipless = Object.keys(SEA_VIEWS).filter((v) => !SHIP_VIEWS.includes(v))
+  ok(shipless.every((v) => shipFloat(2.2, v) === null), 'only the quarterdeck carries a hull — the island boat stays beached')
+  ok(SHIP_VIEWS.join(',') === 'stoneDeck', 'exactly one deck rides the sea')
+
+  // — the hull rides the water under its footprint: heave is the average of
+  //   the five swell seats (a longship cannot surf one chop crest), and the
+  //   tilts follow the sea's slope, the lifted side up.
+  const seat = SHIP_ROCK.seat
+  const five = (t) => ['c', 'p', 's', 'e', 'b'].map((k, i) => {
+    const [sx, sz] = seat
+    if (k === 'p') return seaSwell(sx - SHIP_ROCK.halfW, sz, t, 'stoneDeck')
+    if (k === 's') return seaSwell(sx + SHIP_ROCK.halfW, sz, t, 'stoneDeck')
+    if (k === 'e') return seaSwell(sx, sz - SHIP_ROCK.halfL, t, 'stoneDeck')
+    if (k === 'b') return seaSwell(sx, sz + SHIP_ROCK.halfL, t, 'stoneDeck')
+    return seaSwell(sx, sz, t, 'stoneDeck')
+  })
+  let lawOk = true, signOk = true, signed = 0, bounded = true
+  let maxH = 0, maxR = 0, maxP = 0
+  for (let k = 0; k <= 200 * 40; k++) {
+    const t = k / 40
+    const f = fr(t)
+    const [c, p, s, e, b] = five(t)
+    if (f.heave !== (c + p + s + e + b) / 5) lawOk = false
+    if (Math.abs(s - p) > 1e-9 && Math.abs(f.roll) < SHIP_ROCK.maxTilt) { signed++; if (Math.sign(f.roll) !== Math.sign(s - p)) signOk = false }
+    // +rotation.x points the bow DOWN (three.js), so a high bow rides negative pitch —
+    // the lifted end still rises; the law is the water, the axis is the engine's.
+    if (Math.abs(b - e) > 1e-9 && Math.abs(f.pitch) < SHIP_ROCK.maxTilt) { if (Math.sign(f.pitch) !== Math.sign(e - b)) signOk = false }
+    if (!(Math.abs(f.heave) <= SEA_VIEWS.stoneship.swell && Math.abs(f.roll) <= SHIP_ROCK.maxTilt && Math.abs(f.pitch) <= SHIP_ROCK.maxTilt)) bounded = false
+    maxH = Math.max(maxH, Math.abs(f.heave)); maxR = Math.max(maxR, Math.abs(f.roll)); maxP = Math.max(maxP, Math.abs(f.pitch))
+  }
+  ok(lawOk, 'heave is the swell averaged across the buoyed footprint (keel, bow, stern, both rails)')
+  ok(signOk && signed > 100, 'the high side of the sea lifts its side of the hull — roll and pitch follow the water, never against it')
+  ok(bounded, 'a moored longship stays on an even keel: tilt under SHIP_ROCK.maxTilt, heave under the view\u2019s swell')
+  ok(maxH >= 0.3 && maxR >= 0.01 && maxP >= 0.005, `the Atlantic really lifts her — heave ${maxH.toFixed(2)}, roll ${maxR.toFixed(3)}, pitch ${maxP.toFixed(3)}`)
+
+  // — the shell drives it: hull rides in the scene, cargo aboard, camera on deck
+  const srcSC = readFileSync('src/games/Myst/scene.js', 'utf8')
+  const srcJX = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  ok((srcSC.match(/userData\.ship = true/g) || []).length === 1, 'exactly one hull is tagged for the sea to lift')
+  ok(/ship\.position\.y = ship\.userData\.baseY \+ fr\.heave/.test(srcSC), 'the scene lifts the hull on the law\u2019s heave')
+  ok(/ship\.rotation\.z = fr\.roll/.test(srcSC) && /ship\.rotation\.x = fr\.pitch/.test(srcSC), 'the scene heels and pitches the hull on the law')
+  ok(/crate\(ship,/.test(srcSC) && /barrel\(ship,/.test(srcSC) && /lantern\(ship,/.test(srcSC), 'the deck cargo rides with the deck')
+  const deckSec = srcSC.match(/stoneDeck\(g\) \{[\s\S]*?\n  \},/)
+  ok(deckSec && !/crate\(g,|barrel\(g,|lantern\(g,/.test(deckSec[0]), 'nothing is left standing on a deck that heels (cargo is aboard, not pinned to the world)')
+  ok(/gs\.node === 'stoneDeck' && !gs\.ride/.test(srcJX), 'the quarterdeck — and only it — puts the player on the hull')
+  ok(/camera\.position\.y = NODES\.stoneDeck\.pos\[1\] \+ fr\.heave/.test(srcJX), 'the quarterdeck lifts with its ship')
+  ok(/camera\.rotation\.z = fr\.roll \* SHIP_ROCK\.camGain/.test(srcJX), 'the horizon sways with the deck\u2019s heel, the way the original clip rocks')
+  ok(/else if \(camera\.rotation\.z !== 0\) \{\s*\n\s*camera\.rotation\.z = 0/.test(srcJX), 'step off the deck and the horizon stands still again')
+
+  // — one clock: the Spectator pane rocks the ship by the SAME law (bob is
+  //   the hull's heave in pane pixels; the heel is roll × the pane's gain).
+  function recCtx() {
+    const ops = []
+    const num = (x) => (typeof x === 'number' ? x.toFixed(3) : String(x))
+    const grad = { addColorStop: (...a) => ops.push('stop:' + a.map(num).join(',')) }
+    const ctx = { ops }
+    for (const m of ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']) ctx[m] = (...a) => ops.push(m + ':' + a.map(num).join(','))
+    ctx.createLinearGradient = (...a) => { ops.push('lin:' + a.map(num).join(',')); return grad }
+    ctx.createRadialGradient = (...a) => { ops.push('rad:' + a.map(num).join(',')); return grad }
+    for (const p of ['fillStyle', 'strokeStyle']) {
+      let v = ''
+      Object.defineProperty(ctx, p, { get: () => v, set: (x) => { v = x; ops.push(p + ':' + x) } })
+    }
+    ctx.lineWidth = 0
+    return ctx
+  }
+  const PW = 152, PH = 114
+  let paneOk = true
+  for (const t of [1.1, 3.7, 8.3, 40.1]) {
+    const c = recCtx()
+    drawVision(c, 'stoneship', t, true, PW, PH)
+    const f = fr(t)
+    const yWant = `translate:${(PW * 0.66).toFixed(3)},${(PH * 0.56 + PH * 0.05 + f.heave * PH * 0.036).toFixed(3)}`
+    const rWant = `rotate:${(f.roll * SHIP_ROCK.paneGain).toFixed(3)}`
+    if (!c.ops.includes(yWant) || !c.ops.includes(rWant)) paneOk = false
+  }
+  ok(paneOk, 'pane and Age rock the ship in step — the lens paints the hull\u2019s own heave and roll (item 8 law, one clock)')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -2195,6 +2280,31 @@ if (process.argv.includes('--mutate')) {
     ['the ambience drops the view (every age gets the neutral voice)', SD,
       'for (const c of plan(`amb:${kind}:${view}`)) play(c)',
       'for (const c of plan(`amb:${kind}:`)) play(c)'],
+    // #838 item 12 — the ship floats
+    ['the keel forgets its centre (heave drops the seat it stands on)', SEA,
+      'const c = seaSwell(sx, sz, t, view)', 'const c = 0'],
+    ['the hull surfs one crest (heave stops averaging its footprint)', SEA,
+      'heave: (c + port + star + stern + bow) / 5', 'heave: c'],
+    ['the ship swims against the sea (the roll gain is reversed)', SEA,
+      'roll: cap(Math.atan((star - port) / (2 * SHIP_ROCK.halfW)))',
+      'roll: cap(Math.atan((port - star) / (2 * SHIP_ROCK.halfW)))'],
+    ['the mooring opens (every sea suddenly carries a hull)', SEA,
+      'if (!SHIP_VIEWS.includes(view)) return null', 'if (false) return null'],
+    ['the hull barely stirs (a stick cap clamps the Atlantic flat)', SEA,
+      'maxTilt: 0.09,', 'maxTilt: 0.002,'],
+    ['the hull is welded back to its shelf (the scene stops lifting it)', 'src/games/Myst/scene.js',
+      'ship.position.y = ship.userData.baseY + fr.heave',
+      'ship.position.y = ship.userData.baseY'],
+    ['the cargo is pinned to the world (a deck heels and the barrels stand)', 'src/games/Myst/scene.js',
+      'crate(ship, -3.6, 0.7, -1.6, 1, 0.3); barrel(ship, 3.1, 0.8, -3, 0.8); crate(ship, -2.6, 0.6, -4.6, 0.8, 0.9)',
+      'crate(g, -3.6, 2.7, 0.4, 1, 0.3); barrel(g, 3.1, 2.8, -1, 0.8); crate(g, -2.6, 2.6, -2.6, 0.8, 0.9)'],
+    ['the Spectator ship stops rocking while the Age rolls', VI,
+      'ctx.rotate(fr.roll * SHIP_ROCK.paneGain)', 'ctx.rotate(0)'],
+    ['the quarterdeck stays level (the player never feels the heel)', JX,
+      'camera.rotation.z = fr.roll * SHIP_ROCK.camGain', 'camera.rotation.z = 0'],
+    ['the deck does not lift (the player stays on the shelf)', JX,
+      'camera.position.y = NODES.stoneDeck.pos[1] + fr.heave',
+      'camera.position.y = NODES.stoneDeck.pos[1]'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

@@ -5,6 +5,7 @@
 // instants differ on a linked lens and match on a sealed one.
 
 import { LINK_PALETTE } from './link.js'
+import { shipFloat, SHIP_ROCK } from './sea.js'
 
 const L = 0.5
 
@@ -90,7 +91,9 @@ function selenitic(ctx, w, h, t) {
 }
 
 // STONESHIP — the grey sea world: rolling bands of ocean, a low sun with a
-// halo, the ship moored with its sails lifting on the swell.
+// halo, the ship moored with its sails lifting on the swell. #838 item 12:
+// the bob and heel come from shipFloat — the same law the hull rides and the
+// quarterdeck camera sways by, so the pane and the Age rock in step.
 function stoneship(ctx, w, h, t) {
   sky(ctx, w, h, '#3a3f46', '#8d949b')
   ctx.fillStyle = 'rgba(255,236,200,0.9)'
@@ -115,10 +118,11 @@ function stoneship(ctx, w, h, t) {
     }
     ctx.stroke()
   }
-  const bob = Math.sin(t * 1.3) * h * 0.02
+  const fr = shipFloat(t, 'stoneDeck')
+  const bob = fr.heave * h * 0.036
   ctx.save()
   ctx.translate(w * 0.66, seaY + h * 0.05 + bob)
-  ctx.rotate(Math.sin(t * 1.3 + 0.6) * 0.05)
+  ctx.rotate(fr.roll * SHIP_ROCK.paneGain)
   ctx.fillStyle = '#20262c'
   ctx.beginPath()
   ctx.moveTo(-w * 0.16, 0)

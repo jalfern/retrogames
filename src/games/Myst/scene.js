@@ -8,7 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor, shipFloat } from './sea.js'
 import { stormView, skyGain, seaGain, STORM } from './storm.js'
 
 const GAP = 4000
@@ -204,6 +204,22 @@ function dressSea(group, id, anim) {
     anim.push({ o: strip, f: (t) => {
       strip.material.opacity = gl.base * (0.55 + 0.45 * Math.sin(t * gl.rate + gl.rot * 3))
       strip.position.y = prof.water + 0.06 + seaSwell(gl.x, -gl.z, t, id) * 0.5
+    } })
+  }
+  // #838 item 12 — the hull floats on the very water under it (sea.js
+  // shipFloat): heave is the swell averaged across the buoyed footprint, heel
+  // and pitch ride the sea's own slope, clamped to SHIP_ROCK.maxTilt. The
+  // pane draws the same law (visions.js), so the Spectator and the Age rock
+  // the ship in step. Only the quarterdeck has a hull — every other view's
+  // find answers undefined and nothing moves.
+  const ship = group.children.find((o) => o.userData.ship)
+  if (ship) {
+    anim.push({ o: ship, f: (t) => {
+      const fr = shipFloat(t, id)
+      if (!fr) return
+      ship.position.y = ship.userData.baseY + fr.heave
+      ship.rotation.z = fr.roll
+      ship.rotation.x = fr.pitch
     } })
   }
   // #838 item 5 — land on the skyline: dark domes half-sunk in the view's own
@@ -751,7 +767,7 @@ const BUILDERS = {
     tuft(g, -8, 0.04, -2, 1.2); tuft(g, 8, 0.04, -1, 1)
   },
   stoneDeck(g) {
-    // the becalmed ship on its rock shelf, seen from the quarterdeck: the mast is the landmark
+    // the moored ship on its swell, seen from the quarterdeck: the mast is the landmark
     terrainField(g, TX.grey, 'stoneDeck')
     seaPlane(g, -0.3, SEA_EXTENT, 0.9)
     rocks(g, TX.grey, [[0, 1.4, -16, 18, 3, 5, 0], [-11, 1.2, -4, 6, 3, 4, 0.3], [12, 1.5, -5, 5, 3.5, 4, -0.4]])
@@ -767,10 +783,15 @@ const BUILDERS = {
     const yard = mesh(new THREE.BoxGeometry(4.6, 0.16, 0.16), mat(TX.wood), 0, 8.2, 0.4, ship); yard.userData.landmark = 'shipMast'; yard.userData.noPick = true
     const yard2 = mesh(new THREE.BoxGeometry(3.2, 0.14, 0.14), mat(TX.wood), 0, 6.4, 0.4, ship); yard2.userData.landmark = 'shipMast'; yard2.userData.noPick = true
     ship.position.set(0, 2.0, 2)
+    // #838 item 12 — the hull floats (see sea.js shipFloat): dressSea rides
+    // this group on the water under its footprint. Cargo lives WITH the hull —
+    // a deck that heels and leaves its barrels standing is a prop, not a ship.
+    ship.userData.ship = true
+    ship.userData.baseY = 2.0
+    crate(ship, -3.6, 0.7, -1.6, 1, 0.3); barrel(ship, 3.1, 0.8, -3, 0.8); crate(ship, -2.6, 0.6, -4.6, 0.8, 0.9)
+    lantern(ship, 2.4, 0.4, 0.4)
     g.add(ship)
     for (const [px, pz] of [[-1.3, 4.4], [1.3, 4.4]]) mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4), mat(TX.wood), px, 3.6, pz, g).userData.noPick = true
-    crate(g, -3.6, 2.7, 0.4, 1, 0.3); barrel(g, 3.1, 2.8, -1, 0.8); crate(g, -2.6, 2.6, -2.6, 0.8, 0.9)
-    lantern(g, 2.4, 2.4, 2.4)
     boulder(g, TX.grey, -6.5, 1.4, -8, 1.4, 0.5); boulder(g, TX.grey, 7, 1.6, -7, 1.5, 1.2)
   },
   stoneObservatory(g) {

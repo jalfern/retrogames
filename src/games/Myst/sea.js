@@ -350,3 +350,49 @@ export function landmarksFor(view) {
     dome: L.dome,
   }))
 }
+
+// #838 item 12 — the ship floats. The Spectator lens always painted the
+// Atlantic ship lifting on its swell (visions.js bobbed and rolled it), but
+// standing IN Stoneship the longship was welded to its rock shelf — the
+// quarterdeck view had, by the README's own words, "no live mechanism to
+// drive". In the 1993 clip the whole frame rocks: you are aboard a floating
+// hull. `shipFloat(t, view)` answers what the hull does on the very water
+// under it, sampled from seaSwell at five seats — centre, port, starboard,
+// stern, bow of the moored footprint:
+//   heave  the average of the five (a sixty-foot hull cannot surf one chop
+//          crest — it rides the water its keel actually spans),
+//   roll   the water's slope across the beam — port lifts when starboard's
+//          sample is lower (and vice versa: the sign follows the sea),
+//   pitch  the same along the keel, bow lifting when astern's sample is low.
+// All three come straight from the sea's own three-sine clock — the pane, the
+// hull and the quarterdeck camera therefore rock in step, sharing one law the
+// harness replays. Deterministic: no Math.random.
+export const SHIP_ROCK = {
+  seat: [0, 2], // hull centre on the stoneDeck sea (matches the scene's mooring)
+  halfW: 1.6, // half-beam of the buoyed box (the plank hull is 3.2 across)
+  halfL: 5.3, // half-length of the buoyed run (11-unit hull plus the cone bow)
+  maxTilt: 0.09, // a moored longship never exceeds ~5° on Myst's Atlantic
+  camGain: 1, // you stand ON the deck: the horizon tilts exactly as much as it heels
+  paneGain: 2.2, // the Spectator paints the heel big enough to read at 152 px
+}
+// The island's rotted boat stays beached; Channelwood has no ship at all:
+// the quarterdeck is the only deck that rides.
+export const SHIP_VIEWS = ['stoneDeck']
+
+// { heave, roll, pitch } on the deck's own view — null everywhere the sea
+// carries no ship.
+export function shipFloat(t, view) {
+  if (!SHIP_VIEWS.includes(view)) return null
+  const [sx, sz] = SHIP_ROCK.seat
+  const c = seaSwell(sx, sz, t, view)
+  const port = seaSwell(sx - SHIP_ROCK.halfW, sz, t, view)
+  const star = seaSwell(sx + SHIP_ROCK.halfW, sz, t, view)
+  const stern = seaSwell(sx, sz - SHIP_ROCK.halfL, t, view)
+  const bow = seaSwell(sx, sz + SHIP_ROCK.halfL, t, view)
+  const cap = (v) => Math.max(-SHIP_ROCK.maxTilt, Math.min(SHIP_ROCK.maxTilt, v))
+  return {
+    heave: (c + port + star + stern + bow) / 5,
+    roll: cap(Math.atan((star - port) / (2 * SHIP_ROCK.halfW))),
+    pitch: cap(Math.atan((stern - bow) / (2 * SHIP_ROCK.halfL))),
+  }
+}

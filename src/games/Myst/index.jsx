@@ -25,6 +25,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
 import { drawVision, drawPortrait } from './visions.js'
+import { shipFloat, SHIP_ROCK } from './sea.js'
 import { drawLink, linkEnvelope, LINK_TICKS } from './link.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
@@ -444,6 +445,21 @@ const MystGame = () => {
           if (fl > 0 && stormPrev === 0) stormAt = wt + STORM.rumbleDelay
           stormPrev = fl
           if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }
+        }
+        // #838 item 12 — the quarterdeck rides its ship: standing aboard, the
+        // whole view lifts with the hull's heave and the horizon sways at
+        // SHIP_ROCK.camGain of the deck's heel, the way the original's
+        // quarterdeck clip rocks the frame. Every other node keeps its level:
+        // off the deck the horizon stands still. The sun rides the camera so
+        // the shadow rig stays put against the tilting world.
+        if (gs.node === 'stoneDeck' && !gs.ride) {
+          const fr = shipFloat(wt, 'stoneDeck')
+          camera.position.y = NODES.stoneDeck.pos[1] + fr.heave
+          camera.rotation.z = fr.roll * SHIP_ROCK.camGain
+          sun.position.copy(camera.position).add(SUN_OFF)
+          sun.target.position.copy(camera.position)
+        } else if (camera.rotation.z !== 0) {
+          camera.rotation.z = 0
         }
         if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000, gs.node)
       }
