@@ -83,6 +83,89 @@ export const SCOPES = {
   rally: { dirs: ['src/games/RallyCoDriver'], lint: [], checks: [['rallycheck', true], ['rallylinkcheck', true]], smoke: [] },
 };
 
+// #1575: the explicit manual park. A check script that joins scripts/ with a
+// package.json alias must face its own audit — ciscope --selftest fails if an
+// aliased scripts/*check.mjs is in NEITHER a scope above (some scope's
+// lint/checks/smoke) NOR this list. ws3check sat un-audited since 2ee8b35
+// exactly because neither table knew about it (#1387's hole). Parking here is
+// the honest way to say "I run this by hand, CI does not"; promote a check by
+// moving its file into a scope's `checks` and OUT of this list — a stale
+// entry (scoped check still listed, or listed file without an alias) also
+// reds the selftest, so the park can never rot silently.
+export const MANUAL_CHECKS = [
+  "scripts/adventurecheck.mjs",
+  "scripts/asteroidscheck.mjs",
+  "scripts/audcheck.mjs",
+  "scripts/autopilotcheck.mjs",
+  "scripts/blackholecheck.mjs",
+  "scripts/blobcheck.mjs",
+  "scripts/bombcheck.mjs",
+  "scripts/boredomcheck.mjs",
+  "scripts/cachecheck.mjs",
+  "scripts/campfirecheck.mjs",
+  "scripts/carpetcheck.mjs",
+  "scripts/chromeguardcheck.mjs",
+  "scripts/civcheck.mjs",
+  "scripts/cometdrifthdcheck.mjs",
+  "scripts/cometdrifthdphonecheck.mjs",
+  "scripts/cometdrifthdsandcheck.mjs",
+  "scripts/cometdrifthdscenerycheck.mjs",
+  "scripts/contractcheck.mjs",
+  "scripts/creditscheck.mjs",
+  "scripts/deepglasscheck.mjs",
+  "scripts/defendercheck.mjs",
+  "scripts/doscheck.mjs",
+  "scripts/emberwoodcheck.mjs",
+  "scripts/evocheck.mjs",
+  "scripts/filmstripcheck.mjs",
+  "scripts/floorbosscheck.mjs",
+  "scripts/fpscheck.mjs",
+  "scripts/gardencheck.mjs",
+  "scripts/gravelcheck.mjs",
+  "scripts/invaderscheck.mjs",
+  "scripts/ironringcheck.mjs",
+  "scripts/juicecheck.mjs",
+  "scripts/landerreplaycheck.mjs",
+  "scripts/learnedwalkcheck.mjs",
+  "scripts/levelcheck.mjs",
+  "scripts/lobbycheck.mjs",
+  "scripts/mariocheck.mjs",
+  "scripts/missilecmdcheck.mjs",
+  "scripts/modelindexcheck.mjs",
+  "scripts/mountainscheck.mjs",
+  "scripts/mystviewcheck.mjs",
+  "scripts/neonraincheck.mjs",
+  "scripts/oceancheck.mjs",
+  "scripts/padlinkcheck.mjs",
+  "scripts/peoplecheck.mjs",
+  "scripts/physicswalkcheck.mjs",
+  "scripts/pickcheck.mjs",
+  "scripts/plantcheck.mjs",
+  "scripts/pwacheck.mjs",
+  "scripts/reefcheck.mjs",
+  "scripts/roomcheck.mjs",
+  "scripts/shelfcheck.mjs",
+  "scripts/shorecheck.mjs",
+  "scripts/slotcheck.mjs",
+  "scripts/soscheck.mjs",
+  "scripts/soslinkcheck.mjs",
+  "scripts/ssxmodelcheck.mjs",
+  "scripts/ssxmountaincheck.mjs",
+  "scripts/ssxterraincheck.mjs",
+  "scripts/stickwalkcheck.mjs",
+  "scripts/stormcheck.mjs",
+  "scripts/textfitcheck.mjs",
+  "scripts/tidycheck.mjs",
+  "scripts/touchselectcheck.mjs",
+  "scripts/viperpitcheck.mjs",
+  "scripts/voicecheck.mjs",
+  "scripts/voicecmdcheck.mjs",
+  "scripts/volcanocheck.mjs",
+  "scripts/ws2check.mjs",
+  "scripts/ws3check.mjs",
+  "scripts/zorkuicheck.mjs",
+];
+
 // #887: code that EVERY game page loads. A PR touching any of it pays the
 // nightly play-smoke set on the PR itself (ci.yml's `prsmokes` job, advisory),
 // so an off-prod break like #868's relay-CORS console.error is seen before
@@ -107,7 +190,7 @@ export const SHARED = [
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // package.json -> Map<'scripts/x.mjs', Set<alias>> of scripts CI can invoke.
-function aliasFiles() {
+export function aliasFiles() {
   const pkg = JSON.parse(readFileSync(join(HERE, '..', 'package.json'), 'utf8'));
   const out = new Map();
   for (const [alias, cmd] of Object.entries(pkg.scripts)) {
@@ -120,7 +203,7 @@ function aliasFiles() {
 }
 
 // Map<'scripts/x.mjs', Set<key>> — which CI scopes run each check script.
-function checkScopes() {
+export function checkScopes() {
   const byAlias = new Map();
   const add = (key, entries) => {
     for (const e of entries) {
