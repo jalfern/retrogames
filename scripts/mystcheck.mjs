@@ -12,6 +12,7 @@ import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW } from '../src/games/Myst/sea.js'
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
+import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSeated, seatedCount, galleryOpen, gearRows } from '../src/games/Myst/gears.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1612,6 +1613,85 @@ console.log('MYST — the storm strikes live (#838 item 8: the Age lights at onc
   ok(/if \(stormAt && wt >= stormAt\) \{ stormAt = 0; sfx\('thunder'\) \}/.test(srcJX), 'when its moment comes the storm rings')
 }
 
+console.log('MYST — the gear gallery (#838 item 9: five slots, four carried, one carved in)')
+{
+  // — the table: five slots, five distinct sigils, five distinct seat weights,
+  // and exactly one slot the hand can never move.
+  ok(GEARS.length === GEAR_SLOTS && GEAR_KEYS.length === 5, 'the wall wears five slots')
+  ok(new Set(GEARS.map((g) => g.sigil)).size === 5, 'every slot is stamped with its own sigil')
+  ok(GEARS.filter((g) => g.fixed).length === 1 && GEARS[GEARS.length - 1].key === 'myst', 'exactly one slot is carved in, and it is MYST\'s own')
+  ok(SEAT_TONES.length === GEAR_SLOTS && SEAT_TONES.every((f, i) => i === 0 || f > SEAT_TONES[i - 1]), 'five seat weights, deepest first — the wall is five keys')
+  ok(GEAR_KEYS.every((k, i) => seatWeight(k) === SEAT_TONES[i]), 'each gear drops to its own depth')
+  const seatA = plan('gearSeat:selenitic'), seatB = plan('gearSeat:myst')
+  ok(seatA.length > 0 && JSON.stringify(seatA) !== JSON.stringify(seatB), 'two seats answer apart — Selenitic\'s slot is not the island\'s')
+  ok(plan('gearSeat:nonsense').length === 0, 'an unknown key is silent (never a fallback clank)')
+
+  // — the wall's arithmetic: it starts at one, counts the fixed slot, and only
+  // five opens the niche.
+  let s = freshState(7)
+  ok(seatedCount(s) === 1 && !galleryOpen(s), 'the wall starts with only the island\'s own gear riding it')
+  ok(GEAR_KEYS.every((k) => !gearHeld(s, k)), 'a fresh explorer carries no brass')
+  let r = dispatch(s, { t: 'seat', key: 'selenitic' })
+  ok(r.events.includes('blocked') && !r.state.gearsSeated.selenitic, 'an empty slot refuses an empty hand')
+  r = dispatch(s, { t: 'seat', key: 'myst' })
+  ok(r.events.includes('blocked') && !galleryOpen(r.state), 'MYST\'s own gear is refused — the island keeps its own time')
+  s = { ...s, flags: { ...s.flags, gearSelenitic: true } }
+  r = dispatch(s, { t: 'seat', key: 'selenitic' }); s = r.state
+  ok(r.events.includes('gearSeat:selenitic') && gearSeated(s, 'selenitic') && seatedCount(s) === 2, 'a carried gear drops into its own slot')
+  r = dispatch(s, { t: 'seat', key: 'selenitic' }); s = r.state
+  ok(r.events.includes('gearLift') && !gearSeated(s, 'selenitic') && seatedCount(s) === 1, 'and lifts back out — the wall is not a one-way mouth')
+
+  // — four of five keeps the seal; the fifth lands it home.
+  s = freshState(7)
+  s = { ...s, flags: { ...s.flags, gearSelenitic: true, gearChannelwood: true, gearStoneship: true } }
+  for (const k of ['selenitic', 'channelwood', 'stoneship']) s = dispatch(s, { t: 'seat', key: k }).state
+  ok(seatedCount(s) === 4 && !galleryOpen(s) && !s.flags.nicheOpen, 'four of five keeps the niche shut')
+  s = { ...s, flags: { ...s.flags, gearMechanical: true } }
+  r = dispatch(s, { t: 'seat', key: 'mechanical' }); s = r.state
+  ok(r.events.includes('nicheOpen') && s.flags.nicheOpen && galleryOpen(s), 'the fifth gear home grinds the seal aside')
+  ok(dispatch(s, { t: 'seat', key: 'myst' }).events.includes('blocked'), 'even with the niche open the island\'s gear stays put')
+
+  // — where the two new gears hang: the ridge chart pins the dome gear, the
+  // switch chain holds the tower lid.
+  let s2 = { ...freshState(7), node: 'stoneObservatory' }
+  let r2 = dispatch(s2, { t: 'click', id: 'gearShip' })
+  ok(r2.events.includes('blocked') && !r2.state.flags.gearStoneship, 'the dome gear is pinned under its keeper plate until the chart is read')
+  s2 = dispatch(s2, { t: 'click', id: 'observatory' }).state
+  r2 = dispatch(s2, { t: 'click', id: 'gearShip' }); s2 = r2.state
+  ok(s2.flags.gearStoneship && r2.events.includes('gearTake'), 'the note names the plate, and the gear comes off the axle')
+  ok(dispatch(s2, { t: 'click', id: 'gearShip' }).events.length === 0, 'the axle gives up its gear once, not twice')
+  let s3 = { ...freshState(7), node: 'mechWalk' }
+  ok(dispatch(s3, { t: 'click', id: 'gearLid' }).events.includes('blocked'), 'the steel lid holds until the switch chain solves')
+  s3 = dispatch(s3, { t: 'toggle', i: 0 }).state
+  s3 = dispatch(s3, { t: 'toggle', i: 3 }).state
+  ok(s3.switches.every((v) => v === 1) && s3.flags.switchPanel, 'the five switches stand lit')
+  r2 = dispatch(s3, { t: 'click', id: 'gearLid' }); s3 = r2.state
+  ok(s3.flags.gearMechanical && r2.events.includes('gearTake'), 'the lid the switches unsealed hands over the tower\'s own gear')
+
+  // — the fifth is a law, not a grind: no route, canonical or otherwise, ever
+  // takes the island's gear or opens the niche on the way to Atrus.
+  const won = runSolver()
+  ok(!won.flags.gearMyst, 'no route takes MYST\'s gear (the fifth never enters a hand)')
+  ok(!won.flags.nicheOpen, 'the canonical win walk leaves the niche shut — the gallery is a secret, not a gate')
+
+  // — the wall in the world: spots, gates, panel, and the book inside.
+  ok(NODES.mechWalk.spots.some((sp) => sp.id === 'gearWall' && sp.act === 'gearWall'), 'the bronze wall stands at the tower base')
+  ok(NODES.stoneObservatory.spots.some((sp) => sp.act === 'takeGearShip' && sp.need === 'obsNote'), 'the dome gear is keyed to the chart')
+  ok(NODES.mechWalk.spots.some((sp) => sp.act === 'takeGearMech' && sp.need === 'switchPanel'), 'the tower lid is keyed to the switches')
+  ok(NODES.mechWalk.spots.some((sp) => sp.act === 'nicheBook' && sp.need === 'nicheOpen'), 'the niche is keyed to all five')
+  let s4 = { ...freshState(7), node: 'mechWalk' }
+  let r4 = dispatch(s4, { t: 'click', id: 'gearWall' })
+  ok(r4.state.panelOpen === 'gears' && r4.events.includes('panel'), 'the wall opens its panel')
+  const rows = gearRows(r4.state)
+  ok(rows.length === GEAR_SLOTS && rows[GEARS.length - 1].fixed && rows[GEARS.length - 1].seated, 'the panel shows five rows and the island\'s sits carved in from the start')
+  ok(rows.some((x) => x.key === 'selenitic' && !x.seated && !x.held), 'and says plainly which slots stand empty')
+  const open = { ...freshState(7), node: 'mechWalk', flags: { ...freshState(7).flags, nicheOpen: true } }
+  const rd = dispatch(open, { t: 'click', id: 'nicheBook' })
+  ok(rd.events.includes('nicheRead') && rd.state.flags.nicheRead && /does not fold/.test(rd.state.message), 'the sealed book of MYST opens — and the island does not fold: you cannot link to where you stand')
+  ok(plan('nicheOpen').length >= 3 && plan('nicheOpen').some((c) => c.type === 'sweep'), 'the seal grinds with a voice of its own')
+  ok(JSON.stringify(plan('gearLift')) !== JSON.stringify(plan('gearSeat:selenitic')), 'a gear lifted out is not a gear dropping in')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1622,6 +1702,7 @@ if (process.argv.includes('--mutate')) {
   const ND = 'src/games/Myst/nodes.js'
   const CD = 'src/games/Myst/codes.js'
   const VI = 'src/games/Myst/visions.js'
+  const GG = 'src/games/Myst/gears.js'
   const TR = 'src/games/Myst/terrain.js'
   const LK = 'src/games/Myst/link.js'
   const SEA = 'src/games/Myst/sea.js'
@@ -2016,6 +2097,23 @@ if (process.argv.includes('--mutate')) {
       'd.material.color.setRGB(1 + g * STORM.color[0]', 'd.material.color.setRGB(1 + 0 * g * STORM.color[0]'],
     ['thunder is scheduled but never rings (the edge detector is deaf)', JX,
       "if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }", 'if (stormAt && wt >= stormAt) { stormAt = 0 }'],
+    // #838 item 9 — the gear gallery
+    ['the niche counts to four (a seal that half-guards is no seal)', GG,
+      'return seatedCount(s) === GEAR_SLOTS', 'return seatedCount(s) >= GEAR_SLOTS - 1'],
+    ['the island\'s gear comes loose (MYST starts stopping)', ST,
+      'if (g.fixed) {', 'if (g.nokey) {'],
+    ['a seat accepts an empty hand (the wall trusts nobody)', ST,
+      'if (!gearHeld(s, g.key)) {', 'if (false && !gearHeld(s, g.key)) {'],
+    ['the dome gear ignores the chart (the keeper plate forgets its key)', 'src/games/Myst/nodes.js',
+      "need: 'obsNote', needMsg: 'A drive-gear", "needMsg: 'A drive-gear"],
+    ['the tower lid ignores the switches (the hasps hang open)', 'src/games/Myst/nodes.js',
+      "need: 'switchPanel', needMsg: 'A steel lid", "needMsg: 'A steel lid"],
+    ['every seat answers at one pitch (five keys, one note)', GG,
+      'export const SEAT_TONES = [98, 110, 131, 165, 196]', 'export const SEAT_TONES = [98, 98, 98, 98, 98]'],
+    ['a lifted gear reports as seated (the wall miscounts what leaves it)', ST,
+      "ev.push('gearLift')", "ev.push('gearSeat:' + g.key)"],
+    ['the fifth gear never lands the seal (a niche that stays shut forever)', ST,
+      'if (galleryOpen(s)) {', 'if (false && galleryOpen(s)) {'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

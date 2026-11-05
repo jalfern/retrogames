@@ -199,6 +199,7 @@ export const NODES = {
     spots: [
       { id: 'retStoneObs', label: 'back down the rock stair', yaw: 180, w: 50, h: 36, to: 'stoneDeck' },
       { id: 'observatory', label: 'inside the observatory', yaw: 0, w: 40, h: 34, act: 'observatory' },
+      { id: 'gearShip', label: 'the brass gear on the dome\u2019s axle', yaw: -34, w: 22, h: 22, act: 'takeGearShip', gone: 'gearStoneship', need: 'obsNote', needMsg: 'A drive-gear rides the dome\u2019s axle, worn bright where hands have gripped it — but the axle is pinned under a keeper plate, and the plate\u2019s keying is scratched out. Whatever chart names it is inside the dome.' },
     ],
   },
   rocketSilo: {
@@ -230,6 +231,9 @@ export const NODES = {
     spots: [
       { id: 'backLand', label: 'back to the landing', yaw: -140, w: 70, h: 40, to: 'mechanical' },
       { id: 'switchPanel', label: 'a panel of iron switches', yaw: -30, w: 34, h: 30, act: 'switchPanel' },
+      { id: 'gearWall', label: 'a bronze wall of five gear-slots', yaw: -72, w: 34, h: 30, act: 'gearWall' },
+      { id: 'gearLid', label: 'the gear behind the sealed lid', yaw: -52, w: 22, h: 22, act: 'takeGearMech', gone: 'gearMechanical', need: 'switchPanel', needMsg: 'A steel lid, riveted and cross-braced, set into the tower\u2019s stone at shoulder height. A plate beside it carries five iron keys\u2019 worth of hasps. The switches govern what the switches govern.' },
+      { id: 'nicheBook', label: 'the niche behind the wall', yaw: -72, w: 24, h: 26, act: 'nicheBook', need: 'nicheOpen', needMsg: 'The five slots look down the wall to where a seam runs square through the stone — a niche, sealed, its edges honeyed with old wax. The wall does not open for less than five.' },
       { id: 'mechCall', label: 'the cage call lever', yaw: 12, w: 26, h: 34, act: 'mechCall' },
       { id: 'boardCar', label: 'step into the cage', yaw: 8, w: 22, h: 30, to: 'mechCar', need: 'mechCarDown', needMsg: 'The cage hangs twenty metres up its rails. The call lever is bolted to the wall beside it.' },
     ],

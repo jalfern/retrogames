@@ -11,6 +11,7 @@
 //   fnoise { dur, vol, freq }                 (lowpassed: paper, whoosh)
 
 import { SEA_VIEWS } from './sea.js'
+import { seatWeight } from './gears.js'
 
 export const TONES = [196, 262, 330, 392]
 // The sounding path of SELENITIC: six stones, biggest sings lowest. Strictly
@@ -112,6 +113,15 @@ export function plan(ev) {
     if (!f) return []
     return [{ type: 'sweep', f0: f * 0.5, f1: f, dur: 0.7, wave: 'sine', vol: 0.05 }, { type: 'tone', f, dur: 0.6, wave: 'sine', vol: 0.05, delay: 0.18 }]
   }
+  // #838 item 9 — a gear dropping into its slot. Each of the five seats answers
+  // at its own depth (gears.js `SEAT_TONES`), square clunk over the drive's
+  // rising shudder: the wall is five keys, and a gear in the wrong ear is the
+  // wrong seat. An unknown key is silent (never a fallback clank).
+  if (typeof ev === 'string' && ev.startsWith('gearSeat:')) {
+    const f = seatWeight(ev.split(':')[1])
+    if (!f) return []
+    return [{ type: 'tone', f, dur: 0.14, wave: 'square', vol: 0.09 }, { type: 'sweep', f0: f * 2.2, f1: f * 1.5, dur: 0.5, wave: 'triangle', vol: 0.05 }, { type: 'noise', dur: 0.22, vol: 0.08 }]
+  }
   const P = []
   switch (ev) {
     case 'turn': P.push({ type: 'tone', f: 220, dur: 0.05, wave: 'triangle', vol: 0.05 }); break
@@ -156,6 +166,13 @@ export function plan(ev) {
     // centre. Distinct from the cliff gate (saw + noise) and the safe.
     case 'wheelOpen': P.push({ type: 'tone', f: 90, dur: 0.1, wave: 'square', vol: 0.08 }, { type: 'tone', f: 90, dur: 0.1, wave: 'square', vol: 0.08, delay: 0.14 }, { type: 'tone', f: 90, dur: 0.12, wave: 'square', vol: 0.08, delay: 0.28 }, { type: 'sweep', f0: 80, f1: 170, dur: 1.0, wave: 'triangle', vol: 0.06 }, { type: 'tone', f: 523, dur: 0.7, wave: 'sine', vol: 0.05, delay: 0.7 }); break
     case 'gearTake': P.push({ type: 'fnoise', dur: 0.35, vol: 0.09, freq: 900 }, { type: 'tone', f: 440, dur: 0.25, wave: 'sine', vol: 0.07, delay: 0.18 }); break
+    // #838 item 9 — the gallery: a gear lifted back out is the seat-clunk run
+    // backwards (a rising scrape, no shudder under it); the niche's seal is the
+    // heaviest thing the tower has ever ground — wax, then bronze, then a long
+    // stone breath, and a cold low note when the dark behind it opens.
+    case 'gearLift': P.push({ type: 'sweep', f0: 150, f1: 320, dur: 0.3, wave: 'sawtooth', vol: 0.05 }, { type: 'noise', dur: 0.2, vol: 0.07 }); break
+    case 'nicheOpen': P.push({ type: 'fnoise', dur: 0.25, vol: 0.1, freq: 700 }, { type: 'sweep', f0: 55, f1: 130, dur: 1.6, wave: 'sawtooth', vol: 0.09 }, { type: 'noise', dur: 1.3, vol: 0.1 }, { type: 'tone', f: 65, dur: 1.1, wave: 'sine', vol: 0.07, delay: 1.2 }); break
+    case 'nicheRead': P.push({ type: 'fnoise', dur: 0.2, vol: 0.08, freq: 1200 }, { type: 'tone', f: 392, dur: 0.5, wave: 'sine', vol: 0.04 }, { type: 'tone', f: 466, dur: 0.6, wave: 'sine', vol: 0.04, delay: 0.2 }); break
     // The field of stones hums before you touch it: a low drone under a soft
     // fifth, so the corridor of rock feels alive as you cross it, not silent.
     // Distinct from the sour buzz (detuned saws) and the gate grind — a sweet,

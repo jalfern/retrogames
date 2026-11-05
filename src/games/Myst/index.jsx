@@ -18,6 +18,7 @@ import { audioController } from '../../utils/AudioController'
 import { containMap } from '../../utils/fitCanvas'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
+import { gearRows } from './gears.js'
 import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -54,7 +55,7 @@ const MystGame = () => {
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
-  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial, link: s.link, portraits: portraitViews(s) })
+  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], gears: gearRows(s), dial: s.safeDial, link: s.link, portraits: portraitViews(s) })
 
   useEffect(() => {
     const wrap = stageRef.current
@@ -766,6 +767,22 @@ const MystGame = () => {
             ))}
           </div>
           <div className="text-xs text-amber-200/60">each lever throws its neighbours too — light them all</div>
+        </Panel>
+      )}
+      {hud.panel === 'gears' && screen === 'play' && (
+        <Panel title="THE GEAR WALL — five brass slots" onClose={() => closeHud(false)}>
+          <div className="flex flex-col gap-2 justify-center my-2 sm:flex-row sm:flex-wrap">
+            {(hud.gears || []).map((g) => (
+              <button key={g.key} disabled={g.fixed} data-seat={g.key}
+                className={`px-3 py-2 border text-left ${g.fixed ? 'border-zinc-700 text-zinc-500' : g.seated ? 'bg-amber-500/40 border-amber-300 text-amber-100' : g.held ? 'border-amber-500 text-amber-200' : 'border-zinc-500 text-zinc-400'}`}
+                onClick={() => ctl.current?.action({ t: 'seat', key: g.key })}>
+                <span className="block text-[10px] uppercase tracking-widest opacity-70">{g.age}</span>
+                <span className="block text-sm leading-tight">{g.seated ? '◆' : g.held ? '⬤' : '◇'} {g.sigil}</span>
+                <span className="block text-[10px] opacity-60">{g.fixed ? 'rides its slot — never left' : g.seated ? 'seated — tap to lift' : g.held ? 'in your hand — tap to seat' : 'empty'}</span>
+              </button>
+            ))}
+          </div>
+          <div className="text-xs text-amber-200/60">a gear drops only into the slot it is stamped for · five ride the drive, and behind them something counts · A / Enter closes</div>
         </Panel>
       )}
       {hud.panel === 'spectator' && screen === 'play' && (
