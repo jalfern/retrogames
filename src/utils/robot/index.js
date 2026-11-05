@@ -19,11 +19,12 @@
 
 import { createWorld, installMaterials, mulberry32, poseHash, poseTrack, boxOverlapsBody, TICK_DT, CANNON } from './physics.js'
 import { createArm } from './arm.js'
+import { applyInertiaFloors } from './arm.js'
 import { createBench, createDrawer, createCabinet, createCrate, createCan, BENCH_TOP } from './props.js'
 
 export { BENCH_TOP }
 export { createEpisode, validateEpisode, episodeDownload, exportEpisodes, saveEpisode, loadEpisodes, episodeStats } from './episode.js'
-export { forwardKinematics, planarIK, forceClosureFor, JOINT_SPECS, LINK_MASSES, SLIP_EMA, SLIP_SLACK, SLIP_GRIND, GRIND_EMA } from './arm.js'
+export { forwardKinematics, planarIK, forceClosureFor, JOINT_SPECS, LINK_MASSES, INERTIA_FLOORS, applyInertiaFloors, SLIP_EMA, SLIP_SLACK, SLIP_GRIND, GRIND_EMA } from './arm.js'
 export { Rail } from './physics.js'
 export { ASSETS, SLOTS, assetFor, gateFor, manifestSummary, MANIFEST_REV, SIMREADY_LIBRARY } from './assets.js'
 
@@ -295,10 +296,12 @@ export function createRobotSim(seed = 0, opts = {}) {
                 goals: { ...goals },
                 joints: { ...arm.joints },
                 spin: { ...arm.spin },
+                integ: { ...arm.integral },
                 target: { ...arm.target },
                 gap: arm.gap,
                 gapTarget: arm.gapTarget,
                 held: arm.held,
+                strainN: arm.strainN,
                 tn: { ...arm.torqueNow },
                 sat: { ...arm.saturated },
                 weld: arm.weld
@@ -330,8 +333,10 @@ export function createRobotSim(seed = 0, opts = {}) {
             Object.assign(goals, s.goals)
             Object.assign(arm.joints, s.joints)
             Object.assign(arm.spin, s.spin || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
+            Object.assign(arm.integral, s.integ || { yaw: 0, phi1: 0, phi2: 0, gamw: 0 })
             Object.assign(arm.target, s.target)
             arm.gap = s.gap; arm.gapTarget = s.gapTarget; arm.held = s.held
+            arm.strainN = s.strainN || 0
             if (s.tn) { Object.assign(arm.torqueNow, s.tn); Object.assign(arm.saturated, s.sat || {}) }
             arm.weld = null
             queue.length = 0; queue.push(...s.queue.map((q) => ({ ...q })))
@@ -343,6 +348,10 @@ export function createRobotSim(seed = 0, opts = {}) {
                 b.velocity.set(...bs.v)
                 b.angularVelocity.set(...bs.av)
                 b.updateMassProperties()
+                // updateMassProperties recomputes raw box inertia — re-apply
+                // the joint's reflected rotor floor or the restored chain is a
+                // different (unstable) mechanism than the snapshotted one.
+                if (b.kitInertiaFloors) applyInertiaFloors(b)
                 b.updateBoundingRadius()
                 b.aabbNeedsUpdate = true
                 if (bs.sleep === 2) { b.sleepState = 2; b.sleepTicker = 0 } else b.wakeUp()

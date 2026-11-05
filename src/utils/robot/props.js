@@ -8,7 +8,7 @@
 // rides inside the cavity for real, and closing onto a crate left on the rail
 // track is refused by the Rail stand-clear test.
 
-import { CANNON, Rail } from './physics.js'
+import { CANNON, Rail, COLLISION } from './physics.js'
 import { assetFor } from './assets.js'
 
 export const BENCH_TOP = 0.90
@@ -19,6 +19,7 @@ export function createBench(world, mats) {
         shape: new CANNON.Box(new CANNON.Vec3(0.9, BENCH_TOP / 2, 0.55)),
         position: new CANNON.Vec3(0, BENCH_TOP / 2, -0.15),
         material: mats.wood,
+        collisionFilterGroup: COLLISION.FIXTURE,
     })
     bench.kitName = 'bench'
     bench.simready = assetFor('bench').id
@@ -35,7 +36,7 @@ const T = 0.012
 export function createDrawer(world, mats, { x = 0.16, z = -0.08 } = {}) {
     const half = [0.20, 0.045, 0.16]
     const shapeBottom = new CANNON.Box(new CANNON.Vec3(half[0] - T, T / 2, half[2] - T))
-    const drawer = new CANNON.Body({ mass: assetFor('drawer').physics.massKg, material: mats.steel })
+    const drawer = new CANNON.Body({ mass: assetFor('drawer').physics.massKg, material: mats.steel, collisionFilterGroup: COLLISION.FIXTURE })
     drawer.addShape(shapeBottom, new CANNON.Vec3(0, -half[1] + T / 2, 0))
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, half[1], half[2])), new CANNON.Vec3(-half[0] + T / 2, 0, 0))
     drawer.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, half[1], half[2])), new CANNON.Vec3(half[0] - T / 2, 0, 0))
@@ -92,7 +93,7 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     const y0 = BENCH_TOP
     const w = 0.14
     const d = 0.15
-    const anchor = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(x, y0 + H / 2, z - d), material: mats.steel })
+    const anchor = new CANNON.Body({ mass: 0, position: new CANNON.Vec3(x, y0 + H / 2, z - d), material: mats.steel, collisionFilterGroup: COLLISION.FIXTURE })
     anchor.addShape(new CANNON.Box(new CANNON.Vec3(w, H / 2, T / 2)))
     anchor.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, H / 2, d)), new CANNON.Vec3(-w + T / 2, 0, d))
     anchor.addShape(new CANNON.Box(new CANNON.Vec3(T / 2, H / 2, d)), new CANNON.Vec3(w - T / 2, 0, d))
@@ -106,7 +107,7 @@ export function createCabinet(world, mats, { x = -0.26, z = -0.24 } = {}) {
     const restH = w - 2 * T - 0.004
     const doorZ = z + d + 0.016
     const hinge = { x: x + w - T, y: y0 + H / 2, z: doorZ }
-    const door = new CANNON.Body({ mass: assetFor('door').physics.massKg, material: mats.steel })
+    const door = new CANNON.Body({ mass: assetFor('door').physics.massKg, material: mats.steel, collisionFilterGroup: COLLISION.FIXTURE })
     door.addShape(new CANNON.Box(new CANNON.Vec3(restH, H / 2 - T, T / 2)))
     door.position.set(hinge.x - restH, hinge.y, hinge.z)
     door.kitName = 'door'

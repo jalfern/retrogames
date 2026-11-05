@@ -15,7 +15,7 @@
 // a crate into the drawer lip and it slips out. Closing on nothing holds
 // nothing; a load the pads can't statically hold is refused at the grab.
 
-import { CANNON, TICK_DT } from './physics.js'
+import { CANNON, TICK_DT, COLLISION, LINK_MASK } from './physics.js'
 import { assetFor } from './assets.js'
 
 const DOWN = new CANNON.Vec3(0, -1, 0)
@@ -38,11 +38,46 @@ export const LIMITS = {
 // flips the whole rig; measured).
 // physicsProvenance: class estimate, transcribed from published arm-class
 // data — recorded in the manifest, recomputable by robokitcheck (gate 11).
+// servoK (stage 4a): the rigid chain runs a VELOCITY servo — ω_des =
+// clamp(servoK·θ_err, ±ω_max), τ = kd·(ω_des − ω_joint) + gravity ff. A pure
+// stiffness PD on a true multibody chain is only stable at gains tuned to the
+// exact reflected inertia, which swings with pose and payload; the velocity
+// form bounds joint speed regardless, so saturation and reaction stay honest.
 export const JOINT_SPECS = {
-    yaw: { tauMax: 8.0, inertia: 0.055, omegaMax: 2.6, kp: 12, kd: 1.7 },
-    phi1: { tauMax: 12.0, inertia: 0.045, omegaMax: 2.4, kp: 16, kd: 1.9 },
-    phi2: { tauMax: 8.0, inertia: 0.022, omegaMax: 2.8, kp: 8, kd: 1.0 },
-    gamw: { tauMax: 2.5, inertia: 0.006, omegaMax: 3.0, kp: 2, kd: 0.25 },
+    yaw: { tauMax: 8.0, inertia: 0.055, omegaMax: 2.6, kp: 12, kd: 1.7, servoK: 3.2, ki: 3, intCap: 1.0 },
+    phi1: { tauMax: 12.0, inertia: 0.045, omegaMax: 2.4, kp: 16, kd: 1.9, servoK: 4.0, ki: 3, intCap: 1.5 },
+    phi2: { tauMax: 8.0, inertia: 0.022, omegaMax: 2.8, kp: 8, kd: 1.0, servoK: 4.2, ki: 3, intCap: 0.8 },
+    gamw: { tauMax: 2.5, inertia: 0.006, omegaMax: 3.0, kp: 2, kd: 0.25, servoK: 5.0, ki: 3, intCap: 0.3 },
+}
+
+// Reflected rotor/gearbox inertia floors (kg·m² about the joint axis). Real
+// gearhead joints carry motor inertia reflected through the ratio; cannon's
+// raw box inertias for thin links are ~100× below the stage-3 virtual joints
+// the τ spec was tuned against, and a ±τmax pair on those put ±50 rad/s of
+// spin into the chain EVERY tick — the solver churned the arm into a limp rag
+// (the stage-4a collapse, measured: servo error 991 mm, strain 1772 N).
+// Floors apply per body axis; bodies keep their own inertia above the floor.
+export const INERTIA_FLOORS = {
+    yoke: { y: JOINT_SPECS.yaw.inertia },
+    upper: { x: JOINT_SPECS.phi1.inertia },
+    fore: { x: JOINT_SPECS.phi2.inertia },
+    hand: { x: JOINT_SPECS.gamw.inertia },
+}
+
+// Raise a body's local inertia to its joint's reflected floor; the floor is
+// recorded on the body so snapshot/restore (which calls
+// updateMassProperties) can re-apply it.
+export function applyInertiaFloors(b) {
+    const floor = INERTIA_FLOORS[b.kitName]
+    if (!floor) return
+    for (const ax of ['x', 'y', 'z']) {
+        const f = floor[ax]
+        if (!f) continue
+        const cur = b.invInertia[ax] > 0 ? 1 / b.invInertia[ax] : Infinity
+        if (cur < f) b.invInertia[ax] = 1 / f
+    }
+    b.updateInertiaWorld(true)
+    b.kitInertiaFloors = floor
 }
 
 // Link masses (kg): arm links class-estimated; hand+fingers = the 2F-85
@@ -174,11 +209,31 @@ export function forceClosureFor(body) {
 const YAW_AXIS = new CANNON.Vec3(0, 1, 0)
 const SEG_AXIS = new CANNON.Vec3(-1, 0, 0) // +torque = +φ (seg from straight-down toward forward)
 
+// Stage 4a collision tiers: fixtures (bench/drawer/door/column/plate) are
+// group 4; arm links are group 16 with those bits masked off — links still
+// shove CARGO (crate/can, group 1) but no longer catch on fixture geometry.
+// The stage-3 chain was kinematic and ghosted through the drawer; a dynamic
+// chain catches (measured: hand/finger|drawer pinned a target 118 mm short)
+// and the catch is solver churn, not gameplay. Cargo↔fixture stays solid,
+// and a held crate pressed into anything still loads the chain for real.
+const FIXTURE_GROUP = COLLISION.FIXTURE
+const LINK_GROUP = COLLISION.LINK
+
 export const LINK_MASS_YOKE = 0.20
-export const GRIPPER_HAND_MASS = GRIPPER_MASS - 0.05 // fingers carry the other 0.10 kg of the 2F-85
 export const FINGER_MASS = 0.05
+// hand + 2 fingers = the 2F-85 recorded 0.25 kg exactly (mass travels with
+// the asset — a chain heavier than the manifest breaks the SimReady promise).
+export const GRIPPER_HAND_MASS = assetFor('gripper').physics.massKg - 2 * FINGER_MASS
 export const BASE_PLATE_MASS = 2.0
 export const BASE_PLATE = { half: [0.12, 0.025, 0.12] }
+
+// Gravity moment arms along the gripper axis (m, from wrist): the hand body's
+// COM sits 30 mm beyond the grasp point (graspPoint reads hand COM − 30 mm),
+// the fingers hang at grasp level. The stage-3 FF used LG for the whole
+// gripper — a ~0.5 N·m mismatch at horizontal reach that left a ~30 mm
+// steady-state sag on the real chain (measured, #1570).
+export const GRIPPER_CG = 0.085
+export const FINGER_CG = 0.055
 
 export function createArm(world, mats, { base, rigid = true, mobileBase = false }) {
     const shoulder = { x: base[0], y: base[1] + 0.40, z: base[2] }
@@ -190,7 +245,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         bodies[name] = b
         return b
     }
-    add('base', { mass: rigid && mobileBase ? 1.0 : 0, shape: new CANNON.Cylinder(0.05, 0.07, 0.40, 12), position: new CANNON.Vec3(base[0], base[1] + 0.20, base[2]), material: mats.steel })
+    add('base', { mass: rigid && mobileBase ? 1.0 : 0, shape: new CANNON.Cylinder(0.05, 0.07, 0.40, 12), position: new CANNON.Vec3(base[0], base[1] + 0.20, base[2]), material: mats.steel, collisionFilterGroup: FIXTURE_GROUP })
     if (mobileBase && rigid) {
         // Mobile base plate under the post: friction against the bench lets
         // a fast swing or a heavy lift slide or tip it (stage 4a item 2).
@@ -199,14 +254,21 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
             shape: new CANNON.Box(new CANNON.Vec3(...BASE_PLATE.half)),
             position: new CANNON.Vec3(base[0], base[1] + BASE_PLATE.half[1], base[2]),
             material: mats.steel,
+            collisionFilterGroup: FIXTURE_GROUP,
         })
     }
-    const dyn = (name, half, mass) => add(name, {
-        mass,
-        shape: new CANNON.Box(new CANNON.Vec3(...half)),
-        position: new CANNON.Vec3(base[0], shoulder.y, base[2]),
-        material: mats.steel,
-    })
+    const dyn = (name, half, mass) => {
+        const b = add(name, {
+            mass,
+            shape: new CANNON.Box(new CANNON.Vec3(...half)),
+            position: new CANNON.Vec3(base[0], shoulder.y, base[2]),
+            material: mats.steel,
+            collisionFilterGroup: LINK_GROUP,
+            collisionFilterMask: LINK_MASK,
+        })
+        applyInertiaFloors(b)
+        return b
+    }
     const kin = (name, half) => add(name, {
         type: CANNON.Body.KINEMATIC,
         shape: new CANNON.Box(new CANNON.Vec3(...half)),
@@ -252,6 +314,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     // per-joint torque actuators integrate the real motion. The stage-1 direct
     // slew-limit integrator had no dynamics — no lag, no saturation, no load.
     const spin = { yaw: 0, phi1: 0, phi2: 0, gamw: 0 }
+    const integral = { yaw: 0, phi1: 0, phi2: 0, gamw: 0 }
     const torqueNow = { yaw: 0, phi1: 0, phi2: 0, gamw: 0 }
     const saturated = { yaw: false, phi1: false, phi2: false, gamw: false }
 
@@ -291,11 +354,29 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         const sp = JOINT_SPECS[name]
         const lim = LIMITS[name]
         const e = clamp(desired, lim[0], lim[1]) - ja[name]
-        let tauPD = sp.kp * e - sp.kd * w
-        if (Math.abs(w) > sp.omegaMax) tauPD = -sp.kd * w // speed governor: damping only
-        if (ja[name] <= lim[0] || ja[name] >= lim[1]) tauPD = -sp.kd * w // limit brake
-        const effort = tauPD + tauComp
+        // Velocity servo: command a joint rate from the position error (rate-
+        // and direction-limited), then torque to hold that rate. A velocity
+        // loop alone leaves a small steady-state offset against any residual
+        // torque (solver-compliant hinges, FF model error), so each joint also
+        // carries a clamped integral term — a plain Ki — with anti-windup at
+        // τ saturation. Ki is capped low: it erases pose lag without
+        // springing the chain if a real obstacle pins it.
+        const intCap = sp.intCap
+        let iTerm = integral[name]
+        // Integrate only NEAR the target (where the residual lives): ramping
+        // Ki through a transit move is textbook windup — it overshoots and the
+        // chain limit-cycles (measured: ki=8 ungated regressed every seed).
+        if (intCap > 0 && Math.abs(e) < 0.08) {
+            iTerm = clamp(iTerm + sp.ki * e * TICK_DT, -intCap, intCap)
+        } else iTerm *= 0.95 // target moved away: bleed the stale hold torque
+        const wDes = clamp(e * sp.servoK, -sp.omegaMax, sp.omegaMax)
+        let tauPD = sp.kd * (wDes - w)
+        if (Math.abs(w) > sp.omegaMax) tauPD = sp.kd * (clamp(w, -sp.omegaMax, sp.omegaMax) - w) // speed governor
+        if ((ja[name] <= lim[0] && wDes < 0) || (ja[name] >= lim[1] && wDes > 0)) tauPD = -sp.kd * w // limit brake
+        const effort = tauPD + tauComp + iTerm
         saturated[name] = Math.abs(effort) > sp.tauMax
+        if (saturated[name] && Math.sign(effort) === Math.sign(iTerm)) iTerm = integral[name] // anti-windup: don't grow into a wall
+        integral[name] = iTerm
         const tau = clamp(effort, -sp.tauMax, sp.tauMax)
         torqueNow[name] = tau
         const aw = dist.quaternion.vmult(axisLocal)
@@ -325,19 +406,25 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     }
 
     // Gravity torque the actuators must counter, from the current pose and
-    // the carried payload (real masses come from the SimReady manifest).
+    // the carried payload (real masses come from the SimReady manifest; the
+    // gripper's moment arms are the real body COMs — GRIPPER_CG/FINGER_CG).
     const gravityTorques = (j, payloadKg) => {
         const s1 = Math.sin(j.phi1)
         const s12 = Math.sin(j.phi1 + j.phi2)
         const sg = Math.sin(j.phi1 + j.phi2 + j.gamw)
         const uU = (L1 / 2) * s1
         const uF = L1 * s1 + (L2 / 2) * s12
-        const uH = L1 * s1 + L2 * s12 + LG * sg
+        const uW = L1 * s1 + L2 * s12
+        const mFin = 2 * FINGER_MASS
         return {
             yaw: 0,
-            phi1: G * (LINK_MASSES.upper * uU + LINK_MASSES.fore * uF + (GRIPPER_MASS + payloadKg) * uH),
-            phi2: G * (LINK_MASSES.fore * (L2 / 2) * s12 + (GRIPPER_MASS + payloadKg) * (L2 * s12 + LG * sg)),
-            gamw: G * GRIPPER_MASS * LG * sg,
+            phi1: G * (LINK_MASSES.upper * uU + LINK_MASSES.fore * uF
+                + GRIPPER_HAND_MASS * (uW + GRIPPER_CG * sg) + mFin * (uW + FINGER_CG * sg)
+                + payloadKg * (uW + (LG + 0.045) * sg)),
+            phi2: G * (LINK_MASSES.fore * (L2 / 2) * s12
+                + GRIPPER_HAND_MASS * (L2 * s12 + GRIPPER_CG * sg) + mFin * (L2 * s12 + FINGER_CG * sg)
+                + payloadKg * (L2 * s12 + (LG + 0.045) * sg)),
+            gamw: G * (GRIPPER_HAND_MASS * GRIPPER_CG + mFin * FINGER_CG + payloadKg * (LG + 0.045)) * sg,
         }
     }
 
@@ -595,6 +682,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     // (2) grind: the weld command and the prop's actual pose diverging —
     //     something is in the way and the pads are sliding on it.
     arm.postStep = () => {
+        arm.strainN = readStrainN()
         if (!arm.weld) { arm.slipDemand = 0; arm.grind = 0; return null }
         const b = arm.weld.body
         const dx = b.position.x - arm.weld.prevP.x
@@ -631,15 +719,19 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
     }
     arm.satCount = () => Object.values(saturated).filter(Boolean).length
     arm.spin = spin
+    arm.integral = integral
     arm.torqueNow = torqueNow
     arm.saturated = saturated
     arm.gripRefused = null
     arm.slipDemand = 0
     arm.rigid = rigid
     arm.constraints = constraints
-    arm.baseStrainN = () => {
-        // Reaction force the arm chain exerts on the base, read off the yaw
-        // hinge's solved impulses (the only joint between arm and base).
+    // Strain is READ from the yaw hinge's solved impulses at post-step time and
+    // cached: the multiplier is only meaningful right after world.step, and
+    // snapshot/restore must carry the same number state() last showed (an
+    // uncached read made gate 15 diverge after restore).
+    arm.strainN = 0
+    const readStrainN = () => {
         const c = arm.yawHinge
         if (!c) return 0
         const dt = TICK_DT
@@ -648,6 +740,7 @@ export function createArm(world, mats, { base, rigid = true, mobileBase = false 
         const fz = (c.equationZ.multiplier / dt)
         return Math.round(Math.hypot(fx, fy, fz) * 100) / 100
     }
+    arm.baseStrainN = () => arm.strainN
     arm.baseDelta = () => {
         if (!bodies.basePlate || !basePlateInit) return null
         const p = bodies.basePlate.position
