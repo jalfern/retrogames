@@ -22,7 +22,7 @@ import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneG
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK } from './art.js'
+import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK, CLOUD_LAYER, buildClouds } from './art.js'
 
 const TOUCH = typeof window !== 'undefined' &&
     (window.matchMedia?.('(pointer: coarse)')?.matches === true || 'ontouchstart' in window)
@@ -86,6 +86,8 @@ const SSXGame = () => {
         let world = null
         let worldGen = 0
         let skyObj = null
+        let clouds = null
+        let cloudPunched = false
         let sparkles = null
         let rimJags = null
         let riders = []
@@ -268,6 +270,11 @@ const SSXGame = () => {
             if (rimJags) world.add(keep(rimJags))
             skyObj = buildSky(g.course)
             world.add(keep(skyObj))
+            // #1621: the summit cloud sea — the board starts above it and
+            // breaks through in the drop. Decor only; reset the punch flag.
+            clouds = buildClouds(g.course)
+            world.add(keep(clouds))
+            cloudPunched = false
             world.traverse((o) => {
                 if (o.isMesh && o !== terrainMesh && o.material?.side !== THREE.BackSide) {
                     o.castShadow = true
@@ -654,6 +661,21 @@ const SSXGame = () => {
             // the raw key state — a shallow press throws a whisper, full lock a plume.
             const steer = p.press
             if (!pausedRef.current) {
+                // #1621: the board punches through the cloud sea in the drop —
+                // once per heat, a one-shot mist burst and a low whoosh sell it.
+                if (clouds && !cloudPunched && !counting) {
+                    const by = p.air ? p.y : pp.y
+                    if (by < clouds.userData.layerY) {
+                        cloudPunched = true
+                        for (let k = 0; k < 26; k++) {
+                            const a = Math.random() * Math.PI * 2
+                            putSpray(pp.x + Math.cos(a) * 3, pp.y + 1 + Math.random() * 2, pp.z + Math.sin(a) * 3,
+                                Math.cos(a) * 2, 1.5 + Math.random() * 2, Math.sin(a) * 2)
+                        }
+                        audioController.playNoise(0.5, 0.12)
+                        audioController.playSweep(180, 60, 0.5, 'sine', 0.07)
+                    }
+                }
                 if (!p.air && p.v > 8 && (Math.abs(steer) > 0.2 || screenRef.current === 'attract')) {
                     const n = 1 + Math.min(4, Math.floor((p.v - 8) / 5))
                     for (let k = 0; k < n; k++) {
@@ -1201,6 +1223,15 @@ const SSXGame = () => {
                 },
                 start: (m) => startPlay(m === 'showoff' ? 'showoff' : 'race'),
                 boostMeter: () => { g.riders[0].meter = 100; return g.riders[0].meter },
+                // #1621: the live cloud-sea mount — count, layer altitude and
+                // whether the board has broken through this heat yet.
+                clouds: () => clouds ? {
+                    count: clouds.children.length,
+                    layerY: +clouds.userData.layerY.toFixed(2),
+                    top: +clouds.userData.top.toFixed(2),
+                    gateY: +clouds.userData.gateY.toFixed(2),
+                    punched: cloudPunched,
+                } : null,
                 seek: (m) => { g.riders[0].s = m; camFresh = true; return g.riders[0].s },
                 // DEV QA (#844): shove the rider across the valley-wall line so
                 // the ground-step crash fires on the next tick, deterministically

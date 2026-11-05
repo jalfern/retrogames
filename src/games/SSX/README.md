@@ -372,8 +372,8 @@ spectators tagged, crowd hops at the stands, zero page errors.
 ## Verify
 
 ```bash
-npm run lint:ssx && npm run ssxcheck     # 334 checks, blocks merges (CI `static`)
-npm run ssxmountaincheck                # 212 checks: mountain feel (#638, #665, #889)
+npm run lint:ssx && npm run ssxcheck     # 346 checks, blocks merges (CI `static`)
+npm run ssxmountaincheck                # 257 checks: mountain feel (#638, #665, #889, #1621)
 npm run ssxterraincheck                 # 76 checks: snow/rock surfaces (#669, #685, #844, #889)
 npm run ssxmodelcheck                    # browser: hero loads, 6 poses distinct,
                                           #   keys drive poses, race still winnable,
@@ -545,6 +545,41 @@ after the grab, the OVER head, live REVERT commit (and its negatives), purity,
 and the HUD/probe mount. Mutant proof (done once, by hand): narrow the lock
 window `55→0` in `revolvedLocked` → the two flip-lock gates go red; restore →
 346 green.
+
+## The summit cloud sea (#1621)
+
+The original opens every mountain above the cloud line — the countdown stands on
+the summit and the whole face falls away into a sea of clouds, so the top reads
+as the top of the range. The vista (#780) had the camera; this adds the sea.
+
+- **Pure plan first.** `art.js` exports `CLOUD_LAYER` (band, gate hole, spread —
+  pure data) and `cloudPlan(course)`: deterministic world-space puff entries
+  (position, radius, opacity) from the course's start point + idx, the same law
+  as `peaksRing`/`sceneryPlan`. The sea centres `ahead` m down the run, bands
+  `below`–`above` m under the gate altitude, and keeps a hard clear hole at the
+  gate so the board starts ABOVE the layer, never inside it.
+- **The render.** `buildClouds(course)` lays theme-tinted soft sprite puffs
+  (white day, pink-cream dusk, moonlit indigo night) wider than tall — a deck,
+  not a ball. `index.jsx` adds the group to `world` in `setCourseVisuals` and
+  resets the punch flag each heat.
+- **The break-through.** Once the board's altitude drops under the layer, a
+  one-shot mist burst off the existing spray pool + a low whoosh on the master
+  chain sell the punch — `cloudPunched` latches it so it fires exactly once per
+  heat. `__ssxTest.clouds()` reports the live mount (count, layer/gate altitude,
+  `punched`) for the CI browser pass.
+- **Decor by construction:** `terrainY`, physics, scoring and `stateHash` are
+  untouched — the board flies through, never stands on. All six spines carry
+  the sea, so every mountain opens above the clouds.
+
+ssxmountaincheck section #1621 (+42 gates, 257 total): per course — count, the
+whole sea in the band below the traverse, the gate hole (board starts above,
+not inside), the vista-wide spread, puff size/opacity bounds, the break-through
+window (the centreline crosses the layer top at 60–260 m, so the punch happens
+in the drop, not at the gate), and plan determinism. Browser (`ssxmodelcheck`):
+sea mounted at the gate, layer below the gate altitude, and the board actually
+breaks through on the drive. Mutant proof (done once, by hand): disable the
+gate-hole push-out in `cloudPlan` and exactly one gate ("the gate hole holds")
+goes red; restore → 257 green.
 
 ## Honest gaps (filed as the polish pass)
 

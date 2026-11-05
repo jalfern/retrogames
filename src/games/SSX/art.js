@@ -847,6 +847,97 @@ export function buildSky(course) {
     return g
 }
 
+// ---- Cloud sea under the summit gate (#1621) --------------------------------
+// The original opens every mountain above the cloud line: the countdown stands
+// on the summit and the whole face falls away into a sea of clouds, so the top
+// reads as the top of the range. Pure plan first (world space, deterministic
+// from the course idx — same law as peaksRing/sceneryPlan), then the render.
+// The sea is DECOR: terrainY, physics, scoring and stateHash never touch it —
+// the board flies through, never stands on.
+export const CLOUD_LAYER = {
+    below: 10,   // layer top, m below the gate altitude
+    above: 26,   // layer bottom
+    hole: 30,    // keep this radius around the gate clear — the board starts ABOVE
+    ahead: 120,  // the sea centres this far down the run from the gate
+    radius: 300, // how wide the sea spreads around its centre
+    count: 56,
+    minR: 14, maxR: 46,
+    minA: 0.40, maxA: 0.80,
+}
+
+// Deterministic world-space cloud entries: a wide sea centred `ahead` down the
+// run, banding between `below` and `above` m under the gate altitude, with a
+// hard clear hole around the gate so the board breaks THROUGH the layer in the
+// drop — it never starts inside it.
+export function cloudPlan(course) {
+    const L = CLOUD_LAYER
+    const P0 = slopePos(course, 0, 0)
+    const th = P0.th
+    const cx = P0.x + Math.sin(th) * L.ahead
+    const cz = P0.z + Math.cos(th) * L.ahead
+    const yTop = P0.y - L.below
+    const yBot = P0.y - L.above
+    const seed = 1000 + course.idx * 77
+    const entries = []
+    for (let i = 0; i < L.count; i++) {
+        const ang = hash(seed * 1.37 + i * 7.31) * Math.PI * 2
+        const dist = L.hole + (L.radius - L.hole) * Math.sqrt(hash(seed * 2.71 + i * 3.97))
+        let ex = cx + Math.cos(ang) * dist
+        let ez = cz + Math.sin(ang) * dist
+        const dx = ex - P0.x, dz = ez - P0.z
+        const dp = Math.hypot(dx, dz)
+        if (dp < L.hole) {  // the hole is measured at the gate, not the centre
+            if (dp < 1e-6) { ex = P0.x + L.hole; ez = P0.z }
+            else { ex = P0.x + (dx / dp) * L.hole; ez = P0.z + (dz / dp) * L.hole }
+        }
+        entries.push({
+            x: ex,
+            y: yTop - (yTop - yBot) * hash(seed * 3.37 + i * 5.11),
+            z: ez,
+            r: L.minR + (L.maxR - L.minR) * hash(seed * 4.19 + i * 2.23),
+            a: L.minA + (L.maxA - L.minA) * hash(seed * 5.23 + i * 4.7),
+        })
+    }
+    return { entries, gateY: P0.y, top: yTop, layerY: P0.y - (L.below + L.above) / 2, cx, cz }
+}
+
+let cloudTexCache = null
+function cloudPuffTexture() {
+    if (cloudTexCache) return cloudTexCache
+    const cvs = document.createElement('canvas')
+    cvs.width = cvs.height = 128
+    const ctx = cvs.getContext('2d')
+    const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 64)
+    grad.addColorStop(0, 'rgba(255,255,255,0.85)')
+    grad.addColorStop(0.4, 'rgba(255,255,255,0.38)')
+    grad.addColorStop(0.75, 'rgba(255,255,255,0.12)')
+    grad.addColorStop(1, 'rgba(255,255,255,0)')
+    ctx.fillStyle = grad
+    ctx.fillRect(0, 0, 128, 128)
+    cloudTexCache = new THREE.CanvasTexture(cvs)
+    cloudTexCache.colorSpace = THREE.SRGBColorSpace
+    return cloudTexCache
+}
+
+// Theme-tinted soft sprite puffs laid out by cloudPlan: white day, pink-cream
+// dusk, moonlit indigo night. Wider than tall — a deck, not a ball.
+export function buildClouds(course) {
+    const plan = cloudPlan(course)
+    const g = new THREE.Group()
+    const tex = cloudPuffTexture()
+    const tint = course.theme === 'night' ? 0x93a0d6 : course.theme === 'dusk' ? 0xffd7bd : 0xffffff
+    for (const e of plan.entries) {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: tex, color: tint, transparent: true, opacity: e.a, depthWrite: false,
+        }))
+        sp.position.set(e.x, e.y, e.z)
+        sp.scale.set(e.r * 2, e.r * 1.55, 1)
+        g.add(sp)
+    }
+    g.userData = { plan, layerY: plan.layerY, top: plan.top, gateY: plan.gateY }
+    return g
+}
+
 // ---- shelf props (#638) ------------------------------------------------------
 // Real CC0 models from the shared shelf (public/models/shelf.json), scattered
 // by the sceneryPlan in course.js. Templates are cached per id+theme; clones
