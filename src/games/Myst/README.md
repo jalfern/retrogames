@@ -74,7 +74,9 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 - `terrain.js` — the SELENITIC sculpt (#1033): pure `domeHeight(x, z, view)`
   displaces a 400-unit heightfield in `scene.js`; per-view crests, smooth
   falloff (rim/core), a below-sea skirt, and flat carves for the landing pad
-  and the sounding corridor.
+  and the sounding corridor. `AGE_GROUND` (#838 item 1) and `ISLAND_GROUND`
+  (#838 item 3) carry the same shape per outdoor view of the other Ages and the
+  island itself — bed, crest, skirt to sea floor, flats under every path.
 - `codes.js` — per-save codes (#1005), the original's per-copy combination
   stamps. One 32-bit seed per fresh game (pin with `?seed=N`; a fresh game
   without a pin draws a new one, so a restart is a new book of Myst).
@@ -183,7 +185,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (84 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (97 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -226,7 +228,10 @@ each turns the suite red. Six target the sea (#838 item 2): the island sea
 turning Selenitic green, the Stoneship ocean flattening to a millpond,
 Channelwood glass growing an ocean swell, a swell that freezes, foam that
 forgets the sculpt (dry pads wearing waterlines), and a scene that stops
-dressing its seas — each turns the suite red.
+dressing its seas — each turns the suite red. Six more target the island shores (#838 item 3):
+the dock shore sinking out from under the pier, the cliff path hanging over a sea with no foot,
+the beach bed drowning, the stair-top plateau tipping out of its carve, the sand reverting to
+a flat plane, and two island shores sharing one sculpt — each turns the suite red.
 
 ## Honest gaps vs the original
 - **CLOSED by #838/#989/#996** — all four Ages are walkable node sets:
@@ -302,7 +307,11 @@ dressing its seas — each turns the suite red.
   residual ("the ocean elsewhere is still one tiled plane"): `sea.js` pitches
   each Age's water — dusk amber island, green Selenitic chop, teal Stoneship
   ocean, moss-dark Channelwood glass — swells it deterministically, and lays a
-  foam line exactly where the sculpt meets the sea. Residual: the island's own
-  views (dock, beach, cliffs) still prop their shore with rocks and sit on the
-  shared dusk sea un-sculpted, and the deep ocean far from any coast is still
-  one plane (now at least a plane that wears the Age it drowns).
+  foam line exactly where the sculpt meets the sea. **CLOSED by #838 item 3** — the island
+  wears the same law: `ISLAND_GROUND` in `terrain.js` sculpts the four dusk views (the pier
+  lands on a shore instead of open water, the path is cut into a cliff that meets the sea
+  below, the beach is a rising sand bed with the rotted boat aground, and the library stands
+  on a plateau over the low sea), each carved level where the player stands and skirting to
+  sea floor, so the foam line and swell dress the island coasts too. Residual: the deep
+  ocean far from any coast is still one plane (now at least a plane that wears the Age it
+  drowns).

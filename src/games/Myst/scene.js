@@ -275,6 +275,7 @@ function gear(group, tex, r, x, y, z, speed, tag) {
 
 const BUILDERS = {
   dock(g) {
+    terrainField(g, TX.rock, 'dock')
     for (let i = 0; i < 6; i++) mesh(new THREE.BoxGeometry(3.4, 0.18, 0.62), mat(TX.plank), 0, 1.3, 30 + i * 0.7, g).userData.landmark = 'dockPlank'
     for (const px of [-1.5, 1.5]) for (let i = 0; i < 3; i++) mesh(new THREE.CylinderGeometry(0.14, 0.16, 2.4), mat(TX.wood), px, 0.2, 30 + i * 1.6, g)
     seaPlane(g, 0, SEA_EXTENT)
@@ -283,26 +284,26 @@ const BUILDERS = {
     tree(g, -5, 4.4, 39, 1.2); tree(g, 6, 4, 39.4, 1)
     barrel(g, -1.2, 1.79, 31.6, 0.4); crate(g, 1.15, 1.69, 32.4, 0.9, 0.3)
     lantern(g, 1.55, 1.39, 30.4)
-    tuft(g, -2.4, 2.9, 37.6, 1.1); tuft(g, 5.2, 3.2, 38.2, 0.9)
+    tuft(g, -2.4, groundHeight(-2.4, 37.6, 'dock') + 0.06, 37.6, 1.1); tuft(g, 5.2, groundHeight(5.2, 38.2, 'dock') + 0.06, 38.2, 0.9)
   },
   cliffPath(g) {
+    terrainField(g, TX.rock, 'cliffPath')
     const sea = seaPlane(g, -1, SEA_EXTENT)
     sea.userData.landmark = 'sea'
     // the far cliff the path is cut into; side cliffs frame the corridor
-    const face = mesh(new THREE.BoxGeometry(12, 8, 5), mat(TX.rock), 0, 9.5, 6, g)
+    const face = mesh(new THREE.BoxGeometry(12, 8.6, 5), mat(TX.rock), 0, 8.5, 6, g)
     face.userData.landmark = 'cliffFace'
     rocks(g, TX.rock, [[-6.5, 7, 14, 7, 14, 10, 0], [6.5, 6.5, 12, 7, 13, 10, 0]])
     rocks(g, TX.moss, [[-6.5, 14, 13, 3, 1, 2, 0], [6.5, 13, 11, 2.6, 1.2, 1.8, 0], [2, 13.5, 4.5, 3, 1, 2, 0]])
     for (let i = 0; i < 4; i++) mesh(new THREE.BoxGeometry(2.4, 0.16, 1), mat(TX.stoneD), i % 2 * 0.6, 4.75 + i * 0.55, 16.8 - i * 1.2, g)
     tree(g, -7.5, 14, 12, 1.3); tree(g, 7.5, 13, 10.5, 1.2); tree(g, -2, 13.5, 4, 1.4)
     boulder(g, TX.rock, -5.2, 13.6, 8, 0.9, 0.5); boulder(g, TX.moss, 5.6, 12.6, 7, 0.7, 1.2)
-    tuft(g, -4.4, 14.6, 10, 1.3); tuft(g, 4.8, 13.6, 9, 1.1); tuft(g, 1.8, 5.4, 17.4, 0.8)
+    tuft(g, -4.4, 14.6, 10, 1.3); tuft(g, 4.8, 13.6, 9, 1.1); tuft(g, 1.8, groundHeight(1.8, 17.4, 'cliffPath') + 0.06, 17.4, 0.8)
     mesh(new THREE.CylinderGeometry(0.28, 0.32, 2.6, 7), mat(TX.wood), -5.8, 14.8, 12, g).rotation.z = 1.35
   },
   beach(g) {
+    terrainField(g, TX.sand, 'beach')
     seaPlane(g, 0, SEA_EXTENT)
-    const s = mesh(new THREE.CircleGeometry(9, 20), mat(TX.sand), -14, 0.05, 26, g)
-    s.rotation.x = -Math.PI / 2
     rocks(g, TX.rock, [[-22, 4, 30, 10, 9, 5, 0.5], [-16, 5.4, 32, 6, 8, 3, 0.2]])
     const hull = mesh(new THREE.CylinderGeometry(0.9, 1.4, 5.4, 7), mat(TX.wood), -14, 0.7, 24, g)
     hull.rotation.set(0.15, 0, Math.PI / 2)
@@ -310,7 +311,7 @@ const BUILDERS = {
     hull.userData.landmark = 'boat'
     mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.6), mat(TX.wood), -14, 1.6, 24, g).rotation.z = 0.12
     barrel(g, -12.2, 0.4, 26.2, 0.7); crate(g, -15.6, 0.3, 27, 0.9, 0.5); barrel(g, -16.4, 0.4, 24.6, 1.1)
-    tuft(g, -12.5, 0.06, 28.4, 1.2); tuft(g, -17, 0.06, 28.6, 1)
+    tuft(g, -12.5, groundHeight(-12.5, 28.4, 'beach') + 0.06, 28.4, 1.2); tuft(g, -17, groundHeight(-17, 28.6, 'beach') + 0.06, 28.6, 1)
     boulder(g, TX.rock, -9.5, 0.7, 27.5, 0.8, 0.7)
   },
   landing(g) {
@@ -338,6 +339,7 @@ const BUILDERS = {
     boulder(g, TX.stoneD, 11.5, 12.6, 11, 1.1, 0.4)
   },
   stairTop(g) {
+    terrainField(g, TX.stoneD, 'stairTop')
     rocks(g, TX.stoneD, [[0, 6.2, 2.5, 18, 1.6, 4, 0], [-12, 8, 2, 8, 10, 6, 0.4], [12, 9, 1, 7, 9, 5, -0.4], [-7, 8.4, -1, 5, 5, 3, 0.3], [7, 8.4, -1, 5, 5, 3, -0.3]])
     const lib = mesh(new THREE.CylinderGeometry(5.4, 6, 8, 12), mat(TX.stoneD), 0, 14, 6, g)
     lib.userData.noPick = true
@@ -358,9 +360,9 @@ const BUILDERS = {
     const cdoor = mesh(new THREE.BoxGeometry(1, 2, 0.25), mat(TX.wood), -9, 12, 7.75, g)
     cdoor.userData.spot = 'cabinDoor'
     seaPlane(g, -4, SEA_EXTENT, 0.9)
-    tree(g, -4, 12, 4, 1.3); tree(g, 5, 12, 6, 1.1); tree(g, -13, 11, 4, 1.4)
-    lantern(g, -1.9, 7, 11.4); lantern(g, 1.9, 7, 11.4)
-    crate(g, -6.2, 7.3, 2.6, 0.9, 0.4); barrel(g, -7.4, 7.4, 3.6, 0.9)
+    tree(g, -4, groundHeight(-4, 4, 'stairTop'), 4, 1.3); tree(g, 5, groundHeight(5, 6, 'stairTop'), 6, 1.1); tree(g, -13, groundHeight(-13, 4, 'stairTop'), 4, 1.4)
+    lantern(g, -1.9, groundHeight(-1.9, 11.4, 'stairTop'), 11.4); lantern(g, 1.9, groundHeight(1.9, 11.4, 'stairTop'), 11.4)
+    crate(g, -6.2, groundHeight(-6.2, 2.6, 'stairTop') + 0.45, 2.6, 0.9, 0.4); barrel(g, -7.4, groundHeight(-7.4, 3.6, 'stairTop') + 0.4, 3.6, 0.9)
     boulder(g, TX.stoneD, -11.5, 14.1, 5, 1.1, 0.9); boulder(g, TX.stoneD, 11.8, 13.6, 9, 1, 0.2)
     tuft(g, -5.4, 7.05, 3.4, 1.1); tuft(g, 6.4, 7.05, 2.4, 1)
   },

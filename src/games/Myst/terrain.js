@@ -69,8 +69,21 @@ export const AGE_GROUND = {
   chanObs:          { base: 4.4, water: -0.5, crest: { x: 0, z: -57, core: 5, rim: 16, h: 1.2 }, drop: 6, skirt: 18, flats: [{ x0: -10, x1: 10, z0: -72, z1: -61, soft: 5 }] },
 }
 
+// #838 item 3 — the island itself, last view group on the shelf still propped
+// with rocks and sitting on the shared dusk sea un-sculpted. Same law as the
+// Ages above: bed, crest, skirt to a seabed, flats under the paths. The dock
+// is the one view that stands OVER the sea (the pier), so its flats are empty
+// and its bed is the sea floor; the path, the beach and the library plateau
+// get level carves so nothing the player stands on tilts.
+export const ISLAND_GROUND = {
+  dock:      { base: 0,    water: 0,   crest: { x: 0, z: 44, core: 0, rim: 10, h: 4.8 }, drop: 3.5, skirt: 12, flats: [] },
+  cliffPath: { base: 4.2,  water: -1,  crest: { x: 0, z: 24, core: 0, rim: 16, h: 9 }, drop: 6.4, skirt: 14, flats: [{ x0: -4, x1: 4, z0: 10, z1: 20, soft: 5 }] },
+  beach:     { base: 0.12, water: 0,   crest: { x: -14, z: 36, core: 5, rim: 15, h: 0.7 }, drop: 3.2, skirt: 20, flats: [{ x0: -23, x1: -5, z0: 16, z1: 31, soft: 4 }] },
+  stairTop:  { base: 10.3, water: -4,  crest: { x: 0, z: -14, core: 8, rim: 16, h: 1 }, drop: 15, skirt: 24, flats: [{ x0: -14, x1: 14, z0: -14, z1: 13, soft: 4 }] },
+}
+
 export function ageHeight(x, z, view) {
-  const v = AGE_GROUND[view]
+  const v = AGE_GROUND[view] || ISLAND_GROUND[view]
   const c = v.crest
   const d = Math.hypot(x - c.x, z - c.z)
   const t = clamp01((c.rim - Math.max(d - c.core, 0)) / (c.rim - c.core))
@@ -100,7 +113,7 @@ export function groundRaw(x, z, view) {
     if (d >= DOME.rim) return DOME.seabed * ((d - DOME.rim) / DOME.skirt)
     return crest.h * smooth((DOME.rim - d) / (DOME.rim - DOME.core))
   }
-  const v = AGE_GROUND[view]
+  const v = AGE_GROUND[view] || ISLAND_GROUND[view]
   if (!v) return null
   const c = v.crest
   const d = Math.hypot(x - c.x, z - c.z)
