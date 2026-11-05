@@ -4,7 +4,7 @@
 
 import { NODES, AGE_LIST } from './nodes.js'
 import { deriveCodes, freshSeed, safeWords, NUMBER_WORDS } from './codes.js'
-import { linkingBook, LINK_TICKS } from './link.js'
+import { linkingBook, LINK_TICKS, TRAP_LINK } from './link.js'
 
 export const SAFE_LEN = 3
 export const SWITCH_LINKS = [
@@ -72,6 +72,9 @@ export function freshState(seed) {
     link: null,
     linkT: 0,
     ending: null,
+    // #838 — a fate parked mid-flight: the trap's starfield flies first, and the
+    // loop's tick moves this into `ending` when the field clears.
+    pending: null,
     message: 'You fall through the starless dark — and land at the foot of a wooden dock.',
     bookOpen: null,
     panelOpen: null,
@@ -92,6 +95,11 @@ export function dispatch(st, a) {
     if (a.t === 'restart') return { state: freshState(), events: ['restart'] }
     return { state: st, events: [] }
   }
+
+  // #838 — mid-trap the starfield owns you. The trap is not a menu you can step
+  // back out of: every input but the loop's own tick is refused until the fate
+  // lands, the same law the rocket ride below runs by.
+  if (st.pending && a.t !== 'tick') return { state: st, events: [] }
 
   // Mid-ride the rocket drives you, not the player: once the switch is
   // thrown, every input but the loop's own tick is refused until the surface
@@ -204,6 +212,16 @@ export function dispatch(st, a) {
         if (st.linkT <= 1) { s.link = null; s.linkT = 0 }
         else s.linkT = st.linkT - 1
       }
+      // #838 — a parked fate lands on the tick the field clears, so the overlay's
+      // last frame and the fate screen agree: no cut, no dead beat between them.
+      if (s.pending && !s.link) {
+        s.ending = s.pending
+        s.pending = null
+        s.message = s.ending === 'sirrus'
+          ? 'You speak the words of freeing. SIRRUS steps out of the leaf into the light — and your hand is already closing on the cover from the inside.'
+          : 'ACHENAR smiles as the book closes around you. Both Brothers are free — and you have a page to stay.'
+        ev.push('endBad')
+      }
       break
     }
     default: return { state: st, events: [] }
@@ -218,11 +236,21 @@ function act(s, spot, ev) {
       const got = AGE_LIST.filter((age) => s.pages[`${c}:${age}`])
       for (const age of got) { delete s.pages[`${c}:${age}`]; s.placed[c] += 1; ev.push('placePage') }
       if (has(s, 'whitePage')) {
-        s.ending = c === 'red' ? 'sirrus' : 'achenar'
+        // #838 — the trap does not cut to the fate screen. In 1993 the red and
+        // blue books linked in their own colour: the cover slams, the coloured
+        // starfield takes you, and the brother's face is the last thing the
+        // light shows before the ending lands. So the pull starts a real flight
+        // on the #1031 machinery and parks the fate in `pending`; the loop's own
+        // tick lands it exactly when the field clears.
+        s.pending = c === 'red' ? 'sirrus' : 'achenar'
+        s.link = TRAP_LINK[c]
+        s.linkT = LINK_TICKS
+        s.bookOpen = null
         s.message = c === 'red'
-          ? 'You speak the words of freeing. SIRRUS steps out of the leaf into the light — and your hand is already closing on the cover from the inside.'
-          : 'ACHENAR smiles as the book closes around you. Both Brothers are free — and you have a page to stay.'
-        ev.push('endBad'); break
+          ? 'The cover slams — and it was not your hand. Crimson light floods up through the page, the library folds away, and the pull takes you.'
+          : 'The cover slams — and it was not your hand. Cobalt light breaks across the stand, the library folds away, and you go through after him.'
+        ev.push('trap', `link:${TRAP_LINK[c]}`)
+        break
       }
       if (s.placed[c] === AGE_LIST.length && s.placed.red === AGE_LIST.length && s.placed.blue === AGE_LIST.length) {
         s.flags.whitePage = true

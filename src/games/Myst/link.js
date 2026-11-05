@@ -39,13 +39,24 @@ export function linkingBook(node, id) {
 // Per-Age cover ink (the rushing page), starfield floor and tint. MYST's
 // linking light ran deep blue-white for every book; the Ages' own light leaks
 // into the edges, so each leap still feels like the world you are heading to.
+// `mix` is how hard the stars take on that light (#838: a trap book's field is
+// not an Age with borrowed edges, it IS the colour — Sirrus's crimson, Achenar's
+// cobalt — so the trap flights mix far harder than a normal leap).
 export const LINK_PALETTE = {
   mechanical: { ink: '#140b06', floor: '#07070f', tint: [255, 150, 60] },
   selenitic: { ink: '#07120c', floor: '#06080f', tint: [110, 230, 150] },
   stoneship: { ink: '#0b0f13', floor: '#06080f', tint: [160, 200, 224] },
   channelwood: { ink: '#071214', floor: '#06080f', tint: [120, 220, 220] },
   myst: { ink: '#100d06', floor: '#06080f', tint: [150, 170, 230] },
+  // #838 — the trap books. In 1993 the red and blue books each linked in their
+  // own colour, and the field that takes you when a brother is freed wears that
+  // colour all the way to the fate screen.
+  trapRed: { ink: '#1c0408', floor: '#100103', tint: [255, 62, 54], mix: 0.42 },
+  trapBlue: { ink: '#050a20', floor: '#020413', tint: [70, 106, 255], mix: 0.42 },
 }
+
+// The two trap flights, keyed by the brother's colour as the state names it.
+export const TRAP_LINK = { red: 'trapRed', blue: 'trapBlue' }
 
 export function linkTint(age) {
   const p = LINK_PALETTE[age] || LINK_PALETTE.myst
@@ -190,9 +201,10 @@ export function drawLink(ctx, age, prog, w, h) {
     const x0 = cx + ca * tail, y0 = cy + sa * tail
     const x1 = cx + ca * rr, y1 = cy + sa * rr
     const fade = Math.sin(Math.PI * c)
-    const cr = Math.round(lerp(st.cr, tr, 0.18))
-    const cg = Math.round(lerp(st.cg, tg, 0.18))
-    const cb = Math.round(lerp(st.cb, tb, 0.18))
+    const mix = pal.mix ?? 0.18
+    const cr = Math.round(lerp(st.cr, tr, mix))
+    const cg = Math.round(lerp(st.cg, tg, mix))
+    const cb = Math.round(lerp(st.cb, tb, mix))
     ctx.strokeStyle = `rgba(${cr},${cg},${cb},${(0.18 + 0.72 * fade).toFixed(3)})`
     ctx.lineWidth = Math.max(1, st.sz * (0.5 + q))
     ctx.beginPath()

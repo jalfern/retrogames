@@ -5,7 +5,7 @@
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
 import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews } from '../src/games/Myst/state.js'
 import { drawVision } from '../src/games/Myst/visions.js'
-import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam } from '../src/games/Myst/link.js'
+import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
@@ -408,10 +408,22 @@ console.log('MYST — pages, books, endings')
   // placing all pages does NOT free a brother; the white page must exist first
   let w = runSolver(freshState(5150))
   ok(w.ending === 'atrus', 'eight pages + pedestal = the good ending')
-  let bad = { ...w, ending: null, flags: { ...w.flags, whitePage: true }, node: 'library' }
-  ok(dispatch(bad, { t: 'click', id: 'redBook' }).state.ending === 'sirrus', 'freeing Sirrus traps you (red)')
-  bad = { ...w, ending: null, flags: { ...w.flags, whitePage: true }, node: 'library' }
-  ok(dispatch(bad, { t: 'click', id: 'blueBook' }).state.ending === 'achenar', 'freeing Achenar traps you (blue)')
+  // #838 — freeing a brother no longer CUTS to the fate screen: the trap flies
+  // its own coloured starfield first, and the fate lands when the field clears.
+  const trap = (id, fate) => {
+    const p = { ...w, ending: null, pending: null, flags: { ...w.flags, whitePage: true }, node: 'library' }
+    const r = dispatch(p, { t: 'click', id })
+    ok(!r.state.ending && r.state.pending === fate, `${id}: the trap springs — the fate is taken, not shown`)
+    let f = r.state
+    for (let i = 0; i < LINK_TICKS - 1; i++) f = dispatch(f, { t: 'tick' }).state
+    ok(f.ending === null && f.pending === fate && f.linkT === 1, `${id}: the coloured field still flies one tick before the ending`)
+    const end = dispatch(f, { t: 'tick' })
+    ok(end.state.ending === fate && end.state.pending === null && end.state.link === null, `${id}: the starfield clears exactly as the fate lands`)
+    ok(end.events.includes('endBad'), `${id}: the fate still announces itself`)
+  }
+  trap('redBook', 'sirrus')
+  trap('blueBook', 'achenar')
+  ok(dispatch({ ...w, ending: null, pending: null, flags: { ...w.flags, whitePage: true }, node: 'library' }, { t: 'click', id: 'redBook' }).events.includes('link:trapRed'), 'the trap schedules its own linking sound')
   ok(dispatch(mid, { t: 'restart' }).state.node === 'dock', 'restart returns to the dock')
 }
 { // no page is unreachable given its doors
@@ -784,6 +796,47 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
   // #1035 — crisp streaks on phones: the overlay overdraws on a DPR-aware backing
   ok(/devicePixelRatio/.test(jsx) && /drawLink\([\s\S]*?pw,\s*ph\)/.test(jsx), 'the starfield overdraws on a DPR-aware backing (2× crisp on phones)', '')
 }
+
+console.log('MYST — the trap books fly (#838: red and blue starfields before the fate screens)')
+{
+  const at = (flags) => ({ ...freshState(4242), node: 'library', flags: { ...(flags || {}) } })
+  const pullTrap = (c) => dispatch(at({ whitePage: true }), { t: 'click', id: c === 'red' ? 'redBook' : 'blueBook' })
+  const fateOf = { red: 'sirrus', blue: 'achenar' }
+  ok(TRAP_LINK.red === 'trapRed' && TRAP_LINK.blue === 'trapBlue' && TRAP_LINK.red !== TRAP_LINK.blue, 'each brother’s book owns its own linking field')
+  ok(!!LINK_PALETTE[TRAP_LINK.red] && !!LINK_PALETTE[TRAP_LINK.blue], 'both trap fields carry their own palette (no quiet fallback to the Ages’ blue-white)')
+  const tints = ['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst', TRAP_LINK.red, TRAP_LINK.blue].map((a) => JSON.stringify(linkTint(a)))
+  ok(new Set(tints).size === 7, 'the two traps wear skies no Age has ever worn', tints.join(','))
+  const [rr, rg, rb] = linkTint(TRAP_LINK.red), [br, bg, bb] = linkTint(TRAP_LINK.blue)
+  ok(rr > rg + 120 && rr > rb + 120, 'the red book’s field is crimson, not tinted blue-white', `${rr},${rg},${rb}`)
+  ok(bb > br + 120 && bb > bg + 120, 'the blue book’s field is cobalt, not the Ages’ blue-white', `${br},${bg},${bb}`)
+  ok((LINK_PALETTE.myst.mix ?? 0.18) < LINK_PALETTE[TRAP_LINK.red].mix && (LINK_PALETTE.myst.mix ?? 0.18) < LINK_PALETTE[TRAP_LINK.blue].mix, 'a trap’s stars take their colour far harder than a leap’s', String(LINK_PALETTE[TRAP_LINK.red].mix))
+  // the flight holds cover from the pull to the fate — no frame where the
+  // library would flash back between the trap and its ending screen
+  for (const c of ['red', 'blue']) {
+    let f = pullTrap(c).state
+    let covered = true, t = 0
+    while (f.pending && !f.ending) { covered = covered && !!f.link && f.linkT > 0; f = dispatch(f, { t: 'tick' }).state; t += 1 }
+    ok(covered && t === LINK_TICKS, `the ${c} trap flies its full ${LINK_TICKS}-tick field with no uncovered frame`, `${t} ticks`)
+    ok(f.ending === fateOf[c] && f.pending === null, `the ${c} trap lands its own fate`)
+  }
+  // the trap cannot be cancelled: every input but the loop's own tick is refused
+  const mid = pullTrap('red').state
+  for (const a of [{ t: 'turn', dir: 1 }, { t: 'move', id: 'libDesk' }, { t: 'click', id: 'pedestal' }, { t: 'restart' }]) {
+    const r = dispatch(mid, a)
+    ok(r.state === mid && r.events.length === 0, `the trap ignores ${a.t} — you cannot step back out of it`)
+  }
+  ok(dispatch(mid, { t: 'tick' }).state.linkT === LINK_TICKS - 1, 'only the clock moves you through the trap')
+  // without the white page the books are still voices, not doors (the #1031 law holds)
+  const voice = dispatch(at({}), { t: 'click', id: 'redBook' }).state
+  ok(voice.bookOpen === 'red' && !voice.link && !voice.pending, 'an empty red book still only speaks — the trap needs the white page')
+  const w = runSolver(freshState(5150))
+  ok(w.ending === 'atrus' && !w.pending, 'the white page still brings Atrus home on its own tick')
+  // and it sounds apart from a leap: an Age leap rises into the light, a trap falls
+  const ageSnd = plan('link:mechanical'), trapSnd = plan(`link:${TRAP_LINK.red}`)
+  ok(JSON.stringify(ageSnd) !== JSON.stringify(trapSnd), 'the trap’s linking sound is its own event')
+  const rise = ageSnd.find((x) => x.type === 'sweep'), fall = trapSnd.find((x) => x.type === 'sweep')
+  ok(rise.f1 > rise.f0 && fall.f1 < fall.f0, 'an Age leap rises into the light; the trap drags you down', `${rise.f0}->${rise.f1} vs ${fall.f0}->${fall.f1}`)
+}
 { // the starfield painter: pure paint, alive on the clock, distinct per Age
   const OPS = ['save', 'restore', 'clip', 'beginPath', 'fill', 'stroke', 'closePath', 'fillRect', 'strokeRect', 'clearRect', 'arc', 'ellipse', 'moveTo', 'lineTo', 'quadraticCurveTo', 'translate', 'rotate']
   function recCtx() {
@@ -808,6 +861,17 @@ console.log('MYST — linking-book travel (#1031): the page cover, the seam, the
     ok(runL(age, 0.15) !== runL(age, 0.55), `${age} starfield answers the flight clock`)
   }
   ok(runL('mechanical', 0.5) !== runL('selenitic', 0.5) && runL('stoneship', 0.75) !== runL('channelwood', 0.75), 'no two Ages share a linking sky')
+  // #838 — the trap skies paint: unlike every Age, unlike each other, and their
+  // stars carry the brother's colour hard enough that the field reads as his.
+  ok(runL(TRAP_LINK.red, 0.5) !== runL(TRAP_LINK.blue, 0.5), 'the two traps do not paint one field')
+  ok(['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].every((a) => runL(TRAP_LINK.red, 0.5) !== runL(a, 0.5)), 'the crimson field belongs to no Age')
+  ok(runL(TRAP_LINK.red, 0.15) !== runL(TRAP_LINK.red, 0.55), 'the trap field answers the flight clock')
+  const streaks = (age, p) => (runL(age, p).match(/strokeStyle:rgba\((\d+),(\d+),(\d+)/g) || [])
+    .map((s) => s.replace('strokeStyle:rgba(', '').split(',').map(Number))
+  const rs = streaks(TRAP_LINK.red, 0.55)
+  ok(rs.length >= 100 && rs.reduce((n, [r, , b]) => n + (r - b), 0) / rs.length > 40, 'the red trap’s stars run red-hot, not blue-white', `${rs.length} streaks`)
+  const bs = streaks(TRAP_LINK.blue, 0.55)
+  ok(bs.length >= 100 && bs.reduce((n, [r, , b]) => n + (b - r), 0) / bs.length > 40, 'the blue trap’s stars run cold cobalt', `${bs.length} streaks`)
   const inkOf = (age, p) => (runL(age, p).match(/fillStyle:(#[0-9a-f]{6})/) || [])[1]
   ok(new Set(['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].map((a) => inkOf(a, 0.15))).size === 5, 'each Age’s page cover carries its own ink', ['selenitic', 'stoneship', 'mechanical', 'channelwood', 'myst'].map(inkOf).join(','))
   // full cover: every sampled tick of the held window must paint ground AND a
@@ -895,6 +959,7 @@ if (process.argv.includes('--mutate')) {
   const CD = 'src/games/Myst/codes.js'
   const VI = 'src/games/Myst/visions.js'
   const TR = 'src/games/Myst/terrain.js'
+  const LK = 'src/games/Myst/link.js'
   const MUTANTS = [
     ['the dome has no coast (skirt sits at water level)', TR,
       'seabed: -3.5', 'seabed: 0'],
@@ -1101,6 +1166,20 @@ if (process.argv.includes('--mutate')) {
     ['the starfield overlay drops its DPR backing (soft streaks on phones)', JX,
       `const dpr = Math.min(2, (typeof devicePixelRatio === 'number' && devicePixelRatio > 1 ? devicePixelRatio : 1) || 1)`,
       `const dpr = 1`],
+    // #838 — the trap flights
+    ['the trap’s fate never lands (the starfield flies forever)', ST,
+      'if (s.pending && !s.link) {', 'if (false && s.pending && !s.link) {'],
+    ['the trap can be cancelled (any input escapes the pull)', ST,
+      'if (st.pending && a.t !== \'tick\') return { state: st, events: [] }',
+      'if (false && st.pending && a.t !== \'tick\') return { state: st, events: [] }'],
+    ['the red book’s trap borrows the Ages’ blue-white sky', LK,
+      `trapRed: { ink: '#1c0408', floor: '#100103', tint: [255, 62, 54], mix: 0.42 }`,
+      `trapRed: { ink: '#1c0408', floor: '#100103', tint: [150, 170, 230], mix: 0.42 }`],
+    ['trap stars stop taking their colour (crimson field reads blue)', LK,
+      'const mix = pal.mix ?? 0.18', 'const mix = 0.18'],
+    ['the trap sounds like an ordinary leap (no inward pull)', SP,
+      `if (typeof ev === 'string' && /^link:trap/.test(ev)) {`,
+      `if (typeof ev === 'string' && /^link:trapXX/.test(ev)) {`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
