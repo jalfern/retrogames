@@ -2,9 +2,9 @@
 
 ## What shipped
 **MYST #838 item 2 — the sea wears each Age.** PR #1586 squash-merged to main
-`e8be1c6` (static green; Vercel deploy `37WG63FR9…` success; prod alias
-promotion was still settling at session end — re-verify
-https://www.jalfern.com/retrogames/ bundle hash != `index-D-h6iRr3.js`).
+`e8be1c6` (static green; Vercel deploy `37WG63FR9…` success; prod verified:
+index-CZtRcMRM.js → chunk index-CsLsn-as.js carries the sea — foam #eaf4ee,
+dusk [.98,.8,.6], teal, moss literals all present live).
 - `sea.js` (new, pure): `SEA_VIEWS` per sea view (water level, multiply-tint
   colour, swell amplitude, drift); `seaSwell` deterministic 3-sine swell bounded
   by amplitude; `foamAt`/`foamLine` hug the coast — foam only where masked AND
