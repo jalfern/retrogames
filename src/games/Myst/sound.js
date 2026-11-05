@@ -1,48 +1,39 @@
 // MYST — synthesized audio. The WHAT is in soundplan.js (pure, audited by
 // mystcheck); this file is the thin browser layer that plays each scheduled
 // cue. Ambience is a slow layer scheduled off the fixed-timestep loop
-// (wind, surf, gears, drips) — never setTimeout.
+// (wind, surf, gears, drips) — never setTimeout. #838 item 10 moved the
+// per-Age voices into soundplan.js (`ambCues`) so the harness can prove a
+// kind resolves, kinds stay distinct, and the same wind reads apart across the
+// Ages — this layer only dispatches and keeps the re-trigger timer.
 
 import { audioController as A } from '../../utils/AudioController'
 import { plan, TONES } from './soundplan.js'
 
-export function sfx(ev) {
-  for (const c of plan(ev)) {
-    switch (c.type) {
-      case 'tone': A.playTone(c.f, c.dur, c.wave, c.vol, c.delay || 0); break
-      case 'sweep': A.playSweep(c.f0, c.f1, c.dur, c.wave, c.vol); break
-      case 'noise': A.playNoise(c.dur, c.vol); break
-      case 'fnoise': A.playFilteredNoise(c.dur, c.vol, c.freq); break
-      default: break
-    }
+// one cue → one sound. Shared by every event and the ambience layer.
+function play(c) {
+  switch (c.type) {
+    case 'tone': A.playTone(c.f, c.dur, c.wave, c.vol, c.delay || 0); break
+    case 'sweep': A.playSweep(c.f0, c.f1, c.dur, c.wave, c.vol); break
+    case 'noise': A.playNoise(c.dur, c.vol); break
+    case 'fnoise': A.playFilteredNoise(c.dur, c.vol, c.freq); break
+    default: break
   }
 }
 
+export function sfx(ev) { for (const c of plan(ev)) play(c) }
+
 export function sfxTone(i) { A.playTone(TONES[i] || 262, 0.4, 'sine', 0.09) }
 
-const AMB = {
-  sea: () => { A.playNoise(1.4, 0.05); A.playSweep(70, 50, 1.6, 'sine', 0.04) },
-  wind: () => { A.playNoise(1.8, 0.04) },
-  birds: () => { A.playSweep(1600, 2400, 0.12, 'sine', 0.04); A.playSweep(2100, 1500, 0.1, 'sine', 0.03) },
-  fire: () => { A.playNoise(0.25, 0.05) },
-  drip: () => { A.playTone(900 + Math.random() * 400, 0.06, 'sine', 0.05) },
-  gears: () => { A.playTone(90, 0.05, 'square', 0.05); A.playNoise(0.08, 0.04) },
-  sphere: () => { A.playTone(174, 1.2, 'sine', 0.03) },
-  falls: () => { A.playNoise(1.6, 0.07) },
-  // The sounding field: wind over grass, with the rock itself humming underneath.
-  stones: () => { A.playNoise(1.8, 0.035); sfx('hum') },
-}
-
 let ambT = 0
-// #1587 — `view` (the node id) rides with the ambience so every open sea
-// layers its own swell rumble under the kind's voice; dry views schedule
-// nothing extra (swellCues is [] for a view with no SEA_VIEWS entry).
+// #1587/#838 — `view` (the node id) rides with the ambience so every view
+// wears its own Age: `amb:wind:dock` is the dusk wash, `amb:wind:selThrone`
+// the caldera moan; and every open sea layers its swell rumble underneath
+// (`swell:${view}` is silent for a dry view — swellCues returns [] there).
 export function ambience(kind, dt, view) {
   ambT -= dt
   if (ambT <= 0) {
-    const f = AMB[kind]
-    if (f) f()
-    if (view) sfx(`swell:${view}`)
+    for (const c of plan(`amb:${kind}:${view}`)) play(c)
+    for (const c of plan(`swell:${view}`)) play(c)
     ambT = 2.4 + Math.random() * 1.6
   }
 }
