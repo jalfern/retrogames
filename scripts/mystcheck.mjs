@@ -14,6 +14,7 @@ import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, 
 import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
 import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSeated, seatedCount, galleryOpen, gearRows } from '../src/games/Myst/gears.js'
 import { FORGE, FORGE_VIEWS, FORGE_SEATS, forgeBreath, forgeLight, ventPuff, VENT, forgeSparks, SPARK } from '../src/games/Myst/forge.js'
+import { CLOUD, CLOUD_VIEWS, CLOUD_SEATS, BOUNCE_TINT, cloudBounce, cloudShade, deckLight } from '../src/games/Myst/cloudlight.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1918,6 +1919,103 @@ console.log('MYST — the forge breathes (#838 item 13: MECHANICAL lit from its 
   ok(/ventPuff\(t, o\.userData\.steamKey/.test(srcSC) && /steamKey = 'mechBlueVent'/.test(srcSC), 'the blue-page vent puffs on its own cadence')
 }
 
+console.log('MYST — the cloud floor breathes (#838 item 14: CHANNELWOOD lit from below)')
+{
+  // — determinism: same instant, same light
+  ok(cloudBounce(5.5, 'channelwood') === cloudBounce(5.5, 'channelwood'), 'the breath is deterministic — same instant, same glow')
+  ok(cloudShade(9.25, 3, -30, 'chanChannels') === cloudShade(9.25, 3, -30, 'chanChannels'), 'a bank crosses the same way every time')
+
+  // — scope: the cloud floor stays home (item 8's rule, on gentle light)
+  const NON_CHAN = ['dock', 'cliffPath', 'beach', 'stairTop', 'library', 'cabin', 'cave', 'selenitic', 'stoneDeck', 'mechanical', 'mechRoom']
+  ok(NON_CHAN.every((v) => cloudBounce(3.3, v) === 1), 'the cloud floor stays home — every non-Channelwood view answers gain exactly 1')
+  ok(NON_CHAN.every((v) => cloudShade(3.3, 2, -12, v) === 0), 'no bank crosses a foreign deck — shade exactly 0 outside Channelwood')
+  ok(CLOUD_VIEWS.length === 4 && CLOUD_VIEWS.every((v) => NODES[v] && NODES[v].sky === 'channelwood'), 'the law covers exactly the four Channelwood views')
+
+  // — one sky, one clock: the whole Age brightens together
+  let oneSky = true
+  for (const t of [0.4, 7.25, 33.9, 61.2]) {
+    for (const v of CLOUD_VIEWS) if (cloudBounce(t, v) !== cloudBounce(t, 'channelwood')) oneSky = false
+  }
+  ok(oneSky, 'one cloud sea, one clock — every Channelwood view breathes together at every instant probed')
+
+  // — bounds, and the envelope must be real
+  let bmin = 1e9, bmax = -1e9
+  for (let k = 0; k <= 6000; k++) { const b = cloudBounce(k / 40, 'chanWheel'); bmin = Math.min(bmin, b); bmax = Math.max(bmax, b) }
+  ok(bmin >= CLOUD.min - 1e-12 && bmax <= CLOUD.max + 1e-12, `the glow stays inside [${CLOUD.min}, ${CLOUD.max}]`)
+  ok(CLOUD.min >= 0.7, `the glow dims but never fails — envelope floor ${CLOUD.min} keeps the Age readable`)
+  ok(bmax - bmin >= 0.6 * (CLOUD.max - CLOUD.min), 'the cloud floor really pumps — banks thicken and thin, it is not a static fill light')
+
+  // — slow weather, not a strike: over the storm's 160 ms the gain barely moves
+  let wobble = 0
+  for (let k = 0; k <= 2000; k++) { const t = k / 40; wobble = Math.max(wobble, Math.abs(cloudBounce(t + 0.16, 'channelwood') - cloudBounce(t, 'channelwood'))) }
+  ok(wobble <= 0.05, `the breath is slow weather, not a strike — Δ gain ≤ ${wobble.toFixed(3)} over the storm's 160 ms`)
+
+  // — banks: bounded, reaching real eclipse and real clear sky
+  let smin = 1e9, smax = -1e9
+  for (let k = 0; k <= 8000; k++) { const s = cloudShade(k / 40, 0, -30, 'chanChannels'); smin = Math.min(smin, s); smax = Math.max(smax, s) }
+  ok(smin === 0, 'the sky clears between banks — a bank is not a ceiling')
+  ok(smax <= 1, 'shade lives at or under 1')
+  ok(smax > 0.55, 'a bank really eclipses the glow, not just veils it')
+  ok(CLOUD.duty < 1, 'the duty cycle leaves room for open weather')
+
+  // — the front sweeps in ground direction: near planks darken before far ones
+  let sweep = false
+  for (let k = 1; k <= 8000 && !sweep; k++) {
+    const t = k / 40
+    if (cloudShade(t, 0, -18, 'chanChannels') > cloudShade(t, 0, -18 - CLOUD.front, 'chanChannels') + 0.2) sweep = true
+  }
+  ok(sweep, 'a bank crosses the ground — near planks go dark while the far edge still holds the light')
+
+  // — each platform keeps its own crossing cadence (weather, not a metronome)
+  const crossGaps = (v) => {
+    const z = { channelwood: -18, chanChannels: -30, chanWheel: -52, chanObs: -62 }[v]
+    const times = []
+    let high = false
+    for (let k = 1; k <= 12000; k++) {
+      const t = k / 40
+      const s = cloudShade(t, 0, z, v)
+      if (!high && s > 0.3) { high = true; times.push(t) } else if (high && s === 0) high = false
+    }
+    if (times.length < 3) return null
+    return (times[times.length - 1] - times[0]) / (times.length - 1)
+  }
+  const gaps = CLOUD_VIEWS.map(crossGaps)
+  ok(gaps.every((g) => g !== null), 'every platform sees repeating crossings')
+  ok(new Set(gaps.map((g) => Math.round(g))).size >= 2, 'no two Channelwood decks share one crossing clock — the banks are weather, not a metronome')
+
+  // — what the deck receives: the breath minus whatever bank stands under it
+  let lawful = true
+  for (let k = 0; k <= 4000; k++) {
+    const t = k / 40
+    for (const v of CLOUD_VIEWS) {
+      const l = deckLight(t, 1.5, -30, v)
+      if (l > cloudBounce(t, v) + 1e-12) lawful = false // a bank never brightens
+      if (l < CLOUD.min * (1 - CLOUD.depth) - 1e-12) lawful = false // never below floor·(1−depth)
+      if (cloudShade(t, 1.5, -30, v) === 0 && Math.abs(l - cloudBounce(t, v)) > 1e-12) lawful = false
+    }
+  }
+  ok(lawful, 'open sky and cloud-filtered: the deck never outruns the breath, never sinks below its floor')
+
+  // — per-spot, not per-Age: two boards under one bank read apart
+  let perSpot = false
+  for (let k = 0; k <= 4000 && !perSpot; k++) {
+    const t = k / 40
+    if (deckLight(t, 4, -24, 'channelwood') !== deckLight(t, -4, -24, 'channelwood')) perSpot = true
+  }
+  ok(perSpot, 'one bank, two planks: light is read per spot on the deck, not per Age')
+
+  // — the glow comes UP, in the sky's own colour
+  ok(CLOUD_VIEWS.every((v) => CLOUD_SEATS[v] && CLOUD_SEATS[v][1] < SEA_VIEWS[v].water), 'every uplight seat sits below its cloud floor — the light comes from under the wood')
+  ok(BOUNCE_TINT === SKY_CLOUD.channelwood, 'the lamp wears the very colour the mirrored horizon paints — mirror and bounce cannot drift apart')
+
+  // — the shell drives it
+  const srcCL = readFileSync('src/games/Myst/scene.js', 'utf8')
+  ok(/if \(o\.isLight && o\.userData\.cloud\) anim\.push/.test(srcCL) && /o\.intensity = CLOUD\.lamp \* cloudBounce\(t, o\.userData\.cloud\)/.test(srcCL), 'the anim loop breathes every cloud lamp on the law')
+  ok((srcCL.match(/cloudLamp\(g, '/g) || []).length === 4, 'one uplight seated in each of the four Channelwood views')
+  ok((srcCL.match(/cloudDeck\((?!\s*o,)/g) || []).length >= 7, 'decks, driftwood and shelter are all wired to the light under them')
+  ok(/if \(o\.userData\.cloudDeck\) anim\.push/.test(srcCL) && /deckLight\(t, o\.position\.x, o\.position\.z, o\.userData\.cloudDeck\)/.test(srcCL), 'every deck re-reads the light under its own boards each frame')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
 console.log('MYST — mutants (each MUST die)')
@@ -1934,6 +2032,7 @@ console.log('MYST — mutants (each MUST die)')
   const SEA = 'src/games/Myst/sea.js'
   const SD = 'src/games/Myst/sound.js'
   const FG = 'src/games/Myst/forge.js'
+  const CL = 'src/games/Myst/cloudlight.js'
   const MUTANTS = [
     ['every sea wears Myst again (the island turns Selenitic green)', SEA,
       'dock:             { water: 0,    color: [0.98, 0.80, 0.60], swell: 0.16',
@@ -2423,6 +2522,35 @@ console.log('MYST — mutants (each MUST die)')
     ['the steam ignores its cadence (the puff is pinned shut)', 'src/games/Myst/scene.js',
       "const p = ventPuff(t, o.userData.steamKey || 'default')",
       'const p = 0'],
+    ['the cloud floor never pumps (a static fill light where the Age should breathe)', CL,
+      'const pump = 0.93 + 0.11 * Math.sin((t * 2 * Math.PI) / CLOUD.period)',
+      'const pump = 0.93'],
+    ['the glow can fail to black (the envelope floor drops away)', CL,
+      'min: 0.80,', 'min: 0.0,'],
+    ['the glow leaks abroad (Channelwood\'s sky paints the whole island)', CL,
+      'if (!CLOUD_VIEWS.includes(view)) return 1', 'if (!CLOUD_VIEWS.includes(view)) return 0.9'],
+    ['the banks never leave (duty at ceiling — a sky that is only ceiling)', CL,
+      'duty: 0.55,', 'duty: 1.0,'],
+    ['a bank is a ceiling (uniform varnish — one dimming for the whole deck)', CL,
+      'const front = Math.max(0, Math.min(1, (z + u * 3 * CLOUD.front - CLOUD.front) / CLOUD.front))',
+      'const front = 1'],
+    ['the banks lose their ragged edge (perfectly straight shadow lines)', CL,
+      'ragged = 0.55 + 0.45 * Math.sin(x * 0.05 + t * 0.11', 'ragged = 0.55 + 0.45 * Math.sin(t * 0.11'],
+    ['a cloud parks under the terrace forever (the crossing freezes)', CL,
+      'const u = phase / CLOUD.duty', 'const u = 0.6'],
+    ['the bank throws light instead of taking it (shade brightens the deck)', CL,
+      'return cloudBounce(t, view) * (1 - CLOUD.depth * cloudShade(t, x, z, view))',
+      'return cloudBounce(t, view) * (1 + CLOUD.depth * cloudShade(t, x, z, view))'],
+    ['the lamps move above the boards (the glow shines down like any other Age)', CL,
+      'channelwood: [0, -2.7, -18]', 'channelwood: [0, 2.7, -18]'],
+    ['mirror and bounce drift apart (the lamp forgets the cloud colour)', CL,
+      'export const BOUNCE_TINT = SKY_CLOUD.channelwood', 'export const BOUNCE_TINT = [0.99, 0.72, 0.66]'],
+    ['four skies over one cloud sea (the views stop breathing together)', CL,
+      '+ 0.03 * Math.sin(t * 0.23 + 1.7)', "+ 0.03 * Math.sin(t * 0.23 + (view === 'chanObs' ? 2.9 : 1.7))"],
+    ['the shell stops breathing the cloud lamps', 'src/games/Myst/scene.js',
+      'if (o.isLight && o.userData.cloud) anim.push', 'if (false && o.isLight && o.userData.cloud) anim.push'],
+    ['the boards stop reading their light (colour frozen while banks pass)', 'src/games/Myst/scene.js',
+      'if (o.userData.cloudDeck) anim.push', 'if (false && o.userData.cloudDeck) anim.push'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

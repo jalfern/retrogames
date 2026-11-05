@@ -227,7 +227,7 @@ and turn with the arrow keys. No inventory UI, no hints — take notes, as in 19
 ## Verify
 ```bash
 npm run mystcheck            # Node: graph, every gate, all 8 pages, 4 endings, seeded locks, the ride, the wheel, the lenses, the linking starfield
-npm run mystcheck -- --mutate # the interlocks must be able to fail (161 mutants)
+npm run mystcheck -- --mutate # the interlocks must be able to fail (186 mutants)
 npm run mystplay             # browser (needs npm run dev): keys, travel, full win, seed wire-up, the wheel + the Spectator lenses live
 npm run mystviewcheck        # browser: every one of the 28 views framed
 npm run lint:myst
@@ -448,3 +448,30 @@ mirroring clouds or seating land — each turns the suite red.
     envelope bounds and pump, Age-only scope, the distance-law ordering, vent
     rest + cadence clustering, spark climb/burnout/anchorage and the scene
     wiring; 13 new mutants all die (173 total).
+    **CLOSED by #838 item 14** — the cloud floor breathes: CHANNELWOOD is the
+    second Age to wear Jon's look pass. The 1993 Age floats ON the clouds, and
+    that cloud sea is half its light — ours wore one static sun. Pure
+    `cloudlight.js`: `CLOUD_VIEWS` (exactly the four chan* nodes),
+    `cloudBounce(t, view)` (a ~17 s bank-breath clamped to [0.80, 1.06] — it
+    dims but never fails; the one-sky law says every Channelwood view answers
+    the SAME gain at the same instant, item 8's storm rule on gentle light, and
+    the Δ over the storm's 160 ms is ≤ 0.01: slow weather, not a strike),
+    `cloudShade(t, x, z, view)` (a bank crossing: per-view hashed period
+    34–58 s, duty 0.55 with a TRUE clear gap — a bank that never leaves is a
+    ceiling, not weather — a linear moving front so near planks darken before
+    the far edge, and a ragged edge so shadow lines are never straight), and
+    `deckLight = bounce × (1 − 0.26·shade)` (a bank only ever takes light
+    away). `CLOUD_SEATS` puts one lamp BELOW each view's own sea level — the
+    glow comes up out of the clouds, which no other Age does — and its colour
+    IS `SKY_CLOUD.channelwood` from sea.js, the very constant the mirrored
+    horizon paints (item 12's shared-law rule: mirror and bounce cannot drift
+    apart). `scene.js` seats the four lamps on the breath and re-reads
+    `deckLight` per marked deck mesh (terrains, driftwood, the blue-page
+    bridge, the wheel-shelter) every frame — per spot, not per Age. Scope:
+    `cloudBounce` answers exactly 1 and `cloudShade` exactly 0 everywhere else.
+    mystcheck's item-14 section proves determinism, scope, the one-sky identity,
+    bounds + pump, the slow voice vs the storm, clear sky + real eclipse +
+    duty, the front sweep, per-view cadences, deck ordering (≤ bounce, equal
+    where the sky is clear, never below floor·(1−depth)), per-spot light,
+    seats-under-the-waterline, tint identity and the scene wiring; 13 new
+    mutants all die (186 total).
