@@ -10,6 +10,8 @@
 //   noise  { dur, vol }                       (raw crackle)
 //   fnoise { dur, vol, freq }                 (lowpassed: paper, whoosh)
 
+import { SEA_VIEWS } from './sea.js'
+
 export const TONES = [196, 262, 330, 392]
 // The sounding path of SELENITIC: six stones, biggest sings lowest. Strictly
 // ascending and distinct — the puzzle IS the pitch order.
@@ -22,7 +24,28 @@ export const WHEEL_TONES = [98, 131, 165]
 // per-Age and never a repeat of a neighbour's voice.
 export const THAW_TONES = { selenitic: 262, stoneship: 330, mechanical: 392, channelwood: 494 }
 
+// #1587 — the swell has a voice. A low rumble whose volume and roll length
+// scale with the Age's swell (sea.js `SEA_VIEWS[view].swell`): the Stoneship
+// Atlantic slams, Selenitic chops, the island washes, Channelwood's glass is
+// barely a whisper. A view with no sea entry (the indoor Ages) gets silence —
+// the rumble is per-view, not a global ambience.
+export function swellCues(view) {
+  const v = SEA_VIEWS[view]
+  if (!v) return []
+  const k = v.swell / 0.6
+  if (k <= 0) return []
+  return [
+    { type: 'fnoise', dur: 1.4 + 2.0 * k, vol: 0.015 + 0.075 * k, freq: 220 },
+    { type: 'sweep', f0: 46 + 24 * k, f1: 32, dur: 1.8 + 1.8 * k, wave: 'sine', vol: 0.012 + 0.05 * k },
+  ]
+}
+
 export function plan(ev) {
+  // #1587 — per-view swell rumble: `swell:stoneship` is louder than
+  // `swell:channelwood`, the pitch is the Age's water (pure, above).
+  if (typeof ev === 'string' && ev.startsWith('swell:')) {
+    return swellCues(ev.split(':')[1])
+  }
   // #838 — a trap book does not carry you somewhere: it takes you IN. So the
   // trap flights answer apart from an Age leap (#1031's rising whoosh): a
   // heavier cover SLAM, a rush that FALLS instead of rising, and a low stone

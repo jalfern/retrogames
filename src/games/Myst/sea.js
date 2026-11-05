@@ -46,6 +46,76 @@ export const SEA_VIEWS = {
 // open water below — no foam either side.
 export const FOAM_BAND = 0.45
 
+// #1587 — the horizon: the sea plane's half-span must reach PAST the sky
+// dome (radius 900) so the water's edge is never inside the dome. Then the
+// horizon is fog fade into the dome's own horizon band — the FMV cut, not the
+// rim of a floating disc. (Views sit 4000 apart; 2400/2 + 900 < 4000, so a
+// plane never pokes through its neighbour's dome.)
+export const SEA_EXTENT = 2400
+
+// #1587 — shore break LAGS the swell: real foam holds the waterline of a
+// third-second ago while the crest is already passing. The foam puffs ride
+// seaSwell evaluated at (t - FOAM_LAG), so the line visibly trails the water.
+export const FOAM_LAG = 0.3
+
+// #1587 — the break is ragged: every foam seat wears its own width, a
+// deterministic hash of its position (the harness replays it; no random).
+// Factors 0.85..2.0 over the base 1.7 unit quad — short scallops between
+// long runnels, never a uniform comb.
+export function foamScale(x, z, view) {
+  let h = 2166136261
+  for (let i = 0; i < view.length; i++) { h ^= view.charCodeAt(i); h = Math.imul(h, 16777619) }
+  h = Math.imul(h ^ Math.imul(x + 128, 374761393), 668265263)
+  h = Math.imul(h ^ Math.imul(z + 128, 1440662683), 668265263)
+  const f = ((h >>> 0) % 10000) / 10000
+  return 0.85 + 1.15 * f
+}
+
+// #1587 — the low sun: every open sea catches a specular strip running from
+// its seat toward the player, the way the original's FMV seas gild the water
+// toward the sun. Deterministic per view: a seat hash picks the bearing and
+// distance, the strip wears its sky's sun colour (the same table the scene
+// lights with), and its strength dies as the swell chews the mirror — a heaving
+// Atlantic breaks its glint, the dusk wash holds it.
+const GLINT_SUN = {
+  dusk:        [1.00, 0.69, 0.48], // 0xffb07a — the island's amber sunset
+  selenitic:   [0.75, 0.91, 0.80], // 0xbfe8cc — the green haze sun
+  stoneship:   [0.87, 0.89, 0.92], // 0xdfe4ea — the cold Atlantic sun
+  channelwood: [0.81, 0.93, 0.90], // 0xcfeee6 — cloud-glass light
+}
+function skyOf(view) {
+  if (['dock', 'cliffPath', 'beach', 'stairTop'].includes(view)) return 'dusk'
+  if (view.startsWith('sel')) return 'selenitic'
+  if (view.startsWith('stone')) return 'stoneship'
+  return 'channelwood'
+}
+function hash01(s) {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) }
+  return ((h >>> 0) % 100000) / 100000
+}
+// { x, z, rot, w, len, color[3], base, rate } or null for a dry view.
+//   x,z   the strip's seat on the sea (r units out from the view origin)
+//   rot   the seat's bearing (radians) — the strip lies along this line
+//   base  resting opacity; the scene pulses it around this at `rate`
+export function glintFor(view) {
+  const v = SEA_VIEWS[view]
+  if (!v) return null
+  const a = hash01(view + ':a') * Math.PI * 2
+  const r = 46 + 26 * hash01(view + ':r')
+  const strength = 0.03 + 0.30 * v.color[0] * (1 - v.swell / 0.6)
+  return {
+    x: Math.sin(a) * r,
+    z: Math.cos(a) * r,
+    rot: a,
+    w: 2.6 + 3.2 * hash01(view + ':w'),
+    len: 70 + 50 * hash01(view + ':l'),
+    color: GLINT_SUN[skyOf(view)],
+    base: strength,
+    rate: 0.9 + 1.6 * (1 - v.swell / 0.6),
+  }
+}
+
 export function seaProfile(view) {
   return SEA_VIEWS[view] || null
 }

@@ -8,7 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor } from './sea.js'
 
 const GAP = 4000
 
@@ -134,6 +134,9 @@ function seaPlane(group, y = 0, size = 1600, tint) {
 // Channelwood), and seats foam puffs along the coast where the sculpted
 // ground meets its own waterline. Views with no entry (interiors, the cave
 // fall, Mechanical's dry dock) keep the plain plane untouched.
+// #1587 — the coast break is ragged and LAGS the swell (foamScale/FOAM_LAG),
+// and each open sea seats a sun glint strip (glintFor) running seat-to-player
+// the way the FMV original gilds the water toward its low sun.
 function dressSea(group, id, anim) {
   const prof = seaProfile(id)
   if (!prof) return
@@ -149,13 +152,28 @@ function dressSea(group, id, anim) {
     } })
   })
   for (const [fx, fz, fi] of foamLine(id)) {
-    const f = mesh(new THREE.PlaneGeometry(1.7, 0.9),
+    const w = 1.7 * foamScale(fx, fz, id)
+    const f = mesh(new THREE.PlaneGeometry(w, 0.9),
       new THREE.MeshBasicMaterial({ color: 0xeaf4ee, transparent: true, opacity: 0.25 + 0.35 * fi, fog: true }),
-      fx, prof.water + 0.04 + seaSwell(fx, -fz, 0, id), fz, group)
+      fx, prof.water + 0.04 + seaSwell(fx, -fz, -FOAM_LAG, id), fz, group)
     f.rotation.x = -Math.PI / 2
     f.userData.noPick = true
     f.userData.foam = fx * 0.31 + fz * 0.17
-    anim.push({ o: f, f: (t) => { f.material.opacity = 0.22 + 0.3 * fi + 0.12 * Math.sin(t * 1.9 + f.userData.foam) ; f.position.y = prof.water + 0.04 + seaSwell(fx, -fz, t, id) } })
+    anim.push({ o: f, f: (t) => { f.material.opacity = 0.22 + 0.3 * fi + 0.12 * Math.sin(t * 1.9 + f.userData.foam) ; f.position.y = prof.water + 0.04 + seaSwell(fx, -fz, t - FOAM_LAG, id) } })
+  }
+  const gl = glintFor(id)
+  if (gl) {
+    const strip = mesh(new THREE.PlaneGeometry(gl.w, gl.len),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(gl.color[0], gl.color[1], gl.color[2]), transparent: true, opacity: gl.base, blending: THREE.AdditiveBlending, depthWrite: false, fog: true }),
+      gl.x, prof.water + 0.06, gl.z, group)
+    strip.rotation.x = -Math.PI / 2
+    strip.rotation.z = gl.rot - Math.PI
+    strip.userData.noPick = true
+    strip.userData.glint = true
+    anim.push({ o: strip, f: (t) => {
+      strip.material.opacity = gl.base * (0.55 + 0.45 * Math.sin(t * gl.rate + gl.rot * 3))
+      strip.position.y = prof.water + 0.06 + seaSwell(gl.x, -gl.z, t, id) * 0.5
+    } })
   }
 }
 
@@ -259,7 +277,7 @@ const BUILDERS = {
   dock(g) {
     for (let i = 0; i < 6; i++) mesh(new THREE.BoxGeometry(3.4, 0.18, 0.62), mat(TX.plank), 0, 1.3, 30 + i * 0.7, g).userData.landmark = 'dockPlank'
     for (const px of [-1.5, 1.5]) for (let i = 0; i < 3; i++) mesh(new THREE.CylinderGeometry(0.14, 0.16, 2.4), mat(TX.wood), px, 0.2, 30 + i * 1.6, g)
-    seaPlane(g, 0)
+    seaPlane(g, 0, SEA_EXTENT)
     rocks(g, TX.rock, [[0, 2.4, 37.6, 6, 5, 2, 0], [-6, 4, 40, 8, 8, 4, 0.4], [7, 3.4, 40, 7, 7, 3, -0.3]])
     rocks(g, TX.moss, [[-2, 3.4, 38.4, 2, 1.4, 1.2, 0], [4, 4.4, 39, 2, 2, 1, 0.5]])
     tree(g, -5, 4.4, 39, 1.2); tree(g, 6, 4, 39.4, 1)
@@ -268,7 +286,7 @@ const BUILDERS = {
     tuft(g, -2.4, 2.9, 37.6, 1.1); tuft(g, 5.2, 3.2, 38.2, 0.9)
   },
   cliffPath(g) {
-    const sea = seaPlane(g, -1)
+    const sea = seaPlane(g, -1, SEA_EXTENT)
     sea.userData.landmark = 'sea'
     // the far cliff the path is cut into; side cliffs frame the corridor
     const face = mesh(new THREE.BoxGeometry(12, 8, 5), mat(TX.rock), 0, 9.5, 6, g)
@@ -282,7 +300,7 @@ const BUILDERS = {
     mesh(new THREE.CylinderGeometry(0.28, 0.32, 2.6, 7), mat(TX.wood), -5.8, 14.8, 12, g).rotation.z = 1.35
   },
   beach(g) {
-    seaPlane(g, 0, 1200)
+    seaPlane(g, 0, SEA_EXTENT)
     const s = mesh(new THREE.CircleGeometry(9, 20), mat(TX.sand), -14, 0.05, 26, g)
     s.rotation.x = -Math.PI / 2
     rocks(g, TX.rock, [[-22, 4, 30, 10, 9, 5, 0.5], [-16, 5.4, 32, 6, 8, 3, 0.2]])
@@ -339,7 +357,7 @@ const BUILDERS = {
     g.add(cab)
     const cdoor = mesh(new THREE.BoxGeometry(1, 2, 0.25), mat(TX.wood), -9, 12, 7.75, g)
     cdoor.userData.spot = 'cabinDoor'
-    seaPlane(g, -4, 1600, 0.9)
+    seaPlane(g, -4, SEA_EXTENT, 0.9)
     tree(g, -4, 12, 4, 1.3); tree(g, 5, 12, 6, 1.1); tree(g, -13, 11, 4, 1.4)
     lantern(g, -1.9, 7, 11.4); lantern(g, 1.9, 7, 11.4)
     crate(g, -6.2, 7.3, 2.6, 0.9, 0.4); barrel(g, -7.4, 7.4, 3.6, 0.9)
@@ -468,7 +486,7 @@ const BUILDERS = {
   },
   selenitic(g) {
     terrainField(g, TX.selen, 'selenitic')
-    seaPlane(g, 0.02, 300, 0.25)
+    seaPlane(g, 0.02, SEA_EXTENT, 0.25)
     moon(g, 26, 22, 30, 8, null, null)
     const glow0 = new THREE.PointLight(0x9fd8b0, 12, 70); glow0.position.set(0, 10, 0); g.add(glow0)
     for (let r = 0; r < 4; r++) { const ring = mesh(new THREE.TorusGeometry(8 + r * 5, 0.7, 8, 40), mat(TX.selen), 0, 0.4 + r * 0.25, 0, g); ring.rotation.x = Math.PI / 2; ring.userData.noPick = true }
@@ -497,7 +515,7 @@ const BUILDERS = {
     // camera at [0,1.7,-46], facing +z: the stone field recedes toward a
     // sealed gate in the cliff, the moon low on the right shoulder
     terrainField(g, TX.selen, 'selSound')
-    seaPlane(g, 0.02, 300, 0.2)
+    seaPlane(g, 0.02, SEA_EXTENT, 0.2)
     moon(g, 5, 24, 8, 5.5, null, 'lookMoon')
     // the corridor walls: two green-black rock shoulders, striated like the
     // original's narrow fissure (vertical strata, not flat grey slabs)
@@ -620,7 +638,7 @@ const BUILDERS = {
   },
   stoneship(g) {
     terrainField(g, TX.grey, 'stoneship')
-    seaPlane(g, -0.3, 500, 0.9)
+    seaPlane(g, -0.3, SEA_EXTENT, 0.9)
     // a low grey ridge: the observatory sits on top and is the island's clear landmark
     rocks(g, TX.grey, [[0, 2, -14, 14, 4, 8, 0], [-10, 2, -8, 6, 4, 4, 0.4], [11, 2.4, -9, 5, 5, 4, -0.5]])
     const tower = mesh(new THREE.CylinderGeometry(1.8, 2.2, 3.8, 12), mat(TX.grey), 0, 5.9, -14, g)
@@ -637,7 +655,7 @@ const BUILDERS = {
   stoneDeck(g) {
     // the becalmed ship on its rock shelf, seen from the quarterdeck: the mast is the landmark
     terrainField(g, TX.grey, 'stoneDeck')
-    seaPlane(g, -0.3, 400, 0.9)
+    seaPlane(g, -0.3, SEA_EXTENT, 0.9)
     rocks(g, TX.grey, [[0, 1.4, -16, 18, 3, 5, 0], [-11, 1.2, -4, 6, 3, 4, 0.3], [12, 1.5, -5, 5, 3.5, 4, -0.4]])
     const ship = new THREE.Group()
     const hull = mesh(new THREE.BoxGeometry(3.2, 2.4, 11), mat(TX.plank, { roughness: 0.85 }), 0, 0, 0, ship)
@@ -660,7 +678,7 @@ const BUILDERS = {
   stoneObservatory(g) {
     // the dome on the ridge, reached by the rock stair off the ship's stern
     terrainField(g, TX.grey, 'stoneObservatory')
-    seaPlane(g, -1.5, 360, 0.9)
+    seaPlane(g, -1.5, SEA_EXTENT, 0.9)
     rocks(g, TX.grey, [[0, 3, -16, 20, 5, 6, 0], [-12, 4, -6, 7, 4, 5, 0.4], [12, 3.4, -7, 6, 5, 5, -0.5]])
     const drum = mesh(new THREE.CylinderGeometry(2.2, 2.6, 3.8, 14), mat(TX.grey), 0, 7.2, 3, g)
     drum.userData.landmark = 'observatory'
@@ -889,7 +907,7 @@ const BUILDERS = {
   },
   channelwood(g) {
     terrainField(g, TX.chand, 'channelwood')
-    seaPlane(g, -0.3, 240, 0.7)
+    seaPlane(g, -0.3, SEA_EXTENT, 0.7)
     const fall = mesh(new THREE.PlaneGeometry(14, 5, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 2.5, -13, g)
     fall.userData.fall = true
     rocks(g, TX.chand, [[0, 1.5, -14, 16, 3, 3, 0]])
@@ -917,7 +935,7 @@ const BUILDERS = {
   },
   chanChannels(g) {
     terrainField(g, TX.chand, 'chanChannels')
-    seaPlane(g, -0.3, 200, 0.7)
+    seaPlane(g, -0.3, SEA_EXTENT, 0.7)
     // three cut channels running toward the sluice; water rides them when flooded
     for (const cx of [-5.4, 0, 5.4]) {
       const lipL = mesh(new THREE.BoxGeometry(0.5, 0.9, 12), mat(TX.grey), cx - 1.5, 0.45, -30, g); lipL.userData.noPick = true
@@ -954,7 +972,7 @@ const BUILDERS = {
   },
   chanWheel(g) {
     terrainField(g, TX.chand, 'chanWheel')
-    seaPlane(g, -0.5, 200, 0.7)
+    seaPlane(g, -0.5, SEA_EXTENT, 0.7)
     // parapet along the terrace lip over the falls
     for (let k = 0; k < 14; k++) {
       const a = k * (Math.PI / 13) - Math.PI / 2
@@ -1007,7 +1025,7 @@ const BUILDERS = {
     // drum close ahead, its face wearing this save's three clue-stars; the
     // channelwood fog and sea sit below the lip behind and beside
     terrainField(g, TX.chand, 'chanObs')
-    seaPlane(g, -0.5, 200, 0.7)
+    seaPlane(g, -0.5, SEA_EXTENT, 0.7)
     rocks(g, TX.chand, [[-6.2, 5.6, -62, 4, 4, 4, 0.4], [6.4, 5.2, -63, 4, 3.6, 4, -0.3], [-8.2, 4.2, -72, 5, 5, 5, 0.2], [8.4, 4.6, -74, 5, 4.4, 5, -0.2]])
     const drum = mesh(new THREE.CylinderGeometry(1.5, 1.7, 3.2, 14), mat(TX.brass, { metalness: 0.3, roughness: 0.55, emissive: 0x5f4715, emissiveIntensity: 0.35 }), 0, 6.4, -57, g)
     drum.userData.landmark = 'chanDome'; drum.userData.noPick = true
