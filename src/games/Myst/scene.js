@@ -8,7 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell } from './sea.js'
 
 const GAP = 4000
 
@@ -145,9 +145,24 @@ function dressSea(group, id, anim) {
     o.material.color.setRGB(prof.color[0], prof.color[1], prof.color[2])
     const pos = o.geometry.attributes.position
     const base = Float32Array.from(pos.array)
+    // #838 item 4 — horizon-sized seas wear the deep ladder: per-vertex colour
+    // from sea.js deepTint (shore tint → deep darkening → mirror lift). Small
+    // planes (the cave fall, Channelwood pools) sit inside the coast band and
+    // keep the flat Age tint — the law says they are shore water anyway.
+    if ((o.geometry.parameters?.width || 0) >= SEA_DEEP.mirror * 2) {
+      o.material.vertexColors = true
+      o.material.color.setRGB(1, 1, 1)
+      const col = new Float32Array(pos.count * 3)
+      for (let i = 0; i < pos.count; i++) {
+        const c = deepTint(id, Math.hypot(base[i * 3], base[i * 3 + 1]))
+        col[i * 3] = c[0]; col[i * 3 + 1] = c[1]; col[i * 3 + 2] = c[2]
+      }
+      o.geometry.setAttribute('color', new THREE.BufferAttribute(col, 3))
+    }
     anim.push({ o, f: (t) => {
       if (o.material.map) o.material.map.offset.x = (t * prof.drift) % 1
-      for (let i = 0; i < pos.count; i++) pos.setZ(i, seaSwell(base[i * 3], -base[i * 3 + 1], t, id))
+      // near chop everywhere, long ground-swell where the water runs deep (farSwell is 0 at the shore)
+      for (let i = 0; i < pos.count; i++) pos.setZ(i, seaSwell(base[i * 3], -base[i * 3 + 1], t, id) + farSwell(base[i * 3], -base[i * 3 + 1], t, id))
       pos.needsUpdate = true
     } })
   })

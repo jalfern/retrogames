@@ -10,7 +10,7 @@ import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSe
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
-import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor } from '../src/games/Myst/sea.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1151,6 +1151,102 @@ console.log('MYST — sea polish pass (#1587: ragged lagging foam, swell voice, 
   }
 }
 
+console.log('MYST — the deep ocean wears the Age too (#838 item 4: depth ladder + far ground-swell)')
+{
+  const SCENE = 'src/games/Myst/scene.js'
+  const dlum = (c) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+  // the ladder sits between the break and the fog: the gradient reads before
+  // the sky swallows the water, and it never dims the foam band
+  ok(SEA_DEEP.coast >= 40 && SEA_DEEP.deep > SEA_DEEP.coast && SEA_DEEP.mirror > SEA_DEEP.deep &&
+     SEA_DEEP.mirror <= 400 && DEEP_DARK < 0.8 && MIRROR_LIFT > DEEP_DARK && MIRROR_LIFT < 1,
+    'the depth ladder runs coast < deep < mirror inside fog reach, darkening hard and lifting back', JSON.stringify(SEA_DEEP))
+  ok(deepTint('mechanical', 200) === null, 'a dry Age wears no deep ladder — Mechanical keeps its dry forge floor')
+  {
+    const all = Object.keys(SEA_VIEWS)
+    ok(all.every((v) => deepTint(v, 0).join(',') === SEA_VIEWS[v].color.join(',')),
+      'shore water keeps its Age tint exactly — the item 2/3 shoreline is untouched')
+    ok(all.every((v) => dlum(deepTint(v, SEA_DEEP.deep)) <= dlum(deepTint(v, 0)) * DEEP_DARK + 1e-9 &&
+      dlum(deepTint(v, SEA_DEEP.deep)) < dlum(deepTint(v, 0)) - 0.05),
+      'the deep is darker than the shore in every sea — no uniform sheet to the horizon')
+    ok(all.every((v) => dlum(deepTint(v, SEA_DEEP.mirror)) > dlum(deepTint(v, SEA_DEEP.deep)) &&
+      dlum(deepTint(v, SEA_DEEP.mirror)) < dlum(deepTint(v, 0))),
+      'the last band before the fog catches the sky back — brighter than the deep, dimmer than the shore')
+    ok(all.every((v) => deepTint(v, 900).join(',') === deepTint(v, SEA_DEEP.mirror).join(',')),
+      'past the mirror band the tint holds — the fog finishes the melt, not the law')
+    // monotone darkening shore→deep, deterministic everywhere
+    ok(all.every((v) => {
+      let prev = dlum(deepTint(v, SEA_DEEP.coast))
+      for (let d = SEA_DEEP.coast; d <= SEA_DEEP.deep; d += 5) {
+        const L = dlum(deepTint(v, d))
+        if (L > prev + 1e-9) return false
+        prev = L
+      }
+      return true
+    }), 'water deepens monotonically — same direction for every sea')
+    ok(deepTint('stoneship', 123.5).join(',') === deepTint('stoneship', 123.5).join(',') &&
+      deepTint('stoneship', 123.5).join(',') !== deepTint('selenitic', 123.5).join(','),
+      'deepTint is deterministic per view — replayable, and no two Ages share a deep')
+    // hue laws survive the whole ladder
+    ok([0, 60, 300, 380, 900].every((d) => {
+      const c = deepTint('dock', d); return c[0] > c[1] && c[1] > c[2]
+    }), 'the dusk sea stays amber r > g > b from foam to fog — the sunset never washes out at distance')
+    ok(['stoneship', 'stoneDeck', 'stoneObservatory'].every((v) => [0, 300, 380].every((d) => {
+      const c = deepTint(v, d); return c[2] > c[1] && c[1] > c[0]
+    })), 'the Atlantic stays teal all the way out — blue over green over red at every depth')
+    ok(deepTint('selenitic', 300)[1] > deepTint('selenitic', 300)[0] &&
+      deepTint('selenitic', 300)[1] > deepTint('selenitic', 300)[2],
+      'Selenitic stays green-dominant in the deep — its haze owns the water at range too')
+  }
+  // far ground-swell: the deep heaves with long slow waves the shore never feels
+  ok(farSwell(0, 30, 5.5, 'selenitic') === 0 && farSwell(40, 40, 2.2, 'stoneship') === 0,
+    'inside the coast band the far swell is silent — foam and puzzle beds ride the near chop only')
+  {
+    const a = farSwell(340, 60, 7.5, 'stoneship'), b = farSwell(340, 60, 7.5, 'stoneship')
+    ok(a === b && a !== farSwell(340, 60, 7.5 + 0.37, 'stoneship'),
+      'farSwell is deterministic and alive — same instant same water, next instant different')
+    const peak = (v) => {
+      let mx = 0
+      for (let t = 0; t < 14; t += 0.19) mx = Math.max(mx, Math.abs(farSwell(330, 40, t, v)))
+      return mx
+    }
+    ok(peak('stoneship') <= SEA_VIEWS.stoneship.swell * FAR_GAIN * 1.01 && peak('stoneship') > SEA_VIEWS.stoneship.swell * 0.4,
+      'the ground-swell is bounded by its Age and actually rolls out there', peak('stoneship').toFixed(3))
+    ok(peak('stoneship') > peak('selenitic') && peak('selenitic') > peak('channelwood') && peak('channelwood') > 0,
+      'the far swell is pitched by the Age — ocean rolls, Selenitic lifts, Channelwood barely breathes')
+    // long wavelength: 12-unit steps barely move the ground-swell but chew the chop
+    let fd = 0, nd = 0
+    for (let t = 0; t < 14; t += 0.21) {
+      fd += Math.abs(farSwell(340 + 12, 40, t, 'stoneship') - farSwell(340, 40, t, 'stoneship'))
+      nd += Math.abs(seaSwell(340 + 12, -40, t, 'stoneship') - seaSwell(340, -40, t, 'stoneship'))
+    }
+    ok(fd < nd * 0.6, 'the deep wave is LONG — the ground-swell changes gently where the chop snaps', `${fd.toFixed(2)} vs ${nd.toFixed(2)}`)
+    // deep total motion beats shore motion — an ocean heaves hardest away from land
+    const deepMax = (v) => {
+      let mx = 0
+      for (let t = 0; t < 14; t += 0.17) mx = Math.max(mx, Math.abs(seaSwell(330, 0, t, v) + farSwell(330, 0, t, v)))
+      return mx
+    }
+    const shoreMax = (v) => {
+      let mx = 0
+      for (let t = 0; t < 14; t += 0.17) mx = Math.max(mx, Math.abs(seaSwell(0, -30, t, v)))
+      return mx
+    }
+    ok(deepMax('stoneship') > shoreMax('stoneship') + 0.1,
+      'the water heaves harder in the deep than at the pier — the ocean is not one sea everywhere', `${deepMax('stoneship').toFixed(2)} vs ${shoreMax('stoneship').toFixed(2)}`)
+  }
+  // the scene actually mirrors depth and swells the far water through the pure law
+  {
+    const sc = readFileSync(SCENE, 'utf8')
+    ok(/o\.material\.vertexColors = true/.test(sc) && /deepTint\(id, Math\.hypot\(base\[i \* 3\], base\[i \* 3 \+ 1\]\)\)/.test(sc) &&
+      /setAttribute\('color', new THREE\.BufferAttribute\(col, 3\)\)/.test(sc),
+      'dressSea paints the depth ladder onto the sea through sea.js — the gradient lives in the pure law')
+    ok(/seaSwell\(base\[i \* 3\], -base\[i \* 3 \+ 1\], t, id\) \+ farSwell\(base\[i \* 3\], -base\[i \* 3 \+ 1\], t, id\)/.test(sc),
+      'every heave adds the far ground-swell — near chop AND deep roll, through sea.js')
+    ok(/SEA_DEEP\.mirror \* 2/.test(sc),
+      'only horizon-sized seas take the ladder — the cave fall and Channelwood pools stay small water')
+  }
+}
+
 console.log('MYST — the island wears real shores too (#838 item 3: sculpted ground under dock, path, beach, plateau)')
 {
   // the four sea-worn island views are now sculpted ground; the landing sits
@@ -1243,6 +1339,18 @@ if (process.argv.includes('--mutate')) {
       'return s * (', 'return 0 * ('],
     ['foam forgets the sculpt (dry pads wear waterlines)', SEA,
       'if (nearRaw >= FOAM_BAND) return 0', 'if (nearRaw >= Infinity) return 0'],
+    ['the deep forgets to darken (ocean stays shore-coloured to the fog)', SEA,
+      'export const DEEP_DARK = 0.55', 'export const DEEP_DARK = 1'],
+    ['the mirror band sinks (horizon darker than the deep)', SEA,
+      'export const MIRROR_LIFT = 0.72', 'export const MIRROR_LIFT = 0.4'],
+    ['the ground-swell dies (deep ocean flat as a millpond)', SEA,
+      'export const FAR_GAIN = 0.9', 'export const FAR_GAIN = 0'],
+    ['far swell is transplanted chop (short waves where the deep should roll)', SEA,
+      '0.65 * Math.sin(x * 0.009 + z * 0.004 + t * 0.33)', '0.65 * Math.sin(x * 0.05 + z * 0.04 + t * 3.3)'],
+    ['ground-swell floods the shore (the foam band heaves with the deep)', SEA,
+      'if (r <= coast) return 0', 'if (r <= -1) return 0'],
+    ['the scene stops mirroring depth (one uniform sheet again)', 'src/games/Myst/scene.js',
+      'o.material.vertexColors = true', 'o.material.vertexColors = false'],
     ['the scene stops dressing its seas (one blue plane everywhere)', 'src/games/Myst/scene.js',
       'dressSea(g, id, anim)', 'void 0'],
     ['the dome has no coast (skirt sits at water level)', TR,

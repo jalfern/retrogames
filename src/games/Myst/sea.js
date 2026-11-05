@@ -120,6 +120,62 @@ export function seaProfile(view) {
   return SEA_VIEWS[view] || null
 }
 
+// #838 item 4 — the DEEP ocean wears the Age too. Items 2+3 gave the shore its
+// tint and its waterline, but past the break every sea was still one uniform
+// sheet: the same colour from the foam to the fog line, the same chop under
+// everything. The original's FMV seas are never one colour — water deepens as
+// land falls away, the chop flattens into long ground-swell, and the last band
+// before the horizon catches the low sky back. This is that ladder, as pure law.
+//
+// Distances (from the view's own origin, world units):
+//   coast — shore water keeps the Age tint (foam, glint, puzzle beds live here)
+//   deep  — darkest: multiply-tint toward the deep (×DEEP_DARK), hue kept
+//   mirror— the last band brightens again (×MIRROR_LIFT) — the sky's return
+// past mirror the fog (#1587's horizon) finishes the melt into the sky.
+export const SEA_DEEP = { coast: 60, deep: 300, mirror: 380 }
+export const DEEP_DARK = 0.55
+export const MIRROR_LIFT = 0.72
+
+// { r, g, b } as [r,g,b] at distance d from the player for `view`, or null
+// for a dry view. Deterministic, monotone darkening shore→deep, then a lift.
+export function deepTint(view, d) {
+  const v = SEA_VIEWS[view]
+  if (!v) return null
+  const dist = Math.max(0, d)
+  const { coast, deep, mirror } = SEA_DEEP
+  if (dist <= coast) return [v.color[0], v.color[1], v.color[2]]
+  if (dist <= deep) {
+    const k = (dist - coast) / (deep - coast)
+    const f = 1 + k * (DEEP_DARK - 1)
+    return [v.color[0] * f, v.color[1] * f, v.color[2] * f]
+  }
+  if (dist <= mirror) {
+    const k = (dist - deep) / (mirror - deep)
+    const f = DEEP_DARK + k * (MIRROR_LIFT - DEEP_DARK)
+    return [v.color[0] * f, v.color[1] * f, v.color[2] * f]
+  }
+  return [v.color[0] * MIRROR_LIFT, v.color[1] * MIRROR_LIFT, v.color[2] * MIRROR_LIFT]
+}
+
+// Far ground-swell: long, slow, low-frequency waves the deep ocean rides that
+// shore water never feels. Zero inside the coast band (the foam and the beds sit
+// in the near chop only), ramping to full past `deep`. Bounded by the view's
+// swell — combined with seaSwell the deep heaves harder than the shore, as an
+// ocean should. Deterministic: no Math.random, the harness replays it.
+export const FAR_GAIN = 0.9
+export function farSwell(x, z, t, view) {
+  const v = SEA_VIEWS[view]
+  if (!v || v.swell === 0) return 0
+  const r = Math.sqrt(x * x + z * z)
+  const { coast, deep } = SEA_DEEP
+  if (r <= coast) return 0
+  const ramp = Math.min(1, (r - coast) / (deep - coast))
+  return v.swell * FAR_GAIN * ramp * (
+    0.65 * Math.sin(x * 0.009 + z * 0.004 + t * 0.33) +
+    0.35 * Math.sin(x * 0.004 - z * 0.011 + t * 0.47)
+  )
+}
+
 // deterministic swell: the sea surface's vertical offset at (x, z) at world
 // time t for `view`, bounded by the view's amplitude. Incommensurate sines so
 // the pattern never visibly repeats; no Math.random (the harness replays it).
