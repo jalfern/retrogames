@@ -1,12 +1,17 @@
-// IDLE — what the builder does when the board holds nothing to claim (#841).
+// IDLE — what the builder does when the board holds nothing to claim (#841,
+// extended to the whole shelf by #1571).
 //
 // The old rule STOPped the studio on an empty queue. The new tail of the
 // claim order (after claimOrder misses and after the QA-borrow step —
 // FORGE.md step 2 keeps QA borrow first, and never here, since a live QA
-// lane owns `feedback`): pick one of Jon's flagship games and take the
-// oldest item in its README's honest-gaps list that no open QA issue
-// already owns; file that stage as its own issue, then claim it normally.
-// Only when EVERY flagship gap is owned is STOP legal.
+// lane owns `feedback`) is two rungs: first Jon's flagship polish stage —
+// one of his flagship games, oldest item in its README's honest-gaps list
+// that no open QA issue already owns; then (#1571) the NEVER-DRY rung: the
+// weakest game on the SHELF, judged by open QA feedback naming it plus the
+// README honest gaps nobody owns. File the stage as its own issue, then
+// claim it normally. STOP is legal only when the whole shelf is gap-free
+// and unheld — and then the only question Jon ever sees is "which new
+// flagship title?", at most once a week (lib/jonq.mjs caps it).
 //
 // Flagship order is Jon's (#841): SSX, Emberwood, COMET DRIFT HD, Myst.
 
@@ -106,4 +111,98 @@ export function qaIdleStage({ issues = [], gapsByGame = {} } = {}) {
     const qaIssues = issues.filter((i) => lbl(i, 'feedback') || lbl(i, 'building-qa'))
     const held = heldGames(issues.filter((i) => lbl(i, 'building') || lbl(i, 'building-qa')))
     return flagshipStage({ gapsByGame, qaIssues, buildingQa: held })
+}
+
+// ---- the never-dry rung (#1571) ----------------------------------------
+// Jon's standing rule (#1544/#1557): the lanes never run dry. When the
+// ladder, the QA-borrow and the flagship stage all miss, pick the weakest
+// game on the shelf and ship one real gameplay fix. Weakest is judged by
+// what the board can honestly see: open QA feedback naming the game, plus
+// README honest gaps no QA issue owns. Ties break toward the older title
+// (registry order — first registered weakens first), and one lane per game
+// still holds: any title a `building` or `building-qa` issue is inside is
+// skipped, exactly like flagshipStage skips QA-held flagships.
+
+// Parse the registry's raw text into shelf order: [{dir, label}]. The
+// registry imports each game by directory and each route entry carries the
+// player-facing label; matching component aliases back to dirs lets the
+// score name games the way feedback issues name them ("COMET DRIFT HD",
+// not src/games/CometDrift). Plain Node cannot import the registry (JSX),
+// so this is the honest static read — same shape modelindexcheck uses.
+export function parseRegistry(text) {
+    const aliasToDir = new Map()
+    const out = []
+    const seen = new Set()
+    for (const line of String(text || '').split('\n')) {
+        const imp = line.match(/import\s+(?:\{[^}]*\}\s+from\s+)?'\.\.\/games\/([\w]+)'/)
+        if (imp) {
+            const alias = line.match(/import\s+(\w+)\s+from/)?.[1]
+            if (alias) aliasToDir.set(alias, imp[1])
+            if (!seen.has(imp[1])) { seen.add(imp[1]); out.push({ dir: imp[1], label: null }) }
+            continue
+        }
+        const lazy = line.match(/const\s+(\w+)\s*=\s*lazy\(\(\)\s*=>\s*import\('\.\.\/games\/([\w]+)'\)/)
+        if (lazy) {
+            aliasToDir.set(lazy[1], lazy[2])
+            if (!seen.has(lazy[2])) { seen.add(lazy[2]); out.push({ dir: lazy[2], label: null }) }
+        }
+    }
+    // Route entries are multi-line objects; scan the whole text so a
+    // `component: X,` on one line and its `label: '…'` several lines down
+    // still pair up (line-based matching silently labeled nothing, #1571).
+    for (const m of String(text || '').matchAll(/component:\s*(\w+)\s*,\s*(?:[\w:'\s\[\]{}.,-]*?\n\s*)?label:\s*'([^']+)'/g)) {
+        const dir = aliasToDir.get(m[1])
+        const hit = dir && out.find((g) => g.dir === dir)
+        if (hit && hit.label == null) hit.label = m[2]
+    }
+    return out
+}
+
+// "CometDrift" reads as "comet drift" — feedback issues name games in words.
+const dirWords = (dir) => norm(String(dir).replace(/([a-z0-9])([A-Z])/g, '$1 $2'))
+
+// games: registry order [{dir, label}] with gaps attached by the caller:
+//   { dir, label, gaps: string[] }  (README order = oldest first)
+// qaIssues: open feedback/building-qa issues {title, body}.
+// heldDirs: dirs another lane is inside (building / building-qa titles).
+// Returns { game, dir, gap, index, score, weak: true } — gap/index point at
+// the oldest UNOWNED README gap (gap null + index -1 when the game is only
+// named by feedback and its gap list is empty), or null when nothing on the
+// shelf is weak enough to matter (every score 0 — only then is STOP legal).
+export function weakestStage({ games = [], qaIssues = [], heldDirs = [] } = {}) {
+    const held = new Set(heldDirs.map(norm))
+    let best = null
+    for (const g of games) {
+        if (held.has(norm(g.dir))) continue
+        const name = g.label || dirWords(g.dir)
+        if (/^demos?\b/i.test(name)) continue
+        const gaps = (g.gaps || []).filter((x) => !ownsGap(qaIssues, name, x))
+        const words = norm(name)
+        const dwords = dirWords(g.dir)
+        const named = qaIssues.filter((q) => {
+            const n = norm(`${q.title || ''} ${q.body || ''}`)
+            return (words.length > 2 && n.includes(words)) || (dwords.length > 3 && n.includes(dwords))
+        }).length
+        const score = gaps.length + named
+        if (score > 0 && (!best || score > best.score)) {
+            best = {
+                game: name, dir: g.dir,
+                gap: gaps[0] || null,
+                index: gaps.length ? (g.gaps || []).indexOf(gaps[0]) : -1,
+                score, weak: true,
+            }
+        }
+    }
+    return best
+}
+
+// Dirs held by open building/building-qa issues — same one-lane-per-game law
+// heldGames() applies to the flagships, for the whole shelf.
+export function heldDirs(games, issues) {
+    return games.filter((g) => issues.some((q) => {
+        const lbl = q.labels || []
+        if (!lbl.includes('building') && !lbl.includes('building-qa')) return false
+        const n = norm(`${q.title || ''} ${q.body || ''}`)
+        return (g.label && n.includes(norm(g.label))) || n.includes(dirWords(g.dir)) || n.includes(norm(g.dir))
+    })).map((g) => g.dir)
 }
