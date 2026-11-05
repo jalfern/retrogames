@@ -14,10 +14,10 @@
 // own sea level: foam exists on the coast only, never on dry ground, never on
 // open water.
 
-import { groundHeight, groundRaw, AGE_GROUND } from './terrain.js'
+import { groundHeight, groundRaw, AGE_GROUND, ISLAND_GROUND } from './terrain.js'
 
-// views item 1 sculpted a bed for: foam can only hug a measured coast.
-const HAS_GROUND = (view) => view === 'selenitic' || view === 'selSound' || !!AGE_GROUND[view]
+// views items 1+3 sculpted a bed for: foam can only hug a measured coast.
+const HAS_GROUND = (view) => view === 'selenitic' || view === 'selSound' || !!AGE_GROUND[view] || !!ISLAND_GROUND[view]
 
 // water: the y the view's sea plane draws at (matches seaPlane calls).
 // colour: multiply-tint over the shared sea texture (r,g,b 0..1). Hue laws the

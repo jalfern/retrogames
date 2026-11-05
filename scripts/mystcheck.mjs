@@ -9,7 +9,7 @@ import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, l
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
-import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
+import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
@@ -1079,8 +1079,9 @@ console.log('MYST — the sea wears each Age (#838 item 2: per-Age water, swell,
   // foam: exactly where the sculpted ground meets its own sea
   ok(foamAt(0, 0, 'selenitic') === 0 && foamAt(0, -24, 'stoneship') === 0 && foamAt(0, -40, 'chanChannels') === 0,
     'dry carved pads wear no foam — a puzzle bed at sea level is not a beach')
-  ok(['dock', 'beach', 'cliffPath', 'stairTop'].every((v) => foamAt(0, 30, v) === 0 && foamLine(v).length === 0),
-    'the island props its shore with rocks, not foam — no sculpted coast, no waterline')
+  ok(['dock', 'beach', 'cliffPath', 'stairTop'].every((v) => foamLine(v).length >= 8),
+    'the island shores wear waterlines too — the dusk sea meets sculpted ground on Myst itself (#838 item 3)')
+  ok(foamAt(0, 28, 'dock') === 0, 'the pier foot stays dry — foam hugs the shore ahead, never the planks')
   ok(foamAt(0, 120, 'stoneship') === 0 && foamAt(0, 20, 'stoneObservatory') === 0,
     'foam sits neither on open water below the sea nor on high dry ground')
   const COAST = ['selenitic', 'selSound', 'stoneship', 'stoneDeck', 'stoneObservatory', 'channelwood', 'chanChannels', 'chanWheel', 'chanObs']
@@ -1147,6 +1148,71 @@ console.log('MYST — sea polish pass (#1587: ragged lagging foam, swell voice, 
     ok(/glintFor\(id\)/.test(sc) && /SEA_EXTENT/.test(sc), 'the scene seats its glints and sizes its seas through sea.js')
     ok(/ambience\(NODES\[gs\.node\]\.amb, SIM_MS \/ 1000, gs\.node\)/.test(jx), 'the loop passes the view to ambience so the swell rumble wears its Age')
     ok(/swell:\$\{view\}/.test(sd), 'the ambience layer routes each view to its swell cues')
+  }
+}
+
+console.log('MYST — the island wears real shores too (#838 item 3: sculpted ground under dock, path, beach, plateau)')
+{
+  // the four sea-worn island views are now sculpted ground; the landing sits
+  // above the tree line and keeps no sea, no sculpt
+  ok(Object.keys(ISLAND_GROUND).length === 4 && ['dock', 'cliffPath', 'beach', 'stairTop']
+    .every((v) => ISLAND_GROUND[v] && SEA_VIEWS[v]),
+  'the island\u2019s four sea views wear sculpted ground (dock, cliff path, beach, stair-top)')
+  ok(!ISLAND_GROUND.landing && !SEA_VIEWS.landing,
+    'the stairway landing sits above the tree line \u2014 no sea in view, no sculpt needed')
+  // the camera's stand: level beds at exactly the pose height the node promises
+  // (dock is the exception \u2014 the pier stands OVER the sea, so its foot is sea floor, not land)
+  ok(ageHeight(0, 18, 'cliffPath') === ISLAND_GROUND.cliffPath.base &&
+     ageHeight(-14, 18, 'beach') === ISLAND_GROUND.beach.base &&
+     ageHeight(0, -10, 'stairTop') === ISLAND_GROUND.stairTop.base,
+  'the path, the sand and the library plateau are carved exactly level under the player')
+  ok(ISLAND_GROUND.cliffPath.base > ISLAND_GROUND.cliffPath.water &&
+     ISLAND_GROUND.beach.base > ISLAND_GROUND.beach.water &&
+     ISLAND_GROUND.stairTop.base > ISLAND_GROUND.stairTop.water,
+  'every island bed is dry land \u2014 the dusk sea runs below the player\u2019s feet')
+  const dockFoot = ageHeight(0, 28, 'dock')
+  ok(dockFoot < ISLAND_GROUND.dock.water && dockFoot > ISLAND_GROUND.dock.base - ISLAND_GROUND.dock.drop,
+    'the pier foot is open water over sea floor \u2014 the dock was always a pier, not a beach', dockFoot.toFixed(2))
+  // the sculpt is real per view: a crest above the bed, a drop below its sea
+  for (const view of ['dock', 'cliffPath', 'beach', 'stairTop']) {
+    const v = ISLAND_GROUND[view]
+    let mx = -1e9, mn = 1e9
+    for (let x = -110; x <= 110; x += 3) for (let z = -110; z <= 110; z += 3) {
+      const h = ageHeight(x, z, view); if (h > mx) mx = h; if (h < mn) mn = h
+    }
+    ok(mx > v.base + 0.5 && mn < v.water,
+      `${view}: the sculpt is real \u2014 a crest above the bed, a drop below the sea`, `mx ${mx.toFixed(2)} / mn ${mn.toFixed(2)}`)
+  }
+  // sightline from the camera out over its own shore: the waterline is met
+  // exactly once (a coast, not an ocean under the world), and the skirt ends
+  // the shared dusk plane below it
+  const SIGHT = { dock: [0, 28, 0, 1], cliffPath: [0, 18, 0, -1], beach: [-14, 18, 0, 1], stairTop: [0, -10, 0, -1] }
+  for (const [view, [cx, cz, dx, dz]] of Object.entries(SIGHT)) {
+    const v = ISLAND_GROUND[view]
+    let cross = 0, prev = ageHeight(cx, cz, view)
+    for (let d = 0.5; d <= 130; d += 0.5) {
+      const h = ageHeight(cx + dx * d, cz + dz * d, view)
+      if (prev >= v.water && h < v.water) cross++
+      prev = h
+    }
+    ok(cross === 1, `${view}: the sightline meets the waterline exactly once (a coast)`, String(cross))
+    ok(prev < v.water, `${view}: the skirt dips below the sea so the shared plane ends at the shore`, prev.toFixed(2))
+  }
+  // the dusk sea foams at these coasts like every Age's does
+  const ISLE = ['dock', 'cliffPath', 'beach', 'stairTop']
+  for (const v of ISLE) {
+    const L = foamLine(v)
+    ok(L.length >= 8, `${v}: its coast wears a foam line`, String(L.length))
+    ok(L.every(([x, z, i]) => i > 0 && Math.abs(groundHeight(x, z, v) - SEA_VIEWS[v].water) < FOAM_BAND),
+      `${v}: every puff hugs the waterline \u2014 foam only where land and sea agree`)
+  }
+  const isleSig = (v) => foamLine(v, 3, 20).map(([x, z]) => `${x},${z}`).join('|')
+  ok(new Set(ISLE.map(isleSig)).size === ISLE.length, 'no two island shores share one foam line')
+  // and the scene actually displaces them (no flat disc left on the shelf)
+  {
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    ok(ISLE.every((v) => new RegExp(`terrainField\\(g, TX\\.\\w+, '${v}'`).test(sc)),
+      'every island shore displaces a heightfield in the scene (the rock props are ground now)')
   }
 }
 
@@ -1441,6 +1507,23 @@ if (process.argv.includes('--mutate')) {
     ['the ambience drops the view (no per-Age rumble)', JX,
       'ambience(NODES[gs.node].amb, SIM_MS / 1000, gs.node)',
       'ambience(NODES[gs.node].amb, SIM_MS / 1000)'],
+    // #838 item 3 — the island shores
+    ['the dock shore sinks again (the pier ends at open water)', TR,
+      `crest: { x: 0, z: 44, core: 0, rim: 10, h: 4.8 }`,
+      `crest: { x: 0, z: 44, core: 0, rim: 10, h: 0 }`],
+    ['the cliff path hangs over an endless sea (its skirt stops short)', TR,
+      `drop: 6.4, skirt: 14`,
+      `drop: 1.0, skirt: 14`],
+    ['the beach bed drowns (the rotted boat floats)', TR,
+      `{ base: 0.12,`, `{ base: -0.2,`],
+    ['the library plateau tips (the stair-top bed is not carved level)', TR,
+      `z0: -14, z1: 13`, `z0: -14, z1: -14`],
+    ['the scene leaves the beach a flat plane (no heightfield under the sand)', 'src/games/Myst/scene.js',
+      `terrainField(g, TX.sand, 'beach')`,
+      `const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.sand), 0, -0.05, 0, g); ground.rotation.x = -Math.PI / 2`],
+    ['the beach copies the dock sculpt (two island shores share one ground)', TR,
+      `{ base: 0.12, water: 0,   crest: { x: -14, z: 36, core: 5, rim: 15, h: 0.7 }, drop: 3.2, skirt: 20, flats: [{ x0: -23, x1: -5, z0: 16, z1: 31, soft: 4 }] }`,
+      `{ base: 0,    water: 0,   crest: { x: 0, z: 44, core: 0, rim: 10, h: 4.8 }, drop: 3.5, skirt: 12, flats: [] }`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
