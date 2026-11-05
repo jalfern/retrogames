@@ -80,6 +80,23 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
 - The original is a silent cart; the #1545 "pen-shaped dragon sounds" item has
   no documented counterpart to restore. New sim events (`bridge`, `secret`)
   carry synthesized audio where the port adds meaning (placement, door rite).
+- No variant selector. The original cart opens on a "SELECT GAME" dot-matrix
+  screen with 30+ numbered variants (item placement, dragon speed, difficulty);
+  this port ships exactly ONE fixed ruleset — no variant knob exists in
+  `attract.js`, `index.jsx` or `sim.js` (grep-verified #1568). A variant table
+  (at least slow/fast dragons + seeded-layout shuffle) is owed.
+- The drop-the-key gate rite has zero discoverability. A first-timer probe
+  (#1568: 200 novice seeds x 5000 ticks, seeded random-walk in Node):
+  56/200 seeds pick up the gold key, but **0/200 open any castle gate** and
+  **0/200 open the secret rite** — nothing distinguishes "drop the key inside
+  the gate zone" (`sim.js` gate law: `!key.carried`, y<60, x∈(40,120)) from a
+  dead drop. The pad's only verb is a generic drop; the zone is invisible.
+  A visual affordance at gate thresholds (a mat, a glint) is the owed fix.
+- No guidance surface. The original shipped a fold-out map and hint sheet (the
+  manual was half the game); this port's only in-game text is `PauseOverlay`'s
+  control list. First-timer metrics back the need: median 6/18 rooms seen,
+  57.5% of seeds never pick up any item, 0% win. A "?"-tab hint page (castles,
+  keys, the drop rite — not the secret) is honest help the original itself gave.
 
 ### Restored in the #1545 polish pass
 

@@ -687,6 +687,21 @@ console.log('attract mode: fixed stream, never pollutes the pinned run')
     ok(/const attractRand = seedRng\(\d+\)/.test(src), 'attract wander runs on its own fixed stream')
 }
 
+// --------------------------------------------------------------- #1568 spine ----
+console.log('#1568 spine visibility: roster + driving script + position carrier (static)')
+{
+    const src = readFileSync(IDX, 'utf8')
+    const roster = readFileSync(new URL('./lib/contractGames.mjs', import.meta.url), 'utf8')
+    ok(/\{ id: 'adventure', path: '\/adventure' \}/.test(roster),
+        'adventure is on the contract spine roster — contractcheck/juice/nightly/boredom read it')
+    ok(/adventure: \(i\) => \(\{[^)]*left[^)]*right[^)]*up[^)]*down[^)]*a:/.test(roster),
+        'PATTERNS.adventure scripts 4 directions + drop for the contract replay')
+    ok(/state:\s*\(\)\s*=>\s*\(\{[\s\S]*?x:\s*sim\.player\.x,[\s\S]*?y:\s*sim\.player\.y,[\s\S]*?lives:/.test(src),
+        'state() carries live x/y — a POSITION_KEYS carrier; the boredom audit must never call this game BLIND')
+    ok(/exposeFeedbackState\([\s\S]*?x:\s*sim\.player\.x,[\s\S]*?y:\s*sim\.player\.y/.test(src),
+        'the production report carries position too')
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
@@ -759,6 +774,11 @@ if (process.argv.includes('--mutant')) {
         ['the portcullis no longer holds for the bat (gate check removed)', SM,
             `                return sim.gateOpen[ROOMS[bat.room].gateKey] ? CASTLE_INSIDES[bat.room] : -1`,
             `                return CASTLE_INSIDES[bat.room]  // gate check removed`],
+        ['#1568: the position carrier vanishes from state() — the audit goes BLIND again', I,
+            `                x: sim.player.x,
+                y: sim.player.y,
+                lives: null,`,
+            `                lives: null,`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
