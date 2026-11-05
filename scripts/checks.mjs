@@ -13,7 +13,7 @@ export const CORE = {
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
-    'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchcheck', ['watchcheck', true], 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck'],
+    'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchcheck', ['watchcheck', true], 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true]],
   smoke: ['vpadboot', 'tapstartcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',

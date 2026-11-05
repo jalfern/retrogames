@@ -43,6 +43,7 @@
     "physicswalkcheck": "node scripts/physicswalkcheck.mjs",
     "learnedwalkcheck": "node scripts/learnedwalkcheck.mjs",
     "neverbudrycheck": "node scripts/neverbudrycheck.mjs",
+    "keycheck": "node scripts/keycheck.mjs",
     "pickcheck": "node scripts/pickcheck.mjs",
     "tidycheck": "node scripts/tidycheck.mjs",
     "shelfcheck": "node scripts/shelfcheck.mjs",
