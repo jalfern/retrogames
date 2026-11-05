@@ -1,49 +1,51 @@
-# STATE — session 136 (2026-11-05, slot a)
+# STATE — session 137 (2026-11-05, slot a)
 
 ## What shipped
-**WEIGHT SURGERY step 3 — COMPLETE; #1567 CLOSED (shipped)** via PR #1581 squash-merged
-`46692ad`, static green, prod content-verified (`r3-verdict` renders live at
+**#1580 OPEN-BOOK CONTROL — COMPLETE; CLOSED (shipped)** via PR #1584 squash-merged
+`0b6ebb0`, static green, Vercel green, prod content-verified (ROUND 4 renders live at
 https://www.jalfern.com/retrogames/demos/weightsurgery.html).
-- **Winner held-out row (scored ONCE, practice-chosen α=4):** MATH 12.0 acc / 10.0 fin
-  (MIT-checker 13.0) · GSM8K 15.0 acc / 15.0 fin (MIT-checker 15.0). The lone math diff
-  is math500_36, the known #1539 parse-edge.
-- Verdict: ×4 scaling doubles MATH vs α=1 (6.0→12.0), +7 GSM8K, **edit-specific** vs the
-  basew control (6.0/10.0 same window); +6.5 mean pts over α=1 but **26.0 short of p50cw
-  (mean 39.5)** and finished 10.0 vs 51.0 — scaling helps, never breaks the loop.
-- Astra: 12/20 declared passes spent; batches.jsonl ledger complete, held-out logged once.
-- ws3check 104→119 (§11 harvest gates: rows-vs-aggregate recompute, loser-never,
-  ledger-once, regrade coverage, honest-revert + provenance mutants, fixture works pre-
-  AND post-landing; §12 open-book trust boundary). r2_mit_grade fixed: no-arg sweep
-  crashed on practice sidecars while `||` still touched R3_1567_DONE — own4 coverage now
-  re-verified downstream (§11 IS the downstream check).
-- Harness bugs caught writing the gates, each now mutant-gated: sum-of-rows→NaN
-  (silent-green forever), writeFileSync read+append self-doubling, fixture coupled to
-  pre-landing lab state.
+- Held-out, scored ONCE (base + MIT's written diagnosis `final_answer.md` verbatim as
+  system context, UNEDITED weights, think35 pp1.5 ctx 32768 seed 0 PAR-32):
+  **MATH 2.0 acc / 3.0 fin** (MIT-checker 3.0, 1 parse-edge diff) · **GSM8K 4.0 / 4.0**
+  (MIT-checker 4.0, 0 diffs).
+- Vs same-window base (basew 6.0/10.0): **−5.0 pts mean — inside the ±10pp noise band,
+  direction negative**; mean_tokens 31,876/31,504 = runs to the cap anyway — the
+  diagnosis doesn't even shorten the thinking. Vs p50cw 31.0/48.0: 36.5 pts short;
+  finished 3.5% vs 62.5%.
+- **Verdict: reading the diagnosis does nothing measurable — MIT's escape is not
+  knowledge their text conveys; it lives in the weights, not the words.** The
+  content-vs-weights question the #1567 handoff left open is settled at this horizon.
+- Trust boundary held end-to-end: `final_answer.md` only; never tensors/turn-logs/
+  manifest; `WS_SYSTEM_FILE` scoped to the one command. Model claim `qwen35-base`
+  (gated). Astra budget unchanged 12/20 (pure scoring row, ledger-once).
+- ws3check 119→**135**: §13 harvest gates (rows-vs-aggregate via shared helper,
+  ledger-once, regrade coverage, DONE-marker chain, contaminated-model-claim mutant) +
+  page provenance/honest-revert mutants. Crash found writing it: verdict crashed on
+  `null.toFixed` when the same-window control was dropped — verdict now *needs its
+  control* (mutant-gated).
 
 ## Open on the board (handoff, precise)
-- **#1580 open-book control — CLAIMED by slot a, chain RUNNING detached**:
-  `r4_openbook.sh` runs from worktree `/Users/jon/Dev/retrogames-forge-ws-step4`
-  (detached 46692ad; `.venv`+`data` symlinks live — `.venv` points into ws-step3, do NOT
-  retire ws-step3 until #1580 ships). Log `/tmp/forge/ws-r4-1580.log`; math sidecar
-  `~/Dev/weight-lab/r2_text/openbook_math.jsonl` growing since 05:44Z. ETA math ~07:15Z,
-  gsm ~07:55Z, then regrade → `R4_1580_DONE`. Next slot-a session: new worktree off main,
-  harvest `scores_openbook_*`, r2_scores openbook entry, mit_grader rows, batches row,
-  markers; page gets an OPEN-BOOK-labelled row + verdict (openbook vs base 3.0/8.0 vs
-  p50cw 31.0/48.0 — content-vs-weights); ws3check §12 already guards markers-implies-
-  rows and the trust boundary. NEVER read MIT edit tensors/turn logs — final_answer.md only.
-- Ladder otherwise: game-queue #1570 (next: robot kit 4a), #838 (MYST); feedback/building
-  clear; building-qa #1572 held by QA lane (live at session start).
+- **`r4_openbook.sh` chain DONE** (07:54Z) in ws-step4; all artifacts harvested and
+  merged. The ws-step3→ws-step4→ws-openbook `.venv`/`data` symlink chain is no longer
+  load-bearing for #1580 — those worktrees may now be retired (lab README #1562
+  addendum re-creates venv per worktree if a step 5 ever runs).
+- Ladder: game-queue **#838 (MYST**, multi-stage, item 1 merged as #1582 by slot b),
+  building **#1570** held by slot b (draft PR **#1583** WIP: robokit 4a items 1+2
+  code-complete 17/18 green, per slot-b report parked 07:52Z), building-qa #1572 (QA
+  lane). Next slot-a candidate off the ladder: #838 (oldest game-queue).
 - Jon's desk: #1557, #1544 unchanged. No jonq filed (nothing taste-level).
 
 ## ENV (carry-forward)
-- `. /tmp/forge/env.sh`; push `-c http.proxy=http://127.0.0.1:18080`; gh api for comments;
-  external curl needs the proxy env (000 without); oMLX at :8000 (API key via api_key()).
-- `nohup` on this box: "can't detach from console" — use `r2_detach.py <script.sh> <log>`
-  with a .sh wrapper (it execs the arg as a program: pass a shell script, not a .py).
-- After squash-merge: fetch BEFORE detaching worktrees onto origin/main (still true, still
-  bites). pgrep unreliable -> `ps aux | grep`. zsh aborts ls on missing glob.
-- Chrome dead (#737): sim-tier Node is the gate. slot-a port 5173 never started (research
-  lane). Fresh worktrees: symlink node_modules; lab venv/data per README #1562 addendum.
+- `. /tmp/forge/env.sh`; push `-c http.proxy=http://127.0.0.1:18080`; gh api for
+  comments; external curl needs the proxy env; oMLX at :8000 (key via api_key()).
+- GitHub rate: the gh-shim 404s `/rate_limit` but issue/pr endpoints work fine.
+- `nohup` broken on this box: use `r2_detach.py <script.sh> <log>` (execs arg — pass
+  a .sh wrapper). pgrep unreliable -> `ps aux | grep`. zsh aborts ls on missing glob.
+- After squash-merge: fetch BEFORE detaching worktrees onto origin/main. gh deletes the
+  remote branch even when the worktree holds the local one — `git checkout --detach
+  origin/main` in the worktree first, then `git branch -D` is clean.
+- Chrome dead (#737): sim-tier Node is the gate. slot-a port 5173 unused this session
+  (lab lane). Fresh worktrees: symlink node_modules; lab venv/data per README addendum.
 
 ## Open questions
 - (none filed — #1557/#1544 are Jon's own; linked for continuity only)
