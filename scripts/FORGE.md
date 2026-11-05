@@ -83,14 +83,30 @@ AGENTS.md wins.
     issue already owns (an issue owns a gap when its title/body names the
     game and repeats the gap's opening words; when unsure, treat it as owned
     — this stage exists only for what QA has not reached). Use
-    `scripts/lib/idle.mjs` (`parseGaps` + `flagshipStage`) to derive the pick
-    honestly from the READMEs, not from memory. **File that stage as its own
-    issue first** (`gh issue create` with `game-queue` + `lane:games`, title
-    `POLISH — <GAME>: <gap summary>`, so it shows on the board and in the
-    shift report), **then claim it the normal way** (step 2's claim + worktree)
-    and build it as one stage: it is game code, so it counts for AGENTS.md
-    rule 4. Only when every flagship's every gap is owned may you STOP — say
-    so in STATE.md and exit.
+    `scripts/lib/idle.mjs` (`parseGaps` + `flagshipStage` + `weakestStage`)
+    to derive the pick honestly from the READMEs, not from memory. **File that stage as its own
+    issue first** (`gh issue create` with `game-queue`
+    + `lane:games`, title `POLISH — <GAME>: <gap summary>`, so it shows on
+    the board and in the shift report), **then claim it the normal way**
+    (step 2's claim + worktree) and build it as one stage: it is game code,
+    so it counts for AGENTS.md rule 4.
+
+    **NEVER RUN DRY (#1571) — the last rung.** When the flagship stage is
+    spent (every flagship gap owned), do NOT stop and do NOT ask "what next?"
+    — Jon's standing rule: the lanes never run dry. Pick the weakest game on
+    the WHOLE shelf: `weakestStage` scores every registry title by open QA
+    feedback naming it plus the README honest gaps nobody owns, skips any
+    title a `building`/`building-qa` issue is inside, and breaks ties toward
+    the older title (registry order). Take its oldest unowned gap, file
+    `POLISH — <GAME>: <gap summary>` as above with one **why-weakest line**
+    (the score and what produced it), claim it the normal way, and ship
+    ONE real gameplay fix — something a player notices: a rule, a feel, a
+    mechanic. A refactor or a check-only change does not count. One game per
+    PR; carry the why-weakest line in the PR too. STOP is legal only when
+    every gap on every unheld title is owned — and then the only dry-queue
+    question Jon ever sees is "which new flagship title?" (`jonq.mjs ask`,
+    max one per lane per week; jonq refuses everything else: a dry queue is
+    not a question).
 3. **Design in one paragraph.** Name the original (machine and year) and
    list its 5 signature features, mechanics AND look. Those five are the
    spec; respect anything extra the issue body asks for. **Where the issue

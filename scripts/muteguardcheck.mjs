@@ -120,6 +120,10 @@ const SAFE = {
     'outpostcheck.mjs': 'writes mutant copies into a mkdtemp dir',
     'paperscheck.mjs': 'writes mutant copies into a mkdtemp dir',
     'ws2check.mjs': 'mkdtemp fixture dirs + tmpdir html only; mutants run in memory',
+    // Pre-existing on main since 2ee8b35 (scripts/*.mjs is docs-shaped, so no
+    // scope ran the audit when it landed — noted on #1571). Read 2026-11-05:
+    // every writeFileSync targets mkdtempSync(tmpdir()) dirs or tmpdir html.
+    'ws3check.mjs': 'mkdtemp fixture dirs + tmpdir html only; mutants run in memory',
     'sweepcheck.mjs': 'mutant copy under /tmp (ms-mut-*.mjs)',
     'watchcheck.mjs': 'mutates a copy at /tmp/forge/watch/, never scripts/watch.sh',
     'recmethods.mjs': 'writes JSON replay stamps, not source mutants',

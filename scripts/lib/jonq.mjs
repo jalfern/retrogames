@@ -107,6 +107,10 @@ export function validateAsk({ lane, question, options = [], defaultText }) {
     if (!question || !question.trim()) errors.push('a question needs the question text')
     if (options.length < 2) errors.push('a question needs Options A/B — a question with one option is an order, not a decision')
     if (!defaultText || !defaultText.trim()) errors.push('a question needs a Default: what the lane does if nobody answers')
+    // #1571: a dry queue is not a question — the never-dry rung decides.
+    if (DRY_QUEUE_SHAPE.test(String(question || ''))) {
+        errors.push('a dry queue is not a question for Jon (#1571): run the never-dry rung — pick the weakest game on the shelf and ship one gameplay fix (FORGE.md step 2); ask only for a NEW FLAGSHIP TITLE when the whole shelf is gap-free')
+    }
     return errors
 }
 
@@ -169,4 +173,40 @@ export function claimOrder(issues, owner = 'jalfern') {
         ?? byOldest(ok.filter((i) => has(i, 'next')))
         ?? byOldest(ok.filter((i) => has(i, 'game-queue')))
         ?? null
+}
+
+// ---- the never-dry rule (#1571) ----------------------------------------
+// Jon's standing rule: the lanes never run dry, so "the queue is empty,
+// what should we build next?" is NOT a decision for Jon — the never-dry
+// rung of FORGE.md step 2 decides it (pick the weakest game on the shelf,
+// ship one gameplay fix). `ask` refuses that shape. The one dry-queue
+// question that IS allowed: "which new flagship title?" — capped at one
+// per lane per week (titleAskBlocked), because that genuinely only Jon can
+// answer and repetition would be noise.
+export const DRY_QUEUE_SHAPE = /\b(queue|board|ladder)\b[\s\S]{0,48}\b(empty|dry|nothing)\b|\bwhat(?:'s next| next)\b|what should (?:we|i) (?:build|do|work on) next|nothing left to (?:build|do)/i
+
+// A new-title ask — the only dry-queue question a lane may file.
+export const TITLE_ASK_SHAPE = /\bnew (?:flagship )?title\b|\bnext flagship\b|\bnew game (?:title|for the arcade)\b|which new (?:game|title)/i
+export const TITLE_ASK_DAYS = 7
+
+export function titleAskBlocked(issues, lane, now = new Date()) {
+    return issues.some((i) => isQuestion(i)
+        && (lane == null || lane === 'all' || has(i, laneLabel(lane)))
+        && TITLE_ASK_SHAPE.test(`${i.title || ''}\n${i.body || ''}`)
+        && (now.getTime() - Date.parse(i.created_at)) / 86400000 < TITLE_ASK_DAYS)
+}
+
+// Jon's #1571 addendum: a `**Default:**` line is jonq's question marker —
+// any open issue carrying one without the `question` label is a question
+// that bypassed scripts/jonq.mjs (#1544/#1557 shipped Default: lines with
+// no label, so the sweep never saw them and the digest never showed Jon).
+// Flag shape is FORGE-prefixed on purpose: ROBOT_SHAPE keeps the flag out
+// of answer detection if the issue later gains the label.
+export const UNLABELED_FLAG = 'FORGE: unlabeled question?'
+export const hasDefaultLine = (body) => /^\s*\*\*Default:\*\*\s*\S/m.test(String(body || ''))
+export function unlabeledQuestions(issues) {
+    return issues.filter((i) => isOpen(i) && !i.pull_request
+        && !has(i, QUESTION_LABEL) && !has(i, 'needs-approval')
+        && hasDefaultLine(i.body)
+        && !(i.comments || []).some((c) => String(c.body || '').trim().startsWith(UNLABELED_FLAG)))
 }

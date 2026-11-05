@@ -389,12 +389,17 @@ main() {
     kick_slot a "${A_TARGET:-}" com.jalfern.forge
     kick_slot b "${B_TARGET:-}" "$SLOTB_JOB"
 
-    # ---- 4b. IDLE FLAGSHIP KICK (#869) ---------------------------------
+    # ---- 4b. IDLE NEVER-DRY KICK (#869, shelf-wide #1571) --------------
     # #841's "never idle" lives inside the FORGE session, but a session only
     # starts when step 4 kicks: an empty TARGET left the builder idle for
     # hours (Oct 23, 02:28-08:00). Ask idle-kick.mjs instead: it answers
-    # KICK only while flagshipStage() finds unowned honest gaps, and NONE
-    # when every gap is owned — then STOP is legal and nobody is kicked.
+    # KICK while flagshipStage() finds unowned honest gaps, and — since
+    # #1571 — KICK ... weak while weakestStage() finds a weak game anywhere
+    # on the shelf. NONE only when every gap on every unheld title is owned;
+    # then STOP is legal, nobody is kicked, and no "what next?" question is
+    # filed — the only dry-queue question Jon ever sees is "which new
+    # flagship title?" (jonq, max once a week), and that is the session's
+    # call, never the warden's.
     # A repeated KICK is harmless (kickstart no-ops while the job runs) and
     # ends once the session files its POLISH issue and TARGET turns non-empty.
     if [[ "$ALIVE" == no && -z "$TARGET" && "$HALTED" != yes ]] && (( ! BSLOT_QA )); then
@@ -402,8 +407,8 @@ main() {
         log "idle-kick: $STAGE"
         if [[ "$STAGE" == KICK* ]]; then
             act launchctl kickstart "gui/$(id -u)/com.jalfern.forge" >> "$LOG" 2>&1
-            comment "$PULSE" "WARDEN: queue empty, ${STAGE#KICK } unowned — kicked a flagship-stage session"
-            ACTIONS+=("idle-kick:1"); log "kicked builder for flagship stage ${STAGE#KICK }"
+            comment "$PULSE" "WARDEN: queue empty, ${STAGE#KICK } unowned — kicked a never-dry stage session"
+            ACTIONS+=("idle-kick:1"); log "kicked builder for never-dry stage ${STAGE#KICK }"
             ALIVE=kicked
         fi
     fi

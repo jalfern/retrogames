@@ -23,6 +23,10 @@ if (process.argv.includes('--selftest')) {
     // editing them must face the checks (was: docs=true; #1299 rode through).
     { files: ['scripts/telemetry.sh'], docs: false, all: true, shared: false },
     { files: ['scripts/forge.sh'], docs: false, all: true, shared: false },
+    // #1571: the never-dry rule lives in the playbook + warden raw text, and
+    // neverbudrycheck pins it — editing either must run that gate.
+    { files: ['scripts/FORGE.md'], docs: false, all: true, shared: false },
+    { files: ['scripts/warden.sh'], docs: false, all: true, shared: false },
   ];
   let bad = 0;
   for (const c of cases) {
@@ -58,6 +62,12 @@ if (process.argv.includes('--selftest')) {
   }
   if (!(PINS['scripts/main-ok.sh'] || []).includes('core')) {
     console.log('FAIL pin anchor: scripts/main-ok.sh must pin to core (read by nightlyverdictcheck, #1387)'); bad++;
+  }
+  if (!(PINS['scripts/FORGE.md'] || []).includes('core')) {
+    console.log('FAIL pin anchor: scripts/FORGE.md must pin to core (read by neverbudrycheck, #1571)'); bad++;
+  }
+  if (!(PINS['scripts/warden.sh'] || []).includes('core')) {
+    console.log('FAIL pin anchor: scripts/warden.sh must pin to core (read by neverbudrycheck/jonqcheck/lanecheck, #1571)'); bad++;
   }
   for (const [f, ks] of pinEntries) {
     const c = classify([f]);

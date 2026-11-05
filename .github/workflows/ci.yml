@@ -139,6 +139,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run claimcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run neverbudrycheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run tpscheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run lanecheck
