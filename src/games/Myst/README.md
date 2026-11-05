@@ -344,6 +344,14 @@ mirroring clouds or seating land — each turns the suite red.
    cloud banks across the mirror band (rose dusk, jade Selenitic, silver Atlantic, white
    cloud-floor) and `dressSea` lifts the deep toward them per vertex; `ISLE_LAW` sets the
    dusk bay in a ring of Myst's own dark headlands and Stoneship's ocean in two far islets
-   (`islesFor`), seated on the view's waterline and dressed by its fog. Residual: the
-   original's skyline also carried neighbouring Ages' landmarks faintly (the clock tower
-   from far beaches); ours answers with generic coast, not landmarks.
+   (`islesFor`), seated on the view's waterline and dressed by its fog. **CLOSED by #838
+   item 6** — the skyline carries landmarks: `LANDMARK_LAW` in `sea.js` anchors the
+   clock tower (slim w<h, the tallest silhouette on the bay, one warm breathing dial
+   r>b) and the dome-crag (jade half-dome on dark basalt — Selenitic across the bay)
+   at ONE seat each across all four dusk views: the island is one place, not four
+   sets of props (generic headlands stay per-view hash texture; named landmarks don't).
+   The empty `stoneship` row is the law table saying the Atlantic keeps its two low
+   generic islands; Selenitic, Channelwood and the dry Ages keep their own horizons.
+   mystcheck's item 6 section proves anchorage, fog-limit seating, the slim-and-tall
+   inverse of the isle law, the jade/warm hue laws, layered separation from headlands
+   and the scene wiring; 7 new mutants all die.

@@ -8,7 +8,7 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor } from './sea.js'
 
 const GAP = 4000
 
@@ -214,6 +214,38 @@ function dressSea(group, id, anim) {
       isl.x, prof.water, isl.z, group)
     isle.scale.set(isl.w / 2, isl.h, isl.w / 2)
     isle.userData.noPick = true
+  }
+  // #838 item 6 — the skyline carries landmarks: the clock tower and the
+  // dome-crag stand anchored on the dusk bay (sea.js LANDMARK_LAW — one seat
+  // per landmark across every dusk view, the island is one place). The tower
+  // is slim and taller than any headland; its dial glows warm and breathes on
+  // the world clock. The crag wears a jade dome, Selenitic seen from the bay.
+  for (const lm of landmarksFor(id)) {
+    const dark = (c) => new THREE.MeshStandardMaterial({ color: new THREE.Color(c[0], c[1], c[2]), roughness: 1, metalness: 0, fog: true })
+    if (lm.kind === 'clockTower') {
+      const tower = mesh(new THREE.CylinderGeometry(lm.w * 0.42, lm.w * 0.5, lm.h * 0.82, 10), dark(lm.body),
+        lm.x, prof.water + lm.h * 0.41, lm.z, group)
+      tower.userData.noPick = true
+      const roof = mesh(new THREE.ConeGeometry(lm.w * 0.58, lm.h * 0.26, 10), dark(lm.roof || lm.body),
+        lm.x, prof.water + lm.h * 0.82 + lm.h * 0.13, lm.z, group)
+      roof.userData.noPick = true
+      if (lm.glow) {
+        const dial = mesh(new THREE.CircleGeometry(lm.w * 0.24, 16),
+          new THREE.MeshBasicMaterial({ color: new THREE.Color(lm.glow[0], lm.glow[1], lm.glow[2]), transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, fog: true }),
+          lm.x, prof.water + lm.h * 0.66, lm.z + lm.w * 0.52, group)
+        dial.userData.noPick = true
+        anim.push({ o: dial, f: (t) => { dial.material.opacity = 0.55 + 0.28 * Math.sin(t * 0.7 + lm.h) } })
+      }
+    }
+    if (lm.kind === 'domeCrag') {
+      const crag = mesh(new THREE.SphereGeometry(1, 12, 8), dark(lm.body), lm.x, prof.water, lm.z, group)
+      crag.scale.set(lm.w / 2, lm.h, lm.w / 2)
+      crag.userData.noPick = true
+      const dome = mesh(new THREE.SphereGeometry(1, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), dark(lm.dome),
+        lm.x, prof.water + lm.h * 0.78, lm.z, group)
+      dome.scale.set(lm.w * 0.15, lm.h * 0.34, lm.w * 0.15)
+      dome.userData.noPick = true
+    }
   }
 }
 

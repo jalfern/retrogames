@@ -10,7 +10,7 @@ import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSe
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
-import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT } from '../src/games/Myst/sea.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1399,6 +1399,80 @@ console.log('MYST — the horizon is not empty (#838 item 5: mirrored cloud bank
   }
 }
 
+console.log('MYST — the skyline carries landmarks (#838 item 6: the clock tower and the dome-crag, anchored)')
+{
+  const bay = ['dock', 'cliffPath', 'beach', 'stairTop']
+  const kinds = (v) => landmarksFor(v).map((L) => L.kind).join(',')
+  // — the dusk bay wears its two named landmarks
+  ok(bay.every((v) => kinds(v) === 'clockTower,domeCrag'),
+    'every dusk view carries the clock tower and the dome-crag', bay.map((v) => `${v}:${kinds(v)}`).join(' '))
+  // — ANCHORAGE: a landmark keeps one seat across the island. The generic
+  //   headlands are per-view hash texture; the tower is geography.
+  {
+    const seat = (v, kind) => JSON.stringify(landmarksFor(v).find((L) => L.kind === kind))
+    ok(bay.every((v) => seat(v, 'clockTower') === seat('dock', 'clockTower')),
+      'the clock tower stands in ONE place — every pose on the island sees it at the same bearing')
+    ok(bay.every((v) => seat(v, 'domeCrag') === seat('dock', 'domeCrag')),
+      'the dome-crag stands in ONE place — anchored geography, not per-view props')
+    ok(seat('dock', 'clockTower') !== seat('dock', 'domeCrag'),
+      'the two landmarks hold different seats (a ridge, not one blob)')
+  }
+  // — every landmark seat is inside the fog\u2019s reach and out of arm\u2019s way
+  ok(bay.every((v) => landmarksFor(v).every((L) =>
+    Math.hypot(L.x, L.z) >= ISL_LIMIT.min && Math.hypot(L.x, L.z) <= ISL_LIMIT.far && L.h > 0 && L.w > 0)),
+    'every landmark rides inside the fog limit — faint but seen, never swallowed')
+  // — shape laws: the tower is slim and taller than any headland; headlands
+  //   stay wide and low. The two laws are inverses.
+  ok(bay.every((v) => {
+    const t = landmarksFor(v).find((L) => L.kind === 'clockTower')
+    const widest = Math.max(...islesFor(v).map((i) => i.h))
+    return t.w < t.h && t.h > widest
+  }),
+    'the clock tower is slim (w < h) and the tallest thing on the skyline — a landmark, not a headland')
+  ok(bay.every((v) => islesFor(v).every((i) => i.w > i.h)),
+    'generic headlands stay wide and low — the inverse of the tower law')
+  // — hue laws: jade dome over basalt; warm dial; only the tower carries light
+  {
+    const crag = landmarksFor('beach').find((L) => L.kind === 'domeCrag')
+    ok(crag.dome[1] > crag.dome[0] && crag.dome[1] > crag.dome[2],
+      'the crag wears a jade dome — Selenitic seen from across the bay')
+    ok(crag.body[0] < 0.3 && crag.body[1] < 0.3 && crag.body[2] < 0.3,
+      'the crag body stays dark basalt in the dusk haze')
+    ok(crag.glow === null, 'the crag carries no light — only the tower glows')
+    const t = landmarksFor('beach').find((L) => L.kind === 'clockTower')
+    ok(t.glow && t.glow[0] > t.glow[2] && t.glow[0] > 0.9,
+      'the dial glows warm (r > b) — brass catching the last sun')
+    ok(t.roof && t.roof[0] < t.body[0] && t.roof[1] < t.body[1],
+      'the tower\u2019s cap is darker than its body — a weathered roof line')
+  }
+  // — landmarks never hide inside a generic headland
+  ok(bay.every((v) => landmarksFor(v).every((L) =>
+    islesFor(v).every((i) => Math.hypot(L.x - i.x, L.z - i.z) >= 40))),
+    'no landmark stands hidden inside a headland — the skyline reads in layers')
+  // — skies that keep their own horizon answer through the table itself
+  ok((LANDMARK_LAW.stoneship || ['x']).length === 0,
+    'the Atlantic keeps generic low islands — the empty stoneship row is the law saying so')
+  ok(['stoneship', 'stoneDeck', 'stoneObservatory'].every((v) => landmarksFor(v).length === 0),
+    'no landmark crowds Stoneship\u2019s far Atlantic')
+  ok(['selenitic', 'selSound', 'channelwood', 'chanWheel', 'mechanical', 'towerTop'].every((v) => landmarksFor(v).length === 0),
+    'Selenitic, Channelwood and the dry Ages keep their own horizons untouched')
+  // — deterministic
+  ok(JSON.stringify(landmarksFor('dock')) === JSON.stringify(landmarksFor('dock')),
+    'landmarksFor is deterministic — anchored seats replay identically')
+  // — the scene seats them through the pure law
+  {
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    ok(/for \(const lm of landmarksFor\(id\)\)/.test(sc),
+      'the scene seats its landmarks through sea.js — the law owns the skyline, not the builder')
+    ok(/lm\.x, prof\.water \+ lm\.h \* 0\.41, lm\.z/.test(sc) && /lm\.x, prof\.water, lm\.z/.test(sc),
+      'tower and crag rise out of their view\u2019s own waterline')
+    ok(/side: THREE\.DoubleSide/.test(sc) && /dial\.material\.opacity = 0\.55/.test(sc),
+      'the dial faces the player and breathes on the world clock')
+    ok(/tower\.userData\.noPick = true/.test(sc) && /dial\.userData\.noPick = true/.test(sc),
+      'landmarks are scenery, never hotspots')
+  }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1747,6 +1821,24 @@ if (process.argv.includes('--mutate')) {
       'for (const isl of islesFor(id))', 'for (const isl of [])'],
     ['an isle floats 60 units above the water (a boulder, not a coast)', 'src/games/Myst/scene.js',
       'isl.x, prof.water, isl.z, group)', 'isl.x, prof.water + 60, isl.z, group)'],
+    // #838 item 6 — landmarks on the skyline
+    ['the tower re-seats per view (the island becomes four sets of props)', SEA,
+      'x: Math.sin((L.az * Math.PI) / 180) * L.dist,',
+      'x: Math.sin(((L.az + 37 * hash01(view + L.kind)) * Math.PI) / 180) * L.dist,'],
+    ['the clock tower shrinks below the headlands (no landmark on the skyline)', SEA,
+      'az: 251, dist: 415, w: 13, h: 52,', 'az: 251, dist: 415, w: 13, h: 20,'],
+    ['the crag\u2019s dome turns dusk-amber (Selenitic forgets its green)', SEA,
+      'dome: [0.36, 0.62, 0.46]', 'dome: [0.62, 0.42, 0.3]'],
+    ['the dial runs cold (brass stops catching the sun)', SEA,
+      'glow: [0.96, 0.78, 0.36]', 'glow: [0.4, 0.6, 0.9]'],
+    ['the Atlantic gets crowded (Stoneship\u2019s horizon wears the island\u2019s tower)', SEA,
+      'stoneship: [],',
+      'stoneship: [{ kind: \'clockTower\', az: 251, dist: 415, w: 13, h: 52, body: [0.17, 0.1, 0.13], roof: [0.11, 0.06, 0.09], glow: [0.96, 0.78, 0.36], dome: null }],'],
+    ['the scene stops seating landmarks (an anchor-less skyline)', 'src/games/Myst/scene.js',
+      'for (const lm of landmarksFor(id))', 'for (const lm of [])'],
+    ['the dial freezes (the last sun stops breathing on the brass)', 'src/games/Myst/scene.js',
+      'dial.material.opacity = 0.55 + 0.28 * Math.sin(t * 0.7 + lm.h)',
+      'dial.material.opacity = 0.8'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

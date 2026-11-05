@@ -300,3 +300,53 @@ export function islesFor(view) {
   }
   return out
 }
+
+// #838 item 6 — the skyline carries landmarks. Item 5 answered the horizon with
+// generic headlands; the residual said it plain: the original's skyline also
+// carried neighbouring Ages' landmarks faintly (the clock tower from far
+// beaches). An island is never faceless — Myst's ridge holds the brass clock
+// tower, and across the bay the mountain wears Selenitic's green dome.
+//
+// The law that makes them landmarks and not props is ANCHORAGE: the generic
+// headlands above are hash-born per view (fog texture, free to re-seat), but a
+// named landmark keeps ONE seat in every dusk view — all four poses on the
+// island see the tower at the same bearing and distance, because the island is
+// one place, not four sets of props. That is why the table is fixed numbers,
+// not hashes.
+//
+// Shape laws: a headland is wide and low (w > h); a tower is thin and tall and
+// stands above every headland on the skyline. The crag carries a jade dome
+// (green-dominant against its basalt body — Selenitic seen from across the
+// bay), and only the tower carries a light: one warm dial (r > b) that breathes
+// on the world clock, the last sun caught in brass. An empty entry is the law
+// table SAYING a sky keeps its own horizon: the Atlantic rides generic low
+// islands, Selenitic's horizon is its caldera, Channelwood floats on clouds,
+// Mechanical is dry — all answer [] through the missing key.
+export const LANDMARK_LAW = {
+  dusk: [
+    { kind: 'clockTower', az: 251, dist: 415, w: 13, h: 52, body: [0.17, 0.1, 0.13], roof: [0.11, 0.06, 0.09], glow: [0.96, 0.78, 0.36], dome: null },
+    { kind: 'domeCrag', az: 322, dist: 470, w: 150, h: 44, body: [0.14, 0.12, 0.17], roof: null, glow: null, dome: [0.36, 0.62, 0.46] },
+  ],
+  stoneship: [],
+}
+
+// [{ kind, x, z, w, h, body[3], roof[3]|null, glow[3]|null, dome[3]|null }] —
+// named silhouettes seated on the view's waterline, anchored per sky (never
+// per view). [] where the Age keeps its own horizon.
+export function landmarksFor(view) {
+  const v = SEA_VIEWS[view]
+  if (!v) return []
+  const list = LANDMARK_LAW[skyOf(view)]
+  if (!list) return []
+  return list.map((L) => ({
+    kind: L.kind,
+    x: Math.sin((L.az * Math.PI) / 180) * L.dist,
+    z: Math.cos((L.az * Math.PI) / 180) * L.dist,
+    w: L.w,
+    h: L.h,
+    body: L.body,
+    roof: L.roof,
+    glow: L.glow,
+    dome: L.dome,
+  }))
+}
