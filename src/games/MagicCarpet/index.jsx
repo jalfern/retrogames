@@ -168,6 +168,12 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'invisEnd') {
                     audioController.playSweep(980, 300, 0.26, 'sine', 0.035)
                     say('THE VEIL FADES')
+                } else if (e.type === 'lost') {
+                    // #1612 item 1: whoever had you in their sights just blinked.
+                    const f = e.kind === 'giant' ? 340 : e.kind === 'wolf' ? 880 : 720
+                    audioController.playSweep(f, f * 0.78, 0.14, 'triangle', 0.035)
+                    audioController.playSweep(f * 0.78, f * 1.1, 0.16, 'triangle', 0.022, 0.13)
+                    if (e.kind === 'wizard') say('THE WIZARD LOSES YOU')
                 } else if (e.type === 'zap') {
                     audioController.playNoise(0.16, 0.09)
                     audioController.playSweep(1500, 260, 0.2, 'square', 0.06)
@@ -738,8 +744,10 @@ const MagicCarpetGame = () => {
                     return gs.craters.length
                 },
                 fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },
+                veil: () => { gs.invis = 400; return gs.invis },
                 killHut: () => { const hs = gs.huts[0]; hs.burn = 0; hs.dead = true; return 1 },
                 smokePuffs: () => (renderer ? renderer.smokeCount() : -1),
+                trailMotes: () => (renderer ? renderer.particleCount() : -1),
                 glowCells: () => (renderer ? renderer.glowCells() : -1),
                 scorchCells: () => (renderer ? renderer.scorchCells() : -1),
                 pixels: (x, y, w, h) => {

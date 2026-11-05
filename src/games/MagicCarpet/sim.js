@@ -196,7 +196,7 @@ export function genWorld(gs) {
     gs.x = wrap(cs.x + 40, MAP); gs.y = wrap(cs.y + 40, MAP); gs.alt = 34; gs.yaw = 0
     gs.hp = 100; gs.shield = 0; gs.mana = 0; gs.bank = 0
     const ts = findSpot(gs, 24, 48, true, gs.castle, 140)
-    gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: lv.wizHp, mana: lv.hoard, alive: true, ang: rnd(gs) * 6.28 }
+    gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: lv.wizHp, mana: lv.hoard, alive: true, ang: rnd(gs) * 6.28, lostT: 0 }
 
     const bs = []
     gs.books = []
@@ -239,7 +239,7 @@ function spawnMon(gs, kind, away, minD) {
     const p = findSpot(gs, kind === 'giant' ? 24 : 20, kind === 'cow' ? 46 : 60, false, away || null, minD || 0)
     gs.monsters.push({
         kind, x: p.x, y: p.y, hp: kind === 'giant' ? 30 : kind === 'wolf' ? 8 : 4,
-        dir: rnd(gs) * 6.28, cool: Math.floor(rnd(gs) * 40), wanderT: 0,
+        dir: rnd(gs) * 6.28, cool: Math.floor(rnd(gs) * 40), wanderT: 0, lostT: 0,
     })
 }
 
@@ -591,6 +591,14 @@ export function step(gs, inp) {
         // run down, so fire resumes on its cadence the tick you become visible.
         if (gs.invis <= 0) gs.wizFire--
         const pd = Math.hypot(wrapD(gs.x - wz.x), wrapD(gs.y - wz.y))
+        // Lost-target cue (#1612 item 1): the tick the veil rises, a wizard who
+        // had a bead on the carpet loses it — the shell blips, the renderer
+        // floats a '?'. Presentation only: cosmetic lostT never steers the AI.
+        if (wz.lostT > 0) wz.lostT--
+        if (gs.invis === INVIS_T && pd < 75) {
+            wz.lostT = 40
+            gs.events.push({ type: 'lost', kind: 'wizard', x: wz.x, y: wz.y })
+        }
         if (gs.wizFire <= 0 && pd < 75) {
             gs.wizFire = gs.wizSlow > 0 ? 150 : 55
             const a = Math.atan2(wrapD(gs.y - wz.y), wrapD(gs.x - wz.x))
@@ -621,6 +629,11 @@ export function step(gs, inp) {
         if (m.grabbed) continue
         const pd = Math.hypot(wrapD(gs.x - m.x), wrapD(gs.y - m.y))
         const seen = gs.invis <= 0 // the veil: monsters lose the carpet entirely
+        if (m.lostT > 0) m.lostT--
+        if (gs.invis === INVIS_T && ((m.kind === 'wolf' && pd < 45) || (m.kind === 'giant' && pd < 70))) {
+            m.lostT = 40 // the tick you vanish, the chaser that had you in range blinks
+            gs.events.push({ type: 'lost', kind: m.kind, x: m.x, y: m.y })
+        }
         m.wanderT++
         if (m.kind === 'giant') {
             if (m.wanderT > 60) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }

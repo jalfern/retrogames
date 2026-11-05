@@ -93,6 +93,7 @@ const SPRITES = {
     throw: { l: -2.6, r: 2.6, t: 2.6, b: -2.6, wh: 1.8, ww: 1.8, center: true },
     dot: { l: -4, r: 4, t: 4, b: -4, wh: 4, ww: 4, center: true },
     smoke: { l: -4, r: 4, t: 4, b: -4, wh: 4, ww: 4, center: true },
+    quest: { l: -4, r: 4, t: 4, b: -4, wh: 2.8, ww: 2.8, center: true },
 }
 const ATLAS = 1024
 
@@ -181,6 +182,18 @@ function bakeAtlas() {
             ctx.fillStyle = gr
             ctx.fillRect(gx - rr, gy - rr, rr * 2, rr * 2)
         }
+    })
+    blit('quest', (u) => {
+        const k = u.k
+        ctx.font = `bold ${Math.round(k * 5.6)}px Georgia, 'Times New Roman', serif`
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+        ctx.lineWidth = Math.max(2, k * 0.9)
+        ctx.strokeStyle = 'rgba(24,16,48,0.9)'
+        ctx.strokeText('?', u.cx, u.cy + k * 0.2)
+        ctx.fillStyle = '#ffd75e'
+        ctx.fillText('?', u.cx, u.cy + k * 0.2)
+        ctx.fillStyle = 'rgba(255,240,180,0.55)'
+        ctx.fillText('?', u.cx, u.cy + k * 0.05)
     })
     const tex = new THREE.CanvasTexture(cv)
     tex.colorSpace = THREE.NoColorSpace
@@ -682,13 +695,20 @@ void main(){
         }
         const wz = gs.wizard
         pushSpr(gs.towerDown ? 'towerFall' : 'towerUp', wz.tx, wz.ty, gz(wz.tx, wz.ty), [1, 1, 1], 1)
-        if (wz.alive) pushSpr('wizard', wz.x, wz.y, gz(wz.x, wz.y) + 9 + Math.sin(gs.tick * 0.05) * 1.6, [1.15, 0.85, 1.25], 1)
+        if (wz.alive) {
+            pushSpr('wizard', wz.x, wz.y, gz(wz.x, wz.y) + 9 + Math.sin(gs.tick * 0.05) * 1.6, [1.15, 0.85, 1.25], 1)
+            if (wz.lostT > 0) pushSpr('quest', wz.x, wz.y, gz(wz.x, wz.y) + 24 + Math.sin(gs.tick * 0.22) * 1.2, [1.5, 1.25, 0.5], wz.lostT > 8 ? 0.95 : wz.lostT / 8)
+        }
         for (const m of gs.monsters) {
             if (m.grabbed) continue
             const flip = Math.cos(m.dir) < 0
             if (m.kind === 'giant') pushSpr('giant', m.x, m.y, gz(m.x, m.y) + 0.4, m.hp < 12 ? [1.25, 0.75, 0.6] : [1, 1, 1], 1, flip)
             else if (m.kind === 'wolf') pushSpr('wolf', m.x, m.y, gz(m.x, m.y) + 0.3, [1, 1, 1], 1, flip)
             else pushSpr('cow', m.x, m.y, gz(m.x, m.y) + 0.2, [1, 1, 1], 1, flip)
+            if (m.lostT > 0 && m.kind !== 'cow') {
+                const hz = (m.kind === 'giant' ? 21 : 8) + Math.sin(gs.tick * 0.22 + m.x) * 1.1
+                pushSpr('quest', m.x, m.y, gz(m.x, m.y) + hz, [1.5, 1.25, 0.5], m.lostT > 8 ? 0.95 : m.lostT / 8)
+            }
         }
         for (const fm of gs.fireMarks) {
             if (gs.tick - fm.t > 900) continue
@@ -760,6 +780,27 @@ void main(){
     }
 
     const fillParticles = (basis) => {
+        // Veiled, the carpet leaves a shimmering ghost trail behind it (#1612
+        // item 1): additive cyan motes drifting off the stern + a pulse ring
+        // every 7 ticks, so the world admits what the radar already says.
+        if (gs0.invis > 0) {
+            for (let i = 0; i < 2; i++) {
+                const j = (Math.random() - 0.5) * 5
+                const p = camera.position.clone()
+                    .addScaledVector(basis.fwd, -6 - Math.random() * 3)
+                    .addScaledVector(basis.right, j)
+                    .addScaledVector(basis.up, -0.6 - Math.random())
+                spawn(p.x, p.y, p.z, 'flare',
+                    -basis.fwd.x * 1.1 + (Math.random() - 0.5) * 0.25,
+                    0.45 + Math.random() * 0.45,
+                    -basis.fwd.z * 1.1 + (Math.random() - 0.5) * 0.25,
+                    0.8 + Math.random() * 0.8, 24, [0.4, 1.05, 1.55])
+            }
+            if (gs0.tick % 7 === 0) {
+                const p = camera.position.clone().addScaledVector(basis.fwd, -9).addScaledVector(basis.up, -0.8)
+                spawn(p.x, p.y, p.z, 'flare', -basis.fwd.x * 0.8, 0.3, -basis.fwd.z * 0.8, 2.4, 16, [0.3, 0.85, 1.35])
+            }
+        }
         let na = 0, ns = 0
         for (const p of parts) {
             p.life -= 1

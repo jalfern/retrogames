@@ -460,6 +460,51 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         r.check('the INVISIBILITY grimoire spawns in every world',
             [0, 1, 2].every((lv) => makeGame(7, lv).books.some((bk) => bk.id === 'invisibility')))
     }
+    // Lost-target cue (#1612 item 1): the tick the veil rises, every enemy that
+    // HAD the carpet in its sights loses it — the sim marks cosmetic lostT and
+    // fires a `lost` event (the shell blips, the renderer floats a '?').
+    // Out-of-range watchers stay quiet, the cue fires once per veil, decays,
+    // and a visible carpet never triggers it. lostT never steers the AI.
+    const lostRig = (placeFar) => {
+        const gs = makeGame(7)
+        gs.learned.push('invisibility')
+        const wolf = gs.monsters.find((m) => m.kind === 'wolf')
+        const gi = gs.monsters.find((m) => m.kind === 'giant')
+        const wz = gs.wizard
+        gs.x = wrap(wz.x + (placeFar ? 120 : 20), MAP); gs.y = wz.y
+        wolf.x = wrap(gs.x + (placeFar ? 120 : 8), MAP); wolf.y = gs.y
+        gi.x = wrap(gs.x + (placeFar ? 120 : -30), MAP); gi.y = wrap(gs.y + 20, MAP)
+        return { gs, wolf, gi, wz }
+    }
+    {
+        const { gs, wolf, gi, wz } = lostRig(false)
+        setHand(gs, 'L', 'invisibility'); gs.mana = 40
+        step(gs, { castL: true })
+        const kinds = gs.events.filter((e) => e.type === 'lost').map((e) => e.kind).sort()
+        r.check('casting the veil marks every enemy caught looking (wizard + wolf + giant emit `lost`)',
+            kinds.join(',') === 'giant,wizard,wolf' && wz.lostT === 40 && wolf.lostT === 40 && gi.lostT === 40,
+            `kinds=${kinds.join(',')} lostT w/w/g ${wz.lostT}/${wolf.lostT}/${gi.lostT}`)
+        gs.events.length = 0
+        for (let i = 0; i < 60; i++) step(gs, {})
+        const repeats = gs.events.filter((e) => e.type === 'lost').length
+        r.check('the lost cue fires once per veil and decays while it holds (never spams)',
+            repeats === 0 && wz.lostT === 0 && wolf.lostT === 0 && gi.lostT === 0,
+            `repeats=${repeats} lostT ${wz.lostT}/${wolf.lostT}`)
+    }
+    {
+        const { gs, wolf, gi, wz } = lostRig(true)
+        setHand(gs, 'L', 'invisibility'); gs.mana = 40
+        step(gs, { castL: true })
+        const n = gs.events.filter((e) => e.type === 'lost').length
+        r.check('enemies outside their sight range get no lost cue (only those that had you)',
+            n === 0 && wz.lostT === 0 && wolf.lostT === 0 && gi.lostT === 0, `n=${n}`)
+    }
+    {
+        const { gs } = lostRig(false)
+        let n = 0
+        for (let i = 0; i < 60; i++) { step(gs, {}); n += gs.events.filter((e) => e.type === 'lost').length; gs.events.length = 0 }
+        r.check('a visible carpet never triggers the lost cue (you must vanish to be lost)', n === 0, `n=${n}`)
+    }
     // Balance: the veil must not make the autopilot worse — the documented bar
     // is 60/60 seeds restored (README).
     {
@@ -688,6 +733,21 @@ const smokeLate = await page.evaluate(async () => {
 })
 r.check('dead rubble keeps smouldering long after the fire is gone (#1090)',
     smokeLate.puffs > 0 && smokeLate.glow === 0, `smoke instances ${smokeLate.puffs}, glow ${smokeLate.glow}`)
+
+// ---- #1612 item 1: the veiled carpet breathes additive ghost motes behind it.
+// Mutation guide: delete the `gs0.invis > 0` block in fillParticles (renderer.js)
+// and this gate goes red while every other gate holds.
+await page.evaluate(() => { window.__game.reset(7) })
+await page.waitForTimeout(250)
+const trail = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    const clean = t.trailMotes()
+    t.veil()
+    await new Promise((res) => setTimeout(res, 600))
+    return { clean, motes: t.trailMotes(), invis: t.probe().invis }
+})
+r.check('the veiled carpet leaves a ghost trail in the GL pass (#1612)',
+    trail.invis > 0 && trail.motes > trail.clean + 8, `motes ${trail.clean} -> ${trail.motes} (veil ${trail.invis})`)
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 await browser.close()
