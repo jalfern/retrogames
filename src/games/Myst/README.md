@@ -431,3 +431,20 @@ mirroring clouds or seating land — each turns the suite red.
     from a wall whose seat map records it seated, where an unguarded lift branch
     must answer `gearLift` — the fixed law is load-bearing and the last mutate
     survivor dies.
+    **CLOSED by #838 item 13** — the forge breathes: MECHANICAL is the first
+    Age to wear Jon's look pass (item 3, "one Age per PR"). Pure `forge.js`:
+    `FORGE_SEATS` (one furnace seat per Mechanical view — the drum, the slabs,
+    the shaft, the door, the gear-wall), `forgeBreath(t)` (a 0.9 Hz bellows pump
+    with a double hammer-flicker, clamped to [0.55, 1.15] — it gutters but never
+    goes out), `forgeLight(t,x,z,view)` (breath × squared distance falloff from
+    the seat: near brass hot, far ground rust, exactly 0 past `FORGE.reach`,
+    and 0 for every non-Mechanical view — the forge stays home, item 8's scope
+    rule on light), `ventPuff(t,key)` (per-vent hashed cadence 2.4–4.6 s with a
+    true rest gap: a leak is not a valve) and `forgeSparks(n,t,view)` (deterministic
+    rise-and-die pool climbing 1.6 m off the furnace). `scene.js` seats one
+    breathing lamp + one spark pool in each of the five Mechanical views, tints
+    the tower drum and walk slab with the hot bounce, and puffs the blue-page
+    vent on its own clock. mystcheck's item-13 section proves determinism,
+    envelope bounds and pump, Age-only scope, the distance-law ordering, vent
+    rest + cadence clustering, spark climb/burnout/anchorage and the scene
+    wiring; 13 new mutants all die (173 total).

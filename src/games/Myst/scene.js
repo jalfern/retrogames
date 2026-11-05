@@ -10,6 +10,7 @@ import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
 import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor, shipFloat } from './sea.js'
 import { stormView, skyGain, seaGain, STORM } from './storm.js'
+import { FORGE, FORGE_SEATS, forgeBreath, forgeSparks, ventPuff } from './forge.js'
 
 const GAP = 4000
 
@@ -371,6 +372,31 @@ function lantern(group, x, y, z) {
   lamp.userData.flicker = true
   lamp.userData.noPick = true
 }
+
+// #838 item 13 — the forge's own lamp, seated on the view's furnace seat.
+// The anim loop breathes every lamp tagged `forge` on the pure law.
+function forgeLamp(group, view) {
+  const [sx, sz] = FORGE_SEATS[view]
+  const lamp = new THREE.PointLight(0xff7a30, FORGE.lamp, FORGE.reach * 1.2)
+  lamp.position.set(sx, 2.2, sz)
+  lamp.userData.forge = view
+  group.add(lamp)
+}
+
+// A spark pool drifting off the furnace — positions rewritten per frame from
+// forgeSparks(); the pool itself is dumb geometry, the law lives in forge.js.
+function forgeSparksPool(group, view, n) {
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(n * 3), 3))
+  const pts = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xffa040, size: 0.09, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }))
+  pts.userData.sparks = view
+  pts.userData.noPick = true
+  group.add(pts)
+}
+
+// Near brass takes the forge's bounce: the hot tint scaled by the breath.
+// mat() mints a fresh material per call, so tinting one mesh never bleeds.
+function forgeBounce(o) { o.userData.forgeBounce = true }
 
 function gear(group, tex, r, x, y, z, speed, tag) {
   const g = new THREE.TorusGeometry(r, r * 0.18, 8, 14)
@@ -874,6 +900,9 @@ const BUILDERS = {
     // the tower itself: a bronze drum with a waterfall running its west face
     const tower = mesh(new THREE.CylinderGeometry(7.5, 9, 34, 18), mat(TX.mech, { metalness: 0.45, roughness: 0.5 }), 2, 17, 34, g)
     tower.userData.noPick = true
+    forgeBounce(tower) // the drum under the forge-breath (item 13)
+    forgeLamp(g, 'mechanical')
+    forgeSparksPool(g, 'mechanical', 16)
     gear(g, TX.mech, 3.4, 2, 9, 24.6, 0.22)
     gear(g, TX.mech, 2.2, 6.6, 12.5, 25.4, -0.34)
     const fall = mesh(new THREE.PlaneGeometry(4, 16), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.7, side: THREE.DoubleSide }), -5.4, 12, 27.5, g)
@@ -887,7 +916,7 @@ const BUILDERS = {
     const vent = mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.3, 10), mat(TX.iron), -4.4, 0.2, 2.6, g)
     vent.userData.spot = 'pageMechanicalBlue'
     const steam = new THREE.Points(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-4.4, 0.6, 2.6, -4.2, 1.2, 2.7, -4.5, 1.8, 2.5, -4.3, 2.4, 2.6], 3)), new THREE.PointsMaterial({ color: 0xcfd2d8, size: 0.5, transparent: true, opacity: 0.5 }))
-    steam.userData.steam = true; g.add(steam)
+    steam.userData.steam = true; steam.userData.steamKey = 'mechBlueVent'; g.add(steam)
     for (const [px, pz, pl] of [[9, -2, 7], [-8.5, -4, 6], [11, 8, 5]]) {
       const pipe = mesh(new THREE.CylinderGeometry(0.26, 0.26, pl, 8), mat(TX.mech, { metalness: 0.55, roughness: 0.5 }), px, 0.26, pz, g)
       pipe.rotation.x = Math.PI / 2; pipe.userData.noPick = true
@@ -905,6 +934,9 @@ const BUILDERS = {
     wR.rotation.y = 0.45; wR.userData.noPick = true
     const wC = mesh(new THREE.BoxGeometry(8, 12, 2.4), mat(TX.mech, { metalness: 0.45, roughness: 0.5 }), 0, 6, 10.8, g)
     wC.userData.noPick = true
+    forgeBounce(wC)
+    forgeLamp(g, 'mechWalk')
+    forgeSparksPool(g, 'mechWalk', 12)
     gear(g, TX.mech, 3.2, -4.2, 5.5, 8.4, 0.3)
     gear(g, TX.mech, 1.8, -1.2, 8.4, 8.8, -0.53)
     gear(g, TX.mech, 2.4, 4.8, 3.4, 8.6, 0.4)
@@ -949,6 +981,8 @@ const BUILDERS = {
     for (const rz of [12, 18, 26]) for (const rx of [-1.6, 1.6]) mesh(new THREE.BoxGeometry(0.14, 30, 0.14), mat(TX.brass, { metalness: 0.6 }), rx, 4, rz - 6.4, g).userData.noPick = true
     gear(g, TX.mech, 2.6, -3.6, 2.6, 5.6, 0.6)
     gear(g, TX.mech, 1.6, 3.2, 5.5, 7.6, -0.9)
+    forgeLamp(g, 'mechCar')
+    forgeSparksPool(g, 'mechCar', 10)
     const pull = mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.4), mat(TX.iron, { metalness: 0.6 }), 0, 1.2, 1.2, g)
     pull.userData.spot = 'cageRaise'; pull.userData.landmark = 'mechCageGrate'
     mesh(new THREE.SphereGeometry(0.12, 8, 8), mat(TX.brass, { metalness: 0.7 }), 0, 1.9, 1.2, g).userData.spot = 'cageDescend'
@@ -964,6 +998,8 @@ const BUILDERS = {
     const rail = mesh(new THREE.TorusGeometry(8.4, 0.07, 6, 28), mat(TX.brass, { metalness: 0.7 }), 0, 1.08, -6, g)
     rail.rotation.x = Math.PI / 2; rail.userData.noPick = true
     const warm = new THREE.PointLight(0xffb060, 3.2, 26); warm.position.set(0, 3.2, 12); g.add(warm)
+    forgeLamp(g, 'mechTop') // the landing burns on the forge-breath (item 13)
+    forgeSparksPool(g, 'mechTop', 12)
     // the steel control-room door in its bronze frame
     const frame = mesh(new THREE.BoxGeometry(2.4, 3.2, 0.5), mat(TX.brass, { metalness: 0.55 }), 0, 1.6, 14.4, g)
     frame.userData.noPick = true
@@ -1015,6 +1051,8 @@ const BUILDERS = {
     core.userData.spinY = 0.25; core.userData.noPick = true
     const glow = new THREE.PointLight(0xffc878, 4, 12); glow.position.set(0, 2.4, -4.2); g.add(glow)
     glow.userData.flicker = true
+    forgeLamp(g, 'mechRoom') // the gear-wall behind the Spectator breathes too
+    forgeSparksPool(g, 'mechRoom', 10)
     // the cage shaft window: watch the cage answer the shaft plate
     const win = mesh(new THREE.BoxGeometry(1.6, 2.2, 0.12), new THREE.MeshStandardMaterial({ color: 0x1a1420, roughness: 0.9 }), 3.6, 1.6, -3.8, g)
     win.rotation.y = -0.6; win.userData.noPick = true
@@ -1211,7 +1249,19 @@ export function buildWorld(ids) {
       if (o.userData.fall) anim.push({ o, f: (t) => { if (o.material.map) { o.material.map.offset.y = (t * 0.8) % 1 } } })
       if (o.userData.twinkle) anim.push({ o, f: (t) => { o.material.size = 0.1 + 0.06 * Math.sin(t * 2.1) } })
     if (o.userData.twinkleStar != null) anim.push({ o, f: (t) => { o.material.emissiveIntensity = 1.5 + 0.55 * Math.sin(t * 1.35 + o.userData.twinkleStar * 1.7) } })
-      if (o.userData.steam) anim.push({ o, f: (t) => { o.position.y = 0.4 + ((t * 0.7) % 1) * 2 } })
+      if (o.userData.steam) anim.push({ o, f: (t) => { const p = ventPuff(t, o.userData.steamKey || 'default'); o.position.y = 0.4 + ((t * 0.7) % 1) * 2 * (0.3 + 0.7 * p); o.material.opacity = 0.15 + 0.45 * p } })
+      // #838 item 13 — the forge breathes: lamps pulse on the pure law, near
+      // brass takes the hot bounce, sparks ride the pool, vents puff in cadence.
+      if (o.isLight && o.userData.forge) anim.push({ o, f: (t) => { o.intensity = FORGE.lamp * forgeBreath(t) } })
+      if (o.userData.forgeBounce) anim.push({ o, f: (t) => { const b = forgeBreath(t); o.material.emissive.setRGB(FORGE.bounce[0] * b, FORGE.bounce[1] * b, FORGE.bounce[2] * b) } })
+      if (o.userData.sparks) anim.push({ o, f: (t) => {
+        const sp = forgeSparks(o.geometry.attributes.position.count, t, o.userData.sparks)
+        const pa = o.geometry.attributes.position
+        let lum = 0
+        for (let i = 0; i < sp.length; i++) { pa.setXYZ(i, sp[i].x, 0.6 + sp[i].y, sp[i].z); lum += sp[i].life }
+        pa.needsUpdate = true
+        o.material.opacity = 0.35 + 0.55 * (lum / Math.max(1, sp.length))
+      } })
     })
     hot.push(...[])
   })
