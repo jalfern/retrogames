@@ -450,9 +450,25 @@ main() {
     # note names the assignment: "never-dry: pick the weakest game".
     if [[ "$HALTED" != yes ]]; then
         STAGE=""
-        ND=$(node "$REPO/scripts/neverdry.mjs" --dir "$LOG_DIR" \
-              --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" \
-              --target-a "${A_TARGET:+1}" --target-b "${B_TARGET:+1}" 2>>"$LOG" | tail -1)
+        # Materialise helper + pure lib from origin/main before calling them
+        # (sleepwatch/runway law): the main checkout's WORKING TREE lags behind
+        # origin/main on purpose — it holds the uncommitted STATE.md report — so
+        # a script merged minutes ago may not exist in "$REPO/scripts" yet, and
+        # a stdin `node -` cannot resolve ./lib against the launchd CWD.
+        mkdir -p "$LOG_DIR/lib"
+        NDJS="$LOG_DIR/neverdry-run.mjs"
+        git -C "$REPO" show origin/main:scripts/lib/idle.mjs > "$LOG_DIR/lib/idle.mjs" 2>/dev/null \
+            || cp "$REPO/scripts/lib/idle.mjs" "$LOG_DIR/lib/idle.mjs" 2>/dev/null || true
+        git -C "$REPO" show origin/main:scripts/neverdry.mjs > "$NDJS" 2>/dev/null \
+            || cp "$REPO/scripts/neverdry.mjs" "$NDJS" 2>/dev/null || true
+        ND=""
+        if [[ -s "$NDJS" ]] && [[ -s "$LOG_DIR/lib/idle.mjs" ]]; then
+            ND=$(node "$NDJS" --dir "$LOG_DIR" \
+                  --free-a "$A_IDLE" --free-b "$B_IDLE" --b-loaded "$B_LOADED" \
+                  --target-a "${A_TARGET:+1}" --target-b "${B_TARGET:+1}" 2>>"$LOG" | tail -1)
+        else
+            log "never-dry: helper missing (origin/main + tree both failed) — no kick"
+        fi
         log "never-dry: $ND"
         nd_rest="${ND#KICK }"
         for nd_slot in ${=nd_rest}; do
