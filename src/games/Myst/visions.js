@@ -4,7 +4,17 @@
 // (seconds) — no Math.random anywhere, so the harness can require that two
 // instants differ on a linked lens and match on a sealed one.
 
+import { LINK_PALETTE } from './link.js'
+
 const L = 0.5
+
+// #838 item 7 — deterministic hash (same law as link.js: the sphere's pictures
+// are world constants, not per-seed rolls). No Math.random anywhere in here.
+const hsh = (i, j) => {
+  let x = (i * 374761393 + j * 668265263) | 0
+  x = (x ^ (x >>> 13)) * 1274126177 | 0
+  return ((x ^ (x >>> 16)) >>> 0) / 4294967296
+}
 
 function sky(ctx, w, h, top, bottom) {
   const g = ctx.createLinearGradient(0, 0, 0, h)
@@ -231,7 +241,153 @@ function sealed(ctx, w, h, t) {
   ctx.fill()
 }
 
-const SCENES = { selenitic, stoneship, mechanical, channelwood }
+// MYST — the dome's home optic (#838 item 7): the island the player stands on,
+// at dusk under its own stars. In the original the Spectator's dome carried the
+// island optics beside the five Ages; the island lens was never sealed — you are
+// already there. It wears the same laws the scene dresses the bay with: the
+// clock tower slim and tallest with one warm breathing dial (r > b), the
+// dome-crag jade on basalt across the bay (sea.js LANDMARK_LAW), foam ticks
+// blinking on the dusk shoreline, swell shimmer on the water.
+function myst(ctx, w, h, t) {
+  sky(ctx, w, h, '#05070f', '#241a28')
+  for (let i = 0; i < 90; i++) {
+    const tw = 0.7 + 0.3 * Math.sin(t * (0.8 + hsh(i, 31) * 1.4) + hsh(i, 41) * 6.28)
+    ctx.fillStyle = `rgba(255,250,240,${(0.2 + hsh(i, 17) * 0.6 * tw).toFixed(3)})`
+    ctx.fillRect(hsh(i, 3) * w, hsh(i, 9) * h * 0.5, hsh(i, 53) < 0.12 ? 1.6 : 0.8, 0.8)
+  }
+  ctx.fillStyle = 'rgba(225,232,240,0.85)'
+  ctx.beginPath()
+  ctx.arc(w * 0.24, h * 0.24, h * 0.1, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(225,232,240,0.12)'
+  ctx.beginPath()
+  ctx.arc(w * 0.24, h * 0.24, h * 0.16, 0, Math.PI * 2)
+  ctx.fill()
+  const seaY = h * 0.7
+  ctx.fillStyle = '#0e1622'
+  ctx.fillRect(0, seaY, w, h - seaY)
+  for (let i = 0; i < 4; i++) {
+    ctx.strokeStyle = `rgba(150,170,230,${(0.1 + 0.05 * Math.sin(t * 1.1 + i * 1.9)).toFixed(3)})`
+    ctx.lineWidth = Math.max(1, h * 0.015)
+    ctx.beginPath()
+    for (let x = 0; x <= w; x += 6) {
+      const y = seaY + ((i + 0.7) / 4) * (h - seaY) + Math.sin(x * 0.08 + t * (0.9 + i * 0.3) + i) * h * 0.012
+      x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+  }
+  ctx.fillStyle = '#0a0d12'
+  ctx.beginPath()
+  ctx.ellipse(w * 0.55, seaY + h * 0.02, w * 0.5, h * 0.16, 0, Math.PI, 0)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(w * 0.08, seaY + h * 0.02, w * 0.18, h * 0.07, 0, Math.PI, 0)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.ellipse(w * 0.95, seaY + h * 0.02, w * 0.2, h * 0.09, 0, Math.PI, 0)
+  ctx.fill()
+  ctx.fillStyle = '#0b1210'
+  ctx.beginPath()
+  ctx.ellipse(w * 0.78, seaY, w * 0.12, h * 0.07, 0, Math.PI, 0)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(110,220,150,0.35)'
+  ctx.beginPath()
+  ctx.arc(w * 0.78, seaY - h * 0.03, h * 0.045, Math.PI, 0)
+  ctx.fill()
+  const tx = w * 0.5
+  const tw2 = w * 0.035
+  const th = h * 0.3
+  ctx.fillStyle = '#07090d'
+  ctx.fillRect(tx - tw2 / 2, seaY - h * 0.14 - th, tw2, th)
+  ctx.fillRect(tx - tw2, seaY - h * 0.14 - th - h * 0.03, tw2 * 2, h * 0.03)
+  const dial = 0.55 + 0.35 * Math.sin(t * 1.7)
+  ctx.fillStyle = `rgba(255,176,90,${dial.toFixed(3)})`
+  ctx.beginPath()
+  ctx.arc(tx, seaY - h * 0.14 - th * 0.62, h * 0.028, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = 'rgba(234,244,238,0.5)'
+  for (let k = 0; k < 6; k++) {
+    const fb = 0.5 + 0.5 * Math.sin(t * (1.2 + hsh(k, 83) * 1.3) + hsh(k, 97) * 6.28)
+    if (fb > 0.55) ctx.fillRect(w * (0.12 + hsh(k, 71) * 0.76), seaY + h * 0.005, Math.max(1, w * 0.02), Math.max(1, h * 0.01))
+  }
+}
+
+// THE BROTHERS' PORTRAITS (#838 item 7) — the dome hung Sirrus and Achenar
+// beside the age optics. Each portrait wears its brother's trap colour (the
+// link.js law: a trap field IS crimson/cobalt, not a tinted view), and the
+// corrupted static heals two tears for every page returned to its book — the
+// visual twin of the message-clearing law the books already run. At 4/4 the
+// face resolves, calm, out of the ruin. The pane is scenery on the dome: the
+// portraits never free anyone, and the white page's law is untouched.
+export const PORTRAIT_TEAR0 = 8
+export function drawPortrait(ctx, book, t, placed, w, h) {
+  const p = Math.max(0, Math.min(4, placed | 0))
+  const pal = book === 'blue' ? LINK_PALETTE.trapBlue : LINK_PALETTE.trapRed
+  const [tr, tg, tb] = pal.tint
+  ctx.clearRect(0, 0, w, h)
+  ctx.save()
+  ctx.beginPath()
+  ctx.moveTo(0, h)
+  ctx.lineTo(0, h * 0.22)
+  ctx.quadraticCurveTo(w / 2, -h * 0.16, w, h * 0.22)
+  ctx.lineTo(w, h)
+  ctx.closePath()
+  ctx.clip()
+  sky(ctx, w, h, pal.ink, pal.floor)
+  ctx.fillStyle = `rgba(${Math.round(tr * 0.5)},${Math.round(tg * 0.5)},${Math.round(tb * 0.5)},0.9)`
+  ctx.beginPath()
+  ctx.ellipse(w * 0.5, h * 1.02, w * 0.36, h * 0.42, 0, Math.PI, 0)
+  ctx.fill()
+  ctx.beginPath()
+  ctx.arc(w * 0.5, h * 0.5, h * 0.13, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.strokeStyle = `rgba(${tr},${tg},${tb},0.5)`
+  ctx.lineWidth = Math.max(1, w * 0.012)
+  ctx.beginPath()
+  ctx.arc(w * 0.5, h * 0.5, h * 0.13, Math.PI * 1.1, Math.PI * 1.9)
+  ctx.stroke()
+  if (p >= 4) {
+    ctx.fillStyle = 'rgba(230,220,210,0.55)'
+    ctx.beginPath()
+    ctx.ellipse(w * 0.5, h * 0.52, h * 0.07, h * 0.09, 0, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  const tears = PORTRAIT_TEAR0 - 2 * p
+  for (let k = 0; k < tears; k++) {
+    const seedK = k + (book === 'blue' ? 50 : 0)
+    const x = w * (0.06 + hsh(seedK, 7) * 0.88) + Math.sin(t * 2 + k * 1.7) * w * 0.006
+    const ww = w * (0.02 + hsh(seedK, 29) * 0.05)
+    ctx.fillStyle = `rgba(10,10,14,${(0.5 + hsh(seedK, 37) * 0.3).toFixed(3)})`
+    ctx.fillRect(x, h * 0.05, ww, h * 0.92)
+    ctx.strokeStyle = `rgba(150,158,172,${(0.12 + hsh(seedK, 43) * 0.12).toFixed(3)})`
+    ctx.lineWidth = Math.max(1, h * 0.02)
+    ctx.beginPath()
+    let yy = h * 0.05
+    ctx.moveTo(x, yy)
+    for (let s = 0; s < 5; s++) {
+      yy += h * 0.185
+      ctx.lineTo(x + (s % 2 ? ww : 0), yy)
+    }
+    ctx.stroke()
+  }
+  const glass = ctx.createRadialGradient(w * L - w * 0.2, h * L - h * 0.24, h * 0.06, w * L, h * L, Math.min(w, h) * 0.72)
+  glass.addColorStop(0, 'rgba(255,255,255,0.12)')
+  glass.addColorStop(0.35, 'rgba(255,255,255,0.02)')
+  glass.addColorStop(1, 'rgba(0,0,0,0.4)')
+  ctx.fillStyle = glass
+  ctx.fillRect(0, 0, w, h)
+  ctx.restore()
+  ctx.strokeStyle = 'rgba(214,178,110,0.5)'
+  ctx.lineWidth = Math.max(1, w * 0.02)
+  ctx.beginPath()
+  ctx.moveTo(0, h)
+  ctx.lineTo(0, h * 0.22)
+  ctx.quadraticCurveTo(w / 2, -h * 0.16, w, h * 0.22)
+  ctx.lineTo(w, h)
+  ctx.stroke()
+}
+
+const SCENES = { selenitic, stoneship, mechanical, channelwood, myst }
 
 // Paint one age-vision into `ctx`, clipped to a glass lens inscribed in the
 // (w x h) canvas, with rim and a specular sweep so each pane reads as a sphere.

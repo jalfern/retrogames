@@ -18,12 +18,12 @@ import { audioController } from '../../utils/AudioController'
 import { containMap } from '../../utils/fitCanvas'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
-import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews } from './state.js'
+import { freshState, dispatch, runSolver, solveScript, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { MESSAGES, PRESS } from './attract.js'
 import { buildWorld, atmosphere, updateTrueStars, updateWheel } from './scene.js'
-import { drawVision } from './visions.js'
+import { drawVision, drawPortrait } from './visions.js'
 import { drawLink, linkEnvelope, LINK_TICKS } from './link.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
@@ -46,13 +46,14 @@ const MystGame = () => {
   const [singRing, setSingRing] = useState(-1)
   const singRingRef = useRef(-1)
   const visionRefs = useRef({})
+  const portraitRefs = useRef({})
   const attractRefs = useRef({})
   const linkRef = useRef(null)
   const screenRef = useRef('attract')
   const pausedRef = useRef(false)
   const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
   const ctl = useRef(null)
-  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial, link: s.link })
+  const syncHud = (s) => setHud({ message: s.message, caption: NODES[s.node].caption, pages: { ...s.pages }, placed: { ...s.placed }, panel: s.panelOpen, book: s.bookOpen, ending: s.ending, links: Object.fromEntries(AGE_LIST.map((a) => [a, !!s.flags[`link_${a}`]])), visions: spectatorViews(s), sphere: [...s.sphereDial], star: [...s.starDial], wheel: [...s.wheelDial], switches: [...s.switches], dial: s.safeDial, link: s.link, portraits: portraitViews(s) })
 
   useEffect(() => {
     const wrap = stageRef.current
@@ -439,6 +440,13 @@ const MystGame = () => {
           const cv = visionRefs.current[v.age]
           if (cv) drawVision(cv.getContext('2d'), v.age, wt, v.unlocked, cv.width, cv.height)
         }
+        // #838 item 7 — the dome's home optic is never sealed: you stand there.
+        const cvM = visionRefs.current.myst
+        if (cvM) drawVision(cvM.getContext('2d'), 'myst', wt, true, cvM.width, cvM.height)
+        for (const pv of portraitViews(gs)) {
+          const cv = portraitRefs.current[pv.book]
+          if (cv) drawPortrait(cv.getContext('2d'), pv.book, wt, pv.placed, cv.width, cv.height)
+        }
       }
       if (screenRef.current === 'attract') {
         // #1027 — the Spectator shot: all four lenses swim live on the title
@@ -502,7 +510,7 @@ const MystGame = () => {
           gs = { ...s, link: null, linkT: 0 }; gotoNode(gs.node); aim(); hudStamp = -1
           return { node: gs.node, views: spectatorViews(gs) }
         },
-        visions: () => ({ panel: gs.panelOpen, clock: wt, views: spectatorViews(gs).map((v) => ({ ...v, live: !!visionRefs.current[v.age] })) }),
+        visions: () => ({ panel: gs.panelOpen, clock: wt, views: spectatorViews(gs).map((v) => ({ ...v, live: !!visionRefs.current[v.age] })), island: !!visionRefs.current.myst, portraits: portraitViews(gs) }),
         visionSig: (age) => {
           const cv = visionRefs.current[age]
           if (!cv) return null
@@ -759,7 +767,39 @@ const MystGame = () => {
               </div>
             ))}
           </div>
-          <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · a lens clears when you walk its age · A / Enter closes</div>
+          {/* #838 item 7 — the dome carries home and the brothers: the island
+            optic (never sealed — you stand on it) and the two portraits, whose
+            static heals two tears per page returned to the right book. */}
+          <div className="flex gap-3 justify-center items-end mt-2">
+            <div className="text-center">
+              <canvas
+                ref={(el) => { visionRefs.current.myst = el }}
+                data-vision="myst"
+                width={240}
+                height={180}
+                className="block"
+                style={{ width: 120, height: 90 }}
+              />
+              <div className="text-[10px] uppercase tracking-widest mt-1 text-amber-200/80">myst — home</div>
+            </div>
+            {(hud.portraits || []).map((pv) => (
+              <div key={pv.book} className="text-center">
+                <canvas
+                  ref={(el) => { portraitRefs.current[pv.book] = el }}
+                  data-portrait={pv.book}
+                  data-placed={pv.placed}
+                  width={152}
+                  height={228}
+                  className="block"
+                  style={{ width: 76, height: 114 }}
+                />
+                <div className={`text-[10px] uppercase tracking-widest mt-1 ${pv.placed >= 4 ? 'text-amber-200/80' : 'text-zinc-500'}`}>
+                  {pv.who} · {pv.placed}/4
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-xs text-sky-200/60">ages, all of them — worlds inside books · a lens clears when you walk its age · the portraits heal as pages come home · A / Enter closes</div>
         </Panel>
       )}
       {hud.panel === 'soundbook' && screen === 'play' && (

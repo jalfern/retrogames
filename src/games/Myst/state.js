@@ -504,6 +504,18 @@ export function pagesTotal(st) { return Object.keys(st.pages).length }
 export function spectatorViews(s) {
   return AGE_LIST.map((a) => ({ age: a, unlocked: has(s, `link_${a}`) }))
 }
+
+// #838 item 7 — the dome's two portraits. Corruption heals two tears for every
+// page returned to the right book (the visual twin of the message-clearing law
+// the books already run); at 4/4 the face resolves. Pure: reads only s.placed.
+// The portraits are scenery — they free nobody, and the white page's law is
+// untouched.
+export function portraitViews(s) {
+  return [
+    { who: 'sirrus', book: 'red', placed: Math.max(0, Math.min(AGE_LIST.length, s.placed.red | 0)) },
+    { who: 'achenar', book: 'blue', placed: Math.max(0, Math.min(AGE_LIST.length, s.placed.blue | 0)) },
+  ]
+}
 export function currentSpots(st) {
   const n = NODES[st.node]
   return n.spots
