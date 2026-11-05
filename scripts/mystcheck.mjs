@@ -9,7 +9,7 @@ import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, l
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
 import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
-import { domeHeight, SEL_CRESTS, DOME } from '../src/games/Myst/terrain.js'
+import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -815,7 +815,10 @@ console.log('MYST — the trap books fly (#838: red and blue starfields before t
   for (const c of ['red', 'blue']) {
     let f = pullTrap(c).state
     let covered = true, t = 0
-    while (f.pending && !f.ending) { covered = covered && !!f.link && f.linkT > 0; f = dispatch(f, { t: 'tick' }).state; t += 1 }
+    // capped: the flight is exactly LINK_TICKS long, and a mutant that never
+    // lands the fate must DIE here (fail the next ok), not spin this loop
+    // forever — an unbounded wait was a corpse factory (#838, 2026-11-05).
+    while (f.pending && !f.ending && t < LINK_TICKS + 30) { covered = covered && !!f.link && f.linkT > 0; f = dispatch(f, { t: 'tick' }).state; t += 1 }
     ok(covered && t === LINK_TICKS, `the ${c} trap flies its full ${LINK_TICKS}-tick field with no uncovered frame`, `${t} ticks`)
     ok(f.ending === fateOf[c] && f.pending === null, `the ${c} trap lands its own fate`)
   }
@@ -946,6 +949,86 @@ console.log('MYST — Selenitic terrain sculpt (#1033: a dome, not rings on a di
   'the sounding field stays level and the gate sits in a cliff that rises behind it')
   ok(SEL_CRESTS.selenitic.z !== SEL_CRESTS.selSound.z && SEL_CRESTS.selenitic.h !== SEL_CRESTS.selSound.h,
   'each Selenitic view carves its own crest — one dome seen from two poses')
+}
+
+console.log('MYST — the other Ages’ ground (#838 item 1: beds and coasts, not disc edges)')
+{
+  // the player's feet plus landmarks that must sit on the level bed (from the
+  // node cameras and the scene builders) — all strictly inside the flat carve
+  const BED = {
+    stoneship:        [[0, -24], [0, -2], [4.4, 0.4], [8, -1]],
+    stoneDeck:        [[0, -10], [0, 0], [1.3, 4.4], [0, -16]],
+    stoneObservatory: [[0, -4], [-9, -2], [-8.78, -0.36]],
+    mechanical:       [[0, -14], [0, -6.2], [-4.4, 2.6], [11, -12]],
+    mechWalk:         [[3.2, -8.5], [5.6, 5.6], [-2.4, 7.8], [8.4, -6]],
+    channelwood:      [[0, -24], [0, -16], [0, -14]],
+    chanChannels:     [[0, -40], [0, -25.6], [-2.2, -34.6], [1.5, -30]],
+    chanWheel:        [[0, -56], [0, -53], [-4.8, -51.4], [7.6, -57]],
+    chanObs:          [[0, -66], [-3.4, -63], [-4.4, -70], [5.6, -66]],
+  }
+  for (const [view, v] of Object.entries(AGE_GROUND)) {
+    const f = v.flats[0]
+    let bed = true
+    for (const x of [f.x0 + 1, (f.x0 + f.x1) / 2, f.x1 - 1])
+      for (const z of [f.z0 + 1, (f.z0 + f.z1) / 2, f.z1 - 1])
+        if (ageHeight(x, z, view) !== v.base) bed = false
+    ok(bed && BED[view].every(([x, z]) => ageHeight(x, z, view) === v.base),
+      `${view}: the bed is exactly level under the player and its landmarks`)
+    if (v.water !== null)
+      ok(v.base > v.water, `${view}: the bed is dry land — the sea runs below the player's feet`)
+    // the sculpt is real: a crest above the bed, a drop below the sea (or bed)
+    let mx = -1e9, mn = 1e9
+    for (let x = -110; x <= 110; x += 3) for (let z = -110; z <= 110; z += 3) {
+      const h = ageHeight(x, z, view); if (h > mx) mx = h; if (h < mn) mn = h
+    }
+    ok(mx > v.base + 0.5 && mn < (v.water === null ? v.base - 0.5 : v.water),
+      `${view}: the sculpt is real — a crest above the bed, a drop below ${v.water === null ? 'the bed' : 'the sea'}`,
+      `mx ${mx.toFixed(2)} / mn ${mn.toFixed(2)}`)
+    // sightline from the bed's centre through the crest: it meets the waterline
+    // exactly once (a coast, not an ocean under the world), and the skirt ends
+    // the shared plane below it
+    const c = v.crest
+    const fc = [(f.x0 + f.x1) / 2, (f.z0 + f.z1) / 2]
+    let dx = c.x - fc[0], dz = c.z - fc[1]
+    const L = Math.hypot(dx, dz) || 1
+    dx /= L; dz /= L
+    let cross = 0, prev = ageHeight(fc[0], fc[1], view)
+    for (let d = 0.5; d <= 130; d += 0.5) {
+      const h = ageHeight(fc[0] + dx * d, fc[1] + dz * d, view)
+      if (v.water !== null && prev >= v.water && h < v.water) cross++
+      prev = h
+    }
+    if (v.water !== null) {
+      ok(cross === 1, `${view}: the sightline meets the waterline exactly once (a coast)`, String(cross))
+      ok(prev < v.water, `${view}: the skirt dips below the sea so the shared plane ends at the shore`, prev.toFixed(2))
+    } else {
+      ok(prev < v.base, `${view}: the drop runs below the old disc level — no hard disc edge`, prev.toFixed(2))
+    }
+  }
+  ok(ageHeight(0, 3, 'stoneObservatory') > AGE_GROUND.stoneObservatory.base,
+    'the ridge rises under the observatory dome (Stoneship)')
+  ok(ageHeight(0, -57, 'chanObs') > AGE_GROUND.chanObs.base,
+    'the ridge rises under the star drum (Channelwood)')
+  const entries = Object.values(AGE_GROUND).map((v) => JSON.stringify(v))
+  ok(new Set(entries).size === Object.keys(AGE_GROUND).length,
+    'no two views share one sculpt (nine distinct entries)')
+  const sig = (view) => {
+    const v = AGE_GROUND[view]
+    const out = []
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++)
+      out.push(ageHeight(v.crest.x + i * 7, v.crest.z + j * 7, view).toFixed(2))
+    return out.join(',')
+  }
+  ok(new Set(Object.keys(AGE_GROUND).map(sig)).size === Object.keys(AGE_GROUND).length,
+    'no two views share one sculpt (nine distinct height fields)')
+  // one entry point: the dome for Selenitic, the Age ground for the other three
+  ok(groundHeight(0, 95, 'selenitic') === domeHeight(0, 95, 'selenitic') &&
+     groundHeight(0, -24, 'stoneship') === ageHeight(0, -24, 'stoneship') &&
+     groundHeight(0, -66, 'chanObs') === ageHeight(0, -66, 'chanObs'),
+    'the scene displaces its heightfield through groundHeight — dome for Selenitic, Age ground for the rest')
+  const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+  ok(Object.keys(AGE_GROUND).every((v) => new RegExp(`terrainField\\(g, TX\\.\\w+, '${v}'`).test(sc)),
+    'every outdoor view of the three Ages displaces a heightfield in the scene (no old disc)')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -1180,6 +1263,25 @@ if (process.argv.includes('--mutate')) {
     ['the trap sounds like an ordinary leap (no inward pull)', SP,
       `if (typeof ev === 'string' && /^link:trap/.test(ev)) {`,
       `if (typeof ev === 'string' && /^link:trapXX/.test(ev)) {`],
+    // #838 item 1 — the Age ground
+    ['the Age coast is a disc edge again (the skirt never dips below the sea)', TR,
+      `stoneship:        { base: 0,   water: -0.3, crest: { x: 0, z: -14, core: 6, rim: 26, h: 4 }, drop: 3.5,`,
+      `stoneship:        { base: 0,   water: -0.3, crest: { x: 0, z: -14, core: 6, rim: 26, h: 4 }, drop: 0,`],
+    ['the landing bed is not flat (the sculpt swallows the pier)', TR,
+      `flats: [{ x0: -9, x1: 9, z0: -27, z1: 3, soft: 5 }]`,
+      `flats: []`],
+    ['the island ridge sinks (no sculpt on the Stoneship)', TR,
+      `crest: { x: 0, z: -14, core: 6, rim: 26, h: 4 }`,
+      `crest: { x: 0, z: -14, core: 6, rim: 26, h: 0 }`],
+    ['two views share one sculpt (Channelwood observatory copies the terrace)', TR,
+      `chanObs:          { base: 4.4, water: -0.5, crest: { x: 0, z: -57, core: 5, rim: 16, h: 1.2 }, drop: 6, skirt: 18, flats: [{ x0: -10, x1: 10, z0: -72, z1: -61, soft: 5 }] }`,
+      `chanObs:          { base: 2.2, water: -0.5, crest: { x: 0, z: -53, core: 3, rim: 12, h: 0.8 }, drop: 3, skirt: 10, flats: [{ x0: -11, x1: 11, z0: -61, z1: -49, soft: 5 }] }`],
+    ['the scene keeps the flat disc (the Stoneship heightfield is not displaced)', 'src/games/Myst/scene.js',
+      `terrainField(g, TX.grey, 'stoneship')`,
+      `const ground = mesh(new THREE.CircleGeometry(70, 26), mat(TX.grey), 0, -0.05, 0, g); ground.rotation.x = -Math.PI / 2`],
+    ['the scene displaces the wrong height (the Selenitic dome leaks into the Ages)', TR,
+      `if (view === 'selenitic' || view === 'selSound') return domeHeight(x, z, view)`,
+      `return domeHeight(x, z, view)`],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {
