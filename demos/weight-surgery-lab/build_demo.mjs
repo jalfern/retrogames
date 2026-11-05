@@ -398,6 +398,7 @@ const R2EXP = {
   p50cw: { math: "MIT p50c same-100: 45.8% acc · ~67% finished", gsm: "MIT p50c same-100: 67% acc · ~67% finished" },
   own: { math: "our own edit, scored vs our p50cw row (#1562)", gsm: "our own edit, scored vs our p50cw row (#1562)" },
   basew: { math: "base at window ctx 32768 — our box", gsm: "base at window ctx 32768 — our box" },
+  openbook: { math: "unedited base + MIT's written diagnosis (#1580)", gsm: "unedited base + MIT's written diagnosis (#1580)" },
 };
 const R2ROWS = [
   ["base", "base @ 32K think35"],
@@ -405,6 +406,7 @@ const R2ROWS = [
   ["p50c", "MIT p50c edit — our reproduction"],
   ["p50cw", "#1547 option C — penalty window ctx 32768"],
   ["own", "our own edit (Astra rules, #1562)"],
+  ["openbook", "OPEN-BOOK — base + MIT's written diagnosis in context (#1580)"],
 ];
 // #1562: Jon re-opened step 2 — judged against OUR p50cw row, not MIT's published
 // numbers. jonGo flips the own row from "forbidden (gate STOP)" to in-flight/done.
@@ -414,6 +416,8 @@ const r2Tbl = R2ROWS.map(([tag, label]) => {
   if (!s) {
     if (tag === "basew")
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1567 control row — running detached at PAR-32, lands as it scores</td><td class="note">${R2EXP[tag].math}</td></tr>`;
+    if (tag === "openbook")
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1580 open-book control — <b>unedited weights</b>, diagnosis text in context; rows land as they score <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
     if (tag === "own" && r2gate && !r2gate.pass && !jonGo)
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
@@ -592,6 +596,48 @@ ${r3LayerRows}
 </table>` : ""}
 ${r3LayerNote}`;
 
+// ---- ROUND 4 (#1580): OPEN-BOOK control — MIT's WRITTEN diagnosis, UNEDITED weights ----
+// Jon's condition from the #1567 handoff: feed MIT's final_answer.md verbatim as a
+// system turn (WS_SYSTEM_FILE, r4_openbook.sh) to the untouched base model, same
+// fixed held-out rows, same think35 pp1.5 ctx 32768 PAR-32 protocol. One question:
+// does the CONTENT of their diagnosis do what their edit tensors do? Trust boundary:
+// final_answer.md is the only MIT artifact this lab reads — ws3check §12 polices it.
+const r4Ob = r2s && r2s.openbook
+const r4Done = (x) => x && x.math && x.gsm && x.math.n >= r3Hold && x.gsm.n >= r3Hold
+const r4Row = (id, tag, label, s) => {
+  const mit = (k) => r2mit && r2mit.regrade && r2mit.regrade[k] ? r2mit.regrade[k].mit_acc.toFixed(1) + "%" : "—"
+  if (!r4Done(s))
+    return `<tr id="${id}"><td>${label}</td><td colspan=5 class="note">pending — lands as it scores <span class="prog" aria-hidden="true"><i></i></span></td></tr>`
+  return `<tr id="${id}"><td>${label}</td><td>${s.math.acc.toFixed(1)}%</td><td>${s.math.finished.toFixed(1)}%</td><td>${s.gsm.acc.toFixed(1)}%</td><td>${s.gsm.finished.toFixed(1)}%</td><td class="note">${mit(`${tag}:math`)} / ${mit(`${tag}:gsm`)}</td></tr>`
+}
+const r4Html = `
+<h2>ROUND 4 — OPEN-BOOK CONTROL (#1580)</h2>
+<p>Jon's condition closing #1567: every weight-side route we ran stayed ~26 points short of our p50cw reproduction, so the remaining question is <b>where the knowledge lives</b>. Feed MIT's <i>written</i> diagnosis — their experiment write-up <code>exp8_math/runs/p50c/final_answer.md</code>, verbatim — into the <b>unedited base model</b> as a system turn, at the identical protocol (fixed 100+100 held-out, think35, pp1.5, ctx 32,768, seed 0, PAR-32). If the text alone recovers escape, their result is content-transferable; if the weights row still towers, the fix was never reducible to instructions. Trust boundary, enforced by ws3check: <code>final_answer.md</code> is the only MIT artifact this lab reads — their edit tensors, turn logs and weight manifests were never opened, and the injection is scoped to this one command (<code>WS_SYSTEM_FILE</code>, never exported).</p>
+<table>
+<tr><th>row — same 100+100, same protocol</th><th>MATH acc</th><th>MATH fin</th><th>GSM8K acc</th><th>GSM8K fin</th><th>MIT-checker math / gsm</th></tr>
+${r4Row("r4-base", "base", "base (ctx-20 window, #1533)", r2s && r2s.base)}
+${r4Row("r4-basew", "basew", "base @ window ctx 32768 (#1567 control)", r2s && r2s.basew)}
+${r4Row("r4-openbook", "openbook", "<b>OPEN-BOOK — base + MIT's written diagnosis</b>", r4Ob)}
+${r4Row("r4-p50cw", "p50cw", "p50cw — MIT's edit, our weights (reference)", r2s && r2s.p50cw)}
+</table>
+${(() => {
+  if (!r4Done(r4Ob) || !r4Done(r2s.basew))
+    return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK CONTROL IN FLIGHT.</b> base + MIT's written diagnosis, weights untouched, same rows and protocol as the p50cw row — the cleanest content-vs-weights test on this box. The row and its same-window controls land as they score; nothing is claimed before it is measured.</p>`
+  const mean = (x) => (x.math.acc + x.gsm.acc) / 2
+  const b = r2s.base, bw = r2s.basew, w = r2s.p50cw
+  const liftC = r4Done(bw) ? mean(r4Ob) - mean(bw) : null
+  const shortW = r4Done(w) ? mean(w) - mean(r4Ob) : null
+  const finOb = (r4Ob.math.finished + r4Ob.gsm.finished) / 2
+  const finW = r4Done(w) ? (w.math.finished + w.gsm.finished) / 2 : null
+  const works = liftC !== null && liftC >= 2
+  const concl = works && (shortW === null || shortW <= 2)
+    ? `<b>the diagnosis CONTENT transfers.</b> Reading it moves the unedited model +${liftC.toFixed(1)} pts over the same-window base${shortW === null ? "" : `, within ${shortW.toFixed(1)} pts of the weight edit`} — part of MIT's result is knowledge the model can act on from instructions alone.`
+    : works
+      ? `the diagnosis <b>helps but does not close</b>: +${liftC.toFixed(1)} pts over the same-window base, still <b>${shortW.toFixed(1)} pts short</b> of the p50cw weights edit at the identical protocol (finished ${finOb.toFixed(0)}% vs ${finW === null ? "?" : finW.toFixed(0)}%). The words carry a piece of the fix; the tensors carry the rest — escape is not reducible to the write-up.`
+      : `<b>reading the diagnosis does nothing measurable</b> (Δ${liftC.toFixed(1)} pts vs the same-window base control, finished ${finOb.toFixed(0)}% vs the edit's ${finW === null ? "?" : finW.toFixed(0)}%). MIT's escape is not knowledge their text conveys — it lives in the weights, not the words.`
+  return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK VERDICT.</b> base + MIT's written diagnosis, unedited weights, scored once at the full protocol: <b>MATH ${r4Ob.math.acc.toFixed(1)}% acc / ${r4Ob.math.finished.toFixed(1)}% fin · GSM8K ${r4Ob.gsm.acc.toFixed(1)}% / ${r4Ob.gsm.finished.toFixed(1)}% fin</b> (MIT-checker ${r3mit("openbook:math")} math · ${r3mit("openbook:gsm")} gsm) — vs base ${b && b.math && b.gsm ? `${b.math.acc.toFixed(1)}% / ${b.gsm.acc.toFixed(1)}%` : "—"} (ctx-20) and, at the <b>same</b> window, base ${bw && r4Done(bw) ? `${bw.math.acc.toFixed(1)}% / ${bw.gsm.acc.toFixed(1)}%` : "—"} and p50cw ${w && r4Done(w) ? `${w.math.acc.toFixed(1)}% / ${w.gsm.acc.toFixed(1)}%` : "—"}. Verdict: ${concl} No direction-search passes spent — this row is pure scoring; it lands once in the batch log above.</p>`
+})()}`;
+
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -664,6 +710,7 @@ const html = `<!DOCTYPE html>
 <div class="sub">Qwen3.5-0.8B @ <code>2fc06364</code> — weight-space programming attempt (#1493), rescored at a fair horizon (#1506), and re-run at MIT's own 32,768-token horizon on the GPU (#1533): no gradients, practice on GSM8K/MATH <b>train</b> only, ≤50 forward-pass batches, one scored held-out run. By the forge, on a laptop-class box (rounds I–II on CPU — the GPU path was dead until round 2, #737).</div>
 ${r2Html}
 ${r3Html}
+${r4Html}
 
 ${verdict}
 

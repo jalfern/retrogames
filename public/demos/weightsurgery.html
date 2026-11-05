@@ -88,6 +88,8 @@
 <tr id="r2-p50cw-gsm"><td>gsm</td><td>100</td><td>48.0%</td><td>74.0%</td><td>17835</td><td class="note">MIT p50c same-100: 67% acc · ~67% finished</td></tr>
 <tr id="r2-own"><td rowspan=2>our own edit (Astra rules, #1562)</td><td>math</td><td>100</td><td>6.0%</td><td>6.0%</td><td>31061</td><td class="note">our own edit, scored vs our p50cw row (#1562)</td></tr>
 <tr id="r2-own-gsm"><td>gsm</td><td>100</td><td>8.0%</td><td>8.0%</td><td>30254</td><td class="note">our own edit, scored vs our p50cw row (#1562)</td></tr>
+<tr id="r2-openbook"><td rowspan=2>OPEN-BOOK — base + MIT's written diagnosis in context (#1580)</td><td>math</td><td>100</td><td>2.0%</td><td>3.0%</td><td>31876</td><td class="note">unedited base + MIT's written diagnosis (#1580)</td></tr>
+<tr id="r2-openbook-gsm"><td>gsm</td><td>100</td><td>4.0%</td><td>4.0%</td><td>31504</td><td class="note">unedited base + MIT's written diagnosis (#1580)</td></tr>
 </table>
 
 <p class="note"><b>WHAT REPRODUCES.</b> The base rows land in MIT's base neighborhood — MATH 3.0% acc vs MIT 8% · GSM 8.0% vs 14% — and the loop-cut signature matches: 97%/93% of base answers cut at 32K vs MIT's ~93%. On the p50c row, precision-per-finished-answer matches MIT's: 30/41 ≈ 73% (MATH) and 54/75 = 72% (GSM) vs MIT's ~48/67 ≈ 72%.</p>
@@ -122,6 +124,17 @@
 <tr><td>all6 — L15/L7/L11/L3/L19/L23</td><td>1.43</td></tr>
 </table>
 <p class="note"><b>CANDIDATE 3 — MORE LAYERS? NO.</b> Combined held-out separation on the P5 basis (pooled z-normalization; cross-layer covariance measured from the read, not assumed independent): top-2 1.51 · top-3 1.47 · top-4 1.52 · all-6 1.43. Frozen rule: commit scoring passes to 4 layers only above 1.10× top-2 — measured 1.01×, NOT met — the layer budget stays L15/L7, and the curve says why (top-3 DROPS below top-2: layers 3/11 re-report L15/L7 rather than add). Per-layer separations reproduce P5 within gate tolerance — plumbing green.</p>
+
+<h2>ROUND 4 — OPEN-BOOK CONTROL (#1580)</h2>
+<p>Jon's condition closing #1567: every weight-side route we ran stayed ~26 points short of our p50cw reproduction, so the remaining question is <b>where the knowledge lives</b>. Feed MIT's <i>written</i> diagnosis — their experiment write-up <code>exp8_math/runs/p50c/final_answer.md</code>, verbatim — into the <b>unedited base model</b> as a system turn, at the identical protocol (fixed 100+100 held-out, think35, pp1.5, ctx 32,768, seed 0, PAR-32). If the text alone recovers escape, their result is content-transferable; if the weights row still towers, the fix was never reducible to instructions. Trust boundary, enforced by ws3check: <code>final_answer.md</code> is the only MIT artifact this lab reads — their edit tensors, turn logs and weight manifests were never opened, and the injection is scoped to this one command (<code>WS_SYSTEM_FILE</code>, never exported).</p>
+<table>
+<tr><th>row — same 100+100, same protocol</th><th>MATH acc</th><th>MATH fin</th><th>GSM8K acc</th><th>GSM8K fin</th><th>MIT-checker math / gsm</th></tr>
+<tr id="r4-base"><td>base (ctx-20 window, #1533)</td><td>3.0%</td><td>3.0%</td><td>8.0%</td><td>7.0%</td><td class="note">— / —</td></tr>
+<tr id="r4-basew"><td>base @ window ctx 32768 (#1567 control)</td><td>6.0%</td><td>5.0%</td><td>10.0%</td><td>8.0%</td><td class="note">6.0% / 10.0%</td></tr>
+<tr id="r4-openbook"><td><b>OPEN-BOOK — base + MIT's written diagnosis</b></td><td>2.0%</td><td>3.0%</td><td>4.0%</td><td>4.0%</td><td class="note">3.0% / 4.0%</td></tr>
+<tr id="r4-p50cw"><td>p50cw — MIT's edit, our weights (reference)</td><td>31.0%</td><td>51.0%</td><td>48.0%</td><td>74.0%</td><td class="note">37.0% / 48.0%</td></tr>
+</table>
+<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK VERDICT.</b> base + MIT's written diagnosis, unedited weights, scored once at the full protocol: <b>MATH 2.0% acc / 3.0% fin · GSM8K 4.0% / 4.0% fin</b> (MIT-checker 3.0% math · 4.0% gsm) — vs base 3.0% / 8.0% (ctx-20) and, at the <b>same</b> window, base 6.0% / 10.0% and p50cw 31.0% / 48.0%. Verdict: <b>reading the diagnosis does nothing measurable</b> (Δ-5.0 pts vs the same-window base control, finished 4% vs the edit's 63%). MIT's escape is not knowledge their text conveys — it lives in the weights, not the words. No direction-search passes spent — this row is pure scoring; it lands once in the batch log above.</p>
 
 
 <h2 id="verdictfair">VERDICT — fair horizon, cap 4096 (fixed 100 MATH-500 + 100 GSM8K-test, seed 20261103)</h2>
@@ -258,6 +271,7 @@
 <tr><td>02:28:49</td><td>own-edit</td><td>r2 (#1533) · undefined</td><td>undefined</td><td>undefined</td><td>own edit apply: alpha=8.0 topk=128 layers=[15, 7] from own R1 directions (step-3)<br><span class="ruled">ruled out: nothing yet — scoring follows (r2_score own:qwen35-own)</span></td></tr>
 <tr><td>02:34:15</td><td>practice</td><td>r3 (#1567) · undefined</td><td>undefined</td><td>undefined</td><td>#1567 candidate 2 practice scoring own8 (qwen35-own-a8) — alpha selection on practice ONLY (Jon ruling: held-out is scored once)<br><span class="ruled">ruled out: alpha variants at practice acc 1.6 / finished 4.7 on the fresh 64-math batch</span></td></tr>
 <tr><td>05:24:08</td><td>undefined</td><td>r2 (#1533) · undefined</td><td>undefined</td><td>undefined</td><td>held-out scoring row own4 (qwen35-own-a4, think35 pp=1.5 pp_ctx=32768)<br><span class="ruled">ruled out: step-1 gate vs MIT expectations happens after base+p50c rows</span></td></tr>
+<tr><td>07:54:14</td><td>undefined</td><td>r2 (#1533) · undefined</td><td>undefined</td><td>undefined</td><td>held-out scoring row openbook (qwen35-base, think35 pp=1.5 pp_ctx=32768)<br><span class="ruled">ruled out: step-1 gate vs MIT expectations happens after base+p50c rows</span></td></tr>
 </table>
 
 <h2>FIRST-PASS HELD-OUT (cap 1024 — kept for the record; unmeasurable horizon)</h2>
