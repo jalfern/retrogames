@@ -1140,9 +1140,9 @@ console.log('MYST — sea polish pass (#1587: ragged lagging foam, swell voice, 
   }
   // the scene and loop wear the pure laws
   {
-    const sc = readFileSync('src/games/MYST/scene.js', 'utf8')
-    const jx = readFileSync('src/games/MYST/index.jsx', 'utf8')
-    const sd = readFileSync('src/games/MYST/sound.js', 'utf8')
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    const jx = readFileSync('src/games/Myst/index.jsx', 'utf8')
+    const sd = readFileSync('src/games/Myst/sound.js', 'utf8')
     ok(/t - FOAM_LAG/.test(sc) && /foamScale\(fx, fz, id\)/.test(sc), 'the scene lags and rags its foam through sea.js')
     ok(/glintFor\(id\)/.test(sc) && /SEA_EXTENT/.test(sc), 'the scene seats its glints and sizes its seas through sea.js')
     ok(/ambience\(NODES\[gs\.node\]\.amb, SIM_MS \/ 1000, gs\.node\)/.test(jx), 'the loop passes the view to ambience so the swell rumble wears its Age')
@@ -1418,10 +1418,10 @@ if (process.argv.includes('--mutate')) {
       `if (view === 'selenitic' || view === 'selSound') return domeHeight(x, z, view)`,
       `return domeHeight(x, z, view)`],
     // #1587 — the sea polish pass
-    ['the break stops lagging the swell (foam swims with the water)', 'src/games/MYST/scene.js',
+    ['the break stops lagging the swell (foam swims with the water)', 'src/games/Myst/scene.js',
       'seaSwell(fx, -fz, t - FOAM_LAG, id)',
       'seaSwell(fx, -fz, t, id)'],
-    ['the break goes uniform again (one width for every puff)', 'src/games/MYST/scene.js',
+    ['the break goes uniform again (one width for every puff)', 'src/games/Myst/scene.js',
       'const w = 1.7 * foamScale(fx, fz, id)',
       'const w = 1.7'],
     ['the sea shrinks back to a visible seam', SEA,
@@ -1435,7 +1435,7 @@ if (process.argv.includes('--mutate')) {
     ['the rumble forgets the Age (one flat volume for every sea)', SP,
       'vol: 0.015 + 0.075 * k',
       'vol: 0.015 + 0.075'],
-    ['the sun forgets the seas (the glint strips vanish)', 'src/games/MYST/scene.js',
+    ['the sun forgets the seas (the glint strips vanish)', 'src/games/Myst/scene.js',
       'const gl = glintFor(id)',
       'const gl = null'],
     ['the ambience drops the view (no per-Age rumble)', JX,
