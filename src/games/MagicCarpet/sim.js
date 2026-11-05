@@ -765,6 +765,22 @@ export function autopilot(gs) {
             else if (gs.hands.R === 'slow' && gs.wizSlow <= 0 && gs.mana >= 30) pad.b = ph < 2
         }
     }
+
+    // Defensive veil (#1610): low HP with a threat closing — a blind wizard and
+    // wolves cannot finish the run. Whichever hand holds the veil casts it.
+    if (gs.hp < 40 && gs.invis <= 0 && gs.mana >= spellById('invisibility').cost) {
+        const closing = gs.monsters.some((m) => m.kind !== 'cow' &&
+            Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 25) ||
+            (gs.wizard.alive && Math.hypot(wrapD(gs.wizard.x - gs.x), wrapD(gs.wizard.y - gs.y)) < 70)
+        if (closing) {
+            if (gs.hands.L === 'invisibility') pad.a = true
+            else if (gs.hands.R === 'invisibility') pad.b = true
+        }
+    }
+    // Altitude is armor (the original's lesson, #1610 sweep): when hurt and a
+    // wolf is closing, climb — wolves only bite carpets flying low.
+    if (gs.hp < 55 && gs.monsters.some((m) => m.kind === 'wolf' &&
+        Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 24)) pad.up = true
     return pad
 }
 
