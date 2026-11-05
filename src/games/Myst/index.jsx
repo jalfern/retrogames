@@ -27,6 +27,7 @@ import { drawVision, drawPortrait } from './visions.js'
 import { drawLink, linkEnvelope, LINK_TICKS } from './link.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
+import { stormFlash, STORM } from './storm.js'
 
 const VW = 960, VH = 540
 const SIM_MS = 1000 / 60
@@ -85,6 +86,7 @@ const MystGame = () => {
     sun.shadow.bias = -0.0007
     scene.add(sun); scene.add(sun.target)
     const SUN_OFF = new THREE.Vector3(-38, 54, 26)
+    const STORM_COL = new THREE.Color(STORM.color[0], STORM.color[1], STORM.color[2])
 
     const { root, hot, anim, mech } = buildWorld(NODE_IDS)
     scene.add(root)
@@ -98,6 +100,11 @@ const MystGame = () => {
     const toneBulbs = []
     root.traverse((o) => { if (o.userData && o.userData.tone != null && o.material) toneBulbs.push(o) })
     let sing = null
+    // #838 item 8 — storm lighting: the per-Age sun/fog rest values (from
+    // atmosphere) so the flash rides ON TOP and the calm between strikes returns
+    // them exactly; thunder is scheduled off the sim clock, never a timer.
+    let sunBaseI = 1.1, stormPrev = 0, stormAt = 0
+    const fogBase = new THREE.Color()
     let raf = 0, last = 0, acc = 0, wt = 0, playTick = 0
     let fade = 1, fadeDir = -1
     let attractIx = 0, attractT = 0, hudStamp = -1
@@ -111,6 +118,7 @@ const MystGame = () => {
       const at = atmosphere(id)
       scene.fog.color.set(at.fog.color); scene.fog.near = at.fog.near; scene.fog.far = at.fog.far
       sun.color.set(at.sun.color); sun.intensity = at.sun.i
+      sunBaseI = at.sun.i; fogBase.set(at.fog.color)
     }
     const aim = () => {
       const n = NODES[gs.node]
@@ -417,6 +425,24 @@ const MystGame = () => {
             gs = r.state
             if (gs.node !== prev) { gotoNode(gs.node); lookYaw = 0; fadeDir = 1; aim(); sfx('travel') }
           }
+        }
+        // #838 item 8 — the storm lights the Age and the thunder rolls after:
+        // the flash lifts the sun past its Age value and pushes the fog toward
+        // pale jade for the strike's decay; the calm between strikes returns the
+        // atmosphere exactly (sunBaseI/fogBase). The strike's rising edge parks
+        // thunder at STORM.rumbleDelay on the sim clock — the loop owns timing.
+        if (screenRef.current === 'play' && !gs.ride) {
+          const fl = stormFlash(wt, gs.node)
+          if (fl > 0) {
+            sun.intensity = sunBaseI + fl * 2.4
+            scene.fog.color.copy(fogBase).lerp(STORM_COL, fl * 0.5)
+          } else if (sun.intensity !== sunBaseI) {
+            sun.intensity = sunBaseI
+            scene.fog.color.copy(fogBase)
+          }
+          if (fl > 0 && stormPrev === 0) stormAt = wt + STORM.rumbleDelay
+          stormPrev = fl
+          if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }
         }
         if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000, gs.node)
       }

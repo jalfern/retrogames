@@ -8,9 +8,10 @@ import { drawVision, drawPortrait, PORTRAIT_TEAR0 } from '../src/games/Myst/visi
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues, thunderCues } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ISLAND_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
 import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, DEEP_DARK, MIRROR_LIFT, deepTint, FAR_GAIN, farSwell, cloudMirror, cloudTint, SKY_CLOUD, MIRROR_RAMP, islesFor, ISL_LIMIT, landmarksFor, LANDMARK_LAW } from '../src/games/Myst/sea.js'
+import { STORM, STORM_VIEWS, stormView, stormFlash, skyGain, seaGain } from '../src/games/Myst/storm.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1538,6 +1539,79 @@ console.log('MYST — the dome carries home and the brothers (#838 item 7: the i
   ok(/SCENES = \{ selenitic, stoneship, mechanical, channelwood, myst \}/.test(srcVI), 'the island painter is registered beside the Ages')
 }
 
+console.log('MYST — the storm strikes live (#838 item 8: the Age lights at once, thunder answers after)')
+{
+  // — the envelope: deterministic, bounded, a decaying double strike
+  ok(stormFlash(3.1, 'selenitic') === stormFlash(3.1, 'selenitic'), 'the flash is deterministic — same instant, same light')
+  ok(stormFlash(0, 'selenitic') === 1, 'the strike begins at full brightness')
+  ok(stormFlash(STORM.width, 'selenitic') === 0, 'the main stroke dies at STORM.width')
+  ok(stormFlash(STORM.period, 'selenitic') === stormFlash(0, 'selenitic'), 'the storm keeps its 6.4 s clock')
+  let bounded = true, mainDecay = true
+  for (let k = 0; k <= 6.4 * 120; k++) {
+    const f = stormFlash(k / 120, 'selenitic')
+    if (!(f >= 0 && f <= 1)) bounded = false
+    const x = k / 120, xn = (k + 1) / 120
+    if (x > STORM.bounce + STORM.bounceWidth && xn < STORM.width && f < stormFlash(xn, 'selenitic')) mainDecay = false
+  }
+  ok(bounded, 'the flash never overexposes — the envelope stays in 0..1')
+  ok(mainDecay, 'after the bounce the sky decays monotonically to the dark')
+  ok(stormFlash(0.07, 'selenitic') === 1, 'the second strike lifts the mid-decay sky back to full')
+  ok(stormFlash(0.075, 'selenitic') > 1 - 0.075 / STORM.width, 'the bounce really brightens past the main decay (a double strike, not one)')
+  ok(stormFlash(0.07 + STORM.bounceWidth + 0.01, 'selenitic') < stormFlash(0.07, 'selenitic'), 'the bounce is weaker than the main stroke')
+
+  // — one storm, one clock: the world strikes exactly when the Spectator lens
+  //   paints its flash (visions.js: t % 6.4 < 0.16)
+  let sameClock = true
+  for (let k = 0; k <= 64 * 120; k++) {
+    const t = k / 120
+    const lit = stormFlash(t, 'selenitic') > 0
+    const lens = (t % 6.4) < 0.16
+    if (lit !== lens) { sameClock = false; break }
+  }
+  ok(sameClock, 'the world flashes when the lens flashes — the pane and the Age share one storm')
+
+  // — the storm belongs to Selenitic alone: every sel node, and nothing else
+  const selNodes = Object.keys(NODES).filter((v) => v === 'selenitic' || v.startsWith('sel'))
+  ok(selNodes.join(',') === STORM_VIEWS.join(','), 'every Selenitic view stands under the storm — and only they do')
+  ok(STORM_VIEWS.every((v) => stormView(v)), 'the storm table knows its own views')
+  let sky
+  for (const v of ['dock', 'cliffPath', 'beach', 'stairTop', 'landing', 'mechanical', 'chanWheel', 'stoneDeck', 'towerTop']) {
+    sky = stormFlash(0.02, v)
+    ok(sky === 0, `${v} never flickers — the rest of the world keeps its sky`)
+  }
+  let atOnce = true
+  for (const v of STORM_VIEWS) if (stormFlash(0.02, v) !== stormFlash(0.02, 'selenitic')) atOnce = false
+  ok(atOnce, 'the whole Age lights at once — one sky over the caldera, not five')
+
+  // — the gains ride the envelope
+  ok(skyGain(0, 'selenitic') === 1.8 && seaGain(0, 'selenitic') === 0.5, 'at full strike the sky drives hardest, the sea mirrors softer')
+  ok(skyGain(2.5, 'selenitic') === stormFlash(2.5, 'selenitic') * 1.8 && seaGain(2.5, 'selenitic') === stormFlash(2.5, 'selenitic') * 0.5, 'sky and sea gain ride the same envelope')
+  ok(skyGain(0.02, 'dock') === 0 && seaGain(0.02, 'dock') === 0, 'a dry sky outside the storm keeps its gains at zero')
+
+  // — thunder: it speaks, it is not a swell, and it arrives AFTER the light
+  const th = plan('thunder')
+  ok(th.length === 3 && JSON.stringify(th) === JSON.stringify(thunderCues()), 'thunder speaks the plan — crack, rumble, low stone moan')
+  ok(th.some((c) => c.type === 'noise'), 'the crack is raw — the strike itself, not filtered wash')
+  const swellAll = Object.keys(SEA_VIEWS).flatMap((v) => swellCues(v))
+  ok(!swellAll.some((c) => c.type === 'noise'), 'no swell on any sea has a crack — thunder is never mistaken for surf')
+  ok(Math.max(...th.map((c) => c.vol)) > Math.max(...swellAll.map((c) => c.vol)), 'the storm is closer than any surf — thunder out-scores every swell')
+  ok(th.some((c) => c.type === 'fnoise' && c.freq < 220), 'the rumble sits under the sea\u2019s 220 Hz wash — an octave deeper, rock not water')
+  ok(STORM.rumbleDelay > 1, 'thunder answers the flash with real distance — sound after light, never with it')
+
+  // — the shell drives it: sky, sun, fog, and thunder off the sim clock
+  const srcSC = readFileSync('src/games/Myst/scene.js', 'utf8')
+  const srcJX = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  ok(/dressStorm\(g, id, anim\)/.test(srcSC), 'every view asks the storm (and gets nothing unless it is Selenitic)')
+  ok(/if \(!stormView\(id\)\) return/.test(srcSC), 'dressStorm returns early for the calm Ages')
+  ok(/1 \+ g \* STORM\.color\[0\]/.test(srcSC), 'the flash drives the sky dome past white (tone-mapped light, not an overlay)')
+  ok(/s\.material\.emissive\.setRGB\(e \* STORM\.color\[0\]/.test(srcSC), 'the sea catches the strike in its emissive')
+  ok(/sunBaseI \+ fl \* 2\.4/.test(srcJX), 'the sun lifts past its Age value under the flash')
+  ok(/scene\.fog\.color\.copy\(fogBase\)\.lerp\(STORM_COL/.test(srcJX), 'the haze goes jade with the strike')
+  ok(/sun\.intensity = sunBaseI\s*\n\s*scene\.fog\.color\.copy\(fogBase\)/.test(srcJX), 'the calm between strikes returns the atmosphere exactly')
+  ok(/stormAt = wt \+ STORM\.rumbleDelay/.test(srcJX), 'thunder waits on the sim clock, never a setTimeout')
+  ok(/if \(stormAt && wt >= stormAt\) \{ stormAt = 0; sfx\('thunder'\) \}/.test(srcJX), 'when its moment comes the storm rings')
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1923,6 +1997,25 @@ if (process.argv.includes('--mutate')) {
       'placed: Math.max(0, Math.min(AGE_LIST.length, s.placed.red | 0))'],
     ['the dome never hangs the portraits', JX,
       'data-portrait={pv.book}', 'data-portrai={pv.book}'],
+    // #838 item 8 — the storm strikes live
+    ['the storm never strikes (a still green wash inside the Age)', 'src/games/Myst/storm.js',
+      'return Math.min(1, f)', 'return 0'],
+    ['the bounce dies (a single stiff blink, not the original\u2019s double)', 'src/games/Myst/storm.js',
+      'if (x >= STORM.bounce', 'if (false && x >= STORM.bounce'],
+    ['the island flickers too (dusk forgets whose sky it is)', 'src/games/Myst/storm.js',
+      'return STORM_VIEWS.includes(view)', 'return true'],
+    ['the throne sits dark while the landing flashes (the Age splits)', 'src/games/Myst/storm.js',
+      "'selenitic', 'selSound', 'selThrone', 'selGate', 'selTop'", "'selenitic', 'selSound'"],
+    ['thunder arrives with the flash (sound outruns the light)', 'src/games/Myst/storm.js',
+      'rumbleDelay: 1.7', 'rumbleDelay: 0'],
+    ['thunder never speaks (a mute storm)', SP,
+      "if (ev === 'thunder') return thunderCues()", "if (ev === 'thunder') return []"],
+    ['thunder steals the surf\u2019s voice (crackless, swell-quiet)', SP,
+      "{ type: 'noise', dur: 0.16, vol: 0.17 },", "{ type: 'fnoise', dur: 2.2, vol: 0.08, freq: 220 },"],
+    ['the scene stops driving the sky (the flash lives only in the law)', 'src/games/Myst/scene.js',
+      'd.material.color.setRGB(1 + g * STORM.color[0]', 'd.material.color.setRGB(1 + 0 * g * STORM.color[0]'],
+    ['thunder is scheduled but never rings (the edge detector is deaf)', JX,
+      "if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }", 'if (stormAt && wt >= stormAt) { stormAt = 0 }'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

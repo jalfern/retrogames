@@ -9,6 +9,7 @@ import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
 import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor } from './sea.js'
+import { stormView, skyGain, seaGain, STORM } from './storm.js'
 
 const GAP = 4000
 
@@ -247,6 +248,29 @@ function dressSea(group, id, anim) {
       dome.userData.noPick = true
     }
   }
+}
+
+// #838 item 8 — SELENITIC storms live (storm.js): the flash strikes the whole
+// view at once. The sky dome is driven past white on the pure `skyGain`
+// envelope (tone-mapped, so it reads as light), and every sea plane in the
+// view catches the same pale jade in its emissive. Views outside the storm
+// get nothing — the island's dusk never flickers. The clock is the loop's own
+// `wt`, the same instant the Spectator lens paints (visions.js).
+function dressStorm(group, id, anim) {
+  if (!stormView(id)) return
+  const domes = []
+  const seas = []
+  group.traverse((o) => {
+    if (!o.isMesh) return
+    if (o.userData.sky) domes.push(o)
+    if (o.userData.isSea) seas.push(o)
+  })
+  anim.push({ o: domes[0] || group, f: (t) => {
+    const g = skyGain(t, id)
+    for (const d of domes) d.material.color.setRGB(1 + g * STORM.color[0], 1 + g * STORM.color[1], 1 + g * STORM.color[2])
+    const e = seaGain(t, id)
+    for (const s of seas) s.material.emissive.setRGB(e * STORM.color[0], e * STORM.color[1], e * STORM.color[2])
+  } })
 }
 
 function rocks(group, tex, list) {
@@ -1135,6 +1159,7 @@ export function buildWorld(ids) {
     skyDome(g, idSky(id))
     if (BUILDERS[id]) BUILDERS[id](g)
     dressSea(g, id, anim)
+    dressStorm(g, id, anim)
     const cam = NODES[id].pos
     for (const sp of NODES[id].spots) {
       if (sp.act === 'takePage') {
