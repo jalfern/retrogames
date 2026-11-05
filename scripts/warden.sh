@@ -130,6 +130,14 @@ main() {
     git -C "$REPO" fetch -q --prune origin 2>/dev/null
     MAIN=$(git -C "$REPO" rev-parse --short=7 origin/main 2>/dev/null || echo unknown)
 
+    # ---- 1b. KEY-SYNC LIB (#1614) ---------------------------------------
+    # Materialise the scanner from origin/main (the sleepwatch pattern): the
+    # warden judges key-death with the merged code, not the lagging working
+    # tree. Used by kick_slot's stalled guard below.
+    KEYSYNC="$LOG_DIR/keysync.mjs"
+    git -C "$REPO" show origin/main:scripts/lib/keysync.mjs > "$KEYSYNC" 2>/dev/null \
+        || cp "$REPO/scripts/lib/keysync.mjs" "$KEYSYNC" 2>/dev/null || true
+
     # Every open issue (REST lists PRs as issues too; drop them).
     ISSUES=$(gh api "repos/$GH/issues?state=open&per_page=100" \
              --jq '[.[] | select(.pull_request | not)]') || { log "gh failed"; return 1; }
@@ -362,6 +370,27 @@ main() {
         log "lane plan: ladder=${LADDER:-?} a=${A_TARGET:-none} b=${B_TARGET:-none} qb=$B_LOADED qsq=$QA_STUDIO_QUEUE qmq=$QA_MINI_QUEUE qmf=$QA_MINI_FLAGSHIP sup=$STUDIO_UP"
     fi
 
+    key_dead() {   # $1 = slot a|b — does that lane's newest session log carry a
+                   # key-death signature? (#1614: rotated oMLX key, stale tap copy.
+                   # Only the category token is read — never the log line itself.)
+        local f="$LOG_DIR/last-forge-b.log"
+        [[ "$1" == a ]] && f="$LOG_DIR/last.log"
+        [[ -s "$f" && -s "$KEYSYNC" ]] || return 1
+        [[ "$(node "$KEYSYNC" check-log "$f" 2>/dev/null | tail -1)" == KEYDEAD* ]]
+    }
+    key_note() {   # $1 = slot — the waiting-jon note, once per open occurrence.
+                   # Names the evidence log and the fix path, never a key value.
+        local s=$1 ev="$LOG_DIR/last-forge-b.log"
+        [[ "$s" == a ]] && ev="$LOG_DIR/last.log"
+        local t="PLATFORM: oMLX key rotated — forge slot $s dies at launch with Invalid API key"
+        print -r -- "$ISSUES" | jq -e --arg t "$t" '.[] | select(.title == $t)' >/dev/null 2>&1 && return 0
+        act gh api -X POST "repos/$GH/issues" \
+            -f title="$t" \
+            -f body="Slot \`$s\` keeps dying at launch with \`Invalid API key\` (evidence: tail \`$ev\`; the key value itself is never logged). \`provider.omlx\` was likely rotated; the Studio tap providers hold their own copy of the key, and the launch scripts re-sync them from the source every launch since #1614 — so a lane that still dies here means the SOURCE key is wrong or oMLX rejects it. Jon: check the key in \`~/.config/opencode/opencode.json\` (\`provider.omlx.options.apiKey\`). The warden will NOT label this work \`stalled\`." \
+            -f 'labels[]=waiting-jon' -f 'labels[]=lane:platform' \
+            --jq '.number' >> "$LOG" 2>&1 \
+            && log "opened waiting-jon key note for slot $s"
+    }
     kick_slot() {   # $1 = slot a|b, $2 = issue number, $3 = launchd job
         local s=$1 n=$2 job=$3
         [[ -z "$n" ]] && return 0
@@ -375,6 +404,17 @@ main() {
             | .[(($last // -1) + 1):] | map(select(startswith("WARDEN: builder '"$s"' idle"))) | length' 2>/dev/null)
         KICKS=${KICKS:-0}
         if (( KICKS >= 3 )); then
+            if key_dead "$s"; then
+                # #1614: NOT stalled. The lane dies at LAUNCH on a rotated oMLX
+                # key — the work never got a driver. Say so on the pulse (the
+                # keydead action rides the follow-up pulse line), park a
+                # waiting-jon note once, and leave the item claimable: the moment
+                # Jon fixes the key, the next kick works again by itself.
+                comment "$n" "WARDEN: slot $s keeps dying at launch with 'Invalid API key' — a rotated key, not a stalled game. Not labeling stalled; a waiting-jon note carries the fix. (See #1614.)"
+                key_note "$s"
+                ACTIONS+=("keydead:$s"); log "#$n -> keydead (slot $s): waiting-jon, not stalled"
+                return 0
+            fi
             add_label "$n" stalled
             comment "$n" "WARDEN: kicked 3 times with no FORGE progress in between. Labeled stalled; Jon, please take a look."
             ACTIONS+=("stalled:$s"); log "#$n -> stalled (slot $s)"

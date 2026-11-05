@@ -77,6 +77,19 @@ if [[ -f "$REPO/scripts/jonq.mjs" ]] && [[ "$(node "$REPO/scripts/jonq.mjs" halt
     exit 0
 fi
 
+# #1614 oMLX key rotation: the tap providers keep their OWN copy of the key,
+# so when provider.omlx is rotated they go stale and every session dies at the
+# first request ("Invalid API key", launchd exit 1 — Nov 5 killed both builder
+# slots and QA·Studio for three hours). Re-sync at every launch, BEFORE the
+# provider routing below picks a model, so this session rides the fresh key.
+# Merge = install (the sleepwatch pattern): the lib runs from origin/main, not
+# the lagging working tree. Fail-open: no lib / no source key -> route as
+# before. The summary names providers only — a key value never reaches a log.
+KEYSYNC="$LOG_DIR/keysync.mjs"
+git -C "$REPO" show origin/main:scripts/lib/keysync.mjs > "$KEYSYNC" 2>/dev/null \
+    || cp "$REPO/scripts/lib/keysync.mjs" "$KEYSYNC" 2>/dev/null || true
+[[ -s "$KEYSYNC" ]] && node "$KEYSYNC" sync "$HOME/.config/opencode/opencode.json" >> "$LOG" 2>&1
+
 # TAP (scripts/tap.mjs): when the slot's tap answers AND its provider exists
 # in ~/.config/opencode/opencode.json, route this session through it so
 # `watch.sh --live` shows tokens as they generate. #1356: each slot gets its

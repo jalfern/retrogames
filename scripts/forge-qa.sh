@@ -85,6 +85,16 @@ if ! curl -s -m 3 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; then
     exit 0
 fi
 
+# #1614 oMLX key rotation: tap providers hold their own copy of the key; a
+# rotated source makes them stale and kills the session at the first request.
+# Re-sync before the model routing below (merge = install: the lib comes from
+# origin/main). The Mini/MBP providers have their OWN key and are never
+# touched; the summary names providers only, never a key value. Fail-open.
+KEYSYNC="$LOG_DIR/keysync.mjs"
+git -C "$REPO" show origin/main:scripts/lib/keysync.mjs > "$KEYSYNC" 2>/dev/null \
+    || cp "$REPO/scripts/lib/keysync.mjs" "$KEYSYNC" 2>/dev/null || true
+[[ -s "$KEYSYNC" ]] && node "$KEYSYNC" sync "$HOME/.config/opencode/opencode.json" >> "$LOG" 2>&1
+
 PROMPT="You are THE QA MASTER on node $NODE. Open scripts/FORGE-QA.md and execute its session procedure exactly, end to end, without asking questions. AGENTS.md is the law. Time-box yourself to 60 minutes.$EXTRA"
 
 # TAP (#1268 studio, #1356 mini): lanes with their own model stream get their
