@@ -84,8 +84,8 @@ AGENTS.md wins.
     game and repeats the gap's opening words; when unsure, treat it as owned
     — this stage exists only for what QA has not reached). Use
     `scripts/lib/idle.mjs` (`parseGaps` + `flagshipStage` + `weakestStage`)
-    to derive the pick honestly from the READMEs, not from memory. **File
-    that stage as its own issue first** (`gh issue create` with `game-queue`
+    to derive the pick honestly from the READMEs, not from memory. **File that stage as its own
+    issue first** (`gh issue create` with `game-queue`
     + `lane:games`, title `POLISH — <GAME>: <gap summary>`, so it shows on
     the board and in the shift report), **then claim it the normal way**
     (step 2's claim + worktree) and build it as one stage: it is game code,
