@@ -1,53 +1,61 @@
-# STATE — session 126 (2026-11-04, slot b)
+# STATE — session 134 (2026-11-04, slot b)
 
 ## What shipped
-**ADVENTURE soft-lock fix + #1556 playtest — MERGED** `4ab5f89` via PR #1559
-(QA-borrow: ladder dry, feedback #1556 free, no live QA session at claim).
-- Black Castle approach from OW3 while its gate closed dropped the player at
-  y=8 INSIDE the gate rect — pinned all four directions, permanent soft-lock
-  (the win-script masked it by teleporting y). Fix: `dewedge()` nudges every
-  room-transition landing below the obstruction; gate law untouched (a new law
-  proves standing below a closed gate never enters).
-- adventurecheck 59→67 (+8 soft-lock laws), 15/15 mutants die (incl. new
-  "remove de-wedge" mutant → RED). Gates: eslint, lint:mario/fps/ai, build green.
-- New evidence harness `npm run adventure-playtest` (#1556 deliverable):
-  novice random-walk 300 seeds → 34.7% dragon deaths (Yorgle 60, Rhindle 44,
-  Grundle 0 — correct gating), median survival 1653t, 0% wins, 0% sword-borne
-  deaths; skilled route 100/100 wins at tick 1648; single-slot finding: sword
-  blocks key/chalice pickups → sword routes must park & re-arm.
-- Mobile pad audit (issue part 2): touch path complete — VirtualControls
-  Arrow/Space synth + canvas pointerdown start/restart. No gameplay gap.
-- **Spun off #1560** (feedback, lane:qa): the bat can NEVER change rooms —
-  inner bounce `x∈[10,140]` runs before the `x<2 / x>GW−8` room-change checks,
-  unreachable. Its item-swap signature is dead (measured 1 room/10000t ×20
-  seeds). Fix needs steal-recovery on the scripted win route first.
+**ADVENTURE joins the harness spine — MERGED** `32c5d41` via PR #1569 (closes
+#1568, filed+claimed this session per Jon's 21:02Z order on #1557: "Do the
+ADVENTURE pass first, then follow #1456 as the standing rule").
+- `contractGames.mjs` + nightly-bot roster: `adventure` appended at the same
+  position (boredomcheck compares ORDERS; #1525 can't repeat). Contract spine
+  **44→45 games** — contractcheck/juiceaudit/nightly/boredomaudit see ADVENTURE
+  for the first time. `PATTERNS.adventure` = 4-dir + guarded drop (drop is safe:
+  no-op empty-handed, placed items re-pickable per bridge law #1551).
+- `state()`/`exposeFeedbackState` carry live `x/y` (`sim.player.x/y`) —
+  POSITION_KEYS carrier, the boredom audit can never call this game BLIND again.
+- adventurecheck 72→76 static + all mutants: **+4 spine gates, mutant "position
+  carrier vanishes" → 95 ok/0 fail, 18/18 mutants die** (`--mutant` flag gates
+  the loop; plain run prints 76 — that's normal).
+- First-timer pass (#1456 rule 3): Node probe, 200 novice seeds ×5000t:
+  0% win, 35.5% dragon deaths, median 6/18 rooms, 57.5% never pick an item,
+  56/200 find goldKey but **0/200 open any gate, 0/200 the secret rite** →
+  3 new honest README gaps (no variant selector vs SELECT GAME 30+ variants;
+  zero gate-rite discoverability; no guidance surface vs the fold-out map).
+- Determinism of the new script proven at sim tier: same-seed bit-identical
+  over the 600-tick contract script, different-seed diverges (seed rides in
+  state JSON — honest pass, matches how contractcheck evaluates).
+- Prod verified by CONTENT FINGERPRINT: served entry bundle carries
+  `carrying:…,x:….player.x`; /retrogames/adventure 200.
+- **Filed #1572** (feedback): QA polish pass — gate affordance, guidance tab
+  (no secret hint), 3-variant selector, maws/sparkle/wipe juice.
+- Closed #1557 (Jon's milestone question) — answered at 21:02Z and now
+  executed; completion note posted, precedent #1456.
 
 ## Same cycle, other lanes
-Slot a closed **the seedpin rollout #1473**: b23 total-coverage law (83/83),
-b24 strict-shape ratchet 13→0, rollout COMPLETE; ADVENTURE #1551 bridges +
-secret room (#1555, slot a/QA-mini); #1547 demos verdict (#1558). Jon filed
-**#1557 himself: "Next builder milestone after seedpin rollout closed?"** —
-answer it with a title proposal, not a re-ask (#1544 also stale-open).
+Slot a holds #1567 (WS step 3, claimed 22:50Z; my claim REFUSED, yielded).
+#1141 (Jon, stalled) — never adopt.
 
 ## Board (end of session)
-- Ladder dry: no game-queue/next/steer/halt; feedback = #1560 (fresh, for QA
-  lane — builders may borrow if QA dead, but its fix wants a steal-recovery day).
-- building: only #1141 (Jon, stalled). building-qa: #1547.
-- Flagship README gaps: ZERO open (SSX/Emberwood/CDHD/Myst, parseGaps-verified
-  by hand — every bullet CLOSED-by-#). flagshipStage → null.
-- main tip `4ab5f89`; main-ok true; #1556 closed+shipped; #1560 open.
-- Slot b port 5178 never started (clean). Worktree retrogames-qa-1556 removed;
-  main checkout detached at tip, STATE.md only dirty file.
+- Ladder: game-queue/next/steer/halt empty; feedback = #1572 (QA lane's).
+- building: #1567 (slot a). building-qa: none.
+- main tip `32c5d41`; #1568 shipped+closed; #1557 closed; #1572 open.
+- Rule 4 healthy: game code merged this session.
 
 ## ENV (carry-forward)
 - `. /tmp/forge/env.sh` for gh+proxy; push via `-c http.proxy=http://127.0.0.1:18080`.
-- Fresh worktrees have NO node_modules: `ln -sfn /Users/jon/Dev/retrogames/node_modules <wt>/node_modules` — lints/build work instantly.
-- Vite entry hashes are NOT reproducible local-vs-Vercel — verify prod by
-  `gh api repos/.../commits/<sha>/check-runs` + deployments (Production for the
-  merge sha) and route 200, not by hash equality. www.jalfern HTML via node fetch
-  through the shim is fine but small cached bodies are the proxy answering.
-- `gh pr list` unsupported by shim → `gh api repos/.../pulls?state=open`.
+- Fresh worktrees: `ln -sfn /Users/jon/Dev/retrogames/node_modules <wt>/node_modules`.
+- FORGE step-1 `cp STATE.md <slot-path> <shared>` = 3 sources → "Not a
+  directory"; use two cp calls (slot path FIRST, #1430). Re-kicked this session.
+- Shim gaps: `commits/<sha>/deployments` 422s (path glued to sha);
+  `issues/N --jq '.comments'` returns a number; `commits/<sha>/check-runs`
+  answered total:0 right after merge. Verify prod by content fingerprint:
+  build locally, grep dist for a marker unique to the diff, then fetch the
+  live chunks under /retrogames/assets/ and test the regex there.
+- Vite entry hash names are NOT a reliable before/after signal (Vercel vs
+  local hashes differ; the same name reappeared with new content).
 - Chrome still dead (#737) — browser tier advisory; sim-tier Node is the gate.
+- Mutant loops are flag-gated (`adventurecheck --mutant`); a plain green run
+  does NOT prove the fail-proof.
+- Slot b dev server on 5178 stopped at session end; worktree
+  retrogames-forge-adventure-contract removed; main checkout detached at tip.
 
 ## Open questions
-- (none filed — #1557 is Jon's own question to the studio, not a jonq)
+- (none — #1557 executed+closed this session; jonq games lane empty)
