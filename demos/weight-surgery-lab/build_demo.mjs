@@ -399,6 +399,7 @@ const R2EXP = {
   own: { math: "our own edit, scored vs our p50cw row (#1562)", gsm: "our own edit, scored vs our p50cw row (#1562)" },
   basew: { math: "base at window ctx 32768 — our box", gsm: "base at window ctx 32768 — our box" },
   openbook: { math: "unedited base + MIT's written diagnosis (#1580)", gsm: "unedited base + MIT's written diagnosis (#1580)" },
+  ob: { math: "open-book weight edit — our columns from MIT's diagnosis (#1585)", gsm: "open-book weight edit — our columns from MIT's diagnosis (#1585)" },
 };
 const R2ROWS = [
   ["base", "base @ 32K think35"],
@@ -406,7 +407,8 @@ const R2ROWS = [
   ["p50c", "MIT p50c edit — our reproduction"],
   ["p50cw", "#1547 option C — penalty window ctx 32768"],
   ["own", "our own edit (Astra rules, #1562)"],
-  ["openbook", "OPEN-BOOK — base + MIT's written diagnosis in context (#1580)"],
+  ["openbook", "DIAGNOSIS-AS-PROMPT CONTROL — base + MIT's written diagnosis in context (#1580)"],
+  ["ob", "OPEN-BOOK EDIT — MIT's written diagnosis executed as weights by us (#1585)"],
 ];
 // #1562: Jon re-opened step 2 — judged against OUR p50cw row, not MIT's published
 // numbers. jonGo flips the own row from "forbidden (gate STOP)" to in-flight/done.
@@ -417,7 +419,9 @@ const r2Tbl = R2ROWS.map(([tag, label]) => {
     if (tag === "basew")
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1567 control row — running detached at PAR-32, lands as it scores</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     if (tag === "openbook")
-      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1580 open-book control — <b>unedited weights</b>, diagnosis text in context; rows land as they score <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1580 diagnosis-as-prompt control — <b>unedited weights</b>, diagnosis text in context; rows land as they score <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
+    if (tag === "ob")
+      return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">#1585 open-book edit — layers <b>15 + 19</b>, own top-64 <code>down_proj</code> columns per layer, α chosen on practice; the ONE held-out row lands as it scores <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
     if (tag === "own" && r2gate && !r2gate.pass && !jonGo)
       return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">forbidden — step-1 gate STOPped the run before it; never ran</td><td class="note">${R2EXP[tag].math}</td></tr>`;
     return `<tr id="r2-${tag}"><td>${label}</td><td colspan=4 class="note">pending — rows land as each gate clears <span class="prog" aria-hidden="true"><i></i></span></td><td class="note">${R2EXP[tag].math}</td></tr>`;
@@ -611,18 +615,18 @@ const r4Row = (id, tag, label, s) => {
   return `<tr id="${id}"><td>${label}</td><td>${s.math.acc.toFixed(1)}%</td><td>${s.math.finished.toFixed(1)}%</td><td>${s.gsm.acc.toFixed(1)}%</td><td>${s.gsm.finished.toFixed(1)}%</td><td class="note">${mit(`${tag}:math`)} / ${mit(`${tag}:gsm`)}</td></tr>`
 }
 const r4Html = `
-<h2>ROUND 4 — OPEN-BOOK CONTROL (#1580)</h2>
+<h2>ROUND 4 — DIAGNOSIS-AS-PROMPT CONTROL (#1580)</h2>
 <p>Jon's condition closing #1567: every weight-side route we ran stayed ~26 points short of our p50cw reproduction, so the remaining question is <b>where the knowledge lives</b>. Feed MIT's <i>written</i> diagnosis — their experiment write-up <code>exp8_math/runs/p50c/final_answer.md</code>, verbatim — into the <b>unedited base model</b> as a system turn, at the identical protocol (fixed 100+100 held-out, think35, pp1.5, ctx 32,768, seed 0, PAR-32). If the text alone recovers escape, their result is content-transferable; if the weights row still towers, the fix was never reducible to instructions. Trust boundary, enforced by ws3check: <code>final_answer.md</code> is the only MIT artifact this lab reads — their edit tensors, turn logs and weight manifests were never opened, and the injection is scoped to this one command (<code>WS_SYSTEM_FILE</code>, never exported).</p>
 <table>
 <tr><th>row — same 100+100, same protocol</th><th>MATH acc</th><th>MATH fin</th><th>GSM8K acc</th><th>GSM8K fin</th><th>MIT-checker math / gsm</th></tr>
 ${r4Row("r4-base", "base", "base (ctx-20 window, #1533)", r2s && r2s.base)}
 ${r4Row("r4-basew", "basew", "base @ window ctx 32768 (#1567 control)", r2s && r2s.basew)}
-${r4Row("r4-openbook", "openbook", "<b>OPEN-BOOK — base + MIT's written diagnosis</b>", r4Ob)}
+${r4Row("r4-openbook", "openbook", "<b>DIAGNOSIS-AS-PROMPT CONTROL — base + MIT's written diagnosis</b>", r4Ob)}
 ${r4Row("r4-p50cw", "p50cw", "p50cw — MIT's edit, our weights (reference)", r2s && r2s.p50cw)}
 </table>
 ${(() => {
   if (!r4Done(r4Ob) || !r4Done(r2s.basew))
-    return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK CONTROL IN FLIGHT.</b> base + MIT's written diagnosis, weights untouched, same rows and protocol as the p50cw row — the cleanest content-vs-weights test on this box. The row and its same-window controls land as they score; nothing is claimed before it is measured.</p>`
+    return `<p class="note" id="ob-verdict"><b>#1580 — DIAGNOSIS-AS-PROMPT CONTROL IN FLIGHT.</b> base + MIT's written diagnosis, weights untouched, same rows and protocol as the p50cw row — the cleanest content-vs-weights test on this box. The row and its same-window controls land as they score; nothing is claimed before it is measured.</p>`
   const mean = (x) => (x.math.acc + x.gsm.acc) / 2
   const b = r2s.base, bw = r2s.basew, w = r2s.p50cw
   const liftC = r4Done(bw) ? mean(r4Ob) - mean(bw) : null
@@ -635,7 +639,45 @@ ${(() => {
     : works
       ? `the diagnosis <b>helps but does not close</b>: +${liftC.toFixed(1)} pts over the same-window base, still <b>${shortW.toFixed(1)} pts short</b> of the p50cw weights edit at the identical protocol (finished ${finOb.toFixed(0)}% vs ${finW === null ? "?" : finW.toFixed(0)}%). The words carry a piece of the fix; the tensors carry the rest — escape is not reducible to the write-up.`
       : `<b>reading the diagnosis does nothing measurable</b> (Δ${liftC.toFixed(1)} pts vs the same-window base control, finished ${finOb.toFixed(0)}% vs the edit's ${finW === null ? "?" : finW.toFixed(0)}%). MIT's escape is not knowledge their text conveys — it lives in the weights, not the words.`
-  return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK VERDICT.</b> base + MIT's written diagnosis, unedited weights, scored once at the full protocol: <b>MATH ${r4Ob.math.acc.toFixed(1)}% acc / ${r4Ob.math.finished.toFixed(1)}% fin · GSM8K ${r4Ob.gsm.acc.toFixed(1)}% / ${r4Ob.gsm.finished.toFixed(1)}% fin</b> (MIT-checker ${r3mit("openbook:math")} math · ${r3mit("openbook:gsm")} gsm) — vs base ${b && b.math && b.gsm ? `${b.math.acc.toFixed(1)}% / ${b.gsm.acc.toFixed(1)}%` : "—"} (ctx-20) and, at the <b>same</b> window, base ${bw && r4Done(bw) ? `${bw.math.acc.toFixed(1)}% / ${bw.gsm.acc.toFixed(1)}%` : "—"} and p50cw ${w && r4Done(w) ? `${w.math.acc.toFixed(1)}% / ${w.gsm.acc.toFixed(1)}%` : "—"}. Verdict: ${concl} No direction-search passes spent — this row is pure scoring; it lands once in the batch log above.</p>`
+  return `<p class="note" id="ob-verdict"><b>#1580 — DIAGNOSIS-AS-PROMPT VERDICT.</b> base + MIT's written diagnosis, unedited weights, scored once at the full protocol: <b>MATH ${r4Ob.math.acc.toFixed(1)}% acc / ${r4Ob.math.finished.toFixed(1)}% fin · GSM8K ${r4Ob.gsm.acc.toFixed(1)}% / ${r4Ob.gsm.finished.toFixed(1)}% fin</b> (MIT-checker ${r3mit("openbook:math")} math · ${r3mit("openbook:gsm")} gsm) — vs base ${b && b.math && b.gsm ? `${b.math.acc.toFixed(1)}% / ${b.gsm.acc.toFixed(1)}%` : "—"} (ctx-20) and, at the <b>same</b> window, base ${bw && r4Done(bw) ? `${bw.math.acc.toFixed(1)}% / ${bw.gsm.acc.toFixed(1)}%` : "—"} and p50cw ${w && r4Done(w) ? `${w.math.acc.toFixed(1)}% / ${w.gsm.acc.toFixed(1)}%` : "—"}. Verdict: ${concl} No direction-search passes spent — this row is pure scoring; it lands once in the batch log above.</p>`
+})()}`;
+
+// ---- ROUND 5 (#1585): OPEN-BOOK WEIGHT EDIT — MIT's written diagnosis, executed
+// as weights BY US. The words alone did nothing (#1580); here the recipe from
+// final_answer.md (layers 15+19, 64 down_proj columns per layer, counteract the
+// repetition direction) is rebuilt with OUR columns (own contrast projection,
+// directions_all.npz), OUR algebra and OUR silicon. α ∈ {2,4,8} is chosen on a
+// fresh practice batch (math[160:223], passes 13-15); the winner alone earns the
+// ONE held-out row. Trust boundary unchanged: final_answer.md is still the only
+// MIT artifact read — ws3check §14 polices it and the footprint lock.
+const r5Pick = read("results/r2/r5_alpha_pick.json", null)
+const r5Ob = r2s && r2s.ob
+const r5Html = `
+<h2>ROUND 5 — OPEN-BOOK WEIGHT EDIT (#1585)</h2>
+<p>#1580 asked whether MIT's <i>words</i> could do what their edit does — they could not. This round asks the complement: can we execute their written recipe <b>as weights</b>? <code>runs/p50c/final_answer.md</code> (the sole MIT file read — their tensors, turn logs and manifests remain unopened, same boundary as #1580) fixes the footprint: layers <b>15 and 19</b>, top-<b>64</b> <code>down_proj</code> output columns per layer, counteracting the measured repetition direction. Which 64 columns are ours: our own contrast projection (loop-vs-finished, all-layer scan) ranks them — independently corroborating the diagnosis (layer 19 is #2 of 24, t=5.90; layer 15 t=5.27). Algebra <code>w_j −= α·d_L·(d_L·w_j)</code>, 131,072 values — exactly MIT's stated footprint. α chosen on practice (fresh 64-math batch, passes 13–15 of 20); the winner earns the ONE held-out row.</p>
+${r5Pick ? `<p class="note" id="ws5-pick-note">PRACTICE SWEEP (choose on practice, score held-out once — the #1567 law): ${Object.entries(r5Pick.rows).map(([t, s]) => `<code>${t}</code> ${s.acc}%/${s.finished}%`).join(" · ")} → frozen rule picks <b>α = ${r5Pick.winner.alpha}</b>${r5Pick.base_reference ? ` (base on the same batch: ${r5Pick.base_reference.acc}%/${r5Pick.base_reference.finished}%)` : ""}.</p>`
+    : `<p class="note" id="ws5-pick-note">PRACTICE SWEEP IN FLIGHT: α ∈ {2, 4, 8} scores a fresh 64-math batch @cap8192 (passes 13–15); the frozen rule (accuracy first, finished tie-break, smaller α last) picks one winner. The held-out 100+100 is scored <b>once</b>, for the winner only.</p>`}
+<table>
+<tr><th>three rungs — same 100+100, same protocol</th><th>MATH acc</th><th>MATH fin</th><th>GSM8K acc</th><th>GSM8K fin</th><th>MIT-checker math / gsm</th></tr>
+${r4Row("r5-prompt", "openbook", "rung 0 — diagnosis-as-prompt control (#1580)", r2s && r2s.openbook)}
+${r4Row("r5-closedbook", "own4", "rung 1 — closed-book edit: own direction, our search (#1567)", r2s && r2s.own4)}
+${r4Row("r5-obedit", "ob", "<b>rung 2 — open-book edit: MIT's written recipe, our weights (#1585)</b>", r5Ob)}
+${r4Row("r5-mit", "p50cw", "rung 3 — MIT's edit, our weights (reference)", r2s && r2s.p50cw)}
+</table>
+${(() => {
+  const o4 = r2s && r2s.own4, w = r2s && r2s.p50cw
+  if (!r4Done(r5Ob) || !r4Done(o4))
+    return `<p class="note" id="ws5-verdict"><b>#1585 — OPEN-BOOK EDIT IN FLIGHT.</b> the recipe from MIT's text, rebuilt with our columns and α chosen on practice; the ONE held-out row lands as it scores. Nothing is claimed before it is measured.</p>`
+  const mean = (x) => (x.math.acc + x.gsm.acc) / 2
+  const liftOwn = mean(r5Ob) - mean(o4)
+  const shortW = r4Done(w) ? mean(w) - mean(r5Ob) : null
+  const finOb = (r5Ob.math.finished + r5Ob.gsm.finished) / 2
+  const concl = shortW !== null && shortW <= 2
+    ? `<b>the recipe transfers — executed as weights it recovers MIT's result.</b> ${shortW.toFixed(1)} pts from the reference rung; their escape was always expressible in the instructions they wrote down.`
+    : liftOwn >= 2
+      ? `the written recipe <b>beats our blind search</b> (+${liftOwn.toFixed(1)} pts over the closed-book edit) yet lands <b>${shortW === null ? "?" : shortW.toFixed(1)} pts short</b> of MIT's edit — the words point at the right layers; MIT's specific columns carry what the text never spelled out.`
+      : `<b>the open-book recipe, executed by us, does not beat our own closed-book edit</b> (Δ${liftOwn.toFixed(1)} pts) — even MIT's own written procedure, rebuilt by hand, recreates only part of what their tensors do. Which ingredient the text omits is the next question.`
+  return `<p class="note" id="ws5-verdict"><b>#1585 — OPEN-BOOK EDIT VERDICT.</b> layers 15+19 × own top-64 <code>down_proj</code> columns, α=${r5Pick ? r5Pick.winner.alpha : "?"}, scored ONCE at the full protocol: <b>MATH ${r5Ob.math.acc.toFixed(1)}% acc / ${r5Ob.math.finished.toFixed(1)}% fin · GSM8K ${r5Ob.gsm.acc.toFixed(1)}% / ${r5Ob.gsm.finished.toFixed(1)}% fin</b> (MIT-checker ${r3mit("ob:math")} math · ${r3mit("ob:gsm")} gsm) — vs closed-book own α4 ${mean(o4).toFixed(1)}% mean and p50cw ${w && r4Done(w) ? mean(w).toFixed(1) : "?"}% mean; finished ${finOb.toFixed(0)}%. Verdict: ${concl} Three practice passes + one held-out row logged in the batch log above (${r5Pick ? `pick: ${r5Pick.decision}` : "pick pending"}).</p>`
 })()}`;
 
 const html = `<!DOCTYPE html>
@@ -711,6 +753,7 @@ const html = `<!DOCTYPE html>
 ${r2Html}
 ${r3Html}
 ${r4Html}
+${r5Html}
 
 ${verdict}
 

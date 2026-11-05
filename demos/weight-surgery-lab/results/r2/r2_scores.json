@@ -122,5 +122,23 @@
   "pp": 1.5,
   "pp_ctx": 32768,
   "model": "qwen35-base"
+ },
+ "ob": {
+  "math": {
+   "n": 100,
+   "acc": 5.0,
+   "finished": 4.0,
+   "mean_ntok": 31565
+  },
+  "gsm": {
+   "n": 100,
+   "acc": 10.0,
+   "finished": 9.0,
+   "mean_ntok": 30156
+  },
+  "t_hours": 1.84,
+  "pp": 1.5,
+  "pp_ctx": 32768,
+  "model": "qwen35-ob-a2"
  }
 }

@@ -179,6 +179,16 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(html.includes('30/41') && html.includes('0 mtp/nextn tensors') && html.includes('forbidden by design'),
         'copy: precision fraction, MTP forensics, knob-tuning ban stated')
     ok(!html.replace('WHAT DOES NOT.', '·').includes('WHAT DOES NOT.'), 'mutant caught: a copy block removed')
+    // #1585 QA: the BUILDER rendering scored rows (§ above, #1540) never proved the
+    // SHIPPED file was regenerated — the step-5 commit shipped a stale skeleton with
+    // every round-2 row "pending" beside committed final numbers. Byte-equality of the
+    // committed page against a fresh deterministic build closes that hole for good.
+    const shippedPath = 'public/demos/weightsurgery.html'
+    const shipped = existsSync(shippedPath) ? readFileSync(shippedPath, 'utf8') : ''
+    ok(shipped !== '' && shipped === html,
+        'build: committed public page equals a fresh build of the lab (never ships stale/pending over committed data)')
+    ok(shipped.includes('id="r2-base"><td rowspan=2>'),
+        'copy: committed page carries scored round-2 rows (guards the #1585 skeleton regression)')
     const empty = mkdtempSync(join(tmpdir(), 'ws3empty-'))
     cpSync(join(LAB, 'build_demo.mjs'), join(empty, 'build_demo.mjs'))
     writeFileSync(join(empty, 'batches.jsonl'), '')
@@ -791,9 +801,9 @@ const harvestIssuesFor = (root, tag) => {
     ok(harvestIssuesFor(fx, TAG).length === 0, 'win: open-book fixture restored — gates are the corruption, not the state')
     // page: row + verdict render from artifacts; honest revert never leaves a hole
     const wb = build(fx)
-    ok(wb.rc === 0 && wb.html.includes('id="ob-verdict"') && wb.html.includes('OPEN-BOOK VERDICT')
+    ok(wb.rc === 0 && wb.html.includes('id="ob-verdict"') && wb.html.includes('DIAGNOSIS-AS-PROMPT VERDICT')
         && wb.html.includes('MATH 9.0% acc') && wb.html.includes('id="r4-openbook"'),
-        'build: open-book row + verdict render from artifacts (fixture)')
+        'build: prompt-control row + verdict render from artifacts (fixture)')
     aggFx[TAG].math.acc = 99.0
     writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
     const pb = build(fx)
@@ -802,7 +812,7 @@ const harvestIssuesFor = (root, tag) => {
     delete aggFx[TAG]
     writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
     const rb = build(fx)
-    ok(rb.html.includes('OPEN-BOOK CONTROL IN FLIGHT') && !rb.html.includes('OPEN-BOOK VERDICT'),
+    ok(rb.html.includes('DIAGNOSIS-AS-PROMPT CONTROL IN FLIGHT') && !rb.html.includes('DIAGNOSIS-AS-PROMPT VERDICT'),
         'mutant caught: dropping the open-book entry reverts the page to honest pending, never a silent hole')
     {
         // the verdict compares against the same-window base — losing that control
@@ -815,14 +825,160 @@ const harvestIssuesFor = (root, tag) => {
         delete aggFx.basew
         writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
         const cb = build(fx)
-        ok(cb.rc === 0 && cb.html.includes('OPEN-BOOK CONTROL IN FLIGHT') && !cb.html.includes('OPEN-BOOK VERDICT'),
+        ok(cb.rc === 0 && cb.html.includes('DIAGNOSIS-AS-PROMPT CONTROL IN FLIGHT') && !cb.html.includes('DIAGNOSIS-AS-PROMPT VERDICT'),
             'mutant caught: dropping the same-window base control reverts the open-book verdict — the verdict needs its control')
     }
     rmSync(fx, { recursive: true, force: true })
     if (marker) {
         const hb = build(LAB)
-        ok(hb.rc === 0 && hb.html.includes('OPEN-BOOK VERDICT') && hb.html.includes('id="r4-openbook"'),
+        ok(hb.rc === 0 && hb.html.includes('DIAGNOSIS-AS-PROMPT VERDICT') && hb.html.includes('id="r4-openbook"'),
             'build: committed open-book artifacts render the row and the verdict on the real page')
+    }
+}
+
+// 14. #1585 open-book WEIGHT EDIT — the written diagnosis executed as weights
+//     by us: footprint locked to L15/L19 x 64 columns, columns equal to our OWN
+//     contrast export (MIT's manifest never read), runner trust-boundary + pins,
+//     practice-only sweep with a recomputable pick, the held-out-once harvest for
+//     tag `ob`, and the page ladder with honest revert. Live-lab gates stay
+//     conditional (skip while runs are in flight) so the resumable chain never
+//     reads red mid-sweep.
+{
+    const dir = s => readFileSync(join(LAB, s), 'utf8')
+    const envOnly = t => t.split('\n').filter(l => !l.trim().startsWith('#')).join('\n')
+    // A. edit reports: the footprint the diagnosis describes
+    const reports = [2, 4, 8].map(a => {
+        const p = join(LAB, 'edit_reports', `ob_a${a}.json`)
+        return existsSync(p) ? [a, JSON.parse(readFileSync(p, 'utf8'))] : null
+    }).filter(Boolean)
+    ok(reports.length === 3, 'rules: all three open-book edit reports committed (ob_a2/a4/a8)')
+    for (const [a, rep] of reports) {
+        ok(Object.keys(rep.layers).sort((x, y) => x - y).join(',') === '15,19',
+            `rules: ob_a${a} targets locked to layers 15+19 (per the written diagnosis)`, Object.keys(rep.layers).join(','))
+        ok(Object.values(rep.layers).every(L => L.cols.length === 64) &&
+            Object.values(rep.layers).every(L => new Set(L.cols).size === 64),
+            `rules: ob_a${a} exactly 64 distinct columns per layer (MIT's stated footprint)`)
+        ok(rep.alpha === a && rep.topk === 64, `rules: ob_a${a} records alpha=${a} topk=64`)
+        ok(/contrast|step8/.test(rep.method), `rules: ob_a${a} columns come from our own contrast method`)
+    }
+    // B. columns-from-own-contrast: the committed export (npz + base weights) IS
+    //    the provenance; any divergence between report and export is a red flag.
+    const colsP = join(LAB, 'results/r2/ws5_contrast_top64.json')
+    ok(existsSync(colsP) && existsSync(join(LAB, 'results/r2/ws5_directions_all.npz')),
+        'rules: own-contrast export + directions npz committed as column provenance')
+    if (existsSync(colsP) && reports.length === 3) {
+        const cols = JSON.parse(readFileSync(colsP, 'utf8')).layers
+        const matchOk = rs => rs.every(([, rep]) => ['15', '19'].every(L =>
+            JSON.stringify(rep.layers[L].cols) === JSON.stringify(cols[L])))
+        ok(matchOk(reports), 'rules: every edit\'s columns equal our own contrast top-64 export')
+        const mv = cols['15'].slice(); const tmp = mv[0]; mv[0] = mv[5]; mv[5] = tmp
+        ok(JSON.stringify(reports[0][1].layers['15'].cols) !== JSON.stringify(mv),
+            'mutant caught: a two-column swap in the contrast ranking is a report/export mismatch')
+        ok(reports[0][1].layers['19'].cols.every(c => Number.isInteger(c) && c >= 0 && c < 3584),
+            'rules: column ids are valid down_proj input columns (< 3584)')
+    }
+    // C. runner: trust boundary, pins, practice-only sweep, one held-out row
+    const r5 = existsSync(join(LAB, 'r5_openbook_edit.sh')) ? dir('r5_openbook_edit.sh') : ''
+    const r5cmd = r5.split('\n').map(l => l.replace(/#.*$/, '')).join('\n')
+    ok(r5cmd && !/(runs\/p50c\/(edit|turns)\b|frozen_weights_manifest|final_report)/.test(r5cmd),
+        'rules: r5 runner executes no MIT edit tensors / turn logs / manifest / final_report')
+    ok(r5cmd && !/WS_SYSTEM_FILE/.test(r5cmd),
+        'rules: r5 is a WEIGHT edit — the diagnosis-as-prompt injection must not leak into this row')
+    const pinsOk = t => /WS_R2_PARALLEL=32/.test(t) && /WS_R2_PP_CTX=32768/.test(t)
+        && /WS_R2_SAVETEXT=1/.test(t) && /WS_R2_JON_GO=1/.test(t)
+    ok(pinsOk(envOnly(r5)), 'rules: r5 runner pins PAR-32 + whole-generation window + sidecars + Jon-GO', r5 && r5.slice(0, 120))
+    ok(!pinsOk(envOnly(r5).replace('WS_R2_PP_CTX=32768', 'WS_R2_PP_CTX=0')),
+        'mutant caught: r5 runner without the window pin')
+    const code = envOnly(r5)
+    ok(/for A in 2 4 8/.test(code) && /ws5_practice\.py ob\$\{A\}:qwen35-ob-a\$\{A\}/.test(code)
+        && !/r2_score\.py ob\$\{A\}/.test(code),
+        'rules: open-book alpha sweep scores PRACTICE only — no held-out rows for swept losers')
+    ok(/ws5_pick\.py/.test(code) && /r2_score\.py ob:qwen35-ob-a\$\{W_ALPHA\}/.test(code),
+        'rules: ONE held-out row, for the practice winner only')
+    ok(code.search(/ws5_practice\.py ob/) < code.search(/ws5_pick\.py/)
+        && code.search(/ws5_pick\.py/) < code.search(/r2_score\.py ob:/),
+        'rules: sweep -> pick -> held-out, never held-out before the pick')
+    ok(/r2_register\.py qwen35-ob-a\$\{A\} --load/.test(code)
+        && /r2_register\.py qwen35-ob-a\$\{W_ALPHA\} --load/.test(code),
+        'rules: register + confirm-load before practice and before the held-out row')
+    // D. practice ledger: three passes, fresh batch, distinct pass numbers
+    if (['ob2', 'ob4', 'ob8'].every(t => existsSync(join(LAB, 'results/r2', `practice_${t}.json`)))) {
+        const p = ['ob2', 'ob4', 'ob8'].map(t => JSON.parse(dir(`results/r2/practice_${t}.json`)))
+        ok(p.every(s => s.n === 64 && s.cap === 8192 && /160\.\.223/.test(s.set)),
+            'rules: open-book practice batches are the fresh 64-math slice @cap8192')
+        const logs = readFileSync(join(LAB, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l) } catch { return {} } })
+            .filter(b => b.run === 'r5 (#1585)' && b.phase === 'practice')
+        ok(logs.length === 3 && new Set(logs.map(b => b.pass_no)).size === 3
+            && logs.every(b => b.pass_no >= 13 && b.pass_no <= 15),
+            'rules: exactly three r5 practice passes, numbered 13-15, each logged once',
+            JSON.stringify(logs.map(b => b.pass_no)))
+        const pickP = join(LAB, 'results/r2/r5_alpha_pick.json')
+        if (existsSync(pickP)) {
+            const pick = JSON.parse(readFileSync(pickP, 'utf8'))
+            const best = ['ob2', 'ob4', 'ob8'].map(t => [t, JSON.parse(dir(`results/r2/practice_${t}.json`))])
+                .sort((a, b) => b[1].acc - a[1].acc || b[1].finished - a[1].finished
+                    || parseInt(a[0].slice(2)) - parseInt(b[0].slice(2)))[0][0]
+            ok(pick.decision === best, 'rules: stored pick equals the frozen rule recomputed from practice rows',
+                `stored ${pick.decision} vs recomputed ${best}`)
+            ok(pick.decision !== ['ob2', 'ob4', 'ob8'].find(t =>
+                JSON.parse(dir(`results/r2/practice_${t}.json`)).acc > pick.winner.acc),
+                'mutant caught: a pick that is not the practice-accuracy winner')
+        }
+    } else console.log('  skip r5 practice gates (sweep still in flight)')
+    // E. the ONE held-out row for tag ob — §11's shared recomputation + claims
+    const obDone = existsSync(join(LAB, 'results/r2/R5_OBHELD_DONE'))
+    if (obDone) {
+        const h = harvestIssuesFor(LAB, 'ob')
+        ok(h.length === 0, 'rules: #1585 committed — ob rows complete, aggregate recomputed, regrade covered, ledger once', h.join('; '))
+        ok(['ob2', 'ob8'].every(t => !existsSync(join(LAB, 'results/r2', `scores_${t}_math.jsonl`))),
+            'rules: swept alpha losers never reach held-out')
+        const pickP = join(LAB, 'results/r2/r5_alpha_pick.json')
+        const agg = JSON.parse(dir('results/r2/r2_scores.json'))
+        const claimOk = a => existsSync(pickP) && a.ob
+            && a.ob.model === `qwen35-ob-a${JSON.parse(readFileSync(pickP, 'utf8')).winner.alpha}`
+        ok(claimOk(agg), 'rules: the ob row claims exactly the practice-winner model',
+            `model=${agg.ob && agg.ob.model}`)
+        ok(!claimOk({ ...agg, ob: { ...agg.ob, model: 'qwen35-base' } }),
+            'mutant caught: the unedited base claimed under the open-book EDIT tag')
+        ok(!claimOk({ ...agg, ob: { ...agg.ob, model: 'qwen35-own-a8' } }),
+            'mutant caught: the closed-book model claimed under the open-book EDIT tag')
+        ok(existsSync(join(LAB, 'results/r2/R5_PICK_DONE')), 'rules: R5_OBHELD_DONE implies the pick happened first')
+    } else console.log('  skip #1585 committed-state gates (R5_OBHELD_DONE not on this tip)')
+    if (existsSync(join(LAB, 'results/r2/R5_1585_DONE')))
+        ok(obDone, 'rules: R5_1585_DONE implies R5_OBHELD_DONE (chain order)')
+    // F. page ladder — three rungs render from artifacts; honest revert both ways
+    {
+        const fx = mkdtempSync(join(tmpdir(), 'ws3r5-'))
+        cpSync(LAB, fx, { recursive: true })
+        const bd = join(fx, 'results/r2')
+        const agg = JSON.parse(readFileSync(join(bd, 'r2_scores.json'), 'utf8'))
+        const mk = (acc, fin) => ({ n: 100, acc, finished: fin, mean_ntok: 20000 })
+        agg.own4 = { math: mk(12.0, 10.0), gsm: mk(15.0, 15.0), model: 'qwen35-own-a4' }
+        agg.ob = { math: mk(20.0, 18.0), gsm: mk(28.0, 30.0), pp: 1.5, pp_ctx: 32768, model: 'qwen35-ob-a4' }
+        writeFileSync(join(bd, 'r2_scores.json'), JSON.stringify(agg))
+        writeFileSync(join(bd, 'r5_alpha_pick.json'), JSON.stringify({
+            issue: 1585, decision: 'ob4', winner: { alpha: 4, acc: 9.0, finished: 7.0 },
+            rows: { ob2: { acc: 6.0, finished: 5.0, n: 64, mean_ntok: 5000 },
+                ob4: { acc: 9.0, finished: 7.0, n: 64, mean_ntok: 5000 },
+                ob8: { acc: 7.0, finished: 6.0, n: 64, mean_ntok: 5000 } },
+            base_reference: { acc: 5.0, finished: 4.0, n: 64 },
+        }))
+        const lb = build(fx)
+        ok(lb.rc === 0 && lb.html.includes('ROUND 5 — OPEN-BOOK WEIGHT EDIT')
+            && lb.html.includes('id="r5-obedit"') && lb.html.includes('MATH 20.0% acc')
+            && lb.html.includes('OPEN-BOOK EDIT VERDICT') && lb.html.includes('α = 4'),
+            'build: three-rung ladder + pick note + verdict render from artifacts (fixture)')
+        delete agg.ob
+        writeFileSync(join(bd, 'r2_scores.json'), JSON.stringify(agg))
+        const rb2 = build(fx)
+        ok(rb2.html.includes('OPEN-BOOK EDIT IN FLIGHT') && !rb2.html.includes('OPEN-BOOK EDIT VERDICT'),
+            'mutant caught: dropping the ob aggregate reverts the ladder to honest pending')
+        rmSync(join(bd, 'r5_alpha_pick.json'))
+        const pb2 = build(fx)
+        ok(pb2.html.includes('PRACTICE SWEEP IN FLIGHT'),
+            'mutant caught: dropping the pick artifact reverts the pick note to IN FLIGHT')
+        rmSync(fx, { recursive: true, force: true })
     }
 }
 

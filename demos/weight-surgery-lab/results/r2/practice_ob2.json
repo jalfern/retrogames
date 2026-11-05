@@ -1,0 +1,13 @@
+{
+ "tag": "ob2",
+ "model": "qwen35-ob-a2",
+ "n": 64,
+ "acc": 6.2,
+ "finished": 4.7,
+ "mean_ntok": 7964,
+ "cap": 8192,
+ "pp": 1.5,
+ "pp_ctx": 32768,
+ "set": "fresh math_train 160..223 (SEED-1562 shuffle; disjoint from #1562 fit/val and #1567 sweep)",
+ "t_minutes": 6.6
+}
