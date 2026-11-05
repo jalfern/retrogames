@@ -522,8 +522,8 @@ console.log('win: the chalice home to the Gold Castle')
         if (!walkTo(sim, startRoom)) return false
         return driveTo(sim, backX, backY)
     }
-    function winRun(seed) {
-        const sim = createSim(seedRng(seed))
+    function winRun(seed, variant = 1) {
+        const sim = createSim(seedRng(seed), variant)
         const T = (tx, ty) => driveTo(sim, tx, ty)
         // trip 1: blackKey into front of the black gate
         sim.player.x = 80
@@ -627,6 +627,151 @@ console.log('win: the chalice home to the Gold Castle')
     const t0 = won.tick
     step(won, { dx: S })
     ok(won.tick === t0, 'the win terminal freezes the sim')
+
+    // ================================================================ #1572 item 3 ----
+    // SELECT GAME: the three honest variants. V1 is the classic pin world;
+    // V2 moves ONLY the dragons; V3 re-homes the loot on the seeded stream
+    // (the lairs, the gated foyers and the sealed room are not the
+    // shuffle's to move — the rules stay the rules, not a coin flip).
+    console.log('#1572 item 3: variant law — V1 classic / V2 fast / V3 shuffle')
+    const vscript = (seed, variant, n = 400) => {
+        const s = createSim(seedRng(seed), variant)
+        const out = []
+        for (let i = 0; i < n; i++) { step(s, {}); out.push(hash(s)) }
+        return out.join(';')
+    }
+    ok(vscript(4242, 1) === vscript(4242, 1), 'V1 replays identically (the classic pin world)')
+    ok(vscript(4242, 1) === vscript(4242, undefined), 'an omitted variant IS the classic (the pin law is untouched)')
+    ok(vscript(4242, 2) !== vscript(4242, 1), 'V2 is not V1 (the fast world differs)')
+    ok(createSim(seedRng(5), 2).dragons.map((d) => d.speed.toFixed(1)).join() === '0.9,1.2,1.5',
+        'V2 runs the dragons at 1.5x the classic pace')
+    ok(createSim(seedRng(5), 3).dragons.map((d) => d.speed.toFixed(1)).join() === '0.6,0.8,1.0',
+        'V3 keeps the classic pace (the twist is the loot, not the hunters)')
+
+    // V2 moves only the dragons: same seed, the loot and the bat sit where
+    // the classic puts them (the variant is a twist on one dial, not a new world)
+    const p1 = createSim(seedRng(55)), p2 = createSim(seedRng(55), 2)
+    const itemsScript = (s) => s.items.map((i) => `${i.room}:${i.x.toFixed(3)}:${i.y.toFixed(3)}:${i.carried ? 1 : 0}`).join(';')
+    for (let i = 0; i < 300; i++) { p1.step({}); p2.step({}) }
+    ok(itemsScript(p1) === itemsScript(p2), 'V2 leaves the loot on the classic board')
+    ok(p1.bat.x === p2.bat.x && p1.bat.y === p2.bat.y, 'V2 leaves the bat on the classic course')
+
+    // V3: the seeded re-home, winnable by construction
+    const vlayout = (s) => s.items.map((i) => `${i.id}@${i.room}:${i.x}:${i.y}`).join(';')
+    ok(vlayout(createSim(seedRng(77), 3)) === vlayout(createSim(seedRng(77), 3)),
+        'V3 layout is deterministic per seed')
+    ok(vlayout(createSim(seedRng(77), 3)) !== vlayout(createSim(seedRng(78), 3)),
+        'different seeds re-home the loot differently')
+    ok([77, 78, 79].every((sd) => vlayout(createSim(seedRng(sd), 3)) !== vlayout(createSim(seedRng(sd)))),
+        'a shuffle seed is not the classic layout')
+    const lairs = new Set([R.BLUE_LAB_1, R.RED_LAB_2, R.DRAGON_LAIR])
+    const foyers = new Set([R.GOLD_FOYER, R.BLACK_FOYER, R.WHITE_FOYER])
+    const inAnyWall = (i) => ROOMS[i.room].walls.some((w) =>
+        i.x < w.x + w.w && i.x + i.w > w.x && i.y < w.y + w.h && i.y + i.h > w.y)
+    for (const sd of [1, 7, 42, 1337]) {
+        const s = createSim(seedRng(sd), 3)
+        ok(s.items.every((i) => i.room !== R.SECRET && !lairs.has(i.room) && !foyers.has(i.room)),
+            `seed ${sd}: no loot in the sealed room, a lair, or a gated foyer (winnable by construction)`)
+        ok(s.items.every((i) => !inAnyWall(i)), `seed ${sd}: every re-homed item sits clear of its room's walls`)
+    }
+
+    // The adaptive route: the fixed-map waypoint run cannot chase shuffled
+    // loot, so each fetch walks the item to its seeded home (obeying the same
+    // bridge/gate/secret-door laws as the player), stashing a wrongly-picked
+    // item at the feet and re-approaching until the right one is carried. No
+    // dragon room is ever entered: the ten shuffle rooms connect without one.
+    function fetchItem(sim, id) {
+        const item = sim.items.find((i) => i.id === id)
+        for (let attempt = 0; attempt < 6; attempt++) {
+            if (sim.carrying === id) return true
+            if (sim.carrying) step(sim, { drop: true })
+            if (sim.bat.carrying === id) {
+                // the bat has it: wait where a loose partner sits (no dragon)
+                const prev = new Map([[sim.room, null]])
+                const order = [sim.room]
+                for (let i = 0; i < order.length; i++) {
+                    for (const [, n] of neighbors(sim, order[i])) {
+                        if (!prev.has(n)) { prev.set(n, order[i]); order.push(n) }
+                    }
+                }
+                const shelter = order.find((room) =>
+                    sim.items.some((i) => i.id !== id && i.room === room && !i.carried) &&
+                    !sim.dragons.some((dg) => dg.alive && dg.room === room))
+                if (shelter === undefined) continue
+                if (!walkTo(sim, shelter)) continue
+                for (let i = 0; i < 8000 && sim.bat.carrying === id; i++) {
+                    step(sim, {})
+                    if (sim.dead || sim.won) return sim.carrying === id
+                }
+                if (sim.bat.carrying === id) continue
+            }
+            if (!walkTo(sim, item.room)) continue
+            if (!driveTo(sim, item.x, item.y)) continue
+            if (sim.carrying === id) return true
+        }
+        return sim.carrying === id
+    }
+    function winRunV3(seed) {
+        const sim = createSim(seedRng(seed), 3)
+        const T = (tx, ty) => driveTo(sim, tx, ty)
+        if (!fetchItem(sim, 'blackKey')) return { ok: false, why: 'blackKey' }
+        if (!walkTo(sim, R.BLACK_CASTLE)) return { ok: false, why: 'to black gate' }
+        if (!T(80, 32)) return { ok: false, why: 'black threshold' }
+        step(sim, { drop: true })
+        for (let i = 0; i < 3 && !sim.gateOpen.blackKey; i++) step(sim, {})
+        if (!sim.gateOpen.blackKey) return { ok: false, why: 'gateB' }
+        if (!fetchItem(sim, 'bridge')) return { ok: false, why: 'bridge' }
+        if (!walkTo(sim, R.BLACK_FOYER)) return { ok: false, why: 'to black foyer' }
+        if (!cross(sim, 'down', R.RED_LAB_1)) return { ok: false, why: 'red floor' }
+        if (!fetchItem(sim, 'whiteKey')) return { ok: false, why: 'whiteKey' }
+        if (!walkTo(sim, R.WHITE_CASTLE)) return { ok: false, why: 'to white gate' }
+        if (!T(80, 32)) return { ok: false, why: 'white threshold' }
+        step(sim, { drop: true })
+        for (let i = 0; i < 3 && !sim.gateOpen.whiteKey; i++) step(sim, {})
+        if (!sim.gateOpen.whiteKey) return { ok: false, why: 'gateW' }
+        if (!fetchItem(sim, 'chalice')) return { ok: false, why: 'chalice' }
+        if (!sim.won && !walkTo(sim, R.GOLD_CASTLE)) return { ok: false, why: 'home' }
+        if (!sim.won) for (let i = 0; i < 200 && !sim.won; i++) step(sim, { dx: 0, dy: -S })
+        return sim.won
+            ? { ok: true, tick: sim.tick, score: sim.score }
+            : { ok: false, why: `end room=${sim.room} carry=${sim.carrying}` }
+    }
+
+    console.log('#1572 item 3: every variant is provably winnable (the route adapter)')
+    const tally = (run) => {
+        let wins = 0
+        const whys = {}
+        for (let sd = 1; sd <= 10; sd++) {
+            const r = run(sd)
+            if (r.ok) wins++; else whys[r.why] = (whys[r.why] || 0) + 1
+        }
+        return { wins, whys }
+    }
+    const t1 = tally((sd) => winRun(sd, 1))
+    ok(t1.wins === 10, 'V1 CLASSIC wins 10/10 seeds (the classic pin world)', JSON.stringify(t1.whys))
+    const t2 = tally((sd) => winRun(sd, 2))
+    ok(t2.wins === 10, 'V2 FAST wins 10/10 seeds (the route outruns the 1.5x hunters)', JSON.stringify(t2.whys))
+    const t3 = tally(winRunV3)
+    ok(t3.wins === 10, 'V3 SHUFFLE wins 10/10 seeds (the adaptive route finds the re-homed loot)', JSON.stringify(t3.whys))
+}
+
+// ------------------------------------------------- #1572 item 3 wiring (static) ----
+console.log('#1572 item 3: SELECT GAME wiring (static)')
+{
+    const src = readFileSync(IDX, 'utf8')
+    const simSrc = readFileSync(SIMF, 'utf8')
+    const attractSrc = readFileSync(new URL('../src/games/Adventure/attract.js', import.meta.url), 'utf8')
+    ok(/export const VARIANTS = \{/.test(simSrc) && /export const DEFAULT_VARIANT = 1/.test(simSrc),
+        'the three named variants live in the sim (not the shell)')
+    ok(/createSim\(rand, variant = DEFAULT_VARIANT\)/.test(simSrc),
+        'createSim takes the variant and defaults to the classic')
+    ok(/sim = createSim\(seedRng\(seed\), variant\)/.test(src), 'the run boots the SELECTED variant (the sim receives it)')
+    ok(/attractFrame\(tick, w, h, variant = 1\)/.test(attractSrc), 'attractFrame takes the selected variant')
+    ok(/SELECT GAME/.test(attractSrc) && /String\(variant\)/.test(attractSrc),
+        'the attract shows the variant number (the cart\'s dot matrix)')
+    ok(/attractFrame\(sim\.tick, GW, GH, variant\)/.test(src), 'the shell draws the attract with the selected variant')
+    ok(/e\.code === 'ArrowLeft' \|\| e\.code === 'ArrowRight'/.test(src), 'left/right cycle the pick on the SELECT GAME screen')
+    ok(/variant: sim\.variant,/.test(src), 'state() carries the live variant (the harness can read SELECT GAME)')
 }
 
 // ------------------------------------------------------- #1556 playtest fix ----
@@ -823,6 +968,7 @@ if (process.argv.includes('--mutant')) {
     const SM = SIMF.pathname
     const GS = GAMES.pathname
     const PS = PO.pathname
+    const AF = new URL('../src/games/Adventure/attract.js', import.meta.url).pathname
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `: (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))`,
@@ -919,6 +1065,21 @@ if (process.argv.includes('--mutant')) {
         ['#1572: the guidance tab shows for every game (shared help screen breaks)', PS,
             'game?.guide?.length',
             'true'],
+        ['#1572: V2 runs the classic pace (the speed scale is gone)', SM,
+            '...t, speed: t.speed * spec.dragonScale, alive: true, mouthOpen: false,',
+            '...t, alive: true, mouthOpen: false,'],
+        ['#1572: V3 ignores the seed stream (the shuffle is pinned)', SM,
+            'item.room = pool[Math.floor(rand() * pool.length)]',
+            'item.room = pool[0]'],
+        ['#1572: the lair law dies (loot shuffles into the sealed room)', SM,
+            'item.room = pool[Math.floor(rand() * pool.length)]',
+            "item.room = item.id === 'sword' ? R.SECRET : pool[Math.floor(rand() * pool.length)]"],
+        ['#1572: the variant never reaches the sim (SELECT GAME is a lie)', I,
+            'sim = createSim(seedRng(seed), variant)',
+            'sim = createSim(seedRng(seed))'],
+        ['#1572: the attract hides the variant (no dot-matrix readout)', AF,
+            "{ text: String(variant), x: w / 2, y: h * 0.82, size: 28, col: '#ffff00', glow: 0 },",
+            ''],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

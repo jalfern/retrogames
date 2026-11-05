@@ -52,6 +52,25 @@ export const DRAGON_RESPAWN_TICKS = 300 // slain → back in play (~5 s at 60 fp
 // Single source of truth for the rule, the affordance hint and the mat draw.
 export const GATE_ZONE = { x: 40, y: 0, w: 80, h: 60 }
 
+// #1572 item 3 — the variant selector. The original cart boots to SELECT
+// GAME with 30+ variants; the minimum honest slice is three:
+//   V1 CLASSIC — the 1993 default: the tuned dragon pace, the fixed layout.
+//   V2 FAST    — the same world, dragons at 1.5x pace (the hard cart).
+//   V3 SHUFFLE — the classic world with the eight items re-homed by the
+//     seeded stream. The lair law holds: a sentinel keeps its room, the
+//     gated foyers keep their treasure, the sealed ??? room keeps its
+//     secret — the open world is the shuffle pool, so every seed is
+//     winnable by construction (proven by the adaptive route in
+//     adventurecheck).
+// V1 is the default: createSim(rand) is the classic world bit for bit, so
+// the pin law (?seed=N) replays exactly what it always replayed.
+export const VARIANTS = {
+    1: { name: 'CLASSIC', dragonScale: 1, shuffle: false },
+    2: { name: 'FAST', dragonScale: 1.5, shuffle: false },
+    3: { name: 'SHUFFLE', dragonScale: 1, shuffle: true },
+}
+export const DEFAULT_VARIANT = 1
+
 // Room IDs
 export const R = {
     GOLD_CASTLE: 0,
@@ -275,11 +294,43 @@ const rectsOverlap = (ax, ay, aw, ah, bx, by, bw, bh) => {
 // start site (#1473). This module stays import-free so Node audits can load it
 // directly (Rogue/Defender sim precedent) — pass seedRng from gameContract.
 // =============================================
-export function createSim(rand) {
+
+// V3: re-home the eight items on the seeded stream. The pool is the open
+// world — never the sealed ??? room (nothing can get in until the rite),
+// a sentinel's lair (the lair law: the dragon guards its room), or a gated
+// foyer (the gate rite, not the shuffle, must unlock the treasure). A
+// template point that sits clear in the new room is kept; otherwise the
+// first clear spot on a fixed scan (no extra dice — determinism holds).
+const homeItems = (items, rand) => {
+    const foyers = new Set(Object.values(CASTLE_INSIDES))
+    const lairs = new Set(DRAGON_TEMPLATES.map((d) => d.room))
+    const pool = ROOMS.map((rm) => rm.id).filter((id) => id !== R.SECRET && !foyers.has(id) && !lairs.has(id))
+    const inWall = (room, x, y, w, h) => room.walls.some((wl) =>
+        x < wl.x + wl.w && x + w > wl.x && y < wl.y + wl.h && y + h > wl.y)
+    for (const item of items) {
+        item.room = pool[Math.floor(rand() * pool.length)]
+        if (inWall(ROOMS[item.room], item.x, item.y, item.w, item.h)) {
+            for (let y = 120; y <= 160; y += 10) {
+                let placed = false
+                for (let x = 40; x <= 120 && !placed; x += 10) {
+                    if (!inWall(ROOMS[item.room], x, y, item.w, item.h)) { item.x = x; item.y = y; placed = true }
+                }
+                if (placed) break
+            }
+        }
+    }
+}
+
+export function createSim(rand, variant = DEFAULT_VARIANT) {
     if (typeof rand !== 'function') throw new Error('createSim needs a [0,1) rand stream')
+    const spec = VARIANTS[variant]
+    if (!spec) throw new Error(`unknown variant ${variant}`)
+    const items = ITEM_TEMPLATES.map((t) => ({ ...t, carried: false }))
+    if (spec.shuffle) homeItems(items, rand)
 
     const sim = {
         tick: 0,
+        variant,
         score: 0,               // distinct items picked up this run (0..7), report-only
         won: false,
         dead: false,
@@ -288,9 +339,9 @@ export function createSim(rand) {
         carrying: null,
         player: { x: 80, y: 150, w: 6, h: 10 },
         gateOpen: { goldKey: false, blackKey: false, whiteKey: false },
-        items: ITEM_TEMPLATES.map((t) => ({ ...t, carried: false })),
+        items,
         dragons: DRAGON_TEMPLATES.map((t) => ({
-            ...t, alive: true, mouthOpen: false,
+            ...t, speed: t.speed * spec.dragonScale, alive: true, mouthOpen: false,
             homeRoom: t.room, homeX: t.x, homeY: t.y, respawnAt: Infinity,
         })),
         bat: { room: R.OVERWORLD_3, x: 90, y: 50, vx: 1.5, vy: 0.8, carrying: null, swapTimer: 0 },

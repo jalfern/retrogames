@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE } from './sim.js'
+import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, VARIANTS, DEFAULT_VARIANT } from './sim.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -32,7 +32,19 @@ const AdventureGame = () => {
         // every human start re-rolls the seed unless ?seed=N pins it.
         // =============================================
         let seed = 1979
-        let sim = createSim(seedRng(seed))
+        // #1572 item 3 — SELECT GAME: the cart boots to its variant screen.
+        // The attract shows the number (dot matrix, big); left/right cycles
+        // the pick, any other key or a tap starts on it. ?variant=N pins the
+        // pick the way ?seed=N pins the world.
+        const N_VARIANTS = Object.keys(VARIANTS).length
+        const qv = parseInt(new URLSearchParams(window.location.search).get('variant'), 10)
+        let variant = qv >= 1 && qv <= N_VARIANTS ? qv : DEFAULT_VARIANT
+        const makeAttractSim = () => createSim(seedRng(1979), variant)
+        const setVariant = (v) => {
+            variant = ((v - 1 + N_VARIANTS) % N_VARIANTS) + 1
+            if (isAttractMode) sim = makeAttractSim()  // the demo shows the picked variant
+        }
+        let sim = makeAttractSim()
         let isAttractMode = true
         let dropQueued = false
         const keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, Space: false }
@@ -49,7 +61,7 @@ const AdventureGame = () => {
             seed = forcedSeed !== undefined && forcedSeed !== null
                 ? forcedSeed >>> 0
                 : (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))
-            sim = createSim(seedRng(seed))
+            sim = createSim(seedRng(seed), variant)
             isAttractMode = false
             dropQueued = false
             Object.keys(keys).forEach((k) => { keys[k] = false })
@@ -86,6 +98,11 @@ const AdventureGame = () => {
             if (pausedRef.current) return
 
             if (isAttractMode) {
+                if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
+                    setVariant(variant + (e.code === 'ArrowRight' ? 1 : -1))
+                    e.preventDefault()
+                    return
+                }
                 startRun()
             }
             if (terminal()) {
@@ -440,7 +457,7 @@ const AdventureGame = () => {
                 ctx.fillStyle = COLORS.yellow
                 ctx.font = '10px monospace'
                 ctx.fillText('ADVENTURE', GW / 2, GH * 0.30)
-                for (const l of attractFrame(sim.tick, GW, GH)) {
+                for (const l of attractFrame(sim.tick, GW, GH, variant)) {
                     ctx.fillStyle = l.col
                     ctx.font = `${l.size}px monospace`
                     ctx.fillText(l.text, l.x, l.y)
@@ -517,6 +534,7 @@ const AdventureGame = () => {
             id: 'adventure',
             buttons: ['left', 'right', 'up', 'down', 'a'],
             reset: (s) => {
+                variant = DEFAULT_VARIANT   // harness replays run the classic cart
                 startRun(s >>> 0)
             },
             tick: (pad) => {
@@ -535,6 +553,7 @@ const AdventureGame = () => {
                 score: sim.score,
                 done: sim.won || (sim.dead && sim.deathTimer <= 0),
                 seed,
+                variant: sim.variant, // #1572 item 3: the live SELECT GAME pick
                 room: sim.room,
                 carrying: sim.carrying,
                 afford: sim.afford, // #1572: key whose gate the player can open from here (null otherwise)
