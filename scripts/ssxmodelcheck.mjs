@@ -60,6 +60,14 @@ await page.waitForFunction(() => window.__ssxTest.cam().phase === 'run', null, {
 await page.waitForFunction(() => window.__ssxTest.shelf().attached, null, { timeout: 25000 }).catch(() => {})
 await page.waitForTimeout(1600)
 
+// #1621: the summit cloud sea — mounted below the gate, and the board breaks
+// through it on the drop (one-shot mist burst + whoosh in the renderer).
+const cld = await page.evaluate(() => window.__ssxTest.clouds())
+r.check('#1621 the cloud sea is mounted at the gate (>=40 puffs)', cld && cld.count >= 40, JSON.stringify(cld))
+r.check('#1621 the layer hangs below the gate altitude', !!(cld && cld.top < cld.gateY && cld.layerY < cld.top), JSON.stringify(cld))
+const cloudPunched = await page.waitForFunction(() => window.__ssxTest.clouds().punched, null, { timeout: 20000 }).then(() => true).catch(() => false)
+r.check('#1621 the board breaks through the sea on the drop', cloudPunched)
+
 r.check('hero GLB loads (>=40 bones)', await page.waitForFunction(() => window.__ssxTest.hero().ready, null, { timeout: 15000 }).then(() => page.evaluate(() => window.__ssxTest.hero().bones)).then((n) => n >= 40).catch(() => false))
 
 // #975: the shelf swap keeps its promises in a real browser — the day glade

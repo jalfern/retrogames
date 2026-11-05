@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { buildCourse, terrainY, openness, undulate, bankTurn, sceneryPlan, COURSE_COUNT, DS, WALL_X, SHELF_PROPS } from '../src/games/SSX/course.js'
-import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN, surfaceInfo, peaksRing } from '../src/games/SSX/art.js'
+import { buildCourse, terrainY, openness, undulate, bankTurn, sceneryPlan, COURSE_COUNT, DS, WALL_X, SHELF_PROPS, slopePos } from '../src/games/SSX/course.js'
+import { snowColor, buildTerrain, THEMES, GRIDS, SUN, GROOVE, TRACK_DARKEN, surfaceInfo, peaksRing, CLOUD_LAYER, cloudPlan } from '../src/games/SSX/art.js'
 import { makeGame, step } from '../src/games/SSX/sim.js'
 import { decide } from '../src/games/SSX/planner.js'
 
@@ -316,6 +316,41 @@ for (const f of ['course.js', 'sim.js', 'planner.js']) {
     const right = scatter.filter((p) => p.x > 0).length
     ok(`TIMBER scatter stays side-balanced (${right}/${scatter.length} right)`,
         right > scatter.length * 0.35 && right < scatter.length * 0.65)
+}
+
+// ---- #1621 above the clouds — the summit cloud sea ----------------------------
+// The original opens every mountain above the cloud line. The sea is decor: a
+// pure deterministic plan under the gate, in a band below the traverse, with a
+// clear hole so the board starts ABOVE it and punches through in the drop.
+// terrainY/physics are untouched — only the plan and its geometry are pinned.
+{
+    for (let c = 0; c < COURSE_COUNT; c++) {
+        const co = buildCourse(c)
+        const L = CLOUD_LAYER
+        const P0 = slopePos(co, 0, 0)
+        const plan = cloudPlan(co)
+        const y0 = plan.gateY
+        ok(`${co.name}: a sea of clouds hangs under the gate (${plan.entries.length} puffs)`,
+            plan.entries.length >= 40)
+        ok(`${co.name}: the whole sea sits in the band below the traverse`,
+            plan.entries.every((e) => e.y < y0 - L.below + 1e-6 && e.y > y0 - L.above - 1e-6))
+        ok(`${co.name}: the gate hole holds — the board starts above, not inside`,
+            plan.entries.every((e) => Math.hypot(e.x - P0.x, e.z - P0.z) >= L.hole - 1e-6))
+        ok(`${co.name}: the sea spreads wide enough to fill the vista`,
+            plan.entries.every((e) => Math.hypot(e.x - plan.cx, e.z - plan.cz) <= L.radius + 1e-6))
+        ok(`${co.name}: puffs read as clouds, not dots or fog walls`,
+            plan.entries.every((e) => e.r >= L.minR && e.r <= L.maxR && e.a >= L.minA && e.a <= L.maxA))
+        // the drop crosses the layer's top: the punch happens in the drop,
+        // not at the gate and not after the run has settled
+        let sCross = -1
+        for (let s = 0; s <= 600; s++) {
+            if (terrainY(co, s, 0) < y0 - L.below) { sCross = s; break }
+        }
+        ok(`${co.name}: the board breaks through at s=${sCross} m (60–260 window)`,
+            sCross >= 60 && sCross <= 260)
+        ok(`${co.name}: the cloud plan is deterministic`,
+            JSON.stringify(cloudPlan(buildCourse(c))) === JSON.stringify(plan))
+    }
 }
 
 console.log(`${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
