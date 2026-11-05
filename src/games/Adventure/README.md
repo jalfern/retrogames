@@ -94,10 +94,11 @@ batch). The scripted route lives in `adventurecheck.mjs` and wins at tick
   the rite is still the player's discovery, and the secret rite stays
   Robinett's (no hint by design).
 - No guidance surface. The original shipped a fold-out map and hint sheet (the
-  manual was half the game); this port's only in-game text is `PauseOverlay`'s
+  manual was half the game); this port's only in-game text was `PauseOverlay`'s
   control list. First-timer metrics back the need: median 6/18 rooms seen,
   57.5% of seeds never pick up any item, 0% win. A "?"-tab hint page (castles,
   keys, the drop rite — not the secret) is honest help the original itself gave.
+  Restored in the #1572 feel pass item 2 (see below).
 
 ### Restored in the #1545 polish pass
 
@@ -146,3 +147,21 @@ matching key, only inside the zone, only while the gate is closed, silence
 after the drop, the full walk-up→glint→open rite, determinism) plus four
 mutants (glint removed, any-key fires, zone ignored, glint persists once
 open).
+
+- The **guidance tab** (item 2): `PauseOverlay` gained an optional second
+  section — the fold-out hint sheet the original cart shipped. A game opts in
+  by registering a `guide:` array in `games.js` (a list of strings, or
+  `{ color, text }` where color draws a swatch glyph); the guidance renders
+  only when a game registers one, so every other game's help screen is
+  unchanged. ADVENTURE's guide names the three castles and their matching key
+  colors (with gold/black/white swatches), the drop-the-key rite, the
+  bridge-over-walls law and the magnet — and deliberately says nothing about
+  the gray-dot secret, which stays Robinett's discovery. It rides the existing
+  `packPages` pager, so it fits a phone.
+
+Gated in `adventurecheck`: nine guidance gates (the ADVENTURE registry entry
+carries a `guide`, names the three castle/key colors, teaches the drop rite,
+states the bridge and magnet laws, leaks no secret, and the shared
+`PauseOverlay` gates the tab on `game?.guide?.length`) plus four mutants
+(drop rite removed, magnet law removed, secret leaked, tab shown for every
+game).

@@ -742,7 +742,20 @@ export const GAMES = [
         label: 'ADVENTURE',
         theme: 'dark',
         description: 'Explore a world of castles, dungeons, and dragons. Find the enchanted chalice and return it home.',
-        controls: ['Arrow Keys: Move', 'Space: Drop Item']
+        controls: ['Arrow Keys: Move', 'Space: Drop Item'],
+        // #1572 guidance tab — the fold-out map/hint sheet the original cart
+        // shipped. The three castles and their keys, the drop-the-key rite, the
+        // bridge-over-walls law and the magnet. The gray-dot secret stays
+        // Robinett's: no hint for it here (by design).
+        guide: [
+            { text: 'Bring the Enchanted Chalice back to the Golden Castle.' },
+            { color: '#ffd840', text: 'Golden Castle — its gate wants the golden key.' },
+            { color: '#1a1a1a', text: 'Black Castle — its gate wants the black key.' },
+            { color: '#ffffff', text: 'White Castle — its gate wants the white key.' },
+            { text: 'Stand at a gate and DROP its matching key (Space) to open it for good.' },
+            { text: 'Carry the bridge straight through any wall — it stays set and keeps the way open.' },
+            { text: 'The magnet pulls loose items toward you as you walk.' },
+        ]
     },
     {
         path: '/zork',
