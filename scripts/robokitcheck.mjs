@@ -316,6 +316,10 @@ function armDrop(sim) {
     if (!game.includes('WRIST-CAM')) problems.push('no WRIST-CAM HUD')
     if (!game.includes('setScissorTest')) problems.push('no PIP viewport render')
     if (!game.includes('JOINT TORQUE')) problems.push('no torque strip')
+    if (!game.includes('BASE STRAIN')) problems.push('no base-strain HUD (stage 4a item 2 readout)')
+    if (!game.includes('PointsMaterial')) problems.push('no contact spark/dust particle pool (stage 4a item 3)')
+    if (!game.includes("'sawtooth'")) problems.push('no effort-pitched joint whine (stage 4a item 3)')
+    if (!/spawn\(.*spark/.test(game)) problems.push('sparks never spawned (pool is dead weight)')
     if (!/KIT_VERSION = 'stage4a'/.test(readFileSync(join(ROOT, 'src', 'utils', 'robot', 'index.js'), 'utf8'))) problems.push('KIT_VERSION not stage4a')
     check('stage-3 visibility: torque/slip state + wrist-cam & torque HUD wired', problems.length === 0, problems.join('; '))
 }
