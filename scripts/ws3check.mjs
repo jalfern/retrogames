@@ -179,6 +179,16 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     ok(html.includes('30/41') && html.includes('0 mtp/nextn tensors') && html.includes('forbidden by design'),
         'copy: precision fraction, MTP forensics, knob-tuning ban stated')
     ok(!html.replace('WHAT DOES NOT.', '·').includes('WHAT DOES NOT.'), 'mutant caught: a copy block removed')
+    // #1585 QA: the BUILDER rendering scored rows (§ above, #1540) never proved the
+    // SHIPPED file was regenerated — the step-5 commit shipped a stale skeleton with
+    // every round-2 row "pending" beside committed final numbers. Byte-equality of the
+    // committed page against a fresh deterministic build closes that hole for good.
+    const shippedPath = 'public/demos/weightsurgery.html'
+    const shipped = existsSync(shippedPath) ? readFileSync(shippedPath, 'utf8') : ''
+    ok(shipped !== '' && shipped === html,
+        'build: committed public page equals a fresh build of the lab (never ships stale/pending over committed data)')
+    ok(shipped.includes('id="r2-base"><td rowspan=2>'),
+        'copy: committed page carries scored round-2 rows (guards the #1585 skeleton regression)')
     const empty = mkdtempSync(join(tmpdir(), 'ws3empty-'))
     cpSync(join(LAB, 'build_demo.mjs'), join(empty, 'build_demo.mjs'))
     writeFileSync(join(empty, 'batches.jsonl'), '')
