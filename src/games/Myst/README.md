@@ -312,6 +312,14 @@ a flat plane, and two island shores sharing one sculpt — each turns the suite 
   lands on a shore instead of open water, the path is cut into a cliff that meets the sea
   below, the beach is a rising sand bed with the rotted boat aground, and the library stands
   on a plateau over the low sea), each carved level where the player stands and skirting to
-  sea floor, so the foam line and swell dress the island coasts too. Residual: the deep
-  ocean far from any coast is still one plane (now at least a plane that wears the Age it
-  drowns).
+  sea floor, so the foam line and swell dress the island coasts too. **CLOSED by #838
+   item 4** — the deep wears the Age too: `SEA_DEEP`/`deepTint` in `sea.js` lay a distance
+   ladder on every horizon-sized sea (shore keeps its Age tint, the deep darkens to ×0.55
+   with the hue law intact, the last band before the fog lifts back to ×0.72 — the sky's
+   return the FMV seas show), and `farSwell` adds long, slow ground-swell past the coast
+   band (zero at the shore, ramped to 0.9× the view's swell, wavelengths ~5× the near chop)
+   so the ocean heaves hardest away from land. `dressSea` paints the ladder as per-vertex
+   colour and adds the far swell to every heave; small planes (the cave fall, Channelwood
+   pools) sit inside the coast band and keep the flat tint. Residual: the original's clouds
+   mirrored on the water and neighbouring islands on the skyline are still not modelled —
+   the deep is now a graded, rolling sea, not a sheet, but an empty one.
