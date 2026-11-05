@@ -71,6 +71,11 @@ def main():
         jpath = f"{R.RESULTS}/scores_{tag}_{set_name}.jsonl"
         if not os.path.exists(spath):
             continue
+        # #1567 stage-F lesson: practice runs leave full-text sidecars too, and they
+        # have NO scored rows file — the no-arg sweep must skip them, not crash
+        # (crashing silently left every later row uncovered).
+        if not os.path.exists(jpath):
+            continue
         texts = {}
         for l in open(spath):
             try:

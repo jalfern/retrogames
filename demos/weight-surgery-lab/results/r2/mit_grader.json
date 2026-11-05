@@ -32,6 +32,46 @@
   }
  },
  "regrade": {
+  "basew:gsm": {
+   "n": 100,
+   "ours_acc": 10.0,
+   "mit_acc": 10.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
+  "basew:math": {
+   "n": 100,
+   "ours_acc": 6.0,
+   "mit_acc": 6.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
+  "own4:gsm": {
+   "n": 100,
+   "ours_acc": 15.0,
+   "mit_acc": 15.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
+  "own4:math": {
+   "n": 100,
+   "ours_acc": 12.0,
+   "mit_acc": 13.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": [
+    {
+     "id": "math500_36",
+     "ours": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": true
+     }
+    }
+   ]
+  },
   "own:gsm": {
    "n": 100,
    "ours_acc": 8.0,

@@ -447,3 +447,32 @@ to 6.0, i.e. exactly where #1562's own edit sat (own math 6.0). The own directio
 "doubled MATH" is matched by the UNEDITED model measured under the fair window;
 p50cw 31.0 towers over the same control, so MIT's lift remains edit-specific.
 GSM row + verdict copy land with the gsm row (chain continues detached).
+
+**Candidate 2 — VERDICT (stage E, session 136).** α = 4 earned the round's single held-out
+pass — 100 MATH + 100 GSM8K, think35 pp1.5 ctx 32,768 seed 0 PAR-32: **MATH 12.0 acc /
+10.0 fin (MIT-checker 13.0), GSM8K 15.0 acc / 15.0 fin (MIT-checker 15.0)** — the lone
+math diff is math500_36, the same `\frac` parse-edge of the #1539 trio). Against α = 1
+(#1562, same rows and window): math 6.0→12.0, gsm 8.0→15.0 — scaling ×4 is a REAL lift,
+it doubles MATH accuracy and adds 7 pts on GSM8K. Against basew (same window, unedited:
+math acc 6.0, gsm acc 10.0) both gains are edit-specific, not window effects. Against
+p50cw (31.0 math / 51.0
+fin, 48.0 gsm): still 26.0 points of mean accuracy short, finished 10.0% vs 51.0% —
+scaling helps but does not close; escape remains the gap round 1 diagnosed. Jon's open-book
+condition (#1567 handoff) is therefore LIVE: filed #1580 — base + MIT's *written*
+diagnosis in context, never tensors/turn logs, labelled open-book on the page.
+Ledger: the held-out row is logged once in `batches.jsonl`; Astra budget 12/20 spent.
+Rows: `results/r2/scores_own4_{math,gsm}.jsonl`; ws3check §11 (104→113) recomputes the
+aggregate from the rows and gates loser-never, ledger-once, regrade coverage, honest revert
+and number provenance. Four harness lessons, the first three caught by their own mutants:
+- `.filter(r => r.ok)` returns ROWS — summing them is NaN and `Math.abs(NaN−tol)` is false
+  forever: written that way, a rows-vs-aggregate gate is green on ANY corruption. Count
+  with `.length`; the acc-inflation mutant caught it on first run.
+- `writeFileSync(p, readFileSync(p)+row, {flag:'a'})` appends the whole file to itself —
+  an append writes ONLY the new line (ledger-double mutant).
+- the scorer writes a set's rows after the whole set generates (ex.map barrier) and held a
+  deleted-inode fd across the merge detach — committed markers (R3_OWNHELD_DONE,
+  R3_1567_DONE) now *imply* harvestable rows: §11 makes an orphan marker RED.
+- r2_mit_grade's no-arg sweep crashed on PRACTICE sidecars (they have no scores file),
+  and the runner's non-fatal `|| echo` still touched R3_1567_DONE — own4 regrade coverage
+  came from re-running the fixed sweep. Lesson: a marker whose producer tolerated a crash
+  must be re-verified downstream — §11's regrade-coverage gate is that downstream check.

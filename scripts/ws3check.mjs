@@ -552,5 +552,156 @@ console.log('ws3check — WEIGHT SURGERY ROUND 2 harness (#1533)')
     rmSync(base, { recursive: true, force: true })
 }
 
+// 11. #1567 stage E — the winner's ONE held-out row: rows are the evidence
+//     (aggregate recomputed from them), losers never reach held-out, the ledger
+//     logs the row exactly once, MIT regrade covers both sets, and the page
+//     verdict renders from artifacts and reverts honestly when they vanish.
+{
+    const jp = (root, s) => join(root, 'results/r2', s)
+    const harvestIssues = (root) => {
+        const errs = []
+        const pickP = jp(root, 'r3_alpha_pick.json')
+        if (!existsSync(pickP)) return errs
+        const tag = JSON.parse(readFileSync(pickP, 'utf8')).decision
+        for (const t of ['own2', 'own8'])
+            if (t !== tag && existsSync(jp(root, `scores_${t}_math.jsonl`)))
+                errs.push(`loser alpha ${t} has held-out rows (held-out is scored once — winner only)`)
+        const aggP = jp(root, 'r2_scores.json')
+        const agg = existsSync(aggP) ? JSON.parse(readFileSync(aggP, 'utf8')) : {}
+        const e = agg[tag] || {}
+        for (const set of ['math', 'gsm']) {
+            const rp = jp(root, `scores_${tag}_${set}.jsonl`)
+            if (!existsSync(rp)) { errs.push(`${tag}.${set}: held-out rows missing`); continue }
+            const rows = readFileSync(rp, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l))
+            if (new Set(rows.map(r => r.id)).size !== rows.length) errs.push(`${tag}.${set}: duplicate ids in scores`)
+            const n = rows.length
+            const r1 = (x) => Math.round(x * 10) / 10
+            const acc = r1(rows.filter(r => r.ok).length / Math.max(n, 1) * 100)
+            const fin = r1(rows.filter(r => r.finished).length / Math.max(n, 1) * 100)
+            const mean = Math.round(sum0(rows.map(r => r.ntok)) / Math.max(n, 1))
+            const ent = e[set]
+            if (!ent) { errs.push(`${tag}.${set}: entry missing from r2_scores.json`); continue }
+            if (ent.n !== n) errs.push(`${tag}.${set}: n ${ent.n} != ${n} rows on disk`)
+            if (Math.abs(ent.acc - acc) > 0.05) errs.push(`${tag}.${set}: aggregate acc ${ent.acc} != ${acc} recomputed from rows`)
+            if (Math.abs(ent.finished - fin) > 0.05) errs.push(`${tag}.${set}: aggregate finished ${ent.finished} != ${fin} recomputed`)
+            if (Math.abs(ent.mean_ntok - mean) > 1) errs.push(`${tag}.${set}: mean_ntok drifts from rows`)
+        }
+        const logs = readFileSync(join(root, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+            .map(l => { try { return JSON.parse(l) } catch { return {} } })
+            .filter(b => (b.purpose || '').startsWith(`held-out scoring row ${tag} `))
+        if (logs.length !== 1) errs.push(`batches: ${logs.length} held-out ledger rows for ${tag} — exactly one required`)
+        const mgP = jp(root, 'mit_grader.json')
+        const mg = existsSync(mgP) ? JSON.parse(readFileSync(mgP, 'utf8')) : {}
+        for (const set of ['math', 'gsm']) {
+            const rr = mg.regrade && mg.regrade[`${tag}:${set}`]
+            if (!rr) errs.push(`${tag}:${set}: no MIT regrade row`)
+            else if (!(rr.n === 100 && rr.mit_acc >= 0 && rr.mit_acc <= 100)) errs.push(`${tag}:${set}: regrade incomplete`)
+        }
+        return errs
+    }
+    const sum0 = (xs) => xs.reduce((a, b) => a + b, 0)
+    const realPick = existsSync(jp(LAB, 'r3_alpha_pick.json'))
+        ? JSON.parse(readFileSync(jp(LAB, 'r3_alpha_pick.json'), 'utf8')).decision : null
+    // a committed marker means the row was complete when it was committed —
+    // an orphan marker (row lost in a checkout, #1567 stage-E lesson) is RED.
+    if (realPick && existsSync(jp(LAB, `R3_OWNHELD_DONE`))) {
+        const h = harvestIssues(LAB)
+        ok(h.length === 0, 'rules: stage E committed — winner rows complete, aggregate recomputed from rows, regrade covered, ledger once', h.join('; '))
+    } else console.log('  skip stage-E committed-state gates (R3_OWNHELD_DONE not on this tip)')
+    // fixture: the complete stage-E state passes clean, every corruption is caught
+    if (realPick) {
+        const tag = realPick
+        const fx = mkdtempSync(join(tmpdir(), 'ws3e-'))
+        cpSync(LAB, fx, { recursive: true })
+        const mkRows = (set, accN) => Array.from({ length: 100 }, (_, i) => JSON.stringify({
+            id: `${set}_${i}`, pred: '1', ok: i < accN, finished: i < accN, ntok: 20000, method: 'test',
+        })).join('\n') + '\n'
+        const put = (set, accN) => writeFileSync(jp(fx, `scores_${tag}_${set}.jsonl`), mkRows(set, accN))
+        put('math', 6); put('gsm', 8)
+        const aggFx = JSON.parse(readFileSync(jp(fx, 'r2_scores.json'), 'utf8'))
+        aggFx[tag] = {
+            math: { n: 100, acc: 6.0, finished: 6.0, mean_ntok: 20000 },
+            gsm: { n: 100, acc: 8.0, finished: 8.0, mean_ntok: 20000 },
+            t_hours: 2.5, pp: 1.5, pp_ctx: 32768, model: `qwen35-${tag.replace('own', 'own-a')}`,
+        }
+        writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+        // fixture independence: strip any REAL held-out row for the tag first —
+        // once stage E lands on main, the fixture must still count exactly its own
+        writeFileSync(join(fx, 'batches.jsonl'),
+            readFileSync(join(fx, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+                .filter(l => !((JSON.parse(l).purpose) || '').startsWith(`held-out scoring row ${tag} `))
+                .join('\n') + '\n')
+        writeFileSync(join(fx, 'batches.jsonl'),
+            JSON.stringify({ ts: '2026-11-05T04:40:00Z', run: 'r2 (#1533)', purpose: `held-out scoring row ${tag} (qwen35-${tag.replace('own', 'own-a')}, think35 pp=1.5 pp_ctx=32768)`, ruled_out: 'fixture', model: 'qwen35-fixture', n: 200, total_tokens: 4000000, t_hours: 2.5 }) + '\n', { flag: 'a' })
+        const mgFx = JSON.parse(readFileSync(jp(fx, 'mit_grader.json'), 'utf8'))
+        for (const [set, macc] of [['math', 7.0], ['gsm', 8.0]])
+            mgFx.regrade[`${tag}:${set}`] = { n: 100, ours_acc: set === 'math' ? 6.0 : 8.0, mit_acc: macc, pred_none_finished_sidecar_ok: 0, diffs: [] }
+        writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mgFx))
+        writeFileSync(jp(fx, 'R3_OWNHELD_DONE'), '')
+        ok(harvestIssues(fx).length === 0, 'win: complete stage-E fixture is clean', harvestIssues(fx).join('; '))
+        // mutants
+        writeFileSync(jp(fx, `scores_${tag}_math.jsonl`), mkRows('math', 60))
+        ok(harvestIssues(fx).length > 0, 'mutant caught: aggregate acc no longer matches the rows')
+        writeFileSync(jp(fx, `scores_${tag}_math.jsonl`), mkRows('math', 6))
+        writeFileSync(jp(fx, `scores_own8_math.jsonl`), mkRows('math', 2))
+        ok(harvestIssues(fx).length > 0, 'mutant caught: loser alpha with held-out rows')
+        rmSync(jp(fx, `scores_own8_math.jsonl`))
+        writeFileSync(join(fx, 'batches.jsonl'),
+            JSON.stringify({ purpose: `held-out scoring row ${tag} (resume double-log)` }) + '\n', { flag: 'a' })
+        ok(harvestIssues(fx).length > 0, 'mutant caught: held-out row logged twice in the ledger')
+        {
+            const mg2 = JSON.parse(readFileSync(jp(fx, 'mit_grader.json'), 'utf8'))
+            delete mg2.regrade[`${tag}:gsm`]
+            writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mg2))
+            ok(harvestIssues(fx).length > 0, 'mutant caught: winner set without MIT regrade coverage')
+            mg2.regrade[`${tag}:gsm`] = { n: 100, ours_acc: 8.0, mit_acc: 8.0, pred_none_finished_sidecar_ok: 0, diffs: [] }
+            writeFileSync(jp(fx, 'mit_grader.json'), JSON.stringify(mg2))
+            // strip the ledger dup back to the single real row
+            const keep = readFileSync(join(fx, 'batches.jsonl'), 'utf8').split('\n').filter(Boolean)
+                .filter((l, i, a) => !(JSON.parse(l).purpose || '').includes('resume double-log'))
+            writeFileSync(join(fx, 'batches.jsonl'), keep.join('\n') + '\n')
+            ok(harvestIssues(fx).length === 0, 'win: fixture restored — gates are the corruption, not the state')
+        }
+        // page: verdict renders from artifacts, numbers are NOT baked in, revert honest
+        const wb = build(fx)
+        ok(wb.rc === 0 && wb.html.includes('id="r3-verdict"') && wb.html.includes('SCORED ONCE'),
+            'build: winner held-out verdict renders from artifacts')
+        // consistent inflation — page shows what artifacts claim (provenance, not template)
+        aggFx[tag].math.acc = 99.0
+        writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+        const pb = build(fx)
+        ok(pb.html.includes('99.0% acc') && pb.html.includes('id="r3-verdict"'),
+            'mutant caught: verdict numbers come from the aggregate — an inflated artifact renders inflated (rows gate goes red on real drift)')
+        // honest revert: winner entry vanishes -> pending cell returns, verdict gone
+        delete aggFx[tag]
+        writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+        const rb = build(fx)
+        ok(rb.html.includes('scoring now — the ONE held-out row this round') && !rb.html.includes('id="r3-verdict"'),
+            'mutant caught: dropping the winner row reverts the page to honest pending, never a silent hole')
+        rmSync(fx, { recursive: true, force: true })
+    }
+}
+
+// 12. #1580 open-book plumbing — static trust-boundary gates (pre-flight; the
+//     row itself lands later and gets its full honest-revert treatment then).
+{
+    const common = readFileSync(join(LAB, 'r2_common.py'), 'utf8')
+    ok(/os\.environ\.get\("WS_SYSTEM_FILE", ""\)/.test(common) && /if _ob:/.test(common),
+        'rules: open-book system turn is env-gated — unset WS_SYSTEM_FILE leaves the payload byte-identical to every pre-#1580 row')
+    const r4 = existsSync(join(LAB, 'r4_openbook.sh')) ? readFileSync(join(LAB, 'r4_openbook.sh'), 'utf8') : ''
+    ok(r4.includes('final_answer.md'), "rules: r4 references ONLY MIT's written diagnosis path")
+    // command-level check: prose documenting the forbidden paths is the boundary's
+    // documentation; the gate polices what the runner actually EXECUTES
+    const r4cmd = r4.split('\n').map(l => l.replace(/#.*$/, '')).join('\n')
+    ok(r4cmd && !/(runs\/p50c\/(edit|turns)\b|frozen_weights_manifest)/.test(r4cmd),
+        'rules: r4 never touches MIT edit tensors / turn logs / weight manifests')
+    ok(/WS_SYSTEM_FILE="\$DIAG" WS_R2_SETS/.test(r4) && !/export WS_SYSTEM_FILE/.test(r4),
+        'rules: the diagnosis injection is scoped to the scored command, never exported (no leakage into other rows)')
+    const rowsThere = existsSync(join(LAB, 'results/r2/scores_openbook_math.jsonl'))
+    ok(rowsThere || (!existsSync(join(LAB, 'results/r2/R4_OPENBOOK_DONE'))
+        && !existsSync(join(LAB, 'results/r2/R4_1580_DONE'))),
+        'rules: no open-book DONE marker without its rows (marker-implies-rows law, #1567)')
+}
+
 console.log(`\nws3check: ${passes} passed, ${fails} failed`)
 process.exit(fails ? 1 : 0)
