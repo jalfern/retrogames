@@ -476,3 +476,28 @@ and number provenance. Four harness lessons, the first three caught by their own
   and the runner's non-fatal `|| echo` still touched R3_1567_DONE — own4 regrade coverage
   came from re-running the fixed sweep. Lesson: a marker whose producer tolerated a crash
   must be re-verified downstream — §11's regrade-coverage gate is that downstream check.
+
+## #1580 step 4 (session 137, slot a) — open-book control: CONTENT vs WEIGHTS
+Jon's condition from the #1567 handoff: every weight-side route sits ~26 pts below our
+p50cw reproduction, so where does MIT's fix actually live? `r4_openbook.sh` feeds MIT's
+WRITTEN diagnosis (`exp8_math/runs/p50c/final_answer.md`, verbatim, via `WS_SYSTEM_FILE`
+scoped to the one command) to the UNEDITED base at the identical protocol — fixed 100+100
+held-out, think35 pp1.5 ctx 32768 seed 0 PAR-32, sidecars on. Trust boundary held
+end-to-end: final_answer.md is the only MIT artifact read; ws3check §12 polices the
+runner, §13 polices the data.
+**Result (scored ONCE):** MATH **2.0 acc / 3.0 fin** (MIT-checker 3.0, 1 diff — the
+#1539 parse-edge family), GSM8K **4.0 / 4.0** (MIT-checker 4.0, 0 diffs). Mean 3.0 vs
+the same-window base control (basew 8.0): Δ **−5.0 pts** — inside the ±10 pp noise band,
+direction negative — and mean_tokens 31,876/31,504: the model runs to the cap either way,
+the diagnosis does not even shorten the thinking. Finished 3.5% mean vs the edit's 62.5%.
+**Verdict: the escape is not knowledge their text conveys — it lives in the weights, not
+the words.** Content-transferability is ruled out at this horizon and this model; no
+direction-search passes spent (pure scoring row, ledger-once, marker chain
+R4_OPENBOOK_DONE -> R4_1580_DONE).
+Harness: ws3check 119→135 — §13 open-book harvest gates (rows-vs-aggregate recompute via
+the §11 shared helper, ledger-once, regrade coverage, DONE-marker chain, model claim must
+stay `qwen35-base` — an edited model under the open-book tag is a contaminated control) +
+page provenance/honest-revert mutants. One crash caught writing it: dropping the same-
+window base control while the open-book row was complete crashed the verdict on
+`null.toFixed` — the verdict now explicitly *needs its control* (mutant-gated): no
+control, no claim, honest IN FLIGHT instead.

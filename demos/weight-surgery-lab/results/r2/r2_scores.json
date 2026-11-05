@@ -104,5 +104,23 @@
   "pp": 1.5,
   "pp_ctx": 32768,
   "model": "qwen35-own-a4"
+ },
+ "openbook": {
+  "math": {
+   "n": 100,
+   "acc": 2.0,
+   "finished": 3.0,
+   "mean_ntok": 31876
+  },
+  "gsm": {
+   "n": 100,
+   "acc": 4.0,
+   "finished": 4.0,
+   "mean_ntok": 31504
+  },
+  "t_hours": 2.16,
+  "pp": 1.5,
+  "pp_ctx": 32768,
+  "model": "qwen35-base"
  }
 }

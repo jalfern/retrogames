@@ -46,6 +46,32 @@
    "pred_none_finished_sidecar_ok": 0,
    "diffs": []
   },
+  "openbook:gsm": {
+   "n": 100,
+   "ours_acc": 4.0,
+   "mit_acc": 4.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": []
+  },
+  "openbook:math": {
+   "n": 100,
+   "ours_acc": 2.0,
+   "mit_acc": 3.0,
+   "pred_none_finished_sidecar_ok": 0,
+   "diffs": [
+    {
+     "id": "math500_36",
+     "ours": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": false
+     },
+     "mit": {
+      "pred": "\\frac{11+9a}{20}",
+      "ok": true
+     }
+    }
+   ]
+  },
   "own4:gsm": {
    "n": 100,
    "ours_acc": 15.0,

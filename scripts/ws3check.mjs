@@ -804,6 +804,20 @@ const harvestIssuesFor = (root, tag) => {
     const rb = build(fx)
     ok(rb.html.includes('OPEN-BOOK CONTROL IN FLIGHT') && !rb.html.includes('OPEN-BOOK VERDICT'),
         'mutant caught: dropping the open-book entry reverts the page to honest pending, never a silent hole')
+    {
+        // the verdict compares against the same-window base — losing that control
+        // must revert the verdict too, never crash or make an uncontrolled claim
+        aggFx[TAG] = {
+            math: { n: 100, acc: 9.0, finished: 9.0, mean_ntok: 15000 },
+            gsm: { n: 100, acc: 12.0, finished: 12.0, mean_ntok: 15000 },
+            t_hours: 1.4, pp: 1.5, pp_ctx: 32768, model: 'qwen35-base',
+        }
+        delete aggFx.basew
+        writeFileSync(jp(fx, 'r2_scores.json'), JSON.stringify(aggFx))
+        const cb = build(fx)
+        ok(cb.rc === 0 && cb.html.includes('OPEN-BOOK CONTROL IN FLIGHT') && !cb.html.includes('OPEN-BOOK VERDICT'),
+            'mutant caught: dropping the same-window base control reverts the open-book verdict — the verdict needs its control')
+    }
     rmSync(fx, { recursive: true, force: true })
     if (marker) {
         const hb = build(LAB)

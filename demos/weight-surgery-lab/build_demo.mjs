@@ -621,8 +621,8 @@ ${r4Row("r4-openbook", "openbook", "<b>OPEN-BOOK — base + MIT's written diagno
 ${r4Row("r4-p50cw", "p50cw", "p50cw — MIT's edit, our weights (reference)", r2s && r2s.p50cw)}
 </table>
 ${(() => {
-  if (!r4Done(r4Ob))
-    return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK CONTROL IN FLIGHT.</b> base + MIT's written diagnosis, weights untouched, same rows and protocol as the p50cw row — the cleanest content-vs-weights test on this box. Rows land as it scores; nothing is claimed before it is measured.</p>`
+  if (!r4Done(r4Ob) || !r4Done(r2s.basew))
+    return `<p class="note" id="ob-verdict"><b>#1580 — OPEN-BOOK CONTROL IN FLIGHT.</b> base + MIT's written diagnosis, weights untouched, same rows and protocol as the p50cw row — the cleanest content-vs-weights test on this box. The row and its same-window controls land as they score; nothing is claimed before it is measured.</p>`
   const mean = (x) => (x.math.acc + x.gsm.acc) / 2
   const b = r2s.base, bw = r2s.basew, w = r2s.p50cw
   const liftC = r4Done(bw) ? mean(r4Ob) - mean(bw) : null
