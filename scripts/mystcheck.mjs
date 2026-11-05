@@ -1635,6 +1635,14 @@ console.log('MYST — the gear gallery (#838 item 9: five slots, four carried, o
   ok(r.events.includes('blocked') && !r.state.gearsSeated.selenitic, 'an empty slot refuses an empty hand')
   r = dispatch(s, { t: 'seat', key: 'myst' })
   ok(r.events.includes('blocked') && !galleryOpen(r.state), 'MYST\'s own gear is refused — the island keeps its own time')
+  ok(/will not come/.test(r.state.message) && /one casting/.test(r.state.message),
+    'refused with the law\'s own words, not the empty-slot shrug (the fixed branch speaks)')
+  // The pull, from a wall that records its own gear seated: what holds the fifth
+  // is the fixed law, not the empty hand — so seed the seat map as the carved
+  // row reads it and pull. An unguarded lift branch answers with `gearLift`.
+  const pull = dispatch({ ...s, gearsSeated: { ...s.gearsSeated, myst: true } }, { t: 'seat', key: 'myst' })
+  ok(pull.events.includes('blocked') && !pull.events.includes('gearLift'),
+    'pulled where the wall itself seats it, the island gear still refuses to come loose')
   s = { ...s, flags: { ...s.flags, gearSelenitic: true } }
   r = dispatch(s, { t: 'seat', key: 'selenitic' }); s = r.state
   ok(r.events.includes('gearSeat:selenitic') && gearSeated(s, 'selenitic') && seatedCount(s) === 2, 'a carried gear drops into its own slot')

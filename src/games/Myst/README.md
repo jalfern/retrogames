@@ -401,3 +401,12 @@ mirroring clouds or seating land — each turns the suite red.
     section proves determinism, the shared lens clock, Age-only scope, the
     one-sky-at-once law, bounded + doubling envelope, the thunder voice law
     against every swell, the delay and the wiring; 8 new mutants all die.
+    **CLOSED by #838 item 11** — the fifth gear is provably cast in: the island's
+    gear sat fixed by law, but `the island's gear comes loose` (neutering
+    `if (g.fixed)` in `state.js`) survived `--mutate` — with the branch gone the
+    seat action still answered `blocked` through the empty-hand path, so no gate
+    could tell the law's refusal from the slot's shrug. The item-9 section now
+    asserts the refusal words (`will not come`/`one casting`) and pulls the gear
+    from a wall whose seat map records it seated, where an unguarded lift branch
+    must answer `gearLift` — the fixed law is load-bearing and the last mutate
+    survivor dies.
