@@ -395,14 +395,30 @@ Environment addendum (#1562): `data/` is untracked problem data — symlink it:
 `language_model.model.layers.*` (HF multi-modal container) — r2_edit's DOWN
 template matched the write-up's `model.language_model.*` and died on first run.
 
-## #1567 step 3 (session 134, slot a) — controls, scaling, layer count
-Scripts: `r3_seprank.py` (candidate 3, passes P6+P7), `r3_run_1567.sh` (detached:
-`./.venv/bin/python r2_detach.py r3_run_1567.sh /tmp/forge/ws-r3-1567.log`).
-Markers: `results/r2/R3_BASEW_DONE`, `R3_ALPHA{2,4,8}_DONE`, `R3_1567_DONE`.
-Alpha edits build to `edited_own_a{2,4,8}` -> `~/models/weightlab/qwen35-own-a{2,4,8}`;
-alpha rows score **math-only** (disclosed on the page — GSM sat at base level in
-#1562, scoring it again would spend GPU on a known null; the sweep never picks
-the better set).
+## #1567 step 3 (sessions 134–135, slot a) — controls, scaling, layer count
+Scripts: `r3_seprank.py` (candidate 3, passes P6+P7), `r3_practice.py` +
+`r3_pick.py` + `r3_run_1567.sh` v2 (detached:
+`./.venv/bin/python r2_detach.py r3_run_1567.sh /tmp/forge/ws-r3b-1567.log`).
+Markers: `results/r2/R3_BASEW_DONE`, `R3_PBASE_DONE`, `R3_ALPHA{2,4,8}_DONE`,
+`R3_OWNHELD_DONE`, `R3_1567_DONE`.
+Alpha edits build to `edited_own_a{2,4,8}` -> `~/models/weightlab/qwen35-own-a{2,4,8}`.
+
+**Jon's correction mid-round (23:31Z), applied before relaunch — v2 protocol.**
+v1 scored each α variant on the held-out 100 MATH — picking the best α that way
+is tuning on the test set even when disclosed. v2:
+- **Choose on practice:** base + α∈{2,4,8} score `r3_practice.py`'s FRESH batch —
+  math_train indices 96–159 of the SEED-1562 shuffle. #1562's fit/validation owns
+  indices 0–95 of the same deterministic shuffle; disjointness asserted in code and
+  verified (0 overlap). Cap 8192 (the direction-search horizon — escape at ≤8k is
+  what the direction targets; ~4x cheaper than 32k where loops eat the whole cap).
+  think35 pp1.5 ctx32768 PAR-32 seed 0. Passes P8 (base control) → P9/P10/P11.
+- **Frozen pick before any row existed** (`r3_pick.py`): winner = max practice
+  accuracy (escape without a correct answer is not success); ties → finished-rate,
+  then smaller α.
+- **Score held-out once:** the winner alone earns the 100+100 row at full protocol
+  (cap 32768), then MIT regrade. No swept loser ever gets a held-out row —
+  ws3check proves it: loser α with `scores_own{A}_math.jsonl` on disk is RED.
+Budget after plan: 11/20 Astra passes + rows logged per the #1562 precedent.
 
 **Candidate 3 — layer count: NO, top-2 stands.** `r3_seprank.py` re-reads the P5
 validation texts and computes combined separation for layer sets: per-layer scores
