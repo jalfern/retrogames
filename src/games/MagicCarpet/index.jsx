@@ -17,7 +17,7 @@ import {
     LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, INVIS_T,
-    hudTap, TAP, TRAY,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
 
@@ -270,19 +270,21 @@ const MagicCarpetGame = () => {
             if (sc !== 'play') return
             upHold = keys.u ? upHold + 1 : 0
             boostOn = boostKey || upHold >= 24
-            if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
-            if (boostOn && gs.tick % 12 === 0) audioController.playNoise(0.06, 0.02)
-            if (gs.tick % 46 === 0) audioController.playSweep(74, 58, 0.5, 'sine', boostOn ? 0.028 : 0.015)
+            // #1612 item 4: while veiled the world bed is heard through the carpet.
+            audioController.setMuffle(muffleOf(gs))
+            if (boostOn && !boostPrev) audioController.ambSweep(220, 520, 0.22, 'sine', 0.05)
+            if (boostOn && gs.tick % 12 === 0) audioController.ambNoise(0.06, 0.02)
+            if (gs.tick % 46 === 0) audioController.ambSweep(74, 58, 0.5, 'sine', boostOn ? 0.028 : 0.015)
             if (bankHum > 0) {
-                if (gs.tick % 9 === 0) audioController.playTone(98 + (gs.tick % 3) * 7, 0.2, 'sine', 0.022)
+                if (gs.tick % 9 === 0) audioController.ambTone(98 + (gs.tick % 3) * 7, 0.2, 'sine', 0.022)
                 bankHum--
             }
             if (gs.tick % 170 === 0) {
                 const near = gs.monsters.find((m) => m.kind !== 'cow' &&
                     Math.hypot(((m.x - gs.x + MAP / 2) % MAP + MAP) % MAP - MAP / 2, ((m.y - gs.y + MAP / 2) % MAP + MAP) % MAP - MAP / 2) < 95)
                 if (near) {
-                    audioController.playTone(near.kind === 'giant' ? 44 : 62, 0.34, 'sawtooth', 0.026)
-                    audioController.playTone(near.kind === 'giant' ? 33 : 47, 0.5, 'sawtooth', 0.016, 0.2)
+                    audioController.ambTone(near.kind === 'giant' ? 44 : 62, 0.34, 'sawtooth', 0.026)
+                    audioController.ambTone(near.kind === 'giant' ? 33 : 47, 0.5, 'sawtooth', 0.016, 0.2)
                 }
             }
             boostPrev = boostOn
@@ -738,6 +740,7 @@ const MagicCarpetGame = () => {
                 tap: (x, y) => hudTap(gs, x, y),
                 hash: () => stateHash(gs),
                 gl2: () => !!renderer,
+                muffle: () => audioController.ambTarget,
                 digHot: () => {
                     gs.quota = 999999
                     crater(gs, gs.x + Math.cos(gs.yaw) * 70, gs.y + Math.sin(gs.yaw) * 70, 16, 10, 1)
@@ -812,7 +815,8 @@ const MagicCarpetGame = () => {
                 tick: (pad) => {
                     if (gs.end) { gs.tick += 1; handleEvents(gs.events.splice(0)); return }
                     boostOn = !!pad.boost
-                    if (boostOn && !boostPrev) audioController.playSweep(220, 520, 0.22, 'sine', 0.05)
+                    audioController.setMuffle(muffleOf(gs))
+                    if (boostOn && !boostPrev) audioController.ambSweep(220, 520, 0.22, 'sine', 0.05)
                     boostPrev = boostOn
                     if (pad.cycleL) cycleL(gs)
                     if (pad.cycleR) cycleR(gs)
@@ -834,6 +838,7 @@ const MagicCarpetGame = () => {
 
         return () => {
             unexposeFeedbackState()
+            audioController.setMuffle(OPEN_CUTOFF) // leave the shared ambience bus open
             if (import.meta.env.DEV) { if (window.__carpetTest) delete window.__carpetTest; unexposeGame(); unmountDbg() }
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
