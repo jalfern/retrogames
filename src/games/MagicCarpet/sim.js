@@ -466,6 +466,18 @@ export function hudTap(gs, x, y) {
     return 'world'
 }
 
+// #1612 item 4: behind the veil the world is heard *through* the carpet. The
+// shell hangs its sustained bed (wind, growls, boost hiss) on a low-pass whose
+// cutoff this picks, so invisibility dulls the world instead of only changing
+// the picture. It is a pure read of the veil (like hudTap is of the strip), so
+// carpetcheck proves the decision without Web Audio; open when visible, a short
+// closed band while veiled. It never feeds stateHash — it drives sound, not rules.
+export const OPEN_CUTOFF = 18000
+export const MUFFLE_CUTOFF = 520
+export function muffleOf(gs) {
+    return gs.invis > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
+}
+
 export function step(gs, inp) {
     gs.tick++
     if (gs.end) return

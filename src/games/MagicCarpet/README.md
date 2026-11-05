@@ -95,7 +95,11 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   giant pd<70) gets `lostT = 40` + a `lost` event — the shell blips a curious
   two-note (the wizard adds "THE WIZARD LOSES YOU"), the GL pass floats a gold
   '?' over their heads and the carpet drags a cyan ghost trail of additive motes
-  until the veil lifts. `lostT` is presentation-only: it never steers the AI.
+  until the veil lifts. `lostT` is presentation-only: it never steers the AI. The world muffles too (#1612 item 4): the sustained bed
+   (wind drone tied to airspeed, boost hiss, the bank hum, the nearby growls)
+   rides one low-pass whose cutoff `muffleOf(gs)` picks — open when seen,
+   `MUFFLE_CUTOFF` Hz behind the veil — so invisibility is something you hear.
+   Your own spell-casts stay bright: only the world bed dulls, never your hands.
 
 ## #1612 item 1 polish (2026-11-05, QA studio)
 
@@ -110,11 +114,28 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   Browser side: deleting the `gs0.invis > 0` block in fillParticles reddens
   the ghost-trail gate. Balance after: 60/60 seeds, slowest 24,704 — unchanged.
 
+## #1612 item 4 polish (2026-11-05, QA studio)
+
+- Veil muffle: the wind drone, boost hiss, bank hum and nearby growls now route
+  through a new opt-in low-pass ambience bus in `AudioController`
+  (`ensureAmb`/`setMuffle`/`ambTone`/`ambSweep`/`ambNoise` — games that never
+  call these still hit `destination` directly, so no other title's sound moves).
+  The cutoff is a pure read, `muffleOf(gs)` in `sim.js`: `OPEN_CUTOFF` (18 kHz)
+  while seen, `MUFFLE_CUTOFF` (520 Hz) while `gs.invis > 0`, eased via
+  `setTargetAtTime` so the veil edge doesn't click. Own casts/heals/kills stay on
+  the direct SFX path — the world dulls, your hands don't.
+- Mutation proof: reading `gs.shield` instead of `gs.invis` in `muffleOf` flips
+  the visible/veiled gates; six new Node gates cover open / muffled / pure-hash /
+  expiry-recovery / shield-and-heal-stay-open / narrow-band. Browser side (CI):
+  dropping the `setMuffle(muffleOf(gs))` call leaves `__carpetTest.muffle()` null
+  under the veil and that gate goes red. Balance unchanged (the muffle is audio
+  only, off the hash).
+
 ## Verify
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 53 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 59 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,

@@ -431,6 +431,10 @@ class AudioController {
         this.analyser = null
         this.music = null
         this.pendingStep = null
+        // #1612 item 4 — the low-pass a title muffles its sustained bed through
+        // (built lazily on first use so games that never muffle pay nothing).
+        this.ambFilter = null
+        this.ambTarget = null
         // one-shot SFX scheduled since load (#1130 juice audit: an action that
         // schedules nothing is an action that sounds like nothing). Music steps
         // never count — the bed is not feedback.
@@ -541,6 +545,82 @@ class AudioController {
         gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + duration)
         osc.connect(gain); gain.connect(this.ctx.destination)
         osc.start(); osc.stop(this.ctx.currentTime + duration)
+    }
+
+    // ---- ambience bus (#1612 item 4) ----
+    // A title's SUSTAINED world bed (wind, growls, a hum) can be routed through
+    // one low-pass so a state change — Magic Carpet's veil — dulls the whole bed
+    // at once. Opt-in: games that never call these still hit destination directly
+    // (their one-shots are untouched), so this changes no other title's sound.
+    ensureAmb() {
+        if (!this.ctx) return null
+        if (!this.ambFilter) {
+            this.ambFilter = this.ctx.createBiquadFilter()
+            this.ambFilter.type = 'lowpass'
+            this.ambFilter.frequency.value = 20000 // wide open until something muffles it
+            this.ambFilter.connect(this.ctx.destination)
+        }
+        return this.ambFilter
+    }
+
+    // Hold the ambience bus at a cutoff in Hz. setTargetAtTime gives a short,
+    // click-free muffle/unmuffle rather than a hard jump at the veil's edge.
+    setMuffle(cutoff) {
+        if (!(cutoff > 0)) return
+        const bus = this.ensureAmb()
+        if (!bus) return
+        this.ambTarget = cutoff
+        this.ambFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.08)
+    }
+
+    ambTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
+        if (this.muted || !this.ctx) return
+        const bus = this.ensureAmb()
+        if (!bus) return
+        if (this.ctx.state === 'suspended') this.ctx.resume()
+        this.sfx++
+        const t = this.ctx.currentTime + delay
+        const osc = this.ctx.createOscillator()
+        const gain = this.ctx.createGain()
+        osc.type = type
+        osc.frequency.setValueAtTime(freq, t)
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
+        osc.connect(gain); gain.connect(bus)
+        osc.start(t); osc.stop(t + duration)
+    }
+
+    ambSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1) {
+        if (this.muted || !this.ctx) return
+        const bus = this.ensureAmb()
+        if (!bus) return
+        this.sfx++
+        const osc = this.ctx.createOscillator()
+        const gain = this.ctx.createGain()
+        osc.type = type
+        osc.frequency.setValueAtTime(startFreq, this.ctx.currentTime)
+        osc.frequency.linearRampToValueAtTime(endFreq, this.ctx.currentTime + duration)
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
+        gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        osc.connect(gain); gain.connect(bus)
+        osc.start(); osc.stop(this.ctx.currentTime + duration)
+    }
+
+    ambNoise(duration, vol = 0.2) {
+        if (this.muted || !this.ctx) return
+        const bus = this.ensureAmb()
+        if (!bus) return
+        this.sfx++
+        const bufferSize = this.ctx.sampleRate * duration
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate)
+        const data = buffer.getChannelData(0)
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1
+        const noise = this.ctx.createBufferSource(); noise.buffer = buffer
+        const gain = this.ctx.createGain()
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        noise.connect(gain); gain.connect(bus)
+        noise.start()
     }
 
     // ---- music engine (lookahead scheduler) ----
@@ -660,4 +740,7 @@ export const audioController = new AudioController()
 // qbertcheck and friends import this module in plain Node, where it is absent).
 if (typeof window !== 'undefined' && import.meta.env?.DEV) {
     window.__audioSfx = () => audioController.sfx
+    // #1612 item 4 — the cutoff the ambience bus is being held at (null until a
+    // title muffles something), so a browser check can see the veil take the bed.
+    window.__audioMuffle = () => audioController.ambTarget
 }

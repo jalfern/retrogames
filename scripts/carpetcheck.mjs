@@ -12,6 +12,7 @@ import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
+    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -520,6 +521,39 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     }
 }
 
+// ---- #1612 item 4: behind the veil the WORLD muffles. muffleOf(gs) is the pure
+// cutoff the shell drives its ambience low-pass from — open when visible, a short
+// closed band while veiled, back to open on expiry, and it never touches the rules
+// or the hash. The veil is the only thing that muffles (no shield/heal tie-in).
+// Mutation guide: read gs.shield instead of gs.invis in muffleOf and the visible/
+// veiled gates flip; hardcode OPEN and the veiled gate goes red.
+{
+    const veil = (gs) => { gs.learned.push('invisibility'); setHand(gs, 'L', 'invisibility'); gs.mana = 40; step(gs, { castL: true }) }
+    const vis = makeGame(7)
+    r.check('a visible carpet hears the world open (muffleOf = OPEN_CUTOFF)',
+        muffleOf(vis) === OPEN_CUTOFF, `${muffleOf(vis)}`)
+    const gs = makeGame(7)
+    veil(gs)
+    r.check('casting the veil drops the world cutoff to MUFFLE_CUTOFF',
+        muffleOf(gs) === MUFFLE_CUTOFF, `${muffleOf(gs)}`)
+    // Pure: the readout must not nudge the sim (same discipline as the tray).
+    const h0 = stateHash(gs); muffleOf(gs); const h1 = stateHash(gs)
+    r.check('muffleOf is a pure read — it never disturbs the state hash', h0 === h1, `${h0} vs ${h1}`)
+    // Recovery: the bed opens back up the tick the veil lifts.
+    let i = 0
+    while (gs.invis > 0 && i < INVIS_T + 10) { step(gs, {}); gs.events.length = 0; i++ }
+    r.check('the world opens again the tick the veil expires',
+        gs.invis === 0 && muffleOf(gs) === OPEN_CUTOFF, `invis=${gs.invis} cutoff=${muffleOf(gs)}`)
+    // Only invisibility muffles: a shielded/healing carpet is still heard clearly.
+    const shielded = makeGame(7)
+    shielded.shield = 500; shielded.hp = shielded.hp + 1
+    r.check('the veil alone muffles — shield or heal never closes the bed',
+        muffleOf(shielded) === OPEN_CUTOFF, `${muffleOf(shielded)}`)
+    r.check('the muffle band is genuinely narrow (MUFFLE_CUTOFF well below open)',
+        MUFFLE_CUTOFF > 100 && MUFFLE_CUTOFF < 1200 && OPEN_CUTOFF > 10000 && MUFFLE_CUTOFF < OPEN_CUTOFF / 10,
+        `muffle ${MUFFLE_CUTOFF}Hz vs open ${OPEN_CUTOFF}Hz`)
+}
+
 // ---- #1612 mobile spellbook: the HUD itself equips hands, like the original's
 // mouse-first UI. hudTap is pure (sim.js), so the whole touch path — slots cycle,
 // gold book tab opens the tray, learned cells assign the left hand, click-out
@@ -748,6 +782,18 @@ const trail = await page.evaluate(async () => {
 })
 r.check('the veiled carpet leaves a ghost trail in the GL pass (#1612)',
     trail.invis > 0 && trail.motes > trail.clean + 8, `motes ${trail.clean} -> ${trail.motes} (veil ${trail.invis})`)
+
+// ---- #1612 item 4 (browser): veiling actually closes the ambience low-pass the
+// shell drives the wind/growl bed through. Mutation guide: drop the
+// setMuffle(muffleOf(gs)) call in index.jsx and the veiled reading is null.
+await page.evaluate(() => { window.__game.reset(7); window.__carpetTest.start() })
+await page.waitForTimeout(300)
+const muffleOpen = await page.evaluate(() => window.__carpetTest.muffle())
+await page.evaluate(() => { window.__carpetTest.veil() })
+await page.waitForTimeout(300)
+const muffleVeil = await page.evaluate(() => window.__carpetTest.muffle())
+r.check('the veil muffles the world — the ambience bus low-pass drops while veiled, open when visible',
+    muffleOpen >= 10000 && muffleVeil > 0 && muffleVeil <= 1000, `open=${muffleOpen} veiled=${muffleVeil}`)
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 await browser.close()
