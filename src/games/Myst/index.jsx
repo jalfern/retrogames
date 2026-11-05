@@ -30,6 +30,7 @@ import { drawLink, linkEnvelope, LINK_TICKS } from './link.js'
 import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
 import { stormFlash, STORM } from './storm.js'
+import { STONE_VIEWS, GULLS, gullCry } from './stone.js'
 
 const VW = 960, VH = 540
 const SIM_MS = 1000 / 60
@@ -106,6 +107,7 @@ const MystGame = () => {
     // atmosphere) so the flash rides ON TOP and the calm between strikes returns
     // them exactly; thunder is scheduled off the sim clock, never a timer.
     let sunBaseI = 1.1, stormPrev = 0, stormAt = 0
+    const gullPrev = [0, 0, 0] // #838 item 15 — per-bird cry edges on the sim clock
     const fogBase = new THREE.Color()
     let raf = 0, last = 0, acc = 0, wt = 0, playTick = 0
     let fade = 1, fadeDir = -1
@@ -445,6 +447,16 @@ const MystGame = () => {
           if (fl > 0 && stormPrev === 0) stormAt = wt + STORM.rumbleDelay
           stormPrev = fl
           if (stormAt && wt >= stormAt) { stormAt = 0; sfx('thunder') }
+          // #838 item 15 — gulls cry over the harbour on their own cadences:
+          // each bird's envelope rising past half schedules one cry off the
+          // sim clock (the loop owns timing, the thunder rule).
+          if (STONE_VIEWS.includes(gs.node)) {
+            for (let gi = 0; gi < GULLS.n; gi++) {
+              const e = gullCry(wt, gs.node, gi)
+              if (e > 0.5 && gullPrev[gi] <= 0.5) sfx('gull')
+              gullPrev[gi] = e
+            }
+          }
         }
         // #838 item 12 — the quarterdeck rides its ship: standing aboard, the
         // whole view lifts with the hull's heave and the horizon sways at

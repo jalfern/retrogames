@@ -8,10 +8,13 @@ import { texNoise, texSky, texPages, PAL } from './textures.js'
 import { NODES } from './nodes.js'
 import { STAR_SHAPES, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH } from './state.js'
 import { groundHeight } from './terrain.js'
-import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor, shipFloat } from './sea.js'
+import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, SEA_VIEWS, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor, shipFloat, SHIP_ROCK } from './sea.js'
 import { stormView, skyGain, seaGain, STORM } from './storm.js'
 import { FORGE, FORGE_SEATS, forgeBreath, forgeSparks, ventPuff } from './forge.js'
 import { CLOUD, CLOUD_SEATS, CLOUD_VIEWS, BOUNCE_TINT, cloudBounce, deckLight } from './cloudlight.js'
+import { STONE_VIEWS, GULLS, gullsAt, hullWash } from './stone.js'
+
+const GULL_N = GULLS.n
 
 const GAP = 4000
 
@@ -419,6 +422,42 @@ function cloudDeck(o, view) {
   return o
 }
 
+// #838 item 15 — the harbour ring (stone.js gullsAt): dumb gull silhouettes
+// whose wings and seats are rewritten per frame from the pure law. The birds
+// are geometry here; the wheeling lives in stone.js so mystcheck can gate it.
+function gullBirds(group, view) {
+  const skin = () => new THREE.MeshStandardMaterial({ color: 0xe8ecef, emissive: 0x5a646c, emissiveIntensity: 0.55, roughness: 0.6 })
+  for (let i = 0; i < GULL_N; i++) {
+    const b = new THREE.Group()
+    const body = mesh(new THREE.BoxGeometry(0.5, 0.14, 0.16), skin(), 0, 0, 0, b)
+    body.userData.noPick = true
+    const wl = mesh(new THREE.BoxGeometry(0.72, 0.035, 0.24), skin(), -0.46, 0, 0, b)
+    wl.userData.noPick = true
+    const wr = mesh(new THREE.BoxGeometry(0.72, 0.035, 0.24), skin(), 0.46, 0, 0, b)
+    wr.userData.noPick = true
+    b.userData.gull = view
+    b.userData.gullIndex = i
+    b.userData.noPick = true
+    group.add(b)
+  }
+}
+
+// Foam running along the floating hull's flank (stone.js hullWash): quads at
+// the waterline the sea floods as the swell slides past. They stay on the
+// water — the hull rocks over them, exactly the relative motion the law
+// measures. Opacity is rewritten per frame from hullWash.
+function foamWash(group, view) {
+  for (const side of [-1, 1]) {
+    for (let k = 0; k < 4; k++) {
+      const q = mesh(new THREE.PlaneGeometry(1.5, 0.4), new THREE.MeshBasicMaterial({ color: 0xeaf4ee, transparent: true, opacity: 0.12, depthWrite: false, side: THREE.DoubleSide }), side * (SHIP_ROCK.halfW + 0.18), SEA_VIEWS[view].water + 0.06, SHIP_ROCK.seat[1] + (k - 1.5) * 2.4, group)
+      q.rotation.x = -Math.PI / 2
+      q.userData.wash = view
+      q.userData.washSeat = 0.8 + 0.4 * ((k * 7 + (side + 1) * 3) % 4) / 3
+      q.userData.noPick = true
+    }
+  }
+}
+
 function gear(group, tex, r, x, y, z, speed, tag) {
   const g = new THREE.TorusGeometry(r, r * 0.18, 8, 14)
   const o = mesh(g, mat(tex, { metalness: 0.5, roughness: 0.4 }), x, y, z, group)
@@ -812,6 +851,7 @@ const BUILDERS = {
     // shore rocks where the coast meets the sea, flanking the sightline
     boulder(g, TX.grey, -18, 0.9, 4, 1.3, 0.7); boulder(g, TX.grey, 18, 1.1, 4, 1.5, 0.2)
     tuft(g, -8, 0.04, -2, 1.2); tuft(g, 8, 0.04, -1, 1)
+    gullBirds(g, 'stoneship') // #838 item 15 — the pier sits under the ring
   },
   stoneDeck(g) {
     // the moored ship on its swell, seen from the quarterdeck: the mast is the landmark
@@ -840,6 +880,8 @@ const BUILDERS = {
     g.add(ship)
     for (const [px, pz] of [[-1.3, 4.4], [1.3, 4.4]]) mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.4), mat(TX.wood), px, 3.6, pz, g).userData.noPick = true
     boulder(g, TX.grey, -6.5, 1.4, -8, 1.4, 0.5); boulder(g, TX.grey, 7, 1.6, -7, 1.5, 1.2)
+    gullBirds(g, 'stoneDeck') // #838 item 15 — same ring, same harbour, two seats
+    foamWash(g, 'stoneDeck') // and the Atlantic lapping along the floating hull
   },
   stoneObservatory(g) {
     // the dome on the ridge, reached by the rock stair off the ship's stern
@@ -1283,6 +1325,10 @@ export function buildWorld(ids) {
       if (o.isLight && o.userData.forge) anim.push({ o, f: (t) => { o.intensity = FORGE.lamp * forgeBreath(t) } })
       if (o.isLight && o.userData.cloud) anim.push({ o, f: (t) => { o.intensity = CLOUD.lamp * cloudBounce(t, o.userData.cloud) } })
       if (o.userData.cloudDeck) anim.push({ o, f: (t) => { const l = deckLight(t, o.position.x, o.position.z, o.userData.cloudDeck); o.material.color.copy(o.userData.cloudBase).multiplyScalar(l) } })
+      // #838 item 15 — the harbour lives: gulls wheel on the stone.js ring,
+      // wash foam floods the floating hull's flank on the swell-vs-heave law.
+      if (o.userData.gull) anim.push({ o, f: (t) => { const b = gullsAt(t, o.userData.gull)[o.userData.gullIndex]; if (!b) return; o.position.set(b.x, b.y, b.z); o.rotation.y = b.yaw; if (o.children[1]) o.children[1].rotation.z = (b.flap - 0.5) * 1.3; if (o.children[2]) o.children[2].rotation.z = (0.5 - b.flap) * 1.3 } })
+      if (o.userData.wash) anim.push({ o, f: (t) => { o.material.opacity = 0.06 + 0.55 * hullWash(t, o.userData.wash) * (o.userData.washSeat || 1) } })
       if (o.userData.forgeBounce) anim.push({ o, f: (t) => { const b = forgeBreath(t); o.material.emissive.setRGB(FORGE.bounce[0] * b, FORGE.bounce[1] * b, FORGE.bounce[2] * b) } })
       if (o.userData.sparks) anim.push({ o, f: (t) => {
         const sp = forgeSparks(o.geometry.attributes.position.count, t, o.userData.sparks)

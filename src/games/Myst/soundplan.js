@@ -56,6 +56,18 @@ export function thunderCues() {
   ]
 }
 
+// #838 item 15 — the gull's cry (stone.js cadence, Stoneship harbour): two
+// thin high syllables, the second a third lower a hand-beat after the first —
+// the classic kye-ow. Nothing else in Myst's palette sits up here: thunder is
+// crack-and-bass, the swell is a 220 Hz wash, so the cry reads over both and
+// never doubles as either (the harness proves the pitches and the gap).
+export function gullCues() {
+  return [
+    { type: 'tone', f: 1150, dur: 0.12, wave: 'sawtooth', vol: 0.045 },
+    { type: 'tone', f: 900, dur: 0.16, wave: 'sawtooth', vol: 0.035, delay: 0.14 },
+  ]
+}
+
 // #838 item 10 — the ambience wears the Age. Every node carries an `amb` kind
 // (sea, wind, fire, …), but the 1993 original never sounded the same in two
 // Ages: wind in the dusk bay is a soft wash, wind in green Selenitic is a low
@@ -137,6 +149,7 @@ export function ambCues(kind, view) {
 export function plan(ev) {
   // #838 item 8 — the storm's voice (pure, above): the caldera crack + roll.
   if (ev === 'thunder') return thunderCues()
+  if (ev === 'gull') return gullCues()
   // #838 item 10 — the ambience layer asks for one view's voice: `amb:wind:dock`.
   if (typeof ev === 'string' && ev.startsWith('amb:')) {
     const [, kind, view] = ev.split(':')
