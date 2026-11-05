@@ -90,13 +90,31 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   banking, blasts all normal. Cost 20 from the carried pouch; the fuse resumes
   on its cadence the tick the veil expires. Behind the veil the radar reads
   cyan — tinted glass plus a sweeping arc (#1612) — beside the shimmer and
-  timer bar in the overlay.
+  timer bar in the overlay. The world says it too (#1612 item 1): the tick the
+  veil rises, every enemy that HAD you in its sights (wizard pd<75, wolf pd<45,
+  giant pd<70) gets `lostT = 40` + a `lost` event — the shell blips a curious
+  two-note (the wizard adds "THE WIZARD LOSES YOU"), the GL pass floats a gold
+  '?' over their heads and the carpet drags a cyan ghost trail of additive motes
+  until the veil lifts. `lostT` is presentation-only: it never steers the AI.
+
+## #1612 item 1 polish (2026-11-05, QA studio)
+
+- Lost-target cues: veil-up marks every enemy that had you in its sights
+  (`lostT = 40` + `lost` event; wizard pd<75, wolf pd<45, giant pd<70);
+  the shell answers with a curious two-note per kind ("THE WIZARD LOSES YOU"
+  once), the GL pass floats a bobbing gold '?' over each marker head (new
+  `quest` atlas glyph) and the carpet drags a cyan ghost trail — additive
+  flare motes off the stern plus a wide pulse ring every 7 ticks.
+- Mutation proof: replacing the wizard mark condition with `false` turns
+  exactly one gate red (kinds=giant,wolf, lostT 0/40/40); restored.
+  Browser side: deleting the `gs0.invis > 0` block in fillParticles reddens
+  the ghost-trail gate. Balance after: 60/60 seeds, slowest 24,704 — unchanged.
 
 ## Verify
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 49 checks: boot, determinism, three-world win,
+npm run carpetcheck        # 53 checks: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
@@ -104,16 +122,19 @@ npm run carpetcheck        # 49 checks: boot, determinism, three-world win,
                            # wolf + giant refusal vs controls, in-flight
                            # pass-through, own pickups intact, hash, 60-seed
                            # balance sweep),
+                           # lost-target cues (#1612: every enemy caught looking
+                           # emits `lost` on the cast tick, once per veil + decay,
+                           # out-of-range enemies quiet, visible carpet never),
                            # touch spellbook (#1612: slot cycles, equip events,
                            # world tap still casts, dead strip never casts,
                            # book toggle, tray equip/inert/click-out, hit boxes
                            # inside the HUD, tray never disturbs the hash,
                            # regen closes the book),
-                           # plus a headless-Chrome pass and 9 GPU-pass gates
+                           # plus a headless-Chrome pass and 10 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
                            # upload, glow cools, scorch persists, no shader
-                           # console errors)
+                           # console errors; #1612: veiled ghost trail motes)
 CONTRACT_ONLY=magic-carpet npm run contractcheck
 ```
 
