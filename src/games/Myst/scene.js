@@ -13,8 +13,10 @@ import { stormView, skyGain, seaGain, STORM } from './storm.js'
 import { FORGE, FORGE_SEATS, forgeBreath, forgeSparks, ventPuff } from './forge.js'
 import { CLOUD, CLOUD_SEATS, CLOUD_VIEWS, BOUNCE_TINT, cloudBounce, deckLight } from './cloudlight.js'
 import { STONE_VIEWS, GULLS, gullsAt, hullWash } from './stone.js'
+import { ISLE_VIEWS, ISLE_GULLS, isleGulls, pierWash, PIER_SEATS, dialBreath, DIAL } from './isle.js'
 
 const GULL_N = GULLS.n
+const ISLE_GULL_N = ISLE_GULLS.n
 
 const GAP = 4000
 
@@ -256,7 +258,9 @@ function dressSea(group, id, anim) {
           new THREE.MeshBasicMaterial({ color: new THREE.Color(lm.glow[0], lm.glow[1], lm.glow[2]), transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false, fog: true }),
           lm.x, prof.water + lm.h * 0.66, lm.z + lm.w * 0.52, group)
         dial.userData.noPick = true
-        anim.push({ o: dial, f: (t) => { dial.material.opacity = 0.55 + 0.28 * Math.sin(t * 0.7 + lm.h) } })
+        // #838 item 16 — the skyline dial reads the shared law from isle.js,
+        // so the far dial and the near tower dial breathe in step.
+        anim.push({ o: dial, f: (t) => { dial.material.opacity = dialBreath(t) } })
       }
     }
     if (lm.kind === 'domeCrag') {
@@ -442,6 +446,46 @@ function gullBirds(group, view) {
   }
 }
 
+// #838 item 16 — the island's gull ring (isle.js isleGulls): the same dumb
+// silhouettes as the harbour, but seated over each island view's OWN water
+// (the bay is not the harbour — the seat differs per pose). Wings and seats
+// are rewritten per frame from the pure law; the geometry lives here.
+function isleGullBirds(group, view, seat) {
+  const ring = new THREE.Group()
+  ring.position.set(seat[0], seat[1], seat[2])
+  const skin = () => new THREE.MeshStandardMaterial({ color: 0xe8ecef, emissive: 0x5a646c, emissiveIntensity: 0.55, roughness: 0.6 })
+  for (let i = 0; i < ISLE_GULL_N; i++) {
+    const b = new THREE.Group()
+    const body = mesh(new THREE.BoxGeometry(0.5, 0.14, 0.16), skin(), 0, 0, 0, b)
+    body.userData.noPick = true
+    const wl = mesh(new THREE.BoxGeometry(0.72, 0.035, 0.24), skin(), -0.46, 0, 0, b)
+    wl.userData.noPick = true
+    const wr = mesh(new THREE.BoxGeometry(0.72, 0.035, 0.24), skin(), 0.46, 0, 0, b)
+    wr.userData.noPick = true
+    b.userData.gull = view
+    b.userData.gullIndex = i
+    b.userData.noPick = true
+    ring.add(b)
+  }
+  group.add(ring)
+}
+
+// #838 item 16 — the wash at the pier foot (isle.js pierWash): a flat disc of
+// sea-light at the waterline under each of the six pilings. The swell laps
+// up the piling — the disc brightens and lets the water slide back off. The
+// far rows of pilings are hit a beat after the near ones (the wave crosses
+// the pier), so each disc reads the law at its own arrival time.
+function pierWashDisks(group) {
+  for (const [px, pz] of PIER_SEATS) {
+    const d = mesh(new THREE.CircleGeometry(0.62, 14),
+      new THREE.MeshBasicMaterial({ color: 0xdfe8e8, transparent: true, opacity: 0, depthWrite: false, fog: true }),
+      px, 0.05, pz, group)
+    d.rotation.x = -Math.PI / 2
+    d.userData.pierWashSeat = pz
+    d.userData.noPick = true
+  }
+}
+
 // Foam running along the floating hull's flank (stone.js hullWash): quads at
 // the waterline the sea floods as the swell slides past. They stay on the
 // water — the hull rocks over them, exactly the relative motion the law
@@ -483,6 +527,8 @@ const BUILDERS = {
     barrel(g, -1.2, 1.79, 31.6, 0.4); crate(g, 1.15, 1.69, 32.4, 0.9, 0.3)
     lantern(g, 1.55, 1.39, 30.4)
     tuft(g, -2.4, groundHeight(-2.4, 37.6, 'dock') + 0.06, 37.6, 1.1); tuft(g, 5.2, groundHeight(5.2, 38.2, 'dock') + 0.06, 38.2, 0.9)
+    isleGullBirds(g, 'dock', [0, 1.5, 42]) // #838 item 16 — the bay wheels ahead of the pier
+    pierWashDisks(g) // and the swell laps up the six pilings
   },
   cliffPath(g) {
     terrainField(g, TX.rock, 'cliffPath')
@@ -498,6 +544,7 @@ const BUILDERS = {
     boulder(g, TX.rock, -5.2, 13.6, 8, 0.9, 0.5); boulder(g, TX.moss, 5.6, 12.6, 7, 0.7, 1.2)
     tuft(g, -4.4, 14.6, 10, 1.3); tuft(g, 4.8, 13.6, 9, 1.1); tuft(g, 1.8, groundHeight(1.8, 17.4, 'cliffPath') + 0.06, 17.4, 0.8)
     mesh(new THREE.CylinderGeometry(0.28, 0.32, 2.6, 7), mat(TX.wood), -5.8, 14.8, 12, g).rotation.z = 1.35
+    isleGullBirds(g, 'cliffPath', [-10, 0.5, 4]) // #838 item 16 — the ring over the water below the cut
   },
   beach(g) {
     terrainField(g, TX.sand, 'beach')
@@ -511,6 +558,7 @@ const BUILDERS = {
     barrel(g, -12.2, 0.4, 26.2, 0.7); crate(g, -15.6, 0.3, 27, 0.9, 0.5); barrel(g, -16.4, 0.4, 24.6, 1.1)
     tuft(g, -12.5, groundHeight(-12.5, 28.4, 'beach') + 0.06, 28.4, 1.2); tuft(g, -17, groundHeight(-17, 28.6, 'beach') + 0.06, 28.6, 1)
     boulder(g, TX.rock, -9.5, 0.7, 27.5, 0.8, 0.7)
+    isleGullBirds(g, 'beach', [-6, 0.5, 26]) // #838 item 16 — the bay over the rotted boat's water
   },
   landing(g) {
     // the wooden landing the camera stands on (near end, z 11..15.3)
@@ -548,6 +596,14 @@ const BUILDERS = {
     const tower = mesh(new THREE.CylinderGeometry(1.8, 2.1, 10, 10), mat(TX.stoneD), 8.5, 14.5, 8, g)
     tower.userData.noPick = true
     mesh(new THREE.ConeGeometry(2.4, 2, 10), mat(TX.stoneD), 8.5, 20.4, 8, g)
+    // #838 item 16 — the NEAR tower's dial: the same warm breath the skyline
+    // paints on the FAR tower (isle.js dialBreath, the LANDMARK_LAW glow) —
+    // the island's one landmark is one landmark near and far.
+    const dial = mesh(new THREE.CircleGeometry(0.55, 16),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(DIAL.glow[0], DIAL.glow[1], DIAL.glow[2]), transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false, fog: true }),
+      8.5, 15.8, 9.9, g)
+    dial.userData.noPick = true
+    dial.userData.dial = true
     const tdoor = mesh(new THREE.BoxGeometry(1.2, 2.2, 0.3), mat(TX.iron), 8.5, 11.1, 9.9, g)
     tdoor.userData.spot = 'towerDoor'
     const cab = new THREE.Group()
@@ -563,6 +619,7 @@ const BUILDERS = {
     crate(g, -6.2, groundHeight(-6.2, 2.6, 'stairTop') + 0.45, 2.6, 0.9, 0.4); barrel(g, -7.4, groundHeight(-7.4, 3.6, 'stairTop') + 0.4, 3.6, 0.9)
     boulder(g, TX.stoneD, -11.5, 14.1, 5, 1.1, 0.9); boulder(g, TX.stoneD, 11.8, 13.6, 9, 1, 0.2)
     tuft(g, -5.4, 7.05, 3.4, 1.1); tuft(g, 6.4, 7.05, 2.4, 1)
+    isleGullBirds(g, 'stairTop', [0, 9, 0]) // #838 item 16 — the ring wheels the terrace and the dome
   },
   library(g) {
     const room = mesh(new THREE.CylinderGeometry(7, 7, 5.6, 14, 1, true), mat(TX.shelf, { side: THREE.BackSide }), 0, 2.8, 0, g)
@@ -1327,7 +1384,14 @@ export function buildWorld(ids) {
       if (o.userData.cloudDeck) anim.push({ o, f: (t) => { const l = deckLight(t, o.position.x, o.position.z, o.userData.cloudDeck); o.material.color.copy(o.userData.cloudBase).multiplyScalar(l) } })
       // #838 item 15 — the harbour lives: gulls wheel on the stone.js ring,
       // wash foam floods the floating hull's flank on the swell-vs-heave law.
-      if (o.userData.gull) anim.push({ o, f: (t) => { const b = gullsAt(t, o.userData.gull)[o.userData.gullIndex]; if (!b) return; o.position.set(b.x, b.y, b.z); o.rotation.y = b.yaw; if (o.children[1]) o.children[1].rotation.z = (b.flap - 0.5) * 1.3; if (o.children[2]) o.children[2].rotation.z = (0.5 - b.flap) * 1.3 } })
+      // #838 item 16 — the wheeling law depends on which sky the bird wears:
+      // the harbour ring (stone.js) or the bay ring (isle.js).
+      if (o.userData.gull) anim.push({ o, f: (t) => { const law = ISLE_VIEWS.includes(o.userData.gull) ? isleGulls : gullsAt; const b = law(t, o.userData.gull)[o.userData.gullIndex]; if (!b) return; o.position.set(b.x, b.y, b.z); o.rotation.y = b.yaw; if (o.children[1]) o.children[1].rotation.z = (b.flap - 0.5) * 1.3; if (o.children[2]) o.children[2].rotation.z = (0.5 - b.flap) * 1.3 } })
+      // #838 item 16 — the island lives: the swell laps the pier foot (each
+      // disc reads the law at its own arrival across the pier) and the tower
+      // dial breathes the shared law the skyline wears.
+      if (o.userData.pierWashSeat != null) anim.push({ o, f: (t) => { o.material.opacity = 0.04 + 0.5 * pierWash(t - (o.userData.pierWashSeat - 30) * 0.18, 'dock') } })
+      if (o.userData.dial) anim.push({ o, f: (t) => { o.material.opacity = dialBreath(t) } })
       if (o.userData.wash) anim.push({ o, f: (t) => { o.material.opacity = 0.06 + 0.55 * hullWash(t, o.userData.wash) * (o.userData.washSeat || 1) } })
       if (o.userData.forgeBounce) anim.push({ o, f: (t) => { const b = forgeBreath(t); o.material.emissive.setRGB(FORGE.bounce[0] * b, FORGE.bounce[1] * b, FORGE.bounce[2] * b) } })
       if (o.userData.sparks) anim.push({ o, f: (t) => {
