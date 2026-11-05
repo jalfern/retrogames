@@ -16,6 +16,7 @@ import { GEARS, GEAR_KEYS, GEAR_SLOTS, SEAT_TONES, seatWeight, gearHeld, gearSea
 import { FORGE, FORGE_VIEWS, FORGE_SEATS, forgeBreath, forgeLight, ventPuff, VENT, forgeSparks, SPARK } from '../src/games/Myst/forge.js'
 import { CLOUD, CLOUD_VIEWS, CLOUD_SEATS, BOUNCE_TINT, cloudBounce, cloudShade, deckLight } from '../src/games/Myst/cloudlight.js'
 import { STONE_VIEWS, GULLS, GULLCRY, WASH, gullsAt, gullCry, hullWash } from '../src/games/Myst/stone.js'
+import { ISLE_VIEWS, ISLE_GULLS, ISLE_CRY_VIEWS, ISLECRY, PIER_SEATS, PIER_WASH, isleGulls, isleCry, pierWash, dialBreath, DIAL } from '../src/games/Myst/isle.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1471,8 +1472,8 @@ console.log('MYST — the skyline carries landmarks (#838 item 6: the clock towe
       'the scene seats its landmarks through sea.js — the law owns the skyline, not the builder')
     ok(/lm\.x, prof\.water \+ lm\.h \* 0\.41, lm\.z/.test(sc) && /lm\.x, prof\.water, lm\.z/.test(sc),
       'tower and crag rise out of their view\u2019s own waterline')
-    ok(/side: THREE\.DoubleSide/.test(sc) && /dial\.material\.opacity = 0\.55/.test(sc),
-      'the dial faces the player and breathes on the world clock')
+    ok(/side: THREE\.DoubleSide/.test(sc) && /dial\.material\.opacity = dialBreath\(t\)/.test(sc),
+      'the dial faces the player and breathes on the world clock (item 16: the shared isle.js law)')
     ok(/tower\.userData\.noPick = true/.test(sc) && /dial\.userData\.noPick = true/.test(sc),
       'landmarks are scenery, never hotspots')
   }
@@ -2061,7 +2062,7 @@ console.log('MYST — the harbour lives (#838 item 15: gulls wheel, the Atlantic
   const src15 = readFileSync('src/games/Myst/scene.js', 'utf8')
   ok(/gullBirds\(g, 'stoneship'\)/.test(src15) && /gullBirds\(g, 'stoneDeck'\)/.test(src15), 'the ring is seated over both harbour views')
   ok(/foamWash\(g, 'stoneDeck'\)/.test(src15), 'wash foam seated along the floating hull\u2019s flank')
-  ok(/if \(o\.userData\.gull\) anim\.push/.test(src15) && /gullsAt\(t, o\.userData\.gull\)\[o\.userData\.gullIndex\]/.test(src15), 'the anim loop wheels every gull on the pure law')
+  ok(/if \(o\.userData\.gull\) anim\.push/.test(src15) && /const law = ISLE_VIEWS\.includes\(o\.userData\.gull\) \? isleGulls : gullsAt/.test(src15) && /law\(t, o\.userData\.gull\)\[o\.userData\.gullIndex\]/.test(src15), 'the anim loop wheels every gull on its own sky\u2019s pure law (item 16: harbour vs bay)')
   ok(/o\.children\[1\]\.rotation\.z = \(b\.flap - 0\.5\)/.test(src15) && /o\.children\[2\]\.rotation\.z = \(0\.5 - b\.flap\)/.test(src15), 'the wings counter-flap — left up as right comes down')
   ok(/if \(o\.userData\.wash\) anim\.push/.test(src15) && /hullWash\(t, o\.userData\.wash\)/.test(src15), 'the anim loop floods the flank quads on the wash law')
   ok(/if \(ev === 'gull'\) return gullCues\(\)/.test(readFileSync('src/games/Myst/soundplan.js', 'utf8')), 'the cry is a scheduled event in the plan, not an ad-hoc beep')
@@ -2071,6 +2072,75 @@ console.log('MYST — the harbour lives (#838 item 15: gulls wheel, the Atlantic
   const srcJX15 = readFileSync('src/games/Myst/index.jsx', 'utf8')
   ok(/STONE_VIEWS\.includes\(gs\.node\)/.test(srcJX15) && /gullCry\(wt, gs\.node, gi\)/.test(srcJX15) && /e > 0\.5 && gullPrev\[gi\] <= 0\.5\) sfx\('gull'\)/.test(srcJX15), 'the loop fires a cry on each bird\u2019s rising edge, off the sim clock')
   ok(WASH.scale > 0 && GULLCRY.duty > 0 && GULLCRY.duty < 0.5 && STONE_VIEWS.length === 2, 'the law table is sane — short duty, a real scale, exactly two harbour seats')
+}
+
+console.log('MYST — the island lives (#838 item 16: gulls wheel the bay, the swell laps the pier, the tower dial breathes — home Age look pass)')
+{
+  const otherSkies = ['stoneship', 'stoneDeck', 'selenitic', 'selSound', 'mechanical', 'mechRoom', 'chanWheel', 'chanObs', 'library', 'tower', 'cave', 'cabin', 'silo']
+  ok(ISLE_VIEWS.every((v) => isleGulls(3.3, v).length === ISLE_GULLS.n), 'all four island poses sit under the bay ring — dock, path, beach, terrace')
+  ok(otherSkies.every((v) => isleGulls(4.4, v).length === 0), 'the gulls stay on the island — the harbour and every other Age keep their own sky')
+  ok(JSON.stringify(isleGulls(12.37, 'dock')) === JSON.stringify(isleGulls(12.37, 'dock')), 'the sky is deterministic — same instant, same wheel')
+  ok(JSON.stringify(isleGulls(2.2, 'dock')) !== JSON.stringify(gullsAt(2.2, 'stoneship')), 'the bay ring is not the harbour ring — different birds on different keys')
+  let inR = true, inH = true, inF = true
+  for (let k = 0; k <= 800; k++) {
+    for (const v of ISLE_VIEWS) for (const g of isleGulls(k / 20, v)) {
+      const r = Math.hypot(g.x, g.z)
+      if (r < ISLE_GULLS.r0 - 0.01 || r > ISLE_GULLS.r0 + ISLE_GULLS.r1 + 0.01) inR = false
+      if (g.y < ISLE_GULLS.h0 - 0.6 || g.y > ISLE_GULLS.h0 + ISLE_GULLS.h1 + 0.6) inH = false
+      if (g.flap < 0 || g.flap > 1) inF = false
+    }
+  }
+  ok(inR, 'every bird stays on its ring — a bounded circuit of the bay, never a departure')
+  ok(inH, 'glide heights bounded — the loiter band over the water, under the cliff')
+  ok(inF, 'the wing envelope is bounded 0..1')
+  const ring0 = isleGulls(0, 'dock')
+  ok(new Set(ring0.map((g) => `${g.x.toFixed(2)},${g.z.toFixed(2)}`)).size === ISLE_GULLS.n, 'three birds, three seats — no two gulls share an orbit')
+  ok(new Set(ring0.map((g) => g.y.toFixed(2))).size === ISLE_GULLS.n, 'each bird glides at its own height')
+  const later = isleGulls(6.5, 'dock')
+  ok(later.some((g, i) => Math.hypot(g.x - ring0[i].x, g.z - ring0[i].z) > 1), 'the ring wheels — gulls painted at fixed points are decoration')
+  const flaps = new Set()
+  for (let k = 0; k < 400; k++) flaps.add(isleGulls(k / 40, 'dock')[0].flap.toFixed(3))
+  ok(flaps.size > 30, 'the wings beat — hundreds of distinct flap phases under way')
+  ok([0, 1, 2].every((i) => isleCry(2.2, 'selenitic', i) === 0 && isleCry(9.9, 'stoneDeck', i) === 0 && isleCry(5.1, 'library', i) === 0), 'no cries off the island — the scope law, on birds')
+  let terrace = true
+  for (let k = 0; k < 200; k++) for (let i = 0; i < ISLE_GULLS.n; i++) if (isleCry(k / 10, 'stairTop', i) !== 0) terrace = false
+  ok(terrace, 'the terrace is never double-chirped — stairTop keeps its own birds ambience')
+  ok(isleCry(7.77, 'dock', 1) === isleCry(7.77, 'dock', 1), 'a cry is deterministic')
+  let cryHi = false, cryZero = false, alive = 0, tot = 0
+  for (let k = 0; k <= 1200; k++) { const e = isleCry(k / 20, 'dock', 0); tot++; if (e > 0.5) { cryHi = true; alive++ } if (e === 0) cryZero = true }
+  ok(cryHi, 'the island does hear a cry — the cadence actually calls')
+  ok(cryZero, 'and it rests between calls — a gull that never stops is a smoke alarm, not a bird')
+  ok(alive / tot <= ISLECRY.duty + 0.02, 'duty kept — the island cries slower and shorter than the harbour')
+  ok(pierWash(3.1, 'beach') === 0 && pierWash(3.1, 'cliffPath') === 0 && pierWash(3.1, 'stoneship') === 0, 'the wash laps exactly where the pier stands — every other view stays dry')
+  let wMin = 9, wMax = -9, wOk = true
+  for (let k = 0; k <= 2400; k++) { const w = pierWash(k / 20, 'dock'); if (!Number.isFinite(w)) { wOk = false; break } wMin = Math.min(wMin, w); wMax = Math.max(wMax, w) }
+  ok(wOk && wMin >= 0 && wMax <= 1, `the wash is bounded 0..1 (${wMin.toFixed(2)}..${wMax.toFixed(2)})`)
+  ok(wMax > 0.05, 'the swell really laps the pilings — a pier that never wets is a museum pier')
+  ok(wMin < 0.01, 'and the water slides back off — a wash that only rises is a flood')
+  ok(pierWash(17.25, 'dock') === pierWash(17.25, 'dock'), 'the wash is deterministic')
+  let dMin = 9, dMax = -9, dOk = true, dNearMin = false, dNearMax = false
+  for (let k = 0; k <= 2000; k++) { const d = dialBreath(k / 20); if (!Number.isFinite(d)) { dOk = false; break } dMin = Math.min(dMin, d); dMax = Math.max(dMax, d); if (d < 0.30) dNearMin = true; if (d > 0.80) dNearMax = true }
+  ok(dOk && dMin >= DIAL.min - 1e-9 && dMax <= DIAL.max + 1e-9, `the dial breathes inside its law (${dMin.toFixed(2)}..${dMax.toFixed(2)})`)
+  ok(dNearMin && dNearMax, 'it gutters toward the dark but never goes out, and brightens without blowing out')
+  ok(dialBreath(4.2) === dialBreath(4.2), 'the breath is deterministic')
+  let lawSame = true
+  for (let k = 0; k < 200; k++) { const t = k / 10; if (Math.abs(dialBreath(t) - (0.55 + 0.28 * Math.sin(t * 0.7 + 52))) > 1e-9) { lawSame = false; break } }
+  ok(lawSame, 'the shared law — the near dial breathes the exact formula item 6 always ran on the skyline')
+  ok(DIAL.glow[0] > DIAL.glow[2], 'the dial is warm (r > b) — the last sun caught in brass')
+  const TOWER_LAW = LANDMARK_LAW.dusk.find((L) => L.kind === 'clockTower')
+  ok(JSON.stringify(DIAL.glow) === JSON.stringify(TOWER_LAW.glow) && DIAL.phase === TOWER_LAW.h, 'near and far wear one landmark — same glow, same phase, read from the law table')
+  const srcISLE = readFileSync('src/games/Myst/isle.js', 'utf8')
+  ok(!/Math\.random\(\)/.test(srcISLE), 'no Math.random() call anywhere — the harness replays the sky frame-for-frame')
+  ok(/seaSwell\(x, z, t, view\)/.test(srcISLE), 'the wash reads the very same sea (items 2/3) — one tide, not two')
+  const src16 = readFileSync('src/games/Myst/scene.js', 'utf8')
+  ok(/from '.\/isle\.js'/.test(src16) && /dial\.material\.opacity = dialBreath\(t\)/.test(src16), 'the scene imports the isle laws and the skyline dial reads the shared breath')
+  ok(/isleGullBirds\(g, 'dock'/.test(src16) && /isleGullBirds\(g, 'cliffPath'/.test(src16) && /isleGullBirds\(g, 'beach'/.test(src16) && /isleGullBirds\(g, 'stairTop'/.test(src16), 'the ring is seated over all four island poses')
+  ok(/pierWashDisks\(g\)/.test(src16) && /if \(o\.userData\.pierWashSeat != null\) anim\.push/.test(src16), 'wash discs seated at the pier foot, and the anim loop laps them')
+  ok(/pierWash\(t - \(o\.userData\.pierWashSeat - 30\) \* 0\.18, 'dock'\)/.test(src16), 'the far rows of pilings are hit a beat after the near ones — the wave crosses the pier')
+  ok(/dial\.userData\.dial = true/.test(src16) && /if \(o\.userData\.dial\) anim\.push/.test(src16), 'the NEAR tower wears a dial and the anim loop breathes it')
+  const srcJX16 = readFileSync('src/games/Myst/index.jsx', 'utf8')
+  ok(/ISLE_CRY_VIEWS\.includes\(gs\.node\)/.test(srcJX16) && /isleCry\(wt, gs\.node, gi\)/.test(srcJX16) && /e > 0\.5 && isleCryPrev\[gi\] <= 0\.5\) sfx\('gull'\)/.test(srcJX16), 'the loop fires an island cry on each bird\u2019s rising edge, off the sim clock')
+  ok(ISLE_VIEWS.length === 4 && ISLE_GULLS.n === 3 && ISLE_CRY_VIEWS.length === 3 && ISLE_CRY_VIEWS.every((v) => ISLE_VIEWS.includes(v)) && PIER_SEATS.length === 6 && PIER_WASH.scale > 0 && ISLECRY.duty > 0 && ISLECRY.duty < 0.5, 'the law table is sane — four poses, three bay gulls, three waterline cries, six pilings, short duty')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -2091,6 +2161,7 @@ console.log('MYST — mutants (each MUST die)')
   const SD = 'src/games/Myst/sound.js'
   const FG = 'src/games/Myst/forge.js'
   const CL = 'src/games/Myst/cloudlight.js'
+  const ISL = 'src/games/Myst/isle.js'
   const MUTANTS = [
     ['every sea wears Myst again (the island turns Selenitic green)', SEA,
       'dock:             { water: 0,    color: [0.98, 0.80, 0.60], swell: 0.16',
@@ -2442,7 +2513,7 @@ console.log('MYST — mutants (each MUST die)')
     ['the scene stops seating landmarks (an anchor-less skyline)', 'src/games/Myst/scene.js',
       'for (const lm of landmarksFor(id))', 'for (const lm of [])'],
     ['the dial freezes (the last sun stops breathing on the brass)', 'src/games/Myst/scene.js',
-      'dial.material.opacity = 0.55 + 0.28 * Math.sin(t * 0.7 + lm.h)',
+      'dial.material.opacity = dialBreath(t)',
       'dial.material.opacity = 0.8'],
     // #838 item 7 — the dome carries home and the brothers
     ['the portraits get raggeder with every page home (healing runs backwards)', VI,
@@ -2628,6 +2699,32 @@ console.log('MYST — mutants (each MUST die)')
       'o.children[1].rotation.z = (b.flap - 0.5) * 1.3', 'o.children[1].rotation.z = 0'],
     ['the loop forgets the cry (birds wheel in total silence)', 'src/games/Myst/index.jsx',
       "if (e > 0.5 && gullPrev[gi] <= 0.5) sfx('gull')", 'if (false && gullPrev[gi]) sfx(\'gull\')'],
+    // #838 item 16 — the island lives
+    ['gulls invade every sky (the bay ring wears on Selenitic)', ISL,
+      'if (!ISLE_VIEWS.includes(view)) return []', 'if (false) return []'],
+    ['the ring is painted, not wheeling (island gulls frozen at birth)', ISL,
+      'const a = a0 + dir * ((t / per) % 1) * Math.PI * 2', 'const a = a0'],
+    ['the island never hushes (a cry that never rests)', ISL,
+      'if (phase >= ISLECRY.duty) return 0', 'if (phase >= Infinity) return 0'],
+    ['the island gulls double-chirp the terrace', ISL,
+      "export const ISLE_CRY_VIEWS = ['dock', 'cliffPath', 'beach']",
+      "export const ISLE_CRY_VIEWS = ['dock', 'cliffPath', 'beach', 'stairTop']"],
+    ['the wash climbs the pilings and stays (the pier drowns standing up)', ISL,
+      'return Math.min(1, (s / PIER_SEATS.length) / PIER_WASH.scale)', 'return Math.min(1, 1)'],
+    ['the wash forgets the rest line (whole ocean counted, not excess)', ISL,
+      's += Math.max(0, seaSwell(x, z, t, view))', 's += seaSwell(x, z, t, view)'],
+    ['the dial drifts from the skyline (near and far out of step)', ISL,
+      'return 0.55 + 0.28 * Math.sin(t * DIAL.freq + DIAL.phase)', 'return 0.55 + 0.28 * Math.sin(t * 1.3 + 7)'],
+    ['the dial wears a cold light (the landmark loses its warmth)', ISL,
+      'glow: TOWER.glow,', 'glow: [0.36, 0.42, 0.96],'],
+    ['the scene stops wheeling the island gulls (silhouettes welded to the sky)', 'src/games/Myst/scene.js',
+      'const law = ISLE_VIEWS.includes(o.userData.gull) ? isleGulls : gullsAt', 'const law = gullsAt'],
+    ['the pier loses its wash (pilings sit dry)', 'src/games/Myst/scene.js',
+      'if (o.userData.pierWashSeat != null) anim.push', 'if (false && o.userData.pierWashSeat != null) anim.push'],
+    ['the near tower keeps its dial dark (the landmark has no heart)', 'src/games/Myst/scene.js',
+      'if (o.userData.dial) anim.push', 'if (false && o.userData.dial) anim.push'],
+    ['the loop forgets the island cry (gulls wheel in silence)', 'src/games/Myst/index.jsx',
+      "if (e > 0.5 && isleCryPrev[gi] <= 0.5) sfx('gull')", 'if (false && isleCryPrev[gi]) sfx(\'gull\')'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

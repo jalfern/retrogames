@@ -31,6 +31,7 @@ import { sfx, sfxTone, ambience } from './sound.js'
 import { singTicks } from './soundplan.js'
 import { stormFlash, STORM } from './storm.js'
 import { STONE_VIEWS, GULLS, gullCry } from './stone.js'
+import { ISLE_CRY_VIEWS, ISLE_GULLS, isleCry } from './isle.js'
 
 const VW = 960, VH = 540
 const SIM_MS = 1000 / 60
@@ -108,6 +109,7 @@ const MystGame = () => {
     // them exactly; thunder is scheduled off the sim clock, never a timer.
     let sunBaseI = 1.1, stormPrev = 0, stormAt = 0
     const gullPrev = [0, 0, 0] // #838 item 15 — per-bird cry edges on the sim clock
+    const isleCryPrev = [0, 0, 0] // #838 item 16 — the island ring's own cry edges
     const fogBase = new THREE.Color()
     let raf = 0, last = 0, acc = 0, wt = 0, playTick = 0
     let fade = 1, fadeDir = -1
@@ -455,6 +457,16 @@ const MystGame = () => {
               const e = gullCry(wt, gs.node, gi)
               if (e > 0.5 && gullPrev[gi] <= 0.5) sfx('gull')
               gullPrev[gi] = e
+            }
+          }
+          // #838 item 16 — the island ring cries on its own slower cadence
+          // (isle.js scope: the three waterline views; the terrace keeps its
+          // own birds ambience). Same kye-ow voice — a species, not an Age.
+          if (ISLE_CRY_VIEWS.includes(gs.node)) {
+            for (let gi = 0; gi < ISLE_GULLS.n; gi++) {
+              const e = isleCry(wt, gs.node, gi)
+              if (e > 0.5 && isleCryPrev[gi] <= 0.5) sfx('gull')
+              isleCryPrev[gi] = e
             }
           }
         }
