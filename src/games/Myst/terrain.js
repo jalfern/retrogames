@@ -86,3 +86,24 @@ export function groundHeight(x, z, view) {
   if (view === 'selenitic' || view === 'selSound') return domeHeight(x, z, view)
   return ageHeight(x, z, view)
 }
+
+// #838 item 2 — the sculpt WITHOUT its flat carves (the crest-and-skirt form
+// alone), so sea.js can tell "the sea meets the slope" (a coast, foam) from
+// "the sea level happens to run under a dry carved pad" (no foam: the bed is
+// placed dry land, not a beach).
+export function groundRaw(x, z, view) {
+  if (view === 'selenitic' || view === 'selSound') {
+    const crest = SEL_CRESTS[view] || SEL_CRESTS.selenitic
+    const d = Math.hypot(x - crest.x, z - crest.z)
+    if (d <= DOME.core) return crest.h
+    if (d >= DOME.rim + DOME.skirt) return DOME.seabed
+    if (d >= DOME.rim) return DOME.seabed * ((d - DOME.rim) / DOME.skirt)
+    return crest.h * smooth((DOME.rim - d) / (DOME.rim - DOME.core))
+  }
+  const v = AGE_GROUND[view]
+  if (!v) return null
+  const c = v.crest
+  const d = Math.hypot(x - c.x, z - c.z)
+  const t = clamp01((c.rim - Math.max(d - c.core, 0)) / (c.rim - c.core))
+  return v.base + c.h * smooth(t) - v.drop * clamp01((d - c.rim) / v.skirt)
+}
