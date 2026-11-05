@@ -28,6 +28,8 @@ const ok = (cond, name, detail = '') => {
 const S = PLAYER_SPEED
 const IDX = new URL('../src/games/Adventure/index.jsx', import.meta.url)
 const SIMF = new URL('../src/games/Adventure/sim.js', import.meta.url)
+const GAMES = new URL('../src/config/games.js', import.meta.url)
+const PO = new URL('../src/components/PauseOverlay.jsx', import.meta.url)
 const step = (sim, inp) => { sim.step(inp); sim.events.length = 0 }
 
 // ------------------------------------------------------------ determinism ----
@@ -785,11 +787,42 @@ console.log('#1572 gate-rite affordance: shared zone + renderer gate (static)')
         'state() carries afford so the harness can watch the hint')
 }
 
+// ------------------------------------------------- #1572 guidance tab (static) ----
+console.log('#1572 guidance tab: registry guide content + shared renderer gate (static)')
+{
+    const gamesSrc = readFileSync(GAMES, 'utf8')
+    const poSrc = readFileSync(PO, 'utf8')
+    // Isolate the ADVENTURE registry entry so the gates can't be satisfied by
+    // another game's data (or a stray comment elsewhere in the registry).
+    const start = gamesSrc.indexOf("path: '/adventure'")
+    const end = gamesSrc.indexOf('\n    },', start)
+    const entry = start >= 0 && end > start ? gamesSrc.slice(start, end) : ''
+    ok(start >= 0 && end > start, 'ADVENTURE entry found in the registry (the guide gates have a real anchor)')
+    ok(/guide:\s*\[/.test(entry),
+        'ADVENTURE registers a guide array — PauseOverlay shows a guidance tab')
+    const guideBlock = entry.match(/guide:\s*\[[\s\S]*?\]/)?.[0] || ''
+    ok(/golden/i.test(guideBlock) && /black/i.test(guideBlock) && /white/i.test(guideBlock) && /castle/i.test(guideBlock),
+        'the guide names the three castles and their matching key colors')
+    ok(/drop/i.test(guideBlock) && /key/i.test(guideBlock) && /gate/i.test(guideBlock),
+        'the guide teaches the drop-the-key rite (the 0/200 first-timer failure)')
+    ok(/bridge/i.test(guideBlock) && /wall/i.test(guideBlock),
+        'the guide states the bridge-over-walls law')
+    ok(/magnet/i.test(guideBlock),
+        'the guide states the magnet law')
+    const leak = guideBlock.match(/gr[ae]y\s*dot|secret|robinett|rite/i)?.[0]
+    ok(!leak, 'the guide keeps the gray-dot secret rite hidden (Robinett\'s discovery stays the player\'s)', leak || '')
+    ok(/game\.guide/.test(poSrc), 'PauseOverlay reads game.guide')
+    ok(/game\?\.guide\?\.length/.test(poSrc),
+        'the guidance tab renders ONLY for games that register one — every other help screen is untouched')
+}
+
 // --------------------------------------------------------------- mutants -----
 if (process.argv.includes('--mutant')) {
     console.log('\nmutants (each MUST turn the suite red)')
     const I = IDX.pathname
     const SM = SIMF.pathname
+    const GS = GAMES.pathname
+    const PS = PO.pathname
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `: (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))`,
@@ -874,6 +907,18 @@ if (process.argv.includes('--mutant')) {
         ['#1572: the hint persists after the gate opens (stale teaching)', SM,
             '!sim.gateOpen[gateRoom.gateKey] && sim.carrying',
             'true && sim.carrying'],
+        ['#1572: the guidance tab drops the drop-the-key rite (guide lies to first-timers)', GS,
+            `            { text: 'Stand at a gate and DROP its matching key (Space) to open it for good.' },\n`,
+            ''],
+        ['#1572: the guide forgets the magnet law', GS,
+            `            { text: 'The magnet pulls loose items toward you as you walk.' },\n`,
+            ''],
+        ['#1572: the guide leaks the gray-dot secret rite (Robinett spoiled)', GS,
+            `            { text: 'Bring the Enchanted Chalice back to the Golden Castle.' },`,
+            `            { text: 'Bring the Enchanted Chalice back to the Golden Castle.' },\n            { text: 'Take the gray dot to the lair door for the secret rite.' },`],
+        ['#1572: the guidance tab shows for every game (shared help screen breaks)', PS,
+            'game?.guide?.length',
+            'true'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

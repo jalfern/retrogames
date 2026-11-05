@@ -44,6 +44,27 @@ const PauseOverlay = ({ game, badge, onResume }) => {
                 </div>,
             ]
             : []),
+        // #1572 guidance tab: an optional, game-authored rules page (the
+        // original cart's fold-out map/hint sheet). It rides the same paged
+        // packing as controls and renders ONLY when a game registers a guide,
+        // so every other help screen is byte-for-byte unchanged. Each line is
+        // a string or { color, text } — color draws a small swatch glyph.
+        ...(game?.guide?.length
+            ? [
+                <div key="gh" className="text-xl font-bold text-[#00ffff] border-b border-gray-700 pb-2 w-full max-w-md text-left pt-2">GUIDE</div>,
+                ...game.guide.map((line, i) => {
+                    const g = typeof line === 'string' ? { text: line } : line
+                    return (
+                        <div key={`g${i}`} className="flex items-start w-full max-w-md text-base text-gray-100 text-left">
+                            {g.color
+                                ? <span aria-hidden className="mr-2 mt-1 inline-block w-3 h-3 rounded-sm shrink-0 border border-white/40" style={{ background: g.color }} />
+                                : <span className="text-[#ffff00] mr-2 mt-0.5">◆</span>}
+                            <span>{g.text}</span>
+                        </div>
+                    )
+                }),
+            ]
+            : []),
     ]
 
     const measure = useCallback(() => {
