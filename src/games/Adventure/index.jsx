@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, VARIANTS, DEFAULT_VARIANT } from './sim.js'
+import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, VARIANTS, DEFAULT_VARIANT, stateHash } from './sim.js'
 
 const AdventureGame = () => {
     const canvasRef = useRef(null)
@@ -553,6 +553,8 @@ const AdventureGame = () => {
                 score: sim.score,
                 done: sim.won || (sim.dead && sim.deathTimer <= 0),
                 seed,
+                hash: stateHash(sim), // #1591: the nightly softlock detector reads state().hash —
+                                     // a live world must change it every tick (see sim.js stateHash)
                 variant: sim.variant, // #1572 item 3: the live SELECT GAME pick
                 room: sim.room,
                 carrying: sim.carrying,

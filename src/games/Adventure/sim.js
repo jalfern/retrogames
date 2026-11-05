@@ -778,3 +778,30 @@ export function createSim(rand, variant = DEFAULT_VARIANT) {
 
     return sim
 }
+
+// #1591 — the contract state hash. Every other contract title exposes a
+// state().hash so the nightly bot can tell a FROZEN world (the same hash over
+// the last 30 steps at the tick cap = a softlock) from one that is simply not
+// finished yet (a moving hash = endurance, a warning). ADVENTURE shipped its
+// contract without one, so the bot saw an always-`undefined` hash — a set of
+// size 1 — and called every unfinished run a softlock (#1591's seed 20261149).
+// This is the fix: a pure digest over everything that moves in a run, so the
+// same seed + the same pads replay byte-identical, and a live world changes it
+// every tick. It folds the RULE-relevant mutable state only — the seeded dice
+// live inside the dragons/bat/items, which are folded by their positions.
+const fnv = (h, s) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0 } return h }
+
+export function stateHash(sim) {
+    let h = 2166136261
+    h = fnv(h, `${sim.tick}|${sim.variant}|${sim.score}|${sim.won ? 1 : 0}|${sim.dead ? 1 : 0}|${sim.deathTimer}` +
+        `|${sim.room}|${sim.carrying ?? ''}|${sim.afford ?? ''}|${sim.secretOpen ? 1 : 0}`)
+    h = fnv(h, `p${Math.round(sim.player.x)},${Math.round(sim.player.y)}`)
+    h = fnv(h, `g${sim.gateOpen.goldKey ? 1 : 0}${sim.gateOpen.blackKey ? 1 : 0}${sim.gateOpen.whiteKey ? 1 : 0}`)
+    for (const it of sim.items) h = fnv(h, `${it.id}:${it.room},${Math.round(it.x)},${Math.round(it.y)},${it.carried ? 1 : 0}`)
+    for (const d of sim.dragons) h = fnv(h, `${d.id}:${d.room},${Math.round(d.x)},${Math.round(d.y)},${d.alive ? 1 : 0},${d.mouthOpen ? 1 : 0},${d.respawnAt === Infinity ? 'I' : Math.round(d.respawnAt)}`)
+    const b = sim.bat
+    h = fnv(h, `b:${b.room},${Math.round(b.x)},${Math.round(b.y)},${b.carrying ?? ''},${b.swapTimer}`)
+    h = fnv(h, `br:${[...sim.bridged].sort().join(',')}`)
+    h = fnv(h, `pk:${Object.keys(sim.pickedUp).sort().join(',')}`)
+    return h >>> 0
+}
