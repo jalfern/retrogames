@@ -152,6 +152,21 @@ if [[ -n "$TARGET" ]]; then
     PROMPT="$PROMPT TARGET (#1258): the warden assigned issue #$TARGET to your slot — at the claim step take it first with scripts/forge-claim.sh $TARGET $SLOT; if that is REFUSED, run the normal ladder."
 fi
 
+# never-dry (#1615): the warden kicked THIS slot off an empty board. Fresh
+# (<20 min) means it belongs to this fire; the file names the stage it saw
+# ("Myst 3 weak"). The session still runs the ladder first — the board may
+# have filled between the tick and this start — and takes the never-dry rung
+# of FORGE.md step 2 only if nothing claims.
+if [[ -z "$TARGET" ]]; then
+    ndf="$LOG_DIR/neverdry-$SLOT"
+    if [[ -n "$(find "$ndf" -maxdepth 0 -mmin -20 2>/dev/null)" ]]; then
+        NDSTAGE=$(head -1 "$ndf" 2>/dev/null | tr -dc 'A-Za-z0-9 ._-')
+        rm -f "$ndf"   # consumed — the next needed kick rewrites it
+        echo "$(date): never-dry kick — weakest seen: ${NDSTAGE:-?}" >> "$LOG"
+        PROMPT="$PROMPT NEVER-DRY (#1571/#1615): the board was empty when the warden ticked (weakest stage it saw: ${NDSTAGE:-unknown}). Run the normal ladder first; if still nothing claims, take the never-dry stage: file POLISH for that game, claim it, and ship one real gameplay fix."
+    fi
+fi
+
 # steer (#605): jalfern's `steer` label outranks `next` at the cycle boundary
 # (warden step 4 already ranks it; this names it so the session claims it
 # without re-deriving the order).
