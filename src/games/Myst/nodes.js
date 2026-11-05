@@ -179,17 +179,17 @@ export const NODES = {
       { id: 'retStoneship', label: 'the return panel', yaw: 180, w: 60, h: 36, to: 'library' },
       { id: 'pageStoneshipRed', label: 'a red page caught in the rocks', yaw: -60, w: 24, h: 24, act: 'takePage', page: 'red:stoneship', gone: 'pageRed_stoneship' },
       { id: 'pageStoneshipBlue', label: 'a blue page on the pier', yaw: 55, w: 24, h: 24, act: 'takePage', page: 'blue:stoneship', gone: 'pageBlue_stoneship' },
-      { id: 'toShipDeck', label: 'climb aboard the becalmed ship', yaw: 40, w: 50, h: 40, to: 'stoneDeck' },
+      { id: 'toShipDeck', label: 'climb aboard the moored ship', yaw: 40, w: 50, h: 40, to: 'stoneDeck' },
     ],
   },
   stoneDeck: {
     pos: [0, 2.6, -10], yaw: 0, sky: 'stoneship', amb: 'sea',
-    caption: "The ship's quarterdeck — becalmed hard against the rocks, its yards bare",
+    caption: "The ship's quarterdeck — moored hard on the swell, its yards bare",
     expect: ['shipMast'],
     spots: [
       { id: 'retStoneDeck', label: 'back down to the pier', yaw: 180, w: 50, h: 36, to: 'stoneship' },
       { id: 'toObservatory', label: 'the rock stair up to the dome', yaw: 25, w: 44, h: 40, to: 'stoneObservatory' },
-      { id: 'lookShipRig', label: 'the bare rigging overhead', yaw: -28, w: 40, h: 30, msg: 'Ropes and empty yards creak against a sky with no wind in it. Nothing here has moved in a very long time.' },
+      { id: 'lookShipRig', label: 'the bare rigging overhead', yaw: -28, w: 40, h: 30, msg: 'Ropes and empty yards creak against a windless sky; on every breath of swell the mast sweeps the horizon a finger each way.' },
     ],
   },
   stoneObservatory: {
