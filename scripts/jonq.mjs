@@ -27,6 +27,8 @@ import {
     DEFAULT_DEADLINE_HOURS, MAX_OPEN_PER_LANE, WAITING_LABEL, QUESTION_LABEL,
     claimOrder, decide, defaultComment, formatQuestion, halted, isAnswer,
     laneLabel, openQuestions, steerIssue, validateAsk,
+    TITLE_ASK_SHAPE, TITLE_ASK_DAYS, titleAskBlocked,
+    hasDefaultLine, unlabeledQuestions, UNLABELED_FLAG,
 } from './lib/jonq.mjs'
 import { computeRunway, digestText } from './lib/runway.mjs'
 import { churnLine, liveLine, sleepLine } from './sleepwatch.mjs'
@@ -88,6 +90,17 @@ function cmdAsk(opts, now) {
     if (openQuestions(queue, lane).length >= (Number(opts.cap) || MAX_OPEN_PER_LANE)) {
         console.error(`jonq ask refused: lane ${lane} already carries ${MAX_OPEN_PER_LANE} open questions — ask rarely (list them: jonq.mjs list --lane ${lane})`)
         process.exit(2)
+    }
+    // #1571: "which new flagship title?" is the only dry-queue ask, and one
+    // per lane per week. Check recent question issues (open AND closed) so a
+    // defaulted record still counts against the cap.
+    if (TITLE_ASK_SHAPE.test(`${opts.title || ''}\n${opts.question}`)) {
+        const recent = ghJson(['repos/' + REPO + '/issues?state=all&labels=' + QUESTION_LABEL + '&per_page=100'])
+            .filter((i) => !i.pull_request).map(toIssue)
+        if (titleAskBlocked(recent, lane, now)) {
+            console.error(`jonq ask refused: a new-flagship-title question is already on the record this week for lane ${lane} — one per ${TITLE_ASK_DAYS} days (#1571)`)
+            process.exit(2)
+        }
     }
     const body = formatQuestion({
         lane,
@@ -155,6 +168,21 @@ function cmdSweep(opts, now) {
             console.log(`#${issue.number} MALFORMED — annotated`)
             actions++
         }
+    }
+    // #1571 addendum (Jon via Claude): `**Default:**` without a `question`
+    // label = a question that bypassed jonq — #1544/#1557 rode un-swept and
+    // un-mailed exactly like that. Flag once per issue; cheap body filter
+    // first, comment fetches only for candidates.
+    for (const raw of openIssues(null)) {
+        const labels = (raw.labels || []).map((l) => (typeof l === 'string' ? l : l.name))
+        if (raw.pull_request || labels.includes(QUESTION_LABEL) || !hasDefaultLine(raw.body)) continue
+        const issue = { ...toIssue(raw), comments: commentsOf(raw.number) }
+        if (!unlabeledQuestions([issue]).length) continue
+        if (opts.dry) { console.log(`DRY #${issue.number} unlabeled question — annotate`); actions++; continue }
+        gh(['repos/' + REPO + `/issues/${issue.number}/comments`, '-f',
+            `body=${UNLABELED_FLAG} — this issue carries a **Default:** line but no \`question\` label, so the sweep can never resolve it (#1571). Lanes file questions only through scripts/jonq.mjs: add the \`question\` label if this is one, or drop the Default: line if it isn't.`])
+        console.log(`#${issue.number} UNLABELED QUESTION — annotated`)
+        actions++
     }
     console.log(`sweep: ${actions} action${actions === 1 ? '' : 's'}`)
 }
