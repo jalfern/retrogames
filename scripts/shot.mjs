@@ -42,32 +42,16 @@ const channel = opt('--channel', process.env.SHOT_CHANNEL || 'chrome')
 const start = !args.includes('--no-start')
 const touch = args.includes('--touch')
 
-let chromium
-try {
-    ({ chromium } = await import('playwright-core'))
-} catch {
-    console.error('playwright-core is not installed. Run `npm install` in the repo root first.')
-    process.exit(1)
-}
+// #1622: chromeboot's ladder — full Chrome, then single-process, then the
+// bundled headless shell (+ single-process) — so lanes get shots on nodes
+// where full Chrome cannot boot. --channel "" still forces the headless shell.
+import { launchChrome } from './lib/chromeboot.mjs'
 
 let browser
 try {
-    browser = await chromium.launch({
-        // channel omitted (pass --channel "") → playwright's headless shell,
-        // which boots where full Chrome dies on launchd-restricted nodes.
-        ...(channel ? { channel } : {}),
-        headless: true,
-        args: [
-            '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
-            // machine-level launch flags (e.g. "--single-process" where the
-            // Mach bootstrap rendezvous is refused: #737-class nodes)
-            ...(process.env.SHOT_EXTRA_ARGS ? process.env.SHOT_EXTRA_ARGS.split(/\s+/).filter(Boolean) : []),
-        ],
-    })
+    browser = await launchChrome({ channel })
 } catch (e) {
-    console.error(`Could not launch browser (channel="${channel}").`)
+    console.error(`Could not launch browser (channel="${channel}", and every fallback).`)
     console.error('Install Google Chrome, or run `npx playwright install chromium` and pass --channel chromium.')
     console.error(e.message)
     process.exit(1)

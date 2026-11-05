@@ -69,6 +69,13 @@ if [[ "$SLOT" == a ]] && ! pgrep -f "opencode run.*THE FORGE" >/dev/null; then
     pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/[^/]*-profile" 2>/dev/null || true
 fi
 
+# #1622: session-start screenshot smoke — launch, shoot a blank page, close (~1 s).
+# Its verdict rides the warden's pulse as `shots=ok(mode)` / `shots=broken(reason)`
+# so "Chrome is dead on this box" is said once, out loud, instead of every PR
+# quietly skipping before/after shots. A failure is reported, never fatal: the
+# session still builds; it just knows its screenshots will lie.
+echo "$(date): chromesmoke: $(node "$REPO/scripts/chromesmoke.mjs" 2>&1 | tail -1)" >> "$LOG"
+
 # halt (#605): a `halt` label on any open issue is Jon freezing the factory.
 # The warden already refuses to kick; this catches launchd's own timer and any
 # hand-start, so a frozen factory cannot start a new session by any door.

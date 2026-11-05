@@ -11,6 +11,8 @@
 //   - Target URL comes from MARIO_URL (default localhost dev server).
 //   - Checks exit non-zero on failure so npm run verify / CI can gate on them.
 
+import { launchChrome } from './chromeboot.mjs'
+
 export const URL_DEFAULT = process.env.MARIO_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/mario`
 export const KEEP_URL_DEFAULT = process.env.KEEP_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/ironkeep`
 
@@ -31,9 +33,9 @@ export const relayNoise = (text, loc) =>
     String(text || '').includes('retrogames.jalfern.workers.dev/status') ||
     (loc && String(loc.url || '').startsWith('https://retrogames.jalfern.workers.dev/'))
 
-let chromium
+// Fail fast when playwright-core is missing (the ladder imports it lazily).
 try {
-    ({ chromium } = await import('playwright-core'))
+    await import('playwright-core')
 } catch {
     console.error('playwright-core is not installed. Run `npm install` in the repo root first.')
     process.exit(1)
@@ -56,28 +58,19 @@ export async function requireDevServer(url = URL_DEFAULT) {
 
 export async function launch(opts = {}) {
     const channel = opts.channel || process.env.SHOT_CHANNEL || 'chrome'
-    // GitHub-hosted Linux runners need the sandbox off and a bigger shm than
-    // the default 64mb, or Chromium dies on startup before the check runs.
-    const ciArgs = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []
-    // Headless Chrome happily drops a page's timers to a few ticks a second when it
-    // decides the tab is backgrounded or occluded, and a fixed-timestep sim cannot tell
-    // that from a slow machine: it just runs the world in slow motion. These flags say
-    // "this tab is the thing the user is looking at". Deliberately NOT
-    // `--disable-frame-rate-limit` / `--disable-gpu-vsync`: those spin rAF at 600+ fps,
-    // which stops the sim losing time for the wrong reason and makes `--throttle` stop
-    // being a reproduction of a slow box. A real browser gets ~60 fps; so should this.
-    const frameArgs = [
-        '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding',
-    ]
     try {
-        return await chromium.launch({
+        // #1622: the ladder in lib/chromeboot.mjs falls back to --single-process
+        // and/or the bundled headless shell where full Chrome dies (no Aqua
+        // session on launchd-kicked Studio sessions). browser.__bootMode carries
+        // whichever mode booted. chromeboot also owns the CI sandbox flags and the
+        // anti-throttling frame args (no page should tick in slow motion).
+        return await launchChrome({
             channel,
             headless: opts.headless ?? true,
-            args: ['--autoplay-policy=no-user-gesture-required', ...frameArgs, ...ciArgs, ...(opts.extraArgs || [])],
+            extraArgs: ['--autoplay-policy=no-user-gesture-required', ...(opts.extraArgs || [])],
         })
     } catch (e) {
-        console.error(`Could not launch browser (channel="${channel}").`)
+        console.error(`Could not launch browser (channel="${channel}" + single-process + headless shell all failed).`)
         console.error('Install Google Chrome, or run `npx playwright install chromium` and set SHOT_CHANNEL=chromium.')
         console.error(e.message)
         process.exit(1)

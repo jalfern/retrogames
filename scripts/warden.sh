@@ -175,6 +175,24 @@ main() {
     fi
     [[ "$PULSE" =~ ^[0-9]+$ ]] || { log "pulse lookup failed (got: ${PULSE:-empty}) — aborting, no duplicate"; return 1; }
 
+    # ---- #1622: screenshot capability on the pulse -----------------------
+    # The lanes' session-start smoke (chromesmoke) leaves its verdict in
+    # /tmp/forge/chrome-smoke.json; ride it as `shots=ok(mode)`/`shots=broken(…)`
+    # so "Chrome is dead on this box" is visible on the board instead of every
+    # PR quietly skipping before/after shots. Materialised from origin/main
+    # (the sleepwatch pattern) so the pulse speaks with merged code.
+    CSM="$LOG_DIR/chromesmoke.mjs"
+    git -C "$REPO" show origin/main:scripts/chromesmoke.mjs > "$CSM" 2>/dev/null \
+        || cp "$REPO/scripts/chromesmoke.mjs" "$CSM" 2>/dev/null || true
+    mkdir -p "$LOG_DIR/lib"
+    git -C "$REPO" show origin/main:scripts/lib/chromeboot.mjs > "$LOG_DIR/lib/chromeboot.mjs" 2>/dev/null \
+        || cp "$REPO/scripts/lib/chromeboot.mjs" "$LOG_DIR/lib/chromeboot.mjs" 2>/dev/null || true
+    SHOTS=""
+    if [[ -s "$CSM" && -s "$LOG_DIR/lib/chromeboot.mjs" ]]; then
+        SHOTS=$(node "$CSM" --pulse 2>/dev/null | tail -1)
+        [[ "$SHOTS" == shots=* ]] || SHOTS=""
+    fi
+
     pulse_line() {   # $1 = alive word, $2 = actions
         # #1258: `builders=N/2` — how many builder slots are running right now
         # (a and b are pgrep'd the way the slots themselves are locked).
@@ -188,6 +206,7 @@ main() {
         pgrep -f "opencode run.*THE FORGE( on slot a)?\\." >/dev/null && nb=$((nb + 1))
         pgrep -f "opencode run.*THE FORGE on slot b\\." >/dev/null && nb=$((nb + 1))
         [[ -n "$ASLEEP" ]] && suf=" $ASLEEP"
+        [[ -n "$SHOTS" ]] && suf="$suf $SHOTS"
         echo "$(date +%H:%M) alive=$1 queue=$QUEUE building=$BUILDING shipped=$SHIPPED main=$MAIN qa=$QA_OPEN mini=$MINI gate=$GATE halted=$HALTED questions=$QWAIT builders=$nb/2$suf actions=$2"
     }
     comment() {      # $1 = issue number, $2 = text

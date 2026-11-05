@@ -68,6 +68,10 @@ cd "$REPO" || exit 1
 pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/p$DEV/" 2>/dev/null || true
 pkill -u "$(id -u)" -f "user-data-dir=/tmp/forge/[^/]*-profile" 2>/dev/null || true
 
+# #1622: session-start screenshot smoke (~1 s) — the verdict rides the pulse
+# (`shots=ok(mode)` / `shots=broken(reason)`); reported, never fatal.
+echo "$(date): chromesmoke: $(node "$REPO/scripts/chromesmoke.mjs" 2>&1 | tail -1)" >> "$LOG"
+
 # halt (#605): Jon froze the lanes — no QA node starts a new session either.
 # (A session already running finishes its current step, reports, and exits;
 # the warden refuses to kick while the label is open.)
