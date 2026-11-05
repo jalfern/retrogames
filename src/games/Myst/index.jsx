@@ -417,7 +417,7 @@ const MystGame = () => {
             if (gs.node !== prev) { gotoNode(gs.node); lookYaw = 0; fadeDir = 1; aim(); sfx('travel') }
           }
         }
-        if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000)
+        if (screenRef.current === 'play' && !gs.panelOpen && !gs.bookOpen && !gs.ride) ambience(NODES[gs.node].amb, SIM_MS / 1000, gs.node)
       }
       for (const a of anim) a.f(wt)
       // #1031 — the linking-book starfield: while the sim flies, the overlay

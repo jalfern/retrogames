@@ -8,9 +8,9 @@ import { drawVision } from '../src/games/Myst/visions.js'
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
 import { MESSAGES, PRESS } from '../src/games/Myst/attract.js'
-import { plan, TONES, STONE_TONES, THAW_TONES, singTicks } from '../src/games/Myst/soundplan.js'
+import { plan, TONES, STONE_TONES, THAW_TONES, singTicks, swellCues } from '../src/games/Myst/soundplan.js'
 import { domeHeight, SEL_CRESTS, DOME, AGE_GROUND, ageHeight, groundHeight } from '../src/games/Myst/terrain.js'
-import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND } from '../src/games/Myst/sea.js'
+import { SEA_VIEWS, seaSwell, foamAt, foamLine, FOAM_BAND, FOAM_LAG, foamScale, SEA_EXTENT, glintFor } from '../src/games/Myst/sea.js'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { plant, pull } from './lib/mutateguard.mjs'
@@ -1103,6 +1103,53 @@ console.log('MYST — the sea wears each Age (#838 item 2: per-Age water, swell,
   }
 }
 
+console.log('MYST — sea polish pass (#1587: ragged lagging foam, swell voice, sun glints, horizon cover)')
+{
+  // horizon cover: the plane's edge hides behind the sky dome (radius 900)
+  ok(SEA_EXTENT / 2 > 900 && SEA_EXTENT / 2 + 900 < 4000,
+    'the sea reaches past the sky dome without poking a neighbour — the horizon never shows the water\'s edge', String(SEA_EXTENT))
+  // the break is ragged and lags the swell
+  ok(FOAM_LAG > 0.2 && FOAM_LAG < 0.5, 'shore break lags the swell by ~0.3 s — foam trails the crest', String(FOAM_LAG))
+  {
+    let mn = Infinity, mx = 0
+    for (const [x, z] of foamLine('selenitic')) { const s = foamScale(x, z, 'selenitic'); mn = Math.min(mn, s); mx = Math.max(mx, s) }
+    ok(mn < 1.1 && mx > 1.6, 'the break is ragged — per-seat widths span a real range, not a uniform comb', `${mn.toFixed(2)}..${mx.toFixed(2)}`)
+    ok(foamScale(3, -21, 'stoneship') === foamScale(3, -21, 'stoneship') && foamScale(3, -21, 'stoneship') !== foamScale(4, -21, 'stoneship'),
+      'foamScale is a deterministic seat hash — replayable, and neighbours differ')
+  }
+  // the swell has a voice, pitched by the Age
+  {
+    const loud = (v) => swellCues(v).reduce((m, c) => Math.max(m, c.vol || 0), 0)
+    ok(swellCues('stoneship').length > 0 && swellCues('mechanical').length === 0, 'the swell has a voice; the indoor Age stays dry')
+    ok(loud('stoneship') > loud('selenitic') && loud('selenitic') > loud('channelwood') && loud('channelwood') > 0,
+      'the rumble is pitched by the Age — Stoneship loud, Selenitic mid, Channelwood barely there')
+    const dur = (v) => Math.max(...swellCues(v).map((c) => c.dur))
+    ok(dur('stoneship') > dur('channelwood') + 0.8, 'ocean swells roll longer than glass ripples', `${dur('stoneship').toFixed(1)}s vs ${dur('channelwood').toFixed(1)}s`)
+    ok(plan('swell:stoneship').length === swellCues('stoneship').length && plan('swell:stoneship')[0].vol === swellCues('stoneship')[0].vol,
+      'plan() routes swell: events through the pure law')
+  }
+  // the low sun gilds each open sea
+  {
+    const gl = (v) => glintFor(v)
+    const all = Object.keys(SEA_VIEWS)
+    ok(all.every((v) => gl(v) && gl(v).base > 0 && gl(v).base < 0.4), 'every open sea catches the sun — a glint strip per view, bounded')
+    ok(new Set(all.map((v) => JSON.stringify(gl(v)))).size === all.length, 'no two views seat the same glint (bearing and distance are per-view)')
+    ok(gl('dock').color[0] > gl('dock').color[2] && gl('stoneship').color[2] >= gl('stoneship').color[0],
+      'the glints wear their sky — amber on the dusk island, cold on the Atlantic')
+    ok(gl('beach').base > gl('stoneObservatory').base, 'the heaving observatory breaks its mirror — the calm dusk wash holds the glint')
+  }
+  // the scene and loop wear the pure laws
+  {
+    const sc = readFileSync('src/games/Myst/scene.js', 'utf8')
+    const jx = readFileSync('src/games/Myst/index.jsx', 'utf8')
+    const sd = readFileSync('src/games/Myst/sound.js', 'utf8')
+    ok(/t - FOAM_LAG/.test(sc) && /foamScale\(fx, fz, id\)/.test(sc), 'the scene lags and rags its foam through sea.js')
+    ok(/glintFor\(id\)/.test(sc) && /SEA_EXTENT/.test(sc), 'the scene seats its glints and sizes its seas through sea.js')
+    ok(/ambience\(NODES\[gs\.node\]\.amb, SIM_MS \/ 1000, gs\.node\)/.test(jx), 'the loop passes the view to ambience so the swell rumble wears its Age')
+    ok(/swell:\$\{view\}/.test(sd), 'the ambience layer routes each view to its swell cues')
+  }
+}
+
 // ------------------------------------------------------------------ mutants ----
 if (process.argv.includes('--mutate')) {
   console.log('MYST — mutants (each MUST die)')
@@ -1370,6 +1417,30 @@ if (process.argv.includes('--mutate')) {
     ['the scene displaces the wrong height (the Selenitic dome leaks into the Ages)', TR,
       `if (view === 'selenitic' || view === 'selSound') return domeHeight(x, z, view)`,
       `return domeHeight(x, z, view)`],
+    // #1587 — the sea polish pass
+    ['the break stops lagging the swell (foam swims with the water)', 'src/games/Myst/scene.js',
+      'seaSwell(fx, -fz, t - FOAM_LAG, id)',
+      'seaSwell(fx, -fz, t, id)'],
+    ['the break goes uniform again (one width for every puff)', 'src/games/Myst/scene.js',
+      'const w = 1.7 * foamScale(fx, fz, id)',
+      'const w = 1.7'],
+    ['the sea shrinks back to a visible seam', SEA,
+      'export const SEA_EXTENT = 2400',
+      'export const SEA_EXTENT = 300'],
+    ['the swell goes silent (the rumble volumes zero out)', SP,
+      `    { type: 'fnoise', dur: 1.4 + 2.0 * k, vol: 0.015 + 0.075 * k, freq: 220 },
+    { type: 'sweep', f0: 46 + 24 * k, f1: 32, dur: 1.8 + 1.8 * k, wave: 'sine', vol: 0.012 + 0.05 * k },`,
+      `    { type: 'fnoise', dur: 1.4 + 2.0 * k, vol: 0, freq: 220 },
+    { type: 'sweep', f0: 46 + 24 * k, f1: 32, dur: 1.8 + 1.8 * k, wave: 'sine', vol: 0 },`],
+    ['the rumble forgets the Age (one flat volume for every sea)', SP,
+      'vol: 0.015 + 0.075 * k',
+      'vol: 0.015 + 0.075'],
+    ['the sun forgets the seas (the glint strips vanish)', 'src/games/Myst/scene.js',
+      'const gl = glintFor(id)',
+      'const gl = null'],
+    ['the ambience drops the view (no per-Age rumble)', JX,
+      'ambience(NODES[gs.node].amb, SIM_MS / 1000, gs.node)',
+      'ambience(NODES[gs.node].amb, SIM_MS / 1000)'],
   ]
   let died = 0
   for (const [name, f, from, to] of MUTANTS) {

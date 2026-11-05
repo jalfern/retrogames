@@ -34,11 +34,15 @@ const AMB = {
 }
 
 let ambT = 0
-export function ambience(kind, dt) {
+// #1587 — `view` (the node id) rides with the ambience so every open sea
+// layers its own swell rumble under the kind's voice; dry views schedule
+// nothing extra (swellCues is [] for a view with no SEA_VIEWS entry).
+export function ambience(kind, dt, view) {
   ambT -= dt
   if (ambT <= 0) {
     const f = AMB[kind]
     if (f) f()
+    if (view) sfx(`swell:${view}`)
     ambT = 2.4 + Math.random() * 1.6
   }
 }
