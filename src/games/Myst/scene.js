@@ -11,6 +11,7 @@ import { groundHeight } from './terrain.js'
 import { seaProfile, seaSwell, foamLine, FOAM_LAG, foamScale, SEA_EXTENT, glintFor, SEA_DEEP, deepTint, farSwell, cloudMirror, cloudTint, islesFor, landmarksFor, shipFloat } from './sea.js'
 import { stormView, skyGain, seaGain, STORM } from './storm.js'
 import { FORGE, FORGE_SEATS, forgeBreath, forgeSparks, ventPuff } from './forge.js'
+import { CLOUD, CLOUD_SEATS, CLOUD_VIEWS, BOUNCE_TINT, cloudBounce, deckLight } from './cloudlight.js'
 
 const GAP = 4000
 
@@ -397,6 +398,26 @@ function forgeSparksPool(group, view, n) {
 // Near brass takes the forge's bounce: the hot tint scaled by the breath.
 // mat() mints a fresh material per call, so tinting one mesh never bleeds.
 function forgeBounce(o) { o.userData.forgeBounce = true }
+
+// #838 item 14 — CHANNELWOOD's cloud floor (cloudlight.js): the uplight seat
+// under a platform, riding the shared breath. The lamp wears the SAME colour
+// the mirrored horizon paints (BOUNCE_TINT = SKY_CLOUD.channelwood), and its
+// seat sits below the view's own sea level — the glow comes up out of clouds.
+function cloudLamp(group, view) {
+  const [sx, sy, sz] = CLOUD_SEATS[view]
+  const lamp = new THREE.PointLight(new THREE.Color(BOUNCE_TINT[0], BOUNCE_TINT[1], BOUNCE_TINT[2]), CLOUD.lamp, CLOUD.reach * 1.4)
+  lamp.position.set(sx, sy, sz)
+  lamp.userData.cloud = view
+  group.add(lamp)
+}
+
+// Mark a deck mesh so a crossing bank dims it where it stands (per-point
+// shade: one bank shades the near edge of a platform before the far one).
+function cloudDeck(o, view) {
+  o.userData.cloudDeck = view
+  o.userData.cloudBase = o.material.color.clone()
+  return o
+}
 
 function gear(group, tex, r, x, y, z, speed, tag) {
   const g = new THREE.TorusGeometry(r, r * 0.18, 8, 14)
@@ -1063,8 +1084,9 @@ const BUILDERS = {
     crate(g, -3.9, 0.3, -2.6, 0.7, 0.9); barrel(g, 3.2, 0.38, 1.6, 0.5)
   },
   channelwood(g) {
-    terrainField(g, TX.chand, 'channelwood')
+    cloudDeck(terrainField(g, TX.chand, 'channelwood'), 'channelwood')
     seaPlane(g, -0.3, SEA_EXTENT, 0.7)
+    cloudLamp(g, 'channelwood') // the cloud floor breathing under the landing
     const fall = mesh(new THREE.PlaneGeometry(14, 5, 1, 12), new THREE.MeshStandardMaterial({ map: TX.sea, transparent: true, opacity: 0.75, side: THREE.DoubleSide }), 0, 2.5, -13, g)
     fall.userData.fall = true
     rocks(g, TX.chand, [[0, 1.5, -14, 16, 3, 3, 0]])
@@ -1086,13 +1108,15 @@ const BUILDERS = {
     for (const [lx, lz, lr] of [[-7, -4, 3.4], [7.5, 2, 2.8], [-6, 5, 2.4]]) {
       const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, groundHeight(lx, lz, 'channelwood') + 0.12, lz, g)
       log.rotation.z = Math.PI / 2; log.rotation.y = lr; log.userData.noPick = true
+      cloudDeck(log, 'channelwood') // driftwood takes the uplight on its underside
     }
     tuft(g, -8.5, 0.06, 4, 1.3, 0x2f6a44); tuft(g, 8.6, groundHeight(8.6, -6, 'channelwood') + 0.06, -6, 1.2, 0x2f6a44); tuft(g, -6, 0.06, -20, 1, 0x2f6a44)
     boulder(g, TX.chand, -10, groundHeight(-10, -8, 'channelwood') + 0.84, -8, 1.4, 0.6); boulder(g, TX.chand, 11, groundHeight(11, 8, 'channelwood') + 0.72, 8, 1.2, 1.3)
   },
   chanChannels(g) {
-    terrainField(g, TX.chand, 'chanChannels')
+    cloudDeck(terrainField(g, TX.chand, 'chanChannels'), 'chanChannels')
     seaPlane(g, -0.3, SEA_EXTENT, 0.7)
+    cloudLamp(g, 'chanChannels')
     // three cut channels running toward the sluice; water rides them when flooded
     for (const cx of [-5.4, 0, 5.4]) {
       const lipL = mesh(new THREE.BoxGeometry(0.5, 0.9, 12), mat(TX.grey), cx - 1.5, 0.45, -30, g); lipL.userData.noPick = true
@@ -1119,6 +1143,7 @@ const BUILDERS = {
     // the wood bridge the blue page rests on
     const bridge = mesh(new THREE.BoxGeometry(7, 0.28, 1.3), mat(TX.plank), 3.4, 0.75, -33.5, g)
     bridge.rotation.y = -0.5; bridge.userData.spot = 'pageChannelwoodBlue'; bridge.userData.noPick = true
+    cloudDeck(bridge, 'chanChannels') // the wood bridge takes the crossing shade
     for (const [px, pz] of [[1.6, -32.6], [5.2, -34.4]]) mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.4), mat(TX.wood), px, 0.7, pz, g).userData.noPick = true
     for (const [lx, lz, lr] of [[-8, -32, 3.2], [8.4, -36, 2.6]]) {
       const log = mesh(new THREE.CylinderGeometry(0.24, 0.28, lr, 7), mat(TX.wood), lx, 0.12, lz, g)
@@ -1128,8 +1153,9 @@ const BUILDERS = {
     boulder(g, TX.chand, -9.5, 0.7, -27, 1.3, 0.4); boulder(g, TX.chand, 9.8, 0.9, -26, 1.5, 1.1)
   },
   chanWheel(g) {
-    terrainField(g, TX.chand, 'chanWheel')
+    cloudDeck(terrainField(g, TX.chand, 'chanWheel'), 'chanWheel')
     seaPlane(g, -0.5, SEA_EXTENT, 0.7)
+    cloudLamp(g, 'chanWheel')
     // parapet along the terrace lip over the falls
     for (let k = 0; k < 14; k++) {
       const a = k * (Math.PI / 13) - Math.PI / 2
@@ -1163,6 +1189,7 @@ const BUILDERS = {
     // the wheel-shelter where the red page waits, the axle lock, and the gear
     const shelter = mesh(new THREE.BoxGeometry(2.6, 2.2, 1.2), mat(TX.wood, { roughness: 0.85 }), -4.8, 3.3, -51.4, g)
     shelter.rotation.y = 0.4; shelter.userData.spot = 'pageChannelwoodRed'; shelter.userData.landmark = 'starWheel'
+    cloudDeck(shelter, 'chanWheel') // the wood shelter dims as a bank crosses the terrace
     const gearChan = mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.22, 8), mat(TX.brass, { metalness: 0.6 }), -4.8, 3.7, -50.7, g)
     gearChan.rotation.z = Math.PI / 2; gearChan.userData.mech = 'chanGear'; gearChan.userData.spot = 'gearChan'; gearChan.userData.landmark = 'starWheel'
     gearChan.visible = false
@@ -1181,8 +1208,9 @@ const BUILDERS = {
     // camera at [0,5.2,-66] on the observatory ledge facing +z: the bronze
     // drum close ahead, its face wearing this save's three clue-stars; the
     // channelwood fog and sea sit below the lip behind and beside
-    terrainField(g, TX.chand, 'chanObs')
+    cloudDeck(terrainField(g, TX.chand, 'chanObs'), 'chanObs')
     seaPlane(g, -0.5, SEA_EXTENT, 0.7)
+    cloudLamp(g, 'chanObs')
     rocks(g, TX.chand, [[-6.2, 5.6, -62, 4, 4, 4, 0.4], [6.4, 5.2, -63, 4, 3.6, 4, -0.3], [-8.2, 4.2, -72, 5, 5, 5, 0.2], [8.4, 4.6, -74, 5, 4.4, 5, -0.2]])
     const drum = mesh(new THREE.CylinderGeometry(1.5, 1.7, 3.2, 14), mat(TX.brass, { metalness: 0.3, roughness: 0.55, emissive: 0x5f4715, emissiveIntensity: 0.35 }), 0, 6.4, -57, g)
     drum.userData.landmark = 'chanDome'; drum.userData.noPick = true
@@ -1253,6 +1281,8 @@ export function buildWorld(ids) {
       // #838 item 13 — the forge breathes: lamps pulse on the pure law, near
       // brass takes the hot bounce, sparks ride the pool, vents puff in cadence.
       if (o.isLight && o.userData.forge) anim.push({ o, f: (t) => { o.intensity = FORGE.lamp * forgeBreath(t) } })
+      if (o.isLight && o.userData.cloud) anim.push({ o, f: (t) => { o.intensity = CLOUD.lamp * cloudBounce(t, o.userData.cloud) } })
+      if (o.userData.cloudDeck) anim.push({ o, f: (t) => { const l = deckLight(t, o.position.x, o.position.z, o.userData.cloudDeck); o.material.color.copy(o.userData.cloudBase).multiplyScalar(l) } })
       if (o.userData.forgeBounce) anim.push({ o, f: (t) => { const b = forgeBreath(t); o.material.emissive.setRGB(FORGE.bounce[0] * b, FORGE.bounce[1] * b, FORGE.bounce[2] * b) } })
       if (o.userData.sparks) anim.push({ o, f: (t) => {
         const sp = forgeSparks(o.geometry.attributes.position.count, t, o.userData.sparks)
