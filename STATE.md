@@ -1,44 +1,50 @@
-# STATE — session 164 (2026-11-06, slot a)
+# STATE — session 166 (2026-11-06, slot b)
 
 ## What shipped
-- **#1737 merged — `e4c6e4a` (PR #1742): COMET DRIFT GP — the COMET CUP.**
-  Never-dry rung pick (#1571): weakestStage scored CometDrift GP **7** (6 open
-  README gaps + #1718 naming it; tie with TalkMeDown broken toward older
-  registry title). The #419 "not yet cups" now exists: three legs (Gulch →
-  Sandbank → Corkscomb), 10-8-6-4-3-2-1 on the live classification, standings
-  wins→best→name, title arming (`C` + gold badge), HUD n/3 tag, break/final
-  panels. Pure `cup.js` (sim.js untouched — physics/stateHash/seed-pins keep
-  meaning); badge geometry pure in selector.js (#534 contract byte-identical,
-  prompt 0.74→0.70). Legs 2-3 seed base+idx; ?seed pins leg 1.
-  - cometcheck +15 gates (hand-computed GP table string, 3 tiebreaks, badge
-    geometry, source pins), +3 mutants — all die; plain 447 green.
-  - NEW `npm run cometcupplay`: real keys/taps, pixel-verifies the armed pill,
-    drives all three legs on the certified autopilot (checkpoint gates reject
-    shortcuts), points == real places, ledger sum 102, zero page errors: 15/15.
-  - Prod-verified: `index-B1BohOQ4.js` serves "COMET CUP" on jalfern.com.
-  - README honest-gaps hygiene per #961: map-pinch bullet marked CLOSED by
-    #513/#1669 (was a zombie re-kicker); cups bullet CLOSED by #1737 with
-    residuals named (items owed; music out of scope #419; cup not reload-safe).
+**MAGIC CARPET: nine worlds + title WORLD SELECT — PR #1743 squash-merged as
+`8d5d8de` (Closes #1740).** Resumed at step 1b from slot-b session 165's corpse
+(branch + PR already existed, evidence complete); this session's work was
+unblocking and landing it.
+- #601 freeze cleared: nightly dispatched on `b4206e5` (42299641208) went
+  **green 22:44Z**; the later b4206e5 nightly was cancelled by slot a's
+  COMET CUP push (`e4c6e4a`) — cancellation is not a failure per main-ok.sh,
+  and `static` (the only required check) was SUCCESS on the PR head.
+- Merged with the rule-5 command from the PR worktree; worktree re-detached to
+  origin/main (8d5d8de) right after.
+- Prod verified: jalfern.com bundle contains the nine-worlds marker
+  (`THE LAST SKY`) — live URL commented on #1740, label building→shipped,
+  issue closed completed.
+- Issue #1740: close-out comment with live URL, building→shipped, closed completed.
+- Polish pass filed: **#1746** (QA — MAGIC CARPET: polish pass, feedback +
+  lane:qafeedback): castle spell menu, 5 growing rival castles, village moral
+  economy (villagers/prisoners), 4-bit palette-cycling water, aerial-perspective
+  fog, directional cast-audio tell.
+- Text-fit sweep CI red filed for QA: **#1748** (feedback + lane:qafeedback) —
+  `smoke → Text-fit sweep (#1099)` failed identically on #1742 (slot a, disjoint
+  files) and #1743; nightly full-smoke green on b4206e5; local browser half of
+  textfitcheck can't spawn Chrome on this box (raw spawn SIGABRT; chromeboot
+  works — suggested routing textfitcheck through chromeboot.mjs).
+- Slot hygiene: killed session-165's orphan dev server (pid 35970) on **port
+  5178** — the port is free for the next slot-b session.
+- Independent sanity (my eyes, port 5178): attract renders nine-worlds copy +
+  chevron plaques; shot.mjs's default ArrowRight landed on WORLD 2 OF 9 —
+  arrows cycle the cursor and never start, exactly per design.
 
-## Also this session
-- Re-claimed #1711 for slot a per warden directive (S3 stays blocked: relay
-  still answers without `sessions:true`; #1730 AWAITING, deadline 11-08).
-- Nightly #47 was red on the archery releasing-gate — already fixed on main by
-  #1741; nightly #48/#49 over fixed main went green → freeze lifted, merged.
+## Content summary (for the record)
+LEVELS 3→9 (quotas 115→265, pearls 56→92, hoards/wizHp escalating), PAL
+cycles 3 atmospheres over the arc, title ◀ ▶/chevron-tap world select (pure
+SEL/selectTap/cursorStep), economy policy: quotas are pearl-payable, hoard is
+bonus (first curve soft-locked 41/54 seeds at world 9). 60/60 seeds win all
+nine. carpetcheck 176/180 (4 = #1622 pixel family, main baseline fails same on
+this box). Mutants caught exactly. eslint + lint gates + build + contractcheck
+15/15 green.
 
 ## Next queued
-1. **#1711 S3** — still gated on #1730 (R2 bucket + relay deploy). When the
-   worker answers `sessions:true`: `npm run sessions` live, Jon's 3 phone
-   sessions replay-verified + real-mic clap, then close #1711 with evidence.
-   If still AWAITING, take the ladder's next item (don't idle the builder).
-2. **Ladder state after this session**: game-queue empty, no steer/next;
-   feedback = QA's (#1718 covers CometDrift visual remainder, #1726 QA-held).
-   Flagship README gaps all CLOSED now — the never-dry weakestStage pick is
-   next **TALK ME DOWN** (7 open gaps) unless the board changes. File that
-   stage as its own issue, claim normally.
-3. cometcheck `--mutate` shows a pre-existing BLIND line on #478 (charge
-   accrual mutant survives locally) — CI verdicts are the word; worth a look
-   if CI shows it too (not ours, noted honestly).
+- Slot b ladder at session end: `next`/`steer`/`game-queue` all empty;
+  building: #1744 (FIRE CREW, filed this evening), #1737/#1711/#1637 held by
+  other lanes. Next slot runs the normal ladder; if empty, flagship stage →
+  never-dry weakestStage as usual.
+- PLAICRAFT S3 still gated on #1730 (R2 bucket + relay deploy, AWAITING).
 
 ## Open questions
-- #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
+- #1730 (waiting-jon, lane:games) — R2 bucket + relay; default is hold.
