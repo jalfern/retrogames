@@ -26,6 +26,8 @@ import {
     WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
+import { playWatchStart, playWatchStop, watchSfxLog, WATCH_KEY } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import {
     createRallySync, cpuSeatPad, snapshotGame, restoreGame, packSnap,
     DROP_GRACE, SEATS,
@@ -75,6 +77,7 @@ export default function RallyCoDriver() {
     const canvasRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH (watchSeat is the sim-side truth)
     const pausedRef = useRef(false) // shared by the loop (sim gate) and PauseOverlay resume
     const [voiceUi, setVoiceUi] = useState(null) // { on, said, ok, label }
     const [netUi, setNetUi] = useState(null) // #1448 lobby state for the shared Lobby overlay
@@ -143,6 +146,7 @@ export default function RallyCoDriver() {
             seedRef.cur = pin != null ? (pin >>> 0) || 1 : selectedSeed()
             play.g = createSim(seedRef.cur, 2, selectedWeather())
             play.g.co.kind = 'cpu'
+            watchSeat.on = false; setWatching(false) // #1637 a new stage starts in your hands
             voice.said = ''; voice.ok = false; voice.label = ''
             pushVoice()
             hintUntil.t = play.g.tick + 420
@@ -158,6 +162,13 @@ export default function RallyCoDriver() {
         // seam nightly/RL soak beyond cpuDriverPad. The sim owns the clock;
         // the brain only answers for the pad each tick.
         const modelSeat = { on: qs.get('seat') === 'model', brain: null }
+        // #1637 WATCH: Y seats the pace brain in seat 1 — the same spine rallycheck
+        // finishes two laps with on five seeds — and the co seat stays the proven
+        // cpuCoDriverPad. The driver's own fingers hand the wheel back immediately.
+        // Offline only: online, the wire owns both seats (C/V precedent).
+        const watchSeat = { on: false }
+        const setWatch = (v) => { watchSeat.on = v; setWatching(v) }
+        const watchOff = () => { if (watchSeat.on) { setWatch(false); playWatchStop() } }
         const modelPad = (g) => {
             if (!modelSeat.brain || modelSeat.brain.gs !== g) {
                 modelSeat.brain = Object.assign(createPaceBrain(g), { gs: g })
@@ -165,7 +176,7 @@ export default function RallyCoDriver() {
             return modelSeatPad(g, modelSeat.brain)
         }
 
-        const driverPad = () => (modelSeat.on ? modelPad(play.g) : {
+        const driverPad = () => (modelSeat.on || watchSeat.on ? modelPad(play.g) : {
             up: keys.up, down: keys.down, left: keys.left, right: keys.right, a: keys.a,
         })
 
@@ -420,6 +431,14 @@ export default function RallyCoDriver() {
                 if (net.active && net.role === 'host') return // the host's co seat is the guest
                 voiceOn(); return
             }
+            // #1637 WATCH: Y seats the pace brain in the driver's seat (offline play).
+            if (code === WATCH_KEY && down) {
+                if (net.active) return // the wire owns the seats — never a fake route online
+                if (watchSeat.on) watchOff()
+                else if (screenRef.cur === 'play' && !play.g.done) { setWatch(true); playWatchStart() }
+                return
+            }
+            if (watchSeat.on && down && !net.active) watchOff() // any other driving key takes the wheel
             // the driver's held keys are the host seat's (or the solo player's);
             // the guest's own fingers drive only the co notes below
             if (!net.active || net.role === 'host') {
@@ -470,6 +489,7 @@ export default function RallyCoDriver() {
             }
             if (screenRef.cur === 'attract') startRace()
             else if (screenRef.cur === 'over') startRace()
+            else watchOff() // #1637: a touch on the stage hands the wheel back
         }
         window.addEventListener('keydown', kd)
         window.addEventListener('keyup', ku)
@@ -614,6 +634,7 @@ export default function RallyCoDriver() {
             }
             if (g.done) {
                 const t = state(g).score
+                watchOff() // #1637 the stage is over — the next one starts in your hands
                 if (best.t == null || t < best.t) best.t = t
                 overAt.t = performance.now()
                 setScreenBoth('over')
@@ -1236,6 +1257,7 @@ export default function RallyCoDriver() {
                 seedRef.cur = ((seed ?? 1) >>> 0) % 997 || 1
                 play.g = createSim(seedRef.cur, players, selectedWeather())
                 play.g.co.kind = players >= 2 ? 'cpu' : 'off'
+                watchSeat.on = false; setWatching(false) // #1637 a harness run starts on pads
                 voiceStop()
                 keys.up = keys.down = keys.left = keys.right = keys.a = false
                 offWas = false
@@ -1281,6 +1303,10 @@ export default function RallyCoDriver() {
             vuBar: () => (typeof document !== 'undefined' ? !!document.querySelector('#vc-vu') : false),
             vuLevel: () => (typeof window !== 'undefined' ? window.__voiceVu ?? null : null),
             coCall: (call) => applyCallEvent(play.g, call, 'human'),
+            // #1637 watchcheck pilot drives these.
+            watching: () => watchSeat.on,
+            probe: () => { const s = state(play.g); return { tick: s.tick, speed: s.speed, lap: s.lap, progress: s.progress, done: !!s.done } },
+            watchSfx: watchSfxLog,
         }
 
         return () => {
@@ -1308,6 +1334,13 @@ export default function RallyCoDriver() {
                     visible
                     secondAction={netUi && netUi.role === 'guest' ? { label: '3', code: 'KeyB' } : undefined}
                 />
+            )}
+            {/* #1624 WATCH — the pace brain drives the stage (online keeps the wire). */}
+            {screen === 'play' && watching && <WatchToast className="absolute top-8 z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ top: '2.2rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} disabled={!!netUi} />
+                </div>
             )}
             {paused && <PauseOverlay game={G} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
             {netUi && screen === 'attract' && (
