@@ -140,6 +140,107 @@ if (!MUT) {
     for (let j = 0; j < 14; j++) e.step(m, [P(), P()])
     ok(hp - m.fighters[1].hp >= 12 && m.fighters[0].combo >= 2, `cancel combo deals ${hp - m.fighters[1].hp} with ${m.fighters[0].combo}-hit counter`)
 
+    // ---- MULTI: multi-hit specials (#1699) --------------------------------------
+    // The re-hit rules: `hits` caps, `rehit` spaces, soft push keeps contact,
+    // final hit pushes/launches. Rigs drive real pad streams through the same
+    // parser a human uses.
+    const DP = [{ right: true }, { right: true, down: true }, { down: true }, { up: true, hp: true }]
+    const rig = (id, meter, gap, stream) => {
+        const mm = e.createMatch({ seed: 7, p1: { ...BY_ID[id], cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        go(mm)
+        mm.fighters[0].meter = meter
+        if (stream === 'charge') for (let i = 0; i < 50; i++) e.step(mm, [P({ left: true }), P()])
+        mm.fighters[1].x = mm.fighters[0].x + gap
+        const s = stream === 'charge' ? [{ right: true, hp: true }] : stream === 'dp' ? DP : QCF
+        for (const q of s) e.step(mm, [P(q), P()])
+        const mvName = mm.fighters[0].move
+        let maxVictimY = 0
+        for (let i = 0; i < 90; i++) {
+            e.step(mm, [P({ right: i < 12 }), P()])
+            if (mm.fighters[1].y > maxVictimY) maxVictimY = mm.fighters[1].y
+        }
+        return {
+            mv: mvName,
+            hits: mm.events.filter((ev) => ev.kind === 'hit' && ev.by === 0),
+            blocks: mm.events.filter((ev) => ev.kind === 'block' && ev.by === 0),
+            dmg: (mm.fighters[1].def.hp || 100) - mm.fighters[1].hp,
+            launch: maxVictimY,
+        }
+    }
+    const mh = (r, name, move, n, dmg) => {
+        ok(r.mv === move && r.hits.length === n && r.dmg === dmg,
+            `${name}: ${r.mv} scored ${r.hits.length}/${n} hits for ${r.dmg}/${dmg}`)
+        const gaps = r.hits.slice(1).map((h, i) => h.t - r.hits[i].t)
+        ok(gaps.every((g) => g >= 4), `${name}: re-hits spaced ${gaps.join(',') || '-'} ticks (no machine-gun)`)
+    }
+    mh(rig('hyde', 0, 2.0, 'qcf'), 'HYDE dash', 'qcf', 2, 10)
+    mh(rig('hyde', 60, 2.2, 'qcf'), 'HYDE dash EX', 'qcfx', 3, 15)
+    const hydeSup = rig('hyde', 100, 2.4, 'qcf')
+    mh(hydeSup, 'HYDE dash super', 'qcf_S', 4, 20)
+    ok(hydeSup.launch > 0, `HYDE dash super's final hit launches the victim (y ${hydeSup.launch.toFixed(2)})`)
+    mh(rig('kade', 100, 1.6, 'dp'), 'KADE dp_S', 'dp_S', 3, 21)
+    mh(rig('vexa', 100, 1.6, 'dp'), 'VEXA dp_S', 'dp_S', 2, 16)
+    mh(rig('hyde', 100, 1.6, 'dp'), 'HYDE dp_S', 'dp_S', 3, 18)
+    mh(rig('tessa', 100, 1.6, 'dp'), 'TESSA dp_S', 'dp_S', 3, 18)
+    mh(rig('brakk', 100, 1.8, 'charge'), 'BRAKK charge_S', 'charge_S', 2, 22)
+    mh(rig('sable', 100, 1.9, 'charge'), 'SABLE charge_S', 'charge_S', 2, 20)
+
+    // caps are real: sustained contact past the window never exceeds `hits`
+    ok(hydeSup.hits.length === 4, `dash super caps at 4 hits even with 90 ticks of contact (got ${hydeSup.hits.length})`)
+
+    // single-hit law intact: normals, throws and projectiles still score once
+    let mm2 = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
+    go(mm2); mm2.fighters[1].x = mm2.fighters[0].x + 1.2
+    e.step(mm2, [P({ lp: true }), P()])
+    for (let i = 0; i < 30; i++) e.step(mm2, [P(), P()])
+    ok(mm2.events.filter((ev) => ev.kind === 'hit' && ev.mv === 'lp').length === 1, 'a normal still hits exactly once')
+    const brakThrow = rig('brakk', 100, 1.2, 'qcf')
+    ok(brakThrow.mv === 'qcf_S' && brakThrow.hits.length === 1 && brakThrow.dmg === 28,
+        `throws stay single-hit (qcf_S ${brakThrow.hits.length} hit, ${brakThrow.dmg} dmg)`)
+
+    // blocking a rush eats every hit — and low-per-hit damage never chips
+    const mmB = e.createMatch({ seed: 7, p1: { ...BY_ID.hyde, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+    go(mmB); mmB.fighters[1].x = mmB.fighters[0].x + 2.0
+    for (const q of QCF) e.step(mmB, [P(q), P({ right: true })])
+    let blockedDmg = 0
+    for (let i = 0; i < 60; i++) e.step(mmB, [P({ right: i < 12 }), P({ right: true })])
+    blockedDmg = 100 - mmB.fighters[1].hp
+    ok(mmB.events.filter((ev) => ev.kind === 'block' && ev.by === 0).length >= 2 && blockedDmg === 0,
+        `blocked dash absorbs all ${mmB.events.filter((ev) => ev.kind === 'block' && ev.by === 0).length} hits, chip ${blockedDmg}`)
+
+    // budget law: every multi-hit move's total sits at original +0..+3
+    const BUDGET = { 'kade dp_S': [18, 3], 'vexa dp_S': [16, 2], 'hyde qcf': [9, 2], 'hyde qcfx': [12, 3], 'hyde qcf_S': [17, 4], 'hyde dp_S': [17, 3], 'tessa dp_S': [16, 3], 'brakk charge_S': [22, 2], 'sable charge_S': [20, 2] }
+    const budgetFails = []
+    for (const [name, [orig, n]] of Object.entries(BUDGET)) {
+        const [id, key] = name.split(' ')
+        const mv = BY_ID[id].moves[key]
+        const total = mv.dmg * mv.hits
+        if (!(mv.hits === n && total >= orig && total <= orig + 3)) budgetFails.push(`${name}: hits ${mv.hits}/${n} total ${total} vs ${orig}..${orig + 3}`)
+    }
+    ok(budgetFails.length === 0, `multi-hit budgets hold at original+0..+3 (${budgetFails.join(' | ') || 'all 9'})`)
+
+    // determinism survives live multi-hits (dash-driven stream vs CPU)
+    const runRH = (seed) => {
+        const mm = e.createMatch({ seed, p1: { ...BY_ID.hyde, cpu: false }, p2: { ...BY_ID.kade, cpu: true } })
+        go(mm)
+        const hs = []
+        for (let k = 0; k < 600; k++) {
+            const c = k % 60
+            e.step(mm, [P({ right: c < 12, down: c === 10 || c === 11, lp: c === 12 }), P()])
+            hs.push(e.matchHash(mm))
+        }
+        return hs.join(',')
+    }
+    ok(runRH(11) === runRH(11), 'determinism holds with multi-hit dashes in the stream')
+
+    // the other engine consumer (guardButton mode, no hits set anywhere) is untouched
+    const mmV = e.createMatch({ seed: 5, guardButton: true, p1: human('kade'), p2: human('vexa') })
+    go(mmV); mmV.fighters[1].x = mmV.fighters[0].x + 1.2
+    e.step(mmV, [P({ hp: true }), P()])
+    for (let i = 0; i < 16; i++) e.step(mmV, [P(), P()])
+    ok(mmV.events.filter((ev) => ev.kind === 'hit').length === 1 && 100 - mmV.fighters[1].hp === 9,
+        'guardButton consumer still single-hits (9 dmg, one event)')
+
     // determinism: seed + pad streams -> identical hashes
     const run = (seed) => {
         const mm = e.createMatch({ seed, p1: human('kade'), p2: human('hyde') })
@@ -269,6 +370,26 @@ if (!MUT) {
     st = await page.evaluate(() => window.__ironRingTest.state)
     ok(punchStarted, 'keyboard attack input starts a move in the sim (inputs reach the engine)')
     ok(hitLanded || st.x[0] !== -2.6, `attack closes on the CPU (P2 hp ${st.hp[1]}, P1 x ${st.x[0]})`)
+
+    // ---- #1699: real keys drive HYDE's multi-hit dash — the combo reaches the
+    // screen, not just the Node sim (down, forward + punch, retry vs the CPU) ----
+    await page.evaluate(() => window.__ironRingTest.setChars('hyde', 'vexa'))
+    await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase === 'fight', null, { timeout: 20000 })
+    let sawMulti = false
+    await page.keyboard.down('ArrowRight')
+    for (let i = 0; i < 14 && !sawMulti; i++) {
+        await page.keyboard.press('ArrowDown')
+        await page.waitForTimeout(40)
+        await page.keyboard.press('KeyJ')
+        for (let p = 0; p < 5 && !sawMulti; p++) {
+            await page.waitForTimeout(70)
+            const s = await page.evaluate(() => window.__ironRingTest.state)
+            if (s && s.st[0] === 'qcf' && s.combo[0] >= 2) sawMulti = true
+        }
+        await page.waitForTimeout(120)
+    }
+    await page.keyboard.up('ArrowRight')
+    ok(sawMulti, 'real keys drive HYDE dash — a 2+ hit combo lands in the browser sim')
 
     // round + match flow: two K.O.s end the match with the human ahead
     let guard = 0
