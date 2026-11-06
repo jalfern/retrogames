@@ -1,4 +1,4 @@
-# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696, self-heal #1702)
+# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696, self-heal #1702, sand spray #1718)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
 SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
@@ -341,6 +341,20 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   before healT, exactly-one-step per pulse, re-arm-on-re-drive, mid-race flow
   on seed-0 autopilot, tick-driven determinism); seed-0 race still 9514/win
   with an identical physics hash.
+- **CLOSED by #1718 (QA): the sand spray.** A held drift that bites sand now
+  KICKS — the visual twin of `sandWhoosh`. The pure law `sandSpray(driftT,
+  surf, v)` (track.js, #530 crestDust lineage) reads >0 only when the kart is
+  BOTH sliding (drift held) and on sand at speed (v>1), riding intensity
+  sub-linearly 0.5→1 with speed; the renderer (index.jsx `stepFx`) fires on the
+  law's ENTRY edge — a 5–8 puff burst of coarse dust behind the rear wheels,
+  flung against the drift side, dying in ~20 ticks, tinted `APRON_C` (the
+  course apron palette, #493 lineage). Straight Sandbank cruising keeps the
+  pre-existing light off-road haze; drifts on asphalt keep their kerb sparks.
+  Renderer-only: the sim, the depth law and every seed-pin are untouched.
+  Gates: 4 new #1718 gates in the cometcheck SAND section (law fires on
+  drift+sand+speed, silent for straight sand / road / kerb / wall / crawling,
+  sub-linear saturating intensity, and source pins for the entry-edge call +
+  apron tint since stepFx is DOM-only).
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).
 - Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure

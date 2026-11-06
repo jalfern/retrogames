@@ -1675,6 +1675,21 @@ selectorGate(await loadSelector())
         /gnd = new Uint32Array\(gnd0\)/.test(idxSrcSD) && /gnd\.set\(gnd0\)/.test(idxSrcSD))
     check('index.jsx: the loop applies the deform after every sim step, and the harness can see it',
         /step\(g, live \? inp : decide\(g\)\)\s*\n\s*applyDeform\(\)/.test(idxSrcSD) && /marks:\s*g\.marks\.size/.test(idxSrcSD))
+    // #1718 item 1 — the sandSpray law: a drift that bites sand gets its picture
+    // (the visual twin of sandWhoosh). Node pins the law; the entry-edge wiring and
+    // the apron tint are pinned as source, since stepFx is renderer-only DOM code.
+    const spray = Tmod.sandSpray
+    check('#1718 sandSpray: a held drift on sand at speed sprays',
+        spray(30, 'sand', 5) > 0 && spray(1, 'sand', 8) > 0)
+    check('#1718 sandSpray: nothing else sprays — straight sand, road/kerb drifts and crawling all read 0',
+        spray(0, 'sand', 8) === 0 && spray(30, 'road', 8) === 0 && spray(30, 'kerb', 8) === 0 &&
+        spray(30, 'wall', 8) === 0 && spray(30, 'sand', 1) === 0 && spray(0, 'road', 1) === 0)
+    check('#1718 sandSpray: intensity rides speed sub-linearly and saturates at 1',
+        Math.abs(spray(10, 'sand', 1.0000001) - 0.5) < 1e-6 && spray(10, 'sand', 3) < spray(10, 'sand', 6) &&
+        spray(10, 'sand', 8) === 1 && spray(10, 'sand', 99) === 1)
+    check('#1718 index.jsx fires the burst only on the law\'s entry edge and draws dust in the course apron tint',
+        /sandSpray\(P\.driftT, P\.surf, P\.v\)/.test(idxSrcSD) && /spray > 0 && !sprayPrev/.test(idxSrcSD) &&
+        /fillStyle = APRON_C/.test(idxSrcSD))
 }
 
 if (process.argv.includes('--mutate')) {

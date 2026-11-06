@@ -427,6 +427,19 @@ export function crestDust(crest, v) {
     return strength * (0.4 + 0.6 * speed)
 }
 
+// #1718 item 1 (sand spray) — the drift-onto-sand kick law. `sandWhoosh` already
+// sounds a held slide off-road (engineSfx.js); the picture was silent next to it.
+// Pure so cometcheck pins it in Node; the renderer (index.jsx stepFx) is the only
+// caller and fires the burst on the ENTRY edge (this law returning >0 where the
+// tick before it returned 0). The kart must be BOTH sliding (drift held) and on
+// sand at speed — a straight-line Sandbank cruise keeps only the existing light
+// off-road haze, and a drift on asphalt keeps its kerb sparks. Intensity rides
+// speed sub-linearly (0.5 at the floor, 1 at 8): the burst scales, the law gates.
+export function sandSpray(driftT, surf, v) {
+    if (surf !== 'sand' || !(driftT > 0) || !(v > 1)) return 0
+    return Math.min(1, 0.5 + 0.5 * (v - 1) / 7)
+}
+
 // #530 item 5 — the sprite height-anchor law (2D twin). Mode 7 keeps the ground
 // flat, and the horizon already bobs with the CAMERA's own height+grade (index.jsx
 // bobTarget, scale ELEV_SCREEN on p.h). But the arch and trackside props are drawn
