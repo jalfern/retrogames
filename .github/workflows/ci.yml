@@ -70,6 +70,11 @@ jobs:
       # blind. Fail here, loudly, instead.
       - run: npm run ciyamlcheck
         if: needs.scope.outputs.docs != 'true'
+      # #1676 holes 1+3: the lanes' gh client must refuse detached-HEAD merge
+      # targets, assert head.ref, speak gh's check vocabulary, and lock one
+      # merge loop per PR. Proved offline against a stub API — see the script.
+      - run: npm run shimcheck
+        if: needs.scope.outputs.docs != 'true'
       - run: npm run lint:mario
         if: contains(fromJSON(env.KEYS), 'mario')
       - run: npm run lint:fps
