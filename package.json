@@ -302,6 +302,7 @@
     "ssxplay": "node scripts/ssxplay.mjs",
     "ciscope": "node scripts/ciscope.mjs --selftest",
     "ciyamlcheck": "node scripts/ciyamlcheck.mjs",
+    "shimcheck": "node scripts/shimcheck.mjs",
     "nightlychecks": "node scripts/run-checks.mjs",
     "nightlysmokes": "node scripts/run-checks.mjs --smoke",
     "shiftreportcheck": "node scripts/shiftreportcheck.mjs",
