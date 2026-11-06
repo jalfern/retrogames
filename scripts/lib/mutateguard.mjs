@@ -18,6 +18,14 @@
 
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// #1679: checks build their module paths as `new URL(...)` (that is what
+// dynamic import() wants), and fs calls accept URL — but path.resolve() and
+// Map keys do not. Cometcheck crashed its whole --mutate pass the moment it
+// handed a URL to plant/pull. The guard takes what fs takes, and normalizes
+// so plant(URL)/pull(string-path) provably hit the same remembered key.
+const key = (file) => resolve(file instanceof URL ? fileURLToPath(file) : file)
 
 const originals = new Map() // resolved path -> pre-mutation contents (ABSENT for planted new files)
 const ABSENT = Symbol('absent')
@@ -37,7 +45,7 @@ export function guardExit() {
 // Write `mutated` to `file`, remembering the bytes underneath it.
 export function plant(file, mutated) {
     guardExit()
-    const p = resolve(file)
+    const p = key(file)
     if (!originals.has(p)) originals.set(p, existsSync(p) ? readFileSync(p, 'utf8') : ABSENT)
     writeFileSync(p, mutated)
 }
@@ -52,7 +60,7 @@ export function plantNew(file, mutated) {
 // Put the remembered bytes back — or unlink when the file did not exist
 // before the plant (no-op if nothing was planted here).
 export function pull(file) {
-    const p = resolve(file)
+    const p = key(file)
     if (!originals.has(p)) return
     if (originals.get(p) === ABSENT) rmSync(p, { force: true })
     else writeFileSync(p, originals.get(p))
