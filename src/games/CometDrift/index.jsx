@@ -856,7 +856,9 @@ export default function CometDrift() {
                 }
             }
             if ((g.tick >> 5) % 2) {
-                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.74), '#f2e6d2', dsz(10), 'center')
+                // #1737: prompt nudged 0.74 -> 0.70 to keep the badge's new
+                // mid-panel home clear of the pinned tap zone at 0.74.
+                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.70), '#f2e6d2', dsz(10), 'center')
             }
             // #1737: the COMET CUP arming badge below the panel — gold when the
             // grand prix is armed. The tap target is cupBadgeGeom (selector.js,

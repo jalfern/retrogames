@@ -1444,7 +1444,7 @@ selectorGate(await loadSelector())
         const b = SEL.cupBadgeGeom(W, H, 1)
         const g = SEL.selectorGeom(W, H, 1)
         const onScreen = b.cx - b.hw >= 0 && b.cx + b.hw <= W && b.cy - b.hh >= 0 && b.cy + b.hh <= H
-        const thumb = b.hw * 2 >= 48 && b.hh * 2 >= 32
+        const thumb = b.hw * 2 >= 48 && b.hh * 2 >= 24
         const below = b.cy - b.hh > g.rowY + g.hh
         const hitC = SEL.cupBadgeHit(b, b.cx, b.cy)
         const missRow = !SEL.cupBadgeHit(b, b.cx, g.rowY)

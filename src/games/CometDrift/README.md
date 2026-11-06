@@ -218,9 +218,38 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
                               # autopilot race frame (--w/--h choose aspect)
 ```
 
+## The COMET CUP (#1737) — three races for the title
+
+The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
+
+- Three legs in fixed order: SUNSET GULCH → SANDBANK SPEED BOWL → CORKSCOMB
+  DUNES (dust, bowl, triple-apex — the GP arc), 4 laps each as always.
+- Points 10-8-6-4-3-2-1 across the seven-kart field, awarded on the LIVE
+  place-ordering the sim holds when COMET's flag drops — the same ordering the
+  plain end screen already shows, so the sim is untouched.
+- Standings break ties wins → best single finish → name. (Node-audited: the
+  whole mode is deterministic — the same boards always make the same cup.)
+- Arming: `C` on keyboard, or the thumb-sized "COMET CUP x3" badge below the
+  title panel (`cupBadgeGeom`/`cupBadgeHit` in selector.js — new targets;
+  the #534 chevron contract stays byte-identical). Gold badge = armed; any
+  other start races the grand prix. The course picker is decorative while the
+  cup is armed (the legs are fixed).
+- Legs: leg 1 seeds via the usual law (?seed=N pins it), legs 2-3 seed base +
+  leg index — deterministic extension. HUD carries "COMET CUP n/3"; a
+  standings panel rides between legs ("GOES TO"/table) and the final panel
+  crowns the champion (CHAMPION / nTH + full table). Key and tap both walk
+  the panels after a third-of-a-second guard.
+- Verify: `npm run cometcheck` — the CUP section (#1737): table law, a
+  hand-computed GP standings string, all three tiebreaks, determinism, badge
+  geometry, and source pins for the shell wires; `--mutate` adds three cup
+  mutants (devalued win, frozen leg counter, dropped sort) — all die.
+- Residual, honestly: items are still owed (the #419 list's other child — a
+  small power-up ruleset); real music stays out of scope per #419; a cup in
+  progress does not survive a page reload (session-only state).
+
 ## Honest gaps (filed to QA as the next polish pass)
 
-- The schematic maps put some parallel roads closer together than two roads of
+- **CLOSED by #513/#1669:** The schematic maps put some parallel roads closer together than two roads of
   any sane width can sit (Daytona's fork legs, Laguna's keyhole). #513 spread
   those gaps to the minimum self-clearing distance. #1669 spent the slack the
   later re-tunes left: the world grew x3 (#542) while the lane only grew x1.5
@@ -260,8 +289,10 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   to 0.19. The start line structure is per-course
   since #502 (Sandbank's timing gantry) and #511 item 3 (Corkscomb's dune
   crest, 2D renderer; HD still shares the Gulch arch).
-- No cups, items, or real music (the engine bed is a synthesized voice with
-  scrape/whoosh layers since #440 item 6, but there is no music track) —
+- **CLOSED by #1737:** cups — the COMET CUP ships (see "The COMET CUP" above:
+  three legs, 10-8-6-4-3-2-1, standings + tiebreaks). Still owed honestly: items
+  (the #419 list's other child). Real music: the engine bed is a synthesized voice
+  with scrape/whoosh layers since #440 item 6, but there is no music track —
   music out of scope per #419.
 - **CLOSED by #1687:** CPU karts drive the drift ladder DELIBERATELY now
   (`DRIFT_PLAN` in sim.js): a skill-scaled tier target (BLAZE/DUSTY chase

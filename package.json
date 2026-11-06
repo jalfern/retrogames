@@ -188,6 +188,7 @@
     "cometsandplay": "node scripts/cometsandplay.mjs",
     "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",
+    "cometcupplay": "node scripts/cometcupplay.mjs",
     "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",
     "cometdrifthdphonecheck": "node scripts/cometdrifthdphonecheck.mjs",
     "cometdrifthdscenerycheck": "node scripts/cometdrifthdscenerycheck.mjs",
