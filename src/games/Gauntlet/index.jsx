@@ -25,8 +25,8 @@ import { createModelPolicy, seatSources } from './model.js'
 import { createNetDemo } from './netdemo.js'
 import { parseCall, intentLabel } from './voicecalls.js'
 import { buildSprites, MATERIALS } from './art.js'
-import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
-import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, mapMonsters, stairsPulse } from './minimap.js'
+import { buzz, narratorKind, STAIRS_FANFARE, DEMO_STING } from './sound.js'
+import { VW, VH, PX, MAP_CELL, MAP_MARGIN, viewRect, netPull, mapMonsters, stairsPulse } from './minimap.js'
 import { selfHero, otherHero } from './seat.js'
 import { lowHpPulse, swordTrail, isDraining, deathTint } from './juice.js'
 import { warpGlow, nearArch, trapWarn, stunStars, teleColor, teleSpin, revealFade, debrisVel, DEBRIS_N, FX_TONES } from './fx.js'
@@ -96,6 +96,7 @@ const GauntletGame = () => {
         let gs = netDemo.newGame()
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, wflash = 0, naPrev = false, selectHero = 0, selectHero2 = 1
+        let demoBrainDropped = false // #1655: attract→select gave up the demo's brain seat — explain it once
         const keys = { l: false, r: false, u: false, d: false, swordEdge: false, arrowEdge: false }
         const p2 = { l: false, r: false, u: false, d: false, swordEdge: false }
         const evLog = []
@@ -392,7 +393,13 @@ const GauntletGame = () => {
             if (!netDemo.broken) {
                 if (gs.end) {
                     if (demoWin > 0) { demoWin--; if (demoWin === 0) gs = netDemo.newGame(); return }
-                    if (gs.end === 'win') { demoWin = 240; return } // hold the frozen victory board ~4 s
+                    if (gs.end === 'win') {
+                        demoWin = 240 // hold the frozen victory board ~4 s
+                        // #1655: the net's win gets its own sting — distinct from
+                        // the stairs fanfare, so demo ≠ game even with eyes closed.
+                        DEMO_STING.forEach((f, i) => audioController.playTone(f, 0.12, 'triangle', 0.06, i * 0.07))
+                        return
+                    }
                     gs = netDemo.newGame(); return
                 }
                 const d = netDemo.advance(gs)
@@ -554,12 +561,21 @@ const GauntletGame = () => {
             ctx.drawImage(img, Math.round(wx - (img.width * s) / 2), Math.round(wy - (img.height * s) / 2), Math.round(img.width * s), Math.round(img.height * s))
         }
 
+        // #1655 attract focus: while the net demo drives, the camera pulls
+        // toward seat 2 (the net) on a slow cycle so it is obvious WHO the
+        // demo is about. Only the net demo in attract gets a pull > 0 — play,
+        // the broken-net fallback and the planner replay keep the exact old
+        // camera. Drawn from one helper so view and side-map never drift.
+        const demoFocus = () => (screenRef.current === 'attract' && !net.role && !netDemo.broken
+            ? netPull(gs.tick, gs.partner ? gs.partner.x - gs.hero.x : 0, gs.partner ? gs.partner.y - gs.hero.y : 0)
+            : 0)
+
         const drawView = () => {
             const h = selfEnt()
             const mat = MATERIALS[gs.levelData.material]
             // #524 — the shared cabinet frames BOTH heroes, so the drawn edge is
             // the same window the sim walls players into (host and guest agree).
-            const { camX, camY } = gs.topDown ? viewRect(gs.hero, gs.partner) : viewRect(h)
+            const { camX, camY } = gs.topDown ? viewRect(gs.hero, gs.partner, demoFocus()) : viewRect(h)
             ctx.fillStyle = '#05050c'
             ctx.fillRect(0, 0, VW, VH)
             const c0 = Math.floor(camX / PX), r0 = Math.floor(camY / PX)
@@ -911,7 +927,7 @@ const GauntletGame = () => {
             }
             // the beasts the view shows: red roamers, Death in his green
             // (#524: the side map admits what the SHARED screen shows, both heroes framed)
-            for (const m of mapMonsters(gs, gs.topDown ? viewRect(gs.hero, gs.partner) : viewRect(h))) {
+            for (const m of mapMonsters(gs, gs.topDown ? viewRect(gs.hero, gs.partner, demoFocus()) : viewRect(h))) {
                 ctx.fillStyle = m.kind === 'death' ? '#8fff9f' : '#ff5d5d'
                 ctx.fillRect(px + m.x * s - 1, py + m.y * s - 1, s, s)
             }
@@ -1022,12 +1038,24 @@ const GauntletGame = () => {
                         // the brain lines join the ticker only while the net really drives (#1641)
                         const msgs = netDemo.broken ? INFO_MSGS : NET_MSGS
                         for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0, msgs)) {
+                            // #1655: the win banner owns the top while it is up — pause
+                            // the cycling line (rule #365, one message at a time); the
+                            // PRESS prompt and HI readout stay.
+                            if (demoWin > 0 && !l.blink && !l.text.startsWith('HI-SCORE')) continue
                             text(l.text, l.x, l.y, l.size, l.col, l.glow)
                         }
-                        if (demoWin > 0 && Math.floor(demoWin / 16) % 2 === 0) text('NET CLEARS THE QUEST!', CW / 2, 34, 12, '#5dff8f', 8)
+                        if (demoWin > 0) {
+                            if (Math.floor(demoWin / 16) % 2 === 0) text('NET CLEARS THE QUEST!', CW / 2, 34, 12, '#5dff8f', 8)
+                            // #1655: name the board and the brain — the research crowd
+                            // reads boards, and this ties the attract to /research.
+                            text(`SEED ${netDemo.seed} · ${gs.tick.toLocaleString('en-US')} TICKS · ${bcModel.name}`, CW / 2, 88, 8, '#8fa3d8', 2)
+                        }
                     }
                 } else {
                     if (!roomUp) text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
+                    // #1655: the demo's brain seat does not ride along to select —
+                    // say it in one line instead of silently changing behaviour.
+                    if (!roomUp && demoBrainDropped && (gs.partnerMode || 'off') !== 'model') text('DEMO BRAIN UNSEATS AT HERO SELECT · PRESS M TO SEAT IT', CW / 2, 86, 7, '#5d7094')
                     HERO_ORDER.forEach((hk, i) => {
                         const hd = HEROES[hk]
                         const cx = cardCenter(i)
@@ -1104,7 +1132,9 @@ const GauntletGame = () => {
             let pm = gs.partnerMode || 'off'
             // #1641: the attract demo's BRAIN seat belongs to the DEMO — walking
             // off attract must never hand the player a seat they never chose.
-            if (screenRef.current === 'attract' && pm === 'model') pm = 'off'
+            // #1655: keep dropping it (seats follow choices, never the demo),
+            // but say so on the select screen instead of changing silently.
+            if (screenRef.current === 'attract' && pm === 'model') { pm = 'off'; demoBrainDropped = true }
             if (connectedSlots() >= 2) pm = 'human'
             gs = makeGame(0, 'warrior', { topDown: true })
             gs.partnerOn = false
@@ -1112,6 +1142,7 @@ const GauntletGame = () => {
             setMode('select')
         }
         const startPlay = (hk) => {
+            demoBrainDropped = false // #1655: the player has chosen — the select note is spent
             if (net.role === 'guest' && net.phase !== 'play') return
             let pm = gs.partnerMode || 'off'
             if (pm === 'off' && connectedSlots() >= 2) pm = 'human'
@@ -1175,6 +1206,7 @@ const GauntletGame = () => {
                     if (gs.partnerMode === 'model') gs.partnerMode = 'off'
                     else gs.partnerMode = 'model'
                     bcModel.reset()
+                    if (gs.partnerMode === 'model') demoBrainDropped = false // #1655: choice made — the note is spent
                     setSlotKind(p2slot, gs.partnerMode === 'model' ? 'model' : 'off')
                 }
                 if (ev.code === 'KeyP') { gs.partnerMode = gs.partnerMode === 'human' ? 'off' : 'human'; if (gs.partnerMode === 'human') setSlotKind(p2slot, 'human') }
@@ -1283,7 +1315,7 @@ const GauntletGame = () => {
                 reset: (seed, players = 1) => {
                     gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', players >= 2 ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
                     gs.partnerOn = players >= 2; gs.partnerMode = players >= 2 ? 'cpu' : 'off'; gs.partnerHuman = false
-                    demoAt = 0; netDemo.reset(); demoWin = 0
+                    demoAt = 0; netDemo.reset(); demoWin = 0; demoBrainDropped = false
                     keys.l = keys.r = keys.u = keys.d = false
                     keys.swordEdge = false; keys.arrowEdge = false
                     p2.l = p2.r = p2.u = p2.d = false; p2.swordEdge = false
@@ -1327,12 +1359,13 @@ const GauntletGame = () => {
                     gs.partnerMode = on ? 'model' : 'off'
                     gs.partnerOn = !!on
                     gs.partnerHuman = false
+                    if (on) demoBrainDropped = false // #1655: seat taken by request — note spent
                     bcModel.reset()
                     setSlotKind(p2slot, on ? 'model' : 'off')
                 },
                 brainName: () => bcModel.name,
                 // #1641: the net-driven attract demo — probe + harness entry.
-                netDemoProbe: () => ({ broken: netDemo.broken, seed: netDemo.seed, winBanner: demoWin, screen: screenRef.current, seat: gs.partnerMode }),
+                netDemoProbe: () => ({ broken: netDemo.broken, seed: netDemo.seed, winBanner: demoWin, screen: screenRef.current, seat: gs.partnerMode, focus: demoFocus() }),
                 demoSeed: (seed) => { demoWin = 0; gs = netDemo.newGame(seed != null ? seed >>> 0 : undefined) },
                 demoTick: () => tickDemo(),
                 decide: (s) => decide(s || gs),

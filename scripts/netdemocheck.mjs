@@ -167,6 +167,35 @@ check('DEV reset clears the demo route', /netDemo\.reset\(\)/.test(jsx))
         !fallbackSeen.has('BC NET PLAYS SEAT 2') && !fallbackSeen.has('HELD-OUT 8/8 WINS'))
 }
 
+// 10 — #1655 polish: the attract camera looks at the NET (periodic pull to
+// seat 2), the demo win gets its own stamp (seed · ticks · research name) and
+// sting, the ticker pauses under the banner (#365), and select explains the
+// dropped brain seat instead of changing silently.
+{
+    const { netPull, viewRect } = await import('../src/games/Gauntlet/minimap.js')
+    const { W, H } = await import('../src/games/Gauntlet/levels.js')
+    const clampX = (v) => Math.max(0, Math.min(W * 16 - 256, v)), clampY = (v) => Math.max(0, Math.min(H * 16 - 200, v))
+    check('focus is idle at rest, at window end, at cycle end', netPull(0) === 0 && netPull(240) === 0 && netPull(599) === 0)
+    check('focus peaks mid-window at the peak', Math.abs(netPull(120) - 0.5) < 1e-9, `${netPull(120)}`)
+    check('focus is symmetric and smooth (sin in/out)', Math.abs(netPull(60, 3, -2) - netPull(180, 3, -2)) < 1e-9 && netPull(100, 3, -2) > netPull(40, 3, -2))
+    let maxPull = 0
+    for (let t = 0; t < 2400; t++) maxPull = Math.max(maxPull, netPull(t, 3, -2))
+    check('focus never exceeds the peak (hero stays framed)', maxPull <= 0.5 + 1e-9, `max ${maxPull.toFixed(3)}`)
+    check('wide pair gets no focus (a pan could push a hero off)', netPull(120, 15, 0) === 0 && netPull(120, 0, 14) === 0)
+    check('viewRect(pull=0) is the exact old camera', viewRect({ x: 20, y: 20 }, { x: 24, y: 24 }, 0).camX === viewRect({ x: 20, y: 20 }, { x: 24, y: 24 }).camX)
+    const p1 = viewRect({ x: 20, y: 20 }, { x: 24, y: 24 }, 1)
+    check('viewRect(pull=1) centres the window on the partner', p1.camX === clampX(24 * 16 - 128) && p1.camY === clampY(24 * 16 - 200), `cam ${p1.camX},${p1.camY}`)
+    check('sim bounds still use the plain camera (pan never moves a wall)', /viewBounds\(viewRect\(gs\.hero, gs\.partner\)\)/.test(src('src/games/Gauntlet/sim.js')))
+    check('attract camera pulls only for the live net demo', /screenRef\.current === 'attract' && !net\.role && !netDemo\.broken[\s\S]{0,220}netPull\(/.test(jsx))
+    check('view and side-map share the same focus call', (jsx.match(/viewRect\(gs\.hero, gs\.partner, demoFocus\(\)\)/g) || []).length === 2)
+    check('the demo win plays its own sting', /demoWin = 240[\s\S]{0,300}DEMO_STING/.test(jsx))
+    const { DEMO_STING, STAIRS_FANFARE } = await import('../src/games/Gauntlet/sound.js')
+    check('the sting is not the stairs fanfare (demo ≠ game by ear)', DEMO_STING.join() !== STAIRS_FANFARE.join() && DEMO_STING.length === 5, DEMO_STING.join(','))
+    check('victory stamp names seed, ticks and the net', /SEED \$\{netDemo\.seed\} · \$\{gs\.tick\.toLocaleString\('en-US'\)\} TICKS · \$\{bcModel\.name\}/.test(jsx))
+    check('the cycling ticker pauses while the banner is up', /demoWin > 0 && !l\.blink && !l\.text\.startsWith\('HI-SCORE'\)/.test(jsx))
+    check('select explains the dropped brain seat', /demoBrainDropped = true/.test(jsx) && /PRESS M TO SEAT IT/.test(jsx))
+}
+
 console.log(ok.join('\n'))
 const fails = ok.filter((l) => l.startsWith('FAIL')).length
 console.log(`${ok.length - fails}/${ok.length} gates pass`)

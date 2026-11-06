@@ -147,8 +147,24 @@ held-out board itself (seeds 100..107) and ends each run with
   replay could), and leaving attract resets the seat — the demo's BRAIN never
   becomes the player's choice (they still opt in with M / the BRAIN chip);
 - netdemo.js is pure decisions (never `step()`), so netdemocheck drives the
-  very driver the browser ticks. DEV: `__gauntletTest.netDemoProbe()`,
-  `demoSeed(n)`, `demoTick()`.
+  very driver the browser ticks. DEV: `__gauntletTest.netDemoProbe()` (incl.
+  `.focus` — the live camera pull), `demoSeed(n)`, `demoTick()`.
+
+### Sell polish (#1655)
+
+- The camera looks at the NET: `minimap.netPull(tick, dx, dy)` slides the
+  attract focus up to half-way from the pair midpoint toward seat 2 on a
+  600-tick sin cycle. `viewRect` grew an optional `pull`; every gameplay and
+  `viewBounds` call passes none, so the #524 screen-edge rule is untouched —
+  the camera pans, the world does not. Wide pairs get pull 0 (a pan could
+  push a hero off-frame); play, online, and the planner fallback never pull.
+- The win banner carries `SEED n · t TICKS · plaicraft-bc/v1` under NET
+  CLEARS THE QUEST!, the cycling ticker pauses while the banner is up
+  (#365), and the demo win plays `DEMO_STING` (sound.js) — brighter and
+  faster than the stairs fanfare, so demo ≠ game by ear.
+- Hero select says out loud what it does honestly: `DEMO BRAIN UNSEATS AT
+  HERO SELECT · PRESS M TO SEAT IT` — the demo's seat never becomes the
+  player's choice (#1641), and the drop is no longer silent.
 
 ## Two players (#492 pilot)
 
