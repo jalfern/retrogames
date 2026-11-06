@@ -20,7 +20,7 @@ const read = (p) => readFileSync(new URL(p, import.meta.url), 'utf8')
 const REM = 16
 
 // ---- shared law -------------------------------------------------------------
-const PILL_W = 64, PILL_H = 34          // WatchButton's fixed size (pinned below)
+const PILL_W = 112, PILL_H = 44         // WatchButton's fixed size (pinned below; #1656 44pt solid pill)
 const CHROME_INSET = 0.75 * REM        // #437 corner inset (GameChrome literals, pinned)
 const CHROME_H = 29                    // ~29px chrome button (CometDrift scene.js, pinned)
 const GAP = 8                          // thumb gap between stacked tappable chrome
@@ -55,10 +55,10 @@ const feedbackRect = (vp) => ({ x: CHROME_INSET + (vp.sal || 0), y: 2.75 * REM +
 
 // ---- pins: the law cannot drift silently --------------------------------------
 const btn = read('../src/components/WatchButton.jsx')
-rep.check('pin: WatchButton size 64x34 matches model',
-    btn.includes('width: 64, height: 34'))
+rep.check('pin: WatchButton size 112x44 matches model',
+    btn.includes('minWidth: 112, height: 44'))
 rep.check('pin: toast default rides --sat',
-    /style=\{\{ top: 'calc\(6\.25rem \+ var\(--sat, 0px\)\)'/.test(btn))
+    /style=\{\{ top: 'calc\(6\.75rem \+ var\(--sat, 0px\)\)'/.test(btn))
 rep.check('pin: toast clamps to 94vw and wraps (no nowrap)',
     btn.includes('max-w-[94vw]') && btn.includes('whitespace-normal') && !btn.includes('whitespace-nowrap'))
 const TOAST_TEXT = 'WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER'
@@ -166,7 +166,7 @@ for (const g of games) {
     const pw = pi >= 0 ? src.slice(Math.max(0, pi - 600), pi).split('\n').reverse().find((l) => l.includes('style={{')) || '' : ''
     const pTop = OFF(pw, 'top'), pBottom = OFF(pw, 'bottom')
     for (const vp of VPS) {
-        const y = (clsTop || styTop ? parseFloat((clsTop || styTop)[1]) * REM : 6.25 * REM) + vp.sat
+        const y = (clsTop || styTop ? parseFloat((clsTop || styTop)[1]) * REM : 6.75 * REM) + vp.sat
         const bandW = Math.min(toastTextW, vp.w * 0.94)
         const h = toastTextW > vp.w * 0.94 ? TOAST_H2 : TOAST_H1
         const toast = { x: (vp.w - bandW) / 2, y, w: bandW, h }

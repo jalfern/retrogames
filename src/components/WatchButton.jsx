@@ -9,9 +9,11 @@ import { WATCH_KEY } from '../utils/watch'
 // control) and defaults BELOW the WATCH pill. The old top-3 sat in the chrome
 // band; at ~400px as-written (50 chars of 11px mono + tracking-widest) it
 // overflows a 390px phone, so it now clamps to 94vw and wraps. watchpillcheck
-// pins the 6.25rem/94vw law and the clearance over the pill.
+// pins the 6.75rem/94vw law and the clearance over the pill. (#1656 grew the
+// pill 34→44px, so the old 6.25rem default left a zero gap; 6.75rem restores
+// the 8px thumb gap under the taller pill.)
 export const WatchToast = ({ className = 'absolute z-50', style }) => (
-    <div className={`${className} left-1/2 -translate-x-1/2 max-w-[94vw] bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-normal text-center`} style={{ top: 'calc(6.25rem + var(--sat, 0px))', ...style }}>
+    <div className={`${className} left-1/2 -translate-x-1/2 max-w-[94vw] bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-normal text-center`} style={{ top: 'calc(6.75rem + var(--sat, 0px))', ...style }}>
         WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
     </div>
 )

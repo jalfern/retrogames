@@ -526,7 +526,7 @@ export default function Emberwood() {
             )}
             {/* #1624 WATCH — the prover walks the vale; any input takes over. */}
             {inGame && watching && (
-                <WatchToast className="absolute top-[calc(8.75rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
+                <WatchToast className="absolute top-[calc(10rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
             {screen === 'attract' && (
