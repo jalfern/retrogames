@@ -440,6 +440,21 @@ export function sandSpray(driftT, surf, v) {
     return Math.min(1, 0.5 + 0.5 * (v - 1) / 7)
 }
 
+// #1718 item 4 (tread in the ruts) — the packed-soil speckle law. A depth>=2
+// carve is churned, packed ground, and a flat tint makes the twin ruts read
+// like dark stickers laid on the sand. The renderer splits the tint into
+// diagonal tread dashes (3-texel pitch, rng-free like every other mark law):
+// dash texels take 1.8x the depth step, the gaps 0.6x at an exact 1/3
+// density — so the MEAN step stays exactly 0.11 per depth (#1696's law) and
+// the rut keeps its darkness; only its texture changes. Depth below 2 (rolls,
+// rings, lips) stays a flat tint. Pure and DOM-free so cometcheck pins the
+// two-tone, the density, the phase and the flat range in Node; applyDeform
+// (index.jsx) is the only caller.
+export function rutTexel(tx, ty, d) {
+    if (!(d >= 2)) return 1
+    return (((tx + 2 * ty) % 3 + 3) % 3 === 0) ? 1.8 : 0.6
+}
+
 // #530 item 5 — the sprite height-anchor law (2D twin). Mode 7 keeps the ground
 // flat, and the horizon already bobs with the CAMERA's own height+grade (index.jsx
 // bobTarget, scale ELEV_SCREEN on p.h). But the arch and trackside props are drawn
