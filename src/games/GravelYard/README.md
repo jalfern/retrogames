@@ -79,13 +79,15 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   restore = green.
 - `npm run contractcheck` includes `gravel-yard` (`scripts/lib/contractGames.mjs`).
 - DEV hooks: `window.__gyTest` ({state, screen, start, press, release, hash}).
-  `window.__game` per the standard contract; `sources()` reports live seat kinds.
+  `window.__game` per the standard contract; `sources()` reports live seat kinds
+  (`remote` for a lobby peer seat, #1672).
 
 ## Honest gaps
 
-- **Online seats through the lobby = stage 2** (same as the kitchen #1291): the
-  sim is lockstep-ready (seed + pad streams) and `sources()` could mark
-  `remote`, but no lobby/relay wiring here today; 2P is shared-keyboard.
+- Online seats shipped #1672 (?net=host / ?net=join&room=CODE): the host
+  drives the digger, a remote browser drives the TRUCK on lockstep pads
+  (sample once, D ahead), the operator stays CPU; `sources()` now reports
+  `remote` for the peer seat. A third human seat is still open.
 - **Voice (#1247)**: the recording path banks raw per-seat mic audio via
   `gameContract.recordLiveTick`; an in-game push-to-talk that steers the CPU
   crew like GAUNTLET's voice calls (#1249) is the natural next stage — the

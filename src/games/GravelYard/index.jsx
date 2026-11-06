@@ -14,9 +14,12 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
+import { createLockStep } from '../../utils/lockstep.js'
+import { SEATS, PAD_DELAY, HASH_EVERY, wirePad, padsAt, seatOf, seatKinds, hostSeed } from './net'
 import { normalizePad } from '../../utils/onePad'
 import {
-    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate,
+    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, BAY_CAP, cellKind,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD,
     DOCK_SPOTS, digSwingFrame, tipSeqFrame, TIP_TICKS,
@@ -58,6 +61,10 @@ export default function GravelYard() {
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
+    // #1672 lobby seats: seat 0 = digger = host hands, seat 1 = truck = guest
+    // hands, seat 2 stays the CPU operator. All live net state lives here so the
+    // contract (sources) and the loop (liveTick) can read it without re-render.
+    const netRef = useRef({ active: false, role: null, seat: 0, mode: false, phase: 'off', code: '', joinHref: '', frozen: false, stall: 0, room: null, startHost: null })
 
     const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
     const freshEmitters = () => [makeCpuEmitter(0), makeCpuEmitter(1), makeCpuEmitter(2)]
@@ -102,6 +109,10 @@ export default function GravelYard() {
             buttons: ['a', 'b'],
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
             sources: () => {
+                if (netRef.current.mode) {
+                    const kinds = seatKinds(netRef.current.role)
+                    if (kinds) return kinds
+                }
                 const out = []
                 for (let i = 0; i < seatsRef.current; i++) {
                     if (modelSeatRef.current === i) out.push({ kind: 'model' })
@@ -193,6 +204,10 @@ export default function GravelYard() {
                 if (ev.code === 'ArrowRight') selectRef.current = Math.min(3, selectRef.current + 1)
                 if (ev.code === 'KeyP') partnerHumanRef.current = !partnerHumanRef.current
                 if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'Digit1') {
+                    // #1672: online, the host starts the room (the guest rides
+                    // the 'go'); a solo cabinet starts exactly as before.
+                    if (net.active && net.role === 'host') { net.startHost && net.startHost(); return }
+                    if (net.active && net.role === 'guest') { sayYard('THE HOST STARTS THE SHIFT'); return }
                     // #1473: honor ?seed=N so a filed report replays this exact yard
                     const pin = seedFromQuery()
                     if (pin != null) seedRef.current = pin >>> 0
@@ -207,6 +222,7 @@ export default function GravelYard() {
                 }
                 return
             }
+            if (net.mode && net.frozen && (ev.code === 'Space' || ev.code === 'Enter')) { netReturn(); return }
             if (ev.code === 'ArrowUp') keys1.up = true
             if (ev.code === 'ArrowDown') keys1.down = true
             if (ev.code === 'ArrowLeft') keys1.left = true
@@ -234,10 +250,91 @@ export default function GravelYard() {
             const sc = screenRef.current
             if (sc === 'attract') { selectRef.current = 1; setScreen('select') }
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) { seedRef.current = (seedRef.current + 1) >>> 0; setScreen('select') }
+            else if (sc === 'play' && netRef.current.mode && netRef.current.frozen) netReturn()
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
         cvs.addEventListener('pointerdown', onPointer)
+
+        // ---------- online lobby seats (#1672) ----------
+        // ?net=host rolls a 4-letter room; ?net=join&room=CODE seats the
+        // second browser. Lockstep law (sample once, D ahead, never resample)
+        // makes seed + pad streams identical on both boxes; hashState at the
+        // boundary is the referee. The guest drives the TRUCK (seat 1) with
+        // the same primary keys/pad the host uses for the digger.
+        const net = netRef.current
+        const nq = new URLSearchParams(window.location.search)
+        net.active = !!lobbyRole(window.location.search)
+        net.role = lobbyRole(window.location.search)
+        net.seat = net.active ? seatOf(net.role) : 0
+        const mirrors = [new Map(), new Map()]
+        let ws = null
+        const makeTransport = (url) => {
+            ws = new WebSocket(url)
+            return {
+                send: (s) => { try { if (ws && ws.readyState === 1) ws.send(s) } catch { /* gone */ } },
+                onMessage: (cb) => { ws.onmessage = (ev) => cb(ev.data) },
+                onClose: (cb) => { ws.onclose = () => cb() },
+                close: () => { try { if (ws) ws.close() } catch { /* gone */ } },
+            }
+        }
+        const ls = createLockStep({
+            delay: PAD_DELAY,
+            hashEvery: HASH_EVERY,
+            send: (m) => { if (m.t === 'pad') mirrors[net.seat].set(m.k, m.p); if (net.room) net.room.send(m.t, m) },
+        })
+        const sayYard = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 160 }
+        const beginOnline = (seed) => {
+            ls.reset(); mirrors[0].clear(); mirrors[1].clear()
+            net.mode = true; net.frozen = false; net.stall = 0
+            clearKeys()
+            seatsRef.current = 2
+            partnerHumanRef.current = false
+            seedRef.current = (seed >>> 0) || 1
+            gsRef.current = createGame(seedRef.current, 2)
+            emittersRef.current = freshEmitters()
+            setScreen('play')
+            specRef.current.players = 2
+            playFx({ k: 'start' })
+        }
+        const netAbandon = (msg) => {
+            if (!net.mode || net.frozen) return
+            net.frozen = true
+            sayYard(msg)
+        }
+        const netReturn = () => {
+            net.mode = false; net.frozen = false; net.stall = 0
+            if (net.role === 'host') { if (net.room) { try { net.room.setPhase('waiting') } catch { /* gone */ } } }
+            else { net.active = false; if (net.room) { try { net.room.reset() } catch { /* gone */ } } }
+            startAttract()
+        }
+        if (net.active) {
+            const lobby = createLobby({
+                slug: 'gravel-yard',
+                cap: SEATS,
+                relay: relayFromQuery(window.location.search),
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref },
+                onJoin: () => { if (net.role === 'host') sayYard('CREW IN — DIG IN') },
+                onLeave: () => netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'),
+                onStart: (m) => { if (net.role === 'guest') beginOnline(m.seed >>> 0) },
+                on: {
+                    pad: (m) => { const mm = mirrors[m.s | 0]; if (mm) mm.set(m.k | 0, m.p) },
+                    hs: (m) => { const r = ls.gotHash(m.k | 0, m.h >>> 0); if (r && r.desync !== undefined) netAbandon('SIMS DIVERGED — SPACE FOR TITLE') },
+                    gone: () => netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'),
+                },
+            })
+            net.room = lobby.room
+            if (net.role === 'host') lobby.open()
+            else lobby.join(nq.get('room'))
+            net.startHost = () => {
+                const seed = hostSeed()
+                if (!lobby.start({ seed })) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
+                beginOnline(seed)
+                return true
+            }
+        }
 
         // ---------- the loop ----------
         let raf = 0
@@ -253,6 +350,28 @@ export default function GravelYard() {
         const liveTick = () => {
             const g = gsRef.current
             if (!g || g.done) return
+            if (net.mode) {
+                // #1672 online: the two browsers execute the SAME seed + pad
+                // streams. Own pad is sampled once, D ahead, onto the wire;
+                // tick k runs only when the peer's pad for k is in (the
+                // lockstep law); the hash boundary referees the run.
+                if (net.frozen) return
+                const k = g.tick
+                ls.pumpTo(k + PAD_DELAY, () => wirePad(humanPad(keys1)))
+                if (!ls.ready(k)) { net.stall++; if (net.stall === 90) sayYard('PARTNER LAGGING…'); return }
+                net.stall = 0
+                const pads = padsAt(mirrors[0], mirrors[1], k)
+                pads[2] = emittersRef.current[2]({ gs: g, tick: g.tick })
+                stepGame(g, pads)
+                recordLiveTick(pads)
+                for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
+                if (g.tick % HASH_EVERY === 0) {
+                    const r = ls.hash(g.tick, hashState(g))
+                    if (r && r.desync !== undefined) netAbandon('SIMS DIVERGED — SPACE FOR TITLE')
+                }
+                if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; net.mode = false }
+                return
+            }
             const pads = [{}, {}, {}]
             pads[0] = humanPad(keys1)
             if (human2Active()) pads[1] = humanPad(keys2)
@@ -599,6 +718,13 @@ export default function GravelYard() {
                 ctx.fillStyle = '#f0e8d0'
                 ctx.fillText(ATTRACT_MSGS[Math.floor(t / 150) % ATTRACT_MSGS.length], CANVAS_W / 2, 142)
                 if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 176) }
+                if (netRef.current.active) {
+                    // #1672: the room rides the marquee — the code is the invite.
+                    ctx.fillStyle = '#7fe8c8'
+                    ctx.fillText(netRef.current.code
+                        ? `ROOM ${netRef.current.code}  —  ${netRef.current.phase.toUpperCase()}`
+                        : 'LINKING…', CANVAS_W / 2, 190)
+                }
                 ctx.textAlign = 'left'
             } else if (sc === 'select') {
                 ctx.textAlign = 'center'
@@ -671,6 +797,12 @@ export default function GravelYard() {
                 press: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = true },
                 release: (field, seat = 0) => { (seat === 0 ? keys1 : keys2)[field] = false },
                 hash: () => simState(gsRef.current).hash,
+                // #1672 online-seat probes: feed a peer pad without a relay so
+                // gravelcheck can drive the lockstep path in a headless box.
+                net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall }),
+                netFeed: (seat, k, mask) => { const mm = mirrors[seat | 0]; if (mm) mm.set(k | 0, { m: mask | 0 }); if ((seat | 0) !== net.seat) ls.gotPad(k | 0, { m: mask | 0 }) },
+                netBegin: (seed) => beginOnline(seed),
+                netStart: () => !!(net.startHost && net.startHost()),
                 // #1390 render-animation probes + deterministic staging for gravelcheck
                 anim: () => {
                     const g = gsRef.current
@@ -742,6 +874,7 @@ export default function GravelYard() {
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             cvs.removeEventListener('pointerdown', onPointer)
+            if (netRef.current.room) { try { netRef.current.room.reset() } catch { /* gone */ } }
             clearKeys()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__gyTest }
         }

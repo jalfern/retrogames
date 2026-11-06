@@ -20,6 +20,10 @@ import {
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD, DOCK_SPOTS,
     digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from '../src/games/GravelYard/engine.js'
+import { createLockStep } from '../src/utils/lockstep.js'
+import {
+    SEATS, PAD_DELAY, HASH_EVERY, padMask, unmaskPad, wirePad, padsAt, seatOf, seatKinds, hostSeed,
+} from '../src/games/GravelYard/net.js'
 
 const URL = process.env.GY_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/gravel-yard`
 
@@ -331,6 +335,94 @@ console.log('— win proof (CPU crew) —')
     let twoWins = 0
     for (let s = 1; s <= 8; s++) { const r = simulate(s, 2); if (r.win) twoWins++ }
     ok('two-handed crew wins >=6/8', twoWins >= 6, `wins=${twoWins}`)
+}
+
+// ---------- #1672 lobby seats: twin-box lockstep proof (pure Node) ----------
+{
+    ok('#1672 roster: two lobby seats (the operator stays the CPU emitter)', SEATS === 2)
+    ok('#1672 seat law: host drives the digger (0), guest the truck (1)',
+        seatOf('host') === 0 && seatOf('guest') === 1)
+    const kindsH = seatKinds('host'), kindsG = seatKinds('guest')
+    ok('#1672 contract rows: own seat human, peer seat remote, operator cpu — offline none',
+        kindsH[0].kind === 'human' && kindsH[1].kind === 'remote' && kindsH[2].kind === 'cpu' &&
+        kindsG[0].kind === 'remote' && kindsG[1].kind === 'human' && kindsG[2].kind === 'cpu' &&
+        seatKinds('solo') === null)
+    let rt = true
+    for (let m = 0; m < 64; m++) if (padMask(unmaskPad(m)) !== m) rt = false
+    ok('#1672 the six pad fields round-trip through the wire mask (all 64 states)', rt)
+    ok('#1672 hostSeed never returns zero', hostSeed(() => 0) !== 0 && hostSeed(() => 999999) !== 0)
+
+    const twin = (role, seed) => {
+        const gs = createGame(seed, 2)
+        const mirrors = [new Map(), new Map()]
+        const out = []
+        const ls = createLockStep({
+            delay: PAD_DELAY,
+            hashEvery: HASH_EVERY,
+            send: (m) => { if (m.t === 'pad') mirrors[role === 'host' ? 0 : 1].set(m.k, m.p); out.push(m) },
+        })
+        return { gs, ls, mirrors, out, em: makeCpuEmitter(2), desync: false }
+    }
+    const deliver = (dst, seat, m) => {
+        if (m.t === 'pad') { dst.mirrors[seat].set(m.k, m.p); dst.ls.gotPad(m.k, m.p) }
+        else if (m.t === 'hs') { const r = dst.ls.gotHash(m.k, m.h); if (r && r.desync !== undefined) dst.desync = true }
+    }
+    // twinRun drives both boxes tick by tick over an in-memory relay: either
+    // box may only run tick k when BOTH hold every pad for k (lockstep in
+    // action — nobody ever runs half a shared moment).
+    const twinRun = ({ seed = 777, ticks = 200, hostPad, guestPad, dropWin = null, corrupt = null }) => {
+        const H = twin('host', seed), G = twin('guest', seed)
+        const ref = createGame(seed, 2); const refEm = makeCpuEmitter(2)
+        let desync = false, refMismatch = false, skipped = 0
+        for (let k = 0; k < ticks; k++) {
+            H.ls.pumpTo(k + PAD_DELAY, () => wirePad(hostPad(k)))
+            G.ls.pumpTo(k + PAD_DELAY, () => wirePad(guestPad(k)))
+            const hOut = H.out.splice(0), gOut = G.out.splice(0)
+            const dropped = (seat, kk) => !!(dropWin && kk >= dropWin[0] && kk < dropWin[1])
+            for (const m of hOut) if (!dropped(0, m.k)) deliver(G, 0, m)
+            for (const m of gOut) if (!dropped(1, m.k)) deliver(H, 1, m)
+            if (!H.ls.ready(k) || !G.ls.ready(k)) { skipped++; continue }
+            if (corrupt && k >= corrupt[0] && k < corrupt[1]) H.mirrors[0].set(k, { m: (((H.mirrors[0].get(k) || {}).m | 0) | 8 | 16) })
+            const pH = padsAt(H.mirrors[0], H.mirrors[1], k); pH[2] = H.em({ gs: H.gs, tick: H.gs.tick })
+            const pG = padsAt(G.mirrors[0], G.mirrors[1], k); pG[2] = G.em({ gs: G.gs, tick: G.gs.tick })
+            stepGame(H.gs, pH); stepGame(G.gs, pG)
+            const pR = padsAt(H.mirrors[0], H.mirrors[1], k); pR[2] = refEm({ gs: ref, tick: ref.tick })
+            stepGame(ref, pR)
+            if (H.gs.tick % HASH_EVERY === 0) {
+                const rk = H.gs.tick
+                const rh = H.ls.hash(rk, simState(H.gs).hash)
+                const rg = G.ls.hash(rk, simState(G.gs).hash)
+                if ((rh && rh.desync !== undefined) || (rg && rg.desync !== undefined) || H.desync || G.desync) desync = true
+                if (simState(H.gs).hash !== simState(ref).hash || simState(G.gs).hash !== simState(ref).hash) refMismatch = true
+            }
+        }
+        return { H, G, desync: desync || H.desync || G.desync, refMismatch, skipped }
+    }
+    const hostPad = (k) => ({ right: k < 40, left: k >= 40 && k < 80, a: k % 30 < 4 })
+    const guestPad = (k) => ({ left: k % 20 < 10, up: k % 50 < 6, b: k % 37 < 3 })
+
+    const clean = twinRun({ hostPad, guestPad })
+    ok('#1672 twin boxes executing one seed + pad streams stay hash-equal (200 ticks)',
+        !clean.desync && !clean.refMismatch && clean.H.gs.tick === 200 && clean.G.gs.tick === 200,
+        `tick ${clean.H.gs.tick}/${clean.G.gs.tick}`)
+    ok('#1672 the shift actually ran (deterministic sim, not a frozen pair)',
+        clean.H.gs.tick === 200 && simState(clean.H.gs) !== null)
+
+    const stalled = twinRun({ hostPad, guestPad, dropWin: [50, 70] })
+    ok('#1672 a lost pad window makes BOTH boxes wait the same ticks — nobody runs half a moment',
+        stalled.H.gs.tick === stalled.G.gs.tick && stalled.H.gs.tick === 200 - 20 && !stalled.desync && !stalled.refMismatch,
+        `ticks ${stalled.H.gs.tick}/${stalled.G.gs.tick} skipped ${stalled.skipped}`)
+
+    const broken = twinRun({ hostPad, guestPad, corrupt: [100, 112] })
+    ok('#1672 divergent streams are CAUGHT at the hash boundary (the referee works)',
+        broken.desync === true)
+
+    // determinism of the whole replay: same seed + same scripts => same hash,
+    // twice over — the join-later story needs the stream to be re-executable.
+    const again = twinRun({ hostPad, guestPad })
+    ok('#1672 the exchange is replayable: same seed + scripts => identical final hash',
+        simState(again.H.gs).hash === simState(clean.H.gs).hash,
+        `${simState(again.H.gs).hash} vs ${simState(clean.H.gs).hash}`)
 }
 
 // ---------- browser half ----------
