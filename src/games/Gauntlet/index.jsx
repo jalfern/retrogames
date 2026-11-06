@@ -19,6 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad, applyCall } from './planner.js'
+import { createModelPolicy } from './model.js'
 import { parseCall, intentLabel } from './voicecalls.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
@@ -386,7 +387,10 @@ const GauntletGame = () => {
         const p2slot = makeSlot('off', { padIndex: 2 })
         const seatPrev = { a: false }
         let modelP2 = null
-        const syncSeat = () => setSlotKind(p2slot, gs.partnerHuman ? 'human' : gs.partnerOn ? 'cpu' : 'off')
+        // #1625 PLAICRAFT: the trained BC net can hold this seat (M). It emits
+        // THE one pad like every other source; the sim cannot tell it apart.
+        const bcModel = createModelPolicy()
+        const syncSeat = () => setSlotKind(p2slot, gs.partnerHuman ? 'human' : gs.partnerOn ? (gs.partnerMode === 'model' ? 'model' : 'cpu') : 'off')
         const padToInp = (pad, prev) => ({
             left: !!pad.left, right: !!pad.right, fwd: !!pad.up, back: !!pad.down,
             sword: !!pad.a && !prev.a,
@@ -479,8 +483,8 @@ const GauntletGame = () => {
                 if (modelP2) {
                     pInp = padToInp(modelP2, seatPrev)
                     seatPrev.a = !!modelP2.a
-                } else if (p2slot.kind === 'cpu') {
-                    const raw = partnerPad(gs, seatPrev.a, gs._vCmd)
+                } else if (p2slot.kind === 'cpu' || p2slot.kind === 'model') {
+                    const raw = p2slot.kind === 'model' ? bcModel.decide(gs) : partnerPad(gs, seatPrev.a, gs._vCmd)
                     pInp = { left: raw.left, right: raw.right, fwd: raw.up, back: raw.down, sword: raw.a }
                     seatPrev.a = raw.a
                 } else {
@@ -998,7 +1002,7 @@ const GauntletGame = () => {
                     const pm = gs.partnerMode || 'off'
                     if (!roomUp) {
                         text(pm === 'human' ? 'ARROWS P1 PICK · A/D P2 PICK · WASD+F P2 · PAD 2 = P2 · SPACE START' : 'ARROWS OR TAP PICK · SPACE OR TAP AGAIN START', CW / 2, 202, pm === 'human' ? 7 : 8, '#8fa3d8')
-                        text('C PARTNER ' + (pm === 'cpu' ? 'ON' : 'OFF') + ' · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
+                        text('C PARTNER ' + (pm === 'cpu' ? 'ON' : pm === 'model' ? 'BRAIN' : 'OFF') + ' · M TRAINED NET · P 2-PLAYER ' + (pm === 'human' ? 'ON' : 'OFF') + ' · HP SPEED RANGE', CW / 2, 214, 7, '#5d7094')
                     }
                     if (pm === 'human') {
                         // the second portrait: P2's chosen hero, up in the panel
@@ -1060,7 +1064,7 @@ const GauntletGame = () => {
             let pm = gs.partnerMode || 'off'
             if (pm === 'off' && connectedSlots() >= 2) pm = 'human'
             const two = pm === 'human'
-            const pOn = pm === 'cpu'
+            const pOn = pm === 'cpu' || pm === 'model'
             const online = net.role === 'host' && net.peer && net.phase === 'waiting'
             if (net.role === 'host' && !online) {
                 net.info = 'waiting for friend'
@@ -1102,6 +1106,13 @@ const GauntletGame = () => {
                 if (ev.code === 'ArrowLeft') selectHero = (selectHero + 3) % 4
                 if (ev.code === 'ArrowRight') selectHero = (selectHero + 1) % 4
                 if (ev.code === 'KeyC') { gs.partnerMode = gs.partnerMode === 'cpu' ? 'off' : 'cpu'; if (!gs.partnerHuman) setSlotKind(p2slot, gs.partnerMode === 'cpu' ? 'cpu' : 'off') }
+                if (ev.code === 'KeyM' && !gs.partnerHuman) {
+                    // #1625: seat the trained net. M toggles BRAIN; C/P still win.
+                    if (gs.partnerMode === 'model') gs.partnerMode = 'off'
+                    else gs.partnerMode = 'model'
+                    bcModel.reset()
+                    setSlotKind(p2slot, gs.partnerMode === 'model' ? 'model' : 'off')
+                }
                 if (ev.code === 'KeyP') { gs.partnerMode = gs.partnerMode === 'human' ? 'off' : 'human'; if (gs.partnerMode === 'human') setSlotKind(p2slot, 'human') }
                 if (gs.partnerMode === 'human') {
                     if (ev.code === 'KeyA') selectHero2 = (selectHero2 + 3) % 4
@@ -1198,7 +1209,7 @@ const GauntletGame = () => {
                     keys.swordEdge = false; keys.arrowEdge = false
                     p2.l = p2.r = p2.u = p2.d = false; p2.swordEdge = false
                     cPrev = { a: false, b: false }
-                    modelP2 = null; seatPrev.a = false; setSlotKind(p2slot, 'off')
+                    modelP2 = null; seatPrev.a = false; setSlotKind(p2slot, 'off'); bcModel.reset()
                     setMode('play')
                 },
                 tick: (pad, pads) => {
@@ -1229,6 +1240,16 @@ const GauntletGame = () => {
                 setP2: (k) => { p2.l = !!k.l; p2.r = !!k.r; p2.u = !!k.u; p2.d = !!k.d; if (k.s) p2.swordEdge = true },
                 start2P: (hk1 = 'warrior', hk2 = 'elf') => { const r = Math.floor(Math.random() * 1000) % 97; gs = makeGame(r, hk1, { partner: true, topDown: true, partnerKey: hk2 }); gs.partnerOn = true; gs.partnerMode = 'human'; gs.partnerHuman = true; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, { topDown: true, ...opts }),
+                // #1625: QA path to seat/unseat the trained net (M key does the
+                // same for a human on the select screen).
+                seatBrain: (on = true) => {
+                    gs.partnerMode = on ? 'model' : 'off'
+                    gs.partnerOn = !!on
+                    gs.partnerHuman = false
+                    bcModel.reset()
+                    setSlotKind(p2slot, on ? 'model' : 'off')
+                },
+                brainName: () => bcModel.name,
                 decide: (s) => decide(s || gs),
                 restart: () => { gs = makeGame(0, 'warrior', { topDown: true }) },
                 startHero: (hk) => startPlay(hk),

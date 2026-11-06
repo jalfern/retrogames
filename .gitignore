@@ -21,3 +21,8 @@ __pycache__/
 
 # #1567: 1.4GB edited HF snapshots stay local; edit_reports/own_a*.json are the committed evidence
 demos/weight-surgery-lab/edited_own_a*/
+data/plaicraft/*
+!data/plaicraft/README.md
+!data/plaicraft/sample.jsonl
+!data/plaicraft/results.json
+!data/plaicraft/export-stats.json

@@ -45,6 +45,16 @@ engine, pinned to the original four mazes (`levelCount: 4`).
     reach, and each wall course is two-toned per material (`mortarTones` — a
     dark recess + a light bevel). drawView renders exactly its decisions;
     gauntletcheck proves them in plain Node.
+- `model.js` / `policy.js` — PLAICRAFT (#1625): `model.js` is the one
+    definition of the seat's 32 senses (`featurize`) + the tiny MLP forward
+    pass + `createModelPolicy()` — export, trainer and the live seat all use
+    it, so a model can never train on one world and play on another.
+    `policy.js` is GENERATED weights (1517 numbers, quantized to 4 decimals) —
+    never hand-edit; `npm run plaicraft:train` regenerates. M on the hero
+    select seats the brain in slot 2 (`plaicraftcheck` gates the pipeline:
+    recordings replay exact, seat predicts the expert ≥90% moves, dead-weight
+    mutant collapses). Dataset format: `data/plaicraft/README.md`; write-up:
+    route `/research`.
 
 ## Fidelity notes
 

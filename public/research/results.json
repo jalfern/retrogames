@@ -1,0 +1,301 @@
+{
+ "meta": {
+  "name": "plaicraft-bc/v1",
+  "game": "gauntlet",
+  "trained": "2026-11-06",
+  "epochs": 24,
+  "seed": 7,
+  "rows": 134852,
+  "method": "BC Adam BCE, fixed hparams",
+  "sources": {
+   "practice": "seeds 0..11",
+   "heldout": "seeds 100..107 (scored once, below)"
+  }
+ },
+ "teacherForcing": {
+  "practice": {
+   "rows": 134852,
+   "moveAcc": 0.9773,
+   "intentAcc": 1,
+   "padAcc": 0.9301,
+   "loss": 0.1021
+  },
+  "heldout": {
+   "rows": 86566,
+   "moveAcc": 0.9775,
+   "intentAcc": 1,
+   "padAcc": 0.9316,
+   "loss": 0.1015
+  }
+ },
+ "curve": [
+  {
+   "epoch": 4,
+   "rows": 20000,
+   "moveAcc": 0.9674,
+   "intentAcc": 1,
+   "padAcc": 0.902,
+   "loss": 0.1468
+  },
+  {
+   "epoch": 8,
+   "rows": 20000,
+   "moveAcc": 0.9727,
+   "intentAcc": 1,
+   "padAcc": 0.9168,
+   "loss": 0.1257
+  },
+  {
+   "epoch": 12,
+   "rows": 20000,
+   "moveAcc": 0.9749,
+   "intentAcc": 1,
+   "padAcc": 0.9226,
+   "loss": 0.1151
+  },
+  {
+   "epoch": 16,
+   "rows": 20000,
+   "moveAcc": 0.9764,
+   "intentAcc": 1,
+   "padAcc": 0.9277,
+   "loss": 0.1081
+  },
+  {
+   "epoch": 20,
+   "rows": 20000,
+   "moveAcc": 0.977,
+   "intentAcc": 1,
+   "padAcc": 0.9274,
+   "loss": 0.1025
+  },
+  {
+   "epoch": 24,
+   "rows": 20000,
+   "moveAcc": 0.9786,
+   "intentAcc": 1,
+   "padAcc": 0.9336,
+   "loss": 0.0985
+  }
+ ],
+ "rollout": {
+  "practice": {
+   "wins": {
+    "cpu": 12,
+    "model": 12,
+    "of": 12
+   },
+   "avgLevels": {
+    "cpu": 10,
+    "model": 10
+   },
+   "avgScore": {
+    "cpu": 114883.3,
+    "model": 116604.2
+   },
+   "avgKills": {
+    "cpu": 111.2,
+    "model": 111.9
+   },
+   "partnerDeaths": {
+    "cpu": 0,
+    "model": 1
+   },
+   "goldByPartner": {
+    "cpu": 1.4,
+    "model": 1.6
+   },
+   "perSeed": [
+    {
+     "seed": 0,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 1,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 2,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 3,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 4,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 5,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 6,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 7,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 8,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 9,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 10,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 11,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    }
+   ]
+  },
+  "heldout": {
+   "wins": {
+    "cpu": 8,
+    "model": 8,
+    "of": 8
+   },
+   "avgLevels": {
+    "cpu": 10,
+    "model": 10
+   },
+   "avgScore": {
+    "cpu": 111275,
+    "model": 121306.3
+   },
+   "avgKills": {
+    "cpu": 103.4,
+    "model": 121.1
+   },
+   "partnerDeaths": {
+    "cpu": 0,
+    "model": 1
+   },
+   "goldByPartner": {
+    "cpu": 1.1,
+    "model": 1.3
+   },
+   "perSeed": [
+    {
+     "seed": 100,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 101,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 102,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 103,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 104,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 105,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 106,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    },
+    {
+     "seed": 107,
+     "cpuLevels": 10,
+     "cpuWon": true,
+     "modelLevels": 10,
+     "modelWon": true,
+     "modelVerified": true
+    }
+   ]
+  }
+ }
+}

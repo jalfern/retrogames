@@ -14,6 +14,7 @@ import ArcadeShowcase from './pages/ArcadeShowcase'
 import ForgeBoard from './pages/ForgeBoard'
 import ForgeLog from './pages/ForgeLog'
 import ShiftReport from './pages/ShiftReport'
+import Research from './pages/Research'
 import { audioController } from './utils/AudioController'
 
 function RandomHome() {
@@ -241,6 +242,7 @@ function AppShell() {
         <Route path="/forge" element={<div className="w-full h-full relative"><ForgeBoard /></div>} />
         <Route path="/forge/log" element={<div className="w-full h-full relative"><ForgeLog /></div>} />
         <Route path="/forge/report" element={<div className="w-full h-full relative bg-black"><ShiftReport /></div>} />
+        <Route path="/research" element={<div className="w-full h-full relative bg-black"><Research /></div>} />
         <Route path="*" element={<Navigate to="/" replace />} />
         {GAMES.map(game => (
           <Route
