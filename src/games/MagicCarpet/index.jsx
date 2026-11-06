@@ -840,6 +840,11 @@ const MagicCarpetGame = () => {
                 fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },
                 veil: () => { gs.invis = 400; return gs.invis },
                 killHut: () => { const hs = gs.huts[0]; hs.burn = 0; hs.dead = true; return 1 },
+                // #1673 (phone pass): the browser-side tray/tap gates need a spell
+                // learned without chasing grimoire RNG, and HUD->CSS px mapping for
+                // real touchscreen taps at 390x844.
+                arm: (id) => { if (!gs.learned.includes(id)) gs.learned.push(id); gs.mana = 100; gs.coolL = 0; gs.coolR = 0; return [...gs.learned] },
+                hudRect: () => { const r = canvas.getBoundingClientRect(); return { left: r.left, top: r.top, w: r.width, h: r.height } },
                 smokePuffs: () => (renderer ? renderer.smokeCount() : -1),
                 crumbles: () => (renderer ? renderer.ashCount() : -1),
                 trailMotes: () => (renderer ? renderer.particleCount() : -1),
