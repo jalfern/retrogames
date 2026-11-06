@@ -21,6 +21,12 @@ export const INFO_MSGS = [
     'TEN MAZES AWAITS',
 ]
 
+// #1641: while the trained net actually holds seat 2 in the live demo, the
+// ticker says so — these lines join the cycle ONLY when netdemo is driving
+// (the shell passes them; the planner-replay fallback keeps INFO_MSGS and
+// stops claiming the brain). Same fit rule: one short line.
+export const NET_MSGS = [...INFO_MSGS, 'BC NET PLAYS SEAT 2', 'HELD-OUT 8/8 WINS']
+
 export const PRESS = 'PRESS ANY KEY TO CHOOSE'
 export const DIM = 'rgba(3,3,12,0.55)'
 
@@ -28,8 +34,8 @@ const CHAR_EM = 0.6
 
 const fitSize = (text, w, max) => Math.max(9, Math.min(max, Math.floor((w * 0.92) / (CHAR_EM * text.length))))
 
-export function attractFrame(tick, w, h, hud = HUD, hi = 0) {
-    const msg = cycleAttract(tick, INFO_MSGS, HOLD)
+export function attractFrame(tick, w, h, hud = HUD, hi = 0, msgs = INFO_MSGS) {
+    const msg = cycleAttract(tick, msgs, HOLD)
     const lines = [
         { text: msg, x: w / 2, y: h * 0.42, size: fitSize(msg, w, 10), col: '#8fa3d8', glow: 0 },
         { text: PRESS, x: w / 2, y: Math.min(h * 0.58, h - hud - 40), size: fitSize(PRESS, w, 18), col: '#e9f7ff', glow: 0, blink: true },
