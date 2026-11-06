@@ -7,6 +7,7 @@
 // to `gs.bank >= gs.quota * 100` in src/games/MagicCarpet/sim.js and watch
 // 'equilibrium' go red; restore.
 
+import { readFile } from 'node:fs/promises'
 import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
@@ -1106,6 +1107,44 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         r.check('a world regen closes an open spellbook', gs2.level === 1 && gs2.book === false,
             `level ${gs2.level + 1} book ${gs2.book} bank ${Math.floor(gs2.bank)} at t=${t}`)
     }
+}
+
+// ---- HUD geometry: the score must stay inside the canvas (#1681)
+// The score is the only HUD text pinned to a fixed x near the right edge. At
+// x=302 in 7px monospace its six-digit box spanned [302, 327.2] against
+// W=320, so the last digits were clipped in EVERY orientation (desktop
+// full-bleed, portrait and landscape letterbox alike). Measure the extent the
+// way the browser will: monospace advance is 0.6em (Chrome's default measured
+// 0.6001em at 7px on 2026-11-06), digit count from the padStart.
+// Mutation guide: restore `fillText(..., 302, y0 + 11)` left-aligned @7px → red.
+{
+    const hudSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+    const lines = hudSrc.split('\n')
+    const si = lines.findIndex((l) => /fillText\(String\(gs\.score\)\.padStart\(\d+,\s*'0'\)/.test(l))
+    let fit = false, detail = 'score fillText not found'
+    if (si >= 0) {
+        const scoreLine = lines[si]
+        const digits = +scoreLine.match(/padStart\((\d+),\s*'0'\)/)[1]
+        const xExpr = scoreLine.match(/padStart\(\d+,\s*'0'\),\s*([^,]+),/)[1].trim()
+        const wm = xExpr.match(/^W\s*-\s*(\d+)$/)
+        const x = wm ? W - +wm[1] : parseFloat(xExpr)
+        // Canvas state = last assignment wins: walk up to the nearest font and
+        // textAlign before the fillText (they may be any number of lines apart).
+        let fs = null, align = null
+        for (let i = si - 1; i >= 0 && (fs === null || align === null); i--) {
+            const fm = lines[i].match(/ctx\.font = '(\d+(?:\.\d+)?)px/)
+            const am = lines[i].match(/ctx\.textAlign = '(\w+)'/)
+            if (fm && fs === null) fs = parseFloat(fm[1])
+            if (am && align === null) align = am[1]
+        }
+        if (fs === null) fs = 7
+        if (align === null) align = 'left'
+        const tw = digits * 0.6 * fs
+        const [x0, x1] = align === 'right' ? [x - tw, x] : [x, x + tw]
+        fit = x0 >= 0 && x1 <= W
+        detail = `font ${fs}px ${align} x=${wm ? `W-${wm[1]}` : x} extent [${x0.toFixed(1)}, ${x1.toFixed(1)}] vs W=${W}`
+    }
+    r.check('HUD score fits inside the canvas (#1681)', fit, detail)
 }
 
 // ---- browser pass: boots in Chrome, starts, drives through the contract, zero errors
