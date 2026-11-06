@@ -18,7 +18,7 @@ import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } fro
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
 import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
 import { pressSlot, releaseSlot, slotActive, clearSlot, currentPad, connectedSlots } from '../../utils/onePad'
 import { buildSprites, buildFloor } from './art.js'
@@ -547,6 +547,14 @@ const SmashTVGame = () => {
             ctx.fillRect(0, 0, CW, HUD_H)
             ctx.strokeStyle = '#2b3348'
             ctx.strokeRect(0.5, 0.5, CW - 1, HUD_H - 1)
+            // #1650 WATCH: tint P1's HUD block emerald so a seated partner sees
+            // at a glance which stick the proven brain is driving (seat 2 is yours).
+            if (watchingRef.current) {
+                ctx.fillStyle = 'rgba(110,231,160,0.16)'
+                ctx.fillRect(1, 1, 88, HUD_H - 2)
+                ctx.strokeStyle = 'rgba(110,231,160,0.6)'
+                ctx.strokeRect(1.5, 1.5, 87, HUD_H - 3)
+            }
             text(`HI ${String(hiShown).padStart(6, '0')}`, 8, 10, 8, '#ffd23f', 3, 'left')
             const r1 = respawnState(gs.players[0].deadT, gs.tick)
             text(`1UP ${String(gs.players[0].score).padStart(6, '0')}${r1.down ? ` ${r1.secs}` : ''}`, 8, 20, 8, r1.down ? (r1.on ? '#ff5d5d' : '#5a1f1f') : '#ff5d5d', 3, 'left')
@@ -893,9 +901,7 @@ const SmashTVGame = () => {
             </div>
             {/* #1637 WATCH — the proven brain runs seat 1; any seat-1 input takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

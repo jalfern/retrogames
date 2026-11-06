@@ -19,7 +19,7 @@ import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan, decide } from './planner.js'
 import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
     HEAT_XS, HEAT_VXS, HEAT_EPISODES } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
@@ -536,9 +536,7 @@ const LunarLanderGame = () => {
             </div>
             {/* #1637 WATCH — the proven pilot lands the legs; any input takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {screen === 'play' && !paused && !replayMode && !labMode && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
