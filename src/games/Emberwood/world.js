@@ -3,13 +3,16 @@
 //   T tree  # rock/wall  = fence  H house wall  R roof  I sign  ~ water  b bridge
 //   . floor  " tall grass (slashable)  , path  < exit portal  C cracked wall
 //   a ash floor (walkable, act two)  v crag (solid, act two)
+//   'A' is a burned cinder face: solid to all, but the CINDERSTEP (d4-2 crack
+//   reveal) lets the HERO walk it (#1623) — arrows always pass through.
 // Entity meta (all in tile coords):
 //   chests:[{id,x,y,item,after}]   doors:[{id,x,y,kind,switch,to,entry:[x,y]}]
 //   switches:[{id,x,y,via,opens}]  plates:[{id,x,y}]  cracks:[{id,x,y,reveal,amount}]
-//   enemies:[{type,x,y,i,drop,boss}]  npcs:[{id,kind,x,y,msg,wander:[[x,y]..]}]  signs:[{x,y,msg}]
+//   enemies:[{type,x,y,i,drop,boss,perch}]  npcs:[{id,kind,x,y,msg,wander:[[x,y]..]}]  signs:[{x,y,msg}]
 //   warps:[{x,y,to,sx,sy}]  exits:{n/e/s/w:{to,x,y}}  spawn:[x,y] entry point
 //   braziers:[{x,y}] (decor)  vents:[{id,x,y}] (act two: spore vents, seal with a gust)
 // kind: 'key' | 'bigkey' | 'switch' (opens when linked switch fires) | 'heart' (Ember Heart).
+// crack reveal: 'embers' | 'bow' | 'heart' | 'arrows' | 'cinderstep'.
 
 export const TS = 16
 export const SW = 16
@@ -24,14 +27,14 @@ export const SCREENS = {
         'T..~~~......T..T',
         'T..~~~......T..T',
         'T...~~......##.T',
-        'T.....""....##..',
+        '......""....##..',
         'T.."""".....#..T',
         'T......T.......T',
         'T.TT.....###...T',
         'T.....S.#######T',
         'TTTT.TTTTTTTTTTT',
     ], {
-        exits: { e: { to: 'ow-10', x: 0, y: 5 }, s: { to: 'ow-01', x: 5, y: 0 } },
+        exits: { e: { to: 'ow-10', x: 0, y: 5 }, s: { to: 'ow-01', x: 5, y: 0 }, w: { to: 'ow-40', x: 15, y: 5 } },
         warps: [{ x: 6, y: 9, to: 'd1-e0', sx: 7, sy: 8 }],
         cracks: [{ id: 'ck-00', x: 3, y: 1, reveal: 'embers', amount: 25 }],
         chests: [{ id: 'ch-00', x: 12, y: 1, item: 'heart' }],
@@ -127,6 +130,62 @@ export const SCREENS = {
             { x: 1, y: 8, msg: 'A COLPORTER HIDES IN THE SOUTHWEST CORNER — BUT ONLY FOR THOSE WHO CARRY THE EMBER BLADE.' },
         ],
         enemies: [{ type: 'cinderling', x: 13, y: 9, i: 0 }],
+    }),
+
+    // ---------------- THE CLIFFS — the burned face and the hawk's mesa (#1623) ----------------
+    'ow-40': S('ow-40', 'THE CLIFFS', [
+        'TTTTTTTTTTTTTTTT',
+        'T....<.........T',
+        'TAAAAAAAAAAAAAAT',
+        'T.......T......T',
+        'T..T....T...T..T',
+        'T...............',
+        'T..""...T..""..T',
+        'T.S......T.....T',
+        'T.......T......T',
+        'T.."".....""...T',
+        'TTTTTTTTTTTTTTTT',
+    ], {
+        exits: { e: { to: 'ow-00', x: 0, y: 5 } },
+        spawn: [14, 5],
+        warps: [{ x: 6, y: 1, to: 'ow-41', sx: 8, sy: 6 }, { x: 2, y: 7, to: 'd4-0', sx: 7, sy: 8 }],
+        cracks: [],
+        chests: [{ id: 'ch-ow4', x: 13, y: 8, item: 'arrows' }],
+        signs: [
+            { x: 6, y: 3, msg: 'THE BURNED FACE — NO STAIRS, NO ROPES. THE MOUNTAIN KEEPS ITS OWN STEPS, AND THEY STILL BURN.' },
+            { x: 3, y: 7, msg: 'HAWKROOST — A ROOST HUNG IN BONE. THE HAWK OWNS THE MESA.' },
+        ],
+        enemies: [
+            { type: 'cinderling', x: 10, y: 4, i: 0 },
+            { type: 'bat', x: 13, y: 6, i: 1 },
+            { type: 'husk', x: 5, y: 9, i: 2 },
+            { type: 'wisp', x: 13, y: 3, i: 3 },
+        ],
+    }),
+    'ow-41': S('ow-41', 'THE CLIFFTOP', [
+        'TTTTTTTTTTTTTTTT',
+        'T.....T........T',
+        'T..C..........TT',
+        'T......T...~...T',
+        'T....T.....~...T',
+        'T....T...<.....T',
+        'T....T.........T',
+        'T.........T....T',
+        'T......T...""..T',
+        'T..""....T.."".T',
+        'TTTTTTTTTTTTTTTT',
+    ], {
+        exits: {},
+        spawn: [8, 6],
+        warps: [{ x: 8, y: 5, to: 'ow-40', sx: 5, sy: 1 }],
+        cracks: [{ id: 'ck-41', x: 3, y: 2, reveal: 'embers', amount: 40 }],
+        chests: [{ id: 'ch-41h', x: 5, y: 7, item: 'heart' }],
+        signs: [{ x: 11, y: 7, msg: 'THE WIND KEEPS THE VIEW. BELOW, THE VALE BURNS SOFT AND GOLD. THE HAWK NEVER LOOKS DOWN.' }],
+        enemies: [
+            { type: 'wisp', x: 9, y: 4, i: 0 },
+            { type: 'cinderling', x: 3, y: 6, i: 1 },
+            { type: 'sprig', x: 12, y: 8, i: 2 },
+        ],
     }),
 
     // ---------------- DUNGEON 1 — BRAMBLE HOLLOW (the bow lives here) ----------------
@@ -338,6 +397,99 @@ export const SCREENS = {
         chests: [{ id: 'ch-boss2', x: 12, y: 1, item: 'emberheart', after: 'boss2' }],
         enemies: [{ type: 'wyrm', x: 7, y: 4, i: 0, boss: 2 }],
         warps: [],
+    }),
+
+    // ---------------- DUNGEON 4 — HAWKROOST (the CINDERSTEP lives here, #1623) ----------------
+    'd4-0': S('d4-0', 'HAWKROOST I', [
+        '################',
+        '#..............#',
+        '#..............#',
+        '#..##..........#',
+        '#..##..........#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#......##......#',
+        '#<.............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8],
+        doors: [{ id: 'dr4-0', x: 7, y: 0, kind: 'key', to: 'd4-1', entry: [7, 8] }],
+        chests: [{ id: 'ch-40', x: 12, y: 2, item: 'key' }],
+        enemies: [
+            { type: 'cinderling', x: 4, y: 6, i: 0, drop: 'key' },
+            { type: 'bat', x: 10, y: 4, i: 1 },
+            { type: 'wisp', x: 6, y: 7, i: 2 },
+        ],
+        warps: [{ x: 1, y: 9, to: 'ow-40', sx: 2, sy: 8 }],
+    }),
+    'd4-1': S('d4-1', 'HAWKROOST II', [
+        '################',
+        '#...A..........#',
+        '#..............#',
+        '#....#..#......#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#......##......#',
+        '#..............#',
+        '#..............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8],
+        doors: [{ id: 'dr4-1', x: 7, y: 0, kind: 'switch', switch: 'sw-4a', to: 'd4-2', entry: [7, 8] }],
+        switches: [{ id: 'sw-4a', x: 4, y: 1, via: 'arrow', opens: 'dr4-1' }],
+        chests: [{ id: 'ch-41', x: 12, y: 5, item: 'key' }],
+        enemies: [
+            { type: 'bat', x: 3, y: 3, i: 0 },
+            { type: 'spitter', x: 12, y: 7, i: 1 },
+            { type: 'husk', x: 10, y: 8, i: 2 },
+        ],
+        warps: [],
+    }),
+    'd4-2': S('d4-2', 'HAWKROOST III', [
+        '################',
+        '#..............#',
+        '#..........C...#',
+        '#..####........#',
+        '#..#..#........#',
+        '#..####........#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8],
+        doors: [{ id: 'dr4-2', x: 7, y: 0, kind: 'key', to: 'd4-3', entry: [7, 8] }],
+        cracks: [{ id: 'ck-42', x: 11, y: 2, reveal: 'cinderstep' }],
+        chests: [{ id: 'ch-42', x: 3, y: 8, item: 'heart' }],
+        enemies: [
+            { type: 'husk', x: 10, y: 4, i: 0, drop: 'key' },
+            { type: 'spitter', x: 4, y: 6, i: 1 },
+            { type: 'pod', x: 8, y: 9, i: 2 },
+        ],
+        warps: [],
+    }),
+    'd4-3': S('d4-3', 'THE CINDERHAWK', [
+        '################',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#..............#',
+        '#<.............#',
+        '################',
+    ], {
+        dark: true, spawn: [7, 8],
+        doors: [],
+        signs: [{ x: 7, y: 1, bossHint: true, msg: 'THE HAWK STRIKES ON A LOCKED LINE. WHILE IT RINGS IT IS UNARMED BELOW — SLASH, THEN CROSS THE MESA.' }],
+        chests: [{ id: 'ch-boss4', x: 4, y: 1, item: 'heart', after: 'boss4' }],
+        enemies: [{ type: 'hawk', x: 7, y: 4, i: 0, boss: 4, perch: [[4, 3], [11, 3], [7, 7]] }],
+        warps: [{ x: 1, y: 9, to: 'ow-40', sx: 2, sy: 8 }],
     }),
 
     // ==================== ACT TWO — ASHFELL ====================

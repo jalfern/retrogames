@@ -32,6 +32,7 @@ const ENEMY_SPEC = {
     maw: { hp: 8, w: 26, h: 26, dmg: 1, boss: 1 },
     wyrm: { hp: 6, w: 22, h: 22, dmg: 1, boss: 2 },
     king: { hp: 10, w: 26, h: 26, dmg: 1, boss: 3 },
+    hawk: { hp: 9, w: 20, h: 16, dmg: 1, boss: 4 },
 }
 
 const HERO = { w: 10, h: 8, speed: 1.45 }
@@ -57,7 +58,7 @@ export function createSim(seed = 1) {
         rng: mulberry32(seed >>> 0),
         screen: 'ow-11',
         hero: { x: 5 * TS + 8, y: 6 * TS + 6, dir: 'up', hp: 3, max: 3, inv: 0, hurt: 0 },
-        items: { sword: true, bow: false, shield: false, blade: false, gale: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
+        items: { sword: true, bow: false, shield: false, blade: false, gale: false, step: false, bombs: 0, arrows: 0, potions: 0, keys: 0, bigkey: false },
         score: 0,
         swing: 0, swingDir: 'down', swingId: 0, cool: 0, holdT: 0, drawing: false,
         arc: 0, arcDir: 'down', arcId: 0,
@@ -73,7 +74,7 @@ export function createSim(seed = 1) {
         cut: {},           // 'scr:x,y' tall grass permanently cut
         flags: {
             cracked: {}, doorsOpen: {}, switchesOn: {}, chestsOpen: {}, ventsOff: {},
-            killed: {}, boss1: false, boss2: false, boss3: false,
+            killed: {}, boss1: false, boss2: false, boss3: false, boss4: false,
             emberTaken: false, dawnheart: false,
         },
         roomName: '', nameT: 0,
@@ -101,7 +102,7 @@ function stepAmbient(sim) {
     emit(sim, 'mote', 12 + r(1) * 232, 12 + r(2) * 152, { z: 5 + r(3) * 11 })
 }
 
-function blocked(sim, x, y, w, h, phase) {
+function blocked(sim, x, y, w, h, phase, climb) {
     if (phase) return false
     const s = scr(sim)
     const x0 = tileOf(x - w / 2), x1 = tileOf(x + w / 2 - 0.001)
@@ -117,6 +118,11 @@ function blocked(sim, x, y, w, h, phase) {
                 // crag, unless a sealed vent has crumbled it into a step
                 const vt = (s.vents || []).find(v => v.x === tx && v.y === ty)
                 if (!(vt && sim.flags.ventsOff[vt.id])) return true
+            }
+            else if (ch === 'A') {
+                // burned cinder face (#1623): solid to everything, but the
+                // CINDERSTEP lets the hero walk it (climb param, hero-only)
+                if (!climb) return true
             }
             else if (isSolidTile(ch)) return true
             else if (ch === '.') {
@@ -191,6 +197,7 @@ function makeEnemy(e) {
         t: 0, st: 0, vx: 0, vy: 0, hitT: 0, open: 0, stagger: 0, hidden: e.type === 'sprig',
         charging: 0, rest: 0, chx: 0, chy: 0, gen: 0,
         mantle: e.type === 'king' ? 3 : 0, summoned: 0,
+        perch: (e.perch || []).map(p => [p[0] * TS + TS / 2, p[1] * TS + TS / 2 + 2]), roost: 0,
         fx: 0, fy: 1, seedOff: (e.i || 0) * 37 + 11, dead: false,
         seg: [],
     }
@@ -269,10 +276,11 @@ export function stepSim(sim, inp) {
         const len = Math.hypot(lx, ly)
         const vx = (lx / len) * HERO.speed
         const vy = (ly / len) * HERO.speed
-        if (!blocked(sim, h.x + vx, h.y, HERO.w, HERO.h)) h.x += vx
-        else if (vx !== 0) h.y += cornerNudge((d) => !blocked(sim, h.x + vx, h.y + d, HERO.w, HERO.h) && !blocked(sim, h.x, h.y + d, HERO.w, HERO.h))
-        if (!blocked(sim, h.x, h.y + vy, HERO.w, HERO.h)) h.y += vy
-        else if (vy !== 0) h.x += cornerNudge((d) => !blocked(sim, h.x + d, h.y + vy, HERO.w, HERO.h) && !blocked(sim, h.x + d, h.y, HERO.w, HERO.h))
+        const climb = !!sim.items.step // CINDERSTEP: the hero walks burned faces (#1623)
+        if (!blocked(sim, h.x + vx, h.y, HERO.w, HERO.h, false, climb)) h.x += vx
+        else if (vx !== 0) h.y += cornerNudge((d) => !blocked(sim, h.x + vx, h.y + d, HERO.w, HERO.h, false, climb) && !blocked(sim, h.x, h.y + d, HERO.w, HERO.h, false, climb))
+        if (!blocked(sim, h.x, h.y + vy, HERO.w, HERO.h, false, climb)) h.y += vy
+        else if (vy !== 0) h.x += cornerNudge((d) => !blocked(sim, h.x + d, h.y + vy, HERO.w, HERO.h, false, climb) && !blocked(sim, h.x + d, h.y, HERO.w, HERO.h, false, climb))
         if (Math.abs(lx) >= Math.abs(ly)) h.dir = lx > 0 ? 'right' : 'left'
         else h.dir = ly > 0 ? 'down' : 'up'
         tryPush(sim, lx, ly)
@@ -416,6 +424,7 @@ function grant(sim, item) {
     else if (item === 'emberheart') { h.max += 2; h.hp = h.max; sim.win = true; sim.flags.emberTaken = true; say(sim, 'THE EMBER HEART — THE WOOD IS SAFE', 600) }
     else if (item === 'dawnheart') { h.max += 2; h.hp = h.max; sim.win = true; sim.flags.dawnheart = true; say(sim, 'DAWN OVER EMBERWOOD — THE VALE IS FREE AT LAST', 700) }
     else if (item === 'gale') { sim.items.gale = true; say(sim, 'THE GALE CHARM! HOLD B, RELEASE TO LOOSE THE WIND', 260) }
+    else if (item === 'cinderstep') { sim.items.step = true; say(sim, 'THE CINDERSTEP! BURNED STONE REMEMBERS FOOTFALLS — THE FACE YIELDS', 280) }
     else if (item === 'bow') { sim.items.bow = true; sim.items.arrows += 10; say(sim, 'THE ELDER BOW! HOLD A TO DRAW, RELEASE TO LOOSE', 240) }
     else if (item === 'arrows') sim.items.arrows += 10
     else if (item === 'shield') sim.items.shield = true
@@ -684,6 +693,7 @@ function stepBombs(sim) {
                     else if (c.reveal === 'bow') grant(sim, 'bow')
                     else if (c.reveal === 'heart') grant(sim, 'heart')
                     else if (c.reveal === 'arrows') grant(sim, 'arrows')
+                    else if (c.reveal === 'cinderstep') grant(sim, 'cinderstep')
                 }
             }
         }
