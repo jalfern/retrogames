@@ -20,7 +20,9 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { SEG_LEN, ROAD_W, CAM_H, CAM_DEPTH, DRAW, SCENES } from './road.js'
 import { makeGame, step, stateHash, KMH, HIGH_TOP, LOW_TOP, W, H } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
-import { plan } from './planner.js'
+import { plan, decideTick } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { buildSprites, makeBackdrop } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -44,6 +46,9 @@ const OutRunGame = () => {
     const gearRef = useRef(1)
     const radioRef = useRef(0)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the autopilot takes the wheel
+    const watchingRef = useRef(false)
+    const watchLaneRef = useRef(1) // the planner's committed-lane memory, live
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hud = useRef({})
     const setHud = (k) => (el) => { hud.current[k] = el }
@@ -139,7 +144,14 @@ const OutRunGame = () => {
             if (sc === 'attract') { tickDemo(); return }
             if (sc === 'count') { countT--; if (countT <= 0) setMode('play'); return }
             if (sc !== 'play') return
-            doSim(computeInput())
+            // #1637 WATCH: the same lane policy outruncheck grades, reading the
+            // live road every tick — committed-lane memory rides in a ref.
+            if (watchingRef.current) {
+                const d = decideTick(gs, watchLaneRef.current)
+                watchLaneRef.current = d.lane
+                gearRef.current = d.gear // keep gear 0 (LOW) past doSim's falsy-refill
+                doSim({ steer: d.steer, gas: d.gas, brake: d.brake, gear: d.gear })
+            } else doSim(computeInput())
         }
 
         // ---------------------------------------------------- projection render ----
@@ -355,6 +367,7 @@ const OutRunGame = () => {
         const goPlay = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin >>> 0 : 0); gearRef.current = 1; demoAt = 0
+            watchingRef.current = false; setWatching(false); watchLaneRef.current = 1 // #1637 a new run starts with the wheel in your hand
             backdrop = makeBackdrop(gs.stage.theme)
             lean = 0; shake = 0; flash = 0
             audioController.startMusic(RADIOS[radioRef.current].track)
@@ -373,6 +386,9 @@ const OutRunGame = () => {
                 return
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            // #1637 WATCH: Y hands the road to the autopilot; any driving key takes it back.
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
             if (ev.code === 'KeyB' || ev.code === 'ShiftLeft' || ev.code === 'ShiftRight' || ev.code === 'KeyG') gearEdge = true
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
@@ -398,6 +414,7 @@ const OutRunGame = () => {
                 press: (codes) => { for (const c of codes) held.add(c) },
                 release: (codes) => { for (const c of codes) held.delete(c) },
                 gear: () => { gearRef.current = gearRef.current ? 0 : 1 },
+                watching: () => watchingRef.current, // #1637 watchcheck: is the autopilot driving?
                 setGear: (g) => { gearRef.current = g ? 1 : 0 },
                 start: () => goPlay(),
                 radio: (i) => { radioRef.current = i ? Math.min(2, Math.max(0, i)) : 0 },
@@ -461,6 +478,17 @@ const OutRunGame = () => {
                 <span>GEAR <span ref={setHud('gear')} className="text-[#5dc8ff]">HIGH</span></span>
                 <span>STAGE <span ref={setHud('stage')} className="text-[#ffd23f]">1/5</span></span>
             </div>
+            {/* #1637 WATCH — the autopilot drives its proven line; any input takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

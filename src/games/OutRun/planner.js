@@ -22,7 +22,7 @@ export function plan(opts = {}) {
     const script = []
     const maxTicks = opts.maxTicks || 120000
     while (!g.end && g.tick < maxTicks) {
-        const inp = decide(g, lane)
+        const inp = decideTick(g, lane)
         lane = inp.lane
         script.push({ steer: inp.steer, gas: inp.gas, brake: inp.brake, gear: inp.gear })
         step(g, script[script.length - 1])
@@ -42,7 +42,10 @@ export function plan(opts = {}) {
 // the three lane centres, ordered near-to-far from `from`
 const laneCentres = () => [1, 0, 2].sort((a, b) => Math.abs(a - 1) - Math.abs(b - 1))
 
-function decide(g, prevLane) {
+// #1637 WATCH: exported for the live watcher — the SAME policy outruncheck
+// grades, tick by tick against the live sim. `prevLane` is the watcher's own
+// committed-lane memory; the game keeps it in a ref and hands it back.
+export function decideTick(g, prevLane) {
     const st = g.stage
     const seg = st.segs[Math.min(st.segCount - 1, Math.floor(g.position / SEG_LEN))]
     const locked = g.spin > 0
