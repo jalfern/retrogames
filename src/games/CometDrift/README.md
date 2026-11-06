@@ -261,8 +261,23 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
 - No cups, items, or real music (the engine bed is a synthesized voice with
   scrape/whoosh layers since #440 item 6, but there is no music track) —
   music out of scope per #419.
-- CPU karts never chain multi-tier drifts deliberately; they hold one bend
-  and bank whatever tier they reach.
+- **CLOSED by #1687:** CPU karts drive the drift ladder DELIBERATELY now
+  (`DRIFT_PLAN` in sim.js): a skill-scaled tier target (BLAZE/DUSTY chase
+  gold, NOVA/REX violet, ZEPPA/GRIZZ bank blue early), a hold that keeps the
+  drift alive across a short corner-chain while the tyres are down and the
+  drift is inside its steer-authority window, a bank-onto-exit release the
+  moment the target is met, and an on-road safety gate that stops the
+  pre-change habit of over-holding a bend off the asphalt. Measured
+  (4 courses x 4 seeds, cometcheck): field tier-points up 12–61% per course,
+  violet releases up everywhere, gold column leads with the front markers
+  (313 vs 209), rival spins unchanged (seeded mistakes stay spec), the
+  autopilot line untouched (the certified `decide()` branch keeps its own
+  rule — pinned by a static gate). Residual below; gates + corner-luck
+  mutant in cometcheck (#1687).
+- Boost links don't combo: a release ends it — re-seating a drift mid-boost
+  starts a fresh charge with no carry or extension, so there is still no
+  MK-style linked-combo, and `DRIFT_PLAN` targets are static per skill, not
+  read from the corner the rival is actually in.
 - Sand and cliff are surfaces + clamp; no dynamic deformation.
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).

@@ -60,6 +60,21 @@ export const TIERS = [
     { t: 165, dur: 90, over: 3.6 },
 ]
 
+// #1687 deliberate drift-economy for the field (used by brain(), rivals only):
+// a skill-scaled tier target — the front markers chase gold, the back markers
+// bank blue early — a hard hold cap (steer authority bottoms at
+// CFG.driftDecayT; the slack past it lets a front runner finish a gold while
+// still on-road, then it banks), and a corner-chain horizon that keeps a
+// hungry drift alive across a short straight link instead of paying a runt
+// tier onto it. kBend is the bend threshold shared with the start rule.
+// Pure + rng-free so cometcheck can gate the plan itself, not just outcomes.
+export const DRIFT_PLAN = {
+    chain: 2.4,
+    hold: 170,
+    kBend: 1 / 2200,
+    target: (skill) => (skill >= 0.84 ? TIERS[2].t : skill >= 0.81 ? TIERS[1].t : TIERS[0].t),
+}
+
 // #440 item 5: a rival's gold release is a distant sweep, not the player's.
 // Pure so cometcheck can gate it: quieter than the player's own boost at the
 // same tier, fades linearly with distance, silent past `mute`.
@@ -400,12 +415,31 @@ function brain(g, k, skill, driftSmart) {
     // brake window keeps the charge alive between the short grown-world
     // kinks), threshold scaled x1/3 with the grown radii.
     const bend = kmax > 1 / (driftSmart ? 3300 : 2200)
-    if (k.v > 5 && bend) inp.drift = true
+    // #1687 deliberate drift-economy for the field (the certified decide()
+    // line keeps its old hold-until-window rule). Before: any bend in the look
+    // window held the drift and the release banked whatever the corner fed it —
+    // golds happened, but only because the over-held drift walked the kart off
+    // the asphalt (the sandbank field spun ~25× a race). Now a rival drives the
+    // ladder like a player: start on a bend it can hold, chase its skill's tier
+    // target across a corner-chain while the tyres are down and the drift is
+    // still steerable, bank onto the exit straight when the target is met, and
+    // re-seat at the next bend.
+    if (driftSmart) {
+        if (k.v > 5 && bend) inp.drift = true
+    } else {
+        const onRoad = !k.offroad && k.wpress === 0
+        if (k.driftT === 0) {
+            inp.drift = k.v > 5 && bend && onRoad
+        } else {
+            const hungry = k.charge < DRIFT_PLAN.target(skill)
+            const chain = T.aheadK(k.idx, Math.round((look + 8) * DRIFT_PLAN.chain)) > DRIFT_PLAN.kBend
+            inp.drift = onRoad && k.driftT < DRIFT_PLAN.hold && (hungry ? chain : bend)
+        }
+    }
     return inp
 }
 
 const cpuInput = (g, k) => brain(g, k, k.skill, false)
-
 // the autopilot that drives the attract demo AND the harness win-proof:
 // same brain, top skill, smarter drift release.
 export function decide(g) {
