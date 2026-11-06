@@ -20,6 +20,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan, decide } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { WAVES } from './waves.js'
 import { PRESS, MESSAGES } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
@@ -45,6 +47,9 @@ const MissileBattleGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the intercept solver takes the keys
+    const watchingRef = useRef(false)
+    const watchHeldRef = useRef(new Map()) // the solver's target reservations, live
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -124,6 +129,9 @@ const MissileBattleGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
+            // #1637 WATCH: the same intercept solver missilecheck grades —
+            // youngest-threat-first, battery ammo balanced, reservations held.
+            if (watchingRef.current) { doSim(decide(gs, watchHeldRef.current)); keys.fTap = false; return }
             const inp = { l: keys.l, r: keys.r, u: keys.u, d: keys.d, fire: keys.f || keys.fTap }
             if (tap.on) { inp.aimTo = [tap.x, tap.y]; inp.fire = true; tap.on = false }
             doSim(inp)
@@ -275,6 +283,7 @@ const MissileBattleGame = () => {
             evLog.length = 0; parts.length = 0; trails.clear()
             keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = false
             tap.on = false
+            watchingRef.current = false; setWatching(false); watchHeldRef.current = new Map() // #1637 a new run starts with the keys in your hand
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -287,6 +296,9 @@ const MissileBattleGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y hands the sky to the solver; any driving key takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
@@ -306,6 +318,8 @@ const MissileBattleGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc !== 'play' || pausedRef.current) return
+            // #1637 WATCH: an aim tap is the player driving — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             const r = canvas.getBoundingClientRect()
             if (!r.width || !r.height) return
             tap.x = ((e.clientX - r.left) / r.width) * W
@@ -342,6 +356,7 @@ const MissileBattleGame = () => {
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the solver firing?
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
@@ -500,6 +515,17 @@ const MissileBattleGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MISSILE BATTLE')} onResume={handleResume} />}
+            {/* #1637 WATCH — the solver intercepts the storm; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

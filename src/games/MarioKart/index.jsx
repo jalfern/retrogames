@@ -6,6 +6,8 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
 import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
@@ -64,6 +66,7 @@ export default function MarioKart() {
     const screenRef = useRef('attract')
     const keysRef = useRef({})
     const tapRef = useRef(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the autopilot drives the GP
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
 
@@ -513,6 +516,7 @@ export default function MarioKart() {
             Object.assign(g, makeGame())
             st.screen = screen; screenRef.current = screen
             st.endT = 0
+            st.plan = false; setWatching(false) // #1637 a new GP starts with the wheel in your hands
             camA = g.karts[0].a
             // the pad would only cover the canvas on attract/end — withdraw
             // it there (the tap lands on the canvas itself, see tapRef)
@@ -547,6 +551,10 @@ export default function MarioKart() {
                 if (st.endT > 20) resetTo('attract')
                 return
             }
+            // #1637 WATCH: Y seats the proven autopilot (the same decide that
+            // runs the attract GP); any driving key takes the wheel back.
+            if (isWatchKey(e)) { st.plan = !st.plan; setWatching(st.plan); return }
+            if (st.plan && isTakeoverKey(e)) { st.plan = false; setWatching(false) }
             keys[e.code] = true
         }
         const ku = (e) => { keys[e.code] = false }
@@ -584,7 +592,13 @@ export default function MarioKart() {
             keys,
             screen: () => st.screen,
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
-            setPlan: (v) => { st.plan = !!v },
+            setPlan: (v) => { st.plan = !!v; setWatching(!!v) },
+            watching: () => !!st.plan, // #1637 watchcheck: is the autopilot driving?
+            probe: () => {
+                const P = g.karts[0]
+                return { tick: g.tick, screen: st.screen, phase: g.phase, place: P.place, lap: P.lap,
+                    v: +P.v.toFixed(3), item: P.item || null, spinT: P.spinT, end: g.end }
+            },
             best: () => st.best,
             fx: () => {
                 const P = g.karts[0]
@@ -612,6 +626,17 @@ export default function MarioKart() {
             onPointerDown={() => tapRef.current && tapRef.current()}
         >
             <canvas ref={canvasRef} data-fit="source" width={256} height={224} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
+            {/* #1637 WATCH — the proven autopilot drives the GP; any input takes over. */}
+            {padOn && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {padOn && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'SUPER MARIO KART')} onResume={handleResume} />}
         </div>
