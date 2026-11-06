@@ -1081,11 +1081,17 @@ if (process.argv.includes('--mutate')) {
         ['an attract message leaks the harness', 'src/games/Gauntlet/attract.js', "'TEN MAZES AWAITS',", "'gauntletcheck audits the HUD band',"],
         ['#554 guest draws only the partner (host invisible)', 'src/games/Gauntlet/seat.js', 'selfHero(gs, role) === gs.hero ? gs.partner : gs.hero', 'gs.partner'],
         ['#554 guest self resolves to the hero', 'src/games/Gauntlet/seat.js', "role === 'guest' && gs.partner ? gs.partner : gs.hero", 'gs.hero'],
-        ['#554 world reverts to the partner-only guard', 'src/games/Gauntlet/index.jsx', '            const other = otherEnt()\n            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)', '            if (gs.partner && !gs.partner.down && selfEnt() !== gs.partner) sprite(gs.partner.name.toLowerCase(), sx(gs.partner.x), sy(gs.partner.y), 11)'],
+        // anchor re-pinned 2026-11-06 (#601 main-fix): #1636 grew the draw into a
+        // block (BC-1 veil), so pin the guard head instead of the one-liner. Same
+        // disease — resolve the other hero by the old partner-only rule, which on
+        // the guest (selfEnt() === gs.partner) blinds the world to the host.
+        ['#554 world reverts to the partner-only guard', 'src/games/Gauntlet/index.jsx', '            const other = otherEnt()\n            if (other && !other.down) {', '            const other = gs.partner && selfEnt() !== gs.partner ? gs.partner : null\n            if (other && !other.down) {'],
         ['#554 minimap drops the other hero', 'src/games/Gauntlet/index.jsx', 'const mo = otherEnt()', 'const mo = null'],
         ['#554 HUD hides the other hero online', 'src/games/Gauntlet/index.jsx', 'hudOther && !hudOther.down && (gs.partnerHuman || net.role)', 'hudOther && !hudOther.down && gs.partnerHuman'],
         ['#554 shell stops routing through seat.js', 'src/games/Gauntlet/index.jsx', 'const otherEnt = () => otherHero(gs, net.role)', 'const otherEnt = () => null'],
-        ['#524 camera ignores the partner (P2 not framed)', 'src/games/Gauntlet/minimap.js', 'const ax = p ? (hero.x + p.x) / 2 : hero.x', 'const ax = hero.x'],
+        // anchor re-pinned 2026-11-06 (#601 main-fix): #1655 added the `pull`
+        // offset to the midpoint; the disease (centre on hero only) is unchanged.
+        ['#524 camera ignores the partner (P2 not framed)', 'src/games/Gauntlet/minimap.js', 'const ax = p ? (hero.x + p.x) / 2 + ((p.x - hero.x) / 2) * pull : hero.x', 'const ax = hero.x'],
         ['#524 the shared-view wall is removed from the sim', 'src/games/Gauntlet/sim.js', '    clampToSharedView(gs)\n    updateItems(gs)', '    updateItems(gs)'],
         ['#524 the edge is too loose to wall players in', 'src/games/Gauntlet/minimap.js', 'maxx: rect.camX / PX + VWC, maxy: rect.camY / PX + VHC', 'maxx: rect.camX / PX + VWC * 2, maxy: rect.camY / PX + VHC * 2'],
         ['#505 the partner ignores the hero heading (yo-yo pace)', 'src/games/Gauntlet/planner.js', 'if (vs > 0.012) {', 'if (false) {'],

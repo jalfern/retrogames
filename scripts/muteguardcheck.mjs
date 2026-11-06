@@ -136,6 +136,10 @@ const SAFE = {
     'watchcheck.mjs': 'mutates a copy at /tmp/forge/watch/, never scripts/watch.sh',
     'recmethods.mjs': 'writes JSON replay stamps, not source mutants',
     'replaycheck.mjs': 'writes JSON replay stamps, not source mutants',
+    // Read 2026-11-06 (#601 main-fix): every writeFileSync targets
+    // mkdtempSync(tmpdir()/shimcheck-*) — throwaway git repos, the lock dir
+    // under root, and the dead-shim copy. Nothing tracked is ever rewritten.
+    'shimcheck.mjs': 'mkdtemp fixture dirs + dead-shim copy under tmpdir; never rewrites tracked files',
 }
 
 function audit() {

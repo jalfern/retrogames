@@ -13,7 +13,11 @@ export const CORE = {
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
     'ciyamlcheck', 'shimcheck', 'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
-    'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', ['watchcheck', true], 'watchsoakcheck', 'watchphonecheck', 'watchpillcheck', 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true]],
+    // #1667 moved watchcheck to `smoke` (line below) but left its --mutate entry
+// here; the rewritten check is browser-only (requireDevServer hard-exits, and no
+// --mutate path survives the rewrite), so it froze the browser-free nightly
+// static job red every night from 2026-11-06 (#601). Smoke carries it now.
+'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', 'watchsoakcheck', 'watchphonecheck', 'watchpillcheck', 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true]],
   smoke: ['vpadboot', 'tapstartcheck', 'watchcheck'],
   paths: [
     'src/components/', 'src/utils/', 'src/config/', 'src/pages/',
