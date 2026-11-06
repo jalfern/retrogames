@@ -22,7 +22,7 @@ import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneG
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
 import WatchButton from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey, WATCH_HELP } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, WATCH_HELP, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK, CLOUD_LAYER, buildClouds } from './art.js'
 
@@ -558,6 +558,7 @@ const SSXGame = () => {
                 // #1624 takeover: a stick push or a canvas drag — the rider is yours
                 watchingRef.current = false
                 setWatching(false)
+                playWatchStop() // #1638: the handoff blip for touch takeover too
                 inp = decide(g, p)
             }
             else if (watchingRef.current) inp = decide(g, p) // #1624 the cold witness line, live
@@ -985,8 +986,15 @@ const SSXGame = () => {
             }
             if (pausedRef.current) return
             // #1624 WATCH: Y hands the hill to the prover; any driving key takes it back.
-            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            // #1638: both directions get the shared handoff blip.
+            if (isWatchKey(e)) {
+                const on = !watchingRef.current
+                watchingRef.current = on
+                setWatching(on)
+                if (on) playWatchStart(); else playWatchStop()
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
@@ -1022,6 +1030,7 @@ const SSXGame = () => {
         if (import.meta.env.DEV) {
             window.__ssxTest = {
                 watching: () => watchingRef.current, // #1624 watchcheck: is the prover driving?
+            watchSfx: watchSfxLog, // #1638 watchcheck: handoff blips ('start'/'stop')
                 probe: () => {
                     const p = g.riders[0]
                     return {
@@ -1368,6 +1377,7 @@ const SSXGame = () => {
                     <span ref={setHud('aPop')} data-apop="1" className="block mb-4 text-2xl font-black italic text-yellow-300 transition-opacity duration-200" style={{ opacity: 0, textShadow: '0 0 18px #f0f, 3px 3px 0 #000' }} />
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
+                    <p className="mt-2 text-xs text-cyan-200/50 tracking-widest">Y — WATCH THE PROVEN ROUTE</p>
                 </div>
             )}
 

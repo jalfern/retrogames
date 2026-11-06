@@ -7,6 +7,8 @@
 // attractBot, MYST solveScript — replayed live at real speed, never a video.
 // A game (or a position) with no proven route says "no guide yet".
 
+import { audioController } from './AudioController'
+
 export const WATCH_KEY = 'KeyY'
 
 // The registry help line, identical in every pilot's controls list.
@@ -24,3 +26,23 @@ export const isTakeoverKey = (e) => e.code !== WATCH_KEY && !CHROME.has(e.code)
 
 // Shared toast copy — the honesty clause of the issue: no fake demos.
 export const NO_GUIDE = 'no guide yet'
+
+// #1638 — the handoff blip. Rising when the prover takes the wheel, falling
+// when it hands the wheel back; one voice in every pilot. playTone is
+// lock-safe (silent no-op until the AudioContext exists), so no try/catch.
+// The log is what watchcheck drives against: a start that never blipped or a
+// declined guide that did is a red check.
+const SFX_LOG = []
+export const watchSfxLog = () => SFX_LOG.slice()
+
+export const playWatchStart = () => {
+  audioController.playTone(660, 0.07, 'square', 0.06)
+  audioController.playTone(990, 0.1, 'square', 0.06, 0.07)
+  SFX_LOG.push('start')
+}
+
+export const playWatchStop = () => {
+  audioController.playTone(880, 0.07, 'square', 0.06)
+  audioController.playTone(440, 0.12, 'square', 0.06, 0.07)
+  SFX_LOG.push('stop')
+}

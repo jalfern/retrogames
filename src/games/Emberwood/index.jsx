@@ -16,7 +16,7 @@ import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot, watchSnapshot, watchRestore } from './bot.js'
 import WatchButton from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey, WATCH_HELP } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, WATCH_HELP, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
 
 const FIXED_DT = 1000 / 60
@@ -345,11 +345,13 @@ export default function Emberwood() {
             watchSnapRef.current = watchSnapshot(sim)
             watchingRef.current = true
             setWatching(true)
+            playWatchStart() // #1638: the prover takes the wheel
         }
         const stopWatch = () => {
             if (!watchingRef.current) return
             watchingRef.current = false
             setWatching(false)
+            playWatchStop() // #1638: back to the player
             if (!sim.win && !sim.death) watchRestore(sim, watchSnapRef.current)
             watchSnapRef.current = null
         }
@@ -407,6 +409,7 @@ export default function Emberwood() {
             })
             window.__emberwoodTest = {
                 watching: () => watchingRef.current, // #1624 watchcheck
+            watchSfx: watchSfxLog, // #1638 watchcheck: handoff blips ('start'/'stop')
                 state: () => simState(sim),
                 heroPos: () => ({ x: sim.hero.x, y: sim.hero.y, dir: sim.hero.dir }),
                 reset: (seed) => { const fresh = createSim(seed || 11); Object.assign(sim, fresh); rend.buildScreen(sim.screen, sim.flags, sim.cut); setMode('play'); return simState(sim) },
@@ -594,6 +597,7 @@ export default function Emberwood() {
                     <div className="text-violet-300 text-sm tracking-widest mb-8">THE CINDER VALE</div>
                     <div className="text-emerald-200 text-base mb-2">{line}</div>
                     <div className="text-white/80 text-sm mt-6 animate-pulse">PRESS ANY KEY OR TAP TO BEGIN</div>
+                    <div className="text-stone-400 text-xs mt-2">Y — watch the proven route</div>
                     {/* #965: phones have no third pad button and tap-to-start means
                         "new journey" — the save needs its own tappable affordance
                         here, or a phone can never continue. The tap dispatches the
