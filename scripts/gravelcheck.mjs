@@ -21,6 +21,9 @@ import {
     digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from '../src/games/GravelYard/engine.js'
 import { createLockStep } from '../src/utils/lockstep.js'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
     SEATS, PAD_DELAY, HASH_EVERY, padMask, unmaskPad, wirePad, padsAt, seatOf, seatKinds, hostSeed,
 } from '../src/games/GravelYard/net.js'
@@ -339,14 +342,20 @@ console.log('— win proof (CPU crew) —')
 
 // ---------- #1672 lobby seats: twin-box lockstep proof (pure Node) ----------
 {
-    ok('#1672 roster: two lobby seats (the operator stays the CPU emitter)', SEATS === 2)
-    ok('#1672 seat law: host drives the digger (0), guest the truck (1)',
+    ok('#1705 roster: three lobby seats (digger, truck, operator)', SEATS === 3)
+    ok('#1672 seat law: host drives the digger (0), first joiner the truck (1)',
         seatOf('host') === 0 && seatOf('guest') === 1)
+    ok('#1705 seat law completes: slot IS seat — second joiner runs the console (2)',
+        seatOf('guest', 2) === 2)
     const kindsH = seatKinds('host'), kindsG = seatKinds('guest')
     ok('#1672 contract rows: own seat human, peer seat remote, operator cpu — offline none',
         kindsH[0].kind === 'human' && kindsH[1].kind === 'remote' && kindsH[2].kind === 'cpu' &&
         kindsG[0].kind === 'remote' && kindsG[1].kind === 'human' && kindsG[2].kind === 'cpu' &&
         seatKinds('solo') === null)
+    const kinds3 = seatKinds('guest', [0, 1, 2], 2)
+    ok('#1705 roster-driven rows: a live third seat reads remote to everyone else',
+        kinds3[0].kind === 'remote' && kinds3[1].kind === 'remote' && kinds3[2].kind === 'human' &&
+        seatKinds('host', [0, 1], 0)[2].kind === 'cpu')
     let rt = true
     for (let m = 0; m < 64; m++) if (padMask(unmaskPad(m)) !== m) rt = false
     ok('#1672 the six pad fields round-trip through the wire mask (all 64 states)', rt)
@@ -383,10 +392,10 @@ console.log('— win proof (CPU crew) —')
             for (const m of gOut) if (!dropped(1, m.k)) deliver(H, 1, m)
             if (!H.ls.ready(k) || !G.ls.ready(k)) { skipped++; continue }
             if (corrupt && k >= corrupt[0] && k < corrupt[1]) H.mirrors[0].set(k, { m: (((H.mirrors[0].get(k) || {}).m | 0) | 8 | 16) })
-            const pH = padsAt(H.mirrors[0], H.mirrors[1], k); pH[2] = H.em({ gs: H.gs, tick: H.gs.tick })
-            const pG = padsAt(G.mirrors[0], G.mirrors[1], k); pG[2] = G.em({ gs: G.gs, tick: G.gs.tick })
+            const pH = padsAt(H.mirrors, k); pH[2] = H.em({ gs: H.gs, tick: H.gs.tick })
+            const pG = padsAt(G.mirrors, k); pG[2] = G.em({ gs: G.gs, tick: G.gs.tick })
             stepGame(H.gs, pH); stepGame(G.gs, pG)
-            const pR = padsAt(H.mirrors[0], H.mirrors[1], k); pR[2] = refEm({ gs: ref, tick: ref.tick })
+            const pR = padsAt(H.mirrors, k); pR[2] = refEm({ gs: ref, tick: ref.tick })
             stepGame(ref, pR)
             if (H.gs.tick % HASH_EVERY === 0) {
                 const rk = H.gs.tick
@@ -407,6 +416,13 @@ console.log('— win proof (CPU crew) —')
         `tick ${clean.H.gs.tick}/${clean.G.gs.tick}`)
     ok('#1672 the shift actually ran (deterministic sim, not a frozen pair)',
         clean.H.gs.tick === 200 && simState(clean.H.gs) !== null)
+    // #1705 honesty retrofit: these twin gates were pad-blind while the wire
+    // normalizer erased the yard's mask field (padsAt saw empty pads and the
+    // hashes agreed VACUOUSLY). normalizeWirePad now passes {m}; pin movement
+    // so that class of green can never come back.
+    ok('#1705 twin pads are not empty: the digger actually drove on the wire pad',
+        clean.H.gs.digger.x > 3 && clean.G.gs.digger.x > 3,
+        `H x ${clean.H.gs.digger.x.toFixed(1)} G x ${clean.G.gs.digger.x.toFixed(1)}`)
 
     const stalled = twinRun({ hostPad, guestPad, dropWin: [50, 70] })
     ok('#1672 a lost pad window makes BOTH boxes wait the same ticks — nobody runs half a moment',
@@ -425,10 +441,92 @@ console.log('— win proof (CPU crew) —')
         `${simState(again.H.gs).hash} vs ${simState(clean.H.gs).hash}`)
 }
 
+// ---------- #1705 three-seat proof: the operator joins the room (pure Node) ----------
+{
+    const box = (seed, seat) => {
+        const gs = createGame(seed, 3)
+        const mirrors = [new Map(), new Map(), new Map()]
+        const out = []
+        const ls = createLockStep({
+            delay: PAD_DELAY,
+            hashEvery: HASH_EVERY,
+            send: (m) => { if (m.t === 'pad') mirrors[seat].set(m.k, m.p); out.push(m) },
+        })
+        ls.setPeers([0, 1, 2].filter((s) => s !== seat))
+        return { seat, gs, ls, mirrors, out, desync: false }
+    }
+    const relayTo = (dst, seat, m) => {
+        if (m.t === 'pad') { dst.mirrors[seat].set(m.k, m.p); dst.ls.gotPad(m.k, m.p, seat) }
+        else if (m.t === 'hs') { const r = dst.ls.gotHash(m.k, m.h, seat); if (r && r.desync !== undefined) dst.desync = true }
+    }
+    const tripleRun = ({ seed = 90210, ticks = 240, pads = [() => ({}), () => ({}), () => ({})], drop = null, corrupt = null }) => {
+        const B = [0, 1, 2].map((s) => box(seed, s))
+        const ref = createGame(seed, 3)
+        let desync = false, refMismatch = false, skipped = 0, gateChanges = 0
+        let lastGate = ref.plant.gate
+        for (let k = 0; k < ticks; k++) {
+            for (const s of [0, 1, 2]) B[s].ls.pumpTo(k + PAD_DELAY, () => wirePad(pads[s](k)))
+            const dropped = (seat, kk) => !!(drop && seat === drop[0] && kk >= drop[1] && kk < drop[2])
+            for (const s of [0, 1, 2]) {
+                const q = B[s].out.splice(0)
+                for (const m of q) if (!dropped(s, m.k)) for (const d of B) if (d.seat !== s) relayTo(d, s, m)
+            }
+            if (!B.every((b) => b.ls.ready(k))) { skipped++; continue }
+            if (corrupt && k >= corrupt[0] && k < corrupt[1]) B[0].mirrors[corrupt[2]].set(k, { m: (((B[0].mirrors[corrupt[2]].get(k) || {}).m | 0) | 8 | 16) })
+            const pR = padsAt(B[0].mirrors, k)
+            stepGame(ref, pR)
+            if (ref.plant.gate !== lastGate) { gateChanges++; lastGate = ref.plant.gate }
+            for (const b of B) stepGame(b.gs, padsAt(b.mirrors, k))
+            if (k % HASH_EVERY === 0) {
+                for (const b of B) { const r = b.ls.hash(k, simState(b.gs).hash); if (r && r.desync !== undefined) desync = true }
+                const rh = simState(ref).hash
+                for (const b of B) if (simState(b.gs).hash !== rh) refMismatch = true
+            }
+        }
+        return { B, desync: desync || B.some((b) => b.desync), refMismatch, skipped, gateChanges }
+    }
+    const pDigger = (k) => ({ right: k < 40, left: k >= 40 && k < 80, a: k % 30 < 4 })
+    const pTruck = (k) => ({ left: k % 20 < 10, up: k % 50 < 6, b: k % 37 < 3 })
+    const pOperator = (k) => ({ right: k % 50 < 2 })
+
+    const crew = tripleRun({ pads: [pDigger, pTruck, pOperator] })
+    ok('#1705 three boxes, one seed + three pad streams: every hash boundary agrees (240 ticks)',
+        !crew.desync && !crew.refMismatch && crew.B.every((b) => b.gs.tick === 240),
+        `ticks ${crew.B.map((b) => b.gs.tick).join('/')} desync=${crew.desync} refMismatch=${crew.refMismatch}`)
+    ok('#1705 the OPERATOR pad really moves the sim (gate cycled 5x from the wire)',
+        crew.gateChanges === 5 && crew.B[0].gs.plant.gate === 'wide',
+        `gate ${crew.B[0].gs.plant.gate} changes ${crew.gateChanges}`)
+    ok('#1705 every seat is live: the digger drove on its remote pad too',
+        crew.B[0].gs.digger.x > 3, `digger x ${crew.B[0].gs.digger.x.toFixed(1)}`)
+
+    const lag = tripleRun({ pads: [pDigger, pTruck, pOperator], drop: [2, 60, 80] })
+    ok('#1705 a lost OPERATOR pad window makes all three wait the same ticks — nobody runs half a moment',
+        lag.B.every((b) => b.gs.tick === 220) && !lag.desync && !lag.refMismatch,
+        `ticks ${lag.B.map((b) => b.gs.tick).join('/')} skipped ${lag.skipped}`)
+
+    const bad = tripleRun({ pads: [pDigger, pTruck, pOperator], corrupt: [100, 112, 0] })
+    ok('#1705 a divergent third box is CAUGHT at the hash boundary (the referee covers all peers)',
+        bad.desync === true)
+
+    const twice = tripleRun({ pads: [pDigger, pTruck, pOperator] })
+    ok('#1705 the three-seat exchange is replayable: same seed + scripts => identical final hash',
+        simState(twice.B[2].gs).hash === simState(crew.B[2].gs).hash,
+        `${simState(twice.B[2].gs).hash} vs ${simState(crew.B[2].gs).hash}`)
+
+    // The freeze fix, pinned at the source: the shipped wire handler must feed
+    // lockstep itself. (gauntletcheck's source-pin pattern — the twin/triple
+    // sims prove the design; this pins that index.jsx actually runs it.)
+    const jsxSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GravelYard', 'index.jsx'), 'utf8')
+    ok('#1705 the pad wire feeds the lockstep gate in the shipped handler (the ready() freeze fix)',
+        /pad: \(m\) => \{ const s = m\.s \| 0;[\s\S]*?ls\.gotPad\(m\.k \| 0, m\.p, s\)/.test(jsxSrc))
+    ok('#1705 hash replies are refereed per peer slot',
+        /hs: \(m\) => \{ const r = ls\.gotHash\(m\.k \| 0, m\.h >>> 0, m\.s \| 0\)/.test(jsxSrc))
+}
+
 // ---------- browser half ----------
 if (!process.env.GY_SKIP_BROWSER) {
-    const { chromium } = await import('playwright-core')
-    const browser = await chromium.launch({ channel: process.env.SHOT_CHANNEL || 'chrome', args: ['--autoplay-policy=no-user-gesture-required'] })
+    const { launchChrome } = await import('./lib/chromeboot.mjs')
+    const browser = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrome', extraArgs: ['--autoplay-policy=no-user-gesture-required'] })
     try {
         const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
         const errors = []

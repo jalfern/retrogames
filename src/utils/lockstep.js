@@ -28,7 +28,12 @@ export function retryDelay(attempt, base = 400, cap = 8000) {
 
 export function normalizeWirePad(p) {
     const o = p || {}
-    return { l: !!o.l, r: !!o.r, u: !!o.u, d: !!o.d, s: !!o.s, a: !!o.a }
+    const n = { l: !!o.l, r: !!o.r, u: !!o.u, d: !!o.d, s: !!o.s, a: !!o.a }
+    // #1705: mask-shaped pads (GravelYard's {m}) ride this same pipeline; the
+    // normalizer used to erase `m`, which left every yard pad empty on the
+    // mirror side. Numbers pass through intact; field-shaped pads unchanged.
+    if (Number.isFinite(o.m)) n.m = o.m | 0
+    return n
 }
 
 export function createLockStep(opts = {}) {
