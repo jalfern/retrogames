@@ -6,8 +6,8 @@
 // Screenshots land in /tmp/forge. Zero page errors or it is red.
 
 const URL = process.env.GY_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/gravel-yard`
-const { chromium } = await import('playwright-core')
 const fs = await import('node:fs')
+const { launchChrome } = await import('./lib/chromeboot.mjs') // #1622: full Chrome dies on headless boxes without a WindowServer
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -15,7 +15,7 @@ const ok = (name, cond, extra = '') => {
     else { fail++; console.log(`  FAIL ${name}${extra ? ' — ' + extra : ''}`) }
 }
 
-const browser = await chromium.launch({ channel: process.env.SHOT_CHANNEL || 'chrome', args: ['--autoplay-policy=no-user-gesture-required'] })
+const browser = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrome', extraArgs: ['--autoplay-policy=no-user-gesture-required'] })
 try {
     const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
     const errors = []

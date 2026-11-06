@@ -634,6 +634,22 @@ if (!process.env.GY_SKIP_BROWSER) {
         ok('deck stones bounce while the screen runs', shaker.running, JSON.stringify(shaker))
         ok('batch end spits an output plume sized to the batch', shaker.plumes >= 1, `plumes=${shaker.plumes}`)
         ok('jam puts smoke on the stack', shaker.smoke === 1)
+
+        // ---------- #1726: the phone has no keyboard — a tap is the SPACE ----------
+        // The window owns the tap (the Lobby scrim passes through; the copy
+        // chip and form chrome keep their own semantics). Solo and net share
+        // the branch: attract -> tap -> select -> tap -> play.
+        console.log('— #1726: tap-to-start (the phone has no SPACE) —')
+        await page.goto(URL, { waitUntil: 'load', timeout: 30000 })
+        await page.waitForFunction(() => !!window.__gyTest, null, { timeout: 20000 })
+        await page.waitForFunction(() => window.__gyTest.screen() === 'attract', null, { timeout: 10000 })
+        await page.mouse.click(450, 380)
+        await page.waitForFunction(() => window.__gyTest.screen() === 'select', null, { timeout: 5000 })
+        ok('#1726 tap advances attract -> select (the window owns the tap)', true)
+        await page.mouse.click(450, 380)
+        await page.waitForFunction(() => window.__gyTest.screen() === 'play', null, { timeout: 5000 })
+        ok('#1726 a second tap starts the shift from select (no keyboard needed)',
+            await page.evaluate(() => window.__gyTest.screen() === 'play'))
     } finally {
         await browser.close()
     }
@@ -666,6 +682,15 @@ if (!process.env.GY_SKIP_BROWSER) {
         let code = null
             for (let i = 0; i < 100 && !code; i++) { code = await host.evaluate(() => window.__gyTest.net().code || null); if (!code) await host.waitForTimeout(100) }
             ok('#1705 relay lobby: host rolls a room code', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/.test(String(code)), `code=${code}`)
+            // #1726: the room lives in the shared <Lobby> — code + copy chip on
+            // the host's own box (the same waiting room as every net title).
+            ok('#1726 host room UI: the shared <Lobby> shows the code + the copy chip',
+                await host.evaluate(() => {
+                    const room = document.querySelector('[data-lobby="room"]')
+                    const copy = document.querySelector('[data-lobby="copy"]')
+                    const c = window.__gyTest.net().code
+                    return !!(room && copy && c && room.textContent.includes(c))
+                }))
             const g1 = await mk(`?net=join&room=${code}`)
             const g2 = await mk(`?net=join&room=${code}`)
             let slots = []
@@ -681,6 +706,13 @@ if (!process.env.GY_SKIP_BROWSER) {
             }
             ok('#1705 three browsers seated in one relay room, join order = slots',
                 JSON.stringify(slots) === '[0,1,2]', JSON.stringify(slots))
+            // #1726: the guest has no SPACE — a tap on select must NOT start;
+            // it toasts that the host owns the go.
+            await g1.mouse.click(450, 380)
+            await g1.waitForFunction(() => window.__gyTest.screen() === 'select', null, { timeout: 5000 })
+            await g1.mouse.click(450, 380)
+            await g1.waitForFunction(() => window.__gyTest.toast().msg === 'THE HOST STARTS THE SHIFT', null, { timeout: 5000 })
+            ok('#1726 guest tap on select toasts THE HOST STARTS (the guest cannot start)', true)
             let started = false
             for (let i = 0; i < 40 && !started; i++) { started = await host.evaluate(() => window.__gyTest.netStart()); if (!started) await host.waitForTimeout(100) }
             // the go signal rides the wire: give every box a beat to take its
@@ -695,6 +727,26 @@ if (!process.env.GY_SKIP_BROWSER) {
             ok('#1705 host starts the shift and the seat law rides the wire (digger/truck/console)',
                 started && seats.every((s) => s.mode) && JSON.stringify(seats.map((s) => s.seat)) === '[0,1,2]',
                 JSON.stringify(seats))
+            // #1726: the crew channel speaks — every box toasts its own seat at
+            // kickoff, and the toast is DRAWN (amber callout over the fence
+            // band), not just set. Mutant: delete the toast render block in
+            // index.jsx — the state gate still passes, the pixel gate goes red
+            // (the #1726 bug: the whole channel was set-but-never-drawn).
+            const intros = await Promise.all([host, g1, g2].map((p) => p.evaluate(() => window.__gyTest.toast().msg)))
+            ok('#1726 the crew channel speaks: every box toasts its own seat at kickoff',
+                intros[0] === '3P CREW — YOU HAVE THE DIGGER' &&
+                intros[1] === '3P CREW — YOU HAVE THE TRUCK' &&
+                intros[2] === '3P CREW — YOU HAVE THE CONSOLE',
+                intros.join(' | '))
+            const amber = await Promise.all([host, g1, g2].map((p) => p.evaluate(() => {
+                const g = document.querySelector('canvas').getContext('2d')
+                const d = g.getImageData(156, 48, 200, 16).data
+                let n = 0
+                for (let i = 0; i < d.length; i += 4) if (d[i] > 230 && d[i + 1] > 170 && d[i + 2] < 110) n++
+                return n
+            })))
+            ok('#1726 the toast is DRAWN on every box (amber callout pixels in the fence band)',
+                amber.every((n) => n > 40), amber.join('/'))
             // real keys, timed inside the sampling window: hold Right on the
             // digger page, then cycle the console four times on the third box.
             const keying = (async () => {
