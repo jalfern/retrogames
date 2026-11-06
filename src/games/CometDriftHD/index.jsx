@@ -23,7 +23,7 @@ import {
     bloomDiscs, BLOOM2D_MIN_LUMA,
 } from './scene.js'
 import { tracksidePlan, buildTracksidePrimitives, attachShelfProps } from './scenery.js'
-import { makeWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR, STAMP_PLUME } from './sand.js'
+import { makeWear, stampKarts, decayWear, deformGeo, scarStats, SAND_WEAR, STAMP_PLUME, syncMarks, simStats } from './sand.js'
 
 // =====================================================================
 // COMET DRIFT HD — SUNSET GULCH, same machine, modern renderer (#465).
@@ -1416,7 +1416,10 @@ export default function CometDriftHD() {
             if (wear) {
                 const rep = stampKarts(wear, g.karts, sandHints)
                 decayWear(wear)
-                if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                if ((g.tick & 3) === 0) {
+                    syncMarks(wear, g)
+                    for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                }
                 plowDust(rep)
             }
             const evs = g.events.splice(0)
@@ -1762,7 +1765,7 @@ export default function CometDriftHD() {
                 if (!gN || !gN.children.length) return null
                 return { quads: gN.children.length, opacity: Math.round(gN.children[0].material.opacity * 1000) / 1000 }
             },
-            sandState: () => (wear ? { ...scarStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, lip: SAND_WEAR.lip, meshes: sandMeshes.length } : null),
+            sandState: () => (wear ? { ...scarStats(wear), ...simStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, lip: SAND_WEAR.lip, meshes: sandMeshes.length } : null),
             stampDust: () => { const c = stampDustPuffs; stampDustPuffs = 0; return c },
             brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
             stars: () => {
@@ -1820,7 +1823,10 @@ export default function CometDriftHD() {
                 if (wear) {
                     const rep = stampKarts(wear, g.karts, sandHints)
                     decayWear(wear)
-                    if ((g.tick & 3) === 0) for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                    if ((g.tick & 3) === 0) {
+                        syncMarks(wear, g)
+                        for (const m of sandMeshes) deformGeo(m.geometry, wear)
+                    }
                     plowDust(rep)
                 }
                 spawnTick()

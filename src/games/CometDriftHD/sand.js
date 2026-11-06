@@ -11,10 +11,12 @@
 // stamp kicks, and the field carries across re-races (the desert remembers
 // the session), resetting only on a course swap.
 //
-// Pure module: no DOM, no renderer, one import of the sim's own surface law,
-// so `cometdrifthdsandcheck` runs whole headless races through it.
+// Pure module: no DOM, no renderer, imports only the sim's own surface law
+// and mark constants, so `cometdrifthdsandcheck` runs whole headless races
+// through it.
 
-import { surfaceAt } from '../CometDrift/track.js'
+import { surfaceAt, TEX, TEX_S } from '../CometDrift/track.js'
+import { SAND } from '../CometDrift/sim.js'
 
 export const SAND_WEAR = {
     cell: 14,
@@ -136,7 +138,7 @@ export function deformGeo(geo, w) {
     const col = geo.getAttribute('color')
     let base = geo.userData.sandBase
     if (!base) {
-        if (!w || scarStats(w).cells === 0) return 0
+        if (!w || (scarStats(w).cells === 0 && !(w.sim && w.sim.some((x) => x > 0)))) return 0
         base = geo.userData.sandBase = {
             pos: Float32Array.from(pos.array),
             col: col ? Float32Array.from(col.array) : null,
@@ -146,14 +148,23 @@ export function deformGeo(geo, w) {
     const c = w.cell
     for (let i = 0; i < pos.count; i++) {
         const bx = base.pos[i * 3], by = base.pos[i * 3 + 1], bz = base.pos[i * 3 + 2]
-        const v = wearAt(w, bx, bz)
+        const v0 = wearAt(w, bx, bz)
+        // #1718 item 5: merge the sim's authoritative scar on top of the
+        // kart-stamp approximation — crater cores sink full, self-heal lowers
+        // it again when syncMarks rebuilds the grid next tick.
+        const v = Math.min(SAND_WEAR.max, v0 + simAt(w, bx, bz))
         const gx = (wearAt(w, bx + c, bz) - wearAt(w, bx - c, bz)) / (2 * c)
         const gz = (wearAt(w, bx, bz + c) - wearAt(w, bx, bz - c)) / (2 * c)
         const gpc = Math.hypot(gx, gz) * c
         pos.setY(i, by + rutOffset(v, gpc))
         if (col && base.col) {
-            const d = 1 - v * SAND_WEAR.dark
-            col.setXYZ(i, base.col[i * 3] * d, base.col[i * 3 + 1] * d, base.col[i * 3 + 2] * d)
+            let d = 1 - v * SAND_WEAR.dark
+            let r = base.col[i * 3] * d; let gg = base.col[i * 3 + 1] * d; let b = base.col[i * 3 + 2] * d
+            const mix = coalAt(w, bx, bz)
+            if (mix > 0) {
+                r += (SIM_SCAR.coal[0] - r) * mix; gg += (SIM_SCAR.coal[1] - gg) * mix; b += (SIM_SCAR.coal[2] - b) * mix
+            }
+            col.setXYZ(i, r, gg, b)
         }
         if (v > 0) touched++
     }
@@ -163,3 +174,82 @@ export function deformGeo(geo, w) {
 }
 
 export function clearGeoBase(geo) { delete geo.userData.sandBase }
+
+// ---- #1718 item 5: the sim's marks ARE the desert -------------------------
+// The HD twin approximated ruts from kart centres; the sim had always carried
+// the authoritative field (`gs.marks`: roll 1 / hot 2 / crater 3, lip −1, the
+// #1702 self-heal and re-arm law, and the #1718 coal chips) — and HD read none
+// of it, so spins left no craters, bumps left no chips, and the ruts healed on
+// a different clock than the GP twin's. `syncMarks` rebuilds two side grids
+// from the live Map every deform tick — `sim` (carve depth normalised to
+// 0..1, crater = full) and `coal` (chip/crack decal mix toward coal, mirroring
+// the 2D twin's 0.62/0.42 blend) — and deformGeo merges them into the same
+// sink-and-dark push the kart stamp already drives. Rebuilding from the Map (vs
+// draining deltas) makes self-heal AND deletion land for free: a cell gone
+// from gs.marks is gone from the mesh at the next rebuild. The sim is read
+// only — nothing here feeds back into physics, and the drain of `markDelta`
+// (the 2D bake renderer's queue, which HD never consumed) keeps the array
+// bounded in HD sessions too.
+export const SIM_SCAR = { div: 3, chipMix: 0.62, crackMix: 0.42, coal: [26, 20, 16] }
+
+export function ensureSimGrids(w) {
+    if (!w.sim) w.sim = new Float32Array(w.grid.length)
+    if (!w.coal) w.coal = new Float32Array(w.grid.length)
+}
+
+// depth law: integer carves are depth/3 of a full sink; the fractional decal
+// range (crack/chip, >= SAND.crack) reads as full-dark with a coal blend;
+// lips (d < 0) are deliberately skipped — the berm already crowns every scar
+// via the wear gradient in deformGeo.
+export function markScar(d) {
+    if (d >= SAND.crack) return { v: 1, mix: d >= SAND.chip ? SIM_SCAR.chipMix : SIM_SCAR.crackMix }
+    if (d > 0) return { v: Math.min(SAND_WEAR.max, d / SIM_SCAR.div), mix: 0 }
+    return { v: 0, mix: 0 }
+}
+
+export function syncMarks(w, g) {
+    ensureSimGrids(w)
+    w.sim.fill(0); w.coal.fill(0)
+    let cells = 0; let coals = 0; let depth = 0
+    if (g.marks instanceof Map) {
+        for (const [key, d] of g.marks) {
+            const tx = key % TEX; const ty = (key - tx) / TEX
+            const x = (tx + 0.5) / TEX_S; const z = (ty + 0.5) / TEX_S
+            const ix = Math.floor((x - w.minx) / w.cell); const iz = Math.floor((z - w.minz) / w.cell)
+            if (ix < 0 || iz < 0 || ix >= w.nx || iz >= w.nz) continue
+            const idx = iz * w.nx + ix
+            const s = markScar(d)
+            if (s.v > 0) { if (s.v > w.sim[idx]) w.sim[idx] = s.v; cells++; if (s.v > depth) depth = s.v }
+            if (s.mix > 0) { w.coal[idx] = Math.max(w.coal[idx], s.mix); coals++ }
+        }
+    }
+    if (Array.isArray(g.markDelta)) g.markDelta.length = 0
+    return { cells, coals, depth }
+}
+
+export function simAt(w, x, z) {
+    if (!w.sim) return 0
+    const ix = Math.floor((x - w.minx) / w.cell)
+    const iz = Math.floor((z - w.minz) / w.cell)
+    if (ix < 0 || iz < 0 || ix >= w.nx || iz >= w.nz) return 0
+    return w.sim[iz * w.nx + ix]
+}
+
+export function coalAt(w, x, z) {
+    if (!w.coal) return 0
+    const ix = Math.floor((x - w.minx) / w.cell)
+    const iz = Math.floor((z - w.minz) / w.cell)
+    if (ix < 0 || iz < 0 || ix >= w.nx || iz >= w.nz) return 0
+    return w.coal[iz * w.nx + ix]
+}
+
+export function simStats(w) {
+    if (!w.sim) return { cells: 0, coals: 0, depth: 0 }
+    let cells = 0; let coals = 0; let depth = 0
+    for (let i = 0; i < w.sim.length; i++) {
+        const v = w.sim[i]
+        if (v > 0) { cells++; if (v > depth) depth = v }
+        if (w.coal[i] > 0) coals++
+    }
+    return { cells, coals, depth: +depth.toFixed(3) }
+}
