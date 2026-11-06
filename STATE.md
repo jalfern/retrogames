@@ -1,70 +1,70 @@
-# STATE — session 141 (2026-11-05, slot b)
+# STATE — session 144 (2026-11-05, slot a)
 
 ## What shipped
-**MAGIC CARPET TOUCH SPELLBOOK + RADAR VEIL CUE (#1612 items 2+3)** — PR #1613
-squash-merged to main `73f6c1e`; prod verified live (game chunk index-iaevs9Ev.js
-carries "LEFT HAND" tray code; shell carries the new controls text).
-Play at https://jalfern.com/retrogames/magic-carpet.
-- The original was mouse-first — you CLICKED the HUD to arm your hands. Now the
-  phone does too: tap a hand slot cycles that hand through learned spells; the
-  gold SPELLS tab opens a seven-spell tray (icon art + mana cost gold-when-
-  payable, unlearned dimmed/inert, L-hand pick boxed gold); tapping a learned
-  icon assigns the LEFT hand; click-out closes WITHOUT casting; dead HUD strip
-  never fires a stray bolt. Keyboard 1–7/Q untouched.
-- Routing is pure sim: `hudTap(gs,x,y)` + `TAP`/`TRAY` hit map + `cycleL`
-  (twin of cycleR) in sim.js; `gs.book` is UI state and NOT mixed into
-  stateHash. The HUD canvas is now the pointer surface (maps client→HUD space;
-  'world' taps still cast L/R by button).
-- Radar behind the veil: cyan tinted glass + sweeping arc (#1612 item 3),
-  beside the existing overlay shimmer/timer bar.
-- Any equip (key/pad/tap) blips and names the spell ('equip' event was silent).
-- Attract line + registry controls mention the touch path.
-- carpetcheck +11 Node gates (49/49, was 38): slot cycles both hands, equip
-  events, world-tap-still-casts, dead strip, book toggle, tray equip/inert/
-  click-out, hit boxes inside 320×200, tray never disturbs the hash, world
-  regen closes the book. Mutant: slotL route → 'world' = exactly the two slot
-  gates red; restored. Balance unchanged: 60/60 seeds, slowest 24,704.
-- Contract gains buttons cycleL/cycleR/book + state.book; __carpetTest.tap(x,y)
-  so browser QA drives the same path.
+**PLAICRAFT — Gauntlet pilot (#1625)** — PR #1635 squash-merged to main
+`4133793`; prod-verified live (`index-6Pa5J35Z.js` carries the `plaicraft-bc`
+policy; `/retrogames/research` answers). Recorded play → dataset → trained
+model → seat — all in-repo, deterministic:
+- Export (`npm run plaicraft:export`): 20 real games (planner route through
+  THE pad lane seat 1, CPU partner seat 2) banked as rec/v1 recordings, each
+  replay-verified vs the sim — hash-exact 20/20, won 20/20. Dataset JSONL
+  221k rows: 32 seat senses + expert pad + swing-intent label; committed
+  format README + sample (`data/plaicraft/`, bulk regenerable).
+- Train (`npm run plaicraft:train`): one 32-24-24-5 BC net (1517 weights,
+  quantized BEFORE scoring), fixed hparams, seeds 0..11 practice / 100..107
+  held-out scored ONCE. Held-out: **8/8 wins — full parity with the CPU**
+  (avg lvl 10; score 121,306 vs 111,275; +1 partner death). Teacher-forcing
+  97.8% moves / 100% swing-intent held-out ≈ practice (97.7%) → generalises,
+  no route memorisation.
+- Seat: `Gauntlet/model.js` (featurize/forward/createModelPolicy — one
+  definition shared by export, trainer and live seat) + generated `policy.js`;
+  **M seats the BRAIN in Gauntlet slot 2**; sources() reports kind 'model';
+  `__gauntletTest.seatBrain(on)` for QA.
+- Gate: `npm run plaicraftcheck` 7/7 incl. dead-weights mutant (98.4→74.5%) —
+  proven able to fail. Parked MANUAL_CHECKS (~40 s per run); ciscope selftest
+  green. `/research` write-up page renders the single held-out scoring +
+  honest notes. QA polish pass filed: **#1636**.
+Also: **finished #1570's orphaned ship record** (merged as #1633 by the dying
+23:28 session): prod-verified (`_yawRebase`/`_twist` live), labels
+building→shipped, live URL commented; issue was auto-closed.
 
-## Ladder record (slot b)
-Warden target #1612: `forge-claim.sh 1612 b` CLAIMED clean (no holder). Shipped
-items 2+3; issue left OPEN with `feedback` restored for the QA lane + precise
-remaining list (items 1, 4–7).
+## Ladder record (slot a)
+Warden target #1624: `forge-claim.sh 1624 a` REFUSED — slot b claimed it
+23:19Z. Normal ladder: no steer/jonq/next; oldest game-queue #1625 claimed
+clean. (Slot b shipped #1634 WATCH meanwhile — both pilots landed the same
+night.) Rule 4 debt broken: #1635 + #1633 + #1634 are all game code.
 
 ## Playable now
-Magic Carpet (7 spells, veil, mobile spell equip); RobotLab 4a; MYST through
-item 15 (harbour).
+Gauntlet with the trained brain (M on hero select); WATCH key in MYST,
+Emberwood, SSX (#1634); Magic Carpet; RobotLab 4a; MYST through item 16.
 
 ## Next (priority order)
-1. #838 MYST continues on its own cadence; QA studio (#1258) is inside it.
-   README residual: island shores (dock/beach/cliffPath/stairTop).
-2. #1612 remainder for QA or a future lane: GL ghost shimmer/trail + lost-
-   target cues, muffled-audio veil low-pass, roster clone/dissolve/shatter/
-   volcano, village life, water palette-cycling/underwater/anaglyph.
-3. #1570 still labeled `building` with NO pushed branch (stale since #1583
-   merged) — untouched; a tidy sweep may drop the label.
+1. game-queue is empty. Ladder falls to oldest unclaimed feedback — #1636
+   (PLAICRAFT polish: phone touch-path to seat the brain, model identity,
+   brain attract demo, modelId stamp) — or a flagship stage per #1258.
+2. #1624 is closed by #1634; nothing owed.
 
 ## Gates/commands as of this session
-eslint clean on touched files; lint:mario/fps/ai OK; build OK; carpetcheck 49/49
-Node (browser gates CI-only — Chrome #737 SIGABRTs both channels on this box).
+gauntletcheck 304/304; lint:gauntlet clean; plaicraftcheck 7/7 + mutant;
+ciscope selftest green (131 pins, 156 checks); build OK; eslint clean on all
+new files (App.jsx carries a pre-existing react-hooks error, outside every
+gate scope).
 
-## Notes for the next slot-b session
-- This session's dev server (port 5179, worktree's checkout) is still running —
-  harmless, but it blocks 5179; next session starts at 5178's owner check and
-  falls through to 5180 if needed.
-- The gh/cli rescue env is MANDATORY here: `. /tmp/forge/env.sh` (system DNS
-  dead; Go-TLS OSStatus -26276). `gh pr create/checks/merge` all work through
-  /tmp/forge/rescue/bin/gh (636-line shim, jalfern token).
-- Port 5178 was OCCUPIED by retrogames-forge-robokit-4a's dev server (a dead
-  robokit lane's leftover — its branch is merged? check before killing; this
-  lane used 5179 + DEV_PORT=5179 instead of touching it).
-- Worktree `~/Dev/retrogames-forge-carpet-polish` sits detached at origin/main;
-  branch forge/carpet-polish deleted by the merge. Reuse or `git worktree remove`.
-- Prod verify by CONTENT grep through the proxy (jalfern → www redirect; local
-  vs Vercel chunk hashes differ — enumerate shell's `assets/index-*.js` list and
-  grep each for distinctive strings).
-- STATE.md direct-push to main (HEAD:main) still works for lane reports.
+## Notes for the next slot
+- Trainer gotcha (remember): biases are a COMPACT block (cumulative no) — never
+  index them by the weight-block offset: undefined reads → NaN gradients → net
+  trains to "always idle" at a suspiciously stable 0.7337 (= the always-false
+  baseline). Stable accuracy on a fresh net is a smell; mutant gate is the cure.
+- Local Chrome STILL flaky for heavy pages: chromesmoke passes (shell+sp) but
+  `gauntletplay` SIGABRTs this box (both tries, #737 class). Node gates carry
+  the proof; rule 3 — don't spend a PR on it.
+- `. /tmp/forge/env.sh` mandatory (system DNS dead); gh via the rescue shim.
+- node_modules `cp -R` from the main checkout is APFS-instant for worktrees.
+- Worktree `~/Dev/retrogames-forge-plaicraft` detached at origin/main; branch
+  deleted both ends — reuse or remove. This lane's dev server on 5173 (kill
+  only if orphaned + merged).
+- Slot b's uncommitted session-143 STATE (its step 9 report) was folded here;
+  copy parked at /tmp/forge/STATE.a.prevreport.md.
 
 ## Open questions
-None. (#1557/#1544 remain Jon's own board items, linked for continuity only.)
+None.
