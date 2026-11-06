@@ -63,7 +63,7 @@ export const SCOPES = {
   dug: { dirs: ['src/games/DigDug'], lint: ['lint:dug'], checks: [['dugcheck', true]], smoke: [] },
   bob: { dirs: ['src/games/BubbleBobble'], lint: ['lint:bob'], checks: [['bobcheck', true], 'recmethods', ['recmethods', true]], smoke: [] },
   marble: { dirs: ['src/games/MarbleMadness'], lint: ['lint:marble'], checks: ['marblecheck'], smoke: [] },
-  gauntlet: { dirs: ['src/games/Gauntlet', 'src/games/FourHalls'], lint: ['lint:gauntlet', 'lint:net', 'lint:rec'], checks: [['gauntletcheck', true], 'netcheck', 'replaycheck', ['replaycheck', true]], smoke: [] },
+  gauntlet: { dirs: ['src/games/Gauntlet', 'src/games/FourHalls'], lint: ['lint:gauntlet', 'lint:net', 'lint:rec'], checks: [['gauntletcheck', true], 'netdemocheck', 'netcheck', 'replaycheck', ['replaycheck', true]], smoke: [] },
   myst: { dirs: ['src/games/Myst'], lint: ['lint:myst'], checks: [['mystcheck', true]], smoke: [] },
   bards: { dirs: ['src/games/BardsTale'], lint: ['lint:bards'], checks: ['bardscheck'], smoke: [] },
   ssx: { dirs: ['src/games/SSX', 'public/models/ssx/'], lint: ['lint:ssx'], checks: ['ssxcheck'], smoke: ['ssxplay'] },
