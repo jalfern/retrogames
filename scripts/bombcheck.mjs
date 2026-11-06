@@ -5,7 +5,7 @@
 // itself. Pure Node: engine.js and voice.js are DOM-free by design.
 
 import {
-    createGame, step, simState, hash, solvePad, computeTarget, drainEvents,
+    createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
     RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS,
 } from '../src/games/TalkMeDown/engine.js'
 import { parseCall, intentLabel, ACCEPTED_HINT } from '../src/games/TalkMeDown/voice.js'
@@ -290,6 +290,76 @@ const ok = (name, cond, extra = '') => {
         ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"'), ACCEPTED_HINT)
     const artSrc = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
     ok('the LCD-rail footer draws the shared const (not a literal)', /ACCEPTED_HINT/.test(artSrc))
+}
+
+// ---- 13. D4 anchor — the printed dial answer survives the whole bomb (#1708) --
+{
+    const navigate = (gs, idx) => {
+        for (let g = 0; gs.cursor.mod !== idx && g < 8; g++) step(gs, { down: true })
+    }
+    const solveHere = (gs, m) => {
+        for (let i = 0; i < 400 && !m.solved && gs.strikes === 0 && !gs.done; i++) step(gs, solvePad(gs))
+    }
+    // (a) target identical before and after every sibling module is solved,
+    // across rounds 3 + 5 (the only quota rounds that can seat a DIAL) — the
+    // page prints once, the engine must agree for the bomb's whole life.
+    let cases = 0, moved = ''
+    outer13:
+    for (const round of [3, 5]) {
+        for (let seed = 1; seed <= 1200; seed++) {
+            const gs = createGame(seed, 2)
+            gs.round = round
+            buildBomb(gs)
+            const di = gs.modules.findIndex(m => m.stamp === 'D4')
+            if (di < 0) continue
+            const dial = gs.modules[di]
+            const neon = gs.modules.find(x => x !== dial && x.type === 'N')
+            if (!neon) { moved = `${round}/${seed}: D4 generated with no NEON sibling`; break outer13 }
+            const t0 = computeTarget(gs, dial)
+            if (t0.dial !== neon.wires.length) { moved = `${round}/${seed}: fresh D4 ${t0.dial} != wire count ${neon.wires.length}`; break outer13 }
+            for (let i = 0; i < gs.modules.length; i++) {
+                if (i === di) continue
+                navigate(gs, i)
+                solveHere(gs, gs.modules[i])
+                if (!gs.modules[i].solved) { moved = `${round}/${seed}: sibling ${i} not solved`; break outer13 }
+            }
+            navigate(gs, di)
+            const t1 = computeTarget(gs, dial)
+            if (t1.dial !== t0.dial) { moved = `${round}/${seed}: D4 flipped ${t0.dial} -> ${t1.dial} after siblings solved`; break outer13 }
+            cases++
+        }
+    }
+    ok(`D4 target anchored across sibling progress (${cases} bombs, rounds 3+5)`, !moved && cases >= 100, moved || `only ${cases} D4 bombs found`)
+
+    // (b) the human flow: cut the NEON, THEN dial the number the PAGE says
+    // (the wire count still lying there in plain sight), SET. Pre-#1708 this
+    // sparked — the guard flipped the engine's answer under the manual.
+    let flowed = 0, flowBad = ''
+    for (let seed = 1; seed <= 1200 && flowBad === ''; seed++) {
+        const gs = createGame(seed, 2)
+        gs.round = 3
+        buildBomb(gs)
+        const dial = gs.modules.find(m => m.stamp === 'D4')
+        const neon = gs.modules.find(m => m !== dial && m.type === 'N')
+        if (!dial || !neon) continue
+        const printed = neon.wires.length
+        navigate(gs, gs.modules.indexOf(neon))
+        solveHere(gs, neon)
+        if (!neon.solved) { flowBad = `seed ${seed}: NEON not cut`; break }
+        navigate(gs, gs.modules.indexOf(dial))
+        while (dial.dial !== printed) step(gs, dial.dial < printed ? { right: true } : { left: true })
+        step(gs, { a: true })
+        if (!dial.solved || gs.strikes !== 0) { flowBad = `seed ${seed}: printed ${printed} -> solved=${dial.solved} strikes=${gs.strikes}`; break }
+        flowed++
+    }
+    ok(`human flow: siblings cut first, dial the PRINTED count, SET solves (${flowed} rigs)`, flowBad === '' && flowed >= 50, flowBad || `only ${flowed}`)
+
+    // (c) source pin: the cross-reference is the bare layout find — guard
+    // dead, in words not near-misses (id: 'D4' -> find is 640 bytes; STATE
+    // lesson: measure the window before writing {0,N}).
+    const engSrc = readFileSync(new URL('../src/games/TalkMeDown/engine.js', import.meta.url), 'utf8')
+    ok('D4 cross-reference is the bare unsolved-blind find (source pin)',
+        /id: 'D4'[\s\S]{0,700}all\.find\(x => x !== m && x\.type === 'N'\)/.test(engSrc))
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)
