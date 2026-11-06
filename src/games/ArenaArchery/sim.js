@@ -47,6 +47,16 @@ export const CFG = {
     knockout: true,       // false: arrows fly through stuck arrows
     retrieve: true,       // false: stuck arrows can never be pulled out
     ttlRelease: true,     // false: stuck arrows never expire
+    // the basic bot (the "mean twin"): it shoots FLAT, keeping the foe just
+    // beyond its flat-shot reach, so a miss drops on the FLOOR where a walk
+    // pulls it back and the quiver economy circulates. The old version
+    // LOBED and walked in point-blank: its misses silted the unreachable
+    // ledges until both quivers ran dry and the duel sat frozen ~20 s
+    // (#1685) — and it out-scored the weakened autopilot, failing the slack
+    // rule. bot0Lobs flips it back to the lob for the mutant.
+    bot0Lobs: false,      // false: flat (the fix); true: the #1685 lob
+    bot0Release: 0.5,     // the basic bot's draw release — flat-shot power
+    bot0Range: 130,       // stops walking in here — beyond flat-shot reach
 }
 
 export const SOLID = 1
@@ -367,22 +377,31 @@ export function botInput(g, meId, skill) {
     if (!me.alive) return { mx: 0, my: 0, fire: false }
     let mx = 0, my = 0, fire = false
 
-    // a dry archer is a scavenger: nearest stuck arrow, first
+    // a low-ammo archer is a scavenger: nearest PULLABLE stuck arrow,
+    // first. The pull probes the bot's centre row, and this bot never
+    // climbs ledge chains, so only an arrow in the bot's OWN row is a
+    // target — anything else is scenery until the TTL frees it. The old
+    // pick was nearest-by-X alone: a ledge arrow four rows up pinned a
+    // whole duel (both bots stood under their own ammo with zero input,
+    // #1685), and a two-row-up arrow under a capped shaft became a
+    // hop-forever bounce loop that never got its centre into the cell.
     let scavenging = false
+    let dry = false
     if (foe.alive && (me.quiver === 0 || (skill > 0 && me.quiver < 2))) {
-        let best = null, bestY = 0, bd = 1e9
+        const myRow = Math.floor(me.y / CFG.cell)
+        let best = null, bd = 1e9
         for (const s of g.stuck) {
+            if (g.grid[s.cell] === SOLID) continue
+            if (Math.floor(s.cell / g.W) !== myRow) continue
             const sx = (s.cell % g.W) * CFG.cell + CFG.cell / 2
             const d = Math.abs(sx - me.x)
-            if (d < bd) { bd = d; best = sx; bestY = Math.floor(s.cell / g.W) * CFG.cell + CFG.cell / 2 }
+            if (d < bd) { bd = d; best = sx }
         }
         if (best !== null && (me.quiver === 0 || bd < 260)) {
             scavenging = true
-            // walk under it and hop — arrows that stick on ledges are only
-            // reachable from above, and a scavenger that never jumps will
-            // stand under its own ammo forever (this freeze was real)
             if (Math.abs(best - me.x) > 10) mx = Math.sign(best - me.x)
-            else if (bestY > me.y + 20 && me.grounded) my = 1
+        } else if (me.quiver === 0) {
+            dry = true   // no ammo and nothing in reach: the feet still move
         }
     }
 
@@ -391,13 +410,13 @@ export function botInput(g, meId, skill) {
         const dx = foe.x - me.x, adx = Math.abs(dx)
         if (skill > 0) {
             if (adx < 110) mx = -Math.sign(dx || 1)
-            else if (adx > 300) mx = Math.sign(dx)
+            else if (adx > 210) mx = Math.sign(dx)
             for (const ar of g.arrows) {
                 if (ar.state !== 'fly' || ar.owner === meId) continue
                 const rx = me.x - ar.x, ry = me.y - ar.y
                 if (rx * ar.vx + ry * ar.vy > 0 && Math.hypot(rx, ry) < 60) mx = ar.vx >= 0 ? -1 : 1
             }
-        } else if (adx > 90) mx = Math.sign(dx)
+        } else if (adx > CFG.bot0Range) mx = Math.sign(dx)
     }
 
     // the shot: lead once, solve both angles, forward-simulate each, take
@@ -413,11 +432,16 @@ export function botInput(g, meId, skill) {
         const solve = (ltx, lty) => {
             const ldx = ltx - me.x, ladx = Math.abs(ldx), lrise = me.y - lty
             const out = []
-            if (ladx > 30 && ladx - lrise > 10) out.push({ up: 1, c: mk(Math.sqrt(CFG.arrowGravity * ((ladx * ladx) / (ladx - lrise)))) })
+            // flat first: a level arc lands on the floor where a walking
+            // archer can PULL it back, keeping the quiver economy
+            // circulating; the high lob is the fallback for over the
+            // cover. Lobbing first dumped every missed arrow onto the
+            // unreachable ledges and the duel dried out (#1685).
             if (lty - me.y > -6 && ladx > 8) {
                 const drop = Math.max(2, lty - me.y)
                 out.push({ up: 0, c: mk(ladx * Math.sqrt(CFG.arrowGravity / (2 * drop))) })
             }
+            if (ladx > 30 && ladx - lrise > 10) out.push({ up: 1, c: mk(Math.sqrt(CFG.arrowGravity * ((ladx * ladx) / (ladx - lrise)))) })
             return out
         }
         // iterate the lead on the arrow's OWN measured flight time: solve,
@@ -463,11 +487,23 @@ export function botInput(g, meId, skill) {
             mx = Math.floor(g.tick / 45) % 2 ? 1 : -1
         }
     } else if (!scavenging && foe.alive && me.quiver > 0 && skill === 0) {
-        // the basic bot just lobs at whatever it sees
-        fire = !me.firing || me.charge < 0.55
-        if (fire) my = 1
-        if (fire || me.firing) aim = { x: foe.x >= me.x ? 1 : -1, y: -1 }
+        // the basic bot shoots the foe — FLAT when the foe is at its own
+        // height, so a miss drops on the FLOOR where a walk pulls it back
+        // and the quiver economy keeps circulating. It only LOBS (and
+        // jumps) to reach a foe on another level or clear cover; a lobbed
+        // miss may stick on a ledge until the TTL. The old version always
+        // lobbed, and its six misses silted every ledge until both archers
+        // were empty-handed and the duel sat frozen for ~20 s (#1685).
+        const adx0 = Math.abs(foe.x - me.x)
+        const sameRow = Math.abs(foe.y - me.y) < CFG.cell
+        const flat = !CFG.bot0Lobs && sameRow   // flat: a miss drops on the floor
+        fire = !me.firing ? adx0 < 240 : me.charge < CFG.bot0Release
+        if (fire) my = flat ? 0 : 1
+        if (fire || me.firing) aim = { x: foe.x >= me.x ? 1 : -1, y: flat ? 0 : -1 }
     }
+    // a dry scavenger with nothing in reach keeps its feet moving:
+    // standing still under an unreachable arrow is how a duel dies (#1685)
+    if (dry && mx === 0 && my === 0) mx = Math.floor(g.tick / 45) % 2 ? 1 : -1
     return { mx, my, fire, aim }
 }
 

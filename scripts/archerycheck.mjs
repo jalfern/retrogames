@@ -56,7 +56,10 @@ function driveMatch(opts = {}) {
     const g = makeGame(buildArena(opts.arena || 0), opts)
     const skills = opts.skills || [1, 0]
     const cap = opts.maxTicks || CFG.matchTicks + 240
-    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0 }
+    const receipts = { jumps: 0, sticks: 0, knocks: 0, pulls: 0, dryouts: 0, ledBreaks: 0, stuckPeak: 0, worstGap: 0 }
+    // the #1685 stalemate meter: the longest run of ticks with NO action
+    // (loose|hit) after the first kill. A dry quiver economy sits here ~20 s.
+    let armed = false, prevAction = -1
     while (!g.end && g.tick < cap) {
         const i1 = botInput(g, 0, skills[0])
         const i2 = botInput(g, 1, skills[1])
@@ -65,6 +68,10 @@ function driveMatch(opts = {}) {
         if (ledger(g) !== g.total + g.supplied) receipts.ledBreaks++
         receipts.stuckPeak = Math.max(receipts.stuckPeak, g.stuck.length)
         for (const e of g.events) {
+            if (e.type === 'loose' || e.type === 'hit') {
+                if (e.type === 'hit' && !armed) armed = true
+                if (armed) { if (prevAction >= 0) receipts.worstGap = Math.max(receipts.worstGap, g.tick - prevAction); prevAction = g.tick }
+            }
             if (e.type === 'jump') receipts.jumps++
             else if (e.type === 'stick') receipts.sticks++
             else if (e.type === 'knockout') receipts.knocks++
@@ -206,6 +213,11 @@ for (let i = 0; i < ARENAS_COUNT; i++) {
     ok(r.pulls + r.dryouts > 0, `arena ${i}: no arrow ever came back (pulled or dried out) — the quiver economy ran one-way and the arena would silt up`)
     ok(r.knocks + r.pulls > 0, `arena ${i}: stuck arrows were neither eaten nor pulled — pure scenery`)
     ok(g.p[1].score < CFG.winScore, `arena ${i}: the bot nearly won (${g.p[1].score}) — the demo would be a highlight reel FOR the loser`)
+    // #1685: the duels must not dry out. After the first kill, the longest
+    // gap between shots/hits must stay under 5 s — a frozen mid-duel is what
+    // the player sees as a broken game. The lob-and-walk-in basic bot sat
+    // here ~20 s until the stuck-arrow TTL reopened the quiver economy.
+    ok(r.worstGap < 150, `arena ${i}: the duel sat ${r.worstGap} ticks (${(r.worstGap / 30).toFixed(1)} s) with no shot after the first kill — a dry quiver economy froze the demo (#1685)`)
     ok(Date.now() - t0 < 4000, `arena ${i}: ${Date.now() - t0} ms — this audit must stay a second, not a minute`)
 
     // determinism, three ways: recorded stream re-replayed; re-driven from
@@ -329,6 +341,11 @@ if (MUT) {
     tryMut('clock 400 ticks (the autopilot cannot finish the duel)', { matchTicks: 400 }, () => {
         const { g } = driveMatch({ arena: 0, maxTicks: CFG.matchTicks + 240 })
         return g.end === 'win' && g.winner === 0
+    })
+    tryMut('lob-bot (the basic bot dumps arrows on unreachable ledges — #1685)', { bot0Lobs: true, bot0Range: 90, bot0Release: 0.55 }, () => {
+        // KNOCKBACK: the original lob-and-walk-in bot dried the duel out ~20 s
+        const { receipts: r } = driveMatch({ arena: 1 })
+        return r.worstGap < 150
     })
 }
 
