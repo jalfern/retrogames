@@ -1683,6 +1683,155 @@ await phone.screenshot({ path: 'docs/shots/issue-1673-phone-play.png' })
 r.check('#1673 world tap casts DISSOLVE at phone size (40 mana paid, spray rides the wound, banner rides the HUD)',
     cast.screen === 'play' && cast.mana <= mA - 40 && cast.motes >= mM + 16,
     `mana ${mA}->${cast.mana}, motes ${mM}->${cast.motes}, screen=${cast.screen}`)
+// ---- #1703 phone proof: the crumble RENDERS at 390px — rim silhouette and
+// mid-window animation measured on pixels, not assumed. Reuses the phone page
+// above. The camera is PINNED via holdCarpet (same pose for every capture) so
+// before/peak/settled frames share one viewpoint; craterAt leaves the crumble
+// window OPEN so a capture can land exactly on the rim peak (a=CRUMBLE_T/2,
+// sin(π/2)=1). Premise correction (issue item 2): this title has NO non-WebGL
+// world — ?lite=1 is low-spec WebGL (antialias off, dpr cap 1), the only 2D
+// canvas is the HUD; so the lite proof is: the crumble animates under lite-GL.
+// Mutation guide: zero the rim (0.18*depth → 0 in queueDeform, sim.js) and the
+// lift gate goes red while the boot gates hold; pin sinkCurve to 1 (instant
+// crater) and the animation gate (AC > 1.25×AB) goes red.
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start() })
+await phone.waitForTimeout(300)
+const proof = await phone.evaluate(async () => {
+    const t = window.__carpetTest, g = window.__game
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+    const r0 = t.hudRect()
+    const dpr = window.devicePixelRatio || 1
+    const strip = { w: 200, h: 170 }
+    strip.x0n = 0.5 - 100 / (r0.w * dpr)
+    strip.y0n = 0.56 // normalized from TOP (pixels(): y=1 is top); h=170 spans
+    // the horizon wherever the smoothed camera pitch parks it on degraded boxes.
+    const pin = () => { const p = t.probe(); t.holdCarpet(p.x, p.y, p.alt) }
+    pin(); await sleep(350); pin()
+    const A = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    const p = t.probe()
+    t.craterAt(p.x + Math.cos(p.yaw) * 70, p.y + Math.sin(p.yaw) * 70, 14, 10, 1)
+    for (let a = 0; a < 5;) {
+        g.step({}, 1); pin()
+        const d = t.deforms()
+        if (d.length && d[d.length - 1].a > a) a = d[d.length - 1].a
+    }
+    await sleep(350); pin()
+    const B = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    for (let i = 0; i < 8; i++) { g.step({}, 1); pin() }
+    await sleep(350); pin()
+    const C = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    const diff = (P, Q) => {
+        let changed = 0, sum = 0
+        for (let i = 0; i < P.length; i += 4) {
+            const d = Math.abs(P[i] - Q[i]) + Math.abs(P[i + 1] - Q[i + 1]) + Math.abs(P[i + 2] - Q[i + 2])
+            sum += d / 3
+            if (d > 30) changed++
+        }
+        return { changed, mean: +(sum / (P.length / 4)).toFixed(2) }
+    }
+    const W = strip.w, H = strip.h
+    const get = (P, c, r) => { const i = ((H - 1 - r) * W + c) * 4; return [P[i], P[i + 1], P[i + 2]] }
+    // crest row per column: topmost strongly-changed row (r=0 strip top).
+    // A lifted rim silhouette is exactly this edge: above it the frames agree.
+    const crests = []
+    for (let c = 20; c < W - 20; c += 4) {
+        let top = -1
+        for (let r = 0; r < H; r++) {
+            const a1 = get(A, c, r), b1 = get(B, c, r)
+            if (Math.abs(a1[0] - b1[0]) + Math.abs(a1[1] - b1[1]) + Math.abs(a1[2] - b1[2]) > 48) { top = r; break }
+        }
+        crests.push(top)
+    }
+    // vertical alignment shift per column near the crest band, then relative
+    // to the BACKGROUND mode: the pin holds pos/alt but the renderer camera
+    // pitch eases a hair between captures, shifting every column equally —
+    // subtracting the modal shift isolates the RIM's extra lift.
+    const cs = crests.filter((v) => v >= 0).sort((x, y) => x - y)
+    const bandLo = cs.length ? Math.max(0, cs[Math.floor(cs.length / 2)] - 2) : H - 30
+    const raw = []
+    for (let c = 20; c < W - 20; c += 4) {
+        let best = null, bestS = 1e18
+        for (let dlt = -14; dlt <= 14; dlt++) {
+            let s = 0, n = 0
+            for (let r = bandLo; r < Math.min(bandLo + 24, H); r++) {
+                const ra = r - dlt // rows grow down: content lifted gives negative Δ
+                if (ra < 0 || ra >= H) continue
+                const a1 = get(A, c, ra), b1 = get(B, c, r)
+                s += (a1[0] - b1[0]) ** 2 + (a1[1] - b1[1]) ** 2 + (a1[2] - b1[2]) ** 2; n++
+            }
+            if (n) { s /= n; if (s < bestS) { bestS = s; best = dlt } }
+        }
+        if (best !== null) raw.push(-best) // positive = lifted
+    }
+    if (!raw.length) return { dpr, AB: { changed: 0, mean: 0 }, AC: { changed: 0, mean: 0 }, BC: { changed: 0, mean: 0 }, crestN: 0, crestSpread: 0, liftMed: 0, liftMax: 0, liftN: 0, mode: 0 }
+    const sorted = raw.slice().sort((x, y) => x - y)
+    const mode = sorted[Math.floor(sorted.length / 2)] // uniform drift baseline
+    const rel = raw.map((v) => v - mode).filter((v) => v >= 1) // columns the rim lifted past background
+    rel.sort((x, y) => x - y)
+    return {
+        dpr, AB: diff(A, B), AC: diff(A, C), BC: diff(B, C),
+        crestN: cs.length, crestSpread: cs.length ? cs[cs.length - 1] - cs[0] : 0,
+        liftMed: rel.length ? rel[Math.floor(rel.length / 2)] : 0,
+        liftMax: rel.length ? rel[rel.length - 1] : 0,
+        liftN: rel.length, mode,
+    }
+})
+const phoneProof = (pr) => pr.AB.changed >= 1200 && pr.AB.mean >= 3 &&
+    pr.AC.changed >= 1200 && pr.BC.changed >= 800 &&
+    pr.crestN >= 25 && pr.crestSpread >= 4 && pr.liftN >= 10 && pr.liftMed >= 1 && pr.liftMax >= 2
+    // NB: no before/peak/settled RATIO gate — cloud/water motion on world time
+    // inflates both diffs on software-rendered boxes and squeezes the ratio to
+    // ~1 (flaky). Progressivity is proven by the independent lift + crest-arc
+    // gates: instant-crater and zero-rim mutants both fall to those.
+r.check('#1703 crumble renders + animates on phones at 390px: visible mid-window diff, progressive landing, rim crest arc',
+    phoneProof(proof),
+    `mid-window ${proof.AB.changed}px (mean ${proof.AB.mean}), settled ${proof.AC.changed}px (peak→settled ${proof.BC.changed}px), crest cols ${proof.crestN} spread ${proof.crestSpread}px`)
+r.check('#1703 rim silhouette lift ≥ 1px at phone size (column lift over background drift)',
+    proof.AB.changed >= 1200 && proof.liftN >= 10 && proof.liftMed >= 1 && proof.liftMax >= 2,
+    `${proof.liftN} columns lifted ≥1px over background (mode shift ${proof.mode}px, median excess ${proof.liftMed}px, max ${proof.liftMax}px, dpr ${proof.dpr}) — above the 1px bar, rim amp stays`)
+await phone.screenshot({ path: 'docs/shots/issue-1703-phone-crumble.png' })
+// ---- #1703 item 2: the same proof under ?lite=1 (low-spec GL). There is no
+// ray-marched 2D world in this title — lite must show the crumble too.
+await phone.goto(new URL(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet?lite=1`).href, { waitUntil: 'load' })
+await phone.waitForFunction(() => window.__game && window.__carpetTest, null, { timeout: 15000 })
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start() })
+await phone.waitForTimeout(400)
+const liteProof = await phone.evaluate(async () => {
+    const t = window.__carpetTest, g = window.__game
+    const sleep = (ms) => new Promise((res) => setTimeout(res, ms))
+    const r0 = t.hudRect()
+    const dpr = window.devicePixelRatio || 1
+    const strip = { w: 200, h: 170 }
+    strip.x0n = 0.5 - 100 / (r0.w * dpr)
+    strip.y0n = 0.56
+    const pin = () => { const p = t.probe(); t.holdCarpet(p.x, p.y, p.alt) }
+    pin(); await sleep(350); pin()
+    const A = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    const p = t.probe()
+    t.craterAt(p.x + Math.cos(p.yaw) * 70, p.y + Math.sin(p.yaw) * 70, 14, 10, 1)
+    for (let a = 0; a < 5;) { g.step({}, 1); pin(); const d = t.deforms(); if (d.length && d[d.length - 1].a > a) a = d[d.length - 1].a }
+    await sleep(350); pin()
+    const B = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    for (let i = 0; i < 8; i++) { g.step({}, 1); pin() }
+    await sleep(350); pin()
+    const C = t.pixels(strip.x0n, strip.y0n, strip.w, strip.h)
+    const diff = (P, Q) => {
+        let changed = 0, sum = 0
+        if (!P || !Q) return { changed: -1, mean: -1 }
+        for (let i = 0; i < P.length; i += 4) {
+            const d = Math.abs(P[i] - Q[i]) + Math.abs(P[i + 1] - Q[i + 1]) + Math.abs(P[i + 2] - Q[i + 2])
+            sum += d / 3
+            if (d > 30) changed++
+        }
+        return { changed, mean: +(sum / (P.length / 4)).toFixed(2) }
+    }
+    return { gl2: t.gl2(), AB: diff(A, B), BC: diff(B, C), AC: diff(A, C) }
+})
+r.check('#1703 lite-GL: the crumble animates at low spec too (no 2D world exists — lite IS the fallback)',
+    liteProof.gl2 === true && liteProof.AB.changed >= 200 && liteProof.BC.changed >= 400 &&
+    liteProof.AC.changed >= 200 && liteProof.AC.changed - liteProof.AB.changed >= 200,
+    `mid-window ${liteProof.AB.changed}px (mean ${liteProof.AB.mean}), landed ${liteProof.AC.changed}px, peak→settled ${liteProof.BC.changed}px`)
+r.info('#1703 premise', 'issue item 2\'s "non-WebGL 2D world" does not exist here: ?lite=1 is low-spec WebGL (antialias off, dpr cap 1, CAP_P 140); without WebGL createCarpetGL throws and no world draws. Proof above covers the real fallback path.')
 await phone.close()
 await pBrowser.close()
 
