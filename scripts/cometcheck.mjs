@@ -1426,6 +1426,181 @@ selectorGate(await loadSelector())
         /!g\.zigHint\b/.test(simSrc517) && /if \(g\.zigHintT > 0\) g\.zigHintT--/.test(simSrc517))
 }
 
+// ---- #1696: the sand remembers the race — live terrain deformation --------
+// Ruts where the rear tyres run, heaped lips beside them, radial craters at
+// cliff bumps — written into the ground bake, never read back by physics.
+// Gates: the asphalt law (no texel on the road churns — judged at the texel's
+// own centre with the global nearest line, so it holds by construction), the
+// rut/crater rigs (mirror the wheel law against the sim's own per-tick poses),
+// the depth law (hottest pass wins, never adds), determinism (same seed, same
+// drive, byte-identical sand), and the physics-free promise (seed-0 autopilot
+// still finishes at the pre-change tick 5773).
+{
+    console.log('— the sand remembers the race (#1696) —')
+    const m = await loadSim()
+    selectCourse('sandbank')
+    const TS = Tmod.TRACK
+    const TEXn = Tmod.TEX
+    const TEXSn = Tmod.TEX_S
+    const S = m.SAND
+    const texKey = (wx, wy) => {
+        const tx = Math.round(wx * TEXSn); const ty = Math.round(wy * TEXSn)
+        if (tx < 0 || ty < 0 || tx >= TEXn || ty >= TEXn) return null
+        return ty * TEXn + tx
+    }
+    const surfTex = (key) => {
+        const tx = key % TEXn; const ty = (key - tx) / TEXn
+        return Tmod.surfaceAt((tx + 0.5) / TEXSn, (ty + 0.5) / TEXSn, -1).surf
+    }
+    // pick the longest near-straight and enter it early
+    let si = 0; let run = 0; let bestRun = 0
+    for (let i = 0; i < TS.N; i++) { run = Math.abs(TS.pts[i].k) < 2e-4 ? run + 1 : 0; if (run > bestRun) { bestRun = run; si = i } }
+    const entry = TS.pts[(si - 6 + TS.N) % TS.N]
+    const placeSand = (g, v, lat, lean) => {
+        const ca = Math.cos(entry.a); const sa = Math.sin(entry.a)
+        const P = g.karts[0]
+        P.x = entry.x - sa * lat; P.y = entry.y + ca * lat
+        P.a = entry.a + lean; P.idx = entry.i; P.hint = entry.i
+        P.v = v; P.spinT = 0; P.driftT = 0; P.charge = -1; P.driftG = 0
+        P.boostT = 0; P.boostTier = -1; P.offroad = true; P.surf = 'sand'
+        return P
+    }
+    // mirror of the sim's wheel law against RECORDED poses (physics come from
+    // the sim; only the rut geometry is recomputed here)
+    const wheelsFrom = (P, hot, store) => {
+        const ca = Math.cos(P.a); const sa = Math.sin(P.a)
+        const bx = P.x - ca * S.wheelBase; const by = P.y - sa * S.wheelBase
+        const px = -sa; const py = ca
+        for (const s of [-1, 1]) {
+            const wk = texKey(bx + px * s * S.trackW, by + py * s * S.trackW)
+            const lk = texKey(bx + px * s * S.lipOff, by + py * s * S.lipOff)
+            if (wk !== null && surfTex(wk) !== 'road') store.wheels.push([wk, hot ? S.hot : S.roll])
+            if (lk !== null && surfTex(lk) !== 'road') store.lips.push([lk, S.lip])
+        }
+    }
+    const law = (map, key, d) => {
+        const prev = map.get(key)
+        map.set(key, d > 0 ? Math.max(prev ?? 0, d) : Math.min(prev ?? 0, d))
+    }
+    const runRig = (seed, v, drift, steer, ticks) => {
+        const g = m.makeGame(seed)
+        g.phase = 'race'; g.count = 0
+        const P = placeSand(g, v, 121, 0)
+        const wheels = new Map(); const lips = new Map()
+        const centers = []
+        const bumpPos = []
+        for (let i = 0; i < ticks; i++) {
+            m.step(g, drift ? { u: true, drift: true, steer } : { u: true, steer })
+            if (P.surf === 'sand' && P.v > S.minV) {
+                const w = []; const l = []
+                wheelsFrom(P, P.driftT > 0, { wheels: w, lips: l })
+                for (const [k, d] of w) law(wheels, k, d)
+                for (const [k, d] of l) law(lips, k, d)
+                const ck = texKey(P.x, P.y)
+                if (ck !== null && surfTex(ck) !== 'road') centers.push(ck)
+            }
+            if (g.events.some((ev) => ev.e === 'bump' && ev.who === m.PLAYER.name)) bumpPos.push({ x: P.x, y: P.y })
+        }
+        return { g, P, wheels, lips, centers, bumpPos }
+    }
+    const runCrater = () => {
+        // which way is the cliff from the entry? try both, take the first bump
+        for (const dirLabel of ['toward outside', 'toward inside']) {
+            const r = runRig(9, 7, false, dirLabel === 'toward outside' ? 0.32 : -0.32, 90)
+            if (r.bumpPos.length > 0) return { ...r, dirLabel }
+        }
+        return null
+    }
+    const roll = runRig(3, 5, false, 0, 28)
+    let missW = 0; let wrongW = 0
+    for (const [k, d] of roll.wheels) { const v = roll.g.marks.get(k); if (v === undefined) missW++; else if (v !== d) wrongW++ }
+    check('#1696 rut rig: every expected rear-wheel cell is carved at roll depth', roll.wheels.size > 12 && missW === 0 && wrongW === 0,
+        `${roll.wheels.size} cells, ${missW} missing, ${wrongW} wrong`)
+    let missL = 0; let wrongL = 0
+    for (const [k, d] of roll.lips) {
+        if (roll.wheels.has(k)) continue // a lip that is also a rut follows the rut
+        const v = roll.g.marks.get(k); if (v === undefined) missL++; else if (v !== d) wrongL++
+    }
+    check('#1696 rut rig: the heaped lip lines the flanking cells (+1 tone, never churned dark)', roll.lips.size > 12 && missL === 0 && wrongL === 0,
+        `${roll.lips.size} cells, ${missL} missing, ${wrongL} wrong`)
+    let centerHit = 0
+    for (const k of roll.centers) if (roll.g.marks.has(k)) centerHit++
+    check('#1696 rut rig: the body hovers — the centre line cuts nothing on a plain roll', centerHit === 0, `${centerHit} centre cells carved`)
+    check('#1696 depth law: a plain roll never cuts hot anywhere in its region',
+        [...roll.wheels.keys(), ...roll.lips.keys()].every((k) => Math.abs(roll.g.marks.get(k) ?? 0) <= S.roll),
+        'depth beyond roll found in a drift-free pass')
+    const hot = runRig(3, 8, true, -0.25, 26)
+    let hotCells = 0
+    for (const [k] of hot.wheels) if (hot.g.marks.get(k) === S.hot) hotCells++
+    check('#1696 hot rig: a drift entered at speed cuts deeper (depth 2) while it lives', hotCells >= 5, `${hotCells} hot cells`)
+    const crater = runCrater()
+    check('#1696 crater rig: the scripted run lands a cliff bump', crater !== null, crater ? `${crater.dirLabel}, ${crater.bumpPos.length} bumps` : 'no bump in either direction')
+    if (crater) {
+        const bp = crater.bumpPos[0]
+        // the core lands at the CLAMP point (inside the tick, before the last
+        // movement) — audit a small window around the observed contact pose
+        const near = (v, lo, hi) => {
+            let n = 0
+            for (const [k, d] of crater.g.marks) {
+                if (d !== v) continue
+                const tx = k % TEXn; const ty = (k - tx) / TEXn
+                const dx = (tx + 0.5) / TEXSn - bp.x; const dy = (ty + 0.5) / TEXSn - bp.y
+                const dd = Math.sqrt(dx * dx + dy * dy)
+                if (dd >= lo && dd <= hi) n++
+            }
+            return n
+        }
+        check('#1696 crater rig: the impact stamps a core at the contact, deepest in the marks',
+            near(S.crater, 0, 8) >= 1, `cores within 8px: ${near(S.crater, 0, 8)}`)
+        const ringCells = near(S.ring, 4, 26) + near(S.crater, 4, 26)
+        check('#1696 crater rig: the shockwave ring surrounds the contact', ringCells >= 4, `${ringCells} ring cells in the 4..26px window`)
+    }
+    // determinism: the same seed + drive carves byte-identical sand
+    const roll2 = runRig(3, 5, false, 0, 28)
+    check('#1696 determinism: same seed, same drive — identical marks, identical hash',
+        JSON.stringify([...roll.g.marks]) === JSON.stringify([...roll2.g.marks]) && m.stateHash(roll.g) === m.stateHash(roll2.g))
+    // physics-free promise: pre-change main finishes the sandbank seed-0
+    // autopilot at tick 9514/win (measured at dd892e3) — this branch must too.
+    const g0 = m.makeGame(0)
+    let guard0 = 0
+    while (!g0.end && guard0 < 60000) m.step(g0, m.decide(g0))
+    check('#1696 the deformation is presentation-only: sandbank seed 0 autopilot still finishes at tick 9514',
+        g0.tick === 9514 && g0.end === 'win', `tick ${g0.tick} end ${g0.end}`)
+    check('#1696 an autopilot race still leaves the sand marked', g0.marks.size > 100, `${g0.marks.size} cells`)
+    let roadCells = 0
+    for (const k of g0.marks.keys()) if (surfTex(k) === 'road') roadCells++
+    check('#1696 the asphalt law: no marked texel in a whole race sits on the road', roadCells === 0, `${roadCells} violations`)
+    let depthBad = 0
+    const hist = {}
+    for (const v of g0.marks.values()) { hist[v] = (hist[v] || 0) + 1; if (v < S.lip || v > S.crater) depthBad++ }
+    check('#1696 every cell in a whole race sits inside [lip, crater]', depthBad === 0, JSON.stringify(hist))
+    check('#1696 a fresh game starts on smooth sand', m.makeGame(11).marks.size === 0)
+    // straddle rig: a kart riding the edge line — its LIP shovel reaches onto
+    // the asphalt shoulder of the road. The guard must refuse every one.
+    const strad = (() => {
+        const g = m.makeGame(4)
+        g.phase = 'race'; g.count = 0
+        placeSand(g, 4.5, 113, 0)
+        for (let i = 0; i < 24; i++) m.step(g, { u: true })
+        let rc = 0
+        for (const k of g.marks.keys()) if (surfTex(k) === 'road') rc++
+        return { size: g.marks.size, rc }
+    })()
+    check('#1696 the edge-line straddle: lips pile up right at the paint but never on it',
+        strad.size > 8 && strad.rc === 0, `${strad.size} cells, ${strad.rc} on road`)
+    // source pins: the law + the heal + the harness hook
+    const simSrcSD = readFileSync(SIM, 'utf8')
+    const idxSrcSD = readFileSync(IDXJS, 'utf8')
+    check('sim.js: makeGame carries a fresh marks Map and step flushes markDelta every tick',
+        /marks:\s*new Map\(\)/.test(simSrcSD) && /g\.markDelta\.length\s*=\s*0/.test(simSrcSD))
+    check('sim.js: the asphalt guard judges the texel centre against the global nearest line',
+        /surfaceAt\(wx0, wy0, -1\)\.surf === 'road'/.test(simSrcSD))
+    check('index.jsx: the bake clones the pristine cache and a new marks Map heals it flat',
+        /gnd = new Uint32Array\(gnd0\)/.test(idxSrcSD) && /gnd\.set\(gnd0\)/.test(idxSrcSD))
+    check('index.jsx: the loop applies the deform after every sim step, and the harness can see it',
+        /step\(g, live \? inp : decide\(g\)\)\s*\n\s*applyDeform\(\)/.test(idxSrcSD) && /marks:\s*g\.marks\.size/.test(idxSrcSD))
+}
+
 if (process.argv.includes('--mutate')) {
     // #1498 mutants: (1) restore the narrow 132px clamp — the corridor the
     // maps drew escapes *past* the paint at race speed, and the autopilot's
@@ -1550,6 +1725,7 @@ if (process.argv.includes('--mutate')) {
                 g.phase = 'race'
                 const P = g.karts[0]
                 P.v = 6; P.lapStart = -999
+                const T = Tmod.TRACK
                 let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
                 for (let i = 0; i < T.N; i++) {
                     const k = Math.abs(T.pts[i].k)
@@ -1621,6 +1797,94 @@ if (process.argv.includes('--mutate')) {
             plant(SELJS, selMut)
             await died('the chevrons shrink onto the centre (no thumb target, no start zone)', async () => selectorGate(await loadSelector(Date.now())))
         } finally { pull(SELJS) }
+    }
+
+    // #1696 mutants: kill the carve call, restore additive churn, delete the
+    // asphalt guard, delete the crater-at-bump, and hand the renderer a shared
+    // (non-healing) bake. Each must blind a SAND gate.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const simPath1696 = fileURLToPath(SIM)
+        const simSrc1696 = readFileSync(SIM, 'utf8')
+        const idxSrc1696 = readFileSync(IDXJS, 'utf8')
+        const diedSD = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1696 SAND gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1696 SAND gates are BLIND`)
+        }
+        const sandProbe = async () => {
+            const mm = await loadSim()
+            selectCourse('sandbank')
+            const TS = Tmod.TRACK
+            let si = 0; let run = 0; let bst = 0
+            for (let i = 0; i < TS.N; i++) { run = Math.abs(TS.pts[i].k) < 2e-4 ? run + 1 : 0; if (run > bst) { bst = run; si = i } }
+            const entry = TS.pts[(si - 6 + TS.N) % TS.N]
+            const g = mm.makeGame(3)
+            g.phase = 'race'; g.count = 0
+            const P = g.karts[0]
+            const ca = Math.cos(entry.a); const sa = Math.sin(entry.a)
+            P.x = entry.x - sa * 113; P.y = entry.y + ca * 113; P.a = entry.a; P.idx = entry.i; P.hint = entry.i; P.v = 1.15
+            for (let i = 0; i < 24; i++) mm.step(g, { u: true })
+            // crawl speed: the path revisits cells, so churn-vs-max is visible
+            return { g, mm }
+        }
+        try {
+            plant(simPath1696, simSrc1696.replace('else carveWheels(g, k, k.driftT > 0)', 'else void (k.driftT > 0)'))
+            await diedSD('the carve call is dead (the sand forgets every tyre pass)', async () => {
+                const { g } = await sandProbe()
+                check('#1696 carve-dead: the straddle should still cut ruts — it cuts nothing', g.marks.size > 8, `${g.marks.size} cells`)
+            })
+        } finally { pull(simPath1696) }
+        try {
+            plant(simPath1696, simSrc1696.replace('const best = d > 0 ? Math.max(prev ?? 0, d) : Math.min(prev ?? 0, d)', 'const best = (prev ?? 0) + d'))
+            await diedSD('depth churns additively (a slow roll digs itself to the moon)', async () => {
+                const { g, mm } = await sandProbe()
+                let deep = 0
+                for (const v of g.marks.values()) if (v > mm.SAND.roll || v < mm.SAND.lip) deep++
+                check('#1696 churn probe: the depth law holds on a revisited track (max, not add)', deep === 0, `${deep} law-breaking cells`)
+            })
+        } finally { pull(simPath1696) }
+        try {
+            plant(simPath1696, simSrc1696.replace("if (surfaceAt(wx0, wy0, -1).surf === 'road') return", ''))
+            await diedSD('the asphalt guard is gone (lips pile onto the painted road)', async () => {
+                const { g } = await sandProbe()
+                const TEXn = Tmod.TEX; const TEXSn = Tmod.TEX_S
+                let rc = 0
+                for (const k of g.marks.keys()) {
+                    const tx = k % TEXn; const ty = (k - tx) / TEXn
+                    if (Tmod.surfaceAt((tx + 0.5) / TEXSn, (ty + 0.5) / TEXSn, -1).surf === 'road') rc++
+                }
+                check('#1696 guard probe: the asphalt law still holds here (no road churn)', rc === 0, `${rc} road cells churned`)
+            })
+        } finally { pull(simPath1696) }
+        try {
+            plant(simPath1696, simSrc1696.replace('k.bumpCd = CFG.bumpCd\n                craterAt(g, k)', 'k.bumpCd = CFG.bumpCd'))
+            await diedSD('the cliff bump leaves no scar (crater deleted)', async () => {
+                const mm = await loadSim()
+                selectCourse('sandbank')
+                const TS = Tmod.TRACK
+                let si = 0; let run = 0; let bst = 0
+                for (let i = 0; i < TS.N; i++) { run = Math.abs(TS.pts[i].k) < 2e-4 ? run + 1 : 0; if (run > bst) { bst = run; si = i } }
+                const entry = TS.pts[(si - 6 + TS.N) % TS.N]
+                const g = mm.makeGame(9)
+                g.phase = 'race'; g.count = 0
+                const P = g.karts[0]
+                const ca = Math.cos(entry.a); const sa = Math.sin(entry.a)
+                P.x = entry.x - sa * 121; P.y = entry.y + ca * 121; P.a = entry.a; P.idx = entry.i; P.hint = entry.i; P.v = 7
+                let bumped = false
+                for (let i = 0; i < 90; i++) { mm.step(g, { u: true, steer: 0.32 }); if (g.events.some((ev) => ev.e === 'bump' && ev.who === mm.PLAYER.name)) bumped = true }
+                const cores = [...g.marks.values()].filter((v) => v >= mm.SAND.crater).length
+                check('#1696 crater probe: a bumped kart stamps a core (deepest mark)', bumped && cores > 0, `bumped ${bumped}, cores ${cores}`)
+            })
+        } finally { pull(simPath1696) }
+        try {
+            plant(IDXJS, idxSrc1696.replace('gnd = new Uint32Array(gnd0)', 'gnd = gnd0'))
+            await diedSD('the renderer paints into the shared cache (fresh races can never heal)', async () => {
+                const src = readFileSync(IDXJS, 'utf8')
+                check('#1696 heal-dead: the pristine clone line is gone from index.jsx', /gnd = new Uint32Array\(gnd0\)/.test(src), 'missing')
+            })
+        } finally { pull(IDXJS) }
     }
 
     // break the checkpoint gate in sim.js and demand the shortcut probe above
