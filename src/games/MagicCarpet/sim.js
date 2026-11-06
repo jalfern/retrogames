@@ -19,18 +19,21 @@ export const CFG = {
 // #1740: the original ran a long campaign of 45 levels; the atmospheres repeat
 // every third world (the renderer cycles its three PALs the same way), so the
 // nine named worlds below are three arcs of three — each arc stricter than the
-// last. Quotas stay supply-reachable: pearls 2-6 mana (avg ~4) + wizard hoard +
-// bounties comfortably exceed each quota, gated by the autopilot sweep.
+// last. Quota policy (learned in the sweep: seeds 41/54 stalled when world 9's
+// demand outran the pearl yield): every quota stays well under what the pearls
+// alone realistically pay (~pearls x 3.5 against the 2..6 roll), because the
+// wizard hoard is NOT reliably cashable — casting needs prepaid mana, and an
+// exhausted land at 0 mana is exactly where a hoard-dependent quota soft-locks.
 export const LEVELS = [
     { name: 'VERDANT ISLES', quota: 115, hoard: 80, wizHp: 60, pearls: 56 },
     { name: 'EMBERWILD', quota: 160, hoard: 110, wizHp: 85, pearls: 62 },
     { name: 'FROSTBOUND', quota: 175, hoard: 140, wizHp: 110, pearls: 68 },
-    { name: 'GREENFALL', quota: 190, hoard: 150, wizHp: 120, pearls: 70 },
-    { name: 'SCORCHED SKY', quota: 210, hoard: 165, wizHp: 130, pearls: 72 },
-    { name: 'GLACIER MAW', quota: 230, hoard: 180, wizHp: 140, pearls: 74 },
-    { name: 'LIVING MOOR', quota: 250, hoard: 195, wizHp: 155, pearls: 76 },
-    { name: 'LAST EMBER', quota: 270, hoard: 215, wizHp: 170, pearls: 78 },
-    { name: 'THE LAST SKY', quota: 295, hoard: 235, wizHp: 190, pearls: 82 },
+    { name: 'GREENFALL', quota: 190, hoard: 150, wizHp: 120, pearls: 72 },
+    { name: 'SCORCHED SKY', quota: 205, hoard: 160, wizHp: 130, pearls: 76 },
+    { name: 'GLACIER MAW', quota: 220, hoard: 170, wizHp: 140, pearls: 80 },
+    { name: 'LIVING MOOR', quota: 235, hoard: 185, wizHp: 155, pearls: 84 },
+    { name: 'LAST EMBER', quota: 250, hoard: 200, wizHp: 170, pearls: 88 },
+    { name: 'THE LAST SKY', quota: 265, hoard: 215, wizHp: 185, pearls: 92 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
 
