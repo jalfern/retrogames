@@ -19,7 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad, applyCall } from './planner.js'
-import { createModelPolicy } from './model.js'
+import { createModelPolicy, seatSources } from './model.js'
 import { parseCall, intentLabel } from './voicecalls.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
@@ -444,8 +444,12 @@ const GauntletGame = () => {
         const voiceOn = async () => {
             if (net.phase === 'play') { say('VOICE ORDERS WAIT FOR THE SOLO HALLS'); return }
             if (gs.partnerHuman) { say('SOMEONE ALREADY HOLDS SEAT 2'); return }
+            const wasBrain = gs.partnerMode === 'model' // #1636
             if (!gs.partnerOn) { gs.partnerOn = true; gs.partnerMode = 'cpu'; syncSeat() }
             else if (gs.partnerMode !== 'cpu') gs.partnerMode = 'cpu'
+            // #1636: honesty — voice commands are answered by the scripted CPU,
+            // never the trained net; say so when the seat was BRAIN before V.
+            if (wasBrain) say('ORDERS SERVE THE CPU SEAT')
             const consent = await askVoiceConsent()
             if (!consent.consent) { say('NO MIC, NO ORDERS'); voiceCtl.on = false; voicePush(); return }
             voiceCtl.on = true
@@ -737,7 +741,19 @@ const GauntletGame = () => {
                 if (m.kind === 'death') ctx.restore()
             }
             const other = otherEnt()
-            if (other && !other.down) sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)
+            if (other && !other.down) {
+                sprite(other.name.toLowerCase(), sx(other.x), sy(other.y), 11)
+                // #1636: the trained net wears a face — a faint cyan veil rim
+                // and a BC-1 tag, so players know who they are riding with.
+                if (gs.partnerMode === 'model' && !modelP2 && gs.partnerOn) {
+                    ctx.save()
+                    ctx.shadowColor = '#7de8ff'; ctx.shadowBlur = 6
+                    ctx.strokeStyle = 'rgba(125,232,255,0.55)'
+                    ctx.strokeRect(Math.round(sx(other.x)) - 7, Math.round(sy(other.y)) - 8, 15, 17)
+                    ctx.restore()
+                    text('BC-1', sx(other.x), sy(other.y) - 11, 5, '#7de8ff', 2)
+                }
+            }
             // facing dagger: the sword arc, rendered honestly
             const hx = sx(h.x), hy = sy(h.y)
             ctx.strokeStyle = 'rgba(232,238,248,0.35)'
@@ -1169,6 +1185,15 @@ const GauntletGame = () => {
                     else selectHero = hit
                     return
                 }
+                // #1636: touch path to seat the trained net — the BRAIN chip
+                // sits in the banner strip at bottom-center and mirrors the M
+                // key; the C/BRAIN word in that line is the live readout.
+                if (y > CH - 22 && Math.abs(x - CW / 2) < 64) {
+                    gs.partnerMode = gs.partnerMode === 'model' ? 'off' : 'model'
+                    bcModel.reset()
+                    setSlotKind(p2slot, gs.partnerMode === 'model' ? 'model' : 'off')
+                    return
+                }
                 if (x > VW + 40) startPlay(HERO_ORDER[selectHero])
             }
         }
@@ -1197,7 +1222,11 @@ const GauntletGame = () => {
                 // #495: who fills each seat right now, stamped into recordings
                 // at record-stop. Seat 1 arrives via the contract (external pad
                 // stream = model); seat 2 is model while the contract drives it.
-                sources: () => [{ kind: 'model' }, { kind: modelP2 ? 'model' : p2slot.kind }],
+                sources: () => seatSources({
+                    seat2Kind: modelP2 ? 'model' : p2slot.kind,
+                    brainSeated: !modelP2 && gs.partnerMode === 'model',
+                    brainName: bcModel.name,
+                }),
                 // #1247: online host — this device's mic covers seat 0 only,
                 // and the guest's relayed track joins every recording.
                 ...(netRole === 'host' ? { voice: { slots: [0] }, voiceExtra: () => netVoiceIn.voiceSection() } : {}),
