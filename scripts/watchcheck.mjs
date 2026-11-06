@@ -645,4 +645,20 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     for (const p of ['/zork2', '/zork3'])
         rep.check(`registry ${p}: no WATCH line (the brain is proven on Zork I only)`, !entryHas(p, 'WATCH_HELP'))
 }
+// #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
+// in four palettes had drifted back in after #1650 folded the rest — a stray
+// copy of the contract text anywhere outside the shared component goes red.
+{
+    const shared = readFileSync('src/components/WatchButton.jsx', 'utf8')
+    rep.check('WatchToast: the shared banner holds the contract copy',
+        shared.includes('WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER'))
+    const stray = []
+    for (const g of [...FLAGSHIP, ...ARCADE]) {
+        if (readFileSync(`src/games/${g}/index.jsx`, 'utf8').includes('WATCHING — THE PROVEN ROUTE')) stray.push(g)
+    }
+    for (const f of Object.values(B4_SRC)) {
+        if (readFileSync(f, 'utf8').includes('WATCHING — THE PROVEN ROUTE')) stray.push(f)
+    }
+    rep.check('every pilot renders the shared WatchToast (no per-game banner copies)', stray.length === 0, stray.join(', '))
+}
 rep.exit()

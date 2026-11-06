@@ -21,7 +21,7 @@ import { CFG, T, newCity, step, stateHash, litSet, moveCursor, tapInbox } from '
 import { W, H, SCEN } from './scen.js'
 import { plan } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
@@ -466,9 +466,7 @@ const SimCityMinGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SIMCITY-MIN')} onResume={handleResume} />}
             {/* #1637 WATCH — the proven plan runs the city where the receipt matches. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {play && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

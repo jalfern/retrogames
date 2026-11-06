@@ -20,7 +20,7 @@ import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad, applyCall } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { createModelPolicy, seatSources } from './model.js'
 import { createNetDemo } from './netdemo.js'
 import { parseCall, intentLabel } from './voicecalls.js'
@@ -1572,9 +1572,7 @@ const GauntletGame = () => {
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {/* #1637 WATCH — the proven maze brain walks the hero; any seat-1 input takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

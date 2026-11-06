@@ -17,7 +17,7 @@ import { LEVELS, W, H, HEROES, HERO_ORDER, MONSTERS } from '../Gauntlet/levels.j
 import { makeGame, step, stateHash, CFG, doorAt } from '../Gauntlet/sim.js'
 import { plan, decide } from '../Gauntlet/planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { buildSprites, MATERIALS } from '../Gauntlet/art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from '../Gauntlet/sound.js'
 import { attractFrame, DIM } from './attract.js'
@@ -620,9 +620,7 @@ const FourHallsGame = () => {
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {/* #1637 WATCH — the proven maze brain walks the hero; any input takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

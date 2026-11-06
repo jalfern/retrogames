@@ -8,7 +8,7 @@ import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameCont
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { drawScene, VW, VH, fitAttractFont } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
@@ -411,9 +411,7 @@ const PrinceOfPersiaGame = () => {
                 {paused && <PauseOverlay game={GAMES.find((game) => game.label === 'PRINCE OF PERSIA')} onResume={handleResume} />}
                 {/* #1637 WATCH — the proven pilot runs the hour; any input takes over. */}
                 {watching && (
-                    <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-300/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                        WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                    </div>
+                    <WatchToast className="z-50" />
                 )}
                 {!paused && (
                     <div className="absolute z-50 pointer-events-auto" style={{ top: '0.75rem', right: '0.75rem' }}>

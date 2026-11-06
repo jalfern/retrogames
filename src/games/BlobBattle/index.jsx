@@ -22,7 +22,7 @@ import { createLockStep } from '../../utils/lockstep.js'
 import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx, winPresentation } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { CANVAS, PALETTE, orbSprite, championOrb, text, textWidth, stage, wellFrame } from './art.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, toWire, assemblePads, hostSeed } from './net.js'
 
@@ -821,9 +821,7 @@ const BlobBattleGame = () => {
             <VirtualControls visible={play && !paused && !netUi} secondAction={{ label: 'DROP', code: 'KeyB' }} />
             {/* #1637 WATCH — the seeded CPU planner stacks your well; any seat-1 key takes over. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-pink-400/90 border border-pink-100 text-pink-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {play && !paused && !netUi && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
