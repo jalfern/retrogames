@@ -660,6 +660,24 @@ void main(){
             // #1639 RAISE: the mound itself rides the live heightmap upload;
             // this is the dust it kicks up on the way.
             else if (e.type === 'raise') spawnBurst(gs, e.x, e.y, 12, [0.9, 0.68, 0.42])
+            // #1668 DISSOLVE: the sea pours into the fresh wound — cold cyan
+            // spray and mist rings over the sunk ground. Deliberately NO scorch
+            // and no fire: the flood is cold, and the renderer keeps the sim's
+            // promise on screen. The drowned terrain itself rides the live
+            // heightmap upload; the sea plane does the flooding.
+            else if (e.type === 'dissolve') {
+                spawnBurst(gs, e.x, e.y, 16, [0.45, 1.3, 1.9])
+                spawn(e.x, WATER + 1, e.y, 'flare', 0, 0.2, 0, 10, 16, [0.6, 1.4, 2.0])
+                for (let k = 1; k <= 3; k++) {
+                    const a = k * 2.1
+                    spawn(e.x + Math.cos(a) * k * 6, WATER + 0.4, e.y + Math.sin(a) * k * 6,
+                        'flare', 0, 0.15, 0, 5 + k * 2, 18 + k * 4, [0.55, 1.35, 1.9])
+                }
+            }
+            else if (e.type === 'dissolveHut') {
+                spawn(e.x, WATER + 1.2, e.y, 'smoke', 0, 0.5, 0, 3.2, 46, [0.6, 1.2, 1.5])
+                spawn(e.x, WATER + 0.8, e.y, 'flare', 0, 0.1, 0, 4, 10, [0.6, 1.3, 1.8])
+            }
             else if (e.type === 'level') resetWorld()
         }
     }

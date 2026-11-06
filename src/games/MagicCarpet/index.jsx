@@ -28,6 +28,7 @@ const SPELL_COLORS = {
     protect: '#58b8ff', slow: '#b070ff', telekinesis: '#58e8d8',
     invisibility: '#c8ecff', volcano: '#ff5a20',
     shatter: '#d8f0ff', raise: '#c89a58',
+    dissolve: '#3ec8e8',
 }
 
 function drawSpellIcon(ctx, id, x, y, s) {
@@ -82,6 +83,16 @@ function drawSpellIcon(ctx, id, x, y, s) {
         ctx.strokeStyle = '#ffe0a0'; ctx.lineWidth = Math.max(1, s * 0.32)
         ctx.beginPath(); ctx.moveTo(x - s * 0.7, y + s * 0.15); ctx.lineTo(x, y - s * 0.45); ctx.lineTo(x + s * 0.7, y + s * 0.15); ctx.stroke()
         ctx.beginPath(); ctx.moveTo(x - s * 0.5, y - s * 0.45); ctx.lineTo(x, y - s * 1.0); ctx.lineTo(x + s * 0.5, y - s * 0.45); ctx.stroke()
+    } else if (id === 'dissolve') {
+        // A land slab tilting down under two cyan waves, droplet falling off.
+        ctx.fillStyle = '#8a6a48'
+        ctx.beginPath(); ctx.moveTo(x - s, y - s * 0.45); ctx.lineTo(x + s * 0.45, y - s * 0.9); ctx.lineTo(x + s, y + s * 0.1); ctx.lineTo(x - s * 0.25, y + s * 0.55); ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.32)
+        ctx.beginPath(); ctx.moveTo(x - s * 1.05, y + s * 0.1); ctx.quadraticCurveTo(x - s * 0.5, y - s * 0.4, x, y + s * 0.15); ctx.stroke()
+        ctx.strokeStyle = 'rgba(150, 230, 255, 0.65)'
+        ctx.beginPath(); ctx.moveTo(x - s * 0.6, y + s * 0.55); ctx.quadraticCurveTo(x, y + s * 0.05, x + s * 0.6, y + s * 0.6); ctx.stroke()
+        ctx.fillStyle = c
+        ctx.fillRect(x + s * 0.55, y - s * 0.55, Math.max(1, s * 0.28), Math.max(1, s * 0.5))
     } else {
         ctx.fillStyle = c
         ctx.fillRect(x - s * 0.8, y + s * 0.2, s * 0.5, s * 0.8)
@@ -198,6 +209,12 @@ const MagicCarpetGame = () => {
                         audioController.playSweep(70, 190, 0.32, 'sawtooth', 0.08)
                         audioController.playTone(98, 0.24, 'triangle', 0.04, 0.12)
                     }
+                    else if (id === 'dissolve') {
+                        // The sea pouring into a new wound: a bright glide down
+                        // into a thick low glug.
+                        audioController.playSweep(760, 160, 0.34, 'sine', 0.06)
+                        audioController.playSweep(220, 70, 0.5, 'triangle', 0.07, 0.16)
+                    }
                     else if (id !== 'heal' && id !== 'protect' && id !== 'slow') audioController.playTone(500, 0.05, 'square', 0.05)
                 } else if (e.type === 'invisEnd') {
                     audioController.playSweep(980, 300, 0.26, 'sine', 0.035)
@@ -258,6 +275,17 @@ const MagicCarpetGame = () => {
                     audioController.playNoise(0.3, 0.05)
                     shake = Math.max(shake, 4)
                     say('THE GROUND RISES')
+                } else if (e.type === 'dissolve') {
+                    // The land giving way: a long drown-undertow under the
+                    // splash, and the sea claims the map from here on.
+                    audioController.playNoise(0.5, 0.1)
+                    audioController.playSweep(180, 44, 0.8, 'sine', 0.08)
+                    shake = Math.max(shake, 5)
+                    say('THE LAND DISSOLVES — THE SEA FLOODS IN')
+                } else if (e.type === 'dissolveHut') {
+                    // A hut swallowed whole: one muffled gulp of water.
+                    audioController.playSweep(300, 90, 0.22, 'triangle', 0.05)
+                    audioController.playNoise(0.1, 0.04)
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
                 } else if (e.type === 'wizardDown') {
@@ -566,7 +594,7 @@ const MagicCarpetGame = () => {
                 }
             }
             if (gs.book) {
-                // The tray: all ten spells, unlearned dimmed, left-hand pick
+                // The tray: all eleven spells, unlearned dimmed, left-hand pick
                 // boxed gold; mana cost under each icon (green-gold when payable).
                 const [tx, ty, tw, th] = TRAY
                 ctx.fillStyle = 'rgba(14, 20, 60, 0.92)'
@@ -594,7 +622,7 @@ const MagicCarpetGame = () => {
                     ctx.fillText(String(sp.cost), cx, ty + 15)
                     ctx.fillStyle = '#9aa2cf'
                     ctx.font = 'bold 6px monospace'
-                    ctx.fillText('1234567890'[i], cx, ty + 21)
+                    ctx.fillText('1234567890-'[i], cx, ty + 21)
                     ctx.textAlign = 'left'
                     ctx.globalAlpha = 1
                 })
@@ -707,7 +735,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
-            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'].indexOf(e.code)
+            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'].indexOf(e.code)
             if (digit >= 0 && SPILLS[digit]) setHand(gs, 'L', SPILLS[digit].id)
         }
         const onUp = (e) => {
