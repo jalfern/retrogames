@@ -678,6 +678,17 @@ void main(){
                 spawn(e.x, WATER + 1.2, e.y, 'smoke', 0, 0.5, 0, 3.2, 46, [0.6, 1.2, 1.5])
                 spawn(e.x, WATER + 0.8, e.y, 'flare', 0, 0.1, 0, 4, 10, [0.6, 1.3, 1.8])
             }
+            // #1680 CLONE: the mirror ring flashes jade at the look point and
+            // every twin sparkles into being opposite its original. Deliberately
+            // no scorch, no fire, no terrain write: the bestiary doubles, the
+            // land does not — the renderer keeps the sim's promise on screen.
+            else if (e.type === 'clone') {
+                spawn(e.x, heightAt(gs, e.x, e.y) + 1.5, e.y, 'flare', 0, 0, 0, 10, 13, [0.55, 1.7, 1.05])
+                for (const c of e.copies) {
+                    spawnBurst(gs, c.x, c.y, 5, [0.7, 1.9, 1.15])
+                    spawn(c.x, heightAt(gs, c.x, c.y) + 2, c.y, 'flare', 0, 0.1, 0, 4, 11, [0.65, 1.8, 1.1])
+                }
+            }
             else if (e.type === 'level') resetWorld()
         }
     }

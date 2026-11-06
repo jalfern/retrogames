@@ -32,7 +32,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
   the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots + gold SPELLS tab with eleven-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with twelve-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -130,6 +130,21 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   terrain). rng-free: same seed, same flood. Key `-`, tray slot 11 (keycap
   `-`), learned from an 11th grimoire; the GL pass answers with cyan spray
   rings and mist, and the shell with an undertow sweep + banner.
+- CLONE (#1680, the 12th spell, cost 35): creature-cloning — the last entry of
+  the original's later-game repertoire (#1612 item 5). Where you look, every
+  creature within `CLONE_R` (24u) gains a twin at the MIRRORED position across
+  the ring centre (never closer than 6u to it), at its kind's full spawn health
+  (`SPAWN_HP`, now the single source for spawn + clone) and a fresh AI clock.
+  Twins are ordinary monsters — they chase, bite, sling, stampede and pay the
+  ordinary bounty — so casting into a pack doubles the land's killable mana and
+  the danger in the same gesture. The wizard is unique and never cloned; land,
+  huts, pearls and books are untouched (cold, rng-free like shatter: same seed,
+  same litter). `CLONE_MAX` (32) guards world sim load against ring-upon-ring.
+  Key `=`, tray slot 12 (keycap `=`), learned from a 12th grimoire; the GL pass
+  answers with jade birth-sparkles at every twin, the shell with an echoed
+  two-note cast and a doubling banner. Interpretation note: the original's Clone
+  manual text was unverifiable at build time (no reachable sources); the issue's
+  spec line — the repertoire "still misses creature-cloning" — is what shipped.
 - Fairness invariant (#1639): every wizard tower generates within 180u of the
   castle — inside the guards' firing reach (<200u, arrows carry ~300). A
   hoarding wizard behind an out-of-reach tower plus a carpet at 0 mana is a
@@ -269,9 +284,11 @@ see item 5).
 
 ## Honest gaps (the polish pass owns these)
 
-- Clone: the book reached eleven (#1668 shipped dissolve), but the original's
-  later-game repertoire still misses creature-cloning. Invisibility shipped
-  #1610, volcano #1612 item 5, shatter + raise #1639, dissolve #1668.
+- **CLOSED by #1680:** Clone — the book reached eleven (#1668 shipped dissolve),
+  but the original's later-game repertoire still missed creature-cloning.
+  Invisibility shipped #1610, volcano #1612 item 5, shatter + raise #1639,
+  dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
+  (clone/dissolve/shatter/volcano) is now fully shipped.
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.

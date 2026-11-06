@@ -29,6 +29,7 @@ const SPELL_COLORS = {
     invisibility: '#c8ecff', volcano: '#ff5a20',
     shatter: '#d8f0ff', raise: '#c89a58',
     dissolve: '#3ec8e8',
+    clone: '#58f0a0',
 }
 
 function drawSpellIcon(ctx, id, x, y, s) {
@@ -93,6 +94,15 @@ function drawSpellIcon(ctx, id, x, y, s) {
         ctx.beginPath(); ctx.moveTo(x - s * 0.6, y + s * 0.55); ctx.quadraticCurveTo(x, y + s * 0.05, x + s * 0.6, y + s * 0.6); ctx.stroke()
         ctx.fillStyle = c
         ctx.fillRect(x + s * 0.55, y - s * 0.55, Math.max(1, s * 0.28), Math.max(1, s * 0.5))
+    } else if (id === 'clone') {
+        // The mirror ring: a solid creature dot and its twin, hollow, standing
+        // opposite across the ring centre — the spell in one glyph.
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.28)
+        ctx.beginPath(); ctx.arc(x, y, s * 0.95, 0, Math.PI * 2); ctx.stroke()
+        ctx.fillStyle = c
+        ctx.beginPath(); ctx.arc(x - s * 0.45, y, s * 0.32, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = c
+        ctx.beginPath(); ctx.arc(x + s * 0.45, y, s * 0.32, 0, Math.PI * 2); ctx.stroke()
     } else {
         ctx.fillStyle = c
         ctx.fillRect(x - s * 0.8, y + s * 0.2, s * 0.5, s * 0.8)
@@ -215,6 +225,12 @@ const MagicCarpetGame = () => {
                         audioController.playSweep(760, 160, 0.34, 'sine', 0.06)
                         audioController.playSweep(220, 70, 0.5, 'triangle', 0.07, 0.16)
                     }
+                    else if (id === 'clone') {
+                        // The mirror taking hold: one note, then its twin a
+                        // heartbeat behind — the spell IS the echo.
+                        audioController.playTone(740, 0.09, 'sine', 0.05)
+                        audioController.playTone(740, 0.12, 'sine', 0.04, 0.11)
+                    }
                     else if (id !== 'heal' && id !== 'protect' && id !== 'slow') audioController.playTone(500, 0.05, 'square', 0.05)
                 } else if (e.type === 'invisEnd') {
                     audioController.playSweep(980, 300, 0.26, 'sine', 0.035)
@@ -286,6 +302,20 @@ const MagicCarpetGame = () => {
                     // A hut swallowed whole: one muffled gulp of water.
                     audioController.playSweep(300, 90, 0.22, 'triangle', 0.05)
                     audioController.playNoise(0.1, 0.04)
+                } else if (e.type === 'clone') {
+                    // The payoff: every ring it caught stands twice. One rising
+                    // jade pair per copy (capped so a full ring stays musical,
+                    // not noisy), then the world's verdict in words.
+                    const n = Math.min(e.count, 4)
+                    for (let k = 0; k < n; k++) {
+                        audioController.playSweep(520 + k * 110, 1040 + k * 130, 0.14, 'triangle', 0.045, k * 0.07)
+                    }
+                    if (e.count > 0) {
+                        say(e.count === 1 ? 'A CREATURE STANDS TWICE' : `CLONE — ${e.count} CREATURES DOUBLED`)
+                        shake = Math.max(shake, 2)
+                    } else {
+                        say('THE MIRROR FINDS NOTHING HERE')
+                    }
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
                 } else if (e.type === 'wizardDown') {
@@ -594,7 +624,7 @@ const MagicCarpetGame = () => {
                 }
             }
             if (gs.book) {
-                // The tray: all eleven spells, unlearned dimmed, left-hand pick
+                // The tray: all twelve spells, unlearned dimmed, left-hand pick
                 // boxed gold; mana cost under each icon (green-gold when payable).
                 const [tx, ty, tw, th] = TRAY
                 ctx.fillStyle = 'rgba(14, 20, 60, 0.92)'
@@ -622,7 +652,7 @@ const MagicCarpetGame = () => {
                     ctx.fillText(String(sp.cost), cx, ty + 15)
                     ctx.fillStyle = '#9aa2cf'
                     ctx.font = 'bold 6px monospace'
-                    ctx.fillText('1234567890-'[i], cx, ty + 21)
+                    ctx.fillText('1234567890-='[i], cx, ty + 21)
                     ctx.textAlign = 'left'
                     ctx.globalAlpha = 1
                 })
@@ -735,7 +765,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
-            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus'].indexOf(e.code)
+            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'].indexOf(e.code)
             if (digit >= 0 && SPILLS[digit]) setHand(gs, 'L', SPILLS[digit].id)
         }
         const onUp = (e) => {
