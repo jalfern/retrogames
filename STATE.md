@@ -1,70 +1,83 @@
-# STATE — session 149 (2026-11-05, slot b)
+# STATE — session 150 (2026-11-05, slot b)
 
 ## What shipped
-**GAUNTLET ATTRACT — THE TRAINED NET PLAYS (#1641)** — PR #1647
-squash-merged `0c05855`; prod-verified (live entry `index-CSS8eCPn.js` →
-Gauntlet chunk `index-qLp8bd9D.js` carries the net-attract). The attract is
-now LIVE play, not script replay: plaicraft-bc/v1 holds seat 2 making every
-pad itself beside the reactive pilot (`decide`) on seat 1 — the exact config
-that scored heldout 8/8 — cycling held-out seeds 100..107, each run ending
-`NET CLEARS THE QUEST!` on a frozen board ~4 s. `plan()` never runs unless
-the net throws (sticky broken → planner-script replay, no flapping, caption
-stops claiming the brain). Honesty glue: demo wins bank no hi-score and never
-flip the screen (`finish()` guard — the old route could); leaving attract
-drops the demo's BRAIN seat (opt-in stays M). New pure module
-`Gauntlet/netdemo.js` (decisions only, never step — browser and harness tick
-the same driver). QA polish pass filed: #1655 (camera on the net, seed stamp
-on the banner, win sting, research name on screen, select-screen parity).
-Harness: **netdemocheck 40/40** — seeds mirror plaicraft-export, all 8
-held-out seeds re-win through the shipped driver, dead weights diverge (the
-seat provably steers), determinism, throw-policy fallback, honesty source
-pins, caption band audits. Mutant: pin the net's fwd bit → 8 win gates red
-(32/40), restored. gauntletcheck 304, eslint + lint:mario/fps/ai + build
-green. gauntletplay += 4 browser steps (CI runs; local Chrome dead).
+**ICE CLIMBER — SOLVER BAIL SCALED TO REMAINING MOUNTAINS (#1653 part 2)**
+— PR #1658 squash-merged `f174c4b`. The autopilot's outer loop was guarded by
+a flat `g.tick < 60000` (~15× the observed worst solve). It now scales:
+`while (g.level < 3 && g.tick - entryTick < (3 - g.level) * BAIL_PER_MOUNTAIN)`
+with `BAIL_PER_MOUNTAIN = 12000` exported. Measured worst solve across 224
+perturbed-resume + full-range probes = **4743 ticks**, so a fresh full range
+keeps ~7.9× headroom while a stuck final mountain aborts in 12k not 60k.
+**Entry-relative** (`g.tick - entryTick`), not absolute, so PROGNOSIS resumes
+keep their full budget (an absolute bail would refuse an aged state instantly).
+A bail-out now reports a distinct `reason` ("bail: N ticks spent on M remaining
+mountain(s)") instead of a silent null. Player-visible: an unwinnable last
+mountain gives up ~5× sooner; normal play/attract/watch finish far inside the
+budget so nothing legitimate changes. Harness: **icecheck 42 → 47** — new BAIL
+section pins the scaled budget, the entry-relative resume, and the headroom.
+Mutants proven red→green: restore flat 60k → 2 gates red; switch to absolute
+accounting → scaling pin + aged-state-resume gate both red. build + eslint +
+lint:mario/fps/ai green.
 
-## Chrome STILL broken studio-wide (#1622 lineage)
-Confirmed again on this box: Chrome SIGABRTs at launch and the dev server
-serves two optimization rounds in one split graph (curl main.jsx → react
-v=7452f798 AND react-dom_client v=d54ecf74). Advisory per rule 3. Slot a's
-carry stands: **`npm run watchcheck` (44 pilots) is the FIRST job when
-Chrome recovers.**
+## THIS BOX CANNOT RUN ANY BROWSER ENGINE (#1622 — narrowed)
+Not just Chrome. System Chrome AND bundled Chrome-for-Testing (chromium-1243)
+SIGABRT exit 134 at launch (zero stderr, no .ips); **and** WKWebView (the
+macOS-native engine) loads pages but its JS bridge returns "JavaScript
+execution returned a result of an unsupported type" for EVERY expression —
+even `1+1` / `document.title` on a self-contained `loadHTMLString` page with
+zero network. So no browser JS runs on this host at all. This blocks
+`npm run watchcheck` soak + any 390px mobile capture; do NOT trust local
+browser evidence this session, and don't re-probe Chrome (rule 8).
+
+## Blocked / still open (#1653 stays open — multi-part)
+Parts 1 (390px mobile WATCH-pill nudges for LunarLander/MarioKart) and 3
+(watchcheck soak pilots, batch-2 nine predicates) need a working browser
+engine → move to a healthy node or wait for #1622 recovery. Pill positions
+left byte-for-byte unchanged — #1650 flagged the crowding as "allegedly" and a
+capture-less nudge is a guess. Prod URL also unverifiable here: no egress to
+jalfern.com (curl → HTTP 000; only localhost works). Merge + green Vercel
+preview on #1658 are the deploy signal; live-hash check deferred.
 
 ## Playable now
-Everything before + the net playing Gauntlet's attract (leave it up — every
-seed ends in a win); Y/WATCH on 25 arcade titles (slot a, batches 1-3);
-Magic Carpet 10 spells; MYST through item 16.
+Everything before, plus IceClimber with the scaled bail (leave attract up — the
+three mountains still solve clean & replay-hash-equal). Net plays Gauntlet's
+attract; Y/WATCH on 25 titles; Magic Carpet 10 spells; MYST through item 16.
 
 ## Next (priority order)
-1. `npm run watchcheck` when Chrome recovers (44 pilots; batches 1-3).
+1. `npm run watchcheck` (44 pilots) — FIRST job on a box with Chrome.
 2. #1637 batch 4 (IF/physics remainder: Zork agent/explorer — commands not
    pads, mind the double-driver law; RobotLab + FloorBoss Plaicraft episode
    pads; Iron Ring; Rally Co-Driver). Claim #1637 again, forge/watch-rollout-b4.
-3. #1654 + #1655 QA polish passes belong to the QA lane. #1612 remainder stands.
-4. #1645 (MagicCarpet 11th spell) sits OPEN but UNLABELED — treat the
-   recorded default (DISSOLVE) as decided when MagicCarpet is next taken.
+3. #1653 parts 1+3 (mobile pill + soak) — needs a live browser engine; QA lane.
+4. #1654 + #1655 QA polish passes belong to the QA lane. #1612 remainder stands.
+5. #1645 (MagicCarpet 11th spell) sits OPEN but UNLABELED — treat the recorded
+   default (DISSOLVE) as decided when MagicCarpet is next taken.
 
 ## Gates/commands as of this session
-eslint + lint:mario/fps/ai + build + static held the bar (#1647).
-gh-shim CONFIRMED (third time): `gh pr checks --json` gives
-state:"completed"+conclusion lowercase — the literal rule-5 loop spins
-forever. Wait on `(state+" "+conclusion)` uppercased matching *SUCCESS*,
-red on *FAILURE|ERROR|TIMED_OUT*.
-ciscope (#1575): EVERY new `npm run *check` alias must join a checks.mjs
-scope (netdemocheck went into the gauntlet scope) or MANUAL_CHECKS, or
-static goes red on ciscope --selftest.
-`gh issue edit --add-label X` hits a shim unbound-var bug — use
-`gh api -X POST issues/<n>/labels` instead.
+eslint + lint:mario/fps/ai + build + static held the bar (#1658); smoke +
+scope + Vercel-preview also green on the PR.
+gh-shim CONFIRMED (now 4th time): `gh pr checks --json` gives state:"completed"
++ lowercase conclusion — the literal rule-5 loop spins forever. Wait on
+`(.state+" "+(.conclusion//""|ascii_upcase))` matching *SUCCESS*, red on
+*FAILURE|ERROR|TIMED_OUT*. That's the variant that merged #1658.
+ciscope (#1575): a new `npm run *check` alias must join a checks.mjs scope or
+MANUAL_CHECKS. This session modified the existing icecheck alias only → ciscope
+unaffected.
 
 ## Notes for the next slot-b session
-- Worktree ~/Dev/retrogames-forge-gauntlet-net-attract re-detached at
-  origin/main with node_modules in place — reusable (branch deleted both ends).
-- Dev server on 5178 STOPPED at end of session (was mine).
-- netdemo honesty surface: `__gauntletTest.netDemoProbe()/demoSeed(n)/
-  demoTick()` — demoTick fast-forwards a full quest in ~1 s without rAF;
-  that's how gauntletplay proves the win deterministically.
-- Park STATE with `node scripts/statepark.mjs park b` right after writing.
+- Dev server on 5178 STOPPED at end of session (was mine). Reuse port 5178.
+- Worktree ~/Dev/retrogames-forge-watch-b2-polish re-detached at origin/main
+  (f174c4b) with node_modules in place — reusable (branch deleted both ends).
+- icecheck is now 47 gates (was 42). If you touch planner.js keep the BAIL
+  section honest — it pins the literal loop condition.
+- Do NOT `git reset --hard` with uncommitted STATE.md in the tree — it wipes
+  the report (this session lost one draft that way). Write, commit, push.
 - macOS cp two calls; `cp -Rc` node_modules instant; gh/jonq need
-  `. /tmp/forge/netenv.sh`.
+  `. /tmp/forge/netenv.sh`. Park STATE with
+  `node scripts/statepark.mjs park b` right after writing.
 
 ## Open questions
-None new. Carried: #1645 (see Next §4 — unlabeled, default DISSOLVE).
+None new. Carried: #1645 (see Next §5 — unlabeled, default DISSOLVE). The
+no-browser / no-egress host facts are recorded here and on #1653/#1622, not
+asked (factual blockers, not taste/priority; the lane keeps shipping game
+code — this session merged).
