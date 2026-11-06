@@ -36,6 +36,24 @@ function readRoster(rel) {
     return readFileSync(rel, 'utf8')
 }
 
+// Nightly #40 lesson: CI's software-rendered Chrome can starve the frame clock
+// for seconds, and a single probe at the end of a fixed window calls a healthy
+// prover "no progress" (iron-ring/SSX 0-progress FAILs that pass locally every
+// time, and a stale dev server can fake the same verdict). Poll instead: sleep
+// the honest window, then keep probing until a 3x ceiling. The rule is intact —
+// progress is REQUIRED by the ceiling — only its meaning hardened from "exactly
+// at 5 s" to "by the ceiling", which is what the game promises, not Chrome.
+const pollAdvance = async (page, probe, advanced, a, waitMs) => {
+    const t0 = Date.now()
+    await page.waitForTimeout(waitMs)
+    let b = await probe()
+    while (!advanced(a, b) && Date.now() - t0 < waitMs * 3) {
+        await page.waitForTimeout(250)
+        b = await probe()
+    }
+    return b
+}
+
 // openGame without the exit() — a first visit can also fail on a Vite reload,
 // and this script wants to retry and report, not die.
 async function openGameNoExit(browser, pilot) {
@@ -113,8 +131,7 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
             // A revive-capable prover may have WON by now — releasing the
             // watch at the end of the run is the honest behaviour (#1656), so
@@ -146,8 +163,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: watch from HERE
             rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
             rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
@@ -217,8 +233,7 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
             // A revive-capable prover may have WON by now — releasing the
             // watch at the end of the run is the honest behaviour (#1656), so
@@ -250,8 +265,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: watch from HERE
             rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
             rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
@@ -321,8 +335,7 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
             // A revive-capable prover may have WON by now — releasing the
             // watch at the end of the run is the honest behaviour (#1656), so
@@ -354,8 +367,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: watch from HERE
             rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
             rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
@@ -427,8 +439,7 @@ const PILOTS = [
             // the fixed window on CI; the resume leg proved the seat works).
             if (g.settle) await page.waitForFunction(g.settle, H, { timeout: 25000 }).catch(() => {})
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
             // A revive-capable prover may have WON by now — releasing the
             // watch at the end of the run is the honest behaviour (#1656), so
@@ -460,8 +471,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: watch from HERE
             rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
             rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
@@ -532,8 +542,7 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
             // A revive-capable prover may have WON by now — releasing the
             // watch at the end of the run is the honest behaviour (#1656), so
@@ -565,8 +574,7 @@ const PILOTS = [
             await key(page, 'KeyY')                       // re-seat: watch from HERE
             rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
             rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
@@ -756,8 +764,17 @@ const PILOTS = [
             await page.waitForFunction(() => window.__ssxTest.probe().p.v > 0.05, null, { timeout: 25000 }).catch(() => {})
             await page.waitForTimeout(1200)               // some downhill after release
             const s1 = await page.evaluate(() => window.__ssxTest.probe())
-            await page.waitForTimeout(1500)
-            const s2 = await page.evaluate(() => window.__ssxTest.probe())
+            // Nightly #40 CI flake: the frame clock can starve seconds on the
+            // software-rendered box (`s -14 -> -14 @v 0.0`, locally green every
+            // time). Poll for the descent to a ceiling instead of sampling one
+            // instant — the rule is unchanged (the rider must move untouched),
+            // a stalled box gets a later look, never a pass.
+            let s2 = s1
+            const tSs = Date.now()
+            while (!(s1.tick < s2.tick && s2.p.s > s1.p.s) && Date.now() - tSs < 20000) {
+                await page.waitForTimeout(500)
+                s2 = await page.evaluate(() => window.__ssxTest.probe())
+            }
             rep.check('SSX: the rider runs the line untouched', s1.tick < s2.tick && s2.p.s > s1.p.s,
                 `s ${s1.p.s.toFixed(0)} -> ${s2.p.s.toFixed(0)} @v ${s2.p.v.toFixed(1)}`)
             rep.check('SSX: still watching mid-hill', await page.evaluate(() => window.__ssxTest.watching()))
