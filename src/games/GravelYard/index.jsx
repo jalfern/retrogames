@@ -329,6 +329,9 @@ export default function GravelYard() {
             if (net.role === 'host') lobby.open()
             else lobby.join(nq.get('room'))
             net.startHost = () => {
+                // never start an empty room: the marquee code is the invite,
+                // a seat has to be taken before the shift can begin
+                if (!(lobby.room.slots.length >= 2)) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
                 const seed = hostSeed()
                 if (!lobby.start({ seed })) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
                 beginOnline(seed)
