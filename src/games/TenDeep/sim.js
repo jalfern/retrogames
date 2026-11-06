@@ -12,10 +12,10 @@
 // the slack rule re-grades with one fewer of every supply consumed.
 
 import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
-import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN } from './town.js'
+import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt } from './town.js'
 import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
 
-export { SIZE, BUILDINGS, SERVICES, TOWN }
+export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt }
 export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
 export const W = 256
 export const H = 224
@@ -77,6 +77,13 @@ const BOSS_GROUP = ['KING', 'WYRM', 'WYRM']
 // opts.skipPots / skipSprings: ["floor,x,y", ...] tiles the harness can delete
 // to grade the SLACK RULE — the campaign must still be winnable with one
 // fewer of every supply the winning script actually consumed.
+// the street state for a fresh (or re-entered) RIM: an empty hall, no bench,
+// the hero standing at the west end of the walkable street (#1751).
+export const freshTown = () => ({
+    b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0,
+    tx: RIM_STREET.start.x, ty: RIM_STREET.start.lane, face: 1,
+})
+
 export function makeRun(opts = {}) {
     const st = {
         tick: 0, floor: 0, x: 1, y: 1, dir: 0,
@@ -91,8 +98,10 @@ export function makeRun(opts = {}) {
         pots: new Set(), springs: new Set(), ambushes: new Set(),
         combat: null, target: 0, ward: 0,
         // THE RIM: street or building interior; wipe = bodies just carried home;
-        // cand = the creation bench is open (six papers, chosen alignment)
-        town: { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 },
+        // cand = the creation bench is open (six papers, chosen alignment).
+        // tx/ty (#1751) = the hero's tile on the walkable street, face the
+        // way they last walked — the RIM is a place you walk now.
+        town: freshTown(),
         wipe: false,
         townSeed: opts.townSeed || 0x5EED,
         ledger: { dealt: 0, taken: 0, casts: 0, potionsUsed: 0, springsUsed: 0, potTiles: [], springTiles: [], goldIn: HEROES0.reduce((n, h) => n + h.gold, 0), goldSpent: 0, tx: [] },
@@ -110,7 +119,7 @@ function markViewTown(st) {
 export function enterDungeon(st) {
     st.mode = 'map'
     st.wipe = false
-    st.town = { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
+    st.town = freshTown()
     st.ward = 0
     enterFloor(st, 0)
 }
@@ -345,7 +354,7 @@ function carryHome(st) {
     if (st.strict) { st.mode = 'over'; st.end = 'dead'; return }
     st.mode = 'town'
     st.wipe = true
-    st.town = { b: null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
+    st.town = freshTown()
     markViewTown(st)
     st.events.push({ type: 'wipe', lost })
     // dead and broke at the gate: nobody left to call and nothing to pay with
@@ -530,6 +539,25 @@ function charge(st, price, h) {
 function townStep(st, cmd) {
     const t = st.town
     if (cmd === 'wait') return
+    // ---- walking the street (#1751) --------------------------------------
+    // Arrows move the hero tile by tile on the two-lane RIM. The blocked()
+    // law: a hedge, the well curb or the map edge refuses, the hero stays put
+    // and the walk event says so — an unmoved frame is a refusal, not a bug.
+    if (cmd === 'walk-left' || cmd === 'walk-right' || cmd === 'walk-far' || cmd === 'walk-near') {
+        if (t.b) return // interiors have their own verbs; walk only on the street
+        let nx = t.tx, ny = t.ty
+        if (cmd === 'walk-left') nx = t.tx - 1
+        else if (cmd === 'walk-right') nx = t.tx + 1
+        else if (cmd === 'walk-far') ny = 1
+        else ny = 0
+        if (nx === t.tx && ny === t.ty) return
+        if (rimBlocked(nx, ny)) { st.events.push({ type: 'walkBlocked', x: nx, y: ny }); return }
+        t.tx = nx; t.ty = ny
+        if (cmd === 'walk-left') t.face = -1
+        if (cmd === 'walk-right') t.face = 1
+        st.events.push({ type: 'walk', x: nx, y: ny })
+        return
+    }
     if (cmd === 'potion') {
         if (st.potions <= 0) { st.events.push({ type: 'empty' }); return }
         const hurt = st.party.filter(h => h.alive).sort((a, b) => (a.hp / a.maxHp) - (b.hp / b.maxHp))[0]
@@ -550,13 +578,21 @@ function townStep(st, cmd) {
     }
     if (cmd === 'leave') {
         if (!t.b) return
+        const out = t.b
         t.b = null; t.svc = 0; t.cand = null; t.ci = 0; t.ali = 0
+        // you step out onto your own threshold, not onto the map at large
+        t.tx = RIM_STREET.doors[out] ?? RIM_STREET.start.x
+        t.ty = 1
         st.events.push({ type: 'townStreet' })
         return
     }
     const ent = BUILDINGS.find(b => b.key === cmd.replace('enter-', ''))
     if (cmd.startsWith('enter-')) {
         if (!ent) { st.events.push({ type: 'townNo' }); return }
+        // #1751: doors are where they are — walk to the threshold first. The
+        // street law is strict by design: an enter from across the road would
+        // make the walk (and every gate that proves it) a lie.
+        if (rimDoorAt(t.tx, t.ty) !== ent.key) { st.events.push({ type: 'townNo', why: 'DOORAWAY' }); return }
         t.b = ent.key; t.svc = 0; t.cand = null; t.ci = 0; t.ali = 0
         st.events.push({ type: 'townEnter', b: ent.key, name: ent.name })
         return
@@ -707,6 +743,9 @@ export function stateHash(st) {
     const mix = (n) => { h ^= Math.round(n * 100) | 0; h = Math.imul(h, 0x01000193) }
     mix(st.tick); mix(st.floor); mix(st.x); mix(st.y); mix(st.dir); mix(st.potions)
     mix(st.mode === 'town' ? (st.town.b ? 300 + st.town.svc : 299) : st.mode === 'combat' ? 2 : st.mode === 'over' ? 4 : 1)
+    // #1751: where the hero stands on the walkable RIM is sim state — the
+    // hash changes when the walk changes, so replays pin every step.
+    mix(st.town.tx); mix(st.town.ty); mix(st.town.face)
     mix(purse(st)); mix(st.town.hero); mix(st.wipe ? 1 : 0); mix(st.townSeed)
     mix(st.town.cand ? 500 + st.town.ci + st.town.ali * 17 : 0)
     mix(st.ward)

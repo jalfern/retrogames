@@ -185,8 +185,23 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
 
 ## Honest gaps (stage 4+ of #1127)
 
-- Town is a service screen, not a walkable overworld (the original's New
-  Sorpigal had streets; ours is the four-door view + the well).
+- ~~Town is a service screen, not a walkable overworld~~ **CLOSED by #1751**:
+  THE RIM is a place you walk now. `RIM_STREET` (town.js) is a 32-tile,
+  two-lane hamlet: four facades with door tiles on the far lane (T 3, V 9,
+  G 16, A 22), hedges blocking the far lane at 6-7 and 18-19, the well curb
+  blocking the near lane at 12-13 — so every door needs a lane-hop to reach.
+  `st.town.tx/ty/face` is sim state (in `stateHash`); `walk-left/right/far/near`
+  commands move it, `rimBlocked` refuses (a refused step books a `walkBlocked`
+  event — an unmoving frame is an answer, AGENTS' blocked() law), `enter-<key>`
+  is strict (`rimDoorAt(tx,ty)` must match — DOORAWAY otherwise), `leave`
+  steps you onto your own threshold, and F descends from anywhere (pad law).
+  The shell draws the same map you walk: lamp pools, hedges, door steps, and a
+  walker whose stride keys to tile parity (idle = still). Pure data, zero rng:
+  proofs bypass the town, so every campaign pin stands. tendeepcheck +8 gates
+  (map well-formedness, edge/hedge/well refusals, lane round-trip + facing,
+  strict door, all-doors-reachable + threshold on leave, hash rides the walk,
+  determinism, source pins); mutants: kill `rimBlocked`'s lane lookup → street
+  gates red, kill the `rimDoorAt` guard → strict-door gate red, restored.
 - Monsters do not stand in the corridor before combat — the original showed
   roaming groups in the 3D view; ours are hidden ambush tiles (a sim rule
   since stage 1; the #1129 billboard pipeline is where this would land, and
@@ -194,7 +209,7 @@ npm run dev && npm run tendeepplay   # headless Chrome, real key events,
 - Combat keeps its 2D bitmap plates on the HUD layer (the original also cut
   to a separate combat screen, but the plates want their own MODERN pass).
 - No between-run persistence (Wizardry saved to disk; we don't).
-- ~~The pad carries arrows + A + F~~ #1275: B is mode-aware (`padB` in
+- ~~The pad carries arrows + A + F~~ **CLOSED by #1275**: B is mode-aware (`padB` in
   `sim.js`, pinned in tendeepcheck, graded in tendeeppplay) — DRINK in the
   corridor, LEAVE inside a building, DESCEND on the street, fire in battle
   or GUARD when no living hero can work a letter. Heal and flee stay

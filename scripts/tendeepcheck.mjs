@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -41,6 +41,27 @@ const run = (g, cmd, n = 1) => {
 }
 const partyHp = (g) => g.party.reduce((n, h) => n + h.hp, 0)
 const mobHp = (g) => (g.combat ? g.combat.mobs.reduce((n, m) => n + m.hp, 0) : 0)
+
+// #1751 — walking to a door like a player does: lane-hop around the hedges
+// and the well curb, then stand on the threshold. sim.js owns the law; this
+// only issues the arrow commands a thumb on the pad would.
+const walkToTile = (g, tx) => {
+    let guard = 0
+    while (g.town.tx !== tx && guard++ < 200) {
+        const dir = tx > g.town.tx ? 'walk-right' : 'walk-left'
+        const nx = g.town.tx + (dir === 'walk-right' ? 1 : -1)
+        if (rimBlocked(nx, g.town.ty)) step(g, g.town.ty ? 'walk-near' : 'walk-far')
+        if (rimBlocked(nx, g.town.ty)) throw new Error(`walkToTile: no lane through x=${nx}`)
+        step(g, dir)
+        drain(g)
+    }
+    if (g.town.ty !== 1) { step(g, 'walk-far'); drain(g) } // doors live on the far lane
+}
+const walkEnter = (g, key) => {
+    walkToTile(g, RIM_STREET.doors[key])
+    step(g, `enter-${key}`)
+    return drain(g)
+}
 
 // ---------------------------------------------------------------- math is banned ----
 section('MATH.RANDOM IS A SIM CRIME')
@@ -341,7 +362,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
     // TAVERN: hire replaces a corpse — and refuses the living
     {
         const g = makeRun()
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         const ev = run(g, 'buy')
         ok(ev.some(e => e.type === 'townNo') && purse(g) === 120 && g.ledger.tx.length === 0, 'the tavern hired a BREATHING hero — post is for the fallen only')
         g.party[3].alive = false; g.party[3].hp = 0
@@ -356,7 +377,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
     {
         const seq = () => {
             const g = makeRun()
-            step(g, 'enter-T')
+            walkEnter(g, 'T')
             const names = []
             for (let i = 0; i < 4; i++) {
                 g.party[i].alive = false; g.party[i].hp = 0
@@ -376,7 +397,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         g.party.forEach(h => { h.gold += 200; g.ledger.goldIn += 200 })
         g.party[2].alive = false; g.party[2].hp = 0
         const p0 = purse(g)
-        step(g, 'enter-V'); run(g, 'sel+'); run(g, 'sel+')
+        walkEnter(g, 'V'); run(g, 'sel+'); run(g, 'sel+')
         const price = servicePrice(g, SERVICES.V[0])
         ok(price === CFG.mournCost * 1, `mourn must price at 200 x lvl, got ${price}`)
         run(g, 'buy')
@@ -384,7 +405,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         ok(purse(g) === p0 - 200, `mourn misbooked: ${p0} -> ${purse(g)}`)
         const poor = makeRun()
         poor.party[0].alive = false; poor.party[0].hp = 0
-        step(poor, 'enter-V')
+        walkEnter(poor, 'V')
         const ev = run(poor, 'buy')
         ok(ev.some(e => e.type === 'broke') && !poor.party[0].alive && purse(poor) === 120, 'the temple resurrected on credit')
     }
@@ -393,7 +414,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         const g = makeRun()
         g.party.forEach(h => { h.gold += 400; g.ledger.goldIn += 400 })
         g.party[1].alive = false; g.party[1].hp = 0
-        step(g, 'enter-V'); run(g, 'svc+'); run(g, 'sel+')
+        walkEnter(g, 'V'); run(g, 'svc+'); run(g, 'sel+')
         run(g, 'buy')
         ok(g.party[1].alive && g.party[1].hp === g.party[1].maxHp && g.party[1].mp === g.party[1].maxMp, 'Restore left someone less than whole')
         g.party[4].hp = 3; g.party[4].mp = 0
@@ -408,7 +429,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
     {
         const g = makeRun()
         g.party.forEach(h => { h.gold += 200; g.ledger.goldIn += 200 })
-        step(g, 'enter-G')
+        walkEnter(g, 'G')
         const ev0 = run(g, 'buy')
         ok(ev0.some(e => e.type === 'townNo') && g.party[0].lvl === 1 && purse(g) === 1320, 'training sold a level to a hero with no XP')
         g.party[0].xp = xpNext(1)
@@ -421,11 +442,94 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
     // ALCHEMIST: potions for gold
     {
         const g = makeRun()
-        step(g, 'enter-A')
+        walkEnter(g, 'A')
         const p0 = purse(g)
         const ev = run(g, 'buy')
         ok(ev.some(e => e.type === 'buyPotion') && g.potions === 2 && p0 - purse(g) === CFG.potionCost, 'the alchemist did not sell a vial at list')
     }
+    // ---- THE RIM IS WALKED (#1751) ----------------------------------------
+    section('THE RIM IS WALKED — the street law (#1751)')
+    // map well-formed: doors on the far lane, the well blocking the near lane
+    // only, hedges the far only, and the west start free. A door you cannot
+    // stand on, or a well that seals the whole street, is a level-design lie.
+    {
+        ok(!rimBlocked(RIM_STREET.start.x, RIM_STREET.start.lane), 'the street start tile is blocked — the crew cannot move')
+        for (const [k, tx] of Object.entries(RIM_STREET.doors)) {
+            ok(rimDoorAt(tx, 1) === k && !rimBlocked(tx, 1), `door ${k} at x=${tx} is not standable ground`)
+        }
+        ok(new Set(Object.values(RIM_STREET.doors)).size === Object.keys(RIM_STREET.doors).length, 'two buildings share one door tile')
+        for (const x of RIM_STREET.blockedNear) ok(!rimBlocked(x, 1), `the near lane blocks x=${x} both ways — no way past the well`)
+        for (const x of RIM_STREET.blockedFar) {
+            ok(rimBlocked(x, 1) && !rimBlocked(x, 0), `hedge x=${x} does not straddle lanes`)
+        }
+        ok(rimBlocked(-1, 0) && rimBlocked(RIM_STREET.len, 1), 'the map edges do not refuse walking')
+    }
+    // refusal beats silence: the edge, a hedge and the well each say walkBlocked
+    {
+        const g = makeRun()
+        const ev = run(g, 'walk-left')
+        ok(ev.some(e => e.type === 'walkBlocked') && g.town.tx === 0, 'the west edge let the hero walk off the map')
+        walkToTile(g, 5)
+        ok(g.town.tx === 5 && g.town.ty === 1, `never reached the hedge lip (tx=${g.town.tx})`)
+        const evH = run(g, 'walk-right')
+        ok(evH.some(e => e.type === 'walkBlocked') && g.town.tx === 5, 'the far-lane hedge did not refuse — hedges are décor?')
+        g.town.tx = 11; g.town.ty = 0
+        const evW = run(g, 'walk-right')
+        ok(evW.some(e => e.type === 'walkBlocked') && g.town.tx === 11, 'the well curb did not refuse the near lane')
+    }
+    // lanes round-trip, and the stride direction remembers the last walk
+    {
+        const g = makeRun()
+        run(g, 'walk-right')
+        run(g, 'walk-near'); ok(g.town.ty === 0, 'walk-near did not change lanes')
+        run(g, 'walk-left'); ok(g.town.face === -1 && g.town.tx === 0, 'the walker still faces east after walking west')
+        run(g, 'walk-far'); ok(g.town.ty === 1, 'walk-far did not come back to the doors')
+    }
+    // strict doors: enter-X from anywhere but the threshold is refused
+    {
+        const g = makeRun()
+        const ev = run(g, 'enter-G')
+        ok(ev.some(e => e.type === 'townNo' && e.why === 'DOORAWAY') && g.town.b === null,
+            'a door opened from across the street — the walk would be theatre')
+    }
+    // every door is reachable on foot, and leaving steps you onto your own threshold
+    {
+        const g = makeRun()
+        for (const k of Object.keys(RIM_STREET.doors)) {
+            const ev = walkEnter(g, k)
+            ok(ev.some(e => e.type === 'townEnter' && e.b === k), `door ${k} unreachable or refused`)
+            run(g, 'leave')
+            ok(g.town.tx === RIM_STREET.doors[k] && g.town.ty === 1 && g.town.b === null,
+                `leaving ${k} did not land on its threshold (tx=${g.town.tx} ty=${g.town.ty})`)
+        }
+    }
+    // F descends from ANYWHERE on the street (the shipped pad law), and the
+    // hash rides along with the walk: one step, one different state.
+    {
+        const g = makeRun()
+        const h0 = stateHash(g)
+        run(g, 'walk-right')
+        ok(stateHash(g) !== h0, 'stateHash ignores where the hero stands')
+        walkToTile(g, 27); run(g, 'walk-near')
+        const ev = run(g, 'down')
+        ok(ev.some(e => e.type === 'descend') && g.mode === 'map', 'F stopped descending from the far end of the street')
+    }
+    // determinism: the same seeds and the same arrow stream walk the same path
+    {
+        const walk = () => {
+            const g = makeRun({ townSeed: 99 })
+            for (const c of ['walk-right', 'walk-right', 'walk-near', 'walk-right', 'walk-far', 'walk-right']) step(g, c)
+            return stateHash(g)
+        }
+        ok(walk() === walk(), 'two identical walks hashed apart — the street is not deterministic')
+    }
+    // source pin (#1708 pattern): the strict law lives in the sim, not the shell
+    {
+        const simSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js'), 'utf8')
+        ok(/rimDoorAt\(t\.tx, t\.ty\) !== ent\.key/.test(simSrc), 'the strict door law left sim.js (enter-<key> must ask the map)')
+        ok(/walkBlocked/.test(simSrc), 'the blocked() refusal left sim.js — unmoved is not the same as moved')
+    }
+
     // WIPE: bodies to the RIM, half the purse per hero, tax booked
     {
         const g = makeRun()
@@ -510,7 +614,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         const inLedger = g.ledger.goldIn, spent = g.ledger.goldSpent
         ok(inLedger - spent === purse(g), `coins must live in the purse or in the ledger: in=${inLedger} spent=${spent} purse=${purse(g)}`)
         ok(g.ledger.goldIn > 120 || g.ledger.tx.length > 0, 'the wipe happened before any coin was printed — an empty economy proves nothing')
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         g.town.hero = g.party.findIndex(h => !h.alive)
         ok(g.town.hero >= 0, 'a wipe with no fallen hero? the TPK machine failed')
         if (purse(g) >= CFG.hireCost) {
@@ -525,7 +629,7 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         b.party[0].gold += 1
         ok(stateHash(a) !== stateHash(b), 'stateHash ignores the purse')
         const c = makeRun()
-        step(c, 'enter-T')
+        walkEnter(c, 'T')
         ok(stateHash(c) !== stateHash(makeRun()), 'stateHash ignores where you stand in town')
     }
 }
@@ -633,7 +737,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
     // 8. THE BENCH: vacancy rules, refusal of the settled, gates, the fee
     {
         const g = makeRun()
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         const list = SERVICES.T
         ok(list.some((s) => s.id === 'create'), 'the tavern has no creation bench')
         g.town.svc = list.findIndex((s) => s.id === 'create')
@@ -656,7 +760,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
     {
         const bench = (seeded) => {
             const g = makeRun()
-            step(g, 'enter-T')
+            walkEnter(g, 'T')
             g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
             g.party.forEach((h, i) => { if (i < 5) { h.alive = false; h.hp = 0 } })
             run(g, 'open')
@@ -669,7 +773,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
         ok(six.some((s) => s.endsWith('/true')), 'every paper failed at once — the bench dealt nothing but refusals')
         // force a magicless company: no survivor knows a letter
         const g = makeRun()
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
         g.party.forEach((h) => { h.alive = false; h.hp = 0 })
         g.party[0].alive = true; g.party[0].hp = 20; g.party[0].cls = 'FECHT'
@@ -681,7 +785,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
     //     flat fee exactly once and books it in the town ledger
     {
         const g = makeRun()
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         g.party[2].alive = false; g.party[2].hp = 0
         g.town.hero = 2
         g.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
@@ -716,7 +820,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
         b.party[0].cls = 'CLERIC'
         ok(stateHash(a) !== stateHash(b), 'stateHash ignores class')
         const c = makeRun()
-        step(c, 'enter-T')
+        walkEnter(c, 'T')
         c.party[0].alive = false; c.party[0].hp = 0
         c.town.svc = SERVICES.T.findIndex((s) => s.id === 'create')
         run(c, 'open')
@@ -729,7 +833,7 @@ section('PEOPLE & SPELLS — races, classes, alignments, spells-by-level (stage 
         const g = makeRun()
         g.party.forEach((h) => { h.gold += 100; g.ledger.goldIn += 100 })
         const in0 = g.ledger.goldIn
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         g.party[1].alive = false; g.party[1].hp = 0
         g.town.hero = 1
         run(g, 'buy')                                  // POST 40
@@ -917,7 +1021,7 @@ if (MUT) {
     mut('hireCost 40 -> 0 (a free corps of hires)', { hireCost: 0 }, () => {
         const g = makeRun()
         g.party[3].alive = false; g.party[3].hp = 0
-        step(g, 'enter-T')
+        walkEnter(g, 'T')
         g.town.hero = 3
         run(g, 'buy')
         return purse(g) === 120 - CFG.hireCost && purse(g) < 120
@@ -976,6 +1080,37 @@ if (MUT) {
         }
     }
 
+    // 9b. the walk law (#1751): the street's refusals are load-bearing. Kill
+    //     the blocked() lookup and the hedges/well become décor; kill the
+    //     threshold test and doors open from across the road.
+    {
+        const townFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'town.js')
+        const townOrig = readFileSync(townFile, 'utf8')
+        const townMutants = [
+            ['the hedge and the well stop refusing (blocked() law dead)',
+                '(lane ? RIM_STREET.blockedFar : RIM_STREET.blockedNear).includes(x)',
+                'false'],
+        ]
+        for (const [name, from, to] of townMutants) {
+            ok(townOrig.includes(from), `town mutant anchor missing: ${name}`)
+            plant(townFile, townOrig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(townFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the street gates stopped touching this rule`)
+        }
+        const simOrig2 = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js'), 'utf8')
+        const m2 = ['the strict door law is dead (enter from anywhere)',
+            'if (rimDoorAt(t.tx, t.ty) !== ent.key)', 'if (false)']
+        ok(simOrig2.includes(m2[1]), 'strict-door mutant anchor missing')
+        const simFile2 = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
+        plant(simFile2, simOrig2.replace(m2[1], m2[2]))
+        const res2 = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+        pull(simFile2)
+        console.log(`  mut ${m2[0]}: ${res2.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+        ok(res2.status !== 0, `${m2[0]} SURVIVED — the strict-door gate stopped touching this rule`)
+    }
+
     // 10. source-patch mutants (hudfit.js, #1282): the strip must grow short names
     //     to the largest fitting size AND must ellipsize names that never fit.
     {
@@ -1007,7 +1142,7 @@ if (MUT) {
     const g = makeRun()
     ok(g.mode === 'town' && !g.town.b, 'padB anchor: a run opens on the RIM street')
     ok(padB(g, null).label === 'DESCEND' && padB(g, null).code === 'KeyF', `street B must carry DESCEND/KeyF, got ${JSON.stringify(padB(g, null))}`)
-    step(g, 'enter-T')
+    walkEnter(g, 'T')
     ok(g.town.b === 'T', 'padB anchor: the tavern door opens')
     ok(padB(g, null).label === 'LEAVE' && padB(g, null).code === 'KeyL', `inside a building B must carry LEAVE/KeyL — a phone had NO way out, got ${JSON.stringify(padB(g, null))}`)
     step(g, 'leave')
