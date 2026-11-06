@@ -9,6 +9,31 @@
 
 export const TOWN = 'THE RIM'
 
+// ---- the walkable street (#1751) -------------------------------------------
+// THE RIM is a place you walk, not a menu: a two-lane cobbled street running
+// past four facades, with the well curb blocking the near lane and hedges
+// blocking the far one — so the hamlet has real routing, and every door must
+// be reached on foot. Pure data + pure lookups: positions are input-driven,
+// the map is fixed (no rng), so determinism is untouched and the proofs never
+// touch it (makeRun({strict}) bypasses the town entirely).
+export const RIM_STREET = {
+    len: 32,                    // tiles across (10 px each at the game's W=320)
+    doors: { T: 3, V: 9, G: 16, A: 22 },   // door tiles, all on the FAR lane
+    blockedNear: [12, 13],     // the well curb — walk past on the far lane
+    blockedFar: [6, 7, 18, 19],           // hedges — duck to the near lane
+    start: { x: 0, lane: 1 },           // west end, at the doors' side
+}
+
+// blocked() law (AGENTS): anything that moves must ask.
+export const rimBlocked = (x, lane) =>
+    x < 0 || x >= RIM_STREET.len ||
+    (lane ? RIM_STREET.blockedFar : RIM_STREET.blockedNear).includes(x)
+
+// the building whose threshold you are standing on (only the far lane has doors)
+export const rimDoorAt = (x, lane) =>
+    lane === 1 ? Object.keys(RIM_STREET.doors).find((k) => RIM_STREET.doors[k] === x) ?? null : null
+
+
 export const BUILDINGS = [
     { key: 'T', name: 'TAVERN', sign: 'THE DROWNING CROW' },
     { key: 'V', name: 'TEMPLE', sign: 'HOUSE OF THE Ninth' },
