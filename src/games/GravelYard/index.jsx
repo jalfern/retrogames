@@ -816,7 +816,7 @@ export default function GravelYard() {
                 hash: () => simState(gsRef.current).hash,
                 // #1672 online-seat probes: feed a peer pad without a relay so
                 // gravelcheck can drive the lockstep path in a headless box.
-                net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall }),
+                net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall, slots: net.live || (net.room && net.room.slots) || [] }),
                 netFeed: (seat, k, mask) => { const mm = mirrors[seat | 0]; if (mm) mm.set(k | 0, { m: mask | 0 }); if ((seat | 0) !== net.seat) ls.gotPad(k | 0, { m: mask | 0 }, seat | 0) },
                 netBegin: (seed, slots) => beginOnline(seed, slots),
                 netStart: () => !!(net.startHost && net.startHost()),

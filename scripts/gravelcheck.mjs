@@ -527,9 +527,9 @@ console.log('— win proof (CPU crew) —')
 if (!process.env.GY_SKIP_BROWSER) {
     const { launchChrome } = await import('./lib/chromeboot.mjs')
     const browser = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrome', extraArgs: ['--autoplay-policy=no-user-gesture-required'] })
+    const errors = []
     try {
         const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
-        const errors = []
         page.on('pageerror', (e) => errors.push(String(e)))
         console.log('— browser: boot + contract —')
         await page.goto(URL, { waitUntil: 'load', timeout: 30000 })
@@ -634,11 +634,124 @@ if (!process.env.GY_SKIP_BROWSER) {
         ok('deck stones bounce while the screen runs', shaker.running, JSON.stringify(shaker))
         ok('batch end spits an output plume sized to the batch', shaker.plumes >= 1, `plumes=${shaker.plumes}`)
         ok('jam puts smoke on the stack', shaker.smoke === 1)
-
-        ok('zero page errors', errors.length === 0, errors.join(' | '))
     } finally {
         await browser.close()
     }
+
+    // ---------- #1705 three browsers, one relay: netplay for real ----------
+    // Every pad above ran through in-memory sims; this is the wire: three
+    // headless pages join a relay room (relay/server.mjs, the worker twin),
+    // the host starts, and real keystrokes on each browser must move the
+    // SAME sim identically on all three boxes. Its own browser instance:
+    // the #1622 single-process fallback is one-renderer-per-tab-shy, and
+    // closing the battery's last page would end that browser outright.
+    const { startRelay } = await import('../relay/server.mjs')
+    const relaySrv = startRelay(0)
+    await new Promise((done) => { const iv = setInterval(() => { if (relaySrv.boundPort()) { clearInterval(iv); done() } }, 20) })
+    const RURL = `ws://127.0.0.1:${relaySrv.boundPort()}`
+    // One page per browser: the #1622 single-process fallback caps a browser
+    // at one tab (a second newPage dies), so three browsers = three seats.
+    const boxes = []
+    const mk = async (q) => {
+        const b = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrome', extraArgs: ['--autoplay-policy=no-user-gesture-required'] })
+        const p = await b.newPage({ viewport: { width: 900, height: 760 } })
+        p.on('pageerror', (e) => errors.push(String(e)))
+        await p.goto(`${URL}${q}&relay=${encodeURIComponent(RURL)}`, { waitUntil: 'load', timeout: 30000 })
+        await p.waitForFunction(() => !!window.__gyTest, null, { timeout: 20000 })
+        boxes.push({ b, p })
+        return p
+    }
+    try {
+        const host = await mk('?net=host')
+        let code = null
+            for (let i = 0; i < 100 && !code; i++) { code = await host.evaluate(() => window.__gyTest.net().code || null); if (!code) await host.waitForTimeout(100) }
+            ok('#1705 relay lobby: host rolls a room code', /^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/.test(String(code)), `code=${code}`)
+            const g1 = await mk(`?net=join&room=${code}`)
+            const g2 = await mk(`?net=join&room=${code}`)
+            let slots = []
+            // every box must SEE the full room before kickoff: the host's view
+            // alone can transiently count a StrictMode ghost socket (#1705 run:
+            // start fired while the third joiner was still mid-handshake, the
+            // roster then held a dead slot and the pads for it never came)
+            for (let i = 0; i < 80; i++) {
+                slots = await host.evaluate(() => window.__gyTest.net().slots)
+                const seen = await Promise.all([host, g1, g2].map((p) => p.evaluate(() => window.__gyTest.net().slots.length)))
+                if (slots.length >= 3 && seen.every((n) => n >= 3)) break
+                await host.waitForTimeout(100)
+            }
+            ok('#1705 three browsers seated in one relay room, join order = slots',
+                JSON.stringify(slots) === '[0,1,2]', JSON.stringify(slots))
+            let started = false
+            for (let i = 0; i < 40 && !started; i++) { started = await host.evaluate(() => window.__gyTest.netStart()); if (!started) await host.waitForTimeout(100) }
+            // the go signal rides the wire: give every box a beat to take its
+            // seat before the law is read (the seats gate is the receipt)
+            let seats = []
+            for (let i = 0; i < 40; i++) {
+                seats = []
+                for (const p of [host, g1, g2]) seats.push(await p.evaluate(() => ({ seat: window.__gyTest.net().seat, mode: window.__gyTest.net().mode })))
+                if (seats.every((s) => s.mode)) break
+                await host.waitForTimeout(100)
+            }
+            ok('#1705 host starts the shift and the seat law rides the wire (digger/truck/console)',
+                started && seats.every((s) => s.mode) && JSON.stringify(seats.map((s) => s.seat)) === '[0,1,2]',
+                JSON.stringify(seats))
+            // real keys, timed inside the sampling window: hold Right on the
+            // digger page, then cycle the console four times on the third box.
+            const keying = (async () => {
+                await boxes[0].p.keyboard.down('ArrowRight')
+                await boxes[0].p.waitForTimeout(700)
+                await boxes[0].p.keyboard.up('ArrowRight')
+                for (let i = 0; i < 4; i++) {
+                    // sustained presses: the pad is sampled once per tick, a
+                    // zero-delay down+up falls between two samples entirely
+                    await boxes[2].p.keyboard.down('ArrowRight')
+                    await boxes[2].p.waitForTimeout(90)
+                    await boxes[2].p.keyboard.up('ArrowRight')
+                    await boxes[2].p.waitForTimeout(140)
+                }
+            })()
+            // Sample the wire continuously: flood-pads + delivery jitter mean
+            // the boxes never share an identical instant (the hash moves every
+            // tick and a 3-way evaluate round-trip is slower than a frame), but
+            // deterministic lockstep still pins hard invariants: no box freezes,
+            // no box runs more than two ticks ahead of another while waiting
+            // for pads, and positions at the shared frontier agree within one
+            // tick of travel. A frozen box (the #1705 wire-pad bug) or a
+            // diverged sim (the pad-erase bug) breaks these — and did, before
+            // the fixes.
+            const samples = []
+            for (let i = 0; i < 50; i++) {
+                const s = await Promise.all(boxes.map(({ p }) => p.evaluate(() => {
+                    const st = window.__gyTest.state()
+                    return { t: st.tick, x: st.digger ? st.digger.x : -1, gate: st.plant.gate, frz: window.__gyTest.net().frozen, stall: window.__gyTest.net().stall }
+                })))
+                samples.push(s)
+                await host.waitForTimeout(60)
+            }
+            await keying
+            const dT = boxes.map((_, j) => samples[samples.length - 1][j].t - samples[0][j].t)
+            ok('#1705 all three boxes dig on the relay (no freeze, 60+ ticks in the window)',
+                dT.every((d) => d >= 60), `ticks advanced ${dT.join('/')}`)
+            const maxSpread = Math.max(...samples.map((s) => Math.max(...s.map((v) => v.t)) - Math.min(...s.map((v) => v.t))))
+            ok('#1705 lockstep holds: no box ran away from the others mid-shift',
+                maxSpread <= 2, `worst tick spread ${maxSpread}`)
+            const dX = boxes.map((_, j) => samples[samples.length - 1][j].x - samples[0][j].x)
+            const lastX = samples[samples.length - 1].map((v) => v.x)
+            ok('#1705 the digger keystroke drove the digger identically on all three boxes',
+                dX.every((d) => d > 3) && Math.max(...lastX) - Math.min(...lastX) <= 4,
+                `moved ${dX.map((d) => d.toFixed(1)).join('/')}px, frontier ${lastX.map((v) => v.toFixed(1)).join('/')}`)
+            const gates = [...new Set(samples[samples.length - 1].map((v) => v.gate))]
+            ok('#1705 console presses on the third browser cycled the gate identically everywhere',
+                gates.length === 1 && gates[0] !== 'medium', `gate ${gates.join('/')}`)
+            ok('#1705 no box froze or blamed a partner for lag across the shift',
+                samples.every((s) => s.every((v) => !v.frz && v.stall < 90)),
+                `worst stall ${Math.max(...samples.flatMap((s) => s.map((v) => v.stall)))}`)
+    } finally {
+        for (const { b, p } of boxes) { try { await p.close() } catch { /* gone */ } try { await b.close() } catch { /* gone */ } }
+        await relaySrv.close()
+    }
+
+    ok('zero page errors', errors.length === 0, errors.join(' | '))
 }
 
 console.log(`\ngravelcheck: ${pass} passed, ${fail} failed`)
