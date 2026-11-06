@@ -160,11 +160,26 @@ const PILOTS = [
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -262,11 +277,26 @@ const PILOTS = [
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -364,11 +394,26 @@ const PILOTS = [
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -384,6 +429,11 @@ const PILOTS = [
             id: 'robot-lab', hook: '__robotTest',
             // Space starts a run; the seat needs the fresh bench (clean junction).
             startKeys: ['Space'], seatWait: 700,
+            // #1637 b7: the route is proven from a FRESH bench, and the game itself
+            // declines to re-seat once any goal is banked (the waypoint script no
+            // longer applies — RobotLab/index.jsx seat rule). offLine names that
+            // state so the harness grades the refusal it actually owes.
+            offLine: (b) => Object.values(b.goals).some(Boolean),
             advanced: (a, b) => b.tick > a.tick && (
                 Math.max(Math.abs(b.hand[0] - a.hand[0]), Math.abs(b.hand[1] - a.hand[1]), Math.abs(b.hand[2] - a.hand[2])) > 0.02
                 || b.score > a.score || Object.values(b.goals).some(Boolean)),
@@ -468,11 +518,26 @@ const PILOTS = [
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -571,11 +636,26 @@ const PILOTS = [
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
