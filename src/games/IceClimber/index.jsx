@@ -377,7 +377,11 @@ const IceGame = () => {
                     }
                 },
                 start: startPlay,
-                watching: () => watchingRef.current, // #1637 watchcheck: is the solver replaying?
+                // #1637 batch 7: planning IS seating — the rAF re-plan (#1650)
+                // resolves within a frame; the pill already answers "planning…"
+                // for this window. Honesty holds: a declined plan never raises
+                // either ref, so watching() drops back to false with the route.
+                watching: () => watchingRef.current || planningRef.current, // #1637 watchcheck: is the solver replaying (or planning to)?
                 board: () => board(),
                 hash: () => stateHash(gs),
                 // SETUP rig for the browser harness ONLY: jump to a mountain and
