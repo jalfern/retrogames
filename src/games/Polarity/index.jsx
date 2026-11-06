@@ -21,7 +21,9 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, L, makeGame, step, stateHash } from './sim.js'
-import { plan } from './planner.js'
+import { plan, policy } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 
 const SIM_MS = 1000 / 60
 
@@ -39,6 +41,9 @@ const PolarityGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven pilot works the waves
+    const watchingRef = useRef(false)
+    const watchStRef = useRef({ dodge: 0 }) // the policy's dodge memory, live
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -127,7 +132,11 @@ const PolarityGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.f || keys.fTap, s: keys.sEdge })
+            // #1637 WATCH: the same policy polarcheck audits — reading the live
+            // board, dodging, flipping and killing on the proven line. Player
+            // taps stay queued-down for the moment they take over.
+            if (watchingRef.current) doSim(policy(gs, {}, watchStRef.current))
+            else doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.f || keys.fTap, s: keys.sEdge })
             keys.sEdge = false
             keys.fTap = false
         }
@@ -278,6 +287,7 @@ const PolarityGame = () => {
             gs = makeGame(0)
             evLog.length = 0; parts.length = 0; tele.length = 0
             keys.l = keys.r = keys.u = keys.d = keys.f = keys.fTap = keys.sEdge = false
+            watchingRef.current = false; setWatching(false); watchStRef.current = { dodge: 0 } // #1637 a new run starts with the stick in your hand
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -290,6 +300,9 @@ const PolarityGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y hands the board to the pilot; any driving key takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
@@ -340,6 +353,7 @@ const PolarityGame = () => {
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the pilot driving?
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
@@ -469,6 +483,17 @@ const PolarityGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'POLARITY')} onResume={handleResume} />}
+            {/* #1637 WATCH — the proven pilot works the waves; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

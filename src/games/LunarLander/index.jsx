@@ -17,7 +17,9 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
-import { plan } from './planner.js'
+import { plan, decide } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
     HEAT_XS, HEAT_VXS, HEAT_EPISODES } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
@@ -52,6 +54,8 @@ const LunarLanderGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven pilot flies the legs
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hud = useRef({})
     const setHud = (k) => (el) => { hud.current[k] = el }
@@ -278,7 +282,13 @@ const LunarLanderGame = () => {
             }
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim(computeInput())
+            // #1637 WATCH: planner.decide(gs) — the same pilot landercheck lands
+            // the five-mission chain with, reading the live altitude every tick.
+            if (watchingRef.current) {
+                const inp = decide(gs)
+                thrustVis = inp.thrust && gs.fuel > 0 && gs.phase !== 'crashed'
+                doSim(inp)
+            } else doSim(computeInput())
         }
 
         // ------------------------------------------------------------- render ----
@@ -394,6 +404,7 @@ const LunarLanderGame = () => {
             const pin = seedFromQuery()
             const gseed = pin != null ? pin >>> 0 : 0
             gs = makeGame(gseed); demoAt = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new run starts with the stick in your hand
             stars = makeStars(gseed)
             parts.length = 0
             shake = 0; flash = 0; zoom = false
@@ -406,6 +417,9 @@ const LunarLanderGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { goPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            // #1637 WATCH: Y hands the sky to the proven pilot; any driving key takes it back.
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
             if (ev.code === 'KeyX' || ev.code === 'KeyL') zoom = !zoom
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
@@ -431,6 +445,7 @@ const LunarLanderGame = () => {
                 press: (codes) => { for (const c of codes) held.add(c) },
                 release: (codes) => { for (const c of codes) held.delete(c) },
                 start: () => goPlay(),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the pilot flying?
                 zoom: () => { zoom = !zoom },
                 plan: (opts) => plan(opts),
                 events: () => evLog,
@@ -519,6 +534,17 @@ const LunarLanderGame = () => {
                 <span>FUEL <span ref={setHud('fuel')} className="text-[#ffd76b]">100</span></span>
                 <span>MULT <span ref={setHud('mult')} className="text-[#8fff9f]">×1</span></span>
             </div>
+            {/* #1637 WATCH — the proven pilot lands the legs; any input takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && !replayMode && !labMode && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={screen === 'play' && !paused && !replayMode && !labMode} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {labMode && (

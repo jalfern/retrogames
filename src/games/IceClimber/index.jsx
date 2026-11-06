@@ -27,6 +27,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, cloneGame } from './sim.js'
 import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
+import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 
 const VIEW_W = W * CELL
 const VIEW_H = H * CELL
@@ -54,6 +56,10 @@ const IceGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the solver replays the three mountains
+    const watchingRef = useRef(false)
+    const watchRunRef = useRef(null) // plan(clone of live state) — closed-loop, resumable
+    const watchAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -146,6 +152,17 @@ const IceGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
+            // #1637 WATCH: the solver plans the three mountains from the LIVE
+            // dwarf state (its macros are closed-loop — icecheck's own PROGNOSIS
+            // path) and replays the result tick-for-tick. It runs BOTH climbers:
+            // the carrot stack needs a pair, and the witness proves the pair.
+            if (watchingRef.current) {
+                const r = watchRunRef.current
+                if (r && watchAtRef.current < r.script.length) doSim(r.script[watchAtRef.current++])
+                else { watchingRef.current = false; setWatching(false) }
+                k1.jEdge = false; k2.jEdge = false
+                return
+            }
             doSim({ a: { l: k1.l, r: k1.r, u: k1.u, j: k1.jEdge ? 1 : 0 }, b: { l: k2.l, r: k2.r, u: k2.u, j: k2.jEdge ? 1 : 0 } })
             k1.jEdge = false; k2.jEdge = false
         }
@@ -274,6 +291,7 @@ const IceGame = () => {
             gs = makeGame(buildLevel(0))
             evLog.length = 0; parts.length = 0
             for (const k of [k1, k2]) { k.l = k.r = k.u = k.j = false; k.jEdge = false }
+            watchingRef.current = false; setWatching(false); watchRunRef.current = null // #1637 a new climb starts in your hands
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -286,6 +304,21 @@ const IceGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y re-plans the route from where the climbers actually
+            // stand — honest decline ("no guide yet") if the solver can't finish
+            // from here. Any driving key takes the dwarves back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+                else {
+                    try {
+                        const r = plan(cloneGame(gs))
+                        if (r.ok && r.script.length) { watchRunRef.current = r; watchAtRef.current = 0; watchingRef.current = true; setWatching(true) }
+                        else say(NO_GUIDE)
+                    } catch { say(NO_GUIDE) }
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (P1_KEYS[e.code]) { k1[P1_KEYS[e.code]] = true; if (P1_KEYS[e.code] === 'j') k1.jEdge = true }
             if (P2_KEYS[e.code]) { k2[P2_KEYS[e.code]] = true; if (P2_KEYS[e.code] === 'j') k2.jEdge = true }
         }
@@ -334,6 +367,7 @@ const IceGame = () => {
                     }
                 },
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the solver replaying?
                 board: () => board(),
                 hash: () => stateHash(gs),
                 // SETUP rig for the browser harness ONLY: jump to a mountain and
@@ -483,6 +517,17 @@ const IceGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ICE CLIMBER CO-OP')} onResume={handleResume} />}
+            {/* #1637 WATCH — the solver replays its proven three-mountain route. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls
                 visible={play && !paused}
                 secondPad={{ up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', action: 'KeyF' }}

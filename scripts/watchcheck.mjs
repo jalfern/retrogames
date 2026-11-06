@@ -32,7 +32,7 @@ const PILOTS = [
     // mid-run and it carries on from exactly there. advanced() reads each game's own
     // probe: score up (kills/flips/bricks) or the avatar visibly moved — both are
     // impossible while an idle player watches nothing happen.
-    // id, hook, extra waits, and an optional custom advanced/note.
+    // id, hook, extra waits, and an optional custom advanced/note/probe/startKeys.
     ...[
         {
             id: 'qbert', hook: '__qbertTest',
@@ -86,9 +86,9 @@ const PILOTS = [
         async run(page, rep) {
             const H = g.hook
             const watching = () => page.evaluate((h) => window[h].watching(), H)
-            const probe = () => page.evaluate((h) => window[h].probe(), H)
-            await key(page, 'Space')                       // attract -> play
-            await page.waitForTimeout(600)
+            const probe = g.probe || (() => page.evaluate((h) => window[h].probe(), H))
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
@@ -109,6 +109,145 @@ const PILOTS = [
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
     })),
+    // #1637 batch 2 — the reactive solver titles. Every brain here is the same
+    // per-tick decision the game's Node check grades, so the factory semantics
+    // hold verbatim; only the advance predicate is game-specific.
+    ...[
+        {
+            id: 'out-run', hook: '__outrunTest',
+            // attract opens the radio screen; a second Space drops the flag
+            // (200-tick count), so seat after the light goes green.
+            startKeys: ['Space', 'Space'], seatWait: 3800, takeover: 'ArrowLeft',
+            advanced: (a, b) => b.pos > a.pos + 100 && b.crashes === a.crashes,
+            note: (a, b) => `pos ${a.pos} -> ${b.pos}, crashes ${a.crashes} held, gear ${b.gear}`,
+        },
+        {
+            id: 'lunar-lander', hook: '__landerTest',
+            // fuel burn is prover-only: an idle player never touches the throttle
+            advanced: (a, b) => b.tick > a.tick && b.fuel < a.fuel,
+            note: (a, b) => `fuel ${a.fuel} -> ${b.fuel}, alt ${a.alt} -> ${b.alt}, phase ${b.phase}`,
+        },
+        {
+            id: 'outpost', hook: '__opTest',
+            // its probe carries a live closure (cellAt) — take a serializable slice
+            probeKeys: ['tick', 'dug', 'minedOre', 'harvested', 'food'],
+            advanced: (a, b) => b.dug > a.dug || b.minedOre > a.minedOre || b.harvested > a.harvested,
+            note: (a, b) => `dug ${a.dug} -> ${b.dug}, ore ${a.minedOre} -> ${b.minedOre}, farm ${a.harvested} -> ${b.harvested}`,
+            resumeWait: 4500,
+        },
+        {
+            id: 'polarity', hook: '__polarTest',
+            advanced: (a, b) => b.score > a.score || Math.abs(b.player.x - a.player.x) > 4,
+            note: (a, b) => `score ${a.score} -> ${b.score}, x ${a.player.x.toFixed(0)} -> ${b.player.x.toFixed(0)}, wave ${b.wave}`,
+        },
+        {
+            id: 'missile-battle', hook: '__mbTest',
+            // firing is prover-only — an idle player never launches; cities held
+            advanced: (a, b) => b.fired > a.fired && b.cities.filter((c) => c).length === a.cities.filter((c) => c).length,
+            note: (a, b) => `fired ${a.fired} -> ${b.fired}, kills ${a.kills} -> ${b.kills}, cities held`,
+            advanceWait: 6000,
+        },
+        {
+            id: 'smash-tv', hook: '__smashTest',
+            advanced: (a, b) => b.score > a.score,
+            note: (a, b) => `score ${a.score} -> ${b.score}, room ${b.room}, lives ${b.lives} held`,
+            advanceWait: 6000,
+        },
+        {
+            id: 'mario-kart', hook: '__kartTest',
+            // the count eats the first beats; v > 0.3 cannot happen on an idle grid
+            seatWait: 1200, advanceWait: 6000, takeover: 'ArrowLeft', resumeWait: 4500,
+            advanced: (a, b) => b.tick > a.tick && b.v > 0.3,
+            note: (a, b) => `v ${a.v} -> ${b.v}, lap ${b.lap + 1}/5, place ${b.place}`,
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = g.probeKeys
+                ? () => page.evaluate((a) => { const p = window[a.h].probe(); const o = {}; for (const k of a.keys) o[k] = p[k]; return o }, { h: H, keys: g.probeKeys })
+                : () => page.evaluate((h) => window[h].probe(), H)
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            await page.waitForTimeout(g.advanceWait || 5000)
+            const b = await probe()
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            rep.check(`${g.id}: still watching mid-route`, await watching())
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            await page.waitForTimeout(g.resumeWait || 3500)
+            const d = await probe()
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
+    {
+        // PAPERBOY — the honest junction. The proven pedal-line is a fixed-v script;
+        // it re-seats only where stage-local time still matches the witness receipt.
+        // Mid-stage the watcher declines with the honesty toast, never a fake route.
+        id: 'paperboy', url: `${BASE}/paperboy`, hook: '__paperTest',
+        async run(page, rep) {
+            const H = '__paperTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')                       // attract -> play (fresh street)
+            await page.waitForTimeout(600)
+            await key(page, 'KeyY')
+            rep.check('paperboy: Y seats the route at the stage junction', await watching())
+            const a = await probe()
+            await page.waitForTimeout(8000)
+            const b = await probe()
+            rep.check('paperboy: the route delivers papers untouched', b.delivered > a.delivered,
+                `delivered ${a.delivered} -> ${b.delivered}, score ${b.score}, street ${b.si}`)
+            await page.keyboard.down('ArrowLeft')
+            rep.check('paperboy: steer key takes over', !(await watching()))
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')                       // mid-stage: the honest decline
+            await page.waitForTimeout(300)
+            rep.check('paperboy: mid-stage re-seat says no guide (never a fake route)', !(await watching()))
+        },
+    },
+    {
+        // ICE CLIMBER — the route re-plans from the LIVE dwarf state at every
+        // seat (the planner's macros are closed-loop, the same path icecheck's
+        // PROGNOSIS runs), so takeover and re-seat resume from exactly there.
+        id: 'ice-climber', url: `${BASE}/ice-climber`, hook: '__iceTest',
+        async run(page, rep) {
+            const H = '__iceTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(600)
+            await key(page, 'KeyY')
+            rep.check('ice-climber: Y starts the solver (plans from the live state)', await watching())
+            const a = await probe()
+            await page.waitForTimeout(6000)
+            const b = await probe()
+            rep.check('ice-climber: the route bores ice untouched', b.climbers[0].digs + b.climbers[1].digs > a.climbers[0].digs + a.climbers[1].digs,
+                `digs ${a.climbers[0].digs + a.climbers[1].digs} -> ${b.climbers[0].digs + b.climbers[1].digs}, bore rows ${b.boreRows.length}`)
+            await page.keyboard.down('ArrowLeft')
+            rep.check('ice-climber: steer key takes over', !(await watching()))
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: re-plan from HERE
+            rep.check('ice-climber: Y re-seats by re-planning from where the dwarves stand', await watching())
+            const c = await probe()
+            await page.waitForTimeout(4500)
+            const d = await probe()
+            rep.check('ice-climber: resumes from where the player left it', d.climbers[0].digs + d.climbers[1].digs > c.climbers[0].digs + c.climbers[1].digs,
+                `digs ${c.climbers[0].digs + c.climbers[1].digs} -> ${d.climbers[0].digs + d.climbers[1].digs}`)
+            await key(page, 'KeyY')
+            rep.check('ice-climber: Y again releases the watcher', !(await watching()))
+        },
+    },
     {
         id: 'ssx', url: `${BASE}/ssx`, hook: '__ssxTest',
         async run(page, rep) {

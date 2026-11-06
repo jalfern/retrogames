@@ -21,6 +21,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { CFG, newRun, step, stateHash } from './sim.js'
 import { W, H, ROCK, STAIRS } from './cave.js'
 import { plan, autopilot, decide as decideTick } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 
 const SIM_MS = 1000 / 60
 const CW = 15, CH = 22
@@ -44,6 +46,8 @@ const OutpostGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the autopilot runs the colony
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -134,6 +138,9 @@ const OutpostGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
+            // #1637 WATCH: the same A-star brain outpostcheck drives with (drive()),
+            // reading the live cave — the dwarves dig, mine and farm on their own.
+            if (watchingRef.current) { doSim(decideTick(gs)); return }
             const inp = {}
             if (designTap) { inp.tool = TOOLS[toolIdx]; inp.designate = [designTap.x, designTap.y]; designTap = null }
             doSim(inp)
@@ -271,6 +278,7 @@ const OutpostGame = () => {
             gs = newRun(seed)
             evLog.length = 0
             toolIdx = 0; designTap = null; denyFlash = null
+            watchingRef.current = false; setWatching(false) // #1637 a new outpost starts in your hands
             cursor = { x: gs.cave.spawn[0], y: gs.cave.spawn[1] + 1 < H - 1 ? gs.cave.spawn[1] + 1 : gs.cave.spawn[1] }
             demoSeed = seed
             bgDirty = true
@@ -293,6 +301,9 @@ const OutpostGame = () => {
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y hands the colony to the autopilot; any driving input takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'KeyT') { toolIdx = (toolIdx + 1) % TOOLS.length; audioController.playTone(400 + toolIdx * 60, 0.03, 'square', 0.03); return }
             if (e.code === 'ArrowLeft') cursor.x = Math.max(1, cursor.x - 1)
             if (e.code === 'ArrowRight') cursor.x = Math.min(W - 2, cursor.x + 1)
@@ -305,6 +316,8 @@ const OutpostGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc !== 'play' || pausedRef.current) return
+            // #1637 WATCH: a designation tap is the player driving — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             const r = canvas.getBoundingClientRect()
             if (!r.width || !r.height) return
             const gx = Math.floor(((e.clientX - r.left) / r.width) * W)
@@ -339,6 +352,7 @@ const OutpostGame = () => {
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the autopilot running the colony?
                 hash: () => stateHash(gs),
                 cursorTo: (x, y) => { cursor.x = Math.max(1, Math.min(W - 2, x)); cursor.y = Math.max(1, Math.min(H - 2, y)) },
                 setTool: (ti) => { toolIdx = ((ti % TOOLS.length) + TOOLS.length) % TOOLS.length },
@@ -458,6 +472,17 @@ const OutpostGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'OUTPOST')} onResume={handleResume} />}
+            {/* #1637 WATCH — the autopilot runs the colony; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )
