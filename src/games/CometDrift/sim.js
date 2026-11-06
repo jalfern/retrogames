@@ -60,6 +60,19 @@ export const TIERS = [
     { t: 165, dur: 90, over: 3.6 },
 ]
 
+// #1690 MK-style LINK combo: releasing a PAID drift while your boost is still
+// LIVE links it. The chain runs x1..x3 and every link
+//  - EXTENDS the boost: dur = max(remaining, newBase) + ext*newBase*n,
+//  - LIFTS the cap: +overAdd of extra top-speed per link on top of the
+//    tier's own over,
+//  - SEEDS carry: a drift STARTED while boosting begins at carry * the last
+//    banked tier's charge, so blue-violet-gold is drivable through one corner
+//    sequence instead of three races.
+// The chain breaks honestly: it resets when the boost drains, on a spin, and
+// when a no-pay dump lands during a live boost (the remaining boost burns,
+// the chain does not). Pure + rng-free so cometcheck can gate the law itself.
+export const LINK = { ext: 0.34, max: 3, carry: 0.45, overAdd: 0.55 }
+
 // #1687 deliberate drift-economy for the field (used by brain(), rivals only):
 // a skill-scaled tier target — the front markers chase gold, the back markers
 // bank blue early — a hard hold cap (steer authority bottoms at
@@ -72,7 +85,16 @@ export const DRIFT_PLAN = {
     chain: 2.4,
     hold: 170,
     kBend: 1 / 2200,
-    target: (skill) => (skill >= 0.84 ? TIERS[2].t : skill >= 0.81 ? TIERS[1].t : TIERS[0].t),
+    skillIdx: (skill) => (skill >= 0.84 ? 2 : skill >= 0.81 ? 1 : 0),
+    // #1690 corner-reactive ambition: the brake-horizon curvature decides what
+    // is drivable HERE — a bend (r < 2600) feeds one tier ABOVE the kart's
+    // skill base, a braking corner (r < 1500) feeds the full raise; a
+    // sweeper/straight pays the base. Skill sets the ceiling, the corner
+    // decides how much of it is reachable in THIS sequence (back markers
+    // still never chase gold — the #1687 gradient law rides that).
+    reachIdx: (kAhead) => (kAhead > 1 / 1500 ? 2 : kAhead > 1 / 2600 ? 1 : 0),
+    targetIdx: (skill, kAhead) => Math.min(2, DRIFT_PLAN.skillIdx(skill) + (DRIFT_PLAN.reachIdx(kAhead) >= 1 ? 1 : 0)),
+    target: (skill) => TIERS[DRIFT_PLAN.skillIdx(skill)].t,
 }
 
 // #440 item 5: a rival's gold release is a distant sweep, not the player's.
@@ -127,6 +149,7 @@ function mkKart(def, row) {
         y: p.y + Math.sin(p.a + Math.PI / 2) * lat,
         a: p.a, v: 0, idx: i, hint: i, sUnwrap: p.s,
         boostT: 0, boostTier: -1, spinT: 0, driftT: 0, charge: -1, steerVis: 0, driftG: 0,
+        link: 0, linkCarry: 0,
         grade: 0, braking: 0, lat: 0, bank: 0,
         cp: 0, lap: 0, lapStart: 0, lapTimes: [], place: row + 1,
         finished: false, finishT: 0,
@@ -163,6 +186,7 @@ function spin(k, g, why, by) {
     if (k.spinT > 0 || k.finished) return
         k.spinT = CFG.spinT
     k.boostT = 0; k.boostTier = -1; k.driftT = 0; k.charge = -1; k.driftG = 0
+    k.link = 0; k.linkCarry = 0
     g.events.push({ e: 'spin', who: k.name, why, by })
 }
 
@@ -194,8 +218,9 @@ function drive(g, k, inp) {
         if (surf.surf !== 'wall') k.wpress = 0
         const top = surf.surf === 'sand' ? CFG.sandTop : surf.surf === 'kerb' ? CFG.kerbTop : CFG.top
         const boost = k.boostT > 0
-        const cap = top + (boost ? TIERS[k.boostTier].over : 0)
-        if (boost) { k.boostT--; if (k.v < cap) k.v += CFG.boostAcc; if (k.boostT === 0) k.boostTier = -1 }
+        // #1690: a chained boost rides overAdd u per link above the tier cap
+        const cap = top + (boost ? TIERS[k.boostTier].over + k.link * LINK.overAdd : 0)
+        if (boost) { k.boostT--; if (k.v < cap) k.v += CFG.boostAcc; if (k.boostT === 0) { k.boostTier = -1; k.link = 0; k.linkCarry = 0 } }
         const steer = typeof inp.steer === 'number' ? inp.steer : ((inp.l ? -1 : 0) + (inp.r ? 1 : 0))
         const thr = typeof inp.thr === 'number' ? inp.thr : (inp.u ? 1 : 0)
         const brk = typeof inp.brk === 'number' ? inp.brk : (inp.d ? 1 : 0)
@@ -240,7 +265,9 @@ function drive(g, k, inp) {
             const prevTier = tierFor(k.charge)
             // #478: charge accrues where the road bends — see CFG.driftBendK.
             const bendW = Math.min(1, Math.abs(T.pts[surf.i].k) / CFG.driftBendK)
-            k.charge = k.charge < 0 ? bendW : k.charge + bendW
+            // #1690: a drift started while a boost is live inherits the chain's
+            // carry — the next tier is reachable inside this corner sequence.
+            k.charge = k.charge < 0 ? bendW + (k.boostT > 0 ? k.linkCarry : 0) : k.charge + bendW
             const tierNow = tierFor(k.charge)
             if (tierNow > prevTier) g.events.push({ e: 'tier', who: k.name, tier: tierNow })
             // #440: drift steer authority decays with how long the drift has
@@ -257,8 +284,24 @@ function drive(g, k, inp) {
                 const t = tierFor(k.charge)
                 if (t >= 0) {
                     // the Comet engine breathes deeper than the field's kits
-                    k.boostT = Math.round(TIERS[t].dur * (k.isPlayer ? 1.45 : 1)); k.boostTier = t
+                    const base = Math.round(TIERS[t].dur * (k.isPlayer ? 1.45 : 1))
+                    if (k.boostT > 0) {
+                        // #1690: re-seat while a boost is live — LINK. The chain
+                        // extends the boost by ext*base per link and keeps the
+                        // higher tier as its cap.
+                        k.link = Math.min(k.link + 1, LINK.max)
+                        k.boostT = Math.max(base, k.boostT) + Math.round(base * LINK.ext * k.link)
+                        k.boostTier = Math.max(k.boostTier, t)
+                        g.events.push({ e: 'link', who: k.name, tier: t, n: k.link })
+                    } else {
+                        k.boostT = base; k.boostTier = t
+                    }
+                    k.linkCarry = TIERS[t].t * LINK.carry
                     g.events.push({ e: 'boost', who: k.name, tier: t })
+                } else if (k.boostT > 0) {
+                    // #1690: a no-pay dump during a live boost breaks the chain
+                    // (the remaining boost burns untouched — no ext, no carry)
+                    k.link = 0; k.linkCarry = 0
                 }
             }
             // #517 (Jon's call: teach the zig-zag): a keyboard drift held one
@@ -431,7 +474,9 @@ function brain(g, k, skill, driftSmart) {
         if (k.driftT === 0) {
             inp.drift = k.v > 5 && bend && onRoad
         } else {
-            const hungry = k.charge < DRIFT_PLAN.target(skill)
+            // #1690: the target reads the corner actually in the brake
+            // window — hairpins invite gold, sweepers pay blue onto the exit.
+            const hungry = k.charge < TIERS[DRIFT_PLAN.targetIdx(skill, kmax)].t
             const chain = T.aheadK(k.idx, Math.round((look + 8) * DRIFT_PLAN.chain)) > DRIFT_PLAN.kBend
             inp.drift = onRoad && k.driftT < DRIFT_PLAN.hold && (hungry ? chain : bend)
         }
