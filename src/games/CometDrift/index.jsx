@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, rivalBoostFx } from './sim'
+import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN } from './track.js'
 import { selectorGeom, selectorHit, previewBox } from './selector.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
@@ -176,6 +176,9 @@ export default function CometDrift() {
         let raf = 0; let acc = 0; let last = performance.now()
         let camA = g.karts[0].a
         let shake = 0
+        // #1690: the LINK pop — gold chain callout in the sky band after a
+        // mid-boost re-seat (n = chain count at the moment of the link)
+        let linkAt = -99; let linkN = 0
         let prevPlace = g.karts[0].place
         // boost feel: the FOV punch lerps toward its target so each tier
         // landing kicks the world back instead of snapping it
@@ -203,6 +206,12 @@ export default function CometDrift() {
                     if (K) distant.push({ fx: rivalBoostFx(Math.hypot(K.x - P0.x, K.y - P0.y), ev.tier), tier: ev.tier })
                 }
                 if (ev.e === 'tier' && ev.who === 'COMET') audioController.playSweep(560 + ev.tier * 210, 960 + ev.tier * 280, 0.08, 'square', 0.07)
+                // #1690: the chain chirp climbs with the link count — x3 lands
+                // on a high bright knife-edge, distinct from any tier crossing
+                if (ev.e === 'link' && ev.who === 'COMET') {
+                    audioController.playSweep(760 + ev.n * 200, 1560 + ev.n * 300, 0.1 + ev.n * 0.03, 'square', 0.085)
+                    linkAt = g.tick; linkN = ev.n
+                }
                 if (ev.e === 'spin' && ev.who === 'COMET') { audioController.playNoise(0.35, 0.18); shake = 26; rumble(300, 1) }
                 if (ev.e === 'bump' && ev.who === 'COMET') { audioController.playNoise(0.12, 0.15); shake = 10; rumble(100, 0.4) }
                 if (ev.e === 'lap' && ev.who === 'COMET') { audioController.playTone(880, 0.1, 'square', 0.12); audioController.playTone(1320, 0.1, 'square', 0.08) }
@@ -684,8 +693,8 @@ export default function CometDrift() {
             panel(2 * hs, 31 * hs, 58 * hs, 28 * hs)
             drawText(ctx, `${Math.round(P.v * 19.5)} KM/H`, Math.round(5 * hs), Math.round(40 * hs), '#f2e6d2', dsz(9))
             ctx.fillStyle = '#3a2430'; ctx.fillRect(Math.round(5 * hs), Math.round(44 * hs), Math.round(52 * hs), Math.round(7 * hs))
-            const barW = Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over) * 52 * hs)
-            ctx.fillStyle = P.boostT > 0 ? '#ffd840' : P.offroad ? '#f85820' : '#38d898'
+            const barW = Math.round(P.v / (CFG.top + TIERS[Math.max(P.boostTier, 0)].over + P.link * LINK.overAdd) * 52 * hs)
+            ctx.fillStyle = P.boostT > 0 ? (P.link >= 2 && (g.tick >> 2) % 2 === 0 ? '#ffffff' : '#ffd840') : P.offroad ? '#f85820' : '#38d898'
             ctx.fillRect(Math.round(5 * hs), Math.round(44 * hs), Math.min(Math.round(52 * hs), barW), Math.round(7 * hs))
             // the drift ladder as chevrons, blue violet gold, brighter while
             // the current tier is being held
@@ -735,6 +744,13 @@ export default function CometDrift() {
                 drawText(ctx, 'OFF-ROAD! TAP-TAP THE STEER', W / 2, Math.round(48 * hs), '#f0b878', dsz(9), 'center')
                 ctx.textAlign = 'left'
             }
+            // #1690: the gold chain callout — white flash on land, then LINK xN
+            if (st.screen !== 'attract' && linkN > 0 && g.tick - linkAt < 55) {
+                ctx.textAlign = 'center'
+                const flash = g.tick - linkAt < 12 && (g.tick >> 1) % 2 === 0
+                drawText(ctx, `LINK x${linkN}!`, W / 2, Math.round(62 * hs), flash ? '#ffffff' : '#ffd840', dsz(13), 'center')
+                ctx.textAlign = 'left'
+            }
         }
 
         // attract / end screens ride the same carved panels, strata-trimmed
@@ -780,7 +796,7 @@ export default function CometDrift() {
             }
             ctx.closePath(); ctx.stroke()
             drawText(ctx, COURSE.name, W / 2, sel.rowY, '#f2e6d2', dsz(11), 'center')
-            const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS']
+            const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS', 'RE-DRIFT INSIDE A BOOST = LINK x3']
             drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
             if (st.top.length) {
                 for (let i = 0; i < st.top.length; i++) {
@@ -1009,7 +1025,7 @@ export default function CometDrift() {
             fx: () => {
                 const P = g.karts[0]
                 return { sparks: fx.sparks.length, dust: fx.dust.length,
-                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v, zigHintT: g.zigHintT }
+                    frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v, zigHintT: g.zigHintT, link: P.link, linkCarry: Math.round(P.linkCarry) }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
             // bike-harness precedent (__bikeTest.setup): place the kart, keep
