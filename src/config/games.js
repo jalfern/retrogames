@@ -352,7 +352,7 @@ export const GAMES = [
         label: 'ICE CLIMBER CO-OP',
         theme: 'dark',
         description: "Two climbers, one frozen massif, and every tile punched is gone forever. Hold UP under the ice and bore a shaft straight to the summit shelf, dodge the condor that owns the middle mountain's ledge (the ice column keeps a pocket it cannot reach), and take the carrot. But the last carrot hangs a head taller than any jump in the game: the only way up is one climber standing still while the other jumps onto their shoulders and jumps again — and a climber downed by the condor is only revived by a partner's touch. Alone, the summit is impossible. The attract demo is the autopilot's own proven co-op route, tick for tick.",
-        controls: ['P1 (red): Arrow Left/Right: move · UP: punch upward through the ice · SPACE: jump', 'P2 (blue): A / D: move · W: punch upward · F: jump (the second pad on the screen drives P2)', 'Punching deletes ice FOREVER — the shaft you bore is your shaft', 'The condor owns its shelf: wait in the ice pocket, dash when its back is turned', 'The top carrot needs a climber-shaped stepladder — jump on your partner, then jump again', 'Touch a downed partner to revive them; lives are shared, the summit is not winnable solo', '?: Pause and read the controls'],
+        controls: ['P1 (red): Arrow Left/Right: move · UP: punch upward through the ice · SPACE: jump', 'P2 (blue): A / D: move · W: punch upward · F: jump (the second pad on the screen drives P2)', 'Punching deletes ice FOREVER — the shaft you bore is your shaft', 'The condor owns its shelf: wait in the ice pocket, dash when its back is turned', 'The top carrot needs a climber-shaped stepladder — jump on your partner, then jump again', 'Touch a downed partner to revive them; lives are shared, the summit is not winnable solo', WATCH_HELP + ' — the route runs BOTH climbers', '?: Pause and read the controls'],
     },
     {
         path: '/galaga',
@@ -451,7 +451,7 @@ export const GAMES = [
         label: 'PAPERBOY',
         theme: 'light',
         description: 'The paper round, rebuilt like an NES cartridge that never existed — pseudo-3D road, runtime art and audio, and a route the SOLVER has proven. Steer with the handlebars, pedal up and down, and hurl papers at the doorsteps: a paper only counts if you are LEANED toward it when you cross its door, and the door window is the one consumable — the harness re-proves every route at full throttle AND at a crawl with the windows tighter and zero spare papers. Carts sweep the crossings behind their noses (you cannot out-steer one), dogs lunge from the kerb past centre, and the attract demo is the autopilot\'s own proven ride, tick for tick. Three routes, 77 doors.',
-        controls: ['Arrows / D-pad: steer the handlebars; UP mashes the pedals, DOWN crawls', 'SPACE / A: throw a paper toward your lean (you must be leaned that way at the door!)', 'F / B button: hurl one down the lane — the only answer to a lunging dog', 'Cross carts only AHEAD of their nose, and hug a dog\'s own kerb after it launches', '?: pause and read the rules'],
+        controls: ['Arrows / D-pad: steer the handlebars; UP mashes the pedals, DOWN crawls', 'SPACE / A: throw a paper toward your lean (you must be leaned that way at the door!)', 'F / B button: hurl one down the lane — the only answer to a lunging dog', 'Cross carts only AHEAD of their nose, and hug a dog\'s own kerb after it launches', WATCH_HELP + ' (at a fresh street)', '?: pause and read the rules'],
     },
     {
         path: '/ten-deep',
