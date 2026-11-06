@@ -116,7 +116,30 @@ const PILOTS = [
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
@@ -197,7 +220,30 @@ const PILOTS = [
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
@@ -236,7 +282,7 @@ const PILOTS = [
         },
         {
             id: 'civilization-v', hook: '__civTest',
-            seatWait: 900, advanceWait: 8000,
+            seatWait: 900, advanceWait: 8000, revive: true, // the prover wins ~turn 11 — chain on the next empire if so
             advanced: (a, b) => b.turn > a.turn && b.end !== 'lost',
             note: (a, b) => `turn ${a.turn} -> ${b.turn}, cities ${a.playerCities} -> ${b.playerCities}, science ${b.science.toFixed(0)}`,
             resumeWait: 6000,
@@ -254,8 +300,13 @@ const PILOTS = [
         },
         {
             id: 'blob-battle', hook: '__blobbattleTest',
-            advanced: (a, b) => b.rounds[0] > a.rounds[0],
-            note: (a, b) => `seat1 blobs ${a.rounds[0]} -> ${b.rounds[0]}, score ${b.scores[0]}`,
+            // well.rounds counts rounds WON (the OTHER well overflowing, sim.js
+            // :363) — demanding one inside the watch window asked the CPU to
+            // drown in 5 s, which a healthy prover never causes. The prover's
+            // promise is the contract of the game itself: seat 1 keeps stacking
+            // and scoring without overflowing. #1705-nightly-fix.
+            advanced: (a, b) => b.scores[0] > a.scores[0] && !b.over,
+            note: (a, b) => `seat1 score ${a.scores[0]} -> ${b.scores[0]}, rounds won ${a.rounds[0]} -> ${b.rounds[0]}`,
         },
     ].map((g) => ({
         id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
@@ -273,7 +324,30 @@ const PILOTS = [
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
@@ -356,7 +430,30 @@ const PILOTS = [
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
@@ -438,7 +535,30 @@ const PILOTS = [
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
