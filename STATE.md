@@ -1,70 +1,63 @@
-# STATE — session 144 (2026-11-05, slot a)
+# STATE — session 145 (2026-11-05, slot b)
 
 ## What shipped
-**PLAICRAFT — Gauntlet pilot (#1625)** — PR #1635 squash-merged to main
-`4133793`; prod-verified live (`index-6Pa5J35Z.js` carries the `plaicraft-bc`
-policy; `/retrogames/research` answers). Recorded play → dataset → trained
-model → seat — all in-repo, deterministic:
-- Export (`npm run plaicraft:export`): 20 real games (planner route through
-  THE pad lane seat 1, CPU partner seat 2) banked as rec/v1 recordings, each
-  replay-verified vs the sim — hash-exact 20/20, won 20/20. Dataset JSONL
-  221k rows: 32 seat senses + expert pad + swing-intent label; committed
-  format README + sample (`data/plaicraft/`, bulk regenerable).
-- Train (`npm run plaicraft:train`): one 32-24-24-5 BC net (1517 weights,
-  quantized BEFORE scoring), fixed hparams, seeds 0..11 practice / 100..107
-  held-out scored ONCE. Held-out: **8/8 wins — full parity with the CPU**
-  (avg lvl 10; score 121,306 vs 111,275; +1 partner death). Teacher-forcing
-  97.8% moves / 100% swing-intent held-out ≈ practice (97.7%) → generalises,
-  no route memorisation.
-- Seat: `Gauntlet/model.js` (featurize/forward/createModelPolicy — one
-  definition shared by export, trainer and live seat) + generated `policy.js`;
-  **M seats the BRAIN in Gauntlet slot 2**; sources() reports kind 'model';
-  `__gauntletTest.seatBrain(on)` for QA.
-- Gate: `npm run plaicraftcheck` 7/7 incl. dead-weights mutant (98.4→74.5%) —
-  proven able to fail. Parked MANUAL_CHECKS (~40 s per run); ciscope selftest
-  green. `/research` write-up page renders the single held-out scoring +
-  honest notes. QA polish pass filed: **#1636**.
-Also: **finished #1570's orphaned ship record** (merged as #1633 by the dying
-23:28 session): prod-verified (`_yawRebase`/`_twist` live), labels
-building→shipped, live URL commented; issue was auto-closed.
+**WATCH key (#1624)** — PR #1634 squash-merged (`1aa601f`); pilots MYST,
+Emberwood, SSX live on prod. One key (**Y**, pad pill ▶ WATCH fires the same
+`KeyY`) lets a game play itself on its own proven driver; any input takes over
+mid-play. Registry line from shared `WATCH_HELP` (`src/utils/watch.js`).
+- SSX: `planner.decide(g, rider0)` — the cold witness line — swaps into the
+  human seat in `doSim`; takeover covers keys, stick push and canvas drag.
+- Emberwood: attractBot drives the live run; kit policy
+  `watchSnapshot/watchRestore` (bot.js) — guide borrows the demo kit, hands
+  items/embers/hearts back whole at takeover; world progress stays (real play).
+- MYST: new pure `watchResume(st)` (state.js) — first solveScript prefix whose
+  canonical state (19 KEYS whitelist) equals yours, replay the suffix: provably
+  the same route from where you stand. Off proven line → "no guide yet".
+- Harness: `scripts/watchcheck.mjs` (npm `watchcheck`) 13/13 real Chrome incl.
+  the no-guide clause (`goto('selGate')` never starts the watcher); mystcheck
+  +4 (978/0, mutant `slice(i+1)` died twice), ssxcheck +2 (348/348),
+  emberwoodcheck +3 (232/0, kit round-trip).
+- Rule 4 CLEARED: #1634 is game code (`src/games/**` + registry).
 
-## Ladder record (slot a)
-Warden target #1624: `forge-claim.sh 1624 a` REFUSED — slot b claimed it
-23:19Z. Normal ladder: no steer/jonq/next; oldest game-queue #1625 claimed
-clean. (Slot b shipped #1634 WATCH meanwhile — both pilots landed the same
-night.) Rule 4 debt broken: #1635 + #1633 + #1634 are all game code.
+## Other lanes this window
+Slot a shipped #1633 (#1570 knock-recovery tail) and #1635 (PLAICRAFT #1625,
+their STATE = session 144 on main). #1570 now `shipped` — the warden's target
+for this slot is moot (slot a held the claim; ladder moved to #1624). Filed
+follow-ups: **#1637** WATCH rollout (~45 solver games), **#1638** QA polish.
 
 ## Playable now
-Gauntlet with the trained brain (M on hero select); WATCH key in MYST,
-Emberwood, SSX (#1634); Magic Carpet; RobotLab 4a; MYST through item 16.
+Press Y on jalfern.com/retrogames/myst · /emberwood · /ssx — the games play
+themselves, tap anything to take over. Plus PLAICRAFT Gauntlet (slot a).
 
 ## Next (priority order)
-1. game-queue is empty. Ladder falls to oldest unclaimed feedback — #1636
-   (PLAICRAFT polish: phone touch-path to seat the brain, model identity,
-   brain attract demo, modelId stamp) — or a flagship stage per #1258.
-2. #1624 is closed by #1634; nothing owed.
+1. #1637 WATCH rollout batch 1 (chrome is shared; pick games whose solver is
+   already live-drivable: IronKeep, Blob Battle, Galaga agents…).
+2. #1623 Emberwood stage 2 (held `building-qa` — QA lane's, don't touch).
+3. #1638 is QA-lane work (feedback label), not a builder item.
 
-## Gates/commands as of this session
-gauntletcheck 304/304; lint:gauntlet clean; plaicraftcheck 7/7 + mutant;
-ciscope selftest green (131 pins, 156 checks); build OK; eslint clean on all
-new files (App.jsx carries a pre-existing react-hooks error, outside every
-gate scope).
+## Gates as of this session
+eslint clean (all touched files); lint:mario/fps/ai OK; build OK;
+static SUCCESS on #1634; prod bundle carries the WATCH help line (verified
+`assets/index-B8bJByNM.js` on jalfern.com). chromeguardcheck pre-existing red
+(pgrep dead — machine-level, see below).
 
 ## Notes for the next slot
-- Trainer gotcha (remember): biases are a COMPACT block (cumulative no) — never
-  index them by the weight-block offset: undefined reads → NaN gradients → net
-  trains to "always idle" at a suspiciously stable 0.7337 (= the always-false
-  baseline). Stable accuracy on a fresh net is a smell; mutant gate is the cure.
-- Local Chrome STILL flaky for heavy pages: chromesmoke passes (shell+sp) but
-  `gauntletplay` SIGABRTs this box (both tries, #737 class). Node gates carry
-  the proof; rule 3 — don't spend a PR on it.
-- `. /tmp/forge/env.sh` mandatory (system DNS dead); gh via the rescue shim.
-- node_modules `cp -R` from the main checkout is APFS-instant for worktrees.
-- Worktree `~/Dev/retrogames-forge-plaicraft` detached at origin/main; branch
-  deleted both ends — reuse or remove. This lane's dev server on 5173 (kill
-  only if orphaned + merged).
-- Slot b's uncommitted session-143 STATE (its step 9 report) was folded here;
-  copy parked at /tmp/forge/STATE.a.prevreport.md.
+- **`--single-process` Chrome (this box's boot mode, #1622) dies when a heavy
+  WebGL page closes** — the whole browser goes, not just the page. Multi-page
+  browser scripts must launch ONE BROWSER PER GAME (watchcheck does; it also
+  retries openGame once for first-visit Vite reloads). Expect the same failure
+  in other multi-page scripts until they adopt it.
+- Worktrees share the symlinked `node_modules/.vite` cache → first-visit
+  re-optimization reloads can race hook-waits. Retry-once is the pattern.
+- **Y (`KeyY`) is now the reserved WATCH key** — don't bind it in new games.
+- Main checkout: detached at origin/main, STATE.md committed by this session.
+  Worktree `~/Dev/retrogames-forge-watch-key` left on dead local branch
+  `forge/watch-key` (remote deleted) — reuse or `git worktree remove`.
+- Port 5178 dev server STOPPED at end of session (was mine, this worktree).
+- Rescue env `. /tmp/forge/env.sh` still mandatory; transient
+  "api.github.com connection" blips hit mid-merge-poll — retry the loop.
+- macOS cp: two separate `cp` calls, never `cp A B C`.
 
 ## Open questions
-None.
+- None filed this session (#1631 from slot b's earlier window sits open but
+  unlabeled — the jonq guard flagged it; only Jon can label or close it).
