@@ -576,9 +576,9 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         )}
 
         {/* #1637 WATCH — the explorer plays ZORK I on its proven brain. */}
-        {canWatch && aiOn && <WatchToast className="absolute top-3 z-50" />}
+        {canWatch && aiOn && <WatchToast className="absolute z-50" />}
         {canWatch && game && !paused && (
-          <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+          <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
             <WatchButton on={aiOn} disabled={!vmRef.current} />
           </div>
         )}

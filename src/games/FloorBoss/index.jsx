@@ -957,9 +957,9 @@ const FloorBossGame = () => {
             )}
             {/* #1624 WATCH — the floor runs the proven shift. Bottom-left: the
                 top bar chips and the order rail own the canvas's right side. */}
-            {screen === 'play' && watching && <WatchToast className="absolute top-10 z-50" />}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {screen === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ bottom: '0.75rem', left: '0.75rem' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(0.75rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

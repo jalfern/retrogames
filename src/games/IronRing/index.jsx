@@ -801,9 +801,9 @@ const IronRingGame = () => {
             <div ref={wrapRef} className="absolute inset-0" />
             <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'K', code: 'KeyZ' }} />
             {/* #1624 WATCH — seat 1 fights the ladder on its own proven CPU tier. */}
-            {screen === 'play' && watching && <WatchToast className="absolute top-3 z-50" />}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {screen === 'play' && !paused && !desync && (
-                <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

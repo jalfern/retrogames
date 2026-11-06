@@ -1510,7 +1510,7 @@ const SSXGame = () => {
                 </div>
             )}
             {play && !paused && (
-                <div className="fixed z-50 pointer-events-auto" style={{ top: '11.5rem', right: '0.75rem' }}>
+                <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(11.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

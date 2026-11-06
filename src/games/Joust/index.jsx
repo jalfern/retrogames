@@ -501,10 +501,10 @@ const JoustGame = () => {
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'JOUST')} onResume={handleResume} />}
             {/* #1637 WATCH — the prover rides the waves; any key, pad push or tap takes over. */}
             {play && watching && (
-                <WatchToast className="fixed z-50 top-3" />
+                <WatchToast className="fixed z-50" />
             )}
             {play && !paused && (
-                <div className="fixed z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

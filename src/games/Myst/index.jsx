@@ -1014,7 +1014,7 @@ const MystGame = () => {
 
       {/* #1624 WATCH — the island plays itself on the proven route. */}
       {screen === 'play' && watching && (
-        <WatchToast className="absolute top-8 z-50" />
+        <WatchToast className="absolute z-50" />
       )}
       {watchToast && (
         <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
@@ -1022,7 +1022,7 @@ const MystGame = () => {
         </div>
       )}
       {screen === 'play' && !paused && (
-        <div className="absolute pointer-events-auto z-50" style={{ top: '2.2rem', right: '0.75rem' }}>
+        <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
           <WatchButton on={watching} />
         </div>
       )}

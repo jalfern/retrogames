@@ -553,14 +553,14 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             )}
             {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
             {/* #1624 WATCH — the arm runs the proven task script. */}
-            {phase === 'play' && watching && <WatchToast className="absolute top-10 z-50" />}
+            {phase === 'play' && watching && <WatchToast className="absolute z-50" />}
             {noGuide && (
                 <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
                     {NO_GUIDE}
                 </div>
             )}
             {phase === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
