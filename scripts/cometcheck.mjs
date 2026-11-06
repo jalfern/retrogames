@@ -1305,11 +1305,18 @@ if (process.argv.includes('--mutate')) {
             if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #534 selector gate is load-bearing`)
             else console.log(`  MUTANT SURVIVED — ${label}: the #534 selector gate is BLIND`)
         }
+        // #1679: this block was dead code since the guard crash — and its three
+        // replace-strings no longer matched selector.js (the #794 opts overload
+        // rewrote those lines), so the plant was vacuous and the gate reported
+        // a false BLIND. Re-anchored to the default branches, plus an explicit
+        // applied-guard: drifted replace-strings now fail loudly instead.
+        const selMut = selSrc
+            .replace('const off = opts.off !== undefined ? Math.round(opts.off) : Math.round(88 * hs)', 'const off = opts.off !== undefined ? Math.round(opts.off) : 0')
+            .replace('const hw = opts.hw !== undefined ? Math.max(1, Math.round(opts.hw)) : Math.max(1, Math.round(32 * hs))', 'const hw = opts.hw !== undefined ? Math.max(1, Math.round(opts.hw)) : Math.max(1, Math.round(6 * hs))')
+            .replace('const hh = opts.hh !== undefined ? Math.max(1, Math.round(opts.hh)) : Math.max(1, Math.round(20 * hs))', 'const hh = opts.hh !== undefined ? Math.max(1, Math.round(opts.hh)) : Math.max(1, Math.round(6 * hs))')
+        check('#534 selector mutant applied (replace-strings match selector.js)', selMut !== selSrc)
         try {
-            plant(SELJS, selSrc
-                .replace('const off = Math.round(88 * hs)', 'const off = 0')
-                .replace('const hw = Math.max(1, Math.round(32 * hs))', 'const hw = Math.max(1, Math.round(6 * hs))')
-                .replace('const hh = Math.max(1, Math.round(20 * hs))', 'const hh = Math.max(1, Math.round(6 * hs))'))
+            plant(SELJS, selMut)
             await died('the chevrons shrink onto the centre (no thumb target, no start zone)', async () => selectorGate(await loadSelector(Date.now())))
         } finally { pull(SELJS) }
     }

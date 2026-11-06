@@ -19,8 +19,10 @@
 //                                        lib itself; it MUST make test 2 die
 
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import { plant, plantNew, pull } from './lib/mutateguard.mjs'
 
 const HERE = import.meta.dirname
 const ROOT = join(HERE, '..')
@@ -49,9 +51,15 @@ import { spawnSync } from 'node:child_process'
 import { writeFileSync } from 'node:fs'
 const [file, sentinel, mutant, guarded, guardPath] = process.argv.slice(2)
 writeFileSync(file, sentinel)
-if (guarded === 'guard') {
+if (guarded === 'guard' || guarded === 'guard-url') {
     const { plant } = await import(guardPath + '?v=' + Date.now())
-    plant(file, mutant)
+    if (guarded === 'guard-url') {
+        // #1679: cometcheck hands the guard new URL(...) paths, not strings
+        const { pathToFileURL } = await import('node:url')
+        plant(new URL(pathToFileURL(file).href), mutant)
+    } else {
+        plant(file, mutant)
+    }
 } else {
     writeFileSync(file, mutant)
 }
@@ -165,6 +173,41 @@ async function mutantKill() {
     rmSync(copy, { force: true })
 }
 
+// #1679 — cometcheck built its module paths as `new URL(...)` (what dynamic
+// import() wants) and handed them straight to plant/pull: path.resolve(URL)
+// threw ERR_INVALID_ARG_TYPE and killed the whole --mutate pass at the first
+// URL site (every gate after the corridor never ran). The guard now accepts
+// what fs accepts — this gate pins BOTH halves: no throw, and plant(URL) and
+// pull(string-path) must land on the same remembered key (a mismatch would be
+// a silent corpse, worse than the crash).
+function urlKeys() {
+    console.log('url keys — #1679: the guard receives URL paths and normalizes them')
+    const toUrl = (f) => new URL(pathToFileURL(f).href)
+    const file = join(WORK, 'urlkeys.txt')
+    const fresh = join(WORK, 'urlfresh.txt')
+    let threw = null
+    try {
+        writeFileSync(file, SENTINEL)
+        plant(toUrl(file), MUTANT)
+        ok(readFileSync(file, 'utf8') === MUTANT, 'plant(URL) writes the mutant')
+        pull(file) // string path against a plant keyed by URL
+        ok(readFileSync(file, 'utf8') === SENTINEL, 'pull(path) rewinds a plant(URL) key')
+        plant(file, MUTANT) // mirror direction
+        pull(toUrl(file))
+        ok(readFileSync(file, 'utf8') === SENTINEL, 'pull(URL) rewinds a plant(path) key')
+        rmSync(file, { force: true })
+        plantNew(toUrl(fresh), MUTANT)
+        ok(existsSync(fresh), 'plantNew(URL) creates the mutant file')
+        pull(fresh) // string path must still know to unlink
+        ok(!existsSync(fresh), 'pull(path) unlinks a plantNew(URL) file')
+    } catch (e) {
+        threw = e
+    }
+    ok(threw === null, 'no TypeError when the guard receives a URL', threw && `${threw.code}: ${threw.message}`)
+    rmSync(file, { force: true })
+    rmSync(fresh, { force: true })
+}
+
 async function run() {
     rmSync(WORK, { recursive: true, force: true })
     mkdirSync(WORK, { recursive: true })
@@ -172,6 +215,9 @@ async function run() {
     await killRun('canary', 'raw', 'dirty')
     console.log('guard — same fixture through plant() (must come back clean)')
     await killRun('guard', 'guard', 'clean')
+    console.log('guard via URL — plant(new URL(...)) then SIGTERM (#1679)')
+    await killRun('guard-url', 'guard-url', 'clean')
+    urlKeys()
     audit()
     if (MUTATE) await mutantKill()
     console.log(`\n${fails === 0 ? 'PASS' : 'FAIL'} — ${passes} passed, ${fails} failed`)
