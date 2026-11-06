@@ -18,6 +18,7 @@ const openTile = (id, tx, ty, st) => {
         const vt = (s.vents || []).find(v => v.x === tx && v.y === ty)
         return !!(vt && st.ventsOff && st.ventsOff[vt.id])
     }
+    if (ch === 'A') return !!st.step // burned face: the CINDERSTEP walks it (#1623)
     if (isSolidTile(ch)) return false
     if (ch === '.') {
         const d = d0
@@ -73,7 +74,7 @@ const lineClear = (id, a, b) => {
     return true
 }
 
-const st0 = () => ({ cracked: {}, doors: {}, switches: {}, chests: {}, flags: {}, killed: {}, ventsOff: {} })
+const st0 = () => ({ cracked: {}, doors: {}, switches: {}, chests: {}, flags: {}, killed: {}, ventsOff: {}, step: false })
 
 // can the hero stand next to tile t (its own tile may be solid/blocked)?
 function reachAdj(id, from, t, st) {
@@ -179,6 +180,8 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
             // stripped the mantle, and the mantle only strips with the vents sealed
             if (e.boss === 3 && !st.flags.boss3 && kit.sword && kit.gale &&
                 (SCREENS['d3-f0'].vents || []).every(v => st.ventsOff[v.id])) out.push({ type: 'boss', id: 'boss3', screen: id })
+            // the Cinderhawk strikes only on its locked stoop — steel meets it at the roost (#1623)
+            if (e.boss === 4 && !st.flags.boss4 && kit.sword) out.push({ type: 'boss', id: 'boss4', screen: id })
         }
         return out
     }
@@ -201,6 +204,7 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
                 } else if (a.type === 'crack') {
                     st.cracked[a.id] = true
                     if (a.reveal === 'bow') { kit.bow = true; kit.arrows += 10 }
+                    if (a.reveal === 'cinderstep') { kit.step = true; st.step = true }
                     route.push(a)
                     progress = true
                 } else if (a.type === 'vent') {
@@ -231,7 +235,10 @@ export function proveGame(startKit = { bombs: false, bow: false, shield: false }
 
     const d1Done = !!st.flags.boss1 && seen.has('d1-e3')
     const bowGot = kit.bow
-    return { win: !!actTwoWon, actWon: !!actTwoWon, emberWon: !!emberWon, d1Done, bowGot, galeGot: kit.gale, kit, route, seen: [...seen] }
+    // #1623: the mesa arc — hawk felled, step earned, clifftop reached
+    const hawkGot = !!st.flags.boss4
+    const cliffsSeen = seen.has('ow-40') && seen.has('ow-41') && seen.has('d4-3')
+    return { win: !!actTwoWon, actWon: !!actTwoWon, emberWon: !!emberWon, d1Done, bowGot, galeGot: kit.gale, hawkGot, cliffsSeen, stepGot: !!kit.step, kit, route, seen: [...seen] }
 }
 
 export const shopTotal = (want) => SHOP.filter(o => want.includes(o.item)).reduce((a, o) => a + o.price, 0)

@@ -491,6 +491,7 @@ function hurtEnemy(sim, e, dmg, dx, dy) {
     if (e.type === 'maw' && e.open <= 0) { emit(sim, 'clank', e.x, e.y); return }
     if (e.type === 'wyrm' && e.stagger <= 0) { emit(sim, 'clank', e.x, e.y); say(sim, 'THE SCALECLOAK SHRUGS IT OFF — USE ARROWS!', 120); return }
     if (e.type === 'king' && e.mantle > 0) { emit(sim, 'clank', e.x, e.y); say(sim, 'CINDER MANTLE — LOOSE THE WIND TO STRIP IT', 120); return }
+    if (e.type === 'hawk' && e.charging > 0) { emit(sim, 'clank', e.x, e.y); say(sim, 'STEEL WILL NOT CATCH THE HAWK — STRIKE AT THE ROOST', 140); return }
     e.hp -= dmg
     e.hitT = 8
     if (e.stagger > 0 && e.hp <= 0) e.stagger = 0
@@ -521,6 +522,7 @@ function killEnemy(sim, e) {
         if (e.boss === 1) { sim.flags.boss1 = true; say(sim, 'THE BRAMBLE MAW FALLS', 200) }
         if (e.boss === 2) { sim.flags.boss2 = true; say(sim, 'THE CINDER WYRM BREAKS INTO EMBERS', 240) }
         if (e.boss === 3) { sim.flags.boss3 = true; say(sim, 'THE HOLLOW KING COLLAPSES INTO ASH', 260) }
+        if (e.boss === 4) { sim.flags.boss4 = true; say(sim, 'THE CINDERHAWK FOLDS — THE MESA IS YOURS', 240) }
         spawnDrop(sim, e.x, e.y, 'heart'); spawnDrop(sim, e.x + 8, e.y + 4, 'heart')
     } else {
         const r = sim.rng()
@@ -629,7 +631,9 @@ function stepProjectiles(sim) {
             }
             continue
         }
-        if (tileAt(s, tx, ty) === '#' || tileAt(s, tx, ty) === 'C' || isSolidTile(tileAt(s, tx, ty))) {
+        // burned cinder faces are open sky to flying things (#1623)
+        const pch = tileAt(s, tx, ty)
+        if ((pch === '#' || pch === 'C' || isSolidTile(pch)) && pch !== 'A') {
             emit(sim, 'thunk', p.x, p.y)
             sim.projectiles.splice(i, 1); continue
         }
@@ -924,6 +928,56 @@ function stepEnemies(sim) {
                 moveEnemy(sim, e, dx, dy, 0.72)
                 break
             }
+            case 'hawk': {
+                // The Cinderhawk (#1623): rings the mesa stones, screeches to lock
+                // the hero's row or column, then stoops down that locked line at
+                // speed — the dodge is to step off the line. Steel only reaches it
+                // while it sits the perch (dive is guarded in hurtEnemy).
+                if (!e.roostSet) {
+                    e.roostSet = 1
+                    e.x = e.perch[0][0]; e.y = e.perch[0][1]
+                    e.rest = 70; e.roost = 0
+                }
+                if (e.st > 0) { // screeching — the line locks as the call ends
+                    e.st--
+                    if (e.st === 0) {
+                        e.lockAxis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y'
+                        e.dirSign = (e.lockAxis === 'x' ? Math.sign(dx) : Math.sign(dy)) || 1
+                        e.charging = 56
+                        emit(sim, 'dust', e.x, e.y)
+                    }
+                    break
+                }
+                if (e.charging > 0) {
+                    e.charging--
+                    const sp = 2.4
+                    const nx = e.lockAxis === 'x' ? e.x + e.dirSign * sp : e.x
+                    const ny = e.lockAxis === 'y' ? e.y + e.dirSign * sp : e.y
+                    if (e.charging === 0 || blocked(sim, nx, ny, e.w, e.h)) {
+                        e.charging = 0
+                        e.roost = (e.roost + 1) % e.perch.length
+                    } else {
+                        e.x = nx; e.y = ny
+                        e.fx = e.lockAxis === 'x' ? e.dirSign : 0
+                        e.fy = e.lockAxis === 'y' ? e.dirSign : 0
+                    }
+                    break
+                }
+                // glide to the next perch, settle, ring a while, call again
+                const p = e.perch[e.roost]
+                const gx = p[0] - e.x, gy = p[1] - e.y
+                const gd = Math.hypot(gx, gy)
+                if (gd > 2.5) {
+                    e.x += (gx / gd) * 1.5; e.y += (gy / gd) * 1.5
+                    e.fx = gx / gd; e.fy = gy / gd
+                } else {
+                    e.x = p[0]; e.y = p[1]
+                    if (e.rest <= 0) e.rest = 70
+                    e.rest--
+                    if (e.rest === 0 && dist < 140) { e.st = 24; emit(sim, 'roar', e.x, e.y) }
+                }
+                break
+            }
         }
 
         // contact damage
@@ -989,7 +1043,7 @@ function checkTransitions(sim) {
 function revive(sim) {
     sim.death = false
     sim.hero.hp = Math.min(sim.hero.max, 3)
-    const m = /^d3-/.test(sim.screen) ? 'd3-e0' : /^d2-/.test(sim.screen) ? 'd2-f0' : /^d1-/.test(sim.screen) ? 'd1-e0' : null
+    const m = /^d3-/.test(sim.screen) ? 'd3-e0' : /^d2-/.test(sim.screen) ? 'd2-f0' : /^d1-/.test(sim.screen) ? 'd1-e0' : /^d4-/.test(sim.screen) ? 'd4-0' : null
     if (m) spawnRoom(sim, m, SCREENS[m].spawn)
     else spawnRoom(sim, 'ow-11', null)
     emit(sim, 'revive', sim.hero.x, sim.hero.y)
@@ -1072,6 +1126,7 @@ export function simState(sim) {
             boss1: sim.flags.boss1,
             boss2: sim.flags.boss2,
             boss3: sim.flags.boss3,
+            boss4: sim.flags.boss4,
             emberTaken: sim.flags.emberTaken,
             dawnheart: sim.flags.dawnheart,
         },
@@ -1097,7 +1152,7 @@ export function saveState(sim) {
             cracked: { ...sim.flags.cracked }, doorsOpen: { ...sim.flags.doorsOpen },
             switchesOn: { ...sim.flags.switchesOn }, chestsOpen: { ...sim.flags.chestsOpen },
             ventsOff: { ...sim.flags.ventsOff },
-            killed: { ...sim.flags.killed }, boss1: sim.flags.boss1, boss2: sim.flags.boss2, boss3: sim.flags.boss3,
+            killed: { ...sim.flags.killed }, boss1: sim.flags.boss1, boss2: sim.flags.boss2, boss3: sim.flags.boss3, boss4: sim.flags.boss4,
             emberTaken: !!sim.flags.emberTaken, dawnheart: !!sim.flags.dawnheart,
             elderGifted: !!sim.flags.elderGifted,
         },
