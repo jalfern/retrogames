@@ -122,7 +122,7 @@
     "polarplay": "node scripts/polarplay.mjs",
     "lint:missile": "eslint src/games/MissileBattle src/components src/utils src/config src/main.jsx scripts",
     "missilecmdcheck": "node scripts/missilecmdcheck.mjs",
-        "missilecheck": "node scripts/missilecheck.mjs",
+    "missilecheck": "node scripts/missilecheck.mjs",
     "missileplay": "node scripts/missileplay.mjs",
     "lint:sim": "eslint src/games/SimCityMin src/components src/utils src/config src/main.jsx scripts",
     "citycheck": "node scripts/citycheck.mjs",
@@ -320,7 +320,10 @@
     "viperpitcheck": "node scripts/viperpitcheck.mjs",
     "soslinkcheck": "node scripts/soslinkcheck.mjs",
     "soslinkdrive": "node scripts/soslinkdrive.mjs",
-    "reactcheck": "node scripts/reactcheck.mjs"
+    "reactcheck": "node scripts/reactcheck.mjs",
+    "plaicraftcheck": "node scripts/plaicraftcheck.mjs",
+    "plaicraft:export": "node scripts/plaicraft-export.mjs",
+    "plaicraft:train": "node scripts/plaicraft-train.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

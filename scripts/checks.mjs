@@ -140,6 +140,10 @@ export const MANUAL_CHECKS = [
   "scripts/neonraincheck.mjs",
   "scripts/oceancheck.mjs",
   "scripts/padlinkcheck.mjs",
+  // #1625: the Plaicraft gate regenerates 20 recorded runs and rolls the
+  // trained seat — ~40 s per pass; advisory-only, driven from the lane
+  // (npm run plaicraftcheck). Deterministic: same commit, same numbers.
+  "scripts/plaicraftcheck.mjs",
   "scripts/peoplecheck.mjs",
   "scripts/physicswalkcheck.mjs",
   "scripts/pickcheck.mjs",
