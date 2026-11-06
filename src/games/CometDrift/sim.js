@@ -6,7 +6,7 @@
 // drive() runs the player and every rival; brains differ only in skill and
 // in who computes the input (keys, the seeded rival mistakes, or decide()).
 
-import { TRACK, CHECKPOINTS, surfaceAt, TX, TY, COURSE, courseIndex, wallLatAt } from './track.js'
+import { TRACK, CHECKPOINTS, surfaceAt, TX, TY, TEX, TEX_S, COURSE, courseIndex, wallLatAt } from './track.js'
 
 export const LAPS = 4
 
@@ -72,6 +72,72 @@ export const TIERS = [
 // when a no-pay dump lands during a live boost (the remaining boost burns,
 // the chain does not). Pure + rng-free so cometcheck can gate the law itself.
 export const LINK = { ext: 0.34, max: 3, carry: 0.5, overAdd: 0.55 }
+
+// #1696 the sand REMEMBERS THE RACE: live terrain deformation. Every kart with
+// its centre on sand leaves gouges where the rear tyres run (not the centre —
+// the body hovers), a heaped lip beside each rut, and radial craters where it
+// lands a spin or a cliff bump. Deformation lives on the ground BAKE (the
+// Uint32 texture the Mode 7 renderer already samples per pixel); the physics
+// machine never reads it back — grip, speed, ladder and outcome are the exact
+// same race. rng-free + tick-driven, deterministic like MagicCarpet's crumble
+// queue (#1695): same seed + same drive carves byte-identical sand, `stateHash`
+// stays what it is, and a fresh race (makeGame) starts on smooth sand.
+// Depth law (hottest pass wins, never adds): a cell's step is the MAXIMUM of
+// everything that ever touched it — one roll leaves 1, one hot drift 2, a
+// crater core 3, a shoveled lip -1. Repeated passes cannot churn the same
+// texel deeper, so a slow roll never saturates the desert.
+export const SAND = {
+    roll: 1, hot: 2, crater: 3, ring: 1, lip: -1,
+    wheelBase: 14, trackW: 8, lipOff: 20, // world px: rear axle, half track, lip shelf
+    craterR: 18, craterLipR: 30,
+    minV: 1, // a crawling kart kicks nothing
+}
+
+function markCell(g, wx, wy, d) {
+    const tx = Math.round(wx * TEX_S); const ty = Math.round(wy * TEX_S)
+    if (tx < 0 || ty < 0 || tx >= TEX || ty >= TEX) return
+    // asphalt never churns — a wheel that is still on the road while the
+    // centre sits in the sand cuts nothing (the ruts stop at the edge line).
+    // Judged at the TEXEL'S OWN centre with the global nearest centreline:
+    // the same rule an auditor (cometcheck) applies, so the law holds by
+    // construction — no half-cell boundary flips at the pinch legs.
+    const wx0 = (tx + 0.5) / TEX_S; const wy0 = (ty + 0.5) / TEX_S
+    if (surfaceAt(wx0, wy0, -1).surf === 'road') return
+    const key = ty * TEX + tx
+    // a harness restore() may hand back a JSON-poor plain object (#391) —
+    // adopt a fresh Map rather than die on a missing .get
+    if (!(g.marks instanceof Map)) g.marks = new Map()
+    if (!Array.isArray(g.markDelta)) g.markDelta = []
+    const prev = g.marks.get(key)
+    // hottest pass wins for darkening, deepest lip wins for lightening
+    const best = d > 0 ? Math.max(prev ?? 0, d) : Math.min(prev ?? 0, d)
+    if (best === prev) return
+    g.marks.set(key, best)
+    g.markDelta.push([key, best])
+}
+
+// the two rear-wheel contacts + shoveled lips, at the kart's CURRENT pose
+function carveWheels(g, k, hot) {
+    const ca = Math.cos(k.a); const sa = Math.sin(k.a)
+    const bx = k.x - ca * SAND.wheelBase; const by = k.y - sa * SAND.wheelBase
+    const px = -sa; const py = ca
+    const d = hot ? SAND.hot : SAND.roll
+    for (const s of [-1, 1]) {
+        markCell(g, bx + px * s * SAND.trackW, by + py * s * SAND.trackW, d)
+        markCell(g, bx + px * s * SAND.lipOff, by + py * s * SAND.lipOff, SAND.lip)
+    }
+}
+
+// radial scar: core, 8-cell ring, 8-cell lip at the crater's foot
+function craterAt(g, k) {
+    markCell(g, k.x, k.y, SAND.crater)
+    for (let i = 0; i < 8; i++) {
+        const ang = k.a + (i * Math.PI) / 4
+        const c = Math.cos(ang); const s = Math.sin(ang)
+        markCell(g, k.x + c * SAND.craterR, k.y + s * SAND.craterR, SAND.ring)
+        markCell(g, k.x + c * SAND.craterLipR, k.y + s * SAND.craterLipR, SAND.lip)
+    }
+}
 
 // #1687 deliberate drift-economy for the field (used by brain(), rivals only):
 // a skill-scaled tier target — the front markers chase gold, the back markers
@@ -167,6 +233,10 @@ export function makeGame(seed = 0) {
         karts: [mkKart(PLAYER, 6), ...RIVALS.map((d, i) => mkKart(d, i))],
         events: [], end: null,
         zigHint: 0, zigHintT: 0,
+        // #1696 sand deformation: baked-texel steps (-1 lip … 3 crater core)
+        // + the cells that changed this tick. Presentation-derived state only:
+        // no physics number reads it, and stateHash never mixes it.
+        marks: new Map(), markDelta: [],
     }
     for (const k of g.karts) k.goT = Math.floor(rnd(g) * 7)
     return g
@@ -187,6 +257,7 @@ function spin(k, g, why, by) {
         k.spinT = CFG.spinT
     k.boostT = 0; k.boostTier = -1; k.driftT = 0; k.charge = -1; k.driftG = 0
     k.link = 0; k.linkCarry = 0
+    if (k.offroad) craterAt(g, k)
     g.events.push({ e: 'spin', who: k.name, why, by })
 }
 
@@ -215,6 +286,7 @@ function drive(g, k, inp) {
         const surf = surfaceAt(k.x, k.y, k.hint)
         k.hint = surf.i; k.idx = surf.i
         k.offroad = surf.surf !== 'road'
+        k.surf = surf.surf
         if (surf.surf !== 'wall') k.wpress = 0
         const top = surf.surf === 'sand' ? CFG.sandTop : surf.surf === 'kerb' ? CFG.kerbTop : CFG.top
         const boost = k.boostT > 0
@@ -342,6 +414,7 @@ function drive(g, k, inp) {
             if (k.bumpCd === 0) {
                 k.v *= CFG.bumpV
                 k.bumpCd = CFG.bumpCd
+                craterAt(g, k)
                 g.events.push({ e: 'bump', who: k.name })
             }
         }
@@ -352,6 +425,13 @@ function drive(g, k, inp) {
     k.y += Math.sin(k.a) * k.v
     k.x = Math.max(30, Math.min(TX - 30, k.x))
     k.y = Math.max(30, Math.min(TY - 30, k.y))
+    // #1696: the sand remembers — tyres carve where they RUN, not where the
+    // body points. A spinning body drags a single drag-mark; a steered slide
+    // cuts twin ruts with heaped lips.
+    if (k.v > SAND.minV && k.offroad && k.surf === 'sand') {
+        if (k.spinT > 0) markCell(g, k.x, k.y, SAND.roll)
+        else carveWheels(g, k, k.driftT > 0)
+    }
     k.anim++
 }
 
@@ -511,6 +591,7 @@ function kartBump(g) {
 
 export function step(g, inp) {
     g.tick++
+    g.markDelta.length = 0
     if (g.zigHintT > 0) g.zigHintT--
     if (g.end) return
     const P = g.karts[0]
