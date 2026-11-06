@@ -38,6 +38,8 @@ import {
 import { LEVELS, buildLevel } from './levels.js'
 import { buildArt, CW, CH } from './art.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const SIM_MS = 1000 / 15
 const PXW = W * CW
@@ -66,6 +68,8 @@ const LodeRunnerLiteGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: lodecheck's autopilot runs the vault
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -138,6 +142,7 @@ const LodeRunnerLiteGame = () => {
         }
 
         const gameOver = (win, why) => {
+            watchingRef.current = false; setWatching(false) // #1637 the vault ends in your hands
             setEnd({ win, why, level: levelIdx, score: gs.score })
             if (win) {
                 const best = JSON.parse(localStorage.getItem('lode.best') || '{}')
@@ -148,6 +153,7 @@ const LodeRunnerLiteGame = () => {
         }
 
         const startPlay = (idx = 0, opts = {}) => {
+            if (!opts.keepWatch) { watchingRef.current = false; setWatching(false) } // #1637 a new run starts in your hands (a vault the solver just cleared keeps the guide)
             const b = buildLevel(idx)
             levelIdx = idx
             gs = makeGame(b.meta, b.grid)
@@ -176,7 +182,10 @@ const LodeRunnerLiteGame = () => {
             finishRun()
             if (levelIdx + 1 >= LEVELS.length) { gameOver(true, 'CLEARED'); return }
             say('VAULT CLEARED')
-            startPlay(levelIdx + 1, { carry: gs.score, lives: gs.lives })
+            // #1637 keep the guide seated across the carry — lodecheck proves
+            // every vault from its fresh start state, and the solver re-plans
+            // from live state anyway; only the player's own start hands back.
+            startPlay(levelIdx + 1, { carry: gs.score, lives: gs.lives, keepWatch: true })
         }
 
         const doSim = (cands) => {
@@ -234,9 +243,17 @@ const LodeRunnerLiteGame = () => {
             let act = null
             if (gs.tick % CFG.moveEvery === 0) {
                 const cands = []
-                for (let i = held.length - 1; i >= 0; i--) {
-                    const c = held[i]
-                    if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'ArrowUp' || c === 'ArrowDown') cands.push(c)
+                if (watchingRef.current) {
+                    // #1637 WATCH: seat lodecheck's autopilot — planStep re-plans
+                    // from the live state every move, and the solver's route never
+                    // digs, so a watched vault is never trashed.
+                    const a = planStep(gs)
+                    if (a) cands.push(a)
+                } else {
+                    for (let i = held.length - 1; i >= 0; i--) {
+                        const c = held[i]
+                        if (c === 'ArrowLeft' || c === 'ArrowRight' || c === 'ArrowUp' || c === 'ArrowDown') cands.push(c)
+                    }
                 }
                 act = cands.length ? cands : null
             }
@@ -380,6 +397,14 @@ const LodeRunnerLiteGame = () => {
                 setMode('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats lodecheck's autopilot at any vault state
+            // (planStep re-plans from live); any driving key takes the runner back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code) && !held.includes(e.code)) held.push(e.code)
         }
         const onUp = (e) => {
@@ -391,9 +416,16 @@ const LodeRunnerLiteGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
         }
+        // #1637 WATCH: a touch on the vault means you want the runner — hand back.
+        // (Canvas-level, SmashTV style: the pad's own keydowns already take over,
+        // and the WATCH pill stopPropagations its press.)
+        const onStagePointer = () => {
+            if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onStagePointer)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -427,6 +459,9 @@ const LodeRunnerLiteGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 drive: (n) => {
                     for (let k = 0; k < n && !gs.end; k++) {
                         if (gs.tick % CFG.moveEvery === 0) {
@@ -501,6 +536,7 @@ const LodeRunnerLiteGame = () => {
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onStagePointer)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             canvas.remove()
@@ -533,6 +569,7 @@ const LodeRunnerLiteGame = () => {
                         <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
                         <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                        <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
                     </div>
                 </>
             )}
@@ -547,6 +584,19 @@ const LodeRunnerLiteGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the prover runs the proven vault; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'LODE RUNNER-LITE')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
         </div>

@@ -26,6 +26,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, makeGame, step, botInput, recordMatch, replay, stateHash, cloneGame } from './sim.js'
 import { ARENAS_COUNT, buildArena } from './levels.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const SIM_MS = 1000 / 30
 const CW = CFG.cell
@@ -36,6 +38,9 @@ const PXH = A0.H * CW
 const P1_KEYS = { l: 'ArrowLeft', r: 'ArrowRight', u: 'ArrowUp', d: 'ArrowDown', f: 'Space' }
 const P2_KEYS = { l: 'KeyA', r: 'KeyD', u: 'KeyW', d: 'KeyS', f: 'KeyF' }
 const KEY_SET = new Set([...Object.values(P1_KEYS), ...Object.values(P2_KEYS)])
+// #1637 WATCH: seat-2 codes never unseat the watcher — your duel partner
+// keeps their seat (the Smash TV rule from batch 2).
+const P2_CODES = new Set(Object.values(P2_KEYS))
 
 const inputOf = (held, map) => ({
     mx: (held.has(map.r) ? 1 : 0) - (held.has(map.l) ? 1 : 0),
@@ -57,6 +62,8 @@ const ArenaArcheryGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the arena-winning autopilot takes seat 1
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -180,6 +187,7 @@ const ArenaArcheryGame = () => {
         }
 
         const gameOver = () => {
+            watchingRef.current = false; setWatching(false) // #1637 the duel ends in your hands
             const w = gs.winner
             setEnd({ winner: w, scores: [gs.p[0].score, gs.p[1].score], arena: arenaIdx, time: gs.tick })
             overAtRef.current = performance.now()
@@ -188,6 +196,7 @@ const ArenaArcheryGame = () => {
         }
 
         const startPlay = (m, idx = 0) => {
+            watchingRef.current = false; setWatching(false) // #1637 a new duel starts in your hands
             mode = m; modeRef.current = m
             arenaIdx = ((idx % ARENAS_COUNT) + ARENAS_COUNT) % ARENAS_COUNT
             gs = makeGame(buildArena(arenaIdx))
@@ -216,7 +225,11 @@ const ArenaArcheryGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play' || gs.end) return
-            const in1 = inputOf(held, P1_KEYS)
+            // #1637 WATCH: seat 1 takes the proven autopilot — botInput(0, 1)
+            // is the exact skill-1 brain archerycheck wins both arenas with
+            // (and recordMatch feeds the attract witness); it reads only state,
+            // so takeover and re-seat resume from exactly where you left it.
+            const in1 = watchingRef.current ? botInput(gs, 0, 1) : inputOf(held, P1_KEYS)
             const in2 = mode === '2p' ? inputOf(held, P2_KEYS) : botInput(gs, 1, 0)
             gs.cmds.push({ tick: gs.tick, p1: in1, p2: in2 })
             const before = gs.events.length
@@ -267,6 +280,17 @@ const ArenaArcheryGame = () => {
                 setMode('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the arena-winning autopilot at seat 1; any
+            // seat-1 key takes the bow back. Seat-2 codes never unseat it —
+            // your duel partner keeps their seat (Smash TV rule).
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e) && !(mode === '2p' && P2_CODES.has(e.code))) {
+                watchingRef.current = false; setWatching(false); playWatchStop()
+            }
             if (KEY_SET.has(e.code)) held.add(e.code)
         }
         const onUp = (e) => { held.delete(e.code) }
@@ -275,9 +299,14 @@ const ArenaArcheryGame = () => {
             if (sc === 'attract') { startPlay('1p', 0); return }
             if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
         }
+        // #1637 WATCH: a touch on the arena means you want the bow — hand back.
+        const onStagePointer = () => {
+            if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onStagePointer)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -309,6 +338,9 @@ const ArenaArcheryGame = () => {
                 }),
                 start: startPlay,
                 hash: () => stateHash(gs),
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 // drive N ticks of the BOT (not the human) into the live game,
                 // so a harness can advance the duel through real step() calls
                 drive: (n) => {
@@ -377,6 +409,7 @@ const ArenaArcheryGame = () => {
             window.removeEventListener('keydown', onDown)
             window.removeEventListener('keyup', onUp)
             window.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onStagePointer)
             window.removeEventListener('resize', resize)
             cancelAnimationFrame(raf)
             canvas.remove()
@@ -409,6 +442,7 @@ const ArenaArcheryGame = () => {
                     <h1 className="text-4xl font-black mb-6" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>ARENA ARCHERY</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
+                    <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -424,6 +458,19 @@ const ArenaArcheryGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the prover duels seat 1; any seat-1 input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '18%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ARENA ARCHERY')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} secondPad={{ up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', action: 'KeyF' }} />
         </div>

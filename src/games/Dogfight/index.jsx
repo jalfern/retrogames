@@ -26,6 +26,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { CFG, FIXED_DT, newGame, step, pilotInput, recordMission, replay, stateHash, cloneGame } from './sim.js'
 import { MISSION_COUNT } from './levels.js'
 
@@ -120,6 +122,8 @@ const DogfightGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: dogfightcheck's pilot flies the scout
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -247,6 +251,7 @@ const DogfightGame = () => {
         }
 
         const finishRun = () => {
+            watchingRef.current = false; setWatching(false) // #1637 the sortie ends in your hands
             setEnd({ end: gs.end, why: gs.why, ticks: gs.tick, mission, belt: [gs.p.belt, gs.p.total], hp: gs.p.hp })
             overAtRef.current = performance.now()
             audioController[gs.end === 'win' ? 'playSweep' : 'playDeath'](...(gs.end === 'win' ? [330, 990, 0.9, 'square', 0.09] : []))
@@ -254,6 +259,7 @@ const DogfightGame = () => {
         }
 
         const startPlay = (m = 0) => {
+            watchingRef.current = false; setWatching(false) // #1637 a new sortie starts in your hands
             mission = ((m % MISSION_COUNT) + MISSION_COUNT) % MISSION_COUNT
             gs = newGame(mission)
             gs.cmds = []
@@ -280,6 +286,19 @@ const DogfightGame = () => {
                 handleEvents(gs.events.splice(0))
                 if (gs.end) buildDemo((demoMission + 1) % MISSION_COUNT)
             } else if (screenRef.current === 'play' && !gs.end) {
+                // #1637 WATCH: seat dogfightcheck's own pilot — the same
+                // closed-loop brain the harness re-fights both patrols with
+                // (lead on the bullet's flight time, predictHit receipts, energy
+                // throttle). It reads only state, so any seat is honest.
+                const ai = watchingRef.current ? pilotInput(gs) : null
+                if (ai) {
+                    throttle = ai.throttle // the lever follows the plane — takeover resumes where the pilot left it
+                    gs.cmds.push({ tick: gs.tick, in: ai })
+                    step(gs, ai)
+                    handleEvents(gs.events.splice(0))
+                    if (gs.end) finishRun()
+                    return
+                }
                 const up = keys.has('ArrowUp') ? 1 : 0, dn = keys.has('ArrowDown') ? 1 : 0
                 const lf = keys.has('ArrowLeft') ? 1 : 0, rt = keys.has('ArrowRight') ? 1 : 0
                 if (keys.has('KeyE')) throttle = Math.min(1, throttle + 0.01)
@@ -424,6 +443,14 @@ const DogfightGame = () => {
                 setMode('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the proven pilot anywhere (it flies closed-loop);
+            // any flying control — stick keys, guns or throttle — takes the yoke back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
@@ -433,10 +460,15 @@ const DogfightGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
         }
+        // #1637 WATCH: a touch on the sky means you want the yoke — hand back.
+        const onStagePointer = () => {
+            if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         window.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onStagePointer)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -475,6 +507,9 @@ const DogfightGame = () => {
                 },
                 start: startPlay,
                 hash: () => stateHash(gs),
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 replayCheck: () => {
                     const g2 = replay(mission, gs.cmds, { maxTicks: gs.tick })
                     return { live: stateHash(gs), replay: stateHash(g2), match: stateHash(gs) === stateHash(g2), cmds: gs.cmds.length, tick: gs.tick }
@@ -547,6 +582,7 @@ const DogfightGame = () => {
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
             window.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onStagePointer)
             cancelAnimationFrame(raf)
             for (const b of booms) scene.remove(b.s)
             disposables.forEach((d) => { if (d.dispose) d.dispose() })
@@ -608,6 +644,7 @@ const DogfightGame = () => {
                     <h1 className="text-5xl font-black mb-6" style={{ color: '#e8d9a0', textShadow: '3px 0 0 #7a2b1e, -3px 0 0 #3b5aa0, 0 10px 26px #000' }}>WWI DOGFIGHT</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
+                    <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -625,6 +662,19 @@ const DogfightGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the proven pilot flies the patrol; any input takes the yoke. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '18%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'WWI DOGFIGHT')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
         </div>
