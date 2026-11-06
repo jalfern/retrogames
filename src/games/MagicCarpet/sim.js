@@ -108,20 +108,62 @@ export function sampleH(gs, x, y) {
 // scorch rim stays. glowOf() answers the render side.
 export const CRATER_GLOW = 300
 
+// #1694 crumble ripple: the original's land did not pop holes — it crumbled.
+// Every ground write (crater, RAISE mound, DISSOLVE clamp) computes its cell
+// deltas exactly as the #489 instant machine did, then UNFOLDS them over
+// CRUMBLE_T ticks through gs.deforms, with a transient shockwave ring just
+// outside the work that heaves and settles back to exactly zero. At
+// cast + CRUMBLE_T the heights equal the instant-apply result cell-for-cell
+// (gated in carpetcheck), so every rule downstream (flooding, auto-climb,
+// glow, fairness) lands on the same land it always did. rng-free and
+// tick-driven: replay-bit-identical, and stateHash never reads heights.
+export const CRUMBLE_T = 10
+const sinkCurve = (a) => (a / CRUMBLE_T) ** 2            // collapse accelerates down
+const swellCurve = (a) => 1 - (1 - a / CRUMBLE_T) ** 2   // mounds swell up, ease-out
+
+function queueDeform(gs, cells, deltas, swell, rimCells, rimAmp) {
+    gs.deforms.push({ cells, deltas, e: swell ? 1 : 0, a: 0, done: 0, rimCells, rimAmp, rimPrev: 0 })
+}
+
+function drainDeforms(gs) {
+    for (let di = gs.deforms.length - 1; di >= 0; di--) {
+        const d = gs.deforms[di]
+        d.a++
+        const last = d.a >= CRUMBLE_T
+        const f = d.e ? swellCurve(d.a) : sinkCurve(d.a)
+        const frac = last ? 1 - d.done : f - d.done
+        d.done = last ? 1 : f
+        for (let i = 0; i < d.cells.length; i++) {
+            const gi = d.cells[i]
+            gs.heights[gi] = Math.max(0, Math.min(96, gs.heights[gi] + d.deltas[i] * frac))
+        }
+        // shockwave ring: o(a) = amp·sin(pi·a/T) — starts and ends at exactly 0
+        const o = last ? 0 : d.rimAmp * Math.sin(Math.PI * d.a / CRUMBLE_T)
+        const dd = o - d.rimPrev
+        d.rimPrev = o
+        for (let i = 0; i < d.rimCells.length; i++) {
+            const gi = d.rimCells[i]
+            gs.heights[gi] = Math.max(0, Math.min(96, gs.heights[gi] + dd))
+        }
+        if (last) gs.deforms.splice(di, 1)
+    }
+}
+
 export function crater(gs, x, y, r, depth, hot = 0) {
-    const rCell = Math.ceil(r / CELL)
     const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
     const i0 = Math.floor(cx), j0 = Math.floor(cy)
-    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
-        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+    const rc = Math.ceil((r * 1.25) / CELL)
+    const cells = [], deltas = [], rimCells = []
+    for (let j = j0 - rc; j <= j0 + rc; j++) {
+        for (let i = i0 - rc; i <= i0 + rc; i++) {
             const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
             const d = Math.hypot(du, dv)
-            if (d > r) continue
-            const fall = depth * (1 - d / r) ** 2
             const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
-            gs.heights[gi] = Math.max(0, gs.heights[gi] - fall)
+            if (d <= r) { cells.push(gi); deltas.push(-depth * (1 - d / r) ** 2) }
+            else if (d <= r * 1.25) rimCells.push(gi)
         }
     }
+    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * depth)
     gs.craters.push({ x: wrap(x, MAP), y: wrap(y, MAP), r, t: gs.tick, hot })
     if (gs.craters.length > 10) gs.craters.shift()
 }
@@ -136,19 +178,21 @@ export const glowOf = (gs, c) => (c.hot > 0 ? Math.max(0, 1 - (gs.tick - c.t) / 
 // pushed into gs.craters — a raise glows with nothing: no lava, no scorch,
 // the ground just rises. rng-free, so deterministic like every terrain rule.
 export function raiseTerrain(gs, x, y, r, hgt) {
-    const rCell = Math.ceil(r / CELL)
     const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
     const i0 = Math.floor(cx), j0 = Math.floor(cy)
-    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
-        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+    const rc = Math.ceil((r * 1.2) / CELL)
+    const cells = [], deltas = [], rimCells = []
+    for (let j = j0 - rc; j <= j0 + rc; j++) {
+        for (let i = i0 - rc; i <= i0 + rc; i++) {
             const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
             const d = Math.hypot(du, dv)
-            if (d > r) continue
-            const rise = hgt * (1 - d / r) ** 2
             const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
-            gs.heights[gi] = Math.min(96, gs.heights[gi] + rise)
+            if (d <= r) { cells.push(gi); deltas.push(hgt * (1 - d / r) ** 2) }
+            else if (d <= r * 1.2) rimCells.push(gi)
         }
     }
+    // the ground feeds the mound from around it: the rim dips while it swells
+    queueDeform(gs, cells, deltas, 1, rimCells, -0.15 * hgt)
     gs.events.push({ type: 'raise', x: wrap(x, MAP), y: wrap(y, MAP), r })
 }
 
@@ -167,19 +211,26 @@ export const DISSOLVE_SINK = 6
 
 export function dissolveLand(gs, x, y) {
     const dx0 = wrap(x, MAP), dy0 = wrap(y, MAP)
-    const rCell = Math.ceil(DISSOLVE_R / CELL)
     const cx = dx0 / CELL, cy = dy0 / CELL
     const i0 = Math.floor(cx), j0 = Math.floor(cy)
-    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
-        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+    const rc = Math.ceil((DISSOLVE_R * 1.25) / CELL)
+    const cells = [], deltas = [], rimCells = []
+    for (let j = j0 - rc; j <= j0 + rc; j++) {
+        for (let i = i0 - rc; i <= i0 + rc; i++) {
             const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
             const d = Math.hypot(du, dv)
-            if (d > DISSOLVE_R) continue
-            const floor = WATER - DISSOLVE_SINK * (1 - d / DISSOLVE_R) ** 2
             const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
-            gs.heights[gi] = Math.min(gs.heights[gi], floor)
+            if (d <= DISSOLVE_R) {
+                const floor = WATER - DISSOLVE_SINK * (1 - d / DISSOLVE_R) ** 2
+                const h = gs.heights[gi]
+                const drop = Math.min(h, floor) - h
+                if (drop < 0) { cells.push(gi); deltas.push(drop) }
+            } else if (d <= DISSOLVE_R * 1.25) rimCells.push(gi)
         }
     }
+    // #1694: the wound opens over the crumble window — the guaranteed flood
+    // arrives as the land sinks (complete by cast + CRUMBLE_T, same clamp).
+    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * DISSOLVE_SINK)
     const gone = []
     gs.huts.forEach((hs, i) => {
         if (Math.hypot(wrapD(hs.x - dx0), wrapD(hs.y - dy0)) < DISSOLVE_R) gone.push(i)
@@ -296,7 +347,7 @@ export function makeGame(seed, level = 0) {
         kills: 0, wizardKills: 0, levelClears: 0,
         castle: null, castleStage: 0,
         wizard: null, pearls: [], books: [], monsters: [], projs: [], fireMarks: [],
-        craters: [], towerDown: false,
+        craters: [], deforms: [], towerDown: false,
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
@@ -313,6 +364,7 @@ export function makeGame(seed, level = 0) {
 // makeGame always starts at the requested level, and step()'s level transition
 // calls genWorld in the same deterministic order.
 export function genWorld(gs) {
+    gs.deforms = [] // #1694: fresh land never inherits pending crumble ripples
     const lv = LEVELS[gs.level]
     gs.quota = lv.quota
     gs.heights = genHeights((() => {
@@ -692,6 +744,7 @@ export function step(gs, inp) {
     if (gs.safeT > 0) gs.safeT--
     if (gs.invis > 0) { gs.invis--; if (gs.invis === 0) gs.events.push({ type: 'invisEnd' }) }
     if (gs.holdT > 0 && gs.heldEnt) { gs.holdT--; if (gs.holdT === 0) { gs.heldEnt.ref.grabbed = false; gs.heldEnt = null } }
+    drainDeforms(gs) // #1694: the ground unfolds its pending crumbles first
 
     const steer = (inp.right ? 1 : 0) - (inp.left ? 1 : 0)
     const vert = (inp.up ? 1 : 0) - (inp.down ? 1 : 0)
