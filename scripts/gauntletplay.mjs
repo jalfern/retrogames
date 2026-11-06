@@ -17,10 +17,46 @@ await page.waitForTimeout(700)
 const frameHash2 = await page.evaluate(() => window.__gauntletTest.hash())
 r.check('attract demo is alive', frameHash1 !== frameHash2)
 
+// #1641: the attract demo the TRAINED NET plays. Fast-forward a whole quest
+// through the browser's own demo tick (advance -> doSim, the real path), and
+// the screen must stay attract, the run must end in a WIN, the victory
+// banner must fire, the hi-score board must stay untouched, and leaving the
+// attract must not carry the demo's BRAIN seat into the player's select.
+{
+    const q0 = await page.evaluate(() => { localStorage.setItem('gauntlet.board', '[]'); return window.__gauntletTest.netDemoProbe() })
+    r.check('#1641: net-demo route live at boot', q0.broken === false && q0.seed === 100 && q0.screen === 'attract' && q0.winBanner === 0, JSON.stringify(q0))
+    const res = await page.evaluate(() => {
+        const t = window.__gauntletTest
+        t.demoSeed(103)
+        const before = t.probe().p2
+        let banner = 0
+        for (let i = 0; i < 20000; i++) {
+            t.demoTick()
+            const q = t.netDemoProbe()
+            if (q.winBanner > 0) { banner = q.winBanner; break }
+        }
+        const after = t.probe().p2
+        const q = t.netDemoProbe()
+        return { banner, screen: q.screen, broken: q.broken, end: t.state().end,
+            moved: after && before ? Math.hypot(after.x - before.x, after.y - before.y) : -1,
+            board: localStorage.getItem('gauntlet.board') }
+    })
+    r.check('#1641: net wins the attract quest on the real path (seed 103)', res.banner > 0 && res.end === 'win' && !res.broken && res.screen === 'attract', JSON.stringify(res))
+    r.check('#1641: the net partner travelled under its own pads', res.moved > 5, `${res.moved.toFixed(1)} cells`)
+    r.check('#1641: a demo win banks no hi-score', res.board === '[]', String(res.board))
+    await page.reload()
+    await page.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+    await page.waitForTimeout(400)
+}
+
 await page.keyboard.press('Enter')
 await page.waitForTimeout(300)
 p0 = await probe()
 r.check('hero select opens', p0.screen === 'select', p0.screen)
+{
+    const pm = await page.evaluate(() => window.__gauntletTest.state().partnerMode)
+    r.check('#1641: leaving attract hands the player an unseated brain', pm === 'off', `pm=${pm}`)
+}
 await page.keyboard.press('Digit1')
 await page.waitForTimeout(400)
 p0 = await probe()

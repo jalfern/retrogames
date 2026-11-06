@@ -25,7 +25,8 @@ engine, pinned to the original four mazes (`levelCount: 4`).
   slam/locked/broken door faces, glowing stairs, sprites punched at runtime,
   facing-dagger + sword-arc sweep, vignette and scanlines, side panel (mini
    map, portrait, health, keys/gold), narrator strip, hero select, CPU partner
-   toggle (`C`), attract replaying `plan(2, {topDown:true})`'s proven run.
+   toggle (`C`), attract the TRAINED NET plays (#1641 — see Attract below;
+   the planner replay `plan(2, {topDown:true})` remains its fallback).
 - `select.js` — the hero-select cards (issue #403): one card-geometry
   definition feeds both the painter and the touch test (`heroAt`), so a tap
   lands where the pixels are — tap a card to pick it, tap it again to start.
@@ -119,10 +120,35 @@ npm run voicecoopdrive          # advisory headless drive: consent → V → hea
 npm run slotcheck -- --mutate     # #494 seat determinism: cpu pads recorded,
                                       # replayed through model seats, hash-equal
 npm run gauntletplay              # advisory browser drive (needs npm run dev)
+npm run netdemocheck            # #1641 net-driven attract: seeds mirror the
+                                #      held-out board, all 8 win through the
+                                #      shipped driver, dead weights diverge,
+                                #      determinism, throw-policy fallback, and
+                                #      the shell's honesty glue
 ```
 
-The attract demo is `plan(2, {topDown:true})` — the same deathless full-quest
-run the harness grades.
+## Attract — the net plays (#1641)
+
+The attract demo is LIVE play, not a script replay (`netdemo.js`):
+plaicraft-bc/v1 holds seat 2 and makes every movement and swing itself, while
+the reactive expert pilot (`decide`) walks seat 1 — the exact seat config that
+scored 8/8 held-out wins (`data/plaicraft/results.json`). The demo cycles the
+held-out board itself (seeds 100..107) and ends each run with
+`NET CLEARS THE QUEST!` held ~4 s on the frozen victory board. Honesty glue:
+
+- the ticker only shows `BC NET PLAYS SEAT 2 / HELD-OUT 8/8 WINS` while the
+  net really drives; the BC-1 veil (from #1636) marks the seat;
+- if the policy ever throws, `advance()` fails once and permanently (sticky —
+  no flapping): the shell rebuilds the attract onto the OLD route — the
+  `plan(2, {topDown:true})` proven-run script — and the caption stops
+  claiming the brain. Only then does the page pay for plan()'s precompute;
+- a demo win is never a player ending: `finish()` ignores attract/select
+  `gs.end`, so a long stare at the demo banks no hi-score (the old script
+  replay could), and leaving attract resets the seat — the demo's BRAIN never
+  becomes the player's choice (they still opt in with M / the BRAIN chip);
+- netdemo.js is pure decisions (never `step()`), so netdemocheck drives the
+  very driver the browser ticks. DEV: `__gauntletTest.netDemoProbe()`,
+  `demoSeed(n)`, `demoTick()`.
 
 ## Two players (#492 pilot)
 
