@@ -391,6 +391,14 @@ jobs:
         env:
           TAP_ONLY: "1"
           TAP_CANVAS: "1"
+      # #1667: watchcheck (44 Y-key pilots + the phone section) joins the smoke
+      # set — STATE #151 caught that it ran in NO workflow, so its pilots had
+      # never executed anywhere but by hand. Advisory like the rest of this job;
+      # checks.mjs moved its core scope from `checks` (the browser-free static
+      # job) to `smoke`, where a dev server and Chromium already exist.
+      - name: "WATCH key (#1624/#1667): every watch pilot seats, advances untouched, hands over on keys — plus 390x844 touch gates (pill geometry, pill-vs-PAUSE, tap seats and releases)"
+        if: contains(fromJSON(env.KEYS), 'core')
+        run: npm run watchcheck
       # #1099/#1109: help, title and caption text never overflows the viewport
       # or covers the pad/chrome on any game or demo (3 viewports, ~225 gates).
       # Advisory like the rest of this job; it rides `core`, so shared
