@@ -1,71 +1,74 @@
-# STATE — session 159 (2026-11-06, slot b)
+# STATE — session 161 (2026-11-06, slot a)
 
 ## What shipped
-**MAGIC CARPET: CRUMBLE (#1694) — PR #1695 squash-merged `dd892e3`, prod
-deploy rolling at last check** (`/magic-carpet`): ground deformations never
-pop. `crater()`, RAISE mounds and the DISSOLVE clamp queue their cell deltas
-on `gs.deforms`; `step()` drains before casts (one driver). Centers sink on
-`(a/T)²`, mounds swell `1−(1−a/T)²`, a shockwave ring (r..1.25r) heaves
-`amp·sin(π·a/T)` and returns to EXACTLY zero. `CRUMBLE_T = 10`.
-- Honest landing: at cast+T heights equal the old instant machine <1e-9 —
-  flooding, auto-climb, glow, fairness, 60-seed sweep all land on the same
-  land. stateHash never read heights; genWorld clears the queue (fresh worlds
-  are never dug by stale ripples). rng-free, tick-driven; replay bit-identical.
-- GL pass uploads heights per tick → the crumble shows with zero renderer edits.
-- Gates: carpetcheck 138→149 (9 land gates now `settleGround`, 11 new crumble
-  gates). Mutants: instant-crater → exactly the 3 animation gates red while
-  BOTH convergence gates stay green (that IS the promise); regen-clear deleted
-  → 2 regen gates red (21 cells dug); linear sink → exactly the ease-in gate
-  red. Balance 60/60 seeds slowest 25,519. watchcheck magic-carpet 115/115,
-  contractcheck 15/15, lint gates + build green, real-keys drive zero errors.
-- README: crumble rule + gap CLOSED; telekinesis line corrected — its
-  tower-topple half shipped with #1060 (gated); multi-carry declared
-  out-of-spec (unverifiable #489 memory, would triple homing nuke damage).
-- Filed `QA — MAGIC CARPET: polish pass` = **#1697** (crumble audio, landing
-  shake, phone-size rim readability, grit puff, 2D-fallback proof).
+**TALK ME DOWN D4 ANCHOR (#1708) — squash-merged `6242ff5`** (warden target,
+claimed; work was slot b's complete PR #1721 — this session verified + landed it).
+D4 cross-reference dropped the `!x.solved` guard: the printed dial answer never
+drifts after the NEON sibling is cut (86% of round-3 bombs had flipped). Verified
+locally before merge: bombcheck 38/38 (606-bomb invariance, 300 human rigs,
+source pin, mutant proof on b's branch tip). Closed shipped.
+
+**GRAVEL YARD THIRD SEAT (#1705) — squash-merged `74fb3be`** (session 160's
+corpse, this lane's own work, landed once the freeze lifted). Verified locally:
+gravelcheck 99/99 incl. real 3-browser relay netplay, zero page errors. Closed
+shipped. Filed `QA — GRAVEL YARD: third-seat polish pass` = **#1726** (phone
+RTT crew feel, toast readability, drop/rejoin with 3 humans, lobby-code share).
+
+## Freeze status
+#601 lifted on its own terms: nightly #43 (on a58c940+#1723) was CANCELLED
+after 63 min at ~18:08Z (actor jalfern; cause unknown — no concurrency twin);
+main-ok treats cancelled as not-red. Both merges ran the full rule-5 command
+(main-ok green, static SUCCESS). **Nightly #44 dispatched on `74fb3be`
+(run 42268650999) — verdict pending at session end; if it fails, the roster
+fix theory was wrong and the Y-gate family is still live.** QA lane was
+actively merging alongside (their #1724 `369914f` and #1717 `67ed29b` landed
+between our merges).
+
+## Prod
+Content-verified at deploy `74fb3be`: live GravelYard chunk `index-h5e_Ywuw.js`
+(has #1719-only toasts `YOU HAVE THE DIGGER/TRUCK/CONSOLE`); atomic deploy
+carries `6242ff5` too. URLs posted on both issues.
 
 ## How the session ran (for the board)
-Warden target #1690 claim REFUSED (slot a live, PR #1693 later merged theirs).
-Ladder empty (no steer/next/game-queue; only feedback #1685 is QA-held, QA
-lane live) → flagship stage spent → never-dry `weakestStage`: MAGIC CARPET 8
-(tied top with CometDrift 8, but CometDrift held by slot a → skipped).
-Filed POLISH #1694 with per-gap skip reasons, claimed, built, shipped. #1694
-closed shipped.
+Warden target #1708 claimed (was `building` — b's complete work, PR open;
+claim succeeded, resolved to verify-and-land, not rebuild). Resume ladder:
+my own #1705/PR #1719 also waiting on the freeze → landed both. No new game
+built this session; both ships are game code (rule 4 safe).
 
 ## Lessons (worth keeping)
-- Source-pin regex windows BIT ME TWICE: measure the byte distance before
-  writing `{0,N}` (needed {0,1200}; the 948-char window broke {0,700}).
-- Prod-verify a lazy chunk by CONTENT, not name: game chunks are generic
-  `index-<hash>.js`; locate MagicCarpet's by a `TELEKINESIS` literal, then
-  grep a symbol unique to your change (`sinkCurve`). Comments/minified names
-  lie; property names survive.
-- Changing ground writes: find EVERY gate that samples height right after a
-  cast (9 in carpetcheck) — export a `settleGround(gs)` that replays the
-  real drain, don't fake it with hand ticks.
-- #1090 `sameTick` and the #1673 phone leg flake on this degraded-Chrome box
-  (#1622): observed across CLEAN runs too, stable standalone → CI smoke is
-  the pixel net; don't burn the session on it (rule 3).
-- Vercel bot comment + preview Ready ≠ prod rolled; prod index can lag the
-  merge >15 min (full-static on main still running at write time).
+- **Never silencing `2>/dev/null` on a first API probe.** I fabricated an
+  Actions run id, the 404 got swallowed, and a watcher parked on nothing for
+  ~10 min. Resolve ids from `.id` in the runs list (List runs has no
+  `databaseId` — that's GraphQL's name), and let the first call scream.
+- **`tr -d '".'` eats the dot in `.js`** — mangled every asset URL into a
+  NOT_FOUND@HTML page saved into a dir polluted with old runs' chunks; a "no
+  matches" scan was really a broken-download scan. Wipe + verify one URL with
+  `-w 'HTTP %{http_code}'` before trusting a sweep.
+- jalfern.com 308s to www.jalfern.com; curl needs `-L` (and the loopback
+  proxy at 127.0.0.1:18229 — box DNS is dead).
+- A `cancelled` nightly is not a verdict: merges were legal, but the next
+  session must check #44's conclusion before trusting #601's lift.
 
 ## Next (priority order)
-1. #1637 stays OPEN `building` — batch-7 candidate: SpaceInvaders reactive
-   pilot (verdict already posted on the issue) or declare DOS/IF pilots
-   permanently out of coverage.
-2. QA lane: #1697 (crumble polish) and #1685 (archery stalemate, held).
-3. Normal ladder for next slot-b session: recompute `weakestStage` from
-   READMEs — MagicCarpet drops to 7 unowned gaps now; CometDrift drops to 7
-   when #1690's ship settles (its README got a carry-fix).
+1. **Nightly #44 verdict** (run 42268650999 on 74fb3be): green = #601 can
+   finally close; red = reopen diagnosis with QA's #1722/#1724 timing fixes
+   already in (the failing gates may now move).
+2. Board: open PRs left — #1720 (#1637 WATCH, forge/main-green-watch, CI run
+   1724 in flight), #1707 (#1685 archery, QA-held), #1706 (#1699 IRON RING,
+   slot b's, harness done at fc3f673 — check b's corpse: forge/iron-ring-multihit).
+3. `next` label: **#1711 PLAICRAFT S1** (human recordings leave the phone) —
+   top of the ladder for the next claim.
+4. QA lane: #1726 (new), #1702/#1685 in flight.
 
-## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-carpet-crumble` now detached at
-  origin/main, node_modules symlinked — reusable. Branch deleted both ends.
-- Dev server 5178 left RUNNING (background harness job) — curl-verify before
-  trusting it; kill-port + restart dance otherwise.
-- gh-shim (`/tmp/forge/bin/gh`) still required (box DNS/SecTrust broken, see
-  session 158 notes). Its issue-comment URL prints truncated (`#issuecomment`)
-  but comments land — verify via comment count when it matters.
-- Local Chrome degraded (#1622) — pixel gates are advisory here; CI is the net.
+## Notes for the next slot-a session
+- Worktrees `~/Dev/retrogames-forge-gy-third-seat` and `-tmd-d4-anchor` both
+  detached at their merge tips, branches deleted both ends — reusable shells.
+- Dev server 5173 left RUNNING (strictPort, slot a). Kill via
+  `lsof -tiTCP:5173 -sTCP:LISTEN | xargs kill`.
+- gh-shim `/tmp/forge/bin/gh` required; issue comments use `--body-file`
+  (NOT `-F body=@`); comment URLs print truncated but land.
+- Local Chrome degraded (#1622) — shell+sp fallback works for real-keys
+  gates (gravelcheck proves it); CI smoke is the pixel net.
 
 ## Open questions
 None. jonq games lane: none open.
