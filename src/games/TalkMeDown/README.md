@@ -30,6 +30,15 @@ the couch — or the mic.
   `fuseFor(r) = max(30, 70 - 5r)` seconds; rule variants unlock by round
   (`variantPool`) — round 1 knows N1/N2/D1/D2/G1/G3 only.
   `QUOTA_BOMBS = 5` clears the SQUAD CHIEF stamp.
+- **D4 is anchored (#1708)**: its cross-reference is the LAYOUT — the first
+  NEON sibling's wire count, solved or not (the wires stay on the panel after
+  the cut), else LEDs+3 units. The target is therefore static for the bomb's
+  whole life: cut the sibling first and the number the page printed still
+  solves. The old `!x.solved` guard flipped the engine under the manual
+  (measured 423/489 round-3 D4 bombs) — a split-info lie the game's
+  text==truth invariant forbids; bombing a seat for obeying the page was the
+  symptom. bombcheck section 13 pins the anchor (606 bombs across rounds
+  3+5, 300 human rigs, source pin).
 - **Seats (#494)**: seat 1 = defuser (pads: up/down pick the module,
   left/right the wire/dial/glyph, A the verb). Seat 2 = manual when
   `players = 2` (left/right page, up/down line, A flags a rule — the
@@ -59,11 +68,14 @@ the couch — or the mic.
 ## Verify
 
 ```bash
-npm run bombcheck   # 35 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 38 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
                     # paths, quota win 50/50, slack (wins at 75% fuse), grammar,
                     # voiceCmd banking (#1415: recorder trace lands, file stays
-                    # valid v1, replay hash-exact, hint==grammar one-source)
+                    # valid v1, replay hash-exact, hint==grammar one-source),
+                    # D4-anchor (#1708: target invariant through all sibling
+                    # progress 606 bombs, printed-count human flow 300 rigs,
+                    # source pin)
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
@@ -75,7 +87,9 @@ node scripts/tmd-smoke.mjs   # quick sim-only smoke
 ```
 
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
-(expiry gate + fuse-cost gate); restore returns green.
+(expiry gate + fuse-cost gate); restoring returns green. #1708's mutant —
+restoring the `!x.solved` guard — goes red on exactly the three anchor gates
+("flipped 3 -> 0"), everything else green.
 
 ## Honest gaps
 
