@@ -122,6 +122,8 @@ export default function CometDrift() {
         const archCache = {}
         const sceneryCache = {}
         let gnd = null
+        let gnd0 = null // #1696: the pristine bake — fresh races heal back to it
+        let gndMarks = null // the marks Map currently painted into gnd
         let OUT_C = 0
         let FAR_C = 0
         let NEAR_C = 0
@@ -150,13 +152,33 @@ export default function CometDrift() {
             SKY_LOW = hexRGB(pal.skyLow)
             sunLift = COURSE.palette === 'noon' ? 74 : 30
             if (!groundCache[COURSE.id]) groundCache[COURSE.id] = new Uint32Array(buildGround(pal).data.buffer)
-            gnd = groundCache[COURSE.id]
+            gnd0 = groundCache[COURSE.id]
+            gnd = new Uint32Array(gnd0)
+            gndMarks = null
             map = minimapPath(Math.round(58 * hs), Math.round(50 * hs))
         }
         applyCourse(COURSE.id)
 
         const g = makeGame(0)
         gameRef.current = g
+        // #1696: fold this tick's sand deformation into the bake the Mode 7
+        // loop already samples. Depth steps tint the pristine texel (0.11 per
+        // step — lip +11%, crater core −33%); a NEW game (marks Map changed
+        // identity) heals the whole bake flat, so every race starts on smooth
+        // sand. The sim never reads any of this back — physics untouched.
+        const applyDeform = () => {
+            if (gndMarks !== g.marks) { gnd.set(gnd0); gndMarks = g.marks }
+            if (!g.markDelta.length) return
+            for (const [key, d] of g.markDelta) {
+                const c = gnd0[key]
+                const f = 1 - 0.11 * d
+                const r = Math.max(0, Math.min(255, Math.round((c & 255) * f)))
+                const gg = Math.max(0, Math.min(255, Math.round(((c >> 8) & 255) * f)))
+                const b = Math.max(0, Math.min(255, Math.round(((c >> 16) & 255) * f)))
+                gnd[key] = 0xff000000 | (b << 16) | (gg << 8) | r
+            }
+            g.markDelta.length = 0
+        }
         const keys = keysRef.current
         const st = { screen: 'attract', endT: 0, plan: true }
         screenRef.current = 'attract'
@@ -841,6 +863,7 @@ export default function CometDrift() {
                 inp = { u: !!(keys.KeyX || keys.ArrowUp), d: !!(keys.KeyS || keys.ArrowDown), l: !!keys.ArrowLeft, r: !!keys.ArrowRight, drift: !!(keys.Space || keys.KeyZ || keys.KeyR || keys.KeyC) }
             }
             step(g, live ? inp : decide(g))
+            applyDeform()
             const evs = g.events.splice(0)
             if (import.meta.env.DEV) {
                 const log = (window.__cometLog ||= [])
@@ -1049,6 +1072,12 @@ export default function CometDrift() {
                 const s = surfaceAt(g.karts[0].x, g.karts[0].y, g.karts[0].hint)
                 return { surf: s.surf, lat: s.lat }
             },
+            // #1696 deform probe: live rut census for the browser proof
+            sand: () => {
+                const hist = {}
+                for (const v of g.marks.values()) hist[v] = (hist[v] || 0) + 1
+                return { size: g.marks.size, hist, delta: g.markDelta.length }
+            },
         }
 
         exposeGame({
@@ -1073,6 +1102,7 @@ export default function CometDrift() {
                     thr: typeof pad.rt === 'number' && pad.rt > 0.05 ? pad.rt : undefined,
                     brk: typeof pad.lt === 'number' && pad.lt > 0.05 ? pad.lt : undefined,
                 })
+                applyDeform()
             },
             state: () => {
                 const P = g.karts[0]
@@ -1081,6 +1111,7 @@ export default function CometDrift() {
                     seed: g.seed, course: COURSE.id,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     hash: stateHash(g),
+                    marks: g.marks.size,
                 }
             },
             canvas: () => canvas,
