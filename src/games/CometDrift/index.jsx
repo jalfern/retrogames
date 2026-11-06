@@ -8,7 +8,8 @@ import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray } from './track.js'
-import { selectorGeom, selectorHit, previewBox } from './selector.js'
+import { selectorGeom, selectorHit, previewBox, cupBadgeGeom, cupBadgeHit } from './selector.js'
+import { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } from './cup.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
 import { drawText } from './font.js'
 import { engineVoice, driftScrape, sandWhoosh, ambienceFor } from './engineSfx.js'
@@ -182,6 +183,13 @@ export default function CometDrift() {
         const keys = keysRef.current
         const st = { screen: 'attract', endT: 0, plan: true }
         screenRef.current = 'attract'
+
+        // #1737: the COMET CUP — the three-race points grand prix (#419 cups).
+        // Armed with `C` or the title badge; races start the usual way. All the
+        // rules live in cup.js (pure, Node-audited); this is the shell's state.
+        let cupOn = false
+        let cup = makeCup()
+        let cupSeed0 = 0
 
         const BEST_KEY = 'arcade.comet.bestLap'
         const TOP_KEY = 'arcade.comet.topLaps'
@@ -748,6 +756,9 @@ export default function CometDrift() {
                 ctx.moveTo(cx - 3 * hs, cy - 2 * hs); ctx.lineTo(cx, cy); ctx.lineTo(cx - 3 * hs, cy + 2 * hs)
                 ctx.lineTo(cx - 1.5 * hs, cy); ctx.closePath(); ctx.fill()
             }
+            // #1737: the grand prix tag under the ladder chevrons while the
+            // COMET CUP is armed — which leg of three this race is.
+            if (cupOn) drawText(ctx, `${CUP.name} ${Math.min(cup.raceIdx + 1, CUP_RACES)}/${CUP_RACES}`, Math.round(5 * hs), Math.round(68 * hs), '#ffd840', dsz(8))
             // LAP plate, centre-top
             panel(Math.round((W - 78 * hs) / 2), Math.round(2 * hs), Math.round(78 * hs), Math.round(26 * hs))
             ctx.textAlign = 'center'
@@ -837,7 +848,7 @@ export default function CometDrift() {
             }
             ctx.closePath(); ctx.stroke()
             drawText(ctx, COURSE.name, W / 2, sel.rowY, '#f2e6d2', dsz(11), 'center')
-            const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS', 'RE-DRIFT INSIDE A BOOST = LINK x3']
+            const msgs = [COURSE.tagline, '< > PICK COURSE  X GAS  S BRAKE', 'HOLD SPACE / B THROUGH A BEND = TURBO', 'BLUE VIOLET GOLD - THE LADDER PAYS', 'RE-DRIFT INSIDE A BOOST = LINK x3', 'C UP - THREE RACES FOR THE COMET CUP']
             drawText(ctx, msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(H * 0.55), '#f0b878', dsz(10), 'center')
             if (st.top.length) {
                 for (let i = 0; i < st.top.length; i++) {
@@ -845,8 +856,20 @@ export default function CometDrift() {
                 }
             }
             if ((g.tick >> 5) % 2) {
-                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.74), '#f2e6d2', dsz(10), 'center')
+                // #1737: prompt nudged 0.74 -> 0.70 to keep the badge's new
+                // mid-panel home clear of the pinned tap zone at 0.74.
+                drawText(ctx, 'PRESS ANY KEY / TAP', W / 2, Math.round(H * 0.70), '#f2e6d2', dsz(10), 'center')
             }
+            // #1737: the COMET CUP arming badge below the panel — gold when the
+            // grand prix is armed. The tap target is cupBadgeGeom (selector.js,
+            // thumb-sized, gated in cometcheck); keyboard arms with C.
+            const cb = cupBadgeGeom(W, H, hs)
+            ctx.fillStyle = cupOn ? 'rgba(255,216,64,0.14)' : 'rgba(242,230,210,0.07)'
+            ctx.fillRect(cb.cx - cb.hw, cb.cy - cb.hh, cb.hw * 2, cb.hh * 2)
+            ctx.fillStyle = cupOn ? 'rgba(255,216,64,0.55)' : 'rgba(240,184,120,0.28)'
+            ctx.fillRect(cb.cx - cb.hw, cb.cy - cb.hh, cb.hw * 2, 1)
+            ctx.fillRect(cb.cx - cb.hw, cb.cy + cb.hh - 1, cb.hw * 2, 1)
+            drawText(ctx, cupOn ? 'COMET CUP x3 - ARMED' : 'COMET CUP x3 - C / TAP', cb.cx, cb.cy, cupOn ? '#ffd840' : '#b090a8', dsz(9), 'center')
             ctx.textAlign = 'left'
         }
 
@@ -861,6 +884,53 @@ export default function CometDrift() {
                 drawText(ctx, 'SPLITS ' + P.lapTimes.map((t) => (t / 60).toFixed(1)).join(' '), W / 2, Math.round(H * 0.52), '#f0b878', dsz(8), 'center')
             }
             if ((g.tick >> 5) % 5 < 3) { drawText(ctx, 'TAP OR ANY KEY', W / 2, Math.round(H * 0.63), '#f2e6d2', dsz(11), 'center') }
+            ctx.textAlign = 'left'
+        }
+
+        // #1737: the cup panels ride the same carved, strata-trimmed look as
+        // the end screen. Standings: points desc (wins → best → name), the
+        // leader gold, COMET cream, the rest dusk — arcade leaderboard order.
+        const drawStandingsTable = (yTop) => {
+            ctx.textAlign = 'center'
+            const rows = standings(cup)
+            const lh = Math.max(9, Math.round(11 * hs))
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i]
+                const col = i === 0 ? '#ffd840' : r.name === 'COMET' ? '#f2e6d2' : '#b090a8'
+                drawText(ctx, `${i + 1}  ${r.name}  ${r.pts}`, W / 2, yTop + i * lh, col, dsz(9), 'center')
+            }
+            ctx.textAlign = 'left'
+        }
+        const drawCupBreak = () => {
+            ctx.fillStyle = 'rgba(20,8,12,0.78)'; ctx.fillRect(0, Math.round(H * 0.16), W, Math.round(H * 0.66))
+            strataBar(Math.round(H * 0.16), W)
+            strataBar(Math.round(H * 0.82) - Math.round(6 * hs), W)
+            ctx.textAlign = 'center'
+            const doneR = cup.results[cup.results.length - 1]
+            drawText(ctx, doneR ? `${doneR.course} WON BY ${doneR.board[0].name}` : '', W / 2, Math.round(H * 0.24), '#ffd840', dsz(11), 'center')
+            const nxt = COURSES.find((c) => c.id === CUP.courses[Math.min(cup.raceIdx, CUP_RACES - 1)])
+            drawText(ctx, `RACE ${cup.raceIdx + 1}/${CUP_RACES}  ${nxt ? nxt.short : ''}`, W / 2, Math.round(H * 0.32), '#f2e6d2', dsz(12), 'center')
+            ctx.textAlign = 'left'
+            drawStandingsTable(Math.round(H * 0.40))
+            ctx.textAlign = 'center'
+            if ((g.tick >> 5) % 5 < 3) { drawText(ctx, 'TAP OR ANY KEY', W / 2, Math.round(H * 0.76), '#f2e6d2', dsz(10), 'center') }
+            ctx.textAlign = 'left'
+        }
+        const drawCupFinal = () => {
+            ctx.fillStyle = 'rgba(20,8,12,0.80)'; ctx.fillRect(0, Math.round(H * 0.14), W, Math.round(H * 0.72))
+            strataBar(Math.round(H * 0.14), W)
+            strataBar(Math.round(H * 0.86) - Math.round(6 * hs), W)
+            ctx.textAlign = 'center'
+            const rows = standings(cup)
+            const champ = rows[0]
+            const mine = rows.findIndex((r) => r.name === 'COMET')
+            if (champ && champ.name === 'COMET') drawText(ctx, 'COMET CUP CHAMPION!', W / 2, Math.round(H * 0.24), '#ffd840', dsz(18), 'center')
+            else drawText(ctx, `${champ ? champ.name : ''} TAKES THE CUP`, W / 2, Math.round(H * 0.24), '#f85820', dsz(14), 'center')
+            if (mine >= 0) drawText(ctx, `YOU ${mine + 1}${mine + 1 === 1 ? 'ST' : mine + 1 === 2 ? 'ND' : mine + 1 === 3 ? 'RD' : 'TH'}  ${mine + 1 === 1 ? 'THE CUP IS YOURS' : `${rows[mine].pts} PTS`}`, W / 2, Math.round(H * 0.31), mine === 0 ? '#f2e6d2' : '#b090a8', dsz(9), 'center')
+            ctx.textAlign = 'left'
+            drawStandingsTable(Math.round(H * 0.38))
+            ctx.textAlign = 'center'
+            if ((g.tick >> 5) % 5 < 3) { drawText(ctx, 'TAP OR ANY KEY', W / 2, Math.round(H * 0.80), '#f2e6d2', dsz(10), 'center') }
             ctx.textAlign = 'left'
         }
 
@@ -904,8 +974,24 @@ export default function CometDrift() {
                     }
                 }
             }
+            if (!live && g.end && st.screen === 'cupbreak') { st.endT++; return }
+            if (!live && g.end && st.screen === 'cupfinal') { st.endT++; return }
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0 } }
-            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; setPadOn(false) }
+            if (live && g.end) {
+                // #1737: under the cup the flag IS the race classification — the
+                // places live when COMET finishes score the grand prix, then the
+                // standings panel rides over the frozen scene.
+                st.endT = 0
+                setPadOn(false)
+                if (cupOn) {
+                    tally(cup, g.karts.map((k) => ({ name: k.name, place: k.place })), COURSE.short)
+                    st.screen = cupDone(cup) ? 'cupfinal' : 'cupbreak'
+                } else { st.screen = 'end' }
+                screenRef.current = st.screen
+                if (st.screen === 'cupfinal') {
+                    if (leaderName(cup) === 'COMET') audioController.playTone(660, 0.09, 'square', 0.1); setTimeout(() => audioController.playTone(880, 0.09, 'square', 0.1), 90); setTimeout(() => audioController.playTone(1320, 0.16, 'square', 0.1), 180)
+                }
+            }
         }
         const PplaceRose = (evs, live) => {
             if (!live) return false
@@ -945,6 +1031,8 @@ export default function CometDrift() {
             drawHud()
             if (st.screen === 'attract') drawAttract()
             if (st.screen === 'end') drawEnd()
+            if (st.screen === 'cupbreak') drawCupBreak()
+            if (st.screen === 'cupfinal') drawCupFinal()
         }
 
         const resetTo = (screen) => {
@@ -971,6 +1059,31 @@ export default function CometDrift() {
             audioController.playTone(540 + dir * 120, 0.06, 'square', 0.07)
         }
 
+        // #1737: arm/disarm the COMET CUP from the title (C key or the badge).
+        const toggleCup = () => {
+            cupOn = !cupOn
+            cup = makeCup()
+            audioController.playTone(cupOn ? 720 : 420, 0.07, 'square', 0.08)
+        }
+        // One leg of the grand prix. Leg 1 rides resetTo's seed law so ?seed=N
+        // still pins the field; later legs extend the seed by the race index —
+        // deterministic, so the whole cup replays from the base seed.
+        const startCupRace = () => {
+            applyCourse(CUP.courses[Math.min(cup.raceIdx, CUP_RACES - 1)])
+            if (cup.raceIdx === 0) {
+                cupSeed0 = (seedFromQuery() ?? 0) >>> 0
+                resetTo('race')
+                return
+            }
+            Object.assign(g, makeGame((cupSeed0 + cup.raceIdx) >>> 0))
+            st.screen = 'race'; screenRef.current = 'race'
+            st.plan = false; st.endT = 0
+            prevPlace = g.karts[0].place
+            camA = g.karts[0].a
+            setPadOn(true)
+            audioController.playSweep(300, 700, 0.12, 'square', 0.07)
+        }
+
         // #534: the stick / a gamepad's left stick cycles the circuit too. The
         // attract runs the autopilot (padState is otherwise idle here), so read
         // the stick's x once per step: a push past the dead zone steps one
@@ -991,6 +1104,10 @@ export default function CometDrift() {
             if (pausedRef.current) return
             if (st.screen !== 'attract') {
                 if (st.screen === 'end') resetTo('attract')
+                // #1737: the panels read for a third of a second, then any tap
+                // walks the cup — next leg, or home after the final standings.
+                else if (st.screen === 'cupbreak' && st.endT > 20) startCupRace()
+                else if (st.screen === 'cupfinal' && st.endT > 20) { cup = makeCup(); resetTo('attract') }
                 return
             }
             // the title is the control surface: a tap on a chevron cycles the
@@ -1005,8 +1122,12 @@ export default function CometDrift() {
                 const hit = selectorHit(selectorGeom(W, H, hs), cx, cy)
                 if (hit === -1) { cycleCourse(-1); return }
                 if (hit === 1) { cycleCourse(1); return }
+                // #1737: the COMET CUP badge arms the grand prix (below panel,
+                // clear of both chevrons — the #534 start zone above stays start).
+                if (cupBadgeHit(cupBadgeGeom(W, H, hs), cx, cy)) { toggleCup(); return }
             }
-            audioController.init(); resetTo('race')
+            audioController.init()
+            if (cupOn) startCupRace(); else resetTo('race')
         }
 
         const kd = (e) => {
@@ -1015,13 +1136,24 @@ export default function CometDrift() {
             if (pausedRef.current) return
             if (st.screen === 'attract') {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { cycleCourse(e.code === 'ArrowRight' ? 1 : -1); return }
+                if (e.code === 'KeyC') { toggleCup(); return }
                 audioController.init()
-                resetTo('race')
+                if (cupOn) startCupRace(); else resetTo('race')
                 return
             }
             if (st.screen === 'end') {
                 st.endT++
                 if (st.endT > 20) resetTo('attract')
+                return
+            }
+            // #1737: same third-of-a-second guard the end screen uses, then the
+            // key walks the cup standings → next leg → home.
+            if (st.screen === 'cupbreak' || st.screen === 'cupfinal') {
+                st.endT++
+                if (st.endT > 20) {
+                    if (st.screen === 'cupfinal') { cup = makeCup(); resetTo('attract') }
+                    else startCupRace()
+                }
                 return
             }
             keys[e.code] = true
@@ -1070,6 +1202,21 @@ export default function CometDrift() {
                     frame: P.v > 0.4 ? ((P.anim >> 2) & 1) : 0, driftT: P.driftT, charge: Math.round(P.charge), boostT: P.boostT, spinT: P.spinT, v: P.v, zigHintT: g.zigHintT, link: P.link, linkCarry: Math.round(P.linkCarry) }
             },
             forceSpin: () => { g.karts[0].spinT = 90; return g.karts[0].spinT },
+            // #1737 cup drive hooks: arm the grand prix without a keyboard and
+            // end a race honestly (place the kart short of the line on the last
+            // lap — the finish still comes from real motion across the line).
+            cup: () => ({ on: cupOn, raceIdx: cup.raceIdx, done: cupDone(cup), leader: leaderName(cup), standings: standings(cup) }),
+            cupSet: (v) => { cupOn = !!v; cup = makeCup(); return cupOn },
+            forceFinish: () => {
+                const P = g.karts[0]
+                const i = (TRACK.N - 10 + TRACK.N) % TRACK.N
+                const p = TRACK.pts[i]
+                P.x = p.x; P.y = p.y; P.a = p.a; P.idx = i; P.hint = i
+                P.lap = LAPS - 1
+                if (P.v < 6) P.v = 6
+                camA = P.a
+                return `lap ${P.lap} v ${P.v.toFixed(1)}`
+            },
             // bike-harness precedent (__bikeTest.setup): place the kart, keep
             // the rules the sim's. Seeds position/speed on a chosen track
             // point; every consequence still comes from real physics + real keys.
@@ -1131,6 +1278,7 @@ export default function CometDrift() {
                 return {
                     tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), done: !!g.end,
                     seed: g.seed, course: COURSE.id,
+                    cup: cupOn ? Math.min(cup.raceIdx + 1, CUP_RACES) : 0,
                     place: P.place, lap: P.lap, phase: g.phase, v: Math.round(P.v * 100) / 100,
                     hash: stateHash(g),
                     marks: g.marks.size,

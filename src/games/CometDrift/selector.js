@@ -51,3 +51,25 @@ export function previewBox(W, H, hs) {
     const cx = Math.round(W / 2); const cy = geom.rowY
     return { x: cx - Math.round(w / 2), y: cy - Math.round(h / 2), w, h }
 }
+
+// #1737: the COMET CUP arming target on the attract — a pill in the free
+// band under the panel (the panel ends at H*0.78, the "PRESS ANY KEY" prompt
+// rides at H*0.70 since #1737, and the browser suite pins real taps at H*0.50
+// and H*0.74 as start-anywhere — the pill sits clear of all of them) so a
+// phone thumbs the grand prix. The #534 chevron contract stays byte-identical;
+// this is its own, separate target.
+export function cupBadgeGeom(W, H, hs) {
+    return {
+        w: W, h: H, hs,
+        cx: Math.round(W / 2),
+        cy: Math.round(H * 0.84),
+        hw: Math.max(1, Math.round(78 * hs)),
+        hh: Math.max(1, Math.round(14 * hs)),
+    }
+}
+
+// True when a canvas-space point lands on the cup badge (tap arms/disarms the
+// grand prix). Never overlaps the chevron boxes: the badge sits below rowY.
+export function cupBadgeHit(g, cx, cy) {
+    return Math.abs(cx - g.cx) <= g.hw && Math.abs(cy - g.cy) <= g.hh
+}
