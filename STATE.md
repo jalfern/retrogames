@@ -1,70 +1,76 @@
-# STATE — session 157 (2026-11-06, slot b)
+# STATE — session 158 (2026-11-06, slot b)
 
 ## What shipped
-**WATCH rollout batch 5 (#1637) — PR #1686 squash-merged `3d87c00`, LIVE**
-(`/lode-runner`, `/arena-archery`, `/dogfight`): the Y key seats each title's
-OWN proven driver. No new brains — only seats.
-- Lode Runner-Lite: Y seats `planStep(gs)` (the lodecheck autopilot; its route
-  never digs, re-plans from live state every move). `vaultCleared` keeps the
-  guide seated across the carry (`startPlay(..., {keepWatch:true})`); gameOver
-  and the player's own start hand back.
-- Arena Archery: Y seats `botInput(gs, 0, 1)` at seat 1 — the skill-1 brain
-  archerycheck wins both arenas with. Any seat-1 key/tap/Y hands back; seat-2
-  codes never unseat it (Smash TV rule) so the duel partner keeps their seat.
-- WWI Dogfight: Y seats `pilotInput(gs)` (lead-on-flight-time gunnery,
-  predictHit receipts, energy-lean throttle); the throttle lever follows the
-  flown value so takeover resumes where the pilot left the engine.
-Honesty audit pinned in watchcheck source gates: KingsQuest/Britannia,
-ZORK II/III, MagicCarpet carry NO WATCH line (no proven solver drives them).
-Coverage now **36 of 80** registry routes; SpaceInvaders verdict posted on
-#1637 (invaderscheck proves a scripted flight, not a reactive pilot — skip).
+**WATCH rollout batch 6 (#1637) — PR #1692 squash-merged `7e3f130`, LIVE**
+(`/magic-carpet`): Y seats `autopilot(gs)` from sim.js — the game's OWN
+closed-loop brain, the one the attract demo flies and carpetcheck's 60-seed
+sweep restores all three worlds with. Re-decides from live state every tick:
+a watched run is a real run, never a witness replay.
+- Seat/takeover verbatim from batches 1–5: Y toggles (shared blips); arrows,
+  Shift, Space/X/Z, Q, digits, pad take over AND still apply (lossless); stage
+  tap hands back WITHOUT casting (lode rule). `finish()` and `startPlay()` and
+  the contract `reset` unseat; a world CLEAR keeps the pilot seated (same sim,
+  the sweep crosses levels that way).
+- Visual honesty: bank/sway/pitch/boost read `eff` — the EFFECTIVE inputs — so
+  the picture tracks the route flown, not phantom key-holds.
+- Chrome: registry WATCH line (coverage **37 of 80** routes), attract teach
+  span + ▶ WATCH at the 24% band, pill, WatchToast, pause row auto.
+- Harness: watchcheck gains the magic-carpet pilot pinned `?seed=7`; advance
+  signals prover-only, verified head-to-head vs an idle carpet on the seed
+  (idle |Δyaw| 0.000 over 480 ticks and banks nothing; pilot ≥0.65 within 60).
+  Batch-6 source pins; no-guide registry gate drops /magic-carpet (DOS/IF stay);
+  phone parse floor 33→36. Mutant `ap = {}` → advance legs RED (yaw 0°→0°),
+  restored green. Local: pilot 115/115, watchphonecheck 272/272,
+  attractcheck 694/694, lint gates + build green.
+
+## Box emergency (this session's real cost — ~40 min)
+System DNS + SecTrust + pgrep/Keychain are broken on this box (scutil --dns:
+"No DNS configuration available"; sudo: "you do not exist in the passwd
+database"; gh: x509 OSStatus -26276). Raw UDP DNS to 100.100.100.100 still
+works, git still works (c-ares reads /etc/resolv.conf). Workaround installed:
+`/tmp/forge/dnsproxy.mjs` (CONNECT proxy :18080, resolves via raw DNS) +
+`/tmp/forge/bin/gh` (Node API shim, bundled CA store, covers api/issue/pr/run/
+workflow/auth incl. --paginate/--input/-f) + exports block in `~/.zshenv`
+(PATH, HTTPS_PROXY, NO_PROXY=localhost,127.0.0.1, NODE_USE_ENV_PROXY=1, plus a
+pgrep-guarded proxy respawn). Token from hosts.yml; account jalfern.
+**If GitHub access breaks on a future session, check this block first:
+`/tmp/forge/dnsproxy.log`, `which gh` (should be /tmp/forge/bin/gh after a new
+shell). If DNS/SecTrust heal, remove the ~/.zshenv block.** NOTE /tmp is wiped
+on reboot — the shim dies with it; recreate from this description or from
+PR #1691 (`gh-shim hardening in repo`, #1676 — the repo now hosts a real shim).
 
 ## Lessons (worth keeping)
-- **Pre-push static sweep for chrome/registry changes must include
-  `attractcheck` AND `watchphonecheck`** — CI burned two rounds without them:
-  the attract WATCH teach line must be a `<span>` (attractcheck allows exactly
-  ONE raw `<p>`, the press prompt — batch-4 pattern), and the attract ▶ WATCH
-  wrapper must sit at `bottom: '24%'` (18% is inside the pad zone at 390x844).
-- **Mutant honesty of pilot predicates**: archery's advance leg must use
-  seat-1-only signals — the foe bot's own arrows make `flying>0` advance even
-  with a dead seat 1. And no `b.tick > a.tick` requirements anywhere: the tick
-  clock stalls under software rendering (all three advance legs use mover-only
-  signals now).
-- gh-shim quirks persist (STATE 155): poll `--json name,conclusion` (lowercase
-  `success`), not `.state`; `gh run list --branch` 404s and
-  `actions/runs?head_branch=` lists OTHER lanes' runs too — triage via
-  `gh api repos/.../commits/<sha>/check-runs` (commit-scoped, honest).
-  `gh pr view --json mergeCommit` returned null after a successful squash —
-  read the SHA off origin/main instead.
-- **Cross-slot STATE collision**: both slots write ~/Dev/retrogames/STATE.md —
-  slot a's session 156 overwrote this draft mid-closeout. Fetch origin/main,
-  write YOUR session last, commit from your detached worktree, `push HEAD:main`.
-- Dev-file watcher on this box is dead: after edits, kill :5178 + restart dev,
-  then curl the served module to confirm content before trusting browser runs.
-- QA lanes pushed commits onto `forge/watch-rollout-b5` mid-session (and vice
-  versa per run lists). Verify remote tip is yours before merging; checks by
-  SHA keep you honest.
+- esbuild STRIPS `// comments` from served modules — verify mutants/served
+  content by STRUCTURE (`const ap = {};`), never by comment markers.
+- Game DEV hooks: `watching` must be a function on the hook TOP LEVEL
+  (`watching: () => watchingRef.current`), not inside `probe()` — the factory
+  calls `window[h].watching()`.
+- `curl` jalfern.com needs `-L` (apex → www redirect); a poll without -L looks
+  like "not deployed" forever.
+- Source-pin regex windows: a comment between the anchor lines counts — a seat
+  pin with a 4-line comment needs {0,480}, not {0,240}.
+- Headless sim.js probes (node, import sim directly) prove advance-signal
+  honesty (idle-vs-brain on the pinned seed) in seconds — do this BEFORE
+  writing any browser pilot.
 
 ## Next (priority order)
-1. #1637 stays OPEN `building` — remaining: MagicCarpet (CLONE-era autopilot
-   exists; a seat there is the batch 6 candidate), DOS/IF (needs a solver that
-   drives gameplay), SpaceInvaders reactive pilot (batch 6 candidate — verdict
-   posted on #1637).
-2. #1685 (QA): archery bot-vs-bot opening stalemate ~15-20 s until stuck-arrow
-   TTL — polish, QA's lane, do not pick up from builder lanes.
-3. Normal ladder for next slot-b session: recompute `weakestStage` from
-   READMEs (after #1687 CometDrift gaps shifted; slot a says flagship README
-   gaps now all owned/CLOSED — expect never-dry or `feedback`).
+1. #1637 stays OPEN `building` — remaining: DOS/IF (needs a solver that drives
+   gameplay) and the SpaceInvaders reactive pilot (verdict on the issue;
+   batch-7 candidate: track-lowest-column + fire-on-aligned, sim-graded win in
+   invaderscheck, then seat like batch 5).
+2. Box repair worth an issue? DNS/SecTrust/DirectoryServices are system-level;
+   no sudo here. If it recurs, a `waiting-jon` question (games lane) about
+   reboot/repair may be warranted — this session worked around it.
+3. Normal ladder for next slot-b session: recompute `weakestStage` from READMEs.
 
 ## Notes for the next slot-b session
-- Dev server 5178: STARTED and KILLED this session; port free. The
-  watcher-dead workaround above still applies on this box.
-- Worktree `~/Dev/retrogames-forge-watch-rollout-b5`: detached at origin/main,
+- Dev server 5178 left STOPPED; kill-port + restart + curl-verify dance still
+  required (watcher dead).
+- Worktree `~/Dev/retrogames-forge-watch-rollout-b6`: detached at origin/main,
   node_modules symlinked — reusable. Branch deleted both ends by the merge.
-- Local Chrome still degraded (#1622); full 36-pilot watchcheck matrix not run
-  locally — CI smoke is the safety net (#1670 wiring).
-- `echo ===` in zsh = parse error (equals-expansion) — it silently killed whole
-  command chains this session; quote separators (`echo '---'`).
+- Local Chrome still degraded (#1622, shell+sp boot); CI smoke is the pixel net.
+- zsh: quote separators (`echo '---'`); `nohup` cannot detach on this box —
+  use harness background jobs for dev servers.
 
 ## Open questions
-None new. #1685 covers archery polish; jonq games lane: none open.
+None. jonq games lane: none open.
