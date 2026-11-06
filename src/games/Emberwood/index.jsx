@@ -529,7 +529,7 @@ export default function Emberwood() {
                 <WatchToast className="absolute top-[calc(3.4rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
             )}
             {inGame && !paused && (
-                <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: '0.5rem' }}>
+                <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: 'calc(0.5rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

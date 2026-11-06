@@ -513,10 +513,10 @@ const DigDugGame = () => {
             </div>
             {/* #1637 WATCH — the prover digs the round; any key takes over. */}
             {screen === 'play' && watching && (
-                <WatchToast className="absolute z-50 top-3" />
+                <WatchToast className="absolute z-50" />
             )}
             {screen === 'play' && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

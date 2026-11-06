@@ -1336,9 +1336,9 @@ export default function RallyCoDriver() {
                 />
             )}
             {/* #1624 WATCH — the pace brain drives the stage (online keeps the wire). */}
-            {screen === 'play' && watching && <WatchToast className="absolute top-8 z-50" />}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {screen === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ top: '2.2rem', right: '0.75rem' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} disabled={!!netUi} />
                 </div>
             )}
