@@ -121,8 +121,16 @@ export const CRUMBLE_T = 10
 const sinkCurve = (a) => (a / CRUMBLE_T) ** 2            // collapse accelerates down
 const swellCurve = (a) => 1 - (1 - a / CRUMBLE_T) ** 2   // mounds swell up, ease-out
 
-function queueDeform(gs, cells, deltas, swell, rimCells, rimAmp) {
-    gs.deforms.push({ cells, deltas, e: swell ? 1 : 0, a: 0, done: 0, rimCells, rimAmp, rimPrev: 0 })
+// kind/mag/x/y/hot (#1697): what landed, how hard, where, and whether the
+// crater is hot. Presentation-only fields — they feed the landing thud, the
+// slurp and the grit puff, never the rules (stateHash never reads them).
+function queueDeform(gs, cells, deltas, swell, rimCells, rimAmp, kind, x, y, hot = 0) {
+    let mag = 0
+    for (const d of deltas) if (Math.abs(d) > mag) mag = Math.abs(d)
+    gs.deforms.push({
+        cells, deltas, e: swell ? 1 : 0, a: 0, done: 0, rimCells, rimAmp, rimPrev: 0,
+        kind, mag, x: wrap(x, MAP), y: wrap(y, MAP), hot,
+    })
 }
 
 function drainDeforms(gs) {
@@ -145,7 +153,20 @@ function drainDeforms(gs) {
             const gi = d.rimCells[i]
             gs.heights[gi] = Math.max(0, Math.min(96, gs.heights[gi] + dd))
         }
-        if (last) gs.deforms.splice(di, 1)
+        if (last) {
+            // #1697: the landing. A sink that finishes is ground that just
+            // dropped — say so (thud/shake/grit in the presentation layer,
+            // driven by these events). Mounds (swell) land upward without an
+            // impact: no thud, no grit, the swell sound already told it.
+            if (d.e === 0) {
+                gs.events.push({
+                    type: 'crumble', kind: d.kind, mag: d.mag, x: d.x, y: d.y,
+                    r: d.cells.length ? Math.ceil(Math.sqrt(d.cells.length)) * CELL : 0,
+                    hot: d.hot, flooded: d.kind === 'dissolve' ? 1 : 0,
+                })
+            }
+            gs.deforms.splice(di, 1)
+        }
     }
 }
 
@@ -169,7 +190,7 @@ export function crater(gs, x, y, r, depth, hot = 0) {
             else if (d <= r * 1.25) rimCells.push(gi)
         }
     }
-    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * depth)
+    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * depth, 'crater', x, y, hot)
     gs.craters.push({ x: wrap(x, MAP), y: wrap(y, MAP), r, t: gs.tick, hot })
     if (gs.craters.length > 10) gs.craters.shift()
 }
@@ -198,7 +219,7 @@ export function raiseTerrain(gs, x, y, r, hgt) {
         }
     }
     // the ground feeds the mound from around it: the rim dips while it swells
-    queueDeform(gs, cells, deltas, 1, rimCells, -0.15 * hgt)
+    queueDeform(gs, cells, deltas, 1, rimCells, -0.15 * hgt, 'raise', x, y)
     gs.events.push({ type: 'raise', x: wrap(x, MAP), y: wrap(y, MAP), r })
 }
 
@@ -236,7 +257,7 @@ export function dissolveLand(gs, x, y) {
     }
     // #1694: the wound opens over the crumble window — the guaranteed flood
     // arrives as the land sinks (complete by cast + CRUMBLE_T, same clamp).
-    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * DISSOLVE_SINK)
+    queueDeform(gs, cells, deltas, 0, rimCells, 0.18 * DISSOLVE_SINK, 'dissolve', x, y)
     const gone = []
     gs.huts.forEach((hs, i) => {
         if (Math.hypot(wrapD(hs.x - dx0), wrapD(hs.y - dy0)) < DISSOLVE_R) gone.push(i)
@@ -738,6 +759,20 @@ export const OPEN_CUTOFF = 18000
 export const MUFFLE_CUTOFF = 520
 export function muffleOf(gs) {
     return gs.invis > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
+}
+
+// #1697: how a finished crumble LANDS on the wizard on the carpet — pure read
+// of the landing event plus where the carpet is, like muffleOf is of the veil.
+// Size scales the thud (a bolt crater is a knock, a volcano vent a collapse);
+// distance scales everything to silence: beyond CRUMBLE_HEAR_R the cast was
+// over the next hill — no thud, no shake, only the eye gets it. Never feeds
+// stateHash: it drives feel, not rules.
+export const CRUMBLE_HEAR_R = 90
+export function crumbleFeel(gs, e) {
+    const d = Math.hypot(wrapD(e.x - gs.x), wrapD(e.y - gs.y))
+    const prox = Math.max(0, 1 - d / CRUMBLE_HEAR_R)
+    const size = Math.min(1, e.mag / 12)
+    return { prox, vol: prox * (0.35 + 0.65 * size), shake: prox * (0.8 + 4.2 * size) }
 }
 
 export function step(gs, inp) {

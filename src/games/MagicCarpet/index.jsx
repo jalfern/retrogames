@@ -19,7 +19,7 @@ import {
     LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
-    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
 
@@ -308,6 +308,27 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(180, 44, 0.8, 'sine', 0.08)
                     shake = Math.max(shake, 5)
                     say('THE LAND DISSOLVES — THE SEA FLOODS IN')
+                } else if (e.type === 'crumble') {
+                    // #1697: the ground finishes dropping and says so. Routed on
+                    // the muffle bus (#1612) — one-shot SFX bypass that bus, so
+                    // an unmuffled thud would cut the veil's hush; these are
+                    // heard *through* the carpet while veiled. Size scales the
+                    // note, proximity scales everything: distant casts land silent.
+                    const f = crumbleFeel(gs, e)
+                    if (f.shake > 0.3) shake = Math.max(shake, f.shake)
+                    if (f.vol > 0.03) {
+                        const size = Math.min(1, e.mag / 12)
+                        if (e.kind === 'dissolve') {
+                            // the sea pouring into a new wound: a glide down into
+                            // a thick low glug
+                            audioController.ambSweep(300, 70, 0.42, 'sine', 0.1 * f.vol)
+                            audioController.ambTone(88, 0.12, 'triangle', 0.07 * f.vol, 0.18)
+                        } else {
+                            // sub-bass thud: bigger craters sit lower and longer
+                            audioController.ambTone(66 - size * 24, 0.14 + size * 0.24, 'square', 0.11 * f.vol)
+                            audioController.ambTone(41 - size * 8, 0.3 + size * 0.3, 'square', 0.05 * f.vol, 0.08)
+                        }
+                    }
                 } else if (e.type === 'dissolveHut') {
                     // A hut swallowed whole: one muffled gulp of water.
                     audioController.playSweep(300, 90, 0.22, 'triangle', 0.05)
@@ -916,7 +937,9 @@ const MagicCarpetGame = () => {
                     settleGround(gs) // #1694: the dig gates read the LANDED crater, not the window
                     return gs.craters.length
                 },
-                fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },
+                fx: (e) => { handleEvents([e]); if (renderer) renderer.handleEvents([e], gs) },
+                sfx: () => audioController.sfx,
+                carpet: () => ({ x: gs.x, y: gs.y, seed: gs.seed }),
                 veil: () => { gs.invis = 400; return gs.invis },
                 killHut: () => { const hs = gs.huts[0]; hs.burn = 0; hs.dead = true; return 1 },
                 // #1673 (phone pass): the browser-side tray/tap gates need a spell
