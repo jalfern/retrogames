@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx, SAND } from './sim'
-import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray } from './track.js'
+import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray, rutTexel } from './track.js'
 import { selectorGeom, selectorHit, previewBox, cupBadgeGeom, cupBadgeHit } from './selector.js'
 import { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } from './cup.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
@@ -185,7 +185,12 @@ export default function CometDrift() {
                     gnd[key] = 0xff000000 | (b << 16) | (gg << 8) | r
                     continue
                 }
-                const f = 1 - 0.11 * d
+                // #1718 item 4: depth>=2 cells are packed soil, not flat tint —
+                // the tread law splits the step into diagonal dashes whose mean
+                // is exactly 0.11 per depth, so the rut keeps its darkness and
+                // stops reading like a sticker. Rolls/lips (d < 2) stay flat.
+                const tx0 = key % TEX
+                const f = 1 - 0.11 * d * rutTexel(tx0, (key - tx0) / TEX, d)
                 const r = Math.max(0, Math.min(255, Math.round((c & 255) * f)))
                 const gg = Math.max(0, Math.min(255, Math.round(((c >> 8) & 255) * f)))
                 const b = Math.max(0, Math.min(255, Math.round(((c >> 16) & 255) * f)))

@@ -1864,6 +1864,32 @@ selectorGate(await loadSelector())
     check('#1718 index.jsx fires the burst only on the law\'s entry edge and draws dust in the course apron tint',
         /sandSpray\(P\.driftT, P\.surf, P\.v\)/.test(idxSrcSD) && /spray > 0 && !sprayPrev/.test(idxSrcSD) &&
         /fillStyle = APRON_C/.test(idxSrcSD))
+
+    // #1718 item 4 — tread in the ruts: a depth>=2 carve is packed soil, not a
+    // flat sticker. Node pins the law (two-tone dashes, exact 1/3 density so the
+    // mean step is unchanged, diagonal phase, flat below depth 2); applyDeform is
+    // renderer-only DOM code, so its wiring is pinned as source, same style as
+    // item 1's entry-edge gate above.
+    const tread = Tmod.rutTexel
+    check('#1718 tread: a depth>=2 rut is two-tone — speckles, not a flat tint',
+        typeof tread === 'function' && tread(0, 0, 2) !== tread(1, 0, 2) &&
+        [tread(0, 0, 2), tread(1, 0, 2), tread(2, 0, 2)].every((k) => k === 1.8 || k === 0.6))
+    check('#1718 tread: dash density is an exact third, so the mean step stays 0.11 per depth',
+        (() => {
+            let n = 0; let dark = 0; let sum = 0
+            for (let ty = 0; ty < 7; ty++) {
+                for (let tx = 0; tx < 9; tx++) { n++; const k = tread(tx, ty, 2); sum += k; if (k > 1) dark++ }
+            }
+            return dark * 3 === n && Math.abs(sum / n - 1) < 1e-12
+        })())
+    check('#1718 tread: the dashes run diagonal — same phase along the tread direction, at any depth>=2',
+        tread(4, 5, 2) === tread(6, 4, 2) && tread(4, 5, 2) === tread(2, 6, 2) &&
+        tread(4, 5, 3) === tread(6, 4, 3) && tread(4, 5, 2) === tread(4, 5, 3))
+    check('#1718 tread: depth below 2 stays a flat tint — rolls, rings and lips are untouched',
+        tread(0, 0, 1) === 1 && tread(7, 13, 1) === 1 && tread(7, 13, -1) === 1 && tread(2, 9, 0) === 1)
+    check('#1718 index.jsx folds the tread law into applyDeform on the same texel queue',
+        /const f = 1 - 0\.11 \* d \* rutTexel\(tx0, \(key - tx0\) \/ TEX, d\)/.test(idxSrcSD) &&
+        /const tx0 = key % TEX/.test(idxSrcSD))
 }
 
 if (process.argv.includes('--mutate')) {
@@ -2228,6 +2254,32 @@ if (process.argv.includes('--mutate')) {
                 check('#1718 chipV probe: a slow scuff leaves the strata pristine', deep === 0, `decal cells on a slow scuff: ${deep}`)
             })
         } finally { pull(simPath1696) }
+        // #1718 item 4 mutants: (1) flatten the speckle back to a sticker — the
+        // density/two-tone law must die; (2) delete the renderer fold — the
+        // wiring gate must die.
+        const trackPath1718 = fileURLToPath(new URL(TRACKMOD, import.meta.url))
+        const trackSrc1718 = readFileSync(trackPath1718, 'utf8')
+        try {
+            plant(trackPath1718, trackSrc1718.replace('=== 0) ? 1.8 : 0.6', '=== 0) ? 1 : 1'))
+            await diedSD('the tread speckle is flattened back to a sticker', async () => {
+                const Tn = await import(TRACKMOD + '?c=' + Math.random())
+                const t = Tn.rutTexel
+                let dark = 0; let n = 0; let sum = 0
+                for (let ty = 0; ty < 7; ty++) {
+                    for (let tx = 0; tx < 9; tx++) { n++; const k = t(tx, ty, 2); sum += k; if (k > 1) dark++ }
+                }
+                check('#1718 tread-flat probe: a depth>=2 rut keeps its speckle',
+                    dark > 0 && dark * 3 === n && Math.abs(sum / n - 1) < 1e-12, `dark ${dark}/${n}, mean ${(sum / n).toFixed(3)}`)
+            })
+        } finally { pull(trackPath1718) }
+        try {
+            plant(IDXJS, idxSrc1696.replace('const f = 1 - 0.11 * d * rutTexel(tx0, (key - tx0) / TEX, d)', 'const f = 1 - 0.11 * d'))
+            await diedSD('applyDeform is back to the flat tint (the tread wiring is gone)', async () => {
+                const src = readFileSync(IDXJS, 'utf8')
+                check('#1718 tread-dead: applyDeform still folds the tread law into the tint',
+                    /rutTexel\(tx0, \(key - tx0\) \/ TEX, d\)/.test(src), 'flat tint restored')
+            })
+        } finally { pull(IDXJS) }
     }
 
     // break the checkpoint gate in sim.js and demand the shortcut probe above
