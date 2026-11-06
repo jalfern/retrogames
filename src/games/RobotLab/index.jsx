@@ -17,7 +17,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { createRobotSim, createAutopilot, createEpisode, saveEpisode, episodeStats, manifestSummary, MANIFEST_REV } from '../../utils/robot'
-import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, NO_GUIDE } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const FIXED_DT = 1000 / 60
@@ -43,6 +43,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             const wristRef = useRef(true)
             const [watching, setWatching] = useState(false) // #1637 WATCH: the proven autopilot drives the arm
             const watchingRef = useRef(false)
+            const [noGuide, setNoGuide] = useState(false) // #1637 honesty: off the proven line, Y declines
+            const noGuideRef = useRef(false)
             useEffect(() => { phaseRef.current = phase }, [phase])
             useEffect(() => { pausedRef.current = paused }, [paused])
 
@@ -241,6 +243,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             prevHeld = null
             fall.crate = null; fall.can = null
             watchingRef.current = false; setWatching(false) // #1637 a new bench starts in your hands
+            noGuideRef.current = false; setNoGuide(false)
         }
 
         const onKey = (ev) => {
@@ -258,7 +261,13 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 else {
                     const st = sim.state()
                     const clean = !st.done && !st.timeout && !st.held && !Object.values(st.goals).some(Boolean)
-                    if (clean) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                    if (clean) { watchingRef.current = true; setWatching(true); noGuideRef.current = false; setNoGuide(false); playWatchStart() }
+                    else { // the bench no longer matches the script's proven start
+                        noGuideRef.current = true
+                        setNoGuide(true)
+                        clearTimeout(ngTimer)
+                        ngTimer = setTimeout(() => { noGuideRef.current = false; setNoGuide(false) }, 2600)
+                    }
                 }
                 return
             }
@@ -274,6 +283,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         canvas.addEventListener('pointerdown', onTapStart)
 
         let autopilot = createAutopilot(sim)
+        let ngTimer = 0 // #1637 the no-guide toast's fuse
         let acc = 0
         let last = performance.now()
         let raf = 0
@@ -435,6 +445,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             // #1637 watchcheck pilot drives this.
             window.__robotTest = {
                 watching: () => watchingRef.current,
+                noGuide: () => noGuideRef.current,
                 probe: () => {
                     const st = sim.state()
                     return { tick: sim.tick, score: st.score, held: st.held, goals: { ...st.goals }, hand: [...st.hand], done: st.done, timeout: st.timeout }
@@ -456,6 +467,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             canvas.removeEventListener('pointerdown', onTapStart)
             unexposeGame()
             unmountDbg()
+            clearTimeout(ngTimer)
             if (window.__robotTest) delete window.__robotTest
             renderer.dispose()
         }
@@ -542,6 +554,11 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
             {/* #1624 WATCH — the arm runs the proven task script. */}
             {phase === 'play' && watching && <WatchToast className="absolute top-10 z-50" />}
+            {noGuide && (
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
+                    {NO_GUIDE}
+                </div>
+            )}
             {phase === 'play' && !paused && (
                 <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
                     <WatchButton on={watching} />
