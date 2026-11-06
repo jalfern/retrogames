@@ -627,10 +627,15 @@ const MagicCarpetGame = () => {
                     ctx.globalAlpha = 1
                 })
             }
-            // score
+            // score — right-aligned inside the canvas (#1681): at x=302 the six
+            // 7px digits ran to ~327px and clipped past W in every orientation.
+            // 6px keeps all six digits in the free [298, W] window right of the
+            // hand slots.
             ctx.fillStyle = '#fff'
-            ctx.font = '7px monospace'
-            ctx.fillText(String(gs.score).padStart(6, '0'), 302, y0 + 11)
+            ctx.font = '6px monospace'
+            ctx.textAlign = 'right'
+            ctx.fillText(String(gs.score).padStart(6, '0'), W - 2, y0 + 11)
+            ctx.textAlign = 'left'
             if (toast > 0) {
                 const a = toast > 120 ? 1 : toast / 120
                 ctx.globalAlpha = a
