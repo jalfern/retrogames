@@ -370,7 +370,7 @@ export function createScene(canvas) {
                 const mesh = new THREE.Mesh(SPHERE, mat(0xffffff, { emissive: 0xffffff, ei: 2 }))
                 scene.add(mesh); projMeshes.push(mesh)
             }
-            const PROJ_COLOR = { ember: 0xff8030, sting: 0x40e0ff, hex: 0x9f6aff, seed: 0x7ee08a }
+            const PROJ_COLOR = { ember: 0xff8030, sting: 0x40e0ff, hex: 0x9f6aff, seed: 0x7ee08a, ward: 0xffc24d }
             for (let i = 0; i < projMeshes.length; i++) {
                 const mesh = projMeshes[i]
                 const p = m.projectiles[i]

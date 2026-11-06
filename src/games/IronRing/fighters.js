@@ -69,11 +69,17 @@ const defs = [
         cpuStyle: { zone: 0.6 },
         build: { h: 1.02, bulk: 0.9, hair: 'bun' },
         color: { skin: 0x8d5a3b, top: 0x5a3d8f, pants: 0x2a2440, hair: 0x0e0e12, accent: 0x9f7aff },
-        specials: { qcf: { ex: true, super: true }, charge: { ex: true, super: true } },
+        specials: { qcf: { ex: true, super: true }, qcb: { ex: true, super: true }, charge: { ex: true, super: true } },
         moves: {
             ...sp({ key: 'qcf', move: { type: 'special', startup: 13, active: 1, recovery: 24, dmg: 8, hitstun: 16, blockstun: 11, push: 0.14, projectile: { name: 'hex', speed: 0.13, dmg: 8, hitstun: 16, blockstun: 11, ttl: 200 } } },
                 { dmg: 10, projectile: { name: 'hex', speed: 0.17, dmg: 10, ttl: 240 } },
                 { dmg: 15, projectile: { name: 'hex', speed: 0.2, dmg: 15, hitstun: 22, ttl: 280, super: true } }),
+            // the ward (#1732): a slow, lingering sigil that hangs in the air and
+            // punishes hard — the opposite trade to her fast hex, so she can wall off
+            // both lanes at once. Single-hit by law (no hits/rehit on a projectile).
+            ...sp({ key: 'qcb', move: { type: 'special', startup: 15, active: 1, recovery: 26, dmg: 10, hitstun: 20, blockstun: 14, push: 0.18, projectile: { name: 'ward', speed: 0.1, dmg: 10, hitstun: 20, blockstun: 14, ttl: 320, y: 0.3 } } },
+                { dmg: 13, projectile: { name: 'ward', speed: 0.14, dmg: 13, hitstun: 22, blockstun: 15, ttl: 300, y: 0.3 } },
+                { startup: 10, dmg: 17, projectile: { name: 'ward', speed: 0.17, dmg: 17, hitstun: 26, blockstun: 18, ttl: 380, y: 0.3, super: true } }),
             ...sp({ key: 'charge', move: { type: 'special', startup: 7, active: 5, recovery: 24, dmg: 12, hitstun: 20, blockstun: 12, push: 0.18, launch: 0.09, box: [0.35, 0.6, 2.0, 1.6] } },
                 { dmg: 15 }, { dmg: 10, hits: 2, rehit: 5, active: 6 }),
         },

@@ -50,6 +50,7 @@ ok(ROSTER.every((d) => d.moves.lp && d.moves.hp && d.moves.lk && d.moves.hk && d
 const human = (id) => ({ ...BY_ID[id], cpu: false })
 const go = (m) => { let g = 0; while (m.phase !== 'fight' && g++ < 400) e.step(m, [P(), P()]) }
 const QCF = [{ down: true }, { down: true, right: true }, { right: true }, { right: true, lp: true }]
+const QCB = [{ down: true }, { down: true, left: true }, { left: true }, { left: true, lp: true }]
 
 // punch lands
 let m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
@@ -120,6 +121,52 @@ if (!MUT) {
     go(m); m.fighters[0].meter = 100
     for (const s of QCF) e.step(m, [P(s), P()])
     ok(m.fighters[0].move === 'qcf_S' && m.fighters[0].meter === 0, 'super auto-fires at full meter')
+
+    // SABLE's qcb ward (#1732): motion → special, slow single-hit projectile that
+    // outranges her hex, and the CPU earns it through the same parser a human uses.
+    m = e.createMatch({ seed: 5, p1: human('sable'), p2: human('kade') })
+    go(m)
+    for (const s of QCB) e.step(m, [P(s), P()])
+    ok(m.fighters[0].move === 'qcb', 'qcb motion starts SABLE ward')
+    m.fighters[1].x = m.fighters[0].x + 6
+    {
+        let spawned = 0
+        hp = m.fighters[1].hp
+        for (let i = 0; i < 120; i++) { if (m.projectiles.some((p) => p.kind === 'ward')) spawned = 1; e.step(m, [P(), P()]) }
+        ok(spawned === 1, 'ward spawns')
+        ok(hp - m.fighters[1].hp === 10 && !m.projectiles.some((p) => p.owner === 0), `ward hits once for ${hp - m.fighters[1].hp} then clears`)
+    }
+    m = e.createMatch({ seed: 5, p1: human('sable'), p2: human('kade') })
+    go(m); m.fighters[0].meter = 60
+    for (const s of QCB) e.step(m, [P(s), P()])
+    ok(m.fighters[0].move === 'qcbx' && m.fighters[0].meter === 10, 'EX ward at 50+ meter')
+    m = e.createMatch({ seed: 5, p1: human('sable'), p2: human('kade') })
+    go(m); m.fighters[0].meter = 100
+    for (const s of QCB) e.step(m, [P(s), P()])
+    ok(m.fighters[0].move === 'qcb_S' && m.fighters[0].meter === 0, 'ward super auto-fires at full meter')
+    // ward + hex are distinct kinds so a zoner can wall both lanes at once (#481 keying)
+    m = e.createMatch({ seed: 5, p1: human('sable'), p2: human('kade') })
+    go(m); m.fighters[1].x = m.fighters[0].x + 8 // far, so the slow ward can't hit before the hex joins it
+    for (const s of QCB) e.step(m, [P(s), P()])
+    for (let i = 0; i < 60 && m.fighters[0].st === 'attack'; i++) e.step(m, [P(), P()]) // let qcb fully recover (ward stays airborne)
+    for (const s of QCF) e.step(m, [P(s), P()])
+    let both = 0
+    for (let i = 0; i < 60; i++) { if (m.projectiles.some((p) => p.kind === 'ward') && m.projectiles.some((p) => p.kind === 'hex')) both = 1; e.step(m, [P(), P()]) }
+    ok(both === 1, 'ward and hex fly together (distinct kinds)')
+    // the CPU path: scriptMotion('p','qcb') now emits a real motion (was [{}] → never
+    // fired), so a CPU SABLE must throw a ward within a match across a few seeds.
+    {
+        let cpuWard = 0
+        for (let seed = 1; seed <= 12 && !cpuWard; seed++) {
+            const c = e.createMatch({ seed, p1: { ...BY_ID.sable }, p2: human('vexa') })
+            let g = 0
+            while (c.phase !== 'over' && g++ < 4000) {
+                e.step(c, [P(), P()])
+                if (c.projectiles.some((p) => p.owner === 0 && p.kind === 'ward')) cpuWard = 1
+            }
+        }
+        ok(cpuWard === 1, 'CPU SABLE throws its ward (scriptMotion qcb is live)')
+    }
 
     // charge special
     m = e.createMatch({ seed: 5, p1: human('sable'), p2: human('vexa') })
