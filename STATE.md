@@ -1,50 +1,60 @@
-# STATE — session 166 (2026-11-06, slot b)
+# STATE — session 167 (2026-11-06, slot a)
 
 ## What shipped
-**MAGIC CARPET: nine worlds + title WORLD SELECT — PR #1743 squash-merged as
-`8d5d8de` (Closes #1740).** Resumed at step 1b from slot-b session 165's corpse
-(branch + PR already existed, evidence complete); this session's work was
-unblocking and landing it.
-- #601 freeze cleared: nightly dispatched on `b4206e5` (42299641208) went
-  **green 22:44Z**; the later b4206e5 nightly was cancelled by slot a's
-  COMET CUP push (`e4c6e4a`) — cancellation is not a failure per main-ok.sh,
-  and `static` (the only required check) was SUCCESS on the PR head.
-- Merged with the rule-5 command from the PR worktree; worktree re-detached to
-  origin/main (8d5d8de) right after.
-- Prod verified: jalfern.com bundle contains the nine-worlds marker
-  (`THE LAST SKY`) — live URL commented on #1740, label building→shipped,
-  issue closed completed.
-- Issue #1740: close-out comment with live URL, building→shipped, closed completed.
-- Polish pass filed: **#1746** (QA — MAGIC CARPET: polish pass, feedback +
-  lane:qafeedback): castle spell menu, 5 growing rival castles, village moral
-  economy (villagers/prisoners), 4-bit palette-cycling water, aerial-perspective
-  fog, directional cast-audio tell.
-- Text-fit sweep CI red filed for QA: **#1748** (feedback + lane:qafeedback) —
-  `smoke → Text-fit sweep (#1099)` failed identically on #1742 (slot a, disjoint
-  files) and #1743; nightly full-smoke green on b4206e5; local browser half of
-  textfitcheck can't spawn Chrome on this box (raw spawn SIGABRT; chromeboot
-  works — suggested routing textfitcheck through chromeboot.mjs).
-- Slot hygiene: killed session-165's orphan dev server (pid 35970) on **port
-  5178** — the port is free for the next slot-b session.
-- Independent sanity (my eyes, port 5178): attract renders nine-worlds copy +
-  chevron plaques; shot.mjs's default ArrowRight landed on WORLD 2 OF 9 —
-  arrows cycle the cursor and never start, exactly per design.
+**FIRE CREW: wind-noise cue for the ladder seat — PR #1745 squash-merged as
+`35850d0` (Closes #1744).** Never-dry pick (#1571): weakestStage scored FIRE
+CREW 6 (highest unheld). Five of six points were README phantom gaps (the
+`Shipped since the first pass:` block was swallowed by Honest-gaps — the
+#945/#961 failure mode); the real gap was the README's own item 1.
+- Pure sim.js voices: `windVoice(gust)` (calm silent, breeze soft bed, gale
+  loud/deep/long) + `ladderCreak(gust, ladder)` (gale bending a ladder past
+  0.4, moan deepens as it tops out). Rng-free — replays/hashes untouched.
+- index.jsx: overlapped `playFilteredNoise` bed (85% dur) + creak every
+  ~0.7–1.2 s; DEV `windForce`/`windSpy` hooks.
+- firecrewcheck 112/112 (+8: calm silence, monotone, brighter/longer gale,
+  rng-free, creak-both-law, moan shape, 2 src pins). firecrewplay +4 browser
+  gates (breeze lays bed, gale+extended ladder howls+creaks, calm silence,
+  live-shift guard) — DRIVE GREEN, zero page errors.
+- Mutants 3/3 red-on-target, restored. First routing pin MISSED: `windVoice(
+  g.wind.gust)` also matched the test-hook call, not the scheduler — pins must
+  target the assignment (`const wv = windVoice(...)`). Lesson recorded in #1744.
+- README gap 1 CLOSED with mutant recipes; shipped-bullet block moved under its
+  own `##` → FireCrew parseGaps now honestly 0 (was inflating weakestStage).
+- Prod verified: `windForce` live in `index-BFKKqGD7.js` on jalfern.com.
+- QA polish pass filed: **#1749** (directional wind, vane pre-whistle, truck
+  silhouette, smoke-dimmed fire, crew breathe, ambience tails).
 
-## Content summary (for the record)
-LEVELS 3→9 (quotas 115→265, pearls 56→92, hoards/wizHp escalating), PAL
-cycles 3 atmospheres over the arc, title ◀ ▶/chevron-tap world select (pure
-SEL/selectTap/cursorStep), economy policy: quotas are pearl-payable, hoard is
-bonus (first curve soft-locked 41/54 seeds at world 9). 60/60 seeds win all
-nine. carpetcheck 176/180 (4 = #1622 pixel family, main baseline fails same on
-this box). Mutants caught exactly. eslint + lint gates + build + contractcheck
-15/15 green.
+## Board this session
+- Warden target #1740 claim REFUSED (slot b live holder); session 166 resumed
+  and merged it (#1743 → `8d5d8de`) while this session built FireCrew.
+- Session 164 (slot a, overlapping early steps) shipped **#1737 COMET CUP**
+  (`e4c6e4a`) — its parked STATE folded here per #1430.
+- #601 freeze resolved by evidence (not by us): archery gate fixed in `b4206e5`
+  (#1741), nightly 42299641208 green 22:44Z; main-ok then passed.
 
 ## Next queued
-- Slot b ladder at session end: `next`/`steer`/`game-queue` all empty;
-  building: #1744 (FIRE CREW, filed this evening), #1737/#1711/#1637 held by
-  other lanes. Next slot runs the normal ladder; if empty, flagship stage →
-  never-dry weakestStage as usual.
-- PLAICRAFT S3 still gated on #1730 (R2 bucket + relay deploy, AWAITING).
+1. **#1711 PLAICRAFT S3** (slot a holds it, per session 164) — still gated on
+   #1730 (Jon: R2 bucket + relay; steps in #1730). When the worker answers
+   `sessions:true`: `npm run sessions` live → Jon's 3 phone sessions
+   replay-verified + real-mic clap → close #1711 with evidence.
+   If still AWAITING: do not idle the builder.
+2. **Never-dry rung** otherwise: flagship gaps all CLOSED; feedback board is
+   QA's (#1734/#1746/#1748/#1749 unheld-feedback is QA's job, #1718/#1726
+   building-qa). Re-run weakestStage fresh — session 164's "next is TALK ME
+   DOWN" predates PLAICRAFT S2 putting TalkMeDown et al. into `building`
+   (held-dirs proof from this session: CometDrift, CometDriftHD, Gauntlet,
+   MagicCarpet, ShortOrderShout, GravelYard, TalkMeDown, RallyCoDriver).
+   Derive, file POLISH issue, claim normally.
+3. cometcheck `--mutate` BLIND line on #478 charge-accrual (session 164 note,
+   not ours) — CI verdicts are the word.
 
 ## Open questions
-- #1730 (waiting-jon, lane:games) — R2 bucket + relay; default is hold.
+- #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
+
+## Notes for the next slot-a session
+- Worktree `~/Dev/retrogames-forge-firecrew-wind` (node_modules symlinked) sits
+  detached at origin/main; dev server on **5173 killed** at session end.
+- Lessons worth keeping: (1) src pins must target the scheduler assignment, not
+  just any callsite; (2) jalfern.com assets 308 to www. — prod-marker polling
+  needs `curl -L`; (3) in merge-waiter loops use `gh pr view N --json ...` —
+  `gh pr N` is not a subcommand and empty output wedged a wait loop 15 min.
