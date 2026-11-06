@@ -18,6 +18,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     makeGame, step, autopilot, loadLevel, markChores, stateHash,
     VIEW_W, VIEW_H, WALL, COUNTER, STOVE, TABLE, PLANTS, DW, FR, LEVELS,
@@ -86,6 +88,8 @@ const TidyBotGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: tidycheck's autopilot clocks the shift
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -173,6 +177,7 @@ const TidyBotGame = () => {
         const finish = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
+            watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             setEnd({ won, score: gs.score, tidy: gs.tidies, breaks: gs.breaks, wrongs: gs.wrongs, spills: gs.spills, jams: gs.jams, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('tidybot.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('tidybot.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -191,7 +196,10 @@ const TidyBotGame = () => {
                 return
             }
             if (sc !== 'play') return
-            step(gs, [livePad()])
+            // #1637 WATCH: seat tidycheck's autopilot — the same brain its
+            // playthrough clears all three rooms with, re-deciding from live
+            // state every tick (never a script match).
+            step(gs, [watchingRef.current ? autopilot(gs) : livePad()])
             edgeA = false; edgeB = false
             handleEvents(gs.ev)
             if (gs.end) finish()
@@ -530,6 +538,7 @@ const TidyBotGame = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0, 1)
             parts.length = 0; gs.fx.length = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
             setMode('play')
             audioController.playTone(262, 0.08, 'square', 0.06)
@@ -551,6 +560,14 @@ const TidyBotGame = () => {
                 gs = makeGame(1337, 1)
                 return
             }
+            // #1637 WATCH: Y seats the proven brain at any live shift state
+            // (autopilot re-decides from live); any driving key takes the bot back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true
             if (e.code === 'ArrowRight' || e.code === 'KeyD') keys.right = true
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true
@@ -567,6 +584,10 @@ const TidyBotGame = () => {
         const onPointerDown = () => {
             if (screenRef.current === 'attract') startPlay()
             else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); gs = makeGame(1337, 1) }
+            // #1637 WATCH: a touch on the rooms means you want the bot — hand back.
+            // (The WATCH pill stopPropagations its press; the pad's own keydowns
+            // already take over.)
+            else if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
 
         // ---- contract (QA bots / replays / RL) ----
@@ -647,6 +668,14 @@ const TidyBotGame = () => {
         if (import.meta.env.DEV) {
             window.__tidybotTest = {
                 state: testState,
+                // #1637 watchcheck pilot drives these.
+                probe: () => ({
+                    screen: screenRef.current, tick: gs.tick, score: gs.score, tidies: gs.tidies,
+                    level: gs.level, x: gs.rx, y: gs.ry, end: gs.end,
+                    loose: gs.items.filter((it) => it.state === 'loose').length,
+                }),
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
@@ -704,13 +733,27 @@ const TidyBotGame = () => {
                 <span ref={setHud('levelTag')}>KITCHEN / LIGHT DRIZZLE</span> · A: use · B: toss
             </div>
             {screen === 'attract' && (
-                <div className="absolute bottom-8 inset-x-0 flex justify-center pointer-events-none">
+                <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
                     <AttractMessage messages={TIDY_ATTRACT} ms={2600} className="text-amber-200/80" />
+                    <span className="font-mono font-bold tracking-wider text-amber-200/70">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
             {screen === 'over' && end && (
                 <div className="absolute inset-0 flex items-end justify-center pb-24 pointer-events-none">
                     <p className="font-mono text-[11px] text-white/60">{end.won ? 'The house signs the timesheet. Five stars.' : 'Dust bunnings everywhere. Try again at dawn.'}</p>
+                </div>
+            )}
+            {/* #1637 WATCH — the prover clocks the shift; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
             <VirtualControls secondAction={{ label: 'TOSS', code: 'KeyB' }} visible={screen === 'play' && !paused} />

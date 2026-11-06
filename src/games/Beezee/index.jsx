@@ -21,6 +21,8 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { newGame, step, autopilot, windAt, CFG, FIXED_DT, GARDENS } from './sim.js'
 import { PRESS, MESSAGES } from './attract.js'
 
@@ -114,6 +116,8 @@ const BeeGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: beecheck's autopilot flies the garden
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -345,6 +349,7 @@ const BeeGame = () => {
                 cleared: gs.end === 'delivered',
             })
             overAtRef.current = performance.now()
+            watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
             setMode('over')
             audioController.playDeath()
         }
@@ -381,7 +386,10 @@ const BeeGame = () => {
                 input.sprint = keys.has('ShiftLeft') || keys.has('ShiftRight')
                 input.yaw = (keys.has('ArrowLeft') ? 1 : 0) - (keys.has('ArrowRight') ? 1 : 0)
                 input.pitch = (keys.has('ArrowUp') ? 1 : 0) - (keys.has('ArrowDown') ? 1 : 0)
-                handleEvents(step(gs, input).events)
+                // #1637 WATCH: seat beecheck's autopilot — the same brain the attract
+                // demo flies and beecheck banks the gardens with, re-deciding from
+                // live state every tick (never a script match).
+                handleEvents(step(gs, watchingRef.current ? autopilot(gs) : input).events)
                 if (gs.uv !== lastUv) { lastUv = gs.uv; paintUv(gs.uv) }
                 if (gs.end) finishRun()
             }
@@ -486,6 +494,7 @@ const BeeGame = () => {
         // ---------- input ----------
         const startPlay = () => {
             restart(false)
+            watchingRef.current = false; setWatching(false) // #1637 a new run starts in your hands
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -505,6 +514,14 @@ const BeeGame = () => {
                 return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the proven brain at any live garden state
+            // (autopilot re-decides from live); any driving key takes the bee back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             keys.add(e.code)
             if (e.code === 'KeyV' && !e.repeat) audioController.playTone(1046, 0.08, 'sine', 0.05)
         }
@@ -514,12 +531,19 @@ const BeeGame = () => {
             if (screenRef.current === 'attract') startPlay()
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
         }
+        // #1637 WATCH: a touch on the meadow means you want the bee — hand back.
+        // (Canvas-level, SmashTV style: the pad's own keydowns already take over,
+        // and the WATCH pill stopPropagations its press.)
+        const onStagePointer = () => {
+            if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+        }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
         window.addEventListener('blur', onBlur)
         // pointerdown on the window, not the canvas: the end-screen overlay sits
         // above the canvas, and a tap there is still "a finger on the game".
         window.addEventListener('pointerdown', onPointer)
+        canvas.addEventListener('pointerdown', onStagePointer)
 
         const resize = () => {
             const r = wrap.getBoundingClientRect()
@@ -573,6 +597,9 @@ const BeeGame = () => {
                     return best ? { x: best.x, z: best.z, y: best.stemH + 0.4, uv: best.uv, d: bd } : { x: 0, z: 0, y: 1.6, uv: false, d: Math.hypot(b.x, b.z) }
                 },
                 start: startPlay,
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
             }
             exposeGame({
                 id: 'beezee',
@@ -627,6 +654,7 @@ const BeeGame = () => {
             window.removeEventListener('blur', onBlur)
             window.removeEventListener('resize', resize)
             window.removeEventListener('pointerdown', onPointer)
+            canvas.removeEventListener('pointerdown', onStagePointer)
             cancelAnimationFrame(raf)
             clearNodes()
             disposables.forEach(d => { if (d.dispose) d.dispose() })
@@ -677,6 +705,7 @@ const BeeGame = () => {
                     <h1 className="text-6xl font-black text-amber-300" style={{ textShadow: '0 4px 0 #7a4a00, 0 10px 28px #000' }}>BEEZEE</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
@@ -700,6 +729,19 @@ const BeeGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the prover flies the meadow; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'BEEZEE')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} />
         </div>
