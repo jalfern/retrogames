@@ -334,6 +334,88 @@ const PILOTS = [
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
     })),
+    // #1637 batch 5 — the reactive solvers their own harnesses grade. Factory
+    // semantics hold verbatim; each advance signal is prover-only: an idle
+    // player watching nothing cannot produce it (the sim tick advances anyway,
+    // the runner/yeoman/scout only move when the brain drives them).
+    ...[
+        {
+            id: 'lode-runner', hook: '__lodeTest',
+            // planStep re-plans from live state every move and its route never
+            // digs — a watched vault is never trashed. Runner movement is prover-only.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 6000,
+            // vault ticks restart on a carry — movement/gold/level alone prove
+            // the sim advanced (an idle runner stands still); vaultCleared keeps
+            // the guide seated across the carry, which the level bump records.
+            advanced: (a, b) => b.have > a.have || b.level > a.level || Math.abs(b.player.x - a.player.x) + Math.abs(b.player.y - a.player.y) > 1,
+            note: (a, b) => `runner (${a.player.x},${a.player.y}) -> (${b.player.x},${b.player.y}), gold ${b.have}/${b.need}, vault ${b.level + 1}`,
+            resumeWait: 4500,
+        },
+        {
+            id: 'arena-archery', hook: '__archeryTest',
+            // seat 1 becomes the archerycheck winner (botInput skill 1). Idle
+            // seat-1 keys never draw or walk, so movement/score/ammo spend at
+            // seat 1 all prove the brain is flying — not the player.
+            // Choreography is deliberate: the first kill lands early and the duel
+            // then holds — in this CROSSGLOVE opening the bot-vs-bot economy drives
+            // arrows into cells neither archer can reach and both stand until the
+            // stuck-arrow TTL (CFG.stuckTTL=1200) drips the quivers back (~20 s,
+            // measured). That's the game's own rule, so the resume leg waits
+            // through it: deterministic, and the reopening + walk + shoot that
+            // follows is exactly what a seated brain restarts from where the
+            // player left it. The stalemate itself is game code, filed to QA
+            // on #1637.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 8000, resumeWait: 30000,
+            // seat-1-only signals: the foe bot lobs arrows on its own, so
+            // "something flying" is NOT prover-only (a mutant with a dead seat 1
+            // passed this leg until the mutant run proved it — moved/score/
+            // quiver-spend at seat 1 are). No tick requirement: the tick clock
+            // can stall under software rendering (lode-runner lesson).
+            advanced: (a, b) => Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver,
+            note: (a, b) => `P1 (${Math.round(a.p1.x)},${Math.round(a.p1.y)}) -> (${Math.round(b.p1.x)},${Math.round(b.p1.y)}), score ${b.scores[0]}-${b.scores[1]}, quiver ${b.p1.quiver}, flying ${b.flying}`,
+        },
+        {
+            id: 'dogfight', hook: '__dogTest',
+            // an idle plane flies straight: yaw and pitch sit and the belt
+            // stays full. The pilot zoom-climbs the opening (pitch), banks
+            // onto the bandits (yaw) and fires on a predictHit receipt (belt).
+            // 14 s, not 6: software-rendered Chrome (this box + CI) runs the
+            // WebGL world slower than real time, and the determinism of the
+            // patrol means the banks land at fixed SIM ticks — the window must
+            // cover them in wall seconds on the slowest honest clock.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 14000, resumeWait: 4500,
+            advanced: (a, b) => Math.abs(b.p.pitch - a.p.pitch) > 0.05 || Math.abs(b.p.yaw - a.p.yaw) > 0.08 || b.p.belt < a.p.belt,
+            note: (a, b) => `pitch ${(a.p.pitch * 57.3).toFixed(1)}° -> ${(b.p.pitch * 57.3).toFixed(1)}°, yaw ${(a.p.yaw * 57.3).toFixed(1)}° -> ${(b.p.yaw * 57.3).toFixed(1)}°, belt ${a.p.belt} -> ${b.p.belt}, v ${b.p.v.toFixed(0)} m/s`,
+            resumeWait: 4500,
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            await page.waitForTimeout(g.advanceWait || 5000)
+            const b = await probe()
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            rep.check(`${g.id}: still watching mid-route`, await watching())
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            await page.waitForTimeout(g.resumeWait || 3500)
+            const d = await probe()
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
     {
         // ZORK I — commands, not pads. The Y key mounts the same ZorkExplorer +
         // AgentLoop zorkcheck drives, through the same send the form uses (one
@@ -672,6 +754,39 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         rep.check(`registry ${p}: controls carry the WATCH line`, entryHas(p, 'WATCH_HELP'))
     for (const p of ['/zork2', '/zork3'])
         rep.check(`registry ${p}: no WATCH line (the brain is proven on Zork I only)`, !entryHas(p, 'WATCH_HELP'))
+}
+// ---- #1637 batch-5 source pins — the honesty rules that don't need Chrome ----
+{
+    const B5_SRC = {
+        'LODERUNNER': 'src/games/LodeRunnerLite/index.jsx',
+        'ARENAARCHERY': 'src/games/ArenaArchery/index.jsx',
+        'DOGFIGHT': 'src/games/Dogfight/index.jsx',
+    }
+    for (const [name, f] of Object.entries(B5_SRC)) {
+        const src = readFileSync(f, 'utf8')
+        rep.check(`${name}: imports the shared blips and logs`,
+            /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
+        rep.check(`${name}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    }
+    const lrSrc = readFileSync(B5_SRC.LODERUNNER, 'utf8')
+    rep.check('LODERUNNER: the watcher seats planStep — the solver route never digs (held keys bypassed)',
+        /if \(watchingRef\.current\) \{[\s\S]{0,260}?const a = planStep\(gs\)/.test(lrSrc))
+    const aaSrc = readFileSync(B5_SRC.ARENAARCHERY, 'utf8')
+    rep.check('ARENAARCHERY: seat 1 = botInput(gs, 0, 1), the skill the harness wins with',
+        /const in1 = watchingRef\.current \? botInput\(gs, 0, 1\) : inputOf\(held, P1_KEYS\)/.test(aaSrc))
+    rep.check('ARENAARCHERY: seat-2 keys never unseat the watcher (partner keeps their seat)',
+        /watchingRef\.current && isTakeoverKey\(e\) && !\(mode === '2p' && P2_CODES\.has\(e\.code\)\)/.test(aaSrc))
+    const dfSrc = readFileSync(B5_SRC.DOGFIGHT, 'utf8')
+    rep.check('DOGFIGHT: the watcher flies pilotInput and the throttle lever follows the plane',
+        /pilotInput\(gs\)/.test(dfSrc) && /throttle = ai\.throttle/.test(dfSrc))
+    // registry copy: the three new titles carry the WATCH line; the honest
+    // no-guide remainder (DOS/IF + MagicCarpet: no proven solver) must not.
+    const reg5 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas5 = (p, s) => { const m = reg5.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    for (const p of ['/lode-runner', '/arena-archery', '/dogfight'])
+        rep.check(`registry ${p}: controls carry the WATCH line`, entryHas5(p, 'WATCH_HELP'))
+    for (const p of ['/kingsquest', '/britannia', '/magic-carpet'])
+        rep.check(`registry ${p}: no WATCH line (no proven solver drives it yet)`, !entryHas5(p, 'WATCH_HELP'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
