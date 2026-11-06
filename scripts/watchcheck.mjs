@@ -703,6 +703,81 @@ const PILOTS = [
             rep.check('magic-carpet: Y again releases the pilot', !(await watching()))
         },
     },
+    // #1637 batch 8 — the attract-brain family: four titles whose seat is the
+    // sim's own autopilot, the exact call their attract demo already runs and
+    // their own harness wins with, re-deciding from live state every tick.
+    // Advance signals are prover-only: an idle watcher never moves the bee,
+    // the bot, the claw or the plants, and never banks what they touch.
+    ...[
+        {
+            id: 'beezee', hook: '__beeTest',
+            // idle thrust-off the bee settles on its pad: no forage, no pollen,
+            // no bank, no drift — every signal here needs the brain flying.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 9000, resumeWait: 9000, revive: true,
+            advanced: (a, b) => b.score > a.score || b.delivered > a.delivered || b.pollen > a.pollen || b.nectar > a.nectar || b.flowersLeft < a.flowersLeft || Math.hypot(b.x - a.x, b.z - a.z) > 2,
+            note: (a, b) => `score ${a.score} -> ${b.score}, nectar ${b.nectar}, pollen ${b.pollen}, flowers left ${b.flowersLeft}, flew ${Math.hypot(b.x - a.x, b.z - a.z).toFixed(1)}`,
+        },
+        {
+            id: 'tidy-bot', hook: '__tidybotTest',
+            // the bot only moves on the brain's legs: position, tidies and
+            // score are prover-only against an idle shift.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 9000, resumeWait: 9000, revive: true,
+            advanced: (a, b) => b.tidies > a.tidies || b.score > a.score || Math.hypot(b.x - a.x, b.y - a.y) > 12,
+            note: (a, b) => `tidies ${a.tidies} -> ${b.tidies}, score ${a.score} -> ${b.score}, bot (${Math.round(a.x)},${Math.round(a.y)}) -> (${Math.round(b.x)},${Math.round(b.y)}), loose ${b.loose}`,
+        },
+        {
+            id: 'pick-rush', hook: '__pickrushTest',
+            // seat-1-only signals (the foreman races on its own arm — but an
+            // idle seat 1 never moves ITS gantry, corrects or scores).
+            startKeys: ['Space'], seatWait: 700, advanceWait: 9000, resumeWait: 9000, revive: true,
+            advanced: (a, b) => b.correct > a.correct || b.score > a.score || Math.abs(b.x - a.x) > 8,
+            note: (a, b) => `correct ${a.correct} -> ${b.correct}, score ${a.score} -> ${b.score}, gantry ${Math.round(a.x)} -> ${Math.round(b.x)}, shift ${b.shift + 1}`,
+        },
+        {
+            id: 'garden-guard', hook: '__gardenTest',
+            // idle lawn plants nothing (and nothing defends, nothing scores) —
+            // placements and score are prover-only on every seed.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 12000, resumeWait: 12000, revive: true,
+            advanced: (a, b) => b.plants > a.plants || b.score > a.score || b.unlocked.length > a.unlocked.length,
+            note: (a, b) => `plants ${a.plants} -> ${b.plants}, score ${a.score} -> ${b.score}, acorns ${a.acorns} -> ${b.acorns}, spawned ${b.spawned}/${b.total}`,
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            if (g.revive) {
+                if (endedEarly) {
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
     {
         // ZORK I — commands, not pads. The Y key mounts the same ZorkExplorer +
         // AgentLoop zorkcheck drives, through the same send the form uses (one
@@ -1116,6 +1191,39 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const entryHas6 = (p, s) => { const m = reg6.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     rep.check('registry /magic-carpet: controls carry the WATCH line', entryHas6('/magic-carpet', 'WATCH_HELP'))
 }
+// ---- #1637 batch-8 source pins — the attract-brain family ----
+{
+    const B8_SRC = {
+        'BEEZEE': 'src/games/BeeZee/index.jsx',
+        'TIDYBOT': 'src/games/TidyBot/index.jsx',
+        'PICKRUSH': 'src/games/PickRush/index.jsx',
+        'GARDENGUARD': 'src/games/GardenGuard/index.jsx',
+    }
+    for (const [name, f] of Object.entries(B8_SRC)) {
+        const src = readFileSync(f, 'utf8')
+        rep.check(`${name}: imports the shared blips and logs`,
+            /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
+        rep.check(`${name}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    }
+    // The seat IS the attract call — each pin names the exact swap in the play tick.
+    rep.check('BEEZEE: the watcher seats autopilot(gs) in the play tick',
+        /step\(gs, watchingRef\.current \? autopilot\(gs\) : input\)/.test(readFileSync(B8_SRC.BEEZEE, 'utf8')))
+    rep.check('TIDYBOT: the watcher seats autopilot(gs) in the play tick',
+        /step\(gs, \[watchingRef\.current \? autopilot\(gs\) : livePad\(\)\]\)/.test(readFileSync(B8_SRC.TIDYBOT, 'utf8')))
+    {
+        const prSrc = readFileSync(B8_SRC.PICKRUSH, 'utf8')
+        rep.check('PICKRUSH: seat 1 becomes autopilot(gs, 0) under watch',
+            /const p1 = watchingRef\.current\s*\n?\s*\? autopilot\(gs, 0\)/.test(prSrc))
+        rep.check('PICKRUSH: seat-2 keys never unseat the watcher (partner keeps their seat)',
+            /watchingRef\.current && isTakeoverKey\(e\) && !\(humanSeat2Ref\.current && \['KeyA', 'KeyD', 'KeyS', 'KeyF'\]\.includes\(e\.code\)\)/.test(prSrc))
+    }
+    rep.check('GARDENGUARD: the watcher runs autoStep (bot + advance) in the play tick',
+        /if \(watchingRef\.current\) \{[\s\S]{0,200}autoStep\(gs, SIM_MS \/ 1000\)/.test(readFileSync(B8_SRC.GARDENGUARD, 'utf8')))
+    const reg8 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas8 = (p, s) => { const m = reg8.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    for (const p of ['/beezee', '/tidy-bot', '/pick-rush', '/garden-guard'])
+        rep.check(`registry ${p}: controls carry the WATCH line`, entryHas8(p, 'WATCH_HELP'))
+}
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
 // copy of the contract text anywhere outside the shared component goes red.
@@ -1152,7 +1260,7 @@ if (PHONE) {
     const MINDIM = 30 // shipped pill is 64x34; #1666 will raise it to 44 — the floor catches a shrink regression
     const titles = (ONLY && ONLY !== 'phone') ? PHONE_TITLES.filter((t) => t === `/${ONLY}`) : PHONE_TITLES
     // #1575 lesson: a parse that silently finds nothing gates nothing.
-    rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 36,
+    rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 40,
         `${PHONE_TITLES.length} titles parsed`)
     const browser = await launch()
     console.log(`\n— phone 390x844 (boot ${browser.__bootMode || 'chrome'}), ${titles.length} watch titles`)

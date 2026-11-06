@@ -41,7 +41,7 @@ const entries = []
     }
     flush()
 }
-ok(entries.length >= 30, `registry advertises WATCH on ${entries.length} titles (>=30 tripwire)`)
+ok(entries.length >= 34, `registry advertises WATCH on ${entries.length} titles (>=34 tripwire)`)
 ok(new Set(entries.map((e) => e.dir)).size === entries.length, 'each WATCH title maps to exactly one game dir')
 
 // Titles honestly without an attract ▶ WATCH — see PR #<this>. Multi-screen

@@ -17,6 +17,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     makeGame, step, autopilot,
     VIEW_W, VIEW_H, RAIL_Y, BELT_Y, BELT_END,
@@ -130,6 +132,8 @@ const PickRushGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: pickcheck's autopilot runs seat 1
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const humanSeat2Ref = useRef(false)
@@ -255,11 +259,18 @@ const PickRushGame = () => {
             })
             const board = (() => { try { return JSON.parse(localStorage.getItem('pickrush.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('pickrush.board', JSON.stringify([...board, { score: gs.score, shift: gs.shift + 1, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
+            watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             setMode('over')
         }
 
         const livePads = () => {
-            const p1 = { left: keys.left, right: keys.right, down: keys.down, a: edgeA, b: edgeB }
+            // #1637 WATCH: seat 1 takes pickcheck's shift-clearing brain — the
+            // same call the attract demo drives and autopilot(gs, 0) proves with,
+            // re-deciding from live state every tick. Seat 2 keeps what it had
+            // (a human partner, or the rival's own autopilot).
+            const p1 = watchingRef.current
+                ? autopilot(gs, 0)
+                : { left: keys.left, right: keys.right, down: keys.down, a: edgeA, b: edgeB }
             const pads = [p1]
             if (gs.players > 1) {
                 pads.push(humanSeat2Ref.current
@@ -678,6 +689,7 @@ const PickRushGame = () => {
             // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
             gs = makeGame(seedFromQuery() ?? ((Math.random() * 2 ** 31) | 0), 2)
             parts.length = 0; gs.fx.length = 0; landings.length = 0; boost = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setEnd(null)
             setMode('play')
             audioController.playTone(220, 0.08, 'square', 0.06)
@@ -703,6 +715,15 @@ const PickRushGame = () => {
                 gs = makeGame(1337, 2)
                 return
             }
+            // #1637 WATCH: Y seats the proven brain at seat 1 from any live belt
+            // state; seat-1 keys take it back — seat-2 keys never unseat it
+            // (your partner keeps their seat).
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e) && !(humanSeat2Ref.current && ['KeyA', 'KeyD', 'KeyS', 'KeyF'].includes(e.code))) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') keys.left = true
             if (e.code === 'ArrowRight') keys.right = true
             if (e.code === 'ArrowDown') keys.down = true
@@ -726,6 +747,10 @@ const PickRushGame = () => {
         const onPointerDown = () => {
             if (screenRef.current === 'attract') startPlay()
             else if (screenRef.current === 'over' && performance.now() - overAt > 600) { setMode('attract'); gs = makeGame(1337, 2) }
+            // #1637 WATCH: a touch on the belt means you want the claw — hand back.
+            // (The WATCH pill stopPropagations its press; the pad's own keydowns
+            // already take over.)
+            else if (screenRef.current === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
 
         // ---- contract (QA bots / replays / RL) ----
@@ -803,6 +828,14 @@ const PickRushGame = () => {
         if (import.meta.env.DEV) {
             window.__pickrushTest = {
                 state: testState,
+                // #1637 watchcheck pilot drives these.
+                probe: () => ({
+                    screen: screenRef.current, tick: gs.tick, score: gs.score, correct: gs.correct,
+                    shift: gs.shift, x: gs.arms[0].x, tip: gs.arms[0].tip, end: gs.end,
+                    warnings: gs.warnings,
+                }),
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 hash: () => gs.hash,
                 canvas: () => canvas,
                 sim: () => gs,
@@ -858,13 +891,27 @@ const PickRushGame = () => {
                 <span ref={setHud('seats')}>P1 vs FOREMAN</span> · LINE <span ref={setHud('speedTag')}>×1.00</span>
             </div>
             {screen === 'attract' && (
-                <div className="absolute bottom-8 inset-x-0 flex justify-center pointer-events-none">
+                <div className="absolute bottom-8 inset-x-0 flex flex-col items-center gap-2 pointer-events-none">
                     <AttractMessage messages={PICK_ATTRACT} ms={2600} className="text-amber-200/80" />
+                    <span className="font-mono font-bold tracking-wider text-amber-200/70">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
             {screen === 'over' && end && (
                 <div className="absolute inset-0 flex items-end justify-center pb-24 pointer-events-none">
                     <p className="font-mono text-[11px] text-white/60">{end.won ? 'Promotion papers filed.' : 'The foreman jots it down. Next shift starts now.'}</p>
+                </div>
+            )}
+            {/* #1637 WATCH — the prover works seat 1; any seat-1 input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
             <VirtualControls secondAction={{ label: 'DROP', code: 'KeyB' }} visible={screen === 'play' && !paused} />

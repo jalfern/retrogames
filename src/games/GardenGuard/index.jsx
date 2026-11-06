@@ -18,6 +18,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     FIXED_DT, W, H, ROWS, TRAY_H, GLY, rowY, colX, HOUSE_X,
     tileOf, PLANTS,
@@ -53,6 +55,8 @@ const GardenGuardGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [endInfo, setEndInfo] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: gardencheck's bot defends the lawn
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -142,6 +146,7 @@ const GardenGuardGame = () => {
         const finish = (s) => {
             if (s.done !== 'win' && s.done !== 'lose') return
             overAtRef.current = performance.now()
+            watchingRef.current = false; setWatching(false) // #1637 the lawn ends in your hands
             setEndInfo({ end: s.done, why: s.endMsg, score: s.score, level: s.level })
             setSc('over')
         }
@@ -154,6 +159,10 @@ const GardenGuardGame = () => {
         }
         const pointerPx = (px, py) => {
             if (!gs || gs.done || screenRef.current !== 'play' || pausedRef.current) return
+            // #1637 WATCH: a tap on the lawn means you want the trowel — hand
+            // back, and let the tap place what it aimed at (the click below is
+            // the takeover AND the action).
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (py < TRAY_H) {
                 // card tray: pick a card / trowel
                 if (px >= CARD_X0) {
@@ -284,10 +293,18 @@ const GardenGuardGame = () => {
                     if (demoG.done) demoG = newRun((Date.now() >>> 5) ^ 0xbeef)
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
-                        const pad = { left: heldKeys.left, right: heldKeys.right, up: heldKeys.up, down: heldKeys.down, a: actQueued, b: cycleQueued }
-                        drivePad(pad)
-                        actQueued = false; cycleQueued = false
-                        advance(gs, SIM_MS / 1000)
+                        if (watchingRef.current) {
+                            // #1637 WATCH: seat gardencheck's bot — the exact
+                            // autoStep (bot + advance) the attract demo runs and
+                            // gardencheck clears five levels with, re-deciding
+                            // from live state every tick.
+                            autoStep(gs, SIM_MS / 1000)
+                        } else {
+                            const pad = { left: heldKeys.left, right: heldKeys.right, up: heldKeys.up, down: heldKeys.down, a: actQueued, b: cycleQueued }
+                            drivePad(pad)
+                            actQueued = false; cycleQueued = false
+                            advance(gs, SIM_MS / 1000)
+                        }
                         handleEvents(gs, true)
                         finish(gs)
                     }
@@ -310,6 +327,7 @@ const GardenGuardGame = () => {
             particles = []; shake = 0; toast = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = cycleQueued = trowelQueued = false; digitPick = -1
+            watchingRef.current = false; setWatching(false) // #1637 a new garden starts in your hands
             setEndInfo(null)
             setSc('play')
             audioController.playSweep(260, 620, 0.28, 'square', 0.07)
@@ -332,6 +350,14 @@ const GardenGuardGame = () => {
                 return
             }
             if (pausedRef.current || sc !== 'play') return
+            // #1637 WATCH: Y seats the proven bot at any live lawn state (the
+            // bot re-decides from live every tick); any driving key takes back.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.done) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (CUR.l.includes(e.code)) heldKeys.left = true
             if (CUR.r.includes(e.code)) heldKeys.right = true
             if (CUR.u.includes(e.code)) heldKeys.up = true
@@ -390,6 +416,9 @@ const GardenGuardGame = () => {
                 tap: (px, py) => pointerPx(px, py),
                 win: () => { if (gs) { for (const e of gs.enemies) e.hp = 0; for (const w of gs.waves) { w.started = true; w.i = w.entries.length } gs.waveIdx = gs.waves.length; gs.enemies.length = 0 } },
                 bot: () => { if (gs) bot(gs) },
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             exposeGame({
@@ -462,6 +491,7 @@ const GardenGuardGame = () => {
                     <p className="font-mono text-[11px] text-amber-100/70 mb-4 tracking-widest">AUTUMN ORCHARD · LANE DEFENSE</p>
                     <AttractMessage className="mb-4 text-amber-50/85" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
@@ -477,6 +507,19 @@ const GardenGuardGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the prover defends the lawn; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'GARDEN GUARD')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} secondAction={{ label: '↻', code: 'KeyB' }} />
         </div>
