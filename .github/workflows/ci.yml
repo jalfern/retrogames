@@ -149,6 +149,8 @@ jobs:
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run watchsoakcheck
         if: contains(fromJSON(env.KEYS), 'core')
+      - run: npm run watchpillcheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run feedbackcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run feedbackreplay
