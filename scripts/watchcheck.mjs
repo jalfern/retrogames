@@ -622,8 +622,32 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
         /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,80}recordTick\(pad\)/.test(fbSrc))
     const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
+    // #1663 updated: net never seats the watcher AND says so (amber chip, not silence).
     rep.check('RALLY: online never seats the watcher (the wire owns the seats)',
-        /if \(code === WATCH_KEY && down\) \{\s*if \(net\.active\) return/.test(rlySrc))
+        /if \(code === WATCH_KEY && down\) \{\s*if \(net\.active\) \{/.test(rlySrc)
+        && /setNoGuide\(true\)/.test(rlySrc) && /NO_GUIDE/.test(rlySrc))
+    // ---- #1663 polish-pass pins: discoverability + honesty copy, per title.
+    rep.check('ZORK: idle status strip teaches the watch key',
+        /'PRESS Y TO WATCH THE PROVEN ROUTE'/.test(zorkSrc))
+    rep.check('ZORK: the pill rides the status strip, never floats over the story',
+        /top: '50%', right: 'calc\(0\.5rem \+ var\(--sar, 0px\)\)'/.test(zorkSrc)
+        && !/top: 'calc\(3\.5rem/.test(zorkSrc))
+    rep.check('ROBOTLAB: attract teaches Y (and when it seats)',
+        /WATCH THE PROVEN RUN · AT A FRESH BENCH/.test(rlSrc))
+    rep.check('ROBOTLAB: the decline chip teaches WHEN the guide is available, ~1.5s',
+        /PRESS Y AT A FRESH BENCH/.test(rlSrc) && /setNoGuide\(false\) \}, 1500\)/.test(rlSrc))
+    rep.check('FLOORBOSS: attract carries a static watch line of its own',
+        /PRESS Y TO WATCH THE PROVEN SHIFT/.test(fbSrc))
+    rep.check('FLOORBOSS: watch never lingers — cleared at shift end AND at every start',
+        /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 the shift ends in your hands/.test(fbSrc)
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 a new shift starts in your hands/.test(fbSrc))
+    const irSrc = readFileSync(B4_SRC.IRONRING, 'utf8')
+    rep.check('IRONRING: title card carries the watch hint, offline only',
+        /if \(!net\.active\) \{[\s\S]{0,200}PRESS Y TO WATCH THE CHAMPION/.test(irSrc))
+    rep.check('RALLY: attract teaches the pace-brain route, solo only',
+        /if \(!net\.active\) \{[\s\S]{0,200}Y: WATCH THE PACENOTE ROUTE/.test(rlySrc))
+    rep.check('RALLY: while watching, the HUD names the driver BRAIN (never implies hands on)',
+        /watchSeat\.on && !net\.active[\s\S]{0,240}DRIVER: BRAIN/.test(rlySrc))
     // registry copy: the five new titles carry the WATCH line; the unproven two don't.
     const reg = readFileSync('src/config/games.js', 'utf8')
     const entryHas = (p, s) => { const m = reg.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }

@@ -266,7 +266,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                         noGuideRef.current = true
                         setNoGuide(true)
                         clearTimeout(ngTimer)
-                        ngTimer = setTimeout(() => { noGuideRef.current = false; setNoGuide(false) }, 2600)
+                        ngTimer = setTimeout(() => { noGuideRef.current = false; setNoGuide(false) }, 1500) // #1663 ~1.5s, per the polish pass
                     }
                 }
                 return
@@ -537,6 +537,9 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     <div className="text-3xl font-bold tracking-widest text-emerald-300">ROBOT LAB</div>
                     <div className="mt-2 text-xs text-slate-300">A PLAICRAFT MANIPULATION SANDBOX</div>
                     <div className="mt-6 animate-pulse text-sm text-white">PRESS ANY KEY · TAP TO START</div>
+                    {/* #1663 discoverability: teach Y before the first press, and
+                        when it works — the arm only seats at a clean bench. */}
+                    <div className="mt-4 text-[10px] tracking-widest text-slate-400">PRESS Y TO WATCH THE PROVEN RUN · AT A FRESH BENCH</div>
                 </div>
             )}
             {phase === 'won' && (
@@ -555,8 +558,10 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             {/* #1624 WATCH — the arm runs the proven task script. */}
             {phase === 'play' && watching && <WatchToast className="absolute z-50" />}
             {noGuide && (
-                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase text-center">
                     {NO_GUIDE}
+                    {/* #1663 make it teach: say WHEN the guide is available. */}
+                    <div className="mt-1 text-[10px] tracking-wider text-amber-200/90">PRESS Y AT A FRESH BENCH</div>
                 </div>
             )}
             {phase === 'play' && !paused && (

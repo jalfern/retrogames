@@ -568,6 +568,13 @@ const IronRingGame = () => {
                 ui(Math.max(10, H * 0.02))
                 hctx.fillStyle = 'rgba(160,150,220,0.8)'
                 hctx.fillText(net.active ? `ROOM ${net.code || '····'}` : '1 ARCADE LADDER     2 LOCAL 2P', W / 2, H * 0.92)
+                // #1663 discoverability on the title card, under the coin line
+                // (net rooms own no guide — the seat rule is cpu-ladder only).
+                if (!net.active) {
+                    ui(Math.max(10, H * 0.02))
+                    hctx.fillStyle = 'rgba(255,210,62,0.85)'
+                    hctx.fillText('PRESS Y TO WATCH THE CHAMPION', W / 2, H * 0.5)
+                }
             }
             if (scr === 'select') {
                 hctx.fillStyle = 'rgba(6,4,14,0.8)'; hctx.fillRect(0, 0, W, H)

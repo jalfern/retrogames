@@ -948,6 +948,12 @@ const FloorBossGame = () => {
                     <AttractMessage messages={FB_ATTRACT} ms={2600} className="text-cyan-200/80" />
                 </div>
             )}
+            {/* #1663 discoverability: the watch line is static, never cycles away. */}
+            {screen === 'attract' && (
+                <div className="absolute bottom-2 inset-x-0 flex justify-center pointer-events-none font-mono text-[10px] tracking-widest text-cyan-200/60">
+                    PRESS Y TO WATCH THE PROVEN SHIFT
+                </div>
+            )}
             {screen === 'over' && end && (
                 <div className="absolute inset-0 flex items-end justify-center pb-24 pointer-events-none">
                     <p className="font-mono text-[11px] text-white/60">

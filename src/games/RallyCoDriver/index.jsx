@@ -26,7 +26,7 @@ import {
     WEATHERS, WEATHER_ORDER, CURATED,
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
-import { playWatchStart, playWatchStop, watchSfxLog, WATCH_KEY } from '../../utils/watch'
+import { playWatchStart, playWatchStop, watchSfxLog, WATCH_KEY, NO_GUIDE } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import {
     createRallySync, cpuSeatPad, snapshotGame, restoreGame, packSnap,
@@ -78,6 +78,8 @@ export default function RallyCoDriver() {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [watching, setWatching] = useState(false) // #1637 WATCH (watchSeat is the sim-side truth)
+    // #1663 honesty: Y on the wire declines with the shared amber chip, not silence.
+    const [noGuide, setNoGuide] = useState(false)
     const pausedRef = useRef(false) // shared by the loop (sim gate) and PauseOverlay resume
     const [voiceUi, setVoiceUi] = useState(null) // { on, said, ok, label }
     const [netUi, setNetUi] = useState(null) // #1448 lobby state for the shared Lobby overlay
@@ -167,6 +169,7 @@ export default function RallyCoDriver() {
         // cpuCoDriverPad. The driver's own fingers hand the wheel back immediately.
         // Offline only: online, the wire owns both seats (C/V precedent).
         const watchSeat = { on: false }
+        let ngTimer = null // #1663 net-decline chip lifetime
         const setWatch = (v) => { watchSeat.on = v; setWatching(v) }
         const watchOff = () => { if (watchSeat.on) { setWatch(false); playWatchStop() } }
         const modelPad = (g) => {
@@ -433,7 +436,13 @@ export default function RallyCoDriver() {
             }
             // #1637 WATCH: Y seats the pace brain in the driver's seat (offline play).
             if (code === WATCH_KEY && down) {
-                if (net.active) return // the wire owns the seats — never a fake route online
+                if (net.active) { // the wire owns the seats — never a fake route online.
+                    // #1663: decline out loud — the same amber chip family, ~1.5s, no sound.
+                    setNoGuide(true)
+                    clearTimeout(ngTimer)
+                    ngTimer = setTimeout(() => setNoGuide(false), 1500)
+                    return
+                }
                 if (watchSeat.on) watchOff()
                 else if (screenRef.cur === 'play' && !play.g.done) { setWatch(true); playWatchStart() }
                 return
@@ -1101,6 +1110,14 @@ export default function RallyCoDriver() {
             ctx.fillRect(6, H - 24, 86, 18)
             ctx.fillStyle = coLabel === 'CO-D: LINKED' ? '#7ec8ff' : coLabel === 'CO-D: CPU' && net.active ? '#c23b31' : '#8b93a3'
             ctx.fillText(coLabel, 11, H - 15)
+            // #1663 seat clarity: while the pace brain drives, say who is —
+            // the pad must never imply the player's fingers move the car.
+            if (watchSeat.on && !net.active) {
+                ctx.fillStyle = 'rgba(4,7,13,0.72)'
+                ctx.fillRect(6, H - 44, 86, 18)
+                ctx.fillStyle = '#7ee0a3'
+                ctx.fillText('DRIVER: BRAIN', 11, H - 35)
+            }
             if (voice.on) {
                 ctx.fillStyle = voice.ok ? '#7ee0a3' : '#c23b31'
                 ctx.fillText(voice.said ? voice.said.slice(0, 12) : 'listening…', 11, H - 8)
@@ -1160,6 +1177,12 @@ export default function RallyCoDriver() {
                 ? (net.role === 'host' ? 'HOST: R STAGE · T WEATHER · SPACE KICKS' : 'GUEST: WAITING FOR THE HOST TO KICK…')
                 : 'PRESS ANY KEY · TAP TO START'
             ctx.fillText(startLine, W / 2, 208)
+            // #1663 discoverability (solo only — the wire owns the seats online).
+            if (!net.active) {
+                ctx.font = '9px monospace'
+                ctx.fillStyle = 'rgba(126,200,255,0.75)'
+                ctx.fillText('Y: WATCH THE PACENOTE ROUTE', W / 2, 224)
+            }
             ctx.textAlign = 'left'
         }
 
@@ -1337,6 +1360,13 @@ export default function RallyCoDriver() {
             )}
             {/* #1624 WATCH — the pace brain drives the stage (online keeps the wire). */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {noGuide && (
+                <div className="absolute left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase text-center"
+                     style={{ top: 'calc(6.25rem + var(--sat, 0px))' }}>
+                    {NO_GUIDE}
+                    <div className="mt-1 text-[10px] tracking-wider text-amber-200/90">THE WIRE OWNS THE SEATS · SOLO ONLY</div>
+                </div>
+            )}
             {screen === 'play' && !paused && (
                 <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} disabled={!!netUi} />
