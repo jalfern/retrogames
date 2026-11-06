@@ -451,10 +451,19 @@ async function run() {
 
     if (process.argv.includes('--mutate')) {
         console.log('mutants (each MUST die)')
+        // Per-file anchor overrides: a title whose call site evolved keeps the
+        // DISEASE but not the literal. Gauntlet's ticker takes the message list as
+        // a parameter since #1641 (net lines), so the shared INFO_MSGS anchor
+        // drifted — re-pinned 2026-11-06 in the #601 main-fix. `to` still pins
+        // the first line, which kills the cycle for the same reason.
+        const ANCHOR_OF = {
+            'src/games/Gauntlet/attract.js': { 'cycleAttract(tick, INFO_MSGS, HOLD)': 'cycleAttract(tick, msgs, HOLD)' },
+        }
         for (const file of MUTATE_FILES) {
             const label = file.split('/').slice(-2, -1)[0]
             let died = 0
-            for (const [name, from, to] of MUTANTS) {
+            for (const [name, from0, to] of MUTANTS) {
+                const from = (ANCHOR_OF[file] && ANCHOR_OF[file][from0]) || from0
                 const orig = readFileSync(file, 'utf8')
                 if (!orig.includes(from)) { ok(false, `${label} anchor: ${name}`, `missing: ${from}`); continue }
                 plant(file, orig.replace(from, to))
