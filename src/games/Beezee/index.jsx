@@ -374,6 +374,7 @@ const BeeGame = () => {
         }
 
         let lastUv = false
+        let padThrust = 0 // #1637 WATCH: ticks where the pad actually consumed thrust — prover-only signal (an idle watcher never thrusts; wind drift and contact-pollination can happen with no brain at all)
         const doSim = () => {
             contractTick += 1
             if (screenRef.current === 'attract') {
@@ -389,7 +390,9 @@ const BeeGame = () => {
                 // #1637 WATCH: seat beecheck's autopilot — the same brain the attract
                 // demo flies and beecheck banks the gardens with, re-deciding from
                 // live state every tick (never a script match).
-                handleEvents(step(gs, watchingRef.current ? autopilot(gs) : input).events)
+                const pad = watchingRef.current ? autopilot(gs) : input
+                if (pad.thrust) padThrust++
+                handleEvents(step(gs, pad).events)
                 if (gs.uv !== lastUv) { lastUv = gs.uv; paintUv(gs.uv) }
                 if (gs.end) finishRun()
             }
@@ -576,6 +579,7 @@ const BeeGame = () => {
                         x: b.x, y: b.y, z: b.z, yaw: b.yaw, pitch: b.pitch,
                         vx: b.vx, vy: b.vy, vz: b.vz, uv: gs.uv, nectar: b.nectar, pollen: b.pollen,
                         stuck: b.stuck, scare: gs.scare, wind: [wx, wz],
+                        thrustTicks: padThrust,
                         flowersLeft: gs.world.flowers.reduce((s, f) => s + f.nectar, 0),
                         targetDist: bd, targetUv: buv, keys: [...keys], board: board(),
                         wasps: gs.world.wasps.map(w => ({ x: w.x, y: w.y, z: w.z })),

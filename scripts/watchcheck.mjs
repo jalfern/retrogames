@@ -711,11 +711,13 @@ const PILOTS = [
     ...[
         {
             id: 'beezee', hook: '__beeTest',
-            // idle thrust-off the bee settles on its pad: no forage, no pollen,
-            // no bank, no drift — every signal here needs the brain flying.
+            // Wind drifts an idle bee across flowers and contact pollinates it —
+            // movement and nectar are NOT prover-only here (the batch-8 mutant
+            // proved it). The honest signal is the pad: autopilot holds thrust
+            // through the flight; an idle watcher never thrusts at all.
             startKeys: ['Space'], seatWait: 700, advanceWait: 9000, resumeWait: 9000, revive: true,
-            advanced: (a, b) => b.score > a.score || b.delivered > a.delivered || b.pollen > a.pollen || b.nectar > a.nectar || b.flowersLeft < a.flowersLeft || Math.hypot(b.x - a.x, b.z - a.z) > 2,
-            note: (a, b) => `score ${a.score} -> ${b.score}, nectar ${b.nectar}, pollen ${b.pollen}, flowers left ${b.flowersLeft}, flew ${Math.hypot(b.x - a.x, b.z - a.z).toFixed(1)}`,
+            advanced: (a, b) => b.thrustTicks > a.thrustTicks + 30 || b.delivered > a.delivered || b.score > a.score,
+            note: (a, b) => `thrust ticks ${a.thrustTicks} -> ${b.thrustTicks}, nectar ${b.nectar}, delivered ${b.delivered}, score ${b.score}`,
         },
         {
             id: 'tidy-bot', hook: '__tidybotTest',
@@ -1194,7 +1196,7 @@ for (const [name, f] of Object.entries(B4_SRC)) {
 // ---- #1637 batch-8 source pins — the attract-brain family ----
 {
     const B8_SRC = {
-        'BEEZEE': 'src/games/BeeZee/index.jsx',
+        'BEEZEE': 'src/games/Beezee/index.jsx',
         'TIDYBOT': 'src/games/TidyBot/index.jsx',
         'PICKRUSH': 'src/games/PickRush/index.jsx',
         'GARDENGUARD': 'src/games/GardenGuard/index.jsx',
@@ -1206,8 +1208,8 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         rep.check(`${name}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
     }
     // The seat IS the attract call — each pin names the exact swap in the play tick.
-    rep.check('BEEZEE: the watcher seats autopilot(gs) in the play tick',
-        /step\(gs, watchingRef\.current \? autopilot\(gs\) : input\)/.test(readFileSync(B8_SRC.BEEZEE, 'utf8')))
+    rep.check('BEEZEE: the watcher seats autopilot(gs) in the play tick and the probe counts consumed thrust',
+        /const pad = watchingRef\.current \? autopilot\(gs\) : input[\s\S]{0,80}if \(pad\.thrust\) padThrust\+\+/.test(readFileSync(B8_SRC.BEEZEE, 'utf8')))
     rep.check('TIDYBOT: the watcher seats autopilot(gs) in the play tick',
         /step\(gs, \[watchingRef\.current \? autopilot\(gs\) : livePad\(\)\]\)/.test(readFileSync(B8_SRC.TIDYBOT, 'utf8')))
     {
@@ -1218,7 +1220,7 @@ for (const [name, f] of Object.entries(B4_SRC)) {
             /watchingRef\.current && isTakeoverKey\(e\) && !\(humanSeat2Ref\.current && \['KeyA', 'KeyD', 'KeyS', 'KeyF'\]\.includes\(e\.code\)\)/.test(prSrc))
     }
     rep.check('GARDENGUARD: the watcher runs autoStep (bot + advance) in the play tick',
-        /if \(watchingRef\.current\) \{[\s\S]{0,200}autoStep\(gs, SIM_MS \/ 1000\)/.test(readFileSync(B8_SRC.GARDENGUARD, 'utf8')))
+        /if \(watchingRef\.current\) \{[\s\S]{0,400}autoStep\(gs, SIM_MS \/ 1000\)/.test(readFileSync(B8_SRC.GARDENGUARD, 'utf8')))
     const reg8 = readFileSync('src/config/games.js', 'utf8')
     const entryHas8 = (p, s) => { const m = reg8.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     for (const p of ['/beezee', '/tidy-bot', '/pick-rush', '/garden-guard'])
