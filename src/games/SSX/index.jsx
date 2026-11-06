@@ -1377,7 +1377,7 @@ const SSXGame = () => {
                     <span ref={setHud('aPop')} data-apop="1" className="block mb-4 text-2xl font-black italic text-yellow-300 transition-opacity duration-200" style={{ opacity: 0, textShadow: '0 0 18px #f0f, 3px 3px 0 #000' }} />
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
-                    <p className="mt-2 text-xs text-cyan-200/50 tracking-widest">Y — WATCH THE PROVEN ROUTE</p>
+                    <span className="block mt-2 text-xs text-cyan-200/50 tracking-widest">Y — WATCH THE PROVEN ROUTE</span>
                 </div>
             )}
 
