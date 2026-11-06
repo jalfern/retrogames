@@ -1765,7 +1765,7 @@ export default function CometDriftHD() {
                 if (!gN || !gN.children.length) return null
                 return { quads: gN.children.length, opacity: Math.round(gN.children[0].material.opacity * 1000) / 1000 }
             },
-            sandState: () => (wear ? { ...scarStats(wear), ...simStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, lip: SAND_WEAR.lip, meshes: sandMeshes.length } : null),
+            sandState: () => (wear ? { ...scarStats(wear), sim: simStats(wear), sink: SAND_WEAR.sink, dark: SAND_WEAR.dark, decay: SAND_WEAR.decay, lip: SAND_WEAR.lip, meshes: sandMeshes.length } : null),
             stampDust: () => { const c = stampDustPuffs; stampDustPuffs = 0; return c },
             brakeGlow: () => Math.round((kartMeshes[0].m.userData.brakeMat?.emissiveIntensity ?? -1) * 100) / 100,
             stars: () => {

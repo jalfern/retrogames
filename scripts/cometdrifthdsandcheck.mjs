@@ -38,6 +38,7 @@ const PAIRS = [
     ['const h = stampWear(w, k.x, k.y)', 'const h = 0'],
     ['pos.setY(i, by + rutOffset(v, gpc))', 'pos.setY(i, by)'],
     ['n += STAMP_PLUME.perKart', 'n += 0'],
+    ['const v = Math.min(SAND_WEAR.max, v0 + simAt(w, bx, bz))', 'const v = v0'],
 ]
 if (MUTATE) {
     let src = readFileSync(SAND_SRC, 'utf8')
@@ -229,6 +230,10 @@ console.log('— #1718 item 5: the sim’s marks ride the HD terrain —')
     const w = makeWear(...bounds())
     const g = sim.makeGame(3)
     const keyAt = (wx, wy) => Math.round(wy * TEX_S) * TEX + Math.round(wx * TEX_S)
+    // query at the texel's projected centre — the exact coord syncMarks maps
+    // the key back to (a raw px query can straddle a 14px cell boundary)
+    const pxAt = (wx, wy) => (Math.round(wx * TEX_S) + 0.5) / TEX_S
+    const pzAt = (wx, wy) => (Math.round(wy * TEX_S) + 0.5) / TEX_S
     const cx = 2000; const cy = 2000
     g.marks.set(keyAt(cx, cy), SAND.crater)
     g.marks.set(keyAt(cx + 30, cy + 30), SAND.chip)
@@ -236,16 +241,16 @@ console.log('— #1718 item 5: the sim’s marks ride the HD terrain —')
     g.markDelta.push(['stale', 1])
     let r = syncMarks(w, g)
     ok(r.cells === 3 && r.coals === 1, `sync lifts every carved cell into the HD field (${r.cells} scars, ${r.coals} coal)`)
-    ok(simAt(w, cx, cy) === 1 && approx(simAt(w, cx + 60, cy), 1 / 3), 'a crater core sinks full where a roll sinks a third')
-    ok(coalAt(w, cx + 30, cy + 30) === SIM_SCAR.chipMix, 'a cliff chip carries its coal blend into the HD grid')
+    ok(simAt(w, pxAt(cx, cy), pzAt(cx, cy)) === 1 && approx(simAt(w, pxAt(cx + 60, cy), pzAt(cx + 60, cy)), 1 / 3), 'a crater core sinks full where a roll sinks a third')
+    ok(approx(coalAt(w, pxAt(cx + 30, cy + 30), pzAt(cx + 30, cy + 30)), SIM_SCAR.chipMix), 'a cliff chip carries its coal blend into the HD grid')
     ok(g.markDelta.length === 0, 'sync drains the 2D bake queue — HD sessions never leak it')
     g.marks.set(keyAt(cx, cy), 2)                       // #1702 heal pulse
     g.marks.set(keyAt(cx + 30, cy + 30), SAND.crack)    // chip decays toward crack
     g.marks.delete(keyAt(cx + 60, cy))                   // healed away — no delta is pushed for deletion
     r = syncMarks(w, g)
-    ok(approx(simAt(w, cx, cy), 2 / 3), 'self-heal lands: a healed crater lifts out of the HD mesh')
-    ok(simAt(w, cx + 60, cy) === 0, 'a mark healed away is gone from the HD field — no ghost ruts')
-    ok(r.coals === 1 && coalAt(w, cx + 30, cy + 30) === SIM_SCAR.crackMix, 'chips fade chip → crack on the sim’s own clock')
+    ok(approx(simAt(w, pxAt(cx, cy), pzAt(cx, cy)), 2 / 3), 'self-heal lands: a healed crater lifts out of the HD mesh')
+    ok(simAt(w, pxAt(cx + 60, cy), pzAt(cx + 60, cy)) === 0, 'a mark healed away is gone from the HD field — no ghost ruts')
+    ok(r.coals === 1 && approx(coalAt(w, pxAt(cx + 30, cy + 30), pzAt(cx + 30, cy + 30)), SIM_SCAR.crackMix), 'chips fade chip → crack on the sim’s own clock')
 
     const race = () => {
         const g2 = sim.makeGame(3)
