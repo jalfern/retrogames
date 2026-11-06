@@ -1,4 +1,4 @@
-# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696)
+# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696, self-heal #1702)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
 SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
@@ -323,6 +323,24 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   Residual, honestly: the cliff itself never chips (only its sand foot scars —
   the strata are a painted bake), and marks do not survive a snapshot/restore
   (presentation state; #391 lineage).
+- **CLOSED by #1702 (QA): in-race self-heal.** Dune sand flows: every
+  `SAND.sweep` (30) ticks, `healSweep()` drops each cell one depth step if its
+  LAST wheel touch is older than `SAND.healT` (180) ticks, then re-arms it — so
+  the oldest pass always fades first, a crater core outlives a lip, and a cell
+  on the racing line stays dark while laps keep re-arming it (a fresh line reads
+  brighter than the race line, the polish ask). Age lives in `gs.markAge`, a
+  side Map: `marks` keeps plain depth values, the depth law is untouched, the
+  fade rides the existing `markDelta` queue (zero renderer edits — the bake
+  repaints the faded texel from `gnd0`), and a JSON-poor restore (#391) treats
+  unknown age as fresh so restored sand never spurts. At the flag the autopilot's
+  late-race sand has flowed flat — the SAND audit therefore moved from
+  finish-line snapshots to the complete `markDelta` record (ever-seen cells,
+  road law and depth range over every carve the race ever made — strictly
+  stronger than the old finish view). Gates: 6 new #1702 gates in the
+  cometcheck SAND section (fade-to-pristine within 3×healT idle, no fade
+  before healT, exactly-one-step per pulse, re-arm-on-re-drive, mid-race flow
+  on seed-0 autopilot, tick-driven determinism); seed-0 race still 9514/win
+  with an identical physics hash.
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).
 - Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure
