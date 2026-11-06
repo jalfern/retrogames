@@ -615,6 +615,11 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         r.check('the kill leaves no cinders: no crater, no fire mark',
             gs.craters.length === before.craters && gs.fireMarks.length === before.marks,
             `craters ${before.craters}→${gs.craters.length}, marks ${before.marks}→${gs.fireMarks.length}`)
+        const killEv = gs.events.filter((e) => e.type === 'kill')
+        r.check('every kill names its kind and stands somewhere — the crumble FX fuel (#1646)',
+            killEv.length === 1 && ['wolf', 'giant', 'cow'].includes(killEv[0].kind) &&
+            Number.isFinite(killEv[0].x) && Number.isFinite(killEv[0].y),
+            killEv.map((e) => `${e.kind}@${e.x.toFixed(0)},${e.y.toFixed(0)}`).join(' ') || 'no kill event')
         gs.events.length = 0; gs.pearls.length = 0
         step(gs, { castL: true })
         r.check('casting shatter from a hand spends the pouch (30)', gs.mana === 70 && gs.events.some((e) => e.type === 'cast'),
@@ -973,6 +978,28 @@ const trail = await page.evaluate(async () => {
 })
 r.check('the veiled carpet leaves a ghost trail in the GL pass (#1612)',
     trail.invis > 0 && trail.motes > trail.clean + 8, `motes ${trail.clean} -> ${trail.motes} (veil ${trail.invis})`)
+
+// ---- #1646 item 1: killed bodies crumble to ash where they stand, like the
+// original. Ash is a distinct particle kind, so this counts cold grit only.
+// Mutation guide: delete the `kill` branch in renderer.js handleEvents and this
+// gate goes red (crumbles stays 0 while every other gate holds). The world
+// reset must clear the grit — no particle leak across worlds.
+await page.evaluate(() => { window.__game.reset(7); window.__carpetTest.start() })
+await page.waitForTimeout(250)
+const crumble = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    const clean = t.crumbles()
+    const p = t.probe()
+    t.fx({ type: 'kill', kind: 'giant', x: p.x + 15, y: p.y + 15 })
+    await new Promise((res) => setTimeout(res, 150))
+    const seen = t.crumbles()
+    window.__game.reset(7)
+    await new Promise((res) => setTimeout(res, 150))
+    return { clean, seen, cleared: t.crumbles() }
+})
+r.check('a killed creature crumbles to ash in place (#1646)',
+    crumble.clean === 0 && crumble.seen >= 12 && crumble.cleared === 0,
+    `ash ${crumble.clean} -> ${crumble.seen} -> cleared ${crumble.cleared}`)
 
 // ---- #1612 item 4 (browser): veiling actually closes the ambience low-pass the
 // shell drives the wind/growl bed through. Mutation guide: drop the

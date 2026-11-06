@@ -581,6 +581,31 @@ void main(){
         spawn(x, h + 1.5, y, 'flare', 0, 0, 0, 7, 12, col)
     }
 
+    // #1646: the original crumbled creatures into ash where they fell. Cold
+    // grit that hops and settles — no fire, no scorch: the renderer keeps the
+    // sim's kill-without-cinders promise even for shatter's victims. Per-kind
+    // sizes and tints so a giant comes down differently from a wolf.
+    const CRUMBLE = {
+        wolf: { n: 8, col: [0.5, 0.46, 0.5], size: 0.6 },
+        giant: { n: 14, col: [0.62, 0.58, 0.6], size: 1.0 },
+        cow: { n: 8, col: [0.85, 0.8, 0.74], size: 0.7 },
+    }
+    const spawnCrumble = (gs, x, y, kind) => {
+        const c = CRUMBLE[kind] || CRUMBLE.wolf
+        const h = heightAt(gs, x, y)
+        for (let i = 0; i < c.n; i++) {
+            const a = Math.random() * Math.PI * 2, sp = 0.3 + Math.random() * 1.0
+            spawn(x, h + 1.5 + Math.random() * 2, y, 'ash',
+                Math.cos(a) * sp, 0.3 + Math.random() * 1.1, Math.sin(a) * sp,
+                c.size * (0.7 + Math.random() * 0.6), 30 + Math.random() * 20, c.col)
+        }
+        for (let i = 0; i < Math.max(2, c.n / 4); i++) {
+            spawn(x, h + 1 + Math.random() * 1.5, y, 'smoke',
+                (Math.random() - 0.5) * 0.5, 0.35 + Math.random() * 0.4, (Math.random() - 0.5) * 0.5,
+                1.8 + Math.random() * 1.6, 60 + Math.random() * 40)
+        }
+    }
+
     // Volcano vents (#1612 item 5): live lava fountains for a while after an
     // eruption. Presentation-only; the sim's hot craters carry the truth.
     const vents = []
@@ -622,10 +647,16 @@ void main(){
             else if (e.type === 'hutDown') { spawnBurst(gs, e.x, e.y, 5, [1.2, 0.5, 0.2]); addScorch(e.x, e.y, 6, 0.4) }
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             else if (e.type === 'wizardDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
+            else if (e.type === 'kill') spawnCrumble(gs, e.x, e.y, e.kind)
             // #1639 SHATTER: icy splinters and a cold flare — deliberately NO
             // scorch mark: the kill spell leaves the land untouched, and the
             // renderer keeps that promise on screen as the sim does in the sim.
-            else if (e.type === 'shatter') spawnBurst(gs, e.x, e.y, 16, [1.2, 1.5, 1.9])
+            // #1646: denser splinters + a wide cold ring so the kill reads as
+            // lethal even in the Verdant daylight palette.
+            else if (e.type === 'shatter') {
+                spawnBurst(gs, e.x, e.y, 20, [1.3, 1.6, 2.0])
+                spawn(e.x, heightAt(gs, e.x, e.y) + 1.5, e.y, 'flare', 0, 0, 0, 12, 14, [1.1, 1.45, 1.9])
+            }
             // #1639 RAISE: the mound itself rides the live heightmap upload;
             // this is the dust it kicks up on the way.
             else if (e.type === 'raise') spawnBurst(gs, e.x, e.y, 12, [0.9, 0.68, 0.42])
@@ -834,6 +865,7 @@ void main(){
             p.x += p.vx / 5; p.y += p.vy / 5; p.z += p.vz / 5
             if (p.kind === 'smoke') { p.vy *= 0.985; p.vx += Math.sin(p.seed + p.life * 0.05) * 0.01 }
             if (p.kind === 'ember') p.vy -= 0.06
+            if (p.kind === 'ash') p.vy -= 0.09
             const isSmoke = p.kind === 'smoke'
             const b = isSmoke ? smoke : par
             const si = isSmoke ? ns : na
@@ -974,6 +1006,7 @@ void main(){
         resetWorld,
         applyPalette,
         particleCount: () => parts.length,
+        ashCount: () => parts.reduce((n, p) => n + (p.kind === 'ash' ? 1 : 0), 0),
         smokeCount: () => smoke.geo.instanceCount,
         spriteCount: () => spr.geo.instanceCount,
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
