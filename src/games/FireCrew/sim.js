@@ -237,6 +237,27 @@ function windBias(g, dx, dy) {
 }
 export { windBias }
 
+// #1744 — seat wind audio (README gap 1: "the ladder has no wind-noise cue
+// yet: seat 3 reads gales from the HUD vane and the ladder physics, not from
+// sound"). Pure voice specs so firecrewcheck can prove the bed in plain Node
+// and the shell can never drift from the law. Rng-free: replays and state
+// hashes are untouched. windVoice maps gust level to AudioController's
+// lowpassed-noise bed (calm is silence, a gale is loud, deep and long —
+// wind is heard before it is seen); ladderCreak is the load creak a gale
+// puts on an extended ladder, the cue seat 3 needs without looking at the
+// vane — null (silence) unless the wind load and the ladder both exist.
+const windVoice = (gust) => (
+    gust >= 2 ? { vol: 0.085, freq: 380, dur: 0.55 }
+        : gust === 1 ? { vol: 0.04, freq: 260, dur: 0.5 }
+            : { vol: 0, freq: 200, dur: 0.4 }
+)
+const ladderCreak = (gust, ladder) => (
+    gust >= 2 && ladder > 0.4
+        ? { vol: 0.05 + Math.min(0.05, ladder * 0.05), f0: 140, f1: 70, dur: 0.22 }
+        : null
+)
+export { windVoice, ladderCreak }
+
 function spreadAndBurn(g) {
     const rng = g.rng
     if (g.tick % 2) return // fire chemistry runs at 30 Hz

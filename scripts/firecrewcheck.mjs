@@ -9,6 +9,7 @@ import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, W, H, LOFT_Y1, LADDER_X,
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
+    windVoice, ladderCreak,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 import { drawFire, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE } from '../src/games/FireCrew/art.js'
@@ -449,6 +450,28 @@ console.log('night art pass (#1440)')
     const gale = streakRun.ops.filter((o) => o.style === EMBER_GALE)
     ok(gale.length >= 3 && gale.some((o, i) => gale[i + 2] && gale[i + 1].x === o.x + 3 && gale[i + 2].x === o.x + 6 && gale[i + 1].y === o.y && gale[i + 2].y === o.y),
         'the streak runs downwind (E at dir 0), not at the player')
+}
+
+console.log('wind audio — seat 3 hears the gales (#1744)')
+{
+    // the pure voices the shell fires through playFilteredNoise/playSweep
+    ok(windVoice(0).vol === 0, 'calm is silence (no bed)')
+    ok(windVoice(0).vol < windVoice(1).vol && windVoice(1).vol < windVoice(2).vol,
+        'the bed gets louder as the wind rises')
+    ok(windVoice(2).freq > windVoice(1).freq && windVoice(2).dur > windVoice(1).dur,
+        'a gale is brighter and longer than a breeze')
+    ok(JSON.stringify(windVoice(2)) === JSON.stringify(windVoice(2)) && windVoice.length === 1,
+        'the voice reads gust only — rng-free, hashes untouched')
+    ok(!!ladderCreak(2, 0.95) && !ladderCreak(1, 0.95) && !ladderCreak(2, 0.3) && !ladderCreak(0, 1),
+        'the creak needs both gale load and an extended ladder')
+    const cLow = ladderCreak(2, 0.9); const cHigh = ladderCreak(2, 1)
+    ok(cHigh.vol > cLow.vol && cHigh.f1 < cHigh.f0,
+        'the load moan deepens and thickens as the ladder tops out')
+    const jsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
+    ok(/windVoice\(g\.wind\.gust\)/.test(jsx) && /playFilteredNoise\(v\.dur, v\.vol, v\.freq\)/.test(jsx),
+        'the shell routes the bed through the sim voice, not its own numbers')
+    ok(/ladderCreak\(g\.wind\.gust, g\.ladder\)/.test(jsx) && /playSweep\(c\.f0, c\.f1, c\.dur, 'sawtooth', c\.vol\)/.test(jsx),
+        'the shell routes the creak through the sim voice too')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)
