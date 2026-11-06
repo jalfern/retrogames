@@ -21,6 +21,8 @@ import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/l
 import { createLockStep } from '../../utils/lockstep.js'
 import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx, winPresentation } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { CANVAS, PALETTE, orbSprite, championOrb, text, textWidth, stage, wellFrame } from './art.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, toWire, assemblePads, hostSeed } from './net.js'
 
@@ -51,6 +53,8 @@ const BlobBattleGame = () => {
     const [rivalGone, setRivalGone] = useState(false)
     const rivalGoneRef = useRef(false)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven CPU brain stacks your well
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
 
@@ -232,6 +236,7 @@ const BlobBattleGame = () => {
             pausedRef.current = false
             setPaused(false)
             countdown = m === 'online' ? GO_FRAMES : 0
+            watchingRef.current = false; setWatching(false) // #1637 a new match starts in your hands
             keys1.left = keys1.right = keys1.down = keys1.rot = keys1.drop = false
             keys2.left = keys2.right = keys2.down = keys2.rot = keys2.drop = false
             setSc('play')
@@ -297,8 +302,9 @@ const BlobBattleGame = () => {
                 if (gs.tick % 120 === 0) { padMirror[0].forEach((_, t) => { if (t < gs.tick - 60) padMirror[0].delete(t) }); padMirror[1].forEach((_, t) => { if (t < gs.tick - 60) padMirror[1].delete(t) }) }
                 return pads
             }
-            if (mode === 'local') return [{ ...keys1 }, { ...keys2 }]
-            return [{ ...keys1 }, gs._cpu2(gs.wells[1])]
+            if (mode === 'local') return [(watchingRef.current ? gs._cpu1(gs.wells[0]) : { ...keys1 }), { ...keys2 }] // #1637 seat 1 only — P2 keeps its keys
+            // #1637 WATCH: seat 1 runs the same seeded CPU planner blobcheck grades.
+            return [(watchingRef.current ? gs._cpu1(gs.wells[0]) : { ...keys1 }), gs._cpu2(gs.wells[1])]
         }
 
         // ------------------------------------------------------------- paint ----
@@ -582,6 +588,16 @@ const BlobBattleGame = () => {
             if (desyncRef.current && net.active && net.role === 'host' && (code === 'Space' || code === 'Enter')) { rejoin(); return }
             if (rivalGoneRef.current && net.active && (code === 'Space' || code === 'Enter')) { returnToTitle(); return }
             if (pausedRef.current || desyncRef.current) return
+            // #1637 WATCH: Y seats the seeded CPU planner in seat 1 (never online —
+            // the wire owns those pads). Any seat-1 key takes it back; in local play
+            // the P2 keys (WASD + F) keep your partner seated.
+            if (isWatchKey(e)) {
+                if (mode !== 'online') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) {
+                if (!(mode === 'local' && P2[e.code])) { watchingRef.current = false; setWatching(false) }
+            }
             if (code === 'ArrowLeft') keys1.left = true
             else if (code === 'ArrowRight') keys1.right = true
             else if (code === 'ArrowDown') keys1.down = true
@@ -645,6 +661,7 @@ const BlobBattleGame = () => {
                     }
                 },
                 start: (m = 'cpu', sd, tier) => startPlay(m, sd, tier),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover stacking seat 1?
                 board: (seat) => Array.from((screenRef.current === 'attract' ? demo : gs).wells[seat].board),
                 hash: () => (gs ? stateHash(gs) : 0),
                 // desync drill seam (blobnet): flip this box's well-0 board so
@@ -800,6 +817,17 @@ const BlobBattleGame = () => {
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'BLOB BATTLE')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused && !netUi} secondAction={{ label: 'DROP', code: 'KeyB' }} />
+            {/* #1637 WATCH — the seeded CPU planner stacks your well; any seat-1 key takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-pink-400/90 border border-pink-100 text-pink-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && !netUi && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
         </div>
     )
 }
