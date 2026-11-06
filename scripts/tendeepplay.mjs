@@ -147,13 +147,17 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
     const a = await probe()
     await tap('ArrowRight')
     const b = await probe()
-    r.check('arrows pick a door on the street', b.town && b.town.sel === (a.town.sel + 1) % 4, `sel ${a.town.sel} -> ${b.town && b.town.sel}`)
+    r.check('arrows walk the street tile by tile', b.town && b.town.x === a.town.x + 1, `x ${a.town.x} -> ${b.town && b.town.x}`)
+    // #1751: doors are where they are — walk to the TAVERN threshold (tile 3)
+    for (let i = 0; i < 4 && (await probe()).town.sel !== 0; i++) { await tap('ArrowRight'); await wait(80) }
+    const atT = await probe()
+    r.check('the facade lights when you stand at its door', atT.town && atT.town.sel === 0, `sel=${atT.town && atT.town.sel}`)
     await tap('Space')
     const c = await probe()
-    r.check('SPACE enters the chosen door', c.town && c.town.b === 'V' && c.town.services && c.town.services.length === 4, `b=${c.town && c.town.b}`)
-    // temple windows: pale blue glass on the interior wash
-    const glass = await px(8, 26, 240, 120, 'canvas[data-deep-view]', (R, G, B) => B > 110 && B > R + 20 && G > 60)
-    r.check('the interior paints its room (temple wash on screen)', glass > 200, `lit px=${glass}`)
+    r.check('SPACE crosses the threshold you stand on', c.town && c.town.b === 'T' && c.town.services && c.town.services.length === 2, `b=${c.town && c.town.b}`)
+    // tavern interior: a warm wash on screen (ROOM_TINT T is hearth-brown)
+    const wash = await px(8, 26, 240, 120, 'canvas[data-deep-view]', (R, G, B) => R > 24 && R >= B)
+    r.check('the interior paints its room (tavern wash on screen)', wash > 200, `lit px=${wash}`)
     // #1351: the shop's purse + controls line is painted IN the canvas at
     // 176..200 (the rim's convention) — the old H-24 band is the party
     // strip's, which overpainted these lines, so the DOM strip was the only
@@ -661,12 +665,12 @@ else {
     }
     r.check('a total party kill carries the bodies to THE RIM', !!wiped && wiped.mode === 'town', wiped ? `mode=${wiped.mode}` : `never wiped (${(await probe()).screen}/${(await probe()).mode})`)
     r.check('the dead-body tax was paid and booked', wiped.gold < wiped.ledger.goldIn && wiped.ledger.goldSpent > 0, `purse=${wiped.gold} goldIn=${wiped.ledger.goldIn} spent=${wiped.ledger.goldSpent}`)
-    // walk to the tavern (sel 0), hire the first fallen hero we find
+    // walk to the tavern threshold (tile 3, #1751), hire the first fallen hero we find
     await page.keyboard.press('KeyL')
     for (let i = 0; i < 4; i++) {
         const p = await probe()
         if (p.town && p.town.sel === 0) break
-        await page.keyboard.press('ArrowLeft')
+        await page.keyboard.press('ArrowRight')
         await wait(90)
     }
     await page.keyboard.press('Space')
