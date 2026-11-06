@@ -1,66 +1,85 @@
-# STATE — session 153 (2026-11-06, slot b)
+# STATE — session 153 (2026-11-06, slot a)
 
 ## What shipped
-**GRAVEL YARD ONLINE LOBBY SEATS (#1672) — PR #1675 squash-merged `985518e`, LIVE (prod chunk index-B7_VMAVK.js verified).** The never-dry stage:
-`weakestStage` scored GravelYard 7 (highest unheld on the shelf), its oldest
-unowned gap was "online seats through the lobby" (the kitchen #1291 pattern).
-- `?net=host` rolls a 4-letter room on the marquee; `?net=join&room=CODE`
-  seats a second browser that drives the TRUCK with its own arrows/pad
-  (phones work — VirtualControls dispatches the same primary keys). Host digs,
-  operator stays CPU; host can't start an empty room (seats checked before go).
-- Lockstep: sample once, D=8 ahead, never resample (`utils/lockstep.js`);
-  `hashState` referee every 30 ticks; desync/partner-left freezes with an
-  honest toast, Space returns to title. `sources()` reports the peer `remote`.
-- gravelcheck +11 gates: twin in-memory boxes over the real engine stay
-  hash-equal; a lost pad window stalls BOTH equally (nobody runs half a
-  moment); corrupted streams CAUGHT at the boundary. Mutant proven: wire-mask
-  bit flip in net.js → red, restore → green. 64/64 (GY_SKIP_BROWSER=1 —
-  #1622 still kills the browser half here).
-- Commits `819e87c` + `63ca938`. README gap-0 rewritten (3rd human seat open).
+**WATCH ON PHONES (#1656) — PR #1666 squash-merged `8314f65`, LIVE.** Resumed as
+a slot-a corpse (step 1b): the prior session died after opening the PR with main
+already past its base. Finished legs: union-rebase onto `88f1ba1` (#1664/#1662) across
+23 game files (attract ▶ WATCH × #1654 hints × #1653p1 insets); **fixed a latent
+crash** (BlobBattle attract guard read `net.active`, effect-local var — the attract
+screen would have thrown; now `!netUi`; watchphonecheck's textual net-guard accepted
+the broken form — eslint caught it); **found the true ship-blocker**: ci.yml carried a
+DUPLICATED `if:` key (auto-merge artifact) → GitHub refused to parse the workflow →
+ZERO check-runs → `static` never appeared and the rule-5 loop spun blind (runs
+1685/1688). Dedup + js-yaml validation of all 5 workflows. Pill geometry re-pinned
+across the two gates: pill 64×34→**112×44**, toast default 6.25→**6.75rem** (8px
+thumb gap under the taller pill), Emberwood toast 8.75→10rem; FloorBoss keeps BOTH
+laws (`calc(12.5rem + var(--sab))`).
+**DISSOLVE mutant fix (#1668) — PR #1674 squash-merged `5915ea9`, LIVE.** The
+accidental-merge aftermath below put `MagicCarpet/sim.js:179` on main as
+`crater(...) || Math.min(...)` — a lava bomb wearing a flood's clothes, CI-blind
+(carpetcheck ∈ MANUAL_CHECKS #1575). Restored the honest clamp per the #1668
+handoff; the four named gates (flood-locality, sink-depth, tower-cold-promise,
+RAISE counter-drain) green, mutant re-proven red→green.
 
-## Ship note
-GravelYard 2P is the shelf's first online co-op that is not a battle/race: hash-checked lockstep on a
-shared deterministic yard. Rule-4 counter cleared (game code merged).
-
-## Lane collisions resolved this session (#1258 pressure, worth remembering)
-- Warden split was a→#1668, b→#1656, but both slots resumed each other's
-  corpses. **#1656** (watch-phone): slot a's orphan merge loop spun blind ~1h —
-  root cause (found by b, fixed by a in `c11f16f`): the union-rebase left a
-  DUPLICATE `if:` key in ci.yml → invalid YAML → the workflow never started →
-  `static` absent → loop waited forever. b yielded cleanly; a merged; #1656 shipped.
-- **#1668** (MagicCarpet DISSOLVE): b's namespace claim but a resumed it; a's
-  commit `468e1b9` swept b's live carpetcheck MUTANT into HEAD (a
-  `crater(...) || Math.min(...)` line at sim.js:179 — carpetcheck reds 4 gates
-  on it). Warning + exact fix posted on #1668; CI will NOT catch it because
-  carpetcheck sits in MANUAL_CHECKS. **Whoever ships #1668: restore
-  `gs.heights[gi] = Math.min(gs.heights[gi], floor)` and run `npm run
-  carpetcheck` (expect 93 green) before merging.**
+## The lane-swap incident (full forensics on #1671)
+Warden swapped lanes mid-flight (a→#1668, b→#1656). Slot b correctly DECLINED to
+double-drive #1666 when it saw this lane's live loop. But this lane's FIRST rule-5
+loop outlived its harness tool-timeout (the timeout did not kill the shell chain),
+merged #1666 at 08:31:45, and the shim's `--delete-branch` detached the worktree;
+the lane, believing it had stopped, fired a SECOND merge from the detached tree —
+gh-shim's branch inference degraded to `head=jalfern:` (ignored filter) and squashed
+the newest OPEN PR, #1671 (static green, so nothing unproved shipped, wrong trigger).
+Hardening filed: **#1676** (refuse merge on detached HEAD / empty head-filter;
+treat ABSENT static after ~5 min as diagnose-red not pending; merge-loops take a
+lock; harness timeouts leave live children).
 
 ## Playable now
-GravelYard two-player across two browsers/phones with hash-verified lockstep.
-Plus everything before (WATCH pills, batch-4 watchers, watch-phone UX live).
+Phones: ▶ WATCH one-tap start+seat on 29 titles, solid 44pt pill, pause-menu WATCH
+row; MagicCarpet's 11th spell DISSOLVE floods and dissolves land honestly.
+
+## Gates as run
+eslint clean · lint:mario/fps/ai ✓ · build ✓ · watchphonecheck 244/244 ·
+watchpillcheck 115/115 (mutants both directions) · watchsoak 68 · sleepwatch 314 ·
+robokit/floorboss/claim/lane/runway/dailylog/vpad/padlayout/react/key OK ·
+ciscope 160 audited · carpetcheck sim arm all green (browser legs die on #1622
+React dup; Chrome boot fails here → shell+sp) · static SUCCESS on both merges.
+
+## Prod
+Bundle `index-B-_jQyev.js`; game chunk `index-atwCXBDy.js` = `LAND DISSOLVES` +
+`Math.min` clamp, zero `||Math.min(`; index carries `data-watch-attract`/`PLAY IT
+FOR ME`. Egress via `/tmp/forge/netenv.sh` proxy worked today (both markers + HTTP
+200). Live: /retrogames/magic-carpet, any watched title.
 
 ## Next (priority order)
-1. #1668 ship-safety (mutant line above) — it is slot a's; the warning is on the issue.
-2. #1637 batch 5 (slot a's lane per warden) — MagicCarpet DISSOLVE default DISSOLVE stands (#1645).
-3. watchcheck CI wiring one-liner (STATE 151/152 carry) — still open, still cheap.
-4. GravelYard 3rd human seat (operator) — README gap, natural follow-up to #1672.
+1. **#1676** (harness merge-safety) — QA/platform lane; do NOT let another lane
+   re-fire merges blindly after a timeout.
+2. #1637 batch 5 claim (`forge-claim.sh 1637 a`): Lode Runner-Lite, Arena Archery,
+   WWI Dogfight, DOS/IF remainder (Ultima/KQ via dosKeys). MagicCarpet's solver for
+   WATCH could ride a later batch (11 spells now; no planner yet).
+3. #1667 (QA holds): watchcheck CI wiring + phone-size section — clears STATE #151's
+   one-liner gap.
+4. #1612 remainder stands. #1645 is moot-but-open (DISSOLVE shipped; CLONE is the
+   natural 12th-spell candidate if Jon prefers it).
 
-## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-gravel-lobby-seats` — re-detach after merge;
-  node_modules in place. Dev server on 5178 was killed by port-collision earlier
-  (magiccarpet corpse server); nothing is on 5178 now unless this session's
-  background jobs left one — check before binding.
-- MagicCarpet DISSOLVE gates verified green (93/93 node) with the clamp line —
-  reusable knowledge for #1668 QA.
-- `git checkout -- <file>` in an uncommitted worktree destroys a whole harness
-  section — happened once this session; lost 20 minutes. Don't "clean" files
-  mid-check.
-- `. /tmp/forge/netenv.sh` before gh/jonq. Park STATE right after write:
-  `node scripts/statepark.mjs park b`.
-- Octal footgun: `[ "0830" -lt … ]` on `date +%H%M%S` loops forever (leading
-  zero = octal). Use `date -u +%s`.
+## Notes for the next slot-a session
+- 5173 STOPPED at end of session (was mine); magiccarpet worktree's dev server was
+  the same port. Reuse 5173 strictPort.
+- Worktrees reusable with node_modules: `~/Dev/retrogames-forge-watch-phone` (detached
+  at origin/main) and `~/Dev/retrogames-forge-magiccarpet-dissolve` (detached) —
+  branches deleted both ends; re-`-B` on next claim.
+- **Pass PR numbers explicitly** to gh-shim until #1676 lands; never trust branch
+  inference in a worktree another lane may have detached.
+- carpetcheck's browser legs need the dev server; the sim arm (the rule-bearing half)
+  runs regardless — CI won't run carpetcheck at all (#1575), so MagicCarpet rule
+  changes REQUIRE a local `npm run carpetcheck` before merge.
+- watchphonecheck greps the `#1656 — the forgotten-how-to-play tap` marker per game;
+  don't reword without updating the gate. Attract mounts assume Space-start +
+  Y-seat-at-+180ms; new multi-screen titles join SKIP_ATTRACT.
+- Two gates now model pill geometry (watchphonecheck + watchpillcheck @112×44, toast
+  6.75rem): change the pill in ONE place and update both pins.
+- `. /tmp/forge/netenv.sh` before gh/jonq/prod. Park STATE right after writing:
+  `node scripts/statepark.mjs park a`.
 
 ## Open questions
-Carried: #1645 (MagicCarpet 11th spell — default DISSOLVE, deadline 2026-11-08).
-None new this session.
+Links only (#605): #1645 (open, unlabeled, moot — default shipped; CLONE remains
+candidate). None new this session.
