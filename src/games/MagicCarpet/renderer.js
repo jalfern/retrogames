@@ -956,8 +956,10 @@ void main(){
     }
     let gs0 = null
 
+    // #1740: nine worlds over three atmospheres — cycle like the original's
+    // repeating campaign instead of clamping the ninth world to Frostbound.
     const applyPalette = (level) => {
-        const p = PAL[Math.min(level, PAL.length - 1)]
+        const p = PAL[level % PAL.length]
         tUniforms.uZenith.value.copy(v3(p.zenith))
         tUniforms.uFogCol.value.copy(v3(p.fog))
         tUniforms.uSunCol.value.copy(v3(p.sun))

@@ -1,4 +1,4 @@
-// carpetcheck.mjs — MAGIC CARPET proof: boots, rules hold, three worlds reach equilibrium.
+// carpetcheck.mjs — MAGIC CARPET proof: boots, rules hold, nine worlds reach equilibrium.
 //
 // Node-first (sim is pure), then a short real-browser pass via the game contract.
 // Run: npm run dev in another terminal, then `npm run carpetcheck`.
@@ -17,6 +17,7 @@ import {
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
     crumbleFeel, CRUMBLE_HEAR_R,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
+    SEL, selectTap, cursorStep,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -44,15 +45,70 @@ const d1 = run(7, 600), d2 = run(7, 600), d3 = run(8, 600)
 r.check('seed 7 twice → identical hash', stateHash(d1) === stateHash(d2), `${stateHash(d1)} vs ${stateHash(d2)}`)
 r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 
-// ---- three worlds: level progression and equilibrium
+// ---- nine worlds: level progression and equilibrium (#1740)
 {
-    const gs = run(7, 120000)
-    r.check('three worlds: seed 7 levels 1→2→3 and wins at the final quota',
-        gs.end === 'win' && gs.level === 2 && gs.levelClears === 2 && gs.bank >= gs.quota,
+    const gs = run(7, 300000)
+    r.check('nine worlds: seed 7 clears I→IX and wins at the final quota',
+        gs.end === 'win' && gs.level === LEVELS.length - 1 && gs.levelClears === LEVELS.length - 1 && gs.bank >= gs.quota,
         `end=${gs.end} level=${gs.level + 1} bank=${Math.floor(gs.bank)}/${gs.quota} tick=${gs.tick}`)
     r.check('banked vault (not carried mana) is what reaches the quota', gs.bank >= QUOTA, `bank=${Math.floor(gs.bank)} quota=${QUOTA}`)
-    const gs2 = run(88, 120000)
-    r.check('seed 88 also restores all three worlds', gs2.end === 'win' && gs2.level === 2, `end=${gs2.end} level=${gs2.level + 1}`)
+    const gs2 = run(88, 300000)
+    r.check('seed 88 also restores all nine worlds', gs2.end === 'win' && gs2.level === LEVELS.length - 1, `end=${gs2.end} level=${gs2.level + 1}`)
+}
+
+// ---- #1740 WORLDS: the campaign table, the economy floor and the select math
+{
+    r.check('nine named worlds, quotas/hoards/HP/pearls strictly escalate',
+        LEVELS.length === 9 && new Set(LEVELS.map((l) => l.name)).size === 9 &&
+        LEVELS.every((l, i) => i === 0 || (l.quota > LEVELS[i - 1].quota && l.hoard > LEVELS[i - 1].hoard &&
+            l.wizHp > LEVELS[i - 1].wizHp && l.pearls >= LEVELS[i - 1].pearls)),
+        LEVELS.map((l) => `${l.name}:${l.quota}`).join(' '))
+    r.check('supply floor: worst-case pearls (every one at the minimum m) + the wizard hoard already beat each quota',
+        LEVELS.every((l) => l.pearls * 2 + l.hoard >= l.quota),
+        LEVELS.map((l) => `${l.pearls * 2 + l.hoard}/${l.quota}`).join(' '))
+    r.check('QUOTA exports the final world (the win condition is the ninth vault)',
+        QUOTA === LEVELS[LEVELS.length - 1].quota, `QUOTA=${QUOTA}`)
+    r.check('makeGame pins every level, clamps out-of-range, and pins are deterministic',
+        LEVELS.every((l, n) => makeGame(7, n).level === n &&
+            stateHash(makeGame(7, n)) === stateHash(makeGame(7, n))) &&
+        makeGame(7, 99).level === LEVELS.length - 1 && makeGame(7, -5).level === 0 &&
+        stateHash(makeGame(7, 0)) !== stateHash(makeGame(7, 1)))
+    {
+        const gs = makeGame(3)
+        const seen = []
+        let i = 0
+        while (!gs.end && i < 300000) {
+            step(gs, autopilot(gs))
+            for (const e of gs.events) if (e.type === 'level') seen.push(e.name)
+            gs.events.length = 0
+            i++
+        }
+        r.check('a live campaign visits every world by name in order',
+            gs.end === 'win' && seen.join('|') === LEVELS.slice(1).map((l) => l.name).join('|'),
+            seen.join(' > ') || `end=${gs.end}`)
+    }
+    r.check('title select geometry: thumb-sized zones that never overlap and never fire between the arrows',
+        SEL.zw >= 44 && SEL.h >= 44 && SEL.zw * 2 < W &&
+        selectTap(2, SEL.y + 1) === 'prev' && selectTap(SEL.zw - 1, SEL.y + SEL.h - 1) === 'prev' &&
+        selectTap(W - 2, SEL.y + SEL.h - 1) === 'next' && selectTap(W - SEL.zw + 1, SEL.y + 1) === 'next' &&
+        selectTap(W / 2, SEL.y + SEL.h / 2) === null && selectTap(2, SEL.y - 1) === null && selectTap(W - 2, SEL.y + SEL.h + 1) === null)
+    r.check('the cursor cycles nine worlds both directions (never leaves the table)',
+        cursorStep(0, -1) === LEVELS.length - 1 && cursorStep(LEVELS.length - 1, 1) === 0 &&
+        cursorStep(4, -9) === 4 && cursorStep(4, 9) === 4 && cursorStep(4, 2) === 6)
+    {
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        r.check('the renderer CYCLES its three atmospheres over nine worlds (no clamp to the third)',
+            src.includes('PAL[level % PAL.length]') && !src.includes('PAL[Math.min(level'),
+            'source pin')
+    }
+    {
+        const src = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+        r.check('attract arrows move the cursor and any other start launches AT it (both key and pointer paths)',
+            (src.match(/startPlay\(selCur\)/g) || []).length === 2 &&
+            src.includes('cursorStep(selCur, -1)') && src.includes('cursorStep(selCur, 1)') &&
+            src.includes('selectTap(') && src.includes('paintSelect()'),
+            'source pin')
+    }
 }
 
 // ---- carrying an over-quota load does NOT win; only delivery does
@@ -239,7 +295,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     let t0 = total(gs)
     let spent = 0, bounty = 0
     let i = 0
-    while (!gs.end && i < 120000) {
+    while (!gs.end && i < 300000) {
         step(gs, autopilot(gs))
         for (const e of gs.events) {
             if (e.type === 'cast') spent += spellById(e.id).cost
@@ -529,10 +585,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         for (let s = 1; s <= 60; s++) {
             const gs = makeGame(s)
             let i = 0
-            while (!gs.end && i < 40000) { step(gs, autopilot(gs)); i++ }
+            while (!gs.end && i < 300000) { step(gs, autopilot(gs)); i++ }
             if (gs.end === 'win') { wins++; if (i > slowest) slowest = i }
         }
-        r.check('60-seed balance sweep: the autopilot still restores all three worlds, all 60 seeds',
+        r.check('60-seed balance sweep: the autopilot still restores all nine worlds, all 60 seeds',
             wins === 60, `wins ${wins}/60, slowest ${slowest} ticks`)
     }
 }
@@ -1856,6 +1912,61 @@ r.check('#1703 lite-GL: the crumble animates at low spec too (no 2D world exists
     liteProof.AC.changed >= 200 && liteProof.AC.changed - liteProof.AB.changed >= 200,
     `mid-window ${liteProof.AB.changed}px (mean ${liteProof.AB.mean}), landed ${liteProof.AC.changed}px, peak→settled ${liteProof.BC.changed}px`)
 r.info('#1703 premise', 'issue item 2\'s "non-WebGL 2D world" does not exist here: ?lite=1 is low-spec WebGL (antialias off, dpr cap 1, CAP_P 140); without WebGL createCarpetGL throws and no world draws. Proof above covers the real fallback path.')
+// ---- #1740 WORLD SELECT for real: arrows + Space, and a real touchscreen tap
+// on the thumb-sized chevrons at 390x844, both through the live attract screen
+// (the source pins above keep these honest in CI lite). Both legs ride the
+// phone page — degraded sandbox boots (chromeboot --single-process, #1622)
+// cannot open a second page, and keyboard works fine in a touch viewport.
+{
+    const DEV_URL = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet?seed=7`
+    const pErrs2 = []
+    phone.on('pageerror', (e) => pErrs2.push(e.message))
+    await phone.goto(DEV_URL, { waitUntil: 'load' })
+    await phone.waitForFunction(() => window.__carpetTest && window.__game, null, { timeout: 15000 })
+    await phone.waitForTimeout(500)
+    const s0 = await phone.evaluate(() => window.__carpetTest.probe())
+    await phone.keyboard.press('ArrowRight')
+    await phone.keyboard.press('ArrowRight')
+    await phone.waitForTimeout(150)
+    const s2 = await phone.evaluate(() => window.__carpetTest.probe())
+    await phone.keyboard.press('ArrowLeft')
+    await phone.waitForTimeout(150)
+    const s1 = await phone.evaluate(() => window.__carpetTest.probe())
+    r.check('#1740 attract arrows cycle the cursor (fresh=W1, ▶▶=W3, ◀=W2) and never start the game',
+        s0.screen === 'attract' && s0.sel === 0 && s2.sel === 2 && s1.sel === 1 && s1.screen === 'attract',
+        `sel ${s0.sel}->${s2.sel}->${s1.sel}, screen ${s1.screen}`)
+    await phone.keyboard.press('Space')
+    await phone.waitForTimeout(350)
+    const go = await phone.evaluate(() => window.__carpetTest.probe())
+    r.check('#1740 any-key start launches AT the cursor (seed-pinned world 2)',
+        go.screen === 'play' && go.level === 1 && go.seed === 7, `screen ${go.screen} level ${go.level + 1} seed ${go.seed}`)
+    r.check('#1740 keyboard select pass: zero page errors', pErrs2.length === 0, pErrs2.join(' | '))
+
+    await phone.goto(DEV_URL, { waitUntil: 'load' })
+    await phone.waitForFunction(() => window.__carpetTest && window.__game, null, { timeout: 15000 })
+    await phone.waitForTimeout(500)
+    const hud3 = await phone.evaluate(() => window.__carpetTest.hudRect())
+    const toCss3 = (hx, hy) => [hud3.left + (hx / W) * hud3.w, hud3.top + (hy / H) * hud3.h]
+    const ps0 = await phone.evaluate(() => window.__carpetTest.probe())
+    await phone.touchscreen.tap(...toCss3(W - SEL.zw / 2, SEL.y + SEL.h / 2))
+    await phone.waitForTimeout(150)
+    await phone.touchscreen.tap(...toCss3(W - SEL.zw / 2, SEL.y + SEL.h / 2))
+    await phone.waitForTimeout(150)
+    const ps2 = await phone.evaluate(() => window.__carpetTest.probe())
+    await phone.touchscreen.tap(...toCss3(SEL.zw / 2, SEL.y + SEL.h / 2))
+    await phone.waitForTimeout(150)
+    const ps1 = await phone.evaluate(() => window.__carpetTest.probe())
+    r.check('#1740 phone chevron taps cycle the world at 390px (real touchscreen, sim-routed zones)',
+        ps0.screen === 'attract' && ps0.sel === 0 && ps2.sel === 2 && ps1.sel === 1 && ps1.screen === 'attract',
+        `sel ${ps0.sel}->${ps2.sel}->${ps1.sel}`)
+    await phone.touchscreen.tap(...toCss3(W / 2, SEL.y + SEL.h / 2)) // between the plaques = a world tap: start
+    await phone.waitForTimeout(350)
+    const pgo = await phone.evaluate(() => window.__carpetTest.probe())
+    r.check('#1740 phone tap-to-start honors the cursor (world 2, seed pinned)',
+        pgo.screen === 'play' && pgo.level === 1 && pgo.seed === 7, `screen ${pgo.screen} level ${pgo.level + 1} seed ${pgo.seed}`)
+    r.check('#1740 phone select pass: zero page errors', pErrs2.length === 0, pErrs2.join(' | '))
+}
+
 await phone.close()
 await pBrowser.close()
 

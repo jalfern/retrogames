@@ -10,7 +10,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 
 - `sim.js` — the pure deterministic machine: seeded heightmap (value-noise fbm +
   three cones over a 512u wrapping map) that spells DEFORM (craters, flooding),
-  three worlds (`LEVELS`: quota, wizard hoard/HP, pearl count), carpet, monsters,
+  nine worlds (`LEVELS`: quota, wizard hoard/HP, pearl count), carpet, monsters,
   wizard, spells, vault economy, `autopilot()` (drives the attract demo AND the
   harness), `stateHash()`. No browser APIs in here — the harness imports it directly.
 - `art.js` — rect-composed pixel sprites (wizard, tower, castle stages, giant,
@@ -32,7 +32,9 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
   the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots + gold SPELLS tab with twelve-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with twelve-spell tray, WORLD n/9) + the
+  #1740 title WORLD SELECT (pulsing gold chevrons in the bottom corners, world name
+  between them, drawn on the HUD overlay only in attract), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -43,9 +45,20 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 - Death spills the pouch (`spilled`), the vault endures: with vault > 0 you
   respawn at the gates (high, shielded, 240-tick spawn-invulnerable); with an
   empty vault the flight ends.
-- Three worlds (`LEVELS`, quotas 115/160/175): banking the quota regenerates the
-  whole world (terrain, pearls, huts, monsters, fresh wizard hoard); spells
-  learned and the carried pouch transfer; clearing world 3 wins.
+- Nine worlds (`LEVELS`, quotas 115→265 in nine strict steps, #1740): banking the
+  quota regenerates the whole world (terrain, pearls, huts, monsters, fresh wizard
+  hoard); spells learned and the carried pouch transfer; clearing world 9 wins.
+- WORLD economy (#1740): every quota stays under what the pearls alone realistically
+  pay (~pearls × 3.5 against the 2..6 roll). The wizard hoard is BONUS, never a
+  dependency: at 0 mana on an exhausted land a hoard is not reliably cashable
+  (casting needs prepaid mana), and that is exactly where a hoard-dependent quota
+  soft-locks — seeds 41/54 proved it during the first 9-world sweep.
+- WORLD SELECT (#1740): on the title, ◀ ▶ (arrows or the pad) cycle a cursor through
+  the nine worlds and any other key/tap launches AT it; thumb-sized chevron zones at
+  the bottom corners of the HUD surface route through pure `selectTap`/`cursorStep`
+  in `sim.js` (Node-provable, ≥44 CSS px at 390px phone). The renderer CYCLES its
+  three atmospheres over the nine worlds (`PAL[level % PAL.length]`) — the original
+  reused its seasons across 45 levels the same way.
 - Terrain reshape: every blast punches a crater into the heightmap (`crater()`,
   quadratic falloff; fireball r14d10, lightning r10d8, tower fall r18d11).
   Craters sunk below WATER flood with the sea. Wizard death craters his tower.
@@ -217,7 +230,8 @@ source pin; (3) linear `sinkCurve`: exactly the ease-in gate goes red
 ```
 npm run dev                # another terminal
 npm run carpetcheck        # Node gates + a headless-Chrome pass + GPU-pass
-                           # gates: boot, determinism, three-world win,
+                           # gates: boot, determinism, nine-world win, the
+                           # WORLD SELECT table/economy/pins/geometry (#1740),
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
@@ -320,8 +334,10 @@ see item 5).
   Invisibility shipped #1610, volcano #1612 item 5, shatter + raise #1639,
   dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
   (clone/dissolve/shatter/volcano) is now fully shipped.
-- Three worlds, not the original's 45; no level-select or castle-spell menu;
-  scoring is banked mana + kills + clears + time bonus.
+- **PARTIAL by #1740:** the title carries a WORLD SELECT (◀ ▶ / chevron taps, nine
+  startable worlds) — but the campaign is nine worlds, not the original's 45, and
+  there is still no castle-spell menu; scoring is banked mana + kills + clears +
+  time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.
 - **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
   towers — every throw/fireball impact routes through `toppleTower()` inside
@@ -344,6 +360,33 @@ see item 5).
 - Fog is per-object/per-vertex distance mix, not a true aerial-perspective
   gradient with altitude; clouds are two dome layers that cast a drifting
   shadow on the land, not volumetric bodies.
+
+## #1740 nine worlds + WORLD SELECT (2026-11-06, forge slot b)
+
+- `LEVELS` 3 → 9: named arcs VERDANT ISLES → EMBERWILD → FROSTBOUND → GREENFALL →
+  SCORCHED SKY → GLACIER MAW → LIVING MOOR → LAST EMBER → THE LAST SKY; quotas
+  115→265, hoards 80→215, wizHp 60→185, pearls 56→92. Sim physics untouched —
+  wolves already scaled with `4 + gs.level`, the HUD already read `LEVELS.length`.
+- Balance history: the first curve (quotas to 295) stalled seeds 41/54 at world 9
+  (all pearls eaten, pouch 0, hoard 260 behind 17 monsters — hoard not cashable at
+  0 mana). The economy policy above came out of that; after: **60/60 seeds win all
+  nine worlds, slowest 96,571 ticks.**
+- Harness: WORLDS section (named table + strict escalation, supply floor
+  `pearls*2 + hoard ≥ quota`, QUOTA=world 9, level pins/clamp/determinism, live
+  campaign name order, select-zone geometry + cursor wrap, renderer-cycle and
+  attract-routing source pins) + real-browser gates (arrows cycle the cursor and
+  never start; any-key starts AT the cursor seed-pinned; 390x844 touchscreen
+  chevron taps cycle then tap-to-start honors the cursor). carpetcheck: 176/180 —
+  the 4 reds are the local degraded-Chrome pixel family (#1622; main's baseline
+  emits the identical signatures on this box).
+- Mutants (all restored, each caught exactly): freeze the win at level 3 → the
+  three progression gates go red, sweep still 60/60 (correct: the mutant wins, it
+  just stops early); re-clamp `PAL[Math.min…]` → only the cycle source pin; kill
+  selectTap's `next` zone → the geometry gate + both phone tap gates (`sel
+  0->0->0`).
+- Harness lesson (#1622 box): the pixel gates (sky/texture/same-tick/rotate-hint)
+  fail in a RANDOM subset even on untouched main here — run the baseline carpetcheck
+  before blaming a pixel-gate failure on your branch. State-based gates held green.
 
 ## #1090 polish (2026-10-25, QA)
 
