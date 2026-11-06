@@ -65,6 +65,11 @@ jobs:
           cache: npm
       - run: npm ci
         if: needs.scope.outputs.docs != 'true'
+      # #1676 hole 2: an unparseable ci.yml (e.g. duplicated `if:` from an
+      # auto-merge) produces ZERO check-runs and every rule-5 static-wait spins
+      # blind. Fail here, loudly, instead.
+      - run: npm run ciyamlcheck
+        if: needs.scope.outputs.docs != 'true'
       - run: npm run lint:mario
         if: contains(fromJSON(env.KEYS), 'mario')
       - run: npm run lint:fps
