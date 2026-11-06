@@ -17,6 +17,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
 import { pressSlot, releaseSlot, slotActive, clearSlot, currentPad, connectedSlots } from '../../utils/onePad'
 import { buildSprites, buildFloor } from './art.js'
@@ -48,6 +50,8 @@ const SmashTVGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven brain runs seat 1
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -230,7 +234,9 @@ const SmashTVGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { pollSeatPad2(); tickDemo(); return }
             if (sc !== 'play') return
-            const inp = computeInput()
+            // #1637 WATCH: seat 1 runs the same twin-stick brain smashcheck
+            // audits through nine rooms; seat 2 keeps whatever it has.
+            const inp = watchingRef.current ? padToInp(decidePad(gs, 0)) : computeInput()
             let inp2 = null
             if (p2slot.kind !== 'off' && gs.players.length > 1) {
                 const pad = modelP2 || padFor(p2slot, { method: 'stick', tick: gs.tick })
@@ -707,6 +713,7 @@ const SmashTVGame = () => {
             // arena (rng derives from any integer seed); unpin = the original 0..96 roll.
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin >>> 0 : Math.floor(Math.random() * 1000) % 97, { players: seatMode === 'off' ? 1 : 2 })
+            watchingRef.current = false; setWatching(false) // #1637 a new show starts with the stick in your hand
             floor = buildFloor(0, gs.seed)
             demoAt = 0
             roomTotal = 0; roomBump = 0; clearedAt = -1
@@ -732,6 +739,10 @@ const SmashTVGame = () => {
                 p2Keys.add(ev.code)
                 return
             }
+            // #1637 WATCH: Y seats the proven brain in seat 1; any seat-1 key takes it back.
+            // (Seat 2 keys returned above — your partner keeps their seat.)
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ', 'KeyI', 'KeyJ', 'KeyK', 'KeyL'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
         }
@@ -770,6 +781,7 @@ const SmashTVGame = () => {
                 pad2release: (field) => releaseSlot(2, field),
                 stepP2: (pad) => { if (p2slot.kind !== 'off' && gs.players.length > 1) doSim({ mx: 0, my: 0, fire: false, bomb: false }, seatPadToInp(pad)) },
                 start: () => startPlay(),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover running seat 1?
                 start2P: (seed = 0, kind = 'cpu') => { setSeat(kind); gs = makeGame(seed >>> 0, { players: 2 }); floor = buildFloor(0, gs.seed); demoAt = 0; roomTotal = 0; roomBump = 0; clearedAt = -1; setMode('play') },
                 plan: (seed = 0, opts) => plan(seed, opts),
                 events: () => evLog,
@@ -879,6 +891,17 @@ const SmashTVGame = () => {
                 <span>ROOM <span ref={setHud('room')} className="text-[#e9f7ff]">1/9</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#ff5d5d]">3</span></span>
             </div>
+            {/* #1637 WATCH — the proven brain runs seat 1; any seat-1 input takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls
                 visible={screen === 'play' && !paused}
                 secondAction={{ label: 'BOMB', code: 'KeyB' }}
