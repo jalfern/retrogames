@@ -85,10 +85,27 @@ routes through the wind law"); restore afterwards.
 
 ## Honest gaps (first follow-ups)
 
-1. The ladder has no wind-noise cue yet: seat 3 reads gales from the HUD
-   vane and the ladder physics, not from sound.
+- Wind-noise cue for the ladder seat — **CLOSED by #1744** (`windVoice(gust)`
+  and `ladderCreak(gust, ladder)` in `sim.js` — pure, rng-free, so replays and
+  hashes are untouched): calm is silence, a breeze a soft low bed, a gale loud,
+  deep and long; the creak is the load moan of a gale bending a ladder past 0.4,
+  heavier as the ladder tops out. `index.jsx` overlaps `playFilteredNoise` bursts
+  at 85% of the voice duration so the wind reads continuous, and moans the creak
+  every ~0.7–1.2 s while the load holds. `firecrewcheck` +8 gates (calm silence,
+  monotone loudness/brightness, rng-free, creak needs both, moan shape, and two
+  src pins that the shell routes through the sim voices, never its own numbers);
+  `firecrewplay` +4 browser gates on real rAF ticks (breeze lays the bed, gale +
+  extended ladder howls and creaks, calm silences both, live-shift guard).
+  Mutants (one line each, in `sim.js`):
+  - bed: `sed -i '' 's/gust >= 2 ? { vol: 0.085/gust >= 2 ? { vol: 0/' src/games/FireCrew/sim.js`
+    — "the bed gets louder as the wind rises" goes red.
+  - creak: `sed -i '' 's/gust >= 2 && ladder > 0.4/false/' src/games/FireCrew/sim.js`
+    — the two creak gates go red.
+  - routing: swap `windVoice(g.wind.gust)` in `index.jsx` for a literal voice —
+    the bed src pin goes red.
 
-Shipped since the first pass:
+## Shipped since the first pass
+
 - **#1440 — night art pass (gap 4):** flame palette per fuel (loft decking
   burns heavy-timber amber, ground crates burn white-hot), gale shifts throw
   bright ember streaks downwind (gust 2 only, calm never), and a starving

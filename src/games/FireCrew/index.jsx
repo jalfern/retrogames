@@ -15,7 +15,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { audioController } from '../../utils/AudioController'
-import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio } from './sim.js'
+import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak } from './sim.js'
 import { parseRadio } from './voiceradio.js'
 import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -34,6 +34,10 @@ const sfx = {
     up: () => audioController.playTone(300, 0.05, 'square', 0.04),
     pump: () => audioController.playTone(140, 0.06, 'square', 0.05),
     wind: () => audioController.playSweep(90, 220, 0.6, 'triangle', 0.05),
+    // #1744 — sustained wind bed and ladder load-creak; params come from the
+    // sim-side pure voices (windVoice / ladderCreak), never from the shell.
+    windBed: (v) => audioController.playFilteredNoise(v.dur, v.vol, v.freq),
+    windCreak: (c) => audioController.playSweep(c.f0, c.f1, c.dur, 'sawtooth', c.vol),
     win: () => [523, 659, 784, 1046].forEach((f, i) => audioController.playTone(f, 0.16, 'square', 0.09, i * 0.12)),
     lose: () => [392, 330, 262, 196].forEach((f, i) => audioController.playTone(f, 0.22, 'square', 0.08, i * 0.16)),
     move: () => audioController.playTone(520, 0.05, 'square', 0.05),
@@ -67,6 +71,13 @@ export default function FireCrew() {
     const keys2Ref = useRef({})
     const keys3Ref = useRef({})
     const prevRef = useRef(null)
+    // #1744 — wind bed scheduling: the overlap tick is when the next bed
+    // burst may fire (0.85·dur keeps the whoosh continuous with no gap);
+    // lastBed/lastCreak are what the browser gate reads back.
+    const windBedAtRef = useRef(0)
+    const windCreakAtRef = useRef(0)
+    const lastBedRef = useRef(null)
+    const lastCreakRef = useRef(null)
     // voice radio (#1361): the mic is a seat, like any slot — consent first
     // (never auto-asked), one raw track for the whole run, spoken calls feed
     // the sim through applyRadio so the mic can never beat the darkness.
@@ -83,6 +94,10 @@ export default function FireCrew() {
         voiceRef.current.track = null // fresh run, fresh voice
         gsRef.current = setSources(makeRun(seed >>> 0 || 1), src)
         prevRef.current = null
+        windBedAtRef.current = 0
+        windCreakAtRef.current = 0
+        lastBedRef.current = null
+        lastCreakRef.current = null
         seatsRef.current = n
         setSeats(n)
         setEnd(null)
@@ -138,6 +153,21 @@ export default function FireCrew() {
         g.crew.forEach((c, i) => { if (c.knocks > p.knocks[i]) sfx.knock() })
         if (g.ladder < p.ladder - 0.5) sfx.slip()
         if (g.wind.gust > p.gust) sfx.wind()
+        // #1744 — the sustained bed: gusts are heard, not just read off the
+        // HUD vane. Short filtered-noise bursts overlapped at 85% of the
+        // voice duration read as one wind; the creak is the ladder loaded up.
+        const wv = windVoice(g.wind.gust)
+        if (wv.vol > 0 && g.tick >= windBedAtRef.current) {
+            sfx.windBed(wv)
+            lastBedRef.current = { tick: g.tick, vol: wv.vol, freq: wv.freq }
+            windBedAtRef.current = g.tick + Math.round(wv.dur * 60 * 0.85)
+        }
+        const cr = ladderCreak(g.wind.gust, g.ladder)
+        if (cr && g.tick >= windCreakAtRef.current) {
+            sfx.windCreak(cr)
+            lastCreakRef.current = { tick: g.tick, vol: cr.vol }
+            windCreakAtRef.current = g.tick + 40 + Math.round((1 - g.ladder) * 30)
+        }
         if (g.messageT > p.msgT + 100 && /LADDER/.test(g.message)) sfx.slip()
         if (Math.abs(g.ladder - p.ladder) > 0.001 && g.tick % 12 < 2) sfx.pump()
         prevRef.current = { rescued: g.rescued, lost: g.lost, knocks: g.crew.map((c) => c.knocks), msgT: g.messageT, ladder: g.ladder, gust: g.wind.gust, tick: g.tick }
@@ -383,6 +413,32 @@ export default function FireCrew() {
                         x: v.x, y: v.y, loft: v.loft, state: v.state,
                         walkable: !!stepToward(g, g.crew[1].x, g.crew[1].y, v.x, v.y, v.loft && g.ladder > 0.9),
                     }))
+                },
+                // #1744 — what the wind voices computed and what the shell last
+                // fired, so the browser gate can pin bed/creak on real ticks.
+                windSpy: () => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    return {
+                        gust: g.wind.gust, ladder: g.ladder, done: !!g.done,
+                        voice: windVoice(g.wind.gust),
+                        creak: ladderCreak(g.wind.gust, g.ladder),
+                        bed: lastBedRef.current,
+                        creakFired: lastCreakRef.current,
+                    }
+                },
+                // force the wind state for the gate (a gale the seed has not
+                // rolled yet, a ladder held at any extension) and clear the
+                // fired-spies so the gate only sees what happens after forcing
+                windForce: (gust, ladder) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    g.wind.gust = gust
+                    g.wind.next = g.tick + 99999 // hold the forced level steady
+                    if (ladder != null) g.ladder = ladder
+                    lastBedRef.current = null
+                    lastCreakRef.current = null
+                    return { tick: g.tick, gust: g.wind.gust, ladder: g.ladder, done: !!g.done }
                 },
             }
             mountDbg({
