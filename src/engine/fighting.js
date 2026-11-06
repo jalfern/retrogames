@@ -279,6 +279,9 @@ function updateFighter(m, f, opp, pad) {
             else if (f.phase === 'active' && f.sf >= move.active) { f.phase = 'recovery'; f.sf = 0 }
             else if (f.phase === 'recovery' && f.sf >= move.recovery) { f.st = f.y > 0 ? 'jump' : 'idle'; f.sf = 0; f.move = null }
             if (f.y === 0) f.vx *= 0.7
+            // travel: a committed rush drives forward through startup+active so
+            // multi-hit moves keep contact with the victim (#1699)
+            if (move.travel && (f.phase === 'startup' || f.phase === 'active')) f.vx = move.travel * f.facing
             if (f.move && f.move.startsWith('rdp') && f.phase === 'startup' && f.sf === move.startup - 1) { f.vy = 0.105 }
             if (f.move && f.move === 'qcf_S' && f.phase === 'startup') f.vx = 0.05 * f.facing
             // cancels: a landed/blocked hit opens the gate for a stronger move
@@ -378,13 +381,20 @@ function overlap(a, b) {
 }
 
 function resolveHit(m, atk, def, move, seq) {
+    // multi-hit moves (#1699): `hits` caps what one move may score, `rehit`
+    // spaces the hits. Non-final hits push soft so the rush keeps contact;
+    // the final hit pushes (and launches) with full force. Absent fields ⇒
+    // exactly the old single-hit behavior.
+    const maxHits = move.hits || 1
+    const lgPrev = atk.hitOnce[seq]
+    const finalHit = lgPrev ? lgPrev.n + 1 >= maxHits : true
     const blocked = def.blockHeld && def.y === 0 && move.type !== 'throw' &&
         def.st !== 'down' && def.st !== 'getup' && def.st !== 'hitstun' && def.st !== 'hitair' && def.st !== 'crush' &&
         (!move.low || def.crouchBlock) && (!move.overhead || !def.crouchBlock)
     const raw = move.dmg
     if (blocked) {
         def.st = 'blockstun'; def.stun = move.blockstun; def.sf = 0
-        def.vx = move.push * 0.5 * (def.facing === 1 ? -1 : 1)
+        def.vx = move.push * (maxHits > 1 && !finalHit ? 0.15 : 0.5) * (def.facing === 1 ? -1 : 1)
         def.meter = Math.min(100, def.meter + raw * 0.35)
         atk.meter = Math.min(100, atk.meter + raw * 0.4)
         if (move.type !== 'throw' && move.dmg >= 9) def.hp = Math.max(1, def.hp - 1)
@@ -412,8 +422,8 @@ function resolveHit(m, atk, def, move, seq) {
         atk.comboTimer = 60
         def.hp = Math.max(0, def.hp - raw)
         def.st = 'hitstun'; def.stun = move.hitstun; def.sf = 0
-        def.vx = move.push * atk.facing * (m.juggle && (airborne || move.launch) ? 0.3 : 1)
-        if (move.launch) { def.vy = move.launch; def.y = Math.max(def.y, 0.01) }
+        def.vx = move.push * atk.facing * (m.juggle && (airborne || move.launch) ? 0.3 : maxHits > 1 && !finalHit ? 0.3 : 1)
+        if (move.launch && finalHit) { def.vy = move.launch; def.y = Math.max(def.y, 0.01) }
         if (m.juggle && airborne) {
             def.juggled++
             def.vy = Math.max(def.vy, 0.06)
@@ -432,7 +442,20 @@ function resolveHit(m, atk, def, move, seq) {
             m.banner = 'FINISH!'
         } else if (def.hp <= 0) koRound(m, atk)
     }
-    if (atk.st === 'attack') atk.hitOnce[seq] = true
+    if (atk.st === 'attack') {
+        const lg = atk.hitOnce[seq] || (atk.hitOnce[seq] = { n: 0, last: -99 })
+        lg.n++; lg.last = m.tick
+    }
+}
+
+// re-hit gate (#1699): a logged hit no longer hard-blocks the box — the move
+// may score again while under `hits` and at least `rehit` match-ticks have
+// passed since its last registered hit (hitstop ticks count, so a rattling
+// super re-arms right as the freeze clears).
+function canHit(lg, mv, tick) {
+    if (!lg) return true
+    if (lg.n >= (mv.hits || 1)) return false
+    return tick - lg.last >= (mv.rehit || 6)
 }
 
 function koRound(m, winner) {
@@ -648,7 +671,7 @@ export function step(m, pads) {
         if (!box) continue
         if (atk.move && atk.def.moves[atk.move].type === 'throw' && Math.abs(def.x - atk.x) > THROW_RANGE) continue
         const hb = hurtBox(def)
-        if (overlap(box, hb) && !atk.hitOnce[i] && def.st !== 'down' && def.st !== 'win' && def.st !== 'lose' && def.st !== 'getup') {
+        if (overlap(box, hb) && def.st !== 'down' && def.st !== 'win' && def.st !== 'lose' && def.st !== 'getup' && canHit(atk.hitOnce[i], atk.def.moves[atk.move], m.tick)) {
             resolveHit(m, atk, def, atk.def.moves[atk.move], i)
         }
     }

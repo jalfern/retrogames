@@ -27,7 +27,7 @@ const defs = [
                 { startup: 8, dmg: 16, projectile: { name: 'ember', speed: 0.26, dmg: 16, hitstun: 24, blockstun: 14, ttl: 220, super: true } }),
             ...sp({ key: 'dp', move: { type: 'special', startup: 3, active: 8, recovery: 20, dmg: 10, hitstun: 20, blockstun: 12, push: 0.1, launch: 0.11, box: [0.25, 0.7, 1.45, 2.25] } },
                 { dmg: 13, launch: 0.12 },
-                { startup: 2, dmg: 18, launch: 0.135, super: true }),
+                { startup: 2, dmg: 7, hits: 3, rehit: 5, active: 11, launch: 0.135, super: true }),
         },
     },
     {
@@ -44,7 +44,7 @@ const defs = [
                 { startup: 7, dmg: 14, projectile: { name: 'sting', speed: 0.34, dmg: 14, hitstun: 22, super: true } }),
             ...sp({ key: 'dp', move: { type: 'special', startup: 3, active: 7, recovery: 18, dmg: 8, hitstun: 18, push: 0.1, launch: 0.1, box: [0.2, 0.65, 1.35, 2.15] } },
                 { dmg: 11 },
-                { dmg: 16, launch: 0.12 }),
+                { dmg: 8, hits: 2, rehit: 5, active: 7, launch: 0.12 }),
         },
     },
     {
@@ -60,7 +60,7 @@ const defs = [
                 { dmg: 20 },
                 { dmg: 28, launch: 0.12 }),
             ...sp({ key: 'charge', move: { type: 'special', startup: 6, active: 4, recovery: 22, dmg: 13, hitstun: 20, blockstun: 12, push: 0.2, launch: 0.07, box: [0.4, 0.7, 1.9, 1.7] } },
-                { dmg: 16 }, { dmg: 22 }),
+                { dmg: 16 }, { dmg: 11, hits: 2, rehit: 5, active: 6 }),
         },
     },
     {
@@ -75,7 +75,7 @@ const defs = [
                 { dmg: 10, projectile: { name: 'hex', speed: 0.17, dmg: 10, ttl: 240 } },
                 { dmg: 15, projectile: { name: 'hex', speed: 0.2, dmg: 15, hitstun: 22, ttl: 280, super: true } }),
             ...sp({ key: 'charge', move: { type: 'special', startup: 7, active: 5, recovery: 24, dmg: 12, hitstun: 20, blockstun: 12, push: 0.18, launch: 0.09, box: [0.35, 0.6, 2.0, 1.6] } },
-                { dmg: 15 }, { dmg: 20 }),
+                { dmg: 15 }, { dmg: 10, hits: 2, rehit: 5, active: 6 }),
         },
     },
     {
@@ -87,11 +87,11 @@ const defs = [
         walkMul: 1.1,
         specials: { qcf: { ex: true, super: true }, dp: { ex: true, super: true } },
         moves: {
-            ...sp({ key: 'qcf', move: { type: 'special', startup: 6, active: 5, recovery: 18, dmg: 9, hitstun: 16, blockstun: 10, push: 0.1, box: [0.45, 0.9, 1.85, 1.6] } },
-                { dmg: 12, active: 6 },
-                { startup: 4, dmg: 17, active: 7, launch: 0.09 }),
+            ...sp({ key: 'qcf', move: { type: 'special', startup: 6, active: 8, recovery: 18, dmg: 5, hits: 2, rehit: 4, travel: 0.05, hitstun: 16, blockstun: 10, push: 0.1, box: [0.45, 0.9, 1.85, 1.6] } },
+                { dmg: 5, active: 9, hits: 3, rehit: 4, travel: 0.055 },
+                { startup: 4, dmg: 5, active: 13, hits: 4, rehit: 4, travel: 0.06, launch: 0.09 }),
             ...sp({ key: 'dp', move: { type: 'special', startup: 3, active: 7, recovery: 19, dmg: 9, hitstun: 19, push: 0.1, launch: 0.1, box: [0.2, 0.7, 1.4, 2.2] } },
-                { dmg: 12 }, { dmg: 17 }),
+                { dmg: 12 }, { dmg: 6, hits: 3, rehit: 5, active: 11 }),
         },
     },
     {
@@ -107,7 +107,7 @@ const defs = [
                 { dmg: 8, projectile: { name: 'seed', speed: 0.26, dmg: 8 } },
                 { dmg: 13, projectile: { name: 'seed', speed: 0.3, dmg: 13, hitstun: 20, super: true } }),
             ...sp({ key: 'dp', move: { type: 'special', startup: 4, active: 9, recovery: 16, dmg: 9, hitstun: 18, push: 0.1, launch: 0.06, box: [0.2, 0.55, 1.5, 2.05] } },
-                { dmg: 12 }, { dmg: 16 }),
+                { dmg: 12 }, { dmg: 6, hits: 3, rehit: 5, active: 11 }),
         },
     },
 ]
