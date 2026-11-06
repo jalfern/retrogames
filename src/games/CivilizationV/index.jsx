@@ -300,6 +300,7 @@ const CivilizationVGame = () => {
         const finish = (win) => {
             const why = gs.endWhy || ''
             const type = /Domination/.test(why) ? 'domination' : /Science/.test(why) ? 'science' : /Culture/.test(why) ? 'culture' : win ? 'golden' : 'fall'
+            watchingRef.current = false; setWatching(false) // #1656 pattern: watch never lingers past the end of a run (#1705-nightly-fix)
             panelOpenRef.current = false; setPanelOpen(false); setEnd({ win, why, turn: gs.turn, size: capSize(), domination: type === 'domination', type }); overAtRef.current = performance.now(); setMode('over'); if (win) audioController.playFanfare(); else audioController.playDeath()
         }
         const capSize = () => { const cap = gs.cities.find((c) => c.civ === 0 && c.capital); return cap ? cap.size : 0 }

@@ -280,18 +280,31 @@ const SimCityMinGame = () => {
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
 
-        // #1637: seat only where the live city still IS the witness — replay the
-        // plan into a scratch city to gs.tick and compare hashes. A player who
-        // only panned or waited stays on the proven line; a placed zone departs it.
+        // #1637 batch 7: the honest junction, watch-from-here. The old receipt
+        // replayed the PLAN prefix into a scratch city and demanded the live
+        // city match it — but the planner spends from tick ~10, so a city whose
+        // player only waited could never match: the seat was dead code, and Y
+        // never once seated a fresh city in CI. The sim is fully deterministic
+        // (sim.js: zero Math.random), so the honest rule is two-part: (1) the
+        // player must not have departed the witness line — any zone placement,
+        // tool change or tax move makes the live city differ from a pure-idle
+        // replay of the same tick (cursor panning is you looking, not driving);
+        // (2) on a match, the live city adopts the witness run's exact state at
+        // this tick (grid, funds, inbox, clock — everything the remaining script
+        // was proven against). Nothing improvised: from the swap the rest of the
+        // script replays state-for-state exactly as citycheck grades it.
         const seatWatch = () => {
             const run = demoRun(gs.sc)
             const n = Math.min(gs.tick, run.length)
-            if (gs.end || n >= run.length) return false
+            if (gs.end || n >= run.length) return null
+            const gi = newCity(gs.sc)
+            for (let i = 0; i < n; i++) step(gi, {})
+            gi.cursor = { x: gs.cursor.x, y: gs.cursor.y }   // panning is looking, not driving
+            if (stateHash(gi) !== stateHash(gs)) return null
             const g2 = newCity(gs.sc)
             for (let i = 0; i < n; i++) step(g2, run[i])
-            if (stateHash(g2) !== stateHash(gs)) return false
-            watchRun = run; watchAt = n
-            return true
+            g2.cursor = { x: gs.cursor.x, y: gs.cursor.y }
+            return { city: g2, run, at: n }
         }
 
         const onDown = (e) => {
@@ -312,8 +325,11 @@ const SimCityMinGame = () => {
             if (isWatchKey(e)) {
                 if (sc === 'play') {
                     if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1654
-                    else if (seatWatch()) { watchingRef.current = true; setWatching(true); playWatchStart(); say('THE PLANNER RUNS THE CITY') } // #1654
-                    else say('ONLY A CITY THAT MATCHES THE PROVEN PLAN CAN WATCH') // #1654 the decline names the rule
+                    else {
+                        const seat = seatWatch()   // #1637 batch 7: witness-state swap, or the honest decline
+                        if (seat) { gs = seat.city; watchRun = seat.run; watchAt = seat.at; watchingRef.current = true; setWatching(true); playWatchStart(); say('THE PLANNER RUNS THE CITY') } // #1654
+                        else say('ONLY A CITY THAT MATCHES THE PROVEN PLAN CAN WATCH') // #1654 the decline names the rule
+                    }
                 }
                 return
             }

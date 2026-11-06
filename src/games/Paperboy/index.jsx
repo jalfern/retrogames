@@ -25,6 +25,10 @@ import { PRESS, MESSAGES } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
+// #1637 batch 7: world ticks a stage may have elapsed and STILL be the junction
+// the fixed-v script was proven at. 3 s is generous for a slow CI box pressing
+// Space→Y and far short of a stage (~2600 ticks).
+const SEAT_GRACE = 180
 const YB = 186                 // screen y of the boy (t = 0)
 const Y0 = 74                  // horizon
 const LOOK = 320               // how far ahead the road is drawn
@@ -60,6 +64,7 @@ const PaperboyGame = () => {
     const canSeatRef = useRef(true)
     const stageStartRef = useRef(0) // tick the current stage began (the route's junction)
     const lastSiRef = useRef(0)
+    const droveRef = useRef(false) // #1637 batch 7: any drive input since the junction — the road left the witness line
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
@@ -143,7 +148,7 @@ const PaperboyGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            if (gs.si !== lastSiRef.current) { lastSiRef.current = gs.si; stageStartRef.current = gs.tick }
+            if (gs.si !== lastSiRef.current) { lastSiRef.current = gs.si; stageStartRef.current = gs.tick; droveRef.current = false } // #1637 batch 7: a new stage is a fresh junction
             // #1637 WATCH: the flat solveGame script, indexed by stage-local tick —
             // a SCRIPT-INDEX JUNCTION. Valid only while the road scroll still matches
             // the witness (pedal mid, no crash); off the line, Y says no guide.
@@ -158,7 +163,7 @@ const PaperboyGame = () => {
             // #1650: mirror the seat rule on the pill — grey it while Y would only
             // answer NO_GUIDE (off a witness-synced stage junction).
             const rr = provenRun().receipts[gs.si]
-            const okSeat = !!rr && stageStartRef.current === rr.tStart
+            const okSeat = !!rr && stageStartRef.current === rr.tStart && gs.tick - rr.tStart <= SEAT_GRACE && !droveRef.current // #1637 batch 7: mirror the honest junction on the pill
             if (okSeat !== canSeatRef.current) { canSeatRef.current = okSeat; setCanSeat(okSeat) }
             const steer = keys.r ? 1 : keys.l ? -1 : 0
             if (steer) lastDir = steer
@@ -424,7 +429,7 @@ const PaperboyGame = () => {
             evLog.length = 0; part.length = 0
             keys.l = keys.r = keys.u = keys.d = false
             throwQ = null; lastDir = -1
-            watchingRef.current = false; setWatching(false); stageStartRef.current = 0; lastSiRef.current = 0 // #1637 a new route starts with the bars in your hands
+            watchingRef.current = false; setWatching(false); stageStartRef.current = 0; lastSiRef.current = 0; droveRef.current = false // #1637 a new route starts with the bars in your hands
             canSeatRef.current = true; setCanSeat(true) // #1650 fresh route = seat available at the line
             setMode('play')
             say(STAGES[0].name.toUpperCase())
@@ -441,16 +446,23 @@ const PaperboyGame = () => {
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y seats the proven pedal-line — only at a stage junction
             // where the road still matches the witness; mid-stage it honestly declines.
+            // #1637 batch 7: stage 0's junction is tick 0, so "junction" said YES at
+            // every mid-stage re-seat — the one case this gate exists to refuse. The
+            // junction is honest only when the stage is freshly entered (elapsed
+            // within grace — world ticks, CI-safe) AND nobody has steered since
+            // (droveRef): the pedal-line is a witness route, not a suggestion.
             if (isWatchKey(e)) {
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1654
                 else {
                     const r = provenRun().receipts[gs.si]
-                    if (r && stageStartRef.current === r.tStart) { watchingRef.current = true; setWatching(true); playWatchStart() } // #1654
+                    const fresh = r && stageStartRef.current === r.tStart && gs.tick - r.tStart <= SEAT_GRACE && !droveRef.current
+                    if (fresh) { watchingRef.current = true; setWatching(true); playWatchStart() } // #1654
                     else say(NO_GUIDE)
                 }
                 return
             }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
+            droveRef.current = true // #1637 batch 7: from here the road is yours, not the witness's
             if (e.code === 'ArrowLeft') { keys.l = true; lastDir = -1 }
             if (e.code === 'ArrowRight') { keys.r = true; lastDir = 1 }
             if (e.code === 'ArrowUp') keys.u = true

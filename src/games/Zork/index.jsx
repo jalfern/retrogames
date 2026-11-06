@@ -372,6 +372,14 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
       // the player taking the wheel mid-command — both paths hand back.
       if (canWatch && isWatchKey(e)) {
         e.preventDefault()
+        // #1637 batch 7: RELEASE CONSUMES THE KEYSTROKE. React 19 flushes the
+        // aiOn=false commit in a microtask checkpoint *after this capture-phase
+        // listener*, while the same keydown is still propagating — the seat
+        // listener (bubble) attaches mid-dispatch and would re-seat the brain
+        // for the very Y that just released it (watchcheck: "stop,start" on one
+        // press). stopImmediatePropagation is the only thing that survives a
+        // listener added later in the same dispatch: the toggle is one action.
+        e.stopImmediatePropagation()
         stopAi('you stopped watching')
         playWatchStop()
         setAiNote('watch off — press Y or PLAY to seat the brain again')

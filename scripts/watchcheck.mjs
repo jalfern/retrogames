@@ -36,6 +36,24 @@ function readRoster(rel) {
     return readFileSync(rel, 'utf8')
 }
 
+// Nightly #40 lesson: CI's software-rendered Chrome can starve the frame clock
+// for seconds, and a single probe at the end of a fixed window calls a healthy
+// prover "no progress" (iron-ring/SSX 0-progress FAILs that pass locally every
+// time, and a stale dev server can fake the same verdict). Poll instead: sleep
+// the honest window, then keep probing until a 3x ceiling. The rule is intact —
+// progress is REQUIRED by the ceiling — only its meaning hardened from "exactly
+// at 5 s" to "by the ceiling", which is what the game promises, not Chrome.
+const pollAdvance = async (page, probe, advanced, a, waitMs) => {
+    const t0 = Date.now()
+    await page.waitForTimeout(waitMs)
+    let b = await probe()
+    while (!advanced(a, b) && Date.now() - t0 < waitMs * 3) {
+        await page.waitForTimeout(250)
+        b = await probe()
+    }
+    return b
+}
+
 // openGame without the exit() — a first visit can also fail on a Vite reload,
 // and this script wants to retry and report, not die.
 async function openGameNoExit(browser, pilot) {
@@ -113,19 +131,55 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -194,19 +248,55 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -236,7 +326,7 @@ const PILOTS = [
         },
         {
             id: 'civilization-v', hook: '__civTest',
-            seatWait: 900, advanceWait: 8000,
+            seatWait: 900, advanceWait: 8000, revive: true, // the prover wins ~turn 11 — chain on the next empire if so
             advanced: (a, b) => b.turn > a.turn && b.end !== 'lost',
             note: (a, b) => `turn ${a.turn} -> ${b.turn}, cities ${a.playerCities} -> ${b.playerCities}, science ${b.science.toFixed(0)}`,
             resumeWait: 6000,
@@ -254,8 +344,13 @@ const PILOTS = [
         },
         {
             id: 'blob-battle', hook: '__blobbattleTest',
-            advanced: (a, b) => b.rounds[0] > a.rounds[0],
-            note: (a, b) => `seat1 blobs ${a.rounds[0]} -> ${b.rounds[0]}, score ${b.scores[0]}`,
+            // well.rounds counts rounds WON (the OTHER well overflowing, sim.js
+            // :363) — demanding one inside the watch window asked the CPU to
+            // drown in 5 s, which a healthy prover never causes. The prover's
+            // promise is the contract of the game itself: seat 1 keeps stacking
+            // and scoring without overflowing. #1705-nightly-fix.
+            advanced: (a, b) => b.scores[0] > a.scores[0] && !b.over,
+            note: (a, b) => `seat1 score ${a.scores[0]} -> ${b.scores[0]}, rounds won ${a.rounds[0]} -> ${b.rounds[0]}`,
         },
     ].map((g) => ({
         id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
@@ -270,19 +365,55 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -298,6 +429,11 @@ const PILOTS = [
             id: 'robot-lab', hook: '__robotTest',
             // Space starts a run; the seat needs the fresh bench (clean junction).
             startKeys: ['Space'], seatWait: 700,
+            // #1637 b7: the route is proven from a FRESH bench, and the game itself
+            // declines to re-seat once any goal is banked (the waypoint script no
+            // longer applies — RobotLab/index.jsx seat rule). offLine names that
+            // state so the harness grades the refusal it actually owes.
+            offLine: (b) => Object.values(b.goals).some(Boolean),
             advanced: (a, b) => b.tick > a.tick && (
                 Math.max(Math.abs(b.hand[0] - a.hand[0]), Math.abs(b.hand[1] - a.hand[1]), Math.abs(b.hand[2] - a.hand[2])) > 0.02
                 || b.score > a.score || Object.values(b.goals).some(Boolean)),
@@ -353,19 +489,55 @@ const PILOTS = [
             // the fixed window on CI; the resume leg proved the seat works).
             if (g.settle) await page.waitForFunction(g.settle, H, { timeout: 25000 }).catch(() => {})
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -435,19 +607,55 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
             const a = await probe()
-            await page.waitForTimeout(g.advanceWait || 5000)
-            const b = await probe()
+            const b = await pollAdvance(page, probe, g.advanced, a, g.advanceWait || 5000)
             rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
-            rep.check(`${g.id}: still watching mid-route`, await watching())
+            // A revive-capable prover may have WON by now — releasing the
+            // watch at the end of the run is the honest behaviour (#1656), so
+            // "no longer watching" here means the empire is done, not that
+            // the watcher quit. The label names which it was.
+            const stEnd = await probe()
+            const endedEarly = !!g.revive && (stEnd.screen !== 'play' || stEnd.over || stEnd.end)
+            rep.check(`${g.id}: still watching mid-route${g.revive ? ' (or the prover already finished it)' : ''}`,
+                endedEarly || await watching(), endedEarly ? `prover finished (screen ${stEnd.screen})` : '')
+            // #1705-nightly-fix (opt-in revive): a prover can WIN inside the
+            // advance window (civ-v takes its size-growth win ~turn 11 on the
+            // default seed) — the chain below proves takeover/re-seat/resume
+            // and needs a LIVE game. If the run ended, start a fresh empire
+            // and re-seat: every promise still gets proven, just on the next
+            // route the same brain runs.
+            if (g.revive) {
+                if (endedEarly) {
+                    // over -> attract, attract -> play: two presses, and the
+                    // revive waits past the over-screen dwell itself.
+                    for (const k of (g.startKeys || ['Space', 'Space'])) { await key(page, k); await page.waitForTimeout(1100) }
+                    await page.waitForTimeout(g.seatWait || 600)
+                    await key(page, 'KeyY')
+                    await page.waitForTimeout(400)
+                }
+            }
             await page.keyboard.down(g.takeover || 'ArrowLeft')
             rep.check(`${g.id}: steer key takes over`, !(await watching()))
             await page.keyboard.up(g.takeover || 'ArrowLeft')
+            // #1637 b7: honest-decline family. A route proven ONLY from a fresh
+            // bench (robot-lab's waypoint script) must refuse re-seat once the
+            // bench left the proven line (goal banked / gear held). Fast boxes
+            // bank progress inside the advance window; CI's slow software render
+            // happened not to, so the old blanket "Y re-seats" expectation passed
+            // by timing luck. On the decline path the resume proof cannot apply —
+            // the refusal IS the promise (never a fake route).
+            const stP = g.offLine ? await probe() : null
+            const off = !!g.offLine && g.offLine(stP)
             await key(page, 'KeyY')                       // re-seat: watch from HERE
-            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            if (off) {
+                rep.check(`${g.id}: mid-run re-seat declines off the proven bench (never a fake route)`, !(await watching()))
+            } else {
+                rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            }
             const c = await probe()
-            await page.waitForTimeout(g.resumeWait || 3500)
-            const d = await probe()
-            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            if (!off) {
+                const d = await pollAdvance(page, probe, g.advanced, c, g.resumeWait || 3500)
+                rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            }
             await key(page, 'KeyY')                       // hand the controls back
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
@@ -636,8 +844,17 @@ const PILOTS = [
             await page.waitForFunction(() => window.__ssxTest.probe().p.v > 0.05, null, { timeout: 25000 }).catch(() => {})
             await page.waitForTimeout(1200)               // some downhill after release
             const s1 = await page.evaluate(() => window.__ssxTest.probe())
-            await page.waitForTimeout(1500)
-            const s2 = await page.evaluate(() => window.__ssxTest.probe())
+            // Nightly #40 CI flake: the frame clock can starve seconds on the
+            // software-rendered box (`s -14 -> -14 @v 0.0`, locally green every
+            // time). Poll for the descent to a ceiling instead of sampling one
+            // instant — the rule is unchanged (the rider must move untouched),
+            // a stalled box gets a later look, never a pass.
+            let s2 = s1
+            const tSs = Date.now()
+            while (!(s1.tick < s2.tick && s2.p.s > s1.p.s) && Date.now() - tSs < 20000) {
+                await page.waitForTimeout(500)
+                s2 = await page.evaluate(() => window.__ssxTest.probe())
+            }
             rep.check('SSX: the rider runs the line untouched', s1.tick < s2.tick && s2.p.s > s1.p.s,
                 `s ${s1.p.s.toFixed(0)} -> ${s2.p.s.toFixed(0)} @v ${s2.p.v.toFixed(1)}`)
             rep.check('SSX: still watching mid-hill', await page.evaluate(() => window.__ssxTest.watching()))
