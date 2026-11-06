@@ -20,6 +20,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, T, newCity, step, stateHash, litSet, moveCursor, tapInbox } from './sim.js'
 import { W, H, SCEN } from './scen.js'
 import { plan } from './planner.js'
+import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
@@ -46,6 +48,8 @@ const SimCityMinGame = () => {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the planner replays its proven run (junction only)
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -68,6 +72,8 @@ const SimCityMinGame = () => {
         let gs = newCity(0)
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, demoSc = 0
+        let watchAt = 0
+        let watchRun = null
         let toast = 0, toastMsg = ''
         let toolIdx = 0
         let taxDirty = null
@@ -130,6 +136,13 @@ const SimCityMinGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
+            // #1637 WATCH: replay citycheck's own plan — but only while the live
+            // city still matches the witness receipt (state-for-state), never a fake route.
+            if (watchingRef.current) {
+                if (!watchRun || gs.end || watchAt >= watchRun.length) { watchingRef.current = false; setWatching(false); return }
+                doSim(watchRun[watchAt++])
+                return
+            }
             const inp = { tool: TOOLVALS[toolIdx] }
             if (taxDirty !== null) { inp.tax = taxDirty; taxDirty = null }
             doSim(inp)
@@ -261,9 +274,24 @@ const SimCityMinGame = () => {
             gs = newCity(sc)
             evLog.length = 0; parts = []
             toolIdx = 0; taxDirty = null
+            watchingRef.current = false; setWatching(false); watchRun = null; watchAt = 0 // #1637 a new city starts in your hands
             setMode('play')
             say(SCEN[sc].blurb.toUpperCase())
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
+        }
+
+        // #1637: seat only where the live city still IS the witness — replay the
+        // plan into a scratch city to gs.tick and compare hashes. A player who
+        // only panned or waited stays on the proven line; a placed zone departs it.
+        const seatWatch = () => {
+            const run = demoRun(gs.sc)
+            const n = Math.min(gs.tick, run.length)
+            if (gs.end || n >= run.length) return false
+            const g2 = newCity(gs.sc)
+            for (let i = 0; i < n; i++) step(g2, run[i])
+            if (stateHash(g2) !== stateHash(gs)) return false
+            watchRun = run; watchAt = n
+            return true
         }
 
         const onDown = (e) => {
@@ -279,6 +307,17 @@ const SimCityMinGame = () => {
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the proven plan where the city matches it;
+            // anywhere else the honest decline. Any driving key takes the wheel back.
+            if (isWatchKey(e)) {
+                if (sc === 'play') {
+                    if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+                    else if (seatWatch()) { watchingRef.current = true; setWatching(true); say('THE PLANNER RUNS THE CITY') }
+                    else say(NO_GUIDE.toUpperCase())
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'KeyT') { toolIdx = (toolIdx + 1) % TOOLVALS.length; audioController.playTone(400 + toolIdx * 40, 0.03, 'square', 0.03); return }
             if (e.code === 'BracketLeft') { taxDirty = Math.max(0, gs.tax - 1); return }
             if (e.code === 'BracketRight') { taxDirty = Math.min(CFG.taxMax, gs.tax + 1); return }
@@ -298,6 +337,7 @@ const SimCityMinGame = () => {
             const gx = Math.floor(((e.clientX - r.left) / r.width) * W)
             const gy = Math.floor(((e.clientY - r.top) / r.height) * H)
             if (gy < H) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a zoning tap is you driving
                 const cx = Math.max(0, Math.min(W - 1, gx))
                 const cy = Math.max(0, Math.min(H - 1, gy))
                 gs.cursor.x = cx; gs.cursor.y = cy
@@ -330,6 +370,7 @@ const SimCityMinGame = () => {
                     evLog: evLog.slice(-120),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the planner running the city?
                 hash: () => stateHash(gs),
                 setTool: (i) => { toolIdx = ((i % TOOLVALS.length) + TOOLVALS.length) % TOOLVALS.length },
                 cursorTo: (x, y) => { gs.cursor.x = Math.max(0, Math.min(W - 1, x)); gs.cursor.y = Math.max(0, Math.min(H - 1, y)) },
@@ -421,6 +462,17 @@ const SimCityMinGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SIMCITY-MIN')} onResume={handleResume} />}
+            {/* #1637 WATCH — the proven plan runs the city where the receipt matches. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

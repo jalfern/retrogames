@@ -7,6 +7,8 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { drawScene, VW, VH, fitAttractFont } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
@@ -62,6 +64,8 @@ const PrinceOfPersiaGame = () => {
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    const [watching, setWatching] = React.useState(false) // #1637 WATCH: popcheck's own pilot runs the hour
+    const watchingRef = useRef(false)
 
     const handleResume = () => {
         setPaused(false)
@@ -120,6 +124,7 @@ const PrinceOfPersiaGame = () => {
                 music: trackFor(g),
             }),
             hash: () => stateHash(g),
+            watching: () => watchingRef.current, // #1637 watchcheck: is the prover running the hour?
             musicState: () => ({ ...audioController._musicState(), peak: audioController._peak() }),
         }
         const p_block = () => g.p.block
@@ -143,6 +148,13 @@ const PrinceOfPersiaGame = () => {
                 return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats popcheck's own autopilot (the same decide the
+            // attract demo runs); any driving key — or a tap to restart — takes over.
+            if (isWatchKey(e)) {
+                if (!attract) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (attract) startAttract()
             if (e.code === 'Space') { keys.jump = true; e.preventDefault() }
             if (e.code === 'ArrowLeft') { keys.left = true; e.preventDefault() }
@@ -170,7 +182,7 @@ const PrinceOfPersiaGame = () => {
         const handleCanvasPointer = (e) => {
             if (pausedRef.current) return
             if (attract) { e.preventDefault(); startAttract() }
-            else if (g.status === 'win' || g.status === 'lost') { e.preventDefault(); g = makeGame(0); endSeen = false }
+            else if (g.status === 'win' || g.status === 'lost') { e.preventDefault(); watchingRef.current = false; setWatching(false); g = makeGame(0); endSeen = false } // #1637 a tap to restart is you choosing to drive
         }
 
         // ---- audio driven off sim events ----------------------------------------
@@ -245,7 +257,8 @@ const PrinceOfPersiaGame = () => {
             } else {
                 if ((g.status === 'win' || g.status === 'lost') && !endSeen) endSeen = true
                 if (endSeen && (keys.jump || keys.atk || keys.right || keys.left)) { g = makeGame(0); endSeen = false }
-                step(g, readInputs())
+                // #1637 WATCH: the hour runs on popcheck's own reactive pilot.
+                step(g, watchingRef.current && g.status === 'play' ? decide(g) : readInputs())
             }
             sfx(before)
             music()
@@ -392,6 +405,17 @@ const PrinceOfPersiaGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[640px] aspect-[10/11] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" tabIndex={0} />
                 {paused && <PauseOverlay game={GAMES.find((game) => game.label === 'PRINCE OF PERSIA')} onResume={handleResume} />}
+                {/* #1637 WATCH — the proven pilot runs the hour; any input takes over. */}
+                {watching && (
+                    <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-300/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                        WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                    </div>
+                )}
+                {!paused && (
+                    <div className="absolute z-50 pointer-events-auto" style={{ top: '0.75rem', right: '0.75rem' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
             </div>
             <VirtualControls secondAction={{ label: '⚔', code: 'KeyX' }} visible={!paused} />
         </div>

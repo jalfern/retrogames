@@ -26,6 +26,8 @@ import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { fitSize, fitTwoCols } from './hudfit.js'
@@ -315,6 +317,8 @@ const TenDeepGame = () => {
     const [bAct, setBAct] = useState(null)
     const bActRef = useRef(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the solver runs the ten deeps
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -428,7 +432,7 @@ const TenDeepGame = () => {
         // #1473: the run's STARTING seed — st.townSeed advances as candidate
         // heroes are dealt, so reports must carry this, not the live value.
         let runSeed = gs.townSeed
-        let raf = 0, last = 0, acc = 0, demoAcc = 0, bob = 0
+        let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
         let uiSel = 0
         const evLog = []
@@ -555,6 +559,11 @@ const TenDeepGame = () => {
             if (screenRef.current === 'attract') {
                 demoAcc += SIM_MS
                 if (demoAcc >= DEMO_MS) { demoAcc = 0; tickDemo() }
+            } else if (screenRef.current === 'play' && watchingRef.current && !gs.end) {
+                // #1637 WATCH: the solver's own commands at attract pace, from HERE —
+                // tendeepcheck grades this same policy cold and at slack.
+                watchAcc += SIM_MS
+                if (watchAcc >= DEMO_MS) { watchAcc = 0; act(nextAction(gs)) }
             }
         }
 
@@ -927,6 +936,7 @@ const TenDeepGame = () => {
             runSeed = gs.townSeed
             uiSel = 0
             evLog.length = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new company starts in your hands
             setMode('play')
             say('THE RIM — THE LIP OF THE WELL')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
@@ -950,6 +960,13 @@ const TenDeepGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the solver (BFS to the stairs, supplies when
+            // hurting); any driving key — or the pad — takes it back.
+            if (isWatchKey(e)) {
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (gs.mode === 'town') {
                 if (gs.town.b) {
                     if (gs.town.b === 'T' && gs.town.cand) {
@@ -1115,6 +1132,7 @@ const TenDeepGame = () => {
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the solver running the deeps?
                 hash: () => stateHash(gs),
                 // what one cell holds, for the harness's pose search (#1293):
                 // the mirror gate needs a cell whose flanks disagree.
@@ -1259,6 +1277,17 @@ const TenDeepGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'TEN-DEEP')} onResume={handleResume} />}
+            {/* #1637 WATCH — the solver runs the deeps; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-orange-400/90 border border-orange-100 text-orange-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} secondAction={bAct || undefined} />
         </div>
     )

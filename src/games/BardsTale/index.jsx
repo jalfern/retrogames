@@ -19,6 +19,8 @@ import {
 } from './sim.js'
 import { TOWN_SPECIALS } from './dungeons.js'
 import { nextAction } from './solver.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { playEvents } from './sound.js'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
@@ -35,6 +37,8 @@ const BardsTaleGame = () => {
     const [end, setEnd] = useState(null)
     const [ui, setUi] = useState({})
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the solver replays the proven dive
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const gsRef = useRef(null)
@@ -59,7 +63,7 @@ const BardsTaleGame = () => {
         ctx.imageSmoothingEnabled = false
 
         let gs = makeRun(); gsRef.current = gs
-        let raf = 0, last = 0, acc = 0, demoAcc = 0, anim = 0
+        let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, anim = 0
         let toast = 0, toastMsg = ''
         let shake = 0, flashHit = 0
         const evLog = []
@@ -106,6 +110,7 @@ const BardsTaleGame = () => {
         const startPlay = () => {
             gs = makeRun(); gsRef.current = gs
             evLog.length = 0
+            watchingRef.current = false; setWatching(false) // #1637 a new band starts in your hands
             setMode('play')
             say('SKARA BRAE')
             audioController.playSweep(220, 660, 0.3, 'square', 0.07)
@@ -163,7 +168,12 @@ const BardsTaleGame = () => {
                 if (screenRef.current === 'attract') {
                     demoAcc += ft
                     while (demoAcc >= DEMO_MS) { tickDemo(); demoAcc -= DEMO_MS }
+                } else if (watchingRef.current && screenRef.current === 'play' && !gs.end) {
+                    // #1637 WATCH: the solver's own dive pace (attract DEMO_MS), from HERE.
+                    watchAcc += ft
+                    while (watchAcc >= DEMO_MS) { watchAcc -= DEMO_MS; actRef.current(nextAction(gs)) }
                 } else {
+                    watchAcc = 0
                     while (acc >= SIM_MS) { acc -= SIM_MS }
                 }
                 if (screenRef.current !== 'over' && screenRef.current !== 'attract') acc = 0
@@ -202,6 +212,13 @@ const BardsTaleGame = () => {
             if (sc === 'attract') { startRef.current(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the solver (BFS + combat doctrine + town economy);
+            // any driving key — or one of the on-screen buttons — takes it back.
+            if (isWatchKey(e)) {
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             const fighting = gs.mode === 'combat'
             if (gs.menu) {
                 const opts = (optsRef.current[gs.menu.kind] || [] )()
@@ -267,6 +284,7 @@ const BardsTaleGame = () => {
                     evLog: evLog.slice(-140),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the solver running the dive?
                 hash: () => stateHash(gs),
                 cmd: (c) => { actRef.current(c); return true },
                 auto: (n = 100000) => { let i = 0; while (!gs.end && i < n) { actRef.current(nextAction(gs)); i++ } return { won: gs.end === 'win', end: gs.end, ticks: i } },
@@ -324,7 +342,7 @@ const BardsTaleGame = () => {
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
     const play = screen === 'play'
-    const doCmd = (c) => { if (!paused && screenRef.current === 'play') actRef.current(c) }
+    const doCmd = (c) => { if (watchingRef.current) { watchingRef.current = false; setWatching(false) } if (!paused && screenRef.current === 'play') actRef.current(c) } // #1637 a button press is you driving
     const gs = gsRef.current
     const menuOpts = play && gs && gs.menu ? (({
         garth: GEAR.map((g) => ({ cmd: g.id, label: `${g.name} — ${g.cost}g`, off: !!gs.gear[g.id] })),
@@ -441,6 +459,17 @@ const BardsTaleGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === "THE BARD'S TALE")} onResume={handleResume} />}
+            {/* #1637 WATCH — the solver runs the dive; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-sky-400/90 border border-sky-100 text-sky-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls secondAction={{ label: gs && gs.mode === 'combat' ? 'A' : 'U', code: 'Space' }} visible={play && !paused} />
         </div>
     )
