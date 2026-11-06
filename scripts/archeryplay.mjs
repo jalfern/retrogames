@@ -83,7 +83,14 @@ page.on('pageerror', () => { pageErrors++ })
     // receipt, the bot has arrows up there too
     const seen = new Set(a.arrows.map((x) => x.id))
     const mine = b.arrows.filter((x) => x.owner === 0 && !seen.has(x.id))
-    r.check('releasing looses YOUR arrow (quiver drops, a new arrow of yours is airborne)', b.p1.quiver === a.p1.quiver - 1 && mine.length >= 1, `q ${a.p1.quiver}->${b.p1.quiver} new ${JSON.stringify(mine)}`)
+    // #1739 economy-aware: the pull-back (#1685/#1707) is gated on a NON-full
+    // quiver, so the release press itself opens the slot and a stuck arrow at
+    // the feet is pulled on the very next tick — 6→5→6 before any scalar
+    // sample. The provable statement is the identity: quiver moved by exactly
+    // -1 per arrow loosed +1 per receipt (pull/dryout/resupply). Drop the
+    // quiver-- line and this gate reddens directly, not just the ledger.
+    const rc = b.p1.receipts - a.p1.receipts
+    r.check('releasing looses YOUR arrow (exact accounting: one loosed, quiver net of receipts)', b.p1.alive && b.p1.quiver === a.p1.quiver - mine.length + rc && mine.length >= 1, `q ${a.p1.quiver}->${b.p1.quiver} loosed ${mine.length} receipts +${rc} new ${JSON.stringify(mine)}`)
     // the stuck chain: wait for an arrow to be in the terrain and painted
     let paintedStuck = 0
     for (let k = 0; k < 40 && !paintedStuck; k++) {
