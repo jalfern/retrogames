@@ -113,10 +113,34 @@ const TIGHTEN = {
     // Bus Stop pulled to ~105px apexes (tuner passes, tighten5).
     sandbank: [[1, -13, -27], [2, 31, 17], [3, -35, 9], [4, 28, -12], [5, -30, 0], [6, 21, 12],
         [7, -38, -114], [8, 4, 42], [9, 9, -41], [10, -38, 18], [11, 26, -15], [12, -7, 41],
-        [13, -12, -34], [14, 149, 89]],
+        [13, -12, -34], [14, 149, 89],
+        // #1669 retighten (scripts/comet-retighten.mjs): the world grew x3 (#542)
+        // while the lane only grew x1.5 (#782), so the #513 fork spread
+        // over-cleared — pull the line back toward the traced Daytona centerline
+        // (avg 2.29% -> 1.71% of box). Integer-snapped; min radius >=97, zero
+        // wall crossings, legs >= 2*KERB_R+24 and the longest near-straight
+        // (#478 window) held at every step; the full cometcheck (autopilot wins,
+        // bump caps, straight charge) is green across 4 GPs on this data.
+        [0, -9, 60], [1, 26, 179], [2, 99, 258], [3, 52, -177], [4, 5, -43], [5, -1, -34],
+        [6, 0, 1], [7, 5, 283], [8, 1, 4], [9, 24, 30], [10, 0, -1], [11, -57, -11],
+        [12, -2, -3], [13, 167, 180], [14, -167, -38], [15, 8, -1], [16, 10, -4], [17, 0, 8],
+        [18, 2, 11], [19, 0, 7], [20, 3, 11], [21, 3, 17], [22, 1, 0], [23, 6, 24],
+        [24, 32, 44], [25, 50, 47], [26, 20, 6], [27, 16, -31], [28, -16, 16], [29, -11, 32],
+        [30, -13, 34], [31, -8, 35]],
     // Laguna's: the Corkscomb, the andretti hook exit and the keyhole.
     corkscomb: [[2, -25, -17], [3, 24, 1], [4, -16, 25], [12, -26, -92], [13, 89, 37],
-        [14, -91, 46], [30, 77, 58], [31, -82, -17], [32, 37, -76]],
+        [14, -91, 46], [30, 77, 58], [31, -82, -17], [32, 37, -76],
+        // #1669 retighten: the keyhole pinch and the traced descent come back
+        // toward the map line (avg 3.15% -> 1.86% of box, worst 18.6% -> 18.0%).
+        // The front-straight seam points (0,1,31-34) stay frozen — they set the
+        // #478 straight window and the #1498 escape corridor. Tuner gate parity
+        // (min radius, crossings, leg spacing, straight length, triple-apex
+        // signature) plus the full cometcheck race gates are green on this data.
+        [2, 0, -6], [3, 0, 1], [4, 1, 10], [5, 1, 57], [6, -13, -7], [7, 99, -17],
+        [8, 225, 82], [9, 208, 109], [10, 67, 149], [11, 13, 105], [12, 22, 99], [13, 71, 69],
+        [14, 375, -199], [15, 243, -183], [16, 121, -219], [17, -2, -65], [18, 21, 87], [19, 7, 47],
+        [20, 41, 115], [21, 51, 130], [22, -52, -123], [23, -30, -24], [24, 36, 14], [25, 9, 3],
+        [26, 70, 3], [27, 14, 0], [28, 1, -1], [29, 38, -24], [30, 22, 14]],
     // #530 item 3: the runway fold — the NE hairpin's four knots pulled toward
     // the fold's centre until the apex reads brakeable (~100px grown), the
     // same target the traced circuits tune to.

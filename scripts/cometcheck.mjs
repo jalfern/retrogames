@@ -324,7 +324,12 @@ for (const c of COURSES) {
         // (spread leg, README "honest gaps"), not a smoothed-away feature —
         // the new course bbox re-normalised it from ~17% to ~18.6%. The
         // Corkscomb section itself sits ON the traced line (avg improved).
-        const WORST_CAP = { sandbank: 0.12, corkscomb: 0.19 }
+        // #1669 retighten: the fork legs and keyhole pinch came back toward the
+        // traced line (scripts/comet-retighten.mjs), so the caps move down with
+        // the measurement. The old caps {sandbank 0.12, corkscomb 0.19} ride as
+        // the revert-mutant headroom — replaying the pre-retighten TIGHTEN (the
+        // #511 note below) measures 9.5%/18.6% and dies on these lines.
+        const WORST_CAP = { sandbank: 0.10, corkscomb: 0.185 }
         const A = resample(normalize(ref.pts), 240)
         const G = resample(normalize(gamePts), 240)
         const dm2 = shapeDistance(gamePts, ref.pts.map(([x, y]) => [1 - x, y]))

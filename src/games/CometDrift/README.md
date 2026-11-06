@@ -1,4 +1,4 @@
-# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493)
+# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
 SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
@@ -201,6 +201,10 @@ npm run cometcheck -- --mutate # mutates the checkpoint gate AND the #518 slopeK
                               #       relief >=25px, h=0 datum, seam continuity, grade cap,
                               #       downhill-outruns-uphill speed proof)
 npm run lint:comet            # eslint gate for the game + harness
+node scripts/comet-retighten.mjs  # re-derive the #1669 pulls (deterministic hill-climb;
+                              #       output must stay == the appended TIGHTEN blocks;
+                              #       never re-run blind — race gates were certified on
+                              #       the shipped data, see README #1669 note)
 npm run cometplay             # Chrome: real keys only — throttle/steer/drift-ladder/
                               #       spin bite+recover, minimap dot tracks the sim,
                               #       circuit cycle+persist, and the certified line
@@ -215,11 +219,18 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
 ## Honest gaps (filed to QA as the next polish pass)
 
 - The schematic maps put some parallel roads closer together than two roads of
-  any sane width can sit (Daytona's fork legs, Laguna's keyhole). The re-tune
-  spread those gaps to the minimum self-clearing distance instead of deleting
-  them; the worst local deviation from the traced line is ~10% (sandbank) and
-  ~17% (corkscomb) and cometcheck caps them there. A taller world or narrower
-  lane could tighten the caps further.
+  any sane width can sit (Daytona's fork legs, Laguna's keyhole). #513 spread
+  those gaps to the minimum self-clearing distance. #1669 spent the slack the
+  later re-tunes left: the world grew x3 (#542) while the lane only grew x1.5
+  (#782), so `scripts/comet-retighten.mjs` hill-climbs the control points back
+  toward the traced line under gate parity (radius, crossings, leg spacing,
+  straight window, triple-apex signature) — avg distance to the map falls
+  1.93% -> 1.39% (sandbank) and 2.79% -> 1.86% (corkscomb), worst 18.6% ->
+  18.0%, and cometcheck's WORST_CAPs moved down to match (0.10 / 0.185; the
+  revert-replay measures 18.6% and dies). What is left is real: the notch
+  bottoms sit ~9.7%/18.0% off because the 316px wall corridor and the 97px
+  radius floor forbid the last reach — the maps' pinch legs are narrower than
+  this arcade's road + escape band, and closing them would delete the feature.
 - Controls per se are #431 (steering curve); this pass kept the sim's numbers.
   Measured (cometplay + Node trace): keyboard steer is raw ±1, so a
   one-direction held drift walks the kart off the asphalt in ~20 ticks at any
