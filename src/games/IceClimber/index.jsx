@@ -28,7 +28,7 @@ import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, clo
 import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
 import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 
 const VIEW_W = W * CELL
 const VIEW_H = H * CELL
@@ -535,6 +535,12 @@ const IceGame = () => {
             {play && planning && (
                 <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/60 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap animate-pulse">
                     PLANNING THE CLIMB…
+                </div>
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
                 </div>
             )}
             {play && !paused && (

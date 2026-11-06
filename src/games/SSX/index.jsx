@@ -21,7 +21,7 @@ import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/l
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, WATCH_HELP, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK, CLOUD_LAYER, buildClouds } from './art.js'
@@ -1507,6 +1507,12 @@ const SSXGame = () => {
             {play && watching && (
                 <div className="fixed z-50 top-[4.25rem] left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none">
                     WATCHING — THIS IS THE PROVEN LINE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
                 </div>
             )}
             {play && !paused && (

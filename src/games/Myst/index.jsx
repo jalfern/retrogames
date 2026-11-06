@@ -20,7 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { gearRows } from './gears.js'
 import { freshState, dispatch, runSolver, solveScript, watchResume, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -1020,6 +1020,12 @@ const MystGame = () => {
         <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
           {watchToast}
         </div>
+      )}
+      {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+      {screen === 'attract' && (
+          <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+              <AttractWatchButton />
+          </div>
       )}
       {screen === 'play' && !paused && (
         <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

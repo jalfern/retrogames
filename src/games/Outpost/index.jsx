@@ -22,7 +22,7 @@ import { CFG, newRun, step, stateHash } from './sim.js'
 import { W, H, ROCK, STAIRS } from './cave.js'
 import { plan, autopilot, decide as decideTick } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 
 const SIM_MS = 1000 / 60
 const CW = 15, CH = 22
@@ -477,6 +477,12 @@ const OutpostGame = () => {
             {/* #1637 WATCH — the autopilot runs the colony; any input takes over. */}
             {play && watching && (
                 <WatchToast className="absolute z-50" />
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
             )}
             {play && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

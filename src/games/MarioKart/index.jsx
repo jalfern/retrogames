@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
 import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
@@ -67,6 +67,7 @@ export default function MarioKart() {
     const keysRef = useRef({})
     const tapRef = useRef(null)
     const [watching, setWatching] = useState(false) // #1637 WATCH: the autopilot drives the GP
+    const [attractUi, setAttractUi] = useState(true) // #1656: screen lives in st/screenRef; mirror for the title WATCH pill
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
 
@@ -520,6 +521,7 @@ export default function MarioKart() {
             st.screen = screen; screenRef.current = screen
             st.endT = 0
             st.plan = false; setWatching(false) // #1637 a new GP starts with the wheel in your hands
+            setAttractUi(screen === 'attract')
             camA = g.karts[0].a
             // the pad would only cover the canvas on attract/end — withdraw
             // it there (the tap lands on the canvas itself, see tapRef)
@@ -633,6 +635,12 @@ export default function MarioKart() {
             {/* #1637 WATCH — the proven autopilot drives the GP; any input takes over. */}
             {padOn && watching && (
                 <WatchToast className="absolute z-50" />
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {attractUi && !paused && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
             )}
             {padOn && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

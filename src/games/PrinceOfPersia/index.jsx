@@ -8,7 +8,7 @@ import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameCont
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { drawScene, VW, VH, fitAttractFont } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
@@ -66,6 +66,9 @@ const PrinceOfPersiaGame = () => {
     const pausedRef = useRef(false)
     const [watching, setWatching] = React.useState(false) // #1637 WATCH: popcheck's own pilot runs the hour
     const watchingRef = useRef(false)
+    // #1656: PoP's attract flag lives in the sim closure, not React state —
+    // mirror it once (attract never returns; end cards restart directly).
+    const [attractUi, setAttractUi] = React.useState(true)
 
     const handleResume = () => {
         setPaused(false)
@@ -136,6 +139,7 @@ const PrinceOfPersiaGame = () => {
         // any key OR tap starts) so a desktop click or a mobile tap both launch it.
         const startAttract = () => {
             attract = false
+            setAttractUi(false)
             g = makeGame(0)
             Object.keys(keys).forEach((k) => { keys[k] = false })
             audioController.playTone(660, 0.08, 'square', 0.12)
@@ -413,7 +417,13 @@ const PrinceOfPersiaGame = () => {
                 {watching && (
                     <WatchToast className="z-50" />
                 )}
-                {!paused && (
+                {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                {!paused && attractUi && (
+                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
+                )}
+                {!paused && !attractUi && (
                     <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
                     </div>
