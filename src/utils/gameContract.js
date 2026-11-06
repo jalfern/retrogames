@@ -21,6 +21,11 @@ let exposed = null
 let recorder = null
 let lastPlayers = 1
 let liveFeed = null
+// #1711 S2: the armed spec — the loop-facing capture plumbing (liveFeed/
+// liveCmdFeed) is production-safe by design: it banks only while a recorder
+// runs, and autoStart is consent-gated upstream (autoRecord.js). `armed` is
+// what makes auto-capture possible outside the DEV contract.
+let armed = null
 // #1247: while a recorder runs, the local mic banks a raw voice track aligned
 // to the recorded ticks. `voiceExtra` lets a game contribute already-assembled
 // tracks (Gauntlet online: guest audio relayed in). Flush promise parked at
@@ -52,13 +57,16 @@ export const recordVoiceCmd = (entry) => { if (liveCmdFeed && entry) liveCmdFeed
 // __game.meta so the harness and a remapper know what the game hears. `step`
 // folds whatever a caller passes into THE one pad for that method, so a dpad
 // game's step({x: 1}) reads as "right" exactly the way the on-screen d-pad does.
-export function exposeGame(spec) {
-    if (!import.meta.env.DEV) return null
+// armLiveCapture(spec) — #1711 S2: hoisted out of exposeGame so the live
+// bank exists in PRODUCTION builds too (games call it next to exposeGame;
+// exposeGame calls it itself, byte-identical wiring). Production safety is
+// structural: liveFeed banks only while `recorder` is non-null, and the only
+// production path to a recorder is autoStart, which only autoRecord.js calls
+// after stored consent says motion is granted.
+export function armLiveCapture(spec) {
+    if (!spec || !spec.id || typeof spec.state !== 'function') return false
     const method = spec.method || 'stick'
     const BUILD = typeof __BUILD_COMMIT__ !== 'undefined' ? __BUILD_COMMIT__ : 'dev'
-    // #495: while a recorder runs, every step tick is banked — one addTick per
-    // simulated tick, one pad per seat, the raw device view per seat, and the
-    // game's state.hash when the batch's last tick closes it.
     const seatCount = spec.players && spec.players > 1 ? spec.players : 1
     const rnum = (v) => (typeof v === 'number' && isFinite(v) ? v : 0)
     const rawsFor = (pads) => Array.from({ length: seatCount }, (_, i) => {
@@ -94,6 +102,76 @@ export function exposeGame(spec) {
     // keyboard/dpad seat has no analog device so its raw mirrors the pad.
     liveFeed = (pads) => { if (recorder) { recorder.addTick(pads, rawsFor(pads), hashNow(), pingsNow()); if (voice) voice.onTick(recorder.ticks) } }
     liveCmdFeed = (e) => { if (recorder) recorder.addVoiceCmd(e) }
+    armed = { spec, method, BUILD, seatCount, rawsFor, hashNow, pingsNow }
+    return true
+}
+
+// autoStart(opts) — #1711 S2 production capture for a human run, mirroring
+// recordStart's seed/rules. opts.voiceConsent: the #1711 voice grant already
+// recorded by the consent gate — the mic layer takes it without re-asking
+// (the browser permission bubble still applies). opts.sources overrides the
+// seat labels for games whose armed spec lies about a human seat.
+export function autoStart(opts = {}) {
+    if (!armed || recorder) return false
+    const { spec, method, BUILD } = armed
+    const s = spec.state()
+    if (!Number.isInteger(s.seed)) return false
+    const players = spec.players && spec.players > 1 ? spec.players : 1
+    recorder = createRecorder({
+        gameId: spec.id,
+        method,
+        seed: s.seed,
+        players,
+        build: spec.build || BUILD,
+        hashEvery: opts.hashEvery || DEFAULT_HASH_EVERY,
+        sources: opts.sources || spec.sources || null,
+    })
+    voiceExtra = typeof spec.voiceExtra === 'function' ? spec.voiceExtra : null
+    voice = null
+    if (spec.voice !== false && opts.voiceConsent) {
+        const vslots = spec.voice && Array.isArray(spec.voice.slots) ? spec.voice.slots : Array.from({ length: players }, (_, i) => i)
+        voice = createVoiceSession({ slots: vslots, ask: () => Promise.resolve({ consent: true, headset: false }) })
+    }
+    if (typeof window !== 'undefined') window.__autoCapture = { recording: true, seed: s.seed, players, voice: !!voice }
+    return true
+}
+
+// autoStop() — mirror of recordStop for the auto path; returns { rec, flush }
+// where flush resolves once the mic's final chunk has joined the file (the
+// uploader awaits it, bounded).
+export function autoStop() {
+    if (!armed || !recorder) return null
+    const s = armed.spec.state()
+    const extra = (voiceExtra ? voiceExtra() : null) || { tracks: [], declined: [] }
+    const local = voice
+    const localSlots = local ? local.slots : []
+    voice = null
+    voiceExtra = null
+    const wantVoice = !!local || (extra.tracks && extra.tracks.length > 0) || (extra.declined && extra.declined.length > 0)
+    const voiceSec = wantVoice ? { tracks: [...(extra.tracks || [])], declined: [...(extra.declined || [])] } : null
+    const rec = recorder.finish(typeof s.hash === 'number' || typeof s.hash === 'string' ? s.hash : null, voiceSec)
+    recorder = null
+    if (typeof window !== 'undefined') window.__lastRecording = rec
+    let flush = null
+    if (local) {
+        flush = local.finalize().then((track) => {
+            if (track) {
+                rec.voice.tracks.push(track)
+                rec.voice.tracks.sort((a, b) => a.slots[0] - b.slots[0])
+            } else if (local.consent.consent === false && local.consent.reason === 'declined') {
+                for (const sl of localSlots) if (!rec.voice.declined.includes(sl)) rec.voice.declined.push(sl)
+            }
+            return rec
+        })
+    }
+    if (typeof window !== 'undefined') window.__autoCapture = { recording: false, ticks: rec.ticks, voice: wantVoice }
+    return { rec, flush }
+}
+
+export function exposeGame(spec) {
+    if (!import.meta.env.DEV) return null
+    armLiveCapture(spec)
+    const { method, BUILD, seatCount, rawsFor, hashNow, pingsNow } = armed
     const api = {
         meta: {
             id: spec.id,
@@ -231,6 +309,7 @@ export function unexposeGame() {
     liveCmdFeed = null
     voice = null
     voiceExtra = null
+    armed = null // #1711: a dead mount must not leave an armed capture behind
     if (exposed && window.__game === exposed) delete window.__game
     exposed = null
 }

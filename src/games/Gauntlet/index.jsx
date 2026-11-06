@@ -39,7 +39,8 @@ import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
 import { createLockStep } from '../../utils/lockstep'
 import { createLobby, lobbyRole, relayFromQuery, decodeCode, seatModel } from '../../utils/lobby.js'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, recordLiveTick, recordVoiceCmd, isRecording, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { makeVoiceInbox, packVoiceAudio } from '../../utils/voice'
 import { createVoiceSession, askVoiceConsent } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -367,6 +368,7 @@ const GauntletGame = () => {
             if (voiceCtl.on && voiceCtl.offNow) voiceCtl.offNow() // #1249: never leave the mic hot on the GAME OVER screen
             if (net.role && net.phase === 'play') netEnd('over')
             setMode('over')
+            if (!net.role) endRun() // #1711: the take ends with the run — consent re-checked at upload
         }
 
         const doSim = (inp, pInp = null) => {
@@ -1143,7 +1145,7 @@ const GauntletGame = () => {
         }
         const startPlay = (hk) => {
             demoBrainDropped = false // #1655: the player has chosen — the select note is spent
-            if (net.role === 'guest' && net.phase !== 'play') return
+            if (net.role === 'guest' && net.phase !== 'play') return false
             let pm = gs.partnerMode || 'off'
             if (pm === 'off' && connectedSlots() >= 2) pm = 'human'
             const two = pm === 'human'
@@ -1152,7 +1154,7 @@ const GauntletGame = () => {
             if (net.role === 'host' && !online) {
                 net.info = 'waiting for friend'
                 netPush()
-                return
+                return false
             }
             const peerHero = online ? HERO_ORDER[(selectHero + 1) % 4] : undefined
             // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
@@ -1173,6 +1175,18 @@ const GauntletGame = () => {
             watchingRef.current = false; setWatching(false) // #1637 a new quest starts in your hands
             say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
+            return true
+        }
+        // #1711 S2: consent BEFORE seed-birth. The question goes up first; the
+        // game object is only created after the answer, so the recorder opens at
+        // tick 0 of the run it records and the stored file replay-verifies.
+        // Offline runs only (online: the wire owns the seats — honest gap).
+        const humanStart = (hk) => {
+            if (net.role || startBusy()) return
+            setStartBusy(true)
+            askConsent()
+                .then(() => { if (startPlay(hk)) beginRun() })
+                .finally(() => setStartBusy(false))
         }
         const onKeyDown = (ev) => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
@@ -1214,10 +1228,10 @@ const GauntletGame = () => {
                     if (ev.code === 'KeyA') selectHero2 = (selectHero2 + 3) % 4
                     if (ev.code === 'KeyD') selectHero2 = (selectHero2 + 1) % 4
                 }
-                if (ev.code === 'Digit1' || ev.code === 'Space' || ev.code === 'Enter') startPlay(HERO_ORDER[selectHero])
-                if (ev.code === 'Digit2') startPlay('valkyrie')
-                if (ev.code === 'Digit3') startPlay('wizard')
-                if (ev.code === 'Digit4') startPlay('elf')
+                if (ev.code === 'Digit1' || ev.code === 'Space' || ev.code === 'Enter') humanStart(HERO_ORDER[selectHero])
+                if (ev.code === 'Digit2') humanStart('valkyrie')
+                if (ev.code === 'Digit3') humanStart('wizard')
+                if (ev.code === 'Digit4') humanStart('elf')
                 return
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) startSelect(); return }
@@ -1263,7 +1277,7 @@ const GauntletGame = () => {
                 const y = (ev.clientY - r.top) / r.height * CH
                 const hit = heroAt(x, y)
                 if (hit !== null) {
-                    if (hit === selectHero) startPlay(HERO_ORDER[hit])
+                    if (hit === selectHero) humanStart(HERO_ORDER[hit])
                     else selectHero = hit
                     return
                 }
@@ -1276,7 +1290,7 @@ const GauntletGame = () => {
                     setSlotKind(p2slot, gs.partnerMode === 'model' ? 'model' : 'off')
                     return
                 }
-                if (x > VW + 40) startPlay(HERO_ORDER[selectHero])
+                if (x > VW + 40) humanStart(HERO_ORDER[selectHero])
             }
         }
         const onPads = (ev) => {
@@ -1292,6 +1306,23 @@ const GauntletGame = () => {
         // ------------------------------------------------------------- DEV hook ----
         // #1200: production-safe feedback state (seed for replay), every build
         exposeFeedbackState(() => ({ tick: gs.tick, score: gs.score, done: !!gs.end, seed: gs.seed, x: +gs.hero.x.toFixed(2), y: +gs.hero.y.toFixed(2) }))
+
+        // #1711 S2: arm the live capture for EVERY build (the DEV contract
+        // wires the same plumbing inside exposeGame). Banking only happens
+        // while a consented auto capture runs — see autoRecord.js.
+        initAutoRecord()
+        armLiveCapture({
+            id: 'gauntlet',
+            players: 2,
+            method: 'stick',
+            sources: () => seatSources({
+                seat2Kind: modelP2 ? 'model' : p2slot.kind,
+                brainSeated: !modelP2 && gs.partnerMode === 'model',
+                brainName: bcModel.name,
+            }),
+            state: () => ({ seed: gs.seed, hash: stateHash(gs) }),
+            ...(netRole === 'host' ? { voice: { slots: [0] }, voiceExtra: () => netVoiceIn.voiceSection() } : {}),
+        })
 
         if (import.meta.env.DEV) {
             let cPrev = { a: false, b: false }
@@ -1446,7 +1477,9 @@ const GauntletGame = () => {
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('virtualcontrols', onPad)
             window.removeEventListener('retrogames:pads', onPads)
-            if (import.meta.env.DEV) { unmountDbg(); unexposeGame(); delete window.__gauntletTest }
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            unexposeGame() // #1711: safe every build — clears the armed capture outside DEV too
+            if (import.meta.env.DEV) { unmountDbg(); delete window.__gauntletTest }
         }
     }, [setMode])
 

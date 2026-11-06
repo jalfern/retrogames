@@ -21,6 +21,8 @@ import { createVoiceClock, tickToMs } from '../src/utils/voice.js'
 import { loadConsent, grantConsent, revokeConsent, consentFor, uploadAllowed, CONSENT_LS_KEY, CONSENT_GRACE_MS } from '../src/utils/consent.js'
 import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '../relay/core.js'
 import { uploadSession, listSessions, probeStore, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
+import { planRun, decideMerge } from '../src/utils/autoRecordCore.js'
+import { armLiveCapture, autoStart, autoStop, recordLiveTick, isRecording } from '../src/utils/gameContract.js'
 
 const MUTATE = process.argv.includes('--mutate')
 
@@ -88,6 +90,23 @@ const mkRec = (v2 = false, n = 200) => {
     ok(uploadAllowed(mkRec(true), both).strips.length === 0, 'voice granted -> nothing strips')
     ok(uploadAllowed(mkRec(false), { motion: false }).ok === false, 'no motion consent -> no upload')
     ok(uploadAllowed(null, both).ok === false, 'garbage in -> refused')
+}
+
+// --- S2 plan rules: when do we ask, when do we record (#1711) --------------
+{
+    const OFF = { ok: false, sessions: false }
+    const ON = { ok: true, sessions: true }
+    const UNDECIDED = { motion: false, voice: false, at: 0 }
+    ok(planRun(OFF, UNDECIDED).reason === 'store-off' && !planRun(OFF, { motion: true, at: 1 }).record, 'store not provisioned: never asked, never recorded (no dead buttons, #737)')
+    const ask = planRun(ON, UNDECIDED)
+    ok(ask.ask === true && ask.record === false, 'decided-pending: the gate goes up BEFORE seed-birth')
+    ok(planRun(ON, { motion: true, voice: false, at: 5 }).record === true, 'motion granted -> the run records')
+    ok(planRun(ON, { motion: false, voice: false, at: 5 }).record === false, 'declined -> play on, nothing records')
+    ok(planRun(ON, { motion: false, at: 5, expired: true }).ask === true, 'a 90-day-quiet decision re-asks')
+    const m = decideMerge({ motion: true, voice: false }, { voice: true })
+    ok(m.motion === true && m.voice === true, 'a partial answer never silently revokes the other channel')
+    const m2 = decideMerge({ motion: true, voice: true }, { motion: false, voice: false })
+    ok(!m2.motion && !m2.voice, 'a full NO at a re-ask takes both back')
 }
 
 // --- envelope rules (the worker's own door-guard) ---------------------------
@@ -209,6 +228,58 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(sneak.status === 400, 'server refuses voice-without-voice-consent even if a client is broken')
     const sneak2 = await fetch(`${BASE}/sessions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ recording: mkRec(false), player: 'mallory', consent: {} }) })
     ok(sneak2.status === 400, 'server refuses an envelope with no motion consent')
+}
+
+// --- S2 auto-capture: arm -> autoStart -> live bank -> autoStop -> upload ---
+// The same production path a consented phone run drives (gameContract
+// armLiveCapture/autoStart/autoStop + the recordLiveTick funnel), driven here
+// against a fake spec whose hash math matches the synthetic sim above — so the
+// auto-captured file must replay-verify AND upload through the real gate.
+{
+    const sim = { seed: 0, tick: 0, h: 0 }
+    const advance = (pads) => {
+        sim.tick++
+        let bits = 0
+        for (const p of pads) bits += (p.right ? 1 : 0) + (p.left ? 2 : 0) + (p.up ? 3 : 0) + (p.down ? 4 : 0)
+        sim.h = (sim.h * 131 + bits) % 1000000007
+    }
+    const fakeSpec = {
+        id: 'gauntlet',
+        method: 'dpad',
+        players: 2,
+        sources: () => [{ kind: 'human' }, { kind: 'cpu' }],
+        state: () => ({ seed: sim.seed, hash: sim.h }),
+    }
+    ok(armLiveCapture(fakeSpec) === true, 'armLiveCapture arms the production live feed')
+    ok(!isRecording() && autoStop() === null, 'idle: autoStop returns nothing (no phantom file)')
+    sim.seed = 7; sim.tick = 0; sim.h = 7 * 31
+    ok(autoStart({ voiceConsent: false }) === true, 'autoStart opens the recorder at seed-birth')
+    ok(isRecording(), 'the recorder is live while the human plays')
+    for (let t = 1; t <= 120; t++) {
+        const pads = [{ right: t % 10 < 5 }, {}]
+        advance(pads)
+        recordLiveTick(pads)
+    }
+    const out = autoStop()
+    ok(out && out.rec && out.flush === null, 'autoStop returns the finished take (voice off -> no flush wait)')
+    ok(!isRecording(), 'the recorder closes with the run')
+    const rec = out.rec
+    ok(validate(rec) === null, `auto-captured file validates (${validate(rec) || 'clean'})`, validate(rec) || '')
+    ok(rec.format === REC_FORMAT && rec.voice === undefined, 'voice ungranted -> an honest v1 file')
+    ok(rec.ticks === 120 && rec.seed === 7 && rec.game === 'gauntlet', 'seed + length + game stamped from the run')
+    ok(rec.slots[0].source.kind === 'human' && rec.slots[1].source.kind === 'cpu', 'seat labels come from the game at stop time')
+    const ver2 = verifyRecording(rec, { reset: (seed) => { sim.seed = seed; sim.tick = 0; sim.h = seed * 31 }, step: advance, state: () => ({ tick: sim.tick, hash: sim.h }) })
+    ok(ver2.ok && ver2.ticks === 120, 'the auto-captured file replay-verifies tick-for-tick')
+    // the consented upload of an auto-captured run:
+    const st2 = memStore()
+    grantConsent(st2, 'jon', { motion: true, voice: false })
+    const up2 = await uploadSession(rec, { player: 'jon', consent: consentFor(st2, 'jon'), base: BASE })
+    ok(up2.ok && !!up2.key, 'a consented auto-capture uploads to the store')
+    ok(bucket.get(up2.key).text === JSON.stringify(rec), 'auto-capture bytes land unmodified')
+    // mid-run revoke: consent dies at the store door, zero bytes
+    revokeConsent(st2, 'jon')
+    const revoked = await uploadSession(rec, { player: 'jon', consent: consentFor(st2, 'jon'), base: BASE })
+    ok(revoked.uploaded === false && revoked.reason === 'no motion consent', 'a mid-run revoke stops the upload at the last moment')
 }
 
 // --- alignment bound: the clap proof (Node twin) ------------------------------
