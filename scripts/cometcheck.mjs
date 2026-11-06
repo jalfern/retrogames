@@ -1666,6 +1666,70 @@ selectorGate(await loadSelector())
     const roll2 = runRig(3, 5, false, 0, 28)
     check('#1696 determinism: same seed, same drive — identical marks, identical hash',
         JSON.stringify([...roll.g.marks]) === JSON.stringify([...roll2.g.marks]) && m.stateHash(roll.g) === m.stateHash(roll2.g))
+    // ---- #1718 cliff chips: a FAST bump scars the rock strata too ----------
+    // coal chip at the contact + crack dashes outward into the face, stamped
+    // on the same texel queue; an impact the sand could carry on its own
+    // never chips; deterministic; and the #1702 flow decays chip → crack →
+    // dents → pristine. Rigs run close to the foot so the fast one arrives
+    // above CFG.sandTop (sand drains ~0.1/tick — a long run-up would bleed it
+    // to the cap and no bump could ever chip).
+    const chipRun = (v, lat) => {
+        for (const dirLabel of ['toward outside', 'toward inside']) {
+            const g = m.makeGame(9)
+            g.phase = 'race'; g.count = 0
+            placeSand(g, v, lat, 0)
+            const steer = dirLabel === 'toward outside' ? 0.32 : -0.32
+            const bumpPos = []
+            for (let i = 0; i < 90; i++) {
+                m.step(g, { u: true, steer })
+                if (g.events.some((ev) => ev.e === 'bump' && ev.who === m.PLAYER.name)) bumpPos.push({ x: g.karts[0].x, y: g.karts[0].y })
+            }
+            if (bumpPos.length > 0) return { g, bumpPos, dirLabel }
+        }
+        return null
+    }
+    const imp = chipRun(7, 178)
+    if (imp) {
+        const bp = imp.bumpPos[0]
+        const decals = [...imp.g.marks].filter(([, d]) => d >= S.crack)
+        const nearD = (v, lo, hi) => decals.filter(([k, d]) => {
+            if (d !== v) return false
+            const tx = k % TEXn; const ty = (k - tx) / TEXn
+            const dx = (tx + 0.5) / TEXSn - bp.x; const dy = (ty + 0.5) / TEXSn - bp.y
+            return Math.sqrt(dx * dx + dy * dy) >= lo && Math.sqrt(dx * dx + dy * dy) <= hi
+        }).length
+        check('#1718 chip rig: a fast bump stamps a coal chip at the contact',
+            decals.length > 0 && nearD(S.chip, 0, 9) >= 1, `chips within 9px: ${nearD(S.chip, 0, 9)} (${decals.length} decals)`)
+        check('#1718 chip rig: crack dashes radiate into the strata around the chip',
+            nearD(S.crack, 4, 24) >= 2, `crack dashes in the 4..24px window: ${nearD(S.crack, 4, 24)}`)
+        check('#1718 chip law: no decal texel sits on asphalt (markCell law)',
+            decals.every(([k]) => surfTex(k) !== 'road'), `${decals.filter(([k]) => surfTex(k) === 'road').length} decals on road`)
+        const imp2 = chipRun(7, 178)
+        check('#1718 determinism: the chip scatter is a pose hash — same seed, same drive, identical scars',
+            imp2 !== null && JSON.stringify([...imp.g.marks]) === JSON.stringify([...imp2.g.marks]))
+        // an impact the sand could carry (<= sandTop) dents but never chips
+        const slow = chipRun(2.2, 195)
+        check('#1718 chip law: a low-speed bump churns sand but never chips the rock',
+            slow !== null && slow.bumpPos.length > 0 && [...slow.g.marks.values()].every((v) => v < S.crack),
+            slow ? `bumps ${slow.bumpPos.length}, max depth ${[...slow.g.marks.values()].reduce((a, v) => Math.max(a, v), 0)}` : 'no bump')
+        // heal chain: park on the road and let time flow — the decal range must
+        // drain (chip loses one step per pulse: 4.5 → crack → dents → gone)
+        const Pp = imp.g.karts[0]
+        const cpz = TS.pts[entry.i]
+        Pp.x = cpz.x; Pp.y = cpz.y; Pp.v = 0; Pp.spinT = 0
+        let chipLeft = 0; let crackSeen = 0; let decalLeft = 0
+        for (let i = 0; i < 1200; i++) {
+            m.step(imp.g, { u: false })
+            if (i === S.healT + S.sweep + 5) chipLeft = [...imp.g.marks.values()].filter((v) => v >= S.chip).length
+            if (i === S.healT + S.sweep + 5) crackSeen = [...imp.g.marks.values()].filter((v) => v >= S.crack).length
+        }
+        decalLeft = [...imp.g.marks.values()].filter((v) => v >= S.crack).length
+        check('#1718 chip heal: the flow drains chips to cracks within one age-out, cracks gone after five',
+            chipLeft === 0 && crackSeen >= 1 && decalLeft === 0,
+            `chips@${S.healT + S.sweep + 5}: ${chipLeft}, cracks then: ${crackSeen}, decals@1200: ${decalLeft}`)
+    } else {
+        check('#1718 chip rig: the short run-up lands a cliff bump', false, 'no bump at lat 178 either direction')
+    }
     // #1702 self-heal rig: drive a hot pass, then leave the kart coasting on
     // asphalt. A live cell must lose one depth step each SAND.healT ticks of
     // age (a lip at depth 1 goes straight to pristine), and a pass that is
@@ -1711,7 +1775,7 @@ selectorGate(await loadSelector())
     check('#1702 self-heal: one sweep past healT costs exactly one depth step', oneStep === 0, `${oneStep} off by one`)
     const hr = healRig(24, S.healT + S.sweep, S.healT - S.sweep)
     check('#1702 self-heal: a fresher pass re-arms the clock instead of churning deeper',
-        hr.reAt > 0 && [...hr.g.marks.values()].every((v) => v >= S.lip && v <= S.crater),
+        hr.reAt > 0 && [...hr.g.marks.values()].every((v) => v >= S.lip && v <= S.chip),
         `${hr.reAt} held at original depth`)
     // autopilot: with #1702 the audit must sample the WHOLE carve record —
     // markDelta is the complete carve ledger, and at the finish the sand has
@@ -1730,7 +1794,7 @@ selectorGate(await loadSelector())
             if (surfTex(k) === 'road') roadEver++
             if (d !== 0) {
                 histEver[d] = (histEver[d] || 0) + 1
-                if (d < S.lip || d > S.crater) depthBadEver++
+                if (d < S.lip || d > S.chip) depthBadEver++
             }
         }
         if (gH.marks.size > sizePeak) sizePeak = gH.marks.size
@@ -1756,7 +1820,7 @@ selectorGate(await loadSelector())
     check('#1696 the asphalt law: no texel carved in a whole race sits on the road', roadEver === 0, `${roadEver} violations`)
     let depthBad = depthBadEver
     const hist = histEver
-    check('#1696 every cell carved in a whole race sits inside [lip, crater]', depthBad === 0, JSON.stringify(hist))
+    check('#1696 every cell carved in a whole race sits inside [lip, chip] (#1718 widens the law for coal decals)', depthBad === 0, JSON.stringify(hist))
     check('#1696 a fresh game starts on smooth sand', m.makeGame(11).marks.size === 0)
     // straddle rig: a kart riding the edge line — its LIP shovel reaches onto
     // the asphalt shoulder of the road. The guard must refuse every one.
@@ -2121,6 +2185,46 @@ if (process.argv.includes('--mutate')) {
                 check('#1696 heal-dead: the pristine clone line is gone from index.jsx', /gnd = new Uint32Array\(gnd0\)/.test(src), 'missing')
             })
         } finally { pull(IDXJS) }
+        // #1718: delete the chip stamp, and disarm the speed law — both must
+        // blind a chip gate (the strata stay pristine, and even scuffs chip).
+        try {
+            plant(simPath1696, simSrc1696.replace('chipAt(g, k, Math.cos(p.a + Math.PI / 2) * side, Math.sin(p.a + Math.PI / 2) * side)\n                k.v *= CFG.bumpV', 'k.v *= CFG.bumpV'))
+            await diedSD('the rock never chips (chipAt deleted)', async () => {
+                const mm = await loadSim()
+                selectCourse('sandbank')
+                const TS = Tmod.TRACK
+                let si = 0; let run = 0; let bst = 0
+                for (let i = 0; i < TS.N; i++) { run = Math.abs(TS.pts[i].k) < 2e-4 ? run + 1 : 0; if (run > bst) { bst = run; si = i } }
+                const entry = TS.pts[(si - 6 + TS.N) % TS.N]
+                const g = mm.makeGame(9)
+                g.phase = 'race'; g.count = 0
+                const P = g.karts[0]
+                const ca = Math.cos(entry.a); const sa = Math.sin(entry.a)
+                P.x = entry.x - sa * 178; P.y = entry.y + ca * 178; P.a = entry.a; P.idx = entry.i; P.hint = entry.i; P.v = 7
+                for (let i = 0; i < 90; i++) mm.step(g, { u: true, steer: 0.32 })
+                const chips = [...g.marks.values()].filter((v) => v >= mm.SAND.crack).length
+                check('#1718 chip-dead probe: a fast bump still scars the rock', chips > 0, `decal cells ${chips}`)
+            })
+        } finally { pull(simPath1696) }
+        try {
+            plant(simPath1696, simSrc1696.replace('if (k.wpress !== 1 || k.v < SAND.chipV) return', 'if (!Number.isFinite(k.wpress + k.v)) return'))
+            await diedSD('the chip law is disarmed (a crawling grind scars the rock)', async () => {
+                const mm = await loadSim()
+                selectCourse('sandbank')
+                const TS = Tmod.TRACK
+                let si = 0; let run = 0; let bst = 0
+                for (let i = 0; i < TS.N; i++) { run = Math.abs(TS.pts[i].k) < 2e-4 ? run + 1 : 0; if (run > bst) { bst = run; si = i } }
+                const entry = TS.pts[(si - 6 + TS.N) % TS.N]
+                const g = mm.makeGame(9)
+                g.phase = 'race'; g.count = 0
+                const P = g.karts[0]
+                const ca = Math.cos(entry.a); const sa = Math.sin(entry.a)
+                P.x = entry.x - sa * 195; P.y = entry.y + ca * 195; P.a = entry.a; P.idx = entry.i; P.hint = entry.i; P.v = 2.2
+                for (let i = 0; i < 90; i++) mm.step(g, { u: true, steer: 0.32 })
+                const deep = [...g.marks.values()].filter((v) => v >= mm.SAND.crack).length
+                check('#1718 chipV probe: a slow scuff leaves the strata pristine', deep === 0, `decal cells on a slow scuff: ${deep}`)
+            })
+        } finally { pull(simPath1696) }
     }
 
     // break the checkpoint gate in sim.js and demand the shortcut probe above

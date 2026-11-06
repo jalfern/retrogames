@@ -88,6 +88,13 @@ export const LINK = { ext: 0.34, max: 3, carry: 0.5, overAdd: 0.55 }
 // texel deeper, so a slow roll never saturates the desert.
 export const SAND = {
     roll: 1, hot: 2, crater: 3, ring: 1, lip: -1,
+    // #1718 cliff chips: coal-dark decals painted ON the strata at a fast bump.
+    // Fractional depths (>= crack) are decal range — the renderer blends them
+    // toward coal instead of tinting, and the #1702 flow (d-1 per pulse) decays
+    // a chip into a crack, a crack into a dents, and on to pristine. Integer
+    // depths stay exactly the #1696 sand steps; the deepest-wins law is shared.
+    chip: 4.5, crack: 3.5,
+    chipV: 3.5, // above CFG.sandTop (3.4): sand alone can never carry an impact this fast — only a bump that arrives with asphalt/boost speed left scars the rock
     wheelBase: 14, trackW: 8, lipOff: 20, // world px: rear axle, half track, lip shelf
     craterR: 18, craterLipR: 30,
     minV: 1, // a crawling kart kicks nothing
@@ -167,6 +174,29 @@ function craterAt(g, k) {
         const c = Math.cos(ang); const s = Math.sin(ang)
         markCell(g, k.x + c * SAND.craterR, k.y + s * SAND.craterR, SAND.ring)
         markCell(g, k.x + c * SAND.craterLipR, k.y + s * SAND.craterLipR, SAND.lip)
+    }
+}
+
+// #1718 cliff chips: a bump AT SPEED scars the rock face too — a coal-dark
+// chip decal at the contact plus short crack dashes radiating into the strata
+// along the wall normal, all stamped into the same texel queue the sand carve
+// uses (the renderer blends the decal depth range toward coal instead of
+// tinting). rng-free: the jitter hashes the contact pose + tick, so the same
+// seed and drive scar byte-identical rock. Only a FRESH, fast impact chips:
+// wpress===1 means the kart just arrived at the cliff (a pinned grind climbs
+// to speed along the face but never scars it), and SAND.chipV carries the
+// speed law. Slow scuffs leave the sand dent alone — the strata stay pristine.
+function chipAt(g, k, nx, ny) {
+    if (k.wpress !== 1 || k.v < SAND.chipV) return
+    markCell(g, k.x + nx * 3, k.y + ny * 3, SAND.chip)
+    let h = (Math.floor(k.x * 13) ^ Math.floor(k.y * 7) ^ (g.tick * 29)) >>> 0
+    const tx0 = -ny; const ty0 = nx // wall tangent for the dash scatter
+    for (let i = 0; i < 4; i++) {
+        h = (Math.imul(h, 1103515245) + 12345) >>> 0
+        const out = 7 + i * 4 + (h >>> 27) // outward px into the strata
+        h >>>= 3
+        const tan = ((h >>> 24) % 13) - 6 // tangential px
+        markCell(g, k.x + nx * out + tx0 * tan, k.y + ny * out + ty0 * tan, SAND.crack)
     }
 }
 
@@ -443,6 +473,9 @@ function drive(g, k, inp) {
             while (daT < -Math.PI) daT += Math.PI * 2
             k.a += daT * 0.12
             if (k.bumpCd === 0) {
+                // #1718: chip the rock at the raw impact speed, before the
+                // bump damping — the cliff feels the hit the kart arrived with.
+                chipAt(g, k, Math.cos(p.a + Math.PI / 2) * side, Math.sin(p.a + Math.PI / 2) * side)
                 k.v *= CFG.bumpV
                 k.bumpCd = CFG.bumpCd
                 craterAt(g, k)
