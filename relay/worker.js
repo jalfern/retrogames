@@ -9,7 +9,7 @@
 // Served at https://retrogames.jalfern.workers.dev/room/<CODE> (wss).
 
 import { DurableObject } from 'cloudflare:workers'
-import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot } from './core.js'
+import { CODE_RE, MAX_MSG, IDLE_MS, RATE_WINDOW, ROOM_CAP_MAX, relay, validateFeedback, buildFeedbackIssue, corsHeaders, FB_SHOT_PLACEHOLDER, screenshotMarkdown, uploadScreenshot, SES_MAX_BODY, validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from './core.js'
 
 const GH_API = 'https://api.github.com'
 
@@ -77,6 +77,48 @@ async function handleFeedback(req, env) {
     } catch {
         return json({ ok: false, err: 'github unreachable' }, origin, 502)
     }
+}
+
+// SESSION STORE (#1711) — private R2 behind this worker. Uploads carry a
+// consent envelope that core.validateSessionEnvelope refuses without; the
+// bucket itself is never public (reads only through these routes). Until the
+// bucket + binding exist, /status reports sessions:false and every route
+// answers an honest 503 (capability gate, #737 pattern).
+async function handleSessionUpload(req, env, origin) {
+    if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const len = Number(req.headers.get('content-length') || 0)
+    if (len > SES_MAX_BODY) return json({ ok: false, err: 'too big' }, origin, 413)
+    let body
+    try { body = await req.json() } catch { return json({ ok: false, err: 'bad json' }, origin, 400) }
+    const v = validateSessionEnvelope(body)
+    if (!v.ok) return json({ ok: false, err: v.err }, origin, 400)
+    const stamp = new Date().toISOString()
+    const key = sessionKey(body.recording, stamp, crypto.randomUUID().replace(/-/g, ''))
+    const meta = sessionMeta(body.recording, body.player)
+    meta.uploadedAt = stamp
+    await env.SESSIONS.put(key, JSON.stringify(body.recording), { httpMetadata: { contentType: 'application/json' }, customMetadata: meta })
+    return json({ ok: true, key }, origin, 200)
+}
+
+async function handleSessionList(req, env, origin) {
+    if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const limit = Math.max(1, Math.min(200, Number(new URL(req.url).searchParams.get('limit')) || 50))
+    const listed = await env.SESSIONS.list({ limit })
+    const sessions = []
+    for (const o of listed.objects) {
+        const head = await env.SESSIONS.head(o.key)
+        sessions.push(sessionRow(o.key, head && head.customMetadata, o.uploaded ? o.uploaded.toISOString() : ''))
+    }
+    return json({ ok: true, sessions }, origin, 200)
+}
+
+async function handleSessionGet(env, origin, pathname) {
+    if (!env || !env.SESSIONS) return json({ ok: false, err: 'store not configured' }, origin, 503)
+    const key = decodeURIComponent(pathname.slice('/sessions/'.length))
+    if (!/^[a-z0-9][a-z0-9-]{0,40}\/[0-9-]{10}-seed\d+-[a-f0-9]{10}\.json$/.test(key)) return json({ ok: false, err: 'bad key' }, origin, 400)
+    const obj = await env.SESSIONS.get(key)
+    if (!obj) return json({ ok: false, err: 'not found' }, origin, 404)
+    return new Response(obj.body, { headers: { 'content-type': 'application/json', ...corsHeaders(origin) } })
 }
 
 export class Registry extends DurableObject {
@@ -229,12 +271,15 @@ export default {
         // Browsers preflight the JSON POST (content-type is not a CORS-safelisted
         // value); answer OPTIONS for the HTTP endpoints, never for room upgrades.
         if (req.method === 'OPTIONS') {
-            if (url.pathname === '/status' || url.pathname === '/feedback') {
+            if (url.pathname === '/status' || url.pathname === '/feedback' || url.pathname === '/sessions' || url.pathname.startsWith('/sessions/')) {
                 return new Response(null, { status: 204, headers: corsHeaders(origin) })
             }
             return new Response(null, { status: 405 })
         }
         if (req.method === 'POST' && url.pathname === '/feedback') return handleFeedback(req, env)
+        if (req.method === 'POST' && url.pathname === '/sessions') return handleSessionUpload(req, env, origin)
+        if (req.method === 'GET' && url.pathname === '/sessions') return handleSessionList(req, env, origin)
+        if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) return handleSessionGet(env, origin, url.pathname)
         if (url.pathname === '/' || url.pathname === '/status') {
             let rooms = -1
             try { rooms = await env.REGISTRY.get(env.REGISTRY.idFromName('registry')).count() } catch { /* probe anyway */ }
@@ -244,7 +289,8 @@ export default {
             // jonKey (#737 follow-up): presence-only boolean — "the secrets should be
             // deployed" must be checkable with one curl, without leaking the key.
             const feedback = !!(env.GITHUB_TOKEN && env.GH_REPO)
-            return json({ ok: true, service: 'retrogames-relay', rooms, feedback, jonKey: !!env.JON_KEY }, origin, 200)
+            // sessions (#1711): R2 store bound? Clients hide upload affordances until true.
+            return json({ ok: true, service: 'retrogames-relay', rooms, feedback, jonKey: !!env.JON_KEY, sessions: !!(env.SESSIONS && env.SESSIONS.put) }, origin, 200)
         }
         const m = url.pathname.match(/^\/room\/([A-Za-z0-9]{4})$/)
         if (!m) return new Response('use /room/CODE', { status: 400 })
