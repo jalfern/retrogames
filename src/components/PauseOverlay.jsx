@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from
 import { Link } from 'react-router-dom'
 import { packPages } from '../utils/textFit'
 import { audioController } from '../utils/AudioController.js'
+import { WATCH_KEY, gameHasWatch } from '../utils/watch'
 
 // #1099: the shared help screen must never overflow a phone. Blocks (title,
 // description, each control row) are measured against the live viewport and
@@ -43,6 +44,29 @@ const PauseOverlay = ({ game, badge, onResume }) => {
                     <span className="mr-2">?</span>
                     Toggle Help / Pause
                 </div>,
+            ]
+            : []),
+        // #1656 — Jon couldn't find the watch on his phone. The help screen is
+        // where he looks, so watched titles get an action row here: resume,
+        // then seat the watcher on the run that is already up (~180 ms lets
+        // the unpause flush before KeyY lands).
+        ...(gameHasWatch(game)
+            ? [
+                <button
+                    key="watch"
+                    data-watch-pause="1"
+                    onClick={() => {
+                        onResume()
+                        const fire = (type, code, key) => window.dispatchEvent(new KeyboardEvent(type, { code, key, bubbles: true }))
+                        setTimeout(() => {
+                            fire('keydown', WATCH_KEY, 'y')
+                            fire('keyup', WATCH_KEY, 'y')
+                        }, 180)
+                    }}
+                    className="min-h-[44px] mt-2 px-6 py-2 rounded-full bg-emerald-500 border-2 border-emerald-200 text-white font-bold text-base tracking-wider"
+                >
+                    ▶ WATCH — PLAY IT FOR ME
+                </button>,
             ]
             : []),
         // #1572 guidance tab: an optional, game-authored rules page (the
