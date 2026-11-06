@@ -5,7 +5,7 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
-import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2 } from './levels.js'
+import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
 import { plan, bfsPath, press } from './planner.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -82,26 +82,39 @@ const MarbleMadnessGame = () => {
         for (let i = 0; i < 70; i++) stars.push([(i * 173) % W, (i * 97) % 100, (i * 37) % 3])
 
         // ---- audio -----------------------------------------------------------
+        // #1752: the races finally sing. A continuous virtuosic bed (original,
+        // Marsyas idiom — see AudioController) runs from the first race, walks
+        // faster each race, switches to the variation-up for SILLY/ULTIMATE,
+        // ducks under the big hits, and stops only when the run ends. During
+        // attract the bed rides the demo the way the cabinet's attract played
+        // through (the AudioContext stays locked until the first tap anyway).
         const sfx = (ev) => {
             switch (ev.type) {
                 case 'tickBeep': audioController.playTone(ev.secs <= 3 ? 1100 : 800, 0.06, 'square', 0.12); break
-                case 'steelieHit': audioController.playTone(180, 0.12, 'square', 0.2); audioController.playNoise(0.1, 0.18); break
-                case 'shatter': audioController.playNoise(0.25, 0.3); audioController.playSweep(900, 120, 0.3, 'sawtooth', 0.18); break
-                case 'void': audioController.playSweep(700, 90, 0.45, 'sine', 0.18); break
-                case 'munch': audioController.playSweep(500, 90, 0.2, 'square', 0.2); break
+                case 'steelieHit': audioController.playTone(180, 0.12, 'square', 0.2); audioController.playNoise(0.1, 0.18); audioController.duckMusic(0.75, 0.35); break
+                case 'shatter': audioController.playNoise(0.25, 0.3); audioController.playSweep(900, 120, 0.3, 'sawtooth', 0.18); audioController.duckMusic(0.55, 0.5); break
+                case 'void': audioController.playSweep(700, 90, 0.45, 'sine', 0.18); audioController.duckMusic(0.55, 0.5); break
+                case 'munch': audioController.playSweep(500, 90, 0.2, 'square', 0.2); audioController.duckMusic(0.55, 0.5); break
                 case 'acid': audioController.playSweep(300, 80, 0.35, 'sawtooth', 0.18); break
                 case 'bounce': audioController.playSweep(250, 700, 0.15, 'sine', 0.16); break
                 case 'throw': audioController.playSweep(200, 900, 0.2, 'triangle', 0.15); break
                 case 'land': audioController.playTone(120, 0.05, 'triangle', 0.1); break
                 case 'respawn': audioController.playSweep(400, 900, 0.2, 'sine', 0.12); break
-                case 'practiceRestart': audioController.playTone(300, 0.15, 'triangle', 0.15); break
-                case 'raceStart': audioController.playTone(600, 0.09, 'square', 0.12); break
+                case 'practiceRestart': audioController.playTone(300, 0.15, 'triangle', 0.15); audioController.setMusicStep(musicStepFor(ev.race ?? 0)); break
+                case 'raceStart': {
+                    audioController.playTone(600, 0.09, 'square', 0.12)
+                    const bed = bedFor(ev.race)
+                    audioController.startMusic(bed)
+                    audioController.setMusicStep(musicStepFor(ev.race))
+                    break
+                }
                 case 'raceClear':
+                    audioController.duckMusic(0.6, 0.6);
                     [523, 659, 784, 1047].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.12, 'square', 0.14), i * 90))
                     break
                 case '1up': [784, 1047, 1319].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.1, 'square', 0.14), i * 80)); break
-                case 'win': [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.14, 'square', 0.16), i * 110)); break
-                case 'over': audioController.playSweep(400, 60, 0.8, 'sawtooth', 0.2); break
+                case 'win': audioController.stopMusic(); [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => setTimeout(() => audioController.playTone(f, 0.14, 'square', 0.16), i * 110)); break
+                case 'over': audioController.stopMusic(); audioController.playSweep(400, 60, 0.8, 'sawtooth', 0.2); break
             }
         }
 
@@ -143,6 +156,11 @@ const MarbleMadnessGame = () => {
             particles = []
             resetCam()
             banner = { text: RACES[0].name, t: 110, big: true }
+            // race 1 has no raceStart event (makeGame loads it silently) —
+            // the bed starts here instead; the key/tap that gets here IS the
+            // user gesture, so the AudioContext is already unlocked.
+            audioController.startMusic(bedFor(0))
+            audioController.setMusicStep(musicStepFor(0))
         }
 
         const startAttract = () => {
@@ -506,7 +524,7 @@ const MarbleMadnessGame = () => {
                 { label: 'PROGNOSIS', run: () => (bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 1).length || bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 2).length) ? 'WINNABLE' : 'DEAD END' },
             ],
         })
-        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx }
+        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState() }
 
         // #1473 seedpin: report the run seed every build (hazard waves are pure
         // tick functions; seed travels with the state for exact replays).
@@ -527,6 +545,7 @@ const MarbleMadnessGame = () => {
             window.removeEventListener('pointerup', onPointerUp)
             cancelAnimationFrame(raf)
             if (unmountDbg) unmountDbg()
+            audioController.stopMusic() // the bed belongs to this screen; never outlive it
             delete window.__marble
         }
     }, [])

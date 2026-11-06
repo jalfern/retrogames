@@ -98,6 +98,47 @@ export const MUSIC = {
             47, 0, 0, 47, 0, 0, 55, 0, 43, 0, 0, 43, 0, 0, 50, 0,
         ],
     },
+    // MARBLE MADNESS (#1752) — two original beds in the Marsyas IDIOM: the
+    // relentless sixteenth-note piano showpiece of the cabinet (continuous
+    // arpeggio runs over an octave-pumping left hand, A minor, no rests —
+    // the "running" feel is the signature). Marsyas itself is Mark Levinthal's
+    // copyrighted 1984 composition, and the header law says no copyrighted game
+    // audio, so these melodies are OURS — same breath, same register, same
+    // effect, not a transcription (the `joust` call: composed for this build).
+    // The finale bed is the variation-up: the same harmony an octave higher,
+    // faster step, exactly the way the cabinet's courses each re-voiced it.
+    marble: {
+        step: 0.085,
+        lead: [
+            69, 72, 76, 81, 84, 81, 76, 72, 69, 72, 76, 81, 84, 81, 76, 69,
+            65, 69, 72, 77, 81, 77, 72, 69, 65, 69, 72, 77, 81, 84, 81, 77,
+            67, 71, 74, 79, 83, 79, 74, 71, 67, 71, 74, 79, 83, 79, 74, 67,
+            64, 68, 71, 74, 76, 74, 71, 68, 64, 68, 71, 74, 76, 80, 76, 68,
+        ],
+        bass: [
+            45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57,
+            41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53,
+            43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55,
+            40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52,
+        ],
+    },
+    // "THE FINALE" — SILLY + ULTIMATE: the variation-up. Showpiece octave,
+    // tighter step; the left hand stays low so the runs sit on top of it.
+    marbleFinale: {
+        step: 0.072,
+        lead: [
+            81, 84, 88, 93, 96, 93, 88, 84, 81, 84, 88, 93, 96, 93, 88, 81,
+            77, 81, 84, 89, 93, 89, 84, 81, 77, 81, 84, 89, 93, 96, 93, 89,
+            79, 83, 86, 91, 95, 91, 86, 83, 79, 83, 86, 91, 95, 91, 86, 79,
+            76, 80, 83, 86, 88, 86, 83, 80, 76, 80, 83, 86, 88, 92, 88, 80,
+        ],
+        bass: [
+            45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57,
+            41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53, 41, 53,
+            43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55,
+            40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52,
+        ],
+    },
     // PRINCE OF PERSIA — three original beds in the Hijaz mode (D Eb F# G A Bb C#),
     // composed for this build. Silence stays the default voice of the dungeon:
     // these run under it, sparse and slow, with a darbuka pulse (1=dum 2=tek).
