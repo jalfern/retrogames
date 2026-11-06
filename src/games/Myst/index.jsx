@@ -998,7 +998,7 @@ const MystGame = () => {
           </div>
           <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />
           <p className="text-lg animate-pulse text-amber-300">{PRESS}</p>
-          <p className="mt-3 text-xs text-amber-200/50 tracking-wide">Y — watch the proven route</p>
+          <span className="block mt-3 text-xs text-amber-200/50 tracking-wide">Y — watch the proven route</span>
         </div>
       )}
 
