@@ -15,6 +15,7 @@ import {
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
+    crumbleFeel, CRUMBLE_HEAR_R,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
 } from '../src/games/MagicCarpet/sim.js'
 
@@ -1275,6 +1276,107 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     }
 }
 
+// ---- #1697: CRUMBLE FEEDBACK — the landing thuds, slurps, shakes and throws
+// grit, all driven off the deform queue's landing (cast + CRUMBLE_T), and all
+// presentation-only. Mutation guide: (1) delete the gs.events.push in
+// drainDeforms' last branch — the landing, scaling, distance and flood gates go
+// red while the #1694 convergence gates hold; (2) return constant prox in
+// crumbleFeel — the scaling/distance gates go red; (3) raise the mag threshold
+// above 12 or drop the flooded flag — the gates named for them go red;
+// (4) route the thud to playTone in index.jsx — the bus-pin goes red;
+// (5) delete spawnGrit — the browser grit gate goes red.
+{
+    const drainTo = (gs) => {
+        // step ticks until a crumble event lands (or bail); returns that event.
+        for (let t = 0; t < CRUMBLE_T + 2; t++) {
+            step(gs, {})
+            const e = gs.events.find((ev) => ev.type === 'crumble')
+            if (e) return { e, t: t + 1 }
+        }
+        return null
+    }
+    {
+        const gs = makeGame(7)
+        gs.x = 100; gs.y = 100
+        crater(gs, 110, 100, 14, 10, 1)
+        gs.events.length = 0
+        const mid = (() => { for (let t = 0; t < CRUMBLE_T - 1; t++) step(gs, {}); return gs.events.some((e) => e.type === 'crumble') })()
+        const land = drainTo(gs)
+        r.check('#1697 a sink lands: one crumble event, exactly at the window close',
+            !mid && !!land && land.e.kind === 'crater' && land.e.hot === 1 && gs.deforms.length === 0,
+            `mid=${mid} land=${land ? JSON.stringify({ k: land.e.kind, t: land.t }) : 'never'}`)
+        const f = crumbleFeel(gs, land.e)
+        r.check('#1697 a crater dropping under the carpet shakes the view (size>0, prox>0)',
+            f.shake > 1 && f.vol > 0.2 && f.prox > 0, JSON.stringify(f))
+        r.check('#1697 feel is a pure read — computing the thud never disturbs the hash',
+            stateHash(gs) === (() => { crumbleFeel(gs, { x: 110, y: 100, mag: 7 }); return stateHash(gs) })())
+    }
+    {
+        const gs = makeGame(7)
+        gs.x = 100; gs.y = 100
+        crater(gs, 400, 100, 14, 10, 1) // over the next hill: 300u away
+        gs.events.length = 0
+        const land = drainTo(gs)
+        const f = crumbleFeel(gs, land.e)
+        r.check('#1697 distant casts land silent — no thud, no shake beyond ear-shot',
+            land.e.x === wrap(400, MAP) && f.prox === 0 && f.vol === 0 && f.shake === 0 &&
+            crumbleFeel(gs, { ...land.e, x: wrap(gs.x + CRUMBLE_HEAR_R + 1, MAP), y: gs.y }).vol === 0,
+            JSON.stringify(f))
+    }
+    {
+        // size-scaled: at equal distance, more earth moved = louder and harder.
+        const gs = makeGame(7)
+        gs.x = 100; gs.y = 100
+        const feelAt = (d) => crumbleFeel(gs, { x: wrap(gs.x + d, MAP), y: gs.y, mag: 10 })
+        const a = feelAt(80), b = feelAt(40), c = feelAt(0)
+        r.check('#1697 thud falls off smoothly with distance (0 at horizon, louder closer)',
+            a.vol > 0 && a.vol < b.vol && b.vol < c.vol && c.prox === 1,
+            `${a.vol.toFixed(2)} < ${b.vol.toFixed(2)} < ${c.vol.toFixed(2)}`)
+        const mk = (depth) => { const g = makeGame(7); g.x = 100; g.y = 100; crater(g, 100, 100, 14, depth, 0); const mag = g.deforms[0].mag; return { mag, ...crumbleFeel(g, { x: 100, y: 100, mag }) } }
+        const small = mk(4), big = mk(12)
+        r.check('#1697 a volcano vent thuds harder than a bolt crater (mag scales shake and vol)',
+            big.mag > small.mag && big.shake > small.shake && big.vol > small.vol,
+            `bolt ${small.mag.toFixed(1)}/${small.shake.toFixed(2)} vs vent ${big.mag.toFixed(1)}/${big.shake.toFixed(2)}`)
+        // the real casts: fireball (depth 10) vs the volcano's main vent (12).
+        const fb = makeGame(7); crater(fb, 100, 100, 14, 10, 1)
+        const v0 = makeGame(7); volcanoErupt(v0, 100, 100)
+        const ventMag = Math.max(...v0.deforms.map((d) => d.mag))
+        r.check('#1697 the volcano main vent queues more earth than a fireball (landing scaling is real)',
+            ventMag > fb.deforms[0].mag, `fireball ${fb.deforms[0].mag.toFixed(1)} vs vent ${ventMag.toFixed(1)}`)
+    }
+    {
+        const gs = makeGame(7)
+        gs.x = 100; gs.y = 100
+        dissolveLand(gs, 110, 100)
+        gs.events.length = 0
+        const land = drainTo(gs)
+        r.check('#1697 a dissolve wound lands flooded — the slurp knows the sea arrived',
+            land && land.e.kind === 'dissolve' && land.e.flooded === 1 &&
+            sampleH(gs, 110, 100) < WATER,
+            land ? `kind=${land.e.kind} flooded=${land.e.flooded} h=${sampleH(gs, 110, 100).toFixed(1)}<${WATER}` : 'never')
+        const gs2 = makeGame(7)
+        gs2.x = 100; gs2.y = 100
+        raiseTerrain(gs2, 110, 100, 16, 14)
+        gs2.events.length = 0
+        for (let t = 0; t < CRUMBLE_T + 2; t++) step(gs2, {})
+        r.check('#1697 mounds land upward and stay silent — no impact event for RAISE',
+            !gs2.events.some((e) => e.type === 'crumble') && gs2.deforms.length === 0)
+    }
+    {
+        const idxSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+        const rendSrc = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        const handler = idxSrc.match(/e\.type === 'crumble'\) \{[\s\S]{0,1400}?\n\s+\} else if/)
+        r.check('#1697 landing sound rides the MUFFLE bus (amb* behind the veil, never destination)',
+            !!handler && /ambTone\(/.test(handler[0]) && /ambSweep\(/.test(handler[0]) &&
+            !/audioController\.play(Tone|Sweep|Noise)\(/.test(handler[0]) && /crumbleFeel\(gs, e\)/.test(handler[0]))
+        r.check('#1697 grit rides the ash pool only at the rim of craters — cold, size-gated, no scorch',
+            /e\.type === 'crumble'\) spawnGrit/.test(rendSrc) &&
+            /spawnGrit[\s\S]{0,1400}'ash'/.test(rendSrc) &&
+            /kind !== 'crater' \|\| e\.mag < 3/.test(rendSrc) &&
+            !/spawnGrit[\s\S]{0,1200}addScorch/.test(rendSrc))
+    }
+}
+
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })
@@ -1444,6 +1546,31 @@ const crumble = await page.evaluate(async () => {
 r.check('a killed creature crumbles to ash in place (#1646)',
     crumble.clean === 0 && crumble.seen >= 12 && crumble.cleared === 0,
     `ash ${crumble.clean} -> ${crumble.seen} -> cleared ${crumble.cleared}`)
+
+// #1697 browser leg: the landing event drives real particles and real
+// scheduled sound, scaled by distance; raise landings throw nothing.
+const land1697 = await page.evaluate(() => {
+    // AudioContext needs the page's own unlock gesture before any one-shot
+    // schedules; a synthetic keydown runs the App's once-listener.
+    window.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }))
+    const t = window.__carpetTest
+    const { x, y } = t.carpet()
+    const ev = (kind, dx, mag) => t.fx({ type: 'crumble', kind, mag, x: x + dx, y, r: 28, hot: 0, flooded: kind === 'dissolve' ? 1 : 0 })
+    const ash0 = t.crumbles(), sfx0 = t.sfx()
+    ev('crater', 40, 10)
+    const ashNear = t.crumbles(), sfxNear = t.sfx()
+    ev('raise', 40, 14)
+    const ashRaise = t.crumbles(), sfxRaise = t.sfx()
+    ev('crater', 260, 10)
+    const sfxFar = t.sfx()
+    return { ash0, ashNear, ashRaise, sfx0, sfxNear, sfxRaise, sfxFar }
+})
+r.check('#1697 a crater landing throws cold grit through the ash pool (#1697)',
+    land1697.ashNear - land1697.ash0 >= 8 && land1697.ashRaise === land1697.ashNear,
+    `ash ${land1697.ash0} -> ${land1697.ashNear} (raise ${land1697.ashRaise})`)
+r.check('#1697 a near landing schedules the thud; a distant one schedules nothing (#1697)',
+    land1697.sfxNear > land1697.sfx0 && land1697.sfxRaise > land1697.sfxNear && land1697.sfxFar === land1697.sfxRaise,
+    `sfx ${land1697.sfx0} -> ${land1697.sfxNear} -> ${land1697.sfxRaise} -> ${land1697.sfxFar}`)
 
 // ---- #1612 item 4 (browser): veiling actually closes the ambience low-pass the
 // shell drives the wind/growl bed through. Mutation guide: drop the

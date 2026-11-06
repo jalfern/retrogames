@@ -606,6 +606,29 @@ void main(){
         }
     }
 
+    // #1697: fresh craters throw grit as the crumble window closes — cold dust
+    // riding the #1646 ash pool (hops and settles, dies fast). Deliberately no
+    // scorch and no fire tint: the original's cold craters stayed cold, and a
+    // hot crater's heat glows in the pit — the grit it throws is just rock.
+    const spawnGrit = (gs, e) => {
+        if (e.kind !== 'crater' || e.mag < 3) return
+        const wrapv = (v) => ((v % MAP) + MAP) % MAP
+        const n = Math.min(14, 4 + Math.round(e.mag))
+        const col = [0.58, 0.53, 0.44]
+        for (let i = 0; i < n; i++) {
+            const a = Math.random() * Math.PI * 2, rr = e.r * (1 + Math.random() * 0.25)
+            const gx = wrapv(e.x + Math.cos(a) * rr), gy = wrapv(e.y + Math.sin(a) * rr)
+            spawn(gx, heightAt(gs, gx, gy) + 0.8 + Math.random(), gy, 'ash',
+                Math.cos(a) * 0.4, 0.5 + Math.random() * 1.2, Math.sin(a) * 0.4,
+                0.5 + e.mag * 0.06 + Math.random() * 0.5, 26 + Math.random() * 18, col)
+        }
+        for (let i = 0; i < Math.max(2, n / 5); i++) {
+            const a = Math.random() * Math.PI * 2, rr = e.r * (0.9 + Math.random() * 0.3)
+            const gx = wrapv(e.x + Math.cos(a) * rr), gy = wrapv(e.y + Math.sin(a) * rr)
+            spawn(gx, heightAt(gs, gx, gy) + 1, gy, 'smoke', (Math.random() - 0.5) * 0.3, 0.3 + Math.random() * 0.3, (Math.random() - 0.5) * 0.3, 1.6 + Math.random() * 1.2, 36 + Math.random() * 24, [0.5, 0.46, 0.4])
+        }
+    }
+
     // Volcano vents (#1612 item 5): live lava fountains for a while after an
     // eruption. Presentation-only; the sim's hot craters carry the truth.
     const vents = []
@@ -648,6 +671,7 @@ void main(){
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             else if (e.type === 'wizardDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
             else if (e.type === 'kill') spawnCrumble(gs, e.x, e.y, e.kind)
+            else if (e.type === 'crumble') spawnGrit(gs, e)
             // #1639 SHATTER: icy splinters and a cold flare — deliberately NO
             // scorch mark: the kill spell leaves the land untouched, and the
             // renderer keeps that promise on screen as the sim does in the sim.
