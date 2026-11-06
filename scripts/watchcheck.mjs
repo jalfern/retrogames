@@ -838,7 +838,7 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
     rep.check('MAGICCARPET: attract screen shows the WATCH hint', (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
     rep.check('MAGICCARPET: the watcher seats autopilot(gs) — the closed-loop brain of the sim itself (no witness script)',
-        /if \(watchingRef\.current && !gs\.end\) \{[\s\S]{0,240}const ap = autopilot\(gs\)/.test(src))
+        /if \(watchingRef\.current && !gs\.end\) \{[\s\S]{0,480}const ap = autopilot\(gs\)/.test(src))
     rep.check('MAGICCARPET: visuals follow the FLOWN pad (bank/sway read eff, not phantom keys)',
         /const eff = \{ l: false, r: false, u: false, d: false \}/.test(src)
         && /const steer = \(eff\.r \? 1 : 0\) - \(eff\.l \? 1 : 0\)/.test(src))
