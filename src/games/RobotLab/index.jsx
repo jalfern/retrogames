@@ -18,7 +18,7 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { createRobotSim, createAutopilot, createEpisode, saveEpisode, episodeStats, manifestSummary, MANIFEST_REV } from '../../utils/robot'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, NO_GUIDE } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 
 const FIXED_DT = 1000 / 60
 const TOUCH = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
@@ -562,6 +562,12 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     {NO_GUIDE}
                     {/* #1663 make it teach: say WHEN the guide is available. */}
                     <div className="mt-1 text-[10px] tracking-wider text-amber-200/90">PRESS Y AT A FRESH BENCH</div>
+                </div>
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {phase === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
                 </div>
             )}
             {phase === 'play' && !paused && (

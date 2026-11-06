@@ -15,7 +15,7 @@ import { createRenderer } from './render.js'
 import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot, watchSnapshot, watchRestore } from './bot.js'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, WATCH_HELP, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
 
@@ -526,7 +526,13 @@ export default function Emberwood() {
             )}
             {/* #1624 WATCH — the prover walks the vale; any input takes over. */}
             {inGame && watching && (
-                <WatchToast className="absolute top-[calc(8.75rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
+                <WatchToast className="absolute top-[calc(10rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
             )}
             {inGame && !paused && (
                 <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: 'calc(0.5rem + var(--sar, 0px))' }}>

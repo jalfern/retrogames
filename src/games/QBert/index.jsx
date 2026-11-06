@@ -8,7 +8,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
@@ -554,6 +554,12 @@ const QBertGame = () => {
             {/* #1637 WATCH — the prover climbs the pyramid; any key, pad push or tap takes it back. */}
             {play && watching && (
                 <WatchToast className="fixed z-50" />
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
             )}
             {play && !paused && (
                 <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

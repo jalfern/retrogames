@@ -19,7 +19,7 @@ import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan, decide } from './planner.js'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
     HEAT_XS, HEAT_VXS, HEAT_EPISODES } from './policy.js'
 import { makeStars, makeCam, drawStars, drawTerrain, drawLander, drawOrbiter } from './art.js'
@@ -538,6 +538,12 @@ const LunarLanderGame = () => {
             {/* #1637 WATCH — the proven pilot lands the legs; any input takes over. */}
             {screen === 'play' && watching && (
                 <WatchToast className="absolute z-50 top-[calc(7.25rem + var(--sat, 0px))]" />
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
             )}
             {screen === 'play' && !paused && !replayMode && !labMode && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(4.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

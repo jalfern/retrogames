@@ -27,7 +27,7 @@ import {
 } from './sim.js'
 import { parseCoCall, applyCallEvent, callLabel } from './calls.js'
 import { playWatchStart, playWatchStop, watchSfxLog, WATCH_KEY, NO_GUIDE } from '../../utils/watch'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import {
     createRallySync, cpuSeatPad, snapshotGame, restoreGame, packSnap,
     DROP_GRACE, SEATS,
@@ -1365,6 +1365,12 @@ export default function RallyCoDriver() {
                      style={{ top: 'calc(6.25rem + var(--sat, 0px))' }}>
                     {NO_GUIDE}
                     <div className="mt-1 text-[10px] tracking-wider text-amber-200/90">THE WIRE OWNS THE SEATS · SOLO ONLY</div>
+                </div>
+            )}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && !netUi && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
                 </div>
             )}
             {screen === 'play' && !paused && (

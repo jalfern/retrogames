@@ -31,6 +31,12 @@ export const NO_GUIDE = 'no guide yet'
 // screen, before the first Y press. One sentence in every game.
 export const WATCH_ATTRACT_HINT = 'Y — WATCH THE PROVEN ROUTE'
 
+// #1656 — does this registry entry advertise WATCH? The controls list carries
+// WATCH_HELP for exactly the titles with a proven driver; shared chrome
+// (PauseOverlay's WATCH row) gates on the same source of truth.
+export const gameHasWatch = (game) =>
+  Array.isArray(game?.controls) && game.controls.some((c) => typeof c === 'string' && c.startsWith('Y / WATCH'))
+
 // #1638 — the handoff blip. Rising when the prover takes the wheel, falling
 // when it hands the wheel back; one voice in every pilot. playTone is
 // lock-safe (silent no-op until the AudioContext exists), so no try/catch.

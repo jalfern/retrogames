@@ -15,7 +15,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
-import WatchButton, { WatchToast } from '../../components/WatchButton'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
@@ -964,8 +964,14 @@ const FloorBossGame = () => {
             {/* #1624 WATCH — the floor runs the proven shift. Bottom-left: the
                 top bar chips and the order rail own the canvas's right side. */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
             {screen === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(0.75rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}
