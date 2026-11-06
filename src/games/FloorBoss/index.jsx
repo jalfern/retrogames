@@ -971,7 +971,7 @@ const FloorBossGame = () => {
                 </div>
             )}
             {screen === 'play' && !paused && (
-                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(0.75rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
             )}

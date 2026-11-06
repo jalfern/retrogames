@@ -1368,7 +1368,7 @@ export default function RallyCoDriver() {
                 </div>
             )}
             {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-            {screen === 'attract' && (
+            {screen === 'attract' && !netUi && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
                 </div>
