@@ -15,7 +15,7 @@ import { createRenderer } from './render.js'
 import { makeTextures, battleHeat, musicStepFor, musicBedFor } from './art.js'
 import { proveGame } from './solver.js'
 import { attractBot, watchSnapshot, watchRestore } from './bot.js'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, WATCH_HELP, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { SCREENS, SHOP, SECRET_SHOP } from './world.js'
 
@@ -524,9 +524,7 @@ export default function Emberwood() {
             )}
             {/* #1624 WATCH — the prover walks the vale; any input takes over. */}
             {inGame && watching && (
-                <div className="absolute top-[calc(3.4rem + var(--sat, 0px))] left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full pointer-events-none whitespace-nowrap" style={{ textShadow: 'none' }}>
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute top-[calc(3.4rem + var(--sat, 0px))]" style={{ textShadow: 'none' }} />
             )}
             {inGame && !paused && (
                 <div className="absolute pointer-events-auto" style={{ top: 'calc(6.6rem + var(--sat, 0px))', right: '0.5rem' }}>

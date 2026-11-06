@@ -11,7 +11,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -414,9 +414,7 @@ const ArkanoidGame = () => {
             </div>
             {/* #1637 WATCH — the prover clears the wall; any key takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

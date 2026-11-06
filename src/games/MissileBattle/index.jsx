@@ -21,7 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
 import { plan, decide } from './planner.js'
 import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { WAVES } from './waves.js'
 import { PRESS, MESSAGES } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
@@ -517,9 +517,7 @@ const MissileBattleGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MISSILE BATTLE')} onResume={handleResume} />}
             {/* #1637 WATCH — the solver intercepts the storm; any input takes over. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {play && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

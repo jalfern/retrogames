@@ -20,7 +20,7 @@ import { W, H, CFG, PEDAL, G, makeGame, step, stateHash } from './sim.js'
 import { STAGES, PALETTES } from './levels.js'
 import { solveGame } from './planner.js'
 import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { PRESS, MESSAGES } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
@@ -56,6 +56,8 @@ const PaperboyGame = () => {
     const pausedRef = useRef(false)
     const [watching, setWatching] = useState(false) // #1637 WATCH: the proven pedal-line delivers the papers
     const watchingRef = useRef(false)
+    const [canSeat, setCanSeat] = useState(true) // #1650: pill greys out off-junction (Y would honestly decline)
+    const canSeatRef = useRef(true)
     const stageStartRef = useRef(0) // tick the current stage began (the route's junction)
     const lastSiRef = useRef(0)
     const overAtRef = useRef(0)
@@ -153,6 +155,11 @@ const PaperboyGame = () => {
                 else { watchingRef.current = false; setWatching(false) }
                 return
             }
+            // #1650: mirror the seat rule on the pill — grey it while Y would only
+            // answer NO_GUIDE (off a witness-synced stage junction).
+            const rr = provenRun().receipts[gs.si]
+            const okSeat = !!rr && stageStartRef.current === rr.tStart
+            if (okSeat !== canSeatRef.current) { canSeatRef.current = okSeat; setCanSeat(okSeat) }
             const steer = keys.r ? 1 : keys.l ? -1 : 0
             if (steer) lastDir = steer
             const inp = { steer, pedal: keys.u ? 2 : keys.d ? 0 : 1, throw: throwQ }
@@ -418,6 +425,7 @@ const PaperboyGame = () => {
             keys.l = keys.r = keys.u = keys.d = false
             throwQ = null; lastDir = -1
             watchingRef.current = false; setWatching(false); stageStartRef.current = 0; lastSiRef.current = 0 // #1637 a new route starts with the bars in your hands
+            canSeatRef.current = true; setCanSeat(true) // #1650 fresh route = seat available at the line
             setMode('play')
             say(STAGES[0].name.toUpperCase())
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -653,13 +661,11 @@ const PaperboyGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'PAPERBOY')} onResume={handleResume} />}
             {/* #1637 WATCH — the proven pedal-line; mid-stage it says no guide. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {play && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
-                    <WatchButton on={watching} />
+                    <WatchButton on={watching} disabled={!watching && !canSeat} />
                 </div>
             )}
             <VirtualControls visible={play && !paused} />

@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
 import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
 import { steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
@@ -628,9 +628,7 @@ export default function MarioKart() {
             <canvas ref={canvasRef} data-fit="source" width={256} height={224} className="block w-full h-full object-contain" style={{ imageRendering: 'pixelated', touchAction: 'none' }} />
             {/* #1637 WATCH — the proven autopilot drives the GP; any input takes over. */}
             {padOn && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="absolute z-50 top-3" />
             )}
             {padOn && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>

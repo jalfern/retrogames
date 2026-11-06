@@ -28,7 +28,7 @@ import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, clo
 import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
 import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const VIEW_W = W * CELL
 const VIEW_H = H * CELL
@@ -58,6 +58,8 @@ const IceGame = () => {
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: the solver replays the three mountains
     const watchingRef = useRef(false)
+    const [planning, setPlanning] = useState(false) // #1650: one "planning…" frame hides the seat-plan spike
+    const planningRef = useRef(false)
     const watchRunRef = useRef(null) // plan(clone of live state) — closed-loop, resumable
     const watchAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -309,12 +311,19 @@ const IceGame = () => {
             // from here. Any driving key takes the dwarves back.
             if (isWatchKey(e)) {
                 if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
-                else {
-                    try {
-                        const r = plan(cloneGame(gs))
-                        if (r.ok && r.script.length) { watchRunRef.current = r; watchAtRef.current = 0; watchingRef.current = true; setWatching(true) }
-                        else say(NO_GUIDE)
-                    } catch { say(NO_GUIDE) }
+                else if (!planningRef.current) {
+                    // #1650: plan() off the keypress frame — the clone+solve costs tens
+                    // of ms and the pill answers with a "planning…" frame instead of a dropped one.
+                    planningRef.current = true; setPlanning(true)
+                    requestAnimationFrame(() => {
+                        planningRef.current = false; setPlanning(false)
+                        if (screenRef.current !== 'play' || pausedRef.current) return
+                        try {
+                            const r = plan(cloneGame(gs))
+                            if (r.ok && r.script.length) { watchRunRef.current = r; watchAtRef.current = 0; watchingRef.current = true; setWatching(true) }
+                            else say(NO_GUIDE)
+                        } catch { say(NO_GUIDE) }
+                    })
                 }
                 return
             }
@@ -519,8 +528,11 @@ const IceGame = () => {
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ICE CLIMBER CO-OP')} onResume={handleResume} />}
             {/* #1637 WATCH — the solver replays its proven three-mountain route. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                <WatchToast className="absolute z-50 top-3" />
+            )}
+            {play && planning && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/60 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap animate-pulse">
+                    PLANNING THE CLIMB…
                 </div>
             )}
             {play && !paused && (

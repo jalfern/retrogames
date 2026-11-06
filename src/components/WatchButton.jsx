@@ -1,6 +1,16 @@
 import React from 'react'
 import { WATCH_KEY } from '../utils/watch'
 
+// #1650: the watching banner lived verbatim in every game's JSX — folded into
+// shared chrome here (plumbing, per the shell-template rule). Games pass their
+// own positioning class (the wrapper element stays per-game); the text is the
+// harness-visible contract (watchcheck reads it).
+export const WatchToast = ({ className = 'absolute top-3', style }) => (
+    <div className={`${className} left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap`} style={style}>
+        WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+    </div>
+)
+
 // WATCH (#1624) — the touch face of the watch key. It fires the SAME KeyY
 // keydown/keyup every game listens for, so pad and keyboard can't drift.
 // data-watch-toggle keeps the games' pointer-takeover listeners from eating

@@ -20,7 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { NODES, AGE_LIST } from './nodes.js'
 import { gearRows } from './gears.js'
 import { freshState, dispatch, runSolver, solveScript, watchResume, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
-import WatchButton from '../../components/WatchButton'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -1014,9 +1014,7 @@ const MystGame = () => {
 
       {/* #1624 WATCH — the island plays itself on the proven route. */}
       {screen === 'play' && watching && (
-        <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full pointer-events-none whitespace-nowrap z-50">
-          WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-        </div>
+        <WatchToast className="absolute top-8 z-50" />
       )}
       {watchToast && (
         <div className="absolute top-8 left-1/2 -translate-x-1/2 bg-black/85 border border-amber-500 text-amber-100 font-mono text-xs tracking-widest px-4 py-2 rounded pointer-events-none z-50 uppercase">
