@@ -91,6 +91,32 @@ export const SAND = {
     wheelBase: 14, trackW: 8, lipOff: 20, // world px: rear axle, half track, lip shelf
     craterR: 18, craterLipR: 30,
     minV: 1, // a crawling kart kicks nothing
+    healT: 180, sweep: 30, // #1702: a cell ages one depth step every ~healT ticks
+}
+
+// #1702 in-race self-heal: dune sand flows. A 4-lap race must not still carry
+// lap one's ruts at full strength, and a fresh line has to read brighter than
+// the established racing line. Every SAND.sweep ticks, each cell whose LAST
+// carve is older than SAND.healT loses one depth step (a lip goes straight
+// back to pristine, a crater core takes three pulses) and re-arms — so the
+// oldest pass always fades first. Age lives in a side Map: marks keep their
+// plain depth values (depth law untouched), physics never reads either, and
+// the fade rides the same markDelta queue the carve uses — zero renderer
+// edits, rng-free, tick-driven, deterministic like #1695/#1696.
+function healSweep(g) {
+    if (!(g.marks instanceof Map) || !g.marks.size) return
+    if (!(g.markAge instanceof Map)) g.markAge = new Map()
+    if (!Array.isArray(g.markDelta)) g.markDelta = []
+    for (const [key, d] of g.marks) {
+        // a harness restore() may hand back JSON-poor state (#391): unknown
+        // age counts as freshly carved, so restored sand never spurts
+        const age = g.markAge.get(key)
+        if (age !== undefined && g.tick - age < SAND.healT) continue
+        const nd = d > 0 ? d - 1 : 0
+        if (nd <= 0) { g.marks.delete(key); g.markAge.delete(key) }
+        else { g.marks.set(key, nd); g.markAge.set(key, g.tick) }
+        g.markDelta.push([key, nd])
+    }
 }
 
 function markCell(g, wx, wy, d) {
@@ -109,6 +135,11 @@ function markCell(g, wx, wy, d) {
     if (!(g.marks instanceof Map)) g.marks = new Map()
     if (!Array.isArray(g.markDelta)) g.markDelta = []
     const prev = g.marks.get(key)
+    // #1702: any wheel touch re-arms the flow clock — even at unchanged
+    // depth. A cell driven every lap stays dark while the racing line lives;
+    // a single fresh line fades. (No delta pushed when depth is unchanged.)
+    if (!(g.markAge instanceof Map)) g.markAge = new Map()
+    g.markAge.set(key, g.tick)
     // hottest pass wins for darkening, deepest lip wins for lightening
     const best = d > 0 ? Math.max(prev ?? 0, d) : Math.min(prev ?? 0, d)
     if (best === prev) return
@@ -236,7 +267,7 @@ export function makeGame(seed = 0) {
         // #1696 sand deformation: baked-texel steps (-1 lip … 3 crater core)
         // + the cells that changed this tick. Presentation-derived state only:
         // no physics number reads it, and stateHash never mixes it.
-        marks: new Map(), markDelta: [],
+        marks: new Map(), markDelta: [], markAge: new Map(),
     }
     for (const k of g.karts) k.goT = Math.floor(rnd(g) * 7)
     return g
@@ -594,6 +625,7 @@ export function step(g, inp) {
     g.markDelta.length = 0
     if (g.zigHintT > 0) g.zigHintT--
     if (g.end) return
+    if (g.tick % SAND.sweep === 0) healSweep(g) // #1702: the sand flows during the race
     const P = g.karts[0]
     if (g.phase === 'count') {
         const prev = Math.ceil(g.count / 60)

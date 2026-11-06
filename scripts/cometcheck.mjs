@@ -1559,6 +1559,84 @@ selectorGate(await loadSelector())
     const roll2 = runRig(3, 5, false, 0, 28)
     check('#1696 determinism: same seed, same drive — identical marks, identical hash',
         JSON.stringify([...roll.g.marks]) === JSON.stringify([...roll2.g.marks]) && m.stateHash(roll.g) === m.stateHash(roll2.g))
+    // #1702 self-heal rig: drive a hot pass, then leave the kart coasting on
+    // asphalt. A live cell must lose one depth step each SAND.healT ticks of
+    // age (a lip at depth 1 goes straight to pristine), and a pass that is
+    // just re-carved must reset its own clock without churning deeper.
+    const healRig = (driveTicks, idleTicks, reDriveAt = -1) => {
+        const g = m.makeGame(3)
+        g.phase = 'race'; g.count = 0
+        const P = placeSand(g, 8, 121, 0)
+        for (let i = 0; i < driveTicks; i++) m.step(g, { u: true, drift: true, steer: -0.25 })
+        const first = [...g.marks.entries()]
+        // park ON the asphalt: idling must not coast into a corner — a bump
+        // would crater fresh cells and fake a heal failure.
+        const park = () => {
+            P.x = entry.x; P.y = entry.y; P.a = entry.a; P.idx = entry.i; P.hint = entry.i
+            P.v = 0; P.spinT = 0; P.driftT = 0; P.offroad = false; P.surf = 'road'
+        }
+        park()
+        for (let i = 0; i < idleTicks; i++) {
+            m.step(g, {})
+            if (reDriveAt >= 0 && i >= reDriveAt) {
+                if (i === reDriveAt) placeSand(g, 8, 121, 0)
+                m.step(g, { u: true, drift: true, steer: -0.25 })
+            } else if (reDriveAt < 0) park()
+        }
+        const reAt = reDriveAt >= 0 ? first.filter(([k, d]) => g.marks.get(k) === d).length : -1
+        return { g, first, reAt }
+    }
+    const h3 = healRig(24, S.healT * 3 + S.sweep)
+    let faded = 0; let stuckDeep = 0
+    for (const [k, d] of h3.first) {
+        const v = h3.g.marks.get(k) ?? 0
+        if (d - v >= Math.min(d, 3)) faded++; else stuckDeep++
+    }
+    check('#1702 self-heal: a hot pass fades to pristine within 3 healT ticks of idle',
+        faded === h3.first.length && stuckDeep === 0, `${faded}/${h3.first.length} fully faded`)
+    const h1 = healRig(24, S.healT + S.sweep)
+    const h0 = healRig(24, S.sweep)
+    let tooSoon = 0
+    for (const [k, d] of h0.first) if ((h0.g.marks.get(k) ?? 0) !== d) tooSoon++
+    check('#1702 self-heal: fresh marks hold their depth until healT elapses', tooSoon === 0, `${tooSoon} faded early`)
+    let oneStep = 0
+    for (const [k, d] of h1.first) { const v = h1.g.marks.get(k) ?? 0; if (d > 0 && Math.abs(d - v) !== 1) oneStep++ }
+    check('#1702 self-heal: one sweep past healT costs exactly one depth step', oneStep === 0, `${oneStep} off by one`)
+    const hr = healRig(24, S.healT + S.sweep, S.healT - S.sweep)
+    check('#1702 self-heal: a fresher pass re-arms the clock instead of churning deeper',
+        hr.reAt > 0 && [...hr.g.marks.values()].every((v) => v >= S.lip && v <= S.crater),
+        `${hr.reAt} held at original depth`)
+    // autopilot: with #1702 the audit must sample the WHOLE carve record —
+    // markDelta is the complete carve ledger, and at the finish the sand has
+    // already flowed flat (the autopilot runs asphalt near the flag: that IS
+    // the promise). ever/peak proves fades happened mid-race.
+    const gH = m.makeGame(0)
+    let gh0 = 0; let sizePeak = 0
+    const everSeen = new Set(); let roadEver = 0; let depthBadEver = 0
+    const histEver = {}
+    while (!gH.end && gh0 < 60000) {
+        m.step(gH, m.decide(gH))
+        gh0++
+        for (const [k, d] of gH.markDelta) {
+            if (everSeen.has(k)) continue
+            everSeen.add(k)
+            if (surfTex(k) === 'road') roadEver++
+            if (d !== 0) {
+                histEver[d] = (histEver[d] || 0) + 1
+                if (d < S.lip || d > S.crater) depthBadEver++
+            }
+        }
+        if (gH.marks.size > sizePeak) sizePeak = gH.marks.size
+    }
+    check('#1702 the sand flows mid-race: far more cells got carved than survive at the flag',
+        everSeen.size > gH.marks.size + 200 && sizePeak > gH.marks.size,
+        `ever ${everSeen.size}, peak ${sizePeak}, at flag ${gH.marks.size}`)
+    check('#1702 determinism: the heal is tick-driven — same seed, same drive, identical marks + hash',
+        (() => {
+            const a = m.makeGame(5); const b = m.makeGame(5)
+            for (let i = 0; i < 600; i++) { m.step(a, m.decide(a)); m.step(b, m.decide(b)) }
+            return JSON.stringify([...a.marks]) === JSON.stringify([...b.marks]) && m.stateHash(a) === m.stateHash(b)
+        })())
     // physics-free promise: pre-change main finishes the sandbank seed-0
     // autopilot at tick 9514/win (measured at dd892e3) — this branch must too.
     const g0 = m.makeGame(0)
@@ -1566,14 +1644,12 @@ selectorGate(await loadSelector())
     while (!g0.end && guard0 < 60000) m.step(g0, m.decide(g0))
     check('#1696 the deformation is presentation-only: sandbank seed 0 autopilot still finishes at tick 9514',
         g0.tick === 9514 && g0.end === 'win', `tick ${g0.tick} end ${g0.end}`)
-    check('#1696 an autopilot race still leaves the sand marked', g0.marks.size > 100, `${g0.marks.size} cells`)
-    let roadCells = 0
-    for (const k of g0.marks.keys()) if (surfTex(k) === 'road') roadCells++
-    check('#1696 the asphalt law: no marked texel in a whole race sits on the road', roadCells === 0, `${roadCells} violations`)
-    let depthBad = 0
-    const hist = {}
-    for (const v of g0.marks.values()) { hist[v] = (hist[v] || 0) + 1; if (v < S.lip || v > S.crater) depthBad++ }
-    check('#1696 every cell in a whole race sits inside [lip, crater]', depthBad === 0, JSON.stringify(hist))
+    check('#1696 an autopilot race still marks the sand (#1702: while the passes are fresh)',
+        everSeen.size > 100 && sizePeak > 100, `ever ${everSeen.size} cells, peak ${sizePeak}`)
+    check('#1696 the asphalt law: no texel carved in a whole race sits on the road', roadEver === 0, `${roadEver} violations`)
+    let depthBad = depthBadEver
+    const hist = histEver
+    check('#1696 every cell carved in a whole race sits inside [lip, crater]', depthBad === 0, JSON.stringify(hist))
     check('#1696 a fresh game starts on smooth sand', m.makeGame(11).marks.size === 0)
     // straddle rig: a kart riding the edge line — its LIP shovel reaches onto
     // the asphalt shoulder of the road. The guard must refuse every one.
