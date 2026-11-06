@@ -400,7 +400,7 @@ export function botInput(g, meId, skill) {
         const dx = foe.x - me.x, adx = Math.abs(dx)
         if (skill > 0) {
             if (adx < 110) mx = -Math.sign(dx || 1)
-            else if (adx > 300) mx = Math.sign(dx)
+            else if (adx > 210) mx = Math.sign(dx)
             for (const ar of g.arrows) {
                 if (ar.state !== 'fly' || ar.owner === meId) continue
                 const rx = me.x - ar.x, ry = me.y - ar.y
@@ -477,8 +477,13 @@ export function botInput(g, meId, skill) {
             mx = Math.floor(g.tick / 45) % 2 ? 1 : -1
         }
     } else if (!scavenging && foe.alive && me.quiver > 0 && skill === 0) {
-        // the basic bot just lobs at whatever it sees
-        fire = !me.firing || me.charge < 0.55
+        // the basic bot just lobs at whatever it sees — but only once
+        // close enough that a miss lands on the FLOOR, where a walk can
+        // pull it back. Dumping the quiver across the arena silted every
+        // ledge and the duel dried out with both archers empty-handed
+        // (#1685). A draw already in progress always releases.
+        const adx0 = Math.abs(foe.x - me.x)
+        fire = !me.firing ? adx0 < 240 : me.charge < 0.55
         if (fire) my = 1
         if (fire || me.firing) aim = { x: foe.x >= me.x ? 1 : -1, y: -1 }
     }
