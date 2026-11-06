@@ -23,6 +23,8 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import * as THREE from 'three'
 import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
 const SIM_MS = 1000 / 60
@@ -68,6 +70,8 @@ const CivilizationVGame = () => {
     const vOpenRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the civcheck autopilot runs the empire
+    const watchingRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hud = useRef({})
@@ -313,6 +317,8 @@ const CivilizationVGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickAttract(); return }
             if (sc !== 'play') return
+            // #1637 WATCH: the same witness brain the attract demo paces, at full speed.
+            if (watchingRef.current) { doSim(decide(gs)); return }
             const inp = { ...pending }; pending = {}
             doSim(inp)
         }
@@ -768,6 +774,13 @@ const CivilizationVGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the witness brain civcheck replays (expand,
+            // defend the frontier, burn camps, end turn); any driving input takes over.
+            if (isWatchKey(e)) {
+                if (screenRef.current === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'Space' || e.code === 'Enter') { endTurn(); return }
             if (e.code === 'KeyE' || e.code === 'KeyB') { doSettle(); return }
             if (e.code === 'Digit1') { pending = { ...pending, queue: 'WARRIOR' }; audioController.playTone(330, 0.03, 'sine', 0.03); return }
@@ -788,7 +801,7 @@ const CivilizationVGame = () => {
             if (e.code === 'KeyU') { if (screenRef.current === 'play') toggleUPanel(); return }
             if (e.code === 'KeyG') { if (screenRef.current === 'play') toggleGPanel(); return }
             if (e.code === 'KeyD') { if (screenRef.current === 'play') toggleDPanel(); return }
-            if (e.code === 'KeyY') { if (screenRef.current === 'play') toggleVPanel(); return }
+            if (e.code === 'KeyI') { if (screenRef.current === 'play') toggleVPanel(); return } // #1637: VICTORY panel moved Y -> I (Y is the WATCH key everywhere)
             if (e.code === 'KeyF') { if (screenRef.current === 'play') pickImprove('FARM'); return }
             if (e.code === 'KeyM') { if (screenRef.current === 'play') pickImprove('MINE'); return }
             if (e.code === 'KeyO') { if (screenRef.current === 'play') pickImprove('ROAD'); return }
@@ -840,7 +853,7 @@ const CivilizationVGame = () => {
             ptrs.delete(e.pointerId)
             if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; edgeOn = false; return }
             if (!drag) return
-            if (drag.moved < 8 && drag.btn === 0 && screenRef.current === 'play') { const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) }
+            if (drag.moved < 8 && drag.btn === 0 && screenRef.current === 'play') { if (watchingRef.current) { watchingRef.current = false; setWatching(false) } const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } // #1637 a tile tap is you driving
             drag = null
         }
         const onPointerLeave = () => { edgeOn = false; held.clear(); drag = null; pinch = null; ptrs.clear() }
@@ -851,6 +864,7 @@ const CivilizationVGame = () => {
             const s = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
             if (s) { gs.selected = s.id; const w = view.hexToWorld(s.c, s.r); cam.tx = w.x; cam.tz = w.z; clampTgt() }
             pending = {}
+            watchingRef.current = false; setWatching(false) // #1637 a new empire starts in your hands
             hintFound = false; hintBuilt = false; hintEnded = false; startTurnRef = gs.turn
             setHelpOpen(true)
             setMode('play')
@@ -880,6 +894,7 @@ const CivilizationVGame = () => {
 
         if (import.meta.env.DEV) {
             window.__civTest = {
+                watching: () => watchingRef.current, // #1637 watchcheck: is the witness brain running the empire?
                 probe: () => ({ screen: screenRef.current, tick: gs.tick, turn: gs.turn, phase: gs.phase, end: gs.end, why: gs.endWhy,
                     gold: gs.civs[0].gold, science: gs.civs[0].science, culture: gs.civs[0].culture || 0,
                     capitalSize: capSize(), playerCities: gs.cities.filter((c) => c.civ === 0 && c.alive).length, totalCities: gs.cities.filter((c) => c.alive).length,
@@ -1349,6 +1364,17 @@ const CivilizationVGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'CIVILIZATION V')} onResume={handleResume} />}
+            {/* #1637 WATCH — the witness brain runs the empire; any input takes over. */}
+            {play && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused && !panelOpen && !wOpen && !pOpen && !uOpen && !gOpen && !dOpen && !vOpen} secondAction={{ label: 'E', code: 'KeyE' }} />
         </div>
     )

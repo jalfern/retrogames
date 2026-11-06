@@ -19,6 +19,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad, applyCall } from './planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { createModelPolicy, seatSources } from './model.js'
 import { createNetDemo } from './netdemo.js'
 import { parseCall, intentLabel } from './voicecalls.js'
@@ -64,6 +66,8 @@ const GauntletGame = () => {
     const touchUi = typeof window !== 'undefined' && !!((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints || 0) > 0)
     const netJoinRef = useRef(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven maze brain walks the hero
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -521,7 +525,10 @@ const GauntletGame = () => {
                     seatPrev.a = false
                 }
             }
-            doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }, pInp)
+            // #1637 WATCH: seat 1 walks gauntletcheck's own BFS brain (keys <
+            // locks → key, else stairs, swing what stands ahead); seat 2 keeps its partner.
+            const inp = watchingRef.current ? decide(gs) : { left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }
+            doSim(inp, pInp)
             keys.swordEdge = false
             keys.arrowEdge = false
             p2.swordEdge = false
@@ -1132,6 +1139,7 @@ const GauntletGame = () => {
                 netPush()
             }
             setMode('play')
+            watchingRef.current = false; setWatching(false) // #1637 a new quest starts in your hands
             say(`${HEROES[hk].who} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · THE /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
@@ -1139,6 +1147,17 @@ const GauntletGame = () => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             if (net.role && ev.target && ev.target.tagName === 'INPUT') return
             if (net.role === 'guest' && net.phase !== 'play') return
+            // #1637 WATCH: Y seats the proven maze brain in seat 1 (never online —
+            // the lockstep wire owns those pads). Any seat-1 input takes it back;
+            // seat-2 keys (W/A/S/D, F with a human there) keep your partner seated.
+            if (isWatchKey(ev) && !net.role) {
+                if (screenRef.current === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && !net.role && isTakeoverKey(ev)) {
+                const p2key = ['KeyW', 'KeyA', 'KeyS', 'KeyD'].includes(ev.code) || (ev.code === 'KeyF' && gs.partnerHuman)
+                if (!p2key) { watchingRef.current = false; setWatching(false) }
+            }
             // #1249: V summons (or dismisses) the voice seat — from the hero
             // select screen or mid-run. Mic permission is never auto-asked.
             if (ev.code === 'KeyV' && (screenRef.current === 'play' || screenRef.current === 'select')) {
@@ -1195,6 +1214,8 @@ const GauntletGame = () => {
         const onPad = (ev) => {
             const d = ev.detail
             if (!d) return
+            // #1637 WATCH: the pad is seat 1 driving — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             keys.l = !!d.left; keys.r = !!d.right; keys.u = !!d.up; keys.d = !!d.down
             if (d.action) keys.swordEdge = true
             if (d.second) keys.arrowEdge = true
@@ -1291,6 +1312,8 @@ const GauntletGame = () => {
             window.__gauntletTest = {
                 state: () => gs,
                 hash: () => stateHash(gs),
+                // #1637 WATCH hook: is the prover driving seat 1? (probe lives below)
+                watching: () => watchingRef.current,
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ left: false, right: false, fwd: false, back: false, sword: false, arrow: false }) },
                 stepWith: (inp, pInp) => doSim(inp, pInp),
                 frame: () => doFrameSim(),
@@ -1513,6 +1536,17 @@ const GauntletGame = () => {
                 </div>
             )}
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
+            {/* #1637 WATCH — the proven maze brain walks the hero; any seat-1 input takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} /> {/* online play keeps the wire in charge — the Y press no-ops there */}
+                </div>
+            )}
         </div>
     )
 }

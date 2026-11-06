@@ -16,6 +16,8 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import { LEVELS, W, H, HEROES, HERO_ORDER, MONSTERS } from '../Gauntlet/levels.js'
 import { makeGame, step, stateHash, CFG, doorAt } from '../Gauntlet/sim.js'
 import { plan, decide } from '../Gauntlet/planner.js'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import WatchButton from '../../components/WatchButton'
 import { buildSprites, MATERIALS } from '../Gauntlet/art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from '../Gauntlet/sound.js'
 import { attractFrame, DIM } from './attract.js'
@@ -32,6 +34,8 @@ const FourHallsGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven maze brain walks the hero
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -131,7 +135,10 @@ const FourHallsGame = () => {
             const sc = screenRef.current
             if (sc === 'attract' || sc === 'select') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge })
+            // #1637 WATCH: the same BFS brain gauntletcheck grades (keys < locks
+            // → key, else stairs, swing what stands ahead) walks the live halls.
+            const inp = watchingRef.current ? decide(gs) : { left: keys.l, right: keys.r, fwd: keys.u, back: keys.d, sword: keys.swordEdge, arrow: keys.arrowEdge }
+            doSim(inp)
             keys.swordEdge = false
             keys.arrowEdge = false
         }
@@ -474,6 +481,7 @@ const FourHallsGame = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin % 97 : Math.floor(Math.random() * 1000) % 97, hk, { partner: pOn, levelCount: 4 })
             gs.partnerOn = pOn
+            watchingRef.current = false; setWatching(false) // #1637 a new delve starts in your hands
             setMode('play')
             say(`${HEROES[hk].WHO} ENTERS THE ${LEVELS[0].name.replace(/^LEVEL 1 · /, '')}`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
@@ -481,6 +489,12 @@ const FourHallsGame = () => {
         const onKeyDown = (ev) => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p); return }
             const sc = screenRef.current
+            // #1637 WATCH: Y seats the proven maze brain; any driving input takes it back.
+            if (isWatchKey(ev)) {
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
             if (sc === 'attract') { startSelect(); return }
             if (sc === 'select') {
                 if (ev.code === 'ArrowLeft') selectHero = (selectHero + 3) % 4
@@ -509,6 +523,8 @@ const FourHallsGame = () => {
         const onPad = (ev) => {
             const d = ev.detail
             if (!d) return
+            // #1637 WATCH: the pad is the player driving — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             keys.l = !!d.left; keys.r = !!d.right; keys.u = !!d.up; keys.d = !!d.down
             if (d.action) keys.swordEdge = true
             if (d.second) keys.arrowEdge = true
@@ -536,6 +552,7 @@ const FourHallsGame = () => {
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ left: false, right: false, fwd: false, back: false, sword: false, arrow: false }) },
                 stepWith: (inp) => doSim(inp),
                 setKeys: (k) => { keys.l = !!k.l; keys.r = !!k.r; keys.u = !!k.u; keys.d = !!k.d; if (k.s) keys.swordEdge = true; if (k.a) keys.arrowEdge = true },
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover walking the halls?
                 plan: (seed = 0, opts) => plan(seed, { levelCount: 4, ...opts }),
                 decide: (s) => decide(s || gs),
                 restart: () => { gs = makeGame(0, 'warrior', { levelCount: 4 }) },
@@ -600,6 +617,17 @@ const FourHallsGame = () => {
                 visible={screen === 'play' && !paused}
             />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
+            {/* #1637 WATCH — the proven maze brain walks the hero; any input takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
         </div>
     )
 }
