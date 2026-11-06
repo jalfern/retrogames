@@ -1078,6 +1078,9 @@ export default function CometDrift() {
                 for (const v of g.marks.values()) hist[v] = (hist[v] || 0) + 1
                 return { size: g.marks.size, hist, delta: g.markDelta.length }
             },
+            // baked-texel peek: [pristine, painted] ABGR words for a texel key —
+            // the proof compares what the renderer folded into the bake
+            gndPeek: (k) => [gnd0[k] >>> 0, gnd[k] >>> 0],
         }
 
         exposeGame({

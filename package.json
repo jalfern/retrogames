@@ -185,6 +185,7 @@
     "muteguardcheck": "node scripts/muteguardcheck.mjs",
     "textfitcheck": "node scripts/textfitcheck.mjs",
     "cometcheck": "node scripts/cometcheck.mjs",
+    "cometsandplay": "node scripts/cometsandplay.mjs",
     "cometrefs": "node scripts/extract-comet-references.mjs",
     "cometplay": "node scripts/cometplay.mjs",
     "cometdrifthdcheck": "node scripts/cometdrifthdcheck.mjs",

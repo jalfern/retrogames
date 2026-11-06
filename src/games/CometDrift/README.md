@@ -1,4 +1,4 @@
-# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669)
+# COMET DRIFT GP — engine notes (#419, polished #435, course pack #493, retighten #1669, sand deform #1696)
 
 Original arcade kart racer. Course pack: SUNSET GULCH (dusk canyon),
 SANDBANK SPEED BOWL (noon, Daytona road-course spirit), CORKSCOMB DUNES
@@ -206,6 +206,8 @@ node scripts/comet-retighten.mjs  # re-derive the #1669 pulls (deterministic hil
                               #       never re-run blind — race gates were certified on
                               #       the shipped data, see README #1669 note)
 npm run cometplay             # Chrome: real keys only — throttle/steer/drift-ladder/
+npm run cometsandplay         # Chrome: real keys on sand — rut/lip/crater census, the
+                              # drawn bake carries the tint, and reset heals it flat (#1696)
                               #       spin bite+recover, minimap dot tracks the sim,
                               #       circuit cycle+persist, and the certified line
                               #       drives the NEW Daytona layout to a WIN in-tab
@@ -296,7 +298,31 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   rides the gold column (its violet separation is under the noise floor,
   honestly ungated), and rival links are opportunistic — the field never
   aims for x3 on purpose.
-- Sand and cliff are surfaces + clamp; no dynamic deformation.
+- **CLOSED by #1696:** the sand REMEMBERS THE RACE — live terrain deformation
+  (`SAND` + `markCell/carveWheels/craterAt` in sim.js). Every kart whose centre
+  is on sand carves packed-sand ruts at its rear-wheel contacts (roll depth 1,
+  held-drift depth 2) with a heaped lip (+1 tone, -1 step) on each flank; a
+  cliff bump or an off-road spin stamps a radial crater (core 3, ring 1, lip -1).
+  Deformation is presentation-derived and deterministic: `gs.marks` (texel ->
+  step) + `gs.markDelta` are rng-free and tick-driven (the #1695 crumble
+  precedent), the depth law is hottest-pass-wins (max, never adds — a slow roll
+  cannot churn its own track deeper), the asphalt guard judges the TEXEL'S OWN
+  centre against the GLOBAL nearest line (the pinch legs need it: the kart's own
+  leg can't see the neighbour), and no physics number reads any of it back —
+  sandbank seed-0 autopilot finishes at tick 9514/win, measured identical to
+  pre-change main. `stateHash` stays untouched, so every seed-pin/determinism
+  gate keeps its meaning; `makeGame` clears the marks and the renderer heals the
+  Uint32 bake from its pristine clone (`gnd0`, and per-course groundCache).
+  Gates: cometcheck SAND section (wheel-law rigs mirrored against recorded poses,
+  direction-agnostic crater rig, asphalt law over a whole race + a straddle rig
+  that parks lips ON the paint line but never on it, determinism, physics-free
+  pin, source pins) with 5 mutants (carve dead, additive churn, guard deleted,
+  crater deleted, heal removed) — all die. `npm run cometsandplay`: real keys
+  walk onto the Sandbank sand, census + gndPeek prove the DRAWN bake carries the
+  tint and a reset heals every peeked texel back to pristine, zero page errors.
+  Residual, honestly: the cliff itself never chips (only its sand foot scars —
+  the strata are a painted bake), and marks do not survive a snapshot/restore
+  (presentation state; #391 lineage).
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).
 - Banking cue (#502 item 4): `bankAt(i)` in track.js is the shared measure
