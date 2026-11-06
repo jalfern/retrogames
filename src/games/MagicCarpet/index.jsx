@@ -574,7 +574,7 @@ const MagicCarpetGame = () => {
                 ctx.strokeStyle = '#5a66aa'
                 ctx.strokeRect(tx - 3.5, ty - 3.5, tw + 7, th + 7)
                 ctx.fillStyle = '#8890c0'
-                ctx.font = '5px monospace'
+                ctx.font = 'bold 6px monospace'
                 ctx.fillText('LEFT HAND', tx, ty - 6)
                 SPILLS.forEach((sp, i) => {
                     const known = gs.learned.includes(sp.id)
@@ -585,9 +585,16 @@ const MagicCarpetGame = () => {
                         ctx.strokeRect(tx + i * 14 + 0.5, ty + 0.5, 13, th - 1)
                     }
                     drawSpellIcon(ctx, sp.id, cx, ty + 7, 4)
+                    // #1646: costs at 7px bold (the 5px digits vanished at phone
+                    // scale) plus a keycap row — 1–9,0 — so RAISE-on-0 is seen,
+                    // not memorized.
                     ctx.fillStyle = known && gs.mana >= sp.cost ? '#ffe9a0' : '#6a6fa0'
+                    ctx.font = 'bold 7px monospace'
                     ctx.textAlign = 'center'
-                    ctx.fillText(String(sp.cost), cx, ty + th - 2)
+                    ctx.fillText(String(sp.cost), cx, ty + 15)
+                    ctx.fillStyle = '#9aa2cf'
+                    ctx.font = 'bold 6px monospace'
+                    ctx.fillText('1234567890'[i], cx, ty + 21)
                     ctx.textAlign = 'left'
                     ctx.globalAlpha = 1
                 })
@@ -806,6 +813,7 @@ const MagicCarpetGame = () => {
                 veil: () => { gs.invis = 400; return gs.invis },
                 killHut: () => { const hs = gs.huts[0]; hs.burn = 0; hs.dead = true; return 1 },
                 smokePuffs: () => (renderer ? renderer.smokeCount() : -1),
+                crumbles: () => (renderer ? renderer.ashCount() : -1),
                 trailMotes: () => (renderer ? renderer.particleCount() : -1),
                 glowCells: () => (renderer ? renderer.glowCells() : -1),
                 scorchCells: () => (renderer ? renderer.scorchCells() : -1),

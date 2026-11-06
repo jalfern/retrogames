@@ -221,6 +221,26 @@ see item 5).
     (wolves only bite carpets flying low). Balance after: 60/60 seeds,
     slowest 26,503 ticks.
 
+## #1646 polish (2026-11-06, QA studio)
+
+- Crumble deaths: the original crumbled creatures where they fell. A `kill`
+  event now showers cold `ash` particles (new particle kind: gravity-falloff
+  grit, no fire) plus a small dust puff at the body — per-kind sizes and tints
+  (wolf slate, giant stone, cow bone). It rides every kill (blasts included);
+  shatter kills stay cinder-free because ash is grit, not fire, and none of it
+  writes scorch. Browser gate + mutation guide in carpetcheck (#1646 gate).
+- SHATTER reads lethal in daylight: denser splinters (16→20) and a wide cold
+  flare ring in the icy tint, so the Verdant palette no longer washes the kill
+  out. The radar still keeps no shatter history — faithful to kill-without-
+  cinders (issue item 5 QA verdict: no radar mark; the FX carries the kill).
+- Tray legibility (#1646 items 3–4): tray 17→22px; costs now `bold 7px` (was
+  inheriting the 5px label font) and every slot wears its keycap (1–9,0), so
+  RAISE-on-0 is seen, not memorized. Hit box unchanged in kind — existing
+  HUD-containment and tap gates hold (they read `TRAY` live).
+- Held for a future pass: RAISE mound terrain-ripple animation (the README's
+  "no per-pixel deformation ripple" gap — animating the mound over N ticks
+  means a deforming heightmap write path; bigger than this pass).
+
 ## Honest gaps (the polish pass owns these)
 
 - Clone and dissolve: the book reached ten (#1639 shipped shatter + raise),

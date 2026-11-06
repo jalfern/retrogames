@@ -552,7 +552,9 @@ export const TAP = {
     slotR: [280, H - HUD_H, 22, HUD_H],
     book: [258, H - HUD_H - 16, 44, 16],
 }
-export const TRAY = [Math.floor((W - SPILLS.length * 14) / 2), H - HUD_H - 17, SPILLS.length * 14, 17]
+// #1646: the tray grew 17→22px so each slot carries a readable cost digit AND a
+// keycap caption (1–9,0) — the phone-legibility pass. Still flush on the HUD strip.
+export const TRAY = [Math.floor((W - SPILLS.length * 14) / 2), H - HUD_H - 22, SPILLS.length * 14, 22]
 
 export function hudTap(gs, x, y) {
     if (gs.end) return 'none'
