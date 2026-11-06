@@ -1336,7 +1336,9 @@ await ambienceLaw()
 // and that a chevron tap routes to that course while the centre (the name)
 // stays the clear start zone.
 const SELJS = new URL('../src/games/CometDrift/selector.js', import.meta.url)
+const CUPJS = new URL('../src/games/CometDrift/cup.js', import.meta.url)
 const loadSelector = (q = '') => import(new URL(q ? `../src/games/CometDrift/selector.js?v=${q}` : SELJS, import.meta.url))
+const loadCup = (q = '') => import(q ? `${CUPJS.href}?v=${q}` : CUPJS.href)
 const SEL_CASES = [ { W: 384, H: 176 }, { W: 256, H: 176 }, { W: 256, H: 448 } ]
 const selectorGate = (SEL) => {
     const { selectorGeom, selectorHit } = SEL
@@ -1361,6 +1363,111 @@ const selectorGate = (SEL) => {
 }
 console.log('— the attract course selector is tappable (#534) —')
 selectorGate(await loadSelector())
+
+// ---- #1737: the COMET CUP — a three-race points grand prix (#419 cups) ----
+// The cup rules live in cup.js (pure): the boards are the LIVE place-ordering
+// when the player finishes, the table is arcade GP spacing, and the standings
+// break ties wins → best finish → name. Node audits the whole mode: table,
+// a hand-computed three-race GP, both tiebreaks + the name fallback, the seed
+// extension rule and arming-badge geometry, and source pins for the shell wires
+// the sim can't see (tally at the flag once, guarded panel continues).
+{
+    console.log('— the COMET CUP races a points grand prix (#1737) —')
+    const { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } = await loadCup()
+    const board = (names) => names.map((name, i) => ({ name, place: i + 1 }))
+
+    check('the cup is three real courses, oldest first (#1737)',
+        CUP_RACES === 3 && CUP.courses.every((id) => COURSES.some((c) => c.id === id)) && CUP.courses[0] === 'gulch',
+        CUP.courses.join(','))
+    check('the points table covers the seven-kart field, win worth more than second (#1737)',
+        CUP.points.length === 7 && CUP.points[0] > CUP.points[1] && CUP.points[6] >= 1,
+        CUP.points.join('-'))
+
+    // A hand-computed GP: COMET wins Gulch and Corkscomb, BLAZE takes Sandbank.
+    // COMET 10+8+10=28 · BLAZE 8+10+6=24 · NOVA 4+6+8=18 · DUSTY 6+4+4=14
+    // REX 3+3+3=9 · ZEPPA 2+2+2=6 · GRIZZ 1+1+1=3 (sum 102 = 3 × the table sum).
+    const gp = makeCup()
+    tally(gp, board(['COMET', 'BLAZE', 'DUSTY', 'NOVA', 'REX', 'ZEPPA', 'GRIZZ']), 'GULCH')
+    check('cup completes only after three legs, and not before (#1737)',
+        !cupDone(gp) && gp.raceIdx === 1, `raceIdx ${gp.raceIdx}`)
+    tally(gp, board(['BLAZE', 'COMET', 'NOVA', 'DUSTY', 'REX', 'ZEPPA', 'GRIZZ']), 'SANDBANK')
+    tally(gp, board(['COMET', 'NOVA', 'BLAZE', 'DUSTY', 'REX', 'ZEPPA', 'GRIZZ']), 'CORKSCOMB')
+    const gpRow = standings(gp).map((r) => `${r.name}=${r.pts}`).join(' ')
+    check('standings after the GP: COMET=28 BLAZE=24 NOVA=18 DUSTY=14 REX=9 ZEPPA=6 GRIZZ=3 (#1737)',
+        gpRow === 'COMET=28 BLAZE=24 NOVA=18 DUSTY=14 REX=9 ZEPPA=6 GRIZZ=3', gpRow)
+    check('the cup closes after the third flag and names its champion (#1737)',
+        cupDone(gp) && gp.raceIdx === 3 && leaderName(gp) === 'COMET', `idx ${gp.raceIdx} lead ${leaderName(gp)}`)
+
+    // Tiebreak 1 — points equal (18), wins decide.
+    const t1 = makeCup()
+    tally(t1, board(['COMET', 'BLAZE', 'NOVA', 'REX', 'DUSTY', 'ZEPPA', 'GRIZZ']), 'GULCH')
+    tally(t1, board(['REX', 'BLAZE', 'GRIZZ', 'COMET', 'DUSTY', 'ZEPPA', 'NOVA']), 'SANDBANK')
+    tally(t1, board(['DUSTY', 'ZEPPA', 'NOVA', 'COMET', 'REX', 'BLAZE', 'GRIZZ']), 'CORKSCOMB')
+    check('a points tie goes to the most wins (COMET=BLAZE=18, wins 1-0) (#1737)',
+        standings(t1)[0].name === 'COMET' && t1.pts.COMET === 18 && t1.pts.BLAZE === 18,
+        `${standings(t1)[0].name}`)
+
+    // Tiebreak 2 — points equal (18), wins equal (0), best finish decides.
+    // Hand-computed: COMET finishes 2/2/6 = 8+8+2 = 18 (best 2); BLAZE 3/3/3
+    // = 6+6+6 = 18 (best 3); every other kart stays ≤16, so the tie is at the
+    // top and the best single finish must break it.
+    const t2 = makeCup()
+    tally(t2, board(['NOVA', 'COMET', 'BLAZE', 'ZEPPA', 'DUSTY', 'GRIZZ', 'REX']), 'GULCH')
+    tally(t2, board(['REX', 'COMET', 'BLAZE', 'GRIZZ', 'ZEPPA', 'DUSTY', 'NOVA']), 'SANDBANK')
+    tally(t2, board(['GRIZZ', 'ZEPPA', 'BLAZE', 'REX', 'DUSTY', 'COMET', 'NOVA']), 'CORKSCOMB')
+    check('points and wins equal: the better single finish takes the cup (COMET best 2, BLAZE best 3) (#1737)',
+        standings(t2)[0].name === 'COMET' && t2.pts.COMET === 18 && t2.pts.BLAZE === 18,
+        `${standings(t2)[0].name} ${t2.pts.COMET}/${t2.pts.BLAZE}`)
+
+    // Tiebreak 3 — the last resort is the name, so the table is always stable.
+    const t3 = makeCup()
+    tally(t3, board(['ARK', 'ZEN', 'BRT']), 'A')
+    tally(t3, board(['ZEN', 'BRT', 'ARK']), 'B')
+    tally(t3, board(['BRT', 'ARK', 'ZEN']), 'C')
+    check('total deadlock (24 pts, one win, one best each): standings are name-stable (#1737)',
+        standings(t3).map((r) => r.name).join(' ') === 'ARK BRT ZEN',
+        standings(t3).map((r) => r.name).join(' '))
+
+    // Determinism: the same three boards always make the same cup.
+    const rA = makeCup(); const rB = makeCup()
+    for (const b of [['COMET', 'NOVA', 'BLAZE'], ['BLAZE', 'COMET', 'NOVA'], ['NOVA', 'BLAZE', 'COMET']]) {
+        tally(rA, board(b), 'X'); tally(rB, board(b), 'X')
+    }
+    check('the same boards always make the same cup (JSON-identical standings) (#1737)',
+        JSON.stringify(standings(rA)) === JSON.stringify(standings(rB)))
+
+    // The arming badge: thumb-sized pill below the panel, clear of the #534
+    // chevron boxes, a centre tap hits, and corners fall through to the start.
+    const SEL = await loadSelector()
+    let cbOk = true; const cbWhy = []
+    for (const { W, H } of SEL_CASES) {
+        const b = SEL.cupBadgeGeom(W, H, 1)
+        const g = SEL.selectorGeom(W, H, 1)
+        const onScreen = b.cx - b.hw >= 0 && b.cx + b.hw <= W && b.cy - b.hh >= 0 && b.cy + b.hh <= H
+        const thumb = b.hw * 2 >= 48 && b.hh * 2 >= 32
+        const below = b.cy - b.hh > g.rowY + g.hh
+        const hitC = SEL.cupBadgeHit(b, b.cx, b.cy)
+        const missRow = !SEL.cupBadgeHit(b, b.cx, g.rowY)
+        const missCorner = !SEL.cupBadgeHit(b, 0, 0)
+        if (!(onScreen && thumb && below && hitC && missRow && missCorner)) { cbOk = false; cbWhy.push(`${W}x${H}: on=${onScreen} thumb=${thumb} below=${below} hit=${hitC} missRow=${missRow} missCorner=${missCorner}`) }
+    }
+    check('the cup badge is a thumb-sized pill below the chevrons, hittable, never stealing the selector row (#1737)',
+        cbOk, cbWhy.join(' | '))
+
+    // Source pins: the shell wires the pure rules into the loop; the sim cannot
+    // see any of these, so the file pins are what keep them honest.
+    const idxSrc = readFileSync(IDXJS, 'utf8')
+    check('the flag tallies the LIVE classification exactly once (#1737)',
+        /tally\(cup, g\.karts\.map\(\(k\) => \(\{ name: k\.name, place: k\.place \}\)\)/.test(idxSrc))
+    check('the cup routes the flag to break/final and keeps the plain end screen intact (#1737)',
+        /cupDone\(cup\) \? 'cupfinal' : 'cupbreak'/.test(idxSrc) && /else \{ st\.screen = 'end' \}/.test(idxSrc))
+    check('cup legs extend the seed by the race index; leg 1 keeps the ?seed pin (#1737)',
+        /makeGame\(\(cupSeed0 \+ cup\.raceIdx\) >>> 0\)/.test(idxSrc) && /cupSeed0 = \(seedFromQuery\(\) \?\? 0\) >>> 0/.test(idxSrc))
+    check('the panels guard their first third-of-a-second on both key and tap (#1737)',
+        /st\.screen === 'cupbreak' \|\| st\.screen === 'cupfinal'/.test(idxSrc) && /st\.screen === 'cupbreak' && st\.endT > 20/.test(idxSrc))
+    check('the badge and C arm the cup on the title (#1737)',
+        /KeyC'\) \{ toggleCup\(\); return \}/.test(idxSrc) && /cupBadgeHit\(cupBadgeGeom\(W, H, hs\), cx, cy\)/.test(idxSrc))
+}
 
 // ---- #517: an off-road drift-dump teaches the zig-zag (Jon's call, 'a') ----
 // A keyboard drift held one way carves ~v/yaw = 200px, tighter than any corner
@@ -1888,6 +1995,44 @@ if (process.argv.includes('--mutate')) {
             plant(SELJS, selMut)
             await died('the chevrons shrink onto the centre (no thumb target, no start zone)', async () => selectorGate(await loadSelector(Date.now())))
         } finally { pull(SELJS) }
+    }
+
+    // #1737 mutants: devalue the win, freeze the leg counter, and drop the
+    // standings sort. Each must redden the smoke (full order + points + done).
+    {
+        const cupSrc = readFileSync(CUPJS, 'utf8')
+        const diedCup = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1737 cup gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1737 cup gates are BLIND`)
+        }
+        const cupVariants = [
+            ['the win is worth 6 not 10 (table devalued)', 'points: [10, 8,', 'points: [6, 8,'],
+            ['the leg counter never advances (cup never closes)', 'cup.raceIdx += 1', 'cup.raceIdx += 0'],
+            ['standings keep insertion order (the whole sort dies)', 'rows.sort((a, b) => b.pts - a.pts || b.wins - a.wins || a.best - b.best || (a.name < b.name ? -1 : 1))', 'rows.sort(() => 0)'],
+        ]
+        check('#1737 cup mutants apply (replace-strings match cup.js)',
+            cupVariants.every(([, f]) => cupSrc.includes(f)))
+        for (let mi = 0; mi < cupVariants.length; mi++) {
+            const [label, from, to] = cupVariants[mi]
+            try {
+                plant(CUPJS, cupSrc.replace(from, to))
+                await diedCup(label, async () => {
+                    // ms timestamps can collide inside one tick — make the bust unique per mutant
+                    const C = await loadCup(`${Date.now()}m${mi}`)
+                    const b = (names) => names.map((name, i) => ({ name, place: i + 1 }))
+                    const gp = C.makeCup()
+                    C.tally(gp, b(['COMET', 'BLAZE', 'DUSTY', 'NOVA', 'REX', 'ZEPPA', 'GRIZZ']), 'GULCH')
+                    C.tally(gp, b(['BLAZE', 'COMET', 'NOVA', 'DUSTY', 'REX', 'ZEPPA', 'GRIZZ']), 'SANDBANK')
+                    C.tally(gp, b(['COMET', 'NOVA', 'BLAZE', 'DUSTY', 'REX', 'ZEPPA', 'GRIZZ']), 'CORKSCOMB')
+                    const order = C.standings(gp).map((r) => r.name).join(' ')
+                    const ok = gp.pts.COMET === 28 && gp.pts.BLAZE === 24 && C.cupDone(gp) && gp.raceIdx === 3
+                        && order === 'COMET BLAZE NOVA DUSTY REX ZEPPA GRIZZ'
+                    check(`cup smoke: 28/24 top, closed, full standings order (#1737 mutate: ${label})`, ok, `pts ${gp.pts.COMET}/${gp.pts.BLAZE} idx ${gp.raceIdx} order ${order}`)
+                })
+            } finally { pull(CUPJS) }
+        }
     }
 
     // #1696 mutants: kill the carve call, restore additive churn, delete the
