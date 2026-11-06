@@ -650,6 +650,8 @@ export default function CometDriftHD() {
         let camA = g.karts[0].a
         let camLift = 0
         let shake = 0
+        // #1690: LINK chain callout state (set from the sim's link event)
+        let linkAt = -99; let linkN = 0
         let fovK = 0
         let crestK = 0
         let dipK = 0
@@ -803,6 +805,14 @@ export default function CometDriftHD() {
                     }
                     if (ev.tier === 2) audioController.duckMusic(0.55, 0.5)
                     shake = Math.max(shake, 3 + ev.tier * 2.5)
+                }
+                // #1690: chain chirp climbs with the link count; x3 adds a high
+                // bell on top of the sweep — the same law the GP renderer rings
+                if (ev.e === 'link' && ev.who === 'COMET') {
+                    audioController.playSweep(760 + ev.n * 200, 1560 + ev.n * 300, 0.1 + ev.n * 0.03, 'square', 0.085)
+                    if (ev.n >= 3) audioController.playTone(1760, 0.12, 'square', 0.09, 0.05)
+                    shake = Math.max(shake, 2 + ev.n * 2)
+                    linkAt = g.tick; linkN = ev.n
                 }
                 if (ev.e === 'spin' && ev.who === 'PLAYER') { audioController.playNoise(0.35, 0.18); audioController.duckMusic(0.35, 0.6); shake = 16; rumble(300, 1) }
                 if (ev.e === 'bump' && ev.who === 'PLAYER') { audioController.playNoise(0.12, 0.15); audioController.duckMusic(0.5, 0.35); shake = 7; rumble(100, 0.4) }
@@ -1263,6 +1273,17 @@ export default function CometDriftHD() {
                 hctx.shadowBlur = 0
                 hctx.textAlign = 'left'
             }
+            // #1690: the gold chain callout under the lap plate
+            if (st.screen !== 'attract' && linkN > 0 && g.tick - linkAt < 55) {
+                const flash = g.tick - linkAt < 12 && (g.tick >> 1) % 2 === 0
+                hctx.textAlign = 'center'
+                hctx.font = fu(14)
+                hctx.fillStyle = flash ? '#ffffff' : '#ffd840'
+                hctx.shadowColor = '#ffb020'; hctx.shadowBlur = (flash ? 14 : 8) * u
+                hctx.fillText(`LINK x${linkN}!`, W / 2, Math.round(TOP + 44 * u))
+                hctx.shadowBlur = 0
+                hctx.textAlign = 'left'
+            }
         }
 
         const drawAttract = () => {
@@ -1333,7 +1354,7 @@ export default function CometDriftHD() {
                 if (i === 0) hctx.moveTo(px1, py1); else hctx.lineTo(px1, py1)
             }
             hctx.closePath(); hctx.stroke()
-            const msgs = ['TAP ‹ › TO PICK CIRCUIT · 4 LAPS · 7 KARTS', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS']
+            const msgs = ['TAP ‹ › TO PICK CIRCUIT · 4 LAPS · 7 KARTS', 'X GAS · S BRAKE · ←→ STEER', 'HOLD SPACE / B THROUGH A BEND', 'BLUE VIOLET GOLD — THE LADDER PAYS', 'RE-DRIFT INSIDE A BOOST — LINK x3']
             hctx.font = fa(A.msg.fs)
             hctx.fillStyle = '#9fc8e8'
             hctx.fillText(msgs[Math.floor(g.tick / 120) % msgs.length], W / 2, Math.round(A.msg.y))

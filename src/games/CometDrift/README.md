@@ -274,10 +274,28 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
   autopilot line untouched (the certified `decide()` branch keeps its own
   rule — pinned by a static gate). Residual below; gates + corner-luck
   mutant in cometcheck (#1687).
-- Boost links don't combo: a release ends it — re-seating a drift mid-boost
-  starts a fresh charge with no carry or extension, so there is still no
-  MK-style linked-combo, and `DRIFT_PLAN` targets are static per skill, not
-  read from the corner the rival is actually in.
+- **CLOSED by #1690:** boost links COMBO (`LINK` in sim.js). Releasing a
+  paid drift while a boost is live LINKS the chain (x1..x3): each link
+  extends the boost `ext*base*n` (ext 0.34), lifts the top-speed cap by
+  `overAdd` 0.55 per link, and a drift re-seated inside a live boost starts
+  at `carry` 50% of the banked tier's charge — so blue-violet-gold is
+  drivable through one corner sequence (the carry math closes with margin:
+  violet needs 80 ticks against an 82-tick linked-blue life). The chain
+  breaks honestly: a drained boost, a spin, or a no-pay dump mid-boost
+  resets it (the dump keeps the remaining boost). Rivals read the corner
+  too: `DRIFT_PLAN.targetIdx(skill, kmax)` raises ambition one tier above
+  the skill base when the brake horizon holds a bend (r < 2600), gold-reach
+  under r < 1500 — skill still caps (back markers never chase gold; the
+  #1687 gradient law rides that, measured front/back 1.48). The certified
+  `decide()` branch keeps its own hold rule (static gate pinning unchanged).
+  Gates: the rail rig (both banks, x1..x3, cap lift, drain/dump breaks),
+  per-course race floors (`LINK_MIN`, `CORNER_VIO_MIN` separates wired vs
+  static on gulch/sandbank/corkscomb) and two `--mutate` essays
+  (links-off, corner-blind). Residual: the raise is one flat step
+  (`reachIdx` has no gradient inside the raise), drylake's reactive signal
+  rides the gold column (its violet separation is under the noise floor,
+  honestly ungated), and rival links are opportunistic — the field never
+  aims for x3 on purpose.
 - Sand and cliff are surfaces + clamp; no dynamic deformation.
 - The strata are texture bands, not true vertical geometry (Mode 7 limitation
   accepted — the Road Rash trick was always fake).

@@ -31,6 +31,15 @@ const BUMP_CAP = { gulch: 2, sandbank: 4, corkscomb: 2, drylake: 2 }
 const CHAIN_PTS_MIN = { gulch: 1050, sandbank: 1150, corkscomb: 1830, drylake: 830 }
 const CHAIN_VIO_MIN = { gulch: 120, sandbank: 130, corkscomb: 380, drylake: 125 }
 const CHAIN_SPIN_MAX = { gulch: 24, sandbank: 100, corkscomb: 132, drylake: 58 }
+// #1690: the LINK chain is alive per course (4-GP totals, seeds 0/7/9/42,
+// decide()-driven; measured 404/352/641/325 — the floors sit far below the
+// shipped counts and far above zero, so a links-off collapse dies on them).
+const LINK_MIN = { gulch: 300, sandbank: 240, corkscomb: 480, drylake: 220 }
+// #1690: violet floors the corner-reactive target clears but a static
+// (pre-#1690) target undercuts — wired measures 298/344/692/240, static
+// 268/336/675/246. drylake separates by less than one GP's noise and is
+// honestly NOT gated here (its raise signal rides the gold column instead).
+const CORNER_VIO_MIN = { gulch: 285, sandbank: 340, corkscomb: 685 }
 // gold-chasing gradient across the whole pack (accumulated by the per-course
 // audits, judged after the loop): front markers carry the gold-target skill.
 const GOLD_GRAD = { front: 0, back: 0 }
@@ -437,13 +446,14 @@ for (const c of COURSES) {
     // violet releases, and no new off-road drama bought with the upgrade. The
     // gold ambition by NAME is judged across courses after the loop (GOLD_GRAD).
     {
-        let pts = 0, blu = 0, vio = 0, gold = 0, spins = 0
+        let pts = 0, blu = 0, vio = 0, gold = 0, spins = 0, links = 0
         for (const seed of [0, 7, 9, 42]) {
             const g = sim.makeGame(seed)
             let n = 0
             while (!g.end && n < 60 * 300) {
                 sim.step(g, sim.decide(g))
                 for (const ev of g.events.splice(0)) {
+                    if (ev.e === 'link') links++
                     if (ev.e === 'boost' && ev.who !== sim.PLAYER.name) {
                         pts += ev.tier + 1
                         if (ev.tier === 0) blu++
@@ -462,6 +472,12 @@ for (const c of COURSES) {
             pts >= CHAIN_PTS_MIN[c.id], `b/v/g ${blu}/${vio}/${gold}`)
         check(`${c.id}: deliberate banking pays violet ${vio} >= ${CHAIN_VIO_MIN[c.id]} across 4 GPs (#1687)`,
             vio >= CHAIN_VIO_MIN[c.id], `violets ${vio}`)
+        check(`${c.id}: the chain is alive — ${links} links across 4 GPs >= ${LINK_MIN[c.id]} (#1690)`,
+            links >= LINK_MIN[c.id], `links ${links}`)
+        if (CORNER_VIO_MIN[c.id]) {
+            check(`${c.id}: corner-reactive ambition pays violet ${vio} >= ${CORNER_VIO_MIN[c.id]} (#1690)`,
+                vio >= CORNER_VIO_MIN[c.id], `violets ${vio}`)
+        }
         check(`${c.id}: economy upgrade adds no drama — rival spins ${spins} <= ${CHAIN_SPIN_MAX[c.id]} (#1687)`,
             spins <= CHAIN_SPIN_MAX[c.id], `spins ${spins}`)
     }
@@ -516,6 +532,75 @@ for (const c of COURSES) {
         for (let i = 0; i < 70; i++) { pin2(); sim.step(g2, { u: true, r: true, drift: true }) }
         sim.step(g2, { u: true })
         check(`${c.id}: a short drift pays tier 0 only`, Q.boostTier === 0, `tier ${Q.boostTier}`)
+    }
+
+    console.log(`— ${c.id}: the LINK chain law (#1690) —`)
+    {
+        // Rail the player mid-sweeper (the gold-ladder rig) and drive the
+        // chain end to end: the first blue banks plain; a re-seat inside the
+        // live boost inherits the carry and LINKS x1 extended; the carry makes
+        // violet drivable for x2, which lifts the speed ceiling past the old
+        // tier cap; gold completes x3; a drained boost resets the chain; and a
+        // no-pay dump mid-boost breaks the chain while the boost survives.
+        let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
+        for (let i = 0; i < T.N; i++) {
+            const k = Math.abs(T.pts[i].k)
+            if (k > 1 / 3300 && k < 1 / 700) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+        }
+        if (bcur > bbest) { bbest = bcur; bi = bstart }
+        const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
+        const p = T.pts[pinIdx]
+        const base0 = Math.round(sim.TIERS[0].dur * 1.45)
+        const base1 = Math.round(sim.TIERS[1].dur * 1.45)
+        const g = sim.makeGame(5)
+        g.phase = 'race'
+        const P = g.karts[0]
+        P.v = 6; P.lapStart = -999
+        const pin = () => { P.x = p.x; P.y = p.y; P.a = p.a; P.idx = pinIdx; P.hint = pinIdx }
+        const L = []
+        const run = (n, drift) => {
+            for (let i = 0; i < n; i++) {
+                pin()
+                sim.step(g, { u: true, r: true, drift })
+                for (const ev of g.events.splice(0)) if (ev.e === 'link' && ev.who === 'COMET') L.push(ev)
+            }
+        }
+        run(56, true); run(3, false)
+        check(`${c.id}: first blue banks plain boost, the chain has not started (#1690)`,
+            P.boostT > 0 && P.link === 0 && L.length === 0, `boostT ${P.boostT} link ${P.link}`)
+        run(40, true)
+        const seeded = P.charge
+        check(`${c.id}: re-seat inside a live boost seeds the carry (#1690)`,
+            seeded > 40, `charge ${seeded.toFixed(1)} after 40 held ticks (unseeded ceiling 40)`)
+        run(1, false)
+        check(`${c.id}: mid-boost blue release LINKS x1, extended past base (#1690)`,
+            L.length === 1 && L[0].n === 1 && P.link === 1 && P.boostT > base0, `boostT ${P.boostT} (base ${base0})`)
+        run(80, true); run(1, false)
+        check(`${c.id}: carry makes violet drivable — LINK x2 keeps the higher tier (#1690)`,
+            L.length === 2 && L[1].n === 2 && L[1].tier === 1 && P.boostTier === 1 && P.boostT > base1,
+            `boostT ${P.boostT} (base ${base1}) tier ${P.boostTier}`)
+        let maxV = 0
+        for (let i = 0; i < 20; i++) { pin(); sim.step(g, { u: true, r: true }); maxV = Math.max(maxV, P.v) }
+        check(`${c.id}: the x2 chain lifts the ceiling past the old tier cap (#1690)`,
+            maxV > sim.CFG.top + sim.TIERS[1].over + 0.35,
+            `maxV ${maxV.toFixed(2)} (old cap ${(sim.CFG.top + sim.TIERS[1].over).toFixed(2)})`)
+        run(113, true); run(1, false)
+        check(`${c.id}: the chain runs to gold at the x3 cap (#1690)`,
+            L.length === 3 && L[2].n === 3 && L[2].tier === 2 && P.link === 3,
+            `links ${L.map((e) => e.n).join(',')}`)
+        run(270, false)
+        check(`${c.id}: a drained boost resets the chain (#1690)`,
+            P.boostT === 0 && P.link === 0 && P.linkCarry === 0,
+            `boostT ${P.boostT} link ${P.link}`)
+        run(56, true); run(3, false); run(40, true); run(1, false)
+        check(`${c.id}: the chain restarts after the drain (#1690)`,
+            L.length === 4 && L[3].n === 1 && P.link === 1, `links ${L.map((e) => e.n).join(',')}`)
+        run(20, true)
+        const boostBefore = P.boostT
+        run(1, false)
+        check(`${c.id}: a no-pay dump breaks the chain but keeps the boost (#1690)`,
+            P.charge === -1 && P.link === 0 && P.boostT > 0 && boostBefore > 0,
+            `boostT ${boostBefore} -> ${P.boostT}, link ${P.link}`)
     }
 
     console.log(`— ${c.id}: straights do not charge (#478) —`)
@@ -617,6 +702,39 @@ check('#1687: the field drives the ladder on purpose — front markers out-gold 
         `${s0.DRIFT_PLAN.target(0.86)}/${s0.DRIFT_PLAN.target(0.82)}/${s0.DRIFT_PLAN.target(0.79)}`)
     check('#1687: the certified autopilot line keeps its own hold rule (decide is not re-planned by DRIFT_PLAN)',
         /if \(driftSmart\) \{\s*if \(k\.v > 5 && bend\) inp\.drift = true/.test(readFileSync(SIM, 'utf8')))
+}
+
+// #1690: the LINK chain + corner-reactive ambition laws, pure exports —
+// the rail rig above drives them; these gate the law itself.
+{
+    const s0 = await loadSim()
+    const { LINK, DRIFT_PLAN, TIERS } = s0
+    check('#1690: LINK config is a sane chain (real ext, cap>=2, carry seeds under blue, cap lift)',
+        LINK.ext >= 0.2 && LINK.max >= 3 && LINK.carry > 0 && LINK.carry * TIERS[0].t < TIERS[1].t && LINK.overAdd > 0,
+        `ext ${LINK.ext} max ${LINK.max} carry ${LINK.carry} overAdd ${LINK.overAdd}`)
+    check('#1690: the carry is sized so blue-violet-gold closes inside the linked boosts',
+        TIERS[1].t - TIERS[0].t * LINK.carry <= TIERS[0].dur * 1.45 * (1 + LINK.ext) - 1 &&
+        TIERS[2].t - TIERS[1].t * LINK.carry <= TIERS[1].dur * 1.45 * (1 + 2 * LINK.ext) - 1,
+        `violet ${(TIERS[1].t - TIERS[0].t * LINK.carry).toFixed(1)} ticks vs budget ${(TIERS[0].dur * 1.45 * (1 + LINK.ext)).toFixed(1)}; gold ${(TIERS[2].t - TIERS[1].t * LINK.carry).toFixed(1)} vs ${(TIERS[1].dur * 1.45 * (1 + 2 * LINK.ext)).toFixed(1)}`)
+    check('#1690: reachIdx reads the brake horizon — hairpin gold-reach, bend violet-reach, sweeper none',
+        DRIFT_PLAN.reachIdx(1 / 900) === 2 && DRIFT_PLAN.reachIdx(1 / 2000) === 1 && DRIFT_PLAN.reachIdx(1 / 5000) === 0)
+    check('#1690: a bend raises ambition one tier above the skill base; the straight pays the base',
+        DRIFT_PLAN.targetIdx(0.86, 1 / 900) === 2 && DRIFT_PLAN.targetIdx(0.83, 1 / 900) === 2 &&
+        DRIFT_PLAN.targetIdx(0.83, 1 / 5000) === 1 && DRIFT_PLAN.targetIdx(0.79, 1 / 2000) === 1 &&
+        DRIFT_PLAN.targetIdx(0.79, 1 / 5000) === 0,
+        `front/hairpin ${DRIFT_PLAN.targetIdx(0.83, 1 / 900)}, mid/bend ${DRIFT_PLAN.targetIdx(0.79, 1 / 2000)}`)
+    check('#1690: the raise never puts a blue-base skill on the gold chase (the #1687 gradient law)',
+        DRIFT_PLAN.targetIdx(0.79, 1 / 900) === 1 && DRIFT_PLAN.targetIdx(0.7, 1 / 900) === 1)
+    check('#1690: skill-only target() survives for the certified line (static shape unchanged)',
+        DRIFT_PLAN.target(0.86) === TIERS[2].t && DRIFT_PLAN.target(0.82) === TIERS[1].t && DRIFT_PLAN.target(0.79) === TIERS[0].t)
+    const simSrc1690 = readFileSync(SIM, 'utf8')
+    check('#1690: brain wires the target to the live brake curvature, not the static skill line',
+        /k\.charge < TIERS\[DRIFT_PLAN\.targetIdx\(skill, kmax\)\]\.t/.test(simSrc1690))
+    check('#1690: chain breakage is coded at both seams — drained boost and spin reset link+carry',
+        /if \(k\.boostT === 0\) \{ k\.boostTier = -1; k\.link = 0; k\.linkCarry = 0 \}/.test(simSrc1690) &&
+        /k\.driftT = 0; k\.charge = -1; k\.driftG = 0\n\s*k\.link = 0; k\.linkCarry = 0/.test(simSrc1690))
+    check('#1690: a no-pay dump during a live boost breaks the chain (no ext/carry survives it)',
+        /else if \(k\.boostT > 0\) \{[\s\S]{0,240}?k\.link = 0; k\.linkCarry = 0/.test(simSrc1690))
 }
 
 console.log('— the course pack (#493) —')
@@ -1373,7 +1491,9 @@ if (process.argv.includes('--mutate')) {
         if (k.driftT === 0) {
             inp.drift = k.v > 5 && bend && onRoad
         } else {
-            const hungry = k.charge < DRIFT_PLAN.target(skill)
+            // #1690: the target reads the corner actually in the brake
+            // window — hairpins invite gold, sweepers pay blue onto the exit.
+            const hungry = k.charge < TIERS[DRIFT_PLAN.targetIdx(skill, kmax)].t
             const chain = T.aheadK(k.idx, Math.round((look + 8) * DRIFT_PLAN.chain)) > DRIFT_PLAN.kBend
             inp.drift = onRoad && k.driftT < DRIFT_PLAN.hold && (hungry ? chain : bend)
         }`, '        inp.drift = k.v > 5 && bend'))
@@ -1396,6 +1516,84 @@ if (process.argv.includes('--mutate')) {
                 }
             })
         } finally { pull(simPath) }
+    }
+
+    // #1690 mutant one: links OFF — a mid-boost re-seat pays plain base turbo
+    // again (no chain event, no extension, no cap lift). The scripted rail
+    // must go red: no link fires and the boost never outlives base blue.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const simPathL = fileURLToPath(SIM)
+        const simSrcL = readFileSync(SIM, 'utf8')
+        const diedL = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1690 LINK gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1690 LINK gates are BLIND`)
+        }
+        try {
+            plant(simPathL, simSrcL.replace(`                    if (k.boostT > 0) {
+                        // #1690: re-seat while a boost is live — LINK. The chain
+                        // extends the boost by ext*base per link and keeps the
+                        // higher tier as its cap.
+                        k.link = Math.min(k.link + 1, LINK.max)
+                        k.boostT = Math.max(base, k.boostT) + Math.round(base * LINK.ext * k.link)
+                        k.boostTier = Math.max(k.boostTier, t)
+                        g.events.push({ e: 'link', who: k.name, tier: t, n: k.link })
+                    } else {
+                        k.boostT = base; k.boostTier = t
+                    }`, '                    k.boostT = base; k.boostTier = t'))
+            await diedL('links OFF — re-seats pay plain base turbo again', async () => {
+                const m = await loadSim()
+                selectCourse('corkscomb'); selectCourse('corkscomb')
+                const g = m.makeGame(5)
+                g.phase = 'race'
+                const P = g.karts[0]
+                P.v = 6; P.lapStart = -999
+                let bi = 0; let bbest = 0; let bcur = 0; let bstart = 0
+                for (let i = 0; i < T.N; i++) {
+                    const k = Math.abs(T.pts[i].k)
+                    if (k > 1 / 3300 && k < 1 / 700) { if (bcur === 0) bstart = i; bcur++ } else { if (bcur > bbest) { bbest = bcur; bi = bstart } bcur = 0 }
+                }
+                if (bcur > bbest) { bbest = bcur; bi = bstart }
+                const pinIdx = (bi + Math.floor(bbest / 2)) % T.N
+                const p = T.pts[pinIdx]
+                const pin = () => { P.x = p.x; P.y = p.y; P.a = p.a; P.idx = pinIdx; P.hint = pinIdx }
+                const run = (n, drift) => { for (let i = 0; i < n; i++) { pin(); m.step(g, { u: true, r: true, drift }) } }
+                run(56, true); run(3, false); run(40, true); run(2, false)
+                check('corkscomb: the rail still banks a LINK x1 extended past base (#1690 mutant probe)',
+                    g.events.some((ev) => ev.e === 'link' && ev.who === 'COMET') && P.boostT > Math.round(m.TIERS[0].dur * 1.45) && P.link === 1,
+                    `boostT ${P.boostT} link ${P.link}`)
+            })
+        } finally { pull(simPathL) }
+
+        // #1690 mutant two: corner-BLIND target — the rival target goes back
+        // to static skill. The corner-reactive violet floors must fall short.
+        try {
+            plant(simPathL, simSrcL.replace(`            // #1690: the target reads the corner actually in the brake
+            // window — hairpins invite gold, sweepers pay blue onto the exit.
+            const hungry = k.charge < TIERS[DRIFT_PLAN.targetIdx(skill, kmax)].t`,
+                `            const hungry = k.charge < DRIFT_PLAN.target(skill)`))
+            await diedL('the target is back on static skill (corner-blind)', async () => {
+                const m = await loadSim()
+                for (const cc of COURSES) {
+                    if (!CORNER_VIO_MIN[cc.id]) continue
+                    selectCourse(cc.id); selectCourse(cc.id)
+                    let vio = 0
+                    for (const seed of [0, 7, 9, 42]) {
+                        const g = m.makeGame(seed)
+                        let n = 0
+                        while (!g.end && n < 60 * 300) {
+                            m.step(g, m.decide(g))
+                            for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who !== m.PLAYER.name && ev.tier === 1) vio++
+                            n++
+                        }
+                    }
+                    check(`${cc.id}: corner-reactive violet floor ${CORNER_VIO_MIN[cc.id]} against the corner-blind mutant (#1690)`,
+                        vio >= CORNER_VIO_MIN[cc.id], `violets ${vio}`)
+                }
+            })
+        } finally { pull(simPathL) }
     }
 
     // #534 mutant: collapse the chevrons onto the centre — no thumb target, no
