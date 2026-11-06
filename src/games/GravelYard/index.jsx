@@ -356,7 +356,6 @@ export default function GravelYard() {
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
                 onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref; pushNetUi() },
-                onRoster: () => pushNetUi(),
                 onJoin: () => { if (net.role === 'host') sayYard('CREW IN — DIG IN'); pushNetUi() },
                 onLeave: () => { netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'); pushNetUi() },
                 onStart: (m) => { if (net.role === 'guest') beginOnline(m.seed >>> 0, m.slots) },
