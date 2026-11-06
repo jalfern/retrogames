@@ -20,6 +20,7 @@ import { LEVELS, W, H, HEROES, HERO_ORDER } from './levels.js'
 import { makeGame, step, stateHash, CFG, doorAt, visualChar } from './sim.js'
 import { plan, decide, partnerPad, applyCall } from './planner.js'
 import { createModelPolicy, seatSources } from './model.js'
+import { createNetDemo } from './netdemo.js'
 import { parseCall, intentLabel } from './voicecalls.js'
 import { buildSprites, MATERIALS } from './art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from './sound.js'
@@ -30,7 +31,7 @@ import { warpGlow, nearArch, trapWarn, stunStars, teleColor, teleSpin, revealFad
 import { walkFrame, hitFlashAlpha, deathProgress } from './hero.js'
 import { torch, litColor, mortarTones, css } from './walls.js'
 import { cardCenter, heroAt } from './select.js'
-import { attractFrame, DIM } from './attract.js'
+import { attractFrame, DIM, INFO_MSGS, NET_MSGS } from './attract.js'
 import { p2From } from './p2input.js'
 import { slotPad, connectedSlots } from '../../utils/onePad'
 import { makeSlot, setSlotKind } from '../../utils/slotSources'
@@ -84,7 +85,11 @@ const GauntletGame = () => {
         const ctx = canvas.getContext('2d')
         ctx.imageSmoothingEnabled = false
 
-        let gs = makeGame(0, 'warrior', { topDown: true })
+        // #1641: the attract demo the TRAINED NET plays — plaicraft-bc/v1
+        // drives seat 2 live beside the reactive expert pilot (netdemo.js).
+        const netDemo = createNetDemo()
+        let demoWin = 0 // ticks left showing NET CLEARS THE QUEST! on a frozen board
+        let gs = netDemo.newGame()
         let raf = 0, last = 0, acc = 0
         let demoAt = 0, toast = 0, toastMsg = '', shake = 0, flash = 0, wflash = 0, naPrev = false, selectHero = 0, selectHero2 = 1
         const keys = { l: false, r: false, u: false, d: false, swordEdge: false, arrowEdge: false }
@@ -346,6 +351,11 @@ const GauntletGame = () => {
         }
 
         const finish = (win) => {
+            // #1641: a DEMO ending is not a player ending — an attract/select
+            // gs.end never banks a hi-score and never flips the screen (the old
+            // script replay could bank a fake score after a long stare).
+            const scr = screenRef.current
+            if (scr === 'attract' || scr === 'select') return
             const sc = gs.score
             if (win) localStorage.setItem('gauntlet.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
@@ -371,7 +381,20 @@ const GauntletGame = () => {
             if (gs.end) finish(gs.end === 'win')
         }
 
+        // The primary attract route is the net demo; the planner-script replay
+        // stays only as the broken-net fallback (#1641), and only then does the
+        // demo pay for provenRun()'s plan-time precompute.
         const tickDemo = () => {
+            if (!netDemo.broken) {
+                if (gs.end) {
+                    if (demoWin > 0) { demoWin--; if (demoWin === 0) gs = netDemo.newGame(); return }
+                    if (gs.end === 'win') { demoWin = 240; return } // hold the frozen victory board ~4 s
+                    gs = netDemo.newGame(); return
+                }
+                const d = netDemo.advance(gs)
+                if (d) { doSim(d.inp, d.pInp); return }
+                gs = makeGame(2, 'warrior', { topDown: true }); demoAt = 0 // the net failed: planner replay takes over
+            }
             const run = provenRun()
             if (demoAt >= run.script.length) { gs = makeGame(2, 'warrior', { topDown: true }); demoAt = 0; return }
             doSim(run.script[demoAt++])
@@ -989,9 +1012,12 @@ const GauntletGame = () => {
                 if (sc === 'attract') {
                     if (!roomUp) {
                         const b = board()[0]
-                        for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0)) {
+                        // the brain lines join the ticker only while the net really drives (#1641)
+                        const msgs = netDemo.broken ? INFO_MSGS : NET_MSGS
+                        for (const l of attractFrame(gs.tick, CW, CH, HT, b ? b.score : 0, msgs)) {
                             text(l.text, l.x, l.y, l.size, l.col, l.glow)
                         }
+                        if (demoWin > 0 && Math.floor(demoWin / 16) % 2 === 0) text('NET CLEARS THE QUEST!', CW / 2, 34, 12, '#5dff8f', 8)
                     }
                 } else {
                     if (!roomUp) text('CHOOSE YOUR HERO', CW / 2, 96, 10, '#5dff8f', 4)
@@ -1069,6 +1095,9 @@ const GauntletGame = () => {
         // ---------------------------------------------------------------- input ----
         const startSelect = () => {
             let pm = gs.partnerMode || 'off'
+            // #1641: the attract demo's BRAIN seat belongs to the DEMO — walking
+            // off attract must never hand the player a seat they never chose.
+            if (screenRef.current === 'attract' && pm === 'model') pm = 'off'
             if (connectedSlots() >= 2) pm = 'human'
             gs = makeGame(0, 'warrior', { topDown: true })
             gs.partnerOn = false
@@ -1233,7 +1262,7 @@ const GauntletGame = () => {
                 reset: (seed, players = 1) => {
                     gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', players >= 2 ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
                     gs.partnerOn = players >= 2; gs.partnerMode = players >= 2 ? 'cpu' : 'off'; gs.partnerHuman = false
-                    demoAt = 0
+                    demoAt = 0; netDemo.reset(); demoWin = 0
                     keys.l = keys.r = keys.u = keys.d = false
                     keys.swordEdge = false; keys.arrowEdge = false
                     p2.l = p2.r = p2.u = p2.d = false; p2.swordEdge = false
@@ -1279,6 +1308,10 @@ const GauntletGame = () => {
                     setSlotKind(p2slot, on ? 'model' : 'off')
                 },
                 brainName: () => bcModel.name,
+                // #1641: the net-driven attract demo — probe + harness entry.
+                netDemoProbe: () => ({ broken: netDemo.broken, seed: netDemo.seed, winBanner: demoWin, screen: screenRef.current, seat: gs.partnerMode }),
+                demoSeed: (seed) => { demoWin = 0; gs = netDemo.newGame(seed != null ? seed >>> 0 : undefined) },
+                demoTick: () => tickDemo(),
                 decide: (s) => decide(s || gs),
                 restart: () => { gs = makeGame(0, 'warrior', { topDown: true }) },
                 startHero: (hk) => startPlay(hk),

@@ -323,6 +323,7 @@
     "soslinkdrive": "node scripts/soslinkdrive.mjs",
     "reactcheck": "node scripts/reactcheck.mjs",
     "plaicraftcheck": "node scripts/plaicraftcheck.mjs",
+    "netdemocheck": "node scripts/netdemocheck.mjs",
     "plaicraft:export": "node scripts/plaicraft-export.mjs",
     "plaicraft:train": "node scripts/plaicraft-train.mjs"
   },
