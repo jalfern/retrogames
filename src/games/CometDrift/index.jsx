@@ -7,7 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx } from './sim'
-import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN } from './track.js'
+import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray } from './track.js'
 import { selectorGeom, selectorHit, previewBox } from './selector.js'
 import { paletteFor, KART, buildGround, buildSky, buildSprites, minimapPath, sunLayout, rivalViewFx, duneCrest, DUNE } from './art.js'
 import { drawText } from './font.js'
@@ -609,7 +609,26 @@ export default function CometDrift() {
         // the tick, never Math.random, so replays match.
         const fx = { sparks: [], dust: [] }
         const jit = (n) => { const v = Math.sin(n * 12.9898) * 43758.5453; return v - Math.floor(v) }
+        let sprayPrev = false
         const stepFx = (P) => {
+            // #1718 item 1: the dune kicks back. The instant a held drift bites
+            // sand (the pure sandSpray law, track.js, fires on the entry edge),
+            // coarse puffs burst behind the rear wheels — the visual twin of
+            // sandWhoosh, tinted from the course apron palette below.
+            const spray = sandSpray(P.driftT, P.surf, P.v)
+            if (spray > 0 && !sprayPrev) {
+                const side = P.steerVis || 1
+                const n = 5 + Math.round(spray * 3)
+                for (let i = 0; i < n; i++) {
+                    fx.dust.push({ x: W / 2 + side * (14 + jit(g.tick * 5.7 + i) * 30) * kscale,
+                        y: H - (4 + jit(g.tick * 2.7 + i) * 10) * kscale,
+                        vx: -side * (0.4 + jit(g.tick * 1.7 + i) * 1.0) * spray,
+                        vy: -0.3 - jit(g.tick * 3.3 + i) * 0.7,
+                        life: 18 + Math.round(jit(g.tick + i * 7.1) * 6),
+                        r: (4 + jit(g.tick * 4.1 + i) * 2) * (0.7 + 0.3 * spray) })
+                }
+            }
+            sprayPrev = spray > 0
             if (P.driftT > 0 && P.v > 1) {
                 const dir = P.steerVis || 1
                 for (let i = 0; i < 2; i++) {
