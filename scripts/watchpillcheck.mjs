@@ -90,9 +90,20 @@ const games = readdirSync(new URL('../src/games/', import.meta.url), { withFileT
 rep.check('shelf: every watching title still renders the pill', games.length >= 33, `${games.length} games`)
 
 const REQUIRED_INSET = { top: 'sat', right: 'sar', bottom: 'sab', left: 'sal' }
+// #1663: a DOCKED pill sits inside an in-flow chrome band (Zork's status strip)
+// — not a float — so there is no PAUSE column to clear and no vertical inset to
+// ride. The exemption is pinned positively (dock + --sar must be present) so it
+// can never rot into a silent hole.
+const DOCKED = ['Zork']
 let worstChromeGap = Infinity, worstChromeGame = ''
 for (const g of games) {
     const src = read(`../src/games/${g}/index.jsx`)
+    if (DOCKED.includes(g)) {
+        rep.check(`${g}: docked pill sits in the strip wrapper (in-flow, --sar still rides)`,
+            /<div className="relative">[\s\S]{0,1300}WatchButton on=/.test(src)
+            && /right: 'calc\(0\.5rem \+ var\(--sar, 0px\)\)'/.test(src))
+        continue
+    }
     const i = src.indexOf('WatchButton on=')
     const before = src.slice(Math.max(0, i - 600), i).split('\n')
     const wrapper = before.reverse().find((l) => l.includes('style={{')) || ''

@@ -563,6 +563,7 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         {/* The AI strip. Rendered only when a brain is actually mounted here,
             which until stage 5a meant "never" on this page. */}
         {game && (
+          <div className="relative">
           <AiBadge
             status={aiStatus}
             running={aiOn}
@@ -571,17 +572,23 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             onArm={(next) => { selectArm(next); setArmState(getArm()) }}
             onToggle={aiOn ? () => stopAi('you stopped it') : startAi}
             progress={aiStatus?.progress ? { label: 'PROGRESS', value: aiStatus.progress, max: null } : null}
-            detail={aiNote || (aiOn ? 'any key takes the keyboard back' : null)}
+            detail={aiNote || (aiOn ? 'any key takes the keyboard back' : 'PRESS Y TO WATCH THE PROVEN ROUTE')}
           />
+          {/* #1637 WATCH — the explorer plays ZORK I on its proven brain.
+              #1663: the pill docks into the status strip's right margin, not
+              floating over the terminal — a story line or the prompt caret can
+              never sit under it at any viewport (short windows, ?lite=1). The
+              strip is its own band between the scrollpane and the prompt row;
+              the pill still rides --sar (#1653 p1 law). */}
+          {canWatch && !paused && (
+            <div className="absolute pointer-events-auto z-50" style={{ top: '50%', right: 'calc(0.5rem + var(--sar, 0px))', transform: 'translateY(-50%)' }}>
+              <WatchButton on={aiOn} disabled={!vmRef.current} />
+            </div>
+          )}
+        </div>
         )}
 
-        {/* #1637 WATCH — the explorer plays ZORK I on its proven brain. */}
         {canWatch && aiOn && <WatchToast className="absolute z-50" />}
-        {canWatch && game && !paused && (
-          <div className="absolute pointer-events-auto z-50" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
-            <WatchButton on={aiOn} disabled={!vmRef.current} />
-          </div>
-        )}
 
         {/* Input line */}
         <form onSubmit={handleSubmit} className="flex items-center p-4 pt-2">
