@@ -1789,7 +1789,31 @@ r.check('#1703 crumble renders + animates on phones at 390px: visible mid-window
 r.check('#1703 rim silhouette lift ≥ 1px at phone size (column lift over background drift)',
     proof.AB.changed >= 1200 && proof.liftN >= 10 && proof.liftMed >= 1 && proof.liftMax >= 2,
     `${proof.liftN} columns lifted ≥1px over background (mode shift ${proof.mode}px, median excess ${proof.liftMed}px, max ${proof.liftMax}px, dpr ${proof.dpr}) — above the 1px bar, rim amp stays`)
+// The page shot above can't carry the proof for human eyes: at 390x844 the
+// rotate-your-phone modal sits exactly over the horizon, hiding the crater.
+// The canvas-element close-up shows the rim itself, and the landscape page shot
+// pins a fresh crater AT rim peak (age CRUMBLE_T/2 = 5) — the mid-window view
+// a landscape phone player sees, same camera-pin protocol as the gates.
 await phone.screenshot({ path: 'docs/shots/issue-1703-phone-crumble.png' })
+const shotPos = await phone.evaluate(() => {
+    const p = window.__carpetTest.probe()
+    return { x: p.x + Math.cos(p.yaw) * 80, y: p.y + Math.sin(p.yaw) * 80, cx: p.x, cy: p.y, alt: p.alt }
+})
+await phone.evaluate((q) => { window.__carpetTest.craterAt(q.x, q.y, 14, 10, 1) }, shotPos)
+for (let a = 0; a < 5;) {
+    await phone.evaluate((q) => { window.__game.step({}, 1); window.__carpetTest.holdCarpet(q.cx, q.cy, q.alt) }, shotPos)
+    const ds = await phone.evaluate(() => window.__carpetTest.deforms())
+    if (ds.length && ds[ds.length - 1].a > a) a = ds[ds.length - 1].a
+}
+await phone.evaluate((q) => window.__carpetTest.holdCarpet(q.cx, q.cy, q.alt), shotPos)
+const rimCanvas = (await phone.evaluateHandle(() => [...document.querySelectorAll('canvas')].find((c) => !c.dataset.mcHud))).asElement()
+if (rimCanvas) await rimCanvas.screenshot({ path: 'docs/shots/issue-1703-phone-rim-canvas.png' })
+await phone.setViewportSize({ width: 844, height: 390 })
+await phone.waitForTimeout(450)
+await phone.evaluate((q) => { window.__game.step({}, 1); window.__carpetTest.holdCarpet(q.cx, q.cy, q.alt) }, shotPos)
+await phone.waitForTimeout(250)
+await phone.evaluate((q) => window.__carpetTest.holdCarpet(q.cx, q.cy, q.alt), shotPos)
+await phone.screenshot({ path: 'docs/shots/issue-1703-phone-crumble-landscape.png' })
 // ---- #1703 item 2: the same proof under ?lite=1 (low-spec GL). There is no
 // ray-marched 2D world in this title — lite must show the crumble too.
 await phone.goto(new URL(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet?lite=1`).href, { waitUntil: 'load' })
