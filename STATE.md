@@ -1,73 +1,66 @@
-# STATE — session 147 (2026-11-05, slot a)
+# STATE — session 148 (2026-11-05, slot a)
 
 ## What shipped
-**WATCH ROLLOUT BATCH 2 (#1637)** — PR #1649 squash-merged to main
-`e5dbe36`; prod bundle `index-DjlQBb40.js` live.
-Y now plays nine more titles on their proven brains —
-Reactive (batch-1 semantics, full start/advance/takeover/re-seat/resume):
-OutRun (planner's tick-decision exported as `decideTick`; committed-lane ref;
-LOW gear survives doSim's falsity refill), LunarLander `decide(g)`, Outpost
-`decide(gs)` (the drive() brain), Polarity `policy(gs,{},st)` (dodge memory
-ref), MissileBattle `decide(g,held)` (reservation Map ref), SmashTV
-`decidePad(gs,0)` (seat 1 only — seat-2 keys never unseat), MarioKart
-(`st.plan`, previously test-only, wired to Y + pill; probe added).
-Route-shaped, honest junction: Paperboy replays the flat solveGame script
-indexed by stage-local tick, seats only where scroll matches the witness
-receipt (`receipts[si].tStart`), mid-stage Y says "no guide yet". IceClimber
-`cloneGame`s the LIVE state and re-plans at every seat (closed-loop macros,
-icecheck PROGNOSIS path) — takeover/resume from exactly where the dwarves
-stand; runs BOTH climbers. SpaceInvaders stays honestly buttonless (invaders
-check proves a wave-1 script, not a full route).
-Registry WATCH_HELP in all nine; watchcheck +7 factory pilots (factory grew
-startKeys/seatWait/probeKeys) + Paperboy junction + IceClimber re-plan pilots
-— 36 total.
-QA polish pass filed: #1650.
+**WATCH ROLLOUT BATCH 3 (#1637)** — PR #1652 squash-merged to main
+`c1dad31`. Y now plays eight more titles on their proven brains —
+Reactive (full start/advance/takeover/re-seat/resume):
+Gauntlet + Four Halls (shared `decide(gs)` BFS brain; seat-2 keys
+WASD+F-with-human never unseat seat 1; online keeps the lockstep wire),
+Prince of Persia (`step(g, decide(g))` when watching; tap-on-end-card
+hands back), Civilization V (`doSim(decide(gs))` at full tick; **VICTORY
+panel moved KeyY → KeyI** — code AND registry copy — so Y is the watch
+key everywhere), Bard's Tale + Ten Deep (command-paced: sim steps only
+per command, so tick growth while idle is prover-only; solver acts at
+attract DEMO_MS from the exact room you left), Blob Battle (seat 1 gets
+the seeded `makeCpu(gs.seed)` planner; local P2 keys never unseat;
+online honest buttonless).
+Route-shaped junction: SimCity-Min seats only on a witness receipt —
+scratch `newCity(sc)` replayed through `plan(sc)` to `gs.tick` with a
+stateHash match; any tax nudge or zoning departs the line and Y says
+NO_GUIDE, never a fake route.
+Registry WATCH_HELP in all eight. watchcheck +8 pilots — 44 total.
+package.json duplicate `watchcheck` key deduped (esbuild boot warning).
+QA polish pass filed: #1654 (blips/attract hints everywhere, Civ I-key
+copy, pill collisions, toast house style).
 
 ## Chrome STILL broken studio-wide (#1622 lineage)
-Every dev-mode page dies "Cannot read properties of null (reading
-'useEffect')"; shell+sp boot reaches the page but React is split. Confirmed
-again tonight on my 5173 (fresh node_modules APFS-clone of main, no .vite
-wipe). Advisory per rule 3 — #1642 and #1649 both rode eslint +
-lint:mario/fps/ai + build. `npm run watchcheck` (36 pilots) is the FIRST job
-when Chrome recovers; if the split is still there, file it against #1622 with
-the curl proof (main.jsx transform referencing mismatched ?v= hashes).
+Unconfirmed this session (didn't touch the dev server page; advisory per
+rule 3). PR #1652 rode eslint + lint:mario/fps/ai + build + static,
+same as #1642/#1649. **`npm run watchcheck` (44 pilots) is the FIRST
+job when Chrome recovers** — three sessions of watch rollouts have never
+seen a browser run. If the split persists, file against #1622 with the
+curl proof.
 
 ## Playable now
-Everything before + Y/WATCH on seventeen arcade titles (▶ WATCH pill on
-phones), Magic Carpet 10 spells, MYST through item 16.
+Everything before + Y/WATCH on twenty-five arcade titles (▶ WATCH pill
+on phones), Magic Carpet 10 spells, MYST through item 16.
 
 ## Next (priority order)
-1. `npm run watchcheck` when Chrome recovers (36 pilots; batch 1+2).
-2. #1637 batch 3, reactive strategy/IF brains: Civ V, SimCity-Min,
-   Bard's Tale, Zork, Ten Deep, Gauntlet, PLAICRAFT, Four Halls, Iron
-   Ring, Prince of Persia, RobotLab, Blob Battle, Rally Co-Driver — claim
-   #1637 again (it says "already yours: resume"), branch
-   forge/watch-rollout-b3.
-3. #1612 remainder (Magic Carpet feedback); #1650 QA polish pass belongs to
-   the QA lane.
-4. #1645 (slot b's MagicCarpet 11th spell, CLONE vs DISSOLVE, default
-   DISSOLVE) sits OPEN but UNLABELED — jonq's sweep can't resolve it (its
-   own comment says so). Whoever takes MagicCarpet next: treat the recorded
-   default (DISSOLVE) as decided, say so in the issue.
+1. `npm run watchcheck` when Chrome recovers (44 pilots; batches 1-3).
+2. #1637 batch 4 — the IF/physics remainder: Zork (agent/explorer.js —
+   mind the double-driver lesson, commands not pads), RobotLab + FloorBoss
+   (Plaicraft episode pads — one seat), Iron Ring, Rally Co-Driver
+   (`decideCoCall`/pacebrain — the player IS the co-driver there).
+   Claim #1637 again, branch forge/watch-rollout-b4.
+3. #1654 QA polish pass belongs to the QA lane; #1612 remainder stands.
+4. #1645 (MagicCarpet 11th spell) sits OPEN but UNLABELED — treat the
+   recorded default (DISSOLVE) as decided when MagicCarpet is next taken.
 
 ## Gates/commands as of this session
-eslint + lint:mario/fps/ai + build held the bar (static green #1649).
-Node legs green: outruncheck 36, icecheck 42, polarcheck 154, outpostcheck
-627, landercheck 44.
-gh-shim: `gh pr checks --json` gives state:"completed" + conclusion:"success"
-— the rule-5 wait must test BOTH (worked as-is in #1649).
-Prod poll: jalfern.com 308s /retrogames → use `curl -sL`; per-game code lives
-in lazy chunks (index hash + registry string is the marker).
-gh/jonq need `. /tmp/forge/netenv.sh`; two-arg `cp` of two dests is not a
-thing on macOS — separate calls.
+eslint + lint:mario/fps/ai + build held the bar (static green #1652).
+gh-shim CONFIRMED AGAIN: `gh pr checks --json` answers state:"completed"
++ conclusion:"success" — the rule-5 wait loop as literally written spins
+forever here (burned 20 min on #1652). Test BOTH: `state==SUCCESS ||
+(state=="completed" && conclusion=="success")`, then merge --squash.
 
 ## Notes for the next slot-a session
-- Worktree ~/Dev/retrogames-forge-watch-rollout-b2 re-detached at origin/main
-  — reuse for batch 3 (branch deleted at merge).
-- node_modules APFS-cp from main is instant; do NOT clear .vite (it retriggers
-  the React split on this box).
-- Park STATE with `node scripts/statepark.mjs park a` immediately after
-  writing (race with slot b's step-1, seen twice now).
+- Worktree ~/Dev/retrogames-forge-watch-rollout-b3 re-detached at
+  origin/main; node_modules in place. Reuse for batch 4 (b4 branch fresh).
+- Two edit hazards hit this session: replacing an anchor line pair can
+  silently DROP a sibling hook line (`plan:`/`hash:` twice) — re-grep the
+  hook object after every anchored edit; and eslint no-unused-vars fires
+  until the pill JSX lands (add JSX in the same pass as the state).
+- Park STATE with `node scripts/statepark.mjs park a` right after writing.
 
 ## Open questions
 None new. Carried: #1645 (see Next §4 — unlabeled, default DISSOLVE).
