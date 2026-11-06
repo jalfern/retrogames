@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 export const CORE = {
   lint: ['lint:ai', 'lint:forge', 'lint:pw'],
   checks: ['aicheck', 'zorkcheck', 'vpadcheck', 'steercheck', 'fitcanvascheck',
-    'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
+    'ciyamlcheck', 'forgecheck', 'dailylogcheck', 'builtbycheck', 'navcheck', 'visibilitycheck', 'jonqcheck',
     'pulsecheck', 'shiftreportcheck', 'scrubcheck', 'feedbackcheck', 'feedbackreplay', 'nightlyheal', 'padlayoutcheck', 'nightlybotcheck',
     'runwaycheck', 'claimcheck', 'neverbudrycheck', 'robokitcheck', 'tpscheck', 'lanecheck', 'sleepwatchcheck', 'rewritecheck', ['watchcheck', true], 'watchsoakcheck', 'watchphonecheck', 'watchpillcheck', 'nightlyverdictcheck', ['muteguardcheck', true], 'reactcheck', ['keycheck', true]],
   smoke: ['vpadboot', 'tapstartcheck', 'watchcheck'],
