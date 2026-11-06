@@ -15,6 +15,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
@@ -22,7 +24,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, makeGame, step, stateHash } from './sim.js'
-import { plan } from './planner.js'
+import { plan, policy } from './planner.js' // policy = #1637 WATCH: the greedy closed-loop brain, live
 import { WAVES } from './waves.js'
 
 const SIM_MS = 1000 / 60
@@ -41,6 +43,9 @@ const GalagaGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the greedy prover flies
+    const watchingRef = useRef(false)
+    const watchMem = useRef({ dodge: 0 }) // the pilot's own memory, fresh per watch
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -121,7 +126,10 @@ const GalagaGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.fEdge })
+            // #1637 WATCH: the greedy pilot flies the wing in your seat — the same
+            // brain galactcheck grades, reading the live state every tick.
+            if (watchingRef.current) { watchMem.current ??= { dodge: 0 }; doSim(policy(gs, watchMem.current)) }
+            else doSim({ l: keys.l, r: keys.r, u: keys.u, d: keys.d, f: keys.fEdge })
             keys.fEdge = false
         }
 
@@ -254,6 +262,8 @@ const GalagaGame = () => {
             gs = makeGame(0)
             evLog.length = 0; parts.length = 0
             keys.l = keys.r = keys.u = keys.d = keys.f = keys.fEdge = false
+            watchingRef.current = false // #1637 a new run starts with the stick in your hand
+            setWatching(false)
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -266,6 +276,9 @@ const GalagaGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y hands the wing to the prover; any driving key takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
@@ -282,8 +295,9 @@ const GalagaGame = () => {
         const onBlur = () => { keys.l = keys.r = keys.u = keys.d = keys.f = false }
         const onPointer = () => {
             const sc = screenRef.current
-            if (sc === 'attract') startPlay()
-            else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
+            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'over' && performance.now() - overAtRef.current > 900) { setMode('attract'); return }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the stick back
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -315,6 +329,7 @@ const GalagaGame = () => {
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover flying?
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
@@ -448,6 +463,17 @@ const GalagaGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'GALAGA')} onResume={handleResume} />}
+            {/* #1637 WATCH — the prover flies wave one; any key, pad push or tap takes over. */}
+            {play && watching && (
+                <div className="fixed z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

@@ -26,6 +26,88 @@ async function openGameNoExit(browser, pilot) {
 }
 
 const PILOTS = [
+    // #1637 rollout — the arcade family on one factory: Y starts the watcher, the
+    // prover advances the real sim untouched, a steer key takes over, Y re-seats it
+    // mid-run and it carries on from exactly there. advanced() reads each game's own
+    // probe: score up (kills/flips/bricks) or the avatar visibly moved — both are
+    // impossible while an idle player watches nothing happen.
+    // id, hook, extra waits, and an optional custom advanced/note.
+    ...[
+        {
+            id: 'qbert', hook: '__qbertTest',
+            advanced: (a, b) => b.flips > a.flips || b.px !== a.px || b.py !== a.py,
+            note: (a, b) => `flips ${a.flips} -> ${b.flips} @cube(${b.r},${b.c})`,
+            takeover: 'ArrowUp', resumeWait: 4000,
+        },
+        {
+            id: 'joust', hook: '__joustTest',
+            advanced: (a, b) => (a.p1?.x ?? 0) !== (b.p1?.x ?? 0) || b.p1.score > a.p1.score || b.foes < a.foes,
+            note: (a, b) => `p1 x ${(a.p1?.x ?? 0).toFixed(0)} -> ${(b.p1?.x ?? 0).toFixed(0)}, score ${a.p1.score} -> ${b.p1.score}`,
+        },
+        {
+            id: 'galaga', hook: '__galagaTest',
+            advanced: (a, b) => b.score > a.score || Math.abs(b.player.x - a.player.x) > 8,
+            note: (a, b) => `score ${a.score} -> ${b.score}, x ${a.player.x.toFixed(0)} -> ${b.player.x.toFixed(0)}`,
+        },
+        {
+            id: 'tempest', hook: '__tempestTest',
+            // Tempest punishes idle: things that reach the rim kill. The prover not
+            // only survives the window, it scores — both sides of the promise.
+            advanced: (a, b) => b.score > a.score && b.lives === a.lives,
+            note: (a, b) => `score ${a.score} -> ${b.score}, lives ${a.lives} held`,
+            advanceWait: 6000,
+        },
+        {
+            id: 'dig-dug', hook: '__dugTest',
+            advanced: (a, b) => b.score > a.score || Math.abs(b.player.x - a.player.x) > 8,
+            note: (a, b) => `score ${a.score} -> ${b.score}, x ${a.player.x.toFixed(0)} -> ${b.player.x.toFixed(0)}`,
+        },
+        {
+            id: 'bubble-bobble', hook: '__bobTest',
+            advanced: (a, b) => b.score > a.score || Math.abs((b.player?.x ?? 0) - (a.player?.x ?? 0)) > 8,
+            note: (a, b) => `score ${a.score} -> ${b.score}, x ${(a.player?.x ?? 0).toFixed(0)} -> ${(b.player?.x ?? 0).toFixed(0)}`,
+        },
+        {
+            id: 'spy-hunter', hook: '__spyTest',
+            // idle Spy Hunter can get shot; the proven line holds lives and banks kills
+            advanced: (a, b) => b.score > a.score && b.lives === a.lives,
+            note: (a, b) => `score ${a.score} -> ${b.score}, lives ${a.lives} held`,
+            advanceWait: 6000,
+        },
+        {
+            id: 'arkanoid', hook: '__arkTest',
+            // idle Arkanoid never even launches the ball — score > 0 is prover-only
+            advanced: (a, b) => b.score > a.score || Math.abs(b.paddle - a.paddle) > 4,
+            note: (a, b) => `score ${a.score} -> ${b.score}, paddle ${a.paddle.toFixed(0)} -> ${b.paddle.toFixed(0)}`,
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')                       // attract -> play
+            await page.waitForTimeout(600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            await page.waitForTimeout(g.advanceWait || 5000)
+            const b = await probe()
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            rep.check(`${g.id}: still watching mid-route`, await watching())
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            await page.waitForTimeout(g.resumeWait || 3500)
+            const d = await probe()
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
     {
         id: 'ssx', url: `${BASE}/ssx`, hook: '__ssxTest',
         async run(page, rep) {
