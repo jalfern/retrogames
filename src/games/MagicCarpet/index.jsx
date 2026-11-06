@@ -20,6 +20,7 @@ import {
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
     hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel,
+    SEL, selectTap, cursorStep,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
 
@@ -170,6 +171,7 @@ const MagicCarpetGame = () => {
         let throwL = false, throwR = false
         let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
         let castsSeen = 0 // prover-only signal: an idle player never casts
+        let selCur = 0 // #1740 title WORLD SELECT cursor (0-cycled via cursorStep)
 
         const say = (m) => { toastMsg = m; toast = 150 }
 
@@ -784,11 +786,49 @@ const MagicCarpetGame = () => {
             ctx.restore()
             ctx.globalAlpha = 1
             paintHud()
+            if (screenRef.current === 'attract') paintSelect()
         }
 
-        const startPlay = () => {
+        // #1740 WORLD SELECT attract chrome: carved chevron plaques in the two
+        // bottom corners (zones = sim.SEL, thumb-sized) with a gold pulse and
+        // the picked world's name floating between them.
+        const paintSelect = () => {
+            const pulse = 0.55 + 0.45 * Math.sin(gs.tick * 0.1)
+            const plaque = (x, dir) => {
+                ctx.fillStyle = '#0e1a38'
+                ctx.fillRect(x, SEL.y, SEL.zw, SEL.h)
+                ctx.strokeStyle = `rgba(255, 216, 96, ${(0.35 + 0.4 * pulse).toFixed(3)})`
+                ctx.lineWidth = 1
+                ctx.strokeRect(x + 0.5, SEL.y + 0.5, SEL.zw - 1, SEL.h - 1)
+                const cx = x + SEL.zw / 2, cy = SEL.y + SEL.h / 2
+                ctx.fillStyle = '#ffd860'
+                ctx.beginPath()
+                if (dir === 'prev') { ctx.moveTo(cx + 5, cy - 7); ctx.lineTo(cx - 4, cy); ctx.lineTo(cx + 5, cy + 7) }
+                else { ctx.moveTo(cx - 5, cy - 7); ctx.lineTo(cx + 4, cy); ctx.lineTo(cx - 5, cy + 7) }
+                ctx.closePath(); ctx.fill()
+            }
+            plaque(0, 'prev')
+            plaque(W - SEL.zw, 'next')
+            ctx.textAlign = 'center'
+            ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#0e1a38'
+            ctx.fillText(`WORLD ${selCur + 1} OF ${LEVELS.length} — ${LEVELS[selCur].name}`, W / 2 + 1, 141)
+            ctx.fillStyle = '#ffd860'
+            ctx.fillText(`WORLD ${selCur + 1} OF ${LEVELS.length} — ${LEVELS[selCur].name}`, W / 2, 140)
+            ctx.font = '5px monospace'
+            ctx.fillStyle = 'rgba(232, 200, 96, 0.8)'
+            ctx.fillText('ARROWS OR TAP THE ARROWS PICK A WORLD · ANY KEY GOES', W / 2, 150)
+            ctx.textAlign = 'left'
+        }
+
+        const startPlay = (level = 0) => {
+            // #1740: launch at the world picked with ◀ ▶ (or a chevron tap).
+            // The pin from ?seed=N keeps meaning with any level: makeGame
+            // starts the rng stream identically and genWorld runs the same
+            // deterministic order.
+            const lv = Math.max(0, Math.min(LEVELS.length - 1, level >>> 0))
             const pin = seedFromQuery()
-            gs = makeGame(pin != null ? pin >>> 0 : (performance.now() * 977) >>> 0)
+            gs = makeGame(pin != null ? pin >>> 0 : (performance.now() * 977) >>> 0, lv)
             demoT = 0
             if (renderer) renderer.resetWorld()
             keys.l = keys.r = keys.u = keys.d = false
@@ -798,7 +838,7 @@ const MagicCarpetGame = () => {
             vaultFlash = 0; prevSeg = -1
             watchingRef.current = false; setWatching(false) // #1637 a new run starts in your hands
             setMode('play')
-            say(`WORLD 1 — ${LEVELS[0].name} · FILL THE VAULT`)
+            say(`WORLD ${lv + 1} — ${LEVELS[lv].name} · FILL THE VAULT`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
         }
 
@@ -807,7 +847,13 @@ const MagicCarpetGame = () => {
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'attract') {
+                // #1740 WORLD SELECT: ◀ ▶ pick the starting world (the pad sends
+                // the same arrows); any other key/tap launches from the cursor.
+                if (e.code === 'ArrowLeft' && !e.repeat) { selCur = cursorStep(selCur, -1); audioController.playTone(520, 0.06, 'square', 0.05); return }
+                if (e.code === 'ArrowRight' && !e.repeat) { selCur = cursorStep(selCur, 1); audioController.playTone(660, 0.06, 'square', 0.05); return }
+                startPlay(selCur); return
+            }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y seats sim.js's autopilot (carpetcheck's 60-seed
@@ -841,7 +887,17 @@ const MagicCarpetGame = () => {
         const onPointer = (e) => {
             if (e.target instanceof Element && e.target.closest('[data-vc], button')) return
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'attract') {
+                // #1740 WORLD SELECT: taps on the corner chevrons pick the world;
+                // any other tap launches from the cursor (thumb-sized zones, sim).
+                const rect = canvas.getBoundingClientRect()
+                const hit = selectTap(
+                    ((e.clientX - rect.left) / rect.width) * W,
+                    ((e.clientY - rect.top) / rect.height) * H)
+                if (hit === 'prev') { selCur = cursorStep(selCur, -1); audioController.playTone(520, 0.06, 'square', 0.05); return }
+                if (hit === 'next') { selCur = cursorStep(selCur, 1); audioController.playTone(660, 0.06, 'square', 0.05); return }
+                startPlay(selCur); return
+            }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc === 'play' && !pausedRef.current) {
                 // #1637 WATCH: a tap on the world means you want the carpet —
@@ -923,7 +979,10 @@ const MagicCarpetGame = () => {
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     invis: gs.invis, book: gs.book,
                     casts: castsSeen, seed: gs.seed,
+                    sel: selCur, // #1740 WORLD SELECT cursor
                 }),
+                selectTap: (x, y) => selectTap(x, y),
+                cursor: (d) => { selCur = cursorStep(selCur, d | 0); return selCur },
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
                 start: startPlay,
@@ -1083,7 +1142,7 @@ const MagicCarpetGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                     <h1 className="text-4xl font-black" style={{ color: '#e8c860', textShadow: '0 0 18px #6a4ad0, 3px 3px 0 #3a1a5a' }}>MAGIC CARPET</h1>
-                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore three worlds</p>
+                    <p className="text-purple-200/90 font-mono mt-1 text-sm">fly . gather mana . fly it home . restore nine worlds</p>
                     <p className="text-white font-mono font-bold mt-2 animate-pulse">TAP / PRESS ANY KEY TO START</p>
                     <AttractMessage
                         className="text-purple-100/80 font-mono text-[11px] mt-2 px-8 leading-4"
@@ -1095,7 +1154,7 @@ const MagicCarpetGame = () => {
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
                             'CAST INVISIBILITY AND WIZARD AND WOLVES LOOK RIGHT THROUGH YOU',
-                            'THREE WORLDS · EACH GUARDED BY A RIVAL WIZARD',
+                            'NINE WORLDS · THREE ARCS OF THREE ATMOSPHERES · EACH GUARDED',
                         ]}
                     />
                     <span className="block mt-2 text-purple-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>

@@ -16,12 +16,38 @@ export const CFG = {
     castleR: 26, bankRate: 3,
 }
 
+// #1740: the original ran a long campaign of 45 levels; the atmospheres repeat
+// every third world (the renderer cycles its three PALs the same way), so the
+// nine named worlds below are three arcs of three — each arc stricter than the
+// last. Quotas stay supply-reachable: pearls 2-6 mana (avg ~4) + wizard hoard +
+// bounties comfortably exceed each quota, gated by the autopilot sweep.
 export const LEVELS = [
     { name: 'VERDANT ISLES', quota: 115, hoard: 80, wizHp: 60, pearls: 56 },
     { name: 'EMBERWILD', quota: 160, hoard: 110, wizHp: 85, pearls: 62 },
     { name: 'FROSTBOUND', quota: 175, hoard: 140, wizHp: 110, pearls: 68 },
+    { name: 'GREENFALL', quota: 190, hoard: 150, wizHp: 120, pearls: 70 },
+    { name: 'SCORCHED SKY', quota: 210, hoard: 165, wizHp: 130, pearls: 72 },
+    { name: 'GLACIER MAW', quota: 230, hoard: 180, wizHp: 140, pearls: 74 },
+    { name: 'LIVING MOOR', quota: 250, hoard: 195, wizHp: 155, pearls: 76 },
+    { name: 'LAST EMBER', quota: 270, hoard: 215, wizHp: 170, pearls: 78 },
+    { name: 'THE LAST SKY', quota: 295, hoard: 235, wizHp: 190, pearls: 82 },
 ]
 export const QUOTA = LEVELS[LEVELS.length - 1].quota
+
+// ---- title WORLD SELECT (#1740) -----------------------------------------
+// Pure selector plumbing so the whole pick path is Node-provable, like hudTap.
+// Thumb-sized chevron zones sit at the bottom corners of the 320x200 title
+// surface (48x48 HUD px = >=44 CSS px on a 390px phone); the cursor cycles
+// through the nine worlds and any other start key/tap launches from it.
+export const SEL = { y: 112, h: 48, zw: 48 }
+export function selectTap(x, y) {
+    if (y < SEL.y || y > SEL.y + SEL.h) return null
+    if (x < SEL.zw) return 'prev'
+    if (x >= W - SEL.zw) return 'next'
+    return null
+}
+export const cursorStep = (cur, dir, n = LEVELS.length) => (cur + dir + n) % n
+
 
 export const SPILLS = [
     { id: 'fireball', name: 'FIREBALL', cost: 15 },
