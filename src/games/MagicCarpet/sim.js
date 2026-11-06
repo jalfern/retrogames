@@ -176,7 +176,7 @@ export function dissolveLand(gs, x, y) {
             if (d > DISSOLVE_R) continue
             const floor = WATER - DISSOLVE_SINK * (1 - d / DISSOLVE_R) ** 2
             const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
-            gs.heights[gi] = Math.min(gs.heights[gi], floor)
+            gs.heights[gi] = crater(gs, wrap(i * CELL + CELL / 2, MAP), wrap(j * CELL + CELL / 2, MAP), DISSOLVE_R, DISSOLVE_SINK, 0) || Math.min(gs.heights[gi], floor)
         }
     }
     const gone = []

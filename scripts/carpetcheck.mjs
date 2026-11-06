@@ -13,6 +13,7 @@ import {
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
+    DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -28,8 +29,8 @@ const run = (seed, maxTicks, scriptFn = autopilot) => {
 
 // ---- boot
 const fresh = makeGame(7)
-r.check('world 1 built: 56 pearls, wizard hoards 80, 10 books, one known spell, empty vault',
-    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 10 &&
+r.check('world 1 built: 56 pearls, wizard hoards 80, 11 books, one known spell, empty vault',
+    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 11 &&
     fresh.learned.length === 1 && fresh.bank === 0 && fresh.level === 0,
     `pearls=${fresh.pearls.length} hoard=${fresh.wizard.mana} books=${fresh.books.length} bank=${fresh.bank}`)
 const g0 = run(7, 600, () => ({}))
@@ -343,10 +344,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 
 // ---- roster + INVISIBILITY (#1610): the original's veil, done whole
 // (#1612 item 5 grew the roster to eight with VOLCANO; #1639 to ten with
-// SHATTER and RAISE.)
+// SHATTER and RAISE; #1668 to eleven with DISSOLVE.)
 {
-    r.check('ten signature spells with costs', SPILLS.length === 10 &&
-        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano', 'shatter', 'raise'].every((id) => spellById(id)?.cost > 0))
+    r.check('eleven signature spells with costs', SPILLS.length === 11 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano', 'shatter', 'raise', 'dissolve'].every((id) => spellById(id)?.cost > 0))
 
     const veilUp = (gs) => {
         gs.learned.push('invisibility')
@@ -532,7 +533,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 // ---- #1612 item 5: VOLCANO — the ground tears open where you look.
 {
     r.check('volcano is the 8th spell: cost 60, a grimoire waits in the world',
-        SPILLS.length === 10 && spellById('volcano').cost === 60 &&
+        SPILLS.length === 11 && spellById('volcano').cost === 60 &&
         fresh.books.some((b) => b.id === 'volcano'), `n=${SPILLS.length}`)
     {
         const gv = makeGame(7)
@@ -706,14 +707,141 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             bad === 0, `out-of-reach towers: ${bad}`)
     }
     {
-        // Ten books can crowd the mid-height band; the spread fallback must
+        // Eleven books can crowd the mid-height band; the spread fallback must
         // never leave a grimoire unplaced on any seed or level.
         let missing = 0
         for (let s = 1; s <= 40 && missing === 0; s++) {
-            for (const lv of [0, 1, 2]) if (makeGame(s, lv).books.length !== 10) missing++
+            for (const lv of [0, 1, 2]) if (makeGame(s, lv).books.length !== 11) missing++
         }
-        r.check('all ten grimoires are placed in every world of seeds 1–40 (spread fallback holds)',
-            missing === 0, `worlds short of ten books: ${missing}`)
+        r.check('all eleven grimoires are placed in every world of seeds 1–40 (spread fallback holds)',
+            missing === 0, `worlds short of eleven books: ${missing}`)
+    }
+}
+
+// ---- #1668: DISSOLVE — the 11th spell erases land, it does not crack it.
+// The clamp (min(h, WATER−dip)) guarantees the wound floods even on the
+// highest peak — a crater()-style subtraction would only bite low ground, and
+// that is the mutant: replace the clamp line with crater(gs,x,y,DISSOLVE_R,
+// DISSOLVE_SINK,0) and the flood-on-peak gate goes red. Delete the hut splice
+// and the dissolve/keep gates go red; add igniteHuts inside dissolveLand and
+// the cold-promise gate goes red. Mutants proven once, 2026-11-06.
+{
+    r.check('dissolve is the 11th spell: cost 40, its grimoire waits in the world',
+        SPILLS.length === 11 && SPILLS[10].id === 'dissolve' && spellById('dissolve').cost === 40 &&
+        fresh.books.some((b) => b.id === 'dissolve'), `n=${SPILLS.length}`)
+    {
+        // The signature: clamp-flood on the HIGHEST ground on the map — no
+        // terrain in any world is high enough to keep its dry land.
+        const gs = makeGame(7)
+        let hx = 0, hy = 0, hh = -1
+        for (let j = 0; j < GRID; j++) {
+            for (let i = 0; i < GRID; i++) {
+                const h = gs.heights[j * GRID + i]
+                if (h > hh) { hh = h; hx = i * CELL + CELL / 2; hy = j * CELL + CELL / 2 }
+            }
+        }
+        dissolveLand(gs, hx, hy)
+        r.check('dissolve floods guaranteed: even the highest peak sinks below the sea',
+            hh > WATER + 40 && sampleH(gs, hx, hy) < WATER,
+            `peak ${hh.toFixed(1)} → ${sampleH(gs, hx, hy).toFixed(1)} (sea ${WATER})`)
+        const hEdge = (() => { const g2 = makeGame(7); return sampleH(g2, wrap(hx + DISSOLVE_R + 8, MAP), hy) })()
+        r.check('the flood is local: outside DISSOLVE_R the map is unmoved',
+            Math.abs(sampleH(gs, wrap(hx + DISSOLVE_R + 8, MAP), hy) - hEdge) < 0.01,
+            `edge ${hEdge.toFixed(1)}→${sampleH(gs, wrap(hx + DISSOLVE_R + 8, MAP), hy).toFixed(1)}`)
+        const sink = WATER - gs.heights[Math.floor(hy / CELL) * GRID + Math.floor(hx / CELL)]
+        r.check('the wound floor cell sits DISSOLVE_SINK below sea at the centre',
+            Math.abs(sink - DISSOLVE_SINK) < 0.01, `sink ${sink.toFixed(2)} (raw cell; sampleH reads ~3 with the bilinear neighbour mix)`)
+    }
+    {
+        // Huts dissolve — swallowed whole, no burning, no rubble. The far hut
+        // keeps its spot; each loss announces itself for the FX layer.
+        const gs = makeGame(7)
+        const px = wrap(gs.castle.x + 80, MAP), py = wrap(gs.castle.y + 80, MAP)
+        gs.huts.length = 0
+        gs.huts.push({ x: wrap(px + 4, MAP), y: py, v: 1, burn: 0, dead: false, catchT: 0 })
+        gs.huts.push({ x: wrap(px - 10, MAP), y: wrap(py + 8, MAP), v: 0, burn: 0, dead: false, catchT: 0 })
+        gs.huts.push({ x: wrap(px + DISSOLVE_R + 15, MAP), y: py, v: 2, burn: 0, dead: false, catchT: 0 })
+        const n0 = gs.huts.length
+        dissolveLand(gs, px, py)
+        const hutsEv = gs.events.filter((e) => e.type === 'dissolveHut')
+        const ev = gs.events.find((e) => e.type === 'dissolve')
+        r.check('huts inside the radius dissolve: gone, no burn, no rubble',
+            gs.huts.length === n0 - 2 && hutsEv.length === 2 && gs.huts[0] &&
+            Math.hypot(wrapD(gs.huts[0].x - (px + DISSOLVE_R + 15)), wrapD(gs.huts[0].y - py)) < 1,
+            `huts ${n0}→${gs.huts.length}, events ${hutsEv.length}`)
+        r.check('the dissolve event carries its ring and count — the FX fuel',
+            !!ev && ev.r === DISSOLVE_R && ev.huts === 2, JSON.stringify(ev))
+    }
+    {
+        // The cold promise at the tower base: flood, yes — topple, burn, mark,
+        // wound, or kill, no. The wizard keeps his standing island.
+        const gs = makeGame(7)
+        const tx = gs.wizard.tx, ty = gs.wizard.ty
+        const wolf = gs.monsters.find((m) => m.kind === 'wolf')
+        wolf.x = wrap(tx + 3, MAP); wolf.y = wrap(ty + 3, MAP)
+        const cr0 = gs.craters.length, mk0 = gs.fireMarks.length, hp0 = gs.wizard.hp
+        dissolveLand(gs, tx, ty)
+        r.check('dissolve at the tower floods the base yet never topples, burns, marks or wounds',
+            gs.towerDown === false && gs.craters.length === cr0 && gs.fireMarks.length === mk0 &&
+            gs.wizard.hp === hp0 && sampleH(gs, tx, ty) < WATER,
+            `down=${gs.towerDown} craters ${cr0}→${gs.craters.length} marks ${mk0}→${gs.fireMarks.length} hp ${gs.wizard.hp}`)
+        r.check('creatures swim: a wolf in the flood survives (huts and land are the targets)',
+            gs.monsters.includes(wolf))
+    }
+    {
+        // Hand plumbing: pays from the pouch, denies when broke.
+        const gs = makeGame(7)
+        gs.learned.push('dissolve'); gs.mana = 100; gs.coolL = 0
+        setHand(gs, 'L', 'dissolve')
+        gs.events.length = 0
+        step(gs, { castL: true })
+        const paid = gs.mana === 60 && gs.events.some((e) => e.type === 'cast' && e.id === 'dissolve')
+        gs.mana = 10; gs.coolL = 0; gs.events.length = 0
+        step(gs, { castL: true })
+        r.check('casting dissolve pays 40 from the pouch and denies when broke',
+            paid && gs.mana === 10 && gs.events.some((e) => e.type === 'nomana'), `mana=${gs.mana}`)
+    }
+    {
+        // The counter-spell pairing stays symmetric: RAISE drains the wound.
+        const gs = makeGame(7)
+        let hx = 0, hy = 0, hh = -1
+        for (let j = 0; j < GRID; j++) {
+            for (let i = 0; i < GRID; i++) {
+                const h = gs.heights[j * GRID + i]
+                if (h > hh) { hh = h; hx = i * CELL + CELL / 2; hy = j * CELL + CELL / 2 }
+            }
+        }
+        dissolveLand(gs, hx, hy)
+        const flooded = sampleH(gs, hx, hy) < WATER
+        raiseTerrain(gs, hx, hy, 16, 14)
+        r.check('RAISE drains the dissolve wound — the counter-spell pairing holds',
+            flooded && sampleH(gs, hx, hy) > WATER,
+            `flooded=${flooded} after=${sampleH(gs, hx, hy).toFixed(1)}`)
+    }
+    {
+        // Touch plumbing: the 11th tray cell equips DISSOLVE like any other.
+        const gs = makeGame(7)
+        gs.learned.push('dissolve')
+        gs.book = true
+        const cx = TRAY[0] + 10 * 14 + 7, cy = TRAY[1] + 8
+        const hit = hudTap(gs, cx, cy)
+        r.check('the touch tray reaches the 11th slot: tap equips DISSOLVE to the left hand',
+            hit === 'equip' && gs.hands.L === 'dissolve' && gs.book === false,
+            `hit=${hit} handL=${gs.hands.L}`)
+        r.check('the eleven-slot tray still sits inside the HUD',
+            TRAY[0] >= 0 && TRAY[0] + TRAY[2] <= W && TRAY[1] >= 0 && TRAY[1] + TRAY[3] <= H,
+            `TRAY=${TRAY.join(',')}`)
+    }
+    {
+        const castTwice = () => {
+            const g = makeGame(21)
+            g.learned.push('dissolve'); g.mana = 200
+            setHand(g, 'L', 'dissolve'); step(g, { castL: true })
+            for (let i = 0; i < 80; i++) step(g, {})
+            return stateHash(g)
+        }
+        const a = castTwice(), b = castTwice()
+        r.check('dissolve is deterministic: same seed + same cast → identical hash', a === b, `${a} vs ${b}`)
     }
 }
 

@@ -32,7 +32,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
   the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots + gold SPELLS tab with ten-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with eleven-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -116,6 +116,20 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   books the strict 70u spread starves the mid-height band on unlucky seeds
   (seed 1 hit it on the 9th book), so after the honest 60-try strict loop the
   spread eases once (still past the castle's 45u reach). Always places.
+- DISSOLVE (#1668, the 11th spell, cost 40): the ground is not cracked here,
+  it is erased. Where you look, the heightmap is CLAMPED down —
+  `min(h, WATER − DISSOLVE_SINK·(1−d/DISSOLVE_R)²)` over `DISSOLVE_R = 22` —
+  so the wound floods GUARANTEED and permanent even on the highest peak (a
+  crater()-style subtraction would only bite low ground; the clamp cannot miss).
+  Every hut inside the radius dissolves: gone, no burn, no rubble, no
+  `hutDown` — the flood swallows it whole, as the original drowned villages.
+  Nothing regrows land; RAISE (#1639) is the counter-spell and drains the
+  wound (gated). The promise it never breaks is cold and land-only: no crater
+  record, no fire mark, no scorch, no topple, no wizard wound, and creatures
+  swim — wolves and cows inside the ring survive (#1645 named huts and
+  terrain). rng-free: same seed, same flood. Key `-`, tray slot 11 (keycap
+  `-`), learned from an 11th grimoire; the GL pass answers with cyan spray
+  rings and mist, and the shell with an undertow sweep + banner.
 - Fairness invariant (#1639): every wizard tower generates within 180u of the
   castle — inside the guards' firing reach (<200u, arrows carry ~300). A
   hoarding wizard behind an out-of-reach tower plus a carpet at 0 mana is a
@@ -135,6 +149,12 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   exactly one gate red (kinds=giant,wolf, lostT 0/40/40); restored.
   Browser side: deleting the `gs0.invis > 0` block in fillParticles reddens
   the ghost-trail gate. Balance after: 60/60 seeds, slowest 24,704 — unchanged.
+#1668 mutant (2026-11-06): swapping DISSOLVE's heightmap CLAMP for a
+crater()-style subtraction turns exactly the four flood-dependent gates red
+(flood-on-peak, sink-depth, tower-base flood, RAISE counter-drain) while the
+roster/hut/pays/tray/determinism gates stay green; restored after. Balance
+after: 60/60 seeds, slowest 28,136 ticks (the 11th grimoire re-based the rng
+stream).
 
 ## #1612 item 4 polish (2026-11-05, QA studio)
 
@@ -180,6 +200,12 @@ npm run carpetcheck        # Node gates + a headless-Chrome pass + GPU-pass
                            # locality, flood-drain counter-spell, determinism,
                            # tower-in-guard-reach fairness on 60 worlds, ten
                            # books placed on 120 worlds),
+                           # DISSOLVE (#1668: roster eleven, clamp-flood on the
+                           # highest peak + locality + sink-depth, hut dissolve
+                           # vs keep + FX payload, cold promise at the tower
+                           # base (no topple/burn/mark/wound) + creatures swim,
+                           # pays/denies, RAISE counter-drain, tray slot 11
+                           # equip + HUD containment, determinism),
                            # plus a headless-Chrome pass and 10 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
@@ -243,10 +269,9 @@ see item 5).
 
 ## Honest gaps (the polish pass owns these)
 
-- Clone and dissolve: the book reached ten (#1639 shipped shatter + raise),
-  but the original's later-game repertoire still misses creature-cloning and
-  a land-dissolving flood spell. Invisibility shipped #1610, volcano #1612
-  item 5, shatter + raise #1639.
+- Clone: the book reached eleven (#1668 shipped dissolve), but the original's
+  later-game repertoire still misses creature-cloning. Invisibility shipped
+  #1610, volcano #1612 item 5, shatter + raise #1639, dissolve #1668.
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.
