@@ -1,83 +1,77 @@
-# STATE — session 150 (2026-11-05, slot b)
+# STATE — session 151 (2026-11-05, slot a)
 
 ## What shipped
-**ICE CLIMBER — SOLVER BAIL SCALED TO REMAINING MOUNTAINS (#1653 part 2)**
-— PR #1658 squash-merged `f174c4b`. The autopilot's outer loop was guarded by
-a flat `g.tick < 60000` (~15× the observed worst solve). It now scales:
-`while (g.level < 3 && g.tick - entryTick < (3 - g.level) * BAIL_PER_MOUNTAIN)`
-with `BAIL_PER_MOUNTAIN = 12000` exported. Measured worst solve across 224
-perturbed-resume + full-range probes = **4743 ticks**, so a fresh full range
-keeps ~7.9× headroom while a stuck final mountain aborts in 12k not 60k.
-**Entry-relative** (`g.tick - entryTick`), not absolute, so PROGNOSIS resumes
-keep their full budget (an absolute bail would refuse an aged state instantly).
-A bail-out now reports a distinct `reason` ("bail: N ticks spent on M remaining
-mountain(s)") instead of a silent null. Player-visible: an unwinnable last
-mountain gives up ~5× sooner; normal play/attract/watch finish far inside the
-budget so nothing legitimate changes. Harness: **icecheck 42 → 47** — new BAIL
-section pins the scaled budget, the entry-relative resume, and the headroom.
-Mutants proven red→green: restore flat 60k → 2 gates red; switch to absolute
-accounting → scaling pin + aged-state-resume gate both red. build + eslint +
-lint:mario/fps/ai green.
+**WATCH ROLLOUT BATCH 4 (#1637) — PR #1661 squash-merged `0e5c314`, LIVE on prod.**
+Five titles get the Y-key WATCH mode, each seated on its proven driver:
+- **Zork I** — `ZorkExplorer`+`AgentLoop` (zorkcheck-proven). Y only when the story
+  input is EMPTY (mid-word 'y' stays a letter); answers Q/N prompts. ZORK II/III
+  deliberately NO button (`canWatch` gates on route `/zork`) — honesty over coverage.
+- **RobotLab** — kit `createAutopilot(sim)` seats only at a CLEAN-BENCH junction
+  (nothing held, goal unbanked); otherwise amber `no guide yet` toast. Fixed real bug:
+  `startRun` rebound `sim` but not `autopilot` → driver bound to dead sim.
+- **FloorBoss** — sim.js `createAutopilot()` anywhere (closed-loop); `recordTick(pad)`
+  keeps the input recording honest about who pressed.
+- **IronRing** — seat-1 CPU at the fighter's own tier (`def.cpu = BY_ID[p1Char].cpu`),
+  cpu-ladder mode only, survives ladder auto-advance. Fixed REAL BUG since #1104:
+  `atAttract()` ended attract immediately → offline players PINNED on the title,
+  select unreachable; ironringcheck's "fight starts from select" passed VACUOUSLY.
+  Fix: `atAttract(toSelect)` — key/tap callers advance, champion-return doesn't.
+  ironringcheck +2 regression gates (attract→select, pick walks into fight).
+- **Rally Co-Driver** — pacebrain via existing `modelPad` in the DRIVER seat (offline
+  only; co seat stays cpuCoDriverPad; net excluded from watch).
+Per-title: Y toggle, any takeover key/tap releases, start/stop blips (`playWatchStart/
+Stop`), WatchToast + WatchButton pills, watch resets at run/phase transitions. Registry
+WATCH_HELP: 33/80 routes now watched (was 28).
+Harness: watchcheck +5 pilots (batch-4 factory map; zork custom) + batch-4 source gates
+(blip imports, zork route gate, robot clean-bench, floor episode-honesty, rally net
+exclusion, registry presence/absence) — source gates pass standalone.
 
-## THIS BOX CANNOT RUN ANY BROWSER ENGINE (#1622 — narrowed)
-Not just Chrome. System Chrome AND bundled Chrome-for-Testing (chromium-1243)
-SIGABRT exit 134 at launch (zero stderr, no .ips); **and** WKWebView (the
-macOS-native engine) loads pages but its JS bridge returns "JavaScript
-execution returned a result of an unsupported type" for EVERY expression —
-even `1+1` / `document.title` on a self-contained `loadHTMLString` page with
-zero network. So no browser JS runs on this host at all. This blocks
-`npm run watchcheck` soak + any 390px mobile capture; do NOT trust local
-browser evidence this session, and don't re-probe Chrome (rule 8).
+## Watchcheck is NOT in CI — new gap found
+`watchcheck` (and `ironringcheck`/`floorbosscheck`) appear in NO workflow — batch 2's
+node soaks (`watchsoakcheck`) were the workaround. So the 5 new pilots (44 total) have
+never executed anywhere. One-line fix for the next harness PR: add
+`npm run watchcheck` to ci.yml (core scope) or verify.mjs suite — BEFORE batch 5.
+Documented on #1637 (2026-11-05 ship comment). QA polish pass filed: **#1663**.
 
-## Blocked / still open (#1653 stays open — multi-part)
-Parts 1 (390px mobile WATCH-pill nudges for LunarLander/MarioKart) and 3
-(watchcheck soak pilots, batch-2 nine predicates) need a working browser
-engine → move to a healthy node or wait for #1622 recovery. Pill positions
-left byte-for-byte unchanged — #1650 flagged the crowding as "allegedly" and a
-capture-less nudge is a guess. Prod URL also unverifiable here: no egress to
-jalfern.com (curl → HTTP 000; only localhost works). Merge + green Vercel
-preview on #1658 are the deploy signal; live-hash check deferred.
+## #1622 ROOT-CAUSED (posted on the issue, full evidence)
+Local SPA mount failure = **duplicated React in the Vite dev optimizer**: fresh cold
+cache, `deps/react.js` imports `require_react` from chunk-FCVBRA66 while
+`react-dom_client.js` uses chunk-KFUBF4C3 — two react instances, dispatcher null →
+`Cannot read properties of null (reading 'useEffect')` at renderWithHooks → #root empty
+→ every "DEV hook present" check dies. Deterministic across restarts, reproduced on
+qa-1655's server (machine-wide). `optimizeDeps.include` pin did NOT fix it. Proposed
+fix on #1622: pin `optimizeDeps.entries` properly — harness infra, one lane, not
+batch work. Nuance vs session 150's note: Chrome JS *does* run on this box (shell+sp,
+pageerrors observed) — it is the dev-server graph, not the engine.
 
-## Playable now
-Everything before, plus IceClimber with the scaled bail (leave attract up — the
-three mountains still solve clean & replay-hash-equal). Net plays Gauntlet's
-attract; Y/WATCH on 25 titles; Magic Carpet 10 spells; MYST through item 16.
+## Gates as run this session
+eslint clean on touched files · lint:mario/fps/ai ✓ · build ✓ · zorkcheck 58/58 ·
+robokitcheck OK · floorbosscheck all green · rallycheck 169/0. Browser suites CI-side
+only (advisory): prsmokes/scope green, static SUCCESS (merge gate), smoke still running
+at merge — rule 3 respected, #1622 evidence posted instead of chasing.
 
 ## Next (priority order)
-1. `npm run watchcheck` (44 pilots) — FIRST job on a box with Chrome.
-2. #1637 batch 4 (IF/physics remainder: Zork agent/explorer — commands not
-   pads, mind the double-driver law; RobotLab + FloorBoss Plaicraft episode
-   pads; Iron Ring; Rally Co-Driver). Claim #1637 again, forge/watch-rollout-b4.
-3. #1653 parts 1+3 (mobile pill + soak) — needs a live browser engine; QA lane.
-4. #1654 + #1655 QA polish passes belong to the QA lane. #1612 remainder stands.
-5. #1645 (MagicCarpet 11th spell) sits OPEN but UNLABELED — treat the recorded
-   default (DISSOLVE) as decided when MagicCarpet is next taken.
+1. **Wire watchcheck into CI** (see gap above) — one-liner PR, clears 44 pilots.
+2. #1637 batch 5 claim (`forge-claim.sh 1637 a`): remaining solver titles —
+   MagicCarpet (#1645 default DISSOLVE stands), Lode Runner-Lite, Arena Archery,
+   WWI Dogfight, DOS/IF remainder (Ultima/KQ via dosKeys path).
+3. #1653 parts 1+3 (mobile pill + soak) — QA lane; #1654/#1655/#1663 polish passes
+   belong to QA too (Jon's 2026-10-19 decision).
+4. #1612 remainder stands.
 
-## Gates/commands as of this session
-eslint + lint:mario/fps/ai + build + static held the bar (#1658); smoke +
-scope + Vercel-preview also green on the PR.
-gh-shim CONFIRMED (now 4th time): `gh pr checks --json` gives state:"completed"
-+ lowercase conclusion — the literal rule-5 loop spins forever. Wait on
-`(.state+" "+(.conclusion//""|ascii_upcase))` matching *SUCCESS*, red on
-*FAILURE|ERROR|TIMED_OUT*. That's the variant that merged #1658.
-ciscope (#1575): a new `npm run *check` alias must join a checks.mjs scope or
-MANUAL_CHECKS. This session modified the existing icecheck alias only → ciscope
-unaffected.
-
-## Notes for the next slot-b session
-- Dev server on 5178 STOPPED at end of session (was mine). Reuse port 5178.
-- Worktree ~/Dev/retrogames-forge-watch-b2-polish re-detached at origin/main
-  (f174c4b) with node_modules in place — reusable (branch deleted both ends).
-- icecheck is now 47 gates (was 42). If you touch planner.js keep the BAIL
-  section honest — it pins the literal loop condition.
-- Do NOT `git reset --hard` with uncommitted STATE.md in the tree — it wipes
-  the report (this session lost one draft that way). Write, commit, push.
-- macOS cp two calls; `cp -Rc` node_modules instant; gh/jonq need
-  `. /tmp/forge/netenv.sh`. Park STATE with
-  `node scripts/statepark.mjs park b` right after writing.
+## Notes for the next slot-a session
+- Dev server on 5173 STOPPED at end of session (was mine). Reuse 5173 (slot-a port).
+- Worktree `~/Dev/retrogames-forge-watch-rollout-b4` re-detached at origin/main
+  (`0e5c314`), node_modules in place — reusable; branch deleted both ends.
+- Prod verified by bundle marker (`index-DIKLken_.js` carries batch-4 IronRing copy);
+  jalfern.com apex 308-redirects to www — `curl -L` or hit www directly.
+- gh-shim again confirmed: `gh pr checks --json` state:"completed"+lowercase
+  conclusion; merge loop matched `SUCCESS || completed,success` (merged fine).
+- ironringcheck is now 1 extra section heavier (attract gates); don't delete them when
+  touching IronRing — the vacuous-pass class of bug is exactly what they catch.
+- `. /tmp/forge/netenv.sh` before gh/jonq/curl-to-prod. Park STATE right after write:
+  `node scripts/statepark.mjs park a`.
 
 ## Open questions
-None new. Carried: #1645 (see Next §5 — unlabeled, default DISSOLVE). The
-no-browser / no-egress host facts are recorded here and on #1653/#1622, not
-asked (factual blockers, not taste/priority; the lane keeps shipping game
-code — this session merged).
+Carried: #1645 (MagicCarpet 11th spell, unlabeled, recorded default DISSOLVE — take
+as decided when MagicCarpet is next built). None new this session.
