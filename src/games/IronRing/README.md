@@ -43,6 +43,15 @@ trick), camera tracks the midpoint and zooms with the spacing.
 - Determinism: `createMatch(seed)` + identical pad streams ⇒ identical
   `matchHash` every tick (proven by `ironringcheck`). Every sim random comes
   from the seed; renderer juice may use `Math.random`, the engine may not.
+- Multi-hit specials (#1699): move-level `hits` (cap) + `rehit` (min match-ticks
+  between hits on one victim) + `travel` (forward drive through startup+active so
+  a dash keeps contact). `hitOnce[seq]` is a `{n,last}` log, not a boolean;
+  non-final hits push soft (×0.3 hit, ×0.15 blocked) so the rush stays in range,
+  and `launch` applies on the FINAL hit only. Absent fields ⇒ single-hit exactly
+  as before — VIPER PIT (`guardButton`/`juggle` consumer) is untouched.
+  HYDE's qcf is a rushing 2/3/4-hit dash (10/15/20 total); melee supers
+  reconnect (Kade/Hyde/Tessa dp_S ×3, Vexa dp_S ×2, Braakk/Sable charge_S ×2).
+  Budget law: multi totals sit at the old single-hit damage +0..+3 (gated).
 - Press latching (`index.jsx`): a keyboard tap can fall entirely between two
   60 fps polls; every keydown is latched into the next sampled pad. Same reason
   touch taps must feel responsive on a polled engine.
@@ -75,7 +84,8 @@ trick), camera tracks the midpoint and zooms with the spacing.
 
 ## Honest gaps (polish-pass candidates)
 
-- Multi-hit specials (hyde dash, super reconnects) — one hitbox per move today.
+- **CLOSED by #1699** Multi-hit specials — hyde's dash is a 2/3/4-hit rush,
+  melee supers reconnect (see Rules worth knowing).
 - `qcb` motions parsed but unused; no fighter ships a qcb special yet.
 - Chain chains: normals cancel into specials, specials into supers not yet.
 - Win/lose dialogue lines and per-stage midground variety.

@@ -730,7 +730,7 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), credits, continueFrames, opponent: p2Char, ladderIdx, quote: screenRef.current === 'champion' ? (BY_ID[championChar] || ROSTER[0]).quote : screenRef.current === 'continue' ? (BY_ID[p2Char] || ROSTER[1]).quote : null } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), credits, continueFrames, opponent: p2Char, ladderIdx, quote: screenRef.current === 'champion' ? (BY_ID[championChar] || ROSTER[0]).quote : screenRef.current === 'continue' ? (BY_ID[p2Char] || ROSTER[1]).quote : null } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { p1Char = 'kade'; p2Char = LADDER[0]; ladderIdx = 0; mode = 'cpu'; startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
