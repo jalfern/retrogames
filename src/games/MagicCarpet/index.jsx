@@ -12,6 +12,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import {
     W, H, HUD_H, HORIZON, MAP,
     LEVELS,
@@ -116,8 +118,10 @@ const MagicCarpetGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js's autopilot flies the worlds
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
+    const watchingRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
 
@@ -160,12 +164,17 @@ const MagicCarpetGame = () => {
         let bankS = 0, sinkS = 0, prevAlt = gs.alt
         let bankHum = 0
         const keys = { l: false, r: false, u: false, d: false }
+        // #1637 WATCH: the EFFECTIVE controls — the player's keys, or the flown
+        // autopilot pad while seated, so bank/pitch/boost visuals match the route.
+        const eff = { l: false, r: false, u: false, d: false }
         let throwL = false, throwR = false
         let boostKey = false, upHold = 0, boostOn = false, boostPrev = false
+        let castsSeen = 0 // prover-only signal: an idle player never casts
 
         const say = (m) => { toastMsg = m; toast = 150 }
 
         const finish = (win) => {
+            watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
             setEnd({ win, score: gs.score, deaths: gs.deaths, worlds: gs.levelClears + (win ? 1 : 0) })
             overAtRef.current = performance.now()
             setMode('over')
@@ -200,6 +209,7 @@ const MagicCarpetGame = () => {
                     audioController.playTone(1046, 0.3, 'square', 0.07, 0.36)
                     say(`WORLD RESTORED — ENTER ${e.name}`)
                 } else if (e.type === 'cast') {
+                    castsSeen++
                     if (e.hand === 'L') flashL = 14; else flashR = 14
                     const id = e.id
                     if (id === 'fireball') audioController.playSweep(640, 180, 0.16, 'sawtooth', 0.07)
@@ -375,7 +385,9 @@ const MagicCarpetGame = () => {
             upHold = 0; boostOn = false; boostPrev = false
             if (gs.end || demoT > 2600) { demoSeed = (demoSeed * 31 + 17) % 9973; gs = makeGame(demoSeed); demoT = 0 }
             demoT++
-            doSim(autopilot(gs))
+            const ap = autopilot(gs)
+            eff.l = !!ap.left; eff.r = !!ap.right; eff.u = !!ap.up; eff.d = !!ap.down
+            doSim(ap)
         }
 
         const doFrameSim = () => {
@@ -384,6 +396,19 @@ const MagicCarpetGame = () => {
             if (sc !== 'play') return
             upHold = keys.u ? upHold + 1 : 0
             boostOn = boostKey || upHold >= 24
+            let castL = throwL, castR = throwR
+            if (watchingRef.current && !gs.end) {
+                // #1637 WATCH: sim.js's autopilot takes the carpet — the same
+                // closed-loop brain the attract demo flies and carpetcheck wins
+                // all three worlds with, 60 seeds deep. It re-decides from LIVE
+                // state every tick, so a watched run is a real run, not a replay.
+                const ap = autopilot(gs)
+                eff.l = !!ap.left; eff.r = !!ap.right; eff.u = !!ap.up; eff.d = !!ap.down
+                boostOn = !!ap.boost
+                castL = !!ap.a; castR = !!ap.b
+            } else {
+                eff.l = keys.l; eff.r = keys.r; eff.u = keys.u; eff.d = keys.d
+            }
             // #1612 item 4: while veiled the world bed is heard through the carpet.
             audioController.setMuffle(muffleOf(gs))
             if (boostOn && !boostPrev) audioController.ambSweep(220, 520, 0.22, 'sine', 0.05)
@@ -403,14 +428,14 @@ const MagicCarpetGame = () => {
             }
             boostPrev = boostOn
             doSim({
-                left: keys.l, right: keys.r, up: keys.u, down: keys.d,
-                castL: throwL, castR: throwR, boost: boostOn,
+                left: eff.l, right: eff.r, up: eff.u, down: eff.d,
+                castL, castR, boost: boostOn,
             })
             throwL = throwR = false
         }
 
         const paintCarpetAndHands = (bk = 0) => {
-            const sway = (keys.l ? -3 : keys.r ? 3 : 0) + bk * 26
+            const sway = (eff.r ? 3 : 0) + (eff.l ? -3 : 0) + bk * 26 // #1637: follows the FLOWN pad
             const squash = Math.abs(bk) * 4
             const bob = Math.sin(gs.tick * 0.09) * 1.5
             // The veil (#1610): while invisible the carpet and hands shimmer
@@ -714,7 +739,7 @@ const MagicCarpetGame = () => {
             if (visual) {
                 if (flashL > 0) flashL--
                 if (flashR > 0) flashR--
-                const steer = (keys.r ? 1 : 0) - (keys.l ? 1 : 0)
+                const steer = (eff.r ? 1 : 0) - (eff.l ? 1 : 0) // #1637: bank follows the pilot too
                 const yawDelta = gs.yaw - prevYaw
                 prevYaw = gs.yaw
                 const bankTarget = screenRef.current === 'play' ? steer : Math.max(-1, Math.min(1, yawDelta * 14))
@@ -726,7 +751,7 @@ const MagicCarpetGame = () => {
                 renderer.frame(gs, {
                     bank: bankS,
                     boost: boostOn || screenRef.current === 'attract',
-                    pitch: 0.06 + (keys.d ? 0.05 : 0) - (keys.u ? 0.04 : 0),
+                    pitch: 0.06 + (eff.d ? 0.05 : 0) - (eff.u ? 0.04 : 0),
                     sink: sinkS * 0.08,
                     shakeX: sx, shakeY: sy,
                 })
@@ -746,9 +771,11 @@ const MagicCarpetGame = () => {
             demoT = 0
             if (renderer) renderer.resetWorld()
             keys.l = keys.r = keys.u = keys.d = false
+            eff.l = eff.r = eff.u = eff.d = false
             throwL = throwR = false
             boostKey = boostOn = boostPrev = false; upHold = 0
             vaultFlash = 0; prevSeg = -1
+            watchingRef.current = false; setWatching(false) // #1637 a new run starts in your hands
             setMode('play')
             say(`WORLD 1 — ${LEVELS[0].name} · FILL THE VAULT`)
             audioController.playSweep(330, 660, 0.25, 'square', 0.07)
@@ -762,6 +789,15 @@ const MagicCarpetGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y seats sim.js's autopilot (carpetcheck's 60-seed
+            // winner) at any live position; any driving key takes the carpet
+            // back — and that key still steers, so takeover is lossless.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
@@ -787,6 +823,10 @@ const MagicCarpetGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc === 'play' && !pausedRef.current) {
+                // #1637 WATCH: a tap on the world means you want the carpet —
+                // hand back; that tap does NOT also cast (lode-runner rule: the
+                // wheel is the prize, the spell comes with the next tap).
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop(); return }
                 // Map the tap into HUD space (the canvas is letterboxed in the
                 // stage) and let sim.js route it: world taps cast, strip taps
                 // cycle the hands, the book tab opens the tray (#1612).
@@ -861,7 +901,10 @@ const MagicCarpetGame = () => {
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     invis: gs.invis, book: gs.book,
+                    casts: castsSeen, seed: gs.seed,
+                    watching: () => watchingRef.current,
                 }),
+                watchSfx: watchSfxLog,
                 start: startPlay,
                 tap: (x, y) => hudTap(gs, x, y),
                 hash: () => stateHash(gs),
@@ -942,9 +985,11 @@ const MagicCarpetGame = () => {
                     demoT = 0
                     if (renderer) renderer.resetWorld()
                     keys.l = keys.r = keys.u = keys.d = false
+                    eff.l = eff.r = eff.u = eff.d = false
                     throwL = throwR = false
                     boostKey = boostOn = boostPrev = false; upHold = 0
                     vaultFlash = 0; prevSeg = -1
+                    watchingRef.current = false; setWatching(false) // #1637 a harness reset starts in your hands
                     setMode('play')
                 },
                 tick: (pad) => {
@@ -1014,6 +1059,7 @@ const MagicCarpetGame = () => {
                             'THREE WORLDS · EACH GUARDED BY A RIVAL WIZARD',
                         ]}
                     />
+                    <span className="block mt-2 text-purple-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
@@ -1026,6 +1072,19 @@ const MagicCarpetGame = () => {
                 </div>
             )}
 
+            {/* #1637 WATCH — the prover flies the proven worlds; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'MAGIC CARPET')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} secondAction={{ label: '✦', code: 'KeyX' }} />
         </div>
