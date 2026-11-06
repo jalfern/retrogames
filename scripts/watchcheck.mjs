@@ -190,6 +190,109 @@ const PILOTS = [
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
     })),
+    // #1637 batch 3 — the strategy/dungeon brains. Same factory semantics: these
+    // drivers grade themselves in civcheck/citycheck/bardscheck/tendeepcheck/popcheck/
+    // gauntletcheck/blobcheck, so the browser pilot only has to prove the seat works.
+    // Ten Deep and Bard's Tale are command-paced: their tick ONLY moves when a
+    // command is issued — tick growth while nobody touches the keys is prover-only.
+    ...[
+        {
+            id: 'gauntlet', hook: '__gauntletTest',
+            startKeys: ['Space', 'Space'], seatWait: 700, // attract -> select -> play
+            advanced: (a, b) => b.score > a.score || b.keys > a.keys || b.level > a.level || Math.hypot(b.x - a.x, b.y - a.y) > 2,
+            note: (a, b) => `score ${a.score} -> ${b.score}, keys ${a.keys} -> ${b.keys}, maze ${b.level + 1}`,
+        },
+        {
+            id: 'four-halls', hook: '__fourHallsTest',
+            startKeys: ['Space', 'Space'], seatWait: 700,
+            advanced: (a, b) => b.score > a.score || b.keys > a.keys || b.level > a.level || Math.hypot(b.hero.x - a.hero.x, b.hero.y - a.hero.y) > 1,
+            note: (a, b) => `score ${a.score} -> ${b.score}, keys ${a.keys} -> ${b.keys}, hall ${b.level + 1}`,
+        },
+        {
+            id: 'prince-of-persia', hook: '__popTest',
+            advanced: (a, b) => b.attract === false && (Math.abs(b.x - a.x) > 4 || b.room !== a.room),
+            note: (a, b) => `x ${a.x.toFixed(0)} -> ${b.x.toFixed(0)}, room ${a.room} -> ${b.room}, clock ${b.clock}`,
+        },
+        {
+            id: 'civilization-v', hook: '__civTest',
+            seatWait: 900, advanceWait: 8000,
+            advanced: (a, b) => b.turn > a.turn && b.end !== 'lost',
+            note: (a, b) => `turn ${a.turn} -> ${b.turn}, cities ${a.playerCities} -> ${b.playerCities}, science ${b.science.toFixed(0)}`,
+            resumeWait: 6000,
+        },
+        {
+            id: 'bards-tale', hook: '__bardsTest',
+            // the sim step happens only per COMMAND — tick growth with no input is prover-only
+            advanced: (a, b) => b.tick > a.tick + 5,
+            note: (a, b) => `cmds ${a.tick} -> ${b.tick}, floor ${a.fi} -> ${b.fi}, gold ${b.gold}`,
+        },
+        {
+            id: 'ten-deep', hook: '__deepTest',
+            advanced: (a, b) => b.tick > a.tick + 5,
+            note: (a, b) => `cmds ${a.tick} -> ${b.tick}, mode ${b.mode}`,
+        },
+        {
+            id: 'blob-battle', hook: '__blobbattleTest',
+            advanced: (a, b) => b.rounds[0] > a.rounds[0],
+            note: (a, b) => `seat1 blobs ${a.rounds[0]} -> ${b.rounds[0]}, score ${b.scores[0]}`,
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = g.probeKeys
+                ? () => page.evaluate((a) => { const p = window[a.h].probe(); const o = {}; for (const k of a.keys) o[k] = p[k]; return o }, { h: H, keys: g.probeKeys })
+                : () => page.evaluate((h) => window[h].probe(), H)
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            await page.waitForTimeout(g.advanceWait || 5000)
+            const b = await probe()
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            rep.check(`${g.id}: still watching mid-route`, await watching())
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            await page.waitForTimeout(g.resumeWait || 3500)
+            const d = await probe()
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
+    {
+        // SIMCITY-MIN — the honest junction (Paperboy semantics). The proven plan
+        // is a fixed script; Y seats only while the live city still matches the
+        // witness state-for-state (hash receipt). A tax nuke departs the line,
+        // and there the watcher declines rather than replay a divergent script.
+        id: 'simcity-min', url: `${BASE}/simcity-min`, hook: '__scTest',
+        async run(page, rep) {
+            const H = '__scTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(600)
+            await key(page, 'KeyY')
+            rep.check('simcity-min: Y seats the plan on the fresh city', await watching())
+            const a = await probe()
+            await page.waitForTimeout(8000)
+            const b = await probe()
+            rep.check('simcity-min: the plan builds untouched (funds spent, blocks lit)',
+                b.funds < a.funds || b.pop > a.pop || b.lit > a.lit,
+                `funds ${a.funds} -> ${b.funds}, pop ${a.pop} -> ${b.pop}, lit ${a.lit} -> ${b.lit}, year ${b.year}`)
+            await key(page, 'BracketLeft')                // tax off the witness line
+            rep.check('simcity-min: a tax nudge takes over', !(await watching()))
+            await key(page, 'KeyY')                      // city now diverges from the script
+            await page.waitForTimeout(300)
+            rep.check('simcity-min: off the witness says no guide (never a fake route)', !(await watching()))
+        },
+    },
     {
         // PAPERBOY — the honest junction. The proven pedal-line is a fixed-v script;
         // it re-seats only where stage-local time still matches the witness receipt.
