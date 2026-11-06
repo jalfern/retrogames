@@ -1,63 +1,62 @@
-# STATE — session 145 (2026-11-05, slot b)
+# STATE — session 146 (2026-11-05, slot b)
 
 ## What shipped
-**WATCH key (#1624)** — PR #1634 squash-merged (`1aa601f`); pilots MYST,
-Emberwood, SSX live on prod. One key (**Y**, pad pill ▶ WATCH fires the same
-`KeyY`) lets a game play itself on its own proven driver; any input takes over
-mid-play. Registry line from shared `WATCH_HELP` (`src/utils/watch.js`).
-- SSX: `planner.decide(g, rider0)` — the cold witness line — swaps into the
-  human seat in `doSim`; takeover covers keys, stick push and canvas drag.
-- Emberwood: attractBot drives the live run; kit policy
-  `watchSnapshot/watchRestore` (bot.js) — guide borrows the demo kit, hands
-  items/embers/hearts back whole at takeover; world progress stays (real play).
-- MYST: new pure `watchResume(st)` (state.js) — first solveScript prefix whose
-  canonical state (19 KEYS whitelist) equals yours, replay the suffix: provably
-  the same route from where you stand. Off proven line → "no guide yet".
-- Harness: `scripts/watchcheck.mjs` (npm `watchcheck`) 13/13 real Chrome incl.
-  the no-guide clause (`goto('selGate')` never starts the watcher); mystcheck
-  +4 (978/0, mutant `slice(i+1)` died twice), ssxcheck +2 (348/348),
-  emberwoodcheck +3 (232/0, kit round-trip).
-- Rule 4 CLEARED: #1634 is game code (`src/games/**` + registry).
-
-## Other lanes this window
-Slot a shipped #1633 (#1570 knock-recovery tail) and #1635 (PLAICRAFT #1625,
-their STATE = session 144 on main). #1570 now `shipped` — the warden's target
-for this slot is moot (slot a held the claim; ladder moved to #1624). Filed
-follow-ups: **#1637** WATCH rollout (~45 solver games), **#1638** QA polish.
+**MAGIC CARPET — SHATTER + RAISE, the ten-spell book (#1639)** — PR #1644
+squash-merged (`fd90145`); prod-verified (`assets/index-D8qwhHTe.js` contains
+SHATTER). Never-dry pick: idle-kick scored the shelf, MagicCarpet weakest
+(score 9 = 9 unowned README gaps + 0 feedback; runner-up CometDrift GP 8).
+- SHATTER (cost 30): kill-without-cinders — every creature within 24u of the
+  look point dies (bounties drop, held creature included), wizard −28;
+  provably terrain-untouched (no crater/scorch/fire/topple even at the tower).
+- RAISE (cost 25): mirror of crater() — mound r16 h14 at the look point;
+  auto-climb rides the new ridge; land above WATER drains flooded craters.
+- Both rng-free + determinism-gated. Digit9/Digit0, ten-slot tray (auto-sized),
+  new icons, icy-crackle/earth-rumble audio, white-shard/dust-ring FX.
+- Harness: +14 Node gates (79 green locally), mutant SHATTER_R 24→4 reddens
+  exactly the kill gate. Balance rebased **60/60, slowest 28,573**.
+- Two rules the sweep DEMANDED (seed-diagnosed, README documented): grimoire
+  spread fallback (seed 1 starved the strict 70u loop with 10 books) and the
+  tower-in-guard-reach fairness invariant (seed 14: out-of-reach hoarding
+  wizard + broke carpet = provably soft-locked world; guard arrows carry ~300).
+- Other lanes: slot a shipped WATCH rollout batch 1 (#1637→PR #1642, 8 arcade
+  titles). #1637 stays open for batch 2 (solver games without reactive brains).
 
 ## Playable now
-Press Y on jalfern.com/retrogames/myst · /emberwood · /ssx — the games play
-themselves, tap anything to take over. Plus PLAICRAFT Gauntlet (slot a).
+jalfern.com/retrogames/magic-carpet — learn SHATTER and RAISE from the
+grimoires (8th/9th books, acquisition risk intact); Y on QBert/Joust/Galaga/
+Tempest/DigDug/BubbleBobble/SpyHunter/Arkanoid (slot a); MYST/Emberwood/SSX
+WATCH; PLAICRAFT Gauntlet.
 
 ## Next (priority order)
-1. #1637 WATCH rollout batch 1 (chrome is shared; pick games whose solver is
-   already live-drivable: IronKeep, Blob Battle, Galaga agents…).
-2. #1623 Emberwood stage 2 (held `building-qa` — QA lane's, don't touch).
-3. #1638 is QA-lane work (feedback label), not a builder item.
+1. #1637 batch 2 (WATCH on solver games: IronKeep, Blob Battle, Myst-likes whose
+   drivers aren't reactive decide(gs)) — slot a's open rollout; coordinate via claim.
+2. MagicCarpet clone/dissolve (11th spell) — jonq #1645 asks which (default
+   DISSOLVE); QA polish pass #1646 (crumble deaths, mound ripple, tray text).
+3. Idle-kick will likely re-aim at MagicCarpet (score now ~7) or CometDrift GP (8).
 
 ## Gates as of this session
-eslint clean (all touched files); lint:mario/fps/ai OK; build OK;
-static SUCCESS on #1634; prod bundle carries the WATCH help line (verified
-`assets/index-B8bJByNM.js` on jalfern.com). chromeguardcheck pre-existing red
-(pgrep dead — machine-level, see below).
+eslint clean; lint:mario/fps/ai OK; build OK; carpetcheck 79 Node gates green
+(browser stage = #1622 machine breaker, advisory); static SUCCESS on #1644;
+prod bundle contains SHATTER.
 
 ## Notes for the next slot
-- **`--single-process` Chrome (this box's boot mode, #1622) dies when a heavy
-  WebGL page closes** — the whole browser goes, not just the page. Multi-page
-  browser scripts must launch ONE BROWSER PER GAME (watchcheck does; it also
-  retries openGame once for first-visit Vite reloads). Expect the same failure
-  in other multi-page scripts until they adopt it.
-- Worktrees share the symlinked `node_modules/.vite` cache → first-visit
-  re-optimization reloads can race hook-waits. Retry-once is the pattern.
-- **Y (`KeyY`) is now the reserved WATCH key** — don't bind it in new games.
-- Main checkout: detached at origin/main, STATE.md committed by this session.
-  Worktree `~/Dev/retrogames-forge-watch-key` left on dead local branch
-  `forge/watch-key` (remote deleted) — reuse or `git worktree remove`.
-- Port 5178 dev server STOPPED at end of session (was mine, this worktree).
-- Rescue env `. /tmp/forge/env.sh` still mandatory; transient
-  "api.github.com connection" blips hit mid-merge-poll — retry the loop.
-- macOS cp: two separate `cp` calls, never `cp A B C`.
+- Local Chrome (this box) STILL #1622-broken: carpetcheck's browser stage dies
+  with React "invalid hook call" — dep 504s (Outdated Optimize Dep) even after
+  clearing `.vite` + server restart. Node gates carry the proof; rule 3 — don't
+  spend a PR on it. CI's Chrome runs the browser gates.
+- package.json has a DUPLICATE `"watchcheck"` key (lines 83 & 275) — esbuild
+  warns on every vite boot; a small hygiene PR should dedupe.
+- Slot a's forge-watch-rollout-b1 corpse (worktree retrogames-forge-watch-rollout-b1)
+  was resumed by slot a itself and shipped via #1642 — the worktree may now be
+  pruned (`git worktree prune` after fetch; branch deleted both ends).
+- Worktree `~/Dev/retrogames-forge-carpet-spells` left detached at origin/main
+  after merge; dev server 5178 STOPPED at end of session (was mine). Reuse or
+  remove; stale `.vite` moved aside this session (was /var/tmp/stale-vite-cache-carpet-spells).
+- `. /tmp/forge/env.sh` mandatory; `pgrep`/`kill` need plain single-purpose
+  calls here (compound kill+rm gets permission-blocked); transient API blips
+  stall the rule-5 poll loop — re-check `gh pr checks` and merge directly.
+- macOS cp: two separate calls; `cp -Rc` clones node_modules APFS-instantly.
 
 ## Open questions
-- None filed this session (#1631 from slot b's earlier window sits open but
-  unlabeled — the jonq guard flagged it; only Jon can label or close it).
+- #1645 (jonq, lane:games): which 11th MagicCarpet spell — CLONE vs DISSOLVE
+  (default DISSOLVE). Link only; the sweep takes the default at the deadline.
