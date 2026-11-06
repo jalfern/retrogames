@@ -22,7 +22,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -145,7 +145,14 @@ const drawFacade = (ctx, b, x, sel, bob) => {
     }
 }
 
-const paintRim = (ctx, gs, bob, uiSel) => {
+// #1751: which facade is lit is where you STAND — selection follows the walk,
+// so the painted state and the sim state are the same fact (rimDoorAt).
+const doorIdxOf = (t) => {
+    const k = rimDoorAt(t.tx, t.ty)
+    return k ? BUILDINGS.findIndex((b) => b.key === k) : -1
+}
+
+const paintRim = (ctx, gs, bob, doorIdx) => {
     const g = ctx.createLinearGradient(0, 0, 0, 130)
     g.addColorStop(0, '#070a24'); g.addColorStop(0.7, '#1c1638'); g.addColorStop(1, '#43263f')
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, 130)
@@ -168,7 +175,33 @@ const paintRim = (ctx, gs, bob, uiSel) => {
     ctx.fillStyle = gr; ctx.fillRect(0, 124, W, H - 124)
     ctx.fillStyle = '#2e2440'
     RIM.flecks.forEach((f) => ctx.fillRect(f.x, f.y, f.w, 1))
-    BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === uiSel && !gs.town.b, bob))
+    BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === doorIdx && !gs.town.b, bob))
+    // #1751: lamp pools on the cobbles — two lit patches the walker passes through.
+    for (const lx of [58, 262]) {
+        ctx.fillStyle = 'rgba(255,180,80,0.10)'
+        ctx.beginPath(); ctx.ellipse(lx, 166, 16, 5, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#3a3f5c'; ctx.fillRect(lx - 1, 140, 2, 22)
+        ctx.fillStyle = `rgba(255,200,110,${(0.7 + 0.2 * Math.sin(bob / 11)).toFixed(2)})`
+        ctx.fillRect(lx - 2, 136, 4, 4)
+    }
+    // hedges (the far-lane blockers) and door steps: the map IS the art — the
+    // same tiles sim.js refuses to let you walk through are what you can see.
+    ctx.fillStyle = '#1d2c1e'
+    for (const t of RIM_STREET.blockedFar) {
+        const hx = t * 10 + 1
+        ctx.fillRect(hx, 136, 8, 8)
+        ctx.fillStyle = '#2c4228'
+        ctx.fillRect(hx + 1, 137, 2, 2); ctx.fillRect(hx + 4, 139, 2, 2); ctx.fillRect(hx + 2, 142, 3, 1)
+        ctx.fillStyle = '#1d2c1e'
+    }
+    ctx.fillStyle = '#3b3350'
+    for (const k of Object.keys(RIM_STREET.doors)) {
+        const dx = RIM_STREET.doors[k] * 10
+        ctx.fillRect(dx + 1, 148, 8, 3)
+        ctx.fillStyle = '#4a4160'; ctx.fillRect(dx + 1, 148, 8, 1); ctx.fillStyle = '#3b3350'
+    }
+    // the well-mouth: curb, glow and roof — it blocks the near lane at tiles
+    // 12-13 (RIM_STREET.blockedNear), so the art and the walk law agree.
     const wx = 128, wy = 158
     ctx.fillStyle = '#3a3f5c'; ctx.fillRect(wx - 14, wy - 10, 28, 18)
     ctx.fillStyle = '#8a94a6'
@@ -178,11 +211,31 @@ const paintRim = (ctx, gs, bob, uiSel) => {
     ctx.fillRect(wx - 6, wy - 3, 12, 4)
     ctx.fillStyle = '#6b4519'; ctx.fillRect(wx - 14, wy - 24, 2, 14); ctx.fillRect(wx + 12, wy - 24, 2, 14)
     ctx.fillStyle = '#4a3320'; ctx.fillRect(wx - 16, wy - 26, 32, 3)
+    ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(120, 160, 22, 5)
+    // ---- the walker (#1751): the company's point, tile by tile, facing the
+    // way they last walked. Stride is keyed to the tile parity: the legs swap
+    // per step, not per frame, so standing still is standing still.
+    const px = gs.town.tx * 10 + 5
+    const yb = gs.town.ty ? 146 : 168
+    const stride = (gs.town.tx + gs.town.ty) % 2
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px - 4, yb, 9, 2)
+    ctx.fillStyle = '#2a2136'
+    ctx.fillRect(px - 2, yb - 6 + (stride ? 0 : -1), 2, 6)
+    ctx.fillRect(px + 1, yb - 6 + (stride ? -1 : 0), 2, 6)
+    ctx.fillStyle = '#8f3b2c'; ctx.fillRect(px - 3, yb - 14, 7, 9)
+    ctx.fillStyle = '#6e2a1e'; ctx.fillRect(px - 3, yb - 7, 7, 2)
+    ctx.fillStyle = '#e8c9a0'; ctx.fillRect(px - 2, yb - 18, 5, 4)
+    ctx.fillStyle = '#5a2a20'; ctx.fillRect(px - 2, yb - 19, 5, 2)
+    ctx.fillStyle = '#141416'; ctx.fillRect(gs.town.face > 0 ? px + 1 : px - 1, yb - 17, 1, 1)
     ctx.fillStyle = '#0c1024'; ctx.fillRect(0, 176, W, 24)
     ctx.fillStyle = '#9fb4ff'; ctx.font = '7px monospace'; ctx.textAlign = 'center'
     ctx.fillText(gs.wipe ? 'THE RIM — THE TEMPLE OPENS ALL NIGHT' : 'THE RIM — THE LIP OF THE WELL', 128, 184)
     ctx.fillStyle = '#ffd54f'
-    ctx.fillText('←→ DOORS · SPACE ENTER · F DESCEND TO THE DEEP', 128, 194)
+    ctx.fillText('←→↑↓ WALK · SPACE AT A DOOR · F DESCEND', 128, 194)
+    if (doorIdx >= 0 && !gs.town.b) {
+        ctx.fillStyle = '#7dffb0'
+        ctx.fillText(`AT THE ${BUILDINGS[doorIdx].name}`, 128, 196)
+    }
     void gs
 }
 
@@ -434,7 +487,6 @@ const TenDeepGame = () => {
         let runSeed = gs.townSeed
         let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
-        let uiSel = 0
         const evLog = []
         let shake = 0, flashHit = 0
         // #1351: a wall bump gets a short darken beat — "wall", not "stuck"
@@ -523,6 +575,10 @@ const TenDeepGame = () => {
                 else if (e.type === 'buyPotion') { audioController.playTone(880, 0.09, 'square', 0.05); say('A FRESH VIAL FOR THE SATCHEL') }
                 else if (e.type === 'broke') { audioController.playTone(80, 0.12, 'triangle', 0.06); say('THE PURSE REFUSES') }
                 else if (e.type === 'townNo') audioController.playTone(90, 0.05, 'square', 0.04)
+                // #1751: footsteps are barely-there (a boot on cobbles, not a
+                // drumline); the hedge/well refusal gets a duller knock.
+                else if (e.type === 'walk') audioController.playTone(120 + (e.x * 7) % 40, 0.025, 'triangle', 0.025)
+                else if (e.type === 'walkBlocked') audioController.playTone(74, 0.045, 'triangle', 0.045)
                 else if (e.type === 'noBreathers') { audioController.playTone(70, 0.14, 'sawtooth', 0.06); say('NO BREATHING HERO WALKS YOU DOWN') }
             }
         }
@@ -548,7 +604,7 @@ const TenDeepGame = () => {
         }
 
         const tickDemo = () => {
-            if (gs.end || (gs.mode === 'town' && !gs.party.some(h => h.alive))) { gs = makeRun(); uiSel = 0; return }
+            if (gs.end || (gs.mode === 'town' && !gs.party.some(h => h.alive))) { gs = makeRun(); return }
             act(nextAction(gs))
         }
 
@@ -791,7 +847,7 @@ const TenDeepGame = () => {
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.85; if (shake < 0.4) shake = 0 }
             ctx.save(); ctx.translate(sx, sy)
-            if (gs.mode === 'town') { if (gs.town.b) paintInterior(ctx, gs, bob); else paintRim(ctx, gs, bob, uiSel) }
+            if (gs.mode === 'town') { if (gs.town.b) paintInterior(ctx, gs, bob); else paintRim(ctx, gs, bob, doorIdxOf(gs.town)) }
             else if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
             else if (glOn()) {
                 // the WebGL corridor draws through from the layer below; the 2D
@@ -934,7 +990,6 @@ const TenDeepGame = () => {
             const pin = seedFromQuery()
             gs = makeRun(pin != null ? { townSeed: pin >>> 0 } : {})
             runSeed = gs.townSeed
-            uiSel = 0
             evLog.length = 0
             watchingRef.current = false; setWatching(false) // #1637 a new company starts in your hands
             setMode('play')
@@ -991,10 +1046,15 @@ const TenDeepGame = () => {
                     else if (e.code === 'KeyL') act('leave')
                     else if (e.code === 'KeyP') act('potion')
                 } else {
-                    if (e.code === 'ArrowLeft') uiSel = (uiSel + BUILDINGS.length - 1) % BUILDINGS.length
-                    else if (e.code === 'ArrowRight') uiSel = (uiSel + 1) % BUILDINGS.length
-                    else if (e.code === 'Space') act(`enter-${BUILDINGS[uiSel].key}`)
-                    else if (e.code === 'KeyF' || e.code === 'ArrowUp') act('down')
+                    // #1751: the RIM is walked, not pointed at. Arrows step the
+                    // hero tile by tile; SPACE crosses the threshold you are
+                    // standing at; F still descends from anywhere (pad law).
+                    if (e.code === 'ArrowLeft') act('walk-left')
+                    else if (e.code === 'ArrowRight') act('walk-right')
+                    else if (e.code === 'ArrowUp') act('walk-far')
+                    else if (e.code === 'ArrowDown') act('walk-near')
+                    else if (e.code === 'Space') { const d = rimDoorAt(gs.town.tx, gs.town.ty); if (d) act(`enter-${d}`) }
+                    else if (e.code === 'KeyF') act('down')
                     else if (e.code === 'KeyP') act('potion')
                 }
                 return
@@ -1070,7 +1130,8 @@ const TenDeepGame = () => {
                     floor: gs.floor, x: gs.x, y: gs.y, dir: gs.dir, potions: gs.potions,
                     gold: purse(gs), wipe: gs.wipe, ward: gs.ward,
                     town: gs.mode === 'town' ? {
-                        b: gs.town.b, hero: gs.town.hero, svc: gs.town.svc, sel: uiSel,
+                        b: gs.town.b, hero: gs.town.hero, svc: gs.town.svc, sel: doorIdxOf(gs.town),
+                        x: gs.town.tx, lane: gs.town.ty, face: gs.town.face,
                         ci: gs.town.ci, ali: ALIGN_ORDER[gs.town.ali],
                         cand: gs.town.cand ? gs.town.cand.map(c => ({ ...c, composed: compose(c, ALIGN_ORDER[gs.town.ali]) })) : null,
                         createPrice: createPriceFor(),
@@ -1156,7 +1217,11 @@ const TenDeepGame = () => {
                     if (opts.kill !== undefined) { const h = gs.party[opts.kill]; if (h) { h.alive = false; h.hp = 0 } }
                     if (opts.townB !== undefined) {
                         gs.mode = 'town'; gs.combat = null
-                        gs.town = { b: opts.townB || null, svc: 0, hero: 0, cand: null, ci: 0, ali: 0 }
+                        // dev/QA convenience: standing at that building's threshold
+                        // (the strict door law otherwise applies to everyone).
+                        gs.town = freshTown()
+                        gs.town.b = opts.townB || null
+                        if (gs.town.b) { gs.town.tx = RIM_STREET.doors[gs.town.b]; gs.town.ty = 1 }
                         return true
                     }
                     if (gs.mode === 'town') step(gs, 'down')

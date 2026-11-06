@@ -15,7 +15,7 @@ import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
 import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt } from './town.js'
 import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
 
-export { SIZE, BUILDINGS, SERVICES, TOWN }
+export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt }
 export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
 export const W = 256
 export const H = 224
