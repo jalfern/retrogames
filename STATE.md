@@ -1,60 +1,66 @@
-# STATE — session 154 (2026-11-06, slot b)
+# STATE — session 154 (2026-11-06, slot a)
 
 ## What shipped
 **COMET DRIFT GP retighten (#1669) — PR #1677 squash-merged `1562cda`, LIVE.**
-Took the warden's assignment as a corpse resume (step 1b): slot a had pushed
-`forge/comet-shape-tighten` (30094cb tool, ccdf7a4 retighten) then died without
-checkpointing — its lock silently expired (interim comments used "FORGE (a): <sha>"
-form, which holder() does not count as liveness), so `forge-claim.sh 1669 b`
-succeeded and the warden moved it to this slot. Verified the corpse end-to-end on
-port 5178 instead of rebuilding: cometcheck GREEN x2 (caps pass at 9.7%/18.0% vs
-new caps 0.10/0.185), revert-mutant RED at 18.6% (track.js rolled back, restored,
-PNGs restored), cometplay 29/29 real-key drive — 4-lap Daytona win on the NEW
-geometry, zero page errors; eslint + lint:mario/fps/ai/comet + build green.
-Mid-verification, slot a's zombie merge loop fired and merged #1677 at 09:36:35Z —
-exactly the #1676 hazard (harness timeout leaves live children; the ghost's
-`git push -u` had already recreated the deleted branch ref we then found gone).
-Nothing unproved shipped (all gates verified by this lane first), issue closed
-automatically by the PR body; slot b posted the shipped confirmation + prod proof.
-Prod proof: assets/`selector-9UwUPh7J.js` contains the retightened corkscomb
-constants (`375,-199`) — live at /retrogames/comet-drift.
+The traced circuits come back onto their maps: #513 spread Daytona's fork legs +
+Laguna's keyhole for the old 2560² world with 64px roads; since #542 grew the
+world x3 and #782 widened the lane only x1.5, the spread over-cleared. New
+`scripts/comet-retighten.mjs`: deterministic hill-climb of the grown control
+points toward the reference embedded in the live bbox, gate-parity at every step
+(minR>=97, zero wall crossings, legs >= 2*KERB_R+24, longest-straight window,
+Corkscomb triple-apex signature), integer-snapped so validated == shipped.
+Measured (cometcheck): sandbank avg 1.93->**1.39**%, worst 9.5->9.7 (notch floor
+= 316px wall corridor + 97px radius floor — documented honest limit);
+corkscomb avg 2.79->**1.86**%, worst 18.6->**18.0**. WORST_CAP tightened to
+{0.10, 0.185}; revert-mutant (pre-retighten TIGHTEN replay) measures 18.6 and
+dies RED. Full cometcheck GREEN: bot wins all seeds, bump caps, #478 charge,
+elevation, provenance, signatures. eslint + lint:comet/mario/fps/ai + build green.
+Prod verified by chunk fingerprint (`selector-9UwUPh7J.js` carries `375,-199`);
+`#1669` labeled shipped + closed.
 
-## Playable now
-COMET DRIFT GP: Daytona fork legs and Laguna keyhole visibly closer to their
-traced maps (avg distance 1.71%/1.86% of box, worst 9.7%/18.0%; the caps in
-cometcheck moved down with them — the gate can no longer pass the old spread).
-
-## Gates as run
-cometcheck GREEN x2 (mutant red→green proven) · cometplay 29/29 ·
-eslint clean on both new files · lint:mario/fps/ai/comet ✓ · build ✓ ·
-claim/lane scripts OK · main-ok OK · static: PR #1677 merged (prod verified,
-bundle hash contains retightened data).
+## Lessons (worth keeping)
+- **Race gates are the oracle, not geometric parity.** Two candidate pulls passed
+  my tuner's structural scans yet died on #478 straight-charge / #1498 bump caps —
+  emergent autopilot behaviour. Fix: front-straight seam points frozen
+  (corkscomb 0,1,31-34) + conservative sweep count = the shipped data; the
+  README + verify block say NEVER re-run the tuner blind, only to re-derive.
+- **Snap to integers before validating** — ship-time rounding flipped a near-miss
+  crossing verdict once; snap is now in the tuner.
+- **`cometcheck --mutate` is broken on main** (URL passed to `mutateguard.pull`
+  at cometcheck.mjs:1309) — pre-existing, crashed identically at 88f1ba1/1562cda.
+  Filed **#1679** (feedback + lane:games, QA). It rotting silently = mutate flow
+  missing from CI (same gap class as watchcheck in STATE 151).
+- gh-shim: `gh issue edit --add-label/--remove-label` dies (`ADDL2: unbound`).
+  Workaround: `gh api repos/.../issues/N -X PATCH -f 'labels[]=...'` — NOTE it
+  REPLACES the whole label set (1669 now just `shipped`), fine for closed issues.
+- Prod verify for numeric-only changes: Vite names CometDrift's chunk
+  `selector-*.js`; grep the minified array fingerprint (`375,-199`) in prod.
+- Never claim-and-hold across another slot's target: #1668 was REFUSED (b held,
+  it shipped as #1674 by the resumed lane). #1645's DISSOLVE default is now
+  SPENT — drop that carried line everywhere.
 
 ## Next (priority order)
-1. **#1676** (harness merge-safety) — STILL LIVE (open; #1678 landed hole 2's
-   parse-gate). Today added a fresh datum to the issue: slot a's ghost merged
-   while slot b was mid-verification of the same branch; comment posted.
-   Remaining holes: merge-on-detached-HEAD refusal + merge-loop lock + checkpoint
-   liveness enforcement. QA/platform lane.
-2. #1637 batch 5 (watch rollout) — labeled building; check liveness before touching.
-3. #1612 remainder stands. #1645 moot-but-open (CLONE remains 12th-spell candidate).
+1. **Wire watchcheck into CI** (gap from STATE 151 — still open) and add
+   `cometcheck --mutate` alongside it (#1679): both mutants-and-pilots suites
+   that exist outside CI rot silently. One PR, two jobs.
+2. #1637 batch 5 claim (`forge-claim.sh 1637 a`): remaining solver titles —
+   Lode Runner-Lite, Arena Archery, WWI Dogfight, DOS/IF remainder (MagicCarpet
+   now done via #1668/#1674).
+3. #1612 remainder stands; #1653 parts 2-3 + polish passes (#1654/#1655/#1663)
+   belong to the QA lane (Jon 2026-10-19).
 
-## Notes for the next slot-b session
-- Dev server 5178 STOPPED at end of session (was mine); reuse 5178 strictPort.
-- Worktree `~/Dev/retrogames-forge-comet-shape-tighten` is detached at origin/main
-  (branch deleted by the merge); node_modules reusable — re-`-B` on next claim.
-- **Liveness form matters**: `holder()` only counts `claimed|checkpoint` comments.
-  Interim "FORGE (x): <sha> — note" comments do NOT extend the 90-min lockout.
-  If you resume an issue, post `FORGE (<slot>): checkpoint …` after each increment
-  or your live session can be re-claimed while it still runs (today's incident).
-- comet-retighten.mjs re-derives the TIGHTEN blocks deterministically — run it and
-  diff; output must match track.js or the shipped data drifted.
-- cometcheck browser legs need the dev server on DEV_PORT; the sim arm runs anyway.
-- `. /tmp/forge/netenv.sh` before gh/jonq/prod. Park STATE right after writing:
-  `node scripts/statepark.mjs park b`.
-- No new QA polish-pass issue filed for Comet deliberately: its README honest-gaps
-  are deliberately left unowned so #1571 never-dry keeps returning to the weakest
-  shelf game (score was 8); an umbrella feedback issue would erase that signal.
+## Notes for the next slot-a session
+- Main checkout re-detached at `origin/main` (`1562cda`). Dev server on 5173 was
+  NEVER STARTED this session (cometcheck is Node-only) — nothing to kill.
+- Worktree `~/Dev/retrogames-forge-comet-shape-tighten` re-detached, node_modules
+  symlink into the main checkout — reusable; branch deleted both ends.
+- If touching CometDrift geometry: run FULL cometcheck (it's 9 s) — shape gates,
+  bump caps and straight-charge are all cheap and load-bearing.
+- `. /tmp/forge/netenv.sh` before gh/jonq/curl-to-prod; LC_ALL=C when grepping
+  minified JS through zsh (else "character not in range").
+- Slot bookkeeping was tangled this session (parallel #153 reports on both slots);
+  numbering continues 154 = this one.
 
 ## Open questions
-Links only (#605): #1645 (moot, default shipped). None new this session.
+None new. Carried #1645 resolved by DISSOLVE shipping (#1674); no open waiting-jon
+issues on the games lane (`jonq list games`: none).
