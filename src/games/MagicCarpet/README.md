@@ -32,7 +32,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   strip taps, world taps cast) with carpet corners/hands/crosshair + carried-orb halo,
   the blue-stone HUD (radar with hut/fire dots + cyan veil sweep, VAULT bar with per-world ticks
   + segment-crossing flash and 3-note stagger on big bankings, CARRY pouch,
-  hearts, spell slots + gold SPELLS tab with eight-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
+  hearts, spell slots + gold SPELLS tab with ten-spell tray, WORLD n/3), the fixed-timestep loop, the `?` pause,
   VirtualControls, DEV hooks, and the `window.__game` contract.
 
 ## Rules that are load-bearing (each is a carpetcheck assertion)
@@ -100,6 +100,28 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
    rides one low-pass whose cutoff `muffleOf(gs)` picks — open when seen,
    `MUFFLE_CUTOFF` Hz behind the veil — so invisibility is something you hear.
    Your own spell-casts stay bright: only the world bed dulls, never your hands.
+- SHATTER (#1639, the 9th spell, cost 30): kill-without-cinders. Everything
+  alive within `SHATTER_R` (24u) of the look point dies where it stands — wolf,
+  giant, cow, even a creature in your grip (killEntity, bounties drop) — and
+  the wizard takes 28 when caught in the ring. What it never does is the rule:
+  no crater, no fire mark, no topple, no scorch — the land is provably
+  untouched even when the ring lands on the tower base (harness gate).
+  rng-free: the kill-set is identical every replay.
+- RAISE (#1639, the 10th spell, cost 25): the mirror of `crater()` — a
+  quadratic mound (r16 h14) lifts the ground where you look. Ridges appear on
+  the same heightmap every rule reads, so the carpet's auto-climb rides them;
+  land lifted above `WATER` drains craters the sea had swallowed — the
+  counter-spell to the game's own flooding. rng-free and deterministic.
+- Ten-book spread (#1639): `genWorld` places a grimoire per spell; with ten
+  books the strict 70u spread starves the mid-height band on unlucky seeds
+  (seed 1 hit it on the 9th book), so after the honest 60-try strict loop the
+  spread eases once (still past the castle's 45u reach). Always places.
+- Fairness invariant (#1639): every wizard tower generates within 180u of the
+  castle — inside the guards' firing reach (<200u, arrows carry ~300). A
+  hoarding wizard behind an out-of-reach tower plus a carpet at 0 mana is a
+  soft-locked world (seed 14 proved it after the book rng shift); the retry
+  loop keeps the world always finishable. 60-seed sweep after: 60/60 wins,
+  slowest 28,573 ticks (books shifted the stream from #1612's 26,503).
 
 ## #1612 item 1 polish (2026-11-05, QA studio)
 
@@ -135,7 +157,8 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
 
 ```
 npm run dev                # another terminal
-npm run carpetcheck        # 85 checks: boot, determinism, three-world win,
+npm run carpetcheck        # Node gates + a headless-Chrome pass + GPU-pass
+                           # gates: boot, determinism, three-world win,
                            # delivery/spill/death, craters (fire + lightning),
                            # hut burn-to-rubble, conservation across worlds,
                            # acquisition risk, charge-glide, hoard scatter,
@@ -151,6 +174,12 @@ npm run carpetcheck        # 85 checks: boot, determinism, three-world win,
                            # book toggle, tray equip/inert/click-out, hit boxes
                            # inside the HUD, tray never disturbs the hash,
                            # regen closes the book),
+                           # SHATTER + RAISE (#1639: roster ten, kill-radius +
+                           # spared-outside + no-crater/no-scorch promise +
+                           # no-topple-at-tower, pays/denies both, mound lift +
+                           # locality, flood-drain counter-spell, determinism,
+                           # tower-in-guard-reach fairness on 60 worlds, ten
+                           # books placed on 120 worlds),
                            # plus a headless-Chrome pass and 10 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
@@ -194,9 +223,10 @@ see item 5).
 
 ## Honest gaps (the polish pass owns these)
 
-- Five spells remain: no clone/dissolve/shatter, and no raise-terrain
-  spell (the original's later games added one; MC1 itself only craters and
-  floods). Invisibility shipped #1610, volcano #1612 item 5.
+- Clone and dissolve: the book reached ten (#1639 shipped shatter + raise),
+  but the original's later-game repertoire still misses creature-cloning and
+  a land-dissolving flood spell. Invisibility shipped #1610, volcano #1612
+  item 5, shatter + raise #1639.
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.
