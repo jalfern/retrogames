@@ -1175,6 +1175,19 @@ r.check('#1673 dev-graph on phones: 390x844 touch load, zero page errors (one re
     pErrs.length === 0, pErrs.join(' | '))
 const hud = await phone.evaluate(() => window.__carpetTest.hudRect())
 const toCss = (hx, hy) => [hud.left + (hx / W) * hud.w, hud.top + (hy / H) * hud.h]
+// The #1147 hint is up at this size (portrait + wide canvas) — before any tap
+// can dismiss it, prove it does not swallow the stage: MagicCarpet's portrait
+// band runs through the screen centre and its tray sits under the card, so a
+// pointer-events-auto card made every mid-canvas tap vanish (#1673's four red
+// touch gates). Mutation guide: card back to pointer-events-auto → red here.
+const hintUp = await phone.evaluate(() => !!document.querySelector('[data-nav="rotate-dismiss"]'))
+const centreCss = toCss(W / 2, H / 2 - 40)
+const centreHit = await phone.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y)
+    return el ? `${el.tagName.toLowerCase()}${el.dataset.vc ? '[vc]' : ''}` : 'none'
+}, centreCss)
+r.check('#1673 ROTATE hint is click-through: canvas centre hit-tests to the canvas while the hint is up',
+    hintUp && centreHit === 'canvas', `hint up=${hintUp}, centre hit=${centreHit}`)
 // start by tap (any tap leaves attract), exactly the forgotten-how-to-play gesture
 await phone.touchscreen.tap(...toCss(W / 2, H / 2 - 40))
 await phone.waitForTimeout(500)
@@ -1216,14 +1229,17 @@ await phone.screenshot({ path: 'docs/shots/issue-1673-dissolve-fx.png' })
 r.check('#1673 DISSOLVE FX: cold cyan spray spawns on the wound, zero fire/ash',
     fxA.parts >= pBefore + 16 && fxA.ash === 0, `particles ${pBefore} -> ${fxA.parts}, ash ${fxA.ash}`)
 // 3) the banner row at phone size: cast for real (touch the world) and the shell says it
-await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve') })
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve'); window.__carpetTest.equipL('dissolve') })
 await phone.waitForTimeout(200)
+const mA = (await phone.evaluate(() => window.__carpetTest.probe())).mana
+const mM = await phone.evaluate(() => window.__carpetTest.trailMotes())
 await phone.touchscreen.tap(...toCss(W / 2, 60)) // world tap above the strip = cast
 await phone.waitForTimeout(250)
-const cast = await phone.evaluate(() => ({ mana: window.__carpetTest.probe().mana, screen: window.__carpetTest.probe().screen }))
+const cast = await phone.evaluate(() => ({ mana: window.__carpetTest.probe().mana, screen: window.__carpetTest.probe().screen, motes: window.__carpetTest.trailMotes() }))
 await phone.screenshot({ path: 'docs/shots/issue-1673-phone-play.png' })
-r.check('#1673 world tap casts DISSOLVE at phone size (40 mana paid, banner rides the HUD)',
-    cast.screen === 'play' && cast.mana === 60, `mana=${cast.mana} screen=${cast.screen}`)
+r.check('#1673 world tap casts DISSOLVE at phone size (40 mana paid, spray rides the wound, banner rides the HUD)',
+    cast.screen === 'play' && cast.mana <= mA - 40 && cast.motes >= mM + 16,
+    `mana ${mA}->${cast.mana}, motes ${mM}->${cast.motes}, screen=${cast.screen}`)
 await phone.close()
 await pBrowser.close()
 

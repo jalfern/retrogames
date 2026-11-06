@@ -7,7 +7,10 @@ const MIN_ASPECT = 4 / 3
 // instead. Shown only while the device is portrait AND the route hosts a
 // canvas whose intrinsic size is wider than 4:3 (so portrait-native UI and
 // menu screens stay unaffected). Auto-clears on rotation; a stubborn player
-// can dismiss it for this visit.
+// can dismiss it for this visit. The card itself must be CLICK-THROUGH
+// (#1673): a centered fixed card covers the middle of the stage, and MagicCarpet's
+// portrait canvas band — including its spell tray — sits exactly there, so real
+// gameplay taps vanished under the hint. Only the dismiss button takes pointers.
 export default function RotateHint() {
     const [portrait, setPortrait] = useState(() =>
         typeof window !== 'undefined' && window.matchMedia?.('(orientation: portrait)').matches === true)
@@ -37,7 +40,7 @@ export default function RotateHint() {
 
     return (
         <div className="fixed inset-0 z-[70] flex items-center justify-center pointer-events-none">
-            <div className="pointer-events-auto flex flex-col items-center gap-3 rounded-xl border border-white/25 bg-black/85 px-6 py-5 text-center backdrop-blur-sm">
+            <div className="pointer-events-none flex flex-col items-center gap-3 rounded-xl border border-white/25 bg-black/85 px-6 py-5 text-center backdrop-blur-sm">
                 <svg viewBox="0 0 24 24" className="w-8 h-8 text-white animate-pulse" fill="none" stroke="currentColor" strokeWidth={1.5}>
                     <rect x="7" y="2.5" width="10" height="19" rx="2" />
                     <path d="M13 2.5c4 .4 7 3.2 8.4 7" strokeLinecap="round" strokeDasharray="2 3" />
@@ -46,7 +49,7 @@ export default function RotateHint() {
                 <button
                     data-nav="rotate-dismiss"
                     onClick={() => setDismissed(true)}
-                    className="font-mono text-[10px] tracking-[0.2em] text-white/60 border border-white/25 rounded-md px-2.5 py-1 hover:opacity-100"
+                    className="pointer-events-auto font-mono text-[10px] tracking-[0.2em] text-white/60 border border-white/25 rounded-md px-2.5 py-1 hover:opacity-100"
                 >
                     PLAY IN PORTRAIT
                 </button>

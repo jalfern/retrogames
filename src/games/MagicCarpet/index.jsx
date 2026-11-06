@@ -844,6 +844,9 @@ const MagicCarpetGame = () => {
                 // learned without chasing grimoire RNG, and HUD->CSS px mapping for
                 // real touchscreen taps at 390x844.
                 arm: (id) => { if (!gs.learned.includes(id)) gs.learned.push(id); gs.mana = 100; gs.coolL = 0; gs.coolR = 0; return [...gs.learned] },
+                // learn ≠ equip (sim #1612): gates that cast after reset must equip
+                // explicitly, exactly as the tray tap or Minus key would.
+                equipL: (id) => { if (gs.learned.includes(id)) gs.hands.L = id; return gs.hands.L },
                 hudRect: () => { const r = canvas.getBoundingClientRect(); return { left: r.left, top: r.top, w: r.width, h: r.height } },
                 smokePuffs: () => (renderer ? renderer.smokeCount() : -1),
                 crumbles: () => (renderer ? renderer.ashCount() : -1),
