@@ -34,6 +34,7 @@ export const SPILLS = [
     { id: 'volcano', name: 'VOLCANO', cost: 60 },
     { id: 'shatter', name: 'SHATTER', cost: 30 },
     { id: 'raise', name: 'RAISE', cost: 25 },
+    { id: 'dissolve', name: 'DISSOLVE', cost: 40 },
 ]
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
@@ -148,6 +149,46 @@ export function raiseTerrain(gs, x, y, r, hgt) {
         }
     }
     gs.events.push({ type: 'raise', x: wrap(x, MAP), y: wrap(y, MAP), r })
+}
+
+// Dissolve (#1668, the 11th spell): the original's late-game land spells did
+// not crack the ground, they erased it. This is deliberately NOT a crater()
+// subtraction — it CLAMPS the heightmap down (min(h, floor)), so whatever the
+// terrain was, the wound sinks below the sea: a guaranteed, permanent flood
+// even on a mountaintop. Nothing regrows land; only RAISE (#1639's mirror)
+// drains it — the counter-spell pairing stays symmetric. Every hut inside the
+// radius is dissolved too: not burned, no rubble, no fire marks — the flood
+// swallows it whole, as the original drowned whole villages. Creatures swim
+// (huts and terrain are the targets, #1645), and the wizard's tower stands:
+// cold, land-only, rng-free — same seed, same flood.
+export const DISSOLVE_R = 22
+export const DISSOLVE_SINK = 6
+
+export function dissolveLand(gs, x, y) {
+    const dx0 = wrap(x, MAP), dy0 = wrap(y, MAP)
+    const rCell = Math.ceil(DISSOLVE_R / CELL)
+    const cx = dx0 / CELL, cy = dy0 / CELL
+    const i0 = Math.floor(cx), j0 = Math.floor(cy)
+    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
+        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+            const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
+            const d = Math.hypot(du, dv)
+            if (d > DISSOLVE_R) continue
+            const floor = WATER - DISSOLVE_SINK * (1 - d / DISSOLVE_R) ** 2
+            const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
+            gs.heights[gi] = Math.min(gs.heights[gi], floor)
+        }
+    }
+    const gone = []
+    gs.huts.forEach((hs, i) => {
+        if (Math.hypot(wrapD(hs.x - dx0), wrapD(hs.y - dy0)) < DISSOLVE_R) gone.push(i)
+    })
+    for (const i of [...new Set(gone)].sort((a, b) => b - a)) {
+        const hs = gs.huts[i]
+        gs.events.push({ type: 'dissolveHut', x: hs.x, y: hs.y })
+        gs.huts.splice(i, 1)
+    }
+    gs.events.push({ type: 'dissolve', x: dx0, y: dy0, r: DISSOLVE_R, huts: gone.length })
 }
 
 // Shatter (#1639): the original's kill-without-cinders. Every creature within
@@ -281,6 +322,7 @@ export function genWorld(gs) {
         // band on unlucky seeds (seed 1 exhausted all 60 tries on the 9th).
         // After the honest strict attempt, ease the spread — first still past
         // the castle reach, then anywhere landable. Deterministic either way.
+        // #1668 kept the loop honest for eleven books (DISSOLVE's grimoire).
         if (!p) p = findSpot(gs, 24, 50, false, gs.castle, 46)
         gs.books.push({ id: sp.id, x: p.x, y: p.y, taken: gs.learned.includes(sp.id), cd: 0 })
         bs.push(p)
@@ -479,6 +521,9 @@ function castHand(gs, hand) {
     } else if (id === 'raise') {
         const lp = lookPoint(gs)
         raiseTerrain(gs, lp.x, lp.y, 16, 14)
+    } else if (id === 'dissolve') {
+        const lp = lookPoint(gs)
+        dissolveLand(gs, lp.x, lp.y)
     } else if (id === 'telekinesis') {
         if (gs.heldEnt) {
             const e = gs.heldEnt
