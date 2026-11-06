@@ -391,3 +391,70 @@ export function registryRemove(reg, code) {
 export function registryCount(reg) {
     return reg.rooms.size
 }
+
+// SESSION STORE (#1711) — PLAICRAFT S1: human recordings leave the phone into
+// a private R2 bucket behind this worker. The rules live HERE (pure, Node-
+// provable); worker.js is only the R2 plumbing and scripts/recordcheck.mjs
+// drives the same envelope contract against a stub. The store is private:
+// reads answer only from this worker (the bucket is never public), and an
+// upload without a motion grant is refused at the door even if a buggy client
+// sent one — the consent rule is enforced twice on purpose.
+
+export const SES_MAX_BODY = 20_000_000 // 30 min of opus base64 is ~8 MB; cap generously
+
+// validateSessionEnvelope({ recording, player, consent }) — {ok} or {ok:false,
+// err}. Light structural checks (the deep recording validation is client-side
+// and in recordcheck); the CONSENT rules are the load-bearing part:
+//   recording must be a rec/v1|v2 file with a sane game id + seed + ticks;
+//   consent.motion must be true — a store write without it is refused;
+//   a recording carrying a voice section requires consent.voice as well.
+export function validateSessionEnvelope(env) {
+    if (!env || typeof env !== 'object') return { ok: false, err: 'not an object' }
+    const rec = env.recording
+    if (!rec || typeof rec !== 'object') return { ok: false, err: 'recording required' }
+    if (rec.format !== 'retrogames-rec/v1' && rec.format !== 'retrogames-rec/v2') return { ok: false, err: 'bad format tag' }
+    if (typeof rec.game !== 'string' || !/^[a-z0-9][a-z0-9-]{0,40}$/.test(rec.game)) return { ok: false, err: 'bad game id' }
+    if (!Number.isInteger(rec.seed)) return { ok: false, err: 'seed must be an integer' }
+    if (!Number.isInteger(rec.ticks) || rec.ticks < 1) return { ok: false, err: 'ticks must be a positive integer' }
+    if (!Number.isInteger(rec.players) || rec.players < 1 || rec.players > 4) return { ok: false, err: 'players must be 1..4' }
+    if (typeof env.player !== 'string' || !env.player || env.player.length > 64) return { ok: false, err: 'player label required (1..64 chars)' }
+    const consent = env.consent
+    if (!consent || consent.motion !== true) return { ok: false, err: 'consent.motion required' }
+    if (rec.voice !== undefined && consent.voice !== true) return { ok: false, err: 'voice section without voice consent' }
+    return { ok: true }
+}
+
+// sessionKey: game/date-seedN-<rand>.json — prefixes group by game (R2 list
+// is prefix-first) and the human-readable part makes a leaked key explain
+// itself. `stamp` is the server upload time (ISO), `randHex` server entropy.
+export function sessionKey(rec, stamp, randHex) {
+    const day = String(stamp).slice(0, 10)
+    return `${rec.game}/${day}-seed${rec.seed}-${String(randHex).slice(0, 10)}.json`
+}
+
+// sessionMeta: what the admin listing shows WITHOUT downloading bodies
+// (stored as R2 customMetadata at put time).
+export function sessionMeta(rec, player) {
+    return {
+        game: rec.game,
+        seed: String(rec.seed),
+        ticks: String(rec.ticks),
+        players: String(rec.players),
+        audio: rec.voice ? '1' : '0',
+        player: String(player),
+    }
+}
+
+export function sessionRow(key, meta, uploadedAt) {
+    const m = meta || {}
+    return {
+        key,
+        game: m.game || '',
+        player: m.player || '',
+        seed: Number(m.seed || 0),
+        ticks: Number(m.ticks || 0),
+        players: Number(m.players || 1),
+        audio: m.audio === '1',
+        uploadedAt: m.uploadedAt || uploadedAt || '',
+    }
+}
