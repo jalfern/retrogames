@@ -8,12 +8,14 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { makeGame, step, stateHash, TARGET_WAVES, LEVELS } from './sim.js'
-import { plan } from './planner.js'
+import { plan, decide } from './planner.js' // decide = #1637 WATCH: the rim defender, live
 import { W, H, makeStars, drawStars, drawTube, drawPlayer, drawEnemies, drawBullets, drawZaps, drawRimWarn, posAt } from './art.js'
 import { attractFrame, DIM } from './attract.js'
 
@@ -30,6 +32,9 @@ const TempestGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the prover guards the rim
+    const watchingRef = useRef(false)
+    const watchMem = useRef({ id: null }) // the pilot's target commitment, fresh per watch
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hud = useRef({})
     const setHud = (k) => (el) => { hud.current[k] = el }
@@ -137,7 +142,10 @@ const TempestGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim(computeInput())
+            // #1637 WATCH: the slack-scheduled pilot works the tube from your rim —
+            // the same decide() the harness audits, reading live state every tick.
+            if (watchingRef.current) doSim(decide(gs, watchMem.current))
+            else doSim(computeInput())
             let tmax = 0, tA = -1
             for (const e of gs.enemies) if (e.t > 0.8 && e.t > tmax) { tmax = e.t; tA = e.A }
             if (tA >= 0) {
@@ -245,6 +253,8 @@ const TempestGame = () => {
             zaps.length = 0
             fade = null; warnA = -1; alarmT = 0; hue = 0
             shake = 0; flash = 0
+            watchingRef.current = false // #1637 a new run starts with the stick in your hand
+            setWatching(false)
             setMode('play')
         }
         const onKeyDown = (ev) => {
@@ -252,14 +262,23 @@ const TempestGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { goPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
+            // #1637 WATCH: Y hands the rim to the prover; any driving key takes it back.
+            if (isWatchKey(ev)) {
+                const on = !watchingRef.current
+                watchingRef.current = on
+                if (on) watchMem.current = { id: null }
+                setWatching(on); return
+            }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
         }
         const onKeyUp = (ev) => { held.delete(ev.code) }
         const onPointer = () => {
             const sc = screenRef.current
-            if (sc === 'attract') goPlay()
-            else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
+            if (sc === 'attract') { goPlay(); return }
+            if (sc === 'over' && performance.now() - overAtRef.current > 900) { setMode('attract'); return }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the rim back
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -275,6 +294,7 @@ const TempestGame = () => {
                 press: (codes) => { for (const c of codes) held.add(c) },
                 release: (codes) => { for (const c of codes) held.delete(c) },
                 start: () => goPlay(),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover defending?
                 plan: (seed) => plan(seed ?? 0),
                 events: () => evLog,
                 probe: () => ({
@@ -351,6 +371,17 @@ const TempestGame = () => {
                 <span>WAVE <span ref={setHud('wave')} className="text-[#ffd76b]">1/4</span></span>
                 <span>SHIPS <span ref={setHud('lives')} className="text-[#7df0ff]">4</span></span>
             </div>
+            {/* #1637 WATCH — the prover works the tube; any key or tap takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

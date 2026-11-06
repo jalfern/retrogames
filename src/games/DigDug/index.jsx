@@ -10,6 +10,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -32,6 +34,8 @@ const DigDugGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the prover digs the round
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -121,7 +125,10 @@ const DigDugGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ left: keys.l, right: keys.r, up: keys.u, down: keys.d, fire: keys.fEdge })
+            // #1637 WATCH: the tunnelling prover digs in your boots — the same
+            // decide() dugcheck grades, reading the live tunnels every tick.
+            if (watchingRef.current) doSim(decide(gs))
+            else doSim({ left: keys.l, right: keys.r, up: keys.u, down: keys.d, fire: keys.fEdge })
             keys.fEdge = false
         }
 
@@ -370,6 +377,8 @@ const DigDugGame = () => {
         const startPlay = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin >>> 0 : 0)
+            watchingRef.current = false // #1637 a new run starts with the stick in your hand
+            setWatching(false)
             setMode('play')
             say(ROUNDS[0].name)
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
@@ -383,6 +392,9 @@ const DigDugGame = () => {
             if (ev.code === 'Escape' || ev.code === 'Backquote') { ev.preventDefault(); setPaused((p) => !p) }
             if (screenRef.current === 'attract') { startPlay(); return }
             if (screenRef.current === 'over' && performance.now() - overAtRef.current > 900) { startPlay(); return }
+            // #1637 WATCH: Y hands the tunnels to the prover; any driving key takes it back.
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowLeft') keys.l = false
@@ -411,6 +423,7 @@ const DigDugGame = () => {
                 setKeys: (k) => { keys.l = !!k.l; keys.r = !!k.r; keys.u = !!k.u; keys.d = !!k.d; if (k.f) keys.fEdge = true },
                 plan: (seed = 0, opts) => plan(seed, opts),
                 decide: (seedlessState) => decide(seedlessState || gs),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover digging?
                 restart: () => { gs = makeGame(0) },
                 events: () => evLog,
                 probe: () => ({
@@ -498,6 +511,17 @@ const DigDugGame = () => {
                 <span>ROUND <span ref={setHud('round')} className="text-[#e9f7ff]">ROUND 1</span></span>
                 <span>LIVES <span ref={setHud('lives')} className="text-[#5dff8f]">3</span></span>
             </div>
+            {/* #1637 WATCH — the prover digs the round; any key takes over. */}
+            {screen === 'play' && watching && (
+                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
         </div>

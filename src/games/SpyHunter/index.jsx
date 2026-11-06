@@ -10,6 +10,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -39,6 +41,8 @@ const SpyHunterGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the prover drives the stage
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -123,7 +127,10 @@ const SpyHunterGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { tickDemo(); return }
             if (sc !== 'play') return
-            doSim({ l: keys.l, r: keys.r, f: keys.f, m: keys.mEdge })
+            // #1637 WATCH: the lane-modelling prover drives your car — the same
+            // decide() huntercheck grades, reading live traffic every tick.
+            if (watchingRef.current) doSim(decide(gs))
+            else doSim({ l: keys.l, r: keys.r, f: keys.f, m: keys.mEdge })
             keys.mEdge = false
         }
 
@@ -321,6 +328,8 @@ const SpyHunterGame = () => {
             noteAt = gs.tick
             evLog.length = 0; parts.length = 0
             keys.l = keys.r = keys.f = keys.m = keys.mEdge = false
+            watchingRef.current = false // #1637 a new run starts with the wheel in your hands
+            setWatching(false)
             setMode('play')
             audioController.playSweep(220, 660, 0.25, 'sawtooth', 0.07)
         }
@@ -333,6 +342,9 @@ const SpyHunterGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y hands the road to the prover; any driving key takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'Space') keys.f = true
@@ -346,8 +358,9 @@ const SpyHunterGame = () => {
         const onBlur = () => { keys.l = keys.r = keys.f = false }
         const onPointer = () => {
             const sc = screenRef.current
-            if (sc === 'attract') startPlay()
-            else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
+            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'over' && performance.now() - overAtRef.current > 900) { setMode('attract'); return }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the wheel back
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -384,6 +397,7 @@ const SpyHunterGame = () => {
                     board: board(), evLog: evLog.slice(-90),
                 }),
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover driving?
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
                     if (screenRef.current !== 'play') return false
@@ -526,6 +540,17 @@ const SpyHunterGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SPY HUNTER')} onResume={handleResume} />}
+            {/* #1637 WATCH — the prover drives the stage; any key or tap takes over. */}
+            {play && watching && (
+                <div className="fixed z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )
