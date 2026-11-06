@@ -547,7 +547,11 @@ const PILOTS = [
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
-if (!run.length) { console.error(`unknown --only "${ONLY}"`); process.exit(1) }
+if (!run.length && ONLY !== 'phone' && ONLY !== null) {
+    // --only also names phone-only routes (the registry drives that list)
+    const routes = readFileSync('src/config/games.js', 'utf8').match(/path: '([^']+)'/g) || []
+    if (!routes.some((r) => r.includes(`'/${ONLY}'`))) { console.error(`unknown --only "${ONLY}"`); process.exit(1) }
+}
 
 await requireDevServer(`${BASE}/`)
 const rep = new Report(`WATCH key (${run.map((p) => p.id).join(', ')})`)
@@ -684,5 +688,76 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         if (readFileSync(f, 'utf8').includes('WATCHING — THE PROVEN ROUTE')) stray.push(f)
     }
     rep.check('every pilot renders the shared WatchToast (no per-game banner copies)', stray.length === 0, stray.join(', '))
+}
+
+// ---- #1667 phone section — the pill, driven by a real TOUCH at 390x844 ----
+// The desktop pilots above prove the keyboard door; this proves the phone door:
+// every shipped watch title renders its pill on-screen (inside the viewport,
+// clear of the PAUSE chip — the #1653 inset law verified with live pixels,
+// not just the parse), and one finger tap seats the watcher and releases it.
+// `--phone` runs ONLY this section (that's what the soak-friendly slice is).
+const PHONE = process.argv.includes('--phone') || ONLY === 'phone'
+const PHONE_TITLES = (() => {
+    // same chunk-split parse as the batch-4 registry gates: entries start at path:
+    const src = readFileSync('src/config/games.js', 'utf8')
+    return src.split(/path: '/).slice(1)
+        .map((chunk) => [chunk.match(/^([^']+)'/)[1], chunk.split('\n  },')[0]])
+        .filter(([, body]) => body.includes('WATCH_HELP'))
+        .map(([p]) => p)
+})()
+if (PHONE) {
+    const MINDIM = 30 // shipped pill is 64x34; #1666 will raise it to 44 — the floor catches a shrink regression
+    const titles = (ONLY && ONLY !== 'phone') ? PHONE_TITLES.filter((t) => t === `/${ONLY}`) : PHONE_TITLES
+    // #1575 lesson: a parse that silently finds nothing gates nothing.
+    rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 33,
+        `${PHONE_TITLES.length} titles parsed`)
+    const browser = await launch()
+    console.log(`\n— phone 390x844 (boot ${browser.__bootMode || 'chrome'}), ${titles.length} watch titles`)
+    for (const p of titles) {
+        const id = p.replace(/^\//, '')
+        const hook = (PILOTS.find((x) => x.url === `${BASE}/${id}`) || {}).hook
+        if (!hook) { rep.check(`phone ${id}: hook known`, false, 'no watch pilot maps this route — PILOTS and the registry drifted'); continue }
+        let page = null
+        for (let attempt = 0; attempt < 2 && !page; attempt++) {
+            try {
+                page = await browser.newPage({
+                    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true,
+                })
+                page.setDefaultTimeout(45000)
+                await page.goto(`${BASE}/${id}`, { waitUntil: 'load' })
+                await page.waitForFunction((h) => !!window[h], hook, { timeout: 25000 })
+            } catch {
+                if (page) { await page.close().catch(() => {}); page = null }
+                if (attempt === 1) rep.check(`phone ${id}: page mounted at 390x844`, false, 'DEV hook never appeared')
+            }
+        }
+        if (!page) continue
+        try {
+            const pill = page.locator('[data-watch-toggle="1"]').first()
+            await pill.waitFor({ state: 'visible', timeout: 8000 })
+            const box = await pill.boundingBox()
+            rep.check(`phone ${id}: pill on-screen at 390x844`,
+                box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 390 && box.y + box.height <= 844,
+                box && `(${box.x.toFixed(0)},${box.y.toFixed(0)} ${box.width.toFixed(0)}x${box.height.toFixed(0)})`)
+            rep.check(`phone ${id}: pill >= ${MINDIM}px tall`, box && box.height >= MINDIM, box && `${box.height.toFixed(0)}px`)
+            const pause = page.locator('text=/^PAUSE$/').first()
+            if (await pause.count()) {
+                const pb = await pause.boundingBox()
+                const clear = !pb || pb.y + pb.height <= box.y + 2 || box.y + box.height <= pb.y + 2 || pb.x + pb.width <= box.x || box.x + box.width <= pb.x
+                rep.check(`phone ${id}: pill clear of PAUSE (#1653 insets law, live)`, clear, pb && `pause(${pb.x.toFixed(0)},${pb.y.toFixed(0)} ${pb.width.toFixed(0)}x${pb.height.toFixed(0)}) vs pill(${box.x.toFixed(0)},${box.y.toFixed(0)})`)
+            }
+            await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2)
+            await page.waitForTimeout(900)
+            rep.check(`phone ${id}: TAP seats the watcher`, await page.evaluate((h) => window[h].watching(), hook))
+            const nb = await pill.boundingBox()
+            await page.touchscreen.tap(nb.x + nb.width / 2, nb.y + nb.height / 2)
+            await page.waitForTimeout(400)
+            rep.check(`phone ${id}: TAP again releases it`, !(await page.evaluate((h) => window[h].watching(), hook)))
+        } catch (e) {
+            rep.check(`phone ${id}: pill driven without page error`, false, e.message)
+        }
+        await page.close().catch(() => {})
+    }
+    await browser.close().catch(() => {})
 }
 rep.exit()
