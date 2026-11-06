@@ -475,3 +475,16 @@ mirroring clouds or seating land — each turns the suite red.
     where the sky is clear, never below floor·(1−depth)), per-spot light,
     seats-under-the-waterline, tint identity and the scene wiring; 13 new
     mutants all die (186 total).
+
+## WATCH key (#1624)
+
+Press **Y** in play (or tap ▶ WATCH): the island plays itself on its own
+`solveScript` route. `watchResume(st)` (state.js) walks the proven script from
+the seed's fresh state and finds the first prefix junction whose canonical
+state equals yours — replaying the suffix from an identical state re-enacts
+exactly the proven route, from where you stand. Real dispatches, real pacing
+(moves get their fade, links their ticks). Any key, pad press or tap takes the
+reins back. A position with no junction — you wandered off the proven line —
+reports **no guide yet**; never a fake demo. Node gates in `mystcheck` (#1624);
+the browser leg (dock resume, takeover, no-guide honesty) lives in
+`npm run watchcheck` — needs `npm run dev`.

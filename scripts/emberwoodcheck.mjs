@@ -8,7 +8,7 @@
 import { SCREENS, TS, SW, SH, tileAt, isSolidTile } from '../src/games/Emberwood/world.js'
 import { createSim, stepSim, simState, hashState, spawnRoom, saveState, loadState } from '../src/games/Emberwood/sim.js'
 import { proveGame, tilePath } from '../src/games/Emberwood/solver.js'
-import { attractBot } from '../src/games/Emberwood/bot.js'
+import { attractBot, watchSnapshot, watchRestore } from '../src/games/Emberwood/bot.js'
 import { WIND, SHELF_DECOR } from '../src/games/Emberwood/render.js'
 import { MUSIC } from '../src/utils/AudioController.js'
 import { MUSIC_STEP, battleHeat, musicStepFor, musicBedFor } from '../src/games/Emberwood/art.js'
@@ -1628,6 +1628,25 @@ if (!SKIP_BROWSER) {
     }
 } else {
     console.log('(Chrome leg skipped: EMBERWOOD_NO_BROWSER=1)')
+}
+
+// #1624 WATCH kit policy: the guide is attractBot (it lends the demo kit to
+// run the proven route); watchSnapshot/watchRestore hand your items, embers
+// and hearts back exactly as they were when you take over — while the world
+// progress the watcher made (doors opened, cracks blown) stays put.
+{
+    const sim = createSim(11)
+    for (let i = 0; i < 30; i++) stepSim(sim, { lx: 0, ly: 0 })
+    const snap = watchSnapshot(sim)
+    const snapItems = JSON.stringify(snap.items)
+    const freshFlags = JSON.stringify(createSim(11).flags)
+    for (let i = 0; i < 1200; i++) stepSim(sim, attractBot(sim))
+    ok(JSON.stringify(sim.items) !== snapItems, '#1624 the guide borrows the demo kit while it drives')
+    watchRestore(sim, snap)
+    ok(JSON.stringify(sim.items) === snapItems && sim.score === snap.score &&
+        sim.hero.hp === snap.hp && sim.hero.max === snap.max,
+        '#1624 takeover hands the kit, embers and hearts back whole')
+    ok(JSON.stringify(sim.flags) !== freshFlags, '#1624 world progress made while watching survives the restore')
 }
 
 console.log(`\nemberwoodcheck: ${pass} pass, ${fail} fail${SKIP_BROWSER ? '' : `  [node ${nodeResult.pass}/${nodeResult.fail ? nodeResult.fail : 0}, chrome ${chromePass}/${chromeFail}]`}`)

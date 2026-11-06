@@ -1,163 +1,139 @@
-// watchcheck — proves scripts/watch.sh keeps every lane pane alive (#1259).
-//   npm run watchcheck              # the gates
-//   npm run watchcheck -- --mutate # proof the gates can fail (neuter the respawn)
+// watchcheck — #1624 WATCH key, driven for real in Chrome.
+// For each pilot (SSX, Emberwood, MYST): press Y and prove the game plays
+// itself on its proven route (sim state advances with nobody touching it),
+// then press an ordinary input and prove the player takes over immediately.
+// Needs the dev server (DEV hooks are DEV-only):  npm run dev -- --port <p>
 //
-// It builds the real layout into a sandbox tmux session (FORGE_WATCH_SESSION,
-// per-session /tmp/forge/watch/<session>/ dir, so the live `forge` dashboard
-// is never touched), then proves three things:
-//   A. boot    — 11 panes land (6 left-column lanes incl. BUILDER·B (#1258),
-//                4 LIVE (#1356), RETRO), remain-on-exit is on, the supervisor
-//                runs, and no pane command line contains a lane pattern (the
-//                2026-10-12 self-match rule). Every LIVE pane must share its
-//                own lane's row — the #1356 bug was QA·STUDIO's live pane
-//                targeting index 0.4 after live-builder's split had shifted
-//                every index by one, landing it beside QA·MBP.
-//   B. rules   — SIGKILL a lane pane: it is back within one refresh (8 s) and
-//                pane.log says why; a pane squeezed to 2 rows survives a kill
-//                too; garbage from an oMLX-shaped feed cannot kill a pane loop.
-//   C. can fail — --mutate copies watch.sh, comments out the respawn line,
-//                rebuilds the sandbox and asserts the killed pane STAYS dead.
-// Headless: `tmux attach` failing is the expected way watch.sh ends here.
+//   npm run watchcheck            # all three pilots
+//   npm run watchcheck -- --only ssx
+import { launch, requireDevServer, Report } from './lib/harness.mjs'
 
-import { spawnSync, spawn, execFileSync } from 'node:child_process'
-import { readFileSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import http from 'node:http'
+const BASE = process.env.WATCH_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
+const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').split('=')[1]
+  || (process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null)
 
-const SESSION = 'watchcheck'
-const W = `/tmp/forge/watch/${SESSION}`
-let SRC = 'scripts/watch.sh'
-const MUTATE = process.argv.includes('--mutate')
-// The dashboard lives on the Studio (zsh + jq + tunnels). GitHub runners have
-// no zsh — there the gates are meaningless, so skip honest instead of red.
-if (spawnSync('zsh', ['--version'], { encoding: 'utf8' }).status !== 0) {
-    console.log('watchcheck: SKIP — no zsh here (the watch dashboard runs on the Studio)')
-    process.exit(0)
+const key = (page, code) => page.keyboard.press(code)
+
+// openGame without the exit() — a first visit can also fail on a Vite reload,
+// and this script wants to retry and report, not die.
+async function openGameNoExit(browser, pilot) {
+    const page = await browser.newPage({ viewport: { width: 900, height: 760 }, deviceScaleFactor: 2 })
+    page.setDefaultTimeout(60000)
+    page.on('pageerror', e => console.log('[pageerror]', e.message))
+    await page.goto(pilot.url, { waitUntil: 'load' })
+    await page.waitForFunction((h) => !!window[h], pilot.hook, { timeout: 25000 })
+    return page
 }
-if (MUTATE) {
-    // neuter the supervisor's respawn call in a copy: the killed pane must
-    // then stay dead — proof the gates above actually depend on that line.
-    const src = readFileSync(SRC, 'utf8')
-    const mut = src.replace('tmux respawn-pane -k -t "$id" "zsh \'$script\'" 2>>"$log"', '# MUTANT: no respawn')
-    if (mut === src) { console.error('MUTANT ANCHOR NOT FOUND — watch.sh changed shape'); process.exit(2) }
-    SRC = '/tmp/forge/watch/mutated-watch.sh'
-    writeFileSync(SRC, mut)
-}
-let pass = 0, fail = 0
-const ok = (cond, what) => { if (cond) { pass++; console.log(`  ok   ${what}`) } else { fail++; console.log(`  FAIL ${what}`) } }
-const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
-const tmux = (...args) => { try { return execFileSync('tmux', args, { encoding: 'utf8' }).trim() } catch { return '' } }
-const runWatch = (script = SRC, extra = []) =>
-    spawnSync('zsh', [script, '--live', ...extra], { env: { ...process.env, FORGE_WATCH_SESSION: SESSION }, encoding: 'utf8' })
-const cleanup = () => {
-    try { execFileSync('tmux', ['kill-session', '-t', SESSION], { stdio: 'ignore' }) } catch { /* already gone */ }
-    spawnSync('pkill', ['-f', `${W}/supervise.zsh`])
-    rmSync(W, { recursive: true, force: true })
-}
-const tsv = () => readFileSync(join(W, 'panes.tsv'), 'utf8').trim().split('\n')
-    .map(l => l.split('\t')).filter(r => r.length >= 3).map(([id, name, script]) => ({ id, name, script }))
-const panePid = id => Number(tmux('display', '-p', '-t', id, '#{pane_pid}'))
-const paneDead = id => tmux('display', '-p', '-t', id, '#{pane_dead}')
+const PILOTS = [
+    {
+        id: 'ssx', url: `${BASE}/ssx`, hook: '__ssxTest',
+        async run(page, rep) {
+            await key(page, 'Space')                       // attract -> race (count)
+            await page.waitForTimeout(500)
+            await key(page, 'KeyY')
+            rep.check('SSX: Y starts the watcher', await page.evaluate(() => window.__ssxTest.watching()))
+            await page.waitForTimeout(7000)               // count + some downhill
+            const s1 = await page.evaluate(() => window.__ssxTest.probe())
+            await page.waitForTimeout(1500)
+            const s2 = await page.evaluate(() => window.__ssxTest.probe())
+            rep.check('SSX: the rider runs the line untouched', s1.tick < s2.tick && s2.p.s > s1.p.s,
+                `s ${s1.p.s.toFixed(0)} -> ${s2.p.s.toFixed(0)} @v ${s2.p.v.toFixed(1)}`)
+            rep.check('SSX: still watching mid-hill', await page.evaluate(() => window.__ssxTest.watching()))
+            await page.keyboard.down('ArrowLeft')          // the player takes over
+            rep.check('SSX: steer key takes over', !(await page.evaluate(() => window.__ssxTest.watching())))
+            await page.keyboard.up('ArrowLeft')
+        },
+    },
+    {
+        id: 'emberwood', url: `${BASE}/emberwood`, hook: '__emberwoodTest',
+        async run(page, rep) {
+            await key(page, 'Space')
+            await page.waitForTimeout(600)
+            const before = await page.evaluate(() => window.__emberwoodTest.state())
+            const hero0 = await page.evaluate(() => window.__emberwoodTest.heroPos())
+            await key(page, 'KeyY')
+            rep.check('EMBERWOOD: Y starts the guide', await page.evaluate(() => window.__emberwoodTest.watching()))
+            await page.waitForTimeout(4000)
+            const mid = await page.evaluate(() => window.__emberwoodTest.heroPos())
+            rep.check('EMBERWOOD: the prover walks without input',
+                Math.hypot(mid.x - hero0.x, mid.y - hero0.y) > 6,
+                `moved ${Math.hypot(mid.x - hero0.x, mid.y - hero0.y).toFixed(0)}px`)
+            await page.keyboard.down('ArrowLeft')
+            rep.check('EMBERWOOD: arrow key takes over', !(await page.evaluate(() => window.__emberwoodTest.watching())))
+            await page.keyboard.up('ArrowLeft')
+            const after = await page.evaluate(() => window.__emberwoodTest.state())
+            // the kit policy: watchSnapshot/watchRestore — your items and embers
+            // are exactly what they were; the guide's loan is handed back whole.
+            const kitSame = JSON.stringify(before.items) === JSON.stringify(after.items) && before.score === after.score
+            rep.check('EMBERWOOD: the demo kit is handed back on takeover', kitSame,
+                `embers ${before.score} -> ${after.score}`)
+        },
+    },
+    {
+        id: 'myst', url: `${BASE}/myst`, hook: '__mystTest',
+        async run(page, rep) {
+            await key(page, 'Space')                       // attract -> dock
+            await page.waitForTimeout(600)
+            await key(page, 'KeyY')
+            rep.check('MYST: Y starts the watcher', await page.evaluate(() => window.__mystTest.watching()))
+            await page.waitForTimeout(500)
+            const len1 = await page.evaluate(() => window.__mystTest.watchLen())
+            const full = await page.evaluate(() => window.__mystTest.script().length)
+            rep.check('MYST: the route resumed from the dock at full length', len1 >= full - 8 && len1 <= full,
+                `suffix ${len1} of ${full} (2-3 moves already run at read time)`)
+            await page.waitForTimeout(4000)
+            const p = await page.evaluate(() => window.__mystTest.probe())
+            const len2 = await page.evaluate(() => window.__mystTest.watchLen())
+            rep.check('MYST: the island moves on its own', p.node !== 'dock' && len2 < len1,
+                `node ${p.node}, route ${len1} -> ${len2}`)
+            if (p.node !== 'dock') await page.screenshot({ path: '/tmp/forge/watch-myst.png' }) // PR evidence: mid-watch
+            await page.keyboard.down('ArrowLeft')
+            rep.check('MYST: turn key takes over', !(await page.evaluate(() => window.__mystTest.watching())))
+            await page.keyboard.up('ArrowLeft')
+            // honesty clause: parked off the proven line, the watcher declines.
+            // goto('selGate') puts the dock-fresh player at a route node whose
+            // route state has many flags — no junction can match.
+            await page.evaluate(() => window.__mystTest.goto('selGate'))
+            await page.waitForTimeout(300)
+            await key(page, 'KeyY')
+            await page.waitForTimeout(1200)
+            const off = await page.evaluate(() => ({ w: window.__mystTest.watching(), len: window.__mystTest.watchLen() }))
+            rep.check('MYST: off the proven line says no guide (watcher never starts)', !off.w && off.len === 0)
+        },
+    },
+]
 
-// wait until the pane at `id` is alive again with a fresh pid; true if that
-// happened within `budget` ms
-function waitRespawn(id, oldPid, budget = 8000) {
-    const t0 = Date.now()
-    while (Date.now() - t0 < budget) {
-        const pid = panePid(id)
-        if (paneDead(id) === '0' && pid && pid !== oldPid) return true
-        sleep(500)
+const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
+if (!run.length) { console.error(`unknown --only "${ONLY}"`); process.exit(1) }
+
+await requireDevServer(`${BASE}/`)
+const rep = new Report(`WATCH key (${run.map((p) => p.id).join(', ')})`)
+console.log(`WATCH key — ${run.length} pilot(s) against ${BASE}`)
+for (const pilot of run) {
+    console.log(`\n— ${pilot.id}`)
+    // ONE browser per pilot: on the #1622 shell+sp boot mode (--single-process,
+    // what this no-GUI box needs) closing a heavy WebGL page takes the whole
+    // process with it, and the next pilot's page dies with it.
+    const browser = await launch()
+    console.log(`  boot ${browser.__bootMode || 'chrome'}`)
+    let page = null
+    // Vite may full-reload once on first visit (dep re-optimization) and kill
+    // the hook wait — retry once, then it's a real miss.
+    for (let attempt = 0; attempt < 2 && !page; attempt++) {
+        try {
+            page = await openGameNoExit(browser, pilot)
+        } catch {
+            if (attempt === 1) rep.check(`${pilot.id}: DEV hook present`, false, `window.${pilot.hook} missing`)
+        }
     }
-    return false
+    if (!page) { await browser.close().catch(() => {}); continue }
+    try {
+        await pilot.run(page, rep)
+    } catch (e) {
+        rep.check(`${pilot.id}: drove without page error`, false, e.message)
+    }
+    await page.close().catch(() => {})
+    await browser.close().catch(() => {})
 }
-
-cleanup()
-sleep(300)
-
-// ── A. boot ────────────────────────────────────────────────────────────────
-console.log('watchcheck (#1259) — the watch dashboard never loses a pane')
-runWatch()
-sleep(1500)
-const panes = tmux('list-panes', '-t', `${SESSION}:0`, '-F', '#{pane_id}').split('\n').filter(Boolean)
-ok(panes.length === 11, `boot: ${panes.length}/11 panes (${MUTATE ? 'mutant copy' : 'watch.sh'})`)
-const names = tsv().map(p => p.name)
-ok(names.includes('BUILDER·B'), 'boot: panes follow #1258 — the second builder slot is there')
-ok(names.includes('WARDEN') && names.includes('RETRO'), 'boot: WARDEN and RETRO recorded')
-ok(tmux('show-options', '-t', SESSION, 'remain-on-exit').includes('on'), 'boot: remain-on-exit is on')
-const supOut = spawnSync('pgrep', ['-f', `${W}/supervise.zsh`], { encoding: 'utf8' })
-ok(supOut.stdout.trim().length > 0, 'boot: the supervisor process is running')
-const cmdLines = tmux('list-panes', '-t', SESSION, '-a', '-F', '#{pane_start_command}')
-    + tmux('display', '-p', '-t', `${SESSION}:0.0`, '#{pane_current_command}')
-ok(!cmdLines.includes('THE FORGE'), 'boot: no lane pattern in any pane command line (2026-10-12 rule)')
-
-// ── A2. rows (#1356) ───────────────────────────────────────────────────────
-// Each LIVE pane must open BESIDE its own lane, sharing that lane's row.
-// tmux inserts a split pane right after its target, so an index target that
-// ignores earlier insertions names the wrong row — the shipped #1356 bug.
-// One geometry snapshot so a mid-check warden resize cannot shift one pane
-// between the two reads.
-const byName = Object.fromEntries(tsv().map(p => [p.name, p.id]))
-const geom = {}
-for (const l of tmux('list-panes', '-t', `${SESSION}:0`, '-F', '#{pane_id}|#{pane_top}|#{pane_left}').split('\n').filter(Boolean)) {
-    const [id, top, left] = l.split('|')
-    geom[id] = { top: Number(top), left: Number(left) }
-}
-for (const [live, lane] of [
-    ['LIVE-BUILDER', 'BUILDER·A'], ['LIVE-BUILDER·B', 'BUILDER·B'],
-    ['LIVE-QA·MINI', 'QA·MINI'], ['LIVE-STUDIO', 'QA·STUDIO'],
-]) {
-    const L = geom[byName[live]], P = geom[byName[lane]]
-    ok(L && P && L.top === P.top && L.left > P.left,
-        `#1356: ${live} opens beside ${lane}'s row (same top, further right)`)
-}
-// the warden's resize math wants exactly the six lanes at x=0 — no LIVE pane
-// may land in the left column.
-ok(Object.values(geom).filter(g => g.left === 0).length === 6,
-    '#1356: left column holds exactly the 6 lane panes (LIVE panes sit right of x=0)')
-
-// ── B. rules ───────────────────────────────────────────────────────────────
-const B = tsv().find(p => p.name === 'BUILDER·B')
-let oldPid = panePid(B.id)
-process.kill(oldPid, 'SIGKILL')
-const revived = waitRespawn(B.id, oldPid)
-if (MUTATE) {
-    // the mutant neuters respawn: the pane must STAY dead — that the rules
-    // notice is the whole point of the mutant run.
-    ok(!revived, 'mutant dies: with the respawn line neutered a killed pane stays dead')
-    ok(readFileSync(join(W, 'pane.log'), 'utf8').includes('respawning'), 'mutant dies: the death is still logged (only revival is gone)')
-} else {
-    ok(revived, 'a SIGKILLed lane pane is back within one refresh (<= 8 s)')
-    const log = readFileSync(join(W, 'pane.log'), 'utf8')
-    ok(/BUILDER·B .*respawning/.test(log), 'pane.log says which pane ended and that it respawned')
-
-    // squeezed pane: 2 rows, then a kill — the loop must return, not vanish
-    tmux('resize-pane', '-t', B.id, '-y', '2')
-    oldPid = panePid(B.id)
-    process.kill(oldPid, 'SIGTERM')
-    ok(waitRespawn(B.id, oldPid), 'a pane squeezed to 2 rows survives a kill and comes back')
-
-    // garbage feed: an oMLX-shaped server answering junk must not kill a loop.
-    const srv = http.createServer((req, res) => {
-        res.writeHead(req.url === '/v1/models' ? 200 : 200, { 'content-type': 'application/json' })
-        res.end(req.url === '/admin/api/activity'
-            ? '{"active_models":{"models":[{"generating":[{"tokens_per_second":null,"prompt_tokens":"NaN"},{"prompt_tokens":-9}]}]}} junk'
-            : 'not-json{{')
-    })
-    await new Promise(r => srv.listen(0, '127.0.0.1', r))
-    const dir = mkdtempSync(join(tmpdir(), 'watchfeed-'))
-    const feed = join(dir, 'feed.zsh')
-    writeFileSync(feed, `L='FEEDTEST'\nPORT=${srv.address().port}\nPROV=none\nP1='impossible pattern '\nP2='xyzzy'\n` + readFileSync(join(W, 'body-lane.zsh'), 'utf8'))
-    const feedProc = spawn('zsh', [feed], { stdio: 'ignore' }) // stdio ignore: it lives on its own
-    sleep(7000)
-    let alive = true
-    try { process.kill(feedProc.pid, 0) } catch { alive = false }
-    try { process.kill(feedProc.pid, 'SIGKILL') } catch { /* already gone */ }
-    srv.close(); rmSync(dir, { recursive: true, force: true })
-    ok(alive, 'garbage from an oMLX-shaped feed does not kill the redraw loop (7 s soak)')
-}
-
-cleanup()
-console.log(`\nwatchcheck: ${pass + fail} gates, ${fail} failure${fail === 1 ? '' : 's'}${MUTATE ? ' (mutant run)' : ''}`)
-process.exit(fail ? 1 : 0)
+rep.exit()
