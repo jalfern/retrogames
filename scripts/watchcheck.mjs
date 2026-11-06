@@ -266,6 +266,110 @@ const PILOTS = [
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
     })),
+    // #1637 batch 4 — the IF/physics remainder. Drivers here are the same ones
+    // robokitcheck/floorbosscheck/ironringcheck/rallycheck grade, and all four are
+    // closed-loop (pad out of live state), so seat/takeover/re-seat semantics hold
+    // verbatim. RobotLab's route is a waypoint script proven from a fresh bench,
+    // so its watch seats clean only — the takeover below never banks a goal, so
+    // the mid-run re-seat is honest by construction.
+    ...[
+        {
+            id: 'robot-lab', hook: '__robotTest',
+            // Space starts a run; the seat needs the fresh bench (clean junction).
+            startKeys: ['Space'], seatWait: 700,
+            advanced: (a, b) => b.tick > a.tick && (
+                Math.max(Math.abs(b.hand[0] - a.hand[0]), Math.abs(b.hand[1] - a.hand[1]), Math.abs(b.hand[2] - a.hand[2])) > 0.02
+                || b.score > a.score || Object.values(b.goals).some(Boolean)),
+            note: (a, b) => `hand ${(a.hand[1] ?? 0).toFixed(2)} -> ${(b.hand[1] ?? 0).toFixed(2)}, goals ${Object.entries(b.goals).filter(([, v]) => v).map(([k]) => k).join('+') || 'none'}, score ${b.score}`,
+        },
+        {
+            id: 'floor-boss', hook: '__floorbossTest',
+            // score/stows are prover-only — an idle shift makes nothing
+            startKeys: ['Space'], seatWait: 700, advanceWait: 8000,
+            advanced: (a, b) => b.score > a.score || b.shipped > a.shipped || b.stows > a.stows,
+            note: (a, b) => `score ${a.score} -> ${b.score}, stows ${a.stows} -> ${b.stows}, shipped ${a.shipped} -> ${b.shipped}`,
+        },
+        {
+            id: 'iron-ring', hook: '__ironRingTest',
+            // Digit1 inserts the coin (attract -> select), Space picks (cpu ladder)
+            startKeys: ['Digit1', 'Space'], seatWait: 800, advanceWait: 6000,
+            advanced: (a, b) => b.tick > a.tick && (Math.abs(b.x[0] - a.x[0]) > 0.08 || b.hp[1] < a.hp[1] || b.wins[0] > a.wins[0]),
+            note: (a, b) => `p1 x ${a.x[0]} -> ${b.x[0]}, p2 hp ${a.hp[1]} -> ${b.hp[1]}, rounds ${b.wins[0]}`,
+            resumeWait: 4500,
+        },
+        {
+            id: 'rally-co-driver', hook: '__rallyTest',
+            // Space kicks the race; the 3-2-1-GO lights hold physics ~4 s — seat
+            // after GO, then the pace brain's throttle cannot come from idle keys.
+            startKeys: ['Space'], seatWait: 4600, advanceWait: 6000, resumeWait: 4500,
+            advanced: (a, b) => b.tick > a.tick && b.speed > 0.3,
+            note: (a, b) => `v ${a.speed.toFixed(1)} -> ${b.speed.toFixed(1)}, lap ${b.lap + 1}/2, progress ${(b.progress * 100).toFixed(0)}%`,
+            takeover: 'ArrowLeft',
+        },
+    ].map((g) => ({
+        id: g.id, url: `${BASE}/${g.id}`, hook: g.hook,
+        async run(page, rep) {
+            const H = g.hook
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            for (const k of g.startKeys || ['Space']) { await key(page, k); await page.waitForTimeout(250) }
+            await page.waitForTimeout(g.seatWait || 600)
+            await key(page, 'KeyY')
+            rep.check(`${g.id}: Y starts the watcher`, await watching())
+            const a = await probe()
+            await page.waitForTimeout(g.advanceWait || 5000)
+            const b = await probe()
+            rep.check(`${g.id}: the route advances untouched`, g.advanced(a, b), g.note(a, b))
+            rep.check(`${g.id}: still watching mid-route`, await watching())
+            await page.keyboard.down(g.takeover || 'ArrowLeft')
+            rep.check(`${g.id}: steer key takes over`, !(await watching()))
+            await page.keyboard.up(g.takeover || 'ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: watch from HERE
+            rep.check(`${g.id}: Y re-seats the prover mid-run`, await watching())
+            const c = await probe()
+            await page.waitForTimeout(g.resumeWait || 3500)
+            const d = await probe()
+            rep.check(`${g.id}: resumes from where the player left it`, g.advanced(c, d), g.note(c, d))
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
+        },
+    })),
+    {
+        // ZORK I — commands, not pads. The Y key mounts the same ZorkExplorer +
+        // AgentLoop zorkcheck drives, through the same send the form uses (one
+        // driver; the loop owns its clock). Progress is graded on exchanges: an
+        // idle player at a prompt types nothing.
+        id: 'zork', url: `${BASE}/zork`, hook: '__zorkTest',
+        async run(page, rep) {
+            await page.waitForFunction(() => window.__zorkTest && window.__zorkTest.ready(), null, { timeout: 30000 })
+            // the machine needs its first prompt before a command can land
+            await page.waitForFunction(() => window.__zorkTest.state().inputEnabled, null, { timeout: 30000 })
+            const watching = () => page.evaluate(() => window.__zorkTest.watching())
+            const probe = () => page.evaluate(() => window.__zorkTest.probe())
+            await key(page, 'KeyY')                       // prompt focused but empty -> the guide key
+            rep.check('zork: Y seats the explorer brain', await watching())
+            rep.check('zork: handoff blip at start',
+                (await page.evaluate(() => window.__zorkTest.watchSfx())).at(-1) === 'start')
+            const a = await probe()
+            await page.waitForTimeout(8000)
+            const b = await probe()
+            rep.check('zork: the brain plays untouched (commands not pads)', b.exchanges > a.exchanges,
+                `moves ${a.exchanges} -> ${b.exchanges}, room ${b.room || '?'}, lines ${b.lines}`)
+            await page.keyboard.press('ArrowLeft')
+            rep.check('zork: any key takes the keyboard back', !(await watching()))
+            rep.check('zork: handoff blip on takeover',
+                (await page.evaluate(() => window.__zorkTest.watchSfx())).at(-1) === 'stop')
+            await key(page, 'KeyY')                       // re-seat from wherever the player stopped
+            rep.check('zork: Y re-seats the brain mid-run', await watching())
+            const c = await probe()
+            await page.waitForTimeout(6000)
+            const d = await probe()
+            rep.check('zork: resumes from where the player left it', d.exchanges > c.exchanges,
+                `moves ${c.exchanges} -> ${d.exchanges}, room ${d.room || '?'}`)
+            await key(page, 'KeyY')
+            rep.check('zork: Y again releases the brain', !(await watching()))
+        },
+    },
     {
         // SIMCITY-MIN — the honest junction (Paperboy semantics). The proven plan
         // is a fixed script; Y seats only while the live city still matches the
@@ -492,5 +596,40 @@ for (const [name, f] of Object.entries(PILOT_SRC)) {
         /from '\.\.\/\.\.\/utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
     rep.check(`${name}: attract screen shows the WATCH hint`,
         /screen === 'attract'[\s\S]{0,1600}?Y — [Ww][Aa][Tt][Cc][Hh] THE PROVEN ROUTE/i.test(src))
+}
+// #1637 batch-4 source pins — the honesty rules that don't need Chrome:
+const B4_SRC = {
+    'ZORK': 'src/games/Zork/index.jsx',
+    'ROBOTLAB': 'src/games/RobotLab/index.jsx',
+    'FLOORBOSS': 'src/games/FloorBoss/index.jsx',
+    'IRONRING': 'src/games/IronRing/index.jsx',
+    'RALLY': 'src/games/RallyCoDriver/index.jsx',
+}
+for (const [name, f] of Object.entries(B4_SRC)) {
+    const src = readFileSync(f, 'utf8')
+    rep.check(`${name}: imports the shared blips and logs`,
+        /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
+}
+{
+    const zorkSrc = readFileSync(B4_SRC.ZORK, 'utf8')
+    rep.check('ZORK: the watch gate is ZORK I only (the sequels carry no proven route)',
+        /const canWatch = route === '\/zork'/.test(zorkSrc) && /if \(!canWatch \|\| aiOn\) return/.test(zorkSrc))
+    const rlSrc = readFileSync(B4_SRC.ROBOTLAB, 'utf8')
+    rep.check('ROBOTLAB: Y seats at a clean bench only, and declines with the shared no-guide copy',
+        /const clean = !st\.done && !st\.timeout && !st\.held && !Object\.values\(st\.goals\)\.some\(Boolean\)/.test(rlSrc)
+        && /NO_GUIDE/.test(rlSrc))
+    const fbSrc = readFileSync(B4_SRC.FLOORBOSS, 'utf8')
+    rep.check('FLOORBOSS: the watching branch feeds the autopilot pad into the episode tick (no human-shaped lie)',
+        /const pad = watchingRef\.current && !gs\.end \? ap\(gs\) : livePad\(\)[\s\S]{0,80}recordTick\(pad\)/.test(fbSrc))
+    const rlySrc = readFileSync(B4_SRC.RALLY, 'utf8')
+    rep.check('RALLY: online never seats the watcher (the wire owns the seats)',
+        /if \(code === WATCH_KEY && down\) \{\s*if \(net\.active\) return/.test(rlySrc))
+    // registry copy: the five new titles carry the WATCH line; the unproven two don't.
+    const reg = readFileSync('src/config/games.js', 'utf8')
+    const entryHas = (p, s) => { const m = reg.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    for (const p of ['/zork', '/robot-lab', '/floor-boss', '/iron-ring', '/rally-co-driver'])
+        rep.check(`registry ${p}: controls carry the WATCH line`, entryHas(p, 'WATCH_HELP'))
+    for (const p of ['/zork2', '/zork3'])
+        rep.check(`registry ${p}: no WATCH line (the brain is proven on Zork I only)`, !entryHas(p, 'WATCH_HELP'))
 }
 rep.exit()

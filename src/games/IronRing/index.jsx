@@ -242,7 +242,7 @@ const IronRingGame = () => {
             setSc('play')
         }
 
-        const atAttract = () => {
+        const atAttract = (toSelect = false) => {
             watchingRef.current = false; setWatching(false) // #1637 the cabinet returns to the player
             if (net.active) { setSc('select'); return }
             p2Picked = false
@@ -250,7 +250,12 @@ const IronRingGame = () => {
             credits = CREDITS_START
             quoteText = ''
             continueFrames = 0
-            setSc('attract')
+            // #1637 fix (found writing the watch pilot): an attract press inserts
+            // a credit and advances to char SELECT (the pre-#1103 design) — since
+            // #1104 unified both returns into atAttract(), offline players were
+            // pinned on attract and select was unreachable. Coming back from the
+            // champion screen still lands on attract.
+            setSc(toSelect ? 'select' : 'attract')
         }
 
         const atSelect = () => {
@@ -286,7 +291,7 @@ const IronRingGame = () => {
             if (scr === 'attract') {
                 if (e.code === 'Digit2' && !net.active) mode = 'local'
                 else if (e.code === 'Digit1') mode = 'cpu'
-                atAttract()
+                atAttract(true) // insert coin → char select (offline), see atAttract
                 return
             }
             if (scr === 'select') {
@@ -355,7 +360,7 @@ const IronRingGame = () => {
                 watchingRef.current = false; setWatching(false); playWatchStop()
                 if (gs) gs.fighters[0].def.cpu = false
             }
-            if (scr === 'attract') atAttract()
+            if (scr === 'attract') atAttract(true) // tap inserts a coin → select
             else if (scr === 'select') atSelect()
             else if (scr === 'champion') atAttract()
             else if (scr === 'continue' && credits > 0) { credits--; audioController.playTone(740, 0.12, 'square', 0.1); startFight(undefined, 'cpu') }
