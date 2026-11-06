@@ -18,7 +18,7 @@ import { makeGame, step, stateHash, CFG, ORBIT_Y, TARGET_CYCLES, W, H } from './
 import { attractFrame, DIM } from './attract.js'
 import { terrainY, WORLD_W, PAD_SLOTS, STEP } from './terrain.js'
 import { plan, decide } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { policyProbs, mulberry32, sampleAction, obsFrom, actionVector, ACTION_VECS,
     HEAT_XS, HEAT_VXS, HEAT_EPISODES } from './policy.js'
@@ -418,8 +418,8 @@ const LunarLanderGame = () => {
             if (sc === 'attract') { goPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             // #1637 WATCH: Y hands the sky to the proven pilot; any driving key takes it back.
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (ev.code === 'KeyX' || ev.code === 'KeyL') zoom = !zoom
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
@@ -461,6 +461,7 @@ const LunarLanderGame = () => {
                 replay: () => ({ on: replayOn, failed: replayFailed, idx: replayIdx, seed: replay ? replay.seed : null }),
             }
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'lunar-lander',
                 buttons: ['left', 'right', 'up', 'a', 'x'],
                 reset: (seed) => {

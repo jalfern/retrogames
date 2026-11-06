@@ -4,6 +4,7 @@
 
 import { W, CFG } from './sim.js'
 import { cycleAttract } from '../../utils/attractLines.js'
+import { WATCH_ATTRACT_HINT } from '../../utils/watch.js'
 
 export const PADDLE_TOP = CFG.paddleY
 export const HOLD = 144 // ~2.4s per message at 60fps
@@ -21,6 +22,7 @@ export function attractFrame(tick, hiScore) {
         { text: 'ARKANOID', x: W / 2, y: 76, size: 26, col: '#ff5db0', glow: 12 },
         { text: msg, x: W / 2, y: 110, size: 8, col: '#8fa3d8', glow: 0 },
         { text: 'PRESS ANY KEY TO START', x: W / 2, y: 132, size: 9, col: '#ffd23f', glow: 5, blink: true },
+        { text: WATCH_ATTRACT_HINT, x: W / 2, y: 144, size: 7, col: '#8fa3d8', glow: 0 },
         { text: `HI-SCORE ${String(hiScore).padStart(6, '0')}`, x: W / 2, y: 152, size: 8, col: '#5dc8ff', glow: 3 },
     ]
     return lines.filter((l) => !l.blink || Math.floor(tick / 24) % 2 === 0)

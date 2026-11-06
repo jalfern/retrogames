@@ -11,7 +11,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import AttractMessage from '../../components/AttractMessage'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -343,8 +343,8 @@ const SpyHunterGame = () => {
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y hands the road to the prover; any driving key takes it back.
-            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'Space') keys.f = true
@@ -360,7 +360,7 @@ const SpyHunterGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over' && performance.now() - overAtRef.current > 900) { setMode('attract'); return }
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the wheel back
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the wheel back
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -447,6 +447,7 @@ const SpyHunterGame = () => {
             })
             let prevB = false, contractSeed = 0
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'spy-hunter',
                 buttons: ['left', 'right', 'a', 'b'],
                 reset: (seed) => {
@@ -520,6 +521,7 @@ const SpyHunterGame = () => {
                     <div className="absolute inset-x-0 top-6 text-center pointer-events-none">
                         <h1 className="text-4xl font-black text-yellow-300" style={{ textShadow: '0 4px 0 #620, 0 10px 24px #000' }}>SPY HUNTER</h1>
                         <p className="text-white font-mono font-bold mt-4 animate-pulse">{PRESS}</p>
+                        <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-cyan-100/80 mt-3 px-8" messages={MESSAGES} />
                     </div>
                 </>

@@ -27,7 +27,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { W, H, CELL, ICE, ROCK, PLAT, EMPTY, CFG, makeGame, step, stateHash, cloneGame } from './sim.js'
 import { buildLevel, LEVELS } from './levels.js'
 import { plan, nextMountain } from './planner.js'
-import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const VIEW_W = W * CELL
@@ -310,7 +310,7 @@ const IceGame = () => {
             // stand — honest decline ("no guide yet") if the solver can't finish
             // from here. Any driving key takes the dwarves back.
             if (isWatchKey(e)) {
-                if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1654
                 else if (!planningRef.current) {
                     // #1650: plan() off the keypress frame — the clone+solve costs tens
                     // of ms and the pill answers with a "planning…" frame instead of a dropped one.
@@ -320,14 +320,14 @@ const IceGame = () => {
                         if (screenRef.current !== 'play' || pausedRef.current) return
                         try {
                             const r = plan(cloneGame(gs))
-                            if (r.ok && r.script.length) { watchRunRef.current = r; watchAtRef.current = 0; watchingRef.current = true; setWatching(true) }
+                            if (r.ok && r.script.length) { watchRunRef.current = r; watchAtRef.current = 0; watchingRef.current = true; setWatching(true); playWatchStart() } // #1654 the blip is honest — it fires when the route is proven
                             else say(NO_GUIDE)
                         } catch { say(NO_GUIDE) }
                     })
                 }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (P1_KEYS[e.code]) { k1[P1_KEYS[e.code]] = true; if (P1_KEYS[e.code] === 'j') k1.jEdge = true }
             if (P2_KEYS[e.code]) { k2[P2_KEYS[e.code]] = true; if (P2_KEYS[e.code] === 'j') k2.jEdge = true }
         }
@@ -359,6 +359,7 @@ const IceGame = () => {
 
         if (import.meta.env.DEV) {
             window.__iceTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => {
                     const bore = []
                     for (let y = 6; y <= 29; y++) if (gs.grid[y * W + 8] === EMPTY) bore.push(y)
@@ -508,6 +509,7 @@ const IceGame = () => {
                     <h1 className="text-4xl font-black text-sky-200 mb-5" style={{ textShadow: '0 4px 0 #123, 0 10px 24px #000' }}>ICE CLIMBER CO-OP</h1>
                     <AttractMessage className="mb-5 text-sky-100/80" messages={MESSAGES} />
                     <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

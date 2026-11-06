@@ -7,8 +7,8 @@ import { mountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { makeGame, step, cloneGame, CFG, clockText, stateHash } from './sim.js'
 import { decide } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { drawScene, VW, VH, fitAttractFont } from './art.js'
 import { LEVEL_COUNT, LEVEL_NAMES, RW } from './levels.js'
 import { SFX, trackFor, duckFor, stepFor } from './music.js'
@@ -116,6 +116,7 @@ const PrinceOfPersiaGame = () => {
         })
 
         window.__popTest = {
+            watchSfx: watchSfxLog, // #1654 the shared handoff blip log
             probe: () => ({
                 attract, status: g.status, level: g.levelIndex, room: g.room,
                 x: g.p.x, y: g.p.y, vx: g.p.vx, vy: g.p.vy, hp: g.p.hp, maxHP: g.p.maxHP,
@@ -151,10 +152,10 @@ const PrinceOfPersiaGame = () => {
             // #1637 WATCH: Y seats popcheck's own autopilot (the same decide the
             // attract demo runs); any driving key — or a tap to restart — takes over.
             if (isWatchKey(e)) {
-                if (!attract) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (!attract) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (attract) startAttract()
             if (e.code === 'Space') { keys.jump = true; e.preventDefault() }
             if (e.code === 'ArrowLeft') { keys.left = true; e.preventDefault() }
@@ -182,7 +183,7 @@ const PrinceOfPersiaGame = () => {
         const handleCanvasPointer = (e) => {
             if (pausedRef.current) return
             if (attract) { e.preventDefault(); startAttract() }
-            else if (g.status === 'win' || g.status === 'lost') { e.preventDefault(); watchingRef.current = false; setWatching(false); g = makeGame(0); endSeen = false } // #1637 a tap to restart is you choosing to drive
+            else if (g.status === 'win' || g.status === 'lost') { e.preventDefault(); if (watchingRef.current) playWatchStop(); watchingRef.current = false; setWatching(false); g = makeGame(0); endSeen = false } // #1637 a tap to restart is you choosing to drive
         }
 
         // ---- audio driven off sim events ----------------------------------------
@@ -275,7 +276,7 @@ const PrinceOfPersiaGame = () => {
                 // one message at a time, on a slim band under the HUD — never a
                 // curtain across the playfield, so the autopilot demo stays seen
                 const bandTop = 22
-                const bandH = 48
+                const bandH = 64
                 ctx.fillStyle = 'rgba(6,6,14,0.82)'
                 ctx.fillRect(0, bandTop, VW, bandH)
                 ctx.strokeStyle = 'rgba(232,208,96,0.55)'
@@ -287,6 +288,9 @@ const PrinceOfPersiaGame = () => {
                 ctx.font = '9px monospace'
                 ctx.fillStyle = '#8a8ab0'
                 ctx.fillText('AUTOPILOT DEMONSTRATION', VW / 2, bandTop + 38)
+                ctx.font = '8px monospace'
+                ctx.fillStyle = '#8a8ab0'
+                ctx.fillText(WATCH_ATTRACT_HINT, VW / 2, bandTop + 54)
             } else if (g.status === 'dying') {
                 ctx.font = 'bold 13px monospace'
                 ctx.fillStyle = '#e04040'
@@ -407,9 +411,7 @@ const PrinceOfPersiaGame = () => {
                 {paused && <PauseOverlay game={GAMES.find((game) => game.label === 'PRINCE OF PERSIA')} onResume={handleResume} />}
                 {/* #1637 WATCH — the proven pilot runs the hour; any input takes over. */}
                 {watching && (
-                    <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-300/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                        WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                    </div>
+                    <WatchToast className="z-50" />
                 )}
                 {!paused && (
                     <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

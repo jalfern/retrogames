@@ -21,6 +21,8 @@ export const INFO_MSGS = [
 ]
 
 export const PRESS = 'PRESS ANY KEY TO CHOOSE'
+import { WATCH_ATTRACT_HINT } from '../../utils/watch.js'
+
 export const DIM = 'rgba(3,3,12,0.55)'
 
 const CHAR_EM = 0.6
@@ -32,6 +34,7 @@ export function attractFrame(tick, w, h, hud = HUD, hi = 0) {
     const lines = [
         { text: msg, x: w / 2, y: h * 0.42, size: fitSize(msg, w, 10), col: '#8fa3d8', glow: 0 },
         { text: PRESS, x: w / 2, y: Math.min(h * 0.58, h - hud - 40), size: fitSize(PRESS, w, 18), col: '#e9f7ff', glow: 0, blink: true },
+        { text: WATCH_ATTRACT_HINT, x: w / 2, y: Math.min(h * 0.64, h - hud - 32), size: fitSize(WATCH_ATTRACT_HINT, w, 9), col: '#8fa3d8', glow: 0 },
         { text: `HI-SCORE ${String(hi).padStart(6, '0')}`, x: w / 2, y: Math.min(h * 0.70, h - hud - 24), size: 8, col: '#5dc8ff', glow: 0 },
     ]
     return lines.filter((l) => !l.blink || Math.floor(tick / 24) % 2 === 0)

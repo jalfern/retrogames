@@ -26,8 +26,8 @@ import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { fitSize, fitTwoCols } from './hudfit.js'
@@ -963,10 +963,10 @@ const TenDeepGame = () => {
             // #1637 WATCH: Y seats the solver (BFS to the stairs, supplies when
             // hurting); any driving key — or the pad — takes it back.
             if (isWatchKey(e)) {
-                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (gs.mode === 'town') {
                 if (gs.town.b) {
                     if (gs.town.b === 'T' && gs.town.cand) {
@@ -1043,6 +1043,7 @@ const TenDeepGame = () => {
 
         if (import.meta.env.DEV) {
             window.__deepTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     toast: toast > 0, bump: bumpFade > 0,
@@ -1264,6 +1265,7 @@ const TenDeepGame = () => {
                         <AttractMessage className="text-indigo-100/80" messages={MESSAGES} />
                     </span>
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
@@ -1279,9 +1281,7 @@ const TenDeepGame = () => {
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'TEN-DEEP')} onResume={handleResume} />}
             {/* #1637 WATCH — the solver runs the deeps; any input takes over. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-orange-400/90 border border-orange-100 text-orange-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {play && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

@@ -10,7 +10,7 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -340,10 +340,10 @@ const QBertGame = () => {
             if (pausedRef.current) return
             // #1637 WATCH: Y hands the pyramid to the prover; any driving key takes it back.
             if (isWatchKey(e)) {
-                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (code === 'ArrowUp') held.up = true
             else if (code === 'ArrowDown') held.dn = true
             else if (code === 'ArrowLeft') held.lf = true
@@ -363,7 +363,7 @@ const QBertGame = () => {
                 startPlay()
                 return
             }
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the hat back
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the hat back
         }
 
         window.addEventListener('keydown', onDown)
@@ -483,6 +483,7 @@ const QBertGame = () => {
                 ],
             })
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'qbert',
                 buttons: ['left', 'right', 'up', 'down', 'a'],
                 reset: (seed) => {
@@ -532,6 +533,7 @@ const QBertGame = () => {
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-yellow-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

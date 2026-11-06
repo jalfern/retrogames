@@ -21,7 +21,7 @@ import { SEG_LEN, ROAD_W, CAM_H, CAM_DEPTH, DRAW, SCENES } from './road.js'
 import { makeGame, step, stateHash, KMH, HIGH_TOP, LOW_TOP, W, H } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
 import { plan, decideTick } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { buildSprites, makeBackdrop } from './art.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE } from '../../utils/padState'
@@ -387,8 +387,8 @@ const OutRunGame = () => {
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             // #1637 WATCH: Y hands the road to the autopilot; any driving key takes it back.
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (ev.code === 'KeyB' || ev.code === 'ShiftLeft' || ev.code === 'ShiftRight' || ev.code === 'KeyG') gearEdge = true
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
@@ -406,6 +406,7 @@ const OutRunGame = () => {
         // --------------------------------------------------------- DEV hook ----
         if (import.meta.env.DEV) {
             window.__outrunTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 steer: STEER_PIPELINE,
                 state: () => gs,
                 hash: () => stateHash(gs),

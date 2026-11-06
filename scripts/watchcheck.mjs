@@ -581,21 +581,34 @@ for (const pilot of run) {
 // #1638 source gates — one shared voice for the handoff, discoverable copy:
 // a game that stops blipping (or ships an attract screen without the hint)
 // goes red without needing Chrome to catch the audio.
+// #1654 — the full roster: every WATCH pilot, not just the first three.
 rep.section && rep.section('source')
-const PILOT_SRC = {
-    SSX: 'src/games/SSX/index.jsx',
-    EMBERWOOD: 'src/games/Emberwood/index.jsx',
-    MYST: 'src/games/Myst/index.jsx',
-}
+const FLAGSHIP = ['SSX', 'Emberwood', 'Myst']
+const ARCADE = ['Qbert', 'Joust', 'Galaga', 'Tempest', 'DigDug', 'BubbleBobble',
+    'SpyHunter', 'Arkanoid', 'OutRun', 'LunarLander', 'Outpost', 'Polarity',
+    'MissileBattle', 'SmashTV', 'MarioKart', 'Gauntlet', 'FourHalls',
+    'PrinceOfPersia', 'CivilizationV', 'BardsTale', 'TenDeep', 'BlobBattle',
+    'SimCityMin', 'Paperboy', 'IceClimber']
 const watchSrc = readFileSync('src/utils/watch.js', 'utf8')
 rep.check('watch.js: one shared blip pair, audible (two tones each)',
     /export const playWatchStart[\s\S]*?playTone\([\s\S]*?playTone\([\s\S]*?export const playWatchStop[\s\S]*?playTone\([\s\S]*?playTone\(/.test(watchSrc))
-for (const [name, f] of Object.entries(PILOT_SRC)) {
-    const src = readFileSync(f, 'utf8')
-    rep.check(`${name}: imports the shared blips and logs`,
+rep.check('watch.js: exports the shared attract hint', /export const WATCH_ATTRACT_HINT = 'Y — WATCH THE PROVEN ROUTE'/.test(watchSrc))
+for (const g of [...FLAGSHIP, ...ARCADE]) {
+    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    rep.check(`${g}: imports the shared blips and logs`,
         /from '\.\.\/\.\.\/utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
-    rep.check(`${name}: attract screen shows the WATCH hint`,
+}
+for (const g of FLAGSHIP) {
+    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    rep.check(`${g}: attract screen shows the WATCH hint`,
         /screen === 'attract'[\s\S]{0,1600}?Y — [Ww][Aa][Tt][Cc][Hh] THE PROVEN ROUTE/i.test(src))
+}
+// #1654: the arcade family draws WATCH_ATTRACT_HINT — JSX titles in index.jsx,
+// the canvas contracts in attract.js (import + a drawn line, no orphans).
+for (const g of ARCADE) {
+    let src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    try { src += '\n' + readFileSync(`src/games/${g}/attract.js`, 'utf8') } catch { /* canvas-direct */ }
+    rep.check(`${g}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
 }
 // #1637 batch-4 source pins — the honesty rules that don't need Chrome:
 const B4_SRC = {
@@ -655,5 +668,21 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         rep.check(`registry ${p}: controls carry the WATCH line`, entryHas(p, 'WATCH_HELP'))
     for (const p of ['/zork2', '/zork3'])
         rep.check(`registry ${p}: no WATCH line (the brain is proven on Zork I only)`, !entryHas(p, 'WATCH_HELP'))
+}
+// #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
+// in four palettes had drifted back in after #1650 folded the rest — a stray
+// copy of the contract text anywhere outside the shared component goes red.
+{
+    const shared = readFileSync('src/components/WatchButton.jsx', 'utf8')
+    rep.check('WatchToast: the shared banner holds the contract copy',
+        shared.includes('WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER'))
+    const stray = []
+    for (const g of [...FLAGSHIP, ...ARCADE]) {
+        if (readFileSync(`src/games/${g}/index.jsx`, 'utf8').includes('WATCHING — THE PROVEN ROUTE')) stray.push(g)
+    }
+    for (const f of Object.values(B4_SRC)) {
+        if (readFileSync(f, 'utf8').includes('WATCHING — THE PROVEN ROUTE')) stray.push(f)
+    }
+    rep.check('every pilot renders the shared WatchToast (no per-game banner copies)', stray.length === 0, stray.join(', '))
 }
 rep.exit()

@@ -17,7 +17,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { CW, CH, HUD_H, CELL, GW, GH, EXITS, ENEMIES, WEAPONS, TOTAL_ROOMS } from './levels.js'
 import { makeGame, step, stateHash, CFG, comboColor, flickerPhase } from './sim.js'
 import { plan, decidePad, padToInp } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { makeSlot, setSlotKind, padFor } from '../../utils/slotSources'
 import { pressSlot, releaseSlot, slotActive, clearSlot, currentPad, connectedSlots } from '../../utils/onePad'
@@ -749,8 +749,8 @@ const SmashTVGame = () => {
             }
             // #1637 WATCH: Y seats the proven brain in seat 1; any seat-1 key takes it back.
             // (Seat 2 keys returned above — your partner keeps their seat.)
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space', 'KeyZ', 'KeyI', 'KeyJ', 'KeyK', 'KeyL'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
         }
@@ -808,6 +808,7 @@ const SmashTVGame = () => {
                 gameTime: () => gs.tick / 60,
             }
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'smash-tv',
                 method: 'stick',
                 players: 2,

@@ -21,8 +21,8 @@ import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/l
 import { createLockStep } from '../../utils/lockstep.js'
 import { newGame, step, pairCells, fits, ROWS, COLS, GARBAGE, FIXED_DT, POP_FRAMES, DROP_BEAT, LAND_FRAMES, stateHash, idx, winPresentation } from './sim.js'
 import { makeCpu, choosePlacement } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { CANVAS, PALETTE, orbSprite, championOrb, text, textWidth, stage, wellFrame } from './art.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, toWire, assemblePads, hostSeed } from './net.js'
 
@@ -592,11 +592,11 @@ const BlobBattleGame = () => {
             // the wire owns those pads). Any seat-1 key takes it back; in local play
             // the P2 keys (WASD + F) keep your partner seated.
             if (isWatchKey(e)) {
-                if (mode !== 'online') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (mode !== 'online') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
             if (watchingRef.current && isTakeoverKey(e)) {
-                if (!(mode === 'local' && P2[e.code])) { watchingRef.current = false; setWatching(false) }
+                if (!(mode === 'local' && P2[e.code])) { watchingRef.current = false; setWatching(false); playWatchStop() }
             }
             if (code === 'ArrowLeft') keys1.left = true
             else if (code === 'ArrowRight') keys1.right = true
@@ -702,6 +702,7 @@ const BlobBattleGame = () => {
                 ],
             })
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'blob-battle',
                 players: 2,
                 buttons: ['left', 'right', 'down', 'a', 'b'],
@@ -767,6 +768,7 @@ const BlobBattleGame = () => {
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-pink-200/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-pink-300">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
@@ -819,9 +821,7 @@ const BlobBattleGame = () => {
             <VirtualControls visible={play && !paused && !netUi} secondAction={{ label: 'DROP', code: 'KeyB' }} />
             {/* #1637 WATCH — the seeded CPU planner stacks your well; any seat-1 key takes over. */}
             {play && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-pink-400/90 border border-pink-100 text-pink-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {play && !paused && !netUi && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>

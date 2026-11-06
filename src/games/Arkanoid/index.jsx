@@ -12,7 +12,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -311,8 +311,8 @@ const ArkanoidGame = () => {
             if (screenRef.current === 'attract') { startPlay(); return }
             if (screenRef.current === 'over' && performance.now() - overAtRef.current > 900) { startPlay(); return }
             // #1637 WATCH: Y hands the wall to the prover; any driving key takes it back.
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowLeft') keys.l = false
@@ -353,6 +353,7 @@ const ArkanoidGame = () => {
             mountDbg('arkanoid')
             let prevA = false
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'arkanoid',
                 buttons: ['left', 'right', 'a'],
                 reset: (seed) => {

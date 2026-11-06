@@ -11,7 +11,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -333,6 +333,7 @@ const DigDugGame = () => {
                 ctx.fillRect(0, 0, W, H)
                 text('DIG DUG', W / 2, 74, 26, '#5dff8f', 12)
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 130, 9, '#ffd23f', 5)
+                text(WATCH_ATTRACT_HINT, W / 2, 164, 7, '#8fa3d8', 0)
                 const b = board()[0]
                 if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 150, 8, '#5dc8ff', 3)
                 // one message at a time, cycling (ART.md rule 6)
@@ -393,8 +394,8 @@ const DigDugGame = () => {
             if (screenRef.current === 'attract') { startPlay(); return }
             if (screenRef.current === 'over' && performance.now() - overAtRef.current > 900) { startPlay(); return }
             // #1637 WATCH: Y hands the tunnels to the prover; any driving key takes it back.
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowLeft') keys.l = false
@@ -453,6 +454,7 @@ const DigDugGame = () => {
             })
             let prevA = false
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'dig-dug',
                 buttons: ['left', 'right', 'up', 'down', 'a'],
                 reset: (seed) => {

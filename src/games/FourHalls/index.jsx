@@ -16,8 +16,8 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import { LEVELS, W, H, HEROES, HERO_ORDER, MONSTERS } from '../Gauntlet/levels.js'
 import { makeGame, step, stateHash, CFG, doorAt } from '../Gauntlet/sim.js'
 import { plan, decide } from '../Gauntlet/planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
-import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { buildSprites, MATERIALS } from '../Gauntlet/art.js'
 import { buzz, narratorKind, STAIRS_FANFARE } from '../Gauntlet/sound.js'
 import { attractFrame, DIM } from './attract.js'
@@ -491,10 +491,10 @@ const FourHallsGame = () => {
             const sc = screenRef.current
             // #1637 WATCH: Y seats the proven maze brain; any driving input takes it back.
             if (isWatchKey(ev)) {
-                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (sc === 'attract') { startSelect(); return }
             if (sc === 'select') {
                 if (ev.code === 'ArrowLeft') selectHero = (selectHero + 3) % 4
@@ -524,7 +524,7 @@ const FourHallsGame = () => {
             const d = ev.detail
             if (!d) return
             // #1637 WATCH: the pad is the player driving — hand back first.
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             keys.l = !!d.left; keys.r = !!d.right; keys.u = !!d.up; keys.d = !!d.down
             if (d.action) keys.swordEdge = true
             if (d.second) keys.arrowEdge = true
@@ -547,6 +547,7 @@ const FourHallsGame = () => {
         // ------------------------------------------------------------- DEV hook ----
         if (import.meta.env.DEV) {
             window.__fourHallsTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 state: () => gs,
                 hash: () => stateHash(gs),
                 step: (n = 1) => { for (let i = 0; i < n; i++) doSim({ left: false, right: false, fwd: false, back: false, sword: false, arrow: false }) },
@@ -619,9 +620,7 @@ const FourHallsGame = () => {
             {paused && <PauseOverlay game={entry} onResume={() => setPaused(false)} />}
             {/* #1637 WATCH — the proven maze brain walks the hero; any input takes over. */}
             {screen === 'play' && watching && (
-                <div className="absolute z-50 top-3 left-1/2 -translate-x-1/2 bg-amber-400/90 border border-amber-100 text-amber-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
-                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
-                </div>
+                <WatchToast className="z-50" />
             )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
