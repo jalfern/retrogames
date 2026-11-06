@@ -21,7 +21,7 @@ import { NODES, AGE_LIST } from './nodes.js'
 import { gearRows } from './gears.js'
 import { freshState, dispatch, runSolver, solveScript, watchResume, RIDE, WHEEL_POINTS, WHEEL_RINGS, WHEEL_NOTCH, spectatorViews, portraitViews } from './state.js'
 import WatchButton from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { notebookSeed, storeSeed, loadSeed } from './codes.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { MESSAGES, PRESS } from './attract.js'
@@ -296,6 +296,7 @@ const MystGame = () => {
       watchingRef.current = false
       setWatching(false)
       const w = watchRef.current
+      if (w.seq) playWatchStop() // #1638: only an actively-driving watcher hands back with a blip
       w.seq = null; w.i = 0; w.pending = false
     }
     const watchStep = () => {
@@ -311,6 +312,7 @@ const MystGame = () => {
         const r = watchResume(gs)
         if (!r || !r.suffix.length) { sayNoGuide(); return }
         w.seq = r.suffix; w.i = 0; w.wait = 4
+        playWatchStart() // #1638: the blip is honest — it fires when the route is proven, not at keypress
         return
       }
       if (!w.seq) return
@@ -600,6 +602,7 @@ const MystGame = () => {
     if (import.meta.env.DEV) {
       window.__mystTest = {
         watching: () => watchingRef.current, // #1624 watchcheck
+        watchSfx: watchSfxLog, // #1638 watchcheck: handoff blips ('start'/'stop')
         watchLen: () => (watchRef.current.seq ? watchRef.current.seq.length - watchRef.current.i : 0),
         state: () => gs,
         action: (a) => { doAction(a); return gs.message },
@@ -995,6 +998,7 @@ const MystGame = () => {
           </div>
           <AttractMessage className="mb-8 text-amber-200/70 max-w-xl tracking-wide" messages={MESSAGES} />
           <p className="text-lg animate-pulse text-amber-300">{PRESS}</p>
+          <span className="block mt-3 text-xs text-amber-200/50 tracking-wide">Y — watch the proven route</span>
         </div>
       )}
 
