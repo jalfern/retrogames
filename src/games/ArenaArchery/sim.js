@@ -47,6 +47,16 @@ export const CFG = {
     knockout: true,       // false: arrows fly through stuck arrows
     retrieve: true,       // false: stuck arrows can never be pulled out
     ttlRelease: true,     // false: stuck arrows never expire
+    // the basic bot (the "mean twin"): it shoots FLAT, keeping the foe just
+    // beyond its flat-shot reach, so a miss drops on the FLOOR where a walk
+    // pulls it back and the quiver economy circulates. The old version
+    // LOBED and walked in point-blank: its misses silted the unreachable
+    // ledges until both quivers ran dry and the duel sat frozen ~20 s
+    // (#1685) — and it out-scored the weakened autopilot, failing the slack
+    // rule. bot0Lobs flips it back to the lob for the mutant.
+    bot0Lobs: false,      // false: flat (the fix); true: the #1685 lob
+    bot0Release: 0.5,     // the basic bot's draw release — flat-shot power
+    bot0Range: 130,       // stops walking in here — beyond flat-shot reach
 }
 
 export const SOLID = 1
@@ -406,7 +416,7 @@ export function botInput(g, meId, skill) {
                 const rx = me.x - ar.x, ry = me.y - ar.y
                 if (rx * ar.vx + ry * ar.vy > 0 && Math.hypot(rx, ry) < 60) mx = ar.vx >= 0 ? -1 : 1
             }
-        } else if (adx > 90) mx = Math.sign(dx)
+        } else if (adx > CFG.bot0Range) mx = Math.sign(dx)
     }
 
     // the shot: lead once, solve both angles, forward-simulate each, take
@@ -477,15 +487,19 @@ export function botInput(g, meId, skill) {
             mx = Math.floor(g.tick / 45) % 2 ? 1 : -1
         }
     } else if (!scavenging && foe.alive && me.quiver > 0 && skill === 0) {
-        // the basic bot just lobs at whatever it sees — but only once
-        // close enough that a miss lands on the FLOOR, where a walk can
-        // pull it back. Dumping the quiver across the arena silted every
-        // ledge and the duel dried out with both archers empty-handed
-        // (#1685). A draw already in progress always releases.
+        // the basic bot shoots the foe — FLAT when the foe is at its own
+        // height, so a miss drops on the FLOOR where a walk pulls it back
+        // and the quiver economy keeps circulating. It only LOBS (and
+        // jumps) to reach a foe on another level or clear cover; a lobbed
+        // miss may stick on a ledge until the TTL. The old version always
+        // lobbed, and its six misses silted every ledge until both archers
+        // were empty-handed and the duel sat frozen for ~20 s (#1685).
         const adx0 = Math.abs(foe.x - me.x)
-        fire = !me.firing ? adx0 < 240 : me.charge < 0.55
-        if (fire) my = 1
-        if (fire || me.firing) aim = { x: foe.x >= me.x ? 1 : -1, y: -1 }
+        const sameRow = Math.abs(foe.y - me.y) < CFG.cell
+        const flat = !CFG.bot0Lobs && sameRow   // flat: a miss drops on the floor
+        fire = !me.firing ? adx0 < 240 : me.charge < CFG.bot0Release
+        if (fire) my = flat ? 0 : 1
+        if (fire || me.firing) aim = { x: foe.x >= me.x ? 1 : -1, y: flat ? 0 : -1 }
     }
     // a dry scavenger with nothing in reach keeps its feet moving:
     // standing still under an unreachable arrow is how a duel dies (#1685)
