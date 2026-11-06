@@ -24,6 +24,18 @@ const mk = (o = {}) => ({ l: 0, r: 0, j: 0, u: 0, ...o })
 
 class Fail extends Error {}
 
+// #1653 bail trim: the outer loop was guarded by a flat 60000-tick wall —
+// ~15x the observed worst solve (4743 ticks across 224 perturbed-resume and
+// full-range probes, measured 2026-11-05). The budget now scales with the
+// mountains REMAINING at the top of each loop pass, counted from the tick
+// THIS call started on: a stuck final mountain aborts in BAIL_PER_MOUNTAIN
+// instead of 60000, while the fresh full-range budget (3 x BAIL) still keeps
+// ~7.9x headroom over the worst legitimate solve. Counted from the entry
+// tick, NOT absolute, so PROGNOSIS stays resumable: a live mutated state
+// already tens of thousands of ticks old still gets a full budget for its
+// remaining mountains.
+export const BAIL_PER_MOUNTAIN = 12000
+
 // One macro tick engine: `drive` issues who's inputs each tick, idles the
 // other climber, records every tick, and stops when `until` or `land` says
 // stop. `abort` may rewrite inputs mid-flight (the condor release).
@@ -171,6 +183,7 @@ export function nextMountain(g) {
 export function plan(g) {
     const out = []
     const advanceAt = []
+    const entryTick = g.tick // #1653: budget measured from THIS call, so PROGNOSIS resumes are unaffected
     g.receipts = { digs: 0, stack: 0, revives: 0, dodges: 0 }
     const run = (fn, retries = 1) => {
         for (let k = 0; k <= retries; k++) {
@@ -184,7 +197,7 @@ export function plan(g) {
         }
     }
     try {
-        while (g.level < 3 && g.tick < 60000) {
+        while (g.level < 3 && g.tick - entryTick < (3 - g.level) * BAIL_PER_MOUNTAIN) {
             const lv = g.level
             if (lv === 0) {
                 run(() => walkTo(g, out, 0, 8.5))
@@ -215,7 +228,14 @@ export function plan(g) {
         return { script: out, advanceAt, ok: g.end === 'win', end: g.end || 'stuck', reason: e.message, receipts: g.receipts }
     }
     g.receipts.digs = g.climbers.reduce((n, c) => n + c.digs, 0)
-    return { script: out, advanceAt, ok: g.end === 'win', end: g.end, reason: null, receipts: g.receipts }
+    // #1653: if the loop ended without a clear/win and the scaled budget ran
+    // out, say so — a bail is a different diagnosis than a quiet non-clear.
+    const bailed = !g.end && g.tick - entryTick >= (3 - g.level) * BAIL_PER_MOUNTAIN
+    return {
+        script: out, advanceAt, ok: g.end === 'win', end: g.end,
+        reason: bailed ? `bail: ${g.tick - entryTick} ticks spent on ${3 - g.level} remaining mountain(s)` : null,
+        receipts: g.receipts,
+    }
 }
 
 export function planRun() {

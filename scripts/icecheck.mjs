@@ -25,7 +25,7 @@ import { spawnSync } from 'node:child_process'
 import { readFileSync, writeFileSync } from 'node:fs'
 import { LEVELS, buildLevel } from '../src/games/IceClimber/levels.js'
 import * as sim from '../src/games/IceClimber/sim.js'
-import { plan, replay } from '../src/games/IceClimber/planner.js'
+import { plan, replay, BAIL_PER_MOUNTAIN } from '../src/games/IceClimber/planner.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 const args = process.argv.slice(2)
@@ -70,6 +70,26 @@ ok(full.receipts.dodges === 1, 'condor-pass phase-wait never ran')
     const bAct = full.script.filter(t => t.b.l || t.b.r || t.b.u).length
     ok(aAct > 0 && bAct > 0, `input streams: A=${aAct} B=${bAct} ticks active — a dead key set is not a second player`)
     ok(full.script.every(t => 'a' in t && 'b' in t), 'a tick lacked one player\'s input vector')
+}
+
+// ----------------------------------------- #1653: the bail, scaled + resumable ----
+section('BAIL (per remaining mountain, entry-relative)')
+{
+    const src = readFileSync(new URL('../src/games/IceClimber/planner.js', import.meta.url), 'utf8')
+    ok(Number.isFinite(BAIL_PER_MOUNTAIN) && BAIL_PER_MOUNTAIN <= 12000,
+        `BAIL_PER_MOUNTAIN=${BAIL_PER_MOUNTAIN} — the bail must stay trimmed (observed worst solve 4743 ticks; the old flat bail was 60000)`)
+    ok(!/g\.tick < 60000/.test(src), 'planner still carries the flat 60000-tick bail — the #1653 trim regressed')
+    ok(/g\.tick - entryTick < \(3 - g\.level\) \* BAIL_PER_MOUNTAIN/.test(src),
+        'the bail loop no longer scales to the remaining mountains (#1653)')
+    ok(full.script.length < BAIL_PER_MOUNTAIN,
+        `full range burned ${full.script.length} script ticks vs a ${3 * BAIL_PER_MOUNTAIN}-tick fresh budget — headroom is not luck`)
+    // Entry-relative accounting: an aged live state (a PROGNOSIS clone deep
+    // in a session) gets its full remaining budget and still wins. An
+    // absolute `g.tick < budget` bail would refuse this game instantly.
+    const aged = sim.makeGame(buildLevel(2))
+    aged.tick = 45000
+    const ra = plan(aged)
+    ok(ra.ok, `aged-state resume refused the route (${ra.end} ${ra.reason}) — the bail is not entry-relative`)
 }
 
 // ------------------------------------------- each mountain, alone, with proofs ----

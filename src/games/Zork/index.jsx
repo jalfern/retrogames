@@ -9,8 +9,14 @@ import { GAMES } from '../../config/games'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { TranscriptSensor } from './sensors/transcript'
 import { effectiveArm, armsForGame, setArm as selectArm, getArm } from '../../ai/arms'
+import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 function ZorkGame({ storyFile, label, route = '/zork' }) {
+  // #1637 WATCH — the proven explorer brain on one key. The gate is honest:
+  // ZorkExplorer's map and route are proven on ZORK I (zorkcheck/zorkuicheck);
+  // the sequels carry no proven route, so there Y stays a letter, not a guide.
+  const canWatch = route === '/zork'
   const [lines, setLines] = useState([])
   const [inputEnabled, setInputEnabled] = useState(false)
   const [inputValue, setInputValue] = useState('')
@@ -352,7 +358,8 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
   const takeOver = useCallback(() => {
     if (!loopRef.current?.running) return
     stopAi('you took the keyboard')
-    setAiNote('keyboard is yours — press PLAY to hand it back')
+    playWatchStop() // #1638: the prover hands the wheel back with its blip
+    setAiNote('keyboard is yours — press PLAY or Y to hand it back')
     systemLine('[ai] paused — the keyboard is yours again')
     if (inputRef.current) inputRef.current.focus()
   }, [stopAi, systemLine])
@@ -361,16 +368,44 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
     if (!aiOn) return
     const onKey = (e) => {
       if (e.key === '?' || (e.shiftKey && e.key === '/')) return   // pause menu still works
+      // #1637 WATCH: Y releases the watcher (toggle-off), anything else is
+      // the player taking the wheel mid-command — both paths hand back.
+      if (canWatch && isWatchKey(e)) {
+        e.preventDefault()
+        stopAi('you stopped watching')
+        playWatchStop()
+        setAiNote('watch off — press Y or PLAY to seat the brain again')
+        return
+      }
       e.preventDefault()
       takeOver()
     }
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
-  }, [aiOn, takeOver])
+  }, [aiOn, canWatch, takeOver, stopAi, setAiNote])
 
   // Never leave a loop running behind an unmount or the pause screen.
   useEffect(() => () => { if (loopRef.current) loopRef.current.stop('unmounted') }, [])
   useEffect(() => { if (paused && loopRef.current) stopAi('paused') }, [paused, stopAi])
+
+  // #1637 WATCH seat: Y hands the keyboard to the explorer brain — the same
+  // ZorkExplorer + AgentLoop zorkcheck drives, through the same agentSend the
+  // form uses (the double-driver law holds: the loop owns its clock). With the
+  // prompt focused but EMPTY, Y is the guide key; mid-word it stays a letter.
+  useEffect(() => {
+    if (!canWatch || aiOn) return
+    const onKey = (e) => {
+      if (!isWatchKey(e) || paused) return
+      const field = document.activeElement
+      if (field === inputRef.current && inputValue !== '') return
+      if (!vmRef.current) { setAiNote('no guide yet — the story is still loading'); return }
+      e.preventDefault()
+      startAi()
+      if (loopRef.current?.running) playWatchStart()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [canWatch, aiOn, paused, inputValue, startAi])
 
   const handleSubmit = useCallback((e) => {
     e.preventDefault()
@@ -490,6 +525,10 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
         : null }),
       aiDiary: () => (brainRef.current ? brainRef.current.diary || [] : []),
       aiCommits: () => (brainRef.current ? (brainRef.current.commits || []).slice(-14) : []),
+      // #1637 WATCH: watchcheck drives the Y key and grades the same exchanges.
+      watching: () => !!loopRef.current?.running,
+      probe: () => api.state(),
+      watchSfx: watchSfxLog,
     }
     window.__zorkTest = api
     return () => { if (window.__zorkTest === api) delete window.__zorkTest }
@@ -534,6 +573,14 @@ function ZorkGame({ storyFile, label, route = '/zork' }) {
             progress={aiStatus?.progress ? { label: 'PROGRESS', value: aiStatus.progress, max: null } : null}
             detail={aiNote || (aiOn ? 'any key takes the keyboard back' : null)}
           />
+        )}
+
+        {/* #1637 WATCH — the explorer plays ZORK I on its proven brain. */}
+        {canWatch && aiOn && <WatchToast className="absolute top-3 z-50" />}
+        {canWatch && game && !paused && (
+          <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+            <WatchButton on={aiOn} disabled={!vmRef.current} />
+          </div>
         )}
 
         {/* Input line */}

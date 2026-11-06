@@ -24,6 +24,20 @@ export const MAP_MARGIN = 8
 export const VWC = VW / PX
 export const VHC = VH / PX
 
+// #1655 attract focus: while the NET demo plays, the camera's centre slides
+// periodically from the pair's midpoint toward the partner (seat 2) — the view
+// says who the demo is about. Pure, given the tick and the pair delta: the
+// focus shrinks to 0 as the pair separates so NEITHER hero is ever pushed off
+// the window, and it fades smoothly in and out (sin, endpoints 0). The SIM
+// still measures player bounds through the plain viewRect (sim.js passes no
+// pull) — the camera pans, the world does not, so the 8/8 route stands.
+export function netPull(tick, dx = 0, dy = 0, period = 600, span = 240, peak = 0.5) {
+    const ph = tick % period
+    if (ph >= span) return 0
+    const room = (d, cells) => (Math.abs(d) > 0.5 ? Math.max(0, Math.min(1, (cells - 2) / Math.abs(d) - 1)) : 1)
+    return Math.sin(Math.PI * (ph / span)) * Math.min(peak, room(dx, VWC), room(dy, VHC))
+}
+
 // the camera the overhead view uses. One hero: a VW x VH window centred on
 // him, clamped to the maze (drawView and the minimap share this one definition,
 // so "what is seen" can never drift from what the screen shows).
@@ -32,10 +46,13 @@ export const VHC = VH / PX
 // midpoint, so BOTH stay framed and the screen edge is a wall neither can
 // leave. When P2 is gone (down/absent) it falls back to centring P1 — one
 // player plays exactly as before.
-export function viewRect(hero, partner) {
+//
+// `pull` (#1655) slides the centre that far from the midpoint toward the
+// partner; 0 (every gameplay call, viewBounds included) is the exact old camera.
+export function viewRect(hero, partner, pull = 0) {
     const p = partner && !partner.down ? partner : null
-    const ax = p ? (hero.x + p.x) / 2 : hero.x
-    const ay = p ? (hero.y + p.y) / 2 : hero.y
+    const ax = p ? (hero.x + p.x) / 2 + ((p.x - hero.x) / 2) * pull : hero.x
+    const ay = p ? (hero.y + p.y) / 2 + ((p.y - hero.y) / 2) * pull : hero.y
     let camX = ax * PX - VW / 2
     let camY = ay * PX - VH / 2
     camX = Math.max(0, Math.min(W * PX - VW, camX))

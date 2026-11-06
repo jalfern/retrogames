@@ -294,3 +294,29 @@ world progress it made (doors opened, cracks blown, bosses felled) stays. Any
 key or touch takes over. Since the route is proven for any kit state, the
 guide is always available in a live run. Node gates in `emberwoodcheck`
 (#1624); browser leg in `npm run watchcheck` — needs `npm run dev`.
+
+## The mesa arc — HAWKROOST, the CINDERSTEP, THE CLIFFS (#1623)
+
+Dungeon 4 (HAWKROOST, 4 rooms) hangs west of THE CROSSROADS: ow-00's new
+w exit opens THE CLIFFS, whose burned face (tile 'A') bars the way up. The
+face is solid to everything — feet, enemies, orbs alike — except the hero who
+owns the CINDERSTEP (bomb-crack ck-42, deepest chamber before the boss), and
+arrows read it as open sky. Over the face: THE CLIFFTOP (heart, an embers
+crack, a view).
+
+The CINDERHAWK (boss 4, hp 9): rings three perch stones, screeches to lock
+the hero's row or column, then stoops down that locked line at 2.4 px/tick —
+step off the line, it can't turn. Steel shrugs off mid-stoop (hurtEnemy
+guard, clank + hint); it falls to sword taps while it rings the perch. Its
+heart chest gates on flags.boss4. Death in d4 re-enters at d4-0's doorstep,
+and boss4 + the step persist through save/continue.
+
+Bot: bossTick's boss4 choreography dodges the locked line and carves the
+roost window; the route phase puts d4 and ow-41 *after* the mainline
+(vale→d1→d2), so the attract pilot never abandons the Ember Heart for the
+mesa. The solver gates 'A' on st.step and proves ck-42 → the clifftop;
+without bombs neither the step nor the mesa is reachable (both proven).
+
+Gates: `emberwoodcheck` 6f (face gating both ways, arrows through the face,
+stoop line-lock, roost-vs-dive vulnerability, boss4 flag/chest/respawn/
+save) + map/solver gates; 259 green node-first.

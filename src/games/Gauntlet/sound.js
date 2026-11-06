@@ -18,6 +18,11 @@ export const NARRATOR = {
 // stairs-clear: C-E-G-C, four distinct rising notes (was a single 330->990 sweep)
 export const STAIRS_FANFARE = [523, 659, 784, 1047]
 
+// #1655 demo-only win sting: a brighter, faster A-major arpeggio than the
+// cabinet's own stairs fanfare, so the attract's NET win sounds like the net,
+// not like the player's own quest clear.
+export const DEMO_STING = [440, 554, 659, 880, 1109]
+
 // route a narrator line to its buzz signature by its narrative role
 export const narratorKind = (m) => {
     const t = String(m).toUpperCase()

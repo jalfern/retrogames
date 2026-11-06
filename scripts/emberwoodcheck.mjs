@@ -43,7 +43,9 @@ ok(edgeBad === 0, 'every edge exit has a return edge; every door/warp target exi
 // ---- 2. every dungeon exists and has its promised furniture ----
 const d1 = ['d1-e0', 'd1-e1', 'd1-e2', 'd1-e3']
 const d2 = ['d2-f0', 'd2-f1', 'd2-f2', 'd2-f3', 'd2-f4']
+const d4 = ['d4-0', 'd4-1', 'd4-2', 'd4-3'] // #1623 HAWKROOST
 ok(d1.every(id => SCREENS[id]) && d2.every(id => SCREENS[id]), 'both dungeons present (d1:4 rooms, d2:5 rooms)')
+ok(d4.every(id => SCREENS[id]) && SCREENS['ow-40'] && SCREENS['ow-41'], '#1623 HAWKROOST (4 rooms) + THE CLIFFS/CLIFFTOP exist')
 ok(d1.concat(d2).some(id => (SCREENS[id].enemies || []).some(e => e.boss === 1)), 'dungeon 1 has a boss (Bramble Maw)')
 ok(d2.some(id => (SCREENS[id].enemies || []).some(e => e.boss === 2)), 'dungeon 2 has a boss (Cinder Wyrm)')
 ok(d1.some(id => (SCREENS[id].doors || []).some(d => d.kind === 'key')), 'dungeon 1 has a locked door')
@@ -53,6 +55,10 @@ ok(d2.some(id => (SCREENS[id].switches || []).some(s => s.via === 'arrow')), 'du
 const species = new Set()
 for (const id of Object.keys(SCREENS)) for (const e of SCREENS[id].enemies || []) species.add(e.type)
 for (const sp of ['cinderling', 'bat', 'spitter', 'husk', 'wisp', 'sprig', 'tuskroot', 'pod']) ok(species.has(sp), `species present: ${sp}`)
+ok(species.has('hawk'), '#1623 species present: hawk')
+ok(d4.some(id => (SCREENS[id].enemies || []).some(e => e.boss === 4)), '#1623 dungeon 4 has a boss (Cinderhawk)')
+ok((SCREENS['d4-3'].chests || []).some(c => c.after === 'boss4'), '#1623 the mesa chest is gated behind the hawk')
+ok((SCREENS['d4-2'].cracks || []).some(c => c.reveal === 'cinderstep'), '#1623 the CINDERSTEP lives behind a bomb-crack in HAWKROOST III')
 
 // ---- 3. THE SOLVER: winnable, gated, and re-proven one supply thinner ----
 const full = proveGame({ bombs: true })
@@ -64,11 +70,16 @@ ok(noBombs.bowGot === false, 'without bombs the bow is unreachable (crack gates 
 ok(noBombs.win === false, 'without bombs the game cannot be won')
 const startFresh = proveGame({ bombs: false, bow: false })
 ok(startFresh.d1Done === false || startFresh.bowGot === false, 'a bare starter kit cannot clear dungeon 2 (bow-gated)')
+// #1623 the mesa arc: bombs buy the step, the step opens the face, and the
+// hawk's roost dungeon sits on the other side of it
+ok(full.hawkGot === true && full.cliffsSeen === true, '#1623 solver fells the Cinderhawk and reaches the clifftop (bombs bought)')
+ok(full.route.some(a => a.type === 'boss' && a.id === 'boss4') && full.route.some(a => a.reveal === 'cinderstep'), '#1623 the winning route contains ck-42 and boss4')
+ok(noBombs.stepGot === false && noBombs.cliffsSeen === false, '#1623 without bombs the cinderstep and the mesa stay unreachable')
 
 // slack: keys must exceed what the winning route consumes; arrows too.
-const keyDoors = d1.concat(d2).reduce((n, id) => n + (SCREENS[id].doors || []).filter(d => d.kind === 'key' || d.kind === 'bigkey').length, 0)
-const keyChests = d1.concat(d2).reduce((n, id) => n + (SCREENS[id].chests || []).filter(c => c.item === 'key' || c.item === 'bigkey').length, 0)
-const dropKeys = d1.concat(d2).reduce((n, id) => n + (SCREENS[id].enemies || []).filter(e => e.drop === 'key').length, 0)
+const keyDoors = d1.concat(d2, d4).reduce((n, id) => n + (SCREENS[id].doors || []).filter(d => d.kind === 'key' || d.kind === 'bigkey').length, 0)
+const keyChests = d1.concat(d2, d4).reduce((n, id) => n + (SCREENS[id].chests || []).filter(c => c.item === 'key' || c.item === 'bigkey').length, 0)
+const dropKeys = d1.concat(d2, d4).reduce((n, id) => n + (SCREENS[id].enemies || []).filter(e => e.drop === 'key').length, 0)
 ok(keyChests + dropKeys >= keyDoors + 1, `keys provisioned (${keyChests} chests + ${dropKeys} drops) >= locked doors (${keyDoors}) + 1 slack`)
 const arrowSwitches = d2.reduce((n, id) => n + (SCREENS[id].switches || []).filter(s => s.via === 'arrow').length, 0)
 ok(10 >= arrowSwitches + 1, `arrows from the bow gift (10) >= arrow-switches (${arrowSwitches}) + 1 slack`)
@@ -887,6 +898,108 @@ function arcScript(seed) {
     ok(vale.motes === 0, `the vale has no ember motes — it is Ashfell's tell (${vale.motes})`)
     const deep = countMotes(3, 'd1-e0', 7, 8, 240)
     ok(deep.motes === 0, `the act-one deep stays mote-free too (${deep.motes})`)
+}
+
+// ---- 6f. #1623 the burned face + the Cinderhawk: sim-level rules ----
+{
+    const tap = (n) => n === 0 ? inp({ ap: true }) : n === 1 ? inp({ a: true }) : n === 2 ? inp({ ar: true }) : inp({})
+    // the CINDERSTEP gate: row 2 of THE CLIFFS is bare rock until you own it
+    const s = createSim(7)
+    spawnRoom(s, 'ow-40', null)
+    s.enemies = []; s.hero.inv = 100000 // the vale's locals are not the point here
+    for (let i = 0; i < 400; i++) stepSim(s, inp({ ly: -1 }))
+    ok(s.hero.y > 50, '#1623 the cinder face stops unaided feet')
+    s.items.step = true
+    for (let i = 0; i < 500; i++) stepSim(s, inp({ ly: -1, lx: i > 120 ? -1 : 0 }))
+    ok(s.hero.y < 44 && s.hero.y > 16, '#1623 the CINDERSTEP walks the burned face')
+    for (let i = 0; i < 200 && s.screen === 'ow-40'; i++) stepSim(s, inp({ ly: -1, lx: i % 2 ? -1 : 0 }))
+    ok(s.screen === 'ow-41', '#1623 over the face stands THE CLIFFTOP')
+    // arrows read the face as open sky
+    const sa = createSim(7)
+    spawnRoom(sa, 'ow-40', null)
+    sa.items.bow = true; sa.items.arrows = 10
+    sa.hero.x = 8 * TS + 8; sa.hero.y = 3 * TS + 8; sa.hero.dir = 'up'
+    let flewPast = false
+    for (let i = 0; i < 120; i++) {
+        stepSim(sa, i === 0 ? inp({ ap: true }) : i < 12 ? inp({ a: true }) : i === 12 ? inp({ ar: true }) : inp())
+        if (sa.projectiles.some(p => p.y <= 32)) flewPast = true
+    }
+    ok(flewPast, '#1623 arrows fly through the burned face untouched')
+    // the Cinderhawk: locked-line stoops, a roost window for steel, and a
+    // death that opens the mesa chest
+    const sh = createSim(7)
+    spawnRoom(sh, 'd4-3', null)
+    const hawk = () => sh.enemies.find(e => e.type === 'hawk' && !e.dead)
+    let sawLock = true, axis = null, lockV = 0, strikes = 0, dived = 0
+    for (let i = 0; i < 6000 && !sh.flags.boss4; i++) {
+        const e = hawk()
+        if (!e) break
+        sh.hero.inv = 100000 // the fight is the test, not survival
+        let pad = inp()
+        if (e.charging > 0) {
+            dived++
+            if (axis === null) { axis = e.lockAxis; lockV = axis === 'x' ? e.y : e.x }
+            else if (Math.abs((axis === 'x' ? e.y : e.x) - lockV) > 6) sawLock = false
+            sh.hero.x = 232; sh.hero.y = 136 // the bot's lesson: be elsewhere
+        } else {
+            axis = null
+            if (e.rest > 0 && e.st <= 0) {
+                sh.hero.x = e.x; sh.hero.y = e.y + 16; sh.hero.dir = 'up'
+                if (e.rest > 12) { pad = tap(i % 12); if (i % 12 === 0) strikes++ }
+            } else { sh.hero.x = 232; sh.hero.y = 136 }
+        }
+        stepSim(sh, pad)
+    }
+    const dead = !hawk()
+    ok(dived > 0, '#1623 the hawk stoops')
+    ok(sawLock && dived > 20, '#1623 every stoop holds its locked line')
+    ok(dead && sh.flags.boss4 && strikes > 8, '#1623 steel at the roost fells the Cinderhawk (boss4)')
+    // a dive shrugs steel off; and the vale remembers the fell
+    const sg = createSim(7)
+    spawnRoom(sg, 'd4-3', null)
+    let deflectOk = true, roostHits = 0, diveHp = null
+    for (let i = 0; i < 6000 && !sg.flags.boss4; i++) {
+        const e = sg.enemies.find(x => x.type === 'hawk' && !x.dead)
+        if (!e) break
+        sg.hero.inv = 100000
+        let pad = inp({})
+        if (e.charging > 0) {
+            // stand beside the locked line, steel in reach, body not — no dive
+            // may end with less HP than it started (the guard shrugs every tap)
+            if (diveHp === null) diveHp = e.hp
+            sg.hero.x = e.lockAxis === 'x' ? e.x : e.x + 24
+            sg.hero.y = e.lockAxis === 'x' ? e.y - 24 : e.y
+            sg.hero.dir = e.lockAxis === 'x' ? 'down' : 'left'
+            if (e.charging % 12 < 3) pad = tap(e.charging % 12)
+        } else {
+            if (diveHp !== null) { if (e.hp !== diveHp) deflectOk = false; diveHp = null }
+            if (e.rest > 0 && e.st <= 0) {
+                sg.hero.x = e.x; sg.hero.y = e.y + 16; sg.hero.dir = 'up'
+                pad = tap(i % 12); if (i % 12 === 0) roostHits++
+            } else { sg.hero.x = 232; sg.hero.y = 136 }
+        }
+        stepSim(sg, pad)
+    }
+    ok(deflectOk && roostHits > 0, '#1623 dives shrug steel off; the roost does not')
+    ok(sg.flags.boss4, '#1623 a hawk felled only at the roost (dives deflect)')
+    const mesa = SCREENS['d4-3'].chests[0]
+    sg.hero.x = mesa.x * TS + 8; sg.hero.y = mesa.y * TS + 8 + 20; sg.hero.dir = 'up'
+    for (let k = 0; k < 30; k++) stepSim(sg, inp()) // let the blade cool
+    for (let k = 0; k < 3; k++) stepSim(sg, tap(k))
+    ok(sg.flags.chestsOpen[mesa.id], '#1623 the mesa chest opens for the victor')
+    const sv = saveState(sg)
+    sv.items.step = true
+    const s2 = createSim(sg.seed)
+    ok(loadState(s2, sv) && s2.flags.boss4 === true && s2.items.step === true && simState(s2).progress.boss4 === true, '#1623 boss4 + the step survive save/continue')
+    // death in the roost sends you to its own doorstep, not the village
+    const sr = createSim(7)
+    spawnRoom(sr, 'd4-2', null)
+    sr.hero.hp = 1
+    sr.projectiles = []
+    for (let i = 0; i < 400 && !sr.death; i++) stepSim(sr, inp({ ly: 1 }))
+    ok(sr.death, '#1623 the roost can kill you')
+    for (let i = 0; i < 110; i++) stepSim(sr, i === 100 ? inp({ ap: true }) : inp())
+    ok(!sr.death && sr.screen === 'd4-0', '#1623 death in HAWKROOST re-enters at its own door')
 }
 
 const nodeResult = { pass, fail }

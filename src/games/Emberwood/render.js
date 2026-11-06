@@ -329,7 +329,7 @@ void main(){
 
     const tileTexKey = (ch) => ({
         '.': 'grass', '"': 'tallgrass', ',': 'path', '~': 'water', 'T': 'grass', '#': 'stone', 'a': 'ash', 'v': 'crag',
-        '=': 'grass', 'H': 'house', 'R': 'roof', 'I': 'grass', 'C': 'stone', 'S': 'stairs', '<': 'stone', 'A': 'stone',
+        '=': 'grass', 'H': 'house', 'R': 'roof', 'I': 'grass', 'C': 'stone', 'S': 'stairs', '<': 'stone', 'A': 'cinderface',
     }[ch] || 'grass')
 
     // #981 facing survives a room rebuild: the townsfolk keep the side they were
@@ -851,13 +851,15 @@ void main(){
             else if (e.type === 'maw') key = `maw/${e.open ? 'open' : 'closed'}`
             else if (e.type === 'wyrm') key = `wyrm/${e.open ? 'open' : 'closed'}`
             else if (e.type === 'king') key = `king/${e.mantle <= 0 ? 'core' : (e.t % 30 < 15 ? 'mantle0' : 'mantle1')}`
+            else if (e.type === 'hawk') key = `hawk/${e.charging > 0 ? 'stoop' : e.st > 0 ? 'call' : e.rest > 0 ? 'perch' : 'glide'}`
             else key = `cinder/${anim}`
             setTex(b, key)
             b.mesh.scale.set(1, 1, 1)
             if (e.type === 'maw') b.mesh.scale.set(28 / 16, 28 / 16, 1)
             if (e.type === 'wyrm') b.mesh.scale.set(24 / 16, 20 / 16, 1)
             if (e.type === 'king') b.mesh.scale.set(28 / 16, 28 / 16, 1)
-            b.mesh.position.set(FX(e.x), e.y, 8 + (e.type === 'bat' || e.type === 'wisp' ? 6 : 0))
+            if (e.type === 'hawk') b.mesh.scale.set(22 / 16, 18 / 16, 1)
+            b.mesh.position.set(FX(e.x), e.y, 8 + (e.type === 'bat' || e.type === 'wisp' ? 6 : (e.type === 'hawk' && e.rest <= 0 ? 5 : 0)))
             b.mesh.scale.x *= (e.fx > 0.1 ? -1 : 1)
             const el = e.hitT > 0 ? 1.7 : probeLight(e.x, e.y, dark)
             b.mat.color.setRGB(Math.min(1.6, el), e.hitT > 0 ? 1.1 : el, e.hitT > 0 ? 1.1 : el)

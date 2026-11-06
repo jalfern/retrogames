@@ -237,8 +237,14 @@ if (!MUT) {
 
     await page.keyboard.press('Digit1')
     await page.waitForTimeout(200)
+    // #1637: the coin press must land on char select — offline attract is not a
+    // parking lot (regression guard for the #1104 atAttract pin).
+    let sc = await page.evaluate(() => window.__ironRingTest.state && window.__ironRingTest.state.screen)
+    ok(sc === 'select', `insert coin advances attract -> select (screen ${sc})`)
     await page.keyboard.press('Space')
     await page.waitForTimeout(200)
+    sc = await page.evaluate(() => window.__ironRingTest.state && window.__ironRingTest.state.screen)
+    ok(sc === 'play', `the pick walks into the fight (screen ${sc})`)
     await page.keyboard.press('Space')
     await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.phase !== 'intro', null, { timeout: 20000 })
     let st = await page.evaluate(() => window.__ironRingTest.state)

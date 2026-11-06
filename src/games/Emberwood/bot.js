@@ -378,7 +378,7 @@ export function attractBot(sim) {    const b = sim._bot || (sim._bot = { pi: 0 }
     // (vale -> dungeon 1 -> dungeon 2) that we can still reach — the solver's
     // route is logical, not physical, so its raw index order can warp past
     // dungeon 1 and strand its one-way rooms forever.
-    const phase = (scr) => (scr.startsWith('d1') ? 1 : scr.startsWith('d2') ? 2 : 0)
+    const phase = (scr) => (scr.startsWith('d1') ? 1 : scr.startsWith('d2') ? 2 : scr.startsWith('d4') || scr === 'ow-41' ? 3 : 0)
     // Full-range scans (the solver route is out of physical order, so a
     // lower-bound index would strand already-passed rooms like sw3/sw4).
     let ti = -1
@@ -612,9 +612,10 @@ function fireSetup(sim, b, m) {
 // bosses: choreography, not tile-chasing (#874). Maw = strike-in-window then
 // stand off until the thorns open again. Wyrm = arrow the open maw from mid
 // range on the move (align, set facing, draw, loose, hop back), then carve
-// the stunned core in slash-pulse rhythm.
+// the stunned core in slash-pulse rhythm. Hawk (#1623) = stand off the locked
+// stoop line, then slash the roost window.
 export function bossTick(sim, b, inp, id) {
-    const e = sim.enemies.find(x => (id === 'boss1' ? x.type === 'maw' : x.type === 'wyrm') && !x.dead)
+    const e = sim.enemies.find(x => (id === 'boss1' ? x.type === 'maw' : id === 'boss4' ? x.type === 'hawk' : x.type === 'wyrm') && !x.dead)
     if (!e) return inp
     const h = sim.hero
     const s = b.boss || (b.boss = { screen: sim.screen, ph: 'reposition', tt: 0, strikes: 0, tap: 0, side: ((e.seedOff || 0) % 2) ? 1 : -1 })
@@ -641,6 +642,20 @@ export function bossTick(sim, b, inp, id) {
         if (dist < 40) moveAway(inp, dx, dy)
         else if (dist > 54) setMove(inp, dx, dy)
         else { inp.lx = px; inp.ly = py }
+        return inp
+    }
+
+    if (id === 'boss4') {
+        if (e.charging > 0) { // the stoop is locked — step off its line
+            if (e.lockAxis === 'x') inp.ly = -(Math.sign(dy) || s.side); else inp.lx = -(Math.sign(dx) || s.side)
+            return inp
+        }
+        if (e.rest > 0 && e.st <= 0) { // sitting the perch — it is unarmed below
+            if (dist > 20) { setMove(inp, dx, dy); return inp }
+            cadenceTap(s, inp, 8)
+            return inp
+        }
+        if (dist < 46) moveAway(inp, dx, dy) // gliding or screeching: give the mesa room
         return inp
     }
 

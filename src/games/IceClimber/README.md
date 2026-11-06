@@ -44,7 +44,13 @@ and the audit pins it (`revive=false` must fail the forced-accident pin).
   head-stand hop). It is the attract demo, the PROGNOSIS action, and the
   witness the audit grades. `replay(meta, script, advanceAt)` is the
   determinism contract — hash-equal, and a flipped input tick is not.
-- `scripts/icecheck.mjs` — the Node audit (33 checks, 5 mutants).
+  The outer bail (#1653) scales with the mountains REMAINING at each loop
+  pass — `BAIL_PER_MOUNTAIN = 12000` × remaining, counted from the tick
+  `plan()` started on (the worst measured solve is 4743 ticks; the old flat
+  bail was 60000). Entry-relative so a PROGNOSIS clone aged deep into a
+  session still gets its full remaining budget; `icecheck` pins all three
+  properties (trimmed value, scaling loop, aged-state resume).
+- `scripts/icecheck.mjs` — the Node audit (47 checks, 5 mutants).
 - `scripts/iceplay.mjs` — the browser proof (17 checks): simultaneous keys,
   tiles deleted by real keystrokes, paint-follows-physics, a stack-jump win
   won with real fingers, condor down, partner revive, pause door.
