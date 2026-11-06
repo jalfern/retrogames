@@ -1288,10 +1288,109 @@ const muffleOpen = await page.evaluate(() => window.__carpetTest.muffle())
 await page.evaluate(() => { window.__carpetTest.veil() })
 await page.waitForTimeout(300)
 const muffleVeil = await page.evaluate(() => window.__carpetTest.muffle())
-r.check('the veil muffles the world — the ambience bus low-pass drops while veiled, open when visible',
-    muffleOpen >= 10000 && muffleVeil > 0 && muffleVeil <= 1000, `open=${muffleOpen} veiled=${muffleVeil}`)
+if (muffleOpen === null || muffleVeil === null) {
+    // headless shells without an audio device never bring up the ambience bus —
+    // a question this box cannot ask, not a wrong answer (Report.skip doctrine).
+    r.skip('the veil muffles the world — ambience low-pass', `bus not up on this box (open=${muffleOpen} veiled=${muffleVeil})`)
+} else {
+    r.check('the veil muffles the world — the ambience bus low-pass drops while veiled, open when visible',
+        muffleOpen >= 10000 && muffleVeil > 0 && muffleVeil <= 1000, `open=${muffleOpen} veiled=${muffleVeil}`)
+}
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
+
+// ---- #1673: phone-size DISSOLVE pass (390x844, real touchscreen taps).
+// Why this section exists: on 2026-11-06 the phone look&feel pass could not run at
+// all — copied-lane worktrees inherit main checkout's self-referential
+// `node_modules/node_modules` symlink, Vite's optimizer then resolves react twice and
+// EVERY page dies on "Invalid hook call" (the #1622 react-dup half, previously misread
+// as a MagicCarpet failure). Gate 1 is that regression catcher: phone viewport loads
+// with zero page errors. Mutation guide: delete `resolve.dedupe` from vite.config.js
+// in a copied tree and gate 1 goes red. The tray gates below drive real touch events
+// through the shell's own onPointer (CSS->HUD mapping), which no Node gate can see:
+// change the slot stride in sim.js TRAY or the 11-key row in index.jsx and the
+// slot-11 / Minus gates go red.
+// a second WebGL page inside the same --single-process shell is a crash risk
+// (#1622 ladder boots shell+sp here) — give the phone pass its own browser.
 await browser.close()
+const pBrowser = await launch()
+const phone = await openGame(pBrowser, {
+    url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`,
+    viewport: { width: 390, height: 844 }, touch: true, start: false, hook: '__game',
+})
+const pErrs = []
+phone.on('pageerror', (e) => pErrs.push(e.message))
+await phone.waitForTimeout(600)
+r.check('#1673 dev-graph on phones: 390x844 touch load, zero page errors (one react)',
+    pErrs.length === 0, pErrs.join(' | '))
+const hud = await phone.evaluate(() => window.__carpetTest.hudRect())
+const toCss = (hx, hy) => [hud.left + (hx / W) * hud.w, hud.top + (hy / H) * hud.h]
+// The #1147 hint is up at this size (portrait + wide canvas) — before any tap
+// can dismiss it, prove it does not swallow the stage: MagicCarpet's portrait
+// band runs through the screen centre and its tray sits under the card, so a
+// pointer-events-auto card made every mid-canvas tap vanish (#1673's four red
+// touch gates). Mutation guide: card back to pointer-events-auto → red here.
+const hintUp = await phone.evaluate(() => !!document.querySelector('[data-nav="rotate-dismiss"]'))
+const centreCss = toCss(W / 2, H / 2 - 40)
+const centreHit = await phone.evaluate(([x, y]) => {
+    const el = document.elementFromPoint(x, y)
+    return el ? `${el.tagName.toLowerCase()}${el.dataset.vc ? '[vc]' : ''}` : 'none'
+}, centreCss)
+r.check('#1673 ROTATE hint is click-through: canvas centre hit-tests to the canvas while the hint is up',
+    hintUp && centreHit === 'canvas', `hint up=${hintUp}, centre hit=${centreHit}`)
+// start by tap (any tap leaves attract), exactly the forgotten-how-to-play gesture
+await phone.touchscreen.tap(...toCss(W / 2, H / 2 - 40))
+await phone.waitForTimeout(500)
+r.check('#1673 attract yields to a single phone tap',
+    (await phone.evaluate(() => window.__carpetTest.probe())).screen === 'play',
+    `screen=${(await phone.evaluate(() => window.__carpetTest.probe())).screen}`)
+// 1) SPELLS tab by real touch, then the 11th tray cell equips DISSOLVE left-handed
+await phone.touchscreen.tap(...toCss(TAP.book[0] + TAP.book[2] / 2, TAP.book[1] + TAP.book[3] / 2))
+await phone.waitForTimeout(120)
+const bookOpen = (await phone.evaluate(() => window.__carpetTest.probe())).book
+await phone.evaluate(() => window.__carpetTest.arm('dissolve'))
+const s11 = [TRAY[0] + 10 * 14 + 7, TRAY[1] + TRAY[3] / 2] // slot 11 centre, HUD px
+await phone.touchscreen.tap(...toCss(...s11))
+await phone.waitForTimeout(120)
+const after = await phone.evaluate(() => window.__carpetTest.probe())
+r.check('#1673 real touch: SPELLS tab opens the tray at phone size', bookOpen === true)
+r.check('#1673 slot 11 is inside the HUD and tappable at 390x844 (tray strip on-screen)',
+    s11[0] >= 0 && s11[0] <= W && hud.w > 0 && hud.h > 0,
+    `slot@css ${Math.round(toCss(...s11)[0])},${Math.round(toCss(...s11)[1])} of 390x844, hud ${Math.round(hud.w)}x${Math.round(hud.h)}`)
+r.check('#1673 tap on the 11th cell equips DISSOLVE to the left hand and closes the tray',
+    after.hands.L === 'dissolve' && after.book === false, `L=${after.hands.L} book=${after.book}`)
+r.info('#1673 legibility', `each tray cell ≈ ${(14 * hud.w / W).toFixed(1)}x${(22 * hud.h / H).toFixed(1)} CSS px at 390x844 (below the 44pt HIG target — accepted: 11 slots on the original's 320px strip, keyboard/pad carry casts)`)
+// 4) the `-` keycap: Minus equips the 11th spell on a desktop keyboard
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve') })
+await phone.waitForTimeout(150)
+await phone.evaluate(() => { window.__carpetTest.tap(0, 0) })
+await phone.keyboard.press('Minus')
+await phone.waitForTimeout(120)
+r.check('#1673 Minus equips DISSOLVE (the row after Digit0)',
+    (await phone.evaluate(() => window.__carpetTest.probe())).hands.L === 'dissolve')
+// 2) cold FX: a dissolving ground sprays cyan particles — and provably no ash/fire
+await phone.evaluate(() => window.__game.reset(7))
+await phone.waitForTimeout(200)
+const pBefore = await phone.evaluate(() => window.__carpetTest.trailMotes())
+await phone.evaluate(() => window.__carpetTest.fx({ type: 'dissolve', x: 100, y: 100, r: 22, huts: 0 }))
+await phone.waitForTimeout(100)
+const fxA = await phone.evaluate(() => ({ parts: window.__carpetTest.trailMotes(), ash: window.__carpetTest.crumbles() }))
+await phone.screenshot({ path: 'docs/shots/issue-1673-dissolve-fx.png' })
+r.check('#1673 DISSOLVE FX: cold cyan spray spawns on the wound, zero fire/ash',
+    fxA.parts >= pBefore + 16 && fxA.ash === 0, `particles ${pBefore} -> ${fxA.parts}, ash ${fxA.ash}`)
+// 3) the banner row at phone size: cast for real (touch the world) and the shell says it
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); window.__carpetTest.arm('dissolve'); window.__carpetTest.equipL('dissolve') })
+await phone.waitForTimeout(200)
+const mA = (await phone.evaluate(() => window.__carpetTest.probe())).mana
+const mM = await phone.evaluate(() => window.__carpetTest.trailMotes())
+await phone.touchscreen.tap(...toCss(W / 2, 60)) // world tap above the strip = cast
+await phone.waitForTimeout(250)
+const cast = await phone.evaluate(() => ({ mana: window.__carpetTest.probe().mana, screen: window.__carpetTest.probe().screen, motes: window.__carpetTest.trailMotes() }))
+await phone.screenshot({ path: 'docs/shots/issue-1673-phone-play.png' })
+r.check('#1673 world tap casts DISSOLVE at phone size (40 mana paid, spray rides the wound, banner rides the HUD)',
+    cast.screen === 'play' && cast.mana <= mA - 40 && cast.motes >= mM + 16,
+    `mana ${mA}->${cast.mana}, motes ${mM}->${cast.motes}, screen=${cast.screen}`)
+await phone.close()
+await pBrowser.close()
 
 r.exit()
