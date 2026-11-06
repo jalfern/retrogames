@@ -411,7 +411,7 @@ function dropPearls(gs, x, y, bounty) {
     }
 }
 
-function lookPoint(gs) {
+export function lookPoint(gs) {
     let d = 55
     for (let t = 6; t <= 70; t += 2) {
         const z = gs.alt - t * 0.08
@@ -1066,8 +1066,17 @@ export function autopilot(gs) {
     // while genuinely low: past safe clearance the pack can't reach you, and a
     // pin-up rule with no floor-free ceiling check strands the bot above its
     // pearls when a wolf pack learns to shadow the carpet (#1612 sweep fix).
-    if (gs.hp < 55 && gs.alt < sampleH(gs, gs.x, gs.y) + 12 && gs.monsters.some((m) => m.kind === 'wolf' &&
-        Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 24)) pad.up = true
+    // #1680 (seed 33 sweep): the armor line is the ground the WOLF stands on —
+    // a ridge wolf bites a carpet that reads "high" over the valley below it.
+    {
+        const closing = gs.monsters.filter((m) => m.kind === 'wolf' &&
+            Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 24)
+        if (gs.hp < 55 && closing.length) {
+            let ceil = sampleH(gs, gs.x, gs.y)
+            for (const m of closing) ceil = Math.max(ceil, sampleH(gs, m.x, m.y))
+            if (gs.alt < ceil + 12) { pad.up = true; pad.down = false } // release the target-descent or they cancel (#1680)
+        }
+    }
     return pad
 }
 

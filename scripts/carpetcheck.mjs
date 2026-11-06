@@ -14,6 +14,7 @@ import {
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
+    cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -29,8 +30,8 @@ const run = (seed, maxTicks, scriptFn = autopilot) => {
 
 // ---- boot
 const fresh = makeGame(7)
-r.check('world 1 built: 56 pearls, wizard hoards 80, 11 books, one known spell, empty vault',
-    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 11 &&
+r.check('world 1 built: 56 pearls, wizard hoards 80, 12 books, one known spell, empty vault',
+    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 12 &&
     fresh.learned.length === 1 && fresh.bank === 0 && fresh.level === 0,
     `pearls=${fresh.pearls.length} hoard=${fresh.wizard.mana} books=${fresh.books.length} bank=${fresh.bank}`)
 const g0 = run(7, 600, () => ({}))
@@ -344,10 +345,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 
 // ---- roster + INVISIBILITY (#1610): the original's veil, done whole
 // (#1612 item 5 grew the roster to eight with VOLCANO; #1639 to ten with
-// SHATTER and RAISE; #1668 to eleven with DISSOLVE.)
+// SHATTER and RAISE; #1668 to eleven with DISSOLVE; #1680 to twelve with CLONE.)
 {
-    r.check('eleven signature spells with costs', SPILLS.length === 11 &&
-        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano', 'shatter', 'raise', 'dissolve'].every((id) => spellById(id)?.cost > 0))
+    r.check('twelve signature spells with costs', SPILLS.length === 12 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano', 'shatter', 'raise', 'dissolve', 'clone'].every((id) => spellById(id)?.cost > 0))
 
     const veilUp = (gs) => {
         gs.learned.push('invisibility')
@@ -533,7 +534,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 // ---- #1612 item 5: VOLCANO — the ground tears open where you look.
 {
     r.check('volcano is the 8th spell: cost 60, a grimoire waits in the world',
-        SPILLS.length === 11 && spellById('volcano').cost === 60 &&
+        SPILLS.length === 12 && spellById('volcano').cost === 60 &&
         fresh.books.some((b) => b.id === 'volcano'), `n=${SPILLS.length}`)
     {
         const gv = makeGame(7)
@@ -707,14 +708,14 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             bad === 0, `out-of-reach towers: ${bad}`)
     }
     {
-        // Eleven books can crowd the mid-height band; the spread fallback must
+        // Twelve books can crowd the mid-height band; the spread fallback must
         // never leave a grimoire unplaced on any seed or level.
         let missing = 0
         for (let s = 1; s <= 40 && missing === 0; s++) {
-            for (const lv of [0, 1, 2]) if (makeGame(s, lv).books.length !== 11) missing++
+            for (const lv of [0, 1, 2]) if (makeGame(s, lv).books.length !== 12) missing++
         }
-        r.check('all eleven grimoires are placed in every world of seeds 1–40 (spread fallback holds)',
-            missing === 0, `worlds short of eleven books: ${missing}`)
+        r.check('all twelve grimoires are placed in every world of seeds 1–40 (spread fallback holds)',
+            missing === 0, `worlds short of twelve books: ${missing}`)
     }
 }
 
@@ -727,7 +728,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 // the cold-promise gate goes red. Mutants proven once, 2026-11-06.
 {
     r.check('dissolve is the 11th spell: cost 40, its grimoire waits in the world',
-        SPILLS.length === 11 && SPILLS[10].id === 'dissolve' && spellById('dissolve').cost === 40 &&
+        SPILLS.length === 12 && SPILLS[10].id === 'dissolve' && spellById('dissolve').cost === 40 &&
         fresh.books.some((b) => b.id === 'dissolve'), `n=${SPILLS.length}`)
     {
         // The signature: clamp-flood on the HIGHEST ground on the map — no
@@ -828,7 +829,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         r.check('the touch tray reaches the 11th slot: tap equips DISSOLVE to the left hand',
             hit === 'equip' && gs.hands.L === 'dissolve' && gs.book === false,
             `hit=${hit} handL=${gs.hands.L}`)
-        r.check('the eleven-slot tray still sits inside the HUD',
+        r.check('the twelve-slot tray still sits inside the HUD',
             TRAY[0] >= 0 && TRAY[0] + TRAY[2] <= W && TRAY[1] >= 0 && TRAY[1] + TRAY[3] <= H,
             `TRAY=${TRAY.join(',')}`)
     }
@@ -842,6 +843,155 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         }
         const a = castTwice(), b = castTwice()
         r.check('dissolve is deterministic: same seed + same cast → identical hash', a === b, `${a} vs ${b}`)
+    }
+}
+
+// ---- #1680: CLONE — the 12th spell doubles the bestiary, never the land.
+// Mutation guide (prove it can fail): delete `gs.monsters.push(cp)` in
+// cloneAt (sim.js) and the litter/economy gates go red; replace the mirrored
+// position with the original's (`nx = m.x; ny = m.y`) and the twin-stands-
+// opposite gate goes red; move `toppleTower(gs, cx, cy)` into cloneAt and the
+// cold-promise gate goes red; call rnd(gs) once inside cloneAt and the
+// determinism gate goes red (rng-free contract). Mutants to prove on demand.
+{
+    r.check('clone is the 12th spell: cost 35, its grimoire waits in the world',
+        SPILLS.length === 12 && SPILLS[11].id === 'clone' && spellById('clone').cost === 35 &&
+        fresh.books.some((b) => b.id === 'clone'), `n=${SPILLS.length}`)
+    {
+        // The signature: everything in the ring gains a twin at the MIRRORED
+        // position across the cast point, at its kind's full spawn health;
+        // what stands outside keeps its solitude.
+        const gs = makeGame(7)
+        gs.monsters.length = 0
+        const px = 100, py = 100
+        const wolf = { kind: 'wolf', x: wrap(px + 8, MAP), y: py, hp: SPAWN_HP.wolf, dir: 1.2, cool: 0, wanderT: 0, lostT: 0 }
+        const cow = { kind: 'cow', x: px, y: wrap(py - 14, MAP), hp: SPAWN_HP.cow, dir: 2.5, cool: 0, wanderT: 0, lostT: 0 }
+        const giant = { kind: 'giant', x: wrap(px + CLONE_R + 12, MAP), y: py, hp: SPAWN_HP.giant, dir: 0.5, cool: 0, wanderT: 0, lostT: 0 }
+        gs.monsters.push(wolf, cow, giant)
+        const litter = cloneAt(gs, px, py)
+        const twins = gs.monsters.filter((m) => m !== wolf && m !== cow && m !== giant)
+        const mirrorOK = (orig, cp) => {
+            const dx = wrapD(orig.x - px), dy = wrapD(orig.y - py)
+            const d = Math.hypot(dx, dy)
+            const md = Math.max(d, 6)
+            const ux = d >= 1 ? dx / d : 1, uy = d >= 1 ? dy / d : 0
+            return Math.abs(wrapD(cp.x - wrap(px - ux * md, MAP))) < 1e-6 &&
+                Math.abs(wrapD(cp.y - wrap(py - uy * md, MAP))) < 1e-6
+        }
+        const tw = twins.find((m) => m.kind === 'wolf')
+        const tc = twins.find((m) => m.kind === 'cow')
+        r.check('clone doubles everything inside CLONE_R at the mirrored spot, at full spawn HP',
+            litter.length === 2 && twins.length === 2 && !!tw && !!tc &&
+            tw.hp === SPAWN_HP.wolf && tc.hp === SPAWN_HP.cow &&
+            mirrorOK(wolf, tw) && mirrorOK(cow, tc),
+            `litter=${litter.length} twins=${twins.map((m) => m.kind).join(',')} mirrored=${!!tw && mirrorOK(wolf, tw)}`)
+        r.check('the pack outside the ring keeps its solitude', gs.monsters.includes(giant) && twins.every((m) => m.kind !== 'giant'))
+        const ev = gs.events.find((e) => e.type === 'clone')
+        r.check('the clone event carries ring, count and per-twin spots — the FX fuel',
+            !!ev && ev.r === CLONE_R && ev.count === 2 && ev.copies.length === 2 &&
+            ev.copies.every((c) => Number.isFinite(c.x) && Number.isFinite(c.y)),
+            JSON.stringify(ev && { r: ev.r, count: ev.count, copies: ev.copies.length }))
+        r.check('a doubled wolf is a real monster: it joins the sim and dies for the ordinary bounty',
+            (() => {
+                gs.learned.push('shatter'); gs.mana = 100; gs.coolL = 0
+                setHand(gs, 'L', 'shatter')
+                const kills0 = gs.kills, pearls0 = gs.pearls.length
+                shatterAt(gs, px, py) // both originals AND both twins stand within SHATTER_R of the cast point (8u and 14u out)
+                return gs.kills === kills0 + 4 && gs.pearls.length > pearls0 && gs.monsters.includes(giant)
+            })(),
+            'bounty economy: originals and twins all pay like their kind (kill count proves it)')
+    }
+    {
+        // The cold promise: clone touches the bestiary ONLY — heights, craters,
+        // fire, huts, pearls, books, wizard and tower all untouched. Deleting
+        // this promise is the classic blast-shaped mutant.
+        const gs = makeGame(7)
+        gs.learned.push('clone'); gs.mana = 100; gs.coolL = 0
+        setHand(gs, 'L', 'clone')
+        // Aim through the REAL look point (the arrow the cast lands on), so
+        // this gate proves the cast path end to end, not just cloneAt.
+        const lp = lookPoint(gs)
+        const wolf = gs.monsters.find((m) => m.kind === 'wolf')
+        gs.monsters.length = 0
+        gs.monsters.push(wolf)
+        wolf.x = lp.x; wolf.y = lp.y
+        const h0 = gs.heights.slice(), cr0 = gs.craters.length, mk0 = gs.fireMarks.length
+        const hut0 = gs.huts.length, prl0 = gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0)
+        const whp0 = gs.wizard.hp, books0 = gs.books.length, mons0 = gs.monsters.length
+        gs.events.length = 0
+        step(gs, { castL: true })
+        const heightsSame = gs.heights.every((h, i) => h === h0[i])
+        const prl1 = gs.pearls.reduce((a, p) => a + (p.alive ? p.m : 0), 0)
+        r.check('casting clone pays 35 from the pouch',
+            gs.mana === 65 && gs.events.some((e) => e.type === 'cast' && e.id === 'clone'), `mana=${gs.mana}`)
+        r.check('the land never feels clone: no height change, no crater, no fire, no hut lost, no topple',
+            heightsSame && gs.craters.length === cr0 && gs.fireMarks.length === mk0 &&
+            gs.huts.length === hut0 && gs.towerDown === false,
+            `heights same=${heightsSame} craters ${cr0}→${gs.craters.length} marks ${mk0}→${gs.fireMarks.length} huts ${hut0}→${gs.huts.length}`)
+        r.check('no free mana: clone spawns no pearls — only kills pay',
+            prl1 === prl0 && gs.books.length === books0 && gs.wizard.hp === whp0,
+            `pearls ${prl0}→${prl1}`)
+        r.check('one cast, one twin: the wolf in the ring stands twice',
+            gs.monsters.length === mons0 + 1 && gs.monsters.includes(wolf),
+            `monsters ${mons0}→${gs.monsters.length}`)
+    }
+    {
+        // The wizard is unique: clone at his tower and the bestiary grows, but
+        // he never does.
+        const gs = makeGame(7)
+        const n0 = gs.monsters.length
+        const litter = cloneAt(gs, gs.wizard.tx, gs.wizard.ty)
+        r.check('the wizard is never cloned: no second wizard, only creatures answered',
+            gs.wizard.alive && litter.every((c) => c.kind !== 'wizard') && gs.monsters.length === n0 + litter.length,
+            `litter=${litter.length}`)
+    }
+    {
+        // Empty ring and the world guard: an honest miss still announces
+        // itself; CLONE_MAX keeps ring-upon-ring from melting the sim.
+        const gs = makeGame(7)
+        gs.monsters.length = 0
+        gs.events.length = 0
+        const litter = cloneAt(gs, 250, 250)
+        r.check('an empty ring is an honest miss: zero twins, the event still lands',
+            litter.length === 0 && gs.events.some((e) => e.type === 'clone' && e.count === 0))
+        const g2 = makeGame(7)
+        g2.monsters.length = 0
+        for (let i = 0; i < CLONE_MAX; i++) g2.monsters.push({ kind: 'cow', x: wrap(10 + i, MAP), y: 10, hp: SPAWN_HP.cow, dir: 0, cool: 0, wanderT: 0, lostT: 0 })
+        cloneAt(g2, 10, 10)
+        r.check('CLONE_MAX holds even when a full ring of cows asks for doubles',
+            g2.monsters.length === CLONE_MAX, `monsters=${g2.monsters.length}`)
+    }
+    {
+        // Pouch denial: broke is broke.
+        const gs = makeGame(7)
+        gs.learned.push('clone'); gs.mana = 10; gs.coolL = 0
+        setHand(gs, 'L', 'clone')
+        gs.events.length = 0
+        step(gs, { castL: true })
+        r.check('no mana, no twins: clone denied',
+            gs.events.some((e) => e.type === 'nomana') && gs.mana === 10, `mana=${gs.mana}`)
+    }
+    {
+        // Touch plumbing: the 12th tray cell equips CLONE like any other.
+        const gs = makeGame(7)
+        gs.learned.push('clone')
+        gs.book = true
+        const cx = TRAY[0] + 11 * 14 + 7, cy = TRAY[1] + 8
+        const hit = hudTap(gs, cx, cy)
+        r.check('the touch tray reaches the 12th slot: tap equips CLONE to the left hand',
+            hit === 'equip' && gs.hands.L === 'clone' && gs.book === false,
+            `hit=${hit} handL=${gs.hands.L}`)
+    }
+    {
+        const castTwice = () => {
+            const g = makeGame(21)
+            g.learned.push('clone'); g.mana = 200
+            setHand(g, 'L', 'clone'); step(g, { castL: true })
+            for (let i = 0; i < 80; i++) step(g, {})
+            return stateHash(g)
+        }
+        const a = castTwice(), b = castTwice()
+        r.check('clone is deterministic (rng-free contract): same seed + same cast → identical hash', a === b, `${a} vs ${b}`)
     }
 }
 
