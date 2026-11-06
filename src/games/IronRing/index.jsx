@@ -11,8 +11,10 @@ import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import Lobby from '../../components/Lobby'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { isWatchKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
@@ -61,6 +63,8 @@ const IronRingGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const desyncRef = useRef(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: seat 1 fights on its own proven CPU brain
+    const watchingRef = useRef(false)
 
     useEffect(() => {
         const wrap = wrapRef.current
@@ -232,10 +236,14 @@ const IronRingGame = () => {
             quoteText = ''
             rebuildRigs()
             rebuildStage()
+            // #1637 WATCH across the ladder: a fight starting while the watcher
+            // holds seat 1 re-seats the fighter's own proven CPU tier immediately.
+            if (watchingRef.current && gs && !gs.done) gs.fighters[0].def.cpu = BY_ID[p1Char]?.cpu || 'normal'
             setSc('play')
         }
 
         const atAttract = () => {
+            watchingRef.current = false; setWatching(false) // #1637 the cabinet returns to the player
             if (net.active) { setSc('select'); return }
             p2Picked = false
             cursor = 0
@@ -309,6 +317,26 @@ const IronRingGame = () => {
                 return
             }
             if (scr !== 'play') return
+            // #1637 WATCH: Y hands seat 1 to the engine's tiered CPU — the fighter's
+            // own proven tier from ./fighters.js, the same pad-emitting driver
+            // ironringcheck beats an idle dummy with at every tier. Closed loop:
+            // it reads the live fight each decision, so seat/release mid-round is
+            // honest. 1P ladder mode only — local 2P and the net wire own their pads.
+            const seatable = mode === 'cpu' && !net.active && gs && !gs.done
+            if (isWatchKey(e)) {
+                if (watchingRef.current) {
+                    watchingRef.current = false; setWatching(false); playWatchStop()
+                    gs.fighters[0].def.cpu = false
+                } else if (seatable) {
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                    gs.fighters[0].def.cpu = BY_ID[p1Char]?.cpu || 'normal'
+                }
+                return
+            }
+            if (watchingRef.current) {
+                watchingRef.current = false; setWatching(false); playWatchStop()
+                gs.fighters[0].def.cpu = false
+            }
             const k1 = KEY_P1[e.code]
             if (k1) { keys1[k1] = true; latch1.add(k1); if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault() }
             const k2 = KEY_P2[e.code]
@@ -322,6 +350,11 @@ const IronRingGame = () => {
         }
         const onPointer = () => {
             const scr = screenRef.current
+            // #1637 WATCH: a touch on the cabinet hands seat 1 back mid-bout.
+            if (scr === 'play' && watchingRef.current) {
+                watchingRef.current = false; setWatching(false); playWatchStop()
+                if (gs) gs.fighters[0].def.cpu = false
+            }
             if (scr === 'attract') atAttract()
             else if (scr === 'select') atSelect()
             else if (scr === 'champion') atAttract()
@@ -414,6 +447,7 @@ const IronRingGame = () => {
                             }
                         }, 2600)
                     } else if (won) {
+                        watchingRef.current = false; setWatching(false) // #1637 the ladder is won — hands off
                         championChar = p1Char
                         quoteText = (BY_ID[championChar] || ROSTER[0]).quote || ''
                         ;[0, 4, 7, 12].forEach((semi, i) => setTimeout(() => audioController.playTone(523 * Math.pow(2, semi / 12), 0.18, 'square', 0.11), i * 120))
@@ -691,6 +725,10 @@ const IronRingGame = () => {
                 koP1() { if (gs) forceKO(gs, 1) },
                 expireContinue() { continueFrames = 1 },
                 setLadder(i) { ladderIdx = i },
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                probe: () => (gs ? { phase: gs.phase, tick: gs.tick, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => Math.round(f.hp)), wins: gs.fighters.map((f) => f.wins), done: gs.phase === 'done' } : null),
+                watchSfx: watchSfxLog,
             }
             dbg = mountDbg({
                 title: 'IRON RING',
@@ -757,6 +795,13 @@ const IronRingGame = () => {
         <div className="relative h-full w-full bg-[#0a0a12]" style={{ minHeight: '100%' }}>
             <div ref={wrapRef} className="absolute inset-0" />
             <VirtualControls visible={screen === 'play' && !paused} secondAction={{ label: 'K', code: 'KeyZ' }} />
+            {/* #1624 WATCH — seat 1 fights the ladder on its own proven CPU tier. */}
+            {screen === 'play' && watching && <WatchToast className="absolute top-3 z-50" />}
+            {screen === 'play' && !paused && !desync && (
+                <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {netUi && screen !== 'play' && (
                 <div className="absolute top-2 right-2 z-20 max-w-[280px]">
                     <Lobby state={netUi} title="CHALLENGE" names={netUi.names} startHint="SPACE TO FIGHT" />

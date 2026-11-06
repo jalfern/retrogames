@@ -17,6 +17,8 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { createRobotSim, createAutopilot, createEpisode, saveEpisode, episodeStats, manifestSummary, MANIFEST_REV } from '../../utils/robot'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const FIXED_DT = 1000 / 60
 const TOUCH = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches
@@ -39,6 +41,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             const phaseRef = useRef('attract')
             const pausedRef = useRef(false)
             const wristRef = useRef(true)
+            const [watching, setWatching] = useState(false) // #1637 WATCH: the proven autopilot drives the arm
+            const watchingRef = useRef(false)
             useEffect(() => { phaseRef.current = phase }, [phase])
             useEffect(() => { pausedRef.current = paused }, [paused])
 
@@ -206,6 +210,8 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         const pickables = [meshes.drawer, meshes.door, meshes.handle, meshes.knob, meshes.crate, meshes.can, benchTop]
         const onPointer = (ev) => {
             if (phaseRef.current !== 'play' || pausedRef.current) return
+            // #1637 WATCH: a touch on the bench is the player driving — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const r = canvas.getBoundingClientRect()
             ndc.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1)
             ray.setFromCamera(ndc, cam)
@@ -228,17 +234,35 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
         const startRun = (seed) => {
             runSeed = seed >>> 0
             sim = createRobotSim(seed)
+            autopilot = createAutopilot(sim) // keep the driver bound to the live sim (#1637: watch seats it mid-run)
             ep = createEpisode({ gameId: 'robot-lab', method: 'stick', seed, players: 1, task: 'crate-in-drawer + can-in-cabinet', assets: MANIFEST_REV })
             lastSlips = 0
             shake = 0
             prevHeld = null
             fall.crate = null; fall.can = null
+            watchingRef.current = false; setWatching(false) // #1637 a new bench starts in your hands
         }
 
         const onKey = (ev) => {
             if (ev.code === 'KeyC' && phaseRef.current !== 'won') { wristRef.current = !wristRef.current; setWristOn(wristRef.current); return }
             if ((ev.code === 'KeyQ' || ev.code === 'Slash') && phaseRef.current === 'play') { setPaused((p) => !p); return }
             if (phaseRef.current === 'attract' || phaseRef.current === 'won' || phaseRef.current === 'lost') { setPhase('play'); startRun(((seedFromQuery() ?? (Date.now() % 100000)) | 0)); audioController.playTone(660, 0.08, 'square'); return }
+            // #1637 WATCH: Y seats the robokitcheck-proven autopilot — but only at
+            // a clean bench (nothing held, no task goal banked yet). Once the player
+            // has altered the task state, the script's waypoint route no longer
+            // applies, and Y declines rather than replay a fake route (Paperboy
+            // junction semantics). Any driving key or tap takes the wheel back.
+            if (isWatchKey(ev)) {
+                ev.preventDefault()
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else {
+                    const st = sim.state()
+                    const clean = !st.done && !st.timeout && !st.held && !Object.values(st.goals).some(Boolean)
+                    if (clean) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (ev.code in KEYS) { keys.add(ev.code); ev.preventDefault() }
         }
         const onUp = (ev) => { if (ev.code in KEYS) keys.delete(ev.code) }
@@ -271,7 +295,9 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 while (acc >= FIXED_DT && steps < 5) {
                     acc -= FIXED_DT
                     steps++
-                    const pad = phaseRef.current === 'attract' ? autopilot() : padNow()
+                    // #1637 WATCH: seat the proven autopilot (its waypoint phases
+                    // steer by live sim state, and robokitcheck proves the win).
+                    const pad = phaseRef.current === 'attract' || watchingRef.current ? autopilot() : padNow()
                     const st = sim.step({ pad })
                     if (phaseRef.current === 'play' && ep) {
                         ep.addTick([pad], null, st.hash, st.poses)
@@ -316,6 +342,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                             setRuns(episodeStats())
                             ep = null
                             setPhase('won')
+                            watchingRef.current = false; setWatching(false) // #1637 the shift is over — the wheel is yours again
                             audioController.playSweep(440, 880, 0.3)
                         } else if (st.timeout && ep.ticks > 0) {
                             const file = ep.finish({ success: false, score: st.score, finalHash: st.hash })
@@ -323,6 +350,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                             setRuns(episodeStats())
                             ep = null
                             setPhase('lost')
+                            watchingRef.current = false; setWatching(false) // #1637 the shift is over
                             audioController.playSweep(300, 110, 0.5)
                         }
                     }
@@ -404,6 +432,15 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                     { label: 'RESEED', run: () => startRun((performance.now() | 0) % 9973) },
                 ],
             })
+            // #1637 watchcheck pilot drives this.
+            window.__robotTest = {
+                watching: () => watchingRef.current,
+                probe: () => {
+                    const st = sim.state()
+                    return { tick: sim.tick, score: st.score, held: st.held, goals: { ...st.goals }, hand: [...st.hand], done: st.done, timeout: st.timeout }
+                },
+                watchSfx: watchSfxLog,
+            }
         }
 
         // #1473: production-safe feedback state (seed for replay), every build
@@ -419,6 +456,7 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
             canvas.removeEventListener('pointerdown', onTapStart)
             unexposeGame()
             unmountDbg()
+            if (window.__robotTest) delete window.__robotTest
             renderer.dispose()
         }
     }, [])
@@ -502,6 +540,13 @@ const LITE = typeof window !== 'undefined' && new URLSearchParams(window.locatio
                 </div>
             )}
             {paused && <PauseOverlay game={entry} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
+            {/* #1624 WATCH — the arm runs the proven task script. */}
+            {phase === 'play' && watching && <WatchToast className="absolute top-10 z-50" />}
+            {phase === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ top: '0.75rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={phase === 'play' && !paused} secondAction={{ label: 'LIFT', code: 'ShiftLeft' }} />
         </div>
     )

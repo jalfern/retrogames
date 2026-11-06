@@ -15,8 +15,10 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createEpisode, saveEpisode, episodeStats } from '../../utils/robot/episode.js'
@@ -78,6 +80,8 @@ const FloorBossGame = () => {
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the proven floor manager runs the shift
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -128,10 +132,11 @@ const FloorBossGame = () => {
                 episode = createEpisode({ gameId: 'floor-boss', method: 'dpad', seed: gs.seed >>> 0, players: 1, sources: ['human'], task: 'floor-boss-shift', assets: MANIFEST_REV })
             } catch { episode = null }
         }
-        const recordTick = () => {
+        const recordTick = (pad) => {
             if (!episode) return
             try {
-                episode.addTick([{ left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB }], null, stateHash(gs))
+                const p = pad || { left: keys.left, right: keys.right, up: keys.up, down: keys.down, a: edgeA, b: edgeB }
+                episode.addTick([{ left: !!p.left, right: !!p.right, up: !!p.up, down: !!p.down, a: !!p.a, b: !!p.b }], null, stateHash(gs))
             } catch { episode = null }
         }
         const closeEpisode = (won) => {
@@ -203,6 +208,7 @@ const FloorBossGame = () => {
         const finish = () => {
             const won = gs.end === 'win'
             overAt = performance.now()
+            watchingRef.current = false; setWatching(false) // #1637 the shift ends in your hands
             setEnd({ won, kind: gs.end, score: gs.score, shipped: gs.shipped, expired: gs.expired, stows: gs.stows, reason: gs.endReason })
             const board = (() => { try { return JSON.parse(localStorage.getItem('floorboss.board') || '[]') } catch { return [] } })()
             if (gs.score > 0) localStorage.setItem('floorboss.board', JSON.stringify([...board, { score: gs.score, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -222,8 +228,13 @@ const FloorBossGame = () => {
                 return
             }
             if (sc !== 'play') return
-            step(gs, [livePad()])
-            recordTick()
+            // #1637 WATCH: seat the quota-proven autopilot (it drives ONLY the
+            // pad — cursor + PICK/TOOL — and triages the live floor, so seating
+            // or releasing mid-shift resumes from exactly where the floor stands;
+            // floorbosscheck grades this same manager to quota).
+            const pad = watchingRef.current && !gs.end ? ap(gs) : livePad()
+            step(gs, [pad])
+            recordTick(pad)
             edgeA = false; edgeB = false
             handleEvents(gs.ev, gs.tick)
             // the floor hums at 60 bpm while bots work — gain scales with how
@@ -752,6 +763,7 @@ const FloorBossGame = () => {
             gs = makeGame(pin != null ? pin >>> 0 : (Math.random() * 2 ** 31) | 0)
             parts.length = 0
             setEnd(null)
+            watchingRef.current = false; setWatching(false) // #1637 a new shift starts in your hands
             setMode('play')
             beginEpisode()
             audioController.playTone(262, 0.08, 'square', 0.06)
@@ -768,6 +780,8 @@ const FloorBossGame = () => {
 
         const onCanvasClick = (ev) => {
             if (screenRef.current !== 'play' || pausedRef.current) return
+            // #1637 WATCH: a click on the floor is the player managing — hand back first.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const { px, py, gx, gy } = toGrid(ev)
             if (inRect(CHIPS.auto, px, py)) { toggleAuto(gs); return }
             if (inRect(CHIPS.rack, px, py)) { setTool(gs, 'rack'); return }
@@ -796,6 +810,14 @@ const FloorBossGame = () => {
                 gs = makeGame(1337)
                 return
             }
+            // #1637 WATCH: Y seats the proven floor manager; any driving key or
+            // click takes the shift back (F/R/H are manager verbs — they drive).
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft' || e.code === 'KeyA') keys.left = true
             if (e.code === 'ArrowRight') keys.right = true
             if (e.code === 'ArrowUp' || e.code === 'KeyW') keys.up = true
@@ -868,6 +890,10 @@ const FloorBossGame = () => {
                     return o.id
                 },
                 truck: () => ({ ...truck }),
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                probe: () => ({ tick: gs.tick, score: gs.score, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
+                watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
             }
             mountDbg({
@@ -927,6 +953,14 @@ const FloorBossGame = () => {
                     <p className="font-mono text-[11px] text-white/60">
                         {end.won ? 'The dock seals warm and the chargers glow green.' : end.kind === 'fired' ? 'Three cold orders. The warehouse lights go out behind you.' : 'Close, but the quota is the quota. Back tomorrow at dusk.'}
                     </p>
+                </div>
+            )}
+            {/* #1624 WATCH — the floor runs the proven shift. Bottom-left: the
+                top bar chips and the order rail own the canvas's right side. */}
+            {screen === 'play' && watching && <WatchToast className="absolute top-10 z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: '0.75rem', left: '0.75rem' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
             <VirtualControls secondAction={{ label: 'TOOL', code: 'KeyB' }} visible={screen === 'play' && !paused} />
