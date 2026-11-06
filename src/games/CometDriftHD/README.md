@@ -5,6 +5,9 @@ first MODERN title): the SAME game as COMET DRIFT GP — `CometDrift/sim.js`
 and `CometDrift/track.js` are reused UNCHANGED — re-drawn in real 3D on
 three.js `WebGPURenderer` (WebGL2 fallback for phones). 4 laps, 7 karts,
 dusk canyon, drift ladder. Art and audio synthesized at runtime; no assets.
+Since #1690 the sim's LINK chain (mid-boost re-seats, x1..x3) rides along —
+HD routes the `link` event to its own voice (climbing chirp, bell at x3) and
+draws the gold `LINK xN!` callout under the lap plate.
 
 ## Layout
 

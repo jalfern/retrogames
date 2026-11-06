@@ -71,7 +71,7 @@ export const TIERS = [
 // The chain breaks honestly: it resets when the boost drains, on a spin, and
 // when a no-pay dump lands during a live boost (the remaining boost burns,
 // the chain does not). Pure + rng-free so cometcheck can gate the law itself.
-export const LINK = { ext: 0.34, max: 3, carry: 0.45, overAdd: 0.55 }
+export const LINK = { ext: 0.34, max: 3, carry: 0.5, overAdd: 0.55 }
 
 // #1687 deliberate drift-economy for the field (used by brain(), rivals only):
 // a skill-scaled tier target — the front markers chase gold, the back markers
