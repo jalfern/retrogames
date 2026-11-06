@@ -687,3 +687,13 @@ fail), `npm run lobbycheck` (shared join flow across ssx/blob-battle/gauntlet),
 `npm run ssxdrill` (two headless Chromes vs the local relay — needs
 `npm run dev`: host code, guest join, host-start, same seed, live ghosts, finish
 exchange lights standings on both).
+
+## WATCH key (#1624)
+
+Press **Y** mid-race (or tap ▶ WATCH): `planner.decide(g, rider0)` — the cold
+witness line ssxcheck proves winnable — takes the human seat at real speed,
+count lights through the flag of heat 3. Any steer key, stick push, canvas
+drag or pad button takes over and your held keys keep working. The watcher is
+the same autopilot as the CPU field and the attract, minus the attract's hot
+tricks — ssxcheck's #1624 gate rides five seeded tournaments on it alone.
+Browser leg in `npm run watchcheck` — needs `npm run dev`.

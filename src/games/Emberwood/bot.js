@@ -309,8 +309,23 @@ export function fightTick(sim, b, inp) {
     return true
 }
 
-export function attractBot(sim) {
-    const b = sim._bot || (sim._bot = { pi: 0 })
+// #1624 WATCH kit policy: the guide is the attract autopilot, and like the
+// attract it borrows the demo kit so the proven route can actually run. The
+// borrow is a loan, not a gift — when you take over, your items, embers and
+// hearts come back exactly as they were. World progress the watcher made
+// (doors opened, cracks blown, bosses felled) stays: you watched it happen.
+export const watchSnapshot = (sim) => ({
+    items: { ...sim.items }, score: sim.score, hp: sim.hero.hp, max: sim.hero.max,
+})
+export const watchRestore = (sim, snap) => {
+    if (!snap) return
+    sim.items = { ...snap.items }
+    sim.score = snap.score
+    sim.hero.max = snap.max
+    sim.hero.hp = Math.min(snap.hp, snap.max)
+}
+
+export function attractBot(sim) {    const b = sim._bot || (sim._bot = { pi: 0 })
     const inp = { lx: 0, ly: 0 }
     // the vale lends its demo hero what the route spends; regen keeps the
     // showcase alive (attract is invisible-scored, physics stay honest)

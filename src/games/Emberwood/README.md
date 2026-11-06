@@ -283,3 +283,14 @@ the **HOLLOW SPIRE** (`d3-e0..e3`, `d3-f0`).
   `screenReachable` enforces them, so the demo still fells the Wyrm at 11242.
 - Save/load carry `flags.emberTaken`, `items.gale`, the vent seals and the King,
   so a continue past the Wyrm keeps Ashfell.
+
+## WATCH key (#1624)
+
+Press **Y** in play (or tap ▶ WATCH): the attract autopilot walks the proven
+route through YOUR run at real speed. Kit policy (`watchSnapshot` /
+`watchRestore` in bot.js): the guide borrows the attract kit while it drives
+and hands your items, embers and hearts back whole the moment you take over;
+world progress it made (doors opened, cracks blown, bosses felled) stays. Any
+key or touch takes over. Since the route is proven for any kit state, the
+guide is always available in a live run. Node gates in `emberwoodcheck`
+(#1624); browser leg in `npm run watchcheck` — needs `npm run dev`.

@@ -1434,5 +1434,24 @@ for (let c = 0; c < COURSE_COUNT; c++) {
         /h\.air\.textContent\s*=\s*named \? pv : 'A I R'/.test(idx))
 }
 
+// #1624 WATCH: while Y is on, the game feeds the human seat planner.decide —
+// the cold witness line, the same one ssxcheck proves winnable. Riding it as
+// the only input must carry the whole tournament on the seed: that is what the
+// watcher sees, at real speed, in the real race.
+{
+    let allDone = true
+    for (const seed of [0, 1, 2, 3, 4]) {
+        const g = makeGame('race', seed)
+        let t = 0
+        while (!g.end && t < 400000) { step(g, decide(g, g.riders[0])); t++ }
+        if (!g.end || g.heat !== 2 || !g.riders[0].finished) allDone = false
+    }
+    ok('#1624 the watch line (cold decide) rides five seeded tournaments to the flag', allDone)
+    const g2 = makeGame('race', 3)
+    const s0 = g2.riders[0].s
+    step(g2, decide(g2, g2.riders[0]))
+    ok('#1624 watch ticks idle through the start lights', g2.phase === 'count' && g2.riders[0].s === s0 && g2.tick === 1)
+}
+
 console.log(`\n${pass}/${pass + fail} ${fail ? 'FAILURES: ' + fail : 'PASS'}`)
 process.exit(fail ? 1 : 0)

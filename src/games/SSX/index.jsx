@@ -21,6 +21,8 @@ import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/l
 import { seatIds, encodeState, decodeState, applyGhost, computeStandings, pruneGhosts } from './net.js'
 import { slopePos, terrainY, DS, HEATS, rotationName, expressAt, sceneryPlan, gladeDefs } from './course.js'
 import { padState } from '../../utils/padState'
+import WatchButton from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, WATCH_HELP } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { buildTerrain, buildRails, buildScenery, buildSky, buildSparkles, buildRimJags, attachShelf, makeHeroRider, poseRider, sprayField, makeSprite, makeBoard, THEMES, RIDER_MODELS, SUN, GROOVE, SPARKLE_PULSE, slopeAt, cpuSprayCount, landingSound, carveVoice, retunePose, MUSIC_TRACKS, MUSIC_STEP, START_VISTA, animateDecor, crowdHype, speedStreakK, CLOUD_LAYER, buildClouds } from './art.js'
 
@@ -39,6 +41,8 @@ const SSXGame = () => {
     const [netUi, setNetUi] = useState(null)   // #845 online lobby/standings overlay
     const [podium, setPodium] = useState(null) // #845 final friends' podium
     const [trickHeld, setTrickHeld] = useState(() => new Set())
+    const [watching, setWatching] = useState(false) // #1624 WATCH: the prover rides
+    const watchingRef = useRef(false)
     const trickApi = useRef(null)
     const stickApi = useRef(null)
     const screenRef = useRef('attract')
@@ -550,6 +554,13 @@ const SSXGame = () => {
             const p = g.riders[0]
             let inp
             if (screenRef.current === 'attract') inp = decide(g, p, true)
+            else if (watchingRef.current && (padState.engaged || dragId !== null)) {
+                // #1624 takeover: a stick push or a canvas drag — the rider is yours
+                watchingRef.current = false
+                setWatching(false)
+                inp = decide(g, p)
+            }
+            else if (watchingRef.current) inp = decide(g, p) // #1624 the cold witness line, live
             else inp = {
                 // #791: a canvas drag IS the analog stick — horizontal offset from
                 // where the finger went down sets steer depth; keyboard/pad ±1 falls
@@ -921,6 +932,8 @@ const SSXGame = () => {
             setTrickHeld(new Set())
             poseOverride = null
             setResult(null)
+            watchingRef.current = false
+            setWatching(false)
             dragId = null
             dragSteer = null
             tiltReset()
@@ -971,6 +984,9 @@ const SSXGame = () => {
                 return
             }
             if (pausedRef.current) return
+            // #1624 WATCH: Y hands the hill to the prover; any driving key takes it back.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             keys.add(e.code)
         }
         const onUp = (e) => keys.delete(e.code)
@@ -1005,6 +1021,7 @@ const SSXGame = () => {
 
         if (import.meta.env.DEV) {
             window.__ssxTest = {
+                watching: () => watchingRef.current, // #1624 watchcheck: is the prover driving?
                 probe: () => {
                     const p = g.riders[0]
                     return {
@@ -1473,6 +1490,18 @@ const SSXGame = () => {
                             onPointerCancel={() => trickApi.current?.(code, false)}
                         >{label}</button>
                     ))}
+                </div>
+            )}
+            {/* #1624 WATCH: the prover takes the hill — badge mid-top, pill under
+                the speed stack; any stick push, drag, key or tap takes it back. */}
+            {play && watching && (
+                <div className="fixed z-50 top-[4.25rem] left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none">
+                    WATCHING — THIS IS THE PROVEN LINE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: '11.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
             <VirtualControls visible={play && !paused && TOUCH} secondAction={{ label: 'BST', code: 'ShiftLeft' }} />

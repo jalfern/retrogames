@@ -3,7 +3,7 @@
 // trap you, and the white page brings Atrus home. Node-only, no browser.
 
 import { NODES, AGE_LIST } from '../src/games/Myst/nodes.js'
-import { freshState, dispatch, solveScript, runSolver, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews, portraitViews } from '../src/games/Myst/state.js'
+import { freshState, dispatch, solveScript, runSolver, watchResume, isWin, STONE_SIZES, SUN_MOON, RIDE, STAR_SHAPES, WHEEL_SPOKES, WHEEL_BITE, WHEEL_RINGS, WHEEL_NOTCH, WHEEL_POINTS, spectatorViews, portraitViews } from '../src/games/Myst/state.js'
 import { drawVision, drawPortrait, PORTRAIT_TEAR0 } from '../src/games/Myst/visions.js'
 import { LINK_TICKS, linkingBook, linkEnvelope, linkTint, linkStars, drawLink, linkAccel, linkSeam, LINK_PALETTE, TRAP_LINK } from '../src/games/Myst/link.js'
 import { deriveCodes, safeWords, seedFromSearch, notebookSeed, storeSeed, loadSeed, NUMBER_WORDS } from '../src/games/Myst/codes.js'
@@ -2737,6 +2737,26 @@ console.log('MYST — mutants (each MUST die)')
     pull(f)
   }
   ok(died === MUTANTS.length, `all ${MUTANTS.length} mutants die`, `${died}/${MUTANTS.length}`)
+}
+
+// #1624 WATCH — resume the proven route from wherever the player stands.
+// The junction rule: replaying the suffix from an identical state re-enacts
+// exactly what the fresh run did; a position with no junction honestly gets
+// no guide (browser leg of this proof lives in scripts/watchcheck.mjs).
+{
+  const seed = 13
+  let s = freshState(seed)
+  const full = solveScript(s.codes)
+  const r0 = watchResume(s)
+  ok(r0 && r0.suffix.length === full.length, '#1624 at the dock the junction is the whole route')
+  for (let i = 0; i < 40; i++) s = dispatch(s, full[i]).state
+  const r = watchResume(s)
+  ok(r && r.suffix.length === full.length - 40, '#1624 mid-route the junction resumes at the step you stand')
+  let t = s
+  for (const a of r.suffix) t = dispatch(t, a).state
+  ok(isWin(t), '#1624 replaying the suffix from the junction still brings Atrus home')
+  const dev = dispatch(freshState(seed), { t: 'dial', pad: 'safe', i: 0, v: 5 }).state
+  ok(watchResume(dev) === null, '#1624 a state off the proven line gets no guide — no fake demos')
 }
 
 console.log(`\n${pass} pass, ${fail} fail`)
