@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { containMap } from '../../utils/fitCanvas'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx } from './sim'
+import { makeGame, step, decide, stateHash, fmtTime, CFG, LAPS, TIERS, LINK, rivalBoostFx, SAND } from './sim'
 import { TRACK, SCENERY, TEX, TEX_S, COURSE, COURSES, selectCourse, surfaceAt, spriteFootShift, ELEV_SCREEN, sandSpray } from './track.js'
 import { selectorGeom, selectorHit, previewBox, cupBadgeGeom, cupBadgeHit } from './selector.js'
 import { CUP, CUP_RACES, makeCup, tally, standings, leaderName, cupDone } from './cup.js'
@@ -172,6 +172,19 @@ export default function CometDrift() {
             if (!g.markDelta.length) return
             for (const [key, d] of g.markDelta) {
                 const c = gnd0[key]
+                // #1718 cliff chips: the decal depth range (>= crack) is a
+                // coal-toned scar painted over the strata, not a sand tint —
+                // a chip blends hardest, its crack dashes lighter; the flow
+                // decays one step per pulse, so scars fade chip → crack →
+                // dents → pristine on the same queue.
+                if (d >= SAND.crack) {
+                    const mx = d >= SAND.chip ? 0.62 : 0.42
+                    const r = Math.round((c & 255) * (1 - mx) + 26 * mx)
+                    const gg = Math.round(((c >> 8) & 255) * (1 - mx) + 20 * mx)
+                    const b = Math.round(((c >> 16) & 255) * (1 - mx) + 16 * mx)
+                    gnd[key] = 0xff000000 | (b << 16) | (gg << 8) | r
+                    continue
+                }
                 const f = 1 - 0.11 * d
                 const r = Math.max(0, Math.min(255, Math.round((c & 255) * f)))
                 const gg = Math.max(0, Math.min(255, Math.round(((c >> 8) & 255) * f)))
