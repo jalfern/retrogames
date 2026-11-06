@@ -47,6 +47,7 @@ export default function GravelYard() {
     const pausedRef = useRef(false)
     pausedRef.current = paused
     const [uiScreen, setUiScreen] = useState('attract')
+    const [netSeatUi, setNetSeatUi] = useState(0)
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const attractRef = useRef(null)
@@ -61,10 +62,12 @@ export default function GravelYard() {
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
-    // #1672 lobby seats: seat 0 = digger = host hands, seat 1 = truck = guest
-    // hands, seat 2 stays the CPU operator. All live net state lives here so the
+    // #1672 lobby seats, #1705 extends to three: seat 0 = digger = host hands,
+    // seat 1 = truck = first joiner, seat 2 = operator = second joiner
+    // (join order fixes the machine). A two-browser crew leaves seat 2 the CPU
+    // operator. All live net state lives here so the
     // contract (sources) and the loop (liveTick) can read it without re-render.
-    const netRef = useRef({ active: false, role: null, seat: 0, mode: false, phase: 'off', code: '', joinHref: '', frozen: false, stall: 0, room: null, startHost: null })
+    const netRef = useRef({ active: false, role: null, seat: 0, mode: false, phase: 'off', code: '', joinHref: '', frozen: false, stall: 0, room: null, startHost: null, live: null })
 
     const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
     const freshEmitters = () => [makeCpuEmitter(0), makeCpuEmitter(1), makeCpuEmitter(2)]
@@ -110,7 +113,7 @@ export default function GravelYard() {
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
             sources: () => {
                 if (netRef.current.mode) {
-                    const kinds = seatKinds(netRef.current.role)
+                    const kinds = seatKinds(netRef.current.role, netRef.current.live, netRef.current.seat)
                     if (kinds) return kinds
                 }
                 const out = []
@@ -256,18 +259,19 @@ export default function GravelYard() {
         window.addEventListener('keyup', onKeyUp)
         cvs.addEventListener('pointerdown', onPointer)
 
-        // ---------- online lobby seats (#1672) ----------
-        // ?net=host rolls a 4-letter room; ?net=join&room=CODE seats the
-        // second browser. Lockstep law (sample once, D ahead, never resample)
-        // makes seed + pad streams identical on both boxes; hashState at the
-        // boundary is the referee. The guest drives the TRUCK (seat 1) with
-        // the same primary keys/pad the host uses for the digger.
+        // ---------- online lobby seats (#1672, three seats by #1705) ----------
+        // ?net=host rolls a 4-letter room; one or two browsers join. Lockstep
+        // law (sample once, D ahead, never resample) makes seed + pad streams
+        // identical on every box; hashState at the boundary is the referee.
+        // Join order seats the crew: host digs, first joiner drives the TRUCK,
+        // second joiner works the SCREEN CONSOLE — each with the same primary
+        // keys/pad their seat uses locally.
         const net = netRef.current
         const nq = new URLSearchParams(window.location.search)
         net.active = !!lobbyRole(window.location.search)
         net.role = lobbyRole(window.location.search)
         net.seat = net.active ? seatOf(net.role) : 0
-        const mirrors = [new Map(), new Map()]
+        const mirrors = [new Map(), new Map(), new Map()]
         let ws = null
         const makeTransport = (url) => {
             ws = new WebSocket(url)
@@ -284,18 +288,26 @@ export default function GravelYard() {
             send: (m) => { if (m.t === 'pad') mirrors[net.seat].set(m.k, m.p); if (net.room) net.room.send(m.t, m) },
         })
         const sayYard = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 160 }
-        const beginOnline = (seed) => {
-            ls.reset(); mirrors[0].clear(); mirrors[1].clear()
+        const beginOnline = (seed, slots) => {
+            // roster frozen at kickoff: which slots are humans decides the crew
+            const roster = (Array.isArray(slots) && slots.length >= 2 ? slots.slice(0, SEATS) : [0, 1]).map((s) => s | 0)
+            ls.reset(); mirrors.forEach((mm) => mm.clear())
+            net.live = roster
+            net.seat = seatOf(net.role, net.room && net.room.yourSlot != null ? net.room.yourSlot : null)
+            ls.setPeers(roster.filter((s) => s !== net.seat))
             net.mode = true; net.frozen = false; net.stall = 0
             clearKeys()
-            seatsRef.current = 2
+            seatsRef.current = roster.length
             partnerHumanRef.current = false
             seedRef.current = (seed >>> 0) || 1
-            gsRef.current = createGame(seedRef.current, 2)
+            gsRef.current = createGame(seedRef.current, roster.length)
             emittersRef.current = freshEmitters()
             setScreen('play')
-            specRef.current.players = 2
+            setNetSeatUi(net.seat)
+            specRef.current.players = roster.length
             playFx({ k: 'start' })
+            const machine = ['YOU HAVE THE DIGGER', 'YOU HAVE THE TRUCK', 'YOU HAVE THE CONSOLE'][net.seat]
+            sayYard(roster.length >= 3 ? `3P CREW — ${machine}` : machine)
         }
         const netAbandon = (msg) => {
             if (!net.mode || net.frozen) return
@@ -303,7 +315,8 @@ export default function GravelYard() {
             sayYard(msg)
         }
         const netReturn = () => {
-            net.mode = false; net.frozen = false; net.stall = 0
+            net.mode = false; net.frozen = false; net.stall = 0; net.live = null
+            setNetSeatUi(0)
             if (net.role === 'host') { if (net.room) { try { net.room.setPhase('waiting') } catch { /* gone */ } } }
             else { net.active = false; if (net.room) { try { net.room.reset() } catch { /* gone */ } } }
             startAttract()
@@ -318,10 +331,10 @@ export default function GravelYard() {
                 onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref },
                 onJoin: () => { if (net.role === 'host') sayYard('CREW IN — DIG IN') },
                 onLeave: () => netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'),
-                onStart: (m) => { if (net.role === 'guest') beginOnline(m.seed >>> 0) },
+                onStart: (m) => { if (net.role === 'guest') beginOnline(m.seed >>> 0, m.slots) },
                 on: {
-                    pad: (m) => { const mm = mirrors[m.s | 0]; if (mm) mm.set(m.k | 0, m.p) },
-                    hs: (m) => { const r = ls.gotHash(m.k | 0, m.h >>> 0); if (r && r.desync !== undefined) netAbandon('SIMS DIVERGED — SPACE FOR TITLE') },
+                    pad: (m) => { const s = m.s | 0; const mm = mirrors[s]; if (mm) mm.set(m.k | 0, m.p); if (s !== net.seat) ls.gotPad(m.k | 0, m.p, s) },
+                    hs: (m) => { const r = ls.gotHash(m.k | 0, m.h >>> 0, m.s | 0); if (r && r.desync !== undefined) netAbandon('SIMS DIVERGED — SPACE FOR TITLE') },
                     gone: () => netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'),
                 },
             })
@@ -333,8 +346,9 @@ export default function GravelYard() {
                 // a seat has to be taken before the shift can begin
                 if (!(lobby.room.slots.length >= 2)) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
                 const seed = hostSeed()
-                if (!lobby.start({ seed })) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
-                beginOnline(seed)
+                const roster = lobby.room.slots.slice(0, SEATS)
+                if (!lobby.start({ seed, slots: roster })) { sayYard('WAITING FOR A PARTNER — SHARE THE CODE'); return false }
+                beginOnline(seed, roster)
                 return true
             }
         }
@@ -354,17 +368,17 @@ export default function GravelYard() {
             const g = gsRef.current
             if (!g || g.done) return
             if (net.mode) {
-                // #1672 online: the two browsers execute the SAME seed + pad
-                // streams. Own pad is sampled once, D ahead, onto the wire;
-                // tick k runs only when the peer's pad for k is in (the
-                // lockstep law); the hash boundary referees the run.
+                // #1672 online, #1705 three seats: every browser executes the
+                // SAME seed + pad streams. Own pad is sampled once, D ahead,
+                // onto the wire; tick k runs only when every peer's pad for k
+                // is in (the lockstep law); the hash boundary referees the run.
                 if (net.frozen) return
                 const k = g.tick
                 ls.pumpTo(k + PAD_DELAY, () => wirePad(humanPad(keys1)))
                 if (!ls.ready(k)) { net.stall++; if (net.stall === 90) sayYard('PARTNER LAGGING…'); return }
                 net.stall = 0
-                const pads = padsAt(mirrors[0], mirrors[1], k)
-                pads[2] = emittersRef.current[2]({ gs: g, tick: g.tick })
+                const pads = padsAt(mirrors, k)
+                if (!(net.live || [0, 1, 2]).includes(2)) pads[2] = emittersRef.current[2]({ gs: g, tick: g.tick })
                 stepGame(g, pads)
                 recordLiveTick(pads)
                 for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
@@ -802,9 +816,9 @@ export default function GravelYard() {
                 hash: () => simState(gsRef.current).hash,
                 // #1672 online-seat probes: feed a peer pad without a relay so
                 // gravelcheck can drive the lockstep path in a headless box.
-                net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall }),
-                netFeed: (seat, k, mask) => { const mm = mirrors[seat | 0]; if (mm) mm.set(k | 0, { m: mask | 0 }); if ((seat | 0) !== net.seat) ls.gotPad(k | 0, { m: mask | 0 }) },
-                netBegin: (seed) => beginOnline(seed),
+                net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall, slots: net.live || (net.room && net.room.slots) || [] }),
+                netFeed: (seat, k, mask) => { const mm = mirrors[seat | 0]; if (mm) mm.set(k | 0, { m: mask | 0 }); if ((seat | 0) !== net.seat) ls.gotPad(k | 0, { m: mask | 0 }, seat | 0) },
+                netBegin: (seed, slots) => beginOnline(seed, slots),
                 netStart: () => !!(net.startHost && net.startHost()),
                 // #1390 render-animation probes + deterministic staging for gravelcheck
                 anim: () => {
@@ -894,7 +908,7 @@ export default function GravelYard() {
                 aria-label="Gravel Yard"
             />
             {paused && game && <PauseOverlay game={game} onResume={() => setPaused(false)} />}
-            <VirtualControls secondAction={{ label: 'DUMP', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
+            <VirtualControls secondAction={{ label: netSeatUi === 2 ? 'JOG' : 'DUMP', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
         </div>
     )
 }

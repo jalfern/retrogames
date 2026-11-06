@@ -28,7 +28,12 @@ export function retryDelay(attempt, base = 400, cap = 8000) {
 
 export function normalizeWirePad(p) {
     const o = p || {}
-    return { l: !!o.l, r: !!o.r, u: !!o.u, d: !!o.d, s: !!o.s, a: !!o.a }
+    const n = { l: !!o.l, r: !!o.r, u: !!o.u, d: !!o.d, s: !!o.s, a: !!o.a }
+    // #1705: mask-shaped pads (GravelYard's {m}) ride this same pipeline; the
+    // normalizer used to erase `m`, which left every yard pad empty on the
+    // mirror side. Numbers pass through intact; field-shaped pads unchanged.
+    if (Number.isFinite(o.m)) n.m = o.m | 0
+    return n
 }
 
 export function createLockStep(opts = {}) {
@@ -43,6 +48,13 @@ export function createLockStep(opts = {}) {
     let lastArrival = 0
     let ours = new Map()
     let peerH = new Map()
+    // N-peer mode (#1705): when peers is set (live remote slot ids), pads and
+    // hashes key by slot and a tick runs only when EVERY peer's pad for k has
+    // landed; the hash referee compares against every peer. Left null it is the
+    // exact single-peer law every 2P game shipped on — netcheck pins that.
+    let peers = Array.isArray(opts.peers) && opts.peers.length ? opts.peers.slice() : null
+    let bySlot = new Map()  // slot -> Map(k -> pad)
+    let hBySlot = new Map() // slot -> Map(k -> hash)
     let stalls = 0
     let stallRun = 0
     let maxStallRun = 0
@@ -62,7 +74,14 @@ export function createLockStep(opts = {}) {
         reset() {
             local = new Map(); remote = new Map(); remoteAt = new Map(); lastArrival = 0
             ours = new Map(); peerH = new Map()
+            bySlot = new Map(); hBySlot = new Map()
             stalls = 0; stallRun = 0; maxStallRun = 0; nextSend = 0
+        },
+        // #1705: freeze the live peer roster at kickoff (host starts with what
+        // the roster says). Call right after reset(). Null = single-peer law.
+        setPeers(slots) {
+            peers = Array.isArray(slots) && slots.length ? slots.slice() : null
+            bySlot = new Map(); hBySlot = new Map()
         },
         // Sample every tick from nextSend up to target (= simTick + delay),
         // stamp it and send it — final, once. readPad(t) answers the live pad.
@@ -76,8 +95,13 @@ export function createLockStep(opts = {}) {
                 nextSend++
             }
         },
-        gotPad(k, pad) {
-            remote.set(k, normalizeWirePad(pad))
+        gotPad(k, pad, slot = 0) {
+            const p = normalizeWirePad(pad)
+            if (peers) {
+                let m = bySlot.get(slot)
+                if (!m) { m = new Map(); bySlot.set(slot, m) }
+                m.set(k, p)
+            } else remote.set(k, p)
             const at = now()
             remoteAt.set(k, at)
             if (at > lastArrival) lastArrival = at
@@ -86,22 +110,52 @@ export function createLockStep(opts = {}) {
         // ~0 when the wire is healthy and the buffer keeps pace, it grows
         // when the friend lags. -1 until any pad has landed.
         padAge(at) { return lastArrival ? at - lastArrival : -1 },
-        ready(k) { const r = remote.has(k); if (r) stallRun = 0; return r },
+        ready(k) {
+            let r
+            if (peers) {
+                r = true
+                for (const s of peers) { const m = bySlot.get(s); if (!m || !m.has(k)) { r = false; break } }
+            } else r = remote.has(k)
+            if (r) stallRun = 0
+            return r
+        },
         stall() { stalls++; stallRun++; if (stallRun > maxStallRun) maxStallRun = stallRun; return stalls },
         pads(k) { return [local.get(k) || normalizeWirePad(), remote.get(k) || normalizeWirePad()] },
         // hash at a boundary: send + compare now, or remember for when it lands.
+        // In N-peer mode every peer is refereed: any mismatch is a desync.
         hash(k, h) {
             ours.set(k, h)
             send({ t: WIRE.HASH, k, h })
+            if (peers) {
+                for (const s of peers) {
+                    const m = hBySlot.get(s)
+                    if (m && m.has(k)) { const r = compare(k, m.get(k), h); if (r.desync !== undefined) return r }
+                }
+                return null
+            }
             if (peerH.has(k)) return compare(k, peerH.get(k), h)
             return null
         },
-        gotHash(k, h) {
+        gotHash(k, h, slot = 0) {
+            if (peers) {
+                let m = hBySlot.get(slot)
+                if (!m) { m = new Map(); hBySlot.set(slot, m) }
+                m.set(k, h)
+                if (ours.has(k)) return compare(k, h, ours.get(k))
+                return null
+            }
             peerH.set(k, h)
             if (ours.has(k)) return compare(k, ours.get(k), h)
             return null
         },
-        prune(k) { shrink(local, k); shrink(remote, k); shrink(remoteAt, k); shrink(ours, k); shrink(peerH, k) },
-        stats() { return { local: local.size, remote: remote.size, stalls, stallRun, maxStallRun } },
+        prune(k) {
+            shrink(local, k); shrink(remote, k); shrink(remoteAt, k); shrink(ours, k); shrink(peerH, k)
+            for (const m of bySlot.values()) shrink(m, k)
+            for (const m of hBySlot.values()) shrink(m, k)
+        },
+        stats() {
+            const remoteN = peers ? [...bySlot.values()].reduce((n, m) => n + m.size, 0) : remote.size
+            return { local: local.size, remote: remoteN, stalls, stallRun, maxStallRun }
+        },
     }
 }

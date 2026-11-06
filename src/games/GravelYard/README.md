@@ -57,6 +57,24 @@ Radio callouts are the info channel: `TRUCK` shouts orders (what its board
 sees), `SCREEN` shouts jams/spill/batch results, `DIGGER` shouts wet seams.
 Solo you play by ear — that is the design rule of #1253.
 
+**Online (#1672, all three seats by #1705)**: `?net=host` rolls a room code;
+joiners seat by join order — first joiner drives the TRUCK, second joiner works
+the SCREEN CONSOLE (each remote browser brings its own pad, so the crowds-the-
+pad objection to a third LOCAL keyboard does not apply). The host starts once
+two or more seats are live; join order fixes the machine (`seatOf(role, slot)`
+— seat IS slot). Lockstep law: sample once, D ticks ahead, never resample; a
+tick runs only when every peer's pad for k is in; `hashState` at the boundary
+is the referee on every box. A two-browser crew leaves the operator CPU,
+bit-identical to #1672. `sources()` reports the roster: live seats
+`human`/`remote`, empty seats `cpu`.
+**The two #1672 freezes this fixed** (#1705): the shipped pad handler never fed
+`ls.gotPad`, so `ready(k)` never opened — and `normalizeWirePad` erased the
+yard's `{m}` mask field, so every pad reaching the mirrors read as empty.
+Online play could not move. Both repaired; gravelcheck now pins real movement
+over a local relay (`relay/server.mjs`) with THREE headless pages, and the twin
+gates that carried the vacuous green were retrofitted with a digger-movement
+assertion.
+
 Known CPU reference results (engine seeds): the full CPU crew makes quota on
 **8/8 seeds** (663-985C vs 600); with one unit less on EVERY pile cell
 (slack rule) it still wins **7/8**; a two-handed crew (digger by pad, rest
@@ -64,11 +82,15 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
 
 ## Harness
 
-- `npm run gravelcheck` — 52 engine assertions (layout, determinism, dig/dump/
+- `npm run gravelcheck` — 75 engine assertions (layout, determinism, dig/dump/
   batch/gate/jam/load/tip/refuse/strike/orders/overflow, win + slack, the
   #1306 juice contract: drone cadence, radio voice IDs, orderDone cents) plus
-  browser boot, contract determinism, the in-browser CPU-brain proof and
-  frame checks. Needs `npm run dev` (DEV_PORT, default 5173).
+  the #1672 twin-box and #1705 three-box lockstep proofs (seat law, roster
+  rows, pad loss, per-peer hash referee, replay determinism, source pins) and
+  browser boot, contract determinism, the in-browser CPU-brain proof, render
+  frames, and a THREE-headless-page relay netplay test over `relay/server.mjs`
+  (real keys on three browsers move one sim to identical hashes). Needs
+  `npm run dev` (DEV_PORT, default 5173).
   `GY_SKIP_BROWSER=1 npm run gravelcheck` skips the browser half.
 - `npm run gravelplay` — real-key drive: attract→select→play, walk/dig/dump the
   first link of the chain with real keystrokes, drawn pixels must agree with the
@@ -84,10 +106,11 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
 
 ## Honest gaps
 
-- Online seats shipped #1672 (?net=host / ?net=join&room=CODE): the host
-  drives the digger, a remote browser drives the TRUCK on lockstep pads
-  (sample once, D ahead), the operator stays CPU; `sources()` now reports
-  `remote` for the peer seat. A third human seat is still open.
+- **CLOSED by #1705**: online seats — the THIRD seat went human. A second
+  joiner now works the SCREEN OPERATOR over the same lockstep pads (join order
+  seats digger/truck/console; `sources()` reports `remote` for both peers).
+  Also fixed en route: #1672's online mode was doubly frozen (wire pads never
+  fed `ls.gotPad`; `normalizeWirePad` erased the `{m}` mask) — see Seats.
 - **Voice (#1247)**: the recording path banks raw per-seat mic audio via
   `gameContract.recordLiveTick`; an in-game push-to-talk that steers the CPU
   crew like GAUNTLET's voice calls (#1249) is the natural next stage — the
