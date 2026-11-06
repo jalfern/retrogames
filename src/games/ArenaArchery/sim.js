@@ -82,6 +82,13 @@ export function makeGame(arena, opts = {}) {
         p: [mk(0, a.p1), mk(1, a.p2)],
         arrows: [], stuck: [],
         ledger: { hit: 0, lost: 0 },
+        // #1739 pure bookkeeping: every quiver GAIN per player (pull, dryout,
+        // respawn resupply). Lets a harness assert the exact economy identity
+        // `quiver = start - loosed + receipts` — the pull-back the #1685 fix
+        // added can land on the tick after a release, so a bare `quiver - 1`
+        // sample no longer proves the shot. Never read by the sim itself;
+        // stateHash stays what it was (the hash is the replay contract).
+        receipts: [0, 0],
         tick: 0, end: null, winner: -1, events: [], cmds: [], arrowSeq: 0,
         total: 2 * (opts.quiver ?? CFG.quiver), supplied: 0,
     }
@@ -190,6 +197,7 @@ function stepPlayer(g, p, inp) {
             const add = Math.min(p.quiverMax, p.quiver + 2) - p.quiver
             p.quiver += add
             g.supplied += add
+            g.receipts[p.id] += add
             g.events.push({ type: 'respawn', who: p.id, resupply: add })
         }
         return
@@ -250,6 +258,7 @@ function stepPlayer(g, p, inp) {
             const k = g.arrows.indexOf(s)
             if (k >= 0) g.arrows.splice(k, 1)
             p.quiver++
+            g.receipts[p.id]++
             g.events.push({ type: 'pull', who: p.id, cell: s.cell })
         }
     }
@@ -312,7 +321,7 @@ function stepArrows(g) {
                 const k = g.arrows.indexOf(s)
                 if (k >= 0) g.arrows.splice(k, 1)
                 const owner = g.p[s.owner]
-                if (owner.quiver < owner.quiverMax) owner.quiver++
+                if (owner.quiver < owner.quiverMax) { owner.quiver++; g.receipts[s.owner]++ }
                 else g.ledger.lost++
                 g.events.push({ type: 'dryout', who: s.owner, cell: s.cell })
             }
