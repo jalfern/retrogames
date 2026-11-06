@@ -6,7 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, fmtTime, CFG } from './sim'
 import { decide } from './planner'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { TRACK, SCENERY, TX, TY } from './track.js'
 import { buildGround, buildSky, buildSprites, KART } from './art.js'
@@ -417,6 +417,9 @@ export default function MarioKart() {
                 ctx.fillStyle = '#f8f8f8'
                 ctx.fillText('PRESS ANY KEY / TAP', W / 2, 161)
             }
+            ctx.font = 'bold 8px monospace'
+            ctx.fillStyle = '#88a8d8'
+            ctx.fillText(WATCH_ATTRACT_HINT, W / 2, 174)
             ctx.textAlign = 'left'
         }
 
@@ -553,8 +556,8 @@ export default function MarioKart() {
             }
             // #1637 WATCH: Y seats the proven autopilot (the same decide that
             // runs the attract GP); any driving key takes the wheel back.
-            if (isWatchKey(e)) { st.plan = !st.plan; setWatching(st.plan); return }
-            if (st.plan && isTakeoverKey(e)) { st.plan = false; setWatching(false) }
+            if (isWatchKey(e)) { st.plan = !st.plan; setWatching(st.plan); if (st.plan) playWatchStart(); else playWatchStop(); return } // #1654 shared handoff blip
+            if (st.plan && isTakeoverKey(e)) { st.plan = false; setWatching(false); playWatchStop() }
             keys[e.code] = true
         }
         const ku = (e) => { keys[e.code] = false }
@@ -583,6 +586,7 @@ export default function MarioKart() {
         })
 
         window.__kartTest = {
+            watchSfx: watchSfxLog, // #1654 the shared handoff blip log
             steer: STEER_PIPELINE,
             game: () => g,
             ghostGame: () => gGhost,

@@ -19,7 +19,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameCon
 import { W, H, CFG, PEDAL, G, makeGame, step, stateHash } from './sim.js'
 import { STAGES, PALETTES } from './levels.js'
 import { solveGame } from './planner.js'
-import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, NO_GUIDE, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 import { PRESS, MESSAGES } from './attract.js'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
@@ -442,15 +442,15 @@ const PaperboyGame = () => {
             // #1637 WATCH: Y seats the proven pedal-line — only at a stage junction
             // where the road still matches the witness; mid-stage it honestly declines.
             if (isWatchKey(e)) {
-                if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1654
                 else {
                     const r = provenRun().receipts[gs.si]
-                    if (r && stageStartRef.current === r.tStart) { watchingRef.current = true; setWatching(true) }
+                    if (r && stageStartRef.current === r.tStart) { watchingRef.current = true; setWatching(true); playWatchStart() } // #1654
                     else say(NO_GUIDE)
                 }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') { keys.l = true; lastDir = -1 }
             if (e.code === 'ArrowRight') { keys.r = true; lastDir = 1 }
             if (e.code === 'ArrowUp') keys.u = true
@@ -488,6 +488,7 @@ const PaperboyGame = () => {
 
         if (import.meta.env.DEV) {
             window.__paperTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, si: gs.si, s: +gs.s.toFixed(2), x: +gs.x.toFixed(2),
                     pedal: gs.pedal, lives: gs.lives, score: gs.score, streak: gs.streak, papers: gs.papers,
@@ -639,6 +640,7 @@ const PaperboyGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #e8443a, -3px 0 0 #2e6fd8, 0 10px 24px #000' }}>PAPERBOY</h1>
                         <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
                 </>

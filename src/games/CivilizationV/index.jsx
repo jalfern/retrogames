@@ -6,7 +6,7 @@
 // mirrors the HUD. Playable with mouse/touch: tap a tile to select your unit or
 // move it, tap END TURN (Space) to advance, E settles your settler, W opens
 // the WORK panel for a selected worker, D opens DIPLOMACY (war/peace/trade and
-// the city-state courts), Y opens VICTORY (the three races), LEFT-DRAG pans the
+// the city-state courts), I opens VICTORY (the three races), LEFT-DRAG pans the
 // map (arrows and screen edges pan too), RIGHT-DRAG / two-finger orbits, wheel
 // and pinch zoom, Home or the ◎ CENTER button jumps back to your selected unit
 // or capital.
@@ -23,7 +23,7 @@ import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../..
 import * as THREE from 'three'
 import { CFG, T, newGame, step, stateHash, canFound, CIVS, findPath, hexDist, UNIT, BARB, atWar, tileBlocked, TECH, TECH_IDS, ERAS, hasTech, availableTechs, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, connectedResources, resRevealed, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, gpReady, gpThreshold, gpCost, canRecruit, canUseGP, canDeclareWar, canMakePeace, canTrade, canGift, csInfo, CS_IDS, coastalCityOf, canEmbark, canLand, ARK_PARTS, arkPartsOf, arkPartsDone } from './sim.js'
 import { decide, RESEARCH_ORDER } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton from '../../components/WatchButton'
 import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
@@ -777,10 +777,10 @@ const CivilizationVGame = () => {
             // #1637 WATCH: Y seats the witness brain civcheck replays (expand,
             // defend the frontier, burn camps, end turn); any driving input takes over.
             if (isWatchKey(e)) {
-                if (screenRef.current === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (screenRef.current === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Space' || e.code === 'Enter') { endTurn(); return }
             if (e.code === 'KeyE' || e.code === 'KeyB') { doSettle(); return }
             if (e.code === 'Digit1') { pending = { ...pending, queue: 'WARRIOR' }; audioController.playTone(330, 0.03, 'sine', 0.03); return }
@@ -853,7 +853,7 @@ const CivilizationVGame = () => {
             ptrs.delete(e.pointerId)
             if (pinch) { if (ptrs.size < 2) pinch = null; drag = null; edgeOn = false; return }
             if (!drag) return
-            if (drag.moved < 8 && drag.btn === 0 && screenRef.current === 'play') { if (watchingRef.current) { watchingRef.current = false; setWatching(false) } const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } // #1637 a tile tap is you driving
+            if (drag.moved < 8 && drag.btn === 0 && screenRef.current === 'play') { if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } const t = pickTile(e.clientX, e.clientY); if (t) clickTile(t.c, t.r) } // #1637 a tile tap is you driving
             drag = null
         }
         const onPointerLeave = () => { edgeOn = false; held.clear(); drag = null; pinch = null; ptrs.clear() }
@@ -894,6 +894,7 @@ const CivilizationVGame = () => {
 
         if (import.meta.env.DEV) {
             window.__civTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 watching: () => watchingRef.current, // #1637 watchcheck: is the witness brain running the empire?
                 probe: () => ({ screen: screenRef.current, tick: gs.tick, turn: gs.turn, phase: gs.phase, end: gs.end, why: gs.endWhy,
                     gold: gs.civs[0].gold, science: gs.civs[0].science, culture: gs.civs[0].culture || 0,
@@ -1063,7 +1064,7 @@ const CivilizationVGame = () => {
                     <button onClick={() => actRef.current.toggleUPanel && actRef.current.toggleUPanel()} className="pointer-events-auto border border-amber-300/50 rounded px-2 py-0.5 bg-black/40 text-amber-100 text-[11px]">U · WONDERS</button>
                     <button onClick={() => actRef.current.toggleGPanel && actRef.current.toggleGPanel()} className="pointer-events-auto border border-rose-300/50 rounded px-2 py-0.5 bg-black/40 text-rose-100 text-[11px]">G · LEGENDS</button>
                     <button onClick={() => actRef.current.toggleDPanel && actRef.current.toggleDPanel()} className="pointer-events-auto border border-teal-300/50 rounded px-2 py-0.5 bg-black/40 text-teal-100 text-[11px]">D · DIPLOMACY</button>
-                    <button onClick={() => actRef.current.toggleVPanel && actRef.current.toggleVPanel()} className="pointer-events-auto border border-yellow-300/60 rounded px-2 py-0.5 bg-black/40 text-yellow-100 text-[11px]">Y · VICTORY</button>
+                    <button onClick={() => actRef.current.toggleVPanel && actRef.current.toggleVPanel()} className="pointer-events-auto border border-yellow-300/60 rounded px-2 py-0.5 bg-black/40 text-yellow-100 text-[11px]">I · VICTORY</button>
                     <span ref={setHud('sel')} className="text-white/70 ml-auto">tap a unit</span>
                 </div>
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/4 text-center font-mono font-bold text-xl transition-opacity duration-500" style={{ opacity: 0, color: '#ffe9a8', textShadow: '0 0 12px #c80' }} />
@@ -1335,6 +1336,7 @@ const CivilizationVGame = () => {
                     <h1 className="text-5xl font-black tracking-wide" style={{ color: '#e8c56a', textShadow: '0 2px 0 #6b4a12, 0 10px 26px #000' }}>CIVILIZATION</h1>
                     <p className="text-amber-200/90 font-mono mt-1 text-sm tracking-[0.3em]">FROM THE FIRST SETTLER TO THE LAST ROCKET</p>
                     <p className="text-white font-mono font-bold mt-3 animate-pulse">TAP / PRESS ANY KEY</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                     <AttractMessage
                         className="text-amber-100/80 font-mono text-[11px] mt-3 px-8 leading-5"
                         messages={[

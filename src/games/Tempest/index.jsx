@@ -9,7 +9,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -267,9 +267,11 @@ const TempestGame = () => {
                 const on = !watchingRef.current
                 watchingRef.current = on
                 if (on) watchMem.current = { id: null }
-                setWatching(on); return
+                setWatching(on)
+                if (on) playWatchStart(); else playWatchStop() // #1654 shared handoff blip
+                return
             }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(ev.code)) ev.preventDefault()
             held.add(ev.code)
         }
@@ -306,6 +308,7 @@ const TempestGame = () => {
                 gameTime: () => gs.tick / 60,
             }
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'tempest',
                 buttons: ['left', 'right', 'up', 'a'],
                 reset: (seed) => {

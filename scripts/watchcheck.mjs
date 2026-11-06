@@ -477,20 +477,33 @@ for (const pilot of run) {
 // #1638 source gates — one shared voice for the handoff, discoverable copy:
 // a game that stops blipping (or ships an attract screen without the hint)
 // goes red without needing Chrome to catch the audio.
+// #1654 — the full roster: every WATCH pilot, not just the first three.
 rep.section && rep.section('source')
-const PILOT_SRC = {
-    SSX: 'src/games/SSX/index.jsx',
-    EMBERWOOD: 'src/games/Emberwood/index.jsx',
-    MYST: 'src/games/Myst/index.jsx',
-}
+const FLAGSHIP = ['SSX', 'Emberwood', 'Myst']
+const ARCADE = ['Qbert', 'Joust', 'Galaga', 'Tempest', 'DigDug', 'BubbleBobble',
+    'SpyHunter', 'Arkanoid', 'OutRun', 'LunarLander', 'Outpost', 'Polarity',
+    'MissileBattle', 'SmashTV', 'MarioKart', 'Gauntlet', 'FourHalls',
+    'PrinceOfPersia', 'CivilizationV', 'BardsTale', 'TenDeep', 'BlobBattle',
+    'SimCityMin', 'Paperboy', 'IceClimber']
 const watchSrc = readFileSync('src/utils/watch.js', 'utf8')
 rep.check('watch.js: one shared blip pair, audible (two tones each)',
     /export const playWatchStart[\s\S]*?playTone\([\s\S]*?playTone\([\s\S]*?export const playWatchStop[\s\S]*?playTone\([\s\S]*?playTone\(/.test(watchSrc))
-for (const [name, f] of Object.entries(PILOT_SRC)) {
-    const src = readFileSync(f, 'utf8')
-    rep.check(`${name}: imports the shared blips and logs`,
+rep.check('watch.js: exports the shared attract hint', /export const WATCH_ATTRACT_HINT = 'Y — WATCH THE PROVEN ROUTE'/.test(watchSrc))
+for (const g of [...FLAGSHIP, ...ARCADE]) {
+    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    rep.check(`${g}: imports the shared blips and logs`,
         /from '\.\.\/\.\.\/utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
-    rep.check(`${name}: attract screen shows the WATCH hint`,
+}
+for (const g of FLAGSHIP) {
+    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    rep.check(`${g}: attract screen shows the WATCH hint`,
         /screen === 'attract'[\s\S]{0,1600}?Y — [Ww][Aa][Tt][Cc][Hh] THE PROVEN ROUTE/i.test(src))
+}
+// #1654: the arcade family draws WATCH_ATTRACT_HINT — JSX titles in index.jsx,
+// the canvas contracts in attract.js (import + a drawn line, no orphans).
+for (const g of ARCADE) {
+    let src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    try { src += '\n' + readFileSync(`src/games/${g}/attract.js`, 'utf8') } catch { /* canvas-direct */ }
+    rep.check(`${g}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
 }
 rep.exit()

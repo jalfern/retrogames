@@ -13,7 +13,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
@@ -497,6 +497,7 @@ const Bob = () => {
                 else if (msg === 1) text('1 SOLO   2 +CPU BOB   3 TWO PLAYERS', W / 2, 118, 8, '#e9f7ff', 0)
                 else text('DEMO PLAYS THE PROVEN RUN', W / 2, 118, 7, '#5d7094', 0)
                 if (Math.floor(gs.tick / 24) % 2 === 0) text('PRESS ANY KEY TO START', W / 2, 140, 9, '#ffd23f', 5)
+                text(WATCH_ATTRACT_HINT, W / 2, 170, 7, '#8fa3d8', 0)
                 const b = board()[0]
                 if (b) text(`HI-SCORE ${String(b.score).padStart(6, '0')}`, W / 2, 158, 8, '#5dc8ff', 3)
             }
@@ -563,8 +564,8 @@ const Bob = () => {
             }
             if (screenRef.current === 'over' && performance.now() - overAtRef.current > 900) { startPlay(1); return }
             // #1637 WATCH: Y hands the tower to the prover; any driving key takes it back.
-            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(ev)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(ev)) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
         const onKeyUp = (ev) => {
             if (ev.code === 'ArrowLeft') keys.l = false
@@ -624,6 +625,7 @@ const Bob = () => {
             })
             let prevA = false
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'bubble-bobble',
                 players: 2,
                 method: 'dpad',

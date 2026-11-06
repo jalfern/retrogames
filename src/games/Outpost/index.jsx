@@ -21,7 +21,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import { CFG, newRun, step, stateHash } from './sim.js'
 import { W, H, ROCK, STAIRS } from './cave.js'
 import { plan, autopilot, decide as decideTick } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const SIM_MS = 1000 / 60
@@ -302,8 +302,8 @@ const OutpostGame = () => {
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
             // #1637 WATCH: Y hands the colony to the autopilot; any driving input takes it back.
-            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'KeyT') { toolIdx = (toolIdx + 1) % TOOLS.length; audioController.playTone(400 + toolIdx * 60, 0.03, 'square', 0.03); return }
             if (e.code === 'ArrowLeft') cursor.x = Math.max(1, cursor.x - 1)
             if (e.code === 'ArrowRight') cursor.x = Math.min(W - 2, cursor.x + 1)
@@ -317,7 +317,7 @@ const OutpostGame = () => {
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc !== 'play' || pausedRef.current) return
             // #1637 WATCH: a designation tap is the player driving — hand back first.
-            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const r = canvas.getBoundingClientRect()
             if (!r.width || !r.height) return
             const gx = Math.floor(((e.clientX - r.left) / r.width) * W)
@@ -361,6 +361,7 @@ const OutpostGame = () => {
                 drive: (n) => { for (let k = 0; k < n && !gs.end; k++) doSim(decideTick(gs)) },
             }
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'outpost',
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => startPlay(seed >>> 0),
@@ -457,6 +458,7 @@ const OutpostGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#ffe9a3', textShadow: '3px 0 0 #4ad7ff, -3px 0 0 #ff7d5d, 0 10px 24px #000' }}>OUTPOST</h1>
                         <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
                 </>

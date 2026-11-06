@@ -19,7 +19,7 @@ import {
 } from './sim.js'
 import { TOWN_SPECIALS } from './dungeons.js'
 import { nextAction } from './solver.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton from '../../components/WatchButton'
 import { playEvents } from './sound.js'
 import AttractMessage from '../../components/AttractMessage'
@@ -215,10 +215,10 @@ const BardsTaleGame = () => {
             // #1637 WATCH: Y seats the solver (BFS + combat doctrine + town economy);
             // any driving key — or one of the on-screen buttons — takes it back.
             if (isWatchKey(e)) {
-                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const fighting = gs.mode === 'combat'
             if (gs.menu) {
                 const opts = (optsRef.current[gs.menu.kind] || [] )()
@@ -272,6 +272,7 @@ const BardsTaleGame = () => {
 
         if (import.meta.env.DEV) {
             window.__bardsTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     fi: gs.fi, x: gs.x, y: gs.y, dir: gs.dir, gold: gs.gold,
@@ -342,7 +343,7 @@ const BardsTaleGame = () => {
 
     const handleResume = useCallback(() => { setPaused(false); pausedRef.current = false }, [])
     const play = screen === 'play'
-    const doCmd = (c) => { if (watchingRef.current) { watchingRef.current = false; setWatching(false) } if (!paused && screenRef.current === 'play') actRef.current(c) } // #1637 a button press is you driving
+    const doCmd = (c) => { if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } if (!paused && screenRef.current === 'play') actRef.current(c) } // #1637 a button press is you driving
     const gs = gsRef.current
     const menuOpts = play && gs && gs.menu ? (({
         garth: GEAR.map((g) => ({ cmd: g.id, label: `${g.name} — ${g.cost}g`, off: !!gs.gear[g.id] })),
@@ -446,6 +447,7 @@ const BardsTaleGame = () => {
                     <h1 className="text-4xl font-black tracking-widest mb-6" style={{ color: '#ffd54f', textShadow: '3px 3px 0 #6b21a8, 0 10px 28px #000' }}>THE BARD&apos;S TALE</h1>
                     <AttractMessage className="mb-6 text-violet-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

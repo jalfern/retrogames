@@ -7,7 +7,7 @@
 // attractBot, MYST solveScript — replayed live at real speed, never a video.
 // A game (or a position) with no proven route says "no guide yet".
 
-import { audioController } from './AudioController'
+import { audioController } from './AudioController.js'
 
 export const WATCH_KEY = 'KeyY'
 
@@ -26,6 +26,10 @@ export const isTakeoverKey = (e) => e.code !== WATCH_KEY && !CHROME.has(e.code)
 
 // Shared toast copy — the honesty clause of the issue: no fake demos.
 export const NO_GUIDE = 'no guide yet'
+
+// #1654 — discoverable copy: every pilot shows this line on its attract
+// screen, before the first Y press. One sentence in every game.
+export const WATCH_ATTRACT_HINT = 'Y — WATCH THE PROVEN ROUTE'
 
 // #1638 — the handoff blip. Rising when the prover takes the wheel, falling
 // when it hands the wheel back; one voice in every pilot. playTone is

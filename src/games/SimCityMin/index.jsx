@@ -20,7 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, T, newCity, step, stateHash, litSet, moveCursor, tapInbox } from './sim.js'
 import { W, H, SCEN } from './scen.js'
 import { plan } from './planner.js'
-import { isWatchKey, isTakeoverKey, NO_GUIDE } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton from '../../components/WatchButton'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
@@ -311,13 +311,13 @@ const SimCityMinGame = () => {
             // anywhere else the honest decline. Any driving key takes the wheel back.
             if (isWatchKey(e)) {
                 if (sc === 'play') {
-                    if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
-                    else if (seatWatch()) { watchingRef.current = true; setWatching(true); say('THE PLANNER RUNS THE CITY') }
-                    else say(NO_GUIDE.toUpperCase())
+                    if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1654
+                    else if (seatWatch()) { watchingRef.current = true; setWatching(true); playWatchStart(); say('THE PLANNER RUNS THE CITY') } // #1654
+                    else say('ONLY A CITY THAT MATCHES THE PROVEN PLAN CAN WATCH') // #1654 the decline names the rule
                 }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'KeyT') { toolIdx = (toolIdx + 1) % TOOLVALS.length; audioController.playTone(400 + toolIdx * 40, 0.03, 'square', 0.03); return }
             if (e.code === 'BracketLeft') { taxDirty = Math.max(0, gs.tax - 1); return }
             if (e.code === 'BracketRight') { taxDirty = Math.min(CFG.taxMax, gs.tax + 1); return }
@@ -360,6 +360,7 @@ const SimCityMinGame = () => {
 
         if (import.meta.env.DEV) {
             window.__scTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => ({
                     screen: screenRef.current, tick: gs.tick, year: gs.year, pop: gs.pop, jobs: gs.jobs,
                     funds: gs.funds, tax: gs.tax, score: gs.score, end: gs.end, why: gs.endWhy,
@@ -446,6 +447,7 @@ const SimCityMinGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#8fff9f', textShadow: '3px 0 0 #39d2ff, -3px 0 0 #ff7d3d, 0 10px 24px #000' }}>SIMCITY-MIN</h1>
                         <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
+                        <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
                 </>

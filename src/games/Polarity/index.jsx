@@ -22,7 +22,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 import { W, H, CFG, L, makeGame, step, stateHash } from './sim.js'
 import { plan, policy } from './planner.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton, { WatchToast } from '../../components/WatchButton'
 
 const SIM_MS = 1000 / 60
@@ -301,8 +301,8 @@ const PolarityGame = () => {
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
             // #1637 WATCH: Y hands the board to the pilot; any driving key takes it back.
-            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); return }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') keys.l = true
             if (e.code === 'ArrowRight') keys.r = true
             if (e.code === 'ArrowUp') keys.u = true
@@ -368,6 +368,7 @@ const PolarityGame = () => {
                 },
             }
             exposeGame({
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 id: 'polarity',
                 buttons: ['left', 'right', 'up', 'down', 'a', 'b'],
                 reset: (seed) => {
@@ -465,6 +466,7 @@ const PolarityGame = () => {
                     <h1 className="text-4xl font-black mb-5" style={{ color: '#8fd8ff', textShadow: '3px 0 0 #c05dff, -3px 0 0 #39c2ff, 0 10px 24px #000' }}>POLARITY</h1>
                     <AttractMessage className="mb-5 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

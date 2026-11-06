@@ -26,7 +26,7 @@ import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
-import { isWatchKey, isTakeoverKey } from '../../utils/watch'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import WatchButton from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
@@ -963,10 +963,10 @@ const TenDeepGame = () => {
             // #1637 WATCH: Y seats the solver (BFS to the stairs, supplies when
             // hurting); any driving key — or the pad — takes it back.
             if (isWatchKey(e)) {
-                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop() }
                 return
             }
-            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (gs.mode === 'town') {
                 if (gs.town.b) {
                     if (gs.town.b === 'T' && gs.town.cand) {
@@ -1043,6 +1043,7 @@ const TenDeepGame = () => {
 
         if (import.meta.env.DEV) {
             window.__deepTest = {
+                watchSfx: watchSfxLog, // #1654 the shared handoff blip log
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     toast: toast > 0, bump: bumpFade > 0,
@@ -1264,6 +1265,7 @@ const TenDeepGame = () => {
                         <AttractMessage className="text-indigo-100/80" messages={MESSAGES} />
                     </span>
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <span className="block mt-2 text-xs text-white/50 tracking-widest">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
