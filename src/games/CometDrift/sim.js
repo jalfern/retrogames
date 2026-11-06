@@ -193,7 +193,7 @@ function chipAt(g, k, nx, ny) {
     const tx0 = -ny; const ty0 = nx // wall tangent for the dash scatter
     for (let i = 0; i < 4; i++) {
         h = (Math.imul(h, 1103515245) + 12345) >>> 0
-        const out = 7 + i * 4 + (h >>> 27) // outward px into the strata
+        const out = 5 + i * 3 + (h >>> 27) // outward px into the strata (5..21)
         h >>>= 3
         const tan = ((h >>> 24) % 13) - 6 // tangential px
         markCell(g, k.x + nx * out + tx0 * tan, k.y + ny * out + ty0 * tan, SAND.crack)

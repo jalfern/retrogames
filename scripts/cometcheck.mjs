@@ -1670,14 +1670,17 @@ selectorGate(await loadSelector())
     // coal chip at the contact + crack dashes outward into the face, stamped
     // on the same texel queue; an impact the sand could carry on its own
     // never chips; deterministic; and the #1702 flow decays chip → crack →
-    // dents → pristine. Rigs run close to the foot so the fast one arrives
-    // above CFG.sandTop (sand drains ~0.1/tick — a long run-up would bleed it
-    // to the cap and no bump could ever chip).
-    const chipRun = (v, lat) => {
+    // dents → pristine. A plain-throttle sand run HOVERS at sandTop (measured
+    // 3.19..3.40 — acc cancels the sink), so the fast rig rides a live blue
+    // boost: cap sandTop + TIERS[0].over = 5.0, and it arrives at the rock
+    // above chipV (3.5). No rig trickery — a boosted impact IS the asphalt-
+    // speed impact the law is about; plain sand must stay pristine by design.
+    const chipRun = (v, lat, boost = false) => {
         for (const dirLabel of ['toward outside', 'toward inside']) {
             const g = m.makeGame(9)
             g.phase = 'race'; g.count = 0
-            placeSand(g, v, lat, 0)
+            const P = placeSand(g, v, lat, 0)
+            if (boost) { P.boostT = 90; P.boostTier = 0 }
             const steer = dirLabel === 'toward outside' ? 0.32 : -0.32
             const bumpPos = []
             for (let i = 0; i < 90; i++) {
@@ -1688,7 +1691,7 @@ selectorGate(await loadSelector())
         }
         return null
     }
-    const imp = chipRun(7, 178)
+    const imp = chipRun(7, 178, true)
     if (imp) {
         const bp = imp.bumpPos[0]
         const decals = [...imp.g.marks].filter(([, d]) => d >= S.crack)
@@ -1704,7 +1707,7 @@ selectorGate(await loadSelector())
             nearD(S.crack, 4, 24) >= 2, `crack dashes in the 4..24px window: ${nearD(S.crack, 4, 24)}`)
         check('#1718 chip law: no decal texel sits on asphalt (markCell law)',
             decals.every(([k]) => surfTex(k) !== 'road'), `${decals.filter(([k]) => surfTex(k) === 'road').length} decals on road`)
-        const imp2 = chipRun(7, 178)
+        const imp2 = chipRun(7, 178, true)
         check('#1718 determinism: the chip scatter is a pose hash — same seed, same drive, identical scars',
             imp2 !== null && JSON.stringify([...imp.g.marks]) === JSON.stringify([...imp2.g.marks]))
         // an impact the sand could carry (<= sandTop) dents but never chips
