@@ -32,6 +32,8 @@ export const SPILLS = [
     { id: 'telekinesis', name: 'TELEKINESIS', cost: 12 },
     { id: 'invisibility', name: 'INVISIBILITY', cost: 20 },
     { id: 'volcano', name: 'VOLCANO', cost: 60 },
+    { id: 'shatter', name: 'SHATTER', cost: 30 },
+    { id: 'raise', name: 'RAISE', cost: 25 },
 ]
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
@@ -124,6 +126,51 @@ export function crater(gs, x, y, r, depth, hot = 0) {
 
 export const glowOf = (gs, c) => (c.hot > 0 ? Math.max(0, 1 - (gs.tick - c.t) / CRATER_GLOW) : 0)
 
+// Raise (#1639): the mirror of crater(). The original only tore the ground
+// down — craters, floods, volcano; its later games learned the counter-spell,
+// and so does this one. A quadratic mound of hgt at the look point: ridges
+// the carpet must ride (the auto-climb reads the same heightmap), and land
+// pushed above WATER drains craters the sea had swallowed. Deliberately NOT
+// pushed into gs.craters — a raise glows with nothing: no lava, no scorch,
+// the ground just rises. rng-free, so deterministic like every terrain rule.
+export function raiseTerrain(gs, x, y, r, hgt) {
+    const rCell = Math.ceil(r / CELL)
+    const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
+    const i0 = Math.floor(cx), j0 = Math.floor(cy)
+    for (let j = j0 - rCell; j <= j0 + rCell; j++) {
+        for (let i = i0 - rCell; i <= i0 + rCell; i++) {
+            const du = (i + 0.5 - cx) * CELL, dv = (j + 0.5 - cy) * CELL
+            const d = Math.hypot(du, dv)
+            if (d > r) continue
+            const rise = hgt * (1 - d / r) ** 2
+            const gi = wrap(j, GRID) * GRID + wrap(i, GRID)
+            gs.heights[gi] = Math.min(96, gs.heights[gi] + rise)
+        }
+    }
+    gs.events.push({ type: 'raise', x: wrap(x, MAP), y: wrap(y, MAP), r })
+}
+
+// Shatter (#1639): the original's kill-without-cinders. Every creature within
+// SHATTER_R of the point dies where it stands — wolf, giant, cow, even a
+// creature in your grip — and the wizard takes the blast's force, but the
+// land is untouched: no crater, no scorch, no fire mark, no topple. Death
+// that leaves no trace is exactly why it was feared. rng-free: the kills are
+// the deterministic same-set every replay.
+export const SHATTER_R = 24
+export function shatterAt(gs, x, y) {
+    const sx = wrap(x, MAP), sy = wrap(y, MAP)
+    const dead = []
+    gs.monsters.forEach((m, i) => {
+        if (Math.hypot(wrapD(m.x - sx), wrapD(m.y - sy)) < SHATTER_R) dead.push(i)
+    })
+    for (const i of [...new Set(dead)].sort((a, b) => b - a)) killEntity(gs, gs.monsters[i], i)
+    if (gs.wizard.alive && Math.hypot(wrapD(gs.wizard.x - sx), wrapD(gs.wizard.y - sy)) < 20) {
+        gs.wizard.hp -= 28
+        gs.events.push({ type: 'wizHit' })
+    }
+    gs.events.push({ type: 'shatter', x: sx, y: sy, r: SHATTER_R })
+}
+
 // A physical blast at the wizard's tower base topples it (telekinesis throws
 // and fireballs both). One topple per world; the wizard takes the fall.
 export function toppleTower(gs, x, y) {
@@ -197,6 +244,28 @@ export function genWorld(gs) {
     gs.x = wrap(cs.x + 40, MAP); gs.y = wrap(cs.y + 40, MAP); gs.alt = 34; gs.yaw = 0
     gs.hp = 100; gs.shield = 0; gs.mana = 0; gs.bank = 0
     const ts = findSpot(gs, 24, 48, true, gs.castle, 140)
+    // Fairness invariant (#1639): on the 512u wrapping map every wizard must
+    // sit inside the castle guards' reach (they fire at <200u, arrows carry
+    // ~300). A hoarding wizard with an out-of-range tower and a player at
+    // 0 mana is a soft-locked world — seed 14 rolled exactly that when the
+    // 10th books shifted the stream. Retry until the tower is within reach
+    // (first keeping the full 140u distance, then easing); the final
+    // fallback keeps the old behavior rather than returning null.
+    ts.d = Math.hypot(wrapD(ts.x - gs.castle.x), wrapD(ts.y - gs.castle.y))
+    if (ts.d > 180) {
+        let tp = null
+        for (let k = 0; k < 60 && !tp; k++) {
+            const c = findSpot(gs, 24, 48, true, gs.castle, 140)
+            if (Math.hypot(wrapD(c.x - gs.castle.x), wrapD(c.y - gs.castle.y)) <= 180) tp = c
+        }
+        if (!tp) {
+            for (let k = 0; k < 60 && !tp; k++) {
+                const c = findSpot(gs, 24, 48, true, null, 0)
+                if (Math.hypot(wrapD(c.x - gs.castle.x), wrapD(c.y - gs.castle.y)) <= 180) tp = c
+            }
+        }
+        if (tp) { ts.x = tp.x; ts.y = tp.y }
+    }
     gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: lv.wizHp, mana: lv.hoard, alive: true, ang: rnd(gs) * 6.28, lostT: 0 }
 
     const bs = []
@@ -208,6 +277,11 @@ export function genWorld(gs) {
             if (!bs.some((b) => Math.hypot(wrapD(c.x - b.x), wrapD(c.y - b.y)) < 70) &&
                 Math.hypot(wrapD(c.x - gs.castle.x), wrapD(c.y - gs.castle.y)) > 45) { p = c; break }
         }
+        // #1639: with ten books the strict 70u spread starves the mid-height
+        // band on unlucky seeds (seed 1 exhausted all 60 tries on the 9th).
+        // After the honest strict attempt, ease the spread — first still past
+        // the castle reach, then anywhere landable. Deterministic either way.
+        if (!p) p = findSpot(gs, 24, 50, false, gs.castle, 46)
         gs.books.push({ id: sp.id, x: p.x, y: p.y, taken: gs.learned.includes(sp.id), cd: 0 })
         bs.push(p)
     }
@@ -399,6 +473,12 @@ function castHand(gs, hand) {
     } else if (id === 'volcano') {
         const lp = lookPoint(gs)
         volcanoErupt(gs, lp.x, lp.y)
+    } else if (id === 'shatter') {
+        const lp = lookPoint(gs)
+        shatterAt(gs, lp.x, lp.y)
+    } else if (id === 'raise') {
+        const lp = lookPoint(gs)
+        raiseTerrain(gs, lp.x, lp.y, 16, 14)
     } else if (id === 'telekinesis') {
         if (gs.heldEnt) {
             const e = gs.heldEnt

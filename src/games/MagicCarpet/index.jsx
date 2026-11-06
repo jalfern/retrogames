@@ -27,6 +27,7 @@ const SPELL_COLORS = {
     fireball: '#ff7a28', lightning: '#ffe24a', heal: '#ff5060',
     protect: '#58b8ff', slow: '#b070ff', telekinesis: '#58e8d8',
     invisibility: '#c8ecff', volcano: '#ff5a20',
+    shatter: '#d8f0ff', raise: '#c89a58',
 }
 
 function drawSpellIcon(ctx, id, x, y, s) {
@@ -66,6 +67,21 @@ function drawSpellIcon(ctx, id, x, y, s) {
         ctx.fillStyle = '#ffe0a0'; ctx.fillRect(x - s * 0.15, y - s * 0.55, s * 0.3, s * 0.2)
         ctx.fillStyle = 'rgba(220, 200, 190, 0.75)'
         ctx.beginPath(); ctx.arc(x, y - s * 1.05, s * 0.4, 0, Math.PI * 2); ctx.fill()
+    } else if (id === 'shatter') {
+        // A crack splintering outward from a bright centre.
+        ctx.strokeStyle = c; ctx.lineWidth = Math.max(1, s * 0.3)
+        for (let k = 0; k < 6; k++) {
+            const a = k * Math.PI / 3 + 0.26
+            ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * s, y + Math.sin(a) * s); ctx.stroke()
+        }
+        ctx.fillStyle = '#ffffff'; ctx.fillRect(x - s * 0.22, y - s * 0.22, s * 0.44, s * 0.44)
+    } else if (id === 'raise') {
+        // A mound lifting under two rising chevrons.
+        ctx.fillStyle = c
+        ctx.beginPath(); ctx.arc(x, y + s * 1.05, s * 0.95, Math.PI, 0); ctx.closePath(); ctx.fill()
+        ctx.strokeStyle = '#ffe0a0'; ctx.lineWidth = Math.max(1, s * 0.32)
+        ctx.beginPath(); ctx.moveTo(x - s * 0.7, y + s * 0.15); ctx.lineTo(x, y - s * 0.45); ctx.lineTo(x + s * 0.7, y + s * 0.15); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(x - s * 0.5, y - s * 0.45); ctx.lineTo(x, y - s * 1.0); ctx.lineTo(x + s * 0.5, y - s * 0.45); ctx.stroke()
     } else {
         ctx.fillStyle = c
         ctx.fillRect(x - s * 0.8, y + s * 0.2, s * 0.5, s * 0.8)
@@ -172,6 +188,16 @@ const MagicCarpetGame = () => {
                         audioController.playSweep(1400, 360, 0.3, 'triangle', 0.024, 0.1)
                         say('YOU ARE VEILED')
                     }
+                    else if (id === 'shatter') {
+                        // An icy splintering: bright up-then-down crackle.
+                        audioController.playSweep(1200, 2100, 0.1, 'triangle', 0.05)
+                        audioController.playSweep(2100, 700, 0.22, 'triangle', 0.04, 0.08)
+                    }
+                    else if (id === 'raise') {
+                        // The earth taking a breath upward: low rising rumble.
+                        audioController.playSweep(70, 190, 0.32, 'sawtooth', 0.08)
+                        audioController.playTone(98, 0.24, 'triangle', 0.04, 0.12)
+                    }
                     else if (id !== 'heal' && id !== 'protect' && id !== 'slow') audioController.playTone(500, 0.05, 'square', 0.05)
                 } else if (e.type === 'invisEnd') {
                     audioController.playSweep(980, 300, 0.26, 'sine', 0.035)
@@ -218,6 +244,20 @@ const MagicCarpetGame = () => {
                     audioController.playTone(41, 0.9, 'square', 0.05, 0.25)
                     shake = 10
                     say('THE EARTH OPENS — A VOLCANO RISES')
+                } else if (e.type === 'shatter') {
+                    // The payoff: everything alive in the ring went at once — a
+                    // glass bell cascade, no dirt, no fire. Clean death rings.
+                    audioController.playNoise(0.08, 0.05)
+                    audioController.playTone(1560, 0.1, 'sine', 0.05)
+                    audioController.playTone(1170, 0.14, 'sine', 0.045, 0.07)
+                    audioController.playTone(880, 0.22, 'sine', 0.04, 0.15)
+                    say('SHATTER — THE CREATURES FALL')
+                } else if (e.type === 'raise') {
+                    // The ground answers: a deep upward swell and a dust shake.
+                    audioController.playSweep(55, 150, 0.5, 'sawtooth', 0.09)
+                    audioController.playNoise(0.3, 0.05)
+                    shake = Math.max(shake, 4)
+                    say('THE GROUND RISES')
                 } else if (e.type === 'wizHit') {
                     audioController.playTone(240, 0.07, 'square', 0.06)
                 } else if (e.type === 'wizardDown') {
@@ -526,7 +566,7 @@ const MagicCarpetGame = () => {
                 }
             }
             if (gs.book) {
-                // The tray: all eight spells, unlearned dimmed, left-hand pick
+                // The tray: all ten spells, unlearned dimmed, left-hand pick
                 // boxed gold; mana cost under each icon (green-gold when payable).
                 const [tx, ty, tw, th] = TRAY
                 ctx.fillStyle = 'rgba(14, 20, 60, 0.92)'
@@ -660,7 +700,7 @@ const MagicCarpetGame = () => {
             if (e.code === 'Space') throwL = true
             if (e.code === 'KeyX' || e.code === 'KeyZ') throwR = true
             if (e.code === 'KeyQ') cycleR(gs)
-            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].indexOf(e.code)
+            const digit = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0'].indexOf(e.code)
             if (digit >= 0 && SPILLS[digit]) setHand(gs, 'L', SPILLS[digit].id)
         }
         const onUp = (e) => {

@@ -12,7 +12,7 @@ import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
-    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt,
+    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -28,8 +28,8 @@ const run = (seed, maxTicks, scriptFn = autopilot) => {
 
 // ---- boot
 const fresh = makeGame(7)
-r.check('world 1 built: 56 pearls, wizard hoards 80, 8 books, one known spell, empty vault',
-    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 8 &&
+r.check('world 1 built: 56 pearls, wizard hoards 80, 10 books, one known spell, empty vault',
+    fresh.pearls.length === 56 && fresh.wizard.mana === LEVELS[0].hoard && fresh.books.length === 10 &&
     fresh.learned.length === 1 && fresh.bank === 0 && fresh.level === 0,
     `pearls=${fresh.pearls.length} hoard=${fresh.wizard.mana} books=${fresh.books.length} bank=${fresh.bank}`)
 const g0 = run(7, 600, () => ({}))
@@ -342,10 +342,11 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 }
 
 // ---- roster + INVISIBILITY (#1610): the original's veil, done whole
-// (#1612 item 5 grew the roster to eight with VOLCANO.)
+// (#1612 item 5 grew the roster to eight with VOLCANO; #1639 to ten with
+// SHATTER and RAISE.)
 {
-    r.check('eight signature spells with costs', SPILLS.length === 8 &&
-        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano'].every((id) => spellById(id)?.cost > 0))
+    r.check('ten signature spells with costs', SPILLS.length === 10 &&
+        ['fireball', 'lightning', 'heal', 'protect', 'slow', 'telekinesis', 'invisibility', 'volcano', 'shatter', 'raise'].every((id) => spellById(id)?.cost > 0))
 
     const veilUp = (gs) => {
         gs.learned.push('invisibility')
@@ -531,7 +532,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 // ---- #1612 item 5: VOLCANO — the ground tears open where you look.
 {
     r.check('volcano is the 8th spell: cost 60, a grimoire waits in the world',
-        SPILLS.length === 8 && spellById('volcano').cost === 60 &&
+        SPILLS.length === 10 && spellById('volcano').cost === 60 &&
         fresh.books.some((b) => b.id === 'volcano'), `n=${SPILLS.length}`)
     {
         const gv = makeGame(7)
@@ -577,6 +578,137 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         }
         const h1 = eruptOnce(), h2 = eruptOnce()
         r.check('eruptions are deterministic: same seed + same cast → identical hash', h1 === h2, `${h1} vs ${h2}`)
+    }
+}
+
+// ---- #1639: SHATTER + RAISE — the book grows to ten.
+// Shatter is kill-without-cinders: creatures die at the look point, the land
+// is provably untouched (craters, scorch marks, fire and the tower never move,
+// even cast at the tower base). Raise is crater()'s mirror: a quadratic mound
+// that lifts a ridge, pays from the pouch, and drains a flooded crater — the
+// counter-spell to the game's own flooding. Mutation guide: drop shatter's
+// kill radius to 4 and the kill gate goes red; delete the raiseTerrain body
+// and the mound + flood-drain gates go red.
+{
+    r.check('shatter and raise join the book (costs 30/25) with grimoires in the world',
+        spellById('shatter').cost === 30 && spellById('raise').cost === 25 &&
+        fresh.books.some((b) => b.id === 'shatter') && fresh.books.some((b) => b.id === 'raise'))
+    {
+        const gs = makeGame(7)
+        gs.learned.push('shatter'); gs.mana = 100; gs.coolL = 0
+        setHand(gs, 'L', 'shatter')
+        // Aim by coordinates (the cast point itself), so the kill-radius gate
+        // does not ride lookPoint's terrain scan.
+        const px = wrap(gs.x + 30, MAP), py = wrap(gs.y, MAP)
+        const near = gs.monsters.find((m) => m.kind === 'wolf')
+        const far = gs.monsters.find((m) => m.kind === 'giant' &&
+            Math.hypot(wrapD(m.x - px), wrapD(m.y - py)) > SHATTER_R + 20)
+        near.x = wrap(px + 3, MAP); near.y = wrap(py + 3, MAP)
+        const before = { craters: gs.craters.length, marks: gs.fireMarks.length }
+        const kills0 = gs.kills, pearls0 = gs.pearls.length
+        shatterAt(gs, px, py)
+        r.check('shatter kills everything inside SHATTER_R, its victims pay bounties',
+            !gs.monsters.includes(near) && gs.kills === kills0 + 1 &&
+            gs.pearls.length > pearls0 && gs.events.some((e) => e.type === 'shatter'),
+            `kills+${gs.kills - kills0} pearls +${gs.pearls.length - pearls0}`)
+        r.check('shatter spares what stands outside the ring', gs.monsters.includes(far))
+        r.check('the kill leaves no cinders: no crater, no fire mark',
+            gs.craters.length === before.craters && gs.fireMarks.length === before.marks,
+            `craters ${before.craters}→${gs.craters.length}, marks ${before.marks}→${gs.fireMarks.length}`)
+        gs.events.length = 0; gs.pearls.length = 0
+        step(gs, { castL: true })
+        r.check('casting shatter from a hand spends the pouch (30)', gs.mana === 70 && gs.events.some((e) => e.type === 'cast'),
+            `mana=${gs.mana}`)
+    }
+    {
+        const gt = makeGame(7)
+        gt.learned.push('shatter'); gt.mana = 100; gt.coolL = 0
+        setHand(gt, 'L', 'shatter')
+        // The ring at the wizard himself: he takes the force, yet the tower
+        // stands and the ground keeps its shape — shatter is not a blast.
+        const cr0 = gt.craters.length
+        shatterAt(gt, gt.wizard.x, gt.wizard.y)
+        r.check('shatter at the wizard wounds him yet never topples or craters',
+            gt.events.some((e) => e.type === 'wizHit') && gt.towerDown === false && gt.craters.length === cr0,
+            `down=${gt.towerDown} craters=${gt.craters.length}`)
+    }
+    {
+        const gm = makeGame(7)
+        gm.learned.push('shatter'); gm.mana = 10; gm.coolL = 0
+        setHand(gm, 'L', 'shatter')
+        r.check('no mana, no kill: shatter denied',
+            step(gm, { castL: true }) && gm.events.some((e) => e.type === 'nomana') && gm.mana === 10)
+    }
+    {
+        const gs = makeGame(7)
+        gs.learned.push('raise'); gs.mana = 100; gs.coolL = 0
+        setHand(gs, 'L', 'raise')
+        const px = wrap(gs.x + 30, MAP), py = wrap(gs.y, MAP)
+        const h0 = sampleH(gs, px, py), hEdge = sampleH(gs, wrap(px + 24, MAP), py)
+        raiseTerrain(gs, px, py, 16, 14)
+        r.check('raise pushes a mound up where you look',
+            sampleH(gs, px, py) > h0 + 4 && gs.events.some((e) => e.type === 'raise'),
+            `h ${h0.toFixed(1)}→${sampleH(gs, px, py).toFixed(1)}`)
+        r.check('the mound is local: 24u out the ground is unmoved',
+            Math.abs(sampleH(gs, wrap(px + 24, MAP), py) - hEdge) < 0.5,
+            `edge ${hEdge.toFixed(1)}→${sampleH(gs, wrap(px + 24, MAP), py).toFixed(1)}`)
+        gs.events.length = 0; gs.pearls.length = 0
+        step(gs, { castL: true })
+        r.check('casting raise from a hand spends the pouch (25)', gs.mana === 75 && gs.events.some((e) => e.type === 'cast'),
+            `mana=${gs.mana}`)
+    }
+    {
+        // The counter-spell: a crater sunk below sea floods; raise drains it.
+        // Depths are sized with the bilinear-sampling floor in mind: a point
+        // at a crater's centre still reads ≥0.35×depth down, and a mound's
+        // centre still reads ≥5.8 up (r16/h14) — so flood (≤WATER−4) then
+        // drain (>WATER) are provable at the cast point, not luck of the grid.
+        const gs = makeGame(7)
+        const px = wrap(gs.castle.x + 60, MAP), py = wrap(gs.castle.y + 60, MAP)
+        const h0 = sampleH(gs, px, py)
+        crater(gs, px, py, 14, Math.max(8, Math.ceil((h0 - WATER + 4) * 2.9)))
+        const flooded = sampleH(gs, px, py) < WATER
+        raiseTerrain(gs, px, py, 16, 14)
+        r.check('raise drains a flooded crater — land lifted above the sea',
+            flooded && sampleH(gs, px, py) > WATER,
+            `h0=${h0.toFixed(1)} flooded=${flooded} after=${sampleH(gs, px, py).toFixed(1)}`)
+    }
+    {
+        const castTwice = () => {
+            const g = makeGame(21)
+            g.learned.push('shatter', 'raise'); g.mana = 200
+            setHand(g, 'L', 'shatter'); step(g, { castL: true })
+            setHand(g, 'L', 'raise'); g.coolL = 0; step(g, { castL: true })
+            for (let i = 0; i < 80; i++) step(g, {})
+            return stateHash(g)
+        }
+        const a = castTwice(), b = castTwice()
+        r.check('the new spells are deterministic: same seed + same casts → identical hash', a === b, `${a} vs ${b}`)
+    }
+    {
+        // Fairness invariant (#1639 sweep): every generated wizard tower sits
+        // within the castle guards' reach (<200u, arrows carry ~300). An
+        // unreachable hoarding wizard with a broke carpet is a soft-locked
+        // world — seed 14 rolled exactly that pre-invariant.
+        let bad = 0
+        for (let s = 1; s <= 20 && bad === 0; s++) {
+            for (const lv of [0, 1, 2]) {
+                const g = makeGame(s, lv)
+                if (Math.hypot(wrapD(g.wizard.tx - g.castle.x), wrapD(g.wizard.ty - g.castle.y)) > 200) bad++
+            }
+        }
+        r.check('every wizard tower stands within guard reach (all 60 worlds of seeds 1–20)',
+            bad === 0, `out-of-reach towers: ${bad}`)
+    }
+    {
+        // Ten books can crowd the mid-height band; the spread fallback must
+        // never leave a grimoire unplaced on any seed or level.
+        let missing = 0
+        for (let s = 1; s <= 40 && missing === 0; s++) {
+            for (const lv of [0, 1, 2]) if (makeGame(s, lv).books.length !== 10) missing++
+        }
+        r.check('all ten grimoires are placed in every world of seeds 1–40 (spread fallback holds)',
+            missing === 0, `worlds short of ten books: ${missing}`)
     }
 }
 

@@ -622,6 +622,13 @@ void main(){
             else if (e.type === 'hutDown') { spawnBurst(gs, e.x, e.y, 5, [1.2, 0.5, 0.2]); addScorch(e.x, e.y, 6, 0.4) }
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             else if (e.type === 'wizardDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
+            // #1639 SHATTER: icy splinters and a cold flare — deliberately NO
+            // scorch mark: the kill spell leaves the land untouched, and the
+            // renderer keeps that promise on screen as the sim does in the sim.
+            else if (e.type === 'shatter') spawnBurst(gs, e.x, e.y, 16, [1.2, 1.5, 1.9])
+            // #1639 RAISE: the mound itself rides the live heightmap upload;
+            // this is the dust it kicks up on the way.
+            else if (e.type === 'raise') spawnBurst(gs, e.x, e.y, 12, [0.9, 0.68, 0.42])
             else if (e.type === 'level') resetWorld()
         }
     }
