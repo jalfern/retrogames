@@ -24,6 +24,16 @@ const TRACKMOD = '../src/games/CometDrift/track.js'
 const Tmod = await import(TRACKMOD)
 const { COURSES, selectCourse } = Tmod
 const BUMP_CAP = { gulch: 2, sandbank: 4, corkscomb: 2, drylake: 2 }
+// #1687 drift-economy floors/caps, measured over seeds [0,7,9,42]. Floors sit
+// above the pre-#1687 luck-of-the-corner baseline (tier-points 910/924/1733/
+// 724, violets 87/65/247/112 by course); the spin cap is the pre-change count
+// + 3 so deliberate economy may not be bought with new off-road drama.
+const CHAIN_PTS_MIN = { gulch: 1050, sandbank: 1150, corkscomb: 1830, drylake: 830 }
+const CHAIN_VIO_MIN = { gulch: 120, sandbank: 130, corkscomb: 380, drylake: 125 }
+const CHAIN_SPIN_MAX = { gulch: 24, sandbank: 100, corkscomb: 132, drylake: 58 }
+// gold-chasing gradient across the whole pack (accumulated by the per-course
+// audits, judged after the loop): front markers carry the gold-target skill.
+const GOLD_GRAD = { front: 0, back: 0 }
 const ARTMOD = await import('../src/games/CometDrift/art.js')
 const { KART } = await import('../src/games/CometDrift/art.js')
 
@@ -421,6 +431,41 @@ for (const c of COURSES) {
         return errs > 0
     })())
 
+    // #1687: the field drives the drift ladder DELIBERATELY. Pin the shape the
+    // DRIFT_PLAN promises in real races (4 GPs, seeds 0/7/9/42): materially
+    // more tier-points than the luck-of-the-corner baseline it replaced, more
+    // violet releases, and no new off-road drama bought with the upgrade. The
+    // gold ambition by NAME is judged across courses after the loop (GOLD_GRAD).
+    {
+        let pts = 0, blu = 0, vio = 0, gold = 0, spins = 0
+        for (const seed of [0, 7, 9, 42]) {
+            const g = sim.makeGame(seed)
+            let n = 0
+            while (!g.end && n < 60 * 300) {
+                sim.step(g, sim.decide(g))
+                for (const ev of g.events.splice(0)) {
+                    if (ev.e === 'boost' && ev.who !== sim.PLAYER.name) {
+                        pts += ev.tier + 1
+                        if (ev.tier === 0) blu++
+                        else if (ev.tier === 1) vio++
+                        else {
+                            gold++
+                            if (ev.who === 'BLAZE' || ev.who === 'DUSTY') GOLD_GRAD.front++
+                            else if (ev.who === 'ZEPPA' || ev.who === 'GRIZZ') GOLD_GRAD.back++
+                        }
+                    } else if (ev.e === 'spin' && ev.who !== sim.PLAYER.name) spins++
+                }
+                n++
+            }
+        }
+        check(`${c.id}: field chains the ladder for tier-points ${pts} >= ${CHAIN_PTS_MIN[c.id]} (#1687)`,
+            pts >= CHAIN_PTS_MIN[c.id], `b/v/g ${blu}/${vio}/${gold}`)
+        check(`${c.id}: deliberate banking pays violet ${vio} >= ${CHAIN_VIO_MIN[c.id]} across 4 GPs (#1687)`,
+            vio >= CHAIN_VIO_MIN[c.id], `violets ${vio}`)
+        check(`${c.id}: economy upgrade adds no drama — rival spins ${spins} <= ${CHAIN_SPIN_MAX[c.id]} (#1687)`,
+            spins <= CHAIN_SPIN_MAX[c.id], `spins ${spins}`)
+    }
+
     console.log(`— ${c.id}: the lap gate (infield-cut probe) —`)
     {
         const m = await loadSim()
@@ -557,6 +602,21 @@ for (const c of COURSES) {
         check(`${c.id}: no painted kerb or centre-line chrome (canyon, not circuit)`, !('kerbA' in PAL) && !('center' in PAL))
         check(`${c.id}: asphalt wears into wheel grooves (darker than the road)`, lum(PAL.groove) < lum(PAL.road), `${PAL.groove} vs ${PAL.road}`)
     }
+}
+
+// #1687: tier ambition rides the SKILL ladder. The front markers (BLAZE,
+// DUSTY — the gold-target skills) must out-chase the back markers (ZEPPA,
+// GRIZZ — blue targets) for gold across the pack's four courses. Luck is
+// near-flat by name (pre-#1687 measured 287 vs 251); intent is not (313/209).
+check('#1687: the field drives the ladder on purpose — front markers out-gold the back markers 1.30x',
+    GOLD_GRAD.front >= 1.3 * GOLD_GRAD.back, `front ${GOLD_GRAD.front} vs back ${GOLD_GRAD.back}`)
+{
+    const s0 = await loadSim()
+    check('#1687: DRIFT_PLAN targets escalate down the skill ladder (gold/violet/blue by tier)',
+        s0.DRIFT_PLAN.target(0.86) === s0.TIERS[2].t && s0.DRIFT_PLAN.target(0.82) === s0.TIERS[1].t && s0.DRIFT_PLAN.target(0.79) === s0.TIERS[0].t,
+        `${s0.DRIFT_PLAN.target(0.86)}/${s0.DRIFT_PLAN.target(0.82)}/${s0.DRIFT_PLAN.target(0.79)}`)
+    check('#1687: the certified autopilot line keeps its own hold rule (decide is not re-planned by DRIFT_PLAN)',
+        /if \(driftSmart\) \{\s*if \(k\.v > 5 && bend\) inp\.drift = true/.test(readFileSync(SIM, 'utf8')))
 }
 
 console.log('— the course pack (#493) —')
@@ -1292,6 +1352,50 @@ if (process.argv.includes('--mutate')) {
                 }
             })
         } finally { pull(artPath) }
+    }
+
+    // #1687 mutant: restore the pre-change rival drift rule — hold every bend
+    // the look window sees, bank whatever the corner feeds — and demand the
+    // drift-economy gates go red. Tier-points and violet floors are properties
+    // of the PLAN, not of the tracks, so the mutant must undercut every course.
+    {
+        const { fileURLToPath } = await import('node:url')
+        const simPath = fileURLToPath(SIM)
+        const simSrcC = readFileSync(SIM, 'utf8')
+        const diedC = async (label, run) => {
+            const before = R.fail
+            await run()
+            if (R.fail > before) console.log(`  MUTANT DIED — ${label}: the #1687 drift-economy gates are load-bearing`)
+            else console.log(`  MUTANT SURVIVED — ${label}: the #1687 drift-economy gates are BLIND`)
+        }
+        try {
+            plant(simPath, simSrcC.replace(`        const onRoad = !k.offroad && k.wpress === 0
+        if (k.driftT === 0) {
+            inp.drift = k.v > 5 && bend && onRoad
+        } else {
+            const hungry = k.charge < DRIFT_PLAN.target(skill)
+            const chain = T.aheadK(k.idx, Math.round((look + 8) * DRIFT_PLAN.chain)) > DRIFT_PLAN.kBend
+            inp.drift = onRoad && k.driftT < DRIFT_PLAN.hold && (hungry ? chain : bend)
+        }`, '        inp.drift = k.v > 5 && bend'))
+            await diedC('the field is back to corner-luck (pre-#1687 hold-everything rule)', async () => {
+                const m = await loadSim()
+                for (const cc of COURSES) {
+                    selectCourse(cc.id); selectCourse(cc.id)
+                    let pts = 0, vio = 0
+                    for (const seed of [0, 7, 9, 42]) {
+                        const g = m.makeGame(seed)
+                        let n = 0
+                        while (!g.end && n < 60 * 300) {
+                            m.step(g, m.decide(g))
+                            for (const ev of g.events.splice(0)) if (ev.e === 'boost' && ev.who !== m.PLAYER.name) { pts += ev.tier + 1; if (ev.tier === 1) vio++ }
+                            n++
+                        }
+                    }
+                    check(`${cc.id}: tier-point floor holds against the corner-luck mutant (#1687)`, pts >= CHAIN_PTS_MIN[cc.id], `pts ${pts}`)
+                    check(`${cc.id}: violet floor holds against the corner-luck mutant (#1687)`, vio >= CHAIN_VIO_MIN[cc.id], `violets ${vio}`)
+                }
+            })
+        } finally { pull(simPath) }
     }
 
     // #534 mutant: collapse the chevrons onto the centre — no thumb target, no
