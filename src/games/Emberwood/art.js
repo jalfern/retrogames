@@ -285,6 +285,21 @@ export function makeTextures() {
         g.fillStyle = '#571f14'; g.fillRect(12, 12, 2, 1)
         return c
     })()
+    // #1623 the burned cinder face: chared basalt with ember seams — reads as
+    // "climbable only by the CINDERSTEP" at a glance, distinct from plain
+    // stone and cool crag.
+    T.cinderface = (() => {
+        const [c, g] = mk(16, 16)
+        g.fillStyle = '#241a16'; g.fillRect(0, 0, 16, 16)
+        g.fillStyle = '#33241d'
+        g.fillRect(1, 1, 6, 4); g.fillRect(9, 2, 6, 3)
+        g.fillRect(2, 7, 5, 4); g.fillRect(10, 8, 4, 5)
+        g.fillStyle = '#160f0c'
+        g.fillRect(7, 0, 1, 9); g.fillRect(8, 7, 1, 8); g.fillRect(0, 5, 4, 1); g.fillRect(9, 6, 6, 1)
+        g.fillStyle = '#c9502a'; g.fillRect(7, 3, 1, 3); g.fillRect(8, 10, 1, 3); g.fillRect(0, 12, 2, 1)
+        g.fillStyle = '#ff8a4c'; g.fillRect(7, 4, 1, 1); g.fillRect(8, 11, 1, 1)
+        return c
+    })()
     T.doorHeart = (() => {
         const [c, g] = mk(16, 16)
         g.fillStyle = '#4e4658'; g.fillRect(0, 0, 16, 16)
@@ -645,6 +660,66 @@ export function makeTextures() {
             g.fillStyle = '#fff3cf'; g.beginPath(); g.arc(13, 14, 2, 0, 7); g.fill()
             g.fillStyle = '#57506a'; g.fillRect(5, 6, 4, 3); g.fillRect(19, 6, 4, 3)
             g.fillStyle = '#8ce0ff'; g.fillRect(9, 11, 2, 2); g.fillRect(17, 11, 2, 2)
+            return c
+        })(),
+    }
+    // #1623 the Cinderhawk: a mesa raptor with ember-lit flight feathers.
+    // perch = vulnerably folded, call = wings reared for the screech,
+    // glide = crossing the mesa, stoop = locked-line dive.
+    T.hawk = {
+        perch: (() => {
+            const [c, g] = mk(24, 20)
+            g.clearRect(0, 0, 24, 20)
+            g.fillStyle = '#6b3a26'; g.beginPath(); g.arc(12, 11, 7, 0, 7); g.fill()
+            g.fillStyle = '#4e2a1c'; g.fillRect(10, 6, 5, 8)
+            g.fillStyle = '#8c5a3a'; g.fillRect(6, 10, 4, 6); g.fillRect(14, 10, 4, 6)
+            g.fillStyle = '#ff7a3c'; g.fillRect(6, 14, 4, 2); g.fillRect(14, 14, 4, 2)
+            g.fillStyle = '#e8d9b8'; g.fillRect(10, 13, 5, 4)
+            g.fillStyle = '#2b1a12'; g.fillRect(9, 8, 2, 2); g.fillRect(13, 8, 2, 2)
+            g.fillStyle = '#ffd23e'; g.fillRect(9, 8, 1, 1); g.fillRect(13, 8, 1, 1)
+            g.fillStyle = '#ffb238'; g.fillRect(11, 10, 2, 2)
+            g.fillStyle = '#5c3524'; g.fillRect(10, 17, 1, 2); g.fillRect(13, 17, 1, 2)
+            return c
+        })(),
+        call: (() => {
+            const [c, g] = mk(24, 20)
+            g.clearRect(0, 0, 24, 20)
+            g.fillStyle = '#4e2a1c'; g.fillRect(4, 3, 4, 7); g.fillRect(16, 3, 4, 7)
+            g.fillStyle = '#6b3a26'; g.beginPath(); g.arc(12, 12, 7, 0, 7); g.fill()
+            g.fillStyle = '#ff7a3c'; g.fillRect(4, 2, 4, 2); g.fillRect(16, 2, 4, 2)
+            g.fillStyle = '#e8d9b8'; g.fillRect(10, 14, 5, 4)
+            g.fillStyle = '#2b1a12'; g.fillRect(9, 9, 2, 2); g.fillRect(13, 9, 2, 2)
+            g.fillStyle = '#ffd23e'; g.fillRect(9, 9, 1, 1); g.fillRect(13, 9, 1, 1)
+            g.fillStyle = '#ffb238'; g.fillRect(10, 11, 4, 3)
+            g.fillStyle = '#7a2418'; g.fillRect(11, 12, 2, 2)
+            return c
+        })(),
+        glide: (() => {
+            const [c, g] = mk(24, 20)
+            g.clearRect(0, 0, 24, 20)
+            g.fillStyle = '#4e2a1c'
+            g.beginPath(); g.moveTo(2, 8); g.lineTo(10, 12); g.lineTo(2, 13); g.closePath(); g.fill()
+            g.beginPath(); g.moveTo(22, 8); g.lineTo(14, 12); g.lineTo(22, 13); g.closePath(); g.fill()
+            g.fillStyle = '#ff7a3c'; g.fillRect(2, 7, 3, 1); g.fillRect(19, 7, 3, 1)
+            g.fillStyle = '#6b3a26'; g.beginPath(); g.arc(12, 11, 6, 0, 7); g.fill()
+            g.fillStyle = '#e8d9b8'; g.fillRect(10, 12, 5, 4)
+            g.fillStyle = '#2b1a12'; g.fillRect(9, 8, 2, 2); g.fillRect(13, 8, 2, 2)
+            g.fillStyle = '#ffd23e'; g.fillRect(9, 8, 1, 1); g.fillRect(13, 8, 1, 1)
+            g.fillStyle = '#ffb238'; g.fillRect(11, 10, 2, 2)
+            return c
+        })(),
+        stoop: (() => {
+            const [c, g] = mk(24, 20)
+            g.clearRect(0, 0, 24, 20)
+            g.fillStyle = '#4e2a1c'
+            g.beginPath(); g.moveTo(6, 3); g.lineTo(12, 10); g.lineTo(6, 6); g.closePath(); g.fill()
+            g.beginPath(); g.moveTo(18, 3); g.lineTo(12, 10); g.lineTo(18, 6); g.closePath(); g.fill()
+            g.fillStyle = '#ff7a3c'; g.fillRect(5, 2, 3, 2); g.fillRect(16, 2, 3, 2)
+            g.fillStyle = '#6b3a26'; g.beginPath(); g.arc(12, 12, 6, 0, 7); g.fill()
+            g.fillStyle = '#2b1a12'; g.fillRect(9, 9, 2, 2); g.fillRect(13, 9, 2, 2)
+            g.fillStyle = '#ffd23e'; g.fillRect(9, 9, 1, 1); g.fillRect(13, 9, 1, 1)
+            g.fillStyle = '#ffb238'; g.fillRect(11, 11, 2, 3)
+            g.fillStyle = '#ff5a2a'; g.fillRect(10, 17, 4, 2)
             return c
         })(),
     }

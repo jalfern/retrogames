@@ -461,6 +461,7 @@ export default function Emberwood() {
                     { label: '+3 keys', run: () => { sim.items.keys += 3 } },
                     { label: 'give bow', run: () => { sim.items.bow = true; sim.items.arrows += 10 } },
                     { label: 'give gale charm', run: () => { sim.items.gale = true } },
+                    { label: 'give cinderstep', run: () => { sim.items.step = true } },
                     { label: 'open act two + goto Ashfell', run: () => {
                         sim.flags.emberTaken = true; sim.flags.doorsOpen['dr-heart'] = true
                         spawnRoom(sim, 'ow-20', [8, 10]); rend.buildScreen(sim.screen, sim.flags, sim.cut)
@@ -519,6 +520,7 @@ export default function Emberwood() {
                         {hud.items.shield && <div className="text-sky-200 text-xs">SHIELD</div>}
                         {hud.items.blade && <div className="text-orange-300 text-xs">EMBER BLADE</div>}
                         {hud.items.gale && <div className="text-cyan-200 text-xs">GALE CHARM</div>}
+                        {hud.items.step && <div className="text-orange-200 text-xs">CINDERSTEP</div>}
                     </div>
                 </div>
             )}
