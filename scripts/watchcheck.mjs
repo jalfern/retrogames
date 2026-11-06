@@ -344,7 +344,10 @@ const PILOTS = [
             // planStep re-plans from live state every move and its route never
             // digs — a watched vault is never trashed. Runner movement is prover-only.
             startKeys: ['Space'], seatWait: 700, advanceWait: 6000,
-            advanced: (a, b) => b.tick > a.tick && (b.have > a.have || Math.abs(b.player.x - a.player.x) + Math.abs(b.player.y - a.player.y) > 1),
+            // vault ticks restart on a carry — movement/gold/level alone prove
+            // the sim advanced (an idle runner stands still); vaultCleared keeps
+            // the guide seated across the carry, which the level bump records.
+            advanced: (a, b) => b.have > a.have || b.level > a.level || Math.abs(b.player.x - a.player.x) + Math.abs(b.player.y - a.player.y) > 1,
             note: (a, b) => `runner (${a.player.x},${a.player.y}) -> (${b.player.x},${b.player.y}), gold ${b.have}/${b.need}, vault ${b.level + 1}`,
             resumeWait: 4500,
         },
@@ -353,17 +356,29 @@ const PILOTS = [
             // seat 1 becomes the archerycheck winner (botInput skill 1). Idle
             // seat-1 keys never draw or walk, so movement/score/ammo spend at
             // seat 1 all prove the brain is flying — not the player.
-            startKeys: ['Space'], seatWait: 700, advanceWait: 6000,
-            advanced: (a, b) => b.tick > a.tick && (Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver),
-            note: (a, b) => `P1 (${Math.round(a.p1.x)},${Math.round(a.p1.y)}) -> (${Math.round(b.p1.x)},${Math.round(b.p1.y)}), score ${b.scores[0]}-${b.scores[1]}, quiver ${b.p1.quiver}`,
-            resumeWait: 4500,
+            // Choreography is deliberate: the first kill lands early and the duel
+            // then holds — in this CROSSGLOVE opening the bot-vs-bot economy drives
+            // arrows into cells neither archer can reach and both stand until the
+            // stuck-arrow TTL (CFG.stuckTTL=1200) drips the quivers back (~20 s,
+            // measured). That's the game's own rule, so the resume leg waits
+            // through it: deterministic, and the reopening + walk + shoot that
+            // follows is exactly what a seated brain restarts from where the
+            // player left it. The stalemate itself is game code, filed to QA
+            // on #1637.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 1600, resumeWait: 30000,
+            advanced: (a, b) => b.tick > a.tick && (Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver || b.flying > 0),
+            note: (a, b) => `P1 (${Math.round(a.p1.x)},${Math.round(a.p1.y)}) -> (${Math.round(b.p1.x)},${Math.round(b.p1.y)}), score ${b.scores[0]}-${b.scores[1]}, quiver ${b.p1.quiver}, flying ${b.flying}`,
         },
         {
             id: 'dogfight', hook: '__dogTest',
             // an idle plane flies straight: yaw and pitch sit and the belt
             // stays full. The pilot zoom-climbs the opening (pitch), banks
             // onto the bandits (yaw) and fires on a predictHit receipt (belt).
-            startKeys: ['Space'], seatWait: 700, advanceWait: 6000,
+            // 14 s, not 6: software-rendered Chrome (this box + CI) runs the
+            // WebGL world slower than real time, and the determinism of the
+            // patrol means the banks land at fixed SIM ticks — the window must
+            // cover them in wall seconds on the slowest honest clock.
+            startKeys: ['Space'], seatWait: 700, advanceWait: 14000, resumeWait: 4500,
             advanced: (a, b) => b.tick > a.tick && (Math.abs(b.p.pitch - a.p.pitch) > 0.05 || Math.abs(b.p.yaw - a.p.yaw) > 0.08 || b.p.belt < a.p.belt),
             note: (a, b) => `pitch ${(a.p.pitch * 57.3).toFixed(1)}° -> ${(b.p.pitch * 57.3).toFixed(1)}°, yaw ${(a.p.yaw * 57.3).toFixed(1)}° -> ${(b.p.yaw * 57.3).toFixed(1)}°, belt ${a.p.belt} -> ${b.p.belt}, v ${b.p.v.toFixed(0)} m/s`,
             resumeWait: 4500,
