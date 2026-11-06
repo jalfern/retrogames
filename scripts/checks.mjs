@@ -154,6 +154,9 @@ export const MANUAL_CHECKS = [
   "scripts/plantcheck.mjs",
   "scripts/pwacheck.mjs",
   "scripts/reefcheck.mjs",
+  // #1711: consent + session-store gate; pure Node with a loopback stub store,
+  // driven from the lane (npm run recordcheck), deterministic.
+  "scripts/recordcheck.mjs",
   "scripts/roomcheck.mjs",
   "scripts/shelfcheck.mjs",
   "scripts/shorecheck.mjs",
