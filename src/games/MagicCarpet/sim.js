@@ -35,6 +35,7 @@ export const SPILLS = [
     { id: 'shatter', name: 'SHATTER', cost: 30 },
     { id: 'raise', name: 'RAISE', cost: 25 },
     { id: 'dissolve', name: 'DISSOLVE', cost: 40 },
+    { id: 'clone', name: 'CLONE', cost: 35 },
 ]
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
@@ -212,6 +213,44 @@ export function shatterAt(gs, x, y) {
     gs.events.push({ type: 'shatter', x: sx, y: sy, r: SHATTER_R })
 }
 
+// CLONE (#1680, the 12th spell): creature-cloning, the last entry of the
+// original's later-game repertoire (#1612 item 5). Where you look, everything
+// alive within CLONE_R gains a twin: the copy stands on the OPPOSITE side of
+// the ring centre (mirrored across the cast point, never inside 6u of it), at
+// its kind's full spawn health, a fresh AI clock, ordinary hostility — and an
+// ordinary bounty. That is the whole bargain: cast into a pack and the land's
+// killable mana doubles, and so does the danger. The wizard is unique and is
+// never cloned; the land, huts, pearls and books are untouched — a cold,
+// rng-free spell like shatter (same seed, same litter). Copies participate in
+// every existing rule (bite, slings, stampede, the 12-wolf respawn clock is
+// just the clock, not a cap on your own casting; CLONE_MAX keeps a ring-off-
+// rings from ever melting the world).
+export const CLONE_R = 24
+export const CLONE_MAX = 32
+export const SPAWN_HP = { giant: 30, wolf: 8, cow: 4 }
+
+export function cloneAt(gs, x, y) {
+    const cx = wrap(x, MAP), cy = wrap(y, MAP)
+    const litter = []
+    for (const m of [...gs.monsters]) {
+        if (gs.monsters.length >= CLONE_MAX) break
+        const dx = wrapD(m.x - cx), dy = wrapD(m.y - cy)
+        const d = Math.hypot(dx, dy)
+        if (d >= CLONE_R) continue
+        const md = Math.max(d, 6)
+        const ux = d >= 1 ? dx / d : 1, uy = d >= 1 ? dy / d : 0
+        const nx = wrap(cx - ux * md, MAP), ny = wrap(cy - uy * md, MAP)
+        const cp = {
+            kind: m.kind, x: nx, y: ny, hp: SPAWN_HP[m.kind],
+            dir: m.dir, cool: 0, wanderT: 0, lostT: 0,
+        }
+        gs.monsters.push(cp)
+        litter.push({ kind: m.kind, x: nx, y: ny })
+    }
+    gs.events.push({ type: 'clone', x: cx, y: cy, r: CLONE_R, count: litter.length, copies: litter })
+    return litter
+}
+
 // A physical blast at the wizard's tower base topples it (telekinesis throws
 // and fireballs both). One topple per world; the wizard takes the fall.
 export function toppleTower(gs, x, y) {
@@ -322,7 +361,8 @@ export function genWorld(gs) {
         // band on unlucky seeds (seed 1 exhausted all 60 tries on the 9th).
         // After the honest strict attempt, ease the spread — first still past
         // the castle reach, then anywhere landable. Deterministic either way.
-        // #1668 kept the loop honest for eleven books (DISSOLVE's grimoire).
+        // #1668 kept the loop honest for eleven books (DISSOLVE's grimoire);
+        // #1680 for twelve (CLONE's — the fallback still always places).
         if (!p) p = findSpot(gs, 24, 50, false, gs.castle, 46)
         gs.books.push({ id: sp.id, x: p.x, y: p.y, taken: gs.learned.includes(sp.id), cd: 0 })
         bs.push(p)
@@ -355,7 +395,7 @@ export function genWorld(gs) {
 function spawnMon(gs, kind, away, minD) {
     const p = findSpot(gs, kind === 'giant' ? 24 : 20, kind === 'cow' ? 46 : 60, false, away || null, minD || 0)
     gs.monsters.push({
-        kind, x: p.x, y: p.y, hp: kind === 'giant' ? 30 : kind === 'wolf' ? 8 : 4,
+        kind, x: p.x, y: p.y, hp: SPAWN_HP[kind],
         dir: rnd(gs) * 6.28, cool: Math.floor(rnd(gs) * 40), wanderT: 0, lostT: 0,
     })
 }
@@ -524,6 +564,9 @@ function castHand(gs, hand) {
     } else if (id === 'dissolve') {
         const lp = lookPoint(gs)
         dissolveLand(gs, lp.x, lp.y)
+    } else if (id === 'clone') {
+        const lp = lookPoint(gs)
+        cloneAt(gs, lp.x, lp.y)
     } else if (id === 'telekinesis') {
         if (gs.heldEnt) {
             const e = gs.heldEnt
