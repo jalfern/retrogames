@@ -7,8 +7,10 @@
 // fails; restore).
 
 import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadness/sim.js'
-import { RACES, GRID, BREAKDROP, buildHeights } from '../src/games/MarbleMadness/levels.js'
+import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
+import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
+import { readFileSync } from 'node:fs'
 
 let fails = 0
 const ok = (name, cond, extra = '') => {
@@ -207,6 +209,56 @@ ok('win scores at least a full carry ladder', run.score > 100000, `score ${run.s
 // harness CAN fail: assert the pieces we rely on are real
 ok('stepOk refuses void steps', !stepOk(g0, 0, 0, -1, 0) && stepOk(g0, RACES[0].start.r, RACES[0].start.c, RACES[0].start.r + 1, RACES[0].start.c))
 ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
+
+// ------------------------------------------------------- the music bed (#1752) ----
+// The races run on a continuous virtuosic bed (original, Marsyas idiom — the
+// melody itself is copyrighted and stays un-transcribed, AudioController
+// header). These gates keep the bed a bed: well-formed tables, relentless
+// motion, showpiece shape, a driving left hand, a sane urgency ladder, and
+// routing pinned at the scheduler assignment (not just any callsite — #1744).
+{
+    const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
+    const simSrc = readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')
+    const MB = MUSIC.marble, MF = MUSIC.marbleFinale
+    ok('both beds live in the synth engine', !!MB && !!MF &&
+        MB.lead.length === 64 && MB.lead.length === MB.bass.length &&
+        MF.lead.length === 64 && MF.lead.length === MF.bass.length)
+    ok('beds are pure data (rng-free: integers only, JSON round-trips)',
+        [...MB.lead, ...MB.bass, ...MF.lead, ...MF.bass].every(Number.isInteger) &&
+        JSON.parse(JSON.stringify({ l: MB.lead, b: MB.bass })).l.join() === MB.lead.join())
+    ok('the bed never stops running (zero rests in the leads — the Marsyas motion law)',
+        MB.lead.every((n) => n > 0) && MF.lead.every((n) => n > 0))
+    const leaps = (t) => t.reduce((c, n, i) => c + (i && Math.abs(n - t[i - 1]) >= 7 ? 1 : 0), 0)
+    ok('shows off like a piano run (span >= 19, big leaps >= 8 per bed)',
+        Math.max(...MB.lead) - Math.min(...MB.lead) >= 19 && leaps(MB.lead) >= 8 &&
+        Math.max(...MF.lead) - Math.min(...MF.lead) >= 19 && leaps(MF.lead) >= 8)
+    ok('left hand drives every step in octaves (no rests, span >= 12)',
+        MB.bass.every((n) => n > 0) && MF.bass.every((n) => n > 0) &&
+        Math.max(...MB.bass) - Math.min(...MB.bass) >= 12)
+    ok('finale is the variation-up (track flips at race 5, octave higher, faster)',
+        FINALE_RACE === 4 && bedFor(FINALE_RACE - 1) === 'marble' && bedFor(FINALE_RACE) === 'marbleFinale' &&
+        MF.lead.join() !== MB.lead.join() &&
+        MF.lead.reduce((a, b) => a + b, 0) / MF.lead.length - MB.lead.reduce((a, b) => a + b, 0) / MB.lead.length >= 10 &&
+        MF.step < MB.step)
+    ok('urgency ladder is monotonic and sane (races 1->6 never slow down)',
+        MUSIC_STEPS.length === RACES.length && MUSIC_STEPS.every((s) => s >= 0.06 && s < 0.1) &&
+        MUSIC_STEPS.every((s, i) => !i || s <= MUSIC_STEPS[i - 1]) &&
+        musicStepFor(-1) === MUSIC_STEPS[0] && musicStepFor(99) === MUSIC_STEPS.at(-1) &&
+        MUSIC_STEPS[FINALE_RACE] === MF.step)
+    ok('bed starts where the run starts (pins target the scheduling assignment)',
+        /const bed = bedFor\(ev\.race\)/.test(idxSrc) && /startMusic\(bed\)/.test(idxSrc) &&
+        /startRun[\s\S]{0,700}startMusic\(bedFor\(0\)\)/.test(idxSrc) &&
+        /setMusicStep\(musicStepFor\(ev\.race\)\)/.test(idxSrc))
+    ok('silence is wired (over/win stop the bed; unmount never leaves it running; hits duck)',
+        /case 'over': audioController\.stopMusic\(\)/.test(idxSrc) &&
+        /case 'win': audioController\.stopMusic\(\)/.test(idxSrc) &&
+        /stopMusic\(\) \/\/ the bed belongs to this screen/.test(idxSrc) &&
+        /case 'shatter':[^\n]*duckMusic\(/.test(idxSrc) && /case 'raceClear':\s*\n\s*audioController\.duckMusic\(/.test(idxSrc))
+    ok('determinism untouched (bed is painter-side: sim/planner know no audio)',
+        !/audioController|MUSIC|duckMusic/.test(simSrc))
+    ok('beds ride the shared bus ceiling (MUSIC_BUS stays the one duck number)',
+        MUSIC_BUS > 0 && MUSIC_BUS <= 1 && MB.step > 0 && MF.step > 0)
+}
 
 if (fails) {
     console.log(`\n${fails} FAILURE(S)`)
