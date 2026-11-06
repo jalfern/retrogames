@@ -8,7 +8,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
 import { rumble } from '../../components/gamepadMap'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import AttractMessage from '../../components/AttractMessage'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
@@ -33,6 +35,8 @@ const JoustGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the prover rides the waves
+    const watchingRef = useRef(false)
     const playersRef = useRef(1)
 
     useEffect(() => {
@@ -136,6 +140,8 @@ const JoustGame = () => {
             parts = []
             popups = []
             setFinalInfo(null)
+            watchingRef.current = false // #1637 a new run starts with the reins in your hand
+            setWatching(false)
             setSc('play')
             audioController.startMusic('joust')
         }
@@ -269,7 +275,8 @@ const JoustGame = () => {
                         if (demo.end) buildDemo()
                         handleEvents(demo, false)
                     } else if (screenRef.current === 'play' && gs && !gs.end) {
-                        step(gs, { ...keys })
+                        // #1637 WATCH: the prover rides the waves in the player's saddle.
+                        step(gs, watchingRef.current ? plan(gs) : { ...keys })
                         handleEvents(gs, true)
                         finish(gs)
                     }
@@ -303,6 +310,12 @@ const JoustGame = () => {
                 setSc('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y hands the sky to the prover; any driving key takes it back.
+            if (isWatchKey(e)) {
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (code === 'ArrowLeft') keys.l = true
             else if (code === 'ArrowRight') keys.r = true
             else if (FLAP.has(code)) keys.f = true
@@ -324,7 +337,9 @@ const JoustGame = () => {
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 800) return
                 startPlay(playersRef.current)
+                return
             }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the reins back
         }
 
         window.addEventListener('keydown', onDown)
@@ -360,6 +375,7 @@ const JoustGame = () => {
                     }
                 },
                 start: (players = 1) => startPlay(players),
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover riding?
                 hash: () => (gs ? stateHash(gs) : 0),
                 place: (x, y) => {
                     const rd = gs && gs.players[0].rider
@@ -483,6 +499,17 @@ const JoustGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'JOUST')} onResume={handleResume} />}
+            {/* #1637 WATCH — the prover rides the waves; any key, pad push or tap takes over. */}
+            {play && watching && (
+                <div className="fixed z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

@@ -8,7 +8,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton from '../../components/WatchButton'
 import AttractMessage from '../../components/AttractMessage'
+import { isWatchKey, isTakeoverKey } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -38,6 +40,8 @@ const QBertGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: the BFS prover climbs
+    const watchingRef = useRef(false)
 
     useEffect(() => {
         const wrap = stageRef.current
@@ -120,6 +124,8 @@ const QBertGame = () => {
             popups = []
             lastActive = 0
             setFinalInfo(null)
+            watchingRef.current = false // #1637 a new run starts with the stick in your hand
+            setWatching(false)
             setSc('play')
             audioController.startMusic('qbert')
         }
@@ -300,7 +306,8 @@ const QBertGame = () => {
                         if (demo.end || (demo.pending && demo.pending.t <= 0)) buildDemo()
                         handleEvents(demo, false)
                     } else if (screenRef.current === 'play' && gs && !gs.end) {
-                        step(gs, input)
+                        // #1637 WATCH: the BFS prover climbs in the player's boots.
+                        step(gs, watchingRef.current ? plan(gs) : input)
                         handleEvents(gs, true)
                         finish(gs)
                         if (gs && !gs.end && gs.active !== lastActive) {
@@ -331,6 +338,12 @@ const QBertGame = () => {
                 setSc('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y hands the pyramid to the prover; any driving key takes it back.
+            if (isWatchKey(e)) {
+                if (sc === 'play') { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current) }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false) }
             if (code === 'ArrowUp') held.up = true
             else if (code === 'ArrowDown') held.dn = true
             else if (code === 'ArrowLeft') held.lf = true
@@ -348,7 +361,9 @@ const QBertGame = () => {
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 800) return
                 startPlay()
+                return
             }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 a tap takes the hat back
         }
 
         window.addEventListener('keydown', onDown)
@@ -375,6 +390,7 @@ const QBertGame = () => {
         if (import.meta.env.DEV) {
             const live = () => (screenRef.current === 'attract' ? demo : gs)
             window.__qbertTest = {
+                watching: () => watchingRef.current, // #1637 watchcheck: is the prover climbing?
                 probe: () => {
                     const s = live()
                     const bp = bertPos(s)
@@ -533,6 +549,17 @@ const QBertGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'Q*BERT')} onResume={handleResume} />}
+            {/* #1637 WATCH — the prover climbs the pyramid; any key, pad push or tap takes it back. */}
+            {play && watching && (
+                <div className="fixed z-50 top-3 left-1/2 -translate-x-1/2 bg-emerald-500/90 border border-emerald-200 text-emerald-950 font-mono text-[11px] font-bold tracking-widest px-3 py-1 rounded-full shadow-lg pointer-events-none whitespace-nowrap">
+                    WATCHING — THE PROVEN ROUTE · ANY INPUT TAKES OVER
+                </div>
+            )}
+            {play && !paused && (
+                <div className="fixed z-50 pointer-events-auto" style={{ top: '3.5rem', right: '0.75rem' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} diag />
         </div>
     )
