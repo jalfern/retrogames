@@ -937,6 +937,12 @@ const MagicCarpetGame = () => {
                     settleGround(gs) // #1694: the dig gates read the LANDED crater, not the window
                     return gs.craters.length
                 },
+                // #1703 (phone proof): queue the same crater digHot lands — but
+                // leave the crumble window OPEN so a pass can capture mid-window
+                // (rim peak) vs settled. deforms() reports each deform's age so
+                // the caller can step to a=CRUMBLE_T/2 and no further.
+                craterAt: (x, y, r, depth, hot = 0) => { crater(gs, x, y, r, depth, hot); return gs.deforms.length },
+                deforms: () => gs.deforms.map((d) => ({ a: d.a, kind: d.kind, x: d.x, y: d.y, mag: d.mag, rimAmp: d.rimAmp })),
                 fx: (e) => { handleEvents([e]); if (renderer) renderer.handleEvents([e], gs) },
                 sfx: () => audioController.sfx,
                 carpet: () => ({ x: gs.x, y: gs.y, seed: gs.seed }),
