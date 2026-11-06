@@ -11,11 +11,11 @@ import { readFile } from 'node:fs/promises'
 import { launch, openGame, requireDevServer, Report } from './lib/harness.mjs'
 import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
-    makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower,
+    makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower, settleGround, CRUMBLE_T,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
-    cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint,
+    cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -117,6 +117,8 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         i++
     }
     const hB = impact ? sampleH(snap, impact.x, impact.y) : 0
+    // #1694 crumble: the crater unfolds over CRUMBLE_T ticks — land it before sampling
+    if (impact) settleGround(gs)
     const hA = impact ? sampleH(gs, impact.x, impact.y) : 0
     r.check('fireball impact craters the terrain (heightmap actually deforms)',
         impact && hB - hA >= 3, `impact=${!!impact} ${hB.toFixed(1)} → ${hA.toFixed(1)}`)
@@ -130,6 +132,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     let zapAt = null
     let j = 0
     while (j < 10 && !zapAt) { step(gs2, j === 0 ? { castR: true } : {}); for (const e of gs2.events) if (e.type === 'zap') zapAt = e; gs2.events.length = 0; j++ }
+    if (zapAt) settleGround(gs2)
     const hL0 = zapAt ? sampleH(snap2, zapAt.x, zapAt.y) : 0
     const hL1 = zapAt ? sampleH(gs2, zapAt.x, zapAt.y) : 0
     r.check('lightning craters the ground where it strikes',
@@ -337,6 +340,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     const before = gs.pearls.filter((p) => p.alive).reduce((a, p) => a + p.m, 0)
     let i = 0
     while (gs.wizard.alive && i < 4000) { step(gs, autopilot(gs)); i++ }
+    settleGround(gs) // #1694: let the tower crater land before reading it
     const after = gs.pearls.filter((p) => p.alive).reduce((a, p) => a + p.m, 0) + Math.floor(gs.mana)
     const hAfter = sampleH(gs, tx, ty)
     r.check('slaying the wizard scatters his hoard as pearls and craters his tower',
@@ -654,6 +658,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const px = wrap(gs.x + 30, MAP), py = wrap(gs.y, MAP)
         const h0 = sampleH(gs, px, py), hEdge = sampleH(gs, wrap(px + 24, MAP), py)
         raiseTerrain(gs, px, py, 16, 14)
+        settleGround(gs) // #1694: read the mound after its swell window
         r.check('raise pushes a mound up where you look',
             sampleH(gs, px, py) > h0 + 4 && gs.events.some((e) => e.type === 'raise'),
             `h ${h0.toFixed(1)}→${sampleH(gs, px, py).toFixed(1)}`)
@@ -675,8 +680,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const px = wrap(gs.castle.x + 60, MAP), py = wrap(gs.castle.y + 60, MAP)
         const h0 = sampleH(gs, px, py)
         crater(gs, px, py, 14, Math.max(8, Math.ceil((h0 - WATER + 4) * 2.9)))
+        settleGround(gs) // #1694: flood after the sink window
         const flooded = sampleH(gs, px, py) < WATER
         raiseTerrain(gs, px, py, 16, 14)
+        settleGround(gs) // #1694: drain after the swell window
         r.check('raise drains a flooded crater — land lifted above the sea',
             flooded && sampleH(gs, px, py) > WATER,
             `h0=${h0.toFixed(1)} flooded=${flooded} after=${sampleH(gs, px, py).toFixed(1)}`)
@@ -743,6 +750,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             }
         }
         dissolveLand(gs, hx, hy)
+        settleGround(gs) // #1694: the wound opens over the window — read the drowned land after it
         r.check('dissolve floods guaranteed: even the highest peak sinks below the sea',
             hh > WATER + 40 && sampleH(gs, hx, hy) < WATER,
             `peak ${hh.toFixed(1)} → ${sampleH(gs, hx, hy).toFixed(1)} (sea ${WATER})`)
@@ -783,6 +791,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         wolf.x = wrap(tx + 3, MAP); wolf.y = wrap(ty + 3, MAP)
         const cr0 = gs.craters.length, mk0 = gs.fireMarks.length, hp0 = gs.wizard.hp
         dissolveLand(gs, tx, ty)
+        settleGround(gs) // #1694: flood reads after the sink window (the promise is unchanged)
         r.check('dissolve at the tower floods the base yet never topples, burns, marks or wounds',
             gs.towerDown === false && gs.craters.length === cr0 && gs.fireMarks.length === mk0 &&
             gs.wizard.hp === hp0 && sampleH(gs, tx, ty) < WATER,
@@ -814,8 +823,10 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             }
         }
         dissolveLand(gs, hx, hy)
+        settleGround(gs) // #1694: flooded reads after the wound opens fully
         const flooded = sampleH(gs, hx, hy) < WATER
         raiseTerrain(gs, hx, hy, 16, 14)
+        settleGround(gs) // #1694: drain reads after the mound fully swells
         r.check('RAISE drains the dissolve wound — the counter-spell pairing holds',
             flooded && sampleH(gs, hx, hy) > WATER,
             `flooded=${flooded} after=${sampleH(gs, hx, hy).toFixed(1)}`)
@@ -1148,6 +1159,122 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 }
 
 // ---- browser pass: boots in Chrome, starts, drives through the contract, zero errors
+// ---- #1694: CRUMBLE RIPPLE — ground deformations unfold over ticks.
+// Mutation guide (prove it can fail): (1) make crater() land instantly (append
+// settleGround(gs) before its return) — the no-pop and rim gates go red while
+// the convergence gates stay green (that IS the promise: honest landing);
+// (2) swap sinkCurve for a linear ramp — the accelerate gate goes red (a real
+// collapse starts gently: a quarter of the window must not sink half);
+// (3) delete `gs.deforms = []` in genWorld — the fresh-world gate goes red;
+// (4) cut the drainDeforms call in step() — the no-pop gate itself goes red
+// (the queue never drains, nothing lands). All restored after proving.
+{
+    const giAt = (x, y) => Math.floor(wrap(y, MAP) / CELL) * GRID + Math.floor(wrap(x, MAP) / CELL)
+    const cellD = (gi, x, y) => Math.hypot((gi % GRID + 0.5 - wrap(x, MAP) / CELL) * CELL, (Math.floor(gi / GRID) + 0.5 - wrap(y, MAP) / CELL) * CELL)
+    {
+        // Pure crater law: queue on cast → partial sink → honest landing.
+        const gs = makeGame(7)
+        gs.deforms.length = 0
+        const base = gs.heights.slice()
+        const X = 100, Y = 120, R = 14, D = 10
+        crater(gs, X, Y, R, D)
+        const gi0 = giAt(X, Y)
+        const full = D * (1 - cellD(gi0, X, Y) / R) ** 2
+        r.check('the land never pops: a crater queues and lands nothing on its cast tick',
+            gs.deforms.length === 1 && gs.heights.every((h, i) => h === base[i]), `deforms=${gs.deforms.length}`)
+        for (let t = 0; t < Math.floor(CRUMBLE_T / 4); t++) step(gs, {})
+        const q = base[gi0] - gs.heights[gi0]
+        r.check('collapse accelerates (ease-in): a quarter-window sinks a sliver, far under linear',
+            q > 0.001 && q < full * 0.1, `sunk ${(q / full).toFixed(3)} of full at t=${Math.floor(CRUMBLE_T / 4)} (linear would read 0.20)`);
+        const rimSeen = (() => {
+            // capture the rim heave at mid-window: any ring cell strictly above base
+            let up = 0
+            for (let i = 0; i < GRID * GRID; i++) {
+                const d = cellD(i, X, Y)
+                if (d > R && d <= R * 1.25 && gs.heights[i] > base[i] + 0.02) up++
+            }
+            return up
+        })()
+        for (let t = Math.floor(CRUMBLE_T / 4); t < CRUMBLE_T; t++) step(gs, {})
+        let worst = 0, outside = 0
+        for (let i = 0; i < GRID * GRID; i++) {
+            const d = cellD(i, X, Y)
+            const want = d <= R ? Math.max(0, base[i] - D * (1 - d / R) ** 2) : base[i]
+            worst = Math.max(worst, Math.abs(gs.heights[i] - want))
+            if (d > R * 1.25 && Math.abs(gs.heights[i] - base[i]) > 1e-9) outside++
+        }
+        r.check('crumble converges: the land equals the instant machine at cast+CRUMBLE_T',
+            worst < 1e-9, `worst ${worst.toExponential(2)}`)
+        r.check('the shockwave is no erosion: outside the ring nothing moved, ever',
+            outside === 0, `offenders ${outside}`)
+        r.check('the shockwave rim heaves mid-window (the ground is pushed aside as it falls)',
+            rimSeen > 0, `rim cells up at mid-window ${rimSeen}`)
+    }
+    {
+        // RAISE swells ease-out — most of the mound is visible by quarter-window.
+        const gs = makeGame(7)
+        gs.deforms.length = 0
+        const X = 300, Y = 80, R = 16, HG = 14
+        const base = gs.heights.slice()
+        raiseTerrain(gs, X, Y, R, HG)
+        const gi0 = giAt(X, Y)
+        const full = HG * (1 - cellD(gi0, X, Y) / R) ** 2
+        for (let t = 0; t < Math.floor(CRUMBLE_T / 4); t++) step(gs, {})
+        const q = gs.heights[gi0] - base[gi0]
+        r.check('mounds swell ease-out: a third of the mound already there by quarter-window',
+            q > full * 0.3, `lift ${q.toFixed(2)} of ${full.toFixed(2)} at t=${Math.floor(CRUMBLE_T / 4)}`)
+        for (let t = Math.floor(CRUMBLE_T / 4); t < CRUMBLE_T; t++) step(gs, {})
+        let worst = 0
+        for (let i = 0; i < GRID * GRID; i++) {
+            const d = cellD(i, X, Y)
+            const want = d <= R ? Math.min(96, base[i] + HG * (1 - d / R) ** 2) : base[i]
+            worst = Math.max(worst, Math.abs(gs.heights[i] - want))
+        }
+        r.check('RAISE converges to the instant mound (counter-spell maths unchanged)',
+            worst < 1e-9, `worst ${worst.toExponential(2)}`)
+    }
+    {
+        // Queue mechanics are rng-free and regen-safe: replay bit-identical,
+        // a fresh world never inherits a pending ripple.
+        const drive = () => {
+            const gs = makeGame(7)
+            gs.learned.push('raise', 'dissolve'); gs.mana = 500
+            let i = 0
+            for (; i < 900; i++) {
+                const inp = autopilot(gs)
+                if (i === 120 || i === 480) { gs.hands.L = 'raise'; inp.castL = true }
+                if (i === 240) { gs.hands.L = 'dissolve'; inp.castL = true }
+                gs.mana = Math.max(gs.mana, 100)
+                step(gs, inp)
+            }
+            return gs
+        }
+        const a = drive(), b = drive()
+        r.check('crumbling is deterministic: same seed → identical heights and hash',
+            stateHash(a) === stateHash(b) && a.heights.every((h, i) => h === b.heights[i]), stateHash(a))
+        const stale = drive()
+        crater(stale, 60, 60, 18, 12, 1)
+        step(stale, {})
+        stale.level = 1
+        genWorld(stale)
+        r.check('regen clears pending ripples — fresh land is never dug by stale work',
+            stale.deforms.length === 0)
+        const h0 = stale.heights.slice()
+        for (let t = 0; t < CRUMBLE_T + 2; t++) step(stale, {})
+        let dug = 0
+        for (let j = 4; j < 12; j++) for (let i = 4; i < 12; i++) if (stale.heights[j * GRID + i] < h0[j * GRID + i] - 1e-9) dug++
+        r.check('and the drained queue leaves the fresh world untouched', dug === 0, `cells dug ${dug}`)
+    }
+    {
+        // Source pins: the drain sits in step() (one driver), regen clears,
+        // and the queue is part of the contract-visible state.
+        const simSrc = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        r.check('crumble law pinned in source: step() drains before casts, genWorld clears',
+            /drainDeforms\(gs\) \/\/[\s\S]{0,1200}if \(inp\.castL/.test(simSrc) &&
+            /function genWorld\(gs\) \{\s*\n\s*gs\.deforms = \[\]/.test(simSrc))
+    }
+}
+
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })

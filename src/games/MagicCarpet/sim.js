@@ -149,6 +149,12 @@ function drainDeforms(gs) {
     }
 }
 
+// Harness helper: fast-forward the crumble window to its end using the same
+// drain step() applies, without simulating the world. Gates that assert on the
+// LAND (not the animation) call this after a cast; gates that assert on the
+// animation itself sample mid-window instead.
+export function settleGround(gs) { while (gs.deforms.length) drainDeforms(gs) }
+
 export function crater(gs, x, y, r, depth, hot = 0) {
     const cx = wrap(x, MAP) / CELL, cy = wrap(y, MAP) / CELL
     const i0 = Math.floor(cx), j0 = Math.floor(cy)

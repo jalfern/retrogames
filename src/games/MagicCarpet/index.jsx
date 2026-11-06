@@ -18,7 +18,7 @@ import {
     W, H, HUD_H, HORIZON, MAP,
     LEVELS,
     SPILLS, spellById,
-    makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, INVIS_T,
+    makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
     hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
@@ -913,6 +913,7 @@ const MagicCarpetGame = () => {
                 digHot: () => {
                     gs.quota = 999999
                     crater(gs, gs.x + Math.cos(gs.yaw) * 70, gs.y + Math.sin(gs.yaw) * 70, 16, 10, 1)
+                    settleGround(gs) // #1694: the dig gates read the LANDED crater, not the window
                     return gs.craters.length
                 },
                 fx: (e) => { if (renderer) renderer.handleEvents([e], gs) },

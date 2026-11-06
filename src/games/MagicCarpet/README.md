@@ -151,6 +151,22 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   soft-locked world (seed 14 proved it after the book rng shift); the retry
   loop keeps the world always finishable. 60-seed sweep after: 60/60 wins,
   slowest 28,573 ticks (books shifted the stream from #1612's 26,503).
+- CRUMBLE RIPPLE (#1694, the ground feel): terrain deformations never pop.
+  `crater()`, RAISE mounds and the DISSOLVE clamp compute their cell deltas
+  exactly as the #489 instant machine did, then queue them on `gs.deforms`;
+  `step()` drains the queue first (one driver, before casts). Centers sink on
+  `(a/CRUMBLE_T)²` — an accelerating collapse — mounds swell on
+  `1−(1−a/T)²`, and a shockwave ring just outside the work (r..1.25r;
+  raise r..1.2r) heaves by `amp·sin(π·a/T)`, starting and ending at exactly
+  zero: no erosion, no net land change from the ring. CRUMBLE_T = 10 ticks.
+  At cast+CRUMBLE_T the heights equal the instant machine cell-for-cell
+  (< 1e-9, gated), so flooding, auto-climb, glow, fairness and the 60-seed
+  sweep land on the same land they always did; `stateHash` never reads
+  heights, and `genWorld` clears the queue so a regenerated world is never
+  dug by stale ripples. `settleGround(gs)` fast-forwards the window for
+  gates (and the digHot hook) that assert on the LANDED world; the
+  animation itself is gated mid-window. Balance after: 60/60 seeds,
+  slowest 25,519 ticks.
 
 ## #1612 item 1 polish (2026-11-05, QA studio)
 
@@ -170,6 +186,14 @@ crater()-style subtraction turns exactly the four flood-dependent gates red
 roster/hut/pays/tray/determinism gates stay green; restored after. Balance
 after: 60/60 seeds, slowest 28,136 ticks (the 11th grimoire re-based the rng
 stream).
+#1694 mutants (2026-11-06, forge slot b): three proofs — (1) land the crater
+instantly inside `crater()` (add `settleGround(gs)` before its return):
+exactly the three crumble gates go red (no-pop, ease-in sliver, rim heave)
+while BOTH convergence gates stay green — that IS the promise (animation or
+not, the land lands the same); (2) delete `gs.deforms = []` in `genWorld`:
+exactly the two regen gates go red (21 cells dug by stale ripples) plus the
+source pin; (3) linear `sinkCurve`: exactly the ease-in gate goes red
+(0.200 where the quadratic reads 0.04). All restored; 149/149 green.
 
 ## #1612 item 4 polish (2026-11-05, QA studio)
 
@@ -221,6 +245,12 @@ npm run carpetcheck        # Node gates + a headless-Chrome pass + GPU-pass
                            # base (no topple/burn/mark/wound) + creatures swim,
                            # pays/denies, RAISE counter-drain, tray slot 11
                            # equip + HUD containment, determinism),
+                           # CRUMBLE (#1694: no-pop queue on the cast tick,
+                           # ease-in sliver at quarter-window vs linear, rim
+                           # heave mid-window + zero erosion outside the ring,
+                           # RAISE ease-out swell, honest landing <1e-9 vs
+                           # the instant machine, determinism, regen clears
+                           # the stale queue, source pins),
                            # plus a headless-Chrome pass and 10 GPU-pass gates
                            # (#1083: WebGL2 alive, sky/terrain separation,
                            # texture, lava-glow + scorch in the heightmap
@@ -280,7 +310,8 @@ see item 5).
   HUD-containment and tap gates hold (they read `TRAY` live).
 - Held for a future pass: RAISE mound terrain-ripple animation (the README's
   "no per-pixel deformation ripple" gap — animating the mound over N ticks
-  means a deforming heightmap write path; bigger than this pass).
+  means a deforming heightmap write path; bigger than this pass). *Shipped by
+  #1694: the gs.deforms queue is that write path.*
 
 ## Honest gaps (the polish pass owns these)
 
@@ -292,16 +323,24 @@ see item 5).
 - Three worlds, not the original's 45; no level-select or castle-spell menu;
   scoring is banked mana + kills + clears + time bonus.
 - One rival wizard per world; the original ran five, each growing its own castle.
-- Telekinesis holds and throws but carries only one creature and the throw
-  doesn't knock over towers.
+- **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
+  towers — every throw/fireball impact routes through `toppleTower()` inside
+  `blast()`, and carpetcheck gates it ("a throw landing at the tower base
+  topples it"). The "carries more than one creature" half of the old line is
+  an unverifiable #489-memory claim (no reachable sources; the #1680 lesson) —
+  inventing multi-carry would triple a homing projectile's damage, so it is
+  out of spec, not a gap.
 - Village populations are decorative huts — no villagers, no convert/burn moral
   economy, no prisoners.
 - No anaglyph/stereo mode, no 3D sound. `?` pause carries the rules instead.
 - Water is shader waves with self-shadowing, sun-linked sparkle, dithered
   depth bands and foam lace tracing the shoreline — but not the original's
   4-bit palette-cycling wave animation; no underwater view when cratered below sea.
-- No per-pixel terrain deformation ripple animation — craters appear on the
-  heightmap the tick they land (visible, but instantaneous).
+- **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
+  DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
+  ease-out swell, a shockwave rim that settles to exactly zero) with the
+  final land provably equal to the old instant machine; the #1646-deferred
+  RAISE-mound ripple ships here too.
 - Fog is per-object/per-vertex distance mix, not a true aerial-perspective
   gradient with altitude; clouds are two dome layers that cast a drifting
   shadow on the land, not volumetric bodies.
