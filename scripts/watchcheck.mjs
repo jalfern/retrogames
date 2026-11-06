@@ -16,6 +16,15 @@ const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').split('='
 
 const key = (page, code) => page.keyboard.press(code)
 
+// #1722 — late-seat guard (CI timing family). On CI Chrome (software-rendered) the
+// seat lands late: a planner/hash receipt finishes a few ticks after the key, so a
+// single reading of watching() right after KeyY is false while the watcher really
+// seats moments later (the advance gate right after passes — the watcher drove).
+// Poll the seat instead of sleeping a bigger constant; gates that require a DECLINE
+// still read once — this only waits for a seat the game genuinely provides.
+const seatPoll = (page, H, ms = 2500) =>
+    page.waitForFunction((h) => window[h].watching(), H, { timeout: ms }).catch(() => {})
+
 // #601 lesson: CI filesystems are case-sensitive, macOS APFS is not. A roster
 // name that differs from disk only in case (Qbert vs QBert) boots fine on the
 // dev box and ENOENT-crashes the whole nightly smoke mid-suite. realpathSync
@@ -308,6 +317,17 @@ const PILOTS = [
             advanced: (a, b) => b.tick > a.tick && (Math.abs(b.x[0] - a.x[0]) > 0.08 || b.hp[1] < a.hp[1] || b.wins[0] > a.wins[0]),
             note: (a, b) => `p1 x ${a.x[0]} -> ${b.x[0]}, p2 hp ${a.hp[1]} -> ${b.hp[1]}, rounds ${b.wins[0]}`,
             resumeWait: 4500,
+            // #1722: round-start freeze outlived the fixed window on CI (advance
+            // read -2.6 -> -2.6 while the resume leg advanced fine). Wait for the
+            // bell: any fighter drift, hp spend or round won means the round is on.
+            settle: (h) => {
+                const w = (window.__watchSettle || (window.__watchSettle = {}))
+                const p = window[h].probe()
+                const prev = w.ironRing
+                w.ironRing = { x0: p.x[0], x1: p.x[1], hp0: p.hp[0], hp1: p.hp[1], w0: p.wins[0] }
+                return !!prev && (Math.abs(prev.x0 - p.x[0]) > 0.03 || Math.abs(prev.x1 - p.x[1]) > 0.03
+                    || p.hp0 < prev.hp0 || p.hp1 < prev.hp1 || p.w0 > prev.w0)
+            },
         },
         {
             id: 'rally-co-driver', hook: '__rallyTest',
@@ -328,6 +348,10 @@ const PILOTS = [
             await page.waitForTimeout(g.seatWait || 600)
             await key(page, 'KeyY')
             rep.check(`${g.id}: Y starts the watcher`, await watching())
+            // #1722: optional settle — wait for the round clock to actually move
+            // before the advance window (iron-ring's round-start freeze outlived
+            // the fixed window on CI; the resume leg proved the seat works).
+            if (g.settle) await page.waitForFunction(g.settle, H, { timeout: 25000 }).catch(() => {})
             const a = await probe()
             await page.waitForTimeout(g.advanceWait || 5000)
             const b = await probe()
@@ -520,6 +544,7 @@ const PILOTS = [
             await key(page, 'Space')
             await page.waitForTimeout(600)
             await key(page, 'KeyY')
+            await seatPoll(page, H)                       // #1722: the hash receipt lands a tick after the key on CI; the build gate proved the watcher drove
             rep.check('simcity-min: Y seats the plan on the fresh city', await watching())
             const a = await probe()
             await page.waitForTimeout(8000)
@@ -572,6 +597,7 @@ const PILOTS = [
             await key(page, 'Space')
             await page.waitForTimeout(600)
             await key(page, 'KeyY')
+            await seatPoll(page, H)                       // #1722: the plan is computed from the live state — slow CI seats late, watch.js confirms
             rep.check('ice-climber: Y starts the solver (plans from the live state)', await watching())
             const a = await probe()
             await page.waitForTimeout(6000)
@@ -582,6 +608,7 @@ const PILOTS = [
             rep.check('ice-climber: steer key takes over', !(await watching()))
             await page.keyboard.up('ArrowLeft')
             await key(page, 'KeyY')                       // re-seat: re-plan from HERE
+            await seatPoll(page, H)                       // #1722: re-plan is async too
             rep.check('ice-climber: Y re-seats by re-planning from where the dwarves stand', await watching())
             const c = await probe()
             await page.waitForTimeout(4500)
@@ -601,7 +628,13 @@ const PILOTS = [
             rep.check('SSX: Y starts the watcher', await page.evaluate(() => window.__ssxTest.watching()))
             rep.check('SSX: handoff blip at start',
                 (await page.evaluate(() => window.__ssxTest.watchSfx())).at(-1) === 'start')
-            await page.waitForTimeout(7000)               // count + some downhill
+            // #1722: CI froze the whole loop for the first seconds here (s -14 -> -14
+            // @v 0.0 through the whole 7000+1500 ms) — a longer sleep is the wrong
+            // fix. Wait for the sim's own release signal (the rider moving), then a
+            // short downhill run, then measure. Locally this exits in about the same
+            // time; on CI it exits the moment the first frame lands.
+            await page.waitForFunction(() => window.__ssxTest.probe().p.v > 0.05, null, { timeout: 25000 }).catch(() => {})
+            await page.waitForTimeout(1200)               // some downhill after release
             const s1 = await page.evaluate(() => window.__ssxTest.probe())
             await page.waitForTimeout(1500)
             const s2 = await page.evaluate(() => window.__ssxTest.probe())
