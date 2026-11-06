@@ -184,3 +184,11 @@ export function createModelPolicy(policy = POLICY) {
         },
     }
 }
+
+// #1636: recording seat-stamp. A seat the trained net drove carries its id
+// (recorder sources take `modelId`); externally-driven contract seats stay
+// anonymous `model` — we cannot name a net we did not train.
+export const seatSources = ({ seat2Kind = 'off', brainSeated = false, brainName = 'model/v1' }) => [
+    { kind: 'model' },
+    brainSeated && seat2Kind === 'model' ? { kind: 'model', modelId: brainName } : { kind: seat2Kind },
+]

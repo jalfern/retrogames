@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { packPages } from '../utils/textFit'
 import { audioController } from '../utils/AudioController.js'
 
@@ -63,6 +64,19 @@ const PauseOverlay = ({ game, badge, onResume }) => {
                         </div>
                     )
                 }),
+            ]
+            : []),
+        // #1636: research write-up link, only for titles that register one.
+        ...(game?.research
+            ? [
+                <Link
+                    key="rs"
+                    to={game.research}
+                    data-research-link=""
+                    className="text-base tracking-wider text-[#7de8ff] underline decoration-dotted underline-offset-4 pt-1"
+                >
+                    RESEARCH WRITE-UP →
+                </Link>,
             ]
             : []),
     ]
