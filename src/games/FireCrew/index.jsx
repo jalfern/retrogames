@@ -420,12 +420,25 @@ export default function FireCrew() {
                     const g = gsRef.current
                     if (!g) return { error: 'no run' }
                     return {
-                        gust: g.wind.gust, ladder: g.ladder,
+                        gust: g.wind.gust, ladder: g.ladder, done: !!g.done,
                         voice: windVoice(g.wind.gust),
                         creak: ladderCreak(g.wind.gust, g.ladder),
                         bed: lastBedRef.current,
                         creakFired: lastCreakRef.current,
                     }
+                },
+                // force the wind state for the gate (a gale the seed has not
+                // rolled yet, a ladder held at any extension) and clear the
+                // fired-spies so the gate only sees what happens after forcing
+                windForce: (gust, ladder) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    g.wind.gust = gust
+                    g.wind.next = g.tick + 99999 // hold the forced level steady
+                    if (ladder != null) g.ladder = ladder
+                    lastBedRef.current = null
+                    lastCreakRef.current = null
+                    return { tick: g.tick, gust: g.wind.gust, ladder: g.ladder, done: !!g.done }
                 },
             }
             mountDbg({

@@ -468,9 +468,9 @@ console.log('wind audio — seat 3 hears the gales (#1744)')
     ok(cHigh.vol > cLow.vol && cHigh.f1 < cHigh.f0,
         'the load moan deepens and thickens as the ladder tops out')
     const jsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
-    ok(/windVoice\(g\.wind\.gust\)/.test(jsx) && /playFilteredNoise\(v\.dur, v\.vol, v\.freq\)/.test(jsx),
+    ok(/const wv = windVoice\(g\.wind\.gust\)/.test(jsx) && /playFilteredNoise\(v\.dur, v\.vol, v\.freq\)/.test(jsx),
         'the shell routes the bed through the sim voice, not its own numbers')
-    ok(/ladderCreak\(g\.wind\.gust, g\.ladder\)/.test(jsx) && /playSweep\(c\.f0, c\.f1, c\.dur, 'sawtooth', c\.vol\)/.test(jsx),
+    ok(/const cr = ladderCreak\(g\.wind\.gust, g\.ladder\)/.test(jsx) && /playSweep\(c\.f0, c\.f1, c\.dur, 'sawtooth', c\.vol\)/.test(jsx),
         'the shell routes the creak through the sim voice too')
 }
 

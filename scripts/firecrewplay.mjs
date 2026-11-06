@@ -98,6 +98,25 @@ await press('Space', 120)
 await new Promise((r) => setTimeout(r, 250))
 ok(await screen() === 'play', 'restart works — the shift runs again')
 
+// #1744 — wind audio cues on real rAF ticks: a forced breeze lays the bed,
+// a gale on an extended ladder adds the load-creak, calm silences both.
+const nap = (ms) => new Promise((r) => setTimeout(r, ms))
+let spy = await page.evaluate(() => window.__firecrewTest.windForce(1, 0))
+ok(spy && spy.gust === 1 && !spy.done, 'windForce lays a breeze on a live shift', JSON.stringify(spy))
+await nap(1300)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.bed && spy.bed.vol > 0 && !spy.done, 'a breeze fires the low bed inside a second', JSON.stringify(spy.bed))
+await page.evaluate(() => window.__firecrewTest.windForce(2, 0.95))
+await nap(1300)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.bed && spy.creak && spy.creakFired && spy.creakFired.vol >= spy.creak.vol * 0.99,
+    'a gale on an extended ladder howls and creaks', JSON.stringify(spy))
+await page.evaluate(() => window.__firecrewTest.windForce(0, 0.95))
+await nap(1300)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.bed === null && spy.creakFired === null && !spy.done,
+    'calm silences the bed and the creak', JSON.stringify(spy))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()
