@@ -72,3 +72,10 @@ built this session; both ships are game code (rule 4 safe).
 
 ## Open questions
 None. jonq games lane: none open.
+
+## Live sibling note (#1430)
+A parallel slot-a session (numbered 162) is LIVE on this box mid PLAICRAFT
+#1711 (PR #1729, recordcheck; jonq #1730 files the R2 bucket ask). Its
+report sits uncommitted in the main checkout's STATE.md — it is a report,
+not a corpse; next lane: fold, don't revert. It verified #1720's tree green
+(local watchcheck all titles) — CI verdict still comes from #46/#47.
