@@ -86,7 +86,11 @@ trick), camera tracks the midpoint and zooms with the spacing.
 
 - **CLOSED by #1699** Multi-hit specials — hyde's dash is a 2/3/4-hit rush,
   melee supers reconnect (see Rules worth knowing).
-- `qcb` motions parsed but unused; no fighter ships a qcb special yet.
+- **CLOSED by #1732** qcb — SABLE ships the **ward**: a slow (0.10), long-lived
+  (ttl 320) single-hit sigil that hangs at mid-height, the keep-away mirror of
+  her fast hex. `scriptMotion` gained the missing `qcb` case (the CPU's qcb path
+  was dead — it returned an empty pad), and the CPU now throws a projectile-qcb at
+  range (`dist > 2.4`), so a CPU SABLE earns it through the same parser a human uses.
 - Chain chains: normals cancel into specials, specials into supers not yet.
 - Win/lose dialogue lines and per-stage midground variety.
 - Net select: guest pick reaches the host only if sent before the host starts.

@@ -556,7 +556,10 @@ function cpuDecide(m, f, opp) {
     if (f.def.moves.qcbf && f.meter >= 100 && opp.hp <= (f.def.moves.qcbf.finishAt || 30) && dist < 2.6 && m.rng() < 0.35 + tier * 0.6) {
         return scriptMotion('p', 'qcbf', f)
     }
-    if (sp.qcb && dist < 2.2 && m.rng() < tier * 0.22) return scriptMotion('p', 'qcb', f)
+    // A projectile qcb is a keep-away tool, so the CPU throws it at range (the
+    // old `dist < 2.2` gate could never land a slow ward and scriptMotion had no
+    // qcb case — both fixed here so the CPU earns its special like a human). #1732
+    if (sp.qcb && f.def.moves.qcb && f.def.moves.qcb.projectile && dist > 2.4 && m.rng() < tier * 0.28) return scriptMotion('p', 'qcb', f)
     if (sp.dp && m.rng() < tier * 0.14) return scriptMotion("p", "dp", f)
     if (qcfKey && m.rng() < tier * 0.2) return scriptMotion(sp.qcf.kick ? "k" : "p", "qcf", f)
     const pick = m.rng()
@@ -572,6 +575,7 @@ function scriptMotion(strength, name, f) {
     if (name === 'qcf') return [{ down: true }, { down: true, [toward]: true }, { [toward]: true }, { [toward]: true, [btn]: true }, { [toward]: true }]
     if (name === 'qcbf') return [{ down: true }, { down: true, [away]: true }, { [away]: true }, { down: true }, { down: true, [toward]: true }, { [toward]: true }, { [toward]: true, [btn]: true }, { [toward]: true }]
     if (name === 'dp') return [{ [toward]: true }, { [toward]: true, down: true }, { down: true }, { up: true }, { up: true, [btn]: true }, {}]
+    if (name === 'qcb') return [{ down: true }, { down: true, [away]: true }, { [away]: true }, { [away]: true, [btn]: true }, { [away]: true }]
     return [{}]
 }
 function cpuPad(m, f, opp) {
