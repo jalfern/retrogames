@@ -416,6 +416,49 @@ const PILOTS = [
             rep.check(`${g.id}: Y again releases the watcher`, !(await watching()))
         },
     })),
+    // #1637 batch 6 — MAGIC CARPET. The seat is sim.js's own autopilot: the
+    // brain the attract demo flies and carpetcheck's 60-seed sweep wins all
+    // three worlds with. Seed-pinned (?seed=7 — a sweep seed) so the flight is
+    // deterministic. Advance signals are prover-only (verified head-to-head
+    // against an idle carpet on this seed: idle flies yaw-dead-straight and
+    // never banks mana — |Δyaw| over even a 60-tick window is 0.65 for the
+    // pilot vs 0.000 idle): steering, casts, kills, a banked vault tick or a
+    // world clear all mean the brain is flying, not the player.
+    {
+        id: 'magic-carpet', url: `${BASE}/magic-carpet?seed=7`, hook: '__carpetTest',
+        async run(page, rep) {
+            const H = '__carpetTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(800)
+            await key(page, 'KeyY')
+            rep.check('magic-carpet: Y seats the autopilot', await watching())
+            rep.check('magic-carpet: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            await page.waitForTimeout(8000)
+            const b = await probe()
+            const dYaw = (x, y) => Math.abs(((y - x + Math.PI * 3) % (Math.PI * 2)) - Math.PI)
+            const adv = (x, y) => dYaw(x.yaw, y.yaw) > 0.12 || y.casts > x.casts || y.kills > x.kills || y.bank > x.bank || y.level > x.level
+            rep.check('magic-carpet: the pilot flies the run untouched', adv(a, b),
+                `yaw ${(a.yaw * 57.3).toFixed(0)}° -> ${(b.yaw * 57.3).toFixed(0)}°, casts ${a.casts} -> ${b.casts}, vault ${Math.floor(a.bank)} -> ${Math.floor(b.bank)}, kills ${b.kills}, world ${b.level + 1}`)
+            rep.check('magic-carpet: still watching mid-flight', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('magic-carpet: steer key takes the carpet back', !(await watching()))
+            rep.check('magic-carpet: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')                       // re-seat: fly from HERE
+            rep.check('magic-carpet: Y re-seats the pilot mid-run', await watching())
+            const c = await probe()
+            await page.waitForTimeout(5000)
+            const d = await probe()
+            rep.check('magic-carpet: resumes from where the player left it', adv(c, d),
+                `yaw ${(c.yaw * 57.3).toFixed(0)}° -> ${(d.yaw * 57.3).toFixed(0)}°, casts ${c.casts} -> ${d.casts}, vault ${Math.floor(c.bank)} -> ${Math.floor(d.bank)}`)
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check('magic-carpet: Y again releases the pilot', !(await watching()))
+        },
+    },
     {
         // ZORK I — commands, not pads. The Y key mounts the same ZorkExplorer +
         // AgentLoop zorkcheck drives, through the same send the form uses (one
@@ -780,13 +823,31 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('DOGFIGHT: the watcher flies pilotInput and the throttle lever follows the plane',
         /pilotInput\(gs\)/.test(dfSrc) && /throttle = ai\.throttle/.test(dfSrc))
     // registry copy: the three new titles carry the WATCH line; the honest
-    // no-guide remainder (DOS/IF + MagicCarpet: no proven solver) must not.
+    // no-guide remainder (DOS/IF: no proven solver) must not.
     const reg5 = readFileSync('src/config/games.js', 'utf8')
     const entryHas5 = (p, s) => { const m = reg5.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     for (const p of ['/lode-runner', '/arena-archery', '/dogfight'])
         rep.check(`registry ${p}: controls carry the WATCH line`, entryHas5(p, 'WATCH_HELP'))
-    for (const p of ['/kingsquest', '/britannia', '/magic-carpet'])
+    for (const p of ['/kingsquest', '/britannia'])
         rep.check(`registry ${p}: no WATCH line (no proven solver drives it yet)`, !entryHas5(p, 'WATCH_HELP'))
+}
+// ---- #1637 batch-6 source pins — MAGIC CARPET: the seat is the sim's own brain ----
+{
+    const src = readFileSync('src/games/MagicCarpet/index.jsx', 'utf8')
+    rep.check('MAGICCARPET: imports the shared blips and logs',
+        /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
+    rep.check('MAGICCARPET: attract screen shows the WATCH hint', (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('MAGICCARPET: the watcher seats autopilot(gs) — the closed-loop brain of the sim itself (no witness script)',
+        /if \(watchingRef\.current && !gs\.end\) \{[\s\S]{0,480}const ap = autopilot\(gs\)/.test(src))
+    rep.check('MAGICCARPET: visuals follow the FLOWN pad (bank/sway read eff, not phantom keys)',
+        /const eff = \{ l: false, r: false, u: false, d: false \}/.test(src)
+        && /const steer = \(eff\.r \? 1 : 0\) - \(eff\.l \? 1 : 0\)/.test(src))
+    rep.check('MAGICCARPET: watch never lingers — cleared at run end AND at every start',
+        /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 the run ends in your hands/.test(src)
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 a new run starts in your hands/.test(src))
+    const reg6 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas6 = (p, s) => { const m = reg6.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('registry /magic-carpet: controls carry the WATCH line', entryHas6('/magic-carpet', 'WATCH_HELP'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
@@ -824,7 +885,7 @@ if (PHONE) {
     const MINDIM = 30 // shipped pill is 64x34; #1666 will raise it to 44 — the floor catches a shrink regression
     const titles = (ONLY && ONLY !== 'phone') ? PHONE_TITLES.filter((t) => t === `/${ONLY}`) : PHONE_TITLES
     // #1575 lesson: a parse that silently finds nothing gates nothing.
-    rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 33,
+    rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 36,
         `${PHONE_TITLES.length} titles parsed`)
     const browser = await launch()
     console.log(`\n— phone 390x844 (boot ${browser.__bootMode || 'chrome'}), ${titles.length} watch titles`)

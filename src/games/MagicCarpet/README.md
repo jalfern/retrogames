@@ -326,3 +326,31 @@ see item 5).
   carpetcheck gate (`same tick renders identical frames`); the second new gate
   is `dead rubble keeps smouldering` (mutant: delete the `hs.dead` smoke
   branch in emitAmbient → red).
+
+## #1637 WATCH seat (2026-11-06, forge slot b)
+
+Y seats the game's OWN autopilot — `autopilot(gs)` in sim.js, the same
+closed-loop brain the attract demo flies and that carpetcheck's 60-seed balance
+sweep must keep restoring all three worlds with. It re-decides from live state
+every tick (targets the nearest pearl/grimoire, homes the wizard, banks when
+`bank + mana >= quota`, veils and climbs when hurt), so a watched run is a
+real run, not a witness replay.
+
+- Seat/takeover: Y toggles (blips via `utils/watch`); arrows, Shift, Space,
+  X/Z, Q, digits and the pad all take over AND still apply — takeover is
+  lossless. A stage tap hands back without casting (the wheel is the prize;
+  the spell comes with the next tap). `finish()` and `startPlay()` unseat —
+  a new run and a death land in your hands. A world CLEAR keeps the pilot
+  seated (same sim; the sweep crosses levels the same way).
+- Visual honesty: bank, sway, pitch and the boost streak read `eff` — the
+  EFFECTIVE inputs — so the picture matches the route the pilot flies, and
+  the HUD vault/score move because the sim says so.
+- Harness: watchcheck carries the `magic-carpet` pilot at `?seed=7` (pinned).
+  Advance signals are prover-only, verified head-to-head against an idle
+  carpet on the same seed: idle flies yaw-dead-straight (|Δ| 0.000 over 480
+  ticks) and banks nothing, while the pilot shows |Δyaw| ≥ 0.65 within 60
+  ticks and banks in the window. Signals: sustained yaw change > 0.12 rad,
+  casts, kills, vault movement, or a world clear. Batch-6 source pins sit in
+  watchcheck too (seat feeds autopilot, visuals follow eff, unseat at end and
+  start, registry WATCH line). The honesty gate moved `/magic-carpet` out of
+  the no-guide list; DOS/IF titles stay in it — no solver drives those yet.
