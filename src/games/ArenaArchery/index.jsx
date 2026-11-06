@@ -442,7 +442,7 @@ const ArenaArcheryGame = () => {
                     <h1 className="text-4xl font-black mb-6" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>ARENA ARCHERY</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
-                    <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
+                    <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

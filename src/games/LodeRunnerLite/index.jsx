@@ -569,7 +569,7 @@ const LodeRunnerLiteGame = () => {
                         <h1 className="text-4xl font-black" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>LODE RUNNER-LITE</h1>
                         <p className="text-white font-mono font-bold mt-6 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
-                        <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
+                        <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                     </div>
                 </>
             )}

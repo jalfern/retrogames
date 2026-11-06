@@ -644,7 +644,7 @@ const DogfightGame = () => {
                     <h1 className="text-5xl font-black mb-6" style={{ color: '#e8d9a0', textShadow: '3px 0 0 #7a2b1e, -3px 0 0 #3b5aa0, 0 10px 26px #000' }}>WWI DOGFIGHT</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-yellow-300">{PRESS}</p>
-                    <p className="text-amber-200/70 font-mono font-bold mt-4 tracking-wider">{WATCH_ATTRACT_HINT}</p>
+                    <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 
