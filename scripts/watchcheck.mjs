@@ -365,12 +365,13 @@ const PILOTS = [
             // follows is exactly what a seated brain restarts from where the
             // player left it. The stalemate itself is game code, filed to QA
             // on #1637.
-            startKeys: ['Space'], seatWait: 700, advanceWait: 1600, resumeWait: 30000,
+            startKeys: ['Space'], seatWait: 700, advanceWait: 8000, resumeWait: 30000,
             // seat-1-only signals: the foe bot lobs arrows on its own, so
             // "something flying" is NOT prover-only (a mutant with a dead seat 1
             // passed this leg until the mutant run proved it — moved/score/
-            // quiver-spend at seat 1 are).
-            advanced: (a, b) => b.tick > a.tick && (Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver),
+            // quiver-spend at seat 1 are). No tick requirement: the tick clock
+            // can stall under software rendering (lode-runner lesson).
+            advanced: (a, b) => Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver,
             note: (a, b) => `P1 (${Math.round(a.p1.x)},${Math.round(a.p1.y)}) -> (${Math.round(b.p1.x)},${Math.round(b.p1.y)}), score ${b.scores[0]}-${b.scores[1]}, quiver ${b.p1.quiver}, flying ${b.flying}`,
         },
         {
@@ -383,7 +384,7 @@ const PILOTS = [
             // patrol means the banks land at fixed SIM ticks — the window must
             // cover them in wall seconds on the slowest honest clock.
             startKeys: ['Space'], seatWait: 700, advanceWait: 14000, resumeWait: 4500,
-            advanced: (a, b) => b.tick > a.tick && (Math.abs(b.p.pitch - a.p.pitch) > 0.05 || Math.abs(b.p.yaw - a.p.yaw) > 0.08 || b.p.belt < a.p.belt),
+            advanced: (a, b) => Math.abs(b.p.pitch - a.p.pitch) > 0.05 || Math.abs(b.p.yaw - a.p.yaw) > 0.08 || b.p.belt < a.p.belt,
             note: (a, b) => `pitch ${(a.p.pitch * 57.3).toFixed(1)}° -> ${(b.p.pitch * 57.3).toFixed(1)}°, yaw ${(a.p.yaw * 57.3).toFixed(1)}° -> ${(b.p.yaw * 57.3).toFixed(1)}°, belt ${a.p.belt} -> ${b.p.belt}, v ${b.p.v.toFixed(0)} m/s`,
             resumeWait: 4500,
         },
