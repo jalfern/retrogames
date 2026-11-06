@@ -7,13 +7,25 @@
 //   npm run watchcheck            # all three pilots
 //   npm run watchcheck -- --only ssx
 import { launch, requireDevServer, Report } from './lib/harness.mjs'
-import { readFileSync } from 'node:fs'
+import { readFileSync, realpathSync, existsSync } from 'node:fs'
+import { resolve as pathResolve } from 'node:path'
 
 const BASE = process.env.WATCH_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames`
 const ONLY = (process.argv.find((a) => a.startsWith('--only=')) || '').split('=')[1]
   || (process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null)
 
 const key = (page, code) => page.keyboard.press(code)
+
+// #601 lesson: CI filesystems are case-sensitive, macOS APFS is not. A roster
+// name that differs from disk only in case (Qbert vs QBert) boots fine on the
+// dev box and ENOENT-crashes the whole nightly smoke mid-suite. realpathSync
+// reports the TRUE casing even on macOS, so this guard catches it anywhere.
+function readRoster(rel) {
+    const abs = pathResolve(rel)
+    const real = realpathSync(abs)
+    if (real !== abs) throw new Error(`roster case mismatch: ${rel} resolves to ${real} on disk — CI would ENOENT`)
+    return readFileSync(rel, 'utf8')
+}
 
 // openGame without the exit() — a first visit can also fail on a Vite reload,
 // and this script wants to retry and report, not die.
@@ -713,7 +725,7 @@ for (const pilot of run) {
 // #1654 — the full roster: every WATCH pilot, not just the first three.
 rep.section && rep.section('source')
 const FLAGSHIP = ['SSX', 'Emberwood', 'Myst']
-const ARCADE = ['Qbert', 'Joust', 'Galaga', 'Tempest', 'DigDug', 'BubbleBobble',
+const ARCADE = ['QBert', 'Joust', 'Galaga', 'Tempest', 'DigDug', 'BubbleBobble',
     'SpyHunter', 'Arkanoid', 'OutRun', 'LunarLander', 'Outpost', 'Polarity',
     'MissileBattle', 'SmashTV', 'MarioKart', 'Gauntlet', 'FourHalls',
     'PrinceOfPersia', 'CivilizationV', 'BardsTale', 'TenDeep', 'BlobBattle',
@@ -723,20 +735,25 @@ rep.check('watch.js: one shared blip pair, audible (two tones each)',
     /export const playWatchStart[\s\S]*?playTone\([\s\S]*?playTone\([\s\S]*?export const playWatchStop[\s\S]*?playTone\([\s\S]*?playTone\(/.test(watchSrc))
 rep.check('watch.js: exports the shared attract hint', /export const WATCH_ATTRACT_HINT = 'Y — WATCH THE PROVEN ROUTE'/.test(watchSrc))
 for (const g of [...FLAGSHIP, ...ARCADE]) {
-    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    const src = readRoster(`src/games/${g}/index.jsx`)
     rep.check(`${g}: imports the shared blips and logs`,
         /from '\.\.\/\.\.\/utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
 }
 for (const g of FLAGSHIP) {
-    const src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
+    const src = readRoster(`src/games/${g}/index.jsx`)
     rep.check(`${g}: attract screen shows the WATCH hint`,
         /screen === 'attract'[\s\S]{0,1600}?Y — [Ww][Aa][Tt][Cc][Hh] THE PROVEN ROUTE/i.test(src))
 }
 // #1654: the arcade family draws WATCH_ATTRACT_HINT — JSX titles in index.jsx,
 // the canvas contracts in attract.js (import + a drawn line, no orphans).
 for (const g of ARCADE) {
-    let src = readFileSync(`src/games/${g}/index.jsx`, 'utf8')
-    try { src += '\n' + readFileSync(`src/games/${g}/attract.js`, 'utf8') } catch { /* canvas-direct */ }
+    let src = readRoster(`src/games/${g}/index.jsx`)
+    try {
+        const at = `src/games/${g}/attract.js`
+        if (existsSync(at)) src += '\n' + readRoster(at)
+    } catch (e) {
+        if (/case mismatch/.test(e.message)) throw e // canvas-direct may skip attract.js; a lying case never
+    }
     rep.check(`${g}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
 }
 // #1637 batch-4 source pins — the honesty rules that don't need Chrome:
