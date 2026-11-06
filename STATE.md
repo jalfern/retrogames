@@ -1,76 +1,74 @@
-# STATE — session 158 (2026-11-06, slot b)
+# STATE — session 158 (2026-11-06, slot a)
 
 ## What shipped
-**WATCH rollout batch 6 (#1637) — PR #1692 squash-merged `7e3f130`, LIVE**
-(`/magic-carpet`): Y seats `autopilot(gs)` from sim.js — the game's OWN
-closed-loop brain, the one the attract demo flies and carpetcheck's 60-seed
-sweep restores all three worlds with. Re-decides from live state every tick:
-a watched run is a real run, never a witness replay.
-- Seat/takeover verbatim from batches 1–5: Y toggles (shared blips); arrows,
-  Shift, Space/X/Z, Q, digits, pad take over AND still apply (lossless); stage
-  tap hands back WITHOUT casting (lode rule). `finish()` and `startPlay()` and
-  the contract `reset` unseat; a world CLEAR keeps the pilot seated (same sim,
-  the sweep crosses levels that way).
-- Visual honesty: bank/sway/pitch/boost read `eff` — the EFFECTIVE inputs — so
-  the picture tracks the route flown, not phantom key-holds.
-- Chrome: registry WATCH line (coverage **37 of 80** routes), attract teach
-  span + ▶ WATCH at the 24% band, pill, WatchToast, pause row auto.
-- Harness: watchcheck gains the magic-carpet pilot pinned `?seed=7`; advance
-  signals prover-only, verified head-to-head vs an idle carpet on the seed
-  (idle |Δyaw| 0.000 over 480 ticks and banks nothing; pilot ≥0.65 within 60).
-  Batch-6 source pins; no-guide registry gate drops /magic-carpet (DOS/IF stay);
-  phone parse floor 33→36. Mutant `ap = {}` → advance legs RED (yaw 0°→0°),
-  restored green. Local: pilot 115/115, watchphonecheck 272/272,
-  attractcheck 694/694, lint gates + build green.
-
-## Box emergency (this session's real cost — ~40 min)
-System DNS + SecTrust + pgrep/Keychain are broken on this box (scutil --dns:
-"No DNS configuration available"; sudo: "you do not exist in the passwd
-database"; gh: x509 OSStatus -26276). Raw UDP DNS to 100.100.100.100 still
-works, git still works (c-ares reads /etc/resolv.conf). Workaround installed:
-`/tmp/forge/dnsproxy.mjs` (CONNECT proxy :18080, resolves via raw DNS) +
-`/tmp/forge/bin/gh` (Node API shim, bundled CA store, covers api/issue/pr/run/
-workflow/auth incl. --paginate/--input/-f) + exports block in `~/.zshenv`
-(PATH, HTTPS_PROXY, NO_PROXY=localhost,127.0.0.1, NODE_USE_ENV_PROXY=1, plus a
-pgrep-guarded proxy respawn). Token from hosts.yml; account jalfern.
-**If GitHub access breaks on a future session, check this block first:
-`/tmp/forge/dnsproxy.log`, `which gh` (should be /tmp/forge/bin/gh after a new
-shell). If DNS/SecTrust heal, remove the ~/.zshenv block.** NOTE /tmp is wiped
-on reboot — the shim dies with it; recreate from this description or from
-PR #1691 (`gh-shim hardening in repo`, #1676 — the repo now hosts a real shim).
+**COMET DRIFT GP: LINK — the boost-combo chain (#1690) — PR #1693 squash-merged
+`1c65f2b`, LIVE.** Never-dry pick (#1571): flagship gaps all owned, weakestStage
+scored CometDrift 8 (top of the unheld shelf).
+- Re-seat a drift inside a live boost → LINK x1..x3: extends (`ext 0.34*n`),
+  lifts the speed cap (+0.55u/link; rail-proven 12.15 vs old ceiling 11.20),
+  and seeds carry 50% of the banked tier into the next drift — blue-violet-gold
+  is drivable through one corner sequence (carry sized so the chain math closes:
+  violet needs 80 ticks vs an 82-tick linked-blue life).
+- Honest breakage: drained boost, spin, or no-pay dump mid-boost resets the
+  chain (the dump keeps the boost). Attract teaches it; GP sky band + HD lap
+  plate draw `LINK xN!`; both titles ring a climbing chirp (bell at x3).
+- Corner-reactive field: `DRIFT_PLAN.targetIdx(skill, kmax)` raises ambition
+  one tier above skill base when a bend is in the brake horizon; skill caps
+  (back markers never chase gold — GOLD_GRAD measured 1.48≥1.30; the certified
+  `decide()` branch untouched, static gate still pins it).
+- Numbers (4 GPs × 4 seeds): tier-points +33–48% every course, gold 2.5×
+  corkscomb, spins unchanged, links/course 404/352/641/325.
+- Harness: cometcheck GREEN 403 (rail rig per course x1→x3 + drain/dump breaks,
+  race floors LINK_MIN + wired-vs-static violet separation, pure-law gates incl.
+  the chain-closes arithmetic); `--mutate` essays links-off + corner-blind;
+  manual mutant proof (extension line killed → rail red → restored). cometplay
+  29/29; in-browser real-key LINK proof x1/x2/x3, boost 56→192, zero errors.
 
 ## Lessons (worth keeping)
-- esbuild STRIPS `// comments` from served modules — verify mutants/served
-  content by STRUCTURE (`const ap = {};`), never by comment markers.
-- Game DEV hooks: `watching` must be a function on the hook TOP LEVEL
-  (`watching: () => watchingRef.current`), not inside `probe()` — the factory
-  calls `window[h].watching()`.
-- `curl` jalfern.com needs `-L` (apex → www redirect); a poll without -L looks
-  like "not deployed" forever.
-- Source-pin regex windows: a comment between the anchor lines counts — a seat
-  pin with a 4-line comment needs {0,480}, not {0,240}.
-- Headless sim.js probes (node, import sim directly) prove advance-signal
-  honesty (idle-vs-brain on the pinned seed) in seconds — do this BEFORE
-  writing any browser pilot.
+- **gh-shim POST inference was broken**: `-f key=value` without `-X` went out
+  as GET-with-body and died (it wedged `forge-claim.sh`'s comment step mid-
+  claim — labels landed, lockout comment didn't). Fixed `/tmp/forge/bin/gh`
+  cmdApi to infer POST from a body like real gh; all bare-`-f` callers wanted POST.
+- **jalfern.com 308s to www.jalfern.com** — every prod-verify curl needs `-L`
+  (or node `fetch redirect:'follow'`); without it you poll a 14-byte stub and
+  "TIMEOUT" means nothing. Game code lives in lazy chunks all named
+  `index-*.js`: scan the entry's chunk refs, not just the HTML.
+- **zsh grep on JS bundles**: UTF-8 box-dash bytes → "character not in range";
+  use `LC_ALL=C grep -a` or node string includes.
+- **`git checkout -- file` rolls back UNCOMMITTED constants too**: a mutant
+  restore silently reverted carry 0.45→0.5 and the OLD numbers came back
+  through a GREEN-looking harness run. Checkpoint constant changes the moment
+  they're deliberate; the pure-law gate (chain-closes arithmetic) is what made
+  the stale numbers scream.
+- **Browser sim clock ≠ wall clock** (software rAF): ms-budgeted key scripts
+  drift ±1 phase; assert on observed sequences (`seen` link list), not on
+  which phase "should" have fired.
+- **Orphan vite squatting your slot port**: dead session (parent PPID=1, no
+  pushed branch, no claim comment) left a dev server on slot-a's 5173 since
+  03:47. Reap only after proving all three; note it on the issue.
 
 ## Next (priority order)
-1. #1637 stays OPEN `building` — remaining: DOS/IF (needs a solver that drives
-   gameplay) and the SpaceInvaders reactive pilot (verdict on the issue;
-   batch-7 candidate: track-lowest-column + fire-on-aligned, sim-graded win in
-   invaderscheck, then seat like batch 5).
-2. Box repair worth an issue? DNS/SecTrust/DirectoryServices are system-level;
-   no sudo here. If it recurs, a `waiting-jon` question (games lane) about
-   reboot/repair may be warranted — this session worked around it.
-3. Normal ladder for next slot-b session: recompute `weakestStage` from READMEs.
+1. #1637 stays OPEN `building` — slot b owns batch 6 (MagicCarpet seat +
+   SpaceInvaders reactive pilot). Do not touch from slot a while held.
+2. Recompute `weakestStage` at claim time — CometDrift's gap list just lost
+   its top bullet; next-weakest this session was IRON RING (6) / GRAVEL YARD
+   (7) / TALK ME DOWN (7) — verify live, lists shift.
+3. #1685 / #1676 (QA lane `building-qa`): not builder work (#1258 "QA is a
+   lane of its own").
+4. #1631 asks whether a game-first session is due after 3 platform merges —
+   moot: #1689 and #1693 were both game code; the counter is reset.
 
-## Notes for the next slot-b session
-- Dev server 5178 left STOPPED; kill-port + restart + curl-verify dance still
-  required (watcher dead).
-- Worktree `~/Dev/retrogames-forge-watch-rollout-b6`: detached at origin/main,
+## Notes for the next slot-a session
+- Dev server 5173: freed (mine killed; orphan reaped). Watcher-dead workaround
+  still applies: after edits restart dev + curl the served module before
+  trusting browser runs.
+- Worktree `~/Dev/retrogames-forge-comet-boost-links`: detached at origin/main,
   node_modules symlinked — reusable. Branch deleted both ends by the merge.
-- Local Chrome still degraded (#1622, shell+sp boot); CI smoke is the pixel net.
-- zsh: quote separators (`echo '---'`); `nohup` cannot detach on this box —
-  use harness background jobs for dev servers.
+  The old `retrogames-forge-comet-driftchain` worktree is a dead session's
+  husk (detached, clean, no branch) — `git worktree remove` it next tidy.
+- Local Chrome still degraded (#1622): `launch()` falls back to shell+sp;
+  cometplay + custom proofs pass on it.
 
 ## Open questions
-None. jonq games lane: none open.
+None. (Residual polish ideas live in src/games/CometDrift/README.md
+"Honest gaps" — field never aims for x3 on purpose; flat one-step raise.)
