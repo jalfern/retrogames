@@ -8,7 +8,7 @@
 // driver — hash match at every checkpoint), then converts them into a JSONL
 // training set: one row per tick —
 //
-//   { s: seed, t: tick, lvl: level, f: [22 features], p: cpuPad, a: swingIntent }
+//   { s: seed, t: tick, lvl: level, f: [27 features], p: cpuPad, a: swingIntent }
 //
 // f = the seat's own senses (src/games/Gauntlet/model.js featurize — ONE
 // definition shared by export, trainer and the live seat). p = what the CPU
@@ -114,20 +114,26 @@ export function collectRun(seed, opts = {}) {
     const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: opts.seatKind || 'cpu' }] })
     const codec = makeHeroPadCodec()
     const hst = { prevA: false, prevB: false }
+    const featMem = {}
+    if (opts.seat2 && opts.seat2.reset) opts.seat2.reset()
     const rows = []
     let prevA = false
+    let prevPad = null
     let kills = 0, partnerDeaths = 0, goldTaken = 0, levelStart = 0
     while (!gs.end && gs.tick < maxTicks) {
         const inp = decide(gs)
         const cpuPad = opts.seat2 ? opts.seat2.decide(gs) : partnerPad(gs, prevA)
         prevA = !!cpuPad.a
         const heroPad = codec.toPad(inp)
-        const rowsHere = !opts.noRows
+        const liveTick = !!(gs.partner && !gs.partner.down && gs.hero && gs.hero.deadT === 0 && !gs.end)
+        const rowsHere = !opts.noRows && liveTick
         let row = null
         if (rowsHere) {
-            const f = featurize(gs, gs.partner).map((v) => +v.toFixed(3))
-            const intent = gs.partner && gs.monsters.some((m) => Math.hypot(m.x - gs.partner.x, m.y - gs.partner.y) < 1.25) ? 1 : 0
+            featMem.pa = prevPad
+            const f = featurize(gs, gs.partner, featMem).map((v) => +v.toFixed(3))
+            const intent = gs.monsters.some((m) => Math.hypot(m.x - gs.partner.x, m.y - gs.partner.y) < 1.25) ? 1 : 0
             row = { s: seed, t: gs.tick, lvl: gs.level, f, p: cpuPad, a: intent }
+            prevPad = cpuPad
         }
         step(gs, heroFromPad(heroPad, hst), p2FromPad(cpuPad))
         // the hash rides AFTER the step — the state the recorder stamps at t
@@ -188,7 +194,7 @@ checkpoint or the export fails.
 | \`s\`   | seed of the run this row came from |
 | \`t\`   | tick within that run |
 | \`lvl\` | maze index |
-| \`f\`   | 22 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag + inside-blade-reach flag; nearest food bearing + present flag |
+| \`f\`   | 27 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag + inside-blade-reach flag; nearest food bearing + present flag; motion memory — the hero's smoothed-velocity look-ahead target (the CPU doctrine's own prediction) + hero speed + the seat's own last-tick velocity |
 | \`p\`   | the expert pad emitted this tick: \`{left,right,up,down,a}\` (a is a thumb pulse) |
 | \`a\`   | sustained swing intent (0/1) — the label the net trains on; the seat rebuilds the pulse from intent so the net never has to learn a thumb's tick-phase |
 

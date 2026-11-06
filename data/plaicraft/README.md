@@ -22,7 +22,7 @@ checkpoint or the export fails.
 | `s`   | seed of the run this row came from |
 | `t`   | tick within that run |
 | `lvl` | maze index |
-| `f`   | 22 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag + inside-blade-reach flag; nearest food bearing + present flag |
+| `f`   | 27 features — THE seat's senses: hp frac; 8 range-finder rays (N..NW, 1/8-cell steps, capped 8 cells); hero bearing (dx, dy /8-clamped) + both headings as sin/cos; nearest monster bearing + drain flag + inside-blade-reach flag; nearest food bearing + present flag; motion memory — the hero's smoothed-velocity look-ahead target (the CPU doctrine's own prediction) + hero speed + the seat's own last-tick velocity |
 | `p`   | the expert pad emitted this tick: `{left,right,up,down,a}` (a is a thumb pulse) |
 | `a`   | sustained swing intent (0/1) — the label the net trains on; the seat rebuilds the pulse from intent so the net never has to learn a thumb's tick-phase |
 

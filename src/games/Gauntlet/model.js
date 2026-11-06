@@ -27,6 +27,9 @@ export const FEAT_NAMES = [
     'selfSin', 'selfCos',
     'monDx', 'monDy', 'monDrain', 'monReach',
     'foodDx', 'foodDy', 'foodHere',
+    'predDx', 'predDy', 'heroSpeed',
+    'selfDx', 'selfDy',
+    'prevLeft', 'prevRight', 'prevUp', 'prevDown', 'prevSwing',
 ]
 export const N_FEAT = FEAT_NAMES.length
 export const N_ACT = 5 // left, right, up, down, swing
@@ -53,9 +56,12 @@ const rayOpen = (gs, c, r) => {
     return true
 }
 
-// featurize(gs, who) — who is the seated entity (gs.partner today; the hero
-// tomorrow). The hero is context a seat player can see, never the seat itself.
-export function featurize(gs, who) {
+// featurize(gs, who, mem) — who is the seated entity (gs.partner today; the
+// hero tomorrow). The hero is context a seat player can see, never the seat
+// itself. `mem` (optional) is the caller's tick-history — the same hero-motion
+// EMA the CPU doctrine runs on (its look-ahead prediction), plus the seat's
+// own velocity. A stateless net can't remember; the features carry the memory.
+export function featurize(gs, who, mem) {
     const f = new Array(N_FEAT)
     const h = gs.hero
     f[0] = who.hp / (who.maxHp || 1)
@@ -93,6 +99,42 @@ export function featurize(gs, who) {
         f[20] = clamp8(fi.y - who.y)
         f[21] = 1
     } else { f[19] = 0; f[20] = 0; f[21] = 0 }
+    // motion memory (mem = {hx,hy,vx,vy,wx,wy}): hero velocity EMA (0.4 old +
+    // 0.6 new, the CPU's own smoothing) -> a look-ahead target up to 1.8 cells
+    // down the hero's line; when the hero stands, the target is one cell BEHIND
+    // him — exactly the doctrine the seat is imitating, made visible to a
+    // stateless net. Plus the seat's own last-tick delta.
+    if (mem) {
+        const vx = h.x - (mem.hx ?? h.x)
+        const vy = h.y - (mem.hy ?? h.y)
+        mem.hx = h.x; mem.hy = h.y
+        mem.vx = (mem.vx ?? 0) * 0.4 + vx * 0.6
+        mem.vy = (mem.vy ?? 0) * 0.4 + vy * 0.6
+        const vs = Math.hypot(mem.vx, mem.vy)
+        let tx, ty
+        if (vs > 0.012) {
+            const look = Math.min(1.8, vs * 24)
+            tx = h.x + (mem.vx / vs) * look
+            ty = h.y + (mem.vy / vs) * look
+        } else {
+            tx = h.x - Math.cos(h.a) * 1.0
+            ty = h.y - Math.sin(h.a) * 1.0
+        }
+        f[22] = clamp8(tx - who.x)
+        f[23] = clamp8(ty - who.y)
+        f[24] = Math.min(1, vs / 0.06)
+        f[25] = Math.max(-1, Math.min(1, (who.x - (mem.wx ?? who.x)) / 0.06))
+        f[26] = Math.max(-1, Math.min(1, (who.y - (mem.wy ?? who.y)) / 0.06))
+        mem.wx = who.x; mem.wy = who.y
+        // autoregressive: the last emitted pad. Momentum of intent — the
+        // teacher's lane is a path, and a path continues.
+        const pa = mem.pa
+        f[27] = pa && pa.left ? 1 : 0
+        f[28] = pa && pa.right ? 1 : 0
+        f[29] = pa && pa.up ? 1 : 0
+        f[30] = pa && pa.down ? 1 : 0
+        f[31] = pa && pa.a ? 1 : 0
+    } else { f.fill(0, 22, 32) }
     return f
 }
 
@@ -100,16 +142,17 @@ export function featurize(gs, who) {
 export function forward(policy, x) {
     const { arch, w, b } = policy
     let a = x
-    let off = 0
+    let off = 0, bOff = 0
     for (let l = 0; l < arch.length - 1; l++) {
         const ni = arch[l], no = arch[l + 1]
         const out = new Array(no)
         for (let j = 0; j < no; j++) {
-            let s = b[off + j]
+            let s = b[bOff + j]
             for (let i = 0; i < ni; i++) s += w[off + j * ni + i] * a[i]
-            out[j] = l < arch.length - 2 ? Math.tanh(s) : 1 / (1 + Math.exp(-s))
+            out[j] = l < arch.length - 2 ? Math.tanh(s) : 1 / (1 + Math.exp(Math.max(-35, Math.min(35, -s))))
         }
         off += ni * no
+        bOff += no
         a = out
     }
     return a // N_ACT sigmoids
@@ -119,15 +162,16 @@ export function forward(policy, x) {
 // shipped weights; the harness injects mutants through the argument.
 export function createModelPolicy(policy = POLICY) {
     let prev = false
+    const mem = {}
     return {
         name: policy.meta ? policy.meta.name : 'model/v1',
         meta: policy.meta || null,
-        reset() { prev = false },
+        reset() { prev = false; for (const k of Object.keys(mem)) delete mem[k] },
         decide(gs) {
             const p = gs.partner
             const pad = { left: false, right: false, up: false, down: false, a: false }
             if (!p || p.down || gs.end || !gs.hero || gs.hero.deadT > 0) { prev = false; return pad }
-            const pr = forward(policy, featurize(gs, p))
+            const pr = forward(policy, featurize(gs, p, mem))
             pad.left = pr[0] > 0.5
             pad.right = pr[1] > 0.5
             pad.up = pr[2] > 0.5
@@ -135,6 +179,7 @@ export function createModelPolicy(policy = POLICY) {
             const intent = pr[4] > 0.5
             pad.a = intent && !prev // thumb pulse, like the cpu's cut
             prev = pad.a
+            mem.pa = pad
             return pad
         },
     }
