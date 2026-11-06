@@ -11,7 +11,8 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import {
     createGame, step, simState, solvePad, computeTarget, hash, drainEvents,
@@ -268,6 +269,19 @@ export default function TalkMeDown() {
         const spec = makeSpec()
         startAttract()
         if (import.meta.env.DEV) exposeGame(spec)
+        // #1711 S2: arm the live capture for every build; banking only runs
+        // while a consented auto capture is open (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(spec)
+        // Consent goes up BEFORE the bomb is created — the recorder opens at
+        // seed-birth so the stored file replay-verifies from tick 1.
+        const humanStart = (seed, players) => {
+            if (startBusy()) return
+            setStartBusy(true)
+            askConsent()
+                .then(() => { startPlay(seed, players); beginRun() })
+                .finally(() => setStartBusy(false))
+        }
 
         const keys1 = keys1Ref.current
         const keys2 = keys2Ref.current
@@ -301,7 +315,7 @@ export default function TalkMeDown() {
             if (screenRef.current === 'over') { if (performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() } return }
             if (screenRef.current === 'select') {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { selectRef.current = selectRef.current === 1 ? 2 : 1; sfx.move() }
-                if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); startPlay(humanSeed(), selectRef.current) }
+                if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); humanStart(humanSeed(), selectRef.current) }
                 return
             }
             // play
@@ -323,7 +337,7 @@ export default function TalkMeDown() {
         const onPointer = () => {
             if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
-            else if (screenRef.current === 'select') startPlay(humanSeed(), selectRef.current)
+            else if (screenRef.current === 'select') humanStart(humanSeed(), selectRef.current)
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -369,6 +383,10 @@ export default function TalkMeDown() {
             // Gauntlet funnel (#1249). While the loop-lock is held, step()
             // banks the ticks itself; never both.
             if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
+            // #1711: the run just ended — bank this last tick, THEN close the
+            // take (spec.tick flips play->over above; closing earlier would cut
+            // the final pad off the file and break replay-verification).
+            if (isRecording() && screenRef.current === 'over') endRun()
             // the tick above consumed the pads — releases waiting for their
             // guaranteed sample can settle now (#1373)
             settleReleases(keys1Ref.current)
@@ -637,8 +655,9 @@ export default function TalkMeDown() {
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('pointerdown', onPointer)
             if (v.listen) { v.listen.stop(); v.listen = null }
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            unexposeGame() // #1711: safe every build — clears the armed capture outside DEV too
             if (import.meta.env.DEV) {
-                unexposeGame()
                 if (dbgMounted) unmountDbg()
                 delete window.__tmdTest
             }

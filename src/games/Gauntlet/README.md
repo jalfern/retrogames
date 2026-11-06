@@ -388,3 +388,16 @@ Gates: voicecheck +4 (voiceState truth table), voicedrive +7 (badge rec/off,
 no-badge-pending-consent, badge gone after take, VU bar + signal, picker
 present, deviceId reaches gUM). Deferred here, still open on #1257: the
 two-page `voicedrive --online` wire proof and the link-pad phone voice stream.
+
+## Auto-capture (#1711 S2)
+
+Offline human quests auto-record: the #1711 consent gate (ConsentGate.jsx,
+motion + voice separate, stored 90 days) goes up BEFORE the quest is created,
+so the recorder opens at seed-birth and the stored `retrogames-rec` file
+replay-verifies from tick 1. The take uploads through sessionStore when the
+store capability is live (`GET /status -> sessions:true`; see #1730) and is
+stripped to its consented half at upload time. Honest gaps: online lockstep
+quests are NOT auto-recorded (the wire owns the seats); a mid-run WATCH seats
+the brain but seat 1 stays labelled `human` for the ticks before the takeover.
+Same wiring in ShortOrderShout (offline kitchens), TalkMeDown and
+RallyCoDriver (offline stages). Proof: `npm run recordcheck` (66 gates).

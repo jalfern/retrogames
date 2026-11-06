@@ -14,7 +14,8 @@ import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
-import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { askVoiceConsent, acquireListenBadge, startLevelMeter } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
@@ -403,7 +404,7 @@ export default function RallyCoDriver() {
                     // key starts the race on the current selection
                     if (code === 'KeyR') { stageIdx = (stageIdx + 1) % CURATED.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
                     if (code === 'KeyT') { wxIdx = (wxIdx + 1) % WEATHER_ORDER.length; attract.g = createSim(selectedSeed(), 2, selectedWeather()); return }
-                    startRace()
+                    humanStart()
                 }
                 return
             }
@@ -418,7 +419,7 @@ export default function RallyCoDriver() {
                     }
                     return
                 }
-                if (down && (code === 'Space' || code === 'Enter')) { startRace(); return }
+                if (down && (code === 'Space' || code === 'Enter')) { humanStart(); return }
                 if (down && code === 'KeyB') { setScreenBoth('attract'); attract.g = createSim(selectedSeed(), 2, selectedWeather()); voiceStop(); return }
                 return
             }
@@ -490,14 +491,30 @@ export default function RallyCoDriver() {
         }
         const kd = (e) => onKey(e, true)
         const ku = (e) => onKey(e, false)
+        // #1711 S2: offline human start — consent goes up BEFORE the stage is
+        // created so the recorder opens at seed-birth (the file replay-verifies
+        // from tick 1). Online stages keep the wire's word and are not
+        // auto-recorded in S2.
+        const humanStart = () => {
+            if (startBusy()) return
+            setStartBusy(true)
+            if (net.active) { startRace(); setStartBusy(false); return }
+            askConsent()
+                .then(() => {
+                    startRace()
+                    // honest seat labels at stop time (WATCH/M may own seat 1)
+                    beginRun({ sources: () => [{ kind: watchSeat.on || modelSeat.on ? 'model' : 'human' }, { kind: play.g.co.kind }] })
+                })
+                .finally(() => setStartBusy(false))
+        }
         const tap = () => {
             if (pausedRef.current) return
             if (net.active) {
                 if (net.role === 'host' && screenRef.cur !== 'play') onlineStart()
                 return
             }
-            if (screenRef.cur === 'attract') startRace()
-            else if (screenRef.cur === 'over') startRace()
+            if (screenRef.cur === 'attract') humanStart()
+            else if (screenRef.cur === 'over') humanStart()
             else watchOff() // #1637: a touch on the stage hands the wheel back
         }
         window.addEventListener('keydown', kd)
@@ -623,7 +640,12 @@ export default function RallyCoDriver() {
                 sync.prune(g.tick)
                 if (g.tick % sync.hashEvery === 0 && sync.hash(g.tick, stateHash(g))) netDesync()
             } else {
-                tickSim(g, [driverPad(), coPad(g)])
+                const pads = [driverPad(), coPad(g)]
+                tickSim(g, pads)
+                // #527 funnel, #1711 S2: bank this rAF tick (only banks while a
+                // recorder is open; the loop-lock keeps the contract step the
+                // single writer when the harness drives)
+                if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
             }
             juice(g)
             // gravel spray: roost off the rear wheels while on the shoulder
@@ -648,6 +670,7 @@ export default function RallyCoDriver() {
                 overAt.t = performance.now()
                 setScreenBoth('over')
                 voiceStop()
+                endRun() // #1711: the take ends with the stage (no-op when idle)
             }
         }
 
@@ -1269,6 +1292,18 @@ export default function RallyCoDriver() {
         // score is the clock (ms), so {tick,score,done,seed} pinpoints a run.
         exposeFeedbackState(() => ({ tick: play.g.tick, score: Math.round(play.g.timeMs), done: !!play.g.done, seed: seedRef.cur, lap: play.g.lap }))
 
+        // #1711 S2: arm the live capture for every build. Banking only runs
+        // while a consented auto capture is open (autoRecord.js); the honest
+        // seat labels follow WATCH/M at stop time.
+        initAutoRecord()
+        armLiveCapture({
+            id: 'rally-co-driver',
+            players: 2,
+            method: 'dpad',
+            sources: () => [{ kind: watchSeat.on || modelSeat.on ? 'model' : 'human' }, { kind: play.g.co.kind }],
+            state: () => state(play.g),
+        })
+
         exposeGame({
             id: 'rally-co-driver',
             players: 2,
@@ -1339,6 +1374,7 @@ export default function RallyCoDriver() {
             canvas.removeEventListener('pointerdown', tap)
             if (net.lobby) net.lobby.close() // #1448: don't leave the relay socket open
             voiceStop()
+            endRun() // #1711: an unmount mid-stage ends the take (no-op when idle)
             unexposeGame()
             unexposeFeedbackState()
             delete window.__rallyTest

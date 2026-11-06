@@ -13,7 +13,8 @@ import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
+import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { normalizePad } from '../../utils/onePad'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import { makeTransport } from '../../utils/linkPeers.js'
@@ -140,6 +141,22 @@ export default function ShortOrderShout() {
         cvs.width = CANVAS_W; cvs.height = CANVAS_H
         startAttract()
         if (import.meta.env.DEV) exposeGame(specRef.current)
+        // #1711 S2: arm the live capture for every build (DEV re-arms the
+        // identical wiring inside exposeGame); banking only happens while a
+        // consented auto capture runs (autoRecord.js).
+        initAutoRecord()
+        armLiveCapture(specRef.current)
+        // #1711 S2: the consent question goes up BEFORE the kitchen is created
+        // (recorder opens at seed-birth). Online kitchens keep the wire's word
+        // and are not auto-recorded in S2.
+        const humanStart = () => {
+            if (startBusy()) return
+            setStartBusy(true)
+            if (net.active) { startPlay(seedRef.current, selectRef.current, partnerHumanRef.current); setStartBusy(false); return }
+            askConsent()
+                .then(() => { startPlay(seedRef.current, selectRef.current, partnerHumanRef.current); beginRun() })
+                .finally(() => setStartBusy(false))
+        }
         // #1473: production-safe feedback state (seed for replay), every build
         const fbFallback = createGame(1, 2)
         const fbGame = () => gsRef.current || attractRef.current || fbFallback
@@ -210,9 +227,7 @@ export default function ShortOrderShout() {
                 if (ev.code === 'ArrowRight') selectRef.current = Math.min(4, selectRef.current + 1)
                 if (ev.code === 'KeyP') partnerHumanRef.current = !partnerHumanRef.current
                 if (ev.code === 'KeyP' && net.active && net.role === 'host') pushNetUi()
-                if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'Digit1') {
-                    startPlay(seedRef.current, selectRef.current, partnerHumanRef.current)
-                }
+                if (ev.code === 'Space' || ev.code === 'Enter' || ev.code === 'Digit1') humanStart()
                 return
             }
             if (sc === 'over') {
@@ -559,7 +574,7 @@ export default function ShortOrderShout() {
             const hud = hudRef.current
             if (g.score >= QUOTA && hud.lastScore < QUOTA) hud.stamp = 96 // big stamp the moment quota is made
             hud.lastScore = g.score
-            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); endRun() }
         }
 
         // Online frame: sample own seats D ahead, wait for every human stream,
@@ -1305,7 +1320,9 @@ export default function ShortOrderShout() {
                 try { net.voice.stream.getTracks().forEach((t) => t.stop()) } catch { /* gone */ }
                 net.voice.stream = null
             }
-            if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__sosTest }
+            endRun() // #1711: an unmount mid-run ends the take (no-op when idle)
+            unexposeGame() // #1711: safe every build — clears the armed capture outside DEV too
+            if (import.meta.env.DEV) { unmountDbg(); delete window.__sosTest }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
