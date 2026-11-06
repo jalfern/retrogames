@@ -82,3 +82,17 @@ to clear, it is unclassic and lodecheck's winnability gate fails it.
 - No keyboard-less vault skipping on phones: pads withdraw on menus, and
   vault select is 1/2/3. The vault chain carries score+lives, so a phone
   player who dies on vault 2 restarts at 1 — the honest classic.
+
+## WATCH (#1637 batch 5)
+
+Y seats `planStep(gs)` at the same `CFG.moveEvery` phase the held-key stack
+drives, and hands the runner back on any driving key, a canvas tap, or Y
+again (`utils/watch` chrome: blips + shared toast + pill). The solver's
+no-dig contract makes the watcher safe by construction — it can never trash
+the vault. `planStep` re-plans from live state every move, so takeover and
+re-seat resume from exactly where the runner stands. `vaultCleared` keeps
+the guide seated across the carry (`startPlay(..., {keepWatch:true})` —
+every vault is proven from its fresh start); `gameOver` and the player's own
+start hand back. `watchcheck`'s `lode-runner` pilot grades runner
+movement/gold/level while the stick is idle (tick alone cannot grade it —
+vault ticks restart on a carry).

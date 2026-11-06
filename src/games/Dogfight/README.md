@@ -76,3 +76,16 @@ way from where the deflection already aims.
   the player's hull.
 - 2D instrument knobs are DOM, not gauges; no gun-jam sim; no observer/
   tail-gunner third party; one wing colour per side.
+
+## WATCH (#1637 batch 5)
+
+Y seats `pilotInput(gs)` — the same closed-loop pilot `dogfightcheck`
+re-fights both patrols with (lead on the bullet's own flight time,
+`predictHit` receipts before the trigger, energy-lean throttle). Anywhere
+seats: it reads only state. The throttle lever follows the flown value
+(`throttle = ai.throttle`), so takeover resumes exactly where the pilot
+left the engine; any stick/gun/throttle key, a canvas tap, or Y hands back.
+`watchcheck`'s `dogfight` pilot grades pitch/yaw/belt changes an idle plane
+cannot produce — with a 14 s advance window, because software-rendered
+Chrome runs this WebGL world well under real time while the patrol stays
+deterministic in SIM ticks.

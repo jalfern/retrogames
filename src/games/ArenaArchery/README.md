@@ -86,3 +86,15 @@ Stepping on a stuck arrow with room in the quiver pulls it back —
 - `stuckTTL` (40 s) is tuned for 3-win matches; a stalemate to the clock
   is proven not to happen (the match receipts), but a very defensive duel
   could get boring near the wall — the wander keeps it honest, not fast.
+
+## WATCH (#1637 batch 5)
+
+Y seats the proven autopilot at seat 1 — `botInput(gs, 0, 1)`, the exact
+skill-1 brain `archerycheck` wins both arenas with (and whose stream
+`recordMatch` feeds the attract witness). Any seat-1 key, a canvas tap, or Y
+releases; seat-2 codes never unseat it — the duel partner keeps their seat
+(the Smash TV rule). Watching 1p is the harness match verbatim (bot vs bot
+with the human's seat driven by the proven brain). Known gap: bot-vs-bot can
+stalemate ~15-20 s after the first kill until the stuck-arrow TTL reopens the
+duel — filed as #1685; the `watchcheck` pilot's choreography (`resumeWait:
+30000`) waits through it honestly rather than faking the window.

@@ -366,7 +366,11 @@ const PILOTS = [
             // player left it. The stalemate itself is game code, filed to QA
             // on #1637.
             startKeys: ['Space'], seatWait: 700, advanceWait: 1600, resumeWait: 30000,
-            advanced: (a, b) => b.tick > a.tick && (Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver || b.flying > 0),
+            // seat-1-only signals: the foe bot lobs arrows on its own, so
+            // "something flying" is NOT prover-only (a mutant with a dead seat 1
+            // passed this leg until the mutant run proved it — moved/score/
+            // quiver-spend at seat 1 are).
+            advanced: (a, b) => b.tick > a.tick && (Math.hypot(b.p1.x - a.p1.x, b.p1.y - a.p1.y) > 20 || b.p1.score > a.p1.score || b.p1.quiver < a.p1.quiver),
             note: (a, b) => `P1 (${Math.round(a.p1.x)},${Math.round(a.p1.y)}) -> (${Math.round(b.p1.x)},${Math.round(b.p1.y)}), score ${b.scores[0]}-${b.scores[1]}, quiver ${b.p1.quiver}, flying ${b.flying}`,
         },
         {
