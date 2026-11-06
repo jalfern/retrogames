@@ -81,7 +81,7 @@ function LobbyRoom({ state, title = 'ROOM', accent = {}, names, startHint = 'PRE
     let cpuN = 0, modelN = 0
 
     return (
-        <div className={`absolute inset-0 flex flex-col items-center justify-center text-center font-mono ${text} px-6 z-10`} style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.45) 52%, rgba(0,0,0,0.82) 100%)' }}>
+        <div data-lobby="room" className={`absolute inset-0 flex flex-col items-center justify-center text-center font-mono ${text} px-6 z-10`} style={{ background: 'radial-gradient(ellipse at center, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.45) 52%, rgba(0,0,0,0.82) 100%)' }}>
             <div className={`text-[10px] tracking-[0.3em] mb-1 ${dim}`}>
                 {state.role === 'host' ? `HOST A ${title}` : `JOINING ${title}`}
             </div>
@@ -110,6 +110,7 @@ function LobbyRoom({ state, title = 'ROOM', accent = {}, names, startHint = 'PRE
                 <div className="flex flex-col items-center mb-3">
                     <div className={`text-[9px] tracking-[0.3em] ${dim}`}>ROOM CODE</div>
                     <div
+                        data-lobby="copy"
                         role="button"
                         tabIndex={0}
                         title="tap to copy the invite link"

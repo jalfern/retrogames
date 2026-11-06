@@ -11,10 +11,11 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
-import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
+import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep } from '../../utils/lockstep.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, wirePad, padsAt, seatOf, seatKinds, hostSeed } from './net'
 import { normalizePad } from '../../utils/onePad'
@@ -48,6 +49,7 @@ export default function GravelYard() {
     pausedRef.current = paused
     const [uiScreen, setUiScreen] = useState('attract')
     const [netSeatUi, setNetSeatUi] = useState(0)
+    const [netUi, setNetUi] = useState(null) // #1726: the shared <Lobby> waiting room
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const attractRef = useRef(null)
@@ -249,15 +251,30 @@ export default function GravelYard() {
             if (ev.code === 'KeyF') releaseMin(keys2, 'a')
             if (ev.code === 'KeyG') releaseMin(keys2, 'b')
         }
-        const onPointer = () => {
+        const onPointer = (ev) => {
+            // #1726: the window owns the tap (the Lobby scrim sits over the
+            // canvas while a room is open); chrome and the copy chip keep
+            // their own semantics.
+            if (pausedRef.current) return
+            if (ev.target instanceof Element && ev.target.closest('[data-vc], [data-lobby="copy"], button, a, input, select, textarea')) return
             const sc = screenRef.current
             if (sc === 'attract') { selectRef.current = 1; setScreen('select') }
+            else if (sc === 'select') {
+                // #1726: phones have no keyboard at the select screen — a tap
+                // is the SPACE that starts the shift (host) / the heads-up
+                // (guest). Solo and net share the branch, exactly like Space.
+                if (net.active && net.role === 'host') { if (net.startHost) net.startHost(); return }
+                if (net.active && net.role === 'guest') { sayYard('THE HOST STARTS THE SHIFT'); return }
+                const pin = seedFromQuery()
+                if (pin != null) seedRef.current = pin >>> 0
+                startPlay(seedRef.current, selectRef.current, partnerHumanRef.current)
+            }
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) { seedRef.current = (seedRef.current + 1) >>> 0; setScreen('select') }
             else if (sc === 'play' && netRef.current.mode && netRef.current.frozen) netReturn()
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
-        cvs.addEventListener('pointerdown', onPointer)
+        window.addEventListener('pointerdown', onPointer)
 
         // ---------- online lobby seats (#1672, three seats by #1705) ----------
         // ?net=host rolls a 4-letter room; one or two browsers join. Lockstep
@@ -267,6 +284,15 @@ export default function GravelYard() {
         // second joiner works the SCREEN CONSOLE — each with the same primary
         // keys/pad their seat uses locally.
         const net = netRef.current
+        // #1726: the room lives in the shared <Lobby> (code + QR + copy chip +
+        // seat roster), the same waiting room as every other net title.
+        const pushNetUi = () => setNetUi(net.active ? {
+            role: net.role, phase: net.phase, code: net.code,
+            slot: net.room && net.room.yourSlot != null ? net.room.yourSlot : (net.role === 'host' ? 0 : null),
+            seats: seatModel(SEATS, net.room ? net.room.slots : []),
+            joinHref: net.joinHref,
+            names: ['DIGGER', 'TRUCK', 'CONSOLE'],
+        } : null)
         const nq = new URLSearchParams(window.location.search)
         net.active = !!lobbyRole(window.location.search)
         net.role = lobbyRole(window.location.search)
@@ -319,6 +345,7 @@ export default function GravelYard() {
             setNetSeatUi(0)
             if (net.role === 'host') { if (net.room) { try { net.room.setPhase('waiting') } catch { /* gone */ } } }
             else { net.active = false; if (net.room) { try { net.room.reset() } catch { /* gone */ } } }
+            pushNetUi()
             startAttract()
         }
         if (net.active) {
@@ -328,9 +355,10 @@ export default function GravelYard() {
                 relay: relayFromQuery(window.location.search),
                 makeTransport,
                 shareRelay: !!nq.get('relay'),
-                onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref },
-                onJoin: () => { if (net.role === 'host') sayYard('CREW IN — DIG IN') },
-                onLeave: () => netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'),
+                onState: (s) => { net.phase = s.phase; net.code = s.code; net.joinHref = s.joinHref; pushNetUi() },
+                onRoster: () => pushNetUi(),
+                onJoin: () => { if (net.role === 'host') sayYard('CREW IN — DIG IN'); pushNetUi() },
+                onLeave: () => { netAbandon('PARTNER LEFT THE YARD — SPACE FOR TITLE'); pushNetUi() },
                 onStart: (m) => { if (net.role === 'guest') beginOnline(m.seed >>> 0, m.slots) },
                 on: {
                     pad: (m) => { const s = m.s | 0; const mm = mirrors[s]; if (mm) mm.set(m.k | 0, m.p); if (s !== net.seat) ls.gotPad(m.k | 0, m.p, s) },
@@ -704,6 +732,20 @@ export default function GravelYard() {
                 ctx.fillRect(CANVAS_W / 2 - w / 2 - 8, CANVAS_H - 20, (w + 16) * Math.min(1, hud.radioT / 170), 2)
             }
 
+            // toast: the yard's announcements — seat intros, crew events, the
+            // lag callout. #1726: these were set but never drawn, so the whole
+            // crew channel was silent on every box.
+            if (hud.toastT > 0 && hud.toast) {
+                ctx.font = '7px "Press Start 2P", monospace'
+                const tw = ctx.measureText(hud.toast).width
+                ctx.globalAlpha = Math.min(1, hud.toastT / 30)
+                ctx.fillStyle = 'rgba(18,10,6,0.9)'
+                ctx.fillRect(CANVAS_W / 2 - tw / 2 - 8, 48, tw + 16, 16)
+                ctx.fillStyle = '#ffd048'
+                ctx.fillText(hud.toast, CANVAS_W / 2 - tw / 2, 59)
+                ctx.globalAlpha = 1
+            }
+
             // bottom strip
             ctx.fillStyle = '#241812'
             ctx.fillRect(0, CANVAS_H - 12, CANVAS_W, 12)
@@ -735,13 +777,6 @@ export default function GravelYard() {
                 ctx.fillStyle = '#f0e8d0'
                 ctx.fillText(ATTRACT_MSGS[Math.floor(t / 150) % ATTRACT_MSGS.length], CANVAS_W / 2, 142)
                 if (Math.floor(t / 32) % 2) { ctx.fillStyle = '#58d048'; ctx.fillText('PRESS ANY KEY  /  TAP', CANVAS_W / 2, 176) }
-                if (netRef.current.active) {
-                    // #1672: the room rides the marquee — the code is the invite.
-                    ctx.fillStyle = '#7fe8c8'
-                    ctx.fillText(netRef.current.code
-                        ? `ROOM ${netRef.current.code}  —  ${netRef.current.phase.toUpperCase()}`
-                        : 'LINKING…', CANVAS_W / 2, 190)
-                }
                 ctx.textAlign = 'left'
             } else if (sc === 'select') {
                 ctx.textAlign = 'center'
@@ -817,6 +852,8 @@ export default function GravelYard() {
                 // #1672 online-seat probes: feed a peer pad without a relay so
                 // gravelcheck can drive the lockstep path in a headless box.
                 net: () => ({ active: net.active, role: net.role, seat: net.seat, mode: net.mode, frozen: net.frozen, phase: net.phase, code: net.code, stall: net.stall, slots: net.live || (net.room && net.room.slots) || [] }),
+                toast: () => ({ msg: hudRef.current.toast, t: hudRef.current.toastT }),
+                netReturn: () => netReturn(),
                 netFeed: (seat, k, mask) => { const mm = mirrors[seat | 0]; if (mm) mm.set(k | 0, { m: mask | 0 }); if ((seat | 0) !== net.seat) ls.gotPad(k | 0, { m: mask | 0 }, seat | 0) },
                 netBegin: (seed, slots) => beginOnline(seed, slots),
                 netStart: () => !!(net.startHost && net.startHost()),
@@ -890,7 +927,7 @@ export default function GravelYard() {
             cancelAnimationFrame(raf)
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
-            cvs.removeEventListener('pointerdown', onPointer)
+            window.removeEventListener('pointerdown', onPointer)
             if (netRef.current.room) { try { netRef.current.room.reset() } catch { /* gone */ } }
             clearKeys()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__gyTest }
@@ -901,13 +938,34 @@ export default function GravelYard() {
     const game = GAMES.find((g) => g.label === 'GRAVEL YARD')
 
     return (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-black select-none">
+        <div className="relative flex flex-col items-center justify-center w-full h-full bg-black select-none">
             <canvas
                 ref={canvasRef}
                 style={{ imageRendering: 'pixelated', width: 'min(100%, 960px)', touchAction: 'none' }}
                 aria-label="Gravel Yard"
             />
             {paused && game && <PauseOverlay game={game} onResume={() => setPaused(false)} />}
+            {/* #1726: the shared waiting room — code + QR + tap-to-copy + the
+                seat roster — same look and words as every other net title. */}
+            {netUi && netUi.phase !== 'racing' && (uiScreen === 'attract' || uiScreen === 'select') && (
+                <Lobby
+                    state={netUi}
+                    title="GRAVEL YARD"
+                    names={netUi.names}
+                    startHint="PRESS SPACE / TAP TO START"
+                    waitHint="WAITING FOR THE HOST TO START…"
+                    accent={{
+                        text: 'text-amber-100',
+                        dim: 'text-amber-300/70',
+                        live: 'border-amber-300/50 text-amber-100',
+                        warn: '#ffd23f',
+                        codeGlow: { textShadow: '3px 3px 0 #000' },
+                        btn: 'border-amber-300/60 text-amber-100',
+                        qr: '#1a120c',
+                        qrFrame: '#e8b020',
+                    }}
+                />
+            )}
             <VirtualControls secondAction={{ label: netSeatUi === 2 ? 'JOG' : 'DUMP', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
         </div>
     )
