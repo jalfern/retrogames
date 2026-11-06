@@ -95,8 +95,14 @@ export const RULEBOOK = {
         },
         {
             id: 'D4', text: 'Another module has wires? Set that wire count. If not, lit LEDs + 3, units. Then SET.',
+            // ANCHORED (#1708): the cross-reference is the LAYOUT, not the
+            // progress. A NEON sibling keeps its wires on the panel after its
+            // cut, so the printed count stays the truth for the whole bomb.
+            // The old `!x.solved` guard let the answer silently flip to the
+            // LEDs+3 fallback the moment the defuser cut that sibling — the
+            // page kept saying 3 while the engine demanded something else.
             target: (f, m, all) => {
-                const neon = all && all.find(x => x !== m && x.type === 'N' && !x.solved)
+                const neon = all && all.find(x => x !== m && x.type === 'N')
                 if (neon) return neon.wires.length
                 return (f.leds + 3) % 10
             },
