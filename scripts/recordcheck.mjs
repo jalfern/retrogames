@@ -23,6 +23,11 @@ import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '..
 import { uploadSession, listSessions, probeStore, storeFromQuery, tickSeconds } from '../src/utils/sessionStore.js'
 import { planRun, decideMerge } from '../src/utils/autoRecordCore.js'
 import { armLiveCapture, autoStart, autoStop, recordLiveTick, isRecording } from '../src/utils/gameContract.js'
+import fs from 'node:fs'
+import path from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
+import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
 
 const MUTATE = process.argv.includes('--mutate')
 
@@ -364,6 +369,157 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(storeFromQuery('?store=ws://host') === 'http://host', '?store override, ws->http')
     const dead = await probeStore('http://127.0.0.1:1')
     ok(dead.ok === false && dead.sessions === false, 'a dead relay probes as not-configured, never throws')
+}
+
+// --- outbox: uploads survive the phone (#1711 S6) ---------------------------
+// Fake IndexedDB matching the adapter's exact contract (open + createObjectStore
+// keyPath 'id' + readwrite tx add/getAll/delete/count, async completion). The
+// same factory object reused across setOutboxFactory calls = storage that
+// survives a "browser restart", which is exactly the kill-test in Node form.
+const fakeIDB = () => {
+    const dbs = new Map()
+    return {
+        __dbs: dbs,
+        open(name, version = 1) {
+            const req = { onsuccess: null, onerror: null, onupgradeneeded: null, onblocked: null, result: null, error: null }
+            queueMicrotask(() => {
+                let d = dbs.get(name)
+                const isNew = !d
+                if (isNew) {
+                    d = { stores: new Map(), close() {} }
+                    d.objectStoreNames = { contains: (n) => d.stores.has(n) }
+                    d.createObjectStore = (storeName, { keyPath } = {}) => {
+                        const st = { keyPath: keyPath || null, data: new Map() }
+                        d.stores.set(storeName, st)
+                        return st
+                    }
+                    d.transaction = (storeName) => {
+                        const st = d.stores.get(storeName)
+                        let err = null
+                        const t = {
+                            oncomplete: null, onerror: null, onabort: null,
+                            objectStore: () => ({
+                                add: (v) => {
+                                    const k = st.keyPath ? v[st.keyPath] : null
+                                    if (k == null) { err = new Error('missing key'); return {} }
+                                    if (st.data.has(k)) { err = new Error('constraint'); return {} }
+                                    st.data.set(k, JSON.parse(JSON.stringify(v)))
+                                    return { result: k }
+                                },
+                                getAll: () => ({ result: [...st.data.values()].map((v) => JSON.parse(JSON.stringify(v))) }),
+                                count: () => ({ result: st.data.size }),
+                                delete: (k) => { st.data.delete(k); return {} },
+                            }),
+                        }
+                        queueMicrotask(() => { if (err && t.onerror) t.onerror(); else if (t.oncomplete) t.oncomplete() })
+                        return t
+                    }
+                    dbs.set(name, d)
+                }
+                req.result = d
+                try {
+                    if (isNew && req.onupgradeneeded) req.onupgradeneeded()
+                    if (req.onsuccess) req.onsuccess()
+                } catch (e) { if (req.onerror) req.onerror() }
+            })
+            return req
+        },
+    }
+}
+const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
+    const slots = Array.from({ length: 1 }, () => ({ source: { kind: 'human' }, pads: [], raw: [] }))
+    for (let i = 0; i < ticks; i++) { slots[0].pads.push({}); slots[0].raw.push({}) }
+    return {
+        format: REC_FORMAT, build: 'test', game, method: 'stick', seed, players: 1, ticks, hashEvery: 30,
+        slots, hashes: ticks >= 30 ? [{ t: 30, h: 1 }, { t: ticks, h: 2 }] : [{ t: ticks || 1, h: 2 }],
+    }
+}
+{
+    // honest degrade: no IndexedDB in the world
+    setOutboxFactory(null)
+    ok(await queueRun(mkRec2(), 'jon') === null, 'no IndexedDB: queueRun is an honest no-op (today\u2019s single-attempt world)')
+    const offOut = await drainOutbox({ motion: true, upload: async () => ({ uploaded: true }) })
+    ok(offOut.available === false && offOut.sent.length === 0, 'no IndexedDB: drain reports unavailable and sends nothing')
+
+    const fac = fakeIDB()
+    setOutboxFactory(fac)
+    const e1 = await queueRun(mkRec2('gauntlet', 101, 90), 'jon')
+    ok(!!e1 && e1.rec.seed === 101 && e1.player === 'jon' && e1.savedAt > 0, 'a finished take is queued with rec+player+savedAt (drain can rebuild the upload)')
+    const pen = makeOutbox(fac)
+    ok(await pen.count() === 1, 'queued BEFORE any upload attempt \u2014 the entry stands on its own')
+
+    // plan rules
+    const many = Array.from({ length: OUTBOX_MAX_ITEMS + 3 }, (_, i) => ({ id: `e${i}`, savedAt: 1000 + i }))
+    const pa = planAdd(many, { id: 'new-comer', savedAt: 999999 })
+    ok(pa.entries.length === OUTBOX_MAX_ITEMS && pa.evicted.length === 4 && pa.evicted[0].id === 'e0' && pa.entries.some((x) => x.id === 'new-comer'),
+        `cap ${OUTBOX_MAX_ITEMS}: overflows evict the OLDEST, never the fresh take`)
+    ok(classifyFailure('http 413') === 'drop' && classifyFailure('invalid recording: x') === 'drop'
+        && classifyFailure('no motion consent') === 'drop' && classifyFailure('upload without consent') === 'drop',
+        'permanent refusals classify drop (never hammer a store that will always say no)')
+    ok(classifyFailure('store unreachable: boom') === 'keep' && classifyFailure('http 503') === 'keep'
+        && classifyFailure('http 429') === 'keep' && classifyFailure('http 408') === 'keep',
+        'unreachable/busy/timeout classify keep (retrying is the point)')
+    const pd = planDrain([{ id: 'old', savedAt: 500 }, { id: 'fresh', savedAt: 900 }], { motion: true, now: 1000 })
+    ok(pd.send.length === 2 && pd.send[0].id === 'old', 'drain sends oldest-first \u2014 store order = play order')
+    ok(planDrain([{ id: 'a', savedAt: 1 }], { motion: false, now: 2 }).drop.length === 1, 'consent revoked/absent = drop ALL (no recordings pile for a player who said no)')
+    ok(planDrain([{ id: 'ancient', savedAt: 1 }], { motion: true, now: 1e13 }).drop.length === 1, 'stale entries drop past the age cap')
+
+    // drain mechanics over the fake pen
+    setOutboxFactory(fac) // restart the handle, keep the storage (browser relaunch in Node form)
+    const survived = await makeOutbox(fac).count()
+    ok(survived === 1, 'entries survive a restart when the factory (device storage) is the same')
+    const okUp = async () => ({ uploaded: true, key: 'gauntlet/x.json' })
+    const sOut = await drainOutbox({ motion: true, upload: okUp })
+    ok(sOut.sent.length === 1 && await makeOutbox(fac).count() === 0, 'successful retry removes the entry \u2014 the store has it, the pen keeps nothing')
+
+    setOutboxFactory(fac)
+    await queueRun(mkRec2('gauntlet', 202, 60), 'jon')
+    const netOut = await drainOutbox({ motion: true, upload: async () => ({ uploaded: false, reason: 'store unreachable: down' }) })
+    ok(netOut.kept.length === 1 && await makeOutbox(fac).count() === 1, 'network failure KEEPS the entry for the next trigger')
+    const retryOut = await drainOutbox({ motion: true, upload: okUp })
+    ok(retryOut.sent.length === 1 && await makeOutbox(fac).count() === 0, 'the next drain ships what the outage kept')
+
+    setOutboxFactory(fac)
+    await queueRun(mkRec2('gauntlet', 303, 60), 'jon')
+    await queueRun(mkRec2('gauntlet', 404, 60), 'jon')
+    let calls = 0
+    const stopOut = await drainOutbox({ motion: true, upload: async () => { calls++; return { uploaded: false, reason: 'store unreachable: down' } } })
+    ok(calls === 1 && stopOut.kept.length === 1 && await makeOutbox(fac).count() === 2, 'a dead store ENDS the pass \u2014 the rest of the queue is not hammered')
+    let poison = true
+    const dropOut = await drainOutbox({ motion: true, upload: async () => (poison ? (poison = false, { uploaded: false, reason: 'http 413' }) : okUp()) })
+    ok(dropOut.dropped.length === 1 && await makeOutbox(fac).count() === 0, 'a permanent failure drops its entry and the drain moves to the next')
+    ok(dropOut.sent.length === 1, 'after the poison leaves, the healthy entry ships in the same pass')
+
+    setOutboxFactory(fac)
+    await queueRun(mkRec2('gauntlet', 505, 60), 'jon')
+    const revOut = await drainOutbox({ motion: false, upload: async () => ({ uploaded: true }) })
+    ok(revOut.dropped.length === 1 && revOut.sent.length === 0 && await makeOutbox(fac).count() === 0,
+        'revoked consent purges the pen through drain \u2014 nothing uploads AND nothing lingers')
+    ok(await dropEntry('no-such-id') === true, 'dropEntry is silent on missing (already-gone is success)')
+}
+
+// --mutate: the taxonomy flip (permanent -> keep) must poison the queue — this
+// gate goes RED by design under --mutate, green without it (mutant is a
+// transient file next to the source, deleted at close \u2014 relaysim's pattern).
+{
+    const CORE = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/utils/outboxCore.js')
+    const MUT = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/utils/.recordcheck-mutant-core.mjs')
+    const ANCHOR = "        if (code === 408 || code === 429) return 'keep'\n        return 'drop'"
+    const src = fs.readFileSync(CORE, 'utf8')
+    if (!src.includes(ANCHOR)) { console.log('FAIL   outbox mutant anchor not found in outboxCore.js \u2014 update recordcheck ANCHOR to match'); fail++ }
+    else {
+        fs.writeFileSync(MUT, src.replace(ANCHOR, "        if (code === 408 || code === 429) return 'keep'\n        return 'keep' // MUTANT: permanent refusals retry forever"))
+        try {
+            const mutated = await import(pathToFileURL(MUT).href + `?t=${Date.now()}`)
+            setOutboxFactory(fakeIDB())
+            await queueRun(mkRec2('gauntlet', 606, 60), 'jon')
+            const mOut = await drainOutbox({ motion: true, upload: async () => ({ uploaded: false, reason: 'http 413' }), classify: mutated.classifyFailure })
+            ok(mOut.kept.length === 1 && mOut.dropped.length === 0,
+                'MUTANT classifyFailure drop->keep: a 413 must stay dropped \u2014 red here means a poison entry would clog the queue')
+        } finally {
+            fs.rmSync(MUT, { force: true })
+        }
+    }
 }
 
 server.closeAllConnections()
