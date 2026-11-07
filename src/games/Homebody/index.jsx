@@ -72,6 +72,7 @@ const HomebodyGame = () => {
         let gs = null, demoG = null
         let seed = 20261023
         let particles = [], shake = 0
+        const refuses = []   // #1823: red ghost-cell flashes on refused placements
         let toastMsg = '', toast = 0
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
@@ -133,6 +134,16 @@ const HomebodyGame = () => {
                         audioController.playTone(740, 0.06, 'triangle', 0.04)
                         setTimeout(() => audioController.playTone(988, 0.09, 'triangle', 0.04), 90)
                         if (live) { say(`${e.name.toUpperCase()} MOVES IN`); burst(LOT_X + 13 * TILE, LOT_Y + 5 * TILE, 8, '#ffd24a', 2.2) }
+                        break
+                    case 'step': // #1823: the ground answers the foot — plank creak, crisp gravel, soft lawn
+                        if (e.surf === 'floor') audioController.playSweep(175, 118, 0.06, 'triangle', 0.022)
+                        else if (e.surf === 'path') audioController.playFilteredNoise(0.045, 0.02, 1800)
+                        else audioController.playFilteredNoise(0.05, 0.012, 550)
+                        break
+                    case 'refuse': // #1823: the ghost cell burns red where the order died
+                        audioController.playTone(140, 0.07, 'square', 0.06)
+                        audioController.playTone(110, 0.12, 'square', 0.06, 0.09)
+                        if (live) refuses.push({ r: e.r, c: e.c, life: 36 })
                         break
                     default: break
                 }
@@ -252,6 +263,16 @@ const HomebodyGame = () => {
             const order = [...g.people.map((p) => ({ p, v: p.y })), ...(g.visitor ? [{ p: g.visitor, v: g.visitor.y }] : [])].sort((a, b) => a.v - b.v)
             for (const o of order) drawPerson(ctx, o.p, g.sec, g.people[g.active] === o.p)
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
+            for (const f of refuses) {   // #1823: refused cell — red fill pulsing out
+                const k = f.life / 36
+                ctx.globalAlpha = 0.45 * k
+                ctx.fillStyle = '#e23b2e'
+                ctx.fillRect(LOT_X + f.c * TILE + 1, LOT_Y + f.r * TILE + 1, TILE - 2, TILE - 2)
+                ctx.globalAlpha = k
+                ctx.strokeStyle = '#ff6a5c'; ctx.lineWidth = 2
+                ctx.strokeRect(LOT_X + f.c * TILE + 1, LOT_Y + f.r * TILE + 1, TILE - 2, TILE - 2)
+                ctx.globalAlpha = 1
+            }
             stepParticlesDraw()
             ctx.restore()
             nightTint(ctx, g.hour, g.ext)
@@ -303,6 +324,8 @@ const HomebodyGame = () => {
         const stepParticles = () => {
             for (const pt of particles) { pt.x += pt.vx; pt.y += pt.vy; pt.vy += pt.kind === 'flash' ? 0.02 : 0.14; pt.life-- }
             particles = particles.filter((pt) => pt.life > 0)
+            for (const f of refuses) f.life--
+            for (let i = refuses.length - 1; i >= 0; i--) if (refuses[i].life <= 0) refuses.splice(i, 1)
             if (shake > 0) shake = Math.max(0, shake - 0.6)
             if (toast > 0) toast--
         }
@@ -346,7 +369,7 @@ const HomebodyGame = () => {
                 if (pin != null) seed = pin >>> 0
             }
             gs = newRun(seed)
-            particles = []; shake = 0; toast = 0
+            particles = []; shake = 0; toast = 0; refuses.length = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = buildQueued = switchQueued = false; digitPick = -1
             setEndInfo(null)

@@ -63,14 +63,20 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
   and the harness. A player who does nothing watches, and then buries.
 
+- Feel (#1823): walkers pay a `step` event per footfall (~18 px) carrying the
+  ground underfoot (`groundOf`), so planks creak, gravel crackles and lawn
+  muffles; every refused `place` emits `refuse` at the offending cell and the
+  shell flashes it red. View-only — the sim rules under placement are untouched.
+
 ## Verify
 ```bash
-npm run peoplecheck          # 102 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), winnable seeds, determinism
+npm run peoplecheck          # 124 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), walk-surface footfalls + refusal flash (#1823), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
 # Or zero `s.roomReact = s.people.length` in buildRoom — exactly the MOVE-IN
-# gates go red; restore.
+# gates go red; restore. Or comment the two `footstep(...)` calls — exactly the
+# FEEL walking gates go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
@@ -85,8 +91,10 @@ opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
   with purpose) remains the open tail of this old line.
 - **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
   residents react to the build. Still open from that pass: catalog thumbnails
-  per item, wing-themed furniture, walk-surface step timbre, red refusal flash,
-  bonds-pip legend/teaching line, cooling log lines, chat speech bubbles.
+  per item, wing-themed furniture, bonds-pip legend/teaching line, cooling log
+  lines, chat speech bubbles.
+- **CLOSED by #1823 (QA pass):** walk-surface step timbre (plank/gravel/lawn)
+  and the red ghost-cell flash on refused placements.
 - **PARTIAL by #1817:** bonds climb the chat loop now — `house`/`fern` meters,
   four levels, topic/linger/return/toast unlocks, hourly fade, panel row.
   Romance, fights and relationships beyond the household+Fern triangle are the

@@ -13,6 +13,8 @@
 //   4. BONDS     — the #1817 chat ladder: meter growth, exact level edges, the
 //                  topic/linger/return/toast unlocks (per-seed exact against a
 //                  baseline run), neglect-fade, hash, and source pins.
+//   5. FEEL      — #1823: walking footfalls name their ground (plank/gravel/
+//                  lawn), refusal events name their cell, and views are pinned.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
@@ -26,6 +28,7 @@ import {
     REL_NAMES, relLevel, chatPool,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
+    manualMove,
 } from '../src/games/Homebody/sim.js'
 import { readFileSync } from 'node:fs'
 
@@ -467,6 +470,100 @@ section('MOVE-IN (#1814): reactions, glow, honest edges')
     check('pin: the shell passes the live ext flag into the tint', /nightTint\(ctx, g\.hour, g\.ext\)/.test(jsxSrc))
     check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s\)/.test(sim2Src))
     check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
+}
+
+section('FEEL — walk surfaces + refusal (#1823)')
+{
+    const STEP_PX = 18 // must match sim.js
+
+    // footfalls name their ground: house → lawn corner → path head
+    const g = newRun(21)
+    const p = g.people[0]
+    drain(g)
+    const surfs = []
+    let steps = 0
+    const walkTo = (r, c, cap = 60 * 30) => {
+        cmdWalk(g, p, r, c)
+        for (let i = 0; i < cap && p.path && p.path.length; i++) {
+            advance(g, DT)
+            for (const e of drain(g)) if (e.t === 'step') { steps++; surfs.push(e.surf) }
+        }
+    }
+    walkTo(0, 0)
+    walkTo(10, 5)
+    check('walks ring like footsteps', steps >= 4, `steps=${steps}`)
+    check('every footfall names real ground', surfs.every((x) => ['grass', 'path', 'floor'].includes(x)), surfs.join(','))
+    check('lawn, gravel and plank all get heard', ['grass', 'path', 'floor'].every((x) => surfs.includes(x)), surfs.join(','))
+    check('the garden stand pays lawn', surfs[0] === 'floor' && surfs.slice(-6).includes('grass'), surfs.join(','))
+
+    // cadence: stick-walking ~35 px pays ~2 footfalls, never a machine-gun
+    p.stepDist = 0; drain(g)
+    const x0 = p.x, y0 = p.y
+    let n = 0
+    for (let i = 0; i < 40; i++) { manualMove(g, p, 0, -1, DT); for (const e of drain(g)) if (e.t === 'step') n++ }
+    const moved = Math.abs(p.x - x0) + Math.abs(p.y - y0)
+    check('cadence: one footfall per ~18px', n >= 1 && n >= moved / STEP_PX - 1.2 && n <= moved / STEP_PX + 0.2, `n=${n} moved=${moved.toFixed(0)}px`)
+
+    // standing still makes no sound (hold Fern back — her footfalls are honest)
+    g.visitAfter = 99; g.visitor = null
+    drain(g)
+    for (let i = 0; i < 60; i++) advance(g, DT)
+    check('standing still makes no sound', !drain(g).some((e) => e.t === 'step'))
+
+    // the wing's planks speak floor: walk a resident into the built wing
+    const g2 = newRun(9)
+    g2.money = 520
+    buildRoom(g2); drain(g2)
+    const p2 = g2.people[0]
+    const s2 = []
+    cmdWalk(g2, p2, 5, 13)
+    for (let i = 0; i < 60 * 30 && p2.path && p2.path.length; i++) {
+        advance(g2, DT)
+        for (const e of drain(g2)) if (e.t === 'step') s2.push(e.surf)
+    }
+    check('the wing walk is planks end to end', s2.length >= 2 && s2.every((x) => x === 'floor') && s2[s2.length - 1] === 'floor', s2.join(','))
+    check('the plank floor answers the last steps', p2.r === 5 && p2.c === 13 && s2[s2.length - 1] === 'floor', s2.join(','))
+
+    // refusals name their cell — broke, into a wall, sealing the wing, twice-built
+    const g3 = newRun(5)
+    g3.sel = CATALOG.findIndex((d) => d.id === 'bed')
+    g3.money = 0
+    drain(g3)
+    check('a broke order is refused', !place(g3, 10, 2))
+    const rv = drain(g3)
+    check('the refusal names the cell', rv.filter((e) => e.t === 'refuse').length === 1 && rv[0].r === 10 && rv[0].c === 2, JSON.stringify(rv))
+    g3.money = 500
+    drain(g3)
+    check('a wall cell is refused at the wall', !place(g3, 1, 1) && drain(g3).some((e) => e.t === 'refuse' && e.r === 1 && e.c === 1))
+    drain(g3)
+    const okEv = (() => { const r = place(g3, 10, 2); const ev = drain(g3); return r && ev.some((e) => e.t === 'place') && !ev.some((e) => e.t === 'refuse') })()
+    check('a legal buy lands with no refusal', okEv)
+
+    const g4 = newRun(11)
+    g4.money = 520
+    buildRoom(g4); drain(g4)
+    g4.sel = CATALOG.findIndex((d) => d.id === 'plant')
+    check('the wing gets a piece', place(g4, 3, 13) && drain(g4).some((e) => e.t === 'place'))
+    g4.sel = CATALOG.findIndex((d) => d.id === 'bed')
+    check('sealing the wing door is refused at the door', !place(g4, 4, 11) && drain(g4).some((e) => e.t === 'refuse' && e.r === 4 && e.c === 11))
+
+    const g5 = newRun(3)
+    g5.sel = CATALOG.findIndex((d) => d.id === 'roomkit')
+    g5.money = 100
+    drain(g5)
+    check('a broke kit refusal points at the lot edge', !place(g5, 0, 0) && drain(g5).some((e) => e.t === 'refuse' && e.r === EXT_ROOM.door[0] && e.c === EXT_ROOM.door[1]))
+    g5.money = 520
+    check('the kit builds once', place(g5, 0, 0) && drain(g5).some((e) => e.t === 'room'))
+    check('a second kit is refused too', !place(g5, 0, 0) && drain(g5).some((e) => e.t === 'refuse'))
+
+    // source pins: the events exist at the choke points the view depends on
+    const feelSim = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const feelJsx = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: footfalls carry their surface', /t: 'step', surf: groundOf\(s, p\.r, p\.c\)/.test(feelSim))
+    check('pin: both walk routes feed the footfall meter', /footstep\(s, p, budget - step\)/.test(feelSim) && /footstep\(s, p, Math\.abs\(p\.x - ox\)/.test(feelSim))
+    check('pin: every refusal branch emits its event', (feelSim.match(/t: 'refuse'/g) || []).length === 3)
+    check('pin: the shell plays three distinct step timbres', /e\.surf === 'floor'[\s\S]*e\.surf === 'path'/.test(feelJsx))
+    check('pin: the refusal flashes a red ghost cell', /refuses\.push\(\{ r: e\.r, c: e\.c/.test(feelJsx) && /fillStyle = '#e23b2e'/.test(feelJsx))
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
