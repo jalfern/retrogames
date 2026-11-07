@@ -310,6 +310,58 @@ console.log('— pin law (#1759): cycle at the board, tip honours the pin —')
     ok('src: filled AND lapsed orders retire the pin', /gs\.pin === match\.id\) gs\.pin = null/.test(engSrc) && /!gs\.orders\.some\(\(o\) => o\.id === gs\.pin\)\) gs\.pin = null/.test(engSrc))
 }
 
+console.log('— radio crew-notices (#1769): pin redirect announced, board ownership taught —')
+{
+    const radios = (g) => drainFx(g).filter((f) => f.k === 'radio').map((f) => `${f.who}:${f.text}`)
+    // a pin that OVERRIDES the oldest-match rule must be announced at the tip
+    const t = createGame(3, 1)
+    t.orders = [{ id: 91, grade: 'fines', units: 4, left: 900, total: 1000 }, { id: 92, grade: 'fines', units: 3, left: 500, total: 1000 }]
+    t.pin = 92
+    t.truck.bed = 3; t.bedGrade = 'fines'
+    t.truck.x = DOCK_SPOTS[0][0]; t.truck.y = DOCK_SPOTS[0][1]; t.truck.face = 'left'
+    tap(t, 1, { b: true })
+    ok('pin-redirected tip announced (LOADING FINES — PINNED)', radios(t).includes('BOARD:LOADING FINES — PINNED'), radios(t).join(','))
+
+    // same world, no pin: the oldest match is no surprise -> no callout
+    const u = createGame(3, 1)
+    u.orders = [{ id: 91, grade: 'fines', units: 4, left: 900, total: 1000 }, { id: 92, grade: 'fines', units: 3, left: 500, total: 1000 }]
+    u.truck.bed = 3; u.bedGrade = 'fines'
+    u.truck.x = DOCK_SPOTS[0][0]; u.truck.y = DOCK_SPOTS[0][1]; u.truck.face = 'left'
+    tap(u, 1, { b: true })
+    ok('no pin, no callout (nothing surprised the crew)', !radios(u).some((r) => r.includes('PINNED')), radios(u).join(','))
+
+    // pin on the OLDEST matching order = the default plan -> no callout
+    const v = createGame(3, 1)
+    v.orders = [{ id: 91, grade: 'fines', units: 4, left: 900, total: 1000 }, { id: 92, grade: 'fines', units: 3, left: 500, total: 1000 }]
+    v.pin = 91
+    v.truck.bed = 3; v.bedGrade = 'fines'
+    v.truck.x = DOCK_SPOTS[0][0]; v.truck.y = DOCK_SPOTS[0][1]; v.truck.face = 'left'
+    tap(v, 1, { b: true })
+    ok('pin that changes nothing stays quiet', !radios(v).some((r) => r.includes('PINNED')), radios(v).join(','))
+
+    // wrong seat at the board: denied WITH the ownership lesson, not plain deny
+    const d = createGame(3, 1)
+    d.orders = [{ id: 91, grade: 'coarse', units: 4, left: 1000, total: 1000 }]
+    d.digger.x = BOARD[0] - 1; d.digger.y = BOARD[1]; d.digger.face = 'right'
+    drainFx(d)
+    tap(d, 0, { a: true })
+    const dFx = drainFx(d)
+    ok('digger A at the board: denied and taught (TRUCK OWNS THE BOARD)', dFx.some((f) => f.k === 'deny') && dFx.some((f) => f.k === 'radio' && f.who === 'BOARD' && f.text === 'TRUCK OWNS THE BOARD'), dFx.map((f) => f.k + (f.text ? `:${f.text}` : '')).join(','))
+
+    // the lesson is position-bound: the same tap away from the board is plain deny
+    const d2 = createGame(3, 1)
+    d2.digger.x = BOARD[0] - 2; d2.digger.y = BOARD[1]; d2.digger.face = 'right'
+    tap(d2, 0, { a: true })
+    ok('board lesson only at the board (plain deny elsewhere)', drainK(d2).includes('deny') && !radios(d2).some((r) => r.includes('OWNS')))
+
+    // the truck still pins there, lesson-free (ownership applies to the OTHER seats)
+    const k = createGame(3, 1)
+    k.orders = [{ id: 91, grade: 'coarse', units: 4, left: 1000, total: 1000 }]
+    k.truck.x = BOARD[0] - 1; k.truck.y = BOARD[1]; k.truck.face = 'right'
+    tap(k, 1, { a: true })
+    ok('truck at its own board pins, no ownership noise', k.pin === 91 && !radios(k).some((r) => r.includes('OWNS')), `pin=${k.pin}`)
+}
+
 // ---------- #1771: shouted orders (#1249 pattern, the yard's own radio words) ----------
 console.log('— #1771 voice orders: grammar —')
 {

@@ -384,6 +384,12 @@ function tip(gs) {
         if (gs.strikes >= MAX_STRIKES) { gs.done = true; gs.win = false; gs.fx.push({ k: 'ruined', tick: gs.tick }) }
         return
     }
+    // #1769: the pin was mute to the rest of the crew — when it OVERRIDES the
+    // oldest-match rule the first tip lands on an unexpected order. The board
+    // now says the plan out loud whenever the pin changes it (#1253: every
+    // plan change rides the radio). No callout when the pinned order is the
+    // default anyway — nothing surprised, nothing to explain.
+    if (gs.pin != null && match !== open[0]) radio(gs, 'BOARD', `LOADING ${match.grade === 'coarse' ? 'COARSE' : 'FINES'} — PINNED`)
     const n = Math.min(gs.truck.bed, match.units)
     const paid = n * RATE[gs.bedGrade]
     gs.score += paid
@@ -420,6 +426,14 @@ function actSeatA(gs, seat) {
             return
         }
         if (fx === CONSOLE_FRONT[0] && fy === CONSOLE_FRONT[1] && m.face === 'up') { cycleGate(gs); return }
+        // #1769: the ORDER BOARD belongs to the truck. A digger poking it got
+        // a plain deny — the yard speaks everywhere else, so teach the
+        // ownership rule over the radio instead of puzzling a solo player.
+        if (fx === BOARD[0] && fy === BOARD[1] && m.face === 'right') {
+            gs.fx.push({ k: 'deny', tick: gs.tick })
+            radio(gs, 'BOARD', 'TRUCK OWNS THE BOARD')
+            return
+        }
     }
     if (seat === 1) { // truck
         const [bdx, bdy] = BOARD
