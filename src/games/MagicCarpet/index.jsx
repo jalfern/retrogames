@@ -19,7 +19,7 @@ import {
     LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
-    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing,
     SEL, selectTap, cursorStep,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
@@ -361,7 +361,14 @@ const MagicCarpetGame = () => {
                     audioController.playTone(60, 0.3, 'square', 0.08)
                     shake = Math.max(shake, 6)
                     say('THE WIZARD\'S TOWER TOPPLES')
-                } else if (e.type === 'wizfire') audioController.playSweep(920, 380, 0.14, 'sawtooth', 0.05)
+                } else if (e.type === 'wizfire') {
+                    // #1746 item 7: the bolt lights up the sky WHERE the wizard
+                    // stands — the crack tilts to his side, and a cast from outside
+                    // the nose reads longer and softer, heard over the shoulder.
+                    const br = castBearing(gs, e.x, e.y)
+                    audioController.playSweep(920, 380, br.behind ? 0.18 : 0.14, 'sawtooth',
+                        br.behind ? 0.04 : 0.05, br.pan)
+                }
                 else if (e.type === 'rocksling') audioController.playNoise(0.07, 0.05)
                 else if (e.type === 'bite') audioController.playTone(170, 0.06, 'square', 0.05)
                 else if (e.type === 'hurt') {

@@ -15,7 +15,7 @@ import {
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
-    crumbleFeel, CRUMBLE_HEAR_R,
+    crumbleFeel, CRUMBLE_HEAR_R, castBearing,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
     SEL, selectTap, cursorStep,
 } from '../src/games/MagicCarpet/sim.js'
@@ -1430,6 +1430,84 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             /spawnGrit[\s\S]{0,1400}'ash'/.test(rendSrc) &&
             /kind !== 'crater' \|\| e\.mag < 3/.test(rendSrc) &&
             !/spawnGrit[\s\S]{0,1200}addScorch/.test(rendSrc))
+    }
+}
+
+// ---- #1746 item 7: SPATIAL CAST CUE — a wizfire crack lands on the stereo
+// field where the wizard stands, computed by castBearing (pure read, like
+// muffleOf/crumbleFeel). Mutation guide: (1) strip x/y from the wizfire push
+// in sim.js — the carrier and sign gates go red while determinism holds;
+// (2) swap sin for cos in castBearing — the side gates go red, ahead/behind
+// survive; (3) drop the pan arg in index.jsx — the shell pin goes red;
+// (4) make AudioController pan even when pan===null — the default-path pin
+// goes red (every other title's sweep must keep the old direct graph).
+{
+    const near = (a, b) => Math.abs(a - b) < 0.02
+    {
+        // The carrier: the event knows where the bolt was born.
+        const gs = makeGame(7)
+        const wz = gs.wizard
+        gs.x = wz.x; gs.y = wz.y; gs.invis = 0; gs.wizFire = 0
+        gs.events.length = 0
+        step(gs, {})
+        const e = gs.events.find((ev) => ev.type === 'wizfire')
+        r.check('#1746 wizfire carries the cast point (event x/y equal the wizard at the shot)',
+            !!e && e.x === wrap(wz.x, MAP) && e.y === wrap(wz.y, MAP) &&
+            gs.projs.some((p) => p.kind === 'bolt' && p.from === 'w'),
+            e ? JSON.stringify({ x: e.x, y: e.y }) : 'no wizfire')
+    }
+    {
+        // Geometry: yaw 0 faces +x; the renderer's camera right is +world y
+        // (cross(fwd,up) at yaw 0), so pan = sin(rel) is +right, and the
+        // half-plane behind the nose is cos(rel) < 0. All four cardinal casts.
+        const gs = makeGame(7)
+        gs.x = 100; gs.y = 100; gs.yaw = 0
+        const ahead = castBearing(gs, 150, 100)
+        const behind = castBearing(gs, 50, 100)
+        const right = castBearing(gs, 100, 150)
+        const left = castBearing(gs, 100, 50)
+        r.check('#1746 a cast dead ahead centres (pan 0) and is not behind',
+            near(ahead.pan, 0) && !ahead.behind, JSON.stringify(ahead))
+        r.check('#1746 a cast over the shoulder flags behind (pan still centred)',
+            near(behind.pan, 0) && behind.behind, JSON.stringify(behind))
+        r.check('#1746 right/left casts pan hard to the matching ear (+y is camera-right at yaw 0)',
+            right.pan > 0.99 && !right.behind && left.pan < -0.99 && !left.behind,
+            `R ${right.pan.toFixed(2)} L ${left.pan.toFixed(2)}`)
+        // A turned carpet: the answer follows the nose, not the world axes.
+        const t = { ...gs, yaw: Math.PI / 2 }
+        const upAhead = castBearing(t, 100, 150)
+        r.check('#1746 pan is nose-relative — the same point ahead at yaw 90° centres',
+            near(upAhead.pan, 0) && !upAhead.behind, JSON.stringify(upAhead))
+        // The map wraps: a wizard across the seam is heard the short way round.
+        const seam = castBearing({ ...gs, x: 4, y: 100 }, wrap(4 + 50, MAP), 100)
+        const seamBack = castBearing({ ...gs, x: 4, y: 100 }, wrap(4 - 50, MAP), 100)
+        r.check('#1746 the bearing takes the short way across the map seam',
+            near(seam.pan, 0) && !seam.behind && near(seamBack.pan, 0) && seamBack.behind,
+            `seam ${JSON.stringify(seam)} back ${JSON.stringify(seamBack)}`)
+    }
+    {
+        // Pure read: the same discipline as muffleOf — computing bearings must
+        // never nudge the sim, so determinism gates stay green with the cue in.
+        const gs = makeGame(7)
+        const h0 = stateHash(gs)
+        castBearing(gs, gs.wizard.x, gs.wizard.y)
+        r.check('#1746 castBearing is a pure read — it never disturbs the state hash',
+            h0 === stateHash(gs), `${h0} vs ${stateHash(gs)}`)
+    }
+    {
+        const idxSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+        const acSrc = await readFile(new URL('../src/utils/AudioController.js', import.meta.url), 'utf8')
+        const handler = idxSrc.match(/e\.type === 'wizfire'\) \{([\s\S]{0,900}?)\n\s+\}(?: else if|\s*\n\s*else if)/)
+        r.check('#1746 the shell pans the wizfire crack by the bearing (behind = longer, softer)',
+            !!handler && /castBearing\(gs, e\.x, e\.y\)/.test(handler[0]) &&
+            /playSweep\([^)]*br\.pan\)/.test(handler[0]) &&
+            /br\.behind \? 0\.18 : 0\.14/.test(handler[0]) &&
+            /br\.behind \? 0\.04 : 0\.05/.test(handler[0]),
+            handler ? 'routed' : 'wizfire handler not pinned')
+        r.check('#1746 pan is opt-in in AudioController — null keeps the direct graph untouched',
+            /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null\)/.test(acSrc) &&
+            /if \(pan !== null && this\.ctx\.createStereoPanner\)/.test(acSrc) &&
+            /\} else \{\s*\n\s*gain\.connect\(this\.ctx\.destination\)/.test(acSrc))
     }
 }
 
