@@ -2055,6 +2055,13 @@ r.check('play mode ticks with no stuck loop', live.tick > 20, `tick=${live.tick}
 // it holds on the degraded-Chrome box where the pixel family is flaky).
 r.check('the village is alive in the browser world (14–21 villagers at seed 7)',
     live.villagers >= 14 && live.villagers <= 21, `villagers=${live.villagers}`)
+// #1764 stage 2: the economy is live in the browser world too (state-based).
+const eco1 = await page.evaluate(() => window.__carpetTest.villageEconomy('grab'))
+r.check('the browser world snags a villager at the floor (grip set, lane −1)',
+    !!eco1.prisoner && eco1.villagers >= 13 && eco1.villagers <= 20, JSON.stringify(eco1))
+const eco2 = await page.evaluate(() => window.__carpetTest.villageEconomy('deliver'))
+r.check('the browser world converts the hut on delivery (pennant up, grip empty)',
+    eco2.prisoner === null && eco2.allyHuts === 1, JSON.stringify(eco2))
 
 // ---- GPU world pass (#1083): the GPU must actually render the world, craters
 // must visibly feed the terrain upload (glow), lava cools, scorch persists.

@@ -365,21 +365,30 @@ see item 5).
   an unverifiable #489-memory claim (no reachable sources; the #1680 lesson) —
   inventing multi-carry would triple a homing projectile's damage, so it is
   out of spec, not a gap.
-- **Village life PARTIAL by #1764 item 3 stage 1:** the huts are homes. Each
-  hut houses 2–3 villagers (three tunic variants, one atlas tile each) who keep
-  to their home lane — wander within 18u, stray past it and walk home. A
-  burning hut or a bolt/blast strike within 26u sends the lane fleeing the
-  point of fear (a panicked run tints warm and outlives the ring); a villager
-  caught within 7u of a burning hut burns where they stand — a `villager`
-  `burn` event, a burst + wisp where they stood, a low descending cry and the
-  world names it ("A VILLAGER HAS BURNED"). They are neutral for now: no mana,
-  no bounty, never hostile. Spawned LAST in `genWorld` (after the huts — the
-  last rng-consuming placement), so world placement is untouched and only the
-  play stream re-bases; `stateHash` carries the census. carpetcheck proves the
-  whole village Node-side (census, determinism, wander/flee/burn/scare/home-walk
-  + the mutation guide) and a state-based browser gate counts the lane live.
-  Still open: the convert/burn moral economy and prisoners carried to your
-  castle — the original's signature loop.
+- **Village life stage 2 by #1764 item 3:** the village economy — convert or
+  burn, the original's signature loop. The carpet snags a villager BY TOUCH in
+  the low band (`VIL_GRAB_R = 8`u and `alt ≤ ground + VIL_GRAB_ALT (12)` — the
+  same band wolves bite from: altitude is armor AND the price of a prisoner).
+  One grip (`gs.prisoner`, spliced from the lane) rides the carpet's fore
+  corner; deliver inside the castle's reach (the bank-by-delivery rule) and the
+  home hut becomes ALLY — gold pennant over the roof, gold radar dot, and it
+  pays **tribute**: a 2-man pearl at the hut every `VIL_TRIBUTE_T` (720)
+  ticks. A hut that burns to rubble scatters its savings (4–8 man over the
+  `dropPearls` split, `m` on the `hutDown` event); dissolve stays cold
+  (#1668: a drowned hut is spliced from the world and pays nothing). Death
+  drops the prisoner where the carpet fell (back to the lane, panicked).
+  `stateHash` carries the grip and the ally flags; rng only through the
+  shared stream; the autopilot needs no new rule (a grabbed prisoner rides
+  along and converts on the next bank — the 60-seed sweep re-ran green).
+  Interpretation note (#1680 discipline): the original's exact convert/burn
+  rewards are unverifiable here — the issue's spec line is what ships.
+  carpetcheck proves the whole economy Node-side (band grab / high-flight
+  never / grip full / convert / tribute-on-the-clock / burn-loot /
+  dissolve-cold / death-release / hash grip+pennant / replay pair + mutation
+  guide) and the live browser world grabs and converts through the
+  `villageEconomy` hook (state-based, degraded-box safe).
+  Still open: none — the loop is complete (items 1, 2 and 3 of the pass are
+  shipped; 4–7 remain on the issue).
 - No anaglyph/stereo mode. **Partially closed by #1746 item 7:** rival-cast
   cues now pan to the caster's side (see the #1746 section) — the world bed,
   creatures and lightning are still center, and there is no true HRTF.
