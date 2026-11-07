@@ -647,7 +647,14 @@ const TenDeepGame = () => {
                 else if (e.type === 'townNo') audioController.playTone(90, 0.05, 'square', 0.04)
                 // #1751: footsteps are barely-there (a boot on cobbles, not a
                 // drumline); the hedge/well refusal gets a duller knock.
-                else if (e.type === 'walk') audioController.playTone(120 + (e.x * 7) % 40, 0.025, 'triangle', 0.025)
+                else if (e.type === 'walk') {
+                    // #1756: the file follows the tiles the SIM reported stepping
+                    // on — recorded at event time, so harness commands that move
+                    // the point faster than a paint frame still lay the track.
+                    walkHist.unshift({ x: e.x, y: e.y })
+                    if (walkHist.length > 40) walkHist.length = 40
+                    audioController.playTone(120 + (e.x * 7) % 40, 0.025, 'triangle', 0.025)
+                }
                 else if (e.type === 'walkBlocked') audioController.playTone(74, 0.045, 'triangle', 0.045)
                 else if (e.type === 'noBreathers') { audioController.playTone(70, 0.14, 'sawtooth', 0.06); say('NO BREATHING HERO WALKS YOU DOWN') }
             }
@@ -1225,7 +1232,7 @@ const TenDeepGame = () => {
                     const prev = cut
                     cut = { kind, f: f - 1 }
                     paint()
-                    const moon = ctx.getImageData(212, 26, 1, 1).data
+                    const moon = ctx.getImageData(205, 26, 1, 1).data   // the lit crescent, clear of the dark bite
                     const floor = ctx.getImageData(128, 166, 1, 1).data
                     cut = prev
                     paint()
