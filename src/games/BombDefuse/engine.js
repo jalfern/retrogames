@@ -1,0 +1,357 @@
+// BOMB DEFUSE — deterministic simultaneous two-hand defusal (#1800, PLAICRAFT #1711 fifth title).
+//
+// Pure module: Node + browser, no DOM, no React. All randomness comes from the
+// seed (mulberry32). Seed + per-seat pad streams ⇒ identical hashes (#494).
+//
+// THE DIFFERENCE FROM TALK ME DOWN (#1252): TMD splits INFORMATION (defuser
+// sees the bomb, manual owns the rules, verbs resolve sequentially). BOMB
+// DEFUSE splits EFFORT: nothing one seat does counts. Every step needs both
+// seats inside ONE sync window — the Cold-War two-key trope (Wargames 1983)
+// as a whole game. Timings, not reading, are the pressure.
+//
+// STEPS (one per window, 3/4/5 per bomb):
+//   SYNC — both seats TURN their key (A) inside the window; a lone key holds
+//          the window open only until it expires (SLOW KEY strike, retry).
+//   CUT  — a target color lights on the bomb plate; each seat cycles its own
+//          cutter arm (up/down through RED/BLUE/GREEN/YELLOW) and snips (A).
+//          Both blades must be on the right color and inside the window;
+//          wrong color = strike, stale window = strike.
+//   VENT — one seat (the holder, seeded per step) pins the stabilizer bar (B)
+//          while the other seats the swinging pressure needle (A) inside the
+//          green zone. Seat while unvented = SURGE (extra fuse damage); an
+//          unvented VENT step burns the fuse double every tick it waits.
+//
+// FUSE LEDGER: strikes eat time (−4 s), surges more (−6 s); zero fuse = boom.
+// Three bombs (60/50/40 s, windows 1.25/1.00/0.80 s) cleared = won.
+//
+// HASHED STATE IS INTEGER-ONLY (needle rides a 360-entry integer sine table,
+// never a hashed float) — the #1793 divergence lesson applied before the fact.
+//
+// SEATS: players=1 is solo — seat 2's partner pads are emitted INSIDE step()
+// from fixed cadences (rng-free at tick time, so recorded streams replay
+// identically). An empty seat-2 pad means "nobody home" → partner covers; any
+// true field hands the seat to the human. solvePads() (attract, harness,
+// evidence synthesis) drives BOTH seats cleanly with load-step jitter.
+
+export const COLORS = ['RED', 'BLUE', 'GREEN', 'YELLOW']
+export const SYNC = 0
+export const CUT = 1
+export const VENT = 2
+export const KIND_NAME = ['SYNC', 'CUT', 'VENT']
+
+export const BOMBS = 3
+export const FUSE0 = [3600, 3000, 2400]   // frames per bomb
+export const WINDOW = [75, 60, 48]        // sync window, frames
+export const STEPS_PER_BOMB = [3, 4, 5]
+export const ZONE_HALF = [190, 140, 100]  // green-zone half width (needle units)
+export const NEEDLE_SPD = [2, 3, 4]      // degrees per tick
+export const STRIKE_COST = 240           // −4 s per strike
+export const SURGE_COST = 360          // −6 s per vent surge
+export const INTRO = 45                // ticks of "read the step" grace per step
+
+// Integer sine table (quantized once at module load — bit-stable across node
+// and browser, so the needle can ride the hash without ulp drift).
+const SIN = Array.from({ length: 360 }, (_, d) => Math.round(Math.sin((d * Math.PI) / 180) * 1000))
+
+const mulberry32 = (a) => {
+    let x = a >>> 0
+    return () => {
+        x = (x + 0x6d2b79f5) >>> 0
+        let t = x
+        t = Math.imul(t ^ (t >>> 15), t | 1)
+        t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+    }
+}
+
+const clampZone = (z) => Math.max(-700, Math.min(700, z))
+
+export function createGame(seed, players = 1) {
+    const s = (seed >>> 0) || 1
+    const rng = mulberry32(s ^ 0xB0BB1E5)
+    const bombs = []
+    for (let b = 0; b < BOMBS; b++) {
+        const steps = []
+        let prev = -1
+        for (let k = 0; k < STEPS_PER_BOMB[b]; k++) {
+            // The very first step teaches SYNC; otherwise seeded, never twice
+            // the same kind in a row (a run always asks both verbs).
+            let kind = b === 0 && k === 0 ? SYNC : Math.floor(rng() * 3)
+            if (kind === prev) kind = (kind + 1 + Math.floor(rng() * 2)) % 3
+            prev = kind
+            steps.push({
+                kind,
+                color: Math.floor(rng() * COLORS.length),
+                holder: (b * 7 + k) % 2,
+            })
+        }
+        bombs.push({ fuse0: FUSE0[b], steps })
+    }
+    const gs = {
+        seed: s,
+        bombs,
+        players: players > 1 ? 2 : 1,
+        rng,
+        tick: 0,
+        bomb: 0,
+        step: 0,
+        fuse: FUSE0[0],
+        score: 0,
+        strikes: 0,
+        done: false,
+        won: false,
+        events: [],
+        // per-step live fields (loadStep owns them):
+        intro: 0,
+        stepT: 0,
+        keys: [false, false],
+        keyT: 0,
+        sel: [0, 0],
+        armed: [false, false],
+        armedT: 0,
+        needleT: 0,
+        phase: 0,
+        zone: 0,
+        held: false,
+        brain: { syncLead: 10, follow: 6 },
+    }
+    loadStep(gs)
+    return gs
+}
+
+export const curStep = (gs) => gs.bombs[gs.bomb].steps[gs.step]
+export const curWindow = (gs) => WINDOW[gs.bomb]
+export const needleOf = (gs) => SIN[(gs.needleT + gs.phase) % 360]
+
+// Arm a fresh step: all latches cleared, needle/zone re-seeded. Every rng
+// draw a step ever needs happens HERE — tick-time logic is rng-free, which is
+// what lets recorded pad streams replay identically.
+function loadStep(gs) {
+    const st = curStep(gs)
+    gs.intro = INTRO
+    gs.stepT = 0
+    gs.keys = [false, false]
+    gs.keyT = 0
+    gs.sel = [0, 0]
+    gs.armed = [false, false]
+    gs.armedT = 0
+    gs.held = false
+    gs.phase = Math.floor(gs.rng() * 360)
+    gs.zone = clampZone(Math.floor(gs.rng() * 1401) - 700)
+    gs.brain.syncLead = 8 + Math.floor(gs.rng() * Math.max(8, curWindow(gs) - 24))
+    gs.brain.follow = 5 + Math.floor(gs.rng() * 8)
+    if (st.kind === VENT) gs.events.push({ k: 'vent', holder: st.holder })
+}
+
+function strike(gs, why) {
+    gs.strikes++
+    gs.fuse -= STRIKE_COST
+    gs.events.push({ k: 'strike', why })
+}
+
+function advance(gs) {
+    gs.score += 50
+    gs.step++
+    if (gs.step >= gs.bombs[gs.bomb].steps.length) {
+        gs.score += 500 + Math.floor(gs.fuse / 60) * 5
+        gs.events.push({ k: 'defused', bomb: gs.bomb + 1 })
+        gs.bomb++
+        gs.step = 0
+        if (gs.bomb >= BOMBS) {
+            gs.done = true
+            gs.won = true
+            gs.events.push({ k: 'win' })
+            return
+        }
+        gs.fuse = gs.bombs[gs.bomb].fuse0
+    }
+    loadStep(gs)
+}
+
+// Seat-2 partner for solo play: fixed cadences (rng-free), honest pads.
+// Leads when nobody has moved, follows as soon as the human arms anything.
+function partnerPad(gs) {
+    if (gs.done || gs.intro > 0) return {}
+    const st = curStep(gs)
+    if (st.kind === SYNC) {
+        if (gs.keys[1] || gs.keys[0]) return {}
+        return gs.stepT >= 20 && (gs.stepT === 20 || gs.stepT % 24 === 0) ? { a: true } : {}
+    }
+    if (st.kind === CUT) {
+        const d = (st.color - gs.sel[1] + COLORS.length) % COLORS.length
+        if (d !== 0) return gs.stepT % 4 === 0 ? { [d <= 2 ? 'up' : 'down']: true } : {}
+        if (!gs.armed[1] && (gs.armed[0] || gs.stepT >= 90)) return { a: true }
+        return {}
+    }
+    // VENT
+    if (st.holder === 1) return { b: true }
+    return Math.abs(needleOf(gs) - gs.zone) <= ZONE_HALF[gs.bomb] * 0.55 ? { a: true } : {}
+}
+
+// Both-seat solver: attract autopilot, evidence synthesis, the win gate.
+// Zero strikes by construction: lead/follow offsets are loaded at step birth
+// and every action is verified against the live integer state first.
+export function solvePads(gs) {
+    const pads = [{}, {}]
+    if (gs.done || gs.intro > 0) return pads
+    const st = curStep(gs)
+    const w = curWindow(gs)
+    if (st.kind === SYNC) {
+        if (!gs.keys[0] && gs.stepT === gs.brain.syncLead) pads[0].a = true
+        if (!gs.keys[1] && gs.keys[0] && gs.stepT >= gs.brain.syncLead + gs.brain.follow) pads[1].a = true
+        // belt-and-braces re-lead if a window somehow closed (should never fire)
+        if (!gs.keys[0] && gs.stepT > gs.brain.syncLead + w + 20 && (gs.stepT - gs.brain.syncLead) % (w + 40) === 0) pads[0].a = true
+        return pads
+    }
+    if (st.kind === CUT) {
+        // seat 0 leads: cycle onto the target, snip once it is right;
+        // seat 1 follows: same walk, fires once the lead blade is armed.
+        for (let i = 0; i < 2; i++) {
+            const d = (st.color - gs.sel[i] + COLORS.length) % COLORS.length
+            if (d !== 0) { if (gs.stepT % 4 === i) pads[i][d <= 2 ? 'up' : 'down'] = true; continue }
+            if (gs.armed[i]) continue
+            if (i === 0) { if (gs.stepT >= gs.brain.syncLead) pads[0].a = true }
+            else if (gs.armed[0] && gs.stepT % 4 === 1) pads[1].a = true
+        }
+        return pads
+    }
+    // VENT — holder pins, worker seats on target
+    const holder = st.holder
+    const worker = 1 - holder
+    pads[holder].b = true
+    if (Math.abs(needleOf(gs) - gs.zone) <= ZONE_HALF[gs.bomb] * 0.55) pads[worker].a = true
+    return pads
+}
+
+const norm = (p) => ({
+    up: !!p.up, down: !!p.down, left: !!p.left, right: !!p.right,
+    a: !!p.a, b: !!p.b,
+})
+
+// One simulation tick. pads = [pad1, pad2?] — seat order per #494. A seat with
+// an all-false pad while players=1 is covered by the internal partner.
+export function step(gs, pads) {
+    if (!gs || gs.done) return
+    gs.tick++
+    const raw1 = pads && pads[0] ? pads[0] : {}
+    let p2 = pads && pads[1] ? pads[1] : {}
+    if (gs.players === 1 && !p2.a && !p2.b && !p2.up && !p2.down && !p2.left && !p2.right) p2 = partnerPad(gs)
+    const pad = [norm(raw1), norm(p2)]
+
+    const st = curStep(gs)
+    const win = curWindow(gs)
+    // hash-visible: is THE holder of the live step pinning the bar?
+    gs.held = st.kind === VENT ? !!pad[st.holder].b : false
+
+    // fuse: baseline drain, double while a VENT step waits unvented
+    gs.fuse--
+    if (st.kind === VENT && gs.intro <= 0 && !pad[st.holder].b) gs.fuse--
+
+    if (gs.fuse <= 0) {
+        gs.fuse = 0
+        gs.done = true
+        gs.won = false
+        gs.events.push({ k: 'boom' })
+        return
+    }
+
+    if (gs.intro > 0) { gs.intro--; return }
+    gs.stepT++
+    if (st.kind === VENT) gs.needleT += NEEDLE_SPD[gs.bomb]
+
+    if (st.kind === SYNC) {
+        for (let i = 0; i < 2; i++) {
+            if (pad[i].a && !gs.keys[i]) { gs.keys[i] = true; gs.events.push({ k: 'key', seat: i }) }
+        }
+        if (gs.keys[0] && gs.keys[1]) { gs.events.push({ k: 'click' }); advance(gs); return }
+        if (gs.keys[0] !== gs.keys[1]) {
+            gs.keyT++
+            if (gs.keyT > win) {
+                strike(gs, 'SLOW KEY')
+                gs.keys = [false, false]
+                gs.keyT = 0
+            }
+        } else gs.keyT = 0
+        return
+    }
+
+    if (st.kind === CUT) {
+        for (let i = 0; i < 2; i++) {
+            if (pad[i].up) gs.sel[i] = (gs.sel[i] + 1) % COLORS.length
+            else if (pad[i].down) gs.sel[i] = (gs.sel[i] + COLORS.length - 1) % COLORS.length
+            if (pad[i].a) {
+                if (gs.sel[i] === st.color) {
+                    if (!gs.armed[i]) gs.events.push({ k: 'snip', seat: i })
+                    gs.armed[i] = true
+                } else {
+                    strike(gs, 'WRONG WIRE')
+                    gs.armed = [false, false]
+                    gs.armedT = 0
+                    return
+                }
+            }
+        }
+        if (gs.armed[0] && gs.armed[1]) { gs.events.push({ k: 'cut' }); advance(gs); return }
+        if (gs.armed[0] !== gs.armed[1]) {
+            gs.armedT++
+            if (gs.armedT > win) {
+                strike(gs, 'WINDOW CLOSED')
+                gs.armed = [false, false]
+                gs.armedT = 0
+            }
+        } else gs.armedT = 0
+        return
+    }
+
+    // VENT
+    const worker = 1 - st.holder
+    if (pad[worker].a) {
+        if (Math.abs(needleOf(gs) - gs.zone) <= ZONE_HALF[gs.bomb]) {
+            if (pad[st.holder].b) { gs.events.push({ k: 'sealed' }); advance(gs); return }
+            gs.fuse -= SURGE_COST
+            gs.events.push({ k: 'surge' })
+            if (gs.fuse <= 0) {
+                gs.fuse = 0
+                gs.done = true
+                gs.won = false
+                gs.events.push({ k: 'boom' })
+            }
+        } else {
+            strike(gs, 'OFF TARGET')
+            gs.zone = clampZone(Math.floor(gs.rng() * 1401) - 700)
+        }
+    }
+}
+
+// ---- state + hash ------------------------------------------------------------
+// Hashed fields are integers and booleans only (no floats) — see header note.
+
+export function simState(gs) {
+    return {
+        tick: gs.tick,
+        score: gs.score,
+        done: gs.done,
+        won: gs.won,
+        seed: gs.seed,
+        hash: hash(gs),
+        bomb: gs.bomb,
+        step: gs.step,
+        fuse: gs.fuse,
+    }
+}
+
+export function hash(gs) {
+    const L = []
+    for (const b of gs.bombs) L.push(b.fuse0, ...b.steps.flatMap((s) => [s.kind, s.color, s.holder]))
+    const s = [
+        gs.seed, gs.tick, gs.bomb, gs.step, gs.fuse, gs.score, gs.strikes,
+        gs.done ? 1 : 0, gs.won ? 1 : 0, gs.intro, gs.stepT, gs.keyT, gs.armedT,
+        gs.keys[0] ? 1 : 0, gs.keys[1] ? 1 : 0, gs.armed[0] ? 1 : 0, gs.armed[1] ? 1 : 0,
+        gs.sel[0], gs.sel[1], gs.held ? 1 : 0,
+        gs.phase, gs.needleT, gs.zone, gs.brain.syncLead, gs.brain.follow,
+        L.join(','),
+    ].join('|')
+    let h = 0x811c9dc5
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193) }
+    return h >>> 0
+}
