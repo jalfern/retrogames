@@ -816,12 +816,15 @@ export const GAMES = [
     }    ,
     {
         path: '/rogue',
+        // #1833: the fixed footer mark floated mid-screen over the short map
+        // (80x22 at 19px/row never reaches the bottom band) — opt out per #1221.
+        footer: 'none',
         builtBy: 'claude',
         added: '2026-03-15',
         component: RogueGame,
         label: 'ROGUE',
         theme: 'dark',
-        description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and find the Amulet of Yendor. Permadeath — every run is unique.',
+        description: 'The original dungeon crawler. Descend through procedurally generated dungeons, battle monsters, collect treasure, and go as deep as you dare. Permadeath — every run is unique.',
         controls: ['Arrow Keys / hjkl: Move', ',: Pick up', 'i: Inventory', 'q: Quaff potion', 'r: Read scroll', '>: Descend stairs', '?: Help']
     }
     ,

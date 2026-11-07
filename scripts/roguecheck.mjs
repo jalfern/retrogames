@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import {
   MAP_W, MAP_H, createInitialState, stepGame, hash, done, runScore,
-  buildGrid, monsterAttack, rng, setSeed, generateDungeon,
+  buildGrid, monsterAttack, rng, setSeed, generateDungeon, isWall, blocksMove,
 } from '../src/games/Rogue/sim.js'
 
 let pass = 0, fail = 0
@@ -68,7 +68,8 @@ console.log('determinism')
 // ── 3. dungeon validity: rooms connect, stairs reachable ─────────────────────
 console.log('dungeon structure (BFS)')
 {
-    const walkable = (t) => t !== ' '
+    // #1833 rules: rock and '-'/'|' walls block; doors cross (the bump opens).
+    const walkable = (t) => !blocksMove(t)
     const bfsReachesStairs = (st) => {
         const seen = new Set([`${st.player.x},${st.player.y}`])
         const q = [[st.player.x, st.player.y]]
@@ -102,6 +103,87 @@ console.log('dungeon structure (BFS)')
     ok('40 seeds: monsters and items only on walkable tiles', occOk)
     ok('golden fixture seed 12345: 8 rooms, hash stable across constructions',
         createInitialState(12345).rooms.length === 8 && hash(createInitialState(12345)) === hash(createInitialState(12345)) && hash(createInitialState(12345)) !== hash(createInitialState(12346)))
+}
+
+// ── 3b. walls are solid (#1833) — the 1980 glyph grammar ────────────────────
+console.log('walls solid + glyph grammar (#1833)')
+{
+    // (a) Room walls draw with the original's '-'/'|' strokes, never the
+    // corridor '#'; any '#' on a room perimeter is a pierced doorway and must
+    // touch walkable ground. And hero bumps into walls: never a step, never a
+    // stumble, never a door.
+    const FLOORY = new Set(['.', '#', "'"])
+    let glyphsOk = true, bumpOk = true, bumpSamples = 0
+    for (let seed = 1; seed <= 40; seed++) {
+        const s = createInitialState(seed)
+        for (const r of s.rooms) {
+            for (let rx = r.x; rx < r.x + r.w; rx++) {
+                for (const ry of [r.y, r.y + r.h - 1]) {
+                    const c = s.map[ry][rx]
+                    if (isWall(c) || c === '+' || c === "'") continue
+                    if (c === '#') {
+                        const touch = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                          .some(([dx, dy]) => FLOORY.has(s.map[ry + dy]?.[rx + dx]) || s.map[ry + dy]?.[rx + dx] === '+')
+                        if (!touch) glyphsOk = false
+                        continue
+                    }
+                    glyphsOk = false // '.' (or worse) where a wall must be
+                }
+            }
+            for (let ry = r.y + 1; ry < r.y + r.h - 1; ry++) {
+                for (const rx of [r.x, r.x + r.w - 1]) {
+                    const c = s.map[ry][rx]
+                    if (isWall(c) || c === '+' || c === "'") continue
+                    if (c === '#') {
+                        const touch = [[1, 0], [-1, 0], [0, 1], [0, -1]]
+                          .some(([dx, dy]) => FLOORY.has(s.map[ry + dy]?.[rx + dx]) || s.map[ry + dy]?.[rx + dx] === '+')
+                        if (!touch) glyphsOk = false
+                        continue
+                    }
+                    glyphsOk = false
+                }
+            }
+        }
+        // bump test: hero stood next to a wall cell, stepping into it does nothing
+        outer:
+        for (let y = 1; y < MAP_H - 1; y++) {
+            for (let x = 1; x < MAP_W - 1; x++) {
+                if (!isWall(s.map[y][x])) continue
+                for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+                    if (!FLOORY.has(s.map[y - dy]?.[x - dx])) continue
+                    let w = { ...s, player: { ...s.player, x: x - dx, y: y - dy }, monsters: [] }
+                    const t = stepGame(w, { type: 'MOVE', dx, dy })
+                    if (t.player.x !== w.player.x || t.player.y !== w.player.y
+                        || /door/i.test(t.messages[t.messages.length - 1])) bumpOk = false
+                    bumpSamples++
+                    break outer
+                }
+            }
+        }
+    }
+    ok('40 seeds: room perimeters are -/| strokes (or a pierced doorway touching ground), never walkable stone as wall', glyphsOk)
+    ok('40 seeds: bumping a wall neither moves the hero nor fakes a door', bumpOk, `${bumpSamples} samples`)
+    ok('40 seeds: every seed found a wall to bump (the probe itself works)', bumpSamples === 40)
+
+    // (b) visible grammar: walls draw lighter than the corridors they wrap
+    const g1 = buildGrid(createInitialState(12345))
+    let wallLit = false
+    for (const row of g1) for (const cell of row) if (cell.char === '-' && cell.color === '#999') wallLit = true
+    ok('lit walls draw as bright - strokes (distinct from # corridors)', wallLit)
+
+    // (c) the newcomer's questions answered on screen: legend + goal
+    const idxSrc = readFileSync(fileURLToPath(new URL('../src/games/Rogue/index.jsx', import.meta.url)), 'utf8')
+    ok('help legend separates wall from corridor (no "Wall or corridor")',
+        /Wall — SOLID/.test(idxSrc) && /Corridor/.test(idxSrc) && !/Wall or corridor/.test(idxSrc))
+    ok('welcome states the goal (stairs %, descend)',
+        createInitialState(7).messages.some(m => /stairs \(%\)/.test(m) && /descend/i.test(m)))
+    const gsrc = readFileSync(fileURLToPath(new URL('../src/config/games.js', import.meta.url)), 'utf8')
+    const at = gsrc.indexOf("path: '/rogue'")
+    const entry = gsrc.slice(at, gsrc.indexOf("path: '", at + 10))
+    ok('registry: /rogue opts the footer mark out (map never reaches the bottom band)',
+        /footer: 'none'/.test(entry))
+    ok('registry: honest goal — no Amulet of Yendor in a game without one',
+        !/Amulet/i.test(entry))
 }
 
 // ── 4. core rules ────────────────────────────────────────────────────────────
@@ -240,7 +322,7 @@ console.log('doors (1980: closed blocks, bump opens, hidden found by search or s
     const opened = stepGame(s, { type: 'MOVE', dx: dir[0], dy: dir[1] })
     ok('a closed door blocks the step; the bump opens it (1 turn, no move)',
         opened.player.x === s.player.x && opened.player.y === s.player.y && opened.turn === t0 + 1)
-    ok('the opened door restores corridor stone (#, not floor .)', opened.map[ny][nx] === '#')
+    ok('the opened door leaves the walkable jamb glyph (\', not stone #, not floor .)', opened.map[ny][nx] === "'")
     ok('the next step walks straight through the opened door',
         stepGame(opened, { type: 'MOVE', dx: dir[0], dy: dir[1] }).player.x === nx)
     ok('opening a door fires the door-open fx (audibility gate)', opened.fx.some(f => f.k === 'door-open'))
@@ -277,7 +359,7 @@ console.log('doors (1980: closed blocks, bump opens, hidden found by search or s
     const h = hd.hiddenDoors.find(d => d.x > r0.x && d.x < r0.x + r0.w - 1 && (d.y === r0.y || d.y === r0.y + r0.h - 1))
     ok('the golden seed hides a door on the start room wall', Boolean(h))
     const gridHidden = buildGrid(hd)
-    ok('an unfound hidden door draws as wall, not a door', gridHidden[h.y][h.x].char === '#')
+    ok('an unfound hidden door draws as wall (-), not a door', gridHidden[h.y][h.x].char === '-')
     const under = { x: h.x, y: h.y === r0.y ? h.y + 1 : h.y - 1 }
     let f = { ...hd, player: { ...hd.player, x: under.x, y: under.y }, monsters: [] }
     const searched = stepGame(f, { type: 'SEARCH' })
@@ -288,7 +370,7 @@ console.log('doors (1980: closed blocks, bump opens, hidden found by search or s
     ok('finding the door fires the door-found fx (audibility gate)', searched.fx.some(e => e.k === 'door-found'))
     const stumbled = stepGame(f, { type: 'MOVE', dx: h.x - under.x, dy: h.y - under.y })
     ok('walking into a hidden door opens it under the hero',
-        stumbled.player.x === h.x && stumbled.player.y === h.y && stumbled.map[h.y][h.x] === '#'
+        stumbled.player.x === h.x && stumbled.player.y === h.y && stumbled.map[h.y][h.x] === "'"
         && !stumbled.hiddenDoors.some(d => d.x === h.x && d.y === h.y))
 }
 
@@ -334,7 +416,7 @@ console.log('winnability (BFS autopilot, 20 seeds)')
             for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
                 if (!dx && !dy) continue
                 const nx = x + dx, ny = y + dy
-                if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H || s.map[ny][nx] === ' ') continue
+                if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H || blocksMove(s.map[ny][nx])) continue
                 const k = `${nx},${ny}`
                 if (prev.has(k)) continue
                 prev.set(k, `${x},${y}`); q.push([nx, ny])
@@ -348,6 +430,14 @@ console.log('winnability (BFS autopilot, 20 seeds)')
         for (let lvl = 0; lvl < 3 && !done(s); lvl++) {
             let guard = 0
             while (s.map[s.player.y][s.player.x] !== '%' && !done(s) && guard++ < 400) {
+                // #1833: walls are real now — the runner can no longer sidestep
+                // a chaser through stone. Fight what's adjacent before walking.
+                const foe = s.monsters.find(m => Math.abs(m.x - s.player.x) <= 1 && Math.abs(m.y - s.player.y) <= 1 &&
+                    (m.x !== s.player.x || m.y !== s.player.y))
+                if (foe) {
+                    s = stepGame(s, { type: 'MOVE', dx: Math.sign(foe.x - s.player.x), dy: Math.sign(foe.y - s.player.y) })
+                    continue
+                }
                 const path = bfsPath(s)
                 if (!path) break
                 const step0 = path[0]

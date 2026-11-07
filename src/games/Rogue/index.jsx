@@ -309,6 +309,9 @@ export default function RogueGame() {
     userSelect: 'none',
     outline: 'none',
     boxSizing: 'border-box',
+    // #1833: the fixed ARCADE/PAUSE chrome sat right on the message line —
+    // give every screen a band clear of it (buttons top out ~40px + safe area).
+    paddingTop: 'calc(2.75rem + var(--sat, 0px))',
   }
 
   // ── GAME OVER ──────────────────────────────────────────────
@@ -413,12 +416,16 @@ export default function RogueGame() {
       ['s', 'Search for hidden doors'],
       ['?', 'This help screen'],
       ['Q', 'Quit the game'],
+      ['GOAL', 'Descend as deep as you dare — gold multiplies with depth'],
     ]
     const syms = [
       ['@', COLORS['@'], 'You, the adventurer'],
-      ['#', '#666', 'Wall or corridor'],
+      ['-', COLORS['-'], 'Wall — SOLID, you cannot walk through it'],
+      ['|', COLORS['|'], 'Wall (vertical stroke)'],
+      ['#', COLORS['#'], 'Corridor'],
       ['.', '#3a5a3a', 'Floor'],
-      ['+', COLORS['+'], 'Door'],
+      ['+', COLORS['+'], 'Door (bump to open)'],
+      ["'", COLORS["'"], 'Open doorway'],
       ['%', COLORS['%'], 'Stairs down'],
       ['*', COLORS['*'], 'Gold'],
       ['!', COLORS['!'], 'Potion'],

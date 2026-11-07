@@ -18,9 +18,20 @@
 export const MAP_W = 80
 export const MAP_H = 22
 
+// #1833 glyph grammar (the 1980 legend): room walls are '-' (runs E-W) and
+// '|' (runs N-S) and they BLOCK. Corridors are '#', room floor is '.', an
+// open door leaves a jamb "'", a closed door '+', stairs '%', and ' ' is the
+// solid rock everything sits in. MOVE and monster pathing both ask blocksMove
+// — anything that moves must ask (AGENTS gotcha), walls block, always.
+export const isWall = (c) => c === '-' || c === '|'
+export const blocksMove = (c) => c === ' ' || isWall(c)
+
 export const COLORS = {
   '@': '#ffff55',
   '#': '#666666',
+  '-': '#999999',
+  '|': '#999999',
+  "'": '#aa7744',
   '.': '#3a4a3a',
   '+': '#cc8833',
   '%': '#00dddd',
@@ -158,7 +169,11 @@ export function generateDungeon(dungeonLevel) {
 
     for (let ry = y; ry < y + h; ry++) {
       for (let rx = x; rx < x + w; rx++) {
-        map[ry][rx] = (ry === y || ry === y + h - 1 || rx === x || rx === x + w - 1) ? '#' : '.'
+        // #1833: walls are the original's '-'/'|' — solid, and drawn unlike
+        // the '#'-corridor they wrap. Corners take the vertical stroke.
+        const edgeH = ry === y || ry === y + h - 1
+        const edgeV = rx === x || rx === x + w - 1
+        map[ry][rx] = edgeV ? '|' : edgeH ? '-' : '.'
       }
     }
     rooms.push({ x, y, w, h })
@@ -193,25 +208,25 @@ export function generateDungeon(dungeonLevel) {
   map[stairsY][stairsX] = '%'
 
   // Doors (#1502): one per corridor segment, at the segment midpoint, only on
-  // stone ('#') — the doorway cells where a corridor crosses a room wall, plus
-  // mid-corridor stone in the gaps. A pure function of the dug layout (no new
-  // rolls), so the entropy stream and every existing seed's layout are
-  // untouched — doors simply appear on the same dungeon. In the 1980 original
-  // a closed door blocks and is opened by bumping; here corridors are walkable
-  // stone, so a door cell is the only obstacle on them.
+  // solid rock or wall — the doorway cells where a corridor crosses a room
+  // wall, plus mid-corridor stone in the gaps. A pure function of the dug
+  // layout (no new rolls), so the entropy stream and every existing seed's
+  // layout are untouched — doors simply appear on the same dungeon. Since
+  // #1833 walls block, so the door cell is a real gate on the route; the
+  // 1980 rules apply: a closed door blocks and is opened by bumping.
   const doors = []
+  const solidAt = (x, y) => map[y][x] === '#' || isWall(map[y][x])
   const placeDoor = (x, y) => {
     if (x < 0 || x >= MAP_W || y < 0 || y >= MAP_H) return
-    if (map[y][x] !== '#') return
+    if (!solidAt(x, y)) return
     if (doors.some(d => d.x === x && d.y === y)) return
     map[y][x] = '+'
     doors.push({ x, y })
   }
   for (const seg of segments) {
-    // Walk the segment, find the contiguous stone ('#') run — the corridor
-    // gap between the two rooms — and door its middle. (Corridors only dig
-    // through ' ', so the stone run is exactly the between-rooms gap; room
-    // floor stays '.' and is never doored.)
+    // Walk the segment, find the contiguous solid run (dug '#', wall '-'/'|')
+    // — the corridor gap between the two rooms — and door its middle. Room
+    // floor stays '.' and breaks the run, so it is never doored.
     const cells = []
     if ('x1' in seg) {
       const step = seg.x1 <= seg.x2 ? 1 : -1
@@ -226,7 +241,7 @@ export function generateDungeon(dungeonLevel) {
       run = []
     }
     for (const [x, y] of cells) {
-      if (map[y][x] === '#') run.push([x, y])
+      if (solidAt(x, y)) run.push([x, y])
       else flush()
     }
     flush()
@@ -250,7 +265,7 @@ export function generateDungeon(dungeonLevel) {
     ]
     for (const [hx, hy] of spots) {
       if (hx < 0 || hx >= MAP_W || hy < 0 || hy >= MAP_H) continue
-      if (map[hy][hx] !== '#') continue
+      if (!isWall(map[hy][hx])) continue
       if (doors.some(d => d.x === hx && d.y === hy)) continue
       if (onPath(hx, hy)) continue
       map[hy][hx] = '+'
@@ -326,14 +341,17 @@ export function generateDungeon(dungeonLevel) {
 export function digH(map, x1, x2, y) {
   const step = x1 <= x2 ? 1 : -1
   for (let x = x1; x !== x2 + step; x += step) {
-    if (map[y] && map[y][x] === ' ') map[y][x] = '#'
+    // #1833: a corridor PIERCES walls it crosses ('-'/|' -> '#'), because
+    // walls now genuinely block — the old game only reached rooms because
+    // its walls were walkable stone.
+    if (map[y] && (map[y][x] === ' ' || isWall(map[y][x]))) map[y][x] = '#'
   }
 }
 
 export function digV(map, y1, y2, x) {
   const step = y1 <= y2 ? 1 : -1
   for (let y = y1; y !== y2 + step; y += step) {
-    if (map[y] && map[y][x] === ' ') map[y][x] = '#'
+    if (map[y] && (map[y][x] === ' ' || isWall(map[y][x]))) map[y][x] = '#'
   }
 }
 
@@ -422,7 +440,8 @@ export function createInitialState(seed) {
       inventory: [],
       confused: 0, blind: 0, haste: 0, sleeping: 0,
     },
-    messages: ['Welcome to the Dungeons of Doom!  Press ? for help.'],
+    messages: ['Welcome to the Dungeons of Doom!  Press ? for help.',
+      'Goal: find the stairs (%) and descend — the deeper you go, the richer you die.'],
     potionColorMap,
     scrollTitleMap,
     identifiedPotions: {},
@@ -516,19 +535,23 @@ export function buildGrid(state) {
             // #1502: an unfound hidden door draws as wall — it is found,
             // not seen.
             char = map[y][x]
-            if (char === '+' && doorIsHidden(state, x, y)) char = '#'
+            if (char === '+' && doorIsHidden(state, x, y)) char = '-'
             if (char === '.') color = '#3a5a3a'
             else if (char === '#') color = '#666'
+            else if (isWall(char)) color = '#999'
             else if (char === '+') color = '#cc8833'
+            else if (char === "'") color = '#aa7744'
             else if (char === '%') color = '#00dddd'
             else color = '#555'
           }
         } else if (isExp) {
           char = map[y][x]
-          if (char === '+' && doorIsHidden(state, x, y)) char = '#'
+          if (char === '+' && doorIsHidden(state, x, y)) char = '-'
           if (char === '.') color = '#223322'
           else if (char === '#') color = '#444'
+          else if (isWall(char)) color = '#555'
           else if (char === '+') color = '#664400'
+          else if (char === "'") color = '#554022'
           else if (char === '%') color = '#006666'
           else color = '#333'
         }
@@ -684,7 +707,7 @@ export function advanceMonsters(state, skipId = -1) {
           const nx = m.x + mx, ny = m.y + my
           if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) continue
           const tile = map[ny][nx]
-          if (tile === ' ') continue
+          if (blocksMove(tile)) continue
           // closed VISIBLE doors block monsters; hidden doors are known to
           // the creatures (1980 rule) and pass
           if (tile === '+' && !doorIsHidden(s, nx, ny)) continue
@@ -711,7 +734,7 @@ export function advanceMonsters(state, skipId = -1) {
       if (rng(0, 2) === 0) {
         const dx = rng(-1, 1), dy = rng(-1, 1)
         const nx = m.x + dx, ny = m.y + dy
-        if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && map[ny][nx] !== ' '
+        if (nx >= 0 && nx < MAP_W && ny >= 0 && ny < MAP_H && !blocksMove(map[ny][nx])
             && !(map[ny][nx] === '+' && !doorIsHidden(s, nx, ny))) {
           if (!newMonsters.some((other, ii) => ii !== i && other.x === nx && other.y === ny)) {
             if (!(nx === player.x && ny === player.y)) {
@@ -957,7 +980,7 @@ export function handleSearch(state) {
     for (const d of found) {
       if (s.monsters.some(m => m.x === d.x && m.y === d.y)) {
         if (map === s.map) map = s.map.map(r => [...r])
-        map[d.y][d.x] = '#'
+        map[d.y][d.x] = "'"
       }
     }
     s = addMsg({ ...s, map, hiddenDoors: s.hiddenDoors.filter(d => !near(d)) }, 'You found a hidden door!')
@@ -1001,7 +1024,9 @@ export function reducer(state, action) {
       const nx = player.x + action.dx
       const ny = player.y + action.dy
       if (nx < 0 || nx >= MAP_W || ny < 0 || ny >= MAP_H) return state
-      if (map[ny][nx] === ' ') return state
+      // #1833, the 1980 rule: rock AND walls block. Only floor, corridor,
+      // open jambs and stairs admit the hero; doors handled below.
+      if (blocksMove(map[ny][nx])) return state
 
       // Check monster bump (BEFORE the door logic: a monster can stand on a
       // hidden door cell — creatures know their own doors — and a bump is a
@@ -1022,7 +1047,7 @@ export function reducer(state, action) {
       if (map[ny][nx] === '+') {
         if (doorIsHidden(s, nx, ny)) {
           const openMap = s.map.map(r => [...r])
-          openMap[ny][nx] = '#'
+          openMap[ny][nx] = "'"
           s = addMsg({
             ...s, map: openMap,
             hiddenDoors: s.hiddenDoors.filter(d => d.x !== nx || d.y !== ny),
@@ -1030,7 +1055,7 @@ export function reducer(state, action) {
           s = emitFx(s, 'door-found')
         } else {
           const openMap = s.map.map(r => [...r])
-          openMap[ny][nx] = '#'
+          openMap[ny][nx] = "'"
           s = addMsg({ ...s, map: openMap }, "You open the door.")
           s = emitFx(s, 'door-open')
           s = tickHunger(s)
@@ -1047,7 +1072,7 @@ export function reducer(state, action) {
       if (player.confused > 0) {
         const rdx = rng(-1, 1), rdy = rng(-1, 1)
         const cx = player.x + rdx, cy = player.y + rdy
-        if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H && map[cy][cx] !== ' ' && map[cy][cx] !== '+') {
+        if (cx >= 0 && cx < MAP_W && cy >= 0 && cy < MAP_H && !blocksMove(map[cy][cx]) && map[cy][cx] !== '+') {
           finalX = cx; finalY = cy
         }
         newPlayer.confused = player.confused - 1

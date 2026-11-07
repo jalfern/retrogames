@@ -52,8 +52,32 @@ Mutant proof: flipping the descend guard in `handleDescend` (`!== '%'` →
 Collapsing the search-reveal radius in `handleSearch` kills 3 door checks
 (reveal / drawn `+` / door-found fx). Restore → green.
 
-## Doors and sound (#1502)
+## Walls are solid — the glyph grammar (#1833)
 
+First-play QA found the newcomer's fatal surprise: `MOVE` blocked only `' '`,
+and room walls shared the corridor's `'#'` glyph — so walls were walkable stone
+and rooms looked sealed (exits only visible after accidental wall-walks). The
+port now speaks the original's glyph grammar:
+
+- `'-'` / `'|'` = room walls (solid; corners take `'|'`), `'#'` = corridors,
+  `'.'` = room floor, `'+'` = closed door, `"'"` = open jamb, `'%'` = stairs.
+- Walls block EVERYONE: hero MOVE, confused moves, monster chase and wander
+  all ask `blocksMove(c)` (`sim.js`, exported).
+- Corridors PIERCE the walls they cross (`digH/digV` turn crossed `'-'/|'`
+  into `'#'`), so rooms are connected through real openings. Door placement
+  scans solid (`'#' || isWall`) runs, keeping every seed's door spots identical
+  to the pre-#1833 layout (the RNG stream is untouched).
+- An opened door leaves a walkable jamb `"'"` (was `'#'`), brighter amber than
+  the corridor; walls draw `#999` lit / `#555` in dim memory vs the corridor's
+  `#666/#444` — the exit always reads at a glance.
+- The welcome message states the goal (stairs % + descend), the `?` legend
+  separates Wall from Corridor, and the shell footer opts out of `/rogue`
+  (it floated mid-screen over the short map — the #1221 pattern).
+- Gates: roguecheck's structure BFS and autopilot BFS block walls too — the
+  winnability proof walks the REAL map now — plus a 40-seed perimeter gate and
+  a bump-the-wall gate (mutant: revert the MOVE block → exactly 1 red).
+
+## Doors and sound (#1502)
 - **Doors are a mechanic, not art.** Corridor gaps get one closed door each;
   every room wall hides one more (top/bottom middle, never on a corridor
   path). Both are pure functions of the dug layout — zero new rolls, so the
