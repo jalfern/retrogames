@@ -7,7 +7,7 @@
 // fails; restore).
 
 import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadness/sim.js'
-import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
+import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -216,27 +216,41 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
 // header). These gates keep the bed a bed: well-formed tables, relentless
 // motion, showpiece shape, a driving left hand, a sane urgency ladder, and
 // routing pinned at the scheduler assignment (not just any callsite — #1744).
+// #1758: the cabinet re-voiced Marsyas per course — four arrangements now, and
+// the character gates below keep each re-voicing actually SOUND different
+// (darker/chromatic menace, brighter/wide-leap aerial), not renamed copies.
 {
     const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
     const simSrc = readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')
-    const MB = MUSIC.marble, MF = MUSIC.marbleFinale
-    ok('both beds live in the synth engine', !!MB && !!MF &&
-        MB.lead.length === 64 && MB.lead.length === MB.bass.length &&
-        MF.lead.length === 64 && MF.lead.length === MF.bass.length)
+    const MB = MUSIC.marble, MF = MUSIC.marbleFinale, MR = MUSIC.marbleMenace, MA = MUSIC.marbleAerial
+    const BEDS = [['marble', MB], ['marbleMenace', MR], ['marbleAerial', MA], ['marbleFinale', MF]]
+    ok('four arrangements live in the synth engine', MB && MF && MR && MA &&
+        BEDS.every(([, b]) => b.lead.length === 64 && b.lead.length === b.bass.length))
     ok('beds are pure data (rng-free: integers only, JSON round-trips)',
-        [...MB.lead, ...MB.bass, ...MF.lead, ...MF.bass].every(Number.isInteger) &&
+        BEDS.every(([, b]) => [...b.lead, ...b.bass].every(Number.isInteger)) &&
         JSON.parse(JSON.stringify({ l: MB.lead, b: MB.bass })).l.join() === MB.lead.join())
     ok('the bed never stops running (zero rests in the leads — the Marsyas motion law)',
-        MB.lead.every((n) => n > 0) && MF.lead.every((n) => n > 0))
-    const leaps = (t) => t.reduce((c, n, i) => c + (i && Math.abs(n - t[i - 1]) >= 7 ? 1 : 0), 0)
+        BEDS.every(([, b]) => b.lead.every((n) => n > 0)))
+    const leaps = (t, k = 7) => t.reduce((c, n, i) => c + (i && Math.abs(n - t[i - 1]) >= k ? 1 : 0), 0)
     ok('shows off like a piano run (span >= 19, big leaps >= 8 per bed)',
-        Math.max(...MB.lead) - Math.min(...MB.lead) >= 19 && leaps(MB.lead) >= 8 &&
-        Math.max(...MF.lead) - Math.min(...MF.lead) >= 19 && leaps(MF.lead) >= 8)
+        BEDS.every(([, b]) => Math.max(...b.lead) - Math.min(...b.lead) >= 19 && leaps(b.lead) >= 8))
     ok('left hand drives every step in octaves (no rests, span >= 12)',
-        MB.bass.every((n) => n > 0) && MF.bass.every((n) => n > 0) &&
-        Math.max(...MB.bass) - Math.min(...MB.bass) >= 12)
+        BEDS.every(([, b]) => b.bass.every((n) => n > 0) && Math.max(...b.bass) - Math.min(...b.bass) >= 12))
+    ok('per-course re-voicing (#1758): six races, four distinct arrangements',
+        bedFor(-1) === 'marble' && bedFor(0) === 'marble' && bedFor(1) === 'marble' &&
+        bedFor(MENACE_RACE) === 'marbleMenace' && bedFor(AERIAL_RACE) === 'marbleAerial' &&
+        bedFor(FINALE_RACE) === 'marbleFinale' && bedFor(99) === 'marbleFinale' &&
+        4 === new Set([MB, MR, MA, MF].map((b) => b.lead.join())).size)
+    const chrom = (t) => t.reduce((c, n, i) => c + (i && Math.abs(n - t[i - 1]) <= 1 ? 1 : 0), 0)
+    const mean = (t) => t.reduce((a, b) => a + b, 0) / t.length
+    ok('MENACE is the dark re-voicing (lower floor, lower mean, chromatic sting the base bed lacks)',
+        Math.min(...MR.lead) <= Math.min(...MB.lead) && mean(MR.lead) <= mean(MB.lead) &&
+        chrom(MR.lead) > chrom(MB.lead))
+    ok('AERIAL is the bright re-voicing (raised floor, a fifth higher mean, wide 12th+ jumps)',
+        Math.min(...MA.lead) >= Math.min(...MB.lead) + 4 && mean(MA.lead) >= mean(MB.lead) + 4 &&
+        leaps(MA.lead, 12) > leaps(MB.lead, 12))
     ok('finale is the variation-up (track flips at race 5, octave higher, faster)',
-        FINALE_RACE === 4 && bedFor(FINALE_RACE - 1) === 'marble' && bedFor(FINALE_RACE) === 'marbleFinale' &&
+        FINALE_RACE === 4 && bedFor(FINALE_RACE - 1) === 'marbleAerial' && bedFor(FINALE_RACE) === 'marbleFinale' &&
         MF.lead.join() !== MB.lead.join() &&
         MF.lead.reduce((a, b) => a + b, 0) / MF.lead.length - MB.lead.reduce((a, b) => a + b, 0) / MB.lead.length >= 10 &&
         MF.step < MB.step)
@@ -244,7 +258,8 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         MUSIC_STEPS.length === RACES.length && MUSIC_STEPS.every((s) => s >= 0.06 && s < 0.1) &&
         MUSIC_STEPS.every((s, i) => !i || s <= MUSIC_STEPS[i - 1]) &&
         musicStepFor(-1) === MUSIC_STEPS[0] && musicStepFor(99) === MUSIC_STEPS.at(-1) &&
-        MUSIC_STEPS[FINALE_RACE] === MF.step)
+        MUSIC_STEPS[FINALE_RACE] === MF.step && MUSIC_STEPS[MENACE_RACE] === MR.step &&
+        MUSIC_STEPS[AERIAL_RACE] === MA.step)
     ok('bed starts where the run starts (pins target the scheduling assignment)',
         /const bed = bedFor\(ev\.race\)/.test(idxSrc) && /startMusic\(bed\)/.test(idxSrc) &&
         /startRun[\s\S]{0,700}startMusic\(bedFor\(0\)\)/.test(idxSrc) &&
@@ -257,7 +272,7 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
     ok('determinism untouched (bed is painter-side: sim/planner know no audio)',
         !/audioController|MUSIC|duckMusic/.test(simSrc))
     ok('beds ride the shared bus ceiling (MUSIC_BUS stays the one duck number)',
-        MUSIC_BUS > 0 && MUSIC_BUS <= 1 && MB.step > 0 && MF.step > 0)
+        MUSIC_BUS > 0 && MUSIC_BUS <= 1 && BEDS.every(([, b]) => b.step > 0))
 }
 
 if (fails) {
