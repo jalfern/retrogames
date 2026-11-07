@@ -487,7 +487,7 @@ export const GAMES = [
         label: 'EXCITEBIKE',
         theme: 'dark',
         description: 'The 1984 motocross, rebuilt as an NES cartridge that leans on physics, not sprites. The throttle is the whole game: hold it and you go faster, hold it too long and the engine BOILS and drops you to a limp. Every jump is a ramp off a hand-carved heightmap — go airborne and the bike answers only to your weight, so you must lean it to meet the slope you are about to land on, or eat dirt. Mud and water holes suck the speed out and can stall you outright (pump the throttle to walk it back to life); the boost arrows throw you clear over the far one. Two circuits against rival pace lines; the attract demo is the autopilot\'s own proven lap — it rolls the same pure sim every tick to pick its lean — replayed tick for tick, and a Node harness audits the terrain, the ledger and the whole race offline (80 checks, 9 mutants that must all die).',
-        controls: ['↑ / D-pad up: the GAS on the ground — and while airborne this LEANS the nose UP', '↓ / D-pad down: the BRAKE on the ground — and while airborne this LEANS the nose DOWN', 'Space / A-button: hop off a ramp · pump a stalled bike back to life in mud or water', 'G / GEAR button: high gear for the long straights, low gear will not boil as fast', 'Land flat: the bike self-tracks the slope it sees, but a big air needs YOU on the lean', '?: pause and read the engine gauges'],
+        controls: ['↑ / D-pad up: the GAS on the ground — and while airborne this LEANS the nose UP', '↓ / D-pad down: the BRAKE on the ground — and while airborne this LEANS the nose DOWN', 'Space / A-button: hop off a ramp · pump a stalled bike back to life in mud or water', 'G / GEAR button: high gear for the long straights, low gear will not boil as fast', 'Land flat: the bike self-tracks the slope it sees, but a big air needs YOU on the lean', '?: pause and read the engine gauges', WATCH_HELP + ' — the autopilot discovers the jumps by driving them'],
     },
     {
         path: '/mario-kart',
@@ -534,7 +534,7 @@ export const GAMES = [
         label: 'TETRIS',
         theme: 'dark',
         description: 'The 1989 NES cartridge, rebuilt honest: the NTSC gravity table (48 frames a row at level 0 down to 6 at level 9), DAS 16/6, soft drop every 2 frames — and none of the modern crutches: no hard drop, no hold, no ghost, no rotation kicks. 40/100/300/1200 points times the level, a new level every 10 lines, start at any level 0-9. The well does not negotiate: the piece locks the instant a downward move fails, and a blocked spawn ends the game. The attract demo is the same autopilot a Node harness audits gravity, DAS and the score ledger against, live.',
-        controls: ['Arrow Left/Right: slide (16-frame DAS delay, every 6 after — exactly like the NES)', 'UP / X / SPACE: rotate clockwise — the NES had one rotate button and no kicks', 'Arrow Down: soft drop, one row every 2 frames — there is NO hard drop', '?: pause and read the rules · 0-9 on the title pick the start level', '40 / 100 / 300 / 1200 x (level+1) — and gravity only speeds up'],
+        controls: ['Arrow Left/Right: slide (16-frame DAS delay, every 6 after — exactly like the NES)', 'UP / X / SPACE: rotate clockwise — the NES had one rotate button and no kicks', 'Arrow Down: soft drop, one row every 2 frames — there is NO hard drop', '?: pause and read the rules · 0-9 on the title pick the start level', '40 / 100 / 300 / 1200 x (level+1) — and gravity only speeds up', WATCH_HELP + ' — the planner that clears the rows stacks the well'],
     },
     {
         path: '/joust',
@@ -910,7 +910,7 @@ export const GAMES = [
         label: 'MARBLE MADNESS',
         theme: 'dark',
         description: 'Atari\'s 1984 trackball classic, rebuilt honest: an isometric checkered course and a marble with real inertia — arrows are FORCE, not velocity, so everything you do drifts. Six races (Practice, Beginner, Intermediate, Aerial, Silly with its reversed gravity, Ultimate) against a countdown whose LEFTOVER time carries into the next race and banks as score by race weight. Wipe out: roll off an edge, fall a hard drop, get caught by the black steelie\'s knock, the acid slinkies, the marble munchers\' jaws, the swinging hammers, or the wave floor that hurls you — and you lose a life and restart the race. A green slinky is a free bounce if you can steer onto it. 50 seconds left at the end banks a 5,000 bonus; 50k buys a 1UP.',
-        controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: the floating stick IS the trackball — anchor it anywhere on the left half, push soft for a tap, hard for a shove', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses'],
+        controls: ['Arrows: push the marble (inertia — anticipate)', 'On phones: the floating stick IS the trackball — anchor it anywhere on the left half, push soft for a tap, hard for a shove', 'Reach the gold ring before the clock dies — leftover time carries and scores', 'Falls and hazards cost a life, not the run — the clock is the real enemy', '? pauses', WATCH_HELP + ' — the autopilot that ran all six races steers the marble'],
     },
     {
         path: '/gauntlet',

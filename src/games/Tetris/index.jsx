@@ -17,6 +17,8 @@ import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeed
 import { fitFill } from '../../utils/fitCanvas'
 import { newGame, step, cellsOf, stateHash, PIECE_NAMES, SPAWN_X, SPAWN_Y, FIXED_DT, resting } from './sim.js'
 import { choosePlan, driveInput, nextDemoLevel, DEMO_LEVELS } from './planner.js'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { musicStep } from './music.js'
 import { blockTile, text5, artColumn } from './art.js'
 
@@ -31,6 +33,8 @@ const TetrisGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [finalInfo, setFinalInfo] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: tetrischeck's planner stacks the well
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -54,6 +58,7 @@ const TetrisGame = () => {
 
         let gs = null
         let demo = null, demoMem = {}, demoPlan = null
+        let playPlan = null, playMem = {} // #1637 the watcher's per-piece plan + stuck watchdog
         let demoLevel = DEMO_LEVELS[0]
         let raf = 0, last = 0, acc = 0
         let seedCounter = (Date.now() >>> 0) ^ 0x5eed
@@ -96,6 +101,7 @@ const TetrisGame = () => {
 
         const finish = (s) => {
             if (!s.over) return
+            watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
             if (s.score > topScore) {
                 topScore = s.score
                 try { localStorage.setItem('arcade.tetris.top', String(topScore)) } catch { /* private mode */ }
@@ -107,6 +113,8 @@ const TetrisGame = () => {
 
         const startPlay = (level, seed) => {
             lastLevelRef.current = level
+            watchingRef.current = false; setWatching(false) // #1637 a new well starts in your hands
+            playPlan = null; playMem = {}
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
             // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
             const pin = seed === undefined ? seedFromQuery() : null
@@ -237,8 +245,12 @@ const TetrisGame = () => {
                         else if (demoPlan && demo.locks !== demoMem.lastLocks && !demo.clearing) { demoMem = { lastLocks: demo.locks }; demoPlan = choosePlan(demo) }
                         handleEvents(demo, false)
                     } else if (screenRef.current === 'play' && gs && !gs.over) {
-                        step(gs, { ...keys })
-                        recordLiveTick([{ left: keys.left, right: keys.right, down: keys.down, a: keys.rot }])
+                        const pad = watchingRef.current ? driveInput(gs, playPlan, playMem) : { ...keys }
+                        step(gs, pad)
+                        recordLiveTick([{ left: pad.left, right: pad.right, down: pad.down, a: pad.rot }])
+                        // #1637 the same re-plan the attract demo runs: a new
+                        // piece means a new decision, taken from LIVE state.
+                        if (watchingRef.current && playPlan && gs.locks !== playMem.lastLocks && !gs.clearing) { playMem = { lastLocks: gs.locks }; playPlan = choosePlan(gs) }
                         const rest = resting(gs)
                         if (rest && !wasResting) audioController.playTone(140, 0.03, 'square', 0.05)
                         wasResting = rest
@@ -277,6 +289,14 @@ const TetrisGame = () => {
                 setSc('attract'); return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the planner at any live well state (it
+            // re-decides from the board every lock); any driving key takes over.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (gs && !gs.over) { watchingRef.current = true; setWatching(true); playWatchStart(); playPlan = choosePlan(gs); playMem = {} }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (code === 'ArrowLeft') keys.left = true
             else if (code === 'ArrowRight') keys.right = true
             else if (code === 'ArrowDown') keys.down = true
@@ -294,7 +314,11 @@ const TetrisGame = () => {
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 800) return
                 startPlay(lastLevelRef.current)
+                return
             }
+            // #1637 a touch on the well means you want the wheel (the WATCH
+            // pill stopPropagations its press; the pad's keys take over too).
+            if (sc === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
 
         window.addEventListener('keydown', onDown)
@@ -336,6 +360,8 @@ const TetrisGame = () => {
                     }
                 },
                 start: (lvl = 0, sd) => startPlay(lvl, sd),
+                watching: () => watchingRef.current, // #1637 watchcheck pilot drives these
+                watchSfx: watchSfxLog,
                 seedClear: (banked = 0) => {
                     if (!gs || gs.over || screenRef.current !== 'play') return 'no live well'
                     gs.board.fill(0)
@@ -346,6 +372,19 @@ const TetrisGame = () => {
                     gs.next = 2
                     gs.g = 0
                     return 'row 19 waiting for the I (cols 6-9), marker at 18,0'
+                },
+                seedWatch: () => {
+                    // #1637 watchcheck seed: like seedClear but the I sits at SPAWN,
+                    // so only SLIDING (thinking) can reach the gap — an idle watcher
+                    // drops it onto row 18 and never clears a row. Prover-only.
+                    if (!gs || gs.over || screenRef.current !== 'play') return 'no live well'
+                    gs.board.fill(0)
+                    for (let c = 0; c <= 5; c++) gs.board[19 * 10 + c] = 1
+                    gs.board[18 * 10 + 0] = 2
+                    gs.cur = { type: 5, rot: 0, x: SPAWN_X, y: SPAWN_Y }
+                    gs.next = 2
+                    gs.g = 0
+                    return 'row 19 needs cols 6-9; the I sits at spawn — only a slide clears it'
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
@@ -416,6 +455,22 @@ const TetrisGame = () => {
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-cyan-300">{PRESS}</p>
+                    <p className="mt-3 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</p>
+                </div>
+            )}
+
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '18%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+
+            {/* #1637 WATCH — the prover stacks the well; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
                 </div>
             )}
 

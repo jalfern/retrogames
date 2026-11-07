@@ -22,6 +22,8 @@ import { W, H, makeGame, step, stateHash, CFG } from './sim.js'
 import { track, groundY, LAP, MUD, WATER, BOOST } from './levels.js'
 import { plan, decide } from './planner.js'
 import { PRESS, MESSAGES } from './attract.js'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const SIM_MS = 1000 / 60
@@ -56,6 +58,8 @@ const ExcitebikeGame = () => {
     const pausedRef = useRef(false)
     const gearRef = useRef('high')
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: excitecheck's rollout planner rides the gate
+    const watchingRef = useRef(false)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
     const setHud = (k) => (el) => { hudRef.current[k] = el }
@@ -79,6 +83,7 @@ const ExcitebikeGame = () => {
         let demoAt = 0, demoReady = false, toast = 0, toastMsg = '', shake = 0
         let noteAt = 0, heatBeep = 0
         const keys = { g: false, b: false, j: false }
+        let bikeMem = { pump: 0 } // #1637 decide()'s per-seat memory (pump taps)
         const parts = []
         const say = (m) => { toastMsg = m; toast = 90 }
         const burst = (cx, cy, n, col) => {
@@ -105,6 +110,7 @@ const ExcitebikeGame = () => {
         }
 
         const finish = (win) => {
+            watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
             const sc = gs.score
             setEnd({ win, score: sc, rank: gs.rank })
             if (win) localStorage.setItem('excitebike.board', JSON.stringify([...board(), { score: sc, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -131,6 +137,10 @@ const ExcitebikeGame = () => {
             // BRAKE; airborne the SAME arrows are the rider's weight — the sim
             // only reads u/d when g.air, so sending both is how the bike leans
             // without needing a second set of keys.
+            // #1637 WATCH: the seat is decide() — the same rollout planner the
+            // attract demo's script came from and excitecheck grades; it
+            // re-decides from the live bike every tick.
+            if (watchingRef.current) { doSim(decide(gs, bikeMem)); return }
             doSim({ g: keys.g, b: keys.b, j: keys.j, u: keys.g, d: keys.b })
         }
 
@@ -306,6 +316,8 @@ const ExcitebikeGame = () => {
 
         const startPlay = (trackIdx = 0) => {
             gs = makeGame(trackIdx, { gear: gearRef.current })
+            watchingRef.current = false; setWatching(false) // #1637 a new race starts in your hands
+            bikeMem = { pump: 0 }
             noteAt = gs.tick
             parts.length = 0
             keys.g = keys.b = keys.j = false
@@ -321,6 +333,14 @@ const ExcitebikeGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y seats the rollout planner at any live state (it
+            // re-decides from the bike every tick); any driving key takes over.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart(); bikeMem = { pump: 0 } }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowUp') keys.g = true
             if (e.code === 'ArrowDown') keys.b = true
             if (e.code === 'Space') keys.j = true
@@ -336,6 +356,9 @@ const ExcitebikeGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') startPlay(0)
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
+            // #1637 a touch on the dirt means you want the wheel (the WATCH pill
+            // stopPropagations its press; the pad's keys take over too).
+            else if (sc === 'play' && watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -365,6 +388,8 @@ const ExcitebikeGame = () => {
                     screenX: Math.max(0, gs.x - 84) ? 84 : gs.x, screenY: g2s(gs.alt) - 6,
                 }),
                 start: () => startPlay(0),
+                watching: () => watchingRef.current, // #1637 watchcheck pilot drives these
+                watchSfx: watchSfxLog,
                 track: (i) => startPlay(i),
                 hash: () => stateHash(gs),
                 setup: (opts = {}) => {
@@ -486,9 +511,22 @@ const ExcitebikeGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
+                        <p className="mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</p>
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '18%' }}>
+                        <AttractWatchButton />
+                    </div>
                 </>
+            )}
+
+            {/* #1637 WATCH — the planner rides the gate; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
             )}
 
             {screen === 'over' && end && (
