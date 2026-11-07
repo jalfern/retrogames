@@ -2,13 +2,15 @@ import React, { useEffect, useRef } from 'react'
 import { audioController } from '../../utils/AudioController'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
 import { dynamicsFor } from './dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS } from './wobble.js'
-import { plan, bfsPath, press } from './planner.js'
+import { plan, bfsPath, press, decide } from './planner.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 
@@ -40,6 +42,10 @@ const MarbleMadnessGame = () => {
     const canvasRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    const [watching, setWatching] = React.useState(false) // #1637 WATCH: marblecheck's autopilot runs the course
+    const watchingRef = useRef(false)
+    const [screen, setScreen] = React.useState('attract') // #1637 mirror of the effect's mode for the WATCH chrome
+    const screenRef = useRef('attract')
 
     const handleResume = () => {
         setPaused(false)
@@ -55,6 +61,8 @@ const MarbleMadnessGame = () => {
         ctx.imageSmoothingEnabled = false
 
         let mode = 'attract'
+        // #1637 mirror the mode for the shared WATCH chrome (toast/pill/hint)
+        const screenState = (m) => { if (screenRef.current !== m) { screenRef.current = m; setScreen(m) } }
         let gs = null
         let script = null
         let scriptT = 0
@@ -158,6 +166,8 @@ const MarbleMadnessGame = () => {
             const pin = seedFromQuery()
             gs = makeGame(pin != null ? pin >>> 0 : 0)
             mode = 'play'
+            screenState('play')
+            watchingRef.current = false; setWatching(false) // #1637 a new run starts in your hands
             script = null
             particles = []
             resetCam()
@@ -178,6 +188,8 @@ const MarbleMadnessGame = () => {
             scriptT = 0
             demoTicks = 0
             mode = 'attract'
+            screenState('attract')
+            watchingRef.current = false; setWatching(false) // #1637 watch never lingers
             particles = []
             resetCam()
             banner = null
@@ -479,8 +491,19 @@ const MarbleMadnessGame = () => {
             acc += frame
             while (acc >= FIXED_DT) {
                 acc -= FIXED_DT
-                const gi = mode === 'play' ? inp() : (script && scriptT < script.length ? script[scriptT++] : { left: false, right: false, up: false, down: false })
-                if (mode === 'play') step(gs, gi)
+                const gi = mode === 'play'
+                    // #1637 WATCH: decide() is the same BFS arc-steer that
+                    // generates the attract script and marblecheck grades — it
+                    // re-decides from the live marble every tick.
+                    ? (watchingRef.current ? decide(gs) : inp())
+                    : (script && scriptT < script.length ? script[scriptT++] : { left: false, right: false, up: false, down: false })
+                if (mode === 'play') {
+                    step(gs, gi)
+                    if (gs.end && watchingRef.current) {
+                        watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
+                    }
+                    screenState(gs.end ? 'over' : 'play')
+                }
                 else if (mode === 'attract') {
                     step(gs, gi)
                     demoTicks++
@@ -509,6 +532,14 @@ const MarbleMadnessGame = () => {
                 audioController.unlock?.()
                 return
             }
+            // #1637 WATCH: Y seats the BFS autopilot at any live course state
+            // (it re-decides from the marble every tick); any input takes over.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!gs.end) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'ArrowLeft') keys.ArrowLeft = true
             if (e.code === 'ArrowRight') keys.ArrowRight = true
             if (e.code === 'ArrowUp') keys.ArrowUp = true
@@ -534,6 +565,9 @@ const MarbleMadnessGame = () => {
         const onPointerDown = (e) => {
             if (pausedRef.current) return
             if (mode === 'attract' || gs.end) { startRun(); return }
+            // #1637 a touch on the course means you want the wheel (the WATCH
+            // pill stopPropagations its press; the drag steers from here on).
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             drag.id = e.pointerId
             drag.x = e.clientX; drag.y = e.clientY
         }
@@ -568,7 +602,10 @@ const MarbleMadnessGame = () => {
                 { label: 'PROGNOSIS', run: () => (bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 1).length || bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 2).length) ? 'WINNABLE' : 'DEAD END' },
             ],
         })
-        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak(), wobbleSpy: () => ({ t: wob, kb: wobbleAt(wob) }) }
+        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak(), wobbleSpy: () => ({ t: wob, kb: wobbleAt(wob) }),
+            // #1637 watchcheck pilot drives these
+            watching: () => watchingRef.current, watchSfx: watchSfxLog,
+            probe: () => ({ screen: mode === 'play' ? (gs.end ? 'over' : 'play') : mode, score: gs.score, clears: gs.clears, deaths: gs.deaths, lives: gs.lives, end: gs.end, x: gs.m.x, y: gs.m.y, race: gs.raceIdx }) }
 
         // #1473 seedpin: report the run seed every build (hazard waves are pure
         // tick functions; seed travels with the state for exact replays).
@@ -598,6 +635,24 @@ const MarbleMadnessGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
             <div className="relative w-full max-w-[720px] aspect-[4/3] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
+                {/* #1637 WATCH — the autopilot runs the course; any input takes over.
+                    (pill first in the DOM: the phone contract reads the pill's
+                    window clean of the attract block's bottom anchor; z keeps look) */}
+                {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+                {(screen === 'play' || screen === 'over') && !paused && (
+                    <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
+                {screen === 'attract' && (
+                    <p className="absolute inset-x-0 z-[70] text-center font-mono text-[11px] tracking-widest text-emerald-300/90" style={{ top: '72%' }}>{WATCH_ATTRACT_HINT}</p>
+                )}
+                {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                {screen === 'attract' && (
+                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
+                )}
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MARBLE MADNESS')} onResume={handleResume} />}
             </div>
             <VirtualControls />

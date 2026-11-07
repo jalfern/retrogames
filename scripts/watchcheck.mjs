@@ -844,6 +844,109 @@ const PILOTS = [
             rep.check('simcity-min: off the witness says no guide (never a fake route)', !(await watching()))
         },
     },
+    // #1637 batch 9 — the planner-in-the-box family: three titles that ship
+    // planner.js inside the game folder, whose attract demo flies it and whose
+    // own check grades it. The seat is the planner's live call in the play tick.
+    {
+        // TETRIS — prover-only seeded well: row 19 lacks cols 6-9 and the I
+        // sits at SPAWN. Idle drops it onto row 18 (no row ever completes);
+        // only the planner's slide reaches the gap. Level 9 so gravity can
+        // deliver the proof in seconds.
+        id: 'tetris', url: `${BASE}/tetris`, hook: '__tetrisTest',
+        async run(page, rep) {
+            const H = '__tetrisTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await page.evaluate(() => window.__tetrisTest.start(9))
+            await page.waitForTimeout(400)
+            await page.evaluate(() => window.__tetrisTest.seedWatch())
+            await key(page, 'KeyY')
+            rep.check('tetris: Y seats the planner', await watching())
+            const a = await probe()
+            // prover-only: horizontal presses while the watcher sits. An idle
+            // watcher never presses left/right; bag stacking can clear a row by
+            // luck over a long window, but luck never slides a piece.
+            const adv = (x, y) => y.slides > x.slides + 1
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('tetris: the planner drives the pieces untouched (an idle watcher never slides one)',
+                adv(a, b), `slides ${a.slides} -> ${b.slides}, lines ${a.lines} -> ${b.lines}, score ${a.score} -> ${b.score}, locks ${a.locks} -> ${b.locks}`)
+            rep.check('tetris: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowRight')
+            rep.check('tetris: steer key takes over', !(await watching()))
+            await page.keyboard.up('ArrowRight')
+            await key(page, 'KeyY')
+            rep.check('tetris: Y re-seats the planner mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('tetris: resumes from where the player left it', adv(c, d),
+                `slides ${c.slides} -> ${d.slides}, lines ${c.lines} -> ${d.lines}, score ${c.score} -> ${d.score}, locks ${c.locks} -> ${d.locks}`)
+            await key(page, 'KeyY')
+            rep.check('tetris: Y again releases the planner', !(await watching()))
+        },
+    },
+    {
+        // EXCITEBIKE — an idle bike sits at the gate: total distance only grows
+        // when the gas is on. decide() re-decides by rolling the real sim.
+        id: 'excitebike', url: `${BASE}/excitebike`, hook: '__bikeTest',
+        async run(page, rep) {
+            const H = '__bikeTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            rep.check('excitebike: Y seats the rollout planner', await watching())
+            const a = await probe()
+            const adv = (x, y) => y.total > x.total + 40 || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 10000)
+            rep.check('excitebike: the planner rides the track untouched (an idle bike never touches gas)',
+                adv(a, b), `total ${Math.round(a.total)} -> ${Math.round(b.total)}, score ${a.score} -> ${b.score}, v ${b.v.toFixed(1)}`)
+            rep.check('excitebike: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowUp')
+            rep.check('excitebike: throttle key takes over', !(await watching()))
+            await page.keyboard.up('ArrowUp')
+            await key(page, 'KeyY')
+            rep.check('excitebike: Y re-seats the planner mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 8000)
+            rep.check('excitebike: resumes from where the player left it', adv(c, d),
+                `total ${Math.round(c.total)} -> ${Math.round(d.total)}`)
+            await key(page, 'KeyY')
+            rep.check('excitebike: Y again releases the planner', !(await watching()))
+        },
+    },
+    {
+        // MARBLE MADNESS — an idle marble stays on the PRACTICE start shelf
+        // (measured: no input, no movement). decide() re-decides a BFS
+        // arc-steer from the live marble every tick.
+        id: 'marble-madness', url: `${BASE}/marble-madness`, hook: '__marble',
+        async run(page, rep) {
+            const H = '__marble'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            rep.check('marble-madness: Y seats the BFS autopilot', await watching())
+            const a = await probe()
+            const adv = (x, y) => y.clears > x.clears || y.score > x.score || Math.hypot(y.x - x.x, y.y - x.y) > 4
+            const b = await pollAdvance(page, probe, adv, a, 12000)
+            rep.check('marble-madness: the autopilot runs the course untouched (an idle marble stays at the start)',
+                adv(a, b), `clears ${a.clears} -> ${b.clears}, score ${a.score} -> ${b.score}, pos (${a.x.toFixed(1)},${a.y.toFixed(1)}) -> (${b.x.toFixed(1)},${b.y.toFixed(1)})`)
+            rep.check('marble-madness: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('marble-madness: steer key takes over', !(await watching()))
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            rep.check('marble-madness: Y re-seats the autopilot mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 12000)
+            rep.check('marble-madness: resumes from where the player left it', adv(c, d),
+                `clears ${c.clears} -> ${d.clears}, score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('marble-madness: Y again releases the autopilot', !(await watching()))
+        },
+    },
     {
         // PAPERBOY — the honest junction. The proven pedal-line is a fixed-v script;
         // it re-seats only where stage-local time still matches the witness receipt.
@@ -1225,6 +1328,43 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const entryHas8 = (p, s) => { const m = reg8.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     for (const p of ['/beezee', '/tidy-bot', '/pick-rush', '/garden-guard'])
         rep.check(`registry ${p}: controls carry the WATCH line`, entryHas8(p, 'WATCH_HELP'))
+}
+// ---- #1637 batch-9 source pins — the planner-in-the-box family ----
+{
+    const B9_SRC = {
+        'TETRIS': 'src/games/Tetris/index.jsx',
+        'EXCITEBIKE': 'src/games/Excitebike/index.jsx',
+        'MARBLEMADNESS': 'src/games/MarbleMadness/index.jsx',
+    }
+    for (const [name, f] of Object.entries(B9_SRC)) {
+        const src = readFileSync(f, 'utf8')
+        rep.check(`${name}: imports the shared blips and logs`,
+            /utils\/watch'/.test(src) && /playWatchStart/.test(src) && /playWatchStop/.test(src) && /watchSfx: watchSfxLog/.test(src))
+        rep.check(`${name}: attract screen shows the WATCH hint`, (src.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    }
+    // The seat IS the game's own planner call — each pin names the exact swap in the play tick.
+    rep.check('TETRIS: the watcher seats driveInput in the play tick and re-plans at every lock',
+        /const pad = watchingRef\.current \? driveInput\(gs, playPlan, playMem\) : \{ \.\.\.keys \}/.test(readFileSync(B9_SRC.TETRIS, 'utf8'))
+        && /watchingRef\.current && playPlan && gs\.locks !== playMem\.lastLocks && !gs\.clearing/.test(readFileSync(B9_SRC.TETRIS, 'utf8')))
+    rep.check('EXCITEBIKE: the watcher seats decide(gs, mem) — the rollout brain of the sim itself — in the play tick',
+        /if \(watchingRef\.current\) \{ doSim\(decide\(gs, bikeMem\)\); return \}/.test(readFileSync(B9_SRC.EXCITEBIKE, 'utf8')))
+    rep.check('MARBLEMADNESS: the watcher seats decide(gs) — the BFS autopilot that generated the attract script — in the play tick',
+        /\? \(watchingRef\.current \? decide\(gs\) : inp\(\)\)/.test(readFileSync(B9_SRC.MARBLEMADNESS, 'utf8')))
+    // watch never lingers: each seat clears at run end AND at every start.
+    rep.check('TETRIS: watch never lingers — cleared at run end AND at every start',
+        /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 the run ends in your hands/.test(readFileSync(B9_SRC.TETRIS, 'utf8'))
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 a new well starts in your hands/.test(readFileSync(B9_SRC.TETRIS, 'utf8')))
+    rep.check('EXCITEBIKE: watch never lingers — cleared at run end AND at every start',
+        /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 the run ends in your hands/.test(readFileSync(B9_SRC.EXCITEBIKE, 'utf8'))
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 a new race starts in your hands/.test(readFileSync(B9_SRC.EXCITEBIKE, 'utf8')))
+    rep.check('MARBLEMADNESS: watch never lingers — cleared at run end AND at every start',
+        /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 the run ends in your hands/.test(readFileSync(B9_SRC.MARBLEMADNESS, 'utf8'))
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 a new run starts in your hands/.test(readFileSync(B9_SRC.MARBLEMADNESS, 'utf8'))
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637 watch never lingers/.test(readFileSync(B9_SRC.MARBLEMADNESS, 'utf8')))
+    const reg9 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas9 = (p, s) => { const m = reg9.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    for (const p of ['/tetris', '/excitebike', '/marble-madness'])
+        rep.check(`registry ${p}: controls carry the WATCH line`, entryHas9(p, 'WATCH_HELP'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
