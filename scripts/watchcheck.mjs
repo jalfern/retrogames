@@ -1111,6 +1111,159 @@ const PILOTS = [
             rep.check('MYST: a declined guide makes no sound', off.n === 2, `sfx log ${off.n} (start+stop from the live watch, nothing from the decline)`)
         },
     },
+    // #1637 batch 10 — the SOLVER-SCRIPT family: four titles whose attract demo
+    // already replays a script their own harness proves (zeldacheck re-runs the
+    // planner; lemcheck replays solve() to an identical hash; runnercheck CHAIN
+    // replays planRun(); paperscheck survives the week with autopilot()). The
+    // seat converts that attract-only proof into a mid-run Y: plan the LIVE
+    // state, drive its script tick for tick, decline honestly when the oracle
+    // sees no win from here. Advance signals are prover-only — an idle player
+    // never walks Hyrule, never assigns a skill, never touches gas, never stamps.
+    {
+        id: 'zelda', url: `${BASE}/zelda`, hook: '__zeldaTest',
+        async run(page, rep) {
+            const H = '__zeldaTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            rep.check('zelda: Y seats the quest planner', await watching())
+            rep.check('zelda: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => Math.hypot(y.px - x.px, y.py - x.py) > 6 || y.swings > x.swings || y.kills > x.kills || y.rupees > x.rupees
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('zelda: the planner walks the quest untouched (an idle Link never moves or swings)',
+                adv(a, b), `pos (${Math.round(a.px)},${Math.round(a.py)}) -> (${Math.round(b.px)},${Math.round(b.py)}), swings ${a.swings} -> ${b.swings}, kills ${a.kills} -> ${b.kills}, screen ${b.scr}`)
+            rep.check('zelda: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('zelda: steer key takes over', !(await watching()))
+            rep.check('zelda: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            rep.check('zelda: Y re-seats the planner mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('zelda: resumes from where the player left it', adv(c, d),
+                `pos (${Math.round(c.px)},${Math.round(c.py)}) -> (${Math.round(d.px)},${Math.round(d.py)}), swings ${c.swings} -> ${d.swings}, screen ${d.scr}`)
+            await key(page, 'KeyY')
+            rep.check('zelda: Y again releases the planner', !(await watching()))
+        },
+    },
+    {
+        id: 'lemmings', url: `${BASE}/lemmings`, hook: '__lemTest',
+        async run(page, rep) {
+            const H = '__lemTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            rep.check('lemmings: Y seats the solver', await watching())
+            rep.check('lemmings: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            // prover-only: gcmds counts every assignment the sim booked — an
+            // idle crowd just walks and falls, the solver SIGNS the script.
+            const adv = (x, y) => y.gcmds > x.gcmds || y.exited > x.exited || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 9000)
+            rep.check('lemmings: the solver assigns the line untouched (an idle booth never assigns a skill)',
+                adv(a, b), `cmds ${a.gcmds} -> ${b.gcmds}, out ${a.exited} -> ${b.exited}, spawned ${b.spawned}, score ${a.score} -> ${b.score}`)
+            rep.check('lemmings: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('lemmings: steer key takes over', !(await watching()))
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            rep.check('lemmings: Y re-seats the solver mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 9000)
+            rep.check('lemmings: resumes from where the player left it', adv(c, d),
+                `cmds ${c.gcmds} -> ${d.gcmds}, out ${c.exited} -> ${d.exited}, score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('lemmings: Y again releases the solver', !(await watching()))
+        },
+    },
+    {
+        id: 'momentum', url: `${BASE}/momentum`, hook: '__runnerTest',
+        async run(page, rep) {
+            const H = '__runnerTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            // #1637 b10 PHASE LAW: momentum's drones sweep on ABSOLUTE ticks, so
+            // the greedy plan from a standing spawn is clean at most start phases
+            // and declines at a few (that plan would die at a patrol). The seat
+            // refuses honestly there; re-ask a few ticks later — the patience the
+            // game itself teaches: wait out the bad phase, then watch. (Measured:
+            // spawn-tick 72 ok, 73 declines, 74 ok.)
+            let seats = 1
+            await key(page, 'KeyY')
+            for (; seats < 8 && !(await watching()); seats++) {
+                await page.waitForTimeout(200)
+                await key(page, 'KeyY')
+            }
+            rep.check('momentum: Y seats the autopilot plan (bad-phase declines retried)', await watching(), `${seats} press(es)`)
+            rep.check('momentum: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.x > x.x + 30 || y.score > x.score || y.zone > x.zone
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('momentum: the plan runs the sector untouched (an idle runner coasts to a stop)',
+                adv(a, b), `x ${Math.round(a.x)} -> ${Math.round(b.x)}, score ${a.score} -> ${b.score}, ${a.zoneName} -> ${b.zoneName}`)
+            rep.check('momentum: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('momentum: brake key takes over', !(await watching()))
+            rep.check('momentum: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            let reSeats = 0
+            for (; reSeats < 8 && !(await watching()); reSeats++) {
+                if (reSeats) await page.waitForTimeout(200)
+                await key(page, 'KeyY')                       // re-seat: plan from HERE
+            }
+            rep.check('momentum: Y re-seats the plan mid-run', await watching(), `${reSeats} press(es)`)
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('momentum: resumes from where the player left it', adv(c, d),
+                `x ${Math.round(c.x)} -> ${Math.round(d.x)}, score ${c.score} -> ${d.score}`)
+            await key(page, 'KeyY')
+            rep.check('momentum: Y again releases the plan', !(await watching()))
+        },
+    },
+    {
+        id: 'papers-please', url: `${BASE}/papers-please`, hook: '__ppTest',
+        async run(page, rep) {
+            const H = '__ppTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            rep.check('papers-please: Y seats the perfect inspector', await watching())
+            rep.check('papers-please: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            // prover-only: only a stamp moves the queue — an idle booth stares
+            // at the first entrant forever.
+            const adv = (x, y) => y.idx > x.idx || y.admitted > x.admitted || y.score > x.score || y.day > x.day
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('papers-please: the inspector works the line untouched (an idle booth never stamps)',
+                adv(a, b), `entrant ${a.idx} -> ${b.idx}, admitted ${a.admitted} -> ${b.admitted}, day ${a.day} -> ${b.day}, score ${b.score}`)
+            rep.check('papers-please: still watching mid-week', await watching())
+            await key(page, 'KeyD')
+            rep.check('papers-please: the deny key takes over', !(await watching()))
+            rep.check('papers-please: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await key(page, 'KeyY')
+            rep.check('papers-please: Y re-seats the inspector mid-week', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('papers-please: resumes from where the player left it', adv(c, d),
+                `entrant ${c.idx} -> ${d.idx}, admitted ${c.admitted} -> ${d.admitted}, strikes ${d.strikes}`)
+            await key(page, 'KeyY')
+            rep.check('papers-please: Y again releases the inspector', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)

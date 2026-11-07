@@ -87,7 +87,7 @@ const games = readdirSync(new URL('../src/games/', import.meta.url), { withFileT
     .filter((d) => d.isDirectory())
     .filter((d) => read(`../src/games/${d.name}/index.jsx`).includes('WatchButton on='))
     .map((d) => d.name)
-rep.check('shelf: every watching title still renders the pill', games.length >= 40, `${games.length} games`)
+rep.check('shelf: every watching title still renders the pill', games.length >= 47, `${games.length} games`)
 
 const REQUIRED_INSET = { top: 'sat', right: 'sar', bottom: 'sab', left: 'sal' }
 // #1663: a DOCKED pill sits inside an in-flow chrome band (Zork's status strip)
@@ -123,14 +123,18 @@ for (const g of games) {
     if (!insetsOk) continue
 
     for (const vp of VPS) {
+        // bottom-anchored pills (#1637 b10: Lemmings docks above its skill
+        // panel) compute y from the bottom edge; the PAUSE column only needs
+        // clearing by TOP-anchored pills — a bottom-right pill can't reach it.
+        const y = top ? vp.sat + top.base : vp.h - (bottom.base + (vp.sab || 0)) - PILL_H
         const pill = right
-            ? { x: vp.w - right.base - (vp.sar || 0) - PILL_W, y: vp.sat + top.base, w: PILL_W, h: PILL_H }
-            : { x: left.base + (vp.sal || 0), y: vp.h - (bottom.base + (vp.sab || 0)) - PILL_H, w: PILL_W, h: PILL_H }
+            ? { x: vp.w - right.base - (vp.sar || 0) - PILL_W, y, w: PILL_W, h: PILL_H }
+            : { x: left.base + (vp.sal || 0), y, w: PILL_W, h: PILL_H }
         // fits the viewport
         if (!(pill.x >= 0 && pill.y >= vp.sat && pill.x + pill.w <= vp.w && pill.y + pill.h <= vp.h)) {
             rep.check(`${g}: pill inside ${vp.name}`, false, JSON.stringify(pill))
         }
-        if (right) {
+        if (right && top) {
             const pz = pauseRect(vp)
             const gap = pill.y - (pz.y + pz.h)
             if (gap < worstChromeGap) { worstChromeGap = gap; worstChromeGame = `${g}/${vp.name}` }

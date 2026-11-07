@@ -301,7 +301,7 @@ export const GAMES = [
         label: 'LEMMINGS-LITE',
         theme: 'dark',
         description: 'They walk, they fall, you decide otherwise. A stream of mindless lemmings shuffles out of a cave toward cliffs, voids and plugged steel doors — one key press assigns a skill to the nearest one: blocker, bomber, climber or digger. Four hand-carved levels, each proven solvable (and each skill proven load-bearing) by a solver that ships in the repo; the attract demo is that solution, replayed move for move. Fatal falls are the killer, and a tunnelling digger is the only safe way down.',
-        controls: ['Press and hold a lemming: a ring previews the pick, release assigns the selected skill (release on nothing does nothing)', 'Tap a skill on the bottom panel (or 1 2 3 4) to pick BLOCKER / BOMBER / CLIMBER / DIGGER', 'Arrows move the assignment cursor, Space assigns (keyboard)', 'PAUSE pauses; hold FF to fast-forward', 'Get at least the OUT quota of lemmings into the door before the clock runs out', '?: Pause and read the controls']
+        controls: ['Press and hold a lemming: a ring previews the pick, release assigns the selected skill (release on nothing does nothing)', 'Tap a skill on the bottom panel (or 1 2 3 4) to pick BLOCKER / BOMBER / CLIMBER / DIGGER', 'Arrows move the assignment cursor, Space assigns (keyboard)', 'PAUSE pauses; hold FF to fast-forward', 'Get at least the OUT quota of lemmings into the door before the clock runs out', WATCH_HELP + ' — the solver that audits every level assigns the skills', '?: Pause and read the controls']
     },
     {
         path: '/boulder-dash',
@@ -345,7 +345,7 @@ export const GAMES = [
         label: 'MOMENTUM RUNNER',
         theme: 'dark',
         description: 'Hold right and never stop. A hand-carved slope-runner where speed is the only currency: gravity pulls you faster downhill (angle-based collision projects your landing onto the slope), you jump the pits, and springs loft you over the wide ones. The vertical loop only holds you if you enter FAST — and the only rings that survive the far spike hang on its apex, so skimp on momentum and you fall. Three zones, every slope and loop proven clearable by an autopilot that ships in the repo; the attract demo is its own winning route, replayed tick for tick.',
-        controls: ['Arrow Right / D-pad right: Build speed (flat running is too slow for the loop)', 'Arrow Left: Brake', 'Space / Z / Up / A: Jump pits — release early to land short, hold to fly far', 'Hit a hazard WITH rings: you stagger and lose them; WITHOUT: you fall back to the totem', 'Enter the loop fast enough (v² ≥ 5·g·r) or you peel off at the apex', '?: Pause and read the controls']
+        controls: ['Arrow Right / D-pad right: Build speed (flat running is too slow for the loop)', 'Arrow Left: Brake', 'Space / Z / Up / A: Jump pits — release early to land short, hold to fly far', 'Hit a hazard WITH rings: you stagger and lose them; WITHOUT: you fall back to the totem', 'Enter the loop fast enough (v² ≥ 5·g·r) or you peel off at the apex', WATCH_HELP + ' — the autopilot that proves every gap clears runs the sector', '?: Pause and read the controls']
     },
     {
         path: '/ice-climber',
@@ -421,7 +421,7 @@ export const GAMES = [
         label: 'PAPERS, PLEASE-MIN',
         theme: 'dark',
         description: 'Seven days at the border gate of a small gray country. Each entrant slides papers under the glass; the wall carries the law of the day — entry list, wanted sheet, calendar, a scale that reads the truth under their feet. ADMIT or DENY: the booth never hides its evidence, and every generated paper in the game is PROVEN decidable by a Node harness that re-judges each applicant twice (booth vs truth) and proves a careless eye still clears every day — the six traps (expires-TODAY, same-name-on-the-sheet, foreign-looking city, ID height, child without ID, ID weight) are placed on purpose. One new rule wakes every morning; three mistakes demote you.',
-        controls: ['A / SPACE / tap left: ADMIT the entrant', 'D / B button / tap right: DENY the entrant', 'Read the wall first: date, RULEBOOK, ENTRY LIST, WANTED sheet, SCALE', 'Expired BEFORE today is void — expiring TODAY is still valid', 'Wanted means name AND passport number; children are exempt from the ID rule', 'Day 7 wakes the CURFEW: a passport needs seven days of grace', '?: Pause and read the rules'],
+        controls: ['A / SPACE / tap left: ADMIT the entrant', 'D / B button / tap right: DENY the entrant', 'Read the wall first: date, RULEBOOK, ENTRY LIST, WANTED sheet, SCALE', 'Expired BEFORE today is void — expiring TODAY is still valid', 'Wanted means name AND passport number; children are exempt from the ID rule', 'Day 7 wakes the CURFEW: a passport needs seven days of grace', WATCH_HELP + ' — the perfect inspector paperscheck survives the week with takes the stamp', '?: Pause and read the rules'],
     },
     {
         path: '/lode-runner',
@@ -593,7 +593,7 @@ export const GAMES = [
         label: 'ZELDA',
         theme: 'dark',
         description: 'Hyrule as a cartridge that never was: a 3x3 overworld of hand-carved screens, a sword cave, a bomb shop whose price you earn by the drop tables, a cracked wall that hides an old man and his bombs, and a three-hall dungeon where a push-block opens the way to Aquamentus and the Triforce of Wisdom. Every screen respawns its monsters when you walk back in, every octorok spits on a fixed beat, and every kill drops exactly what the NES ledger says it drops — hearts for the brave, rupees for the hungry. The whole route (sword -> rupees -> bombs -> crack -> dungeon -> boss -> Triforce) is walked by a deterministic autopilot a Node harness audits offline, and the game is re-proven with a thinner wallet and no second cave container.',
-        controls: ['Arrows / D-pad: walk Hyrule — cave mouths and doors swallow you when you step in', 'Z / A: the sword — it hits the arc you face; monsters die to patterns, not to mashing', 'X / B: BOMB — blow the cracked wall, and the rocks of a set full pack too', 'Buy low at the BOMB SHOP (stand at the counter, press A to trade)', 'Push blocks from the side onto the switch tile; wait out Aquamentus, then dash the top row', '?: pause and read the quest'],
+        controls: ['Arrows / D-pad: walk Hyrule — cave mouths and doors swallow you when you step in', 'Z / A: the sword — it hits the arc you face; monsters die to patterns, not to mashing', 'X / B: BOMB — blow the cracked wall, and the rocks of a set full pack too', 'Buy low at the BOMB SHOP (stand at the counter, press A to trade)', 'Push blocks from the side onto the switch tile; wait out Aquamentus, then dash the top row', WATCH_HELP + ' — the same autopilot the harness audits wins the whole quest', '?: pause and read the quest'],
     },
     {
         path: '/emberwood',

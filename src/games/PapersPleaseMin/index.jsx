@@ -15,6 +15,8 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { CFG, newRun, step, stateHash, current, autopilot } from './sim.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { decide, RULES, dfmt, isAdult } from './rules.js'
 import { CW, CHS, STRIP_H, WALL, SCALE, PORTRAIT, PAPERS, ID, STAMP, wallRows } from './layout.js'
 
@@ -34,6 +36,8 @@ const PapersPleaseMinGame = () => {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js autopilot() stamps the booth
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -58,6 +62,20 @@ const PapersPleaseMinGame = () => {
         let banner = null           // {text, sub, ticks}
         let demoScript = null, demoAt = 0, demoWait = 0, demoSeed = 0
         const evLog = []
+        // #1637 WATCH — seat the perfect inspector paperscheck proves survives
+        // the week: clone the live booth, ask autopilot() for the calls, decline
+        // honestly if the booth can no longer survive. The sim is deterministic
+        // (paperscheck replays the week tick for tick), so the clone's verdicts
+        // applied at their waits are the proven line, live.
+        let watchScript = null, watchI = 0, watchWait = 0
+        const seatWatcher = () => {
+            if (!gs || gs.end || screenRef.current !== 'play' || pausedRef.current) return false
+            const r = autopilot(structuredClone(gs), 999)
+            if (!r.ok || !r.script.length) return false
+            watchScript = r.script; watchI = 0; watchWait = 0
+            return true
+        }
+        const releaseWatch = () => { watchingRef.current = false; setWatching(false); watchScript = null; playWatchStop() }
 
         const act = (action) => {
             if (screenRef.current !== 'play' || pausedRef.current || gs.end) return
@@ -83,6 +101,7 @@ const PapersPleaseMinGame = () => {
         }
 
         const finish = (res) => {
+            watchingRef.current = false; setWatching(false); watchScript = null // #1637 the week ends in your hands
             setEnd({ win: res === 'win', why: gs.endWhy, score: gs.score, caught: gs.caught, day: gs.day })
             if (res === 'win') audioController.playSweep(400, 1500, 0.9, 'square', 0.08)
             else audioController.playSweep(300, 50, 1.2, 'sawtooth', 0.1)
@@ -101,6 +120,7 @@ const PapersPleaseMinGame = () => {
             demoSeed = seed
             evLog.length = 0
             stamp = null; banner = null
+            watchingRef.current = false; setWatching(false); watchScript = null // #1637 a new week starts in your hands
             audioController.playSweep(220, 440, 0.25, 'square', 0.07)
             setMode('play')
         }
@@ -132,6 +152,15 @@ const PapersPleaseMinGame = () => {
             simTick++
             if (stamp && stamp.ticks > 0) stamp.ticks--
             if (banner && banner.ticks > 0) banner.ticks--
+            if (watchingRef.current && watchScript) {
+                // #1637 the inspector's own waits ride the live booth
+                if (watchWait > 0) watchWait--
+                else if (watchI < watchScript.length) {
+                    const s = watchScript[watchI++]
+                    act(s.action)
+                    watchWait = s.wait || 84
+                }
+            }
         }
 
         // ---------------------------------------------------------------- paint ----
@@ -303,6 +332,14 @@ const PapersPleaseMinGame = () => {
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || sc !== 'play') return
+            // #1637 WATCH: Y seats the perfect inspector at any live booth it
+            // can still survive; any real input takes over; Y re-seats from HERE.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) releaseWatch()
+                else if (seatWatcher()) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) releaseWatch()
             if (e.code === 'KeyA' || e.code === 'Space') act('approve')
             else if (e.code === 'KeyD') act('deny')
         }
@@ -311,6 +348,7 @@ const PapersPleaseMinGame = () => {
             if (sc === 'attract') { startPlay(0); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc !== 'play' || pausedRef.current) return
+            if (watchingRef.current) releaseWatch() // #1637 a tap on the counter takes the stamp
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
             act((e.clientX - r.left) / r.width > 0.55 ? 'deny' : 'approve')
@@ -331,6 +369,8 @@ const PapersPleaseMinGame = () => {
 
         if (import.meta.env.DEV) {
             window.__ppTest = {
+                watching: () => watchingRef.current, // #1637 WATCH probes
+                watchSfx: watchSfxLog,
                 probe: () => {
                     const { day, view } = current(gs)
                     return {
@@ -399,13 +439,27 @@ const PapersPleaseMinGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
+            {/* #1637 WATCH — the perfect inspector works the booth; any input
+                takes the stamp back. */}
+            {play && watching && <WatchToast className="absolute z-50" />}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
                     <div className="absolute inset-x-0 top-16 text-center pointer-events-none">
                         <h1 className="text-4xl font-black" style={{ color: '#e8c15a', textShadow: '2px 0 0 #a33c3c, -2px 0 0 #49b25a, 0 10px 24px #000' }}>PAPERS, PLEASE-MIN</h1>
                         <p className="text-white font-mono font-bold mt-2 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/80 mt-2 px-8" messages={MESSAGES} />
+                        <span className="block mt-2 text-emerald-300/90 font-mono font-bold tracking-widest text-xs">{WATCH_ATTRACT_HINT}</span>
                     </div>
                 </>
             )}

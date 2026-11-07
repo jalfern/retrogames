@@ -20,6 +20,8 @@ import { audioController, MUSIC } from '../../utils/AudioController'
 import { musicStep } from './music.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
     segAngle, segAtRoute,
@@ -226,6 +228,8 @@ const MomentumGame = () => {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js planRun() drives the sector
+    const watchingRef = useRef(false)
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
@@ -263,6 +267,22 @@ const MomentumGame = () => {
         let cprev = {}
         const keys = { left: false, right: false }
         let jumpEdge = false, jumpCut = false
+        // #1637 WATCH — seat planRun() at the LIVE runner (the same clone-and-plan
+        // PROGNOSIS runs). The sim is deterministic and runnercheck replays these
+        // scripts tick for tick, so feeding the plan's inputs to the live body
+        // reproduces the proven line. plan.ok=false → decline honestly, no blip.
+        let watchPlan = null, watchI = 0
+        const seatWatcher = () => {
+            if (!gs || gs.end || screenRef.current !== 'play' || pausedRef.current) return false
+            const c = { ...gs, p: { ...gs.p }, save: { ...gs.save },
+                taken: new Set(gs.taken), spent: new Map(gs.spent),
+                loopsTaken: new Set(gs.loopsTaken), ev: [] }
+            const plan = planRun(c)
+            if (!plan.ok || plan.end !== 'win') return false
+            watchPlan = plan.script; watchI = 0
+            return true
+        }
+        const releaseWatch = () => { watchingRef.current = false; setWatching(false); watchPlan = null; playWatchStop() }
         const dbg = { kp: 0 }
         const evLog = []
         const hist = []
@@ -373,6 +393,7 @@ const MomentumGame = () => {
         }
 
         const finish = () => {
+            watchingRef.current = false; setWatching(false); watchPlan = null // #1637 the run ends in your hands
             const sc = gs.score
             audioController.playFanfare()
             setEnd({ score: sc, deaths: gs.deaths })
@@ -399,7 +420,10 @@ const MomentumGame = () => {
             }
             if (sc !== 'play') return
             const before = gs.ev.length
-            step(gs, { right: keys.right, left: keys.left, jumpEdge, jumpCut })
+            const inp = watchingRef.current && watchPlan
+                ? (watchI < watchPlan.length ? watchPlan[watchI++] : { right: true }) // #1637 the proven line, tick for tick
+                : { right: keys.right, left: keys.left, jumpEdge, jumpCut }
+            step(gs, inp)
             maybeEnterLoop(gs)
             handleEvents(gs.ev.slice(before))
             climbWatch()
@@ -987,6 +1011,7 @@ const MomentumGame = () => {
         const startPlay = () => {
             gs = makeGame()
             evLog.length = 0; parts.length = 0; trail.length = 0
+            watchingRef.current = false; setWatching(false); watchPlan = null // #1637 a new run starts in your hands
             setMode('play')
             audioController.playSweep(330, 660, 0.2, 'square', 0.07)
         }
@@ -1000,6 +1025,14 @@ const MomentumGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1637 WATCH: Y seats the proven plan from the live runner; any
+            // driving key takes over; Y re-plans and seats from exactly HERE.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) releaseWatch()
+                else if (seatWatcher()) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) releaseWatch()
             if (e.code === 'ArrowLeft') keys.left = true
             if (e.code === 'ArrowRight') keys.right = true
             if (JUMP_KEYS.includes(e.code)) jumpEdge = true
@@ -1014,6 +1047,7 @@ const MomentumGame = () => {
             const sc = screenRef.current
             if (sc === 'attract') startPlay()
             else if (sc === 'over' && performance.now() - overAtRef.current > 900) setMode('attract')
+            else if (sc === 'play' && watchingRef.current) releaseWatch() // #1637 a tap on the strip takes the wheel
         }
         window.addEventListener('keydown', onDown)
         window.addEventListener('keyup', onUp)
@@ -1033,6 +1067,8 @@ const MomentumGame = () => {
 
         if (import.meta.env.DEV) {
             window.__runnerTest = {
+                watching: () => watchingRef.current, // #1637 WATCH probes
+                watchSfx: watchSfxLog,
                 probe: () => {
                     const p = gs.p, c = cam()
                     return {
@@ -1180,6 +1216,15 @@ const MomentumGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
+            {/* #1637 WATCH — planRun() drives the sector from the live runner;
+                any input takes over. Pill below the VELOCITY strip's chrome row. */}
+            {play && watching && <WatchToast className="absolute z-50" />}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-2 left-3 flex items-center gap-2 font-mono text-xs">
                     <div className="skew-x-[-8deg] border border-cyan-300/70 bg-black/50 px-3 py-1" style={{ boxShadow: '0 0 12px rgba(102,246,255,0.25), inset 0 0 8px rgba(102,246,255,0.12)' }}>
@@ -1203,6 +1248,10 @@ const MomentumGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
                     <div className="absolute inset-x-0 top-7 text-center pointer-events-none">
                         <h1 className="text-5xl font-black tracking-tight text-cyan-100" style={{ textShadow: '0 0 18px rgba(102,246,255,0.75), 0 4px 0 rgba(8,40,60,0.9), 0 10px 30px #000' }}>
                             MOMENTUM<span className="text-orange-400" style={{ textShadow: '0 0 18px rgba(255,140,60,0.8)' }}> RUNNER</span>
@@ -1211,6 +1260,7 @@ const MomentumGame = () => {
                     <div className="absolute inset-x-0 bottom-5 text-center pointer-events-none px-8">
                         <p className="text-white font-mono font-bold text-sm animate-pulse tracking-widest">{PRESS}</p>
                         <AttractMessage className="text-cyan-200/85 mt-2" messages={MESSAGES} />
+                        <span className="block mt-2 text-emerald-300/90 font-mono font-bold tracking-widest text-xs">{WATCH_ATTRACT_HINT}</span>
                     </div>
                 </>
             )}
