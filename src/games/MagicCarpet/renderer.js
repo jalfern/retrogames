@@ -18,7 +18,7 @@ import * as THREE from 'three'
 import { MAP, GRID, WATER, SANDL, GRASSL, ROCKL } from './sim.js'
 import {
     drawPearl, drawBook, drawBalloon, drawCastle, drawTower, drawWizard,
-    drawGiant, drawWolf, drawCow, drawHut, drawFireball, drawBolt,
+    drawGiant, drawWolf, drawCow, drawVillager, drawHut, drawFireball, drawBolt,
 } from './art.js'
 
 const N = GRID
@@ -87,6 +87,10 @@ const SPRITES = {
     giant: { l: -5.6, r: 5.6, t: 16.4, b: -0.4, wh: 7, ww: 2.4 },
     wolf: { l: -5.6, r: 5.6, t: 6.6, b: -0.4, wh: 1.9, ww: 1.9 },
     cow: { l: -3.6, r: 3.6, t: 4.6, b: -0.4, wh: 1.35, ww: 1.35 },
+    // #1764 item 3 — the villagers, one tile per tunic variant.
+    villager0: { l: -3.4, r: 3.4, t: 7.6, b: -1.2, wh: 3.0, ww: 2.0 },
+    villager1: { l: -3.4, r: 3.4, t: 7.6, b: -1.2, wh: 3.0, ww: 2.0 },
+    villager2: { l: -3.4, r: 3.4, t: 7.6, b: -1.2, wh: 3.0, ww: 2.0 },
     hut: { l: -5.6, r: 5.6, t: 8.6, b: -1.2, wh: 3.4, ww: 3.4 },
     hutBurn: { l: -5.6, r: 5.6, t: 13.6, b: -1.2, wh: 5, ww: 3.4 },
     rubble: { l: -5, r: 5, t: 2.4, b: -1.2, wh: 1, ww: 3 },
@@ -148,6 +152,9 @@ function bakeAtlas() {
     blit('giant', (u) => drawGiant(ctx, u.cx, u.cy, u.k, 6, false))
     blit('wolf', (u) => drawWolf(ctx, u.cx, u.cy, u.k, 6, true))
     blit('cow', (u) => drawCow(ctx, u.cx, u.cy, u.k))
+    blit('villager0', (u) => drawVillager(ctx, u.cx, u.cy, u.k, 6, 0))
+    blit('villager1', (u) => drawVillager(ctx, u.cx, u.cy, u.k, 6, 1))
+    blit('villager2', (u) => drawVillager(ctx, u.cx, u.cy, u.k, 6, 2))
     blit('hut', (u) => drawHut(ctx, u.cx, u.cy, u.k, 0, 6, 0, false))
     blit('hutBurn', (u) => drawHut(ctx, u.cx, u.cy, u.k, 0, 6, 200, false))
     blit('rubble', (u) => drawHut(ctx, u.cx, u.cy, u.k, 0, 6, 0, true))
@@ -697,6 +704,12 @@ void main(){
             else if (e.type === 'zap') { makeBolt(gs, e.x, e.y); addScorch(e.x, e.y, 8, 0.3) }
             else if (e.type === 'ignite') { addScorch(e.x, e.y, 5, 0.3) }
             else if (e.type === 'hutDown') { spawnBurst(gs, e.x, e.y, 5, [1.2, 0.5, 0.2]); addScorch(e.x, e.y, 6, 0.4) }
+            // #1764 item 3 — a villager in the flames: a small burst and a
+            // wisp of smoke where they stood.
+            else if (e.type === 'villager' && e.what === 'burn') {
+                spawnBurst(gs, e.x, e.y, 6, [1.5, 0.55, 0.25])
+                spawn(e.x, heightAt(gs, e.x, e.y) + 2, e.y, 'smoke', (Math.random() - 0.5) * 0.4, 0.6, (Math.random() - 0.5) * 0.4, 2.2, 70, [0.6, 0.42, 0.34])
+            }
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             // #1764: the growth reads as violet rune-dust off the rising works
             else if (e.type === 'wizGrow') spawnBurst(gs, e.x, e.y, 14, [0.85, 0.5, 1.5])
@@ -839,6 +852,13 @@ void main(){
                 const hz = (m.kind === 'giant' ? 21 : 8) + Math.sin(gs.tick * 0.22 + m.x) * 1.1
                 pushSpr('quest', m.x, m.y, gz(m.x, m.y) + hz, [1.5, 1.25, 0.5], m.lostT > 8 ? 0.95 : m.lostT / 8)
             }
+        }
+        for (const vl of gs.villagers || []) {
+            // #1764 item 3 — the village lives in the lanes; a panicked
+            // villager runs warm (the tint carries the fear, the legs run).
+            const flip = Math.cos(vl.dir) < 0
+            pushSpr(`villager${vl.v}`, vl.x, vl.y, gz(vl.x, vl.y) + 0.2,
+                vl.panicT > 0 ? [1.3, 1.05, 0.8] : [1, 1, 1], 1, flip)
         }
         for (const fm of gs.fireMarks) {
             if (gs.tick - fm.t > 900) continue

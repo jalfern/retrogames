@@ -208,6 +208,23 @@ export function drawCow(ctx, x, y, k) {
     px(ctx, x + 1.6 * k, y - 1 * k, k, k, '#c9c2b4')
 }
 
+// #1764 item 3 — the villagers. Small figures in three tunic colours (v),
+// a mid-stride leg split frozen at bake time (like every billboard here);
+// the walk reads from their motion, the lamp of the village is the huts'.
+export function drawVillager(ctx, x, y, k, f, v = 0) {
+    ctx.globalAlpha = 0.2
+    ctx.beginPath(); ctx.ellipse(x, y, 2.4 * k, 0.8 * k, 0, 0, Math.PI * 2); ctx.fill()
+    ctx.globalAlpha = 1
+    const tunic = ['#8a4a3a', '#5a6a8a', '#6a7a4a'][v % 3]
+    const step = Math.sin(f * 0.4 + v * 2) * 0.5 * k
+    px(ctx, x - 1.1 * k + step, y - 1.6 * k, 0.9 * k, 1.6 * k, '#4a3a2a')
+    px(ctx, x + 0.2 * k - step, y - 1.6 * k, 0.9 * k, 1.6 * k, '#4a3a2a')
+    px(ctx, x - 1.7 * k, y - 4.8 * k, 3.4 * k, 3.4 * k, tunic)
+    px(ctx, x - 1.7 * k, y - 2.3 * k, 3.4 * k, 0.7 * k, '#5a4030')
+    px(ctx, x - 1 * k, y - 6.8 * k, 2 * k, 2 * k, '#c8a080')
+    px(ctx, x - 1.1 * k, y - 7 * k, 2.2 * k, 0.9 * k, tunic)
+}
+
 export function drawHut(ctx, x, y, k, v, f, burn, dead) {
     if (dead) {
         ctx.globalAlpha = 0.2
