@@ -27,6 +27,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
+import { badgeView, BADGE_HOLD_UPLOADED_MS, BADGE_HOLD_SYNCED_MS } from '../src/utils/syncBadgeCore.js'
 import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
 
 const MUTATE = process.argv.includes('--mutate')
@@ -496,6 +497,34 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     ok(revOut.dropped.length === 1 && revOut.sent.length === 0 && await makeOutbox(fac).count() === 0,
         'revoked consent purges the pen through drain \u2014 nothing uploads AND nothing lingers')
     ok(await dropEntry('no-such-id') === true, 'dropEntry is silent on missing (already-gone is success)')
+}
+
+// --- sync badge: the phone says so (#1711 S7) -------------------------------
+// badgeView is the whole pill rule set; these gates pin its honesty:
+// no store = no claim; backlog outranks a fresh success; nothing says
+// "syncing" for an empty pen; confirmations fade, pending states don't.
+{
+    const H = { kind: 'hidden' }
+    ok(badgeView({ storeLive: false, uploaded: true }).kind === 'hidden'
+        && badgeView({ storeLive: false, phase: 'drain', left: 3 }).kind === 'hidden',
+        'no store, no pill — never claim storage the device does not have')
+    const up = badgeView({ storeLive: true, uploaded: true, left: 0 })
+    ok(up.kind === 'uploaded' && up.holdMs === BADGE_HOLD_UPLOADED_MS, 'a run that reached the store says TAKE UPLOADED, then fades')
+    const q = badgeView({ storeLive: true, uploaded: false, requeued: true, left: 1 })
+    ok(q.kind === 'queued' && q.holdMs === 0, 'a requeued take says SAVED — WILL SYNC and persists until truth changes')
+    ok(badgeView({ storeLive: true, uploaded: true, left: 2 }).kind === 'queued',
+        'backlog beats success — an uploaded run with stale takes waiting shows the backlog')
+    ok(badgeView({ storeLive: true, uploaded: true, left: 2 }).text.startsWith('2 TAKES'), 'backlog counts in words — 2 TAKES, not vibes')
+    ok(badgeView({ storeLive: true, phase: 'drain', left: 1 }).kind === 'syncing', 'a pass with work announces SYNCING')
+    ok(badgeView({ storeLive: true, phase: 'drain', left: 0, sent: 0 }).kind === 'hidden', 'no syncing theater for an empty pen')
+    const sy = badgeView({ storeLive: true, sent: 3, left: 0 })
+    ok(sy.kind === 'synced' && sy.text === '3 TAKES SYNCED' && sy.holdMs === BADGE_HOLD_SYNCED_MS, 'a drain that shipped 3 counts them, then fades')
+    ok(badgeView({ storeLive: true, sent: 1, left: 0 }).text === '1 TAKE SYNCED', 'one take reads one TAKE (no broken plurals)')
+    ok(badgeView({ storeLive: true, sent: 2, left: 1 }).kind === 'queued' && badgeView({ storeLive: true, sent: 2, left: 1 }).text.startsWith('1 TAKE'),
+        'partial drain reports the REMAINING count, not the shipped one — pending outranks done')
+    ok(badgeView({ storeLive: true, sent: 0, left: 0, uploaded: false }).kind === 'hidden', 'a pass that did nothing says nothing')
+    const mut = badgeView({ storeLive: true, requeued: true, left: 0 })
+    ok(mut.kind === 'queued' && mut.text === 'TAKE SAVED — WILL SYNC', 'a requeue with an unreadable pen count still says a take is saved')
 }
 
 // --mutate: the taxonomy flip (permanent -> keep) must poison the queue — this

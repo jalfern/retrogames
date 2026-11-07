@@ -18,14 +18,16 @@
 
 import { consentFor, grantConsent } from './consent.js'
 import { probeStore, uploadSession, storeFromQuery } from './sessionStore.js'
-import { queueRun, dropEntry, drain as drainOutbox } from './outbox.js'
+import { queueRun, dropEntry, drain as drainOutbox, countQueue } from './outbox.js'
 import { classifyFailure } from './outboxCore.js'
+import { badgeView } from './syncBadgeCore.js'
 import { voiceSupported } from './voiceCapture.js'
 import { autoStart, autoStop, isRecording } from './gameContract.js'
 import { planRun, decideMerge } from './autoRecordCore.js'
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import ConsentGate from '../components/ConsentGate.jsx'
+import SyncBadge from '../components/SyncBadge.jsx'
 
 // One local human per device in S2; remote seats keep their own device's
 // consent story (and are not auto-recorded yet).
@@ -38,10 +40,39 @@ const st = {
     base: null,
     busy: false, // a start is mid-ask (Space held through the gate must not re-enter)
     onlineArmed: false, // S6: the online->drain listener is installed once
+    badge: null, // S7: { root, host } for the sync pill — mounted on first need
+    badgeSeq: 0, // S7: a faded view may not overwrite a newer fact
+    badgeTimer: null,
 }
 
 const ls = () => { try { return localStorage } catch { return null } }
 const base = () => st.base || (st.base = storeFromQuery(typeof window !== 'undefined' ? window.location.search : ''))
+
+// publishBadge (#1711 S7) — the one honest line the phone says about the
+// store. Mounts the pill host once (ConsentGate's createRoot pattern), mirrors
+// the view on window.__syncBadge for the harness, and fades views whose
+// holdMs elapsed — unless a newer fact replaced them (badgeSeq).
+export function publishBadge(view) {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return view
+    const v = view || { kind: 'hidden', text: '', holdMs: 0 }
+    const seq = ++st.badgeSeq
+    if (st.badgeTimer) { clearTimeout(st.badgeTimer); st.badgeTimer = null }
+    if (!st.badge) {
+        const host = document.createElement('div')
+        host.setAttribute('data-sync-badge-host', '')
+        document.body.appendChild(host)
+        st.badge = { host, root: createRoot(host) }
+    }
+    st.badge.root.render(React.createElement(SyncBadge, { view: v }))
+    window.__syncBadge = { ...v, at: Date.now() }
+    if (v.kind !== 'hidden' && v.holdMs > 0) {
+        st.badgeTimer = setTimeout(() => {
+            st.badgeTimer = null
+            if (seq === st.badgeSeq) publishBadge({ kind: 'hidden', text: '', holdMs: 0 })
+        }, v.holdMs)
+    }
+    return v
+}
 
 // initAutoRecord — fire the capability probe early (mount time), so by the
 // moment the player reaches "start" the answer is already in hand and an
@@ -52,6 +83,9 @@ export function initAutoRecord() {
     if (!st.probe || (!st.probe.sessions && Date.now() - st.probeAt > 60000)) {
         st.probeAt = Date.now()
         probeStore(base()).then((p) => { st.probe = p; if (p.sessions) drainNow() }).catch(() => { st.probe = { ok: false, sessions: false } })
+        // S7 honesty: if the latest probe says no store, any pill on screen
+        // is stale — take it down until the store is real again.
+        if (st.probe && !st.probe.sessions) publishBadge({ kind: 'hidden', text: '', holdMs: 0 })
     }
     if (!st.onlineArmed) {
         st.onlineArmed = true
@@ -62,14 +96,20 @@ export function initAutoRecord() {
 // drainNow — retry the outbox against the live store. Consent is read FRESH
 // (last-moment rule unchanged: motion revoked = nothing uploads, and
 // planDrain purges the pile). Stats land on window.__outbox for the harness.
+// S7: the phone narrates — only when the pen has work (no empty-queue
+// theater), and the closing view comes from badgeView over the pass facts.
 export async function drainNow() {
     if (typeof window === 'undefined') return null
     const consent = consentFor(ls(), PLAYER_ID)
+    const storeLive = !!(st.probe && st.probe.sessions)
+    const before = await countQueue()
+    if (storeLive && before > 0) publishBadge(badgeView({ storeLive, phase: 'drain', left: before }))
     const out = await drainOutbox({
         motion: consent.motion,
         upload: (e) => uploadSession(e.rec, { player: e.player, consent: consentFor(ls(), PLAYER_ID), base: base() }),
     })
     window.__outbox = { ...out, at: Date.now() }
+    if (storeLive) publishBadge(badgeView({ storeLive, sent: out.sent.length, left: out.queued }))
     return out
 }
 
@@ -137,11 +177,21 @@ export async function endRun(opts = {}) {
     // and OVER-to-close is a thumb's width). Removed only when the store has
     // it or a permanent-failure rule says it never can.
     const entry = await queueRun(rec, opts.player || PLAYER_ID)
+    const storeLive = !!(st.probe && st.probe.sessions)
+    // S7: saved first, said first — a persisted take IS pending-sync before
+    // the network ever answers, and the hang window is exactly where the
+    // player is left wondering.
+    if (storeLive && entry) publishBadge(badgeView({ storeLive, requeued: true, left: 1 }))
     const res = await uploadSession(rec, { player: opts.player || PLAYER_ID, consent, base: base() })
     if (entry) {
         if (res.uploaded || classifyFailure(res.reason) === 'drop') await dropEntry(entry.id)
         res.requeued = !res.uploaded && classifyFailure(res.reason) !== 'drop'
     }
+    // S7: say what happened. left is the pen's real backlog after this run's
+    // fate (a fresh upload with stale takes waiting still shows the backlog —
+    // rule 2, backlog beats success).
+    const left = storeLive ? await countQueue() : 0
+    publishBadge(badgeView({ storeLive, uploaded: !!res.uploaded, requeued: !!res.requeued, left }))
     window.__autoRecord = {
         last: {
             game: rec.game, seed: rec.seed, ticks: rec.ticks,
