@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import PauseOverlay from '../../components/PauseOverlay.jsx'
 import VirtualControls from '../../components/VirtualControls.jsx'
+import Lobby from '../../components/Lobby.jsx'
 import { GAMES } from '../../config/games.js'
 import {
     exposeGame, unexposeGame, armLiveCapture, contractHoldsLoop, recordLiveTick,
@@ -18,6 +19,9 @@ import {
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord.js'
 import { startSpeechListen } from '../../utils/speechListen.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit.js'
+import { makeTransport } from '../../utils/linkPeers.js'
+import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
+import { createDefuseSync, snapshotNet, restoreNet, packSnap, DROP_GRACE, HASH_EVERY } from './net.js'
 import * as E from './engine.js'
 import { sfx } from './audio.js'
 import { parseCall } from './voice.js'
@@ -190,7 +194,7 @@ function drawBombView(g, gs, now, opts = {}) {
             g.shadowBlur = 0
             g.restore()
             g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'
-            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}`, kx, cy + 52)
+            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, kx, cy + 52)
         }
         drawWindowBar(g, gs, (gs.keys[0] || gs.keys[1]) && !(gs.keys[0] && gs.keys[1]) ? gs.keyT : 0)
     } else if (st.kind === E.CUT) {
@@ -233,7 +237,7 @@ function drawBombView(g, gs, now, opts = {}) {
             g.moveTo(ax - 12, 296 - 14 * close); g.lineTo(ax + 12, 296)
             g.stroke(); g.lineWidth = 1
             g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'
-            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}`, ax, 250)
+            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, ax, 250)
             g.fillStyle = C.wire[sel]; g.font = '7px "Press Start 2P", monospace'
             g.fillText(E.COLORS[sel][0], ax, 268)
         }
@@ -283,7 +287,7 @@ function drawBombView(g, gs, now, opts = {}) {
             g.strokeStyle = isHolder ? C.amber : '#000'
             g.strokeRect(bx - 10, 180, 20, 90)
             g.fillStyle = isHolder ? C.amber : C.label; g.font = '8px "Press Start 2P", monospace'
-            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}`, bx, 288)
+            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, bx, 288)
         }
     }
 
@@ -352,6 +356,12 @@ export default function BombDefuseGame() {
     const msgRef = useRef({ idx: 0, at: 0 })
     const overAtRef = useRef(0)
     const voiceRef = useRef({ on: false, listen: null })
+    // #1819 online — lobby + lockstep sync live here; the loop reads netRef.current
+    const netRef = useRef({
+        active: false, role: null, lobby: null, room: null, sync: null,
+        miss: 0, desyncs: 0, desyncFrozen: false,
+    })
+    const [netUi, setNetUi] = useState(null)
 
     useEffect(() => { pausedRef.current = paused }, [paused])
 
@@ -429,7 +439,10 @@ export default function BombDefuseGame() {
             get players() { return seatsRef.current },
             buttons: ['a', 'b'],
             reads: ['up', 'down', 'left', 'right', 'a', 'b'],
-            sources: () => [{ kind: 'human' }, seatsRef.current > 1 ? { kind: 'human' } : { kind: 'cpu' }],
+            sources: () => {
+                const solo = netRef.current.sync && netRef.current.sync.solo()
+                return [{ kind: 'human' }, seatsRef.current > 1 && !solo ? { kind: 'human' } : { kind: 'cpu' }]
+            },
             reset: (seed, players) => { startPlay(seed >>> 0 || 1, Math.max(1, Math.min(2, players | 0 || 1))) },
             tick: (pad, pads) => {
                 const g = gsRef.current
@@ -472,6 +485,103 @@ export default function BombDefuseGame() {
             done: !!(gsRef.current && gsRef.current.done),
         }))
 
+        // ---- online (#1819): one lobby, one seed, two hands on two boxes ----
+        const nq = new URLSearchParams(location.search)
+        const urlRole = lobbyRole(location.search)
+        const net = netRef.current
+        net.active = urlRole !== null
+        net.role = urlRole
+        const pushNetUi = () => setNetUi(net.lobby ? net.lobby.state() : null)
+        net.sync = createDefuseSync({
+            mySeat: urlRole === 'host' ? 0 : 1,
+            watchSeats: [],
+            send: (t, p) => { if (net.room) net.room.send(t, p) },
+        })
+        const hostSnap = () => {
+            const g = gsRef.current
+            if (!g || !net.room) return
+            for (const c of packSnap(JSON.stringify(snapshotNet(g)), g.tick)) net.room.send('res', c)
+        }
+        const netDesync = () => {
+            net.desyncs++
+            hudRef.current.banner = { text: 'LINK DESYNC — RESYNCING', ok: false }
+            hudRef.current.bannerT = 80
+            if (net.role === 'host') hostSnap()
+            else {
+                net.desyncFrozen = true
+                if (net.room) net.room.send('res', { e: 'req' })
+            }
+        }
+        const startNetMatch = (m) => {
+            const seed = ((m && m.seed) >>> 0) || 1
+            gsRef.current = E.createGame(seed, 2)
+            seedRef.current = seed
+            seatsRef.current = 2
+            coopRef.current = true
+            hudRef.current = { flash: 0, shake: 0, sparks: [], banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70, boomT: 0 }
+            hintRef.current = null
+            net.miss = 0
+            net.desyncFrozen = false
+            const room = net.room
+            const mySeat = room && room.yourSlot >= 0 ? room.yourSlot : (net.role === 'host' ? 0 : 1)
+            net.sync.mySeat = mySeat
+            const humans = room && room.slots ? room.slots.slice() : [mySeat]
+            net.sync.watchSeats = humans.filter((s) => s !== mySeat).sort((a, b) => a - b)
+            net.sync.reset(0)
+            // consent rides the kick gesture (host press) / prior grant (guest);
+            // a rejected consent just plays unrecorded — honest.
+            askConsent().then(() => beginRun()).catch(() => {})
+            setScreen('play')
+        }
+        const onlineStart = () => {
+            if (!net.lobby || net.role !== 'host' || !net.room || startBusy()) return
+            if (net.room.phase !== 'waiting') net.room.setPhase('waiting')
+            net.lobby.start({ seed: humanSeed() })
+        }
+        if (net.active) {
+            net.lobby = createLobby({
+                slug: 'bomb-defuse',
+                cap: 2,
+                relay: relayFromQuery(location.search),
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (st) => {
+                    if (st.role) net.role = st.role
+                    // a bare ?net=join with no code gets the shared entry card
+                    if (urlRole === 'guest' && !nq.get('room') && st.phase === 'idle' && !st.code) st.phase = 'entry'
+                    pushNetUi()
+                },
+                onStart: (m) => startNetMatch(m),
+                onJoin: () => pushNetUi(),
+                onLeave: () => {
+                    pushNetUi()
+                    // a pending resync could wait forever — drive on; the
+                    // missing seat demotes through the stall law below
+                    net.desyncFrozen = false
+                },
+                on: {
+                    pad: (m) => net.sync.gotPad(m),
+                    hs: (m) => { const d = net.sync.gotHash(m.k | 0, m.h >>> 0); if (d) netDesync() },
+                    res: (m) => {
+                        if (m.e === 'req') { if (net.role === 'host') hostSnap() }
+                        else if (m.e === 'snp') {
+                            const got = net.sync.snapInbox.push(m)
+                            if (got && net.role === 'guest' && net.desyncFrozen) {
+                                // restore at the host's tick; pad streams are
+                                // PRESERVED (the sampling law) — no sync.reset
+                                gsRef.current = restoreNet(got.snap)
+                                net.desyncFrozen = false
+                            }
+                        }
+                    },
+                },
+            })
+            net.room = net.lobby.room
+            if (net.role === 'host') net.lobby.open()
+            else if (nq.get('room')) net.lobby.join(nq.get('room'))
+            pushNetUi()
+        }
+
         const pressMin = (keys, field) => { keys[field] = true; keys[field + '_rel'] = false }
         const releaseMin = (keys, field) => { keys[field + '_rel'] = true }
         const settleReleases = (keys) => {
@@ -495,9 +605,20 @@ export default function BombDefuseGame() {
                 return
             }
             if (e.code === 'KeyV') { e.preventDefault(); toggleVoice(); return }
-            if (screenRef.current === 'attract') { beginSelect(); return }
+            if (screenRef.current === 'attract') {
+                if (net.active) {
+                    // the lobby owns the attract: the host kicks (Space/Enter),
+                    // the guest waits for the go — crew size is fixed at 2 online
+                    if (net.role === 'host' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); onlineStart() }
+                    return
+                }
+                beginSelect(); return
+            }
             if (screenRef.current === 'over') {
-                if (performance.now() - overAtRef.current > 700) { clearKeys(); humanStart(humanSeed(), seatsRef.current) }
+                if (performance.now() - overAtRef.current > 700) {
+                    if (net.active) { if (net.role === 'host') onlineStart() }
+                    else { clearKeys(); humanStart(humanSeed(), seatsRef.current) }
+                }
                 return
             }
             if (screenRef.current === 'select') {
@@ -522,9 +643,15 @@ export default function BombDefuseGame() {
             if (f2 && seatsRef.current > 1) releaseMin(keys2Ref.current, f2)
         }
         const onPointer = (ev) => {
-            if (ev.target && ev.target.closest && ev.target.closest('[data-vc]')) return
-            if (screenRef.current === 'attract') beginSelect()
-            else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) humanStart(humanSeed(), seatsRef.current)
+            if (ev.target && ev.target.closest && (ev.target.closest('[data-vc]') || ev.target.closest('[role="dialog"]') || ev.target.closest('input,button'))) return
+            if (screenRef.current === 'attract') {
+                if (net.active) { if (net.role === 'host') onlineStart() }
+                else beginSelect()
+            }
+            else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) {
+                if (net.active) { if (net.role === 'host') onlineStart() }
+                else humanStart(humanSeed(), seatsRef.current)
+            }
             else if (screenRef.current === 'select') humanStart(humanSeed(), selectRef.current)
         }
         window.addEventListener('keydown', onKeyDown)
@@ -562,6 +689,49 @@ export default function BombDefuseGame() {
             if (screenRef.current === 'select') return
             if (screenRef.current !== 'play' || pausedRef.current) return
             if (contractHoldsLoop()) return
+            if (net.active) {
+                const gs = gsRef.current
+                if (!gs) return
+                if (!net.desyncFrozen) {
+                    let pads
+                    if (net.sync.solo()) {
+                        // survivor: no peer to sync with — held keys drive seat
+                        // 0 and the engine partner covers seat 1 (players=1).
+                        if (gs.players > 1) gs.players = 1
+                        pads = [padFrom(keys1Ref.current), {}]
+                    } else {
+                        const k = gs.tick + 1
+                        net.sync.pumpTo(k + net.sync.delay, () => padFrom(keys1Ref.current))
+                        if (!net.sync.ready(k)) {
+                            net.miss++
+                            if (net.miss >= DROP_GRACE) {
+                                const seat = net.sync.watchSeats[0]
+                                if (seat !== undefined && net.sync.demote(seat)) {
+                                    gs.players = 1
+                                    hudRef.current.banner = { text: 'PARTNER LINK LOST — CPU PARTNER IN', ok: false }
+                                    hudRef.current.bannerT = 90
+                                    sfx.strike()
+                                }
+                                net.miss = 0
+                            }
+                            settleReleases(keys1Ref.current)
+                            return
+                        }
+                        net.miss = 0
+                        pads = net.sync.assemble(k)
+                    }
+                    spec.tick(pads[0], pads)
+                    if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
+                    if (isRecording() && screenRef.current === 'over') endRun()
+                    if (!gs.done && !net.sync.solo() && gs.tick % HASH_EVERY === 0) {
+                        const d = net.sync.hash(gs.tick, E.hash(gs))
+                        if (d) netDesync()
+                    }
+                    settleReleases(keys1Ref.current)
+                    if (!gs.done && screenRef.current === 'play' && Math.ceil(gs.fuse / 60) <= 10 && gs.tick % 30 === 0) sfx.tick()
+                }
+                return
+            }
             const p1 = padFrom(keys1Ref.current)
             const pads = seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : [p1]
             spec.tick(p1, pads)
@@ -586,7 +756,11 @@ export default function BombDefuseGame() {
             if (screenRef.current === 'play' || screenRef.current === 'over') {
                 const gs = gsRef.current
                 if (gs) {
-                    drawBombView(g, gs, now, { paused: pausedRef.current, cpu2: seatsRef.current === 1 })
+                    drawBombView(g, gs, now, {
+                        paused: pausedRef.current,
+                        cpu2: seatsRef.current === 1 || (net.active && net.sync && net.sync.solo()),
+                        youSeat: net.active && net.sync && !net.sync.solo() ? net.sync.mySeat : -1,
+                    })
                     drawIntro(g, gs)
                     for (const s of hud.sparks) {
                         s.x += s.vx; s.y += s.vy; s.vy += 0.18
@@ -614,7 +788,7 @@ export default function BombDefuseGame() {
                         g.lineWidth = 1
                         if (--hn.t <= 0) hintRef.current = null
                     }
-                    drawHudFrame(g, gs, { coop: seatsRef.current > 1, mic: voiceRef.current.on })
+                    drawHudFrame(g, gs, { coop: seatsRef.current > 1 && !(net.active && net.sync && net.sync.solo()), mic: voiceRef.current.on })
                     if (hud.flash > 0) {
                         g.fillStyle = `rgba(255,60,40,${Math.min(0.35, hud.flash / 60)})`
                         g.fillRect(0, 0, W, H); hud.flash--
@@ -649,8 +823,8 @@ export default function BombDefuseGame() {
                 const m = msgRef.current
                 if (now - m.at > 2600) { m.at = now; m.idx = (m.idx + 1) % ATTRACT_MSGS.length }
                 g.font = '9px "Press Start 2P", monospace'; g.fillStyle = C.green
-                g.fillText(ATTRACT_MSGS[m.idx], 320, 214)
-                if (Math.floor(now / 500) % 2) { g.fillStyle = '#fff'; g.fillText('PRESS ANY KEY / TAP', 320, 250) }
+                g.fillText(net.active ? (net.role === 'host' ? 'ROOM LIVE — SHARE THE CODE' : "WAITING FOR THE HOST'S KICK…") : ATTRACT_MSGS[m.idx], 320, 214)
+                if ((!net.active || net.role === 'host') && Math.floor(now / 500) % 2) { g.fillStyle = '#fff'; g.fillText(net.active ? 'SPACE STARTS THE CREW' : 'PRESS ANY KEY / TAP', 320, 250) }
                 g.textAlign = 'left'
             }
             g.restore()
@@ -672,7 +846,9 @@ export default function BombDefuseGame() {
             drawSegText(g, 264, 192, String(gs.score).padStart(5, '0'), 22, C.amber, true)
             if (performance.now() - overAtRef.current > 700 && Math.floor(now / 460) % 2) {
                 g.font = '9px "Press Start 2P", monospace'; g.fillStyle = '#fff'
-                g.fillText('TRY AGAIN — ANY KEY', 320, 238)
+                g.fillText(net.active
+                    ? (net.role === 'host' ? 'SPACE — RUN IT BACK' : 'WAITING FOR THE HOST…')
+                    : 'TRY AGAIN — ANY KEY', 320, 238)
             }
             g.textAlign = 'left'
         }
@@ -723,6 +899,16 @@ export default function BombDefuseGame() {
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return gsRef.current ? E.simState(gsRef.current) : null },
                 press: (code) => { const f1 = S1[code]; if (f1) pressMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) pressMin(keys2Ref.current, f2) },
                 release: (code) => { const f1 = S1[code]; if (f1) releaseMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) releaseMin(keys2Ref.current, f2) },
+                net: () => ({
+                    active: net.active, role: net.role,
+                    code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : '',
+                    seat: net.sync ? net.sync.mySeat : -1,
+                    watch: net.sync ? net.sync.watchSeats.slice() : [],
+                    solo: net.sync ? net.sync.solo() : false,
+                    stalls: net.sync ? net.sync.stats().stalls : 0,
+                    miss: net.miss, desyncs: net.desyncs, frozen: net.desyncFrozen,
+                }),
+                kick: () => { onlineStart(); return true },
             }
             mountDbg({
                 title: 'BOMB DEFUSE',
@@ -737,6 +923,7 @@ export default function BombDefuseGame() {
                         st.kind === E.CUT ? `target ${E.COLORS[st.color]} sel ${E.COLORS[g.sel[0]]}/${E.COLORS[g.sel[1]]} armed ${g.armed.map(a => (a ? 'Y' : 'n')).join('')}` : '',
                         st.kind === E.VENT ? `holder P${st.holder + 1} needle ${E.needleOf(g)} zone ${g.zone}±${E.ZONE_HALF[g.bomb]} held ${g.held}` : '',
                         `done ${g.done} won ${g.won} seats ${seatsRef.current}`,
+                        net.active ? `net ${net.role || '?'} ${net.room ? net.room.phase : ''} code ${net.room ? net.room.code : '----'} seat ${net.sync ? net.sync.mySeat : -1} solo ${net.sync ? net.sync.solo() : false} desyncs ${net.desyncs}` : '',
                     ].filter(Boolean)
                 },
                 actions: [
@@ -753,6 +940,7 @@ export default function BombDefuseGame() {
             window.removeEventListener('pointerdown', onPointer)
             if (voice.listen) voice.listen.stop()
             if (isRecording()) endRun()
+            if (net.lobby) net.lobby.close() // #1819: don't leave the relay socket open
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__bdTest }
             unexposeFeedbackState()
         }
@@ -768,6 +956,15 @@ export default function BombDefuseGame() {
                 className="max-h-full max-w-full"
                 style={{ imageRendering: 'pixelated', aspectRatio: `${W} / ${H}` }}
             />
+            {netUi && uiScreen === 'attract' && (
+                <Lobby
+                    state={netUi}
+                    title="DEFUSE CREW"
+                    accent={{ text: 'text-amber-300', dim: 'text-amber-100/70', live: 'border-amber-300/50 text-amber-100' }}
+                    startHint="SPACE — START THE RUN"
+                    onEntry={(code) => netRef.current.lobby && netRef.current.lobby.join(code)}
+                />
+            )}
             {paused && <PauseOverlay gameEntry={entry} onResume={() => setPaused(false)} />}
             {micOn && (
                 <div className="pointer-events-none absolute top-2 right-2 rounded bg-red-700/80 px-2 py-1 font-mono text-xs text-white">

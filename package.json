@@ -67,6 +67,8 @@
     "gravelplay": "node scripts/gravelplay.mjs",
     "bombcheck": "node scripts/bombcheck.mjs",
     "defusecheck": "node scripts/defusecheck.mjs",
+    "defuselinkcheck": "node scripts/defuselinkcheck.mjs",
+    "defuselinkdrive": "node scripts/defuselinkdrive.mjs",
     "defusedrive": "node scripts/defusedrive.mjs",
     "britannidrive": "node scripts/britanniadrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
