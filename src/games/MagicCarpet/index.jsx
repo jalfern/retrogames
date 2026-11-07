@@ -155,6 +155,17 @@ const MagicCarpetGame = () => {
         } catch {
             renderer = null
         }
+        // #1790 ANAGLYPH STEREO: `?stereo=1` wins (a phone's only hand — there
+        // is no keyboard in a URL bar's reach the other way), then the last
+        // choice; V flips it live. The sim never hears about stereo.
+        let stereo = (() => {
+            try {
+                const q = new URLSearchParams(window.location.search).get('stereo')
+                if (q === '1' || q === '0') return q === '1'
+                return localStorage.getItem('mc-stereo') === '1'
+            } catch { return false }
+        })()
+        if (renderer) renderer.setStereo(stereo)
 
         let gs = makeGame(7)
         let demoSeed = 7, demoT = 0
@@ -629,6 +640,20 @@ const MagicCarpetGame = () => {
             ctx.fillStyle = 'rgba(232, 200, 96, 0.85)'
             ctx.font = '7px monospace'
             ctx.fillText(`WORLD ${gs.level + 1}/${LEVELS.length}`, 6, 12)
+            // #1790 glasses reminder: two colored pips, red-over-cyan, when the
+            // anaglyph is live. Small, top-left, out of the radar's way.
+            if (stereo) {
+                ctx.fillStyle = 'rgba(14, 26, 56, 0.8)'
+                ctx.fillRect(5, 15, 30, 8)
+                ctx.fillStyle = '#ff4848'
+                ctx.fillRect(8, 17, 4, 4)
+                ctx.fillStyle = '#48e0e0'
+                ctx.fillRect(14, 17, 4, 4)
+                ctx.fillStyle = '#ffd860'
+                ctx.font = '5px monospace'
+                ctx.fillText('3D', 21, 21)
+                ctx.font = '7px monospace'
+            }
             // hearts
             for (let i = 0; i < 5; i++) {
                 const full = gs.hp >= (i + 1) * 20
@@ -852,6 +877,16 @@ const MagicCarpetGame = () => {
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            // #1790: V is the glasses switch — it works on any screen, paused
+            // included (nothing else claims KeyV, and a chart never needs 3D).
+            if (e.code === 'KeyV' && !e.repeat) {
+                stereo = !stereo
+                if (renderer) renderer.setStereo(stereo)
+                try { localStorage.setItem('mc-stereo', stereo ? '1' : '0') } catch { /* private mode */ }
+                audioController.playTone(stereo ? 880 : 620, 0.05, 'square', 0.05)
+                say(stereo ? 'ANAGLYPH ON — WEAR THE GLASSES' : 'STEREO OFF')
+                return
+            }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') {
@@ -1036,6 +1071,12 @@ const MagicCarpetGame = () => {
                 trailMotes: () => (renderer ? renderer.particleCount() : -1),
                 glowCells: () => (renderer ? renderer.glowCells() : -1),
                 scorchCells: () => (renderer ? renderer.scorchCells() : -1),
+                // #1790: the harness drives glasses the way a player does.
+                // setStereo here flips the mode WITHOUT touching localStorage —
+                // persistence gates press the real V key instead.
+                stereo: () => stereo,
+                setStereo: (on) => { stereo = !!on; if (renderer) renderer.setStereo(stereo); return stereo },
+                ipd: () => (renderer ? renderer.stereoIPD() : 0),
                 pixels: (x, y, w, h) => {
                     if (!renderer) return null
                     const g = renderer.gl

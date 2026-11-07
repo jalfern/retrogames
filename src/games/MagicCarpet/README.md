@@ -351,7 +351,12 @@ see item 5).
 - No anaglyph/stereo mode. **Partially closed by #1746 item 7:** rival-cast
   cues now pan to the caster's side (see the #1746 section) — the world bed,
   creatures and lightning are still center, and there is no true HRTF.
-  `?` pause carries the rules instead.
+  `?` pause carries the rules instead. **Partially closed by #1790:** red/cyan
+  anaglyph ships — the world renders twice from ±0.60u parallel cameras and
+  the post chain combines left→red / right→cyan (bloom is shared; the HUD
+  stays flat mono). `V` toggles, `?stereo=1` opens on a fresh link, the
+  choice persists. Still open: LCD-shutter/interlace modes, and the
+  audio half (HRTF) of #1746 item 7.
 - Water is shader waves with self-shadowing, sun-linked sparkle, dithered
   depth bands and foam lace tracing the shoreline — but not the original's
   4-bit palette-cycling wave animation; no underwater view when cratered below sea.
