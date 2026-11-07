@@ -416,7 +416,7 @@ export default function TalkMeDown() {
                 const gs = gsRef.current
                 if (gs) {
                     drawBombView(g, gs, tick)
-                    ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag)
+                    ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag, gs.flip)
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
@@ -536,7 +536,7 @@ export default function TalkMeDown() {
                 // #1797: the maintenance side. Batteries are the news — but
                 // the fuse and the breakers stay readable (pressure never
                 // hides, KTANE signature 5).
-                ART.drawBack(g, gs.features.batteries, tick)
+                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial)
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return
@@ -546,8 +546,8 @@ export default function TalkMeDown() {
             ART.drawBoltColor(g, gs.features.bolt)
             ART.drawStrikes(g, gs.strikes)
             ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
-            g.font = '8px "Press Start 2P", monospace'; g.fillStyle = '#0f1113'
-            g.fillText('SER ' + gs.features.serial, ART.PANEL.x + 136, ART.PANEL.y + 24)
+            // #1802: the serial is no longer printed here — it lives on the
+            // BACK ID plate; the front shell says "SERIAL: SEE BACK".
             ART.drawFlipHint(g, !!(hud.pulse && hud.pulse.kind === 'flip'), tick)
             gs.modules.forEach((m, i) => {
                 const r = ART.moduleRect(i, gs.modules.length)

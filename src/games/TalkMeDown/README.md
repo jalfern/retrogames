@@ -82,7 +82,7 @@ the couch — or the mic.
 ## Verify
 
 ```bash
-npm run bombcheck   # 50 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 55 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
                     # paths, quota win 50/50, slack (wins at 75% fuse), grammar
                     # (+ FLIP phrases, page/dial keep), voiceCmd banking (#1415:
@@ -140,8 +140,10 @@ everything else green.
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
   dial module is intentionally not cross-referenced (first dial wins).
 - The tilt is READ-only: batteries are counted, never pulled (no battery-pull
-  fuse tricks), and the serial stays on the front — the original hides it on
-  the back. Solo play can answer D5/G5 straight off the LCD rail without ever
-  tilting; only a human seat 2 forces the flip conversation.
+  fuse tricks). Since #1802 the SERIAL lives on the BACK ID plate (the original
+  hides it there — "Serial Port!"), so serial rules (N6/D1/D3/G2/G4) force the
+  flip conversation; seat 2's page coaches "ASK THEM TO FLIP IT!". Solo play
+  answers N6/D1/D3 too by tilting — the tilt is free; only battery-pull and
+  deeper plate variety remain stage 2.
 - No bomb-shape variety beyond the two sides; deeper rounds could vary the
   plate layout itself (that remains the fun-kind of stage 2).
