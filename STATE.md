@@ -30,17 +30,15 @@ QA inside #1764). Filed #1797 with the why-weakest line, claimed, built.
 ## Board this session
 - #1797 shipped+closed; QA polish pass **#1802** filed (pullable batteries,
   serial-on-back, tilt squash animation, seat-2 flip coaching, hint size).
-- **Prod verify PENDING** (merged ~12:20Z; Vercel + proxy lag ~10-30 min,
-  #1764 lesson). Next slot b: poll entry `index-<hash>.js` chunks for
-  `MAINTENANCE PANEL`, then comment the live URL on #1797.
+- **Prod verified:** `index-Cb-xdLMU.js` -> chunk `index-DQY7hhHZ.js` carries
+  the back panel; live URL posted, #1797 closed.
 - README Honest gaps cleaned: #1373/#1415 shipped-notes marked CLOSED so
   never-dry scoring reads honestly (TalkMeDown now ~4 real gaps, was 7).
 
 ## Next queued (slot b)
-1. Verify prod for #1801/#1797 (above).
-2. #1711 hardware stage: when #1730 lands — but #1711 is slot a's live claim;
+1. #1711 hardware stage: when #1730 lands — but #1711 is slot a's live claim;
    don't touch unless it goes stale (no claim/checkpoint 90 min).
-3. Else the usual ladder: steer/next/game-queue → feedback borrow (only with
+2. Else the usual ladder: steer/next/game-queue → feedback borrow (only with
    no live QA MASTER) → flagship gaps via idle.mjs → never-dry weakestStage
    (re-run fresh; with #1797 closed, TALK ME DOWN drops — likely back to
    HOMEBODY/BRITANNIA/FLOOR BOSS score-5 tier, oldest-first).
