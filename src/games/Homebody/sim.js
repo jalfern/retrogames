@@ -429,9 +429,14 @@ export function buildRoomOk(s) { return roomClear(s) && s.money >= EXT_ROOM.pric
 export function place(s, r, c) {
     const def = CATALOG[s.sel]
     if (!def) return false
-    if (def.room) return buildRoom(s)
-    if (s.money < def.price || !canPlace(s, def, r, c)) return false
-    if (def.solid && !keepsOpen(s, r, c)) return false
+    if (def.room) {
+        if (buildRoom(s)) return true
+        s.events.push({ t: 'refuse', r: EXT_ROOM.door[0], c: EXT_ROOM.door[1] })
+        return false
+    }
+    // #1823: a refused placement speaks — the view flashes the ghost cell red
+    if (s.money < def.price || !canPlace(s, def, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
+    if (def.solid && !keepsOpen(s, r, c)) { s.events.push({ t: 'refuse', r, c }); return false }
     s.money -= def.price
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
     s.events.push({ t: 'place', r, c, id: def.id })
@@ -603,9 +608,21 @@ function updateHouseBond(s, dt) {
 }
 
 // ----------------------------------------------------------- walking ------
+// #1823: walk-surface feel — one 'step' event per footfall (~18 px travelled),
+// carrying the ground underfoot so planks, lawn and path get distinct timbres.
+const STEP_PX = 18
+function footstep(s, p, moved) {
+    p.stepDist = (p.stepDist || 0) + moved
+    while (p.stepDist >= STEP_PX) {
+        p.stepDist -= STEP_PX
+        s.events.push({ t: 'step', surf: groundOf(s, p.r, p.c) })
+    }
+}
+
 function walkAlong(s, p, dt, spd) {
     if (!p.path || !p.path.length) return
     let step = spd * dt
+    const budget = step
     while (step > 0 && p.path.length) {
         const t = p.path[0]
         const tx = tileX(t.c) + TILE / 2, ty = tileY(t.r) + TILE / 2
@@ -622,6 +639,7 @@ function walkAlong(s, p, dt, spd) {
         }
         p.walkPhase += dt * 9
     }
+    footstep(s, p, budget - step)
 }
 
 const moodMul = (p) => (p.needs.energy < 0.2 ? 0.6 : p.needs.hunger < 0.2 ? 0.75 : p.mood > 0.7 ? 1.12 : 1)
@@ -910,6 +928,7 @@ export function manualMove(s, p, dx, dy, dt) {
     if (!dx && !dy) return false
     p.path = null; p.goal = null
     const spd = 52 * moodMul(p) * dt
+    const ox = p.x, oy = p.y
     if (dx) p.face = dx > 0 ? 1 : -1
     const nx = p.x + (dx ? Math.sign(dx) * spd : 0)
     const ny = p.y + (dy ? Math.sign(dy) * spd : 0)
@@ -925,6 +944,7 @@ export function manualMove(s, p, dx, dy, dt) {
     const c = tileAt(p.x, p.y)
     p.r = c.r; p.c = c.c
     p.walkPhase += dt * 11
+    footstep(s, p, Math.abs(p.x - ox) + Math.abs(p.y - oy))
     return true
 }
 
