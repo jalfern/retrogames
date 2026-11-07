@@ -81,7 +81,7 @@ function createFighter(def, side) {
         hp: def.hp || 100, meter: 0, guard: GUARD_MAX,
         st: 'idle', sf: 0, move: null, phase: '', hitOnce: {},
         blockHeld: false, crouchBlock: false,
-        buf: [], press: null,
+        buf: [], press: null, btnBuf: null,
         charge: 0,
         combo: 0, comboTimer: 0,
         juggled: 0,
@@ -118,7 +118,7 @@ export function resetRound(m) {
         f.facing = f.side === 0 ? 1 : -1
         f.hp = f.def.hp || 100
         f.st = 'idle'; f.sf = 0; f.move = null; f.phase = ''; f.hitOnce = {}
-        f.buf = []; f.press = null; f.charge = 0
+        f.buf = []; f.press = null; f.btnBuf = null; f.charge = 0
         f.combo = 0; f.comboTimer = 0
         f.juggled = 0
         f.guard = GUARD_MAX
@@ -184,7 +184,7 @@ function pushHistory(f, pad) {
 
 // ---- move start ------------------------------------------------------------------
 function startMove(f, key) {
-    f.st = 'attack'; f.sf = 0; f.move = key; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false
+    f.st = 'attack'; f.sf = 0; f.move = key; f.phase = 'startup'; f.hitOnce = {}; f.cancelGate = false; f.btnBuf = null
 }
 
 function tryStartSpecial(f, strength) {
@@ -216,6 +216,20 @@ function attackIntent(pad, prevPad) {
     for (const k of BTN_ORDER) {
         if (pad[k] && !(prevPad && prevPad[k])) return k
     }
+    return null
+}
+
+// #1734 item 2 (cancel chains): hitstop used to discard the whole input
+// pipeline — and a chain's next motion is exactly what players press during
+// the freeze on contact. Presses taken mid-freeze are banked for PRESS_BUF
+// sim-ticks and delivered by pressKey() once the freeze ends; direction
+// history keeps recording through hitstop (senseInputs), so the motion parser
+// reads buffered inputs exactly like a human's.
+const PRESS_BUF = 10
+function pressKey(f, pad) {
+    const now = attackIntent(pad, f.padPrev)
+    if (now) return now
+    if (f.btnBuf && f.hf - f.btnBuf.t <= PRESS_BUF) return f.btnBuf.key
     return null
 }
 
@@ -251,7 +265,7 @@ function updateFighter(m, f, opp, pad) {
                 else f.vx = 0
             }
             if (pad.up && f.y === 0) { f.vy = JUMP_VY * (f.def.jumpMul || 1); f.st = 'jump'; f.sf = 0; f.vx = fwd ? WALK_F * 0.9 * f.facing : back ? -WALK_B * 0.9 * f.facing : 0 }
-            const btn = attackIntent(pad, f.padPrev)
+            const btn = pressKey(f, pad)
             if (btn) {
                 const strength = btn === 'hp' || btn === 'hk' ? 'p' : btn === 'lk' ? 'k' : 'p'
                 const sp = tryStartSpecial(f, f.def.specials && (btn === 'hp' || btn === 'lp') ? 'p' : strength)
@@ -268,7 +282,7 @@ function updateFighter(m, f, opp, pad) {
         }
         case 'jump': {
             if (f.y <= 0 && f.vy <= 0) { f.y = 0; f.vy = 0; f.st = 'idle'; f.sf = 0 }
-            const btn = attackIntent(pad, f.padPrev)
+            const btn = pressKey(f, pad)
             if (btn && mv.al) startMove(f, 'al')
             break
         }
@@ -286,7 +300,7 @@ function updateFighter(m, f, opp, pad) {
             if (f.move && f.move === 'qcf_S' && f.phase === 'startup') f.vx = 0.05 * f.facing
             // cancels: a landed/blocked hit opens the gate for a stronger move
             if (f.cancelGate && f.sf >= 1) {
-                const btn = attackIntent(pad, f.padPrev)
+                const btn = pressKey(f, pad)
                 if (btn) {
                     const sp = tryStartSpecial(f, btn === 'hp' || btn === 'lp' ? 'p' : 'k')
                     const next = sp && mv[sp] ? sp : (BTN_NORMAL[btn] && (move.cancel || []).includes(BTN_NORMAL[btn]) ? BTN_NORMAL[btn] : null)
@@ -589,6 +603,25 @@ function cpuPad(m, f, opp) {
     return {}
 }
 
+// read both pads once per tick — facing rules + direction history (#1734: also
+// runs through hitstop, so a chain's next motion can be pressed during the
+// freeze instead of being swallowed by it)
+function senseInputs(m, pads) {
+    const padsIn = []
+    for (let i = 0; i < 2; i++) {
+        const f = m.fighters[i]
+        const pad = f.def.cpu ? cpuPad(m, f, m.fighters[i === 0 ? 1 : 0]) : pads[i === 0 ? 0 : 1] || emptyPad()
+        padsIn[i] = pad
+        f.facing = m.fighters[i === 0 ? 1 : 0].x >= f.x ? 1 : -1
+        if (f.st === 'attack' || f.st === 'hitstun' || f.st === 'blockstun' || f.st === 'down' || f.st === 'getup' || f.st === 'hitair' || f.st === 'crush') {
+            // keep facing locked mid-commit for fairness
+            if (f.st === 'attack') f.facing = f.commitFace || f.facing
+        } else f.commitFace = f.facing
+        pushHistory(f, pad)
+    }
+    return padsIn
+}
+
 // ---- match step -----------------------------------------------------------------------
 export function step(m, pads) {
     if (m.phase === 'intro') {
@@ -615,7 +648,21 @@ export function step(m, pads) {
         return m
     }
 
-    if (m.hitstop > 0) { m.hitstop--; m.tick++; return m }
+    if (m.hitstop > 0) {
+        m.hitstop--
+        // the freeze holds bodies and animations, not the player: keep sensing
+        // so motions banked mid-freeze parse after it, and remember presses
+        // (#1734 cancel chains — hitstop no longer swallows the next link)
+        const frozen = senseInputs(m, pads)
+        for (let i = 0; i < 2; i++) {
+            const f = m.fighters[i]
+            const btn = attackIntent(frozen[i], f.padPrev)
+            if (btn) f.btnBuf = { key: btn, t: f.hf }
+            f.padPrev = frozen[i]
+        }
+        m.tick++
+        return m
+    }
 
     m.timer--
     if (m.timer <= 0) {
@@ -633,18 +680,7 @@ export function step(m, pads) {
         return m
     }
 
-    const padsIn = []
-    for (let i = 0; i < 2; i++) {
-        const f = m.fighters[i]
-        const pad = f.def.cpu ? cpuPad(m, f, m.fighters[i === 0 ? 1 : 0]) : pads[i === 0 ? 0 : 1] || emptyPad()
-        padsIn[i] = pad
-        f.facing = m.fighters[i === 0 ? 1 : 0].x >= f.x ? 1 : -1
-        if (f.st === 'attack' || f.st === 'hitstun' || f.st === 'blockstun' || f.st === 'down' || f.st === 'getup' || f.st === 'hitair' || f.st === 'crush') {
-            // keep facing locked mid-commit for fairness
-            if (f.st === 'attack') f.facing = f.commitFace || f.facing
-        } else f.commitFace = f.facing
-        pushHistory(f, pad)
-    }
+    const padsIn = senseInputs(m, pads)
     for (let i = 0; i < 2; i++) {
         const f = m.fighters[i]
         if (f.st === 'attack' && f.move) {

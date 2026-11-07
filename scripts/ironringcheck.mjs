@@ -187,6 +187,81 @@ if (!MUT) {
     for (let j = 0; j < 14; j++) e.step(m, [P(), P()])
     ok(hp - m.fighters[1].hp >= 12 && m.fighters[0].combo >= 2, `cancel combo deals ${hp - m.fighters[1].hp} with ${m.fighters[0].combo}-hit counter`)
 
+    // ---- #1734 item 2: the chain links through hit-stop --------------------------------
+    // The player presses the next link DURING the freeze on contact. Hit-stop used to
+    // discard the whole input pipeline (direction history frozen, padPrev stuck, so a
+    // press was invisible even when held), which made normal->special/super chains
+    // physically impossible. These rigs input exactly that way and must see the chain.
+    const CDP = [{ right: true }, { right: true, down: true }, { down: true }, { up: true, hp: true }]
+    const chainRig = (id, meter, stream, gap, pre = 5) => {
+        const mm = e.createMatch({ seed: 7, p1: { ...BY_ID[id], cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        go(mm)
+        mm.fighters[0].meter = meter
+        mm.fighters[1].x = mm.fighters[0].x + gap
+        e.step(mm, [P({ lp: true }), P()])
+        for (let i = 0; i < pre; i++) e.step(mm, [P(), P()]) // let contact + the freeze begin
+        const after = stream === 'dp' ? CDP : QCF
+        for (const q of after) e.step(mm, [P(q), P()]) // pressed straight through the freeze
+        for (let i = 0; i < 25; i++) e.step(mm, [P(), P()]) // special resolves; still mid-move when read
+        return mm
+    }
+    {
+        const c = chainRig('kade', 0, 'qcf', 1.2)
+        ok(c.fighters[0].move === 'qcf' && 100 - c.fighters[1].hp >= 11,
+            `normal -> special: lp into buffered qcf chain lands (move ${c.fighters[0].move}, dmg ${100 - c.fighters[1].hp} = lp + ember)`)
+    }
+    {
+        // the hard case: the button goes down INSIDE the freeze — only press
+        // banking can deliver this link
+        const c = chainRig('kade', 0, 'qcf', 1.2, 4)
+        ok(c.fighters[0].move === 'qcf' && 100 - c.fighters[1].hp >= 11,
+            `press banked inside the freeze still chains (move ${c.fighters[0].move}, dmg ${100 - c.fighters[1].hp})`)
+    }
+    {
+        const c = chainRig('kade', 100, 'dp', 1.2)
+        ok(c.fighters[0].move === 'dp_S' && c.fighters[0].meter < 50,
+            `normal -> super: lp into full-bar dp cancels as dp_S (move ${c.fighters[0].move}, meter ${c.fighters[0].meter})`)
+    }
+    {
+        // specials into supers: a landed dp opens the gate; the next dp press at a
+        // full bar auto-upgrades out of the chain (bar topped by the harness — the
+        // link under test is the cancel, not the farm).
+        const mm = e.createMatch({ seed: 7, p1: { ...BY_ID.kade, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        go(mm)
+        mm.fighters[1].x = mm.fighters[0].x + 1.2
+        for (const q of CDP) e.step(mm, [P(q), P()])
+        for (let i = 0; i < 12; i++) e.step(mm, [P(), P()]) // dp lands, still mid-recovery (a cancel, not a fresh press)
+        ok(mm.fighters[0].move === 'dp' && mm.fighters[0].meter === 8, `plain dp lands and gates (${mm.fighters[0].move}, bar ${mm.fighters[0].meter})`)
+        mm.fighters[0].meter = 100
+        for (const q of CDP) e.step(mm, [P(q), P()])
+        ok(mm.fighters[0].move === 'dp_S' && mm.fighters[0].meter === 0,
+            `special -> super: landed dp cancels into dp_S (move ${mm.fighters[0].move}, meter ${mm.fighters[0].meter})`)
+    }
+    {
+        // freshness law: a press banked during a freeze is short-lived — once the
+        // window passes it must never fire out of nowhere
+        const mm = e.createMatch({ seed: 7, p1: { ...BY_ID.kade, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        go(mm)
+        mm.fighters[0].btnBuf = { key: 'lp', t: (mm.fighters[0].hf || 0) - 40 }
+        e.step(mm, [P(), P()])
+        ok(mm.fighters[0].st === 'idle' && !mm.fighters[0].move, 'stale banked press never starts a move (window closed)')
+    }
+    {
+        // determinism survives the buffered pipeline: identical streams hash identical
+        const runChain = (seed) => {
+            const mm = e.createMatch({ seed, p1: { ...BY_ID.kade, cpu: true }, p2: { ...BY_ID.vexa, cpu: false } })
+            go(mm)
+            const hs = []
+            for (let k = 0; k < 600; k++) {
+                const c = k % 50
+                e.step(mm, [P(), P({ right: c < 14, lp: c % 17 === 3, down: c % 17 === 1 })])
+                hs.push(e.matchHash(mm))
+            }
+            return hs.join(',')
+        }
+        ok(runChain(21) === runChain(21), 'determinism holds with freeze-banked inputs')
+    }
+
     // ---- MULTI: multi-hit specials (#1699) --------------------------------------
     // The re-hit rules: `hits` caps, `rehit` spaces, soft push keeps contact,
     // final hit pushes/launches. Rigs drive real pad streams through the same
@@ -339,6 +414,27 @@ if (MUT) {
     ok(m.fighters[1].hp === hp, 'MUTANT check: with the patched gate no damage ever lands (harness bites)')
     globalThis.__IRONRING_NOHIT__ = false
     pull(path.join(HERE, '../src/engine/.mutant-fighting.mjs'))
+
+    // targeted mutant (#1734): make the freeze deaf (sensing stopped mid-freeze)
+    // — the buffered normal->special chain must break while the raw lp still hits.
+    const fs2 = await import('node:fs')
+    const src2 = fs2.readFileSync(SRC, 'utf8')
+    const mut2 = src2.replace('const frozen = senseInputs(m, pads)', 'const frozen = [emptyPad(), emptyPad()] // MUTANT: freeze goes deaf')
+    ok(mut2 !== src2, 'mutate: freeze-sensing line found to patch')
+    plantNew(path.join(HERE, '../src/engine/.mutant-fighting2.mjs'), mut2)
+    const e2 = await import(`../src/engine/.mutant-fighting2.mjs?c=${Date.now()}m2`)
+    {
+        const mm = e2.createMatch({ seed: 7, p1: { ...BY_ID.kade, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+        { let g = 0; while (mm.phase !== 'fight' && g++ < 400) e2.step(mm, [P(), P()]) }
+        mm.fighters[1].x = mm.fighters[0].x + 1.2
+        const hpBefore = mm.fighters[1].hp
+        e2.step(mm, [P({ lp: true }), P()])
+        for (let i = 0; i < 5; i++) e2.step(mm, [P(), P()])
+        for (const q of [{ down: true }, { down: true, right: true }, { right: true }, { right: true, lp: true }, {}, {}, {}]) e2.step(mm, [P(q), P()])
+        ok(mm.fighters[1].hp < hpBefore, 'mutant2 baseline: the lp link still lands (only the freeze is deaf)')
+        ok(mm.fighters[0].move !== 'qcf', `MUTANT check: chain dies when the freeze cannot hear inputs (move ${mm.fighters[0].move})`)
+    }
+    pull(path.join(HERE, '../src/engine/.mutant-fighting2.mjs'))
 }
 
 console.log(`part A: ${pass} ok, ${fail} fail`)
