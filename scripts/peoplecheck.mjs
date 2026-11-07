@@ -10,15 +10,20 @@
 //                  collapse and both-down is the lose.
 //   3. WINNABLE  — the attract autopilot grants the lifetime wish on several seeds,
 //                  and seed→hash is deterministic.
+//   4. BONDS     — the #1817 chat ladder: meter growth, exact level edges, the
+//                  topic/linger/return/toast unlocks (per-seed exact against a
+//                  baseline run), neglect-fade, hash, and source pins.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
-// (content accrual in finishUse) and the WINNABLE section goes red; restore.
+// (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
+// chat block) and the matching sections go red; restore.
 //
 // Run: node scripts/peoplecheck.mjs
 
 import {
     FIXED_DT, W, H, COLS, ROWS, MAP, TILE, WIN_CONTENT, NEEDS,
     CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT, EXT_ROOM,
+    REL_NAMES, relLevel, chatPool,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
 } from '../src/games/Homebody/sim.js'
@@ -255,6 +260,136 @@ section('POLISH (#929): distinct need SFX + red-cross alarm')
     }
     check('a need crossing red raises a redcross event', !!crossed, crossed ? crossed.need : '')
     check('the crossing resident carries a gem-alarm timer', g.people.some((p) => p.alarmT > 0 || Object.values(p.wasRed).some(Boolean)))
+}
+
+// BONDS (#1817): the chat ladder — meters, levels, unlocks, fade, hash -------
+section('BONDS (#1817): the chat loop deepens')
+{
+    check('relLevel edges 12/30/60', [0, 11, 12, 29, 30, 59, 60, 100].map(relLevel).join(',') === '0,0,1,1,2,2,3,3')
+    check('ladder is ACQUAINTED to FAMILY', REL_NAMES.join('/') === 'ACQUAINTED/FRIENDLY/FRIENDS/FAMILY')
+    const g14 = newRun(301)
+    check('bonds start at zero (nobody is family yet)', g14.rel.house === 0 && g14.rel.fern === 0)
+
+    // Fern-chat fills the leaf meter and crosses the first edge exactly once
+    const g15 = newRun(307)
+    g15.rel.fern = 11.95
+    g15.demo = false
+    g15.visitAfter = 99
+    const o15 = g15.people[0]
+    o15.r = 3; o15.c = 4; o15.x = tileX(4) + 16; o15.y = tileY(3) + 16
+    g15.people[1].r = 1; g15.people[1].c = 12; g15.people[1].path = null
+    g15.visitor = { name: 'Fern', r: 3, c: 5, x: tileX(5) + 16, y: tileY(3) + 16, path: null, state: 'hang', t: 0, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0, hangUntil: 9999 }
+    const ups = []
+    for (let i = 0; i < 60 * 3; i++) { o15.path = null; advance(g15, DT); ups.push(...drain(g15).filter((e) => e.t === 'rel-up')) }
+    check('a Fern-chat minute fills the leaf meter', g15.rel.fern > 12, `fern=${g15.rel.fern.toFixed(2)}`)
+    check('crossing an edge pays exactly one rel-up, level FRIENDLY', ups.length === 1 && ups[0].k === 'fern' && ups[0].level === 1, JSON.stringify(ups))
+    check('the level-up banked its contentment bonus', g15.content >= 2)
+
+    // household co-presence chat
+    const g16 = newRun(311)
+    g16.demo = false; g16.visitAfter = 99
+    g16.people[0].r = 3; g16.people[0].c = 3
+    g16.people[1].r = 3; g16.people[1].c = 4
+    g16.people.forEach((p) => { p.path = null })
+    for (let i = 0; i < 60 * 4; i++) advance(g16, DT)
+    check('idle residents within reach build the heart', g16.rel.house >= 0.15, `house=${g16.rel.house.toFixed(2)}`)
+    const g17 = newRun(311)
+    g17.demo = false; g17.visitAfter = 99
+    g17.people[1].r = 1; g17.people[1].c = 12
+    g17.people.forEach((p) => { p.path = null })
+    for (let i = 0; i < 60 * 4; i++) advance(g17, DT)
+    check('apartment does not count as company', g17.rel.house === 0)
+
+    // topic ladder: pool widens 4/5/7/9, family topics wait for FAMILY
+    const gt = newRun(313)
+    const sizes = [0, 12, 30, 60].map((v) => { gt.rel.fern = v; return chatPool(gt).length })
+    check('the topic pool widens with the bond (4/5/7/9)', sizes.join(',') === '4,5,7,9', sizes.join(','))
+    gt.rel.fern = 59
+    const noFam = !chatPool(gt).some((l) => l.includes('potluck'))
+    gt.rel.fern = 60
+    check('family topics unlock exactly at FAMILY', noFam && chatPool(gt).some((l) => l.includes('potluck')))
+
+    // Fern lingers +6 s/level and returns 1 h/level sooner — per-seed exact,
+    // because a bond changes no rng draws
+    let lingerOk = true, soonerOk = true
+    const driveToVisit = (seed, fern0) => {
+        const g = newRun(seed)
+        g.rel.fern = fern0
+        g.visitAfter = 7
+        g.demo = false
+        for (let i = 0; i < 60 * 8; i++) {
+            g.people.forEach((p) => { p.path = null })
+            advance(g, DT)
+            if (drain(g).some((e) => e.t === 'visit')) return g
+        }
+        return null
+    }
+    const forceLeave = (g) => {
+        g.visitor.state = 'leaving'; g.visitor.path = null
+        for (let i = 0; i < 60 * 8; i++) { g.people.forEach((p) => { p.path = null }); advance(g, DT); if (drain(g).some((e) => e.t === 'visit-end')) return true }
+        return false
+    }
+    for (let seed = 400; seed < 440; seed++) {
+        const a = driveToVisit(seed, 0); const b = driveToVisit(seed, 100)
+        if (!a || !b) { lingerOk = false; soonerOk = false; break }
+        if (b.visitor.hangUntil !== a.visitor.hangUntil + 18) lingerOk = false
+        // same rng draw position both runs: the scheduleVisit at Fern's departure
+        const okA = forceLeave(a); const okB = forceLeave(b)
+        if (!okA || !okB || b.visitAfter !== Math.max(8, a.visitAfter - 3)) soonerOk = false
+    }
+    check('FERN at FAMILY lingers +18 s (per-seed exact, seeds 400-439)', lingerOk)
+    check('FERN at FAMILY returns 3 h sooner (floor 8, per-seed exact)', soonerOk)
+
+    // payday toast: needs FRIENDS+, one per day
+    const gt1 = newRun(317)
+    gt1.rel.house = 30
+    gt1.people[0].working = true
+    gt1.hour = 17
+    let toasts = 0
+    for (let i = 0; i < 60 * 4; i++) { advance(gt1, DT); toasts += drain(gt1).filter((e) => e.id === 'toast').length }
+    check('FRIENDS+ turns payday into a toast', toasts === 1, JSON.stringify(toasts))
+    gt1.hour = 17
+    gt1.people[1].working = true
+    for (let i = 0; i < 60 * 4; i++) { advance(gt1, DT); toasts += drain(gt1).filter((e) => e.id === 'toast').length }
+    check('the toast is once per payday (same day guard)', toasts === 1, JSON.stringify(toasts))
+    const gt2 = newRun(317)
+    gt2.rel.house = 29.9
+    gt2.people[0].working = true; gt2.hour = 17
+    let t2 = 0
+    for (let i = 0; i < 60 * 4; i++) { advance(gt2, DT); t2 += drain(gt2).filter((e) => e.id === 'toast').length }
+    check('just below FRIENDS, payday stays quiet', t2 === 0)
+
+    // neglect cools the bond, and Fern stings faster
+    const gf = newRun(319)
+    gf.rel.house = 50; gf.rel.fern = 50
+    gf.visitAfter = 99
+    gf.people[0].working = true
+    gf.people[0].r = 6; gf.people[0].c = 6; gf.people[0].path = null
+    gf.people[1].r = 1; gf.people[1].c = 12; gf.people[1].path = null
+    gf.demo = false
+    for (let i = 0; i < 60 * 5.2; i++) advance(gf, DT)
+    check('a day of neglect cools both bonds', gf.rel.house < 50 && gf.rel.fern < 50, `h=${gf.rel.house.toFixed(1)} f=${gf.rel.fern.toFixed(1)}`)
+    check('absence from Fern stings faster than from home', (50 - gf.rel.fern) > (50 - gf.rel.house))
+
+    // hash + source pins
+    const h0 = stateHash(newRun(321))
+    const ha = newRun(321); ha.rel.house += 1
+    const hb = newRun(321); hb.rel.fern += 1
+    check('either meter rides the hash', stateHash(ha) !== h0 && stateHash(hb) !== h0)
+    const simSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    check('pin: the Fern-chat block feeds the leaf meter', /if \(partner\) \{[^}]*relAdd\(s, 'fern'/.test(simSrc))
+    check('pin: advance drives the household bond tick', /updateVisitor\(s, simDt\)\s*\n\s*updateHouseBond\(s, simDt\)/.test(simSrc))
+    check('pin: scheduleVisit answers the bond level', /function scheduleVisit\(s\)\s*\{[^}]*Math\.max\(8, 9 \+ Math\.floor\(s\.rng\(\) \* 5\) - lv\)/.test(simSrc))
+    check('pin: stateHash mixes both meters', /mix\(s\.rel\.house\); mix\(s\.rel\.fern\)/.test(simSrc))
+
+    // the autopilot actually bonds while it wins (track the max — the end-of-run
+    // value may have cooled to zero), and nothing about the ladder breaks seeds
+    const gw = newRun(7)
+    let houseMax = 0, fernMax = 0, tt = 0
+    while (!gw.done && tt < 60 * 60 * 45) { autoStep(gw, DT); drain(gw); houseMax = Math.max(houseMax, gw.rel.house); fernMax = Math.max(fernMax, gw.rel.fern); tt++ }
+    check('the attract autopilot bonds on the way to the wish', gw.done === 'win' && houseMax > 0 && fernMax > 0, `done=${gw.done} houseMax=${houseMax.toFixed(1)} fernMax=${fernMax.toFixed(1)}`)
+    const gr = play(7)
+    check('bond-carrying runs stay deterministic (seed 7 replay)', stateHash(gr) === stateHash(gw) && gr.rel.house === gw.rel.house && gr.rel.fern === gw.rel.fern)
 }
 
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)

@@ -53,9 +53,10 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 59 gates: boot, rules, spare-room wing (#1806), winnable seeds, determinism
+npm run peoplecheck          # 83 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
-# the WINNABLE section goes red; restore.
+# the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
+# the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
