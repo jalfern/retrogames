@@ -32,6 +32,7 @@ import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
 import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } from '../src/games/TalkMeDown/engine.js'
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
 import { createSim, tickSim, stateHash, cpuDriverPad, cpuCoDriverPad, WEATHER_ORDER } from '../src/games/RallyCoDriver/sim.js'
+import { createGame as bdCreate, step as bdStep, hash as bdHash, solvePads as bdSolvePads } from '../src/games/BombDefuse/engine.js'
 
 const argv = process.argv.slice(2)
 const flagVal = (name, dflt) => {
@@ -87,6 +88,20 @@ function driverFor(rec) {
         const stamped = rec.rules && typeof rec.rules.weather === 'string' ? rec.rules.weather : null
         if (stamped) return { driver: build(stamped), note: `weather:${stamped}` }
         return { legacyInfer: true, build, note: 'weather:inferred' }
+    }
+    if (rec.game === 'bomb-defuse') {
+        // #1800: the fifth title. Solo files record ONE slot — the engine's
+        // partner pads are re-emitted from the seed at replay, exactly as the
+        // capture produced them (partner logic is rng-free at tick time).
+        let g = null
+        return {
+            note: '',
+            driver: {
+                reset: (seed, players) => { g = bdCreate(seed >>> 0 || 1, Math.max(1, Math.min(2, players | 0 || 1))) },
+                step: (pads) => { if (!g.done) bdStep(g, pads) },
+                state: () => ({ tick: g.tick, hash: bdHash(g) }),
+            },
+        }
     }
     return null
 }
@@ -301,6 +316,34 @@ function synthSessions() {
             rec.addTick([d, c], null, stateHash(g))
         }
         out.push({ rec: rec.finish(stateHash(g)), expect: true, label: 'rally-co-driver (mist, legacy — fog is cosmetic)' })
+    }
+    // bomb-defuse — solo: solver plays seat 1, the ENGINE emits the partner
+    // pads internally; v2 voice on a realistic clock (#1800, fifth title).
+    {
+        const seed = 21
+        const g = bdCreate(seed, 1)
+        const rec = createRecorder({ gameId: 'bomb-defuse', method: 'dpad', seed, players: 1, build: 'selftest', sources: [{ kind: 'cpu' }] })
+        while (!g.done && g.tick < 6000) {
+            const pads = bdSolvePads(g)
+            bdStep(g, [pads[0]])
+            g.events.length = 0
+            rec.addTick([pads[0]], null, bdHash(g))
+        }
+        const file = rec.finish(bdHash(g), { tracks: [mkVoice(rec.ticks, 1, 1.02)], declined: [] })
+        out.push({ rec: file, expect: true, label: `bomb-defuse (solo solver + internal partner, won=${g.won}, v2 voice)` })
+    }
+    // bomb-defuse 2P — both seats solver-driven, both streams recorded
+    {
+        const seed = 33
+        const g = bdCreate(seed, 2)
+        const rec = createRecorder({ gameId: 'bomb-defuse', method: 'dpad', seed, players: 2, build: 'selftest', sources: [{ kind: 'cpu' }, { kind: 'cpu' }] })
+        while (!g.done && g.tick < 6000) {
+            const pads = bdSolvePads(g)
+            bdStep(g, pads)
+            g.events.length = 0
+            rec.addTick(pads, null, bdHash(g))
+        }
+        out.push({ rec: rec.finish(bdHash(g)), expect: true, label: 'bomb-defuse (2P solver pair)' })
     }
     return out
 }

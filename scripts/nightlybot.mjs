@@ -101,6 +101,7 @@ export const GAMES = [
     { id: 'fire-crew', path: '/fire-crew' },
     { id: 'invaders', path: '/invaders' }, // SEEDPIN b13 (#1494) grew contractGames; the soak roster missed it (#1525)
     { id: 'adventure', path: '/adventure' }, // #1568: append at the same position as contractGames — boredomcheck compares ORDERS
+    { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: same index as contractGames
 ]
 const CAP = 9000
 

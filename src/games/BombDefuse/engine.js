@@ -15,14 +15,17 @@
 //   CUT  — a target color lights on the bomb plate; each seat cycles its own
 //          cutter arm (up/down through RED/BLUE/GREEN/YELLOW) and snips (A).
 //          Both blades must be on the right color and inside the window;
-//          wrong color = strike, stale window = strike.
+//          wrong color = a nick (−2 s, the wire survives), stale window =
+//          strike.
 //   VENT — one seat (the holder, seeded per step) pins the stabilizer bar (B)
 //          while the other seats the swinging pressure needle (A) inside the
 //          green zone. Seat while unvented = SURGE (extra fuse damage); an
-//          unvented VENT step burns the fuse double every tick it waits.
+//          unvented VENT step burns the fuse double every tick it waits. A
+//          whiffed seat is only a dud — the sweeping gauge is the challenge.
 //
-// FUSE LEDGER: strikes eat time (−4 s), surges more (−6 s); zero fuse = boom.
-// Three bombs (60/50/40 s, windows 1.25/1.00/0.80 s) cleared = won.
+// FUSE LEDGER: mistakes eat time — a nicked wrong wire −2 s, a broken sync
+// window (strike) −4 s, a surge −6 s; zero fuse = boom. Three bombs
+// (60/50/40 s, windows 1.25/1.00/0.80 s) cleared = won.
 //
 // HASHED STATE IS INTEGER-ONLY (needle rides a 360-entry integer sine table,
 // never a hashed float) — the #1793 divergence lesson applied before the fact.
@@ -47,6 +50,7 @@ export const ZONE_HALF = [190, 140, 100]  // green-zone half width (needle units
 export const NEEDLE_SPD = [2, 3, 4]      // degrees per tick
 export const STRIKE_COST = 240           // −4 s per strike
 export const SURGE_COST = 360          // −6 s per vent surge
+export const NICK_COST = 120            // −2 s per wrong-wire nick
 export const INTRO = 45                // ticks of "read the step" grace per step
 
 // Integer sine table (quantized once at module load — bit-stable across node
@@ -284,10 +288,10 @@ export function step(gs, pads) {
                     if (!gs.armed[i]) gs.events.push({ k: 'snip', seat: i })
                     gs.armed[i] = true
                 } else {
-                    strike(gs, 'WRONG WIRE')
-                    gs.armed = [false, false]
-                    gs.armedT = 0
-                    return
+                    // the blade nicks the wrong cable: time, not a strike —
+                    // the wire survives, the fuse pays.
+                    gs.fuse -= NICK_COST
+                    gs.events.push({ k: 'nick', seat: i })
                 }
             }
         }
@@ -317,8 +321,10 @@ export function step(gs, pads) {
                 gs.events.push({ k: 'boom' })
             }
         } else {
-            strike(gs, 'OFF TARGET')
-            gs.zone = clampZone(Math.floor(gs.rng() * 1401) - 700)
+            // a whiffed seat is NOT a strike — the sweeping gauge and the
+            // burning fuse already charge for it (time is the whole penalty
+            // system here; strikes stay for real mistakes).
+            gs.events.push({ k: 'dud' })
         }
     }
 }
