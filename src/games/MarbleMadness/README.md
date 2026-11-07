@@ -29,6 +29,11 @@ clock, and the full hazard roster. All physics is deterministic and lives in
   over the heightmap (corridor width → target zoom) so the follow-camera eases
   onto the narrow sky bridges and pulls back over open aprons. Painter-side; the
   sim never sees it, so hashes and the attract replay stay bit-identical.
+- `trampoline.js` — per-section trampoline strength (#1758 item 5, physics
+  half): landing restitution scales with the landing cell's height band, and the
+  spring launches a real arc (apex = rest × drop, capped). The one sim-side
+  law in this game — hashes change with it by design; the autopilot's SILLY
+  drive is re-proven by `marblecheck`'s win gates rather than pinned.
 
 ## The physics lesson (why `acc` is 0.005)
 
@@ -94,7 +99,7 @@ the attract replay are bit-identical (marblecheck re-pins both).
 
 ```bash
 npm run marblecheck   # rules + determinism + win proof + 13 bed gates + 11 wobble gates
-                      #   + 16 camera push-in gates (#1758 item 5) (Node, ~2s)
+                      #   + 16 camera push-in gates + 12 trampoline gates (#1758 item 5) (Node, ~2s)
 npm run marbleplay    # browser drive (dev server): bed live, per-course re-voicing
                       #   rides the real raceStart events, finale switch, ladder,
                       #   death keeps it, game over stops it, restart brings it back,
@@ -130,8 +135,21 @@ policy-permanent (AudioController header).*
   `consumeEvents` — exactly 1 Node gate (seam pin) and 3 browser gates
   (armed/settle/bend) go red; the fourth (steadies) passes vacuously, the
   three active-moment gates carry the proof.*
-- SILLY bounciness is uniform; the cabinet varies trampoline strength per
-  section. *(still open — #1758 item 5's physics half)*
+- *SILLY bounciness is uniform; the cabinet varies trampoline strength per
+  section — closed by #1758 item 5 (`trampoline.js`): restitution scales with
+  the landing cell's height band (z6 apron 0.30 → z8 high road 0.85, the
+  course's own range), and the landing now launches a real arc (energy form
+  apex = rest × drop, capped 1.6 tiles). The old constant was doubly guilty:
+  it set vz while `air` was already false, so the next tick pinned z — the
+  trampoline was invisible. The spring's own return lands with drop 0 and
+  never re-springs; the shatter rule still outranks the spring. Gated by 12
+  marblecheck checks (purity, monotonic clamped rest, >=2.5× section spread,
+  arc energy, cap, no re-spring, seam pins, live same-drop-different-apex,
+  SILLY-only, shatter-first) — and the autopilot still wins the campaign
+  unchanged (733000, 5 deaths, 5576 ticks — the attract route takes no
+  cliff-drops, so the shipping demo behaves identically). Mutants: uniform
+  law → exactly the 3 semantic gates red; severed launch → the 2 live gates
+  red; restore green.*
 - *The camera now follows the marble at 2× zoom and scrolls the course off every
   screen edge (the whole-course diorama is gone, #265). Still flat vs the
   cabinet: no per-section push-in on the narrow bridges — closed by #1758 item 5

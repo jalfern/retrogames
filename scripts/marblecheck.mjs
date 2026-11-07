@@ -11,6 +11,7 @@ import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_
 import { busLevel, leadVibrato, dynamicsFor, SWELL_BASE, VIB_MAX_CENTS } from '../src/games/MarbleMadness/dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS, KNOCK_TURNS, KNOCK_VIB_CENTS, KNOCK_VIB_HZ } from '../src/games/MarbleMadness/wobble.js'
 import { corridorWidth, narrowness, targetZoom, ZOOM_BASE, PUSH_GAIN, ZOOM_SMOOTH, OPEN_WIDTH, TIGHT_WIDTH } from '../src/games/MarbleMadness/camera.js'
+import { trampRest, trampVz, TRAMP } from '../src/games/MarbleMadness/trampoline.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -470,6 +471,85 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         /ctx\.scale\(camZoom, camZoom\)/.test(idxSrc))
     ok('seam pinned: a new race resets the zoom to base; the whole view scales with camZoom',
         /camZoom = ZOOM_BASE/.test(idxSrc) && /camZoom \* \(isoX/.test(idxSrc) && !/ctx\.scale\(ZOOM, ZOOM\)/.test(idxSrc))
+}
+
+// ------------- per-section trampoline (#1758 item 5, physics half) ----------
+// The cabinet's SILLY course springs harder the higher the section you land in;
+// we had a uniform constant that was also inert (vz was set while air=false and
+// the next tick pinned z). trampoline.js makes the spring real and per-section.
+{
+    const trampSrc = readFileSync(new URL('../src/games/MarbleMadness/trampoline.js', import.meta.url), 'utf8')
+    ok('the trampoline law is pure (no rng, no Date, no DOM/audio in trampoline.js)',
+        !/Math\.random|new Date|document|window|audioController|performance\./.test(trampSrc))
+    ok('rest is monotonic in section height and clamps at both band ends',
+        Math.abs(trampRest(TRAMP.zLo - 4) - TRAMP.restLo) < 1e-9 && Math.abs(trampRest(TRAMP.zHi + 4) - TRAMP.restHi) < 1e-9 &&
+        [6, 7, 8].every((z, i, a) => i === 0 || trampRest(z) > trampRest(a[i - 1])))
+    ok('the gap is closed: the high SILLY section springs >= 2.5x harder than the low apron',
+        trampRest(8) / trampRest(6) >= 2.5 && trampRest(8) - trampRest(6) >= 0.4,
+        `z6 ${trampRest(6).toFixed(3)} -> z8 ${trampRest(8).toFixed(3)}`)
+
+    let energyOk = true
+    for (const d of [1, 2, 3]) for (const z of [6, 7, 8]) {
+        const apex = trampVz(d, z, CFG.grav) ** 2 / (2 * CFG.grav)
+        if (Math.abs(apex - Math.min(trampRest(z) * d, TRAMP.apexCap)) > 1e-9) energyOk = false
+    }
+    ok('arc energy: apex = rest * drop below the cap, and vz = sqrt(2*grav*apex)', energyOk)
+    ok('a max-drop fling still lands under the apex cap (tame, not unbounded)',
+        trampVz(BREAKDROP, TRAMP.zHi, CFG.grav) ** 2 / (2 * CFG.grav) <= TRAMP.apexCap + 1e-9)
+    ok('a same-level landing never re-springs (one arc per cliff-drop)',
+        trampVz(0, TRAMP.zHi, CFG.grav) === 0)
+
+    // seams pinned in the sim source
+    const simSrc = readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')
+    ok('seam pinned: the sim springs through the per-section law and the uniform constant is gone',
+        /trampVz\(drop, g, CFG\.grav\)/.test(simSrc) && !/bounceRest/.test(simSrc))
+    ok('seam pinned: the spring only lives in the reversed (SILLY) race, on a real drop',
+        /gs\.race\.reversed && drop > 0/.test(simSrc))
+
+    // live sim proof: the SAME drop springs visibly higher onto the high road
+    // than onto the low apron — per-section strength, measured in the physics.
+    const SILLY_RACE = RACES.findIndex((r) => r.reversed)
+    ok('SILLY is the reversed (trampoline) race', SILLY_RACE === 4 && RACES[SILLY_RACE].name === 'SILLY')
+    const hs4 = buildHeights(SILLY_RACE)
+    let hiZ = -1, loZ = 99, hiCell = null, loCell = null
+    for (let r = 4; r < 32; r++) for (let c = 4; c < 32; c++) {
+        const z = hs4[r][c]
+        if (z < 0) continue
+        if (z > hiZ) { hiZ = z; hiCell = [c, r] }
+        if (z < loZ) { loZ = z; loCell = [c, r] }
+    }
+    // drop the marble `drop` tiles above cell (c,r) with hazards parked clean;
+    // in the air x,y are frozen, so the arc stays over the cell. armed gates
+    // the apex window to AFTER the spring (the fall-in starts higher than apex).
+    const dropArc = (idx, cell, drop) => {
+        const gs = makeGame(0); loadInto(gs, idx)
+        gs.steelies = []; gs.munchers = []; gs.hammers = []; gs.slinkies = []; gs.waves = []
+        const [c, r] = cell
+        const g = gs.heights[r][c]
+        gs.m.x = c + 0.5; gs.m.y = r + 0.5
+        gs.m.z = g + drop; gs.m.zFrom = g + drop; gs.m.vz = -0.02; gs.m.air = true
+        let apex = 0, springs = 0, armed = false
+        for (let i = 0; i < 600 && gs.phase === 'play'; i++) {
+            step(gs, {})
+            if (gs.m.air && gs.m.zFrom === g && gs.m.vz > 0 && !armed) { springs++; armed = true }
+            if (!gs.m.air) armed = false
+            if (armed) apex = Math.max(apex, gs.m.z - g)
+        }
+        return { apex, springs, phase: gs.phase, air: gs.m.air }
+    }
+    const hi = dropArc(SILLY_RACE, hiCell, 2)
+    const lo = dropArc(SILLY_RACE, loCell, 2)
+    ok(`the same drop springs higher on the high road (z${hiZ} apex ${hi.apex.toFixed(2)}) than the apron (z${loZ} apex ${lo.apex.toFixed(2)})`,
+        hi.springs === 1 && lo.springs === 1 && hi.apex > lo.apex * 1.6 && hi.apex > 0.6)
+    const settle = dropArc(SILLY_RACE, hiCell, 1)
+    ok('one spring then rest: exactly one launch, marble settles grounded',
+        settle.springs === 1 && !settle.air && settle.phase === 'play')
+    let p0 = null
+    outer: for (let r = 4; r < 32; r++) for (let c = 4; c < 32; c++) { if (buildHeights(0)[r][c] >= 0) { p0 = [c, r]; break outer } }
+    ok('non-reversed races land dead — the trampoline is SILLY-only',
+        dropArc(0, p0, 1).springs === 0)
+    ok('the shatter rule outranks the spring: an over-BREAKDROP drop still kills',
+        dropArc(SILLY_RACE, hiCell, BREAKDROP + 1).phase === 'dying')
 }
 
 if (fails) {
