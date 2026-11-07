@@ -59,13 +59,17 @@ const SIN = Array.from({ length: 360 }, (_, d) => Math.round(Math.sin((d * Math.
 
 const mulberry32 = (a) => {
     let x = a >>> 0
-    return () => {
+    const next = () => {
         x = (x + 0x6d2b79f5) >>> 0
         let t = x
         t = Math.imul(t ^ (t >>> 15), t | 1)
         t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
         return ((t ^ (t >>> 14)) >>> 0) / 4294967296
     }
+    // #1819 netplay: the snapshot carries the rng counter so a restored box
+    // draws the same future steps. Read with .x(), load with .x(v).
+    next.x = (v) => (v === undefined ? x : (x = v >>> 0))
+    return next
 }
 
 const clampZone = (z) => Math.max(-700, Math.min(700, z))
