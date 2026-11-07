@@ -8,7 +8,7 @@
 
 import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
-    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool,
+    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS,
 } from '../src/games/TalkMeDown/engine.js'
 import { parseCall, intentLabel, ACCEPTED_HINT } from '../src/games/TalkMeDown/voice.js'
 import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
@@ -502,6 +502,34 @@ const ok = (name, cond, extra = '') => {
     // (i) source pin — the silent refusal guard is in the engine text.
     const engSrc14 = readFileSync(new URL('../src/games/TalkMeDown/engine.js', import.meta.url), 'utf8')
     ok('flip refusal is source-pinned in defuserAct', /if \(gs\.flip\) \{[\s\S]{0,200}pad\.down[\s\S]{0,160}return/.test(engSrc14))
+}
+
+// ---- 15. serial on the back (#1802): text points at the plate, seat 2 coaches
+{
+    // (a) every rule reading a back-plate fact (serial / batteries) must SAY
+    // where the fact lives — text==truth includes WHERE, not just the math.
+    const backRules = []
+    for (const key of ['N', 'D', 'G']) {
+        for (const r of RULEBOOK[key]) if (/SERIAL|BATTER/i.test(r.text)) backRules.push(r)
+    }
+    ok('every serial/battery rule prints where the fact lives (BACK)',
+        backRules.every(r => /BACK/i.test(r.text)),
+        backRules.filter(r => !/BACK/i.test(r.text)).map(r => r.id).join(','))
+    // (b) the coach set matches the rules that actually reference back facts
+    // (computed from the RULEBOOK, so the set cannot silently rot).
+    const computed = backRules.map(r => r.id).sort().join(',')
+    ok('BACK_FACT_STAMPS matches the rulebook (no rot)',
+        [...BACK_FACT_STAMPS].sort().join(',') === computed, `${computed} vs ${BACK_FACT_STAMPS}`)
+    // (c) source pins — the front never prints the serial; the back plate
+    // stamps it; the manual page gets the flipped state and the coach line.
+    const viewSrc = readFileSync(new URL('../src/games/TalkMeDown/index.jsx', import.meta.url), 'utf8')
+    const artSrc15 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
+    ok('the front view prints no serial (source pin)', !/fillText\(\s*'SER\s*'/.test(viewSrc))
+    ok('the back plate draws the serial (source pin)',
+        /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial\)/.test(viewSrc))
+    ok('seat 2 gets the flip coach line, fed by gs.flip (source pin)',
+        /ASK THEM TO FLIP IT!/.test(artSrc15) && /BACK IS UP/.test(artSrc15) &&
+        /drawManual\([\s\S]{0,240}, gs\.flip\)/.test(viewSrc))
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)

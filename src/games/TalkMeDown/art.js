@@ -1,7 +1,7 @@
 // TALK ME DOWN — all art generated in code (RETRO bar, #1252). NES-era squad
 // aesthetic: beveled steel panel, red 7-seg fuse, colored wire arcs, a cream
 // typewritten manual with rule numbers in the red margin. 640x360 native.
-import { WIRE_COLORS, GLYPHS, RULEBOOK, variantPool } from './engine.js'
+import { WIRE_COLORS, GLYPHS, RULEBOOK, variantPool, BACK_FACT_STAMPS } from './engine.js'
 import { ACCEPTED_HINT } from './voice.js'
 
 export const W = 640
@@ -77,9 +77,12 @@ export function drawPanelShell(g) {
     // fuse housing
     g.fillStyle = '#141416'; g.fillRect(PANEL.x + 10, PANEL.y + 8, 108, 26)
     g.fillStyle = P.fuseDim; g.fillRect(PANEL.x + 12, PANEL.y + 10, 104, 22)
-    // serial plate
+    // serial plate — the number itself moved to the BACK (#1802); the front
+    // only tells you where it went (the original hides it — shout the joke).
     g.fillStyle = P.plate; g.fillRect(PANEL.x + 128, PANEL.y + 8, 116, 24)
     g.fillStyle = P.plateHi; g.fillRect(PANEL.x + 128, PANEL.y + 8, 116, 2); g.fillRect(PANEL.x + 128, PANEL.y + 8, 2, 24)
+    g.font = FONT(6); g.fillStyle = '#5c626c'
+    g.fillText('SERIAL: SEE BACK', PANEL.x + 134, PANEL.y + 23)
     // bolt
     const bx = PANEL.x + 256, by = PANEL.y + 20
     g.fillStyle = '#8a8f98'; g.beginPath()
@@ -349,13 +352,13 @@ export function wrapText(g, str, max) {
 const PAGE_NAME = { N: 'PAGE N — WIRES', D: 'PAGE D — DIALS', G: 'PAGE G — GLYPHS' }
 const FOOTER = {
     N: ['COLOR MAP', '0 RED   1 BLUE', '2 YELLOW 3 GREEN', '4 WHITE 5 BLACK'],
-    D: ['digits are 0-9', 'serial = plate on', 'the bomb'],
+    D: ['digits are 0-9', 'serial = the plate', 'on the BACK — flip!'],
     G: ['GLYPH MAP', '0 STAR   1 DIAMOND', '2 CLUB   3 SPADE', '4 BOLT   5 MOON'],
 }
 
 // drawManual — the typewritten page seat 2 owns. page: 0 N / 1 D / 2 G,
 // line = seat-2 cursor, stamps = live module stamps (highlight what matters).
-export function drawManual(g, page, line, stamps, tick, hidden, flag) {
+export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 0) {
     bevel(g, RAIL, '#5d4a2f', '#2e2415')
     if (hidden) {
         g.fillStyle = '#2b2e33'; g.fillRect(RAIL.x + 6, RAIL.y + 6, RAIL.w - 12, RAIL.h - 12)
@@ -411,6 +414,19 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag) {
     })
     g.font = FONT(6); g.fillStyle = '#6b6350'
     FOOTER[key].forEach((ln, i) => g.fillText(ln, RAIL.x + 30, RAIL.y + RAIL.h - 73 + i * 9))
+    // #1802: the flip conversation. When a LIVE rule on this page reads a
+    // back-plate fact (serial/batteries), seat 2 gets the word — the manual
+    // player is the one who must shout "FLIP IT". Greys out once the bomb
+    // is already on its back (gs.flip via simState).
+    if (stamps.some(s => BACK_FACT_STAMPS.includes(s) && s[0] === key)) {
+        if (flipped) {
+            g.fillStyle = '#9a917a'
+            g.fillText('BACK IS UP — READ IT ALOUD', RAIL.x + 30, RAIL.y + RAIL.h - 44)
+        } else {
+            g.fillStyle = tick % 40 < 26 ? '#b0541f' : '#8a8168'
+            g.fillText('ASK THEM TO FLIP IT!', RAIL.x + 30, RAIL.y + RAIL.h - 44)
+        }
+    }
     // #1373: the accepted-call shapes, printed right on the page (#1247) —
     // a manual player who never read a screen knows exactly what to shout.
     g.fillStyle = '#4a4436'
@@ -422,17 +438,26 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag) {
 
 // ---- the back panel (#1797) --------------------------------------------------
 // The maintenance side of the block: a riveted plate bolted over the module
-// bays, a hazard stencil, and the battery bank D5/G5 demand aloud. The fuse
-// and the strike breakers stay drawn by the caller — pressure never hides.
-export function drawBack(g, batteries, tick) {
+// bays, a hazard stencil, the battery bank D5/G5 demand aloud, and — since
+// #1802 — the SERIAL on its ID plate. The fuse and the strike breakers stay
+// drawn by the caller — pressure never hides.
+export function drawBack(g, batteries, tick, serial = 'XX0X0') {
     bevel(g, PANEL, '#3f444c', '#1f2226')
     g.fillStyle = '#33373d'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, PANEL.h - 58)
     g.fillStyle = '#42474e'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, 2); g.fillRect(PANEL.x + 6, PANEL.y + 50, 2, PANEL.h - 58)
-    // the front's serial plate/bolt/LED bar are hidden behind a plain cover
+    // #1802: this is where the SERIAL lives — a dark ID plate riveted to the
+    // maintenance side. The original hides it here ("Serial Port!"); reading it
+    // aloud is the flip's whole payoff. The bolt/LED bar stay hidden.
     g.fillStyle = '#3a3e45'; g.fillRect(PANEL.x + 124, PANEL.y + 4, 224, 32)
     g.fillStyle = '#20242a'; g.fillRect(PANEL.x + 124, PANEL.y + 4, 224, 1)
+    g.fillStyle = '#141416'; g.fillRect(PANEL.x + 132, PANEL.y + 9, 132, 22)
+    g.fillStyle = '#8a8f98'; g.fillRect(PANEL.x + 132, PANEL.y + 9, 132, 1); g.fillRect(PANEL.x + 132, PANEL.y + 9, 1, 22)
+    g.font = FONT(6); g.fillStyle = '#7d838d'
+    g.fillText('SERIAL', PANEL.x + 138, PANEL.y + 17)
+    g.font = FONT(10); g.fillStyle = '#d8dce2'
+    g.fillText(String(serial).slice(0, 6), PANEL.x + 138, PANEL.y + 28)
     g.font = FONT(6); g.fillStyle = '#5c626c'
-    g.fillText('BOLTED SHUT', PANEL.x + 190, PANEL.y + 24)
+    g.fillText('FACT PLATE', PANEL.x + 272, PANEL.y + 24)
     // rivets
     g.fillStyle = '#20242a'
     for (const [rx, ry] of [[16, 60], [PANEL.w - 22, 60], [16, PANEL.h - 18], [PANEL.w - 22, PANEL.h - 18], [124 + 4, 12], [124 + 216, 12]]) {
@@ -469,8 +494,8 @@ export function drawBack(g, batteries, tick) {
 // shout about. Pulses bright when a FLIP call reached the mic (#1247 law —
 // heard words make things visible, they never act).
 export function drawFlipHint(g, pulse, tick) {
-    g.font = FONT(6)
-    g.fillStyle = pulse && tick % 16 < 10 ? '#ffd23e' : '#6b7078'
+    g.font = FONT(7)
+    g.fillStyle = pulse && tick % 16 < 10 ? '#ffd23e' : '#8a9098'
     g.fillText('^ UP FLIPS IT', PANEL.x + 96, PANEL.y + 48)
 }
 

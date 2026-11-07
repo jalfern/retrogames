@@ -3,8 +3,9 @@
 // Pure module: Node + browser, no DOM, no React. All randomness comes from the
 // seed (mulberry32). Seed + per-seat pad streams ⇒ identical hashes (#494).
 //
-// THE SPLIT: seat 1 (DEFUSER) sees the bomb panel — serial, LED bar, bolt,
-// modules stamped N3/D1/G2 — but owns NO rules. Seat 2 (MANUAL) owns the
+// THE SPLIT: seat 1 (DEFUSER) sees the bomb panel — LED bar, bolt, modules
+// stamped N3/D1/G2 — but owns NO rules; the SERIAL hides on the BACK plate
+// (#1802), so serial rules force the flip conversation. Seat 2 (MANUAL) owns the
 // rulebook whose entries answer those stamps but cannot see the bomb. The only
 // channel between human seats is speech (the couch, or the mic, voice.js).
 //
@@ -13,7 +14,7 @@
 //   DIAL  — turn a 0-9 dial, press SET   (arrows turn, A = SET)
 //   GLYPH — press THREE symbols in order  (arrows pick, A presses)
 // Every rule is a pure function of features the DEFUSER can see and read
-// aloud: serial digit, LED count, bolt color, wire colors/lit states.
+// aloud: serial digit (BACK plate), LED count, bolt color, wire colors/lit states.
 //
 // STRIKES: a wrong verb sparks — module locks 3 s, -5 s off the fuse, one of
 // three breakers trips. Three breakers or a zero fuse and the block glows.
@@ -82,7 +83,7 @@ export const RULEBOOK = {
             target: (f, m) => m.wires.findIndex(w => w.color === f.bolt && !w.cut),
         },
         {
-            id: 'N6', text: 'SERIAL digit picks a color (footer). Cut that color DARK; none dark? Cut it LIT.',
+            id: 'N6', text: 'BACK-plate SERIAL digit picks a color (footer). Cut that color DARK; none dark? Cut it LIT.',
             target: (f, m) => {
                 const c = f.serialDigit % 6
                 const dark = m.wires.findIndex(w => w.color === c && !w.lit && !w.cut)
@@ -92,10 +93,10 @@ export const RULEBOOK = {
         },
     ],
     D: [
-        { id: 'D1', text: 'Set the dial to the SERIAL\'s last digit. Then SET.', target: f => f.serialDigit },
+        { id: 'D1', text: 'Set the dial to the SERIAL\'s last digit (BACK plate). Then SET.', target: f => f.serialDigit },
         { id: 'D2', text: 'Set the dial to the number of lit LEDs. Then SET.', target: f => f.leds },
         {
-            id: 'D3', text: 'Double the SERIAL digit, keep the units. Set that. Then SET.',
+            id: 'D3', text: 'Double the SERIAL digit (BACK plate), keep the units. Set that. Then SET.',
             target: f => (f.serialDigit * 2) % 10,
         },
         {
@@ -122,12 +123,12 @@ export const RULEBOOK = {
     G: [
         { id: 'G1', text: 'Press STAR, then BOLT, then MOON.', target: () => [0, 4, 5] },
         {
-            id: 'G2', text: 'Press MOON, then the SERIAL digit\'s glyph, then the LED count\'s glyph (footer).',
+            id: 'G2', text: 'Press MOON, then the SERIAL digit\'s glyph (serial is on the BACK), then the LED count\'s glyph (footer).',
             target: f => [5, f.serialDigit % 6, f.leds % 6],
         },
         { id: 'G3', text: 'Press DIAMOND, then CLUB, then SPADE.', target: () => [1, 2, 3] },
         {
-            id: 'G4', text: 'LED count\'s glyph, SERIAL digit\'s glyph, then LED count again (footer).',
+            id: 'G4', text: 'LED count\'s glyph, SERIAL digit\'s glyph (BACK plate), then LED count again (footer).',
             target: f => [f.leds % 6, f.serialDigit % 6, f.leds % 6],
         },
         {
@@ -138,6 +139,11 @@ export const RULEBOOK = {
         },
     ],
 }
+
+// #1802: the stamps whose fact lives on the BACK plate (serial moved there —
+// the original hides it, and "Serial Port!" is the reason to flip). Seat 2's
+// page stamps an "ask them to FLIP" coach line while any of these is live.
+export const BACK_FACT_STAMPS = ['N6', 'D1', 'D3', 'D5', 'G2', 'G4', 'G5']
 
 export function ruleOf(m) {
     return RULEBOOK[m.type].find(r => r.id === m.stamp)
