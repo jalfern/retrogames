@@ -10,6 +10,7 @@ import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadne
 import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
 import { busLevel, leadVibrato, dynamicsFor, SWELL_BASE, VIB_MAX_CENTS } from '../src/games/MarbleMadness/dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS, KNOCK_TURNS, KNOCK_VIB_CENTS, KNOCK_VIB_HZ } from '../src/games/MarbleMadness/wobble.js'
+import { corridorWidth, narrowness, targetZoom, ZOOM_BASE, PUSH_GAIN, ZOOM_SMOOTH, OPEN_WIDTH, TIGHT_WIDTH } from '../src/games/MarbleMadness/camera.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -389,6 +390,86 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         /wob > 0 \? knockVibrato\(wob\) : dyn\.vib/.test(idxSrc) && /setMusicVibrato\(vib\)/.test(idxSrc))
     ok('determinism untouched (the spin never enters the sim)',
         !/wobbleAt|knockVibrato|wob\b|WOBBLE/.test(readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')))
+}
+
+// ----------------------------------------- per-section camera push-in (#1758-5) ----
+{
+    const camSrc = readFileSync(new URL('../src/games/MarbleMadness/camera.js', import.meta.url), 'utf8')
+    const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
+
+    // a synthetic grid: 10x10 open block, a 3-wide bridge, a 1-wide bridge
+    const mk = () => { const g = []; for (let r = 0; r < 24; r++) g.push(new Array(24).fill(-1)); return g }
+    const open = mk(); for (let r = 2; r < 12; r++) for (let c = 2; c < 12; c++) open[r][c] = 5
+    const b3 = mk(); for (let c = 2; c < 22; c++) for (let r = 6; r <= 8; r++) b3[r][c] = 5   // 3 wide, long along columns
+    const b1 = mk(); for (let c = 2; c < 22; c++) b1[6][c] = 5                                    // 1 wide
+    ok('corridorWidth reads an open block by its short side', corridorWidth(open, 24, 6, 6) === 10, `got ${corridorWidth(open, 24, 6, 6)}`)
+    ok('corridorWidth reads a 3-wide bridge across its width, not its length',
+        corridorWidth(b3, 24, 7, 11) === 3, `center of a 3-wide span -> ${corridorWidth(b3, 24, 7, 11)}`)
+    ok('corridorWidth reads a 1-wide span as one tile', corridorWidth(b1, 24, 6, 11) === 1)
+    ok('a void cell has zero corridor', corridorWidth(open, 24, 0, 0) === 0)
+
+    ok('narrowness is 0 over open ground and 1 on a one-tile span',
+        narrowness(open, 24, 6, 6) === 0 && narrowness(b1, 24, 6, 11) === 1)
+    ok('narrowness climbs monotonically as the corridor narrows (open>=3-wide>1-wide)',
+        narrowness(open, 24, 6, 6) < narrowness(b3, 24, 7, 11) &&
+        narrowness(b3, 24, 7, 11) < narrowness(b1, 24, 6, 11),
+        `3w=${narrowness(b3, 24, 7, 11).toFixed(2)} vs 1w=${narrowness(b1, 24, 6, 11).toFixed(2)}`)
+    ok('narrowness thresholds are sane (OPEN > TIGHT >= 1)', OPEN_WIDTH > TIGHT_WIDTH && TIGHT_WIDTH >= 1)
+
+    ok('target zoom holds base over open ground and pushes in on the tightest span',
+        Math.abs(targetZoom(open, 24, 6, 6) - ZOOM_BASE) < 1e-12 &&
+        Math.abs(targetZoom(b1, 24, 6, 11) - ZOOM_BASE * (1 + PUSH_GAIN)) < 1e-12,
+        `base=${ZOOM_BASE}, tight=${(ZOOM_BASE * (1 + PUSH_GAIN)).toFixed(2)}`)
+    ok('the push-in is bounded — never tighter than base, never past the gain',
+        (() => {
+            for (const [h, w] of [[open, 24], [b3, 24], [b1, 24]]) for (let r = 0; r < w; r++) for (let c = 0; c < w; c++) {
+                const z = targetZoom(h, w, r, c)
+                if (z < ZOOM_BASE - 1e-12 || z > ZOOM_BASE * (1 + PUSH_GAIN) + 1e-12) return false
+            }
+            return true
+        })())
+    ok('zoom constants: base matches the #265 camera, push is a gentle nudge, ease is slow',
+        ZOOM_BASE === 2 && PUSH_GAIN >= 0.1 && PUSH_GAIN <= 0.6 && ZOOM_SMOOTH > 0 && ZOOM_SMOOTH <= 0.15)
+
+    // real-course proof: on a sky-bridge race the camera must actually breathe —
+    // some cells push in, some sit open — or the law is inert on the shipping levels.
+    const aerial = buildHeights(AERIAL_RACE)
+    let aMax = 0, aZero = false, aSum = 0, aN = 0
+    for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) {
+        if (aerial[r][c] < 0) continue
+        const n = narrowness(aerial, GRID, r, c)
+        if (n > aMax) aMax = n
+        if (n === 0) aZero = true
+        aSum += n; aN++
+    }
+    ok('the camera breathes on AERIAL: it pushes in on real bridges AND pulls back on aprons',
+        aMax >= 0.5 && aZero, `max narrowness ${aMax.toFixed(2)}, open aprons present=${aZero}`)
+
+    // and the sky-bridge race is the most exposed of the six — the law keys the
+    // frame to the game's own danger, not just a generic vignette.
+    const means = RACES.map((_, i) => {
+        const h = buildHeights(i)
+        let s = 0, n = 0
+        for (let r = 0; r < GRID; r++) for (let c = 0; c < GRID; c++) { if (h[r][c] < 0) continue; s += narrowness(h, GRID, r, c); n++ }
+        return s / n
+    })
+    ok('AERIAL (the sky-bridge race) is the most-exposed course — the push-in tracks the danger',
+        means[AERIAL_RACE] === Math.max(...means),
+        `AERIAL ${means[AERIAL_RACE].toFixed(3)} vs next ${[...means].sort((a, b) => b - a)[1].toFixed(3)}`)
+
+    // determinism untouched: the camera never enters the sim
+    ok('determinism untouched (the push-in never enters the sim)',
+        !/camera\.js|targetZoom|camZoom|corridorWidth|narrowness|ZOOM_BASE/.test(
+            readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')))
+    ok('the camera law is pure (no rng, no Date, no DOM/audio in camera.js)',
+        !/Math\.random|new Date|document|window|audioController|performance\./.test(camSrc))
+
+    // seams pinned in the painter
+    ok('seam pinned: the zoom eases toward the per-cell target every frame',
+        /camZoom \+= \(targetZoom\(gs\.heights, GRID, Math\.floor\(cm\.y\), Math\.floor\(cm\.x\)\) - camZoom\) \* ZOOM_SMOOTH/.test(idxSrc) &&
+        /ctx\.scale\(camZoom, camZoom\)/.test(idxSrc))
+    ok('seam pinned: a new race resets the zoom to base; the whole view scales with camZoom',
+        /camZoom = ZOOM_BASE/.test(idxSrc) && /camZoom \* \(isoX/.test(idxSrc) && !/ctx\.scale\(ZOOM, ZOOM\)/.test(idxSrc))
 }
 
 if (fails) {

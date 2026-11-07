@@ -4,6 +4,8 @@
 // survives a death, stops at game over, and restarts — zero page errors.
 // Needs `npm run dev` (or MARBLE_URL). DEV_PORT is the slot port.
 import { launch, openGame, Report } from './lib/harness.mjs'
+import { buildHeights, GRID } from '../src/games/MarbleMadness/levels.js'
+import { narrowness, targetZoom, ZOOM_BASE } from '../src/games/MarbleMadness/camera.js'
 
 const URL = process.env.MARBLE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-madness`
 const r = new Report('marbleplay')
@@ -170,6 +172,50 @@ const w3 = await gsq(() => window.__marble.wobbleSpy())
 m = await spy()
 r.check('the marble steadies and the bed releases (wobble done, vibrato cleared)',
     w3.t === 0 && w3.kb === null && m.vib === null && m.playing, JSON.stringify({ ...w3, vib: m.vib, playing: m.playing }))
+
+// ---- per-section camera push-in (#1758 item 5) ----
+// Drive to AERIAL (the sky-bridge race) and park the marble on its narrowest
+// bridge cell: the follow-camera must ease IN toward that cell's target zoom.
+// Move it onto a wide apron cell: the view must ease back OUT toward base. The
+// cells are picked from the real heightmap at runtime (no hardcoding), and the
+// law is painter-side — so this proves the seam is wired live, not just pinned.
+const H3 = buildHeights(3)
+// flat cells (all 4 neighbours same height) so the marble rests and the zoom
+// converges on a constant target rather than chasing a rolling marble.
+const flat = (r, c) => { const z = H3[r][c]; return [[r + 1, c], [r - 1, c], [r, c + 1], [r, c - 1]].every(([rr, cc]) => H3[rr][cc] === z) }
+let nCell = null, nm = -1, wCell = null
+for (let rr = 1; rr < GRID - 1; rr++) for (let cc = 1; cc < GRID - 1; cc++) {
+    if (H3[rr][cc] < 0 || !flat(rr, cc)) continue
+    const nn = narrowness(H3, GRID, rr, cc)
+    if (nn > nm) { nm = nn; nCell = [rr, cc] }
+    if (!wCell && nn === 0) wCell = [rr, cc]
+}
+const park = (cell) => page.evaluate(([r, c]) => {
+    const g = window.__marble.getGs()
+    g.m.air = false; g.m.vx = g.m.vy = g.m.vz = 0
+    g.m.x = c + 0.5; g.m.y = r + 0.5; g.m.z = g.heights[r][c]
+}, cell)
+// hold keeps re-parking so a down-slope can't roll the marble off the cell we
+// are measuring — zoom then converges on that cell's constant target.
+const hold = async (cell, ms) => { const end = Date.now() + ms; while (Date.now() < end) { await park(cell); await page.waitForTimeout(40) } }
+const camSpy = () => page.evaluate(() => window.__marble.camSpy())
+
+await clearRace(1); await clearRace(2); await clearRace(3)
+const aerial = await gsq(() => window.__marble.getGs().raceIdx)
+r.check('camera push-in: reached AERIAL (the sky-bridge race) to test the seam', aerial === 3, JSON.stringify({ race: aerial }))
+
+await hold(nCell, 1600)
+const camN = await camSpy()
+r.check('on a narrow bridge the camera pushes in — zoom converges on the cell target, past base',
+    camN.zoom > ZOOM_BASE + 0.2 && Math.abs(camN.target - targetZoom(H3, GRID, ...nCell)) < 1e-9 &&
+    Math.abs(camN.zoom - camN.target) < 0.15,
+    JSON.stringify({ cell: nCell, zoom: camN.zoom.toFixed(2), target: camN.target.toFixed(2) }))
+
+await hold(wCell, 1600)
+const camW = await camSpy()
+r.check('back over an open apron the camera pulls out — zoom converges down to base',
+    camW.zoom < camN.zoom - 0.2 && Math.abs(camW.target - ZOOM_BASE) < 1e-9 && Math.abs(camW.zoom - ZOOM_BASE) < 0.12,
+    JSON.stringify({ cell: wCell, zoom: camW.zoom.toFixed(2), target: camW.target.toFixed(2), was: camN.zoom.toFixed(2) }))
 
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)
