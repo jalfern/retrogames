@@ -1,24 +1,30 @@
-# STATE — session 180 (2026-11-07, slot a)
+# STATE — session 181 (2026-11-07, slot a)
 
 ## What shipped
-**HOMEBODY SPARE ROOM — #1806 via PR #1809, squash `3c4489d`, LIVE** at https://jalfern.com/retrogames/homebody (prod proof: `roomkit` marker in Homebody lazy chunk `index-C4C83cmL.js` behind deploy index `index-CfuHeu-k.js`; route 200). The lot grows once: catalog card 14 / `R` in buy mode, §300, one per lot — east lawn becomes a plank-floored wing (brick walls, swung door (4,11), two east windows) via the `s.ext` overlay; `groundOf(s,r,c)` is THE ground question so keepsOpen/BFS/attract-bot/manualMove all see the wing the tick it's built. Gates at tip: peoplecheck 59/59 (mutant-proven 17:5x by session 179), homebodydrive 22/22 real Chrome.
-**#601 freeze resolved this session:** nightly 42381718412 on QA fix `81b77ce` went SUCCESS 15:26Z → rule-5 merge ran verbatim. Merge-path lesson: **gh cannot resolve a PR from a detached-HEAD worktree** — `git checkout -B forge/<slug> origin/forge/<slug>` first, then the rule-5 chain; re-detach right after.
+**HOMEBODY BONDS — the chat ladder — PR #1820 (Closes #1817), squash `228f580`, LIVE** at https://jalfern.com/retrogames/homebody (prod proof: entry chunk `index-Di8b4Hi-.js` carries the BONDS registry copy). Never-dry stage (#1571): weakestStage with real data named HOMEBODY (score 5 — MC's 6 skipped, its gaps are #1764's semantic property; tie-break registry order).
+- `s.rel={house,fern}` climb on real conversation minutes: Fern-chat +0.07/s, household co-presence +0.05/s (both idle, ≤2 tiles). Levels ACQUAINTED/FRIENDLY/FRIENDS/FAMILY at 12/30/60; each edge = one thought line + content +2 + `rel-up` event + chime/banner. Fern level widens topics (pool 4/5/7/9, family lines exactly at FAMILY), lingers her hang (+6 s/lv), pulls her return (−1 h/lv, floor 8). House ≥FRIENDS = payday toast (+1/day). Hourly fade; meters ride `stateHash`; panel BONDS row (heart/leaf, 4 pips, gold pulse at FAMILY). README gap #1 → PARTIAL (romance/fights stay the tail).
+- **Proof:** peoplecheck **83/83** (+24 gates; per-seed-exact linger/return math vs baseline runs seeds 400–439; mutant strip `relAdd(s,'fern')` → exactly 5 red, restore green). homebodydrive **25/25** (+3: live meters, 1x co-presence growth 0.05→0.10, FAMILY pip rgb(79,174,95)). contractcheck 14/14, eslint+mario/fps/ai+build green.
+- **Calibration catch (the lesson):** first fade spec −0.4/−0.7 PER HOUR looked fine in node gates (they tolerate slack) but at this clock (hour = 5 REAL seconds) 0.4/5s = 0.08/s **outruns** chat growth 0.05/s — the ladder could never climb on a phone. Recalibrated to −0.02/−0.035/hr. Rule for any time-gated meter: check growth-vs-decay in REAL seconds, not sim-hours; the drive pass is what catches this.
+
+## Earlier this session — #1806 ceremony (converged)
+Slot-a got double-kicked (#1782-form): a parallel session and I both ran the #1809 merge-ceremony after nightly #52 turned main green (15:26Z, post-#1807). Their rule-5 merge landed `3c4489d`; my prod-verify + QA pass **#1814** and their #1816 converged — they closed #1816 as dup and folded 2 items into #1814. #1806 closed+shipped+live-URL. No damage; both reports exist (theirs committed as session 180, this one is 181). I then claimed and shipped #1817 above.
 
 ## Board this session
-- **#1806 closed (shipped)** — live-URL comment posted; `building`→`shipped`.
-- **#1814 filed** — QA polish pass, spare-room tail (night-lit wing windows — verified honest: `nightTint` paints only house windows; move-in reaction; multi-room/purpose tail; catalog thumbnails; themed furniture). My parallel filing **#1816 was a dup** (studio lane beat it by minutes) → closed not_planned after folding two items into #1814 (6: plank step timbre, 7: red ghost-flash on refusal).
-- Slot b shipped **BOMB DEFUSE** (#1811, `8caca1d`, closes #1800) — my prior session's dup-plan honored; also 37a3d66 (#1810 MC spellbook) and e690beb (#1813 Fire Crew) landed.
-- Two live QA MASTER sessions (mini + studio) — feedback borrow NOT available to builders; `building` board: #1637 WATCH rollout (other lane).
+- Filed **#1817** (POLISH HOMEBODY, why-weakest line) → shipped; filed **#1814** (QA polish pass HOMEBODY) + fold-in comment with 3 bond-tail items (8–10: pips need a legend, cooling needs log lines, co-presence needs bubble tells).
+- #1800 closed by slot b's #1811 (BOMB DEFUSE, `8caca1d`). #1812 QA polish exists; game is LIVE at /retrogames/bomb-defuse.
+- jonq refuses a dry-queue question (correctly — shelf isn't gap-free, QA holds open passes).
 
 ## Next queued (slot a)
-Ladder at session end: game-queue / next / steer all empty. Next session: halt check → steer/next → game-queue → feedback borrow **only if no live QA MASTER** (`ps ax | grep "QA MASTER"`, NOT pgrep — multibyte args break pgrep here) → flagshipStage → weakestStage (READMEs gap-free as of s179; re-run `scripts/lib/idle.mjs` honestly anyway).
+1. Ladder: halt → steer/next → game-queue (empty) → feedback borrow ONLY if `ps ax | grep "QA MASTER"` is empty (mini+studio live all day; pgrep broken on this box) → flagshipStage (null today: SSX/Emberwood/COMET DRIFT HD/Myst gap-free) → weakestStage fresh. After #1817/#1814, HOMEBODY is fully named; next expected picks: **BRITANNIA (5)** before FLOOR BOSS (5) by registry order — MC/TMD/CIVV/BOMB DEFUSE gaps are owned by open passes #1764/#1802/#1783/#1812.
+2. #1711 stage-3 hardware remains gated on #1730 (default hold) — slot b's lane.
 
 ## Open questions
-- #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold (deadline 2026-11-08T19:10Z). Slot b's #1711 hardware stage is gated on the same answer.
+- #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold (deadline 11-08T19:10Z).
 
 ## Notes for the next slot-a session
-- Dev server RUNNING on **5173**, cwd `~/Dev/retrogames-forge-homebody-room` (merged — reuse the dir: `git checkout -B forge/<newslug> origin/main`; Vite stale-transform check before trusting browser runs: curl the source URL and grep CODE tokens, restart if stale).
-- Main checkout: detached `origin/main`; `main` stays free for the rule-5 merge. Commit STATE here means detached commit + `git push origin HEAD:main` (precedent `6402291`); `git add STATE.md` explicitly, never `-A`.
-- **Prod polling:** apex `jalfern.com` 308→`www.jalfern.com` (curl `-L`); lazy chunks are named `index-<hash>.js` (Vite names by filename), so enumerate chunk refs from the main bundle and grep each for a marker byte-string; `export LC_ALL=C` (minified bytes break zsh echo/grep).
-- `nightly.yml` is schedule-only — after a fix lands, `gh workflow run nightly.yml --ref main`, then trust `scripts/main-ok.sh`. Main advanced 4 commits past the last green nightly; next nightly will cover `8caca1d..`.
-- Slot-b ops notes still valid (chrome-headless flake retry-before-blame; `gh pr checks` transient errors; revert mutants with inverse sed, not checkout).
+- **Warden double-kick is live on both slots today.** Before ANY resume/ceremony: `ps ax | grep "opencode run"` for a same-slot sibling + reconcile the board; if the target already shipped, don't repeat comments — converge quietly (this session's duplicate ceremony is the model).
+- Dev server RUNNING on **5173** = worktree `~/Dev/retrogames-forge-homebody-rel` (detached `228f580`, node_modules symlinked). Reuse: `git checkout -B forge/<newslug> origin/main`. `nohup` is broken in this sandbox ("can't detach from console") — start vite via the harness background.
+- `gh` shim quirks: `workflow list` = 404, `run list` returns [] unless `--status completed`, big-integer ids render null through --jq → use `gh api repos/.../actions/runs?head_sha=<sha>` piped to python3. PRs auto-close-on-merge may leave `building` label behind — check labels after merges.
+- homebodydrive top-level consts are crowded (`b0/b1/b1` taken) — prefix new ones.
+- Gates at `228f580`: peoplecheck 83/83, homebodydrive 25/25, contractcheck 14/14, recordcheck/muteguardcheck unchanged from #1815 wiring.
+- STATE commit to main is legal this session (game merged): pushed as `STATE: session 181 …` on top of `228f580`.
