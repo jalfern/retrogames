@@ -308,6 +308,55 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     ok(worst <= 50, `clap alignment inside ±50 ms across 30 min + throttle (worst ${worst.toFixed(1)} ms)`)
 }
 
+// --- clap sync: the ±50 ms acceptance line, pure twin of the browser proof --
+// (#1711 S3) scripts/plaicraft-clap.mjs runs these two functions on bytes that
+// came out of the real MediaRecorder; here synthetic PCM pins the same verdicts
+// offline — including the ones that MUST fail (shifted clock, dropped clap),
+// so the clap verdict is provably load-bearing before a single mic opens.
+{
+    const { detectClaps, clapVerdict, CLAP_TOL_MS } = await import('../src/utils/clapSync.js')
+    const SR = 48000
+    const TICK_MS = 1000 / 60
+    const mkPcm = (clapsMs, durMs = 6000) => {
+        const n = Math.round((durMs / 1000) * SR)
+        const a = new Float32Array(n)
+        let s = 12345
+        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
+        for (let i = 0; i < n; i++) a[i] = 0.03 * Math.sin((2 * Math.PI * 220 * i) / SR) + rnd() * 0.004 // mic hum floor, far below any clap
+        for (const ms of clapsMs) {
+            const s0 = Math.round((ms / 1000) * SR)
+            for (let k = 0; k < Math.round(0.05 * SR) && s0 + k < n; k++) {
+                const env = Math.exp(-k / (0.012 * SR)) // the browser driver's clap shape, verbatim — low-frequency, survives opus
+                a[s0 + k] = Math.max(-1, Math.min(1, (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / SR) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / SR)) * env))
+            }
+        }
+        return a
+    }
+    const realtimeClock = (uptoTick) => {
+        const c = []
+        for (let t = 1; t <= uptoTick; t += 60) c.push({ t, ms: Math.round((t - 1) * TICK_MS) })
+        if (c[c.length - 1].t !== uptoTick) c.push({ t: uptoTick, ms: Math.round((uptoTick - 1) * TICK_MS) })
+        return c
+    }
+    const CLAPS = [1000, 2400, 3800] // clap at wall-ms ~ tick 61/145/229 at realtime
+    const PRESSED = [61, 145, 229]
+    const pcm = mkPcm(CLAPS)
+    const onsets = detectClaps(pcm, { sampleRate: SR })
+    ok(onsets.length === 3, `detector heard every synthetic clap (${onsets.length}/3)`)
+    const precision = onsets.map((o, i) => Math.abs((o / SR) * 1000 - CLAPS[i]))
+    ok(Math.max(...precision) < 5, `onset placement < 5 ms off truth (worst ${Math.max(...precision).toFixed(1)} ms)`)
+    const clean = clapVerdict({ sampleRate: SR, onsets, pressTicks: PRESSED, clock: realtimeClock(300) })
+    ok(clean.ok && Math.abs(clean.worstMs) <= CLAP_TOL_MS, `clean take verdicts ok within ±${CLAP_TOL_MS} ms (worst ${clean.worstMs} ms)`, clean.why)
+    // mutants — the verdict must be able to fail:
+    const shifted = clapVerdict({ sampleRate: SR, onsets, pressTicks: PRESSED, clock: realtimeClock(300).map((s) => ({ t: s.t, ms: s.ms + 80 })) })
+    ok(!shifted.ok, 'MUTANT +80 ms clock shift -> RED', shifted.why)
+    const dropped = clapVerdict({ sampleRate: SR, onsets: detectClaps(mkPcm([CLAPS[0], CLAPS[2]]), { sampleRate: SR }).slice(0, 2), pressTicks: PRESSED, clock: realtimeClock(300) })
+    ok(!dropped.ok, 'MUTANT dropped clap (2 heard, 3 pressed) -> RED', dropped.why)
+    const mispressed = clapVerdict({ sampleRate: SR, onsets, pressTicks: [61, 145, 289], clock: realtimeClock(300) })
+    ok(!mispressed.ok, 'MUTANT press 1000 ms from its clap -> RED', mispressed.why)
+    ok(detectClaps(mkPcm([], 4000), { sampleRate: SR }).length === 0, 'sub-threshold hum detects nothing (real claps are the only trigger)')
+}
+
 // --- query plumbing -----------------------------------------------------------
 {
     ok(storeFromQuery('') === 'https://retrogames.jalfern.workers.dev', 'default store = the relay host')
