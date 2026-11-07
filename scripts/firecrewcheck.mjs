@@ -7,12 +7,15 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import {
-    makeRun, step, state, setSources, mulberry32, windBias, CLOCK, W, H, LOFT_Y1, LADDER_X,
+    makeRun, step, state, setSources, mulberry32, windBias, CLOCK, T, W, H, LOFT_Y1, LADDER_X,
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
     windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
-import { drawFire, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE } from '../src/games/FireCrew/art.js'
+import {
+    drawFire, drawCrew, drawLadderTruck, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE,
+    SMOKE_FIRE_DIM, FLAME, LADDER_TRUCK, TRUCK_BEACON_A, TRUCK_BEACON_B, BREATHE,
+} from '../src/games/FireCrew/art.js'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 let passes = 0
@@ -513,6 +516,76 @@ console.log('wind direction, the pre-whistle, the tails (#1749)')
         'the whistle schedules on the sim countdown and rides a rising sweep')
     ok(/sfx\.tail\(crewTail\(won\)\)/.test(jsx) && /playFilteredNoise\(t\.dur, t\.vol, t\.freq, 0\.1\)/.test(jsx),
         'the win/lose card ends on the ducked murmur')
+}
+
+console.log('smoke, the ladder truck & the crew breath (#1766)')
+{
+    // Same recording-ctx pattern as the night-art pass (#1440): these three
+    // polish bullets draw only fillRect/strokeRect, so they are provable in
+    // plain Node — no browser, no dev server.
+    const rec = () => {
+        const ops = []
+        return {
+            ops,
+            fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, globalAlpha: 1,
+            fillRect(x, y, w, h) { ops.push({ op: 'fill', style: this.fillStyle, x, y, w, h }) },
+            strokeRect(x, y, w, h) { ops.push({ op: 'stroke', style: this.strokeStyle, x, y, w, h }) },
+            beginPath() {}, moveTo() {}, lineTo() {}, arc() {}, fill() {}, stroke() {},
+            createRadialGradient() { return { addColorStop() {} } },
+            measureText() { return { width: 0 } },
+        }
+    }
+    const styles = (r) => new Set(r.ops.map((o) => o.style))
+    const rec2 = (fn, g, t) => { const r = rec(); fn(r, g, t); return r }
+    const cellsWith = (spots) => {
+        const g = makeRun(7)
+        g.cell.forEach((c) => { if (c) { c.burning = false; c.heat = 0 } })
+        for (const [x, y, fuel] of spots) g.cell[y * W + x] = { fuel, heat: 100, burning: true }
+        return g
+    }
+    const artSrc = readFileSync(path.join(HERE, '../src/games/FireCrew/art.js'), 'utf8')
+
+    // --- the ladder truck IS the base column (gap 1) ---
+    const truckOps = (lx, t = 0) => { const r = rec(); drawLadderTruck(r, { ladderX: lx }, t); return r.ops }
+    const body = (lx) => truckOps(lx).find((o) => o.style === LADDER_TRUCK)
+    ok(!!body(15), 'a parked ladder truck sits at the base column')
+    ok(body(20).x > body(15).x, 'the truck rides the base law — move g.ladderX and it moves')
+    ok(Math.abs(body(15).x + body(15).w / 2 - (15 * T + 8)) < T, 'the truck is centred on the ladder column (seat 3 reads as a vehicle)')
+    ok(styles(rec2((r, g, t) => drawLadderTruck(r, g, t), { ladderX: 15 }, 0)).has(TRUCK_BEACON_A)
+        && styles(rec2((r, g, t) => drawLadderTruck(r, g, t), { ladderX: 15 }, 0)).has(TRUCK_BEACON_B),
+        'the parked light bar shows both lenses')
+    const litA0 = truckOps(15, 0).some((o) => o.style === TRUCK_BEACON_A && o.x < 15 * T)
+    const litA1 = truckOps(15, 16).some((o) => o.style === TRUCK_BEACON_A && o.x < 15 * T)
+    ok(litA0 !== litA1, 'the light bar alternates red/blue between frames (parked, lights on)')
+    ok(/drawLadderTruck\(ctx, g, t\)\n    \/\/ engine \+ ladder/.test(artSrc), 'props parks the truck on the base column each frame')
+
+    // --- distant fire greys out behind dense smoke (gap 2) ---
+    const clearG = cellsWith([[8, 12, 70]]) // smoke field default 0
+    ok(styles(rec2(drawFire, clearG, 0)).has(FLAME.crate.base) && !styles(rec2(drawFire, clearG, 0)).has(FLAME.smoke.base),
+        'clear air — a nearby crate keeps its white-hot core')
+    const smoky = cellsWith([[8, 12, 70]]); smoky.smoke[12 * W + 8] = SMOKE_FIRE_DIM + 0.05 // g.smoke is a Float32Array: the exact threshold rounds below it
+    ok(styles(rec2(drawFire, smoky, 0)).has(FLAME.smoke.base) && !styles(rec2(drawFire, smoky, 0)).has(FLAME.crate.base),
+        'dense smoke strips the colour off the distant fire')
+    const thin = cellsWith([[8, 12, 70]]); thin.smoke[12 * W + 8] = SMOKE_FIRE_DIM - 0.01
+    ok(styles(rec2(drawFire, thin, 0)).has(FLAME.crate.base), 'thin smoke still lets the flame keep its colour (saturation dies first)')
+    const mixg = cellsWith([[8, 12, 70], [10, 12, 70]]); mixg.smoke[12 * W + 8] = 1
+    ok(styles(rec2(drawFire, mixg, 0)).has(FLAME.smoke.base) && styles(rec2(drawFire, mixg, 0)).has(FLAME.crate.base),
+        'only the cell behind the smoke greys — its clear neighbour still burns')
+    const loftsm = cellsWith([[8, 2, 70]]); loftsm.smoke[2 * W + 8] = 1
+    ok(styles(rec2(drawFire, loftsm, 0)).has(FLAME.smoke.base) && !styles(rec2(drawFire, loftsm, 0)).has(FLAME.loft.base),
+        'a loft fire behind dense smoke greys out too (distance, not fuel type)')
+    ok(/g\.smoke\[i\] >= SMOKE_FIRE_DIM/.test(artSrc) && /smokey \? FLAME\.smoke/.test(artSrc),
+        'drawFire routes the flame palette through the advected smoke field (the SMOKE_DIM law, drawn)')
+
+    // --- an idle firefighter breathes (gap 3) ---
+    const mk = (moving) => ({ x: 5, y: 12, seat: 1, face: 0, moving, downT: 0, hurtT: 0, carrying: false })
+    const trimY = (f, t) => { const r = rec(); drawCrew(r, f, t); const o = r.ops.find((o) => o.style === '#c8ff32'); return o ? o.y : null }
+    const legY = (f, t) => { const r = rec(); drawCrew(r, f, t); const o = r.ops.find((o) => o.style === '#141a22'); return o ? o.y : null }
+    ok(trimY(mk(0), 0) !== null, 'an idle firefighter draws')
+    ok(trimY(mk(0), 0) !== trimY(mk(0), BREATHE), 'an idle pose breathes — the coat rises and settles between moves')
+    ok(trimY(mk(6), 0) === trimY(mk(6), BREATHE), 'a walking firefighter runs the step cycle, not the breath')
+    ok(legY(mk(0), 0) === legY(mk(0), BREATHE), 'the feet stay planted — only the torso rides the breath')
+    ok(/const breath = f\.moving \? 0 : Math\.floor\(t \/ BREATHE\) % 2/.test(artSrc), 'the breath gates on idle — never layered onto the step cycle')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)

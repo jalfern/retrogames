@@ -84,9 +84,17 @@ function helmet(ctx, px, py, face) {
     ctx.fillRect(px + (face === 2 ? 1 : face === 0 ? 11 : 6), py + 1, 3, 2)
 }
 
+// An idle firefighter is never truly still: the coat rises and settles on a
+// slow breath (#1766, Emberwood #981 precedent) so the exhaustion the clock
+// implies reads on the body while it waits between moves. Feet stay planted —
+// only the torso, trim, helmet and tool ride the breath; a walking firefighter
+// runs on the step cycle instead, so breath is 0 while moving.
+export const BREATHE = 12
+
 export function drawCrew(ctx, f, t) {
     const px = f.x * T; const py = f.y * T
     const stepF = f.moving ? Math.floor(f.moving / 6) % 2 : 0
+    const breath = f.moving ? 0 : Math.floor(t / BREATHE) % 2
     if (f.downT > 0) {
         if (Math.floor(t / 8) % 2) {
             ctx.strokeStyle = '#ff5040'
@@ -100,19 +108,19 @@ export function drawCrew(ctx, f, t) {
     if (f.hurtT > 0 && Math.floor(t / 3) % 2) ctx.globalAlpha = 0.4
     // coat
     ctx.fillStyle = f.seat === 1 ? '#1d3a8f' : f.seat === 2 ? '#7a2f10' : '#20262e'
-    ctx.fillRect(px + 3, py + 5, 10, 8)
+    ctx.fillRect(px + 3, py + 5 + breath, 10, 8)
     // reflective trim
     ctx.fillStyle = '#c8ff32'
-    ctx.fillRect(px + 3, py + 8 + stepF, 10, 1)
+    ctx.fillRect(px + 3, py + 8 + stepF + breath, 10, 1)
     // legs shuffle
     ctx.fillStyle = '#141a22'
     ctx.fillRect(px + 4 + stepF * 2, py + 13, 3, 3)
     ctx.fillRect(px + 9 - stepF * 2, py + 13, 3, 3)
-    helmet(ctx, px, py, f.face)
+    helmet(ctx, px, py + breath, f.face)
     // facing tool
     const d = [[1, 0], [0, 1], [-1, 0], [0, -1]][f.face]
     ctx.fillStyle = f.seat === 1 ? '#39d7ff' : f.seat === 2 ? '#ffd24a' : '#aab4c2'
-    ctx.fillRect(px + 8 + d[0] * 7 - 1, py + 8 + d[1] * 7 - 1, 3, 3)
+    ctx.fillRect(px + 8 + d[0] * 7 - 1, py + 8 + d[1] * 7 - 1 + breath, 3, 3)
     if (f.carrying) {
         ctx.fillStyle = '#e8d9c8'
         ctx.fillRect(px + 4, py - 5, 8, 5)
@@ -146,9 +154,16 @@ export const COLLAPSE_CRACK = '#ff5030' // sagging plank crack on a starving flo
 export const COLLAPSE_RIM = '#ff9040' // blinking hole-rim warning
 export const EMBER_CALM = '#ffab40'
 export const EMBER_GALE = '#ffe08a' // wind-carried streaked embers, gust 2 only
-const FLAME = {
+// Smoke steals colour before it steals light (#1766): a flame behind a dense
+// stretch of the advected field is the *distant* fire — its saturation drops
+// out before its brightness does, so it reads as a glow under grey rather than
+// a bright tile painted over the smoke. Mirrors the SMOKE_DIM law (sim.js),
+// which only ever dims light below 0.9 — fire above the threshold keeps colour.
+export const SMOKE_FIRE_DIM = 0.45 // smoke density at which the flame behind it greys out
+export const FLAME = {
     loft: { base: '#c8371a', mid: '#ff7a1a', core: '#ffd24a' }, // heavy timber
     crate: { base: '#e84a12', mid: '#ffa040', core: '#fff2c0' }, // kindling — white-hot
+    smoke: { base: '#6e4436', mid: '#8a6150', core: '#b79a86' }, // distant fire, saturation stripped by the field
 }
 const WIND_DIR = [[1, 0], [0, 1], [-1, 0], [0, -1]] // E S W N (mirrors sim DIRS)
 
@@ -172,7 +187,8 @@ export function drawFire(ctx, g, t) {
         if (c.heat > 0 && !c.burning) { ctx.fillStyle = `rgba(20,8,4,${Math.min(0.7, c.heat / 100)})`; ctx.fillRect(px, py, T, T) }
         if (!c.burning) continue
         const f = Math.floor(t / 7 + hash(x, y, 5) * 3) % 3
-        const pal = y <= LOFT_Y1 ? FLAME.loft : FLAME.crate
+        const smokey = !!g.smoke && g.smoke[i] >= SMOKE_FIRE_DIM // distant fire sits behind the field (#1766)
+        const pal = smokey ? FLAME.smoke : (y <= LOFT_Y1 ? FLAME.loft : FLAME.crate)
         // gap 5 (#1440): a starving fuel cell IS the floor giving way — sink the
         // flame toward the joists, crack the planks, blink the rim it will drop.
         const warn = c.fuel < COLLAPSE_WARN_FUEL
@@ -274,7 +290,41 @@ export function drawDarkness(ctx, g) {
 
 // --- props -------------------------------------------------------------------
 
+// The ladder truck IS the mobile base column (#1424): seat 3's x. Parked with
+// its light bar turning, it makes g.ladderX read as a vehicle instead of a
+// bare line sprouting from the wall line (#1766). Kept to fillRects so
+// firecrewcheck can prove it in plain Node, and so it rides the base law — move
+// g.ladderX and the whole truck moves with it.
+export const LADDER_TRUCK = '#b81c26'
+export const LADDER_TRUCK_DARK = '#7d121a'
+export const LADDER_TRUCK_GLASS = '#9fd8ff'
+export const TRUCK_BEACON_A = '#ff3b30'
+export const TRUCK_BEACON_B = '#5ab0ff'
+
+export function drawLadderTruck(ctx, g, t) {
+    const cx = g.ladderX * T + 8
+    const by = 17.2 * T // parked on the street, just under the loft line
+    ctx.fillStyle = LADDER_TRUCK
+    ctx.fillRect(cx - 1.3 * T, by, 2.6 * T, 1.5 * T) // body
+    ctx.fillStyle = LADDER_TRUCK_DARK
+    ctx.fillRect(cx - 1.3 * T, by + 1.2 * T, 2.6 * T, 0.45 * T) // skirt
+    ctx.fillStyle = LADDER_TRUCK_GLASS
+    ctx.fillRect(cx + 0.5 * T, by + 0.2 * T, 0.7 * T, 0.55 * T) // cab window
+    ctx.fillStyle = '#111'
+    ctx.fillRect(cx - 1.0 * T, by + 1.55 * T, 8, 5) // wheels
+    ctx.fillRect(cx + 0.4 * T, by + 1.55 * T, 8, 5)
+    ctx.fillStyle = '#ffd24a'
+    ctx.fillRect(cx + 1.15 * T, by + 0.7 * T, 3, 3) // headlight
+    // light bar turns red/blue so a parked base still reads as apparatus
+    const alt = Math.floor(t / 16) % 2
+    ctx.fillStyle = alt ? TRUCK_BEACON_A : TRUCK_BEACON_B
+    ctx.fillRect(cx - 0.9 * T, by - 0.35 * T, 5, 3)
+    ctx.fillStyle = alt ? TRUCK_BEACON_B : TRUCK_BEACON_A
+    ctx.fillRect(cx + 0.2 * T, by - 0.35 * T, 5, 3)
+}
+
 export function drawProps(ctx, g, t) {
+    drawLadderTruck(ctx, g, t)
     // engine + ladder
     const ex = ENGINE.x * T; const ey = ENGINE.y * T
     ctx.fillStyle = '#c8202a'
