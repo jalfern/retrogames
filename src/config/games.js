@@ -746,7 +746,7 @@ export const GAMES = [
         label: 'ADVENTURE',
         theme: 'dark',
         description: 'Explore a world of castles, dungeons, and dragons. Find the enchanted chalice and return it home.',
-        controls: ['Arrow Keys: Move', 'Space: Drop Item'],
+        controls: ['Arrow Keys: Move', 'Space: Drop Item', WATCH_HELP + ' — the route that wins every cart variant in the harness drives the quest', '?: Pause and read the controls'],
         // #1572 guidance tab — the fold-out map/hint sheet the original cart
         // shipped. The three castles and their keys, the drop-the-key rite, the
         // bridge-over-walls law and the magnet. The gray-dot secret stays

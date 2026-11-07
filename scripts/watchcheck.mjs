@@ -1264,6 +1264,40 @@ const PILOTS = [
             rep.check('papers-please: Y again releases the inspector', !(await watching()))
         },
     },
+    {
+        id: 'adventure', url: `${BASE}/adventure`, hook: '__advTest',
+        async run(page, rep) {
+            const H = '__advTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(700)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('adventure: Y seats the route', await watching())
+            rep.check('adventure: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => Math.hypot(y.x - x.x, y.y - x.y) > 6 || y.room !== x.room || y.carrying !== x.carrying || y.score > x.score
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('adventure: the route walks the world untouched (an idle dot never moves)',
+                adv(a, b), `pos (${Math.round(a.x)},${Math.round(a.y)}) -> (${Math.round(b.x)},${Math.round(b.y)}), room ${a.room} -> ${b.room}, carry ${a.carrying} -> ${b.carrying}`)
+            rep.check('adventure: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('adventure: steer key takes over', !(await watching()))
+            rep.check('adventure: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('adventure: Y re-seats the route mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('adventure: resumes from where the player left it', adv(c, d),
+                `pos (${Math.round(c.x)},${Math.round(c.y)}) -> (${Math.round(d.x)},${Math.round(d.y)}), room ${c.room} -> ${d.room}, carry ${c.carrying} -> ${d.carrying}`)
+            await key(page, 'KeyY')
+            rep.check('adventure: Y again releases the route', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -1518,6 +1552,23 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const entryHas9 = (p, s) => { const m = reg9.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     for (const p of ['/tetris', '/excitebike', '/marble-madness'])
         rep.check(`registry ${p}: controls carry the WATCH line`, entryHas9(p, 'WATCH_HELP'))
+}
+// #1637 batch 11 — the solver-script family grows one: ADVENTURE seats route.js
+// (V1/V2 waypoint script + V3 adaptive adapter, both the drivers adventurecheck
+// wins with, emitted one input per tick).
+{
+    const ADV = readFileSync('src/games/Adventure/index.jsx', 'utf8')
+    rep.check('ADVENTURE: the watcher feeds route.js per-tick inputs in the play tick',
+        /if \(watchingRef\.current && watcher\) \{\s*const r = watcher\.next\(\)/.test(ADV)
+        && /dx = w\.dx \|\| 0/.test(ADV))
+    rep.check('ADVENTURE: watch never lingers — cleared at terminal AND at every start',
+        /if \(watchingRef\.current && \(sim\.won \|\| sim\.dead\)\) \{ watchingRef\.current = false/.test(ADV)
+        && /watcher = null \/\/ #1637: the old route ends with the old run/.test(ADV))
+    rep.check('ADVENTURE: seats the variant-aware driver (route.js makeRoute at the seat)',
+        /watcher = makeRoute\(sim\)/.test(ADV))
+    const reg11 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas11 = (p, s) => { const m = reg11.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('registry /adventure: controls carry the WATCH line', entryHas11('/adventure', 'WATCH_HELP'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
