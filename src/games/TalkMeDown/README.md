@@ -12,13 +12,22 @@ the couch — or the mic.
   identical hashes. `Math.random()` lives only in the shell (sparks, shake).
 - **Modules** carry a stamp that indexes the printed rulebook:
   - `NEON (N1..N6)` — cut exactly ONE colored wire.
-  - `DIAL (D1..D4)` — turn the 0-9 dial, then press SET.
-  - `GLYPH (G1..G4)` — press three symbols in order.
+  - `DIAL (D1..D5)` — turn the 0-9 dial, then press SET.
+  - `GLYPH (G1..G5)` — press three symbols in order.
   Every rule is a pure function of features the defuser can see and read
   aloud: serial last digit, LED count (0-8), bolt color, wire colors + lit
-  states, sibling-module wire counts. `RULEBOOK[type].find(r => r.id ===
-  stamp)` is the single source shared by the printed page, the CPU partner
-  and the solver — text and truth can never drift (bombcheck pins both).
+  states, sibling-module wire counts, BACK-panel battery count.
+  `RULEBOOK[type].find(r => r.id === stamp)` is the single source shared by
+  the printed page, the CPU partner and the solver — text and truth can never
+  drift (bombcheck pins both).
+- **Back panel (#1797)**: UP at module 1 tilts the bomb onto its maintenance
+  back — a riveted plate stamped with 0-2 seeded BATTERIES, the fact D5/G5
+  read. DOWN tilts back. While flipped, module verbs refuse SILENTLY (no
+  strike — the tilt is free, and punishing curiosity would tax the game's own
+  hint); new bombs land face-up; `hash`/`simState` carry the tilt; a heard
+  "FLIP IT" pulses the tilt hint — words become visible, hands stay yours
+  (#1247 law). The fuse and strike breakers stay drawn on both sides:
+  pressure never hides.
 - **Solvability by construction**: the generator re-rolls module features
   until `computeTarget` resolves, so a printed precondition (e.g. N2's "the
   ONE lit wire") always holds on a live bomb.
@@ -27,8 +36,11 @@ the couch — or the mic.
   or a zero fuse ends the run. Locked modules refuse every verb (no strike
   farming while the current one is hot).
 - **Rounds**: `moduleCountFor(r) = min(1 + r>>1, 4)`,
-  `fuseFor(r) = max(30, 70 - 5r)` seconds; rule variants unlock by round
-  (`variantPool`) — round 1 knows N1/N2/D1/D2/G1/G3 only.
+  `fuseFor(r) = max(30, 70 - 5r)` seconds; rule variants unlock `1 + round`
+  deep (`variantPool`) — round 1 is EXACTLY N1/N2/D1/D2/G1/G3, and every
+  stamp is live inside the quota: D5 rides from round 3 and G5 from round 4
+  (the module-seat law), and N6 — dead under the old `2+ceil(r/2)` slope,
+  which needed round 8 while the quota ends at 5 — rides round 5.
   `QUOTA_BOMBS = 5` clears the SQUAD CHIEF stamp.
 - **D4 is anchored (#1708)**: its cross-reference is the LAYOUT — the first
   NEON sibling's wire count, solved or not (the wires stay on the panel after
@@ -59,29 +71,41 @@ the couch — or the mic.
 | input | seat 1 (defuser) | seat 2 (manual, 2P keyboard) |
 |---|---|---|
 | arrows / d-pad | module + wire/dial/glyph | page + rule line |
+| ↑ at module 1 / ↓ on the back | tilt the bomb over / tilt back (#1797) | — |
 | SPACE / A | cut / SET / press glyph | flag rule (READ N3 on panel) |
 | B / PAGE | hide-show manual rail (solo) | — |
 | V | mic on/off | |
+| `"FLIP IT"` (mic) | pulses the tilt hint (words never act, #1797) | |
 | Tab | flip manual view (solo) | |
 | Esc / `?` | pause (PauseOverlay) | |
 
 ## Verify
 
 ```bash
-npm run bombcheck   # 38 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 50 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
-                    # paths, quota win 50/50, slack (wins at 75% fuse), grammar,
-                    # voiceCmd banking (#1415: recorder trace lands, file stays
-                    # valid v1, replay hash-exact, hint==grammar one-source),
-                    # D4-anchor (#1708: target invariant through all sibling
-                    # progress 606 bombs, printed-count human flow 300 rigs,
-                    # source pin)
+                    # paths, quota win 50/50, slack (wins at 75% fuse), grammar
+                    # (+ FLIP phrases, page/dial keep), voiceCmd banking (#1415:
+                    # recorder trace lands, file stays valid v1, replay hash-exact,
+                    # hint==grammar one-source), D4-anchor (#1708: target invariant
+                    # through all sibling progress, printed-count human flow,
+                    # source pin), back panel (#1797: seeded batteries 0..2, flip
+                    # law + silent refusal + face-up reset, autopilot never tilts,
+                    # D5/G5 printed-truth rigs, every stamp live inside the quota
+                    # incl. the revived N6, round 1 == README set, hash/simState
+                    # carry the tilt, source pin)
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
                     # hash determinism, death->restart, pause; #1415: live capture
                     # banks voiceCmd mid-run and replays exact, LCD-rail call-hint
-                    # footer pixel gates (steel off / green on); zero page errors
+                    # footer pixel gates (steel off / green on); #1797: real-key
+                    # tilt (ArrowUp at module 1 / ArrowDown back), back-plate
+                    # battery pixels, silent Space on the back, voice FLIP pulses
+                    # without acting; zero page errors. Launches via chromeboot
+                    # (#1622 ladder) — full Chrome cannot boot in launchd-kicked
+                    # sessions on this box; its live-capture section still dies in
+                    # headless-shell+single-process (advisory, known #1622 residue).
 CONTRACT_ONLY=talk-me-down npm run contractcheck
 node scripts/tmd-smoke.mjs   # quick sim-only smoke
 ```
@@ -89,35 +113,35 @@ node scripts/tmd-smoke.mjs   # quick sim-only smoke
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
 (expiry gate + fuse-cost gate); restoring returns green. #1708's mutant —
 restoring the `!x.solved` guard — goes red on exactly the three anchor gates
-("flipped 3 -> 0"), everything else green.
+("flipped 3 -> 0"), everything else green. #1797's mutant — removing the
+silent refusal in the flip branch of `defuserAct` — goes red on exactly the
+refusal gate (verbs leak onto the back, `score=495`) and the source pin;
+everything else green.
 
 ## Honest gaps
 
-- #1373 (polish pass) wired the tap-to-talk pill, the BOMB INBOUND curtain,
-  the vignette, paperclip + mic-hint page, seat-2 key drive — and fixed the
-  tap latch: it now guarantees one engine tick instead of ~6 (a quick tap used
-  to wrap cyclic cursors a multiple of 3 — the page flip was a no-op).
+- **CLOSED by #1373:** tap-to-talk pill, BOMB INBOUND curtain, vignette,
+  paperclip + mic-hint page, seat-2 key drive — and the tap latch fixed to
+  guarantee one engine tick (~6-tick wraps made quick taps on the page flip a
+  no-op).
+- **CLOSED by #1415:** `voiceCmd` written into `retrogames-rec` recordings
+  (every heard call — obey, refuse-with-why, NO CALL) and the defuser's
+  LCD-rail footer of accepted call shapes via the shared `ACCEPTED_HINT`
+  const (page, footer and grammar can never drift).
+- **CLOSED by #1797:** the bomb has a BACK panel — UP at module 1 tilts it
+  onto a riveted maintenance plate (0-2 seeded batteries), DOWN tilts back;
+  the back refuses verbs silently (no strike on your own curiosity), D5/G5
+  read the battery count, "FLIP IT" pulses the tilt hint, and the variant
+  slope (`1+round`) revived N6, dead under the old unlock law.
 - 2P requires a shared keyboard (seat 2 = WASD + F); no online lobby yet —
   `#494` remote seats are reserved plumbing like SOS (#1248).
 - Headless CI can hear nothing (no speech service): mic *delivery* is proved
   by badge state only; the grammar + obey/refuse path is injected.
-- `voiceCmd` is written into `retrogames-rec` recordings (#1415, Gauntlet's
-  #1249 pattern): `voiceCall` banks every heard call — obey, refuse-with-why
-  and NO CALL (`intent: null`) — via `recordVoiceCmd`, and the natural rAF
-  loop feeds `recordLiveTick` under `isRecording() && !contractHoldsLoop()`
-  so a live capture holds ticks/pads/hashes AND the trace. Stamps ride the
-  recorder's clock; replay ignores the channel (bombdrive proves the file
-  replays hash-exact with the trace inside). A capture must OPEN on tick
-  zero (reset+release+recordStart in one evaluate) or banked hashes land
-  ahead of the replay clock.
-- The defuser's LCD rail footer etches the accepted call shapes (#1415 —
-  the manual page got them at #1373, seat 1 had nothing): one shared
-  `ACCEPTED_HINT` const in voice.js (page, footer and grammar can never
-  drift; bombcheck pins the shapes against `parseCall`). The rail frame
-  grows 22->32px flush with the panel bottom — glass and order-text pixels
-  keep their coordinates — and the footer glows LCD-green while the mic
-  listens, dim steel while off (the hint doubles as a mic-state echo).
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
   dial module is intentionally not cross-referenced (first dial wins).
-- No bomb-shape variety beyond one panel; deeper rounds could add a second
-  panel on the back (that is the fun-kind of stage 2).
+- The tilt is READ-only: batteries are counted, never pulled (no battery-pull
+  fuse tricks), and the serial stays on the front — the original hides it on
+  the back. Solo play can answer D5/G5 straight off the LCD rail without ever
+  tilting; only a human seat 2 forces the flip conversation.
+- No bomb-shape variety beyond the two sides; deeper rounds could vary the
+  plate layout itself (that remains the fun-kind of stage 2).
