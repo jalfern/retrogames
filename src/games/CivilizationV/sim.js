@@ -12,9 +12,11 @@
 //   - settlers found cities (>= 3 hex from any city, on passable land).
 //   - cities work `size` tiles (centre always), produce food/production/gold/
 //     science/culture, GROW on stored food surplus, and bombard one adjacent
-//     enemy each turn. Walls at 0 => captured; a civ whose CAPITAL falls is
-//     vassalized — its realm folds into the conqueror and the civ is done
-//     (capital capture ≠ needing every unit dead).
+//     enemy each turn. Walls at 0 => captured; when a major's ORIGINAL capital
+//     falls to another major the realm KNEELS (#1777): it keeps its surviving
+//     cities and garrisons as a puppet, the palace relocates, peace is forced
+//     and its gold flows uphill as tribute (capital capture ≠ extinction, and
+//     a single-city realm is the only one that dies with its seat).
 //   - combat: 100 HP units, deterministic effective-strength exchanges.
 //     Modifiers: hills +25%, fortified +25%, city-tile support +50%,
 //     attacking across a river -10%. Ranged (range 2) takes no retaliation.
@@ -22,7 +24,8 @@
 //   - cities bank production into queued units (WARRIOR/ARCHER/SETTLER).
 //   - wounded units heal at rest (faster on home soil, faster still fortified).
 //   - victories: founding milestone (capital size 4) or DOMINATION (every
-//     rival capital captured). Loss: capital falls or the turn limit passes.
+//     rival ORIGINAL capital fallen — kneelers pay, corpses count; #1777).
+//     Loss: capital falls or the turn limit passes.
 //     (Wonders and the other three victories are later stages.)
 //   - Stage 3 adds the tech tree: city science is spent on a researchable tree
 //     (12 techs across Ancient/Classical/Medieval, real Civ V prerequisites).
