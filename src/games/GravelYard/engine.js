@@ -169,6 +169,8 @@ export function createGame(seed = 1, players = 1) {
             jammed: false, jamNeed: 0, jamRoll: -1,
         },
         bays: { coarse: 0, fines: 0 },
+        vord: [], // #1771: shouted orders queue {seat,kind,arg,id,t,orderId?} (solo-local; never hashed)
+        vseq: 0,
         fx: [],
         log: [],
     }
@@ -208,6 +210,91 @@ function cyclePin(gs) {
     gs.pin = next ? next.id : null
     gs.fx.push({ k: 'pin', id: gs.pin, tick: gs.tick })
     radio(gs, 'BOARD', next ? `PINNED ${next.grade === 'coarse' ? 'COARSE' : 'FINES'} x${next.units}` : 'PIN CLEAR')
+}
+
+// --- shouted orders (#1771) ---------------------------------------------------
+// The foreman's grammar (voiceorders.js) turns a transcript into an intent;
+// submitVoice files it as an order against a CPU seat. Like Gauntlet's voice
+// co-op (#1249) the law holds twice over: the sim only ever sees PADS (the
+// planners below emit the keys an order implies — the crew still plans with
+// bfs like any slot), and orders are SOLO-LOCAL: net play refuses them at the
+// UI, so the lockstep hash path never sees a vord entry. The queue itself is
+// therefore not hashed (same ruling as _vCmd in Gauntlet); the state an order
+// drives — the gate, the pin, the batch — is hashed as it always was, and the
+// recorded pad streams replay the run exactly.
+const ORDER_SEAT = { gate: 2, run: 2, jog: 2, pin: 1, unpin: 1 } // 1 truck, 2 screen
+const GRADE_LIST = ['coarse', 'fines']
+const VOICE_MAX_AGE = 2400 // a 40 s stale order is a misheard order
+
+// submitVoice(gs, intent) — { ok, why? }. Honest refusals: the yard refuses
+// what is physically pointless (jog with no jam, run with an empty hopper,
+// pin a grade nobody ordered) with the radio's own words. A same-kind order
+// replaces its older self — the newest shout wins; cap 3 keeps the queue short.
+export function submitVoice(gs, intent) {
+    if (!intent || !ORDER_SEAT[intent.kind] || gs.done) return { ok: false, why: 'NOT SURE' }
+    const seat = ORDER_SEAT[intent.kind]
+    const p = gs.plant
+    let arg = null, orderId = null
+    if (intent.kind === 'gate') {
+        if (!['wide', 'medium', 'narrow'].includes(intent.gate)) return { ok: false, why: 'NOT SURE' }
+        if (p.gate === intent.gate) return { ok: true, why: `ALREADY ${intent.gate.toUpperCase()}` }
+        arg = intent.gate
+    } else if (intent.kind === 'run') {
+        if (p.jammed) return { ok: false, why: 'JAM FIRST' }
+        if (p.running) return { ok: false, why: 'PLANT RUNS ALREADY' }
+        if (p.hopper < 2) return { ok: false, why: 'HOPPER TOO LOW' }
+    } else if (intent.kind === 'jog') {
+        if (!p.jammed) return { ok: false, why: 'NO JAM' }
+    } else if (intent.kind === 'pin') {
+        if (!GRADE_LIST.includes(intent.grade)) return { ok: false, why: 'NOT SURE' }
+        if (gs.pin != null && gs.orders.some((o) => o.id === gs.pin && o.grade === intent.grade)) return { ok: true, why: 'ALREADY PINNED' }
+        const want = gs.orders.filter((o) => o.grade === intent.grade)
+        if (!want.length) return { ok: false, why: `NO ${intent.grade === 'coarse' ? 'COARSE' : 'FINES'} ORDER` }
+        arg = intent.grade; orderId = want[0].id
+    } else { // unpin
+        if (gs.pin == null) return { ok: true, why: 'NOTHING PINNED' }
+    }
+    const kind = intent.kind
+    const at = gs.vord.findIndex((c) => c.kind === kind && c.seat === seat) // newest shout wins
+    if (at >= 0) gs.vord.splice(at, 1)
+    if (gs.vord.length >= 3) gs.vord.shift()
+    gs.vord.push({ seat, kind, arg, id: ++gs.vseq, t: gs.tick, orderId })
+    gs.fx.push({ k: 'voiceGo', seat, kind, tick: gs.tick })
+    radio(gs, seat === 1 ? 'TRUCK' : 'SCREEN', 'COPY')
+    return { ok: true }
+}
+
+// voiceTick — retire completed orders and drop stale ones. Terminal
+// conditions read live sim state, so the retire moment is deterministic.
+function voiceTick(gs) {
+    for (let i = gs.vord.length - 1; i >= 0; i--) {
+        const c = gs.vord[i]
+        if (c.kind === 'gate' && gs.plant.gate === c.arg) {
+            gs.vord.splice(i, 1)
+            radio(gs, 'SCREEN', `GATE ${c.arg.toUpperCase()}`)
+        } else if (c.kind === 'run' && gs.plant.running) {
+            gs.vord.splice(i, 1) // startBatch fired — the batch IS the receipt
+        } else if (c.kind === 'jog' && !gs.plant.jammed) {
+            gs.vord.splice(i, 1)
+        } else if (c.kind === 'pin' && gs.pin === c.orderId) {
+            gs.vord.splice(i, 1) // cyclePin already radioed PINNED ...
+        } else if (c.kind === 'pin' && !gs.orders.some((o) => o.id === c.orderId)) {
+            gs.vord.splice(i, 1)
+            radio(gs, 'TRUCK', 'ORDER GONE — PIN DROPPED')
+        } else if (c.kind === 'unpin' && gs.pin === null) {
+            gs.vord.splice(i, 1) // ... and PIN CLEAR when the cycle unwinds to none
+        }
+        if (gs.tick - c.t > VOICE_MAX_AGE && gs.vord[i] === c) {
+            gs.vord.splice(i, 1)
+            radio(gs, c.seat === 1 ? 'TRUCK' : 'SCREEN', 'FORGET IT')
+        }
+    }
+}
+
+// shortest one-step direction on the gate ring (wide->medium->narrow->wide)
+function gateStep(cur, want) {
+    const i = GATES.indexOf(cur), w = GATES.indexOf(want)
+    return (w - i + 3) % 3 === 1 ? 'r' : 'l'
 }
 
 // --- helpers -------------------------------------------------------------------
@@ -504,6 +591,7 @@ export function stepGame(gs, pads) {
     if (gs.done) return gs
     gs.tick++
     gs.rngState = (Math.imul(gs.rngState ^ (gs.rngState >>> 15), 0x2545f491) >>> 0)
+    voiceTick(gs) // #1771: retire shouted orders before the crew reads the yard
     stepMachine(gs, gs.digger, pads[0] || {})
     stepMachine(gs, gs.truck, pads[1] || {})
     stepOperator(gs, pads[2] || {})
@@ -553,6 +641,7 @@ export function simState(gs) {
         },
         bays: { coarse: gs.bays.coarse, fines: gs.bays.fines },
         pile: gs.pile.map((c) => ({ x: c.x, y: c.y, units: c.units, wet: c.wet })),
+        voice: { q: gs.vord.length, vseq: gs.vseq }, // #1771: shouted orders (solo-local, never hashed)
         hash: hashState(gs),
     }
 }
@@ -657,6 +746,23 @@ function diggerPlan(gs) {
 function truckPlan(gs) {
     const m = gs.truck
     if (m.job) return {}
+    // #1771: a shouted pin/unpin takes the truck to the ORDER BOARD — the pin
+    // action the crew never takes on its own. It rides the same approach the
+    // #1759 pin law uses (stand (13,4), face right, A cycles), so a voice pin
+    // lands on the board through the exact same pad path a human tap uses.
+    const pinCmd = gs.vord.find((c) => c.seat === 1)
+    if (pinCmd) {
+        const done = pinCmd.kind === 'pin' ? gs.pin === pinCmd.orderId : gs.pin === null
+        if (!done) {
+            const standX = BOARD[0] - 1, standY = BOARD[1]
+            if (m.x === standX && m.y === standY) {
+                if (m.face !== 'right') return { thenFace: 'right', act: 'a' }
+                return { act: 'a' }
+            }
+            const a = approach(gs, m, BOARD[0], BOARD[1], ['right'])
+            if (a) return { path: a.path, thenFace: 'right', act: 'a' }
+        }
+    }
     const atDock = DOCK_SPOTS.some(([sx, sy]) => sx === m.x && sy === m.y)
     const toDock = () => {
         let best = null
@@ -691,6 +797,14 @@ function truckPlan(gs) {
 
 function operatorPlan(gs) {
     const p = gs.plant
+    // #1771: shouted orders preempt the demand logic — the foreman's word
+    // beats the chart until the order retires (voiceTick reads the receipt).
+    const cmd = gs.vord.find((c) => c.seat === 2)
+    if (cmd) {
+        if (cmd.kind === 'gate') return { act: gateStep(p.gate, cmd.arg) }
+        if (cmd.kind === 'run') return { act: 'a' }
+        if (cmd.kind === 'jog') return p.jammed ? { act: 'b' } : {}
+    }
     if (p.jammed) return { act: 'b' }
     if (p.running) return {}
     if (p.hopper < 2) return {}
