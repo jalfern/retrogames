@@ -1,56 +1,57 @@
-# STATE — session 171 (2026-11-06, slot b)
+# STATE — session 172 (2026-11-06, slot a)
 
 ## What shipped
-**WATCH batch 8 — BeeZee, TidyBot, PickRush, GardenGuard Y-seats — PR #1738
-squash-merged as `99510cc` (Part of #1637).** Corpse resume (step 1b): a dead
-slot-b session had built, gated and PR'd all four seats (each game's own proven
-autopilot swapped into the play tick — `autopilot(gs)`/`autoStep(gs)`; PickRush
-seats only seat 1 per SmashTV law) and died waiting on the #601 nightly freeze
-(`archeryplay`). Freeze had cleared; merge was plumbing.
-- Re-proved every gate FRESH on current main before merging: watchcheck 404/404
-  (41 pilots), watchphonecheck 300/300, watchpillcheck 139/139, attractcheck
-  694/0, lint:mario/fps/ai + eslint(4 games) + build green. `static` SUCCESS
-  on the PR; no holds; merged with the rule-5 loop.
-- Prod verified: WATCH_HELP marker live in `index-CeHlO9md.js`.
-- Board: #1637 stays open + `building` (multi-stage); checkpoint posted with
-  evidence + batch-9 note (attract-brain family exhausted; 39 titles bare —
-  next batch wants the solver/hash family, audit per title).
+**GRAVEL YARD: the delivery pin — PR #1763 squash-merged as `ff62805` (Closes #1759).**
+Never-dry pick (#1571): weakestStage scored GRAVEL YARD 6 (six open README gaps, no open QA
+feedback naming it — #1726 shipped/closed). Yields above it: MAGIC CARPET 8 → live QA pass #1746
+states its substance (castle menu, 45 worlds, rival wizards, village, water, fog); TALK ME DOWN 7
+→ #1711 holds its mic path under the "BOMB DEFUSE" alias (the heldDirs alias hole from session
+167 — treat as held). MarbleMadness 5 yielded to fresh QA pass #1758. Gap chosen: "the tip
+delivers against the OLDEST matching order; per-order pinning is a polish candidate."
+- **The PIN law:** truck at (13,4) facing the ORDER BOARD, A cycles a delivery pin through the
+  open orders (none→o1→o2→none). `tip()` serves the pinned order when grade matches, else the
+  oldest match — pre-pin rule verbatim. Priority never override: wrong grade still refuses+strikes,
+  pin-on-other-grade falls back, pin retires on fill AND lapse. Rides the plain A pad edge
+  (remote truck seats carry it unchanged — no wire format change), joins `hashState`, CPU crew
+  RESPECTS it (empty-bed CPU truck loads the pinned grade when stocked). Full-CPU reference
+  bit-identical, verified against base engine: 8/8 seeds, 603–930C.
+- Look/sound: pinned ticket wears a blinking gold frame + 9px thumbtack, BOARD radio
+  ("PINNED FINES x4"/"PIN CLEAR"), thumbtack-tick sfx, board-stand hint cell, attract line.
+- Gates: `gravelcheck` **129/129** (+21: cycle order + face/position guards, pinned-first tip
+  keeps the older open, oldest-verbatim, grade-law invariance, retire-on-fill/lapse, hash
+  divergence, full-CPU never pins, CPU-load preference, src pins on deciding lines per #1744,
+  3 browser gates incl. gold-frame pixels; relay legs green this box). `gravelplay` **24/24**
+  real keys (P human-truck → WASD to the board → F pins the printed order). Mutant: tip
+  ignoring the pin = exactly 3 gates red, restored. Lints + build green. README gap CLOSED
+  with the mutant recipe; QA pass **#1769** filed (feedback + lane:qafeedback).
+- Prod verified live: entry `index-ihBlwMHc.js` (deploy of 5bb03ed), pin law in live chunk
+  `index-Cwt6jfOw.js`. (Note: remote chunk hash differs from local dist hash — verify by
+  CONTENT string across the entry's chunk list, not by local hash match.)
 
-## Board this session
-- Warden target #1759 (GRAVEL YARD pin) was STALE — already shipped as PR #1763
-  (`ff62805`) before this session started; claim REFUSED (fresh comment <90 min),
-  normal ladder → no steer/next/game-queue → live QA MASTER sessions (studio+mini)
-  hold the feedback board → corpse resume was the right rung.
-- #1637 re-claimed for slot b at resume (old claim >90 min).
-- QA lane also landed MagicCarpet spatial cast #1765 this window. No new games →
-  no QA polish pass filed (step 8b is for titles).
+## Session start note (for the warden folks)
+This kick was a DOUBLE-KICK false-idle: the previous slot-a session (#1752/MarbleMadness) was
+waiting in the rule-5 merge loop (silent >90 min of claimed/checkpoint comments ⇒ looks dead to
+liveness, but `sleep 20` loops are silent BY DESIGN). It shipped #1752 while this session re-claimed
+and hunted for a corpse. Suggestion: the rule-5 merge loop could emit a `FORGE (slot): checkpoint
+awaiting static` comment, or warden liveness could count pushed commits, not only comments.
 
-## Next queued (slot b ladder)
-1. **WATCH batch 9** — #1637 is the natural claim at session start (it is
-   `building` and now unheld-in-branch). 39 bare titles; audit which have a
-   solver/`autoStep`-class brain a harness already wins with, slice 3–5, seat,
-   pilot, PR as `Part of #1637`. Claim normally (forge-claim.sh 1637 b).
-2. **#1711 PLAICRAFT S3** — gated on #1730 (AWAITING; deadline 11-08). If
-   `sessions:true` answered: Jon's phone drive + `npm run plaicraft:evidence`
-   → paste table on #1711 → close with evidence. AWAITING → do not idle.
-3. Else the usual ladder: steer/next/game-queue, feedback borrow only with no
-   live QA MASTER, else flagship (SSX/Emberwood/COMET DRIFT HD/Myst README
-   gaps via idle.mjs) / never-dry `weakestStage`.
+## Next queued
+- Slot-a ladder at session start: expect steer/next/game-queue empty; #1711 + #1637 building
+  (other lanes); QA holds TEN-DEEP #1756 (mid-stages #1768/#1770 already landed — part-of chain,
+  leave to its owner) and IRON RING #1761 (building-qa).
+- Never-dry candidates when the ladder is empty: re-run `weakestStage` fresh — GravelYard now
+  has #1769 owning its polish items; MarbleMadness #1758 owns re-voicing/piano/HUD-bleed.
+  Score-5 tier still on the shelf: CIVILIZATION V, HOMEBODY, BRITANNIA, FLOOR BOSS, COMET DRIFT
+  GP (its #1718 pass is closed/shipped). TalkMeDown stays yielded until #1711 closes.
+- PLAICRAFT S3 still gated on #1730 (AWAITING, deadline 11-08; default hold).
 
 ## Open questions
 - #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
 
-## Notes for the next slot-b session
-- Dev server LEFT RUNNING on port 5178 (started this session) — kill it or reuse.
-- Worktree `~/Dev/retrogames-forge-watch-rollout-b8` (node_modules symlinked)
-  sits detached at origin/main; branch merged+deleted. Its old dirty STATE.md
-  (session 164's report) parked at `/tmp/forge/STATE.b.stale-session164.md`.
-  Many other stale detached worktrees pile up — `git worktree list` is 150+ deep.
-- Lessons worth keeping: (1) a green PR stranded by the #601 freeze is a
-  RESUMABLE asset, not a rebuild — verify `scripts/main-ok.sh` first, re-prove
-  gates fresh on current main, merge; (2) count, don't recall: I nearly posted
-  "34 seats" from a miscount — the pilot list is 41 (37+4 of 80); (3) `pgrep`
-  can die with "sysmond service not found" in a sandboxed shell — use
-  `ps -ax | grep "QA MASTER"` for the live-QA check; (4) a warden target that
-  REFUSED because the issue is already CLOSED is stale routing, not a contest —
-  note it in STATE and take the ladder.
+## Slot hygiene
+- Dev server: this lane's `npm run dev -- --port 5173 --strictPort` still runs — kill it
+  (`lsof -ti :5173 | xargs kill`) before starting the next one.
+- Worktree `~/Dev/retrogames-forge-gravel-pin` (node_modules symlinked) sits detached on the
+  merged sha; the forge/gravel-pin remote branch is gone (deleted at merge).
+- Rule-8 lesson kept: a gravelplay FAIL was the ASSERTION reading state before the loop tick
+  consumed the key edge (pressMin holds 100 ms) — gate fix, not game fix; probe proved the law.
