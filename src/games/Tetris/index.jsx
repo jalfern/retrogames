@@ -468,7 +468,7 @@ const TetrisGame = () => {
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-cyan-300">{PRESS}</p>
-                    <p className="mt-3 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</p>
+                    <span className="block mt-3 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</span>
                 </div>
             )}
 

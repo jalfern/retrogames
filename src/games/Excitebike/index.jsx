@@ -521,7 +521,7 @@ const ExcitebikeGame = () => {
                     <div className="absolute inset-x-0 top-4 text-center pointer-events-none">
                         <h1 className="text-4xl font-black tracking-tight" style={{ color: '#e40000', textShadow: '2px 2px 0 #ffe23f, 4px 4px 0 #000' }}>EXCITEBIKE</h1>
                         <p className="text-white font-mono font-bold mt-3 animate-pulse">{PRESS}</p>
-                        <p className="mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</p>
+                        <span className="block mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</span>
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
                 </>
