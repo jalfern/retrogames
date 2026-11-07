@@ -84,6 +84,26 @@ export const VIL_WANDER_R = 18
 const VIL_SPEED = 0.35
 const VIL_FLEE = 0.9
 
+// #1764 item 3, stage 2 — the village economy: convert or burn. The carpet
+// snags a villager BY TOUCH in the low band (within VIL_GRAB_R and at most
+// VIL_GRAB_ALT above the ground — the same band wolves bite from, so a
+// prisoner is a raid into the lanes, not a pickup from the ceiling). One
+// grip: gs.prisoner leaves the lane (spliced from gs.villagers) and rides
+// the carpet. Deliver inside the castle's reach (the bank-by-delivery rule)
+// and the home hut becomes ALLY — pennant on the radar, and it pays tribute:
+// a 2-man pearl drops at the hut every VIL_TRIBUTE_T ticks. A hut that burns
+// to rubble scatters its savings (VIL_LOOT_MIN..MAX man over 2–3 pearls, the
+// dropPearls split) — the fast path, with the lane and the tribute dead.
+// Dissolve stays cold (#1668: a drowned hut pays nothing). Death drops the
+// prisoner where the carpet fell. rng only through the shared stream;
+// stateHash gains the grip and the ally flags.
+export const VIL_GRAB_R = 8
+export const VIL_GRAB_ALT = 12
+export const VIL_TRIBUTE_T = 720
+export const VIL_TRIBUTE_M = 2
+const VIL_LOOT_MIN = 4
+const VIL_LOOT_MAX = 8
+
 // Invisibility (#1610): the original's veil — while it holds, the enemies are
 // blind to the carpet. Duration in WORLD ticks so it is deterministic.
 export const INVIS_T = 420
@@ -421,6 +441,7 @@ export function makeGame(seed, level = 0) {
         craters: [], deforms: [], towerDown: false,
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
+        prisoner: null, // #1764 item 3 stage 2: the carried villager (one grip)
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
         wizStage: 0, worldT: 0, wizGuardFire: 0,
         invis: 0, book: false, spellBook: false, bookPage: 0,
@@ -506,17 +527,18 @@ export function genWorld(gs) {
     gs.huts = []
     for (let i = 0; i < 7; i++) {
         const c = findSpot(gs, 26, 46, false, null, 0)
-        gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false, catchT: 0 })
+        gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false, catchT: 0, ally: false, tributeT: 0 })
     }
     // #1764 item 3 — the village, spawned LAST: the huts are the homes.
     gs.villagers = []
-    gs.huts.forEach((hs) => {
+    gs.huts.forEach((hs, hi) => {
         const n = 2 + Math.floor(rnd(gs) * 2) // 2–3 per hut: a village, not a camp
         for (let i = 0; i < n; i++) {
             const a = rnd(gs) * 6.28, d = 2 + rnd(gs) * 8
             gs.villagers.push({
                 x: wrap(hs.x + Math.cos(a) * d, MAP), y: wrap(hs.y + Math.sin(a) * d, MAP),
                 hx: hs.x, hy: hs.y,            // home: the hut's site (a fallen hut keeps its lane)
+                hut: hi,                       // home hut index (stage 2: the convert anchor)
                 v: Math.floor(rnd(gs) * 3),    // tunic variant (atlas tile)
                 dir: rnd(gs) * 6.28,
                 wanderT: Math.floor(rnd(gs) * 70),
@@ -530,6 +552,7 @@ export function genWorld(gs) {
     gs.towerDown = false
     gs.invis = 0
     gs.book = false
+    gs.prisoner = null // #1764 item 3 stage 2: a new world is an empty grip
     gs.spellBook = false; gs.bookPage = 0 // #1764: a new world is a closed book at a new castle
     return gs
 }
@@ -599,6 +622,19 @@ function hurtPlayer(gs, dmg) {
         const lost = Math.floor(gs.mana)
         if (lost > 0) { gs.spilled += lost; gs.events.push({ type: 'spill', m: lost }) }
         gs.mana = 0
+        // #1764 item 3 stage 2: the grip is never a coffin — the prisoner
+        // drops where the carpet fell (BEFORE the respawn teleport rewrites
+        // gs.x/y) and scrambles back toward the lane, panicked.
+        if (gs.prisoner) {
+            gs.villagers.push({
+                x: wrap(gs.x, MAP), y: wrap(gs.y, MAP),
+                hx: gs.prisoner.hx, hy: gs.prisoner.hy,
+                hut: gs.prisoner.hut, v: gs.prisoner.v,
+                dir: rnd(gs) * 6.28, wanderT: 0, panicT: 90,
+            })
+            gs.prisoner = null
+            gs.events.push({ type: 'villager', what: 'release', x: gs.x, y: gs.y })
+        }
         if (gs.bank > 0) {
             gs.deaths++
             gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 52; gs.hp = 100; gs.shield = 150
@@ -1005,6 +1041,24 @@ export function step(gs, inp) {
         }
     }
 
+    // #1764 item 3 stage 2 — the catch band. Low is where the wolves bite,
+    // and it is where the carpet takes a prisoner: touch a villager within
+    // VIL_GRAB_R while within VIL_GRAB_ALT of the ground under their lane.
+    // One grip — the body leaves gs.villagers and rides the carpet; a full
+    // grip snags nothing (silently, like a full pearl magnet never fires).
+    if (!gs.prisoner) {
+        for (let i = gs.villagers.length - 1; i >= 0; i--) {
+            const vl = gs.villagers[i]
+            const dg = Math.hypot(wrapD(gs.x - vl.x), wrapD(gs.y - vl.y))
+            if (dg < VIL_GRAB_R && gs.alt <= sampleH(gs, vl.x, vl.y) + VIL_GRAB_ALT) {
+                gs.villagers.splice(i, 1)
+                gs.prisoner = { v: vl.v, hut: vl.hut, hx: vl.hx, hy: vl.hy }
+                gs.events.push({ type: 'villager', what: 'grab', x: vl.x, y: vl.y })
+                break
+            }
+        }
+    }
+
     for (const b of gs.books) {
         if (b.cd > 0) b.cd--
         const bdx = wrapD(gs.x - b.x), bdy = wrapD(gs.y - b.y)
@@ -1036,6 +1090,20 @@ export function step(gs, inp) {
             gs.mana -= move
             gs.bank += move
             gs.events.push({ type: 'bankIn', m: move })
+        }
+        // #1764 item 3 stage 2 — deliver the prisoner home (the SAME reach as
+        // the bank): the home hut flies a pennant and starts its tribute
+        // clock; a hut already lost gives the settler a home only.
+        if (gs.prisoner) {
+            const hs = gs.huts[gs.prisoner.hut]
+            if (hs && !hs.dead) {
+                hs.ally = true
+                hs.tributeT = VIL_TRIBUTE_T
+                gs.events.push({ type: 'villager', what: 'convert', hut: gs.prisoner.hut, x: hs.x, y: hs.y })
+            } else {
+                gs.events.push({ type: 'villager', what: 'settle' })
+            }
+            gs.prisoner = null
         }
     }
     {
@@ -1190,14 +1258,31 @@ export function step(gs, inp) {
             hs.burn--
             if (hs.burn === 0 && !hs.dead) {
                 hs.dead = true
+                hs.ally = false // stage 2: a burned hut loses its pennant and its tribute
                 crater(gs, hs.x, hs.y, 6, 3, 0.35)
-                gs.events.push({ type: 'hutDown', x: hs.x, y: hs.y })
+                // stage 2: the ashes scatter the hut's savings — 4–8 man over
+                // the dropPearls split. Dissolve never reaches here: a drowned
+                // hut pays nothing (#1668's cold promise). `m` rides the event
+                // so the conservation gate can account the scatter.
+                const lootM = VIL_LOOT_MIN + Math.floor(rnd(gs) * (VIL_LOOT_MAX - VIL_LOOT_MIN + 1))
+                dropPearls(gs, hs.x, hs.y, lootM)
+                gs.events.push({ type: 'hutDown', x: hs.x, y: hs.y, loot: true, m: lootM })
             }
         } else if (!hs.dead && hs.catchT > 0) {
             hs.catchT--
             if (hs.catchT === 0) {
                 hs.burn = 200
                 gs.events.push({ type: 'ignite', x: hs.x, y: hs.y })
+            }
+        } else if (!hs.dead && hs.ally) {
+            // stage 2: the tribute — a converted hut pays a 2-man pearl at its
+            // door every VIL_TRIBUTE_T ticks. Pickup like any pearl.
+            hs.tributeT--
+            if (hs.tributeT === 0) {
+                hs.tributeT = VIL_TRIBUTE_T
+                const px = wrap(hs.x + 4, MAP), py = wrap(hs.y + 4, MAP)
+                gs.pearls.push({ x: px, y: py, z: Math.max(sampleH(gs, px, py), WATER) + 2, m: VIL_TRIBUTE_M, alive: true })
+                gs.events.push({ type: 'tribute', x: px, y: py, m: VIL_TRIBUTE_M })
             }
         }
     }
@@ -1443,6 +1528,8 @@ export function stateHash(gs) {
     mix(gs.monsters.length); mix(gs.projs.length); mix(gs.fireMarks.length)
     mix(gs.villagers.length) // #1764 item 3: the village is world state too
     for (const v of gs.villagers) { mix(v.x.toFixed(0)); mix(v.y.toFixed(0)) }
+    mix(gs.prisoner ? gs.prisoner.hut + '.' + gs.prisoner.v : '-') // stage 2: the grip is state
+    for (const hs of gs.huts) mix(hs.ally ? 1 : 0) // stage 2: the flags are state
     mix(gs.kills); mix(gs.wizardKills); mix(gs.deaths); mix(gs.levelClears)
     for (const p of gs.pearls) if (p.alive) { mix(p.x.toFixed(0)); mix(p.y.toFixed(0)) }
     return (h >>> 0).toString(16)

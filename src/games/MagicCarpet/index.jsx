@@ -218,9 +218,32 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(300, 90, 0.3, 'triangle', 0.04)
                     audioController.playNoise(0.08, 0.03)
                     say('A VILLAGER HAS BURNED')
+                } else if (e.type === 'villager' && e.what === 'grab') {
+                    // #1764 stage 2 — a body on the carpet: a short muffled
+                    // snatch, and the CARRY strip wears the tunic.
+                    audioController.playSweep(200, 420, 0.08, 'triangle', 0.045)
+                    say('A VILLAGER IS IN YOUR GRIP')
+                } else if (e.type === 'villager' && e.what === 'convert') {
+                    // The village joins your flag: a bright pledge — the bank
+                    // chime's cousin, a fifth up.
+                    audioController.playTone(660, 0.05, 'sine', 0.05)
+                    audioController.playTone(880, 0.05, 'sine', 0.05, 0.06)
+                    audioController.playTone(1108, 0.09, 'sine', 0.05, 0.12)
+                    say('A VILLAGE JOINS YOUR FLAG')
+                } else if (e.type === 'villager' && e.what === 'settle') {
+                    audioController.playTone(520, 0.06, 'sine', 0.04)
+                    say('THE VILLAGER SETTLES AT THE CASTLE')
+                } else if (e.type === 'villager' && e.what === 'release') {
+                    audioController.playSweep(400, 140, 0.2, 'triangle', 0.04)
+                    say('YOUR PRISONER FALLS WITH YOU')
+                } else if (e.type === 'tribute') {
+                    // The converted hut pays its pearl: a soft coin at the hut
+                    // (the pickup chime sings when the pearl is actually taken).
+                    audioController.playTone(880, 0.04, 'sine', 0.03)
                 } else if (e.type === 'hutDown') {
                     audioController.playNoise(0.2, 0.08)
                     audioController.playTone(85, 0.12, 'square', 0.06)
+                    if (e.loot) audioController.playTone(980, 0.035, 'triangle', 0.035, 0.12) // stage 2: the savings scatter
                     shake = Math.max(shake, 3)
                 } else if (e.type === 'level') {
                     audioController.playTone(523, 0.12, 'square', 0.07)
@@ -633,7 +656,7 @@ const MagicCarpetGame = () => {
             for (const p of gs.pearls) if (p.alive) dot(p.x, p.y, '#e8e0c0')
             for (const m of gs.monsters) dot(m.x, m.y, m.kind === 'cow' ? '#d8d0c0' : '#e05040', 1.6)
             for (const b of gs.books) if (!b.taken) dot(b.x, b.y, '#40e0d0')
-            for (const hs of gs.huts) dot(hs.x, hs.y, hs.dead ? '#5a5262' : '#c89040', 1.2)
+            for (const hs of gs.huts) dot(hs.x, hs.y, hs.dead ? '#5a5262' : hs.ally ? '#ffd84a' : '#c89040', 1.2)
             for (const fm of gs.fireMarks) dot(fm.x, fm.y, '#ff5030', 1.6)
             dot(gs.castle.x, gs.castle.y, '#ffd84a', 2.4)
             if (gs.wizard.alive) dot(gs.wizard.x, gs.wizard.y, '#c060ff', 2.4)
