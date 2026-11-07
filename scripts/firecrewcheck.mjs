@@ -9,7 +9,7 @@ import path from 'node:path'
 import {
     makeRun, step, state, setSources, mulberry32, windBias, CLOCK, W, H, LOFT_Y1, LADDER_X,
     FUEL, stepToward, lightAt, applyRadio, sweepCovers, SWEEP_COST, VOICE_DRIVE_TICKS, inLoft,
-    windVoice, ladderCreak,
+    windVoice, ladderCreak, windWhistle, crewTail, WIND_TELEGRAPH,
 } from '../src/games/FireCrew/sim.js'
 import { parseRadio, radioLabel } from '../src/games/FireCrew/voiceradio.js'
 import { drawFire, COLLAPSE_WARN_FUEL, COLLAPSE_CRACK, COLLAPSE_RIM, EMBER_GALE } from '../src/games/FireCrew/art.js'
@@ -461,17 +461,58 @@ console.log('wind audio — seat 3 hears the gales (#1744)')
     ok(windVoice(2).freq > windVoice(1).freq && windVoice(2).dur > windVoice(1).dur,
         'a gale is brighter and longer than a breeze')
     ok(JSON.stringify(windVoice(2)) === JSON.stringify(windVoice(2)) && windVoice.length === 1,
-        'the voice reads gust only — rng-free, hashes untouched')
+        'the voice reads gust first, direction optional — rng-free, hashes untouched')
     ok(!!ladderCreak(2, 0.95) && !ladderCreak(1, 0.95) && !ladderCreak(2, 0.3) && !ladderCreak(0, 1),
         'the creak needs both gale load and an extended ladder')
     const cLow = ladderCreak(2, 0.9); const cHigh = ladderCreak(2, 1)
     ok(cHigh.vol > cLow.vol && cHigh.f1 < cHigh.f0,
         'the load moan deepens and thickens as the ladder tops out')
     const jsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
-    ok(/const wv = windVoice\(g\.wind\.gust\)/.test(jsx) && /playFilteredNoise\(v\.dur, v\.vol, v\.freq\)/.test(jsx),
+    ok(/const wv = windVoice\(g\.wind\.gust, g\.wind\.dir\)/.test(jsx) && /playFilteredNoise\(v\.dur, v\.vol, v\.freq\)/.test(jsx),
         'the shell routes the bed through the sim voice, not its own numbers')
     ok(/const cr = ladderCreak\(g\.wind\.gust, g\.ladder\)/.test(jsx) && /playSweep\(c\.f0, c\.f1, c\.dur, 'sawtooth', c\.vol\)/.test(jsx),
         'the shell routes the creak through the sim voice too')
+}
+
+console.log('wind direction, the pre-whistle, the tails (#1749)')
+{
+    // direction-biased bed: the compass leans the voice, the #1744 law holds
+    ok(windVoice(1, -1).freq === 260 && !windVoice(1, -1).second, 'calm stays the centered voice')
+    ok(windVoice(2, 0).freq === windVoice(2).freq + 30, 'an east gale lifts the bed a fixed amount')
+    ok(windVoice(2, 2).freq === windVoice(2).freq - 30, 'a west gale sinks it the same amount')
+    ok(windVoice(1, 0).freq > windVoice(1).freq && windVoice(1, 2).freq < windVoice(1).freq,
+        'the tilt holds at breeze level too')
+    const cross = windVoice(2, 1)
+    ok(!!cross.second && cross.second.freq === cross.freq / 2 && cross.second.vol < cross.vol && cross.second.dur < cross.dur,
+        'a cross-wind carries a quieter, shorter burst an octave lower')
+    ok(!!windVoice(2, 3).second, 'a north cross-wind shadows too (both d[0]===0)')
+    ok(!windVoice(2, 0).second && !windVoice(2, -1).second, 'on-axis and calm never get the shadow')
+    ok(windVoice(0, 0).vol === 0 && windVoice(0, 3).vol === 0, 'a dead wind is silence whatever the compass says')
+
+    // the vane pre-whistle: one f0, a climbing f1, and only in the window
+    ok(WIND_TELEGRAPH === 60, 'the telegraph window is 60 ticks (one second)')
+    ok(windWhistle(61) === null && windWhistle(0) === null && windWhistle(-3) === null && windWhistle(1e9) === null,
+        'the whistle is silent outside the last 60 ticks')
+    const early = windWhistle(60); const late = windWhistle(1)
+    ok(!!early && !!late && early.f0 === 240 && late.f0 === 240 && early.f1 > early.f0,
+        'one fixed start note, and even the first blast rises')
+    ok(late.f1 - early.f1 >= 400 && late.vol > early.vol,
+        'the figure climbs at least a fifth as the shift lands, and thickens')
+    ok(late.f1 === 760, 'max urgency is pinned (f1 760)')
+
+    // the tails: ducked under the jingles
+    const tw = crewTail(true); const tl = crewTail(false)
+    ok(tw.vol < 0.09 && tl.vol < 0.08, 'each tail ducks under its own jingle (win 0.09 / lose 0.08)')
+    ok(tl.dur > tw.dur && tl.freq < tw.freq, 'the loss tail is darker and lingers longer')
+
+    // shell wiring — the sim owns the voices, the shell only fires them
+    const jsx = readFileSync(path.join(HERE, '../src/games/FireCrew/index.jsx'), 'utf8')
+    ok(/windVoice\(g\.wind\.gust, g\.wind\.dir\)/.test(jsx), 'the shell passes the compass into the bed voice')
+    ok(/if \(wv\.second\) sfx\.windBed2\(wv\.second\)/.test(jsx), 'the cross-wind shadow fires through the sim voice too')
+    ok(/const ww = windWhistle\(g\.wind\.next - g\.tick\)/.test(jsx) && /playSweep\(w\.f0, w\.f1, w\.dur, 'triangle', w\.vol\)/.test(jsx),
+        'the whistle schedules on the sim countdown and rides a rising sweep')
+    ok(/sfx\.tail\(crewTail\(won\)\)/.test(jsx) && /playFilteredNoise\(t\.dur, t\.vol, t\.freq, 0\.1\)/.test(jsx),
+        'the win/lose card ends on the ducked murmur')
 }
 
 console.log(`\n${passes} passed, ${fails} failed`)

@@ -117,6 +117,27 @@ spy = await page.evaluate(() => window.__firecrewTest.windSpy())
 ok(spy.bed === null && spy.creakFired === null && !spy.done,
     'calm silences the bed and the creak', JSON.stringify(spy))
 
+// #1749 — the compass leans the bed on real ticks: a cross-wind gale fires
+// the octave shadow, an east gale lifts the bed without the shadow
+await page.evaluate(() => window.__firecrewTest.windForce(2, 0, 1))
+await nap(1300)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.bed && spy.bed.second && spy.bed.second.freq === spy.bed.freq / 2 && spy.voice.freq === spy.bed.freq,
+    'a cross-wind gale fires the octave-low shadow burst', JSON.stringify(spy.bed))
+await page.evaluate(() => window.__firecrewTest.windForce(2, 0, 0))
+await nap(1300)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.bed && !spy.bed.second && spy.voice.freq > 380 && spy.dir === 0,
+    'an east gale lifts the bed, no shadow', JSON.stringify(spy.bed))
+// the vane pre-whistle: set the shift 60 ticks out on a calm live shift; the
+// rising figure must fire and land high-urgency before the wind turns
+await page.evaluate(() => window.__firecrewTest.windForce(0, 0, -1))
+await page.evaluate(() => window.__firecrewTest.windNext(60))
+await nap(2000)
+spy = await page.evaluate(() => window.__firecrewTest.windSpy())
+ok(spy.whistleFired && spy.whistleFired.f0 === 240 && spy.whistleFired.f1 >= 500 && spy.whistleFired.f1 <= 760,
+    'the pre-whistle fires and climbs before the shift lands', JSON.stringify(spy.whistleFired))
+
 ok(errors.length === 0, 'zero page errors across the whole drive', errors.slice(0, 3).join(' | '))
 console.log(`\n${fails ? 'FAILED' : 'DRIVE GREEN'} — ${fails ? fails + ' failures' : 'start, play, pause, contract, die, restart'}`)
 await browser.close()

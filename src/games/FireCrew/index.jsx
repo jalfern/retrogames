@@ -15,7 +15,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { audioController } from '../../utils/AudioController'
-import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak } from './sim.js'
+import { makeRun, step, state, setSources, CLOCK, W, stepToward, inLoft, applyRadio, windVoice, ladderCreak, windWhistle, crewTail } from './sim.js'
 import { parseRadio } from './voiceradio.js'
 import { askVoiceConsent, createVoiceSession } from '../../utils/voiceCapture'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
@@ -37,9 +37,18 @@ const sfx = {
     // #1744 — sustained wind bed and ladder load-creak; params come from the
     // sim-side pure voices (windVoice / ladderCreak), never from the shell.
     windBed: (v) => audioController.playFilteredNoise(v.dur, v.vol, v.freq),
+    // #1749 — the cross-wind octave shadow: the second burst of a N/S gale,
+    // layered 0.15 s under the main bed (the mix has no pan; this is how the
+    // gale reads "from the other side").
+    windBed2: (v) => audioController.playFilteredNoise(v.dur, v.vol, v.freq, 0.15),
+    // #1749 — the vane pre-whistle: a rising sweep on the sim's shift countdown
+    windWhistle: (w) => audioController.playSweep(w.f0, w.f1, w.dur, 'triangle', w.vol),
     windCreak: (c) => audioController.playSweep(c.f0, c.f1, c.dur, 'sawtooth', c.vol),
     win: () => [523, 659, 784, 1046].forEach((f, i) => audioController.playTone(f, 0.16, 'square', 0.09, i * 0.12)),
     lose: () => [392, 330, 262, 196].forEach((f, i) => audioController.playTone(f, 0.22, 'square', 0.08, i * 0.16)),
+    // #1749 — the crowd/machinery tail under the win/lose jingle (ducked:
+    // vol 0.05/0.06 vs the jingle's 0.09/0.08)
+    tail: (t) => audioController.playFilteredNoise(t.dur, t.vol, t.freq, 0.1),
     move: () => audioController.playTone(520, 0.05, 'square', 0.05),
     radio: () => { audioController.playTone(660, 0.06, 'square', 0.05); audioController.playTone(990, 0.08, 'square', 0.05, 0.06) },
     radioNo: () => audioController.playTone(233, 0.12, 'sawtooth', 0.05),
@@ -76,8 +85,10 @@ export default function FireCrew() {
     // lastBed/lastCreak are what the browser gate reads back.
     const windBedAtRef = useRef(0)
     const windCreakAtRef = useRef(0)
+    const windWhistleAtRef = useRef(0) // #1749 — one whistle per 15 ticks max
     const lastBedRef = useRef(null)
     const lastCreakRef = useRef(null)
+    const lastWhistleRef = useRef(null)
     // voice radio (#1361): the mic is a seat, like any slot — consent first
     // (never auto-asked), one raw track for the whole run, spoken calls feed
     // the sim through applyRadio so the mic can never beat the darkness.
@@ -96,8 +107,10 @@ export default function FireCrew() {
         prevRef.current = null
         windBedAtRef.current = 0
         windCreakAtRef.current = 0
+        windWhistleAtRef.current = 0
         lastBedRef.current = null
         lastCreakRef.current = null
+        lastWhistleRef.current = null
         seatsRef.current = n
         setSeats(n)
         setEnd(null)
@@ -135,6 +148,7 @@ export default function FireCrew() {
         setEnd({ win: won, rescued: g.rescued, lost: g.lost, doused: g.doused, score: g.score })
         prevRef.current = won ? 'win' : 'lose'
         if (won) sfx.win(); else sfx.lose()
+        sfx.tail(crewTail(won)) // #1749 — the crowd/machinery tail under the jingle
         screenRef.current = 'over'
         setScreen('over')
         setUiScreen('over')
@@ -156,11 +170,21 @@ export default function FireCrew() {
         // #1744 — the sustained bed: gusts are heard, not just read off the
         // HUD vane. Short filtered-noise bursts overlapped at 85% of the
         // voice duration read as one wind; the creak is the ladder loaded up.
-        const wv = windVoice(g.wind.gust)
+        const wv = windVoice(g.wind.gust, g.wind.dir)
         if (wv.vol > 0 && g.tick >= windBedAtRef.current) {
             sfx.windBed(wv)
-            lastBedRef.current = { tick: g.tick, vol: wv.vol, freq: wv.freq }
+            if (wv.second) sfx.windBed2(wv.second)
+            lastBedRef.current = { tick: g.tick, vol: wv.vol, freq: wv.freq, second: wv.second || null }
             windBedAtRef.current = g.tick + Math.round(wv.dur * 60 * 0.85)
+        }
+        // #1749 — the vane pre-whistle: a rising figure in the last second
+        // before the wind turns. One shot per 15 ticks while the countdown is
+        // live; the sim's shift countdown is the only clock (no shell timers).
+        const ww = windWhistle(g.wind.next - g.tick)
+        if (ww && g.tick >= windWhistleAtRef.current) {
+            sfx.windWhistle(ww)
+            lastWhistleRef.current = { tick: g.tick, f0: ww.f0, f1: ww.f1 }
+            windWhistleAtRef.current = g.tick + 15
         }
         const cr = ladderCreak(g.wind.gust, g.ladder)
         if (cr && g.tick >= windCreakAtRef.current) {
@@ -414,31 +438,46 @@ export default function FireCrew() {
                         walkable: !!stepToward(g, g.crew[1].x, g.crew[1].y, v.x, v.y, v.loft && g.ladder > 0.9),
                     }))
                 },
-                // #1744 — what the wind voices computed and what the shell last
-                // fired, so the browser gate can pin bed/creak on real ticks.
+                // #1744/#1749 — what the wind voices computed and what the
+                // shell last fired, so the browser gate can pin bed/creak/
+                // whistle on real ticks.
                 windSpy: () => {
                     const g = gsRef.current
                     if (!g) return { error: 'no run' }
                     return {
-                        gust: g.wind.gust, ladder: g.ladder, done: !!g.done,
-                        voice: windVoice(g.wind.gust),
+                        gust: g.wind.gust, dir: g.wind.dir, ladder: g.ladder, done: !!g.done,
+                        nextIn: g.wind.next - g.tick,
+                        voice: windVoice(g.wind.gust, g.wind.dir),
                         creak: ladderCreak(g.wind.gust, g.ladder),
+                        whistle: windWhistle(g.wind.next - g.tick),
                         bed: lastBedRef.current,
                         creakFired: lastCreakRef.current,
+                        whistleFired: lastWhistleRef.current,
                     }
                 },
                 // force the wind state for the gate (a gale the seed has not
-                // rolled yet, a ladder held at any extension) and clear the
-                // fired-spies so the gate only sees what happens after forcing
-                windForce: (gust, ladder) => {
+                // rolled yet, a ladder held at any extension, a compass the
+                // seed has not given) and clear the fired-spies so the gate
+                // only sees what happens after forcing
+                windForce: (gust, ladder, dir = -1) => {
                     const g = gsRef.current
                     if (!g) return { error: 'no run' }
                     g.wind.gust = gust
+                    g.wind.dir = Number.isInteger(dir) ? dir : -1
                     g.wind.next = g.tick + 99999 // hold the forced level steady
                     if (ladder != null) g.ladder = ladder
                     lastBedRef.current = null
                     lastCreakRef.current = null
-                    return { tick: g.tick, gust: g.wind.gust, ladder: g.ladder, done: !!g.done }
+                    lastWhistleRef.current = null
+                    return { tick: g.tick, gust: g.wind.gust, dir: g.wind.dir, ladder: g.ladder, done: !!g.done }
+                },
+                // #1749 — set the wind-shift countdown for the pre-whistle gate
+                windNext: (remaining) => {
+                    const g = gsRef.current
+                    if (!g) return { error: 'no run' }
+                    g.wind.next = g.tick + Math.max(0, remaining | 0)
+                    lastWhistleRef.current = null
+                    return { tick: g.tick, nextIn: g.wind.next - g.tick }
                 },
             }
             mountDbg({
