@@ -75,22 +75,34 @@ embark`, `no friendly galleon alongside`, `ships do not board ships`).
 Touch: tap a beach beside a laden Galleon to land; E embarks the selected
 squad; J lands at the nearest open beach.
 
-**Capital capture ≠ extinction (polish #2).** In the original, razing every last
-unit is never how you win — the head of the snake is. In `captureCity`, when a
-major civ's CAPITAL falls to another major, the realm **submits**: the fallen
-capital loses its banner (it becomes an ordinary city of the victor), and the
-defeated civ's remaining cities, garrisons and claimed land fold into the
-conqueror (`collapseRealm`). The civ is marked `civ.alive = false` and
-`civ.vassal = <captor>`, and the log records a `civFall` — *not* the old
-`civDead` every-city-lost extinction. A rival that marched living soldiers into
-the siege is finished anyway; taking its heart ended the reign, not a body count.
-Wars/pacts with a finished civ are dissolved so no front points at a ghost.
-A NON-capital city falling changes nothing about the reign (only the capital
-decides it), and Barbarians seizing a capital raze-without-vassalizing (the law
-is majors-only: `civ < BARB && old < BARB && old !== 0`). This makes the HUD
-pill honest: `X/3 rival capitals taken` now *is* the domination score, and three
-falls trip `victoryFor` → DOMINATION. Rome keeps exactly one capital (the prize
-city never counts as a second seat for the golden-age milestone). See §35.
+**Capital capture ≠ extinction — realms KNEEL (polish #2, vassals #1777).** In
+the original, razing every last unit is never how you win — the head of the
+snake is — and a beheaded realm doesn't die, it kneels. In `captureCity`, when
+a major civ's ORIGINAL capital falls to another major, the realm submits: the
+fallen capital loses its star and joins the victor in plain colours, but the
+rest of the realm stays its own — its surviving cities, garrisons and borders
+keep flying their own banner, run by their own AI as a puppet under the new
+overlord (`civ.vassal = <overlord>`, `civ.alive` stays true). The palace
+RELOCATES to the realm's largest surviving city (`relocatePalace`, the
+original's palace-move law; ties break to the older city), a forced peace cools
+the front, and the log records `civFall` with `vassal: true` alongside `peace`
+and `palace`. The yoke has three laws, all gated: **tribute** — every turn the
+puppet's whole purse flows to the overlord (`tribute` event; it stops the
+moment the vassal takes up arms again); **puppet peace** — `canDeclareWar`
+refuses any war started by a kneeling realm, at any table; **no colonies** — a
+vassal's cities never queue SETTLER (expansion is the overlord's privilege). If
+the overlord itself dies, its vassals cast off the yoke the same tick
+(`unbound`). A realm with no surviving city has nowhere to move the palace: it
+is extinguished honestly (`civDead`) — the body count path is still real, just
+rare. A NON-capital city falling changes nothing about the reign; Barbarians
+seizing a capital raze-without-vassalizing (majors-only: `civ < BARB &&
+old < BARB && old !== 0`); and a RELOCATED seat falling annexes that city and
+moves the palace again — a realm kneels once, at its first capital. This is
+what keeps the HUD pill honest: `X/3 rival capitals taken` counts ORIGINAL
+capitals (`gs.origCapOf` — the seats first founded), so a moved palace can
+never hide a fallen seat, and `victoryFor` domination reads the identical law
+(the original judged the world by captured thrones too). Rome keeps exactly one
+capital (the prize city never counts as a second seat). See §35.
 
 **Determinism.** Ark progress (and its derived four-part reading), lifetime
 culture, the six-era bitmask, the new unit kinds, the transports' cargo
@@ -137,15 +149,18 @@ the hold. The Y panel is reachable by touch (on-screen button).
 ## Verify
 
 ```bash
-npm run civcheck          # 533 Node checks: boot, determinism, founding, economy, combat, barbarians,
+npm run civcheck          # 547 Node checks: boot, determinism, founding, economy, combat, barbarians,
                           # cities, production, tech (§16-18, now 21 techs / 6 eras), improvements (§19-20),
                           # resources (§21-22), borders (§23), happiness (§24), policies (§25), wonders
                           # (§26), great people (§27), stage-6 integration + slack (§28), city-states §29,
                           # diplomacy §30, naval §31, later eras + Ark mechanics + clock budget §32,
                           # victory order + culture ledger + race reachability §33,
                            # transports §34 (embark/land/assault/drown laws, capacity, hash fold)
-                           # capital capture ≠ extinction §35 (capital fall vassalizes a living army, not
-                           # the every-city-lost path; three falls trip DOMINATION; conquest deterministic)
+                           # capital capture ≠ extinction §35 (original-capital fall KNEELS a two-city
+                           # realm: palace relocates, forced peace, whole-purse tribute, puppet no-war +
+                           # no-colony laws, unbind on overlord death; single-city realm extinguishes;
+                           # pill counts ORIGINAL capitals; three falls trip DOMINATION; determinism +
+                           # hash folds for vassal/orig marks)
                            # spaceship parts §36 (four named plates split the 70 ledger, ordered fill +
                            # spill, named weld events, launch only when all four are shut, clamps,
                            # rival tracks, replay determinism)
@@ -172,10 +187,12 @@ npm run lint:civ          # eslint gate for the game + its scripts
 3. In `civplay.mjs`, swap the Stage-8 seed back to inland (`start(4)` →
    `start(1)`) → the coastal-seat and real-keel checks go red (the old vacuous
    escape clause could not); restore.
- 4. In `sim.js` `captureCity`, neuter the capital-fall rule (`const fellCapital
-    = !!city.capital && …` → `false`) → §35's vassalization, one-capital and
-    domination-by-capitals checks go red (the reign still needs a body count);
-    restore.
+ 4. In `sim.js` `captureCity`, neuter the kneel rule (`const origFall
+    = fellCapital && !!city.orig && …` → `false`) → §35's submission, palace,
+    forced-peace, tribute, puppet-war and puppet-colony checks go red (seven
+    of them — without the kneel the world is back to annex-or-die); restore.
+ 4b. In `sim.js` the tribute block (`&& C.gold > 0`) → `&& false` → only the
+    §35 tribute pair reddens (the yoke keeps its other laws); restore.
  5. In `sim.js`, make the Ark lift early (`gs.ark[civ] >= CFG.arkScience` →
     `arkPartsDone(gs, civ) >= 1`) → §36's "a half-built hull does not lift"
     goes red (a single welded plate cannot launch a ship); restore.
@@ -188,10 +205,15 @@ npm run lint:civ          # eslint gate for the game + its scripts
 
 ## Honest gaps (what the full original has that this arcade run does not)
 
-- **Vassals are annexed, not puppets** — a civ whose capital falls hands its
-  cities and armies straight to the conqueror and leaves the board; Civ V lets a
-  vassal keep its cities as an AI puppet under its overlord. Here the reign ends
-  and the realm folds (a deliberate cut so the domination pill stays one number).
+- **CLOSED by #1777:** *Vassals are annexed, not puppets* — the realm whose
+  ORIGINAL capital falls now kneels instead of folding: it keeps its surviving
+  cities, garrisons and banner as an AI puppet, the palace relocates, tribute
+  flows to the overlord each turn, and puppets never start wars or plant
+  colonies (all gated in §35, mutant-pinned). Still owed honestly: the
+  overlord has no liberate/annex **choice** (kneeling is automatic, annexing a
+  kneeling realm still takes cities one by one by siege), tribute is a flat
+  whole-purse rather than the original's scaled per-population cut, there is no
+  rebellion chance, and no Casus-Belli flavour on the forced peace.
 - **No naval supply or sea combat flavor beyond hulls** — transports cross any
   coast-to-coast sea in path range; no supply lines, no naval tactics stack.
 - **The Ark parts are one program, not city industry** — the four named plates
