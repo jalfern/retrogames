@@ -18,10 +18,11 @@
 
 import {
     FIXED_DT, W, H, COLS, ROWS, MAP, TILE, WIN_CONTENT, NEEDS,
-    CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT,
+    CATALOG, DEF, tileOf, tileX, tileY, SFX, RED_AT, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
-    place, sellAt, targetsOf, walkable, bfsPath, stateHash,
+    place, sellAt, targetsOf, walkable, bfsPath, stateHash, buildRoom, buildRoomOk,
 } from '../src/games/Homebody/sim.js'
+import { readFileSync } from 'node:fs'
 
 const DT = FIXED_DT / 1000
 let pass = 0, fail = 0
@@ -52,7 +53,7 @@ section('BOOT')
     check('five needs per resident, all positive', g.people.every((p) => NEEDS.length === 5 && NEEDS.every((n) => p.needs[n] > 0.5)))
     check('starter house has bed/fridge/toilet/mail/radio', ['bed', 'fridge', 'toilet', 'mail', 'radio'].every((id) => g.items.some((it) => it.id === id)))
     check('starter items never wall anyone in', g.items.every((it) => targetsOf(g, it).length > 0))
-    check('thirteen catalog pieces with prices', CATALOG.length === 13 && CATALOG.every((d) => d.price > 0))
+    check('fourteen catalog pieces with prices; Spare Room card 14 keyed R', CATALOG.length === 14 && CATALOG.every((d) => d.price > 0) && CATALOG[13].id === 'roomkit' && CATALOG.filter((d) => d.room).length === 1)
     check('tileOf maps pixels to cells', tileOf(tileX(3) + 4, tileY(2) + 4)?.c === 3 && tileOf(tileX(3), tileY(2))?.r === 2)
 }
 
@@ -164,6 +165,63 @@ section('CORE RULES')
     let over = null
     for (let i = 0; i < 60 * 60 * 3 && !over; i++) { advance(g10, DT); drain(g10); over = g10.done }
     check('both residents down ends the run', over === 'lose')
+}
+
+section('SPARE ROOM (#1806): the lot grows, connectivity honest')
+{
+    const kit = DEF.roomkit
+    check('kit prices space, not furniture (no need, not solid, not decor)', kit.price === 300 && !kit.need && !kit.solid && !kit.decor)
+
+    const g8 = newRun(101)
+    g8.money = 100
+    check('cannot buy the expansion broke', !buildRoomOk(g8) && !buildRoom(g8) && g8.ext === 0)
+
+    g8.money = 520
+    const ev = buildRoom(g8) && drain(g8)
+    check('the hammer falls: ext rises, §300 leaves, room event', g8.ext === 1 && g8.money === 220 && ev.some((e) => e.t === 'room'))
+    check('every room cell is plank floor underfoot', EXT_ROOM.floor.every(([r, c]) => walkable(g8, r, c)))
+    check('every wing wall blocks, windows included', EXT_ROOM.walls.every(([r, c]) => !walkable(g8, r, c)))
+    check('the punched door links house side and room side', walkable(g8, EXT_ROOM.door[0], EXT_ROOM.door[1]) && walkable(g8, 4, 10) && walkable(g8, 4, 12))
+    check('residents walk in and back to the gate', !!bfsPath(g8, { r: 3, c: 3 }, [{ r: 6, c: 14 }]) && !!bfsPath(g8, { r: 5, c: 13 }, [{ r: 12, c: 5 }]))
+
+    // footprint honesty: the lawn under the future room is still lawn
+    const g9 = newRun(103)
+    g9.money = 9999
+    g9.sel = CATALOG.findIndex((d) => d.id === 'rug')
+    place(g9, 5, 13)
+    check('build refused while a piece sits on the footprint', !buildRoomOk(g9) && !buildRoom(g9))
+    check('selling the piece frees the footprint', sellAt(g9, 5, 13) && buildRoomOk(g9) && buildRoom(g9) && g9.ext === 1)
+    const g10 = newRun(107)
+    g10.money = 9999
+    g10.people[0].r = 4; g10.people[0].c = 13; g10.people[0].x = tileX(13) + 16; g10.people[0].y = tileY(4) + 16
+    check('build refused while a resident stands on the footprint', !buildRoomOk(g10))
+    check('one expansion per lot', g9.ext === 1 && !buildRoom(g9))
+
+    // keepsOpen inherits the new walls: once the room holds furniture, the
+    // room-side door cell may not be blocked (it is the wing's only door)
+    const g11 = newRun(109)
+    g11.money = 9999
+    buildRoom(g11)
+    g11.sel = CATALOG.findIndex((d) => d.id === 'bed')
+    check('furniture moves into the room over the open door', place(g11, 5, 13) && place(g11, 3, 13))
+    check('blocking the room-side door cell is refused (keepsOpen sees the wing)', !place(g11, 4, 12))
+    check('the room still accepts pieces elsewhere', place(g11, 3, 14))
+
+    // the wing rides the hash
+    const hA = stateHash(newRun(113))
+    const g12 = newRun(113)
+    g12.money = 520
+    buildRoom(g12)
+    check('stateHash carries the extension', stateHash(g12) !== hA)
+    const g13 = newRun(113)
+    g13.money = 520
+    buildRoom(g13)
+    check('built runs stay deterministic', stateHash(g12) === stateHash(g13))
+
+    // source pins: the guard chain asks the ext-aware ground, not raw MAP
+    const simSrc = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    check('pin: solidAt asks groundOf (wing walls are real walls to the sim)', /function solidAt\(s, r, c\) \{[^}]*groundOf\(s, r, c\)/.test(simSrc))
+    check('pin: the attract bot places by groundOf too', /function bot[\s\S]*?groundOf\(s, r, c\)/.test(simSrc))
 }
 
 section('WINNABLE (attract autopilot, several seeds)')
