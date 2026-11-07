@@ -10,6 +10,7 @@ import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
 import { dynamicsFor } from './dynamics.js'
 import { wobbleAt, knockVibrato, WOBBLE_TICKS } from './wobble.js'
+import { ZOOM_BASE, ZOOM_SMOOTH, targetZoom } from './camera.js'
 import { plan, bfsPath, press, decide } from './planner.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -24,11 +25,13 @@ const OY = 118
 const isoX = (x, y) => OX + (x - y) * (TW / 2)
 const isoY = (x, y, z) => OY + (x + y) * (TH / 2) - z * TZ
 
-// Follow camera (#265): the course is drawn at ZOOM and the marble is held at
+// Follow camera (#265): the course is drawn at a zoom and the marble is held at
 // ANCHOR, so each race scrolls several screens and the course runs off every
-// edge — the cabinet's long downhill run, not a diorama. Painter-side only;
-// the deterministic sim in sim.js never sees it.
-const ZOOM = 2
+// edge — the cabinet's long downhill run, not a diorama. #1758 item 5 adds the
+// cabinet's per-section push-in: `camZoom` eases toward `camera.js`'s target,
+// tightening on the narrow sky bridges and pulling back over open aprons. All of
+// it is painter-side only; the deterministic sim in sim.js never sees it.
+let camZoom = ZOOM_BASE
 const ANCHOR_X = W / 2
 const ANCHOR_Y = Math.round(H * 0.40)
 
@@ -88,9 +91,9 @@ const MarbleMadnessGame = () => {
         const cam = { wx: 0, wy: 0, z: 0, init: false }
         let camIsoX = 0
         let camIsoY = 0
-        const resetCam = () => { cam.wx = gs.m.x; cam.wy = gs.m.y; cam.z = gs.m.z; cam.init = true }
-        const toScreen = (x, y, z) => [ANCHOR_X + ZOOM * (isoX(x, y) - camIsoX), ANCHOR_Y + ZOOM * (isoY(x, y, z) - camIsoY)]
-        const marblePx = () => { const mm = gs.m; const s = toScreen(mm.x, mm.y, mm.z); return { x: s[0], y: s[1] - 5 * ZOOM } }
+        const resetCam = () => { cam.wx = gs.m.x; cam.wy = gs.m.y; cam.z = gs.m.z; cam.init = true; camZoom = ZOOM_BASE }
+        const toScreen = (x, y, z) => [ANCHOR_X + camZoom * (isoX(x, y) - camIsoX), ANCHOR_Y + camZoom * (isoY(x, y, z) - camIsoY)]
+        const marblePx = () => { const mm = gs.m; const s = toScreen(mm.x, mm.y, mm.z); return { x: s[0], y: s[1] - 5 * camZoom } }
         const stars = []
         for (let i = 0; i < 70; i++) stars.push([(i * 173) % W, (i * 97) % 100, (i * 37) % 3])
 
@@ -235,8 +238,11 @@ const MarbleMadnessGame = () => {
             cam.z += (cm.z - cam.z) * 0.34
             camIsoX = isoX(cam.wx, cam.wy)
             camIsoY = isoY(cam.wx, cam.wy, cam.z)
+            // #1758 item 5 — push in over the narrow bridges: ease the zoom toward
+            // this cell's corridor width (painter-side; the sim never sees it).
+            camZoom += (targetZoom(gs.heights, GRID, Math.floor(cm.y), Math.floor(cm.x)) - camZoom) * ZOOM_SMOOTH
             ctx.translate(ANCHOR_X, ANCHOR_Y)
-            ctx.scale(ZOOM, ZOOM)
+            ctx.scale(camZoom, camZoom)
             ctx.translate(-camIsoX, -camIsoY)
 
             const pair = PAIRS[gs.race.pairs % PAIRS.length]
@@ -605,7 +611,8 @@ const MarbleMadnessGame = () => {
         window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak(), wobbleSpy: () => ({ t: wob, kb: wobbleAt(wob) }),
             // #1637 watchcheck pilot drives these
             watching: () => watchingRef.current, watchSfx: watchSfxLog,
-            probe: () => ({ screen: mode === 'play' ? (gs.end ? 'over' : 'play') : mode, score: gs.score, clears: gs.clears, deaths: gs.deaths, lives: gs.lives, end: gs.end, x: gs.m.x, y: gs.m.y, race: gs.raceIdx }) }
+            probe: () => ({ screen: mode === 'play' ? (gs.end ? 'over' : 'play') : mode, score: gs.score, clears: gs.clears, deaths: gs.deaths, lives: gs.lives, end: gs.end, x: gs.m.x, y: gs.m.y, race: gs.raceIdx }),
+            camSpy: () => { const mm = gs && gs.m; return { zoom: camZoom, target: mm ? targetZoom(gs.heights, GRID, Math.floor(mm.y), Math.floor(mm.x)) : ZOOM_BASE, cell: mm ? [Math.floor(mm.x), Math.floor(mm.y)] : null } } }
 
         // #1473 seedpin: report the run seed every build (hazard waves are pure
         // tick functions; seed travels with the state for exact replays).

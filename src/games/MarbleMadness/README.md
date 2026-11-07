@@ -25,6 +25,10 @@ clock, and the full hazard roster. All physics is deterministic and lives in
   drag-anywhere trackball for phones.
 - `wobble.js` — the steely-knock spin law (#1758 item 4): spin/rock decay for
   the marble and the bed's detune sweep, pure and painter-side.
+- `camera.js` — the per-section camera push-in (#1758 item 5): a pure zoom law
+  over the heightmap (corridor width → target zoom) so the follow-camera eases
+  onto the narrow sky bridges and pulls back over open aprons. Painter-side; the
+  sim never sees it, so hashes and the attract replay stay bit-identical.
 
 ## The physics lesson (why `acc` is 0.005)
 
@@ -89,11 +93,13 @@ the attract replay are bit-identical (marblecheck re-pins both).
 ## Verify
 
 ```bash
-npm run marblecheck   # rules + determinism + win proof + 13 bed gates + 11 wobble gates (Node, ~2s)
+npm run marblecheck   # rules + determinism + win proof + 13 bed gates + 11 wobble gates
+                      #   + 16 camera push-in gates (#1758 item 5) (Node, ~2s)
 npm run marbleplay    # browser drive (dev server): bed live, per-course re-voicing
                       #   rides the real raceStart events, finale switch, ladder,
                       #   death keeps it, game over stops it, restart brings it back,
-                      #   a steely knock spins the marble and bends the bed (22 gates)
+                      #   a steely knock spins the marble and bends the bed,
+                      #   the camera pushes in on bridges and pulls out on aprons (25 gates)
 npm run lint:marble   # eslint over the game files + harnesses
 ```
 
@@ -125,13 +131,21 @@ policy-permanent (AudioController header).*
   (armed/settle/bend) go red; the fourth (steadies) passes vacuously, the
   three active-moment gates carry the proof.*
 - SILLY bounciness is uniform; the cabinet varies trampoline strength per
-  section.
-- The camera now follows the marble at 2× zoom and scrolls the course off every
+  section. *(still open — #1758 item 5's physics half)*
+- *The camera now follows the marble at 2× zoom and scrolls the course off every
   screen edge (the whole-course diorama is gone, #265). Still flat vs the
-  cabinet: no per-section push-in on the narrow bridges. *The attract screen no
-  longer bleeding the live race/timer/score HUD — closed by #1758 item 3: the
-  HUD draws in every mode again (the attract card sits at y=60, clear of the
-  20px band, so rule 6 holds) and race banners stay attract-suppressed.*
+  cabinet: no per-section push-in on the narrow bridges — closed by #1758 item 5
+  (`camera.js`): the zoom eases onto a cell's corridor width — pushed in on the
+  sky bridges, base over open aprons — pure and painter-side (hashes + attract
+  replay unchanged). Gated by 16 marblecheck checks (corridor width on synthetic
+  open/3-wide/1-wide grids, monotonic narrowness, bounded zoom, AERIAL is the
+  most-exposed race, sim stays camera-free, pure-law purity, seam pins) and 3 live
+  marbleplay gates (drive to AERIAL, converge push-in on a bridge cell, converge
+  pull-out on an apron). Mutants: inert law (`narrowness` → 0) reddens exactly the
+  4 semantic gates; severed seam (fixed zoom) reddens the ease-pin gate.
+  *The attract screen no longer bleeding the live race/timer/score HUD — closed by
+  #1758 item 3: the HUD draws in every mode again (the attract card sits at y=60,
+  clear of the 20px band, so rule 6 holds) and race banners stay attract-suppressed.*
 - *The bed was one harmony loop (+variation) for the whole campaign — closed by
   #1758: four arrangements now (base, menace, aerial, finale), each gated to
   sound distinct. PRACTICE/BEGINNER share the base and SILLY/ULTIMATE share the
