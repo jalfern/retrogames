@@ -117,8 +117,9 @@ function extCanvas() {
         g.fillStyle = '#5f3c22'; g.fillRect(x + 22, y + 3, 4, 1); g.fillRect(x + 22, y + 28, 4, 1)
         g.fillStyle = '#ffd24a'; g.fillRect(x + 23, y + 7, 2, 2)
     }
-    // windows in the east wall (first and last wall cell of the room's run)
-    for (const [r, c] of [[4, 15], [6, 15]]) {
+    // windows in the east wall (from EXT_ROOM.windows — the single source the
+    // night-lit pass lights up after dusk)
+    for (const [r, c] of EXT_ROOM.windows) {
         const x = tileX(c), y = tileY(r)
         bakeWall(x, y, r)
         g.fillStyle = '#5f3c22'; g.fillRect(x + 4, y + 8, 20, 14)
@@ -377,7 +378,7 @@ function star(ctx, x, y, r, col) {
 }
 
 // ----------------------------------------------------------------- night ---
-export function nightTint(ctx, hour) {
+export function nightTint(ctx, hour, ext) {
     let a = 0
     if (hour >= 19) a = Math.min(0.42, (hour - 19) / 3 * 0.42)
     else if (hour < 7) a = hour < 5 ? 0.42 : (7 - hour) / 2 * 0.42
@@ -392,6 +393,17 @@ export function nightTint(ctx, hour) {
             ctx.fillRect(x + 6, y + 12, 20, 14)
             ctx.fillStyle = `rgba(120,86,34,${(a * 0.5).toFixed(3)})`
             ctx.fillRect(x + 15, y + 12, 2, 14)
+        }
+        // #1814: the wing glows too once it stands — warm panes over the
+        // baked sky-blue glass, same mullions, selling "someone moved in"
+        if (ext) {
+            for (const [wr, wc] of EXT_ROOM.windows) {
+                const x = tileX(wc), y = tileY(wr)
+                ctx.fillStyle = `rgba(255,224,138,${(a * 0.9).toFixed(3)})`
+                ctx.fillRect(x + 6, y + 10, 16, 10)
+                ctx.fillStyle = `rgba(120,86,34,${(a * 0.5).toFixed(3)})`
+                ctx.fillRect(x + 13, y + 10, 2, 10); ctx.fillRect(x + 6, y + 14, 16, 2)
+            }
         }
     }
 }

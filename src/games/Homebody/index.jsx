@@ -129,6 +129,11 @@ const HomebodyGame = () => {
                         setTimeout(() => audioController.playSweep(240, 520, 0.3, 'triangle', 0.06), 340)
                         if (live) { say('SPARE ROOM BUILT — THE LOT GROWS'); burst(LOT_X + 13 * TILE, LOT_Y + 4 * TILE, 14, '#c9b48a', 2.8) }
                         break
+                    case 'room-see':
+                        audioController.playTone(740, 0.06, 'triangle', 0.04)
+                        setTimeout(() => audioController.playTone(988, 0.09, 'triangle', 0.04), 90)
+                        if (live) { say(`${e.name.toUpperCase()} MOVES IN`); burst(LOT_X + 13 * TILE, LOT_Y + 5 * TILE, 8, '#ffd24a', 2.2) }
+                        break
                     default: break
                 }
             }
@@ -249,7 +254,7 @@ const HomebodyGame = () => {
             if (live && g.build) drawBuildCursor(ctx, g, placeOk(g, g.cursor.r, g.cursor.c))
             stepParticlesDraw()
             ctx.restore()
-            nightTint(ctx, g.hour)
+            nightTint(ctx, g.hour, g.ext)
             drawTopBar(ctx, g)
             drawPanel(ctx, g, g.sec)
             drawThoughts(ctx, g)

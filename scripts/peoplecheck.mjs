@@ -392,6 +392,83 @@ section('BONDS (#1817): the chat loop deepens')
     check('bond-carrying runs stay deterministic (seed 7 replay)', stateHash(gr) === stateHash(gw) && gr.rel.house === gw.rel.house && gr.rel.fern === gw.rel.fern)
 }
 
+// MOVE-IN (#1814): the wing sells itself — night-lit windows + reactions ----
+section('MOVE-IN (#1814): reactions, glow, honest edges')
+{
+    // windows ride the kit data (the bake paints them, nightTint lights them)
+    check('kit carries its east-wall windows', EXT_ROOM.windows.length === 2 && EXT_ROOM.windows.every(([r, c]) => c === 15 && EXT_ROOM.walls.some(([wr, wc]) => wr === r && wc === c)))
+
+    // reactions arm on the hammer and never fire unbuilt
+    const g0 = newRun(501)
+    g0.demo = false
+    for (let i = 0; i < 60 * 30; i++) advance(g0, DT)
+    check('an unbuilt lot never reacts', g0.roomReact === 0 && g0.people.every((p) => !p.roomSeen) && !g0.done)
+
+    const g1 = newRun(503)
+    g1.demo = false
+    g1.money = 520
+    buildRoom(g1)
+    check('the hammer arms two move-in reactions', g1.roomReact === 2 && g1.people.every((p) => !p.roomSeen))
+    const seen = []
+    for (let i = 0; i < 60 * 90 && seen.length < 2; i++) { advance(g1, DT); seen.push(...drain(g1).filter((e) => e.t === 'room-see')) }
+    check('both residents walk in through the doorway', seen.length === 2 && new Set(seen.map((e) => e.name)).size === 2, JSON.stringify(seen.map((e) => e.name)))
+    check('the wing is emptied of its reaction ledger', g1.roomReact === 0 && g1.people.every((p) => p.roomSeen))
+    check('the glance landed them inside the wing', g1.people.every((p) => EXT_ROOM.floor.some(([r, c]) => r === p.r && c === p.c) || p.working))
+    check('a glance lifts the mood a notch', g1.people.some((p) => p.needs.fun > 0.8))
+    const before = drain(g1).length
+    for (let i = 0; i < 60 * 60; i++) advance(g1, DT)
+    check('the reaction is once per resident, ever', !drain(g1).some((e) => e.t === 'room-see'), `${before}`)
+
+    // a player interrupting the walk doesn't lose the moment — it re-offers
+    const g2 = newRun(507)
+    g2.demo = false
+    g2.money = 520
+    buildRoom(g2)
+    const p2 = g2.people[0]
+    for (let i = 0; i < 60 * 20; i++) { p2.path = null; p2.goal = null; advance(g2, DT); drain(g2) }
+    check('interrupted glances stay pending, never fire', !p2.roomSeen && !g2.done)
+    let late = null
+    for (let i = 0; i < 60 * 60 && !late; i++) { advance(g2, DT); late = drain(g2).find((e) => e.t === 'room-see' && e.name === p2.name) || null }
+    check('the re-offered glance completes once left alone', !!late && p2.roomSeen)
+
+    // sealed doorway (legal while the room is empty) must not wedge anything
+    const g3 = newRun(509)
+    g3.demo = false
+    g3.money = 9999
+    buildRoom(g3)
+    g3.sel = CATALOG.findIndex((d) => d.id === 'bed')
+    check('a legal seal of the empty room is refused only once the room is used', place(g3, 4, 12))
+    for (let i = 0; i < 60 * 30; i++) advance(g3, DT)
+    check('sealed room: no crash, no false reaction, sim keeps ticking', g3.roomReact > 0 && g3.tick > 60 * 29 && !drain(g3).some((e) => e.t === 'room-see'))
+
+    // determinism: identical scripted builds replay identically
+    const twin = () => {
+        const g = newRun(511)
+        g.demo = false
+        g.money = 520
+        buildRoom(g)
+        for (let i = 0; i < 60 * 40; i++) advance(g, DT)
+        return stateHash(g)
+    }
+    check('move-in runs replay identically', twin() === twin())
+
+    // the attract bot grows the lot so the demo sells the reflow
+    const gb = newRun(7)
+    let bSeen = 0, bt = 0
+    while (!gb.done && bt < 60 * 60 * 45) { autoStep(gb, DT); bSeen += drain(gb).filter((e) => e.t === 'room-see').length; bt++ }
+    check('attract builds the wing and its residents move in', gb.done === 'win' && gb.ext === 1 && bSeen === 2, `done=${gb.done} ext=${gb.ext} sees=${bSeen}`)
+
+    // source pins: one window source, the glow asked for, the kit guard
+    const sim2Src = readFileSync(new URL('../src/games/Homebody/sim.js', import.meta.url), 'utf8')
+    const artSrc = readFileSync(new URL('../src/games/Homebody/art.js', import.meta.url), 'utf8')
+    const jsxSrc = readFileSync(new URL('../src/games/Homebody/index.jsx', import.meta.url), 'utf8')
+    check('pin: the ext bake paints windows from EXT_ROOM.windows', /for \(const \[r, c\] of EXT_ROOM\.windows\)/.test(artSrc))
+    check('pin: nightTint takes the ext flag and lights the wing panes', /function nightTint\(ctx, hour, ext\)[\s\S]*if \(ext\)[\s\S]*EXT_ROOM\.windows/.test(artSrc))
+    check('pin: the shell passes the live ext flag into the tint', /nightTint\(ctx, g\.hour, g\.ext\)/.test(jsxSrc))
+    check('pin: the bot buys the kit only onto a clear lot', /if \(id === 'roomkit'\)[\s\S]*?!roomClear\(s\)/.test(sim2Src))
+    check('pin: the hammer arms the reaction ledger', /s\.roomReact = s\.people\.length/.test(sim2Src))
+}
+
 console.log(`\n=== peoplecheck: ${pass} pass, ${fail} fail ===`)
 if (fails.length) console.log('failed: ' + fails.join(' | '))
 process.exit(fail ? 1 : 0)
