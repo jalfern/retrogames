@@ -89,11 +89,35 @@ export const CATALOG = [
     { id: 'plant', name: 'Potted Fern', price: 40, h: 1, solid: false, decor: true },
     { id: 'rug', name: 'Round Rug', price: 60, h: 1, solid: false, decor: true },
     { id: 'lamp', name: 'Floor Lamp', price: 80, h: 1, solid: false, decor: true },
+    { id: 'roomkit', name: 'Spare Room', price: 300, h: 1, solid: false, room: true },
 ]
 export const DEF = Object.fromEntries(CATALOG.map((d) => [d.id, d]))
 export const NEEDS = ['hunger', 'energy', 'fun', 'social', 'bladder']
 export const PHYS = ['hunger', 'energy', 'bladder']
 export const DECOR = ['plant', 'rug', 'lamp', 'book', 'sofa', 'tv', 'radio', 'phone']
+
+// ------------------------------------------------------- spare room (#1806) --
+// The lot grows once: buy the Spare Room kit and the house's east wall gains a
+// 3×4 room — plank floor, brick band walls, a doorway punched into the shared
+// wall at (4,11), windows in the east wall. The layer never edits MAP: it rides
+// `s.ext`, and `groundOf` is the single honest ground question for every
+// sim-side walker and guard (keepsOpen sees the new walls for free).
+export const EXT_ROOM = {
+    price: 300,
+    floor: [[3, 12], [3, 13], [3, 14], [4, 12], [4, 13], [4, 14], [5, 12], [5, 13], [5, 14], [6, 12], [6, 13], [6, 14]],
+    walls: [[2, 12], [2, 13], [2, 14], [2, 15], [3, 15], [4, 15], [5, 15], [6, 15], [7, 12], [7, 13], [7, 14], [7, 15], [3, 11], [6, 11], [7, 11]],
+    door: [4, 11],
+}
+const extFloor = new Set(EXT_ROOM.floor.map(([r, c]) => `${r},${c}`))
+const extWall = new Set(EXT_ROOM.walls.map(([r, c]) => `${r},${c}`))
+export function groundOf(s, r, c) {
+    if (s && s.ext) {
+        const k = `${r},${c}`
+        if (extWall.has(k)) return 'wall'
+        if (extFloor.has(k) || k === `${EXT_ROOM.door[0]},${EXT_ROOM.door[1]}`) return 'floor'
+    }
+    return groundAt(r, c)
+}
 
 // decay per sim hour, straight from the original's five motives
 export const DECAY = { hunger: 0.15, energy: 0.055, fun: 0.115, social: 0.1, bladder: 0.14 }
@@ -150,6 +174,7 @@ export function newRun(seed) {
         fastT: 0,                      // "AT WORK" overlay seconds left
         done: null, endMsg: '',
         demo: false,
+        ext: 0,
         ambience: 0, happyHours: 0,
     }
     scheduleVisit(s)
@@ -175,7 +200,7 @@ export function cellItem(s, r, c) {
 }
 
 export function solidAt(s, r, c) {
-    if (groundAt(r, c) === 'wall') return true
+    if (groundOf(s, r, c) === 'wall') return true
     const it = cellItem(s, r, c)
     if (!it) return false
     const d = DEF[it.id]
@@ -183,7 +208,7 @@ export function solidAt(s, r, c) {
 }
 
 export function walkable(s, r, c) {
-    return groundAt(r, c) !== 'wall' && !solidAt(s, r, c)
+    return groundOf(s, r, c) !== 'wall' && !solidAt(s, r, c)
 }
 
 // target tiles for an item: walkable neighbours
@@ -289,10 +314,10 @@ export function tryUse(s, p) {
 export function canPlace(s, def, r, c) {
     if (r < 0 || c < 0 || r + def.h - 1 >= ROWS || c >= COLS) return false
     for (let rr = r; rr < r + def.h; rr++) {
-        if (groundAt(rr, c) === 'wall') return false
+        if (groundOf(s, rr, c) === 'wall') return false
         if (solidAt(s, rr, c)) return false
     }
-    if (def.decor && groundAt(r, c) === 'wall') return false
+    if (def.decor && groundOf(s, r, c) === 'wall') return false
     return true
 }
 
@@ -322,9 +347,35 @@ function keepsOpen(s, r, c) {
     return true
 }
 
+// can the expansion stand? the footprint must be free of residents, the
+// visitor and any placed piece — the lawn under the future room is still lawn
+// until the hammer falls
+function roomClear(s) {
+    if (s.done || s.ext) return false
+    for (const [r, c] of EXT_ROOM.floor) {
+        if (cellItem(s, r, c)) return false
+        if (s.people.some((p) => p.r === r && p.c === c)) return false
+    }
+    if (s.visitor && EXT_ROOM.floor.some(([r, c]) => r === s.visitor.r && c === s.visitor.c)) return false
+    return true
+}
+
+export function buildRoom(s) {
+    if (!roomClear(s) || s.money < EXT_ROOM.price) return false
+    s.money -= EXT_ROOM.price
+    s.ext = 1
+    s.events.push({ t: 'room' })
+    think(s, 'The east wall rolls open and a spare room rises — plank floor, two windows, room to grow.')
+    return true
+}
+
+export function buildRoomOk(s) { return roomClear(s) && s.money >= EXT_ROOM.price }
+
 export function place(s, r, c) {
     const def = CATALOG[s.sel]
-    if (!def || s.money < def.price || !canPlace(s, def, r, c)) return false
+    if (!def) return false
+    if (def.room) return buildRoom(s)
+    if (s.money < def.price || !canPlace(s, def, r, c)) return false
     if (def.solid && !keepsOpen(s, r, c)) return false
     s.money -= def.price
     s.items.push({ uid: s.nextUid++, id: def.id, r, c })
@@ -335,7 +386,9 @@ export function place(s, r, c) {
 
 export function placeOk(s, r, c) {
     const def = CATALOG[s.sel]
-    if (!def || s.money < def.price || !canPlace(s, def, r, c)) return false
+    if (!def) return false
+    if (def.room) return buildRoomOk(s)
+    if (s.money < def.price || !canPlace(s, def, r, c)) return false
     if (def.solid && !keepsOpen(s, r, c)) return false
     return true
 }
@@ -767,7 +820,7 @@ export function bot(s) {
             for (let r = 1; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
                     if (KEEP_CELLS.has(`${r},${c}`)) continue
-                    const g = groundAt(r, c)
+                    const g = groundOf(s, r, c)
                     if (g === 'wall' || g === 'path') continue
                     if (def.solid && g !== 'floor') continue
                     if (!canPlace(s, def, r, c)) continue
@@ -793,6 +846,7 @@ export function stateHash(s) {
     let h = 2166136261
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
+    mix(s.ext)
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

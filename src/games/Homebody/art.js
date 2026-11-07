@@ -8,7 +8,7 @@
 
 import {
     W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP,
-    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT,
+    tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
 } from './sim.js'
 
 const P = {
@@ -75,8 +75,68 @@ export function groundCanvas() {
     return cv
 }
 
-export function drawGround(ctx) {
+export function drawGround(ctx, s) {
     ctx.drawImage(groundCanvas(), 0, 0)
+    if (s && s.ext) ctx.drawImage(extCanvas(), 0, 0)
+}
+
+// -------------------------------------------------------- spare room bake ----
+// The #1806 expansion overlay: the same plank/brick styles the main ground bake
+// uses, painted at the EXT_ROOM cells, so the new wing looks native — plus a
+// swung-open door in the shared wall at (4,11), two east-wall windows and a
+// wallpaper strip along the new north wall. Static geometry, baked once.
+let extLayer = null
+function extCanvas() {
+    if (extLayer) return extLayer
+    const cv = document.createElement('canvas')
+    cv.width = W; cv.height = H
+    const g = cv.getContext('2d')
+    const bakeWall = (x, y, r) => {
+        g.fillStyle = P.wall; g.fillRect(x, y, TILE, TILE)
+        g.fillStyle = P.wallTop; g.fillRect(x, y, TILE, 8)
+        g.fillStyle = P.wallLine
+        g.fillRect(x, y + 8, TILE, 1)
+        g.fillRect(x + (r % 2 ? 8 : 20), y + 8, 1, TILE - 8)
+        g.fillRect(x, y + 20, TILE, 1)
+    }
+    const bakeFloor = (x, y, r) => {
+        g.fillStyle = P.floor; g.fillRect(x, y, TILE, TILE)
+        g.fillStyle = P.floorSeam
+        g.fillRect(x, y, TILE, 1)
+        g.fillRect(x + (r % 2 ? 10 : 22), y, 1, TILE)
+    }
+    for (const [r, c] of EXT_ROOM.walls) bakeWall(tileX(c), tileY(r), r)
+    for (const [r, c] of EXT_ROOM.floor) bakeFloor(tileX(c), tileY(r), r)
+    // doorway in the shared wall: planked threshold, slab swung into the room
+    {
+        const [dr, dc] = EXT_ROOM.door
+        const x = tileX(dc), y = tileY(dr)
+        bakeFloor(x, y, dr)
+        g.fillStyle = P.wallLine; g.fillRect(x, y, 1, TILE); g.fillRect(x + TILE - 1, y, 1, TILE)
+        g.fillStyle = '#7a4a28'; g.fillRect(x + 22, y + 3, 4, 26)
+        g.fillStyle = '#5f3c22'; g.fillRect(x + 22, y + 3, 4, 1); g.fillRect(x + 22, y + 28, 4, 1)
+        g.fillStyle = '#ffd24a'; g.fillRect(x + 23, y + 7, 2, 2)
+    }
+    // windows in the east wall (first and last wall cell of the room's run)
+    for (const [r, c] of [[4, 15], [6, 15]]) {
+        const x = tileX(c), y = tileY(r)
+        bakeWall(x, y, r)
+        g.fillStyle = '#5f3c22'; g.fillRect(x + 4, y + 8, 20, 14)
+        g.fillStyle = '#a8d4ee'; g.fillRect(x + 6, y + 10, 16, 10)
+        g.fillStyle = '#5f3c22'
+        g.fillRect(x + 13, y + 10, 2, 10); g.fillRect(x + 6, y + 14, 16, 2)
+        g.fillStyle = '#96653f'; g.fillRect(x + 3, y + 22, 22, 2)
+        g.fillStyle = 'rgba(255,240,170,0.35)'; g.fillRect(x + 7, y + 11, 5, 2)
+    }
+    // wallpaper strip along the room's north wall, matching the house's own
+    for (const c of [12, 13, 14]) {
+        const x = tileX(c)
+        g.fillStyle = P.paper; g.fillRect(x, tileY(2) + TILE - 8, TILE, 8)
+        g.fillStyle = P.paperStripe
+        for (let i = 0; i < 4; i++) g.fillRect(x + 3 + i * 8, tileY(2) + TILE - 8, 2, 8)
+    }
+    extLayer = cv
+    return cv
 }
 
 // ---------------------------------------------------------------- gate ------
@@ -91,6 +151,19 @@ export function drawGate(ctx, _t) {
 // ------------------------------------------------------------ furniture ----
 export function drawItemAt(ctx, id, x, y, t) {
     switch (id) {
+        case 'roomkit': {
+            // blueprint card: brick Cottage with gold roof on drafting paper
+            ctx.fillStyle = '#2c3e63'; ctx.fillRect(x + 3, y + 6, 26, 22)
+            ctx.fillStyle = '#3d5484'
+            for (let i = 0; i < 4; i++) ctx.fillRect(x + 3, y + 9 + i * 5, 26, 1)
+            ctx.fillStyle = '#96653f'; ctx.fillRect(x + 8, y + 14, 16, 11)
+            ctx.fillStyle = '#c9873f'
+            ctx.beginPath(); ctx.moveTo(x + 16, y + 4); ctx.lineTo(x + 4, y + 14); ctx.lineTo(x + 28, y + 14); ctx.closePath(); ctx.fill()
+            ctx.fillStyle = '#ffd24a'; ctx.fillRect(x + 14, y + 18, 5, 7)
+            ctx.fillStyle = '#a8d4ee'; ctx.fillRect(x + 9, y + 16, 4, 4)
+            ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1; ctx.strokeRect(x + 3.5, y + 6.5, 25, 21)
+            break
+        }
         case 'bed': {
             ctx.fillStyle = '#7a4a28'; ctx.fillRect(x + 2, y + 2, 28, 28)
             ctx.fillStyle = '#d8e6f0'; ctx.fillRect(x + 5, y + 5, 22, 8)
@@ -412,11 +485,14 @@ export function drawTopBar(ctx, s) {
 
 // -------------------------------------------------------------- catalog ----
 export const TRAY_H = 56
+// tray geometry shared by draw + hit-test; sized to the catalog so a 14th
+// card (Spare Room, #1806) never overflows the stage
+const TRAY_CW = Math.floor((W - 12 - (CATALOG.length - 1) * 4) / CATALOG.length)
 export function drawCatalog(ctx, s) {
     const y = H - TRAY_H
     ctx.fillStyle = 'rgba(20,26,40,0.92)'; ctx.fillRect(0, y, PANEL_X, TRAY_H)
     ctx.strokeStyle = P.panelEdge; ctx.strokeRect(0.5, y + 0.5, PANEL_X - 1, TRAY_H - 1)
-    const cw = 44, gap = 4
+    const cw = TRAY_CW, gap = 4
     CATALOG.forEach((d, i) => {
         const x = 6 + i * (cw + gap)
         const afford = s.money >= d.price
@@ -437,7 +513,7 @@ export function drawCatalog(ctx, s) {
 
 export function catalogHit(px, py) {
     if (py < H - TRAY_H) return -1
-    const cw = 44, gap = 4
+    const cw = TRAY_CW, gap = 4
     const i = Math.floor((px - 6) / (cw + gap))
     if (i < 0 || i >= CATALOG.length) return -1
     if (px - 6 - i * (cw + gap) > cw) return -1
