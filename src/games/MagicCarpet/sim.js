@@ -408,7 +408,7 @@ export function makeGame(seed, level = 0) {
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
         wizStage: 0, worldT: 0, wizGuardFire: 0,
-        invis: 0, book: false,
+        invis: 0, book: false, spellBook: false, bookPage: 0,
         heights: null, events: [], score: 0,
         quota: LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))].quota,
     }
@@ -499,6 +499,7 @@ export function genWorld(gs) {
     gs.towerDown = false
     gs.invis = 0
     gs.book = false
+    gs.spellBook = false; gs.bookPage = 0 // #1764: a new world is a closed book at a new castle
     return gs
 }
 
@@ -756,6 +757,7 @@ export const TRAY = [Math.floor((W - SPILLS.length * 14) / 2), H - HUD_H - 22, S
 
 export function hudTap(gs, x, y) {
     if (gs.end) return 'none'
+    if (gs.spellBook) return 'none' // #1764: the book owns the surface; a tap never casts under it
     if (x < 0 || x >= W || y < 0 || y >= H) return 'world' // letterbox margin = still the world
     const hit = (r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
     if (gs.book) {
@@ -778,6 +780,98 @@ export function hudTap(gs, x, y) {
     if (hit(TAP.slotR)) { cycleR(gs); return 'slotR' }
     if (y >= H - HUD_H) return 'none' // dead HUD strip: never a stray cast
     return 'world'
+}
+
+// #1764 item 1 — the castle spell book. The original's spell selection was a
+// menu, not a memorized key row, and the book lives at home: it opens only
+// inside the castle's reach (atCastle — the SAME rule as bank-by-delivery)
+// and while it is open the world is frozen (step() returns before the tick),
+// so nothing moves and the carpet cannot drift out from under the pages.
+// Every route is pure here so carpetcheck proves the whole menu without a
+// browser — the shell only maps keys/taps onto these and narrates:
+//   bookOpen(gs)    'open' | 'no' (away from the castle: a bookNo event,
+//                   zero state change) | 'none' (already open / run over)
+//   bookClose(gs)   'close' | 'none'
+//   bookKey(gs, k)  'left'/'right' page (wraps at twelve); a digit 0..11
+//                   jumps to that page; 'L'/'R' equip the selected page to
+//                   that hand — learned only, an unlearned page fizzles
+//                   (fizzle event, no change, the tray's own law); 'close'
+//                   (B / ? / Escape / the pad's A)
+//   bookTap(gs, x, y)  the left/right columns page, a row selects its page,
+//                   the L HAND / R HAND buttons equip, CLOSE closes; the
+//                   header, the dead band and the letterbox margin are
+//                   'none' — a book tap NEVER casts (the shell routes taps
+//                   here while the book is up, and hudTap refuses below)
+// bookPage is the selected row. Unlearned rows read "???" in the shell but
+// the page still turns: the original hides the NAME, not the slot.
+export function atCastle(gs) {
+    return Math.hypot(wrapD(gs.castle.x - gs.x), wrapD(gs.castle.y - gs.y)) < CFG.castleR
+}
+// The book's surface: full 320x200 canvas — twelve 12px rows, 48px thumb
+// page-columns either side (≈59 CSS px at 390 wide, the world-select law),
+// a 32px bottom band with the two equip buttons and CLOSE.
+export const BOOK = {
+    row0: 22, rowH: 12,
+    colL: 48, colR: W - 48,
+    band: 168,
+    btnL: [56, 168, 64, 32],
+    btnR: [128, 168, 64, 32],
+    btnC: [200, 168, 64, 32],
+}
+// At the castle with the book shut, the world surface offers a thumb-sized
+// opening prompt — a centre tap there opens the book and never casts.
+export const BOOK_PROMPT = [W / 2 - 60, H / 2 - 24, 120, 48]
+export function bookOpen(gs) {
+    if (gs.end || gs.spellBook) return 'none'
+    if (!atCastle(gs)) { gs.events.push({ type: 'bookNo' }); return 'no' }
+    gs.spellBook = true
+    gs.book = false // the tray gives way to the book
+    gs.events.push({ type: 'bookOpen' })
+    return 'open'
+}
+export function bookClose(gs) {
+    if (!gs.spellBook) return 'none'
+    gs.spellBook = false
+    gs.events.push({ type: 'bookClose' })
+    return 'close'
+}
+export function bookKey(gs, k) {
+    if (!gs.spellBook) return 'none'
+    if (k === 'close') return bookClose(gs)
+    if (k === 'left') { gs.bookPage = (gs.bookPage + SPILLS.length - 1) % SPILLS.length; gs.events.push({ type: 'page', n: gs.bookPage }); return 'page' }
+    if (k === 'right') { gs.bookPage = (gs.bookPage + 1) % SPILLS.length; gs.events.push({ type: 'page', n: gs.bookPage }); return 'page' }
+    if (typeof k === 'number' && k >= 0 && k < SPILLS.length) { gs.bookPage = k; gs.events.push({ type: 'page', n: k }); return 'page' }
+    if (k === 'L' || k === 'R') {
+        const sp = SPILLS[gs.bookPage]
+        if (!gs.learned.includes(sp.id)) { gs.events.push({ type: 'fizzle' }); return 'no' }
+        setHand(gs, k, sp.id)
+        return 'equip'
+    }
+    return 'none'
+}
+export function bookTap(gs, x, y) {
+    if (!gs.spellBook || gs.end) return 'none'
+    const hit = (r) => x >= r[0] && x < r[0] + r[2] && y >= r[1] && y < r[1] + r[3]
+    if (y >= BOOK.band) {
+        const tryHand = (h) => {
+            const sp = SPILLS[gs.bookPage]
+            if (!gs.learned.includes(sp.id)) { gs.events.push({ type: 'fizzle' }); return 'no' }
+            setHand(gs, h, sp.id)
+            return 'equip'
+        }
+        if (hit(BOOK.btnL)) return tryHand('L')
+        if (hit(BOOK.btnR)) return tryHand('R')
+        if (hit(BOOK.btnC)) return bookClose(gs)
+        return 'none'
+    }
+    if (x < BOOK.colL) { gs.bookPage = (gs.bookPage + SPILLS.length - 1) % SPILLS.length; gs.events.push({ type: 'page', n: gs.bookPage }); return 'page' }
+    if (x >= BOOK.colR) { gs.bookPage = (gs.bookPage + 1) % SPILLS.length; gs.events.push({ type: 'page', n: gs.bookPage }); return 'page' }
+    if (y >= BOOK.row0 && y < BOOK.row0 + BOOK.rowH * SPILLS.length) {
+        gs.bookPage = Math.min(SPILLS.length - 1, Math.floor((y - BOOK.row0) / BOOK.rowH))
+        gs.events.push({ type: 'page', n: gs.bookPage })
+        return 'page'
+    }
+    return 'none'
 }
 
 // #1612 item 4: behind the veil the world is heard *through* the carpet. The
@@ -818,6 +912,7 @@ export function castBearing(gs, x, y) {
 }
 
 export function step(gs, inp) {
+    if (gs.spellBook) return // #1764 item 1: the world holds its breath while the book is open
     gs.tick++
     if (gs.end) return
     gs.worldT++
@@ -1256,6 +1351,7 @@ export function stateHash(gs) {
     mix(gs.x.toFixed(1)); mix(gs.y.toFixed(1)); mix(gs.alt.toFixed(1)); mix(gs.yaw.toFixed(3))
     mix(gs.hp); mix(gs.shield); mix(gs.mana); mix(gs.castleStage); mix(gs.wizStage)
     mix(gs.invis)
+    mix(gs.spellBook ? 1 : 0); mix(gs.spellBook ? gs.bookPage : -1)
     mix(gs.wizard.alive ? gs.wizard.hp : 'x'); mix(gs.wizard.mana)
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
     mix(gs.pearls.filter((p) => p.alive).length)

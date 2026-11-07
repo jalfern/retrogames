@@ -335,9 +335,21 @@ see item 5).
   dissolve #1668, **clone #1680** — the roster tail of #1612 item 5
   (clone/dissolve/shatter/volcano) is now fully shipped.
 - **PARTIAL by #1740:** the title carries a WORLD SELECT (◀ ▶ / chevron taps, nine
-  startable worlds) — but the campaign is nine worlds, not the original's 45, and
-  there is still no castle-spell menu; scoring is banked mana + kills + clears +
-  time bonus.
+  startable worlds) — but the campaign is nine worlds, not the original's 45;
+  scoring is banked mana + kills + clears + time bonus.
+- **Castle-spell menu closed by #1764 item 1:** the original's spell selection was
+  a browseable book, and the book lives at home. `B` (or a tap on the glowing
+  prompt) opens it ONLY inside the castle's 26u reach — away from it the refusal
+  is a `bookNo` event and zero state. While open the world is frozen
+  (`step()` returns before the tick), so nothing moves and the carpet cannot
+  drift out from under the pages. All twelve spells are browsable (unlearned
+  read ??? — the original hides the name, not the slot), ◀ ▶ or the digits page,
+  `L`/`R` (or the L HAND / R HAND buttons) arm the hands — learned only, an
+  unlearned page fizzles exactly like the tray. A tap under the book never
+  reaches the world (no stray cast), `B`/`?`/Escape/Space close it, and
+  `genWorld` closes it with the rest of the world state. The whole menu is
+  sim-pure (`bookOpen`/`bookKey`/`bookTap` in sim.js) and carpetcheck proves it
+  Node-side; the browser pass drives real keys through the shell.
 - One rival wizard per world; the original ran five, each growing its own
   castle. **Growth closed by #1764:** the rival's castle now builds itself over
   world time — curtain wall at 30 s, flanking turrets at 60 s, tall keep with a
