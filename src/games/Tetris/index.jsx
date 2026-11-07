@@ -454,6 +454,16 @@ const TetrisGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center overflow-hidden select-none" style={{ touchAction: 'none' }}>
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center" />
 
+            {/* #1637 WATCH — the prover stacks the well; any input takes over.
+                (pill first in the DOM, #1637: the phone contract wants its window
+                clear of the attract block's bottom anchor; z-index keeps the look) */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <div className="absolute inset-0 bg-black/55 flex flex-col items-center justify-center text-center px-6 pointer-events-none">
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
@@ -466,14 +476,6 @@ const TetrisGame = () => {
             {screen === 'attract' && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
-                </div>
-            )}
-
-            {/* #1637 WATCH — the prover stacks the well; any input takes over. */}
-            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
-            {screen === 'play' && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
-                    <WatchButton on={watching} />
                 </div>
             )}
 

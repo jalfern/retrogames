@@ -635,20 +635,22 @@ const MarbleMadnessGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
             <div className="relative w-full max-w-[720px] aspect-[4/3] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
-                {screen === 'attract' && (
-                    <>
-                        <p className="absolute inset-x-0 z-[70] text-center font-mono text-[11px] tracking-widest text-emerald-300/90" style={{ top: '72%' }}>{WATCH_ATTRACT_HINT}</p>
-                        {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                        <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
-                            <AttractWatchButton />
-                        </div>
-                    </>
-                )}
-                {/* #1637 WATCH — the autopilot runs the course; any input takes over. */}
+                {/* #1637 WATCH — the autopilot runs the course; any input takes over.
+                    (pill first in the DOM: the phone contract reads the pill's
+                    window clean of the attract block's bottom anchor; z keeps look) */}
                 {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
                 {(screen === 'play' || screen === 'over') && !paused && (
                     <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
+                    </div>
+                )}
+                {screen === 'attract' && (
+                    <p className="absolute inset-x-0 z-[70] text-center font-mono text-[11px] tracking-widest text-emerald-300/90" style={{ top: '72%' }}>{WATCH_ATTRACT_HINT}</p>
+                )}
+                {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                {screen === 'attract' && (
+                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
                     </div>
                 )}
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'MARBLE MADNESS')} onResume={handleResume} />}

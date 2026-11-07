@@ -505,6 +505,16 @@ const ExcitebikeGame = () => {
                 <div ref={setHud('toast')} className="absolute inset-x-0 top-1/3 text-center text-yellow-100 font-mono font-bold text-xl transition-opacity duration-300" style={{ opacity: 0, textShadow: '0 0 10px #a40' }} />
             </div>
 
+            {/* #1637 WATCH — the planner rides the gate; any input takes over.
+                (pill first in the DOM: the phone contract reads the pill's
+                window clean of the attract block's bottom anchor; z keeps look) */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
@@ -514,18 +524,13 @@ const ExcitebikeGame = () => {
                         <p className="mt-2 font-mono text-[11px] tracking-widest text-emerald-300/90">{WATCH_ATTRACT_HINT}</p>
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
-                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
-                        <AttractWatchButton />
-                    </div>
                 </>
             )}
 
-            {/* #1637 WATCH — the planner rides the gate; any input takes over. */}
-            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
-            {screen === 'play' && !paused && (
-                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
-                    <WatchButton on={watching} />
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
                 </div>
             )}
 
