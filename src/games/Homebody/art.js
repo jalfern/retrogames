@@ -7,7 +7,7 @@
 // layers at module load — pure drawing, nothing here touches the sim.
 
 import {
-    W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP,
+    W, H, TILE, COLS, ROWS, LOT_Y, PANEL_X, MAP, relLevel,
     tileX, tileY, CATALOG, DEF, NEEDS, WIN_CONTENT, RED_AT, EXT_ROOM,
 } from './sim.js'
 
@@ -435,6 +435,21 @@ export function drawPanel(ctx, s, t) {
         }
         y += 8
     }
+    // BONDS (#1817): heart = the two residents, leaf = Fern; four pips per
+    // bond, filled by level. The FAMILY pip pulses — earned is shown.
+    const by = y + 2
+    ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'
+    ctx.fillText('BONDS', PANEL_X + 12, by)
+    bondRow(ctx, PANEL_X + 12, by + 12, 'heart', '#e2574c', relLevel(s.rel.house), 'HOUSE')
+    bondRow(ctx, PANEL_X + 12, by + 26, 'leaf', '#4fae5f', relLevel(s.rel.fern), 'FERN')
+    if (relLevel(s.rel.house) === 3 && Math.floor(t * 2.5) % 2 === 0) {
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 12 + 0.5, 5, 5)
+    }
+    if (relLevel(s.rel.fern) === 3 && Math.floor(t * 2.5) % 2 === 0) {
+        ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 1
+        ctx.strokeRect(PANEL_X + 12 + 3 * 8 + 0.5, by + 26 + 0.5, 5, 5)
+    }
     // lifetime wish meter
     ctx.fillStyle = '#9fb4d8'; ctx.font = 'bold 9px monospace'
     ctx.fillText('LIFETIME WISH', PANEL_X + 12, H - 92)
@@ -465,6 +480,36 @@ function needIcon(ctx, x, y, kind, col) {
             break
         default: break
     }
+}
+
+// #1817 — bond row: a glyph (heart/leaf), four level pips, target label.
+function bondRow(ctx, x, y, glyph, col, lv, label) {
+    if (glyph === 'heart') {
+        ctx.fillStyle = col
+        ctx.beginPath()
+        ctx.arc(x + 4, y + 1.5, 2.6, Math.PI, 0)
+        ctx.arc(x + 8, y + 1.5, 2.6, Math.PI, 0)
+        ctx.lineTo(x + 6, y + 6.5)
+        ctx.closePath(); ctx.fill()
+    } else {
+        ctx.fillStyle = col
+        ctx.beginPath()
+        ctx.ellipse(x + 6, y + 2, 2.4, 4, -Math.PI / 4, 0, 7)
+        ctx.fill()
+        ctx.strokeStyle = col; ctx.lineWidth = 1
+        ctx.beginPath(); ctx.moveTo(x + 7.5, y + 3.5); ctx.lineTo(x + 10, y + 6); ctx.stroke()
+    }
+    for (let i = 0; i < 4; i++) {
+        const px = x + 14 + i * 8
+        if (i < lv) { ctx.fillStyle = col; ctx.fillRect(px, y + 1, 6, 6) }
+        else {
+            ctx.fillStyle = P.barBg; ctx.fillRect(px, y + 1, 6, 6)
+            ctx.strokeStyle = '#33405e'; ctx.lineWidth = 1
+            ctx.strokeRect(px + 0.5, y + 1.5, 5, 5)
+        }
+    }
+    ctx.fillStyle = '#8fa2c8'; ctx.font = 'bold 7px monospace'; ctx.textAlign = 'left'
+    ctx.fillText(label, x + 50, y + 2)
 }
 
 export function drawTopBar(ctx, s) {

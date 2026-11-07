@@ -23,6 +23,16 @@ export const HOUR_SEC = 5            // one sim hour = 5 real seconds (a day = 2
 export const WIN_CONTENT = 80
 export const WORK_START = 8
 export const WORK_END = 17
+
+// --------------------------------------------------------- relationships ----
+// #1817: the chat loop gains a ladder. Two meters ride the sim — `house`
+// (Otto<->Mira) and `fern` (household<->the neighbour) — grown by real
+// conversation minutes, four levels with unlocks, and an hourly fade so a
+// neglected bond cools (the original's relationships sag too).
+export const REL_MAX = 100
+export const REL_EDGES = [12, 30, 60]
+export const REL_NAMES = ['ACQUAINTED', 'FRIENDLY', 'FRIENDS', 'FAMILY']
+export const relLevel = (v) => (v >= REL_EDGES[2] ? 3 : v >= REL_EDGES[1] ? 2 : v >= REL_EDGES[0] ? 1 : 0)
 export const COLLAPSE_AT = 16       // seconds a red need may go unanswered
 export const FAINT_SEC = 14        // how long a faint lasts
 export const RED_AT = 0.12         // a need at/below this reads red (and alarms the gem)
@@ -169,6 +179,9 @@ export function newRun(seed) {
         visitor: null,                  // { name, x, y, path, state, t }
         visitAfter: null,             // hour of next visit
         visitGap: 0,
+        rel: { house: 0, fern: 0 },   // #1817 conversation ladder (0..REL_MAX)
+        houseLineCd: 6,               // co-presence chat line cooldown (s)
+        lastToast: 0,               // day of last shared payday toast
         thoughts: [], thoughtT: 0,
         events: [],
         fastT: 0,                      // "AT WORK" overlay seconds left
@@ -182,8 +195,36 @@ export function newRun(seed) {
 }
 
 function scheduleVisit(s) {
-    s.visitAfter = 9 + Math.floor(s.rng() * 5)
+    // #1817: the better the bond with Fern, the sooner she's back (−1 h/level, floor 8)
+    const lv = relLevel(s.rel ? s.rel.fern : 0)
+    s.visitAfter = Math.max(8, 9 + Math.floor(s.rng() * 5) - lv)
     s.visitGap = s.rng()
+}
+
+// #1817: every conversation minute stacks the meter; crossing an edge is a
+// moment — one thought-log line, a small contentment bonus, one harness event.
+function relAdd(s, k, n) {
+    const before = s.rel[k]
+    if (before >= REL_MAX) return
+    s.rel[k] = Math.min(REL_MAX, s.rel[k] + n)
+    const al = relLevel(s.rel[k])
+    if (al > relLevel(before)) {
+        s.content = Math.min(WIN_CONTENT, s.content + 2)
+        s.events.push({ t: 'rel-up', k, level: al })
+        think(s, pick(s, REL_UP_LINES[k][al - 1]))
+    }
+}
+const REL_UP_LINES = {
+    fern: {
+        1: ['Fern waves at the gate like an old friend now.', 'Fern hums a tune on the way in — the good kind of neighbour.'],
+        2: ['Fern lets herself in with her own story already started.', 'Fern and the household swap stories before the kettle is on.'],
+        3: ['Fern is practically family — she brings two casseroles now.'],
+    },
+    house: {
+        1: ['Otto and Mira have started finishing each other\u2019s sentences.', 'The two have fallen into an easy rhythm.'],
+        2: ['Otto and Mira laugh at the same joke from two different rooms.', 'Friends under one roof — the house feels bigger and smaller at once.'],
+        3: ['Otto and Mira — soulmates of this little household.'],
+    },
 }
 
 // ------------------------------------------------------------- occupancy -------
@@ -476,7 +517,7 @@ function updateVisitor(s, dt) {
                 s.visitor = {
                     name: 'Fern', r: 12, c: 5, x: tileX(5) + TILE / 2, y: tileY(12) + TILE / 2,
                     path, state: 'enter', t: 0, hue: '#4fae5f', face: 1, walkPhase: 0, chatT: 0,
-                    hangUntil: 45 + s.rng() * 45,
+                    hangUntil: 45 + s.rng() * 45 + 6 * relLevel(s.rel.fern),   // #1817: friends linger
                 }
                 s.events.push({ t: 'visit', name: 'Fern' })
                 think(s, 'A neighbour rings the bell. Fern drifts in through the gate.')
@@ -496,6 +537,7 @@ function updateVisitor(s, dt) {
             partner.chatT += dt
             v.chatT += dt
             partner.needs.social = Math.min(1, partner.needs.social + 0.06 * dt)
+            relAdd(s, 'fern', 0.07 * dt)   // #1817: the bond climbs while they talk
             if (partner.chatT > 2.4 && partner.chatT - 0.06 * dt <= 2.4) think(s, chatLine(s, partner))
         }
         if (s.hour > 19 || v.t > v.hangUntil) { v.state = 'leaving'; v.path = bfsPath(s, { r: v.r, c: v.c }, [{ r: 12, c: 5 }]) }
@@ -521,6 +563,29 @@ function updateVisitor(s, dt) {
 function partnerNear(s, v) {
     for (const p of s.people) if (Math.abs(p.r - v.r) + Math.abs(p.c - v.c) <= 3) return true
     return false
+}
+
+// #1817: two residents idling within arm's reach share the moment — the
+// household bond climbs on co-presence chat (the original raises relationship
+// bars just by talking), on its own slower tick with its own small talk.
+function updateHouseBond(s, dt) {
+    const [a, b] = s.people
+    const idle = (p) => p.faintT <= 0 && !p.working && !p.use
+    if (!idle(a) || !idle(b) || Math.abs(a.r - b.r) + Math.abs(a.c - b.c) > 2) {
+        if (s.houseLineCd > 0) s.houseLineCd -= dt
+        return
+    }
+    a.needs.social = Math.min(1, a.needs.social + 0.03 * dt)
+    b.needs.social = Math.min(1, b.needs.social + 0.03 * dt)
+    relAdd(s, 'house', 0.05 * dt)
+    if (s.houseLineCd <= 0) {
+        s.houseLineCd = 11
+        think(s, pick(s, [
+            'Otto and Mira trade gossip nobody else is home to hear.',
+            'A shared joke bounces between the two of them.',
+            'Otto and Mira plan the weekend out loud, together.',
+        ]))
+    } else s.houseLineCd -= dt
 }
 
 // ----------------------------------------------------------- walking ------
@@ -583,6 +648,16 @@ function endWork(s, p) {
         `${p.name} clocks out with §${pay} jingling in their pocket.`,
         `A decent day at work — §${pay} richer, a little prouder.`,
     ]))
+    // #1817: close friends toast the payday together — once per day, a bonus beat
+    if (s.rel.house >= REL_EDGES[1] && s.lastToast !== s.day) {
+        s.lastToast = s.day
+        s.content = Math.min(WIN_CONTENT, s.content + 1)
+        s.events.push({ t: 'content', n: 1, id: 'toast' })
+        think(s, pick(s, [
+            'Payday! Otto and Mira clink mugs across the kitchen table.',
+            'The payday toast tastes better with a friend in the house.',
+        ]))
+    }
     const mail = s.items.find((it) => it.id === 'mail')
     if (mail) { const t = targetsOf(s, mail)[0]; if (t) { p.r = t.r; p.c = t.c; p.x = tileX(t.c) + TILE / 2; p.y = tileY(t.r) + TILE / 2; p.path = null } }
 }
@@ -593,13 +668,24 @@ function think(s, line) {
     if (s.thoughts.length > 4) s.thoughts.length = 4
 }
 function pick(s, opts) { return Array.isArray(opts) ? opts[Math.floor(s.rng() * opts.length)] : opts }
-function chatLine(s, p) {
-    return pick(s, [
-        `${p.name} and Fern swap stories about the weather.`,
+// #1817: the topics pool widens with the bond — a fresh neighbour gets small
+// talk; FAMILY gets the running jokes. Tier membership is the unlock.
+export function chatPool(s) {
+    const lv = relLevel(s.rel.fern)
+    const base = [
+        `{p} and Fern swap stories about the weather.`,
         `Fern brings over a casserole nobody asked for.`,
-        `${p.name} laughs at Fern's terrible jokes.`,
+        `{p} laughs at Fern's terrible jokes.`,
         `They argue, gently, about garden gnomes.`,
-    ])
+    ]
+    if (lv >= 1) base.push(`Fern and {p} compare garden notes — the tomato grudge continues.`)
+    if (lv >= 2) base.push(`Fern confides the neighbourhood secrets to {p}.`, `{p} saves Fern a seat by the radio.`)
+    if (lv >= 3) base.push(`Fern and {p} finish each other's sentences about the weather.`, `Family business: Fern and {p} plan the street's next potluck.`)
+    return base
+}
+function chatLine(s, p) {
+    const pool = chatPool(s)
+    return pick(s, pool).replace(/\{p\}/g, p.name)
 }
 function doneLine(s, p, def, before) {
     if (def.id === 'bed') return pick(s, [`${p.name} sleeps like a log.`, `${p.name} dreamed about flying.`])
@@ -649,6 +735,11 @@ function applyHourAt(s, hh) {
             think(s, pick(s, ['A happy hour passes over the little house.', 'The household hums along contentedly.']))
         }
     }
+    // #1817: bonds fade when nobody invests — absence from Fern stings faster.
+    // Per-hour values (an hour is only 5 real seconds on this clock): kept well
+    // under the per-second chat growth so attention beats entropy at 1x AND x8.
+    s.rel.house = Math.max(0, s.rel.house - 0.02)
+    s.rel.fern = Math.max(0, s.rel.fern - 0.035)
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false
@@ -682,6 +773,7 @@ export function advance(s, dt) {
     }
 
     updateVisitor(s, simDt)
+    updateHouseBond(s, simDt)
 
     for (const p of s.people) {
         p.mood = avg(p)
@@ -847,6 +939,7 @@ export function stateHash(s) {
     const mix = (v) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 16777619) }
     mix(s.tick); mix(s.day); mix(s.hour); mix(s.money); mix(s.content); mix(s.rank)
     mix(s.ext)
+    mix(s.rel.house); mix(s.rel.fern)   // #1817: bonds ride the hash
     for (const p of s.people) {
         mix(p.r); mix(p.c)
         for (const n of NEEDS) mix(p.needs[n])

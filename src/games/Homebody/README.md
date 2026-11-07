@@ -35,6 +35,21 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   `keepsOpen`, BFS, the attract bot and manual movement all treat the wing as
   built the tick the hammer falls; the door's room-side cell (4,12) may never
   be blocked once the room holds furniture. `ext` rides `stateHash`.
+- Bonds (#1817): `s.rel = { house, fern }` climb while people actually talk —
+  Fern-chat +0.07/s while a resident chats beside her, household co-presence
+  +0.05/s while both residents are unengaged within 2 tiles of each other.
+  Levels ACQUAINTED / FRIENDLY / FRIENDS / FAMILY at 12 / 30 / 60: every
+  level-up fires one thought-log line, +2 contentment and a `rel-up` event.
+  Fern's level widens the topic pool (4→9 lines), extends her hang
+  (+6 s/level) and pulls her next visit earlier (−1 h/level, floor 8);
+  house ≥ FRIENDS turns payday into a shared toast (+1 once/day). Both meters
+  fade every sim-hour (−0.4 house, −0.7 fern — absence from Fern stings
+  faster) and ride `stateHash`. The needs panel gained a BONDS row: heart =
+  the two residents, leaf = Fern, four pips each, gold pulse at FAMILY.
+  Fade is −0.02/−0.035 per hour, not −0.4/−0.7: at this clock an hour is
+  5 real seconds, and a fade above ~0.08/s would outrun chat growth outright
+  — the ladder would exist on paper and die on the phone (caught by the
+  drive pass, not the node gates).
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
@@ -42,9 +57,10 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 59 gates: boot, rules, spare-room wing (#1806), winnable seeds, determinism
+npm run peoplecheck          # 83 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
-# the WINNABLE section goes red; restore.
+# the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
+# the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
@@ -57,7 +73,10 @@ opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
   one per lot). Deeper multi-room building (choose placement, second wing, rooms
   with purpose) remains the open tail of this old line.
-- No relationships deepening beyond the chat loop (no romance, no fights).
+- **PARTIAL by #1817:** bonds climb the chat loop now — `house`/`fern` meters,
+  four levels, topic/linger/return/toast unlocks, hourly fade, panel row.
+  Romance, fights and relationships beyond the household+Fern triangle are the
+  open tail of this line.
 - Visitors are Fern only; no kids/pets; single store catalog.
 - No skippable-speed control for the player; day/night is cosmetic + decay only.
 - Needs panel shows both residents; no per-object queue display like the original.
