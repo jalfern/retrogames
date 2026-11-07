@@ -17,6 +17,7 @@ import {
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
     crumbleFeel, CRUMBLE_HEAR_R, castBearing,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
+    atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT, CFG,
     SEL, selectTap, cursorStep,
 } from '../src/games/MagicCarpet/sim.js'
 
@@ -1247,6 +1248,148 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     }
 }
 
+// ---- #1764 item 1: the castle spell book — the menu at home ----------------
+// The original's spell selection was a browseable book, and the book lives at
+// the castle. The whole menu is sim-pure (bookOpen/bookKey/bookTap in
+// sim.js), so this section proves it without a browser:
+//   - the book opens ONLY at the castle (bank-by-delivery's own 26u rule);
+//     away from it bookOpen is a flat refusal — a bookNo event, zero state
+//   - while open, step() holds: tick, position, mana and hash all frozen
+//   - pages wrap at twelve; digits jump; L/R arm the hands — learned only,
+//     an unlearned page fizzles exactly like the tray does
+//   - under an open book a tap never reaches the world (no stray cast)
+//   - stateHash carries the book: an open book is a different world
+// Mutation guide: drop the `if (gs.spellBook) return` freeze from step() and
+// the freeze gate goes red; move the atCastle check out of bookOpen and the
+// refusal gate goes red; remove spellBook from stateHash and the hash gate
+// goes red.
+{
+    const at = (gs) => { gs.x = gs.castle.x; gs.y = gs.castle.y }
+    const away = (gs) => { gs.x = wrap(gs.castle.x + 80, MAP); gs.y = gs.castle.y }
+
+    r.check('atCastle is the bank rule itself (the 26u reach, no more)',
+        (() => {
+            const g = makeGame(7)
+            g.x = wrap(g.castle.x + 25, MAP); g.y = g.castle.y
+            const near = atCastle(g)
+            g.x = wrap(g.castle.x + 27, MAP); g.y = g.castle.y
+            return near === true && atCastle(g) === false
+        })())
+    {
+        const a = makeGame(11)
+        at(a)
+        a.book = true // an open tray must give way to the book
+        r.check('at the castle the book opens, and the tray gives way',
+            bookOpen(a) === 'open' && a.spellBook === true && a.book === false && a.bookPage === 0)
+        r.check('opening twice is a no-op', bookOpen(a) === 'none' && a.spellBook === true)
+    }
+    {
+        const b = makeGame(11)
+        away(b)
+        const hb = stateHash(b)
+        r.check('away from the castle the book refuses — a bookNo event, zero state change',
+            bookOpen(b) === 'no' && b.spellBook === false && b.events.some((e) => e.type === 'bookNo') &&
+            stateHash(b) === hb,
+            `spellBook=${b.spellBook} hash ${hb} vs ${stateHash(b)}`)
+    }
+    {
+        const c = makeGame(11)
+        at(c)
+        bookOpen(c)
+        c.mana = 50
+        const hc = stateHash(c)
+        const tc = c.tick
+        for (let i = 0; i < 60; i++) step(c, { left: true, up: true, castL: true })
+        r.check('while the book is open the world holds its breath — driving input included',
+            c.tick === tc && stateHash(c) === hc && c.mana === 50,
+            `tick ${tc} -> ${c.tick} hash ${hc} vs ${stateHash(c)}`)
+        bookClose(c)
+        step(c, {})
+        r.check('closing the book lets the world breathe again', c.tick === tc + 1, `tick ${tc} -> ${c.tick}`)
+    }
+    {
+        const d = makeGame(11)
+        at(d)
+        bookOpen(d)
+        r.check('pages wrap at twelve in both directions',
+            bookKey(d, 'right') === 'page' && d.bookPage === 1 &&
+            bookKey(d, 'left') === 'page' && d.bookPage === 0 &&
+            bookKey(d, 'left') === 'page' && d.bookPage === 11 &&
+            bookKey(d, 'right') === 'page' && d.bookPage === 0,
+            `page ${d.bookPage}`)
+        r.check('a digit jumps straight to its page', bookKey(d, 7) === 'page' && d.bookPage === 7)
+    }
+    {
+        const e = makeGame(11)
+        at(e)
+        bookOpen(e)
+        e.learned.push('lightning')
+        bookKey(e, 1) // the LIGHTNING page
+        r.check('L arms the learned page to the left hand',
+            bookKey(e, 'L') === 'equip' && e.hands.L === 'lightning')
+        r.check('R arms the same page to the right hand (a spell may live in both hands)',
+            bookKey(e, 'R') === 'equip' && e.hands.R === 'lightning')
+        bookKey(e, 4) // SLOW TIME — unlearned
+        r.check('an unlearned page fizzles — no arm, the hands keep their spells',
+            bookKey(e, 'L') === 'no' && e.hands.L === 'lightning' && e.events.some((ev) => ev.type === 'fizzle'))
+        const he = stateHash(e)
+        bookKey(e, 11) // CLONE — unlearned, far page (the page turn itself moves the hash)
+        const he2 = stateHash(e)
+        bookKey(e, 'R')
+        r.check('fizzling on a far page changes nothing — hands and hash steady on that page',
+            e.hands.R === 'lightning' && stateHash(e) === he2,
+            `R=${e.hands.R} hash ${he2} vs ${stateHash(e)}`)
+    }
+    {
+        const f = makeGame(11)
+        at(f)
+        bookOpen(f)
+        f.learned.push('heal')
+        const mana0 = f.mana
+        r.check('book taps page, select and equip — the left column wraps to the last page',
+            bookTap(f, 24, 96) === 'page' && f.bookPage === 11 &&
+            bookTap(f, 296, 96) === 'page' && f.bookPage === 0 &&
+            bookTap(f, 100, BOOK.row0 + 2 * BOOK.rowH + 4) === 'page' && f.bookPage === 2,
+            `page ${f.bookPage}`)
+        r.check('the L HAND button arms the selected learned page (HEAL)',
+            bookTap(f, BOOK.btnL[0] + 10, BOOK.btnL[1] + 10) === 'equip' && f.hands.L === 'heal')
+        r.check('the R HAND button arms the right hand',
+            bookTap(f, BOOK.btnR[0] + 10, BOOK.btnR[1] + 10) === 'equip' && f.hands.R === 'heal')
+        r.check('CLOSE shuts the book', bookTap(f, BOOK.btnC[0] + 10, BOOK.btnC[1] + 10) === 'close' && f.spellBook === false)
+        r.check('a tap under the book never reaches the world (no stray cast)',
+            (() => {
+                bookOpen(f)
+                const hf = stateHash(f)
+                const res = hudTap(f, 160, 60)
+                const steady = stateHash(f) === hf && f.mana === mana0
+                bookClose(f)
+                return res === 'none' && steady
+            })())
+        r.check('the very same tap with the book shut would have cast — the book is what stops it',
+            (() => { const g = makeGame(11); at(g); return hudTap(g, 160, 60) === 'world' })())
+    }
+    {
+        const s1 = makeGame(11)
+        at(s1)
+        const h1 = stateHash(s1)
+        bookOpen(s1)
+        const s2 = makeGame(11)
+        at(s2)
+        bookOpen(s2)
+        r.check('stateHash carries the open book', stateHash(s1) !== h1 && stateHash(s1) === stateHash(s2))
+        bookKey(s1, 'right')
+        r.check('...and the page it sits on', stateHash(s1) !== stateHash(s2) && stateHash(s1) !== h1)
+        bookClose(s1)
+        r.check('closing returns the hash to the pre-book world', stateHash(s1) === h1)
+    }
+    r.check('genWorld closes the book (a fresh world is a closed book)',
+        (() => { const g = makeGame(7); g.spellBook = true; g.bookPage = 5; genWorld(g); return g.spellBook === false && g.bookPage === 0 })())
+    r.check('every book hit box lives inside the 320×200 surface, rows clear the band',
+        [BOOK.btnL, BOOK.btnR, BOOK.btnC, BOOK_PROMPT].every((b) => b[0] >= 0 && b[1] >= 0 && b[0] + b[2] <= W && b[1] + b[3] <= H) &&
+        BOOK.row0 + BOOK.rowH * SPILLS.length <= BOOK.band && BOOK.colL < BOOK.colR,
+        `rows end ${BOOK.row0 + BOOK.rowH * SPILLS.length} band ${BOOK.band}`)
+}
+
 // ---- HUD geometry: the score must stay inside the canvas (#1681)
 // The score is the only HUD text pinned to a fixed x near the right edge. At
 // x=302 in 7px monospace its six-digit box spanned [302, 327.2] against
@@ -1949,13 +2092,13 @@ r.check('#1673 attract yields to a single phone tap',
 // 1) SPELLS tab by real touch, then the 11th tray cell equips DISSOLVE left-handed
 await phone.touchscreen.tap(...toCss(TAP.book[0] + TAP.book[2] / 2, TAP.book[1] + TAP.book[3] / 2))
 await phone.waitForTimeout(120)
-const bookOpen = (await phone.evaluate(() => window.__carpetTest.probe())).book
+const trayOpen = (await phone.evaluate(() => window.__carpetTest.probe())).book
 await phone.evaluate(() => window.__carpetTest.arm('dissolve'))
 const s11 = [TRAY[0] + 10 * 14 + 7, TRAY[1] + TRAY[3] / 2] // slot 11 centre, HUD px
 await phone.touchscreen.tap(...toCss(...s11))
 await phone.waitForTimeout(120)
 const after = await phone.evaluate(() => window.__carpetTest.probe())
-r.check('#1673 real touch: SPELLS tab opens the tray at phone size', bookOpen === true)
+r.check('#1673 real touch: SPELLS tab opens the tray at phone size', trayOpen === true)
 r.check('#1673 slot 11 is inside the HUD and tappable at 390x844 (tray strip on-screen)',
     s11[0] >= 0 && s11[0] <= W && hud.w > 0 && hud.h > 0,
     `slot@css ${Math.round(toCss(...s11)[0])},${Math.round(toCss(...s11)[1])} of 390x844, hud ${Math.round(hud.w)}x${Math.round(hud.h)}`)
@@ -1992,6 +2135,45 @@ await phone.screenshot({ path: 'docs/shots/issue-1673-phone-play.png' })
 r.check('#1673 world tap casts DISSOLVE at phone size (40 mana paid, spray rides the wound, banner rides the HUD)',
     cast.screen === 'play' && cast.mana <= mA - 40 && cast.motes >= mM + 16,
     `mana ${mA}->${cast.mana}, motes ${mM}->${cast.motes}, screen=${cast.screen}`)
+// ---- #1764 item 1: the castle spell book, driven through the REAL shell.
+// holdCarpet (the same pin the crumble proof uses) teleports the carpet home,
+// then real keys: B opens, an arrow pages, L arms, Space closes. State-based
+// only (the probe) — no pixels — so the #1622 degraded-Chrome pixel family
+// cannot flake it. Mutation guide: break the shell's KeyB branch or the
+// bookKey routing and the open/page/arm gates go red; remove the step() freeze
+// and the tick-frozen gate goes red.
+await phone.evaluate(() => { window.__game.reset(7); window.__carpetTest.start() })
+await phone.waitForTimeout(250)
+const cc = await phone.evaluate(() => {
+    const c = window.__carpetTest.probe().castle
+    window.__carpetTest.holdCarpet(c.x, c.y, 34)
+    return window.__carpetTest.probe()
+})
+r.check('#1764 the teleport lands at the castle (atCastle true)', cc.atCastle === true,
+    `atCastle=${cc.atCastle} x=${cc.x} castle=${JSON.stringify(cc.castle)}`)
+await phone.keyboard.press('KeyB')
+await phone.waitForTimeout(150)
+const bOpen = await phone.evaluate(() => window.__carpetTest.probe())
+r.check('#1764 B at the castle opens the spell book on the first page',
+    bOpen.spellBook === true && bOpen.bookPage === 0, `spellBook=${bOpen.spellBook} page=${bOpen.bookPage}`)
+const tFrozen = bOpen.tick
+await phone.waitForTimeout(400)
+const tAfter = (await phone.evaluate(() => window.__carpetTest.probe())).tick
+r.check('#1764 the world holds still while the book is open (tick frozen across real frames)',
+    tAfter === tFrozen, `tick ${tFrozen} -> ${tAfter}`)
+await phone.keyboard.press('ArrowRight')
+await phone.waitForTimeout(120)
+await phone.evaluate(() => window.__carpetTest.arm('lightning'))
+await phone.keyboard.press('KeyL')
+await phone.waitForTimeout(120)
+const bEq = await phone.evaluate(() => window.__carpetTest.probe())
+r.check('#1764 a real arrow pages and L arms the learned page (LIGHTNING) to the left hand',
+    bEq.bookPage === 1 && bEq.hands.L === 'lightning', `page=${bEq.bookPage} L=${bEq.hands.L}`)
+await phone.screenshot({ path: 'docs/shots/issue-1764-spell-book.png' })
+await phone.keyboard.press('Space')
+await phone.waitForTimeout(120)
+r.check('#1764 Space (the pad\'s A) closes the book',
+    (await phone.evaluate(() => window.__carpetTest.probe())).spellBook === false)
 // ---- #1703 phone proof: the crumble RENDERS at 390px — rim silhouette and
 // mid-window animation measured on pixels, not assumed. Reuses the phone page
 // above. The camera is PINNED via holdCarpet (same pose for every capture) so

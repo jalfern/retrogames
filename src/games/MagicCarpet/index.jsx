@@ -20,6 +20,7 @@ import {
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
     hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing,
+    atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
 import { createCarpetGL } from './renderer.js'
@@ -286,6 +287,19 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'fizzle') {
                     audioController.playSweep(420, 130, 0.24, 'triangle', 0.06)
                     say('THE SPELL ELUDES YOU')
+                } else if (e.type === 'bookOpen') {
+                    // #1764 item 1: the castle's book — a page turn and a low chord
+                    audioController.playTone(392, 0.1, 'triangle', 0.06)
+                    audioController.playTone(523, 0.16, 'triangle', 0.05, 0.08)
+                    say('THE SPELL BOOK')
+                } else if (e.type === 'bookClose') {
+                    audioController.playTone(523, 0.08, 'triangle', 0.05)
+                    audioController.playTone(392, 0.12, 'triangle', 0.05, 0.06)
+                } else if (e.type === 'bookNo') {
+                    audioController.playTone(120, 0.14, 'square', 0.05)
+                    say('THE BOOK LIES AT YOUR CASTLE')
+                } else if (e.type === 'page') {
+                    audioController.playTone(660, 0.03, 'triangle', 0.035)
                 } else if (e.type === 'boom') {
                     audioController.playNoise(0.28, 0.11)
                     audioController.playTone(70, 0.18, 'square', 0.07)
@@ -789,6 +803,96 @@ const MagicCarpetGame = () => {
                 ctx.globalAlpha = 1
                 hurtFlash--
             }
+            // #1764 item 1 — the castle's spell book. A full-surface page: the
+            // world sits frozen behind it (step() holds while it is open), so
+            // this is the only thing that moves — and it moves with the page,
+            // not with the (frozen) sim tick.
+            if (gs.spellBook) {
+                ctx.fillStyle = 'rgba(7, 11, 32, 0.96)'
+                ctx.fillRect(0, 0, W, H)
+                ctx.strokeStyle = '#ffd860'
+                ctx.strokeRect(1.5, 1.5, W - 3, H - 3)
+                ctx.strokeStyle = '#5a66aa'
+                ctx.strokeRect(4.5, 4.5, W - 9, H - 9)
+                ctx.fillStyle = '#ffe9a0'
+                ctx.font = 'bold 9px monospace'
+                ctx.fillText('SPELL BOOK', 10, 14)
+                ctx.fillStyle = '#8890c0'
+                ctx.font = '6px monospace'
+                ctx.textAlign = 'right'
+                ctx.fillText('AT THE CASTLE', W - 10, 14)
+                ctx.textAlign = 'left'
+                // the two thumb page-columns get their chevrons
+                ctx.fillStyle = 'rgba(255, 216, 96, 0.85)'
+                ctx.font = 'bold 12px monospace'
+                ctx.fillText('\u25C4', 20, H / 2 + 4)
+                ctx.textAlign = 'right'
+                ctx.fillText('\u25BA', W - 20, H / 2 + 4)
+                ctx.textAlign = 'left'
+                SPILLS.forEach((sp, i) => {
+                    const y = BOOK.row0 + i * BOOK.rowH
+                    const sel = i === gs.bookPage
+                    const known = gs.learned.includes(sp.id)
+                    if (sel) {
+                        ctx.fillStyle = 'rgba(255, 216, 96, 0.16)'
+                        ctx.fillRect(BOOK.colL, y, BOOK.colR - BOOK.colL, BOOK.rowH)
+                        ctx.fillStyle = '#ffd860'
+                        ctx.fillRect(2, y, 2, BOOK.rowH)
+                        ctx.fillRect(W - 4, y, 2, BOOK.rowH)
+                    }
+                    drawSpellIcon(ctx, sp.id, 9, y + 6, 4)
+                    ctx.fillStyle = known ? (sel ? '#ffe9a0' : '#dfe4ff') : '#5a6088'
+                    ctx.font = sel ? 'bold 6px monospace' : '6px monospace'
+                    ctx.fillText(known ? sp.name : '???', 18, y + 9)
+                    ctx.fillStyle = '#9aa2cf'
+                    ctx.font = '5px monospace'
+                    ctx.fillText('1234567890-='[i], 150, y + 9)
+                    if (gs.hands.L === sp.id && known) { ctx.fillStyle = '#ffd860'; ctx.font = 'bold 6px monospace'; ctx.fillText('L', 236, y + 9) }
+                    if (gs.hands.R === sp.id && known) { ctx.fillStyle = '#7fd0ff'; ctx.font = 'bold 6px monospace'; ctx.fillText('R', 246, y + 9) }
+                    ctx.textAlign = 'right'
+                    ctx.fillStyle = known && gs.mana >= sp.cost ? '#ffe9a0' : '#6a6fa0'
+                    ctx.font = 'bold 6px monospace'
+                    ctx.fillText(known ? String(sp.cost) : '\u2014', 264, y + 9)
+                    ctx.textAlign = 'left'
+                })
+                // the bottom band: arm the hands from the selected page
+                const bandBtn = (r, title, sub, tint) => {
+                    ctx.fillStyle = '#0e1a38'
+                    ctx.fillRect(r[0], r[1], r[2], r[3])
+                    ctx.strokeStyle = tint
+                    ctx.strokeRect(r[0] + 0.5, r[1] + 0.5, r[2] - 1, r[3] - 1)
+                    ctx.fillStyle = tint
+                    ctx.font = 'bold 7px monospace'
+                    ctx.textAlign = 'center'
+                    ctx.fillText(title, r[0] + r[2] / 2, r[1] + 13)
+                    ctx.fillStyle = '#8890c0'
+                    ctx.font = '5px monospace'
+                    ctx.fillText(sub, r[0] + r[2] / 2, r[1] + 25)
+                    ctx.textAlign = 'left'
+                }
+                const selSp = SPILLS[gs.bookPage]
+                bandBtn(BOOK.btnL, 'L HAND', gs.learned.includes(selSp.id) ? selSp.name : '???', '#ffd860')
+                bandBtn(BOOK.btnR, 'R HAND', gs.learned.includes(selSp.id) ? selSp.name : '???', '#7fd0ff')
+                bandBtn(BOOK.btnC, 'CLOSE', 'B / ?', '#8890c0')
+                ctx.fillStyle = '#8890c0'
+                ctx.font = '5px monospace'
+                ctx.fillText(`PAGE ${gs.bookPage + 1}/${SPILLS.length}`, 8, 192)
+            } else if (screenRef.current === 'play' && atCastle(gs) && !gs.book && !pausedRef.current) {
+                // the door: a pulsing prompt where the book lives
+                const p = BOOK_PROMPT
+                ctx.globalAlpha = 0.5 + Math.sin(gs.tick * 0.1) * 0.25
+                ctx.strokeStyle = '#ffd860'
+                ctx.strokeRect(p[0] + 0.5, p[1] + 0.5, p[2] - 1, p[3] - 1)
+                ctx.globalAlpha = 1
+                ctx.fillStyle = '#ffe9a0'
+                ctx.font = 'bold 8px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText('THE SPELL BOOK', W / 2, H / 2 - 4)
+                ctx.fillStyle = '#8890c0'
+                ctx.font = '6px monospace'
+                ctx.fillText('TAP \u00B7 PRESS B', W / 2, H / 2 + 8)
+                ctx.textAlign = 'left'
+            }
         }
 
         let prevYaw = gs.yaw
@@ -884,7 +988,11 @@ const MagicCarpetGame = () => {
 
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
-            if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            if (code === 'Question') {
+                // #1764 item 1: at an open book, ? closes the book, not the world
+                if (gs.spellBook && screenRef.current === 'play') { bookClose(gs); return }
+                pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return
+            }
             // #1790: V is the glasses switch — it works on any screen, paused
             // included (nothing else claims KeyV, and a chart never needs 3D).
             if (e.code === 'KeyV' && !e.repeat) {
@@ -906,6 +1014,24 @@ const MagicCarpetGame = () => {
             }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current || e.repeat) return
+            // #1764 item 1: while the book is open the keyboard belongs to the
+            // book — arrows page (wrap), digits jump, L/R arm the hands,
+            // Space/Escape close. Nothing else flies, casts or seats the watch.
+            if (gs.spellBook) {
+                if (e.code === 'ArrowLeft') bookKey(gs, 'left')
+                else if (e.code === 'ArrowRight') bookKey(gs, 'right')
+                else if (e.code === 'KeyL') bookKey(gs, 'L')
+                else if (e.code === 'KeyR') bookKey(gs, 'R')
+                else if (e.code === 'Space' || e.code === 'Escape') bookClose(gs)
+                else {
+                    const d = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9', 'Digit0', 'Minus', 'Equal'].indexOf(e.code)
+                    if (d >= 0) bookKey(gs, d)
+                }
+                return
+            }
+            // B is the door to the castle's book (the tray tab stays the
+            // mid-air quick-equip; the book is the menu at home).
+            if (e.code === 'KeyB' && !e.repeat) { if (gs.spellBook) bookClose(gs); else bookOpen(gs); return }
             // #1637 WATCH: Y seats sim.js's autopilot (carpetcheck's 60-seed
             // winner) at any live position; any driving key takes the carpet
             // back — and that key still steers, so takeover is lossless.
@@ -958,9 +1084,18 @@ const MagicCarpetGame = () => {
                 // stage) and let sim.js route it: world taps cast, strip taps
                 // cycle the hands, the book tab opens the tray (#1612).
                 const rect = canvas.getBoundingClientRect()
-                const hit = hudTap(gs,
-                    ((e.clientX - rect.left) / rect.width) * W,
-                    ((e.clientY - rect.top) / rect.height) * H)
+                const hx = ((e.clientX - rect.left) / rect.width) * W
+                const hy = ((e.clientY - rect.top) / rect.height) * H
+                if (gs.spellBook) { bookTap(gs, hx, hy); return } // #1764: the open book owns the whole surface
+                // #1764 item 1: at the castle the world's centre IS the book —
+                // a tap there opens it and never casts (the thumb-sized door).
+                if (!gs.book && atCastle(gs) &&
+                    hx >= BOOK_PROMPT[0] && hx < BOOK_PROMPT[0] + BOOK_PROMPT[2] &&
+                    hy >= BOOK_PROMPT[1] && hy < BOOK_PROMPT[1] + BOOK_PROMPT[3]) {
+                    bookOpen(gs)
+                    return
+                }
+                const hit = hudTap(gs, hx, hy)
                 if (hit === 'world') {
                     if (e.button === 2) throwR = true
                     else throwL = true
@@ -1029,6 +1164,8 @@ const MagicCarpetGame = () => {
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     wizStage: gs.wizStage, worldT: gs.worldT,
                     invis: gs.invis, book: gs.book,
+                    spellBook: gs.spellBook, bookPage: gs.spellBook ? gs.bookPage : -1,
+                    atCastle: atCastle(gs), castle: { x: gs.castle.x, y: gs.castle.y },
                     casts: castsSeen, seed: gs.seed,
                     sel: selCur, // #1740 WORLD SELECT cursor
                 }),
@@ -1133,7 +1270,7 @@ const MagicCarpetGame = () => {
             let contractSeed = 0
             exposeGame({
                 id: 'magic-carpet',
-                buttons: ['left', 'right', 'up', 'down', 'a', 'b', 'boost', 'cycleL', 'cycleR', 'book'],
+                buttons: ['left', 'right', 'up', 'down', 'a', 'b', 'boost', 'cycleL', 'cycleR', 'book', 'spellbook'],
                 reset: (seed) => {
                     contractSeed = seed >>> 0
                     gs = makeGame(contractSeed)
@@ -1156,6 +1293,7 @@ const MagicCarpetGame = () => {
                     if (pad.cycleL) cycleL(gs)
                     if (pad.cycleR) cycleR(gs)
                     if (pad.book) gs.book = !gs.book
+                    if (pad.spellbook) { if (gs.spellBook) bookClose(gs); else bookOpen(gs) }
                     doSim({ left: pad.left, right: pad.right, up: pad.up, down: pad.down, castL: pad.a, castR: pad.b, boost: boostOn })
                 },
                 state: () => ({
@@ -1164,6 +1302,7 @@ const MagicCarpetGame = () => {
                     bank: Math.floor(gs.bank), level: gs.level,
                     deaths: gs.deaths, kills: gs.kills, wizAlive: gs.wizard.alive,
                     stage: gs.castleStage, hash: stateHash(gs), book: gs.book,
+                    spellBook: gs.spellBook, bookPage: gs.spellBook ? gs.bookPage : -1,
                 }),
                 canvas: () => glCanvas,
                 snapshot: () => JSON.parse(JSON.stringify(gs)),
@@ -1207,6 +1346,7 @@ const MagicCarpetGame = () => {
                             'ARROWS STEER THE CARPET · IT BANKS AND CANNOT CRASH',
                             'A CASTS YOUR LEFT HAND · X YOUR RIGHT',
                             'TAP THE BOOK OR HAND SLOTS TO CHANGE SPELLS',
+                            'AT YOUR CASTLE THE SPELL BOOK OPENS — B, OR TAP ITS GLOW',
                             'GATHER MANA PEARLS · HOVER YOUR CASTLE TO FILL THE VAULT',
                             'DIE AND THE LOAD IS LOST',
                             'FIREBALLS CRATER THE LAND · BURNING VILLAGES BREED WOLVES',
