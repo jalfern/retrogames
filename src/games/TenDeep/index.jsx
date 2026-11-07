@@ -22,7 +22,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FLAMES, RIM_WELL_FLAME, rimFlame } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -107,6 +107,11 @@ const FACADE_X = [12, 76, 140, 204]
 
 // #1756 — the coats of the three wanderers (kept dim against the dusk street).
 const FOLK_TINTS = ['#3a2c52', '#523626', '#26423a']
+// #1756: the tiles the point has walked, newest first — presentation only,
+// it exists to place the trailing silhouettes of the file. A jump of more
+// than a tile (a wipe hauling the bodies home, a dev setup) is a teleport:
+// the file falls in rather than marching across the map.
+const walkHist = []
 
 const drawFacade = (ctx, b, x, sel, bob) => {
     const y = sel ? 66 : 70
@@ -155,7 +160,16 @@ const doorIdxOf = (t) => {
     return k ? BUILDINGS.findIndex((b) => b.key === k) : -1
 }
 
-const paintRim = (ctx, gs, bob, doorIdx) => {
+const paintRim = (ctx, gs, bob, doorIdx, dim = 0) => {
+    // #1756: keep the file's map of the walk — the point's tile is newest;
+    // a >1-tile jump is a teleport (wipe, setup) and the file falls in.
+    const h0 = walkHist[0]
+    if (!h0 || h0.x !== gs.town.tx || h0.y !== gs.town.ty) {
+        if (!h0 || Math.abs(h0.x - gs.town.tx) + Math.abs(h0.y - gs.town.ty) > 1) walkHist.length = 0
+        walkHist.unshift({ x: gs.town.tx, y: gs.town.ty })
+        if (walkHist.length > 40) walkHist.length = 40
+    }
+    const lit = 1 - dim   // the door-cut beat dims every fire on the street
     const g = ctx.createLinearGradient(0, 0, 0, 130)
     g.addColorStop(0, '#070a24'); g.addColorStop(0.7, '#1c1638'); g.addColorStop(1, '#43263f')
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, 130)
@@ -187,12 +201,12 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
     // a pixel. Pure in bob: the sim never sees any of it.
     for (const src of RIM_FLAMES) {
         const fl = rimFlame(src, bob)
-        ctx.fillStyle = `rgba(255,180,80,${fl.pool.toFixed(3)})`
+        ctx.fillStyle = `rgba(255,180,80,${(fl.pool * lit).toFixed(3)})`
         ctx.beginPath(); ctx.ellipse(src.x, 166, 16, 5, 0, 0, Math.PI * 2); ctx.fill()
         ctx.fillStyle = '#3a3f5c'; ctx.fillRect(src.x - 1, 140, 2, 22)
-        ctx.fillStyle = `rgba(255,200,110,${fl.glow.toFixed(2)})`
+        ctx.fillStyle = `rgba(255,200,110,${(fl.glow * lit).toFixed(2)})`
         ctx.fillRect(src.x - 2, 136 + fl.lift, 4, 4)
-        ctx.fillStyle = `rgba(255,236,170,${(0.32 + 0.34 * fl.flare).toFixed(2)})`
+        ctx.fillStyle = `rgba(255,236,170,${((0.32 + 0.34 * fl.flare) * lit).toFixed(2)})`
         ctx.fillRect(src.x - 1, 135 + fl.lift, 2, 2)
     }
     // hedges (the far-lane blockers) and door steps: the map IS the art — the
@@ -221,7 +235,7 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
     // #1756: the well's ember breathes too — its own phase, the dimmer of the
     // street's fires, so the mouth never matches either lamp.
     const wf = rimFlame(RIM_WELL_FLAME, bob)
-    ctx.fillStyle = `rgba(255,180,60,${(0.32 + 0.16 * wf.flare).toFixed(2)})`
+    ctx.fillStyle = `rgba(255,180,60,${((0.32 + 0.16 * wf.flare) * lit).toFixed(2)})`
     ctx.fillRect(wx - 6, wy - 3 + wf.lift, 12, 4)
     ctx.fillStyle = '#6b4519'; ctx.fillRect(wx - 14, wy - 24, 2, 14); ctx.fillRect(wx + 12, wy - 24, 2, 14)
     ctx.fillStyle = '#4a3320'; ctx.fillRect(wx - 16, wy - 26, 32, 3)
@@ -244,11 +258,27 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
         ctx.fillRect(fxp - 2, fyb - 12, 5, 8)
         ctx.fillStyle = '#e8c9a0'; ctx.fillRect(fxp - 1, fyb - 15, 3, 3)
     }
+    // #1756: the company walks as a file — five 4-px silhouettes on the tiles
+    // the point actually stepped (rimTrail over walkHist), tile-parity stride
+    // like the walker's own, lane-true rows. Darker than the folk: these are
+    // your people at night, not strangers. Presentation only, hash-untouched.
+    const lift = Math.round(dim * 3)   // the point strides into the door pixel as the street dims
+    for (const [ti, s] of rimTrail(walkHist).entries()) {
+        const txp = s.x * 10 + 5
+        const tyb = (s.y ? 146 : 168) - lift
+        const crowd = s.stacked ? (ti % 2 ? -1 : 1) * (1 + Math.floor(ti / 2)) : 0   // falls in behind the cloak
+        ctx.fillStyle = 'rgba(0,0,0,0.28)'; ctx.fillRect(txp - 2 + crowd, tyb, 5, 2)
+        ctx.fillStyle = '#171225'
+        ctx.fillRect(txp - 2 + crowd, tyb - 4 + (s.stride ? 0 : -1), 2, 4)
+        ctx.fillRect(txp + 1 + crowd, tyb - 4 + (s.stride ? -1 : 0), 2, 4)
+        ctx.fillRect(txp - 2 + crowd, tyb - 10, 5, 7)
+        ctx.fillStyle = '#5e5470'; ctx.fillRect(txp - 1 + crowd, tyb - 12, 3, 2)
+    }
     // ---- the walker (#1751): the company's point, tile by tile, facing the
     // way they last walked. Stride is keyed to the tile parity: the legs swap
     // per step, not per frame, so standing still is standing still.
     const px = gs.town.tx * 10 + 5
-    const yb = gs.town.ty ? 146 : 168
+    const yb = (gs.town.ty ? 146 : 168) - lift
     const stride = (gs.town.tx + gs.town.ty) % 2
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(px - 4, yb, 9, 2)
     ctx.fillStyle = '#2a2136'
@@ -520,6 +550,12 @@ const TenDeepGame = () => {
         let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
         let barkId = -1   // #1756: which wanderer last spoke, so a bark fires once per meeting
+        // #1756: the door-cut beat ({ kind, f }, paint frames) and the night
+        // ambience scheduler (wind period tick + gust-edge memory). Both live
+        // only in the shell — the sim switched truth the instant it was told.
+        let cut = null
+        let ambTick = 0
+        let windWas = 0
         const evLog = []
         let shake = 0, flashHit = 0
         // #1351: a wall bump gets a short darken beat — "wall", not "stuck"
@@ -596,7 +632,8 @@ const TenDeepGame = () => {
                 else if (e.type === 'noback') say('THERE IS NO FLIGHT FROM THE KING')
                 else if (e.type === 'empty') audioController.playTone(70, 0.06, 'triangle', 0.05)
                 else if (e.type === 'wipe') { audioController.playSweep(220, 55, 0.9, 'sawtooth', 0.1); say('THE BODIES RETURN TO THE RIM — HALF THE PURSE BUYS PASSAGE') }
-                else if (e.type === 'townEnter') { audioController.playTone(180, 0.08, 'triangle', 0.05); say(`${e.name} — DOORS OPEN`) }
+                else if (e.type === 'townEnter') { audioController.playTone(180, 0.08, 'triangle', 0.05); say(`${e.name} — DOORS OPEN`); cut = { kind: 'in', f: -1 } }
+                else if (e.type === 'townStreet') cut = { kind: 'out', f: -1 }   // #1756: and back out through the black frame
                 else if (e.type === 'townBuy') audioController.playTone(1245, 0.05, 'square', 0.04)
                 else if (e.type === 'hire') { audioController.playSweep(300, 900, 0.4, 'square', 0.06); say(`WELCOME, ${e.who} THE ${e.cls} — THE POST IS FILLED`) }
                 else if (e.type === 'townOpenBench') { audioController.playTone(220, 0.1, 'triangle', 0.05); say('THE BENCH OPENS — SIX PAPERS, ONE COMPANY') }
@@ -645,6 +682,17 @@ const TenDeepGame = () => {
             // #1351: the toast decays per SIM frame (60 Hz), not per 100 ms HUD
             // sync — 150 frames is 2.5 s of screen time, not 15 s
             if (toast > 0) toast--
+            // #1756: the night has a voice on THE RIM — wind gusts over the lip
+            // on a fixed breath, and standing within a tile of the well curb you
+            // hear it hum. Synth-only on the ambience bus; attract stays quiet
+            // (#365); the sim never hears any of it.
+            if (screenRef.current === 'play' && gs.mode === 'town') {
+                ambTick++
+                const w = rimWind(ambTick)
+                if (w > 0.02 && windWas <= 0.02) audioController.ambSweep(64 + 26 * w, 150 + 70 * w, 0.5, 'triangle', 0.022 + 0.02 * w)
+                windWas = w
+                if (rimWellNear(gs.town.tx, gs.town.ty) && ambTick % 40 === 0) audioController.ambTone(52, 0.55, 'sine', 0.026)
+            }
             if (screenRef.current === 'attract') {
                 demoAcc += SIM_MS
                 if (demoAcc >= DEMO_MS) { demoAcc = 0; tickDemo() }
@@ -880,7 +928,25 @@ const TenDeepGame = () => {
             const sy = shake > 0 ? ((performance.now() % 5) - 2) * shake * 0.4 : 0
             if (shake > 0) { shake *= 0.85; if (shake < 0.4) shake = 0 }
             ctx.save(); ctx.translate(sx, sy)
-            if (gs.mode === 'town') { if (gs.town.b) paintInterior(ctx, gs, bob); else paintRim(ctx, gs, bob, doorIdxOf(gs.town)) }
+            if (gs.mode === 'town') {
+                // #1756: the door cuts through a black frame — rim dims, room
+                // washes in (and back out on leave). Sim truth already moved
+                // when act() ran; only the paint lags, ~12 frames of it.
+                let cc = null
+                if (cut) {
+                    cut.f++
+                    cc = rimCut(cut.kind, cut.f)
+                    if (!cc) cut = null
+                }
+                if (cc) {
+                    if (cc.phase === 'rim') paintRim(ctx, gs, bob, doorIdxOf(gs.town), cc.a)
+                    else paintInterior(ctx, gs, bob)
+                    ctx.fillStyle = `rgba(0,0,0,${cc.a.toFixed(3)})`
+                    ctx.fillRect(-6, 0, W + 12, H)
+                }
+                else if (gs.town.b) paintInterior(ctx, gs, bob)
+                else paintRim(ctx, gs, bob, doorIdxOf(gs.town))
+            }
             else if (screenRef.current === 'play' && gs.mode === 'combat') paintCombat()
             else if (glOn()) {
                 // the WebGL corridor draws through from the layer below; the 2D
@@ -1034,6 +1100,7 @@ const TenDeepGame = () => {
             const pin = seedFromQuery()
             gs = makeRun(pin != null ? { townSeed: pin >>> 0 } : {})
             runSeed = gs.townSeed
+            walkHist.length = 0; cut = null; windWas = 0   // #1756: a new outing starts at the west end
             evLog.length = 0
             watchingRef.current = false; setWatching(false) // #1637 a new company starts in your hands
             setMode('play')
@@ -1148,9 +1215,34 @@ const TenDeepGame = () => {
         if (import.meta.env.DEV) {
             window.__deepTest = {
                 watchSfx: watchSfxLog, // #1654 the shared handoff blip log
+                // #1756: pixel proof of the door beat and the walking file,
+                // taken INSIDE one synchronous call — drive the painter by hand
+                // and read what it put on the canvas, so the gate never races
+                // the rAF clock. moon = the 2D layer at (212,26); cobbles sit
+                // under the well mouth at (128,166); slot k = a file silhouette's
+                // body pixel on its own tile.
+                cutPix: (kind, f) => {
+                    const prev = cut
+                    cut = { kind, f: f - 1 }
+                    paint()
+                    const moon = ctx.getImageData(212, 26, 1, 1).data
+                    const floor = ctx.getImageData(128, 166, 1, 1).data
+                    cut = prev
+                    paint()
+                    return { moon: moon[0] + moon[1] + moon[2], floor: floor[0] + floor[1] + floor[2] }
+                },
+                trailPix: () => rimTrail(walkHist).map((s) => {
+                    const d = ctx.getImageData(s.x * 10 + 5, (s.y ? 146 : 168) - 6, 1, 1).data
+                    return { x: s.x, y: s.y, k: d[0] + d[1] + d[2] }
+                }),
                 probe: () => ({
                     screen: screenRef.current, mode: gs.mode, end: gs.end, tick: gs.tick,
                     toast: toast > 0, bump: bumpFade > 0,
+                    // #1756: the door beat, the well's proximity hum, and the
+                    // length of the walked track the file trails on
+                    cut: cut ? { k: cut.kind, f: cut.f, total: RIM_CUT.dim + RIM_CUT.wash } : null,
+                    hum: gs.mode === 'town' ? rimWellNear(gs.town.tx, gs.town.ty) : false,
+                    trail: walkHist.length,
                     ease: easeOff(),
                     gl: !!R,
                     glFrames: R ? R.frameCount : 0,

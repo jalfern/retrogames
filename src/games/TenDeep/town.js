@@ -133,6 +133,71 @@ export function rimFlame (src, tick) {
     }
 }
 
+// ---- the night has a voice (#1756) -------------------------------------------
+// The street had no sound of its own: no wind over the lip, no hum off the
+// well. PRESENTATION ONLY — the shell schedules these on its own animation
+// tick through AudioController's ambience bus (the same synth-only law as the
+// dungeon's fire); the sim never hears any of it, so stateHash and every
+// campaign pin stand untouched.
+//
+// The wind gusts on a fixed period with a half-sine envelope: silence, a
+// rising moan over the `gust` window, silence again. Zero rng — the same
+// frame always breathes the same breath, so the harness can trust it.
+export const RIM_WIND = { period: 96, gust: 34 }
+export function rimWind (tick) {
+    const p = ((tick % RIM_WIND.period) + RIM_WIND.period) % RIM_WIND.period
+    if (p >= RIM_WIND.gust) return 0
+    return Math.sin(Math.PI * p / RIM_WIND.gust)   // 0 at both ends, peak mid-gust
+}
+
+// The well is close enough to hear when you stand within a tile of its curb
+// (blockedNear, the near lane). Distance is Chebyshev in tiles: the standable
+// ring around the curb — 11 and 14 on the near lane (the curb itself blocks),
+// 11..14 opposite it on the far lane.
+export const RIM_WELL_HUM = 1
+export const rimWellNear = (x, lane) =>
+    !rimBlocked(x, lane) && RIM_STREET.blockedNear.some((bx) => Math.abs(x - bx) <= RIM_WELL_HUM && Math.abs(lane - 0) <= RIM_WELL_HUM)
+
+// ---- the door cuts through a black frame (#1756) ----------------------------
+// The original cut interiors through black; ours snapped. Now a ~12-frame beat:
+// the lamp pools dim as the point stands at the door pixel, then the interior
+// washes in through the dark (and back out the other way on `leave`).
+// kind 'in'  → rim dims (phase 'rim'), room washes in (phase 'room')
+// kind 'out' → room dims,              the street washes back in
+// Pure in the frame index f — deterministic, hash-untouched, and the cut never
+// moves sim truth: the sim switches b the instant it is told, the paint lags.
+export const RIM_CUT = { dim: 7, wash: 5, top: 0.72 }
+export function rimCut (kind, f) {
+    const total = RIM_CUT.dim + RIM_CUT.wash
+    if (f < 0 || f >= total) return null
+    const rise = f < RIM_CUT.dim
+    const a = rise
+        ? RIM_CUT.top * (f + 1) / RIM_CUT.dim
+        : RIM_CUT.top * (1 - (f - RIM_CUT.dim) / RIM_CUT.wash)
+    const phase = kind === 'out' ? (rise ? 'room' : 'rim') : (rise ? 'rim' : 'room')
+    return { phase, a }
+}
+
+// ---- the company walks as a file (#1756) --------------------------------------
+// Only the point walked; the other five were invisible. A short file of five
+// 4-px silhouettes trails the walker along the tiles IT actually stepped on
+// (hist = visited tiles, newest first): tile-parity stride (idle is still, the
+// walker's own law) and lane-true (ty decides the row). When there is not yet
+// enough road behind, the file falls in — silhouettes bunch on the walker's
+// own tile (stacked) until the stride unwinds. Pure over hist: deterministic,
+// zero rng, never in stateHash.
+export const RIM_TRAIL_N = 5
+export function rimTrail (hist, n = RIM_TRAIL_N) {
+    const out = []
+    if (!hist || !hist.length) return out
+    for (let i = 1; i <= n; i++) {
+        const idx = Math.min(i, Math.max(0, hist.length - 1))
+        const p = hist[idx]
+        out.push({ x: p.x, y: p.y, stride: (((p.x + p.y) % 2) + 2) % 2, stacked: idx < i })
+    }
+    return out
+}
+
 
 export const BUILDINGS = [
     { key: 'T', name: 'TAVERN', sign: 'THE DROWNING CROW' },
