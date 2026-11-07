@@ -22,6 +22,7 @@ import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_D
 import { ROSTER, BY_ID, LADDER } from './fighters.js'
 import { createScene, buildFighter, buildStage, attachShelfProps } from './render.js'
 import { STAGES } from './stages.js'
+import { createHostSelect } from './netselect.js'
 
 const SIM_MS = FIXED_DT
 const SEATS = 2
@@ -120,7 +121,9 @@ const IronRingGame = () => {
             latch.clear()
             return p
         }
-        const guestPick = { char: null }
+        // #1761: the online select-start gate as a pure state machine — the host
+        // may only launch once the guest's pick has landed over the wire.
+        const hostSelect = createHostSelect()
 
         // ---- net (#1039 lobby + hand-rolled pad lockstep: the wire carries the
         // eight fighting verbs, so it skips the 6-bit lockstep normalizer) ----
@@ -145,6 +148,12 @@ const IronRingGame = () => {
             names: ['HOST', 'CHALLENGER'],
         } : null)
         const netSend = (t, m) => { if (net.room) { try { net.room.send(t, m) } catch { /* closed */ } } }
+        // The host is the launch authority; the seed keeps host authority
+        // (Outpost precedent), generated at the actual launch — which the
+        // netselect gate defers until the guest's pick has arrived.
+        const launchNet = ({ hostChar, guestChar }) => {
+            net.lobby.start({ seed: (seedCounter = (seedCounter * 1103515245 + 12345) >>> 0), hostChar, guestChar })
+        }
 
         if (net.active) {
             const lobby = createLobby({
@@ -172,7 +181,15 @@ const IronRingGame = () => {
                         peerH.set(k, h)
                         if (oursH.has(k) && oursH.get(k) !== h) { desyncRef.current = true; setDesync(true) }
                     },
-                    pick: (m) => { if (net.role === 'host') guestPick.char = m.char },
+                    pick: (m) => {
+                        // #1761: a pick that lands AFTER the host committed to
+                        // FIGHT is the moment the gate releases — launch now,
+                        // with the guest's real choice (never a placeholder).
+                        if (net.role === 'host') {
+                            const r = hostSelect.onPick(m.char)
+                            if (r.start && screenRef.current === 'select') launchNet(r.start)
+                        }
+                    },
                     gone: () => { if (screenRef.current === 'play') { desyncRef.current = true; setDesync(true) } },
                 },
             })
@@ -244,7 +261,7 @@ const IronRingGame = () => {
 
         const atAttract = (toSelect = false) => {
             watchingRef.current = false; setWatching(false) // #1637 the cabinet returns to the player
-            if (net.active) { setSc('select'); return }
+            if (net.active) { hostSelect.reset(); setSc('select'); return }
             p2Picked = false
             cursor = 0
             credits = CREDITS_START
@@ -262,9 +279,12 @@ const IronRingGame = () => {
             const c = ROSTER[cursor]
             if (net.active) {
                 if (net.role === 'host') {
-                    net.lobby.start({ seed: (seedCounter = (seedCounter * 1103515245 + 12345) >>> 0), hostChar: c.id, guestChar: guestPick.char || seededChar(seedCounter, c.id) })
+                    // #1761: the gate — a FIGHT press before the guest has
+                    // picked defers the start; onPick fires it when the pick
+                    // lands, so the guest's real choice always wins.
+                    const r = hostSelect.commit(c.id)
+                    if (r.start) launchNet(r.start)
                 } else {
-                    guestPick.char = c.id
                     netSend('pick', { char: c.id })
                 }
                 return
@@ -606,7 +626,9 @@ const IronRingGame = () => {
                 hctx.textAlign = 'center'
                 hctx.fillStyle = 'rgba(255,255,255,0.9)'
                 hctx.fillText(net.active
-                    ? (net.role === 'host' ? `ROOM ${net.code} — SPACE: FIGHT` : 'WAITING FOR HOST…')
+                    ? (net.role === 'host'
+                        ? (hostSelect.waiting ? `ROOM ${net.code} — AWAITING CHALLENGER'S PICK…` : `ROOM ${net.code} — SPACE: FIGHT`)
+                        : 'WAITING FOR HOST…')
                     : `MODE: ${mode === 'local' ? (p2Picked ? 'P2 PICK' : 'P1 PICK') : 'ARCADE LADDER'} — 1/2 SWITCH · ARROWS · SPACE`, W / 2, H * 0.965)
             }
             if (scr === 'champion') {

@@ -439,6 +439,58 @@ if (MUT) {
 
 console.log(`part A: ${pass} ok, ${fail} fail`)
 
+// ---- Part A2: the online select-start gate (#1761) ------------------------------
+// The wire carries the guest's pick on its own 'pick' message; the host is the
+// launch authority. A FIGHT press that precedes the guest's pick must DEFER the
+// start, and the late pick must fire it with the guest's real choice — never a
+// seeded placeholder standing in for the challenger (#1761 item 4).
+console.log('part A2: online select gate (netselect.js)')
+{
+    const { createHostSelect } = await import(bust('../src/games/IronRing/netselect.js'))
+    const s1 = createHostSelect()
+    const c1 = s1.commit('kade')
+    ok(c1.start === null && c1.waiting === true, 'a FIGHT press before the guest pick DEFERS the start (waiting)')
+    const g1 = s1.onPick('sable')
+    ok(g1.start && g1.start.hostChar === 'kade' && g1.start.guestChar === 'sable',
+        'the late pick launches with the guest REAL choice (sable), not a placeholder')
+
+    const s2 = createHostSelect()
+    s2.onPick('vexa')
+    const c2 = s2.commit('hyde')
+    ok(c2.start && c2.start.hostChar === 'hyde' && c2.start.guestChar === 'vexa' && c2.waiting === false,
+        'a pick that lands before the host commits launches immediately with it')
+
+    const s3 = createHostSelect()
+    s3.onPick('vexa')
+    s3.commit('hyde')
+    const re = s3.onPick('brakk')
+    ok(re.start === null, 'a re-pick after the host already started cannot relaunch the match')
+
+    if (MUT) {
+        // Mutant: restore the pre-#1761 behavior — commit launches immediately,
+        // so a guest pick still in flight is dropped for a seeded placeholder.
+        // The deferral invariant above must go RED on this.
+        const fsx = await import('node:fs')
+        const NSRC = path.join(HERE, '../src/games/IronRing/netselect.js')
+        const src = fsx.readFileSync(NSRC, 'utf8')
+        // Delete the gate line so `commit` falls straight through to launch —
+        // the pre-#1761 behavior where a FIGHT press starts the match even if
+        // the guest's pick is still in flight (and becomes a placeholder).
+        const mutated = src.replace(
+            'if (guestChar == null) return { start: null, waiting: true }',
+            '// MUTANT: the gate is gone — commit launches before the pick lands')
+        ok(mutated !== src, 'mutate: netselect gate line found to patch')
+        const MNS = path.join(HERE, '../src/games/IronRing/.mutant-netselect.mjs')
+        plantNew(MNS, mutated)
+        const { createHostSelect: mutHost } = await import(bust(MNS))
+        const ms = mutHost()
+        const mc = ms.commit('kade')
+        const deferred = mc.start === null && mc.waiting === true
+        ok(!deferred, 'MUTANT check: the gate is gone — commit launches immediately, dropping the in-flight pick (harness bites)')
+        pull(MNS)
+    }
+}
+
 // ---- mutate-continue: prove the ladder-loss continue gate can fail --------------
 // (deleting the continue branch keeps a lost ladder run silently on 'play'/'attract'
 // instead of the CONTINUE? screen — the normal-mode gate below must then go red.)
