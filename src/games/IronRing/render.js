@@ -293,7 +293,71 @@ export function buildStage(scene, stage) {
         grp.add(light)
         return bulb
     })
-    return { grp, crowd, banners, neon, lamps }
+    const midAnim = buildMidground(grp, stage)
+    return { grp, crowd, banners, neon, lamps, midAnim }
+}
+
+// #1761 item 3: per-stage midground. Each port of call carries its own
+// silhouettes — docklands (crane + containers), dojo (torii + lanterns + moon),
+// skybridge (skyline + girders + deck edge) — so a stage reads as a place, not a
+// re-tinted template. Data lives in stages.js; this builds the meshes and
+// collects the animated props (blinking beacons, pulsing lanterns) that sync()
+// breathes each frame.
+export function buildMidground(grp, stage) {
+    const anim = []
+    const at = (x, y, z, w, h, d, mtl) => { const m = box(w, h, d, mtl); m.position.set(x, y, z); grp.add(m); return m }
+    for (const p of (stage.midground || [])) {
+        if (p.t === 'box') {
+            at(p.x, p.y ?? 0, p.z ?? -12.4, p.w, p.h, p.d, p.e ? mat(p.c, { emissive: p.c, ei: p.e, rough: 0.5 }) : mat(p.c, { rough: p.rough ?? 0.85 }))
+        } else if (p.t === 'disc') {
+            const m = new THREE.Mesh(new THREE.CircleGeometry(p.r, 28), new THREE.MeshStandardMaterial({ color: p.c, emissive: p.c, emissiveIntensity: p.e ?? 0.3, side: THREE.DoubleSide, roughness: 0.9 }))
+            m.position.set(p.x, p.y, p.z ?? -12.9); grp.add(m)
+        } else if (p.t === 'lantern') {
+            const z = p.z ?? -12.2, r = p.r ?? 0.5
+            const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 10), mat(p.c, { emissive: p.c, ei: p.e ?? 1.6, rough: 0.4 }))
+            m.position.set(p.x, p.y, z); grp.add(m)
+            at(p.x, p.y + r, z, r * 0.5, 0.12, r * 0.5, mat(0x2a2a30))
+            anim.push({ mesh: m, base: p.e ?? 1.6, ph: p.x, rate: 1.4, kind: 'pulse' })
+        } else if (p.t === 'torii') {
+            const s = p.s ?? 1, c = mat(p.c ?? 0x7a2a2a, { rough: 0.7 }), z = p.z ?? -12.4, x = p.x ?? 0
+            at(x - 1.8 * s, 2.1 * s, z, 0.4 * s, 4.2 * s, 0.4 * s, c)
+            at(x + 1.8 * s, 2.1 * s, z, 0.4 * s, 4.2 * s, 0.4 * s, c)
+            at(x, 4.2 * s, z, 5.4 * s, 0.5 * s, 0.5 * s, c)
+            at(x, 3.5 * s, z, 4.4 * s, 0.3 * s, 0.4 * s, c)
+        } else if (p.t === 'crane') {
+            const s = p.s ?? 1, c = mat(p.c ?? 0x2b3040), z = p.z ?? -11.6, x = p.x ?? -9.5
+            at(x, 3.25 * s, z, 0.5 * s, 6.5 * s, 0.5 * s, c)
+            at(x + 1.6 * s, 6.4 * s, z, 5.5 * s, 0.4 * s, 0.4 * s, c)
+            at(x + 3.8 * s, 5.5 * s, z, 0.08, 1.6 * s, 0.08, mat(0x888888))
+            at(x + 3.8 * s, 4.6 * s, z, 0.4 * s, 0.4 * s, 0.4 * s, mat(0x888888))
+            const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.18 * s, 8, 6), mat(p.beacon ?? 0xff3c6a, { emissive: p.beacon ?? 0xff3c6a, ei: 1.6 }))
+            beacon.position.set(x, 6.6 * s, z); grp.add(beacon)
+            anim.push({ mesh: beacon, base: 1.6, ph: p.x, rate: 2.2, kind: 'blink' })
+        } else if (p.t === 'skyline') {
+            const z = p.z ?? -13.6, base = p.base ?? 0, n = p.n ?? 9, seed = p.seed ?? 1, c = p.c ?? 0x1a2438
+            const win = p.window ?? 0xffd27a, beaconC = p.beacon ?? 0xff4a5a
+            for (let i = 0; i < n; i++) {
+                const hh = 1.6 + ((i * seed * 137 + 41) % 90) / 14
+                const ww = 1.5 + ((i * seed * 61 + 17) % 30) / 12
+                const bx = -11 + i * (22 / Math.max(1, n - 1))
+                at(bx, base + hh / 2, z, ww, hh, 0.6, mat(c, { rough: 0.95 }))
+                const rows = Math.min(4, Math.floor(hh / 1.6))
+                for (let r = 0; r < rows; r++) at(bx, base + 0.8 + r * 1.4, z + 0.34, ww * 0.5, 0.16, 0.06, mat(win, { emissive: win, ei: 0.8, rough: 0.3 }))
+                if (hh > 6) {
+                    const bc = new THREE.Mesh(new THREE.SphereGeometry(0.16, 8, 6), mat(beaconC, { emissive: beaconC, ei: 1.8 }))
+                    bc.position.set(bx, base + hh + 0.2, z); grp.add(bc)
+                    anim.push({ mesh: bc, base: 1.8, ph: bx, rate: 2.4, kind: 'blink' })
+                }
+            }
+        } else if (p.t === 'girder') {
+            const x = p.x ?? 0, y = p.y ?? 3, z = p.z ?? -12.7, w = p.w ?? 6, h = p.h ?? 1, c = mat(p.c ?? 0x3a4a6a)
+            at(x, y + h / 2, z, w, 0.18, 0.18, c)
+            at(x, y - h / 2, z, w, 0.18, 0.18, c)
+            const ties = Math.max(2, Math.round(w / 0.8))
+            for (let i = 0; i <= ties; i++) at(x - w / 2 + (w / ties) * i, y, z, 0.12, h, 0.12, c)
+        }
+    }
+    return anim
 }
 
 // upgrade stage silhouettes with model-shelf props when the GLBs load (#637).
@@ -365,6 +429,10 @@ export function createScene(canvas) {
             for (const c of stageFx.crowd) c.position.y += Math.sin(tSec * 3 + c.userData.ph) * 0.0018
             for (let i = 0; i < stageFx.banners.length; i++) stageFx.banners[i].rotation.z = Math.sin(tSec * 1.8 + i) * 0.06
             for (const n of stageFx.neon) n.mesh.material.emissiveIntensity = 1.2 + Math.sin(tSec * 6 + n.ph) * 0.5
+            for (const a of (stageFx.midAnim || [])) {
+                if (a.kind === 'blink') a.mesh.material.emissiveIntensity = a.base * (Math.sin(tSec * a.rate + a.ph) > 0 ? 1 : 0.15)
+                else if (a.kind === 'pulse') a.mesh.material.emissiveIntensity = a.base * (0.75 + 0.25 * Math.sin(tSec * a.rate + a.ph))
+            }
             // projectiles
             while (projMeshes.length < m.projectiles.length) {
                 const mesh = new THREE.Mesh(SPHERE, mat(0xffffff, { emissive: 0xffffff, ei: 2 }))

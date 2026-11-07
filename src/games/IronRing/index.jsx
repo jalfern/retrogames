@@ -19,7 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createMatch, step, emptyPad, matchHash, fightersState, forceKO, FIXED_DT } from '../../engine/fighting.js'
-import { ROSTER, BY_ID, LADDER } from './fighters.js'
+import { ROSTER, BY_ID, LADDER, matchupLine } from './fighters.js'
 import { createScene, buildFighter, buildStage, attachShelfProps } from './render.js'
 import { STAGES } from './stages.js'
 import { createHostSelect } from './netselect.js'
@@ -100,7 +100,7 @@ const IronRingGame = () => {
         let p1Char = 'kade', p2Char = 'vexa'
         let p2Picked = false
         let cursor = 0
-        let credits = CREDITS_START, continueFrames = 0, quoteText = '', championChar = 'kade'
+        let credits = CREDITS_START, continueFrames = 0, quoteText = '', concedeText = '', championChar = 'kade'
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let comboFx = [0, 0], comboVal = [0, 0]
@@ -250,7 +250,7 @@ const IronRingGame = () => {
             pausedRef.current = false
             setPaused(false)
             continueFrames = 0
-            quoteText = ''
+            quoteText = ''; concedeText = ''
             rebuildRigs()
             rebuildStage()
             // #1637 WATCH across the ladder: a fight starting while the watcher
@@ -265,7 +265,7 @@ const IronRingGame = () => {
             p2Picked = false
             cursor = 0
             credits = CREDITS_START
-            quoteText = ''
+            quoteText = ''; concedeText = ''
             continueFrames = 0
             // #1637 fix (found writing the watch pilot): an attract press inserts
             // a credit and advances to char SELECT (the pre-#1103 design) — since
@@ -474,7 +474,7 @@ const IronRingGame = () => {
                     } else if (won) {
                         watchingRef.current = false; setWatching(false) // #1637 the ladder is won — hands off
                         championChar = p1Char
-                        quoteText = (BY_ID[championChar] || ROSTER[0]).quote || ''
+                        quoteText = matchupLine(championChar, p2Char, 'win')
                         ;[0, 4, 7, 12].forEach((semi, i) => setTimeout(() => audioController.playTone(523 * Math.pow(2, semi / 12), 0.18, 'square', 0.11), i * 120))
                         setSc('champion')
                         attractDemo()
@@ -485,7 +485,8 @@ const IronRingGame = () => {
                                 if (screenRef.current === 'play' && gs.phase === 'done') startFight(undefined, 'cpu')
                             }, 2600)
                         } else {
-                            quoteText = (BY_ID[p2Char] || ROSTER[1]).quote || ''
+                            quoteText = matchupLine(p2Char, p1Char, 'win')
+                            concedeText = matchupLine(p1Char, p2Char, 'lose')
                             continueFrames = CONTINUE_FRAMES
                             setSc('continue')
                         }
@@ -656,17 +657,22 @@ const IronRingGame = () => {
                 hctx.strokeText('CONTINUE?', W / 2, H * 0.36)
                 hctx.fillStyle = '#ff5a3c'
                 hctx.fillText('CONTINUE?', W / 2, H * 0.36)
-                ui(Math.max(40, H * 0.1))
+                ui(Math.max(38, H * 0.09))
                 hctx.fillStyle = '#ffd23e'
-                hctx.fillText(String(Math.max(0, Math.ceil(continueFrames / 60))), W / 2, H * 0.52)
+                hctx.fillText(String(Math.max(0, Math.ceil(continueFrames / 60))), W / 2, H * 0.5)
+                if (concedeText) {
+                    ui(Math.max(11, H * 0.022))
+                    hctx.fillStyle = 'rgba(205,205,215,0.92)'
+                    hctx.fillText(`${(BY_ID[p1Char] || ROSTER[0]).name}: "${concedeText}"`, W / 2, H * 0.57)
+                }
                 if (quoteText) {
                     ui(Math.max(12, H * 0.024))
                     hctx.fillStyle = 'rgba(255,120,90,0.95)'
-                    hctx.fillText(`${(BY_ID[p2Char] || ROSTER[1]).name}: "${quoteText}"`, W / 2, H * 0.62)
+                    hctx.fillText(`${(BY_ID[p2Char] || ROSTER[1]).name}: "${quoteText}"`, W / 2, H * 0.63)
                 }
                 ui(Math.max(12, H * 0.024))
                 hctx.fillStyle = `rgba(255,255,255,${(0.7 + 0.3 * Math.sin(Date.now() / 300)).toFixed(2)})`
-                hctx.fillText(credits > 0 ? `PRESS SPACE — CREDITS ${credits}` : 'GAME OVER', W / 2, H * 0.72)
+                hctx.fillText(credits > 0 ? `PRESS SPACE — CREDITS ${credits}` : 'GAME OVER', W / 2, H * 0.75)
             }
             if (paused && scr === 'play') {
                 hctx.fillStyle = 'rgba(4,3,10,0.45)'; hctx.fillRect(0, 0, W, H)
@@ -752,7 +758,7 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), credits, continueFrames, opponent: p2Char, ladderIdx, quote: screenRef.current === 'champion' ? (BY_ID[championChar] || ROSTER[0]).quote : screenRef.current === 'continue' ? (BY_ID[p2Char] || ROSTER[1]).quote : null } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), credits, continueFrames, opponent: p2Char, ladderIdx, p1: p1Char, p2: p2Char, champion: championChar, quote: screenRef.current === 'champion' ? matchupLine(championChar, p2Char, 'win') : screenRef.current === 'continue' ? matchupLine(p2Char, p1Char, 'win') : null } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { p1Char = 'kade'; p2Char = LADDER[0]; ladderIdx = 0; mode = 'cpu'; startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
