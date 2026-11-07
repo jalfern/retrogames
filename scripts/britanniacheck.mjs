@@ -15,7 +15,7 @@ import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, 
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
 import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
-import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples } from '../src/games/Britannia/swell.js'
+import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, ROUGH_MEMORY, seaRough, crestGain, foamGain } from '../src/games/Britannia/swell.js'
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -627,6 +627,75 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         const classicIdx = src.indexOf('if (classicOn) {')
         const swellIdx = src.indexOf('crest(tx, ty, t)')
         ok(classicIdx >= 0 && swellIdx > classicIdx, 'index.jsx: classic (C) mode still paints its clean tile sheet before any swell')
+    }
+}
+
+// rain winds the swell (#1822): precipitation raises the sea beyond the
+// dimples. seaRough remembers the sky that stood over the tile — the drift
+// carries a cell east one region per epoch, so reading weatherAt at
+// (t - d*epoch) is the front that already moved off this tile, d epochs back.
+// A storm now is a full sea; a storm one epoch gone leaves it half up; four
+// clear epochs return it bit-exactly to the calm field the gates above prove.
+// Prove-it-can-fail: zero ROUGH_MEMORY[1..3] in swell.js (the linger,
+// bracket and memory-contribution gates go red), pin crestGain/foamGain to 1
+// (the gain gates go red).
+{
+    ok(seaRough(41, 55, 4000, 7) === seaRough(41, 55, 4000, 7),
+        'sea state deterministic: same tile + tick + seed, same roughness')
+    // the expected weights live HERE as literals, not re-derived from the
+    // module under test — a harness that re-reads the mutant's constants can
+    // never go red (#1822 lesson, first mutant run).
+    const LIT = [1, 0.5, 0.24, 0.11]
+    ok(ROUGH_MEMORY.join(',') === LIT.join(','), `wind memory profile is the booked halving ${LIT.join(' / ')}`)
+    let rBad = 0, rMax = 0, calm = 0, wet = 0
+    const E = WX_EPOCH
+    for (let i = 0; i < 800; i++) {
+        const tx = 8 + (i * 17) % 84, ty = 40 + (i * 7) % 52, t = 300 + i * 97, sd = i % 5
+        const r = seaRough(tx, ty, t, sd)
+        if (r < 0 || r > 1 + 1e-9) rBad++
+        if (r > rMax) rMax = r
+        if (r === 0) { calm++; if (weatherAt(tx, ty, t, sd) !== WX.CLEAR) rBad++ }
+        if (r > 0) wet++
+        if (weatherAt(tx, ty, t, sd) === WX.CLEAR && r > 0.85 + 1e-9) rBad++
+    }
+    ok(rBad === 0, `roughness bounded [0..1], calm only under clear sky, a cleared-now sea never wears full storm heave (${rBad} bad of 800)`)
+    ok(calm > 100 && wet > 100, `both states exist at scale: ${calm} glass tiles, ${wet} wind-lifted tiles of 800`)
+    ok(rMax >= SPLAT.storm, `some seas reach the full storm heave (max ${rMax.toFixed(2)})`)
+    let stormBad = 0, stormN = 0, lingerN = 0, bracketBad = 0, contribBad = 0
+    for (let i = 0; i < 900; i++) {
+        const tx = 8 + (i * 13) % 84, ty = 40 + (i * 11) % 52, t = 500 + i * 173, sd = i % 6
+        const wx = weatherAt(tx, ty, t, sd)
+        if (wx === WX.STORM) { stormN++; if (seaRough(tx, ty, t, sd) < 1 - 1e-9) stormBad++ }
+        if (wx === WX.CLEAR && weatherAt(tx, ty, t - E, sd) === WX.RAIN) {
+            lingerN++
+            const r = seaRough(tx, ty, t, sd)
+            if (!(r >= 0.275 - 1e-9 && r <= 0.275 + 0.35 + 1e-9)) bracketBad++
+        }
+        for (let d = 0; d < LIT.length; d++) {
+            if (seaRough(tx, ty, t, sd) + 1e-9 < LIT[d] * splatIntensity(weatherAt(tx, ty, t - d * E, sd))) contribBad++
+        }
+    }
+    ok(stormN > 5 && stormBad === 0, `storm overhead = sea fully up: every sampled storm tile sits at roughness 1 (${stormN} storms, ${stormBad} flat)`)
+    ok(lingerN > 5 && bracketBad === 0, 'the sea remembers the front: rain one epoch back leaves 0.5x its heave (0.275), decayed older epochs can add at most 0.35')
+    ok(contribBad === 0, `every epoch of memory contributes its booked weight: rough >= w[d] * sky(d epochs back) for d=0..${LIT.length - 1} (${900 * LIT.length} samples)`)
+    ok(seaRough(41, 55, 4000, 7) !== seaRough(41, 55, 4000 + E, 7) || weatherAt(41, 55, 4000, 7) === weatherAt(41, 55, 4000 + E, 7),
+        'the sea state rides the fronts: a new epoch brings a new sky (or the same cell has not passed)')
+    ok(crestGain(0) === 1 && crestGain(0.5) === 1.3 && crestGain(1) === 1.6,
+        'crest gain is exactly 1 on a calm sea and climbs to 1.6 in wind (the 0.6 slope)')
+    ok(foamGain(0) === 1 && foamGain(1) === 1.45,
+        'shore foam climbs 1 -> 1.45 with the wind but is untouched on a calm sea')
+    ok(seaRough(41, 55, 4000, 7) === seaRough(41, 55, 4000, 7, null) && Number.isFinite(seaRough(41, 55, 4000, 7, (x, y) => 0)),
+        'seaRough keeps the 4-arg weather contract: terrain-aware and terrain-free callers both work')
+    {
+        const src = readFileSync('src/games/Britannia/swell.js', 'utf8')
+        ok(/weatherAt\(tx, ty, t - d \* WX_EPOCH, seed, terrainAt\)/.test(src),
+            'swell.js: memory reads the sky at (t - d*epoch) — the cell the drift already moved off this tile')
+        const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+        ok(/const rough = seaRough\(tx, ty, t, S\.seed, terrainAt\)/.test(idx), 'index.jsx: every sea tile knows its wind state')
+        ok(/crestGain\(rough\)/.test(idx) && /foamGain\(rough\)/.test(idx) && /rough > 0\.45/.test(idx),
+            'index.jsx: crests gain stroke, foam gains body, and big crests whitecap in wind')
+        ok(/seaRough: seaRough\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)/.test(idx),
+            'index.jsx: the harness can watch the wind state under the Avatar')
     }
 }
 
