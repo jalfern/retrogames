@@ -50,6 +50,7 @@ const GAMES = [
     { id: 'fire-crew', path: '/fire-crew' },
     { id: 'invaders', path: '/invaders' },
     { id: 'adventure', path: '/adventure' }, // POLISH #1568: join the spine — invisible to every shared harness before this
+    { id: 'bomb-defuse', path: '/bomb-defuse' }, // #1800: the recorder's fifth title
 ]
 const TICKS = 600
 // #527 item 1 — games whose loop banks live ticks (recordLiveTick). Only
@@ -113,6 +114,13 @@ const PATTERNS = {
     // and a placed item is always re-pickable (bridge law #1551), so a spammed drop can
     // never strand the run. Same seed + same script replays bit-identical (seeded rand).
     adventure: (i) => ({ left: i % 47 < 15, right: i % 47 >= 20 && i % 47 < 34, up: i % 53 < 12, down: i % 53 >= 28 && i % 53 < 38, a: i % 97 < 2 }),
+    // #1800: blind pad, alive to 600 by construction — both keys latch every
+    // 16 ticks (SYNC clears), the arm walks colors every 5 so a matching snip
+    // lands inside the ≥48-tick window, B is pinned so a VENT holder never
+    // surges. Wrong-wire nicks cost only 120 frames (engine law: mistakes
+    // eat time, strikes only for broken windows) and whiffed VENT seats are
+    // duds — worst-case costs stay far under bomb 0's 3600-frame fuse.
+    'bomb-defuse': (i) => ({ up: i % 5 === 0, down: false, left: false, right: false, a: i % 16 === 0, b: true }),
 }
 const scriptFor = (id) => Array.from({ length: TICKS }, (_, i) => PATTERNS[id](i))
 

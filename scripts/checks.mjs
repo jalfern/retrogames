@@ -121,6 +121,7 @@ export const MANUAL_CHECKS = [
   "scripts/creditscheck.mjs",
   "scripts/deepglasscheck.mjs",
   "scripts/defendercheck.mjs",
+  "scripts/defusecheck.mjs",
   "scripts/doscheck.mjs",
   "scripts/emberwoodcheck.mjs",
   "scripts/evocheck.mjs",

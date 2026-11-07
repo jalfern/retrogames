@@ -220,6 +220,9 @@ const FireCrewGame = lazy(() => import('../games/FireCrew'))
 // Rally Co-Driver: the night-rally sim chunks with the game (#1251).
 const RallyCoDriverGame = lazy(() => import('../games/RallyCoDriver'))
 
+// Bomb Defuse: the simultaneous two-hand co-op sim chunks with the game (#1800).
+const BombDefuseGame = lazy(() => import('../games/BombDefuse'))
+
 // Game Registry
 // Theme 'dark' = white text (background is black)
 // Theme 'light' = black text (background is white)
@@ -1256,5 +1259,18 @@ export const GAMES = [
         theme: 'dark',
         description: 'An original night rally (#1251) where the road hides itself: fog and blind crests eat the line of sight, and the only thing that tells you what is over the next hill is the co-driver\'s pace notes. The stage is a seeded ribbon of two hidden laps; the score is the clock, and the car must hold the ribbon (gravel beyond the white studs bleeds speed). Seat 1 is the driver - throttle, brake, handbrake, steer - who can only SEE what the fog admits. Seat 2 is the co-driver: CPU by default, or the shared keyboard (Q/W/E = left 1/2/3, A/S/D = right 1/2/3, Z = straight) or spoken notes (V opens the mic: "left two", "hard right", "straight on"). A note that reaches the driver late is the co-driver\'s fault - the stage report grades every corner called, late or missed, so a great stage is a fast one the two of you talked your way through. The whole stage is seeded and deterministic, and the attract demo is the CPU pair the harness proves against.',
         controls: ['Arrows / d-pad: steer (A = handbrake - looser line, slower)', 'SPACE / A-button: handbrake', 'Up arrow: throttle - Down: brake - lift before the flat, the notes say where', 'C: seat 2 switches CO-D CPU / KEYS (QWE left, ASD right, Z straight - a tap is a note)', 'V: speak the notes (mic consent first) - "left two", "hard right", "straight on"', 'Watch the NOTES card top-left: it is all you know about the road ahead', 'Two hidden laps; off-track bleeds speed; the clock is the score', WATCH_HELP + ' — the pace brain drives, the co-driver calls (offline)', '?: pause and read the stage rules'],
+    },
+    {
+        path: '/bomb-defuse',
+        pad: { layout: 'dpad', aLabel: 'ACT', buttons: [{ label: 'HOLD', code: 'KeyB' }], reason: 'every step asks for two things at once: the d-pad aims the cutter arm, ACT turns the key / snips / seats the needle, HOLD pins the stabilizer bar' },
+        builtBy: 'forge',
+        added: '2026-11-07',
+        visibility: 'private',
+        tapStart: false,
+        component: BombDefuseGame,
+        label: 'BOMB DEFUSE',
+        theme: 'dark',
+        description: 'An original simultaneous two-hand co-op defusal pair (#1800, PLAICRAFT #1711 fifth title): NOTHING ONE HAND DOES COUNTS. Every step of every bomb has ONE sync window and demands BOTH seats inside it - turn the two keys together (SYNC), snip both blades through the same lit color (CUT), or one player pins the stabilizer bar while the other seats the swinging pressure needle into the green (VENT: hold + seat, or the pressure surges). Strikes do not end the run - they EAT TIME: a broken sync window costs four seconds, nicking the wrong wire two, a vent surge six, and an unvented pressure step burns the fuse double while it waits. Three bombs (60/50/40 seconds) with windows shrinking from 1.25 s to 0.8 s and steps growing 3-4-5; zero fuse and the field unit is a smoking hole. Solo, an honest CPU partner covers seat 2 - it leads when you stall and follows the instant you arm a blade; at the select screen, CO-OP seats a second keyboard crew (WASD + F/G). Words coach but never act: V opens the mic and "both keys", "cut blue", "hold!" pulse the right controls (the pad commits). Seeded and deterministic (integer-hashed state - seed + per-seat pads replay to the same hashes) so the recorder and a future model seat can take either hand.',
+        controls: ['Arrows / d-pad: UP/DOWN cycle your cutter arm through RED-BLUE-GREEN-YELLOW (CUT steps)', 'SPACE / ACT: turn your key (SYNC) - snip your blade (CUT) - seat the needle (VENT)', 'B / HOLD: pin the stabilizer bar while your partner seats the pressure needle', 'Both seats must land inside the flashing SYNC WINDOW - watch the bar drain', 'Attract: any key or tap - ARROWS pick SOLO (+CPU) or CO-OP (2P keyboard) - SPACE starts', 'Seat 2 (CO-OP): WASD aims the arm - F acts - G holds the bar', 'V: coaching words on the mic - "both", "cut red", "hold" - words pulse, pads commit', 'Nicking a wrong wire costs 2 s, a broken sync window 4 s, a surge 6 s; zero fuse = KABOOM; three bombs cleared = the run', '?: pause and read the crew card'],
     },
 ]
