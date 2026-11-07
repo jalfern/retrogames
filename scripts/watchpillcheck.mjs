@@ -87,7 +87,7 @@ const games = readdirSync(new URL('../src/games/', import.meta.url), { withFileT
     .filter((d) => d.isDirectory())
     .filter((d) => read(`../src/games/${d.name}/index.jsx`).includes('WatchButton on='))
     .map((d) => d.name)
-rep.check('shelf: every watching title still renders the pill', games.length >= 33, `${games.length} games`)
+rep.check('shelf: every watching title still renders the pill', games.length >= 37, `${games.length} games`)
 
 const REQUIRED_INSET = { top: 'sat', right: 'sar', bottom: 'sab', left: 'sal' }
 // #1663: a DOCKED pill sits inside an in-flow chrome band (Zork's status strip)
