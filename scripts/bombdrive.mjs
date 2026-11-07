@@ -353,6 +353,54 @@ if (pill) {
     ok('a second tap releases the mic', await page.evaluate(() => window.__tmdTest.voiceMode().on) === false)
 }
 
+// ---- #1797 the back panel: real-key tilt, drawn batteries, voice pulse -------
+{
+    await page.evaluate(() => { const g = window.__game; g.reset(7, 1); g.release() })
+    await sleep(150)
+    await page.keyboard.down('ArrowUp')
+    await sleep(120)
+    await page.keyboard.up('ArrowUp')
+    await sleep(120)
+    const tilting = await page.evaluate(() => window.__tmdTest.state().flipped)
+    ok('real ArrowUp at module 1 tilts the bomb onto its back', tilting === 1, `flipped=${tilting}`)
+    const backPx = await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data
+        let amber = 0
+        for (let y = 150; y < 240; y++) {
+            for (let x = 126; x < 322; x++) {
+                const i4 = (y * c.width + x) * 4
+                if (d[i4] > 180 && d[i4 + 1] > 110 && d[i4 + 1] < 200 && d[i4 + 2] < 90) amber++
+            }
+        }
+        return amber
+    })
+    ok('the back plate draws its battery bank (amber battery pixels)', backPx > 600, `amber=${backPx}`)
+    // wrong verbs on the back stay silent — a strike would spark + shake
+    const before = await page.evaluate(() => window.__tmdTest.state())
+    await page.keyboard.press('Space')
+    await sleep(120)
+    const afterBack = await page.evaluate(() => window.__tmdTest.state())
+    ok('Space on the back is refused silently — no strike, no score',
+        afterBack.strikes === before.strikes && afterBack.score === before.score && afterBack.flipped === 1)
+    await page.keyboard.down('ArrowDown')
+    await sleep(120)
+    await page.keyboard.up('ArrowDown')
+    await sleep(120)
+    ok('real ArrowDown tilts back to the modules', await page.evaluate(() => window.__tmdTest.state().flipped) === 0)
+    // voice: a shouted flip pulses the hint — words make things visible, they
+    // never act (#1247): flipped must STAY 0 while the hint glows amber.
+    await page.evaluate(() => { window.__tmdTest.call('flip it') })
+    await sleep(60)
+    const pulse = await page.evaluate(() => ({
+        flipped: window.__tmdTest.state().flipped,
+        log: window.__tmdTest.voiceLog().slice(-1)[0],
+    }))
+    ok('a heard FLIP pulses instead of acting (words visible, hands yours)',
+        pulse.flipped === 0 && pulse.log && pulse.log.ok === true && pulse.log.intent && pulse.log.intent.kind === 'flip',
+        JSON.stringify(pulse))
+}
+
 ok('zero page errors', errs.length === 0, errs.slice(0, 3).join(' | '))
 await browser.close()
 console.log(`\nbombdrive: ${pass} pass, ${fail} fail`)
