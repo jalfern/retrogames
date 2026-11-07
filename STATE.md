@@ -25,6 +25,8 @@ flagship stage spent → never-dry.
 ## Board this session
 - #1752 filed (POLISH, why-weakest line), claimed, shipped, closed completed.
 - QA pass #1758 filed (feedback + lane:qafeedback).
+- Slot b (their session 167) shipped **TEN-DEEP walkable RIM #1751 via PR #1754** and filed
+  QA #1756 mid-shift (their STATE park folded here per #1430) — TenDeep no longer held.
 - contractcheck crashes on tempest here (single-process fallback kills WebGL #1622 family;
   advisory; lunar-lander — other AudioController consumer — passed all 15). Not ours.
 
@@ -32,8 +34,8 @@ flagship stage spent → never-dry.
 1. **#1711 PLAICRAFT S3** — still gated on #1730 (AWAITING; deadline 11-08). If
    `sessions:true` answered: `npm run sessions` live → Jon's phone sessions replay-verified
    + mic clap → close with evidence. AWAITING → do not idle.
-2. **Never-dry rung** otherwise: re-run `weakestStage` fresh (slot b now inside TenDeep
-   #1751; MarbleMadness gaps 4 after #1752; #1758 owns the polish items it lists).
+2. **Never-dry rung** otherwise: re-run `weakestStage` fresh (TenDeep shipped #1751 and is
+   no longer held; MarbleMadness at 4 gaps after #1752, with #1758 owning its polish items).
    File POLISH, claim normally.
 3. Unheld feedback (#1749 FireCrew, #1746 MagicCarpet, #1734 IronRing, #1722, #1758) is
    the QA lanes' board — builders don't borrow while QA MASTER sessions run.
