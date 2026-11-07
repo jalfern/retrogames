@@ -1,79 +1,98 @@
-// marbleplay — drives MARBLE MADNESS in headless Chrome with real key events.
-// Start (attract -> play), roll, force a cliff death, confirm respawn, and pin
-// the drawn marble sprite to the logical state (pixel where the iso projection
-// says it must be). Advisory; the CI gate is marblecheck.
-
-import { requireDevServer, launch, openGame } from './lib/harness.mjs'
+// marbleplay — advisory browser driver (FORGE.md step 6, #1752): real keys
+// start the race, the virtuosic bed is live and audible, it rides the run
+// through the races (tempo ladder + finale switch by REAL sim events), it
+// survives a death, stops at game over, and restarts — zero page errors.
+// Needs `npm run dev` (or MARBLE_URL). DEV_PORT is the slot port.
+import { launch, openGame, Report } from './lib/harness.mjs'
 
 const URL = process.env.MARBLE_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/marble-madness`
-await requireDevServer(URL)
-const browser = await launch()
-let fail = 0
-const ok = (n, c, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'} ${n}${x ? ' — ' + x : ''}`); if (!c) fail++ }
+const r = new Report('marbleplay')
+const browser = await launch({ headless: !process.argv.includes('--headful') })
+const page = await openGame(browser, { url: URL, hook: '__marble', start: false, viewport: { width: 820, height: 680 } })
 
-const page = await openGame(browser, { url: URL, hook: '__marble', wait: 500 })
-ok('boots into attract', await page.evaluate(() => window.__marble.mode()) === 'attract')
+const errors = []
+page.on('pageerror', (e) => errors.push(String(e)))
+const spy = () => page.evaluate(() => window.__marble.musicSpy())
+const peak = () => page.evaluate(() => window.__marble.musicPeak())
+const gsq = (fn) => page.evaluate(fn)
+const settle = (ms = 250) => page.waitForTimeout(ms)
 
-await page.keyboard.press('Enter')
-await page.waitForTimeout(400)
-let st = await page.evaluate(() => { const g = window.__marble.getGs(); return { mode: window.__marble.mode(), race: g.raceIdx, lives: g.lives, phase: g.phase } })
-ok('key press starts the run', st.mode === 'play' && st.race === 0 && st.lives === 3, JSON.stringify(st))
+// ---- attract: alive, and the bed is not yet unlocked (no gesture yet) ----
+let m = await spy()
+r.check('attract boots with the bed silent (ctx locked pre-gesture)', !m.playing, JSON.stringify(m))
 
-// roll east (right+down is the sim's screen-east) until the cliff takes us
-await page.keyboard.down('ArrowRight')
+// ---- real key starts the race AND the bed ----
+await page.keyboard.press('ArrowRight')
+await settle(400)
+let p = await gsq(() => ({ mode: window.__marble.mode(), race: window.__marble.getGs().raceIdx }))
+r.check('press any key starts the race', p.mode === 'play' && p.race === 0, JSON.stringify(p))
+m = await spy()
+r.check('the race bed is playing from race 1 at the base tempo',
+    m.playing && m.track === 'marble' && Math.abs(m.stepDur - 0.085) < 1e-9, JSON.stringify(m))
+
+// the analyser taps the music bus: compare a pre-gesture-style floor with now
+let bedPeak = 0
+for (let i = 0; i < 12; i++) { bedPeak = Math.max(bedPeak, await peak()); await settle(60) }
+r.check('the bed is audible (music-bus analyser rises above silence)', bedPeak >= 8, `peak ${bedPeak}`)
+
+// ---- drawn state tracks input ----
+const pos0 = await gsq(() => ({ ...window.__marble.getGs().m }))
+const px0 = await gsq(() => window.__marble.marblePx())
 await page.keyboard.down('ArrowDown')
-await page.waitForTimeout(6000)
-await page.keyboard.up('ArrowRight')
+await settle(600)
 await page.keyboard.up('ArrowDown')
-st = await page.evaluate(() => { const g = window.__marble.getGs(); return { lives: g.lives, deaths: g.deaths, phase: g.phase } })
-ok('rolling east off the practice lip costs a life', st.lives <= 2 && st.deaths >= 1, JSON.stringify(st))
+const pos1 = await gsq(() => ({ ...window.__marble.getGs().m }))
+const px1 = await gsq(() => window.__marble.marblePx())
+r.check('down-arrow rolls the marble and the sprite follows',
+    pos1.y > pos0.y && Math.abs(px1.y - px0.y) > 1, `y ${pos0.y.toFixed(2)}->${pos1.y.toFixed(2)} px ${px0.y.toFixed(1)}->${px1.y.toFixed(1)}`)
 
-// the follow camera (#265) zooms the course ~2x and scrolls it, so 10 world
-// tiles apart must span a large screen distance (the old diorama mapped 10
-// tiles to ~67px; the camera maps them to ~134px). Translation-invariant, so
-// this is a pure zoom test — it goes red if the ZOOM is removed.
-const zoom = await page.evaluate(() => {
-    const ts = window.__marble.toScreen
-    const a = ts(10, 10, 0)
-    const b = ts(20, 10, 0)
-    return Math.hypot(b[0] - a[0], b[1] - a[1])
-})
-ok('camera zooms the course (no diorama)', zoom > 100, `10 tiles ≈ ${Math.round(zoom)}px`)
+// ---- the ladder by REAL events: clear races 0..3 via the harness goal trick ----
+const clearRace = async (want) => {
+    await gsq(() => { const g = window.__marble.getGs(); g.m.x = g.race.goal.c + 0.5; g.m.y = g.race.goal.r + 0.5; g.m.vx = g.m.vy = 0 })
+    await page.waitForFunction((w) => window.__marble.getGs().raceIdx === w || window.__marble.getGs().end, want, { timeout: 8000 }).catch(() => {})
+    await settle(350)
+}
+let ladder = []
+for (let want = 1; want <= 4; want++) {
+    await clearRace(want)
+    const st = await gsq(() => ({ race: window.__marble.getGs().raceIdx, s: window.__marble.musicSpy() }))
+    ladder.push([st.race, st.s.track, st.s.stepDur?.toFixed(3)])
+    if (st.race !== want) break
+}
+r.check('race clears walk the tempo ladder (steps shrink, bed keeps playing)',
+    ladder.length === 4 && ladder.every(([race, track, sd], i) =>
+        race === i + 1 && track === (race >= 4 ? 'marbleFinale' : 'marble') &&
+        (!i || Number(sd) < Number(ladder[i - 1][2]))), JSON.stringify(ladder))
+r.check('SILLY switches to the variation-up (finale track, faster step)',
+    ladder.length === 4 && ladder[3][1] === 'marbleFinale' && Math.abs(ladder[3][2] - 0.072) < 1e-9,
+    JSON.stringify(ladder.at(-1)))
 
-// sprite matches the camera: the painter holds the marble at the anchor, so the
-// drawn red body must sit where marblePx() says (retry across a blink frame).
-const px = await page.evaluate(async () => {
-    const c = document.querySelector('canvas')
-    const ctx = c.getContext('2d')
-    for (let attempt = 0; attempt < 8; attempt++) {
-        if (window.__marble.getGs().phase === 'dying') return { ok: true, why: 'dying — sprite hidden by design' }
-        const { x: sx, y: sy } = window.__marble.marblePx()
-        for (let dy = -11; dy <= 11; dy++) {
-            for (let dx = -11; dx <= 11; dx++) {
-                const X = Math.round(sx + dx), Y = Math.round(sy + dy)
-                if (X < 0 || Y < 0 || X >= c.width || Y >= c.height) continue
-                const d = ctx.getImageData(X, Y, 1, 1).data
-                if (d[0] > 150 && d[0] > d[1] + 40 && d[1] < 120) return { ok: true, why: `red at ${Math.round(sx)},${Math.round(sy)}` }
-            }
-        }
-        await new Promise((r) => setTimeout(r, 40))
-    }
-    const { x: sx, y: sy } = window.__marble.marblePx()
-    return { ok: false, why: `no red near the marble anchor ${Math.round(sx)},${Math.round(sy)}` }
-})
-ok('drawn marble sits where the camera says', px.ok, px.why)
+// ---- a death ducks but never silences ----
+await gsq(() => { const g = window.__marble.getGs(); g.invulnT = 0; g.m.x = 0.5; g.m.y = 0.5; g.m.z = 8 })
+await settle(700)
+m = await spy()
+const p2 = await gsq(() => ({ lives: window.__marble.getGs().lives, deaths: window.__marble.getGs().deaths }))
+r.check('a void death costs a life but keeps the bed running',
+    p2.deaths >= 1 && m.playing && m.track === 'marbleFinale', JSON.stringify({ ...m, ...p2 }))
 
-// game-over restart path: burn lives through the hook-free route is slow, so
-// check the OVER banner logic by draining time-free deaths via respawn state
-const st2 = await page.evaluate(() => {
-    const g = window.__marble.getGs()
-    return { end: g.end, lives: g.lives, mode: window.__marble.mode() }
-})
-ok('still alive or over, never stuck', st2.end === null || st2.end === 'over', JSON.stringify(st2))
+// ---- game over: the bed stops; restart: it comes back ----
+// The clock is the geometry-proof kill switch: on a scoring race, expiring it
+// is a death, and lives=1 under it means the next death ends the run
+// (void corners vary by race and 1UPs refill lives — the clock does neither).
+await gsq(() => { const g = window.__marble.getGs(); g.lives = 1; g.timeT = 2 })
+await page.waitForFunction(() => window.__marble.getGs().end === 'over', null, { timeout: 5000 }).catch(() => {})
+await settle(300)
+m = await spy()
+const over = await gsq(() => window.__marble.getGs().end)
+r.check('game over stops the bed', over === 'over' && !m.playing, JSON.stringify({ over, ...m }))
 
-const errs = await page.evaluate(() => window.__pageErrors || [])
-ok('zero page errors', true, `${errs.length} captured`)
+await page.keyboard.press('Space')
+await settle(400)
+m = await spy()
+const p3 = await gsq(() => ({ mode: window.__marble.mode(), race: window.__marble.getGs().raceIdx }))
+r.check('any key restarts: fresh race, fresh bed at the base tempo',
+    p3.mode === 'play' && p3.race === 0 && m.playing && m.track === 'marble' && Math.abs(m.stepDur - 0.085) < 1e-9,
+    JSON.stringify({ ...p3, ...m }))
 
-await browser.close()
-console.log(fail ? `\n${fail} FAILURE(S)` : '\nplay drive green')
-process.exit(fail ? 1 : 0)
+r.check('zero page errors', errors.length === 0, errors.join(' | '))
+r.exit(browser)

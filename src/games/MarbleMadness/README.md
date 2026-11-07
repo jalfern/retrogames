@@ -50,19 +50,46 @@ planner blocks a radius-1.3 bubble around the LIVE steelie position with a
 no-freeze fallback (an old route beats no route when the steelie parks in a
 doorway).
 
+## The music bed (#1752, closes honest gap 1)
+
+`MUSIC.marble` + `MUSIC.marbleFinale` in `AudioController.js` — original
+sixteenth-note virtuosic beds in the Marsyas IDIOM (A minor, zero rests in
+the leads, octave-pumping left hand, span 25, ~17 big leaps per bed). The
+cabinet's actual tune, Marsyas, is Mark Levinthal's copyrighted composition
+and the AudioController header bans copyrighted game audio — so these are
+ours, composed for this build (the `joust` precedent: what we ship is the
+effect, not the melody). `bedFor(raceIdx)`/`musicStepFor(raceIdx)` in
+`levels.js` route it: race 1 starts the bed (race 1 has no `raceStart`
+event — `startRun` starts it), each race tightens the step a hair (our own
+urgency ladder, not a cabinet claim), SILLY + ULTIMATE switch to the
+variation-up (octave over the same harmony, faster), shatter/void/munch/
+steelie/clear duck it, `over`/`win`/unmount stop it. The bed is pure
+painter-side data — `sim.js`/`planner.js` contain no audio, hashes and the
+autopilot are untouched (marblecheck pins this).
+
 ## Verify
 
 ```bash
-npm run marblecheck   # rules + determinism + win proof (Node, ~2s)
-npm run lint:marble   # eslint over the four game files + harness
+npm run marblecheck   # rules + determinism + win proof + 11 bed gates (Node, ~2s)
+npm run marbleplay    # browser drive (dev server): bed live, ladder, finale switch,
+                      #   death keeps it, game over stops it, restart brings it back
+npm run lint:marble   # eslint over the four game files + harnesses
 ```
 
 The harness proves it can fail: set `BREAKDROP = 99` in `levels.js` and the
-"hard drop shatters" check goes red.
+"hard drop shatters" check goes red. Bed mutants: drop a bass note (table
+gate), replace `startMusic(bed)` with a literal (routing-pin gate), plant a
+`0` in a lead (motion-law gate), make `MUSIC_STEPS` non-monotonic (urgency
+gate) — each reddens exactly its gate. #1752 lesson: after committing, read
+`git show --stat` — a "leads recomposed" commit once shipped only the harness
+because a mid-mutant-sequence `git checkout` reverted the working file first.
 
 ## Honest gaps (filed for the QA lane)
 
-- Music is a sparse arpeggio set, not the Marsyas full theme.
+*Gap 1 of the first pass asked for "the Marsyas full theme" — closed by #1752
+with an original bed in the same idiom; a literal transcription stays
+policy-permanent (AudioController header).*
+
 - Steely knocks don't impart spin/visual wobble on the marble.
 - SILLY bounciness is uniform; the cabinet varies trampoline strength per
   section.
@@ -70,3 +97,7 @@ The harness proves it can fail: set `BREAKDROP = 99` in `levels.js` and the
   screen edge (the whole-course diorama is gone, #265); the attract screen no
   longer bleeds the live race/timer/score HUD. Still flat vs the cabinet: no
   per-section push-in on the narrow bridges.
+- The bed is one harmony loop (+variation) for the whole campaign; the cabinet
+  re-voiced Marsyas per course (six distinct arrangements). Also: the third
+  voice (Marsyas is a piano — pedalled sustain, dynamic swells) is out of reach
+  of two square/triangle channels.

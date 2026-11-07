@@ -524,7 +524,7 @@ const MarbleMadnessGame = () => {
                 { label: 'PROGNOSIS', run: () => (bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 1).length || bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 2).length) ? 'WINNABLE' : 'DEAD END' },
             ],
         })
-        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState() }
+        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak() }
 
         // #1473 seedpin: report the run seed every build (hazard waves are pure
         // tick functions; seed travels with the state for exact replays).
