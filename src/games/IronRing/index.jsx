@@ -48,6 +48,7 @@ const KEY_P2 = {
 }
 const MESSAGES = [
     'HOLD BACK TO BLOCK · DOWN-B LOCKS LOWS',
+    'BLOCKING DRAINS YOUR GUARD — EMPTY MEANS CRUSH',
     'DOWN-FORWARD + PUNCH THROWS FIRE',
     'FORWARD-DOWN-UP CATCHES JUMPERS',
     'LIGHT INTO HEAVY INTO SPECIAL = COMBO',
@@ -104,6 +105,7 @@ const IronRingGame = () => {
         let attractMsg = 0, attractT = 0
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let comboFx = [0, 0], comboVal = [0, 0]
+        let crushFx = [0, 0] // #1761 item 5: white-hot flash on the crushed side
         let lagHp = [100, 100]
         let rigs = null
         let nextSend = 0
@@ -239,9 +241,11 @@ const IronRingGame = () => {
             const d1 = BY_ID[p1Char] || ROSTER[0]
             const d2raw = BY_ID[p2Char] || ROSTER[1]
             const human2 = m !== 'cpu'
-            gs = createMatch({ seed: sd, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
+            // #1761 item 5: the cabinet runs the guard-crush gauge — blocking
+            // drains it, an empty guard CRUSHES into a punishable stagger.
+            gs = createMatch({ seed: sd, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
-            comboFx = [0, 0]; comboVal = [0, 0]
+            comboFx = [0, 0]; comboVal = [0, 0]; crushFx = [0, 0]
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
             nextSend = 0
@@ -393,7 +397,7 @@ const IronRingGame = () => {
         const attractDemo = () => {
             seedCounter = (seedCounter + 0x9e3779b9) >>> 0
             const a = BY_ID.vexa, b = BY_ID.hyde
-            gs = createMatch({ seed: seedCounter | 1, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
+            gs = createMatch({ seed: seedCounter | 1, guardCrush: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'vexa'; p2Char = 'hyde'
             rebuildRigs(); rebuildStage()
@@ -440,6 +444,17 @@ const IronRingGame = () => {
                 } else if (e.kind === 'block') {
                     audioController.playTone(760, 0.03, 'square', 0.05)
                     scene.spark(m.fighters[e.by === 0 ? 1 : 0].x, 1.3, 0x80c0ff)
+                } else if (e.kind === 'crush') {
+                    // guard break — the defender's guard shatters into a stagger:
+                    // a hard crack down through the low end, the ring shakes.
+                    const d = m.fighters[e.by === 0 ? 1 : 0]
+                    audioController.playNoise(0.14, 0.2)
+                    audioController.playSweep(320, 55, 0.4, 'sawtooth', 0.15)
+                    shake = Math.max(shake, 11)
+                    flashT = Math.max(flashT, 5)
+                    bannerText = 'GUARD BREAK'; bannerT = 75
+                    crushFx[d.side] = 22
+                    scene.spark(d.x, 1.3, 0xcfe8ff)
                 }
             }
         }
@@ -540,6 +555,24 @@ const IronRingGame = () => {
                         hctx.fillStyle = `rgba(138,255,192,${(0.55 + 0.45 * Math.sin(gs.tick * 0.2)).toFixed(2)})`
                         hctx.textAlign = i === 0 ? 'left' : 'right'
                         hctx.fillText('SUPER!', i === 0 ? mx : mx + mw, my - 5)
+                    }
+                    // #1761 item 5: the guard gauge — steel while the guard holds
+                    // (it is IRON, after all), flashing gold/crimson as it runs
+                    // out, shattering red while the fighter is crushed.
+                    {
+                        const gfrac = Math.max(0, Math.min(1, f[i].guard / 100))
+                        const crushed = f[i].st === 'crush'
+                        const gy = my - mhh - Math.max(7, H * 0.016)
+                        const gh = Math.max(4, H * 0.01)
+                        hctx.fillStyle = crushed ? '#2a0d12' : '#141026'
+                        hctx.fillRect(mx, gy, mw, gh)
+                        hctx.fillStyle = crushed ? '#ff5a3c' : (gfrac < 0.28 ? (((gs.tick >> 3) & 1) ? '#ffd23e' : '#ff5a3c') : '#c9d6de')
+                        hctx.fillRect(i === 0 ? mx : mx + mw - mw * gfrac, gy, mw * gfrac, gh)
+                        if (crushFx[i] > 0) {
+                            crushFx[i]--
+                            hctx.fillStyle = `rgba(255,255,255,${(crushFx[i] / 22).toFixed(2)})`
+                            hctx.fillRect(mx - 2, gy - 2, mw + 4, gh + 4)
+                        }
                     }
                     if (comboFx[i] > 0) {
                         comboFx[i]--
@@ -758,11 +791,14 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), credits, continueFrames, opponent: p2Char, ladderIdx, p1: p1Char, p2: p2Char, champion: championChar, quote: screenRef.current === 'champion' ? matchupLine(championChar, p2Char, 'win') : screenRef.current === 'continue' ? matchupLine(p2Char, p1Char, 'win') : null } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), guard: gs.fighters.map((f) => Math.round(f.guard)), banner: bannerText, credits, continueFrames, opponent: p2Char, ladderIdx, p1: p1Char, p2: p2Char, champion: championChar, quote: screenRef.current === 'champion' ? matchupLine(championChar, p2Char, 'win') : screenRef.current === 'continue' ? matchupLine(p2Char, p1Char, 'win') : null } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { p1Char = 'kade'; p2Char = LADDER[0]; ladderIdx = 0; mode = 'cpu'; startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
                 koP1() { if (gs) forceKO(gs, 1) },
+                // #1761 item 5: seat P2's guard crushed at the sim level; the
+                // synthetic event rides hearEvents exactly like a real crush.
+                forceCrush() { if (gs) { const d = gs.fighters[1]; d.st = 'crush'; d.stun = 46; d.sf = 0; d.guard = 0; d.hp = Math.max(1, d.hp - 7); gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'crush', by: 0, dmg: 7 }) } },
                 expireContinue() { continueFrames = 1 },
                 setLadder(i) { ladderIdx = i },
                 // #1637 watchcheck pilot drives these.

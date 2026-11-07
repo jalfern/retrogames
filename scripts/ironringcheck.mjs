@@ -75,6 +75,92 @@ const go = (m) => { let g = 0; while (m.phase !== 'fight' && g++ < 400) e.step(m
 const QCF = [{ down: true }, { down: true, right: true }, { right: true }, { right: true, lp: true }]
 const QCB = [{ down: true }, { down: true, left: true }, { left: true }, { left: true, lp: true }]
 
+// ---- #1761 item 5: guard crush — the gauge the cabinet now runs ----------------
+// The engine option pre-existed (VIPER PIT); the cabinet turns it on, so these
+// gates pin both the rules (drain, crush, chip, defenseless stagger, reset,
+// regen, determinism) and the fact that IRON RING fights with the gauge live.
+console.log('part A: #1761 item 5 — guard crush')
+{
+    const gsrc = await import('node:fs').then((fs) => fs.readFileSync(path.join(HERE, '../src/games/IronRing/index.jsx'), 'utf8'))
+    ok((gsrc.match(/guardCrush: true/g) || []).length >= 2, 'crush gate: the cabinet turns guardCrush on (real fight + attract)')
+}
+if (!MUT) {
+    // a block drains the gauge by the move's damage
+    let c = e.createMatch({ seed: 9, guardCrush: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 1.4
+    e.step(c, [P({ hp: true }), P({ right: true })])
+    for (let i = 0; i < 14; i++) e.step(c, [P(), P({ right: true })])
+    ok(c.fighters[1].st === 'blockstun' && Math.abs(c.fighters[1].guard - 91) < 0.01, `blocking drains the guard by the move's dmg (guard ${c.fighters[1].guard})`)
+
+    // an empty gauge CRUSHES: the long stagger, the chip, the event
+    c = e.createMatch({ seed: 9, guardCrush: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 1.4
+    // the gauge regens while the startup plays, so it starts EMPTY — the rig
+    // tests the drain->zero->crush transition, not the topping.
+    c.fighters[1].guard = 0
+    const hpBefore = c.fighters[1].hp
+    e.step(c, [P({ lp: true }), P({ right: true })])
+    let crushed = false
+    for (let i = 0; i < 12 && !crushed; i++) { e.step(c, [P(), P({ right: true })]); crushed = c.fighters[1].st === 'crush' }
+    ok(crushed && c.fighters[1].guard === 0, 'a block that empties the gauge crushes the guard')
+    ok(c.fighters[1].stun === 46, `the crush is the long stagger (stun ${c.fighters[1].stun})`)
+    ok(hpBefore - c.fighters[1].hp === 7, `the crush chips ${hpBefore - c.fighters[1].hp} (CRUSH_CHIP)`)
+    ok(c.events.some((ev) => ev.kind === 'crush' && ev.by === 0), 'the crush event fires on the attacker')
+
+    // a crushed fighter is defenseless — the follow-up lands clean EVEN
+    // THOUGH the victim keeps holding block (a live block would have
+    // absorbed it for chip)
+    const hpPre = c.fighters[1].hp
+    // the crush freezes the sim for 8 ticks and the hp press banks through
+    // it, so the follow-up needs the startup to play after the freeze
+    e.step(c, [P({ hp: true }), P({ right: true })])
+    for (let i = 0; i < 20; i++) e.step(c, [P(), P({ right: true })])
+    ok(hpPre - c.fighters[1].hp === 9, `a punch during the crush lands clean (${hpPre - c.fighters[1].hp} dmg, the block is dead)`)
+
+    // when the stagger wears off the guard resets full
+    c = e.createMatch({ seed: 9, guardCrush: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].st = 'crush'; c.fighters[1].stun = 46; c.fighters[1].sf = 0; c.fighters[1].guard = 0
+    for (let i = 0; i < 50; i++) e.step(c, [P(), P()])
+    ok(c.fighters[1].st === 'idle' && c.fighters[1].guard === 100, 'the crushed guard resets full when the stagger wears off')
+
+    // the gauge regens while free
+    c = e.createMatch({ seed: 9, guardCrush: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].guard = 50
+    for (let i = 0; i < 100; i++) e.step(c, [P(), P()])
+    ok(Math.abs(c.fighters[1].guard - 85) < 0.6, `the gauge regens while not guarding (50 -> ${c.fighters[1].guard.toFixed(1)})`)
+
+    // real pressure: sustained HYDE dash combos crush a blocking opponent with
+    // no gauge manipulation — burst beats the regen, sustained blocks are the
+    // mechanic's whole point.
+    c = e.createMatch({ seed: 7, guardCrush: true, p1: { ...BY_ID.hyde, cpu: false }, p2: { ...BY_ID.vexa, cpu: false } })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 2.0
+    let sawCrush = false
+    for (let rep = 0; rep < 60 && !sawCrush; rep++) {
+        for (const q of QCF) { e.step(c, [P(q), P({ right: true })]); if (c.fighters[1].st === 'crush') { sawCrush = true; break } }
+        for (let i = 0; i < 32 && !sawCrush; i++) { e.step(c, [P({ right: true }), P({ right: true })]); if (c.fighters[1].st === 'crush') sawCrush = true }
+    }
+    ok(sawCrush, 'burst dash pressure crushes a blocking opponent (no gauge manipulation)')
+
+    // determinism holds with the gauge live
+    const runCrush = (seed) => {
+        const mm = e.createMatch({ seed, guardCrush: true, p1: { ...BY_ID.kade, cpu: true }, p2: { ...BY_ID.hyde, cpu: false } })
+        go(mm)
+        const hs = []
+        for (let k = 0; k < 600; k++) {
+            const t = k % 45
+            e.step(mm, [P({ right: t < 14, down: t < 2, lp: t === 2 }), P({ right: t < 12 })])
+            hs.push(e.matchHash(mm))
+        }
+        return hs.join(',')
+    }
+    ok(runCrush(17) === runCrush(17), 'determinism holds with guard crush in the stream')
+}
+
 // punch lands
 let m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
 go(m)
@@ -537,6 +623,35 @@ if (process.argv.includes('--mutate-dialogue')) {
     process.exit(fail ? 1 : 0)
 }
 
+// ---- mutate-crush: prove the guard-crush gate bites ------------------------------
+// Kill the gauge drain (a block costs the guard nothing). The "a block that
+// empties the gauge crushes the guard" assertion above must go RED on this —
+// a cabinet that quietly stopped crushing would ship as a passive block fest.
+if (process.argv.includes('--mutate-crush')) {
+    console.log('mutate-crush: proving the guard-crush gate bites')
+    const fsx = await import('node:fs')
+    const src = fsx.readFileSync(SRC, 'utf8')
+    const mutated = src.replace(
+        'def.guard = Math.max(0, def.guard - raw)',
+        'def.guard = Math.max(0, def.guard) // MUTANT: the gauge never drains')
+    ok(mutated !== src, 'mutate-crush: the drain line found to patch')
+    const MF = path.join(HERE, '../src/engine/.mutant-fighting3.mjs')
+    plantNew(MF, mutated)
+    const mc = await import(bust(MF))
+    {
+        const c = mc.createMatch({ seed: 9, guardCrush: true, p1: human('kade'), p2: human('vexa') })
+        { let g = 0; while (c.phase !== 'fight' && g++ < 400) mc.step(c, [P(), P()]) }
+        c.fighters[1].x = c.fighters[0].x + 1.4
+        c.fighters[1].guard = 0
+        mc.step(c, [P({ lp: true }), P({ right: true })])
+        for (let i = 0; i < 12; i++) mc.step(c, [P(), P({ right: true })])
+        ok(c.fighters[1].st !== 'crush' && c.fighters[1].guard > 0, 'MUTANT: the gauge never drains — no crush lands (harness bites)')
+    }
+    pull(MF)
+    console.log(`ironringcheck (mutate-crush): ${pass} ok, ${fail} fail`)
+    process.exit(fail ? 1 : 0)
+}
+
 // ---- mutate-continue: prove the ladder-loss continue gate can fail --------------
 // (deleting the continue branch keeps a lost ladder run silently on 'play'/'attract'
 // instead of the CONTINUE? screen — the normal-mode gate below must then go red.)
@@ -611,6 +726,25 @@ if (!MUT) {
     st = await page.evaluate(() => window.__ironRingTest.state)
     ok(punchStarted, 'keyboard attack input starts a move in the sim (inputs reach the engine)')
     ok(hitLanded || st.x[0] !== -2.6, `attack closes on the CPU (P2 hp ${st.hp[1]}, P1 x ${st.x[0]})`)
+
+    // ---- #1761 item 5: guard crush reaches the screen ----------------------------
+    // The cabinet fights with the gauge live, so a crushed guard must be a
+    // VISIBLE state: the chip lands, the GUARD BREAK banner fires, the gauge
+    // reads zero — and when the stagger wears off the guard resets full.
+    {
+        const pre = await page.evaluate(() => window.__ironRingTest.state)
+        const mid = await page.evaluate(() => { window.__ironRingTest.forceCrush(); return window.__ironRingTest.state })
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.st[1] === 'crush' && s.guard[1] === 0 && s.banner === 'GUARD BREAK'
+        }, null, { timeout: 5000 })
+        ok(pre.hp[1] - mid.hp[1] === 7, `the crush chips ${pre.hp[1] - mid.hp[1]} (CRUSH_CHIP) and the gauge reads zero`)
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.st[1] !== 'crush' && s.guard[1] === 100
+        }, null, { timeout: 5000 })
+        ok(true, 'the crushed guard resets full when the stagger wears off')
+    }
 
     // ---- #1699: real keys drive HYDE's multi-hit dash — the combo reaches the
     // screen, not just the Node sim (down, forward + punch, retry vs the CPU) ----
