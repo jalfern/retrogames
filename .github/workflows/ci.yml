@@ -6,6 +6,9 @@ name: CI
 #             nightly). Docs/scripts-only PRs: selftest + nothing else —
 #             except pinned text (#1387): editing a file a check reads raw
 #             (scripts/telemetry.sh etc) faces that check in this very PR.
+#             muteguardcheck's wiring audit also always runs (#1808): a
+#             scripts/ drop that smuggles an unguarded disk mutator must red
+#             here, not freeze main at nightly (#601).
 #   smoke   — advisory browser steps, scoped the same way.
 #   prsmokes — #887 advisory: shared-code PRs run the nightly play-smoke set.
 # Push to main no longer re-runs the PR suite (the merge commit is the tree the
@@ -57,6 +60,11 @@ jobs:
       # scope fixtures must hold. No install needed; also the whole of a
       # docs-only PR's CI (< 1 min).
       - run: node scripts/ciscope.mjs --selftest
+      # #1808: the #1359 wiring audit, unmutated (the --mutate fixtures stay
+      # nightly), on EVERY PR — docs-only included: an unguarded disk mutator
+      # added to scripts/*.mjs must red here, not merge green and freeze main
+      # at the next nightly (#601). Node builtins only, ~1 s, no install.
+      - run: npm run muteguardcheck
       - uses: actions/setup-node@v7
         if: needs.scope.outputs.docs != 'true'
         with:
