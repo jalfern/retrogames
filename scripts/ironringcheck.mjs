@@ -161,6 +161,145 @@ if (!MUT) {
     ok(runCrush(17) === runCrush(17), 'determinism holds with guard crush in the stream')
 }
 
+// ---- #1785: input stun + air-escapable throws (the v2 mechanics remainder) ----
+// Input stun: mashing attacks fills a hidden meter; a full meter STUNS — a
+// stagger that cannot attack (walking and stand-block still work). Air-
+// escapable throws: a throw on a controllable airborne victim is a grab with
+// an escape window, not a guaranteed hit. Both ride the guardCrush option
+// pattern (off by default — VIPER PIT stays bit-identical) and the cabinet
+// turns both on, so these gates pin the rules and the fact that IRON RING
+// fights with them live.
+console.log('part A: #1785 — input stun + air-escapable throws')
+{
+    const ssrc = await import('node:fs').then((fs) => fs.readFileSync(path.join(HERE, '../src/games/IronRing/index.jsx'), 'utf8'))
+    ok((ssrc.match(/inputStun: true/g) || []).length >= 2, 'stun gate: the cabinet turns inputStun on (real fight + attract)')
+    ok((ssrc.match(/airThrow: true/g) || []).length >= 2, 'air-throw gate: the cabinet turns airThrow on (real fight + attract)')
+}
+if (!MUT) {
+    // a fast mash fills the hidden meter; a full meter STUNS (stagger + event)
+    let c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    let stunned = false
+    for (let i = 0; i < 80 && !stunned; i++) { e.step(c, [P({ lp: i % 4 === 0 }), P()]); stunned = c.fighters[0].st === 'stunned' }
+    ok(stunned, 'a fast mash fills the stun meter and stuns the fighter')
+    ok(c.fighters[0].stun === 90, `the stun is the 90-tick stagger (stun ${c.fighters[0].stun})`)
+    ok(c.events.some((ev) => ev.kind === 'stunned' && ev.by === 0), 'the stunned event fires on the stunned side')
+
+    // a slow tap does not fill — the regen wins, exactly like the guard gauge
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    let maxM = 0, everStunned = false
+    for (let i = 0; i < 90; i++) { e.step(c, [P({ lp: i % 30 === 0 }), P()]); maxM = Math.max(maxM, c.fighters[0].stunMeter); everStunned = everStunned || c.fighters[0].st === 'stunned' }
+    ok(!everStunned && maxM < 60, `a slow tap never stuns (meter peaked at ${maxM.toFixed(1)})`)
+
+    // a stunned fighter cannot attack — the punch never starts, no damage
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[0].st = 'stunned'; c.fighters[0].stun = 90; c.fighters[0].sf = 0; c.fighters[0].stunMeter = 100
+    c.fighters[1].x = c.fighters[0].x + 1.2
+    const shp = c.fighters[1].hp
+    e.step(c, [P({ lp: true }), P()])
+    for (let i = 0; i < 20; i++) e.step(c, [P(), P()])
+    ok(c.fighters[1].hp === shp && c.fighters[0].st === 'stunned', 'a stunned fighter cannot attack (no damage, the stagger holds)')
+
+    // a stunned fighter still blocks — the defender is the stunned one:
+    // hold back absorbs the punch
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].st = 'stunned'; c.fighters[1].stun = 90; c.fighters[1].sf = 0; c.fighters[1].stunMeter = 100
+    c.fighters[1].x = c.fighters[0].x + 1.4
+    const bhp = c.fighters[1].hp
+    e.step(c, [P({ hp: true }), P({ right: true })])
+    for (let i = 0; i < 14; i++) e.step(c, [P(), P({ right: true })])
+    ok(c.fighters[1].st === 'blockstun' && bhp - c.fighters[1].hp <= 1, `a stunned fighter still blocks (${bhp - c.fighters[1].hp} chip)`)
+
+    // the stagger wears off -> idle, meter reset
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[0].st = 'stunned'; c.fighters[0].stun = 90; c.fighters[0].sf = 0; c.fighters[0].stunMeter = 100
+    for (let i = 0; i < 95; i++) e.step(c, [P(), P()])
+    ok(c.fighters[0].st === 'idle' && c.fighters[0].stunMeter === 0, 'the stun wears off to idle and the meter resets')
+
+    // a clean hit interrupts the stun (and resets the meter)
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[0].st = 'stunned'; c.fighters[0].stun = 90; c.fighters[0].sf = 0; c.fighters[0].stunMeter = 100
+    c.fighters[1].x = c.fighters[0].x + 1.2
+    e.step(c, [P(), P({ hp: true })])
+    for (let i = 0; i < 16; i++) e.step(c, [P(), P()])
+    ok(c.fighters[0].st === 'hitstun' && c.fighters[0].stunMeter === 0, 'a clean hit interrupts the stun and resets the meter')
+
+    // the meter regens while not pressing
+    c = e.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[0].stunMeter = 50
+    for (let i = 0; i < 100; i++) e.step(c, [P(), P()])
+    ok(Math.abs(c.fighters[0].stunMeter - 20) < 0.6, `the stun meter regens while not pressing (50 -> ${c.fighters[0].stunMeter.toFixed(1)})`)
+
+    // a throw on an airborne (controllable) victim starts the escape window
+    c = e.createMatch({ seed: 5, airThrow: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 1.2
+    e.step(c, [P(), P({ up: true })])
+    for (let i = 0; i < 8; i++) e.step(c, [P(), P()])
+    e.step(c, [P({ right: true, hp: true }), P()])
+    let grabbed = false
+    for (let i = 0; i < 6 && !grabbed; i++) { e.step(c, [P({ right: true }), P()]); grabbed = c.fighters[1].st === 'airthrow' }
+    ok(grabbed && c.events.some((ev) => ev.kind === 'airgrab' && ev.by === 0), 'a throw on an airborne victim starts the air-grab window')
+    ok(c.fighters[1].y > 0, `the victim is still airborne in the window (y ${c.fighters[1].y.toFixed(2)})`)
+
+    // any attack button in the window ESCAPES — the jump continues, no damage
+    {
+        const ahp = c.fighters[1].hp
+        e.step(c, [P(), P({ lp: true })])
+        for (let i = 0; i < 4 && c.fighters[1].st === 'airthrow'; i++) e.step(c, [P(), P()])
+        ok(c.fighters[1].st === 'jump' && c.fighters[1].hp === ahp, 'a button press inside the window escapes the air grab (no damage)')
+        ok(c.events.some((ev) => ev.kind === 'airescape' && ev.by === 1), 'the airescape event fires on the escaping side')
+    }
+
+    // a window that closes LANDS the throw (damage + launch)
+    c = e.createMatch({ seed: 5, airThrow: true, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 1.2
+    e.step(c, [P(), P({ up: true })])
+    for (let i = 0; i < 8; i++) e.step(c, [P(), P()])
+    e.step(c, [P({ right: true, hp: true }), P()])
+    grabbed = false
+    for (let i = 0; i < 6 && !grabbed; i++) { e.step(c, [P({ right: true }), P()]); grabbed = c.fighters[1].st === 'airthrow' }
+    ok(grabbed, 'setup: the air-grab window opens')
+    const lhp = c.fighters[1].hp
+    for (let i = 0; i < 14; i++) e.step(c, [P(), P()])
+    ok(lhp - c.fighters[1].hp === 12, `a grab whose window closes lands the throw (${lhp - c.fighters[1].hp} dmg)`)
+    ok(c.events.some((ev) => ev.kind === 'hit' && ev.by === 0 && ev.mv === 'throw'), 'the landed air-throw scores as a throw hit')
+
+    // default-off: without the option a throw on a jumper still lands
+    // immediately (the other consumers stay bit-identical)
+    c = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
+    go(c)
+    c.fighters[1].x = c.fighters[0].x + 1.2
+    e.step(c, [P(), P({ up: true })])
+    for (let i = 0; i < 8; i++) e.step(c, [P(), P()])
+    e.step(c, [P({ right: true, hp: true }), P()])
+    grabbed = false
+    for (let i = 0; i < 6 && !grabbed; i++) { e.step(c, [P({ right: true }), P()]); grabbed = c.fighters[1].st === 'hitstun' || c.fighters[1].st === 'hitair' }
+    ok(grabbed && c.fighters[1].hp === 88 && !c.events.some((ev) => ev.kind === 'airgrab'),
+        'default-off: a throw on a jumper lands immediately (no air-grab window)')
+
+    // determinism holds with both mechanics in the stream
+    const runStun = (seed) => {
+        const mm = e.createMatch({ seed, inputStun: true, airThrow: true, p1: { ...BY_ID.hyde, cpu: false }, p2: { ...BY_ID.kade, cpu: true } })
+        go(mm)
+        const hs = []
+        for (let k = 0; k < 600; k++) {
+            const c2 = k % 40
+            e.step(mm, [P({ right: c2 < 10, up: c2 === 5, lp: c2 % 4 === 0 }), P()])
+            hs.push(e.matchHash(mm))
+        }
+        return hs.join(',')
+    }
+    ok(runStun(23) === runStun(23), 'determinism holds with the stun meter and air-grabs in the stream')
+}
+
 // punch lands
 let m = e.createMatch({ seed: 5, p1: human('kade'), p2: human('vexa') })
 go(m)
@@ -652,6 +791,34 @@ if (process.argv.includes('--mutate-crush')) {
     process.exit(fail ? 1 : 0)
 }
 
+// ---- mutate-stun: prove the input-stun gate bites ------------------------------
+// Kill the meter fill (presses cost the masher nothing). The "a fast mash
+// fills the stun meter and stuns the fighter" assertion above must go RED on
+// this — a cabinet that quietly stopped punishing mashing would ship as a
+// free button-mash fest.
+if (process.argv.includes('--mutate-stun')) {
+    console.log('mutate-stun: proving the input-stun gate bites')
+    const fsx = await import('node:fs')
+    const src = fsx.readFileSync(SRC, 'utf8')
+    const mutated = src.replace(
+        "if (m.inputStun && f.st !== 'stunned') f.stunMeter = Math.min(STUN_MAX, f.stunMeter + STUN_FILL * countPresses(pad, f.padPrev))",
+        'if (m.inputStun) f.stunMeter = 0 // MUTANT: the meter never fills')
+    ok(mutated !== src, 'mutate-stun: the fill line found to patch')
+    const MF = path.join(HERE, '../src/engine/.mutant-fighting4.mjs')
+    plantNew(MF, mutated)
+    const ms = await import(bust(MF))
+    {
+        const c = ms.createMatch({ seed: 9, inputStun: true, p1: human('kade'), p2: human('vexa') })
+        { let g = 0; while (c.phase !== 'fight' && g++ < 400) ms.step(c, [P(), P()]) }
+        let everStunned = false
+        for (let i = 0; i < 80; i++) { ms.step(c, [P({ lp: i % 4 === 0 }), P()]); everStunned = everStunned || c.fighters[0].st === 'stunned' }
+        ok(!everStunned, 'MUTANT: a fast mash never stuns — the meter never fills (harness bites)')
+    }
+    pull(MF)
+    console.log(`ironringcheck (mutate-stun): ${pass} ok, ${fail} fail`)
+    process.exit(fail ? 1 : 0)
+}
+
 // ---- mutate-continue: prove the ladder-loss continue gate can fail --------------
 // (deleting the continue branch keeps a lost ladder run silently on 'play'/'attract'
 // instead of the CONTINUE? screen — the normal-mode gate below must then go red.)
@@ -684,7 +851,7 @@ if (!MUT) {
     const browser = await launch()
     const page = await browser.newPage({ viewport: { width: 1024, height: 640 } })
     const errors = []
-    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text())) errors.push(msg.text()) })
+    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text(), msg.location())) errors.push(msg.text()) })
     page.on('pageerror', (err) => errors.push(String(err)))
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('canvas[data-ironring-stage]') && window.__ironRingTest, null, { timeout: 15000 })
@@ -734,16 +901,53 @@ if (!MUT) {
     {
         const pre = await page.evaluate(() => window.__ironRingTest.state)
         const mid = await page.evaluate(() => { window.__ironRingTest.forceCrush(); return window.__ironRingTest.state })
+        // stt = the raw state (st reports move-first — a CPU mid-move used to
+        // hide the crush from this check)
         await page.waitForFunction(() => {
             const s = window.__ironRingTest.state
-            return s && s.st[1] === 'crush' && s.guard[1] === 0 && s.banner === 'GUARD BREAK'
+            return s && s.stt[1] === 'crush' && s.guard[1] === 0 && s.banner === 'GUARD BREAK'
         }, null, { timeout: 5000 })
         ok(pre.hp[1] - mid.hp[1] === 7, `the crush chips ${pre.hp[1] - mid.hp[1]} (CRUSH_CHIP) and the gauge reads zero`)
         await page.waitForFunction(() => {
             const s = window.__ironRingTest.state
-            return s && s.st[1] !== 'crush' && s.guard[1] === 100
+            return s && s.stt[1] !== 'crush' && s.guard[1] === 100
         }, null, { timeout: 5000 })
         ok(true, 'the crushed guard resets full when the stagger wears off')
+    }
+
+    // ---- #1785: input stun reaches the screen ------------------------------------
+    // The cabinet fights with the meter live, so a stunned fighter must be a
+    // VISIBLE state: the STUNNED banner fires, the meter reads full, and when
+    // the stagger wears off the meter resets.
+    {
+        await page.evaluate(() => window.__ironRingTest.forceStun())
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.stt[1] === 'stunned' && s.stun[1] === 100 && s.banner === 'STUNNED'
+        }, null, { timeout: 5000 })
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.stt[1] !== 'stunned' && s.stun[1] === 0
+        }, null, { timeout: 8000 })
+        ok(true, 'the stun banner fires, the meter reads full, and resets when the stagger wears off')
+    }
+
+    // ---- #1785: the air-grab window reaches the screen ---------------------------
+    // The seam puts P2 in an air-grab window (CPU benched for the check); the
+    // window must be a visible state and, with no escape tap, the throw lands.
+    {
+        const pre = await page.evaluate(() => window.__ironRingTest.state)
+        await page.evaluate(() => window.__ironRingTest.forceAirGrab())
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.stt[1] === 'airthrow' && s.banner === 'AIR GRAB'
+        }, null, { timeout: 5000 })
+        await page.waitForFunction(() => {
+            const s = window.__ironRingTest.state
+            return s && s.stt[1] !== 'airthrow'
+        }, null, { timeout: 8000 })
+        const post = await page.evaluate(() => window.__ironRingTest.state)
+        ok(pre.hp[1] - post.hp[1] === 12, `the air-grab window closes and the throw lands (${pre.hp[1] - post.hp[1]} dmg)`)
     }
 
     // ---- #1699: real keys drive HYDE's multi-hit dash — the combo reaches the
