@@ -1657,75 +1657,114 @@ console.log('34. transports')
     ok(stateHash(a) === stateHash(b) && a.turn === b.turn, 'the autopilot still replays hash-for-hash with the transport law in place')
 }
 
-// ---- 35. capital capture ≠ extinction — domination counts capitals (#375 item 2) ----
-console.log('35. capital capture ≠ extinction — domination counts capitals')
+// ---- 35. capital capture ≠ extinction — kneeling realms, original capitals (#375 item 2, #1777) ----
+console.log('35. capital capture ≠ extinction — kneeling realms, original capitals')
 {
     const keepCap = CFG.capitalSizeToWin, keepCult = CFG.cultureWin, keepTour = CFG.tourismWin, keepTurn = CFG.turnLimit
     CFG.capitalSizeToWin = 99; CFG.cultureWin = 1e9; CFG.tourismWin = 1e9; CFG.turnLimit = 9999   // isolate the domination law
-    const gs = newGame(4, 0)
-    const s0 = gs.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
-    step(gs, { select: s0.id, found: true })
-    for (let i = 0; i < 10; i++) step(gs, { endTurn: true })
     const landFreeNear = (g, c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
-
-    // (a) a civ whose CAPITAL falls is done — even though its army still marched
-    const victim = gs.cities.find((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital && landFreeNear(gs, c.c, c.r))
-    ok(!!victim, 'a rival capital sits where it can be stormed')
-    if (victim) {
-        const old = victim.civ
-        const unitsAtFall = gs.units.filter((u) => u.alive && u.civ === old).length
-        ok(unitsAtFall > 0, `${CIVS[old].name} marches living soldiers into the siege (${unitsAtFall} units)`)
-        declareWar(gs, 0, old)
-        const spot = landFreeNear(gs, victim.c, victim.r)
+    const storm = (g, cap) => {
+        declareWar(g, 0, cap.civ)
+        const spot = landFreeNear(g, cap.c, cap.r); if (!spot) return false
         let guard = 0
-        while (victim.alive && victim.civ !== 0 && guard++ < 14) {
-            const w = gs.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
+        while (cap.alive && cap.civ !== 0 && guard++ < 14) {
+            const w = g.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
             w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
-            if (!doAttack(gs, w, victim.c, victim.r)) break
+            if (!doAttack(g, w, cap.c, cap.r)) break
         }
-        ok(victim.civ === 0, 'the rival capital is taken by assault')
-        eq(gs.civs[old].alive, false, 'the capital fell, so the civ is finished — no defender had to die')
-        eq(gs.civs[old].vassal, 0, 'and it is marked a vassal of the conqueror')
-        ok(gs.events.some((e) => e.type === 'civFall' && e.civ === old && e.by === 0), 'the fall is logged as a vassalization')
-        ok(!gs.events.some((e) => e.type === 'civDead' && e.civ === old), 'the reign ended by the head of the snake — NOT by the old every-city-lost extinction path')
-        eq(gs.cities.filter((c) => c.alive && c.civ === 0 && c.capital).length, 1, 'Rome keeps exactly one capital — the prize city is not flagged as a second seat')
-        ok(gs.cities.some((c) => c.alive && c.civ === 0 && c.id === victim.id), 'the captured capital now stands in Roman colours')
-        ok(gs.units.filter((u) => u.alive && u.civ === old).length === 0 && gs.units.filter((u) => u.alive && u.civ === 0).length > 0, 'its surviving soldiers serve Rome now — capture changed the map, not a body count')
+        return cap.civ === 0
     }
 
-    // (b) the pill and the win speak the same language: capitals, not corpses
+    // (a) KNEEL (#1777): a two-city realm whose ORIGINAL capital falls keeps
+    // everything it still holds — its own cities, its own soldiers, its own
+    // banner — as a puppet under Rome: palace moves, peace is forced, purse
+    // flows uphill, and the realm never lifts a sword or plants a colony.
+    let gs = null, victim = null, old = -1
+    for (const seed of [4, 5, 6, 7, 8, 9, 10, 11, 12]) {
+        const g = newGame(seed, 0)
+        const s0 = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s0.id, found: true })
+        for (let i = 0; i < 20 && !g.end; i++) step(g, { endTurn: true })
+        const v = g.cities.find((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital && c.orig
+            && g.cities.filter((x) => x.alive && x.civ === c.civ).length >= 2 && landFreeNear(g, c.c, c.r))
+        if (v) { const oc = v.civ; if (storm(g, v)) { gs = g; victim = v; old = oc; break } }
+    }
+    ok(!!gs, 'a two-city realm watches its original capital fall on a reachable board')
+    if (gs) {
+        eq(victim.civ, 0, 'the original capital is taken by assault')
+        eq(gs.civs[old].alive, true, '#1777: the realm SURVIVES the kneel — capital capture no longer ends the civ')
+        eq(gs.civs[old].vassal, 0, 'it submits to Rome, the hand that took the seat')
+        ok(gs.events.some((e) => e.type === 'civFall' && e.civ === old && e.by === 0 && e.vassal === true), 'the fall is logged as a submission, not a collapse')
+        ok(!gs.events.some((e) => e.type === 'civDead' && e.civ === old), 'the extinction path never fired — the body outlived the head')
+        const held = gs.cities.filter((c) => c.alive && c.civ === old)
+        ok(held.length >= 1, `the puppet keeps its surviving cities (${held.length} still fly its colours)`)
+        ok(!victim.capital, 'the fallen capital lost its star — plain city of the victor now')
+        eq(held.filter((c) => c.capital).length, 1, 'the palace moved on: exactly one seat lights in the puppet colours')
+        const seat = held.find((c) => c.capital)
+        if (seat) eq(gs.capitalOf[old], seat.id, 'the seat register follows the relocated palace')
+        ok(gs.units.some((u) => u.alive && u.civ === old), 'garrisons stay home — soldiers serve their own kneeling realm, never the conqueror')
+        eq(gs.cities.filter((c) => c.alive && c.civ === 0 && c.capital).length, 1, 'Rome keeps exactly one capital — the prize city is not flagged as a second seat')
+        ok(!atWar(gs, 0, old), 'a forced peace cools the front the moment the knee touches stone')
+        const other = old === 1 ? 2 : 1
+        ok(canDeclareWar(gs, old, 0) !== true && canDeclareWar(gs, old, other) !== true, 'a puppet never starts a war — at any table')
+        step(gs, { endTurn: true })
+        ok(gs.events.some((e) => e.type === 'tribute' && e.civ === old && e.to === 0 && e.gold > 0), 'tribute arrives: the puppet purse flows uphill')
+        eq(gs.civs[old].gold, 0, 'the puppet-gold law takes the whole treasury each turn')
+        const cities0 = gs.cities.filter((c) => c.alive && c.civ === old).length
+        for (let i = 0; i < 8 && !gs.end; i++) step(gs, { endTurn: true })
+        eq(gs.cities.filter((c) => c.alive && c.civ === old).length, cities0, 'a kneeling realm plants no colonies')
+        ok(gs.civs.some((c) => c.barb || c.cs || !c.alive || c.vassal === 0 || c.id === 0) && gs.civs[old].alive, 'the kneeler still sits the board — alive, bound, building')
+    }
+
+    // (b) EXTINGUISH: with no city left to move the palace to, the realm is
+    // gone for good — the old path stays real, it just isn't the usual one.
+    let gs2 = null, alone = null, oldB = -1
+    for (const seed of [4, 5, 6, 7, 8]) {
+        const g = newGame(seed, 0)
+        const s0 = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s0.id, found: true })
+        for (let i = 0; i < 10; i++) step(g, { endTurn: true })
+        const v = g.cities.find((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital && c.orig
+            && g.cities.filter((x) => x.alive && x.civ === c.civ).length === 1 && landFreeNear(g, c.c, c.r))
+        if (v) { const oc = v.civ; if (storm(g, v)) { gs2 = g; alone = v; oldB = oc; break } }
+    }
+    ok(!!gs2, 'a single-city realm loses its seat on a reachable board')
+    if (gs2) {
+        eq(gs2.civs[oldB].alive, false, 'no surviving city, nowhere to move the palace — the realm is extinguished')
+        ok(gs2.events.some((e) => e.type === 'civDead' && e.civ === oldB), 'and it goes down the honest extinction path')
+        ok(gs2.cities[gs2.origCapOf[oldB]].civ === 0, 'its ORIGINAL capital still counts as fallen on the pill register')
+    }
+
+    // (c) the pill and the win speak the same language: ORIGINAL capitals (#1777)
     const runScenario = (seed) => {
         const g = newGame(seed, 0)
         const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
         step(g, { select: s.id, found: true })
         for (let i = 0; i < 10; i++) step(g, { endTurn: true })
-        const near = (c, r) => neighbors(c, r).find(([nc, nr]) => nc >= 0 && nr >= 0 && nc < CFG.W && nr < CFG.H && walk(g.tiles[idx(nc, nr)].terr) && !unitAt(g, nc, nr)) || null
-        const hit = (cap) => {
-            declareWar(g, 0, cap.civ)
-            const spot = near(cap.c, cap.r); if (!spot) return
-            let guard = 0
-            while (cap.alive && cap.civ !== 0 && guard++ < 14) {
-                const w = g.units.find((u) => u.civ === 0 && u.alive && u.str > 0 && !u.loaded); if (!w) break
-                w.c = spot[0]; w.r = spot[1]; w.moves = 9; w.hp = 100; w.acted = false
-                if (!doAttack(g, w, cap.c, cap.r)) break
-            }
-        }
-        for (const cap of g.cities.filter((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital)) hit(cap)
+        for (const cap of g.cities.filter((c) => c.alive && c.civ > 0 && c.civ < BARB && c.capital)) storm(g, cap)
         step(g, { endTurn: true })
         return g
     }
     const gs4 = runScenario(4)
-    const pill = [1, 2, 3].filter((i) => { const oc = gs4.capitalOf[i] != null ? gs4.cities[gs4.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
-    eq(pill, 3, 'all three rival capitals show taken on the HUD pill')
-    eq(gs4.end, 'win', 'capitals, not corpses — DOMINATION is won by taking every rival capital')
+    const pill = [1, 2, 3].filter((i) => { const oc = gs4.origCapOf[i] != null ? gs4.cities[gs4.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs4.civs[i].alive }).length
+    eq(pill, 3, 'all three ORIGINAL rival capitals show taken on the HUD pill — a moved palace cannot hide a fallen seat')
+    eq(gs4.end, 'win', 'DOMINATION crowns the one who holds every rival capital, kneeling realms and all')
     ok(/Domination/.test(gs4.endWhy || ''), 'and it names domination as the reason')
-    ok([1, 2, 3].every((i) => gs4.civs[i].alive === false && gs4.civs[i].vassal === 0), 'all three rivals end as vassals of Rome')
-    ok(gs4.events.filter((e) => e.type === 'civFall').length === 3, 'three capitals fell, three reigns ended — by the head, not the body count')
+    ok([1, 2, 3].every((i) => gs4.civs[i].vassal === 0 || !gs4.civs[i].alive), 'every rival kneels or dies — three falls, three verdicts')
+    ok(gs4.events.filter((e) => e.type === 'civFall').length === 3, 'three capitals fell, three reigns knelt — by the head, not the body count')
 
-    // (c) determinism of the new law: two identical conquests replay hash-for-hash
+    // (d) determinism of the new law: two identical conquests replay hash-for-hash
     const d1 = runScenario(4), d2 = runScenario(4)
     ok(stateHash(d1) === stateHash(d2) && d1.turn === d2.turn && d1.endWhy === d2.endWhy,
-        'the capital-fall conquest is deterministic, hash-for-hash')
+        'the kneeling conquest is deterministic, hash-for-hash')
+    // (e) the kneel and the yoke both fold into the state hash
+    if (gs) {
+        const h0 = stateHash(gs)
+        const gsK = structuredClone(gs); gsK.civs[old].vassal = gsK.civs[old].vassal === 0 ? null : 0
+        ok(stateHash(gsK) !== h0, 'vassalage folds into the state hash')
+        const gsO = structuredClone(gs); gsO.cities[victim.id].orig = false
+        ok(stateHash(gsO) !== h0, 'the original-capital mark folds into the state hash too')
+    }
 
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
 }

@@ -145,7 +145,13 @@ const CivilizationVGame = () => {
                     say(e.civ === 0 ? `${gs.cities[e.city].name.toUpperCase()} CAPTURED!` : `${gs.cities[e.city].name.toUpperCase()} HAS FALLEN!`)
                 }
                 else if (e.type === 'civDead') { say(`${CIVS[e.civ].name} IS NO MORE`); audioController.playDeath() }
-                else if (e.type === 'civFall') { say(`${CIVS[e.civ].name} VASSALIZED — ${CIVS[e.by].name.toUpperCase()} TAKES THE REALM`); audioController.playSweep(190, 70, 0.6, 'sawtooth', 0.12) }
+                else if (e.type === 'civFall') { say(e.vassal ? `${CIVS[e.civ].name} SUBMITS — ${CIVS[e.by].name.toUpperCase()} HOLDS ${e.capital.toUpperCase()}, THE REALM KNEELS (TRIBUTE PAYS)` : `${CIVS[e.civ].name} LOSES ${e.capital.toUpperCase()} — THE PALACE MOVES ON`); audioController.playSweep(190, 70, 0.6, 'sawtooth', 0.12) }
+                else if (e.type === 'palace') { say(`${CIVS[e.civ].name} DECLARES ${e.name.toUpperCase()} THE NEW SEAT`); audioController.playSweep(360, 520, 0.35, 'triangle', 0.07) }
+                else if (e.type === 'tribute') {
+                    if (e.to === 0) { say(`TRIBUTE ARRIVES — ${CIVS[e.civ].name} sends ${e.gold} gold`); audioController.playTone(880, 0.12, 'triangle', 0.07) }
+                    else if (e.civ === 0) { say(`TRIBUTE LEAVES — ${e.gold} gold to ${CIVS[e.to].name}`); audioController.playTone(220, 0.14, 'sawtooth', 0.07) }
+                }
+                else if (e.type === 'unbound') { say(`${CIVS[e.civ].name} CASTS OFF THE YOKE — ${CIVS[e.from].name} no longer reigns`); audioController.playSweep(300, 640, 0.4, 'square', 0.07) }
                 else if (e.type === 'build') {
                     if (e.civ === 0) {
                         const label = e.unit === 'GALLEY' ? 'A TRIREME TAKES THE WATER' : e.unit === 'GALLEON' ? 'A GALLEON CATCHES THE WIND' : e.unit === 'MUSKET' ? 'MUSKETS IN THE LINE' : `${e.unit} TRAINED AT ${gs.cities[e.city].name.toUpperCase()}`
@@ -426,7 +432,7 @@ const CivilizationVGame = () => {
                     : `${gs.camps.some((c) => c.alive) ? 'barbarian camps roam' : 'at peace'}${pacts ? ` · 🤝 pacts ${pacts}` : ''}${metN ? ` · ☘ ${metN}/${CS_IDS.length} courts${allies ? ` (${allies} allied)` : ''}` : ''}`
             }
             if (h.victory) {
-                const taken = [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
+                const taken = [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length
                 const tour = Math.floor(gs.civs[0].tourism || 0)
                 const tw = Math.min(999, Math.round((tour / CFG.tourismWin) * 100))
                 const aw = arkPartsDone(gs, 0)
@@ -735,7 +741,7 @@ const CivilizationVGame = () => {
             audioController.playTone(587, 0.08, 'triangle', 0.05)
         }
         const refreshVPanel = () => {
-            const taken = [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length
+            const taken = [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length
             const cult = Math.floor(gs.civs[0].cultureEarned || 0)
             const tour = Math.floor(gs.civs[0].tourism || 0)
             setVpanel({
@@ -751,6 +757,7 @@ const CivilizationVGame = () => {
                 rivals: CIVS.filter((c) => !c.barb && !c.cs && c.id !== 0).map((c) => ({
                     id: c.id, name: c.name, hex: c.hex, alive: gs.civs[c.id].alive,
                     vassal: gs.civs[c.id].vassal,
+                    origFall: (() => { const oc = gs.origCapOf[c.id]; const ct = oc != null ? gs.cities[oc] : null; return ct ? ct.civ !== c.id : !gs.civs[c.id].alive })(),
                     caps: gs.cities.some((ct) => ct.alive && ct.civ === c.id && ct.capital),
                     space: hasTech(gs, c.id, 'SPACEFLIGHT'), ark: Math.floor(gs.ark[c.id]), partsDone: arkPartsDone(gs, c.id),
                     tour: Math.floor(gs.civs[c.id].tourism || 0),
@@ -912,7 +919,7 @@ const CivilizationVGame = () => {
                     wonders: WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => ({ id, by: gs.wonders[id] })),
                     world: { cities: CIVS.filter((c) => c.cs).map((c) => ({ id: c.id, name: c.name, alive: gs.civs[c.id].alive, c: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.c ?? -1, r: gs.cities.find((ct) => ct.civ === c.id && ct.alive)?.r ?? -1 })), rome: CS_IDS.map((id) => ({ cs: id, ...(csInfo(gs, 0, id) || { met: false, influence: 0, ally: false }) })), pacts: Object.keys(gs.trade).filter((k) => gs.trade[k]), wars: Object.keys(gs.wars), truce: Object.keys(gs.peaceTurn), naval: gs.units.filter((u) => u.alive && u.civ === 0 && u.naval).map((u) => ({ id: u.id, c: u.c, r: u.r, kind: u.kind, cargo: u.cargo ? u.cargo.length : 0 })), onboard: gs.units.filter((u) => u.alive && u.loaded).map((u) => ({ id: u.id, kind: u.kind, ship: u.loaded })), coastal: !!coastalCityOf(gs, 0) },
                     gp: GP_TYPES.map((t) => ({ t, pts: Math.floor(gs.gp[0].pts[t]), need: gpThreshold(gs, 0, t), held: gs.gp[0].held[t], ready: gpReady(gs, 0, t), cost: gpCost(gs, 0, t) })),
-                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
+                    victory: { capsTaken: [1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length, ark: Math.floor(gs.ark[0]), needArk: CFG.arkScience, spaceflight: hasTech(gs, 0, 'SPACEFLIGHT'), parts: arkPartsOf(gs, 0).map((p) => ({ id: p.id, name: p.name, cost: p.cost, funded: p.funded, done: p.done })), partsDone: arkPartsDone(gs, 0), cultEarned: Math.floor(gs.civs[0].cultureEarned || 0), needCult: CFG.cultureWin, tourism: Math.floor(gs.civs[0].tourism || 0), needTourism: CFG.tourismWin, tourismLead: [1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)), rivalArk: [1, 2, 3].map((i) => Math.floor(gs.ark[i])), rivalPartsDone: [1, 2, 3].map((i) => arkPartsDone(gs, i)), rivalTourism: [1, 2, 3].map((i) => Math.floor(gs.civs[i].tourism || 0)) },
                     late: { knownLate: ['EDUCATION', 'BANKING', 'GUNPOWDER', 'ASTRONOMY', 'STEAM_POWER', 'RAILROAD', 'INDUSTRIALIZATION', 'ELECTRICITY', 'SPACEFLIGHT'].filter((id) => hasTech(gs, 0, id)), muskets: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'MUSKET').length, galleons: gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'GALLEON').length },
                     owned: gs.tiles.filter((t) => t.owner === 0).length,
                     explored0: countArr(gs.explored[0]),
@@ -966,7 +973,7 @@ const CivilizationVGame = () => {
                     `player cities ${gs.cities.filter((c) => c.civ === 0 && c.alive).length}  total ${gs.cities.filter((c) => c.alive).length}  units0 ${gs.units.filter((u) => u.civ === 0 && u.alive).length}  explored ${countArr(gs.explored[0])}`,
                     `camps alive ${gs.camps.filter((c) => c.alive).length}/${gs.camps.length}  wars ${Object.keys(gs.wars).length}  barbs alive ${gs.units.filter((u) => u.alive && u.civ === BARB).length}  queue ${JSON.stringify((gs.cities.find((c) => c.civ === 0 && c.alive) || { queue: [] }).queue)}`,
                     `research ${gs.tech[0].research ? TECH[gs.tech[0].research].name + ' ' + Math.floor(gs.tech[0].prog) + '/' + TECH[gs.tech[0].research].cost : 'idle'}  known ${TECH_IDS.filter((id) => hasTech(gs, 0, id)).length}/${TECH_IDS.length}  ai ${CIVS.filter((c) => !c.barb && c.id !== 0).map((c) => c.name + ':' + Object.keys(gs.tech[c.id].known).length).join(' ')}`,
-                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.capitalOf[i] != null ? gs.cities[gs.capitalOf[i]] : null; return oc && oc.alive && oc.civ !== i }).length}/3  ark ${arkPartsDone(gs, 0)}/4 parts ${Math.floor(gs.ark[0])}/${CFG.arkScience}${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
+                    `victory: caps ${[1, 2, 3].filter((i) => { const oc = gs.origCapOf[i] != null ? gs.cities[gs.origCapOf[i]] : null; return oc ? oc.civ !== i : !gs.civs[i].alive }).length}/3  ark ${arkPartsDone(gs, 0)}/4 parts ${Math.floor(gs.ark[0])}/${CFG.arkScience}${hasTech(gs, 0, 'SPACEFLIGHT') ? '' : ' (needs Spaceflight)'}  tourism ${Math.floor(gs.civs[0].tourism || 0)}/${CFG.tourismWin}${[1, 2, 3].every((i) => !gs.civs[i].alive || (gs.civs[i].tourism || 0) < (gs.civs[0].tourism || 0)) ? ' LEAD' : ''}  record ❦ ${Math.floor(gs.civs[0].cultureEarned || 0)}/${CFG.cultureWin}`,
                     `land: workers ${gs.units.filter((u) => u.alive && u.civ === 0 && u.kind === 'WORKER').length}  improvements ${gs.tiles.filter((t) => t.imp).length}  roads ${gs.tiles.filter((t) => t.road).length}  connected ${connectedResources(gs, 0).join(',') || 'none'}`,
                     `happiness ${(() => { const hs = happinessOf(gs, 0); return `${hs.net} (${hs.net >= 1 ? 'happy' : hs.net < 0 ? 'UNHAPPY' : 'content'}) lux ${hs.lux} cities ${hs.cities} wars ${hs.wars}` })()}  policies ${POLICY_IDS.filter((id) => hasPolicy(gs, 0, id)).join(',') || 'none'}  culture pool ${Math.floor(gs.civs[0].culture || 0)}  owned ${gs.tiles.filter((t) => t.owner === 0).length}`,
                     `wonders ${WONDER_IDS.filter((id) => gs.wonders[id] != null).map((id) => id + '→' + CIVS[gs.wonders[id]].name).join(',') || 'none'}  gp ${GP_TYPES.map((t) => `${t[0]}:${Math.floor(gs.gp[0].pts[t])}/${gpThreshold(gs, 0, t)}${gs.gp[0].held[t] ? `(${gs.gp[0].held[t]} held)` : ''}`).join(' ')}`,
@@ -1282,7 +1289,7 @@ const CivilizationVGame = () => {
                             <div className="rounded border border-red-300/40 bg-red-950/30 px-2 py-1.5">
                                 <div className="text-[11px] font-bold">⚔ DOMINATION</div>
                                 <div className="h-1.5 rounded bg-black/60 mt-1"><div className="h-full bg-red-400" style={{ width: `${Math.round((vpanel.taken / 3) * 100)}%` }} /></div>
-                                <div className="text-[9px] opacity-70 mt-1">{vpanel.taken}/3 rival capitals taken — take a capital and that realm submits</div>
+                                <div className="text-[9px] opacity-70 mt-1">{vpanel.taken}/3 rival capitals taken — take a capital and that realm kneels: it keeps its cities, pays you tribute, and never starts a war</div>
                             </div>
                             <div className="rounded border border-sky-300/40 bg-sky-950/30 px-2 py-1.5">
                                 <div className="text-[11px] font-bold">🚀 SCIENCE {vpanel.partsDone === 4 ? <span className="text-emerald-300">· READY</span> : null}</div>
@@ -1307,12 +1314,18 @@ const CivilizationVGame = () => {
                         {vpanel.rivals.map((r) => (
                             <div key={r.id} className={`mb-1 rounded border px-2 py-1 text-[11px] ${!r.alive ? 'border-white/10 bg-black/30 text-white/30' : 'border-white/15 bg-black/20'}`}>
                                 <span className="inline-block w-2.5 h-2.5 rounded-sm mr-1.5 align-middle" style={{ background: r.hex }} />{r.name}
-                                {!r.alive ? (r.vassal != null ? <span className="ml-2 text-red-300">— vassal of {CIVS[r.vassal]?.name || 'a rival'}</span> : ' — destroyed') : (
+                                {!r.alive ? (r.vassal != null ? <span className="ml-2 text-red-300">— fell a vassal of {CIVS[r.vassal]?.name || 'a rival'}</span> : ' — destroyed') : r.vassal != null ? (
+                                    <>
+                                        <span className="ml-2 text-amber-300">— VASSAL of {CIVS[r.vassal]?.name || 'a rival'} · tribute flows, puppet peace</span>
+                                        <span className="ml-2 opacity-80">☼ {r.tour}</span>
+                                        {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
+                                    </>
+                                ) : (
                                     <>
                                         <span className="ml-2 opacity-80">☼ {r.tour}</span>
                                         {r.ark > 0 && <span className="ml-2 text-sky-300">ARK {r.partsDone}/4</span>}
                                         {r.space && r.ark === 0 && <span className="ml-2 text-sky-300">SPACEFLIGHT!</span>}
-                                        {!r.caps && <span className="ml-2 text-red-300">capital lost</span>}
+                                        {r.origFall && <span className="ml-2 text-red-300">original capital fallen</span>}
                                     </>
                                 )}
                             </div>
