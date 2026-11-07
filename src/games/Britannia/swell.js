@@ -7,7 +7,7 @@
 
 import { hash2, TILE } from './tiles.js'
 import { isSea } from './britmap.js'
-import { WX } from './weather.js'
+import { WX, WX_EPOCH, weatherAt } from './weather.js'
 
 export const SWELL_TILE = 24   // a crest advances one tile every 24 ticks (~1.3 px/tick)
 export const SWELL_PH = 0.5    // one crest per 2 tiles
@@ -104,3 +104,32 @@ export function dimples(tx, ty, intensity, t, seed = 0) {
     }
     return out
 }
+
+// ---- rain winds the swell (#1822) --------------------------------------
+// A front that passed leaves the sea it whipped still heaving. seaRough
+// samples the sky over this tile at the epoch when it arrived and the three
+// behind: the drift carries a cell one region east per WX_EPOCH, so reading
+// weatherAt at (t - d*WX_EPOCH) reads exactly the cell that stood over this
+// tile d epochs ago — the wind memory is the trail of fronts that moved off
+// it. Weights halve per epoch back (1 / 0.5 / 0.24 / 0.11), clamped <=1:
+// a storm now is a full sea, a storm one epoch gone is still half up, and a
+// clear-for-four sea is bit-exactly the calm field today's gates prove.
+// Pure derivation from weatherAt — same tile + tick + seed, same state; the
+// drift field itself is untouched (this is how the sea remembers the wind).
+export const ROUGH_MEMORY = [1, 0.5, 0.24, 0.11]
+
+export function seaRough(tx, ty, t, seed = 0, terrainAt = null) {
+    let r = 0
+    for (let d = 0; d < ROUGH_MEMORY.length; d++) {
+        r += splatIntensity(weatherAt(tx, ty, t - d * WX_EPOCH, seed, terrainAt)) * ROUGH_MEMORY[d]
+    }
+    return Math.min(1, r)
+}
+
+// wet skies raise the crest: stroke alpha/width scale by crestGain, shore
+// foam by foamGain. Both are exactly 1 on a calm sea, so the pre-#1822
+// painting survives unchanged wherever no front has passed.
+export const CREST_GAIN = 0.6
+export const FOAM_GAIN = 0.45
+export const crestGain = (rough) => 1 + CREST_GAIN * rough
+export const foamGain = (rough) => 1 + FOAM_GAIN * rough

@@ -27,7 +27,7 @@ import { TERR, hash2, TILE, SUB, blockShades, builtPalette, cobbleBlock } from '
 import { townScore, hasCottage } from './towns.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor } from './moons.js'
-import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples } from './swell.js'
+import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, seaRough, crestGain, foamGain } from './swell.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -288,11 +288,15 @@ const BritanniaGame = () => {
                 }
                 // swells ride the sea west-to-east, the same wind the fronts
                 // drift on; crests break into dashed chop off their lee, and
-                // foam gathers only where land holds the water back (#1135)
+                // foam gathers only where land holds the water back (#1135).
+                // #1822: the wind that drifts the fronts also lifts the sea —
+                // wet skies (and the epochs right after) gain crest stroke,
+                // whitecap big crests, and thicken shore foam.
+                const rough = seaRough(tx, ty, t, S.seed, terrainAt)
                 const c = crest(tx, ty, t)
                 if (c > 0.04) {
                     const lane = crestLane(tx, ty, S.seed)
-                    ctx.strokeStyle = `rgba(154,198,232,${(0.12 + 0.34 * c).toFixed(3)})`
+                    ctx.strokeStyle = `rgba(154,198,232,${Math.min(1, (0.12 + 0.34 * c) * crestGain(rough)).toFixed(3)})`
                     ctx.lineWidth = 2
                     ctx.beginPath()
                     if (c > 0.72) {
@@ -304,10 +308,19 @@ const BritanniaGame = () => {
                         ctx.moveTo(sx + g2, sy + lane + 1); ctx.lineTo(sx + 30, sy + lane + 1)
                     }
                     ctx.stroke()
+                    // whitecap: a big crest under a wet sky breaks a short
+                    // white dash over its lane, more tiles capping as rough rises
+                    if (c > 0.72 && rough > 0.45 && hash2(tx, ty, S.seed ^ 0xc07) < 0.35 + 0.55 * rough) {
+                        const wl = lane - 2 + hash2(tx, ty, S.seed ^ 0xc09) * 4
+                        ctx.strokeStyle = `rgba(242,249,255,${(0.3 + 0.4 * rough).toFixed(3)})`
+                        ctx.beginPath()
+                        ctx.moveTo(sx + 3, sy + wl); ctx.lineTo(sx + 12 + 16 * hash2(tx, ty, S.seed ^ 0xc0b), sy + wl)
+                        ctx.stroke()
+                    }
                 }
                 const sides = landSides(tx, ty, world)
                 if (sides.length) {
-                    const st = foam(tx, ty, true, t, S.seed)
+                    const st = Math.min(1.2, foam(tx, ty, true, t, S.seed) * foamGain(rough))
                     for (const sd of sides) {
                         for (const p of foamPatches(tx, ty, sd, t, S.seed, st)) {
                             ctx.fillStyle = `rgba(235,242,250,${p.a.toFixed(3)})`
@@ -870,6 +883,7 @@ const BritanniaGame = () => {
                     ambient: AMB_NAME[S.amb],
                     swell: crest(S.x, S.y, S.tick),
                     seaRain: splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt)),
+                    seaRough: seaRough(S.x, S.y, S.tick, S.seed, terrainAt),
                     town: townScore(S.x, S.y, gates, terrainAt),
                     warping: !!S.warp, warpFlash: S.warp ? warpFlash(S.tick - S.warp.t0) : 0, warpDest: S.warp ? S.warp.dest : -1,
                     moon: moonPhase(S.tick),
