@@ -379,3 +379,24 @@ The round-two ruts: a rut is not only a dent.
   decaying; the desert remembers the pack for the session. Only a course
   swap rebuilds the field (fresh `makeWear` + fresh gutter geometry, so no
   stale `sandBase` leaks across courses).
+
+## The sim's marks ride the HD terrain (#1718 item 5)
+
+The GP twin's sim is the authority on what the sand looks like: `gs.marks`
+carries roll 1 / hot 2 / crater 3 carves, shoveled lips, and the #1702
+self-heal/re-arm clock, plus the #1718 coal chips (`SAND.crack/chip`
+fractional depths). HD used to approximate ruts only from kart centres, so
+spins left no craters, bumps left no chips, and its ruts healed on a
+different clock than the twin's. `syncMarks(w, g)` (sand.js) now rebuilds two
+side grids from the live Map every deform tick — `sim` (carve depth /3, crater
+= full sink) and `coal` (chip 0.62 / crack 0.42 blend toward coal, mirroring
+the 2D bake's mix) — and drains `markDelta` (HD never consumed the 2D bake
+queue before; it grew unbounded). Rebuilding from the Map instead of draining
+deltas makes heal pulses AND deletions land for free — a mark faded out of
+`gs.marks` is gone from the mesh next tick, no ghost ruts. `deformGeo` merges
+both grids into the existing sink-and-dark push (lips stay gradient-owned: the
+berm law didn't move). Determinism holds: same seed + same drive carves the
+same HD scars. DEV: `sandState().sim` reports `{cells, coals, depth}`;
+`cometdrifthdsandcheck` gates the depth/decal laws, the chip→crack fade,
+heal-away deletes, queue bounds, determinism, and `--mutate` pairs the merge
+off (`v = v0`) and demands red.
