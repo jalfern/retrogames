@@ -7,6 +7,11 @@
 // infinite party. Stage 3 added CREATE: the bench where races, classes and
 // alignments are rolled and chosen (people.js owns the people math).
 
+// THE RIM's surface truth lives here. mulberry32 (dungeon.js) is the only dice:
+// the wanderers below are seeded once from the town seed, so no rng is drawn as
+// you walk and every campaign pin is untouched.
+import { mulberry32 } from './dungeon.js'
+
 export const TOWN = 'THE RIM'
 
 // ---- the walkable street (#1751) -------------------------------------------
@@ -32,6 +37,78 @@ export const rimBlocked = (x, lane) =>
 // the building whose threshold you are standing on (only the far lane has doors)
 export const rimDoorAt = (x, lane) =>
     lane === 1 ? Object.keys(RIM_STREET.doors).find((k) => RIM_STREET.doors[k] === x) ?? null : null
+
+// ---- seeded wanderers (#1756) ----------------------------------------------
+// New Sorpigal had townsfolk; THE RIM should not be an empty street. Three
+// seeded folk stroll fixed back-and-forth patrols along the lanes. This is
+// PRESENTATION LAYER ONLY: routes are pure data fixed at town-seed time on
+// mulberry32 (zero new rng draws mid-run), never sim state, never in
+// stateHash — so every campaign and determinism pin still stands. The shell
+// paints them and barks when you share a tile; tendeecheck proves the routes
+// are legal (a folk never steps into the well curb or a hedge), deterministic
+// and honest.
+export const RIM_FOLK_NAMES = [
+    'A CROSSROADS GUARD', "BRANNOCK'S DAUGHTER", 'A TEMPLE ACOLYTE',
+]
+export const RIM_FOLK_BARKS = [
+    'MIND THE WELL — IT KEEPS WHAT IT TAKES',
+    "DON'T KEEP THE CROW WAITING",
+    'THE NINTH HEARS EVEN THOSE WHO DO NOT KNEEL',
+]
+
+// a stretch of one lane that is standable ground end to end (no hedge, no curb)
+const spanClear = (a, b, lane) => {
+    for (let x = a; x <= b; x++) if (rimBlocked(x, lane)) return false
+    return true
+}
+
+// three wanderers, each patrolling a legal span. Same seed → same street: the
+// guard, the daughter and the acolyte always walk the same beats.
+export function makeRimFolk (townSeed) {
+    const rnd = mulberry32((townSeed >>> 0) ^ 0x5A17)
+    const folk = []
+    for (let i = 0; i < RIM_FOLK_NAMES.length; i++) {
+        const lane = rnd() < 0.5 ? 0 : 1
+        // grow a 3..7-tile patrol that stays on standable ground in this lane
+        let a = 1 + Math.floor(rnd() * (RIM_STREET.len - 8))
+        let b = a + 2 + Math.floor(rnd() * 5)
+        if (b >= RIM_STREET.len) b = RIM_STREET.len - 2
+        let guard = 0
+        while (!spanClear(a, b, lane) && guard < 48) { a += 1; b += 1; if (b >= RIM_STREET.len) { a = 1; b = 3 }; guard++ }
+        // final honesty: if no clean span was found, fall back to the two tiles
+        // flanking the well on the far lane (guaranteed open by the map itself)
+        if (!spanClear(a, b, lane)) { a = 14; b = 17 }
+        folk.push({
+            id: i,
+            name: RIM_FOLK_NAMES[i],
+            bark: RIM_FOLK_BARKS[i],
+            lane,
+            a, b,
+            phase: Math.floor(rnd() * 8),
+            speed: 1 + (i % 3),   // ticks per tile-step: a slower stroll for variety
+        })
+    }
+    return folk
+}
+
+// ping-pong along the span, a folk turns at each end. `speed` is how many ticks
+// elide one tile-step (slower townsfolk read calmer); advancing one step at a
+// time keeps every tile on the patrol reachable, so no wanderer ever freezes.
+// Deterministic in tick — the shell advances tick with its animation clock.
+export function rimFolkAt (f, tick) {
+    const run = f.b - f.a
+    if (run <= 0) return { x: f.a, lane: f.lane }
+    const period = run * 2
+    let q = (Math.floor(tick / f.speed) + f.phase) % period
+    if (q < 0) q += period
+    return { x: q <= run ? f.a + q : f.a + (period - q), lane: f.lane }
+}
+
+// the bark law, honestly stated: a folk answers when it shares your tile.
+export const rimFolkShares = (f, tick, tx, ty) => {
+    const p = rimFolkAt(f, tick)
+    return p.x === tx && p.lane === ty
+}
 
 
 export const BUILDINGS = [
