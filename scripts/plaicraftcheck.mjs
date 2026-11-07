@@ -9,11 +9,12 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { step } from '../src/games/Gauntlet/sim.js'
+import { step, stateHash } from '../src/games/Gauntlet/sim.js'
 import { partnerPad, decide } from '../src/games/Gauntlet/planner.js'
 import { createModelPolicy, featurize, forward, N_FEAT, seatSources } from '../src/games/Gauntlet/model.js'
 import { POLICY } from '../src/games/Gauntlet/policy.js'
-import { collectRun, makeHeroPadCodec, heroFromPad, p2FromPad, newGame } from './plaicraft-export.mjs'
+import { collectRun, makeHeroPadCodec, heroFromPad, p2FromPad, newGame, makeReplayDriver } from './plaicraft-export.mjs'
+import { createRecorder, verifyRecording, decodePad } from '../src/utils/recording.js'
 import { makeSlot, setSlotKind, padFor, pushPad } from '../src/utils/slotSources.js'
 
 const ok = []
@@ -109,7 +110,41 @@ function agreement(seed, cap, policy) {
     check('seat-stamp: no brain, no stamp', O[1].kind === 'off' && !('modelId' in O[1]))
 }
 
-// 8 — MUTANT: zeroed weights must collapse the agreement gate (the proof
+// 8 — #1793 seat-faithful replay: a take recorded with seat 2 `off` must
+// rebuild WITHOUT a partner. The outbox kill-test found the consent-gate run
+// (partner off, sources {model,off}) diverging at seed-invariant tick ~570:
+// the replay driver force-seated a CPU partner from `players >= 2` alone, and
+// the ghost — set by the level layout, not the pads — swung at monsters the
+// recording never fought until its interference crossed the hash.
+{
+    const seed = 5
+    const capture = (cap) => {
+        const gs = newGame(seed, {}, false)
+        const codec = makeHeroPadCodec()
+        const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'model' }, { kind: 'off' }] })
+        while (!gs.end && gs.tick < cap) {
+            const pad = codec.toPad(decide(gs))
+            step(gs, heroFromPad(pad), null)
+            rec.addTick([pad, {}], null, gs.tick % 30 === 0 ? stateHash(gs) : null)
+        }
+        return rec.finish(stateHash(gs))
+    }
+    const take = capture(1200)
+    const v = verifyRecording(take, makeReplayDriver())
+    check('seat-off take replays exact — no ghost partner (#1793)', v.ok, v.mismatch ? JSON.stringify(v.mismatch) : `${v.ticks} ticks`)
+    // MUTANT: the pre-#1793 driver seated the partner from `players` alone.
+    // The ghost must break exactness — proof this gate can actually fail.
+    let ghost = null
+    const gv = verifyRecording(take, {
+        reset: () => { ghost = newGame(seed, {}, true) },
+        step: (pads) => step(ghost, heroFromPad(decodePad(pads[0], 'stick')), p2FromPad(decodePad(pads[1], 'stick'))),
+        state: () => ({ hash: stateHash(ghost), tick: ghost.tick }),
+    })
+    check('MUTANT: ghost-partner driver breaks the seat-off replay (#1793)', !gv.ok && !!gv.mismatch,
+        gv.mismatch ? `ghost diverged at tick ${gv.mismatch.tick}` : 'ghost never interfered — pick a livelier seed')
+}
+
+// 9 — MUTANT: zeroed weights must collapse the agreement gate (the proof
 // this check can fail — same code, dead brain).
 {
     const dead = { arch: POLICY.arch, w: POLICY.w.map(() => 0), b: POLICY.b.map(() => 0) }

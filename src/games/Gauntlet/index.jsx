@@ -1351,9 +1351,14 @@ const GauntletGame = () => {
                 // #1247: online host — this device's mic covers seat 0 only,
                 // and the guest's relayed track joins every recording.
                 ...(netRole === 'host' ? { voice: { slots: [0] }, voiceExtra: () => netVoiceIn.voiceSection() } : {}),
-                reset: (seed, players = 1) => {
-                    gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', players >= 2 ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
-                    gs.partnerOn = players >= 2; gs.partnerMode = players >= 2 ? 'cpu' : 'off'; gs.partnerHuman = false
+                reset: (seed, players = 1, rec = null) => {
+                    // #1793: a replay passes the take along — seat 2's SOURCE is
+                    // the truth about who stood there (kind 'off' = nobody). A
+                    // ghost CPU partner seated from `players` alone would swing
+                    // at monsters the recording never fought and desync hashes.
+                    const two = rec && rec.slots && rec.slots[1] ? rec.slots[1].source.kind !== 'off' : players >= 2
+                    gs = makeGame(((seed >>> 0) % 97) | 0, 'warrior', two ? { topDown: true, partner: true, partnerKey: 'elf' } : { topDown: true })
+                    gs.partnerOn = two; gs.partnerMode = two ? 'cpu' : 'off'; gs.partnerHuman = false
                     demoAt = 0; netDemo.reset(); demoWin = 0; demoBrainDropped = false
                     keys.l = keys.r = keys.u = keys.d = false
                     keys.swordEdge = false; keys.arrowEdge = false

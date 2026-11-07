@@ -81,24 +81,39 @@ export const p2FromPad = (pad) => ({
     left: !!pad.left, right: !!pad.right, fwd: !!pad.up, back: !!pad.down, sword: !!pad.a,
 })
 
-export function newGame(seed, rules = {}) {
+export function newGame(seed, rules = {}, partner = true) {
     // #1711 S6: recorded files may carry { hero, partnerKey } (rules stamp) —
     // replay rebuilds THAT hero; files without the stamp keep the historical
     // defaults the export planner was proven on.
-    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner: true, partnerKey: rules.partnerKey || 'elf' })
-    gs.partnerOn = true
+    // #1793: `partner` is whether seat 2 was OCCUPIED when the take was made.
+    // A seat-2 `off` recording must rebuild WITHOUT a partner: a ghost CPU
+    // partner nobody played still walks, swings at monsters, and its
+    // interference leaks into the hash (the #1793 divergence at ~tick 570 —
+    // the ghost's path is set by the level layout, hence seed-invariant).
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner, partnerKey: rules.partnerKey || 'elf' })
+    gs.partnerOn = partner
     gs.partnerMode = 'cpu'
     return gs
+}
+
+// #1793: seat occupancy is recorded in slots[i].source.kind (a kind lives on
+// every seat even when its pads are empty). The replay must rebuild the SAME
+// seats the live run had — 'off' seat = no partner in the sim.
+export function seatedPartner(rec) {
+    const s = rec && rec.slots && rec.slots[1]
+    return s ? !!(s.source && s.source.kind !== 'off') : false // single-seat take: nobody stood in seat 2
 }
 
 // The replay driver for verifyRecording: rebuild the game from the seed and
 // feed it the recorded pads through THE pad lane. Same code path the capture
 // used — a hash mismatch here means the codec is lying, not the game.
+// reset takes (seed, players, rec): verifyRecording passes the recording
+// through, so a seat-`off` take replays without the ghost partner (#1793).
 export function makeReplayDriver(rules = {}) {
     let gs = null
     const st = { prevA: false, prevB: false }
     return {
-        reset: (seed) => { gs = newGame(seed, rules); st.prevA = false; st.prevB = false },
+        reset: (seed, players = 2, rec = null) => { gs = newGame(seed, rules, rec ? seatedPartner(rec) : players > 1); st.prevA = false; st.prevB = false },
         step: (pads) => {
             const heroPad = decodePad(pads[0], 'stick')
             const p2 = decodePad(pads[1], 'stick')
