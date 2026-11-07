@@ -60,6 +60,10 @@ export function playFx(f) {
         case 'jog': AC.playTone(120 + (f.n || 1) * 30, 0.05, 'square', 0.07); AC.playNoise(0.05, 0.05); break
         case 'spill': AC.playNoise(0.3, 0.09); AC.playTone(80, 0.22, 'sawtooth', 0.07, 0.1); break
         case 'deny': AC.playTone(140, 0.14, 'square', 0.07); break
+        case 'pin': // #1759: thumbtack into the board (rising tick) / pin off (dull tap)
+            if (f.id !== null && f.id !== undefined) { AC.playTone(760, 0.05, 'square', 0.05); AC.playTone(980, 0.06, 'square', 0.05, 0.055) }
+            else AC.playTone(420, 0.07, 'triangle', 0.05)
+            break
         case 'noMix': AC.playTone(160, 0.1, 'square', 0.07); AC.playTone(120, 0.12, 'square', 0.07, 0.1); break
         case 'tip': AC.playSweep(200, 340, 0.18, 'square', 0.05); AC.playNoise(0.2, 0.09); break
         case 'orderDone': {
