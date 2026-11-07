@@ -16,12 +16,20 @@ export const TZ = 5  // px per height step
 export const BREAKDROP = 3 // landing this many tile-steps deep shatters the marble
 
 // #1752 music-bed wiring data (index.jsx routes the bed; marblecheck pins it).
-// Races 1-4 walk the A-minor bed a hair faster each race; SILLY + ULTIMATE
-// switch tracks to the variation-up. Our own urgency ladder — Marsyas kept
-// one tempo (and is copyrighted; see AudioController header, original beds).
+// Races 1-2 walk the A-minor bed a hair faster each race; INTERMEDIATE re-voiced
+// to the darker menace bed, AERIAL to the bright high-leap bed (#1758 — the
+// cabinet gave each course its own Marsyas arrangement); SILLY + ULTIMATE switch
+// tracks to the variation-up. Our own urgency ladder — Marsyas kept one tempo
+// (and is copyrighted; see AudioController header, original beds).
 export const FINALE_RACE = 4
+export const MENACE_RACE = 2
+export const AERIAL_RACE = 3
 export const MUSIC_STEPS = [0.085, 0.083, 0.081, 0.079, 0.072, 0.068]
-export const bedFor = (raceIdx) => (raceIdx >= FINALE_RACE ? 'marbleFinale' : 'marble')
+export const bedFor = (raceIdx) => (
+    raceIdx >= FINALE_RACE ? 'marbleFinale'
+        : raceIdx >= AERIAL_RACE ? 'marbleAerial'
+            : raceIdx >= MENACE_RACE ? 'marbleMenace' : 'marble'
+)
 export const musicStepFor = (raceIdx) => MUSIC_STEPS[Math.min(Math.max(raceIdx, 0), MUSIC_STEPS.length - 1)]
 
 // pastel cabinet palette: checker pairs per base hue, side faces darker

@@ -50,7 +50,7 @@ planner blocks a radius-1.3 bubble around the LIVE steelie position with a
 no-freeze fallback (an old route beats no route when the steelie parks in a
 doorway).
 
-## The music bed (#1752, closes honest gap 1)
+## The music bed (#1752, closes honest gap 1; re-voiced per course by #1758)
 
 `MUSIC.marble` + `MUSIC.marbleFinale` in `AudioController.js` — original
 sixteenth-note virtuosic beds in the Marsyas IDIOM (A minor, zero rests in
@@ -67,11 +67,20 @@ steelie/clear duck it, `over`/`win`/unmount stop it. The bed is pure
 painter-side data — `sim.js`/`planner.js` contain no audio, hashes and the
 autopilot are untouched (marblecheck pins this).
 
+#1758 re-voiced the campaign like the cabinet did: `MENACE_RACE`/`AERIAL_RACE`
+in `levels.js` split it into FOUR arrangements. `marbleMenace` (INTERMEDIATE)
+is Am–G–F#dim–E with chromatic neighbours and a lower floor — the Phrygian b2
+over E is the sting; `marbleAerial` (the sky bridges) jumps a 12th into its
+peaks over major colours (A–E–F#m–D), a fifth above the base bed's mean but
+still under the finale. Character is gated, not asserted: the harness measures
+floor, mean, leap width and chromatic count against the base bed.
+
 ## Verify
 
 ```bash
-npm run marblecheck   # rules + determinism + win proof + 11 bed gates (Node, ~2s)
-npm run marbleplay    # browser drive (dev server): bed live, ladder, finale switch,
+npm run marblecheck   # rules + determinism + win proof + 13 bed gates (Node, ~2s)
+npm run marbleplay    # browser drive (dev server): bed live, per-course re-voicing
+                      #   rides the real raceStart events, finale switch, ladder,
                       #   death keeps it, game over stops it, restart brings it back
 npm run lint:marble   # eslint over the four game files + harnesses
 ```
@@ -80,9 +89,12 @@ The harness proves it can fail: set `BREAKDROP = 99` in `levels.js` and the
 "hard drop shatters" check goes red. Bed mutants: drop a bass note (table
 gate), replace `startMusic(bed)` with a literal (routing-pin gate), plant a
 `0` in a lead (motion-law gate), make `MUSIC_STEPS` non-monotonic (urgency
-gate) — each reddens exactly its gate. #1752 lesson: after committing, read
-`git show --stat` — a "leads recomposed" commit once shipped only the harness
-because a mid-mutant-sequence `git checkout` reverted the working file first.
+gate) — each reddens exactly its gate. #1758 mutants: map `AERIAL_RACE` to
+`'marble'` in `bedFor` → exactly the re-voicing + finale-flip gates red;
+`marbleMenace.step 0.081→0.085` → exactly the ladder gate red. #1752 lesson:
+after committing, read `git show --stat` — a "leads recomposed" commit once
+shipped only the harness because a mid-mutant-sequence `git checkout` reverted
+the working file first.
 
 ## Honest gaps (filed for the QA lane)
 
@@ -97,7 +109,9 @@ policy-permanent (AudioController header).*
   screen edge (the whole-course diorama is gone, #265); the attract screen no
   longer bleeds the live race/timer/score HUD. Still flat vs the cabinet: no
   per-section push-in on the narrow bridges.
-- The bed is one harmony loop (+variation) for the whole campaign; the cabinet
-  re-voiced Marsyas per course (six distinct arrangements). Also: the third
-  voice (Marsyas is a piano — pedalled sustain, dynamic swells) is out of reach
-  of two square/triangle channels.
+- *The bed was one harmony loop (+variation) for the whole campaign — closed by
+  #1758: four arrangements now (base, menace, aerial, finale), each gated to
+  sound distinct. PRACTICE/BEGINNER share the base and SILLY/ULTIMATE share the
+  finale on purpose: the arc is arrival→menace→flight→showdown, not six equal
+  courses. The third voice (Marsyas is a piano — pedalled sustain, dynamic
+  swells) stays out of reach of two square/triangle channels.*

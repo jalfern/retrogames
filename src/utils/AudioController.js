@@ -139,6 +139,45 @@ export const MUSIC = {
             40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52,
         ],
     },
+    // #1758 per-course re-voicing — the cabinet gave every course its own
+    // Marsyas arrangement. "MENACE" (INTERMEDIATE): the same motion law in a
+    // darker light — Am–G–F#dim–E with chromatic neighbours (the b2 over E is
+    // the Phrygian sting) and a lower floor than the base bed. Ours, same law:
+    // no rests, octave-pumping left hand, span 23.
+    marbleMenace: {
+        step: 0.081,
+        lead: [
+            69, 72, 76, 68, 71, 76, 69, 65, 68, 71, 76, 80, 85, 76, 64, 68,
+            67, 71, 74, 66, 69, 74, 67, 62, 65, 69, 74, 79, 84, 74, 62, 66,
+            66, 69, 72, 75, 78, 81, 84, 75, 72, 66, 63, 66, 72, 78, 84, 75,
+            64, 68, 71, 76, 80, 71, 68, 63, 67, 71, 76, 79, 84, 76, 64, 67,
+        ],
+        bass: [
+            45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57,
+            43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55, 43, 55,
+            42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54,
+            40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52,
+        ],
+    },
+    // "AERIAL" (the sky-bridges race): brighter tessitura over major colours
+    // (A–E–F#m–D) and the signature wide registral jumps — the lead leaps a
+    // 12th into its peaks, which is what the bridges look like from above.
+    // Mean sits a fifth above the base bed, still under the finale.
+    marbleAerial: {
+        step: 0.079,
+        lead: [
+            73, 76, 81, 93, 88, 81, 76, 73, 76, 81, 85, 97, 88, 85, 81, 73,
+            76, 79, 83, 95, 91, 88, 83, 79, 76, 83, 88, 100, 95, 88, 83, 76,
+            78, 81, 85, 97, 93, 90, 85, 81, 78, 85, 90, 98, 93, 90, 85, 78,
+            74, 78, 81, 93, 90, 86, 81, 78, 74, 81, 86, 98, 93, 86, 81, 74,
+        ],
+        bass: [
+            45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57, 45, 57,
+            40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52, 40, 52,
+            42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54, 42, 54,
+            38, 50, 38, 50, 38, 50, 38, 50, 38, 50, 38, 50, 38, 50, 38, 50,
+        ],
+    },
     // PRINCE OF PERSIA — three original beds in the Hijaz mode (D Eb F# G A Bb C#),
     // composed for this build. Silence stays the default voice of the dungeon:
     // these run under it, sparse and slow, with a darbuka pulse (1=dum 2=tek).

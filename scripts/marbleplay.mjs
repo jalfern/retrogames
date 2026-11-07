@@ -59,10 +59,14 @@ for (let want = 1; want <= 4; want++) {
     ladder.push([st.race, st.s.track, st.s.stepDur?.toFixed(3)])
     if (st.race !== want) break
 }
+const EXPECT_BED = { 1: 'marble', 2: 'marbleMenace', 3: 'marbleAerial', 4: 'marbleFinale' }
 r.check('race clears walk the tempo ladder (steps shrink, bed keeps playing)',
     ladder.length === 4 && ladder.every(([race, track, sd], i) =>
-        race === i + 1 && track === (race >= 4 ? 'marbleFinale' : 'marble') &&
+        race === i + 1 && track === EXPECT_BED[race] &&
         (!i || Number(sd) < Number(ladder[i - 1][2]))), JSON.stringify(ladder))
+r.check('per-course re-voicing rides the real raceStart events (#1758)',
+    ladder.length === 4 && ladder.every(([race, track], i) => race === i + 1 && track === EXPECT_BED[race]),
+    JSON.stringify(ladder))
 r.check('SILLY switches to the variation-up (finale track, faster step)',
     ladder.length === 4 && ladder[3][1] === 'marbleFinale' && Math.abs(ladder[3][2] - 0.072) < 1e-9,
     JSON.stringify(ladder.at(-1)))
