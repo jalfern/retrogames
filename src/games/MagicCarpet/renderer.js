@@ -515,6 +515,11 @@ void main(){
     const rtScene = new THREE.WebGLRenderTarget(4, 4, rtOpts)
     const rtA = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false })
     const rtB = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false })
+    // #1790 ANAGLYPH STEREO: eye buffers hold the composed world (byte — these
+    // carry display values, not HDR). The HUD overlay never sees stereo: it is
+    // a chart, not world, and the original's glasses were on the world window.
+    const rtEyeL = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false, type: THREE.UnsignedByteType })
+    const rtEyeR = new THREE.WebGLRenderTarget(4, 4, { ...rtOpts, depthBuffer: false, type: THREE.UnsignedByteType })
     const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1)
     const quad = new THREE.PlaneGeometry(2, 2)
     const qmat = (frag, uniforms) => new THREE.ShaderMaterial({
@@ -548,6 +553,23 @@ void main(){
     const scBright = mkScene(brightMesh)
     const scBlur = mkScene(blurMesh)
     const scComp = mkScene(compMesh)
+    // #1790: the anaglyph combine — left eye into red, right into cyan. The
+    // classic optical pick: 1994 red/cyan glasses filtered light, they did not
+    // run algorithms, so neither does this (no ghost-crush — warm fire stays
+    // warm, exactly the period trade the original's players wore on their faces).
+    const anaglyphMesh = new THREE.Mesh(quad, qmat(`
+precision highp float; uniform sampler2D uL, uR; varying vec2 vQ;
+void main(){
+    gl_FragColor = vec4(texture2D(uL, vQ).r, texture2D(uR, vQ).g, texture2D(uR, vQ).b, 1.0);
+}
+`, { uL: { value: null }, uR: { value: null } }))
+    const scAnaglyph = mkScene(anaglyphMesh)
+    // #1790 eye separation, world units. At the carpet's own scale (pearls hover
+    // ~10u away, the castle tens of units) this is a strong-but-comfortable pop:
+    // ~9 px of parallax at arm's length, ~1 px at the horizon — parallel view,
+    // converged at infinity, the same cheat every stereo card of the era used.
+    const IPD = 0.30
+    let stereo = false
 
     // ---- CPU particle pool → instanced quads
     const parts = []
@@ -988,6 +1010,7 @@ void main(){
         rtScene.setSize(Wpx, Hpx)
         const bw = Math.max(2, Math.floor(Wpx / 4)), bh = Math.max(2, Math.floor(Hpx / 4))
         rtA.setSize(bw, bh); rtB.setSize(bw, bh)
+        rtEyeL.setSize(Wpx, Hpx); rtEyeR.setSize(Wpx, Hpx)
         camera.aspect = Wpx / Hpx
     }
 
@@ -1033,20 +1056,46 @@ void main(){
         boltMat.uniforms.uFade.value = Math.max(0, 1 - boltAge / 16)
 
         const bsz = Math.max(rtA.width, 1)
-        renderer.setRenderTarget(rtScene)
-        renderer.clear()
-        renderer.render(scene, camera)
-        brightMesh.material.uniforms.uT.value = rtScene.texture
-        renderer.setRenderTarget(rtA); renderer.render(scBright, quadCam)
-        blurMesh.material.uniforms.uT.value = rtA.texture; blurMesh.material.uniforms.uDir.value.set(1.4 / bsz, 0)
-        renderer.setRenderTarget(rtB); renderer.render(scBlur, quadCam)
-        blurMesh.material.uniforms.uT.value = rtB.texture; blurMesh.material.uniforms.uDir.value.set(0, 1.4 / bsz)
-        renderer.setRenderTarget(rtA); renderer.render(scBlur, quadCam)
-        compMesh.material.uniforms.uScene.value = rtScene.texture
-        compMesh.material.uniforms.uBloom.value = rtA.texture
-        compMesh.material.uniforms.uBloomAmt.value = hdr ? 0.85 : 0.7
-        renderer.setRenderTarget(null)
-        renderer.render(scComp, quadCam)
+        const bloomAmt = hdr ? 0.85 : 0.7
+        const renderEye = (withBloom) => {
+            renderer.setRenderTarget(rtScene)
+            renderer.clear()
+            renderer.render(scene, camera)
+            if (withBloom) {
+                // #1790: bloom is a quarter-res blur — the eyes' parallax (a few
+                // px near, sub-px far) is invisible inside the glow, so the
+                // bright/blur chain runs once (left eye) and serves both.
+                brightMesh.material.uniforms.uT.value = rtScene.texture
+                renderer.setRenderTarget(rtA); renderer.render(scBright, quadCam)
+                blurMesh.material.uniforms.uT.value = rtA.texture; blurMesh.material.uniforms.uDir.value.set(1.4 / bsz, 0)
+                renderer.setRenderTarget(rtB); renderer.render(scBlur, quadCam)
+                blurMesh.material.uniforms.uT.value = rtB.texture; blurMesh.material.uniforms.uDir.value.set(0, 1.4 / bsz)
+                renderer.setRenderTarget(rtA); renderer.render(scBlur, quadCam)
+            }
+            compMesh.material.uniforms.uScene.value = rtScene.texture
+            compMesh.material.uniforms.uBloom.value = rtA.texture
+            compMesh.material.uniforms.uBloomAmt.value = bloomAmt
+        }
+        if (stereo) {
+            // #1790 parallel stereo: eyes shift along the view's own right axis;
+            // three.js refreshes the camera world matrix at every render, so the
+            // position move between the two passes is all the eye needs.
+            camera.position.addScaledVector(right, -IPD * 0.5)
+            renderEye(true)
+            renderer.setRenderTarget(rtEyeL); renderer.render(scComp, quadCam)
+            camera.position.addScaledVector(right, IPD)
+            renderEye(false)
+            renderer.setRenderTarget(rtEyeR); renderer.render(scComp, quadCam)
+            camera.position.addScaledVector(right, -IPD * 0.5) // restore the head
+            anaglyphMesh.material.uniforms.uL.value = rtEyeL.texture
+            anaglyphMesh.material.uniforms.uR.value = rtEyeR.texture
+            renderer.setRenderTarget(null)
+            renderer.render(scAnaglyph, quadCam)
+        } else {
+            renderEye(true)
+            renderer.setRenderTarget(null)
+            renderer.render(scComp, quadCam)
+        }
     }
 
     applyPalette(0)
@@ -1060,6 +1109,10 @@ void main(){
         handleEvents,
         resetWorld,
         applyPalette,
+        // #1790 red/cyan anaglyph — the original's stereo-glasses mode, on by V.
+        setStereo: (on) => { stereo = !!on },
+        stereoOn: () => stereo,
+        stereoIPD: () => IPD,
         particleCount: () => parts.length,
         ashCount: () => parts.reduce((n, p) => n + (p.kind === 'ash' ? 1 : 0), 0),
         smokeCount: () => smoke.geo.instanceCount,
@@ -1067,7 +1120,7 @@ void main(){
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
         scorchCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 2] > 0) n++; return n },
         dispose() {
-            rtScene.dispose(); rtA.dispose(); rtB.dispose()
+            rtScene.dispose(); rtA.dispose(); rtB.dispose(); rtEyeL.dispose(); rtEyeR.dispose()
             terrGeo.dispose(); spr.geo.dispose(); par.geo.dispose(); smoke.geo.dispose(); boltGeo.dispose()
             atlas.tex.dispose(); hTex.dispose()
             renderer.dispose()
