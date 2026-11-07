@@ -1,69 +1,71 @@
-# STATE — session 177 (2026-11-07, slot b)
+# STATE — session 178 (2026-11-07, slot b)
 
 ## What shipped
-**MAGIC CARPET — the original's stereo glasses (red/cyan anaglyph) — PR #1794
-squash-merged as `fae53b5`, closes #1790 (POLISH, never-dry stage).**
-Ladder: warden target #1711 was REFUSED at claim (slot a holds it live, resumed
-as S6 outbox #1795); steer/next/game-queue empty; feedback borrow blocked (live
-QA MASTER on studio 5176 + mini 5174); flagship gaps all CLOSED/owned
-(flagshipStage null); weakestStage scored MAGIC CARPET **7** — shelf max. Gap
-pick: #1764 paraphrase-owns spell-menu/wizards/villages/water/fog/campaign, so
-the oldest gap no open issue reaches was the README's "no anaglyph/stereo mode".
-Filed #1790 with the why-weakest line, claimed, built.
-- **Game:** `renderer.js` renders the world twice per paint from ±0.60u parallel
-  cameras; post quad combines left→red / right→cyan (classic optical pick, no
-  ghost-crush); bloom runs once and serves both eyes (quarter-res, eye-agnostic).
-  Two byte-type eye RTs join resize/dispose. Mono path byte-identical to before.
-- **UX:** `V` flips glasses any screen (paused too); `?stereo=1` = phone entry;
-  localStorage persists; flat red/cyan HUD pips while ON (overlay canvas never
-  sees stereo — it's a chart, not world); pause-card line in the registry. Sim
-  untouched.
-- **Harness:** carpetcheck +10 gates on a frozen world (reset+step quiesces):
-  mono baseline peaks dx 0 on far/mid/near bands; ON shifts near-band R↔G peak
-  off-axis NEGATIVE (left-eye polarity); depth spread (far parallaxes less);
-  sky stays blue-dominant (channels split views, not hue); pips drawn/gone;
-  real V key + localStorage + reload persistence + param beats storage once,
-  not after. **Mutant proven:** IPD 0.60→0 — three physics gates RED naming
-  `peak 0`, toggle/persistence gates stay green (correct sensitivity).
-  Restored green; eslint/lint:mario/fps/ai + build green. Prod verified
-  (`index-DaFJgo3a.js` carries `mc-stereo`); #1764 got the scope note (
-  shutter/interlace + true HRTF remain PARTIAL).
+**TALK ME DOWN — THE BACK PANEL — PR #1801 squash-merged as `58d7dfc`,
+closes #1797 (POLISH, never-dry stage).**
+Ladder: warden target #1711 REFUSED at claim (slot a live, claimed 10:27Z,
+pushed S7 sync-badge core `8fc4e47` on forge/plaicraft-pill — their resume,
+not mine); steer/next/game-queue empty; feedback borrow blocked (QA MASTER
+live on studio 5176 + mini 5174); flagshipStage null. weakestStage scored
+TALK ME DOWN **7** — shelf max among unheld titles (MAGIC CARPET also 7 but
+QA inside #1764). Filed #1797 with the why-weakest line, claimed, built.
+- **Game:** UP at module 1 tilts the bomb onto a riveted back plate (0-2
+  seeded `features.batteries`), DOWN tilts back; verbs on the back refuse
+  SILENTLY (no strike); new bombs land face-up; `gs.flip` rides hash +
+  simState. **D5** (dial = battery count) and **G5** (glyph, SPADE, glyph)
+  read the back aloud — text==truth holds (targets always resolvable).
+  "FLIP IT"/"TURN IT OVER" grammar added — pulses the tilt hint, never acts
+  (#1247). Attract tilts itself over; select screen spells the gesture.
+- **Slope fix:** variantPool `1+round` — round 1 now EXACTLY matches the
+  README's promise (old slope leaked N5/D3/G2), and **every stamp is live
+  inside the quota — N6 was dead code** (needed round 8, quota ends at 5).
+- **Proof:** bombcheck **50/50** (+12: legality, flip law, silent refusal,
+  face-up reset, autopilot-never-tilts, 40 D5/G5 printed-truth rigs, quota
+  reachability incl. revived N6, round-1 README set, hash carries tilt, 2
+  source pins, FLIP grammar + page/dial-keep). Mutant (remove refusal) → red
+  on exactly refusal (`score=495` leak) + source pin. Real-key drive: tilt,
+  battery pixels, silent Space, voice pulse — green. contractcheck(tmd)
+  14/14; eslint/lint:mario/fps/ai + build green.
 
-## Board after this session
-- Slot a merged #1795 (PLAICRAFT S6 outbox, `9c60769`) while I built. Their
-  report flags **#1793 (feedback): GAUNTLET replay diverges at tick ~570,
-  intermittent** — threatens #1711's "100% replay-verify" line; QA lane's by
-  rule unless Jon says next/steer.
-- #1711 stays big-build open: hardware stage awaits #1730 (deadline 11-08,
-  default hold).
+## Board this session
+- #1797 shipped+closed; QA polish pass **#1802** filed (pullable batteries,
+  serial-on-back, tilt squash animation, seat-2 flip coaching, hint size).
+- **Prod verify PENDING** (merged ~12:20Z; Vercel + proxy lag ~10-30 min,
+  #1764 lesson). Next slot b: poll entry `index-<hash>.js` chunks for
+  `MAINTENANCE PANEL`, then comment the live URL on #1797.
+- README Honest gaps cleaned: #1373/#1415 shipped-notes marked CLOSED so
+  never-dry scoring reads honestly (TalkMeDown now ~4 real gaps, was 7).
 
-## Next queued
-- #1711 stage 3 (phone drive): when #1730 lands — 3 phone runs,
-  `npm run plaicraft:evidence`, paste table, close with evidence. Run it on a
-  NON-first-consent session or #1793 bites the replay line.
-- Never-dry: re-run weakestStage fresh (`/tmp/forge/slotb-weak-s178.mjs`
-  works — live gh api board, idle.mjs). MAGIC CARPET's remaining gaps are now
-  #1764-paraphrase + the shutter/HRTF residue → next tier score-5 tier is
-  HOMEBODY / BRITANNIA / FLOOR BOSS (oldest-first → HOMEBODY; its oldest gap:
-  no room build/extend, one fixed lot).
+## Next queued (slot b)
+1. Verify prod for #1801/#1797 (above).
+2. #1711 hardware stage: when #1730 lands — but #1711 is slot a's live claim;
+   don't touch unless it goes stale (no claim/checkpoint 90 min).
+3. Else the usual ladder: steer/next/game-queue → feedback borrow (only with
+   no live QA MASTER) → flagship gaps via idle.mjs → never-dry weakestStage
+   (re-run fresh; with #1797 closed, TALK ME DOWN drops — likely back to
+   HOMEBODY/BRITANNIA/FLOOR BOSS score-5 tier, oldest-first).
 
 ## Open questions
 - #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
 
-## Slot hygiene
-- Dev server: slot-b's `npm run dev -- --port 5178 --strictPort` LEFT RUNNING
-  (mine; kill first: `lsof -ti :5178 | xargs kill`). Vite binds IPv6 — browse
-  via `localhost:`.
-- **Vite file-watch misses edits in worktrees on this box** (hit 3× today:
-  slot-a twice, me once — a stale IPD=0.30 served after sed to 0.60 while
-  carpetcheck reported green-looking runs). AFTER any src edit that a browser
-  check depends on: `curl -s localhost:5178/retrogames/src/games/<Game>/<file>.js | grep <new-text>`;
-  on miss `lsof -ti :5178 | xargs kill` + restart + verify again. The
-  IPD-mutant run was only trustworthy after a restart confirmed the served
-  bytes flipped.
-- Worktree `~/Dev/retrogames-forge-mc-anaglyph` (node_modules symlinked) sits
-  detached at `fae53b5`; remote branch deleted at merge — reuse freely with
-  `git checkout -B forge/<newslug> origin/main` after fetching.
-- Prod probe lesson: SPA games lazy-chunk per game (`index-<hash>.js` names —
-  grep ALL chunk refs from the entry, not the entry itself, for new strings).
-  `grep -c` on minified chunks counts LINES (=1), not hits — use -o | wc -l.
+## Notes for the next slot-b session
+- **Chrome on launchd-kicked sessions (this box):** full Chrome cannot boot
+  (#1622); `lib/chromeboot.mjs` ladder picks `shell+sp` here. bombdrive was
+  raw-`chromium.launch` (died at launch entirely) — migrated to chromeboot in
+  #1801. Its LONG live-capture section still kills the page under
+  headless-shell+sp after ~11 gates — advisory per rule 3; the flip gates were
+  proven via a standalone short drive (same code path): 
+  `/tmp/forge/tmd-flip-drive.mjs` (pattern for new browser gates: keep runs
+  short or they die).
+- **Vite serves stale transforms in worktrees** — after src edits, BEFORE
+  trusting a browser check: `curl -s localhost:5178/retrogames/src/games/<G>/<file>.js | grep <new-text>`;
+  on miss `lsof -ti :5178 | xargs kill` + restart + re-verify.
+- Hygiene: dev server LEFT RUNNING on 5178 (mine; slot b). Worktree
+  `~/Dev/retrogames-forge-tmd-backpanel` (node_modules symlinked) sits detached
+  at `58d7dfc`; reuse: `git checkout -B forge/<newslug> origin/main`.
+- Slot-a note from s176 still stands: they left worktree
+  `~/Dev/retrogames-forge-plaicraft-phone` on forge/plaicraft-pill (S7) —
+  theirs to resume; their #1711 liveness was fresh at my start.
+- `natural death` beats forced `gs.end` for replay-proof browser runs (s176);
+  `voiceLog` entries store the FULL intent object, not the kind string (#1801
+  gate lesson).
