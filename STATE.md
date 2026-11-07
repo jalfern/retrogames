@@ -1,60 +1,61 @@
-# STATE — session 167 (2026-11-06, slot a)
+# STATE — session 167 (2026-11-06, slot b)
 
 ## What shipped
-**FIRE CREW: wind-noise cue for the ladder seat — PR #1745 squash-merged as
-`35850d0` (Closes #1744).** Never-dry pick (#1571): weakestStage scored FIRE
-CREW 6 (highest unheld). Five of six points were README phantom gaps (the
-`Shipped since the first pass:` block was swallowed by Honest-gaps — the
-#945/#961 failure mode); the real gap was the README's own item 1.
-- Pure sim.js voices: `windVoice(gust)` (calm silent, breeze soft bed, gale
-  loud/deep/long) + `ladderCreak(gust, ladder)` (gale bending a ladder past
-  0.4, moan deepens as it tops out). Rng-free — replays/hashes untouched.
-- index.jsx: overlapped `playFilteredNoise` bed (85% dur) + creak every
-  ~0.7–1.2 s; DEV `windForce`/`windSpy` hooks.
-- firecrewcheck 112/112 (+8: calm silence, monotone, brighter/longer gale,
-  rng-free, creak-both-law, moan shape, 2 src pins). firecrewplay +4 browser
-  gates (breeze lays bed, gale+extended ladder howls+creaks, calm silence,
-  live-shift guard) — DRIVE GREEN, zero page errors.
-- Mutants 3/3 red-on-target, restored. First routing pin MISSED: `windVoice(
-  g.wind.gust)` also matched the test-hook call, not the scheduler — pins must
-  target the assignment (`const wv = windVoice(...)`). Lesson recorded in #1744.
-- README gap 1 CLOSED with mutant recipes; shipped-bullet block moved under its
-  own `##` → FireCrew parseGaps now honestly 0 (was inflating weakestStage).
-- Prod verified: `windForce` live in `index-BFKKqGD7.js` on jalfern.com.
-- QA polish pass filed: **#1749** (directional wind, vane pre-whistle, truck
-  silhouette, smoke-dimmed fire, crew breathe, ambience tails).
+**TEN-DEEP: THE RIM became a walkable hamlet — PR #1754 squash-merged as
+`40b05d2` (Closes #1751).**
+- Claim: warden target #1744 (FireCrew wind) was REFUSED — slot a held it and
+  shipped it mid-session (#1745, 23:05Z). Normal ladder: no halt/steer/next/
+  game-queue; live QA MASTER sessions (mini + studio) → no feedback borrow;
+  flagship stage SPENT (all four flagship READMEs fully CLOSED-marked —
+  verified parseGaps, not memory). Never-dry weakestStage: MagicCarpet/
+  GravelYard/CometDrift/IronRing skipped (open QA passes #1746/#1726/#1718/
+  #1730 own their substance), TalkMeDown + Gauntlet/ShortOrderShout/
+  RallyCoDriver skipped (#1711 PLAICRAFT — note it names TalkMeDown as
+  "BOMB DEFUSE"; heldDirs misses that alias — see #1757 note below).
+  TEN-DEEP (5 gaps, unheld) won the score-5 tie by registry age. Filed #1751,
+  claimed, built, shipped.
+- `RIM_STREET` (town.js): 32-tile two-lane street — doors far-lane T3/V9/G16/
+  A22, hedges far 6-7/18-19, well curb near 12-13. `st.town.tx/ty/face` in
+  sim + stateHash; walk cmds with `rimBlocked` refusal (`walkBlocked` events);
+  strict `enter-<key>` (`rimDoorAt` → DOORAWAY); `leave` = own threshold;
+  F descends anywhere (pad law kept). Zero rng; proofs/slack/determinism
+  untouched (they bypass the town).
+- Shell: arrows walk, SPACE crosses the threshold under the hero; lamp pools,
+  hedges, door steps, walking hero (tile-parity stride); footstep/knock sfx;
+  dev setup lands on thresholds; probe exposes x/lane/face.
+- tendeepcheck +8 walk-law gates → **968/968**; mutants caught: rimBlocked
+  lane lookup dead → street gates red; strict-door guard dead → strict gate
+  red; restored. tendeeppplay updated to walk thresholds (Chrome can't boot
+  this box, #1622 — CI runs those legs). lints (tendeep/mario/fps/ai) +
+  build green.
+- README: gap 1 CLOSED with mutant recipe; #945 hygiene — struck-through
+  #1275 bullet got its real `CLOSED by` marker.
+- Polish pass filed: **#1756** (QA — TEN-DEEP polish: townsfolk, threshold
+  beat, party file, night ambience, live lamp flames).
 
-## Board this session
-- Warden target #1740 claim REFUSED (slot b live holder); session 166 resumed
-  and merged it (#1743 → `8d5d8de`) while this session built FireCrew.
-- Session 164 (slot a, overlapping early steps) shipped **#1737 COMET CUP**
-  (`e4c6e4a`) — its parked STATE folded here per #1430.
-- #601 freeze resolved by evidence (not by us): archery gate fixed in `b4206e5`
-  (#1741), nightly 42299641208 green 22:44Z; main-ok then passed.
+## Prod
+Vercel was still building at last poll (~12 min post-merge; prod still serving
+index-r94sg8q0.js; this build's chunk is index-BsyN_Cst.js). If the next lane
+finds jalfern.com/retrogames/assets/index-BsyN_Cst.js = 200, comment the live
+URL on #1751, building→shipped, close completed. (Note: origin/main has moved
+to fa6b9d6 behind another lane's merge — poll the asset, not the head sha.)
 
 ## Next queued
-1. **#1711 PLAICRAFT S3** (slot a holds it, per session 164) — still gated on
-   #1730 (Jon: R2 bucket + relay; steps in #1730). When the worker answers
-   `sessions:true`: `npm run sessions` live → Jon's 3 phone sessions
-   replay-verified + real-mic clap → close #1711 with evidence.
-   If still AWAITING: do not idle the builder.
-2. **Never-dry rung** otherwise: flagship gaps all CLOSED; feedback board is
-   QA's (#1734/#1746/#1748/#1749 unheld-feedback is QA's job, #1718/#1726
-   building-qa). Re-run weakestStage fresh — session 164's "next is TALK ME
-   DOWN" predates PLAICRAFT S2 putting TalkMeDown et al. into `building`
-   (held-dirs proof from this session: CometDrift, CometDriftHD, Gauntlet,
-   MagicCarpet, ShortOrderShout, GravelYard, TalkMeDown, RallyCoDriver).
-   Derive, file POLISH issue, claim normally.
-3. cometcheck `--mutate` BLIND line on #478 charge-accrual (session 164 note,
-   not ours) — CI verdicts are the word.
+- Slot b ladder: re-run at session start; expect steer/next/queue empty,
+  building: #1711/#1637 held by other lanes; FireCrew shipped (#1745).
+  Never-dry again if empty: TEN-DEEP still holds 4 open gaps (monsters-in-
+  corridor is solver-reopening — skip; 2D combat plates, no persistence,
+  #1275 hygiene now filtered) and the shelf has several score-4/5 titles.
+- PLAICRAFT S3 still gated on #1730 (AWAITING).
 
 ## Open questions
-- #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
+- #1730 (waiting-jon, lane:games) — R2 bucket + relay; default is hold.
 
-## Notes for the next slot-a session
-- Worktree `~/Dev/retrogames-forge-firecrew-wind` (node_modules symlinked) sits
-  detached at origin/main; dev server on **5173 killed** at session end.
-- Lessons worth keeping: (1) src pins must target the scheduler assignment, not
-  just any callsite; (2) jalfern.com assets 308 to www. — prod-marker polling
-  needs `curl -L`; (3) in merge-waiter loops use `gh pr view N --json ...` —
-  `gh pr N` is not a subcommand and empty output wedged a wait loop 15 min.
+## Slot hygiene
+- My dev server: started on 5178 (strictPort); killed itself once (143) after
+  a lockfile-triggered re-optimize, restarted — still listening at session
+  end. Kill it: `lsof -ti :5178 | xargs kill`.
+- Observation for the harness folks (small, not mine to fix mid-game):
+  `heldDirs`/`weakestStage` missed #1711 holding TalkMeDown because the issue
+  names it "BOMB DEFUSE", not "Talk Me Down" — a title-alias table (or a
+  `game:` label on big-build issues) would close that hole.
