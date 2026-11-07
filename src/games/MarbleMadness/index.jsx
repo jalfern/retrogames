@@ -499,7 +499,9 @@ const MarbleMadnessGame = () => {
                     : (script && scriptT < script.length ? script[scriptT++] : { left: false, right: false, up: false, down: false })
                 if (mode === 'play') {
                     step(gs, gi)
-                    if (gs.end && watchingRef.current) { watchingRef.current = false; setWatching(false) } // #1637 the run ends in your hands
+                    if (gs.end && watchingRef.current) {
+                        watchingRef.current = false; setWatching(false) // #1637 the run ends in your hands
+                    }
                     screenState(gs.end ? 'over' : 'play')
                 }
                 else if (mode === 'attract') {
