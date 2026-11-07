@@ -68,6 +68,7 @@
     "bombcheck": "node scripts/bombcheck.mjs",
     "defusecheck": "node scripts/defusecheck.mjs",
     "defuselinkcheck": "node scripts/defuselinkcheck.mjs",
+    "defuselinkdrive": "node scripts/defuselinkdrive.mjs",
     "defusedrive": "node scripts/defusedrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
     "sosplay": "node scripts/sosplay.mjs",

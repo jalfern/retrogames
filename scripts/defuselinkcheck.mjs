@@ -400,10 +400,13 @@ console.log('shell audit:')
     ok('the go payload carries the seed', /lobby\.start\(\{ seed: /.test(src))
     ok('the loop runs the lockstep contract', /pumpTo\(/.test(src) && /\.ready\(/.test(src) && /\.assemble\(/.test(src))
     ok('the walkaway demote is wired in the shell', /demote\(/.test(src) && /DROP_GRACE/.test(src))
-    ok('the guest drives seat 1', /role === 'guest' \? 1 : 0|netRole === 'guest' \? 1 : 0/.test(src))
+    ok('the guest drives seat 1', /role === 'host' \? 0 : 1/.test(src))
     ok('boundary hashes ride the shell loop', /HASH_EVERY/.test(src) && /\.hash\(/.test(src))
     ok('a desync freeze + snapshot resync is wired', /restoreNet\(/.test(src) && /packSnap\(/.test(src))
-    ok('the DEMO is still pure: attract never touches the net path', !/solvePads\(a\)[^]*pumpTo/.test(src))
+    const pumpCount = (src.match(/\.pumpTo\(/g) || []).length
+    ok('the DEMO is still pure: attract runs solvePads, the wire has exactly one pump (play-only)',
+        /E\.step\(a, E\.solvePads\(a\)\)/.test(src) && pumpCount === 1
+        && src.indexOf('screenRef.current === \'attract\'') < src.indexOf('.pumpTo('))
     const eng = readFileSync(new URL('../src/games/BombDefuse/engine.js', import.meta.url), 'utf8')
     ok('the engine grew ONLY an rng accessor for the snapshot', /next\.x = /.test(eng) && !/WebSocket/.test(eng))
 }
