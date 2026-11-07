@@ -1248,6 +1248,10 @@ const MomentumGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
                     <div className="absolute inset-x-0 top-7 text-center pointer-events-none">
                         <h1 className="text-5xl font-black tracking-tight text-cyan-100" style={{ textShadow: '0 0 18px rgba(102,246,255,0.75), 0 4px 0 rgba(8,40,60,0.9), 0 10px 30px #000' }}>
                             MOMENTUM<span className="text-orange-400" style={{ textShadow: '0 0 18px rgba(255,140,60,0.8)' }}> RUNNER</span>
@@ -1257,10 +1261,6 @@ const MomentumGame = () => {
                         <p className="text-white font-mono font-bold text-sm animate-pulse tracking-widest">{PRESS}</p>
                         <AttractMessage className="text-cyan-200/85 mt-2" messages={MESSAGES} />
                         <span className="block mt-2 text-emerald-300/90 font-mono font-bold tracking-widest text-xs">{WATCH_ATTRACT_HINT}</span>
-                    </div>
-                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
-                        <AttractWatchButton />
                     </div>
                 </>
             )}

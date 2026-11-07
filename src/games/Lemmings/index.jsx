@@ -580,7 +580,7 @@ const LemGame = () => {
                     skills: { ...gs.skills },
                     spawned: gs.spawned, exited: gs.exited, dead: gs.dead, need: meta.need,
                     end: gs.end, win: gs.win, score: gs.score, hash: stateHash(gs),
-                    cmds: runCmds.length, board: board(),
+                    cmds: runCmds.length, gcmds: gs.cmds.length, board: board(), // #1637 gcmds = solver-line assignments too
                     lemmings: gs.lemmings.map(L => ({ id: L.id, x: L.x, y: L.y, state: L.state, dir: L.dir, climber: L.climber, digger: L.digger, flash: L.flashT, live: L.live })),
                 }),
                 // The next move the PROVEN solver makes at this point in the
@@ -747,15 +747,15 @@ const LemGame = () => {
             {screen === 'attract' && (
                 <>
                     <div className="absolute inset-0 bg-black/55 pointer-events-none" />
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
                     <div className="absolute inset-x-0 top-8 text-center pointer-events-none">
                         <h1 className="text-5xl font-black text-green-300" style={{ textShadow: '0 4px 0 #1d4a1d, 0 10px 24px #000' }}>LEMMINGS-LITE</h1>
                         <p className="text-white font-mono font-bold mt-8 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/90 mt-2 px-8" messages={MESSAGES} />
                         <span className="block mt-2 text-green-200/80 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
-                    </div>
-                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
-                        <AttractWatchButton />
                     </div>
                 </>
             )}
