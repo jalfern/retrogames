@@ -310,6 +310,9 @@ export function declareWar(gs, a, b, by) {
 export function canDeclareWar(gs, a, b) {
     if (a === b) return 'cannot war yourself'
     if (a === BARB || b === BARB) return 'barbarians need no declaration'
+    // #1777: puppets keep the peace their overlord won for them — a kneeling
+    // realm never starts a war, at any table, against anyone.
+    if (gs.civs[a] && gs.civs[a].alive && gs.civs[a].vassal != null) return 'your realm kneels — a puppet never starts a war'
     if (!gs.civs[b] || !gs.civs[b].alive) return 'they are already gone'
     if (atWar(gs, a, b)) return 'already at war'
     const pt = gs.peaceTurn[Math.min(a, b) + '-' + Math.max(a, b)]
@@ -936,7 +939,7 @@ export function newGame(seed = 1, scenario = 0) {
         trade: {}, peaceTurn: {},
         ark: CIVS.map(() => 0),
         gp: CIVS.map(() => ({ pts: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, held: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 }, ready: { ENGINEER: false, SCIENTIST: false, MERCHANT: false }, bought: { ENGINEER: 0, SCIENTIST: 0, MERCHANT: 0 } })),
-        capitalOf: {}, events: [], end: null, endWhy: '',
+        capitalOf: {}, origCapOf: {}, events: [], end: null, endWhy: '',
         selected: -1, _anim: [],
     }
     generateMap(gs)
@@ -1155,7 +1158,12 @@ function foundCity(gs, civ, c, r) {
     gs.cities.push(city)
     tl.city = city.id
     gs.civs[civ].cities = (gs.civs[civ].cities || 0) + 1
-    if (city.capital) gs.capitalOf[civ] = city.id
+    if (city.capital) {
+        gs.capitalOf[civ] = city.id
+        // #1777: the ORIGINAL capital is what domination eyes forever after —
+        // a palace may move on, but the first seat is the one that kneels.
+        if (civ > 0 && civ < BARB) { city.orig = true; gs.origCapOf[civ] = city.id }
+    }
     tl.owner = civ
     spreadBorders(gs, civ)
     reveal(gs, civ, c, r, CFG.sightCity)
@@ -1356,49 +1364,64 @@ function captureCity(gs, city, civ) {
         if (civ < CIVS.length) { if (civ < CS0) gs.civs[civ].gold += CFG.csTribute; gs.events.push({ type: 'csTaken', cs: old, by: civ, tribute: civ < CS0 ? CFG.csTribute : 0 }) }
         for (let x = 0; x < CS0; x++) if (gs.cs[x][old]) { gs.cs[x][old].ally = false; gs.cs[x][old].fallen = true }
     }
-    // #375 item 2 — capital capture ≠ extinction, but it ENDS a reign: when a
-    // major civ's capital falls to another major, the realm submits. The fallen
-    // capital loses its banner (it is just a city of the victor now); the rest of
-    // the defeated civ's cities, garrisons and borders fold into the conqueror and
-    // the civ is vassalized. The arcade HUD pill tracks exactly these falls.
+    // #375 item 2 + #1777 — capital capture ≠ extinction, and it doesn't even
+    // end the realm: when a major civ's ORIGINAL capital falls to another major,
+    // the realm SUBMITS. The fallen capital joins the victor in plain colours;
+    // the rest of the realm stays its own — cities, garrisons and borders — run
+    // by its own AI as a puppet under its new overlord. The palace relocates to
+    // the largest surviving city (the original's palace-move law), a forced peace
+    // cools the front, and every turn's gold now flows uphill as tribute. A
+    // puppet never starts a war and never sends out settlers; it keeps its
+    // banner. The arcade HUD pill still tracks one honest number: ORIGINAL
+    // rival capitals that have fallen — three kneelings and the world is yours.
     const fellCapital = !!city.capital && old < BARB && civ < BARB && civ !== old && old !== 0
+    const origFall = fellCapital && !!city.orig && gs.civs[old].vassal == null
     if (fellCapital) delete city.capital
     declareWar(gs, civ, old)
-    if (fellCapital) {
-        collapseRealm(gs, old, civ)
+    if (origFall) {
         gs.civs[old].vassal = civ
-        gs.civs[old].alive = false
+        const k = Math.min(old, civ) + '-' + Math.max(old, civ)
+        delete gs.wars[k]
+        gs.peaceTurn[k] = gs.turn
+        gs.events.push({ type: 'peace', a: Math.min(old, civ), b: Math.max(old, civ) })
+        gs.events.push({ type: 'civFall', civ: old, by: civ, capital: city.name, vassal: true })
+        relocatePalace(gs, old)
+    } else if (fellCapital) {
+        // a seat that already moved falls too: the palace walks on, no second
+        // kneeling — the realm was spoken for at its first capital.
         gs.events.push({ type: 'civFall', civ: old, by: civ, capital: city.name })
+        relocatePalace(gs, old)
     }
     if (civ < BARB) reveal(gs, civ, city.c, city.r, CFG.sightCity)
     checkCivDeath(gs)
 }
 
-// A defeated realm submits: its cities, garrisons and claimed land pass to the
-// victor, its pacts and wars dissolve. The defeated civ keeps NO cities, so
-// checkCivDeath agrees it is gone and DOMINATION (counted on capitals) advances
-// one crown for this capital fall — no need to grind out every last unit.
-function collapseRealm(gs, old, captor) {
+// The head of the snake cut off, the body walks: the surviving largest city
+// (ties: the older one) takes the palace star, and the world's maps of seats
+// update with it. No palace, no realm — checkCivDeath draws that line.
+function relocatePalace(gs, civ) {
+    let best = null
     for (const ct of gs.cities) {
-        if (!ct.alive || ct.civ !== old) continue
-        if (ct.capital) delete ct.capital
-        ct.civ = captor
-        ct.wallMax = ct.wallMax || CFG.cityHp
-        ct.hp = Math.max(1, Math.min(ct.hp, Math.floor(ct.wallMax * 0.5)))
-        ct.queue = ct.queue || []
-        for (const [nc, nr] of neighbors(ct.c, ct.r)) { const tl = gs.tiles[idx(nc, nr)]; if (tl.owner === old) tl.owner = captor }
-        gs.tiles[idx(ct.c, ct.r)].owner = captor
+        if (!ct.alive || ct.civ !== civ || ct.capital) continue
+        if (!best || ct.size > best.size || (ct.size === best.size && ct.id < best.id)) best = ct
     }
-    for (const u of gs.units) if (u.alive && u.civ === old) u.civ = captor
-    for (const book of [gs.wars, gs.trade, gs.peaceTurn]) {
-        for (const k of Object.keys(book)) { const [a, b] = k.split('-').map(Number); if (a === old || b === old) delete book[k] }
-    }
+    if (!best) return false
+    best.capital = true
+    gs.capitalOf[civ] = best.id
+    gs.events.push({ type: 'palace', civ, city: best.id, name: best.name })
+    return true
 }
 
 function checkCivDeath(gs) {
     for (const civ of gs.civs) {
         if (civ.barb || !civ.alive) continue
-        if (!gs.cities.some((c) => c.alive && c.civ === civ.id)) { civ.alive = false; gs.events.push({ type: 'civDead', civ: civ.id }) }
+        if (!gs.cities.some((c) => c.alive && c.civ === civ.id)) {
+            civ.alive = false
+            gs.events.push({ type: 'civDead', civ: civ.id })
+            // #1777: an overlord that dies cannot hold anyone's knee — its
+            // vassals cast off the yoke the same tick the throne goes cold.
+            for (const v of gs.civs) if (v.alive && v.vassal === civ.id) { v.vassal = null; gs.events.push({ type: 'unbound', civ: v.id, from: civ.id }) }
+        }
     }
 }
 
@@ -1599,6 +1622,14 @@ function resolveCiv(gs, civ) {
         if (!now) G.ready[t] = false
     }
     C.gold += gold; C.science += sci; C.culture += cult
+    // #1777: a kneeling realm's treasury flows uphill. Tribute is the whole
+    // purse each turn (the puppet-gold law of the original), and it stops the
+    // moment the vassal takes up arms against its overlord again.
+    if (C.vassal != null && gs.civs[C.vassal].alive && !atWar(gs, civ, C.vassal) && C.gold > 0) {
+        gs.civs[C.vassal].gold += C.gold
+        gs.events.push({ type: 'tribute', civ, to: C.vassal, gold: C.gold })
+        C.gold = 0
+    }
     // Polish pass #375-4: culture and tourism split. The visitor book is a
     // second, unspendable ledger: tourists come for what there IS to see —
     // every completed wonder pays its crown, every connected luxury sends a
@@ -1661,7 +1692,12 @@ function highestEra(gs, civ) {
 // rival achieving any of the three first ends the game the other way.
 function victoryFor(gs, civ) {
     if (!gs.civs[civ].alive) return null
-    if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive)) return 'Domination — every rival capital flies your colours'
+    // #1777: DOMINATION counts ORIGINAL capitals, forever fallen — whoever
+    // holds them, whether their owners kneel as puppets or were ground out of
+    // existence. The original judged the world by its captured thrones, and
+    // the HUD pill and this law now speak the identical number.
+    const fallen = (r) => { const oc = gs.origCapOf[r] != null ? gs.cities[gs.origCapOf[r]] : null; return oc ? oc.civ !== r : !gs.civs[r].alive }
+    if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || fallen(c.id))) return 'Domination — every rival capital flies your colours'
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
     const mine = gs.civs[civ].tourism || 0
     if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {
@@ -1846,7 +1882,9 @@ function aiTurn(gs, civ) {
             const pick = WONDER_IDS.filter((id) => canBuildWonder(gs, civ, id) === true)
             if (pick.length && hash2(city.id, gs.turn, civ ^ 29) < 0.45) city.queue.push(pick[(civ + city.id) % pick.length])
         }
-        const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6
+        // #1777: puppets do not plant colonies — expansion is the overlord's
+        // privilege; the kneeling realm holds what it kneeled with.
+        const wantSettler = city.size >= 2 && C.gold >= 40 && (C.cities || 0) < 6 && C.vassal == null
         const workers = gs.units.filter((x) => x.alive && x.civ === civ && x.kind === 'WORKER').length + city.queue.filter((k) => k === 'WORKER').length
         if (wantSettler && !city.queue.includes('SETTLER')) city.queue.push('SETTLER')
         else if (workers < 2 && hash2(city.id, gs.turn, civ ^ 3) < 0.5) city.queue.push('WORKER')
@@ -1975,7 +2013,7 @@ export function stateHash(gs) {
     const KC = { SETTLER: 1, WARRIOR: 2, ARCHER: 3, CATAPULT: 4, WORKER: 5, CHARIOT: 6, LEGION: 7, GALLEY: 8, MUSKET: 9, GALLEON: 10 }
     let h = gs.turn * 31 + gs.units.length
     for (const u of gs.units) h = (h * 33 + (KC[u.kind] || 99) * 7 + u.c * 3 + u.r + (u.alive ? 1 : 0) * 131 + u.hp * 977 + u.civ * 53 + (u.busy != null ? u.busy + 1 : 0) * 19 + (u.loaded || 0) * 29 + (u.cargo ? u.cargo.length * 71 : 0)) | 0
-    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13) | 0
+    for (const ct of gs.cities) h = (h * 33 + ct.size * 5 + ct.c + ct.r * 11 + (ct.alive ? 1 : 0) + ct.hp * 31 + ct.civ * 71 + (ct.culture || 0) * 13 + (ct.orig ? 43 : 0)) | 0
     for (const cp of gs.camps) h = (h * 33 + cp.c + cp.r * 13 + (cp.alive ? 1 : 0) * 173) | 0
     let L = 0
     for (const tl of gs.tiles) L = (L * 7 + (tl.imp ? IMP_IDS.indexOf(tl.imp) + 1 : 0) + (tl.road ? 4 : 0) + (tl.res + 1) * 11 + (tl.build ? tl.build.left * 3 + tl.build.civ : 0)) | 0
@@ -1999,7 +2037,7 @@ export function stateHash(gs) {
         const G = gs.gp[civ]
         h = (h * 33 + m * 7 + (R.research ? TECH_IDS.indexOf(R.research) + 1 : 0) * 13 + Math.floor(R.prog) * 3 + rm * 29 + pm * 17 + (gs.civs[civ].culture | 0)) | 0
         h = (h * 33 + (Math.floor(G.pts.ENGINEER) + Math.floor(G.pts.SCIENTIST) * 7 + Math.floor(G.pts.MERCHANT) * 11 + G.held.ENGINEER * 17 + G.held.SCIENTIST * 19 + G.held.MERCHANT * 23)) | 0
-        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29) | 0
+        h = (h * 33 + Math.floor(gs.ark[civ]) * 41 + ((gs.civs[civ].cultureEarned || 0) | 0) * 23 + ((gs.civs[civ].tourism || 0) | 0) * 29 + ((gs.civs[civ].vassal != null ? gs.civs[civ].vassal + 1 : 0) * 47)) | 0
     }
     return (h >>> 0).toString(16)
 }
