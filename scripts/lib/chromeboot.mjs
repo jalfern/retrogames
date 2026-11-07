@@ -93,6 +93,40 @@ export async function launchChrome({ channel, headless = true, extraArgs = [], q
     throw lastErr ?? new Error('chromeboot: no launch attempts')
 }
 
+// launchPersistentChrome — same ladder as launchChrome, but with a stable
+// profile directory (#1711 S6: IndexedDB must SURVIVE the browser closing —
+// that is the phone kill-test; a plain launch gets a fresh ephemeral profile
+// every time). Returns the BrowserContext (persistent contexts own their
+// browser; close via ctx.close(), the browser via ctx.browser()).
+export async function launchPersistentChrome({ userDataDir, channel, headless = true, extraArgs = [], quiet = false, ...ctxOpts } = {}) {
+    if (!userDataDir) throw new Error('chromeboot: launchPersistentChrome needs userDataDir')
+    const ch = channel ?? (process.env.SHOT_CHANNEL || 'chrome')
+    const ciArgs = process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []
+    const envArgs = (process.env.SHOT_EXTRA_ARGS || '').split(/\s+/).filter(Boolean)
+    const frameArgs = [
+        '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+    ]
+    const { chromium } = await import('playwright-core')
+    let lastErr = null
+    for (const a of bootLadder(ch, readCachedMode())) {
+        try {
+            const ctx = await chromium.launchPersistentContext(userDataDir, {
+                ...(a.channel ? { channel: a.channel } : {}),
+                headless,
+                args: [...frameArgs, ...ciArgs, ...envArgs, ...(a.single ? ['--single-process'] : []), ...extraArgs],
+                ...ctxOpts,
+            })
+            writeMode(a.mode)
+            try { Object.defineProperty(ctx, '__bootMode', { value: a.mode, configurable: true }) } catch { /* frozen impl */ }
+            return ctx
+        } catch (e) {
+            lastErr = e
+        }
+    }
+    throw lastErr ?? new Error('chromeboot: no persistent launch attempts')
+}
+
 // Pulse field (#1622 rule): say so on the pulse instead of quietly skipping
 // screenshots. `status` is the parsed SMOKE_FILE (null/absent/stale → unknown).
 export function shotsField(status, nowS = Math.floor(Date.now() / 1000)) {

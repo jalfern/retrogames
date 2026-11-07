@@ -1321,6 +1321,13 @@ const GauntletGame = () => {
                 brainName: bcModel.name,
             }),
             state: () => ({ seed: gs.seed, hash: stateHash(gs) }),
+            // #1711 S6: the hero is picked in the select screen — the seed does
+            // NOT fix it (same rule-knob class as Rally's weather, #1711 S3).
+            // Without the stamp a replay rebuilds the default warrior and the
+            // hashes diverge at the first fight a stat difference touches.
+            rules: () => (gs && gs.heroKey
+                ? (gs.partnerKey ? { hero: String(gs.heroKey), partnerKey: String(gs.partnerKey) } : { hero: String(gs.heroKey) })
+                : { hero: 'warrior' }),
             ...(netRole === 'host' ? { voice: { slots: [0] }, voiceExtra: () => netVoiceIn.voiceSection() } : {}),
         })
 

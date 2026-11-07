@@ -337,7 +337,8 @@
     "plaicraft:export": "node scripts/plaicraft-export.mjs",
     "plaicraft:train": "node scripts/plaicraft-train.mjs",
     "plaicraft:evidence": "node scripts/plaicraft-evidence.mjs",
-    "plaicraft:clap": "node scripts/plaicraft-clap.mjs"
+    "plaicraft:clap": "node scripts/plaicraft-clap.mjs",
+    "plaicraft:outbox": "node scripts/plaicraft-outbox.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

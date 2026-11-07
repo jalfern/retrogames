@@ -18,6 +18,8 @@
 
 import { consentFor, grantConsent } from './consent.js'
 import { probeStore, uploadSession, storeFromQuery } from './sessionStore.js'
+import { queueRun, dropEntry, drain as drainOutbox } from './outbox.js'
+import { classifyFailure } from './outboxCore.js'
 import { voiceSupported } from './voiceCapture.js'
 import { autoStart, autoStop, isRecording } from './gameContract.js'
 import { planRun, decideMerge } from './autoRecordCore.js'
@@ -35,6 +37,7 @@ const st = {
     gate: null, // single-flight: one question on screen at a time
     base: null,
     busy: false, // a start is mid-ask (Space held through the gate must not re-enter)
+    onlineArmed: false, // S6: the online->drain listener is installed once
 }
 
 const ls = () => { try { return localStorage } catch { return null } }
@@ -42,13 +45,32 @@ const base = () => st.base || (st.base = storeFromQuery(typeof window !== 'undef
 
 // initAutoRecord — fire the capability probe early (mount time), so by the
 // moment the player reaches "start" the answer is already in hand and an
-// already-decided player boots with zero added delay.
+// already-decided player boots with zero added delay. S6: boot is also a
+// drain trigger — a phone that was offline yesterday ships its queue today.
 export function initAutoRecord() {
     if (typeof window === 'undefined') return
     if (!st.probe || (!st.probe.sessions && Date.now() - st.probeAt > 60000)) {
         st.probeAt = Date.now()
-        probeStore(base()).then((p) => { st.probe = p }).catch(() => { st.probe = { ok: false, sessions: false } })
+        probeStore(base()).then((p) => { st.probe = p; if (p.sessions) drainNow() }).catch(() => { st.probe = { ok: false, sessions: false } })
     }
+    if (!st.onlineArmed) {
+        st.onlineArmed = true
+        try { window.addEventListener('online', () => { if (st.probe && st.probe.sessions) drainNow() }) } catch { /* no window events: single-attempt world */ }
+    }
+}
+
+// drainNow — retry the outbox against the live store. Consent is read FRESH
+// (last-moment rule unchanged: motion revoked = nothing uploads, and
+// planDrain purges the pile). Stats land on window.__outbox for the harness.
+export async function drainNow() {
+    if (typeof window === 'undefined') return null
+    const consent = consentFor(ls(), PLAYER_ID)
+    const out = await drainOutbox({
+        motion: consent.motion,
+        upload: (e) => uploadSession(e.rec, { player: e.player, consent: consentFor(ls(), PLAYER_ID), base: base() }),
+    })
+    window.__outbox = { ...out, at: Date.now() }
+    return out
 }
 
 // askConsent — resolve the player's stored decision, asking once if the store
@@ -110,12 +132,22 @@ export async function endRun(opts = {}) {
         } catch { /* the take ships without the last chunk rather than not at all */ }
     }
     const consent = consentFor(ls(), PLAYER_ID)
+    // S6: persist BEFORE the first attempt — the crash window is exactly the
+    // await on fetch (iOS cancels in-flight uploads when the tab backgrounds,
+    // and OVER-to-close is a thumb's width). Removed only when the store has
+    // it or a permanent-failure rule says it never can.
+    const entry = await queueRun(rec, opts.player || PLAYER_ID)
     const res = await uploadSession(rec, { player: opts.player || PLAYER_ID, consent, base: base() })
+    if (entry) {
+        if (res.uploaded || classifyFailure(res.reason) === 'drop') await dropEntry(entry.id)
+        res.requeued = !res.uploaded && classifyFailure(res.reason) !== 'drop'
+    }
     window.__autoRecord = {
         last: {
             game: rec.game, seed: rec.seed, ticks: rec.ticks,
             voice: !!rec.voice, uploaded: !!res.uploaded,
             reason: res.reason || null, key: res.key || null,
+            requeued: !!res.requeued, queued: entry ? 1 : 0,
         },
     }
     return res
