@@ -19,6 +19,7 @@ import {
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT, CFG,
     SEL, selectTap, cursorStep,
+    scareVillagers, VIL_PANIC_R, VIL_FLAME_R, VIL_WANDER_R,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -1390,6 +1391,128 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         `rows end ${BOOK.row0 + BOOK.rowH * SPILLS.length} band ${BOOK.band}`)
 }
 
+// ---- #1764 item 3: village life, stage 1 — the huts are homes ------------
+// The original's villages were alive: villagers kept to their home lane,
+// broke into a run when fire or lightning came, and burned if caught in the
+// flames. Stage 1 ships exactly that (no convert/burn/prisoner economy yet —
+// they are neutral: no mana, no bounty, never hostile). All rules are sim
+// pure, so the whole village is Node-provable.
+// Mutation guide (prove it can fail): (1) make the wander radius 0
+// (`VIL_WANDER_R = 0`) → the wander/return gates go red; (2) drop the
+// `fear` flee branch (villagers never set dir away) → the fire + lightning
+// panic gates go red; (3) remove the `d < VIL_FLAME_R` splice → the burn gate
+// goes red and the hash gate (census changed) goes red too.
+{
+    const homeOf = (v) => ({ x: v.hx, y: v.hy })
+    const fresh = makeGame(7)
+    r.check('every hut houses 2–3 villagers (14–21 for seven huts), all on land near home',
+        fresh.villagers.length >= 14 && fresh.villagers.length <= 21 &&
+        fresh.villagers.every((v) => Math.hypot(wrapD(v.x - v.hx), wrapD(v.y - v.hy)) <= 10 && v.v >= 0 && v.v < 3),
+        `census=${fresh.villagers.length} variants=${[...new Set(fresh.villagers.map((v) => v.v))].join('')}`)
+    r.check('the village census is deterministic (two fresh worlds agree villager-by-villager)',
+        (() => {
+            const a = makeGame(7).villagers, b = makeGame(7).villagers
+            return a.length === b.length && a.every((v, i) => v.x === b[i].x && v.y === b[i].y && v.v === b[i].v)
+        })())
+    {
+        const gs = makeGame(7)
+        const spawn = gs.villagers.map((v) => ({ x: v.x, y: v.y }))
+        for (let i = 0; i < 300; i++) step(gs, {})
+        r.check('villagers wander: they move on idle ticks and stay inside their home lane',
+            gs.villagers.every((v, i) => Math.hypot(wrapD(v.x - spawn[i].x), wrapD(v.y - spawn[i].y)) > 1) &&
+            gs.villagers.every((v) => Math.hypot(wrapD(v.x - v.hx), wrapD(v.y - v.hy)) <= VIL_WANDER_R + 2),
+            `max home-dist=${Math.max(...gs.villagers.map((v) => Math.hypot(wrapD(v.x - v.hx), wrapD(v.y - v.hy)))).toFixed(1)}`)
+    }
+    {
+        // Fire in the lane: every villager inside the panic ring (and outside
+        // the flame) ends FARTHER from the burning hut, not closer.
+        const gs = makeGame(7)
+        const hut = gs.huts[0]
+        const inRing = gs.villagers
+            .map((v) => ({ v, d0: Math.hypot(wrapD(v.x - hut.x), wrapD(v.y - hut.y)) }))
+            .filter((o) => o.d0 >= VIL_FLAME_R && o.d0 < VIL_PANIC_R)
+        hut.burn = 200
+        for (let i = 0; i < 40; i++) step(gs, {})
+        const ok = inRing.length > 0 && inRing.every(({ v, d0 }) =>
+            gs.villagers.includes(v) && Math.hypot(wrapD(v.x - hut.x), wrapD(v.y - hut.y)) > d0)
+        r.check('a burning hut sends the lane running: every villager in the panic ring ends farther from the fire',
+            ok, `in-ring=${inRing.length} after=${inRing.map(({ v, d0 }) => `${d0.toFixed(0)}→${Math.hypot(wrapD(v.x - hut.x), wrapD(v.y - hut.y)).toFixed(0)}`).join(' ')}`)
+    }
+    {
+        // Caught in the flames: a villager inside the flame radius burns where
+        // they stand — one `villager` burn event, census minus one, and the
+        // burn pays no mana (stage 1 is neutral: no bounty, no economy yet).
+        // Everyone else is moved well outside the ring first: villagers spawn
+        // 2–10u from their hut, so a second one can sit inside the flame and
+        // burn too — the rule is "everyone in the ring burns", and this gate
+        // wants exactly one body.
+        const gs = makeGame(7)
+        const hut = gs.huts[1]
+        const vl = gs.villagers[0]
+        for (const o of gs.villagers) if (o !== vl) { o.x = wrap(hut.x + 100, MAP); o.y = wrap(hut.y + 100, MAP) }
+        vl.x = wrap(hut.x + 3, MAP); vl.y = hut.y
+        const mana = gs.mana, census = gs.villagers.length
+        const h0 = stateHash(gs)
+        hut.burn = 200
+        gs.events.length = 0
+        step(gs, {})
+        const ev = gs.events.find((e) => e.type === 'villager')
+        r.check('a villager in the flame burns where they stand (burn event, census −1, no mana paid)',
+            ev && ev.what === 'burn' && Math.hypot(wrapD(ev.x - vl.x), wrapD(ev.y - vl.y)) < 0.01 &&
+            gs.villagers.length === census - 1 && gs.mana === mana && stateHash(gs) !== h0,
+            `ev=${ev ? ev.what : 'none'} census ${census}→${gs.villagers.length} mana=${mana}→${gs.mana}`)
+    }
+    {
+        // Lightning in the lane: the bolt's strike point is a scare point —
+        // villagers inside the ring panic on the cast tick, villagers far from
+        // the strike stay calm. (Scare radii match the fire ring on purpose:
+        // one "the ground just took a hit" rule for every impact.) Ring
+        // membership is decided by the PRE-step distance: the scare runs on
+        // the cast tick, before the villagers move, so post-step positions
+        // straddle the boundary (a panicked villager has already fled 0.9u,
+        // a calm one may have wandered toward the strike).
+        const gs = makeGame(7)
+        const target = gs.huts[3]
+        gs.learned.push('lightning')
+        setHand(gs, 'L', 'lightning')
+        gs.mana = 30; gs.coolL = 0
+        gs.x = wrap(target.x - 60, MAP); gs.y = target.y; gs.yaw = 0
+        gs.events.length = 0
+        const pre = gs.villagers.map((v) => ({ v, x: v.x, y: v.y }))
+        step(gs, { castL: true })
+        const zap = gs.events.find((e) => e.type === 'zap')
+        const d0 = (o) => Math.hypot(wrapD(o.x - zap.x), wrapD(o.y - zap.y))
+        const near = pre.filter((o) => d0(o) < VIL_PANIC_R - 1)
+        const far = pre.filter((o) => d0(o) > VIL_PANIC_R + 1)
+        r.check('lightning in the lane scares only the ring: inside panics on the cast tick, far stays calm',
+            !!zap && near.length > 0 && near.every((o) => o.v.panicT > 0) && far.every((o) => o.v.panicT === 0),
+            `near=${near.length} panicked=${near.filter((o) => o.v.panicT > 0).length} far=${far.length} calm=${far.filter((o) => o.v.panicT === 0).length}`)
+    }
+    {
+        // The run ends at the door: a villager stranded beyond the lane walks
+        // home (dir points at the hut once they are past the edge), and the
+        // scareVillagers export is the same ring rule the impacts use.
+        const gs = makeGame(7)
+        const vl = gs.villagers[0]
+        vl.x = wrap(vl.hx + 60, MAP); vl.y = vl.hy; vl.dir = Math.PI
+        step(gs, {})
+        const homeAng = Math.atan2(wrapD(vl.hy - vl.y), wrapD(vl.hx - vl.x))
+        const dAng = (a, b) => Math.abs(((a - b + Math.PI) % (Math.PI * 2)) - Math.PI)
+        r.check('a villager past the lane edge walks home (dir points at the hut)',
+            dAng(vl.dir, homeAng) < 0.01, `dir=${vl.dir.toFixed(2)} want=${homeAng.toFixed(2)}`)
+        scareVillagers(gs, vl.x, vl.y)
+        r.check('scareVillagers sets the ring (panicT + away dir) and leaves the far ones untouched',
+            vl.panicT > 0 && gs.villagers.some((o) => o !== vl && Math.hypot(wrapD(o.x - vl.x), wrapD(o.y - vl.y)) > VIL_PANIC_R + 1 && o.panicT === 0))
+    }
+    {
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        const art = await readFile(new URL('../src/games/MagicCarpet/art.js', import.meta.url), 'utf8')
+        r.check('the world pass draws the village (billboards from the atlas, one tile per tunic variant)',
+            src.includes('villager${vl.v}') && src.includes('villager0:') && art.includes('drawVillager'),
+            'source pin')
+    }
+}
+
 // ---- HUD geometry: the score must stay inside the canvas (#1681)
 // The score is the only HUD text pinned to a fixed x near the right edge. At
 // x=302 in 7px monospace its six-digit box spanned [302, 327.2] against
@@ -1757,6 +1880,10 @@ r.check('__carpetTest starts play mode', hooked === 'play', hooked)
 await page.waitForTimeout(700)
 const live = await page.evaluate(() => window.__carpetTest.probe())
 r.check('play mode ticks with no stuck loop', live.tick > 20, `tick=${live.tick}`)
+// #1764 item 3: the village is live in the browser world too (state-based, so
+// it holds on the degraded-Chrome box where the pixel family is flaky).
+r.check('the village is alive in the browser world (14–21 villagers at seed 7)',
+    live.villagers >= 14 && live.villagers <= 21, `villagers=${live.villagers}`)
 
 // ---- GPU world pass (#1083): the GPU must actually render the world, craters
 // must visibly feed the terrain upload (glow), lava cools, scorch persists.

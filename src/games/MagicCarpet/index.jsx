@@ -212,6 +212,12 @@ const MagicCarpetGame = () => {
                     say('YOUR LOAD OF MANA IS LOST')
                 } else if (e.type === 'ignite') {
                     audioController.playNoise(0.12, 0.05)
+                } else if (e.type === 'villager' && e.what === 'burn') {
+                    // #1764 item 3 — a life in the flames: a low descending
+                    // cry under the crackle, and the world names it.
+                    audioController.playSweep(300, 90, 0.3, 'triangle', 0.04)
+                    audioController.playNoise(0.08, 0.03)
+                    say('A VILLAGER HAS BURNED')
                 } else if (e.type === 'hutDown') {
                     audioController.playNoise(0.2, 0.08)
                     audioController.playTone(85, 0.12, 'square', 0.06)
@@ -1160,6 +1166,7 @@ const MagicCarpetGame = () => {
                     learned: [...gs.learned], hands: { ...gs.hands },
                     x: +gs.x.toFixed(2), y: +gs.y.toFixed(2), alt: +gs.alt.toFixed(2), yaw: +gs.yaw.toFixed(4),
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
+                    villagers: gs.villagers.length,
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     wizStage: gs.wizStage, worldT: gs.worldT,

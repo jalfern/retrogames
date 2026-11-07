@@ -69,6 +69,21 @@ export const SPILLS = [
 export const spellById = (id) => SPILLS.find((s) => s.id === id)
 export const OFFENSE = { fireball: 1, lightning: 1, telekinesis: 1 }
 
+// #1764 item 3 — village life, stage 1: the villages are alive. Each hut
+// houses 2–3 villagers who keep to their home lane (wander within
+// VIL_WANDER_R of the hut, stray out, walk home). Fire and a struck ground
+// inside VIL_PANIC_R send them fleeing from the point of fear; a villager
+// caught within VIL_FLAME_R of a burning hut burns where they stand (a
+// `villager` event carries the body for shell + renderer). They are neutral
+// for now — no mana, no bounty, never hostile: the convert/burn/prisoner
+// economy is a later stage. genWorld spawns them LAST (after the huts), so
+// the rng they consume re-bases only the play stream, never the placement.
+export const VIL_PANIC_R = 26
+export const VIL_FLAME_R = 7
+export const VIL_WANDER_R = 18
+const VIL_SPEED = 0.35
+const VIL_FLEE = 0.9
+
 // Invisibility (#1610): the original's veil — while it holds, the enemies are
 // blind to the carpet. Duration in WORLD ticks so it is deterministic.
 export const INVIS_T = 420
@@ -493,6 +508,22 @@ export function genWorld(gs) {
         const c = findSpot(gs, 26, 46, false, null, 0)
         gs.huts.push({ x: c.x, y: c.y, v: Math.floor(rnd(gs) * 3), burn: 0, dead: false, catchT: 0 })
     }
+    // #1764 item 3 — the village, spawned LAST: the huts are the homes.
+    gs.villagers = []
+    gs.huts.forEach((hs) => {
+        const n = 2 + Math.floor(rnd(gs) * 2) // 2–3 per hut: a village, not a camp
+        for (let i = 0; i < n; i++) {
+            const a = rnd(gs) * 6.28, d = 2 + rnd(gs) * 8
+            gs.villagers.push({
+                x: wrap(hs.x + Math.cos(a) * d, MAP), y: wrap(hs.y + Math.sin(a) * d, MAP),
+                hx: hs.x, hy: hs.y,            // home: the hut's site (a fallen hut keeps its lane)
+                v: Math.floor(rnd(gs) * 3),    // tunic variant (atlas tile)
+                dir: rnd(gs) * 6.28,
+                wanderT: Math.floor(rnd(gs) * 70),
+                panicT: 0,
+            })
+        }
+    })
     gs.projs = []
     gs.fireMarks = []
     gs.craters = []
@@ -546,6 +577,19 @@ function igniteHuts(gs, x, y) {
     }
 }
 
+// #1764 item 3: the ground just took a bolt or a blast, and anyone in the
+// lanes feels it — they break into a run away from the point (panicT outlives
+// the flash, so the stampede reads; like the cow wander, only the shared rng
+// and the tick steer them, so replays are bit-identical).
+export function scareVillagers(gs, x, y) {
+    for (const vl of gs.villagers) {
+        if (Math.hypot(wrapD(vl.x - x), wrapD(vl.y - y)) < VIL_PANIC_R) {
+            vl.panicT = 120
+            vl.dir = Math.atan2(wrapD(vl.y - y), wrapD(vl.x - x))
+        }
+    }
+}
+
 function hurtPlayer(gs, dmg) {
     if (gs.safeT > 0) return
     if (gs.shield > 0) { gs.shield = Math.max(0, gs.shield - dmg); gs.events.push({ type: 'shieldHit' }); return }
@@ -580,6 +624,7 @@ function blast(gs, x, y, r, depth, dmg) {
     crater(gs, x, y, r, depth, 1)
     toppleTower(gs, x, y)
     igniteHuts(gs, x, y)
+    scareVillagers(gs, x, y) // #1764 item 3: a shell landing in the lanes sends them running
     for (let k = 0; k < 3; k++) {
         const a = rnd(gs) * 6.28, d = rnd(gs) * r
         gs.fireMarks.push({ x: wrap(x + Math.cos(a) * d, MAP), y: wrap(y + Math.sin(a) * d, MAP), t: gs.tick })
@@ -647,6 +692,7 @@ function castHand(gs, hand) {
         gs.events.push({ type: 'zap', x: lp.x, y: lp.y, d: lp.d })
         crater(gs, lp.x, lp.y, 10, 8)
         igniteHuts(gs, lp.x, lp.y)
+        scareVillagers(gs, lp.x, lp.y) // #1764 item 3: lightning in the lanes
         for (const s of struck) {
             if (s.tgt === 'wiz') { gs.wizard.hp -= s.dmg; gs.events.push({ type: 'wizHit' }) }
         }
@@ -1163,6 +1209,44 @@ export function step(gs, inp) {
         }
     }
 
+    // #1764 item 3 — the village breathes. Each villager keeps to their home
+    // lane: they wander within VIL_WANDER_R of the home hut, stray past the
+    // edge and walk home again. Fire in reach (and the scare points of a
+    // bolt or blast) sets them fleeing from the point of fear at VIL_FLEE;
+    // the panic outlives the ring by a while, so the stampede reads. A
+    // villager caught within VIL_FLAME_R of a burning hut burns where they
+    // stand — the `villager` event carries the body. Deterministic like the
+    // cows: only the shared rng and the tick steer them.
+    for (let i = gs.villagers.length - 1; i >= 0; i--) {
+        const vl = gs.villagers[i]
+        if (vl.panicT > 0) vl.panicT--
+        let fear = null
+        for (const hs of gs.huts) {
+            if (hs.burn <= 0) continue
+            const d = Math.hypot(wrapD(vl.x - hs.x), wrapD(vl.y - hs.y))
+            if (d < VIL_FLAME_R) {
+                gs.villagers.splice(i, 1)
+                gs.events.push({ type: 'villager', what: 'burn', x: vl.x, y: vl.y })
+                fear = 'dead'
+                break
+            }
+            if (d < VIL_PANIC_R && !fear) fear = hs
+        }
+        if (fear === 'dead') continue
+        if (fear) {
+            vl.panicT = 90
+            vl.dir = Math.atan2(wrapD(vl.y - fear.y), wrapD(vl.x - fear.x))
+        } else if (vl.panicT <= 0) {
+            vl.wanderT++
+            const hd = Math.hypot(wrapD(vl.x - vl.hx), wrapD(vl.y - vl.hy))
+            if (hd > VIL_WANDER_R) vl.dir = Math.atan2(wrapD(vl.hy - vl.y), wrapD(vl.hx - vl.x))
+            else if (vl.wanderT > 70) { vl.wanderT = 0; vl.dir = rnd(gs) * 6.28 }
+        }
+        const sp = fear || vl.panicT > 0 ? VIL_FLEE : VIL_SPEED
+        vl.x = wrap(vl.x + Math.cos(vl.dir) * sp, MAP)
+        vl.y = wrap(vl.y + Math.sin(vl.dir) * sp, MAP)
+    }
+
     gs.spawnCool--
     if (gs.spawnCool <= 0) {
         gs.spawnCool = 360
@@ -1241,6 +1325,7 @@ export function step(gs, inp) {
         if (!gone && p.kind === 'bolt' && p.z <= sampleH(gs, p.x, p.y)) {
             gone = true
             crater(gs, p.x, p.y, 8, 5)
+            scareVillagers(gs, p.x, p.y) // #1764 item 3: the wizard's bolts spook the lanes too
             gs.events.push({ type: 'boom', x: p.x, y: p.y })
         }
         if (gone) gs.projs.splice(i, 1)
@@ -1356,6 +1441,8 @@ export function stateHash(gs) {
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
     mix(gs.pearls.filter((p) => p.alive).length)
     mix(gs.monsters.length); mix(gs.projs.length); mix(gs.fireMarks.length)
+    mix(gs.villagers.length) // #1764 item 3: the village is world state too
+    for (const v of gs.villagers) { mix(v.x.toFixed(0)); mix(v.y.toFixed(0)) }
     mix(gs.kills); mix(gs.wizardKills); mix(gs.deaths); mix(gs.levelClears)
     for (const p of gs.pearls) if (p.alive) { mix(p.x.toFixed(0)); mix(p.y.toFixed(0)) }
     return (h >>> 0).toString(16)

@@ -14,7 +14,8 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   wizard, spells, vault economy, `autopilot()` (drives the attract demo AND the
   harness), `stateHash()`. No browser APIs in here — the harness imports it directly.
 - `art.js` — rect-composed pixel sprites (wizard, tower, castle stages, giant,
-  wolf, cow, hut incl. burning + rubble, pearl, grimoire, balloon) + biome
+  wolf, cow, villager x3 tunics, hut incl. burning + rubble, pearl,
+  grimoire, balloon) + biome
   table. Never patched by #1083: the GPU renderer bakes it into an atlas.
 - `renderer.js` — the HD world pass (#1083), a fresh WebGL2 renderer (three.js,
   the COMET DRIFT HD house pattern). Terrain = camera-centered grid whose
@@ -46,7 +47,7 @@ view with a MODERN GPU pass (`renderer.js`, WebGL2) while the HUD stays a crisp
   respawn at the gates (high, shielded, 240-tick spawn-invulnerable); with an
   empty vault the flight ends.
 - Nine worlds (`LEVELS`, quotas 115→265 in nine strict steps, #1740): banking the
-  quota regenerates the whole world (terrain, pearls, huts, monsters, fresh wizard
+  quota regenerates the whole world (terrain, pearls, huts, village, monsters, fresh wizard
   hoard); spells learned and the carried pouch transfer; clearing world 9 wins.
 - WORLD economy (#1740): every quota stays under what the pearls alone realistically
   pay (~pearls × 3.5 against the 2..6 roll). The wizard hoard is BONUS, never a
@@ -364,8 +365,21 @@ see item 5).
   an unverifiable #489-memory claim (no reachable sources; the #1680 lesson) —
   inventing multi-carry would triple a homing projectile's damage, so it is
   out of spec, not a gap.
-- Village populations are decorative huts — no villagers, no convert/burn moral
-  economy, no prisoners.
+- **Village life PARTIAL by #1764 item 3 stage 1:** the huts are homes. Each
+  hut houses 2–3 villagers (three tunic variants, one atlas tile each) who keep
+  to their home lane — wander within 18u, stray past it and walk home. A
+  burning hut or a bolt/blast strike within 26u sends the lane fleeing the
+  point of fear (a panicked run tints warm and outlives the ring); a villager
+  caught within 7u of a burning hut burns where they stand — a `villager`
+  `burn` event, a burst + wisp where they stood, a low descending cry and the
+  world names it ("A VILLAGER HAS BURNED"). They are neutral for now: no mana,
+  no bounty, never hostile. Spawned LAST in `genWorld` (after the huts — the
+  last rng-consuming placement), so world placement is untouched and only the
+  play stream re-bases; `stateHash` carries the census. carpetcheck proves the
+  whole village Node-side (census, determinism, wander/flee/burn/scare/home-walk
+  + the mutation guide) and a state-based browser gate counts the lane live.
+  Still open: the convert/burn moral economy and prisoners carried to your
+  castle — the original's signature loop.
 - No anaglyph/stereo mode. **Partially closed by #1746 item 7:** rival-cast
   cues now pan to the caster's side (see the #1746 section) — the world bed,
   creatures and lightning are still center, and there is no true HRTF.
