@@ -23,6 +23,8 @@ clock, and the full hazard roster. All physics is deterministic and lives in
 - `index.jsx` — iso painter (checkerboard tops, cliff skirts, hazard sprites,
   gloss + shadow on the marble), HUD with carry/bank readout, attract mode,
   drag-anywhere trackball for phones.
+- `wobble.js` — the steely-knock spin law (#1758 item 4): spin/rock decay for
+  the marble and the bed's detune sweep, pure and painter-side.
 
 ## The physics lesson (why `acc` is 0.005)
 
@@ -75,14 +77,24 @@ peaks over major colours (A–E–F#m–D), a fifth above the base bed's mean bu
 still under the finale. Character is gated, not asserted: the harness measures
 floor, mean, leap width and chromatic count against the base bed.
 
+#1758 item 4 gave the knock a body (`wobble.js`, painter-side like everything
+else): the `steelieHit` event arms a 34-tick window (inside the 40-tick knock
+cooldown) in which the marble rocks (`ctx.rotate`, envelope 0.30 rad easing to
+rest), spins ~1.75 turns — the gloss gains an orbiting highlight + dark vein so
+the eye reads the spin — and the bed bends: `setMusicVibrato` overridden with a
+9.5 Hz shudder sweeping 38 -> 12 cents, releasing exactly at the sung warning
+depth so `leadVibrato` takes back seamlessly. The sim is untouched; hashes and
+the attract replay are bit-identical (marblecheck re-pins both).
+
 ## Verify
 
 ```bash
-npm run marblecheck   # rules + determinism + win proof + 13 bed gates (Node, ~2s)
+npm run marblecheck   # rules + determinism + win proof + 13 bed gates + 11 wobble gates (Node, ~2s)
 npm run marbleplay    # browser drive (dev server): bed live, per-course re-voicing
                       #   rides the real raceStart events, finale switch, ladder,
-                      #   death keeps it, game over stops it, restart brings it back
-npm run lint:marble   # eslint over the four game files + harnesses
+                      #   death keeps it, game over stops it, restart brings it back,
+                      #   a steely knock spins the marble and bends the bed (22 gates)
+npm run lint:marble   # eslint over the game files + harnesses
 ```
 
 The harness proves it can fail: set `BREAKDROP = 99` in `levels.js` and the
@@ -105,7 +117,13 @@ gate red in marbleplay; drop the `secsLeft > WARN_SECS` guard in `leadVibrato`
 with an original bed in the same idiom; a literal transcription stays
 policy-permanent (AudioController header).*
 
-- Steely knocks don't impart spin/visual wobble on the marble.
+- *Steely knocks don't impart spin/visual wobble on the marble — closed by
+  #1758 item 4: the hit now rocks/spins the marble (gloss + vein orbit) and
+  bends the bed (9.5 Hz 38-cent detune sweep), gated by 11 marblecheck checks
+  and 4 live marbleplay gates. Mutant: delete the `wob = WOBBLE_TICKS` seam in
+  `consumeEvents` — exactly 1 Node gate (seam pin) and 3 browser gates
+  (armed/settle/bend) go red; the fourth (steadies) passes vacuously, the
+  three active-moment gates carry the proof.*
 - SILLY bounciness is uniform; the cabinet varies trampoline strength per
   section.
 - The camera now follows the marble at 2× zoom and scrolls the course off every
