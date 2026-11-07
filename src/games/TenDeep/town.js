@@ -110,6 +110,29 @@ export const rimFolkShares = (f, tick, tx, ty) => {
     return p.x === tx && p.lane === ty
 }
 
+// ---- the street breathes (#1756) ---------------------------------------------
+// The lamps and the well-mouth are fire, not decals: each source cycles on its
+// own beat — a two-frequency braid phase-shifted per source, so the west lamp,
+// the east lamp and the well never pulse in lockstep — and the cobble pool
+// brightens with its flame. PRESENTATION ONLY: pure in the shell's animation
+// tick (bob), zero rng, zero sim state — stateHash never sees any of it, so
+// every campaign and determinism pin still stands.
+export const RIM_FLAMES = [
+    { x: 58, phase: 0 },        // the west lamp, under the tavern sign
+    { x: 262, phase: 2.4 },     // the east lamp, by the alchemist's step
+]
+export const RIM_WELL_FLAME = { x: 128, phase: 1.3 }
+
+export function rimFlame (src, tick) {
+    const flare = 0.62 * Math.sin(tick / 9 + src.phase) + 0.38 * Math.sin(tick / 23 + src.phase * 1.7)
+    return {
+        flare,                             // -1..1 — the fire's own breath
+        glow: 0.72 + 0.22 * flare,       // the flame core's brightness
+        pool: 0.10 + 0.055 * flare,      // the cobbles under the lamp
+        lift: flare > 0.55 ? -1 : 0,     // a strong flare tips the flame a pixel
+    }
+}
+
 
 export const BUILDINGS = [
     { key: 'T', name: 'TAVERN', sign: 'THE DROWNING CROW' },

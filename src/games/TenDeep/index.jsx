@@ -22,7 +22,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FLAMES, RIM_WELL_FLAME, rimFlame } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -179,13 +179,21 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
     ctx.fillStyle = '#2e2440'
     RIM.flecks.forEach((f) => ctx.fillRect(f.x, f.y, f.w, 1))
     BUILDINGS.forEach((b, i) => drawFacade(ctx, b, FACADE_X[i], i === doorIdx && !gs.town.b, bob))
-    // #1751: lamp pools on the cobbles — two lit patches the walker passes through.
-    for (const lx of [58, 262]) {
-        ctx.fillStyle = 'rgba(255,180,80,0.10)'
-        ctx.beginPath(); ctx.ellipse(lx, 166, 16, 5, 0, 0, Math.PI * 2); ctx.fill()
-        ctx.fillStyle = '#3a3f5c'; ctx.fillRect(lx - 1, 140, 2, 22)
-        ctx.fillStyle = `rgba(255,200,110,${(0.7 + 0.2 * Math.sin(bob / 11)).toFixed(2)})`
-        ctx.fillRect(lx - 2, 136, 4, 4)
+    // #1751/#1756: lamp pools on the cobbles — two lit patches the walker
+    // passes through, and each lamp's flame breathes on its own beat (rimFlame,
+    // town.js). Before this the two lamps pulsed off one shared sine in
+    // lockstep and the pool under them was a constant decal; now the core
+    // flares, the cobbles brighten with it, and a strong flare tips the flame
+    // a pixel. Pure in bob: the sim never sees any of it.
+    for (const src of RIM_FLAMES) {
+        const fl = rimFlame(src, bob)
+        ctx.fillStyle = `rgba(255,180,80,${fl.pool.toFixed(3)})`
+        ctx.beginPath(); ctx.ellipse(src.x, 166, 16, 5, 0, 0, Math.PI * 2); ctx.fill()
+        ctx.fillStyle = '#3a3f5c'; ctx.fillRect(src.x - 1, 140, 2, 22)
+        ctx.fillStyle = `rgba(255,200,110,${fl.glow.toFixed(2)})`
+        ctx.fillRect(src.x - 2, 136 + fl.lift, 4, 4)
+        ctx.fillStyle = `rgba(255,236,170,${(0.32 + 0.34 * fl.flare).toFixed(2)})`
+        ctx.fillRect(src.x - 1, 135 + fl.lift, 2, 2)
     }
     // hedges (the far-lane blockers) and door steps: the map IS the art — the
     // same tiles sim.js refuses to let you walk through are what you can see.
@@ -210,8 +218,11 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
     ctx.fillStyle = '#8a94a6'
     for (let i = 0; i < 7; i++) ctx.fillRect(wx - 14 + i * 4, wy - 10 + (i % 2), 4, 3)
     ctx.fillStyle = '#050408'; ctx.fillRect(wx - 9, wy - 6, 18, 10)
-    ctx.fillStyle = `rgba(255,180,60,${(0.3 + 0.2 * Math.sin(bob / 8)).toFixed(2)})`
-    ctx.fillRect(wx - 6, wy - 3, 12, 4)
+    // #1756: the well's ember breathes too — its own phase, the dimmer of the
+    // street's fires, so the mouth never matches either lamp.
+    const wf = rimFlame(RIM_WELL_FLAME, bob)
+    ctx.fillStyle = `rgba(255,180,60,${(0.32 + 0.16 * wf.flare).toFixed(2)})`
+    ctx.fillRect(wx - 6, wy - 3 + wf.lift, 12, 4)
     ctx.fillStyle = '#6b4519'; ctx.fillRect(wx - 14, wy - 24, 2, 14); ctx.fillRect(wx + 12, wy - 24, 2, 14)
     ctx.fillStyle = '#4a3320'; ctx.fillRect(wx - 16, wy - 26, 32, 3)
     ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(120, 160, 22, 5)

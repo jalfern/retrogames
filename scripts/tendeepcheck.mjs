@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -574,6 +574,65 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
             makeRimFolk(9); rimFolkAt(makeRimFolk(9)[0], 5); rimFolkShares(makeRimFolk(9)[0], 5, 3, 1)
             ok(stateHash(g1) === stateHash(g2), 'seeded a wanderer and moved a hash — folk leaked into the sim')
         }
+    }
+
+    // THE STREET BREATHES (#1756): the lamps and the well are fire, not
+    // decals. Presentation-only code still carries honest law: the flame is
+    // deterministic in tick, actually moves, stays bounded, never pulses two
+    // sources in lockstep, never leaks into a hash — and paintRim actually
+    // asks rimFlame (pinned in source, the #1708 pattern). Proven in Node,
+    // no browser needed.
+    section('THE STREET BREATHES — lamp and well flame (#1756)')
+    {
+        ok(RIM_FLAMES.length === 2, 'the RIM should paint exactly two street lamps')
+        // 1. pure in tick: the street never stutters between identical frames
+        const d0 = rimFlame(RIM_FLAMES[0], 77), d1 = rimFlame(RIM_FLAMES[0], 77)
+        ok(d0.flare === d1.flare && d0.glow === d1.glow && d0.pool === d1.pool && d0.lift === d1.lift,
+            'rimFlame is not deterministic in tick — the same frame paints two different streets')
+        // 2. alive: over a long beat every channel moves and both lift states
+        //    happen — a constant fill is dead décor, which is the whole gap
+        const glows = [], pools = [], flares = [], lifts = new Set()
+        for (let t = 0; t < 600; t++) {
+            const f = rimFlame(RIM_FLAMES[0], t)
+            flares.push(f.flare); glows.push(f.glow); pools.push(f.pool); lifts.add(f.lift)
+            ok(f.glow >= 0.5 && f.glow <= 0.94 && f.pool >= 0.045 && f.pool <= 0.155 && f.flare >= -1 && f.flare <= 1,
+                `flame escaped its bounds at tick ${t}: glow=${f.glow} pool=${f.pool} flare=${f.flare}`)
+            ok(f.lift === (f.flare > 0.55 ? -1 : 0), `the flare-tip law broke at tick ${t}: flare=${f.flare} lift=${f.lift}`)
+        }
+        ok(new Set(glows.map((v) => v.toFixed(2))).size >= 20, 'the lamp core barely flickers — near-static fill')
+        ok(Math.max(...glows) - Math.min(...glows) >= 0.3, `the flame's breath is too shallow (${Math.max(...glows) - Math.min(...glows)})`)
+        ok(Math.max(...pools) - Math.min(...pools) >= 0.05, 'the cobbles never brighten with the flame — the pool is a decal')
+        ok(lifts.has(-1) && lifts.has(0), 'the flame never tips on a flare (or never rests) — the lift law is theatre')
+        // 3. the pool tracks the fire: a brighter core means brighter cobbles
+        const order = flares.map((v, i) => [v, pools[i]]).sort((a, b) => a[0] - b[0])
+        ok(order.every((p, i) => i === 0 || p[1] >= order[i - 1][1] - 1e-9),
+            'the cobble pool dims while the flame brightens — the pool ignores the fire')
+        // 4. independence: no two sources pulse in lockstep (the old shared sine)
+        const differ = (s1, s2) => {
+            let n = 0
+            for (let t = 0; t < 600; t++) if (rimFlame(s1, t).glow.toFixed(2) !== rimFlame(s2, t).glow.toFixed(2)) n++
+            return n
+        }
+        ok(differ(RIM_FLAMES[0], RIM_FLAMES[1]) >= 540, 'the two lamps pulse in lockstep — one shared sine came back')
+        ok(differ(RIM_WELL_FLAME, RIM_FLAMES[0]) >= 540 && differ(RIM_WELL_FLAME, RIM_FLAMES[1]) >= 540,
+            'the well matches a lamp pulse for pay — the street breathes as one body')
+        // 5. honesty: a century of flames never disturbs a sim hash
+        {
+            const g1 = makeRun(), g2 = makeRun()
+            for (let t = 0; t < 600; t++) { rimFlame(RIM_FLAMES[0], t); rimFlame(RIM_FLAMES[1], t); rimFlame(RIM_WELL_FLAME, t) }
+            ok(stateHash(g1) === stateHash(g2), 'the flame animation leaked into the sim — a hash moved')
+        }
+        // 6. source pin (#1708 pattern): paintRim asks rimFlame for every fire
+        //    on the street, and the dead fills it replaced stayed replaced.
+        const idxSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx'), 'utf8')
+        ok(/rimFlame\(src, bob\)/.test(idxSrc), 'paintRim stopped asking rimFlame for the lamps')
+        ok(/rimFlame\(RIM_WELL_FLAME, bob\)/.test(idxSrc), 'the well glow stopped asking rimFlame')
+        ok(/fl\.glow/.test(idxSrc) && /fl\.pool/.test(idxSrc) && /fl\.lift/.test(idxSrc),
+            'a lamp channel went back to a literal — the fire is frozen in the painter')
+        ok(/wf\.flare/.test(idxSrc), 'the well glow is a literal again — the mouth stopped breathing')
+        ok(!/0\.7 \+ 0\.2 \* Math\.sin\(bob \/ 11\)/.test(idxSrc), 'the lockstep lamp sine (both lamps, one beat) is still in paintRim')
+        ok(!/0\.3 \+ 0\.2 \* Math\.sin\(bob \/ 8\)/.test(idxSrc), 'the old smooth well sine is still in paintRim')
+        ok(!/'rgba\(255,180,80,0\.10\)'/.test(idxSrc), 'a dead constant lamp pool is still painted on the cobbles')
     }
 
     // WIPE: bodies to the RIM, half the purse per hero, tax booked
@@ -1158,6 +1217,48 @@ if (MUT) {
         pull(simFile2)
         console.log(`  mut ${m2[0]}: ${res2.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
         ok(res2.status !== 0, `${m2[0]} SURVIVED — the strict-door gate stopped touching this rule`)
+    }
+
+    // 9c. the street breathes (#1756): each fire on the RIM must actually move,
+    //     on its own beat, and the painter must route through the model. Kill a
+    //     channel, freeze the well, kill the flame, or put both lamps back on
+    //     one shared sine — every one must turn a probe red.
+    {
+        const rimIdxFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx')
+        const idxOrig = readFileSync(rimIdxFile, 'utf8')
+        const idxMutants = [
+            ['the west/east lamp core freezes (glow literal back in the painter)',
+                'rgba(255,200,110,${fl.glow.toFixed(2)})', 'rgba(255,200,110,0.75)'],
+            ['the cobble pool ignores the fire (constant decal back)',
+                'rgba(255,180,80,${fl.pool.toFixed(3)})', 'rgba(255,180,80,0.10)'],
+            ['the well-mouth freezes mid-breath',
+                'rgba(255,180,60,${(0.32 + 0.16 * wf.flare).toFixed(2)})', 'rgba(255,180,60,0.32)'],
+        ]
+        for (const [name, from, to] of idxMutants) {
+            ok(idxOrig.includes(from), `paintRim mutant anchor missing: ${name}`)
+            plant(rimIdxFile, idxOrig.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(rimIdxFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the breathing-street gates stopped touching this rule`)
+        }
+        const flameTownFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'town.js')
+        const flameTown = readFileSync(flameTownFile, 'utf8')
+        const townFlameMutants = [
+            ['the flame dies (rimFlame returns a constant)',
+                '0.62 * Math.sin(tick / 9 + src.phase) + 0.38 * Math.sin(tick / 23 + src.phase * 1.7)', '0.0'],
+            ['both lamps pulse in lockstep (phases forget the source)',
+                '0.62 * Math.sin(tick / 9 + src.phase) + 0.38 * Math.sin(tick / 23 + src.phase * 1.7)',
+                '0.62 * Math.sin(tick / 9) + 0.38 * Math.sin(tick / 23)'],
+        ]
+        for (const [name, from, to] of townFlameMutants) {
+            ok(flameTown.includes(from), `flame mutant anchor missing: ${name}`)
+            plant(flameTownFile, flameTown.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(flameTownFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the breathing-street gates stopped touching this rule`)
+        }
     }
 
     // 10. source-patch mutants (hudfit.js, #1282): the strip must grow short names
