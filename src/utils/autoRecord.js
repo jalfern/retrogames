@@ -177,6 +177,11 @@ export async function endRun(opts = {}) {
     // and OVER-to-close is a thumb's width). Removed only when the store has
     // it or a permanent-failure rule says it never can.
     const entry = await queueRun(rec, opts.player || PLAYER_ID)
+    const storeLive = !!(st.probe && st.probe.sessions)
+    // S7: saved first, said first — a persisted take IS pending-sync before
+    // the network ever answers, and the hang window is exactly where the
+    // player is left wondering.
+    if (storeLive && entry) publishBadge(badgeView({ storeLive, requeued: true, left: 1 }))
     const res = await uploadSession(rec, { player: opts.player || PLAYER_ID, consent, base: base() })
     if (entry) {
         if (res.uploaded || classifyFailure(res.reason) === 'drop') await dropEntry(entry.id)
@@ -185,7 +190,6 @@ export async function endRun(opts = {}) {
     // S7: say what happened. left is the pen's real backlog after this run's
     // fate (a fresh upload with stale takes waiting still shows the backlog —
     // rule 2, backlog beats success).
-    const storeLive = !!(st.probe && st.probe.sessions)
     const left = storeLive ? await countQueue() : 0
     publishBadge(badgeView({ storeLive, uploaded: !!res.uploaded, requeued: !!res.requeued, left }))
     window.__autoRecord = {

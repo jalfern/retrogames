@@ -184,6 +184,14 @@ try {
     const persisted = await until(async () => (await penCount(page)) >= 1, 45000)
     r.check('take persisted to IndexedDB while the upload hangs (persist-before-upload)', !!persisted, `pen ${await penCount(page)}`)
 
+    // S7 pill truth while the upload hangs: the take IS saved, and the phone
+    // must say so in the very window a kill lives in.
+    const pillA = await until(() => page.evaluate(() => {
+        const el = document.querySelector('[data-sync-badge]')
+        return el && el.dataset.syncBadge === 'queued' ? el.textContent : null
+    }), 4000)
+    r.check('S7: pill says SAVED — WILL SYNC while the upload hangs', !!pillA, pillA || 'no queued pill')
+
     // KILL: close the whole browser with the upload pending.
     await ctx.close()
 
@@ -198,6 +206,14 @@ try {
     const rowsA = await until(async () => { const q = await storeRows(); return q.length >= 1 ? q : null }, 10000)
     r.check('killed take arrives in the store after relaunch (the acceptance line, minus Jon\'s thumb)', !!rowsA, `store has ${rowsA ? rowsA.length : 0}`)
     if (!rowsA) throw new Error(MUTATE ? 'expected under --mutate: without persist-before-upload the killed take is lost' : 'killed take never arrived')
+
+    // S7: the boot drain must TELL the player, on the attract screen, before
+    // they ever start a run — this is the moment Jon sees his take land.
+    const pillSyncA = await until(() => page.evaluate(() => {
+        const el = document.querySelector('[data-sync-badge]')
+        return el && el.dataset.syncBadge === 'synced' ? el.textContent : null
+    }), 8000)
+    r.check('S7: relaunch drain says N TAKE(S) SYNCED on the attract screen', !!pillSyncA, pillSyncA || 'no synced pill')
 
     const row = rowsA.find((s) => s.game === 'gauntlet')
     r.check('store row names the game and player', !!row && row.player === 'player', JSON.stringify(row))
@@ -235,11 +251,18 @@ try {
     const lastB = await until(async () => { const l = await page.evaluate(() => window.__autoRecord && window.__autoRecord.last); return l || null }, 8000)
     r.check('offline run-end: upload fails, take REQUEUED (not lost)', !!(lastB && !lastB.uploaded && lastB.requeued), JSON.stringify(lastB))
     r.check('the requeued take sits in the pen', (await penCount(page)) === 1)
+    const pillB = await until(() => page.evaluate(() => {
+        const el = document.querySelector('[data-sync-badge]')
+        return el && el.dataset.syncBadge === 'queued' ? el.textContent : null
+    }), 4000)
+    r.check('S7: offline requeue shows the queued pill (player sees the backlog)', !!pillB, pillB || 'no queued pill')
     await page.unroute(sessionsRoute)
     await page.evaluate(() => window.dispatchEvent(new Event('online')))
     const rowsB = await until(async () => { const q = await storeRows(); return q.length >= 2 ? q : null }, 8000)
     r.check('`online` triggers the drain: store lists two', !!rowsB, `store has ${rowsB ? rowsB.length : 1}`)
     r.check('pen emptied again after shipping', (await penCount(page)) === 0)
+    const pillSyncB = await until(() => page.evaluate(() => window.__syncBadge && window.__syncBadge.kind === 'synced' ? window.__syncBadge.text : null), 4000)
+    r.check('S7: the online-drain says SYNCED too (mirror on window.__syncBadge)', !!pillSyncB, pillSyncB || '')
     if (rowsB) {
         const rowB = rowsB.find((s) => s.seed !== rec.seed) || rowsB[1]
         const recB = JSON.parse(await (await fetch(`${sim.base}/sessions/${encodeURIComponent(rowB.key)}`)).text())
@@ -268,6 +291,21 @@ try {
     const rowsC = await storeRows()
     r.check('revoked consent PURGES the queued take — nothing uploaded', !!purged && rowsC.length === 2, `store has ${rowsC.length}, pen ${await penCount(page)}`)
     r.check('revoked consent leaves NO pile on the device', !!purged)
+    // S7 honesty: a purge shipped nothing — the pill must CLAIM nothing.
+    const pillC = await page.evaluate(() => (window.__syncBadge ? window.__syncBadge.kind : 'hidden'))
+    r.check('S7: after the purge the pill says nothing (no phantom sync)', pillC === 'hidden', `pill was ${pillC}`)
+
+    // ================= scenario D — no store, no claims =================
+    // A device that never reaches a store must never see the pill at all:
+    // every word it could say would be a lie about storage that isn't there.
+    const pageD = await ctx.newPage()
+    pageD.setDefaultTimeout(60000)
+    watch(pageD)
+    await pageD.goto(`http://localhost:${PORT}/retrogames/gauntlet?store=http%3A%2F%2F127.0.0.1%3A9`, { waitUntil: 'load' })
+    await pageD.waitForFunction(() => !!window.__gauntletTest, null, { timeout: 15000 })
+    await pageD.waitForTimeout(1500) // probe fails, drains no-op; grace for any stray publish
+    const pillD = await pageD.evaluate(() => !!document.querySelector('[data-sync-badge]') || !!(window.__syncBadge && window.__syncBadge.kind !== 'hidden'))
+    r.check('S7: unreachable store = no pill ever (no-store, no claim)', !pillD)
 
     r.check('zero page errors', errors.length === 0, errors.join(' | '))
 } catch (e) {
