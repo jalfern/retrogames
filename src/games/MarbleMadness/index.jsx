@@ -639,7 +639,7 @@ const MarbleMadnessGame = () => {
                     <>
                         <p className="absolute inset-x-0 z-[70] text-center font-mono text-[11px] tracking-widest text-emerald-300/90" style={{ top: '72%' }}>{WATCH_ATTRACT_HINT}</p>
                         {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                        <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '10%' }}>
+                        <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                             <AttractWatchButton />
                         </div>
                     </>

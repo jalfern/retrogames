@@ -515,7 +515,7 @@ const ExcitebikeGame = () => {
                         <AttractMessage className="text-cyan-100/80 mt-2 px-8" messages={MESSAGES} />
                     </div>
                     {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
-                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '18%' }}>
+                    <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                         <AttractWatchButton />
                     </div>
                 </>
