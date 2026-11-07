@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -528,6 +528,52 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         const simSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js'), 'utf8')
         ok(/rimDoorAt\(t\.tx, t\.ty\) !== ent\.key/.test(simSrc), 'the strict door law left sim.js (enter-<key> must ask the map)')
         ok(/walkBlocked/.test(simSrc), 'the blocked() refusal left sim.js — unmoved is not the same as moved')
+    }
+
+    // SEEDED WANDERERS (#1756): the street hosts folk. The routes are pure
+    // presentation data (stateHash never sees them — pinned last), but they are
+    // load-bearing honesty: a townsman may never walk into the well curb or a
+    // hedge, patrols are deterministic from the town seed, and the bark fires
+    // exactly on a shared tile. Proven here without a browser.
+    section('THE RIM HAS FOLK — seeded wanderers (#1756)')
+    {
+        ok(RIM_FOLK_NAMES.length === 3, 'THE RIM should host three wanderers (guard, daughter, acolyte)')
+        const a = makeRimFolk(1234), b = makeRimFolk(1234)
+        ok(JSON.stringify(a) === JSON.stringify(b), 'the wanderers are not seeded — same seed, different street')
+        let differs = false
+        for (let s = 1; s < 40 && !differs; s++) if (JSON.stringify(makeRimFolk(s)) !== JSON.stringify(a)) differs = true
+        ok(differs, 'every seed raises the same three wanderers — makeRimFolk ignores the seed')
+        // the load-bearing law: no folk ever stands on a blocked tile, at any
+        // point in its patrol. Walk every route for more than a full cycle.
+        for (let s = 0; s < 60; s++) {
+            for (const f of makeRimFolk(s)) {
+                ok(!rimBlocked(f.a, f.lane) && !rimBlocked(f.b, f.lane),
+                    `seed ${s}: ${f.name}'s patrol ends on blocked ground (x=${f.a}..${f.b}, lane ${f.lane})`)
+                const cyc = (f.b - f.a) * 2 * f.speed + 2
+                for (let t = 0; t <= cyc; t++) {
+                    const p = rimFolkAt(f, t)
+                    ok(p.x >= f.a && p.x <= f.b && p.lane === f.lane, `seed ${s}: ${f.name} left its patrol (x=${p.x})`)
+                    ok(!rimBlocked(p.x, p.lane), `seed ${s}: ${f.name} walked into the well or a hedge (x=${p.x}, lane ${p.lane})`)
+                }
+                const seen = new Set()
+                for (let t = 0; t < (f.b - f.a) * 2 * f.speed; t++) seen.add(rimFolkAt(f, t).x)
+                ok(seen.size > 1, `seed ${s}: ${f.name} is bolted to one tile`)
+            }
+        }
+        // the bark law is exact: a folk answers iff you share its tile
+        {
+            const f = makeRimFolk(7)[0]
+            const p = rimFolkAt(f, 3)
+            ok(rimFolkShares(f, 3, p.x, p.lane), 'the bark law fails to fire on a shared tile')
+            ok(!rimFolkShares(f, 3, p.x, p.lane === 1 ? 0 : 1), 'the bark fires across lanes')
+            ok(!rimFolkShares(f, 3, p.x + 1, p.lane), 'the bark fires for a neighbour, not a meeting')
+        }
+        // routes are pure data: reading them must not disturb any sim hash
+        {
+            const g1 = makeRun({ townSeed: 4242 }), g2 = makeRun({ townSeed: 4242 })
+            makeRimFolk(9); rimFolkAt(makeRimFolk(9)[0], 5); rimFolkShares(makeRimFolk(9)[0], 5, 3, 1)
+            ok(stateHash(g1) === stateHash(g2), 'seeded a wanderer and moved a hash — folk leaked into the sim')
+        }
     }
 
     // WIPE: bodies to the RIM, half the purse per hero, tax booked
@@ -1090,6 +1136,9 @@ if (MUT) {
             ['the hedge and the well stop refusing (blocked() law dead)',
                 '(lane ? RIM_STREET.blockedFar : RIM_STREET.blockedNear).includes(x)',
                 'false'],
+            ['the wanderers ignore the walk law (routes may cross the well or a hedge)',
+                'for (let x = a; x <= b; x++) if (rimBlocked(x, lane)) return false',
+                'for (let x = a; x <= b; x++) if (false && rimBlocked(x, lane)) return false'],
         ]
         for (const [name, from, to] of townMutants) {
             ok(townOrig.includes(from), `town mutant anchor missing: ${name}`)

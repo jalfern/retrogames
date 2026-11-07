@@ -22,7 +22,7 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { loadDungeonRenderer } from '../../utils/dungeonRenderer'
-import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown } from './sim.js'
+import { makeRun, step, stateHash, cloneState, SIZE, W, H, DX, DY, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, TOWN, SPELLS, CLASSES, canCast, automapRing, automapShade, RIM_STREET, rimDoorAt, freshTown, makeRimFolk, rimFolkAt, rimFolkShares } from './sim.js'
 import { RACES, ALIGNMENTS, ALIGN_ORDER, compose } from './people.js'
 import { mulberry32 } from './dungeon.js'
 import { nextAction, playOut } from './solver.js'
@@ -104,6 +104,9 @@ const RIM = (() => {
 })()
 
 const FACADE_X = [12, 76, 140, 204]
+
+// #1756 — the coats of the three wanderers (kept dim against the dusk street).
+const FOLK_TINTS = ['#3a2c52', '#523626', '#26423a']
 
 const drawFacade = (ctx, b, x, sel, bob) => {
     const y = sel ? 66 : 70
@@ -212,6 +215,24 @@ const paintRim = (ctx, gs, bob, doorIdx) => {
     ctx.fillStyle = '#6b4519'; ctx.fillRect(wx - 14, wy - 24, 2, 14); ctx.fillRect(wx + 12, wy - 24, 2, 14)
     ctx.fillStyle = '#4a3320'; ctx.fillRect(wx - 16, wy - 26, 32, 3)
     ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(120, 160, 22, 5)
+    // #1756: the townsfolk of New Sorpigal, ours — three seeded wanderers
+    // patrol the lanes. Routes, lanes, speed and phase are fixed at town-seed
+    // time on mulberry32 (zero rng as you walk); the shell's animation tick
+    // drives the stride and the sim never sees any of it, so stateHash is
+    // untouched and every campaign pin still stands.
+    const folkTick = bob / 14
+    for (const f of makeRimFolk(gs.townSeed)) {
+        const fp = rimFolkAt(f, folkTick)
+        const fxp = fp.x * 10 + 5
+        const fyb = fp.lane ? 146 : 168
+        const fstride = (Math.floor(folkTick / f.speed) + f.phase) % 2
+        ctx.fillStyle = 'rgba(0,0,0,0.30)'; ctx.fillRect(fxp - 3, fyb, 7, 2)
+        ctx.fillStyle = FOLK_TINTS[f.id % FOLK_TINTS.length]
+        ctx.fillRect(fxp - 2, fyb - 5 + (fstride ? 0 : -1), 2, 5)
+        ctx.fillRect(fxp + 1, fyb - 5 + (fstride ? -1 : 0), 2, 5)
+        ctx.fillRect(fxp - 2, fyb - 12, 5, 8)
+        ctx.fillStyle = '#e8c9a0'; ctx.fillRect(fxp - 1, fyb - 15, 3, 3)
+    }
     // ---- the walker (#1751): the company's point, tile by tile, facing the
     // way they last walked. Stride is keyed to the tile parity: the legs swap
     // per step, not per frame, so standing still is standing still.
@@ -487,6 +508,7 @@ const TenDeepGame = () => {
         let runSeed = gs.townSeed
         let raf = 0, last = 0, acc = 0, demoAcc = 0, watchAcc = 0, bob = 0
         let toast = 0, toastMsg = ''
+        let barkId = -1   // #1756: which wanderer last spoke, so a bark fires once per meeting
         const evLog = []
         let shake = 0, flashHit = 0
         // #1351: a wall bump gets a short darken beat — "wall", not "stuck"
@@ -864,6 +886,17 @@ const TenDeepGame = () => {
                 bumpFade--
             }
             ctx.restore()
+            // #1756: a wanderer answers when you close onto its tile — the bark
+            // fires once per meeting and never twice in a row (presentation only;
+            // the sim is never told anyone spoke).
+            if (gs.mode === 'town' && !gs.town.b) {
+                const folk = makeRimFolk(gs.townSeed)
+                const bt = bob / 14
+                let meet = -1
+                for (const f of folk) if (rimFolkShares(f, bt, gs.town.tx, gs.town.ty)) { meet = f.id; break }
+                if (meet >= 0 && meet !== barkId) say(folk[meet].bark)
+                barkId = meet
+            } else barkId = -1
             ctx.fillStyle = '#000'; ctx.fillRect(0, 200, W, H - 200)
             // six mini panels along the foot — text is measured, never assumed
             // (#1282): names grow to the largest size that fits the 34px panel so

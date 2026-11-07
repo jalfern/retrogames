@@ -12,10 +12,10 @@
 // the slack rule re-grades with one fewer of every supply consumed.
 
 import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
-import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt } from './town.js'
+import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS } from './town.js'
 import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
 
-export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt }
+export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS }
 export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
 export const W = 256
 export const H = 224
