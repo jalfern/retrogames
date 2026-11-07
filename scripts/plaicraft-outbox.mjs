@@ -205,16 +205,17 @@ try {
     const rec = JSON.parse(text)
     r.check('stored file validates', validate(rec) === null, validate(rec) || '')
     r.check('it is the killed take (seed + ticks match what the pen held)', !!rec.seed && rec.ticks >= 20, `seed ${rec.seed}, ticks ${rec.ticks}`)
-    const ver = verifyRecording(rec, makeReplayDriver(rec.rules || {}))
+    const ver = verifyRecording(rec, makeReplayDriver(rec))
     if (!ver.ok && ver.mismatch) {
-        // Known-hole pointer (filed as feedback): a gauntlet replay divergence
-        // at a seed-INVARIANT tick (~570) in the consent-gate run, while every
-        // other take in this same session verifies tick-for-tick. Signature
-        // says wall-time leaks into gs state, not the capture pipeline. The
-        // take itself survived the kill intact (structure validates, pen was
-        // emptied, bytes are byte-complete below).
+        // A replay divergence is a REAL failure now that the replay rebuilds
+        // the capture's partner state from the file (#1793): the old
+        // seed-invariant ~tick-570 hole was a phantom partner seated for a solo
+        // take, and it is fixed — so any divergence left here is new and
+        // reportable, not a known hole.
         fs.writeFileSync('/tmp/forge/outbox-divergent-take.json', JSON.stringify({ key: row.key, mismatch: ver.mismatch, rec }, null, 1))
-        r.info('known gauntlet replay hole (#see issue filed)', `killed take diverged at tick ${ver.mismatch.tick} — take dumped to /tmp/forge/outbox-divergent-take.json`)
+        r.check('the recovered take replay-verifies tick-for-tick (#1793)', false, `killed take diverged at tick ${ver.mismatch.tick} — dumped to /tmp/forge/outbox-divergent-take.json`)
+    } else {
+        r.check('the recovered take replay-verifies tick-for-tick (#1793)', ver.ok, ver.mismatch ? `diverged at tick ${ver.mismatch.tick}` : ver.error || '')
     }
     r.check('the recovered take is structurally complete (slots x ticks + checkpoints intact)',
         rec.slots.length === rec.players && rec.slots.every((s) => s.pads.length === rec.ticks) && rec.hashes.length >= Math.floor(rec.ticks / rec.hashEvery),
@@ -243,7 +244,7 @@ try {
     if (rowsB) {
         const rowB = rowsB.find((s) => s.seed !== rec.seed) || rowsB[1]
         const recB = JSON.parse(await (await fetch(`${sim.base}/sessions/${encodeURIComponent(rowB.key)}`)).text())
-        const verB = verifyRecording(recB, makeReplayDriver(recB.rules || {}))
+        const verB = verifyRecording(recB, makeReplayDriver(recB))
         r.check('the offline-retry take replay-verifies too (kills-vs-structural discriminator for the line above)', verB.ok, verB.mismatch ? `seed ${recB.seed} diverged at tick ${verB.mismatch.tick} of ${recB.ticks}` : verB.error || '')
     }
 

@@ -81,24 +81,46 @@ export const p2FromPad = (pad) => ({
     left: !!pad.left, right: !!pad.right, fwd: !!pad.up, back: !!pad.down, sword: !!pad.a,
 })
 
-export function newGame(seed, rules = {}) {
+export function newGame(seed, rules = {}, players = 2, partnerOn = players >= 2) {
     // #1711 S6: recorded files may carry { hero, partnerKey } (rules stamp) —
     // replay rebuilds THAT hero; files without the stamp keep the historical
     // defaults the export planner was proven on.
-    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner: true, partnerKey: rules.partnerKey || 'elf' })
-    gs.partnerOn = true
-    gs.partnerMode = 'cpu'
+    // #1793: whether a partner EXISTS is not the seat count — the game's
+    // contract hardcodes players:2, so a live SOLO run is recorded as two
+    // seats (seat 1 = 'off', never a pad). The extra partner is not cosmetic:
+    // it sits inert at the start cell and MONSTERS AGGRO IT INSTEAD OF THE
+    // HERO, so the hero's hp (a hashed field) drifts and the file can never
+    // replay-verify — it diverged at a seed-invariant tick (~570) while every
+    // real two-seat take verified clean. The replay passes partnerOn explicitly
+    // (see makeReplayDriver); the default (players>=2) leaves the 2-seat expert
+    // export (collectRun) byte-identical.
+    const p2 = !!partnerOn
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner: p2, partnerKey: rules.partnerKey || 'elf' })
+    gs.partnerOn = p2
+    gs.partnerMode = p2 ? (rules.partnerMode || 'cpu') : 'off'
     return gs
 }
 
 // The replay driver for verifyRecording: rebuild the game from the seed and
 // feed it the recorded pads through THE pad lane. Same code path the capture
 // used — a hash mismatch here means the codec is lying, not the game.
-export function makeReplayDriver(rules = {}) {
+//
+// #1793: the seat count CANNOT tell the replay whether the capture had a
+// partner — Gauntlet's contract is always players:2, so a solo run is recorded
+// as two seats with an 'off' partner seat. The truth is seat 1's source kind
+// (the game's syncSeat maps partnerOff -> 'off'; a cpu/model/human partner
+// seat records its pads). Seating a partner the capture never had puts a
+// phantom ally at the start cell that steals monster aggro, so derive the
+// partner from the FILE, not the seat count.
+export function makeReplayDriver(rec = {}) {
+    const rules = (rec.rules && typeof rec.rules === 'object') ? rec.rules : {}
+    const p2slot = rec.slots && rec.slots[1]
+    const p2kind = p2slot && p2slot.source && p2slot.source.kind
+    const partnerOn = p2kind ? (p2kind === 'cpu' || p2kind === 'model' || p2kind === 'human') : (rec.players >= 2)
     let gs = null
     const st = { prevA: false, prevB: false }
     return {
-        reset: (seed) => { gs = newGame(seed, rules); st.prevA = false; st.prevB = false },
+        reset: (seed) => { gs = newGame(seed, rules, rec.players, partnerOn); st.prevA = false; st.prevB = false },
         step: (pads) => {
             const heroPad = decodePad(pads[0], 'stick')
             const p2 = decodePad(pads[1], 'stick')
@@ -152,7 +174,7 @@ export function collectRun(seed, opts = {}) {
         gs.events.length = 0
     }
     const file = rec.finish(stateHash(gs))
-    const v = verifyRecording(file, makeReplayDriver())
+    const v = verifyRecording(file, makeReplayDriver(file))
     return {
         seed, file, rows,
         stats: {

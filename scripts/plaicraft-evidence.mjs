@@ -50,8 +50,10 @@ const flagVal = (name, dflt) => {
 function driverFor(rec) {
     if (rec.game === 'gauntlet') {
         // #1711 S6: honor the hero stamp — files without it replay as the
-        // historical warrior/elf defaults.
-        return { driver: makeReplayDriver((rec.rules && typeof rec.rules === 'object') ? rec.rules : {}), note: rec.rules && rec.rules.hero ? `hero:${rec.rules.hero}` : '' }
+        // historical warrior/elf defaults. #1793: pass the WHOLE file so the
+        // driver reads the partner state from seat-1's kind, not the hardcoded
+        // seat count (a solo take is recorded players:2 with an 'off' seat).
+        return { driver: makeReplayDriver(rec), note: rec.rules && rec.rules.hero ? `hero:${rec.rules.hero}` : '' }
     }
     if (rec.game === 'talk-me-down') {
         let g = null

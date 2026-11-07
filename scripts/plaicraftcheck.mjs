@@ -9,11 +9,12 @@
 
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { step } from '../src/games/Gauntlet/sim.js'
+import { step, makeGame, stateHash } from '../src/games/Gauntlet/sim.js'
 import { partnerPad, decide } from '../src/games/Gauntlet/planner.js'
 import { createModelPolicy, featurize, forward, N_FEAT, seatSources } from '../src/games/Gauntlet/model.js'
 import { POLICY } from '../src/games/Gauntlet/policy.js'
-import { collectRun, makeHeroPadCodec, heroFromPad, p2FromPad, newGame } from './plaicraft-export.mjs'
+import { collectRun, makeHeroPadCodec, heroFromPad, p2FromPad, newGame, makeReplayDriver } from './plaicraft-export.mjs'
+import { createRecorder, verifyRecording } from '../src/utils/recording.js'
 import { makeSlot, setSlotKind, padFor, pushPad } from '../src/utils/slotSources.js'
 
 const ok = []
@@ -28,6 +29,40 @@ check('policy shipped & shaped', POLICY.arch && POLICY.arch[0] === N_FEAT && POL
 {
     const r = collectRun(5, { maxTicks: 1200, noRows: true })
     check('rec/v1 recording replays exact (seed 5, 1200t)', r.stats.verified, r.stats.mismatch ? JSON.stringify(r.stats.mismatch) : '')
+}
+
+// 2b — #1793: a SOLO take replays SOLO. The consent-gate run (the #1711 S6
+// acceptance line "100% of them replay-verify") recorded a lone hero, but the
+// seat count is HARDCODED: Gauntlet's contract is always players:2, so a solo
+// run lands in the file as two seats with an 'off' partner seat — the seat
+// count cannot tell the replay "no partner." The replay must read the file's
+// seat-1 kind, not players. Seating a phantom partner puts an inert ally at the
+// start cell, monsters aggro it instead of the hero, the hero's hp (a hashed
+// field) drifts, and the file diverges at a seed-INVARIANT tick (~570). If
+// makeReplayDriver keys the partner off the seat count this gate goes red at
+// ~tick 570.
+{
+    const seed = 86
+    const gs = makeGame(seed, 'warrior', { partner: false, topDown: true })
+    gs.partnerOn = false; gs.partnerMode = 'off'
+    // record exactly the way the live solo capture does: the game's two seats,
+    // seat 1 = 'off' (never a pad), and no partner input reaches the sim.
+    const rec = createRecorder({ gameId: 'gauntlet', method: 'stick', seed, players: 2, sources: [{ kind: 'human' }, { kind: 'off' }] })
+    const CAP = 1200
+    let t = 0
+    while (!gs.end && t < CAP) {
+        t++
+        const inp = { left: false, right: t > 5 && t <= 35, fwd: false, back: false, sword: false, arrow: false }
+        step(gs, inp, null)
+        gs.events.length = 0
+        rec.addTick([
+            { left: inp.left, right: inp.right, up: inp.fwd, down: inp.back, a: inp.sword, b: inp.arrow },
+            {},
+        ], null, gs.tick % 30 === 0 ? stateHash(gs) : null)
+    }
+    const file = rec.finish(stateHash(gs))
+    const ver = verifyRecording(file, makeReplayDriver(file))
+    check('SOLO take (players=2, seat-1=off) replays solo — no phantom partner shields the hero (#1793)', ver.ok, ver.mismatch ? `diverged at tick ${ver.mismatch.tick}` : ver.error || '')
 }
 
 // 3 — teacher-forcing agreement on practice seeds (the seat, predicting the
