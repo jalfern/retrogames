@@ -239,6 +239,7 @@
     "lint:rec": "eslint src/utils scripts/replaycheck.mjs scripts/recmethods.mjs",
     "replaycheck": "node scripts/replaycheck.mjs",
     "recordcheck": "node scripts/recordcheck.mjs",
+    "relaycheck": "node scripts/relaycheck.mjs",
     "voicecheck": "node scripts/voicecheck.mjs",
     "sessions": "node scripts/sessions.mjs",
     "voicecmdcheck": "node scripts/voicecmdcheck.mjs",
