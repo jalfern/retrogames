@@ -17,6 +17,11 @@
 //     players,          // seat count
 //     ticks,            // pads per slot == ticks
 //     hashEvery,        // checkpoint cadence (default 30 = 2/s)
+//     rules?,           // #1711 S3: rule knobs the SEED doesn't fix — e.g.
+//                       // Rally's weather (`{ weather: 'rain' }`), picked in the
+//                       // attract, not derived from the seed. Without it a file
+//                       // under a non-default rule can't replay-verify exactly.
+//                       // Optional; primitives only; replay tools consume it.
 //     slots: [ { source: { kind, modelId? },          // #494 kinds: human/cpu/model/remote/off
 //                pads: [ compactPad x ticks ],         // THE one pad, one per tick
 //                raw:  [ compactRaw x ticks ],         // pre-dead-zone device analog
@@ -116,7 +121,7 @@ export function decodeRaw(compact) {
 // pad is one slot), hash is the game's state.hash when one is due (or null).
 
 export function createRecorder(opts = {}) {
-    const { gameId, method = 'stick', seed, players = 1, build = 'dev', hashEvery = DEFAULT_HASH_EVERY } = opts
+    const { gameId, method = 'stick', seed, players = 1, build = 'dev', hashEvery = DEFAULT_HASH_EVERY, rules = null } = opts
     if (!gameId) throw new Error('recorder: gameId required')
     if (!METHODS.includes(method)) throw new Error(`recorder: unknown method ${method}`)
     if (!Number.isInteger(seed)) throw new Error('recorder: seed must be an integer')
@@ -188,6 +193,10 @@ export function createRecorder(opts = {}) {
                 hashes,
             }
             if (voice) rec.voice = voice
+            // #1711 S3: rule knobs the seed doesn't fix (weather, difficulty...).
+            // A function is resolved at stop time — the rule is a live choice.
+            const rulesOut = typeof rules === 'function' ? rules() : rules
+            if (rulesOut && typeof rulesOut === 'object' && Object.keys(rulesOut).length) rec.rules = { ...rulesOut }
             const cmds = voiceCmd.filter((c) => c.t <= ticks) // calls before the first bank carry no tick — drop, not corrupt
             if (cmds.length) rec.voiceCmd = cmds
             if (finalHash !== null && finalHash !== undefined && (hashes.length === 0 || hashes[hashes.length - 1].t !== ticks) && ticks > 0) {
@@ -212,6 +221,14 @@ export function validate(rec) {
     if (!Number.isInteger(rec.players) || rec.players < 1 || rec.players > 4) return 'players must be 1..4'
     if (!Number.isInteger(rec.ticks) || rec.ticks < 0) return 'ticks must be a non-negative integer'
     if (!Number.isInteger(rec.hashEvery) || rec.hashEvery < 1) return 'hashEvery must be a positive integer'
+    if (rec.rules !== undefined) {
+        // #1711 S3: optional rule stamp — a flat object of primitives
+        // (weather, preset...). Additive: files without it stay valid.
+        if (rec.rules === null || typeof rec.rules !== 'object' || Array.isArray(rec.rules)) return 'rules must be an object of primitives'
+        for (const [k, v] of Object.entries(rec.rules)) {
+            if (!(typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) return `rules.${k} must be a primitive`
+        }
+    }
     if (!Array.isArray(rec.slots) || rec.slots.length !== rec.players) return 'slots must match players'
     for (const s of rec.slots) {
         if (!s.source || !SLOT_KINDS.includes(s.source.kind)) return `bad source kind: ${JSON.stringify(s.source && s.source.kind)}`

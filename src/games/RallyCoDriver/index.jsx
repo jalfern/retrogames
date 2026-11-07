@@ -1302,6 +1302,10 @@ export default function RallyCoDriver() {
             method: 'dpad',
             sources: () => [{ kind: watchSeat.on || modelSeat.on ? 'model' : 'human' }, { kind: play.g.co.kind }],
             state: () => state(play.g),
+            // #1711 S3: weather is picked in the attract (T), NOT derived from
+            // the seed — so the seed alone can't regenerate the stage physics.
+            // Stamp it in the file so stored sessions replay-verify exactly.
+            rules: () => ({ weather: play.g.weather }),
         })
 
         exposeGame({
