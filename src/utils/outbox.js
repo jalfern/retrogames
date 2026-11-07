@@ -127,6 +127,15 @@ export async function dropEntry(id) {
     try { await s.remove(id); return true } catch { return false }
 }
 
+// countQueue — how many takes are waiting in the pen (0 when there is no
+// pen). S7: the sync badge reports backlog truthfully, and backlog is a pen
+// fact, not a guess from the last result.
+export async function countQueue() {
+    const s = theStore()
+    if (!s) return 0
+    try { return await s.count() } catch { return 0 }
+}
+
 // drain — single-flight retry pass. `upload(entry)` resolves to the
 // uploadSession-shaped { uploaded, reason?, key? }; `motion` is the LIVE
 // consent flag (planDrain purges everything when it is false).
