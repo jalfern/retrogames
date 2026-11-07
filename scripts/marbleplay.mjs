@@ -146,5 +146,30 @@ m = await spy()
 r.check('time back above the band releases the vibrato',
     m.vib === null && m.playing, JSON.stringify(m))
 
+// ---- a steely knock spins the marble (#1758 item 4) ----
+// Park the marble on the steelie's nose (race 0 keeps one at 8.5,12.5): the
+// sim knocks it (steelieHit), and the painter must spin/rock it and bend the
+// bed — then everything must settle back on its own. Mutant: drop the
+// `wob = WOBBLE_TICKS` seam and every gate below goes red.
+await gsq(() => { const g = window.__marble.getGs(); const st = g.steelies[0]; g.knockT = 0; g.m.air = false; g.m.vx = 0; g.m.vy = 0; g.m.vz = 0; g.m.x = st.x + 0.7; g.m.y = st.y; g.m.z = g.heights[Math.floor(g.m.y)][Math.floor(g.m.x)] })
+await page.waitForFunction(() => window.__marble.wobbleSpy().t > 0 || window.__marble.getGs().end, null, { timeout: 4000 }).catch(() => {})
+const w1 = await gsq(() => window.__marble.wobbleSpy())
+r.check('a steely knock spins the marble (wobble armed at the hit, hottest)',
+    w1.t > 0 && w1.kb !== null && w1.kb.decay > 0.8, JSON.stringify(w1))
+await settle(140)
+const w2 = await gsq(() => window.__marble.wobbleSpy())
+r.check('the spin reads through the settle (angle advances, envelope shrinks)',
+    w2.kb !== null && w2.kb.angle > w1.kb.angle && w2.kb.decay < w1.kb.decay,
+    JSON.stringify({ a: w1.kb && w1.kb.angle.toFixed(2), b: w2.kb && w2.kb.angle.toFixed(2) }))
+m = await spy()
+r.check('the knock bends the bed (fast sweep deeper than the warning vibrato)',
+    m.vib !== null && m.vib.hz > 6 && m.vib.cents > 26, JSON.stringify(m))
+await page.waitForFunction(() => window.__marble.wobbleSpy().t === 0 || window.__marble.getGs().end, null, { timeout: 4000 }).catch(() => {})
+await settle(200)
+const w3 = await gsq(() => window.__marble.wobbleSpy())
+m = await spy()
+r.check('the marble steadies and the bed releases (wobble done, vibrato cleared)',
+    w3.t === 0 && w3.kb === null && m.vib === null && m.playing, JSON.stringify({ ...w3, vib: m.vib, playing: m.playing }))
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

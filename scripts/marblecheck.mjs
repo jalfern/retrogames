@@ -9,6 +9,7 @@
 import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadness/sim.js'
 import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
 import { busLevel, leadVibrato, dynamicsFor, SWELL_BASE, VIB_MAX_CENTS } from '../src/games/MarbleMadness/dynamics.js'
+import { wobbleAt, knockVibrato, WOBBLE_TICKS, KNOCK_TURNS, KNOCK_VIB_CENTS, KNOCK_VIB_HZ } from '../src/games/MarbleMadness/wobble.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -305,7 +306,7 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
     ok('dynamics module is pure (no rng, no audio, no Date)',
         !/Math\.random|Date\.now|audioController|duckMusic/.test(dynSrc))
     ok('callsites pinned: quantized level + vibrato set and cleared from the sim clock',
-        /setMusicLevel\(/.test(idxSrc) && /setMusicVibrato\(dyn\.vib\)/.test(idxSrc) &&
+        /setMusicLevel\(/.test(idxSrc) && /setMusicVibrato\(vib\)/.test(idxSrc) &&
         /applyDynamics\(\)/.test(idxSrc))
     ok('sim/planner still know no audio (the bed stays painter-side)',
         !/audioController|duckMusic|setMusicLevel|setMusicVibrato/.test(
@@ -331,6 +332,63 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         /\/\/ the race banners are gameplay text[\s\S]*?if \(mode !== 'attract'\)[\s\S]*?raceStart/.test(idxSrc))
     ok('the attract card sits clear of the 20px HUD band (text never over the HUD)',
         /ctx\.fillRect\(0, 60, W, 136\)/.test(idxSrc))
+}
+
+// ------------------------------ steely knock spin/wobble (#1758 item 4) ----
+// The cabinet sold the steelie hit with spin: the marble visibly spun/rocked
+// and the piano bent with the interrupt. The sim's knock is untouched (its
+// steelieHit event is the seam); the law is pure (wobble.js) and pinned at
+// the callsites (#1744 rule), so a refactor can't silently drop the spin.
+{
+    const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
+    const wobSrc = readFileSync(new URL('../src/games/MarbleMadness/wobble.js', import.meta.url), 'utf8')
+    ok('knock wobble law is pure (no rng, no audio, no Date)',
+        !/Math\.random|Date\.now|audioController|duckMusic/.test(wobSrc))
+    ok('wobble lives only inside the knock (null at rest, window inside the 40-tick cooldown)',
+        wobbleAt(0) === null && wobbleAt(-3) === null && knockVibrato(0) === null &&
+        wobbleAt(WOBBLE_TICKS) !== null && WOBBLE_TICKS <= 40 && WOBBLE_TICKS >= 20)
+    ok('spin reads a full turn minimum and eases out (angle monotonic as t drains)',
+        KNOCK_TURNS >= 1 && (() => {
+            let prev = -1
+            for (let t = WOBBLE_TICKS; t >= 1; t--) {
+                const a = wobbleAt(t).angle
+                if (!(a > prev)) return false
+                prev = a
+            }
+            return true
+        })(),
+        `~${KNOCK_TURNS} turns over ${WOBBLE_TICKS} ticks`)
+    ok('the rock is bounded and its envelope decays to rest',
+        (() => {
+            const t = (n) => Math.abs(wobbleAt(n).tilt)
+            let peak = 0, lastPeak = 0
+            for (let n = WOBBLE_TICKS; n > WOBBLE_TICKS * 0.66; n--) peak = Math.max(peak, t(n))
+            for (let n = Math.floor(WOBBLE_TICKS * 0.33); n >= 1; n--) lastPeak = Math.max(lastPeak, t(n))
+            return peak > lastPeak && peak <= 0.30 + 1e-12 && lastPeak < peak
+        })())
+    ok('decay falls 1 -> ~0 across the window (hit is hottest)',
+        Math.abs(wobbleAt(WOBBLE_TICKS).decay - 1) < 1e-12 && wobbleAt(1).decay < 0.05)
+    ok('the bed bends at the hit: deeper than the sung warning, faster than its vibrato',
+        knockVibrato(WOBBLE_TICKS).cents >= KNOCK_VIB_CENTS - 1 && KNOCK_VIB_CENTS > VIB_MAX_CENTS &&
+        knockVibrato(WOBBLE_TICKS).hz === KNOCK_VIB_HZ && KNOCK_VIB_HZ > 6 && KNOCK_VIB_HZ < 30)
+    ok('the sweep lands at the sung warning depth (seamless release to leadVibrato)',
+        knockVibrato(1).cents >= 12 && knockVibrato(1).cents <= 13 &&
+        knockVibrato(WOBBLE_TICKS).cents > knockVibrato(1).cents &&
+        (() => {
+            let prev = Infinity
+            for (let t = WOBBLE_TICKS; t >= 1; t--) { const c = knockVibrato(t).cents; if (c > prev) return false; prev = c }
+            return true
+        })())
+    ok('knock seam pinned: the hit event arms the spin; world ticks drain it',
+        /if \(ev\.type === 'steelieHit'\) \{[\s\S]{0,140}wob = WOBBLE_TICKS/.test(idxSrc) &&
+        /if \(wob > 0\) wob--/.test(idxSrc))
+    ok('painter pinned: the marble really rocks and the gloss rides the spin',
+        /const kb = wobbleAt\(wob\)/.test(idxSrc) && /ctx\.rotate\(kb\.tilt\)/.test(idxSrc) &&
+        /Math\.cos\(kb\.angle\)/.test(idxSrc))
+    ok('bed seam pinned: knock vibrato outranks the warning band, then hands back',
+        /wob > 0 \? knockVibrato\(wob\) : dyn\.vib/.test(idxSrc) && /setMusicVibrato\(vib\)/.test(idxSrc))
+    ok('determinism untouched (the spin never enters the sim)',
+        !/wobbleAt|knockVibrato|wob\b|WOBBLE/.test(readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')))
 }
 
 if (fails) {

@@ -7,6 +7,7 @@ import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
 import { dynamicsFor } from './dynamics.js'
+import { wobbleAt, knockVibrato, WOBBLE_TICKS } from './wobble.js'
 import { plan, bfsPath, press } from './planner.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -70,6 +71,9 @@ const MarbleMadnessGame = () => {
         let particles = []
         let banner = null
         let shake = 0
+        // #1758 item 4 — spin/rock left after a steely knock (painter-side;
+        // counts down per world tick, never in the sim, hashes untouched).
+        let wob = 0
         let demoTicks = 0
         // follow-camera state: smoothed marble position in tile space + the iso
         // center it currently maps to the anchor. Painter-side, never in the sim.
@@ -140,6 +144,7 @@ const MarbleMadnessGame = () => {
                 }
                 if (ev.type === 'steelieHit') {
                     shake = 6
+                    wob = WOBBLE_TICKS // the marble leaves the hit spinning (item 4)
                     for (let i = 0; i < 8; i++) particles.push({
                         x: isoX(ev.x, ev.y), y: isoY(ev.x, ev.y, gs.m.z),
                         vx: (Math.random() - 0.5) * 2, vy: -Math.random() * 2, life: 26, c: '#ffe28a',
@@ -164,6 +169,7 @@ const MarbleMadnessGame = () => {
             audioController.setMusicStep(musicStepFor(0))
             bedLvl = 1
             bedVib = 0 // fresh bank — the loop re-applies the swell from tick one
+            wob = 0
         }
 
         const startAttract = () => {
@@ -175,6 +181,7 @@ const MarbleMadnessGame = () => {
             particles = []
             resetCam()
             banner = null
+            wob = 0
         }
 
         // ---- painter ---------------------------------------------------------
@@ -335,14 +342,26 @@ const MarbleMadnessGame = () => {
                 const mx = isoX(m.x, m.y), my = isoY(m.x, m.y, m.z) - 5
                 const blink = gs.invulnT > 0 && (gs.tick >> 2) % 2 === 0
                 if (!blink) {
-                    const grad = ctx.createRadialGradient(mx - 2, my - 2, 1, mx, my, 6)
+                    // item 4: after a steely knock the marble rocks (tilt) and
+                    // the gloss + a dark vein orbit the spin — spin the eye sees.
+                    const kb = wobbleAt(wob)
+                    if (kb) { ctx.save(); ctx.translate(mx, my); ctx.rotate(kb.tilt) }
+                    const bx = kb ? 0 : mx, by = kb ? 0 : my
+                    const grad = ctx.createRadialGradient(bx - 2, by - 2, 1, bx, by, 6)
                     grad.addColorStop(0, '#ffd0d8')
                     grad.addColorStop(0.4, '#ff4050')
                     grad.addColorStop(1, '#900818')
                     ctx.fillStyle = grad
-                    ctx.beginPath(); ctx.arc(mx, my, 5.5, 0, Math.PI * 2); ctx.fill()
+                    ctx.beginPath(); ctx.arc(bx, by, 5.5, 0, Math.PI * 2); ctx.fill()
                     ctx.fillStyle = 'rgba(255,255,255,0.9)'
-                    ctx.beginPath(); ctx.arc(mx - 2, my - 2.4, 1.5, 0, Math.PI * 2); ctx.fill()
+                    ctx.beginPath(); ctx.arc(bx - 2, by - 2.4, 1.5, 0, Math.PI * 2); ctx.fill()
+                    if (kb) {
+                        ctx.fillStyle = 'rgba(255,255,255,0.75)'
+                        ctx.beginPath(); ctx.arc(Math.cos(kb.angle) * 3, Math.sin(kb.angle) * 1.8 - 1, 1.2, 0, Math.PI * 2); ctx.fill()
+                        ctx.fillStyle = 'rgba(90,8,24,0.85)'
+                        ctx.beginPath(); ctx.arc(Math.cos(kb.angle + Math.PI) * 3, Math.sin(kb.angle + Math.PI) * 1.8 - 1, 1.0, 0, Math.PI * 2); ctx.fill()
+                        ctx.restore()
+                    }
                 }
             }
 
@@ -440,9 +459,12 @@ const MarbleMadnessGame = () => {
             if (mode !== 'play' || gs.end) return
             const dyn = dynamicsFor(gs)
             const lvl = Math.round(dyn.level * 50) / 50
-            const vibKey = dyn.vib ? dyn.vib.cents : 0
+            // item 4: a steely knock bends the bed itself — a fast 38-cent
+            // detune sweep that releases back to the sung warning vibrato.
+            const vib = wob > 0 ? knockVibrato(wob) : dyn.vib
+            const vibKey = vib ? `${vib.hz}:${Math.round(vib.cents / 2) * 2}` : 0
             if (lvl !== bedLvl) { audioController.setMusicLevel(lvl); bedLvl = lvl }
-            if (vibKey !== bedVib) { audioController.setMusicVibrato(dyn.vib); bedVib = vibKey }
+            if (vibKey !== bedVib) { audioController.setMusicVibrato(vib); bedVib = vibKey }
         }
 
         let last = 0
@@ -469,6 +491,7 @@ const MarbleMadnessGame = () => {
                 }
                 consumeEvents()
                 applyDynamics()
+                if (wob > 0) wob-- // the spin decays on world ticks, not frames
             }
             draw()
         }
@@ -545,7 +568,7 @@ const MarbleMadnessGame = () => {
                 { label: 'PROGNOSIS', run: () => (bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 1).length || bfsPath(gs, Math.floor(gs.m.y), Math.floor(gs.m.x), gs.race.goal.r, gs.race.goal.c, false, 2).length) ? 'WINNABLE' : 'DEAD END' },
             ],
         })
-        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak() }
+        window.__marble = { CFG, getGs: () => gs, mode: () => mode, toScreen, marblePx, musicSpy: () => audioController._musicState(), musicPeak: () => audioController._peak(), wobbleSpy: () => ({ t: wob, kb: wobbleAt(wob) }) }
 
         // #1473 seedpin: report the run seed every build (hazard waves are pure
         // tick functions; seed travels with the state for exact replays).
