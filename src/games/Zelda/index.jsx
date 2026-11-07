@@ -4,7 +4,10 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { makeGame, step } from './sim'
+import { makePlanner } from './planner'
 import { screenOf, TILE, COLS, ROWS } from './world'
 
 // =====================================================================
@@ -169,6 +172,9 @@ export default function Zelda() {
     const keysRef = useRef({})
     const pausedRef = useRef(false)
     const [paused, setPaused] = useState(false)
+    const [screen, setScreen] = useState('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: planner.js drives the quest
+    const watchingRef = useRef(false)
 
     useEffect(() => {
         const canvas = canvasRef.current
@@ -183,6 +189,8 @@ export default function Zelda() {
         let last = performance.now()
         let wipe = 0
         let msg = null
+        let watcher = null // #1637 the seated planner (planner.js — the route zeldacheck wins with)
+        const go = (scr) => { stateRef.current.screen = scr; setScreen(scr) }
 
         const sfx = (evs) => {
             for (const ev of evs) {
@@ -215,14 +223,21 @@ export default function Zelda() {
                 if (st.screen === 'play') {
                     const s = keys
                     const before = g.events.length
-                    step(g, { u: !!s.ArrowUp, d: !!s.ArrowDown, l: !!s.ArrowLeft, r: !!s.ArrowRight, a: !!s.KeyZ || !!s.Space, b: !!s.KeyX || !!s.KeyB })
+                    let inp = { u: !!s.ArrowUp, d: !!s.ArrowDown, l: !!s.ArrowLeft, r: !!s.ArrowRight, a: !!s.KeyZ || !!s.Space, b: !!s.KeyX || !!s.KeyB }
+                    if (watchingRef.current && watcher) {
+                        if (watcher.done()) { // #1637 the guide ran out of proven route — honest handback
+                            watchingRef.current = false; setWatching(false); watcher = null; playWatchStop()
+                        } else inp = watcher.decide(g)
+                    }
+                    step(g, inp)
                     sfx(g.events.splice(0))
                     void before
-                    if (g.end === 'dead') { st.screen = 'gameover'; st.t = 0 }
-                    if (g.end === 'win') { st.screen = 'win' }
+                    if (g.end === 'dead') { go('gameover'); st.t = 0 }
+                    if (g.end === 'win') { go('win') }
+                    if (g.end && watchingRef.current) { watchingRef.current = false; setWatching(false); watcher = null } // #1637 the quest ends in your hands
                 } else if (st.screen === 'gameover') {
                     st.t = (st.t || 0) + 1
-                    if (st.t > 180) { Object.assign(g, makeGame()); g.tick = game.tick; st.screen = 'attract' }
+                    if (st.t > 180) { Object.assign(g, makeGame()); g.tick = game.tick; watcher = null; go('attract') }
                 }
                 void msg
             }
@@ -240,6 +255,7 @@ export default function Zelda() {
                 c.fillStyle = '#f8f8f8'; c.font = '8px monospace'
                 c.fillText('HYRULE DEMO  -  FAN TRIBUTE', W / 2, 120)
                 if (st.screen === 'attract' && (t >> 5) % 2) { c.fillText('PRESS ANY KEY', W / 2, 170) }
+                if (st.screen === 'attract') { c.fillStyle = '#00d878'; c.fillText(WATCH_ATTRACT_HINT, W / 2, 186) }
                 if (st.screen === 'gameover') { c.fillStyle = '#f80000'; c.fillText('GAME OVER', W / 2, 150) }
                 if (st.screen === 'win') {
                     c.fillStyle = '#f8d800'; c.fillText('YOU GOT THE TRIFORCE', W / 2, 140)
@@ -278,8 +294,19 @@ export default function Zelda() {
             if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault()
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
-            if (st.screen === 'attract') { audioController.unlock && audioController.unlock(); st.screen = 'play'; return }
-            if (st.screen === 'win' || st.screen === 'gameover') { st.screen = 'attract'; return }
+            if (st.screen === 'attract') { audioController.unlock && audioController.unlock(); go('play'); return }
+            if (st.screen === 'win' || st.screen === 'gameover') { watcher = null; go('attract'); return }
+            // #1637 WATCH: Y seats planner.js at any live quest state (it re-decides
+            // every tick); any driving key takes over; Y re-seats from the same phase.
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (!g.end) {
+                    if (!watcher) watcher = makePlanner() // keep the phase on re-seat — watch from HERE
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             keys[e.code] = true
         }
         const ku = (e) => { keys[e.code] = false }
@@ -287,6 +314,9 @@ export default function Zelda() {
         window.addEventListener('keyup', ku)
         raf = requestAnimationFrame(frame)
         window.__zeldaTest = { game: () => gameRef.current, screen: () => stateRef.current.screen, paused: () => pausedRef.current, keys, press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 120) } }
+        window.__zeldaTest.watching = () => watchingRef.current // #1637 WATCH probes
+        window.__zeldaTest.watchSfx = watchSfxLog
+        window.__zeldaTest.probe = () => ({ tick: g.tick, px: g.px, py: g.py, scr: g.scr, screen: stateRef.current.screen, end: g.end, rupees: g.rupees, swings: g.ledger.swings, kills: Object.values(g.ledger.kills).reduce((n, v) => n + v, 0) })
         // #1473: production-safe feedback state, every build. Zelda's sim (sim.js/
         // world.js) is audited zero-Math.random — every screen, enemy script and
         // drop is authored in tables, so there is no per-run seed to report. The
@@ -300,9 +330,26 @@ export default function Zelda() {
     }, [])
 
     return (
-        <div className="flex flex-col items-center justify-center w-full h-full bg-black select-none">
+        <div className="fixed inset-0 flex flex-col items-center justify-center bg-black select-none overflow-hidden" style={{ touchAction: 'none' }}>
             <canvas ref={canvasRef} width={W} height={H} className="max-w-full max-h-full" style={{ imageRendering: 'pixelated' }} />
-            <VirtualControls visible={!paused} />
+
+            {/* #1637 WATCH — the planner walks the quest; any input takes over.
+                (pill first in the DOM, #1637: the phone contract wants its window
+                clear of the attract block's bottom anchor; z-index keeps the look) */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            <VirtualControls visible={screen === 'play' && !paused} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'ZELDA')} onResume={() => { pausedRef.current = false; setPaused(false) }} />}
         </div>
     )
