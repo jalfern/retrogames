@@ -67,6 +67,7 @@
     "gravelplay": "node scripts/gravelplay.mjs",
     "bombcheck": "node scripts/bombcheck.mjs",
     "defusecheck": "node scripts/defusecheck.mjs",
+    "defusedrive": "node scripts/defusedrive.mjs",
     "bombdrive": "node scripts/bombdrive.mjs",
     "sosplay": "node scripts/sosplay.mjs",
     "rallycheck": "node scripts/rallycheck.mjs",

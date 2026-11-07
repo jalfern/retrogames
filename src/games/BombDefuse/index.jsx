@@ -126,7 +126,8 @@ function chassis() {
 // ---- the bomb face -----------------------------------------------------------
 function drawBombView(g, gs, now, opts = {}) {
     const dim = opts.dim || 0
-    const st = E.curStep(gs)
+    // after the win the run is past its last bomb — show the closed case only
+    const st = gs.done ? null : E.curStep(gs)
     const live = !gs.done && gs.intro <= 0 && opts.paused !== true
     const cx = 320, cy = 200
 
@@ -148,6 +149,7 @@ function drawBombView(g, gs, now, opts = {}) {
     g.fillStyle = C.label; g.fillText('FUSE', cx, 146)
 
     // step dots
+    if (st) {
     const n = gs.bombs[gs.bomb].steps.length
     for (let i = 0; i < n; i++) {
         const done = i < gs.step
@@ -284,6 +286,8 @@ function drawBombView(g, gs, now, opts = {}) {
             g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}`, bx, 288)
         }
     }
+
+    } // end step-dots + kind panels (live bombs only)
 
     // banner text (defused / strike feedback rides the shell hud, drawn outside)
     g.textAlign = 'left'
