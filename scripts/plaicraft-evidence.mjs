@@ -10,8 +10,9 @@
 //   npm run plaicraft:evidence -- --json            # machine-readable report
 //   npm run plaicraft:evidence -- --self-test       # offline proof (below)
 //
-// --self-test needs no bucket: it stands up a stub store (relay/core.js rules,
-// like recordcheck), synthesizes one session PER GAME through the same recorder
+// --self-test needs no bucket: it stands up the PRODUCTION worker in Node
+// (#1711 S5: scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock),
+// synthesizes one session PER GAME through the same recorder
 // the phones use — gauntlet (export planner route), talk-me-down (solvePad
 // autopilot + v2 voice), short-order-shout (cpu emitter partner), and three
 // rally files: rain stamping its weather via `rules`, rain LEGACY (no stamp —
@@ -23,11 +24,10 @@
 //
 // Exit codes: 0 all verified, 1 any failure, 2 store not provisioned (live).
 
-import http from 'node:http'
 import { validate, verifyRecording, createRecorder } from '../src/utils/recording.js'
 import { tickToMs, voiceDrift, VOICE_CLOCK_EVERY } from '../src/utils/voice.js'
 import { probeStore, listSessions, storeFromQuery } from '../src/utils/sessionStore.js'
-import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '../relay/core.js'
+import { startRelaySim } from './lib/relaysim.mjs'
 import { collectRun, makeReplayDriver } from './plaicraft-export.mjs'
 import { createGame as tmdCreate, step as tmdStep, hash as tmdHash, solvePad } from '../src/games/TalkMeDown/engine.js'
 import { createGame as sosCreate, stepGame, hashState, makeCpuEmitter } from '../src/games/ShortOrderShout/engine.js'
@@ -318,36 +318,13 @@ function tamperedCandidates(rec) {
 }
 
 async function runSelfTest() {
-    const bucket = new Map()
-    const server = http.createServer((req, res) => {
-        const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(JSON.stringify(obj)) }
-        const url = new URL(req.url, 'http://x')
-        if (req.method === 'GET' && url.pathname === '/status') return send(200, { ok: true, service: 'stub', sessions: true })
-        if (req.method === 'POST' && url.pathname === '/sessions') {
-            let body = ''
-            req.on('data', (c) => { body += c })
-            req.on('end', () => {
-                let env
-                try { env = JSON.parse(body) } catch { return send(400, { ok: false, err: 'bad json' }) }
-                const v = validateSessionEnvelope(env)
-                if (!v.ok) return send(400, { ok: false, err: v.err })
-                const key = sessionKey(env.recording, new Date().toISOString(), crypto.randomUUID().replace(/-/g, ''))
-                bucket.set(key, { text: JSON.stringify(env.recording), meta: { ...sessionMeta(env.recording, env.player), uploadedAt: new Date().toISOString() } })
-                return send(200, { ok: true, key })
-            })
-            return
-        }
-        if (req.method === 'GET' && url.pathname === '/sessions') return send(200, { ok: true, sessions: [...bucket.entries()].map(([key, v]) => sessionRow(key, v.meta, v.meta.uploadedAt || '')) })
-        if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) {
-            const v = bucket.get(decodeURIComponent(url.pathname.slice('/sessions/'.length)))
-            if (!v) return send(404, { ok: false, err: 'not found' })
-            res.writeHead(200, { 'content-type': 'application/json' })
-            return res.end(v.text)
-        }
-        send(404, { ok: false, err: 'no route' })
-    })
-    await new Promise((r) => server.listen(0, '127.0.0.1', r))
-    const base = `http://127.0.0.1:${server.address().port}`
+    // #1711 S5: the self-test store is now the PRODUCTION worker running in
+    // Node (scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), not
+    // a hand-written duplicate of the routes. What this table verifies today
+    // is the exact HTTP surface Jon's phone will meet when #1730 binds the
+    // bucket: routes, keys, metadata rows, CORS-free loopback transport.
+    const sim = await startRelaySim()
+    const base = sim.base
 
     let pass = 0, fail = 0
     const ok = (cond, name, info = '') => { if (cond) { pass++; console.log(`  ok   ${name}`) } else { fail++; console.log(`FAIL   ${name}${info ? ` — ${info}` : ''}`) } }
@@ -401,8 +378,7 @@ async function runSelfTest() {
     ok(caught >= 1 && caught === mutantKeys, `every pad-flip mutant was CAUGHT (${caught}/${mutantKeys})`, caughtAt.join(' | '))
     if (caughtAt.length) ok(caughtAt.some((e) => /diverged at tick/.test(e)), 'a mutant names its divergence tick', caughtAt[0])
 
-    server.closeAllConnections()
-    server.close()
+    sim.close()
     console.log(`\nevidence self-test: ${pass}/${pass + fail} — ${fail ? 'FAILED' : 'OK (and the mutant proved it can fail)'}`)
     return fail ? 1 : 0
 }
