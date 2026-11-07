@@ -777,6 +777,7 @@ function hashStr(s) {
 export function fightersState(m) {
     return m.fighters.map((f) => ({
         id: f.def.id, name: f.def.name, x: f.x, y: f.y, vx: f.vx, hp: f.hp, meter: f.meter,
+        guard: f.guard,
         facing: f.facing, st: f.st, sf: f.sf, move: f.move, phase: f.phase, wins: f.wins,
         combo: f.combo,
     }))

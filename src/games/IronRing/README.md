@@ -67,6 +67,16 @@ trick), camera tracks the midpoint and zooms with the spacing.
   block state set).
 - KO only happens through `resolveHit` (a bare `hp=0` doesn't end a round);
   harnesses use the exported `forceKO`.
+- Guard crush (#1761 item 5, first slice of the v2 backlog): the cabinet runs
+  the engine's `guardCrush` gauge (a hidden `f.guard`, 0–100). A block drains
+  it by the move's damage; at zero the guard CRUSHES — a 46-tick stagger
+  (`st: 'crush'`) that CANNOT block, chip `CRUSH_CHIP` (7), an 8-tick hitstop
+  and a `kind: 'crush'` event. The gauge regens 0.35/tick while free and resets
+  full when the stagger wears off. Sustained single-hit poking does not crush
+  (the regen wins); burst pressure (dash combos) does — the gauge makes block
+  a resource, not a wall. The HUD carries a steel strip above each meter
+  (flashing gold/crimson when low, shattering red while crushed) and the
+  cabinet fires a GUARD BREAK banner + crack on the event.
 
 ## Controls
 
@@ -92,6 +102,16 @@ trick), camera tracks the midpoint and zooms with the spacing.
   matchup line (the dialogue gate goes red). The Node part also proves every
   fighter carries win + lose lines, the per-opponent resolution, the `_default`
   fallback, line variety, and that all three stages carry a distinct midground.
+- Guard crush (#1761 item 5) gates: Node (a block drains the gauge by the
+  move's dmg; empty gauge → 46-tick crush + 7 chip + event; a crushed fighter
+  is defenseless even while holding block; the stagger resets the gauge full;
+  the gauge regens while free; sustained HYDE dash pressure crushes a blocking
+  opponent with no gauge manipulation; determinism with the gauge live; the
+  cabinet src pins `guardCrush: true`) + browser (forceCrush seam: chip lands,
+  GUARD BREAK banner, gauge reads zero, resets full).
+- `npm run ironringcheck -- --mutate-crush` — proven-fail for #1761 item 5:
+  killing the gauge drain (`def.guard - raw` → no-op) must stop the crush from
+  ever landing (the empty-gauge gate goes red).
 - `CONTRACT_ONLY=iron-ring npm run contractcheck` — the #377 driving contract.
 
 ## Honest gaps (polish-pass candidates)
@@ -126,4 +146,8 @@ trick), camera tracks the midpoint and zooms with the spacing.
   choice, never a seeded placeholder. The decision is the pure
   `src/games/IronRing/netselect.js`, gated in Node (part A2), proven-fail under
   `--mutate`.
-- Guard crush, stun system, throws escapable in air (v2 mechanics).
+- **CLOSED by #1761 (item 5, first slice)** Guard crush — the cabinet now fights
+  with the engine's `guardCrush` gauge (see Rules worth knowing): blocking is a
+  resource, burst pressure shatters it into a punishable 46-tick stagger.
+  Gates in Node + browser, `--mutate-crush` proves the drain gate bites.
+- Stun system, throws escapable in air (the remaining v2 mechanics).
