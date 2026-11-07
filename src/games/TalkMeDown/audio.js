@@ -25,6 +25,8 @@ export const sfx = {
     flag() { A.playTone(980, 0.05, 'triangle', 0.08); A.playTone(1240, 0.06, 'triangle', 0.07, 0.05) },
     heard() { A.playTone(760, 0.05, 'triangle', 0.09) },
     refused() { A.playTone(240, 0.09, 'square', 0.08); A.playTone(180, 0.12, 'square', 0.08, 0.08) },
+    // #1797: the block lands on its back with a chunky mechanical clunk.
+    flip() { A.playSweep(150, 85, 0.18, 'triangle', 0.14); A.playNoise(0.05, 0.12) },
     order() { A.playTone(880, 0.04, 'triangle', 0.06); A.playTone(1100, 0.05, 'triangle', 0.05, 0.04) },
     clear() { [523, 659, 784, 1046].forEach((f, i) => A.playTone(f, 0.12, 'square', 0.1, i * 0.09)) },
     boom() { A.playNoise(0.7, 0.45); A.playSweep(160, 30, 0.9, 'sawtooth', 0.3) },

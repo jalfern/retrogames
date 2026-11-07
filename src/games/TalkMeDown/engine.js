@@ -18,9 +18,14 @@
 // STRIKES: a wrong verb sparks — module locks 3 s, -5 s off the fuse, one of
 // three breakers trips. Three breakers or a zero fuse and the block glows.
 //
+// BACK PANEL (#1797): UP at module 1 tilts the bomb onto its maintenance back —
+// 0-2 BATTERIES stamped there are facts no front rule ever needed, and D5/G5
+// demand them aloud. DOWN tilts back; the flipped side holds no verbs.
+//
 // ROUNDS: short bombs, rising pressure — round r carries min(1+(r>>1), 4)
-// modules on max(30, 70-5r) seconds, deeper rule variants unlocking as the
-// squad chief likes you. Five bombs cleared = SQUAD CHIEF stamp.
+// modules on max(30, 70-5r) seconds; rule variants unlock 1+round deep, so
+// round 1 is exactly N1/N2/D1/D2/G1/G3 and every stamp is live by the quota.
+// Five bombs cleared = SQUAD CHIEF stamp.
 
 import { mulberry32 } from './rng.js'
 
@@ -107,6 +112,12 @@ export const RULEBOOK = {
                 return (f.leds + 3) % 10
             },
         },
+        {
+            id: 'D5', text: 'Count the BATTERIES on the BACK panel. Set the dial to that number. Then SET.',
+            // #1797: the back panel's batteries are the dial's whole answer —
+            // 0..2, so this rule is solvable by construction on every bomb.
+            target: f => f.batteries,
+        },
     ],
     G: [
         { id: 'G1', text: 'Press STAR, then BOLT, then MOON.', target: () => [0, 4, 5] },
@@ -118,6 +129,12 @@ export const RULEBOOK = {
         {
             id: 'G4', text: 'LED count\'s glyph, SERIAL digit\'s glyph, then LED count again (footer).',
             target: f => [f.leds % 6, f.serialDigit % 6, f.leds % 6],
+        },
+        {
+            id: 'G5', text: 'BACK-panel BATTERY count as a glyph (footer), then SPADE, then the count again.',
+            // #1797: batteries are 0..2 — always a real footer glyph, always
+            // solvable; the defuser must tilt the bomb over to read them aloud.
+            target: f => [f.batteries, 3, f.batteries],
         },
     ],
 }
@@ -148,9 +165,15 @@ function fuseFor(round) { return Math.max(30, 70 - round * 5) }
 function moduleCountFor(round) { return Math.min(1 + (round >> 1), 4) }
 export function variantPool(type, round) {
     const all = RULEBOOK[type]
-    // round 1-2: gentle shallow rules; deeper variants unlock round by round.
-    const open = { N: [1, 2, 5, 3, 4, 6], D: [1, 2, 3, 4], G: [1, 3, 2, 4] }[type]
-    const depth = Math.min(all.length, 2 + Math.ceil(round / 2))
+    // #1797: slope 1 + round. Round 1 now carries EXACTLY the set the README
+    // promises (N1/N2/D1/D2/G1/G3 — the old 2+ceil(r/2) leaked N5/D3/G2 into
+    // round 1, a text!=truth), and every stamp unlocks inside the 5-bomb
+    // quota: D5/G5 at round 2, and N6 — dead under the old slope (needed
+    // round 8, the quota ends at 5) — at round 5.
+    const open = { N: [1, 2, 5, 3, 4, 6], D: [1, 2, 5, 4, 3], G: [1, 3, 5, 2, 4] }[type]
+    // D keeps D4 at round 3 (where #1708's anchor gates prove it; D3 slides to
+    // round 4) and surfaces D5 at round 2; G surfaces G5 at round 2, G4 by 4.
+    const depth = Math.min(all.length, 1 + round)
     return open.slice(0, depth)
 }
 
@@ -162,6 +185,7 @@ function genFeatures(rng) {
         leds: (rng() * 9) | 0,
         bolt: (rng() * 6) | 0,
         serialDigit: 0, // fixed below — last char is always a digit
+        batteries: (rng() * 3) | 0, // #1797: 0-2, stamped on the BACK panel
     }
 }
 
@@ -230,6 +254,7 @@ export function buildBomb(gs) {
     gs.fuseMax = gs.fuse
     gs.cursor = { mod: 0, sub: 0 }
     gs.cursorFlash = 0
+    gs.flip = 0 // #1797: every new bomb lands face-up
     gs.order = null
     gs.orderFor = -1
     gs.orderTicks = 0
@@ -275,6 +300,7 @@ export function createGame(seed, players = 1) {
         events: [],           // transient fx cues consumed by the shell
         clearFlash: 0,
         seqInput: {},         // moduleId -> glyphs pressed so far
+        flip: 0,              // #1797: 0 = module panel, 1 = back plate
     }
     buildBomb(gs)
     return gs
@@ -294,6 +320,17 @@ function spark(gs, m, why) {
 
 function defuserAct(gs, pad) {
     const mods = gs.modules
+    // #1797 THE FLIP LAW — UP at module 1 tilts the bomb onto its back,
+    // DOWN tilts it face-up again. The back plate carries no verbs: while
+    // flipped, every other pad input is refused silently (no strike — the
+    // tilt is free, KTANE-style, and a strike for looking at your own
+    // batteries would punish the very curiosity the panel advertises).
+    // Seat 1 alone owns hands; the manual seat never sees the bomb.
+    if (gs.flip) {
+        if (pad.down) { gs.flip = 0; gs.events.push({ k: 'flip', to: 0 }) }
+        return
+    }
+    if (pad.up && gs.cursor.mod === 0) { gs.flip = 1; gs.events.push({ k: 'flip', to: 1 }); return }
     const m = mods[gs.cursor.mod]
     if (!m) return
     // module selector: up/down cycles live modules
@@ -487,6 +524,8 @@ export function simState(gs) {
         serial: gs.features.serial,
         leds: gs.features.leds,
         bolt: gs.features.bolt,
+        batteries: gs.features.batteries, // #1797: the back-plate fact
+        flipped: gs.flip,                // #1797: which side you are on
         cursor: { ...gs.cursor },
         modules: gs.modules.map(m => ({
             stamp: m.stamp, type: m.type, solved: m.solved, locked: m.locked > 0,
@@ -505,8 +544,8 @@ export function simState(gs) {
 export function hash(gs) {
     const s = [
         gs.tick, gs.round, gs.score, gs.strikes, gs.bombsCleared, gs.fuse,
-        gs.features.serial, gs.features.leds, gs.features.bolt,
-        gs.cursor.mod, gs.cursor.sub, gs.manual.page, gs.manual.line,
+        gs.features.serial, gs.features.leds, gs.features.bolt, gs.features.batteries,
+        gs.cursor.mod, gs.cursor.sub, gs.manual.page, gs.manual.line, gs.flip,
         gs.modules.map(m => `${m.stamp}${m.solved ? 1 : 0}${m.locked}${m.dial ?? -1}${m.wires ? m.wires.map(w => `${w.color}${w.lit ? 1 : 0}${w.cut ? 1 : 0}`).join('') : ''}`).join('|'),
         Object.values(gs.seqInput).map(q => q.join('')).join('.'),
     ].join(',')

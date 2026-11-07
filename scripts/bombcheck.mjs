@@ -1,12 +1,14 @@
 // BOMB CHECK — Node harness for TALK ME DOWN (#1252). Proves three things:
 // the sim boots legal bombs, its core rules hold on hundreds of seeds, and it
 // can be won — plus the slack rule (every seed still clears with the fuse cut
-// to 75%) and the voice grammar pins. One gate per behaviour; a red line names
-// itself. Pure Node: engine.js and voice.js are DOM-free by design.
+// to 75%), the voice grammar pins, and the back panel (#1797: seeded
+// batteries, the flip law, D5/G5 answering the printed count). One gate per
+// behaviour; a red line names itself. Pure Node: engine.js and voice.js are
+// DOM-free by design.
 
 import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
-    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS,
+    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool,
 } from '../src/games/TalkMeDown/engine.js'
 import { parseCall, intentLabel, ACCEPTED_HINT } from '../src/games/TalkMeDown/voice.js'
 import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
@@ -242,6 +244,11 @@ const ok = (name, cond, extra = '') => {
         ['confirm', { kind: 'set' }],
         ['flip to the dial page', { kind: 'page', page: 'dial' }],
         ['turn to the wires page', { kind: 'page', page: 'neon' }],
+        ['flip it', { kind: 'flip' }],
+        ['TURN IT OVER', { kind: 'flip' }],
+        ['turn the bomb over', { kind: 'flip' }],
+        ['tilt it', { kind: 'flip' }],
+        ['flip over', { kind: 'flip' }],
         ['hello there', null],
         ['red', null],
         ['blue two three', null],
@@ -255,7 +262,9 @@ const ok = (name, cond, extra = '') => {
     }
     ok(`grammar resolves ${pins.length} pinned phrasings`, !bad, bad)
     ok('labels read like shouts', intentLabel({ kind: 'cut', color: 'red' }) === 'CUT RED' && intentLabel(null) === '?')
+    ok('a FLIP call labels as a shout', intentLabel({ kind: 'flip' }) === 'FLIP')
     ok('no lookahead regex tricks leak (dial beats bare set)', parseCall('set nine').kind === 'dial')
+    ok('FLIP phrases never steal the page or the dial', parseCall('flip to the dial page').kind === 'page' && parseCall('turn to seven').kind === 'dial')
 }
 
 // ---- 12. voiceCmd banking + hint source (#1415) -----------------------------
@@ -287,7 +296,7 @@ const ok = (name, cond, extra = '') => {
     // The hint line the footer and the page share must describe calls the
     // grammar actually accepts (one source, text == truth).
     ok('ACCEPTED_HINT names shapes the grammar accepts', ['cut red', 'dial 7', 'set', 'press star'].every(s => parseCall(s)) &&
-        ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"'), ACCEPTED_HINT)
+        ACCEPTED_HINT.includes('"CUT RED"') && ACCEPTED_HINT.includes('"DIAL 7"') && ACCEPTED_HINT.includes('"SET"') && ACCEPTED_HINT.includes('"PRESS STAR"') && ACCEPTED_HINT.includes('"FLIP IT"'), ACCEPTED_HINT)
     const artSrc = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
     ok('the LCD-rail footer draws the shared const (not a literal)', /ACCEPTED_HINT/.test(artSrc))
 }
@@ -360,6 +369,139 @@ const ok = (name, cond, extra = '') => {
     const engSrc = readFileSync(new URL('../src/games/TalkMeDown/engine.js', import.meta.url), 'utf8')
     ok('D4 cross-reference is the bare unsolved-blind find (source pin)',
         /id: 'D4'[\s\S]{0,700}all\.find\(x => x !== m && x\.type === 'N'\)/.test(engSrc))
+}
+
+// ---- 14. back panel (#1797): batteries, the flip law, battery rules ---------
+{
+    const navigate = (gs, idx) => {
+        for (let g = 0; gs.cursor.mod !== idx && g < 8; g++) step(gs, { down: true })
+    }
+    // (a) batteries — a seeded back-plate fact, 0..2, stable across rebuilds.
+    let bBad = ''
+    for (let seed = 1; seed <= 300 && !bBad; seed++) {
+        const b = createGame(seed, 1).features.batteries
+        if (!Number.isInteger(b) || b < 0 || b > 2) bBad = `seed ${seed} batteries ${b}`
+        else if (createGame(seed, 1).features.batteries !== b) bBad = `seed ${seed} batteries unstable`
+    }
+    ok('back panel: batteries are seeded 0..2 across 300 seeds', !bBad, bBad)
+
+    // (b) the flip law — UP tilts over at module 1, DOWN tilts back; UP does
+    // NOT flip once the cursor sits deeper (it walks the modules there).
+    const g1 = createGame(4242, 1)
+    step(g1, { up: true })
+    const flipIn = g1.flip === 1
+    step(g1, { down: true })
+    const flipOut = g1.flip === 0
+    // the UP-walks-elsewhere leg needs TWO modules (round 1's single-module
+    // bomb has nowhere to walk — UP correctly tilts there).
+    g1.round = 3
+    buildBomb(g1)
+    step(g1, { down: true })
+    const walked = g1.cursor.mod === 1
+    step(g1, { up: true })
+    const upWalks = g1.flip === 0 && g1.cursor.mod === 0
+    const g1b = createGame(4242, 1)
+    const kinds = []
+    step(g1b, { up: true }); drainEvents(g1b).forEach(f => { if (f.k === 'flip') kinds.push(f.to) })
+    step(g1b, { down: true }); drainEvents(g1b).forEach(f => { if (f.k === 'flip') kinds.push(f.to) })
+    ok('flip law: UP tilts over at module 1, DOWN back, UP walks elsewhere; both tilts announce',
+        flipIn && flipOut && walked && upWalks && kinds.join(',') === '1,0',
+        `in=${flipIn} out=${flipOut} walk=${walked} up=${upWalks} events=${kinds.join(',')}`)
+
+    // (c) no verbs on the back — inputs refuse SILENTLY (no strike, no cut,
+    // no cursor/dial move, no score). A locked module must not pin the bomb
+    // face-down either way — the tilt stays legal while a module cools.
+    const g2 = createGame(7, 1)
+    const m0 = g2.modules[0]
+    const sub0 = g2.cursor.sub
+    const dial0 = m0.dial ?? -1
+    step(g2, { up: true })
+    step(g2, { a: true }); step(g2, { left: true }); step(g2, { right: true })
+    const refusedOk = g2.flip === 1 && g2.strikes === 0 && g2.score === 0 && g2.cursor.sub === sub0 && (m0.dial ?? -1) === dial0 && !m0.solved
+    const backAgain = (step(g2, { down: true }), g2.flip === 0)
+    const g2b = createGame(7, 1)
+    g2b.modules[0].locked = 60
+    step(g2b, { up: true })
+    step(g2b, { down: true })
+    const lockTilt = g2b.flip === 0
+    ok('flipped panel refuses verbs silently — no strike, no progress; the tilt escapes a lock',
+        refusedOk && backAgain && lockTilt,
+        `strikes=${g2.strikes} score=${g2.score} sub=${g2.cursor.sub} flip=${g2.flip} lockTilt=${lockTilt}`)
+
+    // (d) every new bomb lands face-up.
+    const g3 = createGame(7, 1)
+    step(g3, { up: true })
+    g3.round = 2
+    buildBomb(g3)
+    ok('a new bomb lands face-up (buildBomb resets the tilt)', g3.flip === 0)
+
+    // (e) the autopilot never tilts — solvePad stays face-up for a whole quota.
+    let tiltSeen = false
+    {
+        const g = createGame(11, 1)
+        for (let i = 0; i < 60000 && !g.done; i++) { step(g, solvePad(g)); if (g.flip) tiltSeen = true }
+    }
+    ok('the autopilot never tilts — a full quota run stays face-up', !tiltSeen)
+
+    // (f) human flow: tilt to READ, then the printed count solves D5/G5 —
+    // printed text and computed target are the same truth.
+    let fBad = '', fRigs = 0
+    outerF:
+    for (const round of [3, 4, 5]) {
+        for (let seed = 1; seed <= 1500 && fRigs < 40; seed++) {
+            const gs = createGame(seed, 2)
+            gs.round = round // D5 seats from round 3, G5 from round 4 (module-type law)
+            buildBomb(gs)
+            const b = gs.features.batteries
+            for (const m of gs.modules) {
+            const idx = gs.modules.indexOf(m)
+            if (m.stamp === 'D5') {
+                step(gs, { up: true }); step(gs, { down: true }) // tilt-read like a human
+                navigate(gs, idx)
+                for (let i = 0; m.dial !== b && i < 12; i++) step(gs, m.dial < b ? { right: true } : { left: true })
+                step(gs, { a: true })
+                if (!m.solved || gs.strikes !== 0) { fBad = `seed ${seed}: D5 b=${b} solved=${m.solved} strikes=${gs.strikes}`; break outerF }
+                fRigs++
+            } else if (m.stamp === 'G5') {
+                step(gs, { up: true }); step(gs, { down: true })
+                navigate(gs, idx)
+                for (const want of [b, 3, b]) {
+                    for (let i = 0; gs.cursor.sub !== want && i < 8; i++) step(gs, ((want - gs.cursor.sub + 6) % 6 <= 3) ? { right: true } : { left: true })
+                    step(gs, { a: true })
+                }
+                if (!m.solved || gs.strikes !== 0) { fBad = `seed ${seed}: G5 b=${b} solved=${m.solved} strikes=${gs.strikes}`; break outerF }
+                fRigs++
+            }
+        }
+        }
+    }
+    ok(`human flow: tilt, count, solve — D5/G5 answer the printed truth (${fRigs} rigs)`, fRigs >= 20 && !fBad, fBad || `only ${fRigs} rigs`)
+
+    // (g) unlock law — every stamp lives inside the 5-bomb quota (the slope
+    // fix revives N6, dead under 2+ceil(r/2)); round 1 is EXACTLY the README set.
+    const seen = new Set()
+    for (let seed = 1; seed <= 800; seed++) {
+        const gs = createGame(seed, 1)
+        for (const round of [1, 2, 3, 4, 5]) {
+            if (round > 1) { gs.round = round; buildBomb(gs) }
+            for (const m of gs.modules) seen.add(m.stamp)
+        }
+    }
+    const missing = ['D5', 'G5', 'N6', 'D4', 'G4', 'N4'].filter(s => !seen.has(s))
+    ok('every stamp unlocks inside the quota (D5, G5, and the once-dead N6 all generate)', !missing.join(), `missing ${missing.join(',')}`)
+    const r1 = ['N', 'D', 'G'].flatMap(t => variantPool(t, 1).map(v => t + v)).sort().join(',')
+    ok('round 1 is exactly the README set (N1/N2/D1/D2/G1/G3)', r1 === 'D1,D2,G1,G3,N1,N2', r1)
+
+    // (h) the tilt is observable state — hash and simState carry it (#494).
+    const g4 = createGame(5, 1)
+    const hUp = hash(g4)
+    g4.flip = 1
+    ok('hash + simState carry the tilt and the battery count',
+        hash(g4) !== hUp && simState(g4).flipped === 1 && simState(g4).batteries === g4.features.batteries)
+
+    // (i) source pin — the silent refusal guard is in the engine text.
+    const engSrc14 = readFileSync(new URL('../src/games/TalkMeDown/engine.js', import.meta.url), 'utf8')
+    ok('flip refusal is source-pinned in defuserAct', /if \(gs\.flip\) \{[\s\S]{0,200}pad\.down[\s\S]{0,160}return/.test(engSrc14))
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)

@@ -61,6 +61,10 @@ export function parseCall(text) {
         return { kind: 'dial', value: v }
     }
     if (/\b(set|confirm|done|engage)\b/.test(t)) return { kind: 'set' }
+    // #1797: tilt calls — LAST, so no existing phrase is stolen. "flip to the
+    // dial page" still pages (the page rule sits above and claims it); a bare
+    // flip/tilt/turn-over is the bomb, not the manual.
+    if (/\b(flip|tilt)\b/.test(t) || /\bturn(?:s|ing)?\b.*\bover\b/.test(t)) return { kind: 'flip' }
     return null
 }
 
@@ -68,7 +72,7 @@ export function parseCall(text) {
 // that must say them: the manual page (#1373) and the defuser's LCD-rail
 // footer (#1415). Grammar and hint share this const so they can never drift
 // (same law as RULEBOOK: text and truth from one source).
-export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR"'
+export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR" "FLIP IT"'
 
 // intentLabel — what the "HEARD" banner shows (ART rule: short, unmistakable).
 export function intentLabel(intent) {
@@ -78,5 +82,6 @@ export function intentLabel(intent) {
     if (intent.kind === 'dial') return `DIAL ${intent.value}`
     if (intent.kind === 'set') return 'SET'
     if (intent.kind === 'page') return `PAGE: ${intent.page.toUpperCase()}`
+    if (intent.kind === 'flip') return 'FLIP'
     return '?'
 }

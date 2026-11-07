@@ -3,7 +3,7 @@
 // obey + refuse (grammar level, #1247); contract reset/step hashes self-agree;
 // death, restart, pause — all with zero page errors. Shots land in /tmp/forge.
 
-import { chromium } from 'playwright-core'
+import { launchChrome } from './lib/chromeboot.mjs'
 
 const URL = process.env.TMD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/talk-me-down`
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -41,7 +41,7 @@ const cornerLuma = (pg) => pg.evaluate(() => {
     return (box(16, 16) + box(c.width - 40, 16) + box(16, c.height - 40) + box(c.width - 40, c.height - 40)) / (4 * 169)
 })
 
-const browser = await chromium.launch({ channel: process.env.SHOT_CHANNEL || 'chrome', args: ['--autoplay-policy=no-user-gesture-required'] })
+const browser = await launchChrome({ channel: process.env.SHOT_CHANNEL || 'chrome', extraArgs: ['--autoplay-policy=no-user-gesture-required'] })
 const page = await browser.newPage({ viewport: { width: 900, height: 760 } })
 const errs = []
 page.on('pageerror', (e) => errs.push(String(e)))

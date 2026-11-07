@@ -34,6 +34,7 @@ const ATTRACT_MSGS = [
     'NEITHER CAN WIN ALONE',
     'V = MIC: SHOUT "CUT RED"',
     'THREE STRIKES AND THE BLOCK GLOWS',
+    'UP AT MODULE 1 TILTS THE BOMB OVER',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
 ]
 
@@ -121,6 +122,12 @@ export default function TalkMeDown() {
             gs.manual.page = { neon: 0, dial: 1, glyph: 2 }[intent.page] ?? gs.manual.page
             manualHiddenRef.current = false
             hud.banner = { text: `PAGE ${intent.page.toUpperCase()}`, ok: true }
+            sfx.heard()
+        } else if (intent.kind === 'flip') {
+            // #1797: a shouted flip PULSES the tilt hint — heard words make
+            // things visible, the defuser's hands stay their own (#1247).
+            hud.pulse = { mod: -1, kind: 'flip', t: 120 }
+            hud.banner = { text: 'HEARD: FLIP', ok: true }
             sfx.heard()
         } else if (!m) refuse('NO MODULE')
         else if (m.solved) refuse('ALREADY SAFE')
@@ -259,6 +266,7 @@ export default function TalkMeDown() {
             if (gs && !gs.done) hud.curtain = { n: gs.bombsCleared + 1, t: 62 }
         }
         if (f.k === 'boom') hud.boomTick = 1
+        if (f.k === 'flip') hud.shake = Math.max(hud.shake, 6) // #1797: a chunky tilt
         if (f.k === 'flag') hud.banner = { text: `READ RULE ${f.stamp}`, ok: true }
     }
 
@@ -371,6 +379,10 @@ export default function TalkMeDown() {
                 step(a, solvePad(a))
                 for (const f of drainEvents(a)) pumpHud(f)
                 if (a.done) attractRef.current = createGame(1000 + Math.floor(Math.random() * 9999), 1)
+                // #1797: the demo tilts its bomb over once a loop — the flip
+                // teaches itself. The attract sim is shell decor (never hashed
+                // nor replayed), so the shell may pose it directly.
+                if (attractRef.current) attractRef.current.flip = (a.tick % 420 >= 240 && a.tick % 420 < 330) ? 1 : 0
                 return
             }
             if (screenRef.current !== 'play' || pausedRef.current) return
@@ -461,6 +473,8 @@ export default function TalkMeDown() {
                 // should have to read a README to know their other half's keys.
                 g.fillStyle = '#7dffb0'
                 g.fillText('P2 KEYS: WASD MOVE · F FLAG', 176, 308)
+                g.fillStyle = '#9aa0aa'
+                g.fillText('^ TILTS THE BOMB OVER - COUNT ITS BATTERIES', 132, 332)
             }
             if (screenRef.current === 'over' && gsRef.current && gsRef.current.done) {
                 const t = Math.floor((now - overAtRef.current) / 16)
@@ -516,15 +530,25 @@ export default function TalkMeDown() {
         }
 
         const drawBombView = (g, gs, tick) => {
+            const secs = Math.ceil(gs.fuse / 60)
+            const hud = hudRef.current
+            if (gs.flip) {
+                // #1797: the maintenance side. Batteries are the news — but
+                // the fuse and the breakers stay readable (pressure never
+                // hides, KTANE signature 5).
+                ART.drawBack(g, gs.features.batteries, tick)
+                ART.drawStrikes(g, gs.strikes)
+                ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
+                return
+            }
             ART.drawPanelShell(g)
             ART.drawLeds(g, gs.features.leds)
             ART.drawBoltColor(g, gs.features.bolt)
             ART.drawStrikes(g, gs.strikes)
-            const secs = Math.ceil(gs.fuse / 60)
             ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
             g.font = '8px "Press Start 2P", monospace'; g.fillStyle = '#0f1113'
             g.fillText('SER ' + gs.features.serial, ART.PANEL.x + 136, ART.PANEL.y + 24)
-            const hud = hudRef.current
+            ART.drawFlipHint(g, !!(hud.pulse && hud.pulse.kind === 'flip'), tick)
             gs.modules.forEach((m, i) => {
                 const r = ART.moduleRect(i, gs.modules.length)
                 const sel = i === gs.cursor.mod && !gs.done

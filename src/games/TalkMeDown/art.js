@@ -420,6 +420,60 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag) {
     g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)
 }
 
+// ---- the back panel (#1797) --------------------------------------------------
+// The maintenance side of the block: a riveted plate bolted over the module
+// bays, a hazard stencil, and the battery bank D5/G5 demand aloud. The fuse
+// and the strike breakers stay drawn by the caller — pressure never hides.
+export function drawBack(g, batteries, tick) {
+    bevel(g, PANEL, '#3f444c', '#1f2226')
+    g.fillStyle = '#33373d'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, PANEL.h - 58)
+    g.fillStyle = '#42474e'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, 2); g.fillRect(PANEL.x + 6, PANEL.y + 50, 2, PANEL.h - 58)
+    // the front's serial plate/bolt/LED bar are hidden behind a plain cover
+    g.fillStyle = '#3a3e45'; g.fillRect(PANEL.x + 124, PANEL.y + 4, 224, 32)
+    g.fillStyle = '#20242a'; g.fillRect(PANEL.x + 124, PANEL.y + 4, 224, 1)
+    g.font = FONT(6); g.fillStyle = '#5c626c'
+    g.fillText('BOLTED SHUT', PANEL.x + 190, PANEL.y + 24)
+    // rivets
+    g.fillStyle = '#20242a'
+    for (const [rx, ry] of [[16, 60], [PANEL.w - 22, 60], [16, PANEL.h - 18], [PANEL.w - 22, PANEL.h - 18], [124 + 4, 12], [124 + 216, 12]]) {
+        g.beginPath(); g.arc(PANEL.x + rx, PANEL.y + ry, 3, 0, 7); g.fill()
+    }
+    g.font = FONT(8); g.fillStyle = '#8a8f98'
+    g.fillText('MAINTENANCE PANEL', PANEL.x + 96, PANEL.y + 82)
+    g.font = FONT(6); g.fillStyle = '#6b7078'
+    g.fillText('PROPERTY OF BOMB SQUAD - DO NOT LOSE', PANEL.x + 60, PANEL.y + 98)
+    for (let i = 0; i < 12; i++) { g.fillStyle = i % 2 ? '#b98a1e' : '#2a2d31'; g.fillRect(PANEL.x + 20 + i * 30, PANEL.y + 108, 30, 6) }
+    g.font = FONT(7); g.fillStyle = P.amber
+    g.fillText('BATTERIES', PANEL.x + 152, PANEL.y + 136)
+    for (let i = 0; i < 3; i++) {
+        const bx = PANEL.x + 118 + i * 68, by = PANEL.y + 146
+        if (i < batteries) {
+            g.fillStyle = '#8a6512'; g.fillRect(bx + 14, by, 16, 8)
+            g.fillStyle = '#c98f1f'; g.fillRect(bx, by + 6, 44, 74)
+            g.fillStyle = P.amber; g.fillRect(bx + 3, by + 9, 38, 68)
+            g.fillStyle = '#8a6512'
+            g.fillRect(bx + 8, by + 22, 28, 3); g.fillRect(bx + 8, by + 38, 28, 3)
+        } else {
+            g.fillStyle = '#1c1e22'; g.fillRect(bx + 14, by, 16, 8)
+            g.fillStyle = '#1c1e22'; g.fillRect(bx, by + 6, 44, 74)
+            g.fillStyle = '#141519'; g.fillRect(bx + 4, by + 10, 36, 66)
+        }
+        g.font = FONT(6); g.fillStyle = i < batteries ? '#3a2c08' : '#3d4148'
+        g.fillText(String(i + 1), bx + 19, by + 80)
+    }
+    g.font = FONT(6); g.fillStyle = tick % 50 < 32 ? '#7dffb0' : '#41544a'
+    g.fillText('DOWN TILTS IT BACK', PANEL.x + 122, PANEL.y + PANEL.h - 48)
+}
+
+// the face-up nudge: where the tilt lives, printed while there is nothing to
+// shout about. Pulses bright when a FLIP call reached the mic (#1247 law —
+// heard words make things visible, they never act).
+export function drawFlipHint(g, pulse, tick) {
+    g.font = FONT(6)
+    g.fillStyle = pulse && tick % 16 < 10 ? '#ffd23e' : '#6b7078'
+    g.fillText('^ UP FLIPS IT', PANEL.x + 96, PANEL.y + 48)
+}
+
 // ---- chrome bits -----------------------------------------------------------
 // #1415: the defuser's LCD rail carries the accepted call shapes etched under
 // the glass — the manual page got them at #1373, seat 1 had nothing. Text is
