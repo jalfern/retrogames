@@ -365,3 +365,18 @@ states (`∅`, never files on them) and Momentum exposes `pos`, its honest readi
 committed-json validation + roster parity) is the load-bearing part; `BOREDOM_MUTATE=dead`
 blinds dead-detection and seven gates go red. Measurement, not a CI gate — the map reports courses, it does not block builds.
 
+
+**The PLAICRAFT store harness (#1711):** rec/v1|v2 consent rules, envelope doors and
+voice-stripping live in `relay/core.js` and `src/utils/consent.js`; `npm run recordcheck`
+(73 gates) grades them with a stub store. S5 closed the gap the stubs left open — nothing
+used to EXECUTE `relay/worker.js`, yet that file is exactly what phones meet in prod.
+`npm run relaycheck` (31 gates) boots the real worker in Node via
+`scripts/lib/relaysim.mjs` (a `cloudflare:workers` resolve-hook shim + an in-memory R2 mock
+with faithful lexicographic `list`/`head` metadata), then grades the HTTP surface: capability
+bools, arcade-vs-stranger CORS, the consent door against hand-crafted envelopes, byte-exact
+round-trips, metadata→`head()`→row plumbing, key-shape 400 / missing 404, honest 503s, and
+a dead-REGISTRY probe that must not sink `/status`. `--mutate` strips the `if (!v.ok)` door
+line from worker.js SOURCE — 5 gates red, restored green. `plaicraft:evidence --self-test`
+(18 gates) and `plaicraft:clap` (15 gates, ±50 ms clap proof through a real browser
+recording) now run their pipelines on the same sim, so when #1730 binds the bucket,
+`npm run plaicraft:evidence` against prod R2 is a mechanical finish, not first contact.

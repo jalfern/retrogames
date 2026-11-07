@@ -60,6 +60,22 @@ after 1 h).
   needs-approval quarantine when the body carries his private `key`
   (`src/utils/feedback.js` stores it from a one-time `?jonkey=…` link).
 
+## Session store (#1711, PLAICRAFT S1)
+- `GET /status` also answers `sessions:true|false` — the R2 capability flag;
+  clients hide every upload affordance until it is true (and until the bucket
+  binds, `POST /sessions` / `GET /sessions` answer an honest 503).
+- `POST /sessions` — one consent envelope `{recording, player, consent}`;
+  `validateSessionEnvelope` (core.js) refuses anything without `motion:true`
+  and any voice section without `voice:true`. The bucket is never public:
+  reads are `GET /sessions` (metadata rows) / `GET /sessions/<key>` (body),
+  both only through this worker. `npm run sessions` is the admin listing.
+- **This file is what phones talk to** — so `npm run relaycheck` RUNS it in
+  Node (`scripts/lib/relaysim.mjs`: `cloudflare:workers` shim + faithful
+  in-memory R2) and grades the routes: door, CORS, key regex, metadata
+  round-trip, caps, honest 503s. `--mutate` strips the door line from
+  `worker.js` SOURCE — 5 gates red, one line. `plaicraft:evidence
+  --self-test` and `plaicraft:clap` run their pipelines on the same sim.
+
 ## Client
 `src/utils/lockstep.js` (pure) + the Gauntlet pilot
 (`src/games/Gauntlet/index.jsx`): `?net=host`, `?net=join&room=CODE`,

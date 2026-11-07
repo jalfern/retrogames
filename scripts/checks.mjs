@@ -157,6 +157,10 @@ export const MANUAL_CHECKS = [
   // #1711: consent + session-store gate; pure Node with a loopback stub store,
   // driven from the lane (npm run recordcheck), deterministic.
   "scripts/recordcheck.mjs",
+  // #1711 S5: runs the PRODUCTION worker.js in Node (cfworkers shim + faithful
+  // R2 mock) and grades the store's HTTP surface; --mutate strips the consent
+  // door from worker.js SOURCE. Pure Node, deterministic, lane-driven.
+  "scripts/relaycheck.mjs",
   "scripts/roomcheck.mjs",
   "scripts/shelfcheck.mjs",
   "scripts/shorecheck.mjs",
