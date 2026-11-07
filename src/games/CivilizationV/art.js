@@ -40,7 +40,16 @@ function hexPrismGeometry(size) {
     return g
 }
 
-function buildCity(city, h) {
+// #1783 item 3: the ghost-star question — who founded this seat, and does another
+// hand hold it? origCapOf is the founder register (sim sets it at founding, and
+// it never moves); city.civ is the current owner. Zero = nothing to remember.
+function exOrigFounder(gs, city) {
+    if (!city.orig) return 0
+    for (const c of gs.civs) if (!c.barb && !c.cs && gs.origCapOf[c.id] === city.id && city.civ !== c.id) return c.id
+    return 0
+}
+
+function buildCity(city, h, exOrig) {
     const g = new THREE.Group()
     const { x, z } = hexToWorld(city.c, city.r)
     const col = new THREE.Color(CIVS[city.civ].hex)
@@ -58,6 +67,11 @@ function buildCity(city, h) {
     flag.position.set(0.58, 1.02 + h, -0.32); g.add(flag)
     if (city.capital) { const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.16), new THREE.MeshStandardMaterial({ color: 0xffe66b, emissive: 0xffcf4a, emissiveIntensity: 0.9 }))
         star.position.set(0, 1.35 + h, 0); g.add(star) }
+    // #1783 item 3: the founder's first seat held by another hand wears a dimmed
+    // ghost-star outline — the pill counts these falls; the board now shows them.
+    // Wireframe + MeshBasic so it reads as an outline at any light, never a claim.
+    if (exOrig) { const ghost = new THREE.Mesh(new THREE.OctahedronGeometry(0.13), new THREE.MeshBasicMaterial({ color: 0xb0a891, transparent: true, opacity: 0.45, wireframe: true }))
+        ghost.position.set(0, 1.32 + h, 0); g.add(ghost); g.userData.ghostStar = ghost }
     if (city.cs) {
         const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 0.66, 8), new THREE.MeshStandardMaterial({ color: 0xe8e4d8, flatShading: true, roughness: 0.85 }))
         tower.position.set(-0.42, 0.33 + h, 0.3); g.add(tower)
@@ -548,7 +562,7 @@ export function updateView(view, gs, extra = {}) {
         for (const city of gs.cities) {
             if (!city.alive) continue
             if (!gs.explored[0][city.r * CFG.W + city.c]) continue
-            const g = buildCity(city, gs.tiles[city.r * CFG.W + city.c]._h)
+            const g = buildCity(city, gs.tiles[city.r * CFG.W + city.c]._h, exOrigFounder(gs, city))
             cityGroup.add(g); view.cityMeshes.set(city.id, g)
         }
     }

@@ -1700,7 +1700,16 @@ function victoryFor(gs, civ) {
     // existence. The original judged the world by its captured thrones, and
     // the HUD pill and this law now speak the identical number.
     const fallen = (r) => { const oc = gs.origCapOf[r] != null ? gs.cities[gs.origCapOf[r]] : null; return oc ? oc.civ !== r : !gs.civs[r].alive }
-    if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || fallen(c.id))) return 'Domination — every rival capital flies your colours'
+    if (gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || fallen(c.id))) {
+        // #1783 item 5: kneeling realms are held by the court, not the garrison —
+        // when puppets survive the conquest, the copy honours them. Kneelers bound
+        // to anyone else unbind when their overlord's throne goes cold (sim.js
+        // vassal-castoff), so vassal === civ is the honest count at crowning.
+        const kneel = gs.civs.filter((c) => !c.barb && !c.cs && c.alive && c.vassal === civ).length
+        return kneel > 0
+            ? `Domination — ${kneel} realm${kneel > 1 ? 's kneel' : ' kneels'} to your court; the rest of the world flies your colours`
+            : 'Domination — every rival capital flies your colours'
+    }
     if (hasTech(gs, civ, 'SPACEFLIGHT') && gs.ark[civ] >= CFG.arkScience) return 'Science — Cockpit, Booster, Stasis and Launch are welded; the Ark leaves the ground, and the future is yours'
     const mine = gs.civs[civ].tourism || 0
     if (mine >= CFG.tourismWin && gs.civs.every((c) => c.barb || c.cs || c.id === civ || !c.alive || (c.tourism || 0) < mine)) {

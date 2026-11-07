@@ -4,6 +4,7 @@
 
 import { CFG, T, newGame, step, canFound, cityYield, hexDist, neighbors, stateHash, CIVS, tileAt, unitAt, spawnUnit, doAttack, BARB, atWar, declareWar, UNIT, defenseBonus, cityDefense, TECH, TECH_IDS, ERAS, hasTech, availableTechs, setResearch, canQueue, grantTech, IMP, IMP_IDS, RES, RES_IDS, canImprove, startImprove, connectedResources, resourceNetwork, resRevealed, queueDeny, roadCost, tileOwnedBy, tileYield, cityWorkedTiles, POLICY, POLICY_IDS, BRANCHES, happinessOf, hasPolicy, canAdopt, adoptPolicy, unitCost, WONDER, WONDER_IDS, GP, GP_TYPES, canBuildWonder, hasWonder, gpReady, gpThreshold, gpCost, canRecruit, recruitGP, canUseGP, spendGP, canDeclareWar, canMakePeace, makePeace, canTrade, makeTrade, cityStates, csInfo, canGift, giftCS, CS_IDS, CS0, isCS, coastalTile, coastalCityOf, isWater, findPath, orderMove, tileBlocked, canEmbark, embark, canLand, land, transportFor, ARK_PARTS, arkPartsOf, arkPartsDone } from '../src/games/CivilizationV/sim.js'
 import { decide, plan, RESEARCH_ORDER } from '../src/games/CivilizationV/planner.js'
+import { readFileSync } from 'fs'
 
 let pass = 0, fail = 0
 const ok = (cond, name) => { if (cond) { pass++ } else { fail++; console.error('  ✗ ' + name) } }
@@ -1949,6 +1950,57 @@ console.log('37. tourism: earned, never spent — and the crown follows the crow
         'with the tourism ledger in place the autopilot still replays hash-for-hash')
 
     CFG.capitalSizeToWin = keepCap; CFG.cultureWin = keepCult; CFG.tourismWin = keepTour; CFG.turnLimit = keepTurn
+}
+
+// ---- 38. kneel copy on the end screen + ghost-star data (#1783 items 3+5) ----
+console.log('38. kneel copy on the end screen + ghost-star data (#1783)')
+{
+    const SRC = (f) => readFileSync(new URL(`../src/games/CivilizationV/${f}`, import.meta.url), 'utf8')
+
+    // (a) the copy law: extinction keeps the classic sentence — no phantom kneelers
+    const g7 = newGame(9, 0)
+    const s7 = g7.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+    step(g7, { select: s7.id, found: true })
+    for (const c of g7.civs) if (!c.barb && !c.player) c.alive = false
+    step(g7, { endTurn: true })
+    eq(g7.end, 'win', 'a). extinction domination still crowns')
+    ok(/Domination/.test(g7.endWhy || '') && !/kneel/i.test(g7.endWhy || ''), 'a). a win by extinction keeps the classic copy — no phantom kneelers')
+
+    // (b) a surviving puppet court is NAMED, with honest grammar
+    const kneelWin = (kneelers) => {
+        const g = newGame(4, 0)
+        const s = g.units.find((u) => u.civ === 0 && u.kind === 'SETTLER')
+        step(g, { select: s.id, found: true })
+        for (let i = 0; i < 10; i++) step(g, { endTurn: true })   // let the AI found seats worth taking
+        for (const i of [1, 2, 3]) { const oc = g.cities[g.origCapOf[i]]; if (oc) oc.civ = 0 }
+        for (const i of kneelers) g.civs[i].vassal = 0
+        step(g, { endTurn: true })
+        return g
+    }
+    const g8 = kneelWin([1])
+    eq(g8.end, 'win', 'b). fallen seats alone crown — the honest pill law is unchanged')
+    ok(/1 realm kneels to your court/.test(g8.endWhy || ''), `b). one survivor kneels, singular grammar (${g8.endWhy})`)
+    const g9 = kneelWin([1, 2])
+    ok(/2 realms kneel to your court/.test(g9.endWhy || ''), `b). two survivors kneel, plural grammar (${g9.endWhy})`)
+    ok(/flies your colours/.test(g9.endWhy || ''), 'b). and the sentence still promises the rest of the world')
+
+    // (c) the ghost-star data: an orig seat held by a foreign hand is derivable
+    ok(g9.cities.some((ct) => ct.alive && ct.orig && g9.civs.some((o) => !o.barb && !o.cs && g9.origCapOf[o.id] === ct.id && ct.civ !== o.id)),
+        'c). ex-original seats (founder register vs current owner) exist for the renderer after kneelings')
+
+    // (d) source pins: the board actually paints the ghost, and the end screen rides the sim
+    const artSrc = SRC('art.js')
+    ok(/function exOrigFounder\(gs, city\)/.test(artSrc) && /gs\.origCapOf\[c\.id\] === city\.id && city\.civ !== c\.id/.test(artSrc),
+        'd). art.js resolves the founder from origCapOf + current owner — the register is the only truth')
+    ok(/buildCity\(city, gs\.tiles\[city\.r \* CFG\.W \+ city\.c\]\._h, exOrigFounder\(gs, city\)\)/.test(artSrc),
+        'd). the city rebuild hands the founder to buildCity every rebuild (owner sits in the sig)')
+    ok(/if \(exOrig\)/.test(artSrc) && /wireframe: true/.test(artSrc) && /userData\.ghostStar/.test(artSrc),
+        'd). a wireframe ghost-star outline is stamped on ex-original seats')
+    const jsxSrc = SRC('index.jsx')
+    ok(/domination' \? \(kneelCopy\(end\.why\)/.test(jsxSrc) && /const kneelCopy = /.test(jsxSrc),
+        'e). the end screen rides the sim endWhy for kneel wins — no second copy table')
+    ok(/realm kneels/.test(SRC('sim.js')) && /s kneel/.test(SRC('sim.js')),
+        'e). the kneel sentence lives in the sim, once, both grammars')
 }
 
 console.log(`\ncivcheck: ${pass} passed, ${fail} failed`)

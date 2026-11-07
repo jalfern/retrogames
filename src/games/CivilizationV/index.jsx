@@ -29,6 +29,9 @@ import { createView, updateView, spawnImpact, spawnArrow } from './art.js'
 
 const SIM_MS = 1000 / 60
 const GOAL = CFG.capitalSizeToWin
+// #1783 item 5: a kneel-won empire gets the puppet-court sentence the sim wrote
+// into endWhy — the end screen rides the sim string, never a second truth.
+const kneelCopy = (why) => { const m = /^Domination — (\d+ realm(?:s kneel| kneels).*)$/.exec(why || ''); return m ? m[1].charAt(0).toUpperCase() + m[1].slice(1) + '.' : null }
 
 /**
  * `?lite=1` — the documented cheap-pipeline path (the RaccoonHeist doctrine, same
@@ -1369,7 +1372,7 @@ const CivilizationVGame = () => {
                         {end.type === 'domination' ? 'DOMINATION' : end.type === 'science' ? 'SCIENCE VICTORY' : end.type === 'culture' ? 'CULTURE VICTORY' : end.win ? 'AN AGE OF GOLD' : 'HISTORY PASSED YOU BY'}
                     </h2>
                     <p className="text-lg mb-1">{end.win
-                        ? (end.type === 'domination' ? 'Every rival capital flies your colours.'
+                        ? (end.type === 'domination' ? (kneelCopy(end.why) || 'Every rival capital flies your colours.')
                             : end.type === 'science' ? 'Cockpit, Booster, Stasis, Launch — the Ark leaves the ground, and the future remembers Rome.'
                                 : end.type === 'culture' ? 'Travelers cross every sea for your wonders — the world sings in Latin.'
                                     : `Your capital reached size ${end.size} by turn ${end.turn}`)
