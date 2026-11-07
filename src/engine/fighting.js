@@ -420,15 +420,17 @@ function updateFighter(m, f, opp, pad) {
 
     if (m.guardCrush && f.st !== 'blockstun' && f.st !== 'crush') f.guard = Math.min(GUARD_MAX, f.guard + GUARD_REGEN)
 
-    // input-stun: the meter regens while free; a full meter on a grounded or
-    // committed state STUNS (a helpless victim can't input-stun itself — the
-    // trigger waits for a state the fighter controls again)
-    if (m.inputStun && f.st !== 'stunned') f.stunMeter = Math.max(0, f.stunMeter - STUN_REGEN)
+    // input-stun: a full meter on a grounded or committed state STUNS (a
+    // helpless victim can't input-stun itself — the trigger waits for a state
+    // the fighter controls again). The trigger reads the meter BEFORE this
+    // tick's regen, or the regen would cap it at STUN_MAX - STUN_REGEN and the
+    // stagger could never fire.
     if (m.inputStun && f.stunMeter >= STUN_MAX && f.st !== 'stunned' &&
         (f.st === 'idle' || f.st === 'crouch' || f.st === 'attack' || f.st === 'blockstun' || f.st === 'jump')) {
         f.st = 'stunned'; f.stun = STUN_FRAMES; f.sf = 0; f.move = null
         m.events.push({ t: m.tick, kind: 'stunned', by: f.side })
     }
+    if (m.inputStun && f.st !== 'stunned') f.stunMeter = Math.max(0, f.stunMeter - STUN_REGEN)
 
     if (f.comboTimer > 0) { f.comboTimer--; if (f.comboTimer === 0) f.combo = 0 }
 }

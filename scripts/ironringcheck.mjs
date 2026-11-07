@@ -851,7 +851,7 @@ if (!MUT) {
     const browser = await launch()
     const page = await browser.newPage({ viewport: { width: 1024, height: 640 } })
     const errors = []
-    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text())) errors.push(msg.text()) })
+    page.on('console', (msg) => { if (msg.type() === 'error' && !relayNoise(msg.text(), msg.location())) errors.push(msg.text()) })
     page.on('pageerror', (err) => errors.push(String(err)))
     await page.goto(URL, { waitUntil: 'networkidle' })
     await page.waitForFunction(() => document.querySelector('canvas[data-ironring-stage]') && window.__ironRingTest, null, { timeout: 15000 })

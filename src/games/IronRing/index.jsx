@@ -608,7 +608,9 @@ const IronRingGame = () => {
                     {
                         const sfrac = Math.max(0, Math.min(1, f[i].stunMeter / 100))
                         const isStunned = f[i].st === 'stunned'
-                        const sy = gy - gh - Math.max(4, H * 0.012)
+                        // the meter stacks above the guard gauge (gy/gh are
+                        // block-scoped to it, so rebuild the stack from my)
+                        const sy = my - mhh - Math.max(7, H * 0.016) - Math.max(4, H * 0.01) - Math.max(4, H * 0.012)
                         const sh = Math.max(3, H * 0.008)
                         hctx.fillStyle = isStunned ? '#2a0d24' : '#141026'
                         hctx.fillRect(mx, sy, mw, sh)
