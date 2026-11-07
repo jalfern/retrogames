@@ -312,6 +312,27 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
             readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')))
 }
 
+// ------------------------------- attract HUD bleed (#1758 item 3) -------------
+// The cabinet's attract demo ran under the live HUD — race, clock, score, lives
+// ticked while the pilot drove. #265 had suppressed the whole HUD in attract;
+// rule 6 only forbids text OVER the HUD, and the attract card starts at y=60.
+{
+    const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
+    const hudStart = idxSrc.indexOf('// ---- HUD')
+    const hudEnd = idxSrc.indexOf('if (banner && banner.t > 0)')
+    const hud = idxSrc.slice(hudStart, hudEnd)
+    ok('HUD block found between the HUD marker and the banner block', hudStart > 0 && hudEnd > hudStart)
+    ok('the live HUD is no longer attract-suppressed (drawn in every mode)',
+        !/mode\s*!==\s*'attract'/.test(hud) && !/mode\s*===\s*'play'/.test(hud))
+    ok('the HUD really shows race/clock/score/lives (all four cabinet readouts)',
+        /RACE \$\{gs\.raceIdx \+ 1\}\/6/.test(hud) && /TIME \$\{secs\}/.test(hud) &&
+        /SCORE \$\{gs\.score\}/.test(hud) && /gs\.lives/.test(hud))
+    ok('rule 6 kept: race banners still never stack onto the attract card',
+        /\/\/ the race banners are gameplay text[\s\S]*?if \(mode !== 'attract'\)[\s\S]*?raceStart/.test(idxSrc))
+    ok('the attract card sits clear of the 20px HUD band (text never over the HUD)',
+        /ctx\.fillRect\(0, 60, W, 136\)/.test(idxSrc))
+}
+
 if (fails) {
     console.log(`\n${fails} FAILURE(S)`)
     process.exit(1)
