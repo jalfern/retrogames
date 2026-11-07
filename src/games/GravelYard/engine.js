@@ -115,7 +115,7 @@ export function hashState(gs) {
     const p = []
     p.push(gs.tick, gs.score, gs.strikes, gs.done ? 1 : 0, gs.win ? 1 : 0, gs.rngState >>> 0)
     p.push(gs.nextOrder, gs.delivered, gs.wasted)
-    for (const o of gs.orders) p.push(o.grade === 'coarse' ? 1 : 2, o.units, o.left)
+    for (const o of gs.orders) p.push(o.grade === 'coarse' ? 1 : 2, o.units, o.left, o.id === gs.pin ? 1 : 0)
     for (const m of gs.machines) p.push(m.x, m.y, FACE_N[m.face], m.job ? m.job.kind : '-', m.job ? m.job.t : 0, m.job && m.job.cell ? m.job.cell[0] * 16 + m.job.cell[1] : -1)
     p.push(gs.digger.bucket, gs.digger.wet)
     p.push(gs.truck.bed, gs.bedGrade === 'coarse' ? 1 : gs.bedGrade === 'fines' ? 2 : 0)
@@ -155,6 +155,7 @@ export function createGame(seed = 1, players = 1) {
         seats,
         orderSeq: 0,
         orders: [],
+        pin: null, // #1759: order id the truck serves first (cycled at the board)
         nextOrder: 120,
         refillT: 900,
         pile,
@@ -191,6 +192,23 @@ function pushOrder(gs) {
 }
 
 function radio(gs, who, text) { gs.fx.push({ k: 'radio', who, text, tick: gs.tick }) }
+
+// --- the delivery pin (#1759) ---------------------------------------------------
+// The truck owns the ORDER BOARD: parked at (13,4) facing right, an A tap cycles
+// the pin through the open orders (none -> first -> next -> none). The pin is a
+// delivery PRIORITY only: tip() serves the pinned order when its grade matches
+// the load, otherwise the oldest matching order — the pre-pin rule verbatim.
+// The grade law is invariant: a pin never overrides grade, never softens a
+// refusal. It rides the plain A pad edge, so remote seats carry it unchanged.
+function cyclePin(gs) {
+    const open = gs.orders
+    if (!open.length) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
+    const i = open.findIndex((o) => o.id === gs.pin)
+    const next = i >= open.length - 1 ? null : open[i + 1] // i === -1 (no pin) -> the first
+    gs.pin = next ? next.id : null
+    gs.fx.push({ k: 'pin', id: gs.pin, tick: gs.tick })
+    radio(gs, 'BOARD', next ? `PINNED ${next.grade === 'coarse' ? 'COARSE' : 'FINES'} x${next.units}` : 'PIN CLEAR')
+}
 
 // --- helpers -------------------------------------------------------------------
 const frontOf = (m) => [m.x + DIRS[m.face][0], m.y + DIRS[m.face][1]]
@@ -270,7 +288,8 @@ function stepPlant(gs) {
 // --- tip at the dock -----------------------------------------------------------
 function tip(gs) {
     if (gs.truck.bed <= 0) { gs.fx.push({ k: 'deny', tick: gs.tick }); return }
-    const match = gs.orders.find((o) => o.grade === gs.bedGrade)
+    const open = gs.orders.filter((o) => o.grade === gs.bedGrade)
+    const match = open.find((o) => o.id === gs.pin) || open[0] // pin first, else oldest (#1759: open[0] is the pre-pin rule verbatim)
     if (!match) {
         gs.strikes++
         gs.fx.push({ k: 'refuse', grade: gs.bedGrade, tick: gs.tick })
@@ -291,6 +310,7 @@ function tip(gs) {
         const bonus = Math.round(40 * Math.max(0, match.left / match.total))
         gs.score += bonus
         gs.orders = gs.orders.filter((o) => o !== match)
+        if (gs.pin === match.id) gs.pin = null // #1759: the pin retires with its order
         gs.fx.push({ k: 'orderDone', bonus, cents: match.paid + bonus, tick: gs.tick })
         radio(gs, 'TRUCK', `ORDER FILLED +${bonus}BONUS`)
     }
@@ -315,6 +335,8 @@ function actSeatA(gs, seat) {
         if (fx === CONSOLE_FRONT[0] && fy === CONSOLE_FRONT[1] && m.face === 'up') { cycleGate(gs); return }
     }
     if (seat === 1) { // truck
+        const [bdx, bdy] = BOARD
+        if (fx === bdx && fy === bdy && m.face === 'right') { cyclePin(gs); return } // #1759: A at the board cycles the delivery pin
         for (const g of ['coarse', 'fines']) {
             const [bx, by] = BAY[g]
             if (fx === bx && fy === by) {
@@ -440,6 +462,7 @@ function stepWorld(gs) {
     const expired = gs.orders.filter((o) => o.left <= 0)
     if (expired.length) {
         gs.orders = gs.orders.filter((o) => o.left > 0)
+        if (gs.pin !== null && !gs.orders.some((o) => o.id === gs.pin)) gs.pin = null // #1759: a pin outlives nothing
         gs.score = Math.max(0, gs.score - 20 * expired.length)
         gs.fx.push({ k: 'lapse', n: expired.length, tick: gs.tick })
         radio(gs, 'BOARD', `${expired.length} ORDER${expired.length > 1 ? 'S' : ''} LAPSED -20C`)
@@ -519,7 +542,8 @@ export function simState(gs) {
         wasted: gs.wasted,
         seed: gs.seed,
         quota: QUOTA,
-        orders: gs.orders.map((o) => ({ grade: o.grade, units: o.units, left: o.left, total: o.total })),
+        orders: gs.orders.map((o) => ({ grade: o.grade, units: o.units, left: o.left, total: o.total, pinned: o.id === gs.pin })),
+        pin: gs.pin == null ? null : gs.pin,
         digger: { x: gs.digger.x, y: gs.digger.y, face: gs.digger.face, bucket: gs.digger.bucket, wet: gs.digger.wet, job: gs.digger.job ? gs.digger.job.kind : null },
         truck: { x: gs.truck.x, y: gs.truck.y, face: gs.truck.face, bed: gs.truck.bed, grade: gs.bedGrade, job: gs.truck.job ? gs.truck.job.kind : null },
         plant: {
@@ -649,7 +673,12 @@ function truckPlan(gs) {
         return atDock ? {} : toDock() // wait at the board for an order that fits
     }
     if (!gs.orders.length) return atDock ? {} : toDock()
-    const oldest = [...gs.orders].sort((x, y) => x.left - y.left)[0]
+    // #1759: the crew respects your pin — when the pinned order's bay has stock,
+    // load THAT grade; otherwise the oldest order decides, exactly as before.
+    const pinned = gs.orders.find((o) => o.id === gs.pin)
+    const oldest = pinned && gs.bays[pinned.grade] > 0
+        ? pinned
+        : [...gs.orders].sort((x, y) => x.left - y.left)[0]
     const [bx, by] = BAY[oldest.grade]
     if (gs.bays[oldest.grade] <= 0) return atDock ? {} : toDock()
     if (m.x === bx - 1 && m.y === by) {

@@ -23,7 +23,7 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, hashState,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, BAY_CAP, cellKind,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD,
-    DOCK_SPOTS, digSwingFrame, tipSeqFrame, TIP_TICKS,
+    DOCK_SPOTS, BOARD, digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from './engine.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, WORLD_X, WORLD_Y } from './art.js'
 import { playFx } from './audio.js'
@@ -36,6 +36,7 @@ const ATTRACT_MSGS = [
     'WET GRAVEL JAMS THE SCREEN - JOG IT',
     'GATE WIDE = COARSE. GATE NARROW = FINES',
     'WRONG GRADE AT THE GATE = STRIKE',
+    'PIN AN ORDER AT THE BOARD - TRUCK A',
     'ANY SEAT: HUMAN, CPU OR MODEL',
 ]
 const GRADE_COLOR = { coarse: '#b09878', fines: '#e0c898' }
@@ -60,7 +61,7 @@ export default function GravelYard() {
     const selectRef = useRef(1)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, popCents: 0, boardShake: 0, stampT: 0, jamFlash: 0, tipT: 0, puffs: [], plumes: [] })
+    const hudRef = useRef({ toast: '', toastT: 0, radio: null, radioT: 0, shake: 0, flash: 0, popT: 0, popCents: 0, boardShake: 0, stampT: 0, jamFlash: 0, tipT: 0, pinT: 0, puffs: [], plumes: [] })
     const overAtRef = useRef(0)
     const seedRef = useRef(1)
     const modelSeatRef = useRef(null)
@@ -172,6 +173,7 @@ export default function GravelYard() {
             if (f.k === 'jam') { hud.shake = 26; hud.jamFlash = 30 }
             if (f.k === 'spill' || f.k === 'refuse') hud.shake = 16
             if (f.k === 'refuse') hud.boardShake = 22 // the order board rattles on a strike
+            if (f.k === 'pin') hud.pinT = 18 // #1759: fresh pin — the ticket frame flashes
             if (f.k === 'ruined') hud.shake = 40
             // #1390 mid-game juice: dust at the bite, bed-tip cycle, chute plumes
             if (f.k === 'digStart') hud.puffs.push({ x: f.x, y: f.y, t: 22 })
@@ -486,6 +488,7 @@ export default function GravelYard() {
             if (hud.shake > 0) hud.shake--
             if (hud.jamFlash > 0) hud.jamFlash--
             if (hud.tipT > 0) hud.tipT--
+            if (hud.pinT > 0) hud.pinT--
             for (const p of hud.puffs) p.t--
             hud.puffs = hud.puffs.filter((p) => p.t > 0)
             for (const p of hud.plumes) p.t--
@@ -596,6 +599,7 @@ export default function GravelYard() {
             hint(BAY_LOAD.coarse[0], BAY_LOAD.coarse[1], dim)
             hint(BAY_LOAD.fines[0], BAY_LOAD.fines[1], dim)
             for (const [dx2, dy2] of DOCK_SPOTS) hint(dx2, dy2, dim)
+            hint(BOARD[0] - 1, BOARD[1], dim) // #1759: the pin stand — park here, face the board, tap A
 
             // dust puffs behind rolling machines (juice only)
             if (screenRef.current === 'play' && Math.random() < 0.25) {
@@ -698,6 +702,14 @@ export default function GravelYard() {
                 ctx.fillStyle = '#241812'; ctx.fillRect(ox + 2, oy + 20, 68, 5)
                 ctx.fillStyle = frac > 0.5 ? '#58d048' : frac > 0.25 ? '#f8d038' : '#f05030'
                 ctx.fillRect(ox + 2, oy + 20, Math.round(68 * frac), 5)
+                if (g.pin === o.id) { // #1759: pinned order — gold frame + thumbtack
+                    ctx.strokeStyle = (Math.floor(t / 8) % 2 || hud.pinT > 0) ? '#ffd048' : '#8a6c18'
+                    ctx.lineWidth = 1
+                    ctx.strokeRect(ox + 0.5, oy + 0.5, 71, 29)
+                    ctx.fillStyle = '#ffd048'
+                    ctx.fillRect(ox + 62, oy + 11, 7, 3) // pin head
+                    ctx.fillRect(ox + 64, oy + 14, 2, 5) // pin needle
+                }
             })
 
             // gate-state icon (#1390): an aperture preview of the screen's gate
@@ -880,6 +892,23 @@ export default function GravelYard() {
                         return true
                     }
                     if (what === 'batch') { g.plant.hopper = 4; g.plant.hopperWet = 0; return true }
+                    if (what === 'pin') {
+                        // #1759: two same-grade orders, the YOUNGER pinned, loaded bed at
+                        // the dock — a B tip must close 902 and leave 901 open.
+                        g.orders = [{ id: 901, grade: 'fines', units: 4, left: 1200, total: 1200 }, { id: 902, grade: 'fines', units: 3, left: 1500, total: 1500 }]
+                        g.pin = 902
+                        g.truck.bed = 3; g.bedGrade = 'fines'
+                        g.truck.x = DOCK_SPOTS[0][0]; g.truck.y = DOCK_SPOTS[0][1]; g.truck.face = 'left'
+                        return true
+                    }
+                    if (what === 'cycle') {
+                        // #1759: truck parked at the pin stand facing the board, two open
+                        // orders, no pin — an A tap must pin 903, then 904, then clear.
+                        g.orders = [{ id: 903, grade: 'coarse', units: 4, left: 1200, total: 1200 }, { id: 904, grade: 'fines', units: 3, left: 1500, total: 1500 }]
+                        g.pin = null
+                        g.truck.x = BOARD[0] - 1; g.truck.y = BOARD[1]; g.truck.face = 'right'
+                        return true
+                    }
                     if (what === 'jam') { g.plant.jammed = true; g.plant.jamNeed = 2; return true }
                     if (what === 'dig') {
                         g.digger.x = 3; g.digger.y = 3; g.digger.face = 'up'
@@ -902,7 +931,7 @@ export default function GravelYard() {
                         `bays C=${s.bays.coarse} F=${s.bays.fines} pile=${s.pile.map((c) => c.units).join('')}`,
                         `digger (${s.digger.x},${s.digger.y})${s.digger.face} bucket=${s.digger.bucket}(w${s.digger.wet}) ${s.digger.job || ''}`,
                         `truck (${s.truck.x},${s.truck.y})${s.truck.face} bed=${s.truck.bed}${s.truck.grade ? ' ' + s.truck.grade : ''} ${s.truck.job || ''}`,
-                        `orders: ${s.orders.map((o) => `${o.grade}x${o.units} ${Math.ceil(o.left / 60)}s`).join(' | ') || 'none'}`,
+                        `orders: ${s.orders.map((o) => `${o.grade}x${o.units} ${Math.ceil(o.left / 60)}s${o.pinned ? '[PIN]' : ''}`).join(' | ') || 'none'}`,
                     ]
                 },
                 actions: [

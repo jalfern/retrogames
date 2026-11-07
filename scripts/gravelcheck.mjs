@@ -17,7 +17,7 @@ import {
     createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, cellKind, driveable,
     SHIFT_TICKS, QUOTA, MAX_STRIKES, MAX_ORDERS, HOPPER_CAP, BED_CAP, BAY_CAP,
     PILE, DIG_TICKS, DUMP_TICKS, LOAD_TICKS,
-    HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD, DOCK_SPOTS,
+    HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD, DOCK_SPOTS, BOARD,
     digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from '../src/games/GravelYard/engine.js'
 import { createLockStep } from '../src/utils/lockstep.js'
@@ -202,6 +202,111 @@ console.log('— truck: load / no-mix / tip / refuse —')
     ruin.truck.x = DOCK_SPOTS[0][0]; ruin.truck.y = DOCK_SPOTS[0][1]
     for (let i = 0; i < MAX_STRIKES; i++) { tap(ruin, 1, { b: true }); ruin.truck.bed = 1; ruin.bedGrade = 'coarse' }
     ok('three refusals ruin the shift', ruin.done && !ruin.win && ruin.strikes === MAX_STRIKES, `strikes=${ruin.strikes} done=${ruin.done}`)
+}
+
+console.log('— pin law (#1759): cycle at the board, tip honours the pin —')
+{
+    const g = createGame(3, 1)
+    g.orders = [{ id: 11, grade: 'coarse', units: 4, left: 1000, total: 1000 }, { id: 12, grade: 'fines', units: 3, left: 1500, total: 1500 }]
+    g.truck.x = BOARD[0] - 1; g.truck.y = BOARD[1]; g.truck.face = 'right'
+    tap(g, 1, { a: true })
+    ok('board tap pins the first order', g.pin === 11, `pin=${g.pin}`)
+    tap(g, 1, { a: true })
+    ok('second tap pins the next', g.pin === 12, `pin=${g.pin}`)
+    tap(g, 1, { a: true })
+    ok('third tap clears the pin (none->o1->o2->none)', g.pin === null, `pin=${g.pin}`)
+    g.truck.face = 'left'
+    tap(g, 1, { a: true })
+    ok('pin cycles only facing the board', g.pin === null, `pin=${g.pin}`)
+    const noOrders = createGame(3, 1)
+    noOrders.orders = []
+    noOrders.truck.x = BOARD[0] - 1; noOrders.truck.y = BOARD[1]; noOrders.truck.face = 'right'
+    tap(noOrders, 1, { a: true })
+    ok('board tap with no open orders is a plain deny', noOrders.pin === null && drainK(noOrders).includes('deny'))
+
+    // tip priority: a pinned younger order is served first; the older stays open
+    const t = createGame(3, 1)
+    t.orders = [{ id: 21, grade: 'fines', units: 4, left: 300, total: 1000 }, { id: 22, grade: 'fines', units: 3, left: 900, total: 1000 }]
+    t.pin = 22
+    t.truck.bed = 3; t.bedGrade = 'fines'
+    t.truck.x = DOCK_SPOTS[0][0]; t.truck.y = DOCK_SPOTS[0][1]; t.truck.face = 'left'
+    tap(t, 1, { b: true })
+    ok('tip fills the PINNED younger order', t.orders.length === 1 && t.orders[0].id === 21 && t.delivered === 3 && t.score >= 3 * 22, `orders=${JSON.stringify(t.orders.map((o) => o.id))} score=${t.score}`)
+    ok('pin retires with its filled order', t.pin === null, `pin=${t.pin}`)
+
+    const n = createGame(3, 1)
+    n.orders = [{ id: 31, grade: 'fines', units: 2, left: 500, total: 1000 }, { id: 32, grade: 'fines', units: 3, left: 1500, total: 1500 }]
+    n.truck.bed = 3; n.bedGrade = 'fines'
+    n.truck.x = DOCK_SPOTS[0][0]; n.truck.y = DOCK_SPOTS[0][1]; n.truck.face = 'left'
+    tap(n, 1, { b: true })
+    ok('no pin: oldest match served verbatim', n.orders.length === 1 && n.orders[0].id === 32 && n.truck.bed === 1, `orders=${JSON.stringify(n.orders.map((o) => o.id))} bed=${n.truck.bed}`)
+
+    const w = createGame(3, 1)
+    w.orders = [{ id: 41, grade: 'coarse', units: 4, left: 1000, total: 1000 }]
+    w.pin = 41
+    w.truck.bed = 2; w.bedGrade = 'fines'
+    w.truck.x = DOCK_SPOTS[0][0]; w.truck.y = DOCK_SPOTS[0][1]; w.truck.face = 'left'
+    tap(w, 1, { b: true })
+    ok('grade law invariant: a pin never overrides grade', w.strikes === 1 && w.truck.bed === 2 && w.orders.length === 1, `strikes=${w.strikes} bed=${w.truck.bed}`)
+
+    const f = createGame(3, 1)
+    f.orders = [{ id: 51, grade: 'coarse', units: 4, left: 400, total: 1000 }, { id: 52, grade: 'fines', units: 3, left: 1500, total: 1000 }]
+    f.pin = 51
+    f.truck.bed = 2; f.bedGrade = 'fines'
+    f.truck.x = DOCK_SPOTS[0][0]; f.truck.y = DOCK_SPOTS[0][1]; f.truck.face = 'left'
+    tap(f, 1, { b: true })
+    ok('pin on another grade falls back to the oldest match', f.delivered === 2 && f.strikes === 0 && f.orders.some((o) => o.id === 51) && f.pin === 51, `delivered=${f.delivered} pin=${f.pin}`)
+
+    const l = createGame(3, 1)
+    l.orders = [{ id: 61, grade: 'fines', units: 3, left: 10, total: 1000 }]
+    l.pin = 61
+    step(l, [{}, {}, {}], 12)
+    ok('pin clears when its order lapses', l.orders.length === 0 && l.pin === null, `pin=${l.pin}`)
+
+    // hash: the pin is part of the sim — identical actions replay identical, pin diverges
+    const a1 = createGame(9, 1); const a2 = createGame(9, 1); const a3 = createGame(9, 1)
+    for (const a of [a1, a2]) {
+        a.orders = [{ id: 71, grade: 'coarse', units: 4, left: 1000, total: 1000 }]
+        a.truck.x = BOARD[0] - 1; a.truck.y = BOARD[1]; a.truck.face = 'right'
+        tap(a, 1, { a: true })
+        step(a, [{}, {}, {}], 5)
+    }
+    a3.orders = [{ id: 71, grade: 'coarse', units: 4, left: 1000, total: 1000 }]
+    a3.truck.x = BOARD[0] - 1; a3.truck.y = BOARD[1]; a3.truck.face = 'right'
+    step(a3, [{}, {}, {}], 7)
+    ok('same pin actions => identical hash', simState(a1).hash === simState(a2).hash, `${simState(a1).hash} vs ${simState(a2).hash}`)
+    ok('the pin diverges the hash', simState(a1).hash !== simState(a3).hash, `${simState(a1).hash} vs ${simState(a3).hash}`)
+
+    // the CPU crew never pins: reference runs keep the pre-pin paths bit-for-bit
+    let sawPin = false
+    for (let s = 1; s <= 8; s++) if (runEm(s, 3, 4000).pin !== null) sawPin = true
+    ok('full-CPU crews never pin (reference paths unchanged)', !sawPin)
+
+    // and it RESPECTS yours: an empty-bed CPU truck loads the pinned grade
+    const pinLoad = (pin) => {
+        const gs = createGame(5, 3)
+        gs.orders = [{ id: 81, grade: 'coarse', units: 4, left: 1400, total: 1500 }, { id: 82, grade: 'fines', units: 4, left: 1450, total: 1500 }]
+        gs.pin = pin
+        gs.bays.coarse = 5; gs.bays.fines = 5
+        const em = makeCpuEmitter(1)
+        for (let i = 0; i < 1200; i++) {
+            const pads = [{}, {}, {}]
+            pads[1] = em({ gs, tick: i })
+            stepGame(gs, pads)
+            if (gs.bedGrade) return gs.bedGrade
+        }
+        return null
+    }
+    ok('CPU truck loads the PINNED grade', pinLoad(82) === 'fines', String(pinLoad(82)))
+    ok('no pin: CPU loads the oldest grade as before', pinLoad(null) === 'coarse', String(pinLoad(null)))
+
+    // src pins (#1744 lesson: pin the deciding lines, not just a callsite)
+    const engSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GravelYard', 'engine.js'), 'utf8')
+    ok('src: tip takes the pinned order first, oldest as fallback', /open\.find\(\(o\) => o\.id === gs\.pin\) \|\| open\[0\]/.test(engSrc))
+    ok('src: a board-facing A drives cyclePin', /fx === bdx && fy === bdy && m\.face === 'right'\) \{ cyclePin\(gs\)/.test(engSrc))
+    ok('src: the pin rides hashState', /o\.id === gs\.pin \? 1 : 0/.test(engSrc))
+    ok('src: CPU load prefers the pinned grade', /pinned && gs\.bays\[pinned\.grade\] > 0/.test(engSrc))
+    ok('src: filled AND lapsed orders retire the pin', /gs\.pin === match\.id\) gs\.pin = null/.test(engSrc) && /!gs\.orders\.some\(\(o\) => o\.id === gs\.pin\)\) gs\.pin = null/.test(engSrc))
 }
 
 console.log('— orders and the clock —')
@@ -634,6 +739,51 @@ if (!process.env.GY_SKIP_BROWSER) {
         ok('deck stones bounce while the screen runs', shaker.running, JSON.stringify(shaker))
         ok('batch end spits an output plume sized to the batch', shaker.plumes >= 1, `plumes=${shaker.plumes}`)
         ok('jam puts smoke on the stack', shaker.smoke === 1)
+
+        // ---------- #1759: the delivery pin, live in the browser ----------
+        console.log('— #1759: the delivery pin (browser) —')
+        const pinCycle = await page.evaluate(() => {
+            window.__gyTest.start(9, 2, true)
+            window.__gyTest.prime('cycle')
+            const press = () => { window.__game.tick({}, [{}, { a: true }, {}]); window.__game.tick({}, [{}, {}, {}]) }
+            const seq = []
+            press(); seq.push(window.__gyTest.state().pin)
+            press(); seq.push(window.__gyTest.state().pin)
+            press(); seq.push(window.__gyTest.state().pin)
+            return seq
+        })
+        ok('browser: board taps cycle the pin none->903->904->none', JSON.stringify(pinCycle) === '[903,904,null]', JSON.stringify(pinCycle))
+
+        const tipPinned = await page.evaluate(() => {
+            window.__gyTest.start(9, 2, true)
+            window.__gyTest.prime('pin')
+            const press = () => { window.__game.tick({}, [{}, { b: true }, {}]); window.__game.tick({}, [{}, {}, {}]) }
+            press()
+            const s = window.__gyTest.state()
+            return { after: s.orders.map((o) => [o.units, o.pinned]), pin: s.pin, delivered: s.delivered }
+        })
+        ok('browser: tip closes the PINNED order and the older stays open',
+            tipPinned.after.length === 1 && tipPinned.after[0][0] === 4 && !tipPinned.after[0][1] && tipPinned.delivered === 3 && tipPinned.pin === null,
+            JSON.stringify(tipPinned))
+
+        // the pinned ticket actually wears its gold frame on the HUD
+        const pinDraw = await page.evaluate(async () => {
+            window.__gyTest.start(9, 2, true)
+            window.__gyTest.prime('cycle')
+            const px = () => {
+                const g = document.querySelector('canvas').getContext('2d')
+                const d = g.getImageData(210, 4, 72, 30).data
+                let gold = 0
+                for (let i = 0; i < d.length; i += 4) if (d[i] > 200 && d[i + 1] > 150 && d[i + 2] < 120) gold++
+                return gold
+            }
+            await new Promise((r) => requestAnimationFrame(r))
+            const before = px()
+            window.__game.tick({}, [{}, { a: true }, {}])
+            await new Promise((r) => requestAnimationFrame(r))
+            return { before, after: px() }
+        })
+        ok('browser: the pinned ticket gains its gold frame on canvas', pinDraw.after > pinDraw.before + 100, JSON.stringify(pinDraw))
 
         // ---------- #1726: the phone has no keyboard — a tap is the SPACE ----------
         // The window owns the tap (the Lobby scrim passes through; the copy

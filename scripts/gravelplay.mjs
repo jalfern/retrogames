@@ -124,6 +124,36 @@ try {
     await page.locator('canvas').click({ position: { x: 40, y: 300 } })
     ok('tap on canvas leaves attract', (await screen()) === 'select')
 
+    console.log('— pin an order at the board with real keys (#1759) —')
+    // from select: two hands, truck seat HUMAN (P), start — then drive the WASD
+    // seat to the board stand and tap F (that seat's A) on the freshly printed order.
+    await page.keyboard.press('ArrowRight')
+    await page.keyboard.press('KeyP')
+    await page.keyboard.press('Space')
+    ok('two-hands shift starts with a human truck', (await screen()) === 'play')
+    for (let i = 0; i < 120 && (await sim()).orders.length === 0; i++) await sleep(60)
+    const driveT = async (key, axis, target) => {
+        await page.keyboard.down(key)
+        const t0 = Date.now()
+        while (Date.now() - t0 < 5000) {
+            const s = await sim()
+            if (s.truck[axis] === target) { await page.keyboard.up(key); return true }
+            await sleep(40)
+        }
+        await page.keyboard.up(key)
+        return false
+    }
+    ok('truck drives east to the board lane', await driveT('KeyD', 'x', 13), JSON.stringify((await sim()).truck))
+    ok('truck drives north to the board stand', await driveT('KeyW', 'y', 4), JSON.stringify((await sim()).truck))
+    await page.keyboard.down('KeyD') // bump into the board sets facing east
+    await sleep(200)
+    await page.keyboard.up('KeyD')
+    await sleep(120)
+    await page.keyboard.press('KeyF') // PIN it
+    const sp = await sim()
+    ok('real F at the board pins the open order', sp.pin !== null && sp.orders.some((o) => o.pinned), JSON.stringify({ pin: sp.pin, orders: sp.orders.map((o) => [o.grade, o.pinned]) }))
+    fs.writeFileSync('/tmp/forge-gy-pin.png', await page.locator('canvas').screenshot())
+
     ok('zero page errors', errors.length === 0, errors.slice(0, 3).join(' | '))
 } finally {
     await browser.close()
