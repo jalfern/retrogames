@@ -338,7 +338,13 @@ see item 5).
   startable worlds) — but the campaign is nine worlds, not the original's 45, and
   there is still no castle-spell menu; scoring is banked mana + kills + clears +
   time bonus.
-- One rival wizard per world; the original ran five, each growing its own castle.
+- One rival wizard per world; the original ran five, each growing its own
+  castle. **Growth closed by #1764:** the rival's castle now builds itself over
+  world time — curtain wall at 30 s, flanking turrets at 60 s, tall keep with a
+  violet pennant at 90 s (in-world ticks, resets with the world) — and a grown
+  castle defends: its towers loose violet arrows at any visible carpet inside
+  110u, faster with every stage. A toppled tower never rebuilds and never
+  fires. Still open: five wizards per world.
 - **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
   towers — every throw/fireball impact routes through `toppleTower()` inside
   `blast()`, and carpetcheck gates it ("a throw landing at the tower base

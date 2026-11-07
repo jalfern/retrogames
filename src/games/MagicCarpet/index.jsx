@@ -372,6 +372,14 @@ const MagicCarpetGame = () => {
                     audioController.playTone(60, 0.3, 'square', 0.08)
                     shake = Math.max(shake, 6)
                     say('THE WIZARD\'S TOWER TOPPLES')
+                } else if (e.type === 'wizGrow') {
+                    // #1764: rising works heard before they're read — a low,
+                    // unequal two-note hoist and the announcement.
+                    audioController.playTone(196, 0.12, 'square', 0.05)
+                    audioController.playTone(233, 0.18, 'square', 0.05, 0.12)
+                    say(`THE RIVAL WIZARD FORTIFIES — STAGE ${e.n}`)
+                } else if (e.type === 'towerFire') {
+                    audioController.playSweep(520, 300, 0.08, 'triangle', 0.045)
                 } else if (e.type === 'wizfire') {
                     // #1746 item 7: the bolt lights up the sky WHERE the wizard
                     // stands — the crack tilts to his side, and a cast from outside
@@ -1019,6 +1027,7 @@ const MagicCarpetGame = () => {
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
+                    wizStage: gs.wizStage, worldT: gs.worldT,
                     invis: gs.invis, book: gs.book,
                     casts: castsSeen, seed: gs.seed,
                     sel: selCur, // #1740 WORLD SELECT cursor

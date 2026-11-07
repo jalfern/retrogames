@@ -407,6 +407,7 @@ export function makeGame(seed, level = 0) {
         learned: ['fireball'], hands: { L: 'fireball', R: null },
         coolL: 0, coolR: 0, heldEnt: null, holdT: 0,
         wizSlow: 0, wizFire: 40, spawnCool: 360, guardFire: 45, safeT: 0,
+        wizStage: 0, worldT: 0, wizGuardFire: 0,
         invis: 0, book: false,
         heights: null, events: [], score: 0,
         quota: LEVELS[Math.max(0, Math.min(LEVELS.length - 1, level))].quota,
@@ -427,6 +428,7 @@ export function genWorld(gs) {
         return () => { gs.rngState = (gs.rngState + 0x6D2B79F5) | 0; let t = gs.rngState; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296 }
     })())
     gs.castleStage = 0
+    gs.wizStage = 0; gs.worldT = 0; gs.wizGuardFire = 0 // #1764: every wizard starts at his foundations
     const cs = findSpot(gs, 26, 44, true, null, 0)
     gs.castle = { x: cs.x, y: cs.y }
     gs.x = wrap(cs.x + 40, MAP); gs.y = wrap(cs.y + 40, MAP); gs.alt = 34; gs.yaw = 0
@@ -818,6 +820,7 @@ export function castBearing(gs, x, y) {
 export function step(gs, inp) {
     gs.tick++
     if (gs.end) return
+    gs.worldT++
     if (gs.coolL > 0) gs.coolL--
     if (gs.coolR > 0) gs.coolR--
     if (gs.shield > 0) gs.shield--
@@ -964,6 +967,32 @@ export function step(gs, inp) {
             crater(gs, wz.tx, wz.ty, 18, 11)
             igniteHuts(gs, wz.tx, wz.ty)
             gs.events.push({ type: 'wizardDown' })
+        }
+    }
+
+    // #1764 item 2 — the rival builds while he hoards. In the original every
+    // wizard's castle grew over world time: the rising silhouette is the
+    // mid-game tell (ours stood static per level). A felled tower is never
+    // rebuilt, and a dead wizard builds nothing — the stage freezes with the
+    // defeat. Pure tick arithmetic: no rng, so no seed stream shifts.
+    if (!gs.towerDown && wz.alive) {
+        const wst = [0, 1800, 3600, 5400]
+        const st = wst.filter((q) => gs.worldT >= q).length - 1
+        if (st > gs.wizStage) {
+            gs.wizStage = st
+            gs.events.push({ type: 'wizGrow', n: st, x: wz.tx, y: wz.ty })
+        }
+        // The grown castle defends itself: curtain wall (1), flanking turrets
+        // (2), tall keep (3) — each stage looses arrows faster, inside a reach
+        // beyond the wizard's own bolt range. The veil holds their shots the
+        // same way it holds his (a blind castle fires at nothing).
+        gs.wizGuardFire--
+        if (gs.invis <= 0 && gs.wizGuardFire <= 0 && gs.wizStage >= 1 &&
+            Math.hypot(wrapD(gs.x - wz.tx), wrapD(gs.y - wz.ty)) < 110) {
+            gs.wizGuardFire = [0, 90, 60, 45][gs.wizStage]
+            const a = Math.atan2(wrapD(gs.y - wz.ty), wrapD(gs.x - wz.tx))
+            gs.projs.push({ kind: 'tarrow', from: 't', x: wz.tx, y: wz.ty, z: sampleH(gs, wz.tx, wz.ty) + 18, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, dmg: 2, life: 80 })
+            gs.events.push({ type: 'towerFire', x: wz.tx, y: wz.ty })
         }
     }
 
@@ -1225,7 +1254,7 @@ export function stateHash(gs) {
     mix(gs.rngState); mix(gs.tick); mix(gs.score); mix(gs.end)
     mix(gs.level); mix(gs.bank); mix(gs.spilled)
     mix(gs.x.toFixed(1)); mix(gs.y.toFixed(1)); mix(gs.alt.toFixed(1)); mix(gs.yaw.toFixed(3))
-    mix(gs.hp); mix(gs.shield); mix(gs.mana); mix(gs.castleStage)
+    mix(gs.hp); mix(gs.shield); mix(gs.mana); mix(gs.castleStage); mix(gs.wizStage)
     mix(gs.invis)
     mix(gs.wizard.alive ? gs.wizard.hp : 'x'); mix(gs.wizard.mana)
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
