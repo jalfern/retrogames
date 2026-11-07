@@ -17,9 +17,36 @@ const peak = () => page.evaluate(() => window.__marble.musicPeak())
 const gsq = (fn) => page.evaluate(fn)
 const settle = (ms = 250) => page.waitForTimeout(ms)
 
-// ---- attract: alive, and the bed is not yet unlocked (no gesture yet) ----
+// ---- attract boots with the bed silent (ctx locked pre-gesture) ----
 let m = await spy()
 r.check('attract boots with the bed silent (ctx locked pre-gesture)', !m.playing, JSON.stringify(m))
+
+// ---- attract bleeds the live HUD (#1758 item 3) ----
+// Painter proof in pixels: the cabinet's demo ran UNDER the HUD, so in attract
+// the 20px band must be painted (dark bar over the sky) and carry bright text
+// (race/clock/score glyphs). And it must be LIVE: the countdown repaints the
+// band as the demo clock ticks. Mutant: re-gate the HUD on mode!=='attract'
+// and the first gate below goes red (stars alone never reach 40 text pixels).
+const hudScan = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const g = c.getContext('2d')
+    const d = g.getImageData(0, 0, c.width, 20).data
+    let text = 0, bar = 0, h = 2166136261
+    for (let i = 0; i < d.length; i += 4) {
+        const s = d[i] + d[i + 1] + d[i + 2]
+        if (s > 300) text++
+        if (d[i + 2] < 45) bar++
+        h = (h * 16777619 ^ d[i]) >>> 0
+    }
+    return { mode: window.__marble.mode(), text, bar, px: d.length / 4, hash: h }
+})
+let hz = await hudScan()
+r.check('attract paints the HUD band: dark bar + race/clock/score text pixels (#1758)',
+    hz.mode === 'attract' && hz.bar > hz.px * 0.5 && hz.text > 40, JSON.stringify(hz))
+await page.waitForTimeout(1300)
+const hz2 = await hudScan()
+r.check('the attract HUD is live — the demo clock repaints the band',
+    hz2.mode === 'attract' && hz2.hash !== hz.hash && hz2.text > 40, JSON.stringify({ a: hz.hash, b: hz2.hash, text: hz2.text }))
 
 // ---- real key starts the race AND the bed ----
 await page.keyboard.press('ArrowRight')

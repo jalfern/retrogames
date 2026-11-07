@@ -354,9 +354,11 @@ const MarbleMadnessGame = () => {
             particles = particles.filter((p) => p.life > 0)
             ctx.restore()
 
-            // ---- HUD (gameplay only: the attract screen shows one message at a
-            // time, never the live race/timer/score of the running demo — #265)
-            if (mode !== 'attract') {
+            // ---- HUD (drawn in every mode: the cabinet's attract bled the live
+            // race/timer/score of the demo — #1758 item 3. The attract card starts
+            // at y=60, clear of this 20px band, so ART.md rule 6 still holds, and
+            // race banners stay attract-suppressed in consumeEvents.)
+            {
                 ctx.fillStyle = 'rgba(8,8,24,0.85)'
                 ctx.fillRect(0, 0, W, 20)
                 ctx.font = 'bold 11px monospace'

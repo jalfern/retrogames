@@ -109,9 +109,11 @@ policy-permanent (AudioController header).*
 - SILLY bounciness is uniform; the cabinet varies trampoline strength per
   section.
 - The camera now follows the marble at 2× zoom and scrolls the course off every
-  screen edge (the whole-course diorama is gone, #265); the attract screen no
-  longer bleeds the live race/timer/score HUD. Still flat vs the cabinet: no
-  per-section push-in on the narrow bridges.
+  screen edge (the whole-course diorama is gone, #265). Still flat vs the
+  cabinet: no per-section push-in on the narrow bridges. *The attract screen no
+  longer bleeding the live race/timer/score HUD — closed by #1758 item 3: the
+  HUD draws in every mode again (the attract card sits at y=60, clear of the
+  20px band, so rule 6 holds) and race banners stay attract-suppressed.*
 - *The bed was one harmony loop (+variation) for the whole campaign — closed by
   #1758: four arrangements now (base, menace, aerial, finale), each gated to
   sound distinct. PRACTICE/BEGINNER share the base and SILLY/ULTIMATE share the
