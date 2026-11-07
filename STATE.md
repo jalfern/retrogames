@@ -1,69 +1,28 @@
-# STATE — session 178 (2026-11-07, slot b)
+# STATE — session 178 (2026-11-07, slot a)
 
 ## What shipped
-**TALK ME DOWN — THE BACK PANEL — PR #1801 squash-merged as `58d7dfc`,
-closes #1797 (POLISH, never-dry stage).**
-Ladder: warden target #1711 REFUSED at claim (slot a live, claimed 10:27Z,
-pushed S7 sync-badge core `8fc4e47` on forge/plaicraft-pill — their resume,
-not mine); steer/next/game-queue empty; feedback borrow blocked (QA MASTER
-live on studio 5176 + mini 5174); flagshipStage null. weakestStage scored
-TALK ME DOWN **7** — shelf max among unheld titles (MAGIC CARPET also 7 but
-QA inside #1764). Filed #1797 with the why-weakest line, claimed, built.
-- **Game:** UP at module 1 tilts the bomb onto a riveted back plate (0-2
-  seeded `features.batteries`), DOWN tilts back; verbs on the back refuse
-  SILENTLY (no strike); new bombs land face-up; `gs.flip` rides hash +
-  simState. **D5** (dial = battery count) and **G5** (glyph, SPADE, glyph)
-  read the back aloud — text==truth holds (targets always resolvable).
-  "FLIP IT"/"TURN IT OVER" grammar added — pulses the tilt hint, never acts
-  (#1247). Attract tilts itself over; select screen spells the gesture.
-- **Slope fix:** variantPool `1+round` — round 1 now EXACTLY matches the
-  README's promise (old slope leaked N5/D3/G2), and **every stamp is live
-  inside the quota — N6 was dead code** (needed round 8, quota ends at 5).
-- **Proof:** bombcheck **50/50** (+12: legality, flip law, silent refusal,
-  face-up reset, autopilot-never-tilts, 40 D5/G5 printed-truth rigs, quota
-  reachability incl. revived N6, round-1 README set, hash carries tilt, 2
-  source pins, FLIP grammar + page/dial-keep). Mutant (remove refusal) → red
-  on exactly refusal (`score=495` leak) + source pin. Real-key drive: tilt,
-  battery pixels, silent Space, voice pulse — green. contractcheck(tmd)
-  14/14; eslint/lint:mario/fps/ai + build green.
+**PLAICRAFT S7 — the phone says so (sync badge) — PR #1796 (Part of #1711), squash `09cd132`, live** (`index-B8MhF2iA.js`, badge text in the `autoRecord-CThV0iQW.js` chunk). S6 made uploads survive the phone; nothing on the phone admitted it — acceptance ("3 phone sessions, all 3 in the store") required trusting an invisible pen.
+- `src/utils/syncBadgeCore.js` (pure): no-store-no-pill, backlog-beats-success, no empty-queue "syncing" theater, pending persists / confirmations fade (3 s/4 s).
+- `src/components/SyncBadge.jsx` (bottom-center pill, ConsentGate family, pointer-events:none) mounted by `autoRecord.js` — zero edits to the four wired games. Narrates: SAVED-WILL-SYNC at persist (inside the hang window), SYNCING at drain start (real pen count via new `countQueue()`), N TAKE(S) SYNCED on the attract screen after boot-drain; purge = silence; probe loses store = pill taken down. `window.__syncBadge` mirrors for the harness.
+- **Proof:** recordcheck **105/105** (+12 gates; hand-mutant no-store-guard-strip red→green). `plaicraft:outbox` **28/28** (+7 browser gates incl. kill-then-relaunch pill arc); `--mutate` persist-strip → take lost AND queued pill red together (claim coupled to persistence). eslint + lint:mario/fps/ai + build green.
 
 ## Board this session
-- #1797 shipped+closed; QA polish pass **#1802** filed (pullable batteries,
-  serial-on-back, tilt squash animation, seat-2 flip coaching, hint size).
-- **Prod verified:** `index-Cb-xdLMU.js` -> chunk `index-DQY7hhHZ.js` carries
-  the back panel; live URL posted, #1797 closed.
-- README Honest gaps cleaned: #1373/#1415 shipped-notes marked CLOSED so
-  never-dry scoring reads honestly (TalkMeDown now ~4 real gaps, was 7).
+- **Filed #1800 (game-queue): BOMB DEFUSE** — the co-op capture title #1711 names that doesn't exist on the shelf (S2 wired the other four; b flagged 02:04Z, it fell through). Audit also cleared SOS/TalkMeDown: pure-seed sims, correctly un-stamped.
+- **#1793 data point** posted: divergence again at tick **570** with a different seed (61) and different total ticks — seed-invariant AND length-invariant ≈9.5 s in; fresh dump `/tmp/forge/outbox-divergent-take.json`. QA (mini) holds that issue.
 
-## Next queued (slot b)
-1. #1711 hardware stage: when #1730 lands — but #1711 is slot a's live claim;
-   don't touch unless it goes stale (no claim/checkpoint 90 min).
-2. Else the usual ladder: steer/next/game-queue → feedback borrow (only with
-   no live QA MASTER) → flagship gaps via idle.mjs → never-dry weakestStage
-   (re-run fresh; with #1797 closed, TALK ME DOWN drops — likely back to
-   HOMEBODY/BRITANNIA/FLOOR BOSS score-5 tier, oldest-first).
+## Next queued (slot a)
+1. **#1711 stage 3 (hardware):** gated on #1730 (deadline 11-08T19:10Z; default hold). When it lands: 3 phone runs + `npm run plaicraft:evidence`, paste the table. Do it on a NON-first-consent session; check #1793 is fixed before claiming the 100%-replay line.
+2. **#1800 BOMB DEFUSE** — only open game-queue item; claimable by the normal ladder. Design pass first (it must not be Talk Me Down by another name).
+3. Else ladder: steer/next → feedback borrow (only with no live QA MASTER) → flagship gaps via idle.mjs → weakestStage.
 
 ## Open questions
 - #1730 (waiting-jon, lane:games) — R2 bucket + relay deploy; default hold.
 
-## Notes for the next slot-b session
-- **Chrome on launchd-kicked sessions (this box):** full Chrome cannot boot
-  (#1622); `lib/chromeboot.mjs` ladder picks `shell+sp` here. bombdrive was
-  raw-`chromium.launch` (died at launch entirely) — migrated to chromeboot in
-  #1801. Its LONG live-capture section still kills the page under
-  headless-shell+sp after ~11 gates — advisory per rule 3; the flip gates were
-  proven via a standalone short drive (same code path): 
-  `/tmp/forge/tmd-flip-drive.mjs` (pattern for new browser gates: keep runs
-  short or they die).
-- **Vite serves stale transforms in worktrees** — after src edits, BEFORE
-  trusting a browser check: `curl -s localhost:5178/retrogames/src/games/<G>/<file>.js | grep <new-text>`;
-  on miss `lsof -ti :5178 | xargs kill` + restart + re-verify.
-- Hygiene: dev server LEFT RUNNING on 5178 (mine; slot b). Worktree
-  `~/Dev/retrogames-forge-tmd-backpanel` (node_modules symlinked) sits detached
-  at `58d7dfc`; reuse: `git checkout -B forge/<newslug> origin/main`.
-- Slot-a note from s176 still stands: they left worktree
-  `~/Dev/retrogames-forge-plaicraft-phone` on forge/plaicraft-pill (S7) —
-  theirs to resume; their #1711 liveness was fresh at my start.
-- `natural death` beats forced `gs.end` for replay-proof browser runs (s176);
-  `voiceLog` entries store the FULL intent object, not the kind string (#1801
-  gate lesson).
+## Notes for the next slot-a session
+- **Actions stall today ~11:30–12:10Z:** dispatches accepted but no runs listed (even historical) for ANY branch. If `gh pr checks` shows only Vercel: query `commits/<sha>/check-runs` for `static` directly, and if that's absent too, `gh workflow run ci.yml --ref <branch>` and wait. It recovered by itself; don't conclude the branch is broken.
+- **Prod verification is chunk-aware:** S7 text lives in `autoRecord-*.js`, NOT `index-*.js` (Vite splits utils). Poll HTML→index→`autoRecord-…` chunk→marker. curl needs `-L` (308 without).
+- **Vite watch-miss bit twice more** (mutant transform served stale while disk was mutated). `plaicraft:outbox --mutate` hard-fails with "restart the dev server" — do: `lsof -ti :5173 | xargs kill`, restart `npm run dev -- --port 5173 --strictPort` from the worktree, re-run.
+- **`git add -A` + dirty STATE.md in the lane worktree = STATE hijacked into your game commit** (this session's #1796 conflict: session 176's parked report sat uncommitted in the worktree; add -A shipped it, main moved to session 177 → merge conflict → rebase, adopt main's STATE). Fix for all lanes: `git add <explicit files>` or `git reset -- STATE.md` before every commit.
+- Gates at merge tip `09cd132`: recordcheck 105/105, evidence self-test 18/18, plaicraft:outbox 28/28 (--mutate red by design), clap 15/15, relaycheck 31/31.
+- Hygiene: dev server LEFT RUNNING on 5173 (mine). Worktree `~/Dev/retrogames-forge-plaicraft-phone` detached at `09cd132` (node_modules symlinked) — reuse: `git checkout -B forge/<newslug> origin/main`.
+- `natural death` beats forced `gs.end='lose'` for replay-proof browser runs (injection changes the final hash at an unreproducible tick).
