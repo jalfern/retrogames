@@ -710,6 +710,11 @@ void main(){
                 spawnBurst(gs, e.x, e.y, 6, [1.5, 0.55, 0.25])
                 spawn(e.x, heightAt(gs, e.x, e.y) + 2, e.y, 'smoke', (Math.random() - 0.5) * 0.4, 0.6, (Math.random() - 0.5) * 0.4, 2.2, 70, [0.6, 0.42, 0.34])
             }
+            // #1764 item 3 stage 2 — the village economy on screen: a convert
+            // throws gold pennant-dust up from the hut, a tribute a small
+            // bright coin-glint at its door.
+            else if (e.type === 'villager' && e.what === 'convert') spawnBurst(gs, e.x, e.y, 10, [1.5, 1.2, 0.5])
+            else if (e.type === 'tribute') spawnBurst(gs, e.x, e.y, 4, [1.6, 1.3, 0.6])
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
             // #1764: the growth reads as violet rune-dust off the rising works
             else if (e.type === 'wizGrow') spawnBurst(gs, e.x, e.y, 14, [0.85, 0.5, 1.5])
@@ -826,7 +831,12 @@ void main(){
         for (const hs of gs.huts || []) {
             if (hs.dead) pushSpr('rubble', hs.x, hs.y, gz(hs.x, hs.y) + 0.4, [1, 1, 1], 1)
             else if (hs.burn > 0) pushSpr('hutBurn', hs.x, hs.y, gz(hs.x, hs.y), [1, 1, 1], 1)
-            else pushSpr('hut', hs.x, hs.y, gz(hs.x, hs.y), [1, 1, 1], 1, false, -5 - hs.v)
+            else pushSpr('hut', hs.x, hs.y, gz(hs.x, hs.y), hs.ally ? [1.22, 1.08, 0.78] : [1, 1, 1], 1, false, -5 - hs.v)
+            // #1764 item 3 stage 2 — the pennant: a converted hut is yours;
+            // a gold mark bobs above the roof (the radar dot matches).
+            if (hs.ally && !hs.dead) {
+                pushSpr('dot', hs.x, hs.y, gz(hs.x, hs.y) + 11 + Math.sin(gs.tick * 0.1 + hs.x) * 0.5, [1.05, 0.88, 0.42], 0.9)
+            }
         }
         const cst = gs.castleStage
         if (cst > 0) {
@@ -875,6 +885,15 @@ void main(){
         if (gs.heldEnt) {
             pushSpr('throw', gs.x + Math.cos(gs.yaw) * 4, gs.y + Math.sin(gs.yaw) * 4, gs.alt + 1.5, [0.7, 1.2, 1.1], 1)
             pushSpr('dot', gs.x + Math.cos(gs.yaw) * 4, gs.y + Math.sin(gs.yaw) * 4, gs.alt + 1.5, [0.5, 1.5, 1.4], 0.6)
+        }
+        // #1764 item 3 stage 2 — the prisoner rides the carpet: clinging to
+        // the fore corner (the throw's seat, one corner over), swaying on the
+        // world clock so the carry reads as a body, not a decal.
+        if (gs.prisoner) {
+            const a = gs.yaw + 0.85
+            pushSpr(`villager${gs.prisoner.v}`,
+                gs.x + Math.cos(a) * 4.5, gs.y + Math.sin(a) * 4.5,
+                gs.alt - 1.2 + Math.sin(gs.tick * 0.15) * 0.25, [1, 1, 1], 1, Math.cos(a) < 0)
         }
         for (const it of sprItems) it.d = (it.x - tUniforms.uCamPos.value.x) ** 2 + (it.y - tUniforms.uCamPos.value.y) ** 2 + (it.z - tUniforms.uCamPos.value.z) ** 2
         sprItems.sort((a, b) => b.d - a.d)

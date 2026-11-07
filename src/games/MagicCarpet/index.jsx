@@ -218,9 +218,32 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(300, 90, 0.3, 'triangle', 0.04)
                     audioController.playNoise(0.08, 0.03)
                     say('A VILLAGER HAS BURNED')
+                } else if (e.type === 'villager' && e.what === 'grab') {
+                    // #1764 stage 2 — a body on the carpet: a short muffled
+                    // snatch, and the CARRY strip wears the tunic.
+                    audioController.playSweep(200, 420, 0.08, 'triangle', 0.045)
+                    say('A VILLAGER IS IN YOUR GRIP')
+                } else if (e.type === 'villager' && e.what === 'convert') {
+                    // The village joins your flag: a bright pledge — the bank
+                    // chime's cousin, a fifth up.
+                    audioController.playTone(660, 0.05, 'sine', 0.05)
+                    audioController.playTone(880, 0.05, 'sine', 0.05, 0.06)
+                    audioController.playTone(1108, 0.09, 'sine', 0.05, 0.12)
+                    say('A VILLAGE JOINS YOUR FLAG')
+                } else if (e.type === 'villager' && e.what === 'settle') {
+                    audioController.playTone(520, 0.06, 'sine', 0.04)
+                    say('THE VILLAGER SETTLES AT THE CASTLE')
+                } else if (e.type === 'villager' && e.what === 'release') {
+                    audioController.playSweep(400, 140, 0.2, 'triangle', 0.04)
+                    say('YOUR PRISONER FALLS WITH YOU')
+                } else if (e.type === 'tribute') {
+                    // The converted hut pays its pearl: a soft coin at the hut
+                    // (the pickup chime sings when the pearl is actually taken).
+                    audioController.playTone(880, 0.04, 'sine', 0.03)
                 } else if (e.type === 'hutDown') {
                     audioController.playNoise(0.2, 0.08)
                     audioController.playTone(85, 0.12, 'square', 0.06)
+                    if (e.loot) audioController.playTone(980, 0.035, 'triangle', 0.035, 0.12) // stage 2: the savings scatter
                     shake = Math.max(shake, 3)
                 } else if (e.type === 'level') {
                     audioController.playTone(523, 0.12, 'square', 0.07)
@@ -633,7 +656,7 @@ const MagicCarpetGame = () => {
             for (const p of gs.pearls) if (p.alive) dot(p.x, p.y, '#e8e0c0')
             for (const m of gs.monsters) dot(m.x, m.y, m.kind === 'cow' ? '#d8d0c0' : '#e05040', 1.6)
             for (const b of gs.books) if (!b.taken) dot(b.x, b.y, '#40e0d0')
-            for (const hs of gs.huts) dot(hs.x, hs.y, hs.dead ? '#5a5262' : '#c89040', 1.2)
+            for (const hs of gs.huts) dot(hs.x, hs.y, hs.dead ? '#5a5262' : hs.ally ? '#ffd84a' : '#c89040', 1.2)
             for (const fm of gs.fireMarks) dot(fm.x, fm.y, '#ff5030', 1.6)
             dot(gs.castle.x, gs.castle.y, '#ffd84a', 2.4)
             if (gs.wizard.alive) dot(gs.wizard.x, gs.wizard.y, '#c060ff', 2.4)
@@ -663,6 +686,15 @@ const MagicCarpetGame = () => {
             ctx.fillRect(170, y0 + 6, 34, 7)
             ctx.fillStyle = '#f0d060'
             ctx.fillRect(171, y0 + 7, 32 * Math.min(1, gs.mana / 40), 5)
+            // #1764 stage 2 — the prisoner chip: while someone rides the
+            // carpet, their tunic (the same three as the lanes) wears the
+            // right of the carry bar — the load is a person, not just mana.
+            if (gs.prisoner) {
+                ctx.fillStyle = ['#8a4a3a', '#5a6a8a', '#6a7a4a'][gs.prisoner.v % 3]
+                ctx.fillRect(207, y0 + 7, 6, 5)
+                ctx.strokeStyle = '#ffe9a0'
+                ctx.strokeRect(206.5, y0 + 6.5, 7, 6)
+            }
             ctx.fillStyle = '#ffe9a0'
             ctx.fillText(`CARRY ${Math.floor(gs.mana)}`, 168, y0 + 21)
             ctx.fillStyle = 'rgba(232, 200, 96, 0.85)'
@@ -1167,6 +1199,8 @@ const MagicCarpetGame = () => {
                     x: +gs.x.toFixed(2), y: +gs.y.toFixed(2), alt: +gs.alt.toFixed(2), yaw: +gs.yaw.toFixed(4),
                     pearlsAlive: gs.pearls.filter((p) => p.alive).length,
                     villagers: gs.villagers.length,
+                    prisoner: gs.prisoner ? { hut: gs.prisoner.hut, v: gs.prisoner.v } : null, // #1764 stage 2
+                    allyHuts: gs.huts.filter((h) => h.ally && !h.dead).length, // #1764 stage 2
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     wizStage: gs.wizStage, worldT: gs.worldT,
@@ -1185,6 +1219,28 @@ const MagicCarpetGame = () => {
                 hash: () => stateHash(gs),
                 gl2: () => !!renderer,
                 muffle: () => audioController.ambTarget,
+                // #1764 stage 2: the village economy in the LIVE world —
+                // 'grab' drops the carpet to the floor of the first lane and
+                // steps once (the shield so the wizard's bolt can't rewrite
+                // the gate); 'deliver' carries the grip to the castle. The
+                // probe fields (prisoner/allyHuts) read the same gs the paint
+                // path renders — state-based, holds on the degraded box.
+                villageEconomy: (mode) => {
+                    gs.shield = 1e9
+                    if (mode === 'grab') {
+                        const vl = gs.villagers[0]
+                        if (!vl) return { err: 'no villagers' }
+                        gs.x = vl.x; gs.y = vl.y; gs.yaw = 0; gs.alt = 0
+                        step(gs, {})
+                        return { prisoner: gs.prisoner ? { hut: gs.prisoner.hut, v: gs.prisoner.v } : null, villagers: gs.villagers.length }
+                    }
+                    if (mode === 'deliver') {
+                        gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 52
+                        step(gs, {})
+                        return { prisoner: gs.prisoner ? { hut: gs.prisoner.hut, v: gs.prisoner.v } : null, allyHuts: gs.huts.filter((h) => h.ally && !h.dead).length }
+                    }
+                    return { err: 'unknown mode' }
+                },
                 digHot: () => {
                     gs.quota = 999999
                     crater(gs, gs.x + Math.cos(gs.yaw) * 70, gs.y + Math.sin(gs.yaw) * 70, 16, 10, 1)

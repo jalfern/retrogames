@@ -20,6 +20,7 @@ import {
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT, CFG,
     SEL, selectTap, cursorStep,
     scareVillagers, VIL_PANIC_R, VIL_FLAME_R, VIL_WANDER_R,
+    VIL_GRAB_R, VIL_GRAB_ALT, VIL_TRIBUTE_T, VIL_TRIBUTE_M,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -373,6 +374,8 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             if (e.type === 'cast') spent += spellById(e.id).cost
             if (e.type === 'kill') bounty += BOUNTY[e.kind]
             if (e.type === 'spill') spent += e.m
+            if (e.type === 'tribute') bounty += e.m // #1764 stage 2: the converted hut pays
+            if (e.type === 'hutDown' && e.loot) bounty += e.m // #1764 stage 2: the ashes pay
             if (e.type === 'level') {
                 t0 -= e.reset.bank + e.reset.pearls + e.reset.hoard
                 t0 += pearlMana(gs) + LEVELS[e.n].hoard
@@ -1513,6 +1516,174 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     }
 }
 
+// ---- #1764 item 3: village life, stage 2 — the village economy ------------
+// The original's signature loop: descend into the lanes, snag a villager by
+// touch (the catch band is the wolf band — altitude is armor AND the price of
+// a prisoner), fly the prisoner to your castle, and the home hut converts:
+// pennant up, and it pays a 2-man pearl every VIL_TRIBUTE_T ticks. The other
+// path burns the hut for its savings. All sim-pure, so Node-provable.
+// Mutation guide (prove it can fail): (1) drop the
+// `gs.alt <= sampleH(...) + VIL_GRAB_ALT` condition in the grab block → the
+// band gates go red; (2) delete `hs.ally = true` in the delivery block → the
+// convert gate goes red (the tribute dies with it); (3) remove the
+// `dropPearls(...)` call in the hutDown branch → the burn-loot gate goes red;
+// (4) delete the prisoner release in hurtPlayer → the death gate goes red;
+// (5) drop the `gs.prisoner`/`hs.ally` mixes from stateHash → the hash gates
+// go red.
+{
+    const lowGrab = (seed = 7) => {
+        const gs = makeGame(seed)
+        const vl = gs.villagers[0]
+        // Park on the villager at the floor (the lowest possible altitude —
+        // always inside the band); one step drifts 2u forward, still inside
+        // VIL_GRAB_R, and the grab reads post-move positions like the pearl
+        // magnet. The wizard is fenced out: these gates are the economy's,
+        // not his.
+        gs.x = vl.x; gs.y = vl.y; gs.yaw = 0; gs.alt = 0
+        gs.wizard.alive = false
+        step(gs, {})
+        return { gs, vl }
+    }
+    {
+        const { gs, vl } = lowGrab()
+        const ev = gs.events.find((e) => e.type === 'villager' && e.what === 'grab')
+        r.check('a carpet at the floor over a villager snags them (grip set, lane −1, grab event)',
+            !!gs.prisoner && gs.prisoner.hut === vl.hut && gs.prisoner.v === vl.v &&
+            gs.villagers.length === fresh.villagers.length - 1 && !!ev,
+            `prisoner=${gs.prisoner ? `hut${gs.prisoner.hut}/v${gs.prisoner.v}` : 'none'} lane=${gs.villagers.length} ev=${ev ? 'grab' : 'none'}`)
+        const gs2 = makeGame(7)
+        const vl2 = gs2.villagers[0]
+        gs2.x = vl2.x; gs2.y = vl2.y; gs2.yaw = 0
+        gs2.alt = sampleH(gs2, vl2.x, vl2.y) + VIL_GRAB_ALT + 1
+        gs2.wizard.alive = false
+        step(gs2, {})
+        r.check('high flight over the same lane never snags (the band, not the distance, is the rule)',
+            gs2.prisoner === null && gs2.villagers.length === fresh.villagers.length,
+            `prisoner=${gs2.prisoner ? 'set' : 'none'} alt=${gs2.alt.toFixed(1)} band-ceiling=${(sampleH(gs2, vl2.x, vl2.y) + VIL_GRAB_ALT).toFixed(1)}`)
+    }
+    {
+        const { gs } = lowGrab()
+        const first = gs.prisoner
+        const v2 = gs.villagers[0]
+        gs.x = v2.x; gs.y = v2.y; gs.alt = 0
+        step(gs, {})
+        r.check('the grip holds one: a second touch in the band snags nothing',
+            gs.prisoner === first && gs.villagers.length === fresh.villagers.length - 1,
+            `prisoner=${gs.prisoner ? `hut${gs.prisoner.hut}` : 'none'} lane=${gs.villagers.length}`)
+    }
+    {
+        const { gs } = lowGrab()
+        const hi = gs.prisoner.hut
+        const hut = gs.huts[hi]
+        gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 52
+        gs.shield = 1e9; gs.bank = 5
+        step(gs, {})
+        const ev = gs.events.find((e) => e.type === 'villager' && e.what === 'convert')
+        r.check('delivering the prisoner at the castle converts the home hut (pennant up, tribute clock, grip empty)',
+            gs.prisoner === null && hut.ally === true && hut.tributeT === VIL_TRIBUTE_T - 1 && !!ev && ev.hut === hi,
+            `prisoner=${gs.prisoner ? 'held' : 'none'} ally=${hut.ally} tributeT=${hut.tributeT} ev=${ev ? 'convert' : 'none'}`)
+        // The tribute is exactly on its clock: nothing early, the pearl at the hut.
+        const t0 = gs.tick
+        let trib = null
+        for (let t = 0; t < VIL_TRIBUTE_T && !trib; t++) {
+            gs.events.length = 0
+            step(gs, {})
+            trib = gs.events.find((e) => e.type === 'tribute')
+        }
+        const pearl = gs.pearls.find((p) => p.alive && p.m === VIL_TRIBUTE_M &&
+            Math.hypot(wrapD(p.x - hut.x), wrapD(p.y - hut.y)) < 8)
+        r.check('the converted hut pays tribute on the clock (2-man pearl at the hut, nothing early)',
+            !!trib && gs.tick - t0 === VIL_TRIBUTE_T - 1 && !!pearl,
+            `trib=${trib ? 'yes' : 'no'} after ${trib ? gs.tick - t0 : 'full window'} ticks pearl=${pearl ? 'at hut' : 'none'}`)
+    }
+    {
+        const gs = makeGame(7)
+        gs.wizard.alive = false
+        const hs = gs.huts[2]
+        hs.burn = 1
+        let ev = null
+        for (let t = 0; t < 260 && !ev; t++) {
+            step(gs, {})
+            ev = gs.events.find((e) => e.type === 'hutDown' && e.x === hs.x && e.y === hs.y)
+        }
+        const loot = gs.pearls.filter((p) => p.alive && Math.hypot(wrapD(p.x - hs.x), wrapD(p.y - hs.y)) < 10)
+        const total = loot.reduce((a, p) => a + p.m, 0)
+        r.check('a burned hut scatters its savings (4–8 man at the rubble; the hutDown carries the tell)',
+            !!ev && ev.loot === true && hs.dead && total >= 4 && total <= 8 && loot.length >= 1,
+            `ev=${ev ? `loot=${ev.loot}` : 'none'} pearls=${loot.length} man=${total}`)
+    }
+    {
+        const gs = makeGame(7)
+        gs.wizard.alive = false
+        const hs = gs.huts[3]
+        const n0 = gs.huts.length
+        const p0 = gs.pearls.length
+        dissolveLand(gs, hs.x, hs.y)
+        const ev = gs.events.find((e) => e.type === 'dissolve')
+        const newNear = gs.pearls.slice(p0).filter((p) => Math.hypot(wrapD(p.x - hs.x), wrapD(p.y - hs.y)) < 10)
+        r.check('dissolve stays cold: a drowned hut is swallowed whole (gone from the world, no loot, no burn)',
+            !!ev && gs.huts.length === n0 - ev.huts && !gs.huts.includes(hs) && newNear.length === 0 &&
+            !gs.events.some((e) => e.type === 'hutDown'),
+            `huts ${n0}→${gs.huts.length} gone=${ev ? ev.huts : 'no ev'} newPearlsNear=${newNear.length} hutDown=${gs.events.some((e) => e.type === 'hutDown')}`)
+    }
+    {
+        const { gs, vl } = lowGrab()
+        gs.bank = 5
+        gs.monsters.push({ kind: 'wolf', x: gs.x, y: gs.y, hp: 50, dir: 0, cool: 0, wanderT: 0, lostT: 0 })
+        gs.alt = sampleH(gs, gs.x, gs.y) + 5
+        gs.hp = 5; gs.shield = 0; gs.safeT = 0
+        const laneBefore = gs.villagers.length
+        step(gs, {})
+        const back = gs.villagers[gs.villagers.length - 1]
+        r.check('death drops the prisoner where the carpet fell (lane +1, home kept, panicked, grip empty)',
+            gs.prisoner === null && gs.villagers.length === laneBefore + 1 &&
+            back.hut === vl.hut && back.panicT > 0 && gs.safeT > 0,
+            `prisoner=${gs.prisoner ? 'held' : 'none'} lane ${laneBefore}→${gs.villagers.length} backHome=${back.hut === vl.hut} panic=${back.panicT}`)
+    }
+    {
+        const { gs } = lowGrab()
+        const h1 = stateHash(gs)
+        const pr = gs.prisoner
+        gs.prisoner = null
+        const h2 = stateHash(gs)
+        gs.prisoner = pr
+        r.check('stateHash senses the grip (mutant: drop the prisoner mix → red)',
+            h1 !== h2 && stateHash(gs) === h1, `${h1} vs ${h2}`)
+        const { gs: g2 } = lowGrab()
+        const hi2 = g2.prisoner.hut
+        g2.x = g2.castle.x; g2.y = g2.castle.y; g2.alt = 52
+        g2.shield = 1e9; g2.bank = 5
+        step(g2, {})
+        const h3 = stateHash(g2)
+        g2.huts[hi2].ally = false
+        r.check('stateHash senses the pennant (mutant: drop the ally mix → red)',
+            h3 !== stateHash(g2), `${h3} vs ${stateHash(g2)}`)
+    }
+    {
+        // The whole loop replayed: floor grab → carry home → convert → tribute.
+        const script = (gs) => {
+            if (gs.tick === 0) {
+                const vl = gs.villagers[0]
+                gs.x = vl.x; gs.y = vl.y; gs.yaw = 0; gs.alt = 0
+                gs.wizard.alive = false; gs.shield = 1e9; gs.bank = 5
+            } else if (gs.tick === 5 && gs.prisoner) {
+                gs.x = gs.castle.x; gs.y = gs.castle.y; gs.alt = 52
+            }
+            return {}
+        }
+        const drive = () => {
+            const gs = makeGame(7)
+            for (let i = 0; i < 800 && !gs.end; i++) step(gs, script(gs))
+            return gs
+        }
+        const s1 = drive(), s2 = drive()
+        r.check('the whole economy replays bit-identical (grab → carry → convert → tribute)',
+            stateHash(s1) === stateHash(s2) && s1.huts.some((h) => h.ally) &&
+            s1.pearls.some((p) => p.alive && p.m === VIL_TRIBUTE_M),
+            `hash ${stateHash(s1).slice(0, 6)}==${stateHash(s2).slice(0, 6)} ally=${s1.huts.some((h) => h.ally)} tributePearl=${s1.pearls.some((p) => p.alive && p.m === VIL_TRIBUTE_M)}`)
+    }
+}
+
 // ---- HUD geometry: the score must stay inside the canvas (#1681)
 // The score is the only HUD text pinned to a fixed x near the right edge. At
 // x=302 in 7px monospace its six-digit box spanned [302, 327.2] against
@@ -1884,6 +2055,13 @@ r.check('play mode ticks with no stuck loop', live.tick > 20, `tick=${live.tick}
 // it holds on the degraded-Chrome box where the pixel family is flaky).
 r.check('the village is alive in the browser world (14–21 villagers at seed 7)',
     live.villagers >= 14 && live.villagers <= 21, `villagers=${live.villagers}`)
+// #1764 stage 2: the economy is live in the browser world too (state-based).
+const eco1 = await page.evaluate(() => window.__carpetTest.villageEconomy('grab'))
+r.check('the browser world snags a villager at the floor (grip set, lane −1)',
+    !!eco1.prisoner && eco1.villagers >= 13 && eco1.villagers <= 20, JSON.stringify(eco1))
+const eco2 = await page.evaluate(() => window.__carpetTest.villageEconomy('deliver'))
+r.check('the browser world converts the hut on delivery (pennant up, grip empty)',
+    eco2.prisoner === null && eco2.allyHuts === 1, JSON.stringify(eco2))
 
 // ---- GPU world pass (#1083): the GPU must actually render the world, craters
 // must visibly feed the terrain upload (glow), lava cools, scorch persists.
