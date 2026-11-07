@@ -49,7 +49,9 @@ const flagVal = (name, dflt) => {
 
 function driverFor(rec) {
     if (rec.game === 'gauntlet') {
-        return { driver: makeReplayDriver(), note: '' }
+        // #1711 S6: honor the hero stamp — files without it replay as the
+        // historical warrior/elf defaults.
+        return { driver: makeReplayDriver((rec.rules && typeof rec.rules === 'object') ? rec.rules : {}), note: rec.rules && rec.rules.hero ? `hero:${rec.rules.hero}` : '' }
     }
     if (rec.game === 'talk-me-down') {
         let g = null

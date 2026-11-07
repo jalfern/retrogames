@@ -439,3 +439,17 @@ baked into ONE looping AudioBuffer started at t=0 (future-scheduled
 BufferSources and ScriptProcessor state both silently vanish in shell+sp), and
 the click content must be LOW-frequency noise + sines — the nyquist-crackle of
 `sin(k*91)` is what opus loves to eat.
+
+## Hero stamp + replay hole (#1711 S6)
+
+Human runs now stamp `rules: { hero, partnerKey }` into every recording
+(the seed does NOT fix who you picked — same rule-knob class as Rally's
+weather, #1711 S3). `plaicraft:export` / `plaicraft:evidence` /
+`plaicraft:outbox` replay builders consume the stamp; legacy files keep
+the historical warrior/elf defaults.
+
+Known hole (#1793): occasionally a consent-gate run replay-diverges at a
+seed-INVARIANT tick (~570), intermittently, while other takes in the same
+session verify clean. Suspect a wall-time float inside hashed state.
+Repro: `npm run plaicraft:outbox` (the killed-take scenario dumps any
+divergent file to /tmp/forge/outbox-divergent-take.json).

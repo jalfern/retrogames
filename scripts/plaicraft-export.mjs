@@ -81,8 +81,11 @@ export const p2FromPad = (pad) => ({
     left: !!pad.left, right: !!pad.right, fwd: !!pad.up, back: !!pad.down, sword: !!pad.a,
 })
 
-export function newGame(seed) {
-    const gs = makeGame(seed, 'warrior', { topDown: true, partner: true, partnerKey: 'elf' })
+export function newGame(seed, rules = {}) {
+    // #1711 S6: recorded files may carry { hero, partnerKey } (rules stamp) —
+    // replay rebuilds THAT hero; files without the stamp keep the historical
+    // defaults the export planner was proven on.
+    const gs = makeGame(seed, rules.hero || 'warrior', { topDown: true, partner: true, partnerKey: rules.partnerKey || 'elf' })
     gs.partnerOn = true
     gs.partnerMode = 'cpu'
     return gs
@@ -91,11 +94,11 @@ export function newGame(seed) {
 // The replay driver for verifyRecording: rebuild the game from the seed and
 // feed it the recorded pads through THE pad lane. Same code path the capture
 // used — a hash mismatch here means the codec is lying, not the game.
-export function makeReplayDriver() {
+export function makeReplayDriver(rules = {}) {
     let gs = null
     const st = { prevA: false, prevB: false }
     return {
-        reset: (seed) => { gs = newGame(seed); st.prevA = false; st.prevB = false },
+        reset: (seed) => { gs = newGame(seed, rules); st.prevA = false; st.prevB = false },
         step: (pads) => {
             const heroPad = decodePad(pads[0], 'stick')
             const p2 = decodePad(pads[1], 'stick')
