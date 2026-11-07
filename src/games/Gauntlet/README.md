@@ -401,3 +401,19 @@ quests are NOT auto-recorded (the wire owns the seats); a mid-run WATCH seats
 the brain but seat 1 stays labelled `human` for the ticks before the takeover.
 Same wiring in ShortOrderShout (offline kitchens), TalkMeDown and
 RallyCoDriver (offline stages). Proof: `npm run recordcheck` (66 gates).
+
+## Store evidence (#1711 S3 prep)
+
+`npm run plaicraft:evidence` is the acceptance-close command for #1711 once
+the R2 bucket binds (#1730): it lists every stored session, downloads it, and
+replay-verifies each against its game's REAL sim (Node drivers for gauntlet,
+talk-me-down, short-order-shout, rally-co-driver — hash match at every
+checkpoint or it names the divergence tick), sanity-checks v2 voice clocks
+(monotonic, reaching the run end — the clock the ±50 ms clap proof rides on),
+and prints the player/game/length/audio/human-seat table. Exit 2 while the
+store is unprovisioned. `--self-test` runs the whole pipeline offline against
+a stub store with synthesized sessions for all four titles plus pad-flip
+mutants (all must be CAUGHT) — 18/18 today. Rally weather rides new files in
+the optional rec/v1 `rules` stamp; legacy files replay under inferred weather
+(rain is physics-visible via grip; mist is fog-only and replays bit-exact as
+clear — `stateHash` excludes `vis`).

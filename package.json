@@ -334,7 +334,8 @@
     "plaicraftcheck": "node scripts/plaicraftcheck.mjs",
     "netdemocheck": "node scripts/netdemocheck.mjs",
     "plaicraft:export": "node scripts/plaicraft-export.mjs",
-    "plaicraft:train": "node scripts/plaicraft-train.mjs"
+    "plaicraft:train": "node scripts/plaicraft-train.mjs",
+    "plaicraft:evidence": "node scripts/plaicraft-evidence.mjs"
   },
   "dependencies": {
     "cannon-es": "^0.20.0",

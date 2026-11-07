@@ -125,6 +125,9 @@ export function autoStart(opts = {}) {
         build: spec.build || BUILD,
         hashEvery: opts.hashEvery || DEFAULT_HASH_EVERY,
         sources: opts.sources || spec.sources || null,
+        // #1711 S3: rule knobs the seed doesn't fix (Rally weather...); the
+        // spec may hold an object or a live getter — resolved at recorder birth.
+        rules: spec.rules || null,
     })
     voiceExtra = typeof spec.voiceExtra === 'function' ? spec.voiceExtra : null
     voice = null
