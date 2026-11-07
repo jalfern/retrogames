@@ -38,8 +38,9 @@ transcribed into source:
   lightning + delayed thunder — and the whole pattern drifts west-to-east at
   one region per epoch (`driftOf`), so fronts travel and a cell keeps its kind
   as it rides. Rock blocks the wind: rain shadow, see below. Fronts still move
-   at constant speed; rain now hits the sea (see Rain on the sea), though
-   precipitation raises no swell of its own beyond the dimples.
+   at constant speed (PARTIAL #1822: rain now hits the sea — see Rain on the
+   sea — AND winds the swell of its own — see Rain winds the swell; the front
+   speed itself remains open).
 - Moongates warp between the 8 detected stars with a destination picker;
   the menu names each gate for its virtue-moon (moons.js, the eight-wheel
   homage to the original) and prints tonight's phase with a lit-disc glyph —
@@ -180,8 +181,49 @@ npm run dev                 # play at /retrogames/britannia
   dimple/sky mismatches over 7.8k sea samples, and 3 wiring gates.
   Mutants: dropping the `intensity <= 0` guard reddens 3 gates; swapping
   the rain/snow intensities reddens 2 — each restored green.
-- Still honest: rain adds no swell of its own (the wind drives crests, not
-  the drops), and there is no splash sound at sea beyond the global rain hiss.
+- Still honest: no splash sound at sea beyond the global rain hiss. (The
+  "no swell of its own" caveat here is superseded by #1822 below — wet skies
+  now lift the crests and foam through the wind-memory.)
+
+## Rain winds the swell (#1822 polish)
+
+- `swell.js`: `seaRough(tx, ty, t, seed, terrainAt)` is the sea's wind-memory
+  — `splatIntensity` of `weatherAt` sampled at `t - d*WX_EPOCH` for d = 0..3
+  with weights `ROUGH_MEMORY = [1, 0.5, 0.24, 0.11]`, clamped ≤1. The drift
+  carries a cell one region east per epoch, so `t - d*epoch` is exactly the
+  sky that stood over this tile d epochs ago: a storm now is a full sea
+  (1.00), the rain that moved off it leaves it half up, four clear epochs
+  return it bit-exactly to the calm field the older gates prove.
+- `index.jsx` per sea tile: crest stroke alpha scales by `crestGain(rough)`
+  (1 → 1.6), shore foam body by `foamGain(rough)` (1 → 1.45), and a big
+  crest (`c > 0.72`) in wind (`rough > 0.45`) breaks a seeded whitecap dash
+  whose coverage grows with the roughness. Both gains are exactly 1 wherever
+  no front has passed, so the pre-#1822 painting survives untouched. The
+  harness state carries `seaRough` under the Avatar; sim + stateHash are
+  untouched (pure render math over `weatherAt` — the #1135 drift identity
+  `pattern rides (x+16k, t+k·epoch)` stays pinned).
+- `britanniacheck` +15 gates: determinism, the literal weight profile (the
+  expected values live in the check, not re-read from the module — a harness
+  that re-reads the mutant's constants can never go red), bounds + calm-only-
+  under-clear + no-full-heave-under-clear over 800 samples, both states at
+  scale, storm-overhead = full sea, the exact 0.275 linger bracket, per-epoch
+  contribution ≥ booked weight over 3.6k samples, epoch-cadence, both gain
+  curves, the 4-arg weather contract, and 4 wiring gates.
+  Mutants: zeroing `ROUGH_MEMORY[1..3]` reddens exactly 3 gates (profile,
+  linger, contribution); pinning `crestGain/foamGain` to 1 reddens exactly
+  2 — each restored green.
+- `npm run britannidrive` (10/10): real Arrow keys start and walk the Avatar;
+  riding the clock 12 epochs at the walk-point shows the panel carrying the
+  memory curve live (STORM 1.00 → CLEAR 0.50 → 0.28 → 0.13 → 0.06); at the
+  coastal moongate spawn (235,211, open water, south of the snow line) the
+  drive recomputes the wind state of every visible sea tile node-side,
+  replays the same seed+tick to the lightest (avg 0.02) and heaviest (1.00)
+  of 24 epochs, and proves the heavy epoch paints more bright crest/foam/
+  whitecap pixels; the panel's `seaRough` matches the drive's recomputation
+  to 1e-9; `reset(7)` clean; zero page errors.
+- Still honest: fronts move at constant speed (the sea reacts to the rain but
+  the sky itself never quickens), and roughness is paint only — no sea-state
+  hazard for shipping yet.
 
 ## Gate-menu flavor + hover chirp (#1135 polish)
 
