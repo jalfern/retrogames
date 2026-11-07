@@ -79,7 +79,7 @@ trick), camera tracks the midpoint and zooms with the spacing.
   determinism, every CPU tier completes a match) + headless Chrome drive
   (attract→select→fight, inputs reach the sim, K.O. flow, zero page errors).
 - `npm run ironringcheck -- --mutate` — proven-fail: a dead hitbox gate must
-  stop all damage.
+  stop all damage, and a freeze that cannot hear inputs must break the chain.
 - `CONTRACT_ONLY=iron-ring npm run contractcheck` — the #377 driving contract.
 
 ## Honest gaps (polish-pass candidates)
@@ -91,7 +91,14 @@ trick), camera tracks the midpoint and zooms with the spacing.
   her fast hex. `scriptMotion` gained the missing `qcb` case (the CPU's qcb path
   was dead — it returned an empty pad), and the CPU now throws a projectile-qcb at
   range (`dist > 2.4`), so a CPU SABLE earns it through the same parser a human uses.
-- Chain chains: normals cancel into specials, specials into supers not yet.
+- **CLOSED by #1734 (item 2)** cancel chains — normals cancel into specials and
+  supers, specials into supers. The blocker was mechanical, not policy: hitstop
+  discarded the entire input pipeline, and the freeze is exactly when players
+  press the next link. `step` now keeps sensing through the freeze (direction
+  history advances, presses bank in `btnBuf` for 10 ticks) and idle/jump/cancel
+  consume them via `pressKey`, so a chain lands through the freeze. Gates:
+  lp→qcf (after and inside the freeze), lp→dp_S, landed dp→dp_S, staleness,
+  determinism; mutant: a deaf freeze must break the chain.
 - Win/lose dialogue lines and per-stage midground variety.
 - Net select: guest pick reaches the host only if sent before the host starts.
 - Guard crush, stun system, throws escapable in air (v2 mechanics).
