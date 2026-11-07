@@ -863,10 +863,13 @@ const PILOTS = [
             await key(page, 'KeyY')
             rep.check('tetris: Y seats the planner', await watching())
             const a = await probe()
-            const adv = (x, y) => y.lines > x.lines || y.score > x.score
+            // prover-only: horizontal presses while the watcher sits. An idle
+            // watcher never presses left/right; bag stacking can clear a row by
+            // luck over a long window, but luck never slides a piece.
+            const adv = (x, y) => y.slides > x.slides + 1
             const b = await pollAdvance(page, probe, adv, a, 6000)
-            rep.check('tetris: the planner clears a row untouched (an idle drop never reaches the gap)',
-                adv(a, b), `lines ${a.lines} -> ${b.lines}, score ${a.score} -> ${b.score}, locks ${a.locks} -> ${b.locks}`)
+            rep.check('tetris: the planner drives the pieces untouched (an idle watcher never slides one)',
+                adv(a, b), `slides ${a.slides} -> ${b.slides}, lines ${a.lines} -> ${b.lines}, score ${a.score} -> ${b.score}, locks ${a.locks} -> ${b.locks}`)
             rep.check('tetris: still watching mid-route', await watching())
             await page.keyboard.down('ArrowRight')
             rep.check('tetris: steer key takes over', !(await watching()))
@@ -876,7 +879,7 @@ const PILOTS = [
             const c = await probe()
             const d = await pollAdvance(page, probe, adv, c, 6000)
             rep.check('tetris: resumes from where the player left it', adv(c, d),
-                `lines ${c.lines} -> ${d.lines}, score ${c.score} -> ${d.score}, locks ${c.locks} -> ${d.locks}`)
+                `slides ${c.slides} -> ${d.slides}, lines ${c.lines} -> ${d.lines}, score ${c.score} -> ${d.score}, locks ${c.locks} -> ${d.locks}`)
             await key(page, 'KeyY')
             rep.check('tetris: Y again releases the planner', !(await watching()))
         },

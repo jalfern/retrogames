@@ -59,6 +59,7 @@ const TetrisGame = () => {
         let gs = null
         let demo = null, demoMem = {}, demoPlan = null
         let playPlan = null, playMem = {} // #1637 the watcher's per-piece plan + stuck watchdog
+        let watchSlides = 0 // #1637 horizontal presses made while the watcher sits — an idle watcher never slides
         let demoLevel = DEMO_LEVELS[0]
         let raf = 0, last = 0, acc = 0
         let seedCounter = (Date.now() >>> 0) ^ 0x5eed
@@ -114,7 +115,7 @@ const TetrisGame = () => {
         const startPlay = (level, seed) => {
             lastLevelRef.current = level
             watchingRef.current = false; setWatching(false) // #1637 a new well starts in your hands
-            playPlan = null; playMem = {}
+            playPlan = null; playMem = {}; watchSlides = 0
             seedCounter = (seedCounter * 1103515245 + 12345) >>> 0
             // #737: honor ?seed=N so a filed feedback report's seed replays this exact world.
             const pin = seed === undefined ? seedFromQuery() : null
@@ -247,6 +248,7 @@ const TetrisGame = () => {
                     } else if (screenRef.current === 'play' && gs && !gs.over) {
                         const pad = watchingRef.current ? driveInput(gs, playPlan, playMem) : { ...keys }
                         step(gs, pad)
+                        if (watchingRef.current && (pad.left || pad.right)) watchSlides++
                         recordLiveTick([{ left: pad.left, right: pad.right, down: pad.down, a: pad.rot }])
                         // #1637 the same re-plan the attract demo runs: a new
                         // piece means a new decision, taken from LIVE state.
@@ -356,6 +358,7 @@ const TetrisGame = () => {
                             cells: cellsOf(s.cur.type, s.cur.rot, s.cur.x, s.cur.y),
                         } : null,
                         hash: stateHash(s), topScore,
+                        slides: screenRef.current === 'play' ? watchSlides : 0, // #1637 prover-only slide presses
                         musicStep: audioController.music && audioController.music.playing ? audioController.music.stepDur : null,
                     }
                 },
