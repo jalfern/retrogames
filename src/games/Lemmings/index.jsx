@@ -24,6 +24,8 @@ import { LEVELS, buildLevel } from './levels.js'
 import { LAYOUT } from './layout.js'
 import { PRESS, MESSAGES } from './attract.js'
 import { makeGame, step, solve, assign, nearestLemming, stateHash, SKILLS, SKILL_NAME, SKILL_KEY, CFG, W, H, DIRT, STEEL, FIXED_DT } from './sim.js'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const TS = 8                                   // internal pixels per tile
 const CW = W * TS
@@ -51,6 +53,8 @@ const LemGame = () => {
     const [paused, setPaused] = useState(false)
     const [end, setEnd] = useState(null)
     const [portrait, setPortrait] = useState(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: sim.js solve() assigns the skills
+    const watchingRef = useRef(false)
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
@@ -86,6 +90,7 @@ const LemGame = () => {
         let plan = [], planI = 0
         let raf = 0, last = 0, acc = 0
         let runCmds = []                          // player-command log of the live run
+        let watchScript = null                    // #1637 the solver's commands for the WATCH seat
         const cursor = { x: 8, y: 18 }
         let selected = 'climb'
         const keys = new Set()
@@ -115,11 +120,33 @@ const LemGame = () => {
             runCmds = []
             cursor.x = meta.spawn.x; cursor.y = meta.spawn.y - 1
             selected = (SKILLS.find(s => meta.skills[s] > 0)) || 'climb'
+            watchScript = null                            // #1637 a new level starts in your hands
+            watchingRef.current = false; setWatching(false)
             abortGesture()                        // no press from the previous run survives into this one
         }
         loadLevel(0, true)
 
         const nextPlan = () => plan.find((c, i) => i >= planI && c.tick >= gs.tick)
+
+        // #1637 WATCH — seat sim.js's own solver at the LIVE board. PROGNOSIS
+        // already proves the pattern: clone the live state (terrain damage and
+        // all), ask solve() for the win path, decline honestly when the oracle
+        // sees none. The sim is deterministic (lemcheck replays the solver's own
+        // script to an identical hash), so applying the clone's commands at their
+        // ticks on the live board reproduces the win line exactly.
+        const seatWatcher = () => {
+            if (!gs || gs.end || screenRef.current !== 'play') return false
+            const g2 = makeGame(meta, gs.grid)
+            Object.assign(g2, {
+                tick: gs.tick, t: gs.t, exited: gs.exited, dead: gs.dead,
+                spawned: gs.spawned, skills: { ...gs.skills },
+            })
+            g2.lemmings = structuredClone(gs.lemmings)
+            const r = solve(g2)
+            if (!r.win) return false
+            watchScript = r.cmds.filter(c => c.tick >= gs.tick)
+            return true
+        }
 
         const handleEvents = (evts) => {
             for (const e of evts) {
@@ -139,6 +166,8 @@ const LemGame = () => {
         }
 
         const finish = () => {
+            watchScript = null                                  // #1637 the run ends in your hands
+            watchingRef.current = false; setWatching(false)
             const won = gs.win
             const entry = { score: gs.score, out: gs.exited, level: meta.name, date: new Date().toISOString().slice(2, 10) }
             if (won || gs.exited > 0) localStorage.setItem('lemmings.board', JSON.stringify([...board(), entry].sort((a, b) => b.score - a.score).slice(0, 8)))
@@ -192,6 +221,12 @@ const LemGame = () => {
                 if (keys.has('ArrowRight')) cursor.x = Math.min(W - 0.5, cursor.x + sp)
                 if (keys.has('ArrowUp')) cursor.y = Math.max(2, cursor.y - sp)
                 if (keys.has('ArrowDown')) cursor.y = Math.min(H - 1, cursor.y + sp)
+                if (watchingRef.current && watchScript) {
+                    // #1637 same stamp rule as attract's replay: the command lands
+                    // on the tick after its stamp — the proven line, live.
+                    const c = watchScript.find(cc => cc.tick === gs.tick + 1)
+                    if (c) assign(gs, c.id, c.skill)
+                }
                 handleEvents(step(gs, { x: cursor.x, y: cursor.y }).events)
                 if (gs.end) finish()
             }
@@ -445,6 +480,14 @@ const LemGame = () => {
                 return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the solver at any live board it can still win;
+            // if the oracle sees no path from here it declines honestly (no blip).
+            if (isWatchKey(e)) {
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (seatWatcher()) { watchingRef.current = true; setWatching(true); playWatchStart() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (SKILL_KEY[e.code]) { selectSkill(SKILL_KEY[e.code]); return }
             if (e.code === 'Space' || e.code === 'KeyZ') { applySkill(cursor.x, cursor.y); return }
             keys.add(e.code)
@@ -490,6 +533,7 @@ const LemGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc !== 'play' || pausedRef.current) return
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a thumb on the hill takes the wheel
             if (e.target.closest && e.target.closest('[data-lem-panel]')) return   // the panel owns its taps
             const p = stagePoint(e)
             if (!p) return
@@ -550,6 +594,8 @@ const LemGame = () => {
                     return { x: L.x, y: L.y, skill: c.skill, id: L.id, inPlan: true }
                 },
                 start: startPlay,
+                watching: () => watchingRef.current, // #1637 WATCH probes
+                watchSfx: watchSfxLog,
                 give: (skill, n = 1) => { gs.skills[skill] += n; return gs.skills[skill] },
                 teleport: (id) => {
                     const L = gs.lemmings.find(l => l.id === id && l.live)
@@ -674,6 +720,16 @@ const LemGame = () => {
             <div ref={stageRef} className="absolute inset-0 flex items-center justify-center"
                 style={{ bottom: play ? LAYOUT.panelReserve : 0 }} />
 
+            {/* #1637 WATCH — Y seats sim.js's solver; any input takes over.
+                The pill docks ABOVE the skill panel + pad band (the panel owns
+                the bottom edge here), still riding the safe-area insets. */}
+            {play && watching && <WatchToast className="absolute z-50" />}
+            {play && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ bottom: 'calc(12rem + var(--sab, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
+
             <div className={`absolute inset-0 pointer-events-none transition-opacity duration-300 ${play ? 'opacity-100' : 'opacity-0'}`}>
                 <div className="absolute top-20 left-3 right-3 flex items-center gap-3 text-amber-50 font-mono text-xs">
                     <span id="lem-lvl" ref={setHud('lvl')} className="font-bold tracking-widest text-sm" />
@@ -695,6 +751,11 @@ const LemGame = () => {
                         <h1 className="text-5xl font-black text-green-300" style={{ textShadow: '0 4px 0 #1d4a1d, 0 10px 24px #000' }}>LEMMINGS-LITE</h1>
                         <p className="text-white font-mono font-bold mt-8 animate-pulse">{PRESS}</p>
                         <AttractMessage className="text-amber-100/90 mt-2 px-8" messages={MESSAGES} />
+                        <span className="block mt-2 text-green-200/80 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
+                    </div>
+                    {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
                     </div>
                 </>
             )}
