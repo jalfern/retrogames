@@ -574,7 +574,10 @@ class AudioController {
         noise.start()
     }
 
-    playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1) {
+    // pan (-1..1, or null) tilts the sweep across the stereo field — opt-in:
+    // callers that pass nothing keep the exact old graph (direct to destination),
+    // so no other title's sound changes (same law as the ambience bus below).
+    playSweep(startFreq, endFreq, duration, type = 'triangle', vol = 0.1, pan = null) {
         if (this.muted || !this.ctx) return
         this.sfx++
         const osc = this.ctx.createOscillator()
@@ -584,7 +587,14 @@ class AudioController {
         osc.frequency.linearRampToValueAtTime(endFreq, this.ctx.currentTime + duration)
         gain.gain.setValueAtTime(vol, this.ctx.currentTime)
         gain.gain.linearRampToValueAtTime(0.01, this.ctx.currentTime + duration)
-        osc.connect(gain); gain.connect(this.ctx.destination)
+        osc.connect(gain)
+        if (pan !== null && this.ctx.createStereoPanner) {
+            const sp = this.ctx.createStereoPanner()
+            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime)
+            gain.connect(sp); sp.connect(this.ctx.destination)
+        } else {
+            gain.connect(this.ctx.destination)
+        }
         osc.start(); osc.stop(this.ctx.currentTime + duration)
     }
 

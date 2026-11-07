@@ -348,7 +348,10 @@ see item 5).
   out of spec, not a gap.
 - Village populations are decorative huts — no villagers, no convert/burn moral
   economy, no prisoners.
-- No anaglyph/stereo mode, no 3D sound. `?` pause carries the rules instead.
+- No anaglyph/stereo mode. **Partially closed by #1746 item 7:** rival-cast
+  cues now pan to the caster's side (see the #1746 section) — the world bed,
+  creatures and lightning are still center, and there is no true HRTF.
+  `?` pause carries the rules instead.
 - Water is shader waves with self-shadowing, sun-linked sparkle, dithered
   depth bands and foam lace tracing the shoreline — but not the original's
   4-bit palette-cycling wave animation; no underwater view when cratered below sea.
@@ -360,6 +363,29 @@ see item 5).
 - Fog is per-object/per-vertex distance mix, not a true aerial-perspective
   gradient with altitude; clouds are two dome layers that cast a drifting
   shadow on the land, not volumetric bodies.
+
+## #1746 item 7 polish (2026-11-06, QA studio): SPATIAL CAST CUE
+
+A rival bolt now lights up the sky WHERE the wizard stands. `castBearing(gs, x, y)`
+(sim.js, exported) returns `{ pan, behind }` — a pure read of the cast point against
+the carpet's nose, the same discipline as `muffleOf`/`crumbleFeel` (never feeds
+`stateHash`). `wizfire` carries the cast point (`x`,`y`, presentation-only like
+`lost`). The shell pans the crack by `pan`; a cast from outside the nose
+(`behind`) reads longer (0.18s) and softer (0.04). `AudioController.playSweep`
+gained an optional trailing `pan` (-1..1): **null keeps the exact old direct
+graph**, so no other title's sound changes (opt-in law, same as the amb bus).
+
+Sign basis: the camera's right vector at yaw 0 is +world y
+(`renderer.js` fwd = (cos yaw·cosP, −sinP, sin yaw·cosP); right = cross(fwd,up)),
+so `pan = sin(rel)` with `rel = atan2(wrapD(dy), wrapD(dx)) − yaw` is +right,
+and `behind = cos(rel) < 0`. The bearing wraps the short way across the seam.
+
+carpetcheck +9 gates (#1746 block): event carrier (x/y equal the wizard at the
+shot), four cardinal geometries, nose-relative turn, seam wrap, purity
+(stateHash immunity), and two source pins (shell routing; the `pan===null`
+default-path in AudioController). Mutants to prove on demand: strip x/y from
+the push (carrier red), sin→cos (side gates red, ahead/behind survive), drop
+the pan arg (shell pin red), pan the null path (default-path pin red).
 
 ## #1740 nine worlds + WORLD SELECT (2026-11-06, forge slot b)
 

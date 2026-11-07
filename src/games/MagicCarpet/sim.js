@@ -804,6 +804,17 @@ export function crumbleFeel(gs, e) {
     return { prox, vol: prox * (0.35 + 0.65 * size), shake: prox * (0.8 + 4.2 * size) }
 }
 
+// #1746 item 7: where did that bolt come FROM — a pure read of a cast point
+// against the carpet's nose, like muffleOf is of the veil. pan tilts the
+// crack to the side the caster stands on (camera convention: +sin(rel) is
+// screen-right, the same +world-y the renderer shows at yaw 0); behind marks
+// a shot from outside the cockpit's arc of sight — heard over the shoulder.
+// Never feeds stateHash: it drives feel, not rules.
+export function castBearing(gs, x, y) {
+    const rel = Math.atan2(wrapD(y - gs.y), wrapD(x - gs.x)) - gs.yaw
+    return { pan: Math.sin(rel), behind: Math.cos(rel) < 0 }
+}
+
 export function step(gs, inp) {
     gs.tick++
     if (gs.end) return
@@ -942,7 +953,9 @@ export function step(gs, inp) {
             gs.wizFire = gs.wizSlow > 0 ? 150 : 55
             const a = Math.atan2(wrapD(gs.y - wz.y), wrapD(gs.x - wz.x))
             gs.projs.push({ kind: 'bolt', from: 'w', x: wz.x, y: wz.y, z: Math.max(sampleH(gs, wz.x, wz.y), WATER) + 10, vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2, dmg: 6, life: 90 })
-            gs.events.push({ type: 'wizfire' })
+            // #1746: the event carries the cast point (presentation only, like
+            // 'lost' above) so the shell can hear which side of the sky it lit.
+            gs.events.push({ type: 'wizfire', x: wz.x, y: wz.y })
         }
         if (wz.hp <= 0) {
             wz.alive = false
