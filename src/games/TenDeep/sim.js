@@ -12,10 +12,10 @@
 // the slack rule re-grades with one fewer of every supply consumed.
 
 import { genFloor, MOBS, FLOORS, SIZE, mulberry32 } from './dungeon.js'
-import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame } from './town.js'
+import { BUILDINGS, SERVICES, rollRecruit, serviceHeroOk, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, RIM_WELL_HUM, rimWellNear, RIM_CUT, rimCut, RIM_TRAIL_N, rimTrail } from './town.js'
 import { SPELLS, ALIGN_ORDER, compose, rollCandidates, canCast } from './people.js'
 
-export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame }
+export { SIZE, BUILDINGS, SERVICES, TOWN, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FOLK_BARKS, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, RIM_WELL_HUM, rimWellNear, RIM_CUT, rimCut, RIM_TRAIL_N, rimTrail }
 export { SPELLS, CLASSES, ALIGN_ORDER, canCast, classOkHero } from './people.js'
 export const W = 256
 export const H = 224
@@ -583,7 +583,10 @@ function townStep(st, cmd) {
         // you step out onto your own threshold, not onto the map at large
         t.tx = RIM_STREET.doors[out] ?? RIM_STREET.start.x
         t.ty = 1
-        st.events.push({ type: 'townStreet' })
+        // #1756: the leave-beat still has to paint the room it came from for
+        // a few frames after b cleared — the event carries the key (events
+        // are transient; stateHash never reads them).
+        st.events.push({ type: 'townStreet', b: out })
         return
     }
     const ent = BUILDINGS.find(b => b.key === cmd.replace('enter-', ''))

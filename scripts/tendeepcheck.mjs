@@ -18,7 +18,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame } from '../src/games/TenDeep/sim.js'
+import { CFG, makeRun, step, stateHash, SIZE, xpNext, purse, canBuy, servicePrice, createPriceFor, isVacant, padB, BUILDINGS, SERVICES, SPELLS, CLASSES, ALIGN_ORDER, canCast, DX as DXC, DY as DYC, automapRing, automapShade, RIM_STREET, rimBlocked, rimDoorAt, makeRimFolk, rimFolkAt, rimFolkShares, RIM_FOLK_NAMES, RIM_FLAMES, RIM_WELL_FLAME, rimFlame, RIM_WIND, rimWind, rimWellNear, RIM_CUT, rimCut, rimTrail } from '../src/games/TenDeep/sim.js'
 import { RACES, ALIGNMENTS, compose, classOk, rollCandidates } from '../src/games/TenDeep/people.js'
 import { genFloor, FLOORS, MOBS } from '../src/games/TenDeep/dungeon.js'
 import { solveRun } from '../src/games/TenDeep/solver.js'
@@ -635,6 +635,131 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
         ok(!/'rgba\(255,180,80,0\.10\)'/.test(idxSrc), 'a dead constant lamp pool is still painted on the cobbles')
     }
 
+    // THE NIGHT HAS A VOICE + THE COMPANY WALKS AS A FILE + THE DOOR CUTS
+    // THROUGH BLACK (#1756, items 3–5 of the polish pass). All presentation:
+    // deterministic in their own ticks, zero rng, hash-untouched — and the
+    // painter actually asks (source pins, the #1708 pattern).
+    section('THE NIGHT HAS A VOICE — wind, well hum, door beat, walking file (#1756)')
+    {
+        // ---- wind: a fixed breath, silence between gusts ---------------------
+        ok(rimWind(0) === rimWind(0) && rimWind(1234) === rimWind(1234),
+            'rimWind is not deterministic in tick — the same frame howls twice')
+        ok(rimWind(0) === 0, `a gust must open from silence, got ${rimWind(0)}`)
+        ok(rimWind(RIM_WIND.gust) === 0 && rimWind(RIM_WIND.period - 1) === 0 && rimWind(RIM_WIND.period) === rimWind(0),
+            'the wind does not rest, or the period does not repeat')
+        {
+            let audible = 0
+            let peak = 0
+            for (let p = 0; p < RIM_WIND.period; p++) {
+                const w = rimWind(p)
+                ok(w >= 0 && w <= 1.0001, `wind escaped its bounds at p=${p}: ${w}`)
+                ok(Math.abs(w - rimWind(p + RIM_WIND.period * 7)) < 1e-12, `the breath stutters at p=${p} on repeat`)
+                if (p < RIM_WIND.gust) {
+                    audible++
+                    ok(Math.abs(rimWind(p) - rimWind(RIM_WIND.gust - p)) < 1e-9,
+                        `the gust envelope is not symmetric at p=${p} — the wind coughs instead of blowing`)
+                    if (w > peak) peak = w
+                } else ok(w === 0, `the wind never rests at p=${p}: ${w}`)
+            }
+            ok(audible >= 16 && audible < RIM_WIND.period, `the gust window is unreasonable (${audible}/${RIM_WIND.period})`)
+            ok(peak > 0.9, `the gust peaks too low to hear (${peak})`)
+        }
+        // ---- the well hums when you stand beside the curb ---------------------
+        ok(rimBlocked(RIM_STREET.blockedNear[0], 0) && rimBlocked(RIM_STREET.blockedNear[1], 0),
+            'the well curb does not block its own tiles — the hum anchor moved')
+        {
+            const [w1, w2] = RIM_STREET.blockedNear
+            const lo = Math.min(w1, w2) - 1, hi = Math.max(w1, w2) + 1
+            for (let x = 0; x < RIM_STREET.len; x++) {
+                for (const lane of [0, 1]) {
+                    const want = x >= lo && x <= hi && !rimBlocked(x, lane)
+                    ok(rimWellNear(x, lane) === want,
+                        `the hum hears x=${x} lane=${lane} as ${rimWellNear(x, lane)}, want ${want}`)
+                }
+            }
+            ok(!rimWellNear(lo - 1, 0) && !rimWellNear(hi + 1, 1), 'the hum carries across the whole street')
+        }
+        // ---- the door cuts through a black frame ------------------------------
+        {
+            const total = RIM_CUT.dim + RIM_CUT.wash
+            ok(RIM_CUT.top > 0.4 && RIM_CUT.top < 1, `the cut frame is ${RIM_CUT.top} — not a black frame`)
+            ok(rimCut('in', -1) === null && rimCut('in', total) === null && rimCut('out', total) === null,
+                'the beat does not end — the frame would hang over the street forever')
+            let prevA = 0
+            let phaseSwaps = 0
+            let lastPhase = null
+            for (let f = 0; f < total; f++) {
+                const c = rimCut('in', f)
+                ok(c !== null && c.a > 0 && c.a <= RIM_CUT.top + 1e-9, `cut frame ${f} outside its envelope: ${c && c.a}`)
+                const want = f < RIM_CUT.dim ? 'rim' : 'room'
+                ok(c.phase === want, `the frame shows ${c.phase} at f=${f}, want ${want} — the street must dim BEFORE the room washes in`)
+                if (lastPhase && c.phase !== lastPhase) phaseSwaps++
+                lastPhase = c.phase
+                if (f < RIM_CUT.dim) ok(c.a >= prevA, `the dim dips mid-rise at f=${f}`)
+                else ok(c.a <= prevA, `the wash brightens mid-fall at f=${f}`)
+                prevA = c.a
+            }
+            ok(phaseSwaps === 1, `the door beat crossed ${phaseSwaps} phases — want exactly one cut`)
+            for (let f = 0; f < total; f++) {
+                const ci = rimCut('in', f), co = rimCut('out', f)
+                ok(ci.a === co.a, 'the way out dims on a different envelope than the way in')
+                const wantOut = f < RIM_CUT.dim ? 'room' : 'rim'
+                ok(co.phase === wantOut, `leaving shows ${co.phase} at f=${f}, want ${wantOut}`)
+            }
+        }
+        // ---- the company files behind the walker ------------------------------
+        {
+            const hist = []
+            for (let x = 8; x >= 1; x--) hist.push({ x, y: 1 })   // newest first, far lane, distinct tiles
+            const s = rimTrail(hist)
+            ok(s.length === 5, `the file should carry five silhouettes, got ${s.length}`)
+            s.forEach((p, i) => {
+                ok(p.x === hist[i + 1].x && p.y === hist[i + 1].y, `slot ${i} left the walked track`)
+                ok(!p.stacked, `slot ${i} is bunched when there is road behind`)
+                ok(p.stride === (((p.x + p.y) % 2) + 2) % 2, `slot ${i} strides off its own tile parity`)
+            })
+            ok(s.every((p, i) => i === 0 || p.x !== s[i - 1].x), 'two silhouettes share a tile on open road — the file walks single-file')
+            const single = rimTrail([{ x: 0, y: 1 }])
+            ok(single.every((p) => p.x === 0 && p.y === 1 && p.stacked), 'a fresh walk-out must bunch the file on its own tile, not scatter it')
+            ok(new Set(single.map((p) => p.stride)).size === 1, 'stacked silhouettes stride differently on one tile — idle is not still')
+            ok(rimTrail(hist, 2).length === 2 && rimTrail([], 3).length === 0, 'the file ignores its requested length (or invents silhouettes on an empty track)')
+        }
+        // the beat's memory: leaving books the room it came from, so the
+        // out-phase can still paint it after b clears
+        {
+            const g = makeRun()
+            walkEnter(g, 'T')
+            step(g, 'leave')
+            const ev = g.events.find((e) => e.type === 'townStreet')
+            ok(ev && ev.b === 'T', `townStreet must carry the room key for the out-beat, got ${JSON.stringify(ev)}`)
+        }
+        // ---- honesty: none of this reaches the sim ----------------------------
+        {
+            const g1 = makeRun(), g2 = makeRun()
+            for (let t = 0; t < 600; t++) { rimWind(t); rimTrail([{ x: t % 32, y: t % 2 }]); rimCut('in', t % 12); rimWellNear(t % 32, t % 2) }
+            ok(stateHash(g1) === stateHash(g2), 'night presentation leaked into the sim — a hash moved')
+        }
+        // ---- source pins (#1708): the painter and the shell ask ---------------
+        {
+            const idxSrc = readFileSync(join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx'), 'utf8')
+            ok(/rimWind\(ambTick\)/.test(idxSrc), 'the shell stopped asking rimWind — the street went silent again')
+            ok(/screenRef\.current === 'play' && gs\.mode === 'town'/.test(idxSrc),
+                'night ambience is no longer gated to playing on the street — attract would howl')
+            ok(/rimWellNear\(gs\.town\.tx, gs\.town\.ty\)/.test(idxSrc), 'the well-hum proximity check left the shell')
+            ok(/audioController\.ambSweep\(/.test(idxSrc) && /audioController\.ambTone\(/.test(idxSrc),
+                'night sounds bypass the ambience bus (AGENTS: the shared synth paths)')
+            ok(/rimCut\(cut\.kind, cut\.f\)/.test(idxSrc), 'paint stopped consulting the door beat')
+            ok(/kind: 'in', f: -1/.test(idxSrc) && /kind: 'out', f: -1/.test(idxSrc),
+                'enter/leave no longer arm the door beat')
+            ok(/paintRim\(ctx, gs, bob, doorIdxOf\(gs\.town\), cc\.a\)/.test(idxSrc),
+                'the dimming street lost its dim argument — lamps ignore the beat')
+            ok(/rimTrail\(walkHist\)/.test(idxSrc), 'paintRim stopped placing the file — the company is invisible again')
+            ok(/walkHist\.unshift\(\{ x: gs\.town\.tx, y: gs\.town\.ty \}\)/.test(idxSrc), 'the walked track stopped recording the point')
+            ok(/Math\.abs\(h0\.x - gs\.town\.tx\) \+ Math\.abs\(h0\.y - gs\.town\.ty\) > 1/.test(idxSrc),
+                'the teleport law left the track — a wipe would march ghosts across the map')
+        }
+    }
+
     // WIPE: bodies to the RIM, half the purse per hero, tax booked
     {
         const g = makeRun()
@@ -1228,11 +1353,11 @@ if (MUT) {
         const idxOrig = readFileSync(rimIdxFile, 'utf8')
         const idxMutants = [
             ['the west/east lamp core freezes (glow literal back in the painter)',
-                'rgba(255,200,110,${fl.glow.toFixed(2)})', 'rgba(255,200,110,0.75)'],
+                'rgba(255,200,110,${(fl.glow * lit).toFixed(2)})', 'rgba(255,200,110,${(0.75 * lit).toFixed(2)})'],
             ['the cobble pool ignores the fire (constant decal back)',
-                'rgba(255,180,80,${fl.pool.toFixed(3)})', 'rgba(255,180,80,0.10)'],
+                'rgba(255,180,80,${(fl.pool * lit).toFixed(3)})', 'rgba(255,180,80,${(0.10 * lit).toFixed(3)})'],
             ['the well-mouth freezes mid-breath',
-                'rgba(255,180,60,${(0.32 + 0.16 * wf.flare).toFixed(2)})', 'rgba(255,180,60,0.32)'],
+                'rgba(255,180,60,${((0.32 + 0.16 * wf.flare) * lit).toFixed(2)})', 'rgba(255,180,60,${(0.32 * lit).toFixed(2)})'],
         ]
         for (const [name, from, to] of idxMutants) {
             ok(idxOrig.includes(from), `paintRim mutant anchor missing: ${name}`)
@@ -1258,6 +1383,62 @@ if (MUT) {
             pull(flameTownFile)
             console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
             ok(res.status !== 0, `${name} SURVIVED — the breathing-street gates stopped touching this rule`)
+        }
+    }
+
+    // 9b. night-voice / door-beat / walking-file mutants (#1756): each must
+    //     turn one of the new honest gates red — wind, hum, cut and trail law.
+    {
+        const nightTownFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'town.js')
+        const nightTown = readFileSync(nightTownFile, 'utf8')
+        const nightMutants = [
+            ['the wind never rests (silence window deleted)',
+                'if (p >= RIM_WIND.gust) return 0', 'if (p >= RIM_WIND.period) return 0'],
+            ['the wind dies (gust envelope flattened)',
+                'return Math.sin(Math.PI * p / RIM_WIND.gust)', 'return 0'],
+            ['the far lane stops hearing the well (proximity halved)',
+                'Math.abs(lane - 0) <= RIM_WELL_HUM', 'lane === 0'],
+            ['the room brightens BEFORE the street dims (cut inverted)',
+                "kind === 'out' ? (rise ? 'room' : 'rim') : (rise ? 'rim' : 'room')",
+                "kind === 'out' ? (rise ? 'rim' : 'room') : (rise ? 'room' : 'rim')"],
+            ['the file ignores the walked track (all slots pile on the newest tile)',
+                'const idx = Math.min(i, Math.max(0, hist.length - 1))', 'const idx = 0'],
+        ]
+        for (const [name, from, to] of nightMutants) {
+            ok(nightTown.includes(from), `night mutant anchor missing: ${name}`)
+            plant(nightTownFile, nightTown.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(nightTownFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the night-voice gates stopped touching this rule`)
+        }
+        const nightSimFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
+        const nightSim = readFileSync(nightSimFile, 'utf8')
+        const simMem = ["the room key drops out of townStreet (out-phase paints nothing)",
+            "{ type: 'townStreet', b: out }", "{ type: 'townStreet' }"]
+        ok(nightSim.includes(simMem[1]), 'night memory mutant anchor missing')
+        plant(nightSimFile, nightSim.replace(simMem[1], simMem[2]))
+        {
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(nightSimFile)
+            console.log(`  mut ${simMem[0]}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${simMem[0]} SURVIVED — the beat-memory gate stopped touching this rule`)
+        }
+        const nightIdxFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx')
+        const nightIdx = readFileSync(nightIdxFile, 'utf8')
+        const nightIdxMutants = [
+            ['the dimming street forgets its dim (beat paints full-bright)',
+                'paintRim(ctx, gs, bob, doorIdxOf(gs.town), cc.a)', 'paintRim(ctx, gs, bob, doorIdxOf(gs.town))'],
+            ['the walked track stops recording the point',
+                'walkHist.unshift({ x: gs.town.tx, y: gs.town.ty })', ''],
+        ]
+        for (const [name, from, to] of nightIdxMutants) {
+            ok(nightIdx.includes(from), `night source mutant anchor missing: ${name}`)
+            plant(nightIdxFile, nightIdx.replace(from, to))
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(nightIdxFile)
+            console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${name} SURVIVED — the night-presentation source pins stopped touching this rule`)
         }
     }
 

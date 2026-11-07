@@ -35,7 +35,7 @@ const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 700, height: 640 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
 const errors = []
-page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
+page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message} @ ${(e.stack || "").split("\n")[1] || ""}`))
 page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__deepTest.probe())
@@ -155,6 +155,9 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
     await tap('Space')
     const c = await probe()
     r.check('SPACE crosses the threshold you stand on', c.town && c.town.b === 'T' && c.town.services && c.town.services.length === 2, `b=${c.town && c.town.b}`)
+    // #1756: the door cuts through a black frame — give the ~12-frame beat
+    // its time before grading the room it washes in (sim truth landed at once).
+    await wait(250)
     // tavern interior: a warm wash on screen (ROOM_TINT T is hearth-brown)
     const wash = await px(8, 26, 240, 120, 'canvas[data-deep-view]', (R, G, B) => R > 24 && R >= B)
     r.check('the interior paints its room (tavern wash on screen)', wash > 200, `lit px=${wash}`)
@@ -168,9 +171,51 @@ r.check('the party strip prints HP numbers on the cards', hpLit > 40, `lit px in
     await tap('KeyL')
     const d = await probe()
     r.check('L steps back out to the street', d.town && d.town.b === null, `b=${d.town && d.town.b}`)
+    await wait(250)   // #1756: the street washes back in through the door beat — let it settle
     // amber windows of the tavern from the street (facade pixels, not stars)
     const amber = await px(12, 60, 232, 60, 'canvas[data-deep-view]', (R, G, B) => R > 180 && G > 110 && B < 110)
     r.check('the street paints lit facades', amber > 10, `amber px=${amber}`)
+    // #1756 THE DOOR CUTS THROUGH BLACK: sim truth moves the instant SPACE
+    // lands; the paint follows behind a ~12-frame frame. One synchronous
+    // probe proves both halves; cutPix drives the beat by hand for pixels so
+    // the gate never races the rAF clock.
+    {
+        const beat = await page.evaluate(() => {
+            window.__deepTest.cmd('enter-T')
+            const p = window.__deepTest.probe()
+            return p.cut ? { k: p.cut.k, f: p.cut.f, b: p.town.b } : null
+        })
+        r.check('the beat arms as sim truth moves (b flips, paint still lagging)',
+            !!beat && beat.b === 'T' && beat.k === 'in' && beat.f === -1, JSON.stringify(beat))
+        const cpA = await page.evaluate(() => window.__deepTest.cutPix('in', 0))
+        const cpB = await page.evaluate(() => window.__deepTest.cutPix('in', 6))
+        const cpC = await page.evaluate(() => window.__deepTest.cutPix('in', 10))
+        r.check('the door beat dims the moonlit street toward black',
+            cpB.moon < cpA.moon * 0.5 && cpC.moon < cpA.moon * 0.5, `moon ${cpA.moon} -> ${cpB.moon} -> ${cpC.moon}`)
+        const beatOut = await page.evaluate(() => {
+            window.__deepTest.cmd('leave')
+            const p = window.__deepTest.probe()
+            return p.cut ? { k: p.cut.k, b: p.town.b } : null
+        })
+        r.check('leaving cuts back out through the black frame', !!beatOut && beatOut.b === null && beatOut.k === 'out', JSON.stringify(beatOut))
+        await wait(250)
+        r.check('the beat settles back to still paint', (await probe()).cut === null, JSON.stringify((await probe()).cut))
+    }
+    // #1756 THE COMPANY WALKS AS A FILE: five silhouettes on the tiles the
+    // point actually stepped, stride keyed to tile parity, lane-true. Sample
+    // each slot's body ink where the road behind was empty before.
+    {
+        await page.evaluate(() => {
+            window.__deepTest.cmd('walk-near')
+            for (let i = 0; i < 6; i++) window.__deepTest.cmd('walk-right')
+        })
+        await wait(120)
+        const slots = await page.evaluate(() => window.__deepTest.trailPix())
+        r.check('a five-strong file trails the walker on its own tiles', slots.length === 5 && new Set(slots.map((s) => s.x)).size === 5, JSON.stringify(slots))
+        r.check('every silhouette paints company ink on the cobbles', slots.every((s) => s.k > 45 && s.k < 130), JSON.stringify(slots))
+        const tr = (await probe()).trail
+        r.check('the walked track records every step', tr >= 8, `trail=${tr}`)
+    }
     await tap('KeyF')
     const e = await probe()
     r.check('F at the well opens DEEP 1', e.mode === 'map' && e.floor === 0, `mode=${e.mode} floor=${e.floor}`)
