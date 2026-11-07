@@ -49,6 +49,8 @@ const KEY_P2 = {
 const MESSAGES = [
     'HOLD BACK TO BLOCK · DOWN-B LOCKS LOWS',
     'BLOCKING DRAINS YOUR GUARD — EMPTY MEANS CRUSH',
+    'MASH ATTACKS TOO FAST AND YOU STUN YOURSELF',
+    'A THROW CATCHES A JUMPER — TAP AN ATTACK TO BREAK FREE',
     'DOWN-FORWARD + PUNCH THROWS FIRE',
     'FORWARD-DOWN-UP CATCHES JUMPERS',
     'LIGHT INTO HEAVY INTO SPECIAL = COMBO',
@@ -106,6 +108,7 @@ const IronRingGame = () => {
         let shake = 0, flashT = 0, bannerT = 0, bannerText = ''
         let comboFx = [0, 0], comboVal = [0, 0]
         let crushFx = [0, 0] // #1761 item 5: white-hot flash on the crushed side
+        let stunFx = [0, 0] // #1785: daze flash on the stunned side
         let lagHp = [100, 100]
         let rigs = null
         let nextSend = 0
@@ -243,9 +246,11 @@ const IronRingGame = () => {
             const human2 = m !== 'cpu'
             // #1761 item 5: the cabinet runs the guard-crush gauge — blocking
             // drains it, an empty guard CRUSHES into a punishable stagger.
-            gs = createMatch({ seed: sd, guardCrush: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
+            // #1785: the v2 remainder — inputStun (mashing stuns you) and
+            // airThrow (a throw catches jumpers; a tap breaks the grab).
+            gs = createMatch({ seed: sd, guardCrush: true, inputStun: true, airThrow: true, p1: { ...d1, cpu: false }, p2: human2 ? { ...d2raw, cpu: false } : d2raw })
             lagHp = [gs.fighters[0].hp, gs.fighters[1].hp]
-            comboFx = [0, 0]; comboVal = [0, 0]; crushFx = [0, 0]
+            comboFx = [0, 0]; comboVal = [0, 0]; crushFx = [0, 0]; stunFx = [0, 0]
             padMirror[0].clear(); padMirror[1].clear()
             oursH.clear(); peerH.clear()
             nextSend = 0
@@ -397,7 +402,7 @@ const IronRingGame = () => {
         const attractDemo = () => {
             seedCounter = (seedCounter + 0x9e3779b9) >>> 0
             const a = BY_ID.vexa, b = BY_ID.hyde
-            gs = createMatch({ seed: seedCounter | 1, guardCrush: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
+            gs = createMatch({ seed: seedCounter | 1, guardCrush: true, inputStun: true, airThrow: true, p1: { ...a, cpu: true }, p2: { ...b, cpu: true } })
             stage = STAGES[seedCounter % STAGES.length]
             p1Char = 'vexa'; p2Char = 'hyde'
             rebuildRigs(); rebuildStage()
@@ -455,6 +460,29 @@ const IronRingGame = () => {
                     bannerText = 'GUARD BREAK'; bannerT = 75
                     crushFx[d.side] = 22
                     scene.spark(d.x, 1.3, 0xcfe8ff)
+                } else if (e.kind === 'stunned') {
+                    // #1785 input stun — the masher is dazed: a wobbly ring-down
+                    // on the low end, a daze flash on the side that over-mashed.
+                    const d = m.fighters[e.by]
+                    audioController.playSweep(560, 140, 0.3, 'square', 0.08)
+                    audioController.playTone(110, 0.14, 'square', 0.09)
+                    bannerText = 'STUNNED'; bannerT = 60
+                    stunFx[d.side] = 20
+                    scene.spark(d.x, 1.5, 0xc76bff)
+                } else if (e.kind === 'airgrab') {
+                    // #1785 air grab — a throw catches a jumper: a taut snap,
+                    // the victim is wrenched into the escape window.
+                    const d = m.fighters[e.by === 0 ? 1 : 0]
+                    audioController.playTone(240, 0.05, 'square', 0.11)
+                    audioController.playNoise(0.04, 0.08)
+                    shake = Math.max(shake, 4)
+                    bannerText = 'AIR GRAB'; bannerT = 40
+                    scene.spark(d.x, d.y + 1.2, 0xffd23e)
+                } else if (e.kind === 'airescape') {
+                    // #1785 the escape — the jumper breaks free: a rising whoosh.
+                    const d = m.fighters[e.by]
+                    audioController.playSweep(180, 720, 0.18, 'square', 0.09)
+                    scene.spark(d.x, d.y + 1.2, 0x8affc0)
                 }
             }
         }
@@ -572,6 +600,24 @@ const IronRingGame = () => {
                             crushFx[i]--
                             hctx.fillStyle = `rgba(255,255,255,${(crushFx[i] / 22).toFixed(2)})`
                             hctx.fillRect(mx - 2, gy - 2, mw + 4, gh + 4)
+                        }
+                    }
+                    // #1785: the input-stun meter — violet while it builds,
+                    // flashing as the masher runs out of headroom, magenta
+                    // while the stagger holds.
+                    {
+                        const sfrac = Math.max(0, Math.min(1, f[i].stunMeter / 100))
+                        const isStunned = f[i].st === 'stunned'
+                        const sy = gy - gh - Math.max(4, H * 0.012)
+                        const sh = Math.max(3, H * 0.008)
+                        hctx.fillStyle = isStunned ? '#2a0d24' : '#141026'
+                        hctx.fillRect(mx, sy, mw, sh)
+                        hctx.fillStyle = isStunned ? '#ff5af0' : (sfrac > 0.7 ? (((gs.tick >> 3) & 1) ? '#ffd23e' : '#c76bff') : '#8a5ad0')
+                        hctx.fillRect(i === 0 ? mx : mx + mw - mw * sfrac, sy, mw * sfrac, sh)
+                        if (stunFx[i] > 0) {
+                            stunFx[i]--
+                            hctx.fillStyle = `rgba(255,255,255,${(stunFx[i] / 20).toFixed(2)})`
+                            hctx.fillRect(mx - 2, sy - 2, mw + 4, sh + 4)
                         }
                     }
                     if (comboFx[i] > 0) {
@@ -791,14 +837,25 @@ const IronRingGame = () => {
         // ---- dev hooks -----------------------------------------------------------------------
         if (import.meta.env.DEV) {
             window.__ironRingTest = {
-                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), combo: gs.fighters.map((f) => f.combo), guard: gs.fighters.map((f) => Math.round(f.guard)), banner: bannerText, credits, continueFrames, opponent: p2Char, ladderIdx, p1: p1Char, p2: p2Char, champion: championChar, quote: screenRef.current === 'champion' ? matchupLine(championChar, p2Char, 'win') : screenRef.current === 'continue' ? matchupLine(p2Char, p1Char, 'win') : null } : null },
+                get state() { return gs ? { phase: gs.phase, tick: gs.tick, screen: screenRef.current, mode, x: gs.fighters.map((f) => +f.x.toFixed(2)), hp: gs.fighters.map((f) => f.hp), wins: gs.fighters.map((f) => f.wins), st: gs.fighters.map((f) => f.move || f.st), stt: gs.fighters.map((f) => f.st), combo: gs.fighters.map((f) => f.combo), guard: gs.fighters.map((f) => Math.round(f.guard)), stun: gs.fighters.map((f) => Math.round(f.stunMeter)), y: gs.fighters.map((f) => +f.y.toFixed(2)), banner: bannerText, credits, continueFrames, opponent: p2Char, ladderIdx, p1: p1Char, p2: p2Char, champion: championChar, quote: screenRef.current === 'champion' ? matchupLine(championChar, p2Char, 'win') : screenRef.current === 'continue' ? matchupLine(p2Char, p1Char, 'win') : null } : null },
                 setChars(a, b) { p1Char = a; p2Char = b; startFight(7, mode === 'cpu' ? 'cpu' : mode) },
                 start() { p1Char = 'kade'; p2Char = LADDER[0]; ladderIdx = 0; mode = 'cpu'; startFight(7, 'cpu') },
                 koP2() { if (gs) forceKO(gs, 0) },
                 koP1() { if (gs) forceKO(gs, 1) },
                 // #1761 item 5: seat P2's guard crushed at the sim level; the
                 // synthetic event rides hearEvents exactly like a real crush.
-                forceCrush() { if (gs) { const d = gs.fighters[1]; d.st = 'crush'; d.stun = 46; d.sf = 0; d.guard = 0; d.hp = Math.max(1, d.hp - 7); gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'crush', by: 0, dmg: 7 }) } },
+                // (The committed move is dropped — a shattered guard releases
+                // it, and state.st reports move-first, so a stale move would
+                // hide the crush from the gate.)
+                forceCrush() { if (gs) { const d = gs.fighters[1]; d.st = 'crush'; d.stun = 46; d.sf = 0; d.guard = 0; d.move = null; d.phase = ''; d.hp = Math.max(1, d.hp - 7); gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'crush', by: 0, dmg: 7 }) } },
+                // #1785: seat P2 input-stunned at the sim level; the synthetic
+                // event rides hearEvents exactly like a real stun.
+                forceStun() { if (gs) { const d = gs.fighters[1]; d.st = 'stunned'; d.stun = 90; d.sf = 0; d.stunMeter = 100; d.move = null; d.phase = ''; gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'stunned', by: 1 }) } },
+                // #1785: put P2 in an air-grab window at the sim level (the
+                // CPU is benched for the check — a 1P-mode CPU would mash its
+                // own escape out of the window). setChars re-seats the CPU
+                // when the next gate rebuilds the match.
+                forceAirGrab() { if (gs) { const d = gs.fighters[1]; d.def.cpu = false; d.st = 'airthrow'; d.stun = 10; d.sf = 0; d.move = null; d.phase = ''; d.y = Math.max(d.y, 0.5); d.vy = Math.max(d.vy, 0.03); d.vx = 0; gs.hitstop = Math.max(gs.hitstop, 8); gs.events.push({ t: gs.tick, kind: 'airgrab', by: 0 }) } },
                 expireContinue() { continueFrames = 1 },
                 setLadder(i) { ladderIdx = i },
                 // #1637 watchcheck pilot drives these.

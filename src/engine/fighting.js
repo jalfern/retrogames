@@ -38,6 +38,20 @@ export const GUARD_MAX = 100
 export const CRUSH_FRAMES = 46
 export const CRUSH_CHIP = 7
 export const GUARD_REGEN = 0.35
+// Input stun (#1785, the v2 backlog's second stagger): mashing attacks fills a
+// hidden meter; at full the fighter is STUNNED — a stagger that cannot attack
+// (walking and stand-block still work). Off by default so other consumers stay
+// bit-identical; createMatch({ inputStun: true }) turns it on.
+export const STUN_MAX = 100
+export const STUN_FRAMES = 90
+export const STUN_FILL = 12
+export const STUN_REGEN = 0.3
+// Air-escapable throws (#1785, the v2 backlog's third entry): a throw that
+// connects on a CONTROLLABLE airborne victim starts an escape window — any
+// attack button in the window breaks the grab (the jump continues); when the
+// window closes the throw lands. A helpless (hitair) victim still eats it.
+// Off by default; createMatch({ airThrow: true }) turns it on.
+export const AIR_GRAB_FRAMES = 10
 
 // ---- rng (mulberry32 — the repo's seeded stream) ------------------------------
 export function mulberry32(a) {
@@ -78,7 +92,7 @@ function createFighter(def, side) {
         def, side,
         x: side === 0 ? -2.6 : 2.6, y: 0, vx: 0, vy: 0,
         facing: side === 0 ? 1 : -1,
-        hp: def.hp || 100, meter: 0, guard: GUARD_MAX,
+        hp: def.hp || 100, meter: 0, guard: GUARD_MAX, stunMeter: 0,
         st: 'idle', sf: 0, move: null, phase: '', hitOnce: {},
         blockHeld: false, crouchBlock: false,
         buf: [], press: null, btnBuf: null,
@@ -98,6 +112,8 @@ export function createMatch(cfg) {
         guardButton: !!cfg.guardButton,
         juggle: !!cfg.juggle,
         guardCrush: !!cfg.guardCrush,
+        inputStun: !!cfg.inputStun,
+        airThrow: !!cfg.airThrow,
         rng: mulberry32((seed >>> 0) ^ 0x1234abc9),
         tick: 0, phase: 'intro', phaseT: INTRO_FREEZE,
         timer: time * 60, hitstop: 0, round: 1,
@@ -122,6 +138,7 @@ export function resetRound(m) {
         f.combo = 0; f.comboTimer = 0
         f.juggled = 0
         f.guard = GUARD_MAX
+        f.stunMeter = 0
         f.cpuScript = []; f.cpuCool = 40
     }
     m.projectiles = []
@@ -233,13 +250,22 @@ function pressKey(f, pad) {
     return null
 }
 
+// how many attack buttons went down this tick (input-stun fills per press —
+// a mash, not a held button, is the offense)
+function countPresses(pad, prev) {
+    let n = 0
+    for (const k of BTN_ORDER) if (pad[k] && !(prev && prev[k])) n++
+    return n
+}
+
 // ---- per-fighter update -------------------------------------------------------------
 function updateFighter(m, f, opp, pad) {
     const mv = f.def.moves
     const dir = dirToken(pad, f.facing)
     const fwd = dir === 'f' || dir === 'df' || dir === 'uf'
     const back = dir === 'b' || dir === 'db' || dir === 'ub'
-    const groundedIdle = f.y === 0 && (f.st === 'idle' || f.st === 'crouch' || f.st === 'blockstun')
+    // a stunned fighter still stands the guard (holding back blocks)
+    const groundedIdle = f.y === 0 && (f.st === 'idle' || f.st === 'crouch' || f.st === 'blockstun' || f.st === 'stunned')
     if (m.guardButton) {
         f.blockHeld = !!pad.bk && groundedIdle
         f.crouchBlock = f.blockHeld && (pad.down || dir === 'd' || dir === 'db')
@@ -321,6 +347,19 @@ function updateFighter(m, f, opp, pad) {
             if (f.sf >= f.stun) { f.st = (pad.down || dir === 'd') && f.y === 0 ? 'crouch' : 'idle'; f.sf = 0; if (m.guardCrush) f.guard = GUARD_MAX }
             break
         }
+        case 'stunned': {
+            // input-stun stagger: the mashing was the offense — attacks and
+            // jumps are dead, but the feet still walk and hold-back still
+            // blocks. The meter resets full-when-free when it wears off.
+            if (f.y === 0) {
+                const wm = f.def.walkMul || 1
+                if (fwd) f.vx = WALK_F * wm * f.facing
+                else if (back) f.vx = -WALK_B * wm * f.facing
+                else f.vx = 0
+            }
+            if (f.sf >= f.stun) { f.st = 'idle'; f.sf = 0; f.stunMeter = 0 }
+            break
+        }
         case 'hitstun': {
             if (f.y > 0) { f.vx *= 0.985 } else f.vx *= 0.8
             if (f.sf >= f.stun) {
@@ -332,6 +371,22 @@ function updateFighter(m, f, opp, pad) {
         case 'hitair': {
             if (m.juggle) f.vx *= 0.8
             if (f.y <= 0 && f.vy <= 0) { f.y = 0; f.vy = 0; f.st = 'down'; f.sf = 0; f.juggled = 0 }
+            break
+        }
+        case 'airthrow': {
+            // air-grab window: held in the air while the grab decides — any
+            // attack button breaks the grab and keeps the jump; when the
+            // window closes the throw lands through resolveHit.
+            f.vx = 0
+            const esc = pressKey(f, pad)
+            if (esc) {
+                f.st = 'jump'; f.sf = 0
+                m.events.push({ t: m.tick, kind: 'airescape', by: f.side })
+            } else if (f.sf >= f.stun) {
+                const tvm = opp.def && opp.def.moves ? opp.def.moves.throw : null
+                if (tvm) resolveHit(m, opp, f, tvm, opp.side)
+                if (f.st === 'airthrow') { f.st = 'jump'; f.sf = 0 } // whiffed (juggle lock) — land free
+            }
             break
         }
         case 'down': {
@@ -364,6 +419,16 @@ function updateFighter(m, f, opp, pad) {
     f.x = Math.max(-WALL, Math.min(WALL, f.x))
 
     if (m.guardCrush && f.st !== 'blockstun' && f.st !== 'crush') f.guard = Math.min(GUARD_MAX, f.guard + GUARD_REGEN)
+
+    // input-stun: the meter regens while free; a full meter on a grounded or
+    // committed state STUNS (a helpless victim can't input-stun itself — the
+    // trigger waits for a state the fighter controls again)
+    if (m.inputStun && f.st !== 'stunned') f.stunMeter = Math.max(0, f.stunMeter - STUN_REGEN)
+    if (m.inputStun && f.stunMeter >= STUN_MAX && f.st !== 'stunned' &&
+        (f.st === 'idle' || f.st === 'crouch' || f.st === 'attack' || f.st === 'blockstun' || f.st === 'jump')) {
+        f.st = 'stunned'; f.stun = STUN_FRAMES; f.sf = 0; f.move = null
+        m.events.push({ t: m.tick, kind: 'stunned', by: f.side })
+    }
 
     if (f.comboTimer > 0) { f.comboTimer--; if (f.comboTimer === 0) f.combo = 0 }
 }
@@ -406,7 +471,17 @@ function resolveHit(m, atk, def, move, seq) {
         def.st !== 'down' && def.st !== 'getup' && def.st !== 'hitstun' && def.st !== 'hitair' && def.st !== 'crush' &&
         (!move.low || def.crouchBlock) && (!move.overhead || !def.crouchBlock)
     const raw = move.dmg
-    if (blocked) {
+    const defStunned = def.st === 'stunned'
+    // air-escapable throw: a throw on a JUMPING (controllable, uncommitted)
+    // airborne victim is a grab with an escape window, not a guaranteed hit
+    // (#1785). A helpless (hitair) or committed (aerial attack) victim eats
+    // the throw — and the deferred landing call (def already 'airthrow')
+    // falls straight through to the hit path below.
+    const airGrab = m.airThrow && move.type === 'throw' && def.y > 0 && def.st === 'jump'
+    if (airGrab) {
+        def.st = 'airthrow'; def.stun = AIR_GRAB_FRAMES; def.sf = 0; def.vx = 0
+        m.events.push({ t: m.tick, kind: 'airgrab', by: atk.side })
+    } else if (blocked) {
         def.st = 'blockstun'; def.stun = move.blockstun; def.sf = 0
         def.vx = move.push * (maxHits > 1 && !finalHit ? 0.15 : 0.5) * (def.facing === 1 ? -1 : 1)
         def.meter = Math.min(100, def.meter + raw * 0.35)
@@ -456,6 +531,9 @@ function resolveHit(m, atk, def, move, seq) {
             m.banner = 'FINISH!'
         } else if (def.hp <= 0) koRound(m, atk)
     }
+    // any hit (blocked or clean) interrupts an input-stun: the stagger ends
+    // and the meter starts over
+    if (defStunned) def.stunMeter = 0
     if (atk.st === 'attack') {
         const lg = atk.hitOnce[seq] || (atk.hitOnce[seq] = { n: 0, last: -99 })
         lg.n++; lg.last = m.tick
@@ -612,6 +690,9 @@ function senseInputs(m, pads) {
         const f = m.fighters[i]
         const pad = f.def.cpu ? cpuPad(m, f, m.fighters[i === 0 ? 1 : 0]) : pads[i === 0 ? 0 : 1] || emptyPad()
         padsIn[i] = pad
+        // input-stun: every fresh attack press fills the hidden meter; the
+        // meter is frozen (and the stun holds) once the stagger is on
+        if (m.inputStun && f.st !== 'stunned') f.stunMeter = Math.min(STUN_MAX, f.stunMeter + STUN_FILL * countPresses(pad, f.padPrev))
         f.facing = m.fighters[i === 0 ? 1 : 0].x >= f.x ? 1 : -1
         if (f.st === 'attack' || f.st === 'hitstun' || f.st === 'blockstun' || f.st === 'down' || f.st === 'getup' || f.st === 'hitair' || f.st === 'crush') {
             // keep facing locked mid-commit for fairness
@@ -777,7 +858,7 @@ function hashStr(s) {
 export function fightersState(m) {
     return m.fighters.map((f) => ({
         id: f.def.id, name: f.def.name, x: f.x, y: f.y, vx: f.vx, hp: f.hp, meter: f.meter,
-        guard: f.guard,
+        guard: f.guard, stunMeter: f.stunMeter,
         facing: f.facing, st: f.st, sf: f.sf, move: f.move, phase: f.phase, wins: f.wins,
         combo: f.combo,
     }))
