@@ -246,17 +246,48 @@ export { windBias }
 // wind is heard before it is seen); ladderCreak is the load creak a gale
 // puts on an extended ladder, the cue seat 3 needs without looking at the
 // vane — null (silence) unless the wind load and the ladder both exist.
-const windVoice = (gust) => (
-    gust >= 2 ? { vol: 0.085, freq: 380, dur: 0.55 }
+// #1749 — the wind has a DIRECTION, and the shift is telegraphed. The
+// directional bed leans into the compass: a horizontal wind (E/W) tilts the
+// bed's pitch by a fixed, honest amount (E lifts, W sinks), and a cross-wind
+// (N/S) carries a second, quieter burst an octave lower — the mix has no pan,
+// so the octave shadow is how a gale reads "from the other side". CALM
+// (dir -1) or an omitted dir stays the centered voice, so the #1744 law
+// (and every old gate) holds untouched. Still rng-free: replays, hashes and
+// the autopilot are untouched.
+const windVoice = (gust, dir = -1) => {
+    const main = gust >= 2 ? { vol: 0.085, freq: 380, dur: 0.55 }
         : gust === 1 ? { vol: 0.04, freq: 260, dur: 0.5 }
             : { vol: 0, freq: 200, dur: 0.4 }
-)
+    if (main.vol === 0) return main
+    if (!Number.isInteger(dir) || dir < 0 || dir > 3) return main
+    const d = DIRS[dir]
+    if (d[0] !== 0) return { ...main, freq: main.freq + d[0] * 30 }
+    return { ...main, second: { vol: +(main.vol * 0.45).toFixed(4), freq: main.freq / 2, dur: +(main.dur * 0.8).toFixed(2) } }
+}
 const ladderCreak = (gust, ladder) => (
     gust >= 2 && ladder > 0.4
         ? { vol: 0.05 + Math.min(0.05, ladder * 0.05), f0: 140, f1: 70, dur: 0.22 }
         : null
 )
-export { windVoice, ladderCreak }
+// Vane pre-whistle: a rising figure in the last WIND_TELEGRAPH ticks before
+// the wind turns — seat 3 hears the shift coming and braces instead of
+// reacting (the sim already knows when the wind will change; now it is heard).
+// The urgency is a pure function of the countdown: one fixed f0, a climbing
+// f1, a voice that thickens as the shift lands.
+export const WIND_TELEGRAPH = 60
+const windWhistle = (remaining) => {
+    if (!Number.isFinite(remaining) || remaining <= 0 || remaining > WIND_TELEGRAPH) return null
+    const u = (WIND_TELEGRAPH - remaining + 1) / WIND_TELEGRAPH
+    return { f0: 240, f1: 240 + Math.round(u * 520), dur: 0.6, vol: +(0.02 + u * 0.025).toFixed(4) }
+}
+// Win/lose tails: the original ends each screen with crowd/machinery
+// ambience — a lowpassed murmur under the jingle, quieter than the jingle it
+// rides (win arpeggio 0.09, lose descent 0.08).
+const crewTail = (win) => (
+    win ? { dur: 1.2, vol: 0.05, freq: 520 }
+        : { dur: 1.8, vol: 0.06, freq: 300 }
+)
+export { windVoice, ladderCreak, windWhistle, crewTail }
 
 function spreadAndBurn(g) {
     const rng = g.rng

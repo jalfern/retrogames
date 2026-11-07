@@ -71,7 +71,7 @@ see a different slice of the smoke. RETRO bar, 480x320, everything synthesized.
 ## Verify
 
 ```bash
-npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art (104)
+npm run firecrewcheck      # Node gate: boots, rules, wins 8/10 seeds, wiring, night art (131)
 npm run attractcheck -- --mutate   # attract rules + 6 FIRE CREW mutants die
 npm run lint:firecrew
 npm run dev -- --port 5173 --strictPort   # then /retrogames/fire-crew
@@ -103,6 +103,39 @@ routes through the wind law"); restore afterwards.
     — the two creak gates go red.
   - routing: swap `windVoice(g.wind.gust)` in `index.jsx` for a literal voice —
     the bed src pin goes red.
+
+- Wind direction, the pre-whistle, the jingle tails — **CLOSED by #1749**
+  (the audio/feel remainder of the polish pass; the truck silhouette, smoke-dim
+  fire and crew breathe remain open under #1766): `windVoice(gust, dir)` now leans into the
+  compass — a horizontal wind (E/W) tilts the bed's pitch by a fixed ±30 Hz
+  (E lifts, W sinks), and a cross-wind (N/S) carries a second, quieter burst an
+  octave lower (the mix has no pan, so the octave shadow is how a gale reads
+  "from the other side"); CALM/omitted dir stays the centered #1744 voice.
+  `windWhistle(remaining)` is the vane pre-whistle: a rising figure in the last
+  60 ticks before the wind turns (one fixed f0 240, climbing f1 to 760,
+  thickening vol) so seat 3 braces instead of reacting — the sim already knew
+  `wind.next`; now it is heard. `crewTail(win)` is the crowd/machinery murmur
+  under the win/lose jingle (ducked: 0.05/0.06 vs the jingle's 0.09/0.08; the
+  loss tail is darker and lingers longer). All three are pure, rng-free specs
+  in `sim.js` — replays, hashes and the autopilot are untouched. `index.jsx`
+  fires them: the cross-wind shadow through a new `playFilteredNoise` delay
+  param (0.15 s under the bed), the whistle at most one shot per 15 ticks on
+  the sim countdown, the tail 0.1 s into the jingle. `firecrewcheck` +19 gates
+  (tilt amounts, shadow shape, window, climb ≥ a fifth, pinned max, duck
+  contract, four src routing pins); `firecrewplay` +3 browser gates on real
+  rAF ticks (cross-wind shadow fires, east gale lifts without shadow, the
+  whistle fires and climbs before the shift lands). Mutants (one line each,
+  in `sim.js`):
+  - tilt: `sed -i '' 's/freq: main.freq + d\[0\] \* 30/freq: main.freq/' src/games/FireCrew/sim.js`
+    — the east/west tilt gates (three) go red.
+  - shadow: `sed -i '' 's/freq: main.freq \/ 2/freq: main.freq/' src/games/FireCrew/sim.js`
+    — "a cross-wind carries a quieter, shorter burst an octave lower" goes red.
+  - whistle climb: `sed -i '' 's/u \* 520/u * 52/' src/games/FireCrew/sim.js`
+    — the climb and max-urgency gates go red.
+  - window: `sed -i '' 's/export const WIND_TELEGRAPH = 60/export const WIND_TELEGRAPH = 120/' src/games/FireCrew/sim.js`
+    — the window and silence gates go red.
+  - tails: `sed -i '' 's/win ? { dur: 1.2, vol: 0.05, freq: 520 }/win ? { dur: 1.8, vol: 0.06, freq: 300 }/' src/games/FireCrew/sim.js`
+    — "the loss tail is darker and lingers longer" goes red.
 
 ## Shipped since the first pass
 

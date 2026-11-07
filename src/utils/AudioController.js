@@ -557,8 +557,10 @@ class AudioController {
     }
 
     // a lowpassed noise burst (a crowd murmur, a whoosh) — playNoise's raw
-    // crackle reads as static, a bed needs the filter
-    playFilteredNoise(duration, vol = 0.2, freq = 800) {
+    // crackle reads as static, a bed needs the filter. #1749: the optional
+    // delay lets a title layer a second burst under the first (a cross-wind
+    // octave shadow, a murmur under a jingle) without a new API.
+    playFilteredNoise(duration, vol = 0.2, freq = 800, delay = 0) {
         if (this.muted || !this.ctx) return
         this.sfx++
         const sr = this.ctx.sampleRate
@@ -568,10 +570,11 @@ class AudioController {
         const noise = this.ctx.createBufferSource(); noise.buffer = buffer
         const lp = this.ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = freq
         const gain = this.ctx.createGain()
-        gain.gain.setValueAtTime(vol, this.ctx.currentTime)
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
+        const t = this.ctx.currentTime + delay
+        gain.gain.setValueAtTime(vol, t)
+        gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
         noise.connect(lp); lp.connect(gain); gain.connect(this.ctx.destination)
-        noise.start()
+        noise.start(t)
     }
 
     // pan (-1..1, or null) tilts the sweep across the stereo field — opt-in:
