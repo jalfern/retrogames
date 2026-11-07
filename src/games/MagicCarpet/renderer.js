@@ -78,6 +78,10 @@ const SPRITES = {
     castle3: { l: -16.5, r: 16.5, t: 35.4, b: -1.6, wh: 20, ww: 11 },
     castle4: { l: -16.5, r: 16.5, t: 46.4, b: -1.6, wh: 26, ww: 11 },
     towerUp: { l: -6.4, r: 6.4, t: 19.6, b: -1.4, wh: 13, ww: 4.4 },
+    // #1764 item 2 — the rival's castle as it grows: wall, turrets, keep.
+    wizCastle1: { l: -13, r: 13, t: 19.6, b: -1.6, wh: 12, ww: 9 },
+    wizCastle2: { l: -16.5, r: 16.5, t: 19.6, b: -1.6, wh: 12, ww: 11 },
+    wizCastle3: { l: -16.5, r: 16.5, t: 27, b: -1.6, wh: 15, ww: 11 },
     towerFall: { l: -10.4, r: 10.4, t: 8.4, b: -1.4, wh: 4.6, ww: 8 },
     wizard: { l: -5, r: 5, t: 12.8, b: -1.4, wh: 3.4, ww: 2.2 },
     giant: { l: -5.6, r: 5.6, t: 16.4, b: -0.4, wh: 7, ww: 2.4 },
@@ -136,6 +140,9 @@ function bakeAtlas() {
     blit('castle3', (u) => drawCastle(ctx, u.cx, u.cy, u.k, 3))
     blit('castle4', (u) => drawCastle(ctx, u.cx, u.cy, u.k, 4))
     blit('towerUp', (u) => drawTower(ctx, u.cx, u.cy, u.k, 6, true, false))
+    blit('wizCastle1', (u) => drawTower(ctx, u.cx, u.cy, u.k, 6, true, false, 1))
+    blit('wizCastle2', (u) => drawTower(ctx, u.cx, u.cy, u.k, 6, true, false, 2))
+    blit('wizCastle3', (u) => drawTower(ctx, u.cx, u.cy, u.k, 6, true, false, 3))
     blit('towerFall', (u) => drawTower(ctx, u.cx, u.cy, u.k, 6, true, true))
     blit('wizard', (u) => drawWizard(ctx, u.cx, u.cy, u.k, 6))
     blit('giant', (u) => drawGiant(ctx, u.cx, u.cy, u.k, 6, false))
@@ -691,6 +698,8 @@ void main(){
             else if (e.type === 'ignite') { addScorch(e.x, e.y, 5, 0.3) }
             else if (e.type === 'hutDown') { spawnBurst(gs, e.x, e.y, 5, [1.2, 0.5, 0.2]); addScorch(e.x, e.y, 6, 0.4) }
             else if (e.type === 'towerDown') { spawnBurst(gs, e.x, e.y, 14, [1.0, 0.45, 0.2]); addScorch(e.x, e.y, 12, 0.5) }
+            // #1764: the growth reads as violet rune-dust off the rising works
+            else if (e.type === 'wizGrow') spawnBurst(gs, e.x, e.y, 14, [0.85, 0.5, 1.5])
             else if (e.type === 'wizardDown') { spawnBurst(gs, e.x, e.y, 22, [1.4, 0.5, 0.3]); addScorch(e.x, e.y, 18, 0.6) }
             else if (e.type === 'kill') spawnCrumble(gs, e.x, e.y, e.kind)
             else if (e.type === 'crumble') spawnGrit(gs, e)
@@ -815,7 +824,7 @@ void main(){
             }
         }
         const wz = gs.wizard
-        pushSpr(gs.towerDown ? 'towerFall' : 'towerUp', wz.tx, wz.ty, gz(wz.tx, wz.ty), [1, 1, 1], 1)
+        pushSpr(gs.towerDown ? 'towerFall' : gs.wizStage >= 1 ? `wizCastle${gs.wizStage}` : 'towerUp', wz.tx, wz.ty, gz(wz.tx, wz.ty), [1, 1, 1], 1)
         if (wz.alive) {
             pushSpr('wizard', wz.x, wz.y, gz(wz.x, wz.y) + 9 + Math.sin(gs.tick * 0.05) * 1.6, [1.15, 0.85, 1.25], 1)
             if (wz.lostT > 0) pushSpr('quest', wz.x, wz.y, gz(wz.x, wz.y) + 24 + Math.sin(gs.tick * 0.22) * 1.2, [1.5, 1.25, 0.5], wz.lostT > 8 ? 0.95 : wz.lostT / 8)
@@ -840,6 +849,7 @@ void main(){
             else if (p.kind === 'bolt') pushSpr('bolt', p.x, p.y, p.z, [1, 1, 1], 1)
             else if (p.kind === 'rock') pushSpr('rock', p.x, p.y, p.z, [1, 1, 1], 1)
             else if (p.kind === 'arrow') pushSpr('arrow', p.x, p.y, p.z, [1, 1, 1], 1)
+            else if (p.kind === 'tarrow') pushSpr('arrow', p.x, p.y, p.z, [0.75, 0.55, 1.15], 1) // #1764: the wizard's own arrows ride a violet tint
             else if (p.kind === 'throw') pushSpr('throw', p.x, p.y, p.z, [1, 1, 1], 1)
         }
         if (gs.heldEnt) {

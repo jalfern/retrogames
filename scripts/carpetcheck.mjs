@@ -287,6 +287,76 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         `down=${down} towerDown=${gs.towerDown} hp ${hp0}→${gs.wizard.hp}`)
 }
 
+// ---- #1764 item 2: the rival wizard's castle grows over world time
+{
+    const gs = makeGame(7)
+    r.check('the rival castle starts at its foundations (fresh world: stage 0, worldT 0)',
+        gs.wizStage === 0 && gs.worldT === 0, `stage=${gs.wizStage} worldT=${gs.worldT}`)
+    for (let i = 0; i < 1800; i++) step(gs, () => ({}))
+    r.check('30s of world time raises the rival castle to stage 1 (curtain wall)',
+        gs.wizStage === 1, `stage=${gs.wizStage} worldT=${gs.worldT}`)
+    for (let i = 0; i < 3600; i++) step(gs, () => ({}))
+    r.check('the longer the world is held the taller the rival builds (stage 3 keep)',
+        gs.wizStage === 3, `stage=${gs.wizStage} worldT=${gs.worldT}`)
+    const grown = gs.events.some((e) => e.type === 'wizGrow' && e.n === 3)
+    r.check('each raising is announced (wizGrow events ride the log)',
+        [1, 2, 3].every((n) => gs.events.some((e) => e.type === 'wizGrow' && e.n === n)))
+    // the tell is per-world: the next wizard starts over
+    const preStage = gs.wizStage
+    gs.bank = gs.quota
+    step(gs, () => ({}))
+    r.check('a level transition starts the next wizard\'s castle at its foundations',
+        preStage === 3 && gs.level === 1 && gs.wizStage === 0 && gs.worldT === 0,
+        `pre=${preStage} level=${gs.level} stage=${gs.wizStage} worldT=${gs.worldT}`)
+}
+{
+    // a grown castle defends itself; a blind or distant carpet is left alone
+    const gs = makeGame(7)
+    gs.quota = 9999
+    gs.wizStage = 1
+    gs.invis = 0
+    gs.x = wrap(gs.wizard.tx + 70, MAP); gs.y = gs.wizard.ty
+    gs.alt = sampleH(gs, gs.x, gs.y) + 30
+    const n0 = gs.projs.length
+    step(gs, () => ({}))
+    const shots = gs.projs.filter((p) => p.from === 't')
+    r.check('the grown tower looses a violet arrow at a visible carpet inside reach',
+        gs.projs.length === n0 + 1 && shots.length === 1 && shots[0].kind === 'tarrow' && shots[0].dmg === 2,
+        `projs ${n0}→${gs.projs.length} from-t=${shots.length}`)
+    gs.invis = 30; gs.wizGuardFire = 0
+    const n1 = gs.projs.length
+    step(gs, () => ({}))
+    r.check('the veil holds the tower\'s shots (a blind castle fires at nothing)',
+        gs.projs.length === n1, `projs ${n1}→${gs.projs.length}`)
+    gs.invis = 0; gs.wizGuardFire = 0
+    gs.x = wrap(gs.wizard.tx + 160, MAP); gs.y = gs.wizard.ty
+    const n2 = gs.projs.length
+    step(gs, () => ({}))
+    r.check('the tower holds while the carpet sits outside its 110u reach',
+        gs.projs.length === n2, `projs ${n2}→${gs.projs.length}`)
+    // stage 0 never fires
+    const gs0 = makeGame(7); gs0.quota = 9999
+    gs0.x = wrap(gs0.wizard.tx + 70, MAP); gs0.y = gs0.wizard.ty; gs0.invis = 0
+    const n3 = gs0.projs.length
+    step(gs0, () => ({}))
+    r.check('the unbuilt tower (stage 0) has nothing to fire from',
+        gs0.projs.length === n3 && !gs0.projs.some((p) => p.from === 't'))
+    // a felled tower never rebuilds and never fires
+    const gd = makeGame(7); gd.quota = 9999
+    toppleTower(gd, gd.wizard.tx, gd.wizard.ty)
+    for (let i = 0; i < 5400; i++) step(gd, () => ({}))
+    r.check('a toppled tower never rebuilds', gd.towerDown && gd.wizStage === 0,
+        `down=${gd.towerDown} stage=${gd.wizStage} worldT=${gd.worldT}`)
+    r.check('a toppled tower never fires (ruins hold no guards)',
+        !gd.projs.some((p) => p.from === 't') && !gd.events.some((e) => e.type === 'towerFire'))
+    // dead wizard builds nothing
+    const gk = makeGame(7); gk.quota = 9999
+    gk.wizard.alive = false
+    for (let i = 0; i < 5400; i++) step(gk, () => ({}))
+    r.check('a slain wizard raises no walls (growth freezes with the defeat)',
+        gk.wizStage === 0, `stage=${gk.wizStage}`)
+}
+
 // ---- mana conservation through a real campaign (vault + pouch + pearls + hoard)
 {
     const gs = makeGame(7)

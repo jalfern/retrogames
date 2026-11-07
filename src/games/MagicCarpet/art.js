@@ -78,7 +78,7 @@ export function drawCastle(ctx, x, y, k, stage) {
     ctx.globalAlpha = 1
 }
 
-export function drawTower(ctx, x, y, k, f, alive, toppled) {
+export function drawTower(ctx, x, y, k, f, alive, toppled, stage = 0) {
     if (toppled) {
         px(ctx, x - 8 * k, y - 2.4 * k, 16 * k, 2.4 * k, '#41394f')
         px(ctx, x - 6 * k, y - 6 * k, 5 * k, 3.6 * k, '#362e44')
@@ -101,6 +101,30 @@ export function drawTower(ctx, x, y, k, f, alive, toppled) {
         px(ctx, x - 8 * k, y, 16 * k, 1.4 * k, '#000')
         ctx.globalAlpha = 1
         return
+    }
+    // #1764 item 2 — the wizard builds while he hoards: curtain wall (1),
+    // flanking turrets (2), tall keep spire with a violet pennant (3).
+    // Dark-stone palette lifted from the tower shaft itself.
+    if (stage >= 1) {
+        px(ctx, x - 12 * k, y - 6 * k, 24 * k, 6 * k, '#3a2f4a')
+        px(ctx, x - 12 * k, y - 6 * k, 24 * k, k, '#4d4060')
+        for (let i = 0; i < 6; i++) px(ctx, x - 11 * k + i * 4 * k, y - 7.5 * k, 2 * k, 1.5 * k, '#3a2f4a')
+        ctx.globalAlpha = 0.22
+        px(ctx, x - 13 * k, y, 26 * k, 1.6 * k, '#000')
+        ctx.globalAlpha = 1
+    }
+    if (stage >= 2) {
+        px(ctx, x - 15 * k, y - 12 * k, 5 * k, 12 * k, '#40355a')
+        px(ctx, x + 10 * k, y - 12 * k, 5 * k, 12 * k, '#40355a')
+        px(ctx, x - 16 * k, y - 14 * k, 7 * k, 2 * k, '#2c2440')
+        px(ctx, x + 9 * k, y - 14 * k, 7 * k, 2 * k, '#2c2440')
+    }
+    if (stage >= 3) {
+        px(ctx, x - 1.6 * k, y - 23.5 * k, 3.2 * k, 4.5 * k, '#5d4f72')
+        px(ctx, x - 2.4 * k, y - 25 * k, 4.8 * k, 1.5 * k, '#2c2440')
+        ctx.globalAlpha = 0.85
+        px(ctx, x + 1 * k, y - 26.5 * k, 3.4 * k, 2 * k, '#8a3ad0')
+        ctx.globalAlpha = 1
     }
     px(ctx, x - 5 * k, y - 16 * k, 10 * k, 16 * k, '#463a58')
     px(ctx, x - 5 * k, y - 16 * k, 10 * k, 1.2 * k, '#5d4f72')
