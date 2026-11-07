@@ -92,8 +92,9 @@ function driverFor(rec) {
 // --- one session's verdict -------------------------------------------------------
 // ok = structurally sound AND replay-verified (100% checkpoints) AND, for v2,
 // the voice clock is sane: samples monotonic and reaching the end of the run
-// (the ±50 ms clap proof itself belongs to the browser — opus bytes decode
-// there; here we prove the clock the clap rides on is intact).
+// (the ±50 ms clap proof itself lives in scripts/plaicraft-clap.mjs — opus
+// bytes decode in the browser; here we prove the clock the clap rides on is
+// intact, and clapSync.js, the verdict both share, is pinned by recordcheck).
 
 async function verifyKey(key, base) {
     const res = { key, ok: false, error: null, ticks: 0, game: '?', player: '?', audio: false, humanSeats: 0, note: '', voice: null }

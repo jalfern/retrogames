@@ -400,7 +400,9 @@ stripped to its consented half at upload time. Honest gaps: online lockstep
 quests are NOT auto-recorded (the wire owns the seats); a mid-run WATCH seats
 the brain but seat 1 stays labelled `human` for the ticks before the takeover.
 Same wiring in ShortOrderShout (offline kitchens), TalkMeDown and
-RallyCoDriver (offline stages). Proof: `npm run recordcheck` (66 gates).
+RallyCoDriver (offline stages). Proof: `npm run recordcheck` (73 gates —
+consent, store contract, auto-capture, voice clock, and the clap-sync verdict
+with its pinned mutants).
 
 ## Store evidence (#1711 S3 prep)
 
@@ -417,3 +419,23 @@ mutants (all must be CAUGHT) — 18/18 today. Rally weather rides new files in
 the optional rec/v1 `rules` stamp; legacy files replay under inferred weather
 (rain is physics-visible via grip; mist is fog-only and replays bit-exact as
 clear — `stateHash` excludes `vis`).
+
+## Clap sync (#1711 S3)
+
+`npm run plaicraft:clap` proves the acceptance line "audio lines up with the
+frames to within ±50 ms (prove it with a clap test)" WITHOUT the R2 bucket: a
+stub store (relay/core rules) stands in for it via `?store=`, the consent gate
+answers YES+YES, and the synth mic (voicedrive's trick, only the sound source
+synthetic) fires full-scale claps at known wall-times while the harness
+presses ArrowRight at the same instant — the physical clap-and-tap, automated.
+The take uploads, downloads back, decodes via WebAudio, and `clapSync.js`
+(pure, pinned by recordcheck) pairs every onset with its banked press tick
+through the track's own clock. Measured today: worst +21 ms over three claps
+(the constant few ms is recorder priming — included, not assumed away).
+`--mutate` plants presses 500 ms from their claps and the verdict must go RED
+(it does: −481 ms, named pair by pair). Two headless-shell traps solved on
+the way, keep them in mind for any future browser audio work: clicks must be
+baked into ONE looping AudioBuffer started at t=0 (future-scheduled
+BufferSources and ScriptProcessor state both silently vanish in shell+sp), and
+the click content must be LOW-frequency noise + sines — the nyquist-crackle of
+`sin(k*91)` is what opus loves to eat.

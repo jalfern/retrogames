@@ -320,11 +320,14 @@ const BASE = `http://127.0.0.1:${server.address().port}`
     const mkPcm = (clapsMs, durMs = 6000) => {
         const n = Math.round((durMs / 1000) * SR)
         const a = new Float32Array(n)
-        for (let i = 0; i < n; i++) a[i] = 0.02 * Math.sin((2 * Math.PI * 220 * i) / SR) + ((i % 7) - 3) * 0.004 // mic hum floor, far below any clap
+        let s = 12345
+        const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x3fffffff) - 1 }
+        for (let i = 0; i < n; i++) a[i] = 0.03 * Math.sin((2 * Math.PI * 220 * i) / SR) + rnd() * 0.004 // mic hum floor, far below any clap
         for (const ms of clapsMs) {
             const s0 = Math.round((ms / 1000) * SR)
-            for (let k = 0; k < Math.round(0.06 * SR) && s0 + k < n; k++) {
-                a[s0 + k] = Math.sin(k * 91) * Math.exp(-k / (0.01 * SR)) // full-scale click, fast decay
+            for (let k = 0; k < Math.round(0.05 * SR) && s0 + k < n; k++) {
+                const env = Math.exp(-k / (0.012 * SR)) // the browser driver's clap shape, verbatim — low-frequency, survives opus
+                a[s0 + k] = Math.max(-1, Math.min(1, (0.55 * rnd() + 0.55 * Math.sin(k * 2 * Math.PI * 190 / SR) + 0.35 * Math.sin(k * 2 * Math.PI * 760 / SR)) * env))
             }
         }
         return a
