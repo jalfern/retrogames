@@ -16,6 +16,7 @@
 //     jaw closes, hammers crush you under the strike, the wave hurls you.
 
 import { RACES, GRID, BREAKDROP, WIN_BONUS, EXTRA_LIFE, buildHeights } from './levels.js'
+import { trampVz } from './trampoline.js'
 
 export { RACES, GRID, BREAKDROP }
 
@@ -34,7 +35,8 @@ export const CFG = {
     munchR: 0.9, munchCycle: 200, munchSnap: 120, munchHold: 15,
     slinkyR: 0.55, slinkyUp: 0.32,
     throwVX: 0.10, throwVZ: 0.30,
-    bounceRest: 0.45,     // SILLY floors are trampolines
+    // (the uniform landing constant retired #1758 item 5 — the spring now
+    //  lives in trampoline.js and varies per section height)
     goalR: 1.0,
     deathT: 90, clearT: 130,
     maxLives: 5,
@@ -302,7 +304,14 @@ function updateMarble(gs, inp) {
             const drop = m.zFrom - g
             if (drop > BREAKDROP) { killMarble(gs, 'shatter'); return }
             m.z = g; m.air = false; m.vz = 0
-            if (gs.race.reversed) m.vz = Math.max(0, drop * CFG.bounceRest * 0.5)
+            if (gs.race.reversed && drop > 0) {
+                // SILLY floors are trampolines, and the spring is per-section:
+                // harder the higher the landing cell (#1758 item 5). Launch the
+                // arc from the ground itself — zFrom = g means the arc's own
+                // return lands with drop 0, so one spring per cliff-drop.
+                const bv = trampVz(drop, g, CFG.grav)
+                if (bv > 0) { m.air = true; m.zFrom = g; m.z = g; m.vz = bv }
+            }
             gs.events.push({ type: 'land', drop })
         } else if (g == null && m.z <= -1.5) {
             killMarble(gs, 'void')
