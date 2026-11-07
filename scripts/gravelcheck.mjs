@@ -745,7 +745,7 @@ if (!process.env.GY_SKIP_BROWSER) {
         const pinCycle = await page.evaluate(() => {
             window.__gyTest.start(9, 2, true)
             window.__gyTest.prime('cycle')
-            const press = () => { window.__game.tick({}, [{}, { a: true }, {}]); window.__game.tick({}, [{}, {}, {}]) }
+            const press = () => { window.__game.step([{}, { a: true }, {}]); window.__game.step([{}, {}, {}]) }
             const seq = []
             press(); seq.push(window.__gyTest.state().pin)
             press(); seq.push(window.__gyTest.state().pin)
@@ -757,7 +757,7 @@ if (!process.env.GY_SKIP_BROWSER) {
         const tipPinned = await page.evaluate(() => {
             window.__gyTest.start(9, 2, true)
             window.__gyTest.prime('pin')
-            const press = () => { window.__game.tick({}, [{}, { b: true }, {}]); window.__game.tick({}, [{}, {}, {}]) }
+            const press = () => { window.__game.step([{}, { b: true }, {}]); window.__game.step([{}, {}, {}]) }
             press()
             const s = window.__gyTest.state()
             return { after: s.orders.map((o) => [o.units, o.pinned]), pin: s.pin, delivered: s.delivered }
@@ -779,7 +779,7 @@ if (!process.env.GY_SKIP_BROWSER) {
             }
             await new Promise((r) => requestAnimationFrame(r))
             const before = px()
-            window.__game.tick({}, [{}, { a: true }, {}])
+            window.__game.step([{}, { a: true }, {}])
             await new Promise((r) => requestAnimationFrame(r))
             return { before, after: px() }
         })

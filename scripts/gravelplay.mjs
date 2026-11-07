@@ -150,6 +150,7 @@ try {
     await page.keyboard.up('KeyD')
     await sleep(120)
     await page.keyboard.press('KeyF') // PIN it
+    await sleep(150) // let the loop tick consume the A edge (pressMin holds 100 ms)
     const sp = await sim()
     ok('real F at the board pins the open order', sp.pin !== null && sp.orders.some((o) => o.pinned), JSON.stringify({ pin: sp.pin, orders: sp.orders.map((o) => [o.grade, o.pinned]) }))
     fs.writeFileSync('/tmp/forge-gy-pin.png', await page.locator('canvas').screenshot())

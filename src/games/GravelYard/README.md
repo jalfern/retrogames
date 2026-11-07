@@ -45,6 +45,17 @@ cols 0/15
   lapsed orders (-20C) cost credit but not strikes.
 - **Shift**: 10 800 ticks (180 s). Orders print from t=120 every ~20-30 s,
   2 open max, 3-7 units each. Quota 600C = CLEAN SHIFT.
+- **Delivery PIN (#1759)**: the truck owns the ORDER BOARD — parked at (13,4)
+  facing right, an A tap cycles the pin through the open orders (none -> first
+  -> next -> none; `cyclePin`). `tip()` serves the PINNED order when its grade
+  matches the load, otherwise the oldest matching order — the pre-pin rule
+  verbatim. The pin is a priority, never an override: a wrong-grade tip is
+  still refused+struck even when pinned, a pin on the other grade falls back
+  to the oldest match. It retires the moment its order fills or lapses. The
+  pin rides the plain A pad edge (remote truck seats carry it unchanged), joins
+  `hashState`, and the CPU crew RESPECTS it — an empty-bed CPU truck loads the
+  pinned order's grade when that bay has stock. Full-CPU reference runs are
+  bit-identical (no emitter ever faces the board with A): 8/8 seeds quota.
 - `state.hash` = FNV-1a over the serialized sim (never over `fx`, which is
   render/audio sugar; `Math.random()` only drives dust puffs and audio jitter).
 
@@ -82,9 +93,14 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
 
 ## Harness
 
-- `npm run gravelcheck` — 75 engine assertions (layout, determinism, dig/dump/
-  batch/gate/jam/load/tip/refuse/strike/orders/overflow, win + slack, the
-  #1306 juice contract: drone cadence, radio voice IDs, orderDone cents) plus
+- `npm run gravelcheck` — 96 engine assertions (layout, determinism, dig/dump/
+  batch/gate/jam/load/tip/refuse/strike/orders/overflow, the #1759 pin law:
+  board cycle none->o1->o2->none, face-and-position guards, pinned-first tip
+  with the older order kept open, oldest-verbatim with no pin, grade-law
+  invariance, pin retirement on fill AND lapse, hash inclusion + divergence,
+  full-CPU never pins, CPU load prefers the pinned grade, and src pins on the
+  deciding lines per #1744) plus win + slack and the #1306 juice contract: drone
+  cadence, radio voice IDs, orderDone cents) plus
   the #1672 twin-box and #1705 three-box lockstep proofs (seat law, roster
   rows, pad loss, per-peer hash referee, replay determinism, source pins) and
   browser boot, contract determinism, the in-browser CPU-brain proof, render
@@ -94,11 +110,16 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   `GY_SKIP_BROWSER=1 npm run gravelcheck` skips the browser half.
 - `npm run gravelplay` — real-key drive: attract→select→play, walk/dig/dump the
   first link of the chain with real keystrokes, drawn pixels must agree with the
-  sim position, pause/resume, shift-end over screen, SPACE restart, tap-to-start.
+  sim position, pause/resume, shift-end over screen, SPACE restart, tap-to-start,
+  and the #1759 pin run: two hands with a human truck (P), WASD to the board
+  stand, real F pins the freshly printed order.
   Screenshots land in /tmp/forge-gy-*.png.
 - Mutant proof: delete `gs.strikes++` in `tip()` and gravelcheck goes red on
   "wrong grade at gate refused + strike" and "three refusals ruin the shift";
-  restore = green.
+  restore = green. #1759 mutant (2026-11-07): make `tip()` ignore the pin
+  (`const match = open[0]`) — exactly three go red: "tip fills the PINNED
+  younger order", "pin retires with its filled order", and the tip src pin;
+  restore = green 96/96 (Node half).
 - `npm run contractcheck` includes `gravel-yard` (`scripts/lib/contractGames.mjs`).
 - DEV hooks: `window.__gyTest` ({state, screen, start, press, release, hash}).
   `window.__game` per the standard contract; `sources()` reports live seat kinds
@@ -117,8 +138,10 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   radio channel already carries the exact utterances a grammar would mirror.
 - The screen operator seat is CPU-only locally (a third keyboard scheme would
   crowd the pad); model seats drive it through the contract.
-- The tip delivers against the OLDEST matching order; per-order pinning is a
-  polish candidate.
+- **CLOSED by #1759:** the tip no longer decides by age — the truck can PIN an
+  open order at the board; delivery serves the pinned matching order first and
+  falls back to the oldest match (the pre-pin rule) when nothing pinned fits the
+  load. See the PIN law below.
 - Movement is d-pad-only (no analog stick); CPU crews never reverse (all
   forward routing), so tight squeezes are handled by replanning, not backing up.
 - #1306 polish shipped the mid-game feel pass (amber cones + cast shadow,
