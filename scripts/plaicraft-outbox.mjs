@@ -37,6 +37,7 @@ import { launchPersistentChrome } from './lib/chromeboot.mjs'
 import { validate, verifyRecording } from '../src/utils/recording.js'
 import { startRelaySim } from './lib/relaysim.mjs'
 import { makeReplayDriver } from './plaicraft-export.mjs'
+import { plant, pull } from './lib/mutateguard.mjs' // #1359: SIGTERM mid-mutate must not leave the autoRecord.js corpse
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
@@ -148,12 +149,12 @@ let mutated = false
 if (MUTATE) {
     const src = fs.readFileSync(AUTO, 'utf8')
     if (!src.includes(PERSIST)) { console.log('FAIL   persist-line anchor not found in autoRecord.js — update plaicraft-outbox PERSIST to match'); r.failed++; await sim.close(); process.exit(1) }
-    fs.writeFileSync(AUTO, src.replace(PERSIST, 'const entry = null // MUTANT: persist-before-upload stripped'))
+    plant(AUTO, src.replace(PERSIST, 'const entry = null // MUTANT: persist-before-upload stripped'))
     mutated = true
     const fresh = await until(servedMutant, 8000)
     if (!fresh) { // the stale-transform lesson: verify vite actually serves the mutant text
         console.log('FAIL   vite served a STALE transform of the mutant — restart the dev server and re-run')
-        fs.writeFileSync(AUTO, src)
+        pull(AUTO)
         r.failed++; await sim.close(); process.exit(1)
     }
 }
@@ -309,8 +310,7 @@ try {
 } finally {
     try { if (ctx) await ctx.close() } catch { /* already closed (scenario A kill) */ }
     if (mutated) {
-        const src = fs.readFileSync(AUTO, 'utf8')
-        fs.writeFileSync(AUTO, src.replace('const entry = null // MUTANT: persist-before-upload stripped', PERSIST))
+        pull(AUTO) // exact original bytes back (guard), not a string-replace reconstruction
         const intact = await until(async () => !(await servedMutant()), 8000)
         if (!intact) console.log('  ..    WARNING: vite still serves mutant text after restore — check the dev server')
     }

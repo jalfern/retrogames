@@ -29,6 +29,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { planAdd, planDrain, classifyFailure, OUTBOX_MAX_ITEMS } from '../src/utils/outboxCore.js'
 import { badgeView, BADGE_HOLD_UPLOADED_MS, BADGE_HOLD_SYNCED_MS } from '../src/utils/syncBadgeCore.js'
 import { makeOutbox, setOutboxFactory, queueRun, drain as drainOutbox, dropEntry } from '../src/utils/outbox.js'
+import { plantNew, pull } from './lib/mutateguard.mjs' // #1359: SIGTERM mid-mutant must not leave the dotfile corpse in src/utils
 
 const MUTATE = process.argv.includes('--mutate')
 
@@ -537,7 +538,7 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
     const src = fs.readFileSync(CORE, 'utf8')
     if (!src.includes(ANCHOR)) { console.log('FAIL   outbox mutant anchor not found in outboxCore.js \u2014 update recordcheck ANCHOR to match'); fail++ }
     else {
-        fs.writeFileSync(MUT, src.replace(ANCHOR, "        if (code === 408 || code === 429) return 'keep'\n        return 'keep' // MUTANT: permanent refusals retry forever"))
+        plantNew(MUT, src.replace(ANCHOR, "        if (code === 408 || code === 429) return 'keep'\n        return 'keep' // MUTANT: permanent refusals retry forever"))
         try {
             const mutated = await import(pathToFileURL(MUT).href + `?t=${Date.now()}`)
             setOutboxFactory(fakeIDB())
@@ -546,7 +547,7 @@ const mkRec2 = (game = 'gauntlet', seed = 777, ticks = 90) => {
             ok(mOut.kept.length === 1 && mOut.dropped.length === 0,
                 'MUTANT classifyFailure drop->keep: a 413 must stay dropped \u2014 red here means a poison entry would clog the queue')
         } finally {
-            fs.rmSync(MUT, { force: true })
+            pull(MUT) // #1359 — guard also rewinds on SIGTERM/SIGINT/SIGHUP/exit
         }
     }
 }

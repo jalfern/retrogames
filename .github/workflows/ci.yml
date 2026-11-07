@@ -158,6 +158,7 @@ jobs:
       - run: npm run sleepwatchcheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run watchsoakcheck
+        if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run watchphonecheck
         if: contains(fromJSON(env.KEYS), 'core')
       - run: npm run watchpillcheck
