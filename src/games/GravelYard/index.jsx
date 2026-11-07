@@ -14,19 +14,23 @@ import VirtualControls from '../../components/VirtualControls'
 import Lobby from '../../components/Lobby'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import { exposeGame, unexposeGame, contractHoldsLoop, recordLiveTick, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, recordVoiceCmd } from '../../utils/gameContract'
+import { askVoiceConsent } from '../../utils/voiceCapture'
+import { startSpeechListen, speechSupported } from '../../utils/speechListen'
+import { parseOrder, orderLabel } from './voiceorders'
 import { createLobby, lobbyRole, relayFromQuery, seatModel } from '../../utils/lobby.js'
 import { createLockStep } from '../../utils/lockstep.js'
 import { SEATS, PAD_DELAY, HASH_EVERY, wirePad, padsAt, seatOf, seatKinds, hostSeed } from './net'
 import { normalizePad } from '../../utils/onePad'
 import {
-    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, hashState,
+    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, hashState, submitVoice,
     GRID_W, GRID_H, SHIFT_TICKS, QUOTA, MAX_STRIKES, BAY_CAP, cellKind,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD,
     DOCK_SPOTS, BOARD, digSwingFrame, tipSeqFrame, TIP_TICKS,
 } from './engine.js'
 import { sprites, TILE, CANVAS_W, CANVAS_H, WORLD_X, WORLD_Y } from './art.js'
 import { playFx } from './audio.js'
+import { audioController } from '../../utils/AudioController'
 
 const FIXED_DT = 1000 / 60
 const SEAT_KEYS_HUMAN2 = { KeyW: 'up', KeyS: 'down', KeyA: 'left', KeyD: 'right' }
@@ -37,6 +41,7 @@ const ATTRACT_MSGS = [
     'GATE WIDE = COARSE. GATE NARROW = FINES',
     'WRONG GRADE AT THE GATE = STRIKE',
     'PIN AN ORDER AT THE BOARD - TRUCK A',
+    'SHOUT ORDERS - PRESS V (MIC)',
     'ANY SEAT: HUMAN, CPU OR MODEL',
 ]
 const GRADE_COLOR = { coarse: '#b09878', fines: '#e0c898' }
@@ -51,6 +56,10 @@ export default function GravelYard() {
     const [uiScreen, setUiScreen] = useState('attract')
     const [netSeatUi, setNetSeatUi] = useState(0)
     const [netUi, setNetUi] = useState(null) // #1726: the shared <Lobby> waiting room
+    const [voiceUi, setVoiceUi] = useState(null) // #1771: MIC pill state
+    const [voiceHints, setVoiceHints] = useState(false) // one-time phrase card
+    const voiceRef = useRef({ on: false, listen: null, said: '', label: '', ok: false, why: '', okT: 0 })
+    const voiceToggleRef = useRef(null)
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
     const attractRef = useRef(null)
@@ -71,6 +80,7 @@ export default function GravelYard() {
     // operator. All live net state lives here so the
     // contract (sources) and the loop (liveTick) can read it without re-render.
     const netRef = useRef({ active: false, role: null, seat: 0, mode: false, phase: 'off', code: '', joinHref: '', frozen: false, stall: 0, room: null, startHost: null, live: null })
+    const touchUi = typeof window !== 'undefined' && !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
 
     const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
     const freshEmitters = () => [makeCpuEmitter(0), makeCpuEmitter(1), makeCpuEmitter(2)]
@@ -236,6 +246,7 @@ export default function GravelYard() {
             if (ev.code === 'ArrowRight') keys1.right = true
             if (ev.code === 'Space') pressMin(keys1, 'a')
             if (ev.code === 'KeyB') pressMin(keys1, 'b')
+            if (ev.code === 'KeyV') { if (voiceToggleRef.current) voiceToggleRef.current(); return }
             const k2 = SEAT_KEYS_HUMAN2[ev.code]
             if (k2 && human2Active()) keys2[k2] = true
             if (ev.code === 'KeyF' && human2Active()) pressMin(keys2, 'a')
@@ -316,6 +327,67 @@ export default function GravelYard() {
             send: (m) => { if (m.t === 'pad') mirrors[net.seat].set(m.k, m.p); if (net.room) net.room.send(m.t, m) },
         })
         const sayYard = (msg) => { const hud = hudRef.current; hud.toast = msg; hud.toastT = 160 }
+
+        // ---------- shouted orders (#1771) ----------
+        // V (or the MIC pill) opens the mic; words run parseOrder -> submitVoice
+        // and the CPU crew obeys with PADS (the sim never learns a voice
+        // exists). Solo-local law (Gauntlet #1249): net play refuses, so the
+        // lockstep referee never sees an order. Consent is the #1247 ask —
+        // never auto-asked; declined = polite toast, the shift plays on.
+        const voiceCtl = voiceRef.current
+        const voiceCall = (raw) => {
+            const g = gsRef.current
+            const text = String(raw || '').trim()
+            if (!text || !g || g.done || screenRef.current !== 'play') return null
+            const intent = parseOrder(text)
+            let res
+            if (!intent) res = { ok: false, why: 'NOT SURE' }
+            else if (net.mode) res = { ok: false, why: 'SOLO SHIFTS ONLY' }
+            else if ((intent.kind === 'pin' || intent.kind === 'unpin') && human2Active()) res = { ok: false, why: 'THE TRUCK IS YOURS' }
+            else res = submitVoice(g, intent)
+            voiceCtl.said = text.length > 26 ? `${text.slice(0, 26)}…` : text
+            voiceCtl.ok = !!res.ok
+            voiceCtl.why = res.why || ''
+            voiceCtl.label = intent ? orderLabel(intent) : '?'
+            voiceCtl.okT = 170
+            recordVoiceCmd({
+                said: text.slice(0, 80),
+                intent: intent ? intent.kind : null,
+                ok: !!res.ok,
+                ...(intent && intent.kind === 'gate' ? { gate: intent.gate } : {}),
+                ...(intent && intent.kind === 'pin' ? { grade: intent.grade } : {}),
+                ...(!res.ok ? { why: voiceCtl.why } : {}),
+            })
+            if (res.ok && !res.why) { audioController.playTone(880, 0.07, 'square', 0.06); audioController.playTone(1318, 0.09, 'square', 0.05, 0.07) }
+            else if (res.ok) audioController.playTone(740, 0.08, 'square', 0.05)
+            else audioController.playTone(233, 0.12, 'sawtooth', 0.05)
+            setVoiceUi(voiceCtl.on ? { label: res.ok && !res.why ? voiceCtl.label : 'LISTENING' } : null)
+            return res
+        }
+        const voiceOn = async () => {
+            if (screenRef.current !== 'play') return
+            if (net.mode) { sayYard('ORDERS WAIT FOR SOLO SHIFTS'); return }
+            const consent = await askVoiceConsent()
+            if (!consent.consent) { sayYard('NO MIC, NO ORDERS'); return }
+            voiceCtl.on = true
+            voiceCtl.listen = startSpeechListen({
+                onPhrase: (p) => voiceCall(p),
+                onError: () => { /* the pill already tells the truth */ },
+            })
+            // one-time card with the exact words — the yard speaks a trade
+            let seen = ''
+            try { seen = localStorage.getItem('retrogames:gravel-voice-hints') || '' } catch { /* private mode */ }
+            if (!seen) { try { localStorage.setItem('retrogames:gravel-voice-hints', '1') } catch { /* private mode */ } setVoiceHints(true) }
+            setVoiceUi({ label: 'LISTENING' })
+        }
+        const voiceOff = () => {
+            voiceCtl.on = false
+            if (voiceCtl.listen) { voiceCtl.listen.stop(); voiceCtl.listen = null }
+            voiceCtl.okT = 0
+            setVoiceUi(null)
+        }
+        voiceToggleRef.current = () => { if (voiceCtl.on) voiceOff(); else voiceOn() }
+
         const beginOnline = (seed, slots) => {
             // roster frozen at kickoff: which slots are humans decides the crew
             const roster = (Array.isArray(slots) && slots.length >= 2 ? slots.slice(0, SEATS) : [0, 1]).map((s) => s | 0)
@@ -325,6 +397,7 @@ export default function GravelYard() {
             ls.setPeers(roster.filter((s) => s !== net.seat))
             net.mode = true; net.frozen = false; net.stall = 0
             clearKeys()
+            voiceOff() // #1771: orders are solo law — an online shift closes the mic
             seatsRef.current = roster.length
             partnerHumanRef.current = false
             seedRef.current = (seed >>> 0) || 1
@@ -415,7 +488,7 @@ export default function GravelYard() {
                     const r = ls.hash(g.tick, hashState(g))
                     if (r && r.desync !== undefined) netAbandon('SIMS DIVERGED — SPACE FOR TITLE')
                 }
-                if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; net.mode = false }
+                if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; net.mode = false; voiceOff() }
                 return
             }
             const pads = [{}, {}, {}]
@@ -429,7 +502,7 @@ export default function GravelYard() {
             // seat 0 is the recording stream's human; cpu streams are banked too
             recordLiveTick(pads)
             for (const f of drainFx(g)) { playFx(f); if (pumpHudRef.current) pumpHudRef.current(f) }
-            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50 }
+            if (g.done) { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); if (g.win) hudRef.current.stampT = 50; voiceOff() }
         }
 
         const attractTick = () => {
@@ -489,6 +562,8 @@ export default function GravelYard() {
             if (hud.jamFlash > 0) hud.jamFlash--
             if (hud.tipT > 0) hud.tipT--
             if (hud.pinT > 0) hud.pinT--
+            const vCtl = voiceRef.current
+            if (vCtl.okT > 0) vCtl.okT--
             for (const p of hud.puffs) p.t--
             hud.puffs = hud.puffs.filter((p) => p.t > 0)
             for (const p of hud.plumes) p.t--
@@ -743,6 +818,20 @@ export default function GravelYard() {
                 ctx.fillRect(CANVAS_W / 2 - w / 2 - 8, CANVAS_H - 20, (w + 16) * Math.min(1, hud.radioT / 170), 2)
             }
 
+            // #1771 heard-order banner: what the foreman said, and whether the
+            // yard took it — the ART rule's single unmistakable message.
+            if (vCtl.okT > 0 && vCtl.said && (screenRef.current === 'play')) {
+                ctx.font = '7px "Press Start 2P", monospace'
+                const msg = `${vCtl.ok ? '“' + vCtl.said + '” → ' + vCtl.label : 'NOTED: ' + (vCtl.why || 'NO ORDER')}`
+                const w2 = ctx.measureText(msg).width
+                ctx.globalAlpha = Math.min(1, vCtl.okT / 40)
+                ctx.fillStyle = 'rgba(18,10,6,0.9)'
+                ctx.fillRect(CANVAS_W / 2 - w2 / 2 - 8, CANVAS_H - 54, w2 + 16, 16)
+                ctx.fillStyle = vCtl.ok ? '#ffd048' : '#ff8a70'
+                ctx.fillText(msg, CANVAS_W / 2 - w2 / 2, CANVAS_H - 43)
+                ctx.globalAlpha = 1
+            }
+
             // toast: the yard's announcements — seat intros, crew events, the
             // lag callout. #1726: these were set but never drawn, so the whole
             // crew channel was silent on every box.
@@ -882,6 +971,11 @@ export default function GravelYard() {
                         puffs: hud.puffs.length,
                     }
                 },
+                voice: (text) => voiceCall(text),
+                voiceMode: () => ({ on: voiceCtl.on, supported: speechSupported(), q: gsRef.current ? gsRef.current.vord.length : 0, heard: voiceCtl.okT > 0 ? { said: voiceCtl.said, label: voiceCtl.label, ok: voiceCtl.ok, why: voiceCtl.why } : null }),
+                // consent-free headless path: gravelcheck drives the whole
+                // order chain without a microphone (voiceOn stays the real one)
+                voiceOn: () => { voiceCtl.on = true; setVoiceUi({ label: 'LISTENING' }); return true },
                 prime: (what) => {
                     const g = gsRef.current
                     if (!g) return false
@@ -958,6 +1052,7 @@ export default function GravelYard() {
             window.removeEventListener('pointerdown', onPointer)
             if (netRef.current.room) { try { netRef.current.room.reset() } catch { /* gone */ } }
             clearKeys()
+            voiceOff()
             if (import.meta.env.DEV) { unexposeGame(); unmountDbg(); delete window.__gyTest }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -995,6 +1090,55 @@ export default function GravelYard() {
                 />
             )}
             <VirtualControls secondAction={{ label: netSeatUi === 2 ? 'JOG' : 'DUMP', code: 'KeyB' }} visible={!paused && uiScreen === 'play'} />
+            {/* #1771: the MIC pill — phones have no V key, so the pill IS the
+                toggle (consent flow and all, #1287 pattern). Amber while the
+                mic is open with the live order; dimmed "MIC · TAP" at rest. */}
+            {(voiceUi || touchUi) && uiScreen === 'play' && !paused && (
+                <button
+                    type="button"
+                    data-voice-coop={voiceUi ? 'on' : 'off'}
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (voiceToggleRef.current) voiceToggleRef.current() }}
+                    className="fixed z-[62] bottom-3 right-3 font-mono text-[10px] tracking-[0.25em] px-2 py-1 border rounded"
+                    style={voiceUi
+                        ? { color: '#ffd048', borderColor: 'rgba(255,208,72,0.55)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }
+                        : { color: '#a89878', borderColor: 'rgba(255,255,255,0.3)', background: 'rgba(0,0,0,0.35)', cursor: 'pointer' }}
+                >
+                    {voiceUi ? `MIC ON · ${voiceUi.label}` : 'MIC · TAP'}
+                </button>
+            )}
+            {voiceHints && (
+                <div
+                    data-voice-hints="on"
+                    className="fixed inset-0 z-[70] flex items-center justify-center"
+                    style={{ background: 'rgba(12,7,4,0.9)', fontFamily: '"Press Start 2P", monospace', color: '#f0e8d0', textAlign: 'center' }}
+                    onClick={() => setVoiceHints(false)}
+                >
+                    <div style={{ maxWidth: 440, padding: '24px 22px', border: '3px solid #e8b020', background: '#1a120c', borderRadius: 8, lineHeight: 2 }}>
+                        <div style={{ fontSize: 13, color: '#ffd048', marginBottom: 12 }}>SHOUT ORDERS TO THE CREW</div>
+                        {[
+                            ['GATE WIDE / NARROW', 'set the screen — the chart obeys the foreman'],
+                            ['RUN IT', 'start the batch on the current gate'],
+                            ['JOG IT', 'knock the jam loose'],
+                            ['PIN COARSE / FINES', 'the truck marks its board'],
+                            ['PIN CLEAR', 'back to oldest-first'],
+                        ].map(([call, what]) => (
+                            <div key={call} style={{ fontSize: 9, marginBottom: 6 }}>
+                                <span style={{ color: '#7ae07a' }}>“{call}”</span>
+                                <span style={{ color: '#c8b890' }}> — {what}</span>
+                            </div>
+                        ))}
+                        <div style={{ fontSize: 8, color: '#a89878', marginTop: 10 }}>V or tap the MIC pill to switch it on and off</div>
+                        <button
+                            type="button"
+                            data-voice-hints-ok
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setVoiceHints(false) }}
+                            style={{ marginTop: 14, fontFamily: 'inherit', fontSize: 10, padding: '10px 16px', background: '#e8b020', color: '#241812', border: 0, borderRadius: 4, cursor: 'pointer' }}
+                        >
+                            GOT IT
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

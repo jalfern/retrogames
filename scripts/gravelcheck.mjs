@@ -14,12 +14,13 @@
 // and the jam assertions go red; restore = green.
 
 import {
-    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, cellKind, driveable,
+    createGame, stepGame, simState, drainFx, makeCpuEmitter, simulate, cellKind, driveable, submitVoice,
     SHIFT_TICKS, QUOTA, MAX_STRIKES, MAX_ORDERS, HOPPER_CAP, BED_CAP, BAY_CAP,
     PILE, DIG_TICKS, DUMP_TICKS, LOAD_TICKS,
     HOPPER_FRONT, CONSOLE_FRONT, HOPPER_STAND, CONSOLE_STAND, BAY, BAY_LOAD, DOCK_SPOTS, BOARD,
-    digSwingFrame, tipSeqFrame, TIP_TICKS,
+    digSwingFrame, tipSeqFrame, TIP_TICKS, demand,
 } from '../src/games/GravelYard/engine.js'
+import { parseOrder, orderLabel } from '../src/games/GravelYard/voiceorders.js'
 import { createLockStep } from '../src/utils/lockstep.js'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -307,6 +308,134 @@ console.log('— pin law (#1759): cycle at the board, tip honours the pin —')
     ok('src: the pin rides hashState', /o\.id === gs\.pin \? 1 : 0/.test(engSrc))
     ok('src: CPU load prefers the pinned grade', /pinned && gs\.bays\[pinned\.grade\] > 0/.test(engSrc))
     ok('src: filled AND lapsed orders retire the pin', /gs\.pin === match\.id\) gs\.pin = null/.test(engSrc) && /!gs\.orders\.some\(\(o\) => o\.id === gs\.pin\)\) gs\.pin = null/.test(engSrc))
+}
+
+// ---------- #1771: shouted orders (#1249 pattern, the yard's own radio words) ----------
+console.log('— #1771 voice orders: grammar —')
+{
+    const say = (t) => JSON.stringify(parseOrder(t))
+    ok('grammar: gate words', parseOrder('wide gate')?.kind === 'gate' && parseOrder('wide gate')?.gate === 'wide' && parseOrder('open it up')?.gate === 'wide' && parseOrder('choke it down')?.gate === 'narrow' && parseOrder('middle')?.gate === 'medium', say('wide gate'))
+    ok('grammar: run words', ['run it', 'start the plant', 'batch it', 'shake it'].every((t) => parseOrder(t)?.kind === 'run'), say('start the plant'))
+    ok('grammar: jog mirrors the radio ("JAMMED! JOG IT")', parseOrder('jog it')?.kind === 'jog' && parseOrder('knock it loose')?.kind === 'jog', say('jog it'))
+    ok('grammar: pin verb + grade, and grade-first phrasing', parseOrder('pin coarse')?.kind === 'pin' && parseOrder('pin coarse')?.grade === 'coarse' && parseOrder('fines first')?.kind === 'pin' && parseOrder('pin the fines order')?.grade === 'fines', say('fines first'))
+    ok('grammar: pin clear (verbatim radio) + siblings', ['pin clear', 'clear the pin', 'unpin', 'any order'].every((t) => parseOrder(t)?.kind === 'unpin'), say('pin clear'))
+    ok('grammar: yard noise returns null (misheard != misobeyed)', parseOrder('hello there') === null && parseOrder('') === null && parseOrder('gate please') === null)
+    ok('grammar: labels are short radio words', orderLabel({ kind: 'gate', gate: 'narrow' }) === 'GATE NARROW' && orderLabel({ kind: 'pin', grade: 'coarse' }) === 'PIN COARSE' && orderLabel(null) === '?')
+}
+
+console.log('— #1771 voice orders: honest refusals + queue —')
+{
+    const g = createGame(5, 1)
+    ok('jog with no jam is refused NO JAM', submitVoice(g, { kind: 'jog' }).why === 'NO JAM')
+    ok('run with an empty hopper is refused HOPPER TOO LOW', submitVoice(g, { kind: 'run' }).why === 'HOPPER TOO LOW')
+    ok('pin with no matching order is refused (seed 5 opens fines)', submitVoice(g, { kind: 'pin', grade: 'coarse' }).why === 'NO COARSE ORDER' || g.orders.some((o) => o.grade === 'coarse'))
+    ok('gate already set is ok with a why (no pointless walk)', submitVoice(g, { kind: 'gate', gate: g.plant.gate }).ok && /ALREADY/.test(submitVoice(g, { kind: 'gate', gate: g.plant.gate }).why || ''))
+    ok('unpin with nothing pinned is ok with a why', submitVoice(g, { kind: 'unpin' }).ok && /NOTHING/.test(submitVoice(g, { kind: 'unpin' }).why || ''))
+    g.plant.hopper = 4
+    const before = g.vseq
+    const res = submitVoice(g, { kind: 'run' })
+    ok('accepted orders file with a COPY radio + voiceGo fx', res.ok && g.vseq === before + 1 && drainFx(g).some((f) => f.k === 'radio' && f.text === 'COPY' && f.who === 'SCREEN'))
+    submitVoice(g, { kind: 'gate', gate: 'wide' })
+    submitVoice(g, { kind: 'gate', gate: 'narrow' })
+    const gates = g.vord.filter((c) => c.kind === 'gate')
+    ok('a newer shout replaces the same kind (latest wins)', gates.length === 1 && gates[0].arg === 'narrow', JSON.stringify(g.vord))
+    g.vord.length = 0
+    ;['gate', 'run', 'jog', 'unpin'].forEach((k) => g.vord.push({ seat: 2, kind: k, arg: null, id: 90 + k.length, t: g.tick }))
+    submitVoice(g, { kind: 'gate', gate: 'wide' })
+    ok('the queue caps at 3 (stale shouts drop off the front)', g.vord.length === 3 && g.vord[g.vord.length - 1].kind === 'gate')
+}
+
+console.log('— #1771 voice orders: the crew obeys with pads —')
+{
+    // gate override: demand is coarse-heavy (chart wants wide) — shouting
+    // narrow must land narrow anyway, then the chart walks back.
+    const g0 = createGame(21, 1)
+    g0.orders = [{ id: 800, grade: 'coarse', units: 7, left: 2000, total: 2000 }]
+    const emg = makeCpuEmitter(2)
+    const saw = [], rsaw = []
+    submitVoice(g0, { kind: 'gate', gate: 'narrow' })
+    for (let t = 0; t < 60 && !g0.done; t++) {
+        stepGame(g0, [{}, {}, emg({ gs: g0, tick: g0.tick })])
+        saw.push(g0.plant.gate)
+        for (const f of g0.fx) if (f.k === 'radio') rsaw.push(`${f.who}:${f.text}`)
+    }
+    ok('shouted GATE NARROW lands even when the chart wants wide', saw.includes('narrow') && demand(g0).coarse > demand(g0).fines, `saw ${saw.join(',')}`)
+    ok('the obey receipt rides the radio (GATE NARROW)', rsaw.includes('SCREEN:GATE NARROW'), rsaw.filter((r) => /GATE/.test(r)).join(','))
+    ok('the queue drains when the order lands', g0.vord.length === 0)
+    // run override: hopper stocked, gate != demand-want — the batch starts NOW.
+    const gr = createGame(31, 1)
+    gr.plant.hopper = 4
+    gr.orders = [{ id: 700, grade: 'fines', units: 7, left: 2000, total: 2000 }]
+    gr.plant.gate = 'wide' // chart wants narrow
+    const emr = makeCpuEmitter(2)
+    submitVoice(gr, { kind: 'run' })
+    for (let t = 0; t < 40 && !gr.plant.running; t++) stepGame(gr, [{}, {}, emr({ gs: gr, tick: gr.tick })])
+    stepGame(gr, [{}, {}, emr({ gs: gr, tick: gr.tick })]) // one more tick: voiceTick reads the receipt
+    ok('RUN IT starts the batch on the CURRENT gate (chart walk skipped)', gr.plant.running && gr.plant.gate === 'wide', `running=${gr.plant.running} gate=${gr.plant.gate}`)
+    ok('the run order retires when the batch starts', gr.vord.length === 0)
+    // pin order: the truck walks to the board and pins the YOUNGER matching
+    // order — the board action the CPU never takes on its own (#1759).
+    // pin order: the truck walks to the board and pins the matching order —
+    // the board action the CPU never takes on its own (#1759). The check fires
+    // AT the landing tick: later deliveries retire the pin (law, not drift).
+    const gpc = createGame(7, 1)
+    const epc = [makeCpuEmitter(0), makeCpuEmitter(1), makeCpuEmitter(2)]
+    let landed = null, prsaw = [], pinSubmitted = false
+    for (let t = 0; t < 1400 && !gpc.done && !landed; t++) {
+        const pads = [{}, {}, {}]
+        for (let s = 0; s < 3; s++) pads[s] = epc[s]({ gs: gpc, tick: t })
+        stepGame(gpc, pads)
+        if (!pinSubmitted && gpc.orders.length >= 2 && gpc.orders.some((o) => o.grade === 'coarse') && gpc.pin === null) { submitVoice(gpc, { kind: 'pin', grade: 'coarse' }); pinSubmitted = true }
+        for (const f of gpc.fx) if (f.k === 'radio') prsaw.push(`${f.who}:${f.text}`)
+        const po = gpc.orders.find((o) => o.id === gpc.pin)
+        if (po && po.grade === 'coarse') landed = { tick: gpc.tick, id: po.id }
+    }
+    ok('a shouted PIN drives the truck to the board and pins that grade', !!landed && pinSubmitted, JSON.stringify(landed))
+    stepGame(gpc, [{}, {}, {}]) // one more tick: voiceTick reads the PINNED receipt
+    ok('pin order retires on the landing', gpc.vord.length === 0)
+    ok('the board radio says PINNED (the human sees what happened)', prsaw.some((r) => r.startsWith('BOARD:PINNED COARSE')), prsaw.filter((r) => /PIN/.test(r)).join(','))
+    // unpin order unwinds the pin
+    const gu = createGame(12, 1)
+    gu.pin = gu.orders.length ? gu.orders[0].id : null
+    const emu = [makeCpuEmitter(1)]
+    submitVoice(gu, { kind: 'unpin' })
+    for (let t = 0; t < 1200 && !gu.done && gu.pin !== null; t++) stepGame(gu, [{}, emu[0]({ gs: gu, tick: t }), {}])
+    ok('PIN CLEAR drives the truck to un-cycle the board', gu.pin === null)
+    // stale orders drop — a 40 s old shout is a misheard shout
+    const gst = createGame(4, 1)
+    gst.vord.push({ seat: 2, kind: 'gate', arg: gst.plant.gate === 'wide' ? 'narrow' : 'wide', id: 99, t: gst.tick - 2401, orderId: null })
+    stepGame(gst, [{}, {}, {}])
+    ok('stale orders expire with FORGET IT', gst.vord.length === 0 && gst.fx.some((f) => f.k === 'radio' && f.text === 'FORGET IT'))
+}
+
+console.log('— #1771 voice orders: solo-local law (hash untouched) —')
+{
+    const engSrc2 = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GravelYard', 'engine.js'), 'utf8')
+    const idxSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'src', 'games', 'GravelYard', 'index.jsx'), 'utf8')
+    ok('src: the queue is NOT hashed (voice is solo-local like Gauntlet _vCmd)', !/vord/.test(engSrc2.split('export function hashState')[1].split('}')[0]))
+    const g1 = createGame(9, 1)
+    const h0 = simState(g1).hash
+    g1.vord.push({ seat: 2, kind: 'gate', arg: 'wide', id: 1, t: g1.tick })
+    ok('a live order in the queue leaves the hash alone', simState(g1).hash === h0)
+    const drive2 = (seed, submits, until) => {
+        const g = createGame(seed, 1)
+        const em = [makeCpuEmitter(0), makeCpuEmitter(1), makeCpuEmitter(2)]
+        for (let t = 0; t < until && !g.done; t++) {
+            const pads = [{}, {}, {}]
+            for (let s = 0; s < 3; s++) pads[s] = em[s]({ gs: g, tick: t })
+            stepGame(g, pads)
+            for (const [st, intent] of submits) if (g.tick === st) submitVoice(g, intent)
+        }
+        return simState(g).hash
+    }
+    ok('same seed + same shouts at the same ticks => identical hash', drive2(15, [[140, { kind: 'gate', gate: 'wide' }]], 600) === drive2(15, [[140, { kind: 'gate', gate: 'wide' }]], 600))
+    ok('shouted vs silent runs diverge (orders really do steer)', drive2(15, [[140, { kind: 'gate', gate: 'wide' }]], 600) !== drive2(15, [], 600))
+    ok('src: V opens the mic (KeyV)', /ev\.code === 'KeyV'/.test(idxSrc))
+    ok('src: consent is asked before the mic opens', /askVoiceConsent\(\)/.test(idxSrc))
+    ok('src: net play is refused orders (SOLO SHIFTS)', /SOLO SHIFTS ONLY|ORDERS WAIT FOR SOLO SHIFTS/.test(idxSrc))
+    ok('src: words land through the shared voiceCmd recorder channel', /recordVoiceCmd\(/.test(idxSrc))
+    ok('src: voiceTick runs inside the sim step', /voiceTick\(gs\)/.test(engSrc2))
+    ok('src: the truck board-walk is shared with the pin law (face right, A cycle)', /thenFace: 'right', act: 'a'/.test(engSrc2))
 }
 
 console.log('— orders and the clock —')
@@ -784,6 +913,37 @@ if (!process.env.GY_SKIP_BROWSER) {
             return { before, after: px() }
         })
         ok('browser: the pinned ticket gains its gold frame on canvas', pinDraw.after > pinDraw.before + 100, JSON.stringify(pinDraw))
+
+        // ---------- #1771: shouted orders in the browser (headless, no mic) ----------
+        console.log('— #1771: voice orders drive the yard for real —')
+        await page.goto(URL, { waitUntil: 'load', timeout: 30000 })
+        await page.waitForFunction(() => window.__gyTest && window.__gyTest.screen() === 'attract', null, { timeout: 20000 })
+        await page.evaluate(() => { window.__gyTest.start(7, 1, false); window.__gyTest.voiceOn() })
+        const vres = await page.evaluate(async () => {
+            const t0 = Date.now()
+            while (Date.now() - t0 < 12000) {
+                const st = window.__gyTest.state()
+                if (st.orders.length >= 2 && st.orders.some((o) => o.grade === 'coarse') && st.pin == null) break
+                await new Promise((r) => setTimeout(r, 100))
+            }
+            const res = window.__gyTest.voice('pin coarse')
+            const t1 = Date.now()
+            while (Date.now() - t1 < 15000) {
+                const st = window.__gyTest.state()
+                if (st.orders.some((o) => o.pinned && o.grade === 'coarse')) return { ok: true, res, heard: window.__gyTest.voiceMode() }
+                if (st.done) break
+                await new Promise((r) => setTimeout(r, 100))
+            }
+            return { ok: false, res, heard: window.__gyTest.voiceMode() }
+        })
+        ok('#1771 shouted PIN COARSE: the truck drove to the board and pinned it (headless, no mic)', vres.ok && vres.res.ok, JSON.stringify(vres.res))
+        const hv = vres.heard && vres.heard.heard
+        ok('#1771 the heard-banner remembers the order (voiceMode.heard)', !!(hv && hv.ok && /PIN/.test(hv.label || '')), JSON.stringify(vres.heard))
+        ok('#1771 the MIC pill is on screen and lit', await page.evaluate(() => { const p = document.querySelector('[data-voice-coop]'); return !!p && p.getAttribute('data-voice-coop') === 'on' }))
+        const vrej = await page.evaluate(() => window.__gyTest.voice('jog it'))
+        ok('#1771 refusal rides the banner: JOG with no jam says NO JAM', vrej.ok === false && vrej.why === 'NO JAM', JSON.stringify(vrej))
+        const vq = await page.evaluate(() => window.__gyTest.voiceMode().q)
+        ok('#1771 the order queue is empty again after landing', vq === 0, String(vq))
 
         // ---------- #1726: the phone has no keyboard — a tap is the SPACE ----------
         // The window owns the tap (the Lobby scrim passes through; the copy

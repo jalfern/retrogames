@@ -93,7 +93,7 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
 
 ## Harness
 
-- `npm run gravelcheck` — 96 engine assertions (layout, determinism, dig/dump/
+- `npm run gravelcheck` — 131 engine assertions (layout, determinism, dig/dump/
   batch/gate/jam/load/tip/refuse/strike/orders/overflow, the #1759 pin law:
   board cycle none->o1->o2->none, face-and-position guards, pinned-first tip
   with the older order kept open, oldest-verbatim with no pin, grade-law
@@ -132,10 +132,20 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   seats digger/truck/console; `sources()` reports `remote` for both peers).
   Also fixed en route: #1672's online mode was doubly frozen (wire pads never
   fed `ls.gotPad`; `normalizeWirePad` erased the `{m}` mask) — see Seats.
-- **Voice (#1247)**: the recording path banks raw per-seat mic audio via
-  `gameContract.recordLiveTick`; an in-game push-to-talk that steers the CPU
-  crew like GAUNTLET's voice calls (#1249) is the natural next stage — the
-  radio channel already carries the exact utterances a grammar would mirror.
+- **CLOSED by #1771**: Voice (#1247) — shouted orders shipped. `V` (or the MIC
+  pill on phones) opens a consent-gated mic; `voiceorders.js` parses the yard's
+  own radio vocabulary into orders (GATE WIDE/MEDIUM/NARROW, RUN IT, JOG IT,
+  PIN COARSE/FINES, PIN CLEAR) and the CPU crew obeys **with pads** (#494):
+  the operator cycles the gate / starts the batch against the demand chart,
+  the truck walks to the board stand and cycles the pin (#1759 law verbatim).
+  Solo-local like Gauntlet's _vCmd: net play refuses ("ORDERS WAIT FOR SOLO
+  SHIFTS"), the `vord` queue is never hashed, and the recorded pad streams
+  replay-verify unchanged. Honest refusals (NO JAM / HOPPER TOO LOW /
+  NO COARSE ORDER / THE TRUCK IS YOURS / SOLO SHIFTS ONLY), heard-banner +
+  COPY radio receipts, stale shouts expire (FORGET IT). `__gyTest.voice(text)`
+  drives it headless. Mutant proof: stub the pin-retire branch
+  (`c.kind === 'pin' && gs.pin === c.orderId` -> `false`) and exactly the
+  retire gate goes red; restore = green.
 - The screen operator seat is CPU-only locally (a third keyboard scheme would
   crowd the pad); model seats drive it through the contract.
 - **CLOSED by #1759:** the tip no longer decides by age — the truck can PIN an
@@ -159,4 +169,4 @@ CPU) wins 8/8. `simulate(seed, players)` in the engine is the reference driver.
   `__gyTest.anim()` + deterministic staging via `__gyTest.prime('dig'|'tip'|
   'batch'|'jam')`; gravelcheck proves the swing/tip/stones/plume/smoke plus
   the pure frame mappers. Remaining from #1390: in-game push-to-talk voice
-  orders for the truck seat (#1247/#1249 pattern).
+  orders for the truck seat (#1247/#1249 pattern) — CLOSED by #1771.
