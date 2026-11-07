@@ -20,6 +20,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
+    REL_NAMES,
     tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
     place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
@@ -36,6 +37,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
+    'CHAT builds BONDS — Fern at FAMILY visits sooner and lingers. Neglect cools them.',
     'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
@@ -114,6 +116,11 @@ const HomebodyGame = () => {
                     case 'pay': audioController.playTone(880, 0.06, 'triangle', 0.05); audioController.playTone(1175, 0.06, 'triangle', 0.05); audioController.playTone(1568, 0.1, 'triangle', 0.05); if (live) say(`PAYDAY  §${e.pay}`); break
                     case 'visit': audioController.playTone(660, 0.14, 'sine', 0.06); setTimeout(() => audioController.playTone(880, 0.18, 'sine', 0.06), 150); if (live) say('THE NEIGHBOUR RINGS'); break
                     case 'visit-end': audioController.playSweep(520, 300, 0.2, 'sine', 0.04); break
+                    case 'rel-up':
+                        audioController.playTone(659, 0.07, 'sine', 0.05)
+                        setTimeout(() => audioController.playTone(988, 0.14, 'sine', 0.05), 90)
+                        if (live) { say(`BOND RISES — ${e.k === 'fern' ? 'FERN' : 'HOUSEHOLD'}: ${REL_NAMES[e.level]}`); sparkles() }
+                        break
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
                     case 'day': audioController.playTone(1245, 0.06, 'sine', 0.03); setTimeout(() => audioController.playTone(1568, 0.09, 'sine', 0.03), 90); if (live && s.day > 1) say(`DAY ${s.day}`); break
