@@ -17,6 +17,8 @@ const defs = [
     {
         id: 'kade', name: 'KADE', tag: 'THE HEART OF THE RING', cpu: 'insane',
         quote: 'HEART BEATS HYPE. NEXT.',
+        win: { _default: 'THE HEART NEVER SKIPS.', vexa: 'SPEED MET A WALL.', brakk: 'THE WALL LOST THE HUG.', hyde: 'NO AIR? NONE LEFT.' },
+        lose: { _default: 'ONE MORE BEAT AND IT IS MINE.', brakk: 'THE WALL GOT ONE. NOT TWO.' },
         cpuStyle: { zone: 0.4 },
         build: { h: 1.0, bulk: 1.0, hair: 'headband' },
         color: { skin: 0xd9a066, top: 0x2f8f4e, pants: 0xe8e2cf, hair: 0x2b2118, accent: 0xd83a2f },
@@ -33,6 +35,8 @@ const defs = [
     {
         id: 'vexa', name: 'VEXA', tag: 'TWICE THE STING', cpu: 'easy',
         quote: 'BLINKED AND MISSED ME.',
+        win: { _default: 'TOO SLOW TO EVEN SEE IT.', tessa: 'GRAVITY CAUGHT ME FIRST, APPARENTLY.', kade: 'I BEAT THE HEART. TWICE.' },
+        lose: { _default: 'YOU GOT LUCKY. ONCE.', hyde: 'NO AIR BETWEEN US? NONE FOR YOU, EITHER.' },
         cpuStyle: { zone: 0.2, jump: 0.3 },
         build: { h: 0.92, bulk: 0.85, hair: 'ponytail' },
         color: { skin: 0xe0b088, top: 0x2bb8d6, pants: 0x1b2f4a, hair: 0xd8c86a, accent: 0xffffff },
@@ -50,6 +54,8 @@ const defs = [
     {
         id: 'brakk', name: 'BRAKK', tag: 'THE WALL THAT HUGS BACK', cpu: 'hard',
         quote: 'YOU JUST HUGGED THE WALL.',
+        win: { _default: 'THE WALL HUGS BACK.', vexa: 'SPEED NEVER REACHED THE WALL.', sable: 'THE WARD CANNOT WALL A HUG.' },
+        lose: { _default: 'THE WALL CRACKED. NOT FALLING.', tessa: 'SHE DANCED AROUND IT. AGAIN.' },
         cpuStyle: { zone: 0.05, jump: 0.05 },
         build: { h: 1.12, bulk: 1.35, hair: 'bald' },
         color: { skin: 0xb87a4a, top: 0x7a4b21, pants: 0x3c342b, hair: 0x141414, accent: 0xc9a227 },
@@ -66,6 +72,8 @@ const defs = [
     {
         id: 'sable', name: 'SABLE', tag: 'KEEPS HER DISTANCE', cpu: 'brutal',
         quote: 'DISTANCE IS A COURTESY I OWED YOU NOT.',
+        win: { _default: 'DISTANCE, PUNISHED.', kade: 'THE HEAT DIED AT MY DOOR.', brakk: 'THE WALL CAME TO THE WARD. BAD MOVE.' },
+        lose: { _default: 'YOU CROSSED THE LINE. I EXCUSE THE LUCK.', tessa: 'SHE CLOSED THE SPACE BEFORE I WANTED.' },
         cpuStyle: { zone: 0.6 },
         build: { h: 1.02, bulk: 0.9, hair: 'bun' },
         color: { skin: 0x8d5a3b, top: 0x5a3d8f, pants: 0x2a2440, hair: 0x0e0e12, accent: 0x9f7aff },
@@ -87,6 +95,8 @@ const defs = [
     {
         id: 'hyde', name: 'HYDE', tag: 'NO AIR BETWEEN US', cpu: 'normal',
         quote: 'TOLD YOU. NO AIR.',
+        win: { _default: 'TOLD YOU. NO AIR.', vexa: 'SPEED WALKED INTO BONE.', sable: 'THE WARD LEFT A GAP. I TOOK IT.' },
+        lose: { _default: 'YOU LEFT AIR. YOU SHOULD NOT HAVE.', kade: 'THE HEART WINS THIS ONE. NEXT IS MINE.' },
         cpuStyle: { zone: 0.15, jump: 0.25 },
         build: { h: 1.04, bulk: 1.05, hair: 'mohawk' },
         color: { skin: 0xcfa07a, top: 0xb03030, pants: 0x22222a, hair: 0xa03434, accent: 0xf0d264 },
@@ -103,6 +113,8 @@ const defs = [
     {
         id: 'tessa', name: 'TESSA', tag: 'GRAVITY IS A SUGGESTION', cpu: 'brutal',
         quote: 'THE GROUND MISSED YOU MORE THAN I DID.',
+        win: { _default: 'GRAVITY IS ONLY A SUGGESTION.', brakk: 'I DANCED AROUND THE WALL.', hyde: 'I WENT UP. YOU CANNOT FOLLOW UP.' },
+        lose: { _default: 'THE GROUND CAUGHT ME. YOU TAKE THE ROUND.', sable: 'HER WARD KEPT THE FLOOR FOR HER.' },
         cpuStyle: { zone: 0.25, jump: 0.5 },
         build: { h: 0.96, bulk: 0.88, hair: 'braid' },
         color: { skin: 0xe8c09a, top: 0xe07a2a, pants: 0x2f4f3e, hair: 0x6a3a1a, accent: 0x7ee08a },
@@ -123,3 +135,16 @@ export const BY_ID = Object.fromEntries(ROSTER.map((d) => [d.id, d]))
 
 // arcade ladder: order + difficulty (the shared core reads def.cpu).
 export const LADDER = ['vexa', 'tessa', 'hyde', 'sable', 'brakk', 'kade']
+
+// #1761 item 3: per-matchup win/lose dialogue. Each fighter carries a `win`
+// and a `lose` table keyed by the opponent's id (with a `_default` for every
+// other matchup); the plain `quote` is the last fallback. Pure + data-only so
+// ironringcheck proves it in Node and the cabinet wires it to the champion and
+// continue screens.
+export function matchupLine(id, opp, kind) {
+    const def = BY_ID[id]
+    if (!def) return ''
+    const table = def[kind] || {}
+    if (opp && table[opp]) return table[opp]
+    return table._default || def.quote || ''
+}

@@ -25,13 +25,20 @@ trick), camera tracks the midpoint and zooms with the spacing.
   on top of `BASE_MOVES`, specials keyed to the engine's motion names
   (`qcf`, `qcfx`, `qcf_S`, `dp`, `dpx`, `dp_S`, `charge`…). Meter: ≥50 turns a
   special into its EX variant, 100 auto-upgrades it to the super variant of the
-  SAME motion (no extra buttons on phone).
-- `src/games/IronRing/stages.js` — 3 ports of call (palettes + neon layouts).
+  SAME motion (no extra buttons on phone). Each fighter also carries `win` and
+  `lose` dialogue tables keyed by the opponent's id (with a `_default` per kind);
+  `matchupLine(id, opp, 'win'|'lose')` is the pure resolver (specific entry →
+  `_default` → the legacy single `quote`), proven in Node by `ironringcheck`.
+- `src/games/IronRing/stages.js` — 3 ports of call (palettes + neon layouts) plus
+  a `midground` spec per stage (containers + crane / torii + lanterns + moon /
+  skyline + girders + deck edge) that `buildMidground` in render.js turns into
+  silhouettes, so each stage reads as a place, not a re-tinted template.
 - `src/games/IronRing/render.js` — three.js: procedural box-rig humanoids posed
   per state (walk cycle, guard, punch/kick extension by move kind, throw
   windmill, dp launch, down/getup, win bounce), stages with live crowd/flags/
-  neon/floodlights, shadow blobs, hit sparks, model-shelf props with primitive
-  fallback (#637). SSIV camera: `z = f(distance)`, midpoint tracking.
+  neon/floodlights + per-stage midground (buildMidground), shadow blobs, hit
+  sparks, model-shelf props with primitive fallback (#637). SSIV camera:
+  `z = f(distance)`, midpoint tracking.
 - `src/games/IronRing/index.jsx` — cabinet: attract CPU-vs-CPU demo, select,
   arcade ladder (VEXA easy → KADE insane), local 2P, head-to-head over the
   #1039 shared lobby with pad lockstep + hash-every-30 (#531 law; wire pads
@@ -80,6 +87,11 @@ trick), camera tracks the midpoint and zooms with the spacing.
   (attract→select→fight, inputs reach the sim, K.O. flow, zero page errors).
 - `npm run ironringcheck -- --mutate` — proven-fail: a dead hitbox gate must
   stop all damage, and a freeze that cannot hear inputs must break the chain.
+- `npm run ironringcheck -- --mutate-dialogue` — proven-fail for #1761 item 3:
+  reverting `matchupLine` to the legacy single quote must drop the specific
+  matchup line (the dialogue gate goes red). The Node part also proves every
+  fighter carries win + lose lines, the per-opponent resolution, the `_default`
+  fallback, line variety, and that all three stages carry a distinct midground.
 - `CONTRACT_ONLY=iron-ring npm run contractcheck` — the #377 driving contract.
 
 ## Honest gaps (polish-pass candidates)
@@ -99,6 +111,19 @@ trick), camera tracks the midpoint and zooms with the spacing.
   consume them via `pressKey`, so a chain lands through the freeze. Gates:
   lp→qcf (after and inside the freeze), lp→dp_S, landed dp→dp_S, staleness,
   determinism; mutant: a deaf freeze must break the chain.
-- Win/lose dialogue lines and per-stage midground variety.
-- Net select: guest pick reaches the host only if sent before the host starts.
+- **CLOSED by #1761** Win/lose dialogue + per-stage midground — every fighter
+  carries `win`/`lose` tables keyed by opponent, resolved by the pure
+  `matchupLine` (specific entry → `_default` → the legacy single `quote`); the
+  champion screen shows the player's matchup win line and the continue screen the
+  loser's concede plus the winner's taunt. Each stage now carries its own
+  midground silhouettes (docklands crane + containers / dojo torii + lanterns +
+  moon / skybridge skyline + girders + deck edge). Gates: Node (structure,
+  per-opponent resolution, `_default` fallback, line variety, per-stage
+  distinctness) + browser (matchup lines on both screens, distinct from the
+  legacy quote); `--mutate-dialogue` proves the dialogue gate bites.
+- **CLOSED by #1773** Net select — the host may only launch once the guest's pick
+  has landed over the wire; a late pick fires the start with the guest's real
+  choice, never a seeded placeholder. The decision is the pure
+  `src/games/IronRing/netselect.js`, gated in Node (part A2), proven-fail under
+  `--mutate`.
 - Guard crush, stun system, throws escapable in air (v2 mechanics).

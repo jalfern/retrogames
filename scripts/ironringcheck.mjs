@@ -42,10 +42,33 @@ if (MUT) {
 }
 const ENG_PATH = MUT ? '../src/engine/.mutant-fighting.mjs' : '../src/engine/fighting.js'
 const e = await import(bust(ENG_PATH))
-const { ROSTER, BY_ID, LADDER } = await import(bust('../src/games/IronRing/fighters.js'))
+const { ROSTER, BY_ID, LADDER, matchupLine } = await import(bust('../src/games/IronRing/fighters.js'))
+const { STAGES } = await import(bust('../src/games/IronRing/stages.js'))
 ok(ROSTER.length >= 6, `roster has ${ROSTER.length} distinct fighters`)
 ok(LADDER.length >= 6, 'arcade ladder has 6 opponents')
 ok(ROSTER.every((d) => d.moves.lp && d.moves.hp && d.moves.lk && d.moves.hk && d.moves.throw), 'every fighter has punch/kick/throw verbs')
+
+// ---- #1761 item 3: per-matchup dialogue + per-stage midground (pure, Node) ----
+console.log('part A: #1761 item 3 — matchup dialogue + midground data')
+ok(ROSTER.every((d) => d.win && typeof d.win._default === 'string' && d.win._default.length > 0 && d.lose && typeof d.lose._default === 'string' && d.lose._default.length > 0), 'every fighter carries a win + lose _default line')
+ok(matchupLine('kade', 'vexa', 'win') === BY_ID.kade.win.vexa, 'matchup win line resolves the specific table entry (kade vs vexa)')
+ok(matchupLine('kade', 'no-such-opp', 'win') === BY_ID.kade.win._default, 'unknown opponent falls back to the _default win line')
+ok(matchupLine('no-such-fighter', 'vexa', 'win') === '', 'unknown fighter returns an empty line')
+{
+    let varied = 0, total = 0
+    for (const d of ROSTER) {
+        for (const [opp, line] of Object.entries(d.win)) { total++; if (opp !== '_default' && line !== d.win._default) varied++ }
+        for (const [opp, line] of Object.entries(d.lose)) { total++; if (opp !== '_default' && line !== d.lose._default) varied++ }
+    }
+    ok(varied >= 12, `matchup lines are genuinely varied (${varied} specific lines differ from their _default, of ${total} entries)`)
+}
+ok(ROSTER.some((d) => Object.values(d.win).some((l) => l && l !== d.quote)), 'at least one win line differs from the legacy single quote (feature is live, not a rename)')
+ok(STAGES.length === 3, `three stages defined (${STAGES.length})`)
+ok(STAGES.every((s) => Array.isArray(s.midground) && s.midground.length >= 3), 'every stage has a non-empty midground (>=3 props)')
+{
+    const sigs = STAGES.map((s) => s.midground.map((p) => p.t).sort().join(','))
+    ok(new Set(sigs).size === sigs.length, `midground layouts are per-stage distinct (${sigs.join(' | ')})`)
+}
 
 const human = (id) => ({ ...BY_ID[id], cpu: false })
 const go = (m) => { let g = 0; while (m.phase !== 'fight' && g++ < 400) e.step(m, [P(), P()]) }
@@ -491,6 +514,29 @@ console.log('part A2: online select gate (netselect.js)')
     }
 }
 
+// ---- mutate-dialogue: prove the matchup-line gate bites --------------------------
+// Revert matchupLine to the pre-#1761 behavior (ignore the matchup table, always
+// return the legacy single quote). The Part A "specific table entry" assertion
+// above must go RED on this — the harness catches a revert to generic quotes.
+if (process.argv.includes('--mutate-dialogue')) {
+    console.log('mutate-dialogue: proving the matchup-line gate bites')
+    const fsx = await import('node:fs')
+    const FSRC = path.join(HERE, '../src/games/IronRing/fighters.js')
+    const src = fsx.readFileSync(FSRC, 'utf8')
+    const mutated = src
+        .replace('if (opp && table[opp]) return table[opp]', '// MUTANT: matchup table ignored')
+        .replace('return table._default || def.quote || \'\'', 'return def.quote || \'\'')
+    ok(mutated !== src, 'mutate-dialogue: matchupLine lines found to patch')
+    const MF = path.join(HERE, '../src/games/IronRing/.mutant-fighters.mjs')
+    plantNew(MF, mutated)
+    const mf = await import(bust(MF))
+    ok(mf.matchupLine('kade', 'vexa', 'win') !== mf.BY_ID.kade.win.vexa, 'MUTANT: the specific matchup line no longer resolves (Part A assertion goes red)')
+    ok(mf.matchupLine('kade', 'vexa', 'win') === mf.BY_ID.kade.quote, 'MUTANT: the line collapses to the legacy single quote (harness bites)')
+    pull(MF)
+    console.log(`ironringcheck (mutate-dialogue): ${pass} ok, ${fail} fail`)
+    process.exit(fail ? 1 : 0)
+}
+
 // ---- mutate-continue: prove the ladder-loss continue gate can fail --------------
 // (deleting the continue branch keeps a lost ladder run silently on 'play'/'attract'
 // instead of the CONTINUE? screen — the normal-mode gate below must then go red.)
@@ -613,7 +659,8 @@ if (!MUT) {
     st = await page.evaluate(() => window.__ironRingTest.state)
     ok(st.screen === 'continue', `ladder loss lands on the CONTINUE screen (screen ${st.screen})`)
     ok(st.continueFrames > 0 && st.credits === 3, `continue shows a countdown + full credits (frames ${st.continueFrames}, credits ${st.credits})`)
-    ok(st.quote === BY_ID[st.opponent].quote, `the winning CPU taunts with its quote (${st.quote})`)
+    ok(st.quote === matchupLine(st.p2, st.p1, 'win'), `the winning CPU taunts with its MATCHUP win line (${st.quote})`)
+    ok(st.quote !== BY_ID[st.opponent].quote, `the taunt is matchup-specific, not the legacy quote (${st.quote})`)
     await page.keyboard.press('Space')
     await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'play', null, { timeout: 4000 })
     st = await page.evaluate(() => window.__ironRingTest.state)
@@ -639,7 +686,8 @@ if (!MUT) {
     await page.waitForFunction(() => window.__ironRingTest.state && window.__ironRingTest.state.screen === 'champion', null, { timeout: 8000 })
     st = await page.evaluate(() => window.__ironRingTest.state)
     ok(st.screen === 'champion', `winning the final rung crowns the player (screen ${st.screen})`)
-    ok(st.quote === BY_ID.kade.quote, `champion screen shows the player's victory quote (${st.quote})`)
+    ok(st.quote === matchupLine(st.champion, st.p2, 'win'), `champion screen shows the player's MATCHUP win line (${st.quote})`)
+    ok(st.quote !== BY_ID[st.champion].quote, `the victory line is matchup-specific, not the legacy quote (${st.quote})`)
 
     ok(errors.length === 0, `zero page errors (${errors.slice(0, 2).join(' | ') || 'clean'})`)
     await browser.close()
