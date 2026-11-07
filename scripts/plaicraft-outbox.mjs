@@ -222,16 +222,12 @@ try {
     r.check('stored file validates', validate(rec) === null, validate(rec) || '')
     r.check('it is the killed take (seed + ticks match what the pen held)', !!rec.seed && rec.ticks >= 20, `seed ${rec.seed}, ticks ${rec.ticks}`)
     const ver = verifyRecording(rec, makeReplayDriver(rec.rules || {}))
-    if (!ver.ok && ver.mismatch) {
-        // Known-hole pointer (filed as feedback): a gauntlet replay divergence
-        // at a seed-INVARIANT tick (~570) in the consent-gate run, while every
-        // other take in this same session verifies tick-for-tick. Signature
-        // says wall-time leaks into gs state, not the capture pipeline. The
-        // take itself survived the kill intact (structure validates, pen was
-        // emptied, bytes are byte-complete below).
-        fs.writeFileSync('/tmp/forge/outbox-divergent-take.json', JSON.stringify({ key: row.key, mismatch: ver.mismatch, rec }, null, 1))
-        r.info('known gauntlet replay hole (#see issue filed)', `killed take diverged at tick ${ver.mismatch.tick} — take dumped to /tmp/forge/outbox-divergent-take.json`)
-    }
+    // #1793 closed the ghost-partner hole (replay now rebuilds seat 2 as the
+    // take had it — 'off' seats replay without a phantom CPU). A divergence
+    // here is a regression, not a known hole: hard-gate the acceptance line.
+    if (!ver.ok && ver.mismatch) fs.writeFileSync('/tmp/forge/outbox-divergent-take.json', JSON.stringify({ key: row.key, mismatch: ver.mismatch, rec }, null, 1))
+    r.check('killed take replay-verifies tick-for-tick (the 100% line, #1793)', ver.ok,
+        ver.mismatch ? `diverged at tick ${ver.mismatch.tick} — dumped to /tmp/forge/outbox-divergent-take.json` : `seed ${rec.seed}, ${rec.ticks} ticks, ${rec.hashes.length} checkpoints`)
     r.check('the recovered take is structurally complete (slots x ticks + checkpoints intact)',
         rec.slots.length === rec.players && rec.slots.every((s) => s.pads.length === rec.ticks) && rec.hashes.length >= Math.floor(rec.ticks / rec.hashEvery),
         `${rec.ticks} ticks, ${rec.hashes.length} checkpoints`)

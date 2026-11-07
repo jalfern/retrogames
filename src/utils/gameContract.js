@@ -187,9 +187,12 @@ export function exposeGame(spec) {
         },
         // `players` (#494): an optional seat count for games that support more
         // than one hero — single-player titles ignore it entirely.
-        reset: (seed = 0, players = 1) => {
+        // #1793: `rec` (from replay()) rides through to spec.reset so a game
+        // can rebuild the seats the take actually had (seat `off` = nobody
+        // there); specs that ignore the third arg replay as before.
+        reset: (seed = 0, players = 1, rec = null) => {
             lastPlayers = Math.max(1, Math.min(4, players | 0 || 1))
-            spec.reset(seed, lastPlayers)
+            spec.reset(seed, lastPlayers, rec)
             return api.state()
         },
         step: (pad = {}, n = 1) => {
@@ -285,7 +288,7 @@ export function exposeGame(spec) {
         },
         isRecording: () => !!recorder,
         replay: (rec) => verifyRecording(rec, {
-            reset: (seed, players) => { api.reset(seed, players) },
+            reset: (seed, players, rec2) => { api.reset(seed, players, rec2) }, // #1793: rec rides to reset so seat-`off` replays without ghosts
             step: (pads) => { api.step(pads) },
             state: () => api.state(),
         }),

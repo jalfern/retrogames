@@ -57,6 +57,9 @@
 // compares state.hash at every checkpoint — a bad file names its divergence
 // tick instead of silently diverging. Pure: Node (replaycheck) + browser
 // (__game.replay). No DOM, no React.
+// reset receives (seed, players, rec): the whole recording rides along so a
+// driver can rebuild the seats the take actually had (#1793 — a seat-`off`
+// slot means NO partner; drivers that don't care ignore the third arg).
 
 import { METHODS, DIR_FIELDS, AIM_FIELDS, normalizePad } from './onePad.js'
 import { SLOT_KINDS } from './slotSources.js'
@@ -293,7 +296,7 @@ export function recDownload(rec) {
 export function verifyRecording(rec, driver) {
     const bad = validate(rec)
     if (bad) return { ok: false, ticks: 0, mismatch: null, error: bad }
-    driver.reset(rec.seed, rec.players)
+    driver.reset(rec.seed, rec.players, rec)
     const want = new Map(rec.hashes.map((x) => [x.t, x.h]))
     let mismatch = null
     let t = 0
