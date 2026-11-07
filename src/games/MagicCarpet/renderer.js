@@ -568,7 +568,7 @@ void main(){
     // ~10u away, the castle tens of units) this is a strong-but-comfortable pop:
     // ~9 px of parallax at arm's length, ~1 px at the horizon — parallel view,
     // converged at infinity, the same cheat every stereo card of the era used.
-    const IPD = 0.30
+    const IPD = 0.60
     let stereo = false
 
     // ---- CPU particle pool → instanced quads

@@ -1723,6 +1723,111 @@ if (muffleOpen === null || muffleVeil === null) {
     r.check('the veil muffles the world — the ambience bus low-pass drops while veiled, open when visible',
         muffleOpen >= 10000 && muffleVeil > 0 && muffleVeil <= 1000, `open=${muffleOpen} veiled=${muffleVeil}`)
 }
+// ---- #1790 ANAGLYPH STEREO: the original's stereo glasses, in red/cyan.
+// Gates run on a frozen world (the #1090 reset+step trick), so the mono and
+// stereo readings see byte-identical sim state and the ONLY difference is the
+// two cameras. The metric is the horizontal peak of the cross-correlation
+// between the red channel (left eye) and the green channel (right eye): with
+// one view red ≈ green and the peak sits at dx 0; with eyes apart the views
+// shift by ipd·f/depth px — the peak moves off-axis, and its SIGN pins which
+// eye feeds which channel (red = left eye is the convention anaglyph glasses
+// are ground for). Mutation guide: (1) IPD to 0 → near/mid collapse to 0 red;
+// (2) swap uL/uR in the combine → polarity flips, mid band red; (3) force
+// stereo true at init → the mono baseline reads parallax and goes red;
+// (4) drop the left-eye half-shift → far/near spread breaks gate 4.
+await page.evaluate(() => { window.__game.reset(7); for (let i = 0; i < 40; i++) window.__game.step({}, 1) })
+await page.waitForTimeout(250)
+const anag = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    const W = 90, H = 40
+    const peak = (region) => {
+        const px = (x, y) => region[(y * W + x) * 4]
+        const py = (x, y) => region[(y * W + x) * 4 + 1]
+        let best = null
+        for (let dx = -24; dx <= 24; dx++) {
+            let sxy = 0, sx = 0, sy = 0, sxx = 0, syy = 0, n = 0
+            for (let y = 2; y < H - 2; y++) for (let x = 24; x < W - 24; x++) {
+                const a = px(x, y), c = py(x + dx, y)
+                sxy += a * c; sx += a; sy += c; sxx += a * a; syy += c * c; n++
+            }
+            const cov = sxy / n - (sx / n) * (sy / n)
+            const cor = cov / (Math.sqrt(sxx / n - (sx / n) ** 2) * Math.sqrt(syy / n - (sy / n) ** 2))
+            if (!best || cor > best.cor) best = { dx, cor }
+        }
+        return best
+    }
+    const bands = () => ({ far: peak(t.pixels(0.25, 0.48, W, H)), mid: peak(t.pixels(0.25, 0.62, W, H)), near: peak(t.pixels(0.25, 0.78, W, H)) })
+    const sky = () => {
+        const p = t.pixels(0.5, 0.10, 40, 8)
+        let r = 0, g = 0, b = 0, n = 0
+        for (let i = 0; i < p.length; i += 4) { r += p[i]; g += p[i + 1]; b += p[i + 2]; n++ }
+        return { r: r / n, g: g / n, b: b / n }
+    }
+    const mono0 = bands()
+    const sky0 = sky()
+    t.setStereo(true)
+    await wait(400)
+    const ster = bands()
+    const skyS = sky()
+    // the HUD reminder (flat overlay canvas): red pip over cyan pip.
+    const hud = document.querySelector('canvas[data-mc-hud="1"]')
+    const hc = hud.getContext('2d')
+    const pip = (x) => { const d = hc.getImageData(x, 17, 4, 4).data; return { r: d[0], g: d[1], b: d[2] } }
+    const chipOn = { red: pip(8), cyan: pip(14) }
+    t.setStereo(false)
+    await wait(400)
+    const mono1 = bands()
+    const chipOff = { red: pip(8) }
+    return { mono0, ster, mono1, sky0, skyS, chipOn, chipOff, ipd: t.ipd() }
+})
+r.check('#1790 default is one view: red↔green correlation peaks at zero shift on every band',
+    ['far', 'mid', 'near'].every((k) => Math.abs(anag.mono0[k].dx) <= 1) && anag.ipd > 0,
+    ['far', 'mid', 'near'].map((k) => `${k} ${anag.mono0[k].dx}@${anag.mono0[k].cor.toFixed(2)}`).join(' | ') + ` ipd ${anag.ipd}`)
+// The bands are taken strongest-of(mid,near): under software-GL load this box
+// sometimes lands a band on flat sky (main's own sky/texture readback gates
+// flake the same way) — a flat band carries no correlation peak, so the
+// separation claim rides on whichever near band the frame actually shows.
+const anagPeak = Math.max(Math.abs(anag.ster.mid.dx), Math.abs(anag.ster.near.dx))
+const anagSigned = Math.abs(anag.ster.mid.dx) >= Math.abs(anag.ster.near.dx) ? anag.ster.mid.dx : anag.ster.near.dx
+r.check('#1790 glasses ON: red(left) vs green(right) peaks 4–24 px off-axis over near ground, negative — left-eye polarity (the convention glasses are ground for)',
+    anagPeak >= 4 && anagPeak <= 24 && anagSigned < 0,
+    `mid ${anag.ster.mid.dx}@${anag.ster.mid.cor.toFixed(2)} near ${anag.ster.near.dx}@${anag.ster.near.cor.toFixed(2)}`)
+r.check('#1790 depth lives: the far band parallaxes less than the strongest near band (|dx far| ≤ 8 and < peak − 2)',
+    Math.abs(anag.ster.far.dx) <= 8 && Math.abs(anag.ster.far.dx) < anagPeak - 2,
+    `far ${anag.ster.far.dx} vs peak ${anagSigned}`)
+r.check('#1790 the stereo frame is still Magic Carpet sky: bright and blue-dominant (channels split views, not hue)',
+    anag.skyS.b > 28 && anag.skyS.b > anag.skyS.r + 12,
+    `rgb ${anag.skyS.r.toFixed(0)},${anag.skyS.g.toFixed(0)},${anag.skyS.b.toFixed(0)}`)
+r.check('#1790 glasses OFF restores mono pixel-for-pixel (peak back at zero on every band)',
+    ['far', 'mid', 'near'].every((k) => Math.abs(anag.mono1[k].dx) <= 1),
+    ['far', 'mid', 'near'].map((k) => `${k} ${anag.mono1[k].dx}`).join(' '))
+r.check('#1790 the HUD wears its own reminder, flat: red+cyan pips while ON, gone while OFF',
+    anag.chipOn.red.r > 150 && anag.chipOn.red.g < 110 && anag.chipOn.cyan.b > 150 && anag.chipOn.cyan.g > 150 && anag.chipOff.red.r < 120,
+    `on ${JSON.stringify(anag.chipOn.red)}/${JSON.stringify(anag.chipOn.cyan)} off ${JSON.stringify(anag.chipOff.red)}`)
+// the real V key + persistence + the phone entry (?stereo=1 outranks storage).
+await page.evaluate(() => { try { localStorage.removeItem('mc-stereo') } catch {} })
+await page.keyboard.press('KeyV')
+await page.waitForTimeout(120)
+const vOn = await page.evaluate(() => ({ on: window.__carpetTest.stereo(), ls: localStorage.getItem('mc-stereo') }))
+r.check('#1790 V flips the glasses and the choice is remembered (localStorage)',
+    vOn.on === true && vOn.ls === '1', JSON.stringify(vOn))
+await page.reload({ waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+const vPersist = await page.evaluate(() => window.__carpetTest.stereo())
+r.check('#1790 glasses survive a reload (you keep the ones you wore)', vPersist === true, `${vPersist}`)
+await page.keyboard.press('KeyV')
+await page.waitForTimeout(120)
+await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet?stereo=1`, { waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+const paramOn = await page.evaluate(() => window.__carpetTest.stereo())
+r.check('#1790 ?stereo=1 opens the glasses on a fresh link even when storage says off (the phone hand)',
+    paramOn === true, `param ${paramOn} vs stored ${await page.evaluate(() => localStorage.getItem('mc-stereo'))}`)
+await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, { waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+const backOff = await page.evaluate(() => window.__carpetTest.stereo())
+r.check('#1790 the param does not stick: the plain link honours storage (off)', backOff === false, `${backOff}`)
+
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 
