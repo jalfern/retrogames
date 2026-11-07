@@ -6,6 +6,7 @@ import { GAMES } from '../../config/games'
 import { mountDbg } from '../../utils/DebugKit'
 import { makeGame, step, CFG } from './sim.js'
 import { RACES, GRID, W, H, TW, TH, TZ, PAIRS, SKY_TOP, SKY_BOT, SIDE1, SIDE2, bedFor, musicStepFor } from './levels.js'
+import { dynamicsFor } from './dynamics.js'
 import { plan, bfsPath, press } from './planner.js'
 import { padState } from '../../utils/padState'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
@@ -161,6 +162,8 @@ const MarbleMadnessGame = () => {
             // user gesture, so the AudioContext is already unlocked.
             audioController.startMusic(bedFor(0))
             audioController.setMusicStep(musicStepFor(0))
+            bedLvl = 1
+            bedVib = 0 // fresh bank — the loop re-applies the swell from tick one
         }
 
         const startAttract = () => {
@@ -425,6 +428,21 @@ const MarbleMadnessGame = () => {
 
         // ---- loop ------------------------------------------------------------
         let raf = 0
+        // #1758 item 2 — piano dynamics: the bed rides the carry bank and the
+        // lead takes a slow vibrato in the time-warning band (dynamics.js is
+        // the pure law; this is the seam). Quantized: call at transitions, not
+        // 60x/s — the bus holds through ducks via setMusicLevel's stored scale.
+        let bedLvl = 1
+        let bedVib = 0
+        const applyDynamics = () => {
+            if (mode !== 'play' || gs.end) return
+            const dyn = dynamicsFor(gs)
+            const lvl = Math.round(dyn.level * 50) / 50
+            const vibKey = dyn.vib ? dyn.vib.cents : 0
+            if (lvl !== bedLvl) { audioController.setMusicLevel(lvl); bedLvl = lvl }
+            if (vibKey !== bedVib) { audioController.setMusicVibrato(dyn.vib); bedVib = vibKey }
+        }
+
         let last = 0
         let acc = 0
         const FIXED_DT = 1000 / 60
@@ -448,6 +466,7 @@ const MarbleMadnessGame = () => {
                     if (gs.end) startAttract()
                 }
                 consumeEvents()
+                applyDynamics()
             }
             draw()
         }

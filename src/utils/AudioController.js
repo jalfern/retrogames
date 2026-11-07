@@ -511,6 +511,8 @@ class AudioController {
         this.analyser = null
         this.music = null
         this.pendingStep = null
+        // held fraction of the bus from setMusicLevel (ducks recover to it)
+        this.musicScale = 1
         // #1612 item 4 — the low-pass a title muffles its sustained bed through
         // (built lazily on first use so games that never muffle pay nothing).
         this.ambFilter = null
@@ -553,15 +555,27 @@ class AudioController {
         this.musicGain.gain.cancelScheduledValues(t)
         this.musicGain.gain.setValueAtTime(this.musicGain.gain.value, t)
         this.musicGain.gain.linearRampToValueAtTime(to * MUSIC_BUS, t + 0.03)
-        this.musicGain.gain.linearRampToValueAtTime(MUSIC_BUS, t + hold)
+        this.musicGain.gain.linearRampToValueAtTime(MUSIC_BUS * this.musicScale, t + hold)
     }
 
     // Hold the music bus at a fraction of the bus (the attract loop runs the
-    // bed at low gain — the original's attract had its soundtrack on). Call
-    // every frame to hold it through ducks; scale 1 restores the full bus.
+    // bed at low gain — the original's attract had its soundtrack on). The
+    // held fraction persists: ducks dip from it and recover to it, so a title
+    // riding a swell (#1758: Marble Madness raises the bed with its carry
+    // bank) keeps its dynamics through every duck. Call at the transitions
+    // that matter — no per-frame spam needed. scale 1 restores the full bus.
     setMusicLevel(scale) {
+        const k = Math.max(0, Math.min(1, scale))
+        this.musicScale = k
         if (!this.ctx || !this.musicGain || this.muted) return
-        this.musicGain.gain.setTargetAtTime(MUSIC_BUS * Math.max(0, Math.min(1, scale)), this.ctx.currentTime, 0.05)
+        this.musicGain.gain.setTargetAtTime(MUSIC_BUS * k, this.ctx.currentTime, 0.05)
+    }
+
+    // Slow pitch wobble on the LEAD of the playing bed (a pedalled piano's
+    // push near the cadenza — #1758). Pass null to release. Depth in cents
+    // stays musical (<30): past that it reads as panic, not vibrato.
+    setMusicVibrato(vib) {
+        if (this.music) this.music.vibrato = vib || null
     }
 
     // ---- one-shot SFX ----
@@ -717,7 +731,7 @@ class AudioController {
     }
 
     // ---- music engine (lookahead scheduler) ----
-    _note(freq, t, dur, type = 'square', vol = 0.5) {
+    _note(freq, t, dur, type = 'square', vol = 0.5, vib = null) {
         if (!this.ctx || !this.musicGain) return
         const o = this.ctx.createOscillator()
         const g = this.ctx.createGain()
@@ -727,6 +741,16 @@ class AudioController {
         g.gain.exponentialRampToValueAtTime(vol, t + 0.01)
         g.gain.exponentialRampToValueAtTime(0.0001, t + dur)
         o.connect(g); g.connect(this.musicGain)
+        // optional slow pitch wobble (setMusicVibrato): a sine LFO on detune,
+        // born and stopped with this note — callers that pass nothing keep the
+        // exact old graph (the same opt-in law as the pan and ambience buses).
+        if (vib) {
+            const lfo = this.ctx.createOscillator()
+            lfo.type = 'sine'; lfo.frequency.value = vib.hz
+            const lg = this.ctx.createGain(); lg.gain.value = vib.cents
+            lfo.connect(lg); lg.connect(o.detune)
+            lfo.start(t); lfo.stop(t + dur + 0.02)
+        }
         o.start(t); o.stop(t + dur + 0.02)
     }
 
@@ -736,7 +760,7 @@ class AudioController {
         if (!P) return
         if (this.music && this.music.track === track && this.music.playing) return
         this.stopMusic()
-        this.music = { track, step: 0, nextTime: this.ctx.currentTime + 0.06, stepDur: P.step, playing: true }
+        this.music = { track, step: 0, nextTime: this.ctx.currentTime + 0.06, stepDur: P.step, playing: true, vibrato: null }
         if (this.pendingStep) { this.music.stepDur = this.pendingStep; this.pendingStep = null }
         this.music.timer = setInterval(() => this._schedule(), 25)
     }
@@ -782,7 +806,7 @@ class AudioController {
         while (m.nextTime < this.ctx.currentTime + 0.12) {
             const i = m.step % P.lead.length
             const ln = P.lead[i]
-            if (ln) this._note(f(ln), m.nextTime, m.stepDur * 0.9, 'square', 0.5)
+            if (ln) this._note(f(ln), m.nextTime, m.stepDur * 0.9, 'square', 0.5, m.vibrato)
             const bn = P.bass && P.bass[i]
             if (bn) this._note(f(bn), m.nextTime, m.stepDur * 1.1, 'triangle', 0.6)
             const pv = P.perc && P.perc[i]
@@ -794,6 +818,10 @@ class AudioController {
 
     stopMusic() {
         if (this.music) { if (this.music.timer) clearInterval(this.music.timer); this.music.playing = false; this.music = null }
+        // the held level belongs to the bed that just stopped — a later title
+        // must never inherit another game's swell
+        this.musicScale = 1
+        if (this.musicGain && !this.muted) this.musicGain.gain.setTargetAtTime(MUSIC_BUS, this.ctx.currentTime, 0.02)
     }
 
     playFanfare() {
@@ -815,7 +843,7 @@ class AudioController {
     }
 
     // ---- verification hooks ----
-    _musicState() { return { playing: !!(this.music && this.music.playing), track: this.music && this.music.track, step: this.music && this.music.step, stepDur: this.music && this.music.playing ? this.music.stepDur : null, ctx: this.ctx && this.ctx.state } }
+    _musicState() { return { playing: !!(this.music && this.music.playing), track: this.music && this.music.track, step: this.music && this.music.step, stepDur: this.music && this.music.playing ? this.music.stepDur : null, ctx: this.ctx && this.ctx.state, level: this.musicScale, vib: this.music ? this.music.vibrato : null } }
     _peak() {
         if (!this.analyser) return 0
         const d = new Uint8Array(this.analyser.fftSize)
