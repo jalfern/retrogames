@@ -94,7 +94,10 @@ gate) — each reddens exactly its gate. #1758 mutants: map `AERIAL_RACE` to
 `marbleMenace.step 0.081→0.085` → exactly the ladder gate red. #1752 lesson:
 after committing, read `git show --stat` — a "leads recomposed" commit once
 shipped only the harness because a mid-mutant-sequence `git checkout` reverted
-the working file first.
+the working file first. #1758 item 2 mutants: make `busLevel` ignore the bank
+(`return 1`) → exactly the three swell gates red (marblecheck) and the carry
+gate red in marbleplay; drop the `secsLeft > WARN_SECS` guard in `leadVibrato`
+→ the engage gate reddens on a non-null vibrato at 11s.
 
 ## Honest gaps (filed for the QA lane)
 
@@ -113,5 +116,10 @@ policy-permanent (AudioController header).*
   #1758: four arrangements now (base, menace, aerial, finale), each gated to
   sound distinct. PRACTICE/BEGINNER share the base and SILLY/ULTIMATE share the
   finale on purpose: the arc is arrival→menace→flight→showdown, not six equal
-  courses. The third voice (Marsyas is a piano — pedalled sustain, dynamic
-  swells) stays out of reach of two square/triangle channels.*
+  courses. The third voice — closed by #1758 item 2: Marsyas is a pedalled
+  piano, and two channels fake the pedal with dynamics (`dynamics.js`): the bus
+  swells 0.82→1.0 as the carry bank grows (0→30s, quantized 0.02 steps, held
+  through ducks — `duckMusic` recovers to the held level), and the lead takes a
+  slow 5.5 Hz vibrato (12→26 cents) in the same ≤10s warning band the tick-beep
+  lives in. `setMusicVibrato` is opt-in on the engine: notes without it keep the
+  exact old graph.*

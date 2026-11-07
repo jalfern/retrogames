@@ -98,5 +98,26 @@ r.check('any key restarts: fresh race, fresh bed at the base tempo',
     p3.mode === 'play' && p3.race === 0 && m.playing && m.track === 'marble' && Math.abs(m.stepDur - 0.085) < 1e-9,
     JSON.stringify({ ...p3, ...m }))
 
+// ---- piano dynamics ride the live sim (#1758 item 2) ----
+// fresh run = empty carry bank: the bed holds the base swell, no vibrato
+m = await spy()
+r.check('run start: bus holds the empty-bank swell, no vibrato',
+    Math.abs(m.level - 0.82) < 1e-6 && m.vib === null, JSON.stringify(m))
+await gsq(() => { const g = window.__marble.getGs(); g.carry = 30 * 60 })
+await settle(200)
+m = await spy()
+r.check('a banked 30s carry opens the swell to full bus',
+    Math.abs(m.level - 1) < 1e-6, JSON.stringify(m))
+await gsq(() => { const g = window.__marble.getGs(); g.timeT = 9 * 60 })
+await settle(200)
+m = await spy()
+r.check('the time-warning band engages the slow lead vibrato',
+    m.vib !== null && Math.abs(m.vib.hz - 5.5) < 1e-9 && m.vib.cents >= 12 && m.vib.cents <= 26, JSON.stringify(m))
+await gsq(() => { const g = window.__marble.getGs(); g.timeT = 40 * 60 })
+await settle(200)
+m = await spy()
+r.check('time back above the band releases the vibrato',
+    m.vib === null && m.playing, JSON.stringify(m))
+
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 r.exit(browser)

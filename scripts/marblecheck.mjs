@@ -8,6 +8,7 @@
 
 import { makeGame, step, stepOk, stateHash, CFG } from '../src/games/MarbleMadness/sim.js'
 import { RACES, GRID, BREAKDROP, buildHeights, FINALE_RACE, MENACE_RACE, AERIAL_RACE, MUSIC_STEPS, bedFor, musicStepFor } from '../src/games/MarbleMadness/levels.js'
+import { busLevel, leadVibrato, dynamicsFor, SWELL_BASE, VIB_MAX_CENTS } from '../src/games/MarbleMadness/dynamics.js'
 import { plan, bfsPath } from '../src/games/MarbleMadness/planner.js'
 import { MUSIC, MUSIC_BUS } from '../src/utils/AudioController.js'
 import { readFileSync } from 'node:fs'
@@ -273,6 +274,42 @@ ok('brake budget fits physics (maxV needs >0.4 + v*6)', CFG.maxV > 0.1)
         !/audioController|MUSIC|duckMusic/.test(simSrc))
     ok('beds ride the shared bus ceiling (MUSIC_BUS stays the one duck number)',
         MUSIC_BUS > 0 && MUSIC_BUS <= 1 && BEDS.every(([, b]) => b.step > 0))
+}
+
+// ----------------------------------------------- piano dynamics (#1758 item 2) ----
+// Marsyas pedals: the bed swells with the carry bank and the lead vibrates in
+// the time-warning band. The law is pure (dynamics.js); the graph is pinned at
+// the callsite (the #1744 routing rule) so a refactor can't silently drop it.
+{
+    const idxSrc = readFileSync(new URL('../src/games/MarbleMadness/index.jsx', import.meta.url), 'utf8')
+    const dynSrc = readFileSync(new URL('../src/games/MarbleMadness/dynamics.js', import.meta.url), 'utf8')
+    ok('swell: bus rides the carry bank (base under full, saturates at the cap)',
+        Math.abs(busLevel(0) - SWELL_BASE) < 1e-12 && SWELL_BASE < 1 &&
+        Math.abs(busLevel(30 * 60) - 1) < 1e-12 && Math.abs(busLevel(9999 * 60) - 1) < 1e-12)
+    ok('swell is monotonic and never clipping (0 <= level <= 1 everywhere)',
+        [0, 60, 600, 1800, 1800, 5400].every((t, i, a) => !i || busLevel(t) >= busLevel(a[i - 1])) &&
+        [0, 120, 900, 1800, 3600, 99999].every((t) => { const v = busLevel(t); return v >= SWELL_BASE && v <= 1 }) &&
+        busLevel(0) < 1 && busLevel(900) < 1 && Math.abs(busLevel(1800) - 1) < 1e-12)
+    ok('vibrato engages exactly at the sim warning band (secs<=10) and stays musical',
+        leadVibrato(11) === null && leadVibrato(10) !== null && leadVibrato(0) !== null &&
+        leadVibrato(10).cents <= VIB_MAX_CENTS && leadVibrato(0).cents <= VIB_MAX_CENTS &&
+        leadVibrato(10).hz < 8)
+    ok('vibrato deepens toward zero (urgency, not noise)',
+        leadVibrato(5).cents >= leadVibrato(10).cents && leadVibrato(0).cents >= leadVibrato(5).cents &&
+        leadVibrato(10).hz === leadVibrato(0).hz)
+    ok('dynamicsFor reads the sim (carry -> level, clock -> vibrato)',
+        Math.abs(dynamicsFor({ carry: 0, timeT: 45 * 60 }).level - SWELL_BASE) < 1e-12 &&
+        dynamicsFor({ carry: 0, timeT: 45 * 60 }).vib === null &&
+        Math.abs(dynamicsFor({ carry: 30 * 60, timeT: 9 * 60 }).level - 1) < 1e-12 &&
+        dynamicsFor({ carry: 30 * 60, timeT: 9 * 60 }).vib !== null)
+    ok('dynamics module is pure (no rng, no audio, no Date)',
+        !/Math\.random|Date\.now|audioController|duckMusic/.test(dynSrc))
+    ok('callsites pinned: quantized level + vibrato set and cleared from the sim clock',
+        /setMusicLevel\(/.test(idxSrc) && /setMusicVibrato\(dyn\.vib\)/.test(idxSrc) &&
+        /applyDynamics\(\)/.test(idxSrc))
+    ok('sim/planner still know no audio (the bed stays painter-side)',
+        !/audioController|duckMusic|setMusicLevel|setMusicVibrato/.test(
+            readFileSync(new URL('../src/games/MarbleMadness/sim.js', import.meta.url), 'utf8')))
 }
 
 if (fails) {
