@@ -583,7 +583,10 @@ function townStep(st, cmd) {
         // you step out onto your own threshold, not onto the map at large
         t.tx = RIM_STREET.doors[out] ?? RIM_STREET.start.x
         t.ty = 1
-        st.events.push({ type: 'townStreet' })
+        // #1756: the leave-beat still has to paint the room it came from for
+        // a few frames after b cleared — the event carries the key (events
+        // are transient; stateHash never reads them).
+        st.events.push({ type: 'townStreet', b: out })
         return
     }
     const ent = BUILDINGS.find(b => b.key === cmd.replace('enter-', ''))

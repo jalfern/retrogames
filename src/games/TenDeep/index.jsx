@@ -341,8 +341,8 @@ const paintBench = (ctx, gs) => {
     })
 }
 
-const paintInterior = (ctx, gs, bob) => {
-    const b = gs.town.b
+const paintInterior = (ctx, gs, bob, bKey) => {
+    const b = bKey ?? gs.town.b   // #1756: the leave-beat names the room it came from after b cleared
     const tint = ROOM_TINT[b]
     const g = ctx.createLinearGradient(0, 0, 0, H)
     g.addColorStop(0, tint[0]); g.addColorStop(1, tint[1])
@@ -633,7 +633,7 @@ const TenDeepGame = () => {
                 else if (e.type === 'empty') audioController.playTone(70, 0.06, 'triangle', 0.05)
                 else if (e.type === 'wipe') { audioController.playSweep(220, 55, 0.9, 'sawtooth', 0.1); say('THE BODIES RETURN TO THE RIM — HALF THE PURSE BUYS PASSAGE') }
                 else if (e.type === 'townEnter') { audioController.playTone(180, 0.08, 'triangle', 0.05); say(`${e.name} — DOORS OPEN`); cut = { kind: 'in', f: -1 } }
-                else if (e.type === 'townStreet') cut = { kind: 'out', f: -1 }   // #1756: and back out through the black frame
+                else if (e.type === 'townStreet') cut = { kind: 'out', f: -1, b: e.b }   // #1756: and back out through the black frame
                 else if (e.type === 'townBuy') audioController.playTone(1245, 0.05, 'square', 0.04)
                 else if (e.type === 'hire') { audioController.playSweep(300, 900, 0.4, 'square', 0.06); say(`WELCOME, ${e.who} THE ${e.cls} — THE POST IS FILLED`) }
                 else if (e.type === 'townOpenBench') { audioController.playTone(220, 0.1, 'triangle', 0.05); say('THE BENCH OPENS — SIX PAPERS, ONE COMPANY') }
@@ -947,7 +947,7 @@ const TenDeepGame = () => {
                 }
                 if (cc) {
                     if (cc.phase === 'rim') paintRim(ctx, gs, bob, doorIdxOf(gs.town), cc.a)
-                    else paintInterior(ctx, gs, bob)
+                    else paintInterior(ctx, gs, bob, cut.b)
                     ctx.fillStyle = `rgba(0,0,0,${cc.a.toFixed(3)})`
                     ctx.fillRect(-6, 0, W + 12, H)
                 }
@@ -1228,9 +1228,9 @@ const TenDeepGame = () => {
                 // the rAF clock. moon = the 2D layer at (212,26); cobbles sit
                 // under the well mouth at (128,166); slot k = a file silhouette's
                 // body pixel on its own tile.
-                cutPix: (kind, f) => {
+                cutPix: (kind, f, b) => {
                     const prev = cut
-                    cut = { kind, f: f - 1 }
+                    cut = { kind, f: f - 1, b }
                     paint()
                     const moon = ctx.getImageData(205, 26, 1, 1).data   // the lit crescent, clear of the dark bite
                     const floor = ctx.getImageData(128, 166, 1, 1).data

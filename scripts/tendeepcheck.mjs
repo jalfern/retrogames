@@ -724,6 +724,15 @@ section('THE RIM — surface-world pins (stage 2 of #1127)')
             ok(new Set(single.map((p) => p.stride)).size === 1, 'stacked silhouettes stride differently on one tile — idle is not still')
             ok(rimTrail(hist, 2).length === 2 && rimTrail([], 3).length === 0, 'the file ignores its requested length (or invents silhouettes on an empty track)')
         }
+        // the beat's memory: leaving books the room it came from, so the
+        // out-phase can still paint it after b clears
+        {
+            const g = makeRun()
+            walkEnter(g, 'T')
+            step(g, 'leave')
+            const ev = g.events.find((e) => e.type === 'townStreet')
+            ok(ev && ev.b === 'T', `townStreet must carry the room key for the out-beat, got ${JSON.stringify(ev)}`)
+        }
         // ---- honesty: none of this reaches the sim ----------------------------
         {
             const g1 = makeRun(), g2 = makeRun()
@@ -1402,6 +1411,18 @@ if (MUT) {
             pull(nightTownFile)
             console.log(`  mut ${name}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
             ok(res.status !== 0, `${name} SURVIVED — the night-voice gates stopped touching this rule`)
+        }
+        const nightSimFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'sim.js')
+        const nightSim = readFileSync(nightSimFile, 'utf8')
+        const simMem = ["the room key drops out of townStreet (out-phase paints nothing)",
+            "{ type: 'townStreet', b: out }", "{ type: 'townStreet' }"]
+        ok(nightSim.includes(simMem[1]), 'night memory mutant anchor missing')
+        plant(nightSimFile, nightSim.replace(simMem[1], simMem[2]))
+        {
+            const res = spawnSync(process.execPath, [join(HERE, 'tendeepcheck.mjs')], { encoding: 'utf8' })
+            pull(nightSimFile)
+            console.log(`  mut ${simMem[0]}: ${res.status !== 0 ? 'caught by a probe' : 'SURVIVED (BAD)'}`)
+            ok(res.status !== 0, `${simMem[0]} SURVIVED — the beat-memory gate stopped touching this rule`)
         }
         const nightIdxFile = join(HERE, '..', 'src', 'games', 'TenDeep', 'index.jsx')
         const nightIdx = readFileSync(nightIdxFile, 'utf8')

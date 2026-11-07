@@ -35,7 +35,7 @@ const browser = await launch()
 const page = await browser.newPage({ viewport: { width: 700, height: 640 }, deviceScaleFactor: 1 })
 page.setDefaultTimeout(180000)
 const errors = []
-page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message}`))
+page.on('pageerror', (e) => errors.push(`[pageerror] ${e.message} @ ${(e.stack || "").split("\n")[1] || ""}`))
 page.on('console', (m) => { if (m.type() === 'error' && !relayNoise(m.text(), m.location())) errors.push(`[console.error] ${m.text()}`) })
 
 const probe = () => page.evaluate(() => window.__deepTest.probe())
