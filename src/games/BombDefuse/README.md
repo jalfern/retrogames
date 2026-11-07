@@ -52,23 +52,57 @@ banking the final tick. No attract picks → **no `rules` stamp needed**.
 `V` opens the mic — words coach (`voice.js` grammar), pulse the control,
 never act (#1247), and every phrase banks a `voiceCmd`.
 
+## Online room (#1819 — `net.js` + shared Lobby)
+
+Two boxes, one bomb: `?net=host` opens a DEFUSE CREW room, a friend opens the
+join URL (QR/entry card) and the host kicks with SPACE. The wire is
+lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
+
+- `go {seed}` — one seed, both boxes run the same deterministic sim (the
+  seed-pure integer engine made this free).
+- `pad {k, mm}` — each box samples its own seat every tick, `PAD_DELAY = 8`
+  ticks ahead of the sim, batched `SAMPLE_EVERY = 2`; tick k does not run on a
+  box until the peer's mask for k is in.
+- `hs {k, h}` — whole-sim hash every `HASH_EVERY = 60`; mismatch freezes the
+  guest, `res {e:'req'}` → host snapshot `res {e:'snp', i/z/p}` chunked under
+  the 512 B relay budget; the guest restores at the SAME tick with pad streams
+  PRESERVED (samples already sent are final — the sampling law). The snapshot
+  carries the rng counter (`rng.x()`), the one thing the seed can't rebuild
+  mid-run.
+- A walkaway is not a crash: `DROP_GRACE = 30` stalled ticks demotes the dead
+  seat and the engine's partner emitter takes it **on both boxes** (`players`
+  flips to 1) — the run burns on with a CPU partner. If the guest survives the
+  host, its own pads drive seat 0. A mid-run returner is re-seated at the next
+  `go`, not in-flight.
+- Pure core: `net.js` imports no DOM/WebSocket — `scripts/defuselinkcheck.mjs`
+  proves codec, lockstep, jitter, walkaway, resync and rejoin in plain Node
+  over `relay/core.js` rules; `scripts/defuselinkdrive.mjs` rides a real
+  relay (`relay/server.mjs`) with two headless browsers, real keys and a real
+  tab-close walkaway. On #1622 `--single-process` boxes the drive falls back to
+  one persistent context with two tabs (a second isolated context aborts sp
+  browsers) — still two JS runtimes, two relay sockets.
+
 ## Verify
 
 ```bash
 npm run defusecheck                      # 53 gates: rules, ledger, replay, slack, source pins
+npm run defuselinkcheck                # 48 gates: online protocol over an in-memory room
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
 npm run defusedrive                      # real-key drive: start→play→boom→restart
+npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway
 ```
 
-Mutant (harness can fail): disable the SYNC-clear condition in `engine.js`
+Mutants (harness can fail): disable the SYNC-clear condition in `engine.js`
 (`gs.keys[0] && gs.keys[1]` → add `&& false`) → defusecheck drops to 38/53,
 red on the gates that name it. Restore → 53/53.
+`npm run defuselinkcheck -- --mutate` kills the walkaway demote → its 4 gates
+report the freeze instead and the run dies with a dead seat (the law has teeth).
 
 ## Honest gaps (filed to QA as the polish pass)
 
-- Online room (net.js/lobby) — the other four co-op titles have it; this one
-  ships solo+CPU and couch 2P only.
+- Online mid-run rejoin lands at the next `go`, not in-flight (linkcheck covers
+  the demote + fresh-go path; a partner returning to a live run stays CPU).
 - No WATCH seat / model seat yet (#1637 rollout can add it).
 - VENT holder is keyboard-only on phones (B button = HOLD exists, but the
   holder/worker role labels could coach harder on first VENT).

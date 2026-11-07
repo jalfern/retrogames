@@ -4,13 +4,33 @@
 // protocol, caps and lifecycle are proven identically on every CI run — no
 // network, no secrets. Run: `node relay/server.mjs [port]` (default 8787).
 
+import http from 'node:http'
 import { WebSocketServer } from 'ws'
-import { CODE_RE, MAX_MSG, join, leave, relay, rosterOf, newRoom, newRegistry, registryAdd, registryRemove, registryCount } from './core.js'
+import { CODE_RE, MAX_MSG, join, leave, relay, rosterOf, newRoom, newRegistry, registryAdd, registryRemove, registryCount, corsHeaders } from './core.js'
 
 export function startRelay(port = Number(process.env.PORT || 8787)) {
     const reg = newRegistry()
     const rooms = new Map()
-    const wss = new WebSocketServer({ port })
+    // Same surface as the production worker: plain HTTP (/status with CORS,
+    // #886/#1711 capability probes) on the SAME port as the room sockets — the
+    // clients derive http:// from ws://, so a twin that answers WS-only makes
+    // every probe a CORS console-error on the drives' zero-page-errors gate.
+    const server = http.createServer((req, res) => {
+        const origin = req.headers.origin
+        const path = (req.url || '/').split('?')[0]
+        if (req.method === 'OPTIONS' && (path === '/status' || path === '/feedback' || path === '/sessions' || path.startsWith('/sessions/'))) {
+            res.writeHead(204, corsHeaders(origin)); res.end(); return
+        }
+        if (path === '/' || path === '/status') {
+            res.writeHead(200, { 'content-type': 'application/json', ...corsHeaders(origin) })
+            res.end(JSON.stringify({ ok: true, service: 'retrogames-relay', rooms: registryCount(reg), feedback: false, jonKey: false, sessions: false }))
+            return
+        }
+        res.writeHead(404, { 'content-type': 'application/json', ...corsHeaders(origin) })
+        res.end(JSON.stringify({ ok: false, err: 'not found' }))
+    })
+    const wss = new WebSocketServer({ server })
+    server.listen(port)
 
     const roomFor = (code, cap) => {
         let r = rooms.get(code)
@@ -104,7 +124,7 @@ export function startRelay(port = Number(process.env.PORT || 8787)) {
         boundPort: () => { const a = wss.address(); return a ? a.port : 0 },
         rooms: () => rooms.size,
         codes: () => registryCount(reg),
-        close: () => new Promise((done) => { clearInterval(hb); for (const r of rooms.values()) closeRoom(r); wss.close(done) }),
+        close: () => new Promise((done) => { clearInterval(hb); for (const r of rooms.values()) closeRoom(r); wss.close(() => server.close(done)) }),
     }
 }
 
