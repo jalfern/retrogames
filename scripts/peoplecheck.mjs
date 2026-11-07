@@ -13,6 +13,8 @@
 //   4. BONDS     — the #1817 chat ladder: meter growth, exact level edges, the
 //                  topic/linger/return/toast unlocks (per-seed exact against a
 //                  baseline run), neglect-fade, hash, and source pins.
+//   5. FEEL      — #1823: walking footfalls name their ground (plank/gravel/
+//                  lawn), refusal events name their cell, and views are pinned.
 //
 // It proves IT can fail the playbook way: break one load-bearing line in sim.js
 // (content accrual in finishUse, or the relAdd(s,'fern') feed in the visitor
