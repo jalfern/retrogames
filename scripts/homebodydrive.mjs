@@ -112,6 +112,24 @@ await wait(150)
 const g1 = await st()
 check('G switches the commanded resident', g1.screen === 'play')
 
+// BONDS (#1817): real co-presence climbs the heart at 1x clock, and the
+// panel paints the ladder — the leaf row lights its pips green at FAMILY.
+const bd0 = await st()
+check('bond meters ride the live state', bd0.rel && typeof bd0.rel.house === 'number' && typeof bd0.rel.fern === 'number', JSON.stringify(bd0.rel))
+const [pr0, pg0, pb0] = await pxAt(557, 246) // fern pip 1, before anyone is family
+await tap(8 + 5 * 32 + 16, 40 + 3 * 32 + 16) // commanded resident walks to (3,5)
+await page.keyboard.press('KeyG')
+await tap(8 + 6 * 32 + 16, 40 + 3 * 32 + 16) // the other walks next door to (3,6)
+await wait(5200)
+const bd1 = await st()
+await wait(6000)
+const bd2 = await st()
+check('residents side by side grow the heart at 1x', bd2.rel.house > bd1.rel.house + 0.03, `house ${bd1.rel.house.toFixed(2)} -> ${bd2.rel.house.toFixed(2)}`)
+await page.evaluate(() => window.__homebodyTest.bond('fern', 100))
+await wait(150)
+const [pr1, pg1, pb1] = await pxAt(557, 246)
+check('a FAMILY leaf paints its pips green', pg1 > pr1 && pg1 > pb1 && pg1 > 120 && !(pg0 > pr0 && pg0 > pb0 && pg0 > 120), `off rgb(${pr0},${pg0},${pb0}) on rgb(${pr1},${pg1},${pb1})`)
+
 // pause via Escape: the clock stops. Sample AFTER the keypress has landed and
 // compare two post-pause reads — a tA captured before Escape can straddle one
 // last frame and false-fail (flake fixed #1806 drive).

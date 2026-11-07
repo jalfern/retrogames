@@ -735,9 +735,11 @@ function applyHourAt(s, hh) {
             think(s, pick(s, ['A happy hour passes over the little house.', 'The household hums along contentedly.']))
         }
     }
-    // #1817: bonds fade when nobody invests — absence from Fern stings faster
-    s.rel.house = Math.max(0, s.rel.house - 0.4)
-    s.rel.fern = Math.max(0, s.rel.fern - 0.7)
+    // #1817: bonds fade when nobody invests — absence from Fern stings faster.
+    // Per-hour values (an hour is only 5 real seconds on this clock): kept well
+    // under the per-second chat growth so attention beats entropy at 1x AND x8.
+    s.rel.house = Math.max(0, s.rel.house - 0.02)
+    s.rel.fern = Math.max(0, s.rel.fern - 0.035)
 }
 function newDay(s) {
     for (const p of s.people) p.workedToday = false

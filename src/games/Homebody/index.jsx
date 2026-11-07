@@ -442,6 +442,7 @@ const HomebodyGame = () => {
                     people: gs.people.map((p) => ({ name: p.name, needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
+                    rel: { house: gs.rel.house, fern: gs.rel.fern },
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
                 start: (sd) => startPlay(sd),
@@ -452,6 +453,7 @@ const HomebodyGame = () => {
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
                 select: (i) => { if (gs) gs.sel = i },
+                bond: (k, v) => { if (gs && gs.rel[k] !== undefined) gs.rel[k] = v },
                 hash: () => (gs ? stateHash(gs) : 0),
             }
             exposeGame({

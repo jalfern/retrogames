@@ -46,6 +46,10 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   fade every sim-hour (−0.4 house, −0.7 fern — absence from Fern stings
   faster) and ride `stateHash`. The needs panel gained a BONDS row: heart =
   the two residents, leaf = Fern, four pips each, gold pulse at FAMILY.
+  Fade is −0.02/−0.035 per hour, not −0.4/−0.7: at this clock an hour is
+  5 real seconds, and a fade above ~0.08/s would outrun chat growth outright
+  — the ladder would exist on paper and die on the phone (caught by the
+  drive pass, not the node gates).
 - Contentment: +1/+2 per satisfied need (2 = everyone healthy), +1 chat, +3
   payday, +1 per happy ambience hour. 80 grants the wish.
 - Autonomy (needs self-service, clocking in) runs only in `demo` mode — attract
