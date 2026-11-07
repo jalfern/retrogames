@@ -139,6 +139,24 @@ routes through the wind law"); restore afterwards.
 
 ## Shipped since the first pass
 
+- **#1766 — polish round 3 (truck silhouette, smoke-dimmed fire, crew breathe):**
+  three visual bullets, all provable in plain Node through the #1440 recording-ctx
+  pattern (they draw only fillRects). (1) *The ladder truck IS the base column*
+  (#1424's `g.ladderX`): `drawLadderTruck` in `art.js` parks a body/skirt/cab/
+  wheels/headlight at seat 3's column with a red↔blue light bar that turns, so the
+  bare ladder line reads as a vehicle; it rides the base law — move `g.ladderX` and
+  the whole truck moves. `drawProps` calls it every frame. (2) *Distant fire greys
+  behind smoke*: `SMOKE_FIRE_DIM` (0.45) — a burning cell whose advected
+  `g.smoke[i]` sits above the threshold draws the desaturated `FLAME.smoke` palette
+  (saturation dies before brightness), the drawn mirror of the sim's `SMOKE_DIM`
+  light law; per-cell, so a clear neighbour still burns. (3) *An idle firefighter
+  breathes*: `breath = moving ? 0 : floor(t / BREATHE) % 2` lifts coat/trim/helmet/
+  tool one pixel while the feet stay planted; a walker runs the step cycle instead.
+  17 gates in `firecrewcheck` (+1 → 148 total). Mutants (one line each): revert the
+  palette routing → 4 smoke gates red; `const breath = 0` → 2 breathe gates red;
+  delete the `drawLadderTruck(ctx, g, t)` call in `drawProps` → the props pin red.
+  Gotcha learned: `g.smoke` is a `Float32Array`, so storing the JS double `0.45`
+  rounds *below* the `>= 0.45` threshold — set a robustly-above density in gates.
 - **#1440 — night art pass (gap 4):** flame palette per fuel (loft decking
   burns heavy-timber amber, ground crates burn white-hot), gale shifts throw
   bright ember streaks downwind (gust 2 only, calm never), and a starving
