@@ -35,6 +35,14 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
   `keepsOpen`, BFS, the attract bot and manual movement all treat the wing as
   built the tick the hammer falls; the door's room-side cell (4,12) may never
   be blocked once the room holds furniture. `ext` rides `stateHash`.
+- Move-in (#1814): buying the kit arms `s.roomReact = 2`; the moment each
+  resident is otherwise idle they path once through the doorway to a glance
+  cell in the wing (preferred cells `ROOM_REACT`, any free room cell as
+  fallback). Arrival pays a thought line, +0.15 fun, a `room-see` event and a
+  banner — once per resident, ever; a player interrupting the walk re-offers
+  it later. The wing's east windows (`EXT_ROOM.windows` — one source for the
+  bake and the glow) light warm after dusk like the house's own. The attract
+  bot buys the kit second so the demo sells the reflow.
 - Bonds (#1817): `s.rel = { house, fern }` climb while people actually talk —
   Fern-chat +0.07/s while a resident chats beside her, household co-presence
   +0.05/s while both residents are unengaged within 2 tiles of each other.
@@ -57,10 +65,12 @@ freezes the rest. Workdays run the clock ×8 while a rostered resident is out
 
 ## Verify
 ```bash
-npm run peoplecheck          # 83 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), winnable seeds, determinism
+npm run peoplecheck          # 102 gates: boot, rules, spare-room wing (#1806), bonds ladder (#1817), move-in reactions + night glow (#1814), winnable seeds, determinism
 # mutation proof: comment out the `s.content += n` line in sim.js finishUse —
 # the WINNABLE section goes red; restore. Or strip `relAdd(s, 'fern', ...)` in
 # the visitor chat block — exactly the BONDS leaf-meter gates go red; restore.
+# Or zero `s.roomReact = s.people.length` in buildRoom — exactly the MOVE-IN
+# gates go red; restore.
 npm run dev   # another terminal
 npm run contractcheck        # includes homebody (CONTRACT_ONLY=homebody for just this)
 DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, restart
@@ -73,6 +83,10 @@ opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
   one per lot). Deeper multi-room building (choose placement, second wing, rooms
   with purpose) remains the open tail of this old line.
+- **CLOSED by #1814 (QA pass, partial):** the wing glows at night and the
+  residents react to the build. Still open from that pass: catalog thumbnails
+  per item, wing-themed furniture, walk-surface step timbre, red refusal flash,
+  bonds-pip legend/teaching line, cooling log lines, chat speech bubbles.
 - **PARTIAL by #1817:** bonds climb the chat loop now — `house`/`fern` meters,
   four levels, topic/linger/return/toast unlocks, hourly fade, panel row.
   Romance, fights and relationships beyond the household+Fern triangle are the

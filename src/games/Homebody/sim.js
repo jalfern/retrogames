@@ -117,7 +117,18 @@ export const EXT_ROOM = {
     floor: [[3, 12], [3, 13], [3, 14], [4, 12], [4, 13], [4, 14], [5, 12], [5, 13], [5, 14], [6, 12], [6, 13], [6, 14]],
     walls: [[2, 12], [2, 13], [2, 14], [2, 15], [3, 15], [4, 15], [5, 15], [6, 15], [7, 12], [7, 13], [7, 14], [7, 15], [3, 11], [6, 11], [7, 11]],
     door: [4, 11],
+    windows: [[4, 15], [6, 15]],   // #1814: one source — the bake paints them, nightTint lights them
 }
+
+// #1814 move-in reactions: the hammer falls and the residents react once.
+// Preferred glance cells inside the wing (any free room cell as fallback);
+// lines for the moment they arrive.
+export const ROOM_REACT = [[4, 13], [6, 13]]
+export const ROOM_SEE_LINES = [
+    'The new room smells like fresh paint.',
+    '{p} takes a victory lap through the new room.',
+    '{p} tries the new floorboards — they creak approvingly.',
+]
 const extFloor = new Set(EXT_ROOM.floor.map(([r, c]) => `${r},${c}`))
 const extWall = new Set(EXT_ROOM.walls.map(([r, c]) => `${r},${c}`))
 export function groundOf(s, r, c) {
@@ -155,6 +166,7 @@ const person = (name, r, c, hue, worksOn) => ({
     workedToday: false, working: false,
     mood: 1, walkPhase: 0, face: 1,
     chatT: 0, alarmT: 0, wasRed: {},
+    roomSeen: false,             // #1814: one move-in glance per resident
 })
 
 export function newRun(seed) {
@@ -188,6 +200,7 @@ export function newRun(seed) {
         done: null, endMsg: '',
         demo: false,
         ext: 0,
+        roomReact: 0,            // #1814: residents still owed a move-in glance
         ambience: 0, happyHours: 0,
     }
     scheduleVisit(s)
@@ -405,6 +418,7 @@ export function buildRoom(s) {
     if (!roomClear(s) || s.money < EXT_ROOM.price) return false
     s.money -= EXT_ROOM.price
     s.ext = 1
+    s.roomReact = s.people.length   // #1814: the wing gets its move-in reactions
     s.events.push({ t: 'room' })
     think(s, 'The east wall rolls open and a spare room rises — plank floor, two windows, room to grow.')
     return true
@@ -850,6 +864,25 @@ export function advance(s, dt) {
             }
             continue
         }
+        // #1814: arrived at the new wing — one glance, one line, a small lift
+        if (p.goal && p.goal.kind === 'room') {
+            p.goal = null
+            p.roomSeen = true
+            s.roomReact = Math.max(0, s.roomReact - 1)
+            p.needs.fun = Math.min(1, p.needs.fun + 0.15)
+            s.events.push({ t: 'room-see', name: p.name })
+            think(s, pick(s, ROOM_SEE_LINES).replace(/\{p\}/g, p.name))
+            continue
+        }
+        // #1814: the hammer fell and this resident hasn't looked yet — send
+        // them through the doorway; re-offered if the player interrupts the walk
+        if (s.ext && s.roomReact > 0 && !p.roomSeen) {
+            const pref = ROOM_REACT[s.people.indexOf(p) % ROOM_REACT.length]
+            const tg = (walkable(s, pref[0], pref[1]) ? [pref] : EXT_ROOM.floor)
+                .map(([r, c]) => ({ r, c }))
+            const path = bfsPath(s, { r: p.r, c: p.c }, tg)
+            if (path) { p.path = path; p.goal = { kind: 'room' } }
+        }
         autonomous(s, p)
         // idle flavour
         s.thoughtT += simDt
@@ -905,9 +938,20 @@ export function bot(s) {
     const p = s.people[0]
     if (p.working || p.faintT > 0 || p.path || p.use) return
     if (s.money > 300 && s.content < WIN_CONTENT) {
-        const wants = ['phone', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
+        const wants = ['phone', 'roomkit', 'stove', 'tv', 'sofa', 'radio', 'book', 'shower', 'plant', 'lamp', 'rug']
         for (const id of wants) {
             const def = DEF[id]
+            // #1814: the attract build grows the lot so the demo sells the
+            // reflow — the room owns itself via `ext`, and only buys when the
+            // footprint is honestly clear (never wedge the bot on a refusal)
+            if (id === 'roomkit') {
+                if (s.ext || s.money < EXT_ROOM.price || !roomClear(s)) continue
+                const keep = s.sel
+                s.sel = CATALOG.findIndex((d) => d.id === 'roomkit')
+                place(s, 0, 0)   // the room ignores the cursor; the lot owns the spot
+                s.sel = keep
+                return
+            }
             if (s.items.some((it) => it.id === id) || s.money < def.price) continue
             for (let r = 1; r < ROWS; r++) {
                 for (let c = 0; c < COLS; c++) {
