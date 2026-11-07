@@ -39,7 +39,7 @@
 // bogus issues in 48 seconds against an orphan vite.
 
 import { spawn } from 'node:child_process'
-import { writeFileSync, readFileSync } from 'node:fs'
+import { writeFileSync, readFileSync, unlinkSync, mkdirSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -208,6 +208,24 @@ export function classifyPort(prePid, chain, childPid, mutate) {
     return { state: 'foreign-pid', pid: chain[0] }
 }
 
+// #1799 — but a crashed run leaks OUR OWN server onto our own port: the bot is
+// SIGKILLed (watchdog) or the waitDev path once killed only the npm leader and
+// orphaned the vite grandchild; the next night aborts on its own wreckage. A
+// `detached` spawn puts every process it ever made in one group whose pgid is
+// the leader pid, and a pgid cannot be recycled while any member lives — so a
+// LISTENing socket whose pgid equals the pidfile's leader PROVES the squatter
+// is our leak, and the run reclaims the port instead of aborting. No pidfile,
+// or a foreign pgid, is still a squatter: the #1312 gate stays load-bearing.
+export function classifyStale(prePid, chain, pgid, rec, mutate) {
+    if (mutate === 'squatter') return { state: 'port-ok', pid: null }
+    if (prePid == null) return { state: 'port-free', pid: null }
+    if (rec && Number.isFinite(rec.leader) &&
+        (pgid === rec.leader || (chain || []).includes(rec.leader))) {
+        return { state: 'reclaim', pid: prePid, leader: rec.leader }
+    }
+    return { state: 'squatted', pid: prePid }
+}
+
 // One infra issue per squatter condition, never per-game. Digits are masked on
 // both sides (same shape math as failureShape), so pid churn night-to-night — or
 // a re-spawned squatter with a new pid — does not re-file.
@@ -286,6 +304,20 @@ function selftest() {
     ok(classifyPort(null, [], 400).state === 'foreign-pid', 'nothing answering lsof after waitDev cannot be proven ours')
     ok(classifyPort(null, [777, 776], 400, 'squatter').state === 'port-ok',
         'mutant squatter plays against a stranger — the ownership gate is load-bearing')
+    // #1799 — self-reclaim verdicts, pure: our own wreckage vs a stranger.
+    ok(classifyStale(null, [], null, null).state === 'port-free',
+        'stale-check: nothing listening is a free port')
+    ok(classifyStale(4242, [4242, 1], 777, null).state === 'squatted',
+        'stale-check: a listener with no pidfile is still a squatter (#1312 untouched)')
+    ok(classifyStale(4242, [4242, 1], 900, { leader: 900 }).state === 'reclaim' &&
+        classifyStale(4242, [4242, 1], 900, { leader: 900 }).leader === 900,
+        'stale-check: listener whose pgid is our recorded group leader is our own leak')
+    ok(classifyStale(4242, [4242, 900, 1], 900, { leader: 900 }).state === 'reclaim',
+        'stale-check: a listener descended from our recorded leader is our own leak too')
+    ok(classifyStale(4242, [4242, 1], 777, { leader: 900, listener: 4241 }).state === 'squatted',
+        'stale-check: foreign pgid with a stale pidfile is still a squatter — the gate stays load-bearing')
+    ok(classifyStale(4242, [4242, 1], 900, { leader: 900 }, 'squatter').state === 'port-ok',
+        'mutant squatter swallows the reclaim verdict too — the bot would play against its own leak')
     ok(planInfraFiling({ port: 5199, pid: 4242 }, []).title === 'nightly-bot: :5199 is squatted by pid 4242',
         'a fresh squatter files one infra issue naming the pid')
     ok(planInfraFiling({ port: 5199, pid: 9021 }, ['nightly-bot: :5199 is squatted by pid 4242']) === null,
@@ -314,6 +346,8 @@ function selftest() {
     const useAt = selfSrc.search(/failed\.length/)
     ok(declAt >= 0 && declAt < useAt,
         'live shell declares `failed` before greenStreak reads it (TDZ #1145: selftest never reaches main())')
+    ok(!/\bchild\.kill\(/.test(selfSrc) && (selfSrc.match(/process\.kill\(-child\.pid/g) || []).length >= 3,
+        'every failed path kills the whole detached group (>=3 sites), never just the npm leader (#1799: leader-only kills orphaned the vite on :5199)')
     console.log(`\n${fail ? 'FAILED' : 'PASSED'} ${pass}/${pass + fail}`)
     process.exit(fail ? 1 : 0)
 }
@@ -361,20 +395,57 @@ function squatterError(port, pid, state, chain) {
     return e
 }
 
+// #1799 pidfile: records the leader of our detached dev-server group the moment
+// we spawn it (and the proven listener once it answers), so a future run can
+// tell its own wreckage from a stranger. Written before the spawn can fail; the
+// directory is the bot's usual artifact dir.
+const PIDFILE = `/tmp/forge/nightly-${PORT}.pid`
+function readPidfile() {
+    try { return JSON.parse(readFileSync(PIDFILE, 'utf8')) } catch { return null }
+}
+function writePidfile(rec) {
+    try { mkdirSync('/tmp/forge', { recursive: true }); writeFileSync(PIDFILE, JSON.stringify(rec)) } catch { /* best effort: a missing pidfile only costs a re-abort */ }
+}
+function removePidfile() {
+    try { unlinkSync(PIDFILE) } catch { /* never ours or already gone */ }
+}
+
+function portPgid(pid) {
+    if (pid == null) return null
+    try { return parseInt(execFileSync('ps', ['-o', 'pgid=', '-p', String(pid)], { encoding: 'utf8' }).trim(), 10) || null } catch { return null }
+}
+
+async function waitPortFree(port, tries) {
+    for (let i = 0; i < tries; i++) {
+        if (portListenerPid(port) == null) return true
+        await new Promise(r => setTimeout(r, 500))
+    }
+    return portListenerPid(port) == null
+}
+
 async function startDev(mutate) {
-    // Stage 1 (#1355): never even spawn onto a squatted port — strictPort would
-    // kill our child while waitDev played against the stranger.
-    const pre = portListenerPid(PORT)
-    const early = classifyPort(pre, [], 0, mutate)
+    // Stage 1 (#1355): never spawn onto a squatted port — strictPort would kill
+    // our child while waitDev played against the stranger. #1799: unless the
+    // pidfile proves it is OUR leaked server from a crashed run — then reclaim.
+    let pre = portListenerPid(PORT)
+    const early = classifyStale(pre, pre == null ? [] : ancestorChain(pre), portPgid(pre), readPidfile(), mutate)
     if (early.state === 'squatted') throw squatterError(PORT, early.pid, early.state, [])
+    if (early.state === 'reclaim') {
+        try { process.kill(-early.leader, 'SIGKILL') } catch { /* group already gone */ }
+        if (!(await waitPortFree(PORT, 20))) throw squatterError(PORT, early.pid, 'reclaim-stuck', [])
+        console.log(`nightlybot: reclaimed leaked server on :${PORT} (pgid ${early.leader})`)
+        pre = null
+    }
     const child = spawn('npm', ['run', 'dev', '--', '--port', String(PORT), '--strictPort'],
         { cwd: ROOT, stdio: ['ignore', 'ignore', 'pipe'], detached: true })
+    writePidfile({ leader: child.pid, port: PORT })
     let log = ''
     child.stderr.on('data', d => { log += d })
     try {
         await waitDev(`http://localhost:${PORT}/retrogames/`)
     } catch (e) {
-        child.kill('SIGKILL')
+        try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } // whole group, not just the npm leader (#1799: leader-only kills orphaned the vite)
+        removePidfile()
         throw new Error(`${e.message}\n${log.slice(-1500)}`)
     }
     // Stage 2: something answers — prove it descends from the process we spawned.
@@ -383,9 +454,11 @@ async function startDev(mutate) {
     const cls = classifyPort(pre, chain, child.pid, mutate)
     if (cls.state !== 'port-ok') {
         try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone / never bound */ }
+        removePidfile()
         throw squatterError(PORT, cls.pid, cls.state, chain)
     }
-    return () => { try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } }
+    writePidfile({ leader: child.pid, port: PORT, listener })
+    return () => { try { process.kill(-child.pid, 'SIGKILL') } catch { /* gone */ } removePidfile() }
 }
 
 const DRIVE = ({ seed, cap, buttons, pointer }) => {
@@ -510,6 +583,8 @@ async function abortSquatter(sq) {
 
 async function main() {
     const base = `http://localhost:${PORT}/retrogames`
+    const games = ONLY ? GAMES.filter(g => g.id === ONLY) : GAMES
+    if (ONLY && games.length === 0) { console.error(`NIGHTLY_ONLY="${ONLY}" matched no game`); process.exit(2) } // check BEFORE spawning: exiting here must not leak a server (#1799)
     let stopDev
     try {
         stopDev = await startDev(MUTATE)
@@ -517,21 +592,22 @@ async function main() {
         if (!e.squatter) throw e
         await abortSquatter(e.squatter) // never returns
     }
-    const browser = await launch()
-    const games = ONLY ? GAMES.filter(g => g.id === ONLY) : GAMES
-    if (ONLY && games.length === 0) { console.error(`NIGHTLY_ONLY="${ONLY}" matched no game`); process.exit(2) }
     const results = []
-    for (const game of games) {
-        const seed = SEED + GAMES.indexOf(game)
-        console.log(`[${game.id}] seed=${seed}`)
-        const res = await play(browser, base, game, seed, MUTATE)
-        results.push(res)
-        console.log(`  ${res.pass ? 'PASS' : 'FAIL'} ${res.done ? `done @${res.ticks}` : `tick ${res.ticks} not done`} score=${res.score}` +
-            (res.flags.length ? ` — ${res.flags.join('; ')}` : '') +
-            (res.warnings.length ? ` [warn: ${res.warnings.join('; ')}]` : ''))
+    try {
+        const browser = await launch()
+        for (const game of games) {
+            const seed = SEED + GAMES.indexOf(game)
+            console.log(`[${game.id}] seed=${seed}`)
+            const res = await play(browser, base, game, seed, MUTATE)
+            results.push(res)
+            console.log(`  ${res.pass ? 'PASS' : 'FAIL'} ${res.done ? `done @${res.ticks}` : `tick ${res.ticks} not done`} score=${res.score}` +
+                (res.flags.length ? ` — ${res.flags.join('; ')}` : '') +
+                (res.warnings.length ? ` [warn: ${res.warnings.join('; ')}]` : ''))
+        }
+        await browser.close()
+    } finally {
+        stopDev() // a throw mid-run must not leave the server (and the pidfile) behind (#1799)
     }
-    await browser.close()
-    stopDev()
 
     const prev = await fetchPrev()
     const streaks = updateStreaks(prev, results)
