@@ -6,26 +6,27 @@
 //   npm run plaicraft:clap -- --mutate             # presses land 500 ms from
 //                                                  # their claps — must go RED
 //
-// How it works: a stub store (relay/core rules, like recordcheck) stands in for
-// the R2 bucket, so the whole consent-gated auto-capture path runs TODAY even
-// though #1730 has not provisioned the real one. Gauntlet gets `?store=`, the
-// gate goes up YES+YES, and a synth mic stream (voicedrive's established trick
-// — only the sound source is synthetic; consent, MediaRecorder, the tick clock,
-// v2 assembly and the upload are the real code) fires full-scale CLAPS at known
-// wall-times while the harness presses ArrowRight at the SAME instant, like the
-// physical clap test: clap + button together. The run ends, uploads to the
-// stub, downloads back, decodes the opus in the browser (WebAudio), and the
-// pure clapSync verdict pairs every detected onset with its recorded press tick
-// through the track's own clock. |offset| <= 50 ms for all three.
+// How it works: the store is the PRODUCTION worker running in Node (#1711 S5,
+// scripts/lib/relaysim.mjs — cfworkers shim + faithful R2 mock), so the whole
+// consent-gated auto-capture path runs TODAY against the exact HTTP surface the
+// real bucket will sit behind, even though #1730 has not provisioned it.
+// Gauntlet gets `?store=`, the gate goes up YES+YES, and a synth mic stream
+// (voicedrive's established trick — only the sound source is synthetic;
+// consent, MediaRecorder, the tick clock, v2 assembly and the upload are the
+// real code) fires full-scale CLAPS at known wall-times while the harness
+// presses ArrowRight at the SAME instant, like the physical clap test: clap +
+// button together. The run ends, uploads through worker.js routes, downloads
+// back, decodes the opus in the browser (WebAudio), and the pure clapSync
+// verdict pairs every detected onset with its recorded press tick through the
+// track's own clock. |offset| <= 50 ms for all three.
 //
 // Nothing here needs Jon's phone; when the real store lands, --store= reuses
 // the identical driver against it.
 
-import http from 'node:http'
 import { requireDevServer, launch, Report } from './lib/harness.mjs'
 import { validate } from '../src/utils/recording.js'
 import { detectClaps, clapVerdict, CLAP_TOL_MS } from '../src/utils/clapSync.js'
-import { validateSessionEnvelope, sessionKey, sessionMeta, sessionRow } from '../relay/core.js'
+import { startRelaySim } from './lib/relaysim.mjs'
 
 const argv = process.argv.slice(2)
 const PORT = process.env.DEV_PORT || 5173
@@ -39,38 +40,9 @@ const PRESS_OFFSET_MS = MUTATE ? 500 : 0
 
 const r = new Report('plaicraft:clap')
 
-// --- stub store ---------------------------------------------------------------
-const bucket = new Map()
-const server = http.createServer((req, res) => {
-    const send = (code, obj) => { res.writeHead(code, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type' }); res.end(JSON.stringify(obj)) }
-    if (req.method === 'OPTIONS') { res.writeHead(204, { 'access-control-allow-origin': '*', 'access-control-allow-headers': 'content-type', 'access-control-allow-methods': 'GET,POST,OPTIONS' }); return res.end() }
-    const url = new URL(req.url, 'http://x')
-    if (req.method === 'GET' && url.pathname === '/status') return send(200, { ok: true, service: 'clap-stub', sessions: true })
-    if (req.method === 'POST' && url.pathname === '/sessions') {
-        let body = ''
-        req.on('data', (c) => { body += c })
-        req.on('end', () => {
-            let env
-            try { env = JSON.parse(body) } catch { return send(400, { ok: false, err: 'bad json' }) }
-            const v = validateSessionEnvelope(env)
-            if (!v.ok) return send(400, { ok: false, err: v.err })
-            const key = sessionKey(env.recording, new Date().toISOString(), crypto.randomUUID().replace(/-/g, ''))
-            bucket.set(key, { text: JSON.stringify(env.recording), meta: { ...sessionMeta(env.recording, env.player), uploadedAt: new Date().toISOString() } })
-            return send(200, { ok: true, key })
-        })
-        return
-    }
-    if (req.method === 'GET' && url.pathname === '/sessions') return send(200, { ok: true, sessions: [...bucket.entries()].map(([key, v]) => sessionRow(key, v.meta)) })
-    if (req.method === 'GET' && url.pathname.startsWith('/sessions/')) {
-        const v = bucket.get(decodeURIComponent(url.pathname.slice('/sessions/'.length)))
-        if (!v) return send(404, { ok: false, err: 'not found' })
-        res.writeHead(200, { 'content-type': 'application/json' })
-        return res.end(v.text)
-    }
-    send(404, { ok: false, err: 'no route' })
-})
-await new Promise((res) => server.listen(0, '127.0.0.1', res))
-const BASE = `http://127.0.0.1:${server.address().port}`
+// --- the real worker, in-process (#1711 S5) ------------------------------------
+const sim = await startRelaySim()
+const BASE = sim.base
 const PAGE_URL = `http://localhost:${PORT}/retrogames/gauntlet?store=${encodeURIComponent(BASE)}`
 
 const browser = await launch({ headless: !argv.includes('--headful'), extraArgs: ['--use-fake-ui-for-media-capture'] })
@@ -184,7 +156,7 @@ if (!(uploaded && uploaded.uploaded)) await r.exit(browser)
 // the store saw it, with audio
 const listed = await (await fetch(`${BASE}/sessions`)).json()
 const row = (listed.sessions || []).find((s) => s.key === uploaded.key)
-r.check('stub store lists the session with audio', !!(row && row.audio === true && row.game === 'gauntlet'), JSON.stringify(row))
+r.check('the real worker lists the session with audio', !!(row && row.audio === true && row.game === 'gauntlet'), JSON.stringify(row))
 
 // download back and read the take
 const text = await (await fetch(`${BASE}/sessions/${encodeURIComponent(uploaded.key)}`)).text()
@@ -221,7 +193,7 @@ try {
     }, track.b64)
 } catch (e) { /* gate below */ }
 r.check('opus bytes decode back to PCM in the browser', !!(pcm && pcm.samples.length > 1000), pcm ? `${pcm.samples.length} samples @ ${pcm.sr} Hz` : 'decode failed')
-if (!(pcm && track)) { server.closeAllConnections(); server.close(); await r.exit(browser) }
+if (!(pcm && track)) { sim.close(); await r.exit(browser) }
 
 const onsets = detectClaps(Float32Array.from(pcm.samples, (v) => v / 32767), { sampleRate: pcm.sr })
 const f32 = Float32Array.from(pcm.samples, (v) => v / 32767)
@@ -239,7 +211,6 @@ if (MUTATE) {
 }
 r.check('zero page errors', errors.length === 0, errors.join(' | '))
 
-server.closeAllConnections()
-server.close()
+sim.close()
 if (MUTATE && r.failed === 0) console.log('  ..    (run was expected RED-on-mutant: green here means the alignment gate caught the planted desync)')
 r.exit(browser)
