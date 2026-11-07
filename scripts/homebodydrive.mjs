@@ -77,6 +77,34 @@ check('tapping a placed piece sells it', !b3.items.some((it) => it.id === 'rug' 
 await page.keyboard.press('KeyB')
 await wait(150)
 
+// Spare Room (#1806): reopen buy mode, R picks the kit, a tap hammers it up,
+// and the drawn wing follows the logic (east-wall window glass pixels appear)
+await page.keyboard.press('KeyB')
+await wait(200)
+const pxAt = (x, y) => page.evaluate(([x, y]) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(x, y, 1, 1).data
+    return [d[0], d[1], d[2]]
+}, [x, y])
+const [gr0, gg0, gb0] = await pxAt(504, 184) // future east window cell, pre-build
+check('east wall spot is lawn before the kit is used', gg0 > gr0 && gr0 > gb0, `rgb(${gr0},${gg0},${gb0})`)
+await page.evaluate(() => window.__homebodyTest.money(1000))
+await page.keyboard.press('KeyR')
+await wait(150)
+const rSel = await st()
+check('R picks the Spare Room kit in buy mode', rSel.build === true && rSel.sel === 13, `sel=${rSel.sel}`)
+await tap(8 + 5 * 32 + 16, 40 + 6 * 32 + 16) // any lot tap builds it
+await wait(250)
+const rBuilt = await st()
+check('tapping the lot hammers the wing up (ext=1)', rBuilt.ext === 1)
+await wait(800) // let the dust from the hammer-knock burst settle before sensing glass
+const [wr, wg, wb] = await pxAt(504, 184)
+check('the east window is drawn where lawn was', wb > wg && wg >= wr && wb > 120, `rgb(${wr},${wg},${wb})`)
+const [fr, fg, fb] = await pxAt(8 + 12 * 32 + 16, 40 + 5 * 32 + 16) // room floor cell
+check('wing floor is drawn as plank, not grass', fr > fb && fr > 90 && fr < 230 && fb < 130, `rgb(${fr},${fg},${fb})`)
+await page.keyboard.press('KeyB')
+await wait(150)
+
 // switch residents with G
 const g0 = await st()
 await page.keyboard.press('KeyG')
@@ -84,12 +112,15 @@ await wait(150)
 const g1 = await st()
 check('G switches the commanded resident', g1.screen === 'play')
 
-// pause via Escape: the sim clock stops
-const tA = (await st()).tick
+// pause via Escape: the clock stops. Sample AFTER the keypress has landed and
+// compare two post-pause reads — a tA captured before Escape can straddle one
+// last frame and false-fail (flake fixed #1806 drive).
 await page.keyboard.press('Escape')
 await wait(350)
 const tB = (await st()).tick
-check('Escape pauses the clock', tB === tA, `${tA} -> ${tB}`)
+await wait(350)
+const tC = (await st()).tick
+check('Escape pauses the clock', tC === tB, `${tB} -> ${tC}`)
 await page.keyboard.press('Escape')
 await wait(250)
 check('Escape resumes', (await st()).tick > tB)

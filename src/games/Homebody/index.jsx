@@ -20,9 +20,9 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
-    tileOf, CATALOG, NEEDS, SFX,
+    tileOf, CATALOG, NEEDS, SFX, EXT_ROOM,
     newRun, advance, autoStep, cmdUse, cmdWalk, cmdWork, tryUse,
-    place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk,
+    place, sellAt, cellItem, targetsOf, walkable, manualMove, placeOk, buildRoom,
     stateHash,
 } from './sim.js'
 import {
@@ -36,6 +36,7 @@ const MESSAGES = [
     'Tap a fridge, a bed, the TV — they walk over and use it. Feed them, rest them.',
     'The mailbox pays the bills on workdays. § buys furniture to raise the home.',
     'Fern the neighbour wanders in by day — chat fills the blue bar.',
+    'Bank §300, then B + card 9: hammer on a Spare Room and the lot grows.',
     'Bank 80 contentment and the lifetime wish comes true.',
 ]
 const PRESS = 'TAP / PRESS ANY KEY TO MOVE IN'
@@ -45,7 +46,8 @@ const MOVE_KEYS = new Set([...CUR.l, ...CUR.r, ...CUR.u, ...CUR.d])
 const ACTION_KEYS = new Set(['Space', 'Enter', 'NumpadEnter'])
 const BUILD_KEYS = new Set(['KeyB'])
 const SWITCH_KEYS = new Set(['KeyG', 'Tab'])
-const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...SWITCH_KEYS, ...'123456789'])
+const ROOM_KEYS = new Set(['KeyR'])
+const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...BUILD_KEYS, ...SWITCH_KEYS, ...ROOM_KEYS, ...'123456789'])
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -115,6 +117,11 @@ const HomebodyGame = () => {
                     case 'faint': audioController.playNoise(0.3, 0.1); audioController.playSweep(300, 60, 0.5, 'sawtooth', 0.09); shake = 10; if (live) { say(`${e.name.toUpperCase()} COLLAPSED!`); burst(e.x, e.y, 16, '#e23b2e', 3.4) } break
                     case 'wake': audioController.playSweep(440, 760, 0.2, 'triangle', 0.05); break
                     case 'day': audioController.playTone(1245, 0.06, 'sine', 0.03); setTimeout(() => audioController.playTone(1568, 0.09, 'sine', 0.03), 90); if (live && s.day > 1) say(`DAY ${s.day}`); break
+                    case 'room':
+                        for (let i = 0; i < 3; i++) audioController.playTone(150 - i * 14, 0.07, 'square', 0.08, i * 0.11)
+                        setTimeout(() => audioController.playSweep(240, 520, 0.3, 'triangle', 0.06), 340)
+                        if (live) { say('SPARE ROOM BUILT — THE LOT GROWS'); burst(LOT_X + 13 * TILE, LOT_Y + 4 * TILE, 14, '#c9b48a', 2.8) }
+                        break
                     default: break
                 }
             }
@@ -226,7 +233,7 @@ const HomebodyGame = () => {
             const sx = shake ? (Math.random() - 0.5) * shake : 0
             const sy = shake ? (Math.random() - 0.5) * shake : 0
             ctx.save(); ctx.translate(sx, sy)
-            drawGround(ctx)
+            drawGround(ctx, g)
             drawGate(ctx, g.sec)
             drawClouds(ctx, g.sec)
             for (const it of g.items) drawItem(ctx, it, g.sec)
@@ -360,6 +367,7 @@ const HomebodyGame = () => {
             if (ACTION_KEYS.has(e.code)) actQueued = true
             if (BUILD_KEYS.has(e.code)) buildQueued = true
             if (SWITCH_KEYS.has(e.code)) switchQueued = true
+            if (ROOM_KEYS.has(e.code)) digitPick = CATALOG.findIndex((d) => d.room)
             if (/^Digit[1-9]$/.test(e.code)) digitPick = parseInt(e.code.slice(5), 10) - 1
         }
         const onUp = (e) => {
@@ -412,7 +420,7 @@ const HomebodyGame = () => {
             return {
                 tick: gs.tick, score: gs.content, done: gs.done || false, seed: gs.seed,
                 money: gs.money, content: gs.content, day: gs.day, hour: Math.round(gs.hour * 10) / 10,
-                items: gs.items.length, visitors: gs.visitor ? 1 : 0,
+                items: gs.items.length, visitors: gs.visitor ? 1 : 0, ext: gs.ext,
                 hero: [Math.round(gs.people[gs.active].x), Math.round(gs.people[gs.active].y)], cursor: [gs.cursor.r, gs.cursor.c],
                 needs: Object.fromEntries(gs.people.map((p) => [p.name, Object.fromEntries(NEEDS.map((n) => [n, Math.round(p.needs[n] * 100) / 100]))])),
                 hash: stateHash(gs),
@@ -426,11 +434,13 @@ const HomebodyGame = () => {
                     day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel,
                     people: gs.people.map((p) => ({ name: p.name, needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
+                    ext: gs.ext,
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
                 start: (sd) => startPlay(sd),
                 tap: (px, py) => pointerPx(px, py),
                 press: (code) => onDown({ code, preventDefault: () => {} }),
+                room: () => (gs ? buildRoom(gs) : false),
                 win: () => { if (gs) { gs.content = WIN_CONTENT; gs.done = 'win'; gs.endMsg = 'forced' } },
                 collapseAll: () => { if (gs) for (const p of gs.people) p.faintT = 2 },
                 money: (v) => { if (gs) gs.money = v },
@@ -462,6 +472,7 @@ const HomebodyGame = () => {
                 ] : ['attract'],
                 actions: [
                     { label: 'GIVE §500', run: () => { if (gs) gs.money += 500; return 'rent money' } },
+                    { label: 'BUILD ROOM', run: () => { if (gs && !gs.ext) { gs.money = Math.max(gs.money, EXT_ROOM.price); buildRoom(gs) } return gs && gs.ext ? 'spare room up — the lot grew' : 'already built / no sim' } },
                     { label: 'GRANT WISH', run: () => { if (gs) { gs.content = WIN_CONTENT } return 'wish banked — next content tick wins' } },
                     { label: 'RING FERN', run: () => { if (gs) { gs.visitAfter = Math.min(gs.visitAfter, Math.floor(gs.hour)); gs.visitGap = 0 } return 'the bell rings soon' } },
                     { label: 'NEW SEED', run: () => { seed = nextSeed(seed); startPlay(); return `reseeded ${seed}` } },
