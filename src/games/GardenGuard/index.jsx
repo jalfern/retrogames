@@ -47,7 +47,7 @@ const CYCLE_KEYS = new Set(['KeyB', 'ShiftLeft', 'ShiftRight', 'Tab'])
 const TROWEL_KEYS = new Set(['KeyT', 'KeyE'])
 const KEY_SET = new Set([...MOVE_KEYS, ...ACTION_KEYS, ...CYCLE_KEYS, ...TROWEL_KEYS, ...'123456'])
 
-const CARD_W = 64, CARD_GAP = 8, CARD_X0 = 178
+const CARD_W = 64, CARD_GAP = 8, CARD_X0 = 218
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
 const GardenGuardGame = () => {
@@ -72,6 +72,11 @@ const GardenGuardGame = () => {
         let seed = 20261023
         let particles = [], shake = 0
         let toastMsg = '', toast = 0
+        // #1832: a refused plant rattles its card (k decays 1 -> 0 per tick)
+        let shakeCard = { i: -1, k: 0 }
+        // #1832: the planter's ghost defender only shows once the keyboard
+        // cursor is actually in use — a mouse player sees a bare outline.
+        let kbGhost = false
         const prev = { left: false, right: false, up: false, down: false, a: false, b: false, pdown: false }
         const heldKeys = { left: false, right: false, up: false, down: false }
         let actQueued = false, cycleQueued = false, trowelQueued = false
@@ -104,10 +109,26 @@ const GardenGuardGame = () => {
                 const e = s.events.shift()
                 switch (e.t) {
                     case 'plant': audioController.playSweep(240, 540, 0.12, 'square', 0.05); if (live) burst(colX(e.c), rowY(e.r) + 16, 6, '#6b4a2a', 2.4, 'soil'); break
+                    case 'refuse': {
+                        // #1832: a refused plant used to be a silent no-op — toast +
+                        // buzz + card shake say WHY (the sim's single canonical path
+                        // emits this for every player-initiated failure; the bot's
+                        // pre-checks mean the attract demo never toasts).
+                        if (!live) break
+                        const def = PLANTS[e.id]
+                        say(e.why === 'cooldown' ? `${def.name.toUpperCase()} RECHARGING`
+                            : e.why === 'cost' ? `NEEDS ${def.cost} ACORNS`
+                                : e.why === 'occupied' ? 'TILE ALREADY PLANTED'
+                                    : 'LOCKED — CLEAR MORE LEVELS')
+                        audioController.playTone(150, 0.09, 'square', 0.055)
+                        const i = e.id ? s.unlocked.indexOf(e.id) : -1
+                        if (i >= 0) { shakeCard.i = i; shakeCard.k = 1 }
+                        break
+                    }
                     case 'dig': audioController.playSweep(420, 170, 0.12, 'square', 0.05); if (live && e.r != null) burst(colX(e.c), rowY(e.r) + 16, 10, '#6b4a2a', 3, 'soil'); break
                     case 'make': audioController.playTone(720, 0.05, 'triangle', 0.04); break
                     case 'sky': audioController.playTone(600, 0.05, 'triangle', 0.035); break
-                    case 'bank': audioController.playSweep(680, 900, 0.08, 'triangle', 0.05); if (live && e.x != null) particles.push({ x: e.x, y: e.y, vx: 0, vy: 0, life: 26, max: 26, col: '#c98a4b', size: 6, kind: 'fly', tx: 127, ty: 40 }); break
+                    case 'bank': audioController.playSweep(680, 900, 0.08, 'triangle', 0.05); if (live && e.x != null) particles.push({ x: e.x, y: e.y, vx: 0, vy: 0, life: 26, max: 26, col: '#c98a4b', size: 6, kind: 'fly', tx: 167, ty: 40 }); break
                     case 'shoot': audioController.playTone(540, 0.04, 'square', 0.035); audioController.playTone(810, 0.03, 'triangle', 0.02); if (live) burst(e.x, e.y, 4, '#ffe6a8', 2.2, 'flash'); break
                     case 'hit': audioController.playTone(300, 0.03, 'square', 0.025); if (live) burst(e.x, e.y, 3, '#d8b98c', 2); break
                     case 'frostshot': audioController.playSweep(760, 1050, 0.08, 'triangle', 0.04); if (live) burst(e.x, e.y, 4, '#bff0ff', 2, 'flash'); break
@@ -177,18 +198,18 @@ const GardenGuardGame = () => {
                 return
             }
             const ac = findAcorn(px, py)
-            if (ac) { bankTap(gs, ac); audioController.playSweep(680, 980, 0.08, 'triangle', 0.05); return }
+            if (ac) { kbGhost = false; bankTap(gs, ac); audioController.playSweep(680, 980, 0.08, 'triangle', 0.05); return }
             const t = tileOf(px, py)
-            if (t) actAt(gs, t.r, t.c)
+            if (t) { kbGhost = false; actAt(gs, t.r, t.c) }
         }
 
         // one tick of player input: pad edges + queued taps -> sim actions.
         const drivePad = (pad) => {
             if (!gs || gs.done) { prev.left = pad.left; prev.right = pad.right; prev.up = pad.up; prev.down = pad.down; prev.a = pad.a; prev.b = pad.b; prev.pdown = !!(pad.pointer && pad.pointer.down); return }
-            if (pad.left && !prev.left) moveCursor(gs, 0, -1)
-            if (pad.right && !prev.right) moveCursor(gs, 0, 1)
-            if (pad.up && !prev.up) moveCursor(gs, -1, 0)
-            if (pad.down && !prev.down) moveCursor(gs, 1, 0)
+            if (pad.left && !prev.left) { moveCursor(gs, 0, -1); kbGhost = true }
+            if (pad.right && !prev.right) { moveCursor(gs, 0, 1); kbGhost = true }
+            if (pad.up && !prev.up) { moveCursor(gs, -1, 0); kbGhost = true }
+            if (pad.down && !prev.down) { moveCursor(gs, 1, 0); kbGhost = true }
             if (pad.b && !prev.b) { cycleCard(gs, 1); audioController.playTone(500, 0.03, 'square', 0.03) }
             const pdown = !!(pad.pointer && pad.pointer.down)
             if (pdown && !prev.pdown) pointerPx(pad.pointer.x * W, pad.pointer.y * H)
@@ -207,7 +228,7 @@ const GardenGuardGame = () => {
             drawBackground(ctx, g.sec)
             drawLawn(ctx, g)
             drawCottage(ctx)
-            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, g.mowerRun[r])
+            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, g.mowerRun[r], g.mowers[r])
             const t = g.sec
             // plants back-to-front by row
             const sorted = [...g.plants].sort((a, b) => a.r - b.r)
@@ -226,14 +247,17 @@ const GardenGuardGame = () => {
                 ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, 7); ctx.fill()
             }
             ctx.globalAlpha = 1
-            if (live && !g.done) drawCursor(ctx, g)
+            if (live && !g.done) drawCursor(ctx, g, kbGhost)
             ctx.restore()
             if (!g.done && bigWaveUp(g)) { const a = 0.1 + Math.sin(g.sec * 6) * 0.05; ctx.fillStyle = `rgba(180,28,18,${a.toFixed(3)})`; ctx.fillRect(0, 0, W, H) }
-            drawTray(ctx, g, null)
+            drawTray(ctx, g, null, shakeCard.k > 0 ? shakeCard : null)
             drawHud(ctx, g, bigWaveUp(g))
             // banners
             if (g.levelClearAt > 0 && !g.done) banner(ctx, g.level >= 4 ? 'ORCHARD HELD!' : 'LANE HELD — new defender next level', '#fff3cf')
             else if (bigWaveUp(g)) banner(ctx, 'THE FINAL WAVE', '#ffd2c4')
+            // #1832: the first-wave how-to line — the attract goal line is easy to
+            // miss, so a fresh lawn (each level wipes it) says it until you plant.
+            if (live && !g.done && g.levelClearAt <= 0 && g.plants.length === 0 && g.sec < 25) banner(ctx, 'TAP A CARD, THEN TAP A TILE TO PLANT', 'rgba(255,243,214,0.92)', true)
             if (toast > 0 && live) banner(ctx, toastMsg, 'rgba(255,243,214,0.92)', true)
         }
 
@@ -253,7 +277,7 @@ const GardenGuardGame = () => {
             drawBackground(ctx, Date.now() / 1000)
             drawLawn(ctx, demoG)
             drawCottage(ctx)
-            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, 0)
+            for (let r = 0; r < ROWS; r++) drawMower(ctx, r, 0, demoG.mowers[r])
             for (const p of demoG.plants) drawPlant(ctx, p, demoG.sec)
             for (const e of [...demoG.enemies].sort((a, b) => a.x - b.x)) drawEnemy(ctx, e, demoG.sec)
             for (const pr of demoG.projs) drawProj(ctx, pr)
@@ -310,6 +334,7 @@ const GardenGuardGame = () => {
                     }
                 }
                 if (toast > 0) toast--
+                if (shakeCard.k > 0) shakeCard.k = Math.max(0, shakeCard.k - 1 / 12)
                 stepParticles()
             }
             if (screenRef.current === 'attract') paintAttract()
@@ -325,6 +350,7 @@ const GardenGuardGame = () => {
             else { const pin = seedFromQuery(); if (pin !== null) seed = pin >>> 0 }
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0
+            shakeCard = { i: -1, k: 0 }; kbGhost = false
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
             actQueued = cycleQueued = trowelQueued = false; digitPick = -1
             watchingRef.current = false; setWatching(false) // #1637 a new garden starts in your hands

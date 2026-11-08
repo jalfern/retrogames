@@ -122,25 +122,30 @@ export function drawAcornIcon(ctx, cx, cy, s) {
 }
 
 // ---------------------------------------------------------- card tray ----
-export function drawTray(ctx, g, hover) {
+// #1832: the board contents sit right of x=128 — the site's top-left chrome
+// (ARCADE at y 12-38, FEEDBACK at y 44-70, each ~95px wide) owns the corner,
+// and a 4:3-ish pane insets the canvas to within a few pixels of that edge.
+export function drawTray(ctx, g, hover, shake) {
     // wooden board
     const grd = ctx.createLinearGradient(0, 0, 0, TRAY_H)
     grd.addColorStop(0, C.trayWoodHi); grd.addColorStop(1, C.trayWood)
     ctx.fillStyle = grd; ctx.fillRect(0, 0, W, TRAY_H)
     ctx.fillStyle = C.trayWoodDark; ctx.fillRect(0, TRAY_H - 4, W, 4)
     // acorn purse (inset so the site's top-left chrome never covers it)
-    ctx.fillStyle = 'rgba(0,0,0,0.25)'; rr(ctx, 88, 14, 78, 76, 10); ctx.fill()
-    drawAcornIcon(ctx, 127, 40, 34)
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'; rr(ctx, 128, 14, 78, 76, 10); ctx.fill()
+    drawAcornIcon(ctx, 167, 40, 34)
     ctx.fillStyle = C.cream; ctx.font = 'bold 24px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-    ctx.fillText(String(g.acorns), 127, 68)
+    ctx.fillText(String(g.acorns), 167, 68)
     // cards — themed portrait plate + name so each defender reads at a glance
     const cardW = 64, cardH = 78, gap = 8
-    const startX = 178
+    const startX = 218
     const SHORT = { daisy: 'DAISY', squirrel: 'SQUIRREL', hedge: 'HEDGE', chili: 'CHILI', frost: 'FROST', pumpkin: 'PUMPKIN' }
     for (let i = 0; i < g.unlocked.length; i++) {
         const id = g.unlocked[i]
         const def = PLANTS[id]
-        const x = startX + i * (cardW + gap), y = 12
+        // #1832: a refused plant rattles its card (shell decays shake.k 1 -> 0)
+        const shx = (shake && shake.i === i) ? Math.round(Math.sin(g.sec * 46) * 3 * shake.k) : 0
+        const x = startX + i * (cardW + gap) + shx, y = 12
         const sel = !g.trowel && g.sel === i
         const cd = g.cd[id] || 0
         const afford = g.acorns >= def.cost
@@ -405,24 +410,49 @@ export function drawAcornDrop(ctx, d, t) {
 }
 
 // ---------------------------------------------------------- mowers ----
-export function drawMower(ctx, r, prog) {
-    const y = rowY(r) + 16
+// #1832: the lane saver used to be a 9px lantern dot that read as a porch lamp.
+// Now it is a real scarecrow (pole + cross-arms + burlap head + scarf): gold
+// glow while armed, grey and head-tilted once it has swept. ~44px tall, so a
+// newcomer can count five of them and tell the spent ones.
+function scarecrowAt(ctx, x, gy, armed, tilt = 0) {
+    ctx.save()
+    ctx.translate(x, gy); ctx.rotate(tilt)
+    if (armed) { ctx.fillStyle = 'rgba(255,210,74,0.30)'; ctx.beginPath(); ctx.arc(0, -26, 17, 0, 7); ctx.fill() }
+    const wood = armed ? '#8a5a2c' : '#5a5a56'
+    const burlap = armed ? '#d8b98c' : '#9a9a90'
+    // pole + cross-arms
+    ctx.fillStyle = wood; ctx.fillRect(-1.5, -40, 3, 40)
+    ctx.fillRect(-13, -31, 26, 3)
+    // scarf
+    ctx.fillStyle = armed ? '#c23b2e' : '#6a6a66'; ctx.fillRect(-5, -26, 10, 4)
+    // burlap head
+    ctx.fillStyle = burlap; ctx.beginPath(); ctx.arc(0, -33, 7, 0, 7); ctx.fill()
+    // straw fringe
+    ctx.fillStyle = armed ? '#c9a24b' : '#7a7a72'
+    for (let k = -2; k <= 2; k++) ctx.fillRect(k * 3 - 1, -27, 2, 4)
+    // eyes
+    ctx.fillStyle = armed ? '#2b1d12' : '#4a4a46'
+    ctx.beginPath(); ctx.arc(-2.6, -34, 1.1, 0, 7); ctx.arc(2.6, -34, 1.1, 0, 7); ctx.fill()
+    ctx.restore()
+}
+
+export function drawMower(ctx, r, prog, armed) {
+    const gy = rowY(r) + 20
     if (prog > 0) {
         const mx = prog
         // motion blur bar
-        ctx.fillStyle = 'rgba(255,240,200,0.25)'; ctx.fillRect(HOUSE_X - 4, y - 8, mx - (HOUSE_X - 4), 14)
-        ctx.fillStyle = '#c9c9d2'; ctx.beginPath(); ctx.arc(mx, y, 8, 0, 7); ctx.fill()
-        ctx.strokeStyle = '#8a5a2c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(mx, y); ctx.lineTo(mx - 14, y - 16); ctx.stroke()
-        // scarecrow head
-        ctx.fillStyle = '#d8b98c'; ctx.beginPath(); ctx.arc(mx - 14, y - 20, 6, 0, 7); ctx.fill()
+        ctx.fillStyle = 'rgba(255,240,200,0.25)'; ctx.fillRect(HOUSE_X - 4, gy - 8, mx - (HOUSE_X - 4), 14)
+        scarecrowAt(ctx, mx, gy, true)
     }
-    // parked scarecrow (lantern) on the cottage line
-    ctx.fillStyle = '#8a5a2c'; ctx.fillRect(HOUSE_X - 10, y - 18, 3, 22)
-    ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.arc(HOUSE_X - 8.5, y - 20, 4.5, 0, 7); ctx.fill()
+    // parked scarecrow on the cottage line: gold while armed, grey when spent
+    scarecrowAt(ctx, HOUSE_X - 8, gy, armed !== false, armed === false ? -0.1 : 0)
 }
 
 // ------------------------------------------------------------ cursor ----
-export function drawCursor(ctx, g) {
+// #1832: `ghost` (default true for the attract-era call shape) — the translucent
+// defender read as a planted one that goblins walked straight through, so the
+// shell only passes true once the player has actually used the keyboard cursor.
+export function drawCursor(ctx, g, ghost = true) {
     if (g.done) return
     const x = GLX + g.cursor.c * CW, y = GLY + g.cursor.r * CH
     const blink = Math.floor(g.tick / 12) % 2 === 0
@@ -431,7 +461,7 @@ export function drawCursor(ctx, g) {
     rr(ctx, x + 2, y + 2, CW - 4, CH - 4, 8); ctx.stroke()
     ctx.lineWidth = 1
     // ghost of the selected defender
-    if (!g.trowel && g.unlocked[g.sel]) {
+    if (ghost && !g.trowel && g.unlocked[g.sel]) {
         ctx.globalAlpha = 0.5
         drawPlantIcon(ctx, g.unlocked[g.sel], x + CW / 2, y + CH / 2, 30)
         ctx.globalAlpha = 1
@@ -439,20 +469,35 @@ export function drawCursor(ctx, g) {
 }
 
 // -------------------------------------------------------------- HUD ----
+// #1832: the whole HUD lives in the 28px strip BELOW the lawn (y 572..600).
+// The old panel (y 548..582) painted over row 5's grass — plants and goblins
+// in the left columns sat under the LEVEL text and the wave bar.
 export function drawHud(ctx, g, bigUp) {
-    // level + wave progress, bottom-left (the site chrome owns both top corners,
-    // and the watermark owns bottom-centre — this lane is clear).
-    const bw = 260, bx = 16, by = H - 30
+    const y0 = GLY + ROWS * CH // 572 — the lawn's bottom edge
+    const bx = 10, by = y0 + 2, bw = 372, bh = H - y0 - 4 // 24px panel, off the grass
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'
-    ctx.fillStyle = 'rgba(40,24,12,0.6)'; ctx.fillRect(bx - 6, by - 22, bw + 96, 34)
-    ctx.fillStyle = C.cream; ctx.font = 'bold 15px system-ui, sans-serif'
-    ctx.fillText(`LEVEL ${g.level}`, bx, by - 6)
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'; rr(ctx, bx, by, bw, 11, 5); ctx.fill()
+    ctx.fillStyle = 'rgba(40,24,12,0.6)'; rr(ctx, bx, by, bw, bh, 6); ctx.fill()
+    // level label
+    ctx.fillStyle = C.cream; ctx.font = 'bold 13px system-ui, sans-serif'
+    ctx.fillText(`LEVEL ${g.level}`, bx + 10, by + 16)
+    // wave progress bar
+    const pxx = bx + 92, pby = by + 7, pbw = 170, pbh = 10
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'; rr(ctx, pxx, pby, pbw, pbh, 5); ctx.fill()
     const frac = Math.min(1, (g.spawned) / Math.max(1, g.totalSpawns))
-    ctx.fillStyle = bigUp ? '#e23b2e' : '#7cb042'; rr(ctx, bx, by, bw * frac, 11, 5); ctx.fill()
+    ctx.fillStyle = bigUp ? '#e23b2e' : '#7cb042'; rr(ctx, pxx, pby, Math.max(pbh, pbw * frac), pbh, 5); ctx.fill()
     // wave flag markers
     let acc = 0
-    for (const w of g.waves) { acc += w.entries.length; const fx = bx + bw * (acc / Math.max(1, g.totalSpawns)); ctx.fillStyle = w.big ? '#e23b2e' : '#4a7228'; ctx.fillRect(fx - 1, by - 4, 2, 7) }
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx + bw * frac, by + 5.5, 4.5, 0, 7); ctx.fill()
+    for (const w of g.waves) { acc += w.entries.length; const fx = pxx + pbw * (acc / Math.max(1, g.totalSpawns)); ctx.fillStyle = w.big ? '#e23b2e' : '#4a7228'; ctx.fillRect(fx - 1, pby - 3, 2, 6) }
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(pxx + pbw * frac, pby + pbh / 2, 4, 0, 7); ctx.fill()
     ctx.strokeStyle = bigUp ? '#e23b2e' : 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1.5; ctx.stroke()
+    // scarecrow-mower pips: one per lane — gold while armed, grey once spent (#1832)
+    for (let r = 0; r < ROWS; r++) {
+        const px = pxx + pbw + 18 + r * 16
+        const armed = g.mowers[r]
+        ctx.strokeStyle = armed ? '#ffd24a' : '#6a6a64'; ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(px, pby + 2); ctx.lineTo(px, pby + 10); ctx.stroke()
+        ctx.beginPath(); ctx.moveTo(px - 3.5, pby + 4.5); ctx.lineTo(px + 3.5, pby + 4.5); ctx.stroke()
+        ctx.fillStyle = armed ? '#ffd24a' : '#8a8a84'
+        ctx.beginPath(); ctx.arc(px, pby + 1.5, 2.6, 0, 7); ctx.fill()
+    }
 }

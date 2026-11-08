@@ -208,12 +208,17 @@ export function actAt(g, r, c) {
     return plant(g, id, r, c)
 }
 
+// A refused plant is a `refuse` event (#1832): the sim is the single canonical
+// action path (keyboard, pointer, bot, contract all funnel through plant), so
+// this is the one place a "nothing happened" becomes a toast + buzz + card
+// shake the shell can show. The bot pre-checks cost/cooldown/occupancy, so a
+// bot-driven run (attract demo) never emits one — gated in gardencheck.
 export function plant(g, id, r, c) {
     const def = PLANTS[id]
-    if (!def || def.unlock > g.level) return false
-    if (occupied(g, r, c)) return false
-    if ((g.cd[id] || 0) > 0) return false
-    if (g.acorns < def.cost) return false
+    if (!def || def.unlock > g.level) { g.events.push({ t: 'refuse', why: 'locked', id, r, c }); return false }
+    if (occupied(g, r, c)) { g.events.push({ t: 'refuse', why: 'occupied', id, r, c }); return false }
+    if ((g.cd[id] || 0) > 0) { g.events.push({ t: 'refuse', why: 'cooldown', id, r, c }); return false }
+    if (g.acorns < def.cost) { g.events.push({ t: 'refuse', why: 'cost', id, r, c }); return false }
     g.acorns -= def.cost
     g.cd[id] = def.recharge
     g.plants.push({

@@ -10,11 +10,14 @@ currency is **acorns**, defenders are critters, every sprite is drawn in code.
   machine, level progression + unlocks, the autopilot `bot`, and `stateHash`.
   Every random comes from one seed (`roll`/LCG); `Math.random()` is never used
   here, so the harness and the attract demo replay byte-identically.
-- `art.js` — procedural look: gradient dusk sky, cottage + scarecrow-mower
-  lanterns, checkerboard lawn with grain, the wooden card tray + acorn purse,
-  per-defender and per-goblin sprites (walk/eat/slow animation), projectiles,
-  particles hooks, cursor, HUD (level + wave bar, bottom-left so the site
-  chrome's top corners stay clear).
+- `art.js` — procedural look: gradient dusk sky, cottage + scarecrow-mowers
+  (a real scarecrow per lane: gold glow while armed, grey and head-tilted once
+  spent — #1832), checkerboard lawn with grain, the wooden card tray + acorn
+  purse (inset right of the site's top-left chrome — #1832), per-defender and
+  per-goblin sprites (walk/eat/slow animation), projectiles, particles hooks,
+  cursor (the ghost defender only shows once the keyboard cursor is used —
+  #1832), HUD (level + wave bar + five scarecrow pips, in the 28px strip BELOW
+  the lawn so nothing paints over row 5 — #1832).
 - `index.jsx` — the arcade shell: one fixed-timestep loop, attract (driven by the
   sim's own `bot`), keyboard / pointer / VirtualControls all funneled through the
   same `drivePad` → sim actions, juice (particles + shake), PauseOverlay,
@@ -36,12 +39,27 @@ next defender; the last ends with the Warlord.
 
 ## Verify
 ```bash
-npm run gardencheck                 # pure Node: boot + 14 core-rule gates + winnable on 5 seeds
+npm run gardencheck                 # pure Node: boot + core rules + winnable on 5 seeds
+                                    # + the #1832 newcomer gates (refuse events, art contract)
 npm run dev                        # then, another shell:
 CONTRACT_ONLY=garden-guard npm run contractcheck   # window.__game contract, determinism
 ```
 `gardencheck` proves it can fail: set `PLANTS.chili.radius` to `0` in `sim.js`
-and the "Chili Bomb splashes a cluster" gate goes red (then restore).
+and the "Chili Bomb splashes a cluster" gate goes red (then restore). The #1832
+art contract gates the same way: the HUD/tray/scarecrow/ghost assertions run
+against a recording mock-canvas, so reverting any of the newcomer layout fixes
+turns them red without a browser.
+
+## Newcomer pass (#1832)
+A first-time player pass found: refused plants were silent (now a toast + buzz +
+card shake — the sim emits `refuse` events from its single canonical plant path,
+and the autopilot's pre-checks keep the attract demo silent), the planter's
+ghost defender read as a broken plant (now hidden until the keyboard cursor is
+used), site chrome sat on the playfield (the HUD moved into the strip below the
+lawn, the tray inset right of the corner chrome, the attract WATCH button into
+the flow so it can't cover the subtitle), the scarecrow-mowers read as porch
+lamps (now real scarecrows, grey when spent, with five pips in the HUD), and
+there was no in-play how-to (a first-wave hint line until the first plant).
 
 ## Honest gaps
 - **No puzzle-slack solver.** This is a real-time strategy title, not a
