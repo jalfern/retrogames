@@ -8,6 +8,12 @@ rendered 2x (960×540, `ctx.scale(2,2)`) in `index.jsx` for the neon look.
   Angle-based physics: scalar speed along the ground tangent, gravity projected
   onto it; the loop is a real circle integrated by energy (`v² ≥ G·r·cosφ` or
   you peel off). `planRun()` is the autopilot that proves every zone winnable.
+  The WATCH seat uses `seatPlan(g)` (#1828): the drones sweep on ABSOLUTE ticks,
+  so a greedy `planRun` at the live runner declines at ~1/3 of start phases (the
+  plan would die at a patrol). `seatPlan` proves "coast k clean ticks (k ≤ 6),
+  THEN the win script" on clones and carries the wait in the returned script, so
+  a single Y press seats at every phase and the honest decline only fires when no
+  wait rescues it.
 - `index.jsx` — the renderer + shell. Its ONLY spatial contract is
   `screen = world - cam` with no vertical flip; the hero is painted at exactly
   the pixel the physics reports, which `runnerplay` samples to prove.

@@ -45,6 +45,7 @@ export const CFG = {
     ringScatter: true,     // a hit scatters your rings in a fixed fan; they last 3s
     drones: true,          // ground patrols + hovers: air/roll contact destroys, else a hit
     multiLoop: true,       // zones carry a LOOPS list; the later zones hold two to commit to
+    watchWaitSeat: true,   // #1828 the WATCH seat may prove "coast k ticks, THEN win" instead of declining
     routeFork: true,       // a fast body commits to the HIGH deck at a fork; slow stays low
 }
 
@@ -993,6 +994,34 @@ export function planRun(g0) {
         && receipt.gaps.every(x => x.margin >= MARGIN)
         && receipt.ringsAtHit.every(r => r > 0)
     return { ok, script, receipt, end: g.end, g }
+}
+
+// #1828 waiting-seat (the WATCH seat): drones sweep on ABSOLUTE ticks, so a
+// greedy planRun at the LIVE runner dies at a patrol in ~1/3 of spawn phases
+// (measured on this build: declines at ticks 1,5,8,9,13,17,20,21,..., runs
+// never longer than 2) — a first Y press there silently declined. Prove the
+// wait instead: coast k ticks with no input — safe means nothing hit the
+// runner and nothing ended the run — then plan from the advanced clone. The
+// returned script carries k no-op ticks up front, so the promise covers the
+// wait and the seat holds at EVERY phase. k=0 is exactly the old seat.
+// Returns { ...plan, wait } or null — honest decline only when all k ≤ 6 fail.
+export function seatPlan(g0) {
+    const cap = CFG.watchWaitSeat ? 6 : 0
+    for (let k = 0; k <= cap; k++) {
+        const c = { ...g0, p: { ...g0.p }, save: { ...g0.save },
+            taken: new Set(g0.taken), spent: new Map(g0.spent),
+            loopsTaken: new Set(g0.loopsTaken), droneDown: new Set(g0.droneDown),
+            scatter: [...g0.scatter], ev: [] }
+        let safe = true
+        for (let i = 0; i < k; i++) {
+            step(c, {}); maybeEnterLoop(c)
+            if (c.end || c.ev.some(e => ['hit', 'die', 'respawn', 'crash', 'wall'].includes(e.type))) { safe = false; break }
+        }
+        if (!safe) break    // waiting longer would replay the same death — decline
+        const plan = planRun(c)
+        if (plan.ok && plan.end === 'win') return { ...plan, wait: k }
+    }
+    return null
 }
 
 export function replayScript(script, opts = {}) {

@@ -23,7 +23,7 @@ import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexp
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
-    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, dronePos,
+    ZONES, groundY, maybeEnterLoop, makeGame, step, planRun, seatPlan, dronePos,
     segAngle, segAtRoute,
     FIXED_DT, VIEW_W, VIEW_H, BODY_R, RUN_TOP, VMAX, DRONE_R,
 } from './sim.js'
@@ -271,15 +271,17 @@ const MomentumGame = () => {
         // PROGNOSIS runs). The sim is deterministic and runnercheck replays these
         // scripts tick for tick, so feeding the plan's inputs to the live body
         // reproduces the proven line. plan.ok=false → decline honestly, no blip.
+        // #1828 waiting-seat: at phases where the immediate plan would die at an
+        // absolute-tick drone patrol, sim.seatPlan proves "coast k ≤ 6 clean ticks,
+        // THEN the win script" and returns a script carrying the wait — one Y press
+        // seats at every phase instead of silently declining at a bad one.
         let watchPlan = null, watchI = 0
         const seatWatcher = () => {
             if (!gs || gs.end || screenRef.current !== 'play' || pausedRef.current) return false
-            const c = { ...gs, p: { ...gs.p }, save: { ...gs.save },
-                taken: new Set(gs.taken), spent: new Map(gs.spent),
-                loopsTaken: new Set(gs.loopsTaken), ev: [] }
-            const plan = planRun(c)
-            if (!plan.ok || plan.end !== 'win') return false
-            watchPlan = plan.script; watchI = 0
+            const seat = seatPlan(gs)
+            if (!seat) return false
+            watchPlan = [...Array(seat.wait).fill({}), ...seat.script]
+            watchI = 0
             return true
         }
         const releaseWatch = () => { watchingRef.current = false; setWatching(false); watchPlan = null; playWatchStop() }
