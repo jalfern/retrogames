@@ -1189,6 +1189,7 @@ if (process.argv.includes('--mutant')) {
     const GS = GAMES.pathname
     const PS = PO.pathname
     const AF = new URL('../src/games/Adventure/attract.js', import.meta.url).pathname
+    const RTF = new URL('../src/games/Adventure/route.js', import.meta.url).pathname
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `: (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))`,
@@ -1333,6 +1334,9 @@ if (process.argv.includes('--mutant')) {
         ['#1588: the renderer never draws the room-change flash', I,
             'if (sim.wipe && !isAttractMode) {',
             'if (false) {'],
+        ['#1637: route.js drops the fixed-map dispatch (V1/V2 lose their proven script)', RTF,
+            'const gen = sim.variant >= 3 ? runRoute(sim) : scriptRun(sim)',
+            'const gen = runRoute(sim)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
