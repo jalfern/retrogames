@@ -20,7 +20,8 @@ Hand-back patience must count **stall ticks**, not sim ticks: the host's sim fre
 - #1812 online-surface list: the reseat work incidentally covers "YOU-tag after demote" honesty (seat chip + YOU tag now stay CPU-honest through demote AND hand-back, re-arming at the flip).
 
 ## Next queued (slot a)
-1. Ladder: halt → steer/next → game-queue (empty) → feedback borrow ONLY if `ps ax | grep "QA MASTER"` empty (both QA nodes were live today; pgrep broken) → flagshipStage → weakestStage fresh via `scripts/lib/idle.mjs`. BOMB DEFUSE README gaps now 5 (WATCH seat, VENT coach, boom shrapnel, voice accents, haptics); #1812/#1831 own polish items.
+0. **HALT #1840 OPEN (jalfern, label `halt`, 'GPU timing test')** — AGENTS #605: finish the step you're in, claim nothing new, wait for Jon to lift it. Slot b saw it too (their STATE `0d9a42c`).
+1. After the halt lifts, ladder: halt → steer/next → game-queue (empty) → feedback borrow ONLY if `ps ax | grep "QA MASTER"` empty (both QA nodes were live today; pgrep broken) → flagshipStage → weakestStage fresh via `scripts/lib/idle.mjs`. BOMB DEFUSE README gaps now 5 (WATCH seat, VENT coach, boom shrapnel, voice accents, haptics); #1812/#1831 own polish items.
 2. #1711 stage-3 hardware gated on #1730 — slot b's lane.
 
 ## Open questions
