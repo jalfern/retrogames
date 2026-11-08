@@ -360,9 +360,10 @@ export default function BombDefuseGame() {
     const netRef = useRef({
         active: false, role: null, lobby: null, room: null, sync: null,
         miss: 0, desyncs: 0, desyncFrozen: false,
-        // #1838 in-flight reseat: host — seat handed back + grace window end +
-        // shared flip tick; guest — armed by the host's 'back', backTick echoed.
-        reseatSeat: null, reseatUntil: 0, reseatBackTick: null, reseatArm: false,
+        // #1838 in-flight reseat: host — seat handed back + stall patience
+        // spent waiting on it + shared flip tick; guest — armed by the host's
+        // 'back', backTick echoed.
+        reseatSeat: null, reseatWait: 0, reseatBackTick: null, reseatArm: false,
     })
     const [netUi, setNetUi] = useState(null)
 
@@ -525,7 +526,7 @@ export default function BombDefuseGame() {
             hintRef.current = null
             net.miss = 0
             net.desyncFrozen = false
-            net.reseatSeat = null; net.reseatUntil = 0; net.reseatBackTick = null; net.reseatArm = false
+            net.reseatSeat = null; net.reseatWait = 0; net.reseatBackTick = null; net.reseatArm = false
             const room = net.room
             const mySeat = room && room.yourSlot >= 0 ? room.yourSlot : (net.role === 'host' ? 0 : 1)
             net.sync.mySeat = mySeat
@@ -585,12 +586,17 @@ export default function BombDefuseGame() {
                             if (net.role === 'host' && screenRef.current === 'play' && g && !g.done) {
                                 const seat = Number.isFinite(m.s) && m.s !== net.sync.mySeat ? (m.s | 0) : 1
                                 net.reseatSeat = seat
-                                net.reseatUntil = g.tick + RESEAT_WINDOW
+                                net.reseatWait = 0
                                 net.reseatBackTick = g.tick + RESEAT_LEAD
                                 net.sync.reseatTick = net.reseatBackTick
                                 if (net.sync.droppedSeats().indexOf(seat) >= 0) net.sync.promote(seat)
                                 net.room.send('res', { e: 'back', k: net.reseatBackTick })
                                 hostSnap()
+                                // the returner missed our masks while its socket
+                                // was gone — send the buffered ones (late is
+                                // legal; absent is fatal, see net.js #1838 note)
+                                const bf = net.sync.backfillPads(g.tick + 1, net.sync.delay)
+                                if (bf) net.room.send('pad', bf)
                             }
                         }
                         else if (m.e === 'back') {
@@ -766,13 +772,19 @@ export default function BombDefuseGame() {
                         const k = gs.tick + 1
                         net.sync.pumpTo(k + net.sync.delay, () => padFrom(keys1Ref.current))
                         if (!net.sync.ready(k)) {
-                            if (net.reseatSeat != null && gs.tick < net.reseatUntil) {
-                                // hand-back in flight: the returner is reloading
-                                // and hashing — wait it out, don't kill the seat
-                                // again mid-handshake. Past the window the stall
-                                // law re-arms below.
+                            // #1838 hand-back grace, counted in STALL ticks —
+                            // the sim tick freezes while we wait, so a tick-based
+                            // window could never expire (the frozen-clock trap).
+                            if (net.reseatSeat != null && net.reseatWait < RESEAT_WINDOW) {
+                                net.reseatWait++
                                 settleReleases(keys1Ref.current)
                                 return
+                            }
+                            if (net.reseatSeat != null) {
+                                // patience over: abandon the hand-back, let the
+                                // stall law below take its normal course
+                                net.reseatSeat = null
+                                net.sync.reseatTick = null
                             }
                             net.miss++
                             if (net.miss >= DROP_GRACE) {

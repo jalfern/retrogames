@@ -17,6 +17,14 @@
 //                                 host's snapshot restores it at the same tick,
 //                                 pad streams preserved
 //   7. a rejoin restores        — promote + fresh 'go' runs lockstep again
+//   7b. an in-flight rejoin RESEATS (#1838) — back + snapshot + mask backfill
+//                                 rebuild the returner at the host's tick; the
+//                                 players flip lands on the SAME tick both boxes
+//                                 and hash agreement resumes mid-run
+//   7c. the window expires      — a returner that never pumps demotes again
+//                                 after RESEAT_WINDOW of honoured patience
+//   7d. the reseat core       — assemble masks until the flip, reseatBase and
+//                                 backfillPads are honest (pure sync gates)
 //   8. the shell is wired       — static audit of index.jsx (Lobby mounted,
 //                                 socket closed on unmount, seed in the go, the
 //                                 lockstep contract in the loop, guest seat 1)
@@ -24,16 +32,19 @@
 // Run: npm run defuselinkcheck   (no dev server needed)
 // Mutant: npm run defuselinkcheck -- --mutate   (the walkaway never demotes —
 //              test 5 goes RED: a lost link freezes frames; the law has teeth)
+// Mutant: npm run defuselinkcheck -- --mutate-reseat   (the shared players
+//              flip never lands — test 7b goes RED: the seat stays CPU forever)
 
 import { createGame, step, hash, solvePads, curStep, COLORS, needleOf, ZONE_HALF, SYNC, CUT } from '../src/games/BombDefuse/engine.js'
 import {
     createDefuseSync, padMask, unmaskPad, snapshotNet, restoreNet, packSnap,
-    PAD_DELAY, HASH_EVERY, DROP_GRACE, SEATS, CHUNK,
+    PAD_DELAY, HASH_EVERY, DROP_GRACE, SEATS, CHUNK, RESEAT_LEAD, RESEAT_WINDOW,
 } from '../src/games/BombDefuse/net.js'
 import { newRoom, join, leave, relay, MAX_MSG, FORWARD_TYPES } from '../relay/core.js'
 import { readFileSync } from 'node:fs'
 
 const MUTATE = process.argv.indexOf('--mutate') >= 0
+const MUTATE_RESEAT = process.argv.indexOf('--mutate-reseat') >= 0
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -131,9 +142,18 @@ function makeBox(link, id, mySeat, seed) {
             }
             else if (msg.t === 'go') box.go = { seed: msg.seed }
             else if (msg.t === 'res' && msg.e === 'req' && mySeat === 0) hostSnap(box)
+            else if (msg.t === 'res' && msg.e === 'rejoin' && mySeat === 0 && !box.g.done) {
+                hostRejoin(box, msg.s)
+            }
+            else if (msg.t === 'res' && msg.e === 'back' && mySeat === 1) {
+                box.reseatArm = true; box.reseatBackTick = msg.k | 0
+            }
             else if (msg.t === 'res' && msg.e === 'snp') {
                 const r = net.snapInbox.push(msg)
-                if (r) box.snap = { snap: r.snap, tick: r.tick }
+                if (r) {
+                    if (box.reseatArm) reseatApply(box, r)
+                    else box.snap = { snap: r.snap, tick: r.tick }
+                }
             }
         }
     }
@@ -163,6 +183,7 @@ function makeBox(link, id, mySeat, seed) {
         if (box.frozen) return 'frozen'
         box.pump()
         if (net.solo()) {
+            net.pumpTo(box.g.tick + 1 + net.delay, box.pad) // #1838: solo pumps
             step(box.g, [reactive(), {}])
             while (box.g.events.length) box.g.events.shift()
             return 'tick'
@@ -170,16 +191,30 @@ function makeBox(link, id, mySeat, seed) {
         const k = box.g.tick + 1
         net.pumpTo(k + net.delay, box.pad)
         if (!net.ready(k)) {
+            if (box.reseatSeat != null && box.reseatWait < RESEAT_WINDOW) { box.reseatWait++; box.reseatStalls++; return 'stall' }
+            if (box.reseatSeat != null) { box.reseatSeat = null; net.reseatTick = null; box.reseatAbandoned = box.reseatStalls }
             box.miss = (box.miss || 0) + 1
             // MUTATE (opt-in, test 5 only): the walkaway never demotes.
             if (box.miss >= DROP_GRACE && !(MUTATE && box.noDemote)) {
                 const seat = net.watchSeats[0]
-                if (net.demote(seat)) { box.g.players = 1; box.demoted = k }
+                if (net.demote(seat)) { box.g.players = 1; box.demoted = k; box.reseatSeat = null; box.reseatWait = 0 }
                 box.miss = 0
             }
             return 'stall'
         }
         box.miss = 0
+        if (net.reseatTick != null && k >= net.reseatTick) {
+            // MUTATE (opt-in, #1838): the shared players flip never happens.
+            if (!(MUTATE_RESEAT && box.noFlip)) {
+                box.reseated = k
+                if (box.g.players === 1) box.g.players = 2
+            } else {
+                box.flipSkipped = k
+            }
+            net.reseatTick = null
+            box.reseatSeat = null
+            box.reseatWait = 0
+        }
         step(box.g, net.assemble(k))
         while (box.g.events.length) box.g.events.shift()
         net.prune(box.g.tick)
@@ -200,6 +235,37 @@ const hostSnap = (box) => {
     }
 }
 const link0send = (box, c) => box.link.send(box.id, Object.assign({ t: 'res', s: box.net.mySeat }, c))
+
+// #1838 host answers a mid-run rejoin: stamp the shared flip tick, take the
+// seat's pads again, put back + live snapshot on the wire (the shell mirror).
+const hostRejoin = (box, fromSlot) => {
+    const seat = Number.isFinite(fromSlot) && fromSlot !== box.net.mySeat ? (fromSlot | 0) : 1
+    box.reseatSeat = seat
+    box.reseatWait = 0
+    box.reseatStalls = 0
+    box.reseatBackTick = box.g.tick + RESEAT_LEAD
+    box.net.reseatTick = box.reseatBackTick
+    if (box.net.droppedSeats().indexOf(seat) >= 0) box.net.promote(seat)
+    box.link.send(box.id, { t: 'res', s: box.net.mySeat, e: 'back', k: box.reseatBackTick })
+    hostSnap(box)
+    const bf = box.net.backfillPads(box.g.tick + 1, box.net.delay)
+    if (bf) box.link.send(box.id, Object.assign({ t: 'pad', s: box.net.mySeat }, bf))
+    box.answeredAt = box.g.tick
+}
+
+// #1838 the returner's rebuild: sim at the host's tick, own buffers re-based,
+// REMOTE preserved (host masks already in the box), seat 1 stays the partner's
+// until the shared flip tick.
+const reseatApply = (box, r) => {
+    box.reseatArm = false
+    box.reseatApplied = { at: r.tick, flip: box.reseatBackTick != null ? box.reseatBackTick : r.tick + RESEAT_LEAD }
+    box.g = restoreNet(r.snap)
+    box.net.watchSeats = [box.net.mySeat === 1 ? 0 : 1]
+    box.net.reseatTick = box.reseatApplied.flip
+    box.net.reseatBase(r.tick)
+    box.frozen = false
+    box.resyncs++
+}
 
 // apply a reassembled snapshot at the host's tick; streams preserved
 const applySnap = (box) => {
@@ -391,6 +457,108 @@ console.log('rejoin:')
         && FORWARD_TYPES.includes('pad') && FORWARD_TYPES.includes('hs') && FORWARD_TYPES.includes('res'))
 }
 
+// ---- 7b. an in-flight rejoin reseats (#1838) -------------------------------
+// The returner never waits for the next go: back + snapshot + mask backfill
+// rebuild it at the host's tick, the partner keeps the seat until the SHARED
+// flip tick, and lockstep — hash agreement included — resumes mid-run.
+console.log('in-flight rejoin:')
+{
+    const { link, host, guest } = freshPair()
+    link.send('A', { t: 'go', s: 0, seed: SEED })
+    guest.pump()
+    tickClock()
+    runPair(host, guest, (h, gg) => h.g.tick < 300 || gg.g.tick < 300)
+    link.leave('B')
+    runPair(host, host, (h) => !h.net.solo() && !h.g.done && h.g.tick < 6000)
+    ok('precondition: the host demoted through the stall law', host.net.solo() === true && host.g.players === 1)
+    link.join('B')
+    const back = makeBox(link, 'B', 1, SEED)
+    if (MUTATE_RESEAT) { host.noFlip = true; back.noFlip = true }
+    link.send('B', { t: 'res', s: 1, e: 'rejoin' })
+    tickClock(); host.step()
+    tickClock(); back.pump()
+    ok('the host answers a mid-run rejoin with back + snapshot',
+        back.reseatArm === false && !!back.reseatApplied, JSON.stringify({ arm: back.reseatArm, applied: back.reseatApplied || null }))
+    ok('the flip tick is RESEAT_LEAD past the host stamp, both boxes',
+        back.reseatApplied.flip === host.answeredAt + RESEAT_LEAD && host.net.reseatTick === back.reseatApplied.flip,
+        `answered=${host.answeredAt} flip=${back.reseatApplied.flip}`)
+    ok('the host stores the seat pads again (promoted) but has NOT flipped yet',
+        host.net.watchSeats.indexOf(1) >= 0 && !host.net.solo() && host.g.players === 1 && host.net.reseatTick != null)
+    ok('the returner rebuilt at the host tick, partner still holding its seat',
+        back.g.seed === SEED && back.g.tick === back.reseatApplied.at && back.g.players === 1,
+        JSON.stringify({ seed: back.g.seed, tick: back.g.tick, players: back.g.players }))
+    ok('the backfill landed: the returner can tick every tick up to the pad-lead horizon',
+        back.net.hasPad(0, back.reseatApplied.at + 1) && back.net.hasPad(0, back.reseatApplied.at + PAD_DELAY))
+    const flip = back.reseatApplied.flip
+    runPair(host, back, (h, b) => h.g.tick < flip + 300 || b.g.tick < flip + 300)
+    const okR = (name, cond, extra = '') =>
+        MUTATE_RESEAT ? ok(`mutant dies: ${name}`, !cond) : ok(name, cond, extra)
+    okR('the players flip lands on the SAME tick on both boxes',
+        host.reseated === flip && back.reseated === flip, `h=${host.reseated} g=${back.reseated} flip=${flip}`)
+    okR('the human seat is back: players=2 on both boxes', host.g.players === 2 && back.g.players === 2,
+        `h=${host.g.players} g=${back.g.players}`)
+    ok('lockstep holds after the reseat (late boundary hashes agree)',
+        host.desyncs === 0 && back.desyncs === 0 && host.hashes.size > 0 && back.hashes.size > 0
+        && (() => { for (const [k, h] of host.hashes) { if (back.hashes.has(k) && back.hashes.get(k) === h) return true } return false })(),
+        `h.desync=${host.desyncs} g.desync=${back.desyncs}`)
+    const ran = runPair(host, back, (h, b) => !h.g.done || !b.g.done)
+    ok('the run finishes together after the reseat (one bomb, two humans)',
+        ran && host.g.done && back.g.done && host.g.won && back.g.won
+        && host.g.tick === back.g.tick && host.g.score === back.g.score,
+        `${host.g.tick}/${back.g.tick} won ${host.g.won}/${back.g.won}`)
+    ok('no desync was ever filed across the whole hand-back', host.desyncs === 0 && back.desyncs === 0,
+        `h=${host.desyncs} g=${back.desyncs}`)
+}
+
+// ---- 7c. the hand-back window expires ----------------------------------------
+console.log('reseat window:')
+{
+    const { link, host, guest } = freshPair()
+    link.send('A', { t: 'go', s: 0, seed: SEED })
+    guest.pump()
+    tickClock()
+    runPair(host, guest, (h, gg) => h.g.tick < 300 || gg.g.tick < 300)
+    link.leave('B')
+    runPair(host, host, (h) => !h.net.solo() && !h.g.done && h.g.tick < 6000)
+    link.join('B')
+    // the slot reopens but NOBODY ticks it (a reopen that died at the door)
+    link.send('B', { t: 'res', s: 1, e: 'rejoin' })
+    tickClock(); host.step()
+    ok('the host still answers (a wire nobody reads is not a host bug)', host.answeredAt != null)
+    const t0 = host.g.tick
+    runPair(host, host, (h) => !h.net.solo() && (h.reseatStalls || 0) < RESEAT_WINDOW + DROP_GRACE + 100)
+    ok('the window is honoured in STALL ticks (a frozen sim tick cannot expire it)',
+        host.reseatAbandoned === RESEAT_WINDOW, `abandoned=${host.reseatAbandoned} window=${RESEAT_WINDOW}`)
+    ok('then the stall law re-arms and the seat dies again', host.net.solo() === true && host.g.players === 1)
+    ok('the dead hand-back is fully cleared', host.net.reseatTick === null && host.reseatSeat === null)
+    ok('no runaway progress while the seat was dead (only in-flight pads tick)',
+        host.g.tick - t0 <= PAD_DELAY, `t0=${t0} now=${host.g.tick}`)
+    runPair(host, host, (h) => !h.g.done && h.g.tick < 12000)
+    ok('the run still finishes with the CPU partner after an expired reseat', host.g.done === true && host.g.won === true)
+}
+
+// ---- 7d. the reseat core is honest (pure sync gates) ------------------------
+console.log('reseat core:')
+{
+    const s = createDefuseSync({ mySeat: 0, watchSeats: [1], send: () => {} })
+    s.gotPad({ k: 5, mm: { 1: [16] } })
+    s.reseatTick = 8
+    ok('before the flip tick assemble keeps seat 1 for the partner', Object.keys(s.assemble(5)[1]).length === 0)
+    s.reseatTick = 4
+    ok('past the flip tick assemble hands the seat to the human pads', s.assemble(5)[1].a === true)
+    s.reseatTick = 99
+    ok('demote clears a pending reseat (no stale flip after death)', s.demote(1) && s.reseatTick === null)
+    const t = createDefuseSync({ mySeat: 0, watchSeats: [1], send: () => {} })
+    t.pumpTo(50, (k) => ({ a: k === 101 }))
+    t.reseatBase(100)
+    t.pumpTo(105, (k) => ({ a: k === 101 }))
+    ok('reseatBase re-bases sampling at k0+1', t.hasPad(0, 101) && t.hasPad(0, 105) && !t.hasPad(0, 50))
+    const bf = t.backfillPads(101, 8)
+    ok('backfillPads ships the buffered own masks, relay-legal', bf && bf.k === 101 && bf.mm[0].length === 5 && bf.mm[0][0] === 16,
+        JSON.stringify(bf))
+    ok('backfillPads is empty-when-nothing-buffered', t.backfillPads(500, 8) === null)
+}
+
 // ---- 8. the shell is wired (static audit) ------------------------------------
 console.log('shell audit:')
 {
@@ -404,9 +572,14 @@ console.log('shell audit:')
     ok('boundary hashes ride the shell loop', /HASH_EVERY/.test(src) && /\.hash\(/.test(src))
     ok('a desync freeze + snapshot resync is wired', /restoreNet\(/.test(src) && /packSnap\(/.test(src))
     const pumpCount = (src.match(/\.pumpTo\(/g) || []).length
-    ok('the DEMO is still pure: attract runs solvePads, the wire has exactly one pump (play-only)',
-        /E\.step\(a, E\.solvePads\(a\)\)/.test(src) && pumpCount === 1
+    ok('the DEMO is still pure: attract runs solvePads, both pumps sit in the net play path only',
+        /E\.step\(a, E\.solvePads\(a\)\)/.test(src) && pumpCount === 2
         && src.indexOf('screenRef.current === \'attract\'') < src.indexOf('.pumpTo('))
+    ok('the solo survivor pumps too (#1838 — a returner needs the stream)',
+        /solo\(\)[\s\S]{0,700}?\.pumpTo\(/.test(src))
+    ok('#1838 reseat is wired: rejoin ask, back answer, backfill, shared flip',
+        /e: 'rejoin'/.test(src) && /e: 'back'/.test(src) && /backfillPads\(/.test(src)
+        && /reseatBase\(/.test(src) && /reseatTick/.test(src) && /RESEAT_WINDOW/.test(src))
     const eng = readFileSync(new URL('../src/games/BombDefuse/engine.js', import.meta.url), 'utf8')
     ok('the engine grew ONLY an rng accessor for the snapshot', /next\.x = /.test(eng) && !/WebSocket/.test(eng))
 }

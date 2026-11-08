@@ -308,6 +308,20 @@ export function createDefuseSync(opts = {}) {
         prune(k) {
             shrink(ours, k); shrink(peerH, k); shrink(own, k); shrink(remote, k)
         },
+        // #1838: a returner rebuilt at tick k0 needs OUR masks for k0+1.. —
+        // batches sent while its socket was gone are gone. We still hold them
+        // in `own` (sampling runs PAD_DELAY ahead), so answer the hand-back
+        // with one catch-up batch: the sampling law says stamps are absolute,
+        // late delivery is legal — and without this the reseat can never tick.
+        backfillPads(k0, n) {
+            const arr = []
+            for (let k = k0; k < k0 + n; k++) {
+                const m = own.get(k)
+                if (m == null) break
+                arr.push(m)
+            }
+            return arr.length ? { k: k0, mm: { [api.mySeat]: arr } } : null
+        },
         hasPad(seat, k) {
             return (seat === api.mySeat ? own : remote).has(k)
         },
