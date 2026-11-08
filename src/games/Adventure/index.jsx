@@ -5,6 +5,9 @@ import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
+import { makeRoute } from './route.js'
 import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, ROOM_WIPE_TICKS, VARIANTS, DEFAULT_VARIANT, stateHash } from './sim.js'
 
 const AdventureGame = () => {
@@ -12,6 +15,9 @@ const AdventureGame = () => {
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    const [watching, setWatching] = React.useState(false) // #1637 WATCH: route.js drives the quest
+    const watchingRef = useRef(false)
+    const [uiMode, setUiMode] = React.useState('attract') // gates the watch pill (play) / pill pair (attract)
 
     const handleResume = () => {
         setPaused(false)
@@ -32,6 +38,9 @@ const AdventureGame = () => {
         // every human start re-rolls the seed unless ?seed=N pins it.
         // =============================================
         let seed = 1979
+        let watcher = null // #1637 the seated route (route.js — the drivers adventurecheck wins with)
+        let uiModeVal = 'attract'
+        const showUi = (m) => { if (uiModeVal !== m) { uiModeVal = m; setUiMode(m) } }
         // #1572 item 3 — SELECT GAME: the cart boots to its variant screen.
         // The attract shows the number (dot matrix, big); left/right cycles
         // the pick, any other key or a tap starts on it. ?variant=N pins the
@@ -64,6 +73,9 @@ const AdventureGame = () => {
             sim = createSim(seedRng(seed), variant)
             isAttractMode = false
             dropQueued = false
+            watcher = null // #1637: the old route ends with the old run
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+            showUi('play')
             Object.keys(keys).forEach((k) => { keys[k] = false })
         }
 
@@ -96,6 +108,22 @@ const AdventureGame = () => {
                 return
             }
             if (pausedRef.current) return
+
+            // #1637 WATCH: Y seats route.js at any live state (the guide
+            // re-decides every tick); any driving key takes over; Y toggles.
+            if (isWatchKey(e)) {
+                if (isAttractMode || terminal()) startRun()
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); watcher = null; playWatchStop() }
+                else if (!(sim.won || sim.dead)) {
+                    watcher = makeRoute(sim)
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                }
+                e.preventDefault()
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) {
+                watchingRef.current = false; setWatching(false); watcher = null; playWatchStop()
+            }
 
             if (isAttractMode) {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
@@ -152,6 +180,10 @@ const AdventureGame = () => {
         }
 
         const update = () => {
+            // #1637: a run that ends in the player's (or the dragon's) hands
+            // releases the guide silently — the route already said its piece.
+            if (watchingRef.current && (sim.won || sim.dead)) { watchingRef.current = false; setWatching(false); watcher = null }
+            if (sim.won || (sim.dead && sim.deathTimer <= 0)) showUi('over')
             let dx = 0, dy = 0
             if (isAttractMode) {
                 // AI: wander around
@@ -163,10 +195,24 @@ const AdventureGame = () => {
                 dx = attractDir.x * PLAYER_SPEED * 0.5
                 dy = attractDir.y * PLAYER_SPEED * 0.5
             } else {
-                if (keys.ArrowUp) dy = -PLAYER_SPEED
-                if (keys.ArrowDown) dy = PLAYER_SPEED
-                if (keys.ArrowLeft) dx = -PLAYER_SPEED
-                if (keys.ArrowRight) dx = PLAYER_SPEED
+                let w = null
+                if (watchingRef.current && watcher) {
+                    const r = watcher.next()
+                    if (r.done) {
+                        // honest handback: the guide ran out of proven road
+                        watchingRef.current = false; setWatching(false); watcher = null; playWatchStop()
+                    } else w = r.value || {}
+                }
+                if (w) {
+                    dx = w.dx || 0
+                    dy = w.dy || 0
+                    if (w.drop) dropQueued = true
+                } else {
+                    if (keys.ArrowUp) dy = -PLAYER_SPEED
+                    if (keys.ArrowDown) dy = PLAYER_SPEED
+                    if (keys.ArrowLeft) dx = -PLAYER_SPEED
+                    if (keys.ArrowRight) dx = PLAYER_SPEED
+                }
             }
             sim.step({ dx, dy, drop: dropQueued })
             dropQueued = false
@@ -488,6 +534,10 @@ const AdventureGame = () => {
                     ctx.font = `${l.size}px monospace`
                     ctx.fillText(l.text, l.x, l.y)
                 }
+                // #1654 — the discoverability line, in attract before the first Y.
+                ctx.fillStyle = '#9fe39f'
+                ctx.font = '6px monospace'
+                ctx.fillText(WATCH_ATTRACT_HINT, GW / 2, GH - 5)
             }
 
             if (sim.won) {
@@ -610,6 +660,23 @@ const AdventureGame = () => {
             // snapshot/restore omitted: the seeded rand closure is not JSON-serializable (#391).
         })
 
+        // #1637 WATCH probes (harness-visible state of the seat)
+        window.__advTest = {
+            watching: () => watchingRef.current,
+            watchSfx: watchSfxLog,
+            probe: () => ({
+                tick: sim.tick,
+                room: sim.room,
+                carrying: sim.carrying,
+                x: sim.player.x,
+                y: sim.player.y,
+                score: sim.score,
+                won: sim.won,
+                dead: sim.dead,
+            }),
+            press: (code) => { keys[code] = true; setTimeout(() => { keys[code] = false }, 120) },
+        }
+
         // production report carries the seed (#1473)
         exposeFeedbackState(() => ({
             tick: sim.tick,
@@ -630,6 +697,7 @@ const AdventureGame = () => {
             cancelAnimationFrame(animationFrameId)
             unexposeGame()
             unexposeFeedbackState()
+            delete window.__advTest
         }
     }, [])
 
@@ -637,6 +705,19 @@ const AdventureGame = () => {
         <div className="fixed inset-0 bg-black flex items-center justify-center p-4">
             <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
+                {/* #1637 WATCH — route.js walks the quest; any input takes over. */}
+                {uiMode === 'play' && watching && <WatchToast className="absolute z-50" />}
+                {uiMode === 'play' && !paused && (
+                    <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
+                {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+                {uiMode === 'attract' && !paused && (
+                    <div className="absolute z-[70] left-1/2 -translate-x-1/2 pointer-events-auto" style={{ bottom: '24%' }}>
+                        <AttractWatchButton />
+                    </div>
+                )}
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'ADVENTURE')} onResume={handleResume} />}
             </div>
             <VirtualControls />

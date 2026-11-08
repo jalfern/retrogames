@@ -17,6 +17,7 @@ import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { createSim, ROOMS, R, GW, GH, PLAYER_SPEED, MAX_ITEMS, DRAGON_RESPAWN_TICKS, EXITS, CASTLE_INSIDES, SIDE_GAP_Y, SIDE_GAP_H, ROOM_WIPE_TICKS, stateHash } from '../src/games/Adventure/sim.js'
 import { seedRng } from '../src/utils/gameContract.js'
+import { makeRoute } from '../src/games/Adventure/route.js'
 import { plant, pull } from './lib/mutateguard.mjs'
 
 let fails = 0, passes = 0
@@ -755,6 +756,50 @@ console.log('win: the chalice home to the Gold Castle')
     ok(t3.wins === 10, 'V3 SHUFFLE wins 10/10 seeds (the adaptive route finds the re-homed loot)', JSON.stringify(t3.whys))
 }
 
+// ================================================================ #1637 batch 11 ----
+// WATCH route (route.js): the drivers above, ported to a per-tick generator the
+// browser seats live. The proof runs the SHIPPED module against real sims — one
+// input per tick, no teleports, no cheating the collision laws. Seat = proof.
+console.log('#1637 batch 11: the WATCH driver wins the quest (route.js, live-step proof)')
+{
+    const drive = (seed, variant) => {
+        const sim = createSim(seedRng(seed), variant)
+        const w = makeRoute(sim)
+        let r = w.next(), n = 0
+        while (!r.done && n < 60000) {
+            sim.step(r.value || {})
+            sim.events.length = 0
+            n++
+            if (sim.dead) break
+            r = w.next()
+        }
+        return { won: sim.won, why: r.done ? (r.value && r.value.why) : 'budget', ticks: n }
+    }
+    for (const [v, label] of [[1, 'CLASSIC script'], [2, 'FAST script'], [3, 'SHUFFLE adaptive']]) {
+        let wins = 0
+        const whys = {}
+        for (let sd = 1; sd <= 10; sd++) {
+            const r = drive(sd, v)
+            if (r.won) wins++
+            else whys[r.why] = (whys[r.why] || 0) + 1
+        }
+        ok(wins === 10, `route.js wins V${v} ${label} on 10/10 seeds`, JSON.stringify(whys))
+    }
+    // honesty: the guide emits inputs only — it never touches the world directly
+    const RT = readFileSync('src/games/Adventure/route.js', 'utf8')
+    ok(!/\bP\.x\s*=[^=]|\bP\.y\s*=[^=]|sim\.room\s*=[^=]|sim\.carrying\s*=[^=]|sim\.player\.x\s*=[^=]/.test(RT),
+        'route.js never writes the sim (inputs only — no teleport guides)')
+    ok(/sim\.variant >= 3 \? runRoute\(sim\) : scriptRun\(sim\)/.test(RT),
+        'route.js dispatches by cart variant (fixed maps get the waypoint script, the shuffle gets the adapter)')
+    // determinism: the guide over a pinned seed is exact
+    const ra = drive(7, 1), rb = drive(7, 1)
+    ok(ra.won && rb.won && ra.ticks === rb.ticks, 'a pinned seed watches to the identical tick', `${ra.ticks} vs ${rb.ticks}`)
+    // bat-theft proof: at least one seed wins only because recover() runs
+    // (seed 6 staggers past its first recover — vscript pin kept honest below)
+    const s6 = drive(6, 1)
+    ok(s6.won && s6.ticks > 2200, 'seed 6 wins through the bat recovery (the route survives steals)', `${s6.ticks} ticks`)
+}
+
 // ------------------------------------------------- #1572 item 3 wiring (static) ----
 console.log('#1572 item 3: SELECT GAME wiring (static)')
 {
@@ -1144,6 +1189,7 @@ if (process.argv.includes('--mutant')) {
     const GS = GAMES.pathname
     const PS = PO.pathname
     const AF = new URL('../src/games/Adventure/attract.js', import.meta.url).pathname
+    const RTF = new URL('../src/games/Adventure/route.js', import.meta.url).pathname
     const MUTANTS = [
         ['human start ignores ?seed (pin removed)', I,
             `: (seedFromQuery(window.location.search) ?? Math.floor(Math.random() * 1000000))`,
@@ -1288,6 +1334,9 @@ if (process.argv.includes('--mutant')) {
         ['#1588: the renderer never draws the room-change flash', I,
             'if (sim.wipe && !isAttractMode) {',
             'if (false) {'],
+        ['#1637: route.js drops the fixed-map dispatch (V1/V2 lose their proven script)', RTF,
+            'const gen = sim.variant >= 3 ? runRoute(sim) : scriptRun(sim)',
+            'const gen = runRoute(sim)'],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {
