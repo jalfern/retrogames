@@ -979,7 +979,7 @@ export default function BombDefuseGame() {
 
         if (import.meta.env.DEV) {
             window.__bdTest = {
-                state: () => (gsRef.current ? { ...E.simState(gsRef.current), players: seatsRef.current } : null),
+                state: () => (gsRef.current ? { ...E.simState(gsRef.current), players: seatsRef.current, gplayers: gsRef.current.players } : null),
                 screen: () => screenRef.current,
                 start: (seed = 42, players = 1) => { humanStart(seed, players); return true },
                 solve: (n = 1) => {

@@ -3,9 +3,12 @@
 // production worker) against the dev server: the host opens the crew room, a
 // phone-shaped guest joins by code, SPACE kicks a shared seed, real Space
 // presses on BOTH boxes turn the SYNC keys, the boxes tick together with zero
-// desync flags, and when the guest closes the tab the host demotes to the CPU
-// partner and keeps defusing. Node owns determinism detail (defuselinkcheck);
-// this tier owns the DOM, real sockets, and two JS runtimes agreeing.
+// desync flags, when the guest closes the tab the host demotes to the CPU
+// partner and keeps defusing — and when the guest REOPENS the join URL, the
+// host seats it back IN FLIGHT (#1838): rebuild at the host's tick, shared
+// players flip, lockstep and hash agreement resume mid-run.
+// Node owns determinism detail (defuselinkcheck); this tier owns the DOM, real
+// sockets, and two JS runtimes agreeing.
 //
 // npm run defuselinkdrive   (needs `npm run dev`; DEV_PORT respected, relay on
 // DRIVE_RELAY_PORT || 8792 so it never collides with other lanes' relays)
@@ -138,7 +141,55 @@ r.check('host keeps defusing after the guest closes', true)
 r.check('the lost seat demotes to the CPU partner on the host',
     afterDrop.solo === true && afterDrop.watch === 0, JSON.stringify(afterDrop))
 
-r.check('zero page errors across both browsers', errors.length === 0, errors.slice(0, 3).join(' | '))
+// ---- the guest COMES BACK mid-run (#1838): the seat is handed back ---------
+const guest2 = await newTab({ viewport: { width: 780, height: 360 }, hasTouch: true, isMobile: true })
+watch(guest2, 'guest2')
+await guest2.goto(`${BASE}/bomb-defuse?net=join&room=${code}&relay=${RELAY}`, { waitUntil: 'load' })
+await guest2.waitForFunction(() => {
+    const n = window.__bdTest && window.__bdTest.net()
+    return !!(n && n.role === 'guest' && n.seat === 1)
+}, null, { timeout: 25000 })
+r.check('the returner re-enters the room by code', true)
+await host.waitForFunction(() => window.__bdTest.net().reseatBack != null, null, { timeout: 15000 })
+r.check('the host answers the mid-run rejoin with a stamped back tick', true)
+await guest2.waitForFunction(() => window.__bdTest.screen() === 'play' && window.__bdTest.state().tick > 60,
+    null, { timeout: 25000 })
+const mid = await guest2.evaluate(() => {
+    const s = window.__bdTest.state()
+    return { tick: s.tick, players: s.gplayers }
+})
+r.check('the returner sits INTO THE LIVE RUN (screen play, tick rebuilt, no fresh go)',
+    mid.tick > 60 && mid.players === 1, JSON.stringify(mid)) // partner still holds the seat
+// the shared flip: both boxes cross it on the same sim tick
+await host.waitForFunction(() => {
+    const n = window.__bdTest.net()
+    return n.reseatBack == null && n.solo === false
+}, null, { timeout: 25000 })
+await guest2.waitForFunction(() => window.__bdTest.state().gplayers === 2, null, { timeout: 25000 })
+r.check('the players flip lands on BOTH boxes: host watches again, returner drives seat 2', true)
+// lockstep resumes: hunt a same-tick sample across the two runtimes
+let beat2 = null
+for (let i = 0; i < 40 && !(beat2 && beat2[0].tick === beat2[1].tick); i++) {
+    await new Promise((res) => setTimeout(res, 100))
+    beat2 = await Promise.all([host, guest2].map((p) => p.evaluate(() => {
+        const s = window.__bdTest.state()
+        const n = window.__bdTest.net()
+        return { tick: s.tick, hash: s.hash, fuse: s.fuse, score: s.score, desyncs: n.desyncs, gplayers: s.gplayers }
+    })))
+}
+r.check('both boxes tick together after the reseat (same tick within sampling)',
+    !!beat2 && Math.abs(beat2[0].tick - beat2[1].tick) <= 4, JSON.stringify(beat2.map((b) => b.tick)))
+r.check('no desync was filed across the whole walkaway-and-return',
+    beat2.every((b) => b.desyncs === 0), JSON.stringify(beat2.map((b) => b.desyncs)))
+if (beat2[0].tick === beat2[1].tick) {
+    r.check('same tick => same whole-sim hash after the reseat',
+        beat2[0].hash === beat2[1].hash && beat2[0].gplayers === 2 && beat2[1].gplayers === 2, JSON.stringify(beat2))
+} else {
+    r.check('both boxes run coop after the flip (players=2 each side)',
+        beat2[0].gplayers === 2 && beat2[1].gplayers === 2, JSON.stringify(beat2.map((b) => b.gplayers)))
+}
+
+r.check('zero page errors across the browsers', errors.length === 0, errors.slice(0, 3).join(' | '))
 
 await closeBrowser()
 await relay.close()
