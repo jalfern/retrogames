@@ -21,7 +21,7 @@ import { startSpeechListen } from '../../utils/speechListen.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit.js'
 import { makeTransport } from '../../utils/linkPeers.js'
 import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
-import { createDefuseSync, snapshotNet, restoreNet, packSnap, DROP_GRACE, HASH_EVERY } from './net.js'
+import { createDefuseSync, snapshotNet, restoreNet, packSnap, DROP_GRACE, HASH_EVERY, RESEAT_LEAD, RESEAT_WINDOW } from './net.js'
 import * as E from './engine.js'
 import { sfx } from './audio.js'
 import { parseCall } from './voice.js'
@@ -360,6 +360,9 @@ export default function BombDefuseGame() {
     const netRef = useRef({
         active: false, role: null, lobby: null, room: null, sync: null,
         miss: 0, desyncs: 0, desyncFrozen: false,
+        // #1838 in-flight reseat: host — seat handed back + grace window end +
+        // shared flip tick; guest — armed by the host's 'back', backTick echoed.
+        reseatSeat: null, reseatUntil: 0, reseatBackTick: null, reseatArm: false,
     })
     const [netUi, setNetUi] = useState(null)
 
@@ -522,6 +525,7 @@ export default function BombDefuseGame() {
             hintRef.current = null
             net.miss = 0
             net.desyncFrozen = false
+            net.reseatSeat = null; net.reseatUntil = 0; net.reseatBackTick = null; net.reseatArm = false
             const room = net.room
             const mySeat = room && room.yourSlot >= 0 ? room.yourSlot : (net.role === 'host' ? 0 : 1)
             net.sync.mySeat = mySeat
@@ -552,18 +556,49 @@ export default function BombDefuseGame() {
                     pushNetUi()
                 },
                 onStart: (m) => startNetMatch(m),
-                onJoin: () => pushNetUi(),
+                onJoin: (e) => {
+                    pushNetUi()
+                    // #1838: a guest page reopened mid-run asks for the LIVE
+                    // state. Only the host can answer (and only mid-run) — if
+                    // it doesn't, we simply keep waiting for the next go.
+                    if (net.role === 'guest' && e && e.slot === 0 && screenRef.current !== 'play' && !net.reseatArm) {
+                        net.room.send('res', { e: 'rejoin' })
+                    }
+                },
                 onLeave: () => {
                     pushNetUi()
                     // a pending resync could wait forever — drive on; the
                     // missing seat demotes through the stall law below
                     net.desyncFrozen = false
+                    net.reseatArm = false
                 },
                 on: {
                     pad: (m) => net.sync.gotPad(m),
                     hs: (m) => { const d = net.sync.gotHash(m.k | 0, m.h >>> 0); if (d) netDesync() },
                     res: (m) => {
                         if (m.e === 'req') { if (net.role === 'host') hostSnap() }
+                        else if (m.e === 'rejoin') {
+                            // a returner is back in the room — hand it its seat
+                            // mid-run: flip tick stamped, pads from the seat
+                            // stored again, live snapshot on the wire.
+                            const g = gsRef.current
+                            if (net.role === 'host' && screenRef.current === 'play' && g && !g.done) {
+                                const seat = Number.isFinite(m.s) && m.s !== net.sync.mySeat ? (m.s | 0) : 1
+                                net.reseatSeat = seat
+                                net.reseatUntil = g.tick + RESEAT_WINDOW
+                                net.reseatBackTick = g.tick + RESEAT_LEAD
+                                net.sync.reseatTick = net.reseatBackTick
+                                if (net.sync.droppedSeats().indexOf(seat) >= 0) net.sync.promote(seat)
+                                net.room.send('res', { e: 'back', k: net.reseatBackTick })
+                                hostSnap()
+                            }
+                        }
+                        else if (m.e === 'back') {
+                            if (net.role === 'guest' && screenRef.current !== 'play') {
+                                net.reseatArm = true
+                                net.reseatBackTick = m.k | 0
+                            }
+                        }
                         else if (m.e === 'snp') {
                             const got = net.sync.snapInbox.push(m)
                             if (got && net.role === 'guest' && net.desyncFrozen) {
@@ -571,6 +606,30 @@ export default function BombDefuseGame() {
                                 // PRESERVED (the sampling law) — no sync.reset
                                 gsRef.current = restoreNet(got.snap)
                                 net.desyncFrozen = false
+                            } else if (got && net.role === 'guest' && net.reseatArm) {
+                                // #1838 hand-back: rebuild the live run at the
+                                // host's tick and climb back into lockstep. The
+                                // partner keeps the seat until the shared flip.
+                                const back = net.reseatBackTick != null ? net.reseatBackTick : got.tick + RESEAT_LEAD
+                                gsRef.current = restoreNet(got.snap)
+                                seedRef.current = (got.snap.seed >>> 0) || 1
+                                seatsRef.current = 2
+                                coopRef.current = true
+                                net.sync.mySeat = net.room && net.room.yourSlot >= 0 ? net.room.yourSlot : 1
+                                net.sync.watchSeats = [0]
+                                net.sync.reseatTick = back
+                                net.sync.reseatBase(got.tick)
+                                net.reseatArm = false
+                                net.miss = 0
+                                net.desyncFrozen = false
+                                if (net.room) net.room.setPhase('racing')
+                                hudRef.current = {
+                                    flash: 0, shake: 0, sparks: [], boomT: 0,
+                                    banner: { text: 'WELCOME BACK — SEAT RE-SEATED', ok: true }, bannerT: 90,
+                                }
+                                hintRef.current = null
+                                askConsent().then(() => beginRun()).catch(() => {})
+                                setScreen('play')
                             }
                         }
                     },
@@ -698,16 +757,29 @@ export default function BombDefuseGame() {
                         // survivor: no peer to sync with — held keys drive seat
                         // 0 and the engine partner covers seat 1 (players=1).
                         if (gs.players > 1) gs.players = 1
+                        // #1838: keep SAMPLING while solo — a returner rebuilds
+                        // from our snapshots and needs our pad stream to climb
+                        // back into lockstep; without this the hand-back stalls.
+                        net.sync.pumpTo(gs.tick + 1 + net.sync.delay, () => padFrom(keys1Ref.current))
                         pads = [padFrom(keys1Ref.current), {}]
                     } else {
                         const k = gs.tick + 1
                         net.sync.pumpTo(k + net.sync.delay, () => padFrom(keys1Ref.current))
                         if (!net.sync.ready(k)) {
+                            if (net.reseatSeat != null && gs.tick < net.reseatUntil) {
+                                // hand-back in flight: the returner is reloading
+                                // and hashing — wait it out, don't kill the seat
+                                // again mid-handshake. Past the window the stall
+                                // law re-arms below.
+                                settleReleases(keys1Ref.current)
+                                return
+                            }
                             net.miss++
                             if (net.miss >= DROP_GRACE) {
                                 const seat = net.sync.watchSeats[0]
                                 if (seat !== undefined && net.sync.demote(seat)) {
                                     gs.players = 1
+                                    net.reseatSeat = null
                                     hudRef.current.banner = { text: 'PARTNER LINK LOST — CPU PARTNER IN', ok: false }
                                     hudRef.current.bannerT = 90
                                     sfx.strike()
@@ -718,6 +790,17 @@ export default function BombDefuseGame() {
                             return
                         }
                         net.miss = 0
+                        if (net.sync.reseatTick != null && k >= net.sync.reseatTick) {
+                            // the shared flip (#1838): both boxes hand seat 1
+                            // from the CPU partner back to the human on the
+                            // SAME sim tick — hash equality survives the flip.
+                            net.sync.reseatTick = null
+                            net.reseatSeat = null
+                            if (gs.players === 1) gs.players = 2
+                            hudRef.current.banner = { text: 'PARTNER RE-SEATED — CREW WHOLE', ok: true }
+                            hudRef.current.bannerT = 80
+                            sfx.blip()
+                        }
                         pads = net.sync.assemble(k)
                     }
                     spec.tick(pads[0], pads)
@@ -758,8 +841,10 @@ export default function BombDefuseGame() {
                 if (gs) {
                     drawBombView(g, gs, now, {
                         paused: pausedRef.current,
-                        cpu2: seatsRef.current === 1 || (net.active && net.sync && net.sync.solo()),
-                        youSeat: net.active && net.sync && !net.sync.solo() ? net.sync.mySeat : -1,
+                        // the seat is still the partner's during an in-flight
+                        // hand-back (#1838) — the chip must not lie until the flip
+                        cpu2: seatsRef.current === 1 || (net.active && net.sync && (net.sync.solo() || net.sync.reseatTick != null)),
+                        youSeat: net.active && net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1,
                     })
                     drawIntro(g, gs)
                     for (const s of hud.sparks) {
@@ -907,6 +992,8 @@ export default function BombDefuseGame() {
                     solo: net.sync ? net.sync.solo() : false,
                     stalls: net.sync ? net.sync.stats().stalls : 0,
                     miss: net.miss, desyncs: net.desyncs, frozen: net.desyncFrozen,
+                    reseatSeat: net.reseatSeat, reseatBack: net.sync ? net.sync.reseatTick : null,
+                    reseatArm: net.reseatArm,
                 }),
                 kick: () => { onlineStart(); return true },
             }

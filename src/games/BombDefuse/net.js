@@ -12,6 +12,8 @@
 //   {t:'hs',  k, h}              whole-sim hash every HASH_EVERY ticks
 //   {t:'res', e:'req'}           "put me back in sync" (guest -> host)
 //   {t:'res', e:'snp', i, z, p, k}  host snapshot chunk (512B-safe)
+//   {t:'res', e:'rejoin'}        #1838 returner: "seat me in the LIVE run"
+//   {t:'res', e:'back', k}       host yes — k is the shared flip tick, chunks follow
 //
 // A walkaway is not a crash: this engine already covers an empty seat 2 with
 // its partner emitter (players=1 && pad[1] all-false). When the peer's pads
@@ -38,6 +40,11 @@ export const SAMPLE_EVERY = 2   // wire granularity (~30 Hz batches per box)
 export const HASH_EVERY = 60    // ~1 s whole-sim hash boundary
 export const DROP_GRACE = 30    // ~0.5 s of missing pads => the partner covers
 export const CHUNK = 380        // relay budget 512B, sig-lesson sizing
+export const RESEAT_LEAD = PAD_DELAY + 2   // #1838: hand-back lands 10 ticks past
+                                            // the snapshot stamp — inside the pad
+                                            // lead plus round-trip slack
+export const RESEAT_WINDOW = 180          // ~3 s: back + chunks + reload + first
+                                            // masks; past it the stall law re-arms
 
 // the six fields either seat reads — one byte on the wire.
 const MBIT = { up: 1, down: 2, left: 4, right: 8, a: 16, b: 32 }
@@ -182,10 +189,12 @@ export function createDefuseSync(opts = {}) {
             api.watchSeats.splice(i, 1)
             dropped.add(seat)
             remote.clear()
+            api.reseatTick = null
             if (stalledSeat === seat) { stalledSeat = -1; stallRun = 0 }
             return true
         },
-        // Mirror of demote: a mid-run rejoin is taken up at the next go.
+        // Mirror of demote: used by the fresh-'go' path AND by the host when
+        // it answers a #1838 rejoin (pads from the seat must be stored again).
         promote(seat) {
             if (!dropped.delete(seat)) return false
             if (api.watchSeats.indexOf(seat) < 0) {
@@ -193,6 +202,21 @@ export function createDefuseSync(opts = {}) {
                 api.watchSeats.sort((a, b) => a - b)
             }
             return true
+        },
+        // #1838 in-flight reseat. When set, assemble() keeps seat 1 empty
+        // (engine partner keeps burning) until the shared flip tick k, where
+        // BOTH boxes step with players=2 — flip tied to the sim tick, never
+        // the wall clock, so hash equality survives the hand-back.
+        reseatTick: null,
+        // The returner's own rebuild base: fresh own/hash buffers, sampling
+        // resumes at k0+1. REMOTE IS PRESERVED — the host's masks buffered
+        // while the page reloaded are exactly what lockstep resumes on.
+        reseatBase(k0) {
+            own = new Map(); ours = new Map(); peerH = new Map()
+            pending.length = 0
+            nextSample = k0 + 1
+            stalls = 0; stallRun = 0
+            stalledSeat = -1
         },
         // Fresh run only (new seed on 'go'). A DESYNC resync must NOT call
         // this — samples already sent are final (the sampling law).
@@ -203,6 +227,7 @@ export function createDefuseSync(opts = {}) {
             stalls = 0; stallRun = 0; maxStallRun = 0
             stalledSeat = -1
             dropped.clear()
+            api.reseatTick = null
             snapInbox.reset()
         },
         // Sample every tick up to target, batch on the wire every SAMPLE_EVERY.
@@ -259,6 +284,10 @@ export function createDefuseSync(opts = {}) {
             const m1 = (api.mySeat === 1 ? own : remote).get(k)
             if (m0 != null) pads[0] = unmaskPad(m0)
             if (m1 != null) pads[1] = unmaskPad(m1)
+            // #1838: until the shared flip tick the seat stays the partner's —
+            // the returning player's pads ride the wire but must not outrank
+            // the CPU until BOTH boxes flip players on the same tick.
+            if (api.reseatTick != null && k < api.reseatTick) pads[1] = {}
             return pads
         },
         hash(k, h) {
