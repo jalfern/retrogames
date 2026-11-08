@@ -19,6 +19,11 @@
 #          green check (state=completed, conclusion=success), 2026-11-06.
 #  run     `run list` without --workflow uses /actions/runs?branch=… (the
 #          empty-workflow path 404'd, making red advisories untriageable).
+#  flags   short flags -R/-l/-q/-t/-b/-c (#1842). Unknown flags are skipped
+#          WITHOUT their value, so a dropped `-l halt` once turned
+#          scripts/forge's halts() into "every open issue": `forge status`
+#          read HALTED forever, `forge stop` never opened a halt, and
+#          `forge start` would have closed every open issue.
 set -u
 PROXY="${GH_SHIM_PROXY-http://127.0.0.1:18229}"
 API="${GH_SHIM_API-https://api.github.com}"
@@ -149,18 +154,20 @@ api)
 issue)
   sub="${1:-}"; shift || true
   repo="$REPO_DEFAULT"; N=''; BODY=''; BODYF=''; TITLE=''; JSONF=''; REASON=''
-  STATE=''; ADDL=''; ADDL2=''; RML=''
+  STATE=''; ADDL=''; ADDL2=''; RML=''; COMMENT=''; LIMIT=100
   while [ $# -gt 0 ]; do
     c="$1"
-    if [ "$c" = "--repo" ]; then repo="$2"; shift 2
-    elif [ "$c" = "--jq" ]; then JQ="$2"; shift 2
-    elif [ "$c" = "--state" ]; then STATE="$2"; shift 2
-    elif [ "$c" = "--label" ]; then ADDL="$ADDL${ADDL:+,}$2"; shift 2
+    if [ "$c" = "--repo" ] || [ "$c" = "-R" ]; then repo="$2"; shift 2
+    elif [ "$c" = "--jq" ] || [ "$c" = "-q" ]; then JQ="$2"; shift 2
+    elif [ "$c" = "--state" ] || [ "$c" = "-s" ]; then STATE="$2"; shift 2
+    elif [ "$c" = "--label" ] || [ "$c" = "-l" ]; then ADDL="$ADDL${ADDL:+,}$2"; shift 2
     elif [ "$c" = "--json" ]; then JSONF="$2"; shift 2
-    elif [ "$c" = "--body" ]; then BODY="$2"; shift 2
-    elif [ "$c" = "--body-file" ]; then BODYF="$2"; shift 2
-    elif [ "$c" = "--title" ]; then TITLE="$2"; shift 2
-    elif [ "$c" = "--reason" ]; then REASON="$2"; shift 2
+    elif [ "$c" = "--body" ] || [ "$c" = "-b" ]; then BODY="$2"; shift 2
+    elif [ "$c" = "--body-file" ] || [ "$c" = "-F" ]; then BODYF="$2"; shift 2
+    elif [ "$c" = "--title" ] || [ "$c" = "-t" ]; then TITLE="$2"; shift 2
+    elif [ "$c" = "--comment" ] || [ "$c" = "-c" ]; then COMMENT="$2"; shift 2
+    elif [ "$c" = "--limit" ] || [ "$c" = "-L" ]; then LIMIT="$2"; shift 2
+    elif [ "$c" = "--reason" ] || [ "$c" = "-r" ]; then REASON="$2"; shift 2
     elif [ "$c" = "--add-label" ]; then ADDL2="$ADDL2${ADDL2:+ }$2"; shift 2
     elif [ "$c" = "--remove-label" ]; then RML="$RML${RML:+ }$2"; shift 2
     elif [ "${c#-}" != "$c" ]; then shift
@@ -169,7 +176,7 @@ issue)
   if [ -n "$BODYF" ]; then BODY=$(cat "$BODYF"); fi
   case "$sub" in
   list)
-    st="${STATE:-open}"; qs="state=$st&per_page=100"
+    st="${STATE:-open}"; qs="state=$st&per_page=$LIMIT"
     if [ -n "$ADDL" ]; then qs="$qs&labels=$ADDL"; fi
     out=$(api_call GET "repos/$repo/issues?$qs" | jq '[.[] | select(has("pull_request") | not)]')
     if [ -n "$JSONF" ]; then
@@ -202,6 +209,7 @@ issue)
     for l in $RML; do api_call DELETE "repos/$repo/issues/$N/labels/$l" >/dev/null 2>&1 || true; done
     ;;
   close)
+    if [ -n "$COMMENT" ]; then api_call POST "repos/$repo/issues/$N/comments" "$(jq -n --arg b "$COMMENT" '{body:$b}')" >/dev/null; fi
     api_call PATCH "repos/$repo/issues/$N" "$(jq -n --arg r "${REASON:-completed}" '{state:"closed",state_reason:$r}')" >/dev/null
     ;;
   create)
@@ -221,12 +229,12 @@ pr)
   repo="$REPO_DEFAULT"; NUM=''; BODY=''; BODYF=''; TITLE=''; BASE=main; DRAFT=false; DEL=0; JSONF=''
   while [ $# -gt 0 ]; do
     c="$1"
-    if [ "$c" = "--repo" ]; then repo="$2"; shift 2
-    elif [ "$c" = "--jq" ]; then JQ="$2"; shift 2
-    elif [ "$c" = "--base" ]; then BASE="$2"; shift 2
-    elif [ "$c" = "--title" ]; then TITLE="$2"; shift 2
-    elif [ "$c" = "--body" ]; then BODY="$2"; shift 2
-    elif [ "$c" = "--body-file" ]; then BODYF="$2"; shift 2
+    if [ "$c" = "--repo" ] || [ "$c" = "-R" ]; then repo="$2"; shift 2
+    elif [ "$c" = "--jq" ] || [ "$c" = "-q" ]; then JQ="$2"; shift 2
+    elif [ "$c" = "--base" ] || [ "$c" = "-B" ]; then BASE="$2"; shift 2
+    elif [ "$c" = "--title" ] || [ "$c" = "-t" ]; then TITLE="$2"; shift 2
+    elif [ "$c" = "--body" ] || [ "$c" = "-b" ]; then BODY="$2"; shift 2
+    elif [ "$c" = "--body-file" ] || [ "$c" = "-F" ]; then BODYF="$2"; shift 2
     elif [ "$c" = "--delete-branch" ]; then DEL=1; shift
     elif [ "$c" = "--draft" ]; then DRAFT=true; shift
     elif [ "${c#-}" != "$c" ]; then shift

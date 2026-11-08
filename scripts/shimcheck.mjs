@@ -38,6 +38,12 @@ const CHECKRUNS = {
     { name: 'verify', status: 'completed', conclusion: 'failure', html_url: 'https://example.test/3' },
   ],
 };
+// #1842: open issues for scripts/forge's halts() — only #1840 carries `halt`.
+const ISSUES = [
+  { number: 1840, title: 'FORGE HALT: GPU timing test', state: 'open', labels: [{ name: 'halt' }] },
+  { number: 1839, title: 'QA pass', state: 'open', labels: [{ name: 'feedback' }] },
+  { number: 1700, title: 'a game', state: 'open', labels: [{ name: 'game-queue' }] },
+];
 let hits = [];
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -58,6 +64,13 @@ const server = http.createServer((req, res) => {
     hits.push('MERGED');
     return json(200, { merged: true, sha: 'squashed' });
   }
+  if (p.match(/^\/repos\/[^/]+\/[^/]+\/issues$/) && req.method === 'GET') {
+    // GitHub's own semantics: `labels=` filters; omitted means every issue.
+    const want = (url.searchParams.get('labels') || '').split(',').filter(Boolean);
+    return json(200, ISSUES.filter((i) => want.every((w) => i.labels.some((l) => l.name === w))));
+  }
+  if ((m = p.match(/^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/)) && req.method === 'PATCH') { hits.push(`CLOSED ${m[1]}`); return json(200, {}); }
+  if ((m = p.match(/^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/)) && req.method === 'POST') { hits.push(`COMMENT ${m[1]}`); return json(201, {}); }
   if (/^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\//.test(p) && req.method === 'DELETE') return json(204, {});
   if ((m = p.match(/^\/repos\/[^/]+\/[^/]+\/commits\/([^/]+)\/check-runs$/)) && req.method === 'GET') {
     return json(200, { check_runs: CHECKRUNS[m[1]] || [] });
@@ -179,19 +192,34 @@ async function suite(shimPath, tag) {
     ok(r.status === 0 && r.stdout.trim() === 'failure', 'workflow-less run list resolves via /actions/runs', `exit=${r.status} out=${r.stdout.trim()}`);
   }
 
+  console.log(`${tag ? `[${tag}] ` : ''}#1842 short flags — scripts/forge's halt check through the shim`);
+  {
+    // verbatim from scripts/forge: halts()
+    const r = await run(['issue', 'list', '-R', 'jalfern/retrogames', '-l', 'halt', '--state', 'open', '--json', 'number', '-q', '.[].number'], mine);
+    ok(r.status === 0 && r.stdout.trim() === '1840', 'halts() returns ONLY the halt issue (-l filters, -q is jq)', `got: ${JSON.stringify(r.stdout.trim())}`);
+  }
+  {
+    // verbatim from scripts/forge: `forge start` closes each halt with a comment
+    hits = hits.filter((h) => !/^(CLOSED|COMMENT) /.test(h));
+    const r = await run(['issue', 'close', '1840', '-R', 'jalfern/retrogames', '-c', 'Lifted with `forge start`.'], mine);
+    ok(r.status === 0 && hits.includes('COMMENT 1840') && hits.includes('CLOSED 1840')
+      && hits.filter((h) => h.startsWith('CLOSED ')).length === 1, 'close -c comments then closes exactly that issue', hits.filter((h) => /^(CLOSED|COMMENT)/.test(h)).join(','));
+  }
+
   return { pass, fail };
 }
 
 const main = await suite(SHIM, null);
 let mutantDied = null;
 if (MUTATE) {
-  // Punch all four guards out of a copy; the suite must fail on every hole.
+  // Punch all five guards out of a copy; the suite must fail on every hole.
   const dead = join(root, 'dead-shim.sh');
   let src = readFileSync(SHIM, 'utf8');
   const edits = [
     ['if [ -z "$br" ]; then\n    echo "gh: $what', 'if false; then\n    echo "gh: $what'],                        // detached guard
     ['if [ -n "$br" ] && [ "$ref" != "$br" ]; then\n      fail "refusing', 'if false; then\n      fail "refusing'], // ref assert
-    ['if ! mkdir "$lock" 2>/dev/null; then', 'if false; then'],                                                       // lock
+    ['if ! mkdir "$lock" 2>/dev/null; then', 'if false; then'],
+    ['elif [ "$c" = "--label" ] || [ "$c" = "-l" ]; then', 'elif [ "$c" = "--label" ]; then'],                     // #1842 -l                                                       // lock
     ['state: (if .status == "completed" then ((.conclusion // "unknown") | ascii_upcase) else (.status | ascii_upcase) end)',
       'state: (.status | ascii_upcase)'],                                                                              // vocab
   ];

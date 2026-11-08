@@ -8,13 +8,14 @@
 // issue was closed. The fix finds it by title search and keeps exactly one.
 // This pins that decision offline: an always-create selector (the old bug)
 // goes red here, so a regression to "create on a missed lookup" is caught.
-import { planPulse, PULSE_TITLE } from './lib/pulse.mjs'
+import { planPulse, PULSE_TITLE, FULL_AT } from './lib/pulse.mjs'
 
 let pass = 0
 const fails = []
 const ok = (c, m) => { if (c) pass++; else fails.push(m) }
 const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b)
-const P = (n, state = 'open', title = PULSE_TITLE) => ({ number: n, state, title })
+const P = (n, state = 'open', title = PULSE_TITLE, comments) => ({ number: n, state, title, ...(comments == null ? {} : { comments }) })
+const F = (n, state = 'open') => P(n, state, PULSE_TITLE, 2500)   // a pulse GitHub will no longer accept comments on
 
 // no pulse at all -> create (the ONLY time a new one may be made)
 ok(eq(planPulse([]), { keep: null, create: true, reopen: null, close: [] }), 'empty -> create')
@@ -38,10 +39,30 @@ ok(eq(planPulse([P(795, 'closed'), P(777)]), { keep: 777, create: false, reopen:
 ok(eq(planPulse([P(795), P(793, 'closed'), P(787, 'closed'), P(785, 'closed'), P(783, 'closed'), P(779, 'closed'), P(777, 'closed'), P(91, 'closed')]),
    { keep: 795, create: false, reopen: null, close: [] }), 'live board shape -> keep #795, no mutation')
 
+// #1842 ROTATION: #795 hit 2,500 comments and the pulse went silent for ~28 h.
+// a full open pulse -> create a fresh one AND close the full one
+ok(eq(planPulse([F(795)]), { keep: null, create: true, reopen: null, close: [795] }), 'full open pulse -> create + retire it')
+ok(eq(planPulse([P(795, 'open', PULSE_TITLE, FULL_AT)]), { keep: null, create: true, reopen: null, close: [795] }), 'exactly FULL_AT counts as full (headroom, not the hard cap)')
+ok(eq(planPulse([P(795, 'open', PULSE_TITLE, FULL_AT - 1)]), { keep: 795, create: false, reopen: null, close: [] }), 'one under FULL_AT -> keep, no churn')
+// after rotation: fresh open + full closed -> keep the fresh one, touch nothing
+ok(eq(planPulse([P(1842, 'open', PULSE_TITLE, 0), F(795, 'closed'), P(91, 'closed', PULSE_TITLE, 2015)]),
+   { keep: 1842, create: false, reopen: null, close: [] }), 'post-rotation board -> keep the fresh pulse')
+// a full pulse is never REOPENED, even if it is the newest closed one
+ok(eq(planPulse([F(795, 'closed'), P(91, 'closed', PULSE_TITLE, 2015)]),
+   { keep: 91, create: false, reopen: 91, close: [] }), 'full newest closed is skipped; newest usable is reopened')
+ok(eq(planPulse([F(795, 'closed')]), { keep: null, create: true, reopen: null, close: [] }), 'only a full closed pulse -> create, never reopen it')
+// rotation half-done (fresh created, full not yet closed) -> keep fresh, finish the close
+ok(eq(planPulse([P(1842, 'open', PULSE_TITLE, 3), F(795)]), { keep: 1842, create: false, reopen: null, close: [795] }), 'half-done rotation -> keep fresh, close the full one')
+// a caller that sends no comments count can never trigger a rotation
+ok(eq(planPulse([P(795)]).create, false), 'missing comments count = usable (no surprise rotation)')
+
 // MUTANT PROOF: a neutered selector that always creates (the pre-#891 bug) must
 // diverge from the fixed selector on a board that already has a pulse.
 const alwaysCreate = { keep: null, create: true, reopen: null, close: [] }
 ok(!eq(alwaysCreate, planPulse([P(795)])), 'mutant (always-create) diverges when a pulse exists')
+// and the pre-#1842 selector (ignores comments) diverges on a full pulse
+const noRotate = { keep: 795, create: false, reopen: null, close: [] }
+ok(!eq(noRotate, planPulse([F(795)])), 'mutant (no rotation) diverges on a full pulse')
 
 console.log(`pulsecheck: ${pass} passed, ${fails.length} failed`)
 for (const f of fails) console.error('  FAIL ' + f)
