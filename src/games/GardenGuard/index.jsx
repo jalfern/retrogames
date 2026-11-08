@@ -518,9 +518,6 @@ const GardenGuardGame = () => {
                     <AttractMessage className="mb-4 text-amber-50/85" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                     <span className="block mt-4 text-amber-200/70 font-mono font-bold tracking-wider">{WATCH_ATTRACT_HINT}</span>
-                    {/* #1832: in the flow (was absolute at 24% from the bottom) —
-                        on a 4:3-ish pane it sat right over the subtitle line. */}
-                    <div className="mt-4"><AttractWatchButton /></div>
                 </div>
             )}
 
@@ -538,6 +535,12 @@ const GardenGuardGame = () => {
 
             {/* #1637 WATCH — the prover defends the lawn; any input takes over. */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
             {screen === 'play' && !paused && (
                 <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                     <WatchButton on={watching} />
