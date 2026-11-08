@@ -72,8 +72,22 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 - A walkaway is not a crash: `DROP_GRACE = 30` stalled ticks demotes the dead
   seat and the engine's partner emitter takes it **on both boxes** (`players`
   flips to 1) — the run burns on with a CPU partner. If the guest survives the
-  host, its own pads drive seat 0. A mid-run returner is re-seated at the next
-  `go`, not in-flight.
+  host, its own pads drive seat 0.
+- **An in-flight reseat (#1838):** a partner that reopens the join URL mid-run
+  rides a hand-back instead of waiting for the next `go`. The returner asks
+  `res {e:'rejoin'}`; the host answers `res {e:'back', k:backTick}` + the
+  usual snapshot chunks + a `pad` **backfill** of the masks it sampled while
+  the socket was gone (late delivery is legal under the sampling law; absent
+  pads are fatal — the returner could not tick without them). The guest
+  rebuilds at the host's tick (`reseatBase` re-bases its own buffers; REMOTE
+  preserved) and both boxes flip `players 1→2` on the SAME sim tick (`backTick
+  = stamp + RESEAT_LEAD`) — flip tied to tick, never wall clock, so hash
+  equality survives it. Until the flip `assemble()` keeps seat 1 for the
+  partner, and the solo survivor KEEPS PUMPING its pads (a returner can only
+  climb back onto a live stream). Hand-back patience is `RESEAT_WINDOW = 180`
+  **stall ticks** — the sim tick freezes while the host waits, so a tick-based
+  window could never expire (the frozen-clock trap, pinned by gate 7c). A
+  returner that never pumps demotes again through the normal stall law.
 - Pure core: `net.js` imports no DOM/WebSocket — `scripts/defuselinkcheck.mjs`
   proves codec, lockstep, jitter, walkaway, resync and rejoin in plain Node
   over `relay/core.js` rules; `scripts/defuselinkdrive.mjs` rides a real
@@ -86,11 +100,11 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 
 ```bash
 npm run defusecheck                      # 53 gates: rules, ledger, replay, slack, source pins
-npm run defuselinkcheck                # 48 gates: online protocol over an in-memory room
+npm run defuselinkcheck                # 73 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
 npm run defusedrive                      # real-key drive: start→play→boom→restart
-npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway
+npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
 
 Mutants (harness can fail): disable the SYNC-clear condition in `engine.js`
@@ -98,11 +112,15 @@ Mutants (harness can fail): disable the SYNC-clear condition in `engine.js`
 red on the gates that name it. Restore → 53/53.
 `npm run defuselinkcheck -- --mutate` kills the walkaway demote → its 4 gates
 report the freeze instead and the run dies with a dead seat (the law has teeth).
+`npm run defuselinkcheck -- --mutate-reseat` kills the shared players flip →
+the seat never comes back, the partner carries the whole rest of the run and
+the fuse dies — 7b's flip/players/finish gates go red (the hand-back has teeth).
 
 ## Honest gaps (filed to QA as the polish pass)
 
-- Online mid-run rejoin lands at the next `go`, not in-flight (linkcheck covers
-  the demote + fresh-go path; a partner returning to a live run stays CPU).
+- **CLOSED by #1838**: online mid-run rejoin landed at the next `go`, not
+  in-flight — the hand-back (`rejoin`/`back`/backfill + shared flip) seats the
+  returner mid-run; linkcheck 7b/7c/7d + defuselinkdrive prove it.
 - No WATCH seat / model seat yet (#1637 rollout can add it).
 - VENT holder is keyboard-only on phones (B button = HOLD exists, but the
   holder/worker role labels could coach harder on first VENT).
