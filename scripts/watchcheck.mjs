@@ -1193,19 +1193,15 @@ const PILOTS = [
             const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
             await key(page, 'Space')
             await page.waitForTimeout(700)
-            // #1637 b10 PHASE LAW: momentum's drones sweep on ABSOLUTE ticks, so
-            // the greedy plan from a standing spawn is clean at most start phases
-            // and declines at a few (that plan would die at a patrol). The seat
-            // refuses honestly there; re-ask a few ticks later — the patience the
-            // game itself teaches: wait out the bad phase, then watch. (Measured:
-            // spawn-tick 72 ok, 73 declines, 74 ok.)
-            let seats = 1
+            // #1637 b10 PHASE LAW / #1828 WAITING-SEAT: momentum's drones sweep on
+            // ABSOLUTE ticks, so the greedy plan from a standing runner is clean at
+            // most start phases and declines at a few (that plan would die at a
+            // patrol). The engine now proves "coast k ≤ 6 clean ticks, THEN win"
+            // and seats the wait into the script — so ONE press seats at every
+            // phase. The old pilot retried Y up to 8×; those retries are removed
+            // deliberately: they were the workaround this issue replaced.
             await key(page, 'KeyY')
-            for (; seats < 8 && !(await watching()); seats++) {
-                await page.waitForTimeout(200)
-                await key(page, 'KeyY')
-            }
-            rep.check('momentum: Y seats the autopilot plan (bad-phase declines retried)', await watching(), `${seats} press(es)`)
+            rep.check('momentum: one Y press seats the autopilot plan at any phase (#1828 waiting-seat)', await watching())
             rep.check('momentum: handoff blip at seat', (await sfx()).at(-1) === 'start')
             const a = await probe()
             const adv = (x, y) => y.x > x.x + 30 || y.score > x.score || y.zone > x.zone
@@ -1217,12 +1213,8 @@ const PILOTS = [
             rep.check('momentum: brake key takes over', !(await watching()))
             rep.check('momentum: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
             await page.keyboard.up('ArrowLeft')
-            let reSeats = 0
-            for (; reSeats < 8 && !(await watching()); reSeats++) {
-                if (reSeats) await page.waitForTimeout(200)
-                await key(page, 'KeyY')                       // re-seat: plan from HERE
-            }
-            rep.check('momentum: Y re-seats the plan mid-run', await watching(), `${reSeats} press(es)`)
+            await key(page, 'KeyY')                       // re-seat: plan from HERE (wait proven in-engine)
+            rep.check('momentum: Y re-seats the plan mid-run on the first press', await watching())
             const c = await probe()
             const d = await pollAdvance(page, probe, adv, c, 6000)
             rep.check('momentum: resumes from where the player left it', adv(c, d),

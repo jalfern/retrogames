@@ -64,6 +64,7 @@ const MUTANTS = {
     multiLoop: 'only the first loop per zone is honoured — the second loop is never taken',
     routeFork: 'fast lanes stop opening — the high deck and its rings are unreachable at any speed',
     breakFlats: 'the tail re-flattens — beat joins chain back into dead straights (#1499)',
+    watchWaitSeat: 'the WATCH seat stops proving the wait — Y silently declines at bad drone phases again (#1828)',
 }
 if (MUT_NAME) {
     if (!(MUT_NAME in MUTANTS)) { console.error(`unknown mutant ${MUT_NAME}`); process.exit(2) }
@@ -663,6 +664,43 @@ section('CHAIN (the autopilot wins; margins measured on the REAL replay)')
     ok(s.stateHash(a) === s.stateHash(b), 'two replays of one script disagree — the sim grew an RNG')
     const cut = plan.script.slice(0, 500).concat(plan.script.slice(501))
     ok(s.stateHash(s.replayScript(cut)) !== s.stateHash(a), 'the hash ignores a dropped command — a desync could hide')
+}
+
+// --------------------------------------------------------- waiting-seat ----
+// #1828 — the WATCH seat must seat at EVERY phase, not just the clean ones. The
+// drones sweep on ABSOLUTE ticks, so a greedy planRun declines at ~1/3 of spawn
+// phases; seatPlan instead proves "coast k ≤ 6 clean ticks, THEN the win script"
+// and carries the wait in the script. Regression: if the engine stops proving the
+// wait, watchcheck's single-press gate goes red — and this section names WHY.
+section('WAITING-SEAT (#1828: seatPlan proves "coast k, then win" at bad phases)')
+{
+    const advance = (t) => { const g = s.makeGame(); for (let i = 0; i < t; i++) { s.step(g, {}); s.maybeEnterLoop(g) } return g }
+    // the measured bad phases from the issue (greedy planRun declines): 1,5,8,9,...
+    // every one of them must now seat with a proven wait of 1..6 ticks.
+    const BAD = [1, 5, 8, 9, 13, 17, 20, 21]
+    const replayAt = (t, script) => {
+        const g = advance(t)
+        for (const inp of script) { if (g.end) break; s.step(g, inp); s.maybeEnterLoop(g) }
+        return g
+    }
+    let seated = 0
+    for (const t of BAD) {
+        const seat = s.seatPlan(advance(t))
+        // the script was proven k ticks LATER than t — replay it from t+wait.
+        if (seat && seat.end === 'win' && seat.wait >= 0 && seat.wait <= 6
+            && replayAt(t + seat.wait, seat.script).end === 'win') seated++
+    }
+    ok(seated === BAD.length, `only ${seated}/${BAD.length} measured bad phases got a proven waiting-seat that replays to a win`)
+    // determinism: two seatPlans at one phase must agree on k, and the waited
+    // script must win tick-for-tick from the state it was proven at.
+    {
+        const t = BAD[0]
+        const p1 = s.seatPlan(advance(t)), p2 = s.seatPlan(advance(t))
+        ok(!!p1 && p1.wait === p2.wait
+            && s.stateHash(replayAt(t + p1.wait, p1.script)) === s.stateHash(replayAt(t + p2.wait, p2.script))
+            && replayAt(t + p1.wait, p1.script).end === 'win',
+            'seatPlan is not deterministic at a bad phase — the waiting-seat grew an RNG or lies about the win')
+    }
 }
 
 // -------------------------------------------------------------- mutants ----
