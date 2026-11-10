@@ -66,26 +66,36 @@ omitted — the rand closure can't JSON round-trip (#391).
 
 ```bash
 npm run invaderscheck          # Node: boot, rules, winnable, determinism, contract,
-                             #   + WITNESS: the WATCH brain clears wave 1 on 19/20 seeds
-npm run invaderscheck -- --mutant  # the route's column-avoidance mutant must go red
+                             #   + WITNESS: the WATCH brain clears wave 1 on 20/20 seeds
+npm run invaderscheck -- --mutant  # 3 mutants (column-stand, fire-gate, lead-fort
+                             #   tiebreak) must all go red
 npm run watchcheck -- --only invaders  # seat pilot: one-tap ▶ WATCH, Y seat/takeover,
                              #   blips, idle-hands proof (browser, needs dev server)
 npm run feedbackcheck          # the seedpin law incl. this title
 ```
 
-## WATCH (#1637 batch 18)
+## WATCH (#1637 batch 18; hardened batch 19)
 
 Y seats `watchRoute` from `sim.js` — the SAME brain the attract demo drives
-and `invaderscheck`'s WITNESS clears 19/20 seeds with (no forked brain: the
+and `invaderscheck`'s WITNESS clears 20/20 seeds with (no forked brain: the
 old local attractInput is deleted). The route stands in columns clear of the
 falling shots and leads the march, shooting the lowest unshielded invader;
 any driving key or a tap hands the wheel back (shared blips).
 
+Batch 19 closed the seed-1462 stall: law 3's meeting point sits ~17 px into
+the marching column, which often hung directly above a fort — law 2's
+shield-free pick then spent shot after shot on a brick (511 ticks, one kill).
+Now the target choice prefers, among equal-lowest invaders, one whose LEAD
+point is also shield-free, and the fire gate refuses to shoot through a fort
+unless the chosen target itself hides behind one (then brick-biting is the
+endgame). Both halves are pinned: the stall-gap witness line (<=450 ticks)
+turns red when either is deleted.
+
 ## Honest gaps
 
-- The WATCH route clears wave 1 on 19/20 WITNESS seeds (0 deaths, slowest
-  ~1987 ticks); seed 1462 stalls at 9 fleet left — honest edge, not fixed
-  by dumbing the route down.
+- The WATCH route clears wave 1 on all 20 WITNESS seeds (0 deaths, slowest
+  ~1857 ticks); between kills a seed may still pause ~7 s crossing under a
+  dense shot pattern — the stall pin caps that at 450 ticks.
 - 4 rows × 8 = 32 invaders; the original opens with 55 and grows per wave.
 - The UFO bounty is uniform-random from the four values; the original's
   mystery score came from a shot-count table.
