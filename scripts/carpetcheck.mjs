@@ -3273,6 +3273,100 @@ await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
 const backOff = await page.evaluate(() => window.__carpetTest.stereo())
 r.check('#1790 the param does not stick: the plain link honours storage (off)', backOff === false, `${backOff}`)
 
+// ---- #1764 item 8: ROW-INTERLACED stereo — the glasses-free twin of #1790.
+// The README's stereo line still carried "LCD-shutter/interlace modes": shutter
+// sync is hardware the browser cannot emit, but row-alternate ("line mode", the
+// software feed of shutter/interlace panels) is in reach: even physical rows to
+// the left eye, odd to the right, both at FULL colour — the inverse trade of
+// anaglyph's channel hack (eyes share the eye buffers, so this stage owns only
+// the selector law, and that is what these gates guard). Mutation guide:
+// (1) feed the line combiner uL twice → the row-diff gate drops to the anaglyph
+// baseline; (2) flip the parity constant so no row picks uR → dead right eye,
+// same gate; (3) drop the mode branch in frame() → both glasses show anaglyph
+// and the live glass/persistence gates die; (4) T forgetting localStorage kills
+// the reload gate.
+{
+    const renS8 = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+    const idxS8 = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+    const simS8 = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+    r.check('#1764-8s1 source pin: the line combiner owns the parity law (floor gl_FragCoord.y mod 2, even rows left)',
+        /gl_FragColor = mod\(floor\(gl_FragCoord\.y\), 2\.0\) < 1\.0 \? texture2D\(uL, vQ\) : texture2D\(uR, vQ\);/.test(renS8))
+    const ilBody = (renS8.match(/const interlaceMesh = new THREE\.Mesh\(quad, qmat\(`([\s\S]*?)`\)/) || [, ''])[1]
+    r.check('#1764-8s1 source pin: line mode is full-colour — both eyes sampled whole, no channel splice inside the combiner',
+        ilBody.includes('texture2D(uL, vQ)') && ilBody.includes('texture2D(uR, vQ)') && !/\)\.r,/.test(ilBody),
+        ilBody.replace(/\s+/g, ' ').slice(0, 90))
+    r.check('#1764-8s1 source pin: the combine dispatches on glass — interlace branch renders scInterlace, anaglyph stays the else arm',
+        /if \(stereoMode === 'interlace'\) \{[\s\S]*?scInterlace, quadCam\)[\s\S]*?\} else \{[\s\S]*?scAnaglyph, quadCam\)/.test(renS8))
+    r.check('#1764-8s1 source pin: the default glass is the #1790 anaglyph; the mode setter normalises junk onto it (never a dark screen)',
+        /let stereoMode = 'anaglyph'/.test(renS8) && /setStereoMode: \(m\) => \{ stereoMode = m === 'interlace' \? 'interlace' : 'anaglyph'; \}/.test(renS8))
+    r.check('#1764-8s1 source pin: T is the glass lever (no auto-repeat), the type persists beside the power in mc-stereo-mode, ?stereo=i opens on it',
+        /e\.code === 'KeyT' && !e\.repeat/.test(idxS8) && /localStorage\.setItem\('mc-stereo-mode', stereoMode\)/.test(idxS8) && /q === 'i' \|\| q === 'interlace'/.test(idxS8))
+    r.check('#1764-8s1 purity: the sim never hears about glasses (no stereo/interlace in sim.js)',
+        !/stereo|interlace/i.test(simS8), 'sim.js word sweep')
+    // JS twin: the row census — every display height splits the scan lines so
+    // BOTH eyes get at least half (even rows left, odd right; gl_FragCoord.y =
+    // row + 0.5 makes floor(y) the row index, so row 0 is left).
+    const rowsL = (h) => Math.ceil(h / 2), rowsR = (h) => Math.floor(h / 2)
+    r.check('#1764-8s1 JS twin: at any output height both eyes get half the lines (426/800 split even, odd heights differ by one)',
+        [426, 800, 425].every((h) => rowsL(h) + rowsR(h) === h && rowsL(h) >= h / 2 && rowsR(h) >= Math.floor(h / 2))
+        && rowsL(426) === rowsR(426) && rowsL(425) - rowsR(425) === 1)
+}
+// live: glass is not power, the row signature, and the T cycle with persistence.
+const glass = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    const modeOff = { mode: t.setStereoMode('interlace'), on: t.stereo() } // mode alone must not power up
+    t.setStereoMode('anaglyph'); t.setStereo(true)
+    await wait(400)
+    const W = 90, H = 36
+    const rowdiff = () => { // mean |adjacent-row| difference over the near-ground band
+        const p = t.pixels(0.25, 0.72, W, H)
+        let s = 0, n = 0
+        for (let y = 1; y < H; y++) for (let x = 0; x < W; x++) {
+            s += Math.abs(p[(y * W + x) * 4] - p[((y - 1) * W + x) * 4]); n++
+        }
+        return s / n
+    }
+    const ana = rowdiff()
+    t.setStereoMode('interlace')
+    await wait(400)
+    const lin = rowdiff()
+    t.setStereo(false); t.setStereoMode('anaglyph')
+    return { modeOff, ana, lin }
+})
+r.check('#1764-8s1 glass is not power: setting the type while the glasses are off leaves them off',
+    glass.modeOff.mode === 'interlace' && glass.modeOff.on === false, JSON.stringify(glass.modeOff))
+r.check('#1764-8s1 line mode shows it: adjacent scan lines disagree harder than the anaglyph frame (rows alternate eyes, both at full colour)',
+    glass.lin > glass.ana * 1.25 && glass.lin >= 1, `line ${glass.lin.toFixed(2)} vs anaglyph ${glass.ana.toFixed(2)}`)
+await page.evaluate(() => { try { localStorage.removeItem('mc-stereo'); localStorage.removeItem('mc-stereo-mode') } catch { /* noop */ } })
+await page.keyboard.press('KeyT')
+await page.waitForTimeout(120)
+const t1 = await page.evaluate(() => ({ on: window.__carpetTest.stereo(), mode: window.__carpetTest.stereoMode(), ls: localStorage.getItem('mc-stereo'), lsMode: localStorage.getItem('mc-stereo-mode') }))
+r.check('#1764-8s1 T puts glasses ON at line mode from cold and remembers both choices',
+    t1.on === true && t1.mode === 'interlace' && t1.ls === '1' && t1.lsMode === 'interlace', JSON.stringify(t1))
+await page.keyboard.press('KeyT')
+await page.waitForTimeout(120)
+const t2 = await page.evaluate(() => ({ on: window.__carpetTest.stereo(), mode: window.__carpetTest.stereoMode(), lsMode: localStorage.getItem('mc-stereo-mode') }))
+r.check('#1764-8s1 T cycles back to anaglyph, glasses stay on, storage follows',
+    t2.on === true && t2.mode === 'anaglyph' && t2.lsMode === 'anaglyph', JSON.stringify(t2))
+await page.reload({ waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+const t3 = await page.evaluate(() => ({ on: window.__carpetTest.stereo(), mode: window.__carpetTest.stereoMode() }))
+r.check('#1764-8s1 glasses AND glass survive a reload (you keep the mode you picked)',
+    t3.on === true && t3.mode === 'anaglyph', JSON.stringify(t3))
+await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet?stereo=i`, { waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+const t4 = await page.evaluate(() => ({ on: window.__carpetTest.stereo(), mode: window.__carpetTest.stereoMode() }))
+r.check('#1764-8s1 ?stereo=i opens line mode on a fresh link even while storage says anaglyph (the phone hand, again)',
+    t4.on === true && t4.mode === 'interlace', JSON.stringify(t4))
+await page.goto(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, { waitUntil: 'load' })
+await page.waitForFunction(() => window.__carpetTest, null, { timeout: 15000 })
+await page.keyboard.press('KeyV')
+await page.waitForTimeout(120)
+const t5 = await page.evaluate(() => window.__carpetTest.stereo())
+r.check('#1764-8s1 V still powers whatever glass you wear (off restores mono, storage back to off)',
+    t5 === false, `${t5}`)
+
 r.check('no shader/WebGL console errors', gpuErrs.length === 0, gpuErrs.join(' | '))
 r.check('zero page errors', errs.length === 0, errs.join(' | '))
 

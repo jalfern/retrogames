@@ -159,14 +159,24 @@ const MagicCarpetGame = () => {
         // #1790 ANAGLYPH STEREO: `?stereo=1` wins (a phone's only hand — there
         // is no keyboard in a URL bar's reach the other way), then the last
         // choice; V flips it live. The sim never hears about stereo.
+        // #1764 item 8: `?stereo=i` (=interlace) opens on row-alternate line
+        // mode; the glass type persists beside the power in its own key.
         let stereo = (() => {
             try {
                 const q = new URLSearchParams(window.location.search).get('stereo')
                 if (q === '1' || q === '0') return q === '1'
+                if (q === 'i' || q === 'interlace') return true
                 return localStorage.getItem('mc-stereo') === '1'
             } catch { return false }
         })()
-        if (renderer) renderer.setStereo(stereo)
+        let stereoMode = (() => {
+            try {
+                const q = new URLSearchParams(window.location.search).get('stereo')
+                if (q === 'i' || q === 'interlace') return 'interlace'
+                return localStorage.getItem('mc-stereo-mode') === 'interlace' ? 'interlace' : 'anaglyph'
+            } catch { return 'anaglyph' }
+        })()
+        if (renderer) { renderer.setStereo(stereo); renderer.setStereoMode(stereoMode) }
 
         let gs = makeGame(7)
         let demoSeed = 7, demoT = 0
@@ -727,13 +737,24 @@ const MagicCarpetGame = () => {
             ctx.fillText(`WORLD ${gs.level + 1}/${LEVELS.length}`, 6, 12)
             // #1790 glasses reminder: two colored pips, red-over-cyan, when the
             // anaglyph is live. Small, top-left, out of the radar's way.
+            // #1764 item 8: line mode is not colour-coded — it wears a striped
+            // pip pair (two eyes, alternating lines) instead of red/cyan.
             if (stereo) {
                 ctx.fillStyle = 'rgba(14, 26, 56, 0.8)'
                 ctx.fillRect(5, 15, 30, 8)
-                ctx.fillStyle = '#ff4848'
-                ctx.fillRect(8, 17, 4, 4)
-                ctx.fillStyle = '#48e0e0'
-                ctx.fillRect(14, 17, 4, 4)
+                if (stereoMode === 'interlace') {
+                    ctx.fillStyle = '#e8e8f0'
+                    ctx.fillRect(8, 17, 2, 4)
+                    ctx.fillRect(12, 17, 2, 4)
+                    ctx.fillStyle = '#5878b8'
+                    ctx.fillRect(10, 17, 2, 4)
+                    ctx.fillRect(14, 17, 2, 4)
+                } else {
+                    ctx.fillStyle = '#ff4848'
+                    ctx.fillRect(8, 17, 4, 4)
+                    ctx.fillStyle = '#48e0e0'
+                    ctx.fillRect(14, 17, 4, 4)
+                }
                 ctx.fillStyle = '#ffd860'
                 ctx.font = '5px monospace'
                 ctx.fillText('3D', 21, 21)
@@ -1063,7 +1084,24 @@ const MagicCarpetGame = () => {
                 if (renderer) renderer.setStereo(stereo)
                 try { localStorage.setItem('mc-stereo', stereo ? '1' : '0') } catch { /* private mode */ }
                 audioController.playTone(stereo ? 880 : 620, 0.05, 'square', 0.05)
-                say(stereo ? 'ANAGLYPH ON — WEAR THE GLASSES' : 'STEREO OFF')
+                say(stereo ? (stereoMode === 'interlace' ? 'INTERLACED 3D ON' : 'ANAGLYPH ON — WEAR THE GLASSES') : 'STEREO OFF')
+                return
+            }
+            // #1764 item 8: T cycles the glass type — red/cyan anaglyph to
+            // row-alternate line mode and back. Pressing it while the glasses are
+            // off puts them ON at the new glass (a mode press must show you the
+            // mode). Same any-screen law as V.
+            if (e.code === 'KeyT' && !e.repeat) {
+                stereoMode = stereoMode === 'anaglyph' ? 'interlace' : 'anaglyph'
+                if (renderer) renderer.setStereoMode(stereoMode)
+                stereo = true
+                if (renderer) renderer.setStereo(true)
+                try {
+                    localStorage.setItem('mc-stereo-mode', stereoMode)
+                    localStorage.setItem('mc-stereo', '1')
+                } catch { /* private mode */ }
+                audioController.playTone(stereoMode === 'interlace' ? 980 : 880, 0.05, 'square', 0.05)
+                say(stereoMode === 'interlace' ? 'INTERLACED 3D — ROWS ALTERNATE EYES' : 'ANAGLYPH ON — WEAR THE GLASSES')
                 return
             }
             if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space'].includes(e.code)) e.preventDefault()
@@ -1361,6 +1399,13 @@ const MagicCarpetGame = () => {
                 // persistence gates press the real V key instead.
                 stereo: () => stereo,
                 setStereo: (on) => { stereo = !!on; if (renderer) renderer.setStereo(stereo); return stereo },
+                // #1764 item 8: glass type is a separate lever for the harness.
+                stereoMode: () => stereoMode,
+                setStereoMode: (m) => {
+                    stereoMode = m === 'interlace' ? 'interlace' : 'anaglyph'
+                    if (renderer) renderer.setStereoMode(stereoMode)
+                    return stereoMode
+                },
                 ipd: () => (renderer ? renderer.stereoIPD() : 0),
                 pixels: (x, y, w, h) => {
                     if (!renderer) return null
