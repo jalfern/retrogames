@@ -71,6 +71,7 @@ const FB_ATTRACT = [
     'B CYCLES THE BUILD TOOL · F TOGGLES AUTO-DISPATCH',
     'THE SERVO SELF-STOWS WHEN BOTS ARE ALL BUSY',
     'PACKED ORDERS STAGE ON THE PAD — TAP THE DOCK TO CALL THE TRUCK EARLY',
+    'FULL TRAILERS EARN FREIGHT — FAR POSTS PAY MORE, THE ROAD COSTS PICKUPS',
     'RUSH HOUR PAYS 1.5x — RUSH ORDERS ALSO RUN COLD',
     'THREE EXPIRED ORDERS AND THE BOSS ENDS YOUR SHIFT',
 ]
@@ -211,7 +212,7 @@ const FloorBossGame = () => {
                         arcItems.push({ x0: PX(p.x) + 13, y0: PY(p.y) + 10, x1: gs.truck.x + 20, y1: 420, k: 0, n: 14, kind: 'crate' })
                         break
                     }
-                    case 'truckout': audioController.playTone(150, 0.12, 'sawtooth', 0.07); audioController.playTone(200, 0.12, 'sawtooth', 0.06, 0.1); fx(e.tap ? 'SENT!' : `HAUL OUT x${e.carry || 1}`, '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 12); break
+                    case 'truckout': audioController.playTone(150, 0.12, 'sawtooth', 0.07); audioController.playTone(200, 0.12, 'sawtooth', 0.06, 0.1); fx(e.tap ? 'SENT!' : e.far === 2 ? `LONG HAUL OUT x${e.carry || 1}` : e.far === 1 ? `REGIONAL OUT x${e.carry || 1}` : `HAUL OUT x${e.carry || 1}`, e.far === 2 ? '#b07aff' : e.far === 1 ? '#ff9a4f' : '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 12); break
                     case 'expire': audioController.playSweep(340, 160, 0.22, 'sawtooth', 0.08); shake = 6; flash = 7; fx('EXPIRED', '#ff5a4f', W / 2, 200); break
                     case 'quota': audioController.playFanfare(); fx('QUOTA CLEARED', '#5dff8f', W / 2, 190); break
                     case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
@@ -689,6 +690,22 @@ const FloorBossGame = () => {
                 const c = OUT_CELLS[i % 2]
                 const cx = PX(c.x) + 13, cy = PY(c.y) + (i < 2 ? 13 : 1)
                 for (let b = 0; b < p.n; b++) drawItem(ctx, 'crate', cx + (b - (p.n - 1) / 2) * 7, cy, 0.62)
+                // freight tiers (#1927): the tag colors the parcel's route —
+                // LOCAL rides plain (the baseline earns no label), far posts
+                // announce their multiplier before the truck ever arrives
+                if (p.d > 0) {
+                    const col = p.d === 2 ? '#b07aff' : '#ff9a4f'
+                    ctx.fillStyle = col
+                    ctx.fillRect(cx - (p.n * 7) / 2 - 1, cy + 5, p.n * 7 + 2, 2)
+                    ctx.font = 'bold 6px monospace'
+                    ctx.fillText(`x${p.d + 1}`, cx + (p.n * 7) / 2 + 2, cy + 5)
+                }
+            }
+            if (tr.mode === 'out' && tr.away > 0) {
+                // the road is the cost (#1927): the dock counts the trip home in
+                // world seconds so the manager can price a late-shift send
+                ctx.fillStyle = '#ff9a4f'; ctx.font = 'bold 7px monospace'
+                ctx.fillText(`ON THE ROAD ${Math.ceil(tr.away / 60)}s`, PX(OUT_CELLS[0].x) + 2, PY(OUT_CELLS[0].y) + 30)
             }
             if (tr.mode === 'out') return
             const x = tr.x, ty = 414
@@ -998,6 +1015,7 @@ const FloorBossGame = () => {
                 },
                 truck: () => ({ ...gs.truck }),
                 pad: () => gs.pad.map((p) => p.n), // #1911 harness eye on the staged parcels
+                padDest: () => gs.pad.map((p) => p.d || 0), // #1927 eye on the destination classes
                 ledger: () => ({ escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees }), // #1921 harness eye on the freight line
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
@@ -1005,7 +1023,7 @@ const FloorBossGame = () => {
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
-                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
+                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0) }), // away/far/padDest #1927
                 watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
             }
@@ -1014,6 +1032,7 @@ const FloorBossGame = () => {
                 getState: () => [
                     `tick ${gs.tick}/${SHIFT} | score ${gs.score}/${QUOTA} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
                     `shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
+                    `road ${gs.truck.away} far ${gs.truck.far} tiers [${gs.truck.tiers.join('')}] pad [${gs.pad.map((p) => `${p.n}x${(p.d || 0) + 1}`).join(' ')}]`, // #1927 freight tiers
                     gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
                 actions: [

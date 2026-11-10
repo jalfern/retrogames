@@ -27,6 +27,8 @@
 //   node scripts/floorbosscheck.mjs --mutate-cap      # let the dock pack past the pad, demand RED
 //   node scripts/floorbosscheck.mjs --mutate-freight  # pay at pack again (old till), demand RED
 //   node scripts/floorbosscheck.mjs --mutate-bonus    # dribbles earn freight too, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-tiers    # far posts pay the LOCAL rate, demand RED (#1927)
+//   node scripts/floorbosscheck.mjs --mutate-miles    # the truck never leaves the depot on the road, demand RED (#1927)
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -39,6 +41,7 @@ import {
     FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
+import { hashString } from '../src/utils/robot/physics.js'
 
 const ARGS = process.argv.slice(2)
 let fails = 0
@@ -50,7 +53,9 @@ const MUT_REACH = ARGS.includes('--mutate-reach')
 const MUT_CAP = ARGS.includes('--mutate-cap')
 const MUT_FREIGHT = ARGS.includes('--mutate-freight')
 const MUT_BONUS = ARGS.includes('--mutate-bonus')
-if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS) {
+const MUT_TIERS = ARGS.includes('--mutate-tiers')
+const MUT_MILES = ARGS.includes('--mutate-miles')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS || MUT_TIERS || MUT_MILES) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
@@ -59,9 +64,13 @@ if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS) {
             ? ['if (gs.pad.length >= PAD_CAP) break', 'if (gs.pad.length >= PAD_CAP + 1) break', 'the dock packs past the pad — parcels pile beyond the pipe']
             : MUT_FREIGHT
                 ? ['gs.escrow += pay', 'gs.score += pay', 'the old till is back — pack pays cash and the trailer hauls free money']
-                : MUT_BONUS
-                    ? ['if (tr.carry >= FULL_TRAILER) {', 'if (tr.carry >= 0) {', 'every dribble haul claims the freight bonus it did not earn']
-                    : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+                : MUT_TIERS
+                    ? ['amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.tiers[d] || 0)', 'amt += FREIGHT_PER_BOX * (tr.tiers[d] || 0)', 'distance dies — far posts pay the LOCAL rate (#1927)']
+                    : MUT_MILES
+                        ? ['export const TRIP_TICKS = [0, 750, 1650]', 'export const TRIP_TICKS = [0, 0, 0]', 'the road shrinks — the truck answers instantly from any distance (#1927)']
+                        : MUT_BONUS
+                            ? ['if (tr.carry >= FULL_TRAILER) {', 'if (tr.carry >= 0) {', 'every dribble haul claims the freight bonus it did not earn']
+                            : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -344,6 +353,7 @@ console.log('— load-out (#1911) —')
     gs.orders.push({ id: 411, items: ['crate', 'crate', 'crate'], due: gs.tick + 4000, prio: false, shipped: false, expired: false })
     gs.packT = 1
     step(gs, [{}]) // ships, stages 3 boxes in one parcel
+    gs.pad[0].d = 0 // #1927: pin this verb-isolating parcel LOCAL — the scenario times the truck cycle, not the road
     const t0 = gs.tick
     const cash0 = gs.score
     const call = clickCell(gs, 23, 13)
@@ -397,6 +407,7 @@ console.log('— freight line (#1921) —')
     // reconciles against opening float + paid + freight + stow pay − fees − fines
     // − build/hire spend. Phantom money, double-pays and evaporating escrow all
     // fail these equations.
+    let allTaps = 0
     for (const seed of [7, 1337, 4242]) {
         const gs = makeGame(seed)
         const ap = createAutopilot()
@@ -414,14 +425,20 @@ console.log('— freight line (#1921) —')
             }
         }
         const books = 100 + gs.paid + gs.freight + gs.stows * STOW_PAY - gs.fees - fines - spend
-        ok(gs.paid + gs.escrow === escrowed && gs.fees === feeSeen && taps > 0 && gs.score === books,
+        // #1927: a far haul keeps the truck on the road, so one seed may never
+        // need an express tap — prove the tap path across the set, not per seed
+        allTaps += taps
+        ok(gs.paid + gs.escrow === escrowed && gs.fees === feeSeen && gs.score === books,
             `seed ${seed}: the books balance — ${gs.paid} paid + ${gs.escrow} held == ${escrowed} booked; score ${gs.score} reconciles (taps ${taps}, freight +${gs.freight}, express −${gs.fees})`)
     }
+    ok(allTaps > 0, `the express tap-call path still earns its keep across the set (${allTaps} taps)`)
 }
 {
-    // freight bonus law: a haul earns the per-box bonus ONLY when it physically
-    // carries FULL_TRAILER or more boxes, and pays exactly FREIGHT_PER_BOX × carry
-    let viol = 0, bonuses = 0, dribbles = 0
+    // freight bonus law (#1921, tiered by #1927): a haul earns the bonus ONLY
+    // when it physically carries FULL_TRAILER or more boxes, and pays exactly
+    // 6 × the multiplier of each box aboard. Multipliers pinned as LITERALS
+    // (#204 lesson: never measure a law against the tunable it guards).
+    let viol = 0, bonuses = 0, dribbles = 0, farSeen = 0
     for (const seed of [7, 1337, 4242, 99, 555]) {
         const gs = makeGame(seed)
         const ap = createAutopilot()
@@ -430,14 +447,18 @@ console.log('— freight line (#1921) —')
             for (const e of gs.ev) {
                 if (e.type === 'bonus') {
                     bonuses++
-                    if (e.carry < FULL_TRAILER || e.amt !== FREIGHT_PER_BOX * e.carry) viol++
+                    const t = e.tiers.split('').map(Number)
+                    const boxes = t.reduce((a, b) => a + b, 0)
+                    const want = 6 * t.reduce((a, m, d) => a + m * (d + 1), 0)
+                    if (e.carry < FULL_TRAILER || e.carry !== boxes || e.amt !== want) viol++
+                    if ((e.far | 0) > 0) farSeen++
                 }
                 if (e.type === 'truckout' && e.carry < FULL_TRAILER) dribbles++
             }
         }
     }
-    ok(viol === 0 && bonuses > 0 && dribbles > 0,
-        `full trailers (≥${FULL_TRAILER} boxes) earn ${FREIGHT_PER_BOX}/box, dribbles never do (${bonuses} bonuses, ${dribbles} dribbles, 0 violations, 5 shifts)`)
+    ok(viol === 0 && bonuses > 0 && dribbles > 0 && farSeen > 0,
+        `full trailers (≥${FULL_TRAILER} boxes) earn 6x[1,2,3] per box by destination, dribbles never do (${bonuses} bonuses, ${farSeen} far, ${dribbles} dribbles, 0 violations, 5 shifts)`)
 }
 {
     // the till never lies: escrow/paid/freight/fees ride sim state and the hash
@@ -451,6 +472,85 @@ console.log('— freight line (#1921) —')
     ok(stateHash(a) !== stateHash(b), 'escrow differences hash apart (the never-lies sweep catches a hidden till)')
     const s = state(a)
     ok(['escrow', 'paid', 'freight', 'fees', 'padAge'].every((k) => k in s), 'state shape carries the freight ledger')
+    ok(['padDest', 'truckAway', 'truckFar'].every((k) => k in s), 'state shape carries the freight tiers (#1927)')
+}
+
+console.log('— freight tiers (#1927) —')
+{
+    // side-stream law: destination rolls live on their own rng — the module
+    // stream (orders) generates byte-identically to the pre-tier floor. The
+    // golden signatures were captured from origin/main at the fork point.
+    const GOLDEN = {
+        1: 3628058901, 2: 1865761932, 3: 2534453316, 4: 248822077,
+        5: 3057910432, 6: 2455069383, 7: 2962844918, 8: 3088558928,
+    }
+    let viol = 0
+    for (const seed of Object.keys(GOLDEN)) {
+        const gs = makeGame(Number(seed))
+        let sig = '', seen = 0
+        for (let i = 0; i < 9000; i++) {
+            step(gs, [{}])
+            for (; seen < gs.orders.length; seen++) {
+                const o = gs.orders[seen]
+                sig += `${o.id}{${o.items.join(',')}}${o.due};`
+            }
+        }
+        if (hashString(sig) !== GOLDEN[seed]) viol++
+    }
+    ok(viol === 0, 'module stream byte-identical — 8 seeds order signatures match the pre-tier golden (side-stream law)')
+}
+{
+    // dest determinism + honest spread across the shelf
+    const dests = (seed) => {
+        const gs = makeGame(seed)
+        const seq = []
+        while (!gs.end && gs.tick < SHIFT + 10) { step(gs, [{}]); for (const e of gs.ev) if (e.type === 'ship' || e.type === 'late') seq.push(e.d) }
+        return seq
+    }
+    const a = dests(7), b = dests(7)
+    let local = 0, long = 0
+    const union = new Set()
+    for (const seed of [7, 1337, 4242, 99, 555, 1, 2, 3]) for (const d of dests(seed)) { union.add(d); if (d === 0) local++; if (d === 2) long++ }
+    ok(JSON.stringify(a) === JSON.stringify(b) && a.length > 0, 'dest rolls replay identically on a fixed seed')
+    ok(union.size === 3 && local > long, 'all three classes appear across the shelf and LOCAL leads (odds law)')
+}
+{
+    // road law: a far send commits its trip and the truck answers NOTHING on
+    // the road — neither the cap/age call law nor a manager tap (no fee for a
+    // truck that cannot come). Trip ticks pinned as LITERALS.
+    const gs = makeGame(7)
+    gs.auto = false
+    gs.orders = []
+    gs.pad.push({ n: 3, since: gs.tick - 240 }) // aged LOCAL parcel calls the truck by law
+    let guard = 0
+    while (gs.truck.mode !== 'park' && guard++ < 600) step(gs, [{}])
+    gs.pad[0].d = 2 // re-route at the dock: LONG HAUL rides
+    guard = 0
+    while (gs.truck.mode === 'park' && guard++ < 400) step(gs, [{}])
+    ok(gs.truck.away === 1650 && gs.truck.mode === 'leave', 'a LONG HAUL send commits TRIP_TICKS 1650 and drives off (literal pin)')
+    // stage three LOCAL parcels past the cap and age them: the law wants the
+    // truck, the road says no
+    gs.pad.push({ n: 1, since: gs.tick - 240 }, { n: 1, since: gs.tick - 240 }, { n: 1, since: gs.tick - 240 })
+    let callsOnRoad = 0, tapFee = 0
+    const scoreOnRoad = gs.score
+    while (gs.truck.away > 100) {
+        step(gs, [{}])
+        callsOnRoad += gs.ev.filter((e) => e.type === 'truckin').length
+        if (clickCell(gs, 23, 13) === 'call') tapFee++
+    }
+    ok(callsOnRoad === 0 && tapFee === 0 && gs.score === scoreOnRoad, 'on the road the truck answers no call law and no tap — and no fee is charged')
+    guard = 0
+    while (gs.truck.mode !== 'back' && guard++ < 300) step(gs, [{}])
+    ok(gs.truck.mode === 'back', 'home from the road, the waiting pad gets its truck at once')
+}
+{
+    // hash carries the tiers, the road and the far class (additive, #1373 law)
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(/\$\{gs\.truck\.away\}:\$\{gs\.truck\.tiers\.join\(''\)\}/.test(simSrc), 'hash carries road-wait and per-class load (#1927, additive)')
+    ok(/\$\{p\.n\}:\$\{p\.esc \|\| 0\}:\$\{p\.d \|\| 0\}/.test(simSrc), 'hash carries the per-parcel destination on the pad (#1927, additive)')
+    const a = makeGame(7), b = makeGame(7)
+    for (let i = 0; i < 900; i++) { step(a, [{}]); step(b, [{}]) }
+    if (a.pad.length) { b.pad[0].d = a.pad[0].d === 2 ? 0 : 2; ok(stateHash(a) !== stateHash(b), 'a re-routed parcel hashes apart (the road cannot hide in the hash)') }
 }
 
 console.log('— win —')

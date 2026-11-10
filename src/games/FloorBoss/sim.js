@@ -208,7 +208,7 @@ function sendTruck(gs, tap) {
         for (let d = 0; d < FREIGHT_MULT.length; d++) amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.tiers[d] || 0)
         gs.score += amt
         gs.freight += amt
-        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far })
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far, tiers: tr.tiers.join('') })
     }
     // the road is the cost (#1927): the trip commits by the farthest class
     // aboard — an empty dribble still drives home LOCAL-cadenced
