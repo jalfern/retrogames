@@ -99,6 +99,32 @@ score; three expired orders and you're fired. Quota: 1000.
   measured at merge: autopilot wins 13/15 seeds (main 13/15, same thin seeds
   2/12), avg 1337 vs main 1268 — far hauls buy their multiplier with pickups
   the floor never gets back, so late-shift freight is a decision.
+- **Load weight** (#1931): weight is the sibling rate-card to distance. Every
+  parcel rolls a weight class when it packs — LIGHT 0.52 / STANDARD 0.30 /
+  HEAVY 0.18 — on a THIRD side-stream rng (`seed ^ 0x5f356495`): the module
+  stream AND #1927's destination stream generate byte-identically (dest and
+  weight sigs both pinned for 8 seeds). A full trailer (law unchanged, dribbles
+  free) pays `FREIGHT_PER_BOX × FREIGHT_MULT × WEIGHT_MULT` per box by each
+  box's dest×weight cell (`tr.grid[d][w]` is the manifest) — so a LOCAL×HEAVY
+  crate pays exactly what a LONG-HAUL×LIGHT crate pays (18), and the rare
+  LONG×HEAVY box is the floor's richest cargo at 54. The dock is the cost: one
+  box rides aboard after `TRUCK_LOAD × WEIGHT_LOAD` ticks (`[1,1,2]` — heavies
+  are manhandled, 28 ticks), so a late-shift send of heavies holds the trailer
+  and costs a pickup. The pad tags classes: heavies wear a steel bar + H badge,
+  standard a grey bar (light rides bare, same no-label law as LOCAL); heavy
+  boxes land with a low thud, and a heavy aboard names itself on the till
+  (`HEAVY xN`). Weight joins `stateHash` (pad `w`, T `grid`; additive #1373)
+  and `simState` (`padWeight`, `truckWeights`). **Surfacing fix:** #1927's dest
+  ladder tested LONG first, then up to 0.86 — that gave REGIONAL ~72% and LOCAL
+  ~14%, not the documented 58/28/14 (its spread gate only asserted LOCAL>LONG
+  and passed at 18>16). Bands corrected; mix gates now demand LOCAL > REGIONAL >
+  LONG and LIGHT > STANDARD > HEAVY across 16 shifts, and `--mutate-bands`
+  proves the sentinel can fail. Measured 15-seed autopilot vs the live
+  pre-weight main in one process: wins 14/15 vs main 13/15 (same thin seed 2,
+  seed 12 recovers 853→1009), avg 1401 vs live main 1337 (baseline re-measured
+  in the same process per the session-206 drift note) — heavies buy
+  their multiplier with dock time, and the honest dest mix pays less than the
+  inverted one did.
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -109,7 +135,7 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927) + load weight: dest+weight goldens, mix sentinels, rate literals 60/54, dock speed 14/14/28 (#1931)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
@@ -117,7 +143,10 @@ node scripts/floorbosscheck.mjs --mutate-freight # the old pack-line till cannot
 node scripts/floorbosscheck.mjs --mutate-bonus   # dribbles cannot claim the freight bonus (#1921)
 node scripts/floorbosscheck.mjs --mutate-tiers   # far posts cannot pay the LOCAL rate (#1927)
 node scripts/floorbosscheck.mjs --mutate-miles   # the truck cannot answer instantly from any distance (#1927)
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together)
+node scripts/floorbosscheck.mjs --mutate-weight  # heavy crates cannot claim their rate (#1931)
+node scripts/floorbosscheck.mjs --mutate-slow    # heavies cannot cost the dock their ticks (#1931)
+node scripts/floorbosscheck.mjs --mutate-bands   # the inverted dest band (REGIONAL 72%) cannot return (#1931)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together); steel heavy-tag pixel [154,215,255] + padWeight simState eye (#1931)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -143,9 +172,13 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   [0,750,1650] blocks call law and tap — see Engine notes). The
   stranded-escrow half of the old gap stays accepted law (#1921: money
   follows freight, refunds would be counterfeit).
-- Load-weight classes remain unexplored: #1927 priced distance only; heavy
+- ~~Load-weight classes remain unexplored: #1927 priced distance only; heavy
   parcels (slower to load, higher rate per box) are the sibling idea left on
-  the shelf.
+  the shelf~~ **CLOSED by #1931**: weight classes price the haul beside
+  distance (LIGHT/STANDARD/HEAVY at 52/30/18 on a third side-stream rng, full
+  trailers pay 6x[1,2,3]dest x[1,2,3]weight per box, heavies load at 2x
+  TRUCK_LOAD — see Engine notes). The rate ladder stays flat on LOCAL dribbles:
+  dribbles ride free, distance AND weight only pay aboard a full trailer.
 - Only one shift template; difficulty varies by seed, not by level ladder.
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.

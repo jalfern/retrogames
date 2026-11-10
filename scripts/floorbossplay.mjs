@@ -333,6 +333,30 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
     const onRoad = await page.evaluate(() => ({ m: window.__floorbossTest.truck().mode, a: window.__floorbossTest.truck().away, f: window.__floorbossTest.ledger().fees }))
     r.check('a real tap while the haul is on the road calls nothing and charges nothing (#1927)',
         !!waited && waited.p >= 1 && onRoad.m === 'out' && onRoad.a > 0 && onRoad.f === feesB, JSON.stringify({ waited, onRoad }))
+    // ---- load weight (#1931): stage a heavy parcel — its crates must wear the
+    // steel bar across the top (and simState must carry the class). Fresh pad,
+    // future-dated so no call law can snatch it while the eye samples.
+    await page.evaluate(() => { const g = window.__floorbossTest.sim(); g.pad.length = 0; g.pad.push({ n: 3, since: g.tick + 10000, esc: 0, d: 0, w: 2 }) })
+    let wtag = null
+    const tWt = await tickNow()
+    while ((await tickNow()) - tWt < 220) {
+        wtag = await page.evaluate(() => {
+            const t = window.__floorbossTest
+            const s = t.state()
+            if (!s.padWeight || s.padWeight[0] !== 2) return null
+            const c = t.canvas(), k = c.width / 800
+            const d = c.getContext('2d').getImageData(Math.round((10 + 23 * 26 + 13) * k), Math.round((44 + 13 * 26 + 9) * k), 1, 1).data
+            return { rgb: [d[0], d[1], d[2]] }
+        })
+        if (wtag && wtag.rgb[2] > 235 && wtag.rgb[1] > 180 && wtag.rgb[0] > 110 && wtag.rgb[0] < 205) break
+        await new Promise((res) => setTimeout(res, 90))
+    }
+    r.check('the heavy tag paints steel across the crates (#1931)',
+        !!(wtag && wtag.rgb[2] > 235 && wtag.rgb[1] > 180 && wtag.rgb[0] > 110 && wtag.rgb[0] < 205), JSON.stringify(wtag))
+    const sWt = await page.evaluate(() => ({ pw: window.__floorbossTest.state().padWeight, eye: window.__floorbossTest.padWeight() }))
+    r.check('pad weights ride simState and the test eye (#1931)',
+        Array.isArray(sWt.pw) && sWt.pw[0] === 2 && Array.isArray(sWt.eye) && sWt.eye[0] === 2, JSON.stringify(sWt))
+    await page.evaluate(() => { window.__floorbossTest.sim().pad.length = 0 }) // clean the staged dummy before the shift resumes
 }
 
 await page.evaluate(() => { window.__floorbossTest.sim().auto = true }) // #1927: back on the mixer — the full shift runs the game's own rhythm
