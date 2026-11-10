@@ -363,12 +363,28 @@ see item 5).
   world by landfall, honestly variable). Each sibling carries half a hoard,
   orbits his site, grows his own castle on the primary's clock (wall/turrets/keep
   at 30/60/90 s), topples once per tower, dies to shatter/splash/throws with his
-  hoard scattering as pearls, and rides `stateHash` + the radar. They DO NOT
-  shoot yet, so the autopilot's course and the threat budget are provably
-  untouched (carpetcheck pins it: no bolt or tarrow originates at a sibling site
-  across two minutes of sim). Still open: arming the siblings (bolts + tower
-  arrows, which needs the autopilot hardened against five casters first, then
-  the 60-seed sweep re-run), siblings hoarding roaming pearls.
+   hoard scattering as pearls, and rides `stateHash` + the radar. **Arming
+   shipped by #1764 stage 2 (this PR):** bolts at 75u on the primary's exact
+   law — 55-tick cadence, dmg 6, and the veil holds the FUSE (a blind
+   sibling's count stops, and he resumes on cadence the tick you reappear) —
+   plus tower arrows at 110u once his wall stands, cadence by stage
+   (90/60/45), dmg 2; a felled tower loses no arrows (its wizard's bolts still
+   fly) and bolts AND arrows die with him. Fuses stagger off the compass index
+   (`fire: 30 + i * 12`), rng-free, so the coven never lands a simultaneous
+   five-caster volley and the seed stream never shifts (seed-7 cast log
+   identical run to run). The autopilot was hardened for five casters as part
+   of arming: the defensive veil now counts a closing SIBLING at the primary's
+   own 70u line, and hurt-under-a-shot climbs over the bolt's lane (same
+   release discipline as the wolf climb — no ceiling pin). The threat budget
+   held: the 60-seed sweep restores all nine worlds on all 60 seeds
+   (carpetcheck). The wizfire/towerFire cues carry each sibling's cast point,
+   so pan and distance falloff (#1746/#1764-s7) find the right side of the sky
+   for free. carpetcheck proves the whole arming Node-side (#1764-2s2 family:
+   armed reach, held fuse + resume, grown-castle arrows, felled-tower
+   arrows-off/bolts-on, dead-sib silence, veil-reflex vs a closing sibling,
+   rng-free cast log + hash). Old pin retargeted honestly: "a toppled tower
+   never fires" now scopes to the primary site — the armed coven legitimately
+   fires from ITS towers. Still open: siblings hoarding roaming pearls.
 - **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
   towers — every throw/fireball impact routes through `toppleTower()` inside
   `blast()`, and carpetcheck gates it ("a throw landing at the tower base
