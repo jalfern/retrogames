@@ -57,8 +57,10 @@ green = Chrome flake, move on (rule 3).
   witness loops are deterministic Node — tighten pins to measured values.
 - Prod-verify without a registry-string change: grep the live chunk for a
   minified STRUCTURE signature (esbuild keeps property names:
-  `carry!==null?[a-z]*\*=[.]25`), enumerate chunks from the live entry HTML
-  (follow the www redirect — bare jalfern.com answers 308).
+  `carry!==null\?[a-z]*\*=[.]25` — escape the ternary `?`, an unescaped one
+  is an ERE quantifier that silently never matches; prove the sig against
+  your local dist BEFORE blaming prod). Enumerate chunks from the live entry
+  HTML (follow the www redirect — bare jalfern.com answers 308).
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
