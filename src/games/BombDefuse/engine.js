@@ -414,3 +414,18 @@ export function turnStep(pos, vel, target) {
     const c = turnClick(pos, p)
     return [p, v, c]
 }
+
+// ---- gauge redline (#1812 item 5) — view math only, never gs/hash -----------
+// The needle computes across ±1000 units, but a real gauge has a stop just past
+// the red ticks: past REDLINE the pointer stops following the number — it PEGS
+// against PEG and stays parked through the top of the swing. The view adds the
+// bezel shake and the red glass glint while hot; this helper is the law, pure
+// arithmetic — no state, no gs write (the sim truth, needleOf, stands).
+export const REDLINE = 900 // units — where the red ticks start biting
+export const PEG = 945     // the needle parks here against the end stop
+
+export function pegNeedle(raw) {
+    const hot = raw > REDLINE || raw < -REDLINE
+    const drawn = raw > PEG ? PEG : raw < -PEG ? -PEG : raw
+    return { hot, drawn }
+}
