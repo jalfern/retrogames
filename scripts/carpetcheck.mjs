@@ -499,7 +499,11 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     r.check('a toppled tower never rebuilds', gd.towerDown && gd.wizStage === 0,
         `down=${gd.towerDown} stage=${gd.wizStage} worldT=${gd.worldT}`)
     r.check('a toppled tower never fires (ruins hold no guards)',
-        !gd.projs.some((p) => p.from === 't') && !gd.events.some((e) => e.type === 'towerFire'))
+        !gd.projs.some((p) => p.from === 't' &&
+            Math.hypot(wrapD(p.x - gd.wizard.tx), wrapD(p.y - gd.wizard.ty)) < 5) &&
+        !gd.events.some((e) => e.type === 'towerFire' &&
+            Math.hypot(wrapD(e.x - gd.wizard.tx), wrapD(e.y - gd.wizard.ty)) < 3),
+        '#1764 s2: scoped to the primary site — the armed coven legitimately fires from ITS towers')
     // dead wizard builds nothing
     const gk = makeGame(7); gk.quota = 9999
     gk.wizard.alive = false
@@ -3737,7 +3741,11 @@ await pBrowser.close()
 // genWorld's coven block — the count and growth gates go red; (2) delete the
 // sib death branch in step() — the kill gate goes red; (3) skip `sb.stage` in
 // stateHash — the hash gate goes red; (4) call rnd(gs) inside `covet` — the
-// seed-stream gate (seed 7 determinism, already above) goes red.
+// seed-stream gate (seed 7 determinism, already above) goes red; stage 2
+// (armed) mutants: (5) delete the sib bolt push — the armed + felled-tower
+// gates go red; (6) drop the `gs.invis <= 0` term on the sib fuse — the veil
+// gate goes red; (7) delete the sib tower-arrow push — the arrow gate goes
+// red; (8) kill the coven lines in autopilot — the veil-reflex gate goes red.
 {
     const covenOf = (seed) => makeGame(seed).sibs
     const seed7 = makeGame(7)
@@ -3801,14 +3809,132 @@ await pBrowser.close()
             stateHash(gs) !== h)
     }
     {
-        // A sibling cannot fire at you this stage: no bolt/tarrow may originate
-        // within reach of any sibling site while the primary's own shots stay legal.
-        const gs = makeGame(7)
-        for (let i = 0; i < 7200; i++) step(gs, {})
-        const fromSib = gs.projs.filter((p) => (p.kind === 'bolt' || p.kind === 'tarrow') &&
-            gs.sibs.some((s) => Math.hypot(wrapD(p.x - s.tx), wrapD(p.y - s.ty)) < 3))
-        r.check('#1764-2s1 the unbuilt threat — siblings loose no bolts or arrows yet (stage 2 arms them)',
-            fromSib.length === 0, `sib-sourced projectiles ${fromSib.length}`)
+        // #1764 item 2 stage 2 — the coven is ARMED: the stage-1 pin (siblings
+        // fire nothing) is deliberately inverted. Park a carpet in a sibling's
+        // reach and his laws answer — bolt at 75u on a veil-held fuse, tower
+        // arrows at 110u once the wall stands, nothing once he is dead. The
+        // other casters are flag-killed (no death branch runs) so every cast in
+        // the log is provably sib 0's: the log, not the moved projectile, is
+        // the origin (a bolt travels; its wizfire event does not).
+        const park = (gs, x, y, n, ev) => {
+            for (let i = 0; i < n; i++) {
+                gs.x = x; gs.y = y; step(gs, {})
+                for (const e of gs.events) if (e.type === 'wizfire' || e.type === 'towerFire') ev.push(e)
+                gs.events.length = 0
+            }
+        }
+        const ring = (e, sb, lo, hi) => Math.hypot(wrapD(e.x - sb.tx), wrapD(e.y - sb.ty)) >= lo &&
+            Math.hypot(wrapD(e.x - sb.tx), wrapD(e.y - sb.ty)) <= hi
+        // park 40u out — the orbit ring (34u) keeps the site inside bolt reach
+        // (max 34+40 = 74 < 75) for the whole lap.
+        const parkAt = (() => {
+            const g0 = makeGame(7)
+            const s0 = g0.sibs[0]
+            let best = null
+            for (let k = 0; k < 24; k++) {
+                const a = (k / 24) * Math.PI * 2
+                const px = wrap(s0.tx + Math.cos(a) * 40, MAP), py = wrap(s0.ty + Math.sin(a) * 40, MAP)
+                const cl = Math.min(...[g0.wizard, ...g0.sibs].map((w) => Math.hypot(wrapD(px - w.tx), wrapD(py - w.ty))))
+                if (!best || cl > best.cl) best = { px, py, cl }
+            }
+            return best
+        })()
+        const solo = (ticks) => { // seed 7, everyone but sib 0 flagged dead
+            const gs = makeGame(7)
+            gs.wizard.alive = false
+            gs.sibs.slice(1).forEach((s) => { s.alive = false })
+            for (let i = 0; i < ticks; i++) step(gs, {})
+            gs.events.length = 0 // reap the grow-tick backlog — the park loops
+            return gs           // must collect ONLY fresh casts
+        }
+        {
+            const gs = solo(60)
+            const sb = gs.sibs[0]
+            const ev = []
+            park(gs, parkAt.px, parkAt.py, 120, ev)
+            r.check('#1764-2s2 armed — parked in a sibling reach, he looses bolts (75u law)',
+                ev.some((e) => e.type === 'wizfire' && ring(e, sb, 31, 37)),
+                `sib wizfires ${ev.filter((e) => e.type === 'wizfire' && ring(e, sb, 31, 37)).length}`)
+        }
+        {
+            const gs = solo(10)
+            const sb = gs.sibs[0]
+            gs.invis = 100000
+            const during = []
+            park(gs, parkAt.px, parkAt.py, 240, during)
+            gs.invis = 0
+            const after = []
+            park(gs, parkAt.px, parkAt.py, 60, after)
+            r.check('#1764-2s2 the veil holds a sibling fuse — silent while blind, back on cadence after',
+                during.filter((e) => ring(e, sb, 31, 37)).length === 0 &&
+                after.some((e) => e.type === 'wizfire' && ring(e, sb, 31, 37)),
+                `during ${during.filter((e) => ring(e, sb, 31, 37)).length}, after ${after.filter((e) => e.type === 'wizfire' && ring(e, sb, 31, 37)).length}`)
+        }
+        {
+            const gs = solo(1802)
+            const sb = gs.sibs[0]
+            const ev = []
+            park(gs, parkAt.px, parkAt.py, 120, ev)
+            r.check('#1764-2s2 a grown sibling castle looses tower arrows (stage 1, 110u law)',
+                sb.stage >= 1 && ev.some((e) => e.type === 'towerFire' && ring(e, sb, 0, 3)),
+                `stage ${sb.stage}, site towerFires ${ev.filter((e) => e.type === 'towerFire' && ring(e, sb, 0, 3)).length}`)
+        }
+        {
+            const gs = solo(1802)
+            const sb = gs.sibs[0]
+            toppleSib(gs, sb.tx, sb.ty)
+            const ev = []
+            park(gs, parkAt.px, parkAt.py, 150, ev)
+            r.check('#1764-2s2 a felled sibling tower fires no arrows — but his bolts still fly',
+                sb.towerDown && !ev.some((e) => e.type === 'towerFire' && ring(e, sb, 0, 3)) &&
+                ev.some((e) => e.type === 'wizfire' && ring(e, sb, 31, 37)),
+                `tarrows-at-site ${ev.filter((e) => e.type === 'towerFire' && ring(e, sb, 0, 3)).length}`)
+        }
+        {
+            const gs = solo(1802)
+            const sb = gs.sibs[0]
+            sb.hp = 0
+            step(gs, {}) // his death tick: pearls scatter, sibDown fires
+            gs.projs.length = 0
+            gs.events.length = 0
+            const ev = []
+            park(gs, parkAt.px, parkAt.py, 150, ev)
+            r.check('#1764-2s2 a dead sibling fires nothing (bolts AND arrows die with him)',
+                !sb.alive && ev.length === 0 && gs.projs.length === 0,
+                `casts ${ev.length}, projs ${gs.projs.length}`)
+        }
+        {
+            // Autopilot hardened: a closing sibling at low HP triggers the veil
+            // exactly like the primary — same 70u line, same hand logic.
+            const ga = makeGame(7)
+            for (let i = 0; i < 240; i++) step(ga, {})
+            if (!ga.learned.includes('invisibility')) ga.learned.push('invisibility') // setHand refuses unlearned
+            setHand(ga, 'L', 'invisibility')
+            ga.mana = 60; ga.hp = 30; ga.invis = 0
+            const sa = ga.sibs.find((s) => s.alive)
+            ga.x = sa.x; ga.y = sa.y; ga.alt = 30
+            const padv = autopilot(ga)
+            r.check('#1764-2s2 the autopilot veils against a closing sibling (five casters, one reflex)',
+                padv.a === true, `pad ${JSON.stringify(padv)}`)
+        }
+        {
+            // rng law survives arming: seed 7 twice under the autopilot gives an
+            // identical cast log and hash.
+            const castLog = () => {
+                const g = makeGame(7)
+                const log = []
+                for (let i = 0; i < 3000; i++) {
+                    step(g, autopilot(g))
+                    for (const e of g.events) if (e.type === 'wizfire' || e.type === 'towerFire' || e.type === 'boom') log.push(`${e.type}:${(e.x ?? 0).toFixed(1)},${(e.y ?? 0).toFixed(1)}`)
+                    g.events.length = 0
+                }
+                return [log.join('|'), stateHash(g)]
+            }
+            const L1 = castLog(), L2 = castLog()
+            r.check('#1764-2s2 armed coven is rng-free — seed 7 twice casts the same shots, same hash',
+                L1[0] === L2[0] && L1[1] === L2[1],
+                `log-eq ${L1[0] === L2[0]}, hash-eq ${L1[1] === L2[1]}, ${L1[0].split('|').length} casts logged`)
+        }
     }
 }
 

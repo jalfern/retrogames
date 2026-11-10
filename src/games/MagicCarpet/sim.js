@@ -527,10 +527,9 @@ export function genWorld(gs) {
     // live seed stream would re-roll every world behind this PR. A bearing that
     // finds no dry, flat, far-enough ground falls through to the next ring; a
     // seed that finds less than four sites runs a smaller coven, honestly and
-    // deterministically. Stage 1 is the visible mid-game tell: siblings hoard,
-    // grow, topple and die — but they do not shoot and do not touch pearls, so
-    // the autopilot's course and the threat budget are provably untouched until
-    // the arming stage.
+    // deterministically. Stage 1 made them hoard, grow, topple and die; stage 2
+    // (#1764) arms them — bolts and tower arrows by the primary's own laws —
+    // and still spends no rnd(), so the seed stream never shifts.
     gs.sibs = []
     {
         const covet = (x, y) => {
@@ -562,6 +561,9 @@ export function genWorld(gs) {
                 tx: spot.x, ty: spot.y, x: spot.x, y: spot.y,
                 hp: lv.wizHp, mana: Math.floor(lv.hoard / 2), alive: true,
                 stage: 0, towerDown: false, ang: bearings[i],
+                // #1764 stage 2: fuses stagger off the compass index — rng-free,
+                // and the coven never lands a simultaneous five-caster volley.
+                fire: 30 + i * 12, guard: 20 + i * 17,
             })
         }
         if (gs.sibs.length) gs.events.push({ type: 'coven', n: gs.sibs.length })
@@ -1367,21 +1369,43 @@ export function step(gs, inp) {
 
     // #1764 item 2 stage 1 — the siblings live by the primary's own laws: the
     // same 34u orbit, the same growth clock (wall/turrets/keep at 30/60/90 s),
-    // the same death (pearls scatter, the ground craters, huts catch). They fire
-    // nothing — that's stage 2 — and the whole block is rng-free, so the seed
-    // stream never shifts. A felled sib tower never rebuilds; a dead sib builds
-    // nothing, stage frozen with the defeat.
+    // the same death (pearls scatter, the ground craters, huts catch). A felled
+    // sib tower never rebuilds; a dead sib builds nothing, stage frozen with the
+    // defeat. Stage 2 (#1764) ARMS them by the same mirror: bolts at 75u on a
+    // held fuse (the veil stops the count, not just the shot), tower arrows at
+    // 110u once the wall stands, cadence by stage — and a dead sib fires nothing.
     for (const sb of gs.sibs) {
         if (!sb.alive) continue
         sb.ang += 0.012
         sb.x = wrap(sb.tx + Math.cos(sb.ang) * 34, MAP)
         sb.y = wrap(sb.ty + Math.sin(sb.ang) * 34, MAP)
+        // stage 2 — his bolt, by the primary's law: held by the veil, 75u
+        // reach, same speed and damage, and the wizfire cue carries HIS cast
+        // point so the pan already finds the right side of the sky (#1746).
+        if (gs.invis <= 0) sb.fire--
+        if (sb.fire <= 0 && Math.hypot(wrapD(gs.x - sb.x), wrapD(gs.y - sb.y)) < 75) {
+            sb.fire = 55
+            const a = Math.atan2(wrapD(gs.y - sb.y), wrapD(gs.x - sb.x))
+            gs.projs.push({ kind: 'bolt', from: 'w', x: sb.x, y: sb.y, z: Math.max(sampleH(gs, sb.x, sb.y), WATER) + 10, vx: Math.cos(a) * 2.2, vy: Math.sin(a) * 2.2, dmg: 6, life: 90 })
+            gs.events.push({ type: 'wizfire', x: sb.x, y: sb.y })
+        }
         if (!sb.towerDown) {
             const wst = [0, 1800, 3600, 5400]
             const st = wst.filter((q) => gs.worldT >= q).length - 1
             if (st > sb.stage) {
                 sb.stage = st
                 gs.events.push({ type: 'sibGrow', n: st, sib: gs.sibs.indexOf(sb), x: sb.tx, y: sb.ty })
+            }
+            // stage 2 — the grown castle defends itself on the primary's tower
+            // law (reach 110u, faster with every stage; the veil holds the fire,
+            // the tick keeps counting — identical to gs.wizGuardFire above).
+            sb.guard--
+            if (gs.invis <= 0 && sb.guard <= 0 && sb.stage >= 1 &&
+                Math.hypot(wrapD(gs.x - sb.tx), wrapD(gs.y - sb.ty)) < 110) {
+                sb.guard = [0, 90, 60, 45][sb.stage]
+                const a = Math.atan2(wrapD(gs.y - sb.ty), wrapD(gs.x - sb.tx))
+                gs.projs.push({ kind: 'tarrow', from: 't', x: sb.tx, y: sb.ty, z: sampleH(gs, sb.tx, sb.ty) + 18, vx: Math.cos(a) * 3, vy: Math.sin(a) * 3, dmg: 2, life: 80 })
+                gs.events.push({ type: 'towerFire', x: sb.tx, y: sb.ty })
             }
         }
         if (sb.hp <= 0) {
@@ -1662,10 +1686,13 @@ export function autopilot(gs) {
 
     // Defensive veil (#1610): low HP with a threat closing — a blind wizard and
     // wolves cannot finish the run. Whichever hand holds the veil casts it.
+    // #1764 stage 2: the coven closes too — a sibling with an armed bolt counts
+    // exactly like the primary at the same 70u line (five casters, one reflex).
     if (gs.hp < 40 && gs.invis <= 0 && gs.mana >= spellById('invisibility').cost) {
         const closing = gs.monsters.some((m) => m.kind !== 'cow' &&
             Math.hypot(wrapD(m.x - gs.x), wrapD(m.y - gs.y)) < 25) ||
-            (gs.wizard.alive && Math.hypot(wrapD(gs.wizard.x - gs.x), wrapD(gs.wizard.y - gs.y)) < 70)
+            (gs.wizard.alive && Math.hypot(wrapD(gs.wizard.x - gs.x), wrapD(gs.wizard.y - gs.y)) < 70) ||
+            gs.sibs.some((s) => s.alive && Math.hypot(wrapD(s.x - gs.x), wrapD(s.y - gs.y)) < 70)
         if (closing) {
             if (gs.hands.L === 'invisibility') pad.a = true
             else if (gs.hands.R === 'invisibility') pad.b = true
@@ -1685,6 +1712,16 @@ export function autopilot(gs) {
             let ceil = sampleH(gs, gs.x, gs.y)
             for (const m of closing) ceil = Math.max(ceil, sampleH(gs, m.x, m.y))
             if (gs.alt < ceil + 12) { pad.up = true; pad.down = false } // release the target-descent or they cancel (#1680)
+        }
+    }
+    // #1764 stage 2 — bolts are the new wolves: hurt and a caster's shot is
+    // closing, climb over it (a bolt keeps its spawn height; 8u of clearance
+    // out-runs its ±7 hit band). Same release discipline as the wolf climb —
+    // climb only while genuinely under the shot; pad.down never fights it.
+    if (gs.hp < 55) {
+        for (const p of gs.projs) {
+            if (p.from === 'p') continue
+            if (Math.hypot(wrapD(p.x - gs.x), wrapD(p.y - gs.y)) < 24 && gs.alt < p.z + 8) { pad.up = true; pad.down = false }
         }
     }
     return pad
