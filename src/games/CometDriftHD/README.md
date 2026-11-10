@@ -249,6 +249,18 @@ and `lostArmed` (the `webglcontextlost` refuge — it keys off the node
 classification, so a misclassified backend silently unarms it, which is what
 `--mutate-classify` punishes).
 
+## WATCH (#1637 batch 13) — the HD ribbon takes the same seat
+
+Y seats `decide()` from the shared `CometDrift/sim.js` — no forked brain, the
+identical certified route the 2D twin seats and cometcheck races to victory
+with (`cometdrifthdcheck` replays the same decide lines against this build).
+Semantics match the twin exactly: Y hands over the attract-demo flag
+(`st.plan`), any driving key takes the wheel back, the flag releases silently
+at the finish, and the attract ▶ WATCH button starts the race and seats the
+prover in one tap. Proof: the `comet-drift-hd` watchcheck pilot + the
+batch-13 source pins in `scripts/watchcheck.mjs` (including the no-forked-
+brain gate). See the GP README for the full seat design and mutant history.
+
 ## Honest gaps (filed to QA as the polish pass)
 
 - **CLOSED by #987/#990:** WebGPU pixels proven at the compositor in numbers
