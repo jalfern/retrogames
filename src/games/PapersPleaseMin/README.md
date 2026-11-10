@@ -79,7 +79,7 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (10, all die under `npm run paperscheck -- --mutate`)
+## Mutants (11, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -90,7 +90,9 @@ blindness to strikes was invisible: a mutant the checks cannot reach is
 décor, not a test. The ninth re-freezes `dnum` at uniform-31 (the two-clock
 regression #1889 removed — short-month seams read grace wrong); the tenth
 strips `dadd`'s backward carry (NOV 00 ships) — the bug the rolled week
-actually found.
+actually found. The eleventh shrinks the wanted sheet back to two decoys
+(#1902) — killed by the slot-used witness, so the fifth portrait can never
+quietly become dead letter.
 
 ## Gates
 
@@ -106,9 +108,14 @@ survives the week, pixels vs sim proven side by side).
   NOV 02 and `dnum` is exact days-since-epoch — one clock with `dadd`,
   seams included; the CALENDAR section of `paperscheck` pins the identity
   law, the roll, the cross-month witness and short-month CURFEW math.
-- The wanted sheet caps at 4 printed entries; a fifth would have to shrink
-  the wall font. Decidability is unaffected (it is graded from the model,
-  and planted entries are always ≤ the printed ones).
+- **CLOSED by #1902 (2026-11-10):** the wanted sheet capped at 4 printed
+  entries. The wall now carries the original bulletin's five — a third decoy
+  is staged every day (entries 3–5; the five-entry day is the twin-trap day).
+  The feared font shrink proved unnecessary: worst measured bottom y=336,
+  theoretical worst day y=346 vs the scale-box law y=358 and strip y=400.
+  `paperscheck` pins the cap at 5, witnesses that the fifth slot is really
+  staged across the seed sweep, fits the synthetic five-entry worst day, and
+  mutant m11 (decoys back to two) proves the witness bites.
 - The portrait is procedural but not read by any rule — it is atmosphere,
   deliberately load-bearing for nothing.
 - Day 7's queue is long (12 entrants); it is the finale, and the clumsy
