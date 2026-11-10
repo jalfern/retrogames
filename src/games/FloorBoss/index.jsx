@@ -70,6 +70,7 @@ const FB_ATTRACT = [
     'BUILD RACKS ($60) AND HIRE ROBOTS ($150) FROM THE TOP BAR',
     'B CYCLES THE BUILD TOOL · F TOGGLES AUTO-DISPATCH',
     'THE SERVO SELF-STOWS WHEN BOTS ARE ALL BUSY',
+    'PACKED ORDERS STAGE ON THE PAD — TAP THE DOCK TO CALL THE TRUCK EARLY',
     'RUSH HOUR PAYS 1.5x — RUSH ORDERS ALSO RUN COLD',
     'THREE EXPIRED ORDERS AND THE BOSS ENDS YOUR SHIFT',
 ]
@@ -112,15 +113,14 @@ const FloorBossGame = () => {
         let episode = null
 
         // ---- polish animation state (#1278) — renderer-only, never touches the
-        // sim, so hashes are untouched. The truck is the floor's face: a ship
-        // summons it, it parks at the dock, then drives off once clear.
-        let truck = { x: -90, mode: 'out', t: 0 } // mode: out | back | park | leave
+        // sim, so hashes are untouched. #1911 moved the TRUCK into the sim (it is
+        // the load-out pipe now); what stays painter-local is the decoration:
+        // trails, arcs and the pulse phase.
         // #1877: painter clocks advance in WORLD ticks (gs.tick), not display
         // frames — software-rendered Chrome paints at 10-15 fps and the truck's
         // back-in/park/drive-off wall-clock gates flaked on main for it. The
         // catch-up clamp (8 ticks/frame) keeps a stalled tab from teleporting.
         let lastPaintTick = 0
-        const TRUCK_PARK = PX(23) + 5 // trailer centered under the dock lane
         const botAnim = new Map() // bot id -> { dir, turn, trail }
         const orderEnter = new Map() // order id -> slide-in ticks left
         const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
@@ -128,11 +128,6 @@ const FloorBossGame = () => {
         let grip = 1 // gripper spread: 1 open, 0 closed
         let diamondA = 0 // last-drawn reach-diamond alpha (harness eye on the pulse, #1877)
         let humT = 60 // 60 bpm floor hum while bots move
-        const truckDock = () => {
-            if (truck.mode === 'out') { truck.mode = 'back'; truck.x = -90 }
-            else if (truck.mode === 'leave') truck.mode = 'park'
-            truck.t = 300
-        }
 
         const beginEpisode = () => {
             try {
@@ -188,10 +183,18 @@ const FloorBossGame = () => {
                         audioController.playTone(784, 0.14, 'square', 0.07, 0.18)
                         fx(`+${e.pay}`, '#5dff8f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y))
                         burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 6, '#9fe8b4', 1.8)
-                        truckDock()
                         break
                     }
-                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`+${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); truckDock(); break
+                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`+${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); break
+                    // load-out (#1911): the dock speaks in truck sounds
+                    case 'truckin': audioController.playTone(180, 0.07, 'square', 0.05); audioController.playTone(180, 0.07, 'square', 0.05, 0.14); fx('TRUCK IN', '#7ec8ff', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y) - 12); break
+                    case 'loadout': {
+                        audioController.playNoise(0.05, 0.05); audioController.playTone(220, 0.05, 'square', 0.04)
+                        const p = gs.pad.length ? OUT_CELLS[gs.pad.length % 2] : OUT_CELLS[0]
+                        arcItems.push({ x0: PX(p.x) + 13, y0: PY(p.y) + 10, x1: gs.truck.x + 20, y1: 420, k: 0, n: 14, kind: 'crate' })
+                        break
+                    }
+                    case 'truckout': audioController.playTone(150, 0.12, 'sawtooth', 0.07); audioController.playTone(200, 0.12, 'sawtooth', 0.06, 0.1); fx(e.tap ? 'SENT!' : `HAUL OUT x${e.carry || 1}`, '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 12); break
                     case 'expire': audioController.playSweep(340, 160, 0.22, 'sawtooth', 0.08); shake = 6; flash = 7; fx('EXPIRED', '#ff5a4f', W / 2, 200); break
                     case 'quota': audioController.playFanfare(); fx('QUOTA CLEARED', '#5dff8f', W / 2, 190); break
                     case 'jam': audioController.playTone(140, 0.12, 'square', 0.08); audioController.playTone(110, 0.1, 'square', 0.06, 0.12); audioController.playNoise(0.06, 0.05); fx('JAM!', PX(e.x) + 13, PY(e.y) + 8); break
@@ -653,20 +656,32 @@ const FloorBossGame = () => {
             ctx.fillStyle = 'rgba(255,210,90,0.14)'; ctx.fillRect(GX, sy, COLS * TILE, 1)
         }
 
-        // The dock's truck: backs in on a ship, parks under the dock, drives
-        // off when clear. Pure painter state — the sim's shipping is unchanged.
-        const paintTruck = (tick, dt) => {
-            if (truck.mode === 'back') { truck.x += 2.6 * dt; if (truck.x >= TRUCK_PARK) { truck.x = TRUCK_PARK; truck.mode = 'park' } }
-            else if (truck.mode === 'park') { truck.t -= dt; if (truck.t <= 0) truck.mode = 'leave' }
-            else if (truck.mode === 'leave') { truck.x += 3.2 * dt; if (truck.x > W + 30) { truck.mode = 'out'; truck.x = -90 } }
-            if (truck.mode === 'out') return
-            const x = truck.x, ty = 414
+        // The dock's truck (#1911): position, mode and load are SIM truth now
+        // (gs.truck) — the painter just draws it. Staged parcels squat on the
+        // green pad until a trailer backs in and takes them box by box.
+        const paintTruck = (tick) => {
+            const tr = gs.truck
+            for (let i = 0; i < gs.pad.length; i++) {
+                const p = gs.pad[i]
+                const c = OUT_CELLS[i % 2]
+                const cx = PX(c.x) + 13, cy = PY(c.y) + (i < 2 ? 13 : 1)
+                for (let b = 0; b < p.n; b++) drawItem(ctx, 'crate', cx + (b - (p.n - 1) / 2) * 7, cy, 0.62)
+            }
+            if (tr.mode === 'out') return
+            const x = tr.x, ty = 414
             ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 2, ty + 20, 68, 4)
             // trailer
             ctx.fillStyle = '#243342'; ctx.fillRect(x, ty, 46, 18)
             ctx.fillStyle = '#d8cfc0'; ctx.fillRect(x + 2, ty + 2, 42, 14)
+            // cargo: one slot per box actually loaded (#1911 — the trailer
+            // never lies about what it is carrying; past four slots it prints
+            // the exact remainder instead of silently saturating)
             ctx.fillStyle = '#171310'
-            for (let i = 0; i < 4; i++) ctx.fillRect(x + 6 + i * 9, ty + 4, 6, 10) // cargo
+            for (let i = 0; i < Math.min(tr.carry, 4); i++) ctx.fillRect(x + 6 + i * 9, ty + 4, 6, 10)
+            if (tr.carry > 4) {
+                ctx.fillStyle = '#ffd23f'; ctx.font = 'bold 6px monospace'
+                ctx.fillText(`+${tr.carry - 4}`, x + 32, ty + 12)
+            }
             ctx.fillStyle = '#c9971f'; ctx.fillRect(x, ty + 2, 3, 14) // rear hazard stripe
             // cab
             ctx.fillStyle = '#b3541e'; ctx.fillRect(x + 48, ty + 2, 14, 16)
@@ -674,13 +689,13 @@ const FloorBossGame = () => {
             // wheels
             ctx.fillStyle = '#0a0f14'
             for (const wx of [x + 5, x + 34, x + 51]) ctx.fillRect(wx, ty + 18, 6, 4)
-            if (truck.mode === 'back') { ctx.fillStyle = '#ff5a4f'; ctx.fillRect(x - 1, ty + 3, 2, 4); ctx.fillRect(x - 1, ty + 11, 2, 4) }
-            if (truck.mode === 'leave') {
+            if (tr.mode === 'back') { ctx.fillStyle = '#ff5a4f'; ctx.fillRect(x - 1, ty + 3, 2, 4); ctx.fillRect(x - 1, ty + 11, 2, 4) }
+            if (tr.mode === 'leave') {
                 ctx.fillStyle = '#fff2a0'; ctx.fillRect(x + 62, ty + 4, 2, 4); ctx.fillRect(x + 62, ty + 12, 2, 4)
                 ctx.fillStyle = 'rgba(255,242,160,0.10)'
                 ctx.beginPath(); ctx.moveTo(x + 64, ty + 5); ctx.lineTo(x + 92, ty - 3); ctx.lineTo(x + 92, ty + 25); ctx.lineTo(x + 64, ty + 14); ctx.closePath(); ctx.fill()
             }
-            if (truck.mode === 'park') {
+            if (tr.mode === 'park') {
                 ctx.fillStyle = `rgba(93,255,143,${0.22 + 0.14 * Math.sin(tick * 0.2)})`
                 ctx.fillRect(PX(23) - 4, ty - 6, TILE * 2 + 8, 4)
             }
@@ -798,7 +813,7 @@ const FloorBossGame = () => {
             paintParticles()
             paintRushWash(tick)
             paintRushScan(tick)
-            paintTruck(tick, worldDt)
+            paintTruck(tick)
             ctx.restore()
             paintHud(tick)
             paintOrders()
@@ -955,7 +970,8 @@ const FloorBossGame = () => {
                     gs.packT = 1
                     return o.id
                 },
-                truck: () => ({ ...truck }),
+                truck: () => ({ ...gs.truck }),
+                pad: () => gs.pad.map((p) => p.n), // #1911 harness eye on the staged parcels
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1877 eyes on the servo presentation ghosts (renderer-only state)

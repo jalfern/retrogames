@@ -53,6 +53,17 @@ export const ARM_REACH = 4 // Manhattan cells the gantry can touch from its post
 export const ARM_PATIENCE = 90 // held-ticks the servo waits for a bot first
 const ARM_SWING_PER = 6 // rotation ticks per cell of reach
 const ARM_DROP = 20 // settle ticks before the gripper opens
+// Load-out (#1911): shipping gets physical. A packed order stages a parcel on the
+// dock pad; the truck returns on law (pad full or oldest parcel aged) or on a
+// manager tap, loads box by box, and drives off LOADED. Truck x is px in the fixed
+// 800-px logical canvas (index.jsx never rescales logical units — TRUCK_PARK equals
+// its PX(23)+5 dock lane), so the drawn truck IS the logical truck.
+export const PAD_CAP = 3 // parcels the pad holds before the next packed ship waits
+export const PAD_AGE = 240 // oldest parcel ages out after 4 s — the truck is called
+const TRUCK_LOAD = 14 // ticks to load one box into the trailer
+const TRUCK_MIN = 40 // min dwell after the pad empties (tap sends early)
+export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
+const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
 const JAM_AUTO = 300 // self-resolve after 5 s
 const REPAIR_TICKS = 1200
@@ -199,6 +210,11 @@ function cellClick(gs, x, y) {
         return 'idle-arm'
     }
     if (map[y][x] === CELL.OUT) {
+        // #1911 load-out verb: tapping the shipping pad calls a waiting truck
+        // early (before cap/age) or sends a parked one before its dwell ends.
+        const tr = gs.truck
+        if (tr.mode === 'out' && gs.pad.length) { tr.mode = 'back'; gs.ev.push({ type: 'truckin', tap: true }); return 'call' }
+        if (tr.mode === 'park') { tr.mode = 'leave'; gs.ev.push({ type: 'truckout', tap: true, carry: tr.carry }); return 'send' }
         gs.ev.push({ type: 'peek', x, y })
         return 'peek'
     }
@@ -330,6 +346,8 @@ export function makeGame(seed = 1337) {
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
         arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
+        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0 }, // load-out (#1911): mode out | back | park | leave
+        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick } (#1911)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
         nextBotId: 1, nextOrderId: 1,
@@ -356,8 +374,13 @@ function spawnOrder(gs) {
 }
 
 function tryShip(gs) {
+    // #1911: the pad is the pipe — with three parcels waiting on a trailer there
+    // is no dock space for a fourth, and the packed order waits (a silent hold,
+    // never a fine: waiting is congestion, not a mistake)
+    if (gs.pad.length >= PAD_CAP) return
     const open = gs.orders.filter((o) => !o.shipped && !o.expired).sort((a, b) => (b.prio - a.prio) || (a.due - b.due) || (a.id - b.id))
     for (const o of open) {
+        if (gs.pad.length >= PAD_CAP) break // pad filled mid-cycle — the rest wait for the trailer (#1911)
         const pool = gs.staging.slice()
         let ok = true
         for (const k of o.items) {
@@ -374,6 +397,7 @@ function tryShip(gs) {
         const pay = Math.round(base * (rush ? 1.5 : 1) * (onTime ? 1 : 0.4)) + (onTime ? ONTIME_BONUS * o.items.length : LATE_PAY)
         gs.score += pay
         gs.shipped++
+        gs.pad.push({ n: o.items.length, since: gs.tick }) // stage the parcel for a trailer (#1911)
         gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id })
         if (!gs.quotaHit && gs.score >= QUOTA) { gs.quotaHit = true; gs.ev.push({ type: 'quota' }) }
     }
@@ -644,6 +668,37 @@ export function step(gs, pads = [{}]) {
     gs.packT--
     if (gs.packT <= 0) { gs.packT = 30; tryShip(gs) }
 
+    // load-out (#1911): one truck serves the pad. Call law: pad full, or the
+    // oldest parcel aged out (a tap calls it early — see cellClick). Parked, it
+    // loads one box per TRUCK_LOAD ticks; once the pad is empty it dwells the
+    // minimum (a tap sends it early), then drives off LOADED. If parcels wait
+    // when it gets home, the call law sends it right back out.
+    const tr = gs.truck
+    if (tr.mode === 'out' && gs.pad.length) {
+        const age = gs.tick - gs.pad[0].since
+        if (gs.pad.length >= PAD_CAP || age >= PAD_AGE) { tr.mode = 'back'; gs.ev.push({ type: 'truckin' }) }
+    }
+    if (tr.mode === 'back') {
+        tr.x += TRUCK_BACK
+        if (tr.x >= TRUCK_PARK) { tr.x = TRUCK_PARK; tr.mode = 'park'; tr.dwell = 0; tr.loadT = 0 }
+    } else if (tr.mode === 'park') {
+        if (gs.pad.length) {
+            tr.loadT++
+            if (tr.loadT >= TRUCK_LOAD) {
+                tr.loadT = 0
+                const p = gs.pad[0]
+                p.n-- // box by box — a three-box parcel takes three cycles
+                tr.carry++
+                if (p.n <= 0) gs.pad.shift()
+                gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
+            }
+        } else tr.dwell++
+        if (!gs.pad.length && tr.dwell >= TRUCK_MIN) { tr.mode = 'leave'; gs.ev.push({ type: 'truckout', carry: tr.carry }) }
+    } else if (tr.mode === 'leave') {
+        tr.x += TRUCK_FWD
+        if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0 }
+    }
+
     // shift end
     if (!gs.end && gs.tick >= SHIFT) {
         gs.end = gs.score >= QUOTA ? 'win' : 'short'
@@ -660,6 +715,7 @@ export function stateHash(gs) {
     for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
+    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}]P[${gs.pad.map((p) => p.n).join(',')}]|` // load-out (#1911), additive (#1373 law)
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
     return hashString(s)
@@ -688,6 +744,9 @@ export function state(gs) {
         orders: gs.orders.map((o) => ({ id: o.id, items: [...o.items], dueLeft: o.due - gs.tick, prio: o.prio })),
         conveyor: gs.conv.map((c) => ({ kind: c.kind, x: c.x })),
         armHeld: gs.arm.held,
+        pad: gs.pad.map((p) => p.n),
+        truck: gs.truck.mode,
+        carry: gs.truck.carry,
         armSwing: gs.arm.swing > 0 ? { x: gs.arm.target.x, y: gs.arm.target.y, left: gs.arm.swing } : null, // #1872
         shipped: gs.shipped,
         expired: gs.expired,
@@ -728,6 +787,10 @@ export function createAutopilot() {
             else pad.a = flip
             return pad
         }
+        // load-out (#1911): an attentive manager keeps the pad fresh — when two
+        // parcels wait and the trailer is away, walk the cursor to the shipping
+        // pad and tap the call rather than let the age law do it.
+        if (!target && !goal && s.pad.length >= 2 && s.truck === 'out') goal = OUT_CELLS[0]
         if (!target && !goal) return pad
 
         const tx = target ? target.x : goal.x
@@ -737,6 +800,12 @@ export function createAutopilot() {
         if (cy !== ty) { pad.up = ty < cy; pad.down = ty > cy; return pad }
 
         if (target) { pad.a = flip; return pad } // turbo: press/release/press
+        if (goal === OUT_CELLS[0]) {
+            // tap the pad with no build tool armed — cycle off first if one is
+            if (gs.tool) { pad.b = flip; return pad }
+            pad.a = flip
+            return pad
+        }
         if (gs.tool !== 'rack') pad.b = true
         else pad.a = true
         return pad
