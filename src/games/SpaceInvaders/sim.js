@@ -115,6 +115,72 @@ export const fireChance = (wave) => Math.min(0.02 + wave * 0.004, 0.05)
 
 export const activeCount = (s) => s.invaders.reduce((n, i) => n + (i.alive ? 1 : 0), 0)
 
+// Does a shot fired straight up the column x still have to get through a fort?
+// A fort with ANY brick left shields its whole span (one shot eats ONE brick).
+export const fortBlocks = (s, x) => s.bunkers.some((b) => x + 1 > b.x && x < b.x + BUNKER_W && b.cells.some((m) => m !== 0))
+
+// WATCH route (#1637 batch 18) — the proven flight, pure per-tick reaction on
+// live state. Three laws, in order:
+//  1. STAND IN CLEAR COLUMNS: enemy shots fall straight (2.5 px/t), so the
+//     route plans a *standing place*, not a dodge twitch — the aiming point,
+//     nudged to the nearest column a body clear of every shot still in the air.
+//  2. SHOOT THE LOWEST: descent ends the game, so the target is the lowest
+//     invader whose column the forts don't shield; nearest breaks ties.
+//  3. LEAD THE MARCH: the fleet drifts while our shot climbs at 5 px/t, so
+//     fire at the meeting point, not today's x.
+// No rand, no memory — honest from any position, so the attract demo and the
+// Y seat run exactly this brain, and invaderscheck's WITNESS section flies it
+// across 20 seeds (wave 1 cleared, no lives lost) and watchcheck drives it in
+// the browser. Extracting it into sim.js keeps one brain, not a forked one.
+export const watchRoute = (s) => {
+    const input = { left: false, right: false, fire: false }
+    if (s.phase !== 'play') return input
+    const pc = s.playerX + PLAYER_W / 2
+    const minX = 4 + PLAYER_W / 2
+    const maxX = GW - 4 - PLAYER_W / 2
+    // A column is contested when its shot is inside our approach band (~40
+    // ticks out); higher shots keep falling and get re-judged as they drop.
+    const lanes = s.enemyBullets.filter((b) => b.y > GH - 100).map((b) => b.x)
+    const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)
+    const pathOpen = (x) => lanes.every((lx) => (lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12)
+    // Law 2: the lowest invader the forts don't shield.
+    let best = null
+    let bestBlocked = true
+    for (const i of s.invaders) {
+        if (!i.alive) continue
+        const blocked = fortBlocks(s, i.x + INVADER_W / 2)
+        const nearer = !best || Math.abs(i.x + INVADER_W / 2 - pc) < Math.abs(best.x + INVADER_W / 2 - pc)
+        if (!best || i.y > best.y || (i.y === best.y && !blocked && bestBlocked) || (i.y === best.y && blocked === bestBlocked && nearer)) {
+            best = i
+            bestBlocked = blocked
+        }
+    }
+    if (!best) return input
+    // Law 3: the meeting point of our shot and the marching target.
+    const flight = (PLAYER_Y - BULLET_H - best.y) / 5
+    const aimX = Math.max(minX, Math.min(maxX, best.x + INVADER_W / 2 + s.dir * waveSpeed(s.wave) * flight))
+    // Law 1: stand free of every contested column; fleeing takes priority, and
+    // no route ever threads between two falling shots.
+    let goal = null
+    if (!freeAt(pc)) {
+        for (let d = 1; d <= 48 && goal === null; d++) {
+            if (pc + d <= maxX && freeAt(pc + d)) goal = pc + d
+            else if (pc - d >= minX && freeAt(pc - d)) goal = pc - d
+        }
+    } else {
+        for (let d = 0; d <= 48 && goal === null; d++) {
+            if (aimX + d <= maxX && freeAt(aimX + d) && pathOpen(aimX + d)) goal = aimX + d
+            else if (d > 0 && aimX - d >= minX && freeAt(aimX - d) && pathOpen(aimX - d)) goal = aimX - d
+        }
+    }
+    if (goal === null) goal = lanes.some((lx) => lx >= pc) ? minX : maxX
+    const dx = goal - pc
+    if (dx > 1) input.right = true
+    else if (dx < -1) input.left = true
+    if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc)) input.fire = true
+    return input
+}
+
 // One fixed-timestep tick. `input` = { left, right, fire } (fire = rising edge
 // handled by the driver; the sim honours a single shot on screen). `rand` is
 // the seeded stream. Mutates and returns `s`.

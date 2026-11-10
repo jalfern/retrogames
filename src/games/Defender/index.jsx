@@ -4,8 +4,10 @@ import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
-import { createSim, wrapDelta, WORLD_WIDTH, START_LIVES } from './sim.js'
+import { createSim, WORLD_WIDTH, START_LIVES, watchRoute } from './sim.js'
 import { attractFrame, DIM } from './attract.js'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const HI_KEY = 'retrogames-defender-hi'
 
@@ -14,6 +16,9 @@ const DefenderGame = () => {
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
+    const [attractUi, setAttractUi] = React.useState(true) // #1637: DOM mirror of the attract flag
+    const [watching, setWatching] = React.useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
 
     // Resume callback
     const handleResume = () => {
@@ -55,31 +60,10 @@ const DefenderGame = () => {
             const h = viewHeight || (containerRef.current ? containerRef.current.getBoundingClientRect().height : 600)
             sim = createSim({ rand, height: h })
             isAttractMode = false
+            setAttractUi(false)
+            watchingRef.current = false // #1637 a new run starts with the stick in your hand
+            setWatching(false)
             Object.keys(keys).forEach((k) => { keys[k] = false })
-        }
-
-        // Attract demo: fly the route, chase the nearest enemy, shoot when level.
-        const autopilot = () => {
-            const input = { left: false, right: false, up: false, down: false, fire: false }
-            const p = sim.player
-            let best = null
-            let bestD = Infinity
-            sim.enemies.forEach((e) => {
-                const d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 2
-                if (d < bestD) { bestD = d; best = e }
-            })
-            if (best) {
-                const dx = wrapDelta(best.x - p.x)
-                const dy = best.y - p.y
-                input.right = dx > 8
-                input.left = dx < -8
-                input.up = dy < -10
-                input.down = dy > 10
-                if (Math.abs(dy) < 24 && Math.abs(dx) < 320) input.fire = tickN % 5 === 0
-            } else {
-                input.right = true
-            }
-            return input
         }
 
         const soundEvents = () => {
@@ -90,7 +74,12 @@ const DefenderGame = () => {
                 else if (ev.t === 'deliver') { audioController.playTone(600, 0.08, 'square', 0.12); audioController.playTone(900, 0.12, 'square', 0.12, 0.08) }
                 else if (ev.t === 'wave') audioController.playSweep(200, 500 + Math.min(500, sim.wave * 80), 0.25, 'square', 0.12) // pitch ramps per wave (#1531)
                 else if (ev.t === 'die') { audioController.playNoise(0.25, 0.25); audioController.playTone(70, 0.3, 'sawtooth', 0.2) }
-                else if (ev.t === 'over') audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
+                else if (ev.t === 'over') {
+                    audioController.playSweep(300, 60, 0.6, 'sawtooth', 0.18)
+                    // #1637 WATCH: the end of the patrol is the end of the
+                    // route — the seat releases silently, like the racer's flag.
+                    if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+                }
                 else if (ev.t === 'bonus') audioController.playTone(1200, 0.15, 'square', 0.12)
                 else if (ev.t === 'mutate') audioController.playTone(500, 0.06, 'square', 0.08)
                 else if (ev.t === 'abduct') audioController.playTone(120, 0.12, 'triangle', 0.1)
@@ -108,6 +97,11 @@ const DefenderGame = () => {
             if (pausedRef.current) return
 
             if (isAttractMode || sim.over) { startRun(); return }
+            // #1637 WATCH: Y seats the proven patrol (watchRoute drives the
+            // real sim); any driving key hands the wheel back and the player
+            // continues from exactly where the prover left it.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Space') keys.Space = true
             if (e.code === 'ArrowUp' || e.key === 'w') keys.ArrowUp = true
             if (e.code === 'ArrowDown' || e.key === 's') keys.ArrowDown = true
@@ -124,9 +118,13 @@ const DefenderGame = () => {
         }
 
         // Phones: any tap starts or restarts the run.
-        const handleCanvasTap = () => {
+        const handleCanvasTap = (e) => {
             if (pausedRef.current) return
-            if (isAttractMode || sim.over) startRun()
+            // #1637: the WATCH pill lives over the canvas on phones — its press
+            // is the seat key, never a takeover tap.
+            if (e && e.target && e.target.closest && e.target.closest('[data-watch-toggle]')) return
+            if (isAttractMode || sim.over) { startRun(); return }
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the stick back
         }
 
         const resize = () => {
@@ -145,11 +143,15 @@ const DefenderGame = () => {
 
         const update = () => {
             tickN += 1
+            // #1637 WATCH: attract and the Y seat both run watchRoute from
+            // sim.js — one brain, honest from any position.
             const input = isAttractMode
-                ? autopilot()
+                ? watchRoute(sim)
                 : sim.over
                     ? { left: false, right: false, up: false, down: false, fire: false }
-                    : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space }
+                    : watchingRef.current
+                        ? watchRoute(sim)
+                        : { left: keys.ArrowLeft, right: keys.ArrowRight, up: keys.ArrowUp, down: keys.ArrowDown, fire: keys.Space }
             if (isAttractMode) sim.player.invuln = 999999 // the demo does not die
             thrustFacing = input.left ? -1 : input.right ? 1 : 0
             sim.step(input)
@@ -402,6 +404,7 @@ const DefenderGame = () => {
             resize()
             startRun()
             isAttractMode = true // the first run demos itself until a key or tap
+            setAttractUi(true) // #1637: startRun() flipped the mirror — the pill belongs on the attract screen
 
             window.addEventListener('keydown', handleKeyDown)
             window.addEventListener('keyup', handleKeyUp)
@@ -474,12 +477,29 @@ const DefenderGame = () => {
             wave: sim ? sim.wave : 1,
         }))
 
+        if (import.meta.env.DEV) {
+            // #1637 watchcheck probes: is the prover patrolling, did it blip,
+            // and a serializable slice of the world for the advance predicates.
+            window.__defenderTest = {
+                watching: () => watchingRef.current && !isAttractMode && !(sim && sim.over),
+                watchSfx: watchSfxLog,
+                probe: () => ({
+                    screen: isAttractMode ? 'attract' : sim && sim.over ? 'over' : 'play',
+                    tick: tickN, score: sim ? sim.score : 0, lives: sim ? sim.lives : START_LIVES,
+                    wave: sim ? sim.wave : 1, enemies: sim ? sim.enemies.length : 0,
+                    humans: sim ? sim.humans.filter((h) => h.state !== 'dead').length : 0,
+                    playerX: sim ? Math.round(sim.player.x) : 0, playerY: sim ? Math.round(sim.player.y) : 0,
+                }),
+            }
+        }
+
         return () => {
             window.removeEventListener('keydown', handleKeyDown)
             window.removeEventListener('keyup', handleKeyUp)
             window.removeEventListener('resize', resize)
             canvas.removeEventListener('pointerdown', handleCanvasTap)
             cancelAnimationFrame(animationFrameId)
+            if (import.meta.env.DEV && window.__defenderTest) delete window.__defenderTest
             unexposeGame()
             unexposeFeedbackState()
         }
@@ -490,6 +510,20 @@ const DefenderGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[3/4] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'DEFENDER')} onResume={handleResume} />}
+                {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
+                        <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                        <AttractWatchButton />
+                    </div>
+                )}
+                {/* #1637 WATCH — the proven patrol flies; any key, pad push or tap takes over. */}
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
+                    <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
             </div>
             <VirtualControls />
         </div>

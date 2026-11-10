@@ -1711,6 +1711,111 @@ const PILOTS = [
             }
         },
     },
+    // #1637 batch 18 — the formation pair seats its OWN attract brains.
+    // SPACE INVADERS' seat is watchRoute from sim.js: stand in a column no
+    // falling shot owns, shoot the lowest invader the forts don't shield,
+    // lead the march — the exact brain invaderscheck's WITNESS section clears
+    // wave 1 with on 19/20 seeds, zero lives, and the attract screen flies.
+    {
+        id: 'invaders', url: `${BASE}/invaders`, hook: '__invadersTest',
+        async run(page, rep) {
+            const H = '__invadersTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('invaders: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                rep.check('invaders: one tap starts the run AND seats the prover', (await probe()).screen === 'play' && await watching())
+                await key(page, 'ArrowLeft') // any input takes the cannon back
+            }
+            await key(page, 'Space')
+            await page.waitForTimeout(400)
+            rep.check('invaders: the march is live before the seat', (await probe()).screen === 'play')
+            rep.check('invaders: nobody is flying yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('invaders: Y seats the proven flight', await watching())
+            rep.check('invaders: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // shots are prover-only: idle hands fire nothing, and the fleet only
+            // shrinks while seated — a seat that banked either falsely lied.
+            const adv = (x, y) => (y.score > x.score || y.fleet < x.fleet) && y.lives >= x.lives
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 8000)
+            rep.check('invaders: the prover shoots untouched (idle hands fire nothing)', adv(a, b),
+                `score ${a.score} -> ${b.score}, fleet ${a.fleet} -> ${b.fleet}, lives ${b.lives} held`)
+            rep.check('invaders: still watching mid-march', await watching() || (await probe()).phase === 'over')
+            await page.keyboard.down('ArrowLeft')
+            rep.check('invaders: steer key takes over', !(await watching()))
+            rep.check('invaders: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('invaders: Y re-seats the prover mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('invaders: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, fleet ${c.fleet} -> ${d.fleet}`)
+            await key(page, 'KeyY')
+            rep.check('invaders: Y again releases the wheel', !(await watching()))
+        },
+    },
+    // DEFENDER's seat is the patrol its attract screen flies (watchRoute, now
+    // the single brain — the forked autopilot is deleted). defendercheck's
+    // WITNESS patrols 20 seeds: all survive 150 s, min 4750 banked, 19/20
+    // clear a wave; the seat drives the same calls, honest from any position.
+    {
+        id: 'defender', url: `${BASE}/defender`, hook: '__defenderTest',
+        async run(page, rep) {
+            const H = '__defenderTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('defender: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                rep.check('defender: one tap starts the run AND seats the prover', (await probe()).screen === 'play' && await watching())
+                await key(page, 'ArrowRight') // any input takes the stick back
+            }
+            await key(page, 'Space')
+            await page.waitForTimeout(400)
+            rep.check('defender: the planet is live before the seat', (await probe()).screen === 'play')
+            rep.check('defender: nobody is patrolling yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('defender: Y seats the proven patrol', await watching())
+            rep.check('defender: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // Honest bar (matches defendercheck WITNESS, 20 seeds): the patrol
+            // banks ~300 pts/10 s, grazes ~1 hit per 150 s, and after the player
+            // steers away it may need seconds to find the next lander — a lander
+            // pays 150/75. Demand at least one kill's worth of progress, allow one graze.
+            const adv = (x, y) => y.score >= x.score + 150 && y.lives >= x.lives - 1
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 12000)
+            rep.check('defender: the prover patrols untouched (idle hands fire nothing)', adv(a, b),
+                `score ${a.score} -> ${b.score}, enemies ${a.enemies} -> ${b.enemies}, lives ${b.lives}`)
+            rep.check('defender: still watching mid-patrol', await watching() || (await probe()).screen === 'over')
+            await page.keyboard.down('ArrowLeft')
+            rep.check('defender: steer key takes over', !(await watching()))
+            rep.check('defender: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('defender: Y re-seats the prover mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 15000)
+            rep.check('defender: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, enemies ${c.enemies} -> ${d.enemies}`)
+            await key(page, 'KeyY')
+            rep.check('defender: Y again releases the wheel', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -2102,7 +2207,9 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /if \(watchingRef\.current && g && !g\.done\) p1 = solvePad\(g\)/.test(tmd)
         && /spec\.tick\(p1, pads\)/.test(tmd))
     rep.check('TALK ME DOWN: Y seats with blips; any driving key takes over',
-        /if \(isWatchKey\(e\)\) \{ e\.preventDefault\(\); watchingRef\.current = !watchingRef\.current; setWatching\(watchingRef\.current\)/.test(tmd)
+        // main grew the seat into a multiline block with an offline gate (#1889) —
+        // pin the behaviour, not the line layout.
+        /if \(isWatchKey\(e\)\) \{[\s\S]{0,160}?watchingRef\.current = !watchingRef\.current; setWatching\(watchingRef\.current\)/.test(tmd)
         && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\)/.test(tmd))
     rep.check('TALK ME DOWN: a tap on the bench hands the hands back too',
         /else if \(screenRef\.current === 'play' && watchingRef\.current\) \{/.test(tmd))

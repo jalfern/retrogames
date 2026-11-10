@@ -6,7 +6,9 @@ import { GAMES } from '../../config/games'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { attractFrame, DIM } from './attract.js'
-import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, bunkerBricks, makeWorld, step, hash, done, activeCount } from './sim.js'
+import { GW, GH, PLAYER_W, PLAYER_H, PLAYER_Y, INVADER_W, INVADER_H, BULLET_W, BULLET_H, UFO_Y, BUNKER_ROWS, bunkerBricks, makeWorld, step, hash, done, activeCount, watchRoute } from './sim.js'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 // SPACE INVADERS (Taito 1978) — world sim lives in sim.js (Node-provable).
 // Pixel title: draws at the original's 224x256 world resolution, integer-scaled
@@ -46,6 +48,9 @@ const SpaceInvadersGame = () => {
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
     const [uiOver, setUiOver] = React.useState(false)
+    const [attractUi, setAttractUi] = React.useState(true) // #1637: DOM mirror of the attract flag
+    const [watching, setWatching] = React.useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
 
     const handleResume = () => {
         setPaused(false)
@@ -106,12 +111,14 @@ const SpaceInvadersGame = () => {
         const startFromAttract = () => {
             if (!isAttractMode) return
             isAttractMode = false
+            setAttractUi(false)
             newRun()
         }
         const restartToAttract = () => {
             isAttractMode = true
             attractTick = 0
             setUiOver(false)
+            setAttractUi(true)
             newRun()
         }
 
@@ -125,6 +132,11 @@ const SpaceInvadersGame = () => {
             if (pausedRef.current) return
             if (done(world)) { restartToAttract(); return }
             startFromAttract()
+            // #1637 WATCH: Y seats the proven flight (watchRoute drives the real
+            // sim); any driving key hands the wheel back and the player
+            // continues from exactly where the prover left it.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (keys[e.code] !== undefined) keys[e.code] = true
         }
         const handleKeyUp = (e) => {
@@ -133,6 +145,7 @@ const SpaceInvadersGame = () => {
 
         const handlePointerDown = () => {
             if (pausedRef.current) return
+            if (watchingRef.current && !isAttractMode && !done(world)) { watchingRef.current = false; setWatching(false); playWatchStop() } // #1637 a tap takes the cannon back
             if (done(world)) restartToAttract()
             else startFromAttract()
         }
@@ -142,28 +155,6 @@ const SpaceInvadersGame = () => {
         window.addEventListener('keyup', handleKeyUp)
         window.addEventListener('pointerdown', handlePointerDown)
         resize()
-
-        // ---------- attract autopilot (drives the SAME sim) ----------
-        const attractInput = (s) => {
-            const input = { left: false, right: false, fire: false }
-            const dangerous = s.enemyBullets
-                .filter((b) => b.y > GH - 80 && Math.abs(b.x - (s.playerX + PLAYER_W / 2)) < 12)
-                .sort((a, b) => b.y - a.y)[0]
-            if (dangerous) {
-                if (dangerous.x > s.playerX + PLAYER_W / 2) input.left = true
-                else input.right = true
-            } else {
-                const act = s.invaders.filter((i) => i.alive)
-                if (act.length > 0) {
-                    const target = act[s.tick % act.length]
-                    const cx = s.playerX + PLAYER_W / 2
-                    if (target.x + INVADER_W / 2 > cx + 3) input.right = true
-                    else if (target.x + INVADER_W / 2 < cx - 3) input.left = true
-                    else input.fire = true
-                }
-            }
-            return input
-        }
 
         // ---------- sim driving ----------
         let uiOverMirror = false
@@ -190,7 +181,12 @@ const SpaceInvadersGame = () => {
             world = step(world, input, rand)
             if (world.score > prevScore) audioController.playNoise(0.08, 0.12)
             else if (prevScore === world.score && was === 'play' && world.phase === 'dying') audioController.playNoise(0.4, 0.25)
-            if (was === 'play' && world.phase === 'over') audioController.playSweep(400, 80, 0.5)
+            if (was === 'play' && world.phase === 'over') {
+                audioController.playSweep(400, 80, 0.5)
+                // #1637 WATCH: the end of the run is the end of the route —
+                // the seat releases silently, like the racer's finish flag.
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
+            }
             if (prevCount > 0 && activeCount(world) === 0) audioController.playSweep(200, 600, 0.3)
             // kill detection by index identity -> burst at the death spot
             for (let k = 0; k < before.length; k++) {
@@ -221,10 +217,14 @@ const SpaceInvadersGame = () => {
         const update = () => {
             if (isAttractMode) {
                 attractTick++
-                doSim(attractInput(world))
+                doSim(watchRoute(world))
                 if (done(world)) { newRun(); uiOverMirror = false; attractTick = 0 }
                 return
             }
+            // #1637 WATCH: the seat drives the SAME sim with the SAME brain the
+            // attract screen flies and invaderscheck's WITNESS section proves —
+            // reactive per tick, honest from any position.
+            if (watchingRef.current) { doSim(watchRoute(world)); return }
             doSim({ left: keys.ArrowLeft, right: keys.ArrowRight, fire: keys.Space })
         }
 
@@ -333,6 +333,9 @@ const SpaceInvadersGame = () => {
                 uiOverMirror = false
                 setUiOver(false)
                 isAttractMode = false
+                setAttractUi(false)
+                watchingRef.current = false // #1637 a reset hands you the stick
+                setWatching(false)
                 keys.ArrowLeft = keys.ArrowRight = keys.Space = false
             },
             tick: (pad) => {
@@ -356,6 +359,21 @@ const SpaceInvadersGame = () => {
         exposeFeedbackState(() => ({
             tick: world.tick, score: world.score, done: done(world), seed: seed, lives: world.lives, wave: world.wave,
         }))
+
+        if (import.meta.env.DEV) {
+            // #1637 watchcheck probes: is the prover flying, did it blip, and
+            // a serializable slice of the world for the advance predicates.
+            window.__invadersTest = {
+                watching: () => watchingRef.current && !isAttractMode && !done(world),
+                watchSfx: watchSfxLog,
+                probe: () => ({
+                    screen: isAttractMode ? 'attract' : done(world) ? 'over' : 'play',
+                    tick: world.tick, score: world.score, lives: world.lives,
+                    wave: world.wave, fleet: activeCount(world), phase: world.phase,
+                    playerX: Math.round(world.playerX),
+                }),
+            }
+        }
 
         mountDbg({
             title: 'SPACE INVADERS',
@@ -399,6 +417,7 @@ const SpaceInvadersGame = () => {
             window.removeEventListener('resize', resize)
             window.removeEventListener('pointerdown', handlePointerDown)
             cancelAnimationFrame(animationFrameId)
+            if (import.meta.env.DEV && window.__invadersTest) delete window.__invadersTest
             unexposeGame()
             unexposeFeedbackState()
             unmountDbg()
@@ -410,6 +429,20 @@ const SpaceInvadersGame = () => {
             <div ref={containerRef} className="relative w-full max-w-[600px] aspect-[7/8] border-2 border-neutral-800 rounded-lg overflow-hidden shadow-2xl shadow-neutral-900 bg-black">
                 <canvas ref={canvasRef} className="block w-full h-full" style={{ background: 'black' }} />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SPACE INVADERS')} onResume={handleResume} />}
+                {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
+                        <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
+                        <AttractWatchButton />
+                    </div>
+                )}
+                {/* #1637 WATCH — the proven flight marches; any key, pad push or tap takes over. */}
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
+                    <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                        <WatchButton on={watching} />
+                    </div>
+                )}
             </div>
             <VirtualControls visible={!uiOver && !paused} />
         </div>

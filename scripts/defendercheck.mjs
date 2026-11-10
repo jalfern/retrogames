@@ -16,10 +16,12 @@ import {
     createSim, wrapDelta, groundAt, makeTerrain, makeHumans, spawnWave,
     livesForScore, humansAlive,
     SCORE_LANDER, SCORE_MUTANT, SCORE_CATCH, SCORE_DELIVER, SCORE_WAVE,
-    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE,
+    BONUS_LIFE_EVERY, START_LIVES, WORLD_WIDTH, HUMAN_COUNT, DEATH_FREEZE, watchRoute,
 } from '../src/games/Defender/sim.js'
 import { seedRng, seedFromQuery } from '../src/utils/gameContract.js'
 import { plant, pull } from './lib/mutateguard.mjs'
+
+const jsx = readFileSync('src/games/Defender/index.jsx', 'utf8')
 
 let fails = 0, passes = 0
 const ok = (cond, name, detail = '') => {
@@ -269,7 +271,7 @@ console.log('component wiring: pin, report, contract, terminal UI')
     ok(/GAME OVER/.test(src) && /RESTART/.test(src), 'the terminal says GAME OVER and offers restart')
     ok(/invuln/.test(simSrc) && /dark/.test(simSrc), 'engine carries the respawn dark + grace fields')
     const fb = readFileSync('scripts/feedbackcheck.mjs', 'utf8')
-    ok(/at least 52 games/.test(fb) && /reportingGames >= 52/.test(fb), 'feedbackcheck floor raised to 52 (Defender counts)')
+    ok(/at least 55 games/.test(fb) && /reportingGames >= 55/.test(fb), 'feedbackcheck floor raised to 55 (Defender counts)')
     const at = readFileSync('src/games/Defender/attract.js', 'utf8')
     ok(!/LANDERS/.test(at) && /RESCUE THE HUMANS/.test(at), 'attract copy rescued the wrong noun (humans, not landers)')
     ok(/README\.md/.test('README.md') && readFileSync('src/games/Defender/README.md', 'utf8').includes('Honest gaps'), 'README carries engine notes + honest gaps')
@@ -302,6 +304,34 @@ console.log('feel pass #1531: death pause, telegraph, thrust voice, radar flicke
     ok(/500 \+ Math\.min\(500, sim\.wave \* 80\)/.test(src), 'the wave fanfare pitch ramps per wave')
     ok(/drawHuman\(h, h\.state === 'walk'\)/.test(src), 'walking humans get the 2-frame shuffle')
     ok(/% 24 > 3/.test(src) && /% 18 > 2/.test(src), 'radar dots flicker on the scanner')
+}
+
+
+// ---------- WATCH witness (#1637 batch 18): the seat brain patrols it ----------
+{
+    let survived = 0, waveSeeds = 0, minScore = Infinity
+    for (let k = 0; k < 20; k++) {
+        const rand = seedRng(2000 + k * 91)
+        const w = createSim({ rand, height: 420 })
+        let waves = 0
+        let cap = 9000
+        while (!w.over && cap > 0) { w.step(watchRoute(w)); if (w.events.some((e) => e.t === 'wave')) waves++; cap-- }
+        if (!w.over) survived++
+        if (waves >= 1) waveSeeds++
+        minScore = Math.min(minScore, w.score)
+    }
+    ok(survived === 20, `every seeded patrol survives its 150 s horizon (${survived}/20)`)
+    ok(minScore >= 4000, `patrol banks >= 4000 on every seed (min ${minScore})`)
+    ok(waveSeeds >= 19, `>= 19/20 seeds clear at least a wave (${waveSeeds}/20)`)
+    ok(humansAlive(createSim({ rand: seedRng(2000), height: 420 }).humans) === HUMAN_COUNT,
+        'witness seeds start with the street full (five humans)')
+    ok(/watchRoute\(sim\)/.test(jsx) && !/autopilot/.test(jsx),
+        'index.jsx runs watchRoute for attract AND seat — the forked autopilot is gone')
+    ok((jsx.match(/watchRoute\(sim\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
+    ok(/isWatchKey\(e\)/.test(jsx) && /isTakeoverKey\(e\)/.test(jsx), 'seat + takeover wired in index.jsx')
+    ok(/data-watch-toggle/.test(jsx), 'the pill press is not eaten by the canvas tap')
+    ok(/label: 'DEFENDER'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
+        'registry advertises WATCH for Defender')
 }
 
 // ------------------------------------------------------------------ mutants ----
@@ -352,6 +382,15 @@ if (process.argv.includes('--mutant')) {
         ['terrain is friendly (pre-port invincibility)', S,
             `if (p.dark <= 0 && p.invuln <= 0 && ceil - p.y < 8) { die(); return s }`,
             `if (false) { die(); return s }`],
+        ['the patrol loses its elevator (vertical aim deleted)', S,
+            `        if (!climbing) {
+            if (dy > 10) input.down = true
+            else if (dy < -10) input.up = true
+        }`,
+            `        if (false) {
+            if (dy > 10) input.down = true
+            else if (dy < -10) input.up = true
+        }`],
     ]
     let died = 0
     for (const [name, file, from, to] of MUTANTS) {

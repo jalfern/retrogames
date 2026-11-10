@@ -106,6 +106,46 @@ export const livesForScore = (score) => Math.floor(score / BONUS_LIFE_EVERY)
 // only `dead` is gone).
 export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').length
 
+// WATCH route (#1637 batch 18) — the patrol the attract screen already flies,
+// extracted from index.jsx so ONE brain drives attract, seat and proof (the
+// no-forked-brain law). Pure per-tick reaction: chase the nearest threat on
+// the wrap (vertical proximity weighs more — the guns fire flat along the
+// facing), lift off the wireframe it hugs, and fire at anything level inside
+// laser range. No rand, no memory — honest from any position.
+// Honest measure (defendercheck's WITNESS section, 20 seeded 150-second
+// patrols): every seed survives to the horizon with lives to spare and banks
+// >= 4,000 points, 19/20 clear at least a wave; the patrol does NOT fly
+// collision-free (a graze about once a patrol) and never catches falling
+// humans. The watch advertises the route, not invincibility — any input
+// takes over, and the seat releases with the run.
+export const watchRoute = (s) => {
+    const input = { left: false, right: false, up: false, down: false, fire: false }
+    const p = s.player
+    if (s.over || p.dark > 0) return input
+    const lookX = ((p.x + p.vx * 12) % WORLD_WIDTH + WORLD_WIDTH) % WORLD_WIDTH
+    const floorY = Math.min(groundAt(s.terrain, p.x), groundAt(s.terrain, lookX))
+    const climbing = p.y > floorY - 30
+    if (climbing) input.up = true
+    let best = null
+    let bestD = Infinity
+    for (const e of s.enemies) {
+        const d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 6
+        if (d < bestD) { bestD = d; best = e }
+    }
+    if (best) {
+        const dx = wrapDelta(best.x - p.x)
+        const dy = best.y - p.y
+        if (dx > 6) input.right = true
+        else if (dx < -6) input.left = true
+        if (!climbing) {
+            if (dy > 10) input.down = true
+            else if (dy < -10) input.up = true
+        }
+        if (Math.abs(dy) < 15 && Math.abs(dx) < 560 && (dx === 0 || Math.sign(dx) === p.facing)) input.fire = true
+    }
+    return input
+}
+
 // One full simulation step. `input` = {left,right,up,down,fire}; the planet
 // wrap, scoring, abduction chain, mutation and terminal all live here, driven
 // by a single mulberry32 stream `rand` (seedRng(seed)).
