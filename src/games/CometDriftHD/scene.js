@@ -36,7 +36,8 @@ export const kerbOuterAt = (i, side) => {
 // per-side wall foot: the map's escape width, floor 220px (the #513 sim-clamp
 // margin), ceiling 300px so trackside props (placed from 306px) always stand
 // on the plateau, never inside the wall band (#675 floating-prop lesson), and
-// capped so a hairpin inside never exceeds 0.8·R (the folded-fin fix).
+// inside bends the #542 evolute cap max(48, Rloc−48) applies — the unified
+// #1498 law in track.js wallLatAt (the 0.8·R folded-fin cap was pre-#1498).
 export const wallOffSideAt = (i, side) => wallLatAt(i, side)
 
 // #530 item 4: the `?ref=1` debug overlay — the traced real-map centerline
