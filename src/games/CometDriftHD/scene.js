@@ -416,7 +416,7 @@ export function trackGeometryStats() {
         offL[i] = wallOffSideAt(i, -1); offR[i] = wallOffSideAt(i, 1)
         kerbL[i] = kerbOuterAt(i, -1) - T.ROAD_R; kerbR[i] = kerbOuterAt(i, 1) - T.ROAD_R
     }
-    const ctx = bandContext()
+    const ctx = bandContext(T.id)
     const mean = (v) => v.reduce((a, x) => a + x, 0) / v.length
     const std = (v) => Math.sqrt(mean(v.map((x) => (x - mean(v)) ** 2)))
     const band = {

@@ -584,7 +584,15 @@ console.log('measured run-off bands (#530 item 2):')
     for (const id of ['sandbank', 'corkscomb']) {
         selectCourse(id)
         const b = trackGeometryStats().band
-        ok(b.has === true && b.spanPx > 1000, `${id}: band law active (map span ${b.spanPx.toFixed(0)}px)`)
+        // #1865: a lost band context must read as a FAIL, not a TypeError —
+        // #1498 gave bandContext() an id param and this audit stopped seeing
+        // the map; the fix is `bandContext(T.id)` in scene.js, this guard is
+        // the tripwire that names the failure instead of crashing the suite.
+        if (!b || b.has !== true) {
+            ok(false, `${id}: band law inactive — audit sees no traced map (band=${b ? 'has=' + b.has : 'null'})`)
+            continue
+        }
+        ok(b.spanPx > 1000, `${id}: band law active (map span ${b.spanPx.toFixed(0)}px)`)
         ok(b.offStdL > 15 && b.offStdR > 15, `${id}: run-off width varies corner to corner (std L ${b.offStdL.toFixed(1)}px, R ${b.offStdR.toFixed(1)}px; a constant ring reads 0)`)
         ok(b.asymMean > 10, `${id}: the two sides disagree — asymmetric escapes read from the map (mean Δ ${b.asymMean.toFixed(1)}px)`)
         ok(b.kerbMin >= 8 && b.kerbMax <= 18 && b.kerbMax - b.kerbMin > 2, `${id}: kerb depth tracks the band (${b.kerbMin.toFixed(1)}..${b.kerbMax.toFixed(1)}px)`)
