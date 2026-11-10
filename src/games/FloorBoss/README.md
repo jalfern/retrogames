@@ -42,6 +42,13 @@ score; three expired orders and you're fired. Quota: 1000.
   while the gantry is over a rack — so no cargo is ever contested. Servo bits
   (`swing`, `target`) join `stateHash`; the painter draws the boom rotating and
   the reach diamond in rack mode.
+- **Servo presentation** (#1877): the carry rides the same ghost-item arc
+  painter as the bay handoff (`arcItems`, duration pinned to `swingT0` so the
+  arc cannot lie about the carry); the reach diamond pulses on `heldT` while
+  cargo waits loaded (teaches the patience rule before the swing); and ALL
+  painter clocks (truck back-in/park/drive-off, ghost arcs) advance in WORLD
+  ticks (`gs.tick` deltas per paint, clamp 8), never display frames — software
+  Chrome paints ~11 fps and wall-frame waits flaked `floorbossplay` on main.
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -52,10 +59,10 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```

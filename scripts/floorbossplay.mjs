@@ -62,38 +62,97 @@ r.check('real Space clocks in (attract → play)', await waitMode('play'))
 
 // ---- drawn sprite follows the sim ----
 {
-    const bot = await page.evaluate(() => { const c = window.__floorbossTest.sim().robots[0]; return { gx: c.x, gy: c.y } })
-    const [rr, gg, bb] = await page.evaluate(([gx, gy]) => {
-        const cv = window.__floorbossTest.canvas()
-        const x = Math.round((10 + gx * 26 + 13) * 2), y = Math.round((44 + gy * 26 + 13) * 2)
-        const d = cv.getContext('2d').getImageData(x - 3, y - 3, 6, 6).data
-        let rSum = 0, gSum = 0, bSum = 0
-        for (let i = 0; i < d.length; i += 4) { rSum += d[i]; gSum += d[i + 1]; bSum += d[i + 2] }
-        const n = d.length / 4
-        return [Math.round(rSum / n), Math.round(gSum / n), Math.round(bSum / n)]
-    }, [bot.gx, bot.gy])
-    r.check('bot 1 paints teal at its logical cell', gg > 110 && bb > 120 && rr < 120, `rgb(${rr},${gg},${bb}) at (${bot.gx},${bot.gy})`)
+    // atomic per-attempt read (cell + pixels in one round trip) and pass on
+    // any hit — a bot in transit shows a lag between logical and painted cell,
+    // the exact race that flaked this gate on main (#1877); it must still paint
+    // teal somewhere on the floor for the gate to go green at all.
+    let rr = 0, gg = 0, bb = 0, gx = 0, gy = 0
+    for (let i = 0; i < 10; i++) {
+        const s = await page.evaluate(() => {
+            const g = window.__floorbossTest
+            const b = g.sim().robots[0]
+            const x = Math.round((10 + b.x * 26 + 13) * 2), y = Math.round((44 + b.y * 26 + 13) * 2)
+            const d = g.canvas().getContext('2d').getImageData(x - 3, y - 3, 6, 6).data
+            let rS = 0, gS = 0, bS = 0
+            for (let j = 0; j < d.length; j += 4) { rS += d[j]; gS += d[j + 1]; bS += d[j + 2] }
+            const n = d.length / 4
+            return { rr: Math.round(rS / n), gg: Math.round(gS / n), bb: Math.round(bS / n), gx: b.x, gy: b.y }
+        })
+        rr = s.rr; gg = s.gg; bb = s.bb; gx = s.gx; gy = s.gy
+        if (gg > 110 && bb > 120 && rr < 120) break
+        await new Promise((res) => setTimeout(res, 120))
+    }
+    r.check('bot 1 paints teal at its logical cell', gg > 110 && bb > 120 && rr < 120, `rgb(${rr},${gg},${bb}) at (${gx},${gy})`)
+}
+
+// ---- the servo carry sells its transfer (#1877) ----
+{
+    // no bots to hand to: auto off, bots down — and one rack within ARM_REACH
+    // (shifts open with zero racks), so patience MUST end in a swing. The ride
+    // must read: the diamond pulses while cargo waits, a ghost item arcs the
+    // swing, and the swing still banks a stow. Budgets are WORLD ticks (#1877).
+    const servo0 = await page.evaluate(() => {
+        const g = window.__floorbossTest
+        g.press('KeyF') // auto off
+        g.sim().robots.forEach((b) => { b.broken = true; b.repair = 4000; b.task = { kind: 'idle' }; b.path = [] })
+        g.sim().score += 200
+        g.sim().tool = 'rack'
+        for (const [rx, ry] of [[16, 3], [15, 2], [17, 2], [14, 1]]) {
+            g.click(rx, ry)
+            if (g.sim().racks.length > 0) break
+        }
+        g.sim().tool = null // disarm so the loaded-wait pulse (not rack mode) is what paints
+        return { racks: g.sim().racks.length, stows: g.sim().stows, tick: g.sim().tick }
+    })
+    r.check('servo section armed (rack in reach, bots down)', servo0.racks > 0, JSON.stringify(servo0))
+    const servo = async () => page.evaluate(() => {
+        const g = window.__floorbossTest
+        const fx = g.servoFx()
+        return { held: g.sim().arm.held, swing: g.sim().arm.swing, heldT: g.sim().arm.heldT, stows: g.sim().stows, tick: g.sim().tick, arcs: fx.arcs, diamond: fx.diamond, dmode: fx.dmode, tool: fx.tool }
+    })
+    let pulseMin = 1, pulseMax = 0, sawSwing = false, arcsInFlight = 0, stowed = null
+    while (true) {
+        const s = await servo()
+        if (s.tick > servo0.tick + 2100) break // 35 world seconds — enough for two patience cycles
+        if (s.dmode === 'pulse') { pulseMin = Math.min(pulseMin, s.diamond); pulseMax = Math.max(pulseMax, s.diamond) }
+        if (s.swing > 0) { sawSwing = true; arcsInFlight = Math.max(arcsInFlight, s.arcs) }
+        if (stowed === null && s.stows > servo0.stows) stowed = s
+        // keep sampling through a SECOND loaded-wait: a single patience cycle at
+        // 11 fps can land every poll inside the swing and miss the pulse (#1877)
+        if (stowed !== null && s.stows >= servo0.stows + 2) break
+        await new Promise((res) => setTimeout(res, 60))
+    }
+    r.check('servo swung with every bot down and auto off', sawSwing && !!stowed, `stows ${servo0.stows} -> ${stowed && stowed.stows}`)
+    r.check('servo carry rides the ghost arc', sawSwing && arcsInFlight >= 1, `${arcsInFlight} servo ghosts seen mid-swing`)
+    r.check('loaded arm pulses the reach diamond while waiting', pulseMax - pulseMin > 0.04 && pulseMax > 0.24, `diamond α ${pulseMin.toFixed(2)}..${pulseMax.toFixed(2)} (last dmode=${(await servo()).dmode}/tool=${(await servo()).tool})`)
+    // hand the floor back to auto for the sections below
+    await page.evaluate(() => { const g = window.__floorbossTest; g.sim().robots.forEach((b) => { b.broken = false; b.repair = 0 }); g.sim().tool = null; g.press('KeyF') })
 }
 
 // ---- the dock sells the fantasy: a ship summons the truck ----
 {
+    // budgets are WORLD ticks (#1877): software-rendered Chrome can drop below
+    // real-time frame rate, and wall-clock budgets flaked these gates identically
+    // on clean main — the sim's own clock cannot.
+    const tickNow = () => page.evaluate(() => window.__floorbossTest.sim().tick)
+    const ordersNow = () => page.evaluate(() => window.__floorbossTest.sim().orders.length)
     // the first order lands ~4 s in; wait for one to cover before forcing a ship
-    const tOrd = Date.now()
-    while (Date.now() - tOrd < 15000 && (await page.evaluate(() => window.__floorbossTest.sim().orders.length)) === 0)
+    const tOrd = await tickNow()
+    while ((await tickNow()) < tOrd + 900 && (await ordersNow()) === 0)
         await new Promise((res) => setTimeout(res, 200))
     const oid = await page.evaluate(() => window.__floorbossTest.shipNow())
     r.check('a ship is forced through the dock', oid != null, `order ${oid}`)
-    const t0 = Date.now()
+    const t0 = await tickNow()
     let parked = null
-    while (Date.now() - t0 < 10000) {
+    while ((await tickNow()) - t0 < 600) {
         parked = await page.evaluate(() => window.__floorbossTest.truck())
         if (parked.mode === 'park') break
         await new Promise((res) => setTimeout(res, 150))
     }
     r.check('truck backs in and parks at the dock', parked && parked.mode === 'park', JSON.stringify(parked))
-    const t1 = Date.now()
+    const t1 = await tickNow()
     let after = parked
-    while (Date.now() - t1 < 15000) {
+    while ((await tickNow()) - t1 < 900) {
         after = await page.evaluate(() => window.__floorbossTest.truck())
         if (after.mode === 'out') break
         await new Promise((res) => setTimeout(res, 150))
