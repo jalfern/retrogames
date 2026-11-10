@@ -180,7 +180,7 @@ await page.evaluate((i) => { window.__britanniaTest.teleport(i) }, routed0)
 await sleep(120)
 r.check(`menu whirls open again beside gate ${ROMAN[routed0]}`, await openMenuOn(routed0), JSON.stringify(await st()))
 const pre = await st()
-await page.evaluate(() => window.__britanniaTest.setTime(DAY_TICKS * 4))
+await page.evaluate((t) => window.__britanniaTest.setTime(t), DAY_TICKS * 4)
 await sleep(140)
 s = await st()
 r.check(`the day turns to a full moon and the road flips (gate ${ROMAN[routed0]}: ${ROMAN[routeDest(routed0, pre.moon, 8)]} -> ${ROMAN[(routed0 + 4) % 8]})`,
