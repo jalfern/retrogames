@@ -1,75 +1,62 @@
-# STATE — session 201 (2026-11-10, slot b)
+# STATE — session 202 (2026-11-10, slot a)
 
 ## What shipped
-**FLOOR BOSS: THE LOAD-OUT** — squash `6d03998` (PR #1913, closes #1911).
-Parcels stage physically on the dock (one per ship, cap = pad), the call law
-is cap/age-240/tap, trucks back in, load 1 box per TRUCK_LOAD cycle (min
-dwell 40), early-send loses nothing, leftovers recall a second trip, and past
-the four drawn slots the trailer prints `+N` — the never-lies law holds at any
-carry. Truck+pad truth lives in the sim and rides the hash (`T[..]P[..]`); the
-autopilot calls the truck (it is the player's interface). This was slot b's own
-corpse (prior session died at the merge gate); resumed at session start,
-re-verified at tip: floorbosscheck green (incl. 15 load-out gates),
-floorbossplay 24/24 zero page errors x2, contractcheck 682/682, eslint,
-lint:mario/fps/ai, build — then merged via the rule-5 loop (main-ok had
-cleared ~17:20 when the #601 freeze lifted).
+**TALK ME DOWN: THE DRAIN** merged as `a05069d` (#1914, closes #1909) — the
+prior slot-a corpse's PR, verified green by THIS session before anyone merged
+it: bombcheck 88/0, watchcheck TMD 216/216, tmdlinkcheck 56/0, contractcheck
+682/682, eslint + lint:mario/fps/ai + build. bombdrive 55/2 = the known #1871
+seed-7 stale-pin pair, proven identical on clean tip via throwaway :5179
+(not a regression; not in the nightly table). The merge itself landed at
+17:23Z from an adjacent sweep while this lane sat in the shared-token rate
+limit — nothing was lost; the freeze had already lifted on the cancelled-run
+quirk (see lessons). Slot b shipped **#1911 FLOOR BOSS** (`6d03998`); studio
+shipped #1912. Prod content-verified by this lane: live chunk
+`index-yUPnV8U4.js` on the **www** host carries `PULL A BATTERY`.
 
-## TARGET #1909: won at claim, beaten by the sibling at merge — no fight
-#1909 (TMD THE DRAIN) was slot a's corpse (session 199 died at the merge gate
-with gate-green PR #1914); a fresh slot-a session resumed it at 17:22:23 as its
-own corpse-resume and merged 3 seconds BEFORE my `forge-claim.sh 1909 b`
-comment landed. The claim returned CLAIMED only because slot a's checkpoints
-were written `FORGE (a) checkpoint …` — no colon after the slot tag, so they
-never matched the liveness regex and the lock expired "100 min" stale. I did
-not contest the merge (session 198's rule, run in mirror: the lane that owns
-the corpse finishes it) and completed its paperwork: `shipped` label added,
-issue CLOSED (auto by merge), handoff comment posted. THE DRAIN is live code on
-main (`a05069d`).
-**Warden-worthy script gotcha:** resume posts must be `FORGE (<slot>): checkpoint
-…` WITH the colon or they are invisible liveness — locks lapse mid-work and
-invite double-merges.
-
-## Prod verify: DONE — and my probe was the flake, not the deploy
-Live entry `index-fJjcpbjh.js`: FloorBoss chunk `index-CMSESTKK.js` carries
-`HAUL OUT x`, TMD chunk `index-yUPnV8U4.js` carries `PULL A BATTERY, THEN
-DIAL`. Both games verified by CONTENT (not hash). Two real findings survive:
-(1) jalfern.com's edge held a stale-HTML snapshot ~40 min post-deploy
-(`x-vercel-cache: HIT`, `age: 2398+`, despite `no-store`; query strings do not
-bust it — Vercel ignores them by default). (2) My sweep was BROKEN the whole
-time: `tr -d '"./'` deletes every `.` INCLUDING the one in `.js`, so every
-`./index-*` chunk name became `Xjs` and 404'd — a constant false-negative that
-the "impossible" consistency should have flagged earlier (rule 8). Portable
-recipe: sed the `./` prefix, grep chunks for game signatures; content, not hash.
+## The session's real lessons
+- **Main-red #601 was a stale source PIN, not game rot:** watchcheck pinned
+  TMD's seat-toggle to its pre-#1889 one-line layout; `e0e230c` re-pinned it
+  behaviorally (`[\s\S]{0,160}?`) and I proved the pin passes at tip in node
+  BEFORE the nightly verdict. When a check goes red, diff the pinned source
+  first — if behavior is fine and only layout rotted, main recovers without a
+  code PR. The nightly on 8825716 came back SUCCESS (confirmed 18:12Z).
+- **`gh run watch` × several lanes burns the core quota** (0/5000, 17:39–
+  18:11Z, one token for all lanes). Law: single-shot status queries + sleep
+  to `rate_limit.reset`; prod probes are curl-only and cost nothing.
+- **Cancelled ≠ red in main-ok.sh** — the cancelled duplicate run 42860891981
+  became "latest completed" and flipped the script to exit 0 while the real
+  nightly was still in flight. The warden's freeze text (wait for GREEN) is
+  stricter than the script; follow the text.
 
 ## Session bookkeeping
-- #1911 merged (`6d03998`) + CLOSED + `shipped` + prod-verified comment.
-  GitHub API hit its **rate limit** 17:47–18:11Z (all lanes share one token) —
-  batch calls, poll prod with curl.
-- #1909 labels/shipped + CLOSED ✓ (mine), merge credited to slot a in the
-  comment.
-- No jonq filed (nothing taste/priority/hard-to-undo).
-- FloorBoss QA polish pass already exists: #1877 (open, feedback, QA lane).
+- Corpse #1909 resumed (step 1b), verified, shipped `shipped` + CLOSED.
+- TARGET #1911: REFUSED at claim-time by live slot b (its PR #1913 shipped
+  anyway) — cross-assignment by the warden = collision signal; yield, don't
+  race. No ladder needed (corpse priority).
+- QA: handoff comment on #1900 (phone gap: THE DRAIN is keyboard-only — pad A
+  dispatches Space, silence-law'd on the back; needs a design call), plus the
+  watchcheck-pin item ticked. #1871/#1900/#1908/#1877 stay QA-owned.
+- No jonq (nothing taste/priority/hard-to-undo).
 
-## Next queued (slot b)
+## Next queued (slot a)
 1. Fresh ladder: warden TARGET, else halt/steer/next/queue game-first.
-   All session paperwork closed (both issues shipped+prod-verified; shiftreport
-   pushed).
-   #1637 batch 19 stays slot a's rolling issue (last activity 15:24Z kick);
-   don't poach without a claim win. `next` #1711 hardware-gated — watch for
-   Jon's answer.
-2. If dry: fresh weakestStage; QA owns #1871/#1900/#1908/#1877 — builders
-   don't pick those up unless steered.
+   #1637 batch 19 (two more titles seat their watchRoute brains) is the
+   natural pick — check no other lane is inside it before claiming.
+2. If dry: weakestStage; TMD gaps left: mic delivery headless, D4 layout rule,
+   plate variety, phone reach of the pull (triaged on #1900).
+3. Do NOT own the bombdrive seed-7 reds — #1871 until QA ships the fix.
 
-## Notes for the next slot-b session
-- `:5178` dev server runs from `~/Dev/retrogames-forge-fb-loadout` (detached
-  `6d03998`, node_modules symlink) — verify cwd, reuse or kill.
-- Batch GitHub calls; prod probes are curl-only (no API cost). A content sweep
-  of the chunk set is the honest prod test — but strip `./` with `sed`, NOT
-  `tr -d '"./'` (tr eats the dot in `.js`; every fetch 404s and the sweep
-  silently reports absent = a lie machine).
-- floorbossplay's first run right after a dev-server (re)start flakes one
-  live-timing gate; re-run once before investigating (rule 3 spirit).
-- Checkpoint colon law (above) — slot b comments already use it; keep it.
+## Notes for the next slot-a session
+- `:5173` vite runs from `~/Dev/retrogames-forge-tmd-drain`, now detached at
+  origin/main tip — serves whatever is on disk; verify cwd, reuse or kill.
+  Slot b owns :5178; QA studio :5176. :5179 throwaway was torn down.
+- Prod-verify recipe (works): `curl -sL` the **www** host, take
+  `src="/retrogames/assets/index-*.js"`, sweep the `assets/index-*.js`
+  literals in the entry chunk, grep each for a source-string signature.
+  Content, never hash.
+- Batch GitHub calls; prefer one `--jq` over three `gh` invocations.
+- main-ok can read `cancelled` as ok — verify the REAL nightly conclusion
+  before merging anything near a freeze.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
