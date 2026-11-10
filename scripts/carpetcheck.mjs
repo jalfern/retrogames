@@ -2095,6 +2095,98 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     }
 }
 
+// ---- #1764 item 7 stage 3: POSITIONED CREATURE/VILLAGE/LIGHTNING CUES ----
+// The rest of the original's stereo field: lightning crashes, bites, slung
+// rocks, burning villagers, tribute coins and the growl bed all lean to the
+// side of the world they come from, on the same castBearing as the wizfire.
+// Mutation guide: (1) strip x/y from the bite or rocksling push in sim.js —
+// the carrier gates go red while determinism holds; (2) place the wolf on the
+// carpet's LEFT and the composite sign gate goes red (sin/cos swap); (3) drop
+// a pan arg in any handler — that handler's shell pin goes red; (4) make
+// playTone/playNoise/ambTone pan even when pan===null — the opt-in pin below
+// goes red (every other title's one-shot must keep the old direct graph).
+{
+    {
+        // Carrier: a bite knows which wolf bit (position at the chomp tick).
+        const gs = makeGame(7)
+        gs.invis = 0
+        // One wolf does the chomping: the rest sit far and busy on cooldown,
+        // so the bite we catch is provably the one we placed.
+        gs.monsters.forEach((m) => { m.cool = 999 })
+        const wolf = gs.monsters.find((m) => m.kind === 'wolf')
+        wolf.x = wrap(gs.x + 0.5, MAP); wolf.y = wrap(gs.y + 5, MAP) // dead right at yaw 0, pd≈5
+        wolf.cool = 0
+        gs.alt = Math.max(1, sampleH(gs, wolf.x, wolf.y) + 1)
+        // The carpet auto-drifts +x every tick (no stick, no brake) — the bear
+        // must be judged from where the nose was when the bite was BORN.
+        const px = gs.x, py = gs.y
+        gs.events.length = 0
+        step(gs, {})
+        const b = gs.events.find((ev) => ev.type === 'bite')
+        const bp = b ? castBearing({ ...gs, x: px, y: py }, b.x, b.y) : null
+        r.check('#1764-7 bite carries the wolf at the chomp — and a wolf on the right pans right',
+            !!b && b.x === wrap(wolf.x, MAP) && b.y === wrap(wolf.y, MAP) &&
+            !!bp && bp.pan > 0.9 && !bp.behind,
+            b ? `${JSON.stringify({ x: b.x, y: b.y })} pan=${bp.pan.toFixed(2)}` : 'no bite')
+    }
+    {
+        // Carrier: a sling knows which giant threw.
+        const gs = makeGame(7)
+        gs.invis = 0
+        gs.monsters.forEach((m) => { m.cool = 999 })
+        const giant = gs.monsters.find((m) => m.kind === 'giant')
+        giant.x = wrap(gs.x + 20, MAP); giant.y = wrap(gs.y + 20, MAP) // diagonal ahead-right
+        giant.cool = 0
+        gs.events.length = 0
+        step(gs, {})
+        const s = gs.events.find((ev) => ev.type === 'rocksling')
+        const sp = s ? castBearing(gs, s.x, s.y) : null
+        r.check('#1764-7 rocksling carries the giant at the throw — bearing sits ahead-right',
+            !!s && s.x === wrap(giant.x, MAP) && s.y === wrap(giant.y, MAP) &&
+            !!sp && sp.pan > 0.5 && !sp.behind,
+            s ? `${JSON.stringify({ x: s.x, y: s.y })} pan=${sp.pan.toFixed(2)}` : 'no rocksling')
+    }
+    {
+        // Pure read: panning the world must never nudge the sim (same law as
+        // #1746 — the audio half of the game stays as provable as its rules).
+        const gs = makeGame(7)
+        const h0 = stateHash(gs)
+        gs.monsters.forEach((m) => castBearing(gs, m.x, m.y))
+        r.check('#1764-7 bearing every monster is still a pure read — the hash never moves',
+            h0 === stateHash(gs), `${h0} vs ${stateHash(gs)}`)
+    }
+    {
+        const idxSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+        const acSrc = await readFile(new URL('../src/utils/AudioController.js', import.meta.url), 'utf8')
+        const zapH = idxSrc.match(/e\.type === 'zap'\) \{([\s\S]{0,900}?)\n\s+\} else if/)
+        r.check('#1764-7 the shell pans the lightning crack by the strike bearing (behind = softer)',
+            !!zapH && /castBearing\(gs, e\.x, e\.y\)/.test(zapH[0]) &&
+            /playNoise\([^)]*bz\.pan\)/.test(zapH[0]) &&
+            /playSweep\([^)]*bz\.pan\)/.test(zapH[0]) &&
+            /bz\.behind \? 0\.07 : 0\.09/.test(zapH[0]),
+            zapH ? 'routed' : 'zap handler not pinned')
+        r.check('#1764-7 the creature strikes lean — bite and rocksling ride the bearing',
+            /else if \(e\.type === 'rocksling'\) audioController\.playNoise\(0\.07, 0\.05, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc) &&
+            /else if \(e\.type === 'bite'\) audioController\.playTone\(170, 0\.06, 'square', 0\.05, 0, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc))
+        r.check('#1764-7 the growl bed is a VOICE — ambTone pans to the creature it came from',
+            /const bg = castBearing\(gs, near\.x, near\.y\)\.pan/.test(idxSrc) &&
+            /ambTone\(near\.kind === 'giant' \? 44 : 62, 0\.34, 'sawtooth', 0\.026, 0, bg\)/.test(idxSrc))
+        r.check('#1764-7 village sounds land at the village — ignite, burn, hut crash and tribute coin all pan',
+            /e\.type === 'ignite'\)[\s\S]{0,220}playNoise\(0\.12, 0\.05, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc) &&
+            /const bb = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,300}playSweep\(300, 90, 0\.3, 'triangle', 0\.04, bb\)/.test(idxSrc) &&
+            /const hp = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,400}playNoise\(0\.2, 0\.08, hp\)/.test(idxSrc) &&
+            /playTone\(880, 0\.04, 'sine', 0\.03, 0, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc))
+        r.check('#1764-7 the chirp of a creature that lost you comes from THEIR side',
+            /const bl = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,300}playSweep\(f, f \* 0\.78, 0\.14, 'triangle', 0\.035, bl\)/.test(idxSrc))
+        r.check('#1764-7 pan is opt-in in EVERY one-shot — null keeps the old direct graph',
+            /playTone\(freq, duration, type = 'square', vol = 0\.1, delay = 0, pan = null\)/.test(acSrc) &&
+            /playNoise\(duration, vol = 0\.2, pan = null\)/.test(acSrc) &&
+            /ambTone\(freq, duration, type = 'square', vol = 0\.1, delay = 0, pan = null\)/.test(acSrc) &&
+            (acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length >= 4,
+            `guards=${(acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length}`)
+    }
+}
+
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })

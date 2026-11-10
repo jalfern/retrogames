@@ -211,12 +211,14 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(600, 120, 0.5, 'triangle', 0.08)
                     say('YOUR LOAD OF MANA IS LOST')
                 } else if (e.type === 'ignite') {
-                    audioController.playNoise(0.12, 0.05)
+                    // #1764 item 7 stage 3: the thatch catches WHERE it burns.
+                    audioController.playNoise(0.12, 0.05, castBearing(gs, e.x, e.y).pan)
                 } else if (e.type === 'villager' && e.what === 'burn') {
                     // #1764 item 3 — a life in the flames: a low descending
                     // cry under the crackle, and the world names it.
-                    audioController.playSweep(300, 90, 0.3, 'triangle', 0.04)
-                    audioController.playNoise(0.08, 0.03)
+                    const bb = castBearing(gs, e.x, e.y).pan
+                    audioController.playSweep(300, 90, 0.3, 'triangle', 0.04, bb)
+                    audioController.playNoise(0.08, 0.03, bb)
                     say('A VILLAGER HAS BURNED')
                 } else if (e.type === 'villager' && e.what === 'grab') {
                     // #1764 stage 2 — a body on the carpet: a short muffled
@@ -239,11 +241,14 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'tribute') {
                     // The converted hut pays its pearl: a soft coin at the hut
                     // (the pickup chime sings when the pearl is actually taken).
-                    audioController.playTone(880, 0.04, 'sine', 0.03)
+                    // #1764 item 7 stage 3: the coin rings from the hut's side.
+                    audioController.playTone(880, 0.04, 'sine', 0.03, 0, castBearing(gs, e.x, e.y).pan)
                 } else if (e.type === 'hutDown') {
-                    audioController.playNoise(0.2, 0.08)
-                    audioController.playTone(85, 0.12, 'square', 0.06)
-                    if (e.loot) audioController.playTone(980, 0.035, 'triangle', 0.035, 0.12) // stage 2: the savings scatter
+                    // #1764 item 7 stage 3: the timber crash lands on the hut's side.
+                    const hp = castBearing(gs, e.x, e.y).pan
+                    audioController.playNoise(0.2, 0.08, hp)
+                    audioController.playTone(85, 0.12, 'square', 0.06, 0, hp)
+                    if (e.loot) audioController.playTone(980, 0.035, 'triangle', 0.035, 0.12, hp) // stage 2: the savings scatter
                     shake = Math.max(shake, 3)
                 } else if (e.type === 'level') {
                     audioController.playTone(523, 0.12, 'square', 0.07)
@@ -290,15 +295,21 @@ const MagicCarpetGame = () => {
                     say('THE VEIL FADES')
                 } else if (e.type === 'lost') {
                     // #1612 item 1: whoever had you in their sights just blinked.
+                    // #1764 item 7 stage 3: the chirp comes from THEIR side.
                     const f = e.kind === 'giant' ? 340 : e.kind === 'wolf' ? 880 : 720
-                    audioController.playSweep(f, f * 0.78, 0.14, 'triangle', 0.035)
-                    audioController.playSweep(f * 0.78, f * 1.1, 0.16, 'triangle', 0.022, 0.13)
+                    const bl = castBearing(gs, e.x, e.y).pan
+                    audioController.playSweep(f, f * 0.78, 0.14, 'triangle', 0.035, bl)
+                    audioController.playSweep(f * 0.78, f * 1.1, 0.16, 'triangle', 0.022, 0.13, bl)
                     if (e.kind === 'wizard') say('THE WIZARD LOSES YOU')
                 } else if (e.type === 'zap') {
-                    audioController.playNoise(0.16, 0.09)
-                    audioController.playSweep(1500, 260, 0.2, 'square', 0.06)
-                    audioController.playTone(210, 0.26, 'triangle', 0.028, 0.14)
-                    audioController.playTone(140, 0.4, 'triangle', 0.016, 0.3)
+                    // #1764 item 7 stage 3: lightning crashes WHERE it strikes —
+                    // the crack tilts to the strike's side, and a bolt over the
+                    // shoulder reads longer and softer, like the wizfire law.
+                    const bz = castBearing(gs, e.x, e.y)
+                    audioController.playNoise(0.16, bz.behind ? 0.07 : 0.09, bz.pan)
+                    audioController.playSweep(1500, 260, 0.2, 'square', bz.behind ? 0.045 : 0.06, bz.pan)
+                    audioController.playTone(210, 0.26, 'triangle', 0.028, 0.14, bz.pan)
+                    audioController.playTone(140, 0.4, 'triangle', 0.016, 0.3, bz.pan)
                 } else if (e.type === 'heal') {
                     audioController.playTone(660, 0.09, 'sine', 0.06)
                     audioController.playTone(880, 0.14, 'sine', 0.06, 0.09)
@@ -431,8 +442,8 @@ const MagicCarpetGame = () => {
                     audioController.playSweep(920, 380, br.behind ? 0.18 : 0.14, 'sawtooth',
                         br.behind ? 0.04 : 0.05, br.pan)
                 }
-                else if (e.type === 'rocksling') audioController.playNoise(0.07, 0.05)
-                else if (e.type === 'bite') audioController.playTone(170, 0.06, 'square', 0.05)
+                else if (e.type === 'rocksling') audioController.playNoise(0.07, 0.05, castBearing(gs, e.x, e.y).pan)
+                else if (e.type === 'bite') audioController.playTone(170, 0.06, 'square', 0.05, 0, castBearing(gs, e.x, e.y).pan)
                 else if (e.type === 'hurt') {
                     audioController.playNoise(0.1, 0.07)
                     audioController.playTone(120, 0.09, 'square', 0.06)
@@ -514,8 +525,11 @@ const MagicCarpetGame = () => {
                 const near = gs.monsters.find((m) => m.kind !== 'cow' &&
                     Math.hypot(((m.x - gs.x + MAP / 2) % MAP + MAP) % MAP - MAP / 2, ((m.y - gs.y + MAP / 2) % MAP + MAP) % MAP - MAP / 2) < 95)
                 if (near) {
-                    audioController.ambTone(near.kind === 'giant' ? 44 : 62, 0.34, 'sawtooth', 0.026)
-                    audioController.ambTone(near.kind === 'giant' ? 33 : 47, 0.5, 'sawtooth', 0.016, 0.2)
+                    // #1764 item 7 stage 3: the growl bed is a VOICE — it stands
+                    // where the creature stands, behind the veil's low-pass.
+                    const bg = castBearing(gs, near.x, near.y).pan
+                    audioController.ambTone(near.kind === 'giant' ? 44 : 62, 0.34, 'sawtooth', 0.026, 0, bg)
+                    audioController.ambTone(near.kind === 'giant' ? 33 : 47, 0.5, 'sawtooth', 0.016, 0.2, bg)
                 }
             }
             boostPrev = boostOn
