@@ -20,7 +20,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx } from './minefield.js'
+import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors } from './minefield.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -38,6 +38,94 @@ const FLAG_KEYS = new Set(['KeyB', 'ShiftLeft', 'ShiftRight'])
 const KEY_SET = new Set([...MOVE_KEYS, ...DIG_KEYS, ...FLAG_KEYS])
 
 const NUM_COLORS = ['', '#4aa3ff', '#3fbf5f', '#ff5d6c', '#c07fff', '#ffb04a', '#3fd7d7', '#e8e8e8', '#ff8fb0']
+
+// #1883(5): LED-flavoured 7-segment digits — the clue numbers and the HUD
+// counters share one glyph, the arcade family look docs/ART.md asks for.
+// Segments: 0 top, 1 top-right, 2 bottom-right, 3 bottom, 4 bottom-left,
+// 5 top-left, 6 middle, 7 dot (HUD zero-placeholder ghosts, dim).
+const SEG_PINS = [0b00001111, 0b00000110, 0b01011011, 0b00111111, 0b00110110, 0b00110011]
+const drawDigit7 = (g, chPx, cyPx, h, color, ghost) => {
+    const w = h * 0.58
+    const t = Math.max(1.6, h * 0.16)
+    const x0 = chPx - w / 2, y0 = cyPx - h / 2, x1 = chPx + w / 2, y1 = cyPx + h / 2
+    const ym = cyPx
+    const seg = (kind, k) => {
+        let d = 0
+        if (kind === 'h') d = k === 0 ? 0b10000001 : k === 3 ? 0b00001000 : 0b01000010
+        else if (kind === 'v') d = k === 1 ? 0b00100100 : k === 4 ? 0b00000001 : 0b00010000
+        else d = 0b00000100
+        g.fillStyle = d & 0b00000100 ? color : ghost
+        g.globalAlpha = d & 0b00000100 ? 1 : 0.14
+        if (kind === 'h') {
+            const y = k === 0 ? y0 : k === 3 ? y1 - t : ym - t / 2
+            g.fillRect(x0 + t / 2, y, w - t, k === 6 ? t * 0.85 : t)
+        } else if (kind === 'v') {
+            const x = k === 1 ? x1 - t : x0
+            const yTop = k === 1 || k === 2 ? ym + t * 0.2 : y0
+            const yBot = k === 1 || k === 2 ? y1 : ym - t * 0.2
+            g.fillRect(x, yTop + t / 2, t, yBot - yTop - t)
+        } else {
+            g.fillRect(x1 - t, y1 - t, t, t)
+        }
+        g.globalAlpha = 1
+    }
+    return {
+        on: (k) => seg(k < 6 ? (k === 0 || k === 3 || k === 6 ? 'h' : 'v') : 'd', k),
+    }
+}
+// Paint an integer right-aligned in n digits; `ghost` draws the dim
+// unlit segments of a VFD panel (the HUD counters), cells pass none.
+const drawNum7 = (g, val, n, cxPx, cyPx, digitH, color, ghost) => {
+    const str = String(Math.max(0, Math.min(999, val))).padStart(n, ' ')
+    const stepX = digitH * 0.74
+    const x0 = cxPx - (n - 1) * stepX / 2
+    for (let k = 0; k < n; k++) {
+        const chr = str[k]
+        const d = drawDigit7(g, x0 + k * stepX, cyPx, digitH, color, ghost)
+        if (chr === ' ') {
+            if (ghost) for (let s = 0; s < 8; s++) d.on(s)
+            continue
+        }
+        const pins = SEG_PINS[+chr]
+        for (let s = 0; s < 7; s++) if (pins & (1 << s)) d.on(s)
+        if (ghost && +chr === 0) d.on(7)
+    }
+}
+
+// #1883(2): the reactive face cell — the original's smiley. Presentation
+// only: it reads the board state, never writes it.
+const FACE_BG = '#ffd23e', FACE_INK = '#171d33', FACE_GLASS = '#222b4d', FACE_RED = '#ff5d6c'
+const drawFace = (g, v) => {
+    const S = 28, cx = 14, cy = 14
+    g.clearRect(0, 0, S, S)
+    g.fillStyle = FACE_BG
+    g.beginPath(); g.arc(cx, cy, 12, 0, 7); g.fill()
+    if (v === 'dead') {
+        g.strokeStyle = FACE_INK; g.lineWidth = 2
+        g.beginPath(); g.moveTo(6, 7); g.lineTo(11, 12); g.moveTo(11, 7); g.lineTo(6, 12); g.stroke()
+        g.beginPath(); g.moveTo(17, 7); g.lineTo(22, 12); g.moveTo(22, 7); g.lineTo(17, 12); g.stroke()
+        g.beginPath(); g.arc(cx, 20, 3.4, 0, 7); g.stroke(); g.lineWidth = 1
+    } else if (v === 'cool') {
+        g.fillStyle = FACE_GLASS
+        g.fillRect(4, 9.5, 20, 5)
+        g.fillRect(6, 11, 6, 4.5); g.fillRect(16, 11, 6, 4.5)
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 15, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    } else if (v === 'win') {
+        g.fillStyle = FACE_INK
+        g.fillRect(7, 10, 4, 2); g.fillRect(17, 10, 4, 2)
+        g.strokeStyle = FACE_RED; g.lineWidth = 2
+        g.beginPath(); g.arc(cx, 14, 8, 0.3, Math.PI - 0.3); g.stroke()
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 15, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    } else {
+        g.fillStyle = FACE_INK
+        g.beginPath(); g.arc(10, 11, 1.7, 0, 7); g.fill()
+        g.beginPath(); g.arc(18, 11, 1.7, 0, 7); g.fill()
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 14, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    }
+}
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -76,6 +164,22 @@ const MinesweeperGame = () => {
         // per dig so the sweep reads as logic, not a flash). The plan is
         // recomputed reactively, never replayed blind.
         let watchPlan = [], watchWait = 0
+        // #1883 presentation-only layers (the referee in ./minefield.js never
+        // sees any of them — s.flag/s.open/stateHash stay byte-identical):
+        // marks[i]: 2 = "?" the player parked on a covered cell (the original's
+        // empty -> flag -> ? cycle lives HERE because s.flag is a hard fact the
+        // solver and the mine counter read).
+        let marks = null
+        // cascade: on the win, march a flag onto every unflagged mine one at a
+        // time (the original's ~50 ms beat) before the over screen.
+        let cascade = []
+        let cascTotal = 0
+        let cascWait = 0
+        let cascDone = false
+        const CASCADE_TICKS = 3
+        // stagger: a chord's fresh ring opens flicker-cell-by-cell instead of
+        // one paint (2 ticks per cell); sim truth opened instantly.
+        const stagger = new Map()
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
@@ -104,6 +208,9 @@ const MinesweeperGame = () => {
             buildCanvas(d)
             plantMs = 0
             watchPlan = []; watchWait = 0
+            marks = new Uint8Array(d.w * d.h)
+            cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
+            stagger.clear()
         }
 
         // ------------------------------------------------------- audio ----
@@ -114,7 +221,17 @@ const MinesweeperGame = () => {
                 else if (e.t === 'flood') audioController.playSweep(300 + e.dug * 6, 640, 0.12, 'triangle', 0.045)
                 else if (e.t === 'flag') audioController.playTone(560, 0.05, 'square', 0.05)
                 else if (e.t === 'unflag') audioController.playTone(300, 0.05, 'square', 0.04)
-                else if (e.t === 'chord') audioController.playSweep(420, 780, 0.1, 'square', 0.05)
+                else if (e.t === 'chord') {
+                    audioController.playSweep(420, 780, 0.1, 'square', 0.05)
+                    // #1883(4): queue the fresh ring for the staggered paint.
+                    // The map is cleared at the chord entry (before minefield
+                    // opens anything), so by now it holds exactly this ring.
+                    const i0 = idx(s, e.x, e.y)
+                    neighbors(s, e.x, e.y, (nx, ny) => {
+                        const j = idx(s, nx, ny)
+                        if (j !== i0 && s.open[j]) stagger.set(j, stagger.size * 2)
+                    })
+                }
                 else if (e.t === 'dry') audioController.playTone(140, 0.04, 'square', 0.025)
                 else if (e.t === 'nope') audioController.playTone(110, 0.06, 'sawtooth', 0.03)
                 else if (e.t === 'boom') audioController.playNoise(0.5, 0.16)
@@ -133,14 +250,25 @@ const MinesweeperGame = () => {
                 end: s.end, why: s.why, sec: s.sec, score: s.score,
                 mines: s.totalMines, diff: s.diff, wrong,
             })
-            if (s.end === 'win') { setSc('over'); say('FIELD SWEPT') }
-            else overDelay = 40
+            if (s.end === 'win') {
+                // #1883(3): the original flagged the leftovers one tile at a
+                // time before the fanfare; the over screen waits for the
+                // march (any key or tap skips it — it stays skippable).
+                cascade = []
+                for (let i = 0; i < s.w * s.h; i++) if (s.mines[i] && !s.flag[i]) cascade.push(i)
+                cascTotal = cascade.length
+                cascWait = CASCADE_TICKS
+                say('FIELD SWEPT')
+                if (!cascade.length) setSc('over')
+            } else overDelay = 40
         }        // The one dig path: keyboard, tap and the DEV hook all land here so
         // the harness and the player never drive different code.
         const actDig = (x, y) => {
             if (!gs || gs.end || screenRef.current !== 'play' || plantPending) return
             if (gs.planted) {
+                stagger.clear() // a fresh action outranks the last flicker
                 const i = idx(gs, x, y)
+                if (marks) marks[i] = 0 // a dig takes the cell out of the cycle
                 const openedNum = gs.open[i] && gs.clue[i] > 0
                 if (openedNum) {
                     let around = 0
@@ -176,7 +304,22 @@ const MinesweeperGame = () => {
 
         const actFlag = (x, y) => {
             if (!gs || gs.end || screenRef.current !== 'play' || !gs.planted) return
+            const i = idx(gs, x, y)
+            if (gs.open[i]) return
+            // #1883(1): the original's three-state cycle on one verb —
+            // empty -> flag -> "?" -> empty. The "?" is the shell's, never
+            // the board's: s.flag stays the solver's hard fact and the mine
+            // counter (totalMines - s.flags) ignores it by construction.
+            const m = marks ? marks[i] : 0
+            if (m === 2) {
+                // ? -> empty: the board never held this mark, so the shell owns
+                // the sound (flag/unflag blips stay tied to s.flag moves).
+                audioController.playTone(360, 0.04, 'square', 0.03)
+                if (marks) marks[i] = 0
+                return
+            }
             flag(gs, x, y)
+            if (marks) marks[i] = gs.flag[i] ? 1 : 2
             handleEvents(gs)
         }
 
@@ -212,7 +355,10 @@ const MinesweeperGame = () => {
             const i = idx(s, x, y)
             const c = s.cell
             const px = x * c, py = y * c
-            const revealed = !!s.open[i]
+            const revealed = !!s.open[i] && !stagger.has(i)
+            const cascPaint = cascDone
+                ? (s.mines[i] && !s.flag[i])
+                : cascade.length > 0 && s.mines[i] && !s.flag[i] && cascade.indexOf(i) < cascTotal - cascWait
             const dead = s.end === 'dead'
             if (revealed) {
                 ctx.fillStyle = '#101527'
@@ -226,10 +372,9 @@ const MinesweeperGame = () => {
                     ctx.fillRect(px + c * .5 - 1, py + c * .18, 2, c * .64)
                     ctx.fillRect(px + c * .18, py + c * .5 - 1, c * .64, 2)
                 } else if (s.clue[i] > 0) {
-                    ctx.fillStyle = NUM_COLORS[s.clue[i]] || '#fff'
-                    ctx.font = `bold ${Math.round(c * 0.68)}px monospace`
-                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
-                    ctx.fillText(String(s.clue[i]), px + c / 2, py + c / 2 + 1)
+                    // #1883(5): the clue is a 7-segment glyph, not a font (the
+                    // digits join the HUD counters as one LED family).
+                    drawNum7(ctx, s.clue[i], 1, px + c / 2, py + c / 2 + 1, c * 0.62, NUM_COLORS[s.clue[i]] || '#fff', null)
                 }
             } else {
                 const lift = s.planted ? 0 : 1
@@ -239,7 +384,7 @@ const MinesweeperGame = () => {
                 ctx.fillRect(px, py, c, 2); ctx.fillRect(px, py, 2, c)
                 ctx.fillStyle = '#232c47'
                 ctx.fillRect(px, py + c - 2, c, 2); ctx.fillRect(px + c - 2, py, 2, c)
-                if (s.flag[i]) {
+                if (s.flag[i] || cascPaint) {
                     const wrongFlag = dead && !s.mines[i]
                     ctx.fillStyle = wrongFlag ? '#888' : '#ff5d6c'
                     ctx.beginPath()
@@ -255,6 +400,13 @@ const MinesweeperGame = () => {
                         ctx.moveTo(px + c - 3, py + 3); ctx.lineTo(px + 3, py + c - 3); ctx.stroke()
                         ctx.lineWidth = 1
                     }
+                } else if (marks && marks[i] === 2 && !s.flag[i] && !cascPaint) {
+                    // #1883(1): the dim "?" park — lighter than the covered
+                    // tile, darker than a flag; the cell stays covered.
+                    ctx.fillStyle = '#9fb0e8'
+                    ctx.font = `bold ${Math.round(c * 0.62)}px monospace`
+                    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+                    ctx.fillText('?', px + c / 2, py + c / 2 + 1)
                 } else if (dead && s.mines[i]) {
                     ctx.fillStyle = '#ff5d6c'
                     ctx.beginPath(); ctx.arc(px + c / 2, py + c / 2, c * 0.3, 0, 7); ctx.fill()
@@ -341,8 +493,11 @@ const MinesweeperGame = () => {
             const s = gs
             if (!s) return
             const left = s.totalMines - s.flags
-            if (h.mines) h.mines.textContent = String(Math.max(0, left)).padStart(3, '0')
-            if (h.time) h.time.textContent = String(s.sec).padStart(3, '0')
+            const mcv = hudRef.current.mctx, tcv = hudRef.current.tctx, fcv = h.face
+            if (mcv) { const g = mcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, Math.max(0, left), 3, 32, 10, 14, '#ff6b7a', '#3a1015') }
+            if (tcv) { const g = tcv.getContext('2d'); g.clearRect(0, 0, 64, 20); drawNum7(g, s.sec, 3, 32, 10, 14, '#5fd0ff', '#0f2836') }
+            if (fcv) drawFace(fcv.getContext('2d'),
+                s.end === 'dead' ? 'dead' : s.end === 'win' ? 'win' : s.opened > 1 ? 'cool' : 'smile')
             if (h.toast) { h.toast.textContent = toastMsg; h.toast.style.opacity = toast > 0 ? '1' : '0' }
             if (toast > 0 && !pausedRef.current) toast--
             // the pad mounts/unmounts on keyboard-vs-touch use without firing a
@@ -365,8 +520,17 @@ const MinesweeperGame = () => {
                 acc -= SIM_MS
                 if (sc === 'attract') tickDemo()
                 else if (sc === 'play' && gs && gs.planted && !gs.end) step(gs)
+                // #1883 presentation clocks (shell-side; the sim already banked
+                // these states — this only paces what the eye gets).
+                for (const [j, n] of stagger) { if (n <= 1) stagger.delete(j); else stagger.set(j, n - 1) }
+                if (cascade.length && sc === 'play' && --cascWait <= 0) {
+                    cascade.shift()
+                    audioController.playTone(560, 0.05, 'square', 0.05) // the shared flag blip
+                    cascWait = CASCADE_TICKS
+                    if (!cascade.length) { cascDone = true; overDelay = 24 }
+                }
                 if (sc === 'play' && watchingRef.current) watchTick()
-                if (overDelay > 0 && --overDelay === 0 && gs && gs.end === 'dead' && screenRef.current === 'play') setSc('over')
+                if (overDelay > 0 && --overDelay === 0 && gs && gs.end && screenRef.current === 'play') setSc('over')
             }
             if (sc === 'attract') paintDemo()
             else paint()
@@ -392,6 +556,8 @@ const MinesweeperGame = () => {
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            // #1883(3): the flag march is skippable — any key finishes it.
+            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); setSc('over'); return }
             // #1637 WATCH: Y seats the referee; any driving key hands back and
             // still lands where the player aimed it (the takeover digs/moves).
             if (isWatchKey(e)) {
@@ -442,6 +608,8 @@ const MinesweeperGame = () => {
             // taps that belong to the virtual pad (or any chrome) must not
             // also dig the cell under them — only the canvas digs
             if (e.target !== canvas) return
+            // #1883(3): a tap on the field finishes the flag march too.
+            if (cascade.length) { cascade = []; cascDone = true; stagger.clear(); setSc('over'); return }
             // #1637 WATCH: a tap on the field is the player digging — the
             // prover hands back (blip), and the tap still lands.
             if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
@@ -512,6 +680,7 @@ const MinesweeperGame = () => {
                     seed, opened: gs.opened, flags: gs.flags, totalMines: gs.totalMines,
                     end: gs.end, why: gs.why, cursor: { ...gs.cursor }, plantMs,
                     sec: gs.sec, w: gs.w, h: gs.h,
+                    cascade: cascade.length, marksQ: marks ? marks.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) : 0,
                     toast: hudRef.current.toast ? hudRef.current.toast.textContent : '',
                 }) : { screen: screenRef.current, seed },
                 start: (di = 0, sd) => startPlay(di, sd === undefined ? seed : (seed = sd >>> 0, sd)),
@@ -536,6 +705,35 @@ const MinesweeperGame = () => {
                     return `replanted at ${gs.cursor.x},${gs.cursor.y} in ${plantMs}ms`
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
+                // #1883 polish probes: the presentation layers the referee must
+                // never see, plus drives for the gates that need a chord or a
+                // win without a 70-dig tour.
+                staggered: () => stagger.size,
+                cascading: () => cascade.length,
+                marksCount: () => (marks ? marks.reduce((a, v) => a + (v === 2 ? 1 : 0), 0) : 0),
+                unflagAt: (x, y) => {
+                    if (!gs || gs.end || screenRef.current !== 'play' || !gs.planted) return false
+                    const i = idx(gs, x, y)
+                    if (!gs.flag[i]) return false
+                    flag(gs, x, y)
+                    if (marks) marks[i] = 0
+                    handleEvents(gs)
+                    return true
+                },
+                forceWin: () => {
+                    if (!gs || gs.end || screenRef.current !== 'play' || !gs.planted) return false
+                    // close the board by OPENING its safe cells only — the
+                    // player's flags stay exactly as they were, so the win
+                    // march still owns every unflagged mine.
+                    for (let y = 0; y < gs.h * gs.w; y++) {
+                        if (gs.end) break
+                        if (!gs.mines[y] && !gs.open[y]) dig(gs, y % gs.w, (y / gs.w) | 0)
+                    }
+                    if (!gs.end) gs.end = 'win' // a degenerate no-act close; real boards close honestly
+                    handleEvents(gs)
+                    finish(gs)
+                    return true
+                },
                 // #1637 WATCH probes: is the prover driving, did it blip.
                 watching: () => watchingRef.current && screenRef.current === 'play',
                 watchSfx: watchSfxLog,
@@ -594,10 +792,18 @@ const MinesweeperGame = () => {
                     className={`flex items-center justify-center gap-3 font-mono text-xs text-white transition-opacity duration-300 mb-1.5 ${play ? 'opacity-100' : 'opacity-0'}`}
                     style={{ height: HUD_H }}
                 >
-                    <span ref={setHud('mines')} className="text-red-400 font-bold" style={{ textShadow: '0 0 8px #f04' }}>010</span>
-                    <span className="text-white/50">mines</span>
+                    {/* #1883: LED-flavoured counters + the reactive face cell —
+                        one small canvas each, the same 7-segment glyph the clue
+                        digits use. Presentation only; syncHud redraws per frame.
+                        data-adaptive: chrome canvases are never the letterbox
+                        problem RotateHint exists for (#1147 scans every canvas). */}
+                    <canvas ref={setHud('mctx')} data-sweep-count="mines" data-adaptive="1" width="64" height="20"
+                        className="opacity-90" style={{ imageRendering: 'pixelated' }} />
+                    <canvas ref={setHud('face')} data-sweep-face="1" data-adaptive="1" width="28" height="28"
+                        className="opacity-90" style={{ imageRendering: 'pixelated' }} />
                     <span ref={setHud('diff')} className="border border-amber-300/60 text-amber-200 px-2 py-0.5 rounded bg-black/40">{DIFFS[diffIdx].name}</span>
-                    <span ref={setHud('time')} className="text-cyan-300 font-bold" style={{ textShadow: '0 0 8px #08f' }}>000</span>
+                    <canvas ref={setHud('tctx')} data-sweep-count="time" data-adaptive="1" width="64" height="20"
+                        className="opacity-90" style={{ imageRendering: 'pixelated' }} />
                 </div>
             </div>
 
