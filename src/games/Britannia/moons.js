@@ -38,3 +38,22 @@ export const PHASE_FLAVOR = [
 ]
 
 export const gateFlavor = (phase) => PHASE_FLAVOR[((Math.round(phase) % 8) + 8) % 8]
+
+// Moon-phase routing (#1862): in the original the gate is no taxi — the moon
+// decides the destination. Ultima IV's exact table isn't in the bundle, so
+// rather than fake its rows we honour the RULE honestly: each phase rotates
+// the gate circle by a fixed non-zero offset — the wheel turns wider as the
+// moon waxes (1,3,5,7), the full moon rides diameters (4), and the waning
+// mirrors the waxing (7,5,3). Fixed, learnable, deterministic — and since
+// every phase is a rotation, each is a derangement: no gate ever routes to
+// itself, and no gate is ever left without a destination.
+export const ROUTE_OFFSET = [1, 3, 5, 7, 4, 7, 5, 3]
+
+// gate --phase--> destination gate, n = gates on the map. The shift is held
+// in 1..n-1 so the rotation stays well-formed (never self) for any n >= 2.
+export const routeDest = (gate, phase, n = MOONS.length) => {
+    if (n < 2) return gate
+    const off = ROUTE_OFFSET[((Math.round(phase) % 8) + 8) % 8]
+    const shift = ((off - 1) % (n - 1)) + 1
+    return (((gate % n) + n) % n + shift) % n
+}
