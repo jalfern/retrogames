@@ -66,6 +66,7 @@
     "gravelcheck": "node scripts/gravelcheck.mjs",
     "gravelplay": "node scripts/gravelplay.mjs",
     "bombcheck": "node scripts/bombcheck.mjs",
+    "platecheck": "node scripts/platecheck.mjs",
     "defusecheck": "node scripts/defusecheck.mjs",
     "defuselinkcheck": "node scripts/defuselinkcheck.mjs",
     "tmdlinkcheck": "node scripts/tmdlinkcheck.mjs",

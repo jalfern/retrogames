@@ -163,6 +163,32 @@ export function ruleOf(m) {
     return RULEBOOK[m.type].find(r => r.id === m.stamp)
 }
 
+// ---- the battery rail (#1917) ----------------------------------------------
+// THE RAIL LAW — the back plate's holders are a physical slide-rail tray.
+// Cells sit in a SEEDED layout (not left-packed), and the tray opens at the
+// right end: only the cell nearest the open end can leave the plate. A tap
+// on a blocked or empty slot refuses SILENTLY — the #1909 fiddle law holds
+// at slot level (reading the rail is the puzzle; looking is never a strike).
+// The layout comes from a side-stream rng keyed on seed+round, so the module
+// stream is untouched and every bomb generated before the rail still builds
+// byte-identically (seed-pin law: batch after batch of pinned rigs prove it).
+export function trayLayout(seed, round, count) {
+    if (count <= 0) return [0, 0, 0]
+    if (count >= 3) return [1, 1, 1]
+    const rng = mulberry32(((seed ^ Math.imul(round, 0x9E3779B1)) ^ 0x5EED) >>> 0)
+    const pick = (rng() * 3) | 0
+    return count === 2
+        ? [0, 1, 2].map(i => (i === pick ? 0 : 1))
+        : [0, 1, 2].map(i => (i === pick ? 1 : 0))
+}
+
+// railOpen — the slot the rail releases: the rightmost occupied cell
+// (everything behind it is blocked by it), or -1 on an empty plate.
+export function railOpen(tray) {
+    for (let j = 2; j >= 0; j--) if (tray[j]) return j
+    return -1
+}
+
 // computeTarget — the solver primitive (the CPU manual partner and the harness
 // both use THIS; the printed rule text is the human copy of the same truth).
 export function computeTarget(gs, m) {
@@ -280,6 +306,12 @@ export function buildBomb(gs) {
     // when D4 is picked (or fall back to its else-branch — both resolve).
     gs.features = features
     gs.modules = mods
+    // #1917 THE RAIL: the tray lands with this bomb's seeded layout (side-
+    // stream rng — the module stream never saw it); the hand enters at the
+    // rail's right end (the drawer side), sel 2.
+    gs.tray = trayLayout(gs.seed, round, features.batteries)
+    gs.sel = 2
+    gs.heldSlot = -1
     gs.fuse = fuseFor(round) * 60
     gs.fuseMax = gs.fuse
     gs.cursor = { mod: 0, sub: 0 }
@@ -333,6 +365,9 @@ export function createGame(seed, players = 1) {
         flip: 0,              // #1797: 0 = module panel, 1 = back plate
         held: 0,              // #1909: battery in hand (0/1 — the pocket is one deep)
         pulls: 0,             // #1909: batteries pulled since this bomb armed (pull rules gate on it)
+        tray: [0, 0, 0],      // #1917: the rail — three holders, seeded layout (filled in buildBomb)
+        sel: 2,               // #1917: slot under the hand while flipped (the rail's right end)
+        heldSlot: -1,         // #1917: where the in-hand cell came from (push-back re-clips home)
         aPrev: false,         // #1909: A held last tick — the drain edge-detects on it (not hashed: input echo)
     }
     buildBomb(gs)
@@ -366,18 +401,29 @@ function defuserAct(gs, pad) {
     // Seat 1 alone owns hands; the manual seat never sees the bomb.
     if (gs.flip) {
         if (pad.down) { gs.flip = 0; gs.events.push({ k: 'flip', to: 0 }); return }
+        // #1917 THE RAIL: LEFT/RIGHT move the hand across the three holders.
+        // Picking a slot is handling, not a verb — free and uneventful.
+        if (pad.left) { gs.sel = (gs.sel + 2) % 3; return }
+        if (pad.right) { gs.sel = (gs.sel + 1) % 3; return }
         // #1909 THE DRAIN — while the back is up, A is a hand: it pulls one
         // battery out (the pocket holds one) or puts it back. Handling the
         // batteries is as free as the tilt itself — the empty end and the
         // full end refuse SILENTLY, a fiddle with the plate is never a strike.
         // The drain is EDGE-triggered (aTap): the flip branch has no lock to
         // swallow held-key repeats, so a held A would ratchet pull-push-pull.
-        // One press, one action.
+        // One press, one action. #1917 adds the rail law inside: the pulled
+        // cell must be the one at the open end — a blocked slot refuses with
+        // the same silence as the empty end.
         if (aTap && gs.held === 0 && gs.features.batteries > 0) {
-            gs.features.batteries -= 1; gs.held = 1; gs.pulls += 1
-            gs.events.push({ k: 'pull' })
+            if (gs.tray[gs.sel] === 1 && gs.sel === railOpen(gs.tray)) {
+                gs.tray[gs.sel] = 0
+                gs.features.batteries -= 1; gs.held = 1; gs.heldSlot = gs.sel; gs.pulls += 1
+                gs.events.push({ k: 'pull' })
+            }
         } else if (aTap && gs.held > 0) {
-            gs.features.batteries += 1; gs.held = 0
+            const home = gs.heldSlot >= 0 && gs.heldSlot <= 2 && !gs.tray[gs.heldSlot] ? gs.heldSlot : gs.sel
+            gs.tray[home] = 1
+            gs.features.batteries += 1; gs.held = 0; gs.heldSlot = -1
             gs.events.push({ k: 'push' })
         }
         return
@@ -537,6 +583,11 @@ export function solvePad(gs) {
     // tilt, pull (the back's one verb), then the front resumes as before.
     if (gs.modules.some(x => !x.solved && ruleOf(x).pull && gs.pulls === 0 && gs.features.batteries >= 1)) {
         if (!gs.flip) return gs.cursor.mod === 0 ? { up: true } : { down: true }
+        // #1917: the brain reads the rail too — home to the open-end cell
+        // before spending the press. Same law the drawn tabs teach.
+        const open = railOpen(gs.tray)
+        if (open < 0) return { down: true }
+        if (gs.sel !== open) return gs.sel > open ? { left: true } : { right: true }
         return { a: true }
     }
     if (gs.flip) return { down: true }
@@ -591,6 +642,9 @@ export function simState(gs) {
         flipped: gs.flip,                // #1797: which side you are on
         held: gs.held,                 // #1909: battery in hand (THE DRAIN)
         pulls: gs.pulls,               // #1909: drains spent on this bomb
+        tray: gs.tray.slice(),        // #1917: the rail — what the plate shows, the state says
+        sel: gs.sel,                  // #1917: slot under the hand
+        heldSlot: gs.heldSlot,        // #1917: where the in-hand cell came from
         cursor: { ...gs.cursor },
         modules: gs.modules.map(m => ({
             stamp: m.stamp, type: m.type, solved: m.solved, locked: m.locked > 0,
@@ -612,6 +666,7 @@ export function hash(gs) {
         gs.features.serial, gs.features.leds, gs.features.bolt, gs.features.batteries,
         gs.cursor.mod, gs.cursor.sub, gs.manual.page, gs.manual.line, gs.flip,
         gs.held, gs.pulls, // #1909: THE DRAIN is observable state (#494)
+        gs.tray.join(''), gs.sel, gs.heldSlot, // #1917: THE RAIL never lies — layout, hand and home ride the hash
         gs.modules.map(m => `${m.stamp}${m.solved ? 1 : 0}${m.locked}${m.dial ?? -1}${m.wires ? m.wires.map(w => `${w.color}${w.lit ? 1 : 0}${w.cut ? 1 : 0}`).join('') : ''}`).join('|'),
         Object.values(gs.seqInput).map(q => q.join('')).join('.'),
     ].join(',')

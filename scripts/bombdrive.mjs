@@ -497,6 +497,44 @@ if (pill) {
         return amber
     })
     ok('the back plate draws its battery bank (amber battery pixels)', backPx > 600, `amber=${backPx}`)
+    // #1917 THE RAIL with real keys: pick a blocked slot -> silence; home to
+    // the open end -> the cell comes out; once more -> it re-clips home.
+    {
+        const st0 = await page.evaluate(() => window.__tmdTest.state())
+        ok('the rail reaches the test hook (tray/sel in simState)', Array.isArray(st0.tray) && st0.tray.length === 3 && Number.isInteger(st0.sel))
+        const t0 = st0.tray.map(Number)
+        let open = -1
+        for (let j = 2; j >= 0; j--) if (t0[j]) { open = j; break }
+        let sCur = st0.sel
+        const goTo = async target => {
+            while (sCur !== target) {
+                await page.keyboard.press(sCur > target ? 'ArrowLeft' : 'ArrowRight')
+                await sleep(90)
+                sCur = await page.evaluate(() => window.__tmdTest.state().sel)
+            }
+        }
+        const blocked = (open + 2) % 3
+        if (st0.held === 0 && open >= 0 && t0[blocked] === 1) {
+            await goTo(blocked)
+            const pre = await page.evaluate(() => window.__tmdTest.state())
+            await page.keyboard.press('Space'); await sleep(120)
+            const ref = await page.evaluate(() => window.__tmdTest.state())
+            ok('real keys at a blocked slot: silence — no pull, no strike, hand stays',
+                ref.held === pre.held && ref.pulls === pre.pulls && ref.strikes === pre.strikes && ref.batteries === pre.batteries,
+                JSON.stringify([ref.held, ref.pulls, ref.strikes, ref.batteries]))
+            await goTo(open)
+            await page.keyboard.press('Space'); await sleep(120)
+            const out = await page.evaluate(() => window.__tmdTest.state())
+            ok('the open-end cell comes out on a real Space (rail truth in state)',
+                out.held === 1 && out.pulls === st0.pulls + 1 && out.heldSlot === open && out.batteries === st0.batteries - 1,
+                JSON.stringify([out.held, out.pulls, out.heldSlot, out.batteries]))
+            await page.keyboard.press('Space'); await sleep(120)
+            const back = await page.evaluate(() => window.__tmdTest.state())
+            ok('put-back re-clips the cell to the slot it came from',
+                back.held === 0 && back.batteries === st0.batteries && back.tray.map(Number).join('') === t0.join(''),
+                JSON.stringify([back.held, back.batteries, back.tray.join('')]))
+        }
+    }
     // wrong verbs on the back stay silent — a strike would spark + shake
     const before = await page.evaluate(() => window.__tmdTest.state())
     await page.keyboard.press('Space')

@@ -441,7 +441,18 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
 // bays, a hazard stencil, the battery bank D5/G5 demand aloud, and — since
 // #1802 — the SERIAL on its ID plate. The fuse and the strike breakers stay
 // drawn by the caller — pressure never hides.
-export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0) {
+// #1917 THE RAIL: the three holders are a slide-rail tray with a SEEDED cell
+// layout. The rail opens at the right; a cell with another cell between it and
+// the opening has its pull-tab clipped (dark slate), the open-end cell wears a
+// bright amber tab. < > moves the hand; the action line names what A does for
+// THIS slot — never lies (plate truth, hash truth, engine truth: one rail).
+export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0, trayIn = null, selIn = 2) {
+    const tray = Array.isArray(trayIn) && trayIn.length === 3
+        ? trayIn.map(v => (v ? 1 : 0))
+        : [0, 1, 2].map(i => (i < batteries ? 1 : 0)) // pre-rail callers: the classic left-packed plate
+    const sel = selIn >= 0 && selIn <= 2 ? selIn | 0 : 2
+    let open = -1
+    for (let j = 2; j >= 0; j--) if (tray[j]) { open = j; break }
     bevel(g, PANEL, '#3f444c', '#1f2226')
     g.fillStyle = '#33373d'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, PANEL.h - 58)
     g.fillStyle = '#42474e'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, 2); g.fillRect(PANEL.x + 6, PANEL.y + 50, 2, PANEL.h - 58)
@@ -470,21 +481,42 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0) {
     for (let i = 0; i < 12; i++) { g.fillStyle = i % 2 ? '#b98a1e' : '#2a2d31'; g.fillRect(PANEL.x + 20 + i * 30, PANEL.y + 108, 30, 6) }
     g.font = FONT(7); g.fillStyle = P.amber
     g.fillText('BATTERIES', PANEL.x + 152, PANEL.y + 136)
+    g.font = FONT(5); g.fillStyle = '#5c626c'
+    g.fillText('< > PICKS THE CELL', PANEL.x + 236, PANEL.y + 136)
+    // the rail itself: a groove the cells slide along, open at the right end
+    g.fillStyle = '#141519'; g.fillRect(PANEL.x + 112, PANEL.y + 150, 214, 74)
+    g.fillStyle = '#20242a'; g.fillRect(PANEL.x + 112, PANEL.y + 150, 214, 2); g.fillRect(PANEL.x + 112, PANEL.y + 222, 214, 2)
+    g.fillStyle = tick % 60 < 38 ? '#8a6512' : '#4a4f57'
+    g.fillText('OPEN', PANEL.x + 330, PANEL.y + 146)
     for (let i = 0; i < 3; i++) {
         const bx = PANEL.x + 118 + i * 68, by = PANEL.y + 146
-        if (i < batteries) {
-            g.fillStyle = '#8a6512'; g.fillRect(bx + 14, by, 16, 8)
+        const occ = tray[i] === 1
+        const pullable = occ && i === open
+        if (occ) {
+            // the pull-tab tells the rail law: bright amber = free at the open
+            // end; dark slate = clipped behind a neighbor (it goes first).
+            g.fillStyle = pullable ? '#8a6512' : '#3a4148'; g.fillRect(bx + 14, by, 16, 8)
             g.fillStyle = '#c98f1f'; g.fillRect(bx, by + 6, 44, 74)
             g.fillStyle = P.amber; g.fillRect(bx + 3, by + 9, 38, 68)
             g.fillStyle = '#8a6512'
             g.fillRect(bx + 8, by + 22, 28, 3); g.fillRect(bx + 8, by + 38, 28, 3)
+            if (pullable) { g.fillStyle = '#3a2c08'; g.fillText('>', bx + 34, by + 30) }
         } else {
             g.fillStyle = '#1c1e22'; g.fillRect(bx + 14, by, 16, 8)
             g.fillStyle = '#1c1e22'; g.fillRect(bx, by + 6, 44, 74)
             g.fillStyle = '#141519'; g.fillRect(bx + 4, by + 10, 36, 66)
         }
-        g.font = FONT(6); g.fillStyle = i < batteries ? '#3a2c08' : '#3d4148'
+        g.font = FONT(6); g.fillStyle = occ ? '#3a2c08' : '#3d4148'
         g.fillText(String(i + 1), bx + 19, by + 80)
+        // the hand: pulsing corner brackets on the selected slot
+        if (i === sel) {
+            g.fillStyle = tick % 40 < 26 ? '#ffd23e' : '#8a6d14'
+            const cx = bx - 4, cy = by - 6, cw = 52, ch = 92
+            g.fillRect(cx, cy, 10, 2); g.fillRect(cx + cw - 10, cy, 10, 2)
+            g.fillRect(cx, cy + ch - 2, 10, 2); g.fillRect(cx + cw - 10, cy + ch - 2, 10, 2)
+            g.fillRect(cx, cy, 2, 10); g.fillRect(cx + cw - 2, cy, 2, 10)
+            g.fillRect(cx, cy + ch - 10, 2, 10); g.fillRect(cx + cw - 2, cy + ch - 10, 2, 10)
+        }
     }
     // #1909 THE DRAIN: the pocket — a battery in hand sits clipped to the
     // plate's corner, and the action line names what A does right now. The
@@ -499,9 +531,14 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0) {
         g.font = FONT(6); g.fillStyle = P.amber
         g.fillText('IN HAND', hx - 2, hy + 44)
     }
+    // the action line is the selected slot's truth, never the plate's average
     g.font = FONT(6)
-    g.fillStyle = held > 0 ? '#ffd23e' : batteries > 0 ? '#7dffb0' : '#5c626c'
-    g.fillText(held > 0 ? 'A PUTS IT BACK' : batteries > 0 ? 'A PULLS ONE OUT' : 'PLATE EMPTY', PANEL.x + 130, PANEL.y + PANEL.h - 60)
+    const line = held > 0 ? 'A PUTS IT BACK'
+        : batteries <= 0 ? 'PLATE EMPTY'
+            : tray[sel] === 0 ? 'EMPTY SLOT'
+                : sel === open ? 'A PULLS IT OUT' : 'BLOCKED - IT CLIPS RIGHT'
+    g.fillStyle = held > 0 ? '#ffd23e' : sel === open && batteries > 0 && tray[sel] === 1 ? '#7dffb0' : '#5c626c'
+    g.fillText(line, PANEL.x + 130, PANEL.y + PANEL.h - 60)
     g.font = FONT(6); g.fillStyle = tick % 50 < 32 ? '#7dffb0' : '#41544a'
     g.fillText('DOWN TILTS IT BACK', PANEL.x + 122, PANEL.y + PANEL.h - 48)
 }

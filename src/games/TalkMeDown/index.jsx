@@ -986,7 +986,7 @@ export default function TalkMeDown() {
                 // #1797: the maintenance side. Batteries are the news — but
                 // the fuse and the breakers stay readable (pressure never
                 // hides, KTANE signature 5).
-                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held)
+                ART.drawBack(g, gs.features.batteries, tick, gs.features.serial, gs.held, gs.tray, gs.sel)
                 ART.drawStrikes(g, gs.strikes)
                 ART.drawFuse(g, ART.PANEL.x + 16, ART.PANEL.y + 12, secs, secs <= 10 && !gs.done, tick)
                 return
