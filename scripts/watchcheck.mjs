@@ -1381,6 +1381,93 @@ const PILOTS = [
             rep.check(`${G.id}: Y again releases the wheel`, !(await watching()))
         },
     })),
+    // #1637 batch 14 — the reactive divers seat their live-state brains. Both
+    // drivers are the titles' OWN planners, the witnesses their Node harnesses
+    // win with: SONAR's planStep is a (cell, move#) BFS against an exact eel
+    // timeline, casting pings on the sim's own cooldown (sonarcheck races the
+    // script it produces across 20/20 seeded depths); BOULDER DASH's planStep
+    // digs BFS to gems-then-exit, one arrow every CFG.moveEvery CA ticks
+    // (dashcheck proves all four caves with it). Reactive per tick, so a
+    // mid-run seat is honest from any position.
+    {
+        id: 'sonar', url: `${BASE}/sonar`, hook: '__sonarTest',
+        async run(page, rep) {
+            const H = '__sonarTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(500)
+            rep.check('sonar: the dive is live before the seat', (await probe()).screen === 'play')
+            rep.check('sonar: nobody is driving yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('sonar: Y seats the proven diver', await watching())
+            rep.check('sonar: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // Idle hands stroke nothing: cells only move by playerMove, pearls
+            // only bank by touching them, and the eel timeline the planner
+            // carries keeps lives whole — a seat that loses either lied.
+            const adv = (x, y) => (y.have > x.have || y.score > x.score
+                || y.player.x !== x.player.x || y.player.y !== x.player.y) && y.lives >= x.lives
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('sonar: the prover swims untouched (idle hands stroke nothing)', adv(a, b),
+                `pearls ${a.have} -> ${b.have}, cell (${a.player.x},${a.player.y}) -> (${b.player.x},${b.player.y}), lives ${b.lives} held`)
+            rep.check('sonar: still watching mid-dive', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('sonar: steer key takes over', !(await watching()))
+            rep.check('sonar: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('sonar: Y re-seats the prover mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 4000)
+            rep.check('sonar: resumes from where the player left it', adv(c, d),
+                `pearls ${c.have} -> ${d.have}, cell (${c.player.x},${c.player.y}) -> (${d.player.x},${d.player.y})`)
+            await key(page, 'KeyY')
+            rep.check('sonar: Y again releases the wheel', !(await watching()))
+        },
+    },
+    {
+        id: 'boulder-dash', url: `${BASE}/boulder-dash`, hook: '__dashTest',
+        async run(page, rep) {
+            const H = '__dashTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')
+            await page.waitForTimeout(500)
+            rep.check('boulder-dash: the dig is live before the seat', (await probe()).screen === 'play')
+            rep.check('boulder-dash: nobody is digging yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('boulder-dash: Y seats the proven digger', await watching())
+            rep.check('boulder-dash: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // moves counts successful playerMoves — an idle player digs nothing,
+            // and the score the prover banks is prover-only. A cleared cave (win)
+            // is the route's own finish line, so it counts as advance too.
+            const adv = (x, y) => y.moves > x.moves || y.have > x.have || (!!y.win && !x.win)
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('boulder-dash: the prover digs untouched (idle hands move no cell)', adv(a, b),
+                `moves ${a.moves} -> ${b.moves}, gems ${a.have}/${a.need}, score ${a.score} -> ${b.score}`)
+            rep.check('boulder-dash: still watching mid-cave', await watching() || (await probe()).done)
+            await page.keyboard.down('ArrowLeft')
+            rep.check('boulder-dash: steer key takes over', !(await watching()))
+            rep.check('boulder-dash: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('boulder-dash: Y re-seats the prover mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 4000)
+            rep.check('boulder-dash: resumes from where the player left it', adv(c, d),
+                `moves ${c.moves} -> ${d.moves}, gems ${d.have}/${d.need}`)
+            await key(page, 'KeyY')
+            rep.check('boulder-dash: Y again releases the wheel', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -1697,6 +1784,46 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     // shared sim's decide, never a fork of its own.
     rep.check('batch 13: HD seats the shared sim decide (no forked brain)',
         /from '\.\.\/CometDrift\/sim\.js'/.test(readFileSync('src/games/CometDriftHD/index.jsx', 'utf8')))
+}
+// ---- #1637 batch 14 source pins — the reactive divers seat live-state brains ----
+{
+    const sonar = readFileSync('src/games/Sonar/index.jsx', 'utf8')
+    const dash = readFileSync('src/games/BoulderDash/index.jsx', 'utf8')
+    const reg14 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas14 = (p, s) => { const m = reg14.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    // The seat must feed the sim's OWN planStep into the real actuator (the same
+    // playerMove the keyboard drives) on the planner's cadence — no re-rolled,
+    // simplified brain, no touching a copy.
+    rep.check('SONAR: the seat feeds planStep into the real playerMove, pings on the sim cadence',
+        /if \(watchingRef\.current\) \{[\s\S]{0,700}?gs\.tick - gs\.lastPing >= CFG\.pingCd[\s\S]{0,300}?gs\.tick % CFG\.moveEvery === 0[\s\S]{0,80}?planStep\(gs\)[\s\S]{0,40}?movePlayer\(d\)/.test(sonar))
+    rep.check('SONAR: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\) \{ watchingRef\.current = !watchingRef\.current; setWatching\(watchingRef\.current\)/.test(sonar)
+        && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\)/.test(sonar))
+    rep.check('SONAR: watch never lingers — released at the end of the dive',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\) \}/.test(sonar))
+    rep.check('SONAR: attract shows the shared WATCH hint (import + drawn line)',
+        (sonar.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /sonar: controls carry the WATCH line', entryHas14('/sonar', 'WATCH_HELP'))
+    rep.check('BOULDER DASH: the seat feeds planStep into the real playerMove on the CA cadence',
+        /if \(watchingRef\.current && !gs\.end\) \{[\s\S]{0,500}?gs\.tick % CFG\.moveEvery === 0[\s\S]{0,80}?planStep\(gs\)[\s\S]{0,40}?movePlayer\(d\)/.test(dash))
+    rep.check('BOULDER DASH: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\) \{ watchingRef\.current = !watchingRef\.current; setWatching\(watchingRef\.current\)/.test(dash)
+        && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\)/.test(dash))
+    rep.check('BOULDER DASH: watch never lingers — released at the door (or the grave)',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\) \}/.test(dash))
+    rep.check('BOULDER DASH: attract shows the shared WATCH hint (import + drawn line)',
+        (dash.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /boulder-dash: controls carry the WATCH line', entryHas14('/boulder-dash', 'WATCH_HELP'))
+    // No forked brains: both seats import planStep from their own sim.js, and
+    // the brains stay honest because their harnesses still carry the win proofs
+    // the seats replay — gate that the witnesses exist where they always did.
+    rep.check('batch 14: both seats import the sim\'s own planStep (no forked brain)',
+        /from '\.\/sim\.js'/.test(sonar) && /planStep/.test(sonar)
+        && /from '\.\/sim\.js'/.test(dash) && /planStep/.test(dash))
+    rep.check('batch 14: sonarcheck still proves crossings to the vent (the seat\'s witness)',
+        /descend/.test(readFileSync('scripts/sonarcheck.mjs', 'utf8')))
+    rep.check('batch 14: dashcheck still proves every cave winnable (the seat\'s witness)',
+        /did NOT win/.test(readFileSync('scripts/dashcheck.mjs', 'utf8')))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

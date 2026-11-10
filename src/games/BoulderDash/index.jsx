@@ -15,12 +15,14 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { GAMES } from '../../config/games'
 import { PRESS, MESSAGES } from './attract.js'
 import { audioController } from '../../utils/AudioController'
 import { exposeGame, unexposeGame, contractHoldsLoop } from '../../utils/gameContract'
 import { LEVELS, buildLevel } from './levels.js'
 import { makeGame, planRun, planStep, step, playerMove, stateHash, CFG, W, H, EMPTY, DIRT, BOULDER, DIAMOND, STEEL, FIRE } from './sim.js'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { exposeFeedbackState, unexposeFeedbackState } from '../../utils/gameContract'
 
 const TS = 16
@@ -49,6 +51,8 @@ const DashGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
 
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
@@ -110,6 +114,9 @@ const DashGame = () => {
             const cause = won ? (levelIdx >= LEVELS.length - 1 ? 'EVERY CAVE CRACKED' : 'CAVE CLEARED') : gs.end === 'time' ? 'THE CLOCK RAN OUT' : 'BURIED'
             setEnd({ score: gs.score, gems: gs.have, need: meta.need, won, cause, last: won && levelIdx >= LEVELS.length - 1 })
             overAtRef.current = performance.now()
+            // #1637 WATCH: the exit door (or the grave) ends the route — the
+            // seat releases silently, like the racer's finish flag.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             setMode('over')
         }
 
@@ -129,8 +136,19 @@ const DashGame = () => {
                 handleEvents(step(gs).events)
                 if (gs.end) loadLevel((levelIdx + 1) % LEVELS.length, true)
             } else if (screenRef.current === 'play') {
-                const dir = held.length && ARROWS.includes(held[held.length - 1]) ? held[held.length - 1] : null
-                if (dir && gs.tick - lastMoveTick >= MOVE_STEP) movePlayer(dir)
+                if (watchingRef.current && !gs.end) {
+                    // #1637 WATCH: the prover digs — planStep is reactive against
+                    // the live cave (honest from any position), one arrow every
+                    // CFG.moveEvery CA ticks: the same script dashcheck wins
+                    // every cave with.
+                    if (gs.tick % CFG.moveEvery === 0) {
+                        const d = planStep(gs)
+                        if (d) movePlayer(d)
+                    }
+                } else {
+                    const dir = held.length && ARROWS.includes(held[held.length - 1]) ? held[held.length - 1] : null
+                    if (dir && gs.tick - lastMoveTick >= MOVE_STEP) movePlayer(dir)
+                }
                 const ev = step(gs).events
                 handleEvents(ev)
                 if (gs.end) finish()
@@ -248,6 +266,11 @@ const DashGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the proven digger (planStep drives the real
+            // playerMove on the CA's own cadence); any driving key hands the
+            // wheel back and the player continues from exactly there.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (ARROWS.includes(e.code)) {
                 if (!held.includes(e.code)) held.push(e.code)
                 movePlayer(e.code)                            // instant first step on a tap
@@ -260,6 +283,9 @@ const DashGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc === 'play' && e.target === canvas) {
+                // #1637 WATCH: a tap on the cave is the player digging — the
+                // seat hands back before the tap drives.
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
                 const r = canvas.getBoundingClientRect()
                 const tx = (e.clientX - r.left) / r.width * W, ty = (e.clientY - r.top) / r.height * H
                 const dx = tx - (gs.player.x + 0.5), dy = ty - (gs.player.y + 0.5)
@@ -304,6 +330,9 @@ const DashGame = () => {
                 // the next arrow the PROVEN planner would press from here — the
                 // driver still has to press a real arrow to make it happen.
                 hint: () => planStep(gs) || null,
+                // #1637 WATCH probes: is the prover digging, did it blip.
+                watching: () => watchingRef.current && screenRef.current === 'play',
+                watchSfx: watchSfxLog,
                 // DEV-only rig for the death test: it only LOOSENS a boulder two
                 // tiles overhead (like Lemmings' __marioTest.teleport positions a
                 // body). The crush itself is computed by the real gravity CA on
@@ -390,6 +419,8 @@ const DashGame = () => {
                     <h1 className="text-5xl font-black text-amber-300 mb-6" style={{ textShadow: '0 4px 0 #7a3b12, 0 10px 24px #000' }}>BOULDER DASH</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                    <p className="mt-4 text-amber-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -410,6 +441,19 @@ const DashGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'BOULDER DASH')} onResume={handleResume} />}
+            {/* #1637 WATCH — the proven digger clears the cave. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )

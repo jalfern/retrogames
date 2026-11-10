@@ -15,6 +15,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import AttractMessage from '../../components/AttractMessage'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
@@ -49,6 +51,8 @@ const SonarGame = () => {
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
 
     const setMode = useCallback((m) => { screenRef.current = m; setScreen(m) }, [])
     const hudRef = useRef({})
@@ -110,6 +114,9 @@ const SonarGame = () => {
             setEnd({ score: runScore + gs.score, depth, seed, won: gs.win, cause })
             if (runScore + gs.score > 0) localStorage.setItem('sonar.board', JSON.stringify([...board(), { score: runScore + gs.score, depth, seed, date: new Date().toISOString().slice(2, 10) }].sort((a, b) => b.score - a.score).slice(0, 8)))
             overAtRef.current = performance.now()
+            // #1637 WATCH: the light at the end of the dive IS the end of the
+            // route — the seat releases silently, like the racer's finish flag.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             setMode('over')
         }
 
@@ -131,7 +138,22 @@ const SonarGame = () => {
                 }
             }
             if (sc === 'play') {
-                if (gs.tick % CFG.moveEvery === 0 && held.length) movePlayer(held[held.length - 1])
+                if (watchingRef.current) {
+                    // #1637 WATCH: the prover is at the controls — planStep is
+                    // reactive against live state (honest from any position),
+                    // casting pings on the sim's own cooldown and moving on
+                    // the planner's own CFG.moveEvery cadence. Same witness
+                    // sonarcheck races to every vent with.
+                    if (gs.tick - gs.lastPing >= CFG.pingCd) {
+                        const before = gs.events.length
+                        ping(gs)
+                        handleEvents(gs.events.slice(before))
+                    }
+                    if (gs.tick % CFG.moveEvery === 0) {
+                        const d = planStep(gs)
+                        if (d) movePlayer(d)
+                    }
+                } else if (gs.tick % CFG.moveEvery === 0 && held.length) movePlayer(held[held.length - 1])
             }
             if (!gs.end) handleEvents(step(gs).events)
             if (gs.end) {
@@ -273,6 +295,11 @@ const SonarGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the proven diver (planStep drives the real
+            // playerMove/ping on the sim's own cadence); any driving key hands
+            // the wheel back and the player continues from exactly there.
+            if (isWatchKey(e)) { watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (ARROWS.includes(e.code)) {
                 if (!held.includes(e.code)) held.push(e.code)
             }
@@ -289,6 +316,9 @@ const SonarGame = () => {
             if (sc === 'attract') { startPlay(); return }
             if (sc === 'over') { if (performance.now() - overAtRef.current > 900) setMode('attract'); return }
             if (sc === 'play' && e.target === canvas) {
+                // #1637 WATCH: a tap on the water is the player pinging — the
+                // seat hands back before the ping drives.
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
                 const before = gs.events.length
                 ping(gs)
                 handleEvents(gs.events.slice(before))
@@ -339,6 +369,9 @@ const SonarGame = () => {
                     }
                 },
                 knownAt: (x, y) => known(gs, idx(x, y)),
+                // #1637 WATCH probes: is the prover driving, did it blip.
+                watching: () => watchingRef.current && screenRef.current === 'play',
+                watchSfx: watchSfxLog,
                 // next move the proven planner would make, or 'PING' if its
                 // cooldown is up — the driver still presses the real keys.
                 hint: () => (gs.tick - gs.lastPing >= CFG.pingCd ? 'PING' : planStep(gs)),
@@ -452,6 +485,8 @@ const SonarGame = () => {
                     <h1 className="text-5xl font-black text-cyan-300 mb-6" style={{ textShadow: '0 4px 0 #0a3a5a, 0 10px 24px #000' }}>SONAR ABYSS</h1>
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
+                    {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                    <p className="mt-4 text-cyan-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -472,6 +507,19 @@ const SonarGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SONAR ABYSS')} onResume={handleResume} />}
+            {/* #1637 WATCH — the proven diver swims the dark. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={play && !paused} />
         </div>
     )
