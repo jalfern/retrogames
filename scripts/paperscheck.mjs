@@ -14,14 +14,15 @@
 // witness map) · TRAP CONTRACT (a naive eye misjudges EXACTLY the planted
 // traps, budget <= 2/day, >= 1 from day 2, all six species per week) ·
 // rulebook (every rule exercises the day it wakes; no law before its day) ·
-// clumsy play clears the week AND chaos loses by day 1 (the slack rule,
-// in booth terms) · the proven weeks (attract replays these) ·
-// determinism · mutants.
+// calendar (one clock: serials match the wall everywhere; the week rolls
+// across a real month-end #1889) · clumsy play clears the week AND chaos
+// loses by day 1 (the slack rule, in booth terms) · the proven weeks
+// (attract replays these) · determinism · mutants.
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { RULES, DAY_RULES, decide, judge, dnum } from '../src/games/PapersPleaseMin/rules.js'
+import { RULES, DAY_RULES, decide, judge, dnum, dadd, dfmt } from '../src/games/PapersPleaseMin/rules.js'
 import { genWeek, genDay, viewOf, CITY2C, TRAPS } from '../src/games/PapersPleaseMin/gen.js'
 import { CFG, newRun, step, stateHash, current, autopilot } from '../src/games/PapersPleaseMin/sim.js'
 import { CW, CHS, STRIP_H, WALL, CHAR, SCALE, PORTRAIT, PAPERS, wallFit } from '../src/games/PapersPleaseMin/layout.js'
@@ -168,6 +169,77 @@ for (let d = 1; d <= 7; d++) {
         }
     }
     console.log(`  ..    ${fired} rule-days: every law convicted its own test paper the day it woke`)
+}
+
+// ---------------------------------------------------------------- calendar ----
+section('THE CALENDAR IS ONE CLOCK (#1889) — serials match the wall, the week rolls')
+{
+    const MD = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    // identity law: advancing the wall n days advances the serial by EXACTLY
+    // n, for every date the sim can print and every span the generator draws.
+    // Uniform-31 serials broke this at every short-month seam — and that drift
+    // is how a CURFEW paper with 6 real days of grace read as a legal 7.
+    // (This Arstotzka has no leap days: dadd never emits Feb 29, so 365-day
+    // years and MDAYS agree for all constructible dates — exact by law here.)
+    let drift = 0
+    for (let m = 1; m <= 12; m++) for (let d = 1; d <= MD[m - 1]; d++) {
+        const x = { y: 1982, m, d }
+        for (const n of [1, 6, 7, 40, 400, -1, -6, -7, -40, -400]) if (dnum(dadd(x, n)) - dnum(x) !== n) drift++
+    }
+    ok(drift === 0, `the serial drifts from the calendar on ${drift} date/spans — dnum and dadd are two clocks again`)
+    // and dadd must never print a day the calendar does not have — the rolled
+    // week found dadd's missing BACKWARD carry shipping NOV 00 at the window.
+    let fakeDay = 0
+    for (let m = 1; m <= 12; m++) for (let d = 1; d <= MD[m - 1]; d++) {
+        const x = { y: 1982, m, d }
+        for (const n of [-1, -31, -60, -365]) {
+            const r = dadd(x, n)
+            if (r.d < 1 || r.d > MD[r.m - 1] || r.m < 1 || r.m > 12) fakeDay++
+        }
+    }
+    ok(fakeDay === 0, `dadd printed ${fakeDay} impossible calendar days going backward`)
+
+    // the week crosses a REAL month-end: OCT 27…31, NOV 01–02. The date
+    // arithmetic the border guard does every shift in the original.
+    for (const seed of SEEDS) {
+        const seq = genWeek(seed).days.map((dd) => `${dd.date.y}.${dd.date.m}.${dd.date.d}`)
+        ok(seq.join(',') === '1982.10.27,1982.10.28,1982.10.29,1982.10.30,1982.10.31,1982.11.1,1982.11.2',
+            `seed ${seed}: the week does not roll OCT 27 → NOV 02 (${seq[0]}…${seq[6]})`)
+    }
+    console.log('  ..    identity law on 365 day-dates × 10 spans (both directions); every seed\'s week rolls OCT→NOV')
+
+    // day 6 prints the week's first cross-month verdict, with its witness.
+    for (const seed of SEEDS) {
+        const day = genWeek(seed).days[5]
+        ok(day.date.m === 11 && day.date.d === 1, `seed ${seed}: day 6 is not NOV 01 — the cross-month window moved`)
+        const v6 = day.queue.find((a) => a.breakRule === 'EXPIRED')
+        ok(v6.person.passport.expiry.d === 31 && v6.person.passport.expiry.m === 10 && v6.person.passport.expiry.y === 1982,
+            `seed ${seed}: the day-6 EXPIRED paper does not carry OCT 31 — no cross-month paper at the booth`)
+        const d6 = decide(viewOf(day, v6))
+        ok(d6.verdict === 'deny' && d6.violations.some((x) => x.rule === 'EXPIRED' && /1982\.10\.31 < TODAY 1982\.11\.01/.test(x.evidence)),
+            `seed ${seed}: the booth did not print EXPIRED 1982.10.31 < TODAY 1982.11.01`)
+    }
+
+    // short-month seams, synthetic — the rolled week never reaches one, so the
+    // law is pinned where the generator has not yet walked. A 30-day November
+    // is exactly where the uniform-31 serial lied (6 days read as 7).
+    const seamCase = (today, expiry, want, tag, rules = ['EXPIRED', 'CURFEW']) => {
+        const [ty, tm, td] = today, [ey, em, ed] = expiry
+        const day = { y: ty, m: tm, d: td }
+        const pp = {
+            name: 'SEAM CASE', id: 4444, dob: { y: 1950, m: 1, d: 1 }, sex: 'M', height: 170, weight: 70,
+            country: 'ARSTOTZKA', city: 'OR VECHNA', expiry: { y: ey, m: em, d: ed },
+        }
+        const view = { date: day, dateNum: dnum(day), rules, allowed: ['ARSTOTZKA'], wanted: [], scale: 70, person: { papers: ['passport'], passport: pp, idcard: null } }
+        const r = decide(view)
+        ok(r.verdict === want, `CURFEW seam (${tag}): ${dfmt(day)} → ${dfmt(pp.expiry)} should be ${want}, booth says ${r.verdict}`)
+    }
+    seamCase([1982, 11, 25], [1982, 12, 1], 'deny', '6 real days — uniform-31 read it as 7')
+    seamCase([1982, 11, 25], [1982, 12, 2], 'approve', 'exactly 7 days of grace over a 30-day November')
+    seamCase([1982, 2, 22], [1982, 2, 28], 'deny', '6 days over the February run')
+    seamCase([1982, 2, 22], [1982, 3, 1], 'approve', 'exactly 7 days past a 28-day February')
+    seamCase([1982, 12, 31], [1983, 1, 1], 'deny', 'grace over the year seam')
+    seamCase([1982, 11, 1], [1982, 11, 1], 'approve', 'expires-TODAY doctrine holds at the month seam', ['EXPIRED'])
 }
 
 // ---------------------------------------------- clumsy clears / chaos collapses ----
@@ -444,6 +516,51 @@ if (MUT) {
             const worstDay = { n: 7, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE', 'PARMENISTAN'], wanted: [{ name: 'ANDERSON K V', id: 4022 }, { name: 'GORSKY A V', id: 1180 }, { name: 'VOSKOVIC M', id: 3345 }, { name: 'DZURAK L', id: 2077 }], rules: m.rules.DAY_RULES[6] }
             const f = m.layout.wallFit(worstDay, worstDay.rules.map((r) => m.rules.RULES[r].text))
             return f.listsFit && f.listsClearScale && f.rulesClearScale
+        })
+
+    // 9. the serial clock re-freezes at 31 days a month: the printed calendar
+    //    and the number every rule compares drift apart again at every short
+    //    month — a 6-day-grace paper past November reads legal. The CALENDAR
+    //    section must see both halves: the broken identity and the seam verdict.
+    await tryMut('dnum reverts to uniform-31 (two clocks again)',
+        mutMod('rules.js', 'dt.y * 365 + MPREFIX[dt.m - 1] + dt.d', 'dt.y * 372 + (dt.m - 1) * 31 + dt.d', 'm9'),
+        (m) => {
+            // SURVIVED = the mutant serial still matches the calendar AND still
+            // denies the short-month seam paper — both are impossible now.
+            const MD = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+            let driftSeen = false
+            for (let mm = 1; mm <= 12 && !driftSeen; mm++) {
+                for (let d = 1; d <= MD[mm - 1] && !driftSeen; d++) {
+                    const x = { y: 1982, m: mm, d }
+                    if (m.rules.dnum(m.rules.dadd(x, 7)) - m.rules.dnum(x) !== 7) driftSeen = true
+                }
+            }
+            if (!driftSeen) {
+                const day = { y: 1982, m: 11, d: 25 }
+                const pp = {
+                    name: 'SEAM CASE', id: 4444, dob: { y: 1950, m: 1, d: 1 }, sex: 'M', height: 170, weight: 70,
+                    country: 'ARSTOTZKA', city: 'OR VECHNA', expiry: { y: 1982, m: 12, d: 1 },
+                }
+                const view = { date: day, dateNum: m.rules.dnum(day), rules: ['EXPIRED', 'CURFEW'], allowed: ['ARSTOTZKA'], wanted: [], scale: 70, person: { papers: ['passport'], passport: pp, idcard: null } }
+                if (m.rules.decide(view).verdict === 'deny') return true   // invisible mutant: identical clock — SURVIVED
+                return false                                                 // 6-day paper walked free: caught
+            }
+            return false   // identity broken at a short-month seam: caught
+        })
+
+    // 10. the backward carry stripped from dadd — the bug #1889 actually found
+    //     while rolling the week: NOV 01 minus one day printed NOV 00, a date
+    //     the wall cannot show. The day-6 cross-month gates must see it.
+    await tryMut('dadd loses the backward carry (NOV 00 ships)',
+        mutMod('rules.js', 'while (d < 1) { m -= 1; if (m < 1) { m = 12; y -= 1 } d += MDAYS[m - 1] }', 'if (false) while (d < 1) { m -= 1; if (m < 1) { m = 12; y -= 1 } d += MDAYS[m - 1] }', 'm10'),
+        (m) => {
+            // SURVIVED = every seed's day-6 EXPIRED paper still carries OCT 31
+            for (let seed = 0; seed < 4; seed++) {
+                const day = m.gen.genWeek(seed).days[5]
+                const v6 = day.queue.find((a) => a.breakRule === 'EXPIRED')
+                if (!v6 || v6.person.passport.expiry.m !== 10 || v6.person.passport.expiry.d !== 31) return false
+            }
+            return true
         })
 }
 
