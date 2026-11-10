@@ -225,6 +225,28 @@ console.log('— servo arm (#1872) —')
     ok(violPatience === 0, 'no swing before ARM_PATIENCE held-ticks')
 }
 
+console.log('— servo presentation (#1877, source pins) —')
+{
+    // Painter-only law: the servo carry must ride the SHARED ghost-arc painter
+    // (no forked second ghost list), timed off the sim's own swing so the arc
+    // can never lie about how long the cargo is in the air. The reach diamond
+    // must pulse (not sit static) while cargo waits loaded. Functional proof
+    // of both is in floorbossplay; these pins keep the choice from rotting.
+    const ui = readFileSync(new URL('../src/games/FloorBoss/index.jsx', import.meta.url), 'utf8')
+    const swingCase = ui.match(/case 'armswing':[\s\S]*?break/)
+    ok(!!swingCase && /arcItems\.push\(\{[\s\S]*?servo:\s*true/.test(swingCase[0]),
+        'servo carry pushes a ghost onto the shared arcItems painter (no fork)')
+    ok(!!swingCase && /n:\s*gs\.arm\.swingT0/.test(swingCase[0]),
+        'the carry ghost duration is the sim swing (arc cannot lie about the carry)')
+    ok(!!swingCase && /kind:\s*gs\.arm\.held/.test(swingCase[0]),
+        'the carry ghost carries the cargo the gripper actually holds')
+    ok(/const n = a\.n \|\| 15/.test(ui), 'the shared arc painter honours per-arc durations (bay keeps 15)')
+    ok(/gs\.arm\.held && gs\.arm\.swing === 0/.test(ui) && /Math\.sin\(gs\.arm\.heldT/.test(ui),
+        'reach diamond pulses on the sim patience counter while loaded-and-waiting')
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(!/arcItems|ghost/i.test(simSrc), 'presentation never leaks into the sim (hash stays honest)')
+}
+
 console.log('— win —')
 for (const seed of [7, 1337, 4242]) {
     const gs = makeGame(seed)

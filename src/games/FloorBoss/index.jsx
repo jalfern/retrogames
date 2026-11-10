@@ -115,12 +115,18 @@ const FloorBossGame = () => {
         // sim, so hashes are untouched. The truck is the floor's face: a ship
         // summons it, it parks at the dock, then drives off once clear.
         let truck = { x: -90, mode: 'out', t: 0 } // mode: out | back | park | leave
+        // #1877: painter clocks advance in WORLD ticks (gs.tick), not display
+        // frames — software-rendered Chrome paints at 10-15 fps and the truck's
+        // back-in/park/drive-off wall-clock gates flaked on main for it. The
+        // catch-up clamp (8 ticks/frame) keeps a stalled tab from teleporting.
+        let lastPaintTick = 0
         const TRUCK_PARK = PX(23) + 5 // trailer centered under the dock lane
         const botAnim = new Map() // bot id -> { dir, turn, trail }
         const orderEnter = new Map() // order id -> slide-in ticks left
-        const arcItems = [] // arm->bot transfer ghosts { x0,y0,x1,y1,k,kind }
+        const arcItems = [] // transfer ghosts { x0,y0,x1,y1,k,n?,kind,servo? } — bay handoff + servo carry (#1877)
         let armTip = { x: 0, y: 0 }
         let grip = 1 // gripper spread: 1 open, 0 closed
+        let diamondA = 0 // last-drawn reach-diamond alpha (harness eye on the pulse, #1877)
         let humT = 60 // 60 bpm floor hum while bots move
         const truckDock = () => {
             if (truck.mode === 'out') { truck.mode = 'back'; truck.x = -90 }
@@ -167,7 +173,10 @@ const FloorBossGame = () => {
                 switch (e.type) {
                     case 'order': audioController.playTone(300, 0.05, 'square', 0.04); break
                     case 'armload': audioController.playTone(520, 0.05, 'triangle', 0.05); break
-                    case 'armswing': audioController.playSweep(240, 420, 0.14, 'triangle', 0.045); break
+                    case 'armswing': audioController.playSweep(240, 420, 0.14, 'triangle', 0.045); // #1877: the carry rides the same ghost-arc
+                        // painter the bay handoff uses, timed to the swing so the cargo
+                        // visibly travels the gantry's sweep instead of just landing
+                        if (gs.arm.held && gs.arm.target) arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(gs.arm.target.x) + 13, y1: PY(gs.arm.target.y) + 3, k: 0, n: gs.arm.swingT0 || 44, kind: gs.arm.held, servo: true }); break
                     case 'armstow': audioController.playTone(560, 0.05, 'square', 0.05); audioController.playTone(840, 0.07, 'square', 0.04, 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#7ec8ff', 1.2); fx('SERVO', '#7ec8ff', PX(e.x) + 13, PY(e.y) + 4); break
                     case 'pick': audioController.playSweep(440, 760, 0.07, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#ffe9a8', 1); break
                     case 'bay': audioController.playSweep(320, 560, 0.07, 'triangle', 0.05); arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(e.x) + 13, y1: PY(e.y) + 3, k: 0, kind: e.k }); break
@@ -311,10 +320,15 @@ const FloorBossGame = () => {
         const paintArm = (tick) => {
             const bx = PX(ARM_CELL.x) + TILE / 2, by = PY(ARM_CELL.y) + TILE / 2
             // reach diamond — the gantry's honest footprint while planning racks,
-            // lit brighter while the servo is carrying (#1872)
-            if (gs.tool === 'rack' || gs.arm.swing > 0) {
+            // lit brighter while the servo is carrying (#1872), and gently pulsing
+            // while cargo sits loaded-and-waiting so the patience rule teaches
+            // itself before the swing even starts (#1877)
+            diamondA = 0
+            const loadedWait = gs.arm.held && gs.arm.swing === 0
+            if (gs.tool === 'rack' || gs.arm.swing > 0 || loadedWait) {
+                diamondA = gs.arm.swing > 0 ? 0.5 : gs.tool === 'rack' ? 0.26 : 0.18 + 0.12 * (0.5 + 0.5 * Math.sin(gs.arm.heldT * 0.22))
                 ctx.save()
-                ctx.strokeStyle = gs.arm.swing > 0 ? 'rgba(126,200,255,0.5)' : 'rgba(255,210,63,0.26)'
+                ctx.strokeStyle = gs.arm.swing > 0 ? 'rgba(126,200,255,0.5)' : `rgba(255,210,63,${diamondA.toFixed(3)})`
                 ctx.lineWidth = 1.2
                 ctx.setLineDash([3, 4])
                 ctx.beginPath()
@@ -641,10 +655,10 @@ const FloorBossGame = () => {
 
         // The dock's truck: backs in on a ship, parks under the dock, drives
         // off when clear. Pure painter state — the sim's shipping is unchanged.
-        const paintTruck = (tick) => {
-            if (truck.mode === 'back') { truck.x += 2.6; if (truck.x >= TRUCK_PARK) { truck.x = TRUCK_PARK; truck.mode = 'park' } }
-            else if (truck.mode === 'park') { if (--truck.t <= 0) truck.mode = 'leave' }
-            else if (truck.mode === 'leave') { truck.x += 3.2; if (truck.x > W + 30) { truck.mode = 'out'; truck.x = -90 } }
+        const paintTruck = (tick, dt) => {
+            if (truck.mode === 'back') { truck.x += 2.6 * dt; if (truck.x >= TRUCK_PARK) { truck.x = TRUCK_PARK; truck.mode = 'park' } }
+            else if (truck.mode === 'park') { truck.t -= dt; if (truck.t <= 0) truck.mode = 'leave' }
+            else if (truck.mode === 'leave') { truck.x += 3.2 * dt; if (truck.x > W + 30) { truck.mode = 'out'; truck.x = -90 } }
             if (truck.mode === 'out') return
             const x = truck.x, ty = 414
             ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x + 2, ty + 20, 68, 4)
@@ -672,12 +686,13 @@ const FloorBossGame = () => {
             }
         }
 
-        // the arm->bot transfer: a ghost item tracing the BAY_TICKS handoff arc
-        const paintArcs = () => {
+        // the arm->bot / gantry->rack transfer: a ghost item tracing the arc
+        const paintArcs = (dt) => {
             for (let i = arcItems.length - 1; i >= 0; i--) {
-                const a = arcItems[i]; a.k++
-                if (a.k > 15) { arcItems.splice(i, 1); continue }
-                const t = a.k / 15
+                const a = arcItems[i]; a.k += dt
+                const n = a.n || 15
+                if (a.k > n) { arcItems.splice(i, 1); continue }
+                const t = a.k / n
                 ctx.globalAlpha = 1 - t * 0.55
                 drawItem(ctx, a.kind, a.x0 + (a.x1 - a.x0) * t, a.y0 + (a.y1 - a.y0) * t - Math.sin(t * Math.PI) * 10, 0.85)
             }
@@ -768,6 +783,8 @@ const FloorBossGame = () => {
             if (shake < 0.3) shake = 0
             ctx.fillStyle = '#060a0e'; ctx.fillRect(0, 0, W, H)
             ctx.save(); ctx.translate(sx, sy)
+            const worldDt = Math.max(1, Math.min(8, gs.tick - lastPaintTick))
+            lastPaintTick = gs.tick
             paintFloor()
             paintWalls()
             paintConveyor(tick)
@@ -775,13 +792,13 @@ const FloorBossGame = () => {
             paintRacks()
             paintArm(tick)
             paintRobots(tick)
-            paintArcs()
+            paintArcs(worldDt)
             paintTutorial(tick)
             paintCursor(tick)
             paintParticles()
             paintRushWash(tick)
             paintRushScan(tick)
-            paintTruck(tick)
+            paintTruck(tick, worldDt)
             ctx.restore()
             paintHud(tick)
             paintOrders()
@@ -941,6 +958,8 @@ const FloorBossGame = () => {
                 truck: () => ({ ...truck }),
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
+                // #1877 eyes on the servo presentation ghosts (renderer-only state)
+                servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 probe: () => ({ tick: gs.tick, score: gs.score, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
