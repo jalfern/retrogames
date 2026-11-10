@@ -9,6 +9,8 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
@@ -50,7 +52,7 @@ export default function TalkMeDown() {
     const [paused, setPaused] = useState(false)
     const pausedRef = useRef(false)
     pausedRef.current = paused
-    const [uiScreen, setUiScreen] = useState('attract')
+    const [screen, setUiScreen] = useState('attract')
     const [micOn, setMicOn] = useState(false) // #1373: pill label mirrors the mic
     const screenRef = useRef('attract') // attract | select | play | over
     const gsRef = useRef(null)
@@ -68,6 +70,9 @@ export default function TalkMeDown() {
     const voiceRef = useRef({ on: false, listen: null })
     const voiceLogRef = useRef([])
     const overAtRef = useRef(0)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
+    const pendingWatchRef = useRef(false) // #1637: Y banked at attract/select — seats when the run starts
     const seedRef = useRef(1)
     const msgIdxRef = useRef(0)
     const msgAtRef = useRef(0)
@@ -85,10 +90,14 @@ export default function TalkMeDown() {
         voiceLogRef.current = []
         setScreen('play')
         sfx.start()
+        // #1637 WATCH: a seat banked at attract/select arrives with the run —
+        // the proven defuser takes the wheel as the fuse starts.
+        if (pendingWatchRef.current) { pendingWatchRef.current = false; watchingRef.current = true; setWatching(true); playWatchStart() }
     }, [])
 
     const startAttract = useCallback(() => {
         attractRef.current = createGame(1000 + Math.floor(Math.random() * 9999), 1)
+        pendingWatchRef.current = false // a fresh attract drops any stale bank
         msgIdxRef.current = 0
         msgAtRef.current = performance.now()
         setScreen('attract')
@@ -230,6 +239,7 @@ export default function TalkMeDown() {
                 const g = gsRef.current || createGame(1, 1)
                 return { ...simState(g), players: seatsRef.current }
             },
+            watching: () => watchingRef.current && screenRef.current === 'play', // #1637 WATCH
             canvas: () => canvasRef.current,
         }
     }
@@ -319,6 +329,17 @@ export default function TalkMeDown() {
                 return
             }
             if (e.code === 'KeyV') { e.preventDefault(); toggleVoice(); return }
+            // #1637 WATCH: Y BEFORE the run banks the seat (no blip yet — no
+            // wheel has changed hands). Attract steps to select like any key;
+            // select starts the run with the current pick and startPlay seats
+            // the prover. One tap on ▶ WATCH therefore starts AND watches.
+            if (isWatchKey(e) && (screenRef.current === 'attract' || screenRef.current === 'select')) {
+                e.preventDefault()
+                pendingWatchRef.current = true
+                if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
+                else humanStart(humanSeed(), selectRef.current)
+                return
+            }
             if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start(); return }
             if (screenRef.current === 'over') { if (performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() } return }
             if (screenRef.current === 'select') {
@@ -328,6 +349,13 @@ export default function TalkMeDown() {
             }
             // play
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the rulebook solver into seat 1 (solvePad
+            // drives the real pad path on the sim's own tick); any driving key
+            // hands the hands back and the player continues from exactly that
+            // module. V lives above this branch — heard words are orders, not
+            // hands (#1247) — so the mic never counts as a takeover.
+            if (isWatchKey(e)) { e.preventDefault(); watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Tab') { e.preventDefault(); if (seatsRef.current === 1) manualHiddenRef.current = !manualHiddenRef.current; return }
             const f1 = S1[e.code]
             if (f1) { e.preventDefault(); pressMin(keys1, f1); return }
@@ -346,6 +374,11 @@ export default function TalkMeDown() {
             if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
             else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
             else if (screenRef.current === 'select') humanStart(humanSeed(), selectRef.current)
+            else if (screenRef.current === 'play' && watchingRef.current) {
+                // #1637 WATCH: a tap on the bench takes the hands back (the
+                // WATCH pill stops its own propagation, so this is real input).
+                watchingRef.current = false; setWatching(false); playWatchStop()
+            }
         }
         window.addEventListener('keydown', onKeyDown)
         window.addEventListener('keyup', onKeyUp)
@@ -387,7 +420,14 @@ export default function TalkMeDown() {
             }
             if (screenRef.current !== 'play' || pausedRef.current) return
             if (contractHoldsLoop()) return
-            const p1 = padFrom(keys1Ref.current)
+            let p1 = padFrom(keys1Ref.current)
+            const g = gsRef.current
+            // #1637 WATCH: the prover is at the controls — solvePad reacts
+            // against LIVE state every tick (honest from any module, strike or
+            // fuse position) and lands on the real pad path, the same route the
+            // keyboard and the phone pad drive. Same brain the attract demo
+            // runs and tmd-smoke wins 200/200 seeds with — no forked solver.
+            if (watchingRef.current && g && !g.done) p1 = solvePad(g)
             const pads = seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : [p1]
             spec.tick(p1, pads)
             // #1415: this loop bypasses the contract's step(), so a live
@@ -399,6 +439,10 @@ export default function TalkMeDown() {
             // take (spec.tick flips play->over above; closing earlier would cut
             // the final pad off the file and break replay-verification).
             if (isRecording() && screenRef.current === 'over') endRun()
+            // #1637 WATCH: the run's end IS the end of the route — the seat
+            // releases silently, like the racer's finish flag; the stamp or
+            // the boom speaks for itself.
+            if (watchingRef.current && screenRef.current === 'over') { watchingRef.current = false; setWatching(false) }
             // the tick above consumed the pads — releases waiting for their
             // guaranteed sample can settle now (#1373)
             settleReleases(keys1Ref.current)
@@ -635,6 +679,15 @@ export default function TalkMeDown() {
                 voiceMode: () => ({ on: voiceRef.current.on, supported: speechSupported(), listening: !!(voiceRef.current.listen && voiceRef.current.listen.active) }),
                 hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0 }), // #1373
                 solveStep: () => { const g = gsRef.current; if (g && !g.done) spec.tick(solvePad(g)) },
+                // #1637 WATCH: the harness pilots the seat through real keys.
+                watching: () => watchingRef.current && screenRef.current === 'play',
+                watchSfx: () => watchSfxLog(),
+                probe: () => {
+                    const g = gsRef.current
+                    return g
+                        ? { screen: screenRef.current, tick: g.tick, score: g.score, bombs: g.bombsCleared, strikes: g.strikes, done: !!g.done, won: !!g.won, round: g.round, solved: g.modules.filter(m => m.solved).length }
+                        : { screen: screenRef.current, tick: 0, score: 0, bombs: 0, strikes: 0, done: false, won: false, round: 1, solved: 0 }
+                },
                 rulesFor: () => Object.keys(RULEBOOK).map(k => RULEBOOK[k].map(r => ({ id: r.id, text: r.text }))),
             }
             mountDbg({
@@ -698,10 +751,32 @@ export default function TalkMeDown() {
                 style={{ imageRendering: 'pixelated', aspectRatio: `${ART.W} / ${ART.H}`, width: 'min(100vw, calc(100vh * 16 / 9))' }}
             />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'TALK ME DOWN')} onResume={() => setPaused(false)} />}
+            {/* #1637 WATCH — the proven rulebook defuses the bomb. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1654 — the discoverable WATCH line, before the first Y press,
+                and the one-tap ▶ WATCH in the clear band (#1656). Multi-screen
+                boot (#1656's own note): Space lands in a run from SELECT, so Y
+                banks a pending seat at attract/select and startPlay seats it —
+                one tap still starts the run AND watches the proven route. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '19%' }}>
+                    <div className="font-mono text-xs tracking-widest text-emerald-200/70">{WATCH_ATTRACT_HINT}</div>
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {/* #1373: tap-to-talk for seat 1 (#1287 pattern) — phones have no
                 V key, and the mic IS this game's co-op mechanic. Bottom-centre
                 keeps it clear of the d-pad (left) and A/PAGE (right). */}
-            {(TOUCH_UI || URL_TOUCH || micOn) && (uiScreen === 'play' || uiScreen === 'select') && !paused && (
+            {(TOUCH_UI || URL_TOUCH || micOn) && (screen === 'play' || screen === 'select') && !paused && (
                 <button
                     type="button"
                     data-voice-coop={micOn ? 'on' : 'off'}
@@ -715,7 +790,7 @@ export default function TalkMeDown() {
                     {micOn ? 'MIC ON — SHOUT' : 'MIC · TAP'}
                 </button>
             )}
-            <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={uiScreen === 'play'} />
+            <VirtualControls secondAction={{ label: 'PAGE', code: 'KeyB' }} visible={screen === 'play'} />
         </div>
     )
 }

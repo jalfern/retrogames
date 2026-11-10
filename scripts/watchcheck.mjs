@@ -1491,6 +1491,79 @@ const PILOTS = [
             rep.check('boulder-dash: Y again releases the wheel', !(await watching()))
         },
     },
+    // #1637 batch 15 — the rulebook solver takes the seat. TALK ME DOWN's
+    // driver is the engine's OWN solvePad, reactive per tick against live
+    // state (module under the cursor, locks, fuse), cutting only the wire the
+    // rulebook says — the same brain tmd-smoke wins 200/200 seeds with and
+    // the attract demo runs. A mid-run seat is honest from any module, strike
+    // or fuse position; strikes are the honesty meter (the prover cuts right).
+    {
+        id: 'talk-me-down', url: `${BASE}/talk-me-down`, hook: '__tmdTest',
+        async run(page, rep) {
+            const H = '__tmdTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> select
+            await page.waitForTimeout(300)
+            await key(page, 'Space')                       // select -> play (1P default)
+            await page.waitForTimeout(500)
+            rep.check('talk-me-down: the bomb is live before the seat', (await probe()).screen === 'play')
+            rep.check('talk-me-down: nobody is defusing yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('talk-me-down: Y seats the proven defuser', await watching())
+            rep.check('talk-me-down: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // Steer while round 1 is still in flight — the seat was just
+            // claimed, the first module is still open, and ArrowLeft is S1's
+            // wire key, so the hand MUST land back on a live run.
+            await page.keyboard.down('ArrowLeft')
+            rep.check('talk-me-down: steer key takes over', !(await watching()))
+            rep.check('talk-me-down: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('talk-me-down: Y re-seats the prover mid-run', await watching())
+            // solvePad cuts only correct wires: the strike count is the honesty
+            // meter — a hand that guessed would trip a breaker. Solved modules
+            // or banked bombs prove the seat is driving, not just ticking.
+            const adv = (x, y) => (y.solved > x.solved || y.bombs > x.bombs || y.score > x.score || !!y.done) && y.strikes <= x.strikes
+            const a = await probe()
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('talk-me-down: the prover defuses untouched (idle hands trip no breaker)', adv(a, b),
+                `modules ${a.solved} -> ${b.solved}, bombs ${a.bombs}/5 -> ${b.bombs}/5, strikes ${b.strikes} held`)
+            // The route's end must release the seat silently (racer rule) and
+            // win — tmd-smoke's all-seed proof says any seed the prover holds
+            // goes down clean, so demanding `won` here is fair.
+            let ended = false
+            try {
+                await page.waitForFunction((h) => window[h].probe().screen === 'over', H, { timeout: 20000 })
+                ended = true
+            } catch { /* fall through to the check */ }
+            const fin = await probe()
+            rep.check('talk-me-down: the route runs to its end and wins', ended && !!fin.won,
+                `bombs ${fin.bombs}/5, strikes ${fin.strikes}, screen ${fin.screen}`)
+            const s = await sfx()
+            const stops = s.filter((x) => x === 'stop').length
+            rep.check('talk-me-down: released silently at the finish (one stop = the steer only)', !(await watching()) && stops === 1,
+                `sfx log ${JSON.stringify(s)}`)
+            // #1656 one-tap: from attract, ▶ WATCH must start the run AND seat
+            // the prover — the banked-seat path keeps the multi-screen boot honest.
+            await page.waitForTimeout(900)                          // over-screen guard
+            await key(page, 'Space')                                // over -> attract
+            await page.waitForTimeout(900)
+            rep.check('talk-me-down: back on attract before the tap', (await probe()).screen === 'attract')
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('talk-me-down: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                const q = await probe()
+                rep.check('talk-me-down: one tap starts the run AND seats the prover', q.screen === 'play' && await watching(), JSON.stringify(q))
+            }
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -1869,6 +1942,39 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /descend/.test(readFileSync('scripts/sonarcheck.mjs', 'utf8')))
     rep.check('batch 14: dashcheck still proves every cave winnable (the seat\'s witness)',
         /did NOT win/.test(readFileSync('scripts/dashcheck.mjs', 'utf8')))
+}
+// ---- #1637 batch 15 source pins — the rulebook solver takes the seat ----
+{
+    const tmd = readFileSync('src/games/TalkMeDown/index.jsx', 'utf8')
+    const reg15 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas15 = (p, s) => { const m = reg15.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    // The seat must feed the engine's OWN solvePad into the real pad path —
+    // the same pads object the keyboard and the phone pad build — never a
+    // re-rolled, simplified brain, never a copy of the sim.
+    rep.check('TALK ME DOWN: the seat feeds solvePad into the real pad path (no forked brain)',
+        /if \(watchingRef\.current && g && !g\.done\) p1 = solvePad\(g\)/.test(tmd)
+        && /spec\.tick\(p1, pads\)/.test(tmd))
+    rep.check('TALK ME DOWN: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\) \{ e\.preventDefault\(\); watchingRef\.current = !watchingRef\.current; setWatching\(watchingRef\.current\)/.test(tmd)
+        && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\)/.test(tmd))
+    rep.check('TALK ME DOWN: a tap on the bench hands the hands back too',
+        /else if \(screenRef\.current === 'play' && watchingRef\.current\) \{/.test(tmd))
+    rep.check('TALK ME DOWN: watch never lingers — released at the end of the run (silent, racer rule)',
+        /if \(watchingRef\.current && screenRef\.current === 'over'\) \{ watchingRef\.current = false; setWatching\(false\) \}/.test(tmd))
+    rep.check('TALK ME DOWN: attract shows the shared WATCH hint (import + drawn line)',
+        (tmd.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('TALK ME DOWN: one-tap ▶ WATCH survives the multi-screen boot (banked seat at startPlay)',
+        /pendingWatchRef\.current = true/.test(tmd)
+        && /if \(pendingWatchRef\.current\) \{ pendingWatchRef\.current = false; watchingRef\.current = true; setWatching\(true\); playWatchStart\(\) \}/.test(tmd))
+    rep.check('registry /talk-me-down: controls carry the WATCH line', entryHas15('/talk-me-down', 'WATCH_HELP'))
+    // No forked brain, and the witness still carries the proof the seat
+    // replays: solvePad comes from the game's own engine.js, and tmd-smoke
+    // still races it across every seed.
+    rep.check('batch 15: the seat imports solvePad from its own engine.js',
+        /from '\.\/engine\.js'/.test(tmd) && /solvePad/.test(tmd))
+    rep.check('batch 15: tmd-smoke still races solvePad across 200 seeds (the seat\'s witness)',
+        /wins \$\{wins\}\/200/.test(readFileSync('scripts/tmd-smoke.mjs', 'utf8'))
+        && /gs\.done && gs\.won/.test(readFileSync('scripts/tmd-smoke.mjs', 'utf8')))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
