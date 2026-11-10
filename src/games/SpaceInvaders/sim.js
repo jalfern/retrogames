@@ -119,15 +119,21 @@ export const activeCount = (s) => s.invaders.reduce((n, i) => n + (i.alive ? 1 :
 // A fort with ANY brick left shields its whole span (one shot eats ONE brick).
 export const fortBlocks = (s, x) => s.bunkers.some((b) => x + 1 > b.x && x < b.x + BUNKER_W && b.cells.some((m) => m !== 0))
 
-// WATCH route (#1637 batch 18) — the proven flight, pure per-tick reaction on
-// live state. Three laws, in order:
+// WATCH route (#1637 batch 18, hardened batch 19) — the proven flight, pure
+// per-tick reaction on live state. Three laws, in order:
 //  1. STAND IN CLEAR COLUMNS: enemy shots fall straight (2.5 px/t), so the
 //     route plans a *standing place*, not a dodge twitch — the aiming point,
 //     nudged to the nearest column a body clear of every shot still in the air.
 //  2. SHOOT THE LOWEST: descent ends the game, so the target is the lowest
-//     invader whose column the forts don't shield; nearest breaks ties.
+//     invader whose column the forts don't shield; among equal rows prefer one
+//     whose LEAD point is also shield-free (#1637 b19: law 3's meeting point
+//     sits ~17 px into the marching column — often over a fort, where the shot
+//     spends itself on a brick while the fleet walks on), then nearest.
 //  3. LEAD THE MARCH: the fleet drifts while our shot climbs at 5 px/t, so
 //     fire at the meeting point, not today's x.
+// The fire gate never pulls the trigger from a fort-shielded column unless the
+// chosen target itself hides behind a shield — then brick-biting is the honest
+// endgame (#1637 b19: seed 1462 stalled 511 ticks exactly this way).
 // No rand, no memory — honest from any position, so the attract demo and the
 // Y seat run exactly this brain, and invaderscheck's WITNESS section flies it
 // across 20 seeds (wave 1 cleared, no lives lost) and watchcheck drives it in
@@ -143,22 +149,32 @@ export const watchRoute = (s) => {
     const lanes = s.enemyBullets.filter((b) => b.y > GH - 100).map((b) => b.x)
     const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)
     const pathOpen = (x) => lanes.every((lx) => (lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12)
-    // Law 2: the lowest invader the forts don't shield.
+    const leadOf = (i) => {
+        const flight = (PLAYER_Y - BULLET_H - i.y) / 5
+        return Math.max(minX, Math.min(maxX, i.x + INVADER_W / 2 + s.dir * waveSpeed(s.wave) * flight))
+    }
+    // Law 2: the lowest invader the forts don't shield — and where the fort
+    // choice ties, the one whose meeting point flies over open sky.
     let best = null
     let bestBlocked = true
+    let bestAimBlocked = true
     for (const i of s.invaders) {
         if (!i.alive) continue
         const blocked = fortBlocks(s, i.x + INVADER_W / 2)
+        const aimBlocked = fortBlocks(s, leadOf(i))
         const nearer = !best || Math.abs(i.x + INVADER_W / 2 - pc) < Math.abs(best.x + INVADER_W / 2 - pc)
-        if (!best || i.y > best.y || (i.y === best.y && !blocked && bestBlocked) || (i.y === best.y && blocked === bestBlocked && nearer)) {
+        if (!best || i.y > best.y
+            || (i.y === best.y && !blocked && bestBlocked)
+            || (i.y === best.y && blocked === bestBlocked && !aimBlocked && bestAimBlocked)
+            || (i.y === best.y && blocked === bestBlocked && aimBlocked === bestAimBlocked && nearer)) {
             best = i
             bestBlocked = blocked
+            bestAimBlocked = aimBlocked
         }
     }
     if (!best) return input
     // Law 3: the meeting point of our shot and the marching target.
-    const flight = (PLAYER_Y - BULLET_H - best.y) / 5
-    const aimX = Math.max(minX, Math.min(maxX, best.x + INVADER_W / 2 + s.dir * waveSpeed(s.wave) * flight))
+    const aimX = leadOf(best)
     // Law 1: stand free of every contested column; fleeing takes priority, and
     // no route ever threads between two falling shots.
     let goal = null
@@ -177,7 +193,7 @@ export const watchRoute = (s) => {
     const dx = goal - pc
     if (dx > 1) input.right = true
     else if (dx < -1) input.left = true
-    if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc)) input.fire = true
+    if (Math.abs(aimX - pc) <= 2.5 && !s.playerBullet && freeAt(pc) && (bestBlocked || !fortBlocks(s, pc))) input.fire = true
     return input
 }
 

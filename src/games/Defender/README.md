@@ -50,23 +50,28 @@ npm run watchcheck -- --only defender  # seat pilot: one-tap ▶ WATCH, Y seat/t
 npm run feedbackcheck          # floor law now 55 report+pin titles
 npm run attractcheck           # attract layout rules
 npm run lint:defender
-npm run dev -- --port 5178 --strictPort   # slot b port; /retrogames/defender
+npm run dev -- --port "$DEV_PORT" --strictPort   # your lane's port; /retrogames/defender
 ```
 
-## WATCH (#1637 batch 18)
+## WATCH (#1637 batch 18; defends the humans since batch 19)
 
 Y seats `watchRoute` from `sim.js` — the SAME patrol the attract demo flies
 and `defendercheck`'s WITNESS audits on 20 seeds (no forked brain; the old
-local attractInput is deleted). The patrol chases the nearest enemy into firing
-line, climbs clear of the terrain and holds altitude out of the dark. Any
+local attractInput is deleted). The patrol ranks the planet's jobs: a lander
+HAULING a human outranks everything (shoot it and the human drops recoverable),
+a diving lander is next, then nearest threats; a falling human is flown into
+(+250) and carried down the elevator to the surface (+500); the guns hold
+when a walking human stands in the laser line closer than the target. The
+patrol still climbs clear of the terrain and stays out of the dark. Any
 driving key or a tap hands the wheel back (shared blips).
 
 ## Honest gaps
 
 - The WATCH patrol is honest-proven, not perfect: WITNESS 20/20 survive a
-  150 s patrol (min 4750 banked, 19/20 clear ≥1 wave) but it grazes ~1 hit
-  per patrol and plays no defence of the abducted humans — tightening the
-  route is a batch-19 candidate; the gate pins what is MEASURED, not wishes.
+  150 s patrol (min 7800 banked, 19/20 clear ≥1 wave; 46 rescues — catch+
+  deliver — across the 20 seeds) but it grazes ~1 hit per patrol and a haul
+  started on the far side of the planet can still crest before the ship
+  arrives; the gate pins what is MEASURED, not wishes.
 - No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
   features left out of this port; the original's bonus table values 250/500/
   1000/10k are honored for what IS here).
