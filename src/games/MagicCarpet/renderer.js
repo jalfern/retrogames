@@ -393,6 +393,10 @@ void main(){
     land = land * (0.80 + 0.32 * grain);
     vec3 col = land * diff * mix(vec3(1.0), uSunCol, 0.25);
     vec3 V = normalize(uCamPos - vWorld);
+    // #1764 item 4 stage 5: SEA FROM BELOW — how far under the surface the
+    // eye sits (0 dry, 1 a metre or more under). View-dependent presentation
+    // read, like the stage-2 dive composite; the sim never sees it.
+    float under = smoothstep(0.0, 1.0, .0 - uCamPos.y);
     if (vH < ${WATER}.0) {
         float depth = ${WATER}.0 - vH;
         float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + uWorldTime * vec2(${WAVE_TRAVEL.x}, ${WAVE_TRAVEL.y}) + 3.3) * 0.45;
@@ -421,15 +425,31 @@ void main(){
         vec3 refl = normalize(reflect(-V, wn));
         float spark = pow(max(dot(refl, normalize(uSunDir)), 0.0), 140.0)
             * step(0.42, fbm2(vWorld.xz * 0.8 + uWorldTime * 0.016));
-        wcol = mix(wcol, uZenith * 1.2, fres * 0.45);
-        wcol *= wsh * (0.9 + 0.1 * sin(rip * 1.4 + vWorld.z * 0.04));
-        wcol += uSunCol * spec * 0.9;
-        wcol += uSunCol * spark * 2.4;
-        float shore = smoothstep(3.2 + fbm2(vWorld.xz * 0.3) * 1.7, 0.35, depth);
-        float foam = shore * (0.45 + 0.55 * fbm2(vWorld.xz * 0.9 + uWorldTime * 0.014));
-        float lace = smoothstep(0.9, 1.6, depth + fbm2(vWorld.xz * 1.6 - uWorldTime * 0.02)) * shore;
-        wcol = mix(wcol, uFoam, clamp(foam + lace * 0.5, 0.0, 1.0) * 0.85);
-        col = wcol;
+        if (under < 0.5) {
+            wcol = mix(wcol, uZenith * 1.2, fres * 0.45);
+            wcol *= wsh * (0.9 + 0.1 * sin(rip * 1.4 + vWorld.z * 0.04));
+            wcol += uSunCol * spec * 0.9;
+            wcol += uSunCol * spark * 2.4;
+            float shore = smoothstep(3.2 + fbm2(vWorld.xz * 0.3) * 1.7, 0.35, depth);
+            float foam = shore * (0.45 + 0.55 * fbm2(vWorld.xz * 0.9 + uWorldTime * 0.014));
+            float lace = smoothstep(0.9, 1.6, depth + fbm2(vWorld.xz * 1.6 - uWorldTime * 0.02)) * shore;
+            wcol = mix(wcol, uFoam, clamp(foam + lace * 0.5, 0.0, 1.0) * 0.85);
+            col = wcol;
+        } else {
+            // #1764 item 4 stage 5: the surface seen from below — the SAME
+            // advected crest bands (wcol, stages 1+4) silvered into a ceiling:
+            // transmitted light that tracks the sun's bearing through the waves,
+            // shimmer on the shared ripple clock, and a span that sinks into
+            // the deep instead of lifting to sky. Foam stays on top — it is a
+            // surface-top phenomenon, and the ceiling never wears it.
+            vec3 fdir = normalize(vWorld - uCamPos);
+            float sdn = max(dot(fdir, uSunDir), 0.0);
+            float shim = 0.5 + 0.5 * sin(rip * 1.6 + uWorldTime * 0.045);
+            vec3 cc = mix(wcol * 0.5, vec3(0.30, 0.62, 0.74), 0.55 + 0.25 * shim);
+            cc += uSunCol * pow(sdn, 24.0) * (0.5 + 0.8 * shim);
+            cc += uSunCol * pow(sdn, 3.5) * 0.10;
+            col = mix(cc, vec3(0.02, 0.07, 0.11), smoothstep(18.0, 95.0, vDist));
+        }
     }
     if (vGlow > 0.004) {
         float flick = 0.72 + 0.28 * fbm3(vWorld.xz * 0.22 + uWorldTime * 0.03);
@@ -448,7 +468,9 @@ void main(){
     // #1764 item 5 stage 5: aerial perspective — the haze layer (hazeOfG) and
     // the carpet's altitude (airOfG) shape the mix; the max() keeps the original
     // horizon fuse: the grid edge must still dissolve into the fog color.
-    col = mix(col, uFogCol, max(aerialG(vDist, vH, uCamPos.y) * 0.92, smoothstep(${HALF - 28}.0, ${HALF - 4}.0, vDist) * 0.92));
+    // #1764 item 4 stage 5: under the sea the far span fades to the deep, never
+    // to sky — the ceiling keeps its distance-darkened teal to the grid edge.
+    col = mix(col, mix(uFogCol, vec3(0.02, 0.07, 0.11), under), max(aerialG(vDist, vH, uCamPos.y) * 0.92, smoothstep(${HALF - 28}.0, ${HALF - 4}.0, vDist) * 0.92));
     gl_FragColor = vec4(col, 1.0);
 }
 `

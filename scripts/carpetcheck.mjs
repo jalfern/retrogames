@@ -186,6 +186,61 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             'source pin')
     }
     {
+        // #1764 item 4 stage 5 — SEA FROM BELOW. A dive showed no floor: the
+        // underside of the clamped surface wore the TOP-side decoration (sky-
+        // lifting fresnel, sparkle, foam lace, sky horizon fog). Now below the
+        // waterline the surface is a ceiling: the same advected crest bands
+        // (stages 1+4) silvered, transmitted shafts that track the sun's
+        // bearing, shimmer on the shared ripple clock, and a span that sinks
+        // into deep teal instead of lifting to sky. Proven with source pins +
+        // a JS twin — deliberately no pixels (the #1622 degraded-Chrome lesson:
+        // this family must be checkable in Node).
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        const iTop = src.indexOf('if (under < 0.5) {')
+        const iElse = src.indexOf('} else {', iTop)
+        const iEnd = src.indexOf('}', src.indexOf('smoothstep(18.0, 95.0, vDist)'))
+        r.check('#1764 item 4 stage 5: the view-from-below read exists and gates the whole top-side decoration (fresnel/spec/spark/foam run only from above)',
+            src.includes('float under = smoothstep(0.0, 1.0, ${WATER}.0 - uCamPos.y);') &&
+            iTop > 0 && iElse > iTop &&
+            src.slice(iTop, iElse).includes('uFoam') &&
+            src.slice(iTop, iElse).includes('spark * 2.4'),
+            'source pin')
+        r.check('#1764 item 4 stage 5: the ceiling re-uses the SAME travelling band colour silvered — the palette march and advected shapes read through the surface from below',
+            iElse > 0 && iEnd > iElse &&
+            src.slice(iElse, iEnd).includes('vec3 cc = mix(wcol * 0.5,') &&
+            src.slice(iElse, iEnd).includes('shim'),
+            'source pin')
+        r.check('#1764 item 4 stage 5: foam is banned on the ceiling — the underside branch never mentions uFoam (lace stays a surface-top phenomenon)',
+            iElse > 0 && iEnd > iElse && !src.slice(iElse, iEnd).includes('uFoam'),
+            'source pin')
+        r.check('#1764 item 4 stage 5: under the keel the far span fades to the deep, and the old sky-only fog mix is banned',
+            src.includes('mix(uFogCol, vec3(0.02, 0.07, 0.11), under)') &&
+            !src.includes('col = mix(col, uFogCol, max(aerialG'),
+            'source pin')
+        const smooth = (e0, e1, x) => { const t = Math.min(Math.max((x - e0) / (e1 - e0), 0), 1); return t * t * (3 - 2 * t) }
+        const lift = (sdn, shim) => Math.pow(sdn, 24) * (0.5 + 0.8 * shim) + Math.pow(sdn, 3.5) * 0.10
+        let mono = true
+        for (let i = 1; i <= 20; i++) if (lift(i / 20, 1) <= lift((i - 1) / 20, 1)) mono = false
+        const lum = (c) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        r.check('#1764 item 4 stage 5: the sun-shaft twin is monotone and sun-locked — zero off-bearing, strong on-bearing (never a flat wash)',
+            mono && lift(0, 1) === 0 && lift(1, 1) > 1.2,
+            `lift(1,1)=${lift(1, 1).toFixed(2)}`)
+        r.check('#1764 item 4 stage 5: silver beats the deep — the lit ceiling is several times brighter than the far fade and lean-blue (daylight through water)',
+            lum([0.30, 0.62, 0.74]) > lum([0.02, 0.07, 0.11]) * 3 && 0.74 > 0.30,
+            `lum ratio ${(lum([0.30, 0.62, 0.74]) / lum([0.02, 0.07, 0.11])).toFixed(1)}`)
+        let shimMin = 1, shimMax = 0
+        for (let t = 0; t <= 3600; t++) { const s = 0.5 + 0.5 * Math.sin(0.7 * 1.6 + t * 0.045); if (s < shimMin) shimMin = s; if (s > shimMax) shimMax = s }
+        r.check('#1764 item 4 stage 5: the ceiling shimmers on the sim clock — a fixed point swings near-full silver-to-shade over a minute (a still ceiling churns 0)',
+            shimMax - shimMin > 0.9,
+            `shim range ${(shimMax - shimMin).toFixed(3)}`)
+        r.check('#1764 item 4 stage 5: the fade span is bounded — ceiling colour holds crisp near, deep-teal owns everything past 95u',
+            smooth(18, 95, 10) === 0 && smooth(18, 95, 120) === 1)
+        r.check('#1764 item 4 stage 5: presentation-only law — sim.js never learns the camera (diveOf/DIVE_DRAG stay the sim-side law)',
+            !simS.includes('uCamPos') && simS.includes('diveOf') && simS.includes('DIVE_DRAG'),
+            'source pin')
+    }
+    {
         const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
         const renS = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
         r.check('#1764 item 4 stage 2: diveable sea floor in sim.js (dry law intact, old blanket floor banned) and the underwater mix in the composite',

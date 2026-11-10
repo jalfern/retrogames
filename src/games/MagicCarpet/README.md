@@ -434,8 +434,17 @@ see item 5).
   travel (the t field is the t=0 field translated exactly, nothing swirls).
   Mutant: static field → churn gate dies. Drift direction is a design choice
   (the original's exact heading is unverifiable here); the magnitude rides the
-  same family as the sparkle drift. Still open: the sea surface seen
-  from below.
+  same family as the sparkle drift. **CLOSED by #1764 item 4 stage 5:** the sea
+  surface seen from below is a ceiling — below the waterline (`under`, a pure
+  camera-depth read) the top-side decoration (sky fresnel lift, sparkle, foam
+  lace) is gated off and the same advected crest bands re-appear silvered:
+  transmitted shafts that track the sun's bearing through the waves, shimmer on
+  the shared ripple clock, and a span that fades to deep teal instead of lifting
+  to sky fog, so a dive reads as being under a moving sea, not in a blue void.
+  Presentation-only (sim.js never learns the camera); carpetcheck proves it with
+  source pins (decoration gated, foam banned on the ceiling, sky-fog mix
+  replaced) + a JS twin (sun-shaft monotone, silver-over-deep luminance,
+  one-minute shimmer range, bounded fade span).
 - **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
   DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
   ease-out swell, a shockwave rim that settles to exactly zero) with the
