@@ -1,62 +1,59 @@
-# STATE — session 189 (2026-11-10, slot b)
+# STATE — session 190 (2026-11-09, slot a)
 
 ## What shipped
-**COMET DRIFT GP: keyboard tap notch** — squash `d040733` (PR #1860,
-Closes #1857, POLISH filed+claimed this session at the never-dry weakest
-rung; `weakestStage` score 5, flagships spent). `sim.js drive()` shapes
-DIGITAL player steering: a tap held ≤ `CFG.tapTicks` (5) deflects at
-`CFG.tapLevel` (0.55), a hold reaches full ±1 from tick 6, reversal re-arms.
-Analog `inp.steer` (#431 stick pipeline, pins) bypasses; notch is
-`isPlayer`-gated so the CPU field is byte-identical; `decide()` stamps
-`autopilot:true` → `step()` pins numeric steer, keeping the certified line
-(attract, win-proofs, the new b13 WATCH seat) exact — first full run caught
-this (violets 335<340, tick-9514 pin), fixed per #1687 precedent. #517
-holds: charge is bend-weighted, one-way hold still dumps below tier 1
-(new digital-twin gate: off-road tick 26, lesson fires).
-Evidence: cometcheck GREEN +12 gates, `--mutate` +2 (notch-off and
-notch-welded each die on their half); cometplay 30/30 real keys incl.
-page-side steerVis sampler (soft −0.55 → lock −1 → release 0);
-contractcheck 682/682; watchcheck 535/535 after rebase onto b13 (`e95c213`).
-Prod: entry `index-DJB8hzlQ.js` carries the TAP registry copy. Live:
-https://jalfern.com/retrogames/comet-drift
+**BRITANNIA: moon-phase routing — the moon decides the destination** — squash
+`0d13332` (PR #1863, closes #1862). Never-dry stage (#1571): `weakestStage`
+scored BRITANNIA 5 (weakest unheld; FloorBoss/TalkMeDown tied but held then).
+Ultima IV's rule that the picker faked is now real: `ROUTE_OFFSET`
+[1,3,5,7,4,7,5,3] + `routeDest(gate,phase,n)` in moons.js — each phase
+rotates the gate circle (shifts held 1..n-1 = derangement; waxing widens,
+full rides diameters, waning mirrors). Gate menu marks tonight's road (silver
+disc + moon-ink + caption); other rows are refused with a toast that names the
+true route — keyboard/digits/tap all obey (one pad.a seat). Warp untouched.
+Evidence: britanniacheck 233 gates (+13, incl. honest rewrite of the vacuous
+"network" winnable gate: 7 moonlit rides visit all 8 once; full-moon alone =
+the four diametric pairs). Mutants: bad wheel (offset[4] 4→2) = 3 RED, cut
+refusal = rule pin RED, restored. britannidrive 20/20 real keys (refusal
+teaches, ride I→II byte-exact, full moon flips II: III→VI, lands VI@235,211,
+zero page errors). lint:mario/fps/ai + eslint + build green.
+Live: https://jalfern.com/retrogames/britannia — prod proof: served chunk
+`index-D37fNuJW.js` carries `routeth hence`.
 
 ## Session bookkeeping
-- Warden target #1637 (WATCH rollout) was REFUSED at claim — slot a held it
-  (and shipped batch 13, Comet Drift + HD, mid-session: `e95c213`). Ran the
-  normal ladder: #1711 verified hardware-gated (comment exists, stays `next`),
-  no halt/steer/next/game-queue, QA MASTER live (no feedback borrow),
-  flagship stage spent → weakest rung → #1857.
-- `cometdrifthdcheck` crashes on origin/main (`trackGeometryStats().band`
-  null for sandbank/corkscomb, TypeError :587) — PRE-EXISTING on main,
-  identical on my branch before/after rebase. Advisory; someone must redress
-  it (looks like a #1858-era harness casualty). Not filed (QA lane's board).
-- Rebase note: b13 and this PR both touched the comet controls arrays —
-  collision resolved keeping WATCH_HELP + TAP lines; watchcheck pins green.
+- **The claim ladder refused #1857** (warden's TARGET): b's hold was LIVE, not
+  stale — b resumed and SHIPPED it (PR #1860, `d040733`). Yielding was right;
+  retrying a refused claim would have collided. A refusal means "another lane
+  is really in there", not "wait 25 min".
+- Filed #1862 (POLISH — BRITANNIA, why-weakest line included), claimed,
+  shipped, #1829 (open BRITANNIA QA pass) gained two moon-route items (6,7)
+  + a stickiness look — that's the QA lane's job now, not ours.
+- No jonq filed (nothing taste/priority; the rule came from README + original).
 
-## Next queued (slot b)
-1. Ladder fresh: halt → steer/next → game-queue → feedback (only if
-   `pgrep -f "QA MASTER"` empty) → flagship (spent) → weakest via
-   `node scripts/idle-kick.mjs` — CometDrift gap 0 is now CLOSED; expect
-   CometDrift gap 1 (#493 third-course residual) or FloorBoss/TalkMeDown at 4-5.
-2. If #1637 is claimable again (a's 90-min liveness expired), the WATCH
-   rollout may still be open with more titles to seat — check `gh issue view
-   1637` coverage counter before picking the weakest rung.
-3. If #1711 is `next`: verify the checkpoint comment, return it to `next`,
-   move on — hardware lines are Jon's only (#1730 = Hold, closed).
+## Next queued (slot a)
+1. The ladder is empty (game-queue 0; feedback owned/held; flagship gaps all
+   owned) -> **never-dry rung**. Fresh `weakestStage` run: MAGIC CARPET 5
+   (tie w/ TalkMeDown/FloorBoss/Britannia 5, registry order picks it).
+   CAUTION first: QA merged #1861 into MagicCarpet ~this session and #1764's
+   items are moving — re-run `heldDirs`; if any open `building-qa` names
+   MagicCarpet, skip it (that's the tie-break's blind spot between runs).
+   CometDrift GP may reappear as the wheel recomputes post-#1857.
+2. #1637 (WATCH roll) — if it's `next`/`steer` at claim time it outranks;
+   b shipped #1857 and its slot may take the roll again.
 
-## Notes for the next slot-b session
-- Dev server on 5178 stopped at session end. Main checkout: detached at
-  `d040733`, clean. Worktree `~/Dev/retrogames-forge-comet-steer` = detached
-  at origin/main after merge; node_modules symlinked, reuse for the next
-  `forge/<slug>` branch or remove.
-- cometcheck is now ~2300 lines; the #1857 section measures on the FLATTEST
-  track point (`|k|+|bank|` min, i=341 gulch) — Catmull curves never hit exact
-  zero, strict-zero gates crash. Browser gates that poll via RPC are
-  rAF-starved under load: sample PAGE-SIDE (see cometplay steerVis gate).
-- jalfern.com 308-redirects to www.jalfern.com — prod bundle greps MUST
-  use `curl -sL`.
-- QA MASTER live all session (PID 46660) — feedback stays theirs.
+## Notes for the next slot-a session
+- Worktree `~/Dev/retrogames-forge-britannia-moonroute` = detached at
+  `0d13332` (post-merge), node_modules symlinked. Reuse:
+  `git checkout -B forge/<newslug> origin/main`.
+- **page.evaluate scope trap:** node-scope consts (DAY_TICKS) do NOT exist in
+  the page function — pass as the second arg. First britanniadrive run died on
+  it late in the suite; everything else passed, so grep evaluate callbacks for
+  free variables before the first browser run.
+- Menu box geometry: `GM.foot` is now the single source (the two pointer-handler
+  copies of `+ 44` were folded into `gmBox()`); britanniacheck pins it.
+- Gate menus open on ADJACENCY (within 1 tile after a move) — the drive opens
+  them with one Arrow press beside a gate; all 8 gates are land-locked 4 ways
+  (checked), so ship-walk accidents can't strand the drive.
+- Dev server 5173 stopped at session end.
 
 ## Open questions
-- None new. (#517's "keyboard untouched" stance was respected, not reversed —
-  the notch never makes tier-1 reachable one-way; no taste issue to ask.)
+- None. (Queue guidance above is mechanical; nothing for Jon.)
