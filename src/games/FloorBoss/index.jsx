@@ -178,6 +178,18 @@ const FloorBossGame = () => {
                     case 'stow': audioController.playTone(620, 0.05, 'square', 0.05); audioController.playTone(930, 0.07, 'square', 0.04, 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#9fe8b4', 1.2); break
                     case 'deliver': audioController.playTone(740, 0.06, 'square', 0.05); break
                     case 'ship': {
+                        // #1921 freight line: pack no longer rings the till — it BOOKS
+                        // the money onto the parcel. Blue hold chip; the register sound
+                        // moves to the freight event, when the trailer actually hauls.
+                        audioController.playTone(494, 0.07, 'triangle', 0.05)
+                        fx(`HOLD +${e.pay}`, '#7ec8ff', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y))
+                        burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 4, '#7ec8ff', 1.2)
+                        break
+                    }
+                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`HOLD +${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); break
+                    // freight line (#1921): the till rings at the trailer, and full
+                    // trailers ring louder — money follows freight
+                    case 'freight': {
                         audioController.playTone(523, 0.08, 'square', 0.07)
                         audioController.playTone(659, 0.08, 'square', 0.07, 0.09)
                         audioController.playTone(784, 0.14, 'square', 0.07, 0.18)
@@ -185,9 +197,14 @@ const FloorBossGame = () => {
                         burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 6, '#9fe8b4', 1.8)
                         break
                     }
-                    case 'late': audioController.playTone(400, 0.09, 'sawtooth', 0.06); audioController.playTone(300, 0.12, 'sawtooth', 0.05, 0.09); fx(`+${e.pay} LATE`, '#ffd23f', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y)); break
+                    case 'bonus': {
+                        audioController.playTone(660, 0.07, 'triangle', 0.06); audioController.playTone(880, 0.09, 'triangle', 0.06, 0.08); audioController.playTone(1175, 0.12, 'triangle', 0.05, 0.17)
+                        fx(`FREIGHT +${e.amt}`, '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 26)
+                        burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 8, '#ffd23f', 2)
+                        break
+                    }
                     // load-out (#1911): the dock speaks in truck sounds
-                    case 'truckin': audioController.playTone(180, 0.07, 'square', 0.05); audioController.playTone(180, 0.07, 'square', 0.05, 0.14); fx('TRUCK IN', '#7ec8ff', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y) - 12); break
+                    case 'truckin': audioController.playTone(180, 0.07, 'square', 0.05); audioController.playTone(180, 0.07, 'square', 0.05, 0.14); fx('TRUCK IN', '#7ec8ff', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y) - 12); if (e.fee) fx(`EXPRESS −${e.fee}`, '#ff9a4f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 12); break
                     case 'loadout': {
                         audioController.playNoise(0.05, 0.05); audioController.playTone(220, 0.05, 'square', 0.04)
                         const p = gs.pad.length ? OUT_CELLS[gs.pad.length % 2] : OUT_CELLS[0]
@@ -564,6 +581,12 @@ const FloorBossGame = () => {
             }
             ctx.fillStyle = '#7e9cb0'; ctx.font = 'bold 7px monospace'
             ctx.fillText('EXPIRED', 204, 28)
+            // freight line (#1921): escrow is money the pack booked but the dock
+            // hasn't shipped — it only becomes THROUGHPUT when the trailer hauls
+            if (gs.escrow > 0) {
+                ctx.fillStyle = tick % 50 < 34 ? '#7ec8ff' : '#3d5f78'; ctx.font = 'bold 8px monospace'; ctx.textAlign = 'left'
+                ctx.fillText(`ESCROW ${gs.escrow}`, 372, 22)
+            }
             // shift clock
             const left = Math.max(0, Math.ceil((SHIFT - gs.tick) / 60))
             ctx.fillStyle = left < 30 && tick % 20 < 10 ? '#ff5a4f' : '#e8e0d0'
@@ -783,6 +806,9 @@ const FloorBossGame = () => {
             ctx.fillText(`THROUGHPUT ${gs.score}`, W / 2, 190)
             ctx.font = '8px monospace'; ctx.fillStyle = '#9fc0d8'
             ctx.fillText(`SHIPPED ${gs.shipped} · STOWS ${gs.stows} · EXPIRED ${gs.expired}/${STRIKES}`, W / 2, 210)
+            // #1921: the freight ledger — what the trailers earned, cost and left behind
+            ctx.fillStyle = '#7e9cb0'
+            ctx.fillText(`FREIGHT +${gs.freight} · EXPRESS −${gs.fees}${gs.escrow ? ` · ${gs.escrow} STRANDED ON THE PAD` : ' · PAD CLEAN'}`, W / 2, 226)
             if (tick % 60 < 40) {
                 ctx.font = 'bold 10px monospace'; ctx.fillStyle = '#ffffff'
                 ctx.fillText('PRESS ANY KEY FOR THE NEXT SHIFT', W / 2, 250)
@@ -972,13 +998,14 @@ const FloorBossGame = () => {
                 },
                 truck: () => ({ ...gs.truck }),
                 pad: () => gs.pad.map((p) => p.n), // #1911 harness eye on the staged parcels
+                ledger: () => ({ escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees }), // #1921 harness eye on the freight line
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1877 eyes on the servo presentation ghosts (renderer-only state)
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
-                probe: () => ({ tick: gs.tick, score: gs.score, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
+                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
                 watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
             }
@@ -986,7 +1013,7 @@ const FloorBossGame = () => {
                 title: 'FLOOR BOSS',
                 getState: () => [
                     `tick ${gs.tick}/${SHIFT} | score ${gs.score}/${QUOTA} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
-                    `shipped ${gs.shipped} stows ${gs.stows} staging [${gs.staging.join('')}] arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
+                    `shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
                     gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
                 actions: [

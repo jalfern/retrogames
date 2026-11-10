@@ -62,6 +62,16 @@ export const PAD_CAP = 3 // parcels the pad holds before the next packed ship wa
 export const PAD_AGE = 240 // oldest parcel ages out after 4 s — the truck is called
 const TRUCK_LOAD = 14 // ticks to load one box into the trailer
 const TRUCK_MIN = 40 // min dwell after the pad empties (tap sends early)
+// Freight line (#1921): pack BOOKS the money, the trailer PAYS it. A parcel's
+// payout rides the parcel as escrow and lands on the tick its LAST box is
+// loaded aboard; a haul that physically carries FULL_TRAILER or more boxes pays
+// FREIGHT_PER_BOX per box — full trailers earn, dribbles ride free of bonus.
+// Scheduled pickups (the cap/age law) are free; a MANAGER tap that calls the
+// trailer early pays DISPATCH_FEE — impatience is the taxed dribble. The ledger
+// rides sim truth: escrow in the hash, per-parcel escrow on the pad.
+export const FREIGHT_PER_BOX = 6
+export const FULL_TRAILER = 3 // boxes aboard at send-off that make a haul "full"
+export const DISPATCH_FEE = 5
 export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
 const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
@@ -162,6 +172,31 @@ const armReach = (gs) => gs.racks
 // lane and never races the gantry.
 const bayClaimed = (gs) => gs.robots.some((b) => b.task.kind === 'toArm' && !b.broken)
 
+// #1921 freight line — the two trailer verbs with their money attached. A
+// scheduled pickup (law) is free; a manager tap that calls early pays the
+// dispatch fee (the express tax on dribbles); a send pays freight when the
+// trailer hauls FULL_TRAILER boxes or more (see sendTruck).
+function callTruck(gs, via) {
+    gs.truck.mode = 'back'
+    if (via === 'tap') {
+        gs.score -= DISPATCH_FEE
+        gs.fees += DISPATCH_FEE
+    }
+    gs.ev.push({ type: 'truckin', tap: via === 'tap', fee: via === 'tap' ? DISPATCH_FEE : 0 })
+}
+
+function sendTruck(gs, tap) {
+    const tr = gs.truck
+    if (tr.carry >= FULL_TRAILER) {
+        const amt = FREIGHT_PER_BOX * tr.carry
+        gs.score += amt
+        gs.freight += amt
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry })
+    }
+    tr.mode = 'leave'
+    gs.ev.push({ type: 'truckout', tap, carry: tr.carry })
+}
+
 function cellClick(gs, x, y) {
     if (!inGrid(x, y)) return 'oor'
     const bot = gs.robots.find((r) => r.x === x && r.y === y)
@@ -213,8 +248,8 @@ function cellClick(gs, x, y) {
         // #1911 load-out verb: tapping the shipping pad calls a waiting truck
         // early (before cap/age) or sends a parked one before its dwell ends.
         const tr = gs.truck
-        if (tr.mode === 'out' && gs.pad.length) { tr.mode = 'back'; gs.ev.push({ type: 'truckin', tap: true }); return 'call' }
-        if (tr.mode === 'park') { tr.mode = 'leave'; gs.ev.push({ type: 'truckout', tap: true, carry: tr.carry }); return 'send' }
+        if (tr.mode === 'out' && gs.pad.length) { callTruck(gs, 'tap'); return 'call' }
+        if (tr.mode === 'park') { sendTruck(gs, true); return 'send' }
         gs.ev.push({ type: 'peek', x, y })
         return 'peek'
     }
@@ -347,7 +382,8 @@ export function makeGame(seed = 1337) {
         robots: [], racks: [], staging: [], orders: [], conv: [],
         arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
         truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0 }, // load-out (#1911): mode out | back | park | leave
-        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick } (#1911)
+        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay } (#1911/#1921)
+        escrow: 0, paid: 0, freight: 0, fees: 0, // freight-line ledger (#1921)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
         nextBotId: 1, nextOrderId: 1,
@@ -395,11 +431,10 @@ function tryShip(gs) {
         const base = o.items.reduce((s, k) => s + BASE_PAY[k], 0)
         const onTime = gs.tick <= o.due
         const pay = Math.round(base * (rush ? 1.5 : 1) * (onTime ? 1 : 0.4)) + (onTime ? ONTIME_BONUS * o.items.length : LATE_PAY)
-        gs.score += pay
+        gs.escrow += pay // #1921 freight line: the pack books it, the trailer pays it
         gs.shipped++
-        gs.pad.push({ n: o.items.length, since: gs.tick }) // stage the parcel for a trailer (#1911)
+        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921)
         gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id })
-        if (!gs.quotaHit && gs.score >= QUOTA) { gs.quotaHit = true; gs.ev.push({ type: 'quota' }) }
     }
 }
 
@@ -409,7 +444,12 @@ function stepRobot(gs, bot) {
         if (bot.repair <= 0) {
             bot.broken = false; bot.wear = 0
             bot.jam = false; bot.wait = 0
-            repath(gs, bot)
+            // #1921 surfacing: a bot that went DOWN while detailed to the bay
+            // stops owning the bay (the servo may swing with its cargo mid-
+            // outage). On recovery, if the gantry is swinging, that cargo is
+            // already landing on a rack — stand down instead of racing the arm.
+            if (bot.task.kind === 'toArm' && gs.arm.swing > 0) { bot.task = { kind: 'idle' }; bot.path = [] }
+            else repath(gs, bot)
             gs.ev.push({ type: 'repaired', x: bot.x, y: bot.y })
         }
         return
@@ -676,7 +716,7 @@ export function step(gs, pads = [{}]) {
     const tr = gs.truck
     if (tr.mode === 'out' && gs.pad.length) {
         const age = gs.tick - gs.pad[0].since
-        if (gs.pad.length >= PAD_CAP || age >= PAD_AGE) { tr.mode = 'back'; gs.ev.push({ type: 'truckin' }) }
+        if (gs.pad.length >= PAD_CAP || age >= PAD_AGE) callTruck(gs, 'law')
     }
     if (tr.mode === 'back') {
         tr.x += TRUCK_BACK
@@ -689,15 +729,27 @@ export function step(gs, pads = [{}]) {
                 const p = gs.pad[0]
                 p.n-- // box by box — a three-box parcel takes three cycles
                 tr.carry++
-                if (p.n <= 0) gs.pad.shift()
+                if (p.n <= 0) {
+                    gs.pad.shift()
+                    // #1921 freight line: the last box aboard frees the parcel's
+                    // escrow — money followed the freight off the dock
+                    gs.escrow -= p.esc || 0
+                    gs.paid += p.esc || 0
+                    gs.score += p.esc || 0
+                    if (p.esc) gs.ev.push({ type: 'freight', pay: p.esc, x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
+                }
                 gs.ev.push({ type: 'loadout', x: OUT_CELLS[0].x, y: OUT_CELLS[0].y })
             }
         } else tr.dwell++
-        if (!gs.pad.length && tr.dwell >= TRUCK_MIN) { tr.mode = 'leave'; gs.ev.push({ type: 'truckout', carry: tr.carry }) }
+        if (!gs.pad.length && tr.dwell >= TRUCK_MIN) sendTruck(gs, false)
     } else if (tr.mode === 'leave') {
         tr.x += TRUCK_FWD
         if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0 }
     }
+
+    // quota rings whenever the score crosses it (the till now rings at the
+    // trailer, not the pack line — #1921; the DebugKit budget cheat rings it too)
+    if (!gs.quotaHit && gs.score >= QUOTA) { gs.quotaHit = true; gs.ev.push({ type: 'quota' }) }
 
     // shift end
     if (!gs.end && gs.tick >= SHIFT) {
@@ -715,7 +767,8 @@ export function stateHash(gs) {
     for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
-    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}]P[${gs.pad.map((p) => p.n).join(',')}]|` // load-out (#1911), additive (#1373 law)
+    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921), additive (#1373 law)
+    s += `E[${gs.escrow}:${gs.paid}:${gs.freight}:${gs.fees}]|` // freight ledger, additive (#1373 law, #1921)
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
     return hashString(s)
@@ -745,6 +798,8 @@ export function state(gs) {
         conveyor: gs.conv.map((c) => ({ kind: c.kind, x: c.x })),
         armHeld: gs.arm.held,
         pad: gs.pad.map((p) => p.n),
+        escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees, // freight-line ledger (#1921)
+        padAge: gs.pad.length ? gs.tick - gs.pad[0].since : 0,
         truck: gs.truck.mode,
         carry: gs.truck.carry,
         armSwing: gs.arm.swing > 0 ? { x: gs.arm.target.x, y: gs.arm.target.y, left: gs.arm.swing } : null, // #1872
@@ -776,10 +831,16 @@ export function createAutopilot() {
 
         // expand: keep the floor ahead of the flow — racks within the belt-to-
         // dock corridor, whenever there is spare cash beyond a reserve; hire a
-        // third robot once the racks are worth more hands.
+        // third robot once the racks are worth more hands. #1921: the freight
+        // line delays the till, so an attentive manager counts escrow as money
+        // in transit when sizing purchases — the trailer always pays.
         let goal = null
-        const wantHire = s.robots.length < 3 && s.racks.length >= 8 && s.score > ROBOT_COST + 220
-        if (!target && s.score > RACK_COST + 80 && s.racks.length < RACK_SPOTS.length) {
+        const cash = s.score + s.escrow
+        // #1921: in the last quarter-shift a new rack or robot barely earns its
+        // cost back — stand pat and run the floor instead (money follows freight).
+        const expanding = s.tick <= SHIFT - 1500
+        const wantHire = expanding && s.robots.length < 3 && s.racks.length >= 8 && cash > ROBOT_COST + 220
+        if (expanding && !target && cash > RACK_COST + 80 && s.racks.length < RACK_SPOTS.length) {
             goal = RACK_SPOTS.find((sp) => !s.racks.some((r) => r.x === sp.x && r.y === sp.y)) || null
         }
         if (!target && !goal && wantHire) {
@@ -787,10 +848,13 @@ export function createAutopilot() {
             else pad.a = flip
             return pad
         }
-        // load-out (#1911): an attentive manager keeps the pad fresh — when two
-        // parcels wait and the trailer is away, walk the cursor to the shipping
-        // pad and tap the call rather than let the age law do it.
-        if (!target && !goal && s.pad.length >= 2 && s.truck === 'out') goal = OUT_CELLS[0]
+        // freight economics (#1921): keep #1911's attentive two-waiting call —
+        // flow beats fees, and a trailer that leaves loaded with FULL_TRAILER
+        // boxes earns freight anyway — step in just before the age law, and in
+        // the last 10 s reel everything in: escrow stranded at the whistle pays
+        // nothing, because money follows freight.
+        if (!target && !goal && s.truck === 'out' && s.pad.length
+            && (s.pad.length >= 2 || s.padAge >= PAD_AGE - 20 || s.tick > SHIFT - 1200)) goal = OUT_CELLS[0]
         if (!target && !goal) return pad
 
         const tx = target ? target.x : goal.x
@@ -804,6 +868,14 @@ export function createAutopilot() {
             // tap the pad with no build tool armed — cycle off first if one is
             if (gs.tool) { pad.b = flip; return pad }
             pad.a = flip
+            return pad
+        }
+        // #1921: a refused rack purchase (the freight line makes early cash dips
+        // real) would wedge pad.b — held buttons never edge again and the floor
+        // freezes. Step off the spot to release the pad, then re-approach and
+        // retry until affordable — patience, not a hang.
+        if (gs.ev.some((e) => e.type === 'poor')) {
+            pad.left = cx > 0; pad.right = !pad.left
             return pad
         }
         if (gs.tool !== 'rack') pad.b = true

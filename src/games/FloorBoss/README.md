@@ -62,6 +62,25 @@ score; three expired orders and you're fired. Quota: 1000.
   #1373 law). Payouts and pack cadence are untouched — the truck is the pipe,
   not the till. The autopilot calls the trailer like an attentive manager (two
   waiting, trailer away), so attract shows staging and loaded departures.
+- **Freight line** (#1921): the truck is the till. A packed order BOOKS its
+  payout into escrow that rides the parcel (`{n, since, esc}`); the credits land
+  when the trailer loads the parcel's LAST box (`freight` event). A haul that
+  physically carries `FULL_TRAILER` (3) or more boxes pays `FREIGHT_PER_BOX` (6)
+  per box — full trailers earn, dribbles ride free of bonus. Scheduled pickups
+  (cap/age law) are free; a MANAGER tap-call is impatience and pays
+  `DISPATCH_FEE` (5) — the only tax on the floor. Stranded escrow pays nothing:
+  money follows freight, so late-shift parcels must be recalled home. Ledger
+  (`E[escrow:paid:freight:fees]`) and per-parcel escrow ride `stateHash`
+  (additive, #1373 law) and `state()`. Autopilot freight economics: escrow
+  counts as money-in-transit for purchases, expansion freezes after
+  `SHIFT - 1500` (a late rack never earns back), and the last 20 s reel every
+  parcel in. Measured: autopilot wins 14/15 seeds, avg ≈1197 (main ≈1160) —
+  thin seed 12 lands ~60 short, an honest variance of the shifted cash flow.
+  Two law repairs surfaced on the way: a refused purchase (poor) once wedged
+  the autopilot's held `pad.b` (no rising edge could re-arm the tool — it now
+  steps off the spot and retries), and a bot that went DOWN while detailed to
+  the bay and repaired mid-swing raced the gantry (it now stands down; the
+  servo's cargo is already landing).
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -72,11 +91,13 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911)
+node scripts/floorbosscheck.mjs --mutate-freight # the old pack-line till cannot come back (#1921)
+node scripts/floorbosscheck.mjs --mutate-bonus   # dribbles cannot claim the freight bonus (#1921)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -89,9 +110,15 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 - ~~No trucks/visual departures; shipping is a dock pulse + payout~~ **CLOSED
   by #1911**: the truck is sim-truth — ships stage parcels on the pad, the pad
   caps the pack line, taps call and send the trailer, and it leaves carrying
-  exactly what it loaded (see Engine notes). Payout timing is still at pack.
-- Truck economy is thin: shipping still pays at pack, the haul costs nothing
-  and arrives free — a trucking budget or freight bonuses are unexplored.
+  exactly what it loaded (see Engine notes). ~~Payout timing is still at pack.~~
+- ~~Truck economy is thin: shipping still pays at pack, the haul costs nothing
+  and arrives free~~ **CLOSED by #1921**: the freight line — pack escrows the
+  payout onto the parcel, money lands when the trailer hauls the last box, full
+  trailers (3+ boxes) earn 6/box, and manager tap-calls pay an express fee (see
+  Engine notes).
+- Freight tiers are unexplored: distance or load-weight classes beyond the
+  box-count bonus could price the haul further; the escrow also never refunds
+  when the whistle strands parcels on the pad (raw, accepted).
 - Only one shift template; difficulty varies by seed, not by level ladder.
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.
