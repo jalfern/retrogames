@@ -1,52 +1,65 @@
-# STATE — session 188 (2026-11-09, slot b)
+# STATE — session 189 (2026-11-09, slot a)
 
 ## What shipped
-**BRITANNIA: fronts ride a variable wind** — squash `ebeefc3` (PR #1856,
-Closes #1853). Seeded pressure cycle `windOf(epoch,seed)` = 0..3 regions per
-epoch (becalmed/steady/fresh/gale at 15/40/35/10%); `driftOf` is the memoized
-monotone cumulative sum (backward integration keeps the #1822 swell memory
-honest across epoch 0). HUD appends the wind name when it isn't steady, every
-shift toasts with its own sweep/tone; the sea feels it via the untouched
-memory — stalled storms pile heave, gales empty it.
-Evidence: britanniacheck all gates + 9 new (riding identities now verified
-against literal booked wind; flat-wind mutant red 3 gates → restored),
-britannidrive 10/10 (ink gate fixed: compares clear-sky epochs both ends —
-the storm-veil brightness confounder is documented and killed), contract
-14/14, lint+build green. Prod: entry `index-BAlWPvGz.js`, Britannia chunk
-`index-B5ZMA2AL.js` carries the wind code. Live:
-https://jalfern.com/retrogames/britannia
+**WATCH batch 13 — COMET DRIFT GP + COMET DRIFT HD seat the certified
+autopilot** — squash `e95c213` (PR #1859, Part of #1637). Y feeds
+`decide()` (CometDrift/sim.js — the brain cometcheck races to victory with,
+"autopilot wins the 5-lap GP from P7", #1687-certified drift ladder, and both
+attract demos' own route) through the attract-demo flag `st.plan`; any driving
+key takes over (shared blips), the finish flag releases silently, CUP legs
+reset it like a run. Attract ▶ WATCH + #1654 hint on both titles. No netplay
+family — #1656 gate no-op. Coverage **50 -> 52**.
+Evidence: watchcheck pilots 169/169 x2 (seat/advance/takeover/re-seat/resume),
+phone slice 175/175 x2, watchphonecheck 367/367 (tripwire 49->51), 9 new
+source pins incl. no-forked-brain, cometcheck GREEN, contract 15/15 x2,
+lint:mario/fps/ai + build green. Mutant: seat toggle off -> 7 gates RED,
+restored. Prod: entry `index-DrW5UJCr.js` carries the batch-13 registry copy.
+Live: https://jalfern.com/retrogames/comet-drift · /comet-drift-hd
 
 ## Session bookkeeping
-- **#1711 (PLAICRAFT S1)** was the warden target: claimed, audited, and found
-  code-complete — all four remaining acceptance lines need Jon's phone and a
-  **bound R2 bucket**, and #1730 **defaulted to Hold** (closed 11-10T03:24Z).
-  Returned to `next` with the four-line hardware checklist posted as evidence.
-  Do NOT re-ask the bucket — #1730 is answered (Hold); no jonq filed.
-- **#1853** filed (POLISH, never-dry rung: `weakestStage` scored BRITANNIA 6,
-  flagships gap-free), claimed, shipped, `shipped` label, closed.
-- **#1829** (BRITANNIA QA polish pass): item 2 commented closed by #1856;
-  items 1,3,4,5 stay with QA.
+- **#1637** stays open + `building` (multi-stage; 13 batches in, ~28 unseated).
+- Along the way fixed a **pre-existing snapshot/restore defect** both comet
+  titles carried: `g.marks`/`markAge` Maps vanished through the JSON
+  round-trip (#391 family) — now entry-pair serialized; contractcheck was
+  14/15 GP before, 15/15 both after.
+- **`cometdrifthdcheck` is RED ON MAIN** (`0439ffd`, before this branch):
+  crashes `spanPx.toFixed` at the run-off-band gate (line ~587, sandbank
+  `band.has` true but spanPx null). MANUAL_CHECKS/advisory — did not block
+  #1859 (required check `static` was green). Flagged on #1637 for its owner;
+  do not blindly re-run hoping for green.
+- #1711 remains `next` and still hardware-held (session 188's audit stands).
 
-## Next queued (slot b)
-1. Ladder fresh: halt → steer/next → game-queue → feedback (only if
-   `pgrep -f "QA MASTER"` is empty) → flagship (currently spent) → weakest
-   via `scripts/lib/idle.mjs` — rerun it, scores moved today (Britannia −1,
-   QA borrowed several). Candidates at today's scores were CometDrift 5,
-   FloorBoss 5, TalkMeDown 5 (registry order breaks the tie → CometDrift).
-2. If #1711 is `next` and #1730 is still Hold: verify claims (comment exists),
-   return it to `next`, and move on — the hardware lines are Jon's only.
+## Next queued (slot a)
+1. **WATCH batch 14** on #1637 (claim resume: `scripts/forge-claim.sh 1637 a`):
+   strongest triage from this session — **SONAR** (`planRun`/`planStep` in
+   Sonar/sim.js; sonarcheck proves 20/20 clean crossings + vent-win +
+   deterministic replay; planCache already exists in index.jsx) and **BOULDER
+   DASH** (`planRun`/`planStep` in sim.js; attract header: demo is "literally a
+   REPLAY of the planner's own proven" route; dashcheck exists — verify its win
+   gate before seating). TALK ME DOWN (`solvePad` engine.js) needs its win-proof
+   checked in tmd-smoke first.
+2. Warden may assign another issue — the claim ladder in FORGE.md step 2 wins
+   over this list at claim time.
 
-## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-britannia-wind` = detached `7a5b8d5`'s
-  parent tip; reuse: `git checkout -B forge/<newslug> origin/main`.
-  node_modules symlinked. Dev server on 5178 was stopped at session end.
-- Main checkout: detached at origin/main (`7a5b8d5`), clean except this STATE.
-- britanniacheck is now ~214 gates, ~40 s Node; britannidrive needs dev server
-  (`DEV_PORT` respected by both). Britannia gates are honest but *timing*
-  sensitive (drive screenshots ~140 ms after `step`) — pixel margins ~±50px.
-- The never-dry pipeline (`idle.mjs`) works end-to-end: file POLISH issue →
-  claim → build → ship, all in one session at ~1/3 of the time-box.
-- QA MASTER was live all session (PIDs 34727/35844) — feedback stays theirs.
+## Notes for the next slot-a session
+- Worktree `~/Dev/retrogames-forge-watch-b13` = merged; reuse pattern:
+  `git checkout -B forge/watch-rollout-b14 origin/main` (node_modules symlinked).
+  Dev server 5173 stopped at session end.
+- **Racer-family seat shape (batch 13, commit 2):** seat = toggle `st.plan`
+  (the attract-demo drive flag). A first cut added a `watchingRef` OR into the
+  decide feed — the LIVE pilot stayed green when the OR was cut: dead code,
+  removed. Lesson: let the mutant attack the NEW seam, and distrust green under
+  mutation as loudly as red.
+- **watchcheck advance metric for loop racers:** expose `len: T.len` in the DEV
+  probe and compare `(b.score - a.score + a.len) % a.len > 500` — `score` is
+  loop-progress (grid sits just before the line), naive deltas read a lap-line
+  crossing as backwards.
+- Stale-lane hazard: slot a's port 5173 was held by the batch-12 session's
+  zombie dev server (strictPort start died silently, curls answered from the
+  OLD worktree). Check `lsof -nP -iTCP:5173` + cwd of the holder before
+  blaming your own code for "missing" DEV hooks.
+- watchcheck/pilots need dev server + `DEV_PORT=5173`; cometcheck ~60s Node;
+  source pins run even under `--only`, so per-title runs still gate the pins.
 
 ## Open questions
-- None new. (#1730 closed by default-Hold; nothing taste/priority left open.)
+- None. (#1637 roll continues mechanically; nothing taste/priority to ask.)
