@@ -1,65 +1,62 @@
-# STATE — session 189 (2026-11-09, slot a)
+# STATE — session 189 (2026-11-10, slot b)
 
 ## What shipped
-**WATCH batch 13 — COMET DRIFT GP + COMET DRIFT HD seat the certified
-autopilot** — squash `e95c213` (PR #1859, Part of #1637). Y feeds
-`decide()` (CometDrift/sim.js — the brain cometcheck races to victory with,
-"autopilot wins the 5-lap GP from P7", #1687-certified drift ladder, and both
-attract demos' own route) through the attract-demo flag `st.plan`; any driving
-key takes over (shared blips), the finish flag releases silently, CUP legs
-reset it like a run. Attract ▶ WATCH + #1654 hint on both titles. No netplay
-family — #1656 gate no-op. Coverage **50 -> 52**.
-Evidence: watchcheck pilots 169/169 x2 (seat/advance/takeover/re-seat/resume),
-phone slice 175/175 x2, watchphonecheck 367/367 (tripwire 49->51), 9 new
-source pins incl. no-forked-brain, cometcheck GREEN, contract 15/15 x2,
-lint:mario/fps/ai + build green. Mutant: seat toggle off -> 7 gates RED,
-restored. Prod: entry `index-DrW5UJCr.js` carries the batch-13 registry copy.
-Live: https://jalfern.com/retrogames/comet-drift · /comet-drift-hd
+**COMET DRIFT GP: keyboard tap notch** — squash `d040733` (PR #1860,
+Closes #1857, POLISH filed+claimed this session at the never-dry weakest
+rung; `weakestStage` score 5, flagships spent). `sim.js drive()` shapes
+DIGITAL player steering: a tap held ≤ `CFG.tapTicks` (5) deflects at
+`CFG.tapLevel` (0.55), a hold reaches full ±1 from tick 6, reversal re-arms.
+Analog `inp.steer` (#431 stick pipeline, pins) bypasses; notch is
+`isPlayer`-gated so the CPU field is byte-identical; `decide()` stamps
+`autopilot:true` → `step()` pins numeric steer, keeping the certified line
+(attract, win-proofs, the new b13 WATCH seat) exact — first full run caught
+this (violets 335<340, tick-9514 pin), fixed per #1687 precedent. #517
+holds: charge is bend-weighted, one-way hold still dumps below tier 1
+(new digital-twin gate: off-road tick 26, lesson fires).
+Evidence: cometcheck GREEN +12 gates, `--mutate` +2 (notch-off and
+notch-welded each die on their half); cometplay 30/30 real keys incl.
+page-side steerVis sampler (soft −0.55 → lock −1 → release 0);
+contractcheck 682/682; watchcheck 535/535 after rebase onto b13 (`e95c213`).
+Prod: entry `index-DJB8hzlQ.js` carries the TAP registry copy. Live:
+https://jalfern.com/retrogames/comet-drift
 
 ## Session bookkeeping
-- **#1637** stays open + `building` (multi-stage; 13 batches in, ~28 unseated).
-- Along the way fixed a **pre-existing snapshot/restore defect** both comet
-  titles carried: `g.marks`/`markAge` Maps vanished through the JSON
-  round-trip (#391 family) — now entry-pair serialized; contractcheck was
-  14/15 GP before, 15/15 both after.
-- **`cometdrifthdcheck` is RED ON MAIN** (`0439ffd`, before this branch):
-  crashes `spanPx.toFixed` at the run-off-band gate (line ~587, sandbank
-  `band.has` true but spanPx null). MANUAL_CHECKS/advisory — did not block
-  #1859 (required check `static` was green). Flagged on #1637 for its owner;
-  do not blindly re-run hoping for green.
-- #1711 remains `next` and still hardware-held (session 188's audit stands).
+- Warden target #1637 (WATCH rollout) was REFUSED at claim — slot a held it
+  (and shipped batch 13, Comet Drift + HD, mid-session: `e95c213`). Ran the
+  normal ladder: #1711 verified hardware-gated (comment exists, stays `next`),
+  no halt/steer/next/game-queue, QA MASTER live (no feedback borrow),
+  flagship stage spent → weakest rung → #1857.
+- `cometdrifthdcheck` crashes on origin/main (`trackGeometryStats().band`
+  null for sandbank/corkscomb, TypeError :587) — PRE-EXISTING on main,
+  identical on my branch before/after rebase. Advisory; someone must redress
+  it (looks like a #1858-era harness casualty). Not filed (QA lane's board).
+- Rebase note: b13 and this PR both touched the comet controls arrays —
+  collision resolved keeping WATCH_HELP + TAP lines; watchcheck pins green.
 
-## Next queued (slot a)
-1. **WATCH batch 14** on #1637 (claim resume: `scripts/forge-claim.sh 1637 a`):
-   strongest triage from this session — **SONAR** (`planRun`/`planStep` in
-   Sonar/sim.js; sonarcheck proves 20/20 clean crossings + vent-win +
-   deterministic replay; planCache already exists in index.jsx) and **BOULDER
-   DASH** (`planRun`/`planStep` in sim.js; attract header: demo is "literally a
-   REPLAY of the planner's own proven" route; dashcheck exists — verify its win
-   gate before seating). TALK ME DOWN (`solvePad` engine.js) needs its win-proof
-   checked in tmd-smoke first.
-2. Warden may assign another issue — the claim ladder in FORGE.md step 2 wins
-   over this list at claim time.
+## Next queued (slot b)
+1. Ladder fresh: halt → steer/next → game-queue → feedback (only if
+   `pgrep -f "QA MASTER"` empty) → flagship (spent) → weakest via
+   `node scripts/idle-kick.mjs` — CometDrift gap 0 is now CLOSED; expect
+   CometDrift gap 1 (#493 third-course residual) or FloorBoss/TalkMeDown at 4-5.
+2. If #1637 is claimable again (a's 90-min liveness expired), the WATCH
+   rollout may still be open with more titles to seat — check `gh issue view
+   1637` coverage counter before picking the weakest rung.
+3. If #1711 is `next`: verify the checkpoint comment, return it to `next`,
+   move on — hardware lines are Jon's only (#1730 = Hold, closed).
 
-## Notes for the next slot-a session
-- Worktree `~/Dev/retrogames-forge-watch-b13` = merged; reuse pattern:
-  `git checkout -B forge/watch-rollout-b14 origin/main` (node_modules symlinked).
-  Dev server 5173 stopped at session end.
-- **Racer-family seat shape (batch 13, commit 2):** seat = toggle `st.plan`
-  (the attract-demo drive flag). A first cut added a `watchingRef` OR into the
-  decide feed — the LIVE pilot stayed green when the OR was cut: dead code,
-  removed. Lesson: let the mutant attack the NEW seam, and distrust green under
-  mutation as loudly as red.
-- **watchcheck advance metric for loop racers:** expose `len: T.len` in the DEV
-  probe and compare `(b.score - a.score + a.len) % a.len > 500` — `score` is
-  loop-progress (grid sits just before the line), naive deltas read a lap-line
-  crossing as backwards.
-- Stale-lane hazard: slot a's port 5173 was held by the batch-12 session's
-  zombie dev server (strictPort start died silently, curls answered from the
-  OLD worktree). Check `lsof -nP -iTCP:5173` + cwd of the holder before
-  blaming your own code for "missing" DEV hooks.
-- watchcheck/pilots need dev server + `DEV_PORT=5173`; cometcheck ~60s Node;
-  source pins run even under `--only`, so per-title runs still gate the pins.
+## Notes for the next slot-b session
+- Dev server on 5178 stopped at session end. Main checkout: detached at
+  `d040733`, clean. Worktree `~/Dev/retrogames-forge-comet-steer` = detached
+  at origin/main after merge; node_modules symlinked, reuse for the next
+  `forge/<slug>` branch or remove.
+- cometcheck is now ~2300 lines; the #1857 section measures on the FLATTEST
+  track point (`|k|+|bank|` min, i=341 gulch) — Catmull curves never hit exact
+  zero, strict-zero gates crash. Browser gates that poll via RPC are
+  rAF-starved under load: sample PAGE-SIDE (see cometplay steerVis gate).
+- jalfern.com 308-redirects to www.jalfern.com — prod bundle greps MUST
+  use `curl -sL`.
+- QA MASTER live all session (PID 46660) — feedback stays theirs.
 
 ## Open questions
-- None. (#1637 roll continues mechanically; nothing taste/priority to ask.)
+- None new. (#517's "keyboard untouched" stance was respected, not reversed —
+  the notch never makes tier-1 reachable one-way; no taste issue to ask.)
