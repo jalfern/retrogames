@@ -359,6 +359,7 @@ export default function CometDriftHD() {
         const trackGroup = new THREE.Group()
         scene.add(trackGroup)
         let wear = null
+        let landmarkWheel = null // #1867: the Dry Lake windmill's wheel (null on other courses)
         let sandMeshes = []
         const sandHints = {}
         // #639: trackside dressing lives in its own group so it can rebuild with
@@ -395,7 +396,12 @@ export default function CometDriftHD() {
             trackGroup.add(new THREE.Mesh(M.wallR, strataMat))
             trackGroup.add(new THREE.Mesh(M.plateauL, plateauMat))
             trackGroup.add(new THREE.Mesh(M.plateauR, plateauMat))
-            trackGroup.add(buildArch(tex(strataTex())))
+            const lm = buildArch(tex(strataTex()))
+            trackGroup.add(lm)
+            // #1867: Dry Lake's windmill wheel turns off g.tick — presentation
+            // only, and re-fetched on every rebuild so a course swap retargets
+            // it (the dune/gantry/arch have no moving parts).
+            landmarkWheel = lm.getObjectByName('windmillWheel')
             if (refOn) {
                 const ro = refOverlayStats()
                 if (ro) {
@@ -1579,6 +1585,9 @@ export default function CometDriftHD() {
             const sh = 1 + Math.sin(g.tick * 0.05) * 0.045
             sunGlow.scale.set(84 * sh, 84 * sh, 1)
             sunDisc.scale.set(24 * (2 - sh), 24 * (2 - sh), 1)
+            // #1867: the windmill wheel turns with the world clock (tick-driven
+            // presentation — pauses with the sim, identical on replay).
+            if (landmarkWheel) landmarkWheel.rotation.z = g.tick * 0.014
             if (ready && renderer) {
                 radialAmt.value = g.karts[0].boostT > 0 ? 0.32 + g.karts[0].boostTier * 0.26 : 0
                 try {
