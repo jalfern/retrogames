@@ -398,9 +398,13 @@ see item 5).
   stays flat mono). `V` toggles, `?stereo=1` opens on a fresh link, the
   choice persists. Still open: LCD-shutter/interlace modes, and the
   audio half (HRTF) of #1746 item 7.
-- Water is shader waves with self-shadowing, sun-linked sparkle, dithered
-  depth bands and foam lace tracing the shoreline — but not the original's
-  4-bit palette-cycling wave animation; no underwater view when cratered below sea.
+- Water is shader waves with self-shadowing, sun-linked sparkle and foam lace
+  tracing the shoreline. **CLOSED by #1764 item 4 stage 1:** the depth bands are
+  now hard 4-level bands whose palette index marches one level every 6 sim ticks
+  (`WAVE_CYCLE`) — the original's 16-colour palette animation walking through the
+  wave bands, clocked on sim ticks (determinism intact). Still open: band shapes
+  sit still while the colours walk (true travelling crests), and no underwater
+  view when cratered below sea.
 - **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
   DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
   ease-out swell, a shockwave rim that settles to exactly zero) with the
