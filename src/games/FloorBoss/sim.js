@@ -45,6 +45,14 @@ const CONV_TICKS = 8 // conveyor advances every 0.133 s
 const PICK_TICKS = 30
 const BAY_TICKS = 15
 const DROP_TICKS = 20
+// Servo arm (#1872): the arm is a worker, not a weathervane. When cargo sits
+// in the gripper and no bot is detailed to fetch it, the arm rotates and loads
+// an in-reach rack itself — a slow, free lane that keeps the belt moving when
+// the floor is saturated. The bay handoff always wins (see the swing gate).
+export const ARM_REACH = 4 // Manhattan cells the gantry can touch from its post
+export const ARM_PATIENCE = 90 // held-ticks the servo waits for a bot first
+const ARM_SWING_PER = 6 // rotation ticks per cell of reach
+const ARM_DROP = 20 // settle ticks before the gripper opens
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
 const JAM_AUTO = 300 // self-resolve after 5 s
 const REPAIR_TICKS = 1200
@@ -133,6 +141,16 @@ function bfs(gs, fx, fy, pred, ignoreId) {
 
 const rackAt = (gs, x, y) => gs.racks.find((r) => r.x === x && r.y === y) || null
 
+// Racks the gantry can reach from its post with room on a shelf, deterministic
+// order: nearest first, ties by x then y (#1872).
+const armReach = (gs) => gs.racks
+    .filter((r) => r.items.length < RACK_CAP && Math.abs(r.x - ARM_CELL.x) + Math.abs(r.y - ARM_CELL.y) <= ARM_REACH)
+    .sort((a, b) => (Math.abs(a.x - ARM_CELL.x) + Math.abs(a.y - ARM_CELL.y)) - (Math.abs(b.x - ARM_CELL.x) + Math.abs(b.y - ARM_CELL.y)) || (a.x - b.x) || (a.y - b.y))
+
+// A bot detailed to the bay makes the servo hold still — handoff is the fast
+// lane and never races the gantry.
+const bayClaimed = (gs) => gs.robots.some((b) => b.task.kind === 'toArm' && !b.broken)
+
 function cellClick(gs, x, y) {
     if (!inGrid(x, y)) return 'oor'
     const bot = gs.robots.find((r) => r.x === x && r.y === y)
@@ -173,7 +191,8 @@ function cellClick(gs, x, y) {
         return 'peek'
     }
     if (map[y][x] === CELL.ARM) {
-        if (gs.arm.held) {
+        // #1872: arm-click calls a bot only while the gantry is not mid-swing
+        if (gs.arm.held && gs.arm.swing === 0) {
             const bot = nearestIdle(gs, BAY_CELL.x, BAY_CELL.y)
             if (bot) { sendArm(gs, bot); gs.ev.push({ type: 'dispatch', x, y }); return 'dispatch' }
         }
@@ -293,8 +312,9 @@ function autoAssign(gs) {
             demand[k] -= 1
         }
     }
-    // stow in the slack: a full arm stalls the conveyor
-    if (gs.arm.held && gs.racks.some((r) => r.items.length < RACK_CAP)) {
+    // stow in the slack: a full arm stalls the conveyor — but the servo's own
+    // swing counts as slack too, and dispatch never races it (#1872)
+    if (gs.arm.held && gs.arm.swing === 0 && gs.racks.some((r) => r.items.length < RACK_CAP)) {
         const bot = nearestIdle(gs, BAY_CELL.x, BAY_CELL.y)
         if (bot) sendArm(gs, bot)
     }
@@ -309,7 +329,7 @@ export function makeGame(seed = 1337) {
         tool: null, sel: null, cursor: { x: 12, y: 7 }, cursorT: 0,
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
-        arm: { held: null, pose: 0 }, // pose 0 docked, ramps to 1 while loading
+        arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
         nextBotId: 1, nextOrderId: 1,
@@ -386,12 +406,14 @@ function stepRobot(gs, bot) {
                     gs.ev.push({ type: 'pick', x: bot.x, y: bot.y, k: t.item })
                 } else { bot.task = { kind: 'idle' }; bot.path = [] }
             } else if (t.kind === 'toArm') {
-                if (gs.arm.held) {
+                if (gs.arm.held && gs.arm.swing === 0) {
                     bot.carry = gs.arm.held
                     gs.arm.held = null
                     bot.task = { kind: 'toStock' }
                     repath(gs, bot) // stock target chosen below when it moves
                     gs.ev.push({ type: 'bay', x: bot.x, y: bot.y, k: bot.carry })
+                } else if (gs.arm.swing > 0) {
+                    bot.pickT = 4 // gantry is over a rack — hold at the bay, retry
                 } else if (!gs.arm.held) { bot.task = { kind: 'idle' }; bot.path = [] }
             } else if (t.kind === 'toStock') {
                 const rk = rackAt(gs, t.rx, t.ry)
@@ -552,6 +574,47 @@ export function step(gs, pads = [{}]) {
     }
     gs.arm.pose += ((gs.arm.held ? 1 : 0) - gs.arm.pose) * 0.08
 
+    // servo self-stow (#1872): cargo waits ARM_PATIENCE ticks for a bot; if
+    // none is detailed to the bay, the arm rotates and loads the nearest
+    // in-reach rack itself. The bay handoff always wins — no swing starts
+    // while a bot is on its way, and dispatch refuses while mid-swing.
+    if (gs.arm.swing > 0) {
+        gs.arm.swing--
+        if (gs.arm.swing === 0 && gs.arm.held) {
+            const rk = gs.arm.target ? rackAt(gs, gs.arm.target.x, gs.arm.target.y) : null
+            if (rk && rk.items.length < RACK_CAP) {
+                const kind = gs.arm.held
+                rk.items.push(kind)
+                gs.arm.held = null
+                gs.arm.target = null
+                gs.arm.heldT = 0
+                gs.stows++
+                gs.score += STOW_PAY
+                gs.ev.push({ type: 'armstow', x: rk.x, y: rk.y, k: kind })
+            } else {
+                // target filled while swinging — re-pick and pay the rotation again
+                const t = armReach(gs)[0]
+                if (t) {
+                    gs.arm.target = { x: t.x, y: t.y }
+                    gs.arm.swing = ARM_SWING_PER * (Math.abs(t.x - ARM_CELL.x) + Math.abs(t.y - ARM_CELL.y)) + ARM_DROP
+                    gs.arm.swingT0 = gs.arm.swing
+                } else gs.arm.target = null
+            }
+        }
+    } else if (gs.arm.held) {
+        gs.arm.heldT++
+        if (gs.arm.heldT >= ARM_PATIENCE && !bayClaimed(gs)) {
+            const t = armReach(gs)[0]
+            if (t) {
+                gs.arm.target = { x: t.x, y: t.y }
+                gs.arm.swing = ARM_SWING_PER * (Math.abs(t.x - ARM_CELL.x) + Math.abs(t.y - ARM_CELL.y)) + ARM_DROP
+                gs.arm.swingT0 = gs.arm.swing
+                gs.ev.push({ type: 'armswing', x: t.x, y: t.y })
+            }
+        }
+    }
+    if (!gs.arm.held && gs.arm.swing === 0) gs.arm.heldT = 0
+
     // orders
     gs.orderT--
     if (gs.orderT <= 0) {
@@ -593,7 +656,7 @@ export function step(gs, pads = [{}]) {
 
 // --- state / hash ----------------------------------------------------------
 export function stateHash(gs) {
-    let s = `${gs.tick}:${gs.score}:${gs.strikes}:${gs.auto ? 1 : 0}|${gs.arm.held || '-'}|`
+    let s = `${gs.tick}:${gs.score}:${gs.strikes}:${gs.auto ? 1 : 0}|${gs.arm.held || '-'}|sw${gs.arm.swing}:${gs.arm.target ? gs.arm.target.x + ',' + gs.arm.target.y : '-'}|`
     for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
@@ -625,6 +688,7 @@ export function state(gs) {
         orders: gs.orders.map((o) => ({ id: o.id, items: [...o.items], dueLeft: o.due - gs.tick, prio: o.prio })),
         conveyor: gs.conv.map((c) => ({ kind: c.kind, x: c.x })),
         armHeld: gs.arm.held,
+        armSwing: gs.arm.swing > 0 ? { x: gs.arm.target.x, y: gs.arm.target.y, left: gs.arm.swing } : null, // #1872
         shipped: gs.shipped,
         expired: gs.expired,
         stows: gs.stows,
