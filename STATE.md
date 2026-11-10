@@ -1,71 +1,74 @@
-# STATE — session 195 (2026-11-10, slot a)
+# STATE — session 196 (2026-11-10, slot b)
 
 ## What shipped
-**WATCH batch 17 — HOMEBODY seats the attract brain** — squash `96eee3e`
-(PR #1892, Part of #1637). Y / ▶ WATCH drives `autoStep` (bot + advance — the
-exact call the attract demo runs and peoplecheck's WINNABLE section grants the
-lifetime wish with) in place of drivePad+advance every sim tick; the bot
-re-decides from live state, one brain with the gate (watchcheck carries the
-no-forked-brain pin: autoStep from its own sim.js — and the witness pin).
-Every release path (Y, driving key, canvas tap, end of run) clears `s.demo`,
-so autonomy is the seat's, not the house's. Attract: shared hint + one-tap
-▶ WATCH. Registry line suffix "grants the wish tends the whole street".
+**POLISH #1889 — PAPERS, PLEASE-MIN gets a real calendar** — squash `856649e`
+(PR #1890, closes #1889). The week ROLLS: `START_DATE` Oct 11 → **Oct 27**, so
+seven days are OCT 27…31, NOV 01–02 — day 6's EXPIRED test paper is judged
+across a real month boundary (wall `1982.11.01` vs passport
+`EXPIRES 1982.10.31` side by side at the window), the date arithmetic the
+original (Papers, Please, 2013) makes its daily bread. `dnum` is now exact
+days-since-epoch (`y*365 + MPREFIX[m-1] + d`) — the serial every rule compares
+and the calendar the wall prints are ONE clock:
+`dnum(dadd(x,n)) − dnum(x) === n`, both directions, every constructible date.
+CURFEW's grace counts real days: over a 30-day November, 6 left is void,
+exactly 7 walks (uniform-31 read 6 as 7 past the seam).
 
-**The batch's real lesson (mid-build):** Beezee's prover-only trap repeats.
-Fern-chat, co-presence bonds and ambience hours bank social/content for an
-IDLE street — needs/content rises are NOT prover-only here. The pilot proves
-advance only with demo-gated commands (a buy: items↑/money↓; a clock-in; the
-payday after work) and asserts the idle street buys nothing and works nowhere.
-The mutant that taught this: seat feed cut (`autoStep`→`advance`) — an
-early naive signal set still passed wake/resume. Killed 7 named gates; restored.
+**Real bug found by rolling:** `dadd` had no backward carry — day 6's
+"yesterday" shipped `NOV 00`. The fairness prover structurally cannot see it
+(serial ordering stayed sane; only the printed date lied, and the display is
+the contract). Carry added.
 
-Evidence (full battery green before merge): watchcheck 648/648 (56 pilots;
-homebody pilot 17 gates incl. idle-purity, demo-flag on/off, steer-takeover,
-re-seat through payday, silent racer release, one-tap), watchphonecheck
-402/402 (tripwire 55→56), watchpillcheck 187/187, peoplecheck 124/124,
-contractcheck 682/682, attractcheck 694/694, sleepwatchcheck 314/314,
-homebodydrive 25/25 zero page errors, eslint + lint:mario/fps/ai + build
-green. Prod verified: chunk `index-DtTK5MYC.js` carries the registry line.
-Live: https://jalfern.com/retrogames/homebody
+Evidence: paperscheck **6551/6551** — new CALENDAR section (~60 gates:
+identity law 365 dates × 10 spans, backward-day sanity, per-seed OCT→NOV roll,
+day-6 cross-month witness, synthetic short-month seams incl. year seam and
+expires-TODAY at the seam) + mutants **m9** (uniform-31 re-freeze) and **m10**
+(carry strip), all 10 caught; hand-mutant proof: carry stripped ⇒ exactly 25
+red, all new gates. papersplay 19/19 real keys, seed 2 survives the rolled
+week, zero page errors. eslint + lint:mario/fps/ai + build green. Prod
+verified: live chunk `index-DSRrkHj3.js` carries `y:1982,m:10,d:27`.
+Live: https://jalfern.com/retrogames/papers-please
 
 ## Session bookkeeping
-- TARGET #1880 (Talk Me Down remote seats) REFUSED at claim — slot b holds it
-  live. Normal ladder: no halt/steer/queue; `next` #1711 hardware-gated;
-  QA MASTER live (no feedback borrow); #1637 re-claimable (slot a's own claim
-  aged past 90 min) → batch 17 claimed, built from origin/main, shipped.
-- #1637 is multi-stage ("Part of #1637") → stays open + `building` for batch
-  18; no close. Wrap + prod-URL comments posted on #1637.
-- Merge done with the rule-5 path (static SUCCESS); worktree re-detached at
-  `96eee3e`. Slot b merged around the same window (main moved mid-merge; the
-  rule-5 loop handled it cleanly).
-- No jonq filed (nothing taste/priority/hard-to-undo this session).
+- TARGET #1637 REFUSED at claim (slot a live, 37-min hold). Ladder: steer
+  empty; `next` = #1711 — all four acceptance lines need Jon's phone + the
+  bound R2 bucket; #1730 CLOSED defaulted-Hold. Slot b's own checkpoint on
+  #1711 keeps it `next` for the post-deploy session; never idle (#841).
+  game-queue empty; feedback belongs to QA (Jon 2026-10-19). Flagship stage
+  SPENT: SSX/Emberwood/CometDriftHD/Myst READMEs hold only CLOSED gap bullets
+  (parseGaps → []). NEVER-DRY (#1571): weakestStage → PAPERS, PLEASE-MIN
+  score 4 (4 README gaps, zero QA feedback naming it; ties → older title).
+  Filed #1889 (game-queue, lane:games, why-weakest line), claimed, shipped.
+- QA polish pass filed as #1891 (feedback): quote the evidence sentence at the
+  stamp strip (`gs.last.why` keeps only the rule name today), month-name dates,
+  new-month bulletin on day 6, paper weight/motion.
+- Shift report pushed. No jonq (nothing taste/priority/hard-to-undo).
+- Game code merged this session (AGENTS rule 4 healthy). Slot a shipped
+  WATCH b17 (HOMEBODY, `96eee3e`) + its STATE in parallel; merge window was
+  clean (rule-5 loop handled main moving).
 
-## Next queued (slot a)
-1. Fresh ladder: TARGET from the warden, else the game-first rungs. `next`
-   #1711 stays hardware-gated; watch for it clearing.
-2. If #1637 is re-claimable (batch 18 = next solver-bearing title not yet
-   seated — 56 seated now): check claim liveness first (slot b may roll it).
-   Un-seated candidates worth auditing for a proven driver: Defender (has an
-   attract autopilot, no test hook yet), SpaceInvaders (attract sim), and the
-   DOS/IF remainder; titles without a proven driver stay honest ("no guide
-   yet") — do NOT seat a panic bot.
-3. #1880 was slot b's live build; check whether it shipped before touching.
-4. Fresh `weakestStage` if the ladder runs dry again.
+## Next queued (slot b)
+1. Normal ladder: warden TARGET, else halt/steer/next/queue rungs.
+   #1637: check claim liveness first (slot a may re-roll batch 18). #1711
+   stays `next` until Jon deploys #1730 — do NOT self-serve the bucket.
+2. If the ladder runs dry: flagship still spent — fresh `weakestStage`.
+   At this session's end it scored **LODE RUNNER-LITE 4** with oldest gap
+   "trap is a single-cell pit; deep shafts…" — audit that gap against the
+   original Lode Runner AND Jon's 2026-10-11 fidelity ruling ("LODE RUNNER
+   shipped permanent holes and a jump") before building it.
 
-## Notes for the next slot-a session
-- Worktree `~/Dev/retrogames-forge-watch-b17` is detached at the merged tip;
-  node_modules symlink intact — `git checkout -B forge/<newslug> origin/main`
-  for the next build. Dev server 5173 was left RUNNING (vite from this
-  session) — reuse after verifying its cwd, or kill and restart.
-- **Checkpoint rule bites again:** mid-session `git checkout -- <file>` (to
-  undo a sed mutant) wiped ALL uncommitted work in that file and the session
-  nearly rewrote blind. Mutants: revert with the exact inverse sed, never git
-  checkout, and commit each increment BEFORE mutating (FORGE hard rule).
-- watchcheck per-game pattern that works now: seat + pilot + demo/honesty
-  gate pinned in BOTH browser and source pins + witness pin (the batch's own
-  audit module) + phone tripwire bump + full battery.
-- Homebody time model matters for pilots: 1 sim-hour = 5 real s, payday 17:00
-  ≈ 50 s from a 07:00 boot — re-seat polls must span the shift's end (50 s).
+## Notes for the next slot-b session
+- Worktree `~/Dev/retrogames-forge-ppm-calendar` is detached at `a3cb961`
+  (origin/main); node_modules symlink intact. For a new build:
+  `git checkout -B forge/<newslug> origin/main`. Dev server 5178 was left
+  RUNNING (vite from this session) — reuse after verifying its cwd, or kill.
+- PPM calendar law: keep `dnum(dadd(x,n)) − dnum(x) === n` (CALENDAR section
+  pins it; backward carry included). No leap days exist in this sim's calendar
+  — dadd never emits Feb 29; keep it that way or change both clocks together.
+- Prod-verify lazy games by CONTENT fingerprint in the HTML-reachable chunk
+  graph (entry chunks carry no game strings; Vercel builds don't reproduce
+  local hashes). The papers chunk is found via LAST-names literals ("ZEMEK").
+- Never claim `#1711` work that needs hardware; its four acceptance lines are
+  posted on the issue and die only on Jon's thumb + bound bucket.
 
 ## Open questions
-- None. (#1637 continues as batch 18; no taste/priority call needed from Jon.)
+- None.
