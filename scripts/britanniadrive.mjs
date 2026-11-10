@@ -12,6 +12,7 @@ import { launchChrome } from './lib/chromeboot.mjs'
 import { Report } from './lib/harness.mjs'
 import { zipRead, makeWorld, isSea } from '../src/games/Britannia/britmap.js'
 import { seaRough } from '../src/games/Britannia/swell.js'
+import { WX, weatherAt } from '../src/games/Britannia/weather.js'
 
 const URL = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/britannia`
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -98,9 +99,15 @@ for (let dx = -R; dx <= R; dx++) for (let dy = -R; dy <= R; dy++) {
 }
 r.check(`the spawn view holds open water to judge (${seaTiles.length} sea tiles within ${R} of ${spawn.x},${spawn.y})`, seaTiles.length >= 6)
 const E = 1440
+// (#1853) candidates are restricted to epochs where the AVATAR's sky is CLEAR:
+// a storm overhead dims the whole frame (the veil darkens the sea ink too), and
+// comparing a veiled heavy epoch against a bright light epoch measures the veil,
+// not the wind. Under clear skies on both ends, more wind over the same water
+// can only paint more light — the post-front sea still heaving under blue sky.
 const epochs = []
 for (let e = 0; e < 24; e++) {
     const t = e * E + 100
+    if (weatherAt(spawn.x, spawn.y, t, spawn.seed, terrainAt) !== WX.CLEAR) continue
     let avg = 0
     for (const [tx, ty] of seaTiles) avg += seaRough(tx, ty, t, spawn.seed, terrainAt)
     avg /= seaTiles.length
@@ -108,7 +115,7 @@ for (let e = 0; e < 24; e++) {
 }
 epochs.sort((a, b) => a.avg - b.avg)
 const lightest = epochs[0], heaviest = epochs[epochs.length - 1]
-r.check(`the view spans a real wind range over 24 epochs (${lightest.avg.toFixed(2)} -> ${heaviest.avg.toFixed(2)})`, heaviest.avg - lightest.avg >= 0.15, JSON.stringify({ lightest, heaviest }))
+r.check(`the view spans a real wind range under clear skies (${lightest.avg.toFixed(2)} -> ${heaviest.avg.toFixed(2)} over ${epochs.length} clear epochs)`, heaviest.avg - lightest.avg >= 0.15, JSON.stringify({ lightest, heaviest }))
 // replay to the SAME seed and tick offsets: only the epoch differs, so any
 // pixel difference is the wind painting the same water.
 const seedReset = spawn.seed
