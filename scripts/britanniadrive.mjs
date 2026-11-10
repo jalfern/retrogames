@@ -12,6 +12,7 @@ import { launchChrome } from './lib/chromeboot.mjs'
 import { Report } from './lib/harness.mjs'
 import { zipRead, makeWorld, isSea } from '../src/games/Britannia/britmap.js'
 import { seaRough } from '../src/games/Britannia/swell.js'
+import { routeDest, moonName, DAY_TICKS } from '../src/games/Britannia/moons.js'
 import { WX, weatherAt } from '../src/games/Britannia/weather.js'
 
 const URL = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/britannia`
@@ -136,6 +137,63 @@ const pv = await page.evaluate(() => {
 const expect = seaRough(spawn.x, spawn.y, heaviest.t, seedReset, terrainAt)
 r.check('panel seaRough matches the drive-side recomputation at the same place+tick+seed', Math.abs(pv.r - expect) < 1e-9, JSON.stringify({ pv, expect }))
 await page.screenshot({ path: '/tmp/forge/britannia-drive.png' })
+
+// #1862 moon-phase routing: the gate is no taxi — tonight's moon decides the
+// destination. Real keys against the wheel: the wrong row is refused (and the
+// refusal names the true road), the moonlit row rides, and the road flips when
+// the day turns to a full moon.
+const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
+const st = async () => page.evaluate(() => window.__britanniaTest.state())
+const openMenuOn = async (gi) => {
+    for (const dir of ['ArrowDown', 'ArrowUp', 'ArrowRight', 'ArrowLeft']) {
+        await page.keyboard.press(dir)
+        await sleep(240)
+        const s = await st()
+        if (s.gate === gi) return true
+        if (s.ship) { await page.keyboard.press(dir === 'ArrowDown' ? 'ArrowUp' : 'ArrowDown'); await sleep(240) }
+    }
+    return false
+}
+await page.evaluate((sd) => { window.__game.reset(sd); window.__britanniaTest.teleport(0) }, seed0)
+await sleep(150)
+r.check('stepping beside moongate I whirls the menu open', await openMenuOn(0), JSON.stringify(await st()))
+let s = await st()
+const routed0 = routeDest(0, s.moon, 8)
+r.check(`panel moonRoute matches the wheel at gate I (phase ${s.moon} -> ${ROMAN[routed0]})`, s.moonRoute === routed0, JSON.stringify(s))
+const wrong0 = routed0 === 2 ? 3 : 2
+await page.keyboard.press(String(wrong0 + 1))
+await sleep(160)
+s = await st()
+r.check(`the wrong road is refused: Digit${wrong0 + 1} neither warps nor closes the menu`, !s.warping && s.gate === 0, JSON.stringify(s))
+r.check('the refusal teaches — the toast names the refused gate AND tonight\'s true road',
+    /refuseth/.test(s.toastMsg) && s.toastMsg.includes(`routeth to ${ROMAN[routed0]} of ${moonName(routed0)}`), s.toastMsg)
+await page.keyboard.press(String(routed0 + 1))
+await sleep(200)
+s = await st()
+r.check('the moonlit road rides: a warp is underway to the routed gate', s.warping && s.warpDest === routed0, JSON.stringify(s))
+await sleep(1100)
+s = await st()
+r.check(`the warp lands on gate ${ROMAN[routed0]} — the moon-route ride completes`,
+    s.x === s.gates[routed0][0] && s.y === s.gates[routed0][1] && !s.warping, JSON.stringify({ x: s.x, y: s.y, want: s.gates[routed0] }))
+// the wheel turns with the sky: same gate, full moon, a different road
+await page.evaluate((i) => { window.__britanniaTest.teleport(i) }, routed0)
+await sleep(120)
+r.check(`menu whirls open again beside gate ${ROMAN[routed0]}`, await openMenuOn(routed0), JSON.stringify(await st()))
+const pre = await st()
+await page.evaluate(() => window.__britanniaTest.setTime(DAY_TICKS * 4))
+await sleep(140)
+s = await st()
+r.check(`the day turns to a full moon and the road flips (gate ${ROMAN[routed0]}: ${ROMAN[routeDest(routed0, pre.moon, 8)]} -> ${ROMAN[(routed0 + 4) % 8]})`,
+    s.moon === 4 && s.moonRoute === (routed0 + 4) % 8 && routeDest(routed0, pre.moon, 8) !== (routed0 + 4) % 8, JSON.stringify({ preMoon: pre.moon, preRoute: pre.moonRoute, postMoon: s.moon, postRoute: s.moonRoute }))
+await page.keyboard.press(String(((routed0 + 1) % 8) + 1))
+await sleep(160)
+s = await st()
+r.check(`yesterday's road is now refused at gate ${ROMAN[routed0]}`, !s.warping && s.gate === routed0 && /refuseth/.test(s.toastMsg), JSON.stringify(s))
+await page.keyboard.press(String(((routed0 + 4) % 8) + 1))
+await sleep(1100)
+s = await st()
+r.check(`the full moon carries gate ${ROMAN[routed0]} its diameter (lands gate ${ROMAN[(routed0 + 4) % 8]})`,
+    s.x === s.gates[(routed0 + 4) % 8][0] && s.y === s.gates[(routed0 + 4) % 8][1], JSON.stringify({ x: s.x, y: s.y, want: s.gates[(routed0 + 4) % 8] }))
 
 // restart path stays clean
 await page.evaluate(() => window.__game.reset(7))
