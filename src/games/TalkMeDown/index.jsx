@@ -1188,17 +1188,17 @@ export default function TalkMeDown() {
                 boot (#1656's own note): Space lands in a run from SELECT, so Y
                 banks a pending seat at attract/select and startPlay seats it —
                 one tap still starts the run AND watches the proven route. */}
-            {screen === 'attract' && (
+            {screen === 'attract' && !netUi && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
                     <AttractWatchButton />
                 </div>
             )}
-            {screen === 'attract' && (
+            {screen === 'attract' && !netUi && (
                 <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '19%' }}>
                     <div className="font-mono text-xs tracking-widest text-emerald-200/70">{WATCH_ATTRACT_HINT}</div>
                 </div>
             )}
-            {screen === 'play' && !paused && (
+            {screen === 'play' && !paused && !netUi && (
                 <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
                     <WatchButton on={watching} />
                 </div>
