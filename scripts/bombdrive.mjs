@@ -4,6 +4,7 @@
 // death, restart, pause — all with zero page errors. Shots land in /tmp/forge.
 
 import { launchChrome } from './lib/chromeboot.mjs'
+import { wrongWireAt } from './lib/tmdwrongwire.mjs'
 
 const URL = process.env.TMD_URL || `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/talk-me-down`
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -104,10 +105,26 @@ ok('real arrows move the cursor/dial (logical)', moved, `sub was ${st0.cursor.su
 ok('the picture moved with the input', !!shotMid)
 await page.screenshot({ path: '/tmp/forge/tmd-play.png' })
 
-// a real strike on a seed where wire 0 is provably the wrong cut (node-pinned:
-// seed 7 -> N?, target wire != 0): press SPACE at the leftmost wire
+// A real strike on a wire that IS provably the wrong cut — derived LIVE from
+// the panel the browser just painted, never remembered (#1871: seed 7's
+// round-1 answer moved to wire 0 when #1909/#1917 shifted the rng draws, so
+// the old seed-pinned premise made SPACE SOLVE and two gates went stale-red).
 await page.evaluate(() => window.__tmdTest.start(7, 1))
 await sleep(250)
+const aim0 = await page.evaluate(() => window.__tmdTest.state())
+const aim = wrongWireAt(aim0)
+ok('the painted panel offers a wire the rulebook does not want', !!aim,
+    aim ? '' : JSON.stringify({ stamp: aim0.modules[aim0.cursor.mod]?.stamp }))
+// walk the cursor onto the wrong wire with real arrows, verifying each step
+let aimOk = !!aim, cur = aim ? aim0.cursor.sub : -1
+if (aim) {
+    for (let g0 = 0; cur !== aim.wrong && g0 < 8; g0++) {
+        await page.keyboard.press(cur < aim.wrong ? 'ArrowRight' : 'ArrowLeft')
+        await sleep(90)
+        cur = (await page.evaluate(() => window.__tmdTest.state())).cursor.sub
+    }
+}
+ok('the cursor rides to the provably-wrong wire (real keys)', aimOk && cur === aim.wrong, `sub=${cur} wrong=${aim?.wrong}`)
 await page.keyboard.press('Space')
 // #1305 pixel gate: the strike must flinch the screen edges red (~500 ms
 // window; poll so screenshot latency cannot decide the verdict).
@@ -405,8 +422,15 @@ const bezelOnce = async () => page.evaluate(() => {
     for (const col of [16, 128]) for (let y = 14; y <= 48; y++) if (hot(col, y)) n++
     return n
 })
-let bezelRed = 0 // poll the pulse: one screenshot cannot decide a sine phase
+let bezelRed = 0 // poll the pulse: one screenshot cannot decide a sine phase.
+// #1888 (from a fresh playtest run): on a loaded box the poll loop can read
+// frame after frame at the SAME pulse phase — wall-clock polling leaves phase
+// coverage to the render loop, and a starved render loop freezes the sine.
+// Advance the pulse in WORLD time via the contract clock between samples
+// (~5 ticks per poll sweeps the 31-tick period regardless of paint cadence;
+// the fuse still has ~400 ticks of margin, so no early boom).
 for (let i = 0; i < 14 && bezelRed < 200; i++) {
+    await page.evaluate(() => { const g = window.__game; for (let t = 0; t < 5; t++) g.step({}) })
     bezelRed = Math.max(bezelRed, await bezelOnce())
     await sleep(30)
 }
