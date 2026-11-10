@@ -1,73 +1,68 @@
-# STATE — session 203 (2026-11-10, slot b)
+# STATE — session 204 (2026-11-10, slot a)
 
 ## What shipped
-**TALK ME DOWN: THE BATTERY RAIL** merged as `3051b20` (PR #1920, closes
-#1917 — a never-dry stage I filed this session). The back plate's three
-holders are now a seeded slide-rail tray: cells sit in a layout keyed on
-seed+round by a SIDE-STREAM rng (module stream untouched — pre-rail bombs
-generate byte-identically), the tray opens right, and only the cell nearest
-the opening pulls out. `<`/`>` pick the slot while flipped; blocked/empty
-refuse SILENTLY (#1909 fiddle law extended); push-back re-clips home.
-D5/D6/G5 stayed verbatim true. Autopilot, hash, simState and the link
-snapshot all carry the rail. Gates at merge: platecheck 13/0 (new harness,
-mutant kills it), bombcheck 88/0, bombdrive 59/2 (known #1871 pair only),
-watchcheck TMD 216/216, tmdlinkcheck 56/0, contractcheck 682/682, lint
-gates + build green. Prod content-verified: www entry `index-0Bz8VRLe.js`
-→ game chunk `index-BsYgjni5.js` carries `BLOCKED - IT CLIPS RIGHT` next
-to the standing `PULL A BATTERY`.
+**FLOOR BOSS: THE FREIGHT LINE** merged as `6e02231` (PR #1924, closes #1921 —
+never-dry POLISH stage, weakestStage score 5). Money follows freight: pack
+BOOKS payouts as escrow riding the parcel; credits land when the trailer loads
+the parcel's LAST box; hauls of FULL_TRAILER 3+ boxes earn FREIGHT 6/box;
+tap-calls pay DISPATCH_FEE 5 (law pickups free); stranded escrow pays nothing.
+Ledger `E[escrow:paid:freight:fees]` + per-parcel escrow ride simState/hash/
+snapshot. Autopilot: escrow counts as in-transit cash for purchases, expansion
+freezes after SHIFT−1500, last 20 s reels the pad in. Measured: wins 14/15
+seeds avg ≈1197 (main ≈1160); thin seed 12 short ~60 — README records it.
+Harness: floorbosscheck green, 5/5 mutants (new --mutate-freight,
+--mutate-bonus); floorbossplay 26/26 (2 new gates); watchcheck --only=floor-boss
+210/210; contractcheck floor-boss 14/14. Live (content-probed
+`STRANDED ON THE PAD` in index-C5ZoXnYt.js):
+https://jalfern.com/retrogames/floor-boss. QA context added to #1877.
 
-## Ladder trail (why this stage)
-- TARGET #1637 (WATCH b19): REFUSED at claim — slot a is ALIVE inside it
-  (checkpoint ~18 min old at claim). Yielded per the cross-assignment law.
-- No halt/steer; `next` #1711 PLAICRAFT S1 is hardware-stalled (audit
-  11-10: "stalled on Jon", #1730 defaulted Hold) — claiming buys nothing.
-- game-queue EMPTY; feedback rung owned by the LIVE QA session (pid exists)
-  → #841 flagship stage: all four flagship READMEs gap-free → NEVER-DRY
-  weakestStage → `TALK ME DOWN` score 7. Gap #0's phone half repeats QA
-  #1900 "phone mouth" (owned in spirit); shipped gap #2 (plate variety).
-- #1917 filed + claimed + shipped in-session. Polish pass filed: **#1923**.
-
-## Lessons
-- **Two CI audits guard new check scripts**: an aliased `scripts/*check.mjs`
-  must be in a checks.mjs scope or MANUAL_CHECKS (#1575 — park it like
-  bombcheck), and any script writing mutant files must import
-  `lib/mutateguard.mjs` plant/pull (#1359). Both red the `static` gate —
-  wire them WITH the harness, not after.
-- **Rule-5 loop needs null-safety**: `--jq 'map(select(.name=="static"))[0].state'`
-  errors (exit 8) while checks are queued and kills the while-loop; use
-  `// "PENDING"` and keep main-ok OUTSIDE the substitution.
-- **Vercel half-propagates**: HTML rotated to an entry whose assets 404'd
-  ~10 min; and the TMD game chunk is NOT in the entry's literal list — the
-  prod sweep must follow the import graph (fetch → grep `assets/…js` in
-  every chunk → repeat until stable), and always grep a control marker the
-  deploy MUST have, else the probe is the bug, not the deploy.
-- A pre-existing "Space on back refused" drive gate silently PULLED once
-  the drain existed — drive-gate preconditions must re-read live state
-  (`held`), not assume the panel is fresh.
+## The session's real lesson: the economy change surfaced two OLD law races
+Shifting when money lands changed world timing → pre-existing fragility became
+reachable. (1) A refused purchase (`poor`) left the autopilot's `pad.b` HELD —
+held buttons never edge again; seed 555 froze for 7700 ticks. Fix: step off the
+spot and retry until affordable. (2) A bot detailed to the bay that went DOWN
+(the servo legally swings during its outage) and repaired MID-SWING then raced
+the gantry. Fix: recovery stands down while swing > 0. Both are law repairs, not
+economy patches — 4 new unit proofs ride along. Also: the reach-mutant SURVIVED
+the first run because the invariant imported the same ARM_REACH constant the
+mutant widened — pin legal values as LITERALS in checks (self-sealing), never
+measure a law against the tunable number.
+Economy-tuning method: sweep 12-15 seeds vs main baseline BEFORE touching
+harness pins — avg score + win-count, not pass/fail of the 3 gate seeds. Chaos
+means one thin seed flips; that's variance, document it, don't chase it.
 
 ## Session bookkeeping
-- #1917: filed → claimed → shipped `3051b20` → CLOSED (+ shipped label,
-  prod comment). #1923: rail polish pass, feedback, QA's next job.
-- No jonq (nothing taste/priority/hard-to-undo; #1900 already carries the
-  phone-mouth question from session 202).
+- #1921 claimed(a)→shipped+CLOSED. Slot b shipped #1917 (battery rail, #1922-
+  era) mid-session — no file overlap. Slot b's earlier TARGET #1637 claim was
+  refused (my lane's checkpoint was warm); #1637 remains building-labeled with
+  no live holder/b branch — batch 20 is claimable by whoever gets there warm.
+- :5173 dev server runs from `~/Dev/retrogames-forge-fb-freight-line` (detached
+  6e02231, node_modules symlinked) — reuse or kill next session. Slot b owns
+  :5178, studio QA :5176.
+- No jonq (nothing taste/priority/hard-to-undo).
 
-## Next queued (slot b)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first.
-   #1637 batch 19 is slot a's while its checkpoints stay fresh.
-2. If dry: weakestStage again — TMD still scores (gap #0 CI-half + the
-   voice shorthand line now split out of the old gap #2). #1923 is QA's;
-   builders don't take feedback while QA is live.
-3. Do NOT own the bombdrive seed-7 pair — #1871 until QA ships the fix.
+## Next queued (slot a)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue, game-first.
+   #1637 batch 20: SI endgame re-aim pacing + DF far-side haul interception
+   (README honest gaps name both; b19 shipped the first halves). Check no live
+   lane is inside it before claiming.
+2. If dry: weakestStage via scripts/lib/idle.mjs. FloorBoss's own remaining
+   gaps (shift ladder, freight tiers, aisle rules) are candidates — but #1877
+   owns the polish surface; don't double up.
+3. QA owns #1915/#1900/#1888/#1871 (TMD), #1906/#1907 (SI/DF), #1877 (FB
+   polish incl. new freight-line items) — builders don't pick them up untended.
 
-## Notes for the next slot-b session
-- `:5178` vite runs from `~/Dev/retrogames-forge-tmd-rail` (detached at
-   origin/main tip) — verify cwd, reuse or kill before strictPort.
-- `pkill -f watchcheck` before `npm run watchcheck -- --only talk-me-down`
-   — a full-suite orphan holds the port budget and looks like a hang.
-- Prod recipe that worked this session: import-graph sweep under the www
-   host + control marker (see Lessons).
-- Keep `tray/sel/heldSlot` in any new hash-visible state; the never-lies
-   gates (platecheck §6) compare simState against the drawn rail art.
+## Notes for the next slot-a session
+- Rate-limit etiquette: `gh api rate_limit` is free; batch gh reads; GraphQL
+  (`gh pr view --json`) survives core-REST droughts; prod probes are curl-only.
+- main-ok reads `cancelled` as ok (freeze text is stricter — verify the real
+  nightly conclusion near a freeze). Today's merge at 19:5xZ: static SUCCESS,
+  nightly-on-8825716 SUCCESS earlier; the cancelled dup is the known quirk.
+- Prod-verify recipe (used again): curl -sL www host → entry chunk → enumerate
+  `[A-Za-z0-9_-]+-[A-Za-z0-9_]{8}\.js` from the entry → grep each for a source
+  STRING signature. Content, never hash.
+- FloorBoss gates: floorbosscheck (+5 mutants), floorbossplay (:5173),
+  watchcheck --only=floor-boss, CONTRACT_ONLY=floor-boss contractcheck.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
