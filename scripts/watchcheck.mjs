@@ -1547,6 +1547,21 @@ const PILOTS = [
             const stops = s.filter((x) => x === 'stop').length
             rep.check('talk-me-down: released silently at the finish (one stop = the steer only)', !(await watching()) && stops === 1,
                 `sfx log ${JSON.stringify(s)}`)
+            // #1656 one-tap: from attract, ▶ WATCH must start the run AND seat
+            // the prover — the banked-seat path keeps the multi-screen boot honest.
+            await page.waitForTimeout(900)                          // over-screen guard
+            await key(page, 'Space')                                // over -> attract
+            await page.waitForTimeout(900)
+            rep.check('talk-me-down: back on attract before the tap', (await probe()).screen === 'attract')
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('talk-me-down: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                const q = await probe()
+                rep.check('talk-me-down: one tap starts the run AND seats the prover', q.screen === 'play' && await watching(), JSON.stringify(q))
+            }
         },
     },
 ]
@@ -1948,6 +1963,9 @@ for (const [name, f] of Object.entries(B4_SRC)) {
         /if \(watchingRef\.current && screenRef\.current === 'over'\) \{ watchingRef\.current = false; setWatching\(false\) \}/.test(tmd))
     rep.check('TALK ME DOWN: attract shows the shared WATCH hint (import + drawn line)',
         (tmd.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('TALK ME DOWN: one-tap ▶ WATCH survives the multi-screen boot (banked seat at startPlay)',
+        /pendingWatchRef\.current = true/.test(tmd)
+        && /if \(pendingWatchRef\.current\) \{ pendingWatchRef\.current = false; watchingRef\.current = true; setWatching\(true\); playWatchStart\(\) \}/.test(tmd))
     rep.check('registry /talk-me-down: controls carry the WATCH line', entryHas15('/talk-me-down', 'WATCH_HELP'))
     // No forked brain, and the witness still carries the proof the seat
     // replays: solvePad comes from the game's own engine.js, and tmd-smoke
