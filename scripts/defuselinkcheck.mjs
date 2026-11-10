@@ -167,9 +167,12 @@ function makeBox(link, id, mySeat, seed) {
         const st = curStep(g)
         if (st.kind === SYNC) return g.keys[1] && !g.keys[0] ? { a: true } : {}
         if (st.kind === CUT) {
+            // #1831: the engine fires on RISING edges — a held pad is one
+            // action, so this reactive hand paces its taps like the solver
+            // (one pulse per 4 ticks) and snips only on the target color.
             const d = (st.color - g.sel[0] + COLORS.length) % COLORS.length
-            if (d !== 0) return { [d <= 2 ? 'up' : 'down']: true }
-            if (!g.armed[0] && (g.armed[1] || g.stepT >= 120)) return { a: true }
+            if (d !== 0) return g.stepT % 4 === 0 ? { [d <= 2 ? 'up' : 'down']: true } : {}
+            if (!g.armed[0]) return { a: true }
             return {}
         }
         if (st.holder === 0) return { b: true }
@@ -317,6 +320,29 @@ console.log('snapshot:')
         if (hash(g) !== hash(b) || g.tick !== b.tick) { same = false; break }
     }
     ok('restore keeps ticking to the same hash (rng counter rode the wire)', same && g.tick === b.tick)
+}
+
+// ---- 2b. edge memory across a resync (#1831) ------------------------------
+// A resync that lands while a key is HELD: without prevPad on the wire the
+// guest's edge memory is empty and it fires the held press again — the hash
+// boundary never agrees again while the finger stays down.
+console.log('held press across resync:')
+{
+    const g = createGame(11, 2)
+    while (!g.done && curStep(g).kind !== CUT) { step(g, solvePads(g)); while (g.events.length) g.events.shift() }
+    while (g.intro > 0) { step(g, [{}, {}]); while (g.events.length) g.events.shift() }
+    step(g, [{ a: true }, {}]) // one press consumed just before the resync
+    const b = restoreNet(JSON.parse(JSON.stringify(snapshotNet(g))))
+    ok('the snapshot carries the edge memory (pp)', Array.isArray(snapshotNet(g).pp) && (snapshotNet(g).pp[0] & 4) === 4)
+    let agreed = true
+    for (let i = 0; i < 40 && !g.done; i++) {
+        step(g, [{ a: true }, {}]) // the key is STILL down
+        step(b, [{ a: true }, {}])
+        while (g.events.length) g.events.shift()
+        while (b.events.length) b.events.shift()
+        if (hash(g) !== hash(b)) { agreed = false; break }
+    }
+    ok('guest holds the same finger without refiring (hash agrees)', agreed && g.tick === b.tick)
 }
 
 // ---- 3. lockstep holds ------------------------------------------------------

@@ -221,6 +221,18 @@ function drawBombView(g, gs, now, opts = {}) {
             g.shadowBlur = 0
         }
         g.lineWidth = 1
+        // #1831: the arm's target wire — a chevron ON the cable (P1 marks the
+        // top end, P2 the bottom), colored by each arm's selector. Before,
+        // the blade position was a 7px letter chip inside the far arm box.
+        for (let i = 0; i < 2; i++) {
+            const wx = 240 + gs.sel[i] * 54
+            const col = gs.armed[i] ? C.brass : C.wire[gs.sel[i]]
+            g.fillStyle = col
+            if (gs.armed[i]) { g.shadowColor = WIRE_GLOW[gs.sel[i]]; g.shadowBlur = 8 }
+            if (i === 0) { g.beginPath(); g.moveTo(wx - 5, 202); g.lineTo(wx + 5, 202); g.lineTo(wx, 210); g.closePath(); g.fill() }
+            else { g.beginPath(); g.moveTo(wx - 5, 302); g.lineTo(wx + 5, 302); g.lineTo(wx, 294); g.closePath(); g.fill() }
+            g.shadowBlur = 0
+        }
         // cutter arms — one per seat, colored by the selector
         for (let i = 0; i < 2; i++) {
             const ax = i === 0 ? 150 : 490
@@ -246,9 +258,6 @@ function drawBombView(g, gs, now, opts = {}) {
         drawWindowBar(g, gs, (gs.armed[0] || gs.armed[1]) && !(gs.armed[0] && gs.armed[1]) ? gs.armedT : 0)
     } else {
         // VENT — gauge + stabilizer bars
-        g.font = '10px "Press Start 2P", monospace'
-        g.fillStyle = C.label
-        g.fillText(`P${st.holder + 1} HOLDS  ·  P${2 - st.holder} SEATS`, cx, 172)
         const unvented = live && !gs.held
         // gauge face
         g.fillStyle = '#0b0e07'; g.beginPath(); g.arc(cx, cy + 18, 66, 0, 7); g.fill()
@@ -276,6 +285,20 @@ function drawBombView(g, gs, now, opts = {}) {
         g.beginPath(); g.moveTo(cx, cy + 18); g.lineTo(cx + Math.cos(nd) * 54, cy + 18 + Math.sin(nd) * 54); g.stroke(); g.lineWidth = 1
         g.fillStyle = C.brass; g.beginPath(); g.arc(cx, cy + 18, 5, 0, 7); g.fill()
         g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'; g.fillText('PRESSURE', cx, cy + 96)
+        // #1831: the role line lived at y=172 — behind the gauge face, so a
+        // newcomer couldn't read which hand holds and which seats. It rides
+        // below the dial now; the P-chips under the bars carry the YOU tag.
+        g.fillStyle = C.label; g.font = '10px "Press Start 2P", monospace'
+        g.fillText(`P${st.holder + 1} HOLDS  ·  P${2 - st.holder} SEATS`, cx, 298)
+        // #1831: a whiffed seat was sound-only — the tap read as a dead key.
+        // Flash the dial red and name it for a beat.
+        if (opts.dudT > 0) {
+            const f = opts.dudT / 18
+            g.strokeStyle = `rgba(255,74,62,${0.85 * f})`; g.lineWidth = 3
+            g.beginPath(); g.arc(cx, cy + 18, 66, 0, 7); g.stroke(); g.lineWidth = 1
+            g.fillStyle = `rgba(255,74,62,${0.9 * f})`; g.font = '8px "Press Start 2P", monospace'
+            g.fillText('MISS', cx, 190)
+        }
         // stabilizer bars — the holder's seat bar glows when pinned
         for (let i = 0; i < 2; i++) {
             const bx = i === 0 ? 128 : 512
@@ -289,7 +312,9 @@ function drawBombView(g, gs, now, opts = {}) {
             g.strokeStyle = isHolder ? C.amber : '#000'
             g.strokeRect(bx - 10, 180, 20, 90)
             g.fillStyle = isHolder ? C.amber : C.label; g.font = '8px "Press Start 2P", monospace'
-            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, bx, 288)
+            // #1831: your own bar names the key — a newcomer reads the role
+            // for THEIR hand, not a seat number they must map.
+            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? (i === st.holder ? ' YOU:HOLD B' : ' YOU:SEAT SP') : ''}`, bx, 288)
         }
     }
 
@@ -317,13 +342,16 @@ function drawWindowBar(g, gs, hold) {
 function drawIntro(g, gs) {
     if (gs.intro <= 0 || gs.done) return
     const st = E.curStep(gs)
-    g.fillStyle = 'rgba(6,8,4,0.72)'; g.fillRect(150, 150, 340, 60)
-    g.strokeStyle = C.amber; g.strokeRect(150, 150, 340, 60)
+    // #1831: the step card sat over the plate — the first second of every
+    // step showed neither the CUT target nor the VENT dial. It rides the
+    // top strip now, clear of the case (the event banner dropped 10px).
+    g.fillStyle = 'rgba(6,8,4,0.72)'; g.fillRect(170, 8, 300, 44)
+    g.strokeStyle = C.amber; g.strokeRect(170, 8, 300, 44)
     g.textAlign = 'center'
     g.font = '12px "Press Start 2P", monospace'; g.fillStyle = C.amber
-    g.fillText(E.KIND_NAME[st.kind], 320, 176)
+    g.fillText(E.KIND_NAME[st.kind], 320, 30)
     g.font = '7px "Press Start 2P", monospace'; g.fillStyle = C.green
-    g.fillText(st.kind === E.SYNC ? 'BOTH KEYS, ONE WINDOW' : st.kind === E.CUT ? 'BOTH BLADES, ONE COLOR' : 'HOLD  +  SEAT, TOGETHER', 320, 196)
+    g.fillText(st.kind === E.SYNC ? 'BOTH KEYS, ONE WINDOW' : st.kind === E.CUT ? 'BOTH BLADES, ONE COLOR' : 'HOLD  +  SEAT, TOGETHER', 320, 46)
     g.textAlign = 'left'
 }
 
@@ -353,7 +381,7 @@ export default function BombDefuseGame() {
     const coopRef = useRef(false)
     const keys1Ref = useRef({})
     const keys2Ref = useRef({})
-    const hudRef = useRef({ flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0 })
+    const hudRef = useRef({ flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0 })
     const hintRef = useRef(null)
     const msgRef = useRef({ idx: 0, at: 0 })
     const overAtRef = useRef(0)
@@ -383,7 +411,7 @@ export default function BombDefuseGame() {
         seatsRef.current = players
         coopRef.current = players > 1
         watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old run
-        hudRef.current = { flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0 }
+        hudRef.current = { flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0 }
         hintRef.current = null
         setScreen('play')
     }, [setScreen])
@@ -428,7 +456,7 @@ export default function BombDefuseGame() {
         else if (f.k === 'cut') { sfx.cut(); hud.banner = { text: 'WIRE OUT', ok: true }; hud.bannerT = 50 }
         else if (f.k === 'vent') sfx.creak()
         else if (f.k === 'sealed') { sfx.sealed(); hud.banner = { text: 'SEALED', ok: true }; hud.bannerT = 50 }
-        else if (f.k === 'dud') sfx.dud()
+        else if (f.k === 'dud') { sfx.dud(); hud.dudT = 18 }
         else if (f.k === 'nick') {
             sfx.nick(); hud.flash = 10; hud.shake = 6
             hud.sparks.push(...Array.from({ length: 8 }, () => ({ x: (f.seat === 0 ? 150 : 490) + (Math.random() - 0.5) * 24, y: 240 + (Math.random() - 0.5) * 30, vx: (Math.random() - 0.5) * 4, vy: -Math.random() * 3, life: 12 })))
@@ -531,7 +559,7 @@ export default function BombDefuseGame() {
             seedRef.current = seed
             seatsRef.current = 2
             coopRef.current = true
-            hudRef.current = { flash: 0, shake: 0, sparks: [], banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70, boomT: 0 }
+            hudRef.current = { flash: 0, shake: 0, sparks: [], banner: { text: 'CREW LINKED — BOTH HANDS', ok: true }, bannerT: 70, boomT: 0, dudT: 0 }
             hintRef.current = null
             net.miss = 0
             net.desyncFrozen = false
@@ -639,7 +667,7 @@ export default function BombDefuseGame() {
                                 net.desyncFrozen = false
                                 if (net.room) net.room.setPhase('racing')
                                 hudRef.current = {
-                                    flash: 0, shake: 0, sparks: [], boomT: 0,
+                                    flash: 0, shake: 0, sparks: [], boomT: 0, dudT: 0,
                                     banner: { text: 'WELCOME BACK — SEAT RE-SEATED', ok: true }, bannerT: 90,
                                 }
                                 hintRef.current = null
@@ -887,7 +915,8 @@ export default function BombDefuseGame() {
                         // the seat is still the partner's during an in-flight
                         // hand-back (#1838) — the chip must not lie until the flip
                         cpu2: seatsRef.current === 1 || (net.active && net.sync && (net.sync.solo() || net.sync.reseatTick != null)),
-                        youSeat: net.active && net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1,
+                        youSeat: net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1),
+                        dudT: hud.dudT,
                     })
                     drawIntro(g, gs)
                     for (const s of hud.sparks) {
@@ -896,12 +925,13 @@ export default function BombDefuseGame() {
                         g.fillRect(s.x, s.y, 2, 2)
                     }
                     hud.sparks = hud.sparks.filter(s => --s.life > 0)
+                    if (hud.dudT > 0) hud.dudT--
                     if (hud.banner && hud.bannerT > 0) {
                         g.textAlign = 'center'
                         g.font = '12px "Press Start 2P", monospace'
                         g.fillStyle = hud.banner.ok ? C.green : C.red
                         g.shadowColor = hud.banner.ok ? C.green : C.red; g.shadowBlur = 10
-                        g.fillText(hud.banner.text, 320, 56)
+                        g.fillText(hud.banner.text, 320, 66)
                         g.shadowBlur = 0; g.textAlign = 'left'
                         hud.bannerT--
                         if (hud.bannerT <= 0) hud.banner = null
