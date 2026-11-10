@@ -1,66 +1,73 @@
-# STATE — session 201 (2026-11-10, slot a)
+# STATE — session 203 (2026-11-10, slot b)
 
 ## What shipped
-**WATCH batch 19 — the seated brains get stronger** — squash `9abc51c`
-(PR #1918, Part of #1637). Both targets were batch 18's own honest witnesses.
-SI: seed-1462 stall root-caused (law 3's lead point sits ~17 px into the
-march, often above a fort — shots spent on bricks, measured 511-tick one-kill
-window before the fleet landed 9-left). Fix: lowest-invader choice prefers a
-shield-free LEAD point; fire gate never shoots into a fort unless the target
-hides behind one. Witness 19/20 → 20/20, slowest 1987 → 1857, stall-gap pin
-≤450 kills both halves of the fix (mutants 477/731), 3/3 mutants die.
-Defender: the patrol defends the humans — hauler priority (×0.25), divers
-×0.7, friendly-fire suppression near walkers, falling-human catch (+250) and
-elevator delivery (+500). 20-seed patrol: catches 8→46, deliveries 8→46,
-score floor 4000→7000, waves 57→82, survived unchanged. Two law unit tests,
-4 new mutants, 16/16 die. README honest gaps rewritten to measured truth.
-Live: https://jalfern.com/retrogames/invaders + /retrogames/defender
-(prod CONTENT probe: `carry!==null?x*=.25` minified signature — see #1637).
-QA context added to #1906 (SI watch-pause tell) and #1907 (DF carry visuals
-now load-bearing in attract/WATCH).
+**TALK ME DOWN: THE BATTERY RAIL** merged as `3051b20` (PR #1920, closes
+#1917 — a never-dry stage I filed this session). The back plate's three
+holders are now a seeded slide-rail tray: cells sit in a layout keyed on
+seed+round by a SIDE-STREAM rng (module stream untouched — pre-rail bombs
+generate byte-identically), the tray opens right, and only the cell nearest
+the opening pulls out. `<`/`>` pick the slot while flipped; blocked/empty
+refuse SILENTLY (#1909 fiddle law extended); push-back re-clips home.
+D5/D6/G5 stayed verbatim true. Autopilot, hash, simState and the link
+snapshot all carry the rail. Gates at merge: platecheck 13/0 (new harness,
+mutant kills it), bombcheck 88/0, bombdrive 59/2 (known #1871 pair only),
+watchcheck TMD 216/216, tmdlinkcheck 56/0, contractcheck 682/682, lint
+gates + build green. Prod content-verified: www entry `index-0Bz8VRLe.js`
+→ game chunk `index-BsYgjni5.js` carries `BLOCKED - IT CLIPS RIGHT` next
+to the standing `PULL A BATTERY`.
 
-## The session's real lesson: a rate-limited claim is not a collision
-GitHub core REST was exhausted (5000/5000 — qa-mini/supervise loops spend it
-by design). `forge-claim.sh` misread its own failed queries as "YIELDED:
-claimed at the same time". Read the output: two API 403s + jq errors = the
-script never read a checkpoint. Waited for the reset (~30 min, `gh api
-rate_limit` is exempt), retried, claimed cleanly. Use the GraphQL headroom
-(`gh pr view --json`, issue views) during REST droughts. Full-suite 1-off
-failures on UNTOUCHED titles (comet-drift-hd hook) → re-run alone once,
-green = Chrome flake, move on (rule 3).
+## Ladder trail (why this stage)
+- TARGET #1637 (WATCH b19): REFUSED at claim — slot a is ALIVE inside it
+  (checkpoint ~18 min old at claim). Yielded per the cross-assignment law.
+- No halt/steer; `next` #1711 PLAICRAFT S1 is hardware-stalled (audit
+  11-10: "stalled on Jon", #1730 defaulted Hold) — claiming buys nothing.
+- game-queue EMPTY; feedback rung owned by the LIVE QA session (pid exists)
+  → #841 flagship stage: all four flagship READMEs gap-free → NEVER-DRY
+  weakestStage → `TALK ME DOWN` score 7. Gap #0's phone half repeats QA
+  #1900 "phone mouth" (owned in spirit); shipped gap #2 (plate variety).
+- #1917 filed + claimed + shipped in-session. Polish pass filed: **#1923**.
+
+## Lessons
+- **Two CI audits guard new check scripts**: an aliased `scripts/*check.mjs`
+  must be in a checks.mjs scope or MANUAL_CHECKS (#1575 — park it like
+  bombcheck), and any script writing mutant files must import
+  `lib/mutateguard.mjs` plant/pull (#1359). Both red the `static` gate —
+  wire them WITH the harness, not after.
+- **Rule-5 loop needs null-safety**: `--jq 'map(select(.name=="static"))[0].state'`
+  errors (exit 8) while checks are queued and kills the while-loop; use
+  `// "PENDING"` and keep main-ok OUTSIDE the substitution.
+- **Vercel half-propagates**: HTML rotated to an entry whose assets 404'd
+  ~10 min; and the TMD game chunk is NOT in the entry's literal list — the
+  prod sweep must follow the import graph (fetch → grep `assets/…js` in
+  every chunk → repeat until stable), and always grep a control marker the
+  deploy MUST have, else the probe is the bug, not the deploy.
+- A pre-existing "Space on back refused" drive gate silently PULLED once
+  the drain existed — drive-gate preconditions must re-read live state
+  (`held`), not assume the panel is fresh.
 
 ## Session bookkeeping
-- #1637 claimed(a)→batch 19 shipped; stays `building` (rollout continues,
-  batch 20 needs a fresh claim; no pushed branch exists now — merge deleted
-  forge/watch-b19).
-- #1906/#1907 got b19-context comments (QA lane's items unchanged).
-- No jonq (nothing taste/priority/hard-to-undo).
-- :5173 dev server runs from this lane's watch-b19 worktree (detached
-  9abc51c, node_modules symlinked) — free to reuse or kill next session.
+- #1917: filed → claimed → shipped `3051b20` → CLOSED (+ shipped label,
+  prod comment). #1923: rail polish pass, feedback, QA's next job.
+- No jonq (nothing taste/priority/hard-to-undo; #1900 already carries the
+  phone-mouth question from session 202).
 
-## Next queued (slot a)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue, game-first.
-   #1637 batch 20 is a fine ladder candidate but has no corpse — claim fresh;
-   remaining honest-watch ideas: SI endgame re-aim pacing, DF far-side haul
-   interception (README honest gaps name both).
-2. If dry: builders-the-reverse — check `pgrep -f "QA MASTER"` before
-   borrowing ONE feedback item; else flagshipStage/weakestStage via
-   scripts/lib/idle.mjs (convert gh labels to names before heldDirs).
-3. QA owns #1915/#1900/#1888/#1871 (TMD), #1906/#1907 (SI/DF polish) —
-   builders don't pick them up unless steered.
+## Next queued (slot b)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first.
+   #1637 batch 19 is slot a's while its checkpoints stay fresh.
+2. If dry: weakestStage again — TMD still scores (gap #0 CI-half + the
+   voice shorthand line now split out of the old gap #2). #1923 is QA's;
+   builders don't take feedback while QA is live.
+3. Do NOT own the bombdrive seed-7 pair — #1871 until QA ships the fix.
 
-## Notes for the next slot-a session
-- Rate-limit etiquette: `gh api rate_limit` is free; core resets hourly;
-  the mini+warden loops burn REST most hours — batch your gh reads.
-- SI gates: invaderscheck (+--mutant, 3), watchcheck --only=invaders;
-  DF: defendercheck (+--mutant, 16), watchcheck --only=defender. Both
-  witness loops are deterministic Node — tighten pins to measured values.
-- Prod-verify without a registry-string change: grep the live chunk for a
-  minified STRUCTURE signature (esbuild keeps property names:
-  `carry!==null\?[a-z]*\*=[.]25` — escape the ternary `?`, an unescaped one
-  is an ERE quantifier that silently never matches; prove the sig against
-  your local dist BEFORE blaming prod). Enumerate chunks from the live entry
-  HTML (follow the www redirect — bare jalfern.com answers 308).
+## Notes for the next slot-b session
+- `:5178` vite runs from `~/Dev/retrogames-forge-tmd-rail` (detached at
+   origin/main tip) — verify cwd, reuse or kill before strictPort.
+- `pkill -f watchcheck` before `npm run watchcheck -- --only talk-me-down`
+   — a full-suite orphan holds the port budget and looks like a hang.
+- Prod recipe that worked this session: import-graph sweep under the www
+   host + control marker (see Lessons).
+- Keep `tray/sel/heldSlot` in any new hash-visible state; the never-lies
+   gates (platecheck §6) compare simState against the drawn rail art.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
