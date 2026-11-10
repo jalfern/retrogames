@@ -115,8 +115,10 @@ section('THE FAIRNESS PROVER — booth vs truth, every paper, every seed')
                     ok(typeof a.scale === 'number' && a.scale === a.truth.trueWeight, `the scale skipped its witness duty at seed ${seed} day ${day.n}`)
                 }
                 // the wall has no scroll: every name on the sheet must fit
-                // the booth's printed panel (index.jsx prints every entry)
-                ok(day.wanted.length <= 4, `day ${day.n} printed ${day.wanted.length} wanted names — the wall would have to hide one (unfair by furniture)`)
+                // the booth's printed panel (index.jsx prints every entry).
+                // Five is the original bulletin's capacity (#1902) — the fit
+                // sweep below proves the fifth row lands above the scale box.
+                ok(day.wanted.length <= 5, `day ${day.n} printed ${day.wanted.length} wanted names — the wall would have to hide one (unfair by furniture)`)
             }
         }
     }
@@ -324,22 +326,30 @@ section('THE WALL FITS THE BOOTH (#410) — nothing hides, nothing is postage')
     const labelR = PORTRAIT.x + PORTRAIT.headCx + ('ENTRANT 8/8'.length * 10 * CHAR) / 2
     ok(PAPERS.x >= labelR + 2, 'the passport card covers the ENTRANT label')
     ok(SCALE.y + SCALE.h <= CHS - STRIP_H, 'the scale box is under the controls strip')
-    let worst = 0
+    let worst = 0, deepest = 0, fives = 0
     for (const seed of SEEDS) {
         for (const day of genWeek(seed).days) {
             const f = wallFit(day, day.rules.map((r) => RULES[r].text))
             worst = Math.max(worst, f.bottom)
+            deepest = Math.max(deepest, day.wanted.length)
+            if (day.wanted.length === 5) fives++
             ok(f.fits && f.listsFit, `seed ${seed} day ${day.n}: wall text reaches y=${f.bottom} — the booth is only ${CHS - STRIP_H}px of wall`)
             ok(f.rulesClearScale && f.listsClearScale, `seed ${seed} day ${day.n}: the SCALE box is painted ON ${f.rulesEnd > SCALE.y ? 'the rulebook' : 'the entry/wanted lists'} — the sheet vanishes`)
             ok(f.rulesClearEntrant, `seed ${seed} day ${day.n}: a rulebook line runs into the entrant column`)
         }
     }
     console.log(`  ..    worst wall bottom y=${worst} of ${CHS - STRIP_H}; every entry, every wanted name, every law is on screen together`)
+    // the fifth slot must be REAL, not just allowed (#1902): a bulletin
+    // that always prints three lines is the old booth wearing a new cap
+    ok(deepest === 5, `the generator never staged a five-entry sheet (deepest ${deepest}) — the fifth slot is dead letter`)
+    ok(fives > 0, 'no seed/day reached the five-entry sheet')
+    console.log(`  ..    deepest sheet ${deepest} entries; ${fives} five-entry days across the sweep — the original bulletin's capacity is in use`)
     // and the theoretical worst day the generator is allowed to build: the
-    // full 8-rule sheet, four countries, four wanted names (#410: the old
-    // booth overflowed exactly here and the scale box buried the sheet)
+    // full 8-rule sheet, four countries, five wanted names (#410: the old
+    // booth overflowed exactly here and the scale box buried the sheet;
+    // #1902 raised the wanted column to the bulletin's five)
     {
-        const worstDay = { n: 7, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE', 'PARMENISTAN'], wanted: [{ name: 'ANDERSON K V', id: 4022 }, { name: 'GORSKY A V', id: 1180 }, { name: 'VOSKOVIC M', id: 3345 }, { name: 'DZURAK L', id: 2077 }], rules: DAY_RULES[6] }
+        const worstDay = { n: 7, allowed: ['ARSTOTZKA', 'KIRINIA', 'VESKOLE', 'PARMENISTAN'], wanted: [{ name: 'ANDERSON K V', id: 4022 }, { name: 'GORSKY A V', id: 1180 }, { name: 'VOSKOVIC M', id: 3345 }, { name: 'DZURAK L', id: 2077 }, { name: 'MARKIC D V', id: 3321 }], rules: DAY_RULES[6] }
         const f = wallFit(worstDay, worstDay.rules.map((r) => RULES[r].text))
         ok(f.listsFit && f.listsClearScale && f.rulesClearScale, `the worst buildable day reaches y=${f.bottom} vs scale y=${SCALE.y} and strip y=${CHS - STRIP_H} — the wall hides its own evidence`)
         console.log(`  ..    worst buildable day: bottom y=${f.bottom}, scale box top y=${SCALE.y}, strip top y=${CHS - STRIP_H} — clear`)
@@ -561,6 +571,19 @@ if (MUT) {
                 if (!v6 || v6.person.passport.expiry.m !== 10 || v6.person.passport.expiry.d !== 31) return false
             }
             return true
+        })
+
+    // 11. the fifth slot dies (#1902): decoys back to two and the bulletin
+    //     silently shrinks to the old four-portrait wall — the slot-used
+    //     witness in the WALL section is the load-bearing line.
+    await tryMut('wanted sheet forgets its fifth portrait (decoys 3 -> 2)',
+        mutMod('gen.js', 'for (let k = 0; k < 3; k++) {', 'for (let k = 0; k < 2; k++) {', 'm11'),
+        (m) => {
+            let deepest = 0
+            for (const seed of SEEDS) {
+                for (const day of m.gen.genWeek(seed).days) deepest = Math.max(deepest, day.wanted.length)
+            }
+            return deepest >= 5
         })
 }
 
