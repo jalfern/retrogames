@@ -309,6 +309,18 @@ void main(){
 // through fixed wave shapes like the 1994 original's palette animation.
 export const WAVE_CYCLE = { levels: 4, stepTicks: 6 }
 
+// #1764 item 4 stage 4 — travelling crests. Stage 1 left the wave SHAPES
+// sitting still while only the colours walked; the original's sea moved —
+// crests travelled. The bpos noise field now advects diagonally through
+// noise space at WAVE_TRAVEL noise-units per sim tick (the same uWorldTime
+// clock the palette cycle rides, so determinism is untouched), and band
+// edges crawl the sea. World-space crest speed = value / 0.7 · 60 u/s —
+// at {0.026, 0.020} that is ≈2.2 u/s east and ≈1.7 u/s north, the same
+// drift family as the sparkle field below (rp advects at 0.02/0.014 on
+// scale 0.55) so the crests and the sparkle walk WITH the water, not
+// against it.
+export const WAVE_TRAVEL = { x: 0.026, y: 0.020 }
+
 export function createCarpetGL(canvas, opts = {}) {
     const lite = !!opts.lite
     const cmPrev = THREE.ColorManagement.enabled
@@ -383,10 +395,13 @@ void main(){
     vec3 V = normalize(uCamPos - vWorld);
     if (vH < ${WATER}.0) {
         float depth = ${WATER}.0 - vH;
-        float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + 3.3) * 0.45;
+        float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + uWorldTime * vec2(${WAVE_TRAVEL.x}, ${WAVE_TRAVEL.y}) + 3.3) * 0.45;
         // #1764 item 4 stage 1: hard 4-level band, palette index marching with
-        // world time (the original's 4-bit wave cycle). Shapes stay put; the
-        // colours walk shallow→deep one level per stepTicks — 16-colour flow.
+        // world time (the original's 4-bit wave cycle). The colours walk
+        // shallow→deep one level per stepTicks — 16-colour flow. Stage 4 put
+        // the SHAPES in motion too: bpos samples an advected noise field
+        // (WAVE_TRAVEL per sim tick), so the crests travel and band edges
+        // crawl the sea instead of sitting still.
         float lvl = clamp(floor(bpos), 0.0, ${WAVE_CYCLE.levels - 1}.0);
         float cyc = mod(lvl + floor(uWorldTime / ${WAVE_CYCLE.stepTicks}.0), ${WAVE_CYCLE.levels}.0);
         vec3 wcol = mix(uShallow, uDeep, cyc / ${WAVE_CYCLE.levels - 1}.0);

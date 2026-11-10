@@ -24,6 +24,7 @@ import {
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
     DIVE_DRAG, DIVE_NOFIRE,
 } from '../src/games/MagicCarpet/sim.js'
+import { WAVE_CYCLE } from '../src/games/MagicCarpet/renderer.js' // #1764 item 4 stage 4: the wave law's clock constant, for the JS twin
 
 const wrap = (v, m) => ((v % m) + m) % m
 const wrapD = (v) => wrap(v + MAP / 2, MAP) - MAP / 2
@@ -113,6 +114,75 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             && src.includes('clamp(floor(bpos), 0.0, ${WAVE_CYCLE.levels - 1}.0)')
             && src.includes('mod(lvl + floor(uWorldTime / ${WAVE_CYCLE.stepTicks}.0), ${WAVE_CYCLE.levels}.0)')
             && !src.includes('smoothstep(0.3, 0.7, fract(bpos))'),
+            'source pin')
+    }
+    {
+        // #1764 item 4 stage 4 — TRAVELLING CRESTS. Stage 1 left the wave
+        // shapes still while the colours walked; the sea must MOVE. The bpos
+        // noise field advects with uWorldTime at WAVE_TRAVEL noise-units per
+        // sim tick. Proven here with a JS twin of NOISE_GLSL + the bpos law:
+        // (a) export sane (diagonal NE drift, crest speed a walk-pace, same
+        // family as the sparkle field's 0.02/0.014 on scale 0.55),
+        // (b) source pin (advected sample, static field banned),
+        // (c) churn (band edges cross fixed points — a static field churns 0),
+        // (d) rigid travel (the whole field is a pure translation of t=0),
+        // (e) purity (the law is presentation-only — sim.js never mentions it).
+        const WT = (await import('../src/games/MagicCarpet/renderer.js')).WAVE_TRAVEL
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        r.check('#1764 item 4 stage 4: WAVE_TRAVEL exports a sane diagonal drift (NE, unequal axes, crest speed 1–4 u/s)',
+            WT && Number.isFinite(WT.x) && Number.isFinite(WT.y) &&
+            WT.x > 0 && WT.y > 0 && WT.x !== WT.y &&
+            WT.x / WT.y >= 1.2 && WT.x / WT.y <= 1.45 &&
+            60 * WT.x / 0.7 >= 1 && 60 * WT.x / 0.7 <= 4 &&
+            60 * WT.y / 0.7 >= 1 && 60 * WT.y / 0.7 <= 4,
+            JSON.stringify(WT))
+        r.check('#1764 item 4 stage 4: the bpos wave field samples an advected noise coordinate (uWorldTime · WAVE_TRAVEL) and the static field is banned',
+            src.includes('fbm2(vWorld.xz * 0.7 + uWorldTime * vec2(${WAVE_TRAVEL.x}, ${WAVE_TRAVEL.y}) + 3.3)')
+            && !src.includes('fbm2(vWorld.xz * 0.7 + 3.3)'),
+            'source pin')
+        const fract = (v) => v - Math.floor(v)
+        const hash21 = (x, y) => {
+            const px = fract(x * 234.34), py = fract(y * 435.345)
+            const d = px * (px + 34.23) + py * (py + 34.23)
+            return fract((px + d) * (py + d))
+        }
+        const vnoise = (x, y) => {
+            const ix = Math.floor(x), iy = Math.floor(y)
+            let fx = fract(x), fy = fract(y)
+            fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy)
+            const a = hash21(ix, iy), b = hash21(ix + 1, iy), c = hash21(ix, iy + 1), d = hash21(ix + 1, iy + 1)
+            return (a + (b - a) * fx) * (1 - fy) + (c + (d - c) * fx) * fy
+        }
+        const fbm2 = (x, y) => vnoise(x, y) * 0.6 + vnoise(x * 2.7 + 13.1, y * 2.7 + 13.1) * 0.4
+        const bposT = (x, z, depth, t) =>
+            depth * 0.28 + fbm2(x * 0.7 + WT.x * t + 3.3, z * 0.7 + WT.y * t + 3.3) * 0.45
+        const lvlT = (v) => Math.min(Math.max(Math.floor(v), 0), WAVE_CYCLE.levels - 1)
+        const pts = []
+        for (let i = 0; i < 12; i++) pts.push([(i * 137 + 21) % 512, (i * 89 + 63) % 512])
+        let churnMin = Infinity
+        for (const [x, z] of pts) {
+            let prev = lvlT(bposT(x, z, 3, 0)), ch = 0
+            for (let t = 1; t <= 3600; t++) {
+                const l = lvlT(bposT(x, z, 3, t))
+                if (l !== prev) { ch++; prev = l }
+            }
+            if (ch < churnMin) churnMin = ch
+        }
+        r.check('#1764 item 4 stage 4: band edges CHURN the sea — every fixed watch point changes crest level over one minute (static shapes churn 0)',
+            churnMin >= 8, `min churn over 12 points/3600 ticks = ${churnMin}`)
+        let maxShiftErr = 0
+        for (const [x, z] of pts) {
+            for (const t of [600, 1800, 3600]) {
+                const e = Math.abs(bposT(x, z, 3, t) -
+                    bposT(x + (WT.x / 0.7) * t, z + (WT.y / 0.7) * t, 3, 0))
+                if (e > maxShiftErr) maxShiftErr = e
+            }
+        }
+        r.check('#1764 item 4 stage 4: the drift is rigid travel, not swirl — the bpos field at tick t is the t=0 field translated by WAVE_TRAVEL/0.7 world-u per tick',
+            maxShiftErr < 1e-9, `max |Δbpos| = ${maxShiftErr.toExponential(2)}`)
+        r.check('#1764 item 4 stage 4: presentation-only law — sim.js never mentions WAVE_TRAVEL (stateHash and the seed stream untouched)',
+            !simS.includes('WAVE_TRAVEL'),
             'source pin')
     }
     {
