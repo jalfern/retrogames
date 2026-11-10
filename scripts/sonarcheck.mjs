@@ -303,7 +303,10 @@ section('attract (rule 6)')
     const block = jsx.slice(jsx.indexOf("{screen === 'attract'"), jsx.indexOf("{screen === 'over'"))
     ok(block.length > 0, 'the attract block exists')
     ok(!/<br/.test(block), 'the attract stacks no hard line breaks')
+    // #1637 batch 14: the attract also carries the shared #1654 WATCH hint —
+    // as a <div>, so the press-prompt-stays-alone law still bites.
     ok((block.match(/<p\b/g) || []).length === 1, 'the attract draws exactly one <p> (the press prompt)')
+    ok(/WATCH_ATTRACT_HINT/.test(block), 'the attract carries the shared WATCH hint line')
     ok(/<AttractMessage\b[^>]*messages=\{MESSAGES\}/.test(block), 'rules ride the cycling <AttractMessage>')
     ok(/bg-black\/[45]\d/.test(block), 'the attract dims the demo')
 }
