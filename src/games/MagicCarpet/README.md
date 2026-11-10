@@ -390,14 +390,18 @@ see item 5).
   Still open: none — the loop is complete (items 1, 2 and 3 of the pass are
   shipped; 4–7 remain on the issue).
 - No anaglyph/stereo mode. **Partially closed by #1746 item 7:** rival-cast
-  cues now pan to the caster's side (see the #1746 section) — the world bed,
-  creatures and lightning are still center, and there is no true HRTF.
+  cues now pan to the caster's side (see the #1746 section). **Closed further
+  by #1764 item 7 stage 3:** lightning, creature strikes (bite, sling, growl
+  bed), the chirp of a chaser that lost you, and the village sounds (ignite,
+  burn, hut crash, tribute coin) all lean to the side of the world they come
+  from, on the same `castBearing` as the wizfire. There is no true HRTF, and
+  the carpet's own wind bed stays center on purpose — you wear it.
   `?` pause carries the rules instead. **Partially closed by #1790:** red/cyan
   anaglyph ships — the world renders twice from ±0.60u parallel cameras and
   the post chain combines left→red / right→cyan (bloom is shared; the HUD
   stays flat mono). `V` toggles, `?stereo=1` opens on a fresh link, the
   choice persists. Still open: LCD-shutter/interlace modes, and the
-  audio half (HRTF) of #1746 item 7.
+  HRTF half of #1746 item 7.
 - Water is shader waves with self-shadowing, sun-linked sparkle and foam lace
   tracing the shoreline. **CLOSED by #1764 item 4 stage 1:** the depth bands are
   now hard 4-level bands whose palette index marches one level every 6 sim ticks
@@ -444,6 +448,33 @@ shot), four cardinal geometries, nose-relative turn, seam wrap, purity
 default-path in AudioController). Mutants to prove on demand: strip x/y from
 the push (carrier red), sin→cos (side gates red, ahead/behind survive), drop
 the pan arg (shell pin red), pan the null path (default-path pin red).
+
+## #1764 item 7 stage 3 (2026-11-10, QA studio): THE WORLD GETS EARS
+
+The rest of the original's stereo field lands on the `castBearing` the wizfire
+already rides (no new geometry, no new law). Panned now: **lightning** (`zap`
+keeps its strike point — the crack leans to it, softer when behind, the same
+behind-treatment as wizfire); **creature strikes** (`bite`/`rocksling` gained
+`x`,`y` at the chomp/throw tick and lean to the attacker); **the chirp of a
+chaser that lost you** (`lost` already carried the source position); **the
+village** (`ignite`, `villager burn`, `hutDown`, `tribute` — the coin rings at
+the hut that pays it); and the **growl bed** — `ambTone` gained an opt-in pan
+and the tick-170 growl now comes from the creature that growls, still behind
+the veil's low-pass. The carpet's own wind/boost bed stays center ON PURPOSE:
+you wear it, the original's wind blew in your ears, not off the landscape.
+`AudioController.playTone`/`playNoise`/`ambTone` gained a trailing `pan`
+under the same opt-in law as `playSweep`: `null` keeps the exact old direct
+graph, so no other title's sound changes.
+
+carpetcheck +8 gates (#1764-7 block): two carriers with bearing signs (the
+chomping wolf sits isolated on the right and pans >0.9; the throwing giant
+sits ahead-right and pans >0.5 — other monsters park on cooldown so the
+caught event is provably the placed one), purity (bearing every monster never
+moves `stateHash`), and five source pins (zap routing, bite/sling lean,
+growl-bed voice, village four, the chirp, and an opt-in pin counting ALL FOUR
+`pan !== null` guards in AudioController — pan the null path and it goes red).
+Determinism gates ride along untouched: the x/y adds are presentation-only,
+the 60-seed sweep has not been re-run (nothing rule-facing changed).
 
 ## #1740 nine worlds + WORLD SELECT (2026-11-06, forge slot b)
 

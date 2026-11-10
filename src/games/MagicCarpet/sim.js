@@ -1244,7 +1244,7 @@ export function step(gs, inp) {
                 m.cool = 90
                 const a = Math.atan2(wrapD(gs.y - m.y), wrapD(gs.x - m.x))
                 gs.projs.push({ kind: 'rock', from: 'm', x: m.x, y: m.y, z: sampleH(gs, m.x, m.y) + 8, vx: Math.cos(a) * 1.8, vy: Math.sin(a) * 1.8, dmg: 8, life: 80 })
-                gs.events.push({ type: 'rocksling' })
+                gs.events.push({ type: 'rocksling', x: m.x, y: m.y })
             }
         } else if (m.kind === 'wolf') {
             const cd = Math.hypot(wrapD(gs.castle.x - m.x), wrapD(gs.castle.y - m.y))
@@ -1254,7 +1254,7 @@ export function step(gs, inp) {
             const sp = seen && pd < 45 ? 1.0 : 0.4
             m.x = wrap(m.x + Math.cos(m.dir) * sp, MAP); m.y = wrap(m.y + Math.sin(m.dir) * sp, MAP)
             if (m.cool > 0) m.cool--
-            if (seen && pd < 6 && m.cool <= 0 && gs.alt < sampleH(gs, m.x, m.y) + 10) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite' }) }
+            if (seen && pd < 6 && m.cool <= 0 && gs.alt < sampleH(gs, m.x, m.y) + 10) { m.cool = 50; hurtPlayer(gs, 5); gs.events.push({ type: 'bite', x: m.x, y: m.y }) }
         } else {
             if (m.wanderT > 90) { m.wanderT = 0; m.dir = rnd(gs) * 6.28 }
             m.x = wrap(m.x + Math.cos(m.dir) * 0.25, MAP); m.y = wrap(m.y + Math.sin(m.dir) * 0.25, MAP)

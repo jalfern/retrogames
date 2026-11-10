@@ -579,7 +579,9 @@ class AudioController {
     }
 
     // ---- one-shot SFX ----
-    playTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
+    // pan (-1..1, or null) is opt-in (same law as playSweep's): callers that
+    // pass nothing keep the exact old graph, so no other title's sound changes.
+    playTone(freq, duration, type = 'square', vol = 0.1, delay = 0, pan = null) {
         if (this.muted || !this.ctx) return
         if (this.ctx.state === 'suspended') this.ctx.resume()
         this.sfx++
@@ -590,11 +592,18 @@ class AudioController {
         osc.frequency.setValueAtTime(freq, t)
         gain.gain.setValueAtTime(vol, t)
         gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
-        osc.connect(gain); gain.connect(this.ctx.destination)
+        osc.connect(gain)
+        if (pan !== null && this.ctx.createStereoPanner) {
+            const sp = this.ctx.createStereoPanner()
+            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
+            gain.connect(sp); sp.connect(this.ctx.destination)
+        } else {
+            gain.connect(this.ctx.destination)
+        }
         osc.start(t); osc.stop(t + duration)
     }
 
-    playNoise(duration, vol = 0.2) {
+    playNoise(duration, vol = 0.2, pan = null) {
         if (this.muted || !this.ctx) return
         this.sfx++
         const bufferSize = this.ctx.sampleRate * duration
@@ -605,7 +614,14 @@ class AudioController {
         const gain = this.ctx.createGain()
         gain.gain.setValueAtTime(vol, this.ctx.currentTime)
         gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
-        noise.connect(gain); gain.connect(this.ctx.destination)
+        noise.connect(gain)
+        if (pan !== null && this.ctx.createStereoPanner) {
+            const sp = this.ctx.createStereoPanner()
+            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime)
+            gain.connect(sp); sp.connect(this.ctx.destination)
+        } else {
+            gain.connect(this.ctx.destination)
+        }
         noise.start()
     }
 
@@ -680,7 +696,9 @@ class AudioController {
         this.ambFilter.frequency.setTargetAtTime(cutoff, this.ctx.currentTime, 0.08)
     }
 
-    ambTone(freq, duration, type = 'square', vol = 0.1, delay = 0) {
+    // pan is opt-in here too (#1764 item 7): the growl bed tilts to the
+    // creature's side behind the veil's low-pass; null keeps the old graph.
+    ambTone(freq, duration, type = 'square', vol = 0.1, delay = 0, pan = null) {
         if (this.muted || !this.ctx) return
         const bus = this.ensureAmb()
         if (!bus) return
@@ -693,7 +711,13 @@ class AudioController {
         osc.frequency.setValueAtTime(freq, t)
         gain.gain.setValueAtTime(vol, t)
         gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
-        osc.connect(gain); gain.connect(bus)
+        if (pan !== null && this.ctx.createStereoPanner) {
+            const sp = this.ctx.createStereoPanner()
+            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
+            osc.connect(gain); gain.connect(sp); sp.connect(bus)
+        } else {
+            osc.connect(gain); gain.connect(bus)
+        }
         osc.start(t); osc.stop(t + duration)
     }
 
