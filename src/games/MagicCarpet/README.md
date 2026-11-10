@@ -422,8 +422,19 @@ see item 5).
   `fireball` and `volcano` refuse before cost and cooldown with a `wetFizzle` event
   (mana, cool-down and the world all stay whole — the nomana refusal grammar); the
   same hand lights again the tick you clear the surface, and non-flame magic ignores
-  the water. Still open: band shapes
-  sit still while the colours walk (true travelling crests) and the sea surface seen
+  the water. **CLOSED by #1764 item 4 stage 4:** the shapes walk too — `bpos`
+  samples an ADVECTED noise field (`WAVE_TRAVEL = {0.026, 0.020}` noise-units
+  per sim tick, ≈2.2 × 1.7 u/s NE, the sparkle field's drift family on scale
+  0.7), so crest band-edges crawl the sea instead of sitting still while the
+  colours cycle; the palette march and hard bands are untouched. Presentation
+  only (sim.js never mentions it — the seed stream and stateHash are whole);
+  carpetcheck proves it with a JS twin of NOISE_GLSL: exports sane, source
+  pins (advected sample, static field banned), churn (every fixed watch point
+  crosses levels repeatedly in 60 s — a static field churns 0) and rigid
+  travel (the t field is the t=0 field translated exactly, nothing swirls).
+  Mutant: static field → churn gate dies. Drift direction is a design choice
+  (the original's exact heading is unverifiable here); the magnitude rides the
+  same family as the sparkle drift. Still open: the sea surface seen
   from below.
 - **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
   DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
