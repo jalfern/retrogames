@@ -330,6 +330,12 @@ const MagicCarpetGame = () => {
                 } else if (e.type === 'fizzle') {
                     audioController.playSweep(420, 130, 0.24, 'triangle', 0.06)
                     say('THE SPELL ELUDES YOU')
+                } else if (e.type === 'wetFizzle') {
+                    // #1764 item 4 stage 3: a drowned flame — a short low hiss and
+                    // a dying bubble; the refusal costs nothing, so the sound is small.
+                    audioController.playNoise(0.18, 0.05)
+                    audioController.playSweep(240, 60, 0.22, 'triangle', 0.04)
+                    say('FIRE DROWNS UNDER THE SEA')
                 } else if (e.type === 'bookOpen') {
                     // #1764 item 1: the castle's book — a page turn and a low chord
                     audioController.playTone(392, 0.1, 'triangle', 0.06)
