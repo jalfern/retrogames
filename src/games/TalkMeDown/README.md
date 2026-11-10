@@ -65,6 +65,17 @@ the couch — or the mic.
   shout becomes visible without the seat ever touching the pad law. Headless
   Chrome has no speech service, so everything downstream of the words is
   proved via `__tmdTest.call(phrase)`.
+- **WATCH (#1637 batch 15)**: Y seats the engine's OWN `solvePad` into seat 1
+  — the same reactive planner the attract demo runs and `tmd-smoke` wins
+  200/200 seeds with, feeding the real pad path every sim tick, so a mid-run
+  seat is honest from any module/strike/fuse position (no forked brain;
+  watchcheck pins the feed and the witness). Any driving key or a tap hands
+  back (shared blips); the run's end releases SILENTLY (racer rule). V is the
+  mic's own switch, so it never counts as a takeover (words are orders, not
+  hands, #1247). Multi-screen boot (#1656 exception): Y/▶ WATCH at
+  attract/select banks a pending seat and `startPlay` seats it — one tap on
+  ▶ WATCH starts the run AND watches the proven route; the pill itself rides
+  the attract band at 24% per the phonecheck law.
 
 ## Input map
 
@@ -108,6 +119,11 @@ npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixel
                     # headless-shell+single-process (advisory, known #1622 residue).
 CONTRACT_ONLY=talk-me-down npm run contractcheck
 node scripts/tmd-smoke.mjs   # quick sim-only smoke
+npm run watchcheck -- --only talk-me-down   # WATCH seat pilot: seat/blip,
+                     # steer-takeover, re-seat, untouched-defuse (strikes held
+                     # is the honesty meter), route-to-win, silent release,
+                     # one-tap ▶ WATCH from attract; + source pins (no forked
+                     # brain, solvePad from engine.js, tmd-smoke witness exists)
 ```
 
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
@@ -117,6 +133,15 @@ restoring the `!x.solved` guard — goes red on exactly the three anchor gates
 silent refusal in the flip branch of `defuserAct` — goes red on exactly the
 refusal gate (verbs leak onto the back, `score=495`) and the source pin;
 everything else green.
+
+#1637 batch 15's mutant — replacing the seat feed (`p1 = solvePad(g)`) with
+an idle pad — goes red on exactly four gates (untouched-defuse, route-to-win,
+silent release, seat-feed source pin); restoring returns 198/198 green.
+
+Known stale (pre-existing, not batch 15): `bombdrive`'s seed-7 strike probe
+expects the leftmost wire to be the WRONG cut, but seed 7's round-1 N1 now
+targets wire 0 (verified in Node on origin/main) — its two strike gates read
+red on main while `bombcheck` stays green. Filed for the QA lane.
 
 ## Honest gaps
 
