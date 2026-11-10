@@ -1356,11 +1356,15 @@ const PILOTS = [
             await seatPoll(page, H)
             rep.check(`${G.id}: Y seats the certified autopilot`, await watching())
             rep.check(`${G.id}: handoff blip at seat`, (await sfx()).at(-1) === 'start')
-            const adv = (x, y) => y.score > x.score || y.lap > x.lap || (!!y.done && !x.done)
+            // score is lap progress on a LOOP (grid sits just before the line):
+            // wrap it modulo the track length so crossing start/finish reads as
+            // forward motion. Idle hands coast to v=0 and never advance 500u;
+            // backward drift is impossible for decide(), which never reverses.
+            const adv = (x, y) => y.lap > x.lap || (!!y.done && !x.done) || ((y.score - x.score + x.len) % x.len) > 500
             const a = await probe()
             const b = await pollAdvance(page, probe, adv, a, G.long)
             rep.check(`${G.id}: the prover races untouched (idle hands touch no pedal)`, adv(a, b),
-                `score ${a.score} -> ${b.score}, lap ${a.lap} -> ${b.lap}, v ${a.v} -> ${b.v}`)
+                `score ${a.score} -> ${b.score} of len ${a.len}, lap ${a.lap} -> ${b.lap}, v ${a.v} -> ${b.v}`)
             rep.check(`${G.id}: still watching mid-race`, await watching())
             await page.keyboard.down('ArrowLeft')
             rep.check(`${G.id}: steer key takes over`, !(await watching()))
@@ -1677,14 +1681,14 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const entryHas13 = (p, s) => { const m = reg13.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     for (const [name, [file, route]] of Object.entries(srcs)) {
         const S = readFileSync(file, 'utf8')
-        rep.check(`${name}: the watch seat feeds decide() at the play tick`,
-            /if \(st\.plan \|\| watchingRef\.current\) \{[\s\S]{0,200}?inp = decide\(g\)/.test(S))
+        rep.check(`${name}: the watch seat rides the st.plan feed into decide()`,
+            /if \(st\.plan\) \{[\s\S]{0,500}?inp = decide\(g\)/.test(S))
         rep.check(`${name}: Y seats with blips; any driving key takes over`,
-            /if \(isWatchKey\(e\)\) \{ st\.plan = !st\.plan; watchingRef\.current = st\.plan/.test(S)
-            && /if \(st\.plan && isTakeoverKey\(e\)\) \{ st\.plan = false; watchingRef\.current = false/.test(S))
+            /if \(isWatchKey\(e\)\) \{ st\.plan = !st\.plan; setWatching\(st\.plan\)/.test(S)
+            && /if \(st\.plan && isTakeoverKey\(e\)\) \{ st\.plan = false; setWatching\(false\)/.test(S))
         rep.check(`${name}: watch never lingers — released at the flag AND at every restart`,
-            /watchingRef\.current \|\| st\.plan\) \{ watchingRef\.current = false; st\.plan = false; setWatching\(false\)/.test(S)
-            && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637: the old route ends with the old run/.test(S))
+            /if \(st\.plan\) \{ st\.plan = false; setWatching\(false\) \}/.test(S)
+            && /setWatching\(false\) \/\/ #1637: the old route ends with the old run/.test(S))
         rep.check(`${name}: attract shows the shared WATCH hint (import + drawn line)`,
             (S.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
         rep.check(`registry ${route}: controls carry the WATCH line`, entryHas13(route, 'WATCH_HELP'))

@@ -58,8 +58,7 @@ export default function CometDrift() {
     const pausedRef = useRef(false)
     const gameRef = useRef(null)
     const screenRef = useRef('attract')
-    const [watching, setWatching] = useState(false) // #1637 WATCH: the certified autopilot drives the GP
-    const watchingRef = useRef(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors st.plan (the drive flag) for the chrome
     const [attractUi, setAttractUi] = useState(true)
     const keysRef = useRef({})
     const tapRef = useRef(null)
@@ -968,10 +967,12 @@ export default function CometDrift() {
             const p = padState
             const padLive = p.engaged || p.rt > 0.05 || p.lt > 0.05
             let inp
-            if (st.plan || watchingRef.current) {
-                // #1637 WATCH: the prover is at the wheel — attract demo, or the
-                // Y-seat replaying decide(), the certified route cometcheck wins
-                // the GPs with (reactive per tick, honest from any position).
+            if (st.plan) {
+                // #1637 WATCH: the prover is at the wheel. Y takes over the
+                // attract-demo flag itself — the seat replays decide(), the
+                // certified route cometcheck wins the GPs with (reactive per
+                // tick, honest from any position). The Y-seat rides the same
+                // flag the attract demo already drives on — st.plan is the one truth.
                 inp = decide(g)
             } else if (padLive) {
                 const s = steerPedals(p)
@@ -1015,7 +1016,7 @@ export default function CometDrift() {
                 setPadOn(false)
                 // #1637 WATCH: the flag releases the seat silently — the prover's
                 // finish is the end of the route, not a handback.
-                if (watchingRef.current || st.plan) { watchingRef.current = false; st.plan = false; setWatching(false) }
+                if (st.plan) { st.plan = false; setWatching(false) }
                 if (cupOn) {
                     tally(cup, g.karts.map((k) => ({ name: k.name, place: k.place })), COURSE.short)
                     st.screen = cupDone(cup) ? 'cupfinal' : 'cupbreak'
@@ -1076,7 +1077,7 @@ export default function CometDrift() {
             st.screen = screen; screenRef.current = screen
             st.plan = screen === 'attract'
             st.endT = 0
-            watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old run
+            setWatching(false) // #1637: the old route ends with the old run
             setAttractUi(screen === 'attract')
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
@@ -1113,7 +1114,7 @@ export default function CometDrift() {
             Object.assign(g, makeGame((cupSeed0 + cup.raceIdx) >>> 0))
             st.screen = 'race'; screenRef.current = 'race'
             st.plan = false; st.endT = 0
-            watchingRef.current = false; setWatching(false) // #1637: a seat is one leg — the prover resets with the field
+            setWatching(false) // #1637: a seat is one leg — the prover resets with the field
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
             setPadOn(true)
@@ -1193,10 +1194,10 @@ export default function CometDrift() {
                 return
             }
             // #1637 WATCH: Y seats the certified autopilot (the same decide that
-            // wins the harness GPs and drives the attract demo); any driving key
-            // takes the wheel back mid-race, exactly where the watcher left it.
-            if (isWatchKey(e)) { st.plan = !st.plan; watchingRef.current = st.plan; setWatching(st.plan); if (st.plan) playWatchStart(); else playWatchStop(); return }
-            if (st.plan && isTakeoverKey(e)) { st.plan = false; watchingRef.current = false; setWatching(false); playWatchStop() }
+            // wins the harness GPs and drives the attract demo — st.plan is that
+            // drive flag); any driving key takes the wheel back mid-race.
+            if (isWatchKey(e)) { st.plan = !st.plan; setWatching(st.plan); if (st.plan) playWatchStart(); else playWatchStop(); return }
+            if (st.plan && isTakeoverKey(e)) { st.plan = false; setWatching(false); playWatchStop() }
             keys[e.code] = true
         }
         const ku = (e) => { keys[e.code] = false }
@@ -1233,7 +1234,7 @@ export default function CometDrift() {
             watchSfx: watchSfxLog,
             probe: () => {
                 const P = g.karts[0]
-                return { tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), lap: P.lap, place: P.place, phase: g.phase, done: !!g.end, v: Math.round(P.v * 100) / 100 }
+                return { tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), len: T.len, lap: P.lap, place: P.place, phase: g.phase, done: !!g.end, v: Math.round(P.v * 100) / 100 }
             },
             view: () => ({ w: W, h: H, horizon: HORIZON, horizonNow: HZ, scale: u }),
             press: (k) => { keys[k] = true; setTimeout(() => { keys[k] = false }, 150) },
@@ -1307,7 +1308,7 @@ export default function CometDrift() {
                 st.screen = 'race'; screenRef.current = 'race'
                 st.plan = false
                 st.endT = 0
-                watchingRef.current = false; setWatching(false); setAttractUi(false) // #1637
+                setWatching(false); setAttractUi(false) // #1637
                 prevPlace = g.karts[0].place
                 camA = g.karts[0].a
                 setPadOn(false)
