@@ -35,12 +35,12 @@ transcribed into source:
 
 - Weather (`weather.js`, #1135): a deterministic sky per 16x16-tile region —
   rain in the south, snow north of the snow line (y<72), storms with night
-  lightning + delayed thunder — and the whole pattern drifts west-to-east at
-  one region per epoch (`driftOf`), so fronts travel and a cell keeps its kind
-  as it rides. Rock blocks the wind: rain shadow, see below. Fronts still move
-   at constant speed (PARTIAL #1822: rain now hits the sea — see Rain on the
-   sea — AND winds the swell of its own — see Rain winds the swell; the front
-   speed itself remains open).
+  lightning + delayed thunder — and the whole pattern drifts west-to-east on
+  the wind, so fronts travel and a cell keeps its kind as it rides. Rock
+  blocks the wind: rain shadow, see below. — **CLOSED by #1853** (fronts ride
+  a seeded pressure wind of 0..3 regions per epoch — see "Variable wind"
+  below; rain on the sea and the swell memory landed earlier in #1822 and are
+  untouched).
 - Moongates warp between the 8 detected stars with a destination picker;
   the menu names each gate for its virtue-moon (moons.js, the eight-wheel
   homage to the original) and prints tonight's phase with a lit-disc glyph —
@@ -89,6 +89,40 @@ transcribed into source:
   two signs reddens 5 gates; zeroing the bias reddens 6 — each restored green.
 - Still honest: the shadow is 1-D along the wind (no cross-wind ridge shape,
   no orographic cloud cap on the summit itself).
+
+## Variable wind — fronts race and stall (#1853)
+
+The old sky marched at exactly one region per epoch forever. Real mid-latitude
+weather races on a gale and parks under a high, so the wind itself now has
+weather (`weather.js`):
+
+- `windOf(epoch, seed)` — a seeded pressure cycle. Per epoch the zonal wind
+  blows 0 (**becalmed** — a stalled high), 1 (**steady**), 2 (**fresh**) or 3
+  (**gale**) regions, at 15/40/35/10% (hash thresholds 0.90 / 0.40 / 0.75 /
+  else). Over any 80 epochs every class shows up.
+- `driftOf(tick, seed)` — the pattern's drift is the cumulative sum of the
+  winds so far: monotone east (the sky never blows backward), constant within
+  an epoch, and a front that crosses a boundary jumps exactly its new wind.
+  Memoized per seed (append-only), so the per-frame `weatherAt` calls stay
+  O(1); replays and hashes see identical values. Negative ticks (the #1822
+  swell memory asking before epoch 0) integrate backward with the same series.
+- What the player reads: the HUD appends the wind name (`RAIN FRESH`,
+  `STORM GALE`) whenever the wind is not the steady baseline, and each shift
+  toasts with its own sound — gale sweep rising, becalmed tone falling. The
+  sea feels it through the untouched #1822 memory: a stalled storm piles
+  multi-epoch heave into the swell, a gale empties the memory fast.
+- What is deliberately NOT swept up: the ambient flocks (`ambient.js`) ride
+  their own constant `CELL_DRIFT` — wildlife has its own schedule, and its
+  gates (#1135) stay byte-exact.
+
+Harness (`npm run britanniacheck`, 9 new gates): the fronts/lightning riding
+identities moved from "one region per epoch" to "exactly drift(t0→t1) regions"
+measured against **literal booked wind in the harness** (#1822 lesson — the
+module under test never supplies its own expectation); plus varies (module and
+booked both show ≥3 classes), agreement 6 seeds x 80 epochs, monotonicity,
+memo==naive sum at 1M ticks, zero-crossing steps, HUD names + shell wiring.
+Mutant: flattening `windOf` to a constant reddens ride (199/288), varies
+(1/4) and agreement — restored green.
 
 ## Verify
 

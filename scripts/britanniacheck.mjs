@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs'
 import { inflateRawSync } from 'node:zlib'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
-import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen, reliefBias, ROCK, SHADOW_D, SHADOW_MAX, UPLIFT_MAX, SUMMIT } from '../src/games/Britannia/weather.js'
+import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen, reliefBias, ROCK, SHADOW_D, SHADOW_MAX, UPLIFT_MAX, SUMMIT, windOf, driftOf, windNow, WX_WIND_NAME } from '../src/games/Britannia/weather.js'
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
 import { FACES, faceFor, walkFrame, drawAvatar } from '../src/games/Britannia/avatar.js'
 import { WARP_LEN, WARP_PEAK, warpActive, warpFlash, warpSwapAt, warpRing, warpMotes } from '../src/games/Britannia/warp.js'
@@ -158,24 +158,87 @@ ok(flashSeen > 0 && badFlash === 0, `lightning strikes at night in storms (${fla
 ok(dayFlash === 0, 'no lightning during the day')
 ok(onset > 0 && multiPeak === 0, `each strike flashes exactly once (${onset} thunder cues scheduled)`)
 
-// fronts (#1135): the sky rides west-to-east at one region per epoch, so a
-// weather cell keeps its kind as it travels: the pattern sampled at (x, y, t)
-// must reappear at (x + 16k, y, t + k*WX_EPOCH). Prove-it-can-fail: freeze
-// the drift in weather.js (driftOf -> 0) and these two gates go red.
+// fronts (#1135, speed made variable by #1853): the sky rides west-to-east
+// on a seeded pressure wind of 0..3 regions per epoch, so a weather cell keeps
+// its kind as it travels: the pattern sampled at (x, y, t0) must reappear at
+// (x + 16*dd, y, t1), dd = drift(t0→t1) measured in booked (literal) wind.
+// Prove-it-can-fail: freeze the drift in weather.js (driftOf -> 0) or flatten
+// windOf to a constant and these gates go red.
 {
-    let invBad = 0, invTot = 0
-    for (let y = 8; y < MAPW; y += 16) for (let x = 8; x < MAPW - 48; x += 16) for (const k of [1, 2, 3]) {
-        invTot++
-        if (weatherAt(x, y, 137, 0) !== weatherAt(x + 16 * k, y, 137 + k * WX_EPOCH, 0)) invBad++
+    // expected wind BOOKED HERE as literals — re-deriving it from weather.js
+    // would let a mutant pick its own target (#1822 lesson).
+    const litHash3 = (a, b, c) => {
+        let h = (a * 374761393 + b * 668265263 + c * -1640531527) | 0
+        h = (h ^ (h >>> 13)) * 1274126177
+        return ((h ^ (h >>> 16)) >>> 0) / 4294967296
     }
-    ok(invBad === 0, `fronts drift east: the pattern rides (x+16k, t+k*epoch) (${invTot - invBad}/${invTot} samples hold)`)
+    const litWind = (e, sd = 0) => {
+        const h = litHash3(e, 17, ((sd ^ 0x9e37) * 2654435761) | 0)
+        return h < 0.4 ? 1 : h < 0.75 ? 2 : h < 0.9 ? 0 : 3
+    }
+    const litDrift = (t, sd = 0) => {
+        const n = Math.floor(t / WX_EPOCH)
+        let d = 0
+        if (n >= 0) for (let e = 0; e < n; e++) d += litWind(e, sd)
+        else for (let e = n; e < 0; e--) d += litWind(e, sd)
+        return d
+    }
+    let invBad = 0, invTot = 0, moved = 0
+    const WINDOWS = [[137, 137 + WX_EPOCH], [2000, 2000 + 2 * WX_EPOCH], [33333, 33333 + 3 * WX_EPOCH]]
+    for (let y = 8; y < MAPW; y += 16) for (let x = 8; x < MAPW - 160; x += 16) for (const [t0, t1] of WINDOWS) {
+        const dd = litDrift(t1, 0) - litDrift(t0, 0)
+        if (dd > 0) moved++
+        invTot++
+        if (weatherAt(x, y, t0, 0) !== weatherAt(x + 16 * dd, y, t1, 0)) invBad++
+    }
+    ok(invBad === 0 && moved > 0, `fronts ride east on the wind: the pattern moves exactly drift(t0→t1) regions (${invTot - invBad}/${invTot} samples hold, ${moved} of them riding a moving epoch)`)
     let ride = 0, rideBad = 0
-    for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW - 16; x += 8) for (let b = 1; b < 16; b++) {
+    for (let y = 8; y < MAPW; y += 8) for (let x = 8; x < MAPW - 48; x += 8) for (let b = 1; b < 16; b++) {
         if (flashAt(x, y, b * 90, 0.5) < 1) continue
         ride++
-        if (weatherAt(x + 16, y, b * 90 + WX_EPOCH) !== WX.STORM) rideBad++
+        const dd = litWind(Math.floor((b * 90) / WX_EPOCH), 0)
+        if (weatherAt(x + 16 * dd, y, b * 90 + WX_EPOCH, 0) !== WX.STORM) rideBad++
     }
-    ok(ride > 0 && rideBad === 0, `lightning rides with its storm: one epoch on, the cell one region east is still storming (${ride} strikes, ${rideBad} lost storms)`)
+    ok(ride > 0 && rideBad === 0, `lightning rides with its storm: one epoch on, the cell its wind carried it east of is still storming (${ride} strikes, ${rideBad} lost storms)`)
+
+    // the pressure wind itself (#1853)
+    const modSpeeds = new Set(), litSpeeds = new Set()
+    for (let e = 0; e < 80; e++) { modSpeeds.add(windOf(e, 0)); litSpeeds.add(litWind(e, 0)) }
+    ok(modSpeeds.size >= 3 && litSpeeds.size >= 3, `the pressure cycle varies: ${modSpeeds.size} distinct winds in 80 epochs (module ${[...modSpeeds].sort().join('/')} / booked ${[...litSpeeds].sort().join('/')})`)
+    let agreeBad = 0, monoBad = 0
+    for (let sd = 0; sd < 6; sd++) {
+        let prev = -1
+        for (let e = 0; e < 80; e++) {
+            if (windOf(e, sd) !== litWind(e, sd)) agreeBad++
+            const d = driftOf(e * WX_EPOCH + 7, sd)
+            if (d < prev) monoBad++
+            prev = d
+        }
+    }
+    ok(agreeBad === 0, `weather.js winds match the booked pressure series (6 seeds x 80 epochs)`)
+    ok(monoBad === 0, 'drift is monotone east: the sky never blows backward')
+    const naive = (t, sd = 0) => { let d = 0; for (let e = 0; e < Math.floor(t / WX_EPOCH); e++) d += windOf(e, sd); return d }
+    let memBad = 0, memN = 0
+    for (const t of [1, 1439, 1440, 70000, 432111, 999983]) for (const sd of [0, 3, 42]) { memN++; if (driftOf(t, sd) !== naive(t, sd)) memBad++ }
+    ok(memBad === 0, `memoized drift equals the naive sum up to a million ticks (${memN} probes)`)
+    let negBad = 0
+    for (let sd = 0; sd < 3; sd++) {
+        let acc = 0
+        for (let e = -1; e >= -12; e--) { acc += windOf(e, sd); if (driftOf(e * WX_EPOCH, sd) !== -acc) negBad++ }
+    }
+    ok(negBad === 0, 'memory ticks before epoch 0 integrate backward honestly (swell memory crosses zero)')
+    let stepBad = 0
+    for (let e = -6; e < 6; e++) if (driftOf((e + 1) * WX_EPOCH, 2) - driftOf(e * WX_EPOCH, 2) !== windOf(e, 2)) stepBad++
+    ok(stepBad === 0, 'each epoch adds exactly its wind to the drift, across zero')
+    ok(WX_WIND_NAME.join(',') === 'BECALMED,STEADY,FRESH,GALE' && windNow(0, 0) === windOf(0, 0) && windNow(WX_EPOCH - 1, 0) === windOf(0, 0),
+        'the HUD wind names are booked and windNow reads the current epoch')
+    {
+        const idx = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+        ok(/const wind = windNow\(S\.tick, S\.seed\)/.test(idx), 'index.jsx: the shell reads the live wind each tick')
+        ok(/WX_WIND_NAME\[S\.wind\]/.test(idx) && /S\.wind === 1 \? ''/.test(idx), 'index.jsx: the HUD names the wind only when it is not the steady baseline')
+        ok(/A gale! The fronts race east\./.test(idx) && /A high settles — the fronts stall\./.test(idx), 'index.jsx: gale and becalmed shifts are toasted')
+        ok(/wind: S\.wind, windName: WX_WIND_NAME\[S\.wind\], drift: driftOf\(S\.tick, S\.seed\)/.test(idx), 'index.jsx: the harness can watch wind and drift under the Avatar')
+    }
 }
 
 // rain shadow (#1135): fronts ride west-to-east, so rock is a wind barrier —
