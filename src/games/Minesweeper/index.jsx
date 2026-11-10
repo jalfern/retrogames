@@ -20,7 +20,7 @@ import { MESSAGES, PRESS } from './attract.js'
 import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
-import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx } from './minefield.js'
+import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx, neighbors } from './minefield.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
@@ -38,6 +38,94 @@ const FLAG_KEYS = new Set(['KeyB', 'ShiftLeft', 'ShiftRight'])
 const KEY_SET = new Set([...MOVE_KEYS, ...DIG_KEYS, ...FLAG_KEYS])
 
 const NUM_COLORS = ['', '#4aa3ff', '#3fbf5f', '#ff5d6c', '#c07fff', '#ffb04a', '#3fd7d7', '#e8e8e8', '#ff8fb0']
+
+// #1883(5): LED-flavoured 7-segment digits — the clue numbers and the HUD
+// counters share one glyph, the arcade family look docs/ART.md asks for.
+// Segments: 0 top, 1 top-right, 2 bottom-right, 3 bottom, 4 bottom-left,
+// 5 top-left, 6 middle, 7 dot (HUD zero-placeholder ghosts, dim).
+const SEG_PINS = [0b00001111, 0b00000110, 0b01011011, 0b00111111, 0b00110110, 0b00110011]
+const drawDigit7 = (g, chPx, cyPx, h, color, ghost) => {
+    const w = h * 0.58
+    const t = Math.max(1.6, h * 0.16)
+    const x0 = chPx - w / 2, y0 = cyPx - h / 2, x1 = chPx + w / 2, y1 = cyPx + h / 2
+    const ym = cyPx
+    const seg = (kind, k) => {
+        let d = 0
+        if (kind === 'h') d = k === 0 ? 0b10000001 : k === 3 ? 0b00001000 : 0b01000010
+        else if (kind === 'v') d = k === 1 ? 0b00100100 : k === 4 ? 0b00000001 : 0b00010000
+        else d = 0b00000100
+        g.fillStyle = d & 0b00000100 ? color : ghost
+        g.globalAlpha = d & 0b00000100 ? 1 : 0.14
+        if (kind === 'h') {
+            const y = k === 0 ? y0 : k === 3 ? y1 - t : ym - t / 2
+            g.fillRect(x0 + t / 2, y, w - t, k === 6 ? t * 0.85 : t)
+        } else if (kind === 'v') {
+            const x = k === 1 ? x1 - t : x0
+            const yTop = k === 1 || k === 2 ? ym + t * 0.2 : y0
+            const yBot = k === 1 || k === 2 ? y1 : ym - t * 0.2
+            g.fillRect(x, yTop + t / 2, t, yBot - yTop - t)
+        } else {
+            g.fillRect(x1 - t, y1 - t, t, t)
+        }
+        g.globalAlpha = 1
+    }
+    return {
+        on: (k) => seg(k < 6 ? (k === 0 || k === 3 || k === 6 ? 'h' : 'v') : 'd', k),
+    }
+}
+// Paint an integer right-aligned in n digits; `ghost` draws the dim
+// unlit segments of a VFD panel (the HUD counters), cells pass none.
+const drawNum7 = (g, val, n, cxPx, cyPx, digitH, color, ghost) => {
+    const str = String(Math.max(0, Math.min(999, val))).padStart(n, ' ')
+    const stepX = digitH * 0.74
+    const x0 = cxPx - (n - 1) * stepX / 2
+    for (let k = 0; k < n; k++) {
+        const chr = str[k]
+        const d = drawDigit7(g, x0 + k * stepX, cyPx, digitH, color, ghost)
+        if (chr === ' ') {
+            if (ghost) for (let s = 0; s < 8; s++) d.on(s)
+            continue
+        }
+        const pins = SEG_PINS[+chr]
+        for (let s = 0; s < 7; s++) if (pins & (1 << s)) d.on(s)
+        if (ghost && +chr === 0) d.on(7)
+    }
+}
+
+// #1883(2): the reactive face cell — the original's smiley. Presentation
+// only: it reads the board state, never writes it.
+const FACE_BG = '#ffd23e', FACE_INK = '#171d33', FACE_GLASS = '#222b4d', FACE_RED = '#ff5d6c'
+const drawFace = (g, v) => {
+    const S = 28, cx = 14, cy = 14
+    g.clearRect(0, 0, S, S)
+    g.fillStyle = FACE_BG
+    g.beginPath(); g.arc(cx, cy, 12, 0, 7); g.fill()
+    if (v === 'dead') {
+        g.strokeStyle = FACE_INK; g.lineWidth = 2
+        g.beginPath(); g.moveTo(6, 7); g.lineTo(11, 12); g.moveTo(11, 7); g.lineTo(6, 12); g.stroke()
+        g.beginPath(); g.moveTo(17, 7); g.lineTo(22, 12); g.moveTo(22, 7); g.lineTo(17, 12); g.stroke()
+        g.beginPath(); g.arc(cx, 20, 3.4, 0, 7); g.stroke(); g.lineWidth = 1
+    } else if (v === 'cool') {
+        g.fillStyle = FACE_GLASS
+        g.fillRect(4, 9.5, 20, 5)
+        g.fillRect(6, 11, 6, 4.5); g.fillRect(16, 11, 6, 4.5)
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 15, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    } else if (v === 'win') {
+        g.fillStyle = FACE_INK
+        g.fillRect(7, 10, 4, 2); g.fillRect(17, 10, 4, 2)
+        g.strokeStyle = FACE_RED; g.lineWidth = 2
+        g.beginPath(); g.arc(cx, 14, 8, 0.3, Math.PI - 0.3); g.stroke()
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 15, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    } else {
+        g.fillStyle = FACE_INK
+        g.beginPath(); g.arc(10, 11, 1.7, 0, 7); g.fill()
+        g.beginPath(); g.arc(18, 11, 1.7, 0, 7); g.fill()
+        g.strokeStyle = FACE_INK; g.lineWidth = 1.6
+        g.beginPath(); g.arc(cx, 14, 7, 0.35, Math.PI - 0.35); g.stroke(); g.lineWidth = 1
+    }
+}
 
 const nextSeed = (s) => (Math.imul(s, 1664525) + 1013904223) >>> 0
 
@@ -76,6 +164,22 @@ const MinesweeperGame = () => {
         // per dig so the sweep reads as logic, not a flash). The plan is
         // recomputed reactively, never replayed blind.
         let watchPlan = [], watchWait = 0
+        // #1883 presentation-only layers (the referee in ./minefield.js never
+        // sees any of them — s.flag/s.open/stateHash stay byte-identical):
+        // marks[i]: 2 = "?" the player parked on a covered cell (the original's
+        // empty -> flag -> ? cycle lives HERE because s.flag is a hard fact the
+        // solver and the mine counter read).
+        let marks = null
+        // cascade: on the win, march a flag onto every unflagged mine one at a
+        // time (the original's ~50 ms beat) before the over screen.
+        let cascade = []
+        let cascTotal = 0
+        let cascWait = 0
+        let cascDone = false
+        const CASCADE_TICKS = 3
+        // stagger: a chord's fresh ring opens flicker-cell-by-cell instead of
+        // one paint (2 ticks per cell); sim truth opened instantly.
+        const stagger = new Map()
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
@@ -104,6 +208,9 @@ const MinesweeperGame = () => {
             buildCanvas(d)
             plantMs = 0
             watchPlan = []; watchWait = 0
+            marks = new Uint8Array(d.w * d.h)
+            cascade = []; cascTotal = 0; cascWait = 0; cascDone = false
+            stagger.clear()
         }
 
         // ------------------------------------------------------- audio ----
@@ -114,7 +221,17 @@ const MinesweeperGame = () => {
                 else if (e.t === 'flood') audioController.playSweep(300 + e.dug * 6, 640, 0.12, 'triangle', 0.045)
                 else if (e.t === 'flag') audioController.playTone(560, 0.05, 'square', 0.05)
                 else if (e.t === 'unflag') audioController.playTone(300, 0.05, 'square', 0.04)
-                else if (e.t === 'chord') audioController.playSweep(420, 780, 0.1, 'square', 0.05)
+                else if (e.t === 'chord') {
+                    audioController.playSweep(420, 780, 0.1, 'square', 0.05)
+                    // #1883(4): queue the fresh ring for the staggered paint.
+                    // The map is cleared at the chord entry (before minefield
+                    // opens anything), so by now it holds exactly this ring.
+                    const i0 = idx(s, e.x, e.y)
+                    neighbors(s, e.x, e.y, (nx, ny) => {
+                        const j = idx(s, nx, ny)
+                        if (j !== i0 && s.open[j]) stagger.set(j, stagger.size * 2)
+                    })
+                }
                 else if (e.t === 'dry') audioController.playTone(140, 0.04, 'square', 0.025)
                 else if (e.t === 'nope') audioController.playTone(110, 0.06, 'sawtooth', 0.03)
                 else if (e.t === 'boom') audioController.playNoise(0.5, 0.16)
