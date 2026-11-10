@@ -225,8 +225,9 @@ npm run tmdlinkcheck   # 56 gates (#1880 remote seats), pure Node over
 npm run tmdlinkcheck -- --mutate          # 4 red — the walkaway law
 npm run tmdlinkcheck -- --mutate-reseat  # 2 red — the shared players flip
 npm run tmdlinkcheck -- --mutate-freeze  # 2 red — role inversion on host loss
-npm run tmdlinkdrive   # 20 gates (#1880), TWO REAL BROWSERS over a local
-                       # relay (dev server needed, DRIVE_RELAY_PORT || 8792):
+npm run tmdlinkcheck -- --mutate-phone   # 1 red — the #1888 wide-bay swap undone
+npm run tmdlinkdrive   # 24 gates (#1880 + #1888), TWO REAL BROWSERS over a
+                       # local relay (dev server needed, DRIVE_RELAY_PORT || 8792):
                        # room+QR, phone joins by code (relay roster), SPACE
                        # kicks a pinned seed, phone ArrowRights really turn
                        # the HOST's manual pages, phone SPACE stamps a rule
@@ -234,7 +235,10 @@ npm run tmdlinkdrive   # 20 gates (#1880), TWO REAL BROWSERS over a local
                        # walkaway -> CPU-manual demote -> solo campaign WIN,
                        # host-gone -> guest FREEZE -> any key walks back,
                        # close+reopen -> seated INTO THE LIVE RUN on the
-                       # shared flip -> squad clears together, zero page errors
+                       # shared flip -> squad clears together, zero page errors,
+                       # PHONE SEAT (#1888): touch guest gets the cream rulebook
+                       # across the bomb bay (x200+x390 cream, plate on the rail,
+                       # LCD band kept); ?touch=0 pins the narrow rail back
 ```
 
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
