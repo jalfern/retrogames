@@ -704,6 +704,10 @@ function castHand(gs, hand) {
     const cool = hand === 'L' ? gs.coolL : gs.coolR
     if (!id || cool > 0) { if (id) gs.events.push({ type: 'deny' }); return }
     const sp = spellById(id)
+    // #1764 item 4 stage 3: fire drowns — submerged, the flame spells refuse BEFORE
+    // cost and cooldown (the nomana grammar): the spell stays in hand, the pouch
+    // stays whole, and the whole refusal is one wetFizzle event.
+    if (DIVE_NOFIRE.includes(id) && diveOf(gs) > 0) { gs.events.push({ type: 'wetFizzle', id }); return }
     if (gs.mana < sp.cost) { gs.events.push({ type: 'nomana' }); return }
     gs.mana -= sp.cost
     if (hand === 'L') gs.coolL = 18; else gs.coolR = 18
@@ -970,6 +974,18 @@ export const MUFFLE_CUTOFF = 520
 // submersion mix) and audio (underwater the world goes muffled).
 export const diveOf = (gs) => Math.max(0, WATER - gs.alt)
 
+// ---- #1764 item 4 stage 3: UNDERWATER HANDLING (a rules law, not presentation)
+// Water is heavy and open flame drowns: while diveOf(gs) > 0 the carpet's throttle
+// multiplies by DIVE_DRAG (the original's sluggish swim) and the fire-family spells
+// refuse to light — a refusal that costs NOTHING: no mana, no cooldown, no state,
+// only a `wetFizzle` event so the shell can play the choked blip (the same refusal
+// grammar as bookNo/nomana/deny). #1680 discipline: the original's exact per-spell
+// behaviour is unverifiable from here — the issue's spec line ("underwater handling:
+// drag, spell limits") is what ships. Both terms are rng-free and ride on alt alone,
+// so a recorded dive replays identical; nothing here feeds stateHash on its own.
+export const DIVE_DRAG = 0.5 // throttle multiplier while submerged
+export const DIVE_NOFIRE = ['fireball', 'volcano'] // the flame book closes under water
+
 // ---- #1764 item 5 stage 5: AERIAL PERSPECTIVE (pure geometry, presentation-only)
 // The original's distance haze is a LAYER, not a per-object distance mix: low
 // land and sea dissolve into the horizon band while summits above the layer
@@ -1057,7 +1073,9 @@ export function step(gs, inp) {
     const vert = (inp.up ? 1 : 0) - (inp.down ? 1 : 0)
     const boosting = !!inp.boost
     gs.yaw += steer * CFG.turn * (boosting ? CFG.boostTurn : 1)
-    const v = CFG.speed * (boosting ? CFG.boost : 1) * (1 - 0.78 * Math.abs(steer))
+    // #1764 item 4 stage 3: water is heavy — a submerged carpet swims at DIVE_DRAG
+    // of its throttle. The read is the same one the renderer and the muffle ride.
+    const v = CFG.speed * (boosting ? CFG.boost : 1) * (1 - 0.78 * Math.abs(steer)) * (diveOf(gs) > 0 ? DIVE_DRAG : 1)
     gs.x = wrap(gs.x + Math.cos(gs.yaw) * v, MAP)
     gs.y = wrap(gs.y + Math.sin(gs.yaw) * v, MAP)
     gs.alt += vert * CFG.climb

@@ -416,9 +416,15 @@ see item 5).
   underwater view: red-eating blue grade, sim-ticked caustic bands and rising
   bubbles, the sky dome turned to deep water, and `muffleOf` closes the world
   like the veil does. carpetcheck +9 gates (seed-7 dive sweep, dig/dive/muffle/
-  determinism/purity, source pins, live shader-mix gate). Still open: band shapes
-  sit still while the colours walk (true travelling crests), underwater handling
-  (drag, spell limits), and the sea surface seen from below.
+  determinism/purity, source pins, live shader-mix gate). **CLOSED by #1764 item 4
+  stage 3:** the submerged carpet *handles* differently — `DIVE_DRAG = 0.5` halves
+  the throttle while `diveOf(gs) > 0` (water is heavy), and the flame books drown:
+  `fireball` and `volcano` refuse before cost and cooldown with a `wetFizzle` event
+  (mana, cool-down and the world all stay whole — the nomana refusal grammar); the
+  same hand lights again the tick you clear the surface, and non-flame magic ignores
+  the water. Still open: band shapes
+  sit still while the colours walk (true travelling crests) and the sea surface seen
+  from below.
 - **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
   DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
   ease-out swell, a shockwave rim that settles to exactly zero) with the

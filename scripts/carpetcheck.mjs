@@ -22,6 +22,7 @@ import {
     scareVillagers, VIL_PANIC_R, VIL_FLAME_R, VIL_WANDER_R,
     VIL_GRAB_R, VIL_GRAB_ALT, VIL_TRIBUTE_T, VIL_TRIBUTE_M,
     FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
+    DIVE_DRAG, DIVE_NOFIRE,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -509,6 +510,133 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
     r.check('#1764 item 4 stage 2: diveOf is a pure read — it never disturbs the state hash', hp0 === hp1, `${hp0} vs ${hp1}`)
     r.check('#1764 item 4 stage 2: the dive is deterministic — same seed + same digs + same yoke → identical hash',
         a.h === b.h, `${a.h} vs ${b.h}`)
+}
+
+// ---- #1764 item 4 stage 3: UNDERWATER HANDLING — water is heavy and fire drowns.
+// While diveOf(gs) > 0 the throttle multiplies by DIVE_DRAG, and the flame-family
+// spells are refused BEFORE cost and cooldown (`wetFizzle`: mana, cool-down and the
+// world all stay whole). The law keys on alt alone, rng-free — a recorded dive
+// replays identical. Mutation guide: DIVE_DRAG -> 1 kills the swim gate; deleting
+// the drown block kills every refusal gate; moving it after the mana subtract kills
+// the costs-nothing gate; adding 'heal' to DIVE_NOFIRE kills the non-flame gate.
+{
+    const simS3 = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+    const digFlood = (g) => {
+        let n = 0
+        while (sampleH(g, g.x, g.y) > WATER - 4 && n < 12) { crater(g, g.x, g.y, 14, 24, 0); settleGround(g); n++ }
+        return n
+    }
+    const sink = (g) => { // hold down until the depth read says we are under
+        let t = 0
+        while (t < 400 && g.end === null && diveOf(g) === 0) { step(g, { down: true }); t++ }
+        return diveOf(g) > 0
+    }
+    r.check('#1764 item 4 stage 3: the law is pinned to literals — DIVE_DRAG 0.5, drowned books fireball + volcano',
+        DIVE_DRAG === 0.5 && DIVE_NOFIRE.join(',') === 'fireball,volcano',
+        `drag ${DIVE_DRAG}, nofire ${DIVE_NOFIRE.join(',')}`)
+    r.check('#1764 item 4 stage 3: source pins — the drag rides the throttle line and the drown block sits before nomana',
+        simS3.includes('* (diveOf(gs) > 0 ? DIVE_DRAG : 1)')
+        && simS3.includes("if (DIVE_NOFIRE.includes(id) && diveOf(gs) > 0) { gs.events.push({ type: 'wetFizzle', id }); return }")
+        && simS3.indexOf("type: 'wetFizzle'") < simS3.indexOf("if (gs.mana < sp.cost)"),
+        'drag/block literals or their order moved')
+
+    // The swim: hold down off the pit rim, then every tick that STARTED submerged
+    // advances exactly CFG.speed * DIVE_DRAG — no steer, no boost, a literal product.
+    let subTicks = 0, worstErr = 0
+    const g3 = makeGame(7)
+    g3.shield = 1e9
+    digFlood(g3)
+    for (let i = 0; i < 400 && g3.end === null; i++) {
+        const px = g3.x, py = g3.y, pre = diveOf(g3)
+        step(g3, { down: true })
+        if (pre > 0) {
+            const d = Math.hypot(wrapD(g3.x - px), wrapD(g3.y - py))
+            subTicks++
+            worstErr = Math.max(worstErr, Math.abs(d - CFG.speed * DIVE_DRAG))
+        }
+    }
+    r.check('#1764 item 4 stage 3: a submerged carpet swims at exactly DIVE_DRAG of its throttle (seed 7 flooded pit)',
+        subTicks >= 30 && worstErr < 1e-9, `${subTicks} submerged ticks, worst step error ${worstErr.toExponential(2)}`)
+
+    // Dry is undragged: full throttle, tick after tick (and the pit world never
+    // drags ABOVE the surface — flight over flooded ground is not swimming).
+    const g4 = makeGame(7)
+    let dryTicks = 0, dryErr = 0
+    for (let i = 0; i < 60 && g4.end === null; i++) {
+        const px = g4.x, py = g4.y
+        step(g4, {})
+        dryTicks++
+        dryErr = Math.max(dryErr, Math.abs(Math.hypot(wrapD(g4.x - px), wrapD(g4.y - py)) - CFG.speed))
+    }
+    r.check('#1764 item 4 stage 3: dry air keeps full throttle — the drag never bites above the sea',
+        dryTicks === 60 && dryErr < 1e-9, `60 dry ticks, worst error ${dryErr.toExponential(2)}`)
+
+    // The drown: every flame book refuses underwater, and the refusal costs nothing.
+    const fireGate = (id) => {
+        const g = makeGame(7)
+        g.shield = 1e9
+        g.mana = 500
+        g.learned.push(id); g.hands.R = id; g.coolR = 0
+        // measure far from home: seed 7 spawns at the castle and bank-by-delivery
+        // would move mana on every tick we watch (line 1158's law, not our block).
+        g.x = wrap(g.x + 120, MAP); g.y = wrap(g.y + 120, MAP)
+        digFlood(g)
+        const sank = sink(g)
+        const projs0 = g.projs.length
+        g.pearls.length = 0 // no pickup can ride the same tick as the measured cast
+        const mana0 = g.mana
+        step(g, { castR: true })
+        const manaBlocked = g.mana // snapshot NOW — the after-rising cast must spend
+        const coolBlocked = g.coolR
+        const wet = g.events.find((e) => e.type === 'wetFizzle')
+        const casted = g.events.some((e) => e.type === 'cast')
+        const volcanoSilent = id !== 'volcano' || !g.events.some((e) => e.type === 'volcano' || e.type === 'boom')
+        g.events.length = 0
+        // ...and once back in the air the same hand lights again.
+        let rose = -1
+        for (let i = 0; i < 600 && g.end === null; i++) { step(g, { up: true }); if (diveOf(g) === 0) { rose = i; break } }
+        g.pearls.length = 0 // same isolation for the after-rising cast
+        step(g, { castR: true })
+        const lit = g.projs.length > projs0 && g.mana < mana0 && g.events.some((e) => e.type === 'cast')
+        return { sank, wet: !!wet && wet.id === id, casted, costsNothing: manaBlocked === mana0, coolClean: coolBlocked === 0, volcanoSilent, rose, lit }
+    }
+    const fb = fireGate('fireball'), vc = fireGate('volcano')
+    r.check('#1764 item 4 stage 3: fireball drowns — no cast, one wetFizzle, and no world state behind it',
+        fb.sank && fb.wet && !fb.casted && fb.volcanoSilent, `wet=${fb.wet} cast=${fb.casted}`)
+    r.check('#1764 item 4 stage 3: volcano drowns too — the mountain stays shut under the sea',
+        vc.sank && vc.wet && !vc.casted && vc.volcanoSilent, `wet=${vc.wet} cast=${vc.casted}`)
+    r.check('#1764 item 4 stage 3: the drowned cast costs NOTHING — mana stays whole and no cool-down burns (block sits before the cost)',
+        fb.sank && fb.costsNothing && fb.coolClean,
+        `mana intact=${fb.costsNothing}, coolR unburnt=${fb.coolClean}`)
+    r.check('#1764 item 4 stage 3: a drowned flame is doused, not dead — the same hand lights again in dry air',
+        fb.rose >= 0 && fb.lit, `rose after ${fb.rose} ticks, lit=${fb.lit}`)
+
+    // Non-flame magic ignores the water.
+    {
+        const g = makeGame(7)
+        g.shield = 1e9
+        g.mana = 500
+        g.learned.push('protect'); g.hands.R = 'protect'; g.coolR = 0
+        const sank = sink(g) || (digFlood(g), sink(g))
+        step(g, { castR: true })
+        r.check('#1764 item 4 stage 3: the non-flame books stay wet-safe — protect shields through the sea',
+            sank && g.shield === 150 && g.events.some((e) => e.type === 'cast') && !g.events.some((e) => e.type === 'wetFizzle'),
+            `sank=${sank} shield=${g.shield}`)
+    }
+
+    // Determinism: dig, sink, drown a fireball, cruise — twice, identical.
+    const runDive3 = () => {
+        const g = makeGame(7)
+        g.shield = 1e9
+        g.mana = 500
+        g.learned.push('fireball'); g.hands.R = 'fireball'; g.coolR = 0
+        digFlood(g)
+        sink(g)
+        for (let i = 0; i < 120 && g.end === null; i++) step(g, i === 10 ? { down: true, castR: true } : { down: true })
+        return stateHash(g)
+    }
+    r.check('#1764 item 4 stage 3: the whole swim is deterministic — same seed + same digs + same yoke → identical hash',
+        runDive3() === runDive3())
 }
 
 // ---- charge-glide: the speed button (Shift / hold ▲ in the shell → inp.boost)
@@ -1912,7 +2040,11 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         // and the queue is part of the contract-visible state.
         const simSrc = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
         r.check('crumble law pinned in source: step() drains before casts, genWorld clears',
-            /drainDeforms\(gs\) \/\/[\s\S]{0,1200}if \(inp\.castL/.test(simSrc) &&
+            // window 1200 -> 1600: #1764 item 4 stage 3 legitimately grew step()'s
+            // throttle block (the DIVE_DRAG law + its comment). The invariant is the
+            // ORDER (drain precedes casts in the one driver); the window only bounds
+            // how much may sit between them.
+            /drainDeforms\(gs\) \/\/[\s\S]{0,1600}if \(inp\.castL/.test(simSrc) &&
             /function genWorld\(gs\) \{\s*\n\s*gs\.deforms = \[\]/.test(simSrc))
     }
 }
