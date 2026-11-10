@@ -641,7 +641,7 @@ export const GAMES = [
         label: 'SPACE INVADERS',
         theme: 'light',
         description: 'Defend Earth from waves of descending aliens. Shoot them down before they land.',
-        controls: ['Arrow Left/Right: Move', 'Space: Shoot']
+        controls: ['Arrow Left/Right: Move', 'Space: Shoot', WATCH_HELP + ' — the flight that clears the formation without a scratch does it for real']
     },
     {
         path: '/pacman',
@@ -701,7 +701,7 @@ export const GAMES = [
         label: 'DEFENDER',
         theme: 'dark',
         description: 'Protect the humanoids from abduction in this side-scrolling shooter.',
-        controls: ['Arrow Keys: Move', 'Space: Shoot']
+        controls: ['Arrow Keys: Move', 'Space: Shoot', WATCH_HELP + ' — the patrol that survives the planet and clears waves does it for real']
     },
     {
         path: '/pitfall',
