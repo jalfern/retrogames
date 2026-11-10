@@ -99,8 +99,8 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 83 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline
-npm run defuselinkcheck                # 73 gates: online protocol incl. in-flight reseat (7b/7c/7d)
+npm run defusecheck                      # 105 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline, first-VENT coaching
+npm run defuselinkcheck                # 75 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
 npm run defusedrive                      # real-key drive: start→play→boom→restart
@@ -128,6 +128,25 @@ report the freeze instead and the run dies with a dead seat (the law has teeth).
 `npm run defuselinkcheck -- --mutate-reseat` kills the shared players flip →
 the seat never comes back, the partner carries the whole rest of the run and
 the fuse dies — 7b's flip/players/finish gates go red (the hand-back has teeth).
+Coaching mutants (#1932): `pulseBar: named && isHolder && !gs.held` →
+`pulseBar: false` reddens the ring gate; `if (!gs || gs.done || taught)` →
+`gs.done && taught` reddens the two silence gates (a coach that never stops
+teaching is not a lesson). Restore → 105/105.
+First-VENT coaching (#1932): `hud.ventTaught` latches on `sealed`; until then
+`E.ventCoach` (pure, hash-clean) grows a teach card under the READ-STEP plate
+naming YOUR seat's job and pulses the control that must move (amber bar ring
+until pinned, green gauge ring + `TAP!` when the needle crosses the zone).
+`__bdTest.coach/ventTaught/probeStep` expose it for `defusedrive` (5 gates:
+role naming, ring pixels before/after the pin, latch + quiet-after).
+Drive notes (#1932 session): two #1812 gates went red on this box AT MAIN
+(`defusedrive` 2026-11-10) and were re-anchored — the press-tick reads now
+park at a clean baseline and capture the whole spring INSIDE one sync
+evaluate (the old shape measured puppeteer round-trip; an instant-consent
+restart lets the partner lead before the probe), and the coach join taps only
+after the partner's key is visibly turned (blind Space spam was a self-strike
+farm). The same run also fixed a latent crash: the guest reseat hud literal
+dropped `turn`, so `drawScene` read `undefined` on the next frame — main's
+linkdrive errors there (pageerror ×3), this branch is clean.
 
 ## Honest gaps (filed to QA as the polish pass)
 
@@ -139,8 +158,14 @@ the fuse dies — 7b's flip/players/finish gates go red (the hand-back has teeth
   seats; any input takes back your hand, online play no-ops the seat.
   watchcheck pilot + 5 source pins prove it. A model seat (learned policy)
   remains open.
-- VENT holder is keyboard-only on phones (B button = HOLD exists, but the
-  holder/worker role labels could coach harder on first VENT).
+- **CLOSED by #1932**: VENT role coaching — the first vent of a run now teaches
+  YOUR seat by name (`YOU HOLD THE BAR` / `YOU SEAT THE NEEDLE`, keys included),
+  the bar that must be pinned pulses until it IS pinned and the gauge pulses
+  `TAP!` exactly on the sim's zone; the lesson latches on the first seal
+  (defusecheck +22 gates incl. hash-purity, defusedrive 5 live gates with ring
+  pixels). On phones the HOLD pad finally arrives with a lesson that says what
+  it is for. Remaining here: the pad label itself is still the static `HOLD`
+  verb (VirtualControls is shared); the canvas carries the teaching.
 - Boom animation is 2D flash + debris; no chunk-of-bomb shrapnel physics.
 - Voice grammar is ~20 words; no accent tolerance.
 - No haptics/vibration hooks on phones.

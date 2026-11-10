@@ -429,3 +429,35 @@ export function pegNeedle(raw) {
     const drawn = raw > PEG ? PEG : raw < -PEG ? -PEG : raw
     return { hot, drawn }
 }
+
+// ---- first-VENT coaching (#1932) — view math only, never gs/hash ----------
+// The FIRST vent of a run teaches each seat its job by name. On a phone the
+// only named control is the HOLD pad — before this, a newcomer had to map a
+// seat number to a verb while the fuse burned double. Pure function of live
+// state + view facts (which seat is yours, has the run learned yet): no rng,
+// no gs write, hash-clean. The view pulses `pulseBar` on the bar that must
+// be pinned (until it actually is) and `pulseGauge` the instant the worker's
+// needle crosses the zone — the lesson names the job, the ring confirms the
+// deed. `taught` latches when the crew seals, so veterans keep the clean plate.
+export function ventCoach(gs, you, taught) {
+    if (!gs || gs.done || taught) return null
+    const st = curStep(gs)
+    if (st.kind !== VENT) return null
+    const isHolder = you === st.holder
+    const named = you === 0 || you === 1
+    const inZone = Math.abs(needleOf(gs) - gs.zone) <= ZONE_HALF[gs.bomb]
+    return {
+        role: named ? (isHolder ? 'HOLD' : 'SEAT') : 'CREW',
+        card: named
+            ? (isHolder ? 'YOU HOLD THE BAR' : 'YOU SEAT THE NEEDLE')
+            : `P${st.holder + 1} HOLDS · P${2 - st.holder} SEATS`,
+        sub: named
+            ? (isHolder ? 'PRESS B / HOLD PAD — KEEP DOWN' : 'TAP A WHEN NEEDLE CROSSES GREEN')
+            : 'ONE PINS THE BAR, ONE SEATS GREEN',
+        intro: gs.intro > 0,
+        held: !!gs.held,
+        inZone,
+        pulseBar: named && isHolder && !gs.held,
+        pulseGauge: named && !isHolder && inZone,
+    }
+}
