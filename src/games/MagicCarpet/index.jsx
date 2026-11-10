@@ -23,7 +23,7 @@ import {
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
-import { createCarpetGL } from './renderer.js'
+import { createCarpetGL, WAVE_CYCLE } from './renderer.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -1204,6 +1204,11 @@ const MagicCarpetGame = () => {
                     projs: gs.projs.length, keys: { ...keys }, boost: boostOn,
                     towerDown: gs.towerDown, craters: gs.craters.length,
                     wizStage: gs.wizStage, worldT: gs.worldT,
+                    // #1764 item 4 stage 1: the ocean's palette cycle is deterministic —
+                    // index = floor(tick / stepTicks) % levels, and the shader's clock is
+                    // the sim tick (never wall time).
+                    waveIdx: Math.floor(gs.tick / WAVE_CYCLE.stepTicks) % WAVE_CYCLE.levels,
+                    waveTick: renderer ? renderer.waveUniform() : -1,
                     invis: gs.invis, book: gs.book,
                     spellBook: gs.spellBook, bookPage: gs.spellBook ? gs.bookPage : -1,
                     atCastle: atCastle(gs), castle: { x: gs.castle.x, y: gs.castle.y },
