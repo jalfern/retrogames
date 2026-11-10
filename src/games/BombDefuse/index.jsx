@@ -316,6 +316,33 @@ function drawBombView(g, gs, now, opts = {}) {
         // below the dial now; the P-chips under the bars carry the YOU tag.
         g.fillStyle = C.label; g.font = '10px "Press Start 2P", monospace'
         g.fillText(`P${st.holder + 1} HOLDS  ·  P${2 - st.holder} SEATS`, cx, 298)
+        // #1932: first-vent coaching pulses — the bar that must be pinned
+        // rings amber for its holder until it IS pinned (release brings the
+        // ring back: the ring IS the "keep it down" lesson), and the dial
+        // rings green with a TAP! the instant the worker's needle crosses
+        // the zone. Pure view: the coach comes from E.ventCoach, the sim
+        // never hears about it.
+        if (opts.coach && live) {
+            if (opts.coach.pulseBar) {
+                const hbx = st.holder === 0 ? 128 : 512
+                const bp = 0.5 + 0.5 * Math.sin(now * 0.012)
+                g.strokeStyle = `rgba(255,194,62,${(0.35 + 0.5 * bp).toFixed(3)})`
+                g.lineWidth = 3; g.shadowColor = C.amber; g.shadowBlur = 8
+                g.strokeRect(hbx - 16, 176, 32, 98)
+                g.shadowBlur = 0; g.lineWidth = 1
+            }
+            if (opts.coach.pulseGauge) {
+                const gp = 0.5 + 0.5 * Math.sin(now * 0.015)
+                g.strokeStyle = `rgba(125,255,154,${(0.3 + 0.5 * gp).toFixed(3)})`
+                g.lineWidth = 3; g.shadowColor = C.green; g.shadowBlur = 10
+                g.beginPath(); g.arc(cx, cy + 18, 72, 0, 7); g.stroke()
+                g.shadowBlur = 0; g.lineWidth = 1
+                g.textAlign = 'center'
+                g.fillStyle = `rgba(125,255,154,${(0.7 + 0.3 * gp).toFixed(3)})`; g.font = '10px "Press Start 2P", monospace'
+                g.fillText('TAP!', cx, 160)
+                g.textAlign = 'left'
+            }
+        }
         // #1831: a whiffed seat was sound-only — the tap read as a dead key.
         // Flash the dial red and name it for a beat.
         if (opts.dudT > 0) {
@@ -365,7 +392,7 @@ function drawWindowBar(g, gs, hold) {
     g.textAlign = 'left'
 }
 
-function drawIntro(g, gs) {
+function drawIntro(g, gs, coach) {
     if (gs.intro <= 0 || gs.done) return
     const st = E.curStep(gs)
     // #1831: the step card sat over the plate — the first second of every
@@ -378,13 +405,26 @@ function drawIntro(g, gs) {
     g.fillText(E.KIND_NAME[st.kind], 320, 30)
     g.font = '7px "Press Start 2P", monospace'; g.fillStyle = C.green
     g.fillText(st.kind === E.SYNC ? 'BOTH KEYS, ONE WINDOW' : st.kind === E.CUT ? 'BOTH BLADES, ONE COLOR' : 'HOLD  +  SEAT, TOGETHER', 320, 46)
+    // #1932: the first vent teaches YOUR job by name — the card grows a
+    // second plate under the step card while the READ intro runs.
+    if (coach && coach.intro) {
+        g.fillStyle = 'rgba(6,8,4,0.78)'; g.fillRect(140, 54, 360, 42)
+        g.strokeStyle = C.green; g.strokeRect(140, 54, 360, 42)
+        g.font = '9px "Press Start 2P", monospace'; g.fillStyle = C.green
+        g.fillText(coach.card, 320, 72)
+        g.font = '7px "Press Start 2P", monospace'; g.fillStyle = C.amber
+        g.fillText(coach.sub, 320, 88)
+    }
     g.textAlign = 'left'
 }
 
 // #1812 item 2: per-seat key-turn view memory (spring pos/vel + seat-2 lag) —
 // presentation state lives in the hud, never in gs, so the sim hash is untouched.
+// #1932: ventTaught latches when the crew seals its FIRST vent — the coach
+// (E.ventCoach, pure) then goes silent for the rest of the run.
 const newHud = () => ({
     flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0, dudT: 0,
+    ventTaught: false, coach: null,
     turn: [{ pos: 0, vel: 0, lag: 0, want: 0 }, { pos: 0, vel: 0, lag: 0, want: 0 }],
 })
 
@@ -488,7 +528,7 @@ export default function BombDefuseGame() {
         else if (f.k === 'snip') { sfx.snip(); hud.sparks.push(...Array.from({ length: 5 }, () => ({ x: (f.seat === 0 ? 150 : 490) + (Math.random() - 0.5) * 18, y: 220 + (Math.random() - 0.5) * 10, vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 3, life: 12 }))) }
         else if (f.k === 'cut') { sfx.cut(); hud.banner = { text: 'WIRE OUT', ok: true }; hud.bannerT = 50 }
         else if (f.k === 'vent') sfx.creak()
-        else if (f.k === 'sealed') { sfx.sealed(); hud.banner = { text: 'SEALED', ok: true }; hud.bannerT = 50 }
+        else if (f.k === 'sealed') { sfx.sealed(); hud.banner = { text: 'SEALED', ok: true }; hud.bannerT = 50; hud.ventTaught = true }
         else if (f.k === 'dud') { sfx.dud(); hud.dudT = 18 }
         else if (f.k === 'nick') {
             sfx.nick(); hud.flash = 10; hud.shake = 6
@@ -718,7 +758,7 @@ export default function BombDefuseGame() {
                                 net.desyncFrozen = false
                                 if (net.room) net.room.setPhase('racing')
                                 hudRef.current = {
-                                    flash: 0, shake: 0, sparks: [], boomT: 0, dudT: 0,
+                                    ...newHud(), // #1932: was a hand-listed literal that had lost `turn` (crash on the next draw) — spread instead
                                     banner: { text: 'WELCOME BACK — SEAT RE-SEATED', ok: true }, bannerT: 90,
                                 }
                                 hintRef.current = null
@@ -964,16 +1004,22 @@ export default function BombDefuseGame() {
             if (screenRef.current === 'play' || screenRef.current === 'over') {
                 const gs = gsRef.current
                 if (gs) {
+                    // #1932: the coach is recomputed from live state each frame
+                    // (pure) and stashed on the hud so __bdTest.coach() answers
+                    // the drive harness without a pixel read.
+                    const youSeat = net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1)
+                    hud.coach = E.ventCoach(gs, youSeat, hud.ventTaught)
                     drawBombView(g, gs, now, {
                         paused: pausedRef.current,
                         // the seat is still the partner's during an in-flight
                         // hand-back (#1838) — the chip must not lie until the flip
                         cpu2: seatsRef.current === 1 || (net.active && net.sync && (net.sync.solo() || net.sync.reseatTick != null)),
-                        youSeat: net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1),
+                        youSeat,
                         dudT: hud.dudT,
                         keyPos: hud.turn.map((t) => t.pos),
+                        coach: hud.coach,
                     })
-                    drawIntro(g, gs)
+                    drawIntro(g, gs, hud.coach)
                     for (const s of hud.sparks) {
                         s.x += s.vx; s.y += s.vy; s.vy += 0.18
                         g.fillStyle = `rgba(255,${180 + Math.floor(Math.random() * 60)},80,${s.life / 14})`
@@ -1117,12 +1163,24 @@ export default function BombDefuseGame() {
                 watching: () => watchingRef.current,
                 watchSfx: watchSfxLog,
                 probe: () => (gsRef.current ? E.simState(gsRef.current) : null),
+                // #1932: live step facts for the coach drive (DEV-only, like the
+                // DebugKit strings) — lets the harness walk a CUT seat without guessing.
+                probeStep: () => {
+                    const g = gsRef.current
+                    if (!g || g.done) return null
+                    const st = E.curStep(g)
+                    return { kind: st.kind, color: st.color, holder: st.holder, sel: g.sel.slice(), keys: g.keys.slice(), armed: g.armed.slice(), step: g.step, bomb: g.bomb }
+                },
                 // #1812 item 2: the barrel poses the view is showing (0..~1.15)
                 keyPoses: () => hudRef.current.turn.map((t) => t.pos),
                 // the press-tick truth, atomically sampleable beside keyPoses
                 keyOn: () => (gsRef.current ? gsRef.current.keys.map(Boolean) : []),
                 press: (code) => { const f1 = S1[code]; if (f1) pressMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) pressMin(keys2Ref.current, f2) },
                 release: (code) => { const f1 = S1[code]; if (f1) releaseMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) releaseMin(keys2Ref.current, f2) },
+                // #1932: the first-VENT lesson, live-probeable (pure function
+                // of sim state + view facts — the harness reads what the plate teaches)
+                coach: () => hudRef.current.coach || null,
+                ventTaught: () => hudRef.current.ventTaught,
                 net: () => ({
                     active: net.active, role: net.role,
                     code: net.room ? net.room.code : '', phase: net.room ? net.room.phase : '',

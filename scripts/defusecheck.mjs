@@ -7,7 +7,7 @@ import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
-    REDLINE, PEG, pegNeedle,
+    REDLINE, PEG, pegNeedle, ventCoach,
 } from '../src/games/BombDefuse/engine.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -362,6 +362,93 @@ console.log('\n— gauge redline (#1812 item 5) —')
         'the red glint lights through the glass only while hot')
     ok(!/const nd = \(\(E\.needleOf\(gs\) \/ 1000\)/.test(jsx),
         'the raw-unit needle angle is gone — nothing draws an unpegged needle')
+}
+
+console.log('\n— first-vent coaching (#1932) —')
+{
+    // Pure view helper (the item-2/item-5 house pattern): while the run's
+    // FIRST vent runs, it names YOUR seat's job and pulses the control that
+    // must move — the phone answer to "the HOLD pad exists but nobody says
+    // so". No rng, no gs write, hash-clean. Kill laws (README mutants):
+    // a dead pulseBar reddens the pin-law gate; a coach that ignores the
+    // taught latch reddens the silence gate.
+    const toVent = (seed, players = 2) => {
+        const g = createGame(seed, players)
+        let guard = 0
+        while (!g.done && curStep(g).kind !== VENT && guard++ < 4000) drive(g, solvePads(g))
+        return g
+    }
+    // silence where there is nothing to teach
+    const s0 = createGame(7, 2)
+    ok(ventCoach(s0, 0, false) === null, 'SYNC step teaches nothing (only VENT carries a coach)')
+    const taughtG = toVent(7)
+    ok(!taughtG.done && curStep(taughtG).kind === VENT && ventCoach(taughtG, 0, true) === null, 'a taught run stays silent at the plate')
+    taughtG.done = true
+    ok(ventCoach(taughtG, 0, false) === null, 'a finished run never coaches')
+    // role naming, both ways + the unnamed (local 2P / spectator) case
+    const g = toVent(7)
+    while (g.intro > 0) drive(g, [{}, {}])
+    const holder = curStep(g).holder
+    const worker = 1 - holder
+    const chH = ventCoach(g, holder, false)
+    const chW = ventCoach(g, worker, false)
+    const chB = ventCoach(g, -1, false)
+    ok(chH && chH.role === 'HOLD' && chH.card.includes('HOLD'), 'the holder seat reads YOU HOLD THE BAR')
+    ok(chW && chW.role === 'SEAT' && chW.card.includes('SEAT') && chW.sub.includes('GREEN'), 'the worker seat reads YOU SEAT THE NEEDLE + the green cue')
+    ok(chB && chB.role === 'CREW' && chB.card.includes('HOLDS') && chB.card.includes('SEATS'), 'a nameless seat gets the both-seats line, never a YOU')
+    ok(chH.sub.includes('B') && chH.sub.includes('PAD'), 'the hold line names both keys: B and the HOLD pad')
+    // pulseBar law: rings the holder until the bar is actually pinned — pin
+    // it against the live sim and the ring goes away; release brings it back.
+    ok(chH.pulseBar === !g.held && !g.held, 'unpinned holder: the bar rings')
+    drive(g, [{ b: holder === 0 }, { b: holder === 1 }])
+    ok(g.held && ventCoach(g, holder, false).pulseBar === false, 'pinning the bar silences the ring (the ring IS the hold-it-down lesson)')
+    const after = drive(g, [{ b: holder === 0 }, { b: holder === 1 }])
+    ok(!g.held || ventCoach(g, holder, false).pulseBar === false, 'level-pin law untouched: held stays held while pressed', after.map(f => f.k).join(','))
+    // pulseGauge law across a full needle sweep: the nudge fires exactly when
+    // the seat would land (the sim's own zone condition — never a lie).
+    const gw = toVent(7)
+    while (gw.intro > 0) drive(gw, [{}, {}])
+    gw.needleT = 0
+    let mism = 0, inZ = 0, seen = 0
+    for (let t = 0; t < 360; t++) {
+        const c = ventCoach(gw, worker, false)
+        const truth = Math.abs(needleOf(gw) - gw.zone) <= ZONE_HALF[gw.bomb]
+        if (c.pulseGauge !== truth || c.inZone !== truth) mism++
+        if (truth) inZ++
+        seen++
+        gw.needleT += 1
+    }
+    ok(mism === 0 && inZ > 0 && seen === 360, 'gauge nudge matches the sim zone exactly across one sweep', `mism=${mism} inZone=${inZ}`)
+    ok(ventCoach(gw, holder, false).pulseGauge === false, 'the holder never gets the tap nudge (it must not leave the bar)')
+    // intro flag: the card shows while READ-STEP runs, live pulses after.
+    const gi = toVent(7)
+    ok(gi.intro > 0 && ventCoach(gi, curStep(gi).holder, false).intro === true, 'coach carries the READ-STEP flag into the teach card')
+    while (gi.intro > 0) drive(gi, [{}, {}])
+    ok(ventCoach(gi, curStep(gi).holder, false).intro === false, 'the card retires when the step goes live')
+    // purity: the coach cannot touch the sim — hash identical through the calls.
+    const hp = hash(g)
+    ventCoach(g, 0, false); ventCoach(g, 1, false); ventCoach(g, -1, true)
+    ok(hash(g) === hp, 'ventCoach cannot touch gs — hash identical through the view calls')
+    // view side wired: coach drawn, taught latched on seal, probe exposed.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(jsx.includes('E.ventCoach(gs, youSeat, hud.ventTaught)') && jsx.includes('coach: hud.coach'),
+        'index.jsx recomputes the coach from live state every frame')
+    ok(/k === 'sealed'[\s\S]{0,160}hud\.ventTaught = true/.test(jsx),
+        'the lesson latches the moment the crew seals')
+    ok(jsx.includes('drawIntro(g, gs, hud.coach)') && jsx.includes('coach && coach.intro'),
+        'the teach card rides the READ-STEP intro')
+    ok(jsx.includes('coach.pulseBar') && jsx.includes('coach.pulseGauge') && jsx.includes("'TAP!'"),
+        'both live pulses (bar ring, gauge TAP!) draw in the VENT view')
+    ok(jsx.includes('coach: () => hudRef.current.coach'), '__bdTest.coach exposes the lesson for the drive harness')
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    ok(!/ventCoach/.test(esrc.slice(esrc.indexOf('export function hash'), esrc.indexOf('export const TURN'))),
+        'hash() never mentions the coach — the lesson lives outside the determinism core')
+    // determinism: same seed, same pads -> the coach answers identically on both boxes.
+    const bx1 = toVent(11), bx2 = toVent(11)
+    while (bx1.intro > 0) drive(bx1, [{}, {}])
+    while (bx2.intro > 0) drive(bx2, [{}, {}])
+    ok(JSON.stringify(ventCoach(bx1, 0, false)) === JSON.stringify(ventCoach(bx2, 0, false)) && hash(bx1) === hash(bx2),
+        'net twins: the coach is state-determined, both boxes teach the same lesson')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)
