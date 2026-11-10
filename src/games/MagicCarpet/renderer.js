@@ -15,7 +15,7 @@
 //  - post: bright-pass bloom + vignette composited at screen resolution.
 
 import * as THREE from 'three'
-import { MAP, GRID, WATER, SANDL, GRASSL, ROCKL } from './sim.js'
+import { MAP, GRID, WATER, SANDL, GRASSL, ROCKL, FOG_NEAR, FOG_D, HAZE } from './sim.js'
 import {
     drawPearl, drawBook, drawBalloon, drawCastle, drawTower, drawWizard,
     drawGiant, drawWolf, drawCow, drawVillager, drawHut, drawFireball, drawBolt,
@@ -25,7 +25,18 @@ const N = GRID
 const CELL = MAP / GRID
 const SPAN = 72
 const HALF = (SPAN * CELL) / 2
-const FOG_D = 260
+// FOG_D/FOG_NEAR/HAZE (#1764 item 5 stage 5) come from sim.js — the single
+// source of the aerial-perspective law; the GLSL below bakes those literals.
+
+// The aerial law in GLSL, mirroring aerialFog() in sim.js constant-for-constant:
+// haze is a ground-hugging layer (dense at/below floorY, crisp above topY) and
+// the camera's altitude thins the path (airOf). Injected at every fog site so
+// no site can drift back to a distance-only mix.
+const AIR_GLSL = `
+float hazeOfG(float y){ return ${HAZE.keep} + ${1 - HAZE.keep} * clamp((${HAZE.topY}.0 - y) / ${(HAZE.topY - HAZE.floorY)}.0, 0.0, 1.0); }
+float airOfG(float camY){ return max(${HAZE.floor}, 1.0 - ${1 - HAZE.floor} * max(0.0, camY - ${HAZE.nearY}.0) / ${(HAZE.farY - HAZE.nearY)}.0); }
+float aerialG(float dist, float y, float camY){ return smoothstep(${FOG_NEAR}.0, uFogD, dist) * hazeOfG(y) * airOfG(camY); }
+`
 
 // Per-world atmospheres: same rules, three skies. Colors are authored as final
 // sRGB (ColorManagement is disabled for this renderer's lifetime).
@@ -245,6 +256,7 @@ const BILL_VERT = `
 uniform vec3 uRight; uniform vec3 uUp; uniform vec3 uFwd; uniform vec3 uCamPos; uniform float uFogD;
 attribute vec3 aPos; attribute vec2 aSize; attribute vec4 aUv; attribute vec4 aTint; attribute float aSeed;
 varying vec2 vUv; varying vec3 vTint; varying float vAlpha; varying float vFog; varying float vSeed; varying float vUp;
+${AIR_GLSL}
 void main(){
     vec2 q = uv;
     float anchor = aUv.w < 0.0 ? 0.5 : 0.0; // packed: negative stored h means centered anchor
@@ -254,7 +266,7 @@ void main(){
     vec3 upv = normalize(mix(uUp, uFwd, lean));
     vec3 world = aPos + uRight * (q.x - 0.5) * aSize.x + upv * (q.y - anchor) * aSize.y;
     vec3 rel = world - uCamPos;
-    vFog = smoothstep(70.0, uFogD, length(rel));
+    vFog = aerialG(length(rel), aPos.y, uCamPos.y);
     vUv = vec2(aUv.x + q.x * aUv.z, aUv.y - (1.0 - q.y) * abs(aUv.w));
     vTint = aTint.rgb; vAlpha = aTint.a; vSeed = aSeed; vUp = q.y;
     gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
@@ -350,6 +362,7 @@ uniform vec3 uZenith, uFogCol, uSunCol, uDeep, uShallow, uFoam, uSand, uGrassA, 
 uniform float uFogD;
 varying float vH; varying float vGlow; varying float vScorch; varying vec3 vWorld; varying float vDist;
 ${NOISE_GLSL}
+${AIR_GLSL}
 float hAt(vec2 xz){ return texture2D(uData, xz / ${MAP}.0).r * 96.0; }
 void main(){
     vec3 nrm = normalize(vec3(
@@ -417,7 +430,10 @@ void main(){
     }
     float cshade = fbm2(vWorld.xz * 0.011 + vec2(uWorldTime * 0.0016, uWorldTime * 0.0009));
     col *= 1.0 - 0.22 * smoothstep(0.48, 0.76, cshade);
-    col = mix(col, uFogCol, smoothstep(70.0, uFogD, vDist) * 0.92);
+    // #1764 item 5 stage 5: aerial perspective — the haze layer (hazeOfG) and
+    // the carpet's altitude (airOfG) shape the mix; the max() keeps the original
+    // horizon fuse: the grid edge must still dissolve into the fog color.
+    col = mix(col, uFogCol, max(aerialG(vDist, vH, uCamPos.y) * 0.92, smoothstep(${HALF - 28}.0, ${HALF - 4}.0, vDist) * 0.92));
     gl_FragColor = vec4(col, 1.0);
 }
 `
@@ -526,9 +542,12 @@ void main(){
     boltGeo.setAttribute('position', new THREE.BufferAttribute(boltPos, 3))
     boltGeo.setDrawRange(0, 0)
     const boltMat = new THREE.ShaderMaterial({
-        uniforms: { uFade: { value: 0 }, uCamPos: tUniforms.uCamPos, uFogCol: tUniforms.uFogCol },
-        vertexShader: 'uniform vec3 uCamPos; varying float vD; void main(){ vD = length(position - uCamPos); gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }',
-        fragmentShader: 'precision highp float; uniform float uFade; uniform vec3 uFogCol; varying float vD; void main(){ gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.6), uFogCol, smoothstep(70.0, 260.0, vD)), uFade); }',
+        uniforms: { uFade: { value: 0 }, uCamPos: tUniforms.uCamPos, uFogCol: tUniforms.uFogCol, uFogD: tUniforms.uFogD },
+        // #1764 item 5 stage 5: a distant bolt dims through the same aerial law
+        // (its strike height rides position.y), so far lightning reads as glow in
+        // the haze instead of a full-bright crack at the horizon.
+        vertexShader: `uniform vec3 uCamPos; uniform float uFogD; varying float vFog; ${AIR_GLSL} void main(){ vFog = aerialG(length(position - uCamPos), position.y, uCamPos.y); gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: 'precision highp float; uniform float uFade; uniform vec3 uFogCol; varying float vFog; void main(){ gl_FragColor = vec4(mix(vec3(0.85, 0.9, 1.6), uFogCol, vFog), uFade); }',
         transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
     })
     const boltMesh = new THREE.LineSegments(boltGeo, boltMat)

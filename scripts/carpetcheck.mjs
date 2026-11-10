@@ -21,6 +21,7 @@ import {
     SEL, selectTap, cursorStep,
     scareVillagers, VIL_PANIC_R, VIL_FLAME_R, VIL_WANDER_R,
     VIL_GRAB_R, VIL_GRAB_ALT, VIL_TRIBUTE_T, VIL_TRIBUTE_M,
+    FOG_NEAR, FOG_D, HAZE, hazeOf, airOf, aerialFog,
 } from '../src/games/MagicCarpet/sim.js'
 
 const wrap = (v, m) => ((v % m) + m) % m
@@ -2262,6 +2263,85 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         /osc\.start\(t\); osc\.stop\(t \+ duration\)/.test(acSrc))
 }
 
+// ---- #1764 item 5 stage 5: AERIAL PERSPECTIVE — the haze layer law (#1764).
+// The gap said the fog was a per-object distance mix with no altitude; the fix
+// is a ground-hugging haze layer (dense at/below floorY, crisp keep above topY)
+// plus a camera-altitude path thinning (airOf), mirrored in GLSL by AIR_GLSL,
+// which BAKES these same literals — the mirror is by construction, and the
+// census below proves every fog site routes through it. Renderer-side numbers,
+// pure geometry: the sim hash never moves.
+//
+// Mutation guide: (1) hazeOf -> 1.0 and the peak-vs-lowland contrast dies;
+// (2) airOf -> 1.0 and the climb gates go red (far ground never resolves);
+// (3) nudge HAZE.topY/keep/floor and the literal pins go red; (4) put
+// `smoothstep(70.0, uFogD, vDist)` back at the terrain site and the census
+// (distance-only residue) goes red; (5) drop the max() horizon-fuse term and
+// the fuse pin goes red — the grid edge must still dissolve into the sky.
+{
+    r.check('#1764-5s5 the law literals are pinned — a 56u haze band, half-crisp peaks, 40/100 eye path',
+        FOG_NEAR === 70 && FOG_D === 260 && HAZE.floorY === 18 && HAZE.topY === 74 &&
+        HAZE.keep === 0.5 && HAZE.nearY === 40 && HAZE.farY === 100 && HAZE.floor === 0.6,
+        `HAZE=${JSON.stringify(HAZE)}`)
+    r.check('#1764-5s5 the haze hugs the ground — full density at sea and beach, clamped past both edges',
+        hazeOf(WATER) === 1 && hazeOf(HAZE.floorY) === 1 && hazeOf(HAZE.floorY - 30) === 1 &&
+        hazeOf((HAZE.floorY + HAZE.topY) / 2) === 0.75 && hazeOf(HAZE.topY) === HAZE.keep &&
+        hazeOf(HAZE.topY + 50) === HAZE.keep,
+        `sea=${hazeOf(WATER)} mid=${hazeOf((HAZE.floorY + HAZE.topY) / 2)} top=${hazeOf(HAZE.topY)}`)
+    r.check('#1764-5s5 haze density falls monotonically with altitude across the band',
+        [0, 18, 32, 46, 60, 74, 90].map(hazeOf).every((v, i, a) => i === 0 || v <= a[i - 1]) &&
+        hazeOf(18) > hazeOf(46) && hazeOf(46) > hazeOf(74))
+    r.check('#1764-5s5 climbing thins the path — full at low eye, floor at and past farY, never past it',
+        airOf(8) === 1 && airOf(HAZE.nearY) === 1 &&
+        airOf((HAZE.nearY + HAZE.farY) / 2) === 0.8 && airOf(HAZE.farY) === HAZE.floor &&
+        airOf(120) === HAZE.floor && airOf(500) === HAZE.floor,
+        `mid=${airOf(70)} high=${airOf(120)}`)
+    r.check('#1764-5s5 far ground at full range: lowland sits in haze, a summit keeps half — exactly 2:1',
+        aerialFog(FOG_D, WATER, HAZE.nearY) === 1 && aerialFog(FOG_D, HAZE.topY, HAZE.nearY) === 0.5 &&
+        aerialFog(FOG_D, HAZE.topY, HAZE.farY) === HAZE.keep * HAZE.floor,
+        `low=${aerialFog(FOG_D, WATER, HAZE.nearY)} peak=${aerialFog(FOG_D, HAZE.topY, HAZE.nearY)}`)
+    r.check('#1764-5s5 nothing inside earshot is fogged, and the mix grows with distance',
+        aerialFog(0, WATER, 20) === 0 && aerialFog(FOG_NEAR, WATER, 20) === 0 &&
+        [80, 120, 160, 200, 240, 260].map((d) => aerialFog(d, WATER, 20)).every((v, i, a) => i === 0 || v >= a[i - 1]) &&
+        aerialFog(120, WATER, 20) > 0 && aerialFog(260, WATER, 20) > aerialFog(120, WATER, 20))
+    r.check('#1764-5s5 the law is monotone in both altitudes — peaks crisper, climbs clearer, all the way',
+        [14, 40, 74, 110].map((y) => aerialFog(220, y, 20)).every((v, i, a) => i === 0 || v <= a[i - 1]) &&
+        [20, 40, 70, 100, 120].map((c) => aerialFog(220, WATER, c)).every((v, i, a) => i === 0 || v <= a[i - 1]) &&
+        aerialFog(220, WATER, 20) > aerialFog(220, WATER, 110) &&
+        aerialFog(220, WATER, 20) > aerialFog(220, 90, 20),
+        `lowland=${aerialFog(220, WATER, 20).toFixed(3)} peak=${aerialFog(220, 90, 20).toFixed(3)} climb=${aerialFog(220, WATER, 110).toFixed(3)}`)
+    {
+        const gs = makeGame(7)
+        const h0 = stateHash(gs)
+        aerialFog(200, WATER, gs.alt); hazeOf(gs.alt); airOf(gs.alt)
+        r.check('#1764-5s5 a pure read — the hash never moves (presentation law, sim untouched)',
+            h0 === stateHash(gs), `${h0} vs ${stateHash(gs)}`)
+    }
+}
+{
+    // Census: every fog site routes through the baked mirror, no distance-only
+    // residue survives, and the horizon fuse still reaches the grid edge.
+    const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+    const half = (72 * (MAP / GRID)) / 2
+    r.check('#1764-5s5 census — the aerial mirror is injected at all three fog sites (terrain, sprites, bolts)',
+        (src.match(/aerialG\(/g) || []).length >= 4 && // definition + 3 sites
+        /vFog = aerialG\(length\(rel\), aPos\.y, uCamPos\.y\)/.test(src) &&
+        /max\(aerialG\(vDist, vH, uCamPos\.y\)/.test(src) &&
+        /vFog = aerialG\(length\(position - uCamPos\), position\.y, uCamPos\.y\)/.test(src))
+    r.check('#1764-5s5 census — no distance-only fog site survived the pass',
+        !/smoothstep\(70\.0, uFogD, (length\(rel\)|vDist)\)/.test(src) &&
+        !/smoothstep\(70\.0, 260\.0, vD\)/.test(src),
+        `residue=${(src.match(/smoothstep\(70\.0[^;]*\)/g) || []).length}`)
+    r.check('#1764-5s5 GLSL bakes the law\'s own literals — the mirror is by construction, not by hand',
+        // The shaders interpolate HAZE/FOG_* straight out of sim.js: change the
+        // law and every site changes with it. This reads the construction site.
+        /import \{[^}]*FOG_NEAR, FOG_D, HAZE[^}]*\} from '\.\/sim\.js'/.test(src) &&
+        src.includes('float hazeOfG(float y){ return ${HAZE.keep} + ${1 - HAZE.keep} * clamp((${HAZE.topY}.0 - y) / ${(HAZE.topY - HAZE.floorY)}.0, 0.0, 1.0); }') &&
+        src.includes('float airOfG(float camY){ return max(${HAZE.floor}, 1.0 - ${1 - HAZE.floor} * max(0.0, camY - ${HAZE.nearY}.0) / ${(HAZE.farY - HAZE.nearY)}.0); }') &&
+        src.includes('float aerialG(float dist, float y, float camY){ return smoothstep(${FOG_NEAR}.0, uFogD, dist) * hazeOfG(y) * airOfG(camY); }'))
+    r.check('#1764-5s5 the horizon fuse survives the gradient — grid edge still dissolves at 0.92',
+        src.includes('smoothstep(${HALF - 28}.0, ${HALF - 4}.0, vDist) * 0.92') && half === 288, `HALF=${half}`)
+}
+
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
 const browser = await launch()
 const page = await openGame(browser, { url: `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`, hook: '__game', start: false })
@@ -2443,6 +2523,7 @@ const sameTick = await page.evaluate(async () => {
     return { ok: a.length === b.length && diff === 0, diff, tick: t.probe().tick }
 })
 r.check('same tick renders identical frames: water/clouds/shadow animate on WORLD time (#1090)',
+
     sameTick.ok, `sumAbsDiff=${sameTick.diff} at tick ${sameTick.tick}${sameTick.why ? ' (' + sameTick.why + ')' : ''}`)
 
 // ---- #1090 polish B: rubble keeps smouldering long after the fire is gone.
@@ -2461,6 +2542,40 @@ const smokeLate = await page.evaluate(async () => {
 })
 r.check('dead rubble keeps smouldering long after the fire is gone (#1090)',
     smokeLate.puffs > 0 && smokeLate.glow === 0, `smoke instances ${smokeLate.puffs}, glow ${smokeLate.glow}`)
+
+// ---- #1764 item 5 stage 5 live: the law rides the LIVE camera. Same tile,
+// same yaw; eye pinned at 20 (inside the layer) vs 110 (above farY). The
+// probe reports aerialFog at the carpet's own altitude — deck vs climb must
+// show the airOf ratio (0.6) and the peak-vs-lowland ratio (0.5) the shaders
+// bake. (A pixel-strip comparison was tried first and rejected: pitch moves the
+// horizon band with altitude, so it measured viewpoint, not the law — rule 8.)
+await page.evaluate(() => { window.__game.reset(7); window.__carpetTest.start(); for (let i = 0; i < 80; i++) window.__game.step({}, 1) })
+const airClimb = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    const wait = (ms) => new Promise((res) => setTimeout(res, ms))
+    const p = t.probe()
+    const lum = (d, i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]
+    const grab = async (alt) => {
+        for (let i = 0; i < 6; i++) { window.__game.step({}, 1); t.holdCarpet(p.x, p.y, alt) }
+        await wait(260)
+        const s = t.pixels(0.2, 0.6, 96, 10)
+        const sky = t.pixels(0.2, 0.28, 40, 6)
+        let skyL = 0, n = 0
+        for (let i = 0; i < sky.length; i += 4) { skyL += lum(sky, i); n++ }
+        skyL /= n
+        let dev = 0; n = 0
+        for (let i = 0; i < s.length; i += 4) { dev += Math.abs(lum(s, i) - skyL); n++ }
+        return { dev: dev / n, law: t.aerial(200) }
+    }
+    const low = await grab(20)
+    const high = await grab(110)
+    return { low, high }
+})
+r.check('#1764-5s5 live: the aerial law rides the live camera — peaks keep half, climbing thins the path',
+    airClimb.low.law.camY < 40 && airClimb.high.law.camY > 100 &&
+    airClimb.low.law.low > airClimb.low.law.peak * 1.8 &&
+    airClimb.high.law.low < airClimb.low.law.low * 0.75 && airClimb.high.law.low > 0,
+    `deck low=${airClimb.low.law.low} peak=${airClimb.low.law.peak}; climb low=${airClimb.high.law.low} (air floor 0.6)`)
 
 // ---- #1612 item 1: the veiled carpet breathes additive ghost motes behind it.
 // Mutation guide: delete the `gs0.invis > 0` block in fillParticles (renderer.js)
