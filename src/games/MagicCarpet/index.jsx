@@ -19,7 +19,7 @@ import {
     LEVELS,
     SPILLS, spellById,
     makeGame, step, autopilot, stateHash, setHand, cycleR, cycleL, crater, settleGround, INVIS_T,
-    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing,
+    hudTap, TAP, TRAY, muffleOf, OPEN_CUTOFF, crumbleFeel, castBearing, diveOf, sampleH, WATER,
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
@@ -1209,6 +1209,9 @@ const MagicCarpetGame = () => {
                     // the sim tick (never wall time).
                     waveIdx: Math.floor(gs.tick / WAVE_CYCLE.stepTicks) % WAVE_CYCLE.levels,
                     waveTick: renderer ? renderer.waveUniform() : -1,
+                    // #1764 item 4 stage 2: units below sea (diveOf) and the mix the
+                    // shader actually painted with — the live gate compares the two.
+                    sub: +diveOf(gs).toFixed(2), subU: renderer ? +renderer.subUniform().toFixed(3) : -1,
                     invis: gs.invis, book: gs.book,
                     spellBook: gs.spellBook, bookPage: gs.spellBook ? gs.bookPage : -1,
                     atCastle: atCastle(gs), castle: { x: gs.castle.x, y: gs.castle.y },
@@ -1251,6 +1254,21 @@ const MagicCarpetGame = () => {
                     crater(gs, gs.x + Math.cos(gs.yaw) * 70, gs.y + Math.sin(gs.yaw) * 70, 16, 10, 1)
                     settleGround(gs) // #1694: the dig gates read the LANDED crater, not the window
                     return gs.craters.length
+                },
+                // #1764 item 4 stage 2: sink a dry pool under the carpet — digs (the
+                // crater bowl falls off toward its rim, so one dig rarely reaches)
+                // until the floor sits under the sea, giving the live world a diveable
+                // pit. crater() is rng-free: the dig and the dive replay identically.
+                diveDig: () => {
+                    gs.shield = 1e9 // the wizard's bolt must not rewrite the gate mid-dive
+                    let n = 0
+                    while (sampleH(gs, gs.x, gs.y) > WATER - 4 && n < 12) {
+                        crater(gs, gs.x, gs.y, 14, 24, 0)
+                        settleGround(gs)
+                        n++
+                    }
+                    const h1 = sampleH(gs, gs.x, gs.y)
+                    return { floor: +h1.toFixed(2), flooded: h1 < WATER, digs: n }
                 },
                 // #1703 (phone proof): queue the same crater digHot lands — but
                 // leave the crumble window OPEN so a pass can capture mid-window

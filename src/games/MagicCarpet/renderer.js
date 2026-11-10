@@ -457,6 +457,7 @@ void main(){
         uSunDir: tUniforms.uSunDir, uSunCol: tUniforms.uSunCol,
         uCloudCol: { value: new THREE.Color() }, uCloudMix: { value: 0.5 }, uTime: tUniforms.uTime,
         uWorldTime: tUniforms.uWorldTime,
+        uSub: { value: 0 }, // #1764 item 4 stage 2: submersion 0..1 — from below the sea the dome is deep water, not sky
     }
     const sky = new THREE.Mesh(
         new THREE.SphereGeometry(900, 32, 18),
@@ -465,7 +466,7 @@ void main(){
             vertexShader: 'varying vec3 vDir; void main(){ vDir = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
             fragmentShader: `
 precision highp float;
-uniform vec3 uZenith, uHorizon, uSunDir, uSunCol, uCloudCol; uniform float uCloudMix, uTime, uWorldTime;
+ uniform vec3 uZenith, uHorizon, uSunDir, uSunCol, uCloudCol; uniform float uCloudMix, uTime, uWorldTime, uSub;
 varying vec3 vDir;
 ${NOISE_GLSL}
 void main(){
@@ -484,6 +485,10 @@ void main(){
     float cov2 = smoothstep(0.58 - uCloudMix * 0.1, 0.84, c2) * smoothstep(0.0, 0.3, d.y);
     col = mix(col, uCloudCol * (0.78 + 0.34 * fine), cov2 * uCloudMix * 0.55);
     col = mix(col, uCloudCol * (0.86 + 0.3 * fine), cov * uCloudMix);
+    // #1764 item 4 stage 2: submerged, the dome is the underside of the sea —
+    // deep teal, sun reduced to a wavering shaft overhead (light through waves).
+    float shaft = pow(max(0.0, d.y), 1.5) * (0.5 + 0.5 * sin(d.x * 9.0 + uWorldTime * 0.11) * sin(d.z * 7.0 - uWorldTime * 0.08));
+    col = mix(col, mix(vec3(0.015, 0.07, 0.12), vec3(0.10, 0.26, 0.30), shaft), uSub);
     gl_FragColor = vec4(col, 1.0);
 }
 `,
@@ -565,15 +570,32 @@ void main(){
 }
 `, { uT: { value: null }, uDir: { value: new THREE.Vector2() } }))
     const compMesh = new THREE.Mesh(quad, qmat(`
-precision highp float; uniform sampler2D uScene, uBloom; uniform float uBloomAmt; varying vec2 vQ;
+precision highp float; uniform sampler2D uScene, uBloom; uniform float uBloomAmt, uSub, uWorldTime; varying vec2 vQ;
+float hsub(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 void main(){
     vec3 c = texture2D(uScene, vQ).rgb + texture2D(uBloom, vQ).rgb * uBloomAmt;
     vec2 v = vQ - 0.5;
     c *= 1.0 - dot(v, v) * 0.42;
     c = c * 1.04 - 0.015;
+    // #1764 item 4 stage 2: UNDERWATER. Depth eats the reds first (the sea is a
+    // red filter), light bends into walking caustic bands, and cold bubbles rise
+    // past the glass. All driven by sim ticks (uWorldTime), never wall time.
+    if (uSub > 0.0) {
+        float ca = 0.5 + 0.5 * sin(vQ.x * 21.0 + uWorldTime * 0.09 + sin(vQ.y * 13.0 - uWorldTime * 0.055) * 1.4);
+        ca = ca * ca * ca;
+        vec3 u = c * vec3(0.30, 0.62, 0.78) + vec3(0.04, 0.14, 0.18) * ca;
+        vec2 cell = floor(vQ * vec2(52.0, 30.0));
+        float bh = hsub(cell);
+        float rise = fract(bh * 7.0 - uWorldTime * 0.045 * (0.6 + bh));
+        vec2 bp = (fract(vQ * vec2(52.0, 30.0)) - vec2(0.35 + 0.3 * bh, rise));
+        float bub = smoothstep(0.16, 0.05, length(bp)) * step(0.80, bh) * step(rise, 0.7);
+        u += vec3(0.16, 0.30, 0.34) * bub;
+        u = mix(u, vec3(0.02, 0.09, 0.16), 0.22);
+        c = mix(c, u, uSub);
+    }
     gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }
-`, { uScene: { value: null }, uBloom: { value: null }, uBloomAmt: { value: 0.75 } }))
+`, { uScene: { value: null }, uBloom: { value: null }, uBloomAmt: { value: 0.75 }, uSub: { value: 0 }, uWorldTime: tUniforms.uWorldTime }))
     const scBright = mkScene(brightMesh)
     const scBlur = mkScene(blurMesh)
     const scComp = mkScene(compMesh)
@@ -1080,6 +1102,12 @@ void main(){
         emitAmbient(gs)
         tUniforms.uTime.value = performance.now() / 1000
         tUniforms.uWorldTime.value = gs.tick
+        // #1764 item 4 stage 2: submersion depth (0..1 over 6u) drives the
+        // underwater composite and the submerged sky. Derived from gs only —
+        // replay-stable, and the shell can poll it against diveOf(gs).
+        const sub = Math.max(0, Math.min(1, (WATER - gs.alt) / 6))
+        compMesh.material.uniforms.uSub.value = sub
+        sUniforms.uSub.value = sub
 
         const bank = view.bank || 0
         const cpP = (view.pitch ?? 0.06) + (view.sink || 0)
@@ -1178,6 +1206,7 @@ void main(){
         spriteCount: () => spr.geo.instanceCount,
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
         waveUniform: () => tUniforms.uWorldTime.value, // #1764 item 4: the shader's clock is sim ticks, not wall time
+        subUniform: () => compMesh.material.uniforms.uSub.value, // #1764 item 4 stage 2: the painted submersion mix
         scorchCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 2] > 0) n++; return n },
         dispose() {
             rtScene.dispose(); rtA.dispose(); rtB.dispose(); rtEyeL.dispose(); rtEyeR.dispose()

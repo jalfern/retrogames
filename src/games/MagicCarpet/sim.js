@@ -964,8 +964,13 @@ export function bookTap(gs, x, y) {
 // closed band while veiled. It never feeds stateHash — it drives sound, not rules.
 export const OPEN_CUTOFF = 18000
 export const MUFFLE_CUTOFF = 520
+// #1764 item 4 stage 2: units the carpet sits BELOW the sea surface — a pure
+// read of the water clamp inside step() (0 above sea, >0 inside a flooded pit).
+// Never feeds stateHash: like muffleOf it drives presentation (the renderer's
+// submersion mix) and audio (underwater the world goes muffled).
+export const diveOf = (gs) => Math.max(0, WATER - gs.alt)
 export function muffleOf(gs) {
-    return gs.invis > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
+    return gs.invis > 0 || diveOf(gs) > 0 ? MUFFLE_CUTOFF : OPEN_CUTOFF
 }
 
 // #1697: how a finished crumble LANDS on the wizard on the carpet — pure read
@@ -1020,7 +1025,11 @@ export function step(gs, inp) {
         sampleH(gs, gs.x + Math.cos(gs.yaw) * Math.max(26, v * 13), gs.y + Math.sin(gs.yaw) * Math.max(26, v * 13)),
     )
     if (aheadH + 4 > gs.alt) gs.alt = Math.min(gs.alt + CFG.climb, aheadH + 4)
-    gs.alt = Math.max(Math.max(WATER + 3, sampleH(gs, gs.x, gs.y) + 1.6), Math.min(120, gs.alt))
+    // #1764 stage 2: flooded ground (gH < WATER) is diveable — hover at gH+1.6
+    // under the sea; dry ground keeps the WATER+3 law. rng-free, replay-stable.
+    const gH = sampleH(gs, gs.x, gs.y)
+    const floorAlt = gH < WATER ? gH + 1.6 : Math.max(WATER + 3, gH + 1.6)
+    gs.alt = Math.max(floorAlt, Math.min(120, gs.alt))
 
     if (inp.castL || inp.a) castHand(gs, 'L')
     if (inp.castR || inp.b) castHand(gs, 'R')
