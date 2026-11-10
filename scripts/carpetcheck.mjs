@@ -13,7 +13,7 @@ import {
     LEVELS, QUOTA, SPILLS, BOUNTY, MAP, spellById, sampleH,
     makeGame, step, autopilot, stateHash, CRATER_GLOW, glowOf, toppleTower, settleGround, CRUMBLE_T,
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
-    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater,
+    muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater, diveOf,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
     crumbleFeel, CRUMBLE_HEAR_R, castBearing,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
@@ -111,6 +111,18 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             && src.includes('clamp(floor(bpos), 0.0, ${WAVE_CYCLE.levels - 1}.0)')
             && src.includes('mod(lvl + floor(uWorldTime / ${WAVE_CYCLE.stepTicks}.0), ${WAVE_CYCLE.levels}.0)')
             && !src.includes('smoothstep(0.3, 0.7, fract(bpos))'),
+            'source pin')
+    }
+    {
+        const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
+        const renS = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        r.check('#1764 item 4 stage 2: diveable sea floor in sim.js (dry law intact, old blanket floor banned) and the underwater mix in the composite',
+            simS.includes('gH < WATER ? gH + 1.6 : Math.max(WATER + 3, gH + 1.6)')
+            && !simS.includes('Math.max(WATER + 3, sampleH(gs, gs.x, gs.y) + 1.6)')
+            && simS.includes('export const diveOf = (gs) => Math.max(0, WATER - gs.alt)')
+            && renS.includes('(WATER - gs.alt) / 6')
+            && renS.includes('uniform float uBloomAmt, uSub, uWorldTime')
+            && renS.includes('subUniform'),
             'source pin')
     }
     {
@@ -434,12 +446,68 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
 // ---- carpet rules: cannot crash, auto-rises
 {
     const gs = makeGame(7)
-    let minClear = 1e9
+    let minClear = 1e9, minAlt = 1e9, dryDip = 0
     for (let i = 0; i < 2000 && !gs.end; i++) {
         step(gs, { up: false, down: true })
-        minClear = Math.min(minClear, gs.alt)
+        const gH = sampleH(gs, gs.x, gs.y)
+        minClear = Math.min(minClear, gs.alt - gH)
+        minAlt = Math.min(minAlt, gs.alt)
+        if (gs.alt < WATER && gH >= WATER) dryDip++
     }
-    r.check('holding down never buries the carpet', minClear > 14, `min alt ${minClear.toFixed(1)}`)
+    r.check('holding down never buries the carpet', minClear > 1.4, `min clearance ${minClear.toFixed(1)}`)
+    // #1764 item 4 stage 2 reshaped this gate: "never buries" is ground-relative now
+    // (hover clearance over any surface), the dry law is its own gate, and the flood
+    // dive is proven positive below. Mutation guide: restore the old blanket
+    // `max(WATER + 3, ground + 1.6)` floor and both stage-2 gates go red (no dive).
+    r.check('#1764 item 4 stage 2: over dry ground the carpet never dips under sea (the old law holds)',
+        dryDip === 0, `${dryDip} ticks below sea over dry ground`)
+    r.check('#1764 item 4 stage 2: the seed-7 sweep finds flooded low ground and dives it (min alt under WATER)',
+        minAlt < WATER, `min alt ${minAlt.toFixed(1)} (WATER ${WATER})`)
+}
+
+// ---- #1764 item 4 stage 2: craters sunk below sea are diveable — the original's
+// underwater view. digFlood sinks a shaft under the carpet until its floor goes
+// under WATER (crater() is rng-free, so the dig replays); holding down dips the
+// carpet below the surface, diveOf(gs) reads the depth, and the world muffles.
+// Mutation guide: restore the blanket `max(WATER + 3, ground + 1.6)` floor in
+// step() and the dive, the sub-muffle and the determinism gates all go red.
+{
+    const digFlood = (g) => {
+        let n = 0
+        while (sampleH(g, g.x, g.y) > WATER - 4 && n < 12) { crater(g, g.x, g.y, 14, 24, 0); settleGround(g); n++ }
+        return n
+    }
+    const playDive = () => {
+        const g = makeGame(7)
+        g.shield = 1e9
+        const digs = digFlood(g)
+        let maxSub = 0, minClear = 1e9, mAtSub = 0
+        for (let i = 0; i < 400 && g.end === null; i++) {
+            step(g, { down: true })
+            const sub = diveOf(g)
+            if (sub > 0) {
+                maxSub = Math.max(maxSub, sub)
+                minClear = Math.min(minClear, g.alt - sampleH(g, g.x, g.y))
+                mAtSub = muffleOf(g)
+            }
+        }
+        let rose = -1
+        for (let i = 0; i < 600 && g.end === null; i++) { step(g, { up: true }); if (diveOf(g) === 0) { rose = i; break } }
+        return { digs, maxSub, minClear, mAtSub, rose, mOpen: muffleOf(g), h: stateHash(g) }
+    }
+    const a = playDive(), b = playDive()
+    r.check('#1764 item 4 stage 2: flooded pits are diveable — hold down and the carpet dips below the sea',
+        a.digs > 0 && a.maxSub > 1, `digs=${a.digs} max depth ${a.maxSub.toFixed(1)}u`)
+    r.check('#1764 item 4 stage 2: underwater the carpet is never buried either (hover clearance ≥ 1.4u)',
+        a.minClear > 1.4, `min clearance ${a.minClear.toFixed(1)}`)
+    r.check('#1764 item 4 stage 2: submerged the world muffles, and opens back up once you rise (diveOf = 0)',
+        a.mAtSub === MUFFLE_CUTOFF && a.rose >= 0 && a.mOpen === OPEN_CUTOFF,
+        `sub-muffle ${a.mAtSub}, escaped after ${a.rose} climb ticks, open ${a.mOpen}`)
+    const pur = makeGame(7)
+    const hp0 = stateHash(pur); diveOf(pur); const hp1 = stateHash(pur)
+    r.check('#1764 item 4 stage 2: diveOf is a pure read — it never disturbs the state hash', hp0 === hp1, `${hp0} vs ${hp1}`)
+    r.check('#1764 item 4 stage 2: the dive is deterministic — same seed + same digs + same yoke → identical hash',
+        a.h === b.h, `${a.h} vs ${b.h}`)
 }
 
 // ---- charge-glide: the speed button (Shift / hold ▲ in the shell → inp.boost)
@@ -2102,6 +2170,31 @@ r.check('#1764 item 4: the ocean palette index rides sim ticks (shader clock equ
     && wave.i0 === Math.floor(wave.t0 / 6) % 4 && wave.i1 === Math.floor(wave.t1 / 6) % 4
     && wave.t1 >= wave.t0 + 6 && wave.w1 > wave.w0,
     JSON.stringify(wave))
+
+// #1764 item 4 stage 2: the LIVE world dives a flooded crater, and the mix the
+// shader actually painted (subU) equals the sim-derived depth min(1, sub/6) on a
+// painted frame — the underwater view is driven by gs, never wall time. State-based
+// by intent: the flaky pixel family (#1090/#1703) must not gate the dive.
+const dive = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    window.__game.reset(7)
+    for (let i = 0; i < 10; i++) window.__game.step({}, 1)
+    const dig = t.diveDig()
+    let p = null
+    for (let i = 0; i < 120 && !p; i++) {
+        window.__game.step({ down: true }, 1)
+        for (let k = 0; k < 10 && !p; k++) {
+            await new Promise((res) => setTimeout(res, 40))
+            const q = t.probe()
+            if (q.sub > 1 && q.subU > 0 && Math.abs(q.subU - Math.min(1, q.sub / 6)) < 0.02) p = q
+        }
+    }
+    return p ? { sub: p.sub, subU: p.subU, alt: p.alt, flooded: dig.flooded, floor: dig.floor, digs: dig.digs }
+        : { miss: true, dig, last: t.probe() }
+})
+r.check('#1764 item 4 stage 2: the LIVE carpet dives a flooded crater and the underwater mix reaches the shader (diveOf depth, sim-driven)',
+    !dive.miss && dive.flooded && dive.sub > 1 && dive.subU > 0 && dive.alt < WATER,
+    JSON.stringify(dive))
 
 // ---- GPU world pass (#1083): the GPU must actually render the world, craters
 // must visibly feed the terrain upload (glow), lava cools, scorch persists.

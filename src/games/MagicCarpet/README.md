@@ -402,9 +402,17 @@ see item 5).
   tracing the shoreline. **CLOSED by #1764 item 4 stage 1:** the depth bands are
   now hard 4-level bands whose palette index marches one level every 6 sim ticks
   (`WAVE_CYCLE`) — the original's 16-colour palette animation walking through the
-  wave bands, clocked on sim ticks (determinism intact). Still open: band shapes
-  sit still while the colours walk (true travelling crests), and no underwater
-  view when cratered below sea.
+  wave bands, clocked on sim ticks (determinism intact).
+  **CLOSED by #1764 item 4 stage 2:** ground sunk below sea level is diveable —
+  where the ground reads below `WATER` the carpet's floor drops to ground+1.6
+  (dry ground keeps the old never-below-`WATER`+3 law), `diveOf(gs)` is the pure
+  depth readout (never hashed), and while it is > 0 the composite paints the
+  underwater view: red-eating blue grade, sim-ticked caustic bands and rising
+  bubbles, the sky dome turned to deep water, and `muffleOf` closes the world
+  like the veil does. carpetcheck +9 gates (seed-7 dive sweep, dig/dive/muffle/
+  determinism/purity, source pins, live shader-mix gate). Still open: band shapes
+  sit still while the colours walk (true travelling crests), underwater handling
+  (drag, spell limits), and the sea surface seen from below.
 - **CLOSED by #1694:** terrain deformation ripple — craters, RAISE mounds and
   DISSOLVE wounds now unfold over CRUMBLE_T=10 ticks (ease-in collapse,
   ease-out swell, a shockwave rim that settles to exactly zero) with the
