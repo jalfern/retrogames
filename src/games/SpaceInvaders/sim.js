@@ -151,7 +151,23 @@ export const watchRoute = (s) => {
     const pathOpen = (x) => lanes.every((lx) => (lx - Math.min(pc, x)) * (lx - Math.max(pc, x)) >= 0 || Math.abs(lx - pc) < 12)
     const leadOf = (i) => {
         const flight = (PLAYER_Y - BULLET_H - i.y) / 5
-        return Math.max(minX, Math.min(maxX, i.x + INVADER_W / 2 + s.dir * waveSpeed(s.wave) * flight))
+        // #1637 b20 — fold the edge bounce into the meeting point: a straight
+        // lead is fiction once the column reverses mid-flight (measured bursts of
+        // edge-bounce misses stretched the inter-kill gaps past 230 ticks). The
+        // whole formation reverses together (step's hitEdge rule), so predict:
+        // march to the bounce, then travel the other way for the rest of the
+        // shot's flight. Flight <= ~40 t never reaches a second bounce at wave 1.
+        const spAbs = waveSpeed(s.wave)
+        let edgeDist = Infinity
+        for (const j of s.invaders) if (j.alive) edgeDist = Math.min(edgeDist, s.dir > 0 ? GW - 4 - INVADER_W - j.x : j.x - 4)
+        const tEdge = spAbs > 0 ? Math.max(0, edgeDist) / spAbs : flight
+        let x = i.x + INVADER_W / 2 + s.dir * spAbs * Math.min(flight, tEdge)
+        let rem = flight - tEdge
+        let d = -s.dir
+        const span = (GW - 8 - INVADER_W) / spAbs
+        let guard = 0
+        while (rem > 0 && guard++ < 3) { x += d * spAbs * Math.min(rem, span); rem -= span; d = -d }
+        return Math.max(minX, Math.min(maxX, x))
     }
     // Law 2: the lowest invader the forts don't shield — and where the fort
     // choice ties, the one whose meeting point flies over open sky.
@@ -175,6 +191,30 @@ export const watchRoute = (s) => {
     if (!best) return input
     // Law 3: the meeting point of our shot and the marching target.
     const aimX = leadOf(best)
+    // #1637 b20 RE-AIM — kill what is aligned NOW. Row-dominant aiming marched
+    // the ship toward the lowest invader's lead column while OTHER invaders sat
+    // already aligned over open sky (~500 ticks per seed of green fire gates,
+    // measured). An aligned shot that can leave this tick beats walking to a
+    // greener column: the descent law still owns the choice whenever nothing is
+    // lined up, and the fort law is unchanged for this pass too.
+    if (!s.playerBullet && freeAt(pc)) {
+        let shot = null
+        let shotBlocked = true
+        for (const i of s.invaders) {
+            if (!i.alive) continue
+            const blocked = fortBlocks(s, i.x + INVADER_W / 2)
+            if (!(blocked || !fortBlocks(s, pc))) continue // the fire gate for this target
+            if (Math.abs(leadOf(i) - pc) <= 2.5) {
+                if (!shot || i.y > shot.y
+                    || (i.y === shot.y && !blocked && shotBlocked)
+                    || (i.y === shot.y && blocked === shotBlocked && Math.abs(i.x + INVADER_W / 2 - pc) < Math.abs(shot.x + INVADER_W / 2 - pc))) {
+                    shot = i
+                    shotBlocked = blocked
+                }
+            }
+        }
+        if (shot) { input.fire = true; return input }
+    }
     // Law 1: stand free of every contested column; fleeing takes priority, and
     // no route ever threads between two falling shots.
     let goal = null
