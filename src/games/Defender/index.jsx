@@ -404,6 +404,7 @@ const DefenderGame = () => {
             resize()
             startRun()
             isAttractMode = true // the first run demos itself until a key or tap
+            setAttractUi(true) // #1637: startRun() flipped the mirror — the pill belongs on the attract screen
 
             window.addEventListener('keydown', handleKeyDown)
             window.addEventListener('keyup', handleKeyUp)
