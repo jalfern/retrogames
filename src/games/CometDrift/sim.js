@@ -49,6 +49,15 @@ export const CFG = {
     // near-straight (|k| ≲ 1e-4) accrue almost nothing and cannot farm a
     // turbo. Radius at full accrual = 3300px; nothing accrues at k=0.
     driftBendK: 1 / 3300,
+    // #1857 keyboard tap notch: a digital (keyboard/pad-arrow) steer tap held
+    // ≤ tapTicks deflects at tapLevel, a sustained hold still reaches full
+    // ±1 lock — the precision middle #431 gave the stick (dead zone + curve +
+    // gain) and left out of the keyboard path, where every correction was
+    // full lock. Ladder charge accrues from bend weight, not steer, so the
+    // ladder stays a zigzag game (#517: tier 1 stays unreachable one-way);
+    // analog `inp.steer` (stick pipeline, harness pins) bypasses; the notch
+    // is `isPlayer`-gated, so the CPU brains' digital lines are untouched.
+    tapTicks: 5, tapLevel: 0.55,
 }
 
 // the drift charge ladder: hold 50 ticks for the blue spark and a small
@@ -282,6 +291,7 @@ function mkKart(def, row) {
         finished: false, finishT: 0,
         offroad: false, bumpCd: 0, anim: 0, goT: 0,
         mist: 0, mistWide: false, wpress: 0,
+        tapD: 0, tapT: 0, // #1857: digital-steer hold length for the tap notch
     }
 }
 
@@ -354,7 +364,22 @@ function drive(g, k, inp) {
         // #1690: a chained boost rides overAdd u per link above the tier cap
         const cap = top + (boost ? TIERS[k.boostTier].over + k.link * LINK.overAdd : 0)
         if (boost) { k.boostT--; if (k.v < cap) k.v += CFG.boostAcc; if (k.boostT === 0) { k.boostTier = -1; k.link = 0; k.linkCarry = 0 } }
-        const steer = typeof inp.steer === 'number' ? inp.steer : ((inp.l ? -1 : 0) + (inp.r ? 1 : 0))
+        const rawDir = (inp.l ? -1 : 0) + (inp.r ? 1 : 0)
+        let steer = rawDir
+        if (typeof inp.steer === 'number') {
+            // #431 analog stick / harness pin: shaped upstream — never notched.
+            steer = inp.steer
+            k.tapD = 0; k.tapT = 0
+        } else if (k.isPlayer) {
+            // #1857 keyboard tap notch (see CFG.tapTicks): a tap held ≤ tapTicks
+            // deflects at tapLevel; a sustained hold reaches full ±1 from the
+            // next tick, so the zigzag ladder technique (#517) is unchanged —
+            // only the twitch of short line-correction flicks gets softer.
+            if (rawDir !== 0 && rawDir === k.tapD) k.tapT++
+            else if (rawDir !== 0) { k.tapD = rawDir; k.tapT = 1 }
+            else { k.tapD = 0; k.tapT = 0 }
+            if (rawDir !== 0 && k.tapT <= CFG.tapTicks) steer = rawDir * CFG.tapLevel
+        }
         const thr = typeof inp.thr === 'number' ? inp.thr : (inp.u ? 1 : 0)
         const brk = typeof inp.brk === 'number' ? inp.brk : (inp.d ? 1 : 0)
         k.braking = brk > 0 ? 1 : 0
