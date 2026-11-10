@@ -8,6 +8,7 @@
 
 import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
+    railOpen,
     RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
 import { parseCall, intentLabel, ACCEPTED_HINT, applyCallKey, KEY_CALL_HINT, CALL_LINE_MAX } from '../src/games/TalkMeDown/voice.js'
@@ -537,7 +538,7 @@ const ok = (name, cond, extra = '') => {
     const artSrc15 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
     ok('the front view prints no serial (source pin)', !/fillText\(\s*'SER\s*'/.test(viewSrc))
     ok('the back plate draws the serial (source pin)',
-        /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial,\s*gs\.held\)/.test(viewSrc))
+        /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial,\s*gs\.held[,)]/.test(viewSrc))
     ok('seat 2 gets the flip coach line, fed by gs.flip (source pin)',
         /ASK THEM TO FLIP IT!/.test(artSrc15) && /BACK IS UP/.test(artSrc15) &&
         /drawManual\([\s\S]{0,240}, gs\.flip\)/.test(viewSrc))
@@ -603,7 +604,12 @@ const ok = (name, cond, extra = '') => {
         const gs = createGame(seed, 2); gs.round = 5; buildBomb(gs)
         const di = gs.modules.findIndex(m => m.stamp === 'D6'); if (di < 0) continue
         const b = gs.features.batteries, d = gs.modules[di]
-        step(gs, { up: true }); step(gs, { a: true }); step(gs, { down: true })
+        step(gs, { up: true })
+        // #1917 THE RAIL: the page procedure reads the rail first — home the
+        // hand to the open-end cell, then press. (Was a bare tap: pre-rail the
+        // plate had no geometry; the drain itself is unchanged.)
+        for (let o = railOpen(gs.tray); gs.sel !== o; o = railOpen(gs.tray)) step(gs, gs.sel > o ? { left: true } : { right: true })
+        step(gs, { a: true }); step(gs, { down: true })
         for (let g = 0; gs.cursor.mod !== di && g < 8; g++) step(gs, { down: true })
         while (d.dial !== b - 1) step(gs, d.dial < b - 1 ? { right: true } : { left: true })
         const t = computeTarget(gs, d)
@@ -636,6 +642,7 @@ const ok = (name, cond, extra = '') => {
         for (let seed = 1; seed <= 300; seed++) { const g = createGame(seed, 1); if (g.features.batteries === 2) { s = g; break } }
         const b0 = s.features.batteries
         step(s, { up: true }); drainEvents(s)
+        for (let o = railOpen(s.tray); s.sel !== o; o = railOpen(s.tray)) step(s, s.sel > o ? { left: true } : { right: true }) // #1917 home the rail
         step(s, { a: true }); step(s, { a: true }); step(s, { a: true }) // one ~3-tick press
         const oneOut = s.features.batteries === b0 - 1 && s.held === 1 && s.pulls === 1
         step(s, { a: false }); step(s, { a: true })                        // release, press again
@@ -662,7 +669,9 @@ const ok = (name, cond, extra = '') => {
                 const rule = gs.modules.find(m => m.stamp === 'D5' || m.stamp === 'G5')
                 if (!rule) continue
                 const t0 = computeTarget(gs, rule)
-                step(gs, { up: true }); step(gs, { a: true })
+                step(gs, { up: true })
+                for (let o = railOpen(gs.tray); gs.sel !== o; o = railOpen(gs.tray)) step(gs, gs.sel > o ? { left: true } : { right: true }) // #1917 home the rail
+                step(gs, { a: true })
                 const t1 = computeTarget(gs, rule)
                 const shift = v => v.map((n, i) => (rule.stamp === 'G5' && i === 1 ? n : n - 1))
                 const want = rule.stamp === 'D5' ? [t0.dial - 1] : shift(t0.seq)
@@ -704,13 +713,13 @@ const ok = (name, cond, extra = '') => {
     // the remote snapshot carries them (additive hp; old snaps restore full).
     {
         const x = createGame(777, 1); const y = createGame(777, 1); const plain = createGame(777, 1)
-        step(x, { up: true }); step(x, { a: true })
-        step(y, { up: true }); step(y, { a: true })
+        const home = g => { step(g, { up: true }); for (let o = railOpen(g.tray); g.sel !== o; o = railOpen(g.tray)) step(g, g.sel > o ? { left: true } : { right: true }); step(g, { a: true }) } // #1917 home the rail before the drain
+        home(x); home(y)
         ok('drained sims hash equal; drained differs from undrained', hash(x) === hash(y) && hash(x) !== hash(plain))
         const sx = simState(x)
         ok('simState carries held/pulls (harness visibility)', sx.held === x.held && sx.pulls === x.pulls && (x.held === 1 || x.features.batteries === 0))
         const netSrc = readFileSync(new URL('../src/games/TalkMeDown/net.js', import.meta.url), 'utf8')
-        ok('the snapshot wires held/pulls (source pin)', /hp:\s*\[gs\.held,\s*gs\.pulls\]/.test(netSrc) && /snap\.hp\s*\?\s*snap\.hp\[0\]/.test(netSrc))
+        ok('the snapshot wires held/pulls (source pin)', /hp:\s*\[gs\.held,\s*gs\.pulls[,]/.test(netSrc) && /snap\.hp\s*\?\s*snap\.hp\[0\]/.test(netSrc))
     }
 
     // (j) source pins — the drain lives once, in the engine, edge-latched; the
@@ -721,7 +730,7 @@ const ok = (name, cond, extra = '') => {
         ok('solvePad drains for pull rules (source pin)', /ruleOf\(x\)\.pull && gs\.pulls === 0 && gs\.features\.batteries >= 1/.test(engSrc16))
         ok('D6 carries its pull marker (source pin)', /id: 'D6', pull: true/.test(engSrc16))
         const artSrc16 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
-        ok('the back plate draws the pocket and the action hint (source pin)', /IN HAND/.test(artSrc16) && /A PUTS IT BACK/.test(artSrc16) && /A PULLS ONE OUT/.test(artSrc16))
+        ok('the back plate draws the pocket and the action hint (source pin)', /IN HAND/.test(artSrc16) && /A PUTS IT BACK/.test(artSrc16) && /A PULLS IT OUT/.test(artSrc16) && /EMPTY SLOT/.test(artSrc16) && /BLOCKED/.test(artSrc16))
     }
 }
 
