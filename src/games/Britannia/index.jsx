@@ -19,7 +19,7 @@ import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
 import { containMap } from '../../utils/fitCanvas'
 import { zipRead, makeWorld, findStars, isSea, MAPW } from './britmap.js'
-import { WX, WX_NAME, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } from './weather.js'
+import { WX, WX_NAME, WX_WIND_NAME, windNow, driftOf, weatherAt, flashAt, flashOnset, isFrozen, reliefBias } from './weather.js'
 import { AMB, AMB_NAME, AMB_CELL, ambientAt, flockOf, flightOf, progressOf } from './ambient.js'
 import { faceFor, walkFrame, drawAvatar } from './avatar.js'
 import { WARP_LEN, warpFlash, warpRing, warpMotes, warpSwapAt } from './warp.js'
@@ -90,6 +90,7 @@ const BritanniaGame = () => {
             face: 'down', anim: 0, dismissed: -1, wasTown: false,
             sel: 1, gate: -1, hoverRow: -1, done: false, camX: 0, camY: 0, wx: WX.CLEAR, fl: 0, thunder: -1,
             amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
+            wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
         })
 
         const load = async () => {
@@ -157,6 +158,19 @@ const BritanniaGame = () => {
                 }
             }
             if ((S.wx === WX.RAIN || S.wx === WX.STORM) && (S.tick % 42) === 0) audioController.playNoise(0.14, 0.04)
+            // #1853: the pressure cycle turns at epoch boundaries — name the
+            // wind shift so the player can read WHY the sky races or stalls.
+            // A sky change this tick keeps its own voice; GOAL stays king.
+            const wind = windNow(S.tick, S.seed)
+            if (wind !== S.wind) {
+                S.wind = wind
+                if (sky === S.wx && !/^GOAL/.test(S.toastMsg || '')) {
+                    if (wind === 3) { S.toast = 110; S.toastMsg = 'A gale! The fronts race east.'; audioController.playSweep(140, 320, 0.8, 'sawtooth', 0.08) }
+                    else if (wind === 2) { S.toast = 110; S.toastMsg = 'A fresh wind takes hold.'; audioController.playSweep(160, 240, 0.7, 'triangle', 0.06) }
+                    else if (wind === 0) { S.toast = 110; S.toastMsg = 'A high settles — the fronts stall.'; audioController.playTone(220, 0.6, 'sine', 0.05) }
+                    else { S.toast = 110; S.toastMsg = 'The wind eases to steady.'; audioController.playTone(260, 0.4, 'sine', 0.04) }
+                }
+            }
             S.fl = flashAt(S.x, S.y, S.tick, tod(), S.seed, terrainAt)
             if (flashOnset(S.x, S.y, S.tick, tod(), S.seed, terrainAt)) S.thunder = S.tick + 26
             if (S.thunder === S.tick) { audioController.playNoise(0.7, 0.2); audioController.playSweep(72, 28, 0.9, 'sawtooth', 0.14) }
@@ -631,7 +645,9 @@ const BritanniaGame = () => {
             ctx.fillText('C classic · ? help', VIEW_W - rx, baseY - 1)
             const helpW = ctx.measureText('C classic · ? help').width
             ctx.fillStyle = S.wx === WX.STORM ? '#e0a060' : S.wx === WX.SNOW ? '#e8f2ff' : S.wx === WX.RAIN ? '#7fb0e0' : '#9fb4d8'
-            ctx.fillText(WX_NAME[S.wx], VIEW_W - rx - helpW - 16, baseY - 1)
+            // #1853: the wind is named only when it is NOT the steady baseline —
+            // a still or racing sky is what deserves the player's eye.
+            ctx.fillText(WX_NAME[S.wx] + (S.wind === 1 ? '' : ` ${WX_WIND_NAME[S.wind]}`), VIEW_W - rx - helpW - 16, baseY - 1)
             ctx.textAlign = 'left'
             if (S.toast > 0) {
                 S.toast--
@@ -879,6 +895,7 @@ const BritanniaGame = () => {
                     face: S.face, frame: walkFrame(S.anim, S.cd > 0), anim: S.anim,
                     gates: gates.map(g => [g.x, g.y]), tod: tod(),
                     weather: WX_NAME[S.wx], frozen: isFrozen(S.y), flash: S.fl > 0,
+                    wind: S.wind, windName: WX_WIND_NAME[S.wind], drift: driftOf(S.tick, S.seed),
                     shadow: reliefBias(S.x, S.y, terrainAt),
                     ambient: AMB_NAME[S.amb],
                     swell: crest(S.x, S.y, S.tick),

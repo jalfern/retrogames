@@ -1,11 +1,17 @@
 // BRITANNIA weather — pure sim, no DOM (#1135): the sky is decided per
 // 16x16-tile region from a hash of (region, seed), and the whole pattern
-// rides west-to-east at one region per WX_EPOCH (#1135 fronts) — mid-latitudes
-// blow off the ocean like they do on Earth. So rain/snow/storm are
+// rides west-to-east on the zonal wind (#1135 fronts) — mid-latitudes blow
+// off the ocean like they do on Earth. So rain/snow/storm are
 // deterministic (harness-replayable), coherent in space and time (a cell keeps
 // its kind as it travels), yet vary across the land. North of the snow line
 // precipitation falls as snow; lightning only ever strikes at night, inside a
 // storm, and rides the storm cell east.
+//
+// #1853 — the wind has weather of its own: a seeded pressure cycle sets the
+// drift SPEED each epoch (0 becalmed, 1 steady, 2 fresh, 3 gale regions), and
+// the pattern's drift is the running sum. Fronts still only ride east, cells
+// still keep their kind; what varies is how fast the sky travels — a gale
+// races fronts across the map in one epoch, a high parks a storm over the moor.
 
 export const WX = { CLEAR: 0, RAIN: 1, SNOW: 2, STORM: 3 }
 export const WX_NAME = ['CLEAR', 'RAIN', 'SNOW', 'STORM']
@@ -17,7 +23,6 @@ export const UPLIFT_D = 8
 export const SHADOW_MAX = 0.22
 export const UPLIFT_MAX = 0.12
 export const SUMMIT = 0.15
-export const driftOf = (tick) => Math.floor(tick / WX_EPOCH)
 const FLASH_PERIOD = 90
 const FLASH_FRAMES = 5
 
@@ -26,6 +31,32 @@ const hash3 = (a, b, c) => {
     h = (h ^ (h >>> 13)) * 1274126177
     return ((h ^ (h >>> 16)) >>> 0) / 4294967296
 }
+
+// the zonal wind for one epoch: a seeded pressure cycle. Distribution leans to
+// steady/fresh weather (40/35%), with stalling highs (15%) and rare gales (10%).
+export const windOf = (epoch, seed = 0) => {
+    const h = hash3(epoch, 17, ((seed ^ 0x9e37) * 2654435761) | 0)
+    return h < 0.4 ? 1 : h < 0.75 ? 2 : h < 0.9 ? 0 : 3
+}
+export const WX_WIND_NAME = ['BECALMED', 'STEADY', 'FRESH', 'GALE']
+
+// drift = cumulative regions travelled by epoch n, memoized per seed so the
+// per-frame weatherAt calls stay O(1). The memo only ever appends the same
+// deterministic series, so replays and hashes see identical values.
+const _driftMemo = new Map()
+export function driftOf(tick, seed = 0) {
+    const n = Math.floor(tick / WX_EPOCH)
+    if (n < 0) { // swell memory asks before time began: integrate backward
+        let d = 0
+        for (let e = n; e < 0; e++) d += windOf(e, seed)
+        return -d
+    }
+    let acc = _driftMemo.get(seed)
+    if (!acc) { acc = [0]; _driftMemo.set(seed, acc) }
+    while (acc.length <= n) acc.push(acc[acc.length - 1] + windOf(acc.length - 1, seed))
+    return acc[n]
+}
+export const windNow = (tick, seed = 0) => windOf(Math.floor(tick / WX_EPOCH), seed)
 
 export const regionOf = (x, y) => [x >> 4, y >> 4]
 export const isFrozen = (y) => y < SNOW_LINE
@@ -52,7 +83,7 @@ export function reliefBias(x, y, terrainAt) {
 
 export function weatherAt(x, y, tick, seed = 0, terrainAt = null) {
     const [gx, gy] = regionOf(x, y)
-    let r = hash3(gx - driftOf(tick), gy, seed + 1013)
+    let r = hash3(gx - driftOf(tick, seed), gy, seed + 1013)
     const b = reliefBias(x, y, terrainAt)
     if (b !== 0) r = Math.min(0.999, Math.max(0.001, r + b))
     if (r < 0.62) return WX.CLEAR
@@ -69,7 +100,7 @@ export function flashAt(x, y, tick, tod, seed = 0, terrainAt = null) {
     if (!stormNight(tod)) return 0
     const [gx, gy] = regionOf(x, y)
     const b = Math.floor(tick / FLASH_PERIOD)
-    if (hash3(gx - driftOf(tick), gy, (b ^ seed) * 7 + 31) > 0.28) return 0
+    if (hash3(gx - driftOf(tick, seed), gy, (b ^ seed) * 7 + 31) > 0.28) return 0
     const ph = tick % FLASH_PERIOD
     return ph < FLASH_FRAMES ? 1 - ph / FLASH_FRAMES : 0
 }

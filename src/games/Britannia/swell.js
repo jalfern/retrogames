@@ -108,10 +108,10 @@ export function dimples(tx, ty, intensity, t, seed = 0) {
 // ---- rain winds the swell (#1822) --------------------------------------
 // A front that passed leaves the sea it whipped still heaving. seaRough
 // samples the sky over this tile at the epoch when it arrived and the three
-// behind: the drift carries a cell one region east per WX_EPOCH, so reading
-// weatherAt at (t - d*WX_EPOCH) reads exactly the cell that stood over this
-// tile d epochs ago — the wind memory is the trail of fronts that moved off
-// it. Weights halve per epoch back (1 / 0.5 / 0.24 / 0.11), clamped <=1:
+// behind: whatever the drift speed (#1853 makes that 0..3 regions per epoch),
+// reading weatherAt at (t - d*WX_EPOCH) reads exactly the sky that stood over
+// this tile d epochs ago — the wind memory is the trail of fronts that moved
+// off it. Weights halve per epoch back (1 / 0.5 / 0.24 / 0.11), clamped <=1:
 // a storm now is a full sea, a storm one epoch gone is still half up, and a
 // clear-for-four sea is bit-exactly the calm field today's gates prove.
 // Pure derivation from weatherAt — same tile + tick + seed, same state; the
