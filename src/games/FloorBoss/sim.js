@@ -72,6 +72,20 @@ const TRUCK_MIN = 40 // min dwell after the pad empties (tap sends early)
 export const FREIGHT_PER_BOX = 6
 export const FULL_TRAILER = 3 // boxes aboard at send-off that make a haul "full"
 export const DISPATCH_FEE = 5
+// Freight tiers (#1927): distance classes ride the parcel — far posts pay more
+// freight, and the road is what it costs. Dest rolls at pack time on a
+// SIDE-STREAM rng (gs.destRng): the module stream (orders, conveyor, rush)
+// generates byte-identically to the pre-tier floor (#1917 law). A full trailer
+// (FULL_TRAILER law untouched) pays FREIGHT_PER_BOX × FREIGHT_MULT per box by
+// the destination of the box actually aboard; dribbles still ride free. At
+// send-off the haul commits TRIP_TICKS by its FARTHEST loaded class, and the
+// truck answers neither the call law nor a tap-call while away — a tap on the
+// road is a silent wait, never an express fee for a truck that cannot come.
+export const DEST_LOCAL = 0, DEST_REGIONAL = 1, DEST_LONGHAUL = 2
+export const DEST_NAMES = ['LOCAL', 'REGIONAL', 'LONG HAUL']
+export const FREIGHT_MULT = [1, 2, 3]
+export const TRIP_TICKS = [0, 750, 1650]
+export const DEST_ODDS = [0.58, 0.28, 0.14] // LOCAL / REGIONAL / LONG HAUL
 export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
 const TRUCK_BACK = 2.6, TRUCK_FWD = 3.2
 const JAM_WAIT = 60 // waited this long next to another waiter -> JAM
@@ -188,13 +202,19 @@ function callTruck(gs, via) {
 function sendTruck(gs, tap) {
     const tr = gs.truck
     if (tr.carry >= FULL_TRAILER) {
-        const amt = FREIGHT_PER_BOX * tr.carry
+        // freight tiers (#1927): each box pays by its own destination class —
+        // LOCAL hauls ride the flat rate, far posts multiply the freight
+        let amt = 0
+        for (let d = 0; d < FREIGHT_MULT.length; d++) amt += FREIGHT_PER_BOX * FREIGHT_MULT[d] * (tr.tiers[d] || 0)
         gs.score += amt
         gs.freight += amt
-        gs.ev.push({ type: 'bonus', amt, carry: tr.carry })
+        gs.ev.push({ type: 'bonus', amt, carry: tr.carry, far: tr.far })
     }
+    // the road is the cost (#1927): the trip commits by the farthest class
+    // aboard — an empty dribble still drives home LOCAL-cadenced
+    tr.away = tr.far >= 0 ? TRIP_TICKS[tr.far] : 0
     tr.mode = 'leave'
-    gs.ev.push({ type: 'truckout', tap, carry: tr.carry })
+    gs.ev.push({ type: 'truckout', tap, carry: tr.carry, far: tr.far })
 }
 
 function cellClick(gs, x, y) {
@@ -248,7 +268,10 @@ function cellClick(gs, x, y) {
         // #1911 load-out verb: tapping the shipping pad calls a waiting truck
         // early (before cap/age) or sends a parked one before its dwell ends.
         const tr = gs.truck
-        if (tr.mode === 'out' && gs.pad.length) { callTruck(gs, 'tap'); return 'call' }
+        if (tr.mode === 'out' && gs.pad.length) {
+            if (tr.away > 0) { gs.ev.push({ type: 'peek', x, y }); return 'peek' } // on the road — silent wait, no fee for a truck that cannot come (#1927)
+            callTruck(gs, 'tap'); return 'call'
+        }
         if (tr.mode === 'park') { sendTruck(gs, true); return 'send' }
         gs.ev.push({ type: 'peek', x, y })
         return 'peek'
@@ -381,8 +404,9 @@ export function makeGame(seed = 1337) {
         prevA: false, prevB: false,
         robots: [], racks: [], staging: [], orders: [], conv: [],
         arm: { held: null, pose: 0, swing: 0, swingT0: 0, target: null, heldT: 0 }, // pose 0 docked, ramps to 1 while loading; swing/target = servo self-stow (#1872)
-        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0 }, // load-out (#1911): mode out | back | park | leave
-        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay } (#1911/#1921)
+        truck: { x: TRUCK_HOME, mode: 'out', dwell: 0, loadT: 0, carry: 0, away: 0, far: -1, tiers: [0, 0, 0] }, // load-out (#1911): mode out | back | park | leave; away/far/tiers = freight tiers (#1927)
+        destRng: mulberry32((seed ^ 0x9e3779b9) >>> 0), // freight-tier side stream (#1927): dest rolls never touch the module stream
+        pad: [], // staged parcels awaiting a trailer, { n: boxes, since: tick, esc: escrowed pay, d: destination class } (#1911/#1921/#1927)
         escrow: 0, paid: 0, freight: 0, fees: 0, // freight-line ledger (#1921)
         shipped: 0, expired: 0, stows: 0, quotaHit: false,
         spawnT: 60, orderT: 240, convT: 0, packT: 30,
@@ -433,8 +457,12 @@ function tryShip(gs) {
         const pay = Math.round(base * (rush ? 1.5 : 1) * (onTime ? 1 : 0.4)) + (onTime ? ONTIME_BONUS * o.items.length : LATE_PAY)
         gs.escrow += pay // #1921 freight line: the pack books it, the trailer pays it
         gs.shipped++
-        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921)
-        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id })
+        // freight tiers (#1927): the parcel gets its destination when it packs —
+        // rolled on the side stream so the module stream stays byte-identical
+        const dr = gs.destRng()
+        const d = dr < DEST_ODDS[DEST_LONGHAUL] ? DEST_LONGHAUL : dr < DEST_ODDS[DEST_LOCAL] + DEST_ODDS[DEST_REGIONAL] ? DEST_REGIONAL : DEST_LOCAL
+        gs.pad.push({ n: o.items.length, since: gs.tick, esc: pay, d }) // stage the parcel for a trailer (#1911); escrow rides the parcel (#1921), destination joins it (#1927)
+        gs.ev.push({ type: onTime ? 'ship' : 'late', pay, o: o.id, d })
     }
 }
 
@@ -713,8 +741,12 @@ export function step(gs, pads = [{}]) {
     // loads one box per TRUCK_LOAD ticks; once the pad is empty it dwells the
     // minimum (a tap sends it early), then drives off LOADED. If parcels wait
     // when it gets home, the call law sends it right back out.
+    // Freight tiers (#1927): a departed haul is ON THE ROAD — away ticks burn
+    // every tick, and neither the call law nor a tap reaches a truck that is
+    // not at home. Far hauls buy their rate with pickups the floor loses.
     const tr = gs.truck
-    if (tr.mode === 'out' && gs.pad.length) {
+    if (tr.away > 0) tr.away--
+    if (tr.mode === 'out' && !tr.away && gs.pad.length) {
         const age = gs.tick - gs.pad[0].since
         if (gs.pad.length >= PAD_CAP || age >= PAD_AGE) callTruck(gs, 'law')
     }
@@ -729,6 +761,8 @@ export function step(gs, pads = [{}]) {
                 const p = gs.pad[0]
                 p.n-- // box by box — a three-box parcel takes three cycles
                 tr.carry++
+                tr.tiers[p.d || 0]++ // freight tiers (#1927): the trailer knows what rides in it
+                if ((p.d || 0) > tr.far) tr.far = p.d || 0
                 if (p.n <= 0) {
                     gs.pad.shift()
                     // #1921 freight line: the last box aboard frees the parcel's
@@ -744,7 +778,7 @@ export function step(gs, pads = [{}]) {
         if (!gs.pad.length && tr.dwell >= TRUCK_MIN) sendTruck(gs, false)
     } else if (tr.mode === 'leave') {
         tr.x += TRUCK_FWD
-        if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0 }
+        if (tr.x >= TRUCK_EXIT) { tr.x = TRUCK_HOME; tr.mode = 'out'; tr.carry = 0; tr.tiers = [0, 0, 0]; tr.far = -1 } // empty at the depot, ready for the next call (#1927)
     }
 
     // quota rings whenever the score crosses it (the till now rings at the
@@ -767,7 +801,7 @@ export function stateHash(gs) {
     for (const b of gs.robots) s += `${b.id}@${b.x},${b.y}c${b.carry || '-'}${b.broken ? 'B' : ''}${b.jam ? 'J' : ''}t${b.task.kind};`
     for (const r of gs.racks) s += `${r.x},${r.y}[${r.items.join('')}];`
     s += `S[${gs.staging.join('')}]|`
-    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921), additive (#1373 law)
+    s += `T[${gs.truck.mode}:${gs.truck.carry}:${Math.round(gs.truck.x)}:${gs.truck.away}:${gs.truck.tiers.join('')}]P[${gs.pad.map((p) => `${p.n}:${p.esc || 0}:${p.d || 0}`).join(',')}]|` // load-out (#1911) + per-parcel escrow (#1921) + tiers/road (#1927), additive (#1373 law)
     s += `E[${gs.escrow}:${gs.paid}:${gs.freight}:${gs.fees}]|` // freight ledger, additive (#1373 law, #1921)
     for (const o of gs.orders) s += `${o.id}{${o.items.join(',')}}${o.due - gs.tick}${o.prio ? '!' : ''};`
     for (const c of gs.conv) s += `${c.kind}@${c.x};`
@@ -798,6 +832,9 @@ export function state(gs) {
         conveyor: gs.conv.map((c) => ({ kind: c.kind, x: c.x })),
         armHeld: gs.arm.held,
         pad: gs.pad.map((p) => p.n),
+        padDest: gs.pad.map((p) => p.d || 0), // freight tiers (#1927): the eye reads where each staged parcel is bound
+        truckAway: gs.truck.away,
+        truckFar: gs.truck.far,
         escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees, // freight-line ledger (#1921)
         padAge: gs.pad.length ? gs.tick - gs.pad[0].since : 0,
         truck: gs.truck.mode,
@@ -852,8 +889,9 @@ export function createAutopilot() {
         // flow beats fees, and a trailer that leaves loaded with FULL_TRAILER
         // boxes earns freight anyway — step in just before the age law, and in
         // the last 10 s reel everything in: escrow stranded at the whistle pays
-        // nothing, because money follows freight.
-        if (!target && !goal && s.truck === 'out' && s.pad.length
+        // nothing, because money follows freight. #1927: a truck on the road
+        // answers nothing — don't burn pad steps tapping at an empty dock.
+        if (!target && !goal && s.truck === 'out' && !s.truckAway && s.pad.length
             && (s.pad.length >= 2 || s.padAge >= PAD_AGE - 20 || s.tick > SHIFT - 1200)) goal = OUT_CELLS[0]
         if (!target && !goal) return pad
 
