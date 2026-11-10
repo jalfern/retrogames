@@ -5,26 +5,39 @@
 // partner holds the manual and prints orders on the LCD rail. The sim is pure,
 // seeded and deterministic (seed + per-seat pads => identical hashes, #494);
 // rules + generation live in ./engine.js, the look in ./art.js.
+// #1880 lifts the couch into two rooms: ?net=host opens a squad room (you keep
+// the bomb), ?net=join&room=CODE seats you at the manual. One seed runs the
+// twin engine on both boxes; pads cross the wire in lockstep (./net.js).
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import PauseOverlay from '../../components/PauseOverlay'
 import VirtualControls from '../../components/VirtualControls'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import Lobby from '../../components/Lobby.jsx'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { GAMES } from '../../config/games'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, isRecording, recordLiveTick, recordVoiceCmd, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, armLiveCapture } from '../../utils/gameContract'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord'
 import { startSpeechListen, speechSupported } from '../../utils/speechListen'
+import { makeTransport } from '../../utils/linkPeers.js'
+import { createLobby, lobbyRole, relayFromQuery } from '../../utils/lobby.js'
 import {
     createGame, step, simState, solvePad, computeTarget, hash, drainEvents,
     QUOTA_BOMBS, MAX_STRIKES, WIRE_COLORS, GLYPHS, RULEBOOK,
 } from './engine.js'
+import {
+    createTmdSync, snapshotNet, restoreNet, packSnap,
+    DROP_GRACE, HASH_EVERY, RESEAT_LEAD, RESEAT_WINDOW,
+} from './net.js'
 import { parseCall, intentLabel } from './voice.js'
 import { sfx } from './audio.js'
 import * as ART from './art.js'
 
 const FIXED_DT = 1000 / 60
+// #1880: one URL decides the role — ?net=host opens the squad room,
+// ?net=join&room=CODE sits at the manual. Every other query is the couch game.
+const NET_ROLE = typeof window !== 'undefined' ? lobbyRole(window.location.search) : null
 // #1373: tap-to-talk is gated to touch surfaces (the #1287 lesson: phones
 // have no V key). `?touch=1` forces it so a desktop browser harness can pin
 // the pill without emulating a tablet.
@@ -38,6 +51,7 @@ const ATTRACT_MSGS = [
     'THREE STRIKES AND THE BLOCK GLOWS',
     'UP AT MODULE 1 TILTS THE BOMB OVER',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
+    'FIND A SQUAD — ONE BOMBS, ONE READS (?net=host)',
 ]
 
 // #1473: honor ?seed=N so a filed feedback report's seed replays this exact
@@ -73,6 +87,18 @@ export default function TalkMeDown() {
     const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
     const pendingWatchRef = useRef(false) // #1637: Y banked at attract/select — seats when the run starts
+    // #1880 remote seats: the lobby, the lockstep core and the link state all
+    // live here; the loop reads netRef.current like BombDefuse reads its own.
+    const netRef = useRef({
+        active: NET_ROLE !== null, role: NET_ROLE, lobby: null, room: null, sync: null,
+        miss: 0, desyncs: 0, desyncFrozen: false, hostLost: false,
+        reseatSeat: null, reseatWait: 0, reseatBackTick: null, reseatArm: false,
+    })
+    const [netUi, setNetUi] = useState(null)
+    // #1880: the guest's heard page-words fold into its OWN sampled pad
+    // stream (queued right-taps) — words ride the same ticks both boxes run,
+    // never a direct mutation of shared state (#1247 law, online form).
+    const pageTapsRef = useRef(0)
     const seedRef = useRef(1)
     const msgIdxRef = useRef(0)
     const msgAtRef = useRef(0)
@@ -128,10 +154,27 @@ export default function TalkMeDown() {
             sfx.refused()
         }
         if (intent.kind === 'page') {
-            gs.manual.page = { neon: 0, dial: 1, glyph: 2 }[intent.page] ?? gs.manual.page
-            manualHiddenRef.current = false
-            hud.banner = { text: `PAGE ${intent.page.toUpperCase()}`, ok: true }
-            sfx.heard()
+            if (netRef.current.active) {
+                // #1880: online, words cannot reach into the shared sim
+                // directly — manual.page rides the hash. The guest (page
+                // holder) folds the heard page into its own sampled pad
+                // stream as queued right-taps: both boxes turn the page on
+                // the SAME ticks. The host never owns the page.
+                const want = { neon: 0, dial: 1, glyph: 2 }[intent.page]
+                if (netRef.current.role === 'host' || want == null) {
+                    hud.banner = { text: 'THEIR PAGE TO TURN', ok: false }
+                    sfx.refused()
+                } else {
+                    pageTapsRef.current += (want - gs.manual.page + 3) % 3
+                    hud.banner = { text: `HEARD: PAGE ${intent.page.toUpperCase()}`, ok: true }
+                    sfx.heard()
+                }
+            } else {
+                gs.manual.page = { neon: 0, dial: 1, glyph: 2 }[intent.page] ?? gs.manual.page
+                manualHiddenRef.current = false
+                hud.banner = { text: `PAGE ${intent.page.toUpperCase()}`, ok: true }
+                sfx.heard()
+            }
         } else if (intent.kind === 'flip') {
             // #1797: a shouted flip PULSES the tilt hint — heard words make
             // things visible, the defuser's hands stay their own (#1247).
@@ -301,6 +344,162 @@ export default function TalkMeDown() {
                 .finally(() => setStartBusy(false))
         }
 
+        // ---- #1880 remote seats: one lobby, one seed, bomb and manual in
+        // separate rooms. Host = seat 0 = DEFUSER; guest = seat 1 = MANUAL.
+        // One seed runs the identical deterministic engine on both boxes;
+        // pads cross the wire in lockstep (the #1819 law) and hash
+        // boundaries prove the two bombs are the same bomb. ----
+        const nq = new URLSearchParams(window.location.search)
+        const net = netRef.current
+        const pushNetUi = () => setNetUi(net.lobby ? net.lobby.state() : null)
+        net.sync = createTmdSync({
+            mySeat: net.role === 'host' ? 0 : 1,
+            watchSeats: [],
+            send: (t, p) => { if (net.room) net.room.send(t, p) },
+        })
+        const hostSnap = () => {
+            const g = gsRef.current
+            if (!g || !net.room) return
+            for (const c of packSnap(JSON.stringify(snapshotNet(g)), g.tick)) net.room.send('res', c)
+        }
+        const netDesync = () => {
+            net.desyncs++
+            hudRef.current.banner = { text: 'LINK DESYNC — RESYNCING', ok: false }
+            if (net.role === 'host') hostSnap()
+            else {
+                net.desyncFrozen = true
+                if (net.room) net.room.send('res', { e: 'req' })
+            }
+        }
+        const startNetMatch = (m) => {
+            const seed = ((m && m.seed) >>> 0) || 1
+            seatsRef.current = 2
+            seedRef.current = seed
+            gsRef.current = createGame(seed, 2)
+            manualHiddenRef.current = false
+            hudRef.current.pulse = null
+            hudRef.current.curtain = null
+            hudRef.current.banner = {
+                text: net.role === 'host' ? 'DEFUSER — YOUR HANDS' : 'MANUAL — YOUR EARS', ok: true,
+            }
+            voiceLogRef.current = []
+            pageTapsRef.current = 0
+            watchingRef.current = false; setWatching(false) // #1656: no third wheel online
+            net.miss = 0
+            net.desyncFrozen = false
+            net.hostLost = false
+            net.reseatSeat = null; net.reseatWait = 0; net.reseatBackTick = null; net.reseatArm = false
+            const room = net.room
+            net.sync.mySeat = room && room.yourSlot >= 0 ? room.yourSlot : (net.role === 'host' ? 0 : 1)
+            const humans = room && room.slots ? room.slots.slice() : [net.sync.mySeat]
+            net.sync.watchSeats = humans.filter((s) => s !== net.sync.mySeat).sort((a, b) => a - b)
+            net.sync.reset(0)
+            // consent rides the kick gesture (host press) / prior grant (guest);
+            // a rejected consent just plays unrecorded — honest.
+            askConsent().then(() => beginRun()).catch(() => {})
+            setScreen('play')
+            sfx.start()
+        }
+        const onlineStart = () => {
+            if (!net.lobby || net.role !== 'host' || !net.room || startBusy()) return
+            if (net.room.phase !== 'waiting') net.room.setPhase('waiting')
+            net.lobby.start({ seed: humanSeed() })
+        }
+        if (net.active) {
+            net.lobby = createLobby({
+                slug: 'talk-me-down',
+                cap: 2,
+                relay: relayFromQuery(window.location.search),
+                makeTransport,
+                shareRelay: !!nq.get('relay'),
+                onState: (st) => {
+                    if (st.role) net.role = st.role
+                    // a bare ?net=join with no code gets the shared entry card
+                    if (NET_ROLE === 'guest' && !nq.get('room') && st.phase === 'idle' && !st.code) st.phase = 'entry'
+                    pushNetUi()
+                },
+                onStart: (m) => startNetMatch(m),
+                onJoin: (e) => {
+                    pushNetUi()
+                    // a guest page reopened mid-run asks for the LIVE state;
+                    // only the host can answer (mid-run) — else we simply wait
+                    // for the next go.
+                    if (net.role === 'guest' && e && e.slot === 0 && screenRef.current !== 'play' && !net.reseatArm) {
+                        net.room.send('res', { e: 'rejoin' })
+                    }
+                },
+                onLeave: () => {
+                    pushNetUi()
+                    // a pending resync could wait forever — drive on; the
+                    // missing seat resolves through the stall law in tickSim
+                    net.desyncFrozen = false
+                    net.reseatArm = false
+                },
+                on: {
+                    pad: (m) => net.sync.gotPad(m),
+                    hs: (m) => { const d = net.sync.gotHash(m.k | 0, m.h >>> 0); if (d) netDesync() },
+                    res: (m) => {
+                        if (m.e === 'req') { if (net.role === 'host') hostSnap() }
+                        else if (m.e === 'rejoin') {
+                            // #1838: a returner is back in the room — hand it
+                            // its seat mid-run: flip tick stamped, seat pads
+                            // stored again, live snapshot on the wire.
+                            const g = gsRef.current
+                            if (net.role === 'host' && screenRef.current === 'play' && g && !g.done) {
+                                const seat = Number.isFinite(m.s) && m.s !== net.sync.mySeat ? (m.s | 0) : 1
+                                net.reseatSeat = seat
+                                net.reseatWait = 0
+                                net.reseatBackTick = g.tick + RESEAT_LEAD
+                                net.sync.reseatTick = net.reseatBackTick
+                                if (net.sync.droppedSeats().indexOf(seat) >= 0) net.sync.promote(seat)
+                                net.room.send('res', { e: 'back', k: net.reseatBackTick })
+                                hostSnap()
+                                const bf = net.sync.backfillPads(g.tick + 1, net.sync.delay)
+                                if (bf) net.room.send('pad', bf)
+                            }
+                        } else if (m.e === 'back') {
+                            if (net.role === 'guest' && screenRef.current !== 'play') {
+                                net.reseatArm = true
+                                net.reseatBackTick = m.k | 0
+                            }
+                        } else if (m.e === 'snp') {
+                            const got = net.sync.snapInbox.push(m)
+                            if (got && net.role === 'guest' && net.desyncFrozen) {
+                                // restore at the host's tick; pad streams are
+                                // PRESERVED (the sampling law) — no sync.reset
+                                gsRef.current = restoreNet(got.snap)
+                                net.desyncFrozen = false
+                            } else if (got && net.role === 'guest' && net.reseatArm) {
+                                // hand-back: rebuild the live run at the host's
+                                // tick and climb back into lockstep; the CPU
+                                // keeps the seat until the shared flip.
+                                const back = net.reseatBackTick != null ? net.reseatBackTick : got.tick + RESEAT_LEAD
+                                gsRef.current = restoreNet(got.snap)
+                                seedRef.current = (got.snap.seed >>> 0) || 1
+                                seatsRef.current = 2
+                                net.sync.mySeat = net.room && net.room.yourSlot >= 0 ? net.room.yourSlot : 1
+                                net.sync.watchSeats = [0]
+                                net.sync.reseatTick = back
+                                net.sync.reseatBase(got.tick)
+                                net.reseatArm = false
+                                net.miss = 0
+                                net.hostLost = false
+                                net.desyncFrozen = false
+                                pageTapsRef.current = 0
+                                hudRef.current.banner = { text: 'WELCOME BACK — MANUAL RE-SEATED', ok: true }
+                                if (net.room) net.room.setPhase('racing')
+                                setScreen('play')
+                            }
+                        }
+                    },
+                },
+            })
+            net.room = net.lobby.room
+            if (net.role === 'host') net.lobby.open()
+            else if (nq.get('room')) net.lobby.join(nq.get('room'))
+            pushNetUi()
+        }
+
         const keys1 = keys1Ref.current
         const keys2 = keys2Ref.current
         const clearKeys = () => { for (const k of Object.keys(keys1)) keys1[k] = false; for (const k of Object.keys(keys2)) keys2[k] = false }
@@ -329,19 +528,44 @@ export default function TalkMeDown() {
                 return
             }
             if (e.code === 'KeyV') { e.preventDefault(); toggleVoice(); return }
+            // #1880 host-gone law: the manual seat owns no hands — a guest
+            // frozen at a dead defuser walks back to the lobby with any key
+            // (no role inversion; a returning host re-arms with a fresh go).
+            if (net.active && net.hostLost) {
+                net.hostLost = false
+                clearKeys()
+                startAttract()
+                return
+            }
             // #1637 WATCH: Y BEFORE the run banks the seat (no blip yet — no
             // wheel has changed hands). Attract steps to select like any key;
             // select starts the run with the current pick and startPlay seats
             // the prover. One tap on ▶ WATCH therefore starts AND watches.
-            if (isWatchKey(e) && (screenRef.current === 'attract' || screenRef.current === 'select')) {
+            // Online Y is inert (#1656 law — the wire is not a third wheel).
+            if (isWatchKey(e) && !net.active && (screenRef.current === 'attract' || screenRef.current === 'select')) {
                 e.preventDefault()
                 pendingWatchRef.current = true
                 if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
                 else humanStart(humanSeed(), selectRef.current)
                 return
             }
-            if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start(); return }
-            if (screenRef.current === 'over') { if (performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() } return }
+            if (screenRef.current === 'attract') {
+                if (net.active) {
+                    // the lobby owns the attract: the host arms the first bomb
+                    // (Space/Enter), the guest waits for the go — the squad is
+                    // fixed at two: one bomb, one manual.
+                    if (net.role === 'host' && (e.code === 'Space' || e.code === 'Enter')) { e.preventDefault(); onlineStart() }
+                    return
+                }
+                clearKeys(); setScreen('select'); sfx.start(); return
+            }
+            if (screenRef.current === 'over') {
+                if (performance.now() - overAtRef.current > 700) {
+                    if (net.active) { if (net.role === 'host') onlineStart(); else { clearKeys(); startAttract() } }
+                    else { clearKeys(); startAttract() }
+                }
+                return
+            }
             if (screenRef.current === 'select') {
                 if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { selectRef.current = selectRef.current === 1 ? 2 : 1; sfx.move() }
                 if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); humanStart(humanSeed(), selectRef.current) }
@@ -354,11 +578,26 @@ export default function TalkMeDown() {
             // hands the hands back and the player continues from exactly that
             // module. V lives above this branch — heard words are orders, not
             // hands (#1247) — so the mic never counts as a takeover.
-            if (isWatchKey(e)) { e.preventDefault(); watchingRef.current = !watchingRef.current; setWatching(watchingRef.current); if (watchingRef.current) playWatchStart(); else playWatchStop(); return }
+            if (isWatchKey(e)) {
+                e.preventDefault()
+                if (!net.active) {
+                    watchingRef.current = !watchingRef.current; setWatching(watchingRef.current)
+                    if (watchingRef.current) playWatchStart(); else playWatchStop()
+                }
+                return
+            }
             if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (e.code === 'Tab') { e.preventDefault(); if (seatsRef.current === 1) manualHiddenRef.current = !manualHiddenRef.current; return }
             const f1 = S1[e.code]
             if (f1) { e.preventDefault(); pressMin(keys1, f1); return }
+            if (net.active) {
+                // #1880: one box, one seat, the whole keyboard — online the
+                // arrows AND WASD both drive YOUR seat (host = bomb hands,
+                // guest = page turns); the other seat lives on the wire.
+                const fw = S2[e.code]
+                if (fw) { e.preventDefault(); pressMin(keys1, fw) }
+                return
+            }
             if (seatsRef.current > 1) {
                 const f2 = S2[e.code]
                 if (f2) { e.preventDefault(); pressMin(keys2, f2) }
@@ -367,12 +606,24 @@ export default function TalkMeDown() {
         const onKeyUp = (e) => {
             const f1 = S1[e.code]
             if (f1) releaseMin(keys1, f1)
+            if (net.active) {
+                const fw = S2[e.code]
+                if (fw) releaseMin(keys1, fw)
+                return
+            }
             const f2 = S2[e.code]
             if (f2 && seatsRef.current > 1) releaseMin(keys2, f2)
         }
         const onPointer = () => {
-            if (screenRef.current === 'attract') { clearKeys(); setScreen('select'); sfx.start() }
-            else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) { clearKeys(); startAttract() }
+            if (net.active && net.hostLost) { net.hostLost = false; clearKeys(); startAttract(); return }
+            if (screenRef.current === 'attract') {
+                if (net.active) { if (net.role === 'host') onlineStart(); return }
+                clearKeys(); setScreen('select'); sfx.start()
+            }
+            else if (screenRef.current === 'over' && performance.now() - overAtRef.current > 700) {
+                if (net.active) { if (net.role === 'host') onlineStart(); else { clearKeys(); startAttract() } }
+                else clearKeys(); startAttract()
+            }
             else if (screenRef.current === 'select') humanStart(humanSeed(), selectRef.current)
             else if (screenRef.current === 'play' && watchingRef.current) {
                 // #1637 WATCH: a tap on the bench takes the hands back (the
@@ -388,6 +639,15 @@ export default function TalkMeDown() {
             left: !!keys.left, right: !!keys.right, up: !!keys.up, down: !!keys.down,
             a: !!keys.a, b: !!keys.b,
         })
+
+        // #1880: the guest's own pad = local keys + the folded page-taps heard
+        // by its mic (words online form, #1247): taps ride the SAME sampled
+        // stream the host replays, so both boxes turn the page identical ticks.
+        const readOwnPad = () => {
+            const p = padFrom(keys1Ref.current)
+            if (pageTapsRef.current > 0) { p.right = true; pageTapsRef.current -= 1 }
+            return p
+        }
 
 
         let raf = 0
@@ -420,6 +680,78 @@ export default function TalkMeDown() {
             }
             if (screenRef.current !== 'play' || pausedRef.current) return
             if (contractHoldsLoop()) return
+            if (net.active) {
+                // #1880 lockstep: sample own seat PAD_DELAY ahead, tick one
+                // only when the peer's stamped mask for k is in (or the seat
+                // has demoted), and prove the twin run at every boundary.
+                const gs = gsRef.current
+                if (!gs) return
+                if (net.desyncFrozen || net.hostLost) return
+                const k = gs.tick + 1
+                net.sync.pumpTo(k + net.sync.delay, readOwnPad)
+                if (net.sync.solo() && gs.players > 1) gs.players = 1
+                if (!net.sync.ready(k)) {
+                    // #1838 hand-back grace, counted in STALL ticks — the sim
+                    // freezes while waiting, so a tick-based window could never
+                    // expire (the frozen-clock trap).
+                    if (net.reseatSeat != null && net.reseatWait < RESEAT_WINDOW) {
+                        net.reseatWait++
+                        settleReleases(keys1Ref.current)
+                        return
+                    }
+                    if (net.reseatSeat != null) {
+                        net.reseatSeat = null
+                        net.sync.reseatTick = null
+                    }
+                    net.miss++
+                    if (net.miss >= DROP_GRACE) {
+                        net.miss = 0
+                        if (net.role === 'host') {
+                            // guest walkaway: the CPU manual partner takes the
+                            // rail back — the bomb stays defusable solo.
+                            const seat = net.sync.watchSeats[0]
+                            if (seat !== undefined && net.sync.demote(seat)) {
+                                gs.players = 1
+                                hudRef.current.banner = { text: 'MANUAL LINK LOST — CPU MANUAL IN', ok: false }
+                                sfx.strike()
+                            }
+                        } else {
+                            // host-gone law: the page holder owns no hands.
+                            net.hostLost = true
+                        }
+                    }
+                    settleReleases(keys1Ref.current)
+                    return
+                }
+                net.miss = 0
+                if (net.sync.reseatTick != null && k >= net.sync.reseatTick) {
+                    // the shared flip (#1838): both boxes hand seat 1 from the
+                    // CPU back to the human on the SAME sim tick.
+                    net.sync.reseatTick = null
+                    net.reseatSeat = null
+                    if (gs.players === 1) gs.players = 2
+                    hudRef.current.banner = { text: 'MANUAL RE-SEATED — SQUAD WHOLE', ok: true }
+                    sfx.key()
+                }
+                const pads = net.sync.assemble(k)
+                spec.tick(pads[0], pads)
+                if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
+                if (isRecording() && screenRef.current === 'over') endRun()
+                if (!gs.done && !net.sync.solo() && gs.tick % HASH_EVERY === 0) {
+                    const d = net.sync.hash(gs.tick, hash(gs))
+                    if (d) netDesync()
+                }
+                net.sync.prune(gs.tick)
+                // #1637: watch is inert online, but a stale flag must never
+                // linger across a match boundary.
+                if (watchingRef.current && screenRef.current === 'over') { watchingRef.current = false; setWatching(false) }
+                settleReleases(keys1Ref.current)
+                if (screenRef.current === 'play' && !gs.done && !net.sync.solo()) {
+                    if (++hudRef.current.humT % 30 === 0) sfx.hum()
+                    if (Math.ceil(gs.fuse / 60) <= 10 && ++hudRef.current.beatT % 60 === 0) sfx.heart()
+                }
+                return
+            }
             let p1 = padFrom(keys1Ref.current)
             const g = gsRef.current
             // #1637 WATCH: the prover is at the controls — solvePad reacts
@@ -459,8 +791,24 @@ export default function TalkMeDown() {
             if (screenRef.current === 'play' || screenRef.current === 'over') {
                 const gs = gsRef.current
                 if (gs) {
-                    drawBombView(g, gs, tick)
-                    ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag, gs.flip)
+                    // #1880: separate screens make the split real. The guest
+                    // box hides the bomb panel behind a squad plate; the host
+                    // box hides the rulebook. The mouth stays the only sensor
+                    // the squad shares — and the live-stamp rail (the
+                    // transcribed "NEON N3!" list) rides with the page-holder.
+                    const guest = net.active && net.role === 'guest'
+                    if (guest) {
+                        drawSquadPlate(g, ART.PANEL, 'SEAT 1 · DEFUSER AT THEIRS',
+                            'THE BOMB IS', 'IN THEIR HANDS', 'LISTEN. THEN SPEAK.', tick)
+                    } else {
+                        drawBombView(g, gs, tick)
+                    }
+                    if (net.active && net.role === 'host') {
+                        drawSquadPlate(g, ART.RAIL, 'SEAT 2 · MANUAL AT THEIRS',
+                            'THE RULEBOOK', 'IS ON THEIR SCREEN', 'READ THE STAMPS ALOUD', tick)
+                    } else {
+                        ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag, gs.flip)
+                    }
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
@@ -497,7 +845,7 @@ export default function TalkMeDown() {
                 if (now - msgAtRef.current > 2600) { msgAtRef.current = now; msgIdxRef.current = (msgIdxRef.current + 1) % ATTRACT_MSGS.length }
                 g.font = '9px "Press Start 2P", monospace'; g.fillStyle = '#7dffb0'
                 g.fillText(ATTRACT_MSGS[msgIdxRef.current], (ART.W - ATTRACT_MSGS[msgIdxRef.current].length * 9) / 2, 210)
-                if (tick % 60 < 36) {
+                if (!net.active && tick % 60 < 36) {
                     g.fillStyle = '#fff'
                     g.fillText('ANY KEY / TAP', 250, 260)
                 }
@@ -531,6 +879,18 @@ export default function TalkMeDown() {
                 g.fillStyle = '#fff'
                 g.fillText(`SCORE ${gsRef.current.score}   BOMBS ${gsRef.current.bombsCleared}/${QUOTA_BOMBS}`, 170, 274)
                 if (t > 40 && tick % 60 < 36) { g.fillStyle = '#fff'; g.fillText('ANY KEY', 280, 300) }
+            }
+            // #1880 host-gone law, made visible: the manual holds still.
+            if (net.active && net.hostLost && screenRef.current === 'play') {
+                g.fillStyle = 'rgba(8,6,10,0.78)'
+                g.fillRect(80, 148, ART.W - 160, 64)
+                g.strokeStyle = '#5e2a2a'; g.strokeRect(80.5, 148.5, ART.W - 161, 63)
+                g.font = '10px "Press Start 2P", monospace'; g.fillStyle = '#ff9d94'
+                const t1 = 'DEFUSER OFFLINE'
+                g.fillText(t1, (ART.W - t1.length * 10) / 2, 176)
+                g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#9aa0aa'
+                const t2 = 'THE PAGE HOLDS STILL — ANY KEY TO THE LOBBY'
+                g.fillText(t2, (ART.W - t2.length * 7) / 2, 198)
             }
             // HUD legend line
             g.restore()
@@ -614,6 +974,32 @@ export default function TalkMeDown() {
             }
         }
 
+        // #1880: the "your half lives on their box" plate — dark steel, a
+        // seat tag, and the one instruction that keeps the squad talking.
+        const drawSquadPlate = (g, r, tag, l1, l2, hint, tick) => {
+            g.fillStyle = '#17191d'
+            g.fillRect(r.x + 6, r.y + 6, r.w - 12, r.h - 12)
+            g.strokeStyle = '#2e333a'
+            g.strokeRect(r.x + 10.5, r.y + 10.5, r.w - 21, r.h - 21)
+            // rivets, same family as the bomb shell
+            g.fillStyle = '#3a4048'
+            for (const [rx, ry] of [[20, 20], [r.w - 24, 20], [20, r.h - 24], [r.w - 24, r.h - 24]]) {
+                g.fillRect(r.x + rx, r.y + ry, 4, 4)
+            }
+            g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#5f656e'
+            g.fillText(tag, r.x + 20, r.y + 40)
+            g.font = '12px "Press Start 2P", monospace'; g.fillStyle = '#d8dde3'
+            g.fillText(l1, r.x + (r.w - l1.length * 12) / 2, r.y + r.h / 2 - 12)
+            g.fillText(l2, r.x + (r.w - l2.length * 12) / 2, r.y + r.h / 2 + 10)
+            // a pulsing link dot — the wire is alive even when nobody talks
+            g.fillStyle = tick % 60 < 34 ? '#7dffb0' : '#31465a'
+            g.fillRect(r.x + r.w / 2 - 3, r.y + r.h / 2 + 26, 6, 6)
+            if (hint) {
+                g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#8b919a'
+                g.fillText(hint, r.x + (r.w - hint.length * 7) / 2, r.y + r.h / 2 + 48)
+            }
+        }
+
         const drawSparks = (g, hud) => {
             for (const s of hud.sparks) {
                 s.x += s.vx; s.y += s.vy; s.vy += 0.35
@@ -682,6 +1068,18 @@ export default function TalkMeDown() {
                 // #1637 WATCH: the harness pilots the seat through real keys.
                 watching: () => watchingRef.current && screenRef.current === 'play',
                 watchSfx: () => watchSfxLog(),
+                // #1880: the browser harness reads the link's whole state.
+                netState: () => (net.active ? {
+                    role: net.role,
+                    code: net.room ? net.room.code : '',
+                    phase: net.room ? net.room.phase : 'idle',
+                    miss: net.miss, desyncs: net.desyncs, frozen: net.desyncFrozen,
+                    hostLost: net.hostLost,
+                    solo: net.sync ? net.sync.solo() : false,
+                    players: gsRef.current ? gsRef.current.players : 0,
+                    nextSample: net.sync ? net.sync.stats().nextSample : 0,
+                } : null),
+                pageTaps: () => pageTapsRef.current,
                 probe: () => {
                     const g = gsRef.current
                     return g
@@ -728,6 +1126,7 @@ export default function TalkMeDown() {
         return () => {
             unexposeFeedbackState()
             cancelAnimationFrame(raf)
+            if (net.lobby) { try { net.lobby.close() } catch { /* gone */ } } // #1880: the room dies with the page
             window.removeEventListener('keydown', onKeyDown)
             window.removeEventListener('keyup', onKeyUp)
             window.removeEventListener('pointerdown', onPointer)
@@ -751,6 +1150,17 @@ export default function TalkMeDown() {
                 style={{ imageRendering: 'pixelated', aspectRatio: `${ART.W} / ${ART.H}`, width: 'min(100vw, calc(100vh * 16 / 9))' }}
             />
             {paused && <PauseOverlay game={GAMES.find(g => g.label === 'TALK ME DOWN')} onResume={() => setPaused(false)} />}
+            {/* #1880 — ONE join flow, the shared waiting room: the host opens
+                a 4-letter code (QR included), the friend takes the manual. */}
+            {netUi && screen === 'attract' && (
+                <Lobby
+                    state={netUi}
+                    title="SQUAD LINK"
+                    accent={{ text: 'text-amber-300', dim: 'text-amber-100/70', live: 'border-amber-300/50 text-amber-100' }}
+                    startHint="SPACE — ARM THE FIRST BOMB"
+                    onEntry={(code) => netRef.current.lobby && netRef.current.lobby.join(code)}
+                />
+            )}
             {/* #1637 WATCH — the proven rulebook defuses the bomb. */}
             {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
             {/* #1654 — the discoverable WATCH line, before the first Y press,
