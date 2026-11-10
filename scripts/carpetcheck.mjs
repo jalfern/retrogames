@@ -3291,14 +3291,14 @@ r.check('#1790 the param does not stick: the plain link honours storage (off)', 
     const simS8 = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
     r.check('#1764-8s1 source pin: the line combiner owns the parity law (floor gl_FragCoord.y mod 2, even rows left)',
         /gl_FragColor = mod\(floor\(gl_FragCoord\.y\), 2\.0\) < 1\.0 \? texture2D\(uL, vQ\) : texture2D\(uR, vQ\);/.test(renS8))
-    const ilBody = (renS8.match(/const interlaceMesh = new THREE\.Mesh\(quad, qmat\(`([\s\S]*?)`\)/) || [, ''])[1]
+    const ilBody = (renS8.match(/const interlaceMesh = new THREE\.Mesh\(quad, qmat\(`([\s\S]*?)`\,/) || [, ''])[1]
     r.check('#1764-8s1 source pin: line mode is full-colour — both eyes sampled whole, no channel splice inside the combiner',
         ilBody.includes('texture2D(uL, vQ)') && ilBody.includes('texture2D(uR, vQ)') && !/\)\.r,/.test(ilBody),
         ilBody.replace(/\s+/g, ' ').slice(0, 90))
     r.check('#1764-8s1 source pin: the combine dispatches on glass — interlace branch renders scInterlace, anaglyph stays the else arm',
         /if \(stereoMode === 'interlace'\) \{[\s\S]*?scInterlace, quadCam\)[\s\S]*?\} else \{[\s\S]*?scAnaglyph, quadCam\)/.test(renS8))
     r.check('#1764-8s1 source pin: the default glass is the #1790 anaglyph; the mode setter normalises junk onto it (never a dark screen)',
-        /let stereoMode = 'anaglyph'/.test(renS8) && /setStereoMode: \(m\) => \{ stereoMode = m === 'interlace' \? 'interlace' : 'anaglyph'; \}/.test(renS8))
+        /let stereoMode = 'anaglyph'/.test(renS8) && /setStereoMode: \(m\) => \{ stereoMode = m === 'interlace' \? 'interlace' : 'anaglyph' \}/.test(renS8))
     r.check('#1764-8s1 source pin: T is the glass lever (no auto-repeat), the type persists beside the power in mc-stereo-mode, ?stereo=i opens on it',
         /e\.code === 'KeyT' && !e\.repeat/.test(idxS8) && /localStorage\.setItem\('mc-stereo-mode', stereoMode\)/.test(idxS8) && /q === 'i' \|\| q === 'interlace'/.test(idxS8))
     r.check('#1764-8s1 purity: the sim never hears about glasses (no stereo/interlace in sim.js)',
