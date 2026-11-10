@@ -15,7 +15,7 @@ import {
     setHand, INVIS_T, hudTap, cycleL, TAP, TRAY, W, H, HUD_H,
     muffleOf, OPEN_CUTOFF, MUFFLE_CUTOFF, volcanoErupt, raiseTerrain, shatterAt, SHATTER_R, WATER, crater, diveOf,
     DISSOLVE_R, DISSOLVE_SINK, dissolveLand, GRID, CELL,
-    crumbleFeel, CRUMBLE_HEAR_R, castBearing,
+    crumbleFeel, CRUMBLE_HEAR_R, castBearing, CUE_LOUD_R, CUE_HEAR_R, CUE_FLOOR,
     cloneAt, CLONE_R, CLONE_MAX, SPAWN_HP, lookPoint, genWorld,
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT, CFG,
     SEL, selectTap, cursorStep,
@@ -2084,12 +2084,12 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const handler = idxSrc.match(/e\.type === 'wizfire'\) \{([\s\S]{0,900}?)\n\s+\}(?: else if|\s*\n\s*else if)/)
         r.check('#1746 the shell pans the wizfire crack by the bearing (behind = longer, softer)',
             !!handler && /castBearing\(gs, e\.x, e\.y\)/.test(handler[0]) &&
-            /playSweep\([^)]*br\.pan\)/.test(handler[0]) &&
+            /playSweep\([^;]*?br\.prox, br\.pan\)/.test(handler[0]) &&
             /br\.behind \? 0\.18 : 0\.14/.test(handler[0]) &&
             /br\.behind \? 0\.04 : 0\.05/.test(handler[0]),
             handler ? 'routed' : 'wizfire handler not pinned')
         r.check('#1746 pan is opt-in in AudioController — null keeps the direct graph untouched',
-            /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null\)/.test(acSrc) &&
+            /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null, delay = 0\)/.test(acSrc) &&
             /if \(pan !== null && this\.ctx\.createStereoPanner\)/.test(acSrc) &&
             /\} else \{\s*\n\s*gain\.connect\(this\.ctx\.destination\)/.test(acSrc))
     }
@@ -2161,23 +2161,24 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         const zapH = idxSrc.match(/e\.type === 'zap'\) \{([\s\S]{0,900}?)\n\s+\} else if/)
         r.check('#1764-7 the shell pans the lightning crack by the strike bearing (behind = softer)',
             !!zapH && /castBearing\(gs, e\.x, e\.y\)/.test(zapH[0]) &&
-            /playNoise\([^)]*bz\.pan\)/.test(zapH[0]) &&
-            /playSweep\([^)]*bz\.pan\)/.test(zapH[0]) &&
+            /playNoise\(0\.16, \(bz\.behind \? 0\.07 : 0\.09\) \* bz\.prox, bz\.pan\)/.test(zapH[0]) &&
+            /playSweep\(1500, 260, 0\.2, 'square', \(bz\.behind \? 0\.045 : 0\.06\) \* bz\.prox, bz\.pan\)/.test(zapH[0]) &&
             /bz\.behind \? 0\.07 : 0\.09/.test(zapH[0]),
             zapH ? 'routed' : 'zap handler not pinned')
         r.check('#1764-7 the creature strikes lean — bite and rocksling ride the bearing',
-            /else if \(e\.type === 'rocksling'\) audioController\.playNoise\(0\.07, 0\.05, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc) &&
-            /else if \(e\.type === 'bite'\) audioController\.playTone\(170, 0\.06, 'square', 0\.05, 0, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc))
+            /else if \(e\.type === 'rocksling'\) \{ const bs = castBearing\(gs, e\.x, e\.y\); audioController\.playNoise\(0\.07, 0\.05 \* bs\.prox, bs\.pan\) \}/.test(idxSrc) &&
+            /else if \(e\.type === 'bite'\) \{ const bk = castBearing\(gs, e\.x, e\.y\); audioController\.playTone\(170, 0\.06, 'square', 0\.05 \* bk\.prox, 0, bk\.pan\) \}/.test(idxSrc))
         r.check('#1764-7 the growl bed is a VOICE — ambTone pans to the creature it came from',
-            /const bg = castBearing\(gs, near\.x, near\.y\)\.pan/.test(idxSrc) &&
-            /ambTone\(near\.kind === 'giant' \? 44 : 62, 0\.34, 'sawtooth', 0\.026, 0, bg\)/.test(idxSrc))
+            /const bg = castBearing\(gs, near\.x, near\.y\)/.test(idxSrc) &&
+            /ambTone\(near\.kind === 'giant' \? 44 : 62, 0\.34, 'sawtooth', 0\.026 \* bg\.prox, 0, bg\.pan\)/.test(idxSrc))
         r.check('#1764-7 village sounds land at the village — ignite, burn, hut crash and tribute coin all pan',
-            /e\.type === 'ignite'\)[\s\S]{0,220}playNoise\(0\.12, 0\.05, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc) &&
-            /const bb = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,300}playSweep\(300, 90, 0\.3, 'triangle', 0\.04, bb\)/.test(idxSrc) &&
-            /const hp = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,400}playNoise\(0\.2, 0\.08, hp\)/.test(idxSrc) &&
-            /playTone\(880, 0\.04, 'sine', 0\.03, 0, castBearing\(gs, e\.x, e\.y\)\.pan\)/.test(idxSrc))
+            /e\.type === 'ignite'\)[\s\S]{0,400}playNoise\(0\.12, 0\.05 \* bi\.prox, bi\.pan\)/.test(idxSrc) &&
+            /const bb = castBearing\(gs, e\.x, e\.y\)[\s\S]{0,300}playSweep\(300, 90, 0\.3, 'triangle', 0\.04 \* bb\.prox, bb\.pan\)/.test(idxSrc) &&
+            /const hp = castBearing\(gs, e\.x, e\.y\)[\s\S]{0,400}playNoise\(0\.2, 0\.08 \* hp\.prox, hp\.pan\)/.test(idxSrc) &&
+            /playTone\(880, 0\.04, 'sine', 0\.03 \* bt\.prox, 0, bt\.pan\)/.test(idxSrc))
         r.check('#1764-7 the chirp of a creature that lost you comes from THEIR side',
-            /const bl = castBearing\(gs, e\.x, e\.y\)\.pan[\s\S]{0,300}playSweep\(f, f \* 0\.78, 0\.14, 'triangle', 0\.035, bl\)/.test(idxSrc))
+            /const bl = castBearing\(gs, e\.x, e\.y\)[\s\S]{0,300}playSweep\(f, f \* 0\.78, 0\.14, 'triangle', 0\.035 \* bl\.prox, bl\.pan\)/.test(idxSrc) &&
+            /playSweep\(f \* 0\.78, f \* 1\.1, 0\.16, 'triangle', 0\.022 \* bl\.prox, bl\.pan, 0\.13\)/.test(idxSrc))
         r.check('#1764-7 pan is opt-in in EVERY one-shot — null keeps the old direct graph',
             /playTone\(freq, duration, type = 'square', vol = 0\.1, delay = 0, pan = null\)/.test(acSrc) &&
             /playNoise\(duration, vol = 0\.2, pan = null\)/.test(acSrc) &&
@@ -2185,6 +2186,80 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             (acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length >= 4,
             `guards=${(acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length}`)
     }
+}
+
+// #1764 item 7 stage 4 (2026-11-10, QA studio): THE DISTANCE LAW — every
+// panned cue also scales its loudness with how FAR its source stands, on the
+// same pure-read castBearing (now {pan, behind, prox}). The horizon keeps
+// crackling at CUE_FLOOR — depth is added, a cue's warning role never taken.
+// Mutation guide: (1) CUE_FLOOR -> 1 and the floor gates go red (the field
+// flattens back to mono-loud); (2) fold yaw into prox and the facing gate goes
+// red; (3) strip one `* b*.prox` at any shell site — the loudness census goes
+// red; (4) swap the chirp echo's pan/delay args back — the echo pin goes red
+// (pan silently received 0.13 while the bearing sat ignored: the bug fixed here).
+{
+    const gs = makeGame(7)
+    // Distances ride the seam, so an axis-aligned d > 256 FOLDS back below the
+    // floor line — beyond-half-map is only reachable on the diagonal.
+    const atD = (dx, dy, dyaw = 0) =>
+        castBearing({ ...gs, yaw: gs.yaw + dyaw }, wrap(gs.x + dx, MAP), wrap(gs.y + dy, MAP))
+    const at = (d, dyaw = 0) => atD(d, 0, dyaw)
+    const at45 = (d) => atD(d / Math.SQRT2, d / Math.SQRT2)
+    const mid = (CUE_LOUD_R + CUE_HEAR_R) / 2
+    r.check('#1764-7s4 prox is a flat top in earshot — d=0 and d=CUE_LOUD_R read full loudness',
+        at(0).prox === 1 && at(CUE_LOUD_R).prox === 1,
+        `d0=${at(0).prox} dLoud=${at(CUE_LOUD_R).prox}`)
+    r.check('#1764-7s4 the floor at half the map, kept past it — the horizon crackles, never mutes',
+        // literal pins: a mutant that raises CUE_FLOOR itself must go red here,
+        // not just feed its own constant through the comparison (the first
+        // mutant run proved the constants-only form passes vacuously at 1).
+        CUE_FLOOR === 0.3 && CUE_LOUD_R === 40 && CUE_HEAR_R === 256 &&
+        at(CUE_HEAR_R).prox === CUE_FLOOR && at45(CUE_HEAR_R + 60).prox === CUE_FLOOR &&
+        at45(Math.hypot(256, 256)).prox === CUE_FLOOR && at45(Math.hypot(256, 256)).prox < 1,
+        `dHear=${at(CUE_HEAR_R).prox} dDiag=${at45(CUE_HEAR_R + 60).prox}`)
+    r.check('#1764-7s4 the decay is linear between the edges',
+        Math.abs(at(mid).prox - (1 + CUE_FLOOR) / 2) < 1e-9 &&
+        Math.abs(at(CUE_LOUD_R + 10).prox - (1 - (1 - CUE_FLOOR) * 10 / (CUE_HEAR_R - CUE_LOUD_R))) < 1e-9,
+        `mid=${at(mid).prox} expected=${((1 + CUE_FLOOR) / 2).toFixed(4)}`)
+    r.check('#1764-7s4 loudness falls monotonically with distance all the way across the map',
+        [at(10), at(60), at(120), at(200), at45(260), at45(340)].map((b) => b.prox)
+            .every((v, i, a) => i === 0 || v <= a[i - 1]) &&
+        at(10).prox > at(120).prox && at(120).prox > at45(340).prox,
+        `d120=${at(120).prox.toFixed(3)} d340diag=${at45(340).prox.toFixed(3)}`)
+    r.check('#1764-7s4 prox is ONLY distance — one far source reads the same loudness from any facing',
+        at(180).prox === at(180, 1.3).prox && at(180).prox === at(180, -2.4).prox &&
+        at45(300).prox === atD(212, -212).prox,
+        `yaw0=${at(180).prox} turned=${at(180, 1.3).prox}`)
+    r.check('#1764-7s4 distance rides the seam — 30u across the wrap is at the ear, not 482u away',
+        castBearing({ ...gs, x: 4 }, wrap(4 + 30, MAP), gs.y).prox === 1 &&
+        castBearing({ ...gs, x: 4 }, wrap(4 - 30, MAP), gs.y).prox === 1 &&
+        castBearing({ ...gs, x: 4 }, wrap(4 + CUE_HEAR_R, MAP), gs.y).prox === CUE_FLOOR)
+    {
+        const h0 = stateHash(gs)
+        castBearing(gs, wrap(gs.x + 300, MAP), wrap(gs.y - 300, MAP))
+        r.check('#1764-7s4 prox rides the same pure-read law — the hash never moves',
+            h0 === stateHash(gs), `${h0} vs ${stateHash(gs)}`)
+    }
+}
+{
+    // Census: 10 panned sites, 18 volume args — every one multiplied by prox.
+    // Pan without distance is stage 3; a site that quietly drops the multiply
+    // mid-refactor goes red here, not half-spatial.
+    const idxSrc = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
+    const m = idxSrc.match(/\* [a-z]\w*\.prox/g) || []
+    r.check('#1764-7s4 loudness census — every panned volume arg is scaled by prox (>= 18)',
+        m.length >= 18 &&
+        /const bi = castBearing[\s\S]{0,200}0\.05 \* bi\.prox/.test(idxSrc) &&
+        /const br = castBearing[\s\S]{0,300}br\.prox, br\.pan/.test(idxSrc) &&
+        /const bz = castBearing[\s\S]{0,500}0\.028 \* bz\.prox/.test(idxSrc),
+        `prox-multiples=${m.length}`)
+    // The echo fix: playSweep gained delay as a trailing opt-in arg — the
+    // chirp's second voice finally pans AND lands 0.13s after the first.
+    const acSrc = await readFile(new URL('../src/utils/AudioController.js', import.meta.url), 'utf8')
+    r.check('#1764-7s4 playSweep delay is opt-in — trailing arg, t = now + delay through the whole graph',
+        /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null, delay = 0\)/.test(acSrc) &&
+        /const t = this\.ctx\.currentTime \+ delay/.test(acSrc) &&
+        /osc\.start\(t\); osc\.stop\(t \+ duration\)/.test(acSrc))
 }
 
 await requireDevServer(`http://localhost:${process.env.DEV_PORT || 5173}/retrogames/magic-carpet`)
