@@ -1,64 +1,65 @@
-# STATE — session 198 (2026-11-10, slot a)
+# STATE — session 198 (2026-11-10, slot b)
 
 ## What shipped
-**WATCH batch 18** — SPACE INVADERS + DEFENDER seat their OWN brains behind Y
-(#1637 via PR #1904, squash `e0e230c`, prod live). Both sims grew a
-`watchRoute` in `sim.js`; the attract demo, the seat and the Node WITNESS all
-call that one function (no-forked-brain law — the local attract autopilots are
-deleted).
+**PAPERS, PLEASE-MIN fifth wanted portrait** — squash `3b4230c` (PR #1903,
+closes #1902). The bulletin carries the original's five: `gen.js` stages a
+third decoy (sheets print 3–5 entries; the five-entry day is the twin-trap
+day), the planted-vs-printed law untouched (name+id grading, decoy-vs-entrant
+name guard unchanged). The README feared a font shrink; measured false — worst
+sweep bottom y=336, theoretical five-portrait worst day y=346 vs scale-box law
+y=358. paperscheck 6553/6553 (+slot-used witness deepest==5, one five-entry
+day/week; synthetic worst-day extended to five); `--mutate` 11/11 die incl. new
+m11 (decoys 3->2 — witness catches the fifth portrait dying quietly);
+papersplay 19/19 zero page errors; lint:papers/eslint/lint:mario/fps/ai/build
+green. Prod verified by CONTENT probe: live chunk `index-Bav1OQ8z.js` carries
+`for(let w=0;w<3;w++)` (Vercel build hashes ≠ local dist hashes — verify
+content, not hash). Live: https://jalfern.com/retrogames/papers-please-min
+QA pass filed #1908 (bulletin readability, false-read balance at 3 decoys).
 
-- **SI**: clear-column / lead-march route. WITNESS 19/20 seeds clean wave-1,
-  0 deaths, slowest ~1987 t. Mutant (lane clearance 12->6) proven red.
-  Honest edge pinned, not hidden: seed 1462 stalls at 9 fleet left.
-- **Defender**: v1 chase-the-nearest patrol. WITNESS 20/20 survive 150 s,
-  min 4750 banked, 19/20 clear >= 1 wave; ~1 graze per patrol is the pinned
-  reality. New elevator-strip mutant; 12/12 mutants die.
+## The session's real lesson: a claim win can still be a collision
+TARGET #1637 CLAIMED at 14:17Z (slot a's checkpoint gap), but slot a was
+ALIVE: pid 94434, and `watchcheck.mjs` in the b18 worktree had mtime 14:35Z —
+18 min AFTER my claim — with a refinement (pilot bar 500->150) I'd never
+written. The claim script sees checkpoints, not processes or file mtimes.
+Chose collision-avoidance: rebased `forge/watch-b18` onto `e64ebd5` (clean),
+committed slot a's two in-flight fixes as `[4/4]` + `[handoff]` (nothing
+evaporates), ran the full battery on the stricter content (invaderscheck green
+incl. WITNESS 19/20, defendercheck 64/64, watchcheck 675/675 both pilots,
+watchphonecheck 424/424, mutants), posted the complete handoff state on #1637
+(incl. the reset commands for slot a's diverged local), and YIELDED the issue
+to the live lane. Then ran the ladder — never dry (#841): no halt/steer/next
+(#1711 hardware-gated, audit 13:50Z concurs), queue empty, QA MASTER live
+(no feedback borrow), flagshipStage spent → weakestStage #1571.
+WeakestStage first pass lied (fed gh object labels into heldDirs which expects
+strings → QA holds invisible; convert labels to names). TMD's top gap is owned
+by #1900 item 3 (phone-mouth decision) under the in-doubt rule. Final pick:
+PapersPleaseMin score 4 — filed #1902, claimed, shipped in ~70 min.
 
-Seat law both: Y seats with blips, steer/tap hands back, silent release at run
-end, one-tap pill on attract (verified LIVE against production in headless
-Chrome). 58 seats on the watchcheck board now.
+## Session bookkeeping
+- #1902 claimed, shipped, closed `shipped`; #1908 filed (QA feedback).
+- #1637 stays `building` with slot a (labels unchanged by the yield); its
+  branch carries my two handoff commits + 4 build commits — battery-green.
+- No jonq (nothing taste/priority/hard-to-undo).
 
-Also repaired en route (pins/mechanics found by the browser, not guessed):
-- Defender `init()`'s startRun flipped the attract DOM mirror before the pill
-  could show — flip back at mount (`setAttractUi(true)`).
-- TMD source-pin was stale red on main: seat block went multiline + offline
-  gate (#1889); pin now matches behaviour, not line layout.
-- feedbackcheck floor 52->55 (stale from the last seedpin batch).
+## Next queued (slot b)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue game-first.
+   CHECK #1637 FIRST: did slot a ship batch 18? If it died again, step-1b
+   resume is honest ONLY if pgrep shows no live slot-a process and the
+   worktree is quiet (mtime check) — this session's lesson.
+2. If dry: fresh weakestStage; PapersPleaseMin has 3 gaps left (portrait
+   unjudged, Day 7 length, +); skip anything #1908's playtest claims.
+3. QA owns #1871/#1900/#1908 — builders don't pick them up unless steered.
 
-## Battery (all green at merge)
-invaderscheck + WITNESS + mutant · defendercheck 64 + 12 mutants ·
-watchcheck 667/668 with the 1 miss a load flake on an untouched title
-(smash-tv hook undefined; `--only` green solo) · attractcheck 694/0 ·
-feedbackcheck 229 · contractcheck 682 · watchphonecheck 424 (tripwire 58) ·
-lint mario/fps/ai + eslint · build ✓.
-
-## Board
-#1637 stays open `building` — batch 19 queued candidates, in order:
-1. Defender human-defence in `watchRoute` (patrol ignores abducted humans;
-   WITNESS bar stays honest: survival + score, and rescue-count once real).
-2. SI seed-1462 stall: column-prediction lookahead (predict 2 shots ahead);
-   bump the WITNESS floor if it wins, never loosen it.
-3. Remaining unseated titles: check registry vs watchcheck SEATS for batch 19.
-
-## Lessons this session (kept short, AGENTS.md law)
-- "Attract missing the pill" was NOT a JSX bug: the demo start flipped a
-  second source of truth (DOM mirror). Two flags for one screen = bug farm.
-- Pin what you MEASURE: DF gates at +500/zero-death failed honest runs; the
-  same gate at one-lander (150) + one-graze matches the 20-seed witness and
-  went green. The honest number IS the tight number.
-- Mid-suite watchcheck flakes move titles between runs (robot-lab/dig-dug/
-  smash-tv, each solo-green). One rerun, note it, ship. Never chase.
-- A stale one-line source-pin can hide behind advisory red for whole sessions
-  (TMD since #1889) — green-the-suite passes should grep pins they touch.
+## Notes for the next slot-b session
+- Dev server on :5178 runs from `~/Dev/retrogames-forge-ppm-wantsheet`
+  (detached `3b4230c`), node_modules symlinked — reuse after verifying cwd,
+  kill otherwise. `retrogames-forge-watch-b18` belongs to slot a now; don't
+  touch it or :5173.
+- Prod-verify recipe: fetch live entry, find the game chunk by content grep
+  (ARSTOTZKA→ppm), check the minified signature — hash-equality against local
+  dist is NOT portable across build envs.
+- pms gate patterns: paperscheck SEEDS=[0..12]; mutants are temp-dir module
+  swaps with anchored replace (anchor must be unique — silent skip is a lie).
 
 ## Open questions
-None filed this session (no `waiting-jon` on lane games).
-
-## QA lane fed
-#1906 (SI polish: score-popups, march ramp, UFO table, bunker nibble),
-#1907 (DF polish: radar silhouette, carry/parachute, lander tell, wave beat).
-
-## Hygiene
-Worktree `~/Dev/retrogames-forge-watch-b18` detached at `origin/main`
-(`e0e230c`); branch `forge/watch-b18` deleted with the merge. Dev server on
-5173 was this lane's and is safe to kill by the next slot-a session.
+- None. (No taste/priority call needed from Jon.)
