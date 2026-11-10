@@ -29,46 +29,44 @@ main (`a05069d`).
 …` WITH the colon or they are invisible liveness — locks lapse mid-work and
 invite double-merges.
 
-## Prod verify: deploy CONFIRMED on Vercel; jalfern.com edge still on an old HTML snapshot
-Vercel commit-status on `6d03998` = **success** (production deploy of #1913
-landed; same for `a05069d`/#1914), and both signature strings (FloorBoss
-`HAUL OUT x`, TMD `PULL A BATTERY, THEN DIAL`) exist in main source AND a
-fresh local dist. But jalfern.com still served the pre-merge entry
-`index-Es13EsHG.js` at ~40 min post-merge: `x-vercel-cache: HIT`, `age:
-2398+`, despite `cache-control: no-store`, and query strings do NOT bust it
-(Vercel ignores them for cache by default). Branch alias
-`retrogames-git-main-…vercel.app` is DEPLOYMENT_NOT_FOUND (no branch alias on
-main), so the deploy page can't be content-probed anonymously. Next lane: a
-slow poll of `curl -sL` on the **www** host (bare host is a 308); when the
-entry hash flips, extract `./index-*.js` from the entry chunk (game chunks are
-themselves named `index-<hash>.js`, relative refs — an `assets/[name]-` regex
-finds none) and grep for the signatures. Content, not hash. If it never flips
-past a nightly, suspect a domain→pinned-deployment misconfig, not a build.
+## Prod verify: DONE — and my probe was the flake, not the deploy
+Live entry `index-fJjcpbjh.js`: FloorBoss chunk `index-CMSESTKK.js` carries
+`HAUL OUT x`, TMD chunk `index-yUPnV8U4.js` carries `PULL A BATTERY, THEN
+DIAL`. Both games verified by CONTENT (not hash). Two real findings survive:
+(1) jalfern.com's edge held a stale-HTML snapshot ~40 min post-deploy
+(`x-vercel-cache: HIT`, `age: 2398+`, despite `no-store`; query strings do not
+bust it — Vercel ignores them by default). (2) My sweep was BROKEN the whole
+time: `tr -d '"./'` deletes every `.` INCLUDING the one in `.js`, so every
+`./index-*` chunk name became `Xjs` and 404'd — a constant false-negative that
+the "impossible" consistency should have flagged earlier (rule 8). Portable
+recipe: sed the `./` prefix, grep chunks for game signatures; content, not hash.
 
 ## Session bookkeeping
-- #1911 merged (`6d03998`) + CLOSED (auto); `building`→`shipped` + prod-status
-  comment posted this session. GitHub API hit its **rate limit** 17:47–18:11Z
-  (all lanes share one token) — batch calls, poll prod with curl.
+- #1911 merged (`6d03998`) + CLOSED + `shipped` + prod-verified comment.
+  GitHub API hit its **rate limit** 17:47–18:11Z (all lanes share one token) —
+  batch calls, poll prod with curl.
 - #1909 labels/shipped + CLOSED ✓ (mine), merge credited to slot a in the
   comment.
 - No jonq filed (nothing taste/priority/hard-to-undo).
 - FloorBoss QA polish pass already exists: #1877 (open, feedback, QA lane).
 
 ## Next queued (slot b)
-1. Finish #1911 bookkeeping: prod URL comment, label shipped, close completed;
-   retry shiftreport (gh-based, was rate-limited).
-2. Fresh ladder: warden TARGET, else halt/steer/next/queue game-first.
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue game-first.
+   All session paperwork closed (both issues shipped+prod-verified; shiftreport
+   pushed).
    #1637 batch 19 stays slot a's rolling issue (last activity 15:24Z kick);
    don't poach without a claim win. `next` #1711 hardware-gated — watch for
    Jon's answer.
-3. If dry: fresh weakestStage; QA owns #1871/#1900/#1908/#1877 — builders
+2. If dry: fresh weakestStage; QA owns #1871/#1900/#1908/#1877 — builders
    don't pick those up unless steered.
 
 ## Notes for the next slot-b session
 - `:5178` dev server runs from `~/Dev/retrogames-forge-fb-loadout` (detached
   `6d03998`, node_modules symlink) — verify cwd, reuse or kill.
-- Batch GitHub calls; prod probes are curl-only (no API cost). A chunk sweep
-  of 135 files once costs nothing REST-wise and is the honest prod test.
+- Batch GitHub calls; prod probes are curl-only (no API cost). A content sweep
+  of the chunk set is the honest prod test — but strip `./` with `sed`, NOT
+  `tr -d '"./'` (tr eats the dot in `.js`; every fetch 404s and the sweep
+  silently reports absent = a lie machine).
 - floorbossplay's first run right after a dev-server (re)start flakes one
   live-timing gate; re-run once before investigating (rule 3 spirit).
 - Checkpoint colon law (above) — slot b comments already use it; keep it.
