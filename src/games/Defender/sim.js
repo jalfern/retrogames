@@ -106,18 +106,26 @@ export const livesForScore = (score) => Math.floor(score / BONUS_LIFE_EVERY)
 // only `dead` is gone).
 export const humansAlive = (humans) => humans.filter((h) => h.state !== 'dead').length
 
-// WATCH route (#1637 batch 18) — the patrol the attract screen already flies,
-// extracted from index.jsx so ONE brain drives attract, seat and proof (the
-// no-forked-brain law). Pure per-tick reaction: chase the nearest threat on
-// the wrap (vertical proximity weighs more — the guns fire flat along the
-// facing), lift off the wireframe it hugs, and fire at anything level inside
-// laser range. No rand, no memory — honest from any position.
+// WATCH route (#1637 batch 18; defends the humans since batch 19) — the patrol
+// the attract screen already flies, extracted from index.jsx so ONE brain drives
+// attract, seat and proof (the no-forked-brain law). Pure per-tick reaction: the
+// planet's own job ranking. A lander HAULING a human outranks everything — shoot
+// it and the human drops, recoverable; a lander on a dive is next. A held human
+// is carried down the elevator and set back on the surface (+500, and a full
+// street at wave clear is the arcade's own bonus). A falling human is flown into,
+// not shot at: sit just above it and let gravity bring it into the harness (+250).
+// Otherwise chase the nearest threat on the wrap (vertical proximity weighs more —
+// the guns fire flat along the facing), lift off the wireframe it hugs, and fire
+// at anything level inside laser range — EXCEPT when a walking human stands in the
+// laser line closer than the target (the arcade's friendly-fire law runs both
+// ways). No rand, no memory — honest from any position.
 // Honest measure (defendercheck's WITNESS section, 20 seeded 150-second
 // patrols): every seed survives to the horizon with lives to spare and banks
-// >= 4,000 points, 19/20 clear at least a wave; the patrol does NOT fly
-// collision-free (a graze about once a patrol) and never catches falling
-// humans. The watch advertises the route, not invincibility — any input
-// takes over, and the seat releases with the run.
+// >= 7,000 points, 19/20 clear at least a wave; the patrol rescues a human
+// (catch + deliver) on most seeds, does NOT fly collision-free (a graze about
+// once a patrol), and cannot always reach a far-side haul before it crests. The
+// watch advertises the route, not invincibility — any input takes over, and the
+// seat releases with the run.
 export const watchRoute = (s) => {
     const input = { left: false, right: false, up: false, down: false, fire: false }
     const p = s.player
@@ -126,10 +134,47 @@ export const watchRoute = (s) => {
     const floorY = Math.min(groundAt(s.terrain, p.x), groundAt(s.terrain, lookX))
     const climbing = p.y > floorY - 30
     if (climbing) input.up = true
+
+    // Delivery: a held human rides below the ship — descend the elevator and hold
+    // the ~10 px band above the wireframe so it touches down and walks (+500).
+    if (s.carrying !== null) {
+        const want = groundAt(s.terrain, p.x) - 13
+        if (p.y < want - 2) input.down = true
+        else if (p.y > want + 2) input.up = true
+        if (p.vx > 1.2) input.left = true
+        else if (p.vx < -1.2) input.right = true
+        return input
+    }
+
+    // Rescue: a human already falling is worth banking if the ship can get under
+    // it before the surface — chase only a realistically reachable one (scaled to
+    // how far it still has to fall and how low it already is), then sit just
+    // above and let it drop into the harness.
+    let fall = null
+    let fallD = Infinity
+    for (const h of s.humans) {
+        if (h.state !== 'falling') continue
+        const d = Math.abs(wrapDelta(h.x - p.x)) + Math.abs(h.y - p.y) * 3
+        if (d < fallD) { fallD = d; fall = h }
+    }
+    if (fall && fallD < 1000 && !climbing) {
+        const fdx = wrapDelta(fall.x - p.x)
+        if (fdx > 4) input.right = true
+        else if (fdx < -4) input.left = true
+        const wantY = fall.y - 12
+        if (p.y < wantY - 4) input.down = true
+        else if (p.y > wantY + 6) input.up = true
+        return input
+    }
+
+    // Threat choice, weighted by the planet's job: a hauler is the top priority,
+    // a diver next, everything else nearest-first.
     let best = null
     let bestD = Infinity
     for (const e of s.enemies) {
-        const d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 6
+        let d = Math.abs(wrapDelta(e.x - p.x)) + Math.abs(e.y - p.y) * 6
+        if (e.type === 'lander' && e.carry !== null) d *= 0.25
+        else if (e.type === 'lander' && e.state === 'descend') d *= 0.7
         if (d < bestD) { bestD = d; best = e }
     }
     if (best) {
@@ -141,7 +186,17 @@ export const watchRoute = (s) => {
             if (dy > 10) input.down = true
             else if (dy < -10) input.up = true
         }
-        if (Math.abs(dy) < 15 && Math.abs(dx) < 560 && (dx === 0 || Math.sign(dx) === p.facing)) input.fire = true
+        if (Math.abs(dy) < 15 && Math.abs(dx) < 560 && (dx === 0 || Math.sign(dx) === p.facing)) {
+            // Friendly-fire guard: never send a laser down a line where a walking
+            // human stands closer than the target — your shots kill humans too.
+            let shield = false
+            for (const h of s.humans) {
+                if (h.state !== 'walk') continue
+                const hd = wrapDelta(h.x - p.x)
+                if (Math.abs(hd) < Math.abs(dx) + 8 && Math.sign(hd || p.facing) === Math.sign(dx || p.facing) && Math.abs(h.y - p.y) < 10) shield = true
+            }
+            if (!shield) input.fire = true
+        }
     }
     return input
 }
