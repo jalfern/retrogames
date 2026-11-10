@@ -84,8 +84,10 @@ export function snapshotNet(gs) {
         man: [gs.manual.page, gs.manual.line, gs.manual.flag || '', gs.manual.flagTicks],
         ord: [gs.order || '', gs.orderFor, gs.orderTicks],
         clearFlash: gs.clearFlash, flip: gs.flip,
-        hp: [gs.held, gs.pulls], // #1909: THE DRAIN state rides the snapshot (additive —
-        // snapshots without the field restore as a fresh, full plate)
+        hp: [gs.held, gs.pulls, gs.tray.join(''), gs.sel, gs.heldSlot], // #1909: THE DRAIN state rides the
+        // snapshot (additive — snapshots without the field restore as a fresh, full plate).
+        // #1917 appended the rail: layout + hand + home (old snaps restore a full,
+        // left-packed plate with the hand at the rail's open end).
         seq: Object.entries(gs.seqInput).map(([k, v]) => [k | 0, v.slice()]),
         rng: gs.rng.state(),
     }
@@ -128,6 +130,14 @@ export function restoreNet(snap) {
     // that plate's truth).
     gs.held = snap.hp ? snap.hp[0] | 0 : 0
     gs.pulls = snap.hp ? snap.hp[1] | 0 : 0
+    // #1917 THE RAIL rides hp[2..4]; pre-rail snaps restore a full plate in
+    // the classic left-packed look, hand at the open (right) end.
+    const rail = snap.hp && typeof snap.hp[2] === 'string' && snap.hp[2].length === 3
+        ? snap.hp[2].split('').map(c => (c === '1' ? 1 : 0))
+        : [0, 1, 2].map(i => (i < gs.features.batteries ? 1 : 0))
+    gs.tray = rail
+    gs.sel = snap.hp && snap.hp[3] != null ? snap.hp[3] | 0 : 2
+    gs.heldSlot = snap.hp && snap.hp[4] != null ? snap.hp[4] | 0 : (gs.held > 0 ? gs.sel : -1)
     gs.seqInput = {}
     for (const [k, v] of snap.seq || []) gs.seqInput[k] = v.slice()
     gs.rng.setState(snap.rng | 0)
