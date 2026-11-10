@@ -74,6 +74,39 @@ export function parseCall(text) {
 // (same law as RULEBOOK: text and truth from one source).
 export const ACCEPTED_HINT = 'SAY: "CUT RED" "DIAL 7" "SET" "PRESS STAR" "FLIP IT"'
 
+// ---- CALL-BY-KEY (#1894) -----------------------------------------------------
+// The mic is not the only mouth: C opens a typed call line and ENTER shouts
+// what it holds. The line must never grow its own grammar — applyCallKey is
+// a pure EDITOR (keys in, buffer/commit/close out); the committed text rides
+// voiceCall, the exact entry the mic feeds, so obey pulse, refuse-with-why
+// and the #1415 voiceCmd bank come along unchanged. A second grammar here
+// would drift from RULEBOOK-text==truth; bombdrive pins the whole delivery
+// with real keystrokes instead of the injected phrase.
+export const CALL_LINE_MAX = 28
+
+// KEY_CALL_HINT — printed on the LCD footer while the mic is OFF: the shapes
+// stay ACCEPTED_HINT's alone (that line glows while it listens); this one
+// names the CHANNEL, not the shapes, so the one-source law is kept whole.
+export const KEY_CALL_HINT = 'NO MIC? PRESS C, TYPE THE CALL, ENTER SHOUTS IT'
+
+// applyCallKey — the whole line law, pure. Returns null when the key is not
+// the line's (the caller lets seat keys live); otherwise the new buffer and
+// whether this keystroke commits (shouts) or closes the line.
+export function applyCallKey(buf, code) {
+    if (code === 'KeyC') return { buf, commit: false, close: true } // C closes what C opened
+    if (code === 'Enter' || code === 'NumpadEnter') return { buf, commit: buf.length > 0, close: buf.length === 0 }
+    if (code === 'Backspace') {
+        const nb = buf.slice(0, -1)
+        return { buf: nb, commit: false, close: nb.length === 0 }
+    }
+    if (code === 'Space') return { buf: buf + ' ', commit: false, close: false }
+    const l = /^Key([A-Z])$/.exec(code)
+    if (l) return { buf: buf + l[1].toLowerCase(), commit: false, close: false }
+    const d = /^Digit([0-9])$/.exec(code)
+    if (d) return { buf: buf + d[1], commit: false, close: false }
+    return null // arrows, TAB, the mic's V, seat keys: not the line's — swallowed by the open line, never a pad
+}
+
 // intentLabel — what the "HEARD" banner shows (ART rule: short, unmistakable).
 export function intentLabel(intent) {
     if (!intent) return '?'

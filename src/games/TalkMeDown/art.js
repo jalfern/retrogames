@@ -2,7 +2,7 @@
 // aesthetic: beveled steel panel, red 7-seg fuse, colored wire arcs, a cream
 // typewritten manual with rule numbers in the red margin. 640x360 native.
 import { WIRE_COLORS, GLYPHS, RULEBOOK, variantPool, BACK_FACT_STAMPS } from './engine.js'
-import { ACCEPTED_HINT } from './voice.js'
+import { ACCEPTED_HINT, KEY_CALL_HINT } from './voice.js'
 
 export const W = 640
 export const H = 360
@@ -430,8 +430,8 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
     // #1373: the accepted-call shapes, printed right on the page (#1247) —
     // a manual player who never read a screen knows exactly what to shout.
     g.fillStyle = '#4a4436'
-    g.fillText('MIC: "CUT RED" "DIAL 7"', RAIL.x + 30, RAIL.y + RAIL.h - 35)
-    g.fillText('"SET"  "PRESS STAR"', RAIL.x + 30, RAIL.y + RAIL.h - 26)
+    g.fillText('MIC V — OR C TYPES IT', RAIL.x + 30, RAIL.y + RAIL.h - 35)
+    g.fillText('"CUT RED" "DIAL 7" "SET"', RAIL.x + 30, RAIL.y + RAIL.h - 26)
     g.font = FONT(6); g.fillStyle = '#8a8168'
     g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)
 }
@@ -522,7 +522,23 @@ export function drawOrderRail(g, order, flag, flicker = 0, micOn = false) {
     const msg = order ? `PARTNER: ${order}` : (flag ? `READ RULE ${flag}` : 'PARTNER HOLDING THE MANUAL...')
     if (!(flicker > 2 && flicker % 2 === 0)) g.fillText(msg.slice(0, 42), PANEL.x + 14, y + 14)
     g.font = FONT(6); g.fillStyle = micOn ? '#5fd680' : '#6f747d'
-    g.fillText(ACCEPTED_HINT, PANEL.x + 12, y + 29)
+    // #1894: the footer says two true things — while the mic listens it glows
+    // with the accepted shapes (one source, ACCEPTED_HINT); while it is off
+    // it coaches the keyboard channel instead. Both consts live in voice.js.
+    g.fillText(micOn ? ACCEPTED_HINT : KEY_CALL_HINT, PANEL.x + 12, y + 29)
+}
+
+// #1894 CALL-BY-KEY: the composition rides the LCD glass itself — same
+// coords the order text owns (this is the seat's mouth), amber like a hotline
+// so it can never be mistaken for a printed PARTNER order. The caret blinks
+// on the sim's own clock; a line full to CALL_LINE_MAX stops growing and the
+// last chars stay visible (the shout is what was typed, not what fits).
+export function drawCallLine(g, buf, tick) {
+    const y = PANEL.y + PANEL.h - 32
+    g.fillStyle = '#120e06'; g.fillRect(PANEL.x + 10, y + 2, PANEL.w - 20, 18)
+    g.font = FONT(7); g.fillStyle = '#ffcf5e'
+    const caret = tick % 40 < 24 ? '_' : ' '
+    g.fillText(`CALL> ${buf}${caret}`.slice(0, 42), PANEL.x + 14, y + 14)
 }
 
 export function drawBanner(g, text, ok, tick) {
