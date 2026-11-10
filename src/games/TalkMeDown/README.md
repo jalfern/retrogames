@@ -76,6 +76,25 @@ the couch — or the mic.
   attract/select banks a pending seat and `startPlay` seats it — one tap on
   ▶ WATCH starts the run AND watches the proven route; the pill itself rides
   the attract band at 24% per the phonecheck law.
+- **Remote seats (#1880):** `net.js` runs the proven BombDefuse-online law
+  (#1819) on this seed-pure sim: `go{seed}`, absolute pad masks batched
+  every 2 ticks (PAD_DELAY 8), a whole-sim hash at every boundary, and
+  `res` snapshots for desync resync plus #1838-style in-flight reseat
+  (back + chunked snapshot + pad backfill, the human seated on a shared
+  flip tick). Roles ride seats: host = seat 0 = DEFUSER, guest = seat 1 =
+  MANUAL. Views split by role — the guest box plates over the bomb panel,
+  the host box plates over the rulebook; the live-stamp rail rides with
+  the page-holder (a shouted "NEON N3!" lands on the page, not the wire).
+  Walkaway laws are role-honest: guest gone → seat 1 demotes after
+  DROP_GRACE stalled ticks and the engine's CPU manual (partnerSay) takes
+  the rail, the run still wins solo; host gone → the guest FREEZES (no
+  role inversion — the page holder owns no hands), DEFUSER OFFLINE on the
+  plate, any key back to the lobby. Heard page-words fold into the guest's
+  SAMPLED pad stream ((want−page+3)%3 right-taps) so words online never
+  fork shared state (#1247, online form). Y/WATCH is couch-only online
+  (#1656 law: the wire already has somebody at the other end).
+  `rng.js` exposes the mulberry32 counter additively — the one fact a seed
+  alone cannot rebuild mid-run — so it rides the snapshot.
 
 ## Input map
 
@@ -124,6 +143,26 @@ npm run watchcheck -- --only talk-me-down   # WATCH seat pilot: seat/blip,
                      # is the honesty meter), route-to-win, silent release,
                      # one-tap ▶ WATCH from attract; + source pins (no forked
                      # brain, solvePad from engine.js, tmd-smoke witness exists)
+npm run tmdlinkcheck   # 56 gates (#1880 remote seats), pure Node over
+                       # relay/core.js rules: codec, snapshot incl. the rng
+                       # counter, twin lockstep-to-win, 90ms jitter, guest
+                       # walkaway demote at exactly DROP_GRACE + CPU-manual
+                       # takeover + solo win, host-gone freeze-no-inversion,
+                       # desync snapshot resync, in-flight reseat seated on a
+                       # shared flip tick, page-fold math, static shell audit
+npm run tmdlinkcheck -- --mutate          # 4 red — the walkaway law
+npm run tmdlinkcheck -- --mutate-reseat  # 2 red — the shared players flip
+npm run tmdlinkcheck -- --mutate-freeze  # 2 red — role inversion on host loss
+npm run tmdlinkdrive   # 20 gates (#1880), TWO REAL BROWSERS over a local
+                       # relay (dev server needed, DRIVE_RELAY_PORT || 8792):
+                       # room+QR, phone joins by code (relay roster), SPACE
+                       # kicks a pinned seed, phone ArrowRights really turn
+                       # the HOST's manual pages, phone SPACE stamps a rule
+                       # the host sees, hash boundaries agree (0 desyncs),
+                       # walkaway -> CPU-manual demote -> solo campaign WIN,
+                       # host-gone -> guest FREEZE -> any key walks back,
+                       # close+reopen -> seated INTO THE LIVE RUN on the
+                       # shared flip -> squad clears together, zero page errors
 ```
 
 Mutant proof (step 5): commenting `gs.fuse -= 1` in `step()` goes red twice
@@ -158,8 +197,12 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   the back refuses verbs silently (no strike on your own curiosity), D5/G5
   read the battery count, "FLIP IT" pulses the tilt hint, and the variant
   slope (`1+round`) revived N6, dead under the old unlock law.
-- 2P requires a shared keyboard (seat 2 = WASD + F); no online lobby yet —
-  `#494` remote seats are reserved plumbing like SOS (#1248).
+- **CLOSED by #1880:** remote seats — `?net=host` keeps the bomb, the joined
+  link (`?net=join&room=CODE`) seats a friend at the manual on their own
+  screen; lockstep pads over the relay, snapshots for resync, walkaway laws
+  (guest gone → CPU manual takes the rail; host gone → the page holds still).
+  Left open: no voice-over-network (the squad still talks by phone) and the
+  room caps at two.
 - Headless CI can hear nothing (no speech service): mic *delivery* is proved
   by badge state only; the grammar + obey/refuse path is injected.
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second

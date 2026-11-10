@@ -176,6 +176,7 @@ export const MANUAL_CHECKS = [
   "scripts/stormcheck.mjs",
   "scripts/textfitcheck.mjs",
   "scripts/tidycheck.mjs",
+  "scripts/tmdlinkcheck.mjs",
   "scripts/touchselectcheck.mjs",
   "scripts/viperpitcheck.mjs",
   "scripts/voicecheck.mjs",
