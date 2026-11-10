@@ -12,7 +12,7 @@ the couch — or the mic.
   identical hashes. `Math.random()` lives only in the shell (sparks, shake).
 - **Modules** carry a stamp that indexes the printed rulebook:
   - `NEON (N1..N6)` — cut exactly ONE colored wire.
-  - `DIAL (D1..D5)` — turn the 0-9 dial, then press SET.
+  - `DIAL (D1..D6)` — turn the 0-9 dial, then press SET.
   - `GLYPH (G1..G5)` — press three symbols in order.
   Every rule is a pure function of features the defuser can see and read
   aloud: serial last digit, LED count (0-8), bolt color, wire colors + lit
@@ -27,7 +27,24 @@ the couch — or the mic.
   hint); new bombs land face-up; `hash`/`simState` carry the tilt; a heard
   "FLIP IT" pulses the tilt hint — words become visible, hands stay yours
   (#1247 law). The fuse and strike breakers stay drawn on both sides:
-  pressure never hides.
+  pressure never hides. Exception since #1909: the back owns ONE verb —
+  see THE DRAIN below.
+- **THE DRAIN (#1909)**: while flipped, A is a hand — it pulls a battery out
+  (the pocket holds exactly one) or puts it back. One press, one action: the
+  drain edge-detects, because the flipped panel has no module-lock to swallow
+  held-key repeats (a held Space would otherwise ratchet pull-push-pull —
+  caught by a real-keystroke screenshot). Handling is free: the empty and the
+  full end refuse silently. New stamp **D6** (round 5) spends the act: "PULL
+  OUT a battery from the BACK plate... SET the dial to the number of
+  batteries LEFT" — SET before the pull is the wrong action and the strike
+  names it (`BATTERY STILL IN PLACE`). The demanded number is the LIVE plate
+  count once pulled, so a drain also shifts what D5/G5 demand aloud — the
+  page says COUNT, never a frozen digit, and text==truth stays whole through
+  the trick (pinned, not accidental). `solvePad` drains for pull rules, so
+  WATCH, the attract demo and every harness share the one brain; `held/pulls`
+  ride hash/simState and the net snapshot (additive `hp`). A GLYPH mirror
+  (G6) is impossible by the seat law — GLYPH seats only at round 4/depth 5 —
+  so the drain rides the dial alone.
 - **Solvability by construction**: the generator re-rolls module features
   until `computeTarget` resolves, so a printed precondition (e.g. N2's "the
   ONE lit wire") always holds on a live bomb.
@@ -117,6 +134,7 @@ the couch — or the mic.
 |---|---|---|
 | arrows / d-pad | module + wire/dial/glyph | page + rule line |
 | ↑ at module 1 / ↓ on the back | tilt the bomb over / tilt back (#1797) | — |
+| A on the back | pull a battery out / put it back (#1909 THE DRAIN) | — |
 | SPACE / A | cut / SET / press glyph | flag rule (READ N3 on panel) |
 | B / PAGE | hide-show manual rail (solo) | — |
 | V | mic on/off | |
@@ -128,7 +146,7 @@ the couch — or the mic.
 ## Verify
 
 ```bash
-npm run bombcheck   # 71 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 88 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
                     # paths, quota win 50/50, slack (wins at 75% fuse), grammar
                     # (+ FLIP phrases, page/dial keep), voiceCmd banking (#1415:
@@ -136,13 +154,19 @@ npm run bombcheck   # 71 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # hint==grammar one-source), D4-anchor (#1708: target invariant
                     # through all sibling progress, printed-count human flow,
                     # source pin), back panel (#1797: seeded batteries 0..2, flip
-                    # law + silent refusal + face-up reset, autopilot never tilts,
-                    # D5/G5 printed-truth rigs, every stamp live inside the quota
-                    # incl. the revived N6, round 1 == README set, hash/simState
-                    # carry the tilt, source pin), CALL-BY-KEY (#1894: editor law
-                    # — compose/commit/close; no grammar in applyCallKey (source
-                    # pin); j/q/x free over the vocabulary; the commit routes
-                    # through voiceCall; the footer swaps coach by mic state)
+                    # law + silent refusal + face-up reset, autopilot never tilts
+                    # for a live pull rule, D5/G5 printed-truth rigs, every stamp
+                    # live inside the quota incl. the revived N6, round 1 == README
+                    # set, hash/simState carry the tilt, source pin), CALL-BY-KEY
+                    # (#1894: editor law — compose/commit/close; no grammar in
+                    # applyCallKey (source pin); j/q/x free over the vocabulary;
+                    # the commit routes through voiceCall; the footer swaps coach
+                    # by mic state), THE DRAIN (#1909: D6 unlocks at round 5,
+                    # exactly-one-in-place gen law, the page-D procedure earns its
+                    # SET, pull is edge-triggered (one press one net-out, a held
+                    # key cannot drain dry), live count moves on D5/G5 rigs,
+                    # solvePad drains too, partner leads with the pull, the wire
+                    # carries held+pulls, source pins)
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
@@ -206,7 +230,13 @@ silent release, seat-feed source pin); restoring returns 198/198 green.
 write (a grammar fork at the shout) — goes red on exactly the five load-bearing
 gates: the voiceCall source pin (bombcheck), ENTER-shout intent, typed NO-CALL
 refusal, live-bank parity, and the watch-word intent (bombdrive); restoring
-returns 71 + 55 green.
+returns everything green.
+
+#1909's mutant — dropping `pull: true` from the D6 rule — goes red on exactly
+four gates: "pull before SET" (the page-D procedure now dies with a premature
+`battery still in place` strike), solvePad drains, the partner's pull-first
+line, and the source pin; the edge/count/hash gates stay green because the
+verbs themselves are untouched. Restoring returns 88 green.
 
 Known stale (pre-existing, not batch 15): `bombdrive`'s seed-7 strike probe
 expects the leftmost wire to be the WRONG cut, but seed 7's round-1 N1 now
@@ -225,15 +255,25 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   const (page, footer and grammar can never drift).
 - **CLOSED by #1797:** the bomb has a BACK panel — UP at module 1 tilts it
   onto a riveted maintenance plate (0-2 seeded batteries), DOWN tilts back;
-  the back refuses verbs silently (no strike on your own curiosity), D5/G5
-  read the battery count, "FLIP IT" pulses the tilt hint, and the variant
-  slope (`1+round`) revived N6, dead under the old unlock law.
+  the back refuses dial/cut/defuse verbs (no strike on your own curiosity,
+  and no ratchet — #1909's edge law makes that true for A too), D5/G5 read
+  the battery count, "FLIP IT" pulses the tilt hint, and the variant slope
+  (`1+round`) revived N6, dead under the old unlock law.
 - **CLOSED by #1880:** remote seats — `?net=host` keeps the bomb, the joined
   link (`?net=join&room=CODE`) seats a friend at the manual on their own
   screen; lockstep pads over the relay, snapshots for resync, walkaway laws
   (guest gone → CPU manual takes the rail; host gone → the page holds still).
   Left open: no voice-over-network (the squad still talks by phone) and the
   room caps at two.
+- **CLOSED by #1909 (THE DRAIN):** batteries can be pulled. A press on the
+  back is an edge — one press, one battery out into the IN-HAND pocket, one
+  out; holding the key does nothing (the #1797 repeat-hazard fix: the flipped
+  panel has no module-lock to swallow held-key repeats, so the verb carries
+  its own edge law, pinned 16e). D6 (round 5+) makes the live page a pull
+  ("PULL A BATTERY, THEN DIAL"); the partner's call leads with the pull;
+  the pocket state rides the contract snapshot (`hp`) and the hash. G6 was
+  ruled out before writing it: GLYPH seats only at rounds 4/5 and N/G are
+  taken at modules 0/1, so the glyph pool at depth 5 holds no 6th stamp.
 - Headless CI can hear nothing (no speech service): mic *delivery* is still
   proved by badge state and an injected phrase (#1249). Since #1894 the
   grammar + obey/refuse + bank path also runs end-to-end on REAL keystrokes
@@ -241,12 +281,11 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   a live speech-service delivery in CI, and typed calls on phones
   (VirtualControls has no X — the pill stays the phone's only mouth).
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
-  dial module is intentionally not cross-referenced (first dial wins).
-- The tilt is READ-only: batteries are counted, never pulled (no battery-pull
-  fuse tricks). Since #1802 the SERIAL lives on the BACK ID plate (the original
-  hides it there — "Serial Port!"), so serial rules (N6/D1/D3/G2/G4) force the
-  flip conversation; seat 2's page coaches "ASK THEM TO FLIP IT!". Solo play
-  answers N6/D1/D3 too by tilting — the tilt is free; only battery-pull and
-  deeper plate variety remain stage 2.
-- No bomb-shape variety beyond the two sides; deeper rounds could vary the
-  plate layout itself (that remains the fun-kind of stage 2).
+  dial module is intentionally not cross-referenced (first dial wins). This is
+  structurally untestable, not just unwritten: the seat law puts NEON at
+  module 0 and the type cycle keeps DIAL at one module per round, so two live
+  dials never exist on a real board.
+- Deeper plate variety: the back is one layout with a count and a pocket;
+  where the batteries sit could itself carry rules (a slot-layout puzzle) —
+  that remains the fun-kind of stage 2, along with voice shorthand for the
+  drain ("PULL IT" should be enough on the mic).

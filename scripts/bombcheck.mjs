@@ -8,7 +8,7 @@
 
 import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
-    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS,
+    RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS, ruleOf,
 } from '../src/games/TalkMeDown/engine.js'
 import { parseCall, intentLabel, ACCEPTED_HINT, applyCallKey, KEY_CALL_HINT, CALL_LINE_MAX } from '../src/games/TalkMeDown/voice.js'
 import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
@@ -411,7 +411,10 @@ const ok = (name, cond, extra = '') => {
     // (c) no verbs on the back — inputs refuse SILENTLY (no strike, no cut,
     // no cursor/dial move, no score). A locked module must not pin the bomb
     // face-down either way — the tilt stays legal while a module cools.
-    const g2 = createGame(7, 1)
+    // #1909: A got a verb on a FULL plate (THE DRAIN, section 16) — this
+    // rig now seeds an empty plate so every input must be silent.
+    let g2 = null
+    for (let s = 1; s <= 300; s++) { const gg = createGame(s, 1); if (gg.features.batteries === 0) { g2 = gg; break } }
     const m0 = g2.modules[0]
     const sub0 = g2.cursor.sub
     const dial0 = m0.dial ?? -1
@@ -435,13 +438,21 @@ const ok = (name, cond, extra = '') => {
     buildBomb(g3)
     ok('a new bomb lands face-up (buildBomb resets the tilt)', g3.flip === 0)
 
-    // (e) the autopilot never tilts — solvePad stays face-up for a whole quota.
-    let tiltSeen = false
+    // (e) the autopilot tilts ONLY for the drain (#1909 rewrote this gate —
+    // it used to read "never tilts"): solvePad stays face-up unless a live
+    // rule demands a pulled battery, and never lies about needing one.
+    let tiltSeen = false, tiltsForNothing = false
     {
         const g = createGame(11, 1)
-        for (let i = 0; i < 60000 && !g.done; i++) { step(g, solvePad(g)); if (g.flip) tiltSeen = true }
+        for (let i = 0; i < 60000 && !g.done; i++) {
+            step(g, solvePad(g))
+            if (g.flip) {
+                tiltSeen = true
+                if (g.pulls === 0 && !g.modules.some(x => !x.solved && ruleOf(x).pull)) tiltsForNothing = true
+            }
+        }
     }
-    ok('the autopilot never tilts — a full quota run stays face-up', !tiltSeen)
+    ok('the autopilot tilts only for a live pull rule — never for nothing', !tiltsForNothing, `tiltSeen=${tiltSeen} spurious=${tiltsForNothing}`)
 
     // (f) human flow: tilt to READ, then the printed count solves D5/G5 —
     // printed text and computed target are the same truth.
@@ -487,8 +498,8 @@ const ok = (name, cond, extra = '') => {
             for (const m of gs.modules) seen.add(m.stamp)
         }
     }
-    const missing = ['D5', 'G5', 'N6', 'D4', 'G4', 'N4'].filter(s => !seen.has(s))
-    ok('every stamp unlocks inside the quota (D5, G5, and the once-dead N6 all generate)', !missing.join(), `missing ${missing.join(',')}`)
+    const missing = ['D5', 'G5', 'N6', 'D4', 'G4', 'N4', 'D6'].filter(s => !seen.has(s))
+    ok('every stamp unlocks inside the quota (D5, G5, and the once-dead N6 all generate; #1909 adds D6)', !missing.join(), `missing ${missing.join(',')}`)
     const r1 = ['N', 'D', 'G'].flatMap(t => variantPool(t, 1).map(v => t + v)).sort().join(',')
     ok('round 1 is exactly the README set (N1/N2/D1/D2/G1/G3)', r1 === 'D1,D2,G1,G3,N1,N2', r1)
 
@@ -526,7 +537,7 @@ const ok = (name, cond, extra = '') => {
     const artSrc15 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
     ok('the front view prints no serial (source pin)', !/fillText\(\s*'SER\s*'/.test(viewSrc))
     ok('the back plate draws the serial (source pin)',
-        /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial\)/.test(viewSrc))
+        /function drawBack\([^)]*serial/.test(artSrc15) && /drawBack\(g, gs\.features\.batteries, tick, gs\.features\.serial,\s*gs\.held\)/.test(viewSrc))
     ok('seat 2 gets the flip coach line, fed by gs.flip (source pin)',
         /ASK THEM TO FLIP IT!/.test(artSrc15) && /BACK IS UP/.test(artSrc15) &&
         /drawManual\([\s\S]{0,240}, gs\.flip\)/.test(viewSrc))
@@ -565,6 +576,153 @@ const ok = (name, cond, extra = '') => {
         ['cut','cuts','snip','clip','remove','pull','yank','red','blue','yellow','green','white','black','press','hit','push','tap','touch','star','diamond','club','spade','bolt','moon','neon','wires','dial','glyph','symbols','page','flip','turn','set','confirm','done','engage','tilt','zero','one','two','three','four','five','six','seven','eight','nine']
             .every(w => !/[jq]/.test(w)),
         'grammar vocab contains j/q')
+}
+
+// ---- #1909 THE DRAIN: the back plate is physical, D6 spends a battery ------
+{
+    // (a) unlock law — D6 surfaces at round 5 (the deepest DIAL seat), and
+    // the G pool stayed at 5: GLYPH seats only round 4/depth 5, so a G6
+    // could never generate (caught pre-ship; the drain rides the dial alone).
+    ok('D6 unlocks exactly at round 5', variantPool('D', 5).includes(6) && !variantPool('D', 4).includes(6))
+    ok('G pool carries no dead stamp (no unreachable G6)', variantPool('G', 5).join(',') === '1,3,5,2,4', variantPool('G', 5).join(','))
+
+    // (b) generation law — D6 lands only where there is a battery to spend.
+    let d6 = 0, dBad = ''
+    for (const round of [3, 5]) {
+        for (let seed = 1; seed <= 1200 && !dBad; seed++) {
+            const gs = createGame(seed, 2); gs.round = round; buildBomb(gs)
+            if (gs.modules.some(m => m.stamp === 'D6')) { d6++; if (gs.features.batteries < 1) dBad = `round ${round} seed ${seed}: D6 with an empty plate` }
+        }
+    }
+    ok(`D6 generates only with batteries >= 1 (${d6} bombs, rounds 3+5)`, !dBad && d6 >= 100, dBad || `only ${d6}`)
+
+    // (c) human flow — the exact page procedure: flip, drain, dial the number
+    // LEFT, SET. Zero strikes.
+    let rigs = 0, rBad = ''
+    for (let seed = 1; seed <= 3000 && rigs < 40 && !rBad; seed++) {
+        const gs = createGame(seed, 2); gs.round = 5; buildBomb(gs)
+        const di = gs.modules.findIndex(m => m.stamp === 'D6'); if (di < 0) continue
+        const b = gs.features.batteries, d = gs.modules[di]
+        step(gs, { up: true }); step(gs, { a: true }); step(gs, { down: true })
+        for (let g = 0; gs.cursor.mod !== di && g < 8; g++) step(gs, { down: true })
+        while (d.dial !== b - 1) step(gs, d.dial < b - 1 ? { right: true } : { left: true })
+        const t = computeTarget(gs, d)
+        step(gs, { a: true })
+        if (!(d.solved && gs.strikes === 0 && t.dial === b - 1)) rBad = `seed ${seed}: solved=${d.solved} strikes=${gs.strikes} t=${JSON.stringify(t)}`
+        rigs++
+    }
+    ok(`page procedure: flip, drain, dial LEFT, SET solves (${rigs} rigs)`, !rBad && rigs >= 20, rBad || `only ${rigs}`)
+
+    // (d) SET before the drain is the wrong action — and the strike NAMES it.
+    {
+        let named = false
+        for (let seed = 1; seed <= 500 && !named; seed++) {
+            const gs = createGame(seed, 2); gs.round = 5; buildBomb(gs)
+            const di = gs.modules.findIndex(m => m.stamp === 'D6'); if (di < 0) continue
+            const d = gs.modules[di]; gs.cursor.mod = di
+            while (d.dial !== gs.features.batteries - 1) step(gs, { right: true })
+            drainEvents(gs); step(gs, { a: true })
+            const ev = drainEvents(gs).filter(e => e.k === 'strike')
+            named = gs.strikes === 1 && ev[0] && ev[0].why === 'battery still in place'
+        }
+        ok('SET before the drain strikes once and names the missed step', named)
+    }
+
+    // (e) the pocket law — A toggles out/in, but EDGE-triggered: one press,
+    // one action. A held key (~5 samples) must NOT ratchet pull-push-pull;
+    // empty and full ends refuse silently.
+    {
+        let s = null, e = null
+        for (let seed = 1; seed <= 300; seed++) { const g = createGame(seed, 1); if (g.features.batteries === 2) { s = g; break } }
+        const b0 = s.features.batteries
+        step(s, { up: true }); drainEvents(s)
+        step(s, { a: true }); step(s, { a: true }); step(s, { a: true }) // one ~3-tick press
+        const oneOut = s.features.batteries === b0 - 1 && s.held === 1 && s.pulls === 1
+        step(s, { a: false }); step(s, { a: true })                        // release, press again
+        const backIn = s.held === 0 && s.features.batteries === b0 && s.pulls === 1
+        ok('A toggles the pocket once per press (edge law); pulls count presses out', oneOut && backIn, `out=${oneOut} in=${backIn}`)
+        for (let seed = 1; seed <= 300; seed++) { const g = createGame(seed, 1); if (g.features.batteries === 0) { e = g; break } }
+        step(e, { up: true }); drainEvents(e)
+        step(e, { a: true })
+        ok('empty plate: A stays silent (no event, no strike)', drainEvents(e).length === 0 && e.strikes === 0)
+    }
+
+    // (f) live-count truth — the drain answers every battery rule live: pull
+    // one and a D5/G5 now demands the NEW count (the page says COUNT, never
+    // a frozen digit — text==truth stays whole through the trick). The drain
+    // is free on any bomb, so this rides rounds where those rules seat
+    // (D5 rounds 3+5, G5 round 4 — D6 never co-seats with either).
+    {
+        let ligs = 0, lBad = ''
+        outerF2:
+        for (const round of [3, 4, 5]) {
+            for (let seed = 1; seed <= 1500 && ligs < 24 && !lBad; seed++) {
+                const gs = createGame(seed, 2); gs.round = round; buildBomb(gs)
+                if (gs.features.batteries < 1) continue
+                const rule = gs.modules.find(m => m.stamp === 'D5' || m.stamp === 'G5')
+                if (!rule) continue
+                const t0 = computeTarget(gs, rule)
+                step(gs, { up: true }); step(gs, { a: true })
+                const t1 = computeTarget(gs, rule)
+                const shift = v => v.map((n, i) => (rule.stamp === 'G5' && i === 1 ? n : n - 1))
+                const want = rule.stamp === 'D5' ? [t0.dial - 1] : shift(t0.seq)
+                const got = rule.stamp === 'D5' ? [t1.dial] : t1.seq
+                if (got.join() !== want.join()) { lBad = `seed ${seed} r${round} ${rule.stamp} ${t0.seq || t0.dial} -> ${t1.seq || t1.dial}`; break outerF2 }
+                ligs++
+            }
+        }
+        ok(`drain shifts live battery rules (${ligs} rigs: D5/G5 answer the NEW count)`, !lBad && ligs >= 8, lBad || `only ${ligs}`)
+    }
+
+    // (g) the autopilot drains — solvePad spends the battery for D6 and still
+    // wins every seed; watch/attract/harness all share this one brain.
+    {
+        let drained = 0, won = 0
+        for (let seed = 1; seed <= 2000; seed++) {
+            const g = createGame(seed, 1)
+            let sawPull = false
+            for (let i = 0; i < 60000 && !g.done; i++) { step(g, solvePad(g)); if (g.pulls > 0) sawPull = true }
+            if (g.done && g.won) { won++; if (sawPull) drained++ }
+        }
+        ok(`solvePad drains for D6 and wins (${drained} drained campaigns, ${won}/2000 won)`, drained >= 5 && won === 2000, `${drained} drained, ${won} won`)
+    }
+
+    // (h) the CPU manual orders the pull first, exactly as the page prints.
+    {
+        let ordered = false
+        for (let seed = 1; seed <= 500 && !ordered; seed++) {
+            const gs = createGame(seed, 1); gs.round = 5; buildBomb(gs)
+            const di = gs.modules.findIndex(m => m.stamp === 'D6'); if (di < 0) continue
+            gs.cursor.mod = di
+            for (let i = 0; i < 120 && !gs.order; i++) step(gs, {})
+            ordered = !!(gs.order && gs.order.startsWith('PULL A BATTERY, THEN DIAL'))
+        }
+        ok('solo partner orders "PULL A BATTERY, THEN DIAL n, THEN SET"', ordered)
+    }
+
+    // (i) observable state + determinism — held/pulls ride hash & simState, and
+    // the remote snapshot carries them (additive hp; old snaps restore full).
+    {
+        const x = createGame(777, 1); const y = createGame(777, 1); const plain = createGame(777, 1)
+        step(x, { up: true }); step(x, { a: true })
+        step(y, { up: true }); step(y, { a: true })
+        ok('drained sims hash equal; drained differs from undrained', hash(x) === hash(y) && hash(x) !== hash(plain))
+        const sx = simState(x)
+        ok('simState carries held/pulls (harness visibility)', sx.held === x.held && sx.pulls === x.pulls && (x.held === 1 || x.features.batteries === 0))
+        const netSrc = readFileSync(new URL('../src/games/TalkMeDown/net.js', import.meta.url), 'utf8')
+        ok('the snapshot wires held/pulls (source pin)', /hp:\s*\[gs\.held,\s*gs\.pulls\]/.test(netSrc) && /snap\.hp\s*\?\s*snap\.hp\[0\]/.test(netSrc))
+    }
+
+    // (j) source pins — the drain lives once, in the engine, edge-latched; the
+    // art draws the pocket and the action hint.
+    {
+        const engSrc16 = readFileSync(new URL('../src/games/TalkMeDown/engine.js', import.meta.url), 'utf8')
+        ok('the drain is edge-latched in defuserAct (source pin)', /const aTap = pad\.a && !gs\.aPrev/.test(engSrc16) && /if \(aTap && gs\.held === 0 && gs\.features\.batteries > 0\)/.test(engSrc16))
+        ok('solvePad drains for pull rules (source pin)', /ruleOf\(x\)\.pull && gs\.pulls === 0 && gs\.features\.batteries >= 1/.test(engSrc16))
+        ok('D6 carries its pull marker (source pin)', /id: 'D6', pull: true/.test(engSrc16))
+        const artSrc16 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
+        ok('the back plate draws the pocket and the action hint (source pin)', /IN HAND/.test(artSrc16) && /A PUTS IT BACK/.test(artSrc16) && /A PULLS ONE OUT/.test(artSrc16))
+    }
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)

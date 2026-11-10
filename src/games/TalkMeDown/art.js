@@ -441,7 +441,7 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
 // bays, a hazard stencil, the battery bank D5/G5 demand aloud, and — since
 // #1802 — the SERIAL on its ID plate. The fuse and the strike breakers stay
 // drawn by the caller — pressure never hides.
-export function drawBack(g, batteries, tick, serial = 'XX0X0') {
+export function drawBack(g, batteries, tick, serial = 'XX0X0', held = 0) {
     bevel(g, PANEL, '#3f444c', '#1f2226')
     g.fillStyle = '#33373d'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, PANEL.h - 58)
     g.fillStyle = '#42474e'; g.fillRect(PANEL.x + 6, PANEL.y + 50, PANEL.w - 12, 2); g.fillRect(PANEL.x + 6, PANEL.y + 50, 2, PANEL.h - 58)
@@ -486,6 +486,22 @@ export function drawBack(g, batteries, tick, serial = 'XX0X0') {
         g.font = FONT(6); g.fillStyle = i < batteries ? '#3a2c08' : '#3d4148'
         g.fillText(String(i + 1), bx + 19, by + 80)
     }
+    // #1909 THE DRAIN: the pocket — a battery in hand sits clipped to the
+    // plate's corner, and the action line names what A does right now. The
+    // empty slots above already show the drain (they are drawn live).
+    if (held > 0) {
+        const hx = PANEL.x + 344, hy = PANEL.y + PANEL.h - 92
+        g.fillStyle = '#20242a'; g.fillRect(hx - 4, hy - 4, 52, 40) // pocket clip
+        g.fillStyle = '#c98f1f'; g.fillRect(hx, hy, 32, 26)
+        g.fillStyle = P.amber; g.fillRect(hx + 2, hy + 3, 28, 20)
+        g.fillStyle = '#8a6512'; g.fillRect(hx + 5, hy + 9, 22, 2)
+        g.fillStyle = '#d8dce2'; g.fillRect(hx + 34, hy - 4, 6, 5); g.fillRect(hx + 34, hy + 25, 6, 5)
+        g.font = FONT(6); g.fillStyle = P.amber
+        g.fillText('IN HAND', hx - 2, hy + 44)
+    }
+    g.font = FONT(6)
+    g.fillStyle = held > 0 ? '#ffd23e' : batteries > 0 ? '#7dffb0' : '#5c626c'
+    g.fillText(held > 0 ? 'A PUTS IT BACK' : batteries > 0 ? 'A PULLS ONE OUT' : 'PLATE EMPTY', PANEL.x + 130, PANEL.y + PANEL.h - 60)
     g.font = FONT(6); g.fillStyle = tick % 50 < 32 ? '#7dffb0' : '#41544a'
     g.fillText('DOWN TILTS IT BACK', PANEL.x + 122, PANEL.y + PANEL.h - 48)
 }
