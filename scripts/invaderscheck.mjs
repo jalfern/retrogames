@@ -274,7 +274,7 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
 
 // ---------- 11. WATCH witness (#1637 batch 18; hardened batch 19): the seat brain flies it ----------
 {
-    let clean = 0, deaths = 0, slowest = 0, slowestGap = 0
+    let clean = 0, deaths = 0, slowest = 0, slowestGap = 0, bricksAtClear = 0
     for (let k = 0; k < 20; k++) {
         const rand = seedRng(1000 + k * 77)
         let w = makeWorld(rand)
@@ -290,17 +290,22 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
             slowestGap = Math.max(slowestGap, w.tick - lastKill)
         }
         deaths += dw
-        if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick) }
+        if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick); bricksAtClear += bunkerBricks(w) }
     }
     ok(clean >= 20, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=20 — #1637 b19 fixed the seed-1462 fort-lead stall)`)
     ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
-    ok(slowest <= 2100, `slowest clean clear tick ${slowest} <= 2100 (a watch worth the time)`)
-    ok(slowestGap <= 450, `no seed stalls longer than 450 ticks between kills (slowest ${slowestGap}; the b18 seed-1462 fort stall ran 511, and deleting either half of the b19 fix pushes past this line)`)
+    ok(slowest <= 1400, `slowest clean clear tick ${slowest} <= 1400 (#1637 b20: aligned-shot re-aim + edge-bounce fold cut b19's 1857)`)
+    ok(slowestGap <= 220, `no seed stalls longer than 220 ticks between kills (slowest ${slowestGap}; b18's fort stall ran 511; deleting the b20 fold runs 236, deleting the re-aim pass runs 264)`)
+    ok(bricksAtClear >= 6200, `the route wastes few bricks on shots that cannot reach (forts still stand ${bricksAtClear}/6560 at clear; deleting the b19 aim tiebreak chews it down to 6108)`)
     ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
         'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
     ok((jsx.match(/watchRoute\(world\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
     ok(/bestBlocked \|\| !fortBlocks\(s, pc\)/.test(simSrc),
         '#1637 b19: the fire gate only crosses a fort when the target itself hides behind one')
+    ok(/if \(!s\.playerBullet && freeAt\(pc\)\) \{[\s\S]*?Math\.abs\(leadOf\(i\) - pc\) <= 2\.5[\s\S]*?input\.fire = true; return input/.test(simSrc),
+        '#1637 b20: the route takes an aligned shot NOW instead of marching to the lowest target\s column')
+    ok(/let edgeDist = Infinity[\s\S]*?Math\.min\(flight, tEdge\)/.test(simSrc),
+        '#1637 b20: the meeting point folds the edge bounce into the shot\s flight prediction')
     ok(/isWatchKey\(e\)/.test(jsx) && /isTakeoverKey\(e\)/.test(jsx), 'seat + takeover wired in index.jsx')
     ok(/label: 'SPACE INVADERS'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
         'registry advertises WATCH for Space Invaders')
@@ -320,6 +325,12 @@ if (process.argv.includes('--mutant')) {
         ['the aim ignores the fort under its lead point (b19 tiebreak deleted)',
             'const aimBlocked = fortBlocks(s, leadOf(i))',
             'const aimBlocked = false'],
+        ['the route ignores aligned targets (b20 re-aim pass deleted)',
+            'if (!s.playerBullet && freeAt(pc)) {',
+            'if (false && !s.playerBullet && freeAt(pc)) {'],
+        ['the lead ignores the edge bounce (b20 fold deleted)',
+            'let edgeDist = Infinity',
+            'let edgeDist = flight * waveSpeed(s.wave)'],
     ]
     for (const [what, from, to] of MUTANTS) {
         if (!orig.includes(from)) { ok(false, `mutant anchor missing: ${what}`, from) }
