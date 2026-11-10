@@ -357,7 +357,18 @@ see item 5).
   violet pennant at 90 s (in-world ticks, resets with the world) — and a grown
   castle defends: its towers loose violet arrows at any visible carpet inside
   110u, faster with every stage. A toppled tower never rebuilds and never
-  fires. Still open: five wizards per world.
+  fires. **Five wizards: stage 1 shipped by #1764 (this PR) — THE COVEN.** Every
+  world now also stands up to four sibling wizards at fixed compass bearings off
+  the primary tower (rng-free placement: the seed stream never shifts; 2–4 per
+  world by landfall, honestly variable). Each sibling carries half a hoard,
+  orbits his site, grows his own castle on the primary's clock (wall/turrets/keep
+  at 30/60/90 s), topples once per tower, dies to shatter/splash/throws with his
+  hoard scattering as pearls, and rides `stateHash` + the radar. They DO NOT
+  shoot yet, so the autopilot's course and the threat budget are provably
+  untouched (carpetcheck pins it: no bolt or tarrow originates at a sibling site
+  across two minutes of sim). Still open: arming the siblings (bolts + tower
+  arrows, which needs the autopilot hardened against five casters first, then
+  the 60-seed sweep re-run), siblings hoarding roaming pearls.
 - **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
   towers — every throw/fireball impact routes through `toppleTower()` inside
   `blast()`, and carpetcheck gates it ("a throw landing at the tower base

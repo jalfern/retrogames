@@ -352,6 +352,14 @@ export function shatterAt(gs, x, y) {
         gs.wizard.hp -= 28
         gs.events.push({ type: 'wizHit' })
     }
+    if (gs.sibs) { // #1764 stage 1: shatter reaches the coven the same way
+        for (const sb of gs.sibs) {
+            if (sb.alive && Math.hypot(wrapD(sb.x - sx), wrapD(sb.y - sy)) < 20) {
+                sb.hp -= 28
+                gs.events.push({ type: 'wizHit' })
+            }
+        }
+    }
     gs.events.push({ type: 'shatter', x: sx, y: sy, r: SHATTER_R })
 }
 
@@ -404,6 +412,25 @@ export function toppleTower(gs, x, y) {
     gs.events.push({ type: 'towerDown', x: gs.wizard.tx, y: gs.wizard.ty })
     if (gs.wizard.alive) { gs.wizard.hp -= 30; gs.events.push({ type: 'wizHit' }) }
     return true
+}
+
+// #1764 item 2 stage 1 — the siblings' towers fall by the same law as the
+// primary's: a physical blast at the base, one topple per tower, the wizard
+// takes the fall. Per-sib flags; a felled sib tower is never rebuilt.
+export function toppleSib(gs, x, y) {
+    if (!gs.sibs) return false
+    let hit = false
+    for (const sb of gs.sibs) {
+        if (!sb.alive || sb.towerDown) continue
+        if (Math.hypot(wrapD(x - sb.tx), wrapD(y - sb.ty)) > 14) continue
+        sb.towerDown = true
+        crater(gs, sb.tx, sb.ty, 12, 8, 0.6)
+        igniteHuts(gs, sb.tx, sb.ty)
+        gs.events.push({ type: 'sibTopple', sib: gs.sibs.indexOf(sb), x: sb.tx, y: sb.ty })
+        if (sb.alive) { sb.hp -= 30; gs.events.push({ type: 'wizHit' }) }
+        hit = true
+    }
+    return hit
 }
 
 const findSpot = (gs, minH, maxH, flat, away, minAway) => {
@@ -493,6 +520,52 @@ export function genWorld(gs) {
         if (tp) { ts.x = tp.x; ts.y = tp.y }
     }
     gs.wizard = { x: ts.x, y: ts.y, tx: ts.x, ty: ts.y, hp: lv.wizHp, mana: lv.hoard, alive: true, ang: rnd(gs) * 6.28, lostT: 0 }
+
+    // #1764 item 2 stage 1 — THE COVEN. The original ran FIVE wizards per world,
+    // each growing its own castle; ours ran one. Four siblings ride fixed compass
+    // bearings off the primary tower — no rnd() call, because a spent draw on the
+    // live seed stream would re-roll every world behind this PR. A bearing that
+    // finds no dry, flat, far-enough ground falls through to the next ring; a
+    // seed that finds less than four sites runs a smaller coven, honestly and
+    // deterministically. Stage 1 is the visible mid-game tell: siblings hoard,
+    // grow, topple and die — but they do not shoot and do not touch pearls, so
+    // the autopilot's course and the threat budget are provably untouched until
+    // the arming stage.
+    gs.sibs = []
+    {
+        const covet = (x, y) => {
+            const h = sampleH(gs, x, y)
+            if (h < 20 || h > 52) return false
+            for (const [dx, dy] of [[12, 0], [-12, 0], [0, 12], [0, -12]]) {
+                if (Math.abs(sampleH(gs, x + dx, y + dy) - h) > 6) return false
+            }
+            if (Math.hypot(wrapD(x - gs.castle.x), wrapD(y - gs.castle.y)) < 60) return false
+            if (Math.hypot(wrapD(x - ts.x), wrapD(y - ts.y)) < 60) return false
+            for (const sb of gs.sibs) {
+                if (Math.hypot(wrapD(x - sb.tx), wrapD(y - sb.ty)) < 60) return false
+            }
+            return true
+        }
+        const bearings = [0.785, 2.356, 3.927, 5.498]
+        for (let i = 0; i < 4; i++) {
+            let spot = null
+            for (const r of [150, 120, 90, 180]) {
+                for (const da of [0, 0.6, -0.6, 1.2, -1.2]) {
+                    const px = wrap(ts.x + Math.cos(bearings[i] + da) * r, MAP)
+                    const py = wrap(ts.y + Math.sin(bearings[i] + da) * r, MAP)
+                    if (covet(px, py)) { spot = { x: px, y: py }; break }
+                }
+                if (spot) break
+            }
+            if (!spot) continue
+            gs.sibs.push({
+                tx: spot.x, ty: spot.y, x: spot.x, y: spot.y,
+                hp: lv.wizHp, mana: Math.floor(lv.hoard / 2), alive: true,
+                stage: 0, towerDown: false, ang: bearings[i],
+            })
+        }
+        if (gs.sibs.length) gs.events.push({ type: 'coven', n: gs.sibs.length })
+    }
 
     const bs = []
     gs.books = []
@@ -659,6 +732,7 @@ function killEntity(gs, mo, i) {
 function blast(gs, x, y, r, depth, dmg) {
     crater(gs, x, y, r, depth, 1)
     toppleTower(gs, x, y)
+    toppleSib(gs, x, y) // #1764 stage 1: the coven's towers fall too
     igniteHuts(gs, x, y)
     scareVillagers(gs, x, y) // #1764 item 3: a shell landing in the lanes sends them running
     for (let k = 0; k < 3; k++) {
@@ -679,6 +753,7 @@ export function volcanoErupt(gs, x, y) {
     const mx = wrap(x, MAP), my = wrap(y, MAP)
     crater(gs, mx, my, 18, 12, 1)
     toppleTower(gs, mx, my)
+    toppleSib(gs, mx, my) // #1764 stage 1
     igniteHuts(gs, mx, my)
     applySplash(gs, mx, my, 20)
     for (let k = 0; k < 8; k++) {
@@ -788,6 +863,14 @@ function applySplash(gs, x, y, dmg) {
     if (gs.wizard.alive && Math.hypot(wrapD(gs.wizard.x - x), wrapD(gs.wizard.y - y)) < 13) {
         gs.wizard.hp -= dmg; hit = true
         gs.events.push({ type: 'wizHit' })
+    }
+    if (gs.sibs) { // #1764 stage 1: a shell near a sibling finds him like the primary
+        for (const sb of gs.sibs) {
+            if (sb.alive && Math.hypot(wrapD(sb.x - x), wrapD(sb.y - y)) < 13) {
+                sb.hp -= dmg; hit = true
+                gs.events.push({ type: 'wizHit' })
+            }
+        }
     }
     const dead = []
     gs.monsters.forEach((m, i) => {
@@ -1282,6 +1365,35 @@ export function step(gs, inp) {
         }
     }
 
+    // #1764 item 2 stage 1 — the siblings live by the primary's own laws: the
+    // same 34u orbit, the same growth clock (wall/turrets/keep at 30/60/90 s),
+    // the same death (pearls scatter, the ground craters, huts catch). They fire
+    // nothing — that's stage 2 — and the whole block is rng-free, so the seed
+    // stream never shifts. A felled sib tower never rebuilds; a dead sib builds
+    // nothing, stage frozen with the defeat.
+    for (const sb of gs.sibs) {
+        if (!sb.alive) continue
+        sb.ang += 0.012
+        sb.x = wrap(sb.tx + Math.cos(sb.ang) * 34, MAP)
+        sb.y = wrap(sb.ty + Math.sin(sb.ang) * 34, MAP)
+        if (!sb.towerDown) {
+            const wst = [0, 1800, 3600, 5400]
+            const st = wst.filter((q) => gs.worldT >= q).length - 1
+            if (st > sb.stage) {
+                sb.stage = st
+                gs.events.push({ type: 'sibGrow', n: st, sib: gs.sibs.indexOf(sb), x: sb.tx, y: sb.ty })
+            }
+        }
+        if (sb.hp <= 0) {
+            sb.alive = false
+            gs.wizardKills++
+            dropPearls(gs, sb.tx, sb.ty, sb.mana)
+            crater(gs, sb.tx, sb.ty, 18, 11)
+            igniteHuts(gs, sb.tx, sb.ty)
+            gs.events.push({ type: 'sibDown', sib: gs.sibs.indexOf(sb), x: sb.tx, y: sb.ty })
+        }
+    }
+
     for (let i = gs.monsters.length - 1; i >= 0; i--) {
         const m = gs.monsters[i]
         if (m.grabbed) continue
@@ -1591,6 +1703,8 @@ export function stateHash(gs) {
     mix(gs.invis)
     mix(gs.spellBook ? 1 : 0); mix(gs.spellBook ? gs.bookPage : -1)
     mix(gs.wizard.alive ? gs.wizard.hp : 'x'); mix(gs.wizard.mana)
+    mix(gs.sibs.length) // #1764 stage 1: the coven is world state too
+    for (const sb of gs.sibs) mix(`${sb.alive ? sb.hp : 'x'}.${sb.stage}.${sb.towerDown ? 1 : 0}.${sb.mana}`)
     mix(gs.hands.L); mix(gs.hands.R); mix(gs.learned.length)
     mix(gs.pearls.filter((p) => p.alive).length)
     mix(gs.monsters.length); mix(gs.projs.length); mix(gs.fireMarks.length)
