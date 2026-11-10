@@ -218,6 +218,24 @@ node scripts/shot.mjs --url http://localhost:5173/retrogames/comet-drift \
                               # autopilot race frame (--w/--h choose aspect)
 ```
 
+## WATCH (#1637 batch 13) — the certified autopilot gets a seat
+
+Y seats `decide()` — the same brain the attract demo replays and cometcheck
+races to victory ("autopilot wins the 5-lap GP from P7"). The seat rides the
+attract-demo flag itself (`st.plan`): Y hands it the wheel for the rest of the
+race, any other driving key takes over at once, the flag releases it silently
+at the finish (the prover's win ends the route), and each COMET CUP leg resets
+it like a fresh run. `decide` verifies every steering/throttle/drift decision
+against live sim state each tick, so a mid-race re-seat is honest from ANY
+position — no off-the-bench state exists. Proof: watchcheck pilots
+`comet-drift` / `comet-drift-hd` (seat, untouched advance modulo track length,
+takeover blips, re-seat, resume) + nine batch-13 source pins. Mutant history:
+the first seat fed decide() on `st.plan || watchingRef` — the live pilot stayed
+green when the OR was cut, proving the ref was dead code; the seat now rides
+one flag (MarioKart family shape), and the pilot's advance metric went
+wrap-safe the same day (score is loop-progress: the grid sits just before the
+start/finish line, so naive score-delta comparison crossed the line backwards).
+
 ## The COMET CUP (#1737) — three races for the title
 
 The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:

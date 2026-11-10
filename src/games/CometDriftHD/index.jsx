@@ -14,6 +14,8 @@ import { TRACK, surfaceAt, SCENERY, COURSE, COURSES, selectCourse, crestDust } f
 import { selectorHit } from '../CometDrift/selector.js'
 import { padState, steerPedals, smoothSteer, STEER_PIPELINE, setStick } from '../../utils/padState'
 import { rumble } from '../../components/gamepadMap'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     S, trackGeometryStats, buildKart, makePool, buildArch, buildTireBars, buildSceneryItem, buildMesas, buildHills, wallTopYAt, worldAnchor, courseFloorY,
     loadBuggy, decorateBuggy, kartYaw, BUGGY_SCALE, elevAt, roadRollYAt, roadRollAt, buildDriver, spinBlurAt, landingSquash, makeStreakPool,
@@ -213,6 +215,8 @@ export default function CometDriftHD() {
     const pausedRef = useRef(false)
     const gameRef = useRef(null)
     const screenRef = useRef('attract')
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors st.plan (the drive flag) for the chrome
+    const [attractUi, setAttractUi] = useState(true)
     const keysRef = useRef({})
     const tapRef = useRef(null)
 
@@ -1370,6 +1374,12 @@ export default function CometDriftHD() {
                 hctx.fillStyle = '#e8f0fa'
                 hctx.fillText('PRESS ANY KEY / TAP', W / 2, Math.round(A.blink.y))
             }
+            // #1654: the discoverable WATCH line. Above the panel, in the sky —
+            // the fitted stack inside the band shrinks-to-fit and owns every
+            // pixel below b0; the road and the pad own everything above b1.
+            hctx.font = fa(Math.max(8, 9 * u))
+            hctx.fillStyle = '#7dd39a'
+            hctx.fillText(WATCH_ATTRACT_HINT, W / 2, Math.round(A.band[0] - Math.max(6, 6 * u)))
             hctx.textAlign = 'left'
         }
 
@@ -1403,6 +1413,11 @@ export default function CometDriftHD() {
             const padLive = p.engaged || p.rt > 0.05 || p.lt > 0.05
             let inp
             if (st.plan) {
+                // #1637 WATCH: the prover is at the wheel. Y takes over the
+                // attract-demo flag itself — the seat replays decide(), the
+                // certified route cometcheck wins the GPs with (reactive per
+                // tick, honest from any position). The Y-seat rides the same
+                // flag the attract demo already drives on — st.plan is the one truth.
                 inp = decide(g)
             } else if (padLive) {
                 const s = steerPedals(p)
@@ -1447,7 +1462,7 @@ export default function CometDriftHD() {
                 }
             }
             if (!live && g.end) { st.endT++; if (st.endT > 240) { Object.assign(g, makeGame(0)); st.endT = 0; sparks.clear(); dust.clear(); streaks.clear() } }
-            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false) }
+            if (live && g.end) { st.screen = 'end'; screenRef.current = 'end'; st.endT = 0; st.endAt = performance.now(); setPadOn(false); if (st.plan) { st.plan = false; setWatching(false) } /* #1637: the flag releases the seat — the prover's finish ends the route */ }
             spawnTick()
         }
 
@@ -1622,6 +1637,8 @@ export default function CometDriftHD() {
             st.screen = screen; screenRef.current = screen
             st.plan = screen === 'attract'
             st.endT = 0
+            setWatching(false) // #1637: the old route ends with the old run
+            setAttractUi(screen === 'attract')
             prevPlace = g.karts[0].place
             camA = g.karts[0].a
             camLift = 0
@@ -1664,6 +1681,11 @@ export default function CometDriftHD() {
                 if (performance.now() - (st.endAt || 0) > 400) resetTo('attract')
                 return
             }
+            // #1637 WATCH: Y seats the certified autopilot (the same decide that
+            // wins the harness GPs and drives the attract demo — st.plan is that
+            // drive flag); any driving key takes the wheel back mid-race.
+            if (isWatchKey(e)) { st.plan = !st.plan; setWatching(st.plan); if (st.plan) playWatchStart(); else playWatchStop(); return }
+            if (st.plan && isTakeoverKey(e)) { st.plan = false; setWatching(false); playWatchStop() }
             keys[e.code] = true
         }
         const ku = (e) => { keys[e.code] = false }
@@ -1705,6 +1727,14 @@ export default function CometDriftHD() {
             frameProbe: () => lastProbe,
             keys,
             screen: () => st.screen,
+            // #1637 WATCH probes: is the prover driving, did it blip, and what
+            // does the race look like from the watcher's seat.
+            watching: () => !!st.plan && screenRef.current === 'race',
+            watchSfx: watchSfxLog,
+            probe: () => {
+                const P = g.karts[0]
+                return { tick: g.tick, score: Math.round(P.lap * T.len + T.pts[P.idx].s), len: T.len, lap: P.lap, place: P.place, phase: g.phase, done: !!g.end, v: Math.round(P.v * 100) / 100 }
+            },
             ready: () => ready,
             backend: () => backendName,
             view: () => ({ w: cssW, h: cssH, dpr }),
@@ -1803,6 +1833,7 @@ export default function CometDriftHD() {
                 st.screen = 'race'; screenRef.current = 'race'
                 st.plan = false
                 st.endT = 0
+                setWatching(false); setAttractUi(false) // #1637
                 prevPlace = g.karts[0].place
                 camA = g.karts[0].a
                 camLift = 0
@@ -1842,8 +1873,15 @@ export default function CometDriftHD() {
                 }
             },
             canvas: () => glCanvas,
-            snapshot: () => JSON.parse(JSON.stringify(g)),
-            restore: (s) => { Object.assign(g, s) },
+            // #1637-b13: g holds Maps (marks/markAge, #1696) — raw JSON would
+            // silently empty them and the restore hash would lie (#391/381).
+            // Serialize the Maps as entry pairs and rebuild them on restore.
+            snapshot: () => JSON.parse(JSON.stringify({ ...g, marks: [...g.marks], markAge: [...g.markAge] })),
+            restore: (s) => {
+                const { marks, markAge, ...rest } = s
+                Object.assign(g, rest)
+                g.marks = new Map(marks); g.markAge = new Map(markAge)
+            },
         })
 
         // #1473: production-safe feedback state (seed for replay), every build —
@@ -1885,6 +1923,19 @@ export default function CometDriftHD() {
         >
             <canvas ref={glRef} className="block absolute inset-0 w-full h-full" style={{ touchAction: 'none' }} />
             <canvas ref={hudRef} className="block absolute inset-0 w-full h-full pointer-events-none" />
+            {/* #1637 WATCH — the certified autopilot drives the classic; any input takes over. */}
+            {padOn && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {attractUi && !paused && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {padOn && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls visible={padOn && !paused && TOUCH} />
             {paused && <PauseOverlay game={GAMES.find((x) => x.label === 'COMET DRIFT HD')} badge={COURSE.name} onResume={handleResume} />}
         </div>
