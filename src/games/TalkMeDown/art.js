@@ -8,6 +8,11 @@ export const W = 640
 export const H = 360
 export const PANEL = { x: 8, y: 8, w: 400, h: 336 }
 export const RAIL = { x: 416, y: 8, w: 216, h: 336 }
+// #1888 phone manual seat: on a touch device the guest IS the rulebook
+// reader, so the page takes the bomb panel's 400px bay (the LCD rail keeps
+// its exact y-band, the squad plate shrinks to the right strip). One size
+// bump: rule type 7 -> 9px native = ~2mm at a 6-inch landscape scale.
+export const MANUAL_WIDE = { x: 8, y: 8, w: 400, h: 296 }
 
 const P = {
     bench: '#17151c', benchHi: '#242031',
@@ -358,47 +363,61 @@ const FOOTER = {
 
 // drawManual — the typewritten page seat 2 owns. page: 0 N / 1 D / 2 G,
 // line = seat-2 cursor, stamps = live module stamps (highlight what matters).
-export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 0) {
-    bevel(g, RAIL, '#5d4a2f', '#2e2415')
+// #1888: `rect` lets the phone guest seat take the wide bay (MANUAL_WIDE);
+// a wide page bumps every type a step (+2px, +2 leading) so the rulebook
+// reads on a 6-inch screen. Default RAIL keeps pixel-for-pixel the desktop
+// page (existing pixel gates stay pinned).
+export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 0, rect = RAIL) {
+    const wide = rect.w > 300
+    const lh = wide ? 12 : 10
+    const r = rect
+    bevel(g, r, '#5d4a2f', '#2e2415')
     if (hidden) {
-        g.fillStyle = '#2b2e33'; g.fillRect(RAIL.x + 6, RAIL.y + 6, RAIL.w - 12, RAIL.h - 12)
-        g.font = FONT(7); g.fillStyle = '#7d838d'
-        g.fillText('THE MANUAL', RAIL.x + 40, RAIL.y + 160)
-        g.fillText('IS SOMEONE', RAIL.x + 44, RAIL.y + 176)
-        g.fillText("ELSE'S JOB", RAIL.x + 52, RAIL.y + 192)
-        g.fillText('B: LOOK ANYWAY', RAIL.x + 28, RAIL.y + 216)
+        g.fillStyle = '#2b2e33'; g.fillRect(r.x + 6, r.y + 6, r.w - 12, r.h - 12)
+        g.font = FONT(7 + (wide ? 2 : 0)); g.fillStyle = '#7d838d'
+        g.fillText('THE MANUAL', r.x + 40, r.y + 160)
+        g.fillText('IS SOMEONE', r.x + 44, r.y + 176)
+        g.fillText("ELSE'S JOB", r.x + 52, r.y + 192)
+        g.fillText('B: LOOK ANYWAY', r.x + 28, r.y + 216)
         return
     }
-    g.fillStyle = P.cream; g.fillRect(RAIL.x + 6, RAIL.y + 6, RAIL.w - 12, RAIL.h - 12)
-    g.fillStyle = P.creamLo; g.fillRect(RAIL.x + 6, RAIL.y + RAIL.h - 18, RAIL.w - 12, 12)
-    g.fillStyle = P.margin; g.fillRect(RAIL.x + 24, RAIL.y + 6, 1, RAIL.h - 12)
+    g.fillStyle = P.cream; g.fillRect(r.x + 6, r.y + 6, r.w - 12, r.h - 12)
+    g.fillStyle = P.creamLo; g.fillRect(r.x + 6, r.y + r.h - 18, r.w - 12, 12)
+    g.fillStyle = P.margin; g.fillRect(r.x + 24, r.y + 6, 1, r.h - 12)
     // binder rings
-    for (let i = 0; i < 3; i++) { g.fillStyle = '#8a8f98'; g.beginPath(); g.arc(RAIL.x + 13, RAIL.y + 40 + i * 110, 4, 0, 7); g.fill(); g.fillStyle = P.cream; g.beginPath(); g.arc(RAIL.x + 13, RAIL.y + 40 + i * 110, 2, 0, 7); g.fill() }
+    for (let i = 0; i < 3; i++) { g.fillStyle = '#8a8f98'; g.beginPath(); g.arc(r.x + 13, r.y + 40 + i * (wide ? 96 : 110), 4, 0, 7); g.fill(); g.fillStyle = P.cream; g.beginPath(); g.arc(r.x + 13, r.y + 40 + i * (wide ? 96 : 110), 2, 0, 7); g.fill() }
     const key = ['N', 'D', 'G'][page]
-    g.font = FONT(8); g.fillStyle = P.ink
-    g.fillText(PAGE_NAME[key], RAIL.x + 32, RAIL.y + 26)
-    g.fillStyle = '#b7ab86'; g.fillRect(RAIL.x + 32, RAIL.y + 32, RAIL.w - 44, 1)
-    g.font = FONT(7)
+    g.font = FONT(8 + (wide ? 2 : 0)); g.fillStyle = P.ink
+    g.fillText(PAGE_NAME[key], r.x + 32, r.y + 26)
+    g.fillStyle = '#b7ab86'; g.fillRect(r.x + 32, r.y + 32, r.w - 44, 1)
+    g.font = FONT(7 + (wide ? 2 : 0))
+    const fs = 7 + (wide ? 2 : 0)
     const pool = variantPool(key, 99)
-    let y = RAIL.y + 46
+    const blocks = pool.map(v => wrapText(g, RULEBOOK[key].find(r2 => r2.id === key + v).text, r.w - 66))
+    // fit pass (#1888): the wide page's footer sits higher (shorter bay) —
+    // if the rule block would walk into it, drop one leading step first.
+    const footTop = r.y + r.h - (wide ? 78 : 73)
+    let lh2 = lh
+    if (wide && r.y + 44 + blocks.reduce((a, b) => a + b.length * lh2 + 8, 0) - 8 > footTop - 4) lh2 = fs + 1
+    let y = r.y + (wide ? 44 : 46)
     pool.forEach((v, idx) => {
-        const rule = RULEBOOK[key].find(r => r.id === key + v)
+        const rule = RULEBOOK[key].find(r2 => r2.id === key + v)
         const live = stamps.includes(rule.id)
-        const lines = wrapText(g, rule.text, RAIL.w - 66)
+        const lines = blocks[idx]
         if (line === idx) {
             g.fillStyle = '#2f7d43'
-            g.fillText('>', RAIL.x + 28, y)
+            g.fillText('>', r.x + 28, y)
             g.fillStyle = 'rgba(47,125,67,0.12)'
-            g.fillRect(RAIL.x + 26, y - 8, RAIL.w - 38, lines.length * 10 + 3)
+            g.fillRect(r.x + 26, y - 8, r.w - 38, lines.length * lh2 + 3)
         }
         g.fillStyle = live ? P.margin : '#8a8168'
-        g.fillText(rule.id, RAIL.x + 34, y)
+        g.fillText(rule.id, r.x + 34, y)
         g.fillStyle = P.ink
-        lines.forEach((ln, li) => g.fillText(ln, RAIL.x + 58, y + li * 10))
+        lines.forEach((ln, li) => g.fillText(ln, r.x + 58, y + li * lh2))
         // #1373: seat 2's flag (A/F) leaves a paperclip on the rule line —
         // the page itself records what the manual player shouted about.
         if (flag && flag === rule.id) {
-            const clipX = RAIL.x + RAIL.w - 22
+            const clipX = r.x + r.w - 22
             const clipY = y - 11
             g.strokeStyle = '#9aa0aa'; g.lineWidth = 1
             g.beginPath()
@@ -410,10 +429,10 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
             g.lineTo(clipX + 2.5, clipY + 6)
             g.stroke()
         }
-        y += lines.length * 10 + 8
+        y += lines.length * lh2 + 8
     })
-    g.font = FONT(6); g.fillStyle = '#6b6350'
-    FOOTER[key].forEach((ln, i) => g.fillText(ln, RAIL.x + 30, RAIL.y + RAIL.h - 73 + i * 9))
+    g.font = FONT(6 + (wide ? 2 : 0)); g.fillStyle = '#6b6350'
+    FOOTER[key].forEach((ln, i) => g.fillText(ln, r.x + 30, r.y + r.h - (wide ? 78 : 73) + i * (wide ? 10 : 9)))
     // #1802: the flip conversation. When a LIVE rule on this page reads a
     // back-plate fact (serial/batteries), seat 2 gets the word — the manual
     // player is the one who must shout "FLIP IT". Greys out once the bomb
@@ -421,19 +440,19 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
     if (stamps.some(s => BACK_FACT_STAMPS.includes(s) && s[0] === key)) {
         if (flipped) {
             g.fillStyle = '#9a917a'
-            g.fillText('BACK IS UP — READ IT ALOUD', RAIL.x + 30, RAIL.y + RAIL.h - 44)
+            g.fillText('BACK IS UP — READ IT ALOUD', r.x + 30, r.y + r.h - (wide ? 46 : 44))
         } else {
             g.fillStyle = tick % 40 < 26 ? '#b0541f' : '#8a8168'
-            g.fillText('ASK THEM TO FLIP IT!', RAIL.x + 30, RAIL.y + RAIL.h - 44)
+            g.fillText('ASK THEM TO FLIP IT!', r.x + 30, r.y + r.h - (wide ? 46 : 44))
         }
     }
     // #1373: the accepted-call shapes, printed right on the page (#1247) —
     // a manual player who never read a screen knows exactly what to shout.
     g.fillStyle = '#4a4436'
-    g.fillText('MIC V — OR X TYPES IT', RAIL.x + 30, RAIL.y + RAIL.h - 35)
-    g.fillText('"CUT RED" "DIAL 7" "SET"', RAIL.x + 30, RAIL.y + RAIL.h - 26)
-    g.font = FONT(6); g.fillStyle = '#8a8168'
-    g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)
+    g.fillText('MIC V — OR X TYPES IT', r.x + 30, r.y + r.h - (wide ? 37 : 35))
+    g.fillText('"CUT RED" "DIAL 7" "SET"', r.x + 30, r.y + r.h - (wide ? 28 : 26))
+    g.font = FONT(6 + (wide ? 2 : 0)); g.fillStyle = '#8a8168'
+    g.fillText('< PAGE >   A: FLAG', r.x + 44, r.y + r.h - 14)
 }
 
 // ---- the back panel (#1797) --------------------------------------------------

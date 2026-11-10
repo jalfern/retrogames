@@ -34,6 +34,8 @@
 //          never lands — test 8 goes RED: the seat stays CPU forever)
 // Mutant: npm run tmdlinkcheck -- --mutate-freeze   (the guest hands the page
 //          holder the bomb when the host dies — test 6 goes RED)
+// Mutant: npm run tmdlinkcheck -- --mutate-phone    (the phone guest's wide
+//          rulebook bay is reverted — the #1888 bay-swap audits go RED)
 
 import { createGame, step, hash, solvePad } from '../src/games/TalkMeDown/engine.js'
 import {
@@ -46,6 +48,8 @@ import { readFileSync } from 'node:fs'
 const MUTATE = process.argv.indexOf('--mutate') >= 0
 const MUTATE_RESEAT = process.argv.indexOf('--mutate-reseat') >= 0
 const MUTATE_FREEZE = process.argv.indexOf('--mutate-freeze') >= 0
+// #1888: revert the phone guest's wide-page swap — the bay-swap audits go RED.
+const MUTATE_PHONE = process.argv.indexOf('--mutate-phone') >= 0
 
 let pass = 0, fail = 0
 const ok = (name, cond, extra = '') => {
@@ -538,12 +542,23 @@ console.log('page fold:')
 // ---- 10. the shell is wired (static audit) ------------------------------------
 console.log('shell audit:')
 {
-    const src = readFileSync('src/games/TalkMeDown/index.jsx', 'utf8')
+    const srcRaw = readFileSync('src/games/TalkMeDown/index.jsx', 'utf8')
+    const src = MUTATE_PHONE ? srcRaw.replace('guestPhone ? ART.MANUAL_WIDE : ART.RAIL', 'ART.RAIL') : srcRaw
     const netjs = readFileSync('src/games/TalkMeDown/net.js', 'utf8')
     ok('the shared Lobby is mounted for the squad room', /import Lobby from/.test(src) && /<Lobby/.test(src))
     ok('the room closes when the page unmounts', /net\.lobby\.close\(\)/.test(src))
     ok('the go carries a seed (?seed= honored through humanSeed)', /lobby\.start\(\{ seed: humanSeed\(\) \}\)/.test(src))
-    ok('the guest view hides the bomb panel behind the squad plate', /guest\) \{[\s\S]*?drawSquadPlate\(g, ART\.PANEL/.test(src))
+    ok('the guest view hides the bomb panel behind the squad plate (#1888: on the phone the plate shrinks to the rail)', /guest\) \{[\s\S]*?drawSquadPlate\(g, guestPhone \? ART\.RAIL : ART\.PANEL/.test(src))
+    ok('#1888 the phone guest takes the wide bay: flag derived + MANUAL_WIDE passed to the page',
+        /const guestPhone = guest && !URL_NO_TOUCH && \(TOUCH_UI \|\| URL_TOUCH\)/.test(src) &&
+        /drawManual\(g,[^]*?guestPhone \? ART\.MANUAL_WIDE : ART\.RAIL\)/.test(src))
+    {
+        const artjs = readFileSync('src/games/TalkMeDown/art.js', 'utf8')
+        ok('#1888 art.js: wide bay defined, page rect-parameterized, type bumped on wide',
+            /MANUAL_WIDE = \{ x: 8, y: 8, w: 400, h: 296 \}/.test(artjs) &&
+            /flipped = 0, rect = RAIL/.test(artjs) &&
+            /const wide = rect\.w > 300/.test(artjs))
+    }
     ok('the host view hides the rulebook behind the squad plate', /role === 'host'\) \{\s*drawSquadPlate\(g, ART\.RAIL/.test(src))
     ok('the live-stamp rail rides with the page-holder', /drawManual\(g, gs\.manual\.page[^]*?\.map\(m => m\.stamp\)/.test(src))
     ok('heard page-words are refused on the host (their page to turn)', /THEIR PAGE TO TURN/.test(src))

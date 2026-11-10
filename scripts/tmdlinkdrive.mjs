@@ -289,6 +289,42 @@ await autopilot(guestD2, false).catch(() => {})
 await d.host.close().catch(() => {})
 await guestD2.close().catch(() => {})
 
+// ==== E. phone manual seat (#1888) =============================================
+// The guest is the READER; on a touch-shaped join the page must take the
+// 400px bomb bay at bigger type, not hide in the 216px right rail. The
+// ?touch=1 / ?touch=0 overrides make both layouts deterministic in every
+// boot mode (the persistent-context path cannot emulate hasTouch).
+const viewPix = (page) => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const g = c.getContext('2d')
+    const px = (x, y) => [...g.getImageData(x, y, 1, 1).data].slice(0, 3)
+    return { bay: px(200, 20), bayR: px(390, 20), rail: px(520, 100), lcd: px(390, 322) }
+})
+const near = (a, b) => Math.abs(a[0] - b[0]) <= 6 && Math.abs(a[1] - b[1]) <= 6 && Math.abs(a[2] - b[2]) <= 6
+const CREAM = [239, 230, 200], PLATE = [23, 25, 29], LCD = [14, 36, 22]
+const e = await openRoom('E')
+const guestE = await joinRoom(`${BASE}/talk-me-down?net=join&room=${e.code}&relay=${RELAY}&touch=1`, 'E-guest')
+await kick(e.host)
+await wait(guestE, () => window.__tmdTest.screen() === 'play', null, 15000, 'E guest play')
+const widePix = await viewPix(guestE)
+r.check('phone guest: the rulebook takes the bomb bay (cream page spans x200..x390)',
+    near(widePix.bay, CREAM) && near(widePix.bayR, CREAM), JSON.stringify(widePix))
+r.check('phone guest: the defuser plate shrinks to the right rail',
+    near(widePix.rail, PLATE), JSON.stringify(widePix))
+r.check('phone guest: the partner LCD keeps its band under the page',
+    near(widePix.lcd, LCD), JSON.stringify(widePix))
+await guestE.close().catch(() => {})
+await e.host.close().catch(() => {})
+const f = await openRoom('F')
+const guestF = await joinRoom(`${BASE}/talk-me-down?net=join&room=${f.code}&relay=${RELAY}&touch=0`, 'F-guest')
+await kick(f.host)
+await wait(guestF, () => window.__tmdTest.screen() === 'play', null, 15000, 'F guest play')
+const narrowPix = await viewPix(guestF)
+r.check('desktop guest keeps the narrow rail (bay plate-dark, page in the rail)',
+    near(narrowPix.bay, PLATE) && near(narrowPix.rail, CREAM), JSON.stringify(narrowPix))
+await guestF.close().catch(() => {})
+await f.host.close().catch(() => {})
+
 r.check('zero page errors across the browsers', errors.length === 0, errors.slice(0, 3).join(' | '))
 
 await closeBrowser()

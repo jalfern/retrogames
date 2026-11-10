@@ -43,6 +43,10 @@ const NET_ROLE = typeof window !== 'undefined' ? lobbyRole(window.location.searc
 // the pill without emulating a tablet.
 const TOUCH_UI = typeof window !== 'undefined' && !!((window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || (navigator.maxTouchPoints || 0) > 0)
 const URL_TOUCH = typeof window !== 'undefined' && /[?&]touch=1/.test(window.location.search)
+// #1888: `?touch=0` forces the DESKTOP layout on a touch device — the link
+// drive pins the narrow page (regression) from the same phone-shaped tab it
+// already uses, so the wide/narrow pair is deterministic in every boot mode.
+const URL_NO_TOUCH = typeof window !== 'undefined' && /[?&]touch=0/.test(window.location.search)
 const ATTRACT_MSGS = [
     'ONE SEES THE BOMB',
     'THE OTHER HOLDS THE MANUAL',
@@ -842,8 +846,12 @@ export default function TalkMeDown() {
                     // the squad shares — and the live-stamp rail (the
                     // transcribed "NEON N3!" list) rides with the page-holder.
                     const guest = net.active && net.role === 'guest'
+                    // #1888: on a phone the guest IS the reader — the page
+                    // takes the 400px bomb bay at +2px type; the defuser's
+                    // plate shrinks to the right rail.
+                    const guestPhone = guest && !URL_NO_TOUCH && (TOUCH_UI || URL_TOUCH)
                     if (guest) {
-                        drawSquadPlate(g, ART.PANEL, 'SEAT 1 · DEFUSER AT THEIRS',
+                        drawSquadPlate(g, guestPhone ? ART.RAIL : ART.PANEL, 'SEAT 1 · DEFUSER AT THEIRS',
                             'THE BOMB IS', 'IN THEIR HANDS', 'LISTEN. THEN SPEAK.', tick)
                     } else {
                         drawBombView(g, gs, tick)
@@ -852,7 +860,7 @@ export default function TalkMeDown() {
                         drawSquadPlate(g, ART.RAIL, 'SEAT 2 · MANUAL AT THEIRS',
                             'THE RULEBOOK', 'IS ON THEIR SCREEN', 'READ THE STAMPS ALOUD', tick)
                     } else {
-                        ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag, gs.flip)
+                        ART.drawManual(g, gs.manual.page, gs.manual.line, gs.modules.filter(m => !m.solved).map(m => m.stamp), tick, manualHiddenRef.current && seatsRef.current === 1, gs.manual.flag, gs.flip, guestPhone ? ART.MANUAL_WIDE : ART.RAIL)
                     }
                     // #1305: new order arriving? stutter the LCD glass for 6 frames.
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
