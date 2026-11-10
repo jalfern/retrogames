@@ -18,6 +18,8 @@ import { GAMES } from '../../config/games'
 import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { exposeGame, unexposeGame, contractHoldsLoop, exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import {
     FIXED_DT, W, H, PANEL_X, TILE, LOT_X, LOT_Y, WIN_CONTENT,
     REL_NAMES,
@@ -58,8 +60,10 @@ const HomebodyGame = () => {
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
     const [endInfo, setEndInfo] = useState(null)
+    const [watching, setWatching] = useState(false) // #1637 batch 17: the attract brain runs the street
     const screenRef = useRef('attract')
     const pausedRef = useRef(false)
+    const watchingRef = useRef(false)
     const overAtRef = useRef(0)
 
     useEffect(() => {
@@ -165,6 +169,9 @@ const HomebodyGame = () => {
 
         const finish = (s) => {
             if (s.done !== 'win' && s.done !== 'lose') return
+            // #1637 batch 17: the street ended under the prover — release the
+            // seat silently (a finish is not a hand-back blip; racer rule).
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); s.demo = false }
             overAtRef.current = performance.now()
             if (s.done === 'win') {
                 audioController.playSweep(523, 1046, 0.5, 'square', 0.08)
@@ -345,9 +352,17 @@ const HomebodyGame = () => {
                     if (demoG.done) demoG = freshDemo()
                 } else if (screenRef.current === 'play' && gs && !gs.done) {
                     if (!contractHoldsLoop()) {
-                        drivePad({ left: heldKeys.left, right: heldKeys.right, up: heldKeys.up, down: heldKeys.down, a: actQueued, b: buildQueued })
+                        // #1637 batch 17 WATCH: the seat is autoStep — bot + advance,
+                        // the exact call the attract demo runs and peoplecheck's
+                        // WINNABLE section grants the wish with. It re-decides from
+                        // LIVE state every tick; drivePad rests while it holds.
+                        const actA = actQueued, buildB = buildQueued
                         actQueued = false; buildQueued = false
-                        advance(gs, SIM_MS / 1000)
+                        if (watchingRef.current) autoStep(gs, SIM_MS / 1000)
+                        else {
+                            drivePad({ left: heldKeys.left, right: heldKeys.right, up: heldKeys.up, down: heldKeys.down, a: actA, b: buildB })
+                            advance(gs, SIM_MS / 1000)
+                        }
                         handleEvents(gs, true)
                         finish(gs)
                     }
@@ -368,6 +383,7 @@ const HomebodyGame = () => {
                 const pin = seedFromQuery()
                 if (pin != null) seed = pin >>> 0
             }
+            watchingRef.current = false; setWatching(false) // #1637 a new street starts in your hands
             gs = newRun(seed)
             particles = []; shake = 0; toast = 0; refuses.length = 0
             prev.left = prev.right = prev.up = prev.down = prev.a = prev.b = prev.pdown = false
@@ -387,7 +403,11 @@ const HomebodyGame = () => {
             if (e.code === 'Tab') e.preventDefault()
             if (KEY_SET.has(e.code)) e.preventDefault()
             const sc = screenRef.current
-            if (sc === 'attract') { startPlay(); return }
+            if (sc === 'attract') {
+                // #1637: Y from the marquee starts the run AND seats the prover.
+                if (isWatchKey(e)) { startPlay(); watchingRef.current = true; setWatching(true); playWatchStart(); return }
+                startPlay(); return
+            }
             if (sc === 'over') {
                 if (performance.now() - overAtRef.current < 900) return
                 if (e.code === 'Enter' || e.code === 'KeyR') { seed = nextSeed(seed); startPlay() }
@@ -395,6 +415,18 @@ const HomebodyGame = () => {
                 return
             }
             if (pausedRef.current || sc !== 'play') return
+            // #1637 batch 17: Y seats the attract autopilot (KeyY is free here —
+            // this game has no vi-keys); any driving key hands the street back,
+            // shared blips both ways. Releasing clears s.demo so the autonomy
+            // stops with the seat — it is the seat's, not the house's.
+            if (isWatchKey(e)) {
+                e.preventDefault()
+                watchingRef.current = !watchingRef.current; setWatching(watchingRef.current)
+                if (watchingRef.current) playWatchStart()
+                else { if (gs) gs.demo = false; playWatchStop() }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); if (gs) gs.demo = false; playWatchStop() }
             if (CUR.l.includes(e.code)) heldKeys.left = true
             if (CUR.r.includes(e.code)) heldKeys.right = true
             if (CUR.u.includes(e.code)) heldKeys.up = true
@@ -419,6 +451,9 @@ const HomebodyGame = () => {
                 setSc('attract'); return
             }
             if (sc !== 'play' || pausedRef.current || !canvas || e.target !== canvas) return
+            // #1637: a tap on the lot means you want the wheel — hand back.
+            // (The WATCH pill stopPropagations its press; this is the canvas.)
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); if (gs) gs.demo = false; playWatchStop(); return }
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
             pointerPx((e.clientX - r.left) / r.width * W, (e.clientY - r.top) / r.height * H)
@@ -467,12 +502,16 @@ const HomebodyGame = () => {
                 probe: () => gs ? ({
                     screen: screenRef.current, tick: gs.tick, done: gs.done, content: gs.content, money: gs.money,
                     day: gs.day, hour: Math.round(gs.hour * 10) / 10, build: gs.build, sel: gs.sel,
+                    demo: gs.demo,
                     people: gs.people.map((p) => ({ name: p.name, needs: { ...p.needs }, working: p.working, fainted: p.faintT > 0 })),
                     items: gs.items.map((it) => ({ id: it.id, r: it.r, c: it.c })),
                     ext: gs.ext,
                     rel: { house: gs.rel.house, fern: gs.rel.fern },
                     visitor: gs.visitor ? gs.visitor.name : null,
                 }) : { screen: screenRef.current, seed },
+                // #1637 watchcheck pilot drives these.
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
                 start: (sd) => startPlay(sd),
                 tap: (px, py) => pointerPx(px, py),
                 press: (code) => onDown({ code, preventDefault: () => {} }),
@@ -542,6 +581,7 @@ const HomebodyGame = () => {
                     <p className="font-mono text-[11px] text-sky-100/70 mb-4 tracking-widest">A LITTLE SUBURBAN LIFE SIM</p>
                     <AttractMessage className="mb-4 text-amber-50/85" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    <p className="font-mono text-[11px] font-bold tracking-widest text-amber-100/60 mt-3">{WATCH_ATTRACT_HINT}</p>
                 </div>
             )}
 
@@ -557,6 +597,19 @@ const HomebodyGame = () => {
                 </div>
             )}
 
+            {/* #1637 batch 17 — the attract brain tends the street; any input takes over. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'HOMEBODY')} onResume={handleResume} />}
             <VirtualControls visible={play && !paused} secondAction={{ label: '⚒', code: 'KeyB' }} />
         </div>

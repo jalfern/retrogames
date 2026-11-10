@@ -1636,6 +1636,81 @@ const PILOTS = [
             }
         },
     },
+    // #1637 batch 17 — the attract brain tends the street. HOME BODY's seat is
+    // autoStep = bot + advance, the exact call its attract demo runs and
+    // peoplecheck's WINNABLE section grants the lifetime wish with (witness
+    // below). Autonomy lives in the sim under s.demo and the flag is the
+    // seat's: release clears it. Beezee's lesson (#1653 era) repeats here:
+    // proximity life is NOT prover-only — Fern's chat and the house's
+    // co-presence climb social bars on their own, and ambience hours bank
+    // content. The honest signals are the demo-gated commands: a buy (items
+    // up, money down), a clock-in, and the payday that follows work. An
+    // unseated street buys nothing, clocks in nowhere and banks no pay.
+    {
+        id: 'homebody', url: `${BASE}/homebody`, hook: '__homebodyTest',
+        async run(page, rep) {
+            const H = '__homebodyTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            const moved = (a, b) => b.items.length !== a.items.length || b.money !== a.money
+                || b.people.some((p, i) => p.working !== a.people[i].working)
+            await key(page, 'Space')                       // attract -> play (single-screen boot)
+            await page.waitForTimeout(400)
+            rep.check('homebody: the street is live before the seat', (await probe()).screen === 'play')
+            rep.check('homebody: nobody is at the controls yet', !(await watching()))
+            const q0 = await probe()
+            await page.waitForTimeout(4000)
+            const q1 = await probe()
+            rep.check('homebody: an idle street buys nothing and works nowhere (prover-only law)',
+                !moved(q0, q1),
+                `items ${q0.items.length} -> ${q1.items.length}, money ${q0.money} -> ${q1.money}, working ${q0.people.map((p) => p.working)} -> ${q1.people.map((p) => p.working)}`)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('homebody: Y seats the attract brain', await watching())
+            rep.check('homebody: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            await page.waitForFunction((h) => window[h].probe().demo === true, H, { timeout: 4000 }).catch(() => {})
+            rep.check('homebody: seated autonomy rides the sim flag (demo is on)', (await probe()).demo === true)
+            const a = await probe()
+            const b = await pollAdvance(page, probe, moved, a, 15000)
+            rep.check('homebody: the street wakes under the prover (buys / clocks in)',
+                moved(a, b), `items ${a.items.length} -> ${b.items.length}, money ${a.money} -> ${b.money}, day ${a.day} -> ${b.day}`)
+            await page.keyboard.down('ArrowLeft')
+            rep.check('homebody: steer key takes over', !(await watching()))
+            rep.check('homebody: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            rep.check('homebody: release clears the sim autonomy flag (demo off with the seat)',
+                (await probe()).demo === false)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('homebody: Y re-seats mid-street', await watching())
+            const c = await probe()
+            // Payday lands at 17:00 = ~50 s of play from a 07:00 boot; the
+            // seat was up ~20 s ago, so this poll must span the shift's end.
+            const d = await pollAdvance(page, probe, moved, c, 50000)
+            rep.check('homebody: resumes from where the player left it (pay / buys)', moved(c, d),
+                `items ${c.items.length} -> ${d.items.length}, money ${c.money} -> ${d.money}`)
+            await key(page, 'KeyY')                       // hand the controls back
+            rep.check('homebody: Y again releases the watcher', !(await watching()) && (await probe()).demo === false)
+            // #1656 one-tap: end this street honestly (both residents down —
+            // the sim's own lose resolves inside advance), return to the
+            // marquee, and let the attract pill start AND seat a fresh run.
+            await page.evaluate((h) => window[h].collapseAll(), H)
+            await page.waitForTimeout(1200)               // over-screen guard
+            await key(page, 'Space')                      // over -> attract
+            await page.waitForTimeout(900)
+            rep.check('homebody: back on attract before the tap', (await probe()).screen === 'attract')
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('homebody: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                const q = await probe()
+                rep.check('homebody: one tap starts the run AND seats the prover', q.screen === 'play' && await watching(), JSON.stringify({ ...q, people: undefined }))
+            }
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -2080,6 +2155,37 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 16: sweepcheck still audits the gate the seat rides (seq-play wins)',
         /seqFail === 0/.test(readFileSync('scripts/sweepcheck.mjs', 'utf8'))
         && /sequential play lost or stalled on/.test(readFileSync('scripts/sweepcheck.mjs', 'utf8')))
+}
+// ---- #1637 batch 17 source pins — the attract brain tends the street ----
+{
+    const hb = readFileSync('src/games/Homebody/index.jsx', 'utf8')
+    const reg17 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas17 = (p, s) => { const m = reg17.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    // The seat must BE the attract call — autoStep in the play tick, from the
+    // game's own sim.js — never a re-forked brain or a stored script.
+    rep.check('HOMEBODY: the seat runs autoStep (bot + advance) in the play tick',
+        /if \(watchingRef\.current\) autoStep\(gs, SIM_MS \/ 1000\)/.test(hb))
+    rep.check('batch 17: the seat imports autoStep from its own sim.js (no forked brain)',
+        /from '\.\/sim\.js'/.test(hb) && /autoStep/.test(hb))
+    rep.check('HOMEBODY: imports the shared blips and logs',
+        /from '\.\.\/\.\.\/utils\/watch'/.test(hb) && /playWatchStart/.test(hb) && /playWatchStop/.test(hb) && /watchSfx: watchSfxLog/.test(hb))
+    rep.check('HOMEBODY: Y seats with blips; any driving key hands back and clears the autonomy flag',
+        /if \(isWatchKey\(e\)\) \{/.test(hb)
+        && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\); if \(gs\) gs\.demo = false; playWatchStop\(\) \}/.test(hb))
+    rep.check('HOMEBODY: a tap on the lot hands the street back too',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\); if \(gs\) gs\.demo = false; playWatchStop\(\); return \}/.test(hb))
+    rep.check('HOMEBODY: watch never lingers — released at the end of the street (silent, racer rule)',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\); s\.demo = false \}/.test(hb))
+    rep.check('HOMEBODY: attract shows the shared WATCH hint (import + drawn line)',
+        (hb.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /homebody: controls carry the WATCH line', entryHas17('/homebody', 'WATCH_HELP'))
+    // The witness still carries the proof the seat rides: peoplecheck grants
+    // the lifetime wish driving this SAME autoStep across seeds — seat and
+    // cert share one brain.
+    const pc = readFileSync('scripts/peoplecheck.mjs', 'utf8')
+    rep.check('batch 17: peoplecheck still grants the wish with autoStep (the seat\'s witness)',
+        /while \(!g\.done && t < cap\) \{ autoStep\(g, DT\)/.test(pc)
+        && /autopilot grants the lifetime wish/.test(pc))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
