@@ -245,7 +245,8 @@ const PapersPleaseMinGame = () => {
             for (const c of day.allowed) { text(`  ${c}`, WALL.x, ey, WALL.listSize, '#7ddc5d'); ey += WALL.listLine }
             let wy = rows.entries
             // every name on the sheet must FIT on the wall — paperscheck
-            // pins day.wanted.length <= 4 so no booth must ever hide one
+            // pins day.wanted.length <= 5 (the original bulletin's five) and
+            // sweeps the fit, so no booth must ever hide one
             for (const w of day.wanted) { text(`  ${w.name} #${w.id}`, WALL.x + 114, wy, WALL.wantedSize, COL.red); wy += WALL.wantedLine }
             box(SCALE.x, SCALE.y, SCALE.w, SCALE.h, '#0f1420', '#4a5578')
             text('SCALE', SCALE.x + 48, SCALE.y + 12, 9, COL.text, 'center')

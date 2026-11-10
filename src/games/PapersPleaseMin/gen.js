@@ -250,7 +250,11 @@ export function genDay(seed, n, trapIdx, trap2Idx = null) {
     // decoy wanted entries: a wall that looks used must never frame a
     // person standing at the window — decoy names may not collide with any
     // entrant's name (a naive eye, and a careless harness, stop at names).
-    for (let k = 0; k < 2; k++) {
+    // Three decoys, not two (#1902): the original bulletin carries five
+    // portraits, so a day with both wanted traps plants a twin into a fuller
+    // wall — planted vs printed stays honest (paperscheck pins <= 5 and the
+    // fit sweep proves the fifth row lands above the scale box).
+    for (let k = 0; k < 3; k++) {
         day.wanted.push({ name: `${FIRST[Math.floor(rnd() * FIRST.length)]} ${LAST[Math.floor(rnd() * LAST.length)]}`, id: 7000 + Math.floor(rnd() * 800), planted: false })
     }
     const entrants = day.queue.filter((a) => a.person.passport).map((a) => a.person.passport.name)
