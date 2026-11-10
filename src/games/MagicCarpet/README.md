@@ -396,14 +396,16 @@ see item 5).
   burn, hut crash, tribute coin) all lean to the side of the world they come
   from, on the same `castBearing` as the wizfire. **Distance now scales every
   one of them (#1764 item 7 stage 4, below): far sources go quiet.** There is
-  no true HRTF, and
+  TRUE HRTF shipped #1764 item 7 stage 5 (below): every panned
+   cue now rides a `PannerNode` with `panningModel: 'HRTF'` — the browser's
+   head-related kernel, not an equal-power tilt, and
   the carpet's own wind bed stays center on purpose — you wear it.
   `?` pause carries the rules instead. **Partially closed by #1790:** red/cyan
   anaglyph ships — the world renders twice from ±0.60u parallel cameras and
   the post chain combines left→red / right→cyan (bloom is shared; the HUD
   stays flat mono). `V` toggles, `?stereo=1` opens on a fresh link, the
-  choice persists. Still open: LCD-shutter/interlace modes, and the
-  HRTF half of #1746 item 7.
+  choice persists. Still open: LCD-shutter/interlace modes — the last stereo gap is LCD-shutter/
+  interlace stereo; the HRTF half of #1746 item 7 shipped at stage 5 (below).
 - Water is shader waves with self-shadowing, sun-linked sparkle and foam lace
   tracing the shoreline. **CLOSED by #1764 item 4 stage 1:** the depth bands are
   now hard 4-level bands whose palette index marches one level every 6 sim ticks
@@ -669,3 +671,44 @@ that pins that exact literal has been red on main ever since (static does not
 run carpetcheck). Restored `${WATER}.0`; the gate is green again. Lesson for
 the lane: re-run the FULL battery after any late string edit — the stage-5
 report described a green battery, the committed source had the broken line.
+
+## #1764 item 7 stage 5 (2026-11-10, QA studio): TRUE HRTF
+
+The stereo field stops *tilting* and starts *colouring*. Stages 3–4 leaned each
+cue to its side and ducked it with distance, but every one rode an equal-power
+`StereoPanner` — a volume split, no head shadow, no pinna cues. Stage 5 swaps the
+panning element to a real `PannerNode` with `panningModel: 'HRTF'`: the browser
+ships a head-related transfer kernel, so a cue placed on the right is now notched
+and delayed exactly the way your right ear hears a sound off to the right.
+
+- `AudioController._panner(pan, t, dest)` (new) is the single element every panned
+  cue routes through. `pan === null` → returns null and the caller connects DIRECT
+  (the opt-in law from stages 3/4 is untouched — no other title's sound moves).
+  Otherwise it builds a `PannerNode`, sets `panningModel: 'HRTF'`, places the
+  source on the unit sphere at `az = pan · 1.15` rad (≈ ±66°, full ear at the rail,
+  never the 90° HRTF degeneracy), and connects it to the caller's `dest` (the
+  destination, or the ambience bus for `ambTone`). If the engine has no
+  `PannerNode`, it falls back to the equal-power `StereoPanner` of stages 3/4,
+  preserving the old lean; if it has neither, it returns null (direct).
+- **It COLOURS only — it never re-attenuates.** `rolloffFactor` is pinned to `0`
+  (`distanceModel: 'linear'`, `refDistance: 1`, `maxDistance: 1000` so the model is
+  inert). Distance loudness is stage 4's `prox`, already multiplied at every Magic
+  Carpet call site; a second distance law in the panner would double-duck far cues.
+- The wind/boost bed stays center ON PURPOSE — you wear the carpet, the original's
+  wind blew in your ears, not off the landscape.
+
+Verified BEHAVIOURALLY on a mock `AudioContext` (real Web Audio is not in Node —
+the mock records every node and connection, so a gate sees the graph the browser
+would build, not just the source text): carpetcheck +5 gates (#1764-7s5) — all four
+one-shots build EXACTLY ONE `PannerNode` with `panningModel 'HRTF'`; `pan === null`
+builds NONE (opt-in); the source lands at the bearing (+pan → +x, −pan → −x,
+magnitude monotone, capped at `sin(1.15)`); `rolloffFactor === 0` and the panner
+reaches a destination; and the kernel is named with `StereoPanner` kept as the
+documented fallback. The HRTF gates assert `panningModel === 'HRTF'` on the created
+node by construction — a mutation to `'equalpower'` fails them directly. The
+existing stage-3/4 source pins (opt-in signatures, the `* prox` census) are
+re-pinned from `createStereoPanner` to the `_panner(pan, …)` call sites; the
+index.jsx call sites (pan last, prox×vol) are unchanged. eslint + lint:mario/fps/ai
+green, build green, the full Node battery green (#1746 / #1764-7 blocks all pass),
+sim hash unmoved (presentation only — nothing rule-facing changed, so the seed sweep
+is unchanged).
