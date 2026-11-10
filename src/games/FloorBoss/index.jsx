@@ -201,6 +201,7 @@ const FloorBossGame = () => {
                     case 'bonus': {
                         audioController.playTone(660, 0.07, 'triangle', 0.06); audioController.playTone(880, 0.09, 'triangle', 0.06, 0.08); audioController.playTone(1175, 0.12, 'triangle', 0.05, 0.17)
                         fx(`FREIGHT +${e.amt}`, '#ffd23f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 26)
+                        if (e.heavy) fx(`HEAVY x${e.heavy}`, '#9ad7ff', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 38) // heavy freight names itself on the till (#1931)
                         burst(PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) + 13, 8, '#ffd23f', 2)
                         break
                     }
@@ -208,6 +209,7 @@ const FloorBossGame = () => {
                     case 'truckin': audioController.playTone(180, 0.07, 'square', 0.05); audioController.playTone(180, 0.07, 'square', 0.05, 0.14); fx('TRUCK IN', '#7ec8ff', PX(OUT_CELLS[0].x) + 13, PY(OUT_CELLS[0].y) - 12); if (e.fee) fx(`EXPRESS −${e.fee}`, '#ff9a4f', PX(OUT_CELLS[1].x) + 13, PY(OUT_CELLS[1].y) - 12); break
                     case 'loadout': {
                         audioController.playNoise(0.05, 0.05); audioController.playTone(220, 0.05, 'square', 0.04)
+                        if (e.w === 2) audioController.playTone(70, 0.1, 'square', 0.08) // heavy freight thuds onto the flatbed (#1931)
                         const p = gs.pad.length ? OUT_CELLS[gs.pad.length % 2] : OUT_CELLS[0]
                         arcItems.push({ x0: PX(p.x) + 13, y0: PY(p.y) + 10, x1: gs.truck.x + 20, y1: 420, k: 0, n: 14, kind: 'crate' })
                         break
@@ -700,6 +702,15 @@ const FloorBossGame = () => {
                     ctx.font = 'bold 6px monospace'
                     ctx.fillText(`x${p.d + 1}`, cx + (p.n * 7) / 2 + 2, cy + 5)
                 }
+                // load weight (#1931): the freight class rides tagged too —
+                // heavies wear a steel bar across the crates + an H badge,
+                // standard a plain grey bar (light rides bare, same no-label
+                // law as LOCAL earns no distance tag)
+                if (p.w > 0) {
+                    ctx.fillStyle = p.w === 2 ? '#9ad7ff' : '#8f99a6'
+                    ctx.fillRect(cx - (p.n * 7) / 2 - 1, cy - 5, p.n * 7 + 2, 2)
+                    if (p.w === 2) { ctx.font = 'bold 6px monospace'; ctx.fillText('H', cx - (p.n * 7) / 2 - 7, cy + 5) }
+                }
             }
             if (tr.mode === 'out' && tr.away > 0) {
                 // the road is the cost (#1927): the dock counts the trip home in
@@ -1016,6 +1027,7 @@ const FloorBossGame = () => {
                 truck: () => ({ ...gs.truck }),
                 pad: () => gs.pad.map((p) => p.n), // #1911 harness eye on the staged parcels
                 padDest: () => gs.pad.map((p) => p.d || 0), // #1927 eye on the destination classes
+                padWeight: () => gs.pad.map((p) => p.w || 0), // #1931 eye on the weight classes
                 ledger: () => ({ escrow: gs.escrow, paid: gs.paid, freight: gs.freight, fees: gs.fees }), // #1921 harness eye on the freight line
                 // #1872 harness eyes on the gantry
                 arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
@@ -1023,7 +1035,7 @@ const FloorBossGame = () => {
                 servoFx: () => ({ arcs: arcItems.filter((a) => a.servo).length, diamond: diamondA, dmode: gs.arm.swing > 0 ? 'swing' : gs.tool === 'rack' ? 'rack' : gs.arm.held ? 'pulse' : 'off', tool: gs.tool }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
-                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0) }), // away/far/padDest #1927
+                probe: () => ({ tick: gs.tick, score: gs.score, escrow: gs.escrow, freight: gs.freight, fees: gs.fees, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end, away: gs.truck.away, far: gs.truck.far, padDest: gs.pad.map((p) => p.d || 0), padWeight: gs.pad.map((p) => p.w || 0), heavy: gs.truck.grid.reduce((s, r) => s + r[2], 0) }), // away/far/padDest #1927, padWeight/heavy #1931
                 watchSfx: watchSfxLog,
                 GX, GY, TILE, W, H,
             }
@@ -1032,7 +1044,7 @@ const FloorBossGame = () => {
                 getState: () => [
                     `tick ${gs.tick}/${SHIFT} | score ${gs.score}/${QUOTA} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
                     `shipped ${gs.shipped} staging [${gs.staging.join('')}] escrow ${gs.escrow} paid ${gs.paid} freight +${gs.freight} express −${gs.fees} | stows ${gs.stows} arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
-                    `road ${gs.truck.away} far ${gs.truck.far} tiers [${gs.truck.tiers.join('')}] pad [${gs.pad.map((p) => `${p.n}x${(p.d || 0) + 1}`).join(' ')}]`, // #1927 freight tiers
+                    `road ${gs.truck.away} far ${gs.truck.far} tiers [${gs.truck.tiers.join('')}] pad [${gs.pad.map((p) => `${p.n}x${(p.d || 0) + 1}${(p.w || 0) > 0 ? `w${(p.w || 0) + 1}` : ''}`).join(' ')}] heavy ${gs.truck.grid.reduce((s, r) => s + r[2], 0)}`, // #1927 freight tiers, #1931 weight classes
                     gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
                 actions: [
