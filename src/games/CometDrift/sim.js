@@ -657,7 +657,13 @@ const cpuInput = (g, k) => brain(g, k, k.skill, false)
 // the autopilot that drives the attract demo AND the harness win-proof:
 // same brain, top skill, smarter drift release.
 export function decide(g) {
-    return brain(g, g.karts[0], 1.0, true)
+    const inp = brain(g, g.karts[0], 1.0, true)
+    // #1857: the certified line is not a twitching human — the tap notch is
+    // for keyboard input only. Stamp the autopilot's digital intents as a
+    // numeric steer so the attract demo and the harness win-proof ride the
+    // exact pre-#1857 line (#1687 precedent: decide() keeps its own rule).
+    inp.autopilot = true
+    return inp
 }
 
 function kartBump(g) {
@@ -702,6 +708,9 @@ export function step(g, inp) {
     if (typeof pin.steer === 'number') pd.steer = pin.steer
     if (typeof pin.thr === 'number') pd.thr = pin.thr
     if (typeof pin.brk === 'number') pd.brk = pin.brk
+    // #1857: autopilot intents (attract + harness win-proof) arrive digital;
+    // pin them as numeric steer so the tap notch never bends the certified line.
+    if (pin.autopilot && typeof pd.steer !== 'number') pd.steer = (pd.l ? -1 : 0) + (pd.r ? 1 : 0)
     drive(g, P, pd)
     for (let i = 1; i < g.karts.length; i++) drive(g, g.karts[i], cpuInput(g, g.karts[i]))
     for (const k of g.karts) {
