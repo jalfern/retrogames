@@ -63,8 +63,23 @@ the couch — or the mic.
   on the panel** (wire/dial/glyph green frame) or refuses with a why
   (`NO BLUE WIRE`, `NO DIAL HERE`, `MODULE LOCKED`, `ALREADY SAFE`) — the
   shout becomes visible without the seat ever touching the pad law. Headless
-  Chrome has no speech service, so everything downstream of the words is
-  proved via `__tmdTest.call(phrase)`.
+  Chrome has no speech service, so the mic-path downstream is proved via
+  `__tmdTest.call(phrase)`.
+- **CALL-BY-KEY (#1894)**: no speech service? X opens a typed call line;
+  letters/digits/SPACE compose, ENTER shouts, X / Backspace-at-empty / Escape
+  sheathes. `applyCallKey` is a pure EDITOR (voice.js) — the committed text
+  rides `voiceCall`, the mic's own entry, so one grammar, one pulse law, one
+  bank (#1415 parity: a typed shout lands in `voiceCmd` and replays
+  hash-exact). Why X: the shapes say "CUT" — the open key can never eat a
+  letter a call needs; no grammar word uses j/q/x (dial SIX is digits), and
+  bombcheck pins that over the vocabulary. While the line is open the keyboard
+  is a MOUTH: arrows and the seat-2 keys are swallowed (no pad leaks — pinned
+  live), V is just a letter ("SEVEN"), and words still never release the WATCH
+  seat (#1247 orders-not-hands). The channel prints where the ear is: the
+  footer glows with ACCEPTED_HINT while the mic listens and coaches
+  `KEY_CALL_HINT` (press X...) while it is off; the composition rides the LCD
+  glass in amber (`CALL> cut red_`). Online the fold laws inside voiceCall
+  run unchanged (guest pages, host gets THEIR PAGE TO TURN).
 - **WATCH (#1637 batch 15)**: Y seats the engine's OWN `solvePad` into seat 1
   — the same reactive planner the attract demo runs and `tmd-smoke` wins
   200/200 seeds with, feeding the real pad path every sim tick, so a mid-run
@@ -105,6 +120,7 @@ the couch — or the mic.
 | SPACE / A | cut / SET / press glyph | flag rule (READ N3 on panel) |
 | B / PAGE | hide-show manual rail (solo) | — |
 | V | mic on/off | |
+| X | open/close the CALL line; letters/digits compose, ENTER shouts, Backspace edits | |
 | `"FLIP IT"` (mic) | pulses the tilt hint (words never act, #1797) | |
 | Tab | flip manual view (solo) | |
 | Esc / `?` | pause (PauseOverlay) | |
@@ -112,7 +128,7 @@ the couch — or the mic.
 ## Verify
 
 ```bash
-npm run bombcheck   # 55 gates: legal+solvable gen (300 seeds), rules-as-printed
+npm run bombcheck   # 71 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # (200 seeds), determinism, strikes/lock/fuse-cut, both loss
                     # paths, quota win 50/50, slack (wins at 75% fuse), grammar
                     # (+ FLIP phrases, page/dial keep), voiceCmd banking (#1415:
@@ -123,7 +139,10 @@ npm run bombcheck   # 55 gates: legal+solvable gen (300 seeds), rules-as-printed
                     # law + silent refusal + face-up reset, autopilot never tilts,
                     # D5/G5 printed-truth rigs, every stamp live inside the quota
                     # incl. the revived N6, round 1 == README set, hash/simState
-                    # carry the tilt, source pin)
+                    # carry the tilt, source pin), CALL-BY-KEY (#1894: editor law
+                    # — compose/commit/close; no grammar in applyCallKey (source
+                    # pin); j/q/x free over the vocabulary; the commit routes
+                    # through voiceCall; the footer swaps coach by mic state)
 npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixels
                     # follow the sim, real strike (+ #1305 pixel gates: strike edge-
                     # flinch, sub-10s fuse-bezel throb), mic obey/refuse, contract
@@ -132,10 +151,16 @@ npm run bombdrive   # real-key browser drive: attract->select->play, drawn pixel
                     # footer pixel gates (steel off / green on); #1797: real-key
                     # tilt (ArrowUp at module 1 / ArrowDown back), back-plate
                     # battery pixels, silent Space on the back, voice FLIP pulses
-                    # without acting; zero page errors. Launches via chromeboot
-                    # (#1622 ladder) — full Chrome cannot boot in launchd-kicked
-                    # sessions on this box; its live-capture section still dies in
-                    # headless-shell+single-process (advisory, known #1622 residue).
+                    # without acting; #1894: real keystrokes deliver a call —
+                    # X opens (amber glass pixels), letters compose, arrows leak
+                    # no pad while typing, V is a letter, ENTER shouts (HEARD
+                    # banner pixels), nonsense gets NO CALL, live capture banks
+                    # the typed shout and replays hash-exact, typed words hold
+                    # the WATCH seat, mic-off footer coaches the keys. Zero page
+                    # errors. Launches via chromeboot (#1622 ladder) — full Chrome
+                    # cannot boot in launchd-kicked sessions on this box; its
+                    # live-capture section still dies in headless-shell+
+                    # single-process (advisory, known #1622 residue).
 CONTRACT_ONLY=talk-me-down npm run contractcheck
 node scripts/tmd-smoke.mjs   # quick sim-only smoke
 npm run watchcheck -- --only talk-me-down   # WATCH seat pilot: seat/blip,
@@ -177,6 +202,12 @@ everything else green.
 an idle pad — goes red on exactly four gates (untouched-defuse, route-to-win,
 silent release, seat-feed source pin); restoring returns 198/198 green.
 
+#1894's mutant — replacing the commit's `voiceCall(said)` with a plain banner
+write (a grammar fork at the shout) — goes red on exactly the five load-bearing
+gates: the voiceCall source pin (bombcheck), ENTER-shout intent, typed NO-CALL
+refusal, live-bank parity, and the watch-word intent (bombdrive); restoring
+returns 71 + 55 green.
+
 Known stale (pre-existing, not batch 15): `bombdrive`'s seed-7 strike probe
 expects the leftmost wire to be the WRONG cut, but seed 7's round-1 N1 now
 targets wire 0 (verified in Node on origin/main) — its two strike gates read
@@ -203,8 +234,12 @@ red on main while `bombcheck` stays green. Filed for the QA lane.
   (guest gone → CPU manual takes the rail; host gone → the page holds still).
   Left open: no voice-over-network (the squad still talks by phone) and the
   room caps at two.
-- Headless CI can hear nothing (no speech service): mic *delivery* is proved
-  by badge state only; the grammar + obey/refuse path is injected.
+- Headless CI can hear nothing (no speech service): mic *delivery* is still
+  proved by badge state and an injected phrase (#1249). Since #1894 the
+  grammar + obey/refuse + bank path also runs end-to-end on REAL keystrokes
+  (X opens, ENTER shouts — to pixels and to `voiceCmd`); what remains open is
+  a live speech-service delivery in CI, and typed calls on phones
+  (VirtualControls has no X — the pill stays the phone's only mouth).
 - DIAL's "another module has wires" rule (D4) reads the bomb layout; a second
   dial module is intentionally not cross-referenced (first dial wins).
 - The tilt is READ-only: batteries are counted, never pulled (no battery-pull

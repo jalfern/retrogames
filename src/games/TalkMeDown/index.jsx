@@ -30,7 +30,7 @@ import {
     createTmdSync, snapshotNet, restoreNet, packSnap,
     DROP_GRACE, HASH_EVERY, RESEAT_LEAD, RESEAT_WINDOW,
 } from './net.js'
-import { parseCall, intentLabel } from './voice.js'
+import { parseCall, intentLabel, applyCallKey, CALL_LINE_MAX } from './voice.js'
 import { sfx } from './audio.js'
 import * as ART from './art.js'
 
@@ -48,6 +48,7 @@ const ATTRACT_MSGS = [
     'THE OTHER HOLDS THE MANUAL',
     'NEITHER CAN WIN ALONE',
     'V = MIC: SHOUT "CUT RED"',
+    'NO MIC? X TYPES THE CALL',
     'THREE STRIKES AND THE BLOCK GLOWS',
     'UP AT MODULE 1 TILTS THE BOMB OVER',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
@@ -84,6 +85,10 @@ export default function TalkMeDown() {
     const manualHiddenRef = useRef(false)
     const voiceRef = useRef({ on: false, listen: null })
     const voiceLogRef = useRef([])
+    // #1894 CALL-BY-KEY: shell-side composition (like the mic, never sim
+    // state, never hashed). ENTER shouts the buffer through voiceCall — the
+    // mic's own entry — so grammar, pulse, banner and bank are one path.
+    const callRef = useRef({ open: false, buf: '' })
     const overAtRef = useRef(0)
     const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
@@ -104,7 +109,10 @@ export default function TalkMeDown() {
     const msgIdxRef = useRef(0)
     const msgAtRef = useRef(0)
 
-    const setScreen = (s) => { screenRef.current = s; setUiScreen(s) }
+    const setScreen = (s) => {
+        screenRef.current = s; setUiScreen(s)
+        if (s !== 'play') { callRef.current.open = false; callRef.current.buf = '' } // #1894: the line lives only at the panel
+    }
 
     const startPlay = useCallback((seed, players) => {
         seatsRef.current = Math.max(1, Math.min(2, players | 0 || 1))
@@ -277,7 +285,7 @@ export default function TalkMeDown() {
                     else if (sfx[f.k]) sfx[f.k]()
                     pumpHud(f)
                 }
-                if (g.done && screenRef.current === 'play') { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now() }
+                if (g.done && screenRef.current === 'play') { screenRef.current = 'over'; setUiScreen('over'); overAtRef.current = performance.now(); callRef.current.open = false; callRef.current.buf = '' }
             },
             state: () => {
                 const g = gsRef.current || createGame(1, 1)
@@ -524,11 +532,19 @@ export default function TalkMeDown() {
         const S2 = { KeyA: 'left', KeyD: 'right', KeyW: 'up', KeyS: 'down', KeyF: 'a' }
 
         const onKeyDown = (e) => {
+            // #1894: while the CALL line is open Escape puts the mouth away
+            // first — the squad card only rises when nothing is being typed.
+            if (callRef.current.open && e.code === 'Escape') {
+                e.preventDefault(); callRef.current.open = false; callRef.current.buf = ''; sfx.move(); return
+            }
             if (e.code === 'Escape' || e.code === 'Backquote' || (e.shiftKey && e.code === 'Digit1')) {
                 if (screenRef.current === 'play') { e.preventDefault(); setPaused(p => !p) }
                 return
             }
-            if (e.code === 'KeyV') { e.preventDefault(); toggleVoice(); return }
+            // #1894: while the CALL line is open V is just a letter ("SEVEN",
+            // "TURN IT OVER") — the mic switch resumes the moment the line
+            // closes. The ear and the mouth never share a keystroke.
+            if (e.code === 'KeyV' && !callRef.current.open) { e.preventDefault(); toggleVoice(); return }
             // #1880 host-gone law: the manual seat owns no hands — a guest
             // frozen at a dead defuser walks back to the lobby with any key
             // (no role inversion; a returning host re-arms with a fresh go).
@@ -574,6 +590,25 @@ export default function TalkMeDown() {
             }
             // play
             if (pausedRef.current) return
+            // #1894 CALL-BY-KEY: while the line is open the keyboard is a
+            // MOUTH, not a hand — every key is swallowed (arrows and the CPU
+            // manual's seat keys produce no pad, and words never release the
+            // WATCH seat: orders, not hands, #1247 by analogy with V). The
+            // buffer commits through voiceCall, the mic's own entry: one
+            // grammar, one pulse law, one bank (#1415). Online the fold laws
+            // inside voiceCall run unchanged (guest pages, host refuses).
+            const cl = callRef.current
+            if (cl.open) {
+                e.preventDefault()
+                const r = applyCallKey(cl.buf, e.code) // KeyX closes what X opened
+                if (!r) { sfx.move(); return } // arrows etc: swallowed at the mouth, never a pad
+                if (r.commit) { cl.open = false; const said = cl.buf; cl.buf = ''; voiceCall(said); return }
+                if (r.close) { cl.open = false; cl.buf = ''; sfx.move(); return }
+                cl.buf = r.buf.slice(0, CALL_LINE_MAX)
+                if (r.buf.length <= CALL_LINE_MAX) sfx.tick()
+                return
+            }
+            if (e.code === 'KeyX') { e.preventDefault(); cl.open = true; cl.buf = ''; sfx.key(); return }
             // #1637 WATCH: Y seats the rulebook solver into seat 1 (solvePad
             // drives the real pad path on the sim's own tick); any driving key
             // hands the hands back and the player continues from exactly that
@@ -821,6 +856,7 @@ export default function TalkMeDown() {
                     if (gs.order && gs.order !== hud.lastOrder) hud.lcdFx = 6
                     hud.lastOrder = gs.order
                     ART.drawOrderRail(g, gs.order, gs.manual.flag, hud.lcdFx, voiceRef.current.on)
+                    if (callRef.current.open) ART.drawCallLine(g, callRef.current.buf, tick) // #1894
                     drawSparks(g, hud)
                     drawZap(g, hud)
                     if (hud.banner) ART.drawBanner(g, hud.banner.text, hud.banner.ok, tick)
@@ -1065,13 +1101,16 @@ export default function TalkMeDown() {
                 start: (seed, players) => startPlay(seed >>> 0 || 1, players || 1),
                 screen: () => screenRef.current,
                 call: (text) => voiceCall(text),
+                // #1894: the harness reads/pilots the typed line the same way
+                // it reads the mic badge — and asserts delivery with real keys.
+                callLine: () => ({ open: callRef.current.open, buf: callRef.current.buf, paused: pausedRef.current }),
                 release: (field) => { keys1Ref.current[field] = false },
                 keys: () => ({ ...keys1Ref.current }),
                 state: () => { const g = gsRef.current; return g ? simState(g) : null },
                 hash: () => { const g = gsRef.current; return g ? hash(g) : 0 },
                 voiceLog: () => voiceLogRef.current.slice(),
                 voiceMode: () => ({ on: voiceRef.current.on, supported: speechSupported(), listening: !!(voiceRef.current.listen && voiceRef.current.listen.active) }),
-                hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0 }), // #1373
+                hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0, banner: hudRef.current.banner ? { text: hudRef.current.banner.text, ok: hudRef.current.banner.ok } : null }), // #1373, banner for #1894
                 solveStep: () => { const g = gsRef.current; if (g && !g.done) spec.tick(solvePad(g)) },
                 // #1880 drive: hands the OWN seat to the solver at the sample
                 // instant (readOwnPad), with delay 0 so the pad for tick k is

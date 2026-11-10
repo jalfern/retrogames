@@ -194,6 +194,125 @@ ok('the footer glows green while the mic listens (pixels)', inkOn > 60, `ink=${i
 await page.keyboard.press('KeyV') // mic off again
 await sleep(150)
 
+// ---- #1894 CALL-BY-KEY: real keystrokes deliver a call, no injection ------
+// The gap this closes: headless CI had no speech service, so grammar +
+// obey/refuse was PROVED ONLY THROUGH __tmdTest.call (a door around the mic
+// layer) and delivery was badge state. Here the whole path runs on real key
+// events: C opens, letters compose, ENTER shouts — through voice.js, onto the
+// glass, into the #1415 bank. The mic keeps its own V while the line is shut;
+// while it is open the keyboard is a mouth: arrows make no pad, V is a letter.
+await page.evaluate(() => { window.__tmdTest.start(7, 1); window.__game.release() })
+await sleep(250)
+const glassInk = () => page.evaluate(() => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(16, 314, 320, 18).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4) { const r = d[i], g0 = d[i + 1], b = d[i + 2]; if (r > 150 && g0 > 110 && b < 130) n++ }
+    return n
+})
+await page.keyboard.press('KeyX')
+await sleep(80)
+const opened = await page.evaluate(() => window.__tmdTest.callLine())
+ok('X opens the CALL line', opened.open === true && opened.buf === '')
+let inkEmpty = 0
+for (let i = 0; i < 12 && inkEmpty <= 20; i++) { inkEmpty = Math.max(inkEmpty, await glassInk()); await sleep(50) }
+ok('the glass shows CALL> with a caret (pixels)', inkEmpty > 20, `ink=${inkEmpty}`)
+for (const k of ['KeyC', 'KeyU', 'KeyT', 'Space', 'KeyR', 'KeyE', 'KeyD']) await page.keyboard.press(k)
+const typed = await page.evaluate(() => window.__tmdTest.callLine())
+ok('letters and SPACE compose on the line', typed.open === true && typed.buf === 'cut red', JSON.stringify(typed))
+// words are orders, not hands: an arrow while composing reaches no pad
+const beforePad = await page.evaluate(() => window.__tmdTest.keys())
+await page.keyboard.press('ArrowRight')
+const afterPad = await page.evaluate(() => window.__tmdTest.keys())
+const stillBuf = await page.evaluate(() => window.__tmdTest.callLine())
+ok('an arrow mid-call is swallowed (no pad leak, text intact)', !afterPad.right && stillBuf.buf === 'cut red', `right=${afterPad.right} buf=${stillBuf.buf}`)
+void beforePad
+// V is just a letter while open (the mic switch resumes when shut)
+await page.keyboard.press('KeyV')
+const vTyped = await page.evaluate(() => ({ line: window.__tmdTest.callLine(), mode: window.__tmdTest.voiceMode() }))
+ok('V types v while open and does NOT toggle the mic', vTyped.line.buf === 'cut redv' && vTyped.mode.on === false, JSON.stringify(vTyped))
+await page.keyboard.press('Backspace') // drop the stray v
+// ENTER shouts: the mic's own entry, so the same banner + log shape lands
+await page.keyboard.press('Enter')
+await sleep(60)
+const cutEntry = await page.evaluate(() => window.__tmdTest.voiceLog().slice(-1)[0])
+ok('ENTER shouts the line: cut intent through the shared grammar', cutEntry && cutEntry.intent && cutEntry.intent.kind === 'cut' && cutEntry.ok === true, JSON.stringify(cutEntry))
+const closedAfter = await page.evaluate(() => window.__tmdTest.callLine())
+ok('a shout closes the line', closedAfter.open === false && closedAfter.buf === '')
+// poll: software-rendered Chrome commits frames ~100ms behind the sim
+// (the #1305 bezel gate polls for the same reason; a single sample reads the
+// pre-banner frame).
+let bannerInk = 0
+for (let i = 0; i < 12 && bannerInk <= 40; i++) {
+    bannerInk = Math.max(bannerInk, await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(170, 40, 300, 18).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) { const r = d[i], g0 = d[i + 1], b = d[i + 2]; if (g0 > 150 && g0 > r + 40 && g0 > b + 40) n++ }
+        return n
+    }))
+    await sleep(50)
+}
+ok('the HEARD banner lights green for the typed shout (pixels)', bannerInk > 40, `ink=${bannerInk}`)
+// nonsense typed is NO CALL — the line grew no grammar of its own
+await page.keyboard.press('KeyX')
+for (const k of ['KeyH', 'KeyE', 'KeyL', 'KeyL', 'KeyO', 'Space', 'KeyT', 'KeyH', 'KeyE', 'KeyR', 'KeyE']) await page.keyboard.press(k)
+await page.keyboard.press('Enter')
+const junkEntry = await page.evaluate(() => window.__tmdTest.voiceLog().slice(-1)[0])
+ok('typed nonsense gets the same NO CALL refusal as a shout', junkEntry && junkEntry.intent === null && junkEntry.ok === false && junkEntry.said === 'hello there', JSON.stringify(junkEntry))
+// the small line laws
+await page.keyboard.press('KeyX'); await page.keyboard.press('KeyA'); await page.keyboard.press('Backspace')
+ok('Backspace at empty closes the line', (await page.evaluate(() => window.__tmdTest.callLine())).open === false)
+await page.keyboard.press('KeyX'); await page.keyboard.press('KeyQ'); await page.keyboard.press('KeyX')
+const cClosed = await page.evaluate(() => window.__tmdTest.callLine())
+ok('X closes what X opened, discarding the draft', cClosed.open === false && cClosed.buf === '')
+await page.keyboard.press('KeyX'); await page.keyboard.press('KeyZ'); await page.keyboard.press('Escape')
+const escClosed = await page.evaluate(() => window.__tmdTest.callLine())
+ok('Escape sheathes the line WITHOUT raising the pause card', escClosed.open === false && escClosed.paused === false, JSON.stringify(escClosed))
+// parity with the #1415 bank law: a typed shout lands in the live capture
+await page.evaluate(() => { window.__tmdTest.start(7, 1); window.__game.release(); window.__game.recordStart(30) }) // release AFTER replay-lock
+await sleep(400)
+await page.keyboard.press('KeyX')
+for (const k of ['KeyC', 'KeyU', 'KeyT', 'Space', 'KeyR', 'KeyE', 'KeyD']) await page.keyboard.press(k)
+await page.keyboard.press('Enter')
+await sleep(350)
+const keyRec = await page.evaluate(() => {
+    const r = window.__game.recordStop(); window.__tmdKeyRec = r
+    return r ? { cmds: (r.voiceCmd || []).map(c => ({ ...c })), hashes: r.hashes.length } : null
+})
+ok('a typed shout banks voiceCmd like a heard one (live capture)', keyRec && keyRec.cmds.length === 1 && keyRec.cmds[0].intent === 'cut' && keyRec.cmds[0].ok === true, JSON.stringify(keyRec && keyRec.cmds))
+const keyReplay = await page.evaluate(() => window.__game.replay(window.__tmdKeyRec))
+ok('the capture with the typed call replays hash-exact', keyReplay.ok === true, JSON.stringify(keyReplay.mismatch || keyReplay.error))
+await page.evaluate(() => window.__game.release()) // replay locks the clock — the sections downstream expect it running
+// #1637 law: words never release the WATCH seat — typed included
+await page.evaluate(() => { window.__tmdTest.start(9, 1); window.__game.release() })
+await sleep(200)
+await page.keyboard.press('KeyY')
+ok('watch seated for the word test', await page.evaluate(() => window.__tmdTest.watching()))
+await page.keyboard.press('KeyX')
+for (const k of ['KeyS', 'KeyE', 'KeyT']) await page.keyboard.press(k)
+await page.keyboard.press('Enter')
+const wordWatch = await page.evaluate(() => ({ w: window.__tmdTest.watching(), e: window.__tmdTest.voiceLog().slice(-1)[0] }))
+ok('a typed word keeps the watch seat (orders, not hands)', wordWatch.w === true && wordWatch.e && wordWatch.e.intent && wordWatch.e.intent.kind === 'set', JSON.stringify(wordWatch))
+await page.keyboard.press('ArrowLeft') // a hand takes over again for the exit paths
+// mic-off footer is the keyboard coach: steel ink where the shapes used to glow
+await page.evaluate(() => { window.__tmdTest.start(7, 1); window.__game.release() })
+await sleep(200)
+let coachInk = 0
+for (let i = 0; i < 12 && coachInk <= 60; i++) {
+    coachInk = Math.max(coachInk, await page.evaluate(() => {
+        const c = document.querySelector('canvas')
+        const d = c.getContext('2d').getImageData(16, 333, 320, 10).data
+        let n = 0
+        for (let i = 0; i < d.length; i += 4) { const r = d[i], g0 = d[i + 1], b = d[i + 2]; if (r > 70 && g0 > 70 && b > 70 && Math.abs(r - g0) < 30) n++ }
+        return n
+    }))
+    await sleep(50)
+}
+ok('the mic-off footer coaches the keys instead (steel pixels)', coachInk > 60, `ink=${coachInk}`)
+await page.evaluate(() => { window.__tmdTest.start(9, 1); window.__game.release() })
+await sleep(200)
+
 // #1373: clearing a bomb must drop a BOMB n INBOUND curtain for ~1 s — the
 // old BOMB DOWN! flash landed on the already-armed next panel instead.
 await page.evaluate(() => window.__tmdTest.start(9, 1))
@@ -259,7 +378,8 @@ ok('contract id + deterministic hashes', h.id === 'talk-me-down' && h.last === h
 // seed the low-fuse sample below uses — same bomb, different clock).
 await page.evaluate(() => { const g = window.__game; g.reset(7, 1); g.release() })
 await sleep(150)
-const lumaHi = await cornerLuma(page)
+let lumaHi = 0 // poll the brightest frame: the vignette throbs with sin(tick/6)
+for (let i = 0; i < 12; i++) { lumaHi = Math.max(lumaHi, await cornerLuma(page)); await sleep(50) } // #1305 law: one screenshot cannot decide a sine phase
 
 // #1305 pixel gate: below 10 s the fuse bezel must throb red whether or not
 // the pulse sine is caught at its peak (alpha floor 0.45). Drive the clock with
@@ -292,7 +412,8 @@ for (let i = 0; i < 14 && bezelRed < 200; i++) {
 }
 ok('the last 10 s throbs a red bezel around the fuse (pixels, #1305)', bezelRed > 120, `ring pixels=${bezelRed}`)
 // #1373: same low-fuse state — the four corners must sink into the vignette.
-const lumaLow = await cornerLuma(page)
+let lumaLow = Infinity // same law on the sunken side: poll to the trough of the pulse
+for (let i = 0; i < 12; i++) { lumaLow = Math.min(lumaLow, await cornerLuma(page)); await sleep(50) }
 ok('the last 10 s sinks the corners into a vignette (pixels, #1373)', lumaHi - lumaLow >= 8, `hi=${lumaHi.toFixed(1)} lo=${lumaLow.toFixed(1)}`)
 
 // die for real via the contract clock, then restart with a real key
