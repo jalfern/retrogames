@@ -28,7 +28,7 @@ import { townScore, hasCottage } from './towns.js'
 import { AVATARS, shrineTitle, plotShrines } from './shrines.js'
 import { buildClassicStamps, variantOf } from './ega.js'
 import { PHASES, moonPhase, moonName, phaseLit, gateFlavor, routeDest } from './moons.js'
-import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, seaRough, crestGain, foamGain } from './swell.js'
+import { crest, crestLane, foam, landSides, foamPatches, splatIntensity, dimples, splashStrikes, SPLAT_GAP, seaRough, crestGain, foamGain } from './swell.js'
 
 const SIM_MS = 1000 / 60
 const VIEW_W = 1280
@@ -96,6 +96,7 @@ const BritanniaGame = () => {
             amb: AMB.NONE, warp: null, toast: 0, toastMsg: '',
             bumped: new Set(), // shrines whose stone the pilgrim has touched
             wind: windNow(0, seed >>> 0), // #1853: the day's first pressure reading
+            splat: -99, // #1829: last tick the sea spoke a drop
         })
 
         const load = async () => {
@@ -167,6 +168,22 @@ const BritanniaGame = () => {
                 }
             }
             if ((S.wx === WX.RAIN || S.wx === WX.STORM) && (S.tick % 42) === 0) audioController.playNoise(0.14, 0.04)
+            // #1829 item 3: rain striking the SEA gets its own voice. The
+            // global hiss above is the sky; this is the water — a soft tick
+            // every time a dimple ring OPENS on the sea tile under the camera
+            // (the Avatar's tile: the same truth `seaRain` exposes), so the
+            // sound lands exactly when the painted drop lands (splashStrikes
+            // reads the same hashes the painter draws with). Land-locked skies
+            // stay silent; SPLAT_GAP keeps a storm shattering, never
+            // machine-gunning. View/audio only — the sim never sees it.
+            if (isSea(terrainAt(S.x, S.y))) {
+                const sis = splatIntensity(weatherAt(S.x, S.y, S.tick, S.seed, terrainAt))
+                if (sis > 0 && splashStrikes(S.x, S.y, sis, S.tick, S.seed) > 0
+                    && S.tick - S.splat >= SPLAT_GAP) {
+                    S.splat = S.tick
+                    audioController.playNoise(0.05 + 0.09 * sis, 0.025 + 0.015 * sis)
+                }
+            }
             // #1853: the pressure cycle turns at epoch boundaries — name the
             // wind shift so the player can read WHY the sky races or stalls.
             // A sky change this tick keeps its own voice; GOAL stays king.

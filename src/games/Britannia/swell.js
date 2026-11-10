@@ -91,6 +91,8 @@ export function splatIntensity(wx) {
 // dimples on a wet sea tile, tile-local px. Each dimple has a seeded period
 // (22..42 ticks): its ring opens (r grows), fades and dies, and a new one
 // takes its place — the surface is struck, never decorated with static dots.
+// `o` marks the tick a ring OPENS (ph === 0): the drop lands exactly there,
+// so the splash voice (#1829 item 3) and the painted ring fire from ONE truth.
 export function dimples(tx, ty, intensity, t, seed = 0) {
     if (intensity <= 0) return []
     const n = 2 + Math.floor(intensity * 5)
@@ -100,10 +102,23 @@ export function dimples(tx, ty, intensity, t, seed = 0) {
         const h2 = hash2(ty * 29 + i, tx * 7 + i, seed ^ 0x3c5)
         const per = 22 + Math.floor(h1 * 20)
         const ph = (((t + Math.floor(h2 * per)) % per) / per)
-        out.push({ x: 3 + h1 * 24, y: 3 + h2 * 24, r: 0.8 + ph * 2.6, a: (1 - ph) * intensity * 0.5 })
+        out.push({ x: 3 + h1 * 24, y: 3 + h2 * 24, r: 0.8 + ph * 2.6, a: (1 - ph) * intensity * 0.5, o: ph === 0 })
     }
     return out
 }
+
+// how many dimple rings OPEN on this tile this tick — the count of drops that
+// strike the water right now. Pure derivation from dimples (same hashes), so
+// the voice can never drift from what the painter draws.
+export function splashStrikes(tx, ty, intensity, t, seed = 0) {
+    let k = 0
+    for (const d of dimples(tx, ty, intensity, t, seed)) if (d.o) k++
+    return k
+}
+
+// min ticks between splash voices: one ring opening is a tick; seven rings
+// opening at once is still one tick. A storm shatters, but never machine-guns.
+export const SPLAT_GAP = 8
 
 // ---- rain winds the swell (#1822) --------------------------------------
 // A front that passed leaves the sea it whipped still heaving. seaRough

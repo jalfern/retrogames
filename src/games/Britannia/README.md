@@ -309,9 +309,25 @@ npm run dev                 # play at /retrogames/britannia
   dimple/sky mismatches over 7.8k sea samples, and 3 wiring gates.
   Mutants: dropping the `intensity <= 0` guard reddens 3 gates; swapping
   the rain/snow intensities reddens 2 — each restored green.
-- Still honest: no splash sound at sea beyond the global rain hiss. (The
-  "no swell of its own" caveat here is superseded by #1822 below — wet skies
-  now lift the crests and foam through the wind-memory.)
+- The sea speaks (#1829 item 3): `swell.js` marks each dimple ring with `o`
+  (the tick its drop LANDS, `ph === 0`) and `splashStrikes(tx, ty, i, t, seed)`
+  counts the rings opening this tick — the voice and the paint read ONE hash
+  field, so sound can never drift from what the player sees. `index.jsx` fires
+  a soft `playNoise` (volume and length scale with the sky: storm loudest, snow
+  dullest) whenever a ring opens on the sea tile under the Avatar — the same
+  truth `seaRain` exposes — rate-limited by `SPLAT_GAP = 8` so a storm
+  shatters but never machine-guns. Land-locked skies stay silent; a glass sea
+  never speaks. View/audio only: the block writes only `S.splat`.
+  `britanniacheck` +10 gates: determinism, glass-sea silence, the one-source
+  law (strikes == rings opening, 1800 ticks), strike-on-fresh-ring alignment,
+  storm>rain>snow strike ordering, the gap law, 4 wiring/purity pins.
+  Mutants: `o: ph === 0.5` (sound lands on a mid-life ring) reddens 3 gates
+  (fresh-ring alignment, storm>rain>snow ordering, the landing-tick pin);
+  `SPLAT_GAP: 600` (one splash per ten seconds) reddens the gap law — each
+  restored green.
+- Still honest: no surf roar beneath the ship in a blow (item 1's hazard
+  half). (The "no swell of its own" caveat here is superseded by #1822 below —
+  wet skies now lift the crests and foam through the wind-memory.)
 
 ## Rain winds the swell (#1822 polish)
 
