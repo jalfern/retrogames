@@ -27,7 +27,7 @@ import {
     makeGame, step, state, stateHash, createAutopilot, clickCell, setTool,
     toggleAuto, clickOrder, hireRobot,
     COLS, ROWS, SHIFT, QUOTA, STRIKES, RACK_COST, ROBOT_COST, RACK_CAP,
-    BAY_CELL, OUT_CELLS, ARM_CELL, MAX_ROBOTS,
+    BAY_CELL, OUT_CELLS, ARM_CELL, ARM_REACH, MAX_ROBOTS,
 } from './sim.js'
 
 const SIM_MS = 1000 / 60
@@ -69,6 +69,7 @@ const FB_ATTRACT = [
     'JAMMED AISLES: CLICK ONE BOT TO BACK IT OFF',
     'BUILD RACKS ($60) AND HIRE ROBOTS ($150) FROM THE TOP BAR',
     'B CYCLES THE BUILD TOOL · F TOGGLES AUTO-DISPATCH',
+    'THE SERVO SELF-STOWS WHEN BOTS ARE ALL BUSY',
     'RUSH HOUR PAYS 1.5x — RUSH ORDERS ALSO RUN COLD',
     'THREE EXPIRED ORDERS AND THE BOSS ENDS YOUR SHIFT',
 ]
@@ -166,6 +167,8 @@ const FloorBossGame = () => {
                 switch (e.type) {
                     case 'order': audioController.playTone(300, 0.05, 'square', 0.04); break
                     case 'armload': audioController.playTone(520, 0.05, 'triangle', 0.05); break
+                    case 'armswing': audioController.playSweep(240, 420, 0.14, 'triangle', 0.045); break
+                    case 'armstow': audioController.playTone(560, 0.05, 'square', 0.05); audioController.playTone(840, 0.07, 'square', 0.04, 0.06); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#7ec8ff', 1.2); fx('SERVO', '#7ec8ff', PX(e.x) + 13, PY(e.y) + 4); break
                     case 'pick': audioController.playSweep(440, 760, 0.07, 'square', 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 3, '#ffe9a8', 1); break
                     case 'bay': audioController.playSweep(320, 560, 0.07, 'triangle', 0.05); arcItems.push({ x0: armTip.x, y0: armTip.y + 4, x1: PX(e.x) + 13, y1: PY(e.y) + 3, k: 0, kind: e.k }); break
                     case 'stow': audioController.playTone(620, 0.05, 'square', 0.05); audioController.playTone(930, 0.07, 'square', 0.04, 0.05); burst(PX(e.x) + 13, PY(e.y) + 13, 4, '#9fe8b4', 1.2); break
@@ -307,30 +310,76 @@ const FloorBossGame = () => {
 
         const paintArm = (tick) => {
             const bx = PX(ARM_CELL.x) + TILE / 2, by = PY(ARM_CELL.y) + TILE / 2
+            // reach diamond — the gantry's honest footprint while planning racks,
+            // lit brighter while the servo is carrying (#1872)
+            if (gs.tool === 'rack' || gs.arm.swing > 0) {
+                ctx.save()
+                ctx.strokeStyle = gs.arm.swing > 0 ? 'rgba(126,200,255,0.5)' : 'rgba(255,210,63,0.26)'
+                ctx.lineWidth = 1.2
+                ctx.setLineDash([3, 4])
+                ctx.beginPath()
+                ctx.moveTo(bx, by - ARM_REACH * TILE); ctx.lineTo(bx + ARM_REACH * TILE, by)
+                ctx.lineTo(bx, by + ARM_REACH * TILE); ctx.lineTo(bx - ARM_REACH * TILE, by)
+                ctx.closePath(); ctx.stroke()
+                ctx.setLineDash([])
+                ctx.restore()
+            }
             ctx.fillStyle = '#3a4a58'; ctx.beginPath(); ctx.arc(bx, by + 2, 9, 0, Math.PI * 2); ctx.fill()
             ctx.fillStyle = '#5f7280'; ctx.beginPath(); ctx.arc(bx, by, 7, 0, Math.PI * 2); ctx.fill()
-            // two-link arm reaches toward the bay when loaded, rests otherwise;
-            // it dips toward the waiting bot through the BAY_TICKS handoff
-            const pose = gs.arm.pose
-            const restA = -2.2, workA = -0.9
-            const handing = gs.robots.some((bb) => bb.task.kind === 'toArm' && bb.pickT > 0)
-            const ang = restA + (workA - restA) * pose + (handing ? 0.22 : 0)
-            const L1 = 16, L2 = 14
-            const ex = bx + Math.cos(ang) * L1, ey = by + Math.sin(ang) * L1
-            const hx = ex + Math.cos(ang + 1.1 - pose * 0.7) * L2, hy = ey + Math.sin(ang + 1.1 - pose * 0.7) * L2
-            armTip = { x: hx, y: hy }
-            ctx.strokeStyle = '#8fa3b0'; ctx.lineWidth = 4
-            ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke()
-            ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke()
-            ctx.fillStyle = '#c9d4dc'; ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill()
-            // gripper — closes when loaded, opens when the transfer lands
-            grip += ((gs.arm.held ? 0 : 1) - grip) * 0.25
-            const sp = 2 + grip * 3
-            ctx.strokeStyle = gs.arm.held ? '#ffd23f' : '#7e8c96'; ctx.lineWidth = 2
-            ctx.beginPath(); ctx.moveTo(hx - 3, hy - 2); ctx.lineTo(hx - 3 - sp, hy + 3); ctx.stroke()
-            ctx.beginPath(); ctx.moveTo(hx + 3, hy - 2); ctx.lineTo(hx + 3 + sp, hy + 3); ctx.stroke()
-            if (gs.arm.held) drawItem(ctx, gs.arm.held, hx, hy + 5, 0.9)
-            ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(bx, by - 8, 1.8 + Math.sin(tick * 0.1) * 0.5, 0, Math.PI * 2); ctx.fill()
+            if (gs.arm.swing > 0 && gs.arm.target) {
+                // gantry in motion: the boom rotates toward the rack and the
+                // sleeve telescopes out; the drop lands the tick the swing ends
+                const tx = PX(gs.arm.target.x) + TILE / 2, ty = PY(gs.arm.target.y) + TILE / 2
+                const prog = gs.arm.swingT0 ? Math.max(0, Math.min(1, 1 - gs.arm.swing / gs.arm.swingT0)) : 1
+                const ext = Math.min(1, prog / 0.8)
+                const dx = tx - bx, dy = ty - by, len = Math.hypot(dx, dy) || 1
+                const ux = dx / len, uy = dy / len
+                const reach = 22 + ext * Math.max(0, len - 22)
+                const exx = bx + ux * 12, eyy = by + uy * 12
+                const hx = bx + ux * reach, hy = by + uy * reach
+                armTip = { x: hx, y: hy }
+                ctx.strokeStyle = '#8fa3b0'; ctx.lineWidth = 4
+                ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(exx, eyy); ctx.stroke()
+                ctx.strokeStyle = '#aabecb'; ctx.lineWidth = 3
+                ctx.beginPath(); ctx.moveTo(exx, eyy); ctx.lineTo(hx, hy); ctx.stroke()
+                ctx.fillStyle = '#c9d4dc'; ctx.beginPath(); ctx.arc(exx, eyy, 3, 0, Math.PI * 2); ctx.fill()
+                // guide + target bracket
+                ctx.strokeStyle = 'rgba(126,200,255,0.35)'; ctx.lineWidth = 1
+                ctx.setLineDash([2, 4])
+                ctx.beginPath(); ctx.moveTo(hx, hy); ctx.lineTo(tx, ty); ctx.stroke()
+                ctx.setLineDash([])
+                const bp = tick % 20 < 10 ? 4 : 6
+                ctx.strokeStyle = '#7ec8ff'; ctx.lineWidth = 1.4
+                for (const [cx, cy, sx, sy] of [[tx - TILE / 2, ty - TILE / 2, 1, 1], [tx + TILE / 2, ty - TILE / 2, -1, 1], [tx - TILE / 2, ty + TILE / 2, 1, -1], [tx + TILE / 2, ty + TILE / 2, -1, -1]]) {
+                    ctx.beginPath(); ctx.moveTo(cx + bp * sx, cy); ctx.lineTo(cx, cy); ctx.lineTo(cx, cy + bp * sy); ctx.stroke()
+                }
+                if (gs.arm.held) drawItem(ctx, gs.arm.held, hx + ux * 4, hy + uy * 4, 0.9)
+                ctx.fillStyle = '#7ec8ff'; ctx.font = 'bold 6px monospace'; ctx.textAlign = 'center'
+                ctx.fillText('SERVO', bx, by + 22); ctx.textAlign = 'left'
+            } else {
+                // two-link arm reaches toward the bay when loaded, rests otherwise;
+                // it dips toward the waiting bot through the BAY_TICKS handoff
+                const pose = gs.arm.pose
+                const restA = -2.2, workA = -0.9
+                const handing = gs.robots.some((bb) => bb.task.kind === 'toArm' && bb.pickT > 0)
+                const ang = restA + (workA - restA) * pose + (handing ? 0.22 : 0)
+                const L1 = 16, L2 = 14
+                const ex = bx + Math.cos(ang) * L1, ey = by + Math.sin(ang) * L1
+                const hx = ex + Math.cos(ang + 1.1 - pose * 0.7) * L2, hy = ey + Math.sin(ang + 1.1 - pose * 0.7) * L2
+                armTip = { x: hx, y: hy }
+                ctx.strokeStyle = '#8fa3b0'; ctx.lineWidth = 4
+                ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(ex, ey); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(ex, ey); ctx.lineTo(hx, hy); ctx.stroke()
+                ctx.fillStyle = '#c9d4dc'; ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill()
+                // gripper — closes when loaded, opens when the transfer lands
+                grip += ((gs.arm.held ? 0 : 1) - grip) * 0.25
+                const sp = 2 + grip * 3
+                ctx.strokeStyle = gs.arm.held ? '#ffd23f' : '#7e8c96'; ctx.lineWidth = 2
+                ctx.beginPath(); ctx.moveTo(hx - 3, hy - 2); ctx.lineTo(hx - 3 - sp, hy + 3); ctx.stroke()
+                ctx.beginPath(); ctx.moveTo(hx + 3, hy - 2); ctx.lineTo(hx + 3 + sp, hy + 3); ctx.stroke()
+                if (gs.arm.held) drawItem(ctx, gs.arm.held, hx, hy + 5, 0.9)
+            }
+            ctx.fillStyle = gs.arm.swing > 0 ? '#7ec8ff' : '#ffd23f'; ctx.beginPath(); ctx.arc(bx, by - 8, 1.8 + Math.sin(tick * 0.1) * 0.5, 0, Math.PI * 2); ctx.fill()
         }
 
         const paintOutbound = (tick) => {
@@ -890,6 +939,8 @@ const FloorBossGame = () => {
                     return o.id
                 },
                 truck: () => ({ ...truck }),
+                // #1872 harness eyes on the gantry
+                arm: () => ({ held: gs.arm.held, swing: gs.arm.swing, swingT0: gs.arm.swingT0, target: gs.arm.target ? { ...gs.arm.target } : null, heldT: gs.arm.heldT, reach: ARM_REACH }),
                 // #1637 watchcheck pilot drives these.
                 watching: () => watchingRef.current,
                 probe: () => ({ tick: gs.tick, score: gs.score, shipped: gs.shipped, stows: gs.stows, racks: gs.racks.length, end: gs.end }),
@@ -900,7 +951,7 @@ const FloorBossGame = () => {
                 title: 'FLOOR BOSS',
                 getState: () => [
                     `tick ${gs.tick}/${SHIFT} | score ${gs.score}/${QUOTA} strikes ${gs.strikes}/${STRIKES} | ${gs.end || 'running'} ${gs.endReason}`,
-                    `shipped ${gs.shipped} stows ${gs.stows} staging [${gs.staging.join('')}] arm ${gs.arm.held || '-'} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
+                    `shipped ${gs.shipped} stows ${gs.stows} staging [${gs.staging.join('')}] arm ${gs.arm.held || '-'} servo ${gs.arm.swing > 0 ? `swing→${gs.arm.target.x},${gs.arm.target.y} (${gs.arm.swing})` : `wait ${gs.arm.heldT}`} auto ${gs.auto ? 'on' : 'off'} tool ${gs.tool || '-'}`,
                     gs.robots.map((b, i) => `bot${i + 1} (${b.x},${b.y}) ${b.task.kind}${b.carry ? ' ' + b.carry : ''}${b.broken ? ' DOWN' : ''}${b.jam ? ' JAM' : ''} wear ${Math.round((b.wear / b.wearMax) * 100)}%`).join(' | '),
                 ],
                 actions: [

@@ -32,6 +32,16 @@ score; three expired orders and you're fired. Quota: 1000.
 - **Belt pressure**: the stow arm holds one item; if no rack has space the
   belt queues up and overflows at the intake (fine). Racks ($60) and robots
   ($150) come out of the score — capacity competes with quota.
+- **Servo arm** (#1872): the gantry is a worker. Cargo waits `ARM_PATIENCE`
+  (90) ticks in the gripper; if no non-broken bot is detailed to the bay, the
+  arm rotates and loads the nearest in-reach rack (`ARM_REACH` 4 cells, ties
+  x then y) itself, paying `STOW_PAY` and counting `gs.stows`. The swing costs
+  `6 ticks/cell + 20 settle` — a slow, free lane beside the fast bot lane. The
+  bay handoff always wins: no swing starts while a bot is tasked `toArm`,
+  dispatch (auto and arm-click) refuses mid-swing, and the bay pickup retries
+  while the gantry is over a rack — so no cargo is ever contested. Servo bits
+  (`swing`, `target`) join `stateHash`; the painter draws the boom rotating and
+  the reach diamond in rack mode.
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -43,14 +53,18 @@ score; three expired orders and you're fired. Quota: 1000.
 ## Verify
 ```bash
 npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven)
+node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
+node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
 
 ## Honest gaps
-- The stow arm is decorative physics — it poses toward the bay but the robot
-  does the transfer (real arm-on-bay manipulation is #1141 territory).
+- ~~The stow arm is decorative physics~~ **CLOSED by #1872**: the servo arm
+  rotates and self-stows in-reach racks when no bot is detailed to the bay
+  (see Engine notes); full arm-on-bay *pick* from the belt is still the
+  scripted handoff, but the transfer is now real gantry work with a swing cost.
 - No trucks/visual departures; shipping is a dock pulse + payout.
 - Only one shift template; difficulty varies by seed, not by level ladder.
 - Two-player manager seats (model vs human, one slot each) are the #1144
