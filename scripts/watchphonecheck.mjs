@@ -22,6 +22,7 @@ const PILL_MIN_H = 44
 const games = read('src/config/games.js')
 const lazy = {}
 for (const m of games.matchAll(/const (\w+) = (?:lazy\(\(\) => )?import\('\.\.\/games\/(\w+)'\)/g)) lazy[m[1]] = m[2]
+for (const m of games.matchAll(/import (\w+) from '\.\.\/games\/(\w+)'/g)) lazy[m[1]] = m[2] // static default imports (Invaders, Defender)
 for (const m of games.matchAll(/import \{([^}]+)\} from '\.\.\/games\/(\w+)'/g)) for (const n of m[1].split(',')) lazy[n.trim()] = m[2]
 const entries = []
 {
@@ -41,7 +42,7 @@ const entries = []
     }
     flush()
 }
-ok(entries.length >= 56, `registry advertises WATCH on ${entries.length} titles (>=56 tripwire)`)
+ok(entries.length >= 58, `registry advertises WATCH on ${entries.length} titles (>=58 tripwire)`)
 ok(new Set(entries.map((e) => e.dir)).size === entries.length, 'each WATCH title maps to exactly one game dir')
 
 // Titles honestly without an attract ▶ WATCH — see PR #<this>. Multi-screen
@@ -110,7 +111,7 @@ for (const { path, dir } of entries) {
     ok(src.includes('<AttractWatchButton'), `${short}: attract ▶ WATCH mounted`)
     const ai = src.indexOf('<AttractWatchButton')
     const ab = src.slice(Math.max(0, ai - 400), ai + 200)
-    ok(/(screen|phase) === 'attract'|attractUi/.test(ab), `${short}: attract button scoped to the attract screen`)
+    ok(/(screen|phase|uiMode) === 'attract'|attractUi/.test(ab), `${short}: attract button scoped to the attract screen`)
     ok(ab.includes("bottom: '24%'"), `${short}: attract button sits in the clear band above the pad zone`)
     ok(ab.includes('z-[70]'), `${short}: attract button stacks above the attract overlay`)
     if (src.includes('net.active') || src.includes('netUi')) {

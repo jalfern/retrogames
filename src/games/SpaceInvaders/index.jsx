@@ -48,7 +48,7 @@ const SpaceInvadersGame = () => {
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
     const [uiOver, setUiOver] = React.useState(false)
-    const [attract, setAttract] = React.useState(true) // #1637: DOM mirror of the attract flag
+    const [attractUi, setAttractUi] = React.useState(true) // #1637: DOM mirror of the attract flag
     const [watching, setWatching] = React.useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
 
@@ -111,14 +111,14 @@ const SpaceInvadersGame = () => {
         const startFromAttract = () => {
             if (!isAttractMode) return
             isAttractMode = false
-            setAttract(false)
+            setAttractUi(false)
             newRun()
         }
         const restartToAttract = () => {
             isAttractMode = true
             attractTick = 0
             setUiOver(false)
-            setAttract(true)
+            setAttractUi(true)
             newRun()
         }
 
@@ -333,7 +333,7 @@ const SpaceInvadersGame = () => {
                 uiOverMirror = false
                 setUiOver(false)
                 isAttractMode = false
-                setAttract(false)
+                setAttractUi(false)
                 watchingRef.current = false // #1637 a reset hands you the stick
                 setWatching(false)
                 keys.ArrowLeft = keys.ArrowRight = keys.Space = false
@@ -430,15 +430,15 @@ const SpaceInvadersGame = () => {
                 <canvas ref={canvasRef} className="block w-full h-full" style={{ background: 'black' }} />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'SPACE INVADERS')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press. */}
-                {attract && !paused && (
-                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '15%' }}>
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
                         <AttractWatchButton />
                     </div>
                 )}
                 {/* #1637 WATCH — the proven flight marches; any key, pad push or tap takes over. */}
-                {!attract && watching && <WatchToast className="fixed z-50" />}
-                {!attract && !paused && (
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
                     <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
                     </div>

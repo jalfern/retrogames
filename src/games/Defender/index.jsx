@@ -16,7 +16,7 @@ const DefenderGame = () => {
     const containerRef = useRef(null)
     const [paused, setPaused] = React.useState(false)
     const pausedRef = useRef(false)
-    const [attract, setAttract] = React.useState(true) // #1637: DOM mirror of the attract flag
+    const [attractUi, setAttractUi] = React.useState(true) // #1637: DOM mirror of the attract flag
     const [watching, setWatching] = React.useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
     const watchingRef = useRef(false)
 
@@ -60,7 +60,7 @@ const DefenderGame = () => {
             const h = viewHeight || (containerRef.current ? containerRef.current.getBoundingClientRect().height : 600)
             sim = createSim({ rand, height: h })
             isAttractMode = false
-            setAttract(false)
+            setAttractUi(false)
             watchingRef.current = false // #1637 a new run starts with the stick in your hand
             setWatching(false)
             Object.keys(keys).forEach((k) => { keys[k] = false })
@@ -510,15 +510,15 @@ const DefenderGame = () => {
                 <canvas ref={canvasRef} className="block w-full h-full" />
                 {paused && <PauseOverlay game={GAMES.find(g => g.label === 'DEFENDER')} onResume={handleResume} />}
                 {/* #1654: the discoverable WATCH line, before the first Y press. */}
-                {attract && !paused && (
-                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '21%' }}>
+                {attractUi && !paused && (
+                    <div className="absolute inset-x-0 z-[70] flex flex-col items-center gap-2 pointer-events-none" style={{ bottom: '24%' }}>
                         <div className="text-emerald-200/70 font-mono text-[11px] tracking-widest">{WATCH_ATTRACT_HINT}</div>
                         <AttractWatchButton />
                     </div>
                 )}
                 {/* #1637 WATCH — the proven patrol flies; any key, pad push or tap takes over. */}
-                {!attract && watching && <WatchToast className="fixed z-50" />}
-                {!attract && !paused && (
+                {!attractUi && watching && <WatchToast className="fixed z-50" />}
+                {!attractUi && !paused && (
                     <div className="fixed z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
                         <WatchButton on={watching} />
                     </div>

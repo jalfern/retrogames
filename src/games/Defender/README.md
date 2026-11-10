@@ -44,7 +44,7 @@ not JSON-serializable (#391).
 ```
 npm run defendercheck            # Node: determinism, score law, rescue chain, deaths, terminal
 npm run defendercheck -- --mutant   # pre-port bugs re-planted; every mutant must go red
-npm run feedbackcheck          # floor law now 52 report+pin titles
+npm run feedbackcheck          # floor law now 55 report+pin titles
 npm run attractcheck           # attract layout rules
 npm run lint:defender
 npm run dev -- --port 5178 --strictPort   # slot b port; /retrogames/defender

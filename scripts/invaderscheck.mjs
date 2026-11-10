@@ -9,13 +9,15 @@
 //   5. sim.js shotVsBunkers return true without clearing a bit (no chew → RED)
 
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { seedRng } from '../src/utils/gameContract.js'
+import { plant, pull } from './lib/mutateguard.mjs'
 import {
     GW, PLAYER_Y, PLAYER_W, ROW_SCORE, RESPAWN_TICKS, UFO_Y,
     BUNKER_W, BUNKER_ROWS, bunkerBricks,
-    makeWorld, step, loseLife, hash, done, activeCount, waveSpeed,
+    makeWorld, step, loseLife, hash, done, activeCount, waveSpeed, watchRoute,
 } from '../src/games/SpaceInvaders/sim.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -267,6 +269,48 @@ const INVADER_BOTTOM_PROBE = 20 // sits above the landing check until one edge-d
     ok(!/Math\.random/.test(stripComments(jsx).replace(/Math\.floor\(Math\.random\(\) \* 1000000\)/g, '')),
         'index.jsx entropy is only the unseeded default seed draw (the audited pattern)')
     ok(/attractFrame/.test(jsx), 'attract screen intact')
+}
+
+
+// ---------- 11. WATCH witness (#1637 batch 18): the seat brain flies it ----------
+{
+    let clean = 0, deaths = 0, slowest = 0
+    for (let k = 0; k < 20; k++) {
+        const rand = seedRng(1000 + k * 77)
+        let w = makeWorld(rand)
+        let dw = 0
+        let cap = 9000
+        while (w.wave === 1 && w.phase !== 'over' && cap--) {
+            const before = w.lives
+            w = step(w, watchRoute(w), rand)
+            if (w.lives < before) dw++
+        }
+        deaths += dw
+        if (w.wave >= 2 && dw === 0) { clean++; slowest = Math.max(slowest, w.tick) }
+    }
+    ok(clean >= 19, `WATCH route clears wave 1 untouched on ${clean}/20 seeds (>=19)`)
+    ok(deaths === 0, `the route never banks a life across 20 seeded flights (${deaths})`)
+    ok(slowest <= 2100, `slowest clean clear tick ${slowest} <= 2100 (a watch worth the time)`)
+    ok(/watchRoute\(world\)/.test(jsx) && !/attractInput/.test(jsx),
+        'index.jsx runs watchRoute from sim.js — attract and seat share one brain')
+    ok((jsx.match(/watchRoute\(world\)/g) || []).length >= 2, 'attract AND the Y seat call the same brain')
+    ok(/isWatchKey\(e\)/.test(jsx) && /isTakeoverKey\(e\)/.test(jsx), 'seat + takeover wired in index.jsx')
+    ok(/label: 'SPACE INVADERS'[\s\S]{0,400}WATCH_HELP/.test(readFileSync('src/config/games.js', 'utf8')),
+        'registry advertises WATCH for Space Invaders')
+}
+
+// prove-it-can-fail: stand inside bullet lanes (freeAt 12 -> 6) — the witness MUST die
+if (process.argv.includes('--mutant')) {
+    const S = 'src/games/SpaceInvaders/sim.js'
+    const orig = readFileSync(S, 'utf8')
+    const from = 'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 12)'
+    if (!orig.includes(from)) { ok(false, 'mutant anchor missing', from) }
+    else {
+        plant(S, orig.replace(from, 'const freeAt = (x) => lanes.every((lx) => Math.abs(lx - x) >= 6)'))
+        const res = spawnSync(process.execPath, ['scripts/invaderscheck.mjs'], { encoding: 'utf8' })
+        ok(res.status !== 0, 'mutant dies: the route can stand in a falling column', res.status === 0 ? 'child passed despite the bug' : '')
+        pull(S)
+    }
 }
 
 console.log(fails ? `FAILURES: ${fails}` : 'INVADERS OK')
