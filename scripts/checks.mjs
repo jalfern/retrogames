@@ -150,6 +150,7 @@ export const MANUAL_CHECKS = [
   // trained seat — ~40 s per pass; advisory-only, driven from the lane
   // (npm run plaicraftcheck). Deterministic: same commit, same numbers.
   "scripts/plaicraftcheck.mjs",
+  "scripts/platecheck.mjs",
   "scripts/peoplecheck.mjs",
   "scripts/physicswalkcheck.mjs",
   "scripts/pickcheck.mjs",
