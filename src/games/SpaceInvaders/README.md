@@ -11,7 +11,7 @@ four-tone march accelerates as the fleet shrinks.
 
 | File | Job | Proven by |
 |------|-----|-----------|
-| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival + bounty) drawn from the injected `rand` stream | `npm run invaderscheck` (42 checks incl. 4 mutants proven RED→GREEN) |
+| `sim.js` | one `step(state, input, rand)` — **zero `Math.random`**, every dice roll (invader fire, shooter choice, UFO arrival + bounty) drawn from the injected `rand` stream | `npm run invaderscheck` (54 checks incl. 5 mutants proven RED→GREEN) |
 | `index.jsx` | render (pixel sprites from bit-rows, 2-frame march), input, seed lifecycle, attract autopilot, harness contract | eslint + `feedbackcheck` laws |
 | `attract.js` | attract screen frames | intact from the original port |
 
@@ -91,11 +91,23 @@ unless the chosen target itself hides behind one (then brick-biting is the
 endgame). Both halves are pinned: the stall-gap witness line (<=450 ticks)
 turns red when either is deleted.
 
+Batch 20 made the route RE-AIM and FOLD the bounce. Re-aim: row-dominant
+aiming marched the ship while another invader sat already aligned over open
+sky (~500 green-gate ticks per seed) — the route now takes an aligned shot
+the tick it appears, keeping the descent law whenever nothing is lined up.
+Fold: a straight lead is fiction once the column reverses mid-flight (measured
+miss bursts ran the inter-kill gap to 236), so the meeting point predicts the
+bounce — march to the edge, then travel back for the rest of the shot's
+flight. Measured: slowest clean clear 1857 → **1265**, inter-kill stall
+236 → 172, pins tightened to 1400 / 220 with the new lines proven red on
+deletion, plus a fort-preservation pin (6215/6560 bricks standing at clear;
+deleting b19's aim tiebreak chews it to 6108).
+
 ## Honest gaps
 
 - The WATCH route clears wave 1 on all 20 WITNESS seeds (0 deaths, slowest
-  ~1857 ticks); between kills a seed may still pause ~7 s crossing under a
-  dense shot pattern — the stall pin caps that at 450 ticks.
+  ~1265 ticks); between kills the worst seed now pauses ~3 s (172 ticks,
+  shot-tempo + re-alignment, pinned <= 220) crossing dense shot patterns.
 - 4 rows × 8 = 32 invaders; the original opens with 55 and grows per wave.
 - The UFO bounty is uniform-random from the four values; the original's
   mystery score came from a shot-count table.

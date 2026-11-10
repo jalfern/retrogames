@@ -71,7 +71,13 @@ driving key or a tap hands the wheel back (shared blips).
   150 s patrol (min 7800 banked, 19/20 clear ≥1 wave; 46 rescues — catch+
   deliver — across the 20 seeds) but it grazes ~1 hit per patrol and a haul
   started on the far side of the planet can still crest before the ship
-  arrives; the gate pins what is MEASURED, not wishes.
+  arrives; the gate pins what is MEASURED, not wishes. (#1637 b20 measured
+  three interception redesigns — reachability-budget concessions, a dive
+  pivot while hauls are lost, and reachable-diver VIP — each RAISED patrol
+  totals (best +18% score, +15 waves) but regressed a seed floor (7800 →
+  3150–5850) and cost lives: at 4000 px the far side is out of the
+  fighter's 210-tick rescue window, and b19's engage-everything law is the
+  honest optimum. The gap stands.)
 - No smart bomb, no hyperspace, no meteor-swarm bonus (documented 1981
   features left out of this port; the original's bonus table values 250/500/
   1000/10k are honored for what IS here).
