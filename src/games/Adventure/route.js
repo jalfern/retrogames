@@ -383,6 +383,15 @@ function* recover(sim, id, backX, backY) {
     return yield* driveTo(sim, backX, backY)
 }
 
+// #1845 watch polish — the seat voice: the guide announces WHICH driver took
+// the wheel, so the ear knows what it's about to watch. V1/V2 (fixed maps) run
+// the proven waypoint script; V3 re-homes loot, so its adaptive route gets its
+// own note. Same dispatch law as makeRoute below — one brain, two voices. The
+// shared handoff blip (utils/watch.js) stays untouched: this stacks after it.
+export function watchVoice(sim) {
+    return sim.variant >= 3 ? { driver: 'adaptive', tone: 880 } : { driver: 'script', tone: 587 }
+}
+
 // Seat factory: makeRoute(sim) -> { next() }. The seat feeds the LIVE sim
 // every tick; next() returns { done, value: input } while the guide drives,
 // and { done: true, value: verdict } when the route is finished or given up.

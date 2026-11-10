@@ -1269,6 +1269,11 @@ const PILOTS = [
             await seatPoll(page, H)
             rep.check('adventure: Y seats the route', await watching())
             rep.check('adventure: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            // #1845 — the seat voice names the driver the ear is about to watch.
+            const vlog = () => page.evaluate((h) => window[h].watchVoiceLog(), H)
+            const dmsg = () => page.evaluate((h) => window[h].declineMsg(), H)
+            rep.check('adventure: V1 seat voice names the script driver', (await vlog()).at(-1) === 'script:1',
+                `voice log ${(await vlog()).join(',')}`)
             const a = await probe()
             const adv = (x, y) => Math.hypot(y.x - x.x, y.y - x.y) > 6 || y.room !== x.room || y.carrying !== x.carrying || y.score > x.score
             const b = await pollAdvance(page, probe, adv, a, 6000)
@@ -1288,6 +1293,24 @@ const PILOTS = [
                 `pos (${Math.round(c.x)},${Math.round(c.y)}) -> (${Math.round(d.x)},${Math.round(d.y)}), room ${c.room} -> ${d.room}, carry ${c.carrying} -> ${d.carrying}`)
             await key(page, 'KeyY')
             rep.check('adventure: Y again releases the route', !(await watching()))
+            // #1845 — a proven road teaches no decline: watching a live route
+            // never raises the canvas lesson (it fires only when the road runs out).
+            rep.check('adventure: no decline lesson while the road is proven', (await dmsg()) === null,
+                `decline msg ${await dmsg()}`)
+            // #1845 — every cart sings its own driver: V2 shares the fixed-map
+            // script voice, V3 re-homes loot and gets the adaptive note.
+            for (const vn of [2, 3]) {
+                await page.goto(`${BASE}/adventure?variant=${vn}`)
+                await page.waitForTimeout(600)
+                await key(page, 'Space')
+                await page.waitForTimeout(300)
+                await key(page, 'KeyY')
+                await seatPoll(page, H)
+                const want = `${vn >= 3 ? 'adaptive' : 'script'}:${vn}`
+                rep.check(`adventure: V${vn} seat voice is the ${vn >= 3 ? 'adaptive' : 'script'} driver`,
+                    (await vlog()).at(-1) === want, `voice log ${(await vlog()).join(',')}`)
+            }
+            await page.goto(`${BASE}/adventure`)
         },
     },
     {
@@ -1652,6 +1675,28 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const reg11 = readFileSync('src/config/games.js', 'utf8')
     const entryHas11 = (p, s) => { const m = reg11.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     rep.check('registry /adventure: controls carry the WATCH line', entryHas11('/adventure', 'WATCH_HELP'))
+}
+
+// #1845 watch polish — the seat says WHICH driver took the wheel (a cart voice
+// stacked after the shared blip; utils/watch.js untouched) and the honest
+// decline is taught on canvas for ~1.5s, under the batch-13 suppression law:
+// a run that won or died already spoke for itself.
+{
+    const ADV = readFileSync('src/games/Adventure/index.jsx', 'utf8')
+    const RT = readFileSync('src/games/Adventure/route.js', 'utf8')
+    rep.check('ADVENTURE: one-brain law — watchVoice branches on variant exactly as makeRoute',
+        /export function watchVoice\(sim\) \{\s*return sim\.variant >= 3 \? \{ driver: 'adaptive'/.test(RT)
+        && /const gen = sim\.variant >= 3 \? runRoute\(sim\) : scriptRun\(sim\)/.test(RT))
+    rep.check('ADVENTURE: the seat stacks the cart voice after the shared blip, receipt to the log',
+        /const v = watchVoice\(sim\)\s*audioController\.playTone\(v\.tone, 0\.09, 'square', 0\.05, 0\.15\)\s*voiceLog\.push\(`\$\{v\.driver\}:\$\{sim\.variant\}`\)/.test(ADV))
+    rep.check('ADVENTURE: the honest decline is taught on canvas, only when the road ran out',
+        /if \(r\.done\) \{[\s\S]*?playWatchStop\(\)[\s\S]*?if \(!\(sim\.won \|\| sim\.dead\)\) \{ declineMsg = 'NO ROUTE FROM HERE'; declineTtl = 90 \}/.test(ADV))
+    rep.check('ADVENTURE: the lesson expires (~1.5s) and clears with every new run',
+        /if \(declineTtl > 0 && --declineTtl === 0\) declineMsg = null/.test(ADV)
+        && /declineMsg = null; declineTtl = 0; voiceLog\.length = 0/.test(ADV))
+    rep.check('ADVENTURE: voice receipts and the decline lesson are harness-observable',
+        /watchVoiceLog: \(\) => voiceLog\.slice\(\)/.test(ADV)
+        && /declineMsg: \(\) => declineMsg/.test(ADV))
 }
 // #1637 batch 12 — BOMB DEFUSE seats the solver crew. The honesty rules that
 // don't need Chrome (the driver itself is graded by defusecheck's 40/40 win

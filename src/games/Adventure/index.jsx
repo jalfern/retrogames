@@ -7,7 +7,7 @@ import { attractFrame, DIM } from './attract.js'
 import { exposeGame, unexposeGame, exposeFeedbackState, unexposeFeedbackState, seedFromQuery, seedRng } from '../../utils/gameContract'
 import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
 import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
-import { makeRoute } from './route.js'
+import { makeRoute, watchVoice } from './route.js'
 import { createSim, ROOMS, COLORS, GW, GH, PLAYER_SPEED, R, WALL_T, SIDE_GAP_Y, SIDE_GAP_H, GATE_ZONE, ROOM_WIPE_TICKS, VARIANTS, DEFAULT_VARIANT, stateHash } from './sim.js'
 
 const AdventureGame = () => {
@@ -39,6 +39,9 @@ const AdventureGame = () => {
         // =============================================
         let seed = 1979
         let watcher = null // #1637 the seated route (route.js — the drivers adventurecheck wins with)
+        let declineMsg = null // #1845 — the honest decline taught on canvas (~1.5s)
+        let declineTtl = 0
+        const voiceLog = [] // #1845 — seat-voice receipt, harness-observed
         let uiModeVal = 'attract'
         const showUi = (m) => { if (uiModeVal !== m) { uiModeVal = m; setUiMode(m) } }
         // #1572 item 3 — SELECT GAME: the cart boots to its variant screen.
@@ -74,6 +77,7 @@ const AdventureGame = () => {
             isAttractMode = false
             dropQueued = false
             watcher = null // #1637: the old route ends with the old run
+            declineMsg = null; declineTtl = 0; voiceLog.length = 0 // #1845: new run, clean slate
             if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             showUi('play')
             Object.keys(keys).forEach((k) => { keys[k] = false })
@@ -117,6 +121,11 @@ const AdventureGame = () => {
                 else if (!(sim.won || sim.dead)) {
                     watcher = makeRoute(sim)
                     watchingRef.current = true; setWatching(true); playWatchStart()
+                    // #1845: the cart's own voice stacked after the shared blip —
+                    // script carts sing one note, the shuffle's adaptive route another.
+                    const v = watchVoice(sim)
+                    audioController.playTone(v.tone, 0.09, 'square', 0.05, 0.15)
+                    voiceLog.push(`${v.driver}:${sim.variant}`)
                 }
                 e.preventDefault()
                 return
@@ -180,6 +189,7 @@ const AdventureGame = () => {
         }
 
         const update = () => {
+            if (declineTtl > 0 && --declineTtl === 0) declineMsg = null // #1845 ~1.5s of lesson
             // #1637: a run that ends in the player's (or the dragon's) hands
             // releases the guide silently — the route already said its piece.
             if (watchingRef.current && (sim.won || sim.dead)) { watchingRef.current = false; setWatching(false); watcher = null }
@@ -201,6 +211,10 @@ const AdventureGame = () => {
                     if (r.done) {
                         // honest handback: the guide ran out of proven road
                         watchingRef.current = false; setWatching(false); watcher = null; playWatchStop()
+                        // #1845 — teach the decline in the player's own language:
+                        // the blip alone was trivia, the words are the lesson. A run
+                        // that ended by winning or dying already spoke for itself.
+                        if (!(sim.won || sim.dead)) { declineMsg = 'NO ROUTE FROM HERE'; declineTtl = 90 }
                     } else w = r.value || {}
                 }
                 if (w) {
@@ -540,6 +554,14 @@ const AdventureGame = () => {
                 ctx.fillText(WATCH_ATTRACT_HINT, GW / 2, GH - 5)
             }
 
+            // #1845 — the honest decline, dot-matrix green like the attract hint.
+            if (declineMsg && !isAttractMode && !(sim.won || sim.dead)) {
+                ctx.fillStyle = '#9fe39f'
+                ctx.font = '7px monospace'
+                ctx.textAlign = 'center'
+                ctx.fillText(declineMsg, GW / 2, GH * 0.42)
+            }
+
             if (sim.won) {
                 ctx.fillStyle = 'rgba(0,0,0,0.5)'
                 ctx.fillRect(0, 0, GW, GH)
@@ -664,6 +686,8 @@ const AdventureGame = () => {
         window.__advTest = {
             watching: () => watchingRef.current,
             watchSfx: watchSfxLog,
+            watchVoiceLog: () => voiceLog.slice(), // #1845 seat-voice receipts
+            declineMsg: () => declineMsg,           // #1845 canvas decline lesson
             probe: () => ({
                 tick: sim.tick,
                 room: sim.room,
