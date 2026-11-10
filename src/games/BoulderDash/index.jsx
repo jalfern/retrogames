@@ -420,7 +420,7 @@ const DashGame = () => {
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
                     {/* #1654: the discoverable WATCH line, before the first Y press. */}
-                    <p className="mt-4 text-amber-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</p>
+                    <div className="mt-4 text-amber-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</div>
                 </div>
             )}
 

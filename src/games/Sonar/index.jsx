@@ -486,7 +486,7 @@ const SonarGame = () => {
                     <AttractMessage className="mb-6 text-cyan-100/80" messages={MESSAGES} />
                     <p className="text-white font-mono font-bold animate-pulse">{PRESS}</p>
                     {/* #1654: the discoverable WATCH line, before the first Y press. */}
-                    <p className="mt-4 text-cyan-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</p>
+                    <div className="mt-4 text-cyan-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</div>
                 </div>
             )}
 
