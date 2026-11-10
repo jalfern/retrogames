@@ -17,6 +17,8 @@ import {
     recordVoiceCmd, isRecording, seedFromQuery, exposeFeedbackState, unexposeFeedbackState,
 } from '../../utils/gameContract.js'
 import { initAutoRecord, askConsent, beginRun, endRun, startBusy, setStartBusy } from '../../utils/autoRecord.js'
+import WatchButton, { WatchToast } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 import { startSpeechListen } from '../../utils/speechListen.js'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit.js'
 import { makeTransport } from '../../utils/linkPeers.js'
@@ -366,6 +368,10 @@ export default function BombDefuseGame() {
         reseatSeat: null, reseatWait: 0, reseatBackTick: null, reseatArm: false,
     })
     const [netUi, setNetUi] = useState(null)
+    // #1637 WATCH batch 12 — solvePads (engine.js) drives BOTH seats; the same
+    // crew defusecheck wins 40/40 seeds with. Reactive from any live position.
+    const [watching, setWatching] = useState(false)
+    const watchingRef = useRef(false)
 
     useEffect(() => { pausedRef.current = paused }, [paused])
 
@@ -376,6 +382,7 @@ export default function BombDefuseGame() {
         seedRef.current = seed
         seatsRef.current = players
         coopRef.current = players > 1
+        watchingRef.current = false; setWatching(false) // #1637: the old route ends with the old run
         hudRef.current = { flash: 0, shake: 0, sparks: [], banner: null, bannerT: 0, boomT: 0 }
         hintRef.current = null
         setScreen('play')
@@ -452,7 +459,9 @@ export default function BombDefuseGame() {
                 const g = gsRef.current
                 if (!g || g.done) return
                 const merged = [pads && pads[0] ? pads[0] : pad]
-                if (g.players > 1) merged.push((pads && pads[1]) || {})
+                // #1637: the seated solver crew supplies seat 2 even in solo runs
+                // (the engine partner only covers an empty pad — solver pads win).
+                if (g.players > 1 || watchingRef.current) merged.push((pads && pads[1]) || {})
                 const cm = E.curStep(g)
                 const moved = !!cm && cm.kind === E.CUT && ((merged[0].left && !prevPad.left) || (merged[0].right && !prevPad.right) || (merged[0].up && !prevPad.up) || (merged[0].down && !prevPad.down))
                 prevPad = { ...merged[0] }
@@ -694,6 +703,20 @@ export default function BombDefuseGame() {
                 return
             }
             if (pausedRef.current) return
+            // #1637 WATCH: Y seats the solver crew at any live position (the
+            // pads verified against live state every tick — never a fake route);
+            // Y again hands back; any ordinary key takes over first.
+            // Online the wire is the guide — Y no-ops there (#1656 law).
+            if (isWatchKey(e)) {
+                e.preventDefault()
+                const g = gsRef.current
+                if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
+                else if (screenRef.current === 'play' && !net.active && g && !g.done) {
+                    watchingRef.current = true; setWatching(true); playWatchStart()
+                }
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const f1 = S1[e.code]
             if (f1) { e.preventDefault(); pressMin(keys1Ref.current, f1); return }
             if (seatsRef.current > 1) {
@@ -827,9 +850,17 @@ export default function BombDefuseGame() {
                 }
                 return
             }
-            const p1 = padFrom(keys1Ref.current)
-            const pads = seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : [p1]
+            const gsw = gsRef.current
+            let p1 = padFrom(keys1Ref.current)
+            let pads = seatsRef.current > 1 ? [p1, padFrom(keys2Ref.current)] : [p1]
+            // #1637 WATCH: the proven crew takes BOTH seats — solvePads is the
+            // same driver defusecheck wins 40/40 seeds with; it verifies every
+            // action against live integer state, so it is honest from any
+            // mid-run position. Takeover keys release the seat first.
+            if (watchingRef.current && gsw && !gsw.done) { pads = E.solvePads(gsw); p1 = pads[0] }
             spec.tick(p1, pads)
+            // watch never lingers past the run — the solver's win is the release
+            if (watchingRef.current && gsw && gsw.done) { watchingRef.current = false; setWatching(false) }
             // the Gauntlet funnel (#1249): this loop bypasses contract step() —
             // feed the live capture here, never both.
             if (isRecording() && !contractHoldsLoop()) recordLiveTick(pads)
@@ -922,6 +953,9 @@ export default function BombDefuseGame() {
                 g.font = '9px "Press Start 2P", monospace'; g.fillStyle = C.green
                 g.fillText(net.active ? (net.role === 'host' ? 'ROOM LIVE — SHARE THE CODE' : "WAITING FOR THE HOST'S KICK…") : ATTRACT_MSGS[m.idx], 320, 214)
                 if ((!net.active || net.role === 'host') && Math.floor(now / 500) % 2) { g.fillStyle = '#fff'; g.fillText(net.active ? 'SPACE STARTS THE CREW' : 'PRESS ANY KEY / TAP', 320, 250) }
+                // #1654 discoverability: the attract already self-plays the solver
+                // demo — say so, and name the key that seats it inside a run.
+                if (!net.active) { g.font = '7px "Press Start 2P", monospace'; g.fillStyle = '#7dd39a'; g.fillText(WATCH_ATTRACT_HINT, 320, 352) }
                 g.textAlign = 'left'
             }
             g.restore()
@@ -994,6 +1028,10 @@ export default function BombDefuseGame() {
                     return E.simState(g)
                 },
                 step: (n = 1) => { for (let i = 0; i < n; i++) simTick(); return gsRef.current ? E.simState(gsRef.current) : null },
+                // #1637 WATCH probes (harness-visible state of the seat)
+                watching: () => watchingRef.current,
+                watchSfx: watchSfxLog,
+                probe: () => (gsRef.current ? E.simState(gsRef.current) : null),
                 press: (code) => { const f1 = S1[code]; if (f1) pressMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) pressMin(keys2Ref.current, f2) },
                 release: (code) => { const f1 = S1[code]; if (f1) releaseMin(keys1Ref.current, f1); const f2 = S2[code]; if (f2) releaseMin(keys2Ref.current, f2) },
                 net: () => ({
@@ -1063,6 +1101,13 @@ export default function BombDefuseGame() {
                     startHint="SPACE — START THE RUN"
                     onEntry={(code) => netRef.current.lobby && netRef.current.lobby.join(code)}
                 />
+            )}
+            {uiScreen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1637 WATCH — the solver crew takes both seats; any input takes over. */}
+            {uiScreen === 'play' && !paused && (
+                <div className="absolute z-50 pointer-events-auto" style={{ top: 'calc(3.5rem + var(--sat, 0px))', right: 'calc(0.75rem + var(--sar, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
             )}
             {paused && <PauseOverlay gameEntry={entry} onResume={() => setPaused(false)} />}
             {micOn && (

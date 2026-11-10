@@ -41,7 +41,7 @@ const entries = []
     }
     flush()
 }
-ok(entries.length >= 48, `registry advertises WATCH on ${entries.length} titles (>=48 tripwire)`)
+ok(entries.length >= 49, `registry advertises WATCH on ${entries.length} titles (>=49 tripwire)`)
 ok(new Set(entries.map((e) => e.dir)).size === entries.length, 'each WATCH title maps to exactly one game dir')
 
 // Titles honestly without an attract ▶ WATCH — see PR #<this>. Multi-screen
@@ -52,6 +52,7 @@ const SKIP_ATTRACT = {
     IronRing: 'title → fighter select (a WATCH tap would not land in a run)',
     Gauntlet: 'title → hero select',
     FourHalls: 'title → hero select',
+    BombDefuse: 'title → crew select (a WATCH tap would stop at the picker; the attract already self-drives the solver demo)',
 }
 
 // ── shared chrome ─────────────────────────────────────────────────────────────
