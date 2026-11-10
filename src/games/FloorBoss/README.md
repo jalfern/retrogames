@@ -81,6 +81,24 @@ score; three expired orders and you're fired. Quota: 1000.
   steps off the spot and retries), and a bot that went DOWN while detailed to
   the bay and repaired mid-swing raced the gantry (it now stands down; the
   servo's cargo is already landing).
+- **Freight tiers** (#1927): distance prices the haul. Every parcel rolls a
+  destination class when it packs — LOCAL 0.58 / REGIONAL 0.28 / LONG HAUL 0.14 —
+  on a **side-stream rng** (`seed ^ 0x9e3779b9`); the module stream (orders,
+  conveyor, rush) generates byte-identically to the pre-tier floor, pinned by
+  golden order-signatures for 8 seeds. A full trailer (`FULL_TRAILER` 3, law
+  unchanged) pays `FREIGHT_PER_BOX` (6) × `[1,2,3]` per box by the destination
+  of each box actually aboard; dribbles ride free as ever. The road is the
+  cost: at send-off the haul commits `TRIP_TICKS` `[0,750,1650]` by its
+  farthest loaded class, and a truck on the road answers neither the cap/age
+  call law nor a manager tap — a tap on the road is a silent wait, never an
+  express fee for a truck that cannot come. The pad tags far posts (amber ×2,
+  violet ×3), the dock counts the trip home in world seconds (`ON THE ROAD`),
+  and the haul-out fx names the class. Dest, away and the per-class load ride
+  `stateHash` (additive, #1373 law) and `simState` (`padDest`, `truckAway`,
+  `truckFar`). The autopilot skips pad steps while the truck is away; economy
+  measured at merge: autopilot wins 13/15 seeds (main 13/15, same thin seeds
+  2/12), avg 1337 vs main 1268 — far hauls buy their multiplier with pickups
+  the floor never gets back, so late-shift freight is a decision.
 - **Rush hour**: a 20-second wave every 65 s doubles intake and order rate,
   tightens deadlines and pays ×1.5.
 - **Autopilot** (attract demo + harness win-proof) drives only the pad — the
@@ -91,13 +109,15 @@ score; three expired orders and you're fired. Quota: 1000.
 
 ## Verify
 ```bash
-npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921)
+npm run floorbosscheck          # Node: boots/rules/win/determinism/episode (mutant-proven) + servo presentation source pins (#1877) + load-out (#1911) + freight-line conservation/bonus/express laws (#1921) + freight tiers: side-stream golden, tiered bonus, road law, dest spread (#1927)
 node scripts/floorbosscheck.mjs --mutate-yield   # servo bay-yield law can fail
 node scripts/floorbosscheck.mjs --mutate-reach   # servo reach law can fail
 node scripts/floorbosscheck.mjs --mutate-cap     # the dock cannot pack past the pad (#1911)
 node scripts/floorbosscheck.mjs --mutate-freight # the old pack-line till cannot come back (#1921)
 node scripts/floorbosscheck.mjs --mutate-bonus   # dribbles cannot claim the freight bonus (#1921)
-npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921)
+node scripts/floorbosscheck.mjs --mutate-tiers   # far posts cannot pay the LOCAL rate (#1927)
+node scripts/floorbosscheck.mjs --mutate-miles   # the truck cannot answer instantly from any distance (#1927)
+npm run floorbossplay           # headless Chrome, real keys/taps: start→play→end→restart, pixels track the sim; servo carry ghost + loaded-diamond pulse gates; truck waits budgeted in WORLD ticks (#1877); real-tap pad call/send + drawn-truck-is-sim-truck gates (#1911); escrow-books-at-pack + freight-paid-at-drive-off gates (#1921); violet far-post tag pixels + road-commit + tap-on-road-silence gates (#1927 — verb gates run with auto-dispatch off and settle dock+truck+road together)
 CONTRACT_ONLY=floor-boss npm run contractcheck
 node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
 ```
@@ -116,9 +136,16 @@ node scripts/floorboss-smoke.mjs [seed]   # quick one-shift print
   payout onto the parcel, money lands when the trailer hauls the last box, full
   trailers (3+ boxes) earn 6/box, and manager tap-calls pay an express fee (see
   Engine notes).
-- Freight tiers are unexplored: distance or load-weight classes beyond the
-  box-count bonus could price the haul further; the escrow also never refunds
-  when the whistle strands parcels on the pad (raw, accepted).
+- ~~Freight tiers are unexplored: distance or load-weight classes beyond the
+  box-count bonus could price the haul further~~ **CLOSED by #1927**: distance
+  classes price the haul (LOCAL/REGIONAL/LONG HAUL at 58/28/14 on a
+  side-stream rng, freight 6x[1,2,3] per box aboard, road-wait
+  [0,750,1650] blocks call law and tap — see Engine notes). The
+  stranded-escrow half of the old gap stays accepted law (#1921: money
+  follows freight, refunds would be counterfeit).
+- Load-weight classes remain unexplored: #1927 priced distance only; heavy
+  parcels (slower to load, higher rate per box) are the sibling idea left on
+  the shelf.
 - Only one shift template; difficulty varies by seed, not by level ladder.
 - Two-player manager seats (model vs human, one slot each) are the #1144
   follow-up: the episode format already pins `sources`.
