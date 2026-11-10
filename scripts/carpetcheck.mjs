@@ -2348,7 +2348,7 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             handler ? 'routed' : 'wizfire handler not pinned')
         r.check('#1746 pan is opt-in in AudioController — null keeps the direct graph untouched',
             /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null, delay = 0\)/.test(acSrc) &&
-            /if \(pan !== null && this\.ctx\.createStereoPanner\)/.test(acSrc) &&
+            /_panner\(pan, t, dest\) \{\s*\n\s*if \(pan === null\) return null/.test(acSrc) &&
             /\} else \{\s*\n\s*gain\.connect\(this\.ctx\.destination\)/.test(acSrc))
     }
 }
@@ -2441,8 +2441,8 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             /playTone\(freq, duration, type = 'square', vol = 0\.1, delay = 0, pan = null\)/.test(acSrc) &&
             /playNoise\(duration, vol = 0\.2, pan = null\)/.test(acSrc) &&
             /ambTone\(freq, duration, type = 'square', vol = 0\.1, delay = 0, pan = null\)/.test(acSrc) &&
-            (acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length >= 4,
-            `guards=${(acSrc.match(/if \(pan !== null && this\.ctx\.createStereoPanner\)/g) || []).length}`)
+            (acSrc.match(/this\._panner\(pan, /g) || []).length >= 4,
+            `pan-sites=${(acSrc.match(/this\._panner\(pan, /g) || []).length}`)
     }
 }
 
@@ -2518,6 +2518,86 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
         /playSweep\(startFreq, endFreq, duration, type = 'triangle', vol = 0\.1, pan = null, delay = 0\)/.test(acSrc) &&
         /const t = this\.ctx\.currentTime \+ delay/.test(acSrc) &&
         /osc\.start\(t\); osc\.stop\(t \+ duration\)/.test(acSrc))
+}
+
+// #1764 item 7 stage 5 (2026-11-10, QA studio): TRUE HRTF — the panned field
+// stops *tilting* and starts colouring. Every panned cue now routes through a
+// PannerNode with panningModel 'HRTF' (the browser's head-related transfer
+// kernel) placed at the cue's bearing on the unit sphere — the pinna cues the
+// equal-power StereoPanner only hinted at. StereoPanner stays the fallback for
+// engines without a PannerNode kernel; pan === null still connects direct, so no
+// other title moves. The panner COLOURS only — rolloffFactor is pinned to 0
+// because stage 4's prox already scales loudness at every call site (a distance
+// law here would double-duck far cues).
+//
+// Verified BEHAVIOURALLY on a mock AudioContext (real Web Audio is not in Node):
+// the mock records every node and connection, so a gate sees the graph the
+// browser would build, not just the source text. Mutation guide: (1) panningModel
+// -> 'equalpower' and the HRTF gate goes red; (2) drop `if (pan === null) return
+// null` and the mono gate goes red (a null pan builds a center panner);
+// (3) rolloffFactor -> 1 and the colour-only gate goes red (far cues double-duck
+// with prox); (4) drop a `this._panner(` call at any site and the source-pin
+// census above goes red.
+{
+    const { audioController } = await import('../src/utils/AudioController.js')
+    const vparam = () => ({ value: 0, setValueAtTime(v) { this.value = v }, exponentialRampToValueAtTime(v) { this.value = v }, linearRampToValueAtTime(v) { this.value = v }, cancelScheduledValues() {}, setTargetAtTime() {} })
+    const mkCtx = () => {
+        const nodes = []
+        const reg = (kind, extra = {}) => { const n = { kind, conns: [], connect(d) { this.conns.push(d) }, ...extra }; nodes.push(n); return n }
+        const destination = reg('destination')
+        return {
+            _nodes: nodes, destination, currentTime: 0, sampleRate: 44100, state: 'running', resume() {},
+            createGain: () => reg('gain', { gain: vparam() }),
+            createOscillator: () => reg('osc', { type: '', frequency: vparam(), detune: vparam(), start() {}, stop() {} }),
+            createBufferSource: () => reg('bufsrc', { buffer: null, start() {} }),
+            createBuffer: (ch, len) => ({ getChannelData: () => new Float32Array(len) }),
+            createBiquadFilter: () => reg('biquad', { type: '', frequency: vparam() }),
+            createStereoPanner: () => reg('stereo', { pan: vparam() }),
+            createPanner: () => reg('panner', { panningModel: '', distanceModel: '', refDistance: 0, maxDistance: 0, rolloffFactor: 1, positionX: vparam(), positionY: vparam(), positionZ: vparam(), setPosition() {} }),
+        }
+    }
+    // Run one call through a fresh mock ctx and return the placed panner node
+    // (null when panning was skipped) plus how many pan nodes were created.
+    const drive = (make, pan) => {
+        audioController.muted = false
+        const ctx = mkCtx(); audioController.ctx = ctx
+        make(pan)
+        audioController.ctx = null
+        const nodes = ctx._nodes.filter((n) => n.kind === 'panner' || n.kind === 'stereo')
+        return { panner: nodes[0] || null, count: nodes.length }
+    }
+    const SITES = {
+        playTone: (pan) => audioController.playTone(440, 0.1, 'square', 0.1, 0, pan),
+        playNoise: (pan) => audioController.playNoise(0.1, 0.1, pan),
+        playSweep: (pan) => audioController.playSweep(400, 100, 0.1, 'square', 0.1, pan),
+        ambTone: (pan) => audioController.ambTone(60, 0.3, 'sawtooth', 0.02, 0, pan),
+    }
+    const allHrtf = Object.entries(SITES).every(([, make]) => {
+        const d = drive(make, 0.9)
+        return !!d.panner && d.panner.kind === 'panner' && d.panner.panningModel === 'HRTF' && d.count === 1
+    })
+    r.check('#1764-7s5 every panned one-shot builds EXACTLY ONE PannerNode, panningModel HRTF',
+        allHrtf, Object.entries(SITES).map(([k, m]) => `${k}:${drive(m, 0.9).panner ? drive(m, 0.9).panner.panningModel : 'none'}`).join(' '))
+    const allMono = Object.values(SITES).every((make) => drive(make, null).count === 0)
+    r.check('#1764-7s5 pan === null stays DIRECT — no panner node is ever built (opt-in law)',
+        allMono, Object.values(SITES).map((m) => drive(m, null).count).join(','))
+    // Bearing sign: the original put a right-hand source in the right ear; +pan
+    // is camera-right (stage-3 sign law), so positionX is positive and grows with
+    // |pan|. Full rail reaches sin(1.15) ≈ 0.91 — never the 90° HRTF degeneracy.
+    r.check('#1764-7s5 the source is placed at the cue bearing — +pan to the right ear, −pan to the left, magnitude monotone',
+        drive(SITES.playTone, 0.9).panner.positionX.value > 0.5 &&
+        drive(SITES.playTone, -0.9).panner.positionX.value < -0.5 &&
+        Math.abs(drive(SITES.playTone, 1).panner.positionX.value) > Math.abs(drive(SITES.playTone, 0.4).panner.positionX.value) &&
+        Math.abs(drive(SITES.playTone, 1).panner.positionX.value) <= Math.sin(1.15) + 1e-9,
+        `R+=${drive(SITES.playTone, 0.9).panner.positionX.value.toFixed(3)} L-=${drive(SITES.playTone, -0.9).panner.positionX.value.toFixed(3)}`)
+    r.check('#1764-7s5 the panner COLOURS only — rolloffFactor 0 (prox owns loudness, no double-duck) and it lands on a destination',
+        drive(SITES.playTone, 0.9).panner.rolloffFactor === 0 && drive(SITES.playTone, 0.9).panner.distanceModel === 'linear' &&
+        drive(SITES.playSweep, 0.7).panner.conns.length >= 1 && drive(SITES.ambTone, 0.7).panner.conns.length >= 1,
+        `rolloff=${drive(SITES.playTone, 0.9).panner.rolloffFactor}`)
+    r.check('#1764-7s5 the HRTF kernel is chosen by name and StereoPanner is kept as the documented fallback',
+        /panningModel = 'HRTF'/.test(await readFile(new URL('../src/utils/AudioController.js', import.meta.url), 'utf8')) &&
+        /if \(this\.ctx\.createStereoPanner\)/.test(await readFile(new URL('../src/utils/AudioController.js', import.meta.url), 'utf8')))
+    audioController.muted = false
 }
 
 // ---- #1764 item 5 stage 5: AERIAL PERSPECTIVE — the haze layer law (#1764).

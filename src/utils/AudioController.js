@@ -578,6 +578,50 @@ class AudioController {
         if (this.music) this.music.vibrato = vib || null
     }
 
+    // #1764 item 7 stage 5 — TRUE HRTF. A panned cue is placed on the unit
+    // sphere at its bearing and coloured by the browser's head-related transfer
+    // kernel (PannerNode panningModel 'HRTF'): the pinna cues the stage-3/4
+    // field only *tilted* with an equal-power StereoPanner. The panner COLOURS
+    // only — it never re-attenuates, because `prox` already scales loudness at
+    // every Magic Carpet call site (stage 4), so rolloffFactor is pinned to 0
+    // (a second distance law here would double-duck far cues). Opt-in law is
+    // unchanged: pan === null connects direct, so no other title's sound moves,
+    // and the fallback to an equal-power StereoPanner preserves the old lean on
+    // engines without a PannerNode/HRTF kernel. Returns null when the caller
+    // wants mono (null pan) or the engine has neither node, so the caller's
+    // `else` connects straight to the bus/destination.
+    _panner(pan, t, dest) {
+        if (pan === null) return null
+        const p = Math.max(-1, Math.min(1, pan))
+        // ~±66° azimuth: full ear at the rail, never the 90° HRTF degeneracy.
+        const az = p * 1.15
+        if (this.ctx.createPanner) {
+            const n = this.ctx.createPanner()
+            n.panningModel = 'HRTF'
+            n.distanceModel = 'linear'
+            n.refDistance = 1
+            n.maxDistance = 1000
+            n.rolloffFactor = 0
+            const x = Math.sin(az), z = -Math.cos(az)
+            if (n.positionX) {
+                n.positionX.setValueAtTime(x, t)
+                n.positionY.setValueAtTime(0, t)
+                n.positionZ.setValueAtTime(z, t)
+            } else if (n.setPosition) {
+                n.setPosition(x, 0, z)
+            }
+            n.connect(dest)
+            return n
+        }
+        if (this.ctx.createStereoPanner) {
+            const n = this.ctx.createStereoPanner()
+            n.pan.setValueAtTime(p, t)
+            n.connect(dest)
+            return n
+        }
+        return null
+    }
+
     // ---- one-shot SFX ----
     // pan (-1..1, or null) is opt-in (same law as playSweep's): callers that
     // pass nothing keep the exact old graph, so no other title's sound changes.
@@ -593,10 +637,9 @@ class AudioController {
         gain.gain.setValueAtTime(vol, t)
         gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
         osc.connect(gain)
-        if (pan !== null && this.ctx.createStereoPanner) {
-            const sp = this.ctx.createStereoPanner()
-            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
-            gain.connect(sp); sp.connect(this.ctx.destination)
+        const pn = this._panner(pan, t, this.ctx.destination)
+        if (pn) {
+            gain.connect(pn)
         } else {
             gain.connect(this.ctx.destination)
         }
@@ -615,10 +658,9 @@ class AudioController {
         gain.gain.setValueAtTime(vol, this.ctx.currentTime)
         gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration)
         noise.connect(gain)
-        if (pan !== null && this.ctx.createStereoPanner) {
-            const sp = this.ctx.createStereoPanner()
-            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), this.ctx.currentTime)
-            gain.connect(sp); sp.connect(this.ctx.destination)
+        const pn = this._panner(pan, this.ctx.currentTime, this.ctx.destination)
+        if (pn) {
+            gain.connect(pn)
         } else {
             gain.connect(this.ctx.destination)
         }
@@ -664,10 +706,9 @@ class AudioController {
         gain.gain.setValueAtTime(vol, t)
         gain.gain.linearRampToValueAtTime(0.01, t + duration)
         osc.connect(gain)
-        if (pan !== null && this.ctx.createStereoPanner) {
-            const sp = this.ctx.createStereoPanner()
-            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
-            gain.connect(sp); sp.connect(this.ctx.destination)
+        const pn = this._panner(pan, t, this.ctx.destination)
+        if (pn) {
+            gain.connect(pn)
         } else {
             gain.connect(this.ctx.destination)
         }
@@ -715,13 +756,9 @@ class AudioController {
         osc.frequency.setValueAtTime(freq, t)
         gain.gain.setValueAtTime(vol, t)
         gain.gain.exponentialRampToValueAtTime(0.01, t + duration)
-        if (pan !== null && this.ctx.createStereoPanner) {
-            const sp = this.ctx.createStereoPanner()
-            sp.pan.setValueAtTime(Math.max(-1, Math.min(1, pan)), t)
-            osc.connect(gain); gain.connect(sp); sp.connect(bus)
-        } else {
-            osc.connect(gain); gain.connect(bus)
-        }
+        const pn = this._panner(pan, t, bus)
+        if (pn) { osc.connect(gain); gain.connect(pn) }
+        else { osc.connect(gain); gain.connect(bus) }
         osc.start(t); osc.stop(t + duration)
     }
 
