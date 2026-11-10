@@ -1336,8 +1336,15 @@ export default function CometDrift() {
                 }
             },
             canvas: () => canvas,
-            snapshot: () => JSON.parse(JSON.stringify(g)),
-            restore: (s) => { Object.assign(g, s) },
+            // #1637-b13: g holds Maps (marks/markAge, #1696) — raw JSON would
+            // silently empty them and the restore hash would lie (#391/381).
+            // Serialize the Maps as entry pairs and rebuild them on restore.
+            snapshot: () => JSON.parse(JSON.stringify({ ...g, marks: [...g.marks], markAge: [...g.markAge] })),
+            restore: (s) => {
+                const { marks, markAge, ...rest } = s
+                Object.assign(g, rest)
+                g.marks = new Map(marks); g.markAge = new Map(markAge)
+            },
         })
 
         // #1473: production-safe feedback state (seed for replay), every build —
