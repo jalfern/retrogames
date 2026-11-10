@@ -2225,11 +2225,20 @@ if (PHONE) {
     // #1575 lesson: a parse that silently finds nothing gates nothing.
     rep.check(`phone: registry parse finds the advertised WATCH titles`, PHONE_TITLES.length >= 40,
         `${PHONE_TITLES.length} titles parsed`)
+    // #1884: pilot urls may carry query params (magic-carpet's is `?seed=7`),
+    // so the route→hook lookup compares paths, not full urls. This census pins
+    // that every pilot's path is a real registry route — a drift here once made
+    // the phone section report magic-carpet as unmapped while its pilot passed.
+    rep.check('#1884 every PILOTS url resolves to a registry route once the query is stripped',
+        PILOTS.every((x) => PHONE_TITLES.includes(x.url.split('?')[0].slice(BASE.length))),
+        PILOTS.filter((x) => !PHONE_TITLES.includes(x.url.split('?')[0].slice(BASE.length))).map((x) => x.url).join(' ') || 'all resolve')
     const browser = await launch()
     console.log(`\n— phone 390x844 (boot ${browser.__bootMode || 'chrome'}), ${titles.length} watch titles`)
     for (const p of titles) {
         const id = p.replace(/^\//, '')
-        const hook = (PILOTS.find((x) => x.url === `${BASE}/${id}`) || {}).hook
+        // #1884: compare paths, not full urls — PILOTS entries may carry query
+        // params (`magic-carpet?seed=7`), and the exact compare missed the route.
+        const hook = (PILOTS.find((x) => x.url.split('?')[0] === `${BASE}/${id}`) || {}).hook
         if (!hook) { rep.check(`phone ${id}: hook known`, false, 'no watch pilot maps this route — PILOTS and the registry drifted'); continue }
         let page = null
         for (let attempt = 0; attempt < 2 && !page; attempt++) {
