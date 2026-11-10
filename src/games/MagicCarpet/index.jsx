@@ -465,6 +465,12 @@ const MagicCarpetGame = () => {
                     audioController.playNoise(0.5, 0.12)
                     audioController.playSweep(300, 50, 0.7, 'sawtooth', 0.09)
                     say('A SIBLING WIZARD FALLS — HIS HOARD SCATTERS')
+                } else if (e.type === 'sibHoard') {
+                    // #1764 stage 3: pearls drawn off the land into his castle —
+                    // a rising hoard-shimmer, panned to where his site stands and
+                    // softened by distance like every other cast cue (#1746).
+                    const bh = castBearing(gs, e.x, e.y)
+                    audioController.playSweep(620, 940, 0.16, 'triangle', 0.035 * bh.prox, bh.pan)
                 } else if (e.type === 'towerFire') {
                     audioController.playSweep(520, 300, 0.08, 'triangle', 0.045)
                 } else if (e.type === 'wizfire') {

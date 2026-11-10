@@ -384,7 +384,24 @@ see item 5).
    arrows-off/bolts-on, dead-sib silence, veil-reflex vs a closing sibling,
    rng-free cast log + hash). Old pin retargeted honestly: "a toppled tower
    never fires" now scopes to the primary site — the armed coven legitimately
-   fires from ITS towers. Still open: siblings hoarding roaming pearls.
+   fires from ITS towers. **Stage 3 shipped (this PR): THE HOARDS.** A roaming
+   pearl that strays within `SIB_HOARD_R` (24u) of a sibling's SITE vanishes
+   into his castle and the hoard grows — the coven strips the land around it
+   while you hunt it. His castle does the work, not his eyes: the veil holds
+   his bolts (stage 2) but never his purse. The hoard caps at the world's full
+   share (he starts at half), so no sibling out-banks the primary, and a full
+   purse takes nothing. The carpet's own magnet beats the castle by tick order
+   — hovering his site, the pearls are yours. And every hoarded pearl is
+   deferred, not destroyed: his death already scatters `sb.mana`, so the purse
+   is paid back with interest (a hunted hoarder drops more than he started
+   with). rng-free — no `rnd()` call, the seed stream never shifts; 60-seed
+   sweep unchanged. The conservation invariant now sums SEVEN stores (vault,
+   pouch, pearls, two wizard banks + the coven's purses — the `level` reset
+   payload carries `sibs`), and the clone free-mana pin nets demonstrable
+   hoard takings. carpetcheck proves it Node-side (#1764-2s3 family: in-strip
+   absorb + merged event at the SITE, 26u/40u outside stays, cap at the full
+   share, dead-sib spare, blind hoard vs the veil, magnet-beats-castle tick
+   order, hoard paid back on death, rng-free hoard log + hash).
 - **CLOSED by #1060, recorded by #1694:** telekinesis throws DO knock over
   towers — every throw/fireball impact routes through `toppleTower()` inside
   `blast()`, and carpetcheck gates it ("a throw landing at the tower base
