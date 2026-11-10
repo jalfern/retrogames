@@ -5,7 +5,9 @@
 // Prove-it-can-fail: break a threshold (e.g. landMin) or tamper WORLD.MAP.
 
 import { readFileSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
 import { inflateRawSync } from 'node:zlib'
+import { plant, pull } from './lib/mutateguard.mjs'
 import { zipRead, makeWorld, findStars, isSea, MAPW, MAP_BYTES } from '../src/games/Britannia/britmap.js'
 import { WX, WX_EPOCH, SNOW_LINE, stormNight, weatherAt, flashAt, flashOnset, isFrozen, reliefBias, ROCK, SHADOW_D, SHADOW_MAX, UPLIFT_MAX, SUMMIT, windOf, driftOf, windNow, WX_WIND_NAME } from '../src/games/Britannia/weather.js'
 import { AMB, AMB_CELL, CELL_DRIFT, ambientAt, rollOf, flockOf, flightOf, progressOf } from '../src/games/Britannia/ambient.js'
@@ -16,6 +18,28 @@ import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britann
 import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
 import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, ROUGH_MEMORY, seaRough, crestGain, foamGain } from '../src/games/Britannia/swell.js'
+import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
+
+// Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
+// (sanctums onto the gate's approach ring), --mutate-block deletes the foot
+// refusal at the sanctum. Either must redden the child suite; the guard rewinds
+// the tree on every exit path.
+const ARGS = process.argv.slice(2)
+if (ARGS.includes('--mutate-shrine') || ARGS.includes('--mutate-block')) {
+    const shr = ARGS.includes('--mutate-shrine')
+    const target = shr ? 'src/games/Britannia/shrines.js' : 'src/games/Britannia/index.jsx'
+    const src = readFileSync(target, 'utf8')
+    const from = shr ? 'export const SHRINE_DIST = 2' : "} else if (shrineBlock.has(nx + ',' + ny)) {"
+    const to = shr ? 'export const SHRINE_DIST = 1' : '} else if (false) {'
+    if (!src.includes(from)) { console.log('FAIL  mutate target line not found'); process.exit(1) }
+    plant(target, src.replace(from, to))
+    const kid = spawnSync(process.execPath, ['scripts/britanniacheck.mjs'], { encoding: 'utf8' })
+    pull(target)
+    const fails = (kid.stdout.match(/^FAIL/gm) || []).length
+    const red = kid.status !== 0 && fails > 0
+    console.log(`${red ? 'PASS' : 'FAIL'}  mutant ${shr ? 'SHRINE_DIST 2->1' : 'sanctum refusal deleted'} reddened the suite (${fails} FAIL lines, child exit ${kid.status})`)
+    process.exit(red ? 0 : 1)
+}
 
 const path = 'public/games/ultima4.jsdos'
 let fails = 0
@@ -541,9 +565,9 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/moonPhase\(S\.tick\)/.test(src) && /the \$\{PHASES\[ph\]\} rules the sky/.test(src),
         'index.jsx: the gate menu names tonight\'s moon phase from the world clock')
-    ok(/moonName\(i\)} moon/.test(src), 'index.jsx: each menu row is named for its moon, not "gate N"')
-    ok(/whirls thee to \$\{ROMAN\[S\.warp\.dest\]\} of \$\{moonName\(S\.warp\.dest\)\}/.test(src),
-        'index.jsx: the arrival toast keeps its named destination (the slice did not hollow the warp)')
+    ok(/\$\{ROMAN\[i\]\} — \$\{shrineTitle\(i\)\}/.test(src), 'index.jsx: each menu row names its shrine by virtue-moon, not "gate N" (#1876: the moon now speaks as its shrine)')
+    ok(/whirls thee to the \$\{shrineTitle\(S\.warp\.dest\)\.toLowerCase\(\)\}, where \$\{AVATARS\[S\.warp\.dest\]\} standeth of old/.test(src),
+        'index.jsx: the arrival toast keeps a named destination — shrine and keeper (the slice did not hollow the warp)')
 }
 
 // gate-menu phase flavor + hover chirp (#1135): the menu prints one mood line
@@ -562,7 +586,7 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
         'gateFlavor maps the wheel deterministically and wraps both ways')
     const lens = PHASE_FLAVOR.map(s => s.length)
     ok(Math.max(...lens) <= 48 && Math.min(...lens) >= 20,
-        `lines fit the 480px panel (longest ${Math.max(...lens)} ≤ 48 chars) and carry some verse (shortest ${Math.min(...lens)} ≥ 20)`)
+        `lines fit the 520px panel (longest ${Math.max(...lens)} ≤ 48 chars) and carry some verse (shortest ${Math.min(...lens)} ≥ 20)`)
     const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
     ok(/gateFlavor\(ph\)/.test(src), 'index.jsx: the open gate menu prints tonight\'s phase flavor')
     ok(/addEventListener\('pointermove', onMove\)/.test(src) && /S\.hoverRow = row/.test(src),
@@ -623,8 +647,8 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/moonRoute: S\.gate >= 0 \? routeDest\(S\.gate, moonPhase\(S\.tick\), gates\.length\) : -1/.test(src) && /toastMsg: S\.toastMsg/.test(src),
         'index.jsx: the harness sees tonight\'s road and the last toast (menu closed => -1)')
     const caption = "tonight's moon routeth hence to VIII of Spirituality"
-    ok(caption.length * 8 <= 480 - 56, `the route caption fits the 480px box (${caption.length} chars ≈ ${caption.length * 8}px at 13px monospace)`)
-    ok(/GM = \{ w: 480, rowTop: 62, pitch: 36, foot: 64 \}/.test(src) &&
+    ok(caption.length * 8 <= 520 - 56, `the route caption fits the 520px box (${caption.length} chars ≈ ${caption.length * 8}px at 13px monospace)`)
+    ok(/GM = \{ w: 520, rowTop: 62, pitch: 36, foot: 64 \}/.test(src) &&
         /const bh = GM\.rowTop \+ \(gates\.length - 1\) \* GM\.pitch \+ GM\.foot/.test(src) &&
         !/GM\.pitch \+ 44/.test(src),
         'index.jsx: the taller box lives in GM.foot alone — pointer handlers read gmBox(), no drifted copies')
@@ -1005,8 +1029,8 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/const nearestUnvisited = \(\) =>/.test(src) &&
         /S\.visited\.has\(i\)/.test(src) && /if \(gx < 0 \|\| gx > VIEW_W \|\| gy < 0 \|\| gy > VIEW_H\)/.test(src),
         'index.jsx: a compass computes the nearest UNVISITED gate and points only when the gate itself is off-screen')
-    ok(/`to \$\{ROMAN\[gd\.i\]} · \$\{gd\.d\} paces`/.test(src),
-        'index.jsx: the compass names its target and distance (never a bare arrow)')
+    ok(/`to \$\{moonName\(gd\.i\)\} · \$\{gd\.d\} paces`/.test(src),
+        'index.jsx: the compass names its target by virtue and distance (never a bare arrow, never a bare numeral — #1876)')
     {
         // wrap-aware nearest: a gate one tile west across the seam must read as
         // 1 pace, not 255 — same wrap law as the walk itself
@@ -1062,14 +1086,112 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     {
         // menu geometry: rows clear of the header, hint clear of the border
         const W = 1280, H = 720
-        const g = { w: 480, rowTop: 62, pitch: 36 }, rows = 7
+        const g = { w: 520, rowTop: 62, pitch: 36 }, rows = 7
         const bh = g.rowTop + rows * g.pitch + 64
         ok(g.rowTop >= 56 && bh <= H * 0.75, `menu box stands clear (rows from by+${g.rowTop}, box height ${bh})`)
         const footer = 'arrows + SPACE choose · 1-8 jump · Z/Esc cancel'
         ok(footer.length * 8.4 <= g.w - 56, `footer hint fits inside the ${g.w}px box (${footer.length} chars ≈ ${(footer.length * 8.4) | 0}px)`)
-        const longest = '  VIII — Spirituality moon  [visited]'
+        const longest = '  VIII — Shrine of Spirituality  [visited]'
         ok(longest.length * 10.2 <= g.w - 56, `longest gate row fits (${longest.length} chars ≈ ${(longest.length * 10.2) | 0}px)`)
     }
+}
+
+// ---- shrines (#1876): the moongates land at named chapels ----
+// The eight virtue-shrines of the original (Ultima IV, Origin 1985) become the
+// destinations: one consecrated plot per gate, cardinal, exactly SHRINE_DIST
+// away, on built-up ground; foot refuses the sanctum; the words name the shrine
+// and its statue-keeper. Prove-it-can-fail lives at the top of this file:
+// --mutate-shrine (dist 2->1 reddens the distance + approach-ring pins) and
+// --mutate-block (deleting the foot refusal reddens the wiring pin).
+{
+    const terrain = (x, y) => world.get(x, y)
+    const spots = plotShrines(gates, terrain)
+    ok(spots.every((s) => s !== null) && new Set(spots.filter(Boolean).map(s => s.x + ',' + s.y)).size === 8,
+        'all 8 gates get a shrine plot, and the eight sanctums are eight distinct tiles')
+    ok(SHRINE_DIST === 2, 'the chapel law is two paces (spec value pinned, not read from itself)')
+    let geoOk = true, ringOk = true, flatOk = true, dirsOk = true
+    for (const [i, s] of spots.entries()) {
+        if (!s) continue
+        const g = gates[i]
+        if (Math.abs(s.dx) + Math.abs(s.dy) !== 1) dirsOk = false
+        const md = Math.abs(s.x - g.x) + Math.abs(s.y - g.y)
+        if (md !== 2) geoOk = false
+        for (const gg of gates) if (Math.max(Math.abs(s.x - gg.x), Math.abs(s.y - gg.y)) < 2) ringOk = false
+        const v = world.get(s.x, s.y)
+        if (isSea(v) || !TOWN_FLAT.has(v)) flatOk = false
+    }
+    ok(dirsOk, 'every plot sits on a cardinal of its gate (the door can face the gate head-on)')
+    ok(geoOk, `every chapel stands exactly SHRINE_DIST=${SHRINE_DIST} tiles from its gate`)
+    ok(ringOk, 'no sanctum ever sits inside a gate\'s approach ring — stone cannot strand a pilgrim')
+    ok(flatOk, 'every chapel stands on built-up ground (the town FLAT law: not sea, cliff, hill, forest, marsh or a POI)')
+
+    // canonical Ultima IV: the eight statues who keep the virtue-shrines, in
+    // the order moons.js names the virtues — the menu and the keeper always
+    // speak the same virtue.
+    const KEEPERS = [
+        ['Humility', 'Dracmato'], ['Honesty', 'Ires'], ['Compassion', 'Emoj'], ['Valor', 'Dactio'],
+        ['Spirituality', 'Naergius'], ['Justice', 'Agdash'], ['Sacrifice', 'Gordam'], ['Honor', 'Andros'],
+    ]
+    ok(AVATARS.length === 8 && new Set(AVATARS).size === 8, 'eight distinct statue-keepers')
+    const alignOk = KEEPERS.every(([v, k]) => moonName(MOONS.indexOf(v)) === v && AVATARS[MOONS.indexOf(v)] === k)
+    ok(alignOk, 'keepers align virtue-for-statue as the original carves them (Dracmato/Humility … Andros/Honor)')
+    ok([0, 1, 2, 3, 4, 5, 6, 7].every(i => shrineTitle(i) === `Shrine of ${MOONS[i]}`), 'every shrine title names its gate\'s own moon-virtue')
+
+    // determinism: same land, same gates => the same eight plots, 40 times over
+    const first = JSON.stringify(spots)
+    let detOk = true
+    for (let i = 0; i < 40; i++) if (JSON.stringify(plotShrines(gates, terrain)) !== first) detOk = false
+    ok(detOk, 'the shrine sweep is deterministic (40 recomputes, byte-identical)')
+
+    // a world that offers nothing returns null rather than a lie: gate in open
+    // sea plots nothing, and a foreign gate keeps its chapel (world-agnostic)
+    const SEA = () => 0
+    ok(shrineSpot(0, { x: 100, y: 100 }, SEA) === null, 'a gate surrounded by sea gets no plot (null, no crash)')
+    const ALIEN = () => 1
+    ok(shrineSpot(0, { x: 100, y: 100 }, ALIEN) !== null, 'a foreign land still hosts a chapel at its gate')
+
+    // stone changes the walk but never strands anyone: with every sanctum
+    // blocked, the only land the pilgrim loses is the eight chapel floors
+    // themselves — no corridor, bridge or isle landing disappears, and gates
+    // keep exactly the reach the sea alone gave them (gates on isles stay the
+    // ship's business they have always been — the ocean is one connected sea,
+    // proven above).
+    const blockedKeys = new Set(spots.filter(Boolean).map(s => s.x + ',' + s.y))
+    const openWater = (x, y) => isSea(world.get(x, y))
+    const roamFree = bfs(gates[0].x, gates[0].y, v => !isSea(v))
+    const seen = new Set([gates[0].x + ',' + gates[0].y])
+    const q = [[gates[0].x, gates[0].y]]
+    while (q.length) {
+        const [x, y] = q.pop()
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = wrap(x + dx), ny = wrap(y + dy), k = nx + ',' + ny
+            if (seen.has(k) || blockedKeys.has(k) || openWater(nx, ny)) continue
+            seen.add(k); q.push([nx, ny])
+        }
+    }
+    let lost = 0, lostBeyond = 0
+    for (const k of roamFree) if (!seen.has(k)) { lost++; if (!blockedKeys.has(k)) lostBeyond++ }
+    ok(roamFree.size > 500 && lostBeyond === 0 && lost <= 8,
+        `sanctums as walls: the land keeps every tile but the chapel floors themselves (lost ${lost}, beyond-floor ${lostBeyond})`)
+    const gatesOnFoot = (s) => gates.filter(g => s.has(g.x + ',' + g.y)).length
+    ok(gatesOnFoot(seen) === gatesOnFoot(roamFree),
+        `gates keep exactly the reach the sea alone gave them on foot (${gatesOnFoot(seen)}/8 walled = unwalled; isles stay the ship's business, ocean connectivity proven above)`)
+
+    // wiring: the words and the walk
+    const src = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    ok(/else if \(shrineBlock\.has\(nx \+ ',' \+ ny\)\)/.test(src),
+        'index.jsx: foot-walk asks the shrine block before stepping onto a sanctum')
+    ok(/is stone — about face/.test(src), 'index.jsx: the first touch names the shrine whose stone refused thee')
+    ok(/S\.cd = 26/.test(src), 'index.jsx: the refusal pays a cooldown (no thudding every frame)')
+    ok(/whirls thee to the \$\{shrineTitle\(S\.warp\.dest\)\.toLowerCase\(\)\}, where \$\{AVATARS\[S\.warp\.dest\]\} standeth of old\./.test(src),
+        'index.jsx: the arrival toast names the shrine AND its keeper — the landing has a name now')
+    ok(/if \(!classicOn\) \{/.test(src) && /drawChapel\(sx, sy, s, i, t, n\)/.test(src),
+        'index.jsx: chapels are painted pass by pass, and classic mode stays the clean CON sheet')
+    ok(/createRadialGradient\(sx \+ 16, sy \+ 4, 1/.test(src) && /rgba\(150,235,255,/.test(src),
+        'index.jsx: the bell-cote carries a moonstone in the gate\'s own ink, haloed at night')
+    ok(/shrines: shrines\.map\(s => \(s \? \[s\.x, s\.y\] : null\)\)/.test(src),
+        'index.jsx: the eight plots ride the harness state (panel can be compared with the Node sweep)')
+    ok(/bumped: S\.bumped\.size/.test(src), 'index.jsx: shrine touches are countable by the harness')
 }
 
 console.log(fails ? `\nBRITANNIA: ${fails} FAILURES` : '\nBRITANNIA: all checks pass')
