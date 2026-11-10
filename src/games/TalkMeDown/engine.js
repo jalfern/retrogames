@@ -157,7 +157,7 @@ export const RULEBOOK = {
 // #1802: the stamps whose fact lives on the BACK plate (serial moved there —
 // the original hides it, and "Serial Port!" is the reason to flip). Seat 2's
 // page stamps an "ask them to FLIP" coach line while any of these is live.
-export const BACK_FACT_STAMPS = ['N6', 'D1', 'D3', 'D5', 'G2', 'G4', 'G5']
+export const BACK_FACT_STAMPS = ['N6', 'D1', 'D3', 'D5', 'D6', 'G2', 'G4', 'G5']
 
 export function ruleOf(m) {
     return RULEBOOK[m.type].find(r => r.id === m.stamp)
