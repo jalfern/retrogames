@@ -195,6 +195,107 @@ s = await st()
 r.check(`the full moon carries gate ${ROMAN[routed0]} its diameter (lands gate ${ROMAN[(routed0 + 4) % 8]})`,
     s.x === s.gates[(routed0 + 4) % 8][0] && s.y === s.gates[(routed0 + 4) % 8][1], JSON.stringify({ x: s.x, y: s.y, want: s.gates[(routed0 + 4) % 8] }))
 
+// #1829 item 6: britanniacheck pins the moonlit disc by REGEX on the draw
+// call — the pixels themselves were never verified. Same gate, same real
+// keys, now the painted pixels: the silver disc sits beside the routed row
+// and beside NO other row, the caption ink is present, and the header phase
+// disc's silver matches tonight's lit fraction. Geometry straight from
+// index.jsx (GM = {w:480, rowTop:62, pitch:36, foot:64}; canvas 1280x720):
+// box bx=400 by=171 bh=378, row i (gate skipped) at by+62+(i<gi?i:i-1)*36,
+// the row disc at (bx+18, row+17) r3.5, caption baseline by+bh-58.
+const GMW = 480, GMROW = 62, GMPITCH = 36, GMFOOT = 64
+const GW = 1280, GH = 720
+const gbh = GMROW + 7 * GMPITCH + GMFOOT
+const gbx = GW / 2 - GMW / 2, gby = GH / 2 - gbh / 2
+const rowY = (i, gi) => gby + GMROW + ((i < gi) ? i : i - 1) * GMPITCH
+const SILVER = [232, 226, 200]   // #e8e2c8 — moonlit disc + row text + phase disc
+const FOG = [159, 180, 216]      // #9fb4d8 — unmarked row text
+const CAPTION = [200, 216, 168]  // #c8d8a8 — "tonight's moon routeth hence to …"
+const inkIn = async (x, y, w, h, rgb, tol) => page.evaluate((a) => {
+    const c = document.querySelector('canvas')
+    const d = c.getContext('2d').getImageData(a.x, a.y, a.w, a.h).data
+    let n = 0
+    for (let i = 0; i < d.length; i += 4)
+        if (Math.abs(d[i] - a.r) <= a.t && Math.abs(d[i + 1] - a.g) <= a.t && Math.abs(d[i + 2] - a.b) <= a.t) n++
+    return n
+}, { x, y, w, h, r: rgb[0], g: rgb[1], b: rgb[2], t: tol })
+// gate III (161,21) — checked: land 4 ways AND two deep south, so the
+// stickiness walk below never boards a ship
+const gi = 2
+await page.evaluate((a) => { window.__game.reset(a.sd); window.__britanniaTest.teleport(a.gi) }, { sd: seed0, gi })
+await page.evaluate((t) => window.__britanniaTest.setTime(t), DAY_TICKS * 4 + 100)
+await sleep(140)
+r.check('gate III menu whirls at full moon (wheel +4 -> the routed road is VII)',
+    (await openMenuOn(gi)) && (await st()).moonRoute === 6, JSON.stringify(await st()))
+{
+    const routed = 6
+    const on = await inkIn(gbx + 12, rowY(routed, gi) + 11, 13, 13, SILVER, 40)
+    r.check('full moon: the silver disc is PAINTED beside the routed row (VII)', on >= 10, `disc ink ${on}px`)
+    const off = []
+    for (const i of [0, 1, 3, 4, 5, 7]) off.push(await inkIn(gbx + 12, rowY(i, gi) + 11, 13, 13, SILVER, 40))
+    r.check('full moon: NO other row wears the moonlit disc', off.every((n) => n === 0), JSON.stringify(off))
+    const cap = await inkIn(gbx + 28, gby + gbh - 64, 400, 20, CAPTION, 40)
+    r.check('full moon: the route caption ink is painted ("…hence to VII of Sacrifice")', cap >= 100, `caption ink ${cap}px`)
+    const routText = await inkIn(gbx + 28, rowY(routed, gi) + 8, 300, 22, SILVER, 30)
+    r.check('full moon: the routed row text wears moonlit silver, not fog blue', routText >= 80, `${routText}px`)
+    const fogText = await inkIn(gbx + 28, rowY(3, gi) + 8, 300, 22, FOG, 30)
+    r.check('full moon: an unmarked row (IV) stays fog blue', fogText >= 80, `${fogText}px`)
+    const hd = await inkIn(gbx + GMW - 40, gby + 19, 21, 21, SILVER, 40)
+    r.check('full moon: the header phase disc is fully silver (lit fraction 1)', hd >= 60, `${hd}px`)
+    await page.screenshot({ path: '/tmp/forge/britannia-moonmenu.png' })
+}
+// new moon on the SAME open menu: the road must live-flip, the disc must
+// re-seat beside the new routed row and vacate the old one, and the header
+// disc must go dark (lit fraction 0)
+await page.evaluate((t) => window.__britanniaTest.setTime(t), 100)
+await sleep(140)
+let s2 = await st()
+r.check('new moon: the open menu live-flips the road (VII -> IV, wheel +1)',
+    s2.gate === gi && s2.moon === 0 && s2.moonRoute === 3, JSON.stringify(s2))
+{
+    const on = await inkIn(gbx + 12, rowY(3, gi) + 11, 13, 13, SILVER, 40)
+    r.check('new moon: the silver disc re-seats beside the new routed row (IV)', on >= 10, `disc ink ${on}px`)
+    const off = []
+    for (const i of [0, 1, 4, 5, 6, 7]) off.push(await inkIn(gbx + 12, rowY(i, gi) + 11, 13, 13, SILVER, 40))
+    r.check('new moon: the OLD routed row (VII) wears no disc anymore', off.every((n) => n === 0), JSON.stringify(off))
+    const hd = await inkIn(gbx + GMW - 40, gby + 19, 21, 21, SILVER, 40)
+    r.check('new moon: the header phase disc is dark (lit fraction 0)', hd === 0, `${hd}px`)
+}
+// #1829 item 7 look: at new moon the wheel is +1, so walking OFF a gate and
+// back re-opens the menu beside the same destination. It must read
+// intentional (the moon is unchanged), not sticky (a frozen menu): the
+// cancel must hold, walking away must clear it, and the re-opened menu must
+// seat fresh AND follow the wheel when the day turns. Re-seat the Avatar
+// exactly on the gate tile first — openMenuOn's opener step leaves him one
+// tile south of it, and the walk-off is measured from the gate itself.
+await page.evaluate((i) => window.__britanniaTest.teleport(i), gi)
+await sleep(120)
+s2 = await st()
+r.check('back on the gate tile the menu still shows the new-moon road (IV)',
+    s2.gate === gi && s2.moonRoute === 3 && s2.x === 161 && s2.y === 21, JSON.stringify(s2))
+await page.keyboard.press('KeyZ')
+await sleep(160)
+s2 = await st()
+r.check('new moon: Z cancels and the gate stays cancelled beside the avatar', s2.gate === -1 && s2.moonRoute === -1, JSON.stringify(s2))
+await page.keyboard.press('ArrowDown')
+await sleep(240)
+s2 = await st()
+r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.y === 22, JSON.stringify(s2))
+await page.keyboard.press('ArrowDown')
+await sleep(240)
+s2 = await st()
+r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.y === 23, JSON.stringify(s2))
+await page.keyboard.press('ArrowUp')
+await sleep(240)
+s2 = await st()
+r.check('walking back re-opens the menu FRESH beside the same new-moon road (IV) — intentional, not sticky',
+    s2.gate === gi && s2.moonRoute === 3 && s2.hoverRow === -1, JSON.stringify(s2))
+await page.evaluate((t) => window.__britanniaTest.setTime(t), DAY_TICKS + 100)
+await sleep(140)
+s2 = await st()
+r.check('the re-opened menu is live: the day turns (new -> waxing crescent, +3) and the road follows (IV -> VI)',
+    s2.gate === gi && s2.moon === 1 && s2.moonRoute === 5, JSON.stringify(s2))
+
 // restart path stays clean
 await page.evaluate(() => window.__game.reset(7))
 await sleep(250)
