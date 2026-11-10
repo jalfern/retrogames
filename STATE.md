@@ -2,63 +2,62 @@
 
 ## What shipped
 **WATCH batch 16 — MINESWEEPER seats the fairness referee** — squash `cf3a0cf`
-(PR #1882, Part of #1637; claim: warden TARGET #1637 to slot a — b's claim was
-expired 147 min, claim accepted fresh). The seat feeds `nextDigs(g)` — the gate's
-OWN autopilot, subset-core + no-chord, exactly the rule set the fairness gate
-certifies with and the attract demo replays — into the REAL dig path (`actDig`,
-auto-chord intact) every sim tick: cursor first, 6 ticks/dig, no forked brain.
-First action digs the center — the original's guaranteed-safe click, the spot
-`plantAt` lays and certifies the board around — so the route is honest from tick
-one. Any driving key/canvas tap hands back (shared blips; the player's dig lands
-too, Sonar-ping style); the win releases silently (racer rule). Single-screen
-boot: the attract ▶ WATCH (band @24%) seats directly — no bank needed. The seat
-never flags: flags are the player's claims and the win never needed them.
-Evidence: watchcheck minesweeper pilot 207/207 (seat/blip, steer-takeover/blip,
-re-seat, no-death sweep-to-win honesty meter FIELD SWEPT 71/71, silent release
-via stop-count, one-tap); full watchcheck 623/623; watchphonecheck 395/395
-(tripwire 54->55), watchpillcheck 184/184, attractcheck 694/694,
-contractcheck 682/682, sweepcheck 89/89 (the seat's witness), sleepwatchcheck
-314. Mutant: seat feed cut -> exactly 6 red, restored. Registry seats 54->55,
-pilots 56. Live: https://jalfern.com/retrogames/minesweeper (entry
-`index-DdoMGjlN.js` carries the copy — NOTE: prod html 308s to www.jalfern.com;
-poll with `curl -sL`). Filed #1883 (polish: face, ?-marker, win flag-cascade,
-chord stagger) + a watchcheck --phone route-table feedback (magic-carpet
-`?seed=7` url defeats the phone section's exact-path hook lookup).
+(PR #1882, Part of #1637). Resumed the prior slot-a corpse (`forge/watch-rollout-b16`,
+branch tip `a859c5b`) at its stated "full battery then ship" step. The seat:
+Y / ▶ WATCH drives the gate's OWN autopilot `nextDigs` (subset-core, chord-forbidden —
+the exact rule sweepcheck certifies every board with) into the real dig path per sim
+tick (`actDig`, auto-chord, cursor first, 6 ticks/dig); first dig takes the centre
+where `plantAt` lays and certifies → zero guesses, so the seat can only dig what the
+referee proved safe. Any driving key or canvas tap hands back (shared blips); the win
+releases silently (racer rule); attract ▶ WATCH seats directly. Honesty clause:
+`sweepcheck` is the witness — a mine under the seat means the referee lied.
+
+Evidence (re-ran the WHOLE battery green before merging — the corpse only claimed it):
+watchcheck 623/623 (minesweeper pilot: seat/blip, steer-takeover, re-seat, no-death
+sweep-to-win, silent release, one-tap ▶ WATCH + 9 source pins incl no-forked-brain +
+sweepcheck-witness), sweepcheck 89/89, contractcheck 682/682, attractcheck 694/694,
+watchphonecheck 395/395 (tripwire 54→55), watchpillcheck 184/184, sleepwatchcheck
+314/314, eslint + lint:mario/fps/ai/sweep green, build green. Mutant already proven by
+the corpse (seat feed cut → exactly 6 red, restored). Prod verified: entry chunk
+`index-Dd24MB-b.js` carries the registry line "…guess-free sweeps its own field".
+Live: https://jalfern.com/retrogames/minesweeper
 
 ## Session bookkeeping
-- The 55-title `watchcheck --phone` soak is NOT a CI gate (static runs
-  watchcheck desktop + watchphonecheck). On a loaded box it times out past
-  15 min and tail-boots starve (`DEV hook never appeared` cascades) — do not
-  chase those flakes; watchphonecheck is the phone law's real enforcement.
-- `git checkout --detach origin/main` in the merge worktree right after
-  `gh pr merge --delete-branch` (gh auto-switched to main again this batch).
+- TARGET #1880 (Talk Me Down remote seats) REFUSED at claim — slot b holds it live
+  (`FORGE (b): claimed 09:14Z`, newest wins). Ran the normal ladder.
+- Ladder: no halt/steer; `next` = #1711 (PLAICRAFT, human-recordings-gated — not
+  claimable by a builder); `game-queue` empty; step 1b found a live slot-a corpse —
+  #1637 batch 16 (`building`, pushed branch, open non-draft PR #1882, static SUCCESS).
+  Resumed it per rule 1b rather than claiming a new issue. One ship, no second claim.
+- #1637 is multi-stage ("Part of #1637") → stays open + `building` for batch 17; no
+  close, no `shipped` label. Posted wrap + prod-URL comments on #1637.
+- Merge done with the rule-5 path (static SUCCESS gate); `gh --delete-branch` left the
+  worktree detached at `cf3a0cf` (= that moment's origin/main) — re-detached plumbing
+  checkout to current origin/main.
+- No jonq filed (nothing taste/priority/hard-to-undo this session).
 
 ## Next queued (slot a)
-1. Resume #1637 batch 17 when claimable (~90 min after the last `FORGE (a)`
-   comment — the ship comment above). Grep fresh at batch start:
-   `grep -ln "planStep\|solvePad\|solve(\|planner\|nextSafe" src/games/*/*.js`
-   minus titles already seated (registry WATCH_HELP = source of truth), then
-   check each candidate's harness for a win-proof BEFORE designing (no proven
-   route = no seat). Unseated solver-ish leads to triage: FireCrew, IronKeep
-   (levels hint), GravelYard, Homebody, ShortOrderShout, Britannia (swell/
-   route?) — verify honestly, several matched only on comments.
-2. Ladder fresh at claim time (halt -> steer/next -> game-queue -> feedback
-   borrow only if QA MASTER dead -> flagship -> weakest via idle-kick).
-   Warden TARGETs go first but REFUSE politely when the holder is live.
-3. #1711 stays hardware-gated for Jon only (#1730 precedent; session-188 audit).
+1. Fresh ladder: TARGET from the warden, else no halt/steer/next/queue → the ladder's
+   game-first rungs. `next` #1711 stays hardware-gated; watch for it clearing.
+2. If #1637 is re-claimable (batch 17 = next solver-bearing title not yet seated):
+   the batch ladder lists 55 seated now; the weakest un-seated solver title is the
+   pick. Check claim liveness first (slot b may roll it).
+3. #1880 (Talk Me Down remote seats) is slot b's live build — do NOT touch.
+4. Fresh `weakestStage` if the ladder runs dry again.
 
 ## Notes for the next slot-a session
-- Dev server 5173 STOPPED at session end. Worktree `~/Dev/retrogames-forge-watch-b16`
-  = detached at origin/main after merge, node_modules symlinked (to watch-b14) —
-  reuse with `git checkout -B forge/watch-rollout-b17 origin/main`.
-- watchcheck batch blocks are append-only: pilot before PILOTS' closing `]`,
-  source pins after the previous batch's block. Phonecheck tripwire = registry
-  WATCH_HELP count (now >= 55) — bump with every seat batch.
-- Minesweeper pilot law: COLT floods ~57 cells on the first dig and the whole
-  run wins in ~2 s — the steer must land right after seatPoll, and any mid-run
-  read must tolerate the board already being over (`watching() || screen!=='play'`).
-- watchSfx stop-count is the silent-release proof: count 'stop' events, require
-  exactly the number of deliberate steers.
+- Worktree `~/Dev/retrogames-forge-watch-b16` is now detached at a merged tip; for a
+  new build `git checkout -B forge/<newslug> origin/main` (its node_modules symlink
+  → forge-watch-b14 is intact). Dev server 5173 was still up (orphaned vite from the
+  corpse) serving this worktree — reused it, verified cwd was the b16 worktree before
+  trusting it. Kill or repoint it for the next title.
+- Prod-verify gotcha (bit twice this session): jalfern.com 301→www.jalfern.com; a
+  `curl -s` without `-L` returns an empty body so the marker grep reads 0 and looks
+  like "not deployed yet". Always `curl -sL`. The games/registry strings live in the
+  single entry chunk (`index-*.js`, ~950 KB) — grep that for a unique literal from the
+  diff (here: the controls suffix `guess-free sweeps its own field`).
+- watchcheck b16 pattern for the next batch: seat + pilot + no-forked-brain pin +
+  witness pin (the batch's own audit module), phone tripwire bump, then full battery.
 
 ## Open questions
-- None. (Batch roll is mechanical; nothing taste/priority came up. No jonq filed.)
+- None. (#1637 continues as batch 17; no taste/priority call needed from Jon.)
