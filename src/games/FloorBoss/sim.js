@@ -59,7 +59,7 @@ const ARM_DROP = 20 // settle ticks before the gripper opens
 // 800-px logical canvas (index.jsx never rescales logical units — TRUCK_PARK equals
 // its PX(23)+5 dock lane), so the drawn truck IS the logical truck.
 export const PAD_CAP = 3 // parcels the pad holds before the next packed ship waits
-const PAD_AGE = 240 // oldest parcel ages out after 4 s — the truck is called
+export const PAD_AGE = 240 // oldest parcel ages out after 4 s — the truck is called
 const TRUCK_LOAD = 14 // ticks to load one box into the trailer
 const TRUCK_MIN = 40 // min dwell after the pad empties (tap sends early)
 export const TRUCK_HOME = -90, TRUCK_PARK = 613, TRUCK_EXIT = 830
