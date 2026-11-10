@@ -84,6 +84,32 @@ DEV_PORT=5174 npm run homebodydrive   # real Chrome: start, order, build, die, r
 Drive it: tap objects to order the active resident; G switches residents; B
 opens buy mode (time stops); 1-9 pick cards; stick/arrows walk, A uses.
 
+## WATCH seat (#1637 batch 17)
+
+Y / ▶ WATCH seats the attract autopilot: while watching, `autoStep(gs, dt)`
+replaces `drivePad`+`advance` in the play tick — the same call the attract demo
+runs and peoplecheck's WINNABLE section grants the lifetime wish with. The bot
+re-decides from LIVE state every tick: buys, clocks in, walks, eats, chats.
+It never touches the player pad, and releasing hands the pad back untouched.
+
+Autonomy honesty: `autonomous()` gates work and self-care on `s.demo`; the seat
+raises that flag each tick and every release path (Y, driving key, canvas tap,
+pause-resume edge, end of run) clears it, so autonomy is the seat's, never the
+house's. Prover-only here is NARROWER than it looks — Fern's chat, co-presence
+bonds and ambience hours all bank social/content for an idle street — so the
+watchcheck homebody pilot proves advance only with demo-gated commands (a buy,
+a clock-in, the payday after work) and asserts the idle street buys nothing and
+works nowhere. Y seats with the shared blips (KeyY is free — no vi-keys in this
+game); any driving key or a tap on the lot hands back; the seat releases
+silently when the street ends (racer rule). Attract carries the shared hint and
+the one-tap ▶ WATCH (start AND seat).
+
+Verify: `DEV_PORT=5173 node scripts/watchcheck.mjs --only=homebody` — pilot,
+source pins, and the witness pin (peoplecheck still grants the wish driving the
+SAME autoStep). Mutant: swap `autoStep(gs, SIM_MS / 1000)` for `advance(gs,
+SIM_MS / 1000)` in the play tick — the demo, wake, resume gates and the seat's
+source pin go red (~7); restore.
+
 ## Honest gaps (filed to QA #…)
 - **CLOSED by #1806:** multiple rooms — one expansion ships: the Spare Room kit
   grows a wing on the east lawn (floor/walls/door/windows, connectivity-guarded,
