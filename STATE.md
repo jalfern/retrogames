@@ -1,74 +1,75 @@
-# STATE — session 196 (2026-11-10, slot b)
+# STATE — session 197 (2026-11-10, slot b)
 
 ## What shipped
-**POLISH #1889 — PAPERS, PLEASE-MIN gets a real calendar** — squash `856649e`
-(PR #1890, closes #1889). The week ROLLS: `START_DATE` Oct 11 → **Oct 27**, so
-seven days are OCT 27…31, NOV 01–02 — day 6's EXPIRED test paper is judged
-across a real month boundary (wall `1982.11.01` vs passport
-`EXPIRES 1982.10.31` side by side at the window), the date arithmetic the
-original (Papers, Please, 2013) makes its daily bread. `dnum` is now exact
-days-since-epoch (`y*365 + MPREFIX[m-1] + d`) — the serial every rule compares
-and the calendar the wall prints are ONE clock:
-`dnum(dadd(x,n)) − dnum(x) === n`, both directions, every constructible date.
-CURFEW's grace counts real days: over a 30-day November, 6 left is void,
-exactly 7 walks (uniform-31 read 6 as 7 past the seam).
+**TALK ME DOWN CALL-BY-KEY** — squash `8528835` (PR #1898, closes #1894).
+X opens a CALL line; letters/digits/SPACE compose; ENTER shouts through
+`voiceCall` — the mic's own entry: one grammar, one pulse law, one voiceCmd
+bank. While composing the keyboard is a MOUTH, not a hand: arrows and seat-2
+keys swallowed (no pad leak), V is a letter ("SEVEN"), typed words never
+release the WATCH seat (#1247 by analogy); online the fold laws inside
+voiceCall run unchanged. Amber `CALL> cut red_` on the LCD glass; mic-off
+footer coaches `KEY_CALL_HINT`; shapes stay ACCEPTED_HINT's alone. Headless CI
+gains real-keystroke delivery to pixels AND into the live capture
+(voiceCmd replays hash-exact) — no more badge-only proof for the grammar path.
 
-**Real bug found by rolling:** `dadd` had no backward carry — day 6's
-"yesterday" shipped `NOV 00`. The fairness prover structurally cannot see it
-(serial ordering stayed sane; only the printed date lied, and the display is
-the contract). Carry added.
+**The batch's real lesson (design bug caught by the harness):** the channel
+key C is EATEN by the word CUT — an open-key can never be a letter a call
+needs. X now opens (no grammar word uses j/q/x — dial SIX is digits; pinned
+over the vocabulary so the choice can't rot). The rename hunt: one drive press
+escaped the sed sweep — the KEY-EVENT DUMP (capture listener printing e.code)
+named it in one run. Lesson: when a key seems swallowed, dump the event codes
+at the window before touching handlers.
 
-Evidence: paperscheck **6551/6551** — new CALENDAR section (~60 gates:
-identity law 365 dates × 10 spans, backward-day sanity, per-seed OCT→NOV roll,
-day-6 cross-month witness, synthetic short-month seams incl. year seam and
-expires-TODAY at the seam) + mutants **m9** (uniform-31 re-freeze) and **m10**
-(carry strip), all 10 caught; hand-mutant proof: carry stripped ⇒ exactly 25
-red, all new gates. papersplay 19/19 real keys, seed 2 survives the rolled
-week, zero page errors. eslint + lint:mario/fps/ai + build green. Prod
-verified: live chunk `index-DSRrkHj3.js` carries `y:1982,m:10,d:27`.
-Live: https://jalfern.com/retrogames/papers-please
+Evidence (full battery before merge): bombcheck 71/71 (+16: editor law,
+no-fork source pins, footer swap); bombdrive +17 real-keys gates green x2
+runs; mutant (commit's voiceCall → plain banner = grammar fork) killed 5 named
+gates, inverse-sed restored. tmd-smoke, contractcheck(TMD) 14/14,
+tmdlinkcheck 56/56, watchphonecheck 403/403, watchpillcheck 187/187,
+lint:mario/fps/ai + eslint + build green. Only reds anywhere: the #1871
+seed-7 pair + one watchcheck TMD pin + 8 other-title textfit reds — ALL
+reproduced on clean main this session (check main before owning a red!).
+Prod verified: entry chunk `index-D_TzJ3RD.js` carries the registry copy.
+Live: https://jalfern.com/retrogames/talk-me-down
 
 ## Session bookkeeping
-- TARGET #1637 REFUSED at claim (slot a live, 37-min hold). Ladder: steer
-  empty; `next` = #1711 — all four acceptance lines need Jon's phone + the
-  bound R2 bucket; #1730 CLOSED defaulted-Hold. Slot b's own checkpoint on
-  #1711 keeps it `next` for the post-deploy session; never idle (#841).
-  game-queue empty; feedback belongs to QA (Jon 2026-10-19). Flagship stage
-  SPENT: SSX/Emberwood/CometDriftHD/Myst READMEs hold only CLOSED gap bullets
-  (parseGaps → []). NEVER-DRY (#1571): weakestStage → PAPERS, PLEASE-MIN
-  score 4 (4 README gaps, zero QA feedback naming it; ties → older title).
-  Filed #1889 (game-queue, lane:games, why-weakest line), claimed, shipped.
-- QA polish pass filed as #1891 (feedback): quote the evidence sentence at the
-  stamp strip (`gs.last.why` keeps only the rule name today), month-name dates,
-  new-month bulletin on day 6, paper weight/motion.
-- Shift report pushed. No jonq (nothing taste/priority/hard-to-undo).
-- Game code merged this session (AGENTS rule 4 healthy). Slot a shipped
-  WATCH b17 (HOMEBODY, `96eee3e`) + its STATE in parallel; merge window was
-  clean (rule-5 loop handled main moving).
+- TARGET #1637 REFUSED at claim (slot a live, batch 18 = Space Invaders +
+  Defender, claimed 12:14Z). Ladder: no halt/steer; `next` #1711 still
+  hardware-gated (Jon's R2 bucket; jonq empty). game-queue empty; QA MASTER
+  live (no feedback borrow); flagshipStage null (spent) → never-dry
+  weakestStage: TALK ME DOWN score 6 (4 unowned README gaps + feedback
+  #1888/#1871 naming it; held: CometDrift, CometDriftHD, MagicCarpet).
+  Filed #1894 (POLISH — TALK ME DOWN: typed-call channel), claimed, shipped,
+  closed `shipped`. #1900 filed: QA polish pass (type-vs-shout parity, the
+  phone-mouth decision, stale-pin cleanup: watchcheck TMD pin regex matches no
+  main text; #1871 pair; #1099 textfit family).
+- Harness fix carried in the PR: vignette hi/lo luma gates now poll the
+  sin(tick/6) phase (the #1305 "one screenshot cannot decide a sine phase"
+  law) — my section's phase shift exposed the single-sample weakness.
+- No jonq filed (nothing taste/priority/hard-to-undo).
 
 ## Next queued (slot b)
-1. Normal ladder: warden TARGET, else halt/steer/next/queue rungs.
-   #1637: check claim liveness first (slot a may re-roll batch 18). #1711
-   stays `next` until Jon deploys #1730 — do NOT self-serve the bucket.
-2. If the ladder runs dry: flagship still spent — fresh `weakestStage`.
-   At this session's end it scored **LODE RUNNER-LITE 4** with oldest gap
-   "trap is a single-cell pit; deep shafts…" — audit that gap against the
-   original Lode Runner AND Jon's 2026-10-11 fidelity ruling ("LODE RUNNER
-   shipped permanent holes and a jump") before building it.
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue game-first.
+   #1637 batch 19 when slot a releases it (56+ seated; batch 18 seats Space
+   Invaders + Defender). #1711 hardware-gated — watch for Jon's answer.
+2. If the ladder runs dry: fresh weakestStage — TMD now scores lower (gap 0
+   rewritten smaller); other candidates: FloorBoss/BombDefuse (score 5 each).
+   Never seat a panic bot; un-proven drivers stay honest "no guide yet".
+3. QA owns #1871/#1900 items — builders don't pick them up unless steered.
 
 ## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-ppm-calendar` is detached at `a3cb961`
-  (origin/main); node_modules symlink intact. For a new build:
-  `git checkout -B forge/<newslug> origin/main`. Dev server 5178 was left
-  RUNNING (vite from this session) — reuse after verifying its cwd, or kill.
-- PPM calendar law: keep `dnum(dadd(x,n)) − dnum(x) === n` (CALENDAR section
-  pins it; backward carry included). No leap days exist in this sim's calendar
-  — dadd never emits Feb 29; keep it that way or change both clocks together.
-- Prod-verify lazy games by CONTENT fingerprint in the HTML-reachable chunk
-  graph (entry chunks carry no game strings; Vercel builds don't reproduce
-  local hashes). The papers chunk is found via LAST-names literals ("ZEMEK").
-- Never claim `#1711` work that needs hardware; its four acceptance lines are
-  posted on the issue and die only on Jon's thumb + bound bucket.
+- Worktree `~/Dev/retrogames-forge-tmd-callkey` detached at `8528835`;
+  node_modules symlink intact — `git checkout -B forge/<newslug> origin/main`
+  for the next build. Dev server on 5178 runs FROM that worktree (vite) —
+  reuse after verifying cwd, kill otherwise. 5179 was a throwaway diagnostic
+  server this session — killed.
+- TMD gate patterns that worked: relay `lsof -i :8792` before tmdlinkdrive;
+  `__game.replay()` LOCKS the clock — any section that starts live after a
+  replay must `__game.release()` (start() does not); pixel gates poll while an
+  overlay pulses; key-event dumps beat handler archaeology.
+- `__tmdTest.callLine()` reports `{open, buf, paused}` — enough to pin
+  Escape-close-without-pause honestly.
+- Slot a may merge batch 18 soon — rule-5 loop handled main moving mid-merge
+  cleanly again (two sessions running: watch #1637 before batching 19).
 
 ## Open questions
-- None.
+- None. (No taste/priority call needed from Jon.)
