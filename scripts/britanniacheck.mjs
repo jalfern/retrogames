@@ -17,7 +17,7 @@ import { MOONS, PHASES, DAY_TICKS, moonPhase, moonName, phaseLit, PHASE_FLAVOR, 
 import { shadeAt, mixHex, builtPalette, cobbleBlock } from '../src/games/Britannia/tiles.js'
 import { TOWN_R, FLAT as TOWN_FLAT, townScore, hasCottage } from '../src/games/Britannia/towns.js'
 import { decodeCon, decodeRecord, CON_TERR, FLAT } from '../src/games/Britannia/ega.js'
-import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, ROUGH_MEMORY, seaRough, crestGain, foamGain } from '../src/games/Britannia/swell.js'
+import { SWELL_TILE, SWELL_PH, PH_T, crest, crestLane, foam, landSides, foamPatches, SPLAT, splatIntensity, dimples, splashStrikes, SPLAT_GAP, ROUGH_MEMORY, seaRough, crestGain, foamGain } from '../src/games/Britannia/swell.js'
 import { SHRINE_DIST, AVATARS, shrineTitle, shrineSpot, plotShrines } from '../src/games/Britannia/shrines.js'
 
 // Prove-it-can-fail mutants (#1876): --mutate-shrine shrinks SHRINE_DIST to 1
@@ -923,6 +923,47 @@ ok(sprite('down', 1) === sprite('down', 1) && sprite('up', 2) === sprite('up', 2
     ok(/dimples\(tx, ty, si, t, S\.seed\)/.test(src), 'index.jsx: wet sea tiles are drawn with dimples')
     ok(/seaRain: splatIntensity\(weatherAt\(S\.x, S\.y, S\.tick, S\.seed, terrainAt\)\)/.test(src),
         'index.jsx: the harness can see the rain striking the Avatar\'s sea tile')
+}
+
+{
+    // the sea speaks (#1829 item 3): every dimple ring that OPENS is a drop
+    // striking the water, and the splash voice fires from that same truth —
+    // sound and paint can never drift apart (they read one hash field).
+    const vsrc = readFileSync('src/games/Britannia/index.jsx', 'utf8')
+    const s1 = splashStrikes(40, 200, SPLAT.storm, 777, 3)
+    const s2 = splashStrikes(40, 200, SPLAT.storm, 777, 3)
+    ok(s1 === s2, `splashStrikes is deterministic (same tile+intensity+tick+seed, ${s1} strikes)`)
+    ok(splashStrikes(40, 200, 0, 777, 3) === 0, 'a glass sea never speaks (intensity 0 -> no strikes)')
+    let drift = 0, over = 0
+    for (let t = 0; t < 600; t++) for (const [tx, ty, sd] of [[50, 180, 2], [9, 9, 1], [120, 40, 7]]) {
+        const dd = dimples(tx, ty, SPLAT.rain, t, sd)
+        if (splashStrikes(tx, ty, SPLAT.rain, t, sd) !== dd.filter(d => d.o).length) drift++
+        if (splashStrikes(tx, ty, SPLAT.rain, t, sd) > dd.length) over++
+    }
+    ok(drift === 0 && over === 0,
+        `the voice counts exactly the rings that open (${drift} drift, ${over} over-counts over 1800 ticks)`)
+    let freshOk = true
+    for (let t = 0; t < 600; t++) {
+        if (splashStrikes(50, 180, SPLAT.storm, t, 2) > 0) {
+            if (!dimples(50, 180, SPLAT.storm, t, 2).some(d => d.o && d.r < 0.95)) freshOk = false
+        }
+    }
+    ok(freshOk, 'every strike tick shows a brand-new ring (r at its minimum) — sound lands on the painted drop')
+    const win = (int, sd) => { let k = 0; for (let t = 0; t < 600; t++) k += splashStrikes(50, 180, int, t, sd); return k }
+    const kStorm = win(SPLAT.storm, 2), kRain = win(SPLAT.rain, 2), kSnow = win(SPLAT.snow, 2)
+    ok(kStorm > kRain && kRain > kSnow && kRain > 0,
+        `wetter skies speak more: storm ${kStorm} > rain ${kRain} > snow ${kSnow} > glass 0 in a 600-tick window`)
+    ok(SPLAT_GAP >= 4 && SPLAT_GAP <= 12, `SPLAT_GAP ${SPLAT_GAP}: a storm shatters, never machine-guns`)
+    ok(/if \(isSea\(terrainAt\(S\.x, S\.y\)\)\) \{/.test(vsrc) && /splashStrikes\(S\.x, S\.y, sis, S\.tick, S\.seed\)/.test(vsrc),
+        'index.jsx: the splash voice is gated on sea under foot and the strikes on that tile')
+    ok(/S\.tick - S\.splat >= SPLAT_GAP/.test(vsrc) && /S\.splat = S\.tick/.test(vsrc),
+        'index.jsx: the voice rate-limits itself with SPLAT_GAP')
+    const vblk = vsrc.split('#1829 item 3')[1].split('// #1853')[0]
+    ok(!/S\.(x|y|tick|wx|seed)\s*(=|\+\+)/.test(vblk),
+        'the splash block writes only S.splat — sim truth and the hash law survive the voice')
+    const ssrc = readFileSync('src/games/Britannia/swell.js', 'utf8')
+    ok(/o: ph === 0 \}\)/.test(ssrc),
+        'swell.js: a strike is the landing tick itself (ph === 0), not a phase guess — sound paints the drop')
 }
 
 {
