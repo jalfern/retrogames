@@ -23,7 +23,7 @@ import {
     atCastle, bookOpen, bookClose, bookKey, bookTap, BOOK, BOOK_PROMPT,
     SEL, selectTap, cursorStep,
 } from './sim.js'
-import { createCarpetGL, WAVE_CYCLE } from './renderer.js'
+import { createCarpetGL, WAVE_CYCLE, CLOUD_FIELD, CLOUD_WIND, buildCloudCells } from './renderer.js'
 
 const FIXED_DT = 1000 / 60
 
@@ -1304,6 +1304,25 @@ const MagicCarpetGame = () => {
                     peak: +aerialFog(d, 90, gs.alt).toFixed(4),
                     camY: +gs.alt.toFixed(2),
                 }),
+                // #1764 item 5 stage 6: the cloud deck as data — the same wind
+                // and recirculation wrap the vertex shader rides, mirrored in JS
+                // against gs.tick, plus what the GL pass actually carries.
+                cloudDeck: (dt = 0) => {
+                    const t = gs.tick + dt
+                    const R = CLOUD_FIELD.r
+                    const wm = (v) => (((v + R) % (2 * R)) + 2 * R) % (2 * R) - R
+                    return {
+                        tick: gs.tick, dt,
+                        sub: +Math.max(0, Math.min(1, (WATER - gs.alt) / 6)).toFixed(3),
+                        cells: buildCloudCells().length,
+                        puffs: renderer ? renderer.cloudBodyCount() : -1,
+                        bodies: buildCloudCells().map((b) => ({
+                            x: +wm(b.x + CLOUD_WIND.x * t).toFixed(3),
+                            z: +wm(b.z + CLOUD_WIND.y * t).toFixed(3),
+                            y: +b.y.toFixed(2), d: +b.d.toFixed(4),
+                        })),
+                    }
+                },
                 // #1703 (phone proof): queue the same crater digHot lands — but
                 // leave the crumble window OPEN so a pass can capture mid-window
                 // (rim peak) vs settled. deforms() reports each deform's age so

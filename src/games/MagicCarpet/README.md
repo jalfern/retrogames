@@ -454,8 +454,10 @@ see item 5).
   hugging haze layer (full density at/below 18u, summits above 74u keep half
   crispness) and climbing the carpet thins the path (air 1.0→0.6), mirrored in
   GLSL constant-for-constant by AIR_GLSL with the horizon fuse kept.
-- Clouds are two dome layers that cast a drifting shadow on the land, not
-  volumetric bodies.
+- **CLOSED by #1764 (stage 6):** volumetric cloud bodies — see the stage-6
+  section at the end. The dome keeps a thinner veil behind the deck; the
+  recirculation wrap means shade-under-body exactness is bounded by the fold
+  period (~110 s), and bodies that fold back in arrive over fresh field.
 
 ## #1746 item 7 polish (2026-11-06, QA studio): SPATIAL CAST CUE
 
@@ -570,8 +572,10 @@ pin red.
 - Water: two-wave analytic normals with sun-facing self-shadow, sparkle term
   tied to sun angle + ripple slope (palette-cycling's readable cousin), three
   dithered depth bands, foam lace that traces the shore geometry.
-- Clouds: two parallax dome layers + a low-freq cloud shadow that drifts over
-  the terrain; cool lava craters keep an obsidian sheen (specular on scorch);
+- Clouds: a deck of volumetric puff-cluster bodies (#1764 stage 6, see the
+  stage-6 section) over two parallax dome layers, with a low-freq cloud shadow
+  that drifts over the terrain on the same wind the bodies ride; cool lava
+  craters keep an obsidian sheen (specular on scorch);
   dead rubble smoulders (smoke keeps rising long after the burn); hut windows
   flicker warm (negative billboard seed channel drives BILL_FRAG).
 - Billboards tilt toward the horizon (`lean` in BILL_VERT) instead of staying
@@ -613,3 +617,55 @@ real run, not a witness replay.
   watchcheck too (seat feeds autopilot, visuals follow eff, unseat at end and
   start, registry WATCH line). The honesty gate moved `/magic-carpet` out of
   the no-guide list; DOS/IF titles stay in it — no solver drives those yet.
+
+## #1764 item 5 stage 6 (2026-11-10, QA studio): VOLUMETRIC CLOUD BODIES
+
+The gap said the clouds were two dome-painted layers: no body, no parallax,
+and the drifting ground shadow came from nowhere. The deck is now data-driven
+and tied to the shade by algebra:
+
+- `buildCloudCells()` (renderer.js, exported, pure — no RNG/gs/clock) places a
+  body wherever the JS twin of the terrain's own `cshade` fbm2 exceeds
+  `CLOUD_FIELD.floor` on a jittered 96u lattice (≈ one noise cell of the
+  shadow field) inside ±480u. `CLOUD_SCALE`/`CLOUD_DRIFT` are the shadow law's
+  constants, now BAKED into the terrain sample site, and
+  `CLOUD_WIND = -CLOUD_DRIFT/CLOUD_SCALE` (-0.1455, -0.0818 u/tick, SW) is the
+  world velocity that field implies. So `anchor·scale + t·drift` is
+  time-invariant: **every body rides over the shade it "casts" — density under
+  a body equals the body's density, at every tick**, proven by the JS twin up
+  to the recirculation fold (period 110 s; bodies fade to zero alpha in the
+  shell fade0..fade1 = 380..470 before they fold, and the mismatched return
+  happens off-map/in the haze).
+- Each body is a cluster of `CLOUD_FIELD.puffs` camera-facing soft-disc puffs
+  (lobed silhouettes, sun-lit: bright rim toward the sun's screen bearing,
+  darker bellies, altitude lift), at altitude 112..142u — above every terrain
+  top (sim clamps heights at 96u) while the 120u climb ceiling lets the
+  carpet graze the underside. Fog rides `aerialG` (the stage-5 law: decks in
+  the distance sit in the same haze layer as distant ground), alpha is killed
+  by the dive composite (`1 - uSub` — under the sea the ceiling is the sea),
+  a 26..74u near-fade keeps a puff from engulfing the camera, and the dome's
+  primary painted layer steps back to `domeKeep` 0.45 of its mix so the
+  bodies carry the cumulus work. Presentation-only: sim.js never learns any of
+  it; the same-tick pixel-stability law holds (drift rides uWorldTime only).
+
+carpetcheck: 10 new Node gates + 2 live (block `#1764-5s6`) — literal pins
+(wind = -drift/scale exact, deck altitude band, fold shell order), purity +
+determinism of `buildCloudCells`, THE TIE (shade-under-body == density, max
+err 1.3e-15 over 96 body·tick pairs), coverage (≥50% map coverage overall;
+every strong shade ≥0.62 has a body within 110u — measured 96%/97%), real
+parallax from a 60u camera step for EVERY body (min 0.086 rad, dome paint is
+0 by construction), fold period, census (terrain site bakes the constants, the
+old unstepped `cov * uCloudMix);` is banned, vertex pins for wrap·aerial·dive),
+and live: 200 puffs in the GL pass, exact wind·120 travel between live ticks.
+Mutants: free `CLOUD_WIND` constant kills the tie; deleting the wrap `mod()`
+kills the vertex census; emptying the deck kills count/coverage/parallax.
+
+**Also in this PR — a stage-5 regression found by this PR's battery:**
+squash `3cf9dd2` (stage 5) landed `float under = smoothstep(0.0, 1.0, .0 -
+uCamPos.y)` — the `${WATER}` interpolation of the view-from-below read was
+stripped, so `under` was 0 whenever the eye sat above y=0 (i.e. always — dive
+altitudes stay positive), the ceiling branch never ran, and the stage-5 gate
+that pins that exact literal has been red on main ever since (static does not
+run carpetcheck). Restored `${WATER}.0`; the gate is green again. Lesson for
+the lane: re-run the FULL battery after any late string edit — the stage-5
+report described a green battery, the committed source had the broken line.
