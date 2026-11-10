@@ -312,7 +312,9 @@ function drawBombView(g, gs, now, opts = {}) {
             g.strokeStyle = isHolder ? C.amber : '#000'
             g.strokeRect(bx - 10, 180, 20, 90)
             g.fillStyle = isHolder ? C.amber : C.label; g.font = '8px "Press Start 2P", monospace'
-            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? ' YOU' : ''}`, bx, 288)
+            // #1831: your own bar names the key — a newcomer reads the role
+            // for THEIR hand, not a seat number they must map.
+            g.fillText(`P${i + 1}${opts.cpu2 && i === 1 ? ' CPU' : ''}${opts.youSeat === i ? (i === st.holder ? ' YOU:HOLD B' : ' YOU:SEAT SP') : ''}`, bx, 288)
         }
     }
 
@@ -913,7 +915,7 @@ export default function BombDefuseGame() {
                         // the seat is still the partner's during an in-flight
                         // hand-back (#1838) — the chip must not lie until the flip
                         cpu2: seatsRef.current === 1 || (net.active && net.sync && (net.sync.solo() || net.sync.reseatTick != null)),
-                        youSeat: net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : 0,
+                        youSeat: net.active ? (net.sync && !net.sync.solo() && net.sync.reseatTick == null ? net.sync.mySeat : -1) : (seatsRef.current === 1 ? 0 : -1),
                         dudT: hud.dudT,
                     })
                     drawIntro(g, gs)

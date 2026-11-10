@@ -75,6 +75,10 @@ export function snapshotNet(gs) {
         armed: [gs.armed[0] ? 1 : 0, gs.armed[1] ? 1 : 0],
         sel: [gs.sel[0], gs.sel[1]], held: gs.held ? 1 : 0,
         phase: gs.phase, needleT: gs.needleT, zone: gs.zone,
+        // #1831: the edge memory must ride the snapshot too — restored without
+        // it, a guest would fire a press the host already consumed (the key
+        // was down at resync time), and the hash boundary would never agree.
+        pp: gs.prevPad.map(p => (p.up ? 1 : 0) | (p.down ? 2 : 0) | (p.a ? 4 : 0)),
         lead: gs.brain.syncLead, follow: gs.brain.follow, rx: gs.rng.x(),
     }
 }
@@ -100,6 +104,11 @@ export function restoreNet(snap) {
     gs.phase = snap.phase | 0
     gs.needleT = snap.needleT | 0
     gs.zone = snap.zone | 0
+    // #1831: rebuild the edge memory — keys held at resync stay "already
+    // fired" on the guest, exactly as the host sees them (missing snap.pp =
+    // an old host: all-released, the pre-edge semantics of one press/tick).
+    const pp = snap.pp || [0, 0]
+    gs.prevPad = pp.map(v => ({ up: !!(v & 1), down: !!(v & 2), left: false, right: false, a: !!(v & 4), b: false }))
     gs.brain.syncLead = snap.lead | 0
     gs.brain.follow = snap.follow | 0
     gs.rng.x(snap.rx)
