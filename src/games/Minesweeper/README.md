@@ -99,3 +99,21 @@ trusting the solver's ledger to become able to fail, and the two green-tested-no
 oracle versions — are in **[`src/games/Minesweeper/README.md`](src/games/Minesweeper/README.md)**.
 Verify with `npm run sweepcheck` (`-- --mutate` = 4/4 mutants die; in the `static`
 gate) and `npm run sweepplay` (Chrome, real keys only; in `verify`).
+
+## WATCH (#1637 batch 16) — the referee sweeps its own field
+
+Y / the ▶ WATCH pill seats the fairness gate's OWN autopilot: `nextDigs` is fed
+into the real dig path (`actDig`, auto-chord intact) every sim tick, cursor
+first, one dig per 6 ticks. The first action digs the center — the original's
+guaranteed-safe click and the spot `plantAt` certifies the board around — so the
+route is honest from tick one: the gate proves every board closes zero-guess
+under exactly this solver's rules (subset-core, chord-forbidden), and
+`sweepcheck`'s seq-play witness says the same rules win for real. A mine under
+the seat is therefore impossible unless the referee lied; the watchcheck pilot
+asserts it (`end !== 'dead'` while seated, FIELD SWEPT by the ceiling). Any
+driving key or canvas tap hands back with the shared blips (the player's own
+dig lands too); the win releases the seat silently (racer rule). The seat never
+flags — flags are the player's claims, and the win condition never needed them.
+
+Verify: `npm run watchcheck -- --only minesweeper` (207 gates incl. 9 source
+pins; mutant: cut the seat feed -> exactly 6 red).
