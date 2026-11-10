@@ -1290,6 +1290,48 @@ const PILOTS = [
             rep.check('adventure: Y again releases the route', !(await watching()))
         },
     },
+    {
+        // #1637 batch 12 — BOMB DEFUSE: solvePads (engine.js) drives BOTH seats.
+        // The same crew defusecheck wins 40/40 seeds with; every action is checked
+        // against live integer state, so a mid-run re-seat is honest (reactive,
+        // not a bench script). Score is prover-only: +50/step, +500/bomb — an
+        // idle crew turns no keys and scores nothing.
+        id: 'bomb-defuse', url: `${BASE}/bomb-defuse`, hook: '__bdTest',
+        async run(page, rep) {
+            const H = '__bdTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            // attract -> crew select -> solo run (Space owns each screen)
+            await key(page, 'Space')
+            await page.waitForTimeout(300)
+            await key(page, 'Space')
+            await page.waitForTimeout(900)
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('bomb-defuse: Y seats the solver crew', await watching())
+            rep.check('bomb-defuse: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            const a = await probe()
+            const adv = (x, y) => y.score > x.score || y.bomb > x.bomb || (!!y.won && !x.won)
+            const b = await pollAdvance(page, probe, adv, a, 6000)
+            rep.check('bomb-defuse: the crew works untouched (idle hands turn no key)',
+                adv(a, b), `score ${a.score} -> ${b.score}, bomb ${b.bomb + 1}/3 step ${b.step + 1}, fuse ${Math.ceil(b.fuse / 60)}s`)
+            rep.check('bomb-defuse: still watching mid-route', await watching())
+            await page.keyboard.down('ArrowLeft')
+            rep.check('bomb-defuse: steer key takes over', !(await watching()))
+            rep.check('bomb-defuse: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('bomb-defuse: Y re-seats the crew mid-run', await watching())
+            const c = await probe()
+            const d = await pollAdvance(page, probe, adv, c, 6000)
+            rep.check('bomb-defuse: resumes from where the player left it', adv(c, d),
+                `score ${c.score} -> ${d.score}, bomb ${d.bomb + 1}/3 step ${d.step + 1}, fuse ${Math.ceil(d.fuse / 60)}s`)
+            await key(page, 'KeyY')
+            rep.check('bomb-defuse: Y again releases the crew', !(await watching()))
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -1561,6 +1603,24 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     const reg11 = readFileSync('src/config/games.js', 'utf8')
     const entryHas11 = (p, s) => { const m = reg11.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
     rep.check('registry /adventure: controls carry the WATCH line', entryHas11('/adventure', 'WATCH_HELP'))
+}
+// #1637 batch 12 — BOMB DEFUSE seats the solver crew. The honesty rules that
+// don't need Chrome (the driver itself is graded by defusecheck's 40/40 win
+// gate; these pins prove the seat wires the driver, never fakes one).
+{
+    const BD = readFileSync('src/games/BombDefuse/index.jsx', 'utf8')
+    rep.check('BOMB DEFUSE: the watch seat feeds solvePads per play tick',
+        /if \(watchingRef\.current && gsw && !gsw\.done\) \{ pads = E\.solvePads\(gsw\)/.test(BD))
+    rep.check('BOMB DEFUSE: the seat supplies seat 2 even in solo runs',
+        /g\.players > 1 \|\| watchingRef\.current/.test(BD))
+    rep.check('BOMB DEFUSE: watch never lingers — cleared at done AND at every start',
+        /watchingRef\.current && gsw && gsw\.done\) \{ watchingRef\.current = false/.test(BD)
+        && /watchingRef\.current = false; setWatching\(false\) \/\/ #1637: the old route ends with the old run/.test(BD))
+    rep.check('BOMB DEFUSE: online play no-ops the seat (no guide on the wire)',
+        /screenRef\.current === 'play' && !net\.active && g && !g\.done/.test(BD))
+    const reg12 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas12 = (p, s) => { const m = reg12.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    rep.check('registry /bomb-defuse: controls carry the WATCH line', entryHas12('/bomb-defuse', 'WATCH_HELP'))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray
