@@ -1,80 +1,85 @@
-# STATE — session 207 (2026-11-10, slot b)
+# STATE — session 208 (2026-11-10, slot a)
 
 ## What shipped
-**FLOOR BOSS: LOAD-WEIGHT CLASSES** merged as `73fa0b2` (PR #1934, closes
-#1931 — never-dry POLISH stage I filed this session, weakestStage score 5).
-Weight is the sibling rate-card to #1927's distance: parcels roll
-LIGHT 0.52 / STANDARD 0.30 / HEAVY 0.18 at pack on a THIRD side-stream rng
-(`seed ^ 0x5f356495`) — module AND dest streams byte-identical, both sigs
-golden for 8 seeds. Full trailers (law untouched) pay `6 x [1,2,3]dest x
-[1,2,3]weight` per box by the `grid[d][w]` manifest aboard — LOCALxHEAVY
-pays what LONGxLIGHT pays (18), LONGxHEAVY is the richest box (54). The dock
-is the cost: a heavy box rides aboard after `TRUCK_LOAD x 2` ticks. Pad tags
-steel H badge + bars (pixel [154,215,255] proven in Chrome), 70 Hz thud,
-`HEAVY xN` on the till. Weight rides stateHash (pad `w`, T `grid`) +
-simState (`padWeight`,`truckWeights`) additive (#1373). Harness +8 gates,
-3 new mutants (--mutate-weight/-slow/-bands), 10/10 killed; play 32/32 x2;
-watchcheck 210/210; contract 14/14. Economy 15 seeds vs live main in one
-process: wins 14/15 (main 13/15, same thin seed 2, seed 12 recovers
-853→1009), avg 1401 vs 1337. Prod content-verified: chunk `index-sI1eX4G-.js`
-carries new `padWeight` beside control `LONG HAUL OUT` — one chunk, two
-markers. https://jalfern.com/retrogames/floor-boss
+**BOMB DEFUSE: FIRST-VENT COACHING** merged as `f26886a` (PR #1935, closes
+#1932 — never-dry POLISH stage I filed this session, weakestStage score 5):
+while a run's first VENT is unlearned, the READ-STEP plate grows a teach card
+naming YOUR seat's job by key (`YOU HOLD THE BAR — PRESS B / HOLD PAD — KEEP
+DOWN` / `YOU SEAT THE NEEDLE — TAP A WHEN NEEDLE CROSSES GREEN`; nameless
+seats get the both-seats line), an amber ring pulses the bar that must be
+pinned until it IS pinned (the ring is the keep-it-down lesson), and the gauge
+rings green + `TAP!` exactly on the sim's own zone. `ventCoach(gs, you,
+taught)` is pure view math — the pegNeedle house pattern — hash-purity and
+net-twins gates prove the sim never hears about it; `hud.ventTaught` latches
+on the first `sealed` so veterans keep the clean plate. No contract/state
+change. Harness: defusecheck 105/105 (+22 gates, 2 named mutants die),
+defusedrive 17/17 (+5 live gates: ring pixels 752 before the pin → 0 under
+it, latch + quiet-after), linkcheck 75/75, contractcheck 14/14, watchcheck
+212/212, lint gates + build green. Live content-probed (`YOU HOLD THE BAR`
+beside control marker `WELCOME BACK` in prod chunk `index-Dl5RFYMg.js`):
+https://jalfern.com/retrogames/bomb-defuse. QA context added to #1812.
 
-## The session's catch — #1927 shipped inverted odds
-Its dest ladder tested LONG first then `dr < LOCAL+REGIONAL (0.86)` as
-REGIONAL: measured mix was LOCAL 18 / REGIONAL 83 / LONG 16 — REGIONAL had
-LOCAL's band (README claims 58/28/14). The spread gate only asserted
-`local > long` and squeaked red-free at 18>16. Fixed the cumulative bands,
-mix gates now demand LOCAL>REGIONAL>LONG AND LIGHT>STANDARD>HEAVY over 16
-shifts, and `--mutate-bands` proves the sentinel fails. LESSON: an order
-gate on two neighbors is not a mix law — pin the FULL ordering and size the
-sample (~200 boxes for 12-point bands; my first 85-parcel draw flipped
-STANDARD/HEAVY by pure noise and the gate honestly went red).
+**Drive fixes that were red AT MAIN today** (recorded in the BombDefuse
+README): guest-reseat hud literal dropped `turn` → `drawScene` crashed on the
+prod reseat path (main linkdrive pageerror ×3 — this branch clean); the two
+#1812 press-tick gates were reading puppeteer round-trip, not the sim tick
+(red on main on this box) — re-anchored to park at a clean baseline and
+capture the whole spring INSIDE one sync evaluate at the rising edge.
 
-## Ladder trail
-- TARGET #1927 REFUSED at claim (slot a held it, checkpoint 51 min) — slot a
-  shipped it as #1929 *mid*-ladder; claim of a TARGET that just shipped =
-  take the board's next truth, don't chase.
-- halt none; steer none; `next` #1711 hardware-stalled (audit: S1
-  code-complete); game-queue empty; feedback owned by live QA; flagship
-  READMEs gap-free → never-dry: TMD(8) skipped (gap 0 structural + phone
-  half owned-in-spirit by #1900, STATE law), MAGIC CARPET(5) then unheld
-  but scores 4 post-#1764; tie 5 FloorBoss vs BOMB DEFUSE → older registry
-  title. Filed #1931 → claimed(b) → shipped+CLOSED. QA context posted on
-  #1877 (badge legibility, thud distinguishability, dock-countdown idea).
-- HELD-dir artifact: a building issue whose why-weakest body NAMES other
-  games locks them ALL in `heldDirs` — #1927's own body held FloorBoss,
-  TalkMeDown AND BombDefuse until it merged. Read HELD changes as body
-  evidence, not lane truth.
+## The session's lessons
+- **A drive gate that reads state between evaluate round-trips measures
+  latency, not the law.** Consent now resolves instantly, so restarted runs
+  are already 25+ ticks old when probes start — the partner leads on an RAF
+  tick before the first read. Shape that survives: park (clean baseline
+  predicate), then capture tick-by-tick in ONE sync evaluate, assert on the
+  captured sequence. Red-at-main confirmed before and after (rules-8 honored:
+  one instrumented probe showed truth already ON at tick 92 — the clue).
+- **Blind key-spam into a windowed mechanic is a strike farm** (a lone turned
+  key self-strikes): join gates must react to partner state. `probeStep`
+  (DEV hook exposing kind/color/holder/sel/keys) makes joins deterministic.
+- **Hand-listed literals drift; spreads don't.** The reseat hud literal lost
+  `turn` when fields were added over two PRs. Always `{ ...newHud(), … }`.
+- **Pixel gates must sample outside standing decor**: my first ring band
+  clipped the holder bar's always-amber border and read 184 pinned vs 186
+  unpinned; bands moved outside the border read 752 → 0. Also pin only AFTER
+  the card phase (`!c.intro`) or you never sample the ring you're testing.
+- The seeded holder law `(b*7+k)%2` is deterministic: pick seeds per pattern
+  (H=2 needs vent@step2 behind a CUT join; W=6 vent@step1). Seat-0 keys are
+  Arrow*/Space/B — KeyW/F/G belong to seat 1.
 
 ## Session bookkeeping
-- #1637 stays `building` (rollout; no pushed branch, checkpoints cold —
-  b21 candidate: DF pin-tightening per session 205's notes).
-- jonq: none (no taste/priority call needed).
-- :5178 vite runs from `~/Dev/retrogames-forge-fb-weight-classes`
-  (detached 73fa0b2, node_modules symlinked) — reuse or kill before
-  strictPort. Worktree kept; branch deleted by merge.
+- Ladder: TARGET #1931 REFUSED (b held it — b shipped it as #1934
+  mid-session); no halt/steer; `next` #1711 is b's + code-complete (hardware
+  gated on Jon); game-queue empty; feedback owned by live QA session
+  (pgrep QA MASTER alive); flagship READMEs gap-free; never-dry weakest:
+  TMD(8) skipped honestly (structural CI-mic gap + live-QA-owned #1900/#1915
+  halves), FloorBoss(5, older) held by b → BombDefuse(5) → filed #1932,
+  claimed(a), shipped+CLOSED.
+- :5173 dev server runs from `~/Dev/retrogames-forge-vent-coach` (detached
+  f26886a, node_modules symlinked) — reuse or kill next session. Slot b owns
+  :5178, studio QA :5176.
+- linkdrive advisory gate `boxes sit at most one tick apart` (stall phase)
+  drifts 2–3 ticks on this box — legal within PAD_DELAY×SAMPLE_EVERY buffer;
+  main drifts more while crashing. Noted on #1935; don't chase it (rule 3).
+- No jonq (nothing taste/priority/hard-to-undo).
 
-## Next queued (slot b)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first.
-   #1637 b21 (DF pins) claimable once other slots' checkpoints are cold.
-2. If dry: never-dry again — FloorBoss keeps 3 unowned gaps (shift ladder,
-   2P seats #1144, aisle clearance); BOMB DEFUSE scores 5 with 4 unowned
-   gaps (phone VENT coaching, shrapnel physics, accent tolerance, haptics).
-3. TMD stays QA's while #1915/#1900/#1888/#1871 are open and a QA session
-   is live — do not take feedback.
+## Next queued (slot a)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue, game-first.
+   BombDefuse's remaining gaps: shrapnel physics, ~20-word voice grammar,
+   haptics — plus #1812's polish items (radar-free run, honest gaps list in
+   README); QA holds #1812 — builders don't pick it up untended.
+2. If dry: weakestStage via scripts/lib/idle.mjs (papers-please/lode/smash/
+   civ/homebody/viper/britannia/pick/tidy/shout all sit at 4).
+3. QA owns #1915/#1900/#1888/#1871 (TMD), #1906/#1907 (SI/DF), #1877 (FB),
+   #1923 (rail), #1812 (DF) — leave to the QA lane.
 
-## Notes for the next slot-b session
-- watchcheck scoping: `npm run watchcheck -- --only floor-boss` (a BARE
-  positional runs the WHOLE shelf — 10+ min, looks hung).
-- Prod sweep recipe, refined: the entry chunk does NOT contain lazy game
-  code; list `assets/index-*.js` names FROM the entry's text (keep the
-  `index-` prefix in your regex!) and fetch each; require new-marker +
-  control-marker in the SAME chunk.
-- `pkill -f watchcheck` before a scoped watchcheck (orphan budget hold).
-- SI pins stay tight (1400/220/6200): any SI brain change runs
-  `invaderscheck -- --mutant` FIRST. New FB gates: dest mix is the
-  band-sentinel — a future dest change that reorders bands dies there.
+## Notes for the next slot-a session
+- Reuse the join-smart probe pattern for any co-op drive: react to partner
+  truth (keys/armed/held), never spam; and re-anchored press-tick shape is
+  the model for feel gates on this box.
+- Rate-limit etiquette, main-ok `nightly cancelled` = pass quirk, prod
+  two-marker recipe (enumerate entry's index-*.js chunks and grep each):
+  unchanged, worked verbatim today.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
