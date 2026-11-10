@@ -1,73 +1,77 @@
-# STATE — session 205 (2026-11-10, slot b)
+# STATE — session 206 (2026-11-10, slot a)
 
 ## What shipped
-**WATCH batch 20 — SPACE INVADERS re-aim + edge-bounce fold** merged as
-`a67e699` (PR #1928, Part of #1637; TARGET #1637 claimed cleanly 162 min
-after slot a's last checkpoint). The Y brain takes an aligned shot the tick
-it appears (was: marching to the lowest invader's column while another sat
-lined up — ~500 green fire-gate ticks/seed wasted) and leads the march
-THROUGH the wall bounce (straight leads died on edge reversals). Measured,
-20 seeds: slowest clean clear **1857→1265**, worst inter-kill stall **172**
-(pins 2100/450 → 1400/220, both proven red on deletion: fold-off 236,
-re-aim-off 264), new fort-preservation pin **6215/6560** (kills the b19
-tiebreak mutant that b20 otherwise let live). 20/20 clean, 0 deaths,
-5/5 mutants die. Prod content-verified: live chunk `index-CBnLQpVr.js`
-carries `<=2.5&&(!` (the aligned-pass brace; old build answered `<=2.5&&!`).
+**FLOOR BOSS: FREIGHT TIERS** merged as `ba10698` (PR #1929, closes #1927 —
+never-dry POLISH stage I filed this session, weakestStage score 5). Distance
+classes price the haul: each parcel rolls LOCAL 0.58 / REGIONAL 0.28 / LONG
+HAUL 0.14 at pack time on a SIDE-STREAM rng (`seed ^ 0x9e3779b9`) — module
+stream byte-identical to pre-tier main, pinned by golden order-signatures for
+8 seeds. Full trailers (#1921 law untouched) pay 6x[1,2,3] per box by each
+box's own destination; dribbles ride free. The road is the cost: send-off
+commits TRIP_TICKS [0,750,1650] by farthest class aboard; on the road the
+truck answers neither cap/age law nor tap-call (tap = silent wait, never a
+fee for a truck that cannot come). Pad tags far posts amber x2 / violet x3,
+dock counts the trip home in world ticks, fx names the class. Dest/away/tiers
+ride stateHash + simState (`padDest`,`truckAway`,`truckFar`) additive (#1373).
+Autopilot skips pad steps while away. Measured: wins 13/15 = main, same thin
+seeds (2,12), avg 1337 vs main 1268 — README records it honestly. Harness:
+floorbosscheck all green +10 gates, 7 mutants killed (new --mutate-tiers,
+--mutate-miles); floorbossplay 30/30 x2 (violet tag pixels [176,122,255],
+road commit in Chrome, tap-on-road silence); watchcheck floor-boss 210/210;
+contractcheck floor-boss 14/14. Live content-probed (`ON THE ROAD` +
+`LONG HAUL OUT` beside `STRANDED ON THE PAD` in `index-Coy2oHU6.js`):
+https://jalfern.com/retrogames/floor-boss. QA context added to #1877.
 
-## Ladder trail
-- TARGET #1637 claimed b (slot a idle inside it since batch-19 ship).
-- No halt/steer; `next` #1711 PLAICRAFT S1 hardware-stalled (unchanged);
-  game-queue empty; jonq empty. TARGET stood.
-
-## Defender: NOT shipped, on purpose (measured dead ends)
-Far-side haul interception attempted three ways on b19's brain:
-1. strict reachability (concede unreachable hauls, pivot to dives) — floor
-   7800→5850, catches down; 2. weight pivot (lose VIP only when all hauls
-   lost) — floor →3750, waves 19→18/20; 3. reachable-diver VIP ×0.5 —
-   totals +18% score/+15 waves but floor →3150, deaths +3. At 4000 px the
-   far side is outside the ~210-tick rescue window (haul crest y<70 at
-   0.72 px/t; crossing ≥250 t at cruise 6). b19's engage-everything law is
-   the honest optimum; README gap now records the three dead ends. LESSON:
-   DF witness variance is huge — judge a DF brain change on SEED FLOOR +
-   waves ≥1 count + deaths, never on total score.
-
-## Lessons
-- **Name-collision in Node probes**: importing `watchRoute` from two sims
-  into one file silently shadows; SI's brain returned empty input on the DF
-  world and the probe measured a do-nothing patrol (all-zero score = tell).
-  Alias cross-game imports (`watchRoute as siWatch`).
-- **A tightened pin can orphan an old mutant**: b20's fold made b19's
-  aimBlocked-tiebreak mutant survive; fixed by adding a metric the tiebreak
-  owns (bricks standing at clear), not by deleting the mutant.
-- Probe-and-revert on law questions: three DF configs measured against the
-  untouched b19 module in one process (git show HEAD > /tmp/ forge/olddef).
-  Fast, honest, decisive.
+## The session's lessons
+- **Road-wait turns every dock-timed drive gate into a race with the mixer.**
+  auto-dispatch floods the pad while the truck is gone, so a "wait for quiet
+  pad" loop never sees its instant; and the quiet instant itself commits a new
+  far haul mid-settle. Fix: verb gates run `auto=false` and settle dock+truck+
+  road in ONE loop (break only when pad empty AND mode out AND away 0). Pin
+  LOCAL (`pad[i].d=0`) on parcels whose leg timings a gate measures.
+- **A tap can be swallowed by a bot standing on the OUT cell** (legit select
+  law) — drive gates needing the pad verb clear bots off it first.
+- **Prod half-propagation, again, caught by the control-marker recipe**: the
+  entry rotated DURING probing (BT6LaXQJ → hYKL69k4); the first "hit" was a
+  chunk carrying a marker string from a comment era… Require BOTH a new marker
+  and a standing control marker in the SAME chunk before declaring live —
+  never one string, never a hash.
+- Literal-pinning (session 204) paid off immediately: TRIP_TICKS 1650 was
+  caught mismatching my stale 2000 pin on first run — the check refused to
+  bless code it didn't measure.
 
 ## Session bookkeeping
-- #1637 stays `building` (rollout; batch 21 claims fresh — no pushed branch
-  left). Shipped comment with live URL + content sig posted.
-- #1906 (SI watch-pause tell, QA): b20 context NOT yet added — the pause is
-  now ≤3 s; QA should re-verify the tell against the faster route.
-- No jonq (nothing taste/priority/hard-to-undo; open questions stayed none).
+- Ladder: TARGET #1637 REFUSED (b alive, checkpoint 9 min); no halt/steer;
+  `next` #1711 stalled on Jon (#1730 Hold); queue empty; feedback owned by
+  live QA; flagship READMEs gap-free → never-dry: TMD(8) skipped — all gaps
+  QA-owned-in-spirit (#1900/#1923) or structural; MAGIC CARPET(5) QA-held
+  (#1764); tie 5 FloorBoss vs BOMB DEFUSE → older registry title. Filed
+  #1927 → claimed(a) → shipped+CLOSED. Slot b shipped WATCH b20 (#1928)
+  mid-session — no overlap.
+- :5173 dev server runs from `~/Dev/retrogames-forge-fb-freight-tiers`
+  (detached ba10698, node_modules symlinked) — reuse or kill next session.
+  Slot b owns :5178, studio QA :5176.
+- No jonq (nothing taste/priority/hard-to-undo).
 
-## Next queued (slot b)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first.
-   #1637 batch 21: SI wave-2+ pacing (fireChance cap 0.05 chokes late
-   waves; README honest), DF rescue-window re-check is NOT a candidate
-   (measured dead ends this session).
-2. If dry: never-dry weakestStage (idle.mjs); TMD gaps owned by QA
-   (#1915/#1900/#1888/#1871) — do not take feedback while QA is live.
-3. Do NOT own the bombdrive seed-7 pair — #1871 until QA ships the fix.
+## Next queued (slot a)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue, game-first.
+   #1637 is b's while its checkpoints stay warm (b21 = DF pin-tightening per
+   its STATE — check before claiming).
+2. If dry: weakestStage via scripts/lib/idle.mjs. FloorBoss's new honest gap
+   (load-weight classes) is a candidate; keep clear of #1877's polish surface.
+3. QA owns #1915/#1900/#1888/#1871 (TMD), #1906/#1907 (SI/DF), #1877 (FB
+   polish incl. freight-tier items), #1923 (rail) — builders don't pick them
+   up untended.
 
-## Notes for the next slot-b session
-- :5178 vite from `~/Dev/retrogames-forge-watch-b20` may still run —
-  verify cwd, reuse or kill before strictPort.
-- `pkill -f watchcheck` before a scoped watchcheck (orphan budget hold).
-- New SI pins are tight (1400/220/6200): any future SI brain change runs
-  `npm run invaderscheck -- --mutant` FIRST; a green run without mutants
-  proves nothing here.
-- Prod sig recipe: pick a brace-level diff from local `dist/assets` after
-  build, verify old-vs-new byte diff is minification-stable, then sweep.
+## Notes for the next slot-a session
+- Economy-tuning method reused: sweep 15 seeds vs a LIVE main-checkout
+   baseline (my run: 13/15 avg 1268 — re-measure, STATE's 1197 era shifted
+   when more packs landed), tune TRIP_TICKS before rates, settle wins parity
+   with main before pinning gates.
+- floorbossplay verb gates now mutate `auto` and bot positions — a future
+   shift-law change must keep those settle loops honest (one loop, three
+   conditions).
+- Rate-limit etiquette, main-ok cancelled quirk, prod recipe: unchanged, above.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
