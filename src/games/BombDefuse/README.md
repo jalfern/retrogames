@@ -104,6 +104,7 @@ npm run defuselinkcheck                # 73 gates: online protocol incl. in-flig
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
 npm run defusedrive                      # real-key drive: start→play→boom→restart
+DEV_PORT=5173 npm run watchcheck -- --only bomb-defuse   # WATCH pilot: seat/advance/takeover/re-seat/resume/release + 5 source pins
 npm run defuselinkdrive                # two browsers over a live relay: join→lockstep→hash→walkaway→in-flight reseat
 ```
 
@@ -121,7 +122,11 @@ the fuse dies — 7b's flip/players/finish gates go red (the hand-back has teeth
 - **CLOSED by #1838**: online mid-run rejoin landed at the next `go`, not
   in-flight — the hand-back (`rejoin`/`back`/backfill + shared flip) seats the
   returner mid-run; linkcheck 7b/7c/7d + defuselinkdrive prove it.
-- No WATCH seat / model seat yet (#1637 rollout can add it).
+- **CLOSED by #1637 batch 12**: the WATCH seat shipped — Y seats `solvePads`
+  (the same two-hand crew defusecheck wins 40/40 seeds with) driving both
+  seats; any input takes back your hand, online play no-ops the seat.
+  watchcheck pilot + 5 source pins prove it. A model seat (learned policy)
+  remains open.
 - VENT holder is keyboard-only on phones (B button = HOLD exists, but the
   holder/worker role labels could coach harder on first VENT).
 - Boom animation is 2D flash + debris; no chunk-of-bomb shrapnel physics.
