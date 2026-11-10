@@ -220,6 +220,41 @@ r.check('the countdown lifts to GO (real 3-2-1)', go, `phase=${(await probe()).p
     r.check('held ArrowLeft steers the kart (heading changes)', turned !== null && turned < 0, `Δheading=${turned === null ? 'none' : turned.toFixed(3)}`)
 }
 
+// ---- #1857: the notch profile is visible on REAL keys ----
+// Page-side rAF sampler (immune to RPC jitter) records steerVis every frame
+// while a real ArrowLeft key press is held. Pre-notch, keyboard steering was
+// only ever 0 or ±1 — so a |steerVis|≈0.55 sample appearing (and coming first,
+// before the sample flips to ±1 lock when the hold crosses the notch window)
+// is end-to-end proof of the notch through keydown → keys map → sim → render
+// state. The hold also proves it RELEASES: the tail is 0.
+{
+    const flatI = TRACK.pts.reduce((best, p, i) => (Math.abs(p.k) + Math.abs(p.bank) < Math.abs(TRACK.pts[best].k) + Math.abs(TRACK.pts[best].bank) ? i : best), 0)
+    let soft = 0; let full = 0; let firstNz = null; let tailZero = false; let tailStr = ''
+    for (let attempt = 0; attempt < 3 && !(soft >= 2 && full >= 4 && tailZero); attempt++) {
+        await seed(flatI, 5)
+        await page.waitForTimeout(120) // let a starved rAF chain drain before sampling
+        await page.evaluate(() => {
+            window.__s = []
+            const g = window.__cometTest.game(); const P = g.karts[0]
+            const f = () => { window.__s.push(P.steerVis); if (window.__s.length < 40) requestAnimationFrame(f) }
+            requestAnimationFrame(f)
+        })
+        await page.keyboard.down('ArrowLeft')
+        await page.waitForTimeout(500)
+        await page.keyboard.up('ArrowLeft')
+        await page.waitForTimeout(300)
+        const s = await page.evaluate(() => window.__s)
+        soft = s.filter((v) => Math.abs(Math.abs(v) - 0.55) < 0.02).length
+        full = s.filter((v) => Math.abs(v) === 1).length
+        firstNz = s.find((v) => v !== 0)
+        tailZero = s.length > 8 && s.slice(-4).every((v) => v === 0)
+        tailStr = s.slice(-4).join(',')
+    }
+    r.check('#1857: real key shows the notch profile — soft nudge first, then full lock, released clean',
+        soft >= 2 && full >= 4 && Math.abs(Math.abs(firstNz || 0) - 0.55) < 0.02 && tailZero,
+        `${soft} soft / ${full} full samples, first ${firstNz}, tail ${tailStr}`)
+}
+
 // ---- the drift ladder charges and pays on real keys ----
 // The drift the keyboard can actually hold: Space stays down while the steering
 // ZAGZAGS (left/right swapped every ~8 ticks) — each leg slides the kart out,
