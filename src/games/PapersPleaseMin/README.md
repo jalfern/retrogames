@@ -55,6 +55,20 @@ day; the queue resets and the rulebook grows each morning; day 7 survives =
 win. `autopilot()` — the perfect inspector — produces the script that IS
 the attract demo, replayed tick for tick by the shell.
 
+## The calendar (one clock since #1889)
+
+`dadd` walks the printed wall (real month lengths, no leap days — Arstotzka
+here never emits Feb 29) and carries BOTH directions across month and year
+seams. `dnum` is exact days-since-epoch (`y*365 + MPREFIX[m-1] + d`), so
+`dnum(dadd(x, n)) − dnum(x) === n` for every constructible date — the serial
+the rules compare and the calendar the wall prints cannot disagree. The week
+starts OCT 27 and rolls through a real month-end: day 5 is OCT 31, day 6
+NOV 01 — and day 6's EXPIRED test paper prints the week's first cross-month
+verdict (`EXPIRED 1982.10.31 < TODAY 1982.11.01`), the date arithmetic the
+original's guard does every shift. Rolling the week is also how a real bug
+surfaced: `dadd` had no backward carry (it shipped NOV 00 as day 6's
+"yesterday") — the day-6 gates now pin the carry, both directions.
+
 ## Curfew's collision (a documented, proven clash)
 
 Day 7 adds CURFEW (validity < 7 days is void), which harshly outranks the
@@ -65,7 +79,7 @@ spent by day 4 by construction) — a game rule defended by the generator's
 own audit, which is exactly how this file grew CURFEW in the first place:
 the rulebook-awakening check caught day 7 as a no-op day.
 
-## Mutants (7, all die under `npm run paperscheck -- --mutate`)
+## Mutants (10, all die under `npm run paperscheck -- --mutate`)
 
 `<`→`<=` expiry; wanted by name only; IDREQ ignoring the DOB; the scale
 reading the paperwork (witness lies); species coverage becoming luck;
@@ -73,7 +87,10 @@ legal fill becoming trap fill (zero-slack); STRIKE_MAX stretched so pure
 chaos survives day one. The seventh replaced an earlier stateHash mutant
 that SURVIVED its first life — nothing in the suite consumes the hash, so
 blindness to strikes was invisible: a mutant the checks cannot reach is
-décor, not a test.
+décor, not a test. The ninth re-freezes `dnum` at uniform-31 (the two-clock
+regression #1889 removed — short-month seams read grace wrong); the tenth
+strips `dadd`'s backward carry (NOV 00 ships) — the bug the rolled week
+actually found.
 
 ## Gates
 
@@ -84,9 +101,11 @@ survives the week, pixels vs sim proven side by side).
 
 ## Honest gaps
 
-- Dates are serials `y*372+(m-1)*31+d`; the generator never crosses the
-  31st, so order is exact. A leap-aware calendar is not worth the code
-  this game needs.
+- **CLOSED by #1889 (2026-11-10):** dates were serials `y*372+(m-1)*31+d`
+  and the generator never crossed the 31st. The week now rolls OCT 27 →
+  NOV 02 and `dnum` is exact days-since-epoch — one clock with `dadd`,
+  seams included; the CALENDAR section of `paperscheck` pins the identity
+  law, the roll, the cross-month witness and short-month CURFEW math.
 - The wanted sheet caps at 4 printed entries; a fifth would have to shrink
   the wall font. Decidability is unaffected (it is graded from the model,
   and planted entries are always ≤ the printed ones).

@@ -12,15 +12,25 @@
 // the suite goes red. `reads` on each rule is the promise decide keeps;
 // the evidence string is the promise the booth keeps to the player.
 
-// ---- calendar: tiny self-contained serials (y*372 + (m-1)*31 + d). Dates
-// never cross the 31st, so the serial is an exact order for this game.
-export const dnum = (dt) => dt.y * 372 + (dt.m - 1) * 31 + dt.d
-export const dfmt = (dt) => `${dt.y}.${String(dt.m).padStart(2, '0')}.${String(dt.d).padStart(2, '0')}`
+// ---- calendar: serials over REAL month lengths. y*365 + prefix(MDAYS)[m-1]
+// + d makes the serial exact days-since-epoch, so dnum and dadd are ONE clock:
+// dnum(dadd(x, n)) - dnum(x) === n for every date this sim can build, seams
+// included. Arstotzka here has no leap days — dadd never emits Feb 29 — so
+// 365-day years and MDAYS agree for all constructible dates (paperscheck's
+// CALENDAR section pins the identity law and the short-month CURFEW seam).
 const MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+const MPREFIX = MDAYS.reduce((a, k) => [...a, (a.at(-1) || 0) + k], [0]).slice(0, 12)
+export const dnum = (dt) => dt.y * 365 + MPREFIX[dt.m - 1] + dt.d
+export const dfmt = (dt) => `${dt.y}.${String(dt.m).padStart(2, '0')}.${String(dt.d).padStart(2, '0')}`
 export const dadd = (dt, n) => {
     let { y, m, d } = dt
     d += n
     while (d > MDAYS[m - 1]) { d -= MDAYS[m - 1]; m += 1; if (m > 12) { m = 1; y += 1 } }
+    // backward carry: the day-6 EXPIRED paper asks for yesterday, and NOV 01's
+    // yesterday is OCT 31 — not NOV 00. (The frozen Oct 11 start never took
+    // dadd below d=1; #1889's rolled week crossed the seam and shipped the
+    // missing carry. paperscheck's CALENDAR section pins both directions.)
+    while (d < 1) { m -= 1; if (m < 1) { m = 12; y -= 1 } d += MDAYS[m - 1] }
     return { y, m, d }
 }
 // adult = the printed DOB put them on earth 18 printed years before today.

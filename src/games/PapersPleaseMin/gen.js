@@ -40,7 +40,11 @@ for (const c of COUNTRIES) for (const city of CITIES[c]) CITY2C[city] = c
 const FIRST = ['EMIL', 'KATYA', 'BORIS', 'ILIA', 'MARTA', 'ANJA', 'DRAGAN', 'VOLO', 'SERDA', 'PETR']
 const LAST = ['KOSTOV', 'DRENIN', 'VASEK', 'LAGODA', 'ORLOV', 'TOLKA', 'ZEMEK', 'PALIN']
 
-export const START_DATE = { y: 1982, m: 10, d: 11 }
+// Late-October start, like the original's campaign: the week crosses a REAL
+// month-end (OCT 27…31, NOV 01–02). Day 6's EXPIRED test paper prints the
+// first cross-month verdict the booth renders — EXPIRED 1982.10.31 < TODAY
+// 1982.11.01 — the date arithmetic the border guard does every shift.
+export const START_DATE = { y: 1982, m: 10, d: 27 }
 
 // The trap species: six ways a careless eye convicts an innocent paper.
 // Each names the rule it tempts you to misapply; a species cannot run
