@@ -404,8 +404,14 @@ see item 5).
   anaglyph ships — the world renders twice from ±0.60u parallel cameras and
   the post chain combines left→red / right→cyan (bloom is shared; the HUD
   stays flat mono). `V` toggles, `?stereo=1` opens on a fresh link, the
-  choice persists. Still open: LCD-shutter/interlace modes — the last stereo gap is LCD-shutter/
-  interlace stereo; the HRTF half of #1746 item 7 shipped at stage 5 (below).
+  choice persists. **Line mode closed by #1764 item 8:** `T` cycles the glass
+  — anaglyph ↔ ROW-INTERLACED line mode (even physical rows to the left eye,
+  odd to the right, both at full colour; a glass press from off puts the
+  glasses ON at the new type). `?stereo=i` opens line mode on a fresh link;
+  the type persists in `mc-stereo-mode` beside the power. What no browser can
+  ship is the shutter half: LCD-shutter glasses need a hardware sync signal a
+  page cannot emit — interlace was their software feed, and that part is here;
+  the shutter sync itself stays hardware-bound, not a gap of this engine.
 - Water is shader waves with self-shadowing, sun-linked sparkle and foam lace
   tracing the shoreline. **CLOSED by #1764 item 4 stage 1:** the depth bands are
   now hard 4-level bands whose palette index marches one level every 6 sim ticks

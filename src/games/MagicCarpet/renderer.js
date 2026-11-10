@@ -840,12 +840,29 @@ void main(){
 }
 `, { uL: { value: null }, uR: { value: null } }))
     const scAnaglyph = mkScene(anaglyphMesh)
+    // #1764 item 8: ROW-INTERLACED stereo — the shutter-era "line mode": every
+    // other scan line carries the other eye (even physical rows left, odd right;
+    // gl_FragCoord.y = row + 0.5, so floor(y) is the row index). Row-alternate
+    // was how soft stereo reached row-interlaced LCD panels and shutter glasses
+    // without a channel hack — each eye gets the full colour at half the vertical
+    // lines, the inverse trade of anaglyph. No ghost-crush: same period law.
+    const interlaceMesh = new THREE.Mesh(quad, qmat(`
+precision highp float; uniform sampler2D uL, uR; varying vec2 vQ;
+void main(){
+    gl_FragColor = mod(floor(gl_FragCoord.y), 2.0) < 1.0 ? texture2D(uL, vQ) : texture2D(uR, vQ);
+}
+`, { uL: { value: null }, uR: { value: null } }))
+    const scInterlace = mkScene(interlaceMesh)
     // #1790 eye separation, world units. At the carpet's own scale (pearls hover
     // ~10u away, the castle tens of units) this is a strong-but-comfortable pop:
     // ~9 px of parallax at arm's length, ~1 px at the horizon — parallel view,
     // converged at infinity, the same cheat every stereo card of the era used.
     const IPD = 0.60
     let stereo = false
+    // #1764 item 8: which combine the glasses-free mode uses — 'anaglyph' (the
+    // #1790 default) or 'interlace' (row-alternate lines). Power (stereo) and
+    // glass type (stereoMode) are separate switches: V flips power, T cycles glass.
+    let stereoMode = 'anaglyph'
 
     // ---- CPU particle pool → instanced quads
     const parts = []
@@ -1410,10 +1427,19 @@ void main(){
             renderEye(false)
             renderer.setRenderTarget(rtEyeR); renderer.render(scComp, quadCam)
             camera.position.addScaledVector(right, -IPD * 0.5) // restore the head
-            anaglyphMesh.material.uniforms.uL.value = rtEyeL.texture
-            anaglyphMesh.material.uniforms.uR.value = rtEyeR.texture
-            renderer.setRenderTarget(null)
-            renderer.render(scAnaglyph, quadCam)
+            if (stereoMode === 'interlace') {
+                // #1764 item 8: row-alternate line mode — both eyes at full colour,
+                // every other scan line to the other eye (the shader owns parity).
+                interlaceMesh.material.uniforms.uL.value = rtEyeL.texture
+                interlaceMesh.material.uniforms.uR.value = rtEyeR.texture
+                renderer.setRenderTarget(null)
+                renderer.render(scInterlace, quadCam)
+            } else {
+                anaglyphMesh.material.uniforms.uL.value = rtEyeL.texture
+                anaglyphMesh.material.uniforms.uR.value = rtEyeR.texture
+                renderer.setRenderTarget(null)
+                renderer.render(scAnaglyph, quadCam)
+            }
         } else {
             renderEye(true)
             renderer.setRenderTarget(null)
@@ -1436,6 +1462,10 @@ void main(){
         setStereo: (on) => { stereo = !!on },
         stereoOn: () => stereo,
         stereoIPD: () => IPD,
+        // #1764 item 8: the glass type is its own switch — 'anaglyph' | 'interlace'.
+        // Anything unknown lands on the #1790 default, never on a dark screen.
+        setStereoMode: (m) => { stereoMode = m === 'interlace' ? 'interlace' : 'anaglyph' },
+        stereoModeName: () => stereoMode,
         particleCount: () => parts.length,
         ashCount: () => parts.reduce((n, p) => n + (p.kind === 'ash' ? 1 : 0), 0),
         smokeCount: () => smoke.geo.instanceCount,
