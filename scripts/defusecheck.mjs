@@ -7,6 +7,7 @@ import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
     TURN, turnStep, turnClick, keyAngle,
+    REDLINE, PEG, pegNeedle,
 } from '../src/games/BombDefuse/engine.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -310,6 +311,57 @@ console.log('\n— key-turn feel (#1812 item 2) —')
         'the pump is defined and runs on every sim path — attract, net and local',
         String((jsx.match(/pumpTurnPoses\(/g) || []).length))
     ok(jsx.includes('sfx.ratchet()') && jsx.includes('sfx.ratchetBack()'), 'the detent wires both click directions in the pump')
+}
+
+console.log('\n— gauge redline (#1812 item 5) —')
+{
+    // Pure view math, the item-2 house pattern: past REDLINE the pointer stops
+    // following the number and PEGS at the end stop; the hot flag lights the
+    // bezel shake and the red glass glint. Mutants (README): a passthrough
+    // clamp reddens the sweep gate; always-hot reddens the ~900-exact gate;
+    // drawing raw units reddens the view pins.
+    ok(REDLINE > 0 && REDLINE < PEG && PEG < 1000,
+        'constants sane — redline under the end stop, stop inside full scale')
+    ok(!pegNeedle(0).hot && pegNeedle(0).drawn === 0, 'mid-scale rides through unpegged')
+    ok(!pegNeedle(REDLINE).hot && pegNeedle(899).drawn === 899,
+        'the redline is exact at ~900 — the line itself is not yet hot')
+    const up = pegNeedle(1000), dn = pegNeedle(-1000)
+    ok(up.hot && dn.hot && up.drawn === PEG && dn.drawn === -PEG,
+        'full-scale swings peg at the stop, both sides symmetric')
+    ok(pegNeedle(913).hot && pegNeedle(913).drawn === 913 && pegNeedle(946).drawn === PEG,
+        'hot starts above the redline; only units past the stop are dropped')
+    // sweep law — one full needle sine: hot comes in exactly two contiguous
+    // windows (over the top, under the bottom), drawn never beats the stop,
+    // and tracks raw 1:1 anywhere cold.
+    let hotRuns = 0, wasHot = false, hotTicks = 0, over = 0, offTrack = 0
+    for (let t = 0; t < 360; t++) {
+        const raw = needleOf({ needleT: t, phase: 0 })
+        const { hot, drawn } = pegNeedle(raw)
+        if (hot && !wasHot) hotRuns++
+        if (Math.abs(drawn) > PEG) over++
+        if (!hot && drawn !== raw) offTrack++
+        if (hot) hotTicks++
+        wasHot = hot
+    }
+    ok(hotRuns === 2 && over === 0 && offTrack === 0 && hotTicks > 0,
+        'one full sweep: two peg windows, nothing beats the stop, clean below',
+        `runs=${hotRuns} hotTicks=${hotTicks}`)
+    // the sim stands unchanged: the view calls can't move gs or the hash.
+    const rv = createGame(7, 2)
+    while (!rv.done && curStep(rv).kind !== VENT) drive(rv, solvePads(rv))
+    const h0 = hash(rv)
+    pegNeedle(needleOf(rv)); pegNeedle(2000); pegNeedle(-2000)
+    ok(hash(rv) === h0, 'pegNeedle cannot touch gs — hash identical through the view calls')
+    // view side wired: the needle rides the pegged units; shake + glint are hot-gated.
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(jsx.includes('E.pegNeedle(E.needleOf(gs))') && jsx.includes('peg.drawn'),
+        'index.jsx draws the needle from the pegged units')
+    ok(jsx.includes('const jx = hot ?') && jsx.includes('gx = cx + jx'),
+        'the bezel shake runs only while hot')
+    ok(jsx.includes('hot glint') && /rgba\(255,74,62/.test(jsx.slice(jsx.indexOf('hot glint'))),
+        'the red glint lights through the glass only while hot')
+    ok(!/const nd = \(\(E\.needleOf\(gs\) \/ 1000\)/.test(jsx),
+        'the raw-unit needle angle is gone — nothing draws an unpegged needle')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)

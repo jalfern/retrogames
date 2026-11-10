@@ -264,31 +264,52 @@ function drawBombView(g, gs, now, opts = {}) {
     } else {
         // VENT — gauge + stabilizer bars
         const unvented = live && !gs.held
+        // #1812 item 5: the gauge REDLINES — past ~900 units the needle pegs at
+        // the end stop, the bezel shakes, and the glass glints red at the hot
+        // arc. Pure view: gs stays the sim truth (E.pegNeedle is pure), and the
+        // shake/glint freeze with the world because gs stops swinging its needle.
+        const peg = E.pegNeedle(E.needleOf(gs))
+        const hot = peg.hot && live
+        const jx = hot ? Math.sin(now * 0.11) * 1.6 : 0
+        const jy = hot ? Math.cos(now * 0.13) * 1.6 : 0
+        const gx = cx + jx, gy = cy + 18 + jy
         // gauge face
-        g.fillStyle = '#0b0e07'; g.beginPath(); g.arc(cx, cy + 18, 66, 0, 7); g.fill()
+        g.fillStyle = '#0b0e07'; g.beginPath(); g.arc(gx, gy, 66, 0, 7); g.fill()
         g.strokeStyle = unvented && Math.floor(now / 200) % 2 ? C.red : C.chrome
-        g.lineWidth = 3; g.beginPath(); g.arc(cx, cy + 18, 66, 0, 7); g.stroke(); g.lineWidth = 1
+        g.lineWidth = 3; g.beginPath(); g.arc(gx, gy, 66, 0, 7); g.stroke(); g.lineWidth = 1
         // ticks
         for (let d = -120; d <= 120; d += 20) {
             const rad = ((d - 90) * Math.PI) / 180
             g.strokeStyle = d >= 60 ? C.red : C.chrome
             g.beginPath()
-            g.moveTo(cx + Math.cos(rad) * 56, cy + 18 + Math.sin(rad) * 56)
-            g.lineTo(cx + Math.cos(rad) * 62, cy + 18 + Math.sin(rad) * 62)
+            g.moveTo(gx + Math.cos(rad) * 56, gy + Math.sin(rad) * 56)
+            g.lineTo(gx + Math.cos(rad) * 62, gy + Math.sin(rad) * 62)
             g.stroke()
+        }
+        // #1812 item 5: hot glint — the red arc lights through the glass,
+        // pulsing, while the needle is pegged.
+        if (hot) {
+            const pulse = 0.5 + 0.5 * Math.sin(now * 0.02)
+            g.strokeStyle = `rgba(255,74,62,${(0.35 + 0.45 * pulse).toFixed(3)})`
+            g.lineWidth = 5; g.shadowColor = C.red; g.shadowBlur = 10
+            g.beginPath(); g.arc(gx, gy, 60, (-30 * Math.PI) / 180, (30 * Math.PI) / 180); g.stroke()
+            g.shadowBlur = 0; g.lineWidth = 1
         }
         // green zone arc — map needle-units (-1000..1000) to gauge degrees (-90..90)
         const a0 = ((((gs.zone - E.ZONE_HALF[gs.bomb]) / 1000) * 90) - 90) * Math.PI / 180
         const a1 = ((((gs.zone + E.ZONE_HALF[gs.bomb]) / 1000) * 90) - 90) * Math.PI / 180
         g.strokeStyle = C.green; g.lineWidth = 9
         g.shadowColor = C.green; g.shadowBlur = 8
-        g.beginPath(); g.arc(cx, cy + 18, 48, a0, a1); g.stroke()
+        g.beginPath(); g.arc(gx, gy, 48, a0, a1); g.stroke()
         g.shadowBlur = 0; g.lineWidth = 1
-        // needle
-        const nd = ((E.needleOf(gs) / 1000) * 90 - 90) * Math.PI / 180
-        g.strokeStyle = unvented ? '#ff8a7e' : '#fff2ea'; g.lineWidth = 2.5
-        g.beginPath(); g.moveTo(cx, cy + 18); g.lineTo(cx + Math.cos(nd) * 54, cy + 18 + Math.sin(nd) * 54); g.stroke(); g.lineWidth = 1
-        g.fillStyle = C.brass; g.beginPath(); g.arc(cx, cy + 18, 5, 0, 7); g.fill()
+        // needle — rides the PEGGED units, so it parks against the stop
+        const nd = ((peg.drawn / 1000) * 90 - 90) * Math.PI / 180
+        g.strokeStyle = hot ? '#ff4a3e' : unvented ? '#ff8a7e' : '#fff2ea'
+        if (hot) { g.shadowColor = C.red; g.shadowBlur = 8 }
+        g.lineWidth = 2.5
+        g.beginPath(); g.moveTo(gx, gy); g.lineTo(gx + Math.cos(nd) * 54, gy + Math.sin(nd) * 54); g.stroke(); g.lineWidth = 1
+        g.shadowBlur = 0
+        g.fillStyle = C.brass; g.beginPath(); g.arc(gx, gy, 5, 0, 7); g.fill()
         g.fillStyle = C.label; g.font = '8px "Press Start 2P", monospace'; g.fillText('PRESSURE', cx, cy + 96)
         // #1831: the role line lived at y=172 — behind the gauge face, so a
         // newcomer couldn't read which hand holds and which seats. It rides

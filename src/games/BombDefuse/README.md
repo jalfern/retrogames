@@ -99,7 +99,7 @@ lockstep-by-sampling-law (#531), same shape as the other four co-op titles:
 ## Verify
 
 ```bash
-npm run defusecheck                      # 72 gates: rules, ledger, replay, slack, source pins, key-turn feel
+npm run defusecheck                      # 83 gates: rules, ledger, replay, slack, source pins, key-turn feel, gauge redline
 npm run defuselinkcheck                # 73 gates: online protocol incl. in-flight reseat (7b/7c/7d)
 CONTRACT_ONLY=bomb-defuse npm run contractcheck
 DEV_PORT=5178 npm run plaicraft:evidence -- --self-test   # fifth-title synths + mutants
@@ -118,6 +118,11 @@ spring — teleport returns) → lag/overshoot/settle/click gates red; `RATCHET:
 → 72/72. `defusedrive` re-proves the law in a real browser tick-exact: seat-1
 truth ON while the pose is still 0 (STAGGER hold), a mid-swing frame, then
 home (|pose−1|≤0.06) under the held truth.
+Gauge redline mutants (#1812 item 5, `pegNeedle` in `engine.js`): passthrough
+clamp (`drawn = raw`) → sweep + full-scale + hash-adjacent gates 3 red; always-
+hot (`hot: true`) → the two cold-ride gates red. Both die on restore → 83/83.
+View: `index.jsx` VENT gauge rides `peg.drawn`, and only while hot the bezel
+shakes (±1.6 px per frame) and the red arc at d≥60 glints through the glass.
 `npm run defuselinkcheck -- --mutate` kills the walkaway demote → its 4 gates
 report the freeze instead and the run dies with a dead seat (the law has teeth).
 `npm run defuselinkcheck -- --mutate-reseat` kills the shared players flip →
