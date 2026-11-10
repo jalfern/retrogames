@@ -291,6 +291,12 @@ void main(){
 }
 `
 
+// #1764 item 4 stage 1 — the original's 4-bit palette-cycled ocean:
+// the depth bands are HARD levels (no smoothstep between them) and the
+// palette index marches every stepTicks of world time, so colours flow
+// through fixed wave shapes like the 1994 original's palette animation.
+export const WAVE_CYCLE = { levels: 4, stepTicks: 6 }
+
 export function createCarpetGL(canvas, opts = {}) {
     const lite = !!opts.lite
     const cmPrev = THREE.ColorManagement.enabled
@@ -365,9 +371,13 @@ void main(){
     if (vH < ${WATER}.0) {
         float depth = ${WATER}.0 - vH;
         float bpos = depth * 0.28 + fbm2(vWorld.xz * 0.7 + 3.3) * 0.45;
-        float b0 = clamp(floor(bpos) / 3.0, 0.0, 1.0);
-        float b1 = clamp((floor(bpos) + 1.0) / 3.0, 0.0, 1.0);
-        vec3 wcol = mix(uShallow, uDeep, mix(b0, b1, smoothstep(0.3, 0.7, fract(bpos))));
+        // #1764 item 4 stage 1: hard 4-level band, palette index marching with
+        // world time (the original's 4-bit wave cycle). Shapes stay put; the
+        // colours walk shallow→deep one level per stepTicks — 16-colour flow.
+        float lvl = clamp(floor(bpos), 0.0, ${WAVE_CYCLE.levels - 1}.0);
+        float cyc = mod(lvl + floor(uWorldTime / ${WAVE_CYCLE.stepTicks}.0), ${WAVE_CYCLE.levels}.0);
+        vec3 wcol = mix(uShallow, uDeep, cyc / ${WAVE_CYCLE.levels - 1}.0);
+        wcol *= mix(1.0, 0.72, clamp(depth * 0.1, 0.0, 1.0));
         vec2 rp = vWorld.xz * 0.55 + uWorldTime * vec2(0.02, 0.014);
         vec2 rp2 = vWorld.xz * 0.31 - uWorldTime * vec2(0.011, 0.018);
         float rip = sin(rp.x + sin(rp.y * 1.3 + uWorldTime * 0.02)) + sin(rp.y * 1.7 - uWorldTime * 0.026);
@@ -1167,6 +1177,7 @@ void main(){
         smokeCount: () => smoke.geo.instanceCount,
         spriteCount: () => spr.geo.instanceCount,
         glowCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 1] > 0) n++; return n },
+        waveUniform: () => tUniforms.uWorldTime.value, // #1764 item 4: the shader's clock is sim ticks, not wall time
         scorchCells: () => { let n = 0; for (let i = 0; i < N * N; i++) if (hData[i * 4 + 2] > 0) n++; return n },
         dispose() {
             rtScene.dispose(); rtA.dispose(); rtB.dispose(); rtEyeL.dispose(); rtEyeR.dispose()

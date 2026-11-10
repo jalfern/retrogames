@@ -105,6 +105,15 @@ r.check('seed 8 → different hash', stateHash(d1) !== stateHash(d3))
             'source pin')
     }
     {
+        const src = await readFile(new URL('../src/games/MagicCarpet/renderer.js', import.meta.url), 'utf8')
+        r.check('#1764 item 4: the ocean is a HARD 4-level band whose palette index marches with world time (4-bit cycle, no smooth band interpolation)',
+            /export const WAVE_CYCLE = \{ levels: 4, stepTicks: 6 \}/.test(src)
+            && src.includes('clamp(floor(bpos), 0.0, ${WAVE_CYCLE.levels - 1}.0)')
+            && src.includes('mod(lvl + floor(uWorldTime / ${WAVE_CYCLE.stepTicks}.0), ${WAVE_CYCLE.levels}.0)')
+            && !src.includes('smoothstep(0.3, 0.7, fract(bpos))'),
+            'source pin')
+    }
+    {
         const src = await readFile(new URL('../src/games/MagicCarpet/index.jsx', import.meta.url), 'utf8')
         r.check('attract arrows move the cursor and any other start launches AT it (both key and pointer paths)',
             (src.match(/startPlay\(selCur\)/g) || []).length === 2 &&
@@ -2062,6 +2071,37 @@ r.check('the browser world snags a villager at the floor (grip set, lane −1)',
 const eco2 = await page.evaluate(() => window.__carpetTest.villageEconomy('deliver'))
 r.check('the browser world converts the hut on delivery (pennant up, grip empty)',
     eco2.prisoner === null && eco2.allyHuts === 1, JSON.stringify(eco2))
+
+// #1764 item 4 stage 1: the ocean's palette cycle lives in the browser world
+// too (state-based — the shader clock must be sim ticks, never wall time).
+// Paints arrive on rAF cadence (irregular on loaded boxes), so poll until the
+// uniform equals the tick; the wait is bounded — a clock stuck off ticks goes red.
+const wave = await page.evaluate(async () => {
+    const t = window.__carpetTest
+    window.__game.reset(7)
+    for (let i = 0; i < 20; i++) window.__game.step({}, 1)
+    let p0 = null
+    for (let i = 0; i < 40 && !p0; i++) {
+        await new Promise((res) => setTimeout(res, 50))
+        const p = t.probe()
+        if (p.waveTick === p.tick) p0 = p
+    }
+    for (let i = 0; i < 6; i++) window.__game.step({}, 1)
+    let p1 = null
+    for (let i = 0; i < 40 && !p1; i++) {
+        await new Promise((res) => setTimeout(res, 50))
+        const p = t.probe()
+        if (p.waveTick === p.tick && p.tick >= 26) p1 = p
+    }
+    return p0 && p1
+        ? { i0: p0.waveIdx, i1: p1.waveIdx, t0: p0.tick, t1: p1.tick, w0: p0.waveTick, w1: p1.waveTick }
+        : { miss: true, p0, p1 }
+})
+r.check('#1764 item 4: the ocean palette index rides sim ticks (shader clock equals tick on painted frames; index = floor(tick/6) % 4; clock moves)',
+    !wave.miss
+    && wave.i0 === Math.floor(wave.t0 / 6) % 4 && wave.i1 === Math.floor(wave.t1 / 6) % 4
+    && wave.t1 >= wave.t0 + 6 && wave.w1 > wave.w0,
+    JSON.stringify(wave))
 
 // ---- GPU world pass (#1083): the GPU must actually render the world, craters
 // must visibly feed the terrain upload (glow), lava cools, scorch persists.
