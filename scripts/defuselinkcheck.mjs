@@ -167,9 +167,12 @@ function makeBox(link, id, mySeat, seed) {
         const st = curStep(g)
         if (st.kind === SYNC) return g.keys[1] && !g.keys[0] ? { a: true } : {}
         if (st.kind === CUT) {
+            // #1831: the engine fires on RISING edges — a held pad is one
+            // action, so this reactive hand paces its taps like the solver
+            // (one pulse per 4 ticks) and snips only on the target color.
             const d = (st.color - g.sel[0] + COLORS.length) % COLORS.length
-            if (d !== 0) return { [d <= 2 ? 'up' : 'down']: true }
-            if (!g.armed[0] && (g.armed[1] || g.stepT >= 120)) return { a: true }
+            if (d !== 0) return g.stepT % 4 === 0 ? { [d <= 2 ? 'up' : 'down']: true } : {}
+            if (!g.armed[0]) return { a: true }
             return {}
         }
         if (st.holder === 0) return { b: true }

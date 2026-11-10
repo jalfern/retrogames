@@ -121,6 +121,7 @@ export function createGame(seed, players = 1) {
         phase: 0,
         zone: 0,
         held: false,
+        prevPad: [offPad(), offPad()],
         brain: { syncLead: 10, follow: 6 },
     }
     loadStep(gs)
@@ -144,6 +145,7 @@ function loadStep(gs) {
     gs.armed = [false, false]
     gs.armedT = 0
     gs.held = false
+    gs.prevPad = [offPad(), offPad()]
     gs.phase = Math.floor(gs.rng() * 360)
     gs.zone = clampZone(Math.floor(gs.rng() * 1401) - 700)
     gs.brain.syncLead = 8 + Math.floor(gs.rng() * Math.max(8, curWindow(gs) - 24))
@@ -236,6 +238,8 @@ const norm = (p) => ({
     a: !!p.a, b: !!p.b,
 })
 
+const offPad = () => ({ up: false, down: false, left: false, right: false, a: false, b: false })
+
 // One simulation tick. pads = [pad1, pad2?] — seat order per #494. A seat with
 // an all-false pad while players=1 is covered by the internal partner.
 export function step(gs, pads) {
@@ -245,6 +249,18 @@ export function step(gs, pads) {
     let p2 = pads && pads[1] ? pads[1] : {}
     if (gs.players === 1 && !p2.a && !p2.b && !p2.up && !p2.down && !p2.left && !p2.right) p2 = partnerPad(gs)
     const pad = [norm(raw1), norm(p2)]
+    // #1831: a tap is ONE action. up/down/a fire on the RISING edge — a held
+    // press must not cycle the arm, nick, or surge every tick it stays down
+    // (the per-tick charge was the blocker: one tap could burn the fuse).
+    // The pin (b) stays a level: holding the stabilizer bar IS the mechanic.
+    // prevPad resets in loadStep, so a press carried across a step boundary
+    // can fire at most once on the new step.
+    const edge = pad.map((p, i) => ({
+        up: p.up && !gs.prevPad[i].up,
+        down: p.down && !gs.prevPad[i].down,
+        a: p.a && !gs.prevPad[i].a,
+    }))
+    gs.prevPad = pad
 
     const st = curStep(gs)
     const win = curWindow(gs)
@@ -285,9 +301,9 @@ export function step(gs, pads) {
 
     if (st.kind === CUT) {
         for (let i = 0; i < 2; i++) {
-            if (pad[i].up) gs.sel[i] = (gs.sel[i] + 1) % COLORS.length
-            else if (pad[i].down) gs.sel[i] = (gs.sel[i] + COLORS.length - 1) % COLORS.length
-            if (pad[i].a) {
+            if (edge[i].up) gs.sel[i] = (gs.sel[i] + 1) % COLORS.length
+            else if (edge[i].down) gs.sel[i] = (gs.sel[i] + COLORS.length - 1) % COLORS.length
+            if (edge[i].a) {
                 if (gs.sel[i] === st.color) {
                     if (!gs.armed[i]) gs.events.push({ k: 'snip', seat: i })
                     gs.armed[i] = true
@@ -313,7 +329,7 @@ export function step(gs, pads) {
 
     // VENT
     const worker = 1 - st.holder
-    if (pad[worker].a) {
+    if (edge[worker].a) {
         if (Math.abs(needleOf(gs) - gs.zone) <= ZONE_HALF[gs.bomb]) {
             if (pad[st.holder].b) { gs.events.push({ k: 'sealed' }); advance(gs); return }
             gs.fuse -= SURGE_COST

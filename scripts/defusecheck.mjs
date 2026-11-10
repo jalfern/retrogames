@@ -63,6 +63,7 @@ console.log('\n— CUT —')
     const fuseBefore = g.fuse
     const nickFx = drive(g, [{ a: true }, { a: true }])
     ok(nickFx.filter(f => f.k === 'nick').length === 2 && g.fuse === fuseBefore - 2 * NICK_COST - 1 && g.strikes === 0, 'both blades nicking wrong wire cost −2 s each, never a strike')
+    drive(g, [{}, {}]) // a tap is press+release — the edge memory must see the release (#1831)
     g.sel = [target, target]
     drive(g, [{ a: true }, {}])
     ok(g.armed[0] && !g.armed[1], 'one blade arms on the right color')
@@ -92,6 +93,7 @@ console.log('\n— VENT —')
     g.zone = 1000 // far off target for the whiff gate
     const dudFx = drive(g, [{ a: worker === 0 }, { a: worker === 1 }])
     ok(dudFx.some(f => f.k === 'dud') && g.strikes === 0 && g.step < g.bombs[g.bomb].steps.length, 'whiffed seat is a dud, not a strike')
+    drive(g, [{}, {}]) // release the tap before the next press (#1831 edge)
     g.zone = zoneSave
     // seat while NOT held -> surge
     const pre = g.fuse
@@ -99,10 +101,47 @@ console.log('\n— VENT —')
     g.zone = needleOf(g) // put the zone exactly under the needle
     const surgeFx = drive(g, [{ a: worker === 0, b: false }, { a: worker === 1, b: false }])
     ok(surgeFx.some(f => f.k === 'surge') && g.fuse === pre - SURGE_COST - 2, `seating without the bar surges (−${SURGE_COST}f + that tick's double drain)`, `Δ=${pre - g.fuse}`)
+    drive(g, [{}, {}]) // release
     // seat WITH the bar -> sealed
     const stepBefore = g.step
     const sealFx = drive(g, [{ a: worker === 0, b: holder === 0 }, { a: worker === 1, b: holder === 1 }])
     ok(sealFx.some(f => f.k === 'sealed') && (g.step !== stepBefore || g.bomb > 0), 'held bar + on-target seat seals the step')
+}
+
+console.log('\n— tap edges (#1831: one tap is one action) —')
+{
+    // A physical key tap holds the pad down ~6 frames. The old level reads
+    // charged every tick of the hold (one tap could walk the arm several
+    // colors, nick repeatedly, or surge the gauge to KABOOM).
+    const g = createGame(7, 2)
+    while (!g.done && curStep(g).kind !== CUT) drive(g, solvePads(g))
+    while (g.intro > 0) drive(g, [{}, {}])
+    const sel0 = g.sel[0]
+    for (let t = 0; t < 6; t++) drive(g, [{ up: true }, {}]) // one tap, held 6 ticks
+    ok(g.sel[0] === (sel0 + 1) % COLORS.length && g.sel[1] === 0, 'held up: the arm walks once per tap, not once per tick', `walked ${g.sel[0] - sel0}`)
+    const target = curStep(g).color
+    g.sel = [(target + 1) % COLORS.length, target] // seat 0 sits on the WRONG wire
+    const fb = g.fuse
+    let nicks = 0
+    for (let t = 0; t < 5; t++) nicks += drive(g, [{ a: true }, {}]).filter(f => f.k === 'nick').length
+    ok(nicks === 1 && g.fuse === fb - 5 - NICK_COST, 'held a on the wrong wire: exactly ONE nick, fuse pays drain+nick once', `nicks=${nicks} Δ=${fb - g.fuse}`)
+    drive(g, [{}, {}]) // release
+    const fb2 = g.fuse
+    const nicks2 = drive(g, [{ a: true }, {}]).filter(f => f.k === 'nick').length
+    ok(nicks2 === 1 && g.fuse === fb2 - 1 - NICK_COST, 'released + re-pressed tap fires again (an edge, not a one-shot latch)')
+    // VENT: holding ACT with the holder never pinning surged once PER TICK —
+    // one press could burn the whole fuse. Now: one surge per zone entry.
+    const v = createGame(7, 2)
+    while (!v.done && curStep(v).kind !== VENT) drive(v, solvePads(v))
+    while (v.intro > 0) drive(v, [{}, {}])
+    const holder = curStep(v).holder
+    const worker = 1 - holder
+    v.needleT = 0; v.phase = 0; v.zone = needleOf(v) // zone glued to the needle
+    const vf = v.fuse
+    let surges = 0
+    for (let t = 0; t < 5; t++) surges += drive(v, [{ a: worker === 0, b: false }, { a: worker === 1, b: false }]).filter(f => f.k === 'surge').length
+    ok(surges === 1 && !v.done, 'held ACT (unvented): exactly one surge per press, not per tick', `surges=${surges} Δ=${vf - v.fuse}`)
+    ok(v.prevPad[worker].a && !v.prevPad[holder].a, 'edge memory keeps the last pad — a release is required to fire again')
 }
 
 console.log('\n— fuse ledger & boom —')
