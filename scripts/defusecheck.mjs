@@ -6,6 +6,7 @@
 import {
     createGame, step, hash, simState, solvePads, curStep, curWindow, needleOf,
     COLORS, SYNC, CUT, VENT, BOMBS, FUSE0, WINDOW, ZONE_HALF, STRIKE_COST, SURGE_COST, NICK_COST, INTRO,
+    TURN, turnStep, turnClick, keyAngle,
 } from '../src/games/BombDefuse/engine.js'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -244,6 +245,71 @@ console.log('\n— contract + spine wiring (static pins) —')
     ok(reg.includes("path: '/bomb-defuse'") && reg.includes("label: 'BOMB DEFUSE'") && reg.includes("visibility: 'private'"), 'registry: private /bomb-defuse entry')
     const cg = readFileSync(join(here, 'lib/contractGames.mjs'), 'utf8')
     ok(cg.includes("id: 'bomb-defuse'") && cg.includes("'bomb-defuse': (i) =>"), 'contractGames lists bomb-defuse + a driver pattern')
+}
+
+console.log('\n— key-turn feel (#1812 item 2) —')
+{
+    // The sim truth is instant (gs.keys latches at the press tick — pinned in
+    // the rules section). These gates prove the VIEW math lags it: a damped
+    // spring that wobbles once and homes, one ratchet click per turn, and a
+    // seat stagger so the pair reads as two hands. Kill a constant and a
+    // gate goes red (see README mutants).
+    ok(TURN.K > 0 && TURN.D > 0 && TURN.D < 1 && TURN.RATCHET > 0 && TURN.RATCHET < 1 && TURN.STAGGER >= 2 && TURN.SETTLE > 4,
+        'spring constants sane — underdamped, detent inside the travel, a stagger that exists')
+    ok(Math.abs(keyAngle(0) - TURN.OFF) < 1e-12 && Math.abs(keyAngle(1) - TURN.ON) < 1e-12 && keyAngle(0.5) > keyAngle(0) && keyAngle(1) > keyAngle(0.5),
+        'keyAngle endpoints are the legacy poses and the sweep is monotone')
+    // single turn toward 1: lag, one overshoot, settle, exactly one detent click up
+    let p = 0, v = 0, up = 0, down = 0, peak = 0
+    const trail = []
+    for (let t = 0; t < 60; t++) {
+        const r = turnStep(p, v, 1)
+        p = r[0]; v = r[1]
+        if (r[2] > 0) up++
+        if (r[2] < 0) down++
+        peak = Math.max(peak, p)
+        trail.push(p)
+    }
+    ok(trail[0] < 0.3, 'pose lags the press tick — first frame well short of home', String(trail[0].toFixed(3)))
+    ok(peak > 1.05 && peak < 1.3, 'the barrel overshoots ONCE (a spring, not a slide)', String(peak.toFixed(3)))
+    ok(trail.slice(TURN.SETTLE).every((x) => Math.abs(x - 1) <= 0.02), `pose is home (|p−1|≤0.02) by ${TURN.SETTLE} ticks`)
+    ok(up === 1 && down === 0, 'one ratchet click per turn — the settle wobble never re-clicks', `up=${up} down=${down}`)
+    ok(turnClick(0.49, 0.51) === 1 && turnClick(0.51, 0.49) === -1 && turnClick(0.9, 1.1) === 0,
+        'turnClick: +1 over the detent, −1 back through it, 0 within one side')
+    // stagger: both truths flip ON at tick 0 (SYNC); seat 2's view waits —
+    // mirror of pumpTurnPoses' per-seat law (source-pinned below to this math).
+    const tr2 = [
+        { pos: 0, vel: 0, lag: 0, want: 0 },
+        { pos: 0, vel: 0, lag: 0, want: 0 },
+    ]
+    const both = []
+    for (let t = 0; t < 12; t++) {
+        for (let i = 0; i < 2; i++) {
+            const s = tr2[i]
+            const want = 1
+            if (want !== s.want) { s.want = want; s.lag = i === 1 && want === 1 ? TURN.STAGGER : 0 }
+            if (s.lag > 0) { s.lag--; continue }
+            const r = turnStep(s.pos, s.vel, s.want)
+            s.pos = r[0]; s.vel = r[1]
+        }
+        both.push([tr2[0].pos, tr2[1].pos])
+    }
+    ok(both[0][0] > 0.1 && both[0][1] === 0 && both.slice(0, TURN.STAGGER).every((f) => f[1] === 0) && both[TURN.STAGGER + 1][1] > 0,
+        `seat 2 holds ${TURN.STAGGER} ticks before its barrel follows — simultaneity READS`)
+    // purity: the pose never touches the sim or the hash; the press latch is untouched.
+    const esrc = readFileSync(join(here, '../src/games/BombDefuse/engine.js'), 'utf8')
+    const hashBody = esrc.slice(esrc.indexOf('export function hash'))
+    ok(!/TURN|turnStep|keyAngle|turnClick/.test(hashBody.split('// ---- key-turn feel')[0]),
+        'hash() reads no pose state — the spring lives outside the determinism core')
+    ok(esrc.includes("gs.keys[i] = true; gs.events.push({ k: 'key', seat: i })"),
+        'the press-tick truth still latches instantly (pose is only a lag on top)')
+    const jsx = readFileSync(join(here, '../src/games/BombDefuse/index.jsx'), 'utf8')
+    ok(!jsx.includes('g.rotate(on ? 0.78 : -0.35)'), 'the teleport ternary is gone from the barrel draw')
+    ok(jsx.includes('pumpTurnPoses') && jsx.includes('E.turnStep') && jsx.includes('E.keyAngle(pose)') && jsx.includes('keyPos:'),
+        'index.jsx pumps the spring per sim tick and draws the barrel from the pose')
+    ok(jsx.includes('const pumpTurnPoses') && (jsx.match(/pumpTurnPoses\(/g) || []).length >= 3,
+        'the pump is defined and runs on every sim path — attract, net and local',
+        String((jsx.match(/pumpTurnPoses\(/g) || []).length))
+    ok(jsx.includes('sfx.ratchet()') && jsx.includes('sfx.ratchetBack()'), 'the detent wires both click directions in the pump')
 }
 
 console.log(`\ndefusecheck: ${pass}/${pass + fail} gates`)

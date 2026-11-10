@@ -74,6 +74,28 @@ await sleep(750)
 await page.keyboard.press('KeyX')
 await sleep(1200)
 r.check('any key restarts (play again)', (await page.evaluate(() => window.__bdTest.screen())) === 'play')
+
+// #1812 item 2 — the press-tick law in the REAL view stack, stepped tick-exact
+// (wall-clock rAF sampling is too coarse on software-rendered Chrome — the
+// first observed frame can land after the spring; sim ticks are the law here).
+// The solo partner leads seat 1's truth at stepT≈48; step to it one tick at a
+// time and read pose atomically beside the truth.
+const probe = await page.evaluate(() => {
+    const T = window.__bdTest
+    let on = -1
+    for (let t = 0; t < 400; t++) { T.step(1); if (T.keyOn()[1]) { on = t; break } }
+    if (on < 0) return null
+    const pAt = T.keyPoses()[1] // truth's own tick — the pump already ran it once
+    T.step(3); const pMid = T.keyPoses()[1] // a few ticks in: still inside the lag/spring
+    T.step(25); const pHome = T.keyPoses()[1]
+    return { on, pAt, pMid, pHome, truth: T.keyOn()[1] }
+})
+r.check('press tick: seat-1 truth ON while the barrel is still at rest (lag reads before motion)',
+    probe !== null && probe.pAt < 0.25, probe ? `p@press=${probe.pAt.toFixed(3)} (STAGGER hold)` : 'partner never led')
+r.check('mid-swing frame exists then the barrel homes (|pose−1|<=0.06) under the held truth',
+    probe !== null && probe.pMid > 0.05 && probe.pMid < 0.6 && Math.abs(probe.pHome - 1) <= 0.06 && probe.truth === true,
+    probe ? `mid=${probe.pMid.toFixed(3)} home=${probe.pHome.toFixed(3)} truth=${probe.truth}` : 'no span')
+
 r.check('zero page errors across the drive', errs.length === 0, errs.join(' | '))
 
 await r.exit(browser)
