@@ -10,7 +10,7 @@ import {
     createGame, step, simState, hash, solvePad, computeTarget, drainEvents, buildBomb,
     RULEBOOK, WIRE_COLORS, GLYPHS, QUOTA_BOMBS, MAX_STRIKES, STRIKE_FUSE_COST, LOCK_TICKS, variantPool, BACK_FACT_STAMPS,
 } from '../src/games/TalkMeDown/engine.js'
-import { parseCall, intentLabel, ACCEPTED_HINT } from '../src/games/TalkMeDown/voice.js'
+import { parseCall, intentLabel, ACCEPTED_HINT, applyCallKey, KEY_CALL_HINT, CALL_LINE_MAX } from '../src/games/TalkMeDown/voice.js'
 import { createRecorder, verifyRecording, validate } from '../src/utils/recording.js'
 import { readFileSync } from 'node:fs'
 
@@ -530,6 +530,41 @@ const ok = (name, cond, extra = '') => {
     ok('seat 2 gets the flip coach line, fed by gs.flip (source pin)',
         /ASK THEM TO FLIP IT!/.test(artSrc15) && /BACK IS UP/.test(artSrc15) &&
         /drawManual\([\s\S]{0,240}, gs\.flip\)/.test(viewSrc))
+}
+
+// ---- #1894 CALL-BY-KEY: the line is an editor, not a second grammar -------
+{
+    const K = (buf, code) => applyCallKey(buf, code)
+    ok('letters, digits and SPACE compose', K('cut', 'KeyR').buf === 'cutr' && K('7', 'Digit3').buf === '73' && K('cut', 'Space').buf === 'cut ')
+    ok('ENTER shouts a held line; ENTER on empty only closes', K('cut red', 'Enter').commit === true && K('', 'Enter').commit === false && K('', 'Enter').close === true)
+    ok('Backspace edits, and closing on the last char closes the line', K('red', 'Backspace').buf === 're' && K('a', 'Backspace').close === true)
+    ok('X closes what X opened', K('draft', 'KeyX').close === true)
+    ok('non-text keys are NOT the line\'s (arrows return null; the shell swallows them, never a pad — pinned live in bombdrive)', K('x', 'ArrowLeft') === null && K('x', 'Tab') === null && K('x', 'Space') !== null)
+    ok('W/A/S/D compose as LETTERS (white, set...) — the seat swallow is the shell\'s law', K('', 'KeyW').buf === 'w' && K('', 'KeyS').buf === 's')
+    // the fork law: whatever the line builds is just TEXT — the same text the
+    // mic hands over — so parseCall decides, once, for both mouths.
+    const built = ['KeyC', 'KeyU', 'KeyT', 'Space', 'KeyR', 'KeyE', 'KeyD'].reduce((s, c) => { const r = applyCallKey(s, c); return r ? r.buf : s }, '')
+    ok('composed text parses through the SAME grammar (no fork)', built === 'cut red' && JSON.stringify(parseCall(built)) === JSON.stringify(parseCall('cut red')))
+    const vSrc = readFileSync(new URL('../src/games/TalkMeDown/voice.js', import.meta.url), 'utf8')
+    const fnBody = /export function applyCallKey\([\s\S]*?\n\}/.exec(vSrc)?.[0] || ''
+    ok('applyCallKey holds no grammar of its own (source pin)', fnBody.length > 0 && !/parseCall|RULEBOOK/.test(fnBody))
+    ok('KEY_CALL_HINT names the channel, not the shapes (one source stays alone)', /C/.test(KEY_CALL_HINT) && /ENTER/.test(KEY_CALL_HINT) && !KEY_CALL_HINT.includes('"CUT') && !KEY_CALL_HINT.includes('"SET'))
+    ok('the coach fits the footer budget (<= the shapes line)', KEY_CALL_HINT.length <= ACCEPTED_HINT.length, `${KEY_CALL_HINT.length} vs ${ACCEPTED_HINT.length}`)
+    ok('CALL_LINE_MAX is a real budget', CALL_LINE_MAX >= 12 && CALL_LINE_MAX <= 42, String(CALL_LINE_MAX))
+    const viewSrc16 = readFileSync(new URL('../src/games/TalkMeDown/index.jsx', import.meta.url), 'utf8')
+    const artSrc16 = readFileSync(new URL('../src/games/TalkMeDown/art.js', import.meta.url), 'utf8')
+    ok('the commit routes through voiceCall — the mic\'s own entry (source pin)',
+        /if \(r\.commit\)[\s\S]{0,140}voiceCall\(/.test(viewSrc16))
+    ok('the glass draws the call line (source pin)',
+        /function drawCallLine\(/.test(artSrc16) && /ART\.drawCallLine\(g, callRef\.current\.buf/.test(viewSrc16))
+    ok('the footer swaps shapes for the coach by mic state (source pin)',
+        /micOn \? ACCEPTED_HINT : KEY_CALL_HINT/.test(artSrc16))
+    ok('the channel key never reaches the seat maps (source pin: KeyX is the mouth, not a pad)',
+        !/KeyX:\s*'/.test(viewSrc16) && /if \(e\.code === 'KeyX'\)/.test(viewSrc16))
+    ok('j, q, x are letters no call needs (the open key cannot starve a shape)',
+        ['cut','cuts','snip','clip','remove','pull','yank','red','blue','yellow','green','white','black','press','hit','push','tap','touch','star','diamond','club','spade','bolt','moon','neon','wires','dial','glyph','symbols','page','flip','turn','set','confirm','done','engage','tilt','zero','one','two','three','four','five','six','seven','eight','nine']
+            .every(w => !/[jq]/.test(w)),
+        'grammar vocab contains j/q')
 }
 
 console.log(`\nbombcheck: ${pass} pass, ${fail} fail`)

@@ -430,7 +430,7 @@ export function drawManual(g, page, line, stamps, tick, hidden, flag, flipped = 
     // #1373: the accepted-call shapes, printed right on the page (#1247) —
     // a manual player who never read a screen knows exactly what to shout.
     g.fillStyle = '#4a4436'
-    g.fillText('MIC V — OR C TYPES IT', RAIL.x + 30, RAIL.y + RAIL.h - 35)
+    g.fillText('MIC V — OR X TYPES IT', RAIL.x + 30, RAIL.y + RAIL.h - 35)
     g.fillText('"CUT RED" "DIAL 7" "SET"', RAIL.x + 30, RAIL.y + RAIL.h - 26)
     g.font = FONT(6); g.fillStyle = '#8a8168'
     g.fillText('< PAGE >   A: FLAG', RAIL.x + 44, RAIL.y + RAIL.h - 14)

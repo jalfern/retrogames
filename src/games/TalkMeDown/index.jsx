@@ -48,7 +48,7 @@ const ATTRACT_MSGS = [
     'THE OTHER HOLDS THE MANUAL',
     'NEITHER CAN WIN ALONE',
     'V = MIC: SHOUT "CUT RED"',
-    'NO MIC? C TYPES THE CALL',
+    'NO MIC? X TYPES THE CALL',
     'THREE STRIKES AND THE BLOCK GLOWS',
     'UP AT MODULE 1 TILTS THE BOMB OVER',
     `CLEAR ${QUOTA_BOMBS} BOMBS = SQUAD CHIEF`,
@@ -600,7 +600,7 @@ export default function TalkMeDown() {
             const cl = callRef.current
             if (cl.open) {
                 e.preventDefault()
-                const r = applyCallKey(cl.buf, e.code) // KeyC closes what C opened
+                const r = applyCallKey(cl.buf, e.code) // KeyX closes what X opened
                 if (!r) { sfx.move(); return } // arrows etc: swallowed at the mouth, never a pad
                 if (r.commit) { cl.open = false; const said = cl.buf; cl.buf = ''; voiceCall(said); return }
                 if (r.close) { cl.open = false; cl.buf = ''; sfx.move(); return }
@@ -608,7 +608,7 @@ export default function TalkMeDown() {
                 if (r.buf.length <= CALL_LINE_MAX) sfx.tick()
                 return
             }
-            if (e.code === 'KeyC') { e.preventDefault(); cl.open = true; cl.buf = ''; sfx.key(); return }
+            if (e.code === 'KeyX') { e.preventDefault(); cl.open = true; cl.buf = ''; sfx.key(); return }
             // #1637 WATCH: Y seats the rulebook solver into seat 1 (solvePad
             // drives the real pad path on the sim's own tick); any driving key
             // hands the hands back and the player continues from exactly that
@@ -1103,14 +1103,14 @@ export default function TalkMeDown() {
                 call: (text) => voiceCall(text),
                 // #1894: the harness reads/pilots the typed line the same way
                 // it reads the mic badge — and asserts delivery with real keys.
-                callLine: () => ({ open: callRef.current.open, buf: callRef.current.buf }),
+                callLine: () => ({ open: callRef.current.open, buf: callRef.current.buf, paused: pausedRef.current }),
                 release: (field) => { keys1Ref.current[field] = false },
                 keys: () => ({ ...keys1Ref.current }),
                 state: () => { const g = gsRef.current; return g ? simState(g) : null },
                 hash: () => { const g = gsRef.current; return g ? hash(g) : 0 },
                 voiceLog: () => voiceLogRef.current.slice(),
                 voiceMode: () => ({ on: voiceRef.current.on, supported: speechSupported(), listening: !!(voiceRef.current.listen && voiceRef.current.listen.active) }),
-                hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0 }), // #1373
+                hud: () => ({ curtain: hudRef.current.curtain ? hudRef.current.curtain.n : 0, banner: hudRef.current.banner ? { text: hudRef.current.banner.text, ok: hudRef.current.banner.ok } : null }), // #1373, banner for #1894
                 solveStep: () => { const g = gsRef.current; if (g && !g.done) spec.tick(solvePad(g)) },
                 // #1880 drive: hands the OWN seat to the solver at the sample
                 // instant (readOwnPad), with delay 0 so the pad for tick k is
