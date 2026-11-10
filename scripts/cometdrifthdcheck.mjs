@@ -14,7 +14,7 @@ import { readFileSync, writeFileSync } from 'node:fs'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { makeGame, step, decide, stateHash } from '../src/games/CometDrift/sim.js'
-import { TRACK, COURSES, selectCourse, crestDipLaw, crestDust } from '../src/games/CometDrift/track.js'
+import { TRACK, COURSES, selectCourse, crestDipLaw, crestDust, wallLatAt } from '../src/games/CometDrift/track.js'
 import { BANDS } from '../src/games/CometDrift/bands.js'
 import { trackGeometryStats, buildKart, makePool, makeStreakPool, kartYaw, BUGGY_SCALE, cameraCorridorAudit, wallTopSideAt, BANK_RISE, refOverlayStats, bloomDiscs, BLOOM2D_MIN_LUMA } from '../src/games/CometDriftHD/scene.js'
 import { selectorGeom, selectorHit } from '../src/games/CometDrift/selector.js'
@@ -366,6 +366,44 @@ if (args.includes('--mutate-gantry')) {
     })
 }
 
+// #1867 dune mutant: Corkscomb falls back onto the sandstone arch — the dune
+// gates (no-span, law-sculpted profile, ridge width) MUST report FAILs.
+const DLINE = "if (T.landmark === 'dune') return buildDune(strataMap)"
+const DUTIL = "if (false) return buildDune(strataMap) /* dunemut */"
+let dunemutat = false
+if (args.includes('--mutate-dune')) {
+    const dsrc = readFileSync(SCENE, 'utf8')
+    if (!dsrc.includes(DLINE)) { console.error('MUTATE_DUNE: landmark dispatch not found — probing stale code.'); process.exit(2) }
+    plant(SCENE, dsrc.replace(DLINE, DUTIL))
+    dunemutat = true
+    console.log('  ..    mutated: Corkscomb gets the Gulch arch back — the dune gates MUST report FAILs')
+    process.on('exit', () => {
+        if (dunemutat) {
+            pull(SCENE)
+            console.log('  ..    dune mutation restored')
+        }
+    })
+}
+
+// #1867 windmill mutant: Dry Lake loses its windmill — the wheel/vane/pad
+// gates and the lateral-clearance gate MUST report FAILs.
+const WMLINE = "if (T.landmark === 'windmill') return buildWindmill(strataMap)"
+const WMUTIL = "if (false) return buildWindmill(strataMap) /* wmmut */"
+let wmmutat = false
+if (args.includes('--mutate-windmill')) {
+    const wsrc = readFileSync(SCENE, 'utf8')
+    if (!wsrc.includes(WMLINE)) { console.error('MUTATE_WINDMILL: landmark dispatch not found — probing stale code.'); process.exit(2) }
+    plant(SCENE, wsrc.replace(WMLINE, WMUTIL))
+    wmmutat = true
+    console.log('  ..    mutated: Dry Lake gets the Gulch arch back — the windmill gates MUST report FAILs')
+    process.on('exit', () => {
+        if (wmmutat) {
+            pull(SCENE)
+            console.log('  ..    windmill mutation restored')
+        }
+    })
+}
+
 // #502 item 3 brake-cue mutant: Sandbank loses its Bus Stop braking cue —
 // the barrier gates MUST go red under this run (the double-kink is silent
 // again, the exact readability gap the item complains about).
@@ -584,7 +622,15 @@ console.log('measured run-off bands (#530 item 2):')
     for (const id of ['sandbank', 'corkscomb']) {
         selectCourse(id)
         const b = trackGeometryStats().band
-        ok(b.has === true && b.spanPx > 1000, `${id}: band law active (map span ${b.spanPx.toFixed(0)}px)`)
+        // #1865: a lost band context must read as a FAIL, not a TypeError —
+        // #1498 gave bandContext() an id param and this audit stopped seeing
+        // the map; the fix is `bandContext(T.id)` in scene.js, this guard is
+        // the tripwire that names the failure instead of crashing the suite.
+        if (!b || b.has !== true) {
+            ok(false, `${id}: band law inactive — audit sees no traced map (band=${b ? 'has=' + b.has : 'null'})`)
+            continue
+        }
+        ok(b.spanPx > 1000, `${id}: band law active (map span ${b.spanPx.toFixed(0)}px)`)
         ok(b.offStdL > 15 && b.offStdR > 15, `${id}: run-off width varies corner to corner (std L ${b.offStdL.toFixed(1)}px, R ${b.offStdR.toFixed(1)}px; a constant ring reads 0)`)
         ok(b.asymMean > 10, `${id}: the two sides disagree — asymmetric escapes read from the map (mean Δ ${b.asymMean.toFixed(1)}px)`)
         ok(b.kerbMin >= 8 && b.kerbMax <= 18 && b.kerbMax - b.kerbMin > 2, `${id}: kerb depth tracks the band (${b.kerbMin.toFixed(1)}..${b.kerbMax.toFixed(1)}px)`)
@@ -1345,6 +1391,116 @@ console.log('line structures (#502 item 2 — gantry vs arch per course):')
     ok(/gantryFor/.test(SRC8) && /'#d03028', '#e0a030', '#30b048'/.test(SRC8), 'the 2D gantry draws its own towers, deck and signal lamps')
 }
 
+// #1867: per-course line structures COMPLETED in HD. Before this, only the
+// gantry had a second shape — Corkscomb and Dry Lake starts wore the Gulch's
+// arch. The dune must be sculpted from art.js's OWN duneCrest law (same
+// silhouette the 2D sprite paints, recomputed here from the import — an
+// inlined constant dies) and must open over the live road corridor; the
+// windmill must carry its wheel (named, so the loop can spin it off g.tick),
+// sails, vane and pad, and stand beyond the wall law's line.
+console.log('line structures completed (#1867 — dune + windmill per course):')
+{
+    const SC = await import('file://' + SCENE + '?t=' + (Date.now() + 131))
+    const { buildArch, buildDune, buildWindmill, duneNotch, DUNE_SPAN, DUNE_BASE, DUNE_AMP, WM_H, WM_R, S: SCALE } = SC
+    const { duneCrest } = await import('file://' + resolve(HERE, '../src/games/CometDrift/art.js') + '?t=' + (Date.now() + 132))
+    const meshes = (grp) => { const out = []; grp.traverse((m) => { if (m.isMesh) out.push(m) }); return out }
+    const halfSpan = (geo) => geo.type === 'TorusGeometry' && geo.parameters.arc < Math.PI * 1.5
+    const cd = COURSES.find((c) => c.id === 'corkscomb')
+    const dl = COURSES.find((c) => c.id === 'drylake')
+    ok(cd.landmark === 'dune' && dl.landmark === 'windmill', 'Corkscomb declares the dune, Dry Lake declares the windmill')
+    selectCourse('corkscomb')
+    ok(TRACK.landmark === 'dune', 'the live TRACK carries the dune landmark')
+    const dg = buildArch()
+    ok(dg.userData.landmark === 'dune', 'the dispatcher answers the dune course with the dune')
+    const dm = meshes(dg)
+    ok(dm.length === 1, `the ridge is a single sculpted mesh (${dm.length})`)
+    ok(!dm.some((m) => halfSpan(m.geometry)), 'the HD dune keeps no sandstone span')
+    const ridge = dg.getObjectByName('duneRidge')
+    ok(!!ridge && ridge.geometry.index.count === 48 * 8 * 6, `the ridge is a meshed grid (${ridge ? ridge.geometry.index.count : 0} tris)`)
+    if (ridge) {
+        const pa = ridge.geometry.attributes.position
+        const nk = duneNotch()
+        const zs = 0.6 + 0.4 * (4 / 8)
+        let lawBad = 0
+        let over = 0
+        for (let v = 0; v < pa.count; v++) {
+            const x = pa.getX(v); const y = pa.getY(v); const z = pa.getZ(v)
+            const zsV = 0.6 + 0.4 * ((z + 2.5) / 7)
+            let expect = 0
+            const a = Math.abs(x)
+            if (a > nk) {
+                const t = (a - nk) / (DUNE_SPAN / 2 - nk)
+                if (t < 1) expect = (DUNE_BASE + DUNE_AMP * duneCrest(t)) * Math.min(1, (1 - t) * 5)
+            }
+            expect *= zsV
+            if (Math.abs(y - expect) > 1e-6) lawBad++ // Float32 buffer — eps must sit under the ripples (0.24u) but over float noise
+            if (a < nk - 0.05 && y > 0.01) over++
+        }
+        ok(lawBad === 0, `every ridge vertex equals art.js's duneCrest law recomputed (${lawBad} deviate)`)
+        ok(over === 0, `the dune opens over the road — nothing inside the ${nk.toFixed(1)}u wall notch (${over} intruders)`)
+        const dg2 = buildDune()
+        const pb = dg2.getObjectByName('duneRidge').geometry.attributes.position
+        let same = pa.count === pb.count
+        for (let v = 0; same && v < pa.count; v++) if (pa.getX(v) !== pb.getX(v) || pa.getY(v) !== pb.getY(v)) same = false
+        ok(same, 'the ridge is deterministic — two builds are byte-identical')
+    }
+    let maxH = 0; let span = 0
+    if (ridge) {
+        const pa = ridge.geometry.attributes.position
+        let mnx = Infinity; let mxx = -Infinity
+        for (let v = 0; v < pa.count; v++) { mnx = Math.min(mnx, pa.getX(v)); mxx = Math.max(mxx, pa.getX(v)); maxH = Math.max(maxH, pa.getY(v)) }
+        span = mxx - mnx
+    }
+    ok(span >= DUNE_SPAN - 0.01, `the ridge reads ${span.toFixed(1)}u wide — a horizon feature, not a sign`)
+    ok(maxH >= DUNE_BASE + 0.9 * DUNE_AMP, `the crest stands ${maxH.toFixed(2)}u over the sand`)
+    const p0 = TRACK.pts[0]
+    ok(Math.abs(dg.position.x - p0.x * SCALE) < 1e-9 && Math.abs(dg.position.z - p0.y * SCALE) < 1e-9
+        && Math.abs(dg.rotation.y - (-p0.a + Math.PI / 2)) < 1e-12, 'the ridge sits squared on the start line')
+    selectCourse('drylake')
+    ok(TRACK.landmark === 'windmill', 'the live TRACK carries the windmill landmark')
+    const wg = buildArch()
+    ok(wg.userData.landmark === 'windmill', 'the dispatcher answers the windmill course with the windmill')
+    const wm = meshes(wg)
+    ok(!wm.some((m) => halfSpan(m.geometry)), 'the windmill keeps no sandstone span')
+    const wheel = wg.getObjectByName('windmillWheel')
+    ok(!!wheel, 'the wheel is a named group the render loop can spin')
+    if (wheel) {
+        ok(wheel.children.filter((m) => m.geometry.type === 'BoxGeometry' && Math.abs(m.geometry.parameters.height - 2 * WM_R) < 1e-9).length === 4,
+            'eight radial arms (four full-length boxes crossing the hub)')
+        ok(wheel.children.some((m) => m.geometry.type === 'TorusGeometry' && Math.abs(m.geometry.parameters.radius - WM_R) < 1e-9 && m.geometry.parameters.arc > Math.PI * 1.9),
+            'the rim is a full circle, not a span')
+        ok(wheel.children.filter((m) => m.geometry.type === 'BoxGeometry' && Math.abs(m.geometry.parameters.width - 0.42) < 1e-9).length === 8,
+            'eight sail boards ride the rim')
+    }
+    ok(!!wg.getObjectByName('windmillVane'), 'the tail vane stands behind the nacelle')
+    ok(!!wg.getObjectByName('windmillPad'), 'the mill stands on a concrete pad')
+    ok(wm.filter((m) => m.geometry.type === 'BoxGeometry' && Math.abs(m.geometry.parameters.height - 0.045) < 1e-9).length === 20,
+        'the lattice tower carries twenty X-braces')
+    ok(wm.filter((m) => m.geometry.type === 'BoxGeometry' && Math.abs(m.geometry.parameters.height - 0.05) < 1e-9 && Math.abs(m.geometry.parameters.depth - 0.05) < 1e-9 && m.geometry.parameters.width >= 0.3).length === 8,
+        'four girt levels ring the tower both ways')
+    const body = wg.getObjectByName('windmillBody')
+    const sideReq = Math.max(wallLatAt(0, 1), wallLatAt(0, -1)) * SCALE
+    ok(!!body && Math.abs(body.position.x) >= sideReq + 1.5,
+        `the mill stands beyond the wall line (${body ? Math.abs(body.position.x).toFixed(2) : '-'}u ≥ ${(sideReq + 1.5).toFixed(2)}u — the lamppost lesson)`)
+    let topH = 0
+    wg.traverse((m) => { if (m.isMesh) { m.geometry.computeBoundingBox(); topH = Math.max(topH, m.localToWorld(m.geometry.boundingBox.max.clone()).y - wg.position.y) } })
+    ok(topH >= WM_H + WM_R, `the wheel tops the tower at ${topH.toFixed(1)}u over the ground`)
+    const wg2 = buildWindmill()
+    ok(meshes(wg2).length === wm.length, 'the mill is deterministic — two builds match part-for-part')
+    const counts = new Set()
+    for (const id of ['gulch', 'sandbank', 'corkscomb', 'drylake']) { selectCourse(id); counts.add(meshes(buildArch()).length) }
+    ok(counts.size === 4, `all four starts are structurally distinct (${[...counts].sort((u, v) => u - v).join('/')} parts)`)
+    const SRC9 = readFileSync(resolve(HERE, '../src/games/CometDriftHD/scene.js'), 'utf8')
+    ok(SRC9.includes("if (T.landmark === 'dune') return buildDune(strataMap)")
+        && SRC9.includes("if (T.landmark === 'windmill') return buildWindmill(strataMap)"),
+    'the dispatcher branches on all four landmarks in scene.js')
+    const SRC10 = readFileSync(SHARD, 'utf8')
+    ok(SRC10.includes("landmarkWheel = lm.getObjectByName('windmillWheel')")
+        && SRC10.includes('landmarkWheel.rotation.z = g.tick * 0.014'),
+    'index.jsx spins the wheel off the world clock (tick-driven, pauses with the sim)')
+    selectCourse('gulch')
+}
+
 // #502 item 3: the Bus Stop braking complex must be SEEABLE, not just graded.
 // Sandbank declares a brakeCue fraction range and the HD side paints red/white
 // tire-bar walls on the inside of every bend inside it; the other circuits
@@ -2028,5 +2184,5 @@ console.log('floor vs elevation (#718 — nothing drives under the sand):')
 }
 
 console.log(`\ncometdrifthdcheck: ${pass} pass, ${fail} fail`)
-if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat || healmutat || floormutat) process.exit(fail > 0 ? 0 : 1)
+if (MUTATE || MUTATE_CHIME || MUTATE_BLOOM || spinmutat || streakmutat || starmutat || wallmutat || hudmutat || skinmutat || regmutat || healmutat || floormutat || gantrymutat || dunemutat || wmmutat) process.exit(fail > 0 ? 0 : 1)
 process.exit(fail > 0 ? 1 : 0)

@@ -263,6 +263,26 @@ brain gate). See the GP README for the full seat design and mutant history.
 
 ## Honest gaps (filed to QA as the polish pass)
 
+- **CLOSED by #1867:** per-course start structures completed. HD answered every
+  landmark but Sandbank's gantry with the Gulch's sandstone arch — Corkscomb and
+  Dry Lake starts wore someone else's face. Now `buildArch` dispatches all four:
+  `dune` sculpts the shared `art.js` `duneCrest` law (same silhouette the 2D
+  renderer paints — main crest at `mainX`, slipface, second dune behind, ripples)
+  into a 26u × 7u sand ridge with a notch computed from the LIVE wall law so
+  nothing stands over usable road; `windmill` builds the farm mill — tapered
+  lattice tower (4 legs, 4 girt rings, 20 X-braces), a named `windmillWheel`
+  (hub, 8 spokes, full rim, 8 sails) that `index.jsx` turns off `g.tick`
+  (presentation-only: sim, `stateHash`, seed pins untouched), tail vane, boom,
+  concrete pad — planted beyond the wall line on the roomier side (the lamppost
+  lesson: ask `wallOffSideAt` before planting). Gates: 29 new pins in
+  `cometdrifthdcheck` including vertex-for-vertex equality against art.js
+  recomputed independently and all-four-structurally-distinct; `--mutate-dune`
+  dies 8 gates, `--mutate-windmill` dies 12. Same PR fixed the #1865 audit
+  crash (`bandContext(T.id)`) and a mutant exit-code inversion
+  (`gantrymutat` was missing from the mutant line). Residual, honestly: no
+  lettering on the 3D structures (2D sprites keep the name plates), sails are
+  plain boards, and the wheel ignores wind (constant rate, tick-driven).
+
 - **CLOSED by #987/#990:** WebGPU pixels proven at the compositor in numbers
   (`cometdrifthdphonecheck`: PNG luma stats + frame-to-frame motion, not
   eyeballs) and the phone auto-fallback pinned headlessly (no `navigator.gpu`,

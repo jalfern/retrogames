@@ -309,7 +309,7 @@ The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
   the sky band while it runs. Gates: cometcheck drives the measured repro
   (held one-way drift at a Corkscomb bend) and three mutants — silence
   (hintT=0), spam (guard removed), permanent HUD (decay removed).
-- #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
+- **CLOSED by #530/#511, HD port CLOSED by #1867:** #493 ships TWO new courses (Sandbank, Corkscomb) per the issue's ship-small
   plan; the optional third, Dry Lake Bed (~Sebring), shipped in #530 item 3. #511 item 1 wove
   the Corkscomb into the ridge: five extra control points between the Andretti
   crest and the Snake make a left-right-left triple apex OVER the drop
@@ -321,7 +321,17 @@ The #419 "not yet cups" landed. `cup.js` holds the whole mode as pure rules:
   16.9% to 18.6% — still the keyhole pinch (spread leg), so WORST_CAP moved
   to 0.19. The start line structure is per-course
   since #502 (Sandbank's timing gantry) and #511 item 3 (Corkscomb's dune
-  crest, 2D renderer; HD still shares the Gulch arch).
+  crest, 2D renderer; HD still shares the Gulch arch). **Fixed #1867:** HD now
+  completes the dispatch — `buildDune` sculpts the SAME `art.js` `duneCrest` law
+  into a 26u sand ridge whose flanks map 0..1 outward from a notch cleared by
+  the live wall line, and `buildWindmill` stands the farm mill (lattice tower,
+  20 X-braces, named spinning wheel with eight sails, tail vane, concrete pad)
+  beyond the wall on the roomier side, wheel turning off `g.tick`. Gates: 29
+  new pins in `cometdrifthdcheck` (law equality recomputed from art.js vertex
+  by vertex, road-notch clearance, lateral wall clearance, structural distinctness
+  of all four starts) + `--mutate-dune` (8 kills) / `--mutate-windmill` (12
+  kills). Residual, honestly: the 3D structures carry no lettering — the 2D
+  name plates own the words — and the sails stay plain boards.
 - **CLOSED by #1737:** cups — the COMET CUP ships (see "The COMET CUP" above:
   three legs, 10-8-6-4-3-2-1, standings + tiebreaks). Still owed honestly: items
   (the #419 list's other child). Real music: the engine bed is a synthesized voice

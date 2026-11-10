@@ -11,6 +11,7 @@
 
 import * as THREE from 'three'
 import { TRACK, SCENERY, bankAt, bandRatioAt, wallLatAt, bandContext } from '../CometDrift/track.js'
+import { duneCrest } from '../CometDrift/art.js'
 import { REFERENCES } from '../CometDrift/reference.js'
 import { selectorGeom } from '../CometDrift/selector.js'
 
@@ -416,7 +417,7 @@ export function trackGeometryStats() {
         offL[i] = wallOffSideAt(i, -1); offR[i] = wallOffSideAt(i, 1)
         kerbL[i] = kerbOuterAt(i, -1) - T.ROAD_R; kerbR[i] = kerbOuterAt(i, 1) - T.ROAD_R
     }
-    const ctx = bandContext()
+    const ctx = bandContext(T.id)
     const mean = (v) => v.reduce((a, x) => a + x, 0) / v.length
     const std = (v) => Math.sqrt(mean(v.map((x) => (x - mean(v)) ** 2)))
     const band = {
@@ -1192,8 +1193,13 @@ export function buildTireBars(redMat, whiteMat) {
 // #502 item 2: the landmark is per-course. Sandbank SPEED BOWL's is the
 // Daytona-style start/finish gantry — a wide timing-line bridge with twin
 // trussed towers and a three-lamp signal board, not a sandstone arch.
+// #1867: the dispatch completes for Corkscomb (the dune crest, driven by the
+// SAME art.js law the 2D renderer samples) and Dry Lake (the old farm
+// windmill), so no HD start line wears another course's structure.
 export function buildArch(strataMap) {
     if (T.landmark === 'gantry') return buildGantry(strataMap)
+    if (T.landmark === 'dune') return buildDune(strataMap)
+    if (T.landmark === 'windmill') return buildWindmill(strataMap)
     const g = new THREE.Group()
     const strata = new THREE.MeshStandardMaterial({ color: 0xb07050, map: strataMap || null, metalness: 0.05, roughness: 0.9 })
     const darker = new THREE.MeshStandardMaterial({ color: 0x6e3c28, map: strataMap || null, metalness: 0.05, roughness: 0.95 })
@@ -1263,6 +1269,174 @@ export function buildGantry(strataMap) {
     return g
 }
 
+// ---- #1867: CORKSCOMB's dune crest, in the round --------------------------------
+// The same wind-carved silhouette the 2D renderer paints from art.js's
+// duneCrest law (windward shoulder, crest at mainX, steeper slipface, a
+// second dune behind, ripples riding the body) — here as a sculpted sand
+// ridge flanking the start line. Both flanks map 0..1 outward from a notch
+// that clears the LIVE wall line (physics-aware placement: nothing stands
+// over the road the karts use), and the rear row rides taller than the
+// front, so from the chase cam it reads as dunes behind the line.
+// Presentation-only: no sim, no stateHash, deterministic.
+export const DUNE_SPAN = 26
+export const DUNE_DEPTH = 7
+export const DUNE_BASE = 0.35
+export const DUNE_AMP = 3.2
+export function duneNotch() {
+    const wallM = Math.max(wallOffSideAt(0, -1), wallOffSideAt(0, 1)) * S
+    return Math.max(wallM + 0.9, (T.ROAD_R + 20) * S)
+}
+export function duneSideH(x) {
+    const nk = duneNotch()
+    const a = Math.abs(x)
+    if (a <= nk) return 0
+    const t = (a - nk) / (DUNE_SPAN / 2 - nk)
+    if (t >= 1) return 0
+    return (DUNE_BASE + DUNE_AMP * duneCrest(t)) * Math.min(1, (1 - t) * 5)
+}
+export function buildDune(strataMap) {
+    const g = new THREE.Group()
+    g.userData.landmark = 'dune'
+    const NX = 48; const NZ = 8
+    const pos = []; const col = []
+    const lit = new THREE.Color(0xdcae74); const shade = new THREE.Color(0xa97443)
+    for (let j = 0; j <= NZ; j++) {
+        const z = -2.5 + (DUNE_DEPTH * j) / NZ
+        const zs = 0.6 + 0.4 * (j / NZ)
+        for (let i = 0; i <= NX; i++) {
+            const x = -DUNE_SPAN / 2 + (DUNE_SPAN * i) / NX
+            const h = duneSideH(x) * zs
+            pos.push(x, h, z)
+            const c = shade.clone().lerp(lit, Math.min(1, h / (DUNE_BASE + DUNE_AMP)))
+            col.push(c.r, c.g, c.b)
+        }
+    }
+    const geo = new THREE.BufferGeometry()
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3))
+    const idx = []
+    for (let j = 0; j < NZ; j++) {
+        for (let i = 0; i < NX; i++) {
+            const a = j * (NX + 1) + i; const b = a + 1; const c = a + NX + 1; const d = c + 1
+            idx.push(a, c, b, b, c, d)
+        }
+    }
+    geo.setIndex(idx); geo.computeVertexNormals()
+    const ridge = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color: 0xffffff, map: strataMap || null, roughness: 0.97, metalness: 0, vertexColors: true,
+    }))
+    ridge.name = 'duneRidge'
+    g.add(ridge)
+    const p = T.pts[0]
+    g.position.set(p.x * S, p.h * S, p.y * S)
+    g.rotation.y = -p.a + Math.PI / 2
+    return g
+}
+
+// ---- #1867: DRY LAKE's windmill, in the round ---------------------------------
+// GP's sprite was a lattice farm windmill — tapered tower, braced girts, an
+// eight-spoke wheel with sail boards, a tail vane, on a concrete pad with the
+// course name. HD builds it in wood-and-concrete standing BESIDE the line,
+// beyond the live wall line on the roomier side (the lamppost lesson: ask the
+// wall law where the road ends before planting anything). The wheel carries
+// userData/name so the render loop can spin it off g.tick; nothing else here
+// moves, sim untouched.
+export const WM_H = 4.6
+export const WM_R = 1.35
+export function buildWindmill(strataMap) {
+    const g = new THREE.Group()
+    g.userData.landmark = 'windmill'
+    const body = new THREE.Group()
+    body.name = 'windmillBody'
+    const wood = new THREE.MeshStandardMaterial({ color: 0xb89a6a, map: strataMap || null, roughness: 0.9, metalness: 0.02 })
+    const dark = new THREE.MeshStandardMaterial({ color: 0x6b5233, roughness: 0.95 })
+    const sail = new THREE.MeshStandardMaterial({ color: 0xd8c9a2, roughness: 0.85, side: THREE.DoubleSide })
+    const concrete = new THREE.MeshStandardMaterial({ color: 0xb8b0a4, map: strataMap || null, roughness: 0.95 })
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.18, 2.4), concrete)
+    pad.name = 'windmillPad'; pad.position.y = 0.09
+    body.add(pad)
+    const bx = 0.95; const tx = 0.3
+    const tilt = Math.atan((bx - tx) / WM_H)
+    const legLen = Math.hypot(WM_H, bx - tx)
+    const legGeo = new THREE.BoxGeometry(0.09, legLen, 0.09)
+    for (const sx of [-1, 1]) {
+        for (const sz of [-1, 1]) {
+            const m = new THREE.Mesh(legGeo, wood)
+            m.position.set((sx * (bx + tx)) / 2, WM_H / 2, (sz * (bx + tx)) / 2)
+            m.rotation.x = -sz * tilt
+            m.rotation.z = sx * tilt
+            body.add(m)
+        }
+    }
+    const girtN = 4
+    for (let lvl = 1; lvl <= girtN; lvl++) {
+        const t0 = lvl / (girtN + 1)
+        const w = bx - (bx - tx) * t0
+        for (const rotY of [0, Math.PI / 2]) {
+            const bar = new THREE.Mesh(new THREE.BoxGeometry(2 * w, 0.05, 0.05), dark)
+            bar.position.y = WM_H * t0; bar.rotation.y = rotY
+            body.add(bar)
+        }
+    }
+    for (let lvl = 0; lvl <= girtN; lvl++) {
+        const t0 = lvl / (girtN + 1); const t1 = (lvl + 1) / (girtN + 1)
+        const y0 = WM_H * t0; const y1 = WM_H * t1
+        const w0 = bx - (bx - tx) * t0; const w1 = bx - (bx - tx) * t1
+        const L = Math.hypot(w0 + w1, y1 - y0)
+        const ang = Math.atan2(y1 - y0, w0 + w1)
+        for (const fz of [-1, 1]) {
+            for (const dir of [-1, 1]) {
+                const b = new THREE.Mesh(new THREE.BoxGeometry(L, 0.045, 0.045), dark)
+                b.position.set(dir * (w0 - w1) / 2, (y0 + y1) / 2, fz * (w0 + w1) / 2)
+                b.rotation.y = fz * 0 // face sits at a fixed z; the diagonal runs in XY
+                b.rotation.z = dir * ang
+                body.add(b)
+            }
+        }
+    }
+    const hubY = WM_H + 0.18
+    const nac = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.3, 0.7), dark)
+    nac.position.set(0, hubY, -0.15)
+    body.add(nac)
+    const boom = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.9), dark)
+    boom.position.set(0, hubY + 0.05, -0.6)
+    body.add(boom)
+    const vane = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.55, 0.7), sail)
+    vane.name = 'windmillVane'
+    vane.position.set(0, hubY + 0.2, -0.95)
+    body.add(vane)
+    const wheel = new THREE.Group()
+    wheel.name = 'windmillWheel'
+    wheel.position.set(0, hubY, 0.28)
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.16, 8), dark)
+    hub.rotation.x = Math.PI / 2
+    wheel.add(hub)
+    for (let k = 0; k < 4; k++) {
+        const sp = new THREE.Mesh(new THREE.BoxGeometry(0.05, 2 * WM_R, 0.035), wood)
+        sp.rotation.z = (k * Math.PI) / 4
+        wheel.add(sp)
+    }
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(WM_R, 0.045, 6, 24), wood)
+    wheel.add(rim)
+    for (let k = 0; k < 8; k++) {
+        const an = (k * Math.PI) / 4 + Math.PI / 8
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.92, 0.02), sail)
+        blade.position.set(Math.cos(an) * WM_R * 0.62, Math.sin(an) * WM_R * 0.62, 0)
+        blade.rotation.z = an - Math.PI / 2
+        blade.rotation.y = 0.5
+        wheel.add(blade)
+    }
+    body.add(wheel)
+    const offR = wallOffSideAt(0, 1) * S
+    const offL = wallOffSideAt(0, -1) * S
+    const side = offR >= offL ? 1 : -1
+    body.position.x = side * ((side > 0 ? offR : offL) + 1.6)
+    g.add(body)
+    const p = T.pts[0]
+    g.position.set(p.x * S, p.h * S, p.y * S)
+    g.rotation.y = -p.a + Math.PI / 2
+    return g
+}
 // cactus / hoodoo from SCENERY, standing on the plateau rim. Node-safe.
 export function buildSceneryItem(sc) {
     const g = new THREE.Group()
