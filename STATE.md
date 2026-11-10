@@ -1,77 +1,80 @@
-# STATE — session 206 (2026-11-10, slot a)
+# STATE — session 207 (2026-11-10, slot b)
 
 ## What shipped
-**FLOOR BOSS: FREIGHT TIERS** merged as `ba10698` (PR #1929, closes #1927 —
-never-dry POLISH stage I filed this session, weakestStage score 5). Distance
-classes price the haul: each parcel rolls LOCAL 0.58 / REGIONAL 0.28 / LONG
-HAUL 0.14 at pack time on a SIDE-STREAM rng (`seed ^ 0x9e3779b9`) — module
-stream byte-identical to pre-tier main, pinned by golden order-signatures for
-8 seeds. Full trailers (#1921 law untouched) pay 6x[1,2,3] per box by each
-box's own destination; dribbles ride free. The road is the cost: send-off
-commits TRIP_TICKS [0,750,1650] by farthest class aboard; on the road the
-truck answers neither cap/age law nor tap-call (tap = silent wait, never a
-fee for a truck that cannot come). Pad tags far posts amber x2 / violet x3,
-dock counts the trip home in world ticks, fx names the class. Dest/away/tiers
-ride stateHash + simState (`padDest`,`truckAway`,`truckFar`) additive (#1373).
-Autopilot skips pad steps while away. Measured: wins 13/15 = main, same thin
-seeds (2,12), avg 1337 vs main 1268 — README records it honestly. Harness:
-floorbosscheck all green +10 gates, 7 mutants killed (new --mutate-tiers,
---mutate-miles); floorbossplay 30/30 x2 (violet tag pixels [176,122,255],
-road commit in Chrome, tap-on-road silence); watchcheck floor-boss 210/210;
-contractcheck floor-boss 14/14. Live content-probed (`ON THE ROAD` +
-`LONG HAUL OUT` beside `STRANDED ON THE PAD` in `index-Coy2oHU6.js`):
-https://jalfern.com/retrogames/floor-boss. QA context added to #1877.
+**FLOOR BOSS: LOAD-WEIGHT CLASSES** merged as `73fa0b2` (PR #1934, closes
+#1931 — never-dry POLISH stage I filed this session, weakestStage score 5).
+Weight is the sibling rate-card to #1927's distance: parcels roll
+LIGHT 0.52 / STANDARD 0.30 / HEAVY 0.18 at pack on a THIRD side-stream rng
+(`seed ^ 0x5f356495`) — module AND dest streams byte-identical, both sigs
+golden for 8 seeds. Full trailers (law untouched) pay `6 x [1,2,3]dest x
+[1,2,3]weight` per box by the `grid[d][w]` manifest aboard — LOCALxHEAVY
+pays what LONGxLIGHT pays (18), LONGxHEAVY is the richest box (54). The dock
+is the cost: a heavy box rides aboard after `TRUCK_LOAD x 2` ticks. Pad tags
+steel H badge + bars (pixel [154,215,255] proven in Chrome), 70 Hz thud,
+`HEAVY xN` on the till. Weight rides stateHash (pad `w`, T `grid`) +
+simState (`padWeight`,`truckWeights`) additive (#1373). Harness +8 gates,
+3 new mutants (--mutate-weight/-slow/-bands), 10/10 killed; play 32/32 x2;
+watchcheck 210/210; contract 14/14. Economy 15 seeds vs live main in one
+process: wins 14/15 (main 13/15, same thin seed 2, seed 12 recovers
+853→1009), avg 1401 vs 1337. Prod content-verified: chunk `index-sI1eX4G-.js`
+carries new `padWeight` beside control `LONG HAUL OUT` — one chunk, two
+markers. https://jalfern.com/retrogames/floor-boss
 
-## The session's lessons
-- **Road-wait turns every dock-timed drive gate into a race with the mixer.**
-  auto-dispatch floods the pad while the truck is gone, so a "wait for quiet
-  pad" loop never sees its instant; and the quiet instant itself commits a new
-  far haul mid-settle. Fix: verb gates run `auto=false` and settle dock+truck+
-  road in ONE loop (break only when pad empty AND mode out AND away 0). Pin
-  LOCAL (`pad[i].d=0`) on parcels whose leg timings a gate measures.
-- **A tap can be swallowed by a bot standing on the OUT cell** (legit select
-  law) — drive gates needing the pad verb clear bots off it first.
-- **Prod half-propagation, again, caught by the control-marker recipe**: the
-  entry rotated DURING probing (BT6LaXQJ → hYKL69k4); the first "hit" was a
-  chunk carrying a marker string from a comment era… Require BOTH a new marker
-  and a standing control marker in the SAME chunk before declaring live —
-  never one string, never a hash.
-- Literal-pinning (session 204) paid off immediately: TRIP_TICKS 1650 was
-  caught mismatching my stale 2000 pin on first run — the check refused to
-  bless code it didn't measure.
+## The session's catch — #1927 shipped inverted odds
+Its dest ladder tested LONG first then `dr < LOCAL+REGIONAL (0.86)` as
+REGIONAL: measured mix was LOCAL 18 / REGIONAL 83 / LONG 16 — REGIONAL had
+LOCAL's band (README claims 58/28/14). The spread gate only asserted
+`local > long` and squeaked red-free at 18>16. Fixed the cumulative bands,
+mix gates now demand LOCAL>REGIONAL>LONG AND LIGHT>STANDARD>HEAVY over 16
+shifts, and `--mutate-bands` proves the sentinel fails. LESSON: an order
+gate on two neighbors is not a mix law — pin the FULL ordering and size the
+sample (~200 boxes for 12-point bands; my first 85-parcel draw flipped
+STANDARD/HEAVY by pure noise and the gate honestly went red).
+
+## Ladder trail
+- TARGET #1927 REFUSED at claim (slot a held it, checkpoint 51 min) — slot a
+  shipped it as #1929 *mid*-ladder; claim of a TARGET that just shipped =
+  take the board's next truth, don't chase.
+- halt none; steer none; `next` #1711 hardware-stalled (audit: S1
+  code-complete); game-queue empty; feedback owned by live QA; flagship
+  READMEs gap-free → never-dry: TMD(8) skipped (gap 0 structural + phone
+  half owned-in-spirit by #1900, STATE law), MAGIC CARPET(5) then unheld
+  but scores 4 post-#1764; tie 5 FloorBoss vs BOMB DEFUSE → older registry
+  title. Filed #1931 → claimed(b) → shipped+CLOSED. QA context posted on
+  #1877 (badge legibility, thud distinguishability, dock-countdown idea).
+- HELD-dir artifact: a building issue whose why-weakest body NAMES other
+  games locks them ALL in `heldDirs` — #1927's own body held FloorBoss,
+  TalkMeDown AND BombDefuse until it merged. Read HELD changes as body
+  evidence, not lane truth.
 
 ## Session bookkeeping
-- Ladder: TARGET #1637 REFUSED (b alive, checkpoint 9 min); no halt/steer;
-  `next` #1711 stalled on Jon (#1730 Hold); queue empty; feedback owned by
-  live QA; flagship READMEs gap-free → never-dry: TMD(8) skipped — all gaps
-  QA-owned-in-spirit (#1900/#1923) or structural; MAGIC CARPET(5) QA-held
-  (#1764); tie 5 FloorBoss vs BOMB DEFUSE → older registry title. Filed
-  #1927 → claimed(a) → shipped+CLOSED. Slot b shipped WATCH b20 (#1928)
-  mid-session — no overlap.
-- :5173 dev server runs from `~/Dev/retrogames-forge-fb-freight-tiers`
-  (detached ba10698, node_modules symlinked) — reuse or kill next session.
-  Slot b owns :5178, studio QA :5176.
-- No jonq (nothing taste/priority/hard-to-undo).
+- #1637 stays `building` (rollout; no pushed branch, checkpoints cold —
+  b21 candidate: DF pin-tightening per session 205's notes).
+- jonq: none (no taste/priority call needed).
+- :5178 vite runs from `~/Dev/retrogames-forge-fb-weight-classes`
+  (detached 73fa0b2, node_modules symlinked) — reuse or kill before
+  strictPort. Worktree kept; branch deleted by merge.
 
-## Next queued (slot a)
-1. Fresh ladder: warden TARGET, else halt/steer/next/queue, game-first.
-   #1637 is b's while its checkpoints stay warm (b21 = DF pin-tightening per
-   its STATE — check before claiming).
-2. If dry: weakestStage via scripts/lib/idle.mjs. FloorBoss's new honest gap
-   (load-weight classes) is a candidate; keep clear of #1877's polish surface.
-3. QA owns #1915/#1900/#1888/#1871 (TMD), #1906/#1907 (SI/DF), #1877 (FB
-   polish incl. freight-tier items), #1923 (rail) — builders don't pick them
-   up untended.
+## Next queued (slot b)
+1. Fresh ladder: warden TARGET, else halt/steer/next/queue games-first.
+   #1637 b21 (DF pins) claimable once other slots' checkpoints are cold.
+2. If dry: never-dry again — FloorBoss keeps 3 unowned gaps (shift ladder,
+   2P seats #1144, aisle clearance); BOMB DEFUSE scores 5 with 4 unowned
+   gaps (phone VENT coaching, shrapnel physics, accent tolerance, haptics).
+3. TMD stays QA's while #1915/#1900/#1888/#1871 are open and a QA session
+   is live — do not take feedback.
 
-## Notes for the next slot-a session
-- Economy-tuning method reused: sweep 15 seeds vs a LIVE main-checkout
-   baseline (my run: 13/15 avg 1268 — re-measure, STATE's 1197 era shifted
-   when more packs landed), tune TRIP_TICKS before rates, settle wins parity
-   with main before pinning gates.
-- floorbossplay verb gates now mutate `auto` and bot positions — a future
-   shift-law change must keep those settle loops honest (one loop, three
-   conditions).
-- Rate-limit etiquette, main-ok cancelled quirk, prod recipe: unchanged, above.
+## Notes for the next slot-b session
+- watchcheck scoping: `npm run watchcheck -- --only floor-boss` (a BARE
+  positional runs the WHOLE shelf — 10+ min, looks hung).
+- Prod sweep recipe, refined: the entry chunk does NOT contain lazy game
+  code; list `assets/index-*.js` names FROM the entry's text (keep the
+  `index-` prefix in your regex!) and fetch each; require new-marker +
+  control-marker in the SAME chunk.
+- `pkill -f watchcheck` before a scoped watchcheck (orphan budget hold).
+- SI pins stay tight (1400/220/6200): any SI brain change runs
+  `invaderscheck -- --mutant` FIRST. New FB gates: dest mix is the
+  band-sentinel — a future dest change that reorders bands dies there.
 
 ## Open questions
 - None. (No taste/priority call needed from Jon.)
