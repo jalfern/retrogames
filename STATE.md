@@ -1,64 +1,68 @@
-# STATE — session 191 (2026-11-10, slot b)
+# STATE — session 191 (2026-11-10, slot a)
 
 ## What shipped
-**WATCH batch 14 — SONAR ABYSS + BOULDER DASH seat their live-state brains** —
-squash `d2ec90f` (PR #1866, Part of #1637, claim: warden TARGET #1862 REFUSED
-— slot a held it live and shipped it same-window — then normal ladder:
-#1711 hardware-held (session-188 audit stands), game-queue empty, QA MASTER
-live so no feedback borrow, flagships spent; #1637 sat `building` with a
-174-min-stale claim → resumed, per slot a's batch-13 triage).
-Each seat feeds the sim's OWN `planStep` into the real `playerMove`
-(watchingRef gates the play branch; no forked brain): Sonar also casts pings
-on `CFG.pingCd`, strokes on `CFG.moveEvery`; BD one arrow every
-`CFG.moveEvery` CA ticks. Reactive per tick → honest mid-cave seats. Any
-driving key/tap hands back (shared blips); route's end releases silently
-(racer rule). Attract hint + pill + AttractWatchButton + WatchToast on shared
-chrome; registry WATCH_HELP x2.
-Evidence: watchcheck pilots 182/182 x2 (seat/blip/advance/takeover/re-seat/
-resume/release; BD moves 0→18 untouched, cave cleared); 12 new source pins
-(seat-feed regexes, no-forked-brain, witness win-gates still exist);
-dashcheck 47/47, sonarcheck 184/184, contractcheck 682/682, watchphonecheck
-381/381 (tripwire 51→53), lint x3 + build green. Mutants: Sonar supply cut
-→ 3 red (idle diver even died — the lives clause bites), BD takeover cut →
-6 red, restored green. Prod: entry `index-DM8xORxz.js` carries the copy.
-Live: https://jalfern.com/retrogames/sonar · /boulder-dash. Coverage 52→54.
-READMEs born for both titles (engine notes, verify cmds, honest gaps).
+**COMET DRIFT HD: per-course start structures completed** — squash `185316c`
+(PR #1869, closes #1867). Never-dry stage (#1571): `weakestStage` scored
+COMET DRIFT GP 5 (3 unowned README gaps + 2 feedback naming it; BombDefuse
+held by QA's #1831, #1637 held by slot b). HD answered every landmark but
+Sandbank's gantry with the Gulch arch. Now `buildArch` dispatches all four:
+`buildDune` sculpts the SAME `art.js` `duneCrest` law into a 26u ridge with a
+road notch cleared by the live wall law; `buildWindmill` = GP's sprite in the
+round (lattice tower, 20 X-braces, named `windmillWheel` with 8 sails, tail
+vane, pad) beyond the wall line, wheel turning off `g.tick` (presentation-only,
+sim/stateHash untouched). Evidence: cometdrifthdcheck 460 pass with 29 new pins
+(vertex-for-vertex equality vs art.js recomputed, notch clearance 0 intruders,
+all-four-distinct 1/6/13/50 parts, determinism); `--mutate-dune` dies 8,
+`--mutate-windmill` dies 12; cometcheck GREEN; lint:hd/mario/fps/ai + build
+green; browser drive zero page errors, windmill + dune seen in screenshots.
+Prod: chunk `index-C0xHIZ_H.js` carries `windmillWheel`.
+Live: https://jalfern.com/retrogames/comet-drift-hd
 
 ## Session bookkeeping
-- First static run RED honestly: shared attractcheck reserves attract `<p>`
-  for the press prompt — the #1654 hint rides a `<div>` (FloorBoss pattern).
-  Fixed both titles, restored sonarcheck's pin to full bite + added hint
-  presence check; green on attempt 2. Lesson: check attractcheck.mjs BEFORE
-  adding any attract line — several per-game checks copy that law.
-- Sonar's earlier `<p>` pin was relaxed to ===2 mid-session, then reverted
-  when the div fix landed — keep pins at the house law, bend the GAME.
-- Merge note: `gh pr merge --auto` had already queued the squash; the explicit
-  second call printed "already merged" and ff'd the worktree — re-detach done.
-- #1637 stays open + `building` (multi-stage; coverage 54, ~26 unseated per
-  b13's count minus this batch).
+- TARGET #1637 REFUSED at claim (b held it live, 16 min) — normal ladder: no
+  halt/steer/game-queue, #1711 re-verified hardware-gated (b's checkpoint:
+  code-complete, gated on Jon), QA MASTER live (no feedback borrow), flagship
+  spent → weakest rung → filed + claimed #1867.
+- **Rode #1865 (first commit `bd066cd`):** HD audit called `bandContext()`
+  without the id #1498 added — passing `T.id` + honest-null gate un-crashed
+  the suite (frozen at :587 since Nov 3). #1865 STAYS OPEN for QA: the
+  unmasked run revealed more than a crash — the recomputation mirror still
+  pins the PRE-#1498 law (`max(170, min(w, R·0.8))`) while #1513 rewrote
+  `wallLatAt` to the evolute cap `max(48, Rloc−48)`; live hairpin walls read
+  **49px vs ROAD_R 96px** (cliff foot crosses the kerb through Corkscomb's
+  triple-apex signature; sim agrees, no pass-through, but render-correction
+  needs a QA/studio call). Documented fully on #1865. The 4 remaining
+  cometdrifthdcheck FAILs are exactly these.
+- Housekeeping that rode along: `gantrymutat` was missing from the mutant
+  exit-code line (--mutate-gantry reported survival/failure inverted). Fixed.
+- No jonq filed (nothing taste/priority that isn't already on #1865).
 
-## Next queued (slot b)
-1. If #1637 is claimable again (my 90-min liveness expires ~07:45Z), batch 15:
-   TALK ME DOWN (`solvePad` in engine.js) — FIRST verify tmd-smoke carries a
-   win-proof; no proven route = no seat (honesty clause). Cheap candidates for
-   the same 15-line canvas shape: any title exposing a `hint()` planner probe —
-   grep `hint: () => planStep` across src/games at batch start.
-2. Ladder fresh at claim time (halt → steer/next → game-queue → feedback
-   borrow only if QA MASTER dead → flagship → weakest via idle-kick).
-3. #1711 stays hardware-gated for Jon only (#1730 precedent; session 188's
-   checkpoint on the issue is the audit).
+## Next queued (slot a)
+1. Fresh `weakestStage` — GP README now has 2 counted gaps ("strata are
+   texture bands… accepted", banking-cue-shipped); if CometDrift still wins,
+   gap 0 is the ACCEPTED strata limitation — honest move is README redress
+   (mark shipped/accepted items CLOSED), but a docs-only change is not a
+   stage: better to look at CometDrift's real debts (README: power-up
+   "items" — the #419 list's other child — is the biggest unowned gameplay
+   debt on the title; needs an issue of its own) or let the wheel pick the
+   next title. Re-check `#1764` MagicCarpet caution and #1637 liveness first.
+2. #1637 WATCH batch: b claimed batch 14 (SONAR + BOULDER DASH) — take the
+   roll only if it's free AND b's slot isn't resuming it.
 
-## Notes for the next slot-b session
-- Dev server 5178 STOPPED at session end. Worktree
-  `~/Dev/retrogames-forge-watch-b14` = detached at origin/main after merge,
-  node_modules symlinked — reuse with `git checkout -B forge/watch-rollout-b15
-  origin/main`.
-- watchcheck's batch blocks are append-only: pilots before the closing `]` of
-  PILOTS, pins after the previous batch's block. Phonecheck tripwire is the
-  registry count — bump with every seat batch (now >=53).
-- The `hint:` DEV probes (Sonar/BD) already name the planner's next call —
-  batch pilots double as proof the seat and the hint stayed the same brain.
+## Notes for the next slot-a session
+- Worktree `~/Dev/retrogames-forge-comethd-landmarks` = detached at
+  `185316c` (post-merge), node_modules symlinked; reuse:
+  `git checkout -B forge/<newslug> origin/main`.
+- Dev server 5173 stopped at session end.
+- `lint:hd` (package.json) covers CometDriftHD + HD scripts — cheap gate, use
+  it for HD work. The 4 stale-law FAILs will follow any hdcheck run until QA
+  redresses #1865 — check the gate NAMES, not just the summary.
+- Landmark pattern for future per-course ports: branch on `T.landmark` inside
+  `buildArch`, name moving parts for the loop, compute placements from
+  `wallOffSideAt(0, side)` (never hard-code offsets), add one mutant per
+  new dispatch line.
+- Vercel deploy lands ~4 min after merge; prod grep must follow redirects
+  (`curl -sL`) and search the ROUTE chunk (entry only carries registry copy).
 
 ## Open questions
-- None. (#1637 roll is mechanical; the attract-`<p>` collision was a harness
-  lesson, not a taste call. No jonq filed.)
+- None. (#1865's law-floor question is QA's board; nothing new for Jon.)
