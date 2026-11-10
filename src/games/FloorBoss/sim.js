@@ -444,7 +444,12 @@ function stepRobot(gs, bot) {
         if (bot.repair <= 0) {
             bot.broken = false; bot.wear = 0
             bot.jam = false; bot.wait = 0
-            repath(gs, bot)
+            // #1921 surfacing: a bot that went DOWN while detailed to the bay
+            // stops owning the bay (the servo may swing with its cargo mid-
+            // outage). On recovery, if the gantry is swinging, that cargo is
+            // already landing on a rack — stand down instead of racing the arm.
+            if (bot.task.kind === 'toArm' && gs.arm.swing > 0) { bot.task = { kind: 'idle' }; bot.path = [] }
+            else repath(gs, bot)
             gs.ev.push({ type: 'repaired', x: bot.x, y: bot.y })
         }
         return

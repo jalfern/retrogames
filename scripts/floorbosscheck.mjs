@@ -15,11 +15,18 @@
 //   LOAD-OUT — (#1911) ships stage parcels on the pad, the pad caps the pack
 //            line, trucks are called by law (cap/age) or by a manager tap, load
 //            box by box, and drive off carrying exactly what they loaded.
+//   FREIGHT  — (#1921) pack BOOKS money as escrow on the parcel; the till rings
+//            when the trailer physically hauls the last box; hauls of
+//            FULL_TRAILER+ boxes earn FREIGHT_PER_BOX per box; manager tap-calls
+//            pay the DISPATCH_FEE (law pickups are free); across autopilot
+//            shifts the books balance — every credit has a ledger line.
 //
 // Run: node scripts/floorbosscheck.mjs
-//   node scripts/floorbosscheck.mjs --mutate-yield  # break the bay-yield law, demand RED
-//   node scripts/floorbosscheck.mjs --mutate-reach  # widen reach past the law, demand RED
-//   node scripts/floorbosscheck.mjs --mutate-cap    # let the dock pack past the pad, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-yield    # break the bay-yield law, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-reach    # widen reach past the law, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-cap      # let the dock pack past the pad, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-freight  # pay at pack again (old till), demand RED
+//   node scripts/floorbosscheck.mjs --mutate-bonus    # dribbles earn freight too, demand RED
 
 import { spawnSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
@@ -27,8 +34,9 @@ import { fileURLToPath } from 'node:url'
 import { plant, pull } from './lib/mutateguard.mjs'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell,
-    SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BASE_PAY,
-    STOW_PAY, ARM_REACH, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
+    SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BREAK_FINE, BASE_PAY,
+    STOW_PAY, RACK_COST, ROBOT_COST, ARM_PATIENCE, ARM_CELL, PAD_CAP, PAD_AGE,
+    FREIGHT_PER_BOX, FULL_TRAILER, DISPATCH_FEE,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 
@@ -40,14 +48,20 @@ const ok = (cond, msg) => { if (cond) console.log(`  ok  ${msg}`); else { consol
 const MUT_YIELD = ARGS.includes('--mutate-yield')
 const MUT_REACH = ARGS.includes('--mutate-reach')
 const MUT_CAP = ARGS.includes('--mutate-cap')
-if (MUT_YIELD || MUT_REACH || MUT_CAP) {
+const MUT_FREIGHT = ARGS.includes('--mutate-freight')
+const MUT_BONUS = ARGS.includes('--mutate-bonus')
+if (MUT_YIELD || MUT_REACH || MUT_CAP || MUT_FREIGHT || MUT_BONUS) {
     const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
     const src = readFileSync(sim, 'utf8')
     const [from, to, name] = MUT_YIELD
         ? ['if (gs.arm.heldT >= ARM_PATIENCE && !bayClaimed(gs)) {', 'if (gs.arm.heldT >= ARM_PATIENCE) {', 'the servo ignores detailed bots and swings anyway']
         : MUT_CAP
             ? ['if (gs.pad.length >= PAD_CAP) break', 'if (gs.pad.length >= PAD_CAP + 1) break', 'the dock packs past the pad — parcels pile beyond the pipe']
-            : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+            : MUT_FREIGHT
+                ? ['gs.escrow += pay', 'gs.score += pay', 'the old till is back — pack pays cash and the trailer hauls free money']
+                : MUT_BONUS
+                    ? ['if (tr.carry >= FULL_TRAILER) {', 'if (tr.carry >= 0) {', 'every dribble haul claims the freight bonus it did not earn']
+                    : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
     if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
     plant(sim, src.replace(from, to))
     console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
@@ -70,7 +84,7 @@ for (const seed of [7, 1337, 4242, 99]) {
 }
 {
     const s = state(makeGame(7))
-    const keys = ['tick', 'score', 'quota', 'strikes', 'done', 'robots', 'racks', 'orders', 'staging', 'conveyor', 'armHeld', 'auto', 'cursor', 'hash', 'seed', 'pad', 'truck', 'carry']
+    const keys = ['tick', 'score', 'quota', 'strikes', 'done', 'robots', 'racks', 'orders', 'staging', 'conveyor', 'armHeld', 'auto', 'cursor', 'hash', 'seed', 'pad', 'truck', 'carry', 'escrow', 'freight', 'fees', 'padAge']
     ok(keys.every((k) => k in s), 'state shape complete')
 }
 
@@ -136,15 +150,28 @@ console.log('— rules —')
     ok(!b.broken && b.wear === 0, `unattended fix completes (idle ~${waited} ticks)`)
 }
 {
-    // shipping: a covered order pays base + on-time bonus and frees staging
+    // freight line (#1921): a covered order is BOOKED at pack — the payout rides
+    // the parcel as escrow and the score does NOT move; the credits land when the
+    // trailer physically hauls the parcel's last box away (law call, so no fee)
     const gs = makeGame(7)
+    gs.auto = false
     gs.staging.push('crate', 'can', 'coil')
     gs.orders.push({ id: 999, items: ['crate', 'coil'], due: gs.tick + 1200, prio: false, shipped: false, expired: false })
     const s0 = gs.score
     for (let i = 0; i < 40; i++) step(gs, [{}])
-    // on-time bonus is per item (two-item order pays base + 2 × 25)
-    ok(gs.shipped === 1 && gs.score - s0 === BASE_PAY.crate + BASE_PAY.coil + 50, `order packed and shipped (+${gs.score - s0})`)
-    ok(gs.staging.length === 1 && gs.staging[0] === 'can', 'staging consumed exactly the shipped kinds')
+    const esc = gs.pad.length === 1 ? gs.pad[0].esc : 0
+    const want = BASE_PAY.crate + BASE_PAY.coil + 50 // two-item on-time order: base + 2 × ONTIME_BONUS
+    ok(gs.shipped === 1 && gs.score === s0 && gs.escrow === want && esc === want
+        && gs.staging.length === 1 && gs.staging[0] === 'can',
+        `a packed order escrows ${esc} instead of paying, staging drained exactly (score frozen at pack)`)
+    let paidAt = 0, payEv = 0
+    for (let i = 0; i < 1200 && !paidAt; i++) {
+        step(gs, [{}])
+        const f = gs.ev.find((e) => e.type === 'freight')
+        if (f) { paidAt = gs.tick; payEv = f.pay }
+    }
+    ok(paidAt > 0 && gs.escrow === 0 && gs.paid === want && gs.score === s0 + want && payEv === want,
+        `money follows freight: +${gs.paid} lands when the trailer hauls the last box (law pickup, no fee)`)
 }
 {
     // overflow: a full floor refuses the belt
@@ -220,7 +247,9 @@ console.log('— servo arm (#1872) —')
             for (const e of gs.ev) {
                 if (e.type === 'armstow') {
                     servoStows++
-                    if (Math.abs(e.x - ARM_CELL.x) + Math.abs(e.y - ARM_CELL.y) > ARM_REACH) violReach++
+                    // legal reach pinned as a literal: widening the constant must
+                    // not widen the law it is measured against (self-sealing pin)
+                    if (Math.abs(e.x - ARM_CELL.x) + Math.abs(e.y - ARM_CELL.y) > 4) violReach++
                 }
                 if (e.type === 'armswing' && gs.arm.heldT < ARM_PATIENCE) violPatience++
             }
@@ -228,7 +257,7 @@ console.log('— servo arm (#1872) —')
     }
     ok(violYield === 0, 'swing never starts while a bot is detailed to the bay (3 autopilot shifts)')
     ok(violRace === 0, 'bay handoff never contested mid-swing')
-    ok(violReach === 0, `every servo stow lands inside ARM_REACH ${ARM_REACH} (${servoStows} servo stows seen)`)
+    ok(violReach === 0, `every servo stow lands inside the legal reach 4 (${servoStows} servo stows seen)`)
     ok(violPatience === 0, 'no swing before ARM_PATIENCE held-ticks')
 }
 
@@ -316,8 +345,12 @@ console.log('— load-out (#1911) —')
     gs.packT = 1
     step(gs, [{}]) // ships, stages 3 boxes in one parcel
     const t0 = gs.tick
+    const cash0 = gs.score
     const call = clickCell(gs, 23, 13)
     ok(call === 'call' && gs.truck.mode === 'back', 'a tap on the shipping pad calls a waiting truck early')
+    // #1921: the early call is IMPATIENCE — it pays the express fee; a pickup
+    // the law summons on cap/age would have been free
+    ok(gs.fees === DISPATCH_FEE && gs.score === cash0 - DISPATCH_FEE, `the express tap-call charges DISPATCH_FEE ${DISPATCH_FEE}`)
     let parked = 0
     while (gs.truck.mode !== 'park' && parked++ < 400) step(gs, [{}])
     const tapParkTick = gs.tick
@@ -355,6 +388,69 @@ console.log('— load-out (#1911) —')
         }
     }
     ok(viol === 0, `autopilot shifts keep the pad inside the pipe and the trailer honest (${cycles} departures, ${seen} boxes loaded, 3 shifts)`)
+}
+
+console.log('— freight line (#1921) —')
+{
+    // conservation across full autopilot shifts: every credit entering or leaving
+    // score has a ledger line. Escrow booked == escrow paid + escrow held; score
+    // reconciles against opening float + paid + freight + stow pay − fees − fines
+    // − build/hire spend. Phantom money, double-pays and evaporating escrow all
+    // fail these equations.
+    for (const seed of [7, 1337, 4242]) {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        let escrowed = 0, fines = 0, spend = 0, taps = 0, feeSeen = 0
+        while (!gs.end && gs.tick < SHIFT + 10) {
+            step(gs, [ap(gs)])
+            for (const e of gs.ev) {
+                if (e.type === 'ship' || e.type === 'late') escrowed += e.pay
+                if (e.type === 'truckin') { if (e.tap) taps++; feeSeen += e.fee || 0 }
+                if (e.type === 'expire') fines += EXPIRE_FINE
+                if (e.type === 'break') fines += BREAK_FINE
+                if (e.type === 'overflow') fines += OVERFLOW_FINE
+                if (e.type === 'build') spend += RACK_COST
+                if (e.type === 'hire') spend += ROBOT_COST
+            }
+        }
+        const books = 100 + gs.paid + gs.freight + gs.stows * STOW_PAY - gs.fees - fines - spend
+        ok(gs.paid + gs.escrow === escrowed && gs.fees === feeSeen && taps > 0 && gs.score === books,
+            `seed ${seed}: the books balance — ${gs.paid} paid + ${gs.escrow} held == ${escrowed} booked; score ${gs.score} reconciles (taps ${taps}, freight +${gs.freight}, express −${gs.fees})`)
+    }
+}
+{
+    // freight bonus law: a haul earns the per-box bonus ONLY when it physically
+    // carries FULL_TRAILER or more boxes, and pays exactly FREIGHT_PER_BOX × carry
+    let viol = 0, bonuses = 0, dribbles = 0
+    for (const seed of [7, 1337, 4242, 99, 555]) {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        while (!gs.end && gs.tick < SHIFT + 10) {
+            step(gs, [ap(gs)])
+            for (const e of gs.ev) {
+                if (e.type === 'bonus') {
+                    bonuses++
+                    if (e.carry < FULL_TRAILER || e.amt !== FREIGHT_PER_BOX * e.carry) viol++
+                }
+                if (e.type === 'truckout' && e.carry < FULL_TRAILER) dribbles++
+            }
+        }
+    }
+    ok(viol === 0 && bonuses > 0 && dribbles > 0,
+        `full trailers (≥${FULL_TRAILER} boxes) earn ${FREIGHT_PER_BOX}/box, dribbles never do (${bonuses} bonuses, ${dribbles} dribbles, 0 violations, 5 shifts)`)
+}
+{
+    // the till never lies: escrow/paid/freight/fees ride sim state and the hash
+    // (two identical-prefix worlds with different escrow must hash apart)
+    const simSrc = readFileSync(new URL('../src/games/FloorBoss/sim.js', import.meta.url), 'utf8')
+    ok(/E\[\$\{gs\.escrow\}:\$\{gs\.paid\}:\$\{gs\.freight\}:\$\{gs\.fees\}\]/.test(simSrc),
+        'hash carries the freight ledger (additive, #1373 law)')
+    ok(/\$\{p\.n\}:\$\{p\.esc \|\| 0\}/.test(simSrc), 'hash carries the per-parcel escrow on the pad')
+    const a = makeGame(7), b = makeGame(7)
+    b.escrow += 50 // a world identical except for booked-but-unshipped money
+    ok(stateHash(a) !== stateHash(b), 'escrow differences hash apart (the never-lies sweep catches a hidden till)')
+    const s = state(a)
+    ok(['escrow', 'paid', 'freight', 'fees', 'padAge'].every((k) => k in s), 'state shape carries the freight ledger')
 }
 
 console.log('— win —')
