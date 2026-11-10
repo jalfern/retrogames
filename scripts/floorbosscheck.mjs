@@ -9,17 +9,47 @@
 //            and the autopilot clears quota (the WIN proof, several seeds)
 //   HONEST — same seed + same pads = identical hashes twice; different seed
 //            differs; the kit episode recorder validates a recorded shift.
+//   SERVO  — (#1872) the gantry self-stows in-reach racks when no bot is
+//            detailed, yields the bay to any detailed bot, never races the
+//            handoff mid-swing, and stays inside ARM_REACH.
 //
 // Run: node scripts/floorbosscheck.mjs
+//   node scripts/floorbosscheck.mjs --mutate-yield  # break the bay-yield law, demand RED
+//   node scripts/floorbosscheck.mjs --mutate-reach  # widen reach past the law, demand RED
 
+import { spawnSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
+import { plant, pull } from './lib/mutateguard.mjs'
 import {
     makeGame, step, state, stateHash, createAutopilot, clickCell,
     SHIFT, QUOTA, STRIKES, RACK_CAP, OVERFLOW_FINE, EXPIRE_FINE, BASE_PAY,
+    STOW_PAY, ARM_REACH, ARM_PATIENCE, ARM_CELL,
 } from '../src/games/FloorBoss/sim.js'
 import { createEpisode, validateEpisode } from '../src/utils/robot/episode.js'
 
+const ARGS = process.argv.slice(2)
 let fails = 0
 const ok = (cond, msg) => { if (cond) console.log(`  ok  ${msg}`); else { console.error(`FAIL  ${msg}`); fails++ } }
+
+// ---- mutant mode: plant one load-bearing lie, a child run must go red ----
+const MUT_YIELD = ARGS.includes('--mutate-yield')
+const MUT_REACH = ARGS.includes('--mutate-reach')
+if (MUT_YIELD || MUT_REACH) {
+    const sim = new URL('../src/games/FloorBoss/sim.js', import.meta.url)
+    const src = readFileSync(sim, 'utf8')
+    const [from, to, name] = MUT_YIELD
+        ? ['if (gs.arm.heldT >= ARM_PATIENCE && !bayClaimed(gs)) {', 'if (gs.arm.heldT >= ARM_PATIENCE) {', 'the servo ignores detailed bots and swings anyway']
+        : ['export const ARM_REACH = 4', 'export const ARM_REACH = 9', 'the gantry reaches past its law']
+    if (!src.includes(from)) { console.error('MUTATE: load-bearing line not found — probing stale code.'); process.exit(2) }
+    plant(sim, src.replace(from, to))
+    console.log(`  ..    mutated: ${name} — this run MUST report FAILs`)
+    const r = spawnSync(process.execPath, [fileURLToPath(import.meta.url)], { encoding: 'utf8' })
+    pull(sim)
+    const red = /FAIL/.test((r.stdout || '') + (r.stderr || ''))
+    console.log(red ? '  ok  mutant killed (servo laws went red)' : 'FAIL  MUTANT SURVIVED — the servo laws cannot fail')
+    process.exit(red ? 0 : 1)
+}
 
 console.log('— boots —')
 for (const seed of [7, 1337, 4242, 99]) {
@@ -128,6 +158,71 @@ console.log('— rules —')
     for (let i = 0; i < STRIKES; i++) gs.orders.push({ id: 990 + i, items: ['crate'], due: gs.tick + 30 + i, prio: false, shipped: false, expired: false })
     for (let i = 0; i < 80 && !gs.end; i++) step(gs, [{}])
     ok(gs.end === 'fired' && gs.expired === STRIKES, `strike ${STRIKES} fires the boss`)
+}
+
+console.log('— servo arm (#1872) —')
+{
+    // self-stow with the bots idle and untouched: racks emptied so the
+    // gantry has room, auto off so no bot is ever detailed
+    const gs = makeGame(7)
+    gs.auto = false
+    for (const r of gs.racks) r.items = []
+    const pos0 = gs.robots.map((r) => `${r.x},${r.y}`).join(' ')
+    const cargo0 = gs.racks.reduce((s, r) => s + r.items.length, 0)
+    const s0 = gs.score
+    let servoStows = 0
+    for (let i = 0; i < 6000 && servoStows < 3; i++) {
+        step(gs, [{}])
+        servoStows += gs.ev.filter((e) => e.type === 'armstow').length
+    }
+    const pos1 = gs.robots.map((r) => `${r.x},${r.y}`).join(' ')
+    ok(servoStows >= 3 && pos0 === pos1
+        && gs.racks.reduce((s, r) => s + r.items.length, 0) - cargo0 >= 3
+        && gs.stows >= 3 && gs.score >= s0 + 3 * STOW_PAY,
+        `servo loads in-reach racks while bots idle and unmoved (${servoStows} stows, counter and pay banked)`)
+}
+{
+    // bay-first yield: detail a bot the tick the arm loads; the servo waits
+    // out its patience anyway (travel > patience) yet must never swing.
+    const gs = makeGame(7)
+    gs.auto = false
+    for (const r of gs.racks) r.items = []
+    let swungWhileDetailed = false, bayServed = false, heldTAtBay = 0
+    for (let i = 0; i < 3000 && !bayServed; i++) {
+        step(gs, [{}])
+        if (gs.arm.held && gs.arm.swing === 0 && !gs.robots.some((b) => b.task.kind === 'toArm')) clickCell(gs, ARM_CELL.x, ARM_CELL.y)
+        if (gs.arm.swing > 0 && gs.robots.some((b) => b.task.kind === 'toArm' && !b.broken)) swungWhileDetailed = true
+        if (gs.ev.some((e) => e.type === 'bay')) { bayServed = true; heldTAtBay = gs.arm.heldT }
+    }
+    ok(bayServed && !swungWhileDetailed && heldTAtBay > ARM_PATIENCE,
+        `detailed bot owns the bay past patience (served at heldT ${heldTAtBay} > ${ARM_PATIENCE}, zero swings)`)
+}
+{
+    // invariants across full autopilot shifts: swing never starts contested,
+    // handoff never races a swing, stows stay in reach, patience always honored
+    let violYield = 0, violRace = 0, violReach = 0, violPatience = 0, servoStows = 0
+    for (const seed of [7, 1337, 4242]) {
+        const gs = makeGame(seed)
+        const ap = createAutopilot()
+        while (!gs.end && gs.tick < SHIFT + 10) {
+            step(gs, [ap(gs)])
+            if (gs.arm.swing > 0) {
+                if (gs.robots.some((b) => b.task.kind === 'toArm' && !b.broken)) violYield++
+                if (gs.ev.some((e) => e.type === 'bay')) violRace++
+            }
+            for (const e of gs.ev) {
+                if (e.type === 'armstow') {
+                    servoStows++
+                    if (Math.abs(e.x - ARM_CELL.x) + Math.abs(e.y - ARM_CELL.y) > ARM_REACH) violReach++
+                }
+                if (e.type === 'armswing' && gs.arm.heldT < ARM_PATIENCE) violPatience++
+            }
+        }
+    }
+    ok(violYield === 0, 'swing never starts while a bot is detailed to the bay (3 autopilot shifts)')
+    ok(violRace === 0, 'bay handoff never contested mid-swing')
+    ok(violReach === 0, `every servo stow lands inside ARM_REACH ${ARM_REACH} (${servoStows} servo stows seen)`)
+    ok(violPatience === 0, 'no swing before ARM_PATIENCE held-ticks')
 }
 
 console.log('— win —')
