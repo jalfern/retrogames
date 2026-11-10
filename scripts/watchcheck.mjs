@@ -1564,6 +1564,78 @@ const PILOTS = [
             }
         },
     },
+    // #1637 batch 16 — the referee sweeps its own field. MINESWEEPER's driver
+    // is nextDigs, the gate's OWN autopilot: the exact solver rule the fairness
+    // gate certifies every board with (subset-core, chord-forbidden). Boards
+    // plant AT the first dig and are proven zero-guess-closable from it
+    // (sweepcheck's witness), so a seated sweep hitting a mine would mean the
+    // referee lied — no death while seated is an honesty assertion, not luck.
+    // COLT floods hard and wins in ~2 s, so the steer lands early and the
+    // re-seat resumes mid-field.
+    {
+        id: 'minesweeper', url: `${BASE}/minesweeper`, hook: '__sweepTest',
+        async run(page, rep) {
+            const H = '__sweepTest'
+            const watching = () => page.evaluate((h) => window[h].watching(), H)
+            const probe = () => page.evaluate((h) => window[h].probe(), H)
+            const sfx = () => page.evaluate((h) => window[h].watchSfx(), H)
+            await key(page, 'Space')                       // attract -> play (single-screen boot)
+            await page.waitForTimeout(400)
+            rep.check('minesweeper: the field is live before the seat', (await probe()).screen === 'play')
+            rep.check('minesweeper: nobody is digging yet (no seat before Y)', !(await watching()))
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            rep.check('minesweeper: Y seats the referee', await watching())
+            rep.check('minesweeper: handoff blip at seat', (await sfx()).at(-1) === 'start')
+            await page.keyboard.down('ArrowLeft')
+            rep.check('minesweeper: steer key takes over', !(await watching()))
+            rep.check('minesweeper: handoff blip on takeover', (await sfx()).at(-1) === 'stop')
+            await page.keyboard.up('ArrowLeft')
+            await key(page, 'KeyY')
+            await seatPoll(page, H)
+            const mid = await probe()
+            rep.check('minesweeper: Y re-seats the prover mid-field',
+                (await watching()) || mid.screen !== 'play', JSON.stringify(mid))
+            if (mid.screen === 'play') {
+                // opened counts every cell the sweep banked; end === 'dead' in
+                // the same breath is the referee lying — that must never hold.
+                const adv = (x, y) => y.opened > x.opened && y.end !== 'dead'
+                const c = mid
+                const d = await pollAdvance(page, probe, adv, c, 4000)
+                rep.check('minesweeper: the prover sweeps untouched (idle hands dig nothing, hit nothing)',
+                    adv(c, d), `opened ${c.opened} -> ${d.end || d.opened}`)
+            } else rep.check('minesweeper: the prover sweeps untouched (idle hands dig nothing, hit nothing)', false, 'never re-seated in time')
+            let ended = false
+            try {
+                await page.waitForFunction((h) => window[h].probe().screen === 'over', H, { timeout: 25000 })
+                ended = true
+            } catch { /* fall through to the check */ }
+            const fin = await probe()
+            const safe = fin.w * fin.h - fin.totalMines
+            rep.check('minesweeper: the route runs to its end and sweeps the field',
+                ended && fin.end === 'win' && fin.opened === safe,
+                `opened ${fin.opened}/${safe}, end ${fin.end}, screen ${fin.screen}`)
+            const s = await sfx()
+            const stops = s.filter((x) => x === 'stop').length
+            rep.check('minesweeper: released silently at the finish (one stop = the steer only)', !(await watching()) && stops === 1,
+                `sfx log ${JSON.stringify(s)}`)
+            // #1656 one-tap: from attract, ▶ WATCH must start the run AND seat
+            // the referee — the single-screen boot seats directly, no bank.
+            await page.waitForTimeout(900)                          // over-screen guard
+            await key(page, 'Space')                                // over -> attract
+            await page.waitForTimeout(900)
+            rep.check('minesweeper: back on attract before the tap', (await probe()).screen === 'attract')
+            const btn = await page.$('[data-watch-attract="1"]')
+            rep.check('minesweeper: attract presents the one-tap ▶ WATCH button', !!btn)
+            if (btn) {
+                const bx = await btn.boundingBox()
+                await page.mouse.click(bx.x + bx.width / 2, bx.y + bx.height / 2)
+                await page.waitForFunction((h) => window[h].watching(), H, { timeout: 4000 }).catch(() => {})
+                const q = await probe()
+                rep.check('minesweeper: one tap starts the run AND seats the prover', q.screen === 'play' && await watching(), JSON.stringify(q))
+            }
+        },
+    },
 ]
 
 const run = PILOTS.filter((p) => !ONLY || p.id === ONLY)
@@ -1975,6 +2047,39 @@ for (const [name, f] of Object.entries(B4_SRC)) {
     rep.check('batch 15: tmd-smoke still races solvePad across 200 seeds (the seat\'s witness)',
         /wins \$\{wins\}\/200/.test(readFileSync('scripts/tmd-smoke.mjs', 'utf8'))
         && /gs\.done && gs\.won/.test(readFileSync('scripts/tmd-smoke.mjs', 'utf8')))
+}
+// ---- #1637 batch 16 source pins — the referee sweeps its own field ----
+{
+    const swp = readFileSync('src/games/Minesweeper/index.jsx', 'utf8')
+    const reg16 = readFileSync('src/config/games.js', 'utf8')
+    const entryHas16 = (p, s) => { const m = reg16.split(`path: '${p}'`)[1]; return !!m && m.split('path:')[0].includes(s) }
+    // The seat must feed the gate's OWN autopilot into the real dig path —
+    // nextDigs through actDig, auto-chord intact — never a re-rolled brain
+    // and never a replay of a stored plan.
+    rep.check('MINESWEEPER: the seat feeds nextDigs into the real dig path (no forked brain)',
+        /if \(sc === 'play' && watchingRef\.current\) watchTick\(\)/.test(swp)
+        && /if \(!watchPlan\.length\) watchPlan = nextDigs\(gs\)/.test(swp)
+        && /actDig\(p\.x, p\.y\)/.test(swp))
+    rep.check('MINESWEEPER: the first dig takes the center — the original\'s guaranteed-safe click the gate plants AT',
+        /if \(!gs\.planted\) \{ actDig\(gs\.w >> 1, gs\.h >> 1\); return \}/.test(swp))
+    rep.check('MINESWEEPER: Y seats with blips; any driving key takes over',
+        /if \(isWatchKey\(e\)\) \{/.test(swp)
+        && /if \(watchingRef\.current && isTakeoverKey\(e\)\) \{ watchingRef\.current = false; setWatching\(false\)/.test(swp))
+    rep.check('MINESWEEPER: a tap on the field hands the dig back too',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\); playWatchStop\(\) \}/.test(swp))
+    rep.check('MINESWEEPER: watch never lingers — released at the end of the run (silent, racer rule)',
+        /if \(watchingRef\.current\) \{ watchingRef\.current = false; setWatching\(false\) \}/.test(swp))
+    rep.check('MINESWEEPER: attract shows the shared WATCH hint (import + drawn line)',
+        (swp.match(/WATCH_ATTRACT_HINT/g) || []).length >= 2)
+    rep.check('registry /minesweeper: controls carry the WATCH line', entryHas16('/minesweeper', 'WATCH_HELP'))
+    // No forked brain, and the witness still carries the proof the seat rides:
+    // nextDigs comes from the game's own minefield.js, and sweepcheck still
+    // audits the zero-guess gate the seat leans on, sequential play included.
+    rep.check('batch 16: the seat imports nextDigs from its own minefield.js',
+        /from '\.\/minefield\.js'/.test(swp) && /nextDigs/.test(swp))
+    rep.check('batch 16: sweepcheck still audits the gate the seat rides (seq-play wins)',
+        /seqFail === 0/.test(readFileSync('scripts/sweepcheck.mjs', 'utf8'))
+        && /sequential play lost or stalled on/.test(readFileSync('scripts/sweepcheck.mjs', 'utf8')))
 }
 // #1654 item 6: the house style is ONE shared banner. Eight raw per-game divs
 // in four palettes had drifted back in after #1650 folded the rest — a stray

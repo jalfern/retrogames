@@ -22,6 +22,8 @@ import { audioController } from '../../utils/AudioController'
 import { mountDbg, unmountDbg } from '../../utils/DebugKit'
 import { DIFFS, FIXED_DT, newGame, dig, flag, chord, step, solve, nextDigs, cloneGame, stateHash, idx } from './minefield.js'
 import { exposeFeedbackState, unexposeFeedbackState, seedFromQuery } from '../../utils/gameContract'
+import WatchButton, { WatchToast, AttractWatchButton } from '../../components/WatchButton'
+import { isWatchKey, isTakeoverKey, playWatchStart, playWatchStop, watchSfxLog, WATCH_ATTRACT_HINT } from '../../utils/watch'
 
 const SIM_MS = 1000 * FIXED_DT
 const PAD_TOP = 72 // px of fixed chrome band above the board (ARCADE / FEEDBACK)
@@ -43,6 +45,8 @@ const MinesweeperGame = () => {
     const stageRef = useRef(null)
     const [screen, setScreen] = useState('attract')
     const [paused, setPaused] = useState(false)
+    const [watching, setWatching] = useState(false) // #1637 WATCH: mirrors the seat flag for the chrome
+    const watchingRef = useRef(false)
     const [endInfo, setEndInfo] = useState(null)
     const [diffIdx, setDiffIdx] = useState(0)
     const screenRef = useRef('attract')
@@ -68,6 +72,10 @@ const MinesweeperGame = () => {
         let overDelay = 0
         let lastPadEl = null, lastPadH = 0
         const say = (m) => { toastMsg = m; toast = 100 }
+        // #1637 batch 16 — the seat's plan queue and pacing (6 ticks ≈ 100 ms
+        // per dig so the sweep reads as logic, not a flash). The plan is
+        // recomputed reactively, never replayed blind.
+        let watchPlan = [], watchWait = 0
 
         const buildCanvas = (d) => {
             if (canvas) canvas.remove()
@@ -95,6 +103,7 @@ const MinesweeperGame = () => {
             gs = newGame(di, seed)
             buildCanvas(d)
             plantMs = 0
+            watchPlan = []; watchWait = 0
         }
 
         // ------------------------------------------------------- audio ----
@@ -115,6 +124,8 @@ const MinesweeperGame = () => {
 
         const finish = (s) => {
             if (s.end !== 'win' && s.end !== 'dead') return
+            // racer rule: the route's end releases the seat, silently
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false) }
             overAtRef.current = performance.now()
             let wrong = 0
             for (let i = 0; i < s.w * s.h; i++) if (s.flag[i] && !s.mines[i]) wrong++
@@ -173,6 +184,27 @@ const MinesweeperGame = () => {
             if (!gs) return
             gs.cursor.x = Math.max(0, Math.min(gs.w - 1, gs.cursor.x + dx))
             gs.cursor.y = Math.max(0, Math.min(gs.h - 1, gs.cursor.y + dy))
+        }
+
+        // #1637 WATCH: the prover at the controls. nextDigs is the gate's OWN
+        // autopilot — the same solver the fairness gate certifies every board
+        // with (subset-core, chord-forbidden) and the attract demo runs — fed
+        // into the real dig path (actDig, auto-chord intact), so the seat can
+        // only dig what the referee proved safe. First action digs the center,
+        // as in the demo: the original guarantees the first click is safe, and
+        // the gate plants AT that click.
+        const watchTick = () => {
+            if (!gs || gs.end || screenRef.current !== 'play' || plantPending) return
+            if (!gs.planted) { actDig(gs.w >> 1, gs.h >> 1); return }
+            if (watchWait > 0) { watchWait--; return }
+            while (watchPlan.length && gs.open[idx(gs, watchPlan[0].x, watchPlan[0].y)]) watchPlan.shift()
+            if (!watchPlan.length) watchPlan = nextDigs(gs)
+            if (!watchPlan.length) return // a gated board empties the plan only at the sweep
+            const p = watchPlan.shift()
+            if (gs.open[idx(gs, p.x, p.y)]) return
+            gs.cursor.x = p.x; gs.cursor.y = p.y
+            watchWait = 6
+            actDig(p.x, p.y)
         }
 
         // ------------------------------------------------------- paint ----
@@ -333,6 +365,7 @@ const MinesweeperGame = () => {
                 acc -= SIM_MS
                 if (sc === 'attract') tickDemo()
                 else if (sc === 'play' && gs && gs.planted && !gs.end) step(gs)
+                if (sc === 'play' && watchingRef.current) watchTick()
                 if (overDelay > 0 && --overDelay === 0 && gs && gs.end === 'dead' && screenRef.current === 'play') setSc('over')
             }
             if (sc === 'attract') paintDemo()
@@ -359,6 +392,14 @@ const MinesweeperGame = () => {
         const onDown = (e) => {
             const code = e.shiftKey && e.code === 'Slash' ? 'Question' : e.code
             if (code === 'Question') { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); return }
+            // #1637 WATCH: Y seats the referee; any driving key hands back and
+            // still lands where the player aimed it (the takeover digs/moves).
+            if (isWatchKey(e)) {
+                watchingRef.current = !watchingRef.current; setWatching(watchingRef.current)
+                if (watchingRef.current) { watchPlan = []; watchWait = 0; playWatchStart() } else playWatchStop()
+                return
+            }
+            if (watchingRef.current && isTakeoverKey(e)) { watchingRef.current = false; setWatching(false); playWatchStop() }
             if (KEY_SET.has(e.code)) e.preventDefault()
             const sc = screenRef.current
             if (sc === 'attract') {
@@ -401,6 +442,9 @@ const MinesweeperGame = () => {
             // taps that belong to the virtual pad (or any chrome) must not
             // also dig the cell under them — only the canvas digs
             if (e.target !== canvas) return
+            // #1637 WATCH: a tap on the field is the player digging — the
+            // prover hands back (blip), and the tap still lands.
+            if (watchingRef.current) { watchingRef.current = false; setWatching(false); playWatchStop() }
             const r = canvas.getBoundingClientRect()
             if (!r.width) return
             const x = Math.floor((e.clientX - r.left) / r.width * gs.w)
@@ -492,6 +536,9 @@ const MinesweeperGame = () => {
                     return `replanted at ${gs.cursor.x},${gs.cursor.y} in ${plantMs}ms`
                 },
                 hash: () => (gs ? stateHash(gs) : 0),
+                // #1637 WATCH probes: is the prover driving, did it blip.
+                watching: () => watchingRef.current && screenRef.current === 'play',
+                watchSfx: watchSfxLog,
                 openCells: () => Array.from(gs.open).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
                 flagCells: () => Array.from(gs.flag).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
                 mineCells: () => Array.from(gs.mines).reduce((a, v, i) => (v ? (a.push(i), a) : a), []),
@@ -563,6 +610,8 @@ const MinesweeperGame = () => {
                     <h1 className="text-4xl font-black mb-6" style={{ color: '#ffd23e', textShadow: '3px 0 0 #b06a3f, -3px 0 0 #4ad7ff, 0 10px 24px #000' }}>MINESWEEPER</h1>
                     <AttractMessage className="mb-6 text-amber-100/80" messages={MESSAGES} />
                     <p className="text-lg font-mono font-bold animate-pulse text-white">{PRESS}</p>
+                    {/* #1654: the discoverable WATCH line, before the first Y press. */}
+                    <div className="mt-4 text-amber-100/60 font-mono text-xs tracking-widest">{WATCH_ATTRACT_HINT}</div>
                 </div>
             )}
 
@@ -582,6 +631,19 @@ const MinesweeperGame = () => {
             )}
 
             {paused && <PauseOverlay game={GAMES.find((g) => g.label === 'MINESWEEPER')} onResume={handleResume} />}
+            {/* #1637 WATCH — the referee sweeps its own field. */}
+            {screen === 'play' && watching && <WatchToast className="absolute z-50" />}
+            {/* #1656 — the forgotten-how-to-play tap: start AND watch, one button. */}
+            {screen === 'attract' && (
+                <div className="absolute inset-x-0 z-[70] flex justify-center pointer-events-none" style={{ bottom: '24%' }}>
+                    <AttractWatchButton />
+                </div>
+            )}
+            {screen === 'play' && !paused && (
+                <div className="absolute pointer-events-auto z-50" style={{ bottom: 'calc(12.5rem + var(--sab, 0px))', left: 'calc(0.75rem + var(--sal, 0px))' }}>
+                    <WatchButton on={watching} />
+                </div>
+            )}
             <VirtualControls
                 visible={play && !paused}
             />

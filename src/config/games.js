@@ -617,7 +617,7 @@ export const GAMES = [
         label: 'MINESWEEPER',
         theme: 'dark',
         description: 'The office classic, rebuilt so it never lies to you: every board is generated under a zero-guess fairness gate — the same referee a Node harness audits — so logic alone ALWAYS clears it. No 50/50 endgames, no dead ends, no luck. And the gate double-proves: every board must also close with chording FORBIDDEN (the slack rule), and every dig the autopilot makes in the attract demo carries the RULE that derived it as safe. Cursor-played so one code path serves keyboard and phone; three densities, from COLT to GENERAL.',
-        controls: ['Click or SPACE / A / tap: dig (a number with matching flags chords the rest open)', 'Right-click or long-press, B / SHIFT / ⚑: plant or lift a flag', 'Arrows / WASD / d-pad: move the cursor', 'A wrong flag chordeS into a mine — flags are a claim, not a shield', '1/2/3 on the marquee: COLT 9×9, SAPPER 16×12, GENERAL 22×13', '?: pause and read the rules']
+        controls: ['Click or SPACE / A / tap: dig (a number with matching flags chords the rest open)', 'Right-click or long-press, B / SHIFT / ⚑: plant or lift a flag', 'Arrows / WASD / d-pad: move the cursor', 'A wrong flag chordeS into a mine — flags are a claim, not a shield', '1/2/3 on the marquee: COLT 9×9, SAPPER 16×12, GENERAL 22×13', WATCH_HELP + ' — the referee that proves every board guess-free sweeps its own field', '?: pause and read the rules']
     },
     {
         path: '/pong',
