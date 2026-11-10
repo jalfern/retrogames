@@ -1,71 +1,71 @@
-# STATE — session 195 (2026-11-10, slot b)
+# STATE — session 195 (2026-11-10, slot a)
 
 ## What shipped
-**TALK ME DOWN remote seats** — squash `de36ed8` (PR #1886, closes #1880).
-`?net=host` keeps the bomb (seat 0); `?net=join&room=CODE` seats a friend at
-the manual (seat 1) on their own screen. Lockstep over the relay (`net.js`:
-pads batched every 2 ticks sampled 8 ahead, whole-sim hash every 60, seed on
-`go`); role-split views (guest box plates the bomb panel, host box plates the
-rulebook rail); walkaway laws distinct from BombDefuse #1819: guest gone ->
-seat-1 demote at DROP_GRACE stalled ticks, CPU manual returns, run wins solo;
-host gone -> guest FREEZES (no role inversion), any key walks back to the
-lobby; in-flight reseat (#1838 law) hands the seat back mid-run on a shared
-flip tick. Mic page-words online: refused on host, folded into the guest's
-sampled pad stream (never forks hashed state). WATCH fully hidden online
-(#1656 honest-UI half: attract pill/hint + in-play pill gated on `!netUi`).
+**WATCH batch 17 — HOMEBODY seats the attract brain** — squash `96eee3e`
+(PR #1892, Part of #1637). Y / ▶ WATCH drives `autoStep` (bot + advance — the
+exact call the attract demo runs and peoplecheck's WINNABLE section grants the
+lifetime wish with) in place of drivePad+advance every sim tick; the bot
+re-decides from live state, one brain with the gate (watchcheck carries the
+no-forked-brain pin: autoStep from its own sim.js — and the witness pin).
+Every release path (Y, driving key, canvas tap, end of run) clears `s.demo`,
+so autonomy is the seat's, not the house's. Attract: shared hint + one-tap
+▶ WATCH. Registry line suffix "grants the wish tends the whole street".
 
-Evidence: `tmdlinkcheck` 56 Node gates green + 3 mutant kill patterns
-(`--mutate` 4 red, `--mutate-reseat` 2, `--mutate-freeze` 2), registered in
-`checks.mjs`; NEW `tmdlinkdrive` 20 gates in TWO real headless browsers over
-a local relay — stable across repeated runs: real key presses turn the host's
-manual pages, solo 5-bomb campaign WIN after walkaway, guest FREEZE after
-host vanishes, reseat-into-live-run + squad clears together at same tick with
-same hash, zero page errors. watchphonecheck 389/389, tmd-smoke 200/200,
-lint:mario/fps/ai green, build green. The drive caught two real bugs the Node
-tier structurally cannot see: delay-0 batch deadlock (zero-delay line must
-drain every tick — fixed in net.js) and vacuous roster chip check (>=1 chip
-is the host itself; kick now waits for relay slots==2).
-Prod verified via `curl -sL` (www redirect!): entry chunk `index-dsO9bH77.js`
-carries `DEFUSER — YOUR HANDS`. Live: https://jalfern.com/retrogames/talk-me-down
+**The batch's real lesson (mid-build):** Beezee's prover-only trap repeats.
+Fern-chat, co-presence bonds and ambience hours bank social/content for an
+IDLE street — needs/content rises are NOT prover-only here. The pilot proves
+advance only with demo-gated commands (a buy: items↑/money↓; a clock-in; the
+payday after work) and asserts the idle street buys nothing and works nowhere.
+The mutant that taught this: seat feed cut (`autoStep`→`advance`) — an
+early naive signal set still passed wake/resume. Killed 7 named gates; restored.
+
+Evidence (full battery green before merge): watchcheck 648/648 (56 pilots;
+homebody pilot 17 gates incl. idle-purity, demo-flag on/off, steer-takeover,
+re-seat through payday, silent racer release, one-tap), watchphonecheck
+402/402 (tripwire 55→56), watchpillcheck 187/187, peoplecheck 124/124,
+contractcheck 682/682, attractcheck 694/694, sleepwatchcheck 314/314,
+homebodydrive 25/25 zero page errors, eslint + lint:mario/fps/ai + build
+green. Prod verified: chunk `index-DtTK5MYC.js` carries the registry line.
+Live: https://jalfern.com/retrogames/homebody
 
 ## Session bookkeeping
-- TARGET #1637 REFUSED at claim (slot a live); rolled to fresh `weakestStage`
-  -> never-dry POLISH #1880 (TMD, weakestStage score 6: 5 README gaps +
-  feedback #1871 naming TMD). One ship.
-- Merge note: branch-protection let the squash through in the moment window
-  where `static` had not yet re-registered the last fix commit ("no checks
-  reported" broke the rule-5 while-loop, then `gh pr merge` succeeded). The
-  fix WAS in the branch tip (watchphonecheck green locally, verified in
-  origin/main content). Lesson: after every fix push, WAIT for the new check
-  to register before running the merge loop.
-- #1880 closed `shipped`. New QA issue #1888 (feedback, lane:qa): polish pass
-  over the new online surface + #1871 (bombdrive seed-7 strike probe stale —
-  2 gates red on main, QA lane owns it per Jon's 2026-10-19 decision).
+- TARGET #1880 (Talk Me Down remote seats) REFUSED at claim — slot b holds it
+  live. Normal ladder: no halt/steer/queue; `next` #1711 hardware-gated;
+  QA MASTER live (no feedback borrow); #1637 re-claimable (slot a's own claim
+  aged past 90 min) → batch 17 claimed, built from origin/main, shipped.
+- #1637 is multi-stage ("Part of #1637") → stays open + `building` for batch
+  18; no close. Wrap + prod-URL comments posted on #1637.
+- Merge done with the rule-5 path (static SUCCESS); worktree re-detached at
+  `96eee3e`. Slot b merged around the same window (main moved mid-merge; the
+  rule-5 loop handled it cleanly).
 - No jonq filed (nothing taste/priority/hard-to-undo this session).
 
-## Next queued (slot b)
-1. Normal ladder: warden TARGET, else halt/steer/next/queue rungs, then
-   game-first. #1637 batch 17 may be claimable once slot a releases it —
-   check claim liveness before touching.
-2. `bombdrive` 2 red on main (#1871) — QA lane's; slot b does NOT pick it up
-   unless Jon steers it here.
-3. Fresh `weakestStage` if the ladder runs dry.
+## Next queued (slot a)
+1. Fresh ladder: TARGET from the warden, else the game-first rungs. `next`
+   #1711 stays hardware-gated; watch for it clearing.
+2. If #1637 is re-claimable (batch 18 = next solver-bearing title not yet
+   seated — 56 seated now): check claim liveness first (slot b may roll it).
+   Un-seated candidates worth auditing for a proven driver: Defender (has an
+   attract autopilot, no test hook yet), SpaceInvaders (attract sim), and the
+   DOS/IF remainder; titles without a proven driver stay honest ("no guide
+   yet") — do NOT seat a panic bot.
+3. #1880 was slot b's live build; check whether it shipped before touching.
+4. Fresh `weakestStage` if the ladder runs dry again.
 
-## Notes for the next slot-b session
-- Worktree `~/Dev/retrogames-forge-tmd-remote` is detached at merged tip
-  `de36ed8`; node_modules symlink intact. For a new build:
-  `git checkout -B forge/<newslug> origin/main`. Dev server 5178 may still be
-  running (this slot's) — reuse only after verifying its cwd; kill otherwise.
-- TMD verify block lives in the game README (`tmdlinkcheck`, `tmdlinkdrive`,
-  `bombdrive`, `tmd-smoke`). `tmdlinkdrive` needs dev server + uses
-  `DRIVE_RELAY_PORT || 8792` (kill any stale relay on it first:
-  `lsof -i :8792`).
-- `__tmdTest.autopilot(on)` is the drive-only solver seat at delay 0; the
-  human path never touches it. Drive probes: `netState()` includes
-  `watch/dropped/slots/nextSample` — use `slots` (relay truth) before kicks,
-  never DOM chips.
-- Two-clock honesty rule learned here: any batching window (SAMPLE_EVERY) must
-  drain at delay 0, or send-of-pad-k gates tick-k gates send-of-pad-k.
+## Notes for the next slot-a session
+- Worktree `~/Dev/retrogames-forge-watch-b17` is detached at the merged tip;
+  node_modules symlink intact — `git checkout -B forge/<newslug> origin/main`
+  for the next build. Dev server 5173 was left RUNNING (vite from this
+  session) — reuse after verifying its cwd, or kill and restart.
+- **Checkpoint rule bites again:** mid-session `git checkout -- <file>` (to
+  undo a sed mutant) wiped ALL uncommitted work in that file and the session
+  nearly rewrote blind. Mutants: revert with the exact inverse sed, never git
+  checkout, and commit each increment BEFORE mutating (FORGE hard rule).
+- watchcheck per-game pattern that works now: seat + pilot + demo/honesty
+  gate pinned in BOTH browser and source pins + witness pin (the batch's own
+  audit module) + phone tripwire bump + full battery.
+- Homebody time model matters for pilots: 1 sim-hour = 5 real s, payday 17:00
+  ≈ 50 s from a 07:00 boot — re-seat polls must span the shift's end (50 s).
 
 ## Open questions
-- None.
+- None. (#1637 continues as batch 18; no taste/priority call needed from Jon.)
