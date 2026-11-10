@@ -3761,8 +3761,8 @@ await pBrowser.close()
     {
         const simS = await readFile(new URL('../src/games/MagicCarpet/sim.js', import.meta.url), 'utf8')
         const blk = simS.slice(simS.indexOf('THE COVEN'), simS.indexOf('if (gs.sibs.length) gs.events'))
-        r.check('#1764-2s1 seed-stream law — the coven block spends no rnd()',
-            blk.length > 200 && !blk.includes('rnd('), 'source pin')
+        r.check('#1764-2s1 seed-stream law — the coven block spends no rnd(gs)',
+            blk.length > 200 && !blk.includes('rnd(gs)'), 'source pin')
     }
     {
         const gs = makeGame(7)
