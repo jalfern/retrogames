@@ -50,7 +50,10 @@ transcribed into source:
   see "Moon-phase routing" below).
 - Gate journeys land at a star, not a shrine, and the stars carry roman
   numerals: the original's shrine destinations and town names (Britain,
-  Trinsic…) arrive when stage 5's town/talk data loads.
+  Trinsic…) arrive when stage 5's town/talk data loads. — **CLOSED by #1876**
+  for the shrine half: gates now land at named chapels with their keeper in
+  the toast (see "Shrines" below). The town names (Britain, Trinsic…) still
+  wait for stage 2/5's town/talk data — that tail stays open (#1829 item 5).
 - Boarding is free at any coast (the purchase lives in stage 2's shops).
 - Town walls/buildings are still tile terrain; enterable buildings are stage 2.
 - Classic mode (`C`) stamps the ORIGINAL terrain tiles: Origin's own
@@ -166,6 +169,53 @@ source pins for refusal/menu-mark/probe wiring. Mutants: `ROUTE_OFFSET[4]`
 reddens the rule pin — restored green. `britannidrive` rides the rule in a
 real browser: refusal on the wrong row, warp on the moonlit row, and the
 route flipping when the day turns.
+
+## Shrines — the landings become named chapels (#1876 polish)
+
+In the original (Ultima IV, Origin 1985) the eight moongates connect the eight
+**shrines of the virtues**, each keeping the stone Avatar who attained that
+virtue. Until now a journey ended at a bare star with a roman numeral on it;
+this stage makes the destination live up to the moon-name the gate has carried
+since #1135:
+
+- `shrines.js` (pure + deterministic): one **consecrated plot** per gate —
+  `SHRINE_DIST = 2` tiles out, cardinals tried in seeded hash order, first
+  tile the town FLAT law accepts (grass/heath/plains — never sea, cliff,
+  hill, forest, marsh or another star's POI) and no earlier shrine claimed.
+  Distance 2 by construction keeps every sanctum outside a gate's ±1 approach
+  ring: **stone cannot strand a pilgrim** (britanniacheck pins it). A world
+  that offers nothing gets `null`, not a lie.
+- `AVATARS` names the eight canonical statue-keepers aligned index-for-index
+  with `MOONS`: Humility/Dracmato, Honesty/Ires, Compassion/Emoj,
+  Valor/Dactio, Spirituality/Naergius, Justice/Agdash, Sacrifice/Gordam,
+  Honor/Andros — the menu's moon and the shrine's keeper always speak the
+  same virtue.
+- **The chapel is stone**: on foot the sanctum tile refuses you (thud +
+  retry cooldown; first touch toasts `The Shrine of X is stone — about face.`).
+  Ships, warps and the gate itself are untouched; sim positions change only
+  by the refusal, so every pre-existing pin and win-margin rides unchanged.
+- **Look (MODERN bar):** a chapel over each plot — ashlar walls with
+  staggered joints, steep slate roof, an arched oak door facing its gate
+  head-on, and a bell-cote carrying a moonstone in the gate's own cyan ink
+  that pulses and halos at night. Classic (`C`) mode stays the clean CON
+  tile sheet. The panel gate box grew 480→520px for `Shrine of Spirituality`.
+- **Words replace numerals where a destination is NAMED**: menu rows read
+  `III — Shrine of Spirituality`, the arrival toast carries shrine + keeper
+  (`…whirls thee to the shrine of Spirituality, where Naergius standeth of
+  old.`), and the compass points `to Spirituality · 214 paces`. The refusal
+  and route caption keep their roman-numeral wheel-teaching — the #1862 pins
+  stay true, word-for-word.
+- Honesty: gate III's chapel plots due SOUTH at (161,23), so the #1829
+  item-7 stickiness walk in `britannidrive` walks off NORTH instead; gates
+  V/VI (the isles) stay the ship's business with or without chapels
+  (britanniacheck proves walls lose no land but the chapel floors).
+
+Proof: britanniacheck +18 gates (plot/dist/ring/FLAT laws with the spec value
+pinned, keeper alignment, 40× determinism, null-on-sea, wall-BFS land +
+gate-reach, 8 wiring pins); mutants `--mutate-shrine` (dist 2→1) and
+`--mutate-block` (refusal deleted) both die, tree restores clean. The drive
+adds panel/node plot parity, the real-keys stone refusal at gate VI and the
+keeper-toast check.
 
 ## Verify
 

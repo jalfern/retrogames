@@ -13,6 +13,7 @@ import { Report } from './lib/harness.mjs'
 import { zipRead, makeWorld, isSea } from '../src/games/Britannia/britmap.js'
 import { seaRough } from '../src/games/Britannia/swell.js'
 import { routeDest, moonName, DAY_TICKS } from '../src/games/Britannia/moons.js'
+import { plotShrines } from '../src/games/Britannia/shrines.js'
 import { WX, weatherAt } from '../src/games/Britannia/weather.js'
 
 const URL = `http://localhost:${process.env.DEV_PORT || 5173}/retrogames/britannia`
@@ -194,6 +195,8 @@ await sleep(1100)
 s = await st()
 r.check(`the full moon carries gate ${ROMAN[routed0]} its diameter (lands gate ${ROMAN[(routed0 + 4) % 8]})`,
     s.x === s.gates[(routed0 + 4) % 8][0] && s.y === s.gates[(routed0 + 4) % 8][1], JSON.stringify({ x: s.x, y: s.y, want: s.gates[(routed0 + 4) % 8] }))
+r.check('the arrival toast names the destination as a shrine, keeper included (#1876)',
+    /whirls thee to the shrine of \w+, where \w+ standeth of old\./.test(s.toastMsg), s.toastMsg)
 
 // #1829 item 6: britanniacheck pins the moonlit disc by REGEX on the draw
 // call — the pixels themselves were never verified. Same gate, same real
@@ -203,7 +206,7 @@ r.check(`the full moon carries gate ${ROMAN[routed0]} its diameter (lands gate $
 // index.jsx (GM = {w:480, rowTop:62, pitch:36, foot:64}; canvas 1280x720):
 // box bx=400 by=171 bh=378, row i (gate skipped) at by+62+(i<gi?i:i-1)*36,
 // the row disc at (bx+18, row+17) r3.5, caption baseline by+bh-58.
-const GMW = 480, GMROW = 62, GMPITCH = 36, GMFOOT = 64
+const GMW = 520, GMROW = 62, GMPITCH = 36, GMFOOT = 64
 const GW = 1280, GH = 720
 const gbh = GMROW + 7 * GMPITCH + GMFOOT
 const gbx = GW / 2 - GMW / 2, gby = GH / 2 - gbh / 2
@@ -268,6 +271,8 @@ r.check('new moon: the open menu live-flips the road (VII -> IV, wheel +1)',
 // seat fresh AND follow the wheel when the day turns. Re-seat the Avatar
 // exactly on the gate tile first — openMenuOn's opener step leaves him one
 // tile south of it, and the walk-off is measured from the gate itself.
+// (#1876: the walk-off goes NORTH now — gate III's shrine stands two tiles
+// south at (161,23), and the chapel is stone.)
 await page.evaluate((i) => window.__britanniaTest.teleport(i), gi)
 await sleep(120)
 s2 = await st()
@@ -277,15 +282,15 @@ await page.keyboard.press('KeyZ')
 await sleep(160)
 s2 = await st()
 r.check('new moon: Z cancels and the gate stays cancelled beside the avatar', s2.gate === -1 && s2.moonRoute === -1, JSON.stringify(s2))
-await page.keyboard.press('ArrowDown')
-await sleep(240)
-s2 = await st()
-r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.y === 22, JSON.stringify(s2))
-await page.keyboard.press('ArrowDown')
-await sleep(240)
-s2 = await st()
-r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.y === 23, JSON.stringify(s2))
 await page.keyboard.press('ArrowUp')
+await sleep(240)
+s2 = await st()
+r.check('the first step off stays cancelled (the dismissal holds one tile)', s2.gate === -1 && s2.y === 20, JSON.stringify(s2))
+await page.keyboard.press('ArrowUp')
+await sleep(240)
+s2 = await st()
+r.check('two steps off, the dismissal clears (no menu, no ghost)', s2.gate === -1 && s2.y === 19, JSON.stringify(s2))
+await page.keyboard.press('ArrowDown')
 await sleep(240)
 s2 = await st()
 r.check('walking back re-opens the menu FRESH beside the same new-moon road (IV) — intentional, not sticky',
@@ -295,6 +300,28 @@ await sleep(140)
 s2 = await st()
 r.check('the re-opened menu is live: the day turns (new -> waxing crescent, +3) and the road follows (IV -> VI)',
     s2.gate === gi && s2.moon === 1 && s2.moonRoute === 5, JSON.stringify(s2))
+
+// #1876 shrines: panel == node parity, and the chapel stone is REAL. Gate VI
+// (231,235, the dungeon star) plots its chapel due west at (229,235) — the one
+// cardinal its POI ring leaves; walking west onto the sanctum must be refused.
+await page.evaluate((sd) => { window.__game.reset(sd); window.__britanniaTest.teleport(6) }, seed0)
+await sleep(150)
+const sPar = await st()
+const wantSpots = plotShrines(sPar.gates.map(([x, y]) => ({ x, y })), (x, y) => world.get(x, y)).map(sv => (sv ? [sv.x, sv.y] : null))
+r.check('panel shrines match the Node sweep plot-for-plot (same eight tiles, same order)',
+    JSON.stringify(sPar.shrines) === JSON.stringify(wantSpots), JSON.stringify({ got: sPar.shrines, want: wantSpots }))
+await page.keyboard.press('ArrowLeft')
+await sleep(240)
+let sS = await st()
+r.check('gate VI: one step west stands beside the moongate (menu whirls open)', sS.x === 230 && sS.gate === 6, JSON.stringify({ x: sS.x, y: sS.y, gate: sS.gate }))
+await page.keyboard.press('KeyZ')
+await sleep(160)
+await page.keyboard.press('ArrowLeft')
+await sleep(240)
+sS = await st()
+r.check('the chapel is stone: the west step onto the sanctum is refused (x stays 230)', sS.x === 230 && sS.y === 235, JSON.stringify({ x: sS.x, y: sS.y }))
+r.check('the refusal names the shrine and counts the touch', /is stone — about face/.test(sS.toastMsg) && sS.bumped >= 1, JSON.stringify({ toast: sS.toastMsg, bumped: sS.bumped }))
+await page.screenshot({ path: '/tmp/forge/britannia-shrine.png' })
 
 // restart path stays clean
 await page.evaluate(() => window.__game.reset(7))
